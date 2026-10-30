@@ -26,7 +26,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 | PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；无下一失败，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
 | GTA3 | macOS | Tap To Continue 标题；PlayMovieInWindow 的 View.toString 已通过 | 本次 90 秒未见新 Java 首错；影片解码画面未验，NV clock 提示仍在 | [DVM-363](../tasks/dexvm/DVM-363.md) |
-| GTASA | macOS | Spinner(Context) 原首错消失；适配器/布局/选择链双后端定向通过 | ProgressBar.setIndeterminate，andSpinner.createView；FPS未验 | [DVM-364](../tasks/dexvm/DVM-364.md) |
+| GTASA | macOS | ProgressBar 原首错消失；主树发布，26 呈现帧 | andLabel.setText 有界文本 UOE（JNI 后清除）；画面/FPS未验 | [DVM-365](../tasks/dexvm/DVM-365.md) |
 
 ## 未闭合问题
 

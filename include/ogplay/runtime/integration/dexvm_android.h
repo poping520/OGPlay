@@ -1054,6 +1054,7 @@ struct DexVmAndroidContext final {
         std::optional<ui::LeafMeasureResult> text_measure;
         std::unordered_map<std::int32_t, ui::LeafMeasureResult> text_measure_cache;
         std::uint64_t text_revision{};
+        bool progress_content_reported{};
         std::array<dexvm::VmObjectRef, 4> text_compounds{dexvm::VmObjectRef{}, dexvm::VmObjectRef{},
                                                          dexvm::VmObjectRef{}, dexvm::VmObjectRef{}};
     };

@@ -238,3 +238,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_widget_Spinner_DropdownPopup(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_Spinner_ForwardingListener(const Context& context);
 }  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+[[nodiscard]] Decl Declare_android_graphics_drawable_AnimationDrawable(const Context& context);
+}

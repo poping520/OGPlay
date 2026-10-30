@@ -1628,6 +1628,24 @@ Decl Declare_android_content_res_Resources(const Context& context) {
         });
     {
         builder.VirtualMethod(
+            "getAnimation", "(I)Landroid/content/res/XmlResourceParser;", [context](dx::IntrinsicContext& call) {
+                const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
+                if ((id >> 24U) == 1) {
+                    const auto* xml = context->theme_resources.Animation(id);
+                    if (!xml)
+                        throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                              "unsealed system animation: " + std::to_string(id)};
+                    return OpenCompiledXml(call, *xml);
+                }
+                // Reuse the existing APK XML resource path, with the API19 anim type check.
+                const auto* entry = context->arsc.FindById(id);
+                if (!entry || entry->type_name != "anim")
+                    throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                          "resource is not an animation"};
+                return CallAndroidMethod(call.vm, call.receiver, "getXml", "(I)Landroid/content/res/XmlResourceParser;",
+                                         {call.arguments[0]});
+            });
+        builder.VirtualMethod(
             "getLayout", "(I)Landroid/content/res/XmlResourceParser;", [context](dx::IntrinsicContext& call) {
                 const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
                 if ((id >> 24U) == 1) {
@@ -1739,6 +1757,68 @@ dx::VmObjectRef MakeRomSkin(dx::IntrinsicContext& call, const Context& context, 
     const auto density = static_cast<std::uint32_t>(std::lround(context->ui_density * 160.0F));
     const auto* resource = context->theme_resources.Drawable(id, density);
     if (!resource) throw std::runtime_error("unreviewed ROM drawable load");
+
+    const auto allocate = [&call](const char* descriptor) {
+        const auto type = call.vm.Linker().ResolveDescriptor(descriptor);
+        const auto initialized = call.vm.EnsureClassInitialized(type);
+        if (initialized.exception.IsValid())
+            throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
+                                  initialized.exception_message, initialized.exception};
+        return call.vm.NewIntrinsicInstance(descriptor);
+    };
+    if (!resource->xml.empty()) {
+        const auto object = allocate("Landroid/graphics/drawable/AnimatedRotateDrawable;");
+        const auto roots = call.vm.ProtectReferences(std::array{object});
+        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/AnimatedRotateDrawable;");
+        const auto ctor = call.vm.Linker().FindDirectMethod(type, "<init>", "()V");
+        const auto out = call.vm.Call(*ctor, std::array{dx::VmValue::Ref(object)});
+        if (out.exception.IsValid())
+            throw dx::VmJavaThrow{call.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                                  out.exception};
+        const auto parser = OpenCompiledXml(call, resource->xml).ref;
+        const auto parser_root = call.vm.ProtectReferences(std::array{parser});
+        try {
+            while (CallAndroidMethod(call.vm, parser, "next", "()I").AsInt() != 2) {
+            }
+            const auto resources = ResourceObject(call, context, false);
+            static_cast<void>(CallAndroidMethod(
+                call.vm, object, "inflate",
+                "(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)V",
+                {dx::VmValue::Ref(resources), dx::VmValue::Ref(parser), dx::VmValue::Ref(parser)}));
+        } catch (...) {
+            static_cast<void>(CallAndroidMethod(call.vm, parser, "close", "()V"));
+            throw;
+        }
+        static_cast<void>(CallAndroidMethod(call.vm, parser, "close", "()V"));
+        return object;
+    }
+    if (!resource->png.empty() && resource->stretch_x.empty()) {
+        const auto decoded = DecodeImageToArgb(resource->png);
+        if (!decoded || decoded->width != static_cast<int>(resource->width) ||
+            decoded->height != static_cast<int>(resource->height))
+            throw std::runtime_error("ROM bitmap decode/facts mismatch");
+        const auto bitmap = allocate("Landroid/graphics/Bitmap;");
+        const auto roots = call.vm.ProtectReferences(std::array{bitmap});
+        auto& backing = context->bitmaps[bitmap.Value()];
+        backing.width = decoded->width;
+        backing.height = decoded->height;
+        backing.mutable_pixels = false;
+        backing.pixels = std::make_shared<BitmapPixels>(decoded->width, decoded->height, 5, decoded->argb);
+        backing.density = static_cast<std::int32_t>(resource->density);
+        const auto object = allocate("Landroid/graphics/drawable/BitmapDrawable;");
+        const auto object_root = call.vm.ProtectReferences(std::array{object});
+        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/BitmapDrawable;");
+        const auto ctor = call.vm.Linker().FindDirectMethod(
+            type, "<init>", "(Landroid/content/res/Resources;Landroid/graphics/Bitmap;)V");
+        const auto resources = ResourceObject(call, context, false);
+        const auto out = call.vm.Call(
+            *ctor, std::array{dx::VmValue::Ref(object), dx::VmValue::Ref(resources), dx::VmValue::Ref(bitmap)});
+        if (out.exception.IsValid())
+            throw dx::VmJavaThrow{call.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                                  out.exception};
+        context->ui_drawables.at(object.Value()).resource_id = id;
+        return object;
+    }
     const bool selector = !resource->items.empty();
     const char* descriptor =
         selector ? "Landroid/graphics/drawable/StateListDrawable;" : "Landroid/graphics/drawable/NinePatchDrawable;";

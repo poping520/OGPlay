@@ -71,6 +71,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_webkit_WebSettings(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/webkit/WebSettings;", "Ljava/lang/Object;");
+    const auto wide_viewport = builder.BoundInstanceField("mUseWideViewPort", "Z", dx::kAccPrivate);
     const auto support_zoom = builder.BoundInstanceField("mSupportZoom", "Z", dx::kAccPrivate);
     const auto built_in_zoom = builder.BoundInstanceField("mBuiltInZoomControls", "Z", dx::kAccPrivate);
     const auto allow_file = builder.BoundInstanceField("mAllowFileAccess", "Z", dx::kAccPrivate);
@@ -96,6 +97,7 @@ Decl Declare_android_webkit_WebSettings(const Context& context) {
             return dx::VmValue::Int(value == 0 ? (default_value ? 1 : 0) : (value == 2 ? 1 : 0));
         });
     };
+    boolean_setting("setUseWideViewPort", "getUseWideViewPort", wide_viewport, false);
     boolean_setting("setSupportZoom", "supportZoom", support_zoom, true);
     boolean_setting("setBuiltInZoomControls", "getBuiltInZoomControls", built_in_zoom, false);
     boolean_setting("setAllowFileAccess", "getAllowFileAccess", allow_file, true);
@@ -210,6 +212,7 @@ Decl Declare_android_webkit_WebView(const Context& context) {
     // API19 WebView.onMeasure delegates to the unsupported browser provider.
     builder.UnimplementedOverride("onMeasure", "(II)V", dx::kAccProtected);
     const auto webview_thread = builder.BoundInstanceField("mWebViewThread", "Landroid/os/Looper;", dx::kAccPrivate);
+    const auto initial_scale = builder.BoundInstanceField("mInitialScale", "I", dx::kAccPrivate);
     const auto destroyed = builder.BoundInstanceField("mDestroyed", "Z", dx::kAccPrivate);
     const auto settings = builder.BoundInstanceField("mWebSettings", "Landroid/webkit/WebSettings;", dx::kAccPrivate);
     const auto view_client =
@@ -236,6 +239,32 @@ Decl Declare_android_webkit_WebView(const Context& context) {
             throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "WebView already destroyed"};
         }
     };
+
+    builder.VirtualMethod("setInitialScale", "(I)V",
+                          [check_thread, require_alive, initial_scale](dx::IntrinsicContext& call) {
+                              check_thread(call);
+                              require_alive(call);
+                              // API19 WebView forwards the int unchanged; there is no Java range check.
+                              // This is the requested configuration only. No browser provider renders it.
+                              dx::IntrinsicCall(call).SetInt(initial_scale, call.arguments[0].AsInt());
+                              return dx::VmValue::Void();
+                          });
+    builder.OverrideMethod(
+        "onAttachedToWindow", "()V",
+        [check_thread, require_alive](dx::IntrinsicContext& call) {
+            check_thread(call);
+            require_alive(call);
+            const auto parent = call.vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;");
+            const auto index = call.vm.Linker().FindVtableIndex(parent, "onAttachedToWindow", "()V");
+            if (!index) throw std::logic_error("ROM ViewGroup attachment is unavailable");
+            const auto out = call.vm.Call(call.vm.Linker().Class(parent).vtable[*index],
+                                          std::array{dx::VmValue::Ref(call.receiver)});
+            if (out.exception.IsValid())
+                throw dx::VmJavaThrow{call.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                                      out.exception};
+            return out.value;
+        },
+        dx::kAccProtected);
     builder.Constructor("(Landroid/content/Context;)V", [context, webview_thread](dx::IntrinsicContext& call) {
         const auto target =
             call.vm.Linker().FindDirectMethod(call.vm.Linker().ResolveDescriptor("Landroid/widget/AbsoluteLayout;"),
@@ -367,6 +396,7 @@ Decl Declare_android_webkit_WebView(const Context& context) {
         return dx::VmValue::Void();
     };
     builder.VirtualMethod("goBack", "()V", no_history);
+    builder.VirtualMethod("goForward", "()V", no_history);
     builder.VirtualMethod("reload", "()V", no_history);
     builder.VirtualMethod("stopLoading", "()V",
                           [check_thread, require_alive, pending_load](dx::IntrinsicContext& call) {
@@ -387,6 +417,11 @@ Decl Declare_android_webkit_WebView(const Context& context) {
             if (!url.IsValid()) url = call.vm.NewStringUtf8("about:blank");
             return disabled_load(call, url, "load_data");
         });
+    builder.VirtualMethod("canGoForward", "()Z", [check_thread, require_alive](dx::IntrinsicContext& call) {
+        check_thread(call);
+        require_alive(call);
+        return dx::VmValue::Int(0);
+    });
     builder.VirtualMethod("canGoBack", "()Z", [check_thread, require_alive](dx::IntrinsicContext& call) {
         check_thread(call);
         require_alive(call);

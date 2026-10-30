@@ -145,30 +145,16 @@ Decl Declare_android_widget_LinearLayout(const Context&) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_widget_ProgressBar(const Context& context) {
-    static_cast<void>(context);
+Decl Declare_android_widget_ProgressBar(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ProgressBar;", "Landroid/view/View;");
-    builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
-    builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V", ViewInitHandler(context));
-    builder.VirtualMethod("setMax", "(I)V", WidgetNoopHandler());
-    builder.VirtualMethod("setProgress", "(I)V", WidgetNoopHandler());
-    // AOSP 4.4 ROM line 242.
-    builder.Constructor(
-        "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
-        [](dx::IntrinsicContext& c) {
-            const auto target =
-                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/widget/ProgressBar;"),
-                                               "<init>", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
-            const auto result =
-                c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver), c.arguments[0],
-                                                            c.arguments[1], dx::VmValue::Int(0x1010077)});
-            if (result.exception.IsValid())
-                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                                      result.exception};
-            return result.value;
+    builder.DirectMethod(
+        "tileify", "(Landroid/graphics/drawable/Drawable;Z)Landroid/graphics/drawable/Drawable;",
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.progressbar_tiling", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "ProgressBar tiled drawable is unsupported"};
         },
-        dx::kAccPublic);
-
+        dx::kAccPrivate);
     return std::move(builder).Build();
 }
 

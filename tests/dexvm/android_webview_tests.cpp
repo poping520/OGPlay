@@ -147,6 +147,7 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
         std::atomic<std::int32_t> worker_runs{};
         std::string worker_exception;
         VmObjectRef worker_view;
+        std::string worker_method = "destroy";
         auto subclass = IntrinsicClassBuilder::Class("Ltest/OwnedWebView;", "Landroid/webkit/WebView;");
         subclass.Constructor(kViewInit, [](IntrinsicContext& call) {
             const auto type = call.vm.Linker().ResolveDescriptor("Landroid/webkit/WebView;");
@@ -162,19 +163,24 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
         auto destroyer =
             IntrinsicClassBuilder::Class("Ltest/DestroyWebView;", "Ljava/lang/Object;", {"Ljava/lang/Runnable;"});
         destroyer.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
-        destroyer.VirtualMethod("run", "()V", [&worker_runs, &worker_exception, &worker_view](IntrinsicContext& call) {
-            ++worker_runs;
-            const auto klass = call.vm.Model().ObjectClass(worker_view);
-            const auto index = call.vm.Linker().FindVtableIndex(klass, kDestroy, kVoid);
-            const std::array arguments{VmValue::Ref(worker_view)};
-            const auto outcome = call.vm.Call(call.vm.Linker().Class(klass).vtable[*index], arguments);
-            if (outcome.exception.IsValid()) {
-                worker_exception = call.vm.Linker().Class(outcome.exception_class).descriptor;
-            } else {
-                worker_exception.clear();
-            }
-            return VmValue::Void();
-        });
+        destroyer.VirtualMethod(
+            "run", "()V", [&worker_runs, &worker_exception, &worker_view, &worker_method](IntrinsicContext& call) {
+                ++worker_runs;
+                const auto klass = call.vm.Model().ObjectClass(worker_view);
+                const auto signature = worker_method == "setInitialScale" ? "(I)V"
+                                       : worker_method == "canGoForward"  ? "()Z"
+                                                                          : kVoid;
+                const auto index = call.vm.Linker().FindVtableIndex(klass, worker_method, signature);
+                std::vector arguments{VmValue::Ref(worker_view)};
+                if (worker_method == "setInitialScale") arguments.push_back(VmValue::Int(80));
+                const auto outcome = call.vm.Call(call.vm.Linker().Class(klass).vtable[*index], arguments);
+                if (outcome.exception.IsValid()) {
+                    worker_exception = call.vm.Linker().Class(outcome.exception_class).descriptor;
+                } else {
+                    worker_exception.clear();
+                }
+                return VmValue::Void();
+            });
         AndroidValueVm fixture(backend, {std::move(subclass).Build(), std::move(destroyer).Build()});
         fixture.context->threads = &fixture.threads;
 
@@ -258,6 +264,12 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
         CHECK(worker_exception == "Ljava/lang/RuntimeException;");
         CHECK(fixture.On(second, "getSettings", kGetSettings).ref == second_settings);
 
+        for (const auto name : {"setInitialScale", "canGoForward", "goForward", "onAttachedToWindow"}) {
+            worker_method = name;
+            post_destroy(second);
+            CHECK(worker_exception == "Ljava/lang/RuntimeException;");
+        }
+        worker_method = "destroy";
         fixture.context->target_sdk_version = 13;
         post_destroy(second);
         CHECK(worker_exception.empty());
@@ -266,5 +278,56 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
         CHECK(fixture.linker.Class(after.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
 
         ShutdownAndroidScheduler(*fixture.context);
+    }
+}
+
+#include "container_traversal_fixture.h"
+
+TEST_CASE("DVM-365 WebView complete constructor configuration and ROM super attachment") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend, true);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto owner = f.New("Landroid/app/Activity;");
+        const auto view = f.New("Ltest/WebViewLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view});
+        f.On(view, "setId", "(I)V", {VmValue::Int(123)});
+        CHECK(f.On(view, "getId", "()I").AsInt() == 123);
+        const auto client = f.New("Landroid/webkit/WebViewClient;");
+        f.On(view, "setWebViewClient", "(Landroid/webkit/WebViewClient;)V", {VmValue::Ref(client)});
+        const auto settings = f.On(view, "getSettings", "()Landroid/webkit/WebSettings;").ref;
+        CHECK(f.On(settings, "getUseWideViewPort", "()Z").AsInt() == 0);
+        for (const auto name : {"setJavaScriptEnabled", "setBuiltInZoomControls", "setSupportZoom"})
+            f.On(settings, name, "(Z)V", {VmValue::Int(1)});
+        f.On(view, "setInitialScale", "(I)V", {VmValue::Int(80)});
+        f.On(settings, "setUseWideViewPort", "(Z)V", {VmValue::Int(1)});
+        CHECK(f.On(settings, "getJavaScriptEnabled", "()Z").AsInt() == 1);
+        CHECK(f.On(settings, "getBuiltInZoomControls", "()Z").AsInt() == 1);
+        CHECK(f.On(settings, "supportZoom", "()Z").AsInt() == 1);
+        CHECK(f.On(settings, "getUseWideViewPort", "()Z").AsInt() == 1);
+        const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(view), "mInitialScale", "I");
+        REQUIRE(field);
+        CHECK(f.model.InstanceSlots(view)[f.linker.Field(*field).slot].bits == 80);
+        for (int scale : {0, -1, 100, INT32_MAX}) {
+            f.On(view, "setInitialScale", "(I)V", {VmValue::Int(scale)});
+            CHECK(f.model.InstanceSlots(view)[f.linker.Field(*field).slot].bits == static_cast<std::uint32_t>(scale));
+        }
+        f.On(settings, "setUseWideViewPort", "(Z)V", {VmValue::Int(0)});
+        CHECK(f.On(settings, "getUseWideViewPort", "()Z").AsInt() == 0);
+        CHECK(f.On(view, "canGoForward", "()Z").AsInt() == 0);
+        f.On(view, "goForward", "()V");
+        CHECK(f.On(view, "canGoBack", "()Z").AsInt() == 0);
+        f.On(view, "onAttachedToWindow", "()V");
+        CHECK(f.On(view, "attachments", "()I").AsInt() == 1);
+        f.On(view, "destroy", "()V");
+        for (const auto name : {"canGoForward", "goForward", "setInitialScale"}) {
+            const bool scale = std::string_view(name) == "setInitialScale";
+            const auto out = f.OnOutcome(view, name,
+                                         scale                                      ? "(I)V"
+                                         : std::string_view(name) == "canGoForward" ? "()Z"
+                                                                                    : "()V",
+                                         scale ? std::vector{VmValue::Int(80)} : std::vector<VmValue>{});
+            REQUIRE(out.exception.IsValid());
+            CHECK(f.linker.Class(out.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+        }
     }
 }

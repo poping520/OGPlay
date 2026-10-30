@@ -20,7 +20,7 @@ GROUPS = ('View', 'ViewGroup', 'FrameLayout', 'LinearLayout', 'RelativeLayout',
           'ViewGroup_Layout', 'ViewGroup_MarginLayout', 'FrameLayout_Layout',
           'LinearLayout_Layout', 'RelativeLayout_Layout',
           'TextViewAppearance', 'TextAppearance', 'TextView', 'ImageView',
-          'ScrollView', 'HorizontalScrollView', 'Spinner', 'AbsSpinner')
+          'ScrollView', 'HorizontalScrollView', 'Spinner', 'AbsSpinner', 'ProgressBar', 'AnimatedRotateDrawable')
 PINNED = {
     '.local/aosp/framework.jar': '422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b',
     '.local/aosp/framework2.jar': '5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973',

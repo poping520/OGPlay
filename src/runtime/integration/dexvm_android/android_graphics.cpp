@@ -744,6 +744,13 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/Drawable;", "Ljava/lang/Object;");
+    builder.StaticMethod(
+        "createFromXmlInner",
+        "(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)Landroid/graphics/drawable/Drawable;",
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "nested drawable XML is unsupported"};
+        });
     const auto dimension = [context](const bool width) {
         return dx::IntrinsicHandler([context, width](dx::IntrinsicContext& call) {
             const auto found = context->ui_drawables.find(call.receiver.Value());
@@ -1365,6 +1372,26 @@ Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
                     if (!field) throw std::logic_error("missing ROM BitmapDrawable field");
                     call.vm.Model().InstanceSlots(call.receiver)[call.vm.Linker().Field(*field).slot] = {bits, tag};
                 };
+
+                const auto state_type =
+                    call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/BitmapDrawable$BitmapState;");
+                const auto state_initialized = call.vm.EnsureClassInitialized(state_type);
+                if (state_initialized.exception.IsValid())
+                    throw dx::VmJavaThrow{call.vm.Linker().Class(state_initialized.exception_class).descriptor,
+                                          state_initialized.exception_message, state_initialized.exception};
+                const auto state =
+                    call.vm.NewIntrinsicInstance("Landroid/graphics/drawable/BitmapDrawable$BitmapState;");
+                const auto state_root = call.vm.ProtectReferences(std::array{state});
+                const auto state_ctor = call.vm.Linker().FindDirectMethod(
+                    call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/BitmapDrawable$BitmapState;"),
+                    "<init>", "(Landroid/graphics/Bitmap;)V");
+                const auto initialized =
+                    call.vm.Call(*state_ctor, std::array{dx::VmValue::Ref(state), dx::VmValue::Ref(bitmap)});
+                if (initialized.exception.IsValid())
+                    throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
+                                          initialized.exception_message, initialized.exception};
+                write("mBitmapState", "Landroid/graphics/drawable/BitmapDrawable$BitmapState;", state.Value(),
+                      dx::SlotTag::ref);
                 write("mBitmap", "Landroid/graphics/Bitmap;", bitmap.Value(), dx::SlotTag::ref);
                 std::int32_t target = 160;
                 if (index == 1 && call.arguments[0].ref.IsValid()) {
@@ -1710,5 +1737,19 @@ Decl Declare_android_graphics_drawable_StateListDrawable(const Context& context)
         },
         dx::kAccProtected);
     return std::move(b).Build();
+}
+}  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+Decl Declare_android_graphics_drawable_AnimationDrawable(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/AnimationDrawable;",
+                                                    "Landroid/graphics/drawable/DrawableContainer;");
+    const auto reject = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.progressbar_tiling", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "frame animation drawable is unsupported"};
+    };
+    builder.Constructor("()V", reject);
+    builder.VirtualMethod("setOneShot", "(Z)V", reject);
+    return std::move(builder).Build();
 }
 }  // namespace ogplay::runtime::android_intrinsics

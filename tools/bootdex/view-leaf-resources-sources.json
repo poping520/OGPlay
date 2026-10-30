@@ -74,7 +74,14 @@
           "signature": "createFromXmlInner(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)Landroid/graphics/drawable/Drawable;",
           "flags": 9,
           "body_sha256": "effbaed45bcb6bb326a060c9bb0ff26c2a531f6bdb7df6eb9316f16d24f7f25f",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-365 explicit nested XML drawing rejection within original rotate inflater",
+            "inputs": "Resources XML parser and attributes",
+            "outputs": "ledger and UnsupportedOperationException",
+            "state_owner": "no state created",
+            "failure_boundary": "only sealed drawable references load; arbitrary nested XML remains unsupported"
+          }
         },
         {
           "signature": "draw(Landroid/graphics/Canvas;)V",
@@ -200,7 +207,7 @@
           "signature": "inflateWithAttributes(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/content/res/TypedArray;I)V",
           "flags": 0,
           "body_sha256": "55c30c4d4f47f52890be235cf47869abe9094a8a2e965ac1b251e1b2f50cbd53",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "invalidateSelf()V",
@@ -362,7 +369,7 @@
           "signature": "unscheduleSelf(Ljava/lang/Runnable;)V",
           "flags": 1,
           "body_sha256": "a540f149e2fe5f03d88dd98bfd19e8b481144e5eb328bbbc14b7abaa6786a4aa",
-          "source": "failure"
+          "source": "rom"
         }
       ],
       "fields": [
@@ -585,7 +592,7 @@
           "signature": "getPaint()Landroid/graphics/Paint;",
           "flags": 17,
           "body_sha256": "d8f6546446e8e6660c352d32bf9d744a413d83ba0bdd40d52329336366c78c38",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getTileModeX()Landroid/graphics/Shader$TileMode;",
@@ -640,13 +647,13 @@
           "signature": "needMirroring()Z",
           "flags": 2,
           "body_sha256": "5da70f26d0fc0d76ff0e002628aff42068d7f59b0a643d776250896e24913619",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onBoundsChange(Landroid/graphics/Rect;)V",
           "flags": 4,
           "body_sha256": "63e9bca1f8b1245c5502dba8b4637553c3350cad13eb4d37349f33a611963b56",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setAlpha(I)V",
@@ -665,7 +672,7 @@
           "signature": "setAntiAlias(Z)V",
           "flags": 1,
           "body_sha256": "831293e838530f213665ac8055948e368f930154f46bd3eab77aaa79df397047",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setAutoMirrored(Z)V",
@@ -695,7 +702,7 @@
           "signature": "setFilterBitmap(Z)V",
           "flags": 1,
           "body_sha256": "4536467494c4662e8ca34431ad27120e7fa69de67fabfa10b95a8a0f52e83c0c",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setGravity(I)V",
@@ -755,7 +762,7 @@
           "signature": "updateMirrorMatrix(F)V",
           "flags": 2,
           "body_sha256": "83f2dd1b8b2c9d64292e62815bb36fe54ff6f4ca93202ec9ffbb2adfcee1ac04",
-          "source": "failure"
+          "source": "rom"
         }
       ],
       "fields": [
@@ -768,7 +775,7 @@
         {
           "signature": "mApplyGravity:Z",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -786,7 +793,7 @@
         {
           "signature": "mBitmapState:Landroid/graphics/drawable/BitmapDrawable$BitmapState;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -804,7 +811,7 @@
         {
           "signature": "mMirrorMatrix:Landroid/graphics/Matrix;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {

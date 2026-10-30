@@ -26,7 +26,8 @@
     "view-policy-sources.json",
     "view-skin-sources.json",
     "view-scrollbar-sources.json",
-    "view-spinner-sources.json"
+    "view-spinner-sources.json",
+    "view-progressbar-sources.json"
   ],
   "class_additions": {
     "framework.jar": [
@@ -50,6 +51,9 @@
       "Landroid/graphics/Shader;",
       "Landroid/graphics/TemporaryBuffer;",
       "Landroid/graphics/Xfermode;",
+      "Landroid/graphics/drawable/AnimatedRotateDrawable$AnimatedRotateState;",
+      "Landroid/graphics/drawable/AnimatedRotateDrawable;",
+      "Landroid/graphics/drawable/AnimationDrawable;",
       "Landroid/graphics/drawable/BitmapDrawable;",
       "Landroid/graphics/drawable/ColorDrawable;",
       "Landroid/graphics/drawable/Drawable;",
@@ -112,6 +116,7 @@
       "Landroid/widget/ImageView$ScaleType;",
       "Landroid/widget/ImageView;",
       "Landroid/widget/LinearLayout;",
+      "Landroid/widget/ProgressBar;",
       "Landroid/widget/RelativeLayout$1;",
       "Landroid/widget/RelativeLayout$TopToBottomLeftToRightComparator;",
       "Landroid/widget/RelativeLayout;",

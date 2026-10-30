@@ -1115,7 +1115,14 @@
           "signature": "getAnimation(I)Landroid/content/res/XmlResourceParser;",
           "flags": 1,
           "body_sha256": "9321d0c3b8f2f405dc2d1dd1f392cfa4961e251fe84bcdfd0cea7aff4653c6bd",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-365 ADR-0174 exact same-ROM linear interpolator XML",
+            "inputs": "sealed system anim id or current APK anim id",
+            "outputs": "real independently owned XmlBlock.Parser; NotFoundException for all unsealed system anim",
+            "state_owner": "ThemeResources immutable XML bytes and existing parser registry",
+            "failure_boundary": "no other system animation content or animation execution; invalid identity/configuration/hash/references rejected"
+          }
         },
         {
           "signature": "getAssets()Landroid/content/res/AssetManager;",

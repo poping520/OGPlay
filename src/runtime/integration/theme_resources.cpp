@@ -59,6 +59,11 @@ const std::vector<std::byte>* ThemeResources::Layout(std::uint32_t id) const {
     return found == rom_layouts_.end() ? nullptr : &found->second;
 }
 
+const std::vector<std::byte>* ThemeResources::Animation(std::uint32_t id) const {
+    const auto found = rom_animations_.find(id);
+    return found == rom_animations_.end() ? nullptr : &found->second;
+}
+
 void ThemeResources::Load(std::string_view projection) {
     if (loaded_ || stopped_) throw std::logic_error("theme projection cannot be replaced");
     core::JsonParseError error;
@@ -171,6 +176,44 @@ void ThemeResources::Load(std::string_view projection) {
             if (!layouts.emplace(id, std::move(xml)).second) throw std::runtime_error("duplicate ROM layout");
         }
     }
+
+    std::map<std::uint32_t, std::vector<std::byte>> animations;
+    if (const auto rows = root.Member("rom_animations")) {
+        if (!rows->IsArray() || rows->Size() > 1) throw std::runtime_error("invalid ROM animation bounds");
+        for (std::size_t i = 0; i < rows->Size(); ++i) {
+            const auto row = *rows->Element(i);
+            const auto id = Number(Member(row, "id"));
+            if (id != 0x010a000b || Text(Member(row, "name")) != "linear_interpolator" ||
+                Text(Member(row, "path")) != "res/anim/linear_interpolator.xml" ||
+                Text(Member(row, "config_hex")) !=
+                    "240000000000000000000000000000000000000000000000000000000000000000000000" ||
+                !Member(row, "references").IsArray() || Member(row, "references").Size())
+                throw std::runtime_error("unreviewed ROM animation identity/configuration/references");
+            const auto hex = Text(Member(row, "xml"));
+            if (hex.empty() || hex.size() % 2 || hex.size() > 131072)
+                throw std::runtime_error("invalid ROM animation XML bounds");
+            std::vector<std::byte> xml;
+            const auto digit = [](char c) -> unsigned {
+                if (c >= '0' && c <= '9') return static_cast<unsigned>(c - '0');
+                if (c >= 'a' && c <= 'f') return static_cast<unsigned>(c - 'a' + 10);
+                throw std::runtime_error("invalid ROM animation hex");
+            };
+            for (std::size_t n = 0; n < hex.size(); n += 2)
+                xml.push_back(static_cast<std::byte>((digit(hex[n]) << 4) | digit(hex[n + 1])));
+            if (core::Sha256(xml) != Text(Member(row, "sha256")))
+                throw std::runtime_error("ROM animation content hash mismatch");
+            const auto doc = loader::ParseCompiledXmlDocument(xml);
+            unsigned roots = 0;
+            for (const auto& node : doc->Nodes())
+                if (node.type == 0x0102) {
+                    if (++roots != 1 || doc->String(node.name_index) != "linearInterpolator" ||
+                        !node.attributes.empty())
+                        throw std::runtime_error("unreviewed ROM animation element/attributes");
+                }
+            if (roots != 1 || !animations.emplace(id, std::move(xml)).second)
+                throw std::runtime_error("invalid ROM animation root");
+        }
+    }
     std::map<std::uint32_t, ThemeValue> configuration;
     if (const auto rows = root.Member("rom_configuration")) {
         if (!rows->IsArray() || rows->Size() > 16) throw std::runtime_error("invalid ROM configuration bounds");
@@ -216,34 +259,80 @@ void ThemeResources::Load(std::string_view projection) {
                         }
                         skin.items.push_back(std::move(entry));
                     }
-                } else if (kind == "ninepatch") {
+                } else if (kind == "animated-rotate") {
+                    if ((id != 0x010804cf || Text(Member(row, "name")) != "progress_medium_white"))
+                        throw std::runtime_error("unreviewed rotate drawable");
+                    const auto hex = Text(Member(variant, "xml"));
+                    if (hex.empty() || hex.size() % 2 || hex.size() > 131072)
+                        throw std::runtime_error("invalid rotate XML bounds");
+                    const auto digit = [](char c) -> unsigned {
+                        if (c >= '0' && c <= '9') return static_cast<unsigned>(c - '0');
+                        if (c >= 'a' && c <= 'f') return static_cast<unsigned>(c - 'a' + 10);
+                        throw std::runtime_error("invalid rotate hex");
+                    };
+                    for (std::size_t n = 0; n < hex.size(); n += 2)
+                        skin.xml.push_back(static_cast<std::byte>((digit(hex[n]) << 4) | digit(hex[n + 1])));
+                    if (core::Sha256(skin.xml) != Text(Member(variant, "sha256")))
+                        throw std::runtime_error("rotate content hash mismatch");
+                    const auto doc = loader::ParseCompiledXmlDocument(skin.xml);
+                    unsigned roots = 0;
+                    std::set<std::uint32_t> refs;
+                    for (const auto& node : doc->Nodes())
+                        if (node.type == 0x0102) {
+                            if (++roots != 1 || doc->String(node.name_index) != "animated-rotate")
+                                throw std::runtime_error("invalid rotate root");
+                            for (const auto& attr : node.attributes) {
+                                const auto name = doc->String(attr.name_index);
+                                if (name == "drawable" && attr.value.type == 1 && attr.value.data == 0x01080580)
+                                    refs.insert(attr.value.data);
+                                else if ((name == "pivotX" || name == "pivotY") && attr.value.type == 6 &&
+                                         attr.value.data == 0x40000030) {
+                                } else if (name == "framesCount" && attr.value.type == 16 && attr.value.data == 12) {
+                                } else if (name == "frameDuration" && attr.value.type == 16 && attr.value.data == 100) {
+                                } else
+                                    throw std::runtime_error("unreviewed rotate attribute");
+                            }
+                        }
+                    std::set<std::uint32_t> declared;
+                    const auto references = Member(variant, "references");
+                    if (!references.IsArray() || references.Size() != 1)
+                        throw std::runtime_error("invalid rotate references");
+                    declared.insert(Number(*references.Element(0)));
+                    if (!declared.contains(0x01080580))
+                        throw std::runtime_error("unreviewed rotate drawable reference");
+                    if (roots != 1 || refs != declared) throw std::runtime_error("unclosed rotate drawable");
+                } else if (kind == "ninepatch" || kind == "bitmap") {
                     skin.width = Number(Member(variant, "width"));
                     skin.height = Number(Member(variant, "height"));
-                    for (const auto name : {"padding", "optical"}) {
-                        const auto values = Member(variant, name);
-                        if (!values.IsArray() || values.Size() != 4) throw std::runtime_error("invalid skin insets");
-                        auto& target = std::string_view(name) == "padding" ? skin.padding : skin.optical;
-                        for (std::size_t n = 0; n < 4; ++n) {
-                            const auto value = Number(*values.Element(n));
-                            if (value > INT32_MAX) throw std::runtime_error("invalid skin inset");
-                            target[n] = static_cast<std::int32_t>(value);
+                    if (kind == "ninepatch") {
+                        for (const auto name : {"padding", "optical"}) {
+                            const auto values = Member(variant, name);
+                            if (!values.IsArray() || values.Size() != 4)
+                                throw std::runtime_error("invalid skin insets");
+                            auto& target = std::string_view(name) == "padding" ? skin.padding : skin.optical;
+                            for (std::size_t n = 0; n < 4; ++n) {
+                                const auto value = Number(*values.Element(n));
+                                if (value > INT32_MAX) throw std::runtime_error("invalid skin inset");
+                                target[n] = static_cast<std::int32_t>(value);
+                            }
                         }
-                    }
-                    for (const auto name : {"stretch_x", "stretch_y"}) {
-                        const auto divisions = Member(variant, name);
-                        if (!divisions.IsArray() || divisions.Size() < 2 || divisions.Size() > 32 ||
-                            divisions.Size() % 2)
-                            throw std::runtime_error("unsupported ROM ninepatch divisions");
-                        auto& target = std::string_view(name) == "stretch_x" ? skin.stretch_x : skin.stretch_y;
-                        const auto extent = std::string_view(name) == "stretch_x" ? skin.width : skin.height;
-                        for (std::size_t n = 0; n < divisions.Size(); ++n) {
-                            const auto v = Number(*divisions.Element(n));
-                            if (v > extent || v > INT32_MAX) throw std::runtime_error("invalid ninepatch division");
-                            if (!target.empty() && v <= static_cast<std::uint32_t>(target.back()))
-                                throw std::runtime_error("unordered ninepatch divisions");
-                            target.push_back(static_cast<std::int32_t>(v));
+                        for (const auto name : {"stretch_x", "stretch_y"}) {
+                            const auto divisions = Member(variant, name);
+                            if (!divisions.IsArray() || divisions.Size() < 2 || divisions.Size() > 32 ||
+                                divisions.Size() % 2)
+                                throw std::runtime_error("unsupported ROM ninepatch divisions");
+                            auto& target = std::string_view(name) == "stretch_x" ? skin.stretch_x : skin.stretch_y;
+                            const auto extent = std::string_view(name) == "stretch_x" ? skin.width : skin.height;
+                            for (std::size_t n = 0; n < divisions.Size(); ++n) {
+                                const auto v = Number(*divisions.Element(n));
+                                if (v > extent || v > INT32_MAX) throw std::runtime_error("invalid ninepatch division");
+                                if (!target.empty() && v <= static_cast<std::uint32_t>(target.back()))
+                                    throw std::runtime_error("unordered ninepatch divisions");
+                                target.push_back(static_cast<std::int32_t>(v));
+                            }
                         }
-                    }
+                    } else if ((id != 0x01080580 || Text(Member(row, "name")) != "spinner_white_48"))
+                        throw std::runtime_error("unreviewed ROM bitmap");
                     const auto hex = Text(Member(variant, "png"));
                     if (hex.size() % 2 || hex.size() > 1048576) throw std::runtime_error("invalid skin PNG bounds");
                     const auto digit = [](char c) -> unsigned {
@@ -253,6 +342,8 @@ void ThemeResources::Load(std::string_view projection) {
                     };
                     for (std::size_t n = 0; n < hex.size(); n += 2)
                         skin.png.push_back(static_cast<std::byte>((digit(hex[n]) << 4) | digit(hex[n + 1])));
+                    if (core::Sha256(skin.png) != Text(Member(variant, "sha256")))
+                        throw std::runtime_error("ROM PNG content hash mismatch");
                 } else
                     throw std::runtime_error("unsupported ROM drawable kind");
                 if (std::any_of(skins.begin(), skins.end(),
@@ -377,6 +468,7 @@ void ThemeResources::Load(std::string_view projection) {
     string_pool_ = std::move(string_pool);
     rom_colors_ = std::move(colors);
     rom_layouts_ = std::move(layouts);
+    rom_animations_ = std::move(animations);
     rom_configuration_ = std::move(configuration);
     rom_drawables_ = std::move(skins);
     drawable_attributes_ = std::move(drawables);

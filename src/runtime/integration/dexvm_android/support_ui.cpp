@@ -356,6 +356,15 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
         }
         const auto kind = context.ui_tree.Get(*node)->kind;
         if (prepare_render) {
+            if (vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/widget/ProgressBar;"),
+                                         vm.Model().ObjectClass(view)) &&
+                !context.view_adapter_references[view.Value()].progress_content_reported) {
+                context.view_adapter_references[view.Value()].progress_content_reported = true;
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.progressbar_draw", 0);
+                if (auto* logger = vm.Log())
+                    logger->Write(core::LogLevel::warn, "ui.content.unreviewed",
+                                  "ProgressBar drawable content is not drawn");
+            }
             ProjectScrollbarState(vm, context, view, visibility == ui::Visibility::Visible && entry.alpha > 0,
                                   view_flags);
             auto& target = *context.ui_tree.Get(*node);
@@ -1370,6 +1379,16 @@ void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unreviewed image Drawable"};
         }
         auto& state = context.ui_drawables[drawable.Value()];
+        if (state.bitmap_drawable) {
+            const auto paint = CallAndroidMethod(vm, drawable, "getPaint", "()Landroid/graphics/Paint;").ref;
+            if (CallAndroidMethod(vm, paint, "getFlags", "()I").AsInt() != 0x506 ||
+                CallAndroidMethod(vm, paint, "getShader", "()Landroid/graphics/Shader;").ref.IsValid() ||
+                CallAndroidMethod(vm, paint, "getXfermode", "()Landroid/graphics/Xfermode;").ref.IsValid()) {
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.image_leaf", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "BitmapDrawable Paint rendering is unsupported"};
+            }
+        }
         const auto source = state.bitmap_drawable
                                 ? CallAndroidMethod(vm, drawable, "getBitmap", "()Landroid/graphics/Bitmap;").ref
                                 : dx::VmObjectRef{};

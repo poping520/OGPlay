@@ -152,6 +152,38 @@ def view_configuration_values():
     return sorted(result, key=lambda r: r['id'])
 
 
+def animation_closure():
+    """ADR-0174: only the exact default linear interpolator XML."""
+    with zipfile.ZipFile(ROOT / rom.APK) as archive:
+        _, rows = rom.ResourceTable(archive.read('resources.arsc')).parse()
+        row, = [r for r in rows if r['type'] == 'anim' and r['name'] == 'linear_interpolator']
+        if row['id'] != 0x010a000b or len(row['configurations']) != 1:
+            raise ValueError('unreviewed ROM animation identity/configurations')
+        v, = row['configurations']
+        if (any(bytes.fromhex(v['config_hex'])[4:]) or v['complex'] or v['value_type'] != 3
+                or v['path'] != 'res/anim/linear_interpolator.xml'):
+            raise ValueError('unsupported ROM animation configuration')
+        raw = archive.read(v['path'])
+        table = rom.ResourceTable(raw)
+        strings, roots, ends = [], 0, 0
+        for at, kind, header, size in table.chunks(8, len(raw)):
+            if kind == 1: strings = table.pool(at)
+            elif kind == 0x102:
+                _, name, start, width, count, _, _, _ = table.words('<II6H', at + 16)
+                if strings[name] != 'linearInterpolator' or count or roots:
+                    raise ValueError('unreviewed ROM interpolator element/attributes')
+                roots += 1
+            elif kind == 0x103:
+                if strings[table.words('<II', at + 16)[1]] != 'linearInterpolator':
+                    raise ValueError('invalid ROM interpolator end')
+                ends += 1
+            elif kind not in (0x100, 0x101):
+                raise ValueError('unreviewed ROM interpolator chunk')
+        if (roots, ends) != (1, 1): raise ValueError('invalid ROM interpolator XML')
+        return [dict(id=row['id'], name=row['name'], path=v['path'], config_hex=v['config_hex'],
+                     sha256=rom.sha(raw), references=[], xml=raw.hex())]
+
+
 def layout_closure():
     """Two exact same-ROM default layouts; content credit separate from identity."""
     roots = {'simple_spinner_item': 0x01090008, 'simple_spinner_dropdown_item': 0x01090009}
@@ -231,7 +263,11 @@ def drawable_closure():
         dropdown, = [row for row in rows if row['type'] == 'drawable' and row['name'] == 'btn_dropdown']
         if dropdown['id'] != 0x01080006:
             raise ValueError('btn_dropdown ROM name/ID mismatch')
-        pending, result = [root['id'], button['id'], dropdown['id'], *thumbs.values()], []
+        progress, = [r for r in rows if r['type'] == 'drawable' and r['name'] == 'progress_medium_white']
+        spinner, = [r for r in rows if r['type'] == 'drawable' and r['name'] == 'spinner_white_48']
+        if progress['id'] != 0x010804cf or spinner['id'] != 0x01080580:
+            raise ValueError('progress drawable ROM name/ID mismatch')
+        pending, result = [root['id'], button['id'], dropdown['id'], progress['id'], *thumbs.values()], []
         while pending:
             ident = pending.pop(0)
             if any(row['id'] == ident for row in result):
@@ -254,6 +290,30 @@ def drawable_closure():
                 raw = archive.read(path)
                 facts = dict(density=variant['density'], path=path, sha256=rom.sha(raw))
                 if path.endswith('.xml'):
+                    if ident == progress['id']:
+                        table = rom.ResourceTable(raw)
+                        strings, ids, roots, targets = [], [], 0, []
+                        for at, kind, header, size in table.chunks(8, len(raw)):
+                            if kind == 1: strings = table.pool(at)
+                            elif kind == 0x180: ids = list(table.words('<%dI' % ((size-header)//4), at+header))
+                            elif kind == 0x102:
+                                _, tag, start, width, count, _, _, _ = table.words('<II6H', at+16)
+                                if strings[tag] != 'animated-rotate' or roots: raise ValueError('invalid progress root')
+                                roots += 1
+                                for i in range(count):
+                                    ns, key, text, vs, zero, typ, data = table.words('<IIIHBBI', at+16+start+i*width)
+                                    attr = by_id[ids[key]]['name']
+                                    if attr == 'drawable' and typ == 1 and data == spinner['id']: targets.append(data)
+                                    elif attr in ('pivotX', 'pivotY') and typ == 6 and data == 0x40000030: pass
+                                    elif attr == 'framesCount' and typ == 16 and data == 12: pass
+                                    elif attr == 'frameDuration' and typ == 16 and data == 100: pass
+                                    else: raise ValueError('unreviewed animated-rotate attribute: '+attr+' '+hex(data))
+                            elif kind not in (0x100,0x101,0x103): raise ValueError('unreviewed progress XML chunk')
+                        if roots != 1 or targets != [spinner['id']]: raise ValueError('unclosed progress drawable')
+                        facts.update(kind='animated-rotate', xml=raw.hex(), references=targets)
+                        pending.extend(targets)
+                        variants.append(facts)
+                        continue
                     table = rom.ResourceTable(raw)
                     strings, resource_ids, items = [], [], []
                     stack = []
@@ -318,6 +378,10 @@ def drawable_closure():
                                  stretch_x=list(struct.unpack_from('>%di' % nx, chunk, 32)),
                                  stretch_y=list(struct.unpack_from('>%di' % ny, chunk, 32 + 4 * nx)),
                                  padding=[left, top, right, bottom], optical=optical)
+                elif ident == spinner['id'] and path.endswith('.png'):
+                    if not raw.startswith(b'\x89PNG\r\n\x1a\n'): raise ValueError('invalid spinner PNG')
+                    width, height = struct.unpack_from('>II', raw, 16)
+                    facts.update(kind='bitmap', png=raw.hex(), width=width, height=height)
                 else:
                     raise ValueError('unreviewed skin drawable type')
                 variants.append(facts)
@@ -468,7 +532,7 @@ def generate(negative_rom_id=False):
     # members of the styleable arrays. Follow ?attr and style edges to a fixed
     # point, proving every ID against the same pinned ROM field inventory.
     implicit = ('textViewStyle', 'buttonStyle', 'editTextStyle', 'imageButtonStyle',
-                'scrollViewStyle', 'horizontalScrollViewStyle', 'spinnerStyle',
+                'scrollViewStyle', 'horizontalScrollViewStyle', 'spinnerStyle', 'progressBarStyle', 'progressBarStyleHorizontal', 'progressBarStyleSmall', 'progressBarStyleLarge',
                 'spinnerItemStyle', 'spinnerDropDownItemStyle', 'dropdownListPreferredItemHeight')
     extra_demands = set(implicit)
     pending_styles = {row['name'] for row in report['themes'] if row['resource_id'] is not None}
@@ -599,7 +663,7 @@ def generate(negative_rom_id=False):
                     styleables=report['styleable_slot_checks'], attribute_demands=attribute_demands,
                     registered=themes, style_closure=style_closure, unregistered=unregistered,
                     counts=dict(counts), attribute_count=len(attrs),
-                    rom_colors=colors, rom_drawables=drawable_closure(), rom_layouts=layouts, rom_configuration=view_configuration_values(), strings=strings, string_pool=string_pool(strings).hex(), attribute_formats=report['attribute_formats'],
+                    rom_colors=colors, rom_drawables=drawable_closure(), rom_layouts=layouts, rom_animations=animation_closure(), rom_configuration=view_configuration_values(), strings=strings, string_pool=string_pool(strings).hex(), attribute_formats=report['attribute_formats'],
                     resource_types={r['resource_type']: r['type_id'] for r in references.values()},
                     resource_names=sorted(references.values(), key=lambda r: r['resource_id']),
                     projected_references=sorted(projected_references.values(), key=lambda r: r['resource_id']))

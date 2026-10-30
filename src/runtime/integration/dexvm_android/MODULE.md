@@ -969,3 +969,18 @@ AttachInfo/IME焦点/无障碍服务、无动画/硬件且背景为静态封存�
 系统 getLayout 仅加载 ADR-0174 两个封存布局的真实 XmlBlock.Parser；未封存系统布局仍
 NotFoundException。TextView 保存 MARQUEE 解析状态，实际启动动画仍失败；textAlignment=inherit
 沿 View 原属性与解析流程，不授予其他对齐/RTL/Editor/Canvas 支持。
+
+
+ProgressBar 构造、indeterminate/progress/max 字段、异步刷新、叶测量与生命周期归固定 ROM；
+非 UI 线程刷新复用 View.post 与主 Looper，不设宿主状态副本。默认 animated-rotate 的
+progress_medium_white/spinner_white_48 与 linear_interpolator 原 XML 按同 ROM 封存；
+AnimatedRotateDrawable 的 inflate/尺寸/状态归 ROM，start/帧调度与 guest onDraw 未准入。
+投影只发布普通叶几何，内容按 View 身份一次记账不绘制。horizontal/Small/Large 未封存而明确失败；
+layer/clip/shape tiling、frame-animation Drawable 与任意嵌套 drawable XML 入口记账失败。
+View 分离清理执行 ROM，removeCallbacks 只取消既有主 Handler 与当前 guest 线程待转移 action，null 不取消其他任务；
+Drawable stop 的 unschedule 回调不创建帧任务。BitmapDrawable 原 BitmapState/Paint 保存
+filter/anti-alias 状态；投影遇到非默认 Paint flags、shader/xfermode 明确失败，不吞掉效果。
+系统 getAnimation 仅加载 ADR-0174 封存 linear_interpolator，其他系统 anim 抛 NotFoundException。
+WebView initial scale 保存 API19 原始 int 请求，WebSettings wide viewport 按实例往返；
+前进查询 false/操作无历史变更，均检查线程与存活；附着转发 ROM ViewGroup 父协议。
+这些配置不授予页面加载、历史、缩放渲染或系统 AttachInfo 支持。

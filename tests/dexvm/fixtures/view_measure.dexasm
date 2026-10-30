@@ -985,3 +985,42 @@
     iput-object v2, v1, Ltest/SpinnerSelection;->parent:Landroid/widget/AdapterView;
     return-void
 .end method
+
+.class public Ltest/WebViewLeaf;
+.super Landroid/webkit/WebView;
+.field private attaches:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/webkit/WebView;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method protected onAttachedToWindow()V
+.registers 2
+    invoke-super {v1}, Landroid/webkit/WebView;->onAttachedToWindow()V
+    iget v0, v1, Ltest/WebViewLeaf;->attaches:I
+    add-int/lit8 v0, v0, 1
+    iput v0, v1, Ltest/WebViewLeaf;->attaches:I
+    return-void
+.end method
+.method public attachments()I
+.registers 2
+    iget v0, v1, Ltest/WebViewLeaf;->attaches:I
+    return v0
+.end method
+
+.class public Ltest/ProgressWorker;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+.field private view:Landroid/widget/ProgressBar;
+.method public constructor <init>(Landroid/widget/ProgressBar;)V
+.registers 2
+    iput-object v1, v0, Ltest/ProgressWorker;->view:Landroid/widget/ProgressBar;
+    return-void
+.end method
+.method public run()V
+.registers 3
+    iget-object v0, v2, Ltest/ProgressWorker;->view:Landroid/widget/ProgressBar;
+    const/4 v1, 7
+    invoke-virtual {v0, v1}, Landroid/widget/ProgressBar;->setProgress(I)V
+    return-void
+.end method

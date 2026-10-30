@@ -1555,8 +1555,8 @@ note = "DVM-331：InputMethodManager 进程单例经窗口 owner 与 Java findFo
 
 [dexvm.webview_configuration_callbacks]
 status = "partial"
-test = "tests/dexvm/android_webview_tests.cpp#View focus and WebView configuration keep real per-instance state; tests/dexvm/android_webview_tests.cpp#DVM-185 WebView.destroy isolates settings and enforces thread rules"
-note = "DVM-187/188：WebSettings 保存当前 APK 使用的配置及 RenderPriority；client/chrome client 与 JavaScript interface 由 guest 字段/HashMap 保活并在 destroy 清理。partial 表示没有浏览器后端；默认禁用网页策略让 loadUrl/loadDataWithBaseURL 在主 Looper 异步回调 ERROR_UNSUPPORTED_SCHEME，javascript: 只记录，stop/destroy 取消，历史为空。严格诊断配置恢复异常。"
+test = "tests/dexvm/android_webview_tests.cpp#View focus and WebView configuration keep real per-instance state; tests/dexvm/android_webview_tests.cpp#DVM-185 WebView.destroy isolates settings and enforces thread rules; tests/dexvm/android_webview_tests.cpp#DVM-365"
+note = "DVM-187/188/365：WebSettings 配置、RenderPriority、initial scale 请求与 wide viewport 按实例保存；client/interface 由 Java 保活，destroy 清理。附着转发 ROM 父协议，前进与后退均为经线程/存活检查的空历史。默认禁用加载，主 Looper 异步回调 ERROR_UNSUPPORTED_SCHEME；javascript 只记账，stop/destroy 取消。严格诊断配置恢复异常；无页面、历史或缩放渲染。"
 
 [dexvm.web_disabled_policy]
 status = "partial"
@@ -2187,3 +2187,18 @@ test = "tests/runtime/property_animation_tests.cpp#DVM-337; tools/bootdex/compos
 status = "partial"
 test = "tests/dexvm/rom_skin_tests.cpp#DVM-352; tests/dexvm/rom_skin_tests.cpp#DVM-355"
 note = "View 背景支持受审 ROM skin 与 ColorDrawable（含子类）；颜色每次由 ROM getColor 读取，透明/null 清空。其他非空 Drawable 记录未实现与限流 warn，不绘制、不抛异常；DVM-355 可见 scrollbar 记账但不绘制；ROM cache 淡出经 Handler/统一时钟。Paint 追踪 shader/xfermode，含状态的 Canvas 绘制明确失败；不支持任意 Drawable.draw。"
+
+[dexvm.progressbar]
+status = "partial"
+test = "tests/dexvm/progressbar_tests.cpp#DVM-365; tools/bootdex/compose_bootdex.py check; tools.android_payload_current"
+note = "DVM-365：固定 ROM 默认 ProgressBar 构造、状态、主/非 UI 刷新、叶测量与生命周期；同 ROM medium-white rotate/bitmap 与 linear 插值器 XML 封存。字段归 Java，内容一次记账不绘制。horizontal/Small/Large、旋转帧、guest onDraw 未支持；Windows 未验。"
+
+[dexvm.progressbar_draw]
+status = "unimplemented"
+test = "tests/dexvm/progressbar_tests.cpp#DVM-365"
+note = "ProgressBar 作为普通叶测量和布局；内容每 View 一次记账不绘制，Animatable.start 与帧调度未准入，不报告正在动画。"
+
+[dexvm.progressbar_tiling]
+status = "unimplemented"
+test = "tests/dexvm/progressbar_tests.cpp#DVM-365"
+note = "ProgressBar tiled layer/clip/shape 与 frame-animation Drawable 明确记账抛 UOE；未封存样式先在资源加载失败。"

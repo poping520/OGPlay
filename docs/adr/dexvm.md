@@ -436,6 +436,13 @@ Spinner/AbsSpinner/AdapterView 的字段与布局、选择、观察者算法优�
 默认 btn_dropdown 仅扩充既有 selector/ninepatch 闭包；不开放弹窗、触摸选择、guest 绘制。
 必要平台接缝必须逐签名 review、记账并保持关闭即失败，不放宽父成员审计。
 
+DVM-365 补充：同一内容封存协议仅扩充 API19 `linear_interpolator`（0x010a000b）。
+生成与运行时分别校验 anim 名称/ID、默认配置、原始 binary XML、单一无属性
+`linearInterpolator` 元素、空引用集合与内容 SHA；随原 pairing 封存。
+Resources.getAnimation 对该 ID 返回真实 XmlBlock.Parser，其他系统 anim 仍 NotFoundException。
+AnimationUtils.loadInterpolator 与 LinearInterpolator(Context, AttributeSet) 保持原 ROM；
+这只授予插值器构造，不授予 guest onDraw 或动画帧运行信用。
+
 ### 后果
 
 布局身份与内容准入分离，未封存布局保持明确失败；两个布局不授予任意系统布局或弹窗信用。

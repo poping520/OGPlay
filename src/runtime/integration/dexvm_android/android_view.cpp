@@ -1823,6 +1823,31 @@ Decl Declare_android_view_View(const Context& context) {
     builder.VirtualMethod("post", "(Ljava/lang/Runnable;)Z", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(PostViewRunnable(call, context, call.receiver, call.arguments[0].ref, 0));
     });
+
+    builder.VirtualMethod("removeCallbacks", "(Ljava/lang/Runnable;)Z", [context](dx::IntrinsicContext& call) {
+        const auto runnable = call.arguments[0].ref;
+        if (!runnable.IsValid()) return dx::VmValue::Int(1);
+        if (context->view_root_handler.IsValid())
+            RemoveHandlerWork(context, context->view_root_handler, std::nullopt, runnable, true, dx::VmObjectRef{},
+                              false);
+        std::scoped_lock lock(context->scheduler_mutex);
+        const auto token = call.vm.CurrentContextToken();
+        std::erase_if(context->pending_view_actions,
+                      [&](const auto& action) { return action.context_token == token && action.runnable == runnable; });
+        return dx::VmValue::Int(1);
+    });
+    builder.VirtualMethod("unscheduleDrawable", "(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;)V",
+                          [context](dx::IntrinsicContext& call) {
+                              // No guest Drawable frames are admitted. A stop cancels the existing queue identity.
+                              const auto drawable = call.arguments[0].ref;
+                              if (CallAndroidMethod(call.vm, call.receiver, "verifyDrawable",
+                                                    "(Landroid/graphics/drawable/Drawable;)Z",
+                                                    {dx::VmValue::Ref(drawable)})
+                                      .AsInt())
+                                  static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "removeCallbacks",
+                                                                      "(Ljava/lang/Runnable;)Z", {call.arguments[1]}));
+                              return dx::VmValue::Void();
+                          });
     builder.VirtualMethod("postDelayed", "(Ljava/lang/Runnable;J)Z", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(
             PostViewRunnable(call, context, call.receiver, call.arguments[0].ref, call.arguments[1].AsLong()));

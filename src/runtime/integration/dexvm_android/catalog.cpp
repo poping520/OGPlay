@@ -155,7 +155,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_graphics_Canvas(context),
         Declare_android_graphics_Matrix(context),
         Declare_android_graphics_Paint(context),
-        Declare_android_graphics_RectF(context),
         Declare_android_graphics_PointF(context),
         Declare_android_graphics_Path_Direction(context),
         Declare_android_graphics_Path(context),

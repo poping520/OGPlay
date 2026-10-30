@@ -133,3 +133,162 @@ TEST_CASE("DVM-293 unsupported Paint features and invalid ranges fail explicitly
         CHECK(f.context->paint_measure_states.at(paint.Value()).measurements == 0);
     }
 }
+
+TEST_CASE("DVM-356 RectF ROM value semantics and explicit failure boundaries on both backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto type = f.linker.ResolveDescriptor("Landroid/graphics/RectF;");
+        CHECK(f.linker.Class(type).is_boot_dex);
+        CHECK_FALSE(f.linker.Class(type).is_intrinsic);
+        const auto field = [&](VmObjectRef object, const char* name, const char* descriptor = "F") {
+            const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, descriptor);
+            REQUIRE(id);
+            return f.model.InstanceSlots(object)[f.linker.Field(*id).slot].bits;
+        };
+        const auto coordinates = [&](VmObjectRef object, std::array<float, 4> expected) {
+            std::size_t i = 0;
+            for (const auto name : {"left", "top", "right", "bottom"})
+                CHECK(std::bit_cast<float>(field(object, name)) == expected[i++]);
+        };
+        const auto values = [](float l, float t, float r, float b) {
+            return std::vector{VmValue::Float(l), VmValue::Float(t), VmValue::Float(r), VmValue::Float(b)};
+        };
+        const auto rect = f.New("Landroid/graphics/Rect;", "(IIII)V",
+                                {VmValue::Int(-3), VmValue::Int(2), VmValue::Int(8), VmValue::Int(12)});
+        const auto a = f.New("Landroid/graphics/RectF;", "(FFFF)V", values(1, 2, 10, 20));
+        const auto b = f.New("Landroid/graphics/RectF;", "(Landroid/graphics/RectF;)V", {VmValue::Ref(a)});
+        const auto c = f.New("Landroid/graphics/RectF;", "(Landroid/graphics/Rect;)V", {VmValue::Ref(rect)});
+        const auto roots = f.vm.ProtectReferences(std::array{rect, a, b, c});
+        coordinates(a, {1, 2, 10, 20});
+        coordinates(b, {1, 2, 10, 20});
+        coordinates(c, {-3, 2, 8, 12});
+        for (const auto descriptor : {"(Landroid/graphics/Rect;)V", "(Landroid/graphics/RectF;)V"})
+            coordinates(f.New("Landroid/graphics/RectF;", descriptor, {VmValue::Ref(VmObjectRef{})}), {0, 0, 0, 0});
+        f.On(a, "set", "(Landroid/graphics/Rect;)V", {VmValue::Ref(rect)});
+        coordinates(a, {-3, 2, 8, 12});
+        f.On(a, "set", "(Landroid/graphics/RectF;)V", {VmValue::Ref(b)});
+        coordinates(a, {1, 2, 10, 20});
+        f.On(a, "set", "(FFFF)V", values(-1, -2, 9, 18));
+        coordinates(a, {-1, -2, 9, 18});
+        CHECK(f.On(a, "width", "()F").AsFloat() == 10);
+        CHECK(f.On(a, "height", "()F").AsFloat() == 20);
+        CHECK(f.On(a, "centerX", "()F").AsFloat() == 4);
+        CHECK(f.On(a, "centerY", "()F").AsFloat() == 8);
+        CHECK(f.On(a, "isEmpty", "()Z").AsInt() == 0);
+        CHECK(f.On(a, "contains", "(FF)Z", {VmValue::Float(-1), VmValue::Float(-2)}).AsInt() == 1);
+        CHECK(f.On(a, "contains", "(FF)Z", {VmValue::Float(9), VmValue::Float(0)}).AsInt() == 0);
+        CHECK(f.On(a, "contains", "(FF)Z", {VmValue::Float(0), VmValue::Float(18)}).AsInt() == 0);
+        CHECK(f.On(a, "contains", "(FFFF)Z", values(-1, -2, 9, 18)).AsInt() == 1);
+        CHECK(f.On(a, "contains", "(Landroid/graphics/RectF;)Z", {VmValue::Ref(b)}).AsInt() == 0);
+        CHECK(f.On(a, "intersect", "(FFFF)Z", values(9, 0, 12, 10)).AsInt() == 0);
+        coordinates(a, {-1, -2, 9, 18});  // Touching edges do not intersect or mutate.
+        CHECK(f.On(a, "intersect", "(Landroid/graphics/RectF;)Z", {VmValue::Ref(b)}).AsInt() == 1);
+        coordinates(a, {1, 2, 9, 18});
+        f.On(a, "union", "(Landroid/graphics/RectF;)V", {VmValue::Ref(c)});
+        coordinates(a, {-3, 2, 9, 18});
+        f.On(a, "union", "(FFFF)V", values(10, 20, 10, 30));  // Empty input is ignored.
+        coordinates(a, {-3, 2, 9, 18});
+        f.On(a, "union", "(FF)V", {VmValue::Float(-5), VmValue::Float(22)});
+        coordinates(a, {-5, 2, 9, 22});
+        CHECK(f.On(a, "intersects", "(FFFF)Z", values(9, 2, 11, 22)).AsInt() == 0);
+        CHECK(f.Static("Landroid/graphics/RectF;", "intersects", "(Landroid/graphics/RectF;Landroid/graphics/RectF;)Z",
+                       {VmValue::Ref(a), VmValue::Ref(b)})
+                  .AsInt() == 1);
+        CHECK(f.On(a, "setIntersect", "(Landroid/graphics/RectF;Landroid/graphics/RectF;)Z",
+                   {VmValue::Ref(b), VmValue::Ref(c)})
+                  .AsInt() == 1);
+        coordinates(a, {1, 2, 8, 12});
+        f.On(a, "offset", "(FF)V", {VmValue::Float(3), VmValue::Float(-4)});
+        coordinates(a, {4, -2, 11, 8});
+        f.On(a, "offsetTo", "(FF)V", {VmValue::Float(0), VmValue::Float(1)});
+        coordinates(a, {0, 1, 7, 11});
+        f.On(a, "inset", "(FF)V", {VmValue::Float(1), VmValue::Float(2)});
+        coordinates(a, {1, 3, 6, 9});
+        f.On(a, "set", "(FFFF)V", values(6, 9, 1, 3));
+        f.On(a, "sort", "()V");
+        coordinates(a, {1, 3, 6, 9});
+        f.On(a, "set", "(FFFF)V", values(-1.6F, -0.4F, 6.4F, 9.6F));
+        f.On(a, "round", "(Landroid/graphics/Rect;)V", {VmValue::Ref(rect)});
+        CHECK(static_cast<std::int32_t>(field(rect, "left", "I")) == -2);
+        CHECK(field(rect, "top", "I") == 0);
+        CHECK(field(rect, "right", "I") == 6);
+        CHECK(field(rect, "bottom", "I") == 10);
+        f.On(a, "set", "(Landroid/graphics/RectF;)V", {VmValue::Ref(b)});
+        CHECK(f.On(a, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(b)}).AsInt() == 1);
+        CHECK(f.On(a, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(c)}).AsInt() == 0);
+        CHECK(f.On(a, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(rect)}).AsInt() == 0);
+        CHECK(f.On(a, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(VmObjectRef{})}).AsInt() == 0);
+        // API19 folds float bits with Java int overflow; +0 and -0 share a hash.
+        std::uint32_t hash = 0;
+        for (const auto v : {1.0F, 2.0F, 10.0F, 20.0F})
+            hash = 31U * hash + std::bit_cast<std::uint32_t>(v);
+        CHECK(f.On(a, "hashCode", "()I").AsInt() == std::bit_cast<std::int32_t>(hash));
+        CHECK(f.On(a, "hashCode", "()I").AsInt() == f.On(b, "hashCode", "()I").AsInt());
+        CHECK(f.vm.StringUtf8(f.On(a, "toString", "()Ljava/lang/String;").ref) == "RectF(1.0, 2.0, 10.0, 20.0)");
+        CHECK(f.vm.StringUtf8(f.On(a, "toShortString", "()Ljava/lang/String;").ref) == "[1.0,2.0][10.0,20.0]");
+        const auto sb = f.New("Ljava/lang/StringBuilder;");
+        CHECK(f.vm.StringUtf8(
+                  f.On(a, "toShortString", "(Ljava/lang/StringBuilder;)Ljava/lang/String;", {VmValue::Ref(sb)}).ref) ==
+              "[1.0,2.0][10.0,20.0]");
+        const auto writer = f.New("Ljava/io/StringWriter;");
+        const auto writer_root = f.vm.ProtectReferences(std::array{writer});
+        const auto printer = f.New("Ljava/io/PrintWriter;", "(Ljava/io/Writer;)V", {VmValue::Ref(writer)});
+        f.On(a, "printShortString", "(Ljava/io/PrintWriter;)V", {VmValue::Ref(printer)});
+        CHECK(f.vm.StringUtf8(f.On(writer, "toString", "()Ljava/lang/String;").ref) == "[1.0,2.0][10.0,20.0]");
+        f.On(a, "setEmpty", "()V");
+        f.On(b, "set", "(FFFF)V", values(-0.0F, 0, -0.0F, 0));
+        coordinates(a, {0, 0, 0, 0});
+        CHECK(f.On(a, "isEmpty", "()Z").AsInt() == 1);
+        CHECK(f.On(a, "contains", "(FF)Z", {VmValue::Float(0), VmValue::Float(0)}).AsInt() == 0);
+        CHECK(f.On(a, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(b)}).AsInt() == 1);
+        CHECK(f.On(a, "hashCode", "()I").AsInt() == 0);
+        CHECK(f.On(b, "hashCode", "()I").AsInt() == 0);
+        const auto nan = std::bit_cast<float>(0x7fa12345U);
+        f.On(a, "set", "(FFFF)V", values(0, 0, 0, nan));
+        f.On(b, "set", "(FFFF)V", values(0, 0, 0, nan));
+        CHECK(f.On(a, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(a)}).AsInt() == 1);
+        CHECK(f.On(a, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(b)}).AsInt() == 0);
+        CHECK(f.On(a, "hashCode", "()I").AsInt() == 0x7fc00000);
+        CHECK(f.On(a, "describeContents", "()I").AsInt() == 0);
+        const auto creator_field = f.linker.FindFieldRecursive(type, "CREATOR", "Landroid/os/Parcelable$Creator;");
+        REQUIRE(creator_field);
+        const VmObjectRef creator{f.linker.Class(type).static_storage[f.linker.Field(*creator_field).slot]};
+        for (const auto desc : {"(I)[Landroid/graphics/RectF;", "(I)[Ljava/lang/Object;"}) {
+            const auto array = f.On(creator, "newArray", desc, {VmValue::Int(3)}).ref;
+            CHECK(f.model.ArrayLength(array) == 3);
+            CHECK(f.model.ObjectArrayElementClass(array) == type);
+            CHECK(f.OnOutcome(creator, "newArray", desc, {VmValue::Int(-1)}).exception.IsValid());
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& entry : {std::pair{"roundOut", "(Landroid/graphics/Rect;)V"},
+                                  std::pair{"writeToParcel", "(Landroid/os/Parcel;I)V"}}) {
+            const auto outcome =
+                entry.first == std::string_view("roundOut")
+                    ? f.OnOutcome(a, entry.first, entry.second, {VmValue::Ref(rect)})
+                    : f.OnOutcome(a, entry.first, entry.second, {VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+            const auto hits = f.ledger.Unimplemented();
+            CHECK(std::any_of(hits.begin(), hits.end(), [&](const auto& hit) {
+                return hit.id ==
+                           std::string("dexvm.intrinsic.Landroid/graphics/RectF;.") + entry.first + entry.second &&
+                       hit.count == 1;
+            }));
+        }
+        CHECK(f.ledger.Unimplemented().size() == 2);
+        for (const auto* methods :
+             {&f.linker.Class(type).own_direct_methods, &f.linker.Class(type).own_virtual_methods}) {
+            for (const auto id : *methods) {
+                const auto& method = f.linker.Method(id);
+                if (method.name == "roundOut" || method.name == "writeToParcel" || method.name == "readFromParcel") {
+                    CHECK(method.kind == MethodKind::intrinsic);
+                    CHECK_FALSE(method.implementation);
+                    CHECK_FALSE(method.code);
+                } else {
+                    CHECK(method.kind == MethodKind::interpreted);
+                    CHECK(method.code.has_value());
+                }
+            }
+        }
+    }
+}

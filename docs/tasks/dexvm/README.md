@@ -328,3 +328,4 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-354 · API19 1 GiB 设备堆档位与 largeHeap](DVM-354.md)
 
 - [DVM-355 · View 默认样式 scrollbar 初始化闭包](DVM-355.md)
+- [DVM-356 · RectF 整类回归 ROM 纯 Java 值语义](DVM-356.md)

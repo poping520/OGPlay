@@ -232,3 +232,9 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_managed_WindowToken(const Context&);
 [[nodiscard]] dx::VmObjectRef MakeRomSkin(dx::IntrinsicContext&, const Context&, std::uint32_t);
 }  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+[[nodiscard]] Decl Declare_android_widget_Spinner(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_Spinner_DropdownPopup(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_Spinner_ForwardingListener(const Context& context);
+}  // namespace ogplay::runtime::android_intrinsics

@@ -20,7 +20,7 @@ GROUPS = ('View', 'ViewGroup', 'FrameLayout', 'LinearLayout', 'RelativeLayout',
           'ViewGroup_Layout', 'ViewGroup_MarginLayout', 'FrameLayout_Layout',
           'LinearLayout_Layout', 'RelativeLayout_Layout',
           'TextViewAppearance', 'TextAppearance', 'TextView', 'ImageView',
-          'ScrollView', 'HorizontalScrollView')
+          'ScrollView', 'HorizontalScrollView', 'Spinner', 'AbsSpinner')
 PINNED = {
     '.local/aosp/framework.jar': '422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b',
     '.local/aosp/framework2.jar': '5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973',
@@ -208,6 +208,10 @@ def inspect_inputs(negative_rom_id=False):
             require(name not in attr_ids or attr_ids[name] == ident, 'conflicting ROM attr: ' + name)
             attr_ids[name] = ident
     by_id = {row['id']: row for row in resource_audit['entries']}
+    private_attr = by_id[0x010103f9]
+    require(private_attr['type'] == 'attr' and private_attr['name'] == 'dropdownListPreferredItemHeight',
+            'ROM spinner layout private attr identity mismatch')
+    attr_ids['dropdownListPreferredItemHeight'] = private_attr['id']
     formats = {}
     for row in resource_audit['entries']:
         if row['type'] != 'attr':

@@ -15,6 +15,7 @@
 
 - [ADR-0172 · Dalvik 堆默认值对齐 API19 1 GB 设备档位](#adr-0172)
 - [ADR-0173 · View scrollbar 初始化闭包与状态型图形对象准入](#adr-0173)
+- [ADR-0174 · 同 ROM Spinner 系统布局内容封存](#adr-0174)
 
 <a id="adr-0017"></a>
 
@@ -414,3 +415,27 @@ Java 初始化需要状态型图形对象与设备配置，但不应借此引入
 
 状态对象可独立于像素绘制获得准入，但不得静默忽略 Paint 状态或伪造滚动条绘制成功。
 每项实施仍须完成双解释器、关闭即失败及真实首错路径的判据；决定本身不授予运行信用。
+
+<a id="adr-0174"></a>
+## ADR-0174 · 同 ROM Spinner 系统布局内容封存
+
+- 日期：2026-10-30
+
+### 背景
+
+ArrayAdapter 的原版 getView 需要系统布局内容；已有主题资源身份不能授予布局加载信用。
+
+### 决定
+
+仅封存固定 framework-res.apk 的 simple_spinner_item 与 simple_spinner_dropdown_item。
+生成时核对名称/ID、默认配置、原始二进制 XML、属性与 style/attr/color/id 引用身份；
+内容随既有主题投影和五项 pairing SHA 封存。Resources.getLayout 仅对封存 ID 返回
+由原始 XML 解析的真实 XmlResourceParser，继续执行 ROM LayoutInflater/ArrayAdapter；
+其他系统布局抛 NotFoundException，APK 布局既有边界保持。
+Spinner/AbsSpinner/AdapterView 的字段与布局、选择、观察者算法优先执行严格审计的 ROM。
+默认 btn_dropdown 仅扩充既有 selector/ninepatch 闭包；不开放弹窗、触摸选择、guest 绘制。
+必要平台接缝必须逐签名 review、记账并保持关闭即失败，不放宽父成员审计。
+
+### 后果
+
+布局身份与内容准入分离，未封存布局保持明确失败；两个布局不授予任意系统布局或弹窗信用。

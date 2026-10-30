@@ -65,7 +65,7 @@ public:
 
         std::uint32_t id{}, density{}, width{}, height{};
         std::array<std::int32_t, 4> padding{}, optical{};
-        std::array<std::int32_t, 2> stretch_x{}, stretch_y{};
+        std::vector<std::int32_t> stretch_x, stretch_y;
         std::vector<std::byte> png;
         std::vector<Item> items;
     };
@@ -90,6 +90,7 @@ public:
     };
 
     [[nodiscard]] std::optional<ResourceIdentity> Identity(std::uint32_t id, const loader::ArscTable& table) const;
+    [[nodiscard]] const std::vector<std::byte>* Layout(std::uint32_t id) const;
     void Shutdown();
 
     [[nodiscard]] std::size_t LiveThemes() const { return themes_.size(); }
@@ -121,6 +122,7 @@ private:
     std::vector<std::byte> string_pool_;
     std::vector<RomDrawable> rom_drawables_;
     std::map<std::uint32_t, RomColor> rom_colors_;
+    std::map<std::uint32_t, std::vector<std::byte>> rom_layouts_;
     std::map<std::uint32_t, ThemeValue> rom_configuration_;
     std::map<std::uint32_t, ResourceIdentity> resource_names_;
     bool loaded_{}, stopped_{};

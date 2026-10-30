@@ -2161,12 +2161,22 @@ note = "DVM-293/362：实例 Paint flags（0x507）、1..128px 字号、Typeface
 [dexvm.text_constructor]
 status = "partial"
 test = "tests/dexvm/edittext_traversal_tests.cpp#DVM-327; tests/dexvm/edittext_traversal_tests.cpp#DVM-326; tests/dexvm/theme_resources_tests.cpp#DVM-294; tests/dexvm/textview_traversal_tests.cpp; tests/dexvm/button_traversal_tests.cpp; tests/dexvm/edittext_traversal_tests.cpp"
-note = "TextView 真实主题构造、有界文本/叶测量与冻结 line-plan；DVM-362 每实例稳定 TextPaint，setter 写穿，hint 空文显示、状态色、inputType 单行/密码掩码、真实 Java InputFilter 顺序派发。DVM-361 singleLine 同步 Java 横向滚动位，无滚动偏移/marquee。Button/EditText 保留 ROM 薄构造及皮肤；无完整 Editor/IME/Layout、KeyListener、键盘、Spanned、RTL/shaping。"
+note = "TextView 真实主题构造、有界文本/叶测量与冻结 line-plan；DVM-362 每实例稳定 TextPaint，setter 写穿，hint 空文显示、状态色、inputType 单行/密码掩码、真实 Java InputFilter 顺序派发。DVM-361 singleLine 同步 Java 横向滚动位；DVM-364 可解析 MARQUEE，启动动画失败，无滚动偏移。Button/EditText 保留 ROM 薄构造及皮肤；无完整 Editor/IME/Layout、KeyListener、键盘、Spanned、RTL/shaping。"
 
 [dexvm.image_leaf]
 status = "partial"
 note = "DVM-296/363：ImageView/ImageButton 完整 ROM 形状、clinit、真实主题构造与纯叶测量 adapter；Java 拥有图片/scale/alpha，五种 scale、bitmap 版本与纯色同 epoch 冻结。btn_default 默认背景已封存，adjustViewBounds 和 drawable-state 合并执行 ROM。其他皮肤、其余 scale、matrix/tint/max/baseline/crop 非中性请求失败。"
 test = "tests/dexvm/imageview_traversal_tests.cpp; tests/dexvm/theme_resources_tests.cpp#DVM-296"
+
+[dexvm.spinner_adapter]
+status = "partial"
+test = "tests/dexvm/spinner_adapter_tests.cpp; tools/bootdex/compose_bootdex.py check; tools.android_payload_current"
+note = "DVM-364/ADR-0174：固定 ROM DIALOG Spinner/AbsSpinner/AdapterView 构造、ArrayAdapter/getView、两种测量、单子项布局、数据观察者与 View.post 选择通知；btn_dropdown 同 ROM selector/ninepatch，两个系统布局封存原 XML/身份/配置/引用。未封存系统布局 NotFoundException。marquee 可解析，启动动画失败；弹窗、触摸、guest 绘制与跨平台未支持。"
+
+[dexvm.spinner_popup]
+status = "unimplemented"
+test = "tests/dexvm/spinner_adapter_tests.cpp#DVM-364"
+note = "Spinner.performClick、DropdownPopup 和转发触摸 listener 构造在平台接缝记账抛 UOE；DialogPopup.show 未准入，不能获得 AlertDialog/ListView 弹窗信用。"
 
 [dexvm.property_animation]
 status = "partial"

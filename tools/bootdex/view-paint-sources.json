@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "1a668a547152c395d2002120bbc61a63da89a720ee4d57d1ab9fa3b6fc79b58f",
+      "surface_sha256": "328999dfcb016224a14d0fe147834e26ab11c009c9a2bc7461457c7a613e2332",
       "owner": "Landroid/graphics/Paint;",
       "smali_sha256": "a9a6e699946d088c737d1f8048f7d13cf44814b6c7e2ea67bb910cea1db6f686",
       "methods": [
@@ -1368,7 +1368,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "1a668a547152c395d2002120bbc61a63da89a720ee4d57d1ab9fa3b6fc79b58f",
+      "surface_sha256": "328999dfcb016224a14d0fe147834e26ab11c009c9a2bc7461457c7a613e2332",
       "owner": "Landroid/widget/TextView;",
       "smali_sha256": "06b1a220e8e5b6b9e559c6c98b253c17b0cea684d8a3563a26056381873d74af",
       "methods": [
@@ -1878,7 +1878,7 @@
           "signature": "getEllipsize()Landroid/text/TextUtils$TruncateAt;",
           "flags": 1,
           "body_sha256": "5e21c4fc630d1e01e050d513c9cdafdec2956f085106ce9757e176a0d93ceb43",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getError()Ljava/lang/CharSequence;",
@@ -3603,7 +3603,14 @@
           "signature": "setSelected(Z)V",
           "flags": 1,
           "body_sha256": "e954e0f9be856045581303a42956cabe3aa98b6bb7724f7685bd6f4f9de31232",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-364 bounded leaf selection; retain parsed MARQUEE without claiming animation",
+            "inputs": "actual Java selected flag and TextView mEllipsize",
+            "outputs": "genuine View selected-state protocol; selecting marquee requests unsupported animation and fails before mutation",
+            "state_owner": "Java View flags and TextView mEllipsize; no animation side table",
+            "failure_boundary": "marquee animation and unsupported truncation modes ledger and UOE; layout of unselected plain text supported"
+          }
         },
         {
           "signature": "setShadowLayer(FFFI)V",
@@ -4209,7 +4216,7 @@
         {
           "signature": "mEllipsize:Landroid/text/TextUtils$TruncateAt;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -4580,7 +4587,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "1a668a547152c395d2002120bbc61a63da89a720ee4d57d1ab9fa3b6fc79b58f",
+      "surface_sha256": "328999dfcb016224a14d0fe147834e26ab11c009c9a2bc7461457c7a613e2332",
       "owner": "Landroid/graphics/RectF;",
       "smali_sha256": "65034d541516dfe44c801f64a3492ce2b8cd09b0189dd97ecb4ebb298e41797c",
       "methods": [
@@ -4864,7 +4871,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "1a668a547152c395d2002120bbc61a63da89a720ee4d57d1ab9fa3b6fc79b58f",
+      "surface_sha256": "328999dfcb016224a14d0fe147834e26ab11c009c9a2bc7461457c7a613e2332",
       "owner": "Landroid/graphics/RectF$1;",
       "smali_sha256": "f889e950e28f121bd482097f9ba13a76fdae40fed5ffdf91ecfd790e70f663ae",
       "methods": [

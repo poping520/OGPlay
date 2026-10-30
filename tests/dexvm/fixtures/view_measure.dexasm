@@ -914,3 +914,74 @@
     iget v0, v1, Ltest/OrderedInputFilter;->counter:I
     return v0
 .end method
+
+.class public Ltest/SpinnerLeaf;
+.super Landroid/widget/Spinner;
+.field private attaches:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/widget/Spinner;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method protected onAttachedToWindow()V
+.registers 2
+    invoke-super {v1}, Landroid/widget/Spinner;->onAttachedToWindow()V
+    iget v0, v1, Ltest/SpinnerLeaf;->attaches:I
+    add-int/lit8 v0, v0, 1
+    iput v0, v1, Ltest/SpinnerLeaf;->attaches:I
+    return-void
+.end method
+.method public attachments()I
+.registers 2
+    iget v0, v1, Ltest/SpinnerLeaf;->attaches:I
+    return v0
+.end method
+
+.class public Ltest/SpinnerItem;
+.super Ljava/lang/Object;
+.field private label:Ljava/lang/String;
+.method public constructor <init>(Ljava/lang/String;)V
+.registers 2
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    iput-object v1, v0, Ltest/SpinnerItem;->label:Ljava/lang/String;
+    return-void
+.end method
+.method public toString()Ljava/lang/String;
+.registers 2
+    iget-object v0, v1, Ltest/SpinnerItem;->label:Ljava/lang/String;
+    return-object v0
+.end method
+
+.class public Ltest/SpinnerSelection;
+.super Ljava/lang/Object;
+.implements Landroid/widget/AdapterView$OnItemSelectedListener;
+.field public calls:I
+.field public nothing:I
+.field public position:I
+.field public id:J
+.field public parent:Landroid/widget/AdapterView;
+.field public selected:Landroid/view/View;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method public onItemSelected(Landroid/widget/AdapterView;Landroid/view/View;IJ)V
+.registers 7
+    iget v0, v1, Ltest/SpinnerSelection;->calls:I
+    add-int/lit8 v0, v0, 1
+    iput v0, v1, Ltest/SpinnerSelection;->calls:I
+    iput-object v2, v1, Ltest/SpinnerSelection;->parent:Landroid/widget/AdapterView;
+    iput-object v3, v1, Ltest/SpinnerSelection;->selected:Landroid/view/View;
+    iput v4, v1, Ltest/SpinnerSelection;->position:I
+    iput-wide v5, v1, Ltest/SpinnerSelection;->id:J
+    return-void
+.end method
+.method public onNothingSelected(Landroid/widget/AdapterView;)V
+.registers 3
+    iget v0, v1, Ltest/SpinnerSelection;->nothing:I
+    add-int/lit8 v0, v0, 1
+    iput v0, v1, Ltest/SpinnerSelection;->nothing:I
+    iput-object v2, v1, Ltest/SpinnerSelection;->parent:Landroid/widget/AdapterView;
+    return-void
+.end method

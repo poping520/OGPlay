@@ -2115,6 +2115,51 @@ Decl Declare_android_view_View(const Context& context) {
         },
         dx::kAccPrivate);
     builder.VirtualMethod("notifySubtreeAccessibilityStateChangedIfNeeded", "()V", software_dirty);
+    builder.VirtualMethod("notifyViewAccessibilityStateChangedIfNeeded", "(I)V", [context](dx::IntrinsicContext& call) {
+        if (!context->UiAccessibilityUnavailable()) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_layout_system_state", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "View accessibility notification requires an unavailable service"};
+        }
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod(
+        "onAttachedToWindow", "()V",
+        [context](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall fields(call);
+            const auto& tokens = *context->view_java_measure_fields;
+            const auto flags = fields.GetInt(tokens.flags[0]);
+            const auto background = fields.GetRef((*context->view_java_input_fields)[1]);
+            const auto skin = context->ui_drawables.find(background.Value());
+            // Managed windows have no AttachInfo/IME or animated DrawableContainer.
+            // Static sealed selectors have no pending transition to jump over.
+            bool unsupported =
+                !context->UiAccessibilityUnavailable() || (flags & 0x200) != 0 ||
+                CallAndroidMethod(call.vm, call.receiver, "isFocused", "()Z").AsInt() != 0 ||
+                (background.IsValid() && (skin == context->ui_drawables.end() || !skin->second.rom_skin));
+            for (const auto token : tokens.unsupported_state)
+                unsupported = unsupported || fields.GetRef(token).IsValid();
+            if (unsupported) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_layout_system_state", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "View attachment requires unsupported system or drawable state"};
+            }
+            if (flags & 0x08000000) {
+                const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+                const auto method = call.vm.Linker().FindDirectMethod(type, "initialAwakenScrollBars", "()Z");
+                const auto out = call.vm.Call(*method, std::array{dx::VmValue::Ref(call.receiver)});
+                if (out.exception.IsValid())
+                    throw dx::VmJavaThrow{call.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                                          out.exception};
+                fields.SetInt(tokens.flags[0], fields.GetInt(tokens.flags[0]) & ~0x08000000);
+            }
+            fields.SetInt(tokens.flags[2], fields.GetInt(tokens.flags[2]) & ~4);
+            static_cast<void>(
+                CallAndroidMethod(call.vm, call.receiver, "resetSubtreeAccessibilityStateChanged", "()V"));
+            return dx::VmValue::Void();
+        },
+        dx::kAccProtected);
+
     {
         builder.VirtualMethod("onWindowFocusChanged", "(Z)V", [context, software_dirty](dx::IntrinsicContext& call) {
             static_cast<void>(software_dirty(call));

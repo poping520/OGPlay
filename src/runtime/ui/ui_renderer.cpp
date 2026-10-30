@@ -345,45 +345,77 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands, const UiMetrics 
             const auto destination_width = bitmap->rect.right - bitmap->rect.left;
             const auto destination_height = bitmap->rect.bottom - bitmap->rect.top;
             if (destination_width <= 0 || destination_height <= 0) continue;
-            PaintRect(frame, bitmap->rect, clips.back(),
-                      [bitmap, destination_width, destination_height](const auto x, const auto y, auto* dst) {
-                          const auto map_axis = [](const std::int32_t position, const std::int32_t destination,
-                                                   const std::int32_t source, const std::array<std::int32_t, 2> divs) {
-                              if (divs[0] < 0 || divs[1] <= divs[0] || divs[1] > source) {
-                                  return static_cast<std::int32_t>(static_cast<std::int64_t>(position) * source /
-                                                                   destination);
-                              }
-                              const auto leading = divs[0];
-                              const auto trailing = source - divs[1];
-                              if (position < leading) return position;
-                              if (position >= destination - trailing) {
-                                  return source - (destination - position);
-                              }
-                              const auto stretch_destination = std::max(1, destination - leading - trailing);
-                              return divs[0] + static_cast<std::int32_t>(static_cast<std::int64_t>(position - leading) *
-                                                                         (divs[1] - divs[0]) / stretch_destination);
-                          };
-                          const auto bx =
-                              bitmap->bitmap->nine_patch
-                                  ? map_axis(x - bitmap->rect.left, destination_width, bitmap->bitmap->width,
-                                             bitmap->bitmap->stretch_x)
-                                  : static_cast<std::int32_t>(static_cast<std::int64_t>(x - bitmap->rect.left) *
-                                                              bitmap->bitmap->width / destination_width);
-                          const auto by =
-                              bitmap->bitmap->nine_patch
-                                  ? map_axis(y - bitmap->rect.top, destination_height, bitmap->bitmap->height,
-                                             bitmap->bitmap->stretch_y)
-                                  : static_cast<std::int32_t>(static_cast<std::int64_t>(y - bitmap->rect.top) *
-                                                              bitmap->bitmap->height / destination_height);
-                          const auto offset =
-                              (static_cast<std::size_t>(by) * static_cast<std::size_t>(bitmap->bitmap->width) +
-                               static_cast<std::size_t>(bx)) *
-                              4U;
-                          const auto* src = bitmap->bitmap->rgba8.data() + offset;
-                          const auto alpha = static_cast<std::uint8_t>(
-                              (static_cast<std::uint32_t>(src[3]) * AlphaByte(bitmap->alpha) + 127U) / 255U);
-                          Blend(dst, src[0], src[1], src[2], alpha);
-                      });
+            PaintRect(
+                frame, bitmap->rect, clips.back(),
+                [bitmap, destination_width, destination_height](const auto x, const auto y, auto* dst) {
+                    const auto map_axis = [](const std::int32_t position, const std::int32_t destination,
+                                             const std::int32_t source, const std::vector<std::int32_t>& divs) {
+                        if (divs.size() != 2) {
+                            if (divs.empty() || divs.size() % 2 || divs.size() > 32)
+                                throw std::runtime_error("invalid ninepatch stretch regions");
+                            std::int64_t stretch = 0;
+                            for (std::size_t i = 0; i < divs.size(); ++i) {
+                                if (divs[i] < 0 || divs[i] > source || (i && divs[i] < divs[i - 1]))
+                                    throw std::runtime_error("unordered ninepatch stretch regions");
+                                if (i % 2) stretch += divs[i] - divs[i - 1];
+                            }
+                            const std::int64_t fixed = source - stretch;
+                            const std::int64_t fixed_destination = std::min<std::int64_t>(destination, fixed);
+                            const std::int64_t stretch_destination = destination - fixed_destination;
+                            std::int64_t fixed_before = 0, stretch_before = 0;
+                            int source_start = 0, destination_start = 0;
+                            for (std::size_t i = 0; i <= divs.size(); ++i) {
+                                const int source_end = i == divs.size() ? source : divs[i];
+                                const int length = source_end - source_start;
+                                if (i % 2)
+                                    stretch_before += length;
+                                else
+                                    fixed_before += length;
+                                const int destination_end =
+                                    static_cast<int>((fixed ? fixed_before * fixed_destination / fixed : 0) +
+                                                     (stretch ? stretch_before * stretch_destination / stretch : 0));
+                                if (position < destination_end)
+                                    return source_start +
+                                           static_cast<int>(static_cast<std::int64_t>(position - destination_start) *
+                                                            length / (destination_end - destination_start));
+                                source_start = source_end;
+                                destination_start = destination_end;
+                            }
+                            return source - 1;
+                        }
+                        if (divs[0] < 0 || divs[1] <= divs[0] || divs[1] > source) {
+                            return static_cast<std::int32_t>(static_cast<std::int64_t>(position) * source /
+                                                             destination);
+                        }
+                        const auto leading = divs[0];
+                        const auto trailing = source - divs[1];
+                        if (position < leading) return position;
+                        if (position >= destination - trailing) {
+                            return source - (destination - position);
+                        }
+                        const auto stretch_destination = std::max(1, destination - leading - trailing);
+                        return divs[0] + static_cast<std::int32_t>(static_cast<std::int64_t>(position - leading) *
+                                                                   (divs[1] - divs[0]) / stretch_destination);
+                    };
+                    const auto bx = bitmap->bitmap->nine_patch
+                                        ? map_axis(x - bitmap->rect.left, destination_width, bitmap->bitmap->width,
+                                                   bitmap->bitmap->stretch_x)
+                                        : static_cast<std::int32_t>(static_cast<std::int64_t>(x - bitmap->rect.left) *
+                                                                    bitmap->bitmap->width / destination_width);
+                    const auto by = bitmap->bitmap->nine_patch
+                                        ? map_axis(y - bitmap->rect.top, destination_height, bitmap->bitmap->height,
+                                                   bitmap->bitmap->stretch_y)
+                                        : static_cast<std::int32_t>(static_cast<std::int64_t>(y - bitmap->rect.top) *
+                                                                    bitmap->bitmap->height / destination_height);
+                    const auto offset =
+                        (static_cast<std::size_t>(by) * static_cast<std::size_t>(bitmap->bitmap->width) +
+                         static_cast<std::size_t>(bx)) *
+                        4U;
+                    const auto* src = bitmap->bitmap->rgba8.data() + offset;
+                    const auto alpha = static_cast<std::uint8_t>(
+                        (static_cast<std::uint32_t>(src[3]) * AlphaByte(bitmap->alpha) + 127U) / 255U);
+                    Blend(dst, src[0], src[1], src[2], alpha);
+                });
         } else if (const auto* text = std::get_if<DrawText>(&command)) {
             PaintTextShadow(frame, *text, clips.back());
             const auto& value = text->line_plan ? text->line_plan->text : text->text;

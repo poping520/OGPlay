@@ -22,6 +22,7 @@
     "destroyDrawingCache()V",
     "dispatchCancelPendingInputEvents()V",
     "dispatchSetPressed(Z)V",
+    "dispatchSetSelected(Z)V",
     "dispatchVisibilityChanged(Landroid/view/View;I)V",
     "dispatchWindowFocusChanged(Z)V",
     "ensureTransformationInfo()V",
@@ -89,6 +90,7 @@
     "hasOnClickListeners()Z",
     "hasOverlappingRendering()Z",
     "hasTransientState()Z",
+    "includeForAccessibility()Z",
     "initScrollCache()V",
     "initialAwakenScrollBars()Z",
     "initializeScrollbars(Landroid/content/res/TypedArray;)V",
@@ -119,6 +121,7 @@
     "isPaddingResolved()Z",
     "isPressed()Z",
     "isRtlCompatibilityMode()Z",
+    "isSelected()Z",
     "isSoundEffectsEnabled()Z",
     "isTextAlignmentInherited()Z",
     "isTextAlignmentResolved()Z",
@@ -130,6 +133,7 @@
     "mergeDrawableStates([I[I)[I",
     "needRtlPropertiesResolution()Z",
     "notifyGlobalFocusCleared(Landroid/view/View;)V",
+    "offsetLeftAndRight(I)V",
     "onFinishInflate()V",
     "onFocusLost()V",
     "onLayout(ZIIII)V",
@@ -156,6 +160,7 @@
     "resetResolvedTextAlignment()V",
     "resetResolvedTextDirection()V",
     "resetRtlProperties()V",
+    "resetSubtreeAccessibilityStateChanged()V",
     "resolveDrawables()V",
     "resolveLayoutDirection()Z",
     "resolveLayoutParams()V",
@@ -180,6 +185,7 @@
     "setFrame(IIII)Z",
     "setHorizontalScrollBarEnabled(Z)V",
     "setId(I)V",
+    "setImportantForAccessibility(I)V",
     "setLayoutDirection(I)V",
     "setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V",
     "setLongClickable(Z)V",
@@ -204,6 +210,7 @@
     "setPressed(Z)V",
     "setRight(I)V",
     "setScrollContainer(Z)V",
+    "setSelected(Z)V",
     "setSoundEffectsEnabled(Z)V",
     "setVisibility(I)V",
     "setWillNotDraw(Z)V",
@@ -817,8 +824,22 @@
       "outputs": "Boolean enqueue result; asynchronous Runnable execution on main Looper; null Runnable throws NPE, negative delay clamps to zero.",
       "state_owner": "Java owns hierarchy; session scheduler owns the single ViewRoot Handler and scheduled GC roots. Detached actions are guest-thread pending roots, delay starts at safe-point transfer.",
       "failure_boundary": "No AttachInfo/ViewRootImpl/RunQueue construction, extra queues, threads or Timer. Shutdown rejects and clears work; removeCallbacks/postOnAnimation/postInvalidateDelayed remain unsupported."
+    },
+    "onAttachedToWindow()V": {
+      "reason": "DVM-364 managed software attachment and unavailable accessibility service seam",
+      "inputs": "real View flags/background, Java subtree and explicitly injected absence of accessibility; no AttachInfo",
+      "outputs": "API19 scrollbar awakening, private flag reset and subtree accessibility reset; static sealed selectors have no animated transition; notification has no recipient only when service is unavailable",
+      "state_owner": "original Java fields and existing managed-window/selector backing; no synthetic attachment or callback table",
+      "failure_boundary": "transparent regions, focused IME attachment, system AttachInfo/animation/display lists, unreviewed backgrounds and enabled accessibility ledger and fail"
+    },
+    "notifyViewAccessibilityStateChangedIfNeeded(I)V": {
+      "reason": "DVM-364 managed software attachment and unavailable accessibility service seam",
+      "inputs": "real View flags/background, Java subtree and explicitly injected absence of accessibility; no AttachInfo",
+      "outputs": "API19 scrollbar awakening, private flag reset and subtree accessibility reset; static sealed selectors have no animated transition; notification has no recipient only when service is unavailable",
+      "state_owner": "original Java fields and existing managed-window/selector backing; no synthetic attachment or callback table",
+      "failure_boundary": "transparent regions, focused IME attachment, system AttachInfo/animation/display lists, unreviewed backgrounds and enabled accessibility ledger and fail"
     }
   },
   "surface": "tools/bootdex/window-background.surface.json.gz",
-  "surface_sha256": "21399ed9954e9d0a5956398cb1921f1e92d3a9ca062d28fd3b5dd36b1101e7cb"
+  "surface_sha256": "6f7e56fd0ef4aef2177f3cecf8c4bf6e0832c9afe64cb7577fb556705c3fb0d4"
 }

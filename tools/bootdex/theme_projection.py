@@ -152,6 +152,60 @@ def view_configuration_values():
     return sorted(result, key=lambda r: r['id'])
 
 
+def layout_closure():
+    """Two exact same-ROM default layouts; content credit separate from identity."""
+    roots = {'simple_spinner_item': 0x01090008, 'simple_spinner_dropdown_item': 0x01090009}
+    with zipfile.ZipFile(ROOT / rom.APK) as archive:
+        _, rows = rom.ResourceTable(archive.read('resources.arsc')).parse()
+        by_id = {row['id']: row for row in rows}
+        result = []
+        for name, ident in roots.items():
+            row = by_id[ident]
+            if row['name'] != name or row['type'] != 'layout' or len(row['configurations']) != 1:
+                raise ValueError('unreviewed ROM layout identity/configurations: ' + name)
+            variant, = row['configurations']
+            if (any(bytes.fromhex(variant['config_hex'])[4:]) or variant['complex']
+                    or variant['value_type'] != 3 or variant['path'] != 'res/layout/' + name + '.xml'):
+                raise ValueError('unsupported ROM layout configuration: ' + name)
+            raw = archive.read(variant['path'])
+            table = rom.ResourceTable(raw)
+            strings, resource_ids, stack, references = [], [], [], set()
+            roots_seen = 0
+            for at, kind, header, size in table.chunks(8, len(raw)):
+                if kind == 1:
+                    strings = table.pool(at)
+                elif kind == 0x180:
+                    resource_ids = list(table.words('<%dI' % ((size - header) // 4), at + header))
+                elif kind == 0x102:
+                    _, tag, start, width, count, _, _, _ = table.words('<II6H', at + 16)
+                    if stack or strings[tag] != ('TextView' if ident == 0x01090008 else 'CheckedTextView'):
+                        raise ValueError('unreviewed ROM layout element')
+                    roots_seen += 1
+                    stack.append(tag)
+                    for i in range(count):
+                        ns, key, text, vs, zero, typ, data = table.words('<IIIHBBI', at + 16 + start + i * width)
+                        aid = resource_ids[key] if key < len(resource_ids) else 0
+                        if aid and (aid not in by_id or by_id[aid]['type'] != 'attr'):
+                            raise ValueError('unknown ROM layout attribute')
+                        if typ in (1, 2):
+                            if data not in by_id or by_id[data]['type'] not in ('style', 'attr', 'color', 'id'):
+                                raise ValueError('unreviewed ROM layout reference')
+                            references.add(data)
+                        elif typ not in (16, 17, 18):
+                            raise ValueError('unreviewed ROM layout value')
+                elif kind == 0x103:
+                    if not stack or table.words('<II', at + 16)[1] != stack.pop():
+                        raise ValueError('invalid ROM layout nesting')
+                elif kind not in (0x100, 0x101):
+                    raise ValueError('unreviewed ROM layout XML chunk')
+            if stack or roots_seen != 1:
+                raise ValueError('invalid ROM layout root')
+            result.append(dict(id=ident, name=name, path=variant['path'],
+                               config_hex=variant['config_hex'], sha256=rom.sha(raw),
+                               references=sorted(references), xml=raw.hex()))
+    return result
+
+
 def drawable_closure():
     """Reviewed EditText, btn_default and four exact same-ROM scrollbar thumb closures."""
     with zipfile.ZipFile(ROOT / rom.APK) as archive:
@@ -174,7 +228,10 @@ def drawable_closure():
         button, = [row for row in rows if row['type'] == 'drawable' and row['name'] == 'btn_default']
         if button['id'] != 0x01080004:
             raise ValueError('btn_default ROM name/ID mismatch')
-        pending, result = [root['id'], button['id'], *thumbs.values()], []
+        dropdown, = [row for row in rows if row['type'] == 'drawable' and row['name'] == 'btn_dropdown']
+        if dropdown['id'] != 0x01080006:
+            raise ValueError('btn_dropdown ROM name/ID mismatch')
+        pending, result = [root['id'], button['id'], dropdown['id'], *thumbs.values()], []
         while pending:
             ident = pending.pop(0)
             if any(row['id'] == ident for row in result):
@@ -258,8 +315,8 @@ def drawable_closure():
                         raise ValueError('invalid ninepatch padding')
                     optical = list(struct.unpack('<4i', chunks[b'npLb'])) if b'npLb' in chunks else [0]*4
                     facts.update(kind='ninepatch', png=raw.hex(), width=width, height=height,
-                                 stretch_x=list(struct.unpack_from('>2i', chunk, 32)) if nx == 2 else [],
-                                 stretch_y=list(struct.unpack_from('>2i', chunk, 32 + 4 * nx)) if ny == 2 else [],
+                                 stretch_x=list(struct.unpack_from('>%di' % nx, chunk, 32)),
+                                 stretch_y=list(struct.unpack_from('>%di' % ny, chunk, 32 + 4 * nx)),
                                  padding=[left, top, right, bottom], optical=optical)
                 else:
                     raise ValueError('unreviewed skin drawable type')
@@ -411,7 +468,8 @@ def generate(negative_rom_id=False):
     # members of the styleable arrays. Follow ?attr and style edges to a fixed
     # point, proving every ID against the same pinned ROM field inventory.
     implicit = ('textViewStyle', 'buttonStyle', 'editTextStyle', 'imageButtonStyle',
-                'scrollViewStyle', 'horizontalScrollViewStyle')
+                'scrollViewStyle', 'horizontalScrollViewStyle', 'spinnerStyle',
+                'spinnerItemStyle', 'spinnerDropDownItemStyle', 'dropdownListPreferredItemHeight')
     extra_demands = set(implicit)
     pending_styles = {row['name'] for row in report['themes'] if row['resource_id'] is not None}
     while True:
@@ -436,7 +494,10 @@ def generate(negative_rom_id=False):
 
     colors = color_resources()
     references = reference_index(report['resource_bindings'])
-    projected_references = {}
+    layouts = layout_closure()
+    by_reference_id = {row['resource_id']: row for row in references.values()}
+    projected_references = {ident: by_reference_id[ident]
+                            for layout in layouts for ident in layout['references']}
     strings = [row['path'] for row in colors if 'xml' in row]
     for row in colors:
         if 'xml' in row:
@@ -538,7 +599,7 @@ def generate(negative_rom_id=False):
                     styleables=report['styleable_slot_checks'], attribute_demands=attribute_demands,
                     registered=themes, style_closure=style_closure, unregistered=unregistered,
                     counts=dict(counts), attribute_count=len(attrs),
-                    rom_colors=colors, rom_drawables=drawable_closure(), rom_configuration=view_configuration_values(), strings=strings, string_pool=string_pool(strings).hex(), attribute_formats=report['attribute_formats'],
+                    rom_colors=colors, rom_drawables=drawable_closure(), rom_layouts=layouts, rom_configuration=view_configuration_values(), strings=strings, string_pool=string_pool(strings).hex(), attribute_formats=report['attribute_formats'],
                     resource_types={r['resource_type']: r['type_id'] for r in references.values()},
                     resource_names=sorted(references.values(), key=lambda r: r['resource_id']),
                     projected_references=sorted(projected_references.values(), key=lambda r: r['resource_id']))

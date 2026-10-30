@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-28。
+更新：2026-10-30。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 修复过程、验证明细及证据写入任务单。能力见 [capabilities.toml](../../capabilities.toml)，
@@ -26,7 +26,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 | PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；无下一失败，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
 | GTA3 | macOS | Tap To Continue 标题；PlayMovieInWindow 的 View.toString 已通过 | 本次 90 秒未见新 Java 首错；影片解码画面未验，NV clock 提示仍在 | [DVM-363](../tasks/dexvm/DVM-363.md) |
-| GTASA | macOS | ImageButton 默认背景及 View 配置通过 | Spinner(Context) 未实现，andDropDownList.createView；FPS未验 | [DVM-363](../tasks/dexvm/DVM-363.md) |
+| GTASA | macOS | Spinner(Context) 原首错消失；适配器/布局/选择链双后端定向通过 | ProgressBar.setIndeterminate，andSpinner.createView；FPS未验 | [DVM-364](../tasks/dexvm/DVM-364.md) |
 
 ## 未闭合问题
 

@@ -93,37 +93,37 @@
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 12089064,
-    "sha256": "0d7b4e64befd746ed5396243ca946b01dc198d101cfd01f64098701c758daa4f",
+    "size": 12954144,
+    "sha256": "95c477c709e1ba86f5b4bb28a585010f5038c403e6b9421ff2f509c2bff6aa8e",
     "dex_entry": "classes.dex",
-    "dex_size": 6218464,
-    "dex_sha256": "f0a05e9ab9f7e985031cdff06017a5d4e53c1b592e6650c4791a783bdf0f43a7",
-    "class_count": 3875,
+    "dex_size": 6245048,
+    "dex_sha256": "035bb7b5aa443145859f67c1f1b0ed0d440076f3086e9013e0c7fe2cd9e7ff1a",
+    "class_count": 3887,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a",
     "candidate_recipe": {
       "path": "tools/bootdex/java-traversal.json",
-      "sha256": "e900ee241199f1aba04f2d362bab1d1bad97fb003595658036da9bb7e588f589",
+      "sha256": "f637d34c83989e16ded0527c04c43a2dc21b68ba7589bd7427019094bfbd9078",
       "entry": "META-INF/ogplay/java-traversal-recipe.json",
-      "payload_sha256": "f86aa48296182ad230aeb064cef7c68dce52c20f456f63fc072744856b79c4f5"
+      "payload_sha256": "4c08b82075ca443a3c6612c938398504417d5525ea88ba742524887d346bf897"
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "328d7aa77734eacd0cd2a4e448f5c382baecd159920033d6de0aab57d50ee4e4",
+      "sha256": "7aeb6f88f23a9b5ce74fd66775dfd25d600ab9c694b7e461bd9fc47a19ec0ed0",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "2e08f934e4b06b6597c618f967fe08aac6a5d7eeeaedb24a26e4fca908396f70",
+      "manifest_sha256": "864de280ddabbcf37bb1ed33ca60f0391aae1015cd0615d73235f5cc32e00702",
       "composer": "tools/bootdex/compose_bootdex.py",
       "composer_sha256": "ec80fb35b63ae38e42f574d246e9749a0cafba0e764e7ba6925abeea5f11d614"
     },
     "theme_projection": {
       "entry": "META-INF/ogplay/theme-projection.json",
       "schema_version": 1,
-      "sha256": "c895ed1e422be669143ba4378a24efc33f570c1ea7a697e89e7f715914d26c6f"
+      "sha256": "d2ba46afe352fa298fd53af0355e26cbfccce9c1de17655404f9e8b011a644a1"
     },
     "experimental_video_adapter": {
       "review": "tools/bootdex/view-video-adapter.json",

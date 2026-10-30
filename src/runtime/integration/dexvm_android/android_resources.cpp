@@ -796,6 +796,30 @@ void InitializeThemeResourceOwner(dx::IntrinsicContext& c, const Context& contex
     static_cast<void>(CallAndroidMethod(c.vm, resources, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;"));
 }
 
+namespace {
+dx::VmValue OpenCompiledXml(dx::IntrinsicContext& call, std::span<const std::byte> bytes) {
+    const auto type = call.vm.Linker().ResolveDescriptor("Landroid/content/res/XmlBlock;");
+    const auto require = [&call](const dx::VmCallOutcome& outcome) {
+        if (outcome.exception.IsValid())
+            throw dx::VmJavaThrow{call.vm.Linker().Class(call.vm.Model().ObjectClass(outcome.exception)).descriptor,
+                                  outcome.exception_message, outcome.exception};
+    };
+    require(call.vm.EnsureClassInitialized(type));
+    auto array = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+                                                   static_cast<std::int32_t>(bytes.size()));
+    auto block = call.vm.NewIntrinsicInstance("Landroid/content/res/XmlBlock;");
+    const auto roots = call.vm.ProtectReferences(std::array{array, block});
+    call.vm.Model().FillPrimitiveData(array, bytes);
+    const auto constructor = call.vm.Linker().FindDirectMethod(type, "<init>", "([B)V");
+    if (!constructor) throw std::logic_error("ROM XmlBlock constructor missing");
+    require(call.vm.Call(*constructor, std::array{dx::VmValue::Ref(block), dx::VmValue::Ref(array)}));
+    const auto parser = CallAndroidMethod(call.vm, block, "newParser", "()Landroid/content/res/XmlResourceParser;");
+    const auto parser_root = call.vm.ProtectReferences(std::array{parser.ref});
+    static_cast<void>(CallAndroidMethod(call.vm, block, "close", "()V"));
+    return parser;
+}
+}  // namespace
+
 Decl Declare_android_content_res_AssetManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/res/AssetManager;", "Ljava/lang/Object;");
     AddThemeAssetMethods(builder, context);
@@ -816,25 +840,7 @@ Decl Declare_android_content_res_AssetManager(const Context& context) {
         } catch (const std::exception& error) {
             throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;", error.what()};
         }
-        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/content/res/XmlBlock;");
-        const auto require = [&call](const dx::VmCallOutcome& outcome) {
-            if (outcome.exception.IsValid())
-                throw dx::VmJavaThrow{call.vm.Linker().Class(call.vm.Model().ObjectClass(outcome.exception)).descriptor,
-                                      outcome.exception_message, outcome.exception};
-        };
-        require(call.vm.EnsureClassInitialized(type));
-        auto array = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
-                                                       static_cast<std::int32_t>(bytes.size()));
-        auto block = call.vm.NewIntrinsicInstance("Landroid/content/res/XmlBlock;");
-        const auto roots = call.vm.ProtectReferences(std::array{array, block});
-        call.vm.Model().FillPrimitiveData(array, bytes);
-        const auto constructor = call.vm.Linker().FindDirectMethod(type, "<init>", "([B)V");
-        if (!constructor) throw std::logic_error("ROM XmlBlock constructor missing");
-        require(call.vm.Call(*constructor, std::array{dx::VmValue::Ref(block), dx::VmValue::Ref(array)}));
-        const auto parser = CallAndroidMethod(call.vm, block, "newParser", "()Landroid/content/res/XmlResourceParser;");
-        const auto parser_root = call.vm.ProtectReferences(std::array{parser.ref});
-        static_cast<void>(CallAndroidMethod(call.vm, block, "close", "()V"));
-        return parser;
+        return OpenCompiledXml(call, bytes);
     };
     {
         builder.FinalMethod(
@@ -1624,6 +1630,13 @@ Decl Declare_android_content_res_Resources(const Context& context) {
         builder.VirtualMethod(
             "getLayout", "(I)Landroid/content/res/XmlResourceParser;", [context](dx::IntrinsicContext& call) {
                 const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
+                if ((id >> 24U) == 1) {
+                    const auto* xml = context->theme_resources.Layout(id);
+                    if (!xml)
+                        throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                              "unsealed system layout: " + std::to_string(id)};
+                    return OpenCompiledXml(call, *xml);
+                }
                 const auto* entry = context->arsc.FindById(id);
                 if (IsSystemResources(context, call.receiver) || !entry || entry->type_name != "layout" ||
                     !entry->string_value)
@@ -1794,10 +1807,10 @@ dx::VmObjectRef MakeRomSkin(dx::IntrinsicContext& call, const Context& context, 
         if (scaled->width <= 0 || scaled->height <= 0 || scaled->width > 4096 || scaled->height > 4096)
             throw std::runtime_error("ROM skin scaled pixels exceed bounds");
         scaled->nine_patch = true;
-        for (std::size_t i = 0; i < 2; ++i) {
-            scaled->stretch_x[i] = scale(resource->stretch_x[i]);
-            scaled->stretch_y[i] = scale(resource->stretch_y[i]);
-        }
+        for (const auto division : resource->stretch_x)
+            scaled->stretch_x.push_back(scale(division));
+        for (const auto division : resource->stretch_y)
+            scaled->stretch_y.push_back(scale(division));
         for (int y = 0; y < scaled->height; ++y) {
             const auto sy = static_cast<std::int64_t>(y) * pixels->height / scaled->height;
             for (int x = 0; x < scaled->width; ++x) {

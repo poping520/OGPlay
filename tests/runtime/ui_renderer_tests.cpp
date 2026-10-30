@@ -117,15 +117,19 @@ TEST_CASE("DVM-235 trusted API19 fallback font renders distinct CJK glyphs") {
     CHECK_FALSE(font->Glyph(u'©', 15)->alpha.empty());
     CHECK_FALSE(font->Glyph(u'é', 15)->alpha.empty());
     CHECK_THROWS_WITH((void)font->Glyph(u'\u0378', 15), "U+0378 is absent from API19 font chain");
-    CHECK_THROWS_WITH((void)ui::MeasureFixedText(u"\u0378", 16, 0, font.get()), "U+0378 is absent from API19 font chain");
-    CHECK_THROWS_WITH((void)ui::RasterizeUiOverlay({ui::DrawText{0, 0, u"\u0378", 0xffffffffU, 16, 1, 0, font}}, {32, 24}),
+    CHECK_THROWS_WITH((void)ui::MeasureFixedText(u"\u0378", 16, 0, font.get()),
                       "U+0378 is absent from API19 font chain");
+    CHECK_THROWS_WITH(
+        (void)ui::RasterizeUiOverlay({ui::DrawText{0, 0, u"\u0378", 0xffffffffU, 16, 1, 0, font}}, {32, 24}),
+        "U+0378 is absent from API19 font chain");
     const ui::UiRenderList fixed{ui::DrawText{0, 0, u"ASCII ©", 0xffffffffU, 16, 1, 0, font}};
     CHECK_FALSE(ui::RasterizeUiOverlay(fixed, {128, 24}).fully_transparent);
     for (unsigned style = 0; style < 4; ++style) {
-        const auto ascii = u" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+        const auto ascii =
+            u" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
         const auto original = ui::RasterizeUiOverlay({ui::DrawText{0, 0, ascii, 0xffffffffU, 8, 1, style}}, {1024, 16});
-        const auto chained = ui::RasterizeUiOverlay({ui::DrawText{0, 0, ascii, 0xffffffffU, 8, 1, style, font}}, {1024, 16});
+        const auto chained =
+            ui::RasterizeUiOverlay({ui::DrawText{0, 0, ascii, 0xffffffffU, 8, 1, style, font}}, {1024, 16});
         CHECK(original.rgba8 == chained.rgba8);
         CHECK(ui::MeasureFixedText(ascii, 8, style) == ui::MeasureFixedText(ascii, 8, style, font.get()));
     }
@@ -837,4 +841,20 @@ TEST_CASE("DVM-340 fallback shadow consumes the frozen styled multiline plan") {
         if (plain.rgba8[i + 3] == 0 && with_shadow.rgba8[i] > 0 && with_shadow.rgba8[i + 1] == 0) red_shadow = true;
     }
     CHECK(red_shadow);
+}
+
+TEST_CASE("UI overlay preserves fixed bands between multiple ninepatch stretch regions") {
+    auto bitmap = std::make_shared<ui::UiBitmap>();
+    bitmap->width = 1;
+    bitmap->height = 7;
+    bitmap->nine_patch = true;
+    bitmap->stretch_x = {0, 1};
+    bitmap->stretch_y = {1, 2, 4, 5};
+    for (std::uint8_t row = 0; row < 7; ++row)
+        bitmap->rgba8.insert(bitmap->rgba8.end(), {static_cast<std::uint8_t>(row * 30), 0, 0, 255});
+    const ui::UiRenderList commands{ui::DrawBitmap{.rect = {0, 0, 1, 11}, .bitmap = bitmap}};
+    const auto frame = ui::RasterizeUiOverlay(commands, {.width = 1, .height = 11});
+    const std::array expected{0, 1, 1, 1, 2, 3, 4, 4, 4, 5, 6};
+    for (std::size_t row = 0; row < expected.size(); ++row)
+        CHECK(frame.rgba8[row * 4] == expected[row] * 30);
 }

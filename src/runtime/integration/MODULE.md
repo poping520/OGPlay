@@ -459,3 +459,8 @@ framework-res.apk 并交叉核对共享 R 常量，只投影名称到真实 ID�
 DVM-329：JavaTraversal 的干净屏障不执行 guest、不扫描投影；只在真实 Java 布局/绘制请求、
 首次附着或窗口输入变化后进入遍历。宿主消费快照前校验 NodeId 属于所持完整投影，
 未发布绑定等待下一 owner 发布；不弱化 guest 不可达请求的明确失败。
+
+
+ADR-0174 的两个同 ROM Spinner 布局以原始二进制 XML 封存在主题 payload；内容 SHA、
+名称/ID、默认配置、属性及引用闭包必须受检。布局身份不代表加载准入，只有显式封存内容
+可进入原 XmlBlock/Parser。nine-patch backing 保存有序的多个伸缩区，缩放保持全部分割点。

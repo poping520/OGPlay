@@ -808,6 +808,8 @@ Decl ExperimentalTextView(const Context& context) {
     const auto filters_field = builder.BoundInstanceField("mFilters", "[Landroid/text/InputFilter;", dx::kAccPrivate);
     const auto horizontal = builder.BoundInstanceField("mHorizontallyScrolling", "Z", dx::kAccPrivate);
     const auto highlight = builder.BoundInstanceField("mHighlightColor", "I", dx::kAccPrivate);
+    const auto ellipsize_field =
+        builder.BoundInstanceField("mEllipsize", "Landroid/text/TextUtils$TruncateAt;", dx::kAccPrivate);
     const std::array resource_fields{builder.BoundInstanceField("mTextSelectHandleLeftRes", "I", 0),
                                      builder.BoundInstanceField("mTextSelectHandleRightRes", "I", 0),
                                      builder.BoundInstanceField("mTextSelectHandleRes", "I", 0),
@@ -857,7 +859,7 @@ Decl ExperimentalTextView(const Context& context) {
                                                                                      link_colors, highlight,
                                                                                      resource_fields, update_color,
                                                                                      horizontal, paint_field,
-                                                                                     filters_field](
+                                                                                     filters_field, ellipsize_field](
                                                                                         dx::IntrinsicContext& c) {
         auto& vm = c.vm;
         const auto owner = c.arguments[0].ref, attrs = c.arguments[1].ref;
@@ -1011,7 +1013,19 @@ Decl ExperimentalTextView(const Context& context) {
                     single = boolean(single);
                 else if (name == "ellipsize") {
                     ellipsize = integer(-1);
-                    if (ellipsize != 0) TextInputFailure(vm, "ellipsize is unsupported");
+                    if (ellipsize != 0 && ellipsize != 4) TextInputFailure(vm, "ellipsize is unsupported");
+                    if (ellipsize == 4) {
+                        const auto type = vm.Linker().ResolveDescriptor("Landroid/text/TextUtils$TruncateAt;");
+                        const auto ready = vm.EnsureClassInitialized(type);
+                        if (ready.exception.IsValid())
+                            throw dx::VmJavaThrow{vm.Linker().Class(ready.exception_class).descriptor,
+                                                  ready.exception_message, ready.exception};
+                        const auto field =
+                            vm.Linker().FindFieldRecursive(type, "MARQUEE", "Landroid/text/TextUtils$TruncateAt;");
+                        dx::IntrinsicCall(c).SetRef(
+                            ellipsize_field,
+                            dx::VmObjectRef{vm.Linker().Class(type).static_storage[vm.Linker().Field(*field).slot]});
+                    }
                 } else if (name == "drawableLeft" || name == "drawableTop" || name == "drawableRight" ||
                            name == "drawableBottom") {
                     const std::size_t slot = name == "drawableLeft"    ? 0
@@ -1644,6 +1658,20 @@ Decl ExperimentalTextView(const Context& context) {
             return out.value;
         },
         dx::kAccProtected);
+    builder.VirtualMethod("setSelected", "(Z)V", [ellipsize_field](dx::IntrinsicContext& c) {
+        const bool selected = c.arguments[0].AsInt() != 0;
+        const bool previous = CallAndroidMethod(c.vm, c.receiver, "isSelected", "()Z").AsInt() != 0;
+        if (selected != previous && selected && dx::IntrinsicCall(c).GetRef(ellipsize_field).IsValid())
+            TextInputFailure(c.vm, "marquee animation is unsupported");
+        const auto base = c.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+        const auto method =
+            c.vm.Linker().Class(base).vtable[*c.vm.Linker().FindVtableIndex(base, "setSelected", "(Z)V")];
+        const auto out = c.vm.Call(method, std::array{dx::VmValue::Ref(c.receiver), c.arguments[0]});
+        if (out.exception.IsValid())
+            throw dx::VmJavaThrow{c.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                                  out.exception};
+        return out.value;
+    });
     // No Editor/Layout/Drawables object graph is installed. These callbacks
     // execute the genuine View protocol; all text work belongs to the leaf owner.
     for (const auto& [name, sig] :
@@ -1729,4 +1757,35 @@ Decl Declare_android_widget_Toast(const Context& context) {
     return std::move(builder).Build();
 }
 
+}  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+namespace {
+dx::VmValue RejectSpinnerPopup(dx::IntrinsicContext& call) {
+    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.spinner_popup", 0);
+    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Spinner popup interaction is unsupported"};
+}
+}  // namespace
+
+Decl Declare_android_widget_Spinner(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/Spinner;", "Landroid/widget/AbsSpinner;");
+    builder.VirtualMethod("performClick", "()Z", RejectSpinnerPopup);
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_widget_Spinner_DropdownPopup(const Context&) {
+    auto builder =
+        dx::IntrinsicClassBuilder::Class("Landroid/widget/Spinner$DropdownPopup;", "Landroid/widget/ListPopupWindow;");
+    builder.Constructor("(Landroid/widget/Spinner;Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                        RejectSpinnerPopup);
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_widget_Spinner_ForwardingListener(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/Spinner$1;",
+                                                    "Landroid/widget/ListPopupWindow$ForwardingListener;");
+    builder.Constructor("(Landroid/widget/Spinner;Landroid/view/View;Landroid/widget/Spinner$DropdownPopup;)V",
+                        RejectSpinnerPopup);
+    return std::move(builder).Build();
+}
 }  // namespace ogplay::runtime::android_intrinsics

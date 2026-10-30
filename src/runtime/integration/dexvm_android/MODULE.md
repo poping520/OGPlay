@@ -820,7 +820,7 @@ Surface 新 created 代次撤销旧尺寸去重事实，created 后必派 change
 不按属性名白名单发放、不预先解析目标内容。资源类型编号与 ID type 段一致，输入锁定
 同 ROM framework-res.apk 并交叉核对共享 R 常量；真实缺名、冲突仍拒绝。
 TypedArray.getResourceId/peekValue 只读取身份；实际消费者调用时检查加载支持，未支持
-目标按 ADR-0147 记账失败。实际 drawable 加载限既有 ColorStateList、edit_text/btn_default 闭包及四个 scrollbar thumb；
+目标按 ADR-0147 记账失败。实际 drawable 加载限既有 ColorStateList、edit_text/btn_default/btn_dropdown 闭包及四个 scrollbar thumb；
 scrollbar 初始化与状态对象边界见上文；未封存资源保持关闭即失败。
 
 DVM-315：JavaTraversal 的 managed 全屏 Window 以稳定 Java 内容根同时提供 decor，
@@ -958,3 +958,14 @@ TRANSPARENT(-2) 与 RGBA_8888/RGBX_8888/RGB_888/RGB_565/RGBA_5551/RGBA_4444 的 
 格式 alpha 判定与 application window 共用 PixelFormat 规则；共同快照冻结 alpha 属性，
 透明 holder 按非预乘像素 alpha source-over 合成，不透明强制 alpha=255，保留 View alpha 与层序。
 不改变 holder queue 事实、视频解码或 SurfaceView 开孔规则。
+
+
+Spinner 的 DIALOG 构造、AdapterView/AbsSpinner 状态、ArrayAdapter 布局与选择通知归固定 ROM。
+子项通过 Java addViewInLayout/removeAllViewsInLayout 进入原父链，由 JavaTraversal 完整投影；
+选择通知复用 View.post/主 Looper，不建立宿主选择状态。弹窗点击、dropdown 构造、触摸选择
+与 guest draw 保持记账失败。ViewGroup 附着父协议归 ROM；View 附着接缝仅接受无系统
+AttachInfo/IME焦点/无障碍服务、无动画/硬件且背景为静态封存皮肤的软件路径，保留原 flags
+清理与 scrollbar 唤醒，不制造 AttachInfo 或全系统附着信用。
+系统 getLayout 仅加载 ADR-0174 两个封存布局的真实 XmlBlock.Parser；未封存系统布局仍
+NotFoundException。TextView 保存 MARQUEE 解析状态，实际启动动画仍失败；textAlignment=inherit
+沿 View 原属性与解析流程，不授予其他对齐/RTL/Editor/Canvas 支持。

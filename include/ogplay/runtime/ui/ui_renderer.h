@@ -16,8 +16,8 @@ struct UiBitmap final {
     std::int32_t width{};
     std::int32_t height{};
     std::vector<std::uint8_t> rgba8;
-    std::array<std::int32_t, 2> stretch_x{};
-    std::array<std::int32_t, 2> stretch_y{};
+    std::vector<std::int32_t> stretch_x;
+    std::vector<std::int32_t> stretch_y;
     Insets nine_patch_padding{};
     bool nine_patch{};
 };

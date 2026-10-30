@@ -294,3 +294,55 @@ TEST_CASE("DVM-150 shutdown hook exceptions use the Thread uncaught handler") {
         CHECK_FALSE(h.f.threads.TakeFailure().has_value());
     }
 }
+
+TEST_CASE("DVM-353 worker SystemClock sleep and Runtime exit hooks share paced catch-up") {
+    for (const auto backend : kShutdownBackends) {
+        std::atomic<std::int64_t> real{};
+        std::atomic<bool> entered{}, returned{};
+        ShutdownHookVm h(backend, [&](IntrinsicContext& c) {
+            entered = true;
+            const auto method = c.vm.Linker().FindDirectMethod(
+                c.vm.Linker().ResolveDescriptor("Landroid/os/SystemClock;"), "sleep", "(J)V");
+            REQUIRE(method);
+            const auto outcome = c.vm.Call(*method, std::array{VmValue::Long(10000)});
+            CHECK_FALSE(outcome.exception.IsValid());
+            returned = true;
+            return VmValue::Void();
+        });
+        auto& m = h.f.vm.Monitors();
+        h.f.context->threads = &h.f.threads;
+        m.SetTimeSource([&] { return h.f.context->uptime_millis.load(); });
+        m.SetRealtimeSource([&] { return real.load(); });
+        m.SetClockAdvance([&](std::int64_t delta) { AdvanceAndroidClock(*h.f.context, delta); });
+        h.f.context->clock_monitors = &m;
+        AttachAndroidClockObserver(*h.f.context, h.f.vm.ExecutionLock());
+        h.f.RequireOk(h.Add(h.Hook()));
+        h.f.RequireOk(h.f.Static("Landroid/os/SystemClock;", "sleep", "(J)V", {VmValue::Long(0)}));
+        const auto negative = h.f.Static("Landroid/os/SystemClock;", "sleep", "(J)V", {VmValue::Long(-1)});
+        REQUIRE(negative.exception.IsValid());
+        CHECK(h.f.linker.Class(negative.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        m.Interrupt(kRootLifecycleToken);
+        h.f.RequireOk(h.f.Static("Landroid/os/SystemClock;", "sleep", "(J)V", {VmValue::Long(0)}));
+        CHECK(m.ClearInterrupt(kRootLifecycleToken));
+        const auto start = h.f.context->uptime_millis.load();
+        std::thread driver([&] {
+            while (!entered.load())
+                std::this_thread::yield();
+            real = 3000;
+            while (h.f.context->uptime_millis.load() < start + 3000)
+                std::this_thread::yield();
+            CHECK_FALSE(returned.load());
+            CHECK(h.f.context->uptime_millis == start + 3000);
+            real = 10000;
+        });
+        try {
+            static_cast<void>(h.f.Static("Ljava/lang/System;", "exit", "(I)V", {VmValue::Int(17)}));
+        } catch (const DexVmError& error) {
+            CHECK(error.Reason() == DexVmErrorReason::thread_stopped);
+        }
+        driver.join();
+        CHECK(returned.load());
+        CHECK(h.f.context->uptime_millis >= start + 10000);
+        CHECK(h.f.vm.ExitCode() == 17);
+    }
+}

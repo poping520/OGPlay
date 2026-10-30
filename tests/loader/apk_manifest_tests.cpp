@@ -25,15 +25,15 @@ void Append32(std::vector<std::byte>& bytes, const std::uint32_t value) {
     }
 }
 
-void Set32(std::vector<std::byte>& bytes, const std::size_t offset,
-           const std::uint32_t value) {
+void Set32(std::vector<std::byte>& bytes, const std::size_t offset, const std::uint32_t value) {
     for (unsigned shift = 0; shift < 32; shift += 8) {
         bytes[offset + shift / 8U] = static_cast<std::byte>((value >> shift) & 0xffU);
     }
 }
 
 void AppendAscii(std::vector<std::byte>& bytes, const std::string_view text) {
-    for (const auto value : text) bytes.push_back(static_cast<std::byte>(value));
+    for (const auto value : text)
+        bytes.push_back(static_cast<std::byte>(value));
 }
 
 std::uint32_t Crc32(const std::vector<std::byte>& bytes) {
@@ -48,33 +48,54 @@ std::uint32_t Crc32(const std::vector<std::byte>& bytes) {
     return ~crc;
 }
 
-std::vector<std::byte> StoredApk(const std::string_view name,
-                                 const std::vector<std::byte>& payload) {
+std::vector<std::byte> StoredApk(const std::string_view name, const std::vector<std::byte>& payload) {
     const auto crc = Crc32(payload);
     std::vector<std::byte> bytes;
-    Append32(bytes, 0x04034b50); Append16(bytes, 20); Append16(bytes, 0);
-    Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0); Append32(bytes, crc);
+    Append32(bytes, 0x04034b50);
+    Append16(bytes, 20);
+    Append16(bytes, 0);
+    Append16(bytes, 0);
+    Append16(bytes, 0);
+    Append16(bytes, 0);
+    Append32(bytes, crc);
     Append32(bytes, static_cast<std::uint32_t>(payload.size()));
-    Append32(bytes, static_cast<std::uint32_t>(payload.size()));
-    Append16(bytes, static_cast<std::uint16_t>(name.size())); Append16(bytes, 0);
-    AppendAscii(bytes, name); bytes.insert(bytes.end(), payload.begin(), payload.end());
-    const auto central_offset = static_cast<std::uint32_t>(bytes.size());
-    Append32(bytes, 0x02014b50); Append16(bytes, 20); Append16(bytes, 20);
-    Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0);
-    Append32(bytes, crc); Append32(bytes, static_cast<std::uint32_t>(payload.size()));
     Append32(bytes, static_cast<std::uint32_t>(payload.size()));
     Append16(bytes, static_cast<std::uint16_t>(name.size()));
-    Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0);
-    Append32(bytes, 0); Append32(bytes, 0); AppendAscii(bytes, name);
+    Append16(bytes, 0);
+    AppendAscii(bytes, name);
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    const auto central_offset = static_cast<std::uint32_t>(bytes.size());
+    Append32(bytes, 0x02014b50);
+    Append16(bytes, 20);
+    Append16(bytes, 20);
+    Append16(bytes, 0);
+    Append16(bytes, 0);
+    Append16(bytes, 0);
+    Append16(bytes, 0);
+    Append32(bytes, crc);
+    Append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    Append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    Append16(bytes, static_cast<std::uint16_t>(name.size()));
+    Append16(bytes, 0);
+    Append16(bytes, 0);
+    Append16(bytes, 0);
+    Append16(bytes, 0);
+    Append32(bytes, 0);
+    Append32(bytes, 0);
+    AppendAscii(bytes, name);
     const auto central_size = static_cast<std::uint32_t>(bytes.size()) - central_offset;
-    Append32(bytes, 0x06054b50); Append16(bytes, 0); Append16(bytes, 0);
-    Append16(bytes, 1); Append16(bytes, 1); Append32(bytes, central_size);
-    Append32(bytes, central_offset); Append16(bytes, 0);
+    Append32(bytes, 0x06054b50);
+    Append16(bytes, 0);
+    Append16(bytes, 0);
+    Append16(bytes, 1);
+    Append16(bytes, 1);
+    Append32(bytes, central_size);
+    Append32(bytes, central_offset);
+    Append16(bytes, 0);
     return bytes;
 }
 
-std::vector<std::byte> StringPool(const std::vector<std::string>& strings,
-                                  const bool utf8) {
+std::vector<std::byte> StringPool(const std::vector<std::string>& strings, const bool utf8) {
     std::vector<std::byte> data;
     std::vector<std::uint32_t> offsets;
     for (const auto& string : strings) {
@@ -86,19 +107,25 @@ std::vector<std::byte> StringPool(const std::vector<std::string>& strings,
             data.push_back(std::byte{0});
         } else {
             Append16(data, static_cast<std::uint16_t>(string.size()));
-            for (const auto value : string) Append16(data, static_cast<std::uint8_t>(value));
+            for (const auto value : string)
+                Append16(data, static_cast<std::uint8_t>(value));
             Append16(data, 0);
         }
     }
-    while (data.size() % 4U != 0) data.push_back(std::byte{0});
+    while (data.size() % 4U != 0)
+        data.push_back(std::byte{0});
 
     std::vector<std::byte> chunk;
-    Append16(chunk, 0x0001); Append16(chunk, 28); Append32(chunk, 0);
+    Append16(chunk, 0x0001);
+    Append16(chunk, 28);
+    Append32(chunk, 0);
     Append32(chunk, static_cast<std::uint32_t>(strings.size()));
-    Append32(chunk, 0); Append32(chunk, utf8 ? 0x100U : 0U);
+    Append32(chunk, 0);
+    Append32(chunk, utf8 ? 0x100U : 0U);
     Append32(chunk, static_cast<std::uint32_t>(28U + offsets.size() * 4U));
     Append32(chunk, 0);
-    for (const auto offset : offsets) Append32(chunk, offset);
+    for (const auto offset : offsets)
+        Append32(chunk, offset);
     chunk.insert(chunk.end(), data.begin(), data.end());
     Set32(chunk, 4, static_cast<std::uint32_t>(chunk.size()));
     return chunk;
@@ -112,20 +139,28 @@ struct Attribute final {
     std::uint32_t namespace_index{0xffffffffU};
 };
 
-std::vector<std::byte> StartElement(const std::uint32_t name,
-                                    const std::vector<Attribute>& attributes) {
+std::vector<std::byte> StartElement(const std::uint32_t name, const std::vector<Attribute>& attributes) {
     std::vector<std::byte> chunk;
-    Append16(chunk, 0x0102); Append16(chunk, 16);
+    Append16(chunk, 0x0102);
+    Append16(chunk, 16);
     Append32(chunk, static_cast<std::uint32_t>(36U + attributes.size() * 20U));
-    Append32(chunk, 1); Append32(chunk, 0xffffffffU);
-    Append32(chunk, 0xffffffffU); Append32(chunk, name);
-    Append16(chunk, 20); Append16(chunk, 20);
+    Append32(chunk, 1);
+    Append32(chunk, 0xffffffffU);
+    Append32(chunk, 0xffffffffU);
+    Append32(chunk, name);
+    Append16(chunk, 20);
+    Append16(chunk, 20);
     Append16(chunk, static_cast<std::uint16_t>(attributes.size()));
-    Append16(chunk, 0); Append16(chunk, 0); Append16(chunk, 0);
+    Append16(chunk, 0);
+    Append16(chunk, 0);
+    Append16(chunk, 0);
     for (const auto& attribute : attributes) {
-        Append32(chunk, attribute.namespace_index); Append32(chunk, attribute.name);
-        Append32(chunk, attribute.raw_value); Append16(chunk, 8);
-        chunk.push_back(std::byte{0}); chunk.push_back(static_cast<std::byte>(attribute.type));
+        Append32(chunk, attribute.namespace_index);
+        Append32(chunk, attribute.name);
+        Append32(chunk, attribute.raw_value);
+        Append16(chunk, 8);
+        chunk.push_back(std::byte{0});
+        chunk.push_back(static_cast<std::byte>(attribute.type));
         Append32(chunk, attribute.data);
     }
     return chunk;
@@ -133,9 +168,13 @@ std::vector<std::byte> StartElement(const std::uint32_t name,
 
 std::vector<std::byte> EndElement(const std::uint32_t name) {
     std::vector<std::byte> chunk;
-    Append16(chunk, 0x0103); Append16(chunk, 16); Append32(chunk, 24);
-    Append32(chunk, 1); Append32(chunk, 0xffffffffU);
-    Append32(chunk, 0xffffffffU); Append32(chunk, name);
+    Append16(chunk, 0x0103);
+    Append16(chunk, 16);
+    Append32(chunk, 24);
+    Append32(chunk, 1);
+    Append32(chunk, 0xffffffffU);
+    Append32(chunk, 0xffffffffU);
+    Append32(chunk, name);
     return chunk;
 }
 
@@ -143,23 +182,30 @@ void Append(std::vector<std::byte>& destination, const std::vector<std::byte>& s
     destination.insert(destination.end(), source.begin(), source.end());
 }
 
-std::vector<std::byte> Manifest(const bool utf8 = false,
-                                const std::string_view package = "org.example.game",
+std::vector<std::byte> Manifest(const bool utf8 = false, const std::string_view package = "org.example.game",
                                 const std::uint8_t version_type = 0x10,
                                 const std::vector<Attribute>& application_attributes = {}) {
-    const std::vector<std::string> strings{
-        "manifest", "package", "versionCode", "versionName", "uses-sdk",
-        "minSdkVersion", "targetSdkVersion", std::string(package), "1.2.3",
-        "http://schemas.android.com/apk/res/android", "application", "icon",
-        "label", "OGPlay Game"};
+    const std::vector<std::string> strings{"manifest",
+                                           "package",
+                                           "versionCode",
+                                           "versionName",
+                                           "uses-sdk",
+                                           "minSdkVersion",
+                                           "targetSdkVersion",
+                                           std::string(package),
+                                           "1.2.3",
+                                           "http://schemas.android.com/apk/res/android",
+                                           "application",
+                                           "icon",
+                                           "label",
+                                           "OGPlay Game"};
     std::vector<std::byte> result;
-    Append16(result, 0x0003); Append16(result, 8); Append32(result, 0);
+    Append16(result, 0x0003);
+    Append16(result, 8);
+    Append32(result, 0);
     Append(result, StringPool(strings, utf8));
-    Append(result, StartElement(0, {{1, 7, 0x03, 7},
-                                    {2, 0xffffffffU, version_type, 7, 9},
-                                    {3, 8, 0x03, 8, 9}}));
-    Append(result, StartElement(4, {{5, 0xffffffffU, 0x10, 5, 9},
-                                    {6, 0xffffffffU, 0x10, 19, 9}}));
+    Append(result, StartElement(0, {{1, 7, 0x03, 7}, {2, 0xffffffffU, version_type, 7, 9}, {3, 8, 0x03, 8, 9}}));
+    Append(result, StartElement(4, {{5, 0xffffffffU, 0x10, 5, 9}, {6, 0xffffffffU, 0x10, 19, 9}}));
     Append(result, EndElement(4));
     Append(result, StartElement(10, application_attributes));
     Append(result, EndElement(10));
@@ -168,71 +214,99 @@ std::vector<std::byte> Manifest(const bool utf8 = false,
     return result;
 }
 
-std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false,
-                                             const bool include_receivers = false,
-                                             const std::uint32_t boolean_data = 1U,
-                                             const bool include_permission = false) {
-    const std::vector<std::string> strings{
-        "manifest", "package", "versionCode", "application",
-        "uses-permission", "name", "meta-data", "value", "resource",
-        "org.example.game", "android.permission.INTERNET",
-        "com.example.configuration", "live", "com.example.number",
-        "com.example.resource", "com.example.enabled",
-        "com.example.value-reference",
-        "http://schemas.android.com/apk/res/android", "receiver", "process",
-        "permission", "enabled", "exported", "intent-filter", ".Receiver",
-        ".Disabled", ":app", ":remote", "org.example.APP",
-        "org.example.RECEIVER", "receiver.string", "receiver.bool",
-        "receiver.int", "receiver.value-ref", "receiver.resource", "ready",
-        ".C2D_MESSAGE", "protectionLevel", "permissionGroup", "permissionFlags",
-        "description", "org.example.GROUP", "permission.string", "permission.bool",
-        "permission.int", "permission.value-ref", "permission.resource",
-        "action", "category", "data", "priority", "label", "icon", "OTHER"};
+std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false, const bool include_receivers = false,
+                                            const std::uint32_t boolean_data = 1U,
+                                            const bool include_permission = false) {
+    const std::vector<std::string> strings{"manifest",
+                                           "package",
+                                           "versionCode",
+                                           "application",
+                                           "uses-permission",
+                                           "name",
+                                           "meta-data",
+                                           "value",
+                                           "resource",
+                                           "org.example.game",
+                                           "android.permission.INTERNET",
+                                           "com.example.configuration",
+                                           "live",
+                                           "com.example.number",
+                                           "com.example.resource",
+                                           "com.example.enabled",
+                                           "com.example.value-reference",
+                                           "http://schemas.android.com/apk/res/android",
+                                           "receiver",
+                                           "process",
+                                           "permission",
+                                           "enabled",
+                                           "exported",
+                                           "intent-filter",
+                                           ".Receiver",
+                                           ".Disabled",
+                                           ":app",
+                                           ":remote",
+                                           "org.example.APP",
+                                           "org.example.RECEIVER",
+                                           "receiver.string",
+                                           "receiver.bool",
+                                           "receiver.int",
+                                           "receiver.value-ref",
+                                           "receiver.resource",
+                                           "ready",
+                                           ".C2D_MESSAGE",
+                                           "protectionLevel",
+                                           "permissionGroup",
+                                           "permissionFlags",
+                                           "description",
+                                           "org.example.GROUP",
+                                           "permission.string",
+                                           "permission.bool",
+                                           "permission.int",
+                                           "permission.value-ref",
+                                           "permission.resource",
+                                           "action",
+                                           "category",
+                                           "data",
+                                           "priority",
+                                           "label",
+                                           "icon",
+                                           "OTHER"};
     const auto index = [&](const std::string_view value) {
         const auto found = std::find(strings.begin(), strings.end(), value);
         REQUIRE(found != strings.end());
         return static_cast<std::uint32_t>(std::distance(strings.begin(), found));
     };
-    const auto android_namespace = index(
-        "http://schemas.android.com/apk/res/android");
+    const auto android_namespace = index("http://schemas.android.com/apk/res/android");
     std::vector<std::byte> result;
-    Append16(result, 0x0003); Append16(result, 8); Append32(result, 0);
+    Append16(result, 0x0003);
+    Append16(result, 8);
+    Append32(result, 0);
     Append(result, StringPool(strings, false));
     Append(result, StartElement(index("manifest"),
-        {{index("package"), index("org.example.game"), 0x03,
-          index("org.example.game")},
-         {index("versionCode"), 0xffffffffU, 0x10, 7,
-          android_namespace}}));
-    Append(result, StartElement(index("uses-permission"),
-        {{index("name"), index("android.permission.INTERNET"), 0x03,
-          index("android.permission.INTERNET"), android_namespace}}));
+                                {{index("package"), index("org.example.game"), 0x03, index("org.example.game")},
+                                 {index("versionCode"), 0xffffffffU, 0x10, 7, android_namespace}}));
+    Append(result, StartElement(index("uses-permission"), {{index("name"), index("android.permission.INTERNET"), 0x03,
+                                                            index("android.permission.INTERNET"), android_namespace}}));
     Append(result, EndElement(index("uses-permission")));
     if (include_permission) {
-        Append(result, StartElement(index("permission"),
-            {{index("name"), index(".C2D_MESSAGE"), 0x03,
-              index(".C2D_MESSAGE"), android_namespace},
-             {index("protectionLevel"), 0xffffffffU, 0x10, 2, android_namespace},
-             {index("permissionGroup"), index("org.example.GROUP"), 0x03,
-              index("org.example.GROUP"), android_namespace},
-             {index("permissionFlags"), 0xffffffffU, 0x10, 1, android_namespace},
-             {index("description"), 0xffffffffU, 0x01, 0x7f030002U,
-              android_namespace}}));
+        Append(result,
+               StartElement(index("permission"),
+                            {{index("name"), index(".C2D_MESSAGE"), 0x03, index(".C2D_MESSAGE"), android_namespace},
+                             {index("protectionLevel"), 0xffffffffU, 0x10, 2, android_namespace},
+                             {index("permissionGroup"), index("org.example.GROUP"), 0x03, index("org.example.GROUP"),
+                              android_namespace},
+                             {index("permissionFlags"), 0xffffffffU, 0x10, 1, android_namespace},
+                             {index("description"), 0xffffffffU, 0x01, 0x7f030002U, android_namespace}}));
         const auto metadata = [&](const char* name, const Attribute value) {
             Append(result, StartElement(index("meta-data"),
-                {{index("name"), index(name), 0x03, index(name), android_namespace},
-                 value}));
+                                        {{index("name"), index(name), 0x03, index(name), android_namespace}, value}));
             Append(result, EndElement(index("meta-data")));
         };
-        metadata("permission.string",
-                 {index("value"), index("ready"), 0x03, index("ready"), android_namespace});
-        metadata("permission.bool",
-                 {index("value"), 0xffffffffU, 0x12, 1, android_namespace});
-        metadata("permission.int",
-                 {index("value"), 0xffffffffU, 0x10, 42, android_namespace});
-        metadata("permission.value-ref",
-                 {index("value"), 0xffffffffU, 0x01, 0x7f05004fU, android_namespace});
-        metadata("permission.resource",
-                 {index("resource"), 0xffffffffU, 0x01, 0x7f030001U, android_namespace});
+        metadata("permission.string", {index("value"), index("ready"), 0x03, index("ready"), android_namespace});
+        metadata("permission.bool", {index("value"), 0xffffffffU, 0x12, 1, android_namespace});
+        metadata("permission.int", {index("value"), 0xffffffffU, 0x10, 42, android_namespace});
+        metadata("permission.value-ref", {index("value"), 0xffffffffU, 0x01, 0x7f05004fU, android_namespace});
+        metadata("permission.resource", {index("resource"), 0xffffffffU, 0x01, 0x7f030001U, android_namespace});
         Append(result, EndElement(index("permission")));
     }
     std::vector<Attribute> application_attributes;
@@ -240,96 +314,79 @@ std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false,
         application_attributes = {
             {index("enabled"), 0xffffffffU, 0x12, boolean_data, android_namespace},
             {index("process"), index(":app"), 0x03, index(":app"), android_namespace},
-            {index("permission"), index("org.example.APP"), 0x03,
-             index("org.example.APP"), android_namespace}};
+            {index("permission"), index("org.example.APP"), 0x03, index("org.example.APP"), android_namespace}};
     }
     Append(result, StartElement(index("application"), application_attributes));
-    std::vector<Attribute> string_metadata{
-        {index("name"), index("com.example.configuration"), 0x03,
-         index("com.example.configuration"), android_namespace}};
+    std::vector<Attribute> string_metadata{{index("name"), index("com.example.configuration"), 0x03,
+                                            index("com.example.configuration"), android_namespace}};
     if (!invalid_metadata) {
-        string_metadata.push_back(
-            {index("value"), index("live"), 0x03, index("live"),
-             android_namespace});
+        string_metadata.push_back({index("value"), index("live"), 0x03, index("live"), android_namespace});
     }
     if (include_receivers) {
         Append(result, StartElement(index("receiver"),
-            {{index("name"), index(".Receiver"), 0x03, index(".Receiver"), android_namespace},
-             {index("enabled"), 0xffffffffU, 0x12, boolean_data, android_namespace},
-             {index("exported"), 0xffffffffU, 0x12, boolean_data, android_namespace},
-             {index("process"), index(":remote"), 0x03, index(":remote"), android_namespace},
-             {index("permission"), index("org.example.RECEIVER"), 0x03,
-              index("org.example.RECEIVER"), android_namespace}}));
-        Append(result, StartElement(index("intent-filter"), {
-            {index("priority"), 0xffffffffU, 0x10, 0xfffffff9U, android_namespace},
-            {index("label"), index("ready"), 0x03, index("ready"), android_namespace},
-            {index("icon"), 0xffffffffU, 0x01, 0x7f030001U, android_namespace}}));
-        Append(result, StartElement(index("action"), {
-            {index("name"), index("org.example.RECEIVER"), 0x03,
-             index("org.example.RECEIVER"), android_namespace}}));
+                                    {{index("name"), index(".Receiver"), 0x03, index(".Receiver"), android_namespace},
+                                     {index("enabled"), 0xffffffffU, 0x12, boolean_data, android_namespace},
+                                     {index("exported"), 0xffffffffU, 0x12, boolean_data, android_namespace},
+                                     {index("process"), index(":remote"), 0x03, index(":remote"), android_namespace},
+                                     {index("permission"), index("org.example.RECEIVER"), 0x03,
+                                      index("org.example.RECEIVER"), android_namespace}}));
+        Append(result, StartElement(index("intent-filter"),
+                                    {{index("priority"), 0xffffffffU, 0x10, 0xfffffff9U, android_namespace},
+                                     {index("label"), index("ready"), 0x03, index("ready"), android_namespace},
+                                     {index("icon"), 0xffffffffU, 0x01, 0x7f030001U, android_namespace}}));
+        Append(result, StartElement(index("action"), {{index("name"), index("org.example.RECEIVER"), 0x03,
+                                                       index("org.example.RECEIVER"), android_namespace}}));
         Append(result, EndElement(index("action")));
-        Append(result, StartElement(index("category"), {
-            {index("name"), index("org.example.game"), 0x03,
-             index("org.example.game"), android_namespace}}));
+        Append(result, StartElement(index("category"), {{index("name"), index("org.example.game"), 0x03,
+                                                         index("org.example.game"), android_namespace}}));
         Append(result, EndElement(index("category")));
         Append(result, EndElement(index("intent-filter")));
-        Append(result, StartElement(index("intent-filter"), {
-            {index("label"), 0xffffffffU, 0x01, 0x7f050001U, android_namespace}}));
-        Append(result, StartElement(index("action"), {
-            {index("name"), index("OTHER"), 0x03, index("OTHER"), android_namespace}}));
+        Append(result, StartElement(index("intent-filter"),
+                                    {{index("label"), 0xffffffffU, 0x01, 0x7f050001U, android_namespace}}));
+        Append(result, StartElement(index("action"),
+                                    {{index("name"), index("OTHER"), 0x03, index("OTHER"), android_namespace}}));
         Append(result, EndElement(index("action")));
         Append(result, StartElement(index("data"), {}));
         Append(result, EndElement(index("data")));
         Append(result, EndElement(index("intent-filter")));
         const auto metadata = [&](const char* name, const Attribute value) {
             Append(result, StartElement(index("meta-data"),
-                {{index("name"), index(name), 0x03, index(name), android_namespace},
-                 value}));
+                                        {{index("name"), index(name), 0x03, index(name), android_namespace}, value}));
             Append(result, EndElement(index("meta-data")));
         };
-        metadata("receiver.string",
-                 {index("value"), index("ready"), 0x03, index("ready"), android_namespace});
-        metadata("receiver.bool",
-                 {index("value"), 0xffffffffU, 0x12, boolean_data, android_namespace});
-        metadata("receiver.int",
-                 {index("value"), 0xffffffffU, 0x10, 42, android_namespace});
-        metadata("receiver.value-ref",
-                 {index("value"), 0xffffffffU, 0x01, 0x7f05004fU, android_namespace});
-        metadata("receiver.resource",
-                 {index("resource"), 0xffffffffU, 0x01, 0x7f030001U, android_namespace});
+        metadata("receiver.string", {index("value"), index("ready"), 0x03, index("ready"), android_namespace});
+        metadata("receiver.bool", {index("value"), 0xffffffffU, 0x12, boolean_data, android_namespace});
+        metadata("receiver.int", {index("value"), 0xffffffffU, 0x10, 42, android_namespace});
+        metadata("receiver.value-ref", {index("value"), 0xffffffffU, 0x01, 0x7f05004fU, android_namespace});
+        metadata("receiver.resource", {index("resource"), 0xffffffffU, 0x01, 0x7f030001U, android_namespace});
         Append(result, EndElement(index("receiver")));
         Append(result, StartElement(index("receiver"),
-            {{index("name"), index(".Disabled"), 0x03, index(".Disabled"), android_namespace},
-             {index("enabled"), 0xffffffffU, 0x12, 0, android_namespace},
-             {index("exported"), 0xffffffffU, 0x12, 0, android_namespace}}));
+                                    {{index("name"), index(".Disabled"), 0x03, index(".Disabled"), android_namespace},
+                                     {index("enabled"), 0xffffffffU, 0x12, 0, android_namespace},
+                                     {index("exported"), 0xffffffffU, 0x12, 0, android_namespace}}));
         Append(result, EndElement(index("receiver")));
     }
     Append(result, StartElement(index("meta-data"), string_metadata));
     Append(result, EndElement(index("meta-data")));
     if (!invalid_metadata) {
-        Append(result, StartElement(index("meta-data"),
-            {{index("name"), index("com.example.number"), 0x03,
-              index("com.example.number"), android_namespace},
-             {index("value"), 0xffffffffU, 0x10, 42,
-              android_namespace}}));
+        Append(result, StartElement(index("meta-data"), {{index("name"), index("com.example.number"), 0x03,
+                                                          index("com.example.number"), android_namespace},
+                                                         {index("value"), 0xffffffffU, 0x10, 42, android_namespace}}));
+        Append(result, EndElement(index("meta-data")));
+        Append(result,
+               StartElement(index("meta-data"), {{index("name"), index("com.example.value-reference"), 0x03,
+                                                  index("com.example.value-reference"), android_namespace},
+                                                 {index("value"), 0xffffffffU, 0x01, 0x7f05004fU, android_namespace}}));
         Append(result, EndElement(index("meta-data")));
         Append(result, StartElement(index("meta-data"),
-            {{index("name"), index("com.example.value-reference"), 0x03,
-              index("com.example.value-reference"), android_namespace},
-             {index("value"), 0xffffffffU, 0x01, 0x7f05004fU,
-              android_namespace}}));
+                                    {{index("name"), index("com.example.resource"), 0x03, index("com.example.resource"),
+                                      android_namespace},
+                                     {index("resource"), 0xffffffffU, 0x01, 0x7f030001U, android_namespace}}));
         Append(result, EndElement(index("meta-data")));
         Append(result, StartElement(index("meta-data"),
-            {{index("name"), index("com.example.resource"), 0x03,
-              index("com.example.resource"), android_namespace},
-             {index("resource"), 0xffffffffU, 0x01, 0x7f030001U,
-              android_namespace}}));
-        Append(result, EndElement(index("meta-data")));
-        Append(result, StartElement(index("meta-data"),
-            {{index("name"), index("com.example.enabled"), 0x03,
-              index("com.example.enabled"), android_namespace},
-             {index("value"), 0xffffffffU, 0x12, boolean_data,
-              android_namespace}}));
+                                    {{index("name"), index("com.example.enabled"), 0x03, index("com.example.enabled"),
+                                      android_namespace},
+                                     {index("value"), 0xffffffffU, 0x12, boolean_data, android_namespace}}));
         Append(result, EndElement(index("meta-data")));
     }
     Append(result, EndElement(index("application")));
@@ -357,22 +414,47 @@ struct ComponentFixture final {
     std::optional<std::string> task_affinity;
 };
 
-std::vector<std::byte> StartupManifest(
-    const std::optional<std::string>& application_name,
-    const std::vector<ComponentFixture>& components,
-    const bool application_enabled = true,
-    std::optional<std::uint32_t> theme = std::nullopt,
-    const std::optional<std::string> application_process = std::nullopt,
-    const std::optional<std::string> application_permission = std::nullopt,
-    const std::optional<std::string> application_affinity = std::nullopt) {
-    std::vector<std::string> strings{
-        "manifest", "package", "versionCode", "application", "name",
-        "enabled", "targetActivity", "activity", "activity-alias",
-        "intent-filter", "action", "category", "service", "data", "theme", "exported", "org.example.game",
-        "http://schemas.android.com/apk/res/android", "process", "permission",
-        "stopWithTask", "isolatedProcess", "singleUser", "meta-data",
-        "launchMode", "taskAffinity", "value", "resource", "service.string", "service.bool", "service.int",
-        "service.value-ref", "service.resource", "ready"};
+std::vector<std::byte> StartupManifest(const std::optional<std::string>& application_name,
+                                       const std::vector<ComponentFixture>& components,
+                                       const bool application_enabled = true,
+                                       std::optional<std::uint32_t> theme = std::nullopt,
+                                       const std::optional<std::string> application_process = std::nullopt,
+                                       const std::optional<std::string> application_permission = std::nullopt,
+                                       const std::optional<std::string> application_affinity = std::nullopt) {
+    std::vector<std::string> strings{"manifest",
+                                     "package",
+                                     "versionCode",
+                                     "application",
+                                     "name",
+                                     "enabled",
+                                     "targetActivity",
+                                     "activity",
+                                     "activity-alias",
+                                     "intent-filter",
+                                     "action",
+                                     "category",
+                                     "service",
+                                     "data",
+                                     "theme",
+                                     "exported",
+                                     "org.example.game",
+                                     "http://schemas.android.com/apk/res/android",
+                                     "process",
+                                     "permission",
+                                     "stopWithTask",
+                                     "isolatedProcess",
+                                     "singleUser",
+                                     "meta-data",
+                                     "launchMode",
+                                     "taskAffinity",
+                                     "value",
+                                     "resource",
+                                     "service.string",
+                                     "service.bool",
+                                     "service.int",
+                                     "service.value-ref",
+                                     "service.resource",
+                                     "ready"};
     const auto add = [&](const std::string& value) {
         if (std::find(strings.begin(), strings.end(), value) == strings.end()) {
             strings.push_back(value);
@@ -389,7 +471,8 @@ std::vector<std::byte> StartupManifest(
         if (component.permission) add(*component.permission);
         if (component.task_affinity) add(*component.task_affinity);
         for (const auto& filter : component.filters) {
-            for (const auto& value : filter) add(value);
+            for (const auto& value : filter)
+                add(value);
         }
     }
     const auto index = [&](const std::string_view value) {
@@ -397,17 +480,16 @@ std::vector<std::byte> StartupManifest(
         REQUIRE(found != strings.end());
         return static_cast<std::uint32_t>(std::distance(strings.begin(), found));
     };
-    const auto android_namespace = index(
-        "http://schemas.android.com/apk/res/android");
+    const auto android_namespace = index("http://schemas.android.com/apk/res/android");
 
     std::vector<std::byte> result;
-    Append16(result, 0x0003); Append16(result, 8); Append32(result, 0);
+    Append16(result, 0x0003);
+    Append16(result, 8);
+    Append32(result, 0);
     Append(result, StringPool(strings, false));
     Append(result, StartElement(index("manifest"),
-                                {{index("package"), index("org.example.game"),
-                                  0x03, index("org.example.game")},
-                                 {index("versionCode"), 0xffffffffU, 0x10, 1,
-                                  android_namespace}}));
+                                {{index("package"), index("org.example.game"), 0x03, index("org.example.game")},
+                                 {index("versionCode"), 0xffffffffU, 0x10, 1, android_namespace}}));
     std::vector<Attribute> application_attributes;
     if (theme) application_attributes.push_back({index("theme"), 0xffffffffU, 0x01, *theme, android_namespace});
     if (!application_enabled) {
@@ -415,60 +497,54 @@ std::vector<std::byte> StartupManifest(
     }
     if (application_name.has_value()) {
         application_attributes.push_back(
-            {index("name"), index(*application_name), 0x03,
-             index(*application_name), android_namespace});
+            {index("name"), index(*application_name), 0x03, index(*application_name), android_namespace});
     }
     if (application_process) {
         application_attributes.push_back(
-            {index("process"), index(*application_process), 0x03,
-             index(*application_process), android_namespace});
+            {index("process"), index(*application_process), 0x03, index(*application_process), android_namespace});
     }
     if (application_permission) {
-        application_attributes.push_back(
-            {index("permission"), index(*application_permission), 0x03,
-             index(*application_permission), android_namespace});
+        application_attributes.push_back({index("permission"), index(*application_permission), 0x03,
+                                          index(*application_permission), android_namespace});
     }
     if (application_affinity) {
         application_attributes.push_back({index("taskAffinity"), index(*application_affinity), 0x03,
-                                         index(*application_affinity), android_namespace});
+                                          index(*application_affinity), android_namespace});
     }
     Append(result, StartElement(index("application"), application_attributes));
     for (const auto& component : components) {
         std::vector<Attribute> attributes{
-            {index("name"), index(component.name), 0x03,
-             index(component.name), android_namespace}};
-        if (component.launch_mode) attributes.push_back({index("launchMode"), 0xffffffffU, 0x10, *component.launch_mode, android_namespace});
-        if (component.task_affinity) attributes.push_back({index("taskAffinity"), index(*component.task_affinity), 0x03,
-                                                         index(*component.task_affinity), android_namespace});
-        if (component.theme) attributes.push_back({index("theme"), 0xffffffffU, 0x01, *component.theme, android_namespace});
+            {index("name"), index(component.name), 0x03, index(component.name), android_namespace}};
+        if (component.launch_mode)
+            attributes.push_back({index("launchMode"), 0xffffffffU, 0x10, *component.launch_mode, android_namespace});
+        if (component.task_affinity)
+            attributes.push_back({index("taskAffinity"), index(*component.task_affinity), 0x03,
+                                  index(*component.task_affinity), android_namespace});
+        if (component.theme)
+            attributes.push_back({index("theme"), 0xffffffffU, 0x01, *component.theme, android_namespace});
         if (!component.enabled) {
-            attributes.push_back({index("enabled"), 0xffffffffU, 0x12, 0,
-                                  android_namespace});
+            attributes.push_back({index("enabled"), 0xffffffffU, 0x12, 0, android_namespace});
         }
         if (component.target.has_value()) {
             attributes.push_back(
-                {index("targetActivity"), index(*component.target), 0x03,
-                 index(*component.target), android_namespace});
+                {index("targetActivity"), index(*component.target), 0x03, index(*component.target), android_namespace});
         }
         if (component.exported.has_value()) {
-            attributes.push_back({index("exported"), 0xffffffffU, 0x12,
-                                  *component.exported ? 1U : 0U,
-                                  android_namespace});
+            attributes.push_back(
+                {index("exported"), 0xffffffffU, 0x12, *component.exported ? 1U : 0U, android_namespace});
         }
         if (component.process) {
-            attributes.push_back({index("process"), index(*component.process), 0x03,
-                                  index(*component.process), android_namespace});
+            attributes.push_back(
+                {index("process"), index(*component.process), 0x03, index(*component.process), android_namespace});
         }
         if (component.permission) {
-            attributes.push_back({index("permission"), index(*component.permission), 0x03,
-                                  index(*component.permission), android_namespace});
+            attributes.push_back({index("permission"), index(*component.permission), 0x03, index(*component.permission),
+                                  android_namespace});
         }
-        for (const auto& [enabled, name] :
-             {std::pair{component.stop_with_task, "stopWithTask"},
-              std::pair{component.isolated_process, "isolatedProcess"},
-              std::pair{component.single_user, "singleUser"}}) {
-            if (enabled) attributes.push_back(
-                {index(name), 0xffffffffU, 0x12, 1, android_namespace});
+        for (const auto& [enabled, name] : {std::pair{component.stop_with_task, "stopWithTask"},
+                                            std::pair{component.isolated_process, "isolatedProcess"},
+                                            std::pair{component.single_user, "singleUser"}}) {
+            if (enabled) attributes.push_back({index(name), 0xffffffffU, 0x12, 1, android_namespace});
         }
         Append(result, StartElement(index(component.tag), attributes));
         for (const auto& filter : component.filters) {
@@ -478,33 +554,25 @@ std::vector<std::byte> StartupManifest(
                 Append(result, EndElement(index("data")));
             }
             for (const auto& value : filter) {
-                const auto tag = value.starts_with("android.intent.action.")
-                                     ? "action"
-                                     : "category";
+                const auto tag = value.starts_with("android.intent.action.") ? "action" : "category";
                 Append(result, StartElement(index(tag),
-                                            {{index("name"), index(value), 0x03,
-                                              index(value), android_namespace}}));
+                                            {{index("name"), index(value), 0x03, index(value), android_namespace}}));
                 Append(result, EndElement(index(tag)));
             }
             Append(result, EndElement(index("intent-filter")));
         }
         if (component.service_meta_data) {
             const auto metadata = [&](const char* name, const Attribute value) {
-                Append(result, StartElement(index("meta-data"),
-                    {{index("name"), index(name), 0x03, index(name), android_namespace},
-                     value}));
+                Append(result,
+                       StartElement(index("meta-data"),
+                                    {{index("name"), index(name), 0x03, index(name), android_namespace}, value}));
                 Append(result, EndElement(index("meta-data")));
             };
-            metadata("service.string",
-                     {index("value"), index("ready"), 0x03, index("ready"), android_namespace});
-            metadata("service.bool",
-                     {index("value"), 0xffffffffU, 0x12, 1, android_namespace});
-            metadata("service.int",
-                     {index("value"), 0xffffffffU, 0x10, 42, android_namespace});
-            metadata("service.value-ref",
-                     {index("value"), 0xffffffffU, 0x01, 0x7f05004fU, android_namespace});
-            metadata("service.resource",
-                     {index("resource"), 0xffffffffU, 0x01, 0x7f030001U, android_namespace});
+            metadata("service.string", {index("value"), index("ready"), 0x03, index("ready"), android_namespace});
+            metadata("service.bool", {index("value"), 0xffffffffU, 0x12, 1, android_namespace});
+            metadata("service.int", {index("value"), 0xffffffffU, 0x10, 42, android_namespace});
+            metadata("service.value-ref", {index("value"), 0xffffffffU, 0x01, 0x7f05004fU, android_namespace});
+            metadata("service.resource", {index("resource"), 0xffffffffU, 0x01, 0x7f030001U, android_namespace});
         }
         Append(result, EndElement(index(component.tag)));
     }
@@ -521,37 +589,27 @@ constexpr std::string_view kLauncher = "android.intent.category.LAUNCHER";
 
 TEST_CASE("Android Manifest class names follow KitKat PackageParser rules") {
     using ogplay::loader::NormalizeAndroidManifestClassName;
-    CHECK(NormalizeAndroidManifestClassName("org.example.game", ".App") ==
-          "org.example.game.App");
-    CHECK(NormalizeAndroidManifestClassName("org.example.game", "App") ==
-          "org.example.game.App");
-    CHECK(NormalizeAndroidManifestClassName("org.example.game", "org.other.App") ==
-          "org.other.App");
-    CHECK_THROWS_AS(
-        static_cast<void>(
-            NormalizeAndroidManifestClassName("org.example.game", "Bad.App")),
-        ogplay::loader::AndroidManifestStartupError);
+    CHECK(NormalizeAndroidManifestClassName("org.example.game", ".App") == "org.example.game.App");
+    CHECK(NormalizeAndroidManifestClassName("org.example.game", "App") == "org.example.game.App");
+    CHECK(NormalizeAndroidManifestClassName("org.example.game", "org.other.App") == "org.other.App");
+    CHECK_THROWS_AS(static_cast<void>(NormalizeAndroidManifestClassName("org.example.game", "Bad.App")),
+                    ogplay::loader::AndroidManifestStartupError);
 }
 
 TEST_CASE("binary AndroidManifest publishes default and custom Application classes") {
-    const auto defaults = ogplay::loader::ParseAndroidBinaryManifest(
-        StartupManifest(std::nullopt, {}));
+    const auto defaults = ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {}));
     CHECK(defaults.application_class == "android.app.Application");
 
-    const auto custom = ogplay::loader::ParseAndroidBinaryManifest(
-        StartupManifest(".GameApplication", {}));
+    const auto custom = ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(".GameApplication", {}));
     CHECK(custom.application_class == "org.example.game.GameApplication");
 }
 
 TEST_CASE("binary AndroidManifest resolves direct launcher in document order") {
     const std::vector<ComponentFixture> components{
-        {"activity", ".First", std::nullopt, true,
-         {{std::string(kMain), std::string(kLauncher)}}},
-        {"activity", ".Second", std::nullopt, true,
-         {{std::string(kMain), std::string(kLauncher)}}}};
+        {"activity", ".First", std::nullopt, true, {{std::string(kMain), std::string(kLauncher)}}},
+        {"activity", ".Second", std::nullopt, true, {{std::string(kMain), std::string(kLauncher)}}}};
     for (int pass = 0; pass < 3; ++pass) {
-        const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
-            StartupManifest(std::nullopt, components));
+        const auto facts = ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(std::nullopt, components));
         const auto launcher = ogplay::loader::ResolveLauncherComponent(facts);
         CHECK(launcher.component_name == "org.example.game.First");
         CHECK(launcher.activity_class == "org.example.game.First");
@@ -564,15 +622,13 @@ TEST_CASE("binary AndroidManifest resolves activity-alias to its target") {
     const auto facts = ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(
         std::nullopt,
         {{"activity", ".RealActivity", std::nullopt, true, {}},
-         {"activity-alias", ".Launcher", ".RealActivity", true,
-          {{std::string(kMain), std::string(kLauncher)}}}}));
+         {"activity-alias", ".Launcher", ".RealActivity", true, {{std::string(kMain), std::string(kLauncher)}}}}));
     const auto launcher = ogplay::loader::ResolveLauncherComponent(facts);
     CHECK(launcher.component_name == "org.example.game.Launcher");
     CHECK(launcher.activity_class == "org.example.game.RealActivity");
     CHECK(launcher.via_alias);
     REQUIRE(facts.activity_components.size() == 2);
-    CHECK(facts.activity_components[1].target_activity ==
-          "org.example.game.RealActivity");
+    CHECK(facts.activity_components[1].target_activity == "org.example.game.RealActivity");
 }
 
 TEST_CASE("binary AndroidManifest preserves duplicate Activity declarations and filters") {
@@ -587,16 +643,14 @@ TEST_CASE("binary AndroidManifest preserves duplicate Activity declarations and 
     last.name = "Main";
     last.launch_mode = 2;
     last.theme = 0x01030007U;
-    const auto facts = ParseAndroidBinaryManifest(
-        StartupManifest(std::nullopt, {first, view, last}));
+    const auto facts = ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {first, view, last}));
     REQUIRE(facts.activity_components.size() == 3);
     for (const auto& component : facts.activity_components)
         CHECK(component.name == "org.example.game.Main");
     CHECK(facts.activity_components[0].intent_filters[0].actions[0] == kMain);
     CHECK(facts.activity_components[1].intent_filters[0].actions[0] == "android.intent.action.VIEW");
     CHECK(facts.activity_components[2].intent_filters.empty());
-    const auto* registered = FindAndroidManifestActivityComponent(
-        facts.activity_components, "org.example.game.Main");
+    const auto* registered = FindAndroidManifestActivityComponent(facts.activity_components, "org.example.game.Main");
     REQUIRE(registered == &facts.activity_components.back());
     CHECK(registered->launch_mode == 2);
     CHECK(registered->theme == 0x01030007U);
@@ -604,8 +658,7 @@ TEST_CASE("binary AndroidManifest preserves duplicate Activity declarations and 
     CHECK(ResolveLauncherComponent(facts).activity_class == "org.example.game.Main");
 
     last.enabled = false;
-    const auto disabled = ParseAndroidBinaryManifest(
-        StartupManifest(std::nullopt, {first, view, last}));
+    const auto disabled = ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {first, view, last}));
     CHECK_FALSE(disabled.launcher_activity.has_value());
 }
 
@@ -626,52 +679,41 @@ TEST_CASE("binary AndroidManifest alias snapshots the first preceding duplicate 
     ComponentFixture later = second;
     later.theme = 0x7f030003U;
     later.launch_mode = 3;
-    const auto facts = ParseAndroidBinaryManifest(
-        StartupManifest(std::nullopt, {first, second, alias, later}));
+    const auto facts = ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {first, second, alias, later}));
     REQUIRE(facts.activity_components.size() == 4);
     CHECK(facts.activity_components[2].theme == first.theme);
     CHECK(facts.activity_components[2].launch_mode == first.launch_mode);
-    CHECK(FindAndroidManifestActivityComponent(facts.activity_components,
-        "org.example.game.Target")->launch_mode == 3);
+    CHECK(FindAndroidManifestActivityComponent(facts.activity_components, "org.example.game.Target")->launch_mode == 3);
     CHECK(ResolveLauncherComponent(facts).activity_class == "org.example.game.Target");
 }
 
 TEST_CASE("launcher action and category must belong to one intent-filter") {
     const auto facts = ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(
-        std::nullopt,
-        {{"activity", ".Split", std::nullopt, true,
-          {{std::string(kMain)}, {std::string(kLauncher)}}}}));
+        std::nullopt, {{"activity", ".Split", std::nullopt, true, {{std::string(kMain)}, {std::string(kLauncher)}}}}));
     CHECK_FALSE(facts.launcher_activity.has_value());
     try {
         static_cast<void>(ogplay::loader::ResolveLauncherComponent(facts));
         FAIL("expected no-launcher error");
     } catch (const ogplay::loader::AndroidManifestStartupError& error) {
-        CHECK(error.Reason() ==
-              ogplay::loader::AndroidManifestStartupErrorReason::no_launcher);
+        CHECK(error.Reason() == ogplay::loader::AndroidManifestStartupErrorReason::no_launcher);
     }
 }
 
 TEST_CASE("disabled launcher components do not resolve") {
     for (const auto& components : std::vector<std::vector<ComponentFixture>>{
-             {{"activity", ".Disabled", std::nullopt, false,
-               {{std::string(kMain), std::string(kLauncher)}}}},
+             {{"activity", ".Disabled", std::nullopt, false, {{std::string(kMain), std::string(kLauncher)}}}},
              {{"activity", ".Target", std::nullopt, true, {}},
-              {"activity-alias", ".Alias", ".Target", false,
-               {{std::string(kMain), std::string(kLauncher)}}}}}) {
-        const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
-            StartupManifest(std::nullopt, components));
-        CHECK_THROWS_AS(
-            static_cast<void>(ogplay::loader::ResolveLauncherComponent(facts)),
-            ogplay::loader::AndroidManifestStartupError);
+              {"activity-alias", ".Alias", ".Target", false, {{std::string(kMain), std::string(kLauncher)}}}}}) {
+        const auto facts = ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(std::nullopt, components));
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ResolveLauncherComponent(facts)),
+                        ogplay::loader::AndroidManifestStartupError);
     }
 }
 
 TEST_CASE("enabled activity-alias resolves independently of target enabled state") {
     const auto facts = ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(
-        std::nullopt,
-        {{"activity", ".Target", std::nullopt, false, {}},
-         {"activity-alias", ".Alias", ".Target", true,
-          {{std::string(kMain), std::string(kLauncher)}}}}));
+        std::nullopt, {{"activity", ".Target", std::nullopt, false, {}},
+                       {"activity-alias", ".Alias", ".Target", true, {{std::string(kMain), std::string(kLauncher)}}}}));
     const auto launcher = ogplay::loader::ResolveLauncherComponent(facts);
     CHECK(launcher.component_name == "org.example.game.Alias");
     CHECK(launcher.activity_class == "org.example.game.Target");
@@ -679,14 +721,12 @@ TEST_CASE("enabled activity-alias resolves independently of target enabled state
 
 TEST_CASE("activity-alias requires a previously declared Activity target") {
     try {
-        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(
-            StartupManifest(std::nullopt,
-                            {{"activity-alias", ".Alias", ".Missing", true,
-                              {{std::string(kMain), std::string(kLauncher)}}}})));
+        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(
+            std::nullopt,
+            {{"activity-alias", ".Alias", ".Missing", true, {{std::string(kMain), std::string(kLauncher)}}}})));
         FAIL("expected alias target error");
     } catch (const ogplay::loader::AndroidManifestStartupError& error) {
-        CHECK(error.Reason() ==
-              ogplay::loader::AndroidManifestStartupErrorReason::alias_target_not_found);
+        CHECK(error.Reason() == ogplay::loader::AndroidManifestStartupErrorReason::alias_target_not_found);
     }
 }
 
@@ -712,36 +752,33 @@ TEST_CASE("binary AndroidManifest exposes exact package version and SDK facts") 
 }
 
 TEST_CASE("binary AndroidManifest distinguishes application visual attributes") {
-    const auto referenced = ogplay::loader::ParseAndroidBinaryManifest(Manifest(
-        false, "org.example.game", 0x10,
-        {{11, 0xffffffffU, 0x01, 0x7f020001U, 9},
-         {12, 0xffffffffU, 0x01, 0x7f030002U, 9}}));
+    const auto referenced = ogplay::loader::ParseAndroidBinaryManifest(
+        Manifest(false, "org.example.game", 0x10,
+                 {{11, 0xffffffffU, 0x01, 0x7f020001U, 9}, {12, 0xffffffffU, 0x01, 0x7f030002U, 9}}));
     CHECK(referenced.application_icon == 0x7f020001U);
     REQUIRE(referenced.application_label.has_value());
     REQUIRE(std::holds_alternative<std::uint32_t>(*referenced.application_label));
     CHECK(std::get<std::uint32_t>(*referenced.application_label) == 0x7f030002U);
 
-    const auto literal = ogplay::loader::ParseAndroidBinaryManifest(Manifest(
-        false, "org.example.game", 0x10,
-        {{12, 13, 0x03, 13, 9}}));
+    const auto literal =
+        ogplay::loader::ParseAndroidBinaryManifest(Manifest(false, "org.example.game", 0x10, {{12, 13, 0x03, 13, 9}}));
     REQUIRE(literal.application_label.has_value());
     REQUIRE(std::holds_alternative<std::string>(*literal.application_label));
     CHECK(std::get<std::string>(*literal.application_label) == "OGPlay Game");
 }
 
 TEST_CASE("binary AndroidManifest exposes package permission and application meta-data") {
-    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
-        PackageFactsManifest());
+    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(PackageFactsManifest());
     REQUIRE(facts.requested_permissions.size() == 1U);
     CHECK(facts.requested_permissions.front() == "android.permission.INTERNET");
     REQUIRE(facts.application_meta_data.size() == 5U);
     CHECK(facts.application_meta_data[0].name == "com.example.configuration");
     CHECK(std::get<std::string>(facts.application_meta_data[0].value) == "live");
     CHECK(std::get<std::int32_t>(facts.application_meta_data[1].value) == 42);
-    CHECK(std::get<ogplay::loader::AndroidManifestMetaDataValueReference>(
-              facts.application_meta_data[2].value).resource_id == 0x7f05004fU);
-    CHECK(std::get<ogplay::loader::AndroidManifestMetaDataResourceReference>(
-              facts.application_meta_data[3].value).resource_id == 0x7f030001U);
+    CHECK(std::get<ogplay::loader::AndroidManifestMetaDataValueReference>(facts.application_meta_data[2].value)
+              .resource_id == 0x7f05004fU);
+    CHECK(std::get<ogplay::loader::AndroidManifestMetaDataResourceReference>(facts.application_meta_data[3].value)
+              .resource_id == 0x7f030001U);
     CHECK(std::get<bool>(facts.application_meta_data[4].value));
     CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(PackageFactsManifest(true))),
                       "binary AndroidManifest application meta-data requires value or resource");
@@ -749,8 +786,7 @@ TEST_CASE("binary AndroidManifest exposes package permission and application met
 
 TEST_CASE("Manifest permission definitions are separate from requests") {
     using namespace ogplay::loader;
-    const auto facts = ParseAndroidBinaryManifest(
-        PackageFactsManifest(false, false, 1U, true));
+    const auto facts = ParseAndroidBinaryManifest(PackageFactsManifest(false, false, 1U, true));
     REQUIRE(facts.requested_permissions.size() == 1);
     CHECK(facts.requested_permissions[0] == "android.permission.INTERNET");
     REQUIRE(facts.defined_permissions.size() == 1);
@@ -765,15 +801,12 @@ TEST_CASE("Manifest permission definitions are separate from requests") {
     CHECK(std::get<std::string>(definition.meta_data[0].value) == "ready");
     CHECK(std::get<bool>(definition.meta_data[1].value));
     CHECK(std::get<std::int32_t>(definition.meta_data[2].value) == 42);
-    CHECK(std::get<AndroidManifestMetaDataValueReference>(
-              definition.meta_data[3].value).resource_id == 0x7f05004fU);
-    CHECK(std::get<AndroidManifestMetaDataResourceReference>(
-              definition.meta_data[4].value).resource_id == 0x7f030001U);
+    CHECK(std::get<AndroidManifestMetaDataValueReference>(definition.meta_data[3].value).resource_id == 0x7f05004fU);
+    CHECK(std::get<AndroidManifestMetaDataResourceReference>(definition.meta_data[4].value).resource_id == 0x7f030001U);
 }
 
 TEST_CASE("binary AndroidManifest preserves receiver facts and own meta-data") {
-    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
-        PackageFactsManifest(false, true));
+    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(PackageFactsManifest(false, true));
     CHECK(facts.application_process_name == "org.example.game:app");
     REQUIRE(facts.receiver_components.size() == 2);
     const auto& receiver = facts.receiver_components[0];
@@ -802,10 +835,10 @@ TEST_CASE("binary AndroidManifest preserves receiver facts and own meta-data") {
     CHECK(std::get<std::string>(receiver.meta_data[0].value) == "ready");
     CHECK(std::get<bool>(receiver.meta_data[1].value));
     CHECK(std::get<std::int32_t>(receiver.meta_data[2].value) == 42);
-    CHECK(std::get<ogplay::loader::AndroidManifestMetaDataValueReference>(
-              receiver.meta_data[3].value).resource_id == 0x7f05004fU);
-    CHECK(std::get<ogplay::loader::AndroidManifestMetaDataResourceReference>(
-              receiver.meta_data[4].value).resource_id == 0x7f030001U);
+    CHECK(std::get<ogplay::loader::AndroidManifestMetaDataValueReference>(receiver.meta_data[3].value).resource_id ==
+          0x7f05004fU);
+    CHECK(std::get<ogplay::loader::AndroidManifestMetaDataResourceReference>(receiver.meta_data[4].value).resource_id ==
+          0x7f030001U);
     CHECK(facts.application_meta_data.size() == 5);
     const auto& disabled = facts.receiver_components[1];
     CHECK_FALSE(disabled.enabled);
@@ -818,8 +851,7 @@ TEST_CASE("binary AndroidManifest preserves receiver facts and own meta-data") {
 TEST_CASE("binary AndroidManifest boolean values use nonzero truth semantics") {
     for (const auto data : {0U, 1U, 2U, 0xffffffffU}) {
         CAPTURE(data);
-        const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
-            PackageFactsManifest(false, true, data));
+        const auto facts = ogplay::loader::ParseAndroidBinaryManifest(PackageFactsManifest(false, true, data));
         const bool expected = data != 0U;
         CHECK(facts.application_enabled == expected);
         REQUIRE(facts.receiver_components.size() == 2U);
@@ -845,8 +877,7 @@ TEST_CASE("binary AndroidManifest rejects identity type and structure errors") {
     CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(Manifest(false, "invalid"))),
                       "binary AndroidManifest package is invalid");
     CHECK_THROWS_WITH(
-        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(
-            Manifest(false, "org.example.game", 0x03))),
+        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(Manifest(false, "org.example.game", 0x03))),
         "binary AndroidManifest attribute versionCode is not an integer");
 
     auto mismatched_end = Manifest();
@@ -867,12 +898,13 @@ TEST_CASE("binary AndroidManifest rejects hostile string pool offsets") {
 
 TEST_CASE("DVM-112 Manifest preserves service facts independently of activities") {
     using namespace ogplay::loader;
-    const auto facts = ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {
-        {"service", ".Local", {}, true, {{"android.intent.action.LOCAL", "example.CATEGORY"}}, true},
-        {"activity", ".Main", {}, true, {{std::string(kMain), std::string(kLauncher)}}},
-        {"service", "Disabled", {}, false, {{"android.intent.action.DISABLED"}}},
-        {"service", "other.package.Plain", {}, true, {}},
-    }));
+    const auto facts = ParseAndroidBinaryManifest(StartupManifest(
+        std::nullopt, {
+                          {"service", ".Local", {}, true, {{"android.intent.action.LOCAL", "example.CATEGORY"}}, true},
+                          {"activity", ".Main", {}, true, {{std::string(kMain), std::string(kLauncher)}}},
+                          {"service", "Disabled", {}, false, {{"android.intent.action.DISABLED"}}},
+                          {"service", "other.package.Plain", {}, true, {}},
+                      }));
     REQUIRE(facts.service_components.size() == 3);
     CHECK(facts.application_enabled);
     const auto& local = facts.service_components[0];
@@ -890,8 +922,8 @@ TEST_CASE("DVM-112 Manifest preserves service facts independently of activities"
     REQUIRE(facts.activity_components.size() == 1);
     CHECK(ResolveLauncherComponent(facts).activity_class == "org.example.game.Main");
     CHECK_FALSE(facts.activity_components[0].intent_filters[0].has_data);
-    const auto disabled = ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {
-        {"service", ".Local", {}, true, {{"android.intent.action.LOCAL"}}}}, false));
+    const auto disabled = ParseAndroidBinaryManifest(
+        StartupManifest(std::nullopt, {{"service", ".Local", {}, true, {{"android.intent.action.LOCAL"}}}}, false));
     CHECK_FALSE(disabled.application_enabled);
     CHECK(disabled.service_components[0].enabled);
 }
@@ -912,9 +944,8 @@ TEST_CASE("Manifest preserves service query fields and owned metadata") {
     inherited_service.name = ".Inherited";
     inherited_service.exported = true;
     inherited_service.single_user = true;
-    const auto facts = ParseAndroidBinaryManifest(StartupManifest(
-        std::nullopt, {explicit_service, inherited_service}, true, std::nullopt,
-        ":app", "org.example.APP"));
+    const auto facts = ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {explicit_service, inherited_service},
+                                                                  true, std::nullopt, ":app", "org.example.APP"));
     REQUIRE(facts.service_components.size() == 2);
     const auto& push = facts.service_components[0];
     CHECK(push.name == "org.example.game.Push");
@@ -927,10 +958,8 @@ TEST_CASE("Manifest preserves service query fields and owned metadata") {
     CHECK(std::get<std::string>(push.meta_data[0].value) == "ready");
     CHECK(std::get<bool>(push.meta_data[1].value));
     CHECK(std::get<std::int32_t>(push.meta_data[2].value) == 42);
-    CHECK(std::get<AndroidManifestMetaDataValueReference>(
-              push.meta_data[3].value).resource_id == 0x7f05004fU);
-    CHECK(std::get<AndroidManifestMetaDataResourceReference>(
-              push.meta_data[4].value).resource_id == 0x7f030001U);
+    CHECK(std::get<AndroidManifestMetaDataValueReference>(push.meta_data[3].value).resource_id == 0x7f05004fU);
+    CHECK(std::get<AndroidManifestMetaDataResourceReference>(push.meta_data[4].value).resource_id == 0x7f030001U);
     const auto& inherited = facts.service_components[1];
     CHECK(inherited.process_name == "org.example.game:app");
     CHECK(inherited.permission == "org.example.APP");
@@ -941,10 +970,12 @@ TEST_CASE("Manifest preserves service query fields and owned metadata") {
 
 TEST_CASE("DVM-112 Manifest rejects invalid service names") {
     using namespace ogplay::loader;
-    CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {
-        {"service", "Bad.Name", {}, true, {}}}))), AndroidManifestStartupError);
-    CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {
-        {"service", "", {}, true, {}}}))), AndroidManifestStartupError);
+    CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(
+                        StartupManifest(std::nullopt, {{"service", "Bad.Name", {}, true, {}}}))),
+                    AndroidManifestStartupError);
+    CHECK_THROWS_AS(
+        static_cast<void>(ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {{"service", "", {}, true, {}}}))),
+        AndroidManifestStartupError);
 }
 
 TEST_CASE("DVM-121 Manifest retains application and Activity themes with alias inheritance") {
@@ -952,10 +983,12 @@ TEST_CASE("DVM-121 Manifest retains application and Activity themes with alias i
     activity.name = ".Main";
     activity.theme = 0x7f030001U;
     ComponentFixture alias;
-    alias.tag = "activity-alias"; alias.name = ".Alias"; alias.target = ".Main";
-    alias.theme = 0x7f030002U; // API19 alias does not override the target theme.
-    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
-        StartupManifest(std::nullopt, {activity, alias}, true, 0x01030007U));
+    alias.tag = "activity-alias";
+    alias.name = ".Alias";
+    alias.target = ".Main";
+    alias.theme = 0x7f030002U;  // API19 alias does not override the target theme.
+    const auto facts =
+        ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {activity, alias}, true, 0x01030007U));
     CHECK(facts.application_theme == 0x01030007U);
     REQUIRE(facts.activity_components.size() == 2);
     CHECK(facts.activity_components[0].theme == 0x7f030001U);
@@ -984,9 +1017,7 @@ TEST_CASE("DVM-180 Manifest resolves Activity exported from attribute or intent-
     alias.target = ".Target";
     alias.filters = {{std::string(kLauncher)}};
     const auto facts = ParseAndroidBinaryManifest(StartupManifest(
-        std::nullopt,
-        {filtered, private_activity, forced_private, forced_public, alias_target,
-         alias}));
+        std::nullopt, {filtered, private_activity, forced_private, forced_public, alias_target, alias}));
     REQUIRE(facts.activity_components.size() == 6);
     CHECK(facts.activity_components[0].exported == true);
     CHECK(facts.activity_components[1].exported == false);
@@ -999,10 +1030,12 @@ TEST_CASE("DVM-180 Manifest resolves Activity exported from attribute or intent-
 }
 
 TEST_CASE("DVM-195 Manifest keeps activity metadata separate from application and siblings") {
-    ComponentFixture first; first.name = ".First"; first.service_meta_data = true;
-    ComponentFixture second; second.name = ".Second";
-    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
-        StartupManifest(std::nullopt, {first, second}));
+    ComponentFixture first;
+    first.name = ".First";
+    first.service_meta_data = true;
+    ComponentFixture second;
+    second.name = ".Second";
+    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {first, second}));
     REQUIRE(facts.activity_components.size() == 2);
     REQUIRE(facts.activity_components[0].meta_data.size() == 5);
     CHECK(std::get<std::string>(facts.activity_components[0].meta_data[0].value) == "ready");
@@ -1029,7 +1062,9 @@ TEST_CASE("DVM-250 Manifest task affinity inherits application and alias snapsho
     ComponentFixture activity;
     activity.name = ".Root";
     ComponentFixture alias;
-    alias.tag = "activity-alias"; alias.name = ".Alias"; alias.target = ".Root";
+    alias.tag = "activity-alias";
+    alias.name = ".Alias";
+    alias.target = ".Root";
     const auto parse = [&](std::optional<std::string> application_affinity = std::nullopt) {
         return ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(
             std::nullopt, {activity, alias}, true, std::nullopt, std::nullopt, std::nullopt, application_affinity));
@@ -1047,36 +1082,47 @@ TEST_CASE("DVM-250 Manifest task affinity inherits application and alias snapsho
 }
 
 namespace {
-std::vector<std::byte> TextureManifest(
-    const std::vector<std::string>& declarations, const bool utf8,
-    const bool nested = false, const std::optional<std::vector<Attribute>>& override_names = {}) {
-    std::vector<std::string> strings{"manifest", "application", "package", "versionCode", "name",
-        "supports-gl-texture", "http://schemas.android.com/apk/res/android", "org.example.game"};
+std::vector<std::byte> TextureManifest(const std::vector<std::string>& declarations, const bool utf8,
+                                       const bool nested = false,
+                                       const std::optional<std::vector<Attribute>>& override_names = {}) {
+    std::vector<std::string> strings{"manifest",
+                                     "application",
+                                     "package",
+                                     "versionCode",
+                                     "name",
+                                     "supports-gl-texture",
+                                     "http://schemas.android.com/apk/res/android",
+                                     "org.example.game"};
     strings.insert(strings.end(), declarations.begin(), declarations.end());
     std::vector<std::byte> bytes;
-    Append16(bytes, 0x0003); Append16(bytes, 8); Append32(bytes, 0);
+    Append16(bytes, 0x0003);
+    Append16(bytes, 8);
+    Append32(bytes, 0);
     Append(bytes, StringPool(strings, utf8));
     Append(bytes, StartElement(0, {{2, 7, 0x03, 7}, {3, 0xffffffffU, 0x10, 1, 6}}));
     if (nested) Append(bytes, StartElement(1, {}));
     for (std::uint32_t index = 0; index < declarations.size(); ++index) {
         const auto attributes = (index == 1 ? override_names : std::nullopt)
                                     .value_or(std::vector<Attribute>{{4, 8U + index, 0x03, 8U + index, 6}});
-        Append(bytes, StartElement(5, attributes)); Append(bytes, EndElement(5));
+        Append(bytes, StartElement(5, attributes));
+        Append(bytes, EndElement(5));
     }
     if (!nested) Append(bytes, StartElement(1, {}));
-    Append(bytes, EndElement(1)); Append(bytes, EndElement(0));
+    Append(bytes, EndElement(1));
+    Append(bytes, EndElement(0));
     Set32(bytes, 4, static_cast<std::uint32_t>(bytes.size()));
     return bytes;
 }
-}
+}  // namespace
 
 TEST_CASE("binary Manifest preserves top-level supports-gl-texture declarations") {
     const std::vector<std::string> declarations{"GL_AMD_compressed_ATC_texture", "GL_UNKNOWN_format",
-        "GL_IMG_texture_compression_pvrtc", "GL_AMD_compressed_ATC_texture"};
+                                                "GL_IMG_texture_compression_pvrtc", "GL_AMD_compressed_ATC_texture"};
     for (const bool utf8 : {false, true}) {
         const auto facts = ogplay::loader::ParseAndroidBinaryManifest(TextureManifest(declarations, utf8));
         CHECK(facts.supported_gl_textures == std::vector<std::string>(declarations.begin(), declarations.begin() + 3));
-        CHECK(ogplay::loader::ParseAndroidBinaryManifest(TextureManifest(declarations, utf8, true)).supported_gl_textures.empty());
+        CHECK(ogplay::loader::ParseAndroidBinaryManifest(TextureManifest(declarations, utf8, true))
+                  .supported_gl_textures.empty());
         CHECK(ogplay::loader::ParseAndroidBinaryManifest(TextureManifest({}, utf8)).supported_gl_textures.empty());
     }
 }
@@ -1763,4 +1809,18 @@ TEST_CASE("WU11 Manifest raw package attribute name does not convert UTF8") {
     const auto at = 8 + 28 + xml.strings.size() * 4;
     bytes[at] = std::byte{99};  // string8At ignores the declared UTF16 length.
     CHECK(ogplay::loader::ParseAndroidBinaryManifest(bytes).package == "org.example.game");
+}
+
+TEST_CASE("DVM-354 Manifest largeHeap preserves true false and absent application facts") {
+    for (const auto value : {-1, 0, 1}) {
+        Api19Manifest xml;
+        xml.Root();
+        if (value < 0)
+            xml.Start("application");
+        else
+            xml.Start("application", {xml.Value("largeHeap", 0x12, static_cast<std::uint32_t>(value))});
+        xml.End("application");
+        xml.End("manifest");
+        CHECK(ogplay::loader::ParseAndroidBinaryManifest(xml.Bytes()).application_large_heap == (value == 1));
+    }
 }

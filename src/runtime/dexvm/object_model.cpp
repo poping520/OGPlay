@@ -62,6 +62,7 @@ public:
     VmExecutionLock* allocation_mutex{};
     JavaObjectInterop interop;
     JavaObjectModelConfig config;
+    std::uint64_t normal_growth_limit_bytes{};
     std::function<void(VmObjectRef)> instance_observer;
     std::uint32_t utilization_units{768};
     std::uint64_t native_bytes{};
@@ -203,6 +204,7 @@ JavaObjectModel::JavaObjectModel(JniStringStore& strings, JniPrimitiveArrayStore
     impl_->strings = &strings;
     impl_->arrays = &arrays;
     impl_->config = config;
+    impl_->normal_growth_limit_bytes = config.heap_growth_limit_bytes;
     impl_->heap_target_bytes = config.initial_heap_target_bytes;
     impl_->native_watermark = config.initial_heap_target_bytes;
     impl_->utilization_units = config.target_utilization_percent * 1024U / 100U;
@@ -1015,6 +1017,10 @@ std::uint64_t JavaObjectModel::HeapTargetBytes() const noexcept {
 
 std::uint64_t JavaObjectModel::HeapGrowthLimitBytes() const noexcept {
     return impl_->config.heap_growth_limit_bytes;
+}
+
+std::uint64_t JavaObjectModel::NormalHeapGrowthLimitBytes() const noexcept {
+    return impl_->normal_growth_limit_bytes;
 }
 
 bool JavaObjectModel::ShouldCollectFor(const std::uint64_t request_bytes) const noexcept {

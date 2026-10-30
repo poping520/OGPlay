@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
+      "surface_sha256": "381bffda4f12ba2737d61be20ba4d9cbc35e6f76179925a8ead5fcd4310dc35a",
       "owner": "Landroid/graphics/drawable/Drawable;",
       "smali_sha256": "512b74a8556542d52efbba789997105a2a1ed75a3125a5641923c2b41fd114ca",
       "methods": [
@@ -236,7 +236,7 @@
           "signature": "mutate()Landroid/graphics/drawable/Drawable;",
           "flags": 1,
           "body_sha256": "5c3b77092b0427d0ea027417d8e3c8055525e7d561b5e6f823362f871a64f6ae",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onBoundsChange(Landroid/graphics/Rect;)V",
@@ -422,7 +422,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
+      "surface_sha256": "381bffda4f12ba2737d61be20ba4d9cbc35e6f76179925a8ead5fcd4310dc35a",
       "owner": "Landroid/graphics/drawable/BitmapDrawable;",
       "smali_sha256": "660a01d12ebeb584153e3c3567af510ef4c1343f4e67b400701978b3b73a1cae",
       "methods": [
@@ -516,7 +516,14 @@
           "signature": "getAlpha()I",
           "flags": 1,
           "body_sha256": "46bab1b6ecaafd235ad761aabdacdec9889200dbf3eb725ad8c134ab2a210897",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "getBitmap()Landroid/graphics/Bitmap;",
@@ -534,7 +541,14 @@
           "signature": "getConstantState()Landroid/graphics/drawable/Drawable$ConstantState;",
           "flags": 17,
           "body_sha256": "40d96c796bed400d2dc7e4d452335dc2c3c4eb397418b268942f929e3e6bfea9",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "getGravity()I",
@@ -558,7 +572,14 @@
           "signature": "getOpacity()I",
           "flags": 1,
           "body_sha256": "b236773d261d439acae50d86d780fac20ccd221739eb78c21982521e73a86a6b",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "getPaint()Landroid/graphics/Paint;",
@@ -606,7 +627,14 @@
           "signature": "mutate()Landroid/graphics/drawable/Drawable;",
           "flags": 1,
           "body_sha256": "3275adef71f1b90ca074ec2432bf25af6d96d09767e87a02201815bb4ac65838",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "needMirroring()Z",
@@ -624,7 +652,14 @@
           "signature": "setAlpha(I)V",
           "flags": 1,
           "body_sha256": "e6594d7009e419a84b02bb005d9358b7f015e5afe90ee2af07ced837378d5d8b",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "setAntiAlias(Z)V",
@@ -792,7 +827,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "944bce9448b73d36d56499c96a6dad519e54f8c90ef97bba33e02bd1ec386b53",
+      "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727",
       "owner": "Landroid/graphics/drawable/ColorDrawable;",
       "smali_sha256": "02bc11f751baccc3d315a606ff50186e588a0b02683a5d5b599de585bf42e0b6",
       "methods": [
@@ -800,39 +835,25 @@
           "signature": "<init>()V",
           "flags": 65537,
           "body_sha256": "2e12da851831a863a08341d1c9963063330ca26baf71b0cf824c60d9bffda753",
-          "source": "overlay",
-          "review": {
-            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
-            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
-            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
-            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
-            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
-          }
+          "source": "rom"
         },
         {
           "signature": "<init>(I)V",
           "flags": 65537,
           "body_sha256": "2ca75986e1de2fcbe025c3169984354b833907fb20b38576342bc1789fcc6299",
-          "source": "overlay",
-          "review": {
-            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
-            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
-            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
-            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
-            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
-          }
+          "source": "rom"
         },
         {
           "signature": "<init>(Landroid/graphics/drawable/ColorDrawable$ColorState;)V",
           "flags": 65538,
           "body_sha256": "dbf371d0c544f98c47e1a7819f4ec2590a8e6c1a967303096d8e3d2cb5338f9e",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "<init>(Landroid/graphics/drawable/ColorDrawable$ColorState;Landroid/graphics/drawable/ColorDrawable$1;)V",
           "flags": 69632,
           "body_sha256": "93c135797516ccbfcebd55a5b3d9e252a9065f7c5c2359e94b33cbd1124dcea1",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "draw(Landroid/graphics/Canvas;)V",
@@ -844,45 +865,31 @@
           "signature": "getAlpha()I",
           "flags": 1,
           "body_sha256": "32ceb3debf8e05dff12ab83d23695b372fbd2ae506cf9a8522d9cb2f4a72e582",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getChangingConfigurations()I",
           "flags": 1,
           "body_sha256": "2abd2d887a31c47c8d0ecf3546ffdd5092909db34fa29bb4f89d173aad76f616",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getColor()I",
           "flags": 1,
           "body_sha256": "d713a5f3e8967a6c68eba9f16a0b86de5659a4c7b1702503cc57df5aa0381284",
-          "source": "overlay",
-          "review": {
-            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
-            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
-            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
-            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
-            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
-          }
+          "source": "rom"
         },
         {
           "signature": "getConstantState()Landroid/graphics/drawable/Drawable$ConstantState;",
           "flags": 1,
           "body_sha256": "8ab6aefefb57b77a3c4f58019d14c11127752d51032901a3023048c3dcc1bb83",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getOpacity()I",
           "flags": 1,
           "body_sha256": "70f4a0544c65c8ce32afe159436f85664ddb42aeed1474878cbe9d052befbd55",
-          "source": "overlay",
-          "review": {
-            "reason": "ROM View background setter requires ColorDrawable opacity",
-            "inputs": "current per-object ARGB color",
-            "outputs": "API19 OPAQUE, TRANSPARENT or TRANSLUCENT from alpha",
-            "state_owner": "existing per-Java-object ui_drawables color",
-            "failure_boundary": "missing backing fails; no window format or WMS updates"
-          }
+          "source": "rom"
         },
         {
           "signature": "inflate(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)V",
@@ -894,51 +901,44 @@
           "signature": "mutate()Landroid/graphics/drawable/Drawable;",
           "flags": 1,
           "body_sha256": "5f5b2493c7ed04471fc212c9aedbe0f2a56095c85e8521e4f89afeccd796780d",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setAlpha(I)V",
           "flags": 1,
           "body_sha256": "8c34ccd556f4459a096c77831d7747a10960a934de47ab1edb3355ec260bbfbc",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setColor(I)V",
           "flags": 1,
           "body_sha256": "4ed95aefa722448427cac7d34b59613124bbeefaadfc03f41e61e672b25be130",
-          "source": "overlay",
-          "review": {
-            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
-            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
-            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
-            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
-            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
-          }
+          "source": "rom"
         },
         {
           "signature": "setColorFilter(Landroid/graphics/ColorFilter;)V",
           "flags": 1,
           "body_sha256": "f82134e5cc237e1f6e32032cab0b905eecde6936b73e78066642c142210c406d",
-          "source": "failure"
+          "source": "rom"
         }
       ],
       "fields": [
         {
           "signature": "mMutated:Z",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mPaint:Landroid/graphics/Paint;",
           "flags": 18,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mState:Landroid/graphics/drawable/ColorDrawable$ColorState;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         }
       ]

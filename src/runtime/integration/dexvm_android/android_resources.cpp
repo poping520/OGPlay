@@ -1383,7 +1383,8 @@ Decl Declare_android_content_res_Resources(const Context& context) {
                     if (outcome.exception.IsValid())
                         throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor,
                                               outcome.exception_message, outcome.exception};
-                    auto& state = context->ui_drawables.at(object.Value());
+                    // ROM ColorDrawable owns color state; this record only carries resource/pixel metadata.
+                    auto& state = context->ui_drawables[object.Value()];
                     state.resource_id = id;
                     state.leaf_pixels = std::move(pixels);
                     return dx::VmValue::Ref(object);

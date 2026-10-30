@@ -43,7 +43,10 @@ public:
     Interpreter* vm{};
     VmMonotonicMillis now;
     VmClockAdvance advance;
-    VmClockDriverBlockedProbe clock_driver_blocked;
+    VmMonotonicMillis realtime;
+    bool driver_blocked{};
+    std::int64_t stall_realtime{};
+    std::int64_t stall_uptime{};
     mutable std::mutex mutex;
     mutable std::mutex clock_advance_mutex;
     std::condition_variable changed;
@@ -67,8 +70,7 @@ public:
                                what};
     }
 
-    void SetMonitorWaitState(const std::uint64_t owner,
-                             const VmThreadWaitState state) const {
+    void SetMonitorWaitState(const std::uint64_t owner, const VmThreadWaitState state) const {
         if (auto* threads = vm->AttachedThreadRuntime(); threads != nullptr) {
             threads->SetWaitState(owner, state);
         }
@@ -76,8 +78,7 @@ public:
 
     // Takes ownership of the monitor, parking while somebody else holds it.
     // The execution lock is released for the whole park.
-    void AcquireLocked(std::unique_lock<std::mutex>& guard,
-                       const VmObjectRef object, const std::uint64_t owner,
+    void AcquireLocked(std::unique_lock<std::mutex>& guard, const VmObjectRef object, const std::uint64_t owner,
                        const std::int32_t recursion) {
         auto* monitor = &MonitorFor(object);
         bool registered{};
@@ -95,12 +96,14 @@ public:
                 std::unique_lock parked(mutex);
                 const auto ready = [&] {
                     auto& current = MonitorFor(object);
-                    return shutting_down || current.recursion == 0 ||
-                           current.owner == owner || vm->ExecutionDeadlineExpired(owner);
+                    return shutting_down || current.recursion == 0 || current.owner == owner ||
+                           vm->ExecutionDeadlineExpired(owner);
                 };
                 if (vm->HasExecutionDeadline(owner)) {
-                    while (!ready()) changed.wait_for(parked, kDeadlinePoll);
-                } else changed.wait(parked, ready);
+                    while (!ready())
+                        changed.wait_for(parked, kDeadlinePoll);
+                } else
+                    changed.wait(parked, ready);
             }
             lock.ReacquireAfterBlocking(depth);
             SetMonitorWaitState(owner, VmThreadWaitState::none);
@@ -112,8 +115,7 @@ public:
             }
         }
         if (registered) {
-            const auto waiter = std::find(monitor->entry_waiters.begin(),
-                                          monitor->entry_waiters.end(), owner);
+            const auto waiter = std::find(monitor->entry_waiters.begin(), monitor->entry_waiters.end(), owner);
             if (waiter != monitor->entry_waiters.end()) {
                 monitor->entry_waiters.erase(waiter);
             }
@@ -123,8 +125,7 @@ public:
     }
 };
 
-VmMonitorTable::VmMonitorTable(Interpreter& vm)
-    : impl_(std::make_unique<Impl>()) {
+VmMonitorTable::VmMonitorTable(Interpreter& vm) : impl_(std::make_unique<Impl>()) {
     impl_->vm = &vm;
 }
 
@@ -145,41 +146,41 @@ void VmMonitorTable::SetClockAdvance(VmClockAdvance advance) {
     impl_->advance = std::move(advance);
 }
 
-void VmMonitorTable::SetClockDriverBlockedProbe(
-    VmClockDriverBlockedProbe probe) {
-    const std::lock_guard guard(impl_->mutex);
-    impl_->clock_driver_blocked = std::move(probe);
+void VmMonitorTable::SetRealtimeSource(VmMonotonicMillis source) {
+    const std::lock_guard guard(impl_->clock_advance_mutex);
+    impl_->realtime = std::move(source);
 }
 
-bool VmMonitorTable::TryAdvanceClockForTimedPark(
-    const std::uint64_t context, const std::int64_t deadline_millis) const {
+void VmMonitorTable::ObserveClockDriverBlocking(const bool blocked) {
+    const std::lock_guard guard(impl_->clock_advance_mutex);
+    if (blocked && !impl_->driver_blocked && impl_->realtime) {
+        const auto now = TimeSource();
+        impl_->stall_realtime = impl_->realtime();
+        impl_->stall_uptime = now ? now() : 0;
+    }
+    impl_->driver_blocked = blocked;
+}
+
+bool VmMonitorTable::TryAdvanceClockForTimedPark(const std::uint64_t, const std::int64_t deadline_millis) const {
+    const std::lock_guard advance_guard(impl_->clock_advance_mutex);
     VmClockAdvance advance;
-    VmClockDriverBlockedProbe driver_blocked;
     VmMonotonicMillis now;
     {
         const std::lock_guard guard(impl_->mutex);
         advance = impl_->advance;
-        driver_blocked = impl_->clock_driver_blocked;
         now = impl_->now;
     }
-    if (!advance || !now ||
-        (context != kRootLifecycleToken &&
-         (!driver_blocked || !driver_blocked()))) {
-        return false;
-    }
-    // Multiple workers can become eligible while one lifecycle callback is
-    // blocked. Serialize the deadline check with the advance so they converge
-    // on the furthest requested deadline instead of each adding a full delay.
-    const std::lock_guard advance_guard(impl_->clock_advance_mutex);
+    if (!now) return false;
     const auto current = now();
-    if (current < deadline_millis) {
-        advance(deadline_millis - current);
-    }
-    return true;
+    if (current >= deadline_millis) return true;
+    if (!advance || !impl_->realtime || !impl_->driver_blocked) return false;
+    const auto elapsed = std::max<std::int64_t>(0, impl_->realtime() - impl_->stall_realtime);
+    const auto allowed = std::min(deadline_millis, impl_->stall_uptime + elapsed);
+    if (allowed > current) advance(allowed - current);
+    return now() >= deadline_millis;
 }
 
-void VmMonitorTable::Enter(const VmObjectRef object,
-                           const std::uint64_t owner) {
+void VmMonitorTable::Enter(const VmObjectRef object, const std::uint64_t owner) {
     std::unique_lock guard(impl_->mutex);
     auto& monitor = impl_->MonitorFor(object);
     if (monitor.recursion != 0 && monitor.owner == owner) {
@@ -194,8 +195,7 @@ void VmMonitorTable::Enter(const VmObjectRef object,
     impl_->AcquireLocked(guard, object, owner, 1);
 }
 
-void VmMonitorTable::Exit(const VmObjectRef object,
-                          const std::uint64_t owner) {
+void VmMonitorTable::Exit(const VmObjectRef object, const std::uint64_t owner) {
     {
         const std::lock_guard guard(impl_->mutex);
         auto& monitor = impl_->MonitorFor(object);
@@ -208,8 +208,7 @@ void VmMonitorTable::Exit(const VmObjectRef object,
     impl_->changed.notify_all();
 }
 
-bool VmMonitorTable::IsOwner(const VmObjectRef object,
-                             const std::uint64_t owner) const {
+bool VmMonitorTable::IsOwner(const VmObjectRef object, const std::uint64_t owner) const {
     const std::lock_guard guard(impl_->mutex);
     const auto found = impl_->monitors.find(object.Value());
     if (found == impl_->monitors.end()) return false;
@@ -236,20 +235,16 @@ void VmMonitorTable::ReleaseObjectForGc(const VmObjectRef object) {
     const std::lock_guard guard(impl_->mutex);
     const auto found = impl_->monitors.find(object.Value());
     if (found == impl_->monitors.end()) return;
-    if (found->second->owner != 0 || found->second->recursion != 0 ||
-        !found->second->wait_set.empty()) {
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "GC reached an owned or waited-on object monitor");
+    if (found->second->owner != 0 || found->second->recursion != 0 || !found->second->wait_set.empty()) {
+        throw DexVmError(DexVmErrorReason::internal_invariant, "GC reached an owned or waited-on object monitor");
     }
     impl_->monitors.erase(found);
 }
 
-VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
-                                   const std::uint64_t owner,
+VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object, const std::uint64_t owner,
                                    const std::int64_t timeout_millis) {
     if (timeout_millis < 0) {
-        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                          "timeout arguments out of range"};
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "timeout arguments out of range"};
     }
     const bool timed = timeout_millis > 0;
     VmMonotonicMillis clock;
@@ -271,12 +266,10 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
     }
     if (timed && !clock) {
         if (auto* ledger = impl_->vm->Ledger(); ledger != nullptr) {
-            ledger->RecordUnimplemented("dexvm.monitors.wait_without_clock",
-                                        0);
+            ledger->RecordUnimplemented("dexvm.monitors.wait_without_clock", 0);
         }
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "a timed Object.wait needs the unified Clock; this "
-                         "session published no time source");
+        throw DexVmError(DexVmErrorReason::internal_invariant, "a timed Object.wait needs the unified Clock; this "
+                                                               "session published no time source");
     }
 
     // Join the wait set and release the monitor completely, keeping the
@@ -296,7 +289,6 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
     impl_->SetMonitorWaitState(owner, VmThreadWaitState::monitor);
     auto& lock = impl_->vm->ExecutionLock();
     const auto depth = lock.ReleaseForBlocking();
-    bool advanced = false;
     bool deadline_expired = false;
     {
         std::unique_lock parked(impl_->mutex);
@@ -325,12 +317,10 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
                 // Deadline decisions stay with the unified Clock; this only
                 // schedules the next re-check.
                 impl_->changed.wait_for(parked, kDeadlinePoll);
-                // Root parks always fast-forward. Worker parks do so only
-                // while the lifecycle clock driver is itself blocked.
-                if (timed && !advanced) {
+                // Recheck the real-time allowance on every poll.
+                if (timed) {
                     parked.unlock();
-                    advanced = TryAdvanceClockForTimedPark(
-                        owner, deadline);
+                    static_cast<void>(TryAdvanceClockForTimedPark(owner, deadline));
                     parked.lock();
                 }
             } else {
@@ -366,8 +356,7 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
             throw;
         }
         auto& monitor = impl_->MonitorFor(object);
-        const auto position = std::find(monitor.wait_set.begin(),
-                                        monitor.wait_set.end(), owner);
+        const auto position = std::find(monitor.wait_set.begin(), monitor.wait_set.end(), owner);
         if (position != monitor.wait_set.end()) {
             monitor.wait_set.erase(position);
         }
@@ -381,8 +370,7 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
     return outcome;
 }
 
-void VmMonitorTable::Notify(const VmObjectRef object,
-                            const std::uint64_t owner) {
+void VmMonitorTable::Notify(const VmObjectRef object, const std::uint64_t owner) {
     {
         const std::lock_guard guard(impl_->mutex);
         auto& monitor = impl_->MonitorFor(object);
@@ -397,8 +385,7 @@ void VmMonitorTable::Notify(const VmObjectRef object,
     impl_->changed.notify_all();
 }
 
-void VmMonitorTable::NotifyAll(const VmObjectRef object,
-                               const std::uint64_t owner) {
+void VmMonitorTable::NotifyAll(const VmObjectRef object, const std::uint64_t owner) {
     {
         const std::lock_guard guard(impl_->mutex);
         auto& monitor = impl_->MonitorFor(object);
@@ -417,7 +404,8 @@ void VmMonitorTable::NotifyForGc(const VmObjectRef object) {
     {
         const std::lock_guard guard(impl_->mutex);
         auto& monitor = impl_->MonitorFor(object);
-        for (const auto waiter : monitor.wait_set) impl_->woken.insert(waiter);
+        for (const auto waiter : monitor.wait_set)
+            impl_->woken.insert(waiter);
         monitor.wait_set.clear();
     }
     impl_->changed.notify_all();
@@ -449,15 +437,11 @@ void VmMonitorTable::ReleaseAll(const std::uint64_t owner) {
                 monitor->recursion = 0;
                 monitor->owner = 0;
             }
-            const auto position =
-                std::find(monitor->wait_set.begin(), monitor->wait_set.end(),
-                          owner);
+            const auto position = std::find(monitor->wait_set.begin(), monitor->wait_set.end(), owner);
             if (position != monitor->wait_set.end()) {
                 monitor->wait_set.erase(position);
             }
-            const auto entrant = std::find(
-                monitor->entry_waiters.begin(), monitor->entry_waiters.end(),
-                owner);
+            const auto entrant = std::find(monitor->entry_waiters.begin(), monitor->entry_waiters.end(), owner);
             if (entrant != monitor->entry_waiters.end()) {
                 monitor->entry_waiters.erase(entrant);
             }
@@ -488,34 +472,31 @@ VmMonitorSnapshot VmMonitorTable::Snapshot(const VmObjectRef object) const {
     if (found == impl_->monitors.end()) {
         return {.shutting_down = impl_->shutting_down};
     }
-    return {found->second->owner,
-            static_cast<std::size_t>(found->second->recursion),
-            found->second->wait_set.size(), impl_->shutting_down};
+    return {found->second->owner, static_cast<std::size_t>(found->second->recursion), found->second->wait_set.size(),
+            impl_->shutting_down};
 }
 
-std::optional<bool> VmMonitorTable::TryInterrupted(
-    const std::uint64_t owner) const {
+std::optional<bool> VmMonitorTable::TryInterrupted(const std::uint64_t owner) const {
     std::unique_lock guard(impl_->mutex, std::try_to_lock);
     if (!guard.owns_lock()) return std::nullopt;
     return impl_->interrupted.contains(owner);
 }
 
-std::optional<std::vector<VmMonitorDiagnosticSnapshot>>
-VmMonitorTable::TrySnapshotAll() const {
+std::optional<std::vector<VmMonitorDiagnosticSnapshot>> VmMonitorTable::TrySnapshotAll() const {
     std::unique_lock guard(impl_->mutex, std::try_to_lock);
     if (!guard.owns_lock()) return std::nullopt;
     std::vector<VmMonitorDiagnosticSnapshot> result;
     result.reserve(impl_->monitors.size());
     for (const auto& [object, monitor] : impl_->monitors) {
-        if (monitor->owner == 0U && monitor->recursion == 0 &&
-            monitor->entry_waiters.empty() && monitor->wait_set.empty()) {
+        if (monitor->owner == 0U && monitor->recursion == 0 && monitor->entry_waiters.empty() &&
+            monitor->wait_set.empty()) {
             continue;
         }
-        result.push_back(
-            {object, monitor->owner,
-             static_cast<std::uint32_t>(monitor->recursion),
-             {monitor->entry_waiters.begin(), monitor->entry_waiters.end()},
-             {monitor->wait_set.begin(), monitor->wait_set.end()}});
+        result.push_back({object,
+                          monitor->owner,
+                          static_cast<std::uint32_t>(monitor->recursion),
+                          {monitor->entry_waiters.begin(), monitor->entry_waiters.end()},
+                          {monitor->wait_set.begin(), monitor->wait_set.end()}});
     }
     std::ranges::sort(result, {}, &VmMonitorDiagnosticSnapshot::object);
     return result;

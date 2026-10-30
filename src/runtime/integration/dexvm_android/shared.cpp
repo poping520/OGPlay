@@ -444,7 +444,9 @@ dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call, const Context& c
     // PackageUserState have installed=true.
     constexpr std::int32_t kApplicationFlagInstalled = 1 << 23;
     const auto archive = kind == PackageInfoKind::archive;
-    SetApplicationInfoInt(call, info, "flags", kApplicationFlagHasCode | kApplicationFlagInstalled);
+    SetApplicationInfoInt(call, info, "flags",
+                          kApplicationFlagHasCode | kApplicationFlagInstalled |
+                              (context->application_large_heap ? 0x00100000 : 0));
     SetApplicationInfoInt(call, info, "uid", archive ? -1 : static_cast<std::int32_t>(context->application_uid));
     SetApplicationInfoInt(call, info, "targetSdkVersion", static_cast<std::int32_t>(context->target_sdk_version));
     SetApplicationInfoBoolean(call, info, "enabled", context->application_enabled);

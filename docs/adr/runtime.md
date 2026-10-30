@@ -14,6 +14,8 @@
 - [ADR-0168 · 从连接拓扑发布本地接口查询视图](#adr-0168)
 - [ADR-0170 · 仅托管默认进程，独立进程服务按不可解析回答](#adr-0170)
 
+- [ADR-0171 · 生命周期停摆期间统一时钟按真实流速推进](#adr-0171)
+
 <a id="adr-0001"></a>
 
 ## ADR-0001 · 采用进程级 HLE 兼容层
@@ -298,3 +300,32 @@ PackageManager 查询保留清单事实；不改变其他组件或扩展同进�
 
 PackageManager 能查到、AMS 不可托管的视图差异是有意为之。依赖独立进程功能的游戏
 会失去该功能，但记账可查；不引入独立 guest 进程、Binder IPC 或游戏专属 quirk。
+
+<a id="adr-0171"></a>
+
+## ADR-0171 · 生命周期停摆期间统一时钟按真实流速推进
+
+- 状态：Accepted
+- 日期：2026-10-29
+
+### 背景
+
+生命周期驱动释放 VM 锁执行长 native 调用期间，watchdog 自己将 Clock 跳到其 10 秒
+截止时间，导致只执行数毫秒的 finalizer 被错误判超时。root 的直接补时也有同类风险。
+
+### 决定
+
+取代 WU-0017 及 dexvm_bridge 中“root/驱动阻塞时限时等待快进到截止时间”的规则。
+生命周期驱动的 execution lock blocking observer 统一记录释放与重新竞争锁的事件，
+并转发 EGL pacer 原有阻塞逻辑；无 EGL 的会话同样跟踪。
+停摆起点记录真实时间与 uptime，root/worker 的 sleep、wait、join、park 每次轮询仅补至
+起点 uptime 加停摆以来真实流逝时间，且不超过等待者自己的截止时间。并发补时串行收敛。
+真实时间由 integration 持有的统一 hal::RealtimeClock 注入；dexvm 不读取宿主时钟。
+驱动恢复后继续按帧推进，不回拨；root join 与 Runtime.exit hook 复用同一规则。
+有界生命周期 ExecutionDeadline 的 steady deadline 不变。
+SystemClock.sleep 按 API19 循环 Thread.sleep，忽略中断直至达到 uptime 目标，再恢复中断。
+
+### 后果
+
+启动期轮询型 sleep 会耗费真实时长，与真机一致；确定性测试用 NowFunction 注入假真实时间。
+补时不代表启动、长时运行或游戏兼容验收。

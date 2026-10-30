@@ -81,7 +81,13 @@ TEST_CASE("DVM-150 Java exit cannot be caught by Application onCreate") {
     const auto state = lifecycle.Start();
     CHECK(state.state == session::LifecycleRunState::stopped);
     CHECK(fixture.bridge->Vm().ExitCode() == 31);
-    CHECK(fixture.bridge->Vm().GetSystemProperty("shutdown.hook") == "done");
+    // Read the value captured by the hook before nativeExit; no Java calls after exit.
+    auto& vm = fixture.bridge->Vm();
+    const auto hook = vm.Linker().ResolveDescriptor("Lfixture/ExitHook;");
+    const auto field = vm.Linker().FindFieldRecursive(hook, "observed", "Ljava/lang/String;");
+    REQUIRE(field);
+    const runtime::dexvm::VmObjectRef observed(vm.Linker().Class(hook).static_storage[vm.Linker().Field(*field).slot]);
+    CHECK(vm.StringUtf8(observed) == "done");
     CHECK(fixture.context->uptime_millis.load() >= 10);
     CHECK_FALSE(opened);
 }
@@ -89,7 +95,7 @@ TEST_CASE("DVM-150 Java exit cannot be caught by Application onCreate") {
 TEST_CASE("DVM-150 AndroidAppProcess does not launch after Application exits") {
     using namespace ogplay;
     OrchestratedApp fixture("fixture.LauncherActivity", true, false, "", {}, true,
-        runtime::dexvm::InterpreterBackend::switch_dispatch, "fixture.ExitApplication");
+                            runtime::dexvm::InterpreterBackend::switch_dispatch, "fixture.ExitApplication");
     fixture.app->StartApplication();
     CHECK(fixture.app->State() == session::AndroidAppProcessState::stopped);
     CHECK(fixture.app->StartLauncherActivity().state == session::LifecycleRunState::stopped);
@@ -115,11 +121,12 @@ TEST_CASE("DVM-150 Runtime exit propagates through guest JNI OnLoad reentry") {
     auto context = std::make_shared<runtime::DexVmAndroidContext>();
     context->session = session.get();
     context->native_libraries = &libraries;
+    ogplay::test::BindBootDexArchive(*context);
     core::CapabilityLedger ledger;
     auto catalog = runtime::AndroidIntrinsicCatalog(context);
-    auto bridge = std::make_unique<runtime::DexVmGuestBridge>(
-        *session, ReadDexFixture("aps5.dex"), catalog, context, ledger,
-        nullptr, runtime::DexVmBridgeConfig{}, ogplay::test::ReadBootDex());
+    auto bridge =
+        std::make_unique<runtime::DexVmGuestBridge>(*session, ReadDexFixture("aps5.dex"), catalog, context, ledger,
+                                                    nullptr, runtime::DexVmBridgeConfig{}, ogplay::test::ReadBootDex());
     const auto type = bridge->Linker().ResolveDescriptor("Lfixture/Aps5;");
     const auto initialized = bridge->Vm().EnsureClassInitialized(type);
     REQUIRE_FALSE(initialized.exception.IsValid());
@@ -158,7 +165,8 @@ TEST_CASE("DVM-202 teardown isolates pending JNI errors and still stops after cl
         REQUIRE(cleanup.has_value());
         vm.TrackGuestNativeResource(original, *cleanup, 1);
         CHECK_THROWS_WITH_AS(static_cast<void>(f.app->Stop()),
-            doctest::Contains("native cleanup failed: Ljava/lang/UnsatisfiedLinkError;"), runtime::AndroidGuestProcessError);
+                             doctest::Contains("native cleanup failed: Ljava/lang/UnsatisfiedLinkError;"),
+                             runtime::AndroidGuestProcessError);
         CHECK(f.app->NativeProcess().AttachedJniThreadCount() == 0);
         CHECK_FALSE(env.ExceptionDiagnostics().empty());
         CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
@@ -169,62 +177,63 @@ TEST_CASE("cooperative onPause can start Java workers before VM shutdown and joi
     using namespace ogplay;
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-      for (const bool timeout : {false, true}) {
-        INFO("timeout=" << timeout << " backend=" << static_cast<int>(backend));
-        OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
-        f.app->StartApplication();
-        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
-        auto& vm = f.app->DexVm().Vm();
-        auto& linker = vm.Linker();
-        const auto worker_type = linker.ResolveDescriptor("Lfixture/NeverParkWorker;");
-        const auto ctor = linker.FindDirectMethod(worker_type, "<init>", "()V");
-        REQUIRE(ctor);
-        const auto run = linker.FindVtableIndex(worker_type, "run", "()V");
-        REQUIRE(run);
-        std::atomic<int> completed{};
-        if (!timeout) {
-            auto& method = linker.MutableMethod(linker.Class(worker_type).vtable[*run]);
-            method.kind = MethodKind::intrinsic;
-            method.implementation = [&](IntrinsicContext&) {
-                ++completed;
-                return VmValue::Void();
-            };
+        for (const bool timeout : {false, true}) {
+            INFO("timeout=" << timeout << " backend=" << static_cast<int>(backend));
+            OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
+            f.app->StartApplication();
+            REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+            auto& vm = f.app->DexVm().Vm();
+            auto& linker = vm.Linker();
+            const auto worker_type = linker.ResolveDescriptor("Lfixture/NeverParkWorker;");
+            const auto ctor = linker.FindDirectMethod(worker_type, "<init>", "()V");
+            REQUIRE(ctor);
+            const auto run = linker.FindVtableIndex(worker_type, "run", "()V");
+            REQUIRE(run);
+            std::atomic<int> completed{};
+            if (!timeout) {
+                auto& method = linker.MutableMethod(linker.Class(worker_type).vtable[*run]);
+                method.kind = MethodKind::intrinsic;
+                method.implementation = [&](IntrinsicContext&) {
+                    ++completed;
+                    return VmValue::Void();
+                };
+            }
+            const auto activity_type = vm.Model().ObjectClass(f.context->activity);
+            for (const auto callback : {"onPause", "onStop", "onDestroy"}) {
+                const auto pause = linker.FindVtableIndex(activity_type, callback, "()V");
+                REQUIRE(pause);
+                auto& method = linker.MutableMethod(linker.Class(activity_type).vtable[*pause]);
+                method.kind = MethodKind::intrinsic;
+                method.implementation = [&](IntrinsicContext&) {
+                    CHECK_FALSE(f.app->DexVm().Threads().ShuttingDown());
+                    // The first worker needs native TLS/JNI preparation. With early
+                    // admission closure it fails and the second start sees VM shutdown.
+                    for (int i = 0; i < 2; ++i) {
+                        const auto worker = vm.NewIntrinsicInstance("Lfixture/NeverParkWorker;");
+                        const auto roots = vm.ProtectReferences(std::array{worker});
+                        REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(worker)}).exception.IsValid());
+                        static_cast<void>(
+                            runtime::android_intrinsics::CallAndroidMethod(vm, worker, "start", "()V", {}));
+                        static_cast<void>(
+                            runtime::android_intrinsics::CallAndroidMethod(vm, worker, "join", "()V", {}));
+                    }
+                    return VmValue::Void();
+                };
+            }
+            if (timeout) {
+                CHECK_THROWS_WITH(static_cast<void>(f.app->Stop()),
+                                  doctest::Contains("lifecycle execution wall-time budget exhausted"));
+                const auto hits = f.ledger.Unimplemented();
+                CHECK(std::any_of(hits.begin(), hits.end(),
+                                  [](const auto& hit) { return hit.id == "session.lifecycle.cleanup_timeout"; }));
+            } else {
+                CHECK(f.app->Stop().state == session::LifecycleRunState::stopped);
+                CHECK(completed == 6);
+            }
+            CHECK(f.app->DexVm().Threads().ShuttingDown());
+            CHECK_FALSE(f.app->NativeProcess().Running());
+            CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
         }
-        const auto activity_type = vm.Model().ObjectClass(f.context->activity);
-        for (const auto callback : {"onPause", "onStop", "onDestroy"}) {
-            const auto pause = linker.FindVtableIndex(activity_type, callback, "()V");
-            REQUIRE(pause);
-            auto& method = linker.MutableMethod(linker.Class(activity_type).vtable[*pause]);
-            method.kind = MethodKind::intrinsic;
-            method.implementation = [&](IntrinsicContext&) {
-                CHECK_FALSE(f.app->DexVm().Threads().ShuttingDown());
-                // The first worker needs native TLS/JNI preparation. With early
-                // admission closure it fails and the second start sees VM shutdown.
-                for (int i = 0; i < 2; ++i) {
-                    const auto worker = vm.NewIntrinsicInstance("Lfixture/NeverParkWorker;");
-                    const auto roots = vm.ProtectReferences(std::array{worker});
-                    REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(worker)}).exception.IsValid());
-                    static_cast<void>(runtime::android_intrinsics::CallAndroidMethod(vm, worker, "start", "()V", {}));
-                    static_cast<void>(runtime::android_intrinsics::CallAndroidMethod(vm, worker, "join", "()V", {}));
-                }
-                return VmValue::Void();
-            };
-        }
-        if (timeout) {
-            CHECK_THROWS_WITH(static_cast<void>(f.app->Stop()),
-                doctest::Contains("lifecycle execution wall-time budget exhausted"));
-            const auto hits = f.ledger.Unimplemented();
-            CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
-                return hit.id == "session.lifecycle.cleanup_timeout";
-            }));
-        } else {
-            CHECK(f.app->Stop().state == session::LifecycleRunState::stopped);
-            CHECK(completed == 6);
-        }
-        CHECK(f.app->DexVm().Threads().ShuttingDown());
-        CHECK_FALSE(f.app->NativeProcess().Running());
-        CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
-      }
     }
 }
 
@@ -232,69 +241,68 @@ TEST_CASE("process close destroys the foreground before shutdown and finish stay
     using namespace ogplay;
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-      for (const int mode : {0, 1, 2}) {
-        INFO("mode=" << mode << " backend=" << static_cast<int>(backend));
-        OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
-        f.app->StartApplication();
-        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
-        auto& vm = f.app->DexVm().Vm();
-        auto& linker = vm.Linker();
-        const auto caller = f.context->activity;
-        const auto type = vm.Model().ObjectClass(caller);
-        const auto slot = linker.FindVtableIndex(type, "onDestroy", "()V");
-        REQUIRE(slot.has_value());
-        int destroyed{};
-        auto& method = linker.MutableMethod(linker.Class(type).vtable[*slot]);
-        method.kind = MethodKind::intrinsic;
-        method.implementation = [&](IntrinsicContext&) {
-            ++destroyed;
-            if (mode == 2)
-                throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "shared owner already destroyed"};
-            return VmValue::Void();
-        };
-        const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
-        const auto ctor = linker.FindDirectMethod(vm.Model().ObjectClass(intent), "<init>", "()V");
-        REQUIRE(ctor.has_value());
-        REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(intent)}).exception.IsValid());
-        const auto on = [&](VmObjectRef object, const char* name, const char* signature,
-                            std::vector<VmValue> args = {}) {
-            return runtime::android_intrinsics::CallAndroidMethod(vm, object, name, signature, args);
-        };
-        on(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
-           {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ResultCaller"))});
-        on(caller, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
-        static_cast<void>(f.app->ActivityLifecycle().StepFrame());
-        REQUIRE(f.context->activity_stack.size() == 2);
-        REQUIRE(f.context->activity != caller);
-        if (mode != 0) {
-            on(f.context->activity, "finish", "()V");
-            if (mode == 2) {
-                CHECK_THROWS_WITH(static_cast<void>(f.app->ActivityLifecycle().StepFrame()),
-                    doctest::Contains("shared owner already destroyed"));
-            } else {
-                static_cast<void>(f.app->ActivityLifecycle().StepFrame());
-                CHECK(f.context->activity == caller);
+        for (const int mode : {0, 1, 2}) {
+            INFO("mode=" << mode << " backend=" << static_cast<int>(backend));
+            OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
+            f.app->StartApplication();
+            REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+            auto& vm = f.app->DexVm().Vm();
+            auto& linker = vm.Linker();
+            const auto caller = f.context->activity;
+            const auto type = vm.Model().ObjectClass(caller);
+            const auto slot = linker.FindVtableIndex(type, "onDestroy", "()V");
+            REQUIRE(slot.has_value());
+            int destroyed{};
+            auto& method = linker.MutableMethod(linker.Class(type).vtable[*slot]);
+            method.kind = MethodKind::intrinsic;
+            method.implementation = [&](IntrinsicContext&) {
+                ++destroyed;
+                if (mode == 2) throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "shared owner already destroyed"};
+                return VmValue::Void();
+            };
+            const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+            const auto ctor = linker.FindDirectMethod(vm.Model().ObjectClass(intent), "<init>", "()V");
+            REQUIRE(ctor.has_value());
+            REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(intent)}).exception.IsValid());
+            const auto on = [&](VmObjectRef object, const char* name, const char* signature,
+                                std::vector<VmValue> args = {}) {
+                return runtime::android_intrinsics::CallAndroidMethod(vm, object, name, signature, args);
+            };
+            on(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+               {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ResultCaller"))});
+            on(caller, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+            static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+            REQUIRE(f.context->activity_stack.size() == 2);
+            REQUIRE(f.context->activity != caller);
+            if (mode != 0) {
+                on(f.context->activity, "finish", "()V");
+                if (mode == 2) {
+                    CHECK_THROWS_WITH(static_cast<void>(f.app->ActivityLifecycle().StepFrame()),
+                                      doctest::Contains("shared owner already destroyed"));
+                } else {
+                    static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+                    CHECK(f.context->activity == caller);
+                }
+                CHECK(destroyed == 1);
             }
-            CHECK(destroyed == 1);
+            f.context->video_views[999].guest_path = "retained source";
+            f.context->encoded_audio_leases[999] = {};
+            REQUIRE(f.context->pcm_playback != nullptr);
+            const auto player = f.context->pcm_playback->CreatePlayer({48000, 2, 16}, 2);
+            f.context->audio_tracks[999].player = player;
+            REQUIRE(f.context->pcm_playback->HasPlayer(player));
+            CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
+            CHECK(destroyed == (mode == 0 ? 1 : mode == 1 ? 2 : 1));
+            CHECK(f.context->video_views.empty());
+            CHECK(f.context->encoded_audio_leases.empty());
+            CHECK_FALSE(f.context->pcm_playback->HasPlayer(player));
+            CHECK(f.context->activity_stack.empty());
+            CHECK(f.context->process_stopping);
+            CHECK_FALSE(f.app->NativeProcess().Running());
+            CHECK(f.app->NativeProcess().AttachedJniThreadCount() == 0);
+            CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
+            CHECK(destroyed == (mode == 0 ? 1 : mode == 1 ? 2 : 1));
         }
-        f.context->video_views[999].guest_path = "retained source";
-        f.context->encoded_audio_leases[999] = {};
-        REQUIRE(f.context->pcm_playback != nullptr);
-        const auto player = f.context->pcm_playback->CreatePlayer({48000, 2, 16}, 2);
-        f.context->audio_tracks[999].player = player;
-        REQUIRE(f.context->pcm_playback->HasPlayer(player));
-        CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
-        CHECK(destroyed == (mode == 0 ? 1 : mode == 1 ? 2 : 1));
-        CHECK(f.context->video_views.empty());
-        CHECK(f.context->encoded_audio_leases.empty());
-        CHECK_FALSE(f.context->pcm_playback->HasPlayer(player));
-        CHECK(f.context->activity_stack.empty());
-        CHECK(f.context->process_stopping);
-        CHECK_FALSE(f.app->NativeProcess().Running());
-        CHECK(f.app->NativeProcess().AttachedJniThreadCount() == 0);
-        CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
-        CHECK(destroyed == (mode == 0 ? 1 : mode == 1 ? 2 : 1));
-      }
     }
 }
 
@@ -302,36 +310,40 @@ TEST_CASE("DVM-236 guest process exit and runtime fault forbid Activity callback
     using namespace ogplay;
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-      for (const bool guest_exit : {false, true}) {
-        OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
-        f.app->StartApplication();
-        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
-        auto& vm = f.app->DexVm().Vm();
-        auto& linker = vm.Linker();
-        const auto type = vm.Model().ObjectClass(f.context->activity);
-        int callbacks{};
-        for (const auto name : {"onPause", "onStop", "onDestroy"}) {
-            const auto slot = linker.FindVtableIndex(type, name, "()V");
-            REQUIRE(slot.has_value());
-            auto& method = linker.MutableMethod(linker.Class(type).vtable[*slot]);
-            method.kind = MethodKind::intrinsic;
-            method.implementation = [&](IntrinsicContext&) { ++callbacks; return VmValue::Void(); };
+        for (const bool guest_exit : {false, true}) {
+            OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
+            f.app->StartApplication();
+            REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+            auto& vm = f.app->DexVm().Vm();
+            auto& linker = vm.Linker();
+            const auto type = vm.Model().ObjectClass(f.context->activity);
+            int callbacks{};
+            for (const auto name : {"onPause", "onStop", "onDestroy"}) {
+                const auto slot = linker.FindVtableIndex(type, name, "()V");
+                REQUIRE(slot.has_value());
+                auto& method = linker.MutableMethod(linker.Class(type).vtable[*slot]);
+                method.kind = MethodKind::intrinsic;
+                method.implementation = [&](IntrinsicContext&) {
+                    ++callbacks;
+                    return VmValue::Void();
+                };
+            }
+            if (guest_exit) {
+                const auto release = linker.FindDirectMethod(linker.ResolveDescriptor("Lfixture/FailingNativeCleanup;"),
+                                                             "release", "(J)V");
+                REQUIRE(release.has_value());
+                vm.TrackGuestNativeResource(f.context->activity, *release, 1);
+                const auto process = linker.ResolveDescriptor("Landroid/os/Process;");
+                const auto kill = linker.FindDirectMethod(process, "killProcess", "(I)V");
+                REQUIRE(kill.has_value());
+                CHECK_THROWS_AS(static_cast<void>(vm.Call(*kill, std::array{VmValue::Int(1)})), DexVmError);
+                CHECK(vm.ExitCode() == 0);
+            }
+            CHECK_NOTHROW(static_cast<void>(f.app->Stop(guest_exit ? session::DexProcessStopReason::host_shutdown
+                                                                   : session::DexProcessStopReason::runtime_failure)));
+            CHECK(callbacks == 0);
+            CHECK_FALSE(f.app->NativeProcess().Running());
+            CHECK(f.app->NativeProcess().AttachedJniThreadCount() == 0);
         }
-        if (guest_exit) {
-            const auto release = linker.FindDirectMethod(linker.ResolveDescriptor("Lfixture/FailingNativeCleanup;"), "release", "(J)V");
-            REQUIRE(release.has_value());
-            vm.TrackGuestNativeResource(f.context->activity, *release, 1);
-            const auto process = linker.ResolveDescriptor("Landroid/os/Process;");
-            const auto kill = linker.FindDirectMethod(process, "killProcess", "(I)V");
-            REQUIRE(kill.has_value());
-            CHECK_THROWS_AS(static_cast<void>(vm.Call(*kill, std::array{VmValue::Int(1)})), DexVmError);
-            CHECK(vm.ExitCode() == 0);
-        }
-        CHECK_NOTHROW(static_cast<void>(f.app->Stop(guest_exit ? session::DexProcessStopReason::host_shutdown
-                                                           : session::DexProcessStopReason::runtime_failure)));
-        CHECK(callbacks == 0);
-        CHECK_FALSE(f.app->NativeProcess().Running());
-        CHECK(f.app->NativeProcess().AttachedJniThreadCount() == 0);
-      }
     }
 }

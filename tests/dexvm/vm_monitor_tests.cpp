@@ -31,12 +31,10 @@ using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 std::vector<std::uint8_t> ReadFixture(const std::string& name) {
-    const std::string path =
-        std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
+    const std::string path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
     std::ifstream stream(path, std::ios::binary);
     REQUIRE_MESSAGE(stream.good(), "missing fixture: ", path);
-    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream),
-                                     std::istreambuf_iterator<char>());
+    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 }
 
 struct MonitorVm final {
@@ -52,16 +50,16 @@ struct MonitorVm final {
     // Stands in for the lifecycle driver's published uptime: the tests move
     // it explicitly, so timed waits stay reproducible.
     std::atomic<std::int64_t> clock_millis{0};
+    std::atomic<std::int64_t> fake_real{};
 
     explicit MonitorVm(const bool platform_bindings = false,
                        const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
-        : model(strings, arrays, {}),
-          linker(),
+        : model(strings, arrays, {}), linker(),
           interpreter(
               [this, platform_bindings]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
-                  if (platform_bindings) linker.RegisterIntrinsics(AndroidIntrinsicCatalog(
-                      std::make_shared<DexVmAndroidContext>()));
+                  if (platform_bindings)
+                      linker.RegisterIntrinsics(AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>()));
                   ogplay::test::RegisterBootDex(linker);
                   linker.RegisterDex(ReadFixture("interp.dex"));
                   linker.Link();
@@ -71,54 +69,42 @@ struct MonitorVm final {
           threads(interpreter) {}
 
     void UseTestClock() {
-        interpreter.Monitors().SetTimeSource(
-            [this] { return clock_millis.load(); });
+        interpreter.Monitors().SetTimeSource([this] { return clock_millis.load(); });
     }
 
-    [[nodiscard]] VmMethodId Static(const std::string& class_descriptor,
-                                    const std::string& name,
+    [[nodiscard]] VmMethodId Static(const std::string& class_descriptor, const std::string& name,
                                     const std::string& descriptor) {
         const auto java_class = linker.FindClass(class_descriptor);
         REQUIRE_MESSAGE(java_class.has_value(), class_descriptor);
-        const auto method =
-            linker.FindDirectMethod(*java_class, name, descriptor);
+        const auto method = linker.FindDirectMethod(*java_class, name, descriptor);
         REQUIRE_MESSAGE(method.has_value(), name);
         return *method;
     }
 
-    [[nodiscard]] VmCallOutcome CallStatic(const std::string& class_descriptor,
-                                           const std::string& name,
+    [[nodiscard]] VmCallOutcome CallStatic(const std::string& class_descriptor, const std::string& name,
                                            const std::string& descriptor) {
-        return interpreter.Call(Static(class_descriptor, name, descriptor),
-                                {});
+        return interpreter.Call(Static(class_descriptor, name, descriptor), {});
     }
 
     [[nodiscard]] VmObjectRef Make(const std::string& class_descriptor) {
-        const auto outcome =
-            CallStatic(class_descriptor, "make", "()Ljava/lang/Runnable;");
-        REQUIRE_MESSAGE(!outcome.exception.IsValid(),
-                        outcome.exception_message);
+        const auto outcome = CallStatic(class_descriptor, "make", "()Ljava/lang/Runnable;");
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
         return outcome.value.ref;
     }
 
     [[nodiscard]] VmObjectRef Lock() {
-        const auto outcome =
-            CallStatic("LWaitProbe;", "lock", "()Ljava/lang/Object;");
-        REQUIRE_MESSAGE(!outcome.exception.IsValid(),
-                        outcome.exception_message);
+        const auto outcome = CallStatic("LWaitProbe;", "lock", "()Ljava/lang/Object;");
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
         return outcome.value.ref;
     }
 
     [[nodiscard]] std::int32_t Observed() {
         const auto outcome = CallStatic("LWaitProbe;", "observed", "()I");
-        REQUIRE_MESSAGE(!outcome.exception.IsValid(),
-                        outcome.exception_message);
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
         return outcome.value.AsInt();
     }
 
-    [[nodiscard]] VmObjectRef NewThreadObject() {
-        return interpreter.NewIntrinsicInstance("Ljava/lang/Object;");
-    }
+    [[nodiscard]] VmObjectRef NewThreadObject() { return interpreter.NewIntrinsicInstance("Ljava/lang/Object;"); }
 };
 
 // Observes another host thread reaching a state. Every use below has a real
@@ -144,22 +130,16 @@ TEST_CASE("dexvm notifyAll releases a waiter parked on another host thread") {
     vm.threads.Start(thread_object, "waiter", vm.threads.AllocateThreadId());
     // The waiter has to be in the wait set before anything signals it,
     // otherwise the test would pass without a wait set at all.
-    REQUIRE(WaitFor(
-        [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
-    const auto monitor_snapshot =
-        vm.interpreter.Monitors().TrySnapshotAll();
+    REQUIRE(WaitFor([&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
+    const auto monitor_snapshot = vm.interpreter.Monitors().TrySnapshotAll();
     REQUIRE(monitor_snapshot.has_value());
-    const auto monitor = std::ranges::find(
-        *monitor_snapshot, lock.Value(),
-        &VmMonitorDiagnosticSnapshot::object);
+    const auto monitor = std::ranges::find(*monitor_snapshot, lock.Value(), &VmMonitorDiagnosticSnapshot::object);
     REQUIRE(monitor != monitor_snapshot->end());
     CHECK(monitor->entry_waiters.empty());
     CHECK(monitor->notify_wait_set.size() == 1U);
-    CHECK(std::ranges::any_of(
-        vm.threads.Snapshot(), [thread_object](const auto& thread) {
-            return thread.object == thread_object.Value() &&
-                   thread.wait_state == VmThreadWaitState::monitor;
-        }));
+    CHECK(std::ranges::any_of(vm.threads.Snapshot(), [thread_object](const auto& thread) {
+        return thread.object == thread_object.Value() && thread.wait_state == VmThreadWaitState::monitor;
+    }));
     CHECK(vm.Observed() == 0);
 
     // signal() takes the same monitor, so it only completes because wait()
@@ -186,16 +166,17 @@ TEST_CASE("conditional swap pacing releases two swaps while driver waits") {
         std::atomic<bool> record_failed{};
         std::atomic<bool> finished{};
         std::atomic<bool> watchdog_fired{};
-        const auto record_swap =
-            vm.Static("LSwapHandshake;", "recordSwap", "()V");
+        const auto record_swap = vm.Static("LSwapHandshake;", "recordSwap", "()V");
         std::exception_ptr worker_failure;
         std::atomic<bool> root_rejected{};
         std::thread worker([&] {
             try {
                 // A blocked lifecycle thread retains ownership of its context.
-                try { (void)vm.interpreter.Call(record_swap, {}); }
-                catch (const DexVmError& error) {
-                    root_rejected = error.Reason() == DexVmErrorReason::internal_invariant &&
+                try {
+                    (void)vm.interpreter.Call(record_swap, {});
+                } catch (const DexVmError& error) {
+                    root_rejected =
+                        error.Reason() == DexVmErrorReason::internal_invariant &&
                         (std::string(error.what()).find("bound to another host thread") != std::string::npos ||
                          std::string(error.what()).find("active on another host thread") != std::string::npos);
                 }
@@ -208,7 +189,9 @@ TEST_CASE("conditional swap pacing releases two swaps while driver waits") {
                         sequence.push_back(swap);
                     }
                 });
-            } catch (...) { worker_failure = std::current_exception(); }
+            } catch (...) {
+                worker_failure = std::current_exception();
+            }
         });
         std::thread watchdog([&] {
             for (int attempt = 0; attempt < 5000 && !finished.load(); ++attempt) {
@@ -220,8 +203,7 @@ TEST_CASE("conditional swap pacing releases two swaps while driver waits") {
             }
         });
 
-        const auto awaited =
-            vm.CallStatic("LSwapHandshake;", "awaitTwo", "()V");
+        const auto awaited = vm.CallStatic("LSwapHandshake;", "awaitTwo", "()V");
         const bool await_failed = awaited.exception.IsValid();
         worker.join();
         finished = true;
@@ -231,8 +213,7 @@ TEST_CASE("conditional swap pacing releases two swaps while driver waits") {
         CHECK_FALSE(watchdog_fired.load());
         CHECK_FALSE(await_failed);
         CHECK_FALSE(record_failed.load());
-        const auto observed =
-            vm.CallStatic("LSwapHandshake;", "observed", "()I");
+        const auto observed = vm.CallStatic("LSwapHandshake;", "observed", "()I");
         REQUIRE_FALSE(observed.exception.IsValid());
         CHECK(observed.value.AsInt() == 2);
         CHECK(sequence == std::vector<std::int32_t>{1, 2});
@@ -277,13 +258,10 @@ TEST_CASE("dexvm wait restores the full recursion depth before returning") {
     const auto target = vm.Make("LWaitRecursion;");
     const auto thread_object = target;
 
-    vm.threads.Start(thread_object, "recursive-waiter",
-                     vm.threads.AllocateThreadId());
-    REQUIRE(WaitFor(
-        [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
+    vm.threads.Start(thread_object, "recursive-waiter", vm.threads.AllocateThreadId());
+    REQUIRE(WaitFor([&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
     // Depth three was released completely: this signal needs the monitor.
-    REQUIRE(!vm.CallStatic("LWaitProbe;", "signal", "()V")
-                 .exception.IsValid());
+    REQUIRE(!vm.CallStatic("LWaitProbe;", "signal", "()V").exception.IsValid());
     vm.threads.Join(thread_object);
 
     // The body exits the monitor three times after waking. Without the
@@ -297,17 +275,13 @@ TEST_CASE("dexvm wait restores the full recursion depth before returning") {
 TEST_CASE("dexvm wait and notify require monitor ownership") {
     MonitorVm vm;
     vm.UseTestClock();
-    const auto notified =
-        vm.CallStatic("LWaitProbe;", "notifyWithoutLock", "()V");
+    const auto notified = vm.CallStatic("LWaitProbe;", "notifyWithoutLock", "()V");
     REQUIRE(notified.exception.IsValid());
-    CHECK(vm.linker.Class(notified.exception_class).descriptor ==
-          "Ljava/lang/IllegalMonitorStateException;");
+    CHECK(vm.linker.Class(notified.exception_class).descriptor == "Ljava/lang/IllegalMonitorStateException;");
 
-    const auto waited =
-        vm.CallStatic("LWaitProbe;", "waitWithoutLock", "()V");
+    const auto waited = vm.CallStatic("LWaitProbe;", "waitWithoutLock", "()V");
     REQUIRE(waited.exception.IsValid());
-    CHECK(vm.linker.Class(waited.exception_class).descriptor ==
-          "Ljava/lang/IllegalMonitorStateException;");
+    CHECK(vm.linker.Class(waited.exception_class).descriptor == "Ljava/lang/IllegalMonitorStateException;");
 }
 
 TEST_CASE("dexvm timed wait ends on the unified Clock deadline") {
@@ -318,10 +292,8 @@ TEST_CASE("dexvm timed wait ends on the unified Clock deadline") {
     // the clock. Nothing ever notifies it: only the deadline gets it out.
     const auto waiter = vm.Make("LWaitTimedRunner;");
     const auto thread_object = waiter;
-    vm.threads.Start(thread_object, "timed-waiter",
-                     vm.threads.AllocateThreadId());
-    REQUIRE(WaitFor(
-        [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
+    vm.threads.Start(thread_object, "timed-waiter", vm.threads.AllocateThreadId());
+    REQUIRE(WaitFor([&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
 
     // Still parked well before the deadline.
     vm.clock_millis.store(49);
@@ -340,12 +312,10 @@ TEST_CASE("dexvm timed wait ends on the unified Clock deadline") {
 TEST_CASE("dexvm Object.wait validates the millis/nanos pair") {
     MonitorVm vm;
     vm.UseTestClock();
-    for (const auto* probe :
-         {"waitNanoBadMillis", "waitNanoBadNanosLow", "waitNanoBadNanosHigh"}) {
+    for (const auto* probe : {"waitNanoBadMillis", "waitNanoBadNanosLow", "waitNanoBadNanosHigh"}) {
         const auto outcome = vm.CallStatic("LWaitProbe;", probe, "()V");
         REQUIRE_MESSAGE(outcome.exception.IsValid(), probe);
-        CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-              "Ljava/lang/IllegalArgumentException;");
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
         CHECK(outcome.exception_message == "timeout arguments out of range");
         CHECK(vm.interpreter.Monitors().WaitingCount(vm.Lock()) == 0U);
     }
@@ -360,10 +330,8 @@ TEST_CASE("dexvm Object.wait rounds a nonzero nanos onto the deadline") {
     const auto lock = vm.Lock();
     const auto waiter = vm.Make("LWaitNanoRunner;");
     const auto thread_object = waiter;
-    vm.threads.Start(thread_object, "nano-waiter",
-                     vm.threads.AllocateThreadId());
-    REQUIRE(WaitFor(
-        [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
+    vm.threads.Start(thread_object, "nano-waiter", vm.threads.AllocateThreadId());
+    REQUIRE(WaitFor([&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
 
     // Clock still at 0: the rounded-up deadline has not arrived yet.
     CHECK(vm.interpreter.Monitors().WaitingCount(lock) == 1U);
@@ -376,9 +344,7 @@ TEST_CASE("dexvm Object.wait rounds a nonzero nanos onto the deadline") {
 
 TEST_CASE("dexvm timed wait without a Clock fails instead of guessing") {
     MonitorVm vm;  // no time source published
-    CHECK_THROWS_AS(static_cast<void>(vm.CallStatic("LWaitProbe;",
-                                                    "waitTimedOnce", "()V")),
-                    DexVmError);
+    CHECK_THROWS_AS(static_cast<void>(vm.CallStatic("LWaitProbe;", "waitTimedOnce", "()V")), DexVmError);
     bool recorded = false;
     for (const auto& hit : vm.ledger.Unimplemented()) {
         if (hit.id == "dexvm.monitors.wait_without_clock") recorded = true;
@@ -394,10 +360,8 @@ TEST_CASE("dexvm interrupt wakes a waiter and re-acquires before throwing") {
         const auto target = vm.Make("LWaitInterrupt;");
         const auto thread_object = target;
 
-        vm.threads.Start(thread_object, "interruptible",
-                         vm.threads.AllocateThreadId());
-        REQUIRE(WaitFor(
-            [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
+        vm.threads.Start(thread_object, "interruptible", vm.threads.AllocateThreadId());
+        REQUIRE(WaitFor([&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
 
         vm.threads.Interrupt(thread_object);
         vm.threads.Join(thread_object);
@@ -436,8 +400,7 @@ TEST_CASE("dexvm teardown wakes every waiter and stops the thread") {
     const auto thread_object = target;
 
     vm.threads.Start(thread_object, "waiter", vm.threads.AllocateThreadId());
-    REQUIRE(WaitFor(
-        [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
+    REQUIRE(WaitFor([&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
 
     vm.threads.Shutdown();
     CHECK(vm.threads.LiveCount() == 0U);
@@ -470,12 +433,11 @@ TEST_CASE("dexvm monitor diagnostics distinguish entry and notify waiters") {
     REQUIRE(WaitFor([&] {
         snapshot = vm.interpreter.Monitors().TrySnapshotAll();
         return snapshot && std::ranges::any_of(*snapshot, [&](const auto& item) {
-            return item.object == lock.Value() && item.owner == 1U &&
-                   item.entry_waiters == std::vector<std::uint64_t>{2U};
-        });
+                   return item.object == lock.Value() && item.owner == 1U &&
+                          item.entry_waiters == std::vector<std::uint64_t>{2U};
+               });
     }));
-    const auto item = std::ranges::find(*snapshot, lock.Value(),
-                                       &VmMonitorDiagnosticSnapshot::object);
+    const auto item = std::ranges::find(*snapshot, lock.Value(), &VmMonitorDiagnosticSnapshot::object);
     REQUIRE(item != snapshot->end());
     CHECK(item->notify_wait_set.empty());
     CHECK_FALSE(acquired.load(std::memory_order_acquire));
@@ -492,21 +454,21 @@ TEST_CASE("dexvm monitor diagnostics distinguish entry and notify waiters") {
 // Clock would wait forever. A pump-driven test clock plus the published
 // advance models that session; without the fast-forward this wait parks
 // forever, which is how a title licence poll in onCreate froze sessions.
-TEST_CASE("dexvm root timed wait fast-forwards the published clock advance") {
+TEST_CASE("dexvm root timed wait catches up using injected real time") {
     MonitorVm vm;
     vm.UseTestClock();
     const auto lock = vm.Lock();
     std::vector<std::int64_t> advances;
-    vm.interpreter.Monitors().SetClockAdvance(
-        [&](const std::int64_t delta_millis) {
-            vm.clock_millis += delta_millis;
-            advances.push_back(delta_millis);
-        });
+    vm.interpreter.Monitors().SetRealtimeSource([&] { return vm.fake_real.fetch_add(2); });
+    vm.interpreter.Monitors().ObserveClockDriverBlocking(true);
+    vm.interpreter.Monitors().SetClockAdvance([&](const std::int64_t delta_millis) {
+        vm.clock_millis += delta_millis;
+        advances.push_back(delta_millis);
+    });
     vm.interpreter.Monitors().Enter(lock, kRootLifecycleToken);
-    CHECK(vm.interpreter.Monitors().Wait(lock, kRootLifecycleToken, 50) ==
-          VmWaitOutcome::timed_out);
-    CHECK(advances.size() == 1U);
-    CHECK(advances.front() == 50);
+    CHECK(vm.interpreter.Monitors().Wait(lock, kRootLifecycleToken, 50) == VmWaitOutcome::timed_out);
+    CHECK_FALSE(advances.empty());
+    CHECK(advances.front() <= 2);
     CHECK(vm.clock_millis.load() == 50);
     // The park restored the released monitor at the same depth.
     CHECK(vm.interpreter.Monitors().IsOwner(lock, kRootLifecycleToken));
@@ -518,15 +480,14 @@ TEST_CASE("dexvm worker timed wait advances only with a blocked clock driver") {
     MonitorVm vm;
     vm.UseTestClock();
     const auto lock = vm.Lock();
-    std::atomic<bool> driver_blocked{};
     std::atomic<int> advances{};
-    vm.interpreter.Monitors().SetClockAdvance(
-        [&](const std::int64_t delta_millis) {
-            vm.clock_millis += delta_millis;
-            ++advances;
-        });
-    vm.interpreter.Monitors().SetClockDriverBlockedProbe(
-        [&] { return driver_blocked.load(); });
+    vm.interpreter.Monitors().SetRealtimeSource([&] { return vm.fake_real.fetch_add(2); });
+    vm.interpreter.Monitors().ObserveClockDriverBlocking(true);
+    vm.interpreter.Monitors().SetClockAdvance([&](const std::int64_t delta_millis) {
+        vm.clock_millis += delta_millis;
+        ++advances;
+    });
+    vm.interpreter.Monitors().ObserveClockDriverBlocking(false);
 
     auto outcome = VmWaitOutcome::notified;
     std::thread waiter([&] {
@@ -535,22 +496,20 @@ TEST_CASE("dexvm worker timed wait advances only with a blocked clock driver") {
         outcome = vm.interpreter.Monitors().Wait(lock, 2U, 50);
         vm.interpreter.Monitors().Exit(lock, 2U);
     });
-    const bool waiting = WaitFor([&] {
-        return vm.interpreter.Monitors().WaitingCount(lock) == 1U;
-    });
+    const bool waiting = WaitFor([&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; });
     CHECK(waiting);
     if (!waiting) {
-        driver_blocked.store(true);
+        vm.interpreter.Monitors().ObserveClockDriverBlocking(true);
         waiter.join();
         return;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     CHECK(advances.load() == 0);
-    driver_blocked.store(true);
+    vm.interpreter.Monitors().ObserveClockDriverBlocking(true);
     waiter.join();
 
     CHECK(outcome == VmWaitOutcome::timed_out);
-    CHECK(advances.load() == 1);
+    CHECK(advances.load() > 1);
     CHECK(vm.clock_millis.load() == 50);
 }
 
@@ -581,9 +540,9 @@ TEST_CASE("DVM-234 lifecycle deadline ends indefinite monitor wait without a fak
     vm.Monitors().Enter(object, 1);
     vm.Monitors().Enter(object, 1);
     const auto deadline = ogplay::hal::Clock::SteadyTimestampNs() + 20'000'000;
-    CHECK_THROWS_WITH_AS(vm.RunWithExecutionDeadline(deadline, [&] {
-        static_cast<void>(vm.Monitors().Wait(object, 1, 0));
-    }), doctest::Contains("lifecycle execution wall-time budget exhausted"), DexVmError);
+    CHECK_THROWS_WITH_AS(
+        vm.RunWithExecutionDeadline(deadline, [&] { static_cast<void>(vm.Monitors().Wait(object, 1, 0)); }),
+        doctest::Contains("lifecycle execution wall-time budget exhausted"), DexVmError);
     CHECK(vm.Monitors().WaitingCount(object) == 0);
     CHECK_FALSE(vm.Monitors().IsOwner(object, 1));
     CHECK_FALSE(vm.HasExecutionDeadline());
@@ -595,10 +554,10 @@ TEST_CASE("DVM-234 lifecycle deadline bounds sleep without advancing the guest c
     MonitorVm fixture(true);
     fixture.UseTestClock();
     const VmExecutionLockScope execution(fixture.interpreter.ExecutionLock());
-    CHECK_THROWS_WITH_AS(fixture.interpreter.RunWithExecutionDeadline(
-        ogplay::hal::Clock::SteadyTimestampNs() + 20'000'000, [&] {
-            fixture.threads.Sleep(10000);
-        }), doctest::Contains("lifecycle execution wall-time budget exhausted"), DexVmError);
+    CHECK_THROWS_WITH_AS(
+        fixture.interpreter.RunWithExecutionDeadline(ogplay::hal::Clock::SteadyTimestampNs() + 20'000'000,
+                                                     [&] { fixture.threads.Sleep(10000); }),
+        doctest::Contains("lifecycle execution wall-time budget exhausted"), DexVmError);
     CHECK(fixture.clock_millis.load() == 0);
     CHECK_FALSE(fixture.interpreter.HasExecutionDeadline());
 }
@@ -620,4 +579,30 @@ TEST_CASE("DVM-234 pacer shutdown preserves actual driver blocking facts") {
         CHECK_FALSE(TryEglSwapPacerSnapshot(context)->driver_blocked);
     }
     DetachEglSwapPacer(context, lock);
+}
+
+TEST_CASE("DVM-353 concurrent timed parks converge on elapsed real time and stop catching up on resume") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        MonitorVm f(false, backend);
+        f.UseTestClock();
+        std::atomic<std::int64_t> real{};
+        ogplay::hal::RealtimeClock clock(
+            1000, [&] { return ogplay::hal::RealtimeClock::TimePoint{} + std::chrono::milliseconds(real.load()); });
+        auto& monitors = f.interpreter.Monitors();
+        monitors.SetRealtimeSource([&] { return static_cast<std::int64_t>(clock.Ticks()); });
+        monitors.SetClockAdvance([&](std::int64_t delta) { f.clock_millis += delta; });
+        monitors.ObserveClockDriverBlocking(true);
+        real = 3000;
+        std::thread worker([&] { CHECK_FALSE(monitors.TryAdvanceClockForTimedPark(2, 10000)); });
+        CHECK_FALSE(monitors.TryAdvanceClockForTimedPark(1, 10000));
+        worker.join();
+        CHECK(f.clock_millis == 3000);
+        real = 10000;
+        CHECK(monitors.TryAdvanceClockForTimedPark(2, 10000));
+        CHECK(f.clock_millis == 10000);
+        monitors.ObserveClockDriverBlocking(false);
+        real = 20000;
+        CHECK_FALSE(monitors.TryAdvanceClockForTimedPark(1, 30000));
+        CHECK(f.clock_millis == 10000);
+    }
 }

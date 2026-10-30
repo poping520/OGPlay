@@ -82,7 +82,6 @@ Decl Declare_android_view_InputQueue(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_drawable_Drawable(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_drawable_PaintDrawable(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context);
-[[nodiscard]] Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context);
 [[nodiscard]] Decl Declare_android_location_LocationListener(const Context& context);
 [[nodiscard]] Decl Declare_android_location_Criteria(const Context& context);
 [[nodiscard]] Decl Declare_android_location_LocationManager(const Context& context);

@@ -13,6 +13,8 @@
 - [ADR-0158 · 固定 ROM 成员组合与开放世界虚派准入](#adr-0158)
 - [ADR-0167 · Locale 的 ROM Java 归属与单一设备语言地区](#adr-0167)
 
+- [ADR-0172 · Dalvik 堆默认值对齐 API19 1 GB 设备档位](#adr-0172)
+
 <a id="adr-0017"></a>
 
 ## ADR-0017 · 有界 DEX 解释执行与平台边界
@@ -321,3 +323,32 @@ boundary 的 AConfiguration 经显式 provider 读取同源投影。Locale.setDe
 
 Java 算法与缓存没有宿主副本；设备语言地区与应用可修改的 Java 默认 Locale 各有明确归属。
 验证入口及范围见 [DVM-342](../tasks/dexvm/DVM-342.md)。
+
+<a id="adr-0172"></a>
+
+## ADR-0172 · Dalvik 堆默认值对齐 API19 1 GB 设备档位
+
+- 状态：Accepted
+- 日期：2026-10-30
+
+### 背景
+
+虚拟设备内存快照为 1 GiB（DVM-228），旧 Dalvik 64/512/1024 MiB 默认堆不匹配。
+Runtime.maxMemory 会影响应用按比例预分配；Manifest 的 largeHeap 尚未投影。
+
+### 决定
+
+采用 AOSP android-4.4.4_r2.0.1 的 frameworks/native/build/
+phone-xhdpi-1024-dalvik-heap.mk：start 8 MiB、growth 96 MiB、maximum 256 MiB，
+target utilization 0.75、min free 512 KiB、max free 8 MiB。六个参数均复用现有模型。
+普通设备 memory class 保留初始 growth limit，clearGrowthLimit 仅改变活动分配上限。
+Manifest 解析 application largeHeap，ApplicationInfo.flags 发布 FLAG_LARGE_HEAP=0x00100000；
+依 ActivityThread.handleBindApplication 顺序，在创建 Application 前调用原版
+VMRuntime.getRuntime().clearGrowthLimit()，将活动上限放开至 maximum。
+不新增 Profile 堆覆盖，不对单个游戏放宽。
+
+### 后果
+
+普通应用 maxMemory=96 MiB，largeHeap 为 256 MiB；getMemoryClass 始终 96，
+getLargeMemoryClass 为 256。Native guest 内存不纳入 Java 堆上限。
+跨游戏 OOM 需保留分配栈与所需大小并停止，不能静默回退旧档位；不改变 1 GiB 设备事实。

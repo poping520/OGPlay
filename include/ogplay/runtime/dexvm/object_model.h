@@ -52,11 +52,12 @@ enum class VmObjectKind : std::uint8_t {
 };
 
 struct JavaObjectModelConfig final {
-    std::uint64_t initial_heap_target_bytes{64ULL * 1024ULL * 1024ULL};
-    std::uint64_t heap_growth_limit_bytes{512ULL * 1024ULL * 1024ULL};
-    std::uint64_t maximum_heap_bytes{1024ULL * 1024ULL * 1024ULL};
+    // AOSP API19 phone-xhdpi-1024-dalvik-heap.mk, matching our 1 GiB device facts.
+    std::uint64_t initial_heap_target_bytes{8ULL * 1024ULL * 1024ULL};
+    std::uint64_t heap_growth_limit_bytes{96ULL * 1024ULL * 1024ULL};
+    std::uint64_t maximum_heap_bytes{256ULL * 1024ULL * 1024ULL};
     std::uint32_t target_utilization_percent{75};
-    std::uint64_t min_free_bytes{2ULL * 1024ULL * 1024ULL};
+    std::uint64_t min_free_bytes{512ULL * 1024ULL};
     std::uint64_t max_free_bytes{8ULL * 1024ULL * 1024ULL};
 };
 
@@ -68,10 +69,8 @@ struct JavaObjectInterop final {
     std::function<JniObjectIdentity(DexClassId)> publish_class;
     std::function<DexClassId(JniObjectIdentity)> resolve_class;
     std::function<DexClassId(JniObjectIdentity)> resolve_object_class;
-    std::function<std::pair<DexClassId, DexClassId>(JniObjectIdentity)>
-        resolve_object_array_class;
-    std::function<std::optional<std::uint16_t>(DexClassId)>
-        resolve_instance_slots;
+    std::function<std::pair<DexClassId, DexClassId>(JniObjectIdentity)> resolve_object_array_class;
+    std::function<std::optional<std::uint16_t>(DexClassId)> resolve_instance_slots;
     std::function<DexClassId(JniPrimitiveKind)> resolve_primitive_array_class;
 };
 
@@ -83,14 +82,12 @@ struct GcMarkResult final {
     std::uint64_t garbage_objects{};
 
     [[nodiscard]] bool IsMarked(VmObjectRef ref) const noexcept {
-        return ref.IsValid() && ref.Value() <= marked.size() &&
-               marked[ref.Value() - 1U];
+        return ref.IsValid() && ref.Value() <= marked.size() && marked[ref.Value() - 1U];
     }
 };
 
 struct GcSweepHooks final {
-    std::function<bool(VmObjectRef, VmObjectKind, DexClassId, std::uint64_t)>
-        before_release;
+    std::function<bool(VmObjectRef, VmObjectKind, DexClassId, std::uint64_t)> before_release;
     std::function<void(VmObjectRef, JniObjectIdentity)> release_external_state;
 };
 
@@ -103,8 +100,7 @@ struct GcSweepResult final {
 class JavaObjectModel final {
 public:
     using RootVisitor = std::function<void(VmObjectRef)>;
-    JavaObjectModel(JniStringStore& strings, JniPrimitiveArrayStore& arrays,
-                    JavaObjectModelConfig config = {},
+    JavaObjectModel(JniStringStore& strings, JniPrimitiveArrayStore& arrays, JavaObjectModelConfig config = {},
                     JavaObjectInterop interop = {});
     ~JavaObjectModel();
     void SetPrimitiveAllocationMutex(VmExecutionLock& mutex);
@@ -119,8 +115,7 @@ public:
     // Class handles and linker ids depend on catalog assembly order. Supplying
     // the descriptor resolver lets class-object identity remain stable when
     // platform shapes are inserted or reordered.
-    void SetClassDescriptorResolver(
-        std::function<std::string(DexClassId)> resolver);
+    void SetClassDescriptorResolver(std::function<std::string(DexClassId)> resolver);
 
     [[nodiscard]] VmObjectRef FromIdentity(JniObjectIdentity identity);
     [[nodiscard]] JniObjectIdentity ToIdentity(VmObjectRef ref) const;
@@ -134,21 +129,17 @@ public:
     void VisitPermanentRoots(const RootVisitor& visitor) const;
     // Inspection under the VM execution lock; visitor must not allocate objects.
     void VisitLiveObjects(const RootVisitor& visitor) const;
-    [[nodiscard]] GcMarkResult MarkReachable(
-        const std::vector<VmObjectRef>& roots,
-        const std::function<void(VmObjectRef, const RootVisitor&)>&
-            trace_host_edges,
-        const std::function<bool(DexClassId, std::size_t)>& is_weak_slot = {});
-    [[nodiscard]] GcSweepResult Sweep(const GcMarkResult& mark,
-                                      const GcSweepHooks& hooks);
+    [[nodiscard]] GcMarkResult
+    MarkReachable(const std::vector<VmObjectRef>& roots,
+                  const std::function<void(VmObjectRef, const RootVisitor&)>& trace_host_edges,
+                  const std::function<bool(DexClassId, std::size_t)>& is_weak_slot = {});
+    [[nodiscard]] GcSweepResult Sweep(const GcMarkResult& mark, const GcSweepHooks& hooks);
 
     void SetInstanceAllocationObserver(std::function<void(VmObjectRef)> observer);
-    [[nodiscard]] VmObjectRef NewInstance(DexClassId java_class,
-                                          std::uint16_t slot_count);
+    [[nodiscard]] VmObjectRef NewInstance(DexClassId java_class, std::uint16_t slot_count);
     [[nodiscard]] std::span<Slot> InstanceSlots(VmObjectRef ref);
 
-    [[nodiscard]] VmObjectRef NewHostBacked(DexClassId java_class,
-                                            std::uint64_t host_state);
+    [[nodiscard]] VmObjectRef NewHostBacked(DexClassId java_class, std::uint64_t host_state);
     [[nodiscard]] std::uint64_t HostState(VmObjectRef ref) const;
     void SetHostState(VmObjectRef ref, std::uint64_t host_state);
 
@@ -156,8 +147,7 @@ public:
     [[nodiscard]] VmObjectRef InternString(std::u16string_view value);
     [[nodiscard]] VmObjectRef InternString(VmObjectRef value);
     [[nodiscard]] JniSize StringLength(VmObjectRef ref) const;
-    [[nodiscard]] std::u16string StringRegion(VmObjectRef ref, JniSize start,
-                                              JniSize length) const;
+    [[nodiscard]] std::u16string StringRegion(VmObjectRef ref, JniSize start, JniSize length) const;
     [[nodiscard]] std::u16string StringValue(VmObjectRef ref) const;
     // Converts a freshly allocated vm_instance of the string class into a
     // real string record in place (same handle, new store-backed identity).
@@ -165,22 +155,15 @@ public:
     // constructors publish their value without moving the object.
     void BindString(VmObjectRef ref, std::u16string_view value);
 
-    [[nodiscard]] VmObjectRef NewPrimitiveArray(DexClassId array_class,
-                                                JniPrimitiveKind kind,
-                                                JniSize length);
+    [[nodiscard]] VmObjectRef NewPrimitiveArray(DexClassId array_class, JniPrimitiveKind kind, JniSize length);
     [[nodiscard]] JniPrimitiveKind PrimitiveArrayKind(VmObjectRef ref) const;
     [[nodiscard]] memory::GuestAddress PrimitiveArrayAddress(VmObjectRef ref) const;
-    [[nodiscard]] std::uint64_t GetPrimitiveElement(VmObjectRef ref,
-                                                    JniSize index) const;
-    void SetPrimitiveElement(VmObjectRef ref, JniSize index,
-                             std::uint64_t bits);
+    [[nodiscard]] std::uint64_t GetPrimitiveElement(VmObjectRef ref, JniSize index) const;
+    void SetPrimitiveElement(VmObjectRef ref, JniSize index, std::uint64_t bits);
 
-    [[nodiscard]] VmObjectRef NewObjectArray(DexClassId array_class,
-                                             DexClassId element_class,
-                                             JniSize length);
+    [[nodiscard]] VmObjectRef NewObjectArray(DexClassId array_class, DexClassId element_class, JniSize length);
     [[nodiscard]] DexClassId ObjectArrayElementClass(VmObjectRef ref) const;
-    [[nodiscard]] VmObjectRef GetObjectElement(VmObjectRef ref,
-                                               JniSize index);
+    [[nodiscard]] VmObjectRef GetObjectElement(VmObjectRef ref, JniSize index);
     void SetObjectElement(VmObjectRef ref, JniSize index, VmObjectRef value);
     void CopyObjectElementsWithin(VmObjectRef ref, JniSize source, JniSize target, JniSize length);
 
@@ -192,11 +175,8 @@ public:
     [[nodiscard]] VmObjectRef CloneObject(VmObjectRef source);
 
     // Bulk byte-array transfer (intrinsic IO paths).
-    void WriteByteRegion(VmObjectRef ref, JniSize start,
-                         std::span<const std::byte> bytes);
-    [[nodiscard]] std::vector<std::byte> ReadByteRegion(VmObjectRef ref,
-                                                        JniSize start,
-                                                        JniSize length) const;
+    void WriteByteRegion(VmObjectRef ref, JniSize start, std::span<const std::byte> bytes);
+    [[nodiscard]] std::vector<std::byte> ReadByteRegion(VmObjectRef ref, JniSize start, JniSize length) const;
 
     [[nodiscard]] VmObjectRef ClassObject(DexClassId java_class);
     [[nodiscard]] DexClassId ClassOfClassObject(VmObjectRef ref) const;
@@ -210,6 +190,8 @@ public:
     [[nodiscard]] std::uint64_t ObjectCount() const noexcept;
     [[nodiscard]] std::uint64_t HeapTargetBytes() const noexcept;
     [[nodiscard]] std::uint64_t HeapGrowthLimitBytes() const noexcept;
+    // The ordinary device memory class stays fixed after clearGrowthLimit.
+    [[nodiscard]] std::uint64_t NormalHeapGrowthLimitBytes() const noexcept;
     [[nodiscard]] std::uint64_t MaximumHeapBytes() const noexcept;
     [[nodiscard]] bool ShouldCollectFor(std::uint64_t request_bytes) const noexcept;
     void AdjustTargetAfterGc() noexcept;
@@ -222,14 +204,10 @@ public:
     void UpdateNativeWatermark() noexcept;
     [[nodiscard]] bool GrowFor(std::uint64_t request_bytes) noexcept;
 
-    [[nodiscard]] static std::uint64_t EstimateInstanceBytes(
-        std::uint16_t slot_count) noexcept;
-    [[nodiscard]] static std::uint64_t EstimateStringBytes(
-        std::size_t code_units) noexcept;
-    [[nodiscard]] static std::uint64_t EstimatePrimitiveArrayBytes(
-        JniPrimitiveKind kind, JniSize length);
-    [[nodiscard]] static std::uint64_t EstimateObjectArrayBytes(
-        JniSize length);
+    [[nodiscard]] static std::uint64_t EstimateInstanceBytes(std::uint16_t slot_count) noexcept;
+    [[nodiscard]] static std::uint64_t EstimateStringBytes(std::size_t code_units) noexcept;
+    [[nodiscard]] static std::uint64_t EstimatePrimitiveArrayBytes(JniPrimitiveKind kind, JniSize length);
+    [[nodiscard]] static std::uint64_t EstimateObjectArrayBytes(JniSize length);
 
 private:
     class Impl;

@@ -1760,24 +1760,14 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
     if (android_context != nullptr) {
         android_context->threads = impl_->threads.get();
         impl_->vm->Monitors().SetTimeSource([android_context] { return android_context->uptime_millis.load(); });
-        // Root-context Thread.sleep/Object.wait(timeout)/join(timeout) run
-        // inside a lifecycle call on the host thread that pumps
-        // uptime_millis between frames; parking on it would self-deadlock
-        // (a title licence poll in onCreate freezes the whole session), so
-        // timed root parks fast-forward the deterministic clock instead.
         impl_->vm->Monitors().SetClockAdvance([android_context](const std::int64_t delta_millis) {
             AdvanceAndroidClock(*android_context, delta_millis);
         });
-        impl_->vm->Monitors().SetClockDriverBlockedProbe([android_context, bounded_vm = impl_->vm.get()] {
-            // Runtime.exit joins hooks on the lifecycle clock driver, also
-            // in headless/pure Java sessions with no EGL pacer. Timed hooks
-            // must use the same unified Clock fast-forward as timed root waits.
-            if (android_context->threads && android_context->threads->RootIsJoining()) return true;
-            const auto pacer = TryEglSwapPacerSnapshot(*android_context);
-            return pacer.has_value() && pacer->attached && pacer->driver_blocked &&
-                   (!pacer->shutdown || bounded_vm->HasExecutionDeadline(dx::kRootLifecycleToken)) &&
-                   !pacer->surface_retired;
-        });
+        impl_->vm->Monitors().SetRealtimeSource(
+            [android_context] { return static_cast<std::int64_t>(android_context->stall_clock->Ticks()); });
+        android_context->clock_monitors = &impl_->vm->Monitors();
+        android_context->clock_driver = std::this_thread::get_id();
+        AttachAndroidClockObserver(*android_context, impl_->vm->ExecutionLock());
     }
     session.Environment().SetThreadDetachGuard([bridge_state](const std::uint64_t thread) {
         const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
@@ -2077,6 +2067,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         ShutdownAndroidScheduler(*impl_->android_context);
     }
     if (impl_->threads) impl_->threads->Shutdown();
+    if (impl_->android_context) impl_->android_context->clock_monitors = nullptr;
     if (impl_->vm) impl_->vm->SetClassInitializationPendingSource({});
     impl_->session->Process().SetBitmapHooks({});
     if (impl_->android_context) {

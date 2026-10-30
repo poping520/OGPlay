@@ -19,7 +19,7 @@
   `ApkEntryRangeStatistics` 的扫描量仅累计 Deflate 输出，stored 为 0；交付量独立累计。
 - `ParseAndroidBinaryManifest` / `ReadAndroidManifest`：受检解析 binary XML chunk、UTF-8/
   UTF-16 string pool、元素与 typed attribute，产出 package/version/SDK、默认或自定义
-  Application 类，以及按声明顺序保留 enabled、逐 intent-filter、alias target 的 Activity
+  Application 类与 largeHeap 布尔事实，以及按声明顺序保留 enabled、逐 intent-filter、alias target 的 Activity
   组件事实；Activity 另保留原始整数 launchMode（缺省 standard）及继承 application/package
   默认值的 taskAffinity（保留显式空值），上层决定支持边界。
   同名 Activity/alias 不拒绝或合并，按 API19 保留各声明及过滤器；

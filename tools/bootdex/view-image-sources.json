@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
+      "surface_sha256": "381bffda4f12ba2737d61be20ba4d9cbc35e6f76179925a8ead5fcd4310dc35a",
       "owner": "Landroid/widget/ImageView;",
       "smali_sha256": "2c9457310baf8d41b38d0c3b7247c6e2a96e104b0e5db98e7633b37aa6e361df",
       "methods": [
@@ -645,7 +645,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
+      "surface_sha256": "381bffda4f12ba2737d61be20ba4d9cbc35e6f76179925a8ead5fcd4310dc35a",
       "owner": "Landroid/widget/ImageButton;",
       "smali_sha256": "5d115fc88dc4261e773fdfc3416459c630b0338f3f4cd683ea636880bbf93487",
       "methods": [
@@ -694,7 +694,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
+      "surface_sha256": "381bffda4f12ba2737d61be20ba4d9cbc35e6f76179925a8ead5fcd4310dc35a",
       "owner": "Landroid/widget/ImageView$ScaleType;",
       "smali_sha256": "a97b3d7b3478f1bd4b3a8d11d5ad175afba86913a0c587f609c48ef4d8e3824e",
       "methods": [
@@ -792,7 +792,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
+      "surface_sha256": "381bffda4f12ba2737d61be20ba4d9cbc35e6f76179925a8ead5fcd4310dc35a",
       "owner": "Landroid/graphics/Matrix;",
       "smali_sha256": "cd7393d18b7ee4798ebd87d05a024d1cb724172ede1366b5dd696909fe03bd96",
       "methods": [
@@ -1482,7 +1482,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
+      "surface_sha256": "381bffda4f12ba2737d61be20ba4d9cbc35e6f76179925a8ead5fcd4310dc35a",
       "owner": "Landroid/graphics/Matrix$1;",
       "smali_sha256": "57443b017981dc0d481e4193cf2e5bc139812b5ee569ad3e03b4ffbd17c6b07f",
       "methods": [

@@ -174,7 +174,7 @@ TEST_CASE("DVM-285 ROM RelativeLayout dependencies constraints baseline RTL and 
         // Same published epoch supplies pixels and hit testing.
         f.On(d, "setClickable", "(Z)V", {VmValue::Int(1)});
         auto did = *FindViewUiNode(*f.context, d.Value());
-        f.context->ui_tree.Get(did)->background_color = 0x123456ff;
+        f.On(d, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff123456U))});
         f.Request();
         f.Tick();
         auto snap = f.context->ui_tree.PublishedProjection();

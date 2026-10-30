@@ -1470,8 +1470,8 @@ TEST_CASE("DVM-329 ROM bringToFront publishes child paint order") {
         f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
         const auto first = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto second = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-        f.context->ui_tree.Get(*FindViewUiNode(*f.context, first.Value()))->background_color = 0xff0000ffU;
-        f.context->ui_tree.Get(*FindViewUiNode(*f.context, second.Value()))->background_color = 0x0000ffffU;
+        f.On(first, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xffff0000U))});
+        f.On(second, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff0000ffU))});
         f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(first)});
         f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(second)});
         const auto tick = [&] {
@@ -1695,8 +1695,8 @@ TEST_CASE("DVM-330 ROM removeViewInLayout publishes remaining child order") {
         f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
         const auto first = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto second = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-        f.context->ui_tree.Get(*FindViewUiNode(*f.context, first.Value()))->background_color = 0xff0000ffU;
-        f.context->ui_tree.Get(*FindViewUiNode(*f.context, second.Value()))->background_color = 0x0000ffffU;
+        f.On(first, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xffff0000U))});
+        f.On(second, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff0000ffU))});
         f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(first)});
         f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(second)});
         const auto tick = [&] {

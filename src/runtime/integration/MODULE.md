@@ -247,8 +247,9 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   退出标记并调用 VM.Exit，保留退出码、非 Java 展开，不从 worker 同步 Stop/join。
   宿主 Stop 仍为取消，不自动运行 hook；详见 [DVM-150](../../../docs/tasks/dexvm/DVM-150.md)。
 - wait/sleep/timed join 共用注入 monotonic Clock，currentTimeMillis 使用会话时间事实。
-  根 timed park 可经 AdvanceAndroidClock 补时；worker 只有 EGL driver-blocked 或 root
-  joining 时可复用串行 deadline 补时，纯 Java timed hook 不依赖帧推进，不新增宿主时间源。
+  ADR-0171：blocking observer 统一跟踪生命周期驱动停摆并转发 EGL pacer；无 EGL 亦适用。
+  root/worker 限时等待仅补至停摆起点 uptime 加注入 RealtimeClock 的真实流逝时间，
+  不超过自身 deadline；root join/退出 hook 同规则，恢复后按帧推进且不回拨。
 - 主 Looper/scheduler 由 lifecycle safe point 泵送；View.post 的 detached 与 scheduled 引用
   均为 GC 根。后台任务必须保留真实异常，不能以 null 结果伪造正常完成。
 

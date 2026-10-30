@@ -150,6 +150,19 @@ dx::VmObjectRef StartDexApplication(runtime::DexVmGuestBridge& bridge,
     const auto main_looper = linker.FindDirectMethod(looper_class, "getMainLooper", "()Landroid/os/Looper;");
     if (!main_looper) Fail("main Looper factory is not linked");
     RequireOutcome(vm, vm.Call(*main_looper, {}), "main Looper setup");
+    // API19 ActivityThread.handleBindApplication clears the limit before makeApplication.
+    if (context->application_large_heap) {
+        const auto runtime_class = linker.ResolveDescriptor("Ldalvik/system/VMRuntime;");
+        const auto get = linker.FindDirectMethod(runtime_class, "getRuntime", "()Ldalvik/system/VMRuntime;");
+        if (!get) Fail("VMRuntime factory is not linked");
+        const auto runtime = vm.Call(*get, {});
+        RequireOutcome(vm, runtime, "VMRuntime.getRuntime");
+        const auto root = vm.ProtectReferences(std::array{runtime.value.ref});
+        const auto clear = linker.FindVtableIndex(runtime_class, "clearGrowthLimit", "()V");
+        if (!clear) Fail("VMRuntime.clearGrowthLimit is not linked");
+        RequireOutcome(vm, vm.Call(linker.Class(runtime_class).vtable[*clear], std::array{runtime.value}),
+                       "largeHeap clearGrowthLimit");
+    }
     const auto java_class = linker.FindClass(application_descriptor);
     if (!java_class.has_value()) {
         Fail("Application class is not linked: " + application_descriptor);

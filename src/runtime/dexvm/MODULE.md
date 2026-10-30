@@ -125,9 +125,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   teardown 回收，新 identity 可合法复用其句柄，不重启旧 Java Thread。
 - Runtime maxMemory 是当前 growth limit，totalMemory 是已提交目标（至少 allocated），
   freeMemory 为 total-allocated；VMRuntime 的利用率按 Dalvik 1024 刻度并限制于 0.2..0.8，
-  clearGrowthLimit 将上限升至 maximum，native allocation/free 独立计数并按堆配置驱动 GC/
+  普通设备 memory class 保留初始 growth limit；clearGrowthLimit 将活动上限升至 maximum，native allocation/free 独立计数并按堆配置驱动 GC/
   finalization 水位。不查询宿主剩余内存。
-- 堆按 ADR-0060 区分 initial target、growth limit 与 maximum：越过当前目标先 GC，再增长，
+- 堆按 ADR-0172 采用 API19 1 GiB 设备档位，区分 initial target、growth limit 与 maximum：越过当前目标先 GC，再增长，
   越过增长上限时执行 before-OOM GC 后才失败；GC 后按 live set、利用率和 min/max free 调整目标。
 - Throwable 栈以方法身份与 DEX PC 保存，物化时读取同 DEX unit 的 source/debug_info；无调试信息保留未知位置，真实 native 入口保留 Native Method 帧。check-cast 的 CCE 消息使用可读类名与数组维度。
 - `Interpreter::Call` 返回值或未捕获 Java 异常；寄存器带类别 tag，默认 512 帧。invoke 只有
@@ -149,6 +149,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - monitor owner 是 context token；wait 完全释放并恢复 recursion，notify/interrupt/shutdown/
   Clock 唤醒。非 owner 操作抛 IllegalMonitorStateException。deadline 只用注入 Clock；无 Clock
   明确失败，禁止读取宿主墙钟。
+  ADR-0171：生命周期停摆时 root/worker 的限时等待每轮仅补至起点 uptime 加注入的
+  真实流逝时间，并受自身截止时间约束；并发收敛，恢复后不补时、不回拨。
   有界生命周期 scope 另使用统一 Clock 的 steady deadline；Java 指令、monitor/睡眠与
   clinit 等待检查同一不可续期预算。到期以非 Java 控制故障退出、移除等待账本，
   不返回伪造通知；正常 Java wait/异常仍按原规则恢复 monitor。

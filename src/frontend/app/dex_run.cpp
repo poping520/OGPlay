@@ -51,8 +51,7 @@ std::vector<std::uint8_t> ReadDex(const std::filesystem::path& path) {
     std::memcpy(archive.data(), raw.data(), raw.size());
     const auto parsed = loader::ParseApkArchive(archive);
     for (const auto& entry : parsed.entries) {
-        if (entry.name == "classes2.dex")
-            throw std::runtime_error("multidex input is not supported: " + path.string());
+        if (entry.name == "classes2.dex") throw std::runtime_error("multidex input is not supported: " + path.string());
     }
     const auto dex = loader::ReadApkEntry(archive, parsed, "classes.dex");
     std::vector<std::uint8_t> bytes(dex.size());
@@ -61,13 +60,13 @@ std::vector<std::uint8_t> ReadDex(const std::filesystem::path& path) {
 }
 
 std::string ClassDescriptor(std::string name) {
-    for (auto& c : name) if (c == '.') c = '/';
+    for (auto& c : name)
+        if (c == '.') c = '/';
     return "L" + name + ";";
 }
 
-dx::VmCallOutcome CallVirtual(dx::Interpreter& vm, const dx::VmObjectRef receiver,
-                              const std::string& name, const std::string& descriptor,
-                              std::vector<dx::VmValue> arguments = {}) {
+dx::VmCallOutcome CallVirtual(dx::Interpreter& vm, const dx::VmObjectRef receiver, const std::string& name,
+                              const std::string& descriptor, std::vector<dx::VmValue> arguments = {}) {
     auto& linker = vm.Linker();
     const auto owner = vm.Model().ObjectClass(receiver);
     const auto index = linker.FindVtableIndex(owner, name, descriptor);
@@ -96,13 +95,12 @@ void DispatchUncaught(dx::Interpreter& vm, const dx::VmObjectRef throwable) {
     }
     // AOSP ignores failures raised by the handler itself; keep them visible
     // on stderr so an unimplemented handler is not mistaken for silence.
-    const auto dispatched = CallVirtual(vm, handler.value.ref, "uncaughtException",
-        "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
-        {dx::VmValue::Ref(thread.value.ref), dx::VmValue::Ref(throwable)});
+    const auto dispatched =
+        CallVirtual(vm, handler.value.ref, "uncaughtException", "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
+                    {dx::VmValue::Ref(thread.value.ref), dx::VmValue::Ref(throwable)});
     if (dispatched.exception.IsValid()) {
-        WriteStderr("ogplay-run-dex: uncaught handler failed: " +
-                    linker.Class(dispatched.exception_class).descriptor + ": " +
-                    dispatched.exception_message + "\n");
+        WriteStderr("ogplay-run-dex: uncaught handler failed: " + linker.Class(dispatched.exception_class).descriptor +
+                    ": " + dispatched.exception_message + "\n");
     }
 }
 
@@ -112,8 +110,9 @@ void WaitForNonDaemonThreads(dx::Interpreter& vm, dx::VmThreadRuntime& threads) 
         if (vm.ExitCode()) return;
         bool waiting = false;
         for (const auto& thread : threads.Snapshot()) {
-            if (thread.id == 1U || (thread.status != dx::VmThreadStatus::running &&
-                                     thread.status != dx::VmThreadStatus::created)) continue;
+            if (thread.id == 1U ||
+                (thread.status != dx::VmThreadStatus::running && thread.status != dx::VmThreadStatus::created))
+                continue;
             const auto daemon = CallVirtual(vm, dx::VmObjectRef{thread.object}, "isDaemon", "()Z");
             if (!daemon.exception.IsValid() && daemon.value.AsInt() == 0) waiting = true;
         }
@@ -162,24 +161,35 @@ DexRunOptions ParseDexRunArgs(const std::span<const std::string_view> args) {
                 throw std::invalid_argument("run-dex option needs a value: " + std::string(arg));
             return std::string(args[++index]);
         };
-        if (arg == "--") { ++index; break; }
-        if (arg == "--class") options.main_class = value();
+        if (arg == "--") {
+            ++index;
+            break;
+        }
+        if (arg == "--class")
+            options.main_class = value();
         else if (arg == "--backend") {
             options.backend = value();
             if (options.backend != "switch" && options.backend != "threaded")
                 throw std::invalid_argument("--backend must be switch or threaded");
-        } else if (arg == "--ledger-json") options.ledger_json = std::filesystem::path(value());
+        } else if (arg == "--ledger-json")
+            options.ledger_json = std::filesystem::path(value());
         else if (arg == "--native-lib-dir") {
             options.native_lib_dir = value();
             if (options.native_lib_dir.empty()) throw std::invalid_argument("--native-lib-dir must not be empty");
-        } else if (arg == "--enable-assertions" || arg == "-ea") options.enable_assertions = true;
+        } else if (arg == "--enable-assertions" || arg == "-ea")
+            options.enable_assertions = true;
         else if (arg == "--merge-console")
             options.merge_console = true;
-        else if (arg.starts_with("--")) throw std::invalid_argument("unknown run-dex option: " + std::string(arg));
-        else if (options.input.empty()) options.input = std::filesystem::path(std::string(arg));
-        else { break; }
+        else if (arg.starts_with("--"))
+            throw std::invalid_argument("unknown run-dex option: " + std::string(arg));
+        else if (options.input.empty())
+            options.input = std::filesystem::path(std::string(arg));
+        else {
+            break;
+        }
     }
-    for (; index < args.size(); ++index) options.arguments.emplace_back(args[index]);
+    for (; index < args.size(); ++index)
+        options.arguments.emplace_back(args[index]);
     if (options.input.empty()) throw std::invalid_argument("run-dex requires <dex-or-jar>");
     if (options.main_class.empty()) throw std::invalid_argument("--class must not be empty");
     return options;
@@ -203,7 +213,8 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     // The real dalvikvm entry is NativeStart.main, which calls the selected
     // application's main. Retain that actual call boundary in captured stacks.
     auto entry = dx::IntrinsicClassBuilder::Class("Ldalvik/system/NativeStart;");
-    entry.StaticMethod("main", "([Ljava/lang/String;)V",
+    entry.StaticMethod(
+        "main", "([Ljava/lang/String;)V",
         [&options](dx::IntrinsicContext& call) {
             auto& vm = call.vm;
             const auto owner = vm.Linker().ResolveDescriptor(ClassDescriptor(options.main_class));
@@ -212,7 +223,8 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
             const auto result = vm.Call(*target, call.arguments);
             if (result.exception.IsValid()) vm.SetPendingException(result.exception);
             return dx::VmValue::Void();
-        }, dx::kAccPublic | dx::kAccStatic | dx::kAccNative);
+        },
+        dx::kAccPublic | dx::kAccStatic | dx::kAccNative);
     catalog.push_back(std::move(entry).Build());
 
     core::Logger logger;
@@ -231,8 +243,10 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     std::span<const std::byte> libc;
     for (const auto& source : owned_system) {
         system_sources.push_back({source.name, source.image});
-        if (source.name == "libc.so") libc = source.image;
-        else dependencies.push_back({source.name, source.image});
+        if (source.name == "libc.so")
+            libc = source.image;
+        else
+            dependencies.push_back({source.name, source.image});
     }
     auto system = runtime::BuildBionicModuleSet(bionic, "libc.so", libc, dependencies);
     const auto inputs = system.Inputs();
@@ -250,8 +264,7 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     request.boundary_options.logger = &logger;
     request.initial_environment = std::make_shared<const runtime::GuestProcessEnvironment>(
         runtime::GuestProcessEnvironment::Api19(context->external_storage_root));
-    auto session = runtime::AndroidGuestCallSession::AdoptProcess(
-        runtime::AndroidGuestProcess::Start(request));
+    auto session = runtime::AndroidGuestCallSession::AdoptProcess(runtime::AndroidGuestProcess::Start(request));
     std::vector<loader::ApkNativeLibrary> application_libraries;
     if (!options.native_lib_dir.empty()) {
         if (!std::filesystem::is_directory(options.native_lib_dir))
@@ -279,18 +292,16 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     }
     loader::ApkNativeLibraryInventory inventory(std::move(application_libraries));
     loader::ApkSelectedNativeLibraries selected(inventory, loader::AndroidArmAbi::armeabi_v7a);
-    runtime::NativeLibraryLoader native_libraries(session->Process(), selected,
-                                                 bionic, system_sources, &logger);
+    runtime::NativeLibraryLoader native_libraries(session->Process(), selected, bionic, system_sources, &logger);
     context->session = session.get();
     context->vfs = &vfs;
     context->native_libraries = &native_libraries;
     runtime::DexVmBridgeConfig config;
     config.interpreter.enable_assertions = options.enable_assertions;
-    config.interpreter.backend = options.backend == "threaded" ? dx::InterpreterBackend::threaded
-                                                               : dx::InterpreterBackend::switch_dispatch;
-    runtime::DexVmGuestBridge bridge(*session, std::move(app_dex), catalog, context,
-                                    ledger, &logger, config, std::move(boot_dex),
-                                    std::move(skeleton));
+    config.interpreter.backend =
+        options.backend == "threaded" ? dx::InterpreterBackend::threaded : dx::InterpreterBackend::switch_dispatch;
+    runtime::DexVmGuestBridge bridge(*session, std::move(app_dex), catalog, context, ledger, &logger, config,
+                                     std::move(boot_dex), std::move(skeleton));
     static_cast<void>(native_libraries.LoadLibrary("ogplay_jni", context->application_class_loader_token));
     auto& vm = bridge.Vm();
     auto& linker = bridge.Linker();
@@ -306,7 +317,7 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     // A standalone run has no frame pump: a realtime unified Clock drives the
     // single Android monotonic clock that Thread.sleep/wait and System time read.
     vm.Monitors().SetClockAdvance({});
-    vm.Monitors().SetClockDriverBlockedProbe({});
+    vm.Monitors().SetRealtimeSource({});
     std::jthread clock_driver([context](const std::stop_token stop) {
         hal::RealtimeClock clock(1000);
         auto last = clock.Ticks();
@@ -334,13 +345,12 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
         const auto argv_root = vm.ProtectReferences(std::array{argv});
         for (std::size_t i = 0; i < options.arguments.size(); ++i) {
             const dx::VmExecutionLockScope lock(vm.ExecutionLock());
-            model.SetObjectElement(argv, static_cast<runtime::JniSize>(i),
-                                   vm.NewStringUtf8(options.arguments[i]));
+            model.SetObjectElement(argv, static_cast<runtime::JniSize>(i), vm.NewStringUtf8(options.arguments[i]));
         }
         try {
             const std::array main_arguments{dx::VmValue::Ref(argv)};
-            const auto entry_method = linker.FindDirectMethod(
-                linker.ResolveDescriptor("Ldalvik/system/NativeStart;"), "main", "([Ljava/lang/String;)V");
+            const auto entry_method = linker.FindDirectMethod(linker.ResolveDescriptor("Ldalvik/system/NativeStart;"),
+                                                              "main", "([Ljava/lang/String;)V");
             const auto outcome = vm.Call(*entry_method, main_arguments);
             if (outcome.exception.IsValid()) {
                 status = 1;

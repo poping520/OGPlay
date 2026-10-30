@@ -1016,8 +1016,19 @@ Decl Declare_android_os_SystemClock(const Context& context) {
     builder.StaticMethod("currentThreadTimeMillis", "()J", millis);
     builder.StaticMethod("sleep", "(J)V", [context](dx::IntrinsicContext& call) {
         const auto delay = call.arguments[0].AsLong();
-        if (delay > 0) AdvanceAndroidClock(*context, delay);
-        ThreadRuntime(context).Yield();
+        const auto start = context->uptime_millis.load();
+        bool interrupted = false;
+        auto remaining = delay;
+        do {
+            try {
+                ThreadRuntime(context).Sleep(remaining);
+            } catch (const dx::VmJavaThrow& error) {
+                if (error.descriptor != "Ljava/lang/InterruptedException;") throw;
+                interrupted = true;
+            }
+            remaining = delay - (context->uptime_millis.load() - start);
+        } while (remaining > 0);
+        if (interrupted) call.vm.Monitors().Interrupt(call.vm.CurrentContextToken());
         return dx::VmValue::Void();
     });
     builder.StaticMethod("setCurrentTimeMillis", "(J)Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });

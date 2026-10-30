@@ -42,7 +42,7 @@ ActivityManager.getRunningAppProcesses 的 private native 仅读取会话身份�
 Java 创建列表和值对象；PID 与 Process/Context 权限查询共享常量。栈顶未 stopped（含
 onCreate/onStart）为前台，否则任一可见为 visible，其余为 cached 后台；仅本进程，不枚举宿主。
 
-ActivityManager.getMemoryClass/staticGetMemoryClass 读取本 VM 的 growth limit，
+ActivityManager.getMemoryClass/staticGetMemoryClass 读取本 VM 的初始 growth limit（不随 largeHeap 改变），
 getLargeMemoryClass/staticGetLargeMemoryClass 读取 maximum，单位 MiB；与 Runtime 内存查询
 共用 JavaObjectModel 配置，不读取宿主内存，不使用固定档位。
 
@@ -180,7 +180,7 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   三个 Drawable 类保留完整 ROM 形状；Drawable 原 clinit/基础构造执行 ROM，BitmapDrawable
   受审构造写 mBitmap/mTargetDensity/mBitmapWidth/Height，intrinsic/getBitmap 读取原字段。
   资源 Bitmap 不可变，像素以源 density 保存，intrinsic 按 API19 scaleFromDensity 向目标 density
-  换算；ColorDrawable 仍按成员来源表组合，未准入的 mPaint/mState 访问明确失败。
+  换算；ColorDrawable 状态由 Java 字段拥有，投影虚派 getColor，Java Canvas draw 不准入。
   默认背景另允许封存同 ROM edit_text selector 与 ninepatch，DrawableContainer/StateListDrawable/
   NinePatchDrawable 保持 ROM 形状、受审对象状态 adapter 与失败成员表。PNG 由既有服务解码，
   npTc 提供 padding，按 density 缩放；selector 按有序状态项选择，默认固定 padding 取全部子项最大值。
@@ -253,8 +253,10 @@ OwnerTick 开始一个逻辑 tick；BeforeInput 是同 tick 读屏障，不消�
 不调用 measure/layout、不推进 epoch。纯绘制变化只重新冻结投影，不调用 measure/layout。
 View.setBackgroundColor、invalidateDrawable、verifyDrawable 执行 ROM；既有 invalidate 接缝标脏。
 owner 投影保留 ROM skin 路径，ColorDrawable（含子类）每次虚派 getColor 读取已含 Drawable alpha
-的 ARGB，背景 alpha 为1；零 alpha 或 null 清空背景。其他非空 Drawable 不绘制，记账
+的 ARGB，经统一转换为宿主 RGBA，背景 alpha 为1；零 alpha 或 null 清空背景。其他非空 Drawable 不绘制，记账
 `dexvm.view_background_draw` 并以 first_and_count 发出 `ui.background.unreviewed` warn（含类描述符）。
+受审 ColorDrawable 外，catalog 子类未准入的状态重写显式记账并抛 UOE，不能继承
+Drawable.mutate 的默认返回；ROM skin 的既有 opacity 查询边界保持不变。
 OwnerTick/BeforeInput/BeforePresent/BeforeSurfaceCallbacks 的 ResolveOnly 与 ResolveAndNotifySizes
 在 owner guest token、绑定宿主线程与 VM 锁下执行根
 EXACTLY managed viewport measure→layout。requestLayout 沿真实 Java parent 虚派传播，首轮仅剩余 FORCE_LAYOUT、仍连到当前根且祖先非 GONE 的请求触发本帧

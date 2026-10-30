@@ -856,3 +856,28 @@
     invoke-super {v0, v1}, Landroid/widget/AbsoluteLayout;->dispatchDraw(Landroid/graphics/Canvas;)V
     return-void
 .end method
+
+.class public Ltest/UnreviewedBackground;
+.super Landroid/graphics/drawable/Drawable;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/graphics/drawable/Drawable;-><init>()V
+    return-void
+.end method
+.method public draw(Landroid/graphics/Canvas;)V
+.registers 2
+    return-void
+.end method
+.method public setAlpha(I)V
+.registers 2
+    return-void
+.end method
+.method public setColorFilter(Landroid/graphics/ColorFilter;)V
+.registers 2
+    return-void
+.end method
+.method public getOpacity()I
+.registers 2
+    const/4 v0, -3
+    return v0
+.end method

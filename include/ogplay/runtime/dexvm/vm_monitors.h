@@ -35,14 +35,9 @@ using VmMonotonicMillis = std::function<std::int64_t()>;
 // allocates guest thread ids from 2 up for the same reason.
 inline constexpr std::uint64_t kRootLifecycleToken = 1U;
 
-// Fast-forwards the unified Clock by a positive delta. The root lifecycle
-// context always needs this when it parks because it normally pumps the
-// deterministic Clock itself. A worker timed park may use the same hook only
-// while the session reports that the lifecycle clock driver is blocked; this
-// breaks startup callback cycles without making normal worker sleeps advance
-// time. A bounded peer window still lets notify/interrupt win first.
+// Catch-up is capped by elapsed real time during a lifecycle-driver stall.
+// Both sources are injected; dexvm never reads a host clock.
 using VmClockAdvance = std::function<void(std::int64_t delta_millis)>;
-using VmClockDriverBlockedProbe = std::function<bool()>;
 
 struct VmMonitorSnapshot final {
     std::uint64_t owner{};
@@ -73,9 +68,9 @@ public:
 
     // Publishes deterministic-clock park coordination (see VmClockAdvance).
     void SetClockAdvance(VmClockAdvance advance);
-    void SetClockDriverBlockedProbe(VmClockDriverBlockedProbe probe);
-    [[nodiscard]] bool TryAdvanceClockForTimedPark(
-        std::uint64_t context, std::int64_t deadline_millis) const;
+    void SetRealtimeSource(VmMonotonicMillis source);
+    void ObserveClockDriverBlocking(bool blocked);
+    [[nodiscard]] bool TryAdvanceClockForTimedPark(std::uint64_t context, std::int64_t deadline_millis) const;
 
     // monitor-enter / monitor-exit. Enter parks (releasing the execution
     // lock) while another context owns the monitor.
@@ -88,8 +83,7 @@ public:
     // the monitor completely, joins the wait set, and only returns after it
     // has re-acquired the monitor and restored that depth.
     // timeout_millis == 0 waits without a deadline.
-    [[nodiscard]] VmWaitOutcome Wait(VmObjectRef object, std::uint64_t owner,
-                                     std::int64_t timeout_millis);
+    [[nodiscard]] VmWaitOutcome Wait(VmObjectRef object, std::uint64_t owner, std::int64_t timeout_millis);
     void Notify(VmObjectRef object, std::uint64_t owner);
     void NotifyAll(VmObjectRef object, std::uint64_t owner);
     // GC has the VM execution lock and never acquires guest monitor ownership.
@@ -112,8 +106,7 @@ public:
     [[nodiscard]] std::size_t WaitingCount(VmObjectRef object) const;
     [[nodiscard]] VmMonitorSnapshot Snapshot(VmObjectRef object) const;
     [[nodiscard]] std::optional<bool> TryInterrupted(std::uint64_t owner) const;
-    [[nodiscard]] std::optional<std::vector<VmMonitorDiagnosticSnapshot>>
-    TrySnapshotAll() const;
+    [[nodiscard]] std::optional<std::vector<VmMonitorDiagnosticSnapshot>> TrySnapshotAll() const;
     void ReleaseObjectForGc(VmObjectRef object);
 
 private:

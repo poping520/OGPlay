@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/graphics/Paint;",
       "smali_sha256": "a9a6e699946d088c737d1f8048f7d13cf44814b6c7e2ea67bb910cea1db6f686",
       "methods": [
@@ -1314,7 +1314,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/widget/TextView;",
       "smali_sha256": "06b1a220e8e5b6b9e559c6c98b253c17b0cea684d8a3563a26056381873d74af",
       "methods": [
@@ -4498,7 +4498,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/graphics/RectF;",
       "smali_sha256": "65034d541516dfe44c801f64a3492ce2b8cd09b0189dd97ecb4ebb298e41797c",
       "methods": [
@@ -4782,7 +4782,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/graphics/RectF$1;",
       "smali_sha256": "f889e950e28f121bd482097f9ba13a76fdae40fed5ffdf91ecfd790e70f663ae",
       "methods": [

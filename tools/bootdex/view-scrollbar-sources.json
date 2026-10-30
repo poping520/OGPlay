@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/view/View$ScrollabilityCache;",
       "smali_sha256": "763d90949b4e6aad2fdcb1765739075cc0755e928112dadd11228c098e0e2556",
       "methods": [
@@ -164,7 +164,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/view/ViewConfiguration;",
       "smali_sha256": "965679707dbe4bf7f1db2b0c294064dda8d6aba5667546acb02cbf7616247bbb",
       "methods": [
@@ -730,7 +730,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/widget/ScrollBarDrawable;",
       "smali_sha256": "15050cb59d9db758c91d0a9ec61ec98aa700d2af661e43cd6404b041d5c24257",
       "methods": [
@@ -942,7 +942,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/graphics/Interpolator;",
       "smali_sha256": "90405c3475e12cd58695e6cec83f8c3eb6cd23368aae00250fea6ecadecce178",
       "methods": [
@@ -1130,7 +1130,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/graphics/Interpolator$Result;",
       "smali_sha256": "c4ac454dc3277ae475e539cb2c2cc6ae50e98cce9310ba8db2e18bf1b544993b",
       "methods": [
@@ -1192,7 +1192,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/graphics/Shader;",
       "smali_sha256": "fd23f16ccfd4206a2c8891d8ae583e1f49635ff299990a5e3f2d124975983428",
       "methods": [
@@ -1280,7 +1280,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/graphics/Shader$TileMode;",
       "smali_sha256": "4c7eb9daea7089dfc8757117a7b59d82fd6c31e5def097563e2fe1dd796cb41f",
       "methods": [
@@ -1348,7 +1348,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/graphics/LinearGradient;",
       "smali_sha256": "9b6237db9e7bede6216e6ca97393b5de9c351afd2e1a8da162bf73951db01a3f",
       "methods": [
@@ -1508,7 +1508,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/graphics/PorterDuffXfermode;",
       "smali_sha256": "2c94d275434032590c64f591127c6e08c35763dbd86d2d905c9aef311a407051",
       "methods": [
@@ -1548,7 +1548,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
       "owner": "Landroid/graphics/Xfermode;",
       "smali_sha256": "aad23097642869b25c331689da894e9ab386ad1a54fae7563b4f91527b0313a1",
       "methods": [

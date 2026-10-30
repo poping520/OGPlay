@@ -329,3 +329,4 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 
 - [DVM-355 · View 默认样式 scrollbar 初始化闭包](DVM-355.md)
 - [DVM-356 · RectF 整类回归 ROM 纯 Java 值语义](DVM-356.md)
+- [DVM-357 · 恢复 View.post/postDelayed（ADR-0162 回归）](DVM-357.md)

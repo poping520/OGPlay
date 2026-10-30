@@ -1820,6 +1820,13 @@ Decl Declare_android_view_View(const Context& context) {
                                                      "Landroid/view/KeyEvent$Callback;",
                                                      "Landroid/view/accessibility/AccessibilityEventSource;"});
 
+    builder.VirtualMethod("post", "(Ljava/lang/Runnable;)Z", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(PostViewRunnable(call, context, call.receiver, call.arguments[0].ref, 0));
+    });
+    builder.VirtualMethod("postDelayed", "(Ljava/lang/Runnable;J)Z", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(
+            PostViewRunnable(call, context, call.receiver, call.arguments[0].ref, call.arguments[1].AsLong()));
+    });
     builder.VirtualMethod("dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", [context](dx::IntrinsicContext& call) {
         const auto owner = context->view_adapter_references[call.receiver.Value()].window_owner;
         if (owner.IsValid())
@@ -3557,8 +3564,7 @@ Decl Declare_android_view_LayoutInflater_BlinkLayout(const Context&) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
-namespace {
-dx::VmObjectRef ObserverWindowRoot(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view) {
+dx::VmObjectRef ManagedViewWindowRoot(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view) {
     dx::IntrinsicContext call{vm, view, {}};
     dx::IntrinsicCall fields(call);
     for (std::size_t depth = 0; view.IsValid() && depth <= ui::UiTree::kMaxDepth; ++depth) {
@@ -3575,6 +3581,7 @@ dx::VmObjectRef ObserverWindowRoot(dx::Interpreter& vm, DexVmAndroidContext& con
     return dx::VmObjectRef{};
 }
 
+namespace {
 dx::Slot& FloatingObserver(dx::Interpreter& vm, dx::VmObjectRef view) {
     const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(view), "mFloatingTreeObserver",
                                                       "Landroid/view/ViewTreeObserver;");
@@ -3599,7 +3606,7 @@ dx::VmObjectRef ManagedViewTreeObserver(dx::Interpreter& vm, DexVmAndroidContext
     if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
         throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Window observer requires owner thread"};
     const auto roots = vm.ProtectReferences(std::array{view});
-    const auto root = ObserverWindowRoot(vm, context, view);
+    const auto root = ManagedViewWindowRoot(vm, context, view);
     if (!root.IsValid()) {
         auto observer = dx::VmObjectRef(FloatingObserver(vm, view).bits);
         if (!observer.IsValid()) {
@@ -3624,7 +3631,7 @@ dx::VmObjectRef ManagedViewTreeObserver(dx::Interpreter& vm, DexVmAndroidContext
 }
 
 void MergeManagedViewTreeObservers(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef subtree) {
-    if (!subtree.IsValid() || !ObserverWindowRoot(vm, context, subtree).IsValid()) return;
+    if (!subtree.IsValid() || !ManagedViewWindowRoot(vm, context, subtree).IsValid()) return;
     const auto roots = vm.ProtectReferences(std::array{subtree});
     if (FloatingObserver(vm, subtree).bits) static_cast<void>(ManagedViewTreeObserver(vm, context, subtree));
     const auto group = vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;");
@@ -3642,7 +3649,7 @@ namespace ogplay::runtime::android_intrinsics {
 dx::VmObjectRef ManagedWindowToken(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view) {
     if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
         throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Window token requires owner thread"};
-    const auto root = ObserverWindowRoot(vm, context, view);
+    const auto root = ManagedViewWindowRoot(vm, context, view);
     if (!root.IsValid()) return dx::VmObjectRef{};
     auto& schedule = context.ui_window_schedules.at(root);
     if (!schedule.window_token.IsValid()) {
@@ -3662,7 +3669,7 @@ Decl Declare_managed_WindowToken(const Context& context) {
         if (state == context->managed_window_tokens.end()) return dx::VmValue::Int(0);
         const auto window = context->ui_window_schedules.find(state->second.root);
         const bool valid = window != context->ui_window_schedules.end() && window->second.window_token == c.receiver &&
-                           ObserverWindowRoot(c.vm, *context, state->second.root) == state->second.root;
+                           ManagedViewWindowRoot(c.vm, *context, state->second.root) == state->second.root;
         return dx::VmValue::Int(valid);
     };
     b.VirtualMethod("isBinderAlive", "()Z", alive);

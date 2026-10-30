@@ -511,6 +511,11 @@ backend context-loss 按验证范围记账。
 
 Handler/Looper/HandlerThread/AsyncTask 共用 scheduler，同 uptime deadline 按 sequence FIFO；
 主 Looper 在 lifecycle safe point 泵送、子 Looper 在对应 host 线程执行，不同步伪装 post。
+View.post/postDelayed 以 Java mParent 链到达存活受管窗口根（非零附着代次）判定附着，
+不读取 ui_tree 投影；附着时进入单一 ViewRoot Handler。detached 按 guest 线程暂存，
+存在该窗口后在相同线程 lifecycle safe point 转入，delay 从转入起算。负 delay 为零、
+null Runnable 抛 NPE、始终异步；pending/scheduled Runnable 为 session roots，shutdown 清空。
+不构造 AttachInfo/ViewRootImpl/RunQueue；其他 View posting API 仍按配方明确失败。
 Clock 默认确定性 60 秒 boot-age，无 suspend 时 uptime/elapsedRealtime 同源。
 prepare_native_looper 显式关联 Java/native 线程、主 Looper 仅首次关联，查询/消息泵不重 prepare；
 Java scheduler 持消息，quit 不清存活线程 native Looper。root Thread 稳定、空泵不重入 Java/VM 锁，

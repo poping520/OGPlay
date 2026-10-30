@@ -26,7 +26,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 | PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；无下一失败，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
 | GTA3 | macOS | EULA 已接受，Surface 可见性生命周期通过，到达 Tap To Continue 标题画面 | PlayMovieInWindow 命中 `View.toString()` 未实现（pc25）；影片解码画面未验；NV clock 提示仍在 | [BND-42](../tasks/boundary/BND-42.md)、[DVM-348](../tasks/dexvm/DVM-348.md) |
-| GTASA | macOS | RectF.set 首错消失；andView 布局继续 | 下一首错 View.postDelayed，DelayedNativeRunnable.post pc9；FPS未验 | [DVM-356](../tasks/dexvm/DVM-356.md) |
+| GTASA | macOS | View.postDelayed 首错消失；进入 loading screen 膨胀 | LinearLayout InflateException，LayoutInflater.createViewFromTag pc80；FPS未验 | [DVM-357](../tasks/dexvm/DVM-357.md) |
 
 ## 未闭合问题
 

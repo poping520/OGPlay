@@ -2161,7 +2161,7 @@ note = "DVM-293：默认配对的实例 Paint flags/antiAlias/filterBitmap/dithe
 [dexvm.text_constructor]
 status = "partial"
 test = "tests/dexvm/edittext_traversal_tests.cpp#DVM-327; tests/dexvm/edittext_traversal_tests.cpp#DVM-326; tests/dexvm/theme_resources_tests.cpp#DVM-294; tests/dexvm/textview_traversal_tests.cpp; tests/dexvm/button_traversal_tests.cpp; tests/dexvm/edittext_traversal_tests.cpp"
-note = "默认配对 TextView 真实主题构造、有界文本/叶测量与冻结 line-plan；Button/EditText 保持 ROM 薄构造和默认 style。DVM-327 ROM 状态色与 edit_text 背景叶冻结；IME show/hide/restart 经真实焦点检查，无候选返回 false，需要 InputConnection 明确失败。完整 Editor/IME/Layout、RTL/shaping 失败。"
+note = "默认配对 TextView 真实主题构造、有界文本/叶测量与冻结 line-plan；DVM-361 Java 横向滚动位控制不折行，保留显式换行，singleLine 同步该位；无滚动偏移/marquee；Button/EditText 保持 ROM 薄构造和默认 style。DVM-327 ROM 状态色与 edit_text 背景叶冻结；IME show/hide/restart 经真实焦点检查，无候选返回 false，需要 InputConnection 明确失败。完整 Editor/IME/Layout、RTL/shaping 失败。"
 
 [dexvm.image_leaf]
 status = "partial"

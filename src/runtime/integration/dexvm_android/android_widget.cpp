@@ -803,6 +803,7 @@ Decl ExperimentalTextView(const Context& context) {
         builder.BoundInstanceField("mHintTextColor", "Landroid/content/res/ColorStateList;", dx::kAccPrivate);
     const auto link_colors =
         builder.BoundInstanceField("mLinkTextColor", "Landroid/content/res/ColorStateList;", dx::kAccPrivate);
+    const auto horizontal = builder.BoundInstanceField("mHorizontallyScrolling", "Z", dx::kAccPrivate);
     const auto highlight = builder.BoundInstanceField("mHighlightColor", "I", dx::kAccPrivate);
     const std::array resource_fields{builder.BoundInstanceField("mTextSelectHandleLeftRes", "I", 0),
                                      builder.BoundInstanceField("mTextSelectHandleRightRes", "I", 0),
@@ -842,7 +843,8 @@ Decl ExperimentalTextView(const Context& context) {
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;)V", chain(2));
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V", [context, text_colors, hint_colors,
                                                                                      link_colors, highlight,
-                                                                                     resource_fields, update_color](
+                                                                                     resource_fields, update_color,
+                                                                                     horizontal](
                                                                                         dx::IntrinsicContext& c) {
         auto& vm = c.vm;
         const auto owner = c.arguments[0].ref, attrs = c.arguments[1].ref;
@@ -1126,6 +1128,7 @@ Decl ExperimentalTextView(const Context& context) {
         state->compound_drawables = compounds;
         auto& refs = context->view_adapter_references[c.receiver.Value()];
         refs.text_single_line = single;
+        dx::IntrinsicCall(c).SetInt(horizontal, single);
         refs.text_typeface = face;
         refs.text_compounds = compound_refs;
         if (editing) {
@@ -1360,10 +1363,18 @@ Decl ExperimentalTextView(const Context& context) {
     builder.VirtualMethod("setSingleLine", "()V", [](dx::IntrinsicContext& c) {
         return CallAndroidMethod(c.vm, c.receiver, "setSingleLine", "(Z)V", {dx::VmValue::Int(1)});
     });
-    builder.VirtualMethod("setSingleLine", "(Z)V", [context, changed](dx::IntrinsicContext& c) {
+    builder.VirtualMethod("setHorizontallyScrolling", "(Z)V", [horizontal, changed](dx::IntrinsicContext& c) {
+        dx::IntrinsicCall fields(c);
+        const auto value = c.arguments[0].AsInt() != 0;
+        if ((fields.GetInt(horizontal) != 0) == value) return dx::VmValue::Void();
+        fields.SetInt(horizontal, value);
+        return changed(c);
+    });
+    builder.VirtualMethod("setSingleLine", "(Z)V", [context, changed, horizontal](dx::IntrinsicContext& c) {
         const auto single = c.arguments[0].AsInt() != 0;
         auto& n = *context->ui_tree.Get(TextNode(c, context));
         context->view_adapter_references.at(c.receiver.Value()).text_single_line = single;
+        dx::IntrinsicCall(c).SetInt(horizontal, single);
         n.max_lines = single ? 1 : 0x7fffffff;
         return changed(c);
     });
@@ -1422,7 +1433,7 @@ Decl ExperimentalTextView(const Context& context) {
                                                           (i % 2 ? compound.height : compound.width));
                               });
     }
-    builder.VirtualMethod("onMeasure", "(II)V", [context](dx::IntrinsicContext& c) {
+    builder.VirtualMethod("onMeasure", "(II)V", [context, horizontal](dx::IntrinsicContext& c) {
         if (c.vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id())
             throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Text measure requires owner"};
         const auto revision = context->view_adapter_references.at(c.receiver.Value()).text_revision;
@@ -1436,6 +1447,7 @@ Decl ExperimentalTextView(const Context& context) {
         input.fallback_font = n.fallback_font;
         input.max_lines = n.max_lines;
         input.java_text_view = true;
+        input.no_wrap = dx::IntrinsicCall(c).GetInt(horizontal) != 0;
         input.single_line = context->view_adapter_references.at(c.receiver.Value()).text_single_line;
         for (std::size_t i = 0; i < 4; ++i)
             input.compound[i] = {n.compound_drawables[i].width, n.compound_drawables[i].height};

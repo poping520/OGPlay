@@ -187,3 +187,99 @@ TEST_CASE("DVM-295 TextView host input retired by GC") {
         CHECK(f.ledger.Unimplemented().empty());
     }
 }
+
+TEST_CASE("DVM-361 TextView horizontal scrolling preserves newlines on both backends") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        const auto text = Text(f, owner);
+        const auto root = f.vm.ProtectReferences(std::array{text});
+        auto& refs = f.context->view_adapter_references.at(text.Value());
+        const auto get = [&] { return f.On(text, "getHorizontallyScrolling", "()Z").AsInt(); };
+        const auto set = [&](bool value) {
+            const auto revision = refs.text_revision;
+            const auto changed = get() != value;
+            const auto plan = refs.text_measure;
+            f.On(text, "setHorizontallyScrolling", "(Z)V", {VmValue::Int(value)});
+            CHECK(get() == value);
+            CHECK(refs.text_revision == revision + changed);
+            if (!changed && plan) CHECK(refs.text_measure->line_plan == plan->line_plan);
+            if (changed) CHECK_FALSE(refs.text_measure.has_value());
+        };
+        const auto type = f.model.ObjectClass(text);
+        CHECK(f.linker.Class(type).is_boot_dex);
+        const auto getter = f.linker.FindVtableIndex(type, "getHorizontallyScrolling", "()Z");
+        REQUIRE(getter);
+        CHECK(f.linker.Method(f.linker.Class(type).vtable[*getter]).kind == MethodKind::interpreted);
+        const auto horizontal_field = f.linker.FindFieldRecursive(type, "mHorizontallyScrolling", "Z");
+        REQUIRE(horizontal_field);
+        CHECK(f.model.InstanceSlots(text)[f.linker.Field(*horizontal_field).slot].bits == 0);
+        CHECK(get() == 0);
+        Measure(f, text, 0x40000000 | 20, 0);
+        CHECK(f.On(text, "getMeasuredHeight", "()I").AsInt() == 15);
+        set(false);
+        set(true);
+        Measure(f, text, 0x40000000 | 20, 0);
+        CHECK(f.On(text, "getMeasuredWidth", "()I").AsInt() == 20);
+        CHECK(f.On(text, "getMeasuredHeight", "()I").AsInt() == 7);
+        CHECK(refs.text_measure->line_plan->text == u"HI HI");
+        set(true);
+        Measure(f, text, static_cast<int>(0x80000000U) | 20, 0);
+        CHECK(f.On(text, "getMeasuredWidth", "()I").AsInt() == 20);
+        CHECK(f.On(text, "getMeasuredHeight", "()I").AsInt() == 7);
+        set(false);
+        Measure(f, text, 0x40000000 | 20, 0);
+        CHECK(refs.text_measure->line_plan->text == u"HI\nHI");
+        set(true);
+        f.On(text, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.model.NewString(u"HI HI\nHI HI"))});
+        Measure(f, text, 0x40000000 | 20, 0);
+        CHECK(f.On(text, "getMeasuredHeight", "()I").AsInt() == 15);
+        CHECK(refs.text_measure->line_plan->text == u"HI HI\nHI HI");
+        f.On(text, "setMaxLines", "(I)V", {VmValue::Int(1)});
+        Measure(f, text, 0x40000000 | 20, 0);
+        CHECK(refs.text_measure->line_plan->text == u"HI HI");
+        f.On(text, "setSingleLine", "(Z)V", {VmValue::Int(1)});
+        CHECK(get() == 1);
+        Measure(f, text, 0x40000000 | 20, 0);
+        CHECK(f.On(text, "getMeasuredHeight", "()I").AsInt() == 7);
+        CHECK(refs.text_measure->line_plan->text == u"HI HI HI HI");
+        f.On(text, "setSingleLine", "(Z)V", {VmValue::Int(0)});
+        CHECK(get() == 0);
+
+        // Exercise both cached measurement and guest override raster-only preparation.
+        const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto group_root = f.vm.ProtectReferences(std::array{group});
+        const auto custom = Text(f, owner, "Ltest/TextMeasureOverride;");
+        f.On(group, "addView", "(Landroid/view/View;II)V", {VmValue::Ref(text), VmValue::Int(20), VmValue::Int(-2)});
+        f.On(group, "addView", "(Landroid/view/View;II)V", {VmValue::Ref(custom), VmValue::Int(20), VmValue::Int(-2)});
+        f.context->content_view = group;
+        ++f.context->ui_content_revision;
+        for (bool horizontal : {false, true}) {
+            for (auto view : {text, custom}) {
+                f.On(view, "setText", "(Ljava/lang/CharSequence;)V",
+                     {VmValue::Ref(f.model.NewString(u"HI HI\nHI HI"))});
+                if (view == custom)
+                    f.On(view, "setText", "(Ljava/lang/CharSequence;)V",
+                         {VmValue::Ref(f.model.NewString(u"HI HI HI\nHI HI HI"))});
+                f.On(view, "setHorizontallyScrolling", "(Z)V", {VmValue::Int(horizontal)});
+            }
+            REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                             AndroidUiTraversalPhase::ResolveOnly, ui::Size{20, 80}));
+            const auto snapshot = f.context->ui_tree.PublishedProjection();
+            const auto expected = horizontal ? u"HI HI\nHI HI" : u"HI\nHI\nHI\nHI";
+            for (auto view : {text, custom}) {
+                const auto id = *FindViewUiNode(*f.context, view.Value());
+                const auto raster_expected =
+                    view == custom ? (horizontal ? u"HI HI HI\nHI HI HI" : u"HI HI\nHI\nHI HI\nHI") : expected;
+                CHECK(snapshot->Get(id)->text_line_plan->text == raster_expected);
+            }
+            CHECK(refs.text_measure->line_plan->text == expected);
+            for (const auto& command : ui::BuildUiRenderList(*snapshot, {}))
+                if (const auto* draw = std::get_if<ui::DrawText>(&command))
+                    CHECK((draw->line_plan->text == expected ||
+                           draw->line_plan->text == (horizontal ? u"HI HI HI\nHI HI HI" : u"HI HI\nHI\nHI HI\nHI")));
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}

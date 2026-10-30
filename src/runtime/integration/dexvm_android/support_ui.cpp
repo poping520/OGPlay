@@ -428,6 +428,8 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
                 input.padding = entry.padding;
                 input.java_text_view = true;
                 input.single_line = refs.text_single_line;
+                input.no_wrap =
+                    android_intrinsics::CallAndroidMethod(vm, view, "getHorizontallyScrolling", "()Z").AsInt() != 0;
                 if (input.single_line) std::replace(input.text.begin(), input.text.end(), u'\n', u' ');
                 for (std::size_t i = 0; i < 4; ++i)
                     input.compound[i] = {text.compound_drawables[i].width, text.compound_drawables[i].height};

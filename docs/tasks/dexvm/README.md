@@ -334,3 +334,5 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-358 · XML drawable 共用准入与 JNI 反射异常链](DVM-358.md)
 - [DVM-359 · Bitmap 元数据查询](DVM-359.md)
 - [DVM-360 · Paint FILTER_BITMAP/DITHER 状态位](DVM-360.md)
+
+- [DVM-361 · TextView 横向滚动状态](DVM-361.md)

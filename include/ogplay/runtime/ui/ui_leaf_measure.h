@@ -85,6 +85,8 @@ struct TextLeafInput final {
     // API19 TextView chooses width before layout and clamps without TOO_SMALL.
     bool java_text_view{};
     bool single_line{};
+    // Suppress width wrapping while preserving explicit newlines.
+    bool no_wrap{};
 };
 
 struct LeafMeasureResult final {

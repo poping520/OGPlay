@@ -30,6 +30,7 @@ UiTree 构造必须显式给出字体资源（独立 ASCII 测试可传 nullptr�
   renderer 继续按最终 text band 换行，该宿主路径不承诺统一 line-plan。
   JavaTraversal 节点携带与完整 projection epoch 一起冻结的 text_line_plan，presenter 不再测量/断行；
   Java 模式空串宽度为0，maxLines 截断可见行，singleLine 转换由 integration 提供。
+  独立 no_wrap 与 single_line 均跳过按宽度折行，no_wrap 保留显式换行；视图尺寸仍按 spec 约束。
 
 - `UiTree`：每 generation 建立唯一 synthetic `ContentRoot`；创建、按稳定顺序 attach、
   detach/destroy node，并以 android id 查找已接入 content root 的 node。

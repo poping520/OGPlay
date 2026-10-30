@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79f12ef3142f7940a6281b63576132d4afcbeeb2e3ccb48d512123e419088b24",
+      "surface_sha256": "9358bb57d3b4a9070590c592a5c9846c8b6d29984b1af910753c959c507611d9",
       "owner": "Landroid/graphics/Paint;",
       "smali_sha256": "a9a6e699946d088c737d1f8048f7d13cf44814b6c7e2ea67bb910cea1db6f686",
       "methods": [
@@ -1330,7 +1330,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79f12ef3142f7940a6281b63576132d4afcbeeb2e3ccb48d512123e419088b24",
+      "surface_sha256": "9358bb57d3b4a9070590c592a5c9846c8b6d29984b1af910753c959c507611d9",
       "owner": "Landroid/widget/TextView;",
       "smali_sha256": "06b1a220e8e5b6b9e559c6c98b253c17b0cea684d8a3563a26056381873d74af",
       "methods": [
@@ -1944,7 +1944,7 @@
           "signature": "getHorizontallyScrolling()Z",
           "flags": 1,
           "body_sha256": "e4c9d9dfb33ac58a185543a7c414261985dbe9e2426d2da9aaa7af05b26e9369",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getImeActionId()I",
@@ -3300,7 +3300,14 @@
           "signature": "setHorizontallyScrolling(Z)V",
           "flags": 1,
           "body_sha256": "42c30bf6e4b18536ef6fdb1ed577789ff6a410446b429c8089b545a66862fc67",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-361 bounded TextView no-wrap layout seam",
+            "inputs": "receiver and boolean; unchanged value is a no-op",
+            "outputs": "void; changed value clears measurement cache and requests layout/invalidation",
+            "state_owner": "Java mHorizontallyScrolling is the sole authority; ROM getter reads it",
+            "failure_boundary": "bounded fixed-font measurement only; no Layout/TextPaint, scrolling offset or marquee"
+          }
         },
         {
           "signature": "setImeActionLabel(Ljava/lang/CharSequence;I)V",
@@ -4215,7 +4222,7 @@
         {
           "signature": "mHorizontallyScrolling:Z",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -4514,7 +4521,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79f12ef3142f7940a6281b63576132d4afcbeeb2e3ccb48d512123e419088b24",
+      "surface_sha256": "9358bb57d3b4a9070590c592a5c9846c8b6d29984b1af910753c959c507611d9",
       "owner": "Landroid/graphics/RectF;",
       "smali_sha256": "65034d541516dfe44c801f64a3492ce2b8cd09b0189dd97ecb4ebb298e41797c",
       "methods": [
@@ -4798,7 +4805,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "79f12ef3142f7940a6281b63576132d4afcbeeb2e3ccb48d512123e419088b24",
+      "surface_sha256": "9358bb57d3b4a9070590c592a5c9846c8b6d29984b1af910753c959c507611d9",
       "owner": "Landroid/graphics/RectF$1;",
       "smali_sha256": "f889e950e28f121bd482097f9ba13a76fdae40fed5ffdf91ecfd790e70f663ae",
       "methods": [

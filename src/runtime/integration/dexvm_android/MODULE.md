@@ -623,7 +623,9 @@ ADR-0161：仅配对 JavaTraversal 的三个 TextView 构造为受审 adapter，
 UiNode 的文本、字号、字体样式、gravity、行策略及四绝对位图槽是单一文本输入；
 颜色身份归 Java 字段，UiNode 仅持派生 RGBA；
 View adapter 状态另存独立 singleLine 位，并保活 Typeface/Drawable 身份及其不可变 backing，随 View trace/sweep。
-不写 mText/mLayout/mEditor，不开放 getPaint singleton。
+mHorizontallyScrolling 由 Java 字段唯一拥有，getter 执行 ROM；setter 值变化才清测量缓存并请求布局/失效。
+setSingleLine 同时设置该字段；测量和光栅计划都传独立 no_wrap，只有 singleLine 转换换行为空格。
+不实现滚动偏移或 marquee。不写 mText/mLayout/mEditor，不开放 getPaint singleton。
 ROM 状态色的 TextView 消费：mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor 保存
 真实 Java 值；getTextColors 保持列表身份，hint/link/highlight getter 执行 ROM。
 getCurrentTextColor 与叶 RGBA 按真实 getDrawableState→ROM getColorForState 派生，

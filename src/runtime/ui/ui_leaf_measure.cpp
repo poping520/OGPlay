@@ -110,16 +110,18 @@ using Glyph = std::array<std::uint8_t, 7>;
     case u'~': return {0, 0, 8, 21, 2, 0, 0};
     default: {
         std::ostringstream error;
-        error << "U+" << std::uppercase << std::hex << std::setfill('0') << std::setw(4)
-              << static_cast<unsigned>(value) << " is absent from 5x7 fixed font";
+        error << "U+" << std::uppercase << std::hex << std::setfill('0') << std::setw(4) << static_cast<unsigned>(value)
+              << " is absent from 5x7 fixed font";
         throw std::runtime_error(error.str());
     }
     }
 }
 
 void RequireTextGlyph(const char16_t unit, const UiFallbackFont* fallback) {
-    if (unit > 127 && fallback) static_cast<void>(fallback->SourceIndex(unit));
-    else static_cast<void>(GlyphRows(unit));
+    if (unit > 127 && fallback)
+        static_cast<void>(fallback->SourceIndex(unit));
+    else
+        static_cast<void>(GlyphRows(unit));
 }
 
 FixedTextMetrics MeasureFixedText(const std::u16string_view text, const float size_px, const std::uint32_t style,
@@ -272,7 +274,7 @@ LeafMeasureResult MeasureTextLeaf(const TextLeafInput& input, MeasureSpec width,
         const auto desired_width =
             std::max(input.minimum.width, std::max({raw.width, c[1].width, c[3].width}) + horizontal);
         const auto actual_width = Constrain(desired_width, width);
-        auto text = input.single_line
+        auto text = (input.single_line || input.no_wrap)
                         ? input.text
                         : WrapFixedText(input.text, input.size_px, input.style,
                                         std::max(1, actual_width - horizontal + raw.scale),

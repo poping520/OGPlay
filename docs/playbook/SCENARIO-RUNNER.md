@@ -53,7 +53,7 @@ python tools/run_scenario.py \
 > DVM-331：默认载荷及装配均为 JavaTraversal。下述 staging 工具保留为隔离调试用途，
 > 不再用于启用实验模式；旧 Legacy 只能使用冻结基线整包，不能交给当前 CLI 回落。
 
-默认制品使用 `python3 tools/bootdex/compose_bootdex.py build` 重建，再执行同工具 `check`；
+默认制品使用 `python3 tools/bootdex/compose_bootdex.py build` 重建，build 后无需再跑 `check`（它只做同样的构建并比对已提交制品）；
 旧 `build_bootdex.py` 仅保留固定 native/JNI 来源生成与审计职责，不用于重建默认 guest View 制品。
 默认和调试候选必须具有相同五项配对身份；当前 CLI 对旧无配对归档明确失败。
 

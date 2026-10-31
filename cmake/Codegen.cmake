@@ -76,71 +76,15 @@ add_custom_target(ogplay_member_sources_fixture
             "${OGPLAY_DEXVM_FIXTURE_DIR}/member-sources.jar")
 add_dependencies(ogplay_dexvm_fixtures ogplay_member_sources_fixture)
 
-# Fixed sealed JavaTraversal counterpart. The production default remains Legacy.
+# Fixed sealed JavaTraversal counterpart: byte-identical to the default BootDex.
 add_custom_command(
     OUTPUT "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.jar"
-           "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.manifest.json"
-    COMMAND ${Python3_EXECUTABLE}
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/compose_bootdex.py" build
-        --view-measure-test-output "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.jar"
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/compose_bootdex.py"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/member_sources.py"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/member-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-measure-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-owner.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-button-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-edittext-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-edittext.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-scroll-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-scroll.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-video-adapter.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-surface-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-surface.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-button.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-image-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-image.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-paint-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-paint.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-text.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-group-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-frame-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-absolute-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-progressbar-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-progressbar.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-colorfilter-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-colorfilter.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-spinner-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-spinner.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-linear-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-relative-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-xml-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-xml.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-inflater-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-inflater.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/policy_rom.py"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/policy-reference.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/policy-baseline.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/policy.surface.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-policy-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/.local/aosp/android.policy.jar"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-context-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-context.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-theme-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-theme.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/theme_projection.py"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/theme_inputs.py"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/framework_res_audit.py"
-            "${CMAKE_CURRENT_SOURCE_DIR}/.local/aosp/framework-res.apk"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/theme-projection-inputs.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-system-sources.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-measure.surface.json.gz"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/api19.json"
-            "${CMAKE_CURRENT_SOURCE_DIR}/data/android/19/framework/bootdex.jar"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/data/android/19/framework/bootdex.jar"
+            "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.jar"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/data/android/19/framework/bootdex.jar"
     VERBATIM
 )
-add_custom_target(ogplay_view_measure_fixture
-    DEPENDS "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.jar"
-            "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.manifest.json")
+add_custom_target(ogplay_view_measure_fixture DEPENDS "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.jar")
 add_dependencies(ogplay_dexvm_fixtures ogplay_view_measure_fixture)
 
 # API19 ICU property fallbacks follow the bundled payload metadata, not host ICU.

@@ -529,7 +529,9 @@ def payload(document, roots, root, writer_owners=None):
     if not document['classes']:
         return None
     texts = {}
-    surfaces = []
+    # Classes share a few large pinned inputs: hash and parse each file once.
+    input_digests = {}
+    loaded = {}
     for cls in document['classes']:
         owner = cls['owner']
         matches = [p / (owner[1:-1] + '.smali') for p in roots
@@ -538,16 +540,24 @@ def payload(document, roots, root, writer_owners=None):
             raise ValueError('ROM class must have exactly one owner: ' + owner)
         texts[owner] = matches[0].read_text(encoding='utf-8')
         source = root / cls['rom_input']
-        if digest(source.read_bytes()) != cls['rom_input_sha256']:
+        if source not in input_digests:
+            input_digests[source] = digest(source.read_bytes())
+        if input_digests[source] != cls['rom_input_sha256']:
             raise ValueError('pinned ROM input hash mismatch: ' + owner)
         surface = root / cls['surface']
-        if digest(surface.read_bytes()) != cls['surface_sha256']:
+        if surface not in loaded:
+            raw = surface.read_bytes()
+            if digest(raw) != cls['surface_sha256']:
+                raise ValueError('pinned runtime surface hash mismatch')
+            current = json.loads(gzip.decompress(raw) if surface.suffix == '.gz' else raw)
+            if current.get('startup_link_error'):
+                raise ValueError('surface startup link failure')
+            loaded[surface] = (cls['surface_sha256'], current['classes'])
+        elif loaded[surface][0] != cls['surface_sha256']:
             raise ValueError('pinned runtime surface hash mismatch')
-        raw = surface.read_bytes()
-        current = json.loads(gzip.decompress(raw) if surface.suffix == '.gz' else raw)
-        if current.get('startup_link_error'):
-            raise ValueError('surface startup link failure')
-        surfaces += current['classes']
+        # Later classes' surfaces win in validate(); keep last-use order.
+        loaded[surface] = loaded.pop(surface)
+    surfaces = [c for _, classes in loaded.values() for c in classes]
     # Recipe membership is authoritative, rather than the source label of a
     # merged runtime class (a BootDex class can also have intrinsic handlers).
     recipe_owners = (set(writer_owners) if writer_owners is not None else

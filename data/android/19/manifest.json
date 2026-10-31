@@ -118,7 +118,7 @@
       "entry": "META-INF/ogplay/member-sources.json",
       "manifest_sha256": "b9d59f41ffcbdfea6ff3026433460f18cd4a024a39b631f777d0ed1e5e015704",
       "composer": "tools/bootdex/compose_bootdex.py",
-      "composer_sha256": "ec80fb35b63ae38e42f574d246e9749a0cafba0e764e7ba6925abeea5f11d614"
+      "composer_sha256": "1d08e2f555c68426544c094e37ab02dfa4862e37116cf002550d9324893dd6b6"
     },
     "theme_projection": {
       "entry": "META-INF/ogplay/theme-projection.json",

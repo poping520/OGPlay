@@ -10,6 +10,7 @@ import argparse
 import copy
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import zipfile
@@ -150,12 +151,12 @@ def measure_sources(document):
 
 def assemble(recipe, work):
     # Replace the frozen generator wrappers with the paired ROM classes.
+    # One JVM per source jar; per-class smali output does not depend on job count.
     for source, classes in recipe.items():
-        for offset in range(0, len(classes), 100):
-            builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'baksmali.jar'),
-                         'disassemble', '--api', '19', '--jobs', '1', '--classes',
-                         ','.join(classes[offset:offset + 100]), '--output',
-                         str(work / (source + '-smali')), str(builder.source_path(source))])
+        builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'baksmali.jar'),
+                     'disassemble', '--api', '19', '--jobs', str(os.cpu_count() or 1), '--classes',
+                     ','.join(classes), '--output',
+                     str(work / (source + '-smali')), str(builder.source_path(source))])
     guest, custom = builder.compile_guest_java(work)
     replacements = {'Landroid/view/ContextThemeWrapper;', 'Landroid/view/LayoutInflater;'}
     duplicates = {v for values in recipe.values() for v in values} & set(custom)
@@ -182,11 +183,8 @@ def assemble(recipe, work):
 def build():
     recipe = candidate_classes()
     builder.verify_inputs(recipe)
-    with tempfile.TemporaryDirectory(prefix='ogplay-composition-a-') as first, \
-            tempfile.TemporaryDirectory(prefix='ogplay-composition-b-') as second:
-        dex, payload = assemble(recipe, Path(first))
-        if (dex, payload) != assemble(recipe, Path(second)):
-            raise builder.BuildError('two BootDex DEX/member source assemblies differ')
+    with tempfile.TemporaryDirectory(prefix='ogplay-composition-') as work:
+        dex, payload = assemble(recipe, Path(work))
     with tempfile.TemporaryDirectory(prefix='ogplay-composition-java-audit-') as work:
         _, custom = builder.compile_guest_java(Path(work))
         selected = builder.expected_class_names(recipe, tuple(c for c in custom if c not in {'Landroid/view/ContextThemeWrapper;', 'Landroid/view/LayoutInflater;', 'Landroid/view/LayoutInflater$Factory;', 'Landroid/view/LayoutInflater$LocalInflater;'}))

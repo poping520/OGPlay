@@ -149,7 +149,7 @@
           "signature": "hasOverlappingRendering()Z",
           "flags": 1,
           "body_sha256": "f12c67a01cd7c64dc1c30c4445470cc11531242ba49ac722e9e2be98f51f4e77",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "initImageView()V",
@@ -161,19 +161,19 @@
           "signature": "invalidateDrawable(Landroid/graphics/drawable/Drawable;)V",
           "flags": 1,
           "body_sha256": "71625d7ff583c913bb55bd62a3f1c79eec9d3b86e876ac0e2fe242ffd0716a96",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "jumpDrawablesToCurrentState()V",
           "flags": 1,
           "body_sha256": "3727028d6fc8f96157224f741375e5ef28cbbef19f2be862ddc46cc67effad10",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onAttachedToWindow()V",
           "flags": 4,
           "body_sha256": "3844d00d9b95302bdb2ce68f6d573b5db3e9b4301c9ec7847242a8db758f9b82",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onCreateDrawableState(I)[I",
@@ -185,7 +185,7 @@
           "signature": "onDetachedFromWindow()V",
           "flags": 4,
           "body_sha256": "299db2227565be7f2bf35f4980feac012931acadd08b27b74f72c59fc04be4b2",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onDraw(Landroid/graphics/Canvas;)V",
@@ -440,14 +440,7 @@
           "signature": "setVisibility(I)V",
           "flags": 1,
           "body_sha256": "ab97bab13fe50829c3d7dc6cd060761aebccc6062c883eb4f623f3576d43cd54",
-          "source": "overlay",
-          "review": {
-            "reason": "ADR-0161 / DVM-296 bounded ImageView leaf construction, identity, measurement and projection",
-            "inputs": "actual Context/AttributeSet/defStyleAttr and ROM ImageView TypedArray; audited bitmap/color Drawable, five scaleTypes and alpha; Java padding/minimum and MeasureSpecs",
-            "outputs": "Java mDrawable identity, mScaleType, mAlpha, initialized Matrix/RectF; pure MeasureImageLeaf output through true virtual setMeasuredDimension; immutable image backing frozen with epoch",
-            "state_owner": "Java fields are sole image identity/scale/alpha owner; host owns immutable pixel/version backing; ui_view_images weak derived index only; Java owns all geometry",
-            "failure_boundary": "MATRIX/FIT_START/FIT_END, tint/colorFilter/adjustViewBounds/max/baseline/crop requests and unreviewed Drawable fail with ADR-0147 ledger; no system skin/selector/ninepatch/custom draw/Matrix mutation"
-          }
+          "source": "rom"
         },
         {
           "signature": "setXfermode(Landroid/graphics/Xfermode;)V",
@@ -465,7 +458,7 @@
           "signature": "verifyDrawable(Landroid/graphics/drawable/Drawable;)Z",
           "flags": 4,
           "body_sha256": "6e9740664284d5b8ed01973596fc04171194087010a820a68a537206f3cd7124",
-          "source": "failure"
+          "source": "rom"
         }
       ],
       "fields": [

@@ -568,27 +568,9 @@ Decl ExperimentalImageView(const Context& context) {
         fields.SetInt(compat,
                       static_cast<int>(vm.Model().InstanceSlots(info)[vm.Linker().Field(*target).slot].bits) <= 17);
         if (attributes) {
-            const auto attrs = c.arguments[1].ref;
+            // Like the ROM, View/ImageView read only their own styleables: other XML
+            // attributes (e.g. android:gravity, parent layout params) are ignored here.
             const auto group = RomTextAttributes(vm, "ImageView");
-            if (attrs.IsValid()) {
-                std::set<std::uint32_t> known;
-                for (auto name : {"View", "ImageView", "ViewGroup_Layout", "ViewGroup_MarginLayout",
-                                  "FrameLayout_Layout", "LinearLayout_Layout", "RelativeLayout_Layout"}) {
-                    const auto array = RomTextAttributes(vm, name).array;
-                    for (JniSize i = 0; i < vm.Model().ArrayLength(array); ++i)
-                        known.insert(static_cast<std::uint32_t>(vm.Model().GetPrimitiveElement(array, i)));
-                }
-                const auto count = CallAndroidMethod(vm, attrs, "getAttributeCount", "()I").AsInt();
-                for (int i = 0; i < count; ++i) {
-                    const auto id =
-                        CallAndroidMethod(vm, attrs, "getAttributeNameResource", "(I)I", {dx::VmValue::Int(i)}).cat1;
-                    if (id == 0 && vm.StringUtf8(CallAndroidMethod(vm, attrs, "getAttributeName",
-                                                                   "(I)Ljava/lang/String;", {dx::VmValue::Int(i)})
-                                                     .ref) == "style")
-                        continue;
-                    if (!known.contains(id)) ImageFailure(vm, "unknown ImageView XML attribute");
-                }
-            }
             const auto theme =
                 CallAndroidMethod(vm, c.arguments[0].ref, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
             const auto theme_root = vm.ProtectReferences(std::array{theme});
@@ -740,13 +722,13 @@ Decl ExperimentalImageView(const Context& context) {
         return dx::VmValue::Void();
     });
     // No Drawable layout/state/draw stack is claimed. Execute the genuine View
-    // protocol for geometry and visibility; the leaf renderer consumes backing.
+    // protocol for geometry; the leaf renderer consumes backing. setVisibility
+    // runs the ROM body (Drawable visibility and invalidate callback).
     for (const auto& [name, sig] :
-         std::array<std::pair<const char*, const char*>, 5>{{{"setFrame", "(IIII)Z"},
+         std::array<std::pair<const char*, const char*>, 4>{{{"setFrame", "(IIII)Z"},
                                                              {"onRtlPropertiesChanged", "(I)V"},
                                                              {"drawableStateChanged", "()V"},
-                                                             {"setSelected", "(Z)V"},
-                                                             {"setVisibility", "(I)V"}}}) {
+                                                             {"setSelected", "(Z)V"}}}) {
         builder.VirtualMethod(name, sig, [name, sig](dx::IntrinsicContext& c) {
             if (std::string_view(name) == "onRtlPropertiesChanged" && c.arguments[0].AsInt() != 0)
                 ImageFailure(c.vm, "RTL image unsupported");

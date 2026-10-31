@@ -325,6 +325,13 @@
 .ii-facts dd { margin: 0; overflow-wrap: anywhere; color: var(--ink); font-size: 13px; font-weight: 700; line-height: 20px; }
 .ii-facts dd.mono { font-size: 12.5px; color: var(--soft); }
 .ii-facts dd small { display: block; margin-top: 2px; color: var(--dim); font-size: 11.5px; font-weight: 700; }
+/* copyable fact: the value, then a compact copy pill that keeps the row height */
+.ii-facts dd.ii-copyable { display: flex; align-items: center; gap: 10px; }
+.ii-copyable > span { flex: 1; min-width: 0; user-select: text; }
+.console .install-info .ii-copy { flex: none; height: 28px; margin: -4px 0; padding: 0 12px; border: 0; background: var(--glass2); font: 800 12px var(--font); }
+.console .install-info .ii-copy:hover:not(:disabled) { background: rgba(255,255,255,.16); }
+.console .install-info .ii-copy.done { color: var(--ready); }
+.console .install-info .ii-copy.failed { color: var(--danger); }
 .ii-path { margin-top: 14px; }
 .ii-path > small { display: block; margin-left: 4px; color: var(--muted); font-size: 12px; font-weight: 800; }
 /* paths wrap in full so every segment stays readable and selectable */

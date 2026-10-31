@@ -16,6 +16,7 @@ import android.content.Context;
 import android.content.res.AssetFileDescriptor;
 import android.media.MediaPlayer;
 import android.net.Uri;
+import android.util.AttributeSet;
 import android.view.SurfaceView;
 import java.util.List;
 
@@ -32,6 +33,8 @@ public class VideoView extends SurfaceView {
     private boolean mTargetPlaying;
 
     public VideoView(Context context) { super(context); }
+    public VideoView(Context context, AttributeSet attrs) { this(context, attrs, 0); }
+    public VideoView(Context context, AttributeSet attrs, int defStyle) { super(context, attrs, defStyle); }
     public void setOnPreparedListener(MediaPlayer.OnPreparedListener listener) { mPreparedListener = listener; }
     public void setOnCompletionListener(MediaPlayer.OnCompletionListener listener) { mCompletionListener = listener; }
     public void setOnErrorListener(MediaPlayer.OnErrorListener listener) { mErrorListener = listener; }

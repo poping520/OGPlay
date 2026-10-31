@@ -367,9 +367,10 @@ public:
             {"SL_IID_OBJECT", "SL_IID_PLAY"}, call.ThreadId());
         if (!interfaces.has_value()) return kFeatureUnsupported;
         auto exposed = *interfaces;
-        exposed.insert(locator_type == kLocatorBufferQueue
-                           ? "SL_IID_BUFFERQUEUE"
-                           : "SL_IID_ANDROIDSIMPLEBUFFERQUEUE");
+        // AOSP MPH_to_AudioPlayer aliases ANDROIDSIMPLEBUFFERQUEUE to the
+        // BUFFERQUEUE slot: either IID reaches the same queue interface.
+        exposed.insert("SL_IID_BUFFERQUEUE");
+        exposed.insert("SL_IID_ANDROIDSIMPLEBUFFERQUEUE");
         std::scoped_lock lock(mutex_);
         const auto& engine = RequireKind(call.Argument(0), ObjectKind::engine);
         const auto& mix = RequireKind(mix_handle, ObjectKind::output_mix);

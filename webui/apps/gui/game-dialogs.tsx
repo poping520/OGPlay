@@ -25,6 +25,31 @@ function importedAt(value: string | null) {
   return new Date(time).toLocaleString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+// Async clipboard first; a WebView without it copies a selection of the shown text instead.
+async function copyText(text: string, source: Element) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* fall back to a selection copy */ }
+  const selection = getSelection();
+  if (!selection) return false;
+  const range = document.createRange();
+  range.selectNodeContents(source);
+  selection.removeAllRanges(); selection.addRange(range);
+  try { return document.execCommand('copy'); } finally { selection.removeAllRanges(); }
+}
+// A fact value with a copy pill; the pill reports success or failure for a moment, then resets.
+function Copyable({ text }: { text: string }) {
+  const value = useRef<HTMLSpanElement>(null);
+  const timer = useRef(0);
+  const [state, setState] = useState<'' | 'done' | 'failed'>('');
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const copy = async () => {
+    setState(await copyText(text, value.current!) ? 'done' : 'failed');
+    clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setState(''), 1500);
+  };
+  return <><span ref={value}>{text}</span>
+    <button class={`ii-copy ${state}`} aria-live="polite" onClick={copy}>{t(state === 'done' ? '已复制' : state === 'failed' ? '复制失败' : '复制')}</button></>;
+}
+
 /** "更多 › 安装信息": install record, directories and runtime state of one entry. */
 export function InstallInfoDialog({ item, runtime, busy, openDir, onClose }: {
   item: LibraryItem; runtime?: RuntimeInfo; busy: boolean; openDir: (kind: 'sandbox' | 'log') => void; onClose: () => void;
@@ -44,7 +69,7 @@ export function InstallInfoDialog({ item, runtime, busy, openDir, onClose }: {
         {item.profile && <li title={item.profile.detail}>Profile · {item.profile.value}</li>}</ul></GameCard>
     <dl class="ii-facts">
       <dt>{t('安装 ID')}</dt><dd class="mono">{item.installation_id}</dd>
-      <dt>{t('包名')}</dt><dd class="mono">{item.package || t('包名不可用')}</dd>
+      <dt>{t('包名')}</dt>{item.package ? <dd class="mono ii-copyable"><Copyable text={item.package} /></dd> : <dd class="mono">{t('包名不可用')}</dd>}
       <dt>{t('数据包')}</dt><dd>{item.external.value}{item.external.detail && <small>{item.external.detail}</small>}</dd>
     </dl>
     {path(t('沙盒路径'), item.sandbox_path, 'sandbox')}

@@ -381,3 +381,38 @@ TEST_CASE("DVM-363 ImageView adjust bounds keeps ROM flags and scale type on bot
         CHECK(f.On(image, "getAdjustViewBounds", "()Z").AsInt() == 0);
     }
 }
+
+TEST_CASE("ImageView Drawable callback and attach protocol run ROM bodies on both backends") {
+    // setVisibility toggles the Drawable, whose invalidateSelf calls back into ImageView.invalidateDrawable.
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        const auto image = Image(f, owner);
+        const auto drawable =
+            f.New("Landroid/graphics/drawable/ColorDrawable;", "(I)V", {VmValue::Int(static_cast<int>(0xff123456U))});
+        const auto other =
+            f.New("Landroid/graphics/drawable/ColorDrawable;", "(I)V", {VmValue::Int(static_cast<int>(0xff654321U))});
+        const auto roots = f.vm.ProtectReferences(std::array{image, drawable, other});
+        f.On(image, "setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(drawable)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(image)});
+        const auto visible = [&] { return f.On(drawable, "isVisible", "()Z").AsInt(); };
+        CHECK(visible() == 1);
+        f.On(image, "setVisibility", "(I)V", {VmValue::Int(8)});
+        CHECK(visible() == 0);
+        f.On(image, "setVisibility", "(I)V", {VmValue::Int(0)});
+        CHECK(visible() == 1);
+        f.On(drawable, "invalidateSelf", "()V");
+        CHECK(f.On(image, "verifyDrawable", "(Landroid/graphics/drawable/Drawable;)Z", {VmValue::Ref(drawable)})
+                  .AsInt() == 1);
+        CHECK(f.On(image, "verifyDrawable", "(Landroid/graphics/drawable/Drawable;)Z", {VmValue::Ref(other)}).AsInt() ==
+              0);
+        f.On(image, "jumpDrawablesToCurrentState", "()V");
+        CHECK(f.On(image, "hasOverlappingRendering", "()Z").AsInt() == 0);
+        f.On(image, "onDetachedFromWindow", "()V");
+        CHECK(visible() == 0);
+        f.On(image, "onAttachedToWindow", "()V");
+        CHECK(visible() == 1);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}

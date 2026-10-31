@@ -280,7 +280,7 @@
           "signature": "verifyDrawable(Landroid/graphics/drawable/Drawable;)Z",
           "flags": 4,
           "body_sha256": "51b8e829e691ab50f2b7e293bf044cf54d550518a4729348a1dfe1c8c076e068",
-          "source": "failure"
+          "source": "rom"
         }
       ]
     },

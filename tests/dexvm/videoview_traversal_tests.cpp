@@ -233,3 +233,26 @@ TEST_CASE("DVM-303 VideoView unsupported services and unhandled errors fail with
         CHECK(f.ledger.Unimplemented().size() == 7);
     }
 }
+
+TEST_CASE("VideoView XML constructors reach the bounded Java player instead of the API19 skeleton") {
+    // LayoutInflater.createView uses (Context, AttributeSet); the skeleton would
+    // otherwise supply an unbound declaration that throws UnsatisfiedLinkError.
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend, true);
+        const auto owner = Owner(f);
+        const auto root = f.vm.ProtectReferences(std::array{owner});
+        static_cast<void>(Video(f, owner));
+        for (const auto sig : {"(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+                               "(Landroid/content/Context;Landroid/util/AttributeSet;I)V"}) {
+            std::vector<VmValue> args{VmValue::Ref(owner), VmValue::Ref(VmObjectRef{})};
+            if (std::string_view(sig).find(";I)") != std::string_view::npos) args.push_back(VmValue::Int(0));
+            const auto view = f.New("Landroid/widget/VideoView;", sig, args);
+            const auto keep = f.vm.ProtectReferences(std::array{view});
+            const auto before = Generation(f, view);
+            Open(f, view);
+            CHECK(Generation(f, view) == before + 1);
+            f.On(view, "stopPlayback", "()V");
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}

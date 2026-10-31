@@ -181,6 +181,8 @@ TEST_CASE("OpenSL ES guest vtables create and play a PCM buffer queue") {
     const auto play = query_itf("SL_IID_PLAY", fixture.output.Add(16U));
     const auto queue = query_itf("SL_IID_ANDROIDSIMPLEBUFFERQUEUE",
                                  fixture.output.Add(20U));
+    // OpenAL Soft requests ANDROIDSIMPLEBUFFERQUEUE, then asks for BUFFERQUEUE.
+    CHECK(query_itf("SL_IID_BUFFERQUEUE", fixture.output.Add(36U)) == queue);
     const auto volume = query_itf("SL_IID_VOLUME", fixture.output.Add(24U));
     const auto queue_vtable = fixture.bus.Read32(
         ogplay::memory::GuestAddress{queue}, 1U);

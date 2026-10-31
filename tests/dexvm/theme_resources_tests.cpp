@@ -2265,8 +2265,11 @@ TEST_CASE("DVM-296 ImageButton XML and code honor real imageButtonStyle and expl
         f.context->arsc.entries.push_back(Style(0x7f020072, 0, {{0x01010072, 1, 0x7f020071, {}}}));
         const auto theme = f.On(owner, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
         f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(0x7f020072), VmValue::Int(1)});
+        // android:gravity is not read by ROM View/ImageView/ImageButton and is ignored, not rejected.
         const auto parser = OpenAttributeXml(
-            f, owner, AttributeXml({{{0x01010119, 28, 0xff223344}, {0x0101011d, 16, 1}, {0x0101042f, 16, 96}}}));
+            f, owner,
+            AttributeXml(
+                {{{0x010100af, 17, 5}, {0x01010119, 28, 0xff223344}, {0x0101011d, 16, 1}, {0x0101042f, 16, 96}}}));
         const auto parser_root = f.vm.ProtectReferences(std::array{parser});
         const auto xml =
             f.New("Landroid/widget/ImageButton;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-30。
+更新：2026-10-31。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 修复过程、验证明细及证据写入任务单。能力见 [capabilities.toml](../../capabilities.toml)，
@@ -26,7 +26,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 | PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；无下一失败，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
 | GTA3 | macOS | Tap To Continue 标题；PlayMovieInWindow 的 View.toString 已通过 | 本次 90 秒未见新 Java 首错；影片解码画面未验，NV clock 提示仍在 | [DVM-363](../tasks/dexvm/DVM-363.md) |
-| GTASA | macOS | Social Club 登录界面文字完整；点击 OFFLINE 进入 GL/音频初始化 | 渲染线程 `swapBuffer wait` 后 JNI 引用对当前线程无效；登录界面图片（guest onDraw）未绘制 | [DVM-366](../tasks/dexvm/DVM-366.md) |
+| GTASA | macOS | OFFLINE → 标题菜单 → Start Game 进入开场过场，约 2 分钟无 fault，SIGINT 退出 0 | OpenSL 播放器 BUFFERQUEUE/ANDROIDSIMPLEBUFFERQUEUE 未互为别名致 OpenAL 启动失败、随后堆损坏，已修；登录界面图片（guest onDraw）未绘制，游戏内交互未验 | [DVM-366](../tasks/dexvm/DVM-366.md) |
 
 ## 未闭合问题
 

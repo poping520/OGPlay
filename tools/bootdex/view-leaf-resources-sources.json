@@ -237,7 +237,7 @@
           "signature": "jumpToCurrentState()V",
           "flags": 1,
           "body_sha256": "ac25f1ee73d01609a73eb45af3e1ccd4bf029e3dfbb676c9cf906903467b4a0b",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "mutate()Landroid/graphics/drawable/Drawable;",

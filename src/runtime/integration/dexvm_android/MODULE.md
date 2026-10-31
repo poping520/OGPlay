@@ -671,7 +671,8 @@ TextView.setShadowLayer/getShadowRadius/Dx/Dy/Color 以 UiNode.TextShadow 为唯
 
 JavaTraversal 配对保留 ImageView/ImageButton、八成员 ScaleType 及 Matrix 的完整 ROM 形状和
 原 clinit。ImageView 构造接缝执行真实 View/Theme/TypedArray；Context-only 沿源码只初始化，
-属性构造保留 defStyleAttr 优先级。ImageButton 三构造执行 ROM，真实 imageButtonStyle 和
+属性构造保留 defStyleAttr 优先级；与 ROM 一致，只读 View/ImageView styleable，其余 XML 属性
+（如 gravity、父容器布局参数）忽略而不拒绝。ImageButton 三构造执行 ROM，真实 imageButtonStyle 和
 setFocusable(true) 不被删除；系统 selector/ninepatch 背景拒绝，应用显式受支持主题可成功。
 Java mDrawable/mScaleType/mAlpha 唯一拥有图片身份、缩放和 drawableAlpha；BitmapDrawable 的
 mBitmap 是 Java 强边。ui_view_images 在此路径仅为弱派生索引，不参与 GC 保活或 setter 读取。

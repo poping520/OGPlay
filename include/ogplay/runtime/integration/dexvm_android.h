@@ -212,6 +212,8 @@ struct DexVmAndroidContext final {
     XmlStringPoolToken resource_string_pool;
     XmlStringPoolToken rom_string_pool;
     XmlCursorRegistry xml_cursors;
+    // Synchronous, rooted ROM inflate scopes; arbitrary nested XML stays rejected.
+    std::vector<dexvm::VmObjectRef> rom_drawable_parsers;
     bool xml_gc_registered{};
     loader::ArscTable arsc;
     std::vector<std::byte> apk_bytes;
@@ -619,7 +621,7 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t, SQLiteHelperState> sqlite_helpers;
 
     struct PathState final {
-        enum class Verb : std::uint8_t { move, line, close, rect };
+        enum class Verb : std::uint8_t { move, line, close, rect, round_rect };
 
         struct Command final {
             Verb verb{};
@@ -628,6 +630,7 @@ struct DexVmAndroidContext final {
             float x2{};
             float y2{};
             std::int32_t direction{};
+            std::array<float, 8> radii{};
         };
 
         std::vector<Command> commands;
@@ -1095,6 +1098,7 @@ struct DexVmAndroidContext final {
     struct PaintMeasureState final {
         std::int32_t flags{0x500};  // API19 DEV_KERN_TEXT | EMBEDDED_BITMAP_TEXT.
         bool text_view_owned{};
+        std::int32_t alpha{255};
         float text_size{12.0F};  // API19 SkPaint default.
         std::uint64_t measurements{};
         std::u16string last_text;

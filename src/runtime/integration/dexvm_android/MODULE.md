@@ -649,15 +649,18 @@ drawableStateChanged 先执行 View 协议再刷新颜色；GC 通过 Java 字�
 View 背景按 ROM isStateful 跳过非有状态背景；仅 ROM 皮肤可更新状态，其他有状态背景明确失败。
 颜色变化仅失效绘制，不改变测量几何。link 的布局与 Editor 能力仍未开放。
 
+minWidth/minHeight 按样式/XML 优先级消费；像素 getter/setter 执行原版 Java，保留 requestLayout/invalidate。
+最小 ems/非零行数与最大尺寸仍未准入。
 未知/不支持请求明确失败；全部解析与校验后才发布宿主文本输入，inflater仍原子替换整树。
 
 TextView onMeasure 为 overlay：读取宿主输入及虚派 Java compound padding/suggested minimum，
-调用纯文本叶服务，再虚派 setMeasuredDimension；不写 measured/bounds/flags、不遍历子树。
+合并独立 Java TextView 像素最小宽高（不覆盖 View 最小值），调用纯文本叶服务，再虚派 setMeasuredDimension；不写 measured/bounds/flags、不遍历子树。
 setText/getText、字号、Typeface、ROM 颜色列表、gravity、singleLine/maxLines、四位图 compound
 按逐签名 review 开放，setter 经 Java requestLayout/invalidate，owner tick 重测后完整发布。
 每输入版本按最终宽度保存 immutable plan，以兼容 ROM measure cache/补测；baseline 读取同一服务结果，
 附加 Java 高度下的 gravity offset。构造/输入与 plan 随 View sweep 退役；无宿主全局强根。
 投影中的 text/style/plan/geometry 同 epoch 冻结，presenter 不再测量；失败保留旧发布快照，不回滚 guest 回调。
+隐藏祖先下仍收集 Java 层级/几何，但不准备背景、图像或文本行计划；可见分支仍要求有效测量计划。
 子类 onMeasure 不调用 super 时保留其 Java 自定尺寸，owner 发布阶段只按最终尺寸准备光栅 plan，
 不进入 adapter、不写 guest 几何；没有叶测量结果时基线沿 View 缺席值 -1。
 有限 plain text 的 onLayout/setFrame/RTL/drawable-state/padding 回调执行真实 View 父协议；RTL、Editor/状态 Drawable
@@ -980,8 +983,16 @@ ProgressBar 构造、indeterminate/progress/max 字段、异步刷新、叶测�
 非 UI 线程刷新复用 View.post 与主 Looper，不设宿主状态副本。默认 animated-rotate 的
 progress_medium_white/spinner_white_48 与 linear_interpolator 原 XML 按同 ROM 封存；
 AnimatedRotateDrawable 的 inflate/尺寸/状态归 ROM，start/帧调度与 guest onDraw 未准入。
-投影只发布普通叶几何，内容按 View 身份一次记账不绘制。horizontal/Small/Large 未封存而明确失败；
-layer/clip/shape tiling、frame-animation Drawable 与任意嵌套 drawable XML 入口记账失败。
+投影只发布普通叶几何，内容按 View 身份一次记账不绘制。DVM-367 另封存同 ROM Holo dark
+horizontal 的 layer-list/scale、ninepatch 和八帧 bitmap；身份、配置、原 XML grammar/引用及 SHA
+受检。ROM tileify/层 ID、level、测量和 AnimationDrawable 帧集合归 Java；仅同步封存 parser
+作用域可分派嵌套标签，任意其他 drawable XML 仍失败。Small/Large/Light 未封存。
+DrawableContainer 静态选择与字段归 ROM，既有 selector backing 与新 ROM 容器的查询/回调通过
+显式 adapter 分开；fade、animate=true 的 setFrame、start/run 与 guest draw 不准入。
+BitmapShader 仅保存真实 bitmap/tile 引用及带 GC/finalize 退役的软件描述符；静态 Shape 尺寸更新
+拒绝 ShaderFactory，Path 仅记录有限正面积圆角矩形与八个非负半径，不提供 Skia/Canvas 绘制。
+Paint 支持独立复制已支持的状态、0..255 alpha 与 null ColorFilter；TextView alpha、非空 filter
+仍拒绝。ImageView 投影拒绝非默认 bitmap alpha/filter/mirroring，不吞掉未实现效果。
 View 分离清理执行 ROM，removeCallbacks 只取消既有主 Handler 与当前 guest 线程待转移 action，null 不取消其他任务；
 Drawable stop 的 unschedule 回调不创建帧任务。BitmapDrawable 原 BitmapState/Paint 保存
 filter/anti-alias 状态；投影遇到非默认 Paint flags、shader/xfermode 明确失败，不吞掉效果。

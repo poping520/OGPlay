@@ -10,6 +10,10 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace dx = dexvm;
 [[nodiscard]] std::u16string ReadAndroidTextDisplay(dx::Interpreter&, DexVmAndroidContext&, dx::VmObjectRef);
+[[nodiscard]] dx::VmObjectRef InflateSealedRomDrawable(dx::IntrinsicContext&,
+                                                       const std::shared_ptr<DexVmAndroidContext>&,
+                                                       dx::VmObjectRef resources, dx::VmObjectRef parser,
+                                                       dx::VmObjectRef attrs);
 void RequirePlainCanvasPaint(dx::IntrinsicContext& call, dx::VmObjectRef paint);
 void RegisterGraphicsStateTables(dx::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context);
 inline constexpr std::int32_t kGuestProcessId = 1;

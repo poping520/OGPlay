@@ -146,16 +146,7 @@ Decl Declare_android_widget_LinearLayout(const Context&) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ProgressBar(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ProgressBar;", "Landroid/view/View;");
-    builder.DirectMethod(
-        "tileify", "(Landroid/graphics/drawable/Drawable;Z)Landroid/graphics/drawable/Drawable;",
-        [](dx::IntrinsicContext& call) -> dx::VmValue {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.progressbar_tiling", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "ProgressBar tiled drawable is unsupported"};
-        },
-        dx::kAccPrivate);
-    return std::move(builder).Build();
+    return dx::IntrinsicClassBuilder::Class("Landroid/widget/ProgressBar;", "Landroid/view/View;").Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
@@ -791,6 +782,10 @@ Decl ExperimentalTextView(const Context& context) {
     const auto hint_field = builder.BoundInstanceField("mHint", "Ljava/lang/CharSequence;", dx::kAccPrivate);
     const auto filters_field = builder.BoundInstanceField("mFilters", "[Landroid/text/InputFilter;", dx::kAccPrivate);
     const auto horizontal = builder.BoundInstanceField("mHorizontallyScrolling", "Z", dx::kAccPrivate);
+    const auto min_width = builder.BoundInstanceField("mMinWidth", "I", dx::kAccPrivate);
+    const auto min_width_mode = builder.BoundInstanceField("mMinWidthMode", "I", dx::kAccPrivate);
+    const auto minimum = builder.BoundInstanceField("mMinimum", "I", dx::kAccPrivate);
+    const auto min_mode = builder.BoundInstanceField("mMinMode", "I", dx::kAccPrivate);
     const auto highlight = builder.BoundInstanceField("mHighlightColor", "I", dx::kAccPrivate);
     const auto ellipsize_field =
         builder.BoundInstanceField("mEllipsize", "Landroid/text/TextUtils$TruncateAt;", dx::kAccPrivate);
@@ -843,7 +838,9 @@ Decl ExperimentalTextView(const Context& context) {
                                                                                      link_colors, highlight,
                                                                                      resource_fields, update_color,
                                                                                      horizontal, paint_field,
-                                                                                     filters_field, ellipsize_field](
+                                                                                     filters_field, ellipsize_field,
+                                                                                     min_width, min_width_mode, minimum,
+                                                                                     min_mode](
                                                                                         dx::IntrinsicContext& c) {
         auto& vm = c.vm;
         const auto owner = c.arguments[0].ref, attrs = c.arguments[1].ref;
@@ -856,6 +853,11 @@ Decl ExperimentalTextView(const Context& context) {
         if (initialized.exception.IsValid())
             throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor,
                                   initialized.exception_message, initialized.exception};
+        // Original TextView defaults: pixel width, zero line-count minimum height.
+        dx::IntrinsicCall(c).SetInt(min_width, 0);
+        dx::IntrinsicCall(c).SetInt(min_width_mode, 2);
+        dx::IntrinsicCall(c).SetInt(minimum, 0);
+        dx::IntrinsicCall(c).SetInt(min_mode, 1);
         // Pinned ROM constructor pc210..217, before style consumption.
         dx::IntrinsicCall(c).SetInt(highlight, 0x6633b5e5);
         const auto theme = CallAndroidMethod(vm, owner, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
@@ -903,6 +905,7 @@ Decl ExperimentalTextView(const Context& context) {
         bool has_family = false, single = false;
         bool editable = editing;
         int ellipsize = -1;
+        std::optional<int> min_width_px, min_height_px;
         std::array<ui::CompoundDrawable, 4> compounds{};
         std::array<dx::VmObjectRef, 4> compound_refs{dx::VmObjectRef{}, dx::VmObjectRef{}, dx::VmObjectRef{},
                                                      dx::VmObjectRef{}};
@@ -943,7 +946,12 @@ Decl ExperimentalTextView(const Context& context) {
                     size = CallAndroidMethod(vm, values, "getDimensionPixelSize", "(II)I",
                                              {dx::VmValue::Int(index), dx::VmValue::Int(size)})
                                .AsInt();
-                else if (name == "textColor") {
+                else if (name == "minWidth" || name == "minHeight") {
+                    const auto pixels = CallAndroidMethod(vm, values, "getDimensionPixelSize", "(II)I",
+                                                          {dx::VmValue::Int(index), dx::VmValue::Int(-1)})
+                                            .AsInt();
+                    (name == "minWidth" ? min_width_px : min_height_px) = pixels;
+                } else if (name == "textColor") {
                     const auto list =
                         CallAndroidMethod(vm, values, "getColorStateList", "(I)Landroid/content/res/ColorStateList;",
                                           {dx::VmValue::Int(index)})
@@ -1128,6 +1136,12 @@ Decl ExperimentalTextView(const Context& context) {
             static_cast<void>(CallAndroidMethod(vm, c.receiver,
                                                 std::array{"setFocusable", "setClickable", "setLongClickable"}[j],
                                                 "(Z)V", {dx::VmValue::Int(focus[j])}));
+        if (min_width_px)
+            static_cast<void>(
+                CallAndroidMethod(vm, c.receiver, "setMinWidth", "(I)V", {dx::VmValue::Int(*min_width_px)}));
+        if (min_height_px)
+            static_cast<void>(
+                CallAndroidMethod(vm, c.receiver, "setMinHeight", "(I)V", {dx::VmValue::Int(*min_height_px)}));
         const auto node = TextNode(c, context);
         auto* state = context->ui_tree.Get(node);
         state->text = std::move(text);
@@ -1545,54 +1559,63 @@ Decl ExperimentalTextView(const Context& context) {
                                                           (i % 2 ? compound.height : compound.width));
                               });
     }
-    builder.VirtualMethod("onMeasure", "(II)V", [context, horizontal](dx::IntrinsicContext& c) {
-        if (c.vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id())
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Text measure requires owner"};
-        const auto revision = context->view_adapter_references.at(c.receiver.Value()).text_revision;
-        const auto& n = *context->ui_tree.Get(TextNode(c, context));
-        ui::TextLeafInput input;
-        input.text = ReadAndroidTextDisplay(c.vm, *context, c.receiver);
-        if (context->view_adapter_references.at(c.receiver.Value()).text_single_line)
-            std::replace(input.text.begin(), input.text.end(), u'\n', u' ');
-        input.size_px = n.text_size_px;
-        input.style = n.text_style;
-        input.fallback_font = n.fallback_font;
-        input.max_lines = n.max_lines;
-        input.java_text_view = true;
-        input.no_wrap = dx::IntrinsicCall(c).GetInt(horizontal) != 0;
-        input.single_line = context->view_adapter_references.at(c.receiver.Value()).text_single_line;
-        for (std::size_t i = 0; i < 4; ++i)
-            input.compound[i] = {n.compound_drawables[i].width, n.compound_drawables[i].height};
-        std::array<int, 4> pads{};
-        for (std::size_t i = 0; i < 4; ++i)
-            pads[i] = CallAndroidMethod(c.vm, c.receiver,
-                                        std::array{"getCompoundPaddingLeft", "getCompoundPaddingTop",
-                                                   "getCompoundPaddingRight", "getCompoundPaddingBottom"}[i],
-                                        "()I")
-                          .AsInt() -
-                      (i % 2 ? input.compound[i].height : input.compound[i].width);
-        input.padding = {pads[0], pads[1], pads[2], pads[3]};
-        input.minimum = {CallAndroidMethod(c.vm, c.receiver, "getSuggestedMinimumWidth", "()I").AsInt(),
-                         CallAndroidMethod(c.vm, c.receiver, "getSuggestedMinimumHeight", "()I").AsInt()};
-        const auto spec = [&](int bits) {
-            const auto mode = static_cast<std::uint32_t>(bits) >> 30U;
-            if (mode == 3) TextInputFailure(c.vm, "invalid MeasureSpec mode");
-            return ui::MeasureSpec{mode == 1   ? ui::MeasureMode::Exactly
-                                   : mode == 2 ? ui::MeasureMode::AtMost
-                                               : ui::MeasureMode::Unspecified,
-                                   bits & 0x3fffffff};
-        };
-        auto result = ui::MeasureTextLeaf(input, spec(c.arguments[0].AsInt()), spec(c.arguments[1].AsInt()));
-        static_cast<void>(CallAndroidMethod(
-            c.vm, c.receiver, "setMeasuredDimension", "(II)V",
-            {dx::VmValue::Int(result.constrained.width), dx::VmValue::Int(result.constrained.height)}));
-        auto& refs = context->view_adapter_references.at(c.receiver.Value());
-        if (revision != refs.text_revision)
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Text changed during measurement"};
-        refs.text_measure_cache[result.constrained.width] = result;
-        refs.text_measure = std::move(result);
-        return dx::VmValue::Void();
-    });
+    builder.VirtualMethod(
+        "onMeasure", "(II)V",
+        [context, horizontal, min_width, min_width_mode, minimum, min_mode](dx::IntrinsicContext& c) {
+            if (c.vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Text measure requires owner"};
+            const auto revision = context->view_adapter_references.at(c.receiver.Value()).text_revision;
+            const auto& n = *context->ui_tree.Get(TextNode(c, context));
+            ui::TextLeafInput input;
+            input.text = ReadAndroidTextDisplay(c.vm, *context, c.receiver);
+            if (context->view_adapter_references.at(c.receiver.Value()).text_single_line)
+                std::replace(input.text.begin(), input.text.end(), u'\n', u' ');
+            input.size_px = n.text_size_px;
+            input.style = n.text_style;
+            input.fallback_font = n.fallback_font;
+            input.max_lines = n.max_lines;
+            input.java_text_view = true;
+            input.no_wrap = dx::IntrinsicCall(c).GetInt(horizontal) != 0;
+            input.single_line = context->view_adapter_references.at(c.receiver.Value()).text_single_line;
+            for (std::size_t i = 0; i < 4; ++i)
+                input.compound[i] = {n.compound_drawables[i].width, n.compound_drawables[i].height};
+            std::array<int, 4> pads{};
+            for (std::size_t i = 0; i < 4; ++i)
+                pads[i] = CallAndroidMethod(c.vm, c.receiver,
+                                            std::array{"getCompoundPaddingLeft", "getCompoundPaddingTop",
+                                                       "getCompoundPaddingRight", "getCompoundPaddingBottom"}[i],
+                                            "()I")
+                              .AsInt() -
+                          (i % 2 ? input.compound[i].height : input.compound[i].width);
+            input.padding = {pads[0], pads[1], pads[2], pads[3]};
+            input.minimum = {CallAndroidMethod(c.vm, c.receiver, "getSuggestedMinimumWidth", "()I").AsInt(),
+                             CallAndroidMethod(c.vm, c.receiver, "getSuggestedMinimumHeight", "()I").AsInt()};
+            const dx::IntrinsicCall fields(c);
+            if (fields.GetInt(min_width_mode) != 2 ||
+                (fields.GetInt(min_mode) != 2 && (fields.GetInt(min_mode) != 1 || fields.GetInt(minimum) != 0)))
+                TextInputFailure(c.vm, "TextView minimum ems/lines are unsupported");
+            input.minimum.width = std::max(input.minimum.width, fields.GetInt(min_width));
+            if (fields.GetInt(min_mode) == 2)
+                input.minimum.height = std::max(input.minimum.height, fields.GetInt(minimum));
+            const auto spec = [&](int bits) {
+                const auto mode = static_cast<std::uint32_t>(bits) >> 30U;
+                if (mode == 3) TextInputFailure(c.vm, "invalid MeasureSpec mode");
+                return ui::MeasureSpec{mode == 1   ? ui::MeasureMode::Exactly
+                                       : mode == 2 ? ui::MeasureMode::AtMost
+                                                   : ui::MeasureMode::Unspecified,
+                                       bits & 0x3fffffff};
+            };
+            auto result = ui::MeasureTextLeaf(input, spec(c.arguments[0].AsInt()), spec(c.arguments[1].AsInt()));
+            static_cast<void>(CallAndroidMethod(
+                c.vm, c.receiver, "setMeasuredDimension", "(II)V",
+                {dx::VmValue::Int(result.constrained.width), dx::VmValue::Int(result.constrained.height)}));
+            auto& refs = context->view_adapter_references.at(c.receiver.Value());
+            if (revision != refs.text_revision)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Text changed during measurement"};
+            refs.text_measure_cache[result.constrained.width] = result;
+            refs.text_measure = std::move(result);
+            return dx::VmValue::Void();
+        });
     builder.VirtualMethod("getBaseline", "()I", [context](dx::IntrinsicContext& c) {
         const auto width = CallAndroidMethod(c.vm, c.receiver, "getMeasuredWidth", "()I").AsInt();
         const auto& cache = context->view_adapter_references.at(c.receiver.Value()).text_measure_cache;

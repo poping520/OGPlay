@@ -524,3 +524,36 @@ TEST_CASE("DVM-366 plain TextView touch returns View.onTouchEvent and editors fa
         CHECK_FALSE(f.ledger.Unimplemented().empty());
     }
 }
+
+TEST_CASE("DVM-368 initially hidden ancestors skip descendant text plans") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (bool gone : {false, true}) {
+            ContainerVm f(backend);
+            const auto owner = Owner(f);
+            f.context->activity = owner;
+            auto& record = f.context->activity_stack.emplace_back();
+            record.object = owner;
+            record.visible = record.resumed = true;
+            const auto root = f.vm.ProtectReferences(std::array{owner});
+            const auto outer =
+                f.New("Landroid/widget/LinearLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+            const auto parent =
+                f.New("Landroid/widget/LinearLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+            const auto text = Text(f, owner);
+            const auto refs = f.vm.ProtectReferences(std::array{outer, parent, text});
+            // Like XML inflation, set the parent's visibility before adding children.
+            // Changing an attached TextView's visibility callback remains outside this test.
+            if (gone) f.On(parent, "setVisibility", "(I)V", {VmValue::Int(8)});
+            f.On(parent, "addView", "(Landroid/view/View;)V", {VmValue::Ref(text)});
+            f.On(outer, "addView", "(Landroid/view/View;)V", {VmValue::Ref(parent)});
+            f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(outer)});
+            REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                             AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 100}));
+            const auto id = *FindViewUiNode(*f.context, text.Value());
+            CHECK(f.context->view_adapter_references.at(text.Value()).text_measure_cache.empty() == gone);
+            CHECK((f.On(text, "getMeasuredWidth", "()I").AsInt() == 0) == gone);
+            CHECK(static_cast<bool>(f.context->ui_tree.PublishedProjection()->Get(id)->text_line_plan) == !gone);
+            CHECK(f.ledger.Unimplemented().empty());
+        }
+    }
+}

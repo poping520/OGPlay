@@ -14,7 +14,6 @@ posix.UnimplementedVirtual("execv", "(Ljava/lang/String;[Ljava/lang/String;)V");
 posix.UnimplementedVirtual("execve", "(Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;)V");
 posix.UnimplementedVirtual("fchmod", "(Ljava/io/FileDescriptor;I)V");
 posix.UnimplementedVirtual("fchown", "(Ljava/io/FileDescriptor;II)V");
-posix.UnimplementedVirtual("fcntlFlock", "(Ljava/io/FileDescriptor;ILlibcore/io/StructFlock;)I");
 posix.UnimplementedVirtual("fstatvfs", "(Ljava/io/FileDescriptor;)Llibcore/io/StructStatVfs;");
 posix.UnimplementedVirtual("getegid", "()I");
 posix.UnimplementedVirtual("getenv", "(Ljava/lang/String;)Ljava/lang/String;");

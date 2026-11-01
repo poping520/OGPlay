@@ -13,6 +13,7 @@
 #include <charconv>
 #include <cctype>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -45,6 +46,26 @@ namespace ogplay::runtime::dexvm::intrinsics {
             const auto& field = ObjectField(vm, object, name, "I");
             vm.Model().InstanceSlots(object)[field.slot] = {
                 static_cast<std::uint32_t>(value), SlotTag::cat1};
+        }
+
+        [[nodiscard]] std::int32_t GetCat1Field(Interpreter& vm, const VmObjectRef object, const std::string& name,
+                                                const std::string& descriptor) {
+            const auto& field = ObjectField(vm, object, name, descriptor);
+            return static_cast<std::int32_t>(vm.Model().InstanceSlots(object)[field.slot].bits);
+        }
+
+        void SetShortField(Interpreter& vm, const VmObjectRef object, const std::string& name,
+                           const std::int16_t value) {
+            const auto& field = ObjectField(vm, object, name, "S");
+            vm.Model().InstanceSlots(object)[field.slot] = {
+                static_cast<std::uint32_t>(static_cast<std::int32_t>(value)), SlotTag::cat1};
+        }
+
+        [[nodiscard]] std::int64_t GetLongField(Interpreter& vm, const VmObjectRef object, const std::string& name) {
+            const auto& field = ObjectField(vm, object, name, "J");
+            const auto slots = vm.Model().InstanceSlots(object);
+            return static_cast<std::int64_t>(static_cast<std::uint64_t>(slots[field.slot].bits) |
+                                             (static_cast<std::uint64_t>(slots[field.slot + 1U].bits) << 32U));
         }
 
         [[noreturn]] void ThrowErrno(Interpreter& vm,
@@ -1031,6 +1052,58 @@ namespace ogplay::runtime::dexvm::intrinsics {
                     },
                     kAccPublic | kAccNative);
             }
+            // POSIX record locks belong to the process and never conflict with the
+            // owner's own locks. A sandbox runs exactly one guest process (the
+            // instance running lock), so F_SETLK/F_SETLKW always acquire and F_GETLK
+            // reports F_UNLCK, after the kernel's argument and access-mode checks.
+            posix.VirtualMethod(
+                "fcntlFlock", "(Ljava/io/FileDescriptor;ILlibcore/io/StructFlock;)I",
+                [](IntrinsicContext& call) {
+                    const auto fd = call.arguments[0].ref;
+                    static_cast<void>(PosixDescriptor(call, fd, "fcntl"));
+                    const auto cmd = call.arguments[1].AsInt();
+                    const auto lock = call.arguments[2].ref;
+                    if (!lock.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "flock == null"};
+                    constexpr std::int32_t kGetLk = 5, kSetLk = 6, kSetLkW = 7;
+                    constexpr std::int32_t kGetLk64 = 12, kSetLk64 = 13, kSetLkW64 = 14;
+                    constexpr std::int16_t kRdLck = 0, kWrLck = 1, kUnLck = 2;
+                    const bool query = cmd == kGetLk || cmd == kGetLk64;
+                    if (!query && cmd != kSetLk && cmd != kSetLkW && cmd != kSetLk64 && cmd != kSetLkW64)
+                        ThrowErrno(call.vm, "fcntl", 22, "fcntlFlock command is not a record-lock command");
+                    const auto type = static_cast<std::int16_t>(GetCat1Field(call.vm, lock, "l_type", "S"));
+                    const auto whence = static_cast<std::int16_t>(GetCat1Field(call.vm, lock, "l_whence", "S"));
+                    const auto start = GetLongField(call.vm, lock, "l_start");
+                    const auto length = GetLongField(call.vm, lock, "l_len");
+                    if ((type != kRdLck && type != kWrLck && type != kUnLck) || (query && type == kUnLck) ||
+                        whence < 0 || whence > 2)
+                        ThrowErrno(call.vm, "fcntl", 22, "invalid flock type or whence");
+                    try {
+                        std::int64_t base = 0;
+                        if (whence == 1) base = static_cast<std::int64_t>(call.vm.IO().FileOffset(fd));
+                        if (whence == 2) base = static_cast<std::int64_t>(call.vm.IO().FileSize(fd));
+                        // Kernel flock_to_posix_lock: EOVERFLOW past off_t, EINVAL before 0.
+                        constexpr auto kMax = std::numeric_limits<std::int64_t>::max();
+                        if (start > 0 && base > kMax - start) throw IoRuntimeError("flock range overflows", 75);
+                        auto first = base + start;
+                        if (first < 0) throw IoRuntimeError("flock range starts before the file", 22);
+                        if (length > 0 && first > kMax - (length - 1))
+                            throw IoRuntimeError("flock range overflows", 75);
+                        if (length < 0) {
+                            if (length == std::numeric_limits<std::int64_t>::min())
+                                throw IoRuntimeError("flock range starts before the file", 22);
+                            first += length;
+                        }
+                        if (first < 0) throw IoRuntimeError("flock range starts before the file", 22);
+                        const auto access = call.vm.IO().DescriptorFlags(fd) & 3;
+                        if (!query && ((type == kRdLck && access == 1) || (type == kWrLck && access == 0)))
+                            throw IoRuntimeError("flock type does not match descriptor access mode", 9);
+                    } catch (const IoRuntimeError& error) {
+                        ThrowErrno(call.vm, "fcntl", error.ErrorNumber(), error.what());
+                    }
+                    if (query) SetShortField(call.vm, lock, "l_type", kUnLck);
+                    return VmValue::Int(0);
+                },
+                kAccPublic | kAccNative);
             const auto read_bytes = [](IntrinsicContext& call) {
                 const auto fd = call.arguments[0].ref;
                 static_cast<void>(PosixDescriptor(call, fd, "read"));

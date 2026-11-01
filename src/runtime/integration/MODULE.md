@@ -454,7 +454,9 @@ JavaTraversal共同发布冻结逐窗口完整投影、视频像素与bitmap版�
 package/type 与数量，任意同 ROM 类型均可作为 terminal 引用/resourceId。生成器锁定
 framework-res.apk 并交叉核对共享 R 常量，只投影名称到真实 ID，不按属性名或加载能力
 筛选、不预先解析目标内容。消费者实际调用才加载，未支持目标按 ADR-0147 记账失败；
-既有 ColorStateList/edit_text 加载范围保持，详见 dexvm_android MODULE。
+加载范围见 dexvm_android MODULE。封存 drawable XML 的资源引用同样进入身份投影；
+ROM 样式仅在完整 parent 链不设置任何投影属性时可作为空 bag，非 inert 或未知样式仍失败。
+ContextImpl 基础主题从 selectDefaultTheme(0,targetSdk) 选择，Activity 再叠加自身主题。
 
 DVM-329：JavaTraversal 的干净屏障不执行 guest、不扫描投影；只在真实 Java 布局/绘制请求、
 首次附着或窗口输入变化后进入遍历。宿主消费快照前校验 NodeId 属于所持完整投影，

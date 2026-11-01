@@ -201,7 +201,7 @@
           "signature": "inflate(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)V",
           "flags": 1,
           "body_sha256": "36eb1bb62476246d13b10b9659383def89c746f035ab594e5d130d66d06169ef",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "inflateWithAttributes(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/content/res/TypedArray;I)V",
@@ -219,7 +219,7 @@
           "signature": "isAutoMirrored()Z",
           "flags": 1,
           "body_sha256": "7ed0886f7c0aea643d6169dd97ec27c03b72d4d1a9cfa5c79db61c13ef403101",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "isStateful()Z",
@@ -267,7 +267,7 @@
           "signature": "resolveOpacity(II)I",
           "flags": 9,
           "body_sha256": "73320f49cfe3b765b2bd32d5f0b2364ac799423de1b9dcf181e6b5474be418ad",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "scheduleSelf(Ljava/lang/Runnable;J)V",
@@ -285,7 +285,7 @@
           "signature": "setAutoMirrored(Z)V",
           "flags": 1,
           "body_sha256": "8c10151f549525c64649e5c46e3870615b6bd9085b1af0b0777473c49cdb032b",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setBounds(IIII)V",
@@ -309,7 +309,7 @@
           "signature": "setChangingConfigurations(I)V",
           "flags": 1,
           "body_sha256": "cfac5d493b94118445381cbb095b827ee292f1940108b1f702b78245ff1f123f",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setColorFilter(ILandroid/graphics/PorterDuff$Mode;)V",
@@ -523,14 +523,7 @@
           "signature": "getAlpha()I",
           "flags": 1,
           "body_sha256": "46bab1b6ecaafd235ad761aabdacdec9889200dbf3eb725ad8c134ab2a210897",
-          "source": "overlay",
-          "review": {
-            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
-            "inputs": "receiver and original API19 arguments",
-            "outputs": "ledger hit and UnsupportedOperationException",
-            "state_owner": "no state created or changed",
-            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
-          }
+          "source": "rom"
         },
         {
           "signature": "getBitmap()Landroid/graphics/Bitmap;",
@@ -542,7 +535,7 @@
           "signature": "getChangingConfigurations()I",
           "flags": 1,
           "body_sha256": "8ddcaef428afa74b891ac41569e58026021401cc1b2791a82ffa2e833169c4a6",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getConstantState()Landroid/graphics/drawable/Drawable$ConstantState;",
@@ -628,20 +621,13 @@
           "signature": "isAutoMirrored()Z",
           "flags": 17,
           "body_sha256": "fedf6da1bd075de64fdc3b841e86ef2269e3be0ef10bc7f62cdcaa925d81e9ec",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "mutate()Landroid/graphics/drawable/Drawable;",
           "flags": 1,
           "body_sha256": "3275adef71f1b90ca074ec2432bf25af6d96d09767e87a02201815bb4ac65838",
-          "source": "overlay",
-          "review": {
-            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
-            "inputs": "receiver and original API19 arguments",
-            "outputs": "ledger hit and UnsupportedOperationException",
-            "state_owner": "no state created or changed",
-            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
-          }
+          "source": "rom"
         },
         {
           "signature": "needMirroring()Z",
@@ -659,14 +645,7 @@
           "signature": "setAlpha(I)V",
           "flags": 1,
           "body_sha256": "e6594d7009e419a84b02bb005d9358b7f015e5afe90ee2af07ced837378d5d8b",
-          "source": "overlay",
-          "review": {
-            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
-            "inputs": "receiver and original API19 arguments",
-            "outputs": "ledger hit and UnsupportedOperationException",
-            "state_owner": "no state created or changed",
-            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
-          }
+          "source": "rom"
         },
         {
           "signature": "setAntiAlias(Z)V",
@@ -678,7 +657,7 @@
           "signature": "setAutoMirrored(Z)V",
           "flags": 1,
           "body_sha256": "f113be879180e6c3c75b4e8f295625d3e6a4b1ee931ee1a63db222d629fd5be8",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setBitmap(Landroid/graphics/Bitmap;)V",
@@ -690,13 +669,13 @@
           "signature": "setColorFilter(Landroid/graphics/ColorFilter;)V",
           "flags": 1,
           "body_sha256": "31af46be3b8c2b60a890c2d2b3a4cc01532ab850000c707b1941fe35f67e366b",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setDither(Z)V",
           "flags": 1,
           "body_sha256": "9c86860a6fd2f2dc85a961ec0c7b2d14527d70af0a8d237cc4b1a4a25f63b506",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setFilterBitmap(Z)V",
@@ -817,7 +796,7 @@
         {
           "signature": "mMutated:Z",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {

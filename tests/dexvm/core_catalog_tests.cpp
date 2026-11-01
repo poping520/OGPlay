@@ -94,7 +94,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Llibcore/io/Posix;.execve(Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;)V",
         "Llibcore/io/Posix;.fchmod(Ljava/io/FileDescriptor;I)V",
         "Llibcore/io/Posix;.fchown(Ljava/io/FileDescriptor;II)V",
-        "Llibcore/io/Posix;.fcntlFlock(Ljava/io/FileDescriptor;ILlibcore/io/StructFlock;)I",
         "Llibcore/io/Posix;.fstatvfs(Ljava/io/FileDescriptor;)Llibcore/io/StructStatVfs;",
         "Llibcore/io/Posix;.getegid()I",
         "Llibcore/io/Posix;.getenv(Ljava/lang/String;)Ljava/lang/String;",

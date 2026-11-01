@@ -14,13 +14,20 @@
           "signature": "<init>()V",
           "flags": 65537,
           "body_sha256": "3de698620c378bee64acbfbf18ab67bd69955daee24d88381f1279c9f93b81ff",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "animate(Z)V",
           "flags": 0,
           "body_sha256": "b6f31cd13ebe98fff42db7631af550130d62cdf565d369313565cec2a0e1d560",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-367 refuse reachable fade-animation branch",
+            "inputs": "schedule boolean",
+            "outputs": "ledger and UOE",
+            "state_owner": "no timer or state created; fade setters not admitted",
+            "failure_boundary": "all fade animation remains unsupported"
+          }
         },
         {
           "signature": "draw(Landroid/graphics/Canvas;)V",
@@ -45,7 +52,7 @@
           "signature": "getChangingConfigurations()I",
           "flags": 1,
           "body_sha256": "6a0239757f982790171185a2cb67ef9d984706d0ce67e007ab4bbaaee8fa53f1",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getConstantState()Landroid/graphics/drawable/Drawable$ConstantState;",
@@ -66,11 +73,11 @@
           "body_sha256": "6fe9bef6e605993beaeb9d2bcbac4438803c30ea8a9a8f146d2f34678ea8505a",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
-            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
-            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
-            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
-            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+            "reason": "DVM-367 existing sealed-skin adapter plus ROM container state queries",
+            "inputs": "receiver, original method arguments, ROM container fields or existing selector backing",
+            "outputs": "original static current/constant-size/padding/opacity/callback result",
+            "state_owner": "ROM AnimationState/DrawableContainer fields for new containers; existing sealed-skin backing unchanged",
+            "failure_boundary": "no fade, frame scheduling or guest drawing; only default non-mirrored state"
           }
         },
         {
@@ -79,11 +86,11 @@
           "body_sha256": "8334bd5ab462e3128ff1c312f43ac372d33abde4cfa3cb0cf8e6ec60cb51f837",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
-            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
-            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
-            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
-            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+            "reason": "DVM-367 existing sealed-skin adapter plus ROM container state queries",
+            "inputs": "receiver, original method arguments, ROM container fields or existing selector backing",
+            "outputs": "original static current/constant-size/padding/opacity/callback result",
+            "state_owner": "ROM AnimationState/DrawableContainer fields for new containers; existing sealed-skin backing unchanged",
+            "failure_boundary": "no fade, frame scheduling or guest drawing; only default non-mirrored state"
           }
         },
         {
@@ -92,11 +99,11 @@
           "body_sha256": "52f43327e19f20907ed028e09791557f9206b7273fa9ab39425f68b2b7cddd44",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
-            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
-            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
-            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
-            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+            "reason": "DVM-367 existing sealed-skin adapter plus ROM container state queries",
+            "inputs": "receiver, original method arguments, ROM container fields or existing selector backing",
+            "outputs": "original static current/constant-size/padding/opacity/callback result",
+            "state_owner": "ROM AnimationState/DrawableContainer fields for new containers; existing sealed-skin backing unchanged",
+            "failure_boundary": "no fade, frame scheduling or guest drawing; only default non-mirrored state"
           }
         },
         {
@@ -105,11 +112,11 @@
           "body_sha256": "0fa6f2acdf9686567e153defdbd048211e75c54064fd737c90c4b5cea8aa6de5",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
-            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
-            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
-            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
-            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+            "reason": "DVM-367 existing sealed-skin adapter plus ROM container state queries",
+            "inputs": "receiver, original method arguments, ROM container fields or existing selector backing",
+            "outputs": "original static current/constant-size/padding/opacity/callback result",
+            "state_owner": "ROM AnimationState/DrawableContainer fields for new containers; existing sealed-skin backing unchanged",
+            "failure_boundary": "no fade, frame scheduling or guest drawing; only default non-mirrored state"
           }
         },
         {
@@ -118,11 +125,11 @@
           "body_sha256": "7b71b62e1b477c248dc1afdd9796f4dae58f0b1b142cceddbb71ed8a7f17f914",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
-            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
-            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
-            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
-            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+            "reason": "DVM-367 existing sealed-skin adapter plus ROM container state queries",
+            "inputs": "receiver, original method arguments, ROM container fields or existing selector backing",
+            "outputs": "original static current/constant-size/padding/opacity/callback result",
+            "state_owner": "ROM AnimationState/DrawableContainer fields for new containers; existing sealed-skin backing unchanged",
+            "failure_boundary": "no fade, frame scheduling or guest drawing; only default non-mirrored state"
           }
         },
         {
@@ -131,11 +138,11 @@
           "body_sha256": "edca6e7ac002f6c932678ef672ed70ea7630d26b636f903af49e9f7984df3ca8",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
-            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
-            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
-            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
-            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+            "reason": "DVM-367 existing sealed-skin adapter plus ROM container state queries",
+            "inputs": "receiver, original method arguments, ROM container fields or existing selector backing",
+            "outputs": "original static current/constant-size/padding/opacity/callback result",
+            "state_owner": "ROM AnimationState/DrawableContainer fields for new containers; existing sealed-skin backing unchanged",
+            "failure_boundary": "no fade, frame scheduling or guest drawing; only default non-mirrored state"
           }
         },
         {
@@ -144,11 +151,11 @@
           "body_sha256": "5f486c4dc243b451e922f93fb1c1b3558723544fd9613801f5331c03e90db247",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
-            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
-            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
-            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
-            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+            "reason": "DVM-367 existing sealed-skin adapter plus ROM container state queries",
+            "inputs": "receiver, original method arguments, ROM container fields or existing selector backing",
+            "outputs": "original static current/constant-size/padding/opacity/callback result",
+            "state_owner": "ROM AnimationState/DrawableContainer fields for new containers; existing sealed-skin backing unchanged",
+            "failure_boundary": "no fade, frame scheduling or guest drawing; only default non-mirrored state"
           }
         },
         {
@@ -157,11 +164,11 @@
           "body_sha256": "47168a8a47dbf0519f27608dd0d335fe27020dcde7ce9d7ef5df7513546b0810",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
-            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
-            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
-            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
-            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+            "reason": "DVM-367 existing sealed-skin adapter plus ROM container state queries",
+            "inputs": "receiver, original method arguments, ROM container fields or existing selector backing",
+            "outputs": "original static current/constant-size/padding/opacity/callback result",
+            "state_owner": "ROM AnimationState/DrawableContainer fields for new containers; existing sealed-skin backing unchanged",
+            "failure_boundary": "no fade, frame scheduling or guest drawing; only default non-mirrored state"
           }
         },
         {
@@ -170,11 +177,11 @@
           "body_sha256": "8cd3fe652eca94ee25cb3842087d4373349ad1a568bd30c815e2f7a467eb9e89",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 ROM Drawable.Callback forwarding for bounded selector children",
-            "inputs": "child Drawable identity, Runnable and time; adapter-selected current child; ROM Drawable.getCallback",
-            "outputs": "current child requests re-addressed to the owner callback with this container; other children dropped as ROM",
-            "state_owner": "adapter skin backing owns current child; ROM Drawable base owns the callback reference",
-            "failure_boundary": "owner callback members keep their own ROM/failure source; no animation, transition or guest draw"
+            "reason": "DVM-367 existing sealed-skin adapter plus ROM container state queries",
+            "inputs": "receiver, original method arguments, ROM container fields or existing selector backing",
+            "outputs": "original static current/constant-size/padding/opacity/callback result",
+            "state_owner": "ROM AnimationState/DrawableContainer fields for new containers; existing sealed-skin backing unchanged",
+            "failure_boundary": "no fade, frame scheduling or guest drawing; only default non-mirrored state"
           }
         },
         {
@@ -187,7 +194,7 @@
           "signature": "isStateful()Z",
           "flags": 1,
           "body_sha256": "650848dfce6741a081ed7a8e4cb9a708d4a7bd5a34bd9744ed5bad36ea7f7c94",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "jumpToCurrentState()V",
@@ -218,19 +225,19 @@
           "signature": "onBoundsChange(Landroid/graphics/Rect;)V",
           "flags": 4,
           "body_sha256": "73ec46a814a76f2d6c91b00da5b8906a911a7dafef5bec5cad98eeede8a3763e",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onLevelChange(I)Z",
           "flags": 4,
           "body_sha256": "4f9c5fef185b0f8ce1c5d199cd35d342be0014bfcc0e5584d6a2558a0a5a6f28",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onStateChange([I)Z",
           "flags": 4,
           "body_sha256": "360cb9ada270fa8b658ff7a32143a891caab391235ea44079c6e3e9f986250e5",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "scheduleDrawable(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;J)V",
@@ -238,18 +245,18 @@
           "body_sha256": "346c894a89b3fc6bfb2c3a3f72a2e6f14b96118a53da4ddec4bde9b982ee6c16",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 ROM Drawable.Callback forwarding for bounded selector children",
-            "inputs": "child Drawable identity, Runnable and time; adapter-selected current child; ROM Drawable.getCallback",
-            "outputs": "current child requests re-addressed to the owner callback with this container; other children dropped as ROM",
-            "state_owner": "adapter skin backing owns current child; ROM Drawable base owns the callback reference",
-            "failure_boundary": "owner callback members keep their own ROM/failure source; no animation, transition or guest draw"
+            "reason": "DVM-367 existing sealed-skin adapter plus ROM container state queries",
+            "inputs": "receiver, original method arguments, ROM container fields or existing selector backing",
+            "outputs": "original static current/constant-size/padding/opacity/callback result",
+            "state_owner": "ROM AnimationState/DrawableContainer fields for new containers; existing sealed-skin backing unchanged",
+            "failure_boundary": "no fade, frame scheduling or guest drawing; only default non-mirrored state"
           }
         },
         {
           "signature": "selectDrawable(I)Z",
           "flags": 1,
           "body_sha256": "72b6b2e0dec22fd67c9905743ec6d3996a478c80b70efc24103879d6cb2dd851",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setAlpha(I)V",
@@ -280,7 +287,7 @@
           "signature": "setConstantState(Landroid/graphics/drawable/DrawableContainer$DrawableContainerState;)V",
           "flags": 4,
           "body_sha256": "4db092cf4581c23c327dc22358fd781d45519f7905dde1c86278d03e5394c385",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setDither(Z)V",
@@ -306,11 +313,11 @@
           "body_sha256": "59d4b26ed34ac8b13da8ff738602dd9f44a4cdce111cb29a3b6324508bf5c643",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
-            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
-            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
-            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
-            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+            "reason": "DVM-367 existing sealed-skin adapter plus ROM container state queries",
+            "inputs": "receiver, original method arguments, ROM container fields or existing selector backing",
+            "outputs": "original static current/constant-size/padding/opacity/callback result",
+            "state_owner": "ROM AnimationState/DrawableContainer fields for new containers; existing sealed-skin backing unchanged",
+            "failure_boundary": "no fade, frame scheduling or guest drawing; only default non-mirrored state"
           }
         },
         {
@@ -319,11 +326,11 @@
           "body_sha256": "c38f54445ee76820dd8f6017d195fd9a353a11ffebe997345041c99a6805a5c3",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 ROM Drawable.Callback forwarding for bounded selector children",
-            "inputs": "child Drawable identity, Runnable and time; adapter-selected current child; ROM Drawable.getCallback",
-            "outputs": "current child requests re-addressed to the owner callback with this container; other children dropped as ROM",
-            "state_owner": "adapter skin backing owns current child; ROM Drawable base owns the callback reference",
-            "failure_boundary": "owner callback members keep their own ROM/failure source; no animation, transition or guest draw"
+            "reason": "DVM-367 existing sealed-skin adapter plus ROM container state queries",
+            "inputs": "receiver, original method arguments, ROM container fields or existing selector backing",
+            "outputs": "original static current/constant-size/padding/opacity/callback result",
+            "state_owner": "ROM AnimationState/DrawableContainer fields for new containers; existing sealed-skin backing unchanged",
+            "failure_boundary": "no fade, frame scheduling or guest drawing; only default non-mirrored state"
           }
         }
       ],
@@ -349,67 +356,67 @@
         {
           "signature": "mAlpha:I",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mAnimationRunnable:Ljava/lang/Runnable;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mColorFilter:Landroid/graphics/ColorFilter;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mCurIndex:I",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mCurrDrawable:Landroid/graphics/drawable/Drawable;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mDrawableContainerState:Landroid/graphics/drawable/DrawableContainer$DrawableContainerState;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mEnterAnimationEnd:J",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mExitAnimationEnd:J",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mInsets:Landroid/graphics/Insets;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mLastDrawable:Landroid/graphics/drawable/Drawable;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mMutated:Z",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         }
       ]
@@ -706,7 +713,14 @@
           "signature": "getChangingConfigurations()I",
           "flags": 1,
           "body_sha256": "0c05eacd1976500cc2905469449eb9fb53f67318a98bdfe19d646325fe1fbd39",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-367 sealed skin configuration query required by ROM layer assembly",
+            "inputs": "constructed sealed ninepatch and ROM base changing-configuration field",
+            "outputs": "base flags; sealed provider has zero additional ConstantState configuration flags",
+            "state_owner": "ROM Drawable field and immutable sealed resource metadata",
+            "failure_boundary": "no mutable ConstantState, arbitrary resources or native NinePatch"
+          }
         },
         {
           "signature": "getConstantState()Landroid/graphics/drawable/Drawable$ConstantState;",
@@ -878,7 +892,14 @@
           "signature": "setAutoMirrored(Z)V",
           "flags": 1,
           "body_sha256": "92abbff305ed8824a25c1518bc6e43ed38e39bf3b8e50e68de9c77af129eb716",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-367 preserve exact default false mirroring while assembling ROM layers",
+            "inputs": "constructed sealed ninepatch and false",
+            "outputs": "unchanged known unmirrored skin; true is ledger and UOE",
+            "state_owner": "existing sealed-skin backing; no alternate Java mirror state",
+            "failure_boundary": "no mirrored ninepatch rendering or general Drawable state"
+          }
         },
         {
           "signature": "setColorFilter(Landroid/graphics/ColorFilter;)V",
@@ -1000,7 +1021,7 @@
           "signature": "<init>(Landroid/graphics/drawable/DrawableContainer;)V",
           "flags": 65536,
           "body_sha256": "bc0de45e49137064b8814fe6fb6c0a9c61e82c45aec8dabba6d9d5ff68874591",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "run()V",
@@ -1013,7 +1034,7 @@
         {
           "signature": "this$0:Landroid/graphics/drawable/DrawableContainer;",
           "flags": 4112,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         }
       ]

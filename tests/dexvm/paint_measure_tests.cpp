@@ -110,9 +110,12 @@ TEST_CASE("DVM-293 unsupported Paint features and invalid ranges fail explicitly
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         const auto paint = f.New("Landroid/graphics/Paint;");
+        CHECK_FALSE(f.On(paint, "setShader", "(Landroid/graphics/Shader;)Landroid/graphics/Shader;",
+                         {VmValue::Ref(VmObjectRef{})})
+                        .ref.IsValid());
+        CHECK(f.ledger.Unimplemented().empty());
         for (const auto entry :
-             {std::pair{"setShader", "(Landroid/graphics/Shader;)Landroid/graphics/Shader;"},
-              std::pair{"setPathEffect", "(Landroid/graphics/PathEffect;)Landroid/graphics/PathEffect;"},
+             {std::pair{"setPathEffect", "(Landroid/graphics/PathEffect;)Landroid/graphics/PathEffect;"},
               std::pair{"setMaskFilter", "(Landroid/graphics/MaskFilter;)Landroid/graphics/MaskFilter;"}}) {
             CHECK(f.OnOutcome(paint, entry.first, entry.second, {VmValue::Ref(VmObjectRef{})}).exception.IsValid());
             CHECK_FALSE(f.ledger.Unimplemented().empty());

@@ -112,7 +112,34 @@ def self_test():
                 pass
             else:
                 raise AssertionError('invalid ColorStateList XML accepted')
-    print('same-ROM enum/flags and ColorStateList grammar/reference positive and negative checks passed')
+    with zipfile.ZipFile(ROOT / rom.APK) as archive:
+        _, rows = rom.ResourceTable(archive.read('resources.arsc')).parse()
+        by_id = {r['id']: r for r in rows}
+        for name in ('progress_horizontal_holo_dark', 'progress_indeterminate_horizontal_holo'):
+            row = next(r for r in rows if r['name'] == name and r['type'] == 'drawable')
+            raw = archive.read(row['configurations'][0]['path'])
+            facts = horizontal_xml_facts(raw, by_id, name)
+            assert len(facts['references']) == (3 if name == 'progress_horizontal_holo_dark' else 8)
+            mutations = []
+            for at, kind, header, size in rom.ResourceTable(raw).chunks(8, len(raw)):
+                if kind != 0x102:
+                    continue
+                _, tag, start, width, count, _, _, _ = struct.unpack_from('<II6H', raw, at+16)
+                for i in range(count):
+                    pos = at+16+start+i*width
+                    if raw[pos+15] == 1:
+                        changed = bytearray(raw)
+                        struct.pack_into('<I', changed, pos+16, 0x0108ffff)
+                        mutations.append(changed)
+            assert mutations
+            for changed in mutations:
+                try:
+                    horizontal_xml_facts(changed, by_id, name)
+                except (ValueError, KeyError, IndexError):
+                    pass
+                else:
+                    raise AssertionError('unsealed horizontal XML reference accepted')
+    print('same-ROM enum/flags, color and horizontal drawable grammar/reference positive and negative checks passed')
 
 
 def string_pool(strings):
@@ -238,8 +265,64 @@ def layout_closure():
     return result
 
 
+def horizontal_xml_facts(raw, by_id, root_name):
+    """Exact API19 horizontal closures; no general drawable XML admission."""
+    table = rom.ResourceTable(raw)
+    strings, ids, stack, events, references = [], [], [], [], set()
+    for at, kind, header, size in table.chunks(8, len(raw)):
+        if kind == 1:
+            strings = table.pool(at)
+        elif kind == 0x180:
+            ids = list(table.words('<%dI' % ((size-header)//4), at+header))
+        elif kind == 0x102:
+            _, tag, start, width, count, _, _, _ = table.words('<II6H', at+16)
+            tag = strings[tag]
+            attrs = []
+            for i in range(count):
+                ns, key, text, vs, zero, typ, data = table.words('<IIIHBBI', at+16+start+i*width)
+                name = by_id[ids[key]]['name']
+                if typ == 1:
+                    value = by_id[data]['name']
+                    if name == 'drawable':
+                        references.add(data)
+                elif typ == 3:
+                    value = strings[data]
+                else:
+                    value = data
+                attrs.append((name, typ, value))
+            events.append((tag, sorted(attrs)))
+            stack.append(tag)
+        elif kind == 0x103:
+            _, tag = table.words('<II', at+16)
+            if not stack or stack.pop() != strings[tag]:
+                raise ValueError('unbalanced horizontal drawable XML')
+            events.append(('/' + strings[tag], []))
+        elif kind not in (0x100, 0x101):
+            raise ValueError('unsupported horizontal drawable XML chunk')
+    if root_name == 'progress_horizontal_holo_dark':
+        expected = [('layer-list', []),
+            ('item', [('drawable', 1, 'progress_bg_holo_dark'), ('id', 1, 'background')]), ('/item', []),
+            ('item', [('id', 1, 'secondaryProgress')]),
+            ('scale', [('drawable', 1, 'progress_secondary_holo_dark'), ('scaleWidth', 3, '100%')]),
+            ('/scale', []), ('/item', []), ('item', [('id', 1, 'progress')]),
+            ('scale', [('drawable', 1, 'progress_primary_holo_dark'), ('scaleWidth', 3, '100%')]),
+            ('/scale', []), ('/item', []), ('/layer-list', [])]
+        kind = 'layer-list'
+    elif root_name == 'progress_indeterminate_horizontal_holo':
+        expected = [('animation-list', [('oneshot', 18, 0)])]
+        for i in range(1, 9):
+            expected += [('item', [('drawable', 1, 'progressbar_indeterminate_holo' + str(i)), ('duration', 16, 50)]), ('/item', [])]
+        expected += [('/animation-list', [])]
+        kind = 'animation-list'
+    else:
+        raise ValueError('unreviewed horizontal drawable root')
+    if stack or events != expected:
+        raise ValueError('unreviewed horizontal drawable grammar/reference')
+    return dict(kind=kind, xml=raw.hex(), references=sorted(references))
+
+
 def drawable_closure():
-    """Reviewed EditText, btn_default and four exact same-ROM scrollbar thumb closures."""
+    """Reviewed same-ROM widget skins and their exact drawable reference closures."""
     with zipfile.ZipFile(ROOT / rom.APK) as archive:
         _, rows = rom.ResourceTable(archive.read('resources.arsc')).parse()
         by_id = {row['id']: row for row in rows}
@@ -260,6 +343,9 @@ def drawable_closure():
         button, = [row for row in rows if row['type'] == 'drawable' and row['name'] == 'btn_default']
         if button['id'] != 0x01080004:
             raise ValueError('btn_default ROM name/ID mismatch')
+        holo_button, = [row for row in rows if row['type'] == 'drawable' and row['name'] == 'btn_default_holo_dark']
+        if holo_button['id'] != 0x0108011d:
+            raise ValueError('btn_default_holo_dark ROM name/ID mismatch')
         dropdown, = [row for row in rows if row['type'] == 'drawable' and row['name'] == 'btn_dropdown']
         if dropdown['id'] != 0x01080006:
             raise ValueError('btn_dropdown ROM name/ID mismatch')
@@ -267,7 +353,12 @@ def drawable_closure():
         spinner, = [r for r in rows if r['type'] == 'drawable' and r['name'] == 'spinner_white_48']
         if progress['id'] != 0x010804cf or spinner['id'] != 0x01080580:
             raise ValueError('progress drawable ROM name/ID mismatch')
-        pending, result = [root['id'], button['id'], dropdown['id'], progress['id'], *thumbs.values()], []
+        horizontal = {'progress_horizontal_holo_dark': 0x010804c7,
+                      'progress_indeterminate_horizontal_holo': 0x010804c9}
+        for name, ident in horizontal.items():
+            if by_id[ident]['name'] != name or by_id[ident]['type'] != 'drawable':
+                raise ValueError('horizontal ROM identity mismatch')
+        pending, result = [root['id'], button['id'], holo_button['id'], dropdown['id'], progress['id'], *thumbs.values(), *horizontal.values()], []
         while pending:
             ident = pending.pop(0)
             if any(row['id'] == ident for row in result):
@@ -290,6 +381,11 @@ def drawable_closure():
                 raw = archive.read(path)
                 facts = dict(density=variant['density'], path=path, sha256=rom.sha(raw))
                 if path.endswith('.xml'):
+                    if ident in horizontal.values():
+                        facts.update(horizontal_xml_facts(raw, by_id, row['name']))
+                        pending.extend(facts['references'])
+                        variants.append(facts)
+                        continue
                     if ident == progress['id']:
                         table = rom.ResourceTable(raw)
                         strings, ids, roots, targets = [], [], 0, []
@@ -378,7 +474,7 @@ def drawable_closure():
                                  stretch_x=list(struct.unpack_from('>%di' % nx, chunk, 32)),
                                  stretch_y=list(struct.unpack_from('>%di' % ny, chunk, 32 + 4 * nx)),
                                  padding=[left, top, right, bottom], optical=optical)
-                elif ident == spinner['id'] and path.endswith('.png'):
+                elif (ident == spinner['id'] or row['name'] in {'progressbar_indeterminate_holo' + str(i) for i in range(1, 9)}) and path.endswith('.png'):
                     if not raw.startswith(b'\x89PNG\r\n\x1a\n'): raise ValueError('invalid spinner PNG')
                     width, height = struct.unpack_from('>II', raw, 16)
                     facts.update(kind='bitmap', png=raw.hex(), width=width, height=height)
@@ -461,6 +557,44 @@ def resolve_rom_color(ident, by_id, seen=()):
     if not 28 <= v['value_type'] <= 31:
         raise ValueError('ROM color reference is not scalar')
     return dict(type=v['value_type'], data=v['data'])
+
+
+def rom_style_inventory(domain, projected):
+    """Classify every unprojected ROM style by its ARSC parent chain.
+
+    An APK compiled against a later SDK may name an API 19 ID that is an
+    unrelated ROM style. ResTable resolves it like any bag, so a chain that
+    sets no projected attribute is inert within the domain. Any other
+    configuration or chain shape stays non-inert and fails explicitly.
+    """
+    with zipfile.ZipFile(ROOT / rom.APK) as archive:
+        _, rows = rom.ResourceTable(archive.read('resources.arsc')).parse()
+    styles = {row['id']: row for row in rows if row['type'] == 'style'}
+
+    def chain(ident, seen=()):
+        if ident in seen or len(seen) >= 64:
+            raise ValueError('ROM style parent cycle/depth')
+        row = styles.get(ident)
+        if row is None or len(row['configurations']) != 1:
+            return None
+        v = row['configurations'][0]
+        if any(bytes.fromhex(v['config_hex'])[4:]) or not v['complex']:
+            return None
+        names = {item['name'] for item in v['bag']}
+        if v['parent']:
+            inherited = chain(v['parent'], seen + (ident,))
+            if inherited is None:
+                return None
+            names |= inherited
+        return names
+
+    result = []
+    for ident, row in sorted(styles.items()):
+        if ident in projected:
+            continue
+        names = chain(ident)
+        result.append(dict(id=ident, name=row['name'], inert=names is not None and not names & domain))
+    return result
 
 
 def color_resources():
@@ -559,9 +693,26 @@ def generate(negative_rom_id=False):
     colors = color_resources()
     references = reference_index(report['resource_bindings'])
     layouts = layout_closure()
+    drawables = drawable_closure()
     by_reference_id = {row['resource_id']: row for row in references.values()}
     projected_references = {ident: by_reference_id[ident]
                             for layout in layouts for ident in layout['references']}
+    # Sealed XML consumers may read framework IDs as well as drawable references.
+    # This grants identity only; loading remains independently sealed.
+    for drawable in drawables:
+        for variant in drawable['variants']:
+            if 'xml' not in variant:
+                continue
+            raw = bytes.fromhex(variant['xml'])
+            table = rom.ResourceTable(raw)
+            for at, kind, header, size in table.chunks(8, len(raw)):
+                if kind != 0x102:
+                    continue
+                _, tag, start, width, count, _, _, _ = table.words('<II6H', at+16)
+                for i in range(count):
+                    _, _, _, _, _, typ, ident = table.words('<IIIHBBI', at+16+start+i*width)
+                    if typ == 1:
+                        projected_references[ident] = by_reference_id[ident]
     strings = [row['path'] for row in colors if 'xml' in row]
     for row in colors:
         if 'xml' in row:
@@ -662,8 +813,9 @@ def generate(negative_rom_id=False):
                     configuration='values', input_sha256=report['input_sha256'],
                     styleables=report['styleable_slot_checks'], attribute_demands=attribute_demands,
                     registered=themes, style_closure=style_closure, unregistered=unregistered,
+                    rom_styles=rom_style_inventory(set(attrs.values()), set(ids) | {row['id'] for row in style_closure}),
                     counts=dict(counts), attribute_count=len(attrs),
-                    rom_colors=colors, rom_drawables=drawable_closure(), rom_layouts=layouts, rom_animations=animation_closure(), rom_configuration=view_configuration_values(), strings=strings, string_pool=string_pool(strings).hex(), attribute_formats=report['attribute_formats'],
+                    rom_colors=colors, rom_drawables=drawables, rom_layouts=layouts, rom_animations=animation_closure(), rom_configuration=view_configuration_values(), strings=strings, string_pool=string_pool(strings).hex(), attribute_formats=report['attribute_formats'],
                     resource_types={r['resource_type']: r['type_id'] for r in references.values()},
                     resource_names=sorted(references.values(), key=lambda r: r['resource_id']),
                     projected_references=sorted(projected_references.values(), key=lambda r: r['resource_id']))

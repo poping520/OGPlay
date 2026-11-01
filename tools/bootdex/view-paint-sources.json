@@ -46,7 +46,14 @@
           "signature": "<init>(Landroid/graphics/Paint;)V",
           "flags": 65537,
           "body_sha256": "20a8dac8181a3446cb1a22babee154e362e02a0fc9b2482edbd1c08ddfad235b",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-367 static drawable Paint copy/alpha and neutral filter state",
+            "inputs": "constructed source Paint or alpha 0..255 or null ColorFilter",
+            "outputs": "independent supported Paint facts, shallow Java effect references, original alpha/null filter return",
+            "state_owner": "PaintMeasureState scalar facts and original Java strong fields",
+            "failure_boundary": "non-null ColorFilter, out-of-domain alpha and TextView alpha mutation reject; no Skia/effect rendering"
+          }
         },
         {
           "signature": "ascent()F",
@@ -123,7 +130,15 @@
           "signature": "getAlpha()I",
           "flags": 257,
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-367 static drawable Paint copy/alpha and neutral filter state",
+            "inputs": "constructed source Paint or alpha 0..255 or null ColorFilter",
+            "outputs": "independent supported Paint facts, shallow Java effect references, original alpha/null filter return",
+            "state_owner": "PaintMeasureState scalar facts and original Java strong fields",
+            "failure_boundary": "non-null ColorFilter, out-of-domain alpha and TextView alpha mutation reject; no Skia/effect rendering"
+          },
+          "platform_seam": true
         },
         {
           "signature": "getBidiFlags()I",
@@ -141,7 +156,7 @@
           "signature": "getColorFilter()Landroid/graphics/ColorFilter;",
           "flags": 1,
           "body_sha256": "9e0c40c364283a0ad148f893172ccd3ce1a21530ff5bd58652c147ed3fff4696",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getFillPath(Landroid/graphics/Path;Landroid/graphics/Path;)Z",
@@ -779,7 +794,15 @@
           "signature": "setAlpha(I)V",
           "flags": 257,
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-367 static drawable Paint copy/alpha and neutral filter state",
+            "inputs": "constructed source Paint or alpha 0..255 or null ColorFilter",
+            "outputs": "independent supported Paint facts, shallow Java effect references, original alpha/null filter return",
+            "state_owner": "PaintMeasureState scalar facts and original Java strong fields",
+            "failure_boundary": "non-null ColorFilter, out-of-domain alpha and TextView alpha mutation reject; no Skia/effect rendering"
+          },
+          "platform_seam": true
         },
         {
           "signature": "setAntiAlias(Z)V",
@@ -817,7 +840,14 @@
           "signature": "setColorFilter(Landroid/graphics/ColorFilter;)Landroid/graphics/ColorFilter;",
           "flags": 1,
           "body_sha256": "9f0be65f4393fd685c1c6df49380607efeba9bc2c537c8004d054adff652c8dd",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-367 static drawable Paint copy/alpha and neutral filter state",
+            "inputs": "constructed source Paint or alpha 0..255 or null ColorFilter",
+            "outputs": "independent supported Paint facts, shallow Java effect references, original alpha/null filter return",
+            "state_owner": "PaintMeasureState scalar facts and original Java strong fields",
+            "failure_boundary": "non-null ColorFilter, out-of-domain alpha and TextView alpha mutation reject; no Skia/effect rendering"
+          }
         },
         {
           "signature": "setCompatibilityScaling(F)V",
@@ -1243,7 +1273,7 @@
         {
           "signature": "mColorFilter:Landroid/graphics/ColorFilter;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -2163,7 +2193,7 @@
           "signature": "getMinHeight()I",
           "flags": 1,
           "body_sha256": "ca6bf35405e8adfbb7482edbc00435ee8cc1278a5ebe788ea0a802b099c9420d",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getMinLines()I",
@@ -2175,7 +2205,7 @@
           "signature": "getMinWidth()I",
           "flags": 1,
           "body_sha256": "cc91f31589cf462e517ca83644450ba9ca5363e3f380e954c9d4ffd6fc24e195",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getMovementMethod()Landroid/text/method/MovementMethod;",
@@ -2845,7 +2875,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
-            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities; original Java pixel minimum width/height fields (DVM-368)",
             "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
             "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
             "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
@@ -3506,7 +3536,7 @@
           "signature": "setMinHeight(I)V",
           "flags": 1,
           "body_sha256": "32204cf534e0c9f6b3464050b7d9c25e7eaee408e08217e354e278483b27518b",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setMinLines(I)V",
@@ -3518,7 +3548,7 @@
           "signature": "setMinWidth(I)V",
           "flags": 1,
           "body_sha256": "bdf98ead8de6194d43304acad0ed71e4812e1880166052e4e590b37e4431fbfc",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setMovementMethod(Landroid/text/method/MovementMethod;)V",
@@ -4385,25 +4415,25 @@
         {
           "signature": "mMinMode:I",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mMinWidth:I",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mMinWidthMode:I",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mMinimum:I",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {

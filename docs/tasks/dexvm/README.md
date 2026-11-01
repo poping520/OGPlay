@@ -340,3 +340,6 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-362 · TextView 文字状态与固定字体度量](DVM-362.md)
 - [DVM-363 · ImageButton 默认背景与 View 配置杂项](DVM-363.md)
 - [DVM-366 · 固定字体统一长度边界、LightingColorFilter 与 TextView 触摸](DVM-366.md)
+
+- [DVM-367 · 水平 ProgressBar ROM 资源与状态闭包](DVM-367.md)
+- [DVM-368 · TextView 最小尺寸与隐藏子树呈现](DVM-368.md)

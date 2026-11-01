@@ -416,3 +416,40 @@ TEST_CASE("ImageView Drawable callback and attach protocol run ROM bodies on bot
         CHECK(f.ledger.Unimplemented().empty());
     }
 }
+
+TEST_CASE("DVM-367 BitmapDrawable alpha and mirroring state cannot silently lose effects in projection") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        const auto image = Image(f, owner);
+        const auto config = f.Static("Landroid/graphics/Bitmap$Config;", "valueOf",
+                                     "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;",
+                                     {VmValue::Ref(f.vm.NewStringUtf8("ARGB_8888"))})
+                                .ref;
+        const auto bitmap = f.Static("Landroid/graphics/Bitmap;", "createBitmap",
+                                     "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+                                     {VmValue::Int(1), VmValue::Int(1), VmValue::Ref(config)})
+                                .ref;
+        const auto roots = f.vm.ProtectReferences(std::array{image, bitmap});
+        f.On(image, "setImageBitmap", "(Landroid/graphics/Bitmap;)V", {VmValue::Ref(bitmap)});
+        const auto drawable = f.On(image, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
+        f.context->content_view = image;
+        ++f.context->ui_content_revision;
+        const auto tick = [&] {
+            return EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                            AndroidUiTraversalPhase::ResolveOnly, ui::Size{20, 20});
+        };
+        REQUIRE(tick());
+        f.On(drawable, "setAlpha", "(I)V", {VmValue::Int(128)});
+        CHECK(f.On(drawable, "getAlpha", "()I").AsInt() == 128);
+        f.On(image, "requestLayout", "()V");
+        CHECK_THROWS_AS(tick(), VmJavaThrow);
+        f.On(drawable, "setAlpha", "(I)V", {VmValue::Int(255)});
+        f.On(image, "requestLayout", "()V");
+        CHECK_NOTHROW(static_cast<void>(tick()));
+        f.On(drawable, "setAutoMirrored", "(Z)V", {VmValue::Int(1)});
+        f.On(image, "requestLayout", "()V");
+        CHECK_THROWS_AS(tick(), VmJavaThrow);
+    }
+}

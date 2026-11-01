@@ -33,6 +33,12 @@ struct GraphicsStateStore final {
         int tile{};
     };
 
+    struct BitmapPattern final {
+        std::shared_ptr<BitmapPixels> pixels;
+        int tile_x{}, tile_y{};
+    };
+
+    std::map<Handle, BitmapPattern> bitmap_patterns;
     std::uint32_t next{1};
     std::map<Handle, Interpolation> interpolators;
     std::map<Handle, Gradient> gradients;
@@ -267,11 +273,81 @@ std::vector<Decl> Declare_android_graphics_StateObjects(const Context& context) 
             native_instance);
     }
     result.push_back(std::move(gradient).Build());
+    auto shape = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/ShapeDrawable;",
+                                                  "Landroid/graphics/drawable/Drawable;");
+    shape.DirectMethod(
+        "updateShape", "()V",
+        [](dx::IntrinsicContext& c) {
+            const auto ref = [&c](dx::VmObjectRef owner, const char* name, const char* type) {
+                const auto field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(owner), name, type);
+                if (!field) throw std::logic_error("ROM ShapeDrawable field unavailable");
+                return dx::VmObjectRef{c.vm.Model().InstanceSlots(owner)[c.vm.Linker().Field(*field).slot].bits};
+            };
+            const auto state = ref(c.receiver, "mShapeState", "Landroid/graphics/drawable/ShapeDrawable$ShapeState;");
+            if (ref(state, "mShaderFactory", "Landroid/graphics/drawable/ShapeDrawable$ShaderFactory;").IsValid()) {
+                if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.progressbar_tiling", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "ShapeDrawable ShaderFactory is unsupported"};
+            }
+            const auto value = ref(state, "mShape", "Landroid/graphics/drawable/shapes/Shape;");
+            if (value.IsValid()) {
+                const auto bounds = CallAndroidMethod(c.vm, c.receiver, "getBounds", "()Landroid/graphics/Rect;").ref;
+                static_cast<void>(CallAndroidMethod(
+                    c.vm, value, "resize", "(FF)V",
+                    {dx::VmValue::Float(static_cast<float>(CallAndroidMethod(c.vm, bounds, "width", "()I").AsInt())),
+                     dx::VmValue::Float(
+                         static_cast<float>(CallAndroidMethod(c.vm, bounds, "height", "()I").AsInt()))}));
+            }
+            static_cast<void>(CallAndroidMethod(c.vm, c.receiver, "invalidateSelf", "()V"));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPrivate);
+    result.push_back(std::move(shape).Build());
+    auto bitmap_shader =
+        dx::IntrinsicClassBuilder::Class("Landroid/graphics/BitmapShader;", "Landroid/graphics/Shader;");
+    const auto bitmap_field =
+        bitmap_shader.BoundInstanceField("mBitmap", "Landroid/graphics/Bitmap;", dx::kAccPublic | dx::kAccFinal);
+    const auto tile_x =
+        bitmap_shader.BoundInstanceField("mTileX", "Landroid/graphics/Shader$TileMode;", dx::kAccPrivate);
+    const auto tile_y =
+        bitmap_shader.BoundInstanceField("mTileY", "Landroid/graphics/Shader$TileMode;", dx::kAccPrivate);
+    bitmap_shader.Constructor(
+        "(Landroid/graphics/Bitmap;Landroid/graphics/Shader$TileMode;Landroid/graphics/Shader$TileMode;)V",
+        [context, store, bitmap_field, tile_x, tile_y](dx::IntrinsicContext& c) {
+            for (const auto& arg : c.arguments)
+                if (!arg.ref.IsValid())
+                    throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "BitmapShader bitmap/tile mode is null"};
+            const auto found = context->bitmaps.find(c.arguments[0].ref.Value());
+            if (found == context->bitmaps.end() || found->second.recycled || !found->second.pixels)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "BitmapShader bitmap is unavailable"};
+            const auto read_mode = [&c](dx::VmObjectRef mode) {
+                const auto field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(mode), "nativeInt", "I");
+                const auto value =
+                    static_cast<std::int32_t>(c.vm.Model().InstanceSlots(mode)[c.vm.Linker().Field(*field).slot].bits);
+                if (value < 0 || value > 2) Invalid("BitmapShader tile mode");
+                return value;
+            };
+            const auto x = read_mode(c.arguments[1].ref), y = read_mode(c.arguments[2].ref);
+            const dx::IntrinsicCall fields(c);
+            fields.SetRef(bitmap_field, c.arguments[0].ref);
+            fields.SetRef(tile_x, c.arguments[1].ref);
+            fields.SetRef(tile_y, c.arguments[2].ref);
+            const auto handle = store->New();
+            for (const auto name : {"native_instance", "native_shader"}) {
+                const auto field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(c.receiver), name, "I");
+                c.vm.Model().InstanceSlots(c.receiver)[c.vm.Linker().Field(*field).slot] = {handle.value,
+                                                                                            dx::SlotTag::cat1};
+            }
+            store->bitmap_patterns.emplace(handle, Store::BitmapPattern{found->second.pixels, x, y});
+            return dx::VmValue::Void();
+        });
+    result.push_back(std::move(bitmap_shader).Build());
     auto shader = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Shader;");
     shader.StaticMethod(
         "nativeDestructor", "(II)V",
         [store](dx::IntrinsicContext& c) {
             store->gradients.erase(Id(c.arguments[0]));
+            store->bitmap_patterns.erase(Id(c.arguments[0]));
             return dx::VmValue::Void();
         },
         native_static);
@@ -359,8 +435,10 @@ void RegisterGraphicsStateTables(dx::Interpreter& vm, const Context& context) {
          [store, &vm](dx::VmObjectRef object) {
              const auto type = vm.Model().ObjectClass(object);
              const auto& descriptor = vm.Linker().Class(type).descriptor;
+             const bool bitmap_shader =
+                 vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/graphics/BitmapShader;"), type);
              if (descriptor != "Landroid/graphics/Interpolator;" && descriptor != "Landroid/graphics/LinearGradient;" &&
-                 descriptor != "Landroid/graphics/PorterDuffXfermode;" &&
+                 !bitmap_shader && descriptor != "Landroid/graphics/PorterDuffXfermode;" &&
                  descriptor != "Landroid/graphics/LightingColorFilter;")
                  return;
              const auto field = vm.Linker().FindFieldRecursive(type, "native_instance", "I");
@@ -368,6 +446,7 @@ void RegisterGraphicsStateTables(dx::Interpreter& vm, const Context& context) {
              const Handle handle{vm.Model().InstanceSlots(object)[vm.Linker().Field(*field).slot].bits};
              if (descriptor == "Landroid/graphics/Interpolator;") store->interpolators.erase(handle);
              if (descriptor == "Landroid/graphics/LinearGradient;") store->gradients.erase(handle);
+             if (bitmap_shader) store->bitmap_patterns.erase(handle);
              if (descriptor == "Landroid/graphics/PorterDuffXfermode;") store->xfermodes.erase(handle);
              if (descriptor == "Landroid/graphics/LightingColorFilter;") {
                  store->lighting_filters.erase(handle);

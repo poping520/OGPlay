@@ -251,6 +251,48 @@ TEST_CASE("DVM-288 generated theme registration and three-state values are expli
     CHECK_THROWS(static_cast<void>(r.New()));
 }
 
+TEST_CASE("API19 ROM style IDs named by later SDKs apply inert bags and reject projected ones") {
+    ThemeResources r;
+    r.Load(Projection());
+    const auto token = r.New();
+    const auto table = Table();
+    r.Apply(token, 0x01030128, true, table);  // Theme.DeviceDefault
+    const auto before = r.Attribute(token, 0x01010078, false, table);
+    REQUIRE(before);
+    // API 21 SDKs call 0x0103022f Theme.Material.NoActionBar.Fullscreen; the API 19
+    // ROM binds it to the private Preference.Holo bag, which sets only android:layout.
+    CHECK_NOTHROW(r.Apply(token, 0x0103022f, true, table));
+    CHECK(r.Attribute(token, 0x01010078, false, table)->Slots() == before->Slots());
+    CHECK_THROWS_WITH(r.Apply(token, 0x01030012, true, table),
+                      "unregistered framework theme ID 16973842 (ROM style Widget)");
+    CHECK_THROWS_WITH(r.Apply(token, 0x0103ffff, true, table), "unregistered framework theme ID 17039359");
+}
+
+TEST_CASE("API19 ContextImpl default theme underlies an activity theme with an inert ROM parent") {
+    using ogplay::test::container_traversal::ContainerVm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend);
+        ContainerVm f(backend);
+        f.context->arsc = Table();
+        f.context->arsc.entries.push_back(Style(0x7f020020, 0x0103022f, {{0x01010064, 1, 0, {}}}));
+        f.context->application_theme = 0x7f020020;
+        const auto owner = f.New("Landroid/app/Activity;");
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020020)});
+        const auto theme = f.On(owner, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
+        const auto value = f.New("Landroid/util/TypedValue;");
+        const auto roots = f.vm.ProtectReferences(std::array{theme, value});
+        // The manifest theme is layered by Activity.setTheme, never used as the base.
+        CHECK(f.On(theme, "resolveAttribute", "(ILandroid/util/TypedValue;Z)Z",
+                   {VmValue::Int(0x01010078), VmValue::Ref(value), VmValue::Int(0)})
+                  .AsInt() == 1);
+        const auto type = f.linker.FindFieldRecursive(f.model.ObjectClass(value), "type", "I");
+        REQUIRE(type);
+        CHECK(f.model.InstanceSlots(value)[f.linker.Field(*type).slot].bits == 1);
+    }
+}
+
 TEST_CASE("DVM-288 AOSP priority parent references force copy and null masking") {
     ThemeResources r;
     r.Load(Projection());

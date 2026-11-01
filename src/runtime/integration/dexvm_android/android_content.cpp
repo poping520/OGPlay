@@ -1155,9 +1155,11 @@ Decl Declare_android_content_Context(const Context& context) {
                 const auto sdk =
                     call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(info), "targetSdkVersion", "I");
                 if (!sdk) throw std::logic_error("ApplicationInfo targetSdkVersion missing");
+                // ContextImpl.mThemeResource starts at 0 and is never given the manifest
+                // theme; activities layer their theme over this default via setTheme.
                 const auto selected = call.vm.Call(
                     *select,
-                    std::array{dx::VmValue::Int(static_cast<std::int32_t>(context->application_theme)),
+                    std::array{dx::VmValue::Int(0),
                                dx::VmValue::Int(static_cast<std::int32_t>(
                                    call.vm.Model().InstanceSlots(info)[call.vm.Linker().Field(*sdk).slot].bits))});
                 if (selected.exception.IsValid())

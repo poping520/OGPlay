@@ -476,6 +476,96 @@ TEST_CASE("RandomAccessFile shares VFS position and supports resize") {
   }
 }
 
+TEST_CASE("Posix fcntlFlock backs FileChannel locks with single-process record lock semantics") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend);
+        InterpreterConfig config;
+        config.backend = backend;
+        FileVm vm(nullptr, true, config);
+        vm.vfs.CreateDirectory("/sdcard");
+        vm.JavaWrite("/sdcard/lock.dat", "abcdef");
+        const auto open = [&](const char* mode) {
+            const auto file = vm.interpreter.NewIntrinsicInstance("Ljava/io/RandomAccessFile;");
+            static_cast<void>(vm.CallOn(file, "<init>", "(Ljava/lang/String;Ljava/lang/String;)V",
+                                        {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/lock.dat")),
+                                         VmValue::Ref(vm.interpreter.NewStringUtf8(mode))}));
+            return file;
+        };
+        const auto writable = open("rw");
+        const auto readable = open("r");
+        const auto files_root = vm.interpreter.ProtectReferences(std::array{writable, readable});
+        // Exclusive whole-file lock on a "rw" file, then release (lock() adds only begin/end).
+        const auto channel = vm.CallOn(writable, "getChannel", "()Ljava/nio/channels/FileChannel;").ref;
+        const auto lock = vm.CallOn(channel, "tryLock", "()Ljava/nio/channels/FileLock;").ref;
+        REQUIRE(lock.IsValid());
+        const auto lock_root = vm.interpreter.ProtectReferences(std::array{channel, lock});
+        CHECK(vm.BoolOn(lock, "isValid"));
+        CHECK_FALSE(vm.BoolOn(lock, "isShared"));
+        static_cast<void>(vm.CallOn(lock, "release", "()V"));
+        CHECK_FALSE(vm.BoolOn(lock, "isValid"));
+        const auto read_channel = vm.CallOn(readable, "getChannel", "()Ljava/nio/channels/FileChannel;").ref;
+        const auto shared = vm.CallOn(read_channel, "tryLock", "(JJZ)Ljava/nio/channels/FileLock;",
+                                      {VmValue::Long(0), VmValue::Long(3), VmValue::Int(1)})
+                                .ref;
+        REQUIRE(shared.IsValid());
+        CHECK(vm.BoolOn(shared, "isShared"));
+
+        const auto posix = vm.interpreter.NewIntrinsicInstance("Llibcore/io/Posix;");
+        const auto fd = vm.CallOn(readable, "getFD", "()Ljava/io/FileDescriptor;").ref;
+        const auto flock = vm.interpreter.NewIntrinsicInstance("Llibcore/io/StructFlock;");
+        const auto roots = vm.interpreter.ProtectReferences(std::array{read_channel, shared, posix, fd, flock});
+        static_cast<void>(vm.CallOn(flock, "<init>", "()V"));
+        const auto slot = [&](const char* name, const char* type) {
+            const auto field = vm.linker.FindFieldRecursive(vm.model.ObjectClass(flock), name, type);
+            REQUIRE(field.has_value());
+            return vm.linker.Field(*field).slot;
+        };
+        const auto set = [&](std::int16_t type, std::int16_t whence, std::int64_t start) {
+            auto slots = vm.model.InstanceSlots(flock);
+            slots[slot("l_type", "S")] = {static_cast<std::uint32_t>(type), SlotTag::cat1};
+            slots[slot("l_whence", "S")] = {static_cast<std::uint32_t>(whence), SlotTag::cat1};
+            slots[slot("l_start", "J")] = {static_cast<std::uint32_t>(start), SlotTag::wide_lo};
+            slots[slot("l_start", "J") + 1] = {static_cast<std::uint32_t>(static_cast<std::uint64_t>(start) >> 32U),
+                                               SlotTag::wide_hi};
+        };
+        const auto call = [&](std::int32_t cmd) {
+            return vm.CallOnOutcome(posix, "fcntlFlock", "(Ljava/io/FileDescriptor;ILlibcore/io/StructFlock;)I",
+                                    {VmValue::Ref(fd), VmValue::Int(cmd), VmValue::Ref(flock)});
+        };
+        const auto expect_errno = [&](const VmCallOutcome& result, std::uint32_t error) {
+            REQUIRE(result.exception.IsValid());
+            CHECK(vm.linker.Class(result.exception_class).descriptor == "Llibcore/io/ErrnoException;");
+            const auto field = vm.linker.FindFieldRecursive(vm.model.ObjectClass(result.exception), "errno", "I");
+            REQUIRE(field.has_value());
+            CHECK(vm.model.InstanceSlots(result.exception)[vm.linker.Field(*field).slot].bits == error);
+        };
+        // No other process can hold a conflicting lock: F_GETLK reports F_UNLCK.
+        set(1, 0, 0);
+        const auto query = call(12);
+        REQUIRE_FALSE(query.exception.IsValid());
+        CHECK(query.value.AsInt() == 0);
+        CHECK(vm.model.InstanceSlots(flock)[slot("l_type", "S")].bits == 2);
+        set(0, 1, 2);
+        CHECK(call(13).value.AsInt() == 0);
+        set(1, 0, 0);
+        expect_errno(call(13), 9);  // write lock on a read-only descriptor
+        set(7, 0, 0);
+        expect_errno(call(13), 22);
+        set(0, 3, 0);
+        expect_errno(call(13), 22);
+        set(0, 0, -1);
+        expect_errno(call(13), 22);
+        set(0, 0, INT64_MIN);
+        auto lock_slots = vm.model.InstanceSlots(flock);
+        lock_slots[slot("l_len", "J")] = {UINT32_MAX, SlotTag::wide_lo};
+        lock_slots[slot("l_len", "J") + 1] = {UINT32_MAX, SlotTag::wide_hi};
+        expect_errno(call(13), 22);  // Reject before adding a negative length can underflow.
+        set(0, 0, 0);
+        expect_errno(call(99), 22);
+        CHECK(vm.ledger.Unimplemented().empty());
+    }
+}
+
 TEST_CASE("FileInputStream rejects null and missing sources") {
     FileVm vm;
     vm.vfs.CreateDirectory("/sdcard");

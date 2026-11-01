@@ -301,6 +301,92 @@ void ThemeResources::Load(std::string_view projection) {
                     if (!declared.contains(0x01080580))
                         throw std::runtime_error("unreviewed rotate drawable reference");
                     if (roots != 1 || refs != declared) throw std::runtime_error("unclosed rotate drawable");
+                } else if (kind == "layer-list" || kind == "animation-list") {
+                    const bool layers = kind == "layer-list";
+                    if (id != (layers ? 0x010804c7U : 0x010804c9U) ||
+                        Text(Member(row, "name")) !=
+                            (layers ? "progress_horizontal_holo_dark" : "progress_indeterminate_horizontal_holo"))
+                        throw std::runtime_error("unreviewed horizontal drawable identity");
+                    const auto hex = Text(Member(variant, "xml"));
+                    if (hex.empty() || hex.size() % 2 || hex.size() > 131072)
+                        throw std::runtime_error("invalid horizontal XML bounds");
+                    const auto digit = [](char c) -> unsigned {
+                        if (c >= '0' && c <= '9') return static_cast<unsigned>(c - '0');
+                        if (c >= 'a' && c <= 'f') return static_cast<unsigned>(c - 'a' + 10);
+                        throw std::runtime_error("invalid horizontal XML hex");
+                    };
+                    for (std::size_t n = 0; n < hex.size(); n += 2)
+                        skin.xml.push_back(static_cast<std::byte>((digit(hex[n]) << 4) | digit(hex[n + 1])));
+                    if (core::Sha256(skin.xml) != Text(Member(variant, "sha256")))
+                        throw std::runtime_error("horizontal XML hash mismatch");
+                    const auto doc = loader::ParseCompiledXmlDocument(skin.xml);
+                    std::vector<std::string> stack;
+                    std::set<std::uint32_t> refs;
+                    unsigned items = 0, scales = 0, roots = 0;
+                    for (const auto& node : doc->Nodes()) {
+                        const auto tag = doc->String(node.name_index).value_or("");
+                        if (node.type == 0x0103) {
+                            if (stack.empty() || stack.back() != tag)
+                                throw std::runtime_error("unbalanced horizontal XML");
+                            stack.pop_back();
+                            continue;
+                        }
+                        if (node.type != 0x0102) continue;
+                        if (stack.empty()) {
+                            if (++roots != 1 || tag != kind) throw std::runtime_error("invalid horizontal XML root");
+                        } else if (stack.size() == 1 && tag == "item") {
+                            ++items;
+                        } else if (layers && stack == std::vector<std::string>{"layer-list", "item"} &&
+                                   tag == "scale" && (items == 2 || items == 3)) {
+                            ++scales;
+                        } else
+                            throw std::runtime_error("unreviewed horizontal XML element");
+                        const unsigned expected = tag == "layer-list"       ? 0
+                                                  : tag == "animation-list" ? 1
+                                                  : tag == "scale"          ? 2
+                                                  : layers && items > 1     ? 1
+                                                                            : 2;
+                        if (node.attributes.size() != expected)
+                            throw std::runtime_error("invalid horizontal XML attributes");
+                        std::set<std::uint32_t> attributes;
+                        for (const auto& attr : node.attributes) {
+                            const auto name = doc->String(attr.name_index);
+                            if (!attributes.insert(attr.resource_id).second)
+                                throw std::runtime_error("duplicate horizontal XML attribute");
+                            if ((attr.resource_id >> 16) != 0x0101)
+                                throw std::runtime_error("invalid horizontal attribute identity");
+                            bool valid = false;
+                            if (tag == "animation-list")
+                                valid = name == "oneshot" && attr.value.type == 18 && attr.value.data == 0;
+                            if (tag == "item" && name == "id" && layers)
+                                valid = attr.value.type == 1 && attr.value.data == (items == 1   ? 0x01020000U
+                                                                                    : items == 2 ? 0x0102000fU
+                                                                                                 : 0x0102000dU);
+                            if (tag == "item" && name == "duration" && !layers)
+                                valid = attr.value.type == 16 && attr.value.data == 50;
+                            if (tag == "scale" && name == "scaleWidth")
+                                valid = attr.value.type == 3 && doc->String(attr.value.data) == "100%";
+                            if (name == "drawable") {
+                                const auto target = layers ? (items == 1   ? 0x010804c5U
+                                                              : items == 2 ? 0x010804d2U
+                                                                           : 0x010804d0U)
+                                                           : 0x010804daU + items;
+                                valid = attr.value.type == 1 && attr.value.data == target;
+                                if (valid) refs.insert(target);
+                            }
+                            if (!valid) throw std::runtime_error("unreviewed horizontal XML attribute/reference");
+                        }
+                        stack.emplace_back(tag);
+                    }
+                    const auto declared = Member(variant, "references");
+                    std::set<std::uint32_t> declared_refs;
+                    if (!declared.IsArray() || declared.Size() != (layers ? 3 : 8))
+                        throw std::runtime_error("invalid horizontal references");
+                    for (std::size_t n = 0; n < declared.Size(); ++n)
+                        declared_refs.insert(Number(*declared.Element(n)));
+                    if (roots != 1 || !stack.empty() || items != (layers ? 3U : 8U) || scales != (layers ? 2U : 0U) ||
+                        refs != declared_refs)
+                        throw std::runtime_error("unclosed horizontal XML");
                 } else if (kind == "ninepatch" || kind == "bitmap") {
                     skin.width = Number(Member(variant, "width"));
                     skin.height = Number(Member(variant, "height"));
@@ -331,7 +417,10 @@ void ThemeResources::Load(std::string_view projection) {
                                 target.push_back(static_cast<std::int32_t>(v));
                             }
                         }
-                    } else if ((id != 0x01080580 || Text(Member(row, "name")) != "spinner_white_48"))
+                    } else if (!((id == 0x01080580 && Text(Member(row, "name")) == "spinner_white_48") ||
+                                 (id >= 0x010804db && id <= 0x010804e2 &&
+                                  Text(Member(row, "name")) ==
+                                      "progressbar_indeterminate_holo" + std::to_string(id - 0x010804da))))
                         throw std::runtime_error("unreviewed ROM bitmap");
                     const auto hex = Text(Member(variant, "png"));
                     if (hex.size() % 2 || hex.size() > 1048576) throw std::runtime_error("invalid skin PNG bounds");
@@ -351,6 +440,16 @@ void ThemeResources::Load(std::string_view projection) {
                     throw std::runtime_error("duplicate ROM drawable variant");
                 skins.push_back(std::move(skin));
             }
+        }
+        for (const auto& skin : skins) {
+            if (skin.xml.empty()) continue;
+            const auto doc = loader::ParseCompiledXmlDocument(skin.xml);
+            for (const auto& node : doc->Nodes())
+                for (const auto& attr : node.attributes)
+                    if (attr.value.type == 1 && doc->String(attr.name_index) == "drawable" &&
+                        std::none_of(skins.begin(), skins.end(),
+                                     [&](const auto& leaf) { return leaf.id == attr.value.data && !leaf.png.empty(); }))
+                        throw std::runtime_error("unclosed ROM XML drawable reference");
         }
         for (const auto& skin : skins)
             for (const auto& item : skin.items)
@@ -453,6 +552,20 @@ void ThemeResources::Load(std::string_view projection) {
         if (!rejected.emplace(Text(Member(row, "name")), Text(Member(row, "reason"))).second)
             throw std::runtime_error("duplicate unregistered theme");
     }
+    decltype(rom_styles_) rom_styles;
+    const auto rom_style_rows = root.Member("rom_styles");
+    if (rom_style_rows) {
+        if (!rom_style_rows->IsArray() || rom_style_rows->Size() > 1024)
+            throw std::runtime_error("invalid ROM style inventory bounds");
+        for (std::size_t i = 0; i < rom_style_rows->Size(); ++i) {
+            const auto row = *rom_style_rows->Element(i);
+            const auto id = Number(Member(row, "id"));
+            const auto inert = Member(row, "inert").Bool();
+            if ((id >> 16U) != 0x0103 || !inert || projected.contains(id) ||
+                !rom_styles.emplace(id, std::pair{Text(Member(row, "name")), *inert}).second)
+                throw std::runtime_error("invalid/duplicate ROM style inventory row");
+        }
+    }
     std::vector<std::byte> string_pool;
     if (!strings.empty()) {
         const auto hex = Text(Member(root, "string_pool"));
@@ -476,6 +589,7 @@ void ThemeResources::Load(std::string_view projection) {
     projection_ = std::move(projected);
     registered_names_ = std::move(names);
     unregistered_ = std::move(rejected);
+    rom_styles_ = std::move(rom_styles);
     resource_names_ = std::move(resource_names);
     loaded_ = true;
 }
@@ -593,8 +707,15 @@ ThemeResources::Bag ThemeResources::Style(std::uint32_t style, const loader::Ars
     seen.push_back(style);
     if ((style >> 24U) == 1) {
         const auto found = projection_.find(style);
-        if (found == projection_.end())
-            throw std::runtime_error("unregistered framework theme ID " + std::to_string(style));
+        if (found == projection_.end()) {
+            // An APK built against a later SDK can name an API 19 ID that is an
+            // unrelated ROM style; ResTable resolves its bag, which sets nothing
+            // in the projected domain when inert. IDs absent from the ROM still fail.
+            const auto rom = rom_styles_.find(style);
+            if (rom != rom_styles_.end() && rom->second.second) return {};
+            throw std::runtime_error("unregistered framework theme ID " + std::to_string(style) +
+                                     (rom == rom_styles_.end() ? "" : " (ROM style " + rom->second.first + ")"));
+        }
         auto result = found->second;
         std::erase_if(result, [](const auto& row) { return row.second.type == 0 && row.second.unsupported.empty(); });
         return result;
@@ -666,7 +787,7 @@ ThemeValue ThemeResources::Resolve(ThemeValue value, const State* theme, bool re
         if (value.type == 2 && theme) {
             if (!seen.emplace(2, value.data).second) throw std::runtime_error("theme attribute cycle");
             const auto attr = Lookup(*theme, value.data);
-            if (!attr) throw std::runtime_error("unresolved theme attribute");
+            if (!attr) throw std::runtime_error("unresolved theme attribute " + std::to_string(value.data));
             const auto flags = value.flags;
             value = *attr;
             value.flags |= flags;

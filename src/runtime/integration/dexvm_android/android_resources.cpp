@@ -1753,6 +1753,42 @@ Decl Declare_android_content_res_Resources(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
+dx::VmObjectRef InflateSealedRomDrawable(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef resources,
+                                         dx::VmObjectRef parser, dx::VmObjectRef attrs) {
+    if (!parser.IsValid() || attrs != parser ||
+        std::find(context->rom_drawable_parsers.begin(), context->rom_drawable_parsers.end(), parser) ==
+            context->rom_drawable_parsers.end()) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "nested drawable XML is unsupported"};
+    }
+    const auto name_ref = CallAndroidMethod(call.vm, parser, "getName", "()Ljava/lang/String;").ref;
+    const auto name = call.vm.StringUtf8(name_ref);
+    const char* descriptor = name == "animated-rotate"  ? "Landroid/graphics/drawable/AnimatedRotateDrawable;"
+                             : name == "layer-list"     ? "Landroid/graphics/drawable/LayerDrawable;"
+                             : name == "scale"          ? "Landroid/graphics/drawable/ScaleDrawable;"
+                             : name == "animation-list" ? "Landroid/graphics/drawable/AnimationDrawable;"
+                                                        : nullptr;
+    if (!descriptor)
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unreviewed sealed drawable XML tag"};
+    const auto type = call.vm.Linker().ResolveDescriptor(descriptor);
+    const auto init = call.vm.EnsureClassInitialized(type);
+    if (init.exception.IsValid())
+        throw dx::VmJavaThrow{call.vm.Linker().Class(init.exception_class).descriptor, init.exception_message,
+                              init.exception};
+    const auto object = call.vm.NewIntrinsicInstance(descriptor);
+    const auto root = call.vm.ProtectReferences(std::array{object});
+    const auto ctor = call.vm.Linker().FindDirectMethod(type, "<init>", "()V");
+    const auto out = call.vm.Call(*ctor, std::array{dx::VmValue::Ref(object)});
+    if (out.exception.IsValid())
+        throw dx::VmJavaThrow{call.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                              out.exception};
+    static_cast<void>(
+        CallAndroidMethod(call.vm, object, "inflate",
+                          "(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)V",
+                          {dx::VmValue::Ref(resources), dx::VmValue::Ref(parser), dx::VmValue::Ref(attrs)}));
+    return object;
+}
+
 dx::VmObjectRef MakeRomSkin(dx::IntrinsicContext& call, const Context& context, std::uint32_t id) {
     const auto density = static_cast<std::uint32_t>(std::lround(context->ui_density * 160.0F));
     const auto* resource = context->theme_resources.Drawable(id, density);
@@ -1767,30 +1803,23 @@ dx::VmObjectRef MakeRomSkin(dx::IntrinsicContext& call, const Context& context, 
         return call.vm.NewIntrinsicInstance(descriptor);
     };
     if (!resource->xml.empty()) {
-        const auto object = allocate("Landroid/graphics/drawable/AnimatedRotateDrawable;");
-        const auto roots = call.vm.ProtectReferences(std::array{object});
-        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/AnimatedRotateDrawable;");
-        const auto ctor = call.vm.Linker().FindDirectMethod(type, "<init>", "()V");
-        const auto out = call.vm.Call(*ctor, std::array{dx::VmValue::Ref(object)});
-        if (out.exception.IsValid())
-            throw dx::VmJavaThrow{call.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
-                                  out.exception};
         const auto parser = OpenCompiledXml(call, resource->xml).ref;
         const auto parser_root = call.vm.ProtectReferences(std::array{parser});
+        context->rom_drawable_parsers.push_back(parser);
         try {
             while (CallAndroidMethod(call.vm, parser, "next", "()I").AsInt() != 2) {
             }
             const auto resources = ResourceObject(call, context, false);
-            static_cast<void>(CallAndroidMethod(
-                call.vm, object, "inflate",
-                "(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)V",
-                {dx::VmValue::Ref(resources), dx::VmValue::Ref(parser), dx::VmValue::Ref(parser)}));
+            const auto object = InflateSealedRomDrawable(call, context, resources, parser, parser);
+            const auto root = call.vm.ProtectReferences(std::array{object});
+            std::erase(context->rom_drawable_parsers, parser);
+            static_cast<void>(CallAndroidMethod(call.vm, parser, "close", "()V"));
+            return object;
         } catch (...) {
+            std::erase(context->rom_drawable_parsers, parser);
             static_cast<void>(CallAndroidMethod(call.vm, parser, "close", "()V"));
             throw;
         }
-        static_cast<void>(CallAndroidMethod(call.vm, parser, "close", "()V"));
-        return object;
     }
     if (!resource->png.empty() && resource->stretch_x.empty()) {
         const auto decoded = DecodeImageToArgb(resource->png);

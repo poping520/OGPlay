@@ -317,22 +317,52 @@ TEST_CASE("DVM-297 Button inherited text measure click focus compound and frozen
     }
 }
 
-TEST_CASE("DVM-297 Button default theme fails actual unsupported requests") {
+TEST_CASE("DVM-297 Button default themes construct with sealed backgrounds") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         for (int defaults : {1, 2, 3}) {
             ContainerVm f(backend);
             const auto owner = Owner(f, defaults);
             const auto root = f.vm.ProtectReferences(std::array{owner});
-            const auto failed = Construct(f, owner);
-            INFO(defaults, failed.exception_message);
-            if (defaults <= 2) {
-                CHECK(failed.exception.IsValid());
-                CHECK(failed.exception_message.find("unreviewed ROM drawable load") != std::string::npos);
-                CHECK_FALSE(f.ledger.Unimplemented().empty());
-            } else {
-                CHECK_FALSE(failed.exception.IsValid());
-                CHECK(f.ledger.Unimplemented().empty());
-            }
+            const auto result = Construct(f, owner);
+            INFO(defaults, result.exception_message);
+            CHECK_FALSE(result.exception.IsValid());
+            CHECK(f.ledger.Unimplemented().empty());
         }
+    }
+}
+
+TEST_CASE("DVM-368 TextView pixel minimums preserve ROM fields and constrain both dimensions") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto root = f.vm.ProtectReferences(std::array{owner});
+        f.context->arsc.entries[1].bag.push_back({0x0101013f, 5, 0x5000, {}});  // minWidth=80dp
+        f.context->arsc.entries[1].bag.push_back({0x01010140, 5, 0x3000, {}});  // minHeight=48dp
+        const auto parser =
+            OpenAttributeXml(f, owner, AttributeXml({{{0x0101013f, 5, 0x5e00}, {0x01010140, 5, 0x2800}}}));
+        const auto parser_root = f.vm.ProtectReferences(std::array{parser});
+        const auto button = f.New("Landroid/widget/Button;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+                                  {VmValue::Ref(owner), VmValue::Ref(parser)});
+        const auto button_root = f.vm.ProtectReferences(std::array{button});
+        CHECK(f.On(button, "getMinWidth", "()I").AsInt() == 94);
+        CHECK(f.On(button, "getMinHeight", "()I").AsInt() == 40);
+        CHECK(f.On(button, "getMinimumWidth", "()I").AsInt() == 94);  // View also consumes the XML.
+        const auto measure = [&](int width, int height) {
+            f.On(button, "measure", "(II)V", {VmValue::Int(width), VmValue::Int(height)});
+            return std::array{f.On(button, "getMeasuredWidth", "()I").AsInt(),
+                              f.On(button, "getMeasuredHeight", "()I").AsInt()};
+        };
+        CHECK(measure(static_cast<int>(0x80000100U), static_cast<int>(0x80000100U)) == std::array{94, 40});
+        f.On(button, "setMinWidth", "(I)V", {VmValue::Int(120)});
+        f.On(button, "setMinHeight", "(I)V", {VmValue::Int(80)});
+        CHECK(f.On(button, "getMinimumWidth", "()I").AsInt() == 94);  // TextView setters leave View fields intact.
+        CHECK(measure(static_cast<int>(0x80000100U), static_cast<int>(0x80000100U)) == std::array{120, 80});
+        CHECK(measure(static_cast<int>(0x80000040U), static_cast<int>(0x80000020U)) == std::array{64, 32});
+        CHECK(measure(0x40000014, 0x4000000a) == std::array{20, 10});
+        f.On(button, "setMinWidth", "(I)V", {VmValue::Int(-1)});
+        f.On(button, "setMinHeight", "(I)V", {VmValue::Int(-1)});
+        CHECK(f.On(button, "getMinWidth", "()I").AsInt() == -1);
+        CHECK(f.On(button, "getMinHeight", "()I").AsInt() == -1);
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }

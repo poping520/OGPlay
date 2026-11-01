@@ -117,6 +117,8 @@ private:
     std::map<std::uint32_t, Bag> projection_;
     std::map<std::uint32_t, std::string> registered_names_;
     std::map<std::string, std::string, std::less<>> unregistered_;
+    // Unprojected ROM styles: name and whether the chain sets no projected attribute.
+    std::map<std::uint32_t, std::pair<std::string, bool>> rom_styles_;
     std::map<ThemeToken, State> themes_;
     std::set<std::uint32_t> drawable_attributes_;
     std::set<std::uint32_t> projected_reference_ids_;

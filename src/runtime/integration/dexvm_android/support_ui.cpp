@@ -307,7 +307,8 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
         if (record.object == context.activity) projection.window_visible = record.visible;
     std::set<dexvm::VmObjectRef> seen;
     const auto collect = [&](auto&& self, dexvm::VmObjectRef view, dexvm::VmObjectRef expected_parent,
-                             ui::UiNodeId parent, std::size_t depth, float ancestor_alpha) -> void {
+                             ui::UiNodeId parent, std::size_t depth, float ancestor_alpha,
+                             bool ancestor_visible) -> void {
         if (!seen.insert(view).second || depth > ui::UiTree::kMaxDepth || seen.size() >= ui::UiTree::kMaxNodes)
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Invalid Java View hierarchy"};
         const auto node = FindViewUiNode(context, view.Value());
@@ -355,7 +356,9 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
             entry.clip_to_padding = (flags & 2) != 0;
         }
         const auto kind = context.ui_tree.Get(*node)->kind;
-        if (prepare_render) {
+        const bool render_visible = ancestor_visible && visibility == ui::Visibility::Visible;
+        const bool render = prepare_render && render_visible;
+        if (render) {
             if (vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/widget/ProgressBar;"),
                                          vm.Model().ObjectClass(view)) &&
                 !context.view_adapter_references[view.Value()].progress_content_reported) {
@@ -408,10 +411,9 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
                 }
             }
         }
-        if (prepare_render && (kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton))
+        if (render && (kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton))
             android_intrinsics::ProjectAndroidImage(vm, context, view);
-        if (prepare_render &&
-            (kind == ui::UiClass::TextView || kind == ui::UiClass::Button || kind == ui::UiClass::EditText) &&
+        if (render && (kind == ui::UiClass::TextView || kind == ui::UiClass::Button || kind == ui::UiClass::EditText) &&
             visibility != ui::Visibility::Gone) {
             const auto& refs = context.view_adapter_references.at(view.Value());
             const auto cached = refs.text_measure_cache.find(entry.measured.width);
@@ -464,10 +466,10 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
         for (std::int32_t i = 0; i < count; ++i) {
             const auto child = vm.Model().GetObjectElement(children, i);
             if (!child.IsValid()) throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Null Java child"};
-            self(self, child, view, *node, depth + 1, *entry.alpha);
+            self(self, child, view, *node, depth + 1, *entry.alpha, render_visible);
         }
     };
-    collect(collect, root, dexvm::VmObjectRef{}, target.root, 0, 1.0F);
+    collect(collect, root, dexvm::VmObjectRef{}, target.root, 0, 1.0F, true);
     return projection;
 }
 }  // namespace
@@ -1382,6 +1384,9 @@ void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::
         if (state.bitmap_drawable) {
             const auto paint = CallAndroidMethod(vm, drawable, "getPaint", "()Landroid/graphics/Paint;").ref;
             if (CallAndroidMethod(vm, paint, "getFlags", "()I").AsInt() != 0x506 ||
+                CallAndroidMethod(vm, paint, "getAlpha", "()I").AsInt() != 255 ||
+                CallAndroidMethod(vm, paint, "getColorFilter", "()Landroid/graphics/ColorFilter;").ref.IsValid() ||
+                CallAndroidMethod(vm, drawable, "isAutoMirrored", "()Z").AsInt() != 0 ||
                 CallAndroidMethod(vm, paint, "getShader", "()Landroid/graphics/Shader;").ref.IsValid() ||
                 CallAndroidMethod(vm, paint, "getXfermode", "()Landroid/graphics/Xfermode;").ref.IsValid()) {
                 if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.image_leaf", 0);

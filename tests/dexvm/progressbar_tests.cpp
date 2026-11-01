@@ -78,7 +78,7 @@ TEST_CASE("DVM-365 ProgressBar ROM state measurement attachment and bounded reso
         const auto ctor =
             f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Landroid/widget/ProgressBar;"), "<init>",
                                       "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
-        for (int style : {0x01010078, 0x01010079, 0x0101007a}) {
+        for (int style : {0x01010079, 0x0101007a}) {
             const auto rejected = f.vm.Call(*ctor, std::array{VmValue::Ref(horizontal), VmValue::Ref(owner),
                                                               VmValue::Ref(VmObjectRef{}), VmValue::Int(style)});
             REQUIRE(rejected.exception.IsValid());
@@ -164,21 +164,13 @@ TEST_CASE("DVM-365 ProgressBar ROM state measurement attachment and bounded reso
     }
 }
 
-TEST_CASE("DVM-365 unsupported drawable construction and tiling seams fail explicitly") {
+TEST_CASE("DVM-365 arbitrary nested drawable XML remains rejected") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend, true);
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
         const auto view = f.New("Landroid/widget/ProgressBar;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto roots = f.vm.ProtectReferences(std::array{owner, view});
-        const auto type = f.linker.ResolveDescriptor("Landroid/widget/ProgressBar;");
-        const auto tile = f.linker.FindDirectMethod(
-            type, "tileify", "(Landroid/graphics/drawable/Drawable;Z)Landroid/graphics/drawable/Drawable;");
-        REQUIRE(tile);
-        const auto tiled =
-            f.vm.Call(*tile, std::array{VmValue::Ref(view), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
-        REQUIRE(tiled.exception.IsValid());
-        CHECK(tiled.exception_message == "ProgressBar tiled drawable is unsupported");
         const auto xml = f.linker.FindDirectMethod(
             f.linker.ResolveDescriptor("Landroid/graphics/drawable/Drawable;"), "createFromXmlInner",
             "(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)Landroid/graphics/drawable/Drawable;");
@@ -187,16 +179,113 @@ TEST_CASE("DVM-365 unsupported drawable construction and tiling seams fail expli
             *xml, std::array{VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
         REQUIRE(nested.exception.IsValid());
         CHECK(nested.exception_message == "nested drawable XML is unsupported");
-        const auto animation = f.vm.NewIntrinsicInstance("Landroid/graphics/drawable/AnimationDrawable;");
-        const auto animation_root = f.vm.ProtectReferences(std::array{animation});
-        const auto ctor = f.linker.FindDirectMethod(
-            f.linker.ResolveDescriptor("Landroid/graphics/drawable/AnimationDrawable;"), "<init>", "()V");
-        REQUIRE(ctor);
-        const auto rejected = f.vm.Call(*ctor, std::array{VmValue::Ref(animation)});
-        REQUIRE(rejected.exception.IsValid());
-        CHECK(rejected.exception_message == "frame animation drawable is unsupported");
-        const auto one = f.OnOutcome(animation, "setOneShot", "(Z)V", {VmValue::Int(1)});
-        REQUIRE(one.exception.IsValid());
-        CHECK(one.exception_message == "frame animation drawable is unsupported");
+    }
+}
+
+TEST_CASE("DVM-367 horizontal ROM ProgressBar retains layer IDs levels and static animation frames") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend, true);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto owner = f.New("Landroid/app/Activity;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.context->activity = owner;
+        auto& record = f.context->activity_stack.emplace_back();
+        record.object = owner;
+        record.visible = record.resumed = true;
+        f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x01030128)});
+        const auto bar =
+            f.New("Landroid/widget/ProgressBar;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                  {VmValue::Ref(owner), VmValue::Ref(VmObjectRef{}), VmValue::Int(0x01010078)});
+        const auto roots = f.vm.ProtectReferences(std::array{owner, bar});
+        CHECK(f.On(bar, "isIndeterminate", "()Z").AsInt() == 0);
+        const auto layers = f.On(bar, "getProgressDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
+        REQUIRE(f.linker.Class(f.model.ObjectClass(layers)).descriptor == "Landroid/graphics/drawable/LayerDrawable;");
+        CHECK(f.On(layers, "getNumberOfLayers", "()I").AsInt() == 3);
+        const std::array ids{0x01020000, 0x0102000f, 0x0102000d};
+        for (int i = 0; i < 3; ++i)
+            CHECK(f.On(layers, "getId", "(I)I", {VmValue::Int(i)}).AsInt() == ids[static_cast<std::size_t>(i)]);
+        f.On(bar, "setMax", "(I)V", {VmValue::Int(200)});
+        f.On(bar, "setProgress", "(I)V", {VmValue::Int(50)});
+        f.On(bar, "setSecondaryProgress", "(I)V", {VmValue::Int(120)});
+        for (int i : {1, 2}) {
+            const auto scale =
+                f.On(layers, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(i)}).ref;
+            CHECK(f.linker.Class(f.model.ObjectClass(scale)).descriptor == "Landroid/graphics/drawable/ScaleDrawable;");
+            CHECK(f.On(scale, "getLevel", "()I").AsInt() == (i == 1 ? 6000 : 2500));
+            const auto patch = f.On(scale, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
+            CHECK(f.linker.Class(f.model.ObjectClass(patch)).descriptor ==
+                  "Landroid/graphics/drawable/NinePatchDrawable;");
+            CHECK(f.On(patch, "getLevel", "()I").AsInt() == (i == 1 ? 6000 : 2500));
+        }
+        f.On(bar, "measure", "(II)V",
+             {VmValue::Int(static_cast<int>(0x80000100U)), VmValue::Int(static_cast<int>(0x80000100U))});
+        CHECK(f.On(bar, "getMeasuredHeight", "()I").AsInt() == 16);
+        const auto animation = f.On(bar, "getIndeterminateDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
+        REQUIRE(f.linker.Class(f.model.ObjectClass(animation)).descriptor ==
+                "Landroid/graphics/drawable/AnimationDrawable;");
+        CHECK(f.On(animation, "getNumberOfFrames", "()I").AsInt() == 8);
+        CHECK(f.On(animation, "getIntrinsicWidth", "()I").AsInt() == 0);
+        CHECK(f.On(animation, "getIntrinsicHeight", "()I").AsInt() == 0);
+        CHECK(f.On(animation, "getMinimumWidth", "()I").AsInt() == 0);
+        CHECK(f.On(animation, "getMinimumHeight", "()I").AsInt() == 0);
+        const auto padding = f.New("Landroid/graphics/Rect;");
+        CHECK(f.On(animation, "getPadding", "(Landroid/graphics/Rect;)Z", {VmValue::Ref(padding)}).AsInt() == 0);
+        CHECK(f.On(animation, "isOneShot", "()Z").AsInt() == 0);
+        CHECK(f.On(animation, "isRunning", "()Z").AsInt() == 0);
+        for (int i = 0; i < 8; ++i) {
+            CHECK(f.On(animation, "getDuration", "(I)I", {VmValue::Int(i)}).AsInt() == 50);
+            const auto clip =
+                f.On(animation, "getFrame", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(i)}).ref;
+            CHECK(f.linker.Class(f.model.ObjectClass(clip)).descriptor == "Landroid/graphics/drawable/ClipDrawable;");
+            CHECK(f.On(clip, "getLevel", "()I").AsInt() == 10000);
+        }
+        const auto read_ref = [&](VmObjectRef object, const char* name, const char* descriptor) {
+            const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, descriptor);
+            REQUIRE(field);
+            return VmObjectRef{f.model.InstanceSlots(object)[f.linker.Field(*field).slot].bits};
+        };
+        const auto clip = f.On(animation, "getFrame", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0)}).ref;
+        const auto clip_state = read_ref(clip, "mClipState", "Landroid/graphics/drawable/ClipDrawable$ClipState;");
+        const auto shape = read_ref(clip_state, "mDrawable", "Landroid/graphics/drawable/Drawable;");
+        const auto paint = f.On(shape, "getPaint", "()Landroid/graphics/Paint;").ref;
+        const auto shader = f.On(paint, "getShader", "()Landroid/graphics/Shader;").ref;
+        CHECK(f.linker.Class(f.model.ObjectClass(shader)).descriptor == "Landroid/graphics/BitmapShader;");
+        const auto bitmap = read_ref(shader, "mBitmap", "Landroid/graphics/Bitmap;");
+        REQUIRE(f.context->bitmaps.contains(bitmap.Value()));
+        CHECK(f.context->bitmaps.at(bitmap.Value()).width > 0);
+        CHECK(f.On(paint, "getAlpha", "()I").AsInt() == 255);
+        f.On(paint, "setAlpha", "(I)V", {VmValue::Int(128)});
+        const auto copy = f.New("Landroid/graphics/Paint;", "(Landroid/graphics/Paint;)V", {VmValue::Ref(paint)});
+        const auto copy_root = f.vm.ProtectReferences(std::array{copy});
+        CHECK(f.On(copy, "getAlpha", "()I").AsInt() == 128);
+        CHECK(f.On(copy, "getShader", "()Landroid/graphics/Shader;").ref == shader);
+        f.On(copy, "setAlpha", "(I)V", {VmValue::Int(7)});
+        CHECK(f.On(paint, "getAlpha", "()I").AsInt() == 128);
+        f.On(paint, "setAlpha", "(I)V", {VmValue::Int(255)});
+        const auto start = f.OnOutcome(animation, "start", "()V");
+        REQUIRE(start.exception.IsValid());
+        CHECK(f.On(animation, "isRunning", "()Z").AsInt() == 0);
+        f.On(bar, "setIndeterminate", "(Z)V", {VmValue::Int(1)});
+        CHECK(f.On(bar, "isIndeterminate", "()Z").AsInt() == 1);
+        f.On(bar, "setIndeterminate", "(Z)V", {VmValue::Int(0)});
+        CHECK(f.On(bar, "getProgress", "()I").AsInt() == 50);
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(bar)});
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly));
+        const auto round_shape = f.On(shape, "getShape", "()Landroid/graphics/drawable/shapes/Shape;").ref;
+        const auto path = read_ref(round_shape, "mPath", "Landroid/graphics/Path;");
+        const auto& commands = f.context->paths.at(path.Value()).commands;
+        REQUIRE(commands.size() == 1);
+        CHECK(commands[0].verb == DexVmAndroidContext::PathState::Verb::round_rect);
+        CHECK(commands[0].radii == std::array<float, 8>{5, 5, 5, 5, 5, 5, 5, 5});
+        static_cast<void>(f.vm.CollectGarbage("horizontal-drawable-tree"));
+        CHECK(f.model.IsValidRef(bitmap));
+        CHECK(f.model.IsValidRef(shader));
+        bool rejected_content = false;
+        for (const auto& hit : f.ledger.Unimplemented())
+            if (hit.id == "dexvm.progressbar_draw") rejected_content = true;
+        CHECK(rejected_content);
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK(hit.id != "dexvm.progressbar_tiling");
     }
 }

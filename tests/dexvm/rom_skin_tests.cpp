@@ -741,7 +741,14 @@ TEST_CASE("DVM-352 Drawable subclasses never silently inherit unsupported state 
                 REQUIRE(slot);
                 const auto& target = f.linker.Method(f.linker.Class(type).vtable[*slot]);
                 CHECK(f.linker.Class(target.owner).descriptor != "Landroid/graphics/drawable/Drawable;");
-                // Skin opacity is implemented against decoded backing; all state mutators above are rejected.
+                // DVM-367 admits these ROM state methods; raw unconstructed instances have no state.
+                const auto kind = std::string_view(owner), method = std::string_view(name);
+                if ((kind == "BitmapDrawable" &&
+                     (method == "mutate" || method == "getAlpha" || method == "setAlpha")) ||
+                    (kind == "ShapeDrawable" &&
+                     (method == "getAlpha" || method == "setAlpha" || method == "getOpacity")))
+                    continue;
+                // Skin opacity is implemented against decoded backing.
                 if (std::string_view(name) == "getOpacity" &&
                     (std::string_view(owner) == "DrawableContainer" || std::string_view(owner) == "NinePatchDrawable" ||
                      std::string_view(owner) == "StateListDrawable"))
@@ -967,71 +974,77 @@ TEST_CASE("DVM-355 visible scrollbar projection records the gap without changing
     }
 }
 
-TEST_CASE("DVM-363 ImageButton loads sealed btn_default and runtime selectors keep ordered state") {
+TEST_CASE("DVM-363 buttons load sealed classic and Holo skins and selectors keep ordered state") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend);
-        const auto owner = Owner(f, true);
-        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
-        f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x01030007)});  // Theme.NoTitleBar.Fullscreen
-        const auto button =
-            f.New("Landroid/widget/ImageButton;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-        const auto button_root = f.vm.ProtectReferences(std::array{button});
-        const auto background = f.On(button, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref;
-        REQUIRE(background.IsValid());
-        CHECK(f.linker.Class(f.model.ObjectClass(background)).descriptor ==
-              "Landroid/graphics/drawable/StateListDrawable;");
-        CHECK(f.context->ui_drawables.at(background.Value()).resource_id == 0x01080004);
-        CHECK(f.On(background, "getStateCount", "()I").AsInt() > 1);
-        for (const auto child : f.context->ui_drawables.at(background.Value()).skin_children) {
-            CHECK(f.linker.Class(f.model.ObjectClass(child)).descriptor ==
-                  "Landroid/graphics/drawable/NinePatchDrawable;");
-            REQUIRE(f.context->ui_drawables.at(child.Value()).leaf_pixels);
-            CHECK(f.context->ui_drawables.at(child.Value()).leaf_pixels->nine_patch);
+        for (bool holo : {false, true}) {
+            ContainerVm f(backend);
+            const auto owner = Owner(f, true);
+            const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+            f.On(owner, "setTheme", "(I)V",
+                 {VmValue::Int(holo ? 0x01030128 : 0x01030007)});  // Theme.NoTitleBar.Fullscreen
+            const auto button = f.New(holo ? "Landroid/widget/Button;" : "Landroid/widget/ImageButton;",
+                                      "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+            const auto button_root = f.vm.ProtectReferences(std::array{button});
+            const auto background = f.On(button, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref;
+            REQUIRE(background.IsValid());
+            CHECK(f.linker.Class(f.model.ObjectClass(background)).descriptor ==
+                  "Landroid/graphics/drawable/StateListDrawable;");
+            CHECK(f.context->ui_drawables.at(background.Value()).resource_id == (holo ? 0x0108011d : 0x01080004));
+            CHECK(f.On(background, "getStateCount", "()I").AsInt() > 1);
+            for (const auto child : f.context->ui_drawables.at(background.Value()).skin_children) {
+                CHECK(f.linker.Class(f.model.ObjectClass(child)).descriptor ==
+                      "Landroid/graphics/drawable/NinePatchDrawable;");
+                REQUIRE(f.context->ui_drawables.at(child.Value()).leaf_pixels);
+                CHECK(f.context->ui_drawables.at(child.Value()).leaf_pixels->nine_patch);
+            }
+            const auto selector = f.New("Landroid/graphics/drawable/StateListDrawable;");
+            const auto selector_root = f.vm.ProtectReferences(std::array{selector});
+            const auto first = f.New("Landroid/graphics/drawable/ColorDrawable;", "(I)V", {VmValue::Int(0)});
+            const auto first_root = f.vm.ProtectReferences(std::array{first});
+            const auto second = f.New("Landroid/graphics/drawable/ColorDrawable;", "(I)V",
+                                      {VmValue::Int(static_cast<std::int32_t>(0xff123456U))});
+            const auto second_root = f.vm.ProtectReferences(std::array{second});
+            const auto states =
+                f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 3);
+            const auto empty =
+                f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 0);
+            const auto arrays_root = f.vm.ProtectReferences(std::array{states, empty});
+            f.model.SetPrimitiveElement(states, 0, 0x010100a7);  // state_pressed
+            f.model.SetPrimitiveElement(states, 1, 0);           // API19 terminator ignores later values
+            f.model.SetPrimitiveElement(states, 2, 0x0101009e);
+            f.On(selector, "addState", "([ILandroid/graphics/drawable/Drawable;)V",
+                 {VmValue::Ref(states), VmValue::Ref(first)});
+            f.On(selector, "addState", "([ILandroid/graphics/drawable/Drawable;)V",
+                 {VmValue::Ref(empty), VmValue::Ref(second)});
+            f.On(selector, "addState", "([ILandroid/graphics/drawable/Drawable;)V",
+                 {VmValue::Ref(empty), VmValue::Ref(VmObjectRef{})});
+            CHECK(f.On(selector, "getStateCount", "()I").AsInt() == 2);
+            CHECK(f.On(selector, "getStateSet", "(I)[I", {VmValue::Int(0)}).ref == states);
+            CHECK(
+                f.On(selector, "getStateDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0)}).ref ==
+                first);
+            CHECK(f.On(selector, "getStateDrawableIndex", "([I)I", {VmValue::Ref(states)}).AsInt() == 0);
+            CHECK(f.On(selector, "getStateDrawableIndex", "([I)I", {VmValue::Ref(empty)}).AsInt() == 1);
+            f.On(selector, "setState", "([I)Z", {VmValue::Ref(states)});
+            CHECK(f.On(selector, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref == first);
+            f.On(selector, "setState", "([I)Z", {VmValue::Ref(empty)});
+            CHECK(f.On(selector, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref == second);
+            f.model.SetPrimitiveElement(states, 0, static_cast<std::uint32_t>(-0x010100a7));
+            CHECK(f.On(selector, "getStateDrawableIndex", "([I)I", {VmValue::Ref(empty)}).AsInt() == 0);
+            f.On(button, "setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(selector)});
+            CHECK(f.On(button, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref == selector);
+            f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(button)});
+            f.On(button, "invalidate", "()V");
+            REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                             AndroidUiTraversalPhase::ResolveOnly, ui::Size{100, 100}));
+            const auto projection = f.context->ui_tree.PublishedProjection();
+            const auto node = projection->Get(*FindViewUiNode(*f.context, button.Value()));
+            CHECK(node->background_resource_id == 0);
+            CHECK_FALSE(node->background_color.has_value());
+            const auto gaps = f.ledger.Unimplemented();
+            CHECK(std::any_of(gaps.begin(), gaps.end(),
+                              [](const auto& gap) { return gap.id == "dexvm.view_background_draw"; }));
         }
-        const auto selector = f.New("Landroid/graphics/drawable/StateListDrawable;");
-        const auto selector_root = f.vm.ProtectReferences(std::array{selector});
-        const auto first = f.New("Landroid/graphics/drawable/ColorDrawable;", "(I)V", {VmValue::Int(0)});
-        const auto first_root = f.vm.ProtectReferences(std::array{first});
-        const auto second = f.New("Landroid/graphics/drawable/ColorDrawable;", "(I)V",
-                                  {VmValue::Int(static_cast<std::int32_t>(0xff123456U))});
-        const auto second_root = f.vm.ProtectReferences(std::array{second});
-        const auto states = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 3);
-        const auto empty = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 0);
-        const auto arrays_root = f.vm.ProtectReferences(std::array{states, empty});
-        f.model.SetPrimitiveElement(states, 0, 0x010100a7);  // state_pressed
-        f.model.SetPrimitiveElement(states, 1, 0);           // API19 terminator ignores later values
-        f.model.SetPrimitiveElement(states, 2, 0x0101009e);
-        f.On(selector, "addState", "([ILandroid/graphics/drawable/Drawable;)V",
-             {VmValue::Ref(states), VmValue::Ref(first)});
-        f.On(selector, "addState", "([ILandroid/graphics/drawable/Drawable;)V",
-             {VmValue::Ref(empty), VmValue::Ref(second)});
-        f.On(selector, "addState", "([ILandroid/graphics/drawable/Drawable;)V",
-             {VmValue::Ref(empty), VmValue::Ref(VmObjectRef{})});
-        CHECK(f.On(selector, "getStateCount", "()I").AsInt() == 2);
-        CHECK(f.On(selector, "getStateSet", "(I)[I", {VmValue::Int(0)}).ref == states);
-        CHECK(f.On(selector, "getStateDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0)}).ref ==
-              first);
-        CHECK(f.On(selector, "getStateDrawableIndex", "([I)I", {VmValue::Ref(states)}).AsInt() == 0);
-        CHECK(f.On(selector, "getStateDrawableIndex", "([I)I", {VmValue::Ref(empty)}).AsInt() == 1);
-        f.On(selector, "setState", "([I)Z", {VmValue::Ref(states)});
-        CHECK(f.On(selector, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref == first);
-        f.On(selector, "setState", "([I)Z", {VmValue::Ref(empty)});
-        CHECK(f.On(selector, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref == second);
-        f.model.SetPrimitiveElement(states, 0, static_cast<std::uint32_t>(-0x010100a7));
-        CHECK(f.On(selector, "getStateDrawableIndex", "([I)I", {VmValue::Ref(empty)}).AsInt() == 0);
-        f.On(button, "setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(selector)});
-        CHECK(f.On(button, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref == selector);
-        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(button)});
-        f.On(button, "invalidate", "()V");
-        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
-                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{100, 100}));
-        const auto projection = f.context->ui_tree.PublishedProjection();
-        const auto node = projection->Get(*FindViewUiNode(*f.context, button.Value()));
-        CHECK(node->background_resource_id == 0);
-        CHECK_FALSE(node->background_color.has_value());
-        const auto gaps = f.ledger.Unimplemented();
-        CHECK(std::any_of(gaps.begin(), gaps.end(),
-                          [](const auto& gap) { return gap.id == "dexvm.view_background_draw"; }));
     }
 }
 

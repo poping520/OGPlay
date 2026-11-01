@@ -268,14 +268,7 @@
           "signature": "tileify(Landroid/graphics/drawable/Drawable;Z)Landroid/graphics/drawable/Drawable;",
           "flags": 2,
           "body_sha256": "7551c20fe2cd619bac03008cac81d2503f8ed000c86ba65cfe8e284aa4dcda8b",
-          "source": "overlay",
-          "review": {
-            "reason": "DVM-365 bounded ROM ProgressBar; unsupported tiled progress drawing",
-            "inputs": "receiver and non-null progress Drawable",
-            "outputs": "ledger and UnsupportedOperationException",
-            "state_owner": "ROM fields only; no host progress state",
-            "failure_boundary": "layer/clip/shape tiling and guest drawing unavailable; never reports success"
-          }
+          "source": "rom"
         },
         {
           "signature": "tileifyIndeterminate(Landroid/graphics/drawable/Drawable;)Landroid/graphics/drawable/Drawable;",
@@ -311,7 +304,7 @@
           "signature": "getDrawableShape()Landroid/graphics/drawable/shapes/Shape;",
           "flags": 0,
           "body_sha256": "8afba9486c3a33e250ca2791715267b656890caa30783c5d97aee3bdbb467aa8",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getIndeterminateDrawable()Landroid/graphics/drawable/Drawable;",
@@ -899,26 +892,19 @@
           "signature": "<init>()V",
           "flags": 65537,
           "body_sha256": "1ac8e12c3818d7465838ef12e9b538e3ebf9384400842d3a8717592ad1673be4",
-          "source": "overlay",
-          "review": {
-            "reason": "DVM-365 explicit rejection for retained frame-animation branch of ROM tileifyIndeterminate",
-            "inputs": "original frame-animation constructor or one-shot configuration arguments",
-            "outputs": "ledger and UnsupportedOperationException",
-            "state_owner": "no state created; full ROM shape only",
-            "failure_boundary": "frame animation construction/configuration never succeeds; no scheduling or guest drawing"
-          }
+          "source": "rom"
         },
         {
           "signature": "<init>(Landroid/graphics/drawable/AnimationDrawable$AnimationState;Landroid/content/res/Resources;)V",
           "flags": 65538,
           "body_sha256": "451dfeedee24e49fe79f3f16933849217c98612e0a9fb03c74d36a6f560fcae8",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "<init>(Landroid/graphics/drawable/AnimationDrawable$AnimationState;Landroid/content/res/Resources;Landroid/graphics/drawable/AnimationDrawable$1;)V",
           "flags": 69632,
           "body_sha256": "136b06418f4e17777caecc853208bfd81fd929efed957ca40145db5e79ad306f",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "nextFrame(Z)V",
@@ -930,49 +916,56 @@
           "signature": "setFrame(IZZ)V",
           "flags": 2,
           "body_sha256": "27b87c8dd8e11d97fa28ac85608e9c0c387fc3180529b738da9fcb4b9c3d974b",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-367 static ROM frame selection branch",
+            "inputs": "frame index, unschedule, animate",
+            "outputs": "ROM current index and selected child; UOE before animate=true",
+            "state_owner": "ROM AnimationState and DrawableContainer fields",
+            "failure_boundary": "no frame scheduling, start/run or guest draw"
+          }
         },
         {
           "signature": "addFrame(Landroid/graphics/drawable/Drawable;I)V",
           "flags": 1,
           "body_sha256": "f6ddbd6e9c0e5a88263afab8a25d83ea9963b21d78432f873d8c748666c22ac3",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getDuration(I)I",
           "flags": 1,
           "body_sha256": "48540961f78bd8150b3f5166b309108fc3a4da2f1511f90d8b8768041ce1059b",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getFrame(I)Landroid/graphics/drawable/Drawable;",
           "flags": 1,
           "body_sha256": "9e700e8551649e9893aaf75277d797fa70bc573477a1fa1bb047ea33f9450227",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getNumberOfFrames()I",
           "flags": 1,
           "body_sha256": "9196443627185fd352d5fb04ece5ac410ab7c80dbeb9180fe4ce890e4fb6f2ca",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "inflate(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)V",
           "flags": 1,
           "body_sha256": "fddeb12e02fb4ccac5733dbb86be06b88d3c4b402cf034f4446dd0c7155fb9a3",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "isOneShot()Z",
           "flags": 1,
           "body_sha256": "8bbb109deecfc9fa3a85775128322b4de1d9ffbfaff368068f578672e68e8cc0",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "isRunning()Z",
           "flags": 1,
           "body_sha256": "6ea57bcbcb012493413322120e3c4aa0fb09289e2b9230ecb7bf423f2ece8dcd",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "mutate()Landroid/graphics/drawable/Drawable;",
@@ -990,20 +983,13 @@
           "signature": "setOneShot(Z)V",
           "flags": 1,
           "body_sha256": "07f2a163ebfd9674bf0b57c58e412c2c33b0cb72356f3888c1174a34f72ff2dd",
-          "source": "overlay",
-          "review": {
-            "reason": "DVM-365 explicit rejection for retained frame-animation branch of ROM tileifyIndeterminate",
-            "inputs": "original frame-animation constructor or one-shot configuration arguments",
-            "outputs": "ledger and UnsupportedOperationException",
-            "state_owner": "no state created; full ROM shape only",
-            "failure_boundary": "frame animation construction/configuration never succeeds; no scheduling or guest drawing"
-          }
+          "source": "rom"
         },
         {
           "signature": "setVisible(ZZ)Z",
           "flags": 1,
           "body_sha256": "db27662e539451549ec4fdf9c4348e63c4cb8ae70f5c9f29e4f57fb42164ee29",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "start()V",
@@ -1015,13 +1001,13 @@
           "signature": "stop()V",
           "flags": 1,
           "body_sha256": "9350e69c5c5447430423ac76e8296210625a63cecaad3aa5972b5bdac2d8c8cc",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "unscheduleSelf(Ljava/lang/Runnable;)V",
           "flags": 1,
           "body_sha256": "0b1463d2b6c74dbcc8fa5438e793c9b83eda5e1f66110638991bbed7c014a264",
-          "source": "failure"
+          "source": "rom"
         }
       ]
     }

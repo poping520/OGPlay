@@ -747,9 +747,9 @@ Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
     builder.StaticMethod(
         "createFromXmlInner",
         "(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)Landroid/graphics/drawable/Drawable;",
-        [](dx::IntrinsicContext& call) -> dx::VmValue {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "nested drawable XML is unsupported"};
+        [context](dx::IntrinsicContext& call) -> dx::VmValue {
+            return dx::VmValue::Ref(InflateSealedRomDrawable(call, context, call.arguments[0].ref,
+                                                             call.arguments[1].ref, call.arguments[2].ref));
         });
     const auto dimension = [context](const bool width) {
         return dx::IntrinsicHandler([context, width](dx::IntrinsicContext& call) {
@@ -868,6 +868,8 @@ Decl Declare_android_graphics_Paint(const Context& context) {
         const auto face = builder.BoundInstanceField("mTypeface", "Landroid/graphics/Typeface;", dx::kAccPrivate);
         const auto shader = builder.BoundInstanceField("mShader", "Landroid/graphics/Shader;", dx::kAccPrivate);
         const auto xfer = builder.BoundInstanceField("mXfermode", "Landroid/graphics/Xfermode;", dx::kAccPrivate);
+        const auto color_filter =
+            builder.BoundInstanceField("mColorFilter", "Landroid/graphics/ColorFilter;", dx::kAccPrivate);
         const auto state = [context](dx::IntrinsicContext& call) -> DexVmAndroidContext::PaintMeasureState& {
             const auto found = context->paint_measure_states.find(call.receiver.Value());
             if (found == context->paint_measure_states.end())
@@ -887,6 +889,45 @@ Decl Declare_android_graphics_Paint(const Context& context) {
             return dx::VmValue::Void();
         };
         builder.Constructor("()V", init).Constructor("(I)V", init);
+        builder.Constructor("(Landroid/graphics/Paint;)V",
+                            [context, face, shader, xfer, color_filter](dx::IntrinsicContext& c) {
+                                const auto source = c.arguments[0].ref;
+                                if (!source.IsValid())
+                                    throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "Paint source is null"};
+                                const auto found = context->paint_measure_states.find(source.Value());
+                                if (found == context->paint_measure_states.end())
+                                    UnsupportedPaint(c, "Paint source requires construction");
+                                DexVmAndroidContext::PaintMeasureState copy;
+                                copy.flags = found->second.flags;
+                                copy.text_size = found->second.text_size;
+                                copy.alpha = found->second.alpha;
+                                const dx::IntrinsicCall fields(c);
+                                for (const auto field : {face, shader, xfer, color_filter})
+                                    fields.SetRef(field, fields.GetRef(field, source));
+                                context->paint_measure_states.insert_or_assign(c.receiver.Value(), std::move(copy));
+                                return dx::VmValue::Void();
+                            });
+        builder.VirtualMethod(
+            "getAlpha", "()I", [state](dx::IntrinsicContext& c) { return dx::VmValue::Int(state(c).alpha); },
+            dx::kAccPublic | dx::kAccNative);
+        builder.VirtualMethod(
+            "setAlpha", "(I)V",
+            [state](dx::IntrinsicContext& c) {
+                const auto value = c.arguments[0].AsInt();
+                if (value < 0 || value > 255 || state(c).text_view_owned)
+                    UnsupportedPaint(c, "Paint alpha outside bounded drawable state");
+                state(c).alpha = value;
+                return dx::VmValue::Void();
+            },
+            dx::kAccPublic | dx::kAccNative);
+        builder.VirtualMethod("setColorFilter", "(Landroid/graphics/ColorFilter;)Landroid/graphics/ColorFilter;",
+                              [state, color_filter](dx::IntrinsicContext& c) {
+                                  static_cast<void>(state(c));
+                                  if (c.arguments[0].ref.IsValid())
+                                      UnsupportedPaint(c, "Paint ColorFilter is unsupported");
+                                  dx::IntrinsicCall(c).SetRef(color_filter, dx::VmObjectRef{});
+                                  return dx::VmValue::Ref(dx::VmObjectRef{});
+                              });
         for (const auto [name, signature, field] :
              {std::tuple{"setShader", "(Landroid/graphics/Shader;)Landroid/graphics/Shader;", shader},
               std::tuple{"setXfermode", "(Landroid/graphics/Xfermode;)Landroid/graphics/Xfermode;", xfer}}) {
@@ -1310,6 +1351,44 @@ Decl Declare_android_graphics_Path(const Context& context) {
                  call.arguments[2].AsFloat(), call.arguments[3].AsFloat(), direction});
             return dx::VmValue::Void();
         });
+    builder.VirtualMethod(
+        "addRoundRect", "(Landroid/graphics/RectF;[FLandroid/graphics/Path$Direction;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto rect = call.arguments[0].ref, radii = call.arguments[1].ref, direction = call.arguments[2].ref;
+            if (!rect.IsValid() || !radii.IsValid() || !direction.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "round rect arguments"};
+            if (call.vm.Model().ArrayLength(radii) < 8)
+                throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "radii[] needs 8 values"};
+            DexVmAndroidContext::PathState::Command command;
+            command.verb = DexVmAndroidContext::PathState::Verb::round_rect;
+            std::array<float*, 4> bounds{&command.x1, &command.y1, &command.x2, &command.y2};
+            const std::array names{"left", "top", "right", "bottom"};
+            for (std::size_t i = 0; i < names.size(); ++i) {
+                const auto field =
+                    call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(rect), names[i], "F");
+                *bounds[i] =
+                    std::bit_cast<float>(call.vm.Model().InstanceSlots(rect)[call.vm.Linker().Field(*field).slot].bits);
+            }
+            for (std::size_t i = 0; i < command.radii.size(); ++i)
+                command.radii[i] = std::bit_cast<float>(
+                    static_cast<std::uint32_t>(call.vm.Model().GetPrimitiveElement(radii, static_cast<int>(i))));
+            command.direction = ReadIntField(call.vm, direction, "nativeInt");
+            const bool finite_bounds =
+                std::all_of(bounds.begin(), bounds.end(), [](const auto* value) { return std::isfinite(*value); });
+            if (!finite_bounds || command.x1 >= command.x2 || command.y1 >= command.y2 || command.direction < 0 ||
+                command.direction > 1 || std::any_of(command.radii.begin(), command.radii.end(), [](float value) {
+                    return !std::isfinite(value) || value < 0;
+                })) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.progressbar_tiling", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "round rect outside static finite path domain"};
+            }
+            const auto path = context->paths.find(call.receiver.Value());
+            if (path == context->paths.end())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Path requires construction"};
+            path->second.commands.push_back(command);
+            return dx::VmValue::Void();
+        });
     return std::move(builder).Build();
 }
 
@@ -1514,8 +1593,27 @@ void SkinInit(dx::IntrinsicContext& call, const Context& context) {
     context->ui_drawables[call.receiver.Value()].rom_skin = true;
 }
 
+dx::VmObjectRef DrawableRef(dx::IntrinsicContext& call, dx::VmObjectRef object, const char* name,
+                            const char* descriptor) {
+    const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(object), name, descriptor);
+    if (!field) throw std::logic_error("ROM Drawable field unavailable");
+    call.vm.RequireImplementedField(*field);
+    return dx::VmObjectRef{call.vm.Model().InstanceSlots(object)[call.vm.Linker().Field(*field).slot].bits};
+}
+
+dx::VmObjectRef RomContainerState(dx::IntrinsicContext& call) {
+    return DrawableRef(call, call.receiver, "mDrawableContainerState",
+                       "Landroid/graphics/drawable/DrawableContainer$DrawableContainerState;");
+}
+
+dx::VmObjectRef RomContainerCurrent(dx::IntrinsicContext& call) {
+    return DrawableRef(call, call.receiver, "mCurrDrawable", "Landroid/graphics/drawable/Drawable;");
+}
+
 void AddSkinQueries(dx::IntrinsicClassBuilder& b, const Context& context, bool container) {
     b.VirtualMethod("getOpticalInsets", "()Landroid/graphics/Insets;", [context, container](dx::IntrinsicContext& c) {
+        if (container && RomContainerState(c).IsValid())
+            return dx::VmValue::Ref(DrawableRef(c, c.receiver, "mInsets", "Landroid/graphics/Insets;"));
         const auto& state = Skin(c, context);
         if (container && state.skin_current >= 0)
             return CallAndroidMethod(c.vm, state.skin_children.at(static_cast<std::size_t>(state.skin_current)),
@@ -1535,6 +1633,15 @@ void AddSkinQueries(dx::IntrinsicClassBuilder& b, const Context& context, bool c
         return out.value;
     });
     b.VirtualMethod("getOpacity", "()I", [context, container](dx::IntrinsicContext& c) {
+        if (container) {
+            const auto state = RomContainerState(c);
+            if (state.IsValid()) {
+                const auto current = RomContainerCurrent(c);
+                if (!current.IsValid() || !CallAndroidMethod(c.vm, current, "isVisible", "()Z").AsInt())
+                    return dx::VmValue::Int(-2);
+                return CallAndroidMethod(c.vm, state, "getOpacity", "()I");
+            }
+        }
         const auto& state = Skin(c, context);
         if (container) {
             if (state.skin_current < 0) return dx::VmValue::Int(-2);
@@ -1551,7 +1658,30 @@ void AddSkinQueries(dx::IntrinsicClassBuilder& b, const Context& context, bool c
             if (state.leaf_pixels->rgba8[i] != 255) return dx::VmValue::Int(-3);
         return dx::VmValue::Int(-1);
     });
-    b.VirtualMethod("getPadding", "(Landroid/graphics/Rect;)Z", [context](dx::IntrinsicContext& call) {
+    b.VirtualMethod("getPadding", "(Landroid/graphics/Rect;)Z", [context, container](dx::IntrinsicContext& call) {
+        if (container) {
+            const auto state = RomContainerState(call);
+            if (state.IsValid()) {
+                const auto padding =
+                    CallAndroidMethod(call.vm, state, "getConstantPadding", "()Landroid/graphics/Rect;").ref;
+                const auto padding_root = call.vm.ProtectReferences(std::array{padding});
+                if (padding.IsValid()) {
+                    static_cast<void>(CallAndroidMethod(call.vm, call.arguments[0].ref, "set",
+                                                        "(Landroid/graphics/Rect;)V", {dx::VmValue::Ref(padding)}));
+                    return dx::VmValue::Int(
+                        (ReadIntField(call.vm, padding, "left") | ReadIntField(call.vm, padding, "top") |
+                         ReadIntField(call.vm, padding, "right") | ReadIntField(call.vm, padding, "bottom")) != 0);
+                }
+                const auto current = RomContainerCurrent(call);
+                if (current.IsValid())
+                    return CallAndroidMethod(call.vm, current, "getPadding", "(Landroid/graphics/Rect;)Z",
+                                             {call.arguments[0]});
+                static_cast<void>(CallAndroidMethod(
+                    call.vm, call.arguments[0].ref, "set", "(IIII)V",
+                    {dx::VmValue::Int(0), dx::VmValue::Int(0), dx::VmValue::Int(0), dx::VmValue::Int(0)}));
+                return dx::VmValue::Int(0);
+            }
+        }
         const auto& state = Skin(call, context);
         const auto rect = call.arguments[0].ref;
         if (!rect.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "padding rect == null"};
@@ -1567,6 +1697,19 @@ void AddSkinQueries(dx::IntrinsicClassBuilder& b, const Context& context, bool c
     });
     for (const auto width : {true, false}) {
         const auto size = [context, width, container](dx::IntrinsicContext& call) {
+            if (container) {
+                const auto state = RomContainerState(call);
+                if (state.IsValid()) {
+                    if (CallAndroidMethod(call.vm, state, "isConstantSize", "()Z").AsInt())
+                        return CallAndroidMethod(call.vm, state, width ? "getConstantWidth" : "getConstantHeight",
+                                                 "()I");
+                    const auto current = RomContainerCurrent(call);
+                    return current.IsValid()
+                               ? CallAndroidMethod(call.vm, current, width ? "getIntrinsicWidth" : "getIntrinsicHeight",
+                                                   "()I")
+                               : dx::VmValue::Int(-1);
+                }
+            }
             const auto& state = Skin(call, context);
             if (container && state.skin_current >= 0) {
                 const auto child = state.skin_children.at(static_cast<std::size_t>(state.skin_current));
@@ -1575,8 +1718,23 @@ void AddSkinQueries(dx::IntrinsicClassBuilder& b, const Context& context, bool c
             return dx::VmValue::Int(width ? state.skin_width : state.skin_height);
         };
         b.VirtualMethod(width ? "getIntrinsicWidth" : "getIntrinsicHeight", "()I", size);
-        b.VirtualMethod(width ? "getMinimumWidth" : "getMinimumHeight", "()I",
-                        [size](dx::IntrinsicContext& c) { return dx::VmValue::Int(std::max(0, size(c).AsInt())); });
+        b.VirtualMethod(
+            width ? "getMinimumWidth" : "getMinimumHeight", "()I", [size, container, width](dx::IntrinsicContext& c) {
+                if (container) {
+                    const auto state = RomContainerState(c);
+                    if (state.IsValid()) {
+                        if (CallAndroidMethod(c.vm, state, "isConstantSize", "()Z").AsInt())
+                            return CallAndroidMethod(
+                                c.vm, state, width ? "getConstantMinimumWidth" : "getConstantMinimumHeight", "()I");
+                        const auto current = RomContainerCurrent(c);
+                        return current.IsValid()
+                                   ? CallAndroidMethod(c.vm, current, width ? "getMinimumWidth" : "getMinimumHeight",
+                                                       "()I")
+                                   : dx::VmValue::Int(0);
+                    }
+                }
+                return dx::VmValue::Int(std::max(0, size(c).AsInt()));
+            });
     }
 }
 }  // namespace
@@ -1593,6 +1751,14 @@ Decl Declare_android_graphics_drawable_DrawableContainer(const Context& context)
     b.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
     b.OverrideMethod("getAlpha", "()I", reject_state);
     b.OverrideMethod("setAlpha", "(I)V", reject_state);
+    b.VirtualMethod(
+        "animate", "(Z)V",
+        [](dx::IntrinsicContext& c) -> dx::VmValue {
+            if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.progressbar_tiling", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "Drawable fade animation is unsupported"};
+        },
+        0);
     AddSkinQueries(b, context, true);
     b.VirtualMethod("setVisible", "(ZZ)Z", [context](dx::IntrinsicContext& c) {
         // A virtual base method is resolved explicitly to preserve its ROM field protocol.
@@ -1605,8 +1771,15 @@ Decl Declare_android_graphics_drawable_DrawableContainer(const Context& context)
         if (out.exception.IsValid())
             throw dx::VmJavaThrow{c.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
                                   out.exception};
-        for (const auto child : Skin(c, context).skin_children)
-            static_cast<void>(CallAndroidMethod(c.vm, child, "setVisible", "(ZZ)Z", {c.arguments[0], c.arguments[1]}));
+        if (RomContainerState(c).IsValid()) {
+            const auto child = RomContainerCurrent(c);
+            if (child.IsValid())
+                static_cast<void>(
+                    CallAndroidMethod(c.vm, child, "setVisible", "(ZZ)Z", {c.arguments[0], c.arguments[1]}));
+        } else
+            for (const auto child : Skin(c, context).skin_children)
+                static_cast<void>(
+                    CallAndroidMethod(c.vm, child, "setVisible", "(ZZ)Z", {c.arguments[0], c.arguments[1]}));
         return out.value;
     });
     // Drawable.Callback as in the ROM: only the current child reaches the owner's
@@ -1616,10 +1789,14 @@ Decl Declare_android_graphics_drawable_DrawableContainer(const Context& context)
               {"scheduleDrawable", "(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;J)V"},
               {"unscheduleDrawable", "(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;)V"}}}) {
         b.VirtualMethod(name, sig, [context, name, sig](dx::IntrinsicContext& c) {
-            const auto& s = Skin(c, context);
-            if (s.skin_current < 0 ||
-                s.skin_children.at(static_cast<std::size_t>(s.skin_current)).Value() != c.arguments[0].ref.Value())
-                return dx::VmValue::Void();
+            if (RomContainerState(c).IsValid()) {
+                if (RomContainerCurrent(c) != c.arguments[0].ref) return dx::VmValue::Void();
+            } else {
+                const auto& s = Skin(c, context);
+                if (s.skin_current < 0 ||
+                    s.skin_children.at(static_cast<std::size_t>(s.skin_current)) != c.arguments[0].ref)
+                    return dx::VmValue::Void();
+            }
             const auto callback =
                 CallAndroidMethod(c.vm, c.receiver, "getCallback", "()Landroid/graphics/drawable/Drawable$Callback;")
                     .ref;
@@ -1631,6 +1808,7 @@ Decl Declare_android_graphics_drawable_DrawableContainer(const Context& context)
         });
     }
     b.VirtualMethod("getCurrent", "()Landroid/graphics/drawable/Drawable;", [context](dx::IntrinsicContext& c) {
+        if (RomContainerState(c).IsValid()) return dx::VmValue::Ref(RomContainerCurrent(c));
         const auto& s = Skin(c, context);
         return dx::VmValue::Ref(s.skin_current < 0 ? dx::VmObjectRef{}
                                                    : s.skin_children.at(static_cast<std::size_t>(s.skin_current)));
@@ -1653,6 +1831,20 @@ Decl Declare_android_graphics_drawable_NinePatchDrawable(const Context& context)
     b.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
     b.OverrideMethod("getAlpha", "()I", reject_state);
     b.OverrideMethod("setAlpha", "(I)V", reject_state);
+    b.VirtualMethod("getChangingConfigurations", "()I", [context](dx::IntrinsicContext& c) {
+        // Sealed host skins have no mutable ConstantState configuration producer.
+        // Resource loading contributes zero flags; the base ROM field remains observable.
+        static_cast<void>(Skin(c, context));
+        return dx::VmValue::Int(ReadIntField(c.vm, c.receiver, "mChangingConfigurations"));
+    });
+    b.VirtualMethod("setAutoMirrored", "(Z)V", [context](dx::IntrinsicContext& c) {
+        static_cast<void>(Skin(c, context));
+        if (c.arguments[0].AsInt()) {
+            if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "ROM skin mirroring is unsupported"};
+        }
+        return dx::VmValue::Void();
+    });
     AddSkinQueries(b, context, false);
     return std::move(b).Build();
 }
@@ -1764,14 +1956,31 @@ Decl Declare_android_graphics_drawable_StateListDrawable(const Context& context)
 
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_graphics_drawable_AnimationDrawable(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/AnimationDrawable;",
-                                                    "Landroid/graphics/drawable/DrawableContainer;");
-    const auto reject = [](dx::IntrinsicContext& call) -> dx::VmValue {
-        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.progressbar_tiling", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "frame animation drawable is unsupported"};
-    };
-    builder.Constructor("()V", reject);
-    builder.VirtualMethod("setOneShot", "(Z)V", reject);
-    return std::move(builder).Build();
+    auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/AnimationDrawable;",
+                                              "Landroid/graphics/drawable/DrawableContainer;");
+    // Preserve the ROM unscheduled setFrame branch. Actual frame animation is not admitted.
+    b.DirectMethod(
+        "setFrame", "(IZZ)V",
+        [](dx::IntrinsicContext& c) -> dx::VmValue {
+            if (c.arguments[2].AsInt()) {
+                if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.progressbar_tiling", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "frame animation scheduling is unsupported"};
+            }
+            const auto frame = c.arguments[0].AsInt();
+            if (frame >= CallAndroidMethod(c.vm, c.receiver, "getNumberOfFrames", "()I").AsInt())
+                return dx::VmValue::Void();
+            const auto field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(c.receiver), "mCurFrame", "I");
+            c.vm.Model().InstanceSlots(c.receiver)[c.vm.Linker().Field(*field).slot] = {
+                static_cast<std::uint32_t>(frame), dx::SlotTag::cat1};
+            static_cast<void>(CallAndroidMethod(c.vm, c.receiver, "selectDrawable", "(I)Z", {c.arguments[0]}));
+            if (c.arguments[1].AsInt())
+                static_cast<void>(CallAndroidMethod(c.vm, c.receiver, "unscheduleSelf", "(Ljava/lang/Runnable;)V",
+                                                    {dx::VmValue::Ref(c.receiver)}));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPrivate);
+    return std::move(b).Build();
 }
+
 }  // namespace ogplay::runtime::android_intrinsics

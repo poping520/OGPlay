@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { shellPalette, versionLabel, vividIconColor } from './library';
 import type { LibraryItem } from './rpc';
 import logo from './assets/logo.png';
+import type { Skin } from './kit';
 
 type Rgb = [number, number, number];
 const fallback: Rgb = [124, 156, 255];
@@ -134,4 +135,25 @@ export function Cartridge({ item, tone, hero = false }: { item: LibraryItem; ton
       {wear === 'worn' && <span class="cart-scuff" />}
     </span>
   </span>;
+}
+// Selection changes crossfade stacked layers by opacity only (compositor work); the art is pre-blurred. The glass
+// skin paints the shared sky from the shell colours instead, so it skips the art.
+export function Backdrop({ item, skin }: { item: LibraryItem | undefined; skin: Skin }) {
+  const color = useIconColor(item?.icon ?? '');
+  const art = useBackdropArt(skin === 'glass' ? '' : item?.icon ?? '');
+  const [layers, setLayers] = useState<{ key: number; welcome: boolean; style: Record<string, string> }[]>([]);
+  const serial = useRef(0);
+  const style: Record<string, string> = item ? { ...shellStyle(color), ...(art ? { backgroundImage: `url("${art}")` } : {}) } : {};
+  const signature = item ? JSON.stringify([art, style['--shell-l']]) : 'welcome';   // art: null while pending, '' when none
+  useEffect(() => {
+    if (item && art === null) return;                 // wait for the blurred art instead of flashing the gradient
+    const key = ++serial.current;
+    setLayers(current => [...current.slice(-1), { key, welcome: !item, style }]);
+    const timer = window.setTimeout(() => setLayers(current => current.filter(layer => layer.key >= key)), 600);
+    return () => window.clearTimeout(timer);
+  }, [signature]);
+  return <div class="backdrop" aria-hidden="true">
+    {layers.map(layer => <div key={layer.key} class={`backdrop-art glass-sky ${layer.welcome ? 'welcome' : ''}`} style={layer.style} />)}
+    <div class="backdrop-fade" /><div class="backdrop-grain" />
+  </div>;
 }

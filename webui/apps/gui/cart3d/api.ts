@@ -22,6 +22,24 @@ export interface Cart3D {
   prefetch(faces: CartFace[]): void;
   // Still frame for the rail, as a PNG data URL (img-src data: is the only image source the CSP allows).
   thumb(face: CartFace): Promise<string>;
+  // Moves the same canvas into the cartridge viewer's `stage` (the hero must be detached); close() hands it back.
+  inspect(stage: HTMLElement, events: InspectEvents): Inspector;
+}
+// Cartridge viewer camera presets, in key order (1–6).
+export const VIEWS = ['three', 'front', 'back', 'side', 'top', 'bottom'] as const;
+export type View = typeof VIEWS[number];
+// The page owns the viewer state (game, preset, open, spin) and drives these; the canvas reports back only what the
+// pointer did there.
+export interface Inspector {
+  show(face: CartFace): void;
+  view(name: View): void;          // eases the camera to a preset
+  open(on: boolean): void;         // animates the shell apart to show the board, or back together
+  spin(on: boolean): void;         // slow turntable
+  close(): void;
+}
+export interface InspectEvents {
+  orbit(): void;                   // the pointer moved the camera off its preset
+  part(name: string | null, x: number, y: number): void;   // model part under the pointer (GLB part name), client px
 }
 declare global {
   interface Window { OGPlayCart3D?: Promise<Cart3D> }

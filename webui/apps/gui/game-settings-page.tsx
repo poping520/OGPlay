@@ -8,7 +8,8 @@ import { statuses, versionLabel } from './library';
 import { useIconColor } from './cartridge';
 import { TileCart } from './cartridge3d';
 import type { Cart3D } from './cart3d/api';
-import { Note, Paths, SettingsFrame, type Skin, useAutoSave, useToast } from './settings-ui';
+import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui';
+import type { Skin } from './kit';
 import { t } from './i18n';
 
 const modes = [['normal', '正常启动'], ['preflight', '预检'], ['diagnostic', '带诊断启动']] as const;

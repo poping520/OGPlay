@@ -3,13 +3,11 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { changedKeys, choiceLabel, fieldMeta, RESERVED_MARK, stepValue, type SettingField, type SettingValue } from './settings';
 import { shellStyle } from './cartridge';
 import { t } from './i18n';
-import { Brand, Key } from './kit';
+import { Back, Brand, Key, type Skin } from './kit';
 import './settings.css';
 
 // Settings pages ("主机之夜" layout): top bar with save state, group sidebar, field rows, gamepad legend. Edits are
-// written as they are made. The "glass" skin (global settings_style, all launcher views) only changes classes.
-export type Skin = 'console' | 'glass';
-export const skinOf = (style: unknown): Skin => style === 'glass' ? 'glass' : 'console';
+// written as they are made. The skin (kit.tsx) only changes classes.
 const ICON: Record<string, string> = {
   general: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
   storage: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
@@ -299,8 +297,7 @@ export function SettingsFrame(props: FrameProps) {
     <div class="cfg-bg glass-sky" aria-hidden="true"><div class={`art ${props.art ? '' : 'plain'}`} style={props.art ? { backgroundImage: `url("${props.art}")` } : {}} /><div class="fade" /><div class="grain" /></div>
     <header class="cfg-top">
       <Brand />
-      <button class="back" disabled={props.busy} onClick={props.back}><Key>B</Key>
-        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>{t('返回游戏库')}</button>
+      <Back disabled={props.busy} onClick={props.back} />
       <span class="crumb">{props.crumb}</span>
       <span class="spacer" />
       <span class={`save-state ${props.saving ? 'on' : ''}`} role="status"><i />{props.saving ? t('正在保存…') : props.idle}</span>

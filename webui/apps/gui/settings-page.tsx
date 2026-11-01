@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc } from './rpc';
 import { pickPath } from './import';
 import { groups, settingsError, type Settings } from './settings';
-import { Note, Paths, SettingsFrame, skinOf, useAutoSave, useToast } from './settings-ui';
+import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui';
+import { skinOf } from './kit';
 import { setLanguage, t } from './i18n';
 
 export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved: (settings: Settings) => void }) {

@@ -1,24 +1,23 @@
-import { Brand, Key } from './kit';
+import { Brand, Key, skinOf } from './kit';
 import { render, type ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { rpc, type Library, type LibraryItem } from './rpc';
-import { cycle, filters, statuses, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library';
+import { cycle, filters, statusOf, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library';
 import { SettingsPage } from './settings-page';
 import { GameSettingsPage } from './game-settings-page';
-import { skinOf, type Skin } from './settings-ui';
+import { CartViewer } from './cart-viewer';
 import type { Settings } from './settings';
 import { ImportWizard } from './import-wizard';
 import { DataHintDialog } from './data-hint';
 import { InstallInfoDialog, RemoveGameDialog } from './game-dialogs';
 import type { DataHint } from './import';
-import { Cartridge, shellStyle, useBackdropArt, useIconColor } from './cartridge';
+import { Backdrop, Cartridge } from './cartridge';
 import { Hero3D, TileCart, useCart3D, type CartMode } from './cartridge3d';
 import logo from './assets/logo.png';
 import { setLanguage, t, useLanguage } from './i18n';
 import './console.css';
 interface DashboardInfo { installation_id: string; process_id: number; port: number | null; status: string; detail: string; key_editor_status: string; key_editor_detail: string }
 
-const statusOf = (item: LibraryItem) => { const status = statuses[item.status] ?? { label: '状态未知', tone: 'warning' }; return { ...status, label: t(status.label) }; };
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
 function Modal({ title, onDismiss, children }: { title: string; onDismiss: () => void; children: ComponentChildren }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -26,27 +25,6 @@ function Modal({ title, onDismiss, children }: { title: string; onDismiss: () =>
   return <dialog ref={dialog} aria-label={title} onCancel={event => { event.preventDefault(); onDismiss(); }}>
     <h2>{title}</h2>{children}<div class="modal-actions"><button autoFocus onClick={onDismiss}>{t('关闭')}</button></div>
   </dialog>;
-}
-// Selection changes crossfade stacked layers by opacity only (compositor work); the art is pre-blurred. The glass
-// skin paints the shared sky from the shell colours instead, so it skips the art.
-function Backdrop({ item, skin }: { item: LibraryItem | undefined; skin: Skin }) {
-  const color = useIconColor(item?.icon ?? '');
-  const art = useBackdropArt(skin === 'glass' ? '' : item?.icon ?? '');
-  const [layers, setLayers] = useState<{ key: number; welcome: boolean; style: Record<string, string> }[]>([]);
-  const serial = useRef(0);
-  const style: Record<string, string> = item ? { ...shellStyle(color), ...(art ? { backgroundImage: `url("${art}")` } : {}) } : {};
-  const signature = item ? `${art ?? ''}|${style['--shell-l']}` : 'welcome';
-  useEffect(() => {
-    if (item && art === null) return;                 // wait for the blurred art instead of flashing the gradient
-    const key = ++serial.current;
-    setLayers(current => [...current.slice(-1), { key, welcome: !item, style }]);
-    const timer = window.setTimeout(() => setLayers(current => current.filter(layer => layer.key >= key)), 600);
-    return () => window.clearTimeout(timer);
-  }, [signature]);
-  return <div class="backdrop" aria-hidden="true">
-    {layers.map(layer => <div key={layer.key} class={`backdrop-art glass-sky ${layer.welcome ? 'welcome' : ''}`} style={layer.style} />)}
-    <div class="backdrop-fade" /><div class="backdrop-grain" />
-  </div>;
 }
 // Launch splash: icon and wordmark stay up at least SPLASH_MIN_MS and until the main screen is ready (library,
 // settings, and with 3D the hero's first frame and the first rail stills), never longer than SPLASH_MAX_MS.
@@ -86,6 +64,7 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [viewing, setViewing] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [settingsFailed, setSettingsFailed] = useState(false);
   const [splash, setSplash] = useState(true);
@@ -122,6 +101,8 @@ function App() {
   // Pending until settings load, so a CSS preference never starts loading the 3D bundle; unreadable settings use the default.
   const cartMode: CartMode = settings ? (settings.values.cartridge === 'css' ? 'css' : '3d') : settingsFailed ? '3d' : 'pending';
   const cart3d = useCart3D(cartMode, report);
+  // The cartridge viewer needs the 3D bundle; with the CSS cartridge its entries stay disabled and say why.
+  const viewer = cart3d && cart3d !== 'waiting' ? cart3d : null;
   const tileReady = (id: string) => { if (!readyTiles.current.has(id)) { readyTiles.current.add(id); setReadyTileCount(readyTiles.current.size); } };
   const startReady = !loading && cartMode !== 'pending' && cart3d !== 'waiting' && (cart3d === null ||
     (!item || heroShown) && items.slice(0, 12).every(game => readyTiles.current.has(game.installation_id)));
@@ -206,12 +187,13 @@ function App() {
   const openSearch = () => { setSearchOpen(true); requestAnimationFrame(() => search.current?.focus()); };
   const editorReady = instance?.key_editor_status === 'ready';
   const openControls = (game: LibraryItem) => { if (dashboards.find(value => value.installation_id === game.installation_id)?.key_editor_status === 'ready') void act('controls.open', game); };
+  const openViewer = () => { if (viewer) { setMenuOpen(false); setViewing(true); } };
   const openGameSettings = (game: LibraryItem) => { if (!busy && !importing) { setMenuOpen(false); setGameSettingsId(game.installation_id); } };
 
   // Keyboard stands in for the gamepad legend: ←/→ select, Enter = A, Esc = B, X/Y shortcuts, Q/E = L/R.
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (settingsOpen || gameSettingsId) return;   // the settings pages own the keyboard while open
+      if (settingsOpen || gameSettingsId || viewing) return;   // full-screen views own the keyboard while open
       if (event.key === 'Escape') {
         if (menuOpen) { setMenuOpen(false); return; }
         if (searchOpen && !query && document.activeElement === search.current) { setSearchOpen(false); search.current?.blur(); }
@@ -237,6 +219,7 @@ function App() {
         setFilter(current => cycle(filters.map(([value]) => value), current, event.key === 'e' ? 1 : -1));
       } else if (event.key === 'x' && item) openControls(item);
       else if (event.key === 'y' && item) openGameSettings(item);
+      else if (event.key === 'v' && item) openViewer();
       else if (event.key === '/') { event.preventDefault(); openSearch(); }
     };
     window.addEventListener('keydown', keydown);
@@ -249,6 +232,7 @@ function App() {
     return () => window.removeEventListener('pointerdown', close);
   }, [menuOpen]);
 
+  if (viewing && viewer && item) return <CartViewer api={viewer} items={items} selected={item} skin={skin} select={setSelected} onBack={() => setViewing(false)} />;
   if (settingsOpen) return <SettingsPage onBack={() => { setSettingsOpen(false); void refresh().catch(report); }} onSaved={applySettings} />;
   if (gameSettingsId) return <GameSettingsPage id={gameSettingsId} item={library.items.find(game => game.installation_id === gameSettingsId)}
     skin={skin} cart3d={cart3d}
@@ -259,6 +243,7 @@ function App() {
     <button class="pill" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}><Key>…</Key>{t('更多')}</button>
     {menuOpen && <div class="menu" role="menu">
       {game.running && <button role="menuitem" disabled={busy || importing} onClick={() => openGameSettings(game)}>{t('游戏设置')}<small>{t('下次启动生效')}</small></button>}
+      <button role="menuitem" disabled={!viewer} onClick={openViewer}>{t('查看卡带')}<small>{viewer ? t('转一转、拆开看看里面') : t('需要 3D 卡带：设置 › 常规 › 主界面卡带')}</small></button>
       <button role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); void act('library.open_dir', game, 'sandbox'); }}>{t('打开沙盒目录')}</button>
       <button role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); void act('library.open_dir', game, 'log'); }}>{t('打开日志目录')}</button>
       <button role="menuitem" onClick={() => { setMenuOpen(false); setInfoOpen(true); }}>{t('安装信息')}</button>
@@ -318,7 +303,7 @@ function App() {
       </div>
       <div class="showcase" onPointerMove={tilt} onPointerLeave={tilt}>
         {(item.running || status.tone !== 'ready') && <span class={`flag ${item.running ? 'running' : status.tone}`}>{item.running ? t('● 运行中') : status.label}</span>}
-        {cart3d ? <Hero3D api={cart3d} item={item} tone={item.running ? 'running' : status.tone} shown={() => setHeroShown(true)}
+        {cart3d ? <Hero3D api={cart3d} item={item} tone={item.running ? 'running' : status.tone} shown={() => setHeroShown(true)} inspect={openViewer}
           neighbours={[items[(position - 2 + items.length) % items.length], items[position % items.length]].filter(game => game !== item)
             .map(game => [game, game.running ? 'running' : statusOf(game).tone] as [LibraryItem, string])} /> :
           <><div class="float"><div class="tilt"><Cartridge item={item} tone={item.running ? 'running' : status.tone} hero /></div></div><div class="floor" /></>}
@@ -371,7 +356,8 @@ function App() {
     </section>
     <footer class="foot">
       <span class="hint"><Key>← →</Key>{t('选择')}</span><span class="hint"><Key>A</Key>{t('开始')}<kbd>Enter</kbd></span><span class="hint"><Key>B</Key>{t('返回')}<kbd>Esc</kbd></span>
-      <span class="hint"><Key>X</Key>{t('按键设置')}</span><span class="hint"><Key>Y</Key>{t('游戏设置')}</span><span class="hint"><Key>L R</Key>{t('切换分类')}<kbd>Q E</kbd></span>
+      <span class="hint"><Key>X</Key>{t('按键设置')}</span><span class="hint"><Key>Y</Key>{t('游戏设置')}</span>
+      {viewer && <span class="hint"><Key>⧉</Key>{t('查看卡带')}<kbd>V</kbd></span>}<span class="hint"><Key>L R</Key>{t('切换分类')}<kbd>Q E</kbd></span>
       <span class="path" title={library.library_root}><span dir="ltr">{library.library_root}</span></span>
     </footer>
     {splash && <Splash ready={startReady} onDone={() => setSplash(false)} />}

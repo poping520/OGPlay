@@ -1,6 +1,7 @@
-// cart3d.js entry: the real-time hero cartridge and the rail stills. gui.js loads this bundle only when the
-// cartridge setting is "3d" and falls back to the CSS cartridge if it fails.
+// cart3d.js entry: the real-time hero cartridge, the rail stills and the cartridge viewer. gui.js loads this bundle
+// only when the cartridge setting is "3d" and falls back to the CSS cartridge if it fails.
 import { loadKit, THREE } from './kit';
+import { createInspector } from './inspect';
 import type { Cart3D, CartFace } from './api';
 
 const ease = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -99,7 +100,9 @@ async function createCart3D(): Promise<Cart3D> {
     for (const texture of kit.texturesOf(target)) hero.initTexture(texture);
     if (look) kit.wear(look);
   };
-  const pinned = () => face?.key ?? null;
+  // the look on screen (hero or viewer) stays cached whatever the rail builds meanwhile
+  let pinnedKey: string | null = null;
+  const pinned = () => pinnedKey;
   const thumb = (entry: CartFace) => {
     let url = stills.get(entry.key);
     if (!url) {
@@ -126,7 +129,7 @@ async function createCart3D(): Promise<Cart3D> {
   return {
     mount(stage, shown) {
       if (!canvas.parentElement) canvas.animate([{ opacity: 0 }, { opacity: 1 }], 700);
-      reveal = shown;
+      reveal = shown; drag = 0;                // the viewer's orbit drags also passed through the hero handlers
       stage.append(canvas);
       resize.disconnect(); resize.observe(stage);
       addEventListener('pointermove', track);
@@ -141,7 +144,7 @@ async function createCart3D(): Promise<Cart3D> {
     show(next) {
       if (face?.key === next.key) return;
       if (face && face.id !== next.id) swapT = 0;
-      face = next;
+      face = next; pinnedKey = next.key;
       void kit.lookFor(next, pinned).then(value => { if (face?.key === next.key) { warm(value); look = value; } });
     },
     prefetch(faces) {
@@ -151,6 +154,12 @@ async function createCart3D(): Promise<Cart3D> {
       }).catch(() => {});
     },
     thumb,
+    inspect(stage, events) {
+      return createInspector({
+        kit, renderer: hero, env: heroEnv, scene, pivot, shadow,
+        look: async next => { pinnedKey = next.key; const value = await kit.lookFor(next, pinned); warm(value); return value; },
+      }, stage, events);
+    },
   };
 }
 

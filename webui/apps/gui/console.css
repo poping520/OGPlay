@@ -361,6 +361,28 @@
 .console dialog button.danger { background: var(--danger); border-color: var(--danger); color: #2b0705; }
 .console dialog button.danger:hover:not(:disabled) { background: #ff7a73; border-color: #ff7a73; }
 
+/* cartridge viewer (cart-viewer.tsx): this screen's top bar and footer around a full-size canvas in place of hero
+   and rail; the way back and the actions sized like the settings top bar, title and presets over the canvas */
+.console.viewer { grid-template-rows: 68px minmax(0, 1fr) 42px; }
+.viewer-stage { position: relative; z-index: 1; min-height: 0; }
+.viewer-canvas { position: absolute; inset: 0; }
+.viewer .top { gap: 12px; }
+.viewer .top .crumb { margin-right: auto; }
+.viewer .top .pill { gap: 10px; height: 44px; padding: 0 18px 0 9px; font-size: 14px; line-height: 1; white-space: nowrap; }
+.viewer .top .key { min-width: 26px; height: 26px; padding: 0 7px; font-size: 12px; }
+.viewer .top .pill[aria-pressed=true]:not(.main) { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.viewer-info { position: absolute; left: clamp(36px, 4.5vw, 64px); bottom: 30px; max-width: min(620px, 50%); pointer-events: none; }
+.viewer-info > * { animation: rise .3s backwards cubic-bezier(.2,.8,.2,1); }
+.viewer-info h1 { margin: 10px 0 2px; overflow: hidden; font-size: clamp(30px, 3.6vw, 52px); font-weight: 900; line-height: 1.12; letter-spacing: -.02em;
+  white-space: nowrap; text-overflow: ellipsis; text-shadow: 0 6px 40px rgba(0,0,0,.4); }
+.viewer-info .sub { font-size: 15px; }
+.viewer-views { position: absolute; right: 32px; bottom: 30px; }
+.viewer-views b { margin-right: 6px; font-size: 11px; opacity: .55; }
+.part-tip { position: fixed; left: 0; top: 0; z-index: 5; padding: 6px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(20,26,42,.96);
+  box-shadow: 0 10px 30px rgba(0,0,0,.45); font-size: 13px; font-weight: 800; white-space: nowrap; pointer-events: none; }
+.foot-note { margin-left: auto; overflow: hidden; color: var(--dim); white-space: nowrap; text-overflow: ellipsis; }
+@media (max-width: 1180px) { .viewer-views b { display: none; } .viewer-info { max-width: 40%; } }
+
 /* ================================================================== skin-glass · 玻璃紫
    Tokens, sky, pills, keys and the dialog surface come from ui-kit; accents follow --accent. Here: the backdrop
    layers (sky without art or vignette), the shapes and the glows this screen draws itself. */
@@ -368,7 +390,7 @@
 .console.skin-glass .backdrop-fade { display: none; }
 .console.skin-glass .backdrop-grain { opacity: .06; }
 .console.skin-glass .pill { border-radius: 18px; }
-.console.skin-glass .menu { border-color: rgba(255,255,255,.14); background: rgba(58,29,122,.94); box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 20px 50px rgba(10,0,40,.55); }
+.console.skin-glass :is(.menu, .part-tip) { border-color: rgba(255,255,255,.14); background: rgba(58,29,122,.94); box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 20px 50px rgba(10,0,40,.55); }
 .console.skin-glass .ghost-cart { border-color: rgba(111,247,228,.6); background: radial-gradient(rgba(111,247,228,.12), transparent 70%); }
 .console.skin-glass .ghost-cart:hover:not(:disabled) { background: radial-gradient(rgba(111,247,228,.2), transparent 70%); }
 .console.skin-glass .tile[aria-pressed=true]::before { box-shadow: 0 0 30px rgba(111,247,228,.35); animation-name: ring-glass; }
@@ -389,6 +411,6 @@
 @media (max-width: 1180px) { .clock, .shoulder { display: none; } .tabs button { padding: 6px 12px; } .search.open input { width: 150px; } .hint kbd { display: none; } }
 @media (max-height: 720px) { .console { grid-template-rows: 60px minmax(0, 1fr) auto 38px; } .sub { font-size: 16px; } .stats b { font-size: 19px; } .strip { --tile-em: 2.95px; padding-top: 22px; padding-bottom: 32px; } .stats { margin: 12px 0 10px; } .cta { margin-top: 14px; } .console .pill { height: 46px; } .console .pill.main { height: 50px; } }
 @media (prefers-reduced-motion: reduce) {
-  .float, .ghost-cart, .floor, .splash, .splash *, .splash-bar::after, .hero-cart .cart-foil, .cart-led.running::after, .led.running, .tile[aria-pressed=true]::before, .drop .slot::after, .hero-text > *, .menu { animation: none; }
+  .float, .ghost-cart, .floor, .splash, .splash *, .viewer-info > *, .splash-bar::after, .hero-cart .cart-foil, .cart-led.running::after, .led.running, .tile[aria-pressed=true]::before, .drop .slot::after, .hero-text > *, .menu { animation: none; }
   .console .tile, .console .pill, .tilt, .tile .cartridge { transition: none; }
 }

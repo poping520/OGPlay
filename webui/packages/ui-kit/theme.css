@@ -56,6 +56,16 @@ dialog p, dialog pre { margin-top: 14px; }
 .seg button:hover:not(:disabled):not(.on) { color: var(--ink); }
 .seg button.on { background: var(--ink); color: var(--bg); }
 
+/* way back to the library (kit.tsx Back), first after the brand: outlined, full contrast, set off from the crumb after it */
+.back { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px 0 8px; border: 1.5px solid rgba(255,255,255,.22); border-radius: 999px;
+  background: var(--glass2); font-weight: 900; font-size: 14px; line-height: 1; color: var(--ink); flex: none; white-space: nowrap; transition: border-color .12s, background .12s; }
+.back .chev { width: 18px; height: 18px; margin-left: 2px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; transition: transform .12s; }
+.back:hover:not(:disabled) { border-color: var(--yellow); background: rgba(255,255,255,.14); }
+.back:hover:not(:disabled) .chev { transform: translateX(-2px); }
+.back + .crumb { padding-left: 14px; border-left: 1px solid rgba(255,255,255,.14); }
+.crumb { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-weight: 800; }
+.crumb b { color: var(--ink); font-weight: 900; }
+
 @keyframes led-pulse { 50% { opacity: .4; } }
 
 /* ================================================================== skin-glass · 玻璃紫
@@ -81,6 +91,8 @@ dialog p, dialog pre { margin-top: 14px; }
 :root .skin-glass .pill.main .key { background: #3a1290; color: #fff; }
 :root .skin-glass .pill.danger { background: #fff; color: #b0124f; }
 :root .skin-glass .pill.danger .key { background: #b0124f; color: #fff; }
+:root .skin-glass .back { height: 40px; padding: 0 16px 0 6px; border-radius: 14px; border-color: rgba(255,255,255,.32); background: rgba(255,255,255,.16); }
+:root .skin-glass .back:hover:not(:disabled) { border-color: #fff; background: rgba(255,255,255,.24); }
 :root .skin-glass .seg button.on { background: #fff; color: #3a1290; box-shadow: 0 4px 12px -4px rgba(0,0,0,.4); }
 :root .skin-glass dialog { background: linear-gradient(160deg, rgba(120,60,200,.96), rgba(60,20,130,.98));
   box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 30px 80px rgba(10,0,40,.6); }

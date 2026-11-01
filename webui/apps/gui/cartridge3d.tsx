@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { Cart3D, CartFace } from './cart3d/api';
+import type { Cart3D, CartFace, Inspector, View } from './cart3d/api';
 import { Cartridge, iconSampled, knownIconColor, useIconColor } from './cartridge';
 import { versionLabel } from './library';
 import type { LibraryItem } from './rpc';
@@ -55,11 +55,13 @@ function useFace(item: LibraryItem, tone: string) {
   return iconSampled(item.icon) ? cartFace(item, tone, color) : null;
 }
 // `shown` reports the first drawn cartridge, so the splash can stay up until the hero is really there.
-// `neighbours` are the rail entries either side, prefetched so the next switch is ready.
-export function Hero3D({ api, item, tone, shown, neighbours }: {
-  api: Cart3D | 'waiting'; item: LibraryItem; tone: string; shown: () => void; neighbours: [LibraryItem, string][];
+// `neighbours` are the rail entries either side, prefetched so the next switch is ready. A click that did not
+// drag the cartridge round opens the viewer (`inspect`).
+export function Hero3D({ api, item, tone, shown, neighbours, inspect }: {
+  api: Cart3D | 'waiting'; item: LibraryItem; tone: string; shown: () => void; neighbours: [LibraryItem, string][]; inspect: () => void;
 }) {
   const stage = useRef<HTMLDivElement>(null);
+  const press = useRef<{ x: number; y: number } | null>(null);
   const face = useFace(item, tone);
   useEffect(() => api === 'waiting' ? undefined : api.mount(stage.current!, shown), [api]);
   useEffect(() => {
@@ -67,7 +69,31 @@ export function Hero3D({ api, item, tone, shown, neighbours }: {
     api.show(face);
     api.prefetch(neighbours.flatMap(([game, gameTone]) => { const color = knownIconColor(game.icon); return color ? [cartFace(game, gameTone, color)] : []; }));
   }, [api, face?.key]);
-  return <div class="stage3d" ref={stage} aria-hidden="true" />;
+  return <div class="stage3d" ref={stage} aria-hidden="true" title={t('点击查看卡带')}
+    onPointerDown={event => { press.current = { x: event.clientX, y: event.clientY }; }}
+    onPointerUp={event => { const from = press.current; press.current = null; if (from && Math.hypot(event.clientX - from.x, event.clientY - from.y) < 6) inspect(); }} />;
+}
+// The cartridge viewer's canvas: takes the 3D canvas over while mounted (the hero is unmounted then). The page owns
+// preset, open and spin; `view` null leaves the camera where the pointer put it.
+export function Inspect3D({ api, item, tone, view, open, spin, orbit, part }: {
+  api: Cart3D; item: LibraryItem; tone: string; view: View | null; open: boolean; spin: boolean;
+  orbit: () => void; part: (name: string | null, x: number, y: number) => void;
+}) {
+  const stage = useRef<HTMLDivElement>(null);
+  const inspector = useRef<Inspector | null>(null);
+  const events = useRef({ orbit, part });
+  events.current = { orbit, part };
+  const face = useFace(item, tone);
+  useEffect(() => {
+    const value = api.inspect(stage.current!, { orbit: () => events.current.orbit(), part: (name, x, y) => events.current.part(name, x, y) });
+    inspector.current = value;
+    return () => { value.close(); inspector.current = null; };
+  }, [api]);
+  useEffect(() => { if (face) inspector.current?.show(face); }, [api, face?.key]);
+  useEffect(() => { if (view) inspector.current?.view(view); }, [api, view]);
+  useEffect(() => inspector.current?.open(open), [api, open]);
+  useEffect(() => inspector.current?.spin(spin), [api, spin]);
+  return <div class="viewer-canvas" ref={stage} />;
 }
 // Stills already rendered this session show at once when a tile remounts (filter or search changes).
 const shownStills = new Map<string, string>();

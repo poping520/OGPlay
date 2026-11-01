@@ -11,6 +11,11 @@ export const statuses: Record<string, { label: string; tone: string }> = {
   running: { label: '运行中', tone: 'running' },
   ready: { label: '就绪', tone: 'ready' },
 };
+// Host status as shown: translated label and LED tone; an unknown status reads as a warning.
+export function statusOf(item: LibraryItem): { label: string; tone: string } {
+  const status = statuses[item.status] ?? { label: '状态未知', tone: 'warning' };
+  return { ...status, label: t(status.label) };
+}
 export function visibleItems(items: LibraryItem[], query: string, filter: Filter, sort: Sort): LibraryItem[] {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const time = (item: LibraryItem) => {

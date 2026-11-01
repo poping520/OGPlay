@@ -630,5 +630,5 @@ vec3 ogpPerturb(vec3 p, vec3 n, vec2 dh, float faceDir) {
     const fill = new THREE.HemisphereLight(0xbcd4ff, 0x1a1020, 0.6);
     return [key, rimBlue, rimWarm, fill];
   }
-  return { model, modelSize, lookFor, wear, texturesOf, makeRenderer, stageLights };
+  return { model, parts, modelSize, lookFor, wear, texturesOf, makeRenderer, stageLights };
 }

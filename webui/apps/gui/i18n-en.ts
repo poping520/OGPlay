@@ -364,7 +364,7 @@ export const en: Record<string, string> = {
   '游戏库密度': 'Library density',
   '新界面暂不区分密度': 'The new interface has a single density',
   '主界面卡带': 'Library cartridges',
-  '设置页风格': 'Settings style',
+  '界面风格': 'Interface style',
   '启动游戏后最小化': 'Minimize after launching a game',
   '异常退出时显示日志末尾': 'Show the log tail when a game exits abnormally',
   '删除游戏前二次确认': 'Confirm before deleting a game',

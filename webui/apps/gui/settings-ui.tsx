@@ -1,14 +1,15 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { changedKeys, choiceLabel, fieldMeta, RESERVED_MARK, stepValue, type SettingField, type SettingValue } from './settings';
-import { shellPalette } from './library';
+import { shellStyle } from './cartridge';
 import { t } from './i18n';
 import { Brand, Key } from './kit';
 import './settings.css';
 
 // Settings pages ("主机之夜" layout): top bar with save state, group sidebar, field rows, gamepad legend. Edits are
-// written as they are made. The "glass" skin is the same layout restyled (frosted violet); it only changes classes.
+// written as they are made. The "glass" skin (global settings_style, all launcher views) only changes classes.
 export type Skin = 'console' | 'glass';
+export const skinOf = (style: unknown): Skin => style === 'glass' ? 'glass' : 'console';
 const ICON: Record<string, string> = {
   general: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
   storage: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
@@ -289,14 +290,13 @@ export function SettingsFrame(props: FrameProps) {
     window.addEventListener('keydown', keydown);
     return () => window.removeEventListener('keydown', keydown);
   });
-  const palette = props.tint ? shellPalette(props.tint) : null;
   const rows = visible.map((field, index) => <Fragment key={field.key}>
     {props.sectionBefore?.[field.key] && <div class="sect">{props.sectionBefore[field.key]}</div>}
     <FieldRow field={field} model={props.model(field)} focused={index === focus} focus={() => setFocus(index)}
       change={value => props.change(field, value)} browse={() => props.browse(field)} toggleInherit={props.toggleInherit && (() => props.toggleInherit!(field))} />
   </Fragment>);
-  return <div class={`cfg skin-${skin}`} style={palette ? { '--t1': palette.light, '--t2': palette.shell } : {}}>
-    <div class="cfg-bg" aria-hidden="true"><div class={`art ${props.art ? '' : 'plain'}`} style={props.art ? { backgroundImage: `url("${props.art}")` } : {}} /><div class="fade" /><div class="grain" /></div>
+  return <div class={`cfg skin-${skin}`} style={props.tint ? shellStyle(props.tint) : {}}>
+    <div class="cfg-bg glass-sky" aria-hidden="true"><div class={`art ${props.art ? '' : 'plain'}`} style={props.art ? { backgroundImage: `url("${props.art}")` } : {}} /><div class="fade" /><div class="grain" /></div>
     <header class="cfg-top">
       <Brand />
       <button class="back" disabled={props.busy} onClick={props.back}><Key>B</Key>

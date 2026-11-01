@@ -57,3 +57,31 @@ dialog p, dialog pre { margin-top: 14px; }
 .seg button.on { background: var(--ink); color: var(--bg); }
 
 @keyframes led-pulse { 50% { opacity: .4; } }
+
+/* ================================================================== skin-glass · 玻璃紫
+   Global `settings_style`=glass: every launcher view restyled frosted violet. A view root carries `skin-glass`; this
+   section swaps the tokens and gives the shared controls their glass look, views add layout differences. `:root`
+   lifts these rules one step above a view's own console defaults (`.cfg`, `.console dialog`), whatever the file order. */
+:root .skin-glass {
+  --bg: #24105e; --ink: #fff; --soft: rgba(240,232,255,.78); --muted: rgba(225,212,255,.62); --dim: rgba(210,195,255,.42);
+  --glass: rgba(255,255,255,.12); --glass2: rgba(255,255,255,.2); --line: rgba(255,255,255,.12);
+  --mint: #6ff7e4; --mint2: #7fb8ff; --accent: var(--mint); --field: rgba(20,0,60,.28); --panel: #3a1d7a;
+}
+/* the violet sky behind a view, lit by the selected game's shell colours (cartridge.tsx shellStyle) when it sets them */
+:root .skin-glass .glass-sky { background:
+  radial-gradient(60% 50% at 88% 6%, color-mix(in oklab, var(--shell-l, #ff4fd8) 55%, transparent), transparent 70%),
+  radial-gradient(50% 45% at 8% 100%, color-mix(in oklab, var(--shell, #3b7bff) 50%, transparent), transparent 70%),
+  radial-gradient(40% 40% at 45% 45%, rgba(160,80,255,.35), transparent 70%),
+  linear-gradient(140deg, #1d0c52 0%, #3a1290 38%, #6a17b4 72%, #8c2bc7 100%); }
+:root .skin-glass .kicker { color: var(--mint); }
+:root .skin-glass .key { background: rgba(255,255,255,.85); color: #3a1290; box-shadow: none; }
+:root .skin-glass .pill { box-shadow: inset 0 1px 0 rgba(255,255,255,.2); backdrop-filter: none; }
+:root .skin-glass .pill.main { background: #fff; color: #3a1290; box-shadow: 0 10px 24px -10px rgba(255,255,255,.7); }
+:root .skin-glass .pill.main:hover:not(:disabled) { background: #f3ecff; }
+:root .skin-glass .pill.main .key { background: #3a1290; color: #fff; }
+:root .skin-glass .pill.danger { background: #fff; color: #b0124f; }
+:root .skin-glass .pill.danger .key { background: #b0124f; color: #fff; }
+:root .skin-glass .seg button.on { background: #fff; color: #3a1290; box-shadow: 0 4px 12px -4px rgba(0,0,0,.4); }
+:root .skin-glass dialog { background: linear-gradient(160deg, rgba(120,60,200,.96), rgba(60,20,130,.98));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 30px 80px rgba(10,0,40,.6); }
+:root .skin-glass dialog::backdrop { background: rgba(20,4,50,.55); }

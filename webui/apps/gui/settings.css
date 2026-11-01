@@ -199,16 +199,7 @@ details.fact pre { margin: 8px 0 2px; font: 11.5px/1.6 var(--code); color: var(-
 @media (prefers-reduced-motion: reduce) { .rows > *, .save-state.on i, .toast, .cfg dialog[open] { animation: none; } .cfg .switch::after, .inh .sw::after { transition: none; } }
 
 /* ================================================================== skin-glass · 玻璃紫 */
-.cfg.skin-glass {
-  --ink: #fff; --soft: rgba(240,232,255,.78); --muted: rgba(225,212,255,.62); --dim: rgba(210,195,255,.42); --line: rgba(255,255,255,.12);
-  --mint: #6ff7e4; --mint2: #7fb8ff; --accent: var(--mint); --field: rgba(20,0,60,.28); --panel: #3a1d7a;
-  background: #24105e;
-}
-.skin-glass .cfg-bg { background:
-  radial-gradient(60% 50% at 88% 6%, color-mix(in oklab, var(--t1, #ff4fd8) 55%, transparent), transparent 70%),
-  radial-gradient(50% 45% at 8% 100%, color-mix(in oklab, var(--t2, #3b7bff) 50%, transparent), transparent 70%),
-  radial-gradient(40% 40% at 45% 45%, rgba(160,80,255,.35), transparent 70%),
-  linear-gradient(140deg, #1d0c52 0%, #3a1290 38%, #6a17b4 72%, #8c2bc7 100%); }
+/* tokens, sky, keys, pills, segments and dialog surface come from the ui-kit skin-glass section */
 .skin-glass .cfg-bg .art, .skin-glass .cfg-bg .fade { display: none; }
 .skin-glass .cfg-bg .grain { opacity: .06; }
 /* frosted glass surface shared by rows, notes, sidebar selection and buttons */
@@ -223,20 +214,12 @@ details.fact pre { margin: 8px 0 2px; font: 11.5px/1.6 var(--code); color: var(-
 .skin-glass .ic svg { position: relative; width: 52%; height: 52%; stroke-width: 2.2; filter: drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
 .cfg.skin-glass .groups button.on .ic, .cfg.skin-glass .note > .ic, .cfg.skin-glass .note.warn > .ic { color: #fff;
   background: radial-gradient(120% 90% at 30% 15%, color-mix(in oklab, var(--g1) 70%, #fff), var(--g1) 40%, var(--g2) 100%); }
-.skin-glass .kicker { color: var(--mint); }
 .skin-glass .cfg-top { gap: 10px; }
 .cfg.skin-glass .back { height: 40px; padding: 0 16px 0 6px; border-radius: 14px; border-color: rgba(255,255,255,.32); background: rgba(255,255,255,.16); }
 .cfg.skin-glass .back:hover:not(:disabled) { border-color: #fff; background: rgba(255,255,255,.24); }
 .skin-glass .save-state.on { color: #ffe39a; background: rgba(255,194,26,.18); }
-.cfg.skin-glass .pill { height: 42px; padding: 0 18px 0 8px; border-radius: 14px; background: rgba(255,255,255,.12); box-shadow: inset 0 1px 0 rgba(255,255,255,.2); backdrop-filter: none; font-weight: 800; }
-.cfg.skin-glass .pill:hover:not(:disabled) { background: rgba(255,255,255,.2); }
-.cfg.skin-glass .pill.main { background: #fff; color: #3a1290; box-shadow: 0 10px 24px -10px rgba(255,255,255,.7); }
-.cfg.skin-glass .pill.main:not(:disabled):hover { background: #f3ecff; }
+.cfg.skin-glass .pill { height: 42px; padding: 0 18px 0 8px; border-radius: 14px; font-weight: 800; }
 .cfg.skin-glass .pill.main:disabled { opacity: .5; }
-.skin-glass .key { background: rgba(255,255,255,.85); color: #3a1290; box-shadow: none; }
-.skin-glass .pill.main .key { background: #3a1290; color: #fff; }
-.cfg.skin-glass .pill.danger { background: #fff; color: #b0124f; }
-.skin-glass .pill.danger .key { background: #b0124f; color: #fff; }
 /* sidebar */
 .skin-glass .cfg-side { padding-left: 22px; }
 .skin-glass .who { margin-bottom: 14px; padding: 12px 14px; border-radius: 20px; }
@@ -264,7 +247,6 @@ details.fact pre { margin: 8px 0 2px; font: 11.5px/1.6 var(--code); color: var(-
 .skin-glass :is(.seg, .cyc, .step, .txt) { border-radius: 14px; box-shadow: inset 0 1px 2px rgba(0,0,0,.2), 0 1px 0 rgba(255,255,255,.08); }
 .skin-glass .seg { border-radius: 16px; }
 .cfg.skin-glass .seg button { border-radius: 12px; color: var(--soft); }
-.cfg.skin-glass .seg button.on { background: #fff; color: #3a1290; box-shadow: 0 4px 12px -4px rgba(0,0,0,.4); }
 .cfg.skin-glass :is(.cyc, .step) button:hover:not(:disabled) { color: var(--mint); }
 .skin-glass .cyc .pips i.on { background: var(--mint); }
 .cfg.skin-glass .txt button { border-radius: 10px; background: rgba(255,255,255,.16); }
@@ -284,10 +266,8 @@ details.fact pre { margin: 8px 0 2px; font: 11.5px/1.6 var(--code); color: var(-
 .skin-glass .term .p { color: var(--mint); } .skin-glass .term .f { color: #ffb8f0; }
 /* footer, toast, dialog */
 .skin-glass .cfg-foot { border-top-color: rgba(255,255,255,.1); }
-.skin-glass .cfg-foot .key { background: rgba(255,255,255,.85); }
 .skin-glass .toast { background: rgba(255,255,255,.95); color: #3a1290; border-radius: 16px; }
 .skin-glass .toast i { background: #19c7a8; box-shadow: none; }
-.cfg.skin-glass dialog { border-radius: 30px; background: linear-gradient(160deg, rgba(120,60,200,.96), rgba(60,20,130,.98)); box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 30px 80px rgba(10,0,40,.6); }
-.cfg.skin-glass dialog::backdrop { background: rgba(20,4,50,.55); }
+.cfg.skin-glass dialog { border-radius: 30px; }
 .cfg.skin-glass dialog .kicker { color: #ffd65c; }
 .skin-glass dialog li { background: rgba(255,255,255,.12); }

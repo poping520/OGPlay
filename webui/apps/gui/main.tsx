@@ -5,6 +5,7 @@ import { rpc, type Library, type LibraryItem } from './rpc';
 import { cycle, filters, statuses, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library';
 import { SettingsPage } from './settings-page';
 import { GameSettingsPage } from './game-settings-page';
+import { skinOf, type Skin } from './settings-ui';
 import type { Settings } from './settings';
 import { ImportWizard } from './import-wizard';
 import { DataHintDialog } from './data-hint';
@@ -26,10 +27,11 @@ function Modal({ title, onDismiss, children }: { title: string; onDismiss: () =>
     <h2>{title}</h2>{children}<div class="modal-actions"><button autoFocus onClick={onDismiss}>{t('关闭')}</button></div>
   </dialog>;
 }
-// Selection changes crossfade stacked layers by opacity only (compositor work); the art is pre-blurred.
-function Backdrop({ item }: { item: LibraryItem | undefined }) {
+// Selection changes crossfade stacked layers by opacity only (compositor work); the art is pre-blurred. The glass
+// skin paints the shared sky from the shell colours instead, so it skips the art.
+function Backdrop({ item, skin }: { item: LibraryItem | undefined; skin: Skin }) {
   const color = useIconColor(item?.icon ?? '');
-  const art = useBackdropArt(item?.icon ?? '');
+  const art = useBackdropArt(skin === 'glass' ? '' : item?.icon ?? '');
   const [layers, setLayers] = useState<{ key: number; welcome: boolean; style: Record<string, string> }[]>([]);
   const serial = useRef(0);
   const style: Record<string, string> = item ? { ...shellStyle(color), ...(art ? { backgroundImage: `url("${art}")` } : {}) } : {};
@@ -42,7 +44,7 @@ function Backdrop({ item }: { item: LibraryItem | undefined }) {
     return () => window.clearTimeout(timer);
   }, [signature]);
   return <div class="backdrop" aria-hidden="true">
-    {layers.map(layer => <div key={layer.key} class={`backdrop-art ${layer.welcome ? 'welcome' : ''}`} style={layer.style} />)}
+    {layers.map(layer => <div key={layer.key} class={`backdrop-art glass-sky ${layer.welcome ? 'welcome' : ''}`} style={layer.style} />)}
     <div class="backdrop-fade" /><div class="backdrop-grain" />
   </div>;
 }
@@ -64,7 +66,7 @@ function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }) {
     const timer = window.setTimeout(onDone, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 450);
     return () => window.clearTimeout(timer);
   }, [leaving]);
-  return <div class={`splash ${leaving ? 'leaving' : ''}`} role="status" aria-label={t('OGPlay 正在启动')}>
+  return <div class={`splash glass-sky ${leaving ? 'leaving' : ''}`} role="status" aria-label={t('OGPlay 正在启动')}>
     <img src={logo} alt="" /><b><span>OG</span>Play</b><small>{t('Android 经典游戏兼容层')}</small><i class="splash-bar" />
   </div>;
 }
@@ -113,7 +115,10 @@ function App() {
   const instance = item && dashboards.find(value => value.installation_id === item.installation_id);
   const runningCount = library.items.filter(game => game.running).length;
   const report = (reason: unknown) => setErrors(queue => [...queue, reason instanceof Error ? reason.message : String(reason)]);
-  const applySettings = (value: Settings) => { settingsRef.current = value; setSettings(value); applyLanguage(value.values.language); };
+  const applySettings = (value: Settings) => {
+    settingsRef.current = value; setSettings(value); applyLanguage(value.values.language); remember('ogplay.skin', value.values.settings_style);
+  };
+  const skin = settings ? skinOf(settings.values.settings_style) : rememberedSkin;
   // Pending until settings load, so a CSS preference never starts loading the 3D bundle; unreadable settings use the default.
   const cartMode: CartMode = settings ? (settings.values.cartridge === 'css' ? 'css' : '3d') : settingsFailed ? '3d' : 'pending';
   const cart3d = useCart3D(cartMode, report);
@@ -246,7 +251,7 @@ function App() {
 
   if (settingsOpen) return <SettingsPage onBack={() => { setSettingsOpen(false); void refresh().catch(report); }} onSaved={applySettings} />;
   if (gameSettingsId) return <GameSettingsPage id={gameSettingsId} item={library.items.find(game => game.installation_id === gameSettingsId)}
-    skin={settings?.values.settings_style === 'glass' ? 'glass' : 'console'} cart3d={cart3d}
+    skin={skin} cart3d={cart3d}
     onBack={() => { setGameSettingsId(''); void refresh().catch(report); }} />;
 
   const filterLabel = t(filters.find(([value]) => value === filter)![1]);
@@ -320,12 +325,12 @@ function App() {
       </div>
     </>;
   };
-  return <div class={`console ${dragging ? 'dragging' : ''}`}
+  return <div class={`console skin-${skin} ${dragging ? 'dragging' : ''}`}
     onDragEnter={event => { if (isFileDrag(event)) { event.preventDefault(); ++dragDepth.current; setDragging(true); } }}
     onDragOver={event => { if (isFileDrag(event)) { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'; } }}
     onDragLeave={event => { event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } }}
     onDrop={event => { event.preventDefault(); dragDepth.current = 0; setDragging(false); if (isFileDrag(event)) intake(Array.from(event.dataTransfer?.files ?? [])); }}>
-    <Backdrop item={loading ? undefined : item} />
+    <Backdrop item={loading ? undefined : item} skin={skin} />
     <header class="top">
       <Brand />
       <nav class="tabs" aria-label={t('筛选游戏')}>
@@ -395,10 +400,14 @@ function App() {
     {!importing && errors.length > 0 && <Modal title={t('操作提示')} onDismiss={() => setErrors(queue => queue.slice(1))}><pre>{errors[0]}</pre></Modal>}
   </div>;
 }
-// The host's setting decides; the last one used is remembered so the splash does not flash the other language.
-function applyLanguage(value: unknown) {
-  setLanguage(value);
-  try { localStorage.setItem('ogplay.language', String(value)); } catch { /* storage unavailable: the setting still applies */ }
+// The host's settings decide; the last language and skin are remembered so the splash does not flash the other one.
+function remember(key: string, value: unknown) {
+  try { localStorage.setItem(key, String(value)); } catch { /* storage unavailable: the setting still applies */ }
 }
-try { setLanguage(localStorage.getItem('ogplay.language')); } catch { /* first run or blocked storage: Chinese until settings load */ }
+function recall(key: string) {
+  try { return localStorage.getItem(key); } catch { return null; /* first run or blocked storage: defaults until settings load */ }
+}
+function applyLanguage(value: unknown) { setLanguage(value); remember('ogplay.language', value); }
+const rememberedSkin = skinOf(recall('ogplay.skin'));
+setLanguage(recall('ogplay.language'));
 render(<App />, document.getElementById('app')!);

@@ -26,7 +26,7 @@ const std::vector<SettingDefinition>& SettingDefinitions() {
         {"theme", "general", "主题", std::string("dark"), {"dark", "light", "system"}, 0, 0, "预留 · 新界面暂无浅色主题"},
         {"density", "general", "游戏库密度", std::string("comfortable"), {"comfortable", "compact"}, 0, 0, "预留 · 新界面暂不区分密度"},
         {"cartridge", "general", "主界面卡带", std::string("3d"), {"3d", "css"}},
-        {"settings_style", "general", "设置页风格", std::string("console"), {"console", "glass"}},
+        {"settings_style", "general", "界面风格", std::string("console"), {"console", "glass"}},
         {"minimize_on_launch", "general", "启动游戏后最小化", false},
         {"show_exit_log", "general", "异常退出时显示日志末尾", true},
         {"confirm_delete", "general", "删除游戏前二次确认", true},

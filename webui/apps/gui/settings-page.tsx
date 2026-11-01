@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc } from './rpc';
 import { pickPath } from './import';
 import { groups, settingsError, type Settings } from './settings';
-import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui';
+import { Note, Paths, SettingsFrame, skinOf, useAutoSave, useToast } from './settings-ui';
 import { setLanguage, t } from './i18n';
 
 export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved: (settings: Settings) => void }) {
@@ -45,7 +45,7 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
     control: <Note icon="control"><p>{t('MCP 只监听本机。固定端口被其他游戏占用时启动失败；端口范围自动分配待后续接入。')}</p></Note>,
   };
   // The style setting previews while it is still a draft.
-  const skin = (draft.settings_style ?? saved?.values.settings_style) === 'glass' ? 'glass' : 'console';
+  const skin = skinOf(draft.settings_style ?? saved?.values.settings_style);
   const resetKeys = saved ? saved.fields.filter(field => draft[field.key] !== field.initial).map(field => field.key) : [];
   return <SettingsFrame skin={skin} crumb={<b>{t('全局设置')}</b>} idle={t('影响之后启动的游戏')} resetLabel={t('恢复默认')}
     resetTitle={t('将 {n} 项恢复为默认值？', { n: resetKeys.length })} resetKeys={resetKeys} busy={busy} saving={store.saving} loaded={!!saved}

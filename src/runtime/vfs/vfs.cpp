@@ -425,6 +425,39 @@ void VirtualFileSystem::Impl::MountHostFile(const VfsSource source, const std::s
     MountLazy(source, root, entries, false, host_backings);
 }
 
+std::string VirtualFileSystem::Impl::ResolveDataPathLocked(const std::string_view path) const {
+    const bool parent =
+        path == ".." || path.starts_with("../") || path.ends_with("/..") || path.find("/../") != std::string_view::npos;
+    if (!parent) return ResolvePath(path, working_directory_, aliases_);
+    const bool absolute = path.front() == '/';
+    if (!absolute && (!working_directory_.has_value() || working_directory_unlinked_)) {
+        throw VfsError(kEnoent, "VFS working directory was removed");
+    }
+    auto resolved = absolute ? std::string("/") : *working_directory_;
+    // Resolve guest components before consulting a backing. Mount registration
+    // still uses strict NormalizePath; no guest '..' reaches a host path.
+    std::size_t cursor = absolute ? 1U : 0U;
+    while (cursor <= path.size()) {
+        const auto end = path.find('/', cursor);
+        const auto part = path.substr(cursor, (end == std::string_view::npos ? path.size() : end) - cursor);
+        if (part == "..") {
+            const auto slash = resolved.rfind('/');
+            resolved = slash == 0 ? "/" : resolved.substr(0, slash);
+        } else if (!part.empty() && part != ".") {
+            resolved =
+                ResolvePath((resolved == "/" ? resolved : resolved + "/") + std::string(part), std::nullopt, aliases_);
+        }
+        if (end != std::string_view::npos || part.empty() || part == "." || part == "..") {
+            if (!StatLocked(resolved).is_directory) {
+                throw VfsError(kEnotdir, "VFS path component is not a directory");
+            }
+        }
+        if (end == std::string_view::npos) break;
+        cursor = end + 1U;
+    }
+    return resolved;
+}
+
 void VirtualFileSystem::Impl::SetWorkingDirectory(const std::string_view path) {
     std::scoped_lock lock(mutex_);
     if (path.empty()) throw VfsError(kEnoent, "VFS working directory path is empty");
@@ -490,7 +523,7 @@ std::optional<std::string> VirtualFileSystem::Impl::WorkingDirectory() const {
 
 std::string VirtualFileSystem::Impl::CanonicalPath(const std::string_view path) const {
     std::scoped_lock lock(mutex_);
-    return ResolvePath(path, working_directory_, aliases_);
+    return ResolveDataPathLocked(path);
 }
 
 std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const VfsOpenOptions options) {
@@ -504,7 +537,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
         return OpenDirectory(path, options.large_file, options.no_follow);
     }
     std::unique_lock lock(mutex_);
-    const auto normalized = ResolvePath(path, working_directory_, aliases_);
+    const auto normalized = ResolveDataPathLocked(path);
     if (normalized == "/") throw VfsError(kEisdir, "VFS root is not a file");
     auto found = files_.find(normalized);
     if (options.create && options.exclusive && (found != files_.end() || IsDirectoryLocked(normalized))) {

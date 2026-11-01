@@ -811,8 +811,9 @@ void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch,
             ReadGuestFloats(address_space, arguments[2], LightCount(arguments[1]), thread_id);
         static_cast<void>(require_frame("glLightfv"));
         state.SetLight(arguments[0], arguments[1],
-            matrices == nullptr ? values : TransformGles1LightParameter(
-                arguments[1], values, matrices->Current()));
+                       matrices == nullptr ? values
+                                           : TransformGles1LightParameter(
+                                                 arguments[1], values, matrices->Current(kGles1Modelview, kTexture0)));
         return 0U;
     });
     dispatch.Bind("glMaterialf",

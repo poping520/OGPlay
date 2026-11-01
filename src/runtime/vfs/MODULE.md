@@ -124,7 +124,8 @@ mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄�
 
 ## 不变量
 
-- 路径索引按 ASCII 大小写不敏感，拒绝 traversal、别名歧义和事务挂载的部分发布。
+- 路径索引按 ASCII 大小写不敏感；guest 查找中的 `..` 逐目录解析并停在虚拟根，
+  挂载条目、沙盒编码与宿主 backing 仍拒绝 traversal、别名歧义和事务挂载的部分发布。
 - `generation` 只随内容写入/截断变化；路径替换创建不同节点身份。alias 与 canonical
   路径共享同一节点、锁、SQLite identity 和 overlay。
 - 底层 APK/OBB/宿主来源永不反写；写入只进入内存可写节点或 attached overlay。
@@ -161,5 +162,7 @@ ListDirectory 对不存在目录返回空，不触发通知。观察者不得重
 目录 FD 保留打开路径与删除事实，dup 共享；删除后同名重建不重绑旧 cwd/FD，
 WorkingDirectory 报 ENOENT。cwd 以折叠路径解析，getcwd 返回 guest 所用拼写（仅 ASCII 大小写
 可不同；经别名的前缀取规范拼写）。根目录作为文件打开 EISDIR，rmdir/rename 根 EBUSY。
-普通数据路径仍保持既有 traversal 拒绝，不对宿主文件系统执行 chdir 或路径探测；
+普通数据路径同样逐目录解析 `..`，中间缺目录 ENOENT、文件作目录 ENOTDIR；
+别名先解析到 guest 规范目录再取父目录，权限校验与 backing 读取只接收规范路径。
+挂载条目仍拒绝 `..`，不对宿主文件系统执行 chdir 或路径探测；
 无 symlink/目录子树 rename。别名祖先参与目录存在性判断，挂载点与内容同样折叠大小写。

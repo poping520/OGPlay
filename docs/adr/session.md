@@ -29,6 +29,8 @@ meta package 匹配的最小残留沙盒，否则从两侧占用并集取 packag
 沙盒 schema 3 只接受 internal/external/obb/sdcard 四根和匹配 meta，每实例 ANDROID_ID 持久；
 旧 fs/、错配/混合布局不迁移或降为空。语义根不可删除，缺根可重建并告警。
 配额、文件名编码、大小写索引、原子替换与 flush 集中在 VFS/SandboxStore；真实 IO 失败传播。
+普通 guest 路径的 `..` 只在虚拟命名空间内逐目录解析，根的父目录保持根；缺目录/文件作目录
+明确失败。挂载条目、沙盒编码与宿主 backing 仍拒绝 traversal，不把原始 guest 路径交给宿主。
 node/backing/open-state 分离，耗时读取/CRC/解压不持全局索引锁，FD 各自游标；
 lease 固定来源版本和窗口，独立于 Close/unlink/rename，可写捕获受统一快照预算约束。
 音视频只经消费者定义的窄 ReadAt 接口使用同一 lease，不反查 host 路径或复制完整编码源。

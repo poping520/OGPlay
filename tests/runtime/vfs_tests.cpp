@@ -244,6 +244,49 @@ TEST_CASE("VFS resolves relative paths from an explicit working directory") {
         ogplay::runtime::VfsError);
 }
 
+TEST_CASE("VFS-11 data paths resolve parent segments inside the guest namespace") {
+    using namespace ogplay::runtime;
+    VirtualFileSystem vfs;
+    const std::array bytes{std::byte{0x42}, std::byte{0x24}};
+    vfs.PutFile("/sdcard/game/data/models/creatures/mesh.bin", bytes, false);
+    vfs.PutFile("/sdcard/game/data/interface/sprite.bin", bytes, false);
+    vfs.SetWorkingDirectory("/sdcard/game");
+    vfs.AddPathAlias("/assets", "/sdcard/game/data/models");
+    for (const auto path :
+         {"data/models/creatures/../../interface/SPRITE.bin", "/../../sdcard/game/data/models/../interface/sprite.bin",
+          "/assets/../interface/sprite.bin"}) {
+        const auto fd = vfs.Open(path, {.read = true});
+        std::array<std::byte, 2> actual{};
+        CHECK(vfs.Read(fd, actual) == actual.size());
+        CHECK(actual == bytes);
+        CHECK(vfs.Stat(path).size == bytes.size());
+        CHECK(vfs.CanonicalPath(path) == "/sdcard/game/data/interface/sprite.bin");
+        vfs.Close(fd);
+    }
+    ExpectHostErrno([&] { (void)vfs.Open("data/missing/../interface/sprite.bin", {.read = true}); }, 2);
+    ExpectHostErrno([&] { (void)vfs.Open("data/interface/sprite.bin/../sprite.bin", {.read = true}); }, 20);
+    ExpectHostErrno([&] { (void)vfs.Open("data/bad\\name/../interface/sprite.bin", {.read = true}); }, 22);
+    ExpectHostErrno([&] { (void)vfs.Open("data/models/../interface/sprite.bin", {.write = true}); }, 13);
+    CHECK(vfs.WorkingDirectory() == "/sdcard/game");
+}
+
+TEST_CASE("VFS-11 parent segments cannot escape a host backing mount") {
+    using namespace ogplay::runtime;
+    HostMountFixture host;
+    std::filesystem::create_directory(host.root / "mounted");
+    host.Put("mounted/inside.bin", "IN");
+    host.Put("outside.bin", "OUT");
+    VirtualFileSystem vfs;
+    vfs.MountHostDirectory("/sdcard/data", host.root / "mounted");
+    const auto fd = vfs.Open("/sdcard/data/../data/inside.bin", {.read = true});
+    std::array<std::byte, 2> actual{};
+    CHECK(vfs.Read(fd, actual) == actual.size());
+    CHECK(actual == std::array{std::byte{'I'}, std::byte{'N'}});
+    vfs.Close(fd);
+    ExpectHostErrno([&] { (void)vfs.Open("/sdcard/data/../outside.bin", {.read = true}); }, 2);
+    ExpectHostErrno([&] { (void)vfs.Open("/sdcard/data/../../outside.bin", {.read = true}); }, 2);
+}
+
 TEST_CASE("VFS enforces read only files and descriptor access modes") {
     ogplay::runtime::VirtualFileSystem vfs;
     const std::array contents{std::byte{7}};

@@ -157,12 +157,13 @@ TEST_CASE("DVM-243 sandbox statvfs shares alias identity and dirty quota facts")
     CHECK(vfs.StatVfs("/sdcard").values == original.values);
     vfs.CreateDirectory("/sdcard/folder");
     CHECK(vfs.StatVfs("/sdcard").values[6] == 7);
+    CHECK(vfs.StatVfs("/storage/emulated/0/folder/..").values == vfs.StatVfs("/sdcard").values);
     vfs.RemoveDirectory("/sdcard/folder");
     CHECK(vfs.StatVfs("/sdcard").values[6] == 8);
     vfs.PutFile("/system/readonly", {}, false);
     CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/system/readonly")); }) == 95);
     CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/sdcard/missing")); }) == 2);
-    CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/sdcard/../escape")); }) == 13);
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/sdcard/../escape")); }) == 2);
     VirtualFileSystem missing;
     missing.CreateDirectory("/sdcard");
     CHECK(ErrnoOf([&] { static_cast<void>(missing.StatVfs("/sdcard")); }) == 95);

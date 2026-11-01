@@ -1628,6 +1628,30 @@ TEST_CASE("VFS-09 Android AT_FDCWD uses the shared cwd") {
     CHECK(fixture.Call(323, {7, 0x20000, 0755}) == -95);
 }
 
+TEST_CASE("VFS-11 file syscalls resolve parent segments without changing cwd") {
+    MetadataSyscallFixture fixture;
+    const std::array bytes{std::byte{0x42}};
+    fixture.vfs.PutFile("/scene/models/mesh.bin", bytes, false);
+    fixture.vfs.PutFile("/scene/textures/sprite.bin", bytes, false);
+    fixture.vfs.SetWorkingDirectory("/scene/models");
+    fixture.WriteString(0x20000, "../textures/sprite.bin");
+    for (const bool at : {false, true}) {
+        fixture.WriteString(0x20000, at ? "/scene/models/../textures/sprite.bin" : "../textures/sprite.bin");
+        const auto fd = at ? fixture.Call(322, {0xffffff9c, 0x20000, 0}) : fixture.Call(5, {0x20000, 0});
+        REQUIRE(fd >= 3);
+        CHECK(fixture.Call(3, {static_cast<std::uint32_t>(fd), 0x20300, 1}) == 1);
+        CHECK(fixture.memory.Read8(GuestAddress{0x20300}) == 0x42);
+        CHECK(fixture.Call(6, {static_cast<std::uint32_t>(fd)}) == 0);
+    }
+    CHECK(fixture.Call(195, {0x20000, 0x20200}) == 0);
+    CHECK(fixture.Call(33, {0x20000, 0}) == 0);
+    fixture.WriteString(0x20000, "missing/../mesh.bin");
+    CHECK(fixture.Call(5, {0x20000, 0}) == -2);
+    fixture.WriteString(0x20000, "/scene/models/mesh.bin/../mesh.bin");
+    CHECK(fixture.Call(322, {0xffffff9c, 0x20000, 0}) == -20);
+    CHECK(fixture.vfs.WorkingDirectory() == "/scene/models");
+}
+
 TEST_CASE("VFS-05 generated proc files share ARM access open and read semantics") {
     MetadataSyscallFixture fixture;
     auto registration = fixture.vfs.RegisterGeneratedReadOnly("/proc/self/maps", 64, [] {

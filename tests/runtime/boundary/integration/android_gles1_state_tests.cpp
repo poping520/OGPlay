@@ -409,3 +409,48 @@ TEST_CASE("BND34 GLES1 isolates light fog and client arrays between contexts") {
     CHECK(f.bus.Read32(f.output, 1) == 0x41000000U);
     CHECK(f.Call("libGLESv1_CM.so", "glIsEnabled", {0x8074}) == 1U);
 }
+
+TEST_CASE("BND34 GLES1 light vectors use modelview regardless of matrix mode") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1, 0, 0}) == 1U);
+    const auto surface = AuditSurface(f), context = AuditContext(f, 1U);
+    AuditBind(f, context, surface);
+    const auto gl = [&](std::string_view name, const std::array<std::uint32_t, 4>& args = {}) {
+        return f.Call("libGLESv1_CM.so", name, args);
+    };
+    const auto word = [](float value) { return std::bit_cast<std::uint32_t>(value); };
+    gl("glMatrixMode", {0x1700});
+    gl("glTranslatef", {word(4), word(-2), word(5)});
+    gl("glScalef", {word(2), word(3), word(4)});
+    const auto input = f.output.Add(64);
+    for (const auto mode : {0x1701U, 0x1702U}) {
+        CAPTURE(mode);
+        gl("glMatrixMode", {mode});
+        gl("glTranslatef", {word(100), word(200), word(300)});
+        for (const bool fixed : {false, true}) {
+            CAPTURE(fixed);
+            for (const auto parameter : {0x1203U, 0x1204U}) {
+                CAPTURE(parameter);
+                const bool position = parameter == 0x1203U;
+                const std::array values{1.0F, 2.0F, 3.0F, 1.0F};
+                const std::array expected =
+                    position ? std::array{6.0F, 4.0F, 17.0F, 1.0F} : std::array{0.5F, 2.0F / 3.0F, 0.75F, 0.0F};
+                const std::size_t count = position ? 4U : 3U;
+                for (std::size_t i = 0; i < count; ++i) {
+                    const auto raw = fixed ? static_cast<std::uint32_t>(values[i] * 65536.0F) : word(values[i]);
+                    f.bus.Write32(input.Add(i * 4), raw, 1U);
+                }
+                gl(fixed ? "glLightxv" : "glLightfv", {0x4000, parameter, input.Value()});
+                gl("glGetLightfv", {0x4000, parameter, f.output.Value()});
+                for (std::size_t i = 0; i < count; ++i) {
+                    const auto actual = std::bit_cast<float>(f.bus.Read32(f.output.Add(i * 4), 1U));
+                    CHECK(actual == doctest::Approx(expected[i]));
+                }
+                gl("glGetIntegerv", {0x0BA0, f.output.Value()});
+                CHECK(f.bus.Read32(f.output, 1U) == mode);
+                CHECK(gl("glGetError") == 0U);
+            }
+        }
+    }
+}

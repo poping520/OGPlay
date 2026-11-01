@@ -570,8 +570,8 @@ note = "ADR-0071/VFS-01：沙盒按安装层显式 installation id 隔离，sche
 
 [runtime.vfs]
 status = "complete"
-test = "tests/runtime/vfs_tests.cpp; tests/runtime/syscall_tests.cpp#VFS-06; tests/runtime/syscall_tests.cpp#VFS-08; tests/runtime/syscall_tests.cpp#VFS-09; tests/runtime/syscall_tests.cpp#ARM F_GETFL; tests/runtime/guest_cpu_environment_tests.cpp#VFS-06; tests/frontend/run_apk_vfs_tests.cpp; tests/loader/apk_tests.cpp; tests/dexvm/network_sqlite_tests.cpp"
-note = "ADR-0071/0074/0110/0129、VFS-01..10：节点/打开状态/backing 分离，ReadAt/WriteAt、读 lease、128 MiB 统一资源预算；初始 / 共享 cwd；APK/OBB stored/Deflate 严格 range 挂载；随机设备接 HAL CSPRNG；宿主目录惰性绑定、128 句柄 LRU（满则 EMFILE）；O_APPEND 原子 EOF 写；DescriptorStatus 查询真实不可变打开标志，dup 共享。fcntl 状态改写与跨进程追加未实现；VFS-07 macOS 待原生验证。"
+test = "tests/runtime/vfs_tests.cpp; tests/runtime/syscall_tests.cpp#VFS-06; tests/runtime/syscall_tests.cpp#VFS-08; tests/runtime/syscall_tests.cpp#VFS-09; tests/runtime/syscall_tests.cpp#VFS-11; tests/runtime/syscall_tests.cpp#ARM F_GETFL; tests/runtime/guest_cpu_environment_tests.cpp#VFS-06; tests/frontend/run_apk_vfs_tests.cpp; tests/loader/apk_tests.cpp; tests/dexvm/network_sqlite_tests.cpp"
+note = "ADR-0071/0074/0110/0129、VFS-01..11：节点/打开状态/backing 分离，ReadAt/WriteAt、lease 与统一资源预算；guest cwd 及普通路径逐目录解析 ..，根不越界；挂载条目与宿主 backing 仍拒绝 traversal。APK/OBB 严格 range、宿主惰性绑定/句柄 LRU、append、身份查询及 HAL 随机设备已实现；fcntl 状态改写、跨进程追加未实现，VFS-07 macOS 待原生验证。"
 
 [runtime.vfs_filesystem_stats]
 status = "partial"

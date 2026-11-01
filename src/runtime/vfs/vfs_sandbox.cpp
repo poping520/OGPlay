@@ -14,7 +14,7 @@ namespace ogplay::runtime {
 
 VfsFileInfo VirtualFileSystem::Impl::Stat(const std::string_view path) const {
     std::scoped_lock lock(mutex_);
-    const auto normalized = ResolvePath(path, working_directory_, aliases_);
+    const auto normalized = ResolveDataPathLocked(path);
     return StatLocked(normalized);
 }
 
@@ -44,7 +44,7 @@ VfsFileInfo VirtualFileSystem::Impl::StatLocked(const std::string& normalized) c
 
 GuestFileSystemStats VirtualFileSystem::Impl::StatVfs(std::string_view path) const {
     std::scoped_lock lock(mutex_);
-    const auto normalized = ResolvePath(path, working_directory_, aliases_);
+    const auto normalized = ResolveDataPathLocked(path);
     const auto info = StatLocked(normalized);
     // Container directories such as /data and /data/data describe the
     // single attached quota volume too; this does not grant write access.
@@ -89,7 +89,7 @@ GuestFileSystemStats VirtualFileSystem::Impl::StatVfs(std::string_view path) con
 
 std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ListDirectory(const std::string_view path) const {
     std::scoped_lock lock(mutex_);
-    auto prefix = ResolvePath(path, working_directory_, aliases_);
+    auto prefix = ResolveDataPathLocked(path);
     if (prefix.empty() || prefix.back() != '/') prefix.push_back('/');
     // Merged from both indexes and deduplicated by name, so getdents64 sees
     // one stable order regardless of how a directory came to be.
@@ -241,7 +241,7 @@ std::int32_t VirtualFileSystem::Impl::OpenDirectory(const std::string_view path,
                                                     const bool no_follow) {
     auto entries = ListDirectory(path);
     std::scoped_lock lock(mutex_);
-    const auto normalized = ResolvePath(path, working_directory_, aliases_);
+    const auto normalized = ResolveDataPathLocked(path);
     if (files_.contains(normalized)) {
         throw VfsError(kEnotdir, "VFS path is not a directory");
     }
@@ -303,7 +303,7 @@ VfsFileInfo VirtualFileSystem::Impl::DescriptorInfo(const std::int32_t descripto
 
 void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {
     std::scoped_lock lock(mutex_);
-    const auto normalized = ResolvePath(path, working_directory_, aliases_);
+    const auto normalized = ResolveDataPathLocked(path);
     if (files_.contains(normalized)) {
         throw VfsError(kEexist, "VFS path already holds a file");
     }
@@ -324,7 +324,7 @@ void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {
 
 void VirtualFileSystem::Impl::RemoveFile(const std::string_view path) {
     std::scoped_lock lock(mutex_);
-    const auto normalized = ResolvePath(path, working_directory_, aliases_);
+    const auto normalized = ResolveDataPathLocked(path);
     const auto found = files_.find(normalized);
     if (found == files_.end() || tombstones_.contains(normalized)) {
         if (IsDirectoryLocked(normalized)) {
@@ -345,7 +345,7 @@ void VirtualFileSystem::Impl::RemoveFile(const std::string_view path) {
 
 void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
     std::scoped_lock lock(mutex_);
-    const auto normalized = ResolvePath(path, working_directory_, aliases_);
+    const auto normalized = ResolveDataPathLocked(path);
     if (normalized == "/") throw VfsError(kEbusy, "VFS root cannot be removed");
     if (sandbox_ != nullptr &&
         std::ranges::find(sandbox_->SemanticRoots(), normalized) != sandbox_->SemanticRoots().end()) {
@@ -386,8 +386,8 @@ void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
 
 void VirtualFileSystem::Impl::Rename(const std::string_view from, const std::string_view to) {
     std::unique_lock lock(mutex_);
-    const auto source = ResolvePath(from, working_directory_, aliases_);
-    const auto target = ResolvePath(to, working_directory_, aliases_);
+    const auto source = ResolveDataPathLocked(from);
+    const auto target = ResolveDataPathLocked(to);
     if (source == "/") throw VfsError(kEbusy, "VFS root cannot be renamed");
     auto found = files_.find(source);
     const auto target_file = files_.find(target);

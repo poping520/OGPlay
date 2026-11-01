@@ -259,4 +259,4 @@ details.fact pre { margin: 8px 0 2px; font: 11.5px/1.6 var(--code); color: var(-
 .skin-glass .toast i { background: #19c7a8; box-shadow: none; }
 .cfg.skin-glass dialog { border-radius: 30px; }
 .cfg.skin-glass dialog .kicker { color: #ffd65c; }
-.skin-glass dialog li { background: rgba(255,255,255,.12); }
+.cfg.skin-glass dialog li { background: rgba(255,255,255,.12); }

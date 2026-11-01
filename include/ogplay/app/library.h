@@ -118,6 +118,10 @@ public:
     [[nodiscard]] bool IsRunning(std::string_view key) const;
     // Saves stay by default and are adopted by the next import of the package.
     void Remove(std::string_view key, bool delete_saves = false);
+    // Empties the instance's saves (its whole sandbox overlay) and keeps the
+    // sandbox identity, game files, data pack, settings and logs. Refused
+    // while the game runs and for a damaged entry.
+    void ClearSaves(std::string_view key);
     // Re-extracts each entry's icon.png from its own game.apk with the current icon
     // rule; returns the ids whose icon changed. Unreadable entries keep their icon.
     std::vector<std::string> RefreshIcons();

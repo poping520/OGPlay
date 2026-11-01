@@ -101,6 +101,7 @@ fsync 返回 EINVAL。O_NONBLOCK 仅放行字符设备，reader 自身负责就�
 
 映射唯一集中在 `SandboxStore`：语义根按 VFS 的 ASCII case-fold 匹配并规范化；
 package/meta/安装目录保留原始拼写，根内文件名保留既有宿主布局，不迁移存档。
+SandboxStore::Clear 原地清空四个语义根的全部内容并清零索引，meta.toml 不动；中途失败留下合法的部分清空沙盒，再次清空即可完成。
 四个语义根挂载时即为目录、不可删除（Remove/WriteTombstone/rmdir 返回 EBUSY）；SandboxStore::CreateDirectory 幂等且不计 entry，已有沙盒缺失根时自动重建空目录并由前端记 warn，meta/未知旧布局或根被文件替换仍严格失败。
 
 - `/data/data/<package>/...` → `internal/...`

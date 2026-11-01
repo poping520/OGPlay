@@ -19,6 +19,7 @@
 | [GUI-13](GUI-13.md) | 运行时推断数据包挂载位置，退出后确认修改 | macOS 定向与 DH 真实复跑已验；App 内点击待验 |
 | [GUI-14](GUI-14.md) | 启动器界面中英文切换（前端文案） | macOS 前端已验；宿主文字与 App 内点击待验 |
 | [GUI-15](GUI-15.md) | 卡带展示视图（3D 旋转、视角、拆开看电路板） | macOS 前端已验；App 内点击待验 |
+| [GUI-16](GUI-16.md) | 清空游戏数据（保留游戏、数据包与沙盒身份） | 宿主与前端已验；App 内点击待验 |
 | [DASH-01](DASH-01.md) | Dashboard agent 只读聚合、事件游标与线程关联 | agent 层完成 |
 | [DASH-02](DASH-02.md) | 堆/GC、JNI、CPU 缓存、权限、VFS/动态库快照 | Windows 完成；扩展 BootDex 回归有阻塞 |
 | [DASH-03](DASH-03.md) | Dashboard HTTP、顶栏/拓扑/时间轴/线程表 | Windows 完成；新增来源/面板见 DASH-02/04 |

@@ -110,3 +110,26 @@ export function RemoveGameDialog({ item, busy, onConfirm, onClose }: {
     </div>
   </dialog>;
 }
+
+/** "清空游戏数据": resets the entry's sandbox to how it was at import; always asks, since nothing can bring it back. */
+export function ClearDataDialog({ item, busy, onConfirm, onClose }: {
+  item: LibraryItem; busy: boolean; onConfirm: () => void; onClose: () => void;
+}) {
+  const dialog = useModal();
+  return <dialog ref={dialog} class="import-wizard remove-game" aria-label={t('清空游戏数据')} onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
+    <header class="iw-head"><h2>{t('清空「{name}」的游戏数据？', { name: item.display_name })}</h2></header>
+    <GameCard item={item}><div class="mono">{item.installation_id}</div><ul class="iw-tags"><li>{versionLabel(item)}</li></ul></GameCard>
+    <div class="rg-scope">
+      <div class="rg-col gone"><small>{t('将清空')}</small><ul>
+        <li>{t('存档与游戏进度')}</li><li>{t('游戏内设置与登录')}</li><li>{t('游戏下载或生成的文件')}</li></ul></div>
+      <div class="rg-col kept"><small>{t('保留')}</small><ul>
+        <li>{t('游戏与数据包')}</li><li>{t('游戏设置与按键')}</li><li>{t('运行日志')}</li><li>{t('设备 ID（ANDROID_ID）')}</li></ul></div>
+    </div>
+    <p class="rg-warn" role="alert"><b>{t('此操作无法撤销')}</b>{t('游戏会像刚导入时一样从头开始。需要保留进度时，先在“打开沙盒目录”中备份。')}</p>
+    <div class="modal-actions">
+      <button autoFocus disabled={busy} onClick={onClose}>{t('取消')}</button>
+      <span class="iw-spacer" />
+      <button class="danger" disabled={busy || item.running} title={item.running ? t('游戏运行中，退出后才能清空数据。') : undefined} onClick={onConfirm}>{t('清空数据')}</button>
+    </div>
+  </dialog>;
+}

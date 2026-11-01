@@ -21,8 +21,9 @@ function Argv({ argv }: { argv: string[] }) {
   </Fragment>)}</pre>;
 }
 
-export function GameSettingsPage({ id, item, skin, cart3d, onBack }: {
-  id: string; item?: LibraryItem; skin: Skin; cart3d: Cart3D | 'waiting' | null; onBack: () => void;
+// `clearData` returns to the library, whose confirmation dialog clears the saves.
+export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: {
+  id: string; item?: LibraryItem; skin: Skin; cart3d: Cart3D | 'waiting' | null; onBack: () => void; clearData: () => void;
 }) {
   const [group, setGroup] = useState<string>('performance');
   const [mode, setMode] = useState<string>('normal');
@@ -64,7 +65,8 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack }: {
     data: <Note icon="data" title={t('存档与目录')}><Paths rows={[...(item ? [[t('沙盒'), item.sandbox_path], [t('日志'), item.log_directory]] as [string, string][] : []), [t('游戏配置'), saved.config_path]]} />
       {actions(<button class="mini" disabled={busy} onClick={() => open('sandbox')}>{t('打开沙盒目录')}</button>, <button class="mini" disabled={busy} onClick={() => open('log')}>{t('打开日志目录')}</button>,
         <button class="mini" disabled={busy} onClick={() => open('external')}>{t('打开数据包目录')}</button>, <button class="mini" disabled>{t('导出 / 导入存档')}<em>{t('预留')}</em></button>,
-        <button class="mini" disabled>{t('重置沙盒')}<em>{t('暂未开放')}</em></button>)}</Note>,
+        <button class="mini" disabled={busy || !item || item.running} title={item?.running ? t('游戏运行中，退出后才能清空数据。') : undefined}
+          onClick={() => store.afterSave(clearData)}>{t('清空游戏数据…')}</button>)}</Note>,
     network: <Note icon="network" title={t('仅保存意向')} warn><p>{t('不改变运行时网络策略；“允许网络”是预留配置。')}</p></Note>,
     compatibility: <Note icon="compatibility" title={saved.profile_id ? t('精确 Profile · {id}', { id: saved.profile_id }) : t('兼容性目录')}>
       {Object.keys(saved.facts).length > 0 && <Paths rows={Object.entries(saved.facts).map(([key, value]) => [t(key), value] as [string, string])} />}</Note>,

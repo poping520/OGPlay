@@ -358,6 +358,9 @@
 .rg-saves b { display: block; font-size: 14px; font-weight: 900; }
 .rg-saves small { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; font-weight: 700; }
 .rg-saves.on small { color: #ffb4ae; }
+.rg-warn { margin: 14px 0 0; padding: 12px 16px; border: 1px solid rgba(255,90,82,.45); border-radius: 14px; background: rgba(255,90,82,.1); color: #ffb4ae;
+  font-size: 12.5px; font-weight: 700; line-height: 1.6; }
+.rg-warn b { display: block; color: var(--ink); font-size: 14px; font-weight: 900; }
 .console dialog button.danger { background: var(--danger); border-color: var(--danger); color: #2b0705; }
 .console dialog button.danger:hover:not(:disabled) { background: #ff7a73; border-color: #ff7a73; }
 

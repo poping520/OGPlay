@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <thread>
 #include "ogplay/app/encoding.h"
 #include "frontend/gui/rpc.h"
@@ -419,6 +420,52 @@ TEST_CASE("GUI RPC removes only the confirmed stopped installation") {
     CHECK_FALSE(std::filesystem::exists(sibling));
     CHECK_FALSE(std::filesystem::exists(sibling_saves));
     CHECK(std::filesystem::exists(sandbox / "save.dat"));
+}
+
+TEST_CASE("GUI RPC clears the saves of a confirmed stopped installation and keeps its identity") {
+    Fixture fixture;
+    const auto entry = fixture.store.EntriesRoot() / "org.example.game";
+    // A sandbox as the runtime writes it: identity in meta.toml, guest writes 1:1 under the four roots.
+    const auto sandbox = ogplay::app::LauncherSandboxRoot(fixture.root) / "org.example.game";
+    const std::string meta = "schema = 3\npackage = \"org.example.game\"\nversion_code = 1\nandroid_id = \"0123456789abcdef\"\n";
+    for (const auto* root : {"internal/files", "external", "obb", "sdcard/vendor"}) std::filesystem::create_directories(sandbox / root);
+    std::ofstream(sandbox / "meta.toml") << meta;
+    std::ofstream(sandbox / "internal/files/save.dat") << "save";
+    std::ofstream(sandbox / "sdcard/vendor/profile.sav") << "profile";
+    const auto saved = [&] {
+        std::size_t count{};
+        for (const auto* root : {"internal", "external", "obb", "sdcard"})
+            count += static_cast<std::size_t>(std::distance(std::filesystem::recursive_directory_iterator(sandbox / root), {}));
+        return count;
+    };
+    REQUIRE(saved() == 4);
+    for (const auto* params : {
+        R"({"installation_id":"org.example.game"})",
+        R"({"installation_id":"org.example.game","confirmed":false})",
+        R"({"installation_id":"org.example.game","confirmed":true,"delete_saves":true})",
+        R"({"installation_id":"../sandbox","confirmed":true})",
+        R"({"installation_id":"absent","confirmed":true})"}) {
+        const auto response = Decode(fixture.rpc.Handle(std::string(R"({"jsonrpc":"2.0","id":1,"method":"library.clear_data","params":)") + params + "}"));
+        CHECK(response.Root().Member("error").has_value());
+    }
+    CHECK(saved() == 4);
+    const auto request = R"({"jsonrpc":"2.0","id":1,"method":"library.clear_data","params":{"installation_id":"org.example.game","confirmed":true}})";
+    fixture.context.running_packages = {"org.example.game"};
+    CHECK(Decode(fixture.rpc.Handle(request)).Root().Member("error")->Member("code")->Integer() == -32002);
+    fixture.context.running_packages.clear();
+    {
+        ogplay::app::RunningLease externally_running(fixture.root, "org.example.game");
+        CHECK(Decode(fixture.rpc.Handle(request)).Root().Member("error").has_value());
+    }
+    CHECK(saved() == 4);
+    const auto cleared = Decode(fixture.rpc.Handle(request));
+    REQUIRE(cleared.Root().Member("result").has_value());
+    CHECK(cleared.Root().Member("result")->Member("cleared")->Bool() == true);
+    CHECK(saved() == 0);
+    std::ifstream input(sandbox / "meta.toml");
+    CHECK(std::string(std::istreambuf_iterator<char>(input), {}) == meta);
+    CHECK(std::filesystem::exists(entry / "game.apk"));
+    CHECK(std::filesystem::exists(entry / "meta.toml"));
 }
 
 TEST_CASE("INP-7 GUI opens the key editor only for a running instance whose editor is ready") {

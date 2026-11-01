@@ -154,7 +154,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             method.starts_with("library.upload."))
             return ImportRequest(method, params);
         if (method != "library.list" && method != "library.launch" && method != "library.open_dir" &&
-            method != "library.remove")
+            method != "library.remove" && method != "library.clear_data")
             return Error(-32601, "unknown method", "使用当前版本支持的 GUI 方法。");
         if (method == "library.list")
             CheckFields(params, {});
@@ -162,6 +162,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             CheckFields(params, {"installation_id", "mode"});
         else if (method == "library.remove")
             CheckFields(params, {"installation_id", "confirmed", "delete_saves"});
+        else if (method == "library.clear_data")
+            CheckFields(params, {"installation_id", "confirmed"});
         else
             CheckFields(params, {"installation_id", "kind"});
 
@@ -181,10 +183,10 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 throw std::invalid_argument("unknown launch mode");
         }
         bool delete_saves{};
-        if (method == "library.remove") {
+        if (method == "library.remove" || method == "library.clear_data") {
             const auto confirmed = params.Member("confirmed");
             if (!confirmed || confirmed->Bool() != std::optional<bool>{true})
-                throw std::invalid_argument("removal requires confirmed=true");
+                throw std::invalid_argument(method == "library.remove" ? "removal requires confirmed=true" : "clearing data requires confirmed=true");
             if (const auto value = params.Member("delete_saves")) {
                 if (!value->Bool()) throw std::invalid_argument("delete_saves requires a boolean");
                 delete_saves = *value->Bool();
@@ -258,6 +260,13 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 store_.Remove(key, delete_saves);
                 writer.AddString(result, "installation_id", key);
                 writer.AddBool(result, "removed", true);
+            } else if (method == "library.clear_data") {
+                const auto tile =
+                    std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
+                if (tile->running) return Error(-32002, "游戏正在运行", "退出游戏后再清空数据。");
+                store_.ClearSaves(key);
+                writer.AddString(result, "installation_id", key);
+                writer.AddBool(result, "cleared", true);
             } else if (method == "library.launch") {
                 const auto tile =
                     std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });

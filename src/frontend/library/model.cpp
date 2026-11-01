@@ -791,4 +791,23 @@ void LibraryStore::Remove(const std::string_view key, const bool delete_saves) {
     }
 }
 
+void LibraryStore::ClearSaves(const std::string_view key) {
+    auto library_lock = RequireLibraryLock(root_);
+    const auto entries = LoadEntries();
+    const auto found = std::find_if(entries.begin(), entries.end(), [&](const auto& entry) { return entry.key == key; });
+    if (found == entries.end()) throw LibraryError(LibraryErrorCode::not_found, "library entry does not exist");
+    if (found->Damaged() || !found->metadata) {
+        throw LibraryError(LibraryErrorCode::corrupt_config, "damaged library entry cannot clear its saves", found->directory);
+    }
+    // Held through the clear; the library lock also keeps a new launch out.
+    const auto running = TryRunningLock(*this, key);
+    if (!running) throw LibraryError(LibraryErrorCode::running, "instance_running: game is running; stop it before clearing its saves", found->directory);
+    const auto saves = root_ / "sandbox" / Utf8Path(key);
+    try {
+        runtime::SandboxStore::Open(root_ / "sandbox", key, found->metadata->package)->Clear();
+    } catch (const runtime::VfsError& error) {
+        throw LibraryError(LibraryErrorCode::io_error, std::string("cannot clear saves: ") + error.what(), saves);
+    }
+}
+
 }  // namespace ogplay::app

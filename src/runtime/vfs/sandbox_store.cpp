@@ -820,6 +820,23 @@ void SandboxStore::Remove(const std::string_view raw_guest_path) {
     impl_->entries.erase(found);
 }
 
+void SandboxStore::Clear() {
+    for (const auto root_name : {"internal", "external", "obb", "sdcard"}) {
+        const auto root = impl_->directory / root_name;
+        std::vector<std::filesystem::path> children;
+        std::error_code error;
+        for (std::filesystem::directory_iterator it(root, error), end; !error && it != end; it.increment(error))
+            children.push_back(it->path());
+        if (error) throw VfsError(kEio, "cannot list a sandbox semantic root");
+        for (const auto& child : children) {
+            std::filesystem::remove_all(child, error);
+            if (error) throw VfsError(kEio, "cannot clear a sandbox semantic root");
+        }
+    }
+    impl_->entries.clear();
+    impl_->used_bytes = 0;
+}
+
 std::uint64_t SandboxStore::UsedBytes() const {
     return impl_->used_bytes;
 }

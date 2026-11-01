@@ -9,7 +9,7 @@ import { CartViewer } from './cart-viewer';
 import type { Settings } from './settings';
 import { ImportWizard } from './import-wizard';
 import { DataHintDialog } from './data-hint';
-import { InstallInfoDialog, RemoveGameDialog } from './game-dialogs';
+import { ClearDataDialog, InstallInfoDialog, RemoveGameDialog } from './game-dialogs';
 import type { DataHint } from './import';
 import { Backdrop, Cartridge } from './cartridge';
 import { Hero3D, TileCart, useCart3D, type CartMode } from './cartridge3d';
@@ -58,6 +58,7 @@ function App() {
   const [library, setLibrary] = useState<Library>({ items: [], library_root: '' });
   const [dashboards, setDashboards] = useState<DashboardInfo[]>([]);
   const [removing, setRemoving] = useState<LibraryItem | null>(null);
+  const [clearing, setClearing] = useState<LibraryItem | null>(null);
   const [dataHint, setDataHint] = useState<{ id: string; hint: DataHint } | null>(null);
   const [dashboardListOpen, setDashboardListOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -170,6 +171,12 @@ function App() {
   const remove = async (game: LibraryItem, withSaves = false) => {
     if (await act('library.remove', game, undefined, withSaves ? { delete_saves: true } : {})) { setRemoving(null); setSelected(''); }
   };
+  // Always confirmed in its dialog: unlike removal, cleared saves cannot be restored by a re-import.
+  const clearData = async (game: LibraryItem) => {
+    if (await act('library.clear_data', game, undefined, { confirmed: true })) {
+      setClearing(null); report(t('已清空「{name}」的游戏数据。', { name: game.display_name }));
+    }
+  };
   const requestRemoval = (game: LibraryItem) => {
     setMenuOpen(false);
     if (game.running || busy || importing) return;
@@ -236,7 +243,8 @@ function App() {
   if (settingsOpen) return <SettingsPage onBack={() => { setSettingsOpen(false); void refresh().catch(report); }} onSaved={applySettings} />;
   if (gameSettingsId) return <GameSettingsPage id={gameSettingsId} item={library.items.find(game => game.installation_id === gameSettingsId)}
     skin={skin} cart3d={cart3d}
-    onBack={() => { setGameSettingsId(''); void refresh().catch(report); }} />;
+    onBack={() => { setGameSettingsId(''); void refresh().catch(report); }}
+    clearData={() => { const game = library.items.find(entry => entry.installation_id === gameSettingsId); setGameSettingsId(''); if (game) setClearing(game); }} />;
 
   const filterLabel = t(filters.find(([value]) => value === filter)![1]);
   const moreMenu = (game: LibraryItem) => <div class="more">
@@ -248,6 +256,7 @@ function App() {
       <button role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); void act('library.open_dir', game, 'log'); }}>{t('打开日志目录')}</button>
       <button role="menuitem" onClick={() => { setMenuOpen(false); setInfoOpen(true); }}>{t('安装信息')}</button>
       <hr />
+      <button role="menuitem" class="danger" disabled={busy || importing || game.running} title={game.running ? t('游戏运行中，退出后才能清空数据。') : undefined} onClick={() => { setMenuOpen(false); setClearing(game); }}>{t('清空游戏数据')}<small>{t('删除存档与进度，保留游戏和数据包')}</small></button>
       <button role="menuitem" class="danger" disabled={busy || importing || game.running} title={game.running ? t('游戏运行中，退出后才能删除。') : undefined} onClick={() => requestRemoval(game)}>{t('删除游戏')}<small>{t('默认保留存档，重新导入时恢复')}</small></button>
     </div>}
   </div>;
@@ -372,6 +381,8 @@ function App() {
         setDataHint(null); await refresh();
         if (relaunch) await rpc('library.launch', { installation_id: id });
       }} />}
+    {clearing && <ClearDataDialog item={library.items.find(game => game.installation_id === clearing.installation_id) ?? clearing} busy={busy}
+      onConfirm={() => void clearData(clearing)} onClose={() => { if (!busy) setClearing(null); }} />}
     {removing && <RemoveGameDialog item={removing} busy={busy} onConfirm={withSaves => void remove(removing, withSaves)} onClose={() => { if (!busy) setRemoving(null); }} />}
     {infoOpen && item && <InstallInfoDialog item={item} runtime={instance} busy={busy} openDir={kind => void act('library.open_dir', item, kind)} onClose={() => setInfoOpen(false)} />}
     {dashboardListOpen && <Modal title={t('运行中的游戏')} onDismiss={() => setDashboardListOpen(false)}>

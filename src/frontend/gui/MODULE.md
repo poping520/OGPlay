@@ -12,7 +12,7 @@
   冒烟失败只返回日志/退出码，交互 GUI 初始化失败显示消息框。入口由 desktop/main 分派；GUI 日志由桌面配置。
   原生窗口、导航限制和目录打开经 `hal::WebViewHost`，不直接包含 Windows/WebView2 API。
 - `GuiRpcService::Handle`：复用 `app::JsonRpcDispatcher` 注入模式；同步分派
-  `library.list`、`library.launch`、`library.open_dir`、`library.remove`，以及导入任务与对话框 RPC。
+  `library.list`、`library.launch`、`library.open_dir`、`library.remove`、`library.clear_data`，以及导入任务与对话框 RPC。
   宿主上下文、进程、目录打开、分析、选择器与 UTC 时间通过显式回调注入。
 - `library.analyze {path}` / `library.upload.begin/chunk/finish`：原生路径或拖放字节进入独立快照，
   单体 APK 上限 1 GiB；分块 base64 最大 256 KiB，严格顺序/总长度检查。
@@ -115,6 +115,8 @@ library_lock/cli_library/game_run_args 按主题验证；
   入库忙碌或实例运行中（包括损坏条目）拒绝移除。复用 LibraryStore::Remove，删除库内 APK、
   库内数据包、设置与日志，保留引用的 external 和原始 APK；sandbox 默认保留，
   `delete_saves:true` 时先删除。保留的存档由同包下次导入沿用原 id（ADR-0145）。
+- `library.clear_data {installation_id, confirmed:true}` 同样只作用于当前枚举实例、字段严格校验，入库忙碌或运行中拒绝；
+  复用 LibraryStore::ClearSaves 清空存档并保留沙盒身份与库内文件。
 
 导入向导与实例设置均可编辑 external_guest_dir，校验和启动预览复用 library 契约；
 挂载目录默认为 /sdcard，属于用户数据，与 Profile 无关。

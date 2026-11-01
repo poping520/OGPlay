@@ -71,6 +71,11 @@ public:
     // A guest rename is composed by the VFS overlay (write the new name,
     // tombstone the old one); the store has no rename of its own.
     void Remove(std::string_view guest_path);
+    // Empties the four overlay roots (every guest write, directory and
+    // tombstone) and keeps meta.toml, so the installation id and ANDROID_ID
+    // survive. A failure part way leaves a valid, partly cleared sandbox that
+    // clearing again finishes.
+    void Clear();
 
     [[nodiscard]] std::uint64_t UsedBytes() const;
     [[nodiscard]] std::uint64_t FileCount() const;

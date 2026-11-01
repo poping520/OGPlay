@@ -633,6 +633,41 @@ TEST_CASE("sandbox store creates and preserves one API 19 ANDROID_ID") {
     CHECK_THROWS_AS(static_cast<void>(invalid->EnsureAndroidId(std::span{first}.first(7))), VfsError);
 }
 
+TEST_CASE("sandbox store clears every guest write and keeps its identity") {
+    const TemporaryRoot root("clear");
+    constexpr std::array<std::byte, 8> entropy{std::byte{0x01}, std::byte{0x23}, std::byte{0x45}, std::byte{0x67},
+                                               std::byte{0x89}, std::byte{0xab}, std::byte{0xcd}, std::byte{0xef}};
+    {
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+        const auto android_id = store->EnsureAndroidId(entropy);
+        store->WriteFileAtomic("/data/data/com.example.game/shared_prefs/progress.xml", Bytes("level=9"));
+        store->WriteFileAtomic("/sdcard/android/data/com.example.game/files/cache.bin", Bytes("cache"));
+        store->WriteFileAtomic("/sdcard/android/obb/com.example.game/download.obb", Bytes("download"));
+        store->WriteFileAtomic("/sdcard/vendor/profile.sav", Bytes("profile"));
+        store->CreateDirectory("/sdcard/empty");
+        store->WriteTombstone("/sdcard/base.dat");
+        REQUIRE(store->UsedBytes() > 0);
+
+        store->Clear();
+        CHECK(store->Entries().empty());
+        CHECK(store->UsedBytes() == 0);
+        CHECK(store->FileCount() == 0);
+        // Still a working store after clearing.
+        store->WriteFileAtomic("/sdcard/vendor/profile.sav", Bytes("fresh"));
+        CHECK(Text(store->ReadFile("/sdcard/vendor/profile.sav")) == "fresh");
+        store->Clear();
+        CHECK(android_id == "0123456789abcdef");
+    }
+    for (const auto* name : {"internal", "external", "obb", "sdcard"}) {
+        CHECK(std::filesystem::is_directory(root.path / kPackage / name));
+        CHECK(std::filesystem::is_empty(root.path / kPackage / name));
+    }
+    auto reopened = SandboxStore::Open(root.path, kPackage, kPackage);
+    CHECK(reopened->Entries().empty());
+    CHECK(reopened->AndroidId() == std::optional<std::string>{"0123456789abcdef"});
+    CHECK(reopened->RecreatedSemanticRoots().empty());
+}
+
 TEST_CASE("sandbox store rejects an unusable package key") {
     const TemporaryRoot root("package");
     CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, "", "")), VfsError);

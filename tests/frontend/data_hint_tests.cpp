@@ -74,6 +74,47 @@ TEST_CASE("ADR-0146 infers the mount from misses that exist in the data pack") {
     CHECK(two.candidates.at(0).guest_dir == "/sdcard/unrelated");
 }
 
+TEST_CASE("ADR-0146 a game that ran gets no hint, whatever it missed") {
+    TemporaryDirectory tree;
+    const auto pack = Pack(tree.path);
+    MissingDataReport report;
+    report.missing = {"/sdcard/vendor/games/title/data/3d/camera/intro.bdae",
+                      "/sdcard/vendor/games/title/data/menus/map.tga", "/sdcard/engine/content/a.bin"};
+    report.failed = false;
+    CHECK(InferDataMount(report, pack, "/sdcard").kind == DataMountHintKind::none);
+    CHECK(InferDataMount(report, std::nullopt, "/sdcard").kind == DataMountHintKind::none);
+    CHECK(InferDataMount(report, std::nullopt, "/sdcard").missing == 3);
+    report.failed = true;
+    CHECK(InferDataMount(report, pack, "/sdcard").kind == DataMountHintKind::remount);
+    CHECK(InferDataMount(report, std::nullopt, "/sdcard").kind == DataMountHintKind::needs_data);
+}
+
+TEST_CASE("ADR-0146 never moves a pack the game already reads where it is") {
+    TemporaryDirectory tree;
+    const auto pack = Pack(tree.path);
+    // A game that resolves textures next to their model first, then from its data root.
+    MissingDataReport report;
+    report.missing = {"/sdcard/vendor/title/data/menus/data/menus/map.tga",
+                      "/sdcard/vendor/title/data/3d/camera/data/3d/camera/intro.bdae"};
+    const auto probing = InferDataMount(report, pack, "/sdcard/Vendor/Title");
+    CHECK(probing.kind == DataMountHintKind::remount);  // without what it found, the probes look like evidence
+    report.found = {"/sdcard/vendor/title/data/menus/map.tga", "/sdcard/vendor/title/data/3d/camera/intro.bdae"};
+    CHECK(InferDataMount(report, pack, "/sdcard/Vendor/Title").kind == DataMountHintKind::none);
+
+    // Files the game made itself under the mount are not served by the pack.
+    MissingDataReport misplaced;
+    misplaced.missing = {"/sdcard/vendor/title/data/menus/map.tga", "/sdcard/vendor/title/data/3d/camera/intro.bdae"};
+    misplaced.found = {"/sdcard/save.dat", "/sdcard/vendor/notes.txt"};
+    const auto hint = InferDataMount(misplaced, pack, "/sdcard");
+    CHECK(hint.kind == DataMountHintKind::remount);
+    CHECK(hint.candidates.at(0).guest_dir == "/sdcard/vendor/title");
+    // A pack that serves as much as a move would explain stays where it is.
+    misplaced.found.push_back("/sdcard/data/menus/map.tga");
+    CHECK(InferDataMount(misplaced, pack, "/sdcard").kind == DataMountHintKind::remount);
+    misplaced.found.push_back("/sdcard/data/3d/camera/intro.bdae");
+    CHECK(InferDataMount(misplaced, pack, "/sdcard").kind == DataMountHintKind::none);
+}
+
 TEST_CASE("ADR-0146 guesses the mount from where the picked directory sits") {
     TemporaryDirectory temporary;
     const auto root = temporary.path / "Downloads" / "Title";
@@ -112,21 +153,77 @@ TEST_CASE("ADR-0146 without a data pack only says the game may need one") {
     CHECK(hint.candidates.empty());
 }
 
+TEST_CASE("ADR-0146 a missing expansion file alone shows the game needs its obb") {
+    TemporaryDirectory tree;
+    MissingDataReport report;
+    report.missing = {"/sdcard/android/obb/org.example.game/main.7.org.example.game.obb",
+                      "/sdcard/android/obb/org.example.game/patch.7.org.example.game.obb"};
+    const auto hint = InferDataMount(report, std::nullopt, "/sdcard");
+    CHECK(hint.kind == DataMountHintKind::needs_data);
+    CHECK(hint.search_root == "/sdcard/android/obb/org.example.game");
+    CHECK(hint.examples == report.missing);
+    // The expansion file outweighs unrelated probes for where to look.
+    report.missing.insert(report.missing.begin(), {"/sdcard/engine/a.txt", "/sdcard/engine/b.txt"});
+    CHECK(InferDataMount(report, std::nullopt, "/sdcard").search_root == "/sdcard/android/obb/org.example.game");
+    // Look-alike names are not expansion files.
+    for (const auto* name : {"main.org.example.game.obb", "main.7.obb", "mainx.7.org.example.game.obb",
+                             "main.7.org.example.game.obb.idx"}) {
+        MissingDataReport other;
+        other.missing = {std::string("/sdcard/android/obb/org.example.game/") + name};
+        CHECK(InferDataMount(other, std::nullopt, "/sdcard").kind == DataMountHintKind::none);
+    }
+
+    // A picked pack holding only the main file explains it, though the match is a single shallow one.
+    Write(tree.path / "Obb" / "Main.7.Org.Example.Game.obb", "1");
+    report.missing.resize(4);
+    const auto picked = InferDataMount(report, tree.path / "Obb", {});
+    CHECK(picked.kind == DataMountHintKind::remount);
+    REQUIRE(picked.candidates.size() == 1);
+    CHECK(picked.candidates[0].guest_dir == "/sdcard/android/obb/org.example.game");
+    CHECK(picked.candidates[0].explained == 1);
+    // Not when the game already reads that file where the pack is mounted.
+    report.found = {"/sdcard/android/obb/org.example.game/main.7.org.example.game.obb"};
+    CHECK(InferDataMount(report, tree.path / "Obb", "/sdcard/Android/obb/org.example.game").kind ==
+          DataMountHintKind::none);
+}
+
 TEST_CASE("ADR-0146 reads only well formed reports") {
     TemporaryDirectory tree;
     CHECK_THROWS_AS(static_cast<void>(LoadMissingDataReport(tree.path / "absent.json")), LibraryError);
-    for (const auto* text : {"{", R"({"schema":2,"external_dir":null,"external_guest_dir":"/sdcard","missing":[],"truncated":false})",
-                             R"({"schema":1,"external_dir":null,"external_guest_dir":"/sdcard","missing":["/data/x"],"truncated":false})",
-                             R"({"schema":1,"external_guest_dir":"/sdcard","missing":[],"truncated":false})"}) {
+    // Schema 1 predates the run end: its misses cannot tell a probe from a failure.
+    for (
+        const auto* text :
+        {"{", R"({"schema":1,"external_dir":null,"external_guest_dir":"/sdcard","missing":[],"truncated":false})",
+         R"({"schema":2,"end":"fault","external_dir":null,"external_guest_dir":"/sdcard","missing":["/data/x"],"truncated":false,"found":[]})",
+         R"({"schema":2,"end":"fault","external_dir":null,"external_guest_dir":"/sdcard","missing":[],"truncated":false,"found":["/data/x"]})",
+         R"({"schema":2,"end":"bored","external_dir":null,"external_guest_dir":"/sdcard","missing":[],"truncated":false,"found":[]})",
+         R"({"schema":2,"external_dir":null,"external_guest_dir":"/sdcard","missing":[],"truncated":false,"found":[]})",
+         R"({"schema":2,"end":"fault","external_guest_dir":"/sdcard","missing":[],"truncated":false,"found":[]})"}) {
         Write(tree.path / "bad.json", text);
         CHECK_THROWS_AS(static_cast<void>(LoadMissingDataReport(tree.path / "bad.json")), LibraryError);
     }
-    Write(tree.path / "ok.json", R"({"schema":1,"external_dir":"/pack","external_guest_dir":"/sdcard/g","missing":["/sdcard/g/x"],"truncated":true})");
+    Write(
+        tree.path / "ok.json",
+        R"({"schema":2,"end":"crashed","external_dir":"/pack","external_guest_dir":"/sdcard/g","missing":["/sdcard/g/x"],"truncated":true,"found":["/sdcard/g/y"]})");
     const auto report = LoadMissingDataReport(tree.path / "ok.json");
     CHECK(report.external_dir == std::filesystem::path("/pack"));
     CHECK(report.external_guest_dir == "/sdcard/g");
     CHECK(report.missing == std::vector<std::string>{"/sdcard/g/x"});
+    CHECK(report.found == std::vector<std::string>{"/sdcard/g/y"});
     CHECK(report.truncated);
+    CHECK(report.failed);
+    for (const auto* end : {"startup_failed", "fault", "no_frame"}) {
+        Write(tree.path / "end.json",
+              std::string(R"({"schema":2,"end":")") + end +
+                  R"(","external_dir":null,"external_guest_dir":"/sdcard","missing":[],"truncated":false,"found":[]})");
+        CHECK(LoadMissingDataReport(tree.path / "end.json").failed);
+    }
+    for (const auto* end : {"closed", "exited"}) {
+        Write(tree.path / "end.json",
+              std::string(R"({"schema":2,"end":")") + end +
+                  R"(","external_dir":null,"external_guest_dir":"/sdcard","missing":[],"truncated":false,"found":[]})");
+        CHECK_FALSE(LoadMissingDataReport(tree.path / "end.json").failed);
+    }
 }
 
 TEST_CASE("ADR-0146 GUI suggests and applies a mount for the current configuration only") {
@@ -139,10 +236,12 @@ TEST_CASE("ADR-0146 GUI suggests and applies a mount for the current configurati
                              .imported_at = "2026-10-20T00:00:00Z", .external_dir = pack};
     const auto id = store.Import({.source_apk = tree.path / "game.apk", .metadata = metadata}, true);
     const auto entry = store.EntriesRoot() / id;
-    const auto report = [&](std::string_view guest, bool data) {
-        Write(entry / "last-run-missing.json", std::string(R"({"schema":1,"external_dir":)") + (data ? "\"/x\"" : "null") +
-              R"(,"external_guest_dir":")" + std::string(guest) +
-              R"(","missing":["/sdcard/vendor/title/data/menus/map.tga","/sdcard/vendor/title/data/3d/camera/intro.bdae"],"truncated":false})");
+    const auto report = [&](std::string_view guest, bool data, std::string_view end = "fault") {
+        Write(
+            entry / "last-run-missing.json",
+            std::string(R"({"schema":2,"end":")") + std::string(end) + R"(","external_dir":)" +
+                (data ? "\"/x\"" : "null") + R"(,"external_guest_dir":")" + std::string(guest) +
+                R"(","missing":["/sdcard/vendor/title/data/menus/map.tga","/sdcard/vendor/title/data/3d/camera/intro.bdae"],"truncated":false,"found":[]})");
     };
     frontend::GuiRpcService rpc(store, tree.path / "ogplay.exe", {
         [](const auto&) { return frontend::LibraryViewContext{}; }, [](const auto&) {}, [](const auto&) {}, {}, {},
@@ -163,6 +262,8 @@ TEST_CASE("ADR-0146 GUI suggests and applies a mount for the current configurati
     CHECK(kind(params) == "none");  // no report yet
     report("/sdcard/elsewhere", true);
     CHECK(kind(params) == "none");  // the report describes another mount
+    report("/sdcard", true, "closed");
+    CHECK(kind(params) == "none");  // the game ran, so its misses are not evidence
     report("/sdcard", true);
     const auto hint = call("library.data_hint", params);
     const auto result = hint.Root().Member("result");
@@ -187,8 +288,9 @@ TEST_CASE("ADR-0146 GUI suggests and applies a mount for the current configurati
     LibraryMetadata bare = metadata;
     bare.external_dir.reset();
     const auto bare_id = store.Import({.source_apk = tree.path / "game.apk", .metadata = bare}, true);
-    Write(store.EntriesRoot() / bare_id / "last-run-missing.json",
-          R"({"schema":1,"external_dir":null,"external_guest_dir":"/sdcard","missing":["/sdcard/vendor/title/data/menus/map.tga","/sdcard/vendor/title/data/3d/camera/intro.bdae","/sdcard/vendor/title/data/x.bin"],"truncated":false})");
+    Write(
+        store.EntriesRoot() / bare_id / "last-run-missing.json",
+        R"({"schema":2,"end":"no_frame","external_dir":null,"external_guest_dir":"/sdcard","missing":["/sdcard/vendor/title/data/menus/map.tga","/sdcard/vendor/title/data/3d/camera/intro.bdae","/sdcard/vendor/title/data/x.bin"],"truncated":false,"found":[]})");
     CHECK(kind(R"({"installation_id":")" + bare_id + "\"}") == "needs_data");
     CHECK(kind(R"({"installation_id":")" + bare_id + R"(","external_dir":")" + pack.generic_string() + "\"}") == "remount");
 }

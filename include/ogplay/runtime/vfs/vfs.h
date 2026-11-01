@@ -236,10 +236,11 @@ private:
 };
 
 // Diagnostics only (ADR-0146): receives the canonical guest path of a read
-// lookup (Stat, non-creating Open, OpenDirectory, ListDirectory) that failed
-// with ENOENT. Runs on the calling guest thread outside VFS locks, must not
-// re-enter the VFS, and cannot change the guest-visible result.
-using VfsMissingPathObserver = std::function<void(std::string_view)>;
+// lookup (Stat, non-creating Open, OpenDirectory, ListDirectory) and whether
+// it succeeded (found) or failed with ENOENT; other errors are not reported.
+// Runs on the calling guest thread outside VFS locks, must not re-enter the
+// VFS, and cannot change the guest-visible result.
+using VfsLookupObserver = std::function<void(std::string_view path, bool found)>;
 
 class VirtualFileSystem final {
 public:
@@ -265,7 +266,7 @@ public:
     // spellings then address the same nodes and overlay.
     void AddPathAlias(std::string_view alias, std::string_view target);
     // An empty function detaches the observer.
-    void SetMissingPathObserver(VfsMissingPathObserver observer);
+    void SetLookupObserver(VfsLookupObserver observer);
     void SetWorkingDirectory(std::string_view path);
     void SetWorkingDirectory(std::int32_t descriptor);
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;

@@ -1132,21 +1132,23 @@ std::string VirtualFileSystem::CanonicalPath(const std::string_view path) const 
     return impl_->CanonicalPath(path);
 }
 
-void VirtualFileSystem::SetMissingPathObserver(VfsMissingPathObserver observer) {
-    std::scoped_lock lock(impl_->missing_observer_mutex_);
-    impl_->missing_observer_ = observer ? std::make_shared<const VfsMissingPathObserver>(std::move(observer)) : nullptr;
+void VirtualFileSystem::SetLookupObserver(VfsLookupObserver observer) {
+    std::scoped_lock lock(impl_->lookup_observer_mutex_);
+    impl_->lookup_observer_ = observer ? std::make_shared<const VfsLookupObserver>(std::move(observer)) : nullptr;
+    impl_->lookup_observed_.store(impl_->lookup_observer_ != nullptr, std::memory_order_release);
 }
 
-void VirtualFileSystem::Impl::NotifyMissing(const std::string_view path) const noexcept {
-    std::shared_ptr<const VfsMissingPathObserver> observer;
+void VirtualFileSystem::Impl::NotifyLookup(const std::string_view path, const bool found) const noexcept {
+    if (!lookup_observed_.load(std::memory_order_acquire)) return;
+    std::shared_ptr<const VfsLookupObserver> observer;
     {
-        std::scoped_lock lock(missing_observer_mutex_);
-        observer = missing_observer_;
+        std::scoped_lock lock(lookup_observer_mutex_);
+        observer = lookup_observer_;
     }
     if (!observer) return;
-    // Diagnostics must never replace the ENOENT the guest is about to see.
+    // Diagnostics must never replace the result the guest is about to see.
     try {
-        (*observer)(CanonicalPath(path));
+        (*observer)(CanonicalPath(path), found);
     } catch (...) {
     }
 }
@@ -1154,18 +1156,20 @@ void VirtualFileSystem::Impl::NotifyMissing(const std::string_view path) const n
 namespace {
 // Impl is deduced: the private nested type cannot be named here.
 template <class Impl, class Call>
-auto ObserveMissing(const Impl& impl, const std::string_view path, Call&& call) {
+auto ObserveLookup(const Impl& impl, const std::string_view path, Call&& call, const bool report_found = true) {
     try {
-        return call();
+        auto result = call();
+        if (report_found) impl.NotifyLookup(path, true);
+        return result;
     } catch (const VfsError& error) {
-        if (error.ErrorNumber() == kEnoent) impl.NotifyMissing(path);
+        if (error.ErrorNumber() == kEnoent) impl.NotifyLookup(path, false);
         throw;
     }
 }
 }  // namespace
 
 VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
-    return ObserveMissing(*impl_, path, [&] { return impl_->Stat(path); });
+    return ObserveLookup(*impl_, path, [&] { return impl_->Stat(path); });
 }
 
 GuestFileSystemStats VirtualFileSystem::StatVfs(std::string_view path) const {
@@ -1189,7 +1193,8 @@ std::int32_t VirtualFileSystem::Duplicate(const std::int32_t descriptor) {
 }
 
 std::vector<VfsDirectoryEntry> VirtualFileSystem::ListDirectory(const std::string_view path) const {
-    return ObserveMissing(*impl_, path, [&] { return impl_->ListDirectory(path); });
+    // A missing directory lists as empty, so success here is no evidence it exists.
+    return ObserveLookup(*impl_, path, [&] { return impl_->ListDirectory(path); }, false);
 }
 
 void VirtualFileSystem::CreateDirectory(const std::string_view path) {
@@ -1210,11 +1215,11 @@ void VirtualFileSystem::Rename(const std::string_view from, const std::string_vi
 
 std::int32_t VirtualFileSystem::Open(const std::string_view path, const VfsOpenOptions options) {
     if (options.create) return impl_->Open(path, options);
-    return ObserveMissing(*impl_, path, [&] { return impl_->Open(path, options); });
+    return ObserveLookup(*impl_, path, [&] { return impl_->Open(path, options); });
 }
 
 std::int32_t VirtualFileSystem::OpenDirectory(const std::string_view path) {
-    return ObserveMissing(*impl_, path, [&] { return impl_->OpenDirectory(path); });
+    return ObserveLookup(*impl_, path, [&] { return impl_->OpenDirectory(path); });
 }
 
 bool VirtualFileSystem::IsAppend(const std::int32_t descriptor) const {

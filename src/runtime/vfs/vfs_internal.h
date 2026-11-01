@@ -223,9 +223,11 @@ public:
 
     mutable std::mutex mutex_;
     // Separate from mutex_ so notification never runs under the index lock.
-    mutable std::mutex missing_observer_mutex_;
-    std::shared_ptr<const VfsMissingPathObserver> missing_observer_;
-    void NotifyMissing(std::string_view path) const noexcept;
+    mutable std::mutex lookup_observer_mutex_;
+    std::shared_ptr<const VfsLookupObserver> lookup_observer_;
+    // Lets successful lookups skip the observer lock while none is attached.
+    std::atomic<bool> lookup_observed_{};
+    void NotifyLookup(std::string_view path, bool found) const noexcept;
     std::optional<std::string> working_directory_{"/"};
     std::string working_directory_spelling_{"/"};
     bool working_directory_unlinked_{};

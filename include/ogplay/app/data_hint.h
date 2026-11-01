@@ -16,6 +16,10 @@ struct MissingDataReport final {
     std::string external_guest_dir{"/sdcard"};
     std::vector<std::string> missing;
     bool truncated{};
+    // False when the game ran (presented frames, then was closed or quit cleanly):
+    // its misses are then optional probes, never evidence about the data pack.
+    bool failed{true};
+    std::vector<std::string> found;  // paths under the external mount the game did find
 };
 
 // Throws LibraryError(corrupt_config) for a malformed report, not_found when absent.
@@ -38,7 +42,8 @@ struct DataMountHint final {
 };
 
 // Compares missing guest paths with the files of a data directory; never reads the APK.
-// Without a data directory it only reports that the game may need one.
+// Without a data directory it only reports that the game may need one. A run that did
+// not fail gets no hint.
 [[nodiscard]] OGPLAYCORE_API DataMountHint InferDataMount(
     const MissingDataReport& report, const std::optional<std::filesystem::path>& data_dir,
     std::string_view current_guest_dir);

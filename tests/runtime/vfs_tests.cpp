@@ -1482,22 +1482,29 @@ TEST_CASE("VFS-08 independent append writers keep complete records") {
     vfs.Close(reader);
 }
 
-TEST_CASE("ADR-0146 VFS reports read lookups that miss, never creates or hits") {
+TEST_CASE("ADR-0146 VFS reports read lookups that find or miss, never creates") {
     ogplay::runtime::VirtualFileSystem vfs;
     vfs.AddPathAlias("/mnt/sdcard", "/sdcard");
     const std::array present{std::byte{1}};
     vfs.PutFile("/sdcard/present.bin", present, true);
     std::vector<std::string> seen;
-    vfs.SetMissingPathObserver([&](std::string_view path) { seen.emplace_back(path); });
+    vfs.SetLookupObserver(
+        [&](std::string_view path, bool found) { seen.push_back((found ? "+" : "-") + std::string(path)); });
     CHECK_THROWS_AS(static_cast<void>(vfs.Stat("/mnt/sdcard/a.bin")), ogplay::runtime::VfsError);
     CHECK_THROWS_AS(static_cast<void>(vfs.Open("/sdcard/b.bin", {.read = true})), ogplay::runtime::VfsError);
     CHECK_THROWS_AS(static_cast<void>(vfs.OpenDirectory("/sdcard/dir")), ogplay::runtime::VfsError);
-    static_cast<void>(vfs.Stat("/sdcard/present.bin"));
+    static_cast<void>(vfs.Stat("/mnt/sdcard/present.bin"));
+    vfs.Close(vfs.Open("/sdcard/present.bin", {.read = true}));
     vfs.Close(vfs.Open("/sdcard/created.bin", {.write = true, .create = true}));
+    // An absent directory lists as empty, so a listing proves nothing either way.
+    static_cast<void>(vfs.ListDirectory("/sdcard"));
+    static_cast<void>(vfs.ListDirectory("/sdcard/absent"));
     // A throwing observer cannot change what the guest sees.
-    vfs.SetMissingPathObserver([](std::string_view) { throw std::runtime_error("observer"); });
+    vfs.SetLookupObserver([](std::string_view, bool) { throw std::runtime_error("observer"); });
     CHECK_THROWS_AS(static_cast<void>(vfs.Stat("/sdcard/c.bin")), ogplay::runtime::VfsError);
-    vfs.SetMissingPathObserver({});
+    CHECK(vfs.Stat("/sdcard/present.bin").size == 1);
+    vfs.SetLookupObserver({});
     CHECK_THROWS_AS(static_cast<void>(vfs.Stat("/sdcard/d.bin")), ogplay::runtime::VfsError);
-    CHECK(seen == std::vector<std::string>{"/sdcard/a.bin", "/sdcard/b.bin", "/sdcard/dir"});
+    CHECK(seen == std::vector<std::string>{"-/sdcard/a.bin", "-/sdcard/b.bin", "-/sdcard/dir", "+/sdcard/present.bin",
+                                           "+/sdcard/present.bin"});
 }

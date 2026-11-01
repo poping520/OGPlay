@@ -200,19 +200,67 @@ TEST_CASE("ADR-0146 records /sdcard reads that stay missing and writes them at e
         missing([&] { return vfs.OpenDirectory("/storage/emulated/0/game/data"); });
         missing([&] { return vfs.Open("/sdcard/other/readme.txt", {.read = true}); });
         missing([&] { return vfs.Stat("/data/data/org.example/files/x"); });
+        static_cast<void>(vfs.Stat("/sdcard/Game/present.bin"));
         static_cast<void>(vfs.Stat("/sdcard/game/present.bin"));
+        // Hits outside the external mount, and the mount root itself, say nothing about the pack.
+        static_cast<void>(vfs.Stat("/sdcard/game"));
+        static_cast<void>(vfs.Stat("/sdcard"));
         // A miss the game later fills itself (a save) is not missing data.
         missing([&] { return vfs.Stat("/sdcard/game/save.dat"); });
         vfs.Close(vfs.Open("/sdcard/game/save.dat", {.read = true, .write = true, .create = true}));
-        recorder.Write();
-        recorder.Write();
+        recorder.Write(ogplay::frontend::RunEnd::closed);
+        recorder.Write(ogplay::frontend::RunEnd::fault);
     }
     std::ifstream input(report, std::ios::binary);
     const std::string text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    CHECK(text.find(R"("schema":2)") != std::string::npos);
+    CHECK(text.find(R"("end":"closed")") != std::string::npos);
     CHECK(text.find(R"("external_guest_dir":"/sdcard/game")") != std::string::npos);
     CHECK(text.find(R"("missing":["/sdcard/game/data/level.bin","/sdcard/game/data","/sdcard/other/readme.txt"])") !=
           std::string::npos);
     CHECK(text.find(R"("truncated":false)") != std::string::npos);
+    CHECK(text.find(R"("found":["/sdcard/game/present.bin"])") != std::string::npos);
     // The observer is detached once the recorder is gone.
     CHECK_THROWS_AS(static_cast<void>(vfs.Stat("/sdcard/after.bin")), ogplay::runtime::VfsError);
+}
+
+TEST_CASE("ADR-0146 a run fails unless it presented frames and then closed or quit cleanly") {
+    using ogplay::frontend::ClassifyRunEnd;
+    using ogplay::frontend::RunEnd;
+    ogplay::frontend::RunApkExitState state;
+    CHECK(ClassifyRunEnd(state, false) == RunEnd::no_frame);
+    state.presented = 3;
+    state.host_requested = true;
+    CHECK(ClassifyRunEnd(state, false) == RunEnd::closed);
+    CHECK(ClassifyRunEnd(state, true) == RunEnd::fault);
+    // The game ending itself: cleanly after frames is a quit, a code or signal is a crash.
+    state.host_requested = false;
+    state.guest_exit = true;
+    CHECK(ClassifyRunEnd(state, false) == RunEnd::exited);
+    state.native_exit_code = 0;
+    CHECK(ClassifyRunEnd(state, true) == RunEnd::exited);  // a native exit unwinds as an exception
+    state.native_exit_code = 2;
+    CHECK(ClassifyRunEnd(state, true) == RunEnd::crashed);
+    state.native_exit_code.reset();
+    state.termination_signal = 6;
+    CHECK(ClassifyRunEnd(state, false) == RunEnd::crashed);
+    state.termination_signal.reset();
+    state.presented = 0;
+    CHECK(ClassifyRunEnd(state, false) == RunEnd::no_frame);
+}
+
+TEST_CASE("ADR-0146 a recorder that is never written reports a failed startup") {
+    TemporaryDirectory tree;
+    const auto report = tree.path / "missing.json";
+    ogplay::runtime::VirtualFileSystem vfs;
+    ogplay::frontend::MountExternalDirectory(std::nullopt, vfs);
+    ogplay::core::Logger logger;
+    {
+        ogplay::frontend::MissingDataRecorder recorder(vfs, logger, report, std::nullopt, "/sdcard");
+        CHECK_THROWS_AS(static_cast<void>(vfs.Stat("/sdcard/data.bin")), ogplay::runtime::VfsError);
+    }
+    std::ifstream input(report, std::ios::binary);
+    const std::string text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    CHECK(text.find(R"("end":"startup_failed")") != std::string::npos);
+    CHECK(text.find(R"("found":[])") != std::string::npos);
 }

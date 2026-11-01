@@ -16,8 +16,12 @@ ABI/入口来自 APK，VM/guest call 使用默认值。OBB 原文件挂到标准
 sandbox 旁的 <installation_id>.input.toml。缺文件为空布局，旧 template 字段拒绝。
 
 `--missing-data-report <file>`（ADR-0146）：MissingDataRecorder 启动时删除旧报告，收集 `/sdcard`
-子树缺失（去重、512 条上限并标记 truncated），会话结束或析构时剔除已存在路径并原子写 JSON
-（schema 1、external_dir、external_guest_dir、missing、truncated）；写失败只记 warn。preflight 不记录。
+子树缺失（去重、512 条上限并标记 truncated）与外部挂载内查找成功的路径（found，去重、2048 条上限），
+会话结束或析构时剔除已存在的缺失并原子写 JSON（schema 2、end、external_dir、external_guest_dir、
+missing、truncated、found）；写失败只记 warn。preflight 不记录。end 由 ClassifyRunEnd 在运行循环停止、
+teardown 之前判定，用户关闭后 onDestroy 等退出错误不改变它：游戏自行退出时信号或非零码为 crashed、
+无呈现帧为 no_frame、否则 exited；其余运行故障为 fault，无呈现帧为 no_frame，用户/宿主关闭为 closed；
+未写即析构为 startup_failed。
 
 `--window-title <name>`：窗口标题为 `OGPlay · <name> · FPS`，缺省用 APK 文件名；限 1～256 字节可打印 UTF-8。
 库启动由 ResolveLaunch 传入游戏库显示名称。

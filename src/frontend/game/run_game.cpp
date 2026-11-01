@@ -961,6 +961,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         // Snapshot guest facts before Stop can add a host teardown request.
         exit_state.frame = driver.state().frame;
         if (!failure) capture_exit();
+        // Judged before teardown: an onDestroy error after the user closed a running game is not a failed run.
+        const auto run_end = ClassifyRunEnd(exit_state, failure != nullptr);
         control_channel->Close();
         ReleaseCapturedFrame(mcp_frames.get(), *guest);
         // onPause may join an AudioTrack producer. Keep its consumer alive even
@@ -992,7 +994,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         }
         if (audio_output) audio_output->Stop();
         publish_session();
-        if (missing_data) missing_data->Write();
+        if (missing_data) missing_data->Write(run_end);
         write_survey();
         if (failure) std::rethrow_exception(failure);
     }

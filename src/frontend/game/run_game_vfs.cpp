@@ -74,14 +74,50 @@ std::string SandboxSession::Describe() const {
     return PathUtf8(root) + " used=" + std::to_string(store->UsedBytes()) + "/" + std::to_string(store->QuotaBytes());
 }
 
+RunEnd ClassifyRunEnd(const RunApkExitState& state, const bool fault) noexcept {
+    if (state.guest_exit && !state.host_requested) {
+        if (state.termination_signal || state.native_exit_code.value_or(state.java_exit_code.value_or(0)) != 0)
+            return RunEnd::crashed;
+        return state.presented == 0 ? RunEnd::no_frame : RunEnd::exited;
+    }
+    if (fault) return RunEnd::fault;
+    return state.presented == 0 ? RunEnd::no_frame : RunEnd::closed;
+}
+
+namespace {
+[[nodiscard]] std::string_view RunEndName(const RunEnd end) noexcept {
+    switch (end) {
+    case RunEnd::fault: return "fault";
+    case RunEnd::crashed: return "crashed";
+    case RunEnd::no_frame: return "no_frame";
+    case RunEnd::closed: return "closed";
+    case RunEnd::exited: return "exited";
+    case RunEnd::startup_failed: break;
+    }
+    return "startup_failed";
+}
+}  // namespace
+
 struct MissingDataRecorder::State final {
     static constexpr std::size_t kLimit = 512;
+    // Only counted against what a remount would explain, which kLimit bounds.
+    static constexpr std::size_t kFoundLimit = 2048;
     std::mutex mutex;
     std::vector<std::string> paths;  // first-seen order
     std::unordered_set<std::string> seen;
     bool truncated{};
+    std::string mount_prefix;  // canonical external mount plus '/', empty without one
+    std::vector<std::string> found;
+    std::unordered_set<std::string> found_seen;
 
-    void Record(const std::string_view path) {
+    void Record(const std::string_view path, const bool hit) {
+        if (hit) {
+            if (mount_prefix.empty() || path.size() <= mount_prefix.size() || !path.starts_with(mount_prefix)) return;
+            std::scoped_lock lock(mutex);
+            if (found.size() == kFoundLimit || !found_seen.emplace(path).second) return;
+            found.emplace_back(path);
+            return;
+        }
         if (path != "/sdcard" && !path.starts_with("/sdcard/")) return;
         std::scoped_lock lock(mutex);
         if (seen.contains(std::string(path))) return;
@@ -104,25 +140,31 @@ MissingDataRecorder::MissingDataRecorder(runtime::VirtualFileSystem& filesystem,
     // A stale report from an earlier run must never describe this one.
     std::error_code error;
     static_cast<void>(std::filesystem::remove(report_, error));
-    filesystem_.SetMissingPathObserver([state = state_](const std::string_view path) { state->Record(path); });
+    if (external_directory_) {
+        state_->mount_prefix = filesystem_.CanonicalPath(external_guest_directory_);
+        if (state_->mount_prefix.back() != '/') state_->mount_prefix.push_back('/');
+    }
+    filesystem_.SetLookupObserver(
+        [state = state_](const std::string_view path, const bool found) { state->Record(path, found); });
 }
 
 MissingDataRecorder::~MissingDataRecorder() {
-    Write();
+    Write(RunEnd::startup_failed);
 }
 
-void MissingDataRecorder::Write() noexcept {
+void MissingDataRecorder::Write(const RunEnd end) noexcept {
     if (written_) return;
     written_ = true;
     try {
         // Detach first: the existence checks below must not record themselves.
-        filesystem_.SetMissingPathObserver({});
-        std::vector<std::string> missing;
+        filesystem_.SetLookupObserver({});
+        std::vector<std::string> missing, found;
         bool truncated{};
         {
             std::scoped_lock lock(state_->mutex);
             missing = state_->paths;
             truncated = state_->truncated;
+            found = state_->found;
         }
         std::erase_if(missing, [&](const std::string& path) {
             try {
@@ -134,7 +176,8 @@ void MissingDataRecorder::Write() noexcept {
         });
         core::JsonWriter writer;
         const auto root = writer.Object();
-        writer.AddUnsignedInteger(root, "schema", 1);
+        writer.AddUnsignedInteger(root, "schema", 2);
+        writer.AddString(root, "end", std::string(RunEndName(end)));
         if (external_directory_)
             writer.AddString(root, "external_dir", PathUtf8(*external_directory_));
         else
@@ -145,6 +188,10 @@ void MissingDataRecorder::Write() noexcept {
             writer.Append(paths, writer.String(path));
         writer.Add(root, "missing", paths);
         writer.AddBool(root, "truncated", truncated);
+        const auto hits = writer.Array();
+        for (const auto& path : found)
+            writer.Append(hits, writer.String(path));
+        writer.Add(root, "found", hits);
         const auto text = writer.Serialize(root);
         if (!report_.parent_path().empty()) std::filesystem::create_directories(report_.parent_path());
         auto temporary = report_;
@@ -157,6 +204,7 @@ void MissingDataRecorder::Write() noexcept {
         std::filesystem::rename(temporary, report_);
         logger_.Write(core::LogLevel::info, "frontend.missing_data", "missing data report written", {},
                       {{"path", PathUtf8(report_)},
+                       {"end", std::string(RunEndName(end))},
                        {"missing", static_cast<std::uint64_t>(missing.size())},
                        {"truncated", truncated}},
                       kUnrestrictedLog);

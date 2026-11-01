@@ -22,10 +22,14 @@ external_guest_dir 属于安装实例用户数据：导入 meta.toml 默认 /sdc
 旧 meta 缺字段读取默认值；不依赖 Profile，也不移动宿主数据。
 
 数据包挂载提示（ADR-0146）：ResolveLaunch 在非 preflight 时传条目 `last-run-missing.json`。
-InferDataMount 只比对报告缺失路径与数据目录实际文件（ASCII 折叠）：`X/r` 中 r 存在则 X 为候选，
-按解释的不同缺失数、再按 r 深度排序；单条且 r 只有一级的巧合与当前挂载点忽略。无数据目录且
-缺失 ≥3 条时为 needs_data（最深共同目录）。SuggestDataMount 读取报告，`data_mount_hint` 关闭、
-报告缺失/损坏或与当前挂载不符时为 none；用户新选目录单独评估。CLI `library data-hint` 同源。
+只推断失败运行（end 为 startup_failed/fault/crashed/no_frame）；closed/exited 表示游戏已跑起来，
+其缺失视为可选探测，恒为 none。InferDataMount 只比对报告缺失路径与数据目录实际文件（ASCII 折叠）：
+`X/r` 中 r 存在则 X 为候选，按解释的不同缺失数、再按 r 深度排序；忽略单条且 r 只有一级的巧合
+（r 为 Android 扩展文件 `main|patch.<版本>.<包名>.obb` 时除外）、当前挂载点，以及解释数不超过游戏已从
+当前挂载读到的数据包文件数（found 中属于数据包者）的候选。无数据目录时，缺失含扩展文件即为
+needs_data（示例与最深共同目录只取扩展文件），否则缺失 ≥3 条才是。SuggestDataMount 只读 schema 2 报告，
+`data_mount_hint` 关闭、报告缺失/损坏/旧 schema 或与当前挂载不符时为 none；用户新选目录单独评估。
+CLI `library data-hint` 同源。
 导入前 GuessDataMount 只看宿主路径：最内层 `Android/data|obb|media`、`sdcard`、`emulated/0`
 之下的部分映射到 /sdcard 下，目录名等于包名时映射 Android/data（含 .obb 为 Android/obb），其余为
 `/sdcard/<目录名>`；顶层含 Android/ 的 sdcard 副本保持 /sdcard。

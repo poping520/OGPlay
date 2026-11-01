@@ -6,7 +6,9 @@
 #include <map>
 #include <set>
 #include <span>
+#include <string_view>
 #include <unordered_set>
+#include <utility>
 
 #include "ogplay/app/game_run.h"
 #include "ogplay/app/json.h"
@@ -51,6 +53,23 @@ constexpr std::size_t kIndexLimit = 200000, kExamples = 3, kCandidates = 3, kNee
     return result.empty() && absolute ? "/" : result;
 }
 
+// Android expansion file naming, main|patch.<version>.<package>.obb: a game that looks for one
+// cannot run without it, so a single miss is evidence where other names need several.
+[[nodiscard]] bool IsExpansionFile(std::string_view path) {
+    const auto name = Fold(path.substr(path.rfind('/') + 1));
+    std::string_view rest(name);
+    if (rest.starts_with("main."))
+        rest.remove_prefix(5);
+    else if (rest.starts_with("patch."))
+        rest.remove_prefix(6);
+    else
+        return false;
+    const auto digits = rest.find_first_not_of("0123456789");
+    if (digits == 0 || digits == std::string_view::npos || rest[digits] != '.') return false;
+    rest.remove_prefix(digits + 1);
+    return rest.size() > 4 && rest.ends_with(".obb");
+}
+
 // Relative paths (files and directories) of the data pack, ASCII case-folded like the VFS.
 [[nodiscard]] std::unordered_set<std::string> IndexDataPack(const std::filesystem::path& root) {
     std::unordered_set<std::string> index;
@@ -73,20 +92,29 @@ MissingDataReport LoadMissingDataReport(const std::filesystem::path& file) {
     if (!document) throw corrupt();
     const auto root = document->Root();
     const auto schema = root.Member("schema"), guest = root.Member("external_guest_dir"),
-               missing = root.Member("missing"), truncated = root.Member("truncated"), external = root.Member("external_dir");
-    if (!schema || schema->UnsignedInteger() != 1U || !guest || !guest->String() || !missing || !missing->IsArray() ||
-        !truncated || !truncated->Bool() || !external) throw corrupt();
+               missing = root.Member("missing"), truncated = root.Member("truncated"),
+               external = root.Member("external_dir"), end = root.Member("end"), found = root.Member("found");
+    if (!schema || schema->UnsignedInteger() != 2U || !guest || !guest->String() || !missing || !missing->IsArray() ||
+        !truncated || !truncated->Bool() || !external || !end || !end->String() || !found || !found->IsArray())
+        throw corrupt();
     MissingDataReport report;
     report.external_guest_dir = std::string(*guest->String());
     report.truncated = *truncated->Bool();
+    // The game frontend's run ends: only closed and exited mean the game ran.
+    static constexpr std::string_view kFailedEnds[] = {"startup_failed", "fault", "crashed", "no_frame"};
+    const auto run_end = *end->String();
+    report.failed = std::find(std::begin(kFailedEnds), std::end(kFailedEnds), run_end) != std::end(kFailedEnds);
+    if (!report.failed && run_end != "closed" && run_end != "exited") throw corrupt();
     if (const auto text_value = external->String()) report.external_dir = std::filesystem::path(std::u8string(
         reinterpret_cast<const char8_t*>(text_value->data()), text_value->size()));
     else if (!external->IsNull()) throw corrupt();
-    for (std::size_t index = 0; index < missing->Size(); ++index) {
-        const auto value = missing->Element(index);
-        const auto path = value ? value->String() : std::nullopt;
-        if (!path || !path->starts_with("/sdcard")) throw corrupt();
-        report.missing.emplace_back(*path);
+    for (const auto& [list, into] : {std::pair{*missing, &report.missing}, std::pair{*found, &report.found}}) {
+        for (std::size_t index = 0; index < list.Size(); ++index) {
+            const auto value = list.Element(index);
+            const auto path = value ? value->String() : std::nullopt;
+            if (!path || !path->starts_with("/sdcard")) throw corrupt();
+            into->emplace_back(*path);
+        }
     }
     return report;
 }
@@ -95,13 +123,18 @@ DataMountHint InferDataMount(const MissingDataReport& report, const std::optiona
                              const std::string_view current_guest_dir) {
     DataMountHint hint;
     hint.missing = report.missing.size();
-    if (report.missing.empty()) return hint;
+    // A game that ran probes paths it can do without; only a failed run makes misses evidence.
+    if (!report.failed || report.missing.empty()) return hint;
     if (!data_dir) {
-        if (report.missing.size() < kNeedsDataThreshold) return hint;
+        std::vector<std::string> evidence;
+        std::copy_if(report.missing.begin(), report.missing.end(), std::back_inserter(evidence),
+                     [](const auto& path) { return IsExpansionFile(path); });
+        if (evidence.empty() && report.missing.size() >= kNeedsDataThreshold) evidence = report.missing;
+        if (evidence.empty()) return hint;
         // The deepest directory shared by every miss is where the game looks for its data.
-        auto common = Components(report.missing.front());
+        auto common = Components(evidence.front());
         if (!common.empty()) common.pop_back();
-        for (const auto& path : report.missing) {
+        for (const auto& path : evidence) {
             auto parts = Components(path);
             if (!parts.empty()) parts.pop_back();
             std::size_t shared = 0;
@@ -110,15 +143,30 @@ DataMountHint InferDataMount(const MissingDataReport& report, const std::optiona
         }
         hint.kind = DataMountHintKind::needs_data;
         hint.search_root = Join(common, true);
-        for (std::size_t index = 0; index < report.missing.size() && index < kExamples; ++index)
-            hint.examples.push_back(report.missing[index]);
+        for (std::size_t index = 0; index < evidence.size() && index < kExamples; ++index)
+            hint.examples.push_back(evidence[index]);
         return hint;
     }
     const auto index = IndexDataPack(*data_dir);
-    struct Tally { std::string spelling; std::set<std::size_t> paths; std::size_t depth{}; };
+
+    struct Tally {
+        std::string spelling;
+        std::set<std::size_t> paths;
+        std::size_t depth{};
+        bool expansion{};
+    };
     std::map<std::string, std::size_t> depths;
     std::map<std::string, Tally> tallies;
     const auto current = Fold(current_guest_dir);
+    // Pack files the game already reads through the current mount; moving the pack would lose them.
+    std::size_t served{};
+    if (!current.empty()) {
+        const auto prefix = current.ends_with('/') ? current : current + "/";
+        for (const auto& path : report.found) {
+            const auto folded = Fold(path);
+            served += folded.starts_with(prefix) && index.contains(folded.substr(prefix.size())) ? 1U : 0U;
+        }
+    }
     for (std::size_t miss = 0; miss < report.missing.size(); ++miss) {
         const auto parts = Components(report.missing[miss]);
         // Split /X.../r...: X is a candidate mount when r exists in the data pack.
@@ -130,11 +178,16 @@ DataMountHint InferDataMount(const MissingDataReport& report, const std::optiona
             if (tally.spelling.empty()) tally.spelling = std::move(mount);
             tally.paths.insert(miss);
             tally.depth = std::max(tally.depth, parts.size() - split);
+            tally.expansion = tally.expansion || IsExpansionFile(report.missing[miss]);
         }
     }
     for (auto& [folded, tally] : tallies) {
-        // One shallow coincidence (a lone Readme.txt) is not evidence.
-        if (folded == current || (tally.depth < 2 && tally.paths.size() < 2)) continue;
+        // One shallow coincidence (a lone Readme.txt) is not evidence unless it is the expansion
+        // file itself, nor is a move that loses at least as many files as it gains (a game
+        // probing paths inside its own pack).
+        if (folded == current || (tally.depth < 2 && tally.paths.size() < 2 && !tally.expansion) ||
+            tally.paths.size() <= served)
+            continue;
         DataMountCandidate candidate{tally.spelling, tally.paths.size(), {}};
         depths[candidate.guest_dir] = tally.depth;
         for (const auto miss : tally.paths) {

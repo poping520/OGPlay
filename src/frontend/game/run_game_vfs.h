@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "ogplay/core/logger.h"
+#include "ogplay/frontend/run_apk_progress.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/vfs/sandbox_store.h"
 #include "ogplay/runtime/vfs/vfs.h"
@@ -41,8 +42,17 @@ struct SandboxSession final {
     [[nodiscard]] std::string Describe() const;
 };
 
-// ADR-0146: collects /sdcard read lookups that found nothing while attached and
-// writes them with the mount facts. Destruction writes too, so startup faults
+// ADR-0146: how a session ended, judged when the run loop stops so a teardown
+// error after the user closed a running game does not count. closed and exited
+// mean the game ran; every other end is a failed run.
+enum class RunEnd { startup_failed, fault, crashed, no_frame, closed, exited };
+
+// The game's own exit wins over a fault, since a native exit unwinds as one.
+[[nodiscard]] RunEnd ClassifyRunEnd(const RunApkExitState& state, bool fault) noexcept;
+
+// ADR-0146: collects /sdcard read lookups that found nothing, and paths found
+// under the external mount, while attached and writes them with the mount facts
+// and how the run ended. Destruction writes startup_failed, so startup faults
 // still leave a report; declare it after (destroy it before) the filesystem.
 class MissingDataRecorder final {
 public:
@@ -54,7 +64,7 @@ public:
     MissingDataRecorder(const MissingDataRecorder&) = delete;
     MissingDataRecorder& operator=(const MissingDataRecorder&) = delete;
     // Drops paths that exist by now (files the game created itself); idempotent.
-    void Write() noexcept;
+    void Write(RunEnd end) noexcept;
 
 private:
     struct State;

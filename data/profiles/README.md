@@ -21,7 +21,7 @@ so_sha256 = ["0000000000000000000000000000000000000000000000000000000000000000"]
 注册并有“关闭即失败”的测试。`[input]` 不再允许；输入布局和显示尺寸都是用户数据。
 
 API 固定为 19；ABI 和入口来自 APK inventory 与 Manifest MAIN/LAUNCHER。
-逻辑表面由用户设置提供（默认 800×480），VM 与 guest call 使用各自默认值。外部目录由显式运行选项
+逻辑表面与密度由用户设置提供（默认 1280×720 @ 320 dpi），VM 与 guest call 使用各自默认值。外部目录由显式运行选项
 提供；`--obb` 将原文件挂到 `/sdcard/Android/obb/<package>/<filename>`，游戏按标准
 路径自行打开；不解包到自定义路径，不做资源清单预检。音乐与音效走标准 MediaPlayer /
 SoundPool。Profile 禁止 input/runtime/data/audio/Java 预置或脚本；应用不内置官方键位。

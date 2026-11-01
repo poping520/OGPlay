@@ -42,6 +42,7 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     if (o.external_directory) o.external_guest_directory = entry.metadata->external_guest_dir;
     o.surface_width = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "surface_width"));
     o.surface_height = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "surface_height"));
+    o.density_dpi = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "density_dpi"));
     o.supersample_factor = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "supersample"));
     o.cpu_config.cores = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_cores"));
     o.cpu_config.frequency_mhz = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_frequency_mhz"));

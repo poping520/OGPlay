@@ -47,6 +47,7 @@ if(NOT OGPLAY_GAME_MODE)
     expect_usage("--key-editor-port <1..65535>")
     expect_usage("--surface-width <1..4096>")
     expect_usage("--surface-height <1..4096>")
+    expect_usage("--density-dpi <72..1280>")
 endif()
 expect_failure(removed_system_dir
     "unknown or incomplete run-apk option: --system-dir"
@@ -63,6 +64,11 @@ expect_failure(valid_one "cannot open" ${_base} --supersample 1)
 expect_failure(valid_two "cannot open" ${_base} --supersample 2)
 expect_failure(valid_four "cannot open" ${_base} --supersample 4)
 expect_failure(default_one "cannot open" ${_base})
+expect_failure(density_low "--density-dpi requires an integer in 72..1280"
+    ${_base} --density-dpi 71)
+expect_failure(density_high "--density-dpi requires an integer in 72..1280"
+    ${_base} --density-dpi 1281)
+expect_failure(density_valid "cannot open" ${_base} --density-dpi 240)
 expect_failure(external_missing "unknown or incomplete run-apk option: --external-dir"
     ${_base} --external-dir)
 expect_failure(external_once "run-apk accepts --external-dir only once"

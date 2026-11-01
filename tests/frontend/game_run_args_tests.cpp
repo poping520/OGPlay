@@ -19,7 +19,7 @@ TEST_CASE("Game run args round trip every value and optional field") {
     o.dexvm_interpreter = InterpreterBackend::threaded;
     o.diagnostics_enabled = true; o.diagnostic_directory = "/diag";
     o.diagnostic_teardown_timeout = std::chrono::seconds(7);
-    o.surface_width = 1024; o.surface_height = 600;
+    o.surface_width = 1024; o.surface_height = 600; o.density_dpi = 240;
     o.supersample_factor = 4; o.cpu_config = {8, 2400, {true, 123}};
     o.survey_gaps_output = "/survey.json"; o.sandbox_directory = "/sandbox";
     o.installation_id = "org.example.app-1"; o.input_config_path = "/input.toml";
@@ -105,5 +105,32 @@ TEST_CASE("surface dimensions validate CLI and facade boundaries") {
     options.surface_width = 0;
     CHECK_THROWS_AS(ValidateGameRunOptions(options), std::invalid_argument);
     options.surface_width = 1024; options.surface_height = 4097;
+    CHECK_THROWS_AS(ValidateGameRunOptions(options), std::invalid_argument);
+}
+
+TEST_CASE("density dpi defaults to xhdpi and validates CLI and facade boundaries") {
+    using namespace ogplay::app;
+    const std::array<std::string_view, 1> plain{"game.apk"};
+    const auto defaults = ParseGameRunArgs(plain);
+    CHECK(defaults.surface_width == 1280);
+    CHECK(defaults.surface_height == 720);
+    CHECK(defaults.density_dpi == 320);
+    for (const auto& arg : FormatGameRunArgs(defaults)) {
+        CHECK(arg != "--surface-width");
+        CHECK(arg != "--surface-height");
+        CHECK(arg != "--density-dpi");
+    }
+    for (const auto value : {"0", "71", "1281", "-1", "2x"}) {
+        const std::vector<std::string_view> args{"game.apk", "--density-dpi", value};
+        CHECK_THROWS_AS(static_cast<void>(ParseGameRunArgs(args)), std::invalid_argument);
+    }
+    for (const auto [value, dpi] : {std::pair{"72", 72U}, {"160", 160U}, {"1280", 1280U}}) {
+        const std::vector<std::string_view> args{"game.apk", "--density-dpi", value};
+        CHECK(ParseGameRunArgs(args).density_dpi == dpi);
+    }
+    GameRunOptions options; options.apk_path = "game.apk";
+    options.density_dpi = 71;
+    CHECK_THROWS_AS(ValidateGameRunOptions(options), std::invalid_argument);
+    options.density_dpi = 1281;
     CHECK_THROWS_AS(ValidateGameRunOptions(options), std::invalid_argument);
 }

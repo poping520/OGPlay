@@ -21,7 +21,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 | Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 基础场景 1200 帧退出 0 | GAThread `ContentValues$1.<init>` 未实现；CG/Win 待验 | [DVM-257](../tasks/dexvm/DVM-257.md) |
 | Tales From Deep Space 1.0.0 | macOS | 1920×1080 存档重载，初始场景 80 FPS | **退出读 0x315f0001**；800×480/1280×720 菜单裁剪 | [DVM-218](../tasks/dexvm/DVM-218.md)、[BND-29](../tasks/boundary/BND-29.md) |
 | Dead Trigger 1.1.0 | Win / macOS | Win 第一关/存档重载；macOS 场景 1200 帧 | macOS 退出 native futex 超 2 秒预算；隔离 f=4740 receiver 错、默认存档缺 `Dialog(Context)` | [DVM-204](../tasks/dexvm/DVM-204.md) |
-| Dungeon Hunter（P1000） | macOS | 1024×600：CG → 标题 → 建档/选职业 → 第一关可移动攻击，SIGTERM 退出 0 | 精灵/光晕白块由 VFS 拒绝纹理父目录路径导致，已修，第一关 MCP 复核；默认 800×480 CG 后 nativeRender 读 0 | [VFS-09](../tasks/vfs/VFS-09.md)、[VFS-11](../tasks/vfs/VFS-11.md)、[DVM-251](../tasks/dexvm/DVM-251.md) |
+| Dungeon Hunter（P1000） | macOS | 1024×600：CG → 标题 → 建档/选职业 → 第一关可移动攻击，SIGTERM 退出 0 | 精灵/光晕白块由 VFS 拒绝纹理父目录路径导致，已修，第一关 MCP 复核；800×480 CG 后 nativeRender 读 0 | [VFS-09](../tasks/vfs/VFS-09.md)、[VFS-11](../tasks/vfs/VFS-11.md)、[DVM-251](../tasks/dexvm/DVM-251.md) |
 | Asphalt 5 1.1.3 | macOS | 语言选择界面 | 无 Profile 场景 600 帧退出 0；交互未验 | [DVM-19](../tasks/dexvm/DVM-19.md)、[WU5](../tasks/diagnostics/DIAG-6.md) |
 | PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；无下一失败，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
@@ -59,7 +59,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 - 音视频（[DVM-189](../tasks/dexvm/DVM-189.md)）：视频改为链接裁剪版 ogplay_ffmpeg
   （[VID-1](../tasks/video/VID-1.md)），macOS arm64 真实 CG 实测正常；预编译包已含 macOS arm64 与 Windows x64，Windows CG 未验；
   raw-resource 完整链、手动音频写入、媒体主时钟与影音同步未验收。
-- 输入/显示（[INP-8](../tasks/input/INP-8.md)、ADR-0142）：仅内置直通/Esc + 用户 input.toml，删除 Profile 输入与类型模板。显示宽高（默认 800×480、1..4096）和超采样经游戏 > 全局 > 默认解析；Angry Birds 1024×600 启动、F2 创建 J 键保存、重启加载及 F1 提示已实测，两次退出 0。旧 template/input_template 明确失败、不迁移；Windows/Linux 未实跑。
+- 输入/显示（[INP-8](../tasks/input/INP-8.md)、ADR-0142）：仅内置直通/Esc + 用户 input.toml，删除 Profile 输入与类型模板。显示宽高（默认 1280×720、1..4096）、密度（默认 320 dpi、72..1280，写入 guest DisplayMetrics）和超采样经游戏 > 全局 > 默认解析；Angry Birds 1280×720 帧率约为 800×480 的一半，basic 场景超时，性能待查；Angry Birds 1024×600 启动、F2 创建 J 键保存、重启加载及 F1 提示已实测，两次退出 0。旧 template/input_template 明确失败、不迁移；Windows/Linux 未实跑。
 - WebView 仅基础配置与回调（[DVM-187](../tasks/dexvm/DVM-187.md)/[188](../tasks/dexvm/DVM-188.md)），
   页面、JavaScript、TextToSpeech 未实现。
 - 不支持 NDK Looper callback 与非 pipe fd；TLS-03、完整 mmap/lock、系统 CA 未验收。

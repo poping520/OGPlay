@@ -168,7 +168,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     };
     auto [apk_path, external_directory, external_guest_directory, obb_path, profiles_directory, exit_after_frames,
           mcp_port, key_editor_port, dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,
-          diagnostics_enabled, supersample_factor, surface_width, surface_height, cpu_config, mcp_manual_step,
+          diagnostics_enabled, supersample_factor, surface_width, surface_height, density_dpi, cpu_config, mcp_manual_step,
           preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox, input_config_path,
           library_root, missing_data_report, window_title] = std::move(options);
     const auto bundled_data = HostBundledDataPaths();
@@ -248,6 +248,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                   {"lifecycle", std::string("dex_activity")},
                   {"surface_width", static_cast<std::uint64_t>(surface_width)},
                   {"surface_height", static_cast<std::uint64_t>(surface_height)},
+                  {"density_dpi", static_cast<std::uint64_t>(density_dpi)},
                   {"native_libraries", static_cast<std::uint64_t>(native_inventory.Libraries().size())}},
                  kUnrestrictedLog);
     if (preflight) {
@@ -284,7 +285,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
               " api=" + std::to_string(api_level) + " lifecycle=" + std::string("dex_activity") +
               " native=" + std::to_string(native_inventory.Libraries().size()) +
               " surface=" + std::to_string(surface_width) + "x" + std::to_string(surface_height) +
-              " profile=" + (selected_profile != nullptr ? profile.identity.package : "none") +
+              " density=" + std::to_string(density_dpi) + " profile=" + (selected_profile != nullptr ? profile.identity.package : "none") +
               " sandbox=" + sandbox.Describe() + "\n");
         return 0;
     }
@@ -344,6 +345,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             dex_context->package_name = manifest.package;
             dex_context->surface_width = surface_width;
             dex_context->surface_height = surface_height;
+            // fontScale stays 1.0, so scaledDensity equals density.
+            dex_context->ui_density = static_cast<float>(density_dpi) / 160.0F;
+            dex_context->ui_scaled_density = dex_context->ui_density;
             dex_context->host_display_sleep_inhibited = window->State().display_sleep_inhibited;
             dex_context->api_level = static_cast<std::int32_t>(api_level);
             // Java File/streams resolve through the same guest VFS as

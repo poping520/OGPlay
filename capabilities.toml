@@ -1106,7 +1106,7 @@ note = "BND-33/36/38/49、DVM-168：Java EGL10 与 API19 EGL14 复用 Native EGL
 [frontend.profile_gl_surface_run]
 status = "complete"
 test = "frontend.run_apk_options; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp"
-note = "ADR-0142：标准 Manifest Activity、SDL input、ANGLE 与通用 session 编排；Profile 只提供 quirk。surface 与 supersample 为用户设置，经游戏 > 全局 > 默认解析；CLI 接受 --surface-width/--surface-height（1..4096）与 --supersample（1..4）。"
+note = "ADR-0142：标准 Manifest Activity、SDL input、ANGLE 与通用 session 编排；Profile 只提供 quirk。surface、density 与 supersample 为用户设置，经游戏 > 全局 > 默认解析，默认 1280×720 @ 320 dpi；CLI 接受 --surface-width/--surface-height（1..4096）、--density-dpi（72..1280）与 --supersample（1..4）。"
 
 [gles.gles1_core_catalog]
 status = "complete"

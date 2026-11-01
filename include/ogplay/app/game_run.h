@@ -26,6 +26,12 @@ struct CpuConfig final {
 };
 
 inline constexpr std::uint32_t kMaximumSurfaceDimension = 4096;
+inline constexpr std::uint32_t kDefaultSurfaceWidth = 1280;
+inline constexpr std::uint32_t kDefaultSurfaceHeight = 720;
+// Guest-visible DisplayMetrics density; 160 dpi is Android's 1.0 baseline.
+inline constexpr std::uint32_t kDefaultDensityDpi = 320;
+inline constexpr std::uint32_t kMinimumDensityDpi = 72;
+inline constexpr std::uint32_t kMaximumDensityDpi = 1280;
 
 struct GameRunOptions final {
     std::filesystem::path apk_path;
@@ -41,8 +47,9 @@ struct GameRunOptions final {
     std::optional<std::chrono::milliseconds> diagnostic_teardown_timeout;
     bool diagnostics_enabled{};
     std::uint32_t supersample_factor{1};
-    std::uint32_t surface_width{800};
-    std::uint32_t surface_height{480};
+    std::uint32_t surface_width{kDefaultSurfaceWidth};
+    std::uint32_t surface_height{kDefaultSurfaceHeight};
+    std::uint32_t density_dpi{kDefaultDensityDpi};
     CpuConfig cpu_config;
     bool mcp_manual_step{};
     bool preflight{};

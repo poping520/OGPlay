@@ -8,7 +8,7 @@ const std::vector<SettingDefinition>& GameSettingDefinitions() {
         std::vector<SettingDefinition> result;
         for (const auto& [key, group] : std::vector<std::pair<std::string, std::string>>{
             {"interpreter", "performance"}, {"clock_mode", "performance"}, {"device_preset", "device"},
-            {"surface_width", "display"}, {"surface_height", "display"}, {"supersample", "display"}, {"window_mode", "display"}, {"scaling", "display"},
+            {"surface_width", "display"}, {"surface_height", "display"}, {"density_dpi", "display"}, {"supersample", "display"}, {"window_mode", "display"}, {"scaling", "display"},
             {"volume", "audio"}, {"mute", "audio"}, {"keymap", "input"},
             {"gamepad_deadzone", "input"}, {"network_policy", "network"}, {"profiles_dir", "compatibility"},
             {"mcp_enabled", "advanced"}, {"mcp_port", "advanced"}}) {
@@ -28,7 +28,6 @@ const std::vector<SettingDefinition>& GameSettingDefinitions() {
             {"cpu_max_mticks_per_second", "performance", "原生 CPU 速率上限（百万 tick/秒）", std::uint32_t(0), {}, 0, 10000, "所有原生线程共享；0 不限速。tick 不等于物理 CPU 周期，Java 解释速度不受此项限制"},
             {"screen_width", "device", "屏幕宽度", std::uint32_t(1280), {}, 1, 16384, pending},
             {"screen_height", "device", "屏幕高度", std::uint32_t(720), {}, 1, 16384, pending},
-            {"density_dpi", "device", "屏幕密度（DPI）", std::uint32_t(320), {}, 72, 1280, pending},
             {"memory_mb", "device", "内存（MiB）", std::uint32_t(2048), {}, 128, 65536, pending},
             {"orientation", "display", "强制方向", std::string("automatic"), {"automatic", "portrait", "landscape"}, 0, 0, pending},
             {"fps_overlay", "display", "FPS 叠层", false, {}, 0, 0, pending},

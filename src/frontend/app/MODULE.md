@@ -12,8 +12,8 @@ JSON 值为所属文档的借用视图，回调结束/文档销毁后失效；�
 SDL 动态库与桌面共享；RunGame 的状态行默认 stdout，CLI library run 可选 stderr 以保持 JSON 输出。
 验证：ogplay_app_tests、frontend.app_entrypoints（含导出/导入审计）、frontend.run_apk_options 和真实 APK 有界复跑。
 
-GameRunOptions 显式携带 surface_width/surface_height（默认 800×480，每边 1..4096），
-解析、格式化和直接调用共用边界校验；DataPaths 不再暴露模板目录。
+GameRunOptions 显式携带 surface_width/surface_height（默认 1280×720，每边 1..4096）与 density_dpi
+（默认 320，72..1280），解析、格式化和直接调用共用边界校验；DataPaths 不再暴露模板目录。
 
 DumpDexSurface 显式读取 BootDex 归档，以生产相同的 bound core/Android catalog 装配独立 linker，
 返回 JSON 表面及 API19 native exports；与 run-apk/run-dex 共用 AssembleAndroidContext，

@@ -112,6 +112,11 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
                 throw std::invalid_argument(std::string(option) + " exceeds " + std::to_string(kMaximumSurfaceDimension));
             if (option == "--surface-width") options.surface_width = static_cast<std::uint32_t>(value);
             else options.surface_height = static_cast<std::uint32_t>(value);
+        } else if (option == "--density-dpi" && index + 1 < args.size()) {
+            const auto value = ParsePositive(args[++index], option);
+            if (value < kMinimumDensityDpi || value > kMaximumDensityDpi)
+                throw std::invalid_argument("--density-dpi requires an integer in 72..1280");
+            options.density_dpi = static_cast<std::uint32_t>(value);
         } else if (option == "--supersample" && index + 1 < args.size()) {
             options.supersample_factor = ParseSupersampleFactor(args[++index]);
         } else if (option == "--mcp-port" && index + 1 < args.size()) {
@@ -253,6 +258,8 @@ void ValidateGameRunOptions(const GameRunOptions& o) {
     if (o.surface_width == 0 || o.surface_width > kMaximumSurfaceDimension ||
         o.surface_height == 0 || o.surface_height > kMaximumSurfaceDimension)
         throw std::invalid_argument("surface dimensions must be in 1..4096");
+    if (o.density_dpi < kMinimumDensityDpi || o.density_dpi > kMaximumDensityDpi)
+        throw std::invalid_argument("--density-dpi requires 72..1280");
     if (o.supersample_factor < 1 || o.supersample_factor > 4) throw std::invalid_argument("--supersample requires 1..4");
     if (o.cpu_config.cores < 1 || o.cpu_config.cores > 32 || o.cpu_config.frequency_mhz < 1 || o.cpu_config.frequency_mhz > 10000 || o.cpu_config.execution.max_mticks_per_second > 10000)
         throw std::invalid_argument("invalid guest CPU configuration");
@@ -296,8 +303,9 @@ std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
     add("--cpu-frequency-mhz", std::to_string(o.cpu_config.frequency_mhz));
     if (o.cpu_config.execution.limit_parallelism) args.emplace_back("--cpu-limit-parallelism");
     if (o.cpu_config.execution.max_mticks_per_second) add("--cpu-max-mticks-per-second", std::to_string(o.cpu_config.execution.max_mticks_per_second));
-    if (o.surface_width != 800) add("--surface-width", std::to_string(o.surface_width));
-    if (o.surface_height != 480) add("--surface-height", std::to_string(o.surface_height));
+    if (o.surface_width != kDefaultSurfaceWidth) add("--surface-width", std::to_string(o.surface_width));
+    if (o.surface_height != kDefaultSurfaceHeight) add("--surface-height", std::to_string(o.surface_height));
+    if (o.density_dpi != kDefaultDensityDpi) add("--density-dpi", std::to_string(o.density_dpi));
     if (o.supersample_factor != 1) add("--supersample", std::to_string(o.supersample_factor));
     if (o.mcp_port) add("--mcp-port", std::to_string(*o.mcp_port));
     if (o.key_editor_port) add("--key-editor-port", std::to_string(*o.key_editor_port));

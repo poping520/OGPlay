@@ -63,7 +63,7 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   run-apk 读取固定 payload 的 `zoneinfo/tzdata` 并注入 session，缺失明确失败；来源、
   格式与哈希由 Android payload 校验入口维护，不使用宿主时区数据。
 - Profile 仅接受 v4 identity/quirks，旧 schema 与 runtime/data/audio 明确拒绝。
-  用户表面默认 800×480，每边 1..4096，VM/guest call 使用默认配置；无资源清单预检，`--external-dir` 最多一个。
+  用户表面默认 1280×720 @ 320 dpi（每边 1..4096、密度 72..1280），VM/guest call 使用默认配置；无资源清单预检，`--external-dir` 最多一个。
   quirk 必须在 `data/quirks.toml` 注册并有测试引用。
 - `--preflight`/`library run --mode preflight` 在所选 ABI 下逐个将 APK `.so` 作为静态根，
   复用 native 来源与 NEEDED/SONAME 闭包、Bionic boundary catalog 及 ELF 查找/版本规则；
@@ -135,7 +135,8 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
 CLI 参数、MCP transport 和会话控制由 CTest 覆盖；真实 APK 按 playbook 使用
 `tools/run_scenario.py` 产出机器可判定证据。
 
-显示的 surface_width/surface_height/supersample 由 EffectiveGameSetting 按游戏、全局、默认
-解析，再经 GameRunOptions 与 --surface-width/--surface-height/--supersample 传入。
-宽高默认 800×480、每边 1..4096；超采样 1..4。GUI 字段使用同一设置定义。
+显示的 surface_width/surface_height/density_dpi/supersample 由 EffectiveGameSetting 按游戏、全局、
+默认解析，再经 GameRunOptions 与 --surface-width/--surface-height/--density-dpi/--supersample 传入。
+宽高默认 1280×720、每边 1..4096；密度默认 320、72..1280，run-apk 写入 guest ui_density
+（dpi/160，scaledDensity 相同）；超采样 1..4。GUI 字段使用同一设置定义。
 无新窗口缩放/宽高比偏好；bundled payload 不携带 input 目录。

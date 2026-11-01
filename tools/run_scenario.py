@@ -822,6 +822,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
                         help="run-apk guest mount point for the external fixture")
     parser.add_argument("--surface-width", type=int, choices=range(1, 4097), metavar="1..4096")
     parser.add_argument("--surface-height", type=int, choices=range(1, 4097), metavar="1..4096")
+    parser.add_argument("--density-dpi", type=int, choices=range(72, 1281), metavar="72..1280")
     parser.add_argument("--fixture", action="append", default=[])
     parser.add_argument("--evidence-dir", type=Path)
     parser.add_argument("--fresh", action="store_true",
@@ -835,7 +836,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 def _run_options(args: argparse.Namespace) -> list[str]:
     options: list[str] = []
-    for name in ("sandbox_dir", "external_guest_dir", "surface_width", "surface_height"):
+    for name in ("sandbox_dir", "external_guest_dir", "surface_width", "surface_height", "density_dpi"):
         value = getattr(args, name)
         if value is not None:
             if isinstance(value, Path):

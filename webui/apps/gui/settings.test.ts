@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { changedKeys, displayValue, fieldMeta, isDirty, settingsError, stepValue, type SettingField } from './settings';
+import { changedKeys, displayValue, fieldMeta, groups, isDirty, settingsError, stepValue, type SettingField } from './settings';
+import { gameGroups } from './game-settings';
+import { SETTING_ICONS, SHARED_ICONS } from './setting-icons';
 const field = (key: string, initial: string | number | boolean, choices: string[] = []): SettingField =>
   ({ key, label: key, initial, choices, min: 1, max: 4, group: 'general', pending: '', directory: false });
 describe('settings drafts', () => {
@@ -38,5 +40,26 @@ describe('settings drafts', () => {
     expect(stepValue(fields[1], 4, 1)).toBe(4);
     expect(stepValue(fields[1], NaN, 1)).toBe(2);
     expect(stepValue({ ...field('volume', 100), label: '主音量（%）', max: 100 }, 50, -1)).toBe(45);
+  });
+});
+
+// Host field definitions: `{"key", "group", "label", ...}` rows plus the per-game device identity `{key, label}` list.
+const hostSettings = Object.values(import.meta.glob(['../../../src/frontend/library/settings.cpp', '../../../src/frontend/library/game_settings.cpp'],
+  { query: '?raw', import: 'default', eager: true })) as string[];
+describe('setting row icons', () => {
+  it('give every host setting its own glyph, repeated only for the same concept', () => {
+    const groupKeys = new Set<string>([...groups, ...gameGroups].map(([key]) => key));
+    const keys = new Set<string>();
+    for (const text of hostSettings) {
+      for (const [, key, group] of text.matchAll(/\{"([a-z0-9_]+)", "([a-z]+)", "/g)) if (groupKeys.has(group)) keys.add(key);
+      for (const [, key] of text.match(/\[key, label\][\s\S]*?\}\)/)?.[0].matchAll(/\{"([a-z0-9_]+)", "/g) ?? []) keys.add(key);
+    }
+    expect(hostSettings.length).toBe(2);
+    expect(keys.size).toBeGreaterThan(60);
+    expect([...keys].filter(key => !SETTING_ICONS[key])).toEqual([]);
+    const shared = new Set(SHARED_ICONS.map(pair => pair.join()));
+    const repeats = Object.entries(SETTING_ICONS).flatMap(([key, glyph], index, all) =>
+      all.slice(index + 1).filter(([, other]) => other === glyph).map(([other]) => [key, other].join()));
+    expect(repeats.filter(pair => !shared.has(pair))).toEqual([]);
   });
 });

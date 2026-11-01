@@ -4,6 +4,7 @@ import { changedKeys, choiceLabel, fieldMeta, RESERVED_MARK, stepValue, type Set
 import { shellStyle } from './cartridge';
 import { t } from './i18n';
 import { Back, Brand, Key, type Skin } from './kit';
+import { SETTING_ICONS } from './setting-icons';
 import './settings.css';
 
 // Settings pages ("主机之夜" layout): top bar with save state, group sidebar, field rows, gamepad legend. Edits are
@@ -35,10 +36,11 @@ const TINT: Record<string, [string, string]> = {
   display: ['#ffd36e', '#ff6a3d'], data: ['#9bf3b4', '#16a34a'], compatibility: ['#f7b5ff', '#a21caf'], advanced: ['#d2c2ff', '#7c3aed'],
   info: ['#9fd0ff', '#2563eb'], warn: ['#ffd36e', '#ff8a3d'],
 };
-export function GroupIcon({ name, tone = name }: { name: string; tone?: string }) {
+// `glyph` draws a setting's own icon (setting-icons.ts) on its group's chip.
+export function GroupIcon({ name, tone = name, glyph }: { name: string; tone?: string; glyph?: string }) {
   const [g1, g2] = TINT[tone] ?? TINT.info;
   return <span class="ic" style={{ '--g1': g1, '--g2': g2 }}>
-    <svg viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: ICON[name] ?? ICON.info }} />
+    <svg viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: glyph ?? ICON[name] ?? ICON.info }} />
   </span>;
 }
 export function Note({ icon, title, warn = false, children }: { icon: string; title?: string; warn?: boolean; children?: ComponentChildren }) {
@@ -113,7 +115,7 @@ function FieldRow({ field, model, focused, focus, change, browse, toggleInherit 
 }) {
   const meta = fieldMeta(field), inherit = model.inherit, inherited = inherit && !inherit.overridden;
   return <div class={`row ${focused ? 'focus' : ''} ${inherited ? 'inherit' : ''}`} data-row onPointerDown={focus}>
-    <GroupIcon name={field.group} />
+    <GroupIcon name={field.group} glyph={SETTING_ICONS[field.key]} />
     <div class="lbl"><b>{meta.label}</b>
       {(inherit || meta.reserved || meta.hint) && <div class="meta">
         {inherited && <span class="inherit-val">{inherit.source} · {inherit.shown}</span>}

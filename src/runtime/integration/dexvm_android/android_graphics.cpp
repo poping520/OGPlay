@@ -1609,6 +1609,27 @@ Decl Declare_android_graphics_drawable_DrawableContainer(const Context& context)
             static_cast<void>(CallAndroidMethod(c.vm, child, "setVisible", "(ZZ)Z", {c.arguments[0], c.arguments[1]}));
         return out.value;
     });
+    // Drawable.Callback as in the ROM: only the current child reaches the owner's
+    // callback, re-addressed to this container; other children are dropped.
+    for (const auto& [name, sig] : std::array<std::pair<const char*, const char*>, 3>{
+             {{"invalidateDrawable", "(Landroid/graphics/drawable/Drawable;)V"},
+              {"scheduleDrawable", "(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;J)V"},
+              {"unscheduleDrawable", "(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;)V"}}}) {
+        b.VirtualMethod(name, sig, [context, name, sig](dx::IntrinsicContext& c) {
+            const auto& s = Skin(c, context);
+            if (s.skin_current < 0 ||
+                s.skin_children.at(static_cast<std::size_t>(s.skin_current)).Value() != c.arguments[0].ref.Value())
+                return dx::VmValue::Void();
+            const auto callback =
+                CallAndroidMethod(c.vm, c.receiver, "getCallback", "()Landroid/graphics/drawable/Drawable$Callback;")
+                    .ref;
+            if (!callback.IsValid()) return dx::VmValue::Void();
+            std::vector<dx::VmValue> args{dx::VmValue::Ref(c.receiver)};
+            args.insert(args.end(), c.arguments.begin() + 1, c.arguments.end());
+            static_cast<void>(CallAndroidMethod(c.vm, callback, name, sig, std::move(args)));
+            return dx::VmValue::Void();
+        });
+    }
     b.VirtualMethod("getCurrent", "()Landroid/graphics/drawable/Drawable;", [context](dx::IntrinsicContext& c) {
         const auto& s = Skin(c, context);
         return dx::VmValue::Ref(s.skin_current < 0 ? dx::VmObjectRef{}

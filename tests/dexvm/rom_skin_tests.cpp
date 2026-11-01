@@ -1035,6 +1035,52 @@ TEST_CASE("DVM-363 ImageButton loads sealed btn_default and runtime selectors ke
     }
 }
 
+TEST_CASE("DrawableContainer forwards only the current child's callbacks to its owner") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f, true);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x01030007)});  // Theme.NoTitleBar.Fullscreen
+        const auto button =
+            f.New("Landroid/widget/ImageButton;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto button_root = f.vm.ProtectReferences(std::array{button});
+        const auto background = f.On(button, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref;
+        REQUIRE(background.IsValid());
+        const auto current = f.On(background, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref;
+        REQUIRE(current.IsValid());
+        VmObjectRef other{};
+        for (const auto child : f.context->ui_drawables.at(background.Value()).skin_children)
+            if (child != current) other = child;
+        REQUIRE(other.IsValid());
+
+        // ImageButton.setVisibility -> DrawableContainer.setVisible -> child invalidateSelf.
+        for (const auto visibility : {8, 0})
+            CHECK_FALSE(f.OnOutcome(button, "setVisibility", "(I)V", {VmValue::Int(visibility)}).exception.IsValid());
+        for (const auto child : {current, other}) {
+            CHECK_FALSE(f.OnOutcome(background, "invalidateDrawable", "(Landroid/graphics/drawable/Drawable;)V",
+                                    {VmValue::Ref(child)})
+                            .exception.IsValid());
+            CHECK_FALSE(f.OnOutcome(background, "unscheduleDrawable",
+                                    "(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;)V",
+                                    {VmValue::Ref(child), VmValue::Ref(VmObjectRef{})})
+                            .exception.IsValid());
+        }
+        // A non-current child is dropped; the current one reaches View.scheduleDrawable,
+        // which stays an explicit failure.
+        constexpr auto schedule = "(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;J)V";
+        CHECK_FALSE(f.OnOutcome(background, "scheduleDrawable", schedule,
+                                {VmValue::Ref(other), VmValue::Ref(VmObjectRef{}), VmValue::Long(0)})
+                        .exception.IsValid());
+        const auto forwarded = f.OnOutcome(background, "scheduleDrawable", schedule,
+                                           {VmValue::Ref(current), VmValue::Ref(VmObjectRef{}), VmValue::Long(0)});
+        REQUIRE(forwarded.exception.IsValid());
+        CHECK(forwarded.exception_message.find("Landroid/view/View;.scheduleDrawable") != std::string::npos);
+        const auto gaps = f.ledger.Unimplemented();
+        CHECK(std::none_of(gaps.begin(), gaps.end(),
+                           [](const auto& gap) { return gap.id.find("DrawableContainer;.") != std::string::npos; }));
+    }
+}
+
 TEST_CASE("DVM-366 LightingColorFilter keeps bounded native handles across the button press path") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);

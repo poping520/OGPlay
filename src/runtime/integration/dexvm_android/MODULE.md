@@ -190,7 +190,8 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   皮肤封存范围为同 ROM edit_text、btn_default selector/ninepatch 闭包加四个 scrollbar thumb
   （classic 横/竖、Holo 深/浅）；thumb 复用密度缩放、npTc 与 NinePatchDrawable 加载，
   不开放其他系统皮肤。DrawableContainer/StateListDrawable/
-  NinePatchDrawable 保持 ROM 形状、受审对象状态 adapter 与失败成员表。PNG 由既有服务解码，
+  NinePatchDrawable 保持 ROM 形状、受审对象状态 adapter 与失败成员表；DrawableContainer 的
+  Drawable.Callback 按 ROM 仅把当前子项请求以容器身份转给 owner 回调，其余子项丢弃。PNG 由既有服务解码，
   npTc 提供 padding，按 density 缩放；selector 按有序状态项选择，默认固定 padding 取全部子项最大值。
   运行时 StateListDrawable 复用同一状态 backing，保留 int[] 与子 Drawable 身份并由 owner trace；
   ROM StateSet 做顺序匹配，支持零终止/负状态和 wildcard 回退；View 可更新其状态，

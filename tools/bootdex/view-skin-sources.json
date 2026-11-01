@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "6f7e56fd0ef4aef2177f3cecf8c4bf6e0832c9afe64cb7577fb556705c3fb0d4",
+      "surface_sha256": "9a9ef548c91cfd46ab07c79916862255c25d7adc91ffb33bde384d17214225ee",
       "owner": "Landroid/graphics/drawable/DrawableContainer;",
       "smali_sha256": "36e1b54bd56dca432d453c5e4b60f53672992e9faf7b2403526fab4438370e42",
       "methods": [
@@ -168,7 +168,14 @@
           "signature": "invalidateDrawable(Landroid/graphics/drawable/Drawable;)V",
           "flags": 1,
           "body_sha256": "8cd3fe652eca94ee25cb3842087d4373349ad1a568bd30c815e2f7a467eb9e89",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 ROM Drawable.Callback forwarding for bounded selector children",
+            "inputs": "child Drawable identity, Runnable and time; adapter-selected current child; ROM Drawable.getCallback",
+            "outputs": "current child requests re-addressed to the owner callback with this container; other children dropped as ROM",
+            "state_owner": "adapter skin backing owns current child; ROM Drawable base owns the callback reference",
+            "failure_boundary": "owner callback members keep their own ROM/failure source; no animation, transition or guest draw"
+          }
         },
         {
           "signature": "isAutoMirrored()Z",
@@ -229,7 +236,14 @@
           "signature": "scheduleDrawable(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;J)V",
           "flags": 1,
           "body_sha256": "346c894a89b3fc6bfb2c3a3f72a2e6f14b96118a53da4ddec4bde9b982ee6c16",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 ROM Drawable.Callback forwarding for bounded selector children",
+            "inputs": "child Drawable identity, Runnable and time; adapter-selected current child; ROM Drawable.getCallback",
+            "outputs": "current child requests re-addressed to the owner callback with this container; other children dropped as ROM",
+            "state_owner": "adapter skin backing owns current child; ROM Drawable base owns the callback reference",
+            "failure_boundary": "owner callback members keep their own ROM/failure source; no animation, transition or guest draw"
+          }
         },
         {
           "signature": "selectDrawable(I)Z",
@@ -303,7 +317,14 @@
           "signature": "unscheduleDrawable(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;)V",
           "flags": 1,
           "body_sha256": "c38f54445ee76820dd8f6017d195fd9a353a11ffebe997345041c99a6805a5c3",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 ROM Drawable.Callback forwarding for bounded selector children",
+            "inputs": "child Drawable identity, Runnable and time; adapter-selected current child; ROM Drawable.getCallback",
+            "outputs": "current child requests re-addressed to the owner callback with this container; other children dropped as ROM",
+            "state_owner": "adapter skin backing owns current child; ROM Drawable base owns the callback reference",
+            "failure_boundary": "owner callback members keep their own ROM/failure source; no animation, transition or guest draw"
+          }
         }
       ],
       "fields": [
@@ -399,7 +420,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "6f7e56fd0ef4aef2177f3cecf8c4bf6e0832c9afe64cb7577fb556705c3fb0d4",
+      "surface_sha256": "9a9ef548c91cfd46ab07c79916862255c25d7adc91ffb33bde384d17214225ee",
       "owner": "Landroid/graphics/drawable/StateListDrawable;",
       "smali_sha256": "4713b48c679cf15c15d791dad458196efe60f48217a167c4ddc31fb2cab5ed00",
       "methods": [
@@ -597,7 +618,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "6f7e56fd0ef4aef2177f3cecf8c4bf6e0832c9afe64cb7577fb556705c3fb0d4",
+      "surface_sha256": "9a9ef548c91cfd46ab07c79916862255c25d7adc91ffb33bde384d17214225ee",
       "owner": "Landroid/graphics/drawable/NinePatchDrawable;",
       "smali_sha256": "fc189612255501987bc397f5412c66f16784d8709f3cdb680e0bcd94b6e4e391",
       "methods": [
@@ -971,7 +992,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "6f7e56fd0ef4aef2177f3cecf8c4bf6e0832c9afe64cb7577fb556705c3fb0d4",
+      "surface_sha256": "9a9ef548c91cfd46ab07c79916862255c25d7adc91ffb33bde384d17214225ee",
       "owner": "Landroid/graphics/drawable/DrawableContainer$1;",
       "smali_sha256": "b047de47518cd8eef076fe6b19c076069fada8baec4ddc3810695c5ad1ea8288",
       "methods": [
@@ -1003,7 +1024,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "6f7e56fd0ef4aef2177f3cecf8c4bf6e0832c9afe64cb7577fb556705c3fb0d4",
+      "surface_sha256": "9a9ef548c91cfd46ab07c79916862255c25d7adc91ffb33bde384d17214225ee",
       "owner": "Landroid/graphics/drawable/NinePatchDrawable$NinePatchState;",
       "smali_sha256": "9c54834cc0d13a4ee9d22ff9e7b6f80ec384ccc259e0f9f87ad947d73b9289c9",
       "methods": [
@@ -1107,7 +1128,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "6f7e56fd0ef4aef2177f3cecf8c4bf6e0832c9afe64cb7577fb556705c3fb0d4",
+      "surface_sha256": "9a9ef548c91cfd46ab07c79916862255c25d7adc91ffb33bde384d17214225ee",
       "owner": "Landroid/graphics/drawable/StateListDrawable$StateListState;",
       "smali_sha256": "3120d38add389c34572db67bb9f90ba167e5c27a5dba0e2e5e03a71265aa9454",
       "methods": [

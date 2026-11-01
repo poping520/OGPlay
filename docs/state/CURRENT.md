@@ -21,7 +21,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 | Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 基础场景 1200 帧退出 0 | GAThread `ContentValues$1.<init>` 未实现；CG/Win 待验 | [DVM-257](../tasks/dexvm/DVM-257.md) |
 | Tales From Deep Space 1.0.0 | macOS | 1920×1080 存档重载，初始场景 80 FPS | **退出读 0x315f0001**；800×480/1280×720 菜单裁剪 | [DVM-218](../tasks/dexvm/DVM-218.md)、[BND-29](../tasks/boundary/BND-29.md) |
 | Dead Trigger 1.1.0 | Win / macOS | Win 第一关/存档重载；macOS 场景 1200 帧 | macOS 退出 native futex 超 2 秒预算；隔离 f=4740 receiver 错、默认存档缺 `Dialog(Context)` | [DVM-204](../tasks/dexvm/DVM-204.md) |
-| Dungeon Hunter（P1000） | macOS | 无 Profile、用户挂载；1024×600 呈现 900 帧，CLI/GUI 退出 0 | 默认 800×480 恢复游戏后 nativeRender 读 0（PC 0x30885b08）；未改默认尺寸 | [VFS-09](../tasks/vfs/VFS-09.md)、[DVM-251](../tasks/dexvm/DVM-251.md) |
+| Dungeon Hunter（P1000） | macOS | 1024×600：CG → 标题 → 建档/选职业 → 第一关可移动攻击，SIGTERM 退出 0 | 部分特效呈白色矩形（未查）；默认 800×480 CG 后 nativeRender 读 0 | [VFS-09](../tasks/vfs/VFS-09.md)、[DVM-251](../tasks/dexvm/DVM-251.md) |
 | Asphalt 5 1.1.3 | macOS | 语言选择界面 | 无 Profile 场景 600 帧退出 0；交互未验 | [DVM-19](../tasks/dexvm/DVM-19.md)、[WU5](../tasks/diagnostics/DIAG-6.md) |
 | PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；无下一失败，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |

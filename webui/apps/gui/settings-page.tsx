@@ -2,39 +2,32 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc } from './rpc';
 import { pickPath } from './import';
-import { changedKeys, groups, settingsError, type SettingValue, type Settings } from './settings';
-import { Note, Paths, SettingsFrame, useToast } from './settings-ui';
+import { groups, settingsError, type Settings } from './settings';
+import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui';
 import { setLanguage, t } from './i18n';
 
 export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved: (settings: Settings) => void }) {
-  const [saved, setSaved] = useState<Settings | null>(null);
-  const [draft, setDraft] = useState<Record<string, SettingValue>>({});
   const [group, setGroup] = useState<string>('general');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [discard, setDiscard] = useState<'back' | 'reload' | null>(null);
   const [toast, say] = useToast();
   const lock = useRef(false);
-  const changed = saved ? changedKeys(saved.values, draft) : [];
+  const store = useAutoSave<Settings>({
+    load: () => rpc<Settings>('settings.get'),
+    write: (saved, values) => rpc<Settings>('settings.set', { revision: saved.revision, values }),
+    check: (saved, values) => settingsError(saved.fields, values),
+    accepted: onSaved,
+  });
+  const { saved, draft, setError } = store;
   const run = async (action: () => Promise<void>) => {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError('');
     try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { lock.current = false; setBusy(false); }
   };
-  const load = async () => { const value = await rpc<Settings>('settings.get'); setSaved(value); setDraft({ ...value.values }); onSaved(value); };
-  useEffect(() => { void run(load); }, []);
-  // Language previews while it is a draft, like the style; leaving without saving restores the saved one.
-  const savedLanguage = useRef<unknown>(undefined);
-  savedLanguage.current = saved?.values.language;
+  useEffect(() => { void run(store.load); }, []);
+  // Language follows the page at once; if a write never lands, leaving restores the saved one.
   useEffect(() => { if (saved) setLanguage(draft.language ?? saved.values.language); }, [draft.language, saved]);
-  useEffect(() => () => { if (savedLanguage.current !== undefined) setLanguage(savedLanguage.current); }, []);
-  const leave = (action: 'back' | 'reload') => {
-    if (busy) return;
-    if (changed.length) setDiscard(action);
-    else if (action === 'back') onBack();
-    else void run(async () => { await load(); say(t('已重新载入')); });
-  };
+  useEffect(() => () => { const language = store.latest()?.values.language; if (language !== undefined) setLanguage(language); }, []);
   const openLibrary = () => void run(async () => { await rpc('settings.open_dir', { kind: 'library' }); });
   const actions = (...buttons: ComponentChildren[]) => <div class="acts">{buttons}</div>;
   const top: Record<string, ComponentChildren> = saved ? {
@@ -53,22 +46,16 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
   };
   // The style setting previews while it is still a draft.
   const skin = (draft.settings_style ?? saved?.values.settings_style) === 'glass' ? 'glass' : 'console';
-  return <SettingsFrame skin={skin} crumb={<b>{t('全局设置')}</b>} idle={t('影响之后启动的游戏')} resetLabel={t('恢复默认')} busy={busy} loaded={!!saved} changed={changed}
+  const resetKeys = saved ? saved.fields.filter(field => draft[field.key] !== field.initial).map(field => field.key) : [];
+  return <SettingsFrame skin={skin} crumb={<b>{t('全局设置')}</b>} idle={t('影响之后启动的游戏')} resetLabel={t('恢复默认')}
+    resetTitle={t('将 {n} 项恢复为默认值？', { n: resetKeys.length })} resetKeys={resetKeys} busy={busy} saving={store.saving} loaded={!!saved}
     groupsTitle={t('全局设置')} groups={groups} group={group} setGroup={setGroup} fields={saved?.fields ?? []}
-    model={field => ({ value: draft[field.key] ?? field.initial, changed: changed.includes(field.key), disabled: busy })}
-    change={(field, value) => setDraft(current => ({ ...current, [field.key]: value }))}
-    browse={field => void run(async () => { const path = await pickPath('directory'); if (path) setDraft(current => ({ ...current, [field.key]: path })); })}
+    model={field => ({ value: draft[field.key] ?? field.initial, disabled: busy })}
+    change={(field, value) => store.edit(current => ({ ...current, [field.key]: value }))}
+    browse={field => void run(async () => { const path = await pickPath('directory'); if (path) store.edit(current => ({ ...current, [field.key]: path })); })}
     fileLabel={t('配置文件')} filePath={saved?.config_path ?? ''} kicker={t('Settings · 全局')} note={t('预留项只保存配置，不改变运行时')}
-    top={top[group]} end={end[group]} error={error} toast={toast}
-    discard={discard} keep={() => setDiscard(null)} confirmDiscard={() => {
-      const action = discard; setDiscard(null);
-      if (action === 'back') onBack(); else void run(async () => { await load(); say(t('已重新载入')); });
-    }}
-    back={() => leave('back')} reload={() => leave('reload')}
-    reset={() => { if (!saved || busy) return; setDraft(Object.fromEntries(saved.fields.map(field => [field.key, field.initial]))); say(t('默认值已填入，保存后生效')); }}
-    save={() => { if (!saved || busy || !changed.length) return; void run(async () => {
-      const invalid = settingsError(saved.fields, draft); if (invalid) throw new Error(invalid);
-      const value = await rpc<Settings>('settings.set', { revision: saved.revision, values: draft });
-      setSaved(value); setDraft({ ...value.values }); onSaved(value); say(t('设置已保存'));
-    }); }} />;
+    top={top[group]} end={end[group]} error={store.error} toast={toast}
+    back={() => { if (!busy) store.afterSave(onBack); }}
+    reload={() => void run(async () => { await store.load(); say(t('已重新载入')); })}
+    reset={() => { if (saved) store.edit(() => Object.fromEntries(saved.fields.map(field => [field.key, field.initial]))); }} />;
 }

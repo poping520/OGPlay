@@ -253,7 +253,7 @@ function App() {
   const moreMenu = (game: LibraryItem) => <div class="more">
     <button class="pill" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}><Key>…</Key>{t('更多')}</button>
     {menuOpen && <div class="menu" role="menu">
-      {game.running && <button role="menuitem" disabled={busy || importing} onClick={() => openGameSettings(game)}>{t('游戏设置')}<small>{t('保存后下次启动生效')}</small></button>}
+      {game.running && <button role="menuitem" disabled={busy || importing} onClick={() => openGameSettings(game)}>{t('游戏设置')}<small>{t('下次启动生效')}</small></button>}
       <button role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); void act('library.open_dir', game, 'sandbox'); }}>{t('打开沙盒目录')}</button>
       <button role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); void act('library.open_dir', game, 'log'); }}>{t('打开日志目录')}</button>
       <button role="menuitem" onClick={() => { setMenuOpen(false); setInfoOpen(true); }}>{t('安装信息')}</button>

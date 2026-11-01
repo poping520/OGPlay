@@ -1,13 +1,13 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { choiceLabel, fieldMeta, RESERVED_MARK, stepValue, type SettingField, type SettingValue } from './settings';
+import { changedKeys, choiceLabel, fieldMeta, RESERVED_MARK, stepValue, type SettingField, type SettingValue } from './settings';
 import { shellPalette } from './library';
 import { t } from './i18n';
 import { Brand, Key } from './kit';
 import './settings.css';
 
-// Settings pages ("主机之夜" layout): top bar with save actions, group sidebar, field rows, gamepad legend. The
-// "glass" skin is the same layout restyled (frosted violet); the skin only changes classes.
+// Settings pages ("主机之夜" layout): top bar with save state, group sidebar, field rows, gamepad legend. Edits are
+// written as they are made. The "glass" skin is the same layout restyled (frosted violet); it only changes classes.
 export type Skin = 'console' | 'glass';
 const ICON: Record<string, string> = {
   general: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
@@ -52,10 +52,24 @@ export function Paths({ rows }: { rows: [string, string][] }) {
 // ---------------------------------------------------------------- controls
 // Display width in Latin-letter units: wide (CJK) characters count twice, so both languages pick the same control.
 const textWidth = (text: string) => [...text].reduce((width, char) => width + (/[\u2e80-\u9fff\uff00-\uffef]/.test(char) ? 2 : 1), 0);
+// Typed text, numbers and slider drags are written once the edit ends (Enter, leaving the field or releasing the
+// slider), not on every keystroke; Esc drops the edit.
+function useTyped(value: string, commit: (text: string) => void) {
+  const [text, setText] = useState<string | null>(null);
+  const edit = useRef<string | null>(null);
+  const set = (next: string | null) => { edit.current = next; setText(next); };
+  return { shown: text ?? value, events: {
+    onInput: (event: Event) => set((event.currentTarget as HTMLInputElement).value),
+    onKeyDown: (event: KeyboardEvent) => { if (event.key === 'Escape') set(null); },
+    onChange: () => { const typed = edit.current; set(null); if (typed !== null) commit(typed); },
+    onBlur: () => set(null),
+  } };
+}
 function Control({ field, value, disabled, change, browse }: {
   field: SettingField; value: SettingValue; disabled: boolean; change: (value: SettingValue) => void; browse?: () => void;
 }) {
   const meta = fieldMeta(field);
+  const typed = useTyped(String(value), text => change(typeof field.initial === 'number' ? (text.trim() ? Number(text) : NaN) : text));
   if (typeof field.initial === 'boolean')
     return <button class={`switch ${value === true ? 'on' : ''}`} role="switch" aria-checked={value === true} aria-label={meta.label} disabled={disabled} onClick={() => change(value !== true)} />;
   if (field.choices.length && field.choices.length <= 3 && field.choices.every(choice => textWidth(choiceLabel(field, choice)) <= 14))
@@ -70,42 +84,41 @@ function Control({ field, value, disabled, change, browse }: {
     </div>;
   }
   if (typeof field.initial === 'number') {
-    const number = typeof value === 'number' ? value : NaN;
+    const number = typed.shown.trim() ? Number(typed.shown) : NaN;
     if (meta.unit === '%') {
       const percent = Number.isFinite(number) ? (number - field.min) / (field.max - field.min) * 100 : 0;
       return <div class="range"><input type="range" min={field.min} max={field.max} step={1} value={Number.isFinite(number) ? number : field.min} disabled={disabled}
-        aria-label={meta.label} style={{ '--p': `${percent}%` }} onInput={event => change(event.currentTarget.valueAsNumber)} /><b>{Number.isFinite(number) ? number : '—'}%</b></div>;
+        aria-label={meta.label} style={{ '--p': `${percent}%` }} {...typed.events} /><b>{Number.isFinite(number) ? number : '—'}%</b></div>;
     }
     return <div class="step">
       <button aria-label={t('减少')} disabled={disabled} onClick={() => change(stepValue(field, value, -1))}>−</button>
-      <input type="number" min={field.min} max={field.max} step={1} value={Number.isNaN(number) ? '' : String(number)} disabled={disabled} aria-label={meta.label}
-        onInput={event => change(event.currentTarget.valueAsNumber)} />
+      <input type="number" min={field.min} max={field.max} step={1} value={Number.isNaN(number) ? '' : typed.shown} disabled={disabled} aria-label={meta.label}
+        {...typed.events} />
       {meta.unit && <small>{meta.unit}</small>}
       <button aria-label={t('增加')} disabled={disabled} onClick={() => change(stepValue(field, value, 1))}>+</button>
     </div>;
   }
-  return <div class="txt"><input type="text" value={String(value)} disabled={disabled} aria-label={meta.label}
-    placeholder={field.directory ? t('留空使用默认行为') : field.pending.startsWith(RESERVED_MARK) ? t('跟随设备预设') : t('未设置')} onInput={event => change(event.currentTarget.value)} />
+  return <div class="txt"><input type="text" value={typed.shown} disabled={disabled} aria-label={meta.label}
+    placeholder={field.directory ? t('留空使用默认行为') : field.pending.startsWith(RESERVED_MARK) ? t('跟随设备预设') : t('未设置')} {...typed.events} />
     {browse && <button disabled={disabled} onClick={browse}>{t('浏览…')}</button>}</div>;
 }
 
 // What a page tells the frame about one row.
 export interface RowModel {
-  value: SettingValue; changed: boolean; disabled: boolean;
-  inherit?: { overridden: boolean; saved: boolean; source: string; shown: string };
+  value: SettingValue; disabled: boolean;
+  inherit?: { overridden: boolean; source: string; shown: string };
 }
 function FieldRow({ field, model, focused, focus, change, browse, toggleInherit }: {
   field: SettingField; model: RowModel; focused: boolean; focus: () => void;
   change: (value: SettingValue) => void; browse?: () => void; toggleInherit?: () => void;
 }) {
   const meta = fieldMeta(field), inherit = model.inherit, inherited = inherit && !inherit.overridden;
-  return <div class={`row ${focused ? 'focus' : ''} ${model.changed ? 'changed' : ''} ${inherited ? 'inherit' : ''}`} data-row onPointerDown={focus}>
+  return <div class={`row ${focused ? 'focus' : ''} ${inherited ? 'inherit' : ''}`} data-row onPointerDown={focus}>
     <GroupIcon name={field.group} />
     <div class="lbl"><b>{meta.label}</b>
-      {(model.changed || inherit || meta.reserved || meta.hint) && <div class="meta">
-        {model.changed && <span class="tag mod">{t('未保存')}</span>}
+      {(inherit || meta.reserved || meta.hint) && <div class="meta">
         {inherited && <span class="inherit-val">{inherit.source} · {inherit.shown}</span>}
-        {inherit?.overridden && inherit.saved && !model.changed && <span class="tag over">{t('已覆盖')}</span>}
+        {inherit?.overridden && <span class="tag over">{t('已覆盖')}</span>}
         {meta.reserved && <span class="tag pending" title={meta.reserved}>{t('预留 · 仅保存')}</span>}
         {(meta.hint || meta.reserved) && <span>{meta.hint || meta.reserved}</span>}
       </div>}
@@ -126,17 +139,72 @@ export function useToast(): [string, (text: string) => void] {
   return [toast, text => { setToast(text); window.clearTimeout(timer.current); timer.current = window.setTimeout(() => setToast(''), 2400); }];
 }
 
+// ---------------------------------------------------------------- auto save
+// Each edit is checked, then written straight away: one request at a time, edits made meanwhile go out together in
+// the next one against the new revision. A rejected write (host validation, a revision changed elsewhere) reloads
+// the host's values and reports the error; nothing is left half-saved in the page.
+export interface SavedSettings { revision: string; values: Record<string, SettingValue> }
+type Values = Record<string, SettingValue>;
+export function useAutoSave<T extends SavedSettings>({ load, write, check, accepted }: {
+  load: () => Promise<T>; write: (saved: T, values: Values) => Promise<T>;
+  check: (saved: T, values: Values) => string | null; accepted?: (value: T) => void;
+}) {
+  const [saved, setSaved] = useState<T | null>(null);
+  const [draft, setDraft] = useState<Values>({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const savedRef = useRef<T | null>(null), draftRef = useRef<Values>({});
+  const writing = useRef(false), settled = useRef<(() => void)[]>([]);
+  const show = (values: Values) => { draftRef.current = values; setDraft(values); };
+  const accept = (value: T) => { savedRef.current = value; setSaved(value); show({ ...value.values }); accepted?.(value); };
+  const flush = async () => {
+    if (writing.current) return;
+    writing.current = true; setSaving(true);
+    let ok = true;
+    for (let base = savedRef.current; base && changedKeys(base.values, draftRef.current).length; base = savedRef.current) {
+      const values = draftRef.current;
+      try {
+        const next = await write(base, values);
+        savedRef.current = next; setSaved(next); accepted?.(next);
+        if (draftRef.current === values) show({ ...next.values });
+      } catch (reason) {
+        ok = false; setError(reason instanceof Error ? reason.message : String(reason));
+        try { accept(await load()); } catch { show({ ...base.values }); }
+        break;
+      }
+    }
+    writing.current = false; setSaving(false);
+    for (const callback of settled.current.splice(0)) if (ok) callback();
+  };
+  return {
+    saved, draft, saving, error, setError,
+    latest: () => savedRef.current,
+    load: async () => accept(await load()),
+    edit: (update: (current: Values) => Values) => {
+      const base = savedRef.current;
+      if (!base) return;
+      const next = update(draftRef.current), invalid = check(base, next);
+      if (invalid) { setError(invalid); return; }
+      setError(''); show(next); void flush();
+    },
+    // Runs once the pending writes succeed; dropped if one fails, so the error stays in view.
+    afterSave: (callback: () => void) => { if (writing.current) settled.current.push(callback); else callback(); },
+  };
+}
+
 // ---------------------------------------------------------------- frame
 export interface FrameProps {
   skin: Skin;
   art?: string;                                  // game icon for the console backdrop
   tint?: [number, number, number];               // game colour for the glass sky
   crumb: ComponentChildren;
-  idle: string;                                  // status text when nothing is unsaved
+  idle: string;                                  // status text while nothing is being written
   resetLabel: string;
+  resetTitle: string;                            // confirmation heading
+  resetKeys: string[];                           // keys the reset would change
   busy: boolean;
+  saving: boolean;
   loaded: boolean;
-  changed: string[];                             // unsaved keys
   who?: ComponentChildren;
   groupsTitle: string;
   groups: readonly (readonly [string, string, string])[];
@@ -156,18 +224,18 @@ export interface FrameProps {
   end?: ComponentChildren;
   error: string;
   toast: string;
-  discard: 'back' | 'reload' | null;
-  keep: () => void;
-  confirmDiscard: () => void;
   back: () => void;
   reload: () => void;
-  reset: () => void;
-  save: () => void;
+  reset: () => void;                             // after confirmation
 }
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
 
 export function SettingsFrame(props: FrameProps) {
-  const { skin, changed, fields, group, groups } = props;
+  const { skin, fields, group, groups } = props;
+  // A reset writes several settings at once, so it is the one edit that asks first.
+  const [confirm, setConfirm] = useState(false);
+  const askReset = () => { if (!props.busy && props.loaded && props.resetKeys.length) setConfirm(true); };
+  const confirmReset = () => { setConfirm(false); props.reset(); };
   // The ref answers key repeat that arrives before the next render.
   const [focus, setFocusState] = useState(0);
   const focusRef = useRef(0);
@@ -176,17 +244,16 @@ export function SettingsFrame(props: FrameProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   const visible = fields.filter(field => field.group === group);
   const [, title, description] = groups.find(([key]) => key === group) ?? groups[0];
-  const dirtyGroups = new Set(fields.filter(field => changed.includes(field.key)).map(field => field.group));
   const selectGroup = (next: string) => { props.setGroup(next); setFocus(0); main.current?.scrollTo({ top: 0 }); };
-  useEffect(() => { if (props.discard) dialog.current?.showModal(); else dialog.current?.close(); }, [props.discard]);
+  useEffect(() => { if (confirm) dialog.current?.showModal(); else dialog.current?.close(); }, [confirm]);
   useEffect(() => { if (focus >= visible.length) setFocus(0); }, [visible.length]);
   // Keyboard mirrors the gamepad legend in the footer.
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (props.discard) {
-        if (event.key === 'a' || event.key === 'Enter') { event.preventDefault(); props.confirmDiscard(); }
-        else if (event.key === 'b') props.keep();
+      if (confirm) {
+        if (event.key === 'a' || event.key === 'Enter') { event.preventDefault(); confirmReset(); }
+        else if (event.key === 'b') setConfirm(false);
         return;
       }
       if (editable(event.target)) {
@@ -216,8 +283,7 @@ export function SettingsFrame(props: FrameProps) {
       } else if (event.key === 'q' || event.key === 'e') {
         selectGroup(groups[(at + (event.key === 'e' ? 1 : groups.length - 1)) % groups.length][0]);
       } else if (event.key === 'i' && field && props.toggleInherit) props.toggleInherit(field);
-      else if (event.key === 'x') props.reset();
-      else if (event.key === 'y') props.save();
+      else if (event.key === 'x') askReset();
       else if (event.key === 'Escape' || event.key === 'b') props.back();
     };
     window.addEventListener('keydown', keydown);
@@ -237,10 +303,9 @@ export function SettingsFrame(props: FrameProps) {
         <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>{t('返回游戏库')}</button>
       <span class="crumb">{props.crumb}</span>
       <span class="spacer" />
-      <span class={`dirty ${changed.length ? 'on' : ''}`} role="status"><i />{changed.length ? t('{n} 项未保存', { n: changed.length }) : props.idle}</span>
-      <button class="pill" disabled={props.busy} onClick={props.reload}><Key>⟳</Key>{t('重新载入')}</button>
-      <button class="pill" disabled={props.busy || !props.loaded} onClick={props.reset}><Key>X</Key>{props.resetLabel}</button>
-      <button class="pill main" disabled={props.busy || !props.loaded || !changed.length} onClick={props.save}><Key>Y</Key>{t('保存设置')}{changed.length ? ` · ${changed.length}` : ''}</button>
+      <span class={`save-state ${props.saving ? 'on' : ''}`} role="status"><i />{props.saving ? t('正在保存…') : props.idle}</span>
+      <button class="pill" disabled={props.busy || props.saving} onClick={props.reload}><Key>⟳</Key>{t('重新载入')}</button>
+      <button class="pill" disabled={props.busy || !props.loaded || !props.resetKeys.length} onClick={askReset}><Key>X</Key>{props.resetLabel}</button>
     </header>
     <aside class="cfg-side">
       {props.who}
@@ -248,13 +313,13 @@ export function SettingsFrame(props: FrameProps) {
       <nav class="groups" aria-label={props.groupsTitle}>{groups.map(([key, label]) => {
         const count = fields.filter(field => field.group === key).length;
         return <button key={key} class={key === group ? 'on' : ''} aria-current={key === group ? 'page' : undefined} onClick={() => selectGroup(key)}>
-          <GroupIcon name={key} />{t(label)}{dirtyGroups.has(key) && <span class="dot" />}<span class="n">{count || ''}</span></button>;
+          <GroupIcon name={key} />{t(label)}<span class="n">{count || ''}</span></button>;
       })}</nav>
       <div class="cfg-file">{props.fileLabel}<span title={props.filePath}><span dir="ltr">{props.filePath}</span></span></div>
     </aside>
     <main class="cfg-main" ref={main}>
       <div class="head"><div><div class="kicker"><i />{props.kicker}</div><h1>{t(title)}</h1><p>{t(description)}</p></div>
-        <div class="legend"><span><i class="l-mod" />{t('未保存')}</span>{props.toggleInherit && <span><i class="l-inh" />{t('继承')}</span>}<span><i class="l-pending" />{t('预留 · 仅保存')}</span></div></div>
+        <div class="legend">{props.toggleInherit && <span><i class="l-inh" />{t('继承')}</span>}<span><i class="l-pending" />{t('预留 · 仅保存')}</span></div></div>
       <div class="rows" key={group} aria-busy={props.busy}>
         {props.error && <Note icon="info" title={t('操作失败')} warn><pre role="alert">{props.error}</pre></Note>}
         {props.loaded ? <>{props.top}{rows}{props.end}</> : !props.error && <Note icon="info" title={props.busy ? t('正在读取设置…') : t('设置不可用')} />}
@@ -262,17 +327,17 @@ export function SettingsFrame(props: FrameProps) {
     </main>
     <footer class="cfg-foot">
       <span class="hk"><Key>↑ ↓</Key>{t('选择')}</span><span class="hk"><Key>← →</Key>{t('调整')}</span><span class="hk"><Key>A</Key>{t('切换')}</span>
-      <span class="hk"><Key>B</Key>{t('返回')}</span><span class="hk"><Key>X</Key>{props.resetLabel}</span><span class="hk"><Key>Y</Key>{t('保存')}</span>
+      <span class="hk"><Key>B</Key>{t('返回')}</span><span class="hk"><Key>X</Key>{props.resetLabel}</span>
       <span class="hk"><Key>L R</Key>{t('切换分组')}<kbd>Q E</kbd></span>
       <span class="note-text">{props.note}</span>
     </footer>
-    <dialog ref={dialog} aria-label={t('有未保存的修改')} onCancel={event => { event.preventDefault(); props.keep(); }}>
-      <div class="kicker"><i />Unsaved</div>
-      <h2>{t('放弃 {n} 项修改？', { n: changed.length })}</h2>
-      <p>{props.discard === 'back' ? t('返回游戏库前，这些修改不会写入配置。') : t('重新载入前，这些修改不会写入配置。')}</p>
-      <ul>{fields.filter(field => changed.includes(field.key)).map(field => <li key={field.key}>{fieldMeta(field).label}</li>)}</ul>
-      <div class="acts"><button class="pill" autoFocus onClick={props.keep}><Key>B</Key>{t('继续编辑')}</button>
-        <button class="pill danger" onClick={props.confirmDiscard}><Key>A</Key>{t('放弃修改')}</button></div>
+    <dialog ref={dialog} aria-label={props.resetLabel} onCancel={event => { event.preventDefault(); setConfirm(false); }}>
+      <div class="kicker"><i />{props.resetLabel}</div>
+      <h2>{props.resetTitle}</h2>
+      <p>{t('确认后立即写入配置。')}</p>
+      <ul>{fields.filter(field => props.resetKeys.includes(field.key)).map(field => <li key={field.key}>{fieldMeta(field).label}</li>)}</ul>
+      <div class="acts"><button class="pill" autoFocus onClick={() => setConfirm(false)}><Key>B</Key>{t('取消')}</button>
+        <button class="pill danger" onClick={confirmReset}><Key>A</Key>{props.resetLabel}</button></div>
     </dialog>
     {props.toast && <div class="toast" role="status"><i />{props.toast}</div>}
   </div>;

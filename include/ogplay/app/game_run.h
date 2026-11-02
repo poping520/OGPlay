@@ -10,14 +10,17 @@
 #include <vector>
 #include "ogplay/app/export.h"
 #include "ogplay/app/logging.h"
+#include "ogplay/app/running_icon.h"
 
 namespace ogplay::app {
 enum class InterpreterBackend { switch_dispatch, threaded };
+
 struct CpuExecutionConfig final {
     bool limit_parallelism{};
     std::uint32_t max_mticks_per_second{};
     bool operator==(const CpuExecutionConfig&) const = default;
 };
+
 struct CpuConfig final {
     std::uint32_t cores{1};
     std::uint32_t frequency_mhz{1000};
@@ -68,6 +71,10 @@ struct GameRunOptions final {
     std::optional<std::filesystem::path> missing_data_report;
     // Window caption name; the APK file name when absent (library launches pass the game's name).
     std::optional<std::string> window_title;
+    // Window/Dock icon (library launches pass the entry's icon.png): composed with the OGPlay mark in
+    // window_icon_style; any failure keeps the default icon.
+    std::optional<std::filesystem::path> window_icon;
+    RunningIconStyle window_icon_style{RunningIconStyle::badge};
     bool operator==(const GameRunOptions&) const = default;
 };
 

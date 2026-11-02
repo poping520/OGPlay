@@ -25,6 +25,9 @@ teardown 之前判定，用户关闭后 onDestroy 等退出错误不改变它：
 
 `--window-title <name>`：窗口标题为 `OGPlay · <name> · FPS`，缺省用 APK 文件名；限 1～256 字节可打印 UTF-8。
 库启动由 ResolveLaunch 传入游戏库显示名称。
+`--window-icon <png> [--window-icon-style badge|cradle]`（GUI-17）：窗口打开后以 `ComposeRunningIcons` 合成
+512/256/64/48/40/32/24/20/16 px 一组图标（小尺寸覆盖 Windows 100%～200% DPI 的图标度量）并 `SetIcon`；读图、合成或设置失败只记 warn，保留默认图标。样式缺省 badge，单独给样式参数明确失败。
+库启动（有 installation id 与图标）在建窗前设置 `OGPlay.Game.<id>` 任务栏身份，失败只记 warn。
 
 ValidateExternalGuestDirectory 为 CLI、导入与游戏设置提供统一 /sdcard 子树约束；
 初始 cwd 由 VFS 建立为 /，之后仅 guest chdir/fchdir 改变，不由挂载配置隐式改变。

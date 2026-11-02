@@ -4,6 +4,7 @@ import { rpc } from '../shared/rpc';
 import { pickPath } from '../import/import';
 import { groups, settingsError, type Settings } from './settings';
 import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui';
+import { IconPreview } from './icon-preview';
 import { skinOf } from '../kit';
 import { setLanguage, t } from '../shared/i18n';
 
@@ -56,6 +57,8 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
     browse={field => void run(async () => { const path = await pickPath('directory'); if (path) store.edit(current => ({ ...current, [field.key]: path })); })}
     fileLabel={t('配置文件')} filePath={saved?.config_path ?? ''} kicker={t('Settings · 全局')} note={t('预留项只保存配置，不改变运行时')}
     top={top[group]} end={end[group]} error={store.error} toast={toast}
+    after={saved ? { running_icon: <IconPreview value={String(draft.running_icon ?? saved.values.running_icon)} disabled={busy}
+      choose={value => store.edit(current => ({ ...current, running_icon: value }))} /> } : undefined}
     back={() => { if (!busy) store.afterSave(onBack); }}
     reload={() => void run(async () => { await store.load(); say(t('已重新载入')); })}
     reset={() => { if (saved) store.edit(() => Object.fromEntries(saved.fields.map(field => [field.key, field.initial]))); }} />;

@@ -46,3 +46,6 @@ external_dir 与库内路径不同时即按 link 解析。
 图标：入库与导入分析从 application icon 的全部密度配置中选面积最大且可解码的 PNG（跳过 XML、.9.png），
 存方形 RGBA PNG，不放大、超过 kLauncherIconMaxSize（256）才缩小。`RefreshIcons`/CLI `library refresh-icons`
 在库锁内按当前规则从各条目 game.apk 重提 icon.png，原子替换，读不出的条目保留原图标。
+运行中游戏图标（GUI-17）：`ComposeRunningIcon` 把条目图标与随包 OGPlay 卡带合成为方形 RGBA，`badge`（默认，圆形角标）或
+`cradle`（卡带插槽）；游戏图标不加底，裁透明边/软投影后放大至多 20% 直到 macOS 圆角内无透明像素。全局 `running_icon`
+选择样式；ResolveLaunch 仅在条目有 icon.png 时传 window_icon 与样式。

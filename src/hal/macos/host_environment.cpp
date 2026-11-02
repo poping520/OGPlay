@@ -23,32 +23,24 @@ std::recursive_mutex& EnvironmentMutex() {
     return mutex;
 }
 
-void ValidateOverrides(
-    const std::span<const HostEnvironmentOverride> overrides) {
+void ValidateOverrides(const std::span<const HostEnvironmentOverride> overrides) {
     std::unordered_set<std::string> names;
     for (const auto& override : overrides) {
-        if (override.name.empty() ||
-            override.name.find('=') != std::string::npos ||
+        if (override.name.empty() || override.name.find('=') != std::string::npos ||
             override.name.find('\0') != std::string::npos ||
-            (override.value.has_value() &&
-             override.value->find('\0') != std::string::npos)) {
+            (override.value.has_value() && override.value->find('\0') != std::string::npos)) {
             throw std::invalid_argument("invalid host environment override");
         }
         if (!names.insert(override.name).second) {
-            throw std::invalid_argument(
-                "duplicate host environment override");
+            throw std::invalid_argument("duplicate host environment override");
         }
     }
 }
 
-void RestoreEnvironment(
-    const std::vector<std::pair<std::string, std::optional<std::string>>>&
-        previous) noexcept {
-    for (auto iterator = previous.rbegin(); iterator != previous.rend();
-         ++iterator) {
+void RestoreEnvironment(const std::vector<std::pair<std::string, std::optional<std::string>>>& previous) noexcept {
+    for (auto iterator = previous.rbegin(); iterator != previous.rend(); ++iterator) {
         if (iterator->second.has_value()) {
-            static_cast<void>(
-                setenv(iterator->first.c_str(), iterator->second->c_str(), 1));
+            static_cast<void>(setenv(iterator->first.c_str(), iterator->second->c_str(), 1));
         } else {
             static_cast<void>(unsetenv(iterator->first.c_str()));
         }
@@ -61,13 +53,10 @@ struct ScopedHostEnvironment::Impl final {
     std::unique_lock<std::recursive_mutex> lock{EnvironmentMutex()};
     std::vector<std::pair<std::string, std::optional<std::string>>> previous;
 
-    ~Impl() {
-        RestoreEnvironment(previous);
-    }
+    ~Impl() { RestoreEnvironment(previous); }
 };
 
-ScopedHostEnvironment::ScopedHostEnvironment(
-    const std::span<const HostEnvironmentOverride> overrides) {
+ScopedHostEnvironment::ScopedHostEnvironment(const std::span<const HostEnvironmentOverride> overrides) {
     ValidateOverrides(overrides);
     auto impl = std::make_unique<Impl>();
     impl->previous.reserve(overrides.size());
@@ -75,20 +64,15 @@ ScopedHostEnvironment::ScopedHostEnvironment(
         for (const auto& override : overrides) {
             const auto* prior = std::getenv(override.name.c_str());
             impl->previous.emplace_back(
-                override.name,
-                prior == nullptr
-                    ? std::nullopt
-                    : std::optional<std::string>(std::string(prior)));
+                override.name, prior == nullptr ? std::nullopt : std::optional<std::string>(std::string(prior)));
             int result{};
             if (override.value.has_value()) {
-                result = setenv(override.name.c_str(),
-                                override.value->c_str(), 1);
+                result = setenv(override.name.c_str(), override.value->c_str(), 1);
             } else {
                 result = unsetenv(override.name.c_str());
             }
             if (result != 0) {
-                throw std::runtime_error(
-                    "failed to override host environment");
+                throw std::runtime_error("failed to override host environment");
             }
         }
     } catch (...) {
@@ -118,21 +102,26 @@ std::filesystem::path HostExecutableDirectory() {
     return HostExecutablePath().parent_path();
 }
 
-std::optional<std::string> HostEnvironmentValue(
-    const std::string_view name) {
+std::optional<std::string> HostEnvironmentValue(const std::string_view name) {
     const std::lock_guard lock(EnvironmentMutex());
     const std::string owned_name(name);
     const auto* value = std::getenv(owned_name.c_str());
-    return value == nullptr
-               ? std::nullopt
-               : std::optional<std::string>(std::string(value));
+    return value == nullptr ? std::nullopt : std::optional<std::string>(std::string(value));
+}
+
+void SetHostApplicationIdentity(const std::string_view identity) {
+    // No taskbar grouping by process identity here; the value is still checked like on Windows.
+    if (identity.empty() || identity.size() > 128 || !std::all_of(identity.begin(), identity.end(), [](const char c) {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' ||
+                   c == '-';
+        }))
+        throw std::invalid_argument("host application identity must be 1..128 characters of [A-Za-z0-9._-]");
 }
 
 std::optional<std::filesystem::path> HostUserDataDirectory() {
     const auto home = HostEnvironmentValue("HOME");
     if (!home.has_value() || home->empty()) return std::nullopt;
-    return std::filesystem::path(*home) / "Library" / "Application Support" /
-           "OGPlay";
+    return std::filesystem::path(*home) / "Library" / "Application Support" / "OGPlay";
 }
 
 }  // namespace ogplay::hal
@@ -141,4 +130,4 @@ namespace ogplay::hal {
 void FillSecureRandom(std::span<std::byte> output) {
     arc4random_buf(output.data(), output.size());
 }
-}
+}  // namespace ogplay::hal

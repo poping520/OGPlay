@@ -53,7 +53,7 @@ const labels: Record<string, string> = {
   'zh-CN': '简体中文', 'en-US': 'English', switch: 'Switch', threaded: 'Threaded',
   windowed: '窗口', fullscreen: '全屏', aspect: '保持比例', stretch: '拉伸', automatic: '自动', 'hardware-only': '仅硬件', 'software-only': '仅软件',
   disabled: '禁用', loopback: '仅回环', allow: '允许网络', realtime: '实时', fixed: '固定步进', portrait: '竖屏', landscape: '横屏', unlimited: '不限',
-  '3d': '3D 模型', css: 'CSS 轻量', console: '主机之夜', glass: '玻璃紫',
+  '3d': '3D 模型', css: 'CSS 轻量', console: '主机之夜', glass: '玻璃紫', cradle: '卡带插槽', badge: '圆形角标',
 };
 export function choiceLabel(field: SettingField, value: string): string {
   return field.key === 'clock_rate' ? `${value}×` : value in labels ? t(labels[value]) : value;

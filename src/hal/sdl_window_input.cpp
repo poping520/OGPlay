@@ -11,6 +11,10 @@
 
 #if OGPLAY_HAS_SDL3
 #include <SDL3/SDL.h>
+
+#ifdef _WIN32
+#include "windows/window_icon.h"
+#endif
 #endif
 
 namespace ogplay::hal {
@@ -192,6 +196,9 @@ public:
         renderer_ = nullptr;
         SDL_DestroyWindow(window_);
         window_ = nullptr;
+#ifdef _WIN32
+        win32_icons_.Release();  // after the window: it may draw them until destroyed
+#endif
     }
 
     void SetTitle(const std::string_view title) override {
@@ -205,6 +212,39 @@ public:
         if (!SDL_SetWindowTitle(window_, owned.c_str())) {
             throw SdlError("SDL_SetWindowTitle");
         }
+    }
+
+    void SetIcon(const std::span<const IconImage> sizes) override {
+        if (window_ == nullptr) throw std::logic_error("window icon requires an open window");
+        if (sizes.empty()) throw std::invalid_argument("window icon needs at least one size");
+        for (const auto& image : sizes)
+            if (image.width == 0 || image.height == 0 || image.width > 1024 || image.height > 1024 ||
+                image.rgba.size() != static_cast<std::size_t>(image.width) * image.height * 4U)
+                throw std::invalid_argument("window icon dimensions do not match its pixels");
+        // SDL copies the pixels into the platform icon before returning, so borrowed buffers suffice.
+        const auto wrap = [](const IconImage& image) {
+            return SDL_CreateSurfaceFrom(static_cast<int>(image.width), static_cast<int>(image.height),
+                                         SDL_PIXELFORMAT_RGBA32, const_cast<std::uint8_t*>(image.rgba.data()),
+                                         static_cast<int>(image.width * 4U));
+        };
+        SDL_Surface* surface = wrap(sizes.front());
+        if (surface == nullptr) throw SdlError("SDL_CreateSurfaceFrom");
+        bool set = true;
+        for (const auto& image : sizes.subspan(1)) {
+            SDL_Surface* alternate = wrap(image);
+            set = alternate != nullptr && SDL_AddSurfaceAlternateImage(surface, alternate);
+            SDL_DestroySurface(alternate);
+            if (!set) break;
+        }
+        set = set && SDL_SetWindowIcon(window_, surface);
+        SDL_DestroySurface(surface);
+        if (!set) throw SdlError("SDL_SetWindowIcon");
+#ifdef _WIN32
+        // SDL hands Windows one HICON for both slots; give each slot the size that matches it instead.
+        win32_icons_.Apply(
+            SDL_GetPointerProperty(SDL_GetWindowProperties(window_), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr),
+            sizes);
+#endif
     }
 
     WindowState State() const override {
@@ -507,6 +547,9 @@ private:
     std::size_t lifecycle_count_{};
     bool background_{}, terminating_{}, lifecycle_overflow_{};
     SDL_Renderer* renderer_{};
+#ifdef _WIN32
+    windows::WindowIcons win32_icons_;
+#endif
     SDL_Texture* texture_{};
     std::uint32_t texture_width_{};
     std::uint32_t texture_height_{};

@@ -12,6 +12,7 @@ export const SETTING_ICONS: Record<string, string> = {
   theme: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/>',
   density: '<path d="M4 6h16M4 10h16M4 14h16M4 18h16"/>',
   cartridge: '<path d="M6 3h12a1 1 0 0 1 1 1v13H5V4a1 1 0 0 1 1-1z"/><path d="M7 17v3h10v-3"/><rect x="8" y="6" width="8" height="7" rx="1"/>',
+  running_icon: '<rect x="3" y="3" width="13" height="13" rx="3.5"/><circle cx="17" cy="17" r="4"/>',
   settings_style: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.5-.8 1.5-1.6 0-1.2-1-1.6-1-2.6 0-.9.8-1.6 1.8-1.6H17a4 4 0 0 0 4-4c0-4.6-4-8.2-9-8.2z"/><path d="M7.5 11h.01M10 7h.01M15 7.5h.01"/>',
   minimize_on_launch: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 8v6M9 11l3 3 3-3M8 17h8"/>',
   show_exit_log: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h4"/>',

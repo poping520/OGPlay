@@ -125,12 +125,23 @@ struct InputEvent {
     float pressure{};
 };
 
+// One size of a window icon: straight RGBA8, row-major, width*height*4 bytes.
+struct IconImage {
+    std::span<const std::uint8_t> rgba;
+    std::uint32_t width{};
+    std::uint32_t height{};
+};
+
 class WindowInput {
 public:
     virtual ~WindowInput() = default;
     virtual void Open(const WindowOptions& options) = 0;
     virtual void Close() noexcept = 0;
     virtual void SetTitle(std::string_view title) = 0;
+    // Window icon from one picture at one or more sizes, the largest first. macOS shows it as the process's
+    // Dock icon (every size an image representation); Windows sets the title-bar and taskbar icons from the
+    // sizes nearest the small/large icon metrics at the window's DPI.
+    virtual void SetIcon(std::span<const IconImage> sizes) = 0;
     [[nodiscard]] virtual WindowState State() const = 0;
     [[nodiscard]] virtual std::string_view BackendName() const noexcept = 0;
     virtual void PumpEvents() = 0;

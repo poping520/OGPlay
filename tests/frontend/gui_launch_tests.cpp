@@ -20,15 +20,16 @@ public:
     TemporaryDirectory() {
         static std::atomic<std::uint64_t> sequence{};
         path = std::filesystem::temp_directory_path() /
-               ("ogplay-gui-launch-" + std::to_string(
-                    std::chrono::steady_clock::now().time_since_epoch().count()) +
+               ("ogplay-gui-launch-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
                 "-" + std::to_string(sequence.fetch_add(1)));
         std::filesystem::create_directories(path);
     }
+
     ~TemporaryDirectory() {
         std::error_code error;
         static_cast<void>(std::filesystem::remove_all(path, error));
     }
+
     std::filesystem::path path;
 };
 
@@ -39,8 +40,7 @@ void Write(const std::filesystem::path& path, const std::string_view text) {
     REQUIRE(output.good());
 }
 
-ogplay::app::LibraryEntry Entry(const std::filesystem::path& directory,
-                                     const std::filesystem::path& external) {
+ogplay::app::LibraryEntry Entry(const std::filesystem::path& directory, const std::filesystem::path& external) {
     ogplay::app::LibraryEntry entry;
     entry.key = "org.example.game";
     entry.directory = directory;
@@ -71,7 +71,8 @@ TEST_CASE("GUI global launch settings forward only supported CLI controls") {
     TemporaryDirectory tree;
     const auto cli = tree.path / "ogplay";
     const auto directory = tree.path / "library" / "org.example.game";
-    Write(cli, "exe"); Write(directory / "game.apk", "apk");
+    Write(cli, "exe");
+    Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {});
     entry.metadata->external_dir.reset();
     LibraryConfig config;
@@ -87,7 +88,7 @@ TEST_CASE("GUI global launch settings forward only supported CLI controls") {
     CHECK(argv.size() == baseline.size() + 6);
     CHECK(std::find(argv.begin(), argv.end(), "--key-editor-port") == argv.end());  // shares the MCP port
     for (const auto& [flag, value] : std::vector<std::pair<std::string, std::string>>{
-        {"--supersample", "2"}, {"--dexvm-interpreter", "threaded"}, {"--mcp-port", "12345"}}) {
+             {"--supersample", "2"}, {"--dexvm-interpreter", "threaded"}, {"--mcp-port", "12345"}}) {
         const auto it = std::find(argv.begin(), argv.end(), flag);
         REQUIRE(it != argv.end());
         REQUIRE(std::next(it) != argv.end());
@@ -99,37 +100,54 @@ TEST_CASE("GUI instance launch overrides inherit and emit valid CLI mode combina
     using namespace ogplay::frontend;
     using namespace ogplay::app;
     TemporaryDirectory tree;
-    const auto cli = tree.path / "ogplay", directory = tree.path / "library" / "org.example.game", external = tree.path / "external";
-    Write(cli, "exe"); Write(directory / "game.apk", "apk");
+    const auto cli = tree.path / "ogplay", directory = tree.path / "library" / "org.example.game",
+               external = tree.path / "external";
+    Write(cli, "exe");
+    Write(directory / "game.apk", "apk");
     std::filesystem::create_directories(external);
-    auto entry = Entry(directory, {}); entry.metadata->external_dir.reset();
+    auto entry = Entry(directory, {});
+    entry.metadata->external_dir.reset();
     LibraryConfig global;
     SetSetting(global, "supersample", std::uint32_t{4});
     SetSetting(global, "mcp_enabled", true);
     SetSetting(global, "dashboard_auto_open", true);
-    GameSettings settings{{{"supersample", std::uint32_t{2}}, {"mcp_manual_step", true},
-        {"ephemeral_sandbox", true}, {"external_dir", external.generic_string()}, {"model", std::string("reserved")}}};
+    GameSettings settings{{{"supersample", std::uint32_t{2}},
+                           {"mcp_manual_step", true},
+                           {"ephemeral_sandbox", true},
+                           {"external_dir", external.generic_string()},
+                           {"model", std::string("reserved")}}};
     SaveGameSettings(directory, settings);
-    const auto has = [](const auto& args, const auto& value) { return std::find(args.begin(), args.end(), value) != args.end(); };
+    const auto has = [](const auto& args, const auto& value) {
+        return std::find(args.begin(), args.end(), value) != args.end();
+    };
     const auto normal_plan = BuildLaunchPlan(cli, tree.path, entry, global);
     CHECK(normal_plan.mcp_port == 15971);
     CHECK(normal_plan.dashboard_auto_open);
     CHECK_FALSE(BuildLaunchPlan(cli, tree.path, entry, global, LaunchMode::preflight).mcp_port);
     CHECK_FALSE(BuildLaunchPlan(cli, tree.path, entry, global, LaunchMode::preflight).dashboard_auto_open);
     const auto normal = normal_plan.argv;
-    CHECK(has(normal, "2")); CHECK_FALSE(has(normal, "4")); CHECK_FALSE(has(normal, "reserved"));
-    CHECK(has(normal, "--external-dir")); CHECK(has(normal, external.generic_string()));
-    CHECK(has(normal, "--mcp-port")); CHECK(has(normal, "--mcp-manual-step"));
-    CHECK(has(normal, "--ephemeral-sandbox")); CHECK_FALSE(has(normal, "--sandbox-dir"));
+    CHECK(has(normal, "2"));
+    CHECK_FALSE(has(normal, "4"));
+    CHECK_FALSE(has(normal, "reserved"));
+    CHECK(has(normal, "--external-dir"));
+    CHECK(has(normal, external.generic_string()));
+    CHECK(has(normal, "--mcp-port"));
+    CHECK(has(normal, "--mcp-manual-step"));
+    CHECK(has(normal, "--ephemeral-sandbox"));
+    CHECK_FALSE(has(normal, "--sandbox-dir"));
     const auto preflight = BuildLaunchPlan(cli, tree.path, entry, global, LaunchMode::preflight).argv;
-    CHECK(has(preflight, "--preflight")); CHECK_FALSE(has(preflight, "--mcp-port")); CHECK_FALSE(has(preflight, "--mcp-manual-step"));
+    CHECK(has(preflight, "--preflight"));
+    CHECK_FALSE(has(preflight, "--mcp-port"));
+    CHECK_FALSE(has(preflight, "--mcp-manual-step"));
     CHECK(has(BuildLaunchPlan(cli, tree.path, entry, global, LaunchMode::diagnostic).argv, "--diag"));
     SetSetting(global, "mcp_enabled", false);
     CHECK_THROWS(static_cast<void>(BuildLaunchPlan(cli, tree.path, entry, global)));
     CHECK_NOTHROW(static_cast<void>(BuildLaunchPlan(cli, tree.path, entry, global, LaunchMode::preflight)));
     SaveGameSettings(directory, {});
     const auto inherited = BuildLaunchPlan(cli, tree.path, entry, global).argv;
-    CHECK(has(inherited, "4")); CHECK(has(inherited, "--sandbox-dir")); CHECK_FALSE(has(inherited, "--external-dir"));
+    CHECK(has(inherited, "4"));
+    CHECK(has(inherited, "--sandbox-dir"));
+    CHECK_FALSE(has(inherited, "--external-dir"));
     entry.metadata->external_dir = external;
     SaveGameSettings(directory, {{{"external_dir", std::string()}}});
     CHECK_FALSE(has(BuildLaunchPlan(cli, tree.path, entry, global).argv, "--external-dir"));
@@ -141,12 +159,12 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     const auto entry_dir = temporary.path / "library" / "org.example.game";
     const auto profiles = temporary.path / "profiles";
     const auto external = temporary.path / "external";
-    Write(cli, "exe"); Write(entry_dir / "game.apk", "apk");
+    Write(cli, "exe");
+    Write(entry_dir / "game.apk", "apk");
     std::filesystem::create_directories(profiles);
     std::filesystem::create_directories(external);
-    const auto plan = ogplay::frontend::BuildLaunchPlan(
-        cli, temporary.path, Entry(entry_dir, external),
-        {.profiles_dir = profiles});
+    const auto plan =
+        ogplay::frontend::BuildLaunchPlan(cli, temporary.path, Entry(entry_dir, external), {.profiles_dir = profiles});
     REQUIRE(plan.argv.size() == 27);
     CHECK(plan.argv[1] == "--run-game");
     CHECK(plan.argv[3] == "--profiles-dir");
@@ -160,16 +178,15 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     CHECK(plan.argv[13] == "--key-editor-port");
     CHECK(plan.argv[14] == std::to_string(*plan.key_editor_port));
     CHECK(plan.argv[15] == "--sandbox-dir");
-    CHECK(plan.argv[16] ==
-          ogplay::app::LauncherSandboxRoot(temporary.path)
-              .generic_string());
+    CHECK(plan.argv[16] == ogplay::app::LauncherSandboxRoot(temporary.path).generic_string());
     CHECK(plan.argv[17] == "--library-root");
     CHECK(plan.argv[18] == std::filesystem::absolute(temporary.path).generic_string());
     CHECK(plan.argv[19] == "--installation-id");
     CHECK(plan.argv[20] == "org.example.game");
     CHECK(plan.argv[21] == "--input-config");
     CHECK(plan.argv[23] == "--missing-data-report");
-    CHECK(plan.argv[24] == std::filesystem::absolute(entry_dir / "last-run-missing.json").lexically_normal().generic_string());
+    CHECK(plan.argv[24] ==
+          std::filesystem::absolute(entry_dir / "last-run-missing.json").lexically_normal().generic_string());
     // The window caption shows the library name, not the stored game.apk.
     CHECK(plan.argv[25] == "--window-title");
     CHECK(plan.argv[26] == "Game");
@@ -182,51 +199,44 @@ TEST_CASE("INP-5 GUI LaunchPlan always names the instance key layout file") {
     const auto cli = temporary.path / "bin" / "ogplay";
     const auto entry_dir = temporary.path / "library" / "org.example.game";
     const auto external = temporary.path / "external";
-    Write(cli, "exe"); Write(entry_dir / "game.apk", "apk");
+    Write(cli, "exe");
+    Write(entry_dir / "game.apk", "apk");
     std::filesystem::create_directories(external);
     const auto plan = ogplay::frontend::BuildLaunchPlan(cli, temporary.path, Entry(entry_dir, external), {});
     REQUIRE(plan.argv.size() >= 2);
     const auto input = std::find(plan.argv.begin(), plan.argv.end(), "--input-config");
     REQUIRE(input != plan.argv.end());
     REQUIRE(std::next(input) != plan.argv.end());
-    CHECK(*std::next(input) ==
-          std::filesystem::absolute(entry_dir / "input.toml").lexically_normal().generic_string());
+    CHECK(*std::next(input) == std::filesystem::absolute(entry_dir / "input.toml").lexically_normal().generic_string());
 }
 
 TEST_CASE("GUI LaunchPlan fails before spawn for every missing required input") {
     TemporaryDirectory temporary;
     const auto cli = temporary.path / "ogplay";
     const auto entry_dir = temporary.path / "entry";
-    Write(cli, "exe"); Write(entry_dir / "game.apk", "apk");
+    Write(cli, "exe");
+    Write(entry_dir / "game.apk", "apk");
     const auto entry = Entry(entry_dir, temporary.path / "missing-external");
-    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
-                        cli, temporary.path, entry, {})),
+    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(cli, temporary.path, entry, {})),
                     ogplay::app::LibraryError);
     auto damaged = entry;
     damaged.damage_reason = "broken";
-    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
-                        cli, temporary.path, damaged,
-                        {})),
+    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(cli, temporary.path, damaged, {})),
                     ogplay::app::LibraryError);
 
     auto valid = Entry(entry_dir, temporary.path / "external");
     std::filesystem::create_directories(*valid.metadata->external_dir);
-    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
-                        temporary.path / "missing-cli", temporary.path, valid,
-                        {})),
-                    ogplay::app::LibraryError);
+    CHECK_THROWS_AS(
+        static_cast<void>(ogplay::frontend::BuildLaunchPlan(temporary.path / "missing-cli", temporary.path, valid, {})),
+        ogplay::app::LibraryError);
     std::filesystem::remove(entry_dir / "game.apk");
-    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
-                        cli, temporary.path, valid,
-                        {})),
+    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(cli, temporary.path, valid, {})),
                     ogplay::app::LibraryError);
     Write(entry_dir / "game.apk", "apk");
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
-                        cli, temporary.path, valid,
-                        {.profiles_dir = temporary.path / "missing-profiles"})),
+                        cli, temporary.path, valid, {.profiles_dir = temporary.path / "missing-profiles"})),
                     ogplay::app::LibraryError);
-    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
-                        cli, {}, valid, {})),
+    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(cli, {}, valid, {})),
                     ogplay::app::LibraryError);
 }
 
@@ -235,8 +245,10 @@ TEST_CASE("BND-42 GUI persists and forwards bounded CPU configuration") {
     using namespace ogplay::app;
     TemporaryDirectory tree;
     const auto cli = tree.path / "ogplay", directory = tree.path / "library" / "org.example.game";
-    Write(cli, "exe"); Write(directory / "game.apk", "apk");
-    auto entry = Entry(directory, {}); entry.metadata->external_dir.reset();
+    Write(cli, "exe");
+    Write(directory / "game.apk", "apk");
+    auto entry = Entry(directory, {});
+    entry.metadata->external_dir.reset();
     GameSettings settings{{{"cpu_cores", std::uint32_t{4}}, {"cpu_frequency_mhz", std::uint32_t{1500}}}};
     SaveGameSettings(directory, settings);
     const auto plan = BuildLaunchPlan(cli, tree.path, entry, {});
@@ -258,14 +270,17 @@ TEST_CASE("BND-43 GUI persists optional execution limits independently of nomina
     using namespace ogplay::app;
     TemporaryDirectory tree;
     const auto cli = tree.path / "ogplay", directory = tree.path / "library" / "org.example.game";
-    Write(cli, "exe"); Write(directory / "game.apk", "apk");
-    auto entry = Entry(directory, {}); entry.metadata->external_dir.reset();
+    Write(cli, "exe");
+    Write(directory / "game.apk", "apk");
+    auto entry = Entry(directory, {});
+    entry.metadata->external_dir.reset();
     GameSettings settings{{{"cpu_limit_parallelism", true}, {"cpu_max_mticks_per_second", std::uint32_t{20}}}};
     SaveGameSettings(directory, settings);
     const auto plan = BuildLaunchPlan(cli, tree.path, entry, {});
     CHECK(std::find(plan.argv.begin(), plan.argv.end(), "--cpu-limit-parallelism") != plan.argv.end());
     const auto rate = std::find(plan.argv.begin(), plan.argv.end(), "--cpu-max-mticks-per-second");
-    REQUIRE(rate != plan.argv.end()); REQUIRE(std::next(rate) != plan.argv.end());
+    REQUIRE(rate != plan.argv.end());
+    REQUIRE(std::next(rate) != plan.argv.end());
     CHECK(*std::next(rate) == "20");
     settings.values["cpu_max_mticks_per_second"] = std::uint32_t{10001};
     CHECK_THROWS(ValidateGameSettings(settings));
@@ -280,10 +295,8 @@ TEST_CASE("GUI launch tracker rejects duplicates and returns exact exits") {
     tracker.Begin("org.example.b", "b.log");
     tracker.Begin("org.example.a", "a.log");
     CHECK(tracker.IsRunning("org.example.a"));
-    CHECK(tracker.RunningPackages() ==
-          std::vector<std::string>{"org.example.a", "org.example.b"});
-    CHECK_THROWS_AS(tracker.Begin("org.example.a", "again.log"),
-                    ogplay::app::LibraryError);
+    CHECK(tracker.RunningPackages() == std::vector<std::string>{"org.example.a", "org.example.b"});
+    CHECK_THROWS_AS(tracker.Begin("org.example.a", "again.log"), ogplay::app::LibraryError);
     const auto result = tracker.Finish("org.example.a", 17);
     CHECK(result.package == "org.example.a");
     CHECK(result.exit_code == 17);
@@ -319,7 +332,9 @@ TEST_CASE("GUI Dashboard probe rejects foreign process and malformed protocol") 
     CHECK_FALSE(DecodeDashboardProbe(good + "{", 123).ready);
     CHECK_FALSE(DecodeDashboardProbe(good + body + std::string(8192, ' '), 123).ready);
     CHECK_FALSE(DecodeDashboardProbe(good + R"({"id":1,"result":{"schema_version":1,"process_id":123}})", 123).ready);
-    CHECK_FALSE(DecodeDashboardProbe(good + R"({"jsonrpc":"2.0","id":1,"result":{"schema_version":2,"process_id":123}})", 123).ready);
+    CHECK_FALSE(
+        DecodeDashboardProbe(good + R"({"jsonrpc":"2.0","id":1,"result":{"schema_version":2,"process_id":123}})", 123)
+            .ready);
 }
 
 TEST_CASE("INP-7 GUI LaunchPlan gives every game a key editor port and a token outside argv") {
@@ -328,7 +343,8 @@ TEST_CASE("INP-7 GUI LaunchPlan gives every game a key editor port and a token o
     TemporaryDirectory tree;
     const auto cli = tree.path / "ogplay";
     const auto directory = tree.path / "library" / "org.example.game";
-    Write(cli, "exe"); Write(directory / "game.apk", "apk");
+    Write(cli, "exe");
+    Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {});
     entry.metadata->external_dir.reset();
     LibraryConfig config;
@@ -354,8 +370,10 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     TemporaryDirectory tree;
     const auto executable = tree.path / "ogplay";
     const auto directory = tree.path / "library/org.example.game";
-    Write(executable, "exe"); Write(directory / "game.apk", "apk");
-    auto entry = Entry(directory, {}); entry.metadata->external_dir.reset();
+    Write(executable, "exe");
+    Write(directory / "game.apk", "apk");
+    auto entry = Entry(directory, {});
+    entry.metadata->external_dir.reset();
     LibraryConfig global;
     auto launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
     CHECK(launch.options.surface_width == 1280);
@@ -417,11 +435,38 @@ TEST_CASE("VFS-09 external guest mount is per installation and resolves user ove
     const auto args = FormatGameRunArgs(resolved.options);
     const std::vector<std::string_view> views(args.begin(), args.end());
     CHECK(ParseGameRunArgs(views) == resolved.options);
-    for (const auto invalid : {"/", "/data/other", "/sdcard2/game", "/sdcard/../data", "/sdcard/a/./b", "/sdcard//a", "relative", "/sdcard/a\\b"}) {
+    for (const auto invalid : {"/", "/data/other", "/sdcard2/game", "/sdcard/../data", "/sdcard/a/./b", "/sdcard//a",
+                               "relative", "/sdcard/a\\b"}) {
         settings.values["external_guest_dir"] = std::string(invalid);
         CHECK_THROWS(ValidateGameSettings(settings));
     }
     settings.values = {{"external_dir", std::string()}};
     SaveGameSettings(directory, settings);
     CHECK_FALSE(ResolveLaunch(store, entry, {}).options.external_guest_directory);
+}
+
+TEST_CASE("running icon follows the entry icon and the global style") {
+    using namespace ogplay::app;
+    TemporaryDirectory tree;
+    const auto directory = tree.path / "library/org.example.game";
+    Write(directory / "game.apk", "apk");
+    auto entry = Entry(directory, {});
+    entry.metadata->external_dir.reset();
+    LibraryConfig global;
+    CHECK_FALSE(ResolveLaunch(LibraryStore(tree.path), entry, global).options.window_icon.has_value());
+    Write(directory / "icon.png", "png");
+    auto launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
+    REQUIRE(launch.options.window_icon.has_value());
+    CHECK(launch.options.window_icon->filename() == "icon.png");
+    CHECK(launch.options.window_icon_style == RunningIconStyle::badge);
+    const auto default_argv = FormatGameRunArgs(launch.options);
+    CHECK(std::find(default_argv.begin(), default_argv.end(), "--window-icon-style") == default_argv.end());
+    SetSetting(global, "running_icon", std::string("cradle"));
+    launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
+    CHECK(launch.options.window_icon_style == RunningIconStyle::cradle);
+    const auto argv = FormatGameRunArgs(launch.options);
+    const auto style = std::find(argv.begin(), argv.end(), "--window-icon-style");
+    REQUIRE(style != argv.end());
+    CHECK(*std::next(style) == "cradle");
+    CHECK_THROWS(SetSetting(global, "running_icon", std::string("plain")));
 }

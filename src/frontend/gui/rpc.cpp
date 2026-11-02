@@ -147,7 +147,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         if (method == "game_settings.get" || method == "game_settings.set") return GameSettingsRequest(method, params);
         if (method == "library.data_hint" || method == "library.data_mount.apply")
             return DataHintRequest(method, params);
-        if (method == "settings.get" || method == "settings.set" || method == "settings.open_dir")
+        if (method == "settings.get" || method == "settings.set" || method == "settings.open_dir" ||
+            method == "settings.icon_preview")
             return SettingsRequest(method, params);
         if (method == "dialog.pick" || method == "dialog.poll" || method == "library.analyze" ||
             method == "library.external.inspect" || method == "library.import" || method.starts_with("library.job.") ||
@@ -186,7 +187,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         if (method == "library.remove" || method == "library.clear_data") {
             const auto confirmed = params.Member("confirmed");
             if (!confirmed || confirmed->Bool() != std::optional<bool>{true})
-                throw std::invalid_argument(method == "library.remove" ? "removal requires confirmed=true" : "clearing data requires confirmed=true");
+                throw std::invalid_argument(method == "library.remove" ? "removal requires confirmed=true"
+                                                                       : "clearing data requires confirmed=true");
             if (const auto value = params.Member("delete_saves")) {
                 if (!value->Bool()) throw std::invalid_argument("delete_saves requires a boolean");
                 delete_saves = *value->Bool();

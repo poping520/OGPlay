@@ -1,5 +1,9 @@
 #include "frontend/gui/rpc.h"
 #include "ogplay/app/library.h"
+#include "ogplay/app/encoding.h"
+#include "ogplay/app/host.h"
+#include "ogplay/app/running_icon.h"
+#include <fstream>
 #include <limits>
 #include <algorithm>
 #include <stdexcept>
@@ -162,7 +166,35 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
     return {true, writer.Serialize(root)};
 }
 
+namespace {
+// The running_icon choices drawn by the same compositor the game uses, from the bundled placeholder game icon.
+app::ConsoleResponse IconPreview(const app::JsonValue params) {
+    if (params.Size()) throw std::invalid_argument("settings.icon_preview accepts no parameters");
+    const auto branding = BundledDataPaths().root / "branding";
+    const auto read = [](const std::filesystem::path& path) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file) throw std::runtime_error("图标素材缺失：" + PathText(path));
+        std::vector<std::byte> bytes;
+        for (char c; file.get(c);)
+            bytes.push_back(static_cast<std::byte>(c));
+        return bytes;
+    };
+    const auto game = read(branding / "preview-game.png"), cartridge = read(branding / "ogplay-cartridge.png");
+    app::JsonWriter writer;
+    const auto root = writer.Object(), result = writer.Object();
+    for (const auto style : {RunningIconStyle::cradle, RunningIconStyle::badge}) {
+        const auto png = EncodeRgbaPng(ComposeRunningIcon(game, cartridge, style, 192));
+        if (png.empty()) throw std::runtime_error("预览图标编码失败");
+        writer.AddString(result, std::string(RunningIconStyleName(style)),
+                         "data:image/png;base64," + EncodeBase64(png));
+    }
+    writer.Add(root, "result", result);
+    return {true, writer.Serialize(root)};
+}
+}  // namespace
+
 app::ConsoleResponse GuiRpcService::SettingsRequest(std::string_view method, app::JsonValue params) {
+    if (method == "settings.icon_preview") return IconPreview(params);
     LibraryConfig patch;
     std::string expected;
     if (method == "settings.get") {

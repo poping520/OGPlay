@@ -1,19 +1,19 @@
 #include "ogplay/app/library.h"
 #include <algorithm>
+
 namespace ogplay::app {
 namespace {
 void RequireDirectory(const std::filesystem::path& path, std::string_view name) {
-    if (!std::filesystem::is_directory(path)) throw LibraryError(LibraryErrorCode::not_found, std::string(name) + " is unavailable", path);
+    if (!std::filesystem::is_directory(path))
+        throw LibraryError(LibraryErrorCode::not_found, std::string(name) + " is unavailable", path);
 }
-}
-std::filesystem::path LauncherSandboxRoot(
-    const std::filesystem::path& library_root) {
+}  // namespace
+
+std::filesystem::path LauncherSandboxRoot(const std::filesystem::path& library_root) {
     if (library_root.empty()) {
-        throw LibraryError(LibraryErrorCode::invalid_argument,
-                            "library root must not be empty");
+        throw LibraryError(LibraryErrorCode::invalid_argument, "library root must not be empty");
     }
-    return (std::filesystem::absolute(library_root).lexically_normal() /
-            "sandbox").lexically_normal();
+    return (std::filesystem::absolute(library_root).lexically_normal() / "sandbox").lexically_normal();
 }
 
 ResolvedLaunch ResolveLaunch(const LibraryStore& store, std::string_view id, LaunchMode mode) {
@@ -22,21 +22,27 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, std::string_view id, Lau
     if (entry == entries.end()) throw LibraryError(LibraryErrorCode::not_found, "library entry does not exist");
     return ResolveLaunch(store, *entry, LoadLibraryConfig(store.Root()), mode);
 }
-ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& source_entry, const LibraryConfig& global, LaunchMode mode) {
+
+ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& source_entry, const LibraryConfig& global,
+                             LaunchMode mode) {
     if (source_entry.directory.lexically_normal() != (store.EntriesRoot() / source_entry.key).lexically_normal())
         throw LibraryError(LibraryErrorCode::invalid_argument, "entry is outside library");
-    if (mode != LaunchMode::normal && mode != LaunchMode::preflight && mode != LaunchMode::diagnostic) throw std::invalid_argument("unknown launch mode");
+    if (mode != LaunchMode::normal && mode != LaunchMode::preflight && mode != LaunchMode::diagnostic)
+        throw std::invalid_argument("unknown launch mode");
     const auto settings = LoadGameSettings(source_entry.directory);
     const auto config = EffectiveGameConfig(settings, global);
     const auto entry = EffectiveGameEntry(source_entry, settings);
     ValidateLibraryConfigValues(config);
-    if (entry.Damaged() || !entry.metadata) throw LibraryError(LibraryErrorCode::corrupt_config, "damaged library entry cannot be launched", entry.directory);
+    if (entry.Damaged() || !entry.metadata)
+        throw LibraryError(LibraryErrorCode::corrupt_config, "damaged library entry cannot be launched",
+                           entry.directory);
     if (config.profiles_dir) RequireDirectory(*config.profiles_dir, "Profile directory");
     if (entry.metadata->external_dir) RequireDirectory(*entry.metadata->external_dir, "external data directory");
     ResolvedLaunch result;
     auto& o = result.options;
     o.apk_path = std::filesystem::absolute(entry.directory / "game.apk").lexically_normal();
-    if (!std::filesystem::is_regular_file(o.apk_path)) throw LibraryError(LibraryErrorCode::not_found, "library APK copy is missing", o.apk_path);
+    if (!std::filesystem::is_regular_file(o.apk_path))
+        throw LibraryError(LibraryErrorCode::not_found, "library APK copy is missing", o.apk_path);
     o.profiles_directory = config.profiles_dir;
     o.external_directory = entry.metadata->external_dir;
     if (o.external_directory) o.external_guest_directory = entry.metadata->external_guest_dir;
@@ -45,11 +51,16 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     o.density_dpi = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "density_dpi"));
     o.supersample_factor = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "supersample"));
     o.cpu_config.cores = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_cores"));
-    o.cpu_config.frequency_mhz = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_frequency_mhz"));
-    o.cpu_config.execution.limit_parallelism = std::get<bool>(EffectiveGameSetting(settings, global, entry, "cpu_limit_parallelism"));
-    o.cpu_config.execution.max_mticks_per_second = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_max_mticks_per_second"));
+    o.cpu_config.frequency_mhz =
+        std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_frequency_mhz"));
+    o.cpu_config.execution.limit_parallelism =
+        std::get<bool>(EffectiveGameSetting(settings, global, entry, "cpu_limit_parallelism"));
+    o.cpu_config.execution.max_mticks_per_second =
+        std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_max_mticks_per_second"));
     const auto interpreter = std::get<std::string>(Setting(config, "interpreter"));
-    if (interpreter != "default") o.dexvm_interpreter = interpreter == "threaded" ? InterpreterBackend::threaded : InterpreterBackend::switch_dispatch;
+    if (interpreter != "default")
+        o.dexvm_interpreter =
+            interpreter == "threaded" ? InterpreterBackend::threaded : InterpreterBackend::switch_dispatch;
     const bool mcp = std::get<bool>(Setting(config, "mcp_enabled"));
     const bool manual = std::get<bool>(EffectiveGameSetting(settings, global, entry, "mcp_manual_step"));
     if (mode != LaunchMode::preflight) {
@@ -72,7 +83,13 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     if (mode != LaunchMode::preflight)
         o.missing_data_report = std::filesystem::absolute(entry.directory / "last-run-missing.json").lexically_normal();
     if (!entry.metadata->display_name.empty()) o.window_title = entry.metadata->display_name;
+    // The running window carries the game's own icon with the OGPlay mark; entries without one keep the default.
+    if (const auto icon = entry.directory / "icon.png"; std::filesystem::is_regular_file(icon)) {
+        o.window_icon = std::filesystem::absolute(icon).lexically_normal();
+        o.window_icon_style = ParseRunningIconStyle(std::get<std::string>(Setting(global, "running_icon")))
+                                  .value_or(RunningIconStyle::badge);
+    }
     ValidateGameRunOptions(o);
     return result;
 }
-}
+}  // namespace ogplay::app

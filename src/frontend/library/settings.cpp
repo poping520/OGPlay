@@ -22,24 +22,80 @@ void ValidateExternalGuestDirectory(const std::string_view path) {
 const std::vector<SettingDefinition>& SettingDefinitions() {
     // One schema drives persistence, RPC validation and the rendered controls.
     static const std::vector<SettingDefinition> fields{
-        {"language", "general", "语言", std::string("zh-CN"), {"zh-CN", "en-US"}, 0, 0, "启动器界面语言；部分宿主提示暂为中文"},
-        {"theme", "general", "主题", std::string("dark"), {"dark", "light", "system"}, 0, 0, "预留 · 新界面暂无浅色主题"},
-        {"density", "general", "游戏库密度", std::string("comfortable"), {"comfortable", "compact"}, 0, 0, "预留 · 新界面暂不区分密度"},
+        {"language",
+         "general",
+         "语言",
+         std::string("zh-CN"),
+         {"zh-CN", "en-US"},
+         0,
+         0,
+         "启动器界面语言；部分宿主提示暂为中文"},
+        {"theme",
+         "general",
+         "主题",
+         std::string("dark"),
+         {"dark", "light", "system"},
+         0,
+         0,
+         "预留 · 新界面暂无浅色主题"},
+        {"density",
+         "general",
+         "游戏库密度",
+         std::string("comfortable"),
+         {"comfortable", "compact"},
+         0,
+         0,
+         "预留 · 新界面暂不区分密度"},
         {"cartridge", "general", "主界面卡带", std::string("3d"), {"3d", "css"}},
         {"settings_style", "general", "界面风格", std::string("console"), {"console", "glass"}},
+        {"running_icon",
+         "general",
+         "运行中游戏图标",
+         std::string("badge"),
+         {"badge", "cradle"},
+         0,
+         0,
+         "游戏运行时程序坞/任务栏显示的图标，下次启动生效"},
         {"minimize_on_launch", "general", "启动游戏后最小化", false},
         {"show_exit_log", "general", "异常退出时显示日志末尾", true},
         {"confirm_delete", "general", "删除游戏前二次确认", true},
         {"profiles_dir", "storage", "Profile 目录覆盖", std::string(), {}, 0, 0, "", true},
         {"default_external_dir", "storage", "默认数据包目录（导入时预填）", std::string(), {}, 0, 0, "", true},
-        {"log_retention", "storage", "每款游戏保留日志数", std::uint32_t(1), {}, 1, 100, "预留 · 当前只保留 last-run.log"},
-        {"angle_backend", "graphics", "ANGLE 后端偏好", std::string("automatic"), {"automatic", "hardware-only", "software-only"}, 0, 0, "预留 · 启动参数尚未接入"},
+        {"log_retention",
+         "storage",
+         "每款游戏保留日志数",
+         std::uint32_t(1),
+         {},
+         1,
+         100,
+         "预留 · 当前只保留 last-run.log"},
+        {"angle_backend",
+         "graphics",
+         "ANGLE 后端偏好",
+         std::string("automatic"),
+         {"automatic", "hardware-only", "software-only"},
+         0,
+         0,
+         "预留 · 启动参数尚未接入"},
         {"surface_width", "graphics", "逻辑画面宽度", kDefaultSurfaceWidth, {}, 1, kMaximumSurfaceDimension},
         {"surface_height", "graphics", "逻辑画面高度", kDefaultSurfaceHeight, {}, 1, kMaximumSurfaceDimension},
-        {"density_dpi", "graphics", "屏幕密度（DPI）", kDefaultDensityDpi, {}, kMinimumDensityDpi, kMaximumDensityDpi,
+        {"density_dpi",
+         "graphics",
+         "屏幕密度（DPI）",
+         kDefaultDensityDpi,
+         {},
+         kMinimumDensityDpi,
+         kMaximumDensityDpi,
          "游戏读到的 DisplayMetrics 密度；160 为 1.0 倍"},
         {"supersample", "graphics", "默认超采样", std::uint32_t(1), {}, 1, 4},
-        {"window_mode", "graphics", "默认窗口模式", std::string("windowed"), {"windowed", "fullscreen"}, 0, 0, "预留 · 运行时未实现"},
+        {"window_mode",
+         "graphics",
+         "默认窗口模式",
+         std::string("windowed"),
+         {"windowed", "fullscreen"},
+         0,
+         0,
+         "预留 · 运行时未实现"},
         {"scaling", "graphics", "缩放模式", std::string("aspect"), {"aspect", "stretch"}, 0, 0, "预留 · 运行时未实现"},
         {"audio_device", "audio", "输出设备名称", std::string(), {}, 0, 0, "预留 · 运行时设备选择尚未接入"},
         {"volume", "audio", "主音量（%）", std::uint32_t(100), {}, 0, 100, "预留 · 运行时未实现"},
@@ -47,13 +103,48 @@ const std::vector<SettingDefinition>& SettingDefinitions() {
         {"keymap", "input", "全局键位映射", std::string(), {}, 0, 0, "预留 · 运行时未实现"},
         {"gamepad_deadzone", "input", "手柄死区（%）", std::uint32_t(15), {}, 0, 100, "预留 · 运行时未实现"},
         {"interpreter", "vm", "默认解释器", std::string("default"), {"default", "switch", "threaded"}},
-        {"clock_mode", "vm", "默认 Clock 模式", std::string("realtime"), {"realtime", "fixed"}, 0, 0, "预留 · 启动参数尚未接入"},
+        {"clock_mode",
+         "vm",
+         "默认 Clock 模式",
+         std::string("realtime"),
+         {"realtime", "fixed"},
+         0,
+         0,
+         "预留 · 启动参数尚未接入"},
         {"device_preset", "vm", "默认虚拟设备预设", std::string(), {}, 0, 0, "预留 · 运行时未实现"},
-        {"network_policy", "network", "默认网络策略", std::string("disabled"), {"disabled", "loopback", "allow"}, 0, 0, "预留 · 不改变运行时网络策略"},
-        {"log_level", "diagnostics", "日志级别", std::string("info"), {"trace", "debug", "info", "warn", "error"}, 0, 0, "预留 · 启动参数尚未接入"},
+        {"network_policy",
+         "network",
+         "默认网络策略",
+         std::string("disabled"),
+         {"disabled", "loopback", "allow"},
+         0,
+         0,
+         "预留 · 不改变运行时网络策略"},
+        {"log_level",
+         "diagnostics",
+         "日志级别",
+         std::string("info"),
+         {"trace", "debug", "info", "warn", "error"},
+         0,
+         0,
+         "预留 · 启动参数尚未接入"},
         {"jsonl", "diagnostics", "JSONL 同源输出", false, {}, 0, 0, "预留 · 启动参数尚未接入"},
-        {"stall_timeout", "diagnostics", "停滞快照阈值（秒）", std::uint32_t(30), {}, 1, 3600, "预留 · 启动参数尚未接入"},
-        {"teardown_timeout", "diagnostics", "退出诊断预算（秒）", std::uint32_t(10), {}, 1, 86400, "预留 · 启动参数尚未接入"},
+        {"stall_timeout",
+         "diagnostics",
+         "停滞快照阈值（秒）",
+         std::uint32_t(30),
+         {},
+         1,
+         3600,
+         "预留 · 启动参数尚未接入"},
+        {"teardown_timeout",
+         "diagnostics",
+         "退出诊断预算（秒）",
+         std::uint32_t(10),
+         {},
+         1,
+         86400,
+         "预留 · 启动参数尚未接入"},
         {"crash_dump_dir", "diagnostics", "崩溃转储目录", std::string(), {}, 0, 0, "预留 · 运行时未实现", true},
         {"mcp_enabled", "control", "启动时启用 MCP", false},
         {"mcp_port", "control", "MCP 端口", std::uint32_t(15971), {}, 1, 65535},
@@ -61,12 +152,14 @@ const std::vector<SettingDefinition>& SettingDefinitions() {
     };
     return fields;
 }
+
 const SettingDefinition& FindSetting(std::string_view key) {
     const auto& fields = SettingDefinitions();
     const auto found = std::find_if(fields.begin(), fields.end(), [&](const auto& field) { return field.key == key; });
     if (found == fields.end()) throw std::invalid_argument("unknown setting: " + std::string(key));
     return *found;
 }
+
 SettingValue Setting(const LibraryConfig& config, std::string_view key) {
     const auto& field = FindSetting(key);
     if (key == "profiles_dir") {
@@ -77,28 +170,39 @@ SettingValue Setting(const LibraryConfig& config, std::string_view key) {
     const auto found = config.values.find(key);
     return found == config.values.end() ? field.initial : found->second;
 }
+
 void ValidateSettingValue(const SettingDefinition& field, const SettingValue& value) {
     if (field.initial.index() != value.index()) throw std::invalid_argument(field.key + ": invalid type");
     if (const auto number = std::get_if<std::uint32_t>(&value)) {
-        if (*number < field.minimum || *number > field.maximum) throw std::invalid_argument(field.key + ": outside allowed range");
+        if (*number < field.minimum || *number > field.maximum)
+            throw std::invalid_argument(field.key + ": outside allowed range");
     }
     if (const auto text = std::get_if<std::string>(&value)) {
         if (field.key == "external_guest_dir") ValidateExternalGuestDirectory(*text);
-        if (text->size() > 32768 || !core::IsValidUtf8(*text) || std::any_of(text->begin(), text->end(), [](unsigned char c) { return c < 0x20; }))
+        if (text->size() > 32768 || !core::IsValidUtf8(*text) ||
+            std::any_of(text->begin(), text->end(), [](unsigned char c) { return c < 0x20; }))
             throw std::invalid_argument(field.key + ": invalid text");
-        if (!field.choices.empty() && std::find(field.choices.begin(), field.choices.end(), *text) == field.choices.end())
+        if (!field.choices.empty() &&
+            std::find(field.choices.begin(), field.choices.end(), *text) == field.choices.end())
             throw std::invalid_argument(field.key + ": unknown choice");
-        if (field.directory && !text->empty() && !std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text->data()), text->size())).is_absolute())
+        if (field.directory && !text->empty() &&
+            !std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text->data()), text->size()))
+                 .is_absolute())
             throw std::invalid_argument(field.key + ": directory must be absolute");
     }
 }
+
 void SetSetting(LibraryConfig& config, std::string_view key, SettingValue value) {
     ValidateSettingValue(FindSetting(key), value);
     if (key == "profiles_dir") {
         const auto& text = std::get<std::string>(value);
-        config.profiles_dir = text.empty() ? std::nullopt : std::optional(std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text.data()), text.size())));
-    } else config.values[std::string(key)] = std::move(value);
+        config.profiles_dir = text.empty() ? std::nullopt
+                                           : std::optional(std::filesystem::path(std::u8string_view(
+                                                 reinterpret_cast<const char8_t*>(text.data()), text.size())));
+    } else
+        config.values[std::string(key)] = std::move(value);
 }
+
 void ValidateLibraryConfigValues(const LibraryConfig& config) {
     LibraryConfig validated;
     SetSetting(validated, "profiles_dir", Setting(config, "profiles_dir"));
@@ -107,4 +211,4 @@ void ValidateLibraryConfigValues(const LibraryConfig& config) {
         SetSetting(validated, key, value);
     }
 }
-}
+}  // namespace ogplay::app

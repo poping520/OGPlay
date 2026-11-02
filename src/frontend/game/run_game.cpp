@@ -4,6 +4,7 @@
 #include <array>
 #include <charconv>
 #include <chrono>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -168,9 +169,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     };
     auto [apk_path, external_directory, external_guest_directory, obb_path, profiles_directory, exit_after_frames,
           mcp_port, key_editor_port, dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,
-          diagnostics_enabled, supersample_factor, surface_width, surface_height, density_dpi, cpu_config, mcp_manual_step,
-          preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox, input_config_path,
-          library_root, missing_data_report, window_title] = std::move(options);
+          diagnostics_enabled, supersample_factor, surface_width, surface_height, density_dpi, cpu_config,
+          mcp_manual_step, preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox,
+          input_config_path, library_root, missing_data_report, window_title, window_icon, window_icon_style] =
+        std::move(options);
     const auto bundled_data = HostBundledDataPaths();
     logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
                  {{"data_root", PathUtf8(bundled_data.root)}});
@@ -282,10 +284,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         if (audit.strong_missing) return 1;
         Write("OGPlay: preflight ready: package=" + manifest.package + " rootless=true abi=" +
               (process_abi.has_value() ? std::string(loader::ToString(*process_abi)) : std::string("none")) +
-              " api=" + std::to_string(api_level) + " lifecycle=" + std::string("dex_activity") +
-              " native=" + std::to_string(native_inventory.Libraries().size()) +
-              " surface=" + std::to_string(surface_width) + "x" + std::to_string(surface_height) +
-              " density=" + std::to_string(density_dpi) + " profile=" + (selected_profile != nullptr ? profile.identity.package : "none") +
+              " api=" + std::to_string(api_level) + " lifecycle=" + std::string("dex_activity") + " native=" +
+              std::to_string(native_inventory.Libraries().size()) + " surface=" + std::to_string(surface_width) + "x" +
+              std::to_string(surface_height) + " density=" + std::to_string(density_dpi) +
+              " profile=" + (selected_profile != nullptr ? profile.identity.package : "none") +
               " sandbox=" + sandbox.Describe() + "\n");
         return 0;
     }
@@ -301,6 +303,20 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     mcp_inputs = std::make_unique<agent::McpInputQueue>();
     if (mcp_port.has_value()) mcp_session = std::make_unique<agent::McpSessionControl>();
 
+    // A library launch gets its own taskbar identity before its first window, so Windows shows the
+    // game's icon on a separate button instead of folding it into the launcher's.
+    if (installation_id && window_icon) {
+        std::string identity = "OGPlay.Game.";
+        for (const char c : *installation_id)
+            identity.push_back(std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '-' ? c : '_');
+        identity.resize(std::min<std::size_t>(identity.size(), 128));
+        try {
+            hal::SetHostApplicationIdentity(identity);
+        } catch (const std::exception& error) {
+            logger.Write(core::LogLevel::warn, "frontend.run_apk.icon", "taskbar identity unavailable", {},
+                         {{"reason", std::string(error.what())}}, kUnrestrictedLog);
+        }
+    }
     auto window = hal::CreateSdlWindowInput();
     const auto base_title = "OGPlay · " + window_title.value_or(PathUtf8(apk_path.filename()));
     window->Open({.title = base_title + " · FPS --",
@@ -317,6 +333,25 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
          {"cpu_limit_parallelism", cpu_config.execution.limit_parallelism},
          {"cpu_max_mticks_per_second", static_cast<std::uint64_t>(cpu_config.execution.max_mticks_per_second)}},
         kUnrestrictedLog);
+    // The game's icon with the OGPlay mark; any failure keeps the default icon and only logs.
+    if (window_icon) {
+        try {
+            // Largest first; the small ones cover the Windows icon metrics at 100%..200% DPI.
+            constexpr std::array<std::uint32_t, 9> kIconSizes{512, 256, 64, 48, 40, 32, 24, 20, 16};
+            const auto icons = app::ComposeRunningIcons(
+                ReadBytes(*window_icon), ReadBytes(bundled_data.root / "branding" / "ogplay-cartridge.png"),
+                window_icon_style, kIconSizes);
+            std::vector<hal::IconImage> sizes;
+            for (const auto& icon : icons)
+                sizes.push_back({icon.pixels, icon.width, icon.height});
+            window->SetIcon(sizes);
+            logger.Write(core::LogLevel::info, "frontend.run_apk.icon", "running icon set", {},
+                         {{"style", std::string(app::RunningIconStyleName(window_icon_style))}}, kUnrestrictedLog);
+        } catch (const std::exception& error) {
+            logger.Write(core::LogLevel::warn, "frontend.run_apk.icon", "running icon unavailable; keeping the default",
+                         {}, {{"reason", std::string(error.what())}}, kUnrestrictedLog);
+        }
+    }
     bool quit{};
     auto& presented = exit_state.presented;
     std::uint32_t guest_width = surface_width;

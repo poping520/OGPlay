@@ -298,6 +298,11 @@ status = "complete"
 test = "tests/frontend/gui_launch_tests.cpp; tests/frontend/gui_dashboard_window_tests.cpp; frontend.gui_smoke; frontend.gui_library_smoke"
 note = "GUI-5/6/9/14：spawn 前校验并装配当前 ogplay EXE 的 --run-game 参数；与 ogplay-cli 共用运行服务，显式传递 sandbox 根与 --installation-id；子进程 stderr 重定向，100ms 计时器回收退出码并按 UTF-8 边界展示日志尾。合并全局与实例设置，支持正常/预检/诊断模式；预检不传 MCP，临时沙盒不传持久根，预留字段不转发。"
 
+[frontend.running_game_icon]
+status = "partial"
+test = "tests/frontend/library_visuals_tests.cpp#running icon; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp#running icon; tests/frontend/gui_rpc_tests.cpp#settings RPC; webui/apps/gui/settings/settings.test.ts"
+note = "GUI-17：库启动的游戏窗口/Dock 图标为游戏图标与 OGPlay 标记合成（全局 running_icon：badge 圆形角标默认、cradle 卡带插槽），设置页预览由宿主同一合成器生成；Windows 按 DPI 选尺寸设大小图标并以 AppUserModelID 独立分组。macOS 已验；Windows 编译/任务栏未验；退出时 Dock 闪回为系统限制；无图标条目保留默认图标。"
+
 [loader.apk_application_visuals]
 status = "complete"
 test = "tests/loader/apk_manifest_tests.cpp; tests/frontend/library_visuals_tests.cpp"

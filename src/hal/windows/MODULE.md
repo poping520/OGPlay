@@ -20,6 +20,11 @@
   HRESULT 失败传播，避免在 WebView 消息回调中运行模态消息循环。
   `Minimize` 只最小化当前宿主窗口，不改变子进程生命周期。
   主窗口与辅助窗口从当前 EXE 的 `OGPLAY_ICON` 资源设置大小图标；资源缺失明确失败，共享图标随模块存活。
+- SDL 游戏窗口图标（GUI-17，`window_icon.cpp`）：`WindowIcons` 以 `GetDpiForWindow` 与 `GetSystemMetricsForDpi`
+  取 SM_CXSMICON/SM_CXICON，从给定尺寸中选最接近且不小于者，以 32 位 BGRA DIB + 全零掩码 `CreateIconIndirect`
+  生成 HICON 并 WM_SETICON；持有到下次设置或窗口销毁后释放。窗口跨显示器改变 DPI 时不重选尺寸（系统缩放）。
+- `SetHostApplicationIdentity`：`SetCurrentProcessExplicitAppUserModelID`，游戏进程与启动器分属不同任务栏组。
+  未设置 RelaunchCommand 等窗口属性，固定到任务栏的游戏按钮行为未定义（未验）。
   Dashboard 按实例使用独立 WebView，仅允许指定 loopback 端口 `/dash/`、禁止新窗口，
   不绑定启动器 RPC；主窗口销毁会回收全部 Dashboard，创建/销毁期间防止计时器重入。
   主窗口带通知区域图标：关闭按钮只隐藏主窗口（进程常驻），单击图标或菜单“显示”恢复，菜单“退出”销毁主窗口结束运行；

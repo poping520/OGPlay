@@ -140,6 +140,20 @@
 .paths { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; margin: 8px 0 0; font-size: 12px; }
 .paths dt { margin: 0; color: var(--muted); font-size: 12px; font-weight: 800; }
 .paths dd { margin: 0; font: 12px var(--code); color: var(--soft); word-break: break-all; user-select: text; }
+/* running_icon preview: two cards drawn by the host compositor, the chosen one outlined in the accent */
+/* content belonging to the row above it, indented to that row's label column (padding + chip + gap) */
+.row-extra { padding: 2px 18px 8px 70px; }
+.skin-glass .row-extra { padding-left: 76px; }
+.row-extra > p { color: var(--muted); font-size: 12px; font-weight: 700; }
+.icon-preview { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
+.icon-preview button { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 200px; padding: 14px 12px 12px; border-radius: 16px;
+  background: var(--glass); box-shadow: inset 0 0 0 1px var(--line); text-align: center; transition: box-shadow .12s, background .12s; }
+.icon-preview button:hover:not(:disabled) { background: var(--glass2); }
+.icon-preview button.on { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 0 0 0 2px var(--accent); }
+.icon-preview img, .icon-preview .placeholder { display: block; width: 96px; height: 96px; margin-bottom: 4px; }
+.icon-preview b { font-size: 14px; }
+.icon-preview small { color: var(--muted); font-size: 12px; font-weight: 700; line-height: 1.4; }
+.row-extra .err { color: #ffb4ae; }
 .note .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .cfg .mini { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 999px; background: var(--glass2); font-size: 12.5px; font-weight: 800; line-height: 1; white-space: nowrap; }
 .cfg .mini:hover:not(:disabled) { background: rgba(255,255,255,.16); }

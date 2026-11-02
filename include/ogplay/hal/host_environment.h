@@ -20,8 +20,7 @@ struct HostEnvironmentOverride final {
 
 class ScopedHostEnvironment final {
 public:
-    explicit ScopedHostEnvironment(
-        std::span<const HostEnvironmentOverride> overrides);
+    explicit ScopedHostEnvironment(std::span<const HostEnvironmentOverride> overrides);
     ~ScopedHostEnvironment();
 
     ScopedHostEnvironment(const ScopedHostEnvironment&) = delete;
@@ -43,7 +42,10 @@ private:
 //   macOS    ~/Library/Application Support/OGPlay
 //   Linux    $XDG_DATA_HOME/ogplay, else ~/.local/share/ogplay
 [[nodiscard]] std::optional<std::filesystem::path> HostUserDataDirectory();
-[[nodiscard]] std::optional<std::string> HostEnvironmentValue(
-    std::string_view name);
+[[nodiscard]] std::optional<std::string> HostEnvironmentValue(std::string_view name);
+// Taskbar identity of this process, set before its first window: Windows uses it as the
+// AppUserModelID, so a running game gets its own taskbar button and icon instead of joining
+// the launcher's. 1..128 characters of [A-Za-z0-9._-]; other platforms validate and ignore it.
+void SetHostApplicationIdentity(std::string_view identity);
 
 }  // namespace ogplay::hal

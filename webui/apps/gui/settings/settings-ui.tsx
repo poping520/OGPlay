@@ -215,6 +215,8 @@ export interface FrameProps {
   setGroup: (group: string) => void;
   fields: SettingField[];                        // all fields of the page
   sectionBefore?: Record<string, string>;
+  // Content shown right under a field's row (e.g. a preview of its choices).
+  after?: Record<string, ComponentChildren>;
   model: (field: SettingField) => RowModel;
   change: (field: SettingField, value: SettingValue) => void;
   browse: (field: SettingField) => void;
@@ -296,6 +298,7 @@ export function SettingsFrame(props: FrameProps) {
     {props.sectionBefore?.[field.key] && <div class="sect">{props.sectionBefore[field.key]}</div>}
     <FieldRow field={field} model={props.model(field)} focused={index === focus} focus={() => setFocus(index)}
       change={value => props.change(field, value)} browse={() => props.browse(field)} toggleInherit={props.toggleInherit && (() => props.toggleInherit!(field))} />
+    {props.after?.[field.key]}
   </Fragment>);
   return <div class={`cfg skin-${skin}`} style={props.tint ? shellStyle(props.tint) : {}}>
     <div class="cfg-bg glass-sky" aria-hidden="true"><div class={`art ${props.art ? '' : 'plain'}`} style={props.art ? { backgroundImage: `url("${props.art}")` } : {}} /><div class="fade" /><div class="grain" /></div>

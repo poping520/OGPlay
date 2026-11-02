@@ -39,6 +39,11 @@
   SDL 指针事件使用队列中此前键盘事件的修饰键状态，失焦或生命周期切换时清除。
 - `hal::WindowInput::SetTitle`：只在窗口打开期间更新宿主标题，拒绝内嵌 NUL，SDL
   失败必须明确传播。
+- `hal::WindowInput::SetIcon`：窗口打开期间以同一图标的一组尺寸（最大在前；直通 RGBA8，≤1024 边长、尺寸与像素数一致）
+  设置窗口图标。SDL 以首张为主图、其余为备选：macOS 即进程 Dock 图标（各尺寸为 NSImage 表示）；Windows 另由
+  hal/windows `WindowIcons` 按窗口 DPI 的小/大图标度量各取最接近且不小于的尺寸设 ICON_SMALL/ICON_BIG。失败明确传播。
+- `hal::SetHostApplicationIdentity`：建窗前设置进程任务栏身份，1～128 个 `[A-Za-z0-9._-]`；Windows 为
+  AppUserModelID（游戏与启动器分开成组），其他平台只校验。
 - `hal::WindowInput::PumpEvents`：处理宿主窗口消息但不移除规范化输入事件，供长任务
   在主线程维持窗口响应；关闭窗口上调用明确失败。
 - `hal::WindowInput::PresentRgba8`：校验完整 RGBA8 帧并缩放提交到当前 SDL 窗口。

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
@@ -11,6 +12,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <bcrypt.h>
+#include <shobjidl.h>
 #include <limits>
 
 namespace ogplay::hal {
@@ -21,20 +23,16 @@ std::recursive_mutex& EnvironmentMutex() {
     return mutex;
 }
 
-void ValidateOverrides(
-    const std::span<const HostEnvironmentOverride> overrides) {
+void ValidateOverrides(const std::span<const HostEnvironmentOverride> overrides) {
     std::unordered_set<std::string> names;
     for (const auto& override : overrides) {
-        if (override.name.empty() ||
-            override.name.find('=') != std::string::npos ||
+        if (override.name.empty() || override.name.find('=') != std::string::npos ||
             override.name.find('\0') != std::string::npos ||
-            (override.value.has_value() &&
-             override.value->find('\0') != std::string::npos)) {
+            (override.value.has_value() && override.value->find('\0') != std::string::npos)) {
             throw std::invalid_argument("invalid host environment override");
         }
         if (!names.insert(override.name).second) {
-            throw std::invalid_argument(
-                "duplicate host environment override");
+            throw std::invalid_argument("duplicate host environment override");
         }
     }
 }
@@ -49,8 +47,7 @@ std::optional<std::string> ReadEnvironment(const std::string& name) {
         return std::string{};
     }
     std::string value(size, '\0');
-    const auto written =
-        GetEnvironmentVariableA(name.c_str(), value.data(), size);
+    const auto written = GetEnvironmentVariableA(name.c_str(), value.data(), size);
     if (written + 1U != size) {
         throw std::runtime_error("failed to read host environment");
     }
@@ -58,15 +55,10 @@ std::optional<std::string> ReadEnvironment(const std::string& name) {
     return value;
 }
 
-void RestoreEnvironment(
-    const std::vector<std::pair<std::string, std::optional<std::string>>>&
-        previous) noexcept {
-    for (auto iterator = previous.rbegin(); iterator != previous.rend();
-         ++iterator) {
-        static_cast<void>(SetEnvironmentVariableA(
-            iterator->first.c_str(),
-            iterator->second.has_value() ? iterator->second->c_str()
-                                         : nullptr));
+void RestoreEnvironment(const std::vector<std::pair<std::string, std::optional<std::string>>>& previous) noexcept {
+    for (auto iterator = previous.rbegin(); iterator != previous.rend(); ++iterator) {
+        static_cast<void>(SetEnvironmentVariableA(iterator->first.c_str(),
+                                                  iterator->second.has_value() ? iterator->second->c_str() : nullptr));
     }
 }
 
@@ -76,26 +68,19 @@ struct ScopedHostEnvironment::Impl final {
     std::unique_lock<std::recursive_mutex> lock{EnvironmentMutex()};
     std::vector<std::pair<std::string, std::optional<std::string>>> previous;
 
-    ~Impl() {
-        RestoreEnvironment(previous);
-    }
+    ~Impl() { RestoreEnvironment(previous); }
 };
 
-ScopedHostEnvironment::ScopedHostEnvironment(
-    const std::span<const HostEnvironmentOverride> overrides) {
+ScopedHostEnvironment::ScopedHostEnvironment(const std::span<const HostEnvironmentOverride> overrides) {
     ValidateOverrides(overrides);
     auto impl = std::make_unique<Impl>();
     impl->previous.reserve(overrides.size());
     try {
         for (const auto& override : overrides) {
-            impl->previous.emplace_back(override.name,
-                                        ReadEnvironment(override.name));
+            impl->previous.emplace_back(override.name, ReadEnvironment(override.name));
             if (!SetEnvironmentVariableA(override.name.c_str(),
-                                         override.value.has_value()
-                                             ? override.value->c_str()
-                                             : nullptr)) {
-                throw std::runtime_error(
-                    "failed to override host environment");
+                                         override.value.has_value() ? override.value->c_str() : nullptr)) {
+                throw std::runtime_error("failed to override host environment");
             }
         }
     } catch (...) {
@@ -108,20 +93,28 @@ ScopedHostEnvironment::ScopedHostEnvironment(
 
 ScopedHostEnvironment::~ScopedHostEnvironment() = default;
 
+void SetHostApplicationIdentity(const std::string_view identity) {
+    if (identity.empty() || identity.size() > 128 || !std::all_of(identity.begin(), identity.end(), [](const char c) {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' ||
+                   c == '-';
+        }))
+        throw std::invalid_argument("host application identity must be 1..128 characters of [A-Za-z0-9._-]");
+    // ASCII only, so a direct widening is the UTF-16 form.
+    const std::wstring wide(identity.begin(), identity.end());
+    if (FAILED(SetCurrentProcessExplicitAppUserModelID(wide.c_str())))
+        throw std::runtime_error("failed to set the process AppUserModelID");
+}
+
 std::filesystem::path HostExecutablePath() {
     std::vector<wchar_t> path(256);
     while (path.size() <= 32768U) {
         SetLastError(ERROR_SUCCESS);
-        const auto length = GetModuleFileNameW(
-            nullptr, path.data(), static_cast<DWORD>(path.size()));
+        const auto length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
         if (length == 0) {
             throw std::runtime_error("failed to locate host executable");
         }
-        if (length < path.size() ||
-            (length == path.size() &&
-             GetLastError() != ERROR_INSUFFICIENT_BUFFER)) {
-            return std::filesystem::path(
-                       std::wstring(path.data(), length));
+        if (length < path.size() || (length == path.size() && GetLastError() != ERROR_INSUFFICIENT_BUFFER)) {
+            return std::filesystem::path(std::wstring(path.data(), length));
         }
         path.resize(path.size() * 2U);
     }
@@ -132,8 +125,7 @@ std::filesystem::path HostExecutableDirectory() {
     return HostExecutablePath().parent_path();
 }
 
-std::optional<std::string> HostEnvironmentValue(
-    const std::string_view name) {
+std::optional<std::string> HostEnvironmentValue(const std::string_view name) {
     const std::lock_guard lock(EnvironmentMutex());
     return ReadEnvironment(std::string(name));
 }
@@ -150,10 +142,10 @@ namespace ogplay::hal {
 void FillSecureRandom(std::span<std::byte> output) {
     while (!output.empty()) {
         const auto size = static_cast<ULONG>((std::min<std::size_t>)(output.size(), 1048576));
-        if (BCryptGenRandom(nullptr, reinterpret_cast<PUCHAR>(output.data()), size,
-                           BCRYPT_USE_SYSTEM_PREFERRED_RNG) < 0)
+        if (BCryptGenRandom(nullptr, reinterpret_cast<PUCHAR>(output.data()), size, BCRYPT_USE_SYSTEM_PREFERRED_RNG) <
+            0)
             throw std::runtime_error("OS secure random failed");
         output = output.subspan(size);
     }
 }
-}
+}  // namespace ogplay::hal

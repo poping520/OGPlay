@@ -111,25 +111,30 @@ export interface RowModel {
   value: SettingValue; disabled: boolean;
   inherit?: { overridden: boolean; source: string; shown: string };
 }
-function FieldRow({ field, model, focused, focus, change, browse, toggleInherit }: {
+// Per-game rows never lock: editing one makes it this game's own value (outlined, "已单独设置"), and the restore
+// button beside the control drops it back to the inherited one.
+function FieldRow({ field, model, focused, focus, change, browse, restoreInherit }: {
   field: SettingField; model: RowModel; focused: boolean; focus: () => void;
-  change: (value: SettingValue) => void; browse?: () => void; toggleInherit?: () => void;
+  change: (value: SettingValue) => void; browse?: () => void; restoreInherit?: () => void;
 }) {
-  const meta = fieldMeta(field), inherit = model.inherit, inherited = inherit && !inherit.overridden;
-  return <div class={`row ${focused ? 'focus' : ''} ${inherited ? 'inherit' : ''}`} data-row onPointerDown={focus}>
+  const meta = fieldMeta(field), inherit = model.inherit, overridden = !!inherit?.overridden;
+  return <div class={`row ${focused ? 'focus' : ''} ${overridden ? 'override' : ''}`} data-row onPointerDown={focus}>
     <GroupIcon name={field.group} glyph={SETTING_ICONS[field.key]} />
     <div class="lbl"><b>{meta.label}</b>
       {(inherit || meta.reserved || meta.hint) && <div class="meta">
-        {inherited && <span class="inherit-val">{inherit.source} · {inherit.shown}</span>}
-        {inherit?.overridden && <span class="tag over">{t('已覆盖')}</span>}
+        {inherit && !overridden && <span class="inherit-val">{inherit.source} · {inherit.shown}</span>}
+        {inherit && overridden && <><span class="tag over">{t('已单独设置')}</span>
+          <span class="inherit-val">{t('{source}为 {value}', { source: inherit.source, value: inherit.shown })}</span></>}
         {meta.reserved && <span class="tag pending" title={meta.reserved}>{t('预留 · 仅保存')}</span>}
         {(meta.hint || meta.reserved) && <span>{meta.hint || meta.reserved}</span>}
       </div>}
     </div>
     <div class="ctl">
-      <Control field={field} value={model.value} disabled={model.disabled || !!inherited} change={change} browse={field.directory ? browse : undefined} />
-      {inherit && <button class={`inh ${inherited ? 'on' : ''}`} disabled={model.disabled} title={t('继承{source}', { source: inherit.source })} onClick={toggleInherit}>
-        <span class="sw" />{inherited ? t('继承') : t('单独设置')}</button>}
+      <Control field={field} value={model.value} disabled={model.disabled} change={change} browse={field.directory ? browse : undefined} />
+      {inherit && (overridden
+        ? <button class="restore" disabled={model.disabled} title={t('恢复{source}', { source: inherit.source })} onClick={restoreInherit}>
+            <Glyph name="reload" />{t('恢复{source}', { source: inherit.source })}</button>
+        : <span class="restore-slot" aria-hidden="true" />)}
     </div>
   </div>;
 }
@@ -221,7 +226,7 @@ export interface FrameProps {
   model: (field: SettingField) => RowModel;
   change: (field: SettingField, value: SettingValue) => void;
   browse: (field: SettingField) => void;
-  toggleInherit?: (field: SettingField) => void;
+  restoreInherit?: (field: SettingField) => void;   // per-game pages: drop this game's own value
   fileLabel: string;
   filePath: string;
   kicker: string;
@@ -281,17 +286,17 @@ export function SettingsFrame(props: FrameProps) {
       } else if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && field) {
         event.preventDefault();
         const model = props.model(field);
-        if (!model.disabled && !(model.inherit && !model.inherit.overridden) && (typeof field.initial !== 'string' || field.choices.length))
+        if (!model.disabled && (typeof field.initial !== 'string' || field.choices.length))
           props.change(field, stepValue(field, model.value, event.key === 'ArrowRight' ? 1 : -1));
       } else if ((event.key === 'Enter' || event.key === 'a') && field) {
         event.preventDefault();
         const model = props.model(field);
-        if (model.disabled || (model.inherit && !model.inherit.overridden)) return;
+        if (model.disabled) return;
         if (typeof field.initial === 'boolean' || field.choices.length) props.change(field, stepValue(field, model.value, 0));
         else main.current?.querySelectorAll('[data-row]')[focus]?.querySelector<HTMLInputElement>('input')?.focus();
       } else if ((event.key === 'q' || event.key === 'e') && groups.length) {
         selectGroup(groups[(at + (event.key === 'e' ? 1 : groups.length - 1)) % groups.length][0]);
-      } else if (event.key === 'i' && field && props.toggleInherit) props.toggleInherit(field);
+      } else if (event.key === 'i' && field && props.restoreInherit && props.model(field).inherit?.overridden) props.restoreInherit(field);
       else if (event.key === 'x') askReset();
       else if (event.key === 'Escape' || event.key === 'b') props.back();
     };
@@ -301,7 +306,7 @@ export function SettingsFrame(props: FrameProps) {
   const rows = visible.map((field, index) => <Fragment key={field.key}>
     {props.sectionBefore?.[field.key] && <div class="sect">{props.sectionBefore[field.key]}</div>}
     <FieldRow field={field} model={props.model(field)} focused={index === focus} focus={() => setFocus(index)}
-      change={value => props.change(field, value)} browse={() => props.browse(field)} toggleInherit={props.toggleInherit && (() => props.toggleInherit!(field))} />
+      change={value => props.change(field, value)} browse={() => props.browse(field)} restoreInherit={props.restoreInherit && (() => props.restoreInherit!(field))} />
     {props.after?.[field.key]}
   </Fragment>);
   return <div class={`cfg skin-${skin}`} style={props.tint ? shellStyle(props.tint) : {}}>
@@ -327,7 +332,7 @@ export function SettingsFrame(props: FrameProps) {
     </aside>
     <main class="cfg-main" ref={main}>
       <div class="head"><div><div class="kicker"><i />{props.kicker}</div><h1>{t(title)}</h1><p>{t(description)}</p></div>
-        <div class="legend">{props.toggleInherit && <span><i class="l-inh" />{t('继承')}</span>}{fields.some(field => fieldMeta(field).reserved) && <span><i class="l-pending" />{t('预留 · 仅保存')}</span>}</div></div>
+        <div class="legend">{props.restoreInherit && <span><i class="l-inh" />{t('已单独设置')}</span>}{fields.some(field => fieldMeta(field).reserved) && <span><i class="l-pending" />{t('预留 · 仅保存')}</span>}</div></div>
       <div class="rows" key={group} aria-busy={props.busy}>
         {props.error && <Note icon="info" title={t('操作失败')} warn><pre role="alert">{props.error}</pre></Note>}
         {props.loaded ? <>{props.top}{rows}{props.end}</> : !props.error && <Note icon="info" title={props.busy ? t('正在读取设置…') : t('设置不可用')} />}

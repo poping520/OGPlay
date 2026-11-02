@@ -71,7 +71,8 @@
 .hero-text > * { animation: rise .3s backwards cubic-bezier(.2,.8,.2,1); }
 .hero-text > :nth-child(2) { animation-delay: .02s; } .hero-text > :nth-child(3) { animation-delay: .04s; } .hero-text > :nth-child(4) { animation-delay: .06s; }
 .hero-text > :nth-child(5) { animation-delay: .08s; } .hero-text > :nth-child(6) { animation-delay: .1s; }
-.hero-text h1 { margin: 12px 0 4px; font-size: clamp(40px, min(5.4vw, 8.4vh), 76px); line-height: 1.08; font-weight: 900; letter-spacing: -.02em;
+/* the clamp's overflow cuts at the line box, shorter than the rounded face's descenders: pad them in, take it back from the margin */
+.hero-text h1 { margin: 12px 0 calc(4px - .14em); padding-bottom: .14em; font-size: clamp(40px, min(5.4vw, 8.4vh), 76px); line-height: 1.08; font-weight: 900; letter-spacing: -.02em;
   text-shadow: 0 6px 40px rgba(0,0,0,.4); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 .hero-text h1.small { font-size: clamp(30px, 3.4vw, 42px); }
 .sub { color: var(--soft); font-size: 18px; font-weight: 700; }
@@ -388,7 +389,7 @@
 .viewer .top .pill[aria-pressed=true]:not(.main) { box-shadow: inset 0 0 0 1.5px var(--accent); }
 .viewer-info { position: absolute; left: clamp(36px, 4.5vw, 64px); bottom: 30px; max-width: min(620px, 50%); pointer-events: none; }
 .viewer-info > * { animation: rise .3s backwards cubic-bezier(.2,.8,.2,1); }
-.viewer-info h1 { margin: 10px 0 2px; overflow: hidden; font-size: clamp(30px, 3.6vw, 52px); font-weight: 900; line-height: 1.12; letter-spacing: -.02em;
+.viewer-info h1 { margin: 10px 0 calc(2px - .14em); padding-bottom: .14em; overflow: hidden; font-size: clamp(30px, 3.6vw, 52px); font-weight: 900; line-height: 1.12; letter-spacing: -.02em;
   white-space: nowrap; text-overflow: ellipsis; text-shadow: 0 6px 40px rgba(0,0,0,.4); }
 .viewer-info .sub { font-size: 15px; }
 .viewer-views { position: absolute; right: 32px; bottom: 30px; }

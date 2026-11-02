@@ -84,15 +84,16 @@
 .cfg .tag.pending { color: #ffcf7a; background: rgba(255,176,32,.12); box-shadow: inset 0 0 0 1px rgba(255,176,32,.28); }
 .cfg .tag.over { color: #b9dbff; background: rgba(74,163,255,.16); }
 .ctl { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
-.row.inherit .ctl > :not(.inh) { opacity: .45; }
+/* a game's own value: an accent bar on the row's leading edge (the legend's 已单独设置 colour) */
+.row.override::before { content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: var(--running); }
 
 /* controls */
 .cfg .switch { position: relative; flex: none; width: 56px; height: 32px; border-radius: 999px; background: rgba(255,255,255,.14); transition: background .15s; }
 .cfg .switch::after { content: ''; position: absolute; top: 4px; left: 4px; width: 24px; height: 24px; border-radius: 50%; background: #dfe3ee; box-shadow: 0 2px 6px rgba(0,0,0,.35); transition: transform .18s cubic-bezier(.3,1.4,.5,1); }
 .cfg .switch.on { background: var(--yellow); }
 .cfg .switch.on::after { transform: translateX(24px); background: #2a2000; }
-/* existing behaviour: the track and the inherit toggle lose their fill while hovered */
-.cfg :is(.switch, .inh):hover:not(:disabled) { background: none; }
+/* existing behaviour: the track loses its fill while hovered */
+.cfg .switch:hover:not(:disabled) { background: none; }
 .cyc, .step, .txt { display: inline-flex; align-items: center; height: 40px; border-radius: 999px; background: var(--field); }
 .cyc { width: 220px; }
 .cfg .cyc button, .cfg .step button { flex: none; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; font-weight: 900; line-height: 1; color: var(--muted); }
@@ -118,14 +119,12 @@
 .cfg .txt button { height: 32px; padding: 0 12px; border-radius: 999px; background: var(--glass2); font-size: 12px; font-weight: 800; white-space: nowrap; }
 .cfg .txt button:hover:not(:disabled) { background: rgba(255,255,255,.16); }
 .cfg :is(.seg, .cyc, .step, .txt, .range) :disabled { cursor: not-allowed; }
-/* inherit toggle: fixed width so the controls line up whichever state it shows */
-.cfg .inh { display: inline-flex; align-items: center; gap: 6px; flex: none; width: 96px; height: 28px; padding: 0 10px 0 6px; border-radius: 999px; background: var(--field);
-  font-size: 11.5px; font-weight: 800; color: var(--muted); white-space: nowrap; }
-.inh .sw { position: relative; flex: none; width: 26px; height: 16px; border-radius: 999px; background: rgba(255,255,255,.16); }
-.inh .sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #dfe3ee; transition: transform .15s; }
-.cfg .inh.on { color: #b9dbff; }
-.inh.on .sw { background: var(--running); }
-.inh.on .sw::after { transform: translateX(10px); }
+/* restore-to-inherited button beside an overridden control; an empty slot of the same width keeps the controls aligned */
+.cfg .restore, .restore-slot { flex: none; width: 104px; }
+.cfg .restore { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 999px;
+  background: rgba(74,163,255,.14); color: #b9dbff; font-size: 11.5px; font-weight: 800; white-space: nowrap; transition: background .12s; }
+.cfg .restore:hover:not(:disabled) { background: rgba(74,163,255,.26); }
+.cfg .restore .glyph { width: 13px; height: 13px; }
 .inherit-val { color: var(--muted); font-size: 12px; font-weight: 700; }
 
 /* fact cards */
@@ -203,7 +202,7 @@ details.fact pre { margin: 8px 0 2px; font: 11.5px/1.6 var(--code); color: var(-
   .row { grid-template-columns: auto minmax(0, 1fr) minmax(250px, max-content); } .cyc, .step, .range { width: 196px; }
 }
 @media (max-width: 1100px) { .cfg-top .save-state { display: none; } .cfg-foot .hk:nth-child(n+6) kbd { display: none; } }
-@media (prefers-reduced-motion: reduce) { .rows > *, .save-state.on i, .toast, .cfg dialog[open] { animation: none; } .cfg .switch::after, .inh .sw::after { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .rows > *, .save-state.on i, .toast, .cfg dialog[open] { animation: none; } .cfg .switch::after { transition: none; } }
 
 /* ================================================================== skin-glass · 玻璃紫 */
 /* tokens, sky, keys, pills, segments and dialog surface come from the ui-kit skin-glass section */
@@ -257,8 +256,9 @@ details.fact pre { margin: 8px 0 2px; font: 11.5px/1.6 var(--code); color: var(-
 .cfg.skin-glass .txt button { border-radius: 10px; background: rgba(255,255,255,.16); }
 .skin-glass .range input { background: linear-gradient(90deg, var(--mint) var(--p), rgba(255,255,255,.18) var(--p)); }
 .skin-glass .range input::-webkit-slider-thumb { background: #fff; }
-.cfg.skin-glass .inh.on { color: #d8e8ff; }
-.skin-glass .inh.on .sw { background: var(--mint2); }
+.cfg.skin-glass .restore { color: #d8e8ff; background: rgba(127,184,255,.2); }
+.cfg.skin-glass .restore:hover:not(:disabled) { background: rgba(127,184,255,.32); }
+.skin-glass .row.override::before { background: var(--mint2); }
 /* notes, launch preview */
 .skin-glass .note { gap: 22px; padding: 22px 24px; border-radius: 26px; }
 .skin-glass .note > .ic { --s: 52px; border-radius: 16px; }

@@ -41,6 +41,7 @@ export const en: Record<string, string> = {
   '筛选游戏': 'Filter games',
   '搜索游戏': 'Search games',
   '搜索（⌘K / Ctrl+K）': 'Search (⌘K / Ctrl+K)',
+  '导入游戏（⌘O / Ctrl+O）': 'Import game (⌘O / Ctrl+O)',
   '名称、包名或版本': 'Name, package or version',
   '{n} 运行中': '{n} running',
   '刷新游戏库': 'Refresh library',

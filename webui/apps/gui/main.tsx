@@ -1,4 +1,4 @@
-import { Brand, Key, skinOf } from './kit';
+import { Brand, Glyph, Key, skinOf } from './kit';
 import { render, type ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { rpc, type Library, type LibraryItem } from './rpc';
@@ -52,6 +52,38 @@ function Clock() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 10000); return () => window.clearInterval(timer); }, []);
   return <span class="clock">{now.toTimeString().slice(0, 5)}</span>;
+}
+// Sort picker in the "更多" menu style: a native <select> opens the system menu, which no skin can restyle.
+const sorts: readonly (readonly [Sort, string])[] = [['name', '名称'], ['newest', '最近导入'], ['oldest', '最早导入']];
+function SortMenu({ value, change }: { value: Sort; change: (value: Sort) => void }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    root.current?.querySelector<HTMLElement>('[aria-checked=true]')?.focus();
+    const close = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    window.addEventListener('pointerdown', close);
+    return () => window.removeEventListener('pointerdown', close);
+  }, [open]);
+  const dismiss = () => { setOpen(false); root.current?.querySelector<HTMLElement>('[aria-haspopup]')?.focus(); };
+  // Esc closes only the menu (not the library's filters); ↑/↓ walk its entries.
+  const keydown = (event: KeyboardEvent) => {
+    if (!open) return;
+    if (event.key === 'Escape') { event.stopPropagation(); dismiss(); return; }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const entries = Array.from(root.current!.querySelectorAll<HTMLElement>('[role=menuitemradio]'));
+    const index = entries.indexOf(document.activeElement as HTMLElement);
+    entries[(index + (event.key === 'ArrowDown' ? 1 : entries.length - 1)) % entries.length].focus();
+  };
+  const label = t(sorts.find(([key]) => key === value)![1]);
+  return <div class="sort" ref={root} onKeyDown={keydown}><span aria-hidden="true">{t('排序')}</span>
+    <button aria-haspopup="menu" aria-expanded={open} aria-label={`${t('排序')} · ${label}`} onClick={() => setOpen(current => !current)}>
+      {label}<Glyph name="down" /></button>
+    {open && <div class="menu" role="menu" aria-label={t('排序')}>{sorts.map(([key, label]) =>
+      <button key={key} role="menuitemradio" aria-checked={key === value} onClick={() => { change(key); dismiss(); }}>
+        {key === value && <Glyph name="check" />}{t(label)}</button>)}</div>}
+  </div>;
 }
 function App() {
   useLanguage();
@@ -197,7 +229,8 @@ function App() {
   const openViewer = () => { if (viewer) { setMenuOpen(false); setViewing(true); } };
   const openGameSettings = (game: LibraryItem) => { if (!busy && !importing) { setMenuOpen(false); setGameSettingsId(game.installation_id); } };
 
-  // Keyboard stands in for the gamepad legend: ←/→ select, Enter = A, Esc = B, X/Y shortcuts, Q/E = L/R.
+  // Keyboard stands in for the gamepad legend: ←/→ select, Enter = A, Esc = B, X/Y shortcuts, Q/E = L/R; ⌘K/Ctrl+K
+  // searches and ⌘O/Ctrl+O imports from anywhere in the library.
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (settingsOpen || gameSettingsId || viewing) return;   // full-screen views own the keyboard while open
@@ -208,6 +241,11 @@ function App() {
         return;
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); openSearch(); return; }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'o') {
+        event.preventDefault();
+        if (!importing && !document.querySelector('dialog[open]')) startImport();
+        return;
+      }
       if (event.metaKey || event.ctrlKey || event.altKey || editable(event.target) || document.querySelector('dialog[open]') || importing) return;
       const target = event.target as HTMLElement | null;
       const onTile = !!target?.closest?.('.tile');
@@ -335,22 +373,23 @@ function App() {
       </nav>
       <div class="tools">
         <div class={`search ${searchOpen || query ? 'open' : ''}`}>
-          <button class="round" aria-label={t('搜索游戏')} title={t('搜索（⌘K / Ctrl+K）')} onClick={() => searchOpen || query ? search.current?.focus() : openSearch()}>⌕</button>
+          <button class="round" aria-label={t('搜索游戏')} title={t('搜索（⌘K / Ctrl+K）')} onClick={() => searchOpen || query ? search.current?.focus() : openSearch()}><Glyph name="search" /></button>
           <input ref={search} type="search" placeholder={t('名称、包名或版本')} aria-label={t('搜索游戏')} value={query} tabIndex={searchOpen || query ? 0 : -1}
             onInput={event => setQuery(event.currentTarget.value)} onBlur={() => { if (!query) setSearchOpen(false); }} />
         </div>
         <button class={`running-pill ${runningCount ? 'live' : ''}`} onClick={() => setDashboardListOpen(true)}><span class={`led ${runningCount ? 'running' : 'idle'}`} />{t('{n} 运行中', { n: runningCount })}</button>
-        <button class="round" aria-label={t('刷新游戏库')} title={t('刷新')} disabled={busy || loading} onClick={() => void refresh().catch(report)}>⟳</button>
-        <button class="round" aria-label={t('设置')} title={t('设置')} disabled={busy || importing} onClick={() => setSettingsOpen(true)}>⚙</button>
+        <button class="round" aria-label={t('刷新游戏库')} title={t('刷新')} disabled={busy || loading} onClick={() => void refresh().catch(report)}><Glyph name="reload" /></button>
+        <button class="round" aria-label={t('设置')} title={t('设置')} disabled={busy || importing} onClick={() => setSettingsOpen(true)}><Glyph name="settings" /></button>
         <Clock />
       </div>
     </header>
     <section class="stage" aria-label={t('游戏详情')} aria-busy={loading}>{hero()}</section>
     <section class="rail" aria-label={t('游戏条目')}>
       <div class="rail-head"><b>{filterLabel}</b><span role="status">{t('{n} 款游戏', { n: items.length })}{query ? t(' · 搜索“{query}”', { query }) : ''}</span>
-        <label class="sort">{t('排序')}<select aria-label={t('排序')} value={sort} onChange={event => setSort(event.currentTarget.value as Sort)}><option value="name">{t('名称')}</option><option value="newest">{t('最近导入')}</option><option value="oldest">{t('最早导入')}</option></select></label>
+        <SortMenu value={sort} change={setSort} />
       </div>
-      <div class="strip" ref={strip} onWheel={event => { if (strip.current && Math.abs(event.deltaY) > Math.abs(event.deltaX)) strip.current.scrollLeft += event.deltaY; }}>
+      {/* The import tile sits beside the scrolling strip, so it is in view however long the library is. */}
+      <div class="rail-body"><div class="strip" ref={strip} onWheel={event => { if (strip.current && Math.abs(event.deltaY) > Math.abs(event.deltaX)) strip.current.scrollLeft += event.deltaY; }}>
         {items.map(game => {
           const status = statusOf(game);
           const tone = game.running ? 'running' : status.tone;
@@ -360,8 +399,8 @@ function App() {
             <TileCart api={cart3d} item={game} tone={tone} ready={() => tileReady(game.installation_id)} /><span class="name">{game.display_name}</span>
           </button>;
         })}
-        <button class="tile add" disabled={importing} onClick={startImport}><b>＋</b>{t('导入游戏')}<small>{t('选择 APK')}</small></button>
       </div>
+      <button class="tile add" title={t('导入游戏（⌘O / Ctrl+O）')} disabled={importing} onClick={startImport}><b>＋</b>{t('导入游戏')}<small>{t('选择 APK')}</small></button></div>
     </section>
     <footer class="foot">
       <span class="hint"><Key>← →</Key>{t('选择')}</span><span class="hint"><Key>A</Key>{t('开始')}<kbd>Enter</kbd></span><span class="hint"><Key>B</Key>{t('返回')}<kbd>Esc</kbd></span>
@@ -407,4 +446,9 @@ function recall(key: string) {
 function applyLanguage(value: unknown) { setLanguage(value); remember('ogplay.language', value); }
 const rememberedSkin = skinOf(recall('ogplay.skin'));
 setLanguage(recall('ogplay.language'));
+// The launcher is an app, not a page: the WebView's own menu (Reload, Back, Inspect…) stays off except in text fields
+// and on selected text, where it carries Cut/Copy/Paste.
+window.addEventListener('contextmenu', event => {
+  if (!editable(event.target) && !window.getSelection()?.toString()) event.preventDefault();
+});
 render(<App />, document.getElementById('app')!);

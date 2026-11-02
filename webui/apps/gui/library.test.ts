@@ -15,9 +15,8 @@ describe('library presentation', () => {
     expect(visibleItems(items, '测试', 'launchable', 'name').map(x => x.installation_id)).toEqual(['one']);
     expect(visibleItems(items, 'no match', 'all', 'name')).toEqual([]);
   });
-  it('uses running fact even when higher priority damage controls the badge', () => {
+  it('keeps a running entry under attention when damage controls the badge', () => {
     const damaged = item('one', { status: 'damaged', running: true, can_launch: false });
-    expect(visibleItems([damaged], '', 'running', 'name')).toEqual([damaged]);
     expect(visibleItems([damaged], '', 'attention', 'name')).toEqual([damaged]);
   });
   it('sorts dates with missing facts last and leaves host order untouched', () => {

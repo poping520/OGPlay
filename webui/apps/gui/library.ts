@@ -1,9 +1,9 @@
 import type { LibraryItem } from './rpc';
 import { t } from './i18n';
 
-export type Filter = 'all' | 'launchable' | 'running' | 'attention';
+export type Filter = 'all' | 'launchable' | 'attention';
 export type Sort = 'name' | 'newest' | 'oldest';
-export const filters: readonly (readonly [Filter, string])[] = [['all', '全部'], ['launchable', '可启动'], ['running', '运行中'], ['attention', '需检查']];
+export const filters: readonly (readonly [Filter, string])[] = [['all', '全部'], ['launchable', '可启动'], ['attention', '需检查']];
 export const statuses: Record<string, { label: string; tone: string }> = {
   damaged: { label: '条目损坏', tone: 'danger' },
   profile_catalog_unavailable: { label: 'Profile 不可用', tone: 'danger' },
@@ -26,7 +26,6 @@ export function visibleItems(items: LibraryItem[], query: string, filter: Filter
     const text = [item.display_name, item.package, item.installation_id, item.version].join(' ').toLocaleLowerCase();
     return terms.every(term => text.includes(term)) &&
       (filter === 'all' || (filter === 'launchable' && item.can_launch) ||
-       (filter === 'running' && item.running) ||
        (filter === 'attention' && !['ready', 'running'].includes(item.status)));
   }).sort((left, right) => {
     if (sort !== 'name') {

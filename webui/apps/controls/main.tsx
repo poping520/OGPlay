@@ -1,5 +1,6 @@
 import { render } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import '../../packages/ui-kit/theme.css';
 import './style.css';
 import { captureKey, captureMouse, joinStickSources, sourceLabel, splitSources } from './keys';
 import {
@@ -28,7 +29,7 @@ function TokenForm({ onToken }: { onToken: (token: string) => void }) {
     <h1>OGPlay 按键设置</h1>
     <p>请从 OGPlay 启动器打开此页面；命令行启动时，可粘贴终端输出中的编辑器令牌。</p>
     <input value={value} onInput={event => setValue((event.target as HTMLInputElement).value)} placeholder="令牌" autoFocus />
-    <button class="primary" type="submit">连接</button>
+    <button class="pill main" type="submit">连接</button>
   </form>;
 }
 
@@ -122,19 +123,19 @@ function Inspector({ session, draft, zone, conflictedBindings, onZone, onBinding
   };
   return <section class="inspector">
     <h2>{zone.name}</h2>
-    <div class="row">
-      <button aria-pressed={box.circle} onClick={() => reshape(true)}>圆形</button>
-      <button aria-pressed={!box.circle} onClick={() => reshape(false)}>矩形</button>
+    <div class="seg">
+      <button class={box.circle ? 'on' : ''} aria-pressed={box.circle} onClick={() => reshape(true)}>圆形</button>
+      <button class={box.circle ? '' : 'on'} aria-pressed={!box.circle} onClick={() => reshape(false)}>矩形</button>
     </div>
     {!binding && <div class="row">
-      <button class="primary" onClick={() => onCapture(zone.name, 'button')}>设为按钮并绑定按键</button>
-      <button onClick={() => onCapture(zone.name, 'stick')}>设为摇杆</button>
+      <button class="pill main" onClick={() => onCapture(zone.name, 'button')}>设为按钮并绑定按键</button>
+      <button class="pill" onClick={() => onCapture(zone.name, 'stick')}>设为摇杆</button>
     </div>}
     {binding?.action === 'button' && <>
       <p class={conflictedBindings.has(draft.bindings.indexOf(binding)) ? 'conflict-text' : ''}>按键：<b>{bindingText(binding)}</b></p>
-      <div class="row"><button onClick={() => onCapture(zone.name, 'button')}>重新绑定</button></div>
-      <div class="row">{(['tap', 'hold', 'repeat'] as const).map(press =>
-        <button aria-pressed={(binding.press ?? 'hold') === press}
+      <div class="row"><button class="pill" onClick={() => onCapture(zone.name, 'button')}>重新绑定</button></div>
+      <div class="seg">{(['tap', 'hold', 'repeat'] as const).map(press =>
+        <button class={(binding.press ?? 'hold') === press ? 'on' : ''} aria-pressed={(binding.press ?? 'hold') === press}
                 onClick={() => onBinding(zone.name, { ...binding, press, repeat_frames: press === 'repeat' ? binding.repeat_frames ?? 6 : undefined })}>{pressNames[press]}</button>)}
       </div>
       {binding.press === 'repeat' && <NumberField label="连发间隔（帧）" value={binding.repeat_frames ?? 6} min={2} max={120}
@@ -143,9 +144,9 @@ function Inspector({ session, draft, zone, conflictedBindings, onZone, onBinding
     {binding?.action === 'stick' && <>
       <p class={conflictedBindings.has(draft.bindings.indexOf(binding)) ? 'conflict-text' : ''}>上 左 下 右：<b>{bindingText(binding)}</b></p>
       <div class="row">
-        <button onClick={() => onCapture(zone.name, 'stick')}>逐个绑定</button>
-        <button onClick={() => onBinding(zone.name, { ...binding, source: 'keys:w,a,s,d' })}>WASD</button>
-        <button onClick={() => onBinding(zone.name, { ...binding, source: 'keys:up,left,down,right' })}>方向键</button>
+        <button class="pill" onClick={() => onCapture(zone.name, 'stick')}>逐个绑定</button>
+        <button class="pill" onClick={() => onBinding(zone.name, { ...binding, source: 'keys:w,a,s,d' })}>WASD</button>
+        <button class="pill" onClick={() => onBinding(zone.name, { ...binding, source: 'keys:up,left,down,right' })}>方向键</button>
       </div>
       <NumberField label="行程（相对半径）" value={binding.radius ?? 0.7} min={0.1} max={1} step={0.05}
         onChange={value => onBinding(zone.name, { ...binding, radius: Math.round(value * 100) / 100 })} />
@@ -155,7 +156,7 @@ function Inspector({ session, draft, zone, conflictedBindings, onZone, onBinding
         onChange={value => onBinding(zone.name, { ...binding, ramp_frames: value })} />
       <small>拖动圆内的菱形手柄调整行程。</small>
     </>}
-    <div class="row"><button class="danger" onClick={() => onRemove(zone.name)}>删除此控件</button></div>
+    <div class="row"><button class="pill danger" onClick={() => onRemove(zone.name)}>删除此控件</button></div>
   </section>;
 }
 
@@ -167,7 +168,7 @@ function OtherBindings({ draft, conflictedBindings, onRemove }: { draft: Draft; 
     {others.map(({ binding, index }) => <div class={`other ${conflictedBindings.has(index) ? 'conflict-text' : ''}`} key={index}>
       <span>{bindingText(binding)} → {binding.action === 'key' ? `安卓键 ${binding.key}` : `切换到 ${binding.target}`}
         {binding.mode && binding.mode !== 'default' ? <small>模式 {binding.mode === '*' ? '全部' : binding.mode}</small> : null}</span>
-      <button onClick={() => onRemove(index)}>删除</button>
+      <button class="pill danger" onClick={() => onRemove(index)}>删除</button>
     </div>)}
   </section>;
 }
@@ -178,7 +179,7 @@ function CaptureBanner({ capture, onMouse, onCancel }: { capture: Capture; onMou
     <b>{prompt}</b><span>Esc 取消；F1、F2 与 Ctrl/Cmd 组合键保留给宿主。</span>
     {capture.kind === 'button' && <div class="mouse-pad" onMouseDown={event => { event.preventDefault(); onMouse(event.button); }}
                                        onContextMenu={event => event.preventDefault()}>在此框内点击鼠标键以绑定鼠标</div>}
-    <button onClick={onCancel}>取消</button>
+    <button class="pill" onClick={onCancel}>取消</button>
   </div>;
 }
 
@@ -273,10 +274,10 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
   const conflictedZones = useMemo(() => new Set([...conflictedBindings].map(index => draft?.bindings[index]?.zone).filter((zone): zone is string => !!zone)), [conflictedBindings]);
 
   if (!session || !draft) {
-    return <div class="loading"><p class={status.kind}>{status.text}</p><button onClick={() => void freeze()} disabled={busy}>重试</button></div>;
+    return <div class="loading"><p class={status.kind}>{status.text}</p><button class="pill" onClick={() => void freeze()} disabled={busy}>重试</button></div>;
   }
   if (!session.surface.width || !session.surface.height) {
-    return <div class="loading"><p>游戏画面尚未就绪，请在游戏出现画面后重试。</p><button onClick={() => void freeze()} disabled={busy}>重试</button></div>;
+    return <div class="loading"><p>游戏画面尚未就绪，请在游戏出现画面后重试。</p><button class="pill" onClick={() => void freeze()} disabled={busy}>重试</button></div>;
   }
   const apply = () => run(async () => {
     if (conflictedBindings.size) throw new Error('存在按键冲突（红色标出），请先修改。');
@@ -292,15 +293,15 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
   return <div class="editor">
     <header>
       <h1>按键设置</h1>
-      <span class={`chip ${session.frozen ? 'frozen' : 'running'}`}>{session.frozen ? '已暂停' : '运行中'}</span>
-      <button onClick={() => { const added = addControl(draft, 'button', session.surface); update(added.draft); startCapture(added.zone, 'button'); }}>添加按钮</button>
-      <button onClick={() => { const added = addControl(draft, 'stick', session.surface); update(added.draft); startCapture(added.zone, 'stick'); }}>添加摇杆</button>
+      <span class="state"><span class={`led ${session.frozen ? 'warning' : 'running'}`} />{session.frozen ? '已暂停' : '运行中'}</span>
+      <button class="pill" onClick={() => { const added = addControl(draft, 'button', session.surface); update(added.draft); startCapture(added.zone, 'button'); }}>添加按钮</button>
+      <button class="pill" onClick={() => { const added = addControl(draft, 'stick', session.surface); update(added.draft); startCapture(added.zone, 'stick'); }}>添加摇杆</button>
       <span class="spacer" />
-      <button disabled={busy || !session.frozen} onClick={() => void run(refreshFrame)}>刷新画面</button>
-      <button disabled={busy || !dirty} title="回到上次应用的配置" onClick={() => void run(async () => { await load(); setStatus({ kind: 'info', text: '已放弃未应用的修改。' }); })}>放弃</button>
-      {session.frozen ? <button disabled={busy} onClick={() => void resume()}>继续游戏</button>
-                      : <button disabled={busy} onClick={() => void freeze()}>暂停并编辑</button>}
-      <button class="primary" disabled={busy || conflictedBindings.size > 0} onClick={() => void apply()}>应用{dirty ? ' *' : ''}</button>
+      <button class="pill" disabled={busy || !session.frozen} onClick={() => void run(refreshFrame)}>刷新画面</button>
+      <button class="pill" disabled={busy || !dirty} title="回到上次应用的配置" onClick={() => void run(async () => { await load(); setStatus({ kind: 'info', text: '已放弃未应用的修改。' }); })}>放弃</button>
+      {session.frozen ? <button class="pill" disabled={busy} onClick={() => void resume()}>继续游戏</button>
+                      : <button class="pill" disabled={busy} onClick={() => void freeze()}>暂停并编辑</button>}
+      <button class="pill main" disabled={busy || conflictedBindings.size > 0} onClick={() => void apply()}>应用{dirty ? ' *' : ''}</button>
     </header>
     <p class={`status ${status.kind}`} role="status">{status.text}{!session.frozen && frame ? '（背景为暂停时的画面）' : ''}</p>
     {capture && <CaptureBanner capture={capture} onCancel={() => changeCapture(null)}

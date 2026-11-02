@@ -20,3 +20,5 @@ ADR-0134 的 Web 按键编辑器，由 run-apk 的 loopback 服务以 `/controls
   删除内置按键时写 action=none。保存到既有用户 input.toml，重新打开/重启加载用户文件。
   TOML/JSON 的 template 字段都明确拒绝。
 - 不含导入导出、社区预设与离线编辑。
+- 外观：先导入 ui-kit theme.css（主机之夜令牌、`.pill`、`.seg`、`.led`），style.css 只补编辑器布局与舞台绘制；
+  不引入 gui/kit.tsx（其 logo 等资源不在 `/controls/` 提供的两个文件内）。不跟随玻璃紫。

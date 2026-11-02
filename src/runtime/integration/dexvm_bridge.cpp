@@ -259,8 +259,8 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
         root(identity.activity);
         root(identity.root);
         root(identity.view);
-        for (const auto& [ref, _] : identity.mounts)
-            root(ref);
+        for (const auto& mount : identity.mounts)
+            root(mount.first);
     }
     for (const auto* identity : {&context.input_capture_identity, &context.input_scroll_identity}) {
         if (!*identity) continue;

@@ -1,5 +1,6 @@
 #include "runtime/boundary/modules/gles1/gles1_module.h"
 
+#include <limits>
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -123,7 +124,8 @@ void AndroidBoundaryGles1DrawState::DrawTexture(gles::AngleFrame& frame, const A
         if (program.attributes[index] < 0) return;
         frame.BindBuffer(0x8892U, program.buffers[index]);
         const auto bytes = std::as_bytes(std::span(values));
-        frame.BufferData(0x8892U, bytes.size(), bytes, 0x88E0U);
+        static_assert(sizeof(values) <= std::numeric_limits<std::uint32_t>::max());
+        frame.BufferData(0x8892U, static_cast<std::uint32_t>(bytes.size()), bytes, 0x88E0U);
         const auto attribute = static_cast<std::uint32_t>(program.attributes[index]);
         frame.VertexAttributePointer(attribute, 4, 0x1406U, false, 0, 0);
         frame.SetVertexAttributeEnabled(attribute, true);

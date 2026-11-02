@@ -317,12 +317,25 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                          {{"reason", std::string(error.what())}}, kUnrestrictedLog);
         }
     }
+    // Finish the expensive composition before creating any native window.
+    std::vector<app::RgbaImage> icons;
+    if (window_icon) {
+        try {
+            constexpr std::array<std::uint32_t, 9> kIconSizes{512, 256, 64, 48, 40, 32, 24, 20, 16};
+            icons = app::ComposeRunningIcons(
+                ReadBytes(*window_icon), ReadBytes(bundled_data.root / "branding" / "ogplay-cartridge.png"),
+                window_icon_style, kIconSizes);
+        } catch (const std::exception& error) {
+            logger.Write(core::LogLevel::warn, "frontend.run_apk.icon", "running icon unavailable; keeping the default",
+                         {}, {{"reason", std::string(error.what())}}, kUnrestrictedLog);
+        }
+    }
     auto window = hal::CreateSdlWindowInput();
     const auto base_title = "OGPlay · " + window_title.value_or(PathUtf8(apk_path.filename()));
     window->Open({.title = base_title + " · FPS --",
                   .width = surface_width,
                   .height = surface_height,
-                  .hidden = mcp_manual_step,
+                  .hidden = mcp_manual_step || window_icon.has_value(),
                   .resizable = true});
     logger.Write(
         core::LogLevel::info, "frontend.run_apk", "SDL window opened", {},
@@ -333,14 +346,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
          {"cpu_limit_parallelism", cpu_config.execution.limit_parallelism},
          {"cpu_max_mticks_per_second", static_cast<std::uint64_t>(cpu_config.execution.max_mticks_per_second)}},
         kUnrestrictedLog);
-    // The game's icon with the OGPlay mark; any failure keeps the default icon and only logs.
-    if (window_icon) {
+    // A native handle is required to set the icons; keep it hidden until this completes.
+    if (!icons.empty()) {
         try {
-            // Largest first; the small ones cover the Windows icon metrics at 100%..200% DPI.
-            constexpr std::array<std::uint32_t, 9> kIconSizes{512, 256, 64, 48, 40, 32, 24, 20, 16};
-            const auto icons = app::ComposeRunningIcons(
-                ReadBytes(*window_icon), ReadBytes(bundled_data.root / "branding" / "ogplay-cartridge.png"),
-                window_icon_style, kIconSizes);
             std::vector<hal::IconImage> sizes;
             for (const auto& icon : icons)
                 sizes.push_back({icon.pixels, icon.width, icon.height});
@@ -352,6 +360,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                          {}, {{"reason", std::string(error.what())}}, kUnrestrictedLog);
         }
     }
+    // Publish the window to the taskbar only after its initial icon is ready (or has failed).
+    if (window_icon && !mcp_manual_step) window->Show();
     bool quit{};
     auto& presented = exit_state.presented;
     std::uint32_t guest_width = surface_width;

@@ -540,7 +540,7 @@ struct DexVmAndroidContext final {
     std::array<std::uint64_t, static_cast<std::size_t>(PresentationRejectReason::count)> presentation_reject_counts{};
 
     // Owner builds partitions; render/input acquire only this immutable sequence.
-    std::shared_ptr<const PresentationSnapshot> presentation_snapshot;
+    std::atomic<std::shared_ptr<const PresentationSnapshot>> presentation_snapshot;
     std::shared_ptr<const PresentationSnapshot> input_presentation;  // Owner-scoped event lease.
 
     struct ModalCapture final {

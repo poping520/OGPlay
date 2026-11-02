@@ -236,7 +236,7 @@ constexpr float kPlateInset = 100.0F / 1024.0F, kPlateRadius = 185.0F / 824.0F;
     Canvas canvas = Plated(art, n);
     const int size = static_cast<int>(std::lround(n * 0.40F));
     Canvas disc(size, size);
-    const auto round = RoundedRect(size, size, 0.0F, 0.0F, size, size, size / 2.0F);
+    const auto round = RoundedRect(size, size, 0.0F, 0.0F, static_cast<float>(size), static_cast<float>(size), size / 2.0F);
     for (std::size_t i = 0; i < round.size(); ++i)
         for (int c = 0; c < 4; ++c)
             disc.pixels[i * 4U + U(c)] = round[i];
@@ -274,7 +274,7 @@ constexpr float kPlateInset = 100.0F / 1024.0F, kPlateRadius = 185.0F / 824.0F;
     const int bx = (n - width) / 2, by = n - height - static_cast<int>(std::lround(n * 0.05F));
     const int side = static_cast<int>(std::lround(width * 0.74F));
     Canvas card = Resize(art, side, side);
-    ApplyMask(card, RoundedRect(side, side, 0.0F, 0.0F, side, side, side * kPlateRadius));
+    ApplyMask(card, RoundedRect(side, side, 0.0F, 0.0F, static_cast<float>(side), static_cast<float>(side), side * kPlateRadius));
     // Back rim behind the card, front face over its lower edge: the card reads as inserted into the base.
     const int front_top = static_cast<int>(std::lround(height * 0.30F));
     Canvas layer(n, n);

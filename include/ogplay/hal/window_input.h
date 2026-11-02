@@ -137,6 +137,8 @@ public:
     virtual ~WindowInput() = default;
     virtual void Open(const WindowOptions& options) = 0;
     virtual void Close() noexcept = 0;
+    // Reveal an open, hidden window after its initial appearance has been configured.
+    virtual void Show() = 0;
     virtual void SetTitle(std::string_view title) = 0;
     // Window icon from one picture at one or more sizes, the largest first. macOS shows it as the process's
     // Dock icon (every size an image representation); Windows sets the title-bar and taskbar icons from the

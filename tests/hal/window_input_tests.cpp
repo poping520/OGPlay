@@ -10,6 +10,12 @@
 #include <SDL3/SDL.h>
 #endif
 
+#if OGPLAY_TEST_HAS_SDL3 && defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
+
 #include "ogplay/hal/window_input.h"
 
 TEST_CASE("display layout preserves aspect ratio and centers black bars") {
@@ -73,6 +79,7 @@ TEST_CASE("SDL dummy window has an explicit lifecycle") {
     auto host = ogplay::hal::CreateSdlWindowInput(ogplay::hal::VideoBackend::dummy);
     CHECK(host->BackendName() == "dummy");
     CHECK_FALSE(host->State().open);
+    CHECK_THROWS_AS(host->Show(), std::logic_error);
     CHECK_THROWS_AS(host->Open({.width = 0, .height = 180}), std::invalid_argument);
     CHECK_THROWS_AS(host->SetTitle("closed"), std::logic_error);
     CHECK_THROWS_AS(host->PumpEvents(), std::logic_error);
@@ -94,8 +101,12 @@ TEST_CASE("SDL dummy window has an explicit lifecycle") {
     const ogplay::hal::IconImage mismatched[]{{icon, 16, 16}, {icon, 16, 8}};
     CHECK_THROWS_AS(host->SetIcon(mismatched), std::invalid_argument);
     CHECK_THROWS_AS(host->SetIcon({}), std::invalid_argument);
+    CHECK((SDL_GetWindowFlags(window) & SDL_WINDOW_HIDDEN) != 0);
     // The dummy driver has no window icons: the request fails explicitly instead of passing silently.
     CHECK_THROWS_AS(host->SetIcon(sizes), std::runtime_error);
+    CHECK((SDL_GetWindowFlags(window) & SDL_WINDOW_HIDDEN) != 0);
+    host->Show();
+    CHECK((SDL_GetWindowFlags(window) & SDL_WINDOW_HIDDEN) == 0);
     CHECK_THROWS_AS(host->Open({}), std::logic_error);
     host->PumpEvents();
     host->Close();
@@ -334,5 +345,33 @@ TEST_CASE("BND46 SDL lifecycle watch reports overflow instead of losing transiti
         REQUIRE(SDL_PushEvent(&event));
     }
     CHECK_THROWS_WITH(static_cast<void>(host->PollEvents()), "SDL lifecycle notification budget exhausted");
+}
+#endif
+
+#if OGPLAY_TEST_HAS_SDL3 && defined(_WIN32)
+TEST_CASE("GUI-17 Windows window has game icons before its first show") {
+    // Other HAL tests use the dummy backend; this contract requires a real HWND.
+    SDL_ResetHint(SDL_HINT_VIDEO_DRIVER);
+    auto host = ogplay::hal::CreateSdlWindowInput();
+    host->Open({.title = "OGPlay icon startup contract", .width = 160, .height = 90, .hidden = true});
+    auto* window = SDL_GetWindowFromID(host->State().id);
+    REQUIRE(window != nullptr);
+    auto hwnd = static_cast<HWND>(SDL_GetPointerProperty(
+        SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+    REQUIRE(hwnd != nullptr);
+    CHECK_FALSE(IsWindowVisible(hwnd));
+    const std::vector<std::uint8_t> pixels(32U * 32U * 4U, 0xffU);
+    const ogplay::hal::IconImage icons[]{{pixels, 32, 32}};
+    host->SetIcon(icons);
+    const auto small = SendMessageW(hwnd, WM_GETICON, ICON_SMALL, 0);
+    const auto big = SendMessageW(hwnd, WM_GETICON, ICON_BIG, 0);
+    REQUIRE(small != 0);
+    REQUIRE(big != 0);
+    CHECK_FALSE(IsWindowVisible(hwnd));
+    host->Show();
+    CHECK(IsWindowVisible(hwnd));
+    CHECK(SendMessageW(hwnd, WM_GETICON, ICON_SMALL, 0) == small);
+    CHECK(SendMessageW(hwnd, WM_GETICON, ICON_BIG, 0) == big);
+    host->Close();
 }
 #endif

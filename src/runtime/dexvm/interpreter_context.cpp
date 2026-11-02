@@ -629,13 +629,13 @@ void Interpreter::Impl::ProcessReferences(const GcMarkResult& mark, const bool p
         if (referent) {
             for (std::size_t i = 0; i < mark.marked.size(); ++i) {
                 if (!mark.marked[i]) continue;
-                const auto owner = VmObjectRef(static_cast<std::uint32_t>(i + 1));
-                const auto owner_class = model->ObjectClass(owner);
+                const auto reference_object = VmObjectRef(static_cast<std::uint32_t>(i + 1));
+                const auto owner_class = model->ObjectClass(reference_object);
                 if (!owner_class.IsValid() || !linker->IsAssignable(*reference, owner_class)) continue;
                 const bool is_finalizer = finalizer_class && linker->IsAssignable(*finalizer_class, owner_class);
                 const bool is_phantom = phantom_class && linker->IsAssignable(*phantom_class, owner_class);
                 if (is_finalizer != finalizers || (!finalizers && is_phantom != phantom)) continue;
-                auto slots = model->InstanceSlots(owner);
+                auto slots = model->InstanceSlots(reference_object);
                 auto& target = slots[linker->Field(*referent).slot];
                 if (target.bits == 0 || mark.IsMarked(VmObjectRef(target.bits))) continue;
                 if (is_finalizer) {
@@ -651,8 +651,8 @@ void Interpreter::Impl::ProcessReferences(const GcMarkResult& mark, const bool p
                 auto& next_slot = slots[linker->Field(*next).slot];
                 if (!queue_ref.IsValid() || next_slot.bits != 0) continue;
                 auto& queue_head = model->InstanceSlots(queue_ref)[linker->Field(*head).slot];
-                next_slot = {queue_head.bits == 0 ? owner.Value() : queue_head.bits, SlotTag::ref};
-                queue_head = {owner.Value(), SlotTag::ref};
+                next_slot = {queue_head.bits == 0 ? reference_object.Value() : queue_head.bits, SlotTag::ref};
+                queue_head = {reference_object.Value(), SlotTag::ref};
                 slots[linker->Field(*queue).slot] = {0, SlotTag::ref};
                 monitors->NotifyForGc(queue_ref);
             }

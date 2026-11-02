@@ -1,6 +1,6 @@
 # GUI-17 · 运行中游戏图标
 
-状态：macOS 已验（构建、单测、合成效果与 OGPlay.app 内 Dock 显示）；Windows 实现已写、编译与任务栏待验。依赖：GUI-3（图标提取）、GUI-5（库启动参数）。
+状态：macOS 已验（构建、单测、合成效果与 OGPlay.app 内 Dock 显示）；Windows Release 编译、首次显示前 HWND 图标定向验证及用户实际启动复测通过。依赖：GUI-3（图标提取）、GUI-5（库启动参数）。
 
 目标：游戏运行时程序坞/任务栏不再显示与启动器相同的 OGPlay 图标，而是“游戏图标 + OGPlay 标记”，玩家能一眼分辨各个游戏进程。
 
@@ -13,8 +13,8 @@
 - 设置：全局 `running_icon`（badge/cradle），下次启动生效；字段行正下方的预览卡片由宿主 `settings.icon_preview`
   用同一合成器和占位图标 `data/branding/preview-game.png` 生成，点击卡片与字段行分段控件编辑同一草稿值。
 - 启动：ResolveLaunch 在条目有 icon.png 时传 `--window-icon <icon.png>`（非默认样式再传 `--window-icon-style`）；
-  RunGame 打开窗口后一次合成 512～16px 共 9 个尺寸（游戏图标只裁剪一次），经 `hal::WindowInput::SetIcon` 设置；
-  失败只记 warn 保留默认图标。
+  RunGame 建窗前一次合成 512～16px 共 9 个尺寸（游戏图标只裁剪一次），经 `hal::WindowInput::SetIcon` 设置；
+  先隐藏建窗，设置图标后再显示；手动步进保持隐藏。失败只记 warn，回退默认图标后继续显示。
   库启动先 `hal::SetHostApplicationIdentity("OGPlay.Game.<id>")`，Windows 据此给游戏独立任务栏按钮（AppUserModelID）。
 
 Windows（代码已写，本机无法编译，待用户在 Windows 上验证）：
@@ -39,3 +39,16 @@ Windows（代码已写，本机无法编译，待用户在 Windows 上验证）�
 - 用库中 6 个真实游戏图标调用 C++ 合成，与 GUI 效果图 v2 一致。
 - `npm run check`；浏览器模拟宿主核对两种皮肤下预览卡片与字段行联动。
 - 待验：OGPlay.app 实际启动游戏后的 Dock 图标；Windows 编译与任务栏分组（本机无法编译）。
+
+### Windows 启动图标延迟修复（2026-11-02）
+
+- 原因：SDL 默认可见建窗后才合成图标，合成期间任务栏显示 EXE 内嵌图标。
+- 修复：合成前移到建窗前；有图标请求时隐藏建窗，SetIcon 成功或失败后再 Show。
+  手动步进仍隐藏；HAL Show 对未开窗或宿主显示失败明确抛错。
+- 验证：windows-msvc Release 的 ogplay / ogplay-cli 构建通过。
+  复用生成的 MSVC 项目配置，仅编译 test_main.cpp 与 window_input_tests.cpp，
+  定向运行 SDL 生命周期与 Windows 首次显示图标两例，均通过。
+  后者验证隐藏 HWND 已有非空大小 HICON，Show 后可见且图标句柄不变；
+  前者覆盖图标设置失败后仍可显示。证据：/tmp/ogplay-icon-{startup-build.log,tests-build.log,tests.log}。
+- 用户复测：真实游戏启动图标正常；此前关闭隐藏、托盘恢复与退出功能也测试正常。
+- 缺口：跨 DPI 与固定按钮行为仍待验。

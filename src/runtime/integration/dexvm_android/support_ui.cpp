@@ -218,12 +218,12 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
     // API19 View.java:3453-3463. The sealed process target SDK is the
     // ApplicationInfo fact exposed by this bounded Context implementation.
     if (owner.IsValid() && context.view_compatibility_fields) {
-        dexvm::IntrinsicCall fields(call);
+        dexvm::IntrinsicCall compatibility_fields(call);
         const auto& handles = *context.view_compatibility_fields;
-        if (fields.GetInt(handles[0]) == 0) {
-            fields.SetInt(handles[1], context.target_sdk_version <= 17U);
-            fields.SetInt(handles[2], context.target_sdk_version < 19U);
-            fields.SetInt(handles[0], 1);
+        if (compatibility_fields.GetInt(handles[0]) == 0) {
+            compatibility_fields.SetInt(handles[1], context.target_sdk_version <= 17U);
+            compatibility_fields.SetInt(handles[2], context.target_sdk_version < 19U);
+            compatibility_fields.SetInt(handles[0], 1);
         }
     }
     ProjectViewLayoutInputs(vm, context, view);
@@ -2256,7 +2256,7 @@ void CheckModalFit(const Modal& modal, const ui::Size viewport) {
 
 std::shared_ptr<const DexVmAndroidContext::PresentationSnapshot>
 AcquireAndroidPresentation(const DexVmAndroidContext& context) {
-    return std::atomic_load(&context.presentation_snapshot);
+    return context.presentation_snapshot.load();
 }
 
 void SnapshotAndroidPresentationDiagnostics(const DexVmAndroidContext& context, AndroidUiSnapshot& result) {
@@ -2493,7 +2493,7 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
             ClearModalCapture(context);
     }
     context.dialog_host_revision = next->host_modal_revision;
-    std::atomic_store(&context.presentation_snapshot, std::shared_ptr<const Snapshot>{std::move(next)});
+    context.presentation_snapshot.store(std::shared_ptr<const Snapshot>{std::move(next)});
     return true;
 }
 

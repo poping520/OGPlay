@@ -135,9 +135,9 @@ std::optional<std::uint32_t> DexClassLinker::Impl::SkeletonMethodFlags(const Lin
         if (entry == skeleton_index.end()) continue;
         auto doc = Record(skeleton_bytes, entry->second);
         const auto root = doc.Root();
-        const auto methods = At(root, 3);
-        for (std::size_t i = 0; i < methods.Size(); ++i) {
-            const auto row = At(methods, i);
+        const auto skeleton_methods = At(root, 3);
+        for (std::size_t i = 0; i < skeleton_methods.Size(); ++i) {
+            const auto row = At(skeleton_methods, i);
             if (Text(At(row, 0)) == method.name && Text(At(row, 1)) == method.descriptor) return Flags(At(row, 2));
         }
         const auto interfaces = At(root, 1);
@@ -158,9 +158,9 @@ void DexClassLinker::Impl::MergeSkeletonMembers(const DexClassId id) {
     if (found == skeleton_index.end()) return;
     auto doc = Record(skeleton_bytes, found->second);
     const auto root = doc.Root();
-    const auto methods = At(root, 3);
-    for (std::size_t i = 0; i < methods.Size(); ++i) {
-        const auto row = At(methods, i);
+    const auto skeleton_methods = At(root, 3);
+    for (std::size_t i = 0; i < skeleton_methods.Size(); ++i) {
+        const auto row = At(skeleton_methods, i);
         const auto name = Text(At(row, 0)), desc = Text(At(row, 1));
         const auto same = [&](VmMethodId mid) {
             const auto& m = MethodAt(mid);
@@ -213,9 +213,9 @@ void DexClassLinker::Impl::MergeSkeletonMembers(const DexClassId id) {
         } else
             cls.own_virtual_methods.push_back(mid);
     }
-    const auto fields = At(root, 4);
-    for (std::size_t i = 0; i < fields.Size(); ++i) {
-        const auto row = At(fields, i);
+    const auto skeleton_fields = At(root, 4);
+    for (std::size_t i = 0; i < skeleton_fields.Size(); ++i) {
+        const auto row = At(skeleton_fields, i);
         const auto name = Text(At(row, 0)), desc = Text(At(row, 1));
         const auto same = [&](VmFieldId fid) {
             const auto& f = FieldAt(fid);

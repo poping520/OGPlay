@@ -3,6 +3,7 @@
 #include "ogplay/runtime/ui/ui_leaf_measure.h"
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <compare>
@@ -263,6 +264,8 @@ public:
     explicit UiTree(std::shared_ptr<const UiFallbackFont> font)
         : UiTree(UiGeometryOwner::HostLayout, std::move(font)) {}
 
+    UiTree(const UiTree& other);
+
     UiTree(UiGeometryOwner owner, std::shared_ptr<const UiFallbackFont> font);
 
     [[nodiscard]] UiGeometryOwner GeometryOwner() const { return geometry_owner_; }
@@ -281,7 +284,7 @@ public:
     // Only successful, complete commits are published. Consumers retain this
     // immutable snapshot for both rendering and hit testing; null before first commit.
     [[nodiscard]] std::shared_ptr<const UiTree> PublishedProjection() const {
-        return std::atomic_load(&published_projection_);
+        return published_projection_.load();
     }
 
     [[nodiscard]] std::optional<UiNodeId> HitTestProjection(std::int32_t x, std::int32_t y) const;
@@ -347,7 +350,7 @@ private:
     bool projection_snapshot_{};
     std::optional<UiProjectionTarget> projection_target_;
     std::uint64_t projection_epoch_{};
-    std::shared_ptr<const UiTree> published_projection_;
+    std::atomic<std::shared_ptr<const UiTree>> published_projection_;
     std::uint32_t generation_{};
     std::shared_ptr<const UiFallbackFont> fallback_font_;
     std::uint32_t next_node_{};

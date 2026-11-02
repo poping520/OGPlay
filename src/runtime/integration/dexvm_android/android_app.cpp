@@ -1316,8 +1316,8 @@ std::optional<std::string> PumpAndroidSurfaceEvents(dexvm::Interpreter& vm, DexV
     std::map<std::uint32_t, std::vector<dexvm::VmObjectRef>> callbacks;
     std::vector<dexvm::VmObjectRef> references{context.activity, root};
     for (const auto& [_, identity] : identities)
-        for (const auto& [view, _] : identity.mounts)
-            references.push_back(view);
+        for (const auto& mount : identity.mounts)
+            references.push_back(mount.first);
     for (const auto* group : {&holders, &retired})
         for (const auto holder : *group) {
             references.emplace_back(holder);

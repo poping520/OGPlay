@@ -201,6 +201,11 @@ public:
 #endif
     }
 
+    void Show() override {
+        if (window_ == nullptr) throw std::logic_error("show requires an open window");
+        if (!SDL_ShowWindow(window_)) throw SdlError("SDL_ShowWindow");
+    }
+
     void SetTitle(const std::string_view title) override {
         if (window_ == nullptr) {
             throw std::logic_error("window title requires an open window");

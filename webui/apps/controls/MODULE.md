@@ -5,7 +5,9 @@ ADR-0134 的 Web 按键编辑器，由 run-apk 的 loopback 服务以 `/controls
 
 - 令牌：启动方打开 `/controls/#token=<令牌>`；页面把令牌移入本标签页的 sessionStorage 并
   从地址栏与历史中移除，片段不发往服务器。无令牌或 401 时要求粘贴令牌。
-- 打开即 `control.freeze` → `control.get` → `control.frame`；页面卸载（pagehide）时以
+- 打开即 `control.freeze` → `control.get` → `control.frame`。只在暂停时编辑：“试玩”先应用（有改动时）再
+  `control.resume`，画面与面板只读，“返回编辑”重新冻结并取帧；“完成”应用后 `control.resume {close:true}`，
+  启动器据 `close_requests` 关闭窗口，浏览器打开时停在完成页。存在冲突时两者都不可用。页面卸载（pagehide）时以
   keepalive 请求 `control.resume`；每 2 秒 `control.status {client:"editor"}` 心跳，心跳中断
   8 秒后 run-apk 自行恢复，不让游戏停在冻结状态。GUI 窗口经 sessionStorage 预置令牌。
 - 坐标一律为 guest 像素：`resolveZone` 与 `ControlMapper::SetSurface` 同一锚点规则；编辑时
@@ -15,7 +17,8 @@ ADR-0134 的 Web 按键编辑器，由 run-apk 的 loopback 服务以 `/controls
 - 冲突规则与 `session::BuildControlConfig` 相同（同模式或任一为 `*` 且共享源）；存在冲突时
   不允许应用。
 - 首次打开没有官方区域；只有内置鼠标/触摸直通和 Esc→Back。用户点击添加按钮/摇杆、
-  放置区域并绑定按键。没有模板列表、选择或模板重置。
+  放置区域并绑定按键。新摇杆直接取第一组未被占用的方向键（WASD，其次方向键），两组都被占用才逐个捕获四键；
+  每个方向可单独点击换键，四个方向不得重复。没有模板列表、选择或模板重置。
 - 保存：编辑对象为内置默认与用户层合并后的布局；control.apply 发送 zone/binding，
   删除内置按键时写 action=none。保存到既有用户 input.toml，重新打开/重启加载用户文件。
   TOML/JSON 的 template 字段都明确拒绝。

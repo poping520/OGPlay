@@ -342,7 +342,7 @@ TEST_CASE("INP-7 launcher probe reads F2 requests with the launch token") {
             channel->ServePending([&](std::string_view method, ogplay::core::JsonValue params) {
                 if (method != "control.status") return ogplay::agent::ControlError(-32601, "unknown");
                 seen_client = std::string(params.Member("client")->String().value_or(""));
-                return ogplay::agent::ControlResult(R"({"frozen":false,"edit_requests":2})");
+                return ogplay::agent::ControlResult(R"({"frozen":false,"edit_requests":2,"close_requests":1})");
             });
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
@@ -353,10 +353,14 @@ TEST_CASE("INP-7 launcher probe reads F2 requests with the launch token") {
     main_loop.join();
     CHECK(ready.ready);
     CHECK(ready.edit_requests == 2);
+    CHECK(ready.close_requests == 1);
     CHECK(seen_client == "launcher");
     CHECK_FALSE(wrong.ready);
     CHECK(wrong.detail.find("令牌") != std::string::npos);
     CHECK_FALSE(ogplay::frontend::DecodeKeyEditorProbe("HTTP/1.1 200 OK\r\n\r\n{\"id\":1,\"result\":{}}").ready);
+    CHECK_FALSE(
+        ogplay::frontend::DecodeKeyEditorProbe("HTTP/1.1 200 OK\r\n\r\n{\"id\":1,\"result\":{\"edit_requests\":0}}")
+            .ready);
     CHECK_FALSE(ogplay::frontend::DecodeKeyEditorProbe("HTTP/1.1 503 x\r\n\r\n").ready);
     CHECK(ogplay::frontend::PickLoopbackPort() != 0);
 }

@@ -39,6 +39,8 @@ public:
     [[nodiscard]] KeyEditorAddress KeyEditor(std::string_view instance) const;
     // Instances whose game asked for the editor with F2 since the last call.
     [[nodiscard]] std::vector<std::string> TakeKeyEditorRequests();
+    // Instances whose editor page finished (applied and resumed) since the last call; their window closes.
+    [[nodiscard]] std::vector<std::string> TakeKeyEditorCloses();
 
 private:
     struct Active final {
@@ -54,6 +56,8 @@ private:
         std::uint64_t next_editor_probe{};
         std::uint64_t edit_requests{};
         bool editor_requested{};
+        std::uint64_t close_requests{};
+        bool editor_close_requested{};
     };
     app::Logger& logger_;
     LaunchTracker tracker_;

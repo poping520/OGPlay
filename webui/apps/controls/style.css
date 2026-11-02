@@ -1,6 +1,8 @@
 /* Key settings window on the ui-kit "主机之夜" base: tokens, element baseline and the shared .pill, .seg and .led come
    from theme.css (imported first); this file adds the editor layout and its stage drawing. */
-body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+/* the page background sits on :root so short screens (connect, token, done) have no band below the body */
+:root { background: var(--bg); }
+body { color: var(--ink); font: 14px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
 b { font-weight: 800; }
 
 /* text pills: the kit sets shape and colour, this view sizes them (no key badge here) */
@@ -13,6 +15,7 @@ b { font-weight: 800; }
 .editor > header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 20px; }
 .editor h1 { margin-right: 4px; font-size: 20px; font-weight: 900; }
 .spacer { flex: 1; }
+.unsaved { color: var(--warning); font-size: 12px; font-weight: 800; white-space: nowrap; }
 .state { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 999px; background: var(--glass);
   color: var(--soft); font-size: 12px; font-weight: 800; white-space: nowrap; }
 .status { margin: 0 20px; padding: 9px 14px; border-radius: 12px; background: var(--glass); color: var(--soft); font-size: 13px; font-weight: 700; }
@@ -28,7 +31,12 @@ b { font-weight: 800; }
 
 /* stage: the paused frame with the control zones drawn over it in the accent colour */
 .workspace { display: flex; flex: 1; gap: 16px; min-height: 0; padding: 16px 20px 20px; }
-.canvas { display: flex; flex: 1; align-items: center; justify-content: center; min-width: 0; padding: 12px; border-radius: 18px; background: rgba(0,0,0,.35); }
+.canvas { position: relative; display: flex; flex: 1; align-items: center; justify-content: center; min-width: 0; padding: 12px; border-radius: 18px; background: rgba(0,0,0,.35); }
+.canvas-note { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px;
+  border-radius: 999px; background: rgba(20,26,42,.92); color: var(--soft); font-size: 13px; font-weight: 700; white-space: nowrap; }
+p.canvas-note { padding: 8px 16px; }
+/* try-out: the game runs with the applied keys, so the paused frame and the inspector are read-only */
+.workspace.locked .stage, .workspace.locked aside { opacity: .45; filter: saturate(.6); }
 .stage { display: block; max-width: 100%; max-height: 100%; width: 100%; height: auto; touch-action: none; user-select: none; }
 .placeholder { fill: var(--panel); }
 .zone { cursor: move; }
@@ -53,6 +61,14 @@ aside p { color: var(--soft); font-size: 13px; }
 .field { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--soft); font-size: 13px; font-weight: 700; }
 .field input, .token input { height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--field); color: var(--ink); font-weight: 800; }
 .field input { width: 92px; text-align: right; }
+/* stick directions: one key chip per direction, the one waiting for a key lit in the accent */
+.directions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.directions button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; border-radius: 14px;
+  background: var(--field); color: var(--muted); font-size: 12px; font-weight: 700; transition: background .12s; }
+.directions button:hover { background: var(--glass2); }
+.directions b { color: var(--ink); font-size: 17px; font-weight: 900; line-height: 1.2; }
+.directions button.on { background: var(--accent); color: #2a2000; }
+.directions button.on b { color: #2a2000; }
 .conflict-text, .conflict-text b { color: #ffb4ae; }
 .others .other { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; font-size: 13px; font-weight: 700; }
 .others .other + .other { border-top: 1px solid var(--line); }
@@ -60,6 +76,6 @@ aside p { color: var(--soft); font-size: 13px; }
 
 /* connect and retry screens */
 .loading, .token { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; max-width: 460px; margin: 18vh auto; padding: 0 16px; }
-.token h1 { font-size: 22px; font-weight: 900; }
+.token h1, .loading h1 { font-size: 22px; font-weight: 900; }
 .token input { align-self: stretch; }
 @media (max-width: 760px) { .workspace { flex-direction: column; } aside { width: auto; } }

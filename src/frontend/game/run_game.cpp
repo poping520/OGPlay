@@ -689,7 +689,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         // otherwise the default browser opens the same page.
         constexpr std::uint64_t kLauncherPollWindowNs = 3'000'000'000ULL;
         constexpr std::uint64_t kEditorIdleResumeNs = 8'000'000'000ULL;
-        std::uint64_t edit_requests{}, launcher_seen_ns{}, editor_seen_ns{};
+        std::uint64_t edit_requests{}, close_requests{}, launcher_seen_ns{}, editor_seen_ns{};
         const auto open_key_editor = [&] {
             try {
                 if (!mcp_server) {
@@ -812,6 +812,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                                                                 driver.queue_input(*input);
                                                     },
                                                 .edit_requests = edit_requests,
+                                                .close_requests = close_requests,
+                                                .close = [&] { ++close_requests; },
                                                 .seen =
                                                     [&](const bool launcher) {
                                                         (launcher ? launcher_seen_ns : editor_seen_ns) =

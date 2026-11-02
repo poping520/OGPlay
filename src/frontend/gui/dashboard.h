@@ -16,11 +16,17 @@ struct GuiDashboard final {
     std::string editor_detail{"游戏运行后可打开按键设置。"};
 };
 struct DashboardProbe final { bool ready{}; std::string detail; };
-struct KeyEditorProbe final { bool ready{}; std::uint64_t edit_requests{}; std::string detail; };
+struct KeyEditorProbe final {
+    bool ready{};
+    std::uint64_t edit_requests{};
+    std::string detail;
+    std::uint64_t close_requests{};
+};
 // Worker-only, loopback-only, bounded time/body. Never executes guest or controls.
 [[nodiscard]] DashboardProbe ProbeDashboard(std::uint16_t port, std::uint64_t process_id);
 [[nodiscard]] DashboardProbe DecodeDashboardProbe(std::string_view response, std::uint64_t process_id);
-// Launcher poll: control.status with the launch token; edit_requests counts in-game F2.
+// Launcher poll: control.status with the launch token; edit_requests counts in-game F2,
+// close_requests the edits finished with control.resume {close:true}.
 [[nodiscard]] KeyEditorProbe ProbeKeyEditor(std::uint16_t port, std::string_view token);
 [[nodiscard]] KeyEditorProbe DecodeKeyEditorProbe(std::string_view response);
 // A free loopback port for --key-editor-port (released before the game binds it).

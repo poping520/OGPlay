@@ -157,7 +157,11 @@ std::vector<GameExit> GuiProcessManager::Poll() {
                 active.dashboard.editor_status = result.ready ? "ready" : "unavailable";
                 active.dashboard.editor_detail = result.detail;
                 if (result.ready && result.edit_requests > active.edit_requests) active.editor_requested = true;
-                if (result.ready) active.edit_requests = result.edit_requests;
+                if (result.ready && result.close_requests > active.close_requests) active.editor_close_requested = true;
+                if (result.ready) {
+                    active.edit_requests = result.edit_requests;
+                    active.close_requests = result.close_requests;
+                }
                 active.next_editor_probe = now + 500000000ULL;
             }
             if (active.editor_port && !active.control_token.empty() && !active.editor_probe.valid() &&
@@ -221,6 +225,16 @@ std::vector<std::string> GuiProcessManager::TakeKeyEditorRequests() {
     for (auto& active : active_) if (active.editor_requested) {
         active.editor_requested = false; result.push_back(active.package);
     }
+    return result;
+}
+
+std::vector<std::string> GuiProcessManager::TakeKeyEditorCloses() {
+    std::vector<std::string> result;
+    for (auto& active : active_)
+        if (active.editor_close_requested) {
+            active.editor_close_requested = false;
+            result.push_back(active.package);
+        }
     return result;
 }
 

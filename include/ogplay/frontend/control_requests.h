@@ -32,12 +32,16 @@ struct ControlRequestContext final {
     std::function<void(const std::vector<input::ControlOutput>&)> deliver;
     // Running count of in-game F2 presses handed to a launcher; reported by control.status.
     std::uint64_t edit_requests{};
+    // Running count of finished edits (control.resume with close) whose window the launcher should
+    // close; reported by control.status. `close` counts one more.
+    std::uint64_t close_requests{};
+    std::function<void()> close;
     // Called for every valid request; true for a launcher poll (control.status with
     // client "launcher"), false for editor traffic, which keeps a freeze alive.
     std::function<void(bool launcher)> seen;
 };
 
-// control.get / freeze / resume / frame / apply / status. Configuration errors are JSON-RPC
+// control.get / freeze / resume {close?} / frame / apply / status. Configuration errors are JSON-RPC
 // error -32010 with the loader's message; the running layout is unchanged on any failure.
 [[nodiscard]] agent::ControlResponse HandleControlRequest(std::string_view method,
                                                           core::JsonValue params,

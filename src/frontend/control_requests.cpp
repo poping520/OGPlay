@@ -116,8 +116,14 @@ agent::ControlResponse HandleControlRequest(const std::string_view method, const
             return Frozen(true);
         }
         if (method == "control.resume") {
-            RequireParams(params, {});
+            RequireParams(params, {"close"});
+            bool close = false;
+            if (const auto flag = params.IsValid() ? params.Member("close") : std::nullopt) {
+                if (!flag->Bool()) throw std::invalid_argument("close must be a boolean");
+                close = *flag->Bool();
+            }
             context.frozen = false;
+            if (close && context.close) context.close();
             return Frozen(false);
         }
         if (method == "control.frame") {
@@ -138,6 +144,7 @@ agent::ControlResponse HandleControlRequest(const std::string_view method, const
             const auto root = writer.Object();
             writer.AddBool(root, "frozen", context.frozen);
             writer.AddUnsignedInteger(root, "edit_requests", context.edit_requests);
+            writer.AddUnsignedInteger(root, "close_requests", context.close_requests);
             return agent::ControlResult(writer.Serialize(root));
         }
         if (method == "control.apply") return Apply(params, context);

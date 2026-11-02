@@ -87,7 +87,7 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   尺寸变化时更新 surface。GUI 总以 `--input-config <实例目录>/input.toml` 启动，该文件独立于
   `settings.toml`。
 - 按键编辑器会话（ADR-0134）：loopback 服务存在时，`/controls/rpc` 提供
-  `control.get/freeze/resume/frame/apply/status`，要求 `Authorization: Bearer <token>` 且 Host 为
+  `control.get/freeze/resume/frame/apply/status`（`resume {close:true}` 表示编辑完成，计入 `close_requests`），要求 `Authorization: Bearer <token>` 且 Host 为
   loopback；令牌取 `OGPLAY_CONTROL_TOKEN` 环境变量（由启动方提供，不进 argv），缺省时生成
   128 位随机令牌并打印。请求经 `ControlEditorChannel` 在主循环执行（`HandleControlRequest`）。
   冻结只停止 guest 推进与窗口输入投递并取消现有触点，不触发 Android 生命周期；`apply`
@@ -105,7 +105,8 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   F1 切换提示叠加层：`DrawControlHints` 在呈现副本上绘制 `ControlMapper::Hints` 的区域与键名
   （内置 5×7 ASCII 字形），guest 帧、MCP 截图与 `control.frame` 不含叠加层；切换在下一帧生效。
   F2：最近 3 秒内有启动器以 `control.status {client:"launcher"}` 轮询时计入 `edit_requests` 交给
-  启动器打开，否则用默认浏览器打开 `/controls/#token=…`。
+  启动器打开，否则用默认浏览器打开 `/controls/#token=…`。`control.status` 同时报告
+  `edit_requests` 与 `close_requests` 两个累计数。
 - 冻结看门狗：冻结期间若 8 秒内没有编辑器请求（启动器轮询不算），自动恢复并记 warn 日志。
 - pointer 按最新 guest frame 与等比内容区映射；黑边不开始手势，既有 release 必须闭合。
   窗口 FPS 使用独立 `RealtimeClock`，不改变 guest Clock。

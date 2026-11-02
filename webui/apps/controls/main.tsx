@@ -2,16 +2,17 @@ import { render } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import '../../packages/ui-kit/theme.css';
 import './style.css';
-import { captureKey, captureMouse, joinStickSources, sourceLabel, splitSources } from './keys';
+import { captureKey, captureMouse, joinStickSources, replaceStickSource, sourceLabel, splitSources } from './keys';
 import {
-  addControl, baseBindings, buildLayer, clampBox, conflicts, loadDraft, placeZone, removeControl, resolveZone,
-  setZoneBinding, toGuest, type Binding, type Box, type Draft, type Session, type Zone,
+  addControl, baseBindings, buildLayer, clampBox, conflicts, freeStickPreset, loadDraft, newStick, placeZone, removeControl,
+  resolveZone, setZoneBinding, toGuest, type Binding, type Box, type Draft, type Session, type Zone,
 } from './model';
 import { createRpc, rememberToken, resumeOnUnload, RpcError, takeToken, Unauthorized, type Rpc } from './rpc';
 
 interface Frame { url: string; sequence: number }
 interface Status { kind: 'info' | 'ok' | 'error'; text: string }
-interface Capture { zone: string; kind: 'button' | 'stick'; collected: string[]; template: Binding }
+// direction: rebind only that stick direction instead of collecting all four.
+interface Capture { zone: string; kind: 'button' | 'stick'; collected: string[]; template: Binding; direction?: number }
 type Drag = { kind: 'move' | 'size' | 'travel'; zone: string; start: { x: number; y: number }; box: Box; pointer: number };
 
 const stickSteps = ['上', '左', '下', '右'];
@@ -19,7 +20,7 @@ const pressNames = { tap: '点按', hold: '按住', repeat: '连发' } as const;
 
 function message(error: unknown): string {
   if (error instanceof RpcError && error.code === -32010) return `配置无效：${error.message}`;
-  if (error instanceof RpcError && error.code === -32011) return '游戏还没有输出画面，稍后点“刷新画面”。';
+  if (error instanceof RpcError && error.code === -32011) return '游戏还没有输出画面，稍后点“重新获取画面”。';
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -66,7 +67,9 @@ function Stage({ session, draft, frame, selected, conflicted, onSelect, onZone, 
       onZone(placeZone(active.zone, clampBox(next, session.surface), session.surface));
     } else {
       const stick = zoneBindings(draft, active.zone).find(binding => binding.action === 'stick');
-      if (stick) onBinding(active.zone, { ...stick, radius: Math.round(Math.min(1, Math.max(0.1, (now.x - box.cx) / box.hw)) * 100) / 100 });
+      // The handle sits on the diagonal, so the travel is the pointer's distance from the centre.
+      const travel = Math.hypot(now.x - box.cx, now.y - box.cy) / box.hw;
+      if (stick) onBinding(active.zone, { ...stick, radius: Math.round(Math.min(1, Math.max(0.1, travel)) * 100) / 100 });
     }
   };
   const end = (event: PointerEvent) => { if (drag.current?.pointer === event.pointerId) drag.current = null; };
@@ -93,9 +96,12 @@ function Stage({ session, draft, frame, selected, conflicted, onSelect, onZone, 
         {zone.name === selected && <>
           <circle class="handle" cx={box.cx + box.hw * (box.circle ? Math.SQRT1_2 : 1)} cy={box.cy + box.hh * (box.circle ? Math.SQRT1_2 : 1)} r="7"
                   onPointerDown={event => begin(event as PointerEvent, 'size', zone)} />
-          {stick && <rect class="handle travel-handle" x={box.cx + box.hw * (stick.radius ?? 0.7) - 6} y={box.cy - 6} width="12" height="12"
-                          transform={`rotate(45 ${box.cx + box.hw * (stick.radius ?? 0.7)} ${box.cy})`}
-                          onPointerDown={event => begin(event as PointerEvent, 'travel', zone)} />}
+          {/* Travel handle on the same bottom-right diagonal as the size handle, clear of the four direction labels. */}
+          {stick && (() => {
+            const offset = box.hw * (stick.radius ?? 0.7) * Math.SQRT1_2, x = box.cx + offset, y = box.cy + offset;
+            return <rect class="handle travel-handle" x={x - 6} y={y - 6} width="12" height="12" transform={`rotate(45 ${x} ${y})`}
+                         onPointerDown={event => begin(event as PointerEvent, 'travel', zone)} />;
+          })()}
         </>}
       </g>;
     })}
@@ -109,10 +115,10 @@ function NumberField({ label, value, min, max, step = 1, onChange }: { label: st
   </label>;
 }
 
-function Inspector({ session, draft, zone, conflictedBindings, onZone, onBinding, onCapture, onRemove }: {
-  session: Session; draft: Draft; zone: Zone; conflictedBindings: Set<number>;
+function Inspector({ session, draft, zone, conflictedBindings, capturing, onZone, onBinding, onCapture, onStick, onRemove }: {
+  session: Session; draft: Draft; zone: Zone; conflictedBindings: Set<number>; capturing?: number;
   onZone: (zone: Zone) => void; onBinding: (zone: string, binding: Binding) => void;
-  onCapture: (zone: string, kind: 'button' | 'stick') => void; onRemove: (zone: string) => void;
+  onCapture: (zone: string, kind: 'button' | 'stick', direction?: number) => void; onStick: (zone: string) => void; onRemove: (zone: string) => void;
 }) {
   const box = resolveZone(zone, session.surface);
   const bindings = zoneBindings(draft, zone.name);
@@ -129,7 +135,7 @@ function Inspector({ session, draft, zone, conflictedBindings, onZone, onBinding
     </div>
     {!binding && <div class="row">
       <button class="pill main" onClick={() => onCapture(zone.name, 'button')}>设为按钮并绑定按键</button>
-      <button class="pill" onClick={() => onCapture(zone.name, 'stick')}>设为摇杆</button>
+      <button class="pill" onClick={() => onStick(zone.name)}>设为摇杆</button>
     </div>}
     {binding?.action === 'button' && <>
       <p class={conflictedBindings.has(draft.bindings.indexOf(binding)) ? 'conflict-text' : ''}>按键：<b>{bindingText(binding)}</b></p>
@@ -142,7 +148,12 @@ function Inspector({ session, draft, zone, conflictedBindings, onZone, onBinding
         onChange={value => onBinding(zone.name, { ...binding, repeat_frames: value })} />}
     </>}
     {binding?.action === 'stick' && <>
-      <p class={conflictedBindings.has(draft.bindings.indexOf(binding)) ? 'conflict-text' : ''}>上 左 下 右：<b>{bindingText(binding)}</b></p>
+      <div class={`directions ${conflictedBindings.has(draft.bindings.indexOf(binding)) ? 'conflict-text' : ''}`}>
+        {splitSources(binding.source).map((source, index) =>
+          <button key={index} class={capturing === index ? 'on' : ''} aria-label={`${stickSteps[index]}：${sourceLabel(source)}，点击更换`}
+                  onClick={() => onCapture(zone.name, 'stick', index)}><span>{stickSteps[index]}</span><b>{capturing === index ? '…' : sourceLabel(source)}</b></button>)}
+      </div>
+      <small>点击一个方向后按下新键，只更换该方向。</small>
       <div class="row">
         <button class="pill" onClick={() => onCapture(zone.name, 'stick')}>逐个绑定</button>
         <button class="pill" onClick={() => onBinding(zone.name, { ...binding, source: 'keys:w,a,s,d' })}>WASD</button>
@@ -174,7 +185,9 @@ function OtherBindings({ draft, conflictedBindings, onRemove }: { draft: Draft; 
 }
 
 function CaptureBanner({ capture, onMouse, onCancel }: { capture: Capture; onMouse: (button: number) => void; onCancel: () => void }) {
-  const prompt = capture.kind === 'stick' ? `按下摇杆“${stickSteps[capture.collected.length]}”方向的键（${capture.collected.length + 1}/4）` : `按下要绑定到 ${capture.zone} 的键`;
+  const prompt = capture.kind === 'button' ? `按下要绑定到 ${capture.zone} 的键`
+    : capture.direction !== undefined ? `按下摇杆“${stickSteps[capture.direction]}”方向的新键`
+    : `按下摇杆“${stickSteps[capture.collected.length]}”方向的键（${capture.collected.length + 1}/4）`;
   return <div class="capture" role="dialog" aria-live="polite">
     <b>{prompt}</b><span>Esc 取消；F1、F2 与 Ctrl/Cmd 组合键保留给宿主。</span>
     {capture.kind === 'button' && <div class="mouse-pad" onMouseDown={event => { event.preventDefault(); onMouse(event.button); }}
@@ -193,6 +206,7 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
   const [status, setStatus] = useState<Status>({ kind: 'info', text: '正在连接游戏…' });
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
   const captureRef = useRef<Capture | null>(null), draftRef = useRef<Draft | null>(null), capturedAt = useRef(-Infinity);
   const changeCapture = (next: Capture | null) => {
     if (!next && captureRef.current) capturedAt.current = performance.now();
@@ -230,14 +244,19 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
   const update = (next: Draft) => { replaceDraft(next); setDirty(true); };
   const onZone = (zone: Zone) => { const current = draftRef.current; if (current) update({ ...current, zones: current.zones.map(item => item.name === zone.name ? zone : item) }); };
   const onBinding = (zone: string, binding: Binding) => { const current = draftRef.current; if (current) update(setZoneBinding(current, zone, binding)); };
-  const startCapture = (zone: string, kind: 'button' | 'stick') => {
+  const startCapture = (zone: string, kind: 'button' | 'stick', direction?: number) => {
     const existing = draftRef.current && zoneBindings(draftRef.current, zone).find(binding => binding.action === kind);
-    const template: Binding = existing ?? (kind === 'stick'
-      ? { source: '', action: 'stick', zone, radius: 0.7, settle_frames: 2, ramp_frames: 4 }
-      : { source: '', action: 'button', zone, press: 'tap' });
+    const template: Binding = existing ?? (kind === 'stick' ? newStick(zone, '') : { source: '', action: 'button', zone, press: 'tap' });
     // A focused button would be activated again by the key's keyup (Space/Enter).
     (document.activeElement as HTMLElement | null)?.blur?.();
-    setSelected(zone); changeCapture({ zone, kind, collected: [], template });
+    setSelected(zone); changeCapture({ zone, kind, collected: [], template, direction });
+  };
+  // A new stick takes the first free preset (WASD, then the arrows); only when both are taken does it ask for four keys.
+  const makeStick = (current: Draft, zone: string) => {
+    const preset = freeStickPreset(current);
+    if (!preset) { update(current); startCapture(zone, 'stick'); return; }
+    update(setZoneBinding(current, zone, newStick(zone, preset))); setSelected(zone);
+    setStatus({ kind: 'info', text: `${zone} 已用 ${splitSources(preset).map(sourceLabel).join(' ')} 控制上左下右，可在右侧点击单个方向更换按键。` });
   };
   // Key events can arrive before the next paint; capture state lives in refs so the listener
   // registered once always sees the latest capture and draft.
@@ -246,6 +265,12 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
     if (!active || !current) return;
     if (active.kind === 'button') {
       update(setZoneBinding(current, active.zone, { ...active.template, source })); changeCapture(null); return;
+    }
+    if (active.direction !== undefined) {
+      const group = replaceStickSource(active.template.source, active.direction, source);
+      if (!group) { setStatus({ kind: 'error', text: '摇杆四个方向需要不同的键。' }); return; }
+      update(setZoneBinding(current, active.zone, { ...active.template, source: group })); changeCapture(null);
+      setStatus({ kind: 'info', text: `${active.zone} 的“${stickSteps[active.direction]}”方向改为 ${sourceLabel(source)}。` }); return;
     }
     if (active.collected.includes(source)) { setStatus({ kind: 'error', text: '摇杆四个方向需要不同的键。' }); return; }
     const collected = [...active.collected, source];
@@ -279,39 +304,61 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
   if (!session.surface.width || !session.surface.height) {
     return <div class="loading"><p>游戏画面尚未就绪，请在游戏出现画面后重试。</p><button class="pill" onClick={() => void freeze()} disabled={busy}>重试</button></div>;
   }
-  const apply = () => run(async () => {
+  if (done) {
+    return <div class="loading"><h1>按键已应用</h1><p>游戏继续运行，此窗口会自动关闭；如果没有关闭，可直接关闭此页面。</p></div>;
+  }
+  // Editing happens only while the game is paused; 试玩 and 完成 apply the draft first, so what runs is what was edited.
+  const editing = session.frozen;
+  const applyDraft = async () => {
+    if (!dirty) return '';
     if (conflictedBindings.size) throw new Error('存在按键冲突（红色标出），请先修改。');
     const result = await rpc<{ saved: boolean; config_path: string | null }>('control.apply', { layer: buildLayer(draft, base) });
     await load();
-    setStatus({ kind: 'ok', text: result.saved ? `已应用并保存到 ${result.config_path}` : '已应用；临时沙盒不保存到文件。' });
-  });
-  const resume = () => run(async () => {
+    return result.saved ? '已保存' : '临时沙盒不保存到文件';
+  };
+  const tryOut = () => run(async () => {
+    const saved = await applyDraft();
     await rpc('control.resume'); setSession({ ...session, frozen: false }); changeCapture(null);
-    setStatus({ kind: 'info', text: dirty ? '游戏继续运行；尚未应用的修改仍保留在编辑器中。' : '游戏继续运行，可直接试玩。' });
+    setStatus({ kind: 'info', text: `试玩中：到游戏窗口里操作试试${saved ? `（${saved}）` : ''}。要继续修改，点“返回编辑”。` });
+  });
+  // The launcher closes this window once the game reports the finished edit; a browser tab stays on the done page.
+  const finish = () => run(async () => {
+    await applyDraft();
+    changeCapture(null);
+    await rpc('control.resume', { close: true });
+    setDone(true);
   });
   const selectedZone = draft.zones.find(zone => zone.name === selected);
   return <div class="editor">
     <header>
       <h1>按键设置</h1>
-      <span class="state"><span class={`led ${session.frozen ? 'warning' : 'running'}`} />{session.frozen ? '已暂停' : '运行中'}</span>
-      <button class="pill" onClick={() => { const added = addControl(draft, 'button', session.surface); update(added.draft); startCapture(added.zone, 'button'); }}>添加按钮</button>
-      <button class="pill" onClick={() => { const added = addControl(draft, 'stick', session.surface); update(added.draft); startCapture(added.zone, 'stick'); }}>添加摇杆</button>
+      <span class="state"><span class={`led ${editing ? 'warning' : 'running'}`} />{editing ? '编辑中 · 游戏已暂停' : '试玩中 · 游戏运行'}</span>
+      {editing && <>
+        <button class="pill" onClick={() => { const added = addControl(draft, 'button', session.surface); update(added.draft); startCapture(added.zone, 'button'); }}>添加按钮</button>
+        <button class="pill" onClick={() => { const added = addControl(draft, 'stick', session.surface); makeStick(added.draft, added.zone); }}>添加摇杆</button>
+      </>}
       <span class="spacer" />
-      <button class="pill" disabled={busy || !session.frozen} onClick={() => void run(refreshFrame)}>刷新画面</button>
-      <button class="pill" disabled={busy || !dirty} title="回到上次应用的配置" onClick={() => void run(async () => { await load(); setStatus({ kind: 'info', text: '已放弃未应用的修改。' }); })}>放弃</button>
-      {session.frozen ? <button class="pill" disabled={busy} onClick={() => void resume()}>继续游戏</button>
-                      : <button class="pill" disabled={busy} onClick={() => void freeze()}>暂停并编辑</button>}
-      <button class="pill main" disabled={busy || conflictedBindings.size > 0} onClick={() => void apply()}>应用{dirty ? ' *' : ''}</button>
+      {dirty && <span class="unsaved">有未应用的修改</span>}
+      {editing ? <>
+        <button class="pill" disabled={busy || !dirty} title="回到上次应用的按键" onClick={() => void run(async () => { await load(); setStatus({ kind: 'info', text: '已放弃未应用的修改。' }); })}>放弃修改</button>
+        <button class="pill" disabled={busy || conflictedBindings.size > 0} title="应用修改并继续游戏；本窗口保持打开，可随时返回编辑" onClick={() => void tryOut()}>试玩</button>
+      </> : <button class="pill" disabled={busy} title="暂停游戏，继续修改按键" onClick={() => void freeze()}>返回编辑</button>}
+      <button class="pill main" disabled={busy || conflictedBindings.size > 0} title="应用修改、继续游戏并关闭此窗口" onClick={() => void finish()}>完成</button>
     </header>
-    <p class={`status ${status.kind}`} role="status">{status.text}{!session.frozen && frame ? '（背景为暂停时的画面）' : ''}</p>
+    <p class={`status ${status.kind}`} role="status">{status.text}</p>
     {capture && <CaptureBanner capture={capture} onCancel={() => changeCapture(null)}
       onMouse={button => { const result = captureMouse(button); if ('error' in result) setStatus({ kind: 'error', text: result.error }); else finishSource(result.source); }} />}
-    <div class="workspace">
+    <div class={`workspace ${editing ? '' : 'locked'}`} inert={!editing}>
       <div class="canvas"><Stage session={session} draft={draft} frame={frame} selected={selected} conflicted={conflictedZones}
-        onSelect={setSelected} onZone={onZone} onBinding={onBinding} /></div>
+        onSelect={setSelected} onZone={onZone} onBinding={onBinding} />
+        {!editing && <p class="canvas-note">试玩中，画面为暂停时的截图</p>}
+        {editing && !frame && <div class="canvas-note">还没有游戏画面
+          <button class="pill" disabled={busy} onClick={() => void run(refreshFrame)}>重新获取画面</button></div>}
+      </div>
       <aside>
         {selectedZone ? <Inspector session={session} draft={draft} zone={selectedZone} conflictedBindings={conflictedBindings}
-            onZone={onZone} onBinding={onBinding} onCapture={startCapture}
+            capturing={capture?.zone === selectedZone.name ? capture.direction : undefined}
+            onZone={onZone} onBinding={onBinding} onCapture={startCapture} onStick={zone => { if (draftRef.current) makeStick(draftRef.current, zone); }}
             onRemove={zone => { update(removeControl(draft, zone)); setSelected(null); }} />
           : <section class="inspector"><p>点击画面上的控件进行编辑，拖动移动，拖动圆点缩放。新控件放在画面中央。</p></section>}
         <OtherBindings draft={draft} conflictedBindings={conflictedBindings}

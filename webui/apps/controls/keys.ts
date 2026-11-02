@@ -63,3 +63,10 @@ export function splitSources(source: string): string[] {
 export function joinStickSources(sources: string[]): string {
   return 'keys:' + sources.map(source => source.slice(4)).join(',');
 }
+// Rebinds one direction (0 up, 1 left, 2 down, 3 right); undefined when another direction already has that key.
+export function replaceStickSource(group: string, direction: number, source: string): string | undefined {
+  const sources = splitSources(group);
+  if (sources.some((other, index) => index !== direction && other === source)) return undefined;
+  sources[direction] = source;
+  return joinStickSources(sources);
+}

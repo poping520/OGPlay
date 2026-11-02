@@ -90,9 +90,11 @@ KeyEditorProbe DecodeKeyEditorProbe(const std::string_view response) {
     const auto result = root.Member("result");
     const auto requests = result ? result->Member("edit_requests") : std::nullopt;
     const auto count = requests ? requests->UnsignedInteger() : std::nullopt;
-    if (!root.Member("id") || root.Member("id")->UnsignedInteger() != 1 || root.Member("error") || !count)
+    const auto closes = result ? result->Member("close_requests") : std::nullopt;
+    const auto closed = closes ? closes->UnsignedInteger() : std::nullopt;
+    if (!root.Member("id") || root.Member("id")->UnsignedInteger() != 1 || root.Member("error") || !count || !closed)
         return {false, 0, "按键设置协议不匹配。"};
-    return {true, *count, "按键设置可用。"};
+    return {true, *count, "按键设置可用。", *closed};
 }
 KeyEditorProbe ProbeKeyEditor(const std::uint16_t port, const std::string_view token) {
     if (!port || token.empty()) return {false, 0, "运行中的游戏信息无效。"};

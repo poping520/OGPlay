@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { captureKey, captureMouse, joinStickSources, keyName, sourceLabel, splitSources } from './keys';
+import { captureKey, captureMouse, joinStickSources, keyName, replaceStickSource, sourceLabel, splitSources } from './keys';
 import {
-  addControl, baseBindings, buildLayer, chooseAnchor, clampBox, conflicts, loadDraft, placeZone,
-  removeControl, resolveZone, toGuest, type Binding, type Session,
+  addControl, baseBindings, buildLayer, chooseAnchor, clampBox, conflicts, freeStickPreset, loadDraft, newStick, placeZone,
+  removeControl, resolveZone, setZoneBinding, toGuest, type Binding, type Session,
 } from './model';
 import { createRpc, takeToken, RpcError, Unauthorized } from './rpc';
 
@@ -86,6 +86,11 @@ describe('key editor key mapping', () => {
     expect(sourceLabel('key:j')).toBe('J');
     expect(sourceLabel('mouse:right')).toBe('鼠标右键');
   });
+  it('rebinds one stick direction and keeps the four keys distinct', () => {
+    expect(replaceStickSource('keys:w,a,s,d', 0, 'key:i')).toBe('keys:i,a,s,d');
+    expect(replaceStickSource('keys:w,a,s,d', 3, 'key:d')).toBe('keys:w,a,s,d');
+    expect(replaceStickSource('keys:w,a,s,d', 0, 'key:a')).toBeUndefined();
+  });
 });
 
 describe('key editor drafts', () => {
@@ -124,6 +129,23 @@ describe('key editor drafts', () => {
     const box = resolveZone(added.draft.zones[0], surface);
     expect(box.cx - box.hw).toBeGreaterThanOrEqual(0);
     expect(box.cy + box.hh).toBeLessThanOrEqual(surface.height);
+  });
+});
+
+describe('key editor stick defaults', () => {
+  const empty = { zones: [], bindings: [escape] };
+  it('gives the first stick WASD and the next one the arrows, without capturing keys', () => {
+    expect(freeStickPreset(empty)).toBe('keys:w,a,s,d');
+    const first = addControl(empty, 'stick', surface);
+    const withFirst = setZoneBinding(first.draft, first.zone, newStick(first.zone, freeStickPreset(first.draft)!));
+    expect(withFirst.bindings.at(-1)).toEqual({ source: 'keys:w,a,s,d', action: 'stick', zone: 'stick_1', radius: 0.7, settle_frames: 2, ramp_frames: 4 });
+    expect(freeStickPreset(withFirst)).toBe('keys:up,left,down,right');
+  });
+  it('skips a preset any of whose keys is taken in the default or every mode', () => {
+    expect(freeStickPreset({ zones: [], bindings: [{ source: 'key:s', action: 'button', zone: 'x' }] })).toBe('keys:up,left,down,right');
+    expect(freeStickPreset({ zones: [], bindings: [{ source: 'key:w', action: 'button', zone: 'x', mode: 'menu' }] })).toBe('keys:w,a,s,d');
+    expect(freeStickPreset({ zones: [], bindings: [{ source: 'key:d', action: 'key', mode: '*', key: 'back' },
+                                                   { source: 'key:up', action: 'button', zone: 'x' }] })).toBeUndefined();
   });
 });
 

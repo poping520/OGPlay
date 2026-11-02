@@ -137,6 +137,16 @@ export function addControl(draft: Draft, kind: 'button' | 'stick', surface: Surf
   return { draft: { ...draft, zones: [...draft.zones, zone] }, zone: name };
 }
 
+// Direction presets in the order a new stick tries them; WASD is what keyboard players expect first.
+export const stickPresets = ['keys:w,a,s,d', 'keys:up,left,down,right'];
+// The first preset whose keys no binding uses yet, so a new stick steers at once instead of asking for four keys.
+export function freeStickPreset(draft: Draft): string | undefined {
+  return stickPresets.find(source => !draft.bindings.some(binding => binding.action !== 'none' && collide(binding, { source, action: 'stick' })));
+}
+export function newStick(zone: string, source: string): Binding {
+  return { source, action: 'stick', zone, radius: 0.7, settle_frames: 2, ramp_frames: 4 };
+}
+
 export function removeControl(draft: Draft, name: string): Draft {
   return { ...draft, zones: draft.zones.filter(zone => zone.name !== name), bindings: draft.bindings.filter(binding => binding.zone !== name) };
 }

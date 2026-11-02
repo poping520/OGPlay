@@ -47,7 +47,7 @@
 - 按键设置（ADR-0134）：非预检启动都生成 128 位令牌，只经子进程环境 `OGPLAY_CONTROL_TOKEN`
   传入；启用 MCP 时编辑器共用 MCP 端口，否则 `PickLoopbackPort` 选空闲端口并传
   `--key-editor-port`。`GuiProcessManager` 每 500ms 以令牌发 `control.status {client:"launcher"}`，
-  据此标记就绪，并在 `edit_requests` 增加（游戏内 F2）时打开窗口。`controls.open {installation_id}`
+  据此标记就绪，并在 `edit_requests` 增加（游戏内 F2）时打开窗口、`close_requests` 增加（页面“完成”）时关闭窗口。`controls.open {installation_id}`
   只对就绪实例打开；`dashboard.list` 带 `key_editor_status/detail`，从不返回令牌。
 - `ValidateLibraryConfigDirectories`：共享配置目录验证；全局设置保存前调用。
 - 原 CJK 字体选择、事件等待与消息队列模型保留用于既有调用/测试，不再驱动 WebView 渲染。

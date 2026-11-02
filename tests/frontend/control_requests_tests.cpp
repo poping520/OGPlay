@@ -22,6 +22,7 @@ struct Harness final {
     int freezes{};
     std::size_t delivered{};
     std::uint64_t edit_requests{};
+    std::uint64_t close_requests{};
     std::vector<bool> seen;
 
     agent::ControlResponse Call(const std::string& method, const std::string& params = {}) {
@@ -33,14 +34,23 @@ struct Harness final {
             REQUIRE(document.has_value());
             value = document->Root();
         }
-        return frontend::HandleControlRequest(method, value, {
-            .mapper = mapper, .frozen = frozen, .user = user, .config_path = path, .frames = &frames,
-            .surface_width = 800, .surface_height = 480,
-            .freeze = [this] { ++freezes; },
-            .deliver = [this](const std::vector<input::ControlOutput>& outputs) { delivered += outputs.size(); },
-            .edit_requests = edit_requests,
-            .seen = [this](const bool launcher) { seen.push_back(launcher); },
-        });
+        return frontend::HandleControlRequest(
+            method, value,
+            {
+                .mapper = mapper,
+                .frozen = frozen,
+                .user = user,
+                .config_path = path,
+                .frames = &frames,
+                .surface_width = 800,
+                .surface_height = 480,
+                .freeze = [this] { ++freezes; },
+                .deliver = [this](const std::vector<input::ControlOutput>& outputs) { delivered += outputs.size(); },
+                .edit_requests = edit_requests,
+                .close_requests = close_requests,
+                .close = [this] { ++close_requests; },
+                .seen = [this](const bool launcher) { seen.push_back(launcher); },
+            });
     }
 };
 
@@ -119,7 +129,7 @@ TEST_CASE("INP-7 control.status reports F2 requests and tells launcher polls fro
     Harness harness;
     harness.edit_requests = 3;
     auto status = harness.Call("control.status", R"({"client":"launcher"})");
-    CHECK(status.json == R"({"result":{"frozen":false,"edit_requests":3}})");
+    CHECK(status.json == R"({"result":{"frozen":false,"edit_requests":3,"close_requests":0}})");
     static_cast<void>(harness.Call("control.status"));
     static_cast<void>(harness.Call("control.status", R"({"client":"editor"})"));
     static_cast<void>(harness.Call("control.freeze"));
@@ -128,4 +138,20 @@ TEST_CASE("INP-7 control.status reports F2 requests and tells launcher polls fro
     CHECK(harness.seen == std::vector<bool>{true, false, false, false, true});
     CHECK(harness.Call("control.status", R"({"client":"gui"})").json.find("-32602") != std::string::npos);
     CHECK(harness.Call("control.status", R"({"other":1})").json.find("-32602") != std::string::npos);
+}
+
+TEST_CASE("INP-7 control.resume with close resumes and asks the launcher to close the editor") {
+    Harness harness;
+    static_cast<void>(harness.Call("control.freeze"));
+    CHECK(harness.Call("control.resume", R"({"close":false})").json == R"({"result":{"frozen":false}})");
+    CHECK(harness.close_requests == 0);
+    static_cast<void>(harness.Call("control.freeze"));
+    CHECK(harness.Call("control.resume", R"({"close":true})").json == R"({"result":{"frozen":false}})");
+    CHECK_FALSE(harness.frozen);
+    CHECK(harness.close_requests == 1);
+    CHECK(harness.Call("control.status", R"({"client":"launcher"})").json.find(R"("close_requests":1)") !=
+          std::string::npos);
+    CHECK(harness.Call("control.resume", R"({"close":1})").json.find("-32602") != std::string::npos);
+    CHECK(harness.Call("control.resume", R"({"other":true})").json.find("-32602") != std::string::npos);
+    CHECK(harness.close_requests == 1);
 }

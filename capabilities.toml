@@ -236,7 +236,7 @@ note = "INP-4/ADR-0134：F1 在呈现副本上绘制当前模式有效区域与�
 [frontend.key_editor_session]
 status = "partial"
 test = "tests/frontend/control_requests_tests.cpp; tests/agent/control_editor_tests.cpp; tests/frontend/mcp_http_server_tests.cpp#INP-5; tests/frontend/mcp_http_server_tests.cpp#INP-6; tests/frontend/mcp_http_server_tests.cpp#INP-7; tests/frontend/gui_launch_tests.cpp#INP-7; tests/frontend/gui_rpc_tests.cpp#INP-7; tests/session/control_config_tests.cpp#INP-5; webui/apps/controls/controls.test.ts; frontend.key_editor_manifest; frontend.run_apk_options"
-note = "ADR-0134/0142：F2/GUI 打开游戏提供的 Web 编辑器，令牌校验、冻结/恢复、热应用与原子保存沿用；无官方区域与类型模板，用户手动创建布局并在 input.toml 持久化。"
+note = "ADR-0134/0142：F2/GUI 打开游戏提供的 Web 编辑器，令牌校验、冻结/恢复、热应用与原子保存沿用；编辑仅在暂停时进行，试玩先应用再恢复，完成后由启动器关闭窗口；无官方区域与类型模板，用户手动创建布局并在 input.toml 持久化。"
 
 [input.mouse_touch_mapper]
 status = "complete"

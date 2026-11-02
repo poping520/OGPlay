@@ -250,6 +250,9 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
                                       {{"reason", std::string(error.what())}});
                      }
                  }
+                 // The editor page's 完成 (control.resume {close:true}) closes its window here.
+                 for (const auto& instance : processes.TakeKeyEditorCloses())
+                     view->CloseKeyEditor(instance);
                  for (const auto& instance : processes.TakeAutoOpen()) {
                      try {
                          view->OpenDashboard(instance, processes.DashboardPort(instance));

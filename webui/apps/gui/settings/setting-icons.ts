@@ -26,8 +26,8 @@ export const SETTING_ICONS: Record<string, string> = {
   log_retention: '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10h14V9M10 13h4"/>',
   // graphics and display
   angle_backend: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>',
-  surface_width: WIDTH,
-  surface_height: HEIGHT,
+  screen_width: WIDTH,
+  screen_height: HEIGHT,
   supersample: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 12h16M12 4v16"/>',
   window_mode: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   scaling: '<rect x="3" y="3" width="10" height="10" rx="1.5"/><path d="M14 21h7v-7M21 21l-8-8"/>',
@@ -52,8 +52,6 @@ export const SETTING_ICONS: Record<string, string> = {
   // virtual device and its identity
   cpu_cores: '<rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 9h2v2H9zM13 9h2v2h-2zM9 13h2v2H9zM13 13h2v2h-2z"/>',
   cpu_frequency_mhz: '<path d="M3 16h3V8h4v8h4V8h4v8h3"/>',
-  screen_width: WIDTH,
-  screen_height: HEIGHT,
   density_dpi: '<path d="M6 6h.01M12 6h.01M18 6h.01M6 12h.01M12 12h.01M18 12h.01M6 18h.01M12 18h.01M18 18h.01"/>',
   memory_mb: '<rect x="2" y="7" width="20" height="9" rx="1"/><path d="M6 10v3M10 10v3M14 10v3M18 10v3M6 16v3M10 16v3M14 16v3M18 16v3"/>',
   brand: '<path d="M3 12V4h8l10 10-8 8z"/><path d="M7.5 8.5h.01"/>',
@@ -80,4 +78,4 @@ export const SETTING_ICONS: Record<string, string> = {
   ephemeral_sandbox: '<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 3"/><path d="M9 12h6"/>',
 };
 // The same concept drawn twice on purpose; any other repeated glyph is a mistake (settings.test.ts).
-export const SHARED_ICONS = [['surface_width', 'screen_width'], ['surface_height', 'screen_height'], ['default_external_dir', 'external_dir']];
+export const SHARED_ICONS = [['default_external_dir', 'external_dir']];

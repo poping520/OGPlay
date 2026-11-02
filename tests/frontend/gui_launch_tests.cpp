@@ -380,8 +380,8 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     CHECK(launch.options.surface_height == 720);
     CHECK(launch.options.density_dpi == 320);
     CHECK(launch.options.supersample_factor == 1);
-    SetSetting(global, "surface_width", std::uint32_t{960});
-    SetSetting(global, "surface_height", std::uint32_t{540});
+    SetSetting(global, "screen_width", std::uint32_t{960});
+    SetSetting(global, "screen_height", std::uint32_t{540});
     SetSetting(global, "density_dpi", std::uint32_t{240});
     SetSetting(global, "supersample", std::uint32_t{2});
     launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
@@ -389,8 +389,8 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     CHECK(launch.options.surface_height == 540);
     CHECK(launch.options.density_dpi == 240);
     CHECK(launch.options.supersample_factor == 2);
-    SaveGameSettings(directory, {{{"surface_width", std::uint32_t{1024}},
-                                  {"surface_height", std::uint32_t{600}},
+    SaveGameSettings(directory, {{{"screen_width", std::uint32_t{1024}},
+                                  {"screen_height", std::uint32_t{600}},
                                   {"density_dpi", std::uint32_t{160}},
                                   {"supersample", std::uint32_t{3}}}});
     launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
@@ -408,11 +408,11 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
     CHECK(launch.options.surface_width == 960);
     CHECK(launch.options.density_dpi == 240);
-    CHECK_THROWS(SetSetting(global, "surface_width", std::uint32_t{0}));
-    CHECK_THROWS(SetSetting(global, "surface_height", std::uint32_t{4097}));
+    CHECK_THROWS(SetSetting(global, "screen_width", std::uint32_t{0}));
+    CHECK_THROWS(SetSetting(global, "screen_height", std::uint32_t{4097}));
     CHECK_THROWS(SetSetting(global, "density_dpi", std::uint32_t{71}));
-    CHECK_THROWS(ValidateGameSettings({{{"surface_width", std::uint32_t{0}}}}));
-    CHECK_THROWS(ValidateGameSettings({{{"surface_height", std::uint32_t{4097}}}}));
+    CHECK_THROWS(ValidateGameSettings({{{"screen_width", std::uint32_t{0}}}}));
+    CHECK_THROWS(ValidateGameSettings({{{"screen_height", std::uint32_t{4097}}}}));
     CHECK_THROWS(ValidateGameSettings({{{"density_dpi", std::uint32_t{1281}}}}));
 }
 

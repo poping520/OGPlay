@@ -6,12 +6,15 @@ export interface GameSettings {
   values: Record<string, SettingValue>; inherited: Record<string, SettingValue>;
   facts: Record<string, string>;
   previews: Record<string, { argv: string[]; error: string }>;
+  reserved_visible: boolean;                     // false in release builds
 }
+// Most-changed, effective groups first; developer switches last.
 export const gameGroups = [
+  ['display', '显示', '分辨率倍率、窗口与方向。'], ['data', '数据与沙盒', '存档沙盒、日志与外部数据包。'],
+  ['input', '输入', '键位模板与手柄。运行中按 F2 打开按键设置。'], ['audio', '音频', '音量与静音。'],
   ['performance', '性能', '解释器、帧率与原生 CPU 限速。'], ['device', '虚拟设备', '游戏查询到的设备参数与身份。'],
-  ['display', '显示', '分辨率倍率、窗口与方向。'], ['audio', '音频', '音量与静音。'], ['input', '输入', '键位模板与手柄。运行中按 F2 打开按键设置。'],
-  ['data', '数据与沙盒', '存档沙盒、日志与外部数据包。'], ['network', '网络', '此游戏的网络意向。'],
-  ['compatibility', '兼容性', 'Profile 与数据包等覆盖目录。'], ['advanced', '高级', 'MCP、临时沙盒与启动参数预览。'],
+  ['compatibility', '兼容性', 'Profile 与数据包等覆盖目录。'], ['network', '网络', '此游戏的网络意向。'],
+  ['advanced', '高级', 'MCP、临时沙盒与启动参数预览。'],
 ] as const;
 
 export function inheritSetting(values: Record<string, SettingValue>, key: string): Record<string, SettingValue> {

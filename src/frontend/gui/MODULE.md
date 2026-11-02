@@ -31,6 +31,7 @@
 - LibraryStore、LibraryConfig、SettingDefinitions、GameSettings、APK 检视/图标/Profile、设置继承归
   frontend/library，只经 app 公开头消费。settings.get/set 保存前复用库内 schema/目录校验，
   未知键/损坏配置/过期读取版本拒绝覆盖；后台分析或入库尚未回收时禁止保存。
+- `settings.get`/`game_settings.get` 带 `reserved_visible`：`NDEBUG` 构建为 false，前端据此隐藏预留项；字段列表仍完整。
 - `settings.icon_preview`（无参数）：以随包占位图标与同一合成器返回 `{cradle, badge}` 两张 192px PNG data URL，
   素材缺失明确报错（GUI-17）。
 - `game_settings.get/set {installation_id, values?, revision?}`：只查找已枚举实例，set 的 values

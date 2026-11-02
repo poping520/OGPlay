@@ -121,6 +121,12 @@ TEST_CASE("GUI settings RPC applies validated patches and rejects stale writes")
     const auto result = initial.Root().Member("result");
     REQUIRE(result.has_value());
     CHECK(result->Member("schema")->UnsignedInteger() == 2);
+    // Release builds hide reserved rows; the field list itself stays complete.
+#ifdef NDEBUG
+    CHECK(result->Member("reserved_visible")->Bool() == std::optional<bool>{false});
+#else
+    CHECK(result->Member("reserved_visible")->Bool() == std::optional<bool>{true});
+#endif
     CHECK(result->Member("fields")->Size() == ogplay::app::SettingDefinitions().size());
     const auto revision = std::string(*result->Member("revision")->String());
     const auto update = [&](std::string_view token, std::string_view key, auto value) {
@@ -233,6 +239,7 @@ TEST_CASE("GUI instance settings RPC isolates instances and uses the same previe
     };
     auto initial = get("org.example.game");
     REQUIRE(initial.Root().Member("result"));
+    CHECK(initial.Root().Member("result")->Member("reserved_visible")->Bool().has_value());
     const auto revision = std::string(*initial.Root().Member("result")->Member("revision")->String());
     for (const auto values : {R"({"supersample":5})", R"({"unknown":true})", R"({"supersample":"2"})",
                               R"({"mcp_manual_step":true})", R"({"mute":null})", R"({"external_dir":"relative"})",

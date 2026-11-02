@@ -7,13 +7,15 @@ export interface SettingField {
 export interface Settings {
   schema: number; revision: string; values: Record<string, SettingValue>; fields: SettingField[];
   library_root: string; config_path: string; facts: Record<string, string>;
+  reserved_visible: boolean;                     // false in release builds
 }
+// Same priority as the per-game page: graphics before storage, input before audio.
 export const groups = [
-  ['general', '常规', '启动器自身的外观与交互习惯。'], ['storage', '目录与存储', '游戏库、Profile 与数据包所在位置。'],
-  ['graphics', '图形', '新启动游戏的默认渲染选项。'], ['audio', '音频', '默认音频输出。'],
-  ['input', '输入', '键位模板与手柄。游戏内按 F2 可打开按键设置。'], ['vm', '虚拟机', '解释器、时钟与默认虚拟设备。'],
+  ['general', '常规', '启动器自身的外观与交互习惯。'], ['graphics', '图形', '新启动游戏的默认渲染选项。'],
+  ['storage', '目录与存储', '游戏库、Profile 与数据包所在位置。'], ['input', '输入', '键位模板与手柄。游戏内按 F2 可打开按键设置。'],
+  ['audio', '音频', '默认音频输出。'], ['vm', '虚拟机', '解释器、时钟与默认虚拟设备。'],
   ['network', '网络', '游戏的默认网络意向。'], ['diagnostics', '诊断与日志', '日志、停滞快照与退出诊断。'],
-  ['control', '控制面 (MCP)', '本机 MCP 服务与 Dashboard。'], ['about', '关于', '版本与随程序交付的制品清单。'],
+  ['control', '开发者工具', '本机 MCP 服务与 Dashboard，供调试与自动化使用。'], ['about', '关于', '版本与随程序交付的制品清单。'],
 ] as const;
 export function settingsError(fields: SettingField[], values: Record<string, SettingValue>): string | null {
   if (Object.keys(values).some(key => !fields.some(field => field.key === key))) return t('包含未知设置。');
@@ -55,6 +57,14 @@ const labels: Record<string, string> = {
   disabled: '禁用', loopback: '仅回环', allow: '允许网络', realtime: '实时', fixed: '固定步进', portrait: '竖屏', landscape: '横屏', unlimited: '不限',
   '3d': '3D 模型', css: 'CSS 轻量', console: '主机之夜', glass: '玻璃紫', cradle: '卡带插槽', badge: '圆形角标',
 };
+// Release builds (host reserved_visible false) leave reserved rows out of the pages, and with them the groups
+// that only had reserved rows; groups without any field (e.g. 关于) stay.
+export function shownFields(fields: SettingField[], reservedVisible: boolean): SettingField[] {
+  return reservedVisible ? fields : fields.filter(field => !fieldMeta(field).reserved);
+}
+export function shownGroups<G extends readonly [string, ...string[]]>(groups: readonly G[], fields: SettingField[], shown: SettingField[]): G[] {
+  return groups.filter(([key]) => shown.some(field => field.group === key) || !fields.some(field => field.group === key));
+}
 export function choiceLabel(field: SettingField, value: string): string {
   return field.key === 'clock_rate' ? `${value}×` : value in labels ? t(labels[value]) : value;
 }

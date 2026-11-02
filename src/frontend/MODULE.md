@@ -136,8 +136,8 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
 CLI 参数、MCP transport 和会话控制由 CTest 覆盖；真实 APK 按 playbook 使用
 `tools/run_scenario.py` 产出机器可判定证据。
 
-显示的 surface_width/surface_height/density_dpi/supersample 由 EffectiveGameSetting 按游戏、全局、
-默认解析，再经 GameRunOptions 与 --surface-width/--surface-height/--density-dpi/--supersample 传入。
+显示设置 screen_width/screen_height/density_dpi/supersample 由 EffectiveGameSetting 按游戏、全局、
+默认解析，再经 GameRunOptions（surface_width/surface_height）与 --surface-width/--surface-height/--density-dpi/--supersample 传入。
 宽高默认 1280×720、每边 1..4096；密度默认 320、72..1280，run-apk 写入 guest ui_density
 （dpi/160，scaledDensity 相同）；超采样 1..4。GUI 字段使用同一设置定义。
 无新窗口缩放/宽高比偏好；bundled payload 不携带 input 目录。

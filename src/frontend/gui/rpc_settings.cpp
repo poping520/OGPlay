@@ -12,6 +12,14 @@ namespace ogplay::frontend {
 using namespace ogplay::app;
 
 namespace {
+// Release builds keep reserved (not yet wired) settings off the pages; the schema itself is unchanged, so
+// values, validation and resets still cover every field.
+#ifdef NDEBUG
+constexpr bool kReservedVisible = false;
+#else
+constexpr bool kReservedVisible = true;
+#endif
+
 app::JsonWriter::Value Json(app::JsonWriter& writer, const SettingValue& value) {
     if (const auto flag = std::get_if<bool>(&value)) return writer.Bool(*flag);
     if (const auto number = std::get_if<std::uint32_t>(&value)) return writer.UnsignedInteger(*number);
@@ -133,6 +141,7 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
     writer.Add(result, "values", overrides);
     writer.Add(result, "inherited", inherited);
     writer.Add(result, "fields", FieldList(writer, GameSettingDefinitions()));
+    writer.AddBool(result, "reserved_visible", kReservedVisible);
     writer.AddString(result, "config_path", PathText(entry.directory / "settings.toml"));
     const auto previews = writer.Object();
     for (const auto& [name, mode] :
@@ -238,6 +247,7 @@ app::ConsoleResponse GuiRpcService::SettingsRequest(std::string_view method, app
     writer.Add(result, "values", Values(writer, config));
     const auto fields = FieldList(writer, SettingDefinitions());
     writer.Add(result, "fields", fields);
+    writer.AddBool(result, "reserved_visible", kReservedVisible);
     writer.AddString(result, "library_root", PathText(store_.Root()));
     writer.AddString(result, "config_path", PathText(store_.Root() / "config.toml"));
     const auto facts = writer.Object();

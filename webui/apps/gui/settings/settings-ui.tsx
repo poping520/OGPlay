@@ -1,6 +1,6 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { changedKeys, choiceLabel, fieldMeta, RESERVED_MARK, stepValue, type SettingField, type SettingValue } from './settings';
+import { changedKeys, choiceLabel, fieldMeta, RESERVED_MARK, stepValue, shownFields, shownGroups, type SettingField, type SettingValue } from './settings';
 import { shellStyle } from '../cartridge/cartridge';
 import { t } from '../shared/i18n';
 import { Back, Brand, type Skin } from '../kit';
@@ -214,6 +214,7 @@ export interface FrameProps {
   group: string;
   setGroup: (group: string) => void;
   fields: SettingField[];                        // all fields of the page
+  reservedVisible: boolean;                      // false in release builds: reserved rows (and groups left empty) hidden
   sectionBefore?: Record<string, string>;
   // Content shown right under a field's row (e.g. a preview of its choices).
   after?: Record<string, ComponentChildren>;
@@ -236,7 +237,10 @@ export interface FrameProps {
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
 
 export function SettingsFrame(props: FrameProps) {
-  const { skin, fields, group, groups } = props;
+  const { skin, group } = props;
+  const fields = shownFields(props.fields, props.reservedVisible);
+  // Which groups survive is only known once the fields arrive: list none until then rather than all and then fewer.
+  const groups = props.loaded ? shownGroups(props.groups, props.fields, fields) : [];
   // A reset writes several settings at once, so it is the one edit that asks first.
   const [confirm, setConfirm] = useState(false);
   const askReset = () => { if (!props.busy && props.loaded && props.resetKeys.length) setConfirm(true); };
@@ -248,7 +252,7 @@ export function SettingsFrame(props: FrameProps) {
   const main = useRef<HTMLElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const visible = fields.filter(field => field.group === group);
-  const [, title, description] = groups.find(([key]) => key === group) ?? groups[0];
+  const [, title, description] = props.groups.find(([key]) => key === group) ?? props.groups[0];
   const selectGroup = (next: string) => { props.setGroup(next); setFocus(0); main.current?.scrollTo({ top: 0 }); };
   useEffect(() => { if (confirm) dialog.current?.showModal(); else dialog.current?.close(); }, [confirm]);
   useEffect(() => { if (focus >= visible.length) setFocus(0); }, [visible.length]);
@@ -285,7 +289,7 @@ export function SettingsFrame(props: FrameProps) {
         if (model.disabled || (model.inherit && !model.inherit.overridden)) return;
         if (typeof field.initial === 'boolean' || field.choices.length) props.change(field, stepValue(field, model.value, 0));
         else main.current?.querySelectorAll('[data-row]')[focus]?.querySelector<HTMLInputElement>('input')?.focus();
-      } else if (event.key === 'q' || event.key === 'e') {
+      } else if ((event.key === 'q' || event.key === 'e') && groups.length) {
         selectGroup(groups[(at + (event.key === 'e' ? 1 : groups.length - 1)) % groups.length][0]);
       } else if (event.key === 'i' && field && props.toggleInherit) props.toggleInherit(field);
       else if (event.key === 'x') askReset();
@@ -323,7 +327,7 @@ export function SettingsFrame(props: FrameProps) {
     </aside>
     <main class="cfg-main" ref={main}>
       <div class="head"><div><div class="kicker"><i />{props.kicker}</div><h1>{t(title)}</h1><p>{t(description)}</p></div>
-        <div class="legend">{props.toggleInherit && <span><i class="l-inh" />{t('继承')}</span>}<span><i class="l-pending" />{t('预留 · 仅保存')}</span></div></div>
+        <div class="legend">{props.toggleInherit && <span><i class="l-inh" />{t('继承')}</span>}{fields.some(field => fieldMeta(field).reserved) && <span><i class="l-pending" />{t('预留 · 仅保存')}</span>}</div></div>
       <div class="rows" key={group} aria-busy={props.busy}>
         {props.error && <Note icon="info" title={t('操作失败')} warn><pre role="alert">{props.error}</pre></Note>}
         {props.loaded ? <>{props.top}{rows}{props.end}</> : !props.error && <Note icon="info" title={props.busy ? t('正在读取设置…') : t('设置不可用')} />}

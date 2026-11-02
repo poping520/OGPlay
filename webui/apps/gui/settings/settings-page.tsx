@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc } from '../shared/rpc';
 import { pickPath } from '../import/import';
-import { groups, settingsError, type Settings } from './settings';
+import { groups, settingsError, shownFields, type Settings } from './settings';
 import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui';
 import { IconPreview } from './icon-preview';
 import { skinOf } from '../kit';
@@ -48,14 +48,14 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
   };
   // The style setting previews while it is still a draft.
   const skin = skinOf(draft.settings_style ?? saved?.values.settings_style);
-  const resetKeys = saved ? saved.fields.filter(field => draft[field.key] !== field.initial).map(field => field.key) : [];
+  const resetKeys = saved ? shownFields(saved.fields, saved.reserved_visible).filter(field => draft[field.key] !== field.initial).map(field => field.key) : [];
   return <SettingsFrame skin={skin} crumb={<b>{t('全局设置')}</b>} idle={t('影响之后启动的游戏')} resetLabel={t('恢复默认')}
     resetTitle={t('将 {n} 项恢复为默认值？', { n: resetKeys.length })} resetKeys={resetKeys} busy={busy} saving={store.saving} loaded={!!saved}
-    groupsTitle={t('全局设置')} groups={groups} group={group} setGroup={setGroup} fields={saved?.fields ?? []}
+    groupsTitle={t('全局设置')} groups={groups} group={group} setGroup={setGroup} fields={saved?.fields ?? []} reservedVisible={saved?.reserved_visible ?? true}
     model={field => ({ value: draft[field.key] ?? field.initial, disabled: busy })}
     change={(field, value) => store.edit(current => ({ ...current, [field.key]: value }))}
     browse={field => void run(async () => { const path = await pickPath('directory'); if (path) store.edit(current => ({ ...current, [field.key]: path })); })}
-    fileLabel={t('配置文件')} filePath={saved?.config_path ?? ''} kicker={t('Settings · 全局')} note={t('预留项只保存配置，不改变运行时')}
+    fileLabel={t('配置文件')} filePath={saved?.config_path ?? ''} kicker={t('Settings · 全局')} note={saved?.reserved_visible === false ? '' : t('预留项只保存配置，不改变运行时')}
     top={top[group]} end={end[group]} error={store.error} toast={toast}
     after={saved ? { running_icon: <IconPreview value={String(draft.running_icon ?? saved.values.running_icon)} disabled={busy}
       choose={value => store.edit(current => ({ ...current, running_icon: value }))} /> } : undefined}

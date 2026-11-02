@@ -13,7 +13,7 @@ Profile 摘要只含 id 与 quirk，不提供显示名或 required external。�
 APK；数据目录由实例设置/导入选项提供，目录有效性独立于 Profile。
 解释器设置用 `default` 选择通用默认值，`switch/threaded` 为用户显式覆盖。
 
-surface_width/surface_height 默认 1280/720，范围 1..4096；density_dpi 默认 320，范围 72..1280；
+screen_width/screen_height（屏幕宽高）默认 1280/720，范围 1..4096；density_dpi 默认 320，范围 72..1280；
 supersample 范围 1..4。四者均经 EffectiveGameSetting 解析游戏 > 全局 > 默认，GUI 编辑同一 schema；不读取 Profile。
 类型模板及 input_template 设置已删除，未知旧设置明确失败。
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { changedKeys, displayValue, fieldMeta, groups, isDirty, settingsError, stepValue, type SettingField } from './settings';
+import { changedKeys, displayValue, fieldMeta, groups, isDirty, settingsError, shownFields, shownGroups, stepValue, type SettingField } from './settings';
 import { gameGroups } from './game-settings';
 import { SETTING_ICONS, SHARED_ICONS } from './setting-icons';
 const field = (key: string, initial: string | number | boolean, choices: string[] = []): SettingField =>
@@ -43,16 +43,31 @@ describe('settings drafts', () => {
   });
 });
 
-// Host field definitions: `{"key", "group", "label", ...}` rows plus the per-game device identity `{key, label}` list.
+// Host field definitions: `{"key", "group", "label", ...}` rows (one line or one field per line, as clang-format
+// leaves them) plus the per-game device identity `{key, label}` list.
 const hostSettings = Object.values(import.meta.glob(['../../../../src/frontend/library/settings.cpp', '../../../../src/frontend/library/game_settings.cpp'],
   { query: '?raw', import: 'default', eager: true })) as string[];
+describe('reserved settings in release builds', () => {
+  it('drops reserved rows and the groups they leave empty, keeping groups that never had fields', () => {
+    const reserved = { ...field('volume', 100), group: 'audio', pending: '预留 · 运行时未实现' };
+    const live = { ...field('supersample', 1), group: 'graphics', pending: '说明文字' };
+    const all = [reserved, live];
+    expect(shownFields(all, true)).toEqual(all);
+    const shown = shownFields(all, false);
+    expect(shown).toEqual([live]);
+    const pageGroups = [['graphics', '图形', ''], ['audio', '音频', ''], ['about', '关于', '']] as const;
+    expect(shownGroups(pageGroups, all, shown).map(([key]) => key)).toEqual(['graphics', 'about']);
+    expect(shownGroups(pageGroups, all, all).map(([key]) => key)).toEqual(['graphics', 'audio', 'about']);
+  });
+});
+
 describe('setting row icons', () => {
   it('give every host setting its own glyph, repeated only for the same concept', () => {
     const groupKeys = new Set<string>([...groups, ...gameGroups].map(([key]) => key));
     const keys = new Set<string>();
     for (const text of hostSettings) {
-      for (const [, key, group] of text.matchAll(/\{"([a-z0-9_]+)", "([a-z]+)", "/g)) if (groupKeys.has(group)) keys.add(key);
-      for (const [, key] of text.match(/\[key, label\][\s\S]*?\}\)/)?.[0].matchAll(/\{"([a-z0-9_]+)", "/g) ?? []) keys.add(key);
+      for (const [, key, group] of text.matchAll(/\{\s*"([a-z0-9_]+)",\s*"([a-z]+)",\s*"/g)) if (groupKeys.has(group)) keys.add(key);
+      for (const [, key] of text.match(/\[key, label\][\s\S]*?\}\)/)?.[0].matchAll(/\{\s*"([a-z0-9_]+)",\s*"/g) ?? []) keys.add(key);
     }
     expect(hostSettings.length).toBe(2);
     expect(keys.size).toBeGreaterThan(60);

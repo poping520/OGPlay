@@ -2,7 +2,7 @@ import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc, type LibraryItem } from '../shared/rpc';
 import { pickPath } from '../import/import';
-import { displayValue } from './settings';
+import { displayValue, shownFields } from './settings';
 import { gameGroups, gameSettingsError, inheritSetting, type GameSettings } from './game-settings';
 import { statuses, versionLabel } from '../library/library';
 import { useIconColor } from '../cartridge/cartridge';
@@ -25,7 +25,7 @@ function Argv({ argv }: { argv: string[] }) {
 export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: {
   id: string; item?: LibraryItem; skin: Skin; cart3d: Cart3D | 'waiting' | null; onBack: () => void; clearData: () => void;
 }) {
-  const [group, setGroup] = useState<string>('performance');
+  const [group, setGroup] = useState<string>(gameGroups[0][0]);
   const [mode, setMode] = useState<string>('normal');
   const [busy, setBusy] = useState(false);
   const [toast, say] = useToast();
@@ -60,18 +60,21 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
         {mode === 'preflight' ? t('执行预检') : t('执行启动')}</button></div>
   </div>;
   const top: Record<string, ComponentChildren> = saved ? {
-    device: <Note icon="device" title="Android 4.4.4 · API 19"><p>{t('系统版本固定。CPU 核数和标称主频在下次启动生效，供游戏查询；主频不限制实际执行速度。机型预设尚未接入，其他预留项仅保存配置。')}</p>
+    device: <Note icon="device" title="Android 4.4.4 · API 19"><p>{t('系统版本固定。CPU 核数和标称主频在下次启动生效，供游戏查询；主频不限制实际执行速度。')}{saved.reserved_visible && t('机型预设尚未接入，其他预留项仅保存配置。')}</p>
       {actions(<button class="mini" disabled>{t('ANDROID_ID 查看 / 重新生成')}<em>{t('管理接口待接入')}</em></button>)}</Note>,
     data: <Note icon="data" title={t('存档与目录')}><Paths rows={[...(item ? [[t('沙盒'), item.sandbox_path], [t('日志'), item.log_directory]] as [string, string][] : []), [t('游戏配置'), saved.config_path]]} />
       {actions(<button class="mini" disabled={busy} onClick={() => open('sandbox')}>{t('打开沙盒目录')}</button>, <button class="mini" disabled={busy} onClick={() => open('log')}>{t('打开日志目录')}</button>,
-        <button class="mini" disabled={busy} onClick={() => open('external')}>{t('打开数据包目录')}</button>, <button class="mini" disabled>{t('导出 / 导入存档')}<em>{t('预留')}</em></button>,
+        <button class="mini" disabled={busy} onClick={() => open('external')}>{t('打开数据包目录')}</button>,
+        saved.reserved_visible && <button class="mini" disabled>{t('导出 / 导入存档')}<em>{t('预留')}</em></button>,
         <button class="mini" disabled={busy || !item || item.running} title={item?.running ? t('游戏运行中，退出后才能清空数据。') : undefined}
           onClick={() => store.afterSave(clearData)}>{t('清空游戏数据…')}</button>)}</Note>,
     network: <Note icon="network" title={t('仅保存意向')} warn><p>{t('不改变运行时网络策略；“允许网络”是预留配置。')}</p></Note>,
     compatibility: <Note icon="compatibility" title={saved.profile_id ? t('精确 Profile · {id}', { id: saved.profile_id }) : t('兼容性目录')}>
       {Object.keys(saved.facts).length > 0 && <Paths rows={Object.entries(saved.facts).map(([key, value]) => [t(key), value] as [string, string])} />}</Note>,
   } : {};
-  const resetKeys = Object.keys(draft);
+  const reservedVisible = saved?.reserved_visible ?? true;
+  const shown = new Set(shownFields(saved?.fields ?? [], reservedVisible).map(field => field.key));
+  const resetKeys = Object.keys(draft).filter(key => shown.has(key));
   return <SettingsFrame skin={skin} art={item?.icon} tint={item ? color : undefined}
     crumb={<>{t('游戏设置')} · <b>{name}</b></>} idle={t('下次启动生效')} resetLabel={t('全部继承')}
     resetTitle={t('将 {n} 项改回继承？', { n: resetKeys.length })} resetKeys={resetKeys} busy={busy} saving={saving} loaded={!!saved}
@@ -80,7 +83,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
       <div><b>{name}</b><small>{id}</small>
         <span class="chip"><i class={`led ${tone}`} />{item ? versionLabel(item) : ''}{saved ? t(' · 已覆盖 {n} 项', { n: Object.keys(saved.values).length }) : ''}</span></div>
     </div>}
-    groupsTitle={t('游戏设置')} groups={gameGroups} group={group} setGroup={setGroup} fields={saved?.fields ?? []}
+    groupsTitle={t('游戏设置')} groups={gameGroups} group={group} setGroup={setGroup} fields={saved?.fields ?? []} reservedVisible={reservedVisible}
     sectionBefore={{ brand: t('设备身份 · 预留') }}
     model={field => {
       const overridden = Object.hasOwn(draft, field.key);

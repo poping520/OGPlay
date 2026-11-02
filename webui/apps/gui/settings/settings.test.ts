@@ -44,7 +44,7 @@ describe('settings drafts', () => {
 });
 
 // Host field definitions: `{"key", "group", "label", ...}` rows plus the per-game device identity `{key, label}` list.
-const hostSettings = Object.values(import.meta.glob(['../../../src/frontend/library/settings.cpp', '../../../src/frontend/library/game_settings.cpp'],
+const hostSettings = Object.values(import.meta.glob(['../../../../src/frontend/library/settings.cpp', '../../../../src/frontend/library/game_settings.cpp'],
   { query: '?raw', import: 'default', eager: true })) as string[];
 describe('setting row icons', () => {
   it('give every host setting its own glyph, repeated only for the same concept', () => {

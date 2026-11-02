@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { rpc } from './rpc';
+import { rpc } from '../shared/rpc';
 import { pickPath, type DataHint } from './import';
 import { MountPreview, useDataDirectory } from './mount-preview';
-import { t, tj } from './i18n';
+import { t, tj } from '../shared/i18n';
 
 /** ADR-0146: shown after a game exits when its missing files point at a better data mount. */
 export function DataHintDialog({ id, name, initial, onClose, onApplied }: {

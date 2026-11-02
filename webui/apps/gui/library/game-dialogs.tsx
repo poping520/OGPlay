@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import type { LibraryItem } from './rpc';
+import type { LibraryItem } from '../shared/rpc';
 import { statuses, versionLabel } from './library';
-import { t } from './i18n';
+import { t } from '../shared/i18n';
 
 // Dialogs about one library entry, in the import wizard's console look: the same head, game card and pill buttons.
 export interface RuntimeInfo { status: string; detail: string; key_editor_status: string; key_editor_detail: string }

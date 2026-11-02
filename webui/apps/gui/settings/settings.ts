@@ -1,4 +1,4 @@
-import { t } from './i18n';
+import { t } from '../shared/i18n';
 export type SettingValue = boolean | number | string;
 export interface SettingField {
   key: string; group: string; label: string; pending: string; initial: SettingValue;

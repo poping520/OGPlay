@@ -1,11 +1,11 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { rpc } from './rpc';
-import { pickPath } from './import';
+import { rpc } from '../shared/rpc';
+import { pickPath } from '../import/import';
 import { groups, settingsError, type Settings } from './settings';
 import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui';
-import { skinOf } from './kit';
-import { setLanguage, t } from './i18n';
+import { skinOf } from '../kit';
+import { setLanguage, t } from '../shared/i18n';
 
 export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved: (settings: Settings) => void }) {
   const [group, setGroup] = useState<string>('general');

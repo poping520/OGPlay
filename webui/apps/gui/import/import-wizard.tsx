@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { rpc } from './rpc';
+import { rpc } from '../shared/rpc';
 import { guestPathError, importingStage, normalizeGuestPath, pause, pickPath, upload, type ExternalMode, type ImportJob } from './import';
 import { MountPreview, useDataDirectory } from './mount-preview';
-import { t } from './i18n';
+import { t } from '../shared/i18n';
 
 const MODES: { value: ExternalMode; label: string; hint: string }[] = [
   { value: 'copy', label: '复制到游戏库', hint: '导入后原目录可移动或删除；同一磁盘支持克隆时几乎不占额外空间。' },

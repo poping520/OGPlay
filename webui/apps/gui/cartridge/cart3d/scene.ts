@@ -4,9 +4,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mainThreadDraco } from './draco';
 import type { CartFace } from './api';
-import glb from '../assets/cartridge.glb';
-import aoPng from '../assets/cartridge-ao.png';
-import logoPng from '../assets/logo.png';
+import glb from '../../assets/cartridge.glb';
+import aoPng from '../../assets/cartridge-ao.png';
+import logoPng from '../../assets/logo.png';
 
 export { THREE };
 const LED_COLOR: Record<string, string> = { ready: '#3ddc84', running: '#4aa3ff', warning: '#ffb020', danger: '#ff5a52' };

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
-import { rpc } from './rpc';
+import { rpc } from '../shared/rpc';
 import { describeData, type DataDirectory } from './import';
-import { t } from './i18n';
+import { t } from '../shared/i18n';
 
 /** Host listing of a data directory; null while loading, error text on failure. */
 export function useDataDirectory(path: string, pkg = ''): { data: DataDirectory | null; error: string } {

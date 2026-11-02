@@ -1,6 +1,6 @@
 // cart3d.js entry: the real-time hero cartridge, the rail stills and the cartridge viewer. gui.js loads this bundle
 // only when the cartridge setting is "3d" and falls back to the CSS cartridge if it fails.
-import { loadKit, THREE } from './kit';
+import { loadKit, THREE } from './scene';
 import { createInspector } from './inspect';
 import type { Cart3D, CartFace } from './api';
 

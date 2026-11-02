@@ -101,7 +101,7 @@
 .console .menu small { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .menu hr { margin: 6px 4px; border: 0; border-top: 1px solid var(--line); }
 
-/* hero cartridge: perspective stage, idle bob on .float, pointer tilt on .tilt (vars set from main.tsx) */
+/* hero cartridge: perspective stage, idle bob on .float, pointer tilt on .tilt (vars set from app.tsx) */
 .showcase { position: relative; height: clamp(250px, 50vh, 470px); display: grid; place-items: center; perspective: 1500px; }
 .float { font-size: clamp(6px, .95vh, 10px); transform-style: preserve-3d; animation: float 6s ease-in-out infinite; }
 .tilt { transform-style: preserve-3d; transform: rotateY(calc(-24deg + var(--tilt-y, 0deg))) rotateX(calc(9deg + var(--tilt-x, 0deg))); transition: transform .5s cubic-bezier(.2,.8,.2,1); }

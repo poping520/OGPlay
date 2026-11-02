@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { shellPalette, versionLabel, vividIconColor } from './library';
-import type { LibraryItem } from './rpc';
-import logo from './assets/logo.png';
-import type { Skin } from './kit';
+import { shellPalette, versionLabel, vividIconColor } from '../library/library';
+import type { LibraryItem } from '../shared/rpc';
+import logo from '../assets/logo.png';
+import type { Skin } from '../kit';
 
 type Rgb = [number, number, number];
 const fallback: Rgb = [124, 156, 255];

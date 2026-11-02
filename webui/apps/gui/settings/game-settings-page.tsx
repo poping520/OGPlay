@@ -1,16 +1,16 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { rpc, type LibraryItem } from './rpc';
-import { pickPath } from './import';
+import { rpc, type LibraryItem } from '../shared/rpc';
+import { pickPath } from '../import/import';
 import { displayValue } from './settings';
 import { gameGroups, gameSettingsError, inheritSetting, type GameSettings } from './game-settings';
-import { statuses, versionLabel } from './library';
-import { useIconColor } from './cartridge';
-import { TileCart } from './cartridge3d';
-import type { Cart3D } from './cart3d/api';
+import { statuses, versionLabel } from '../library/library';
+import { useIconColor } from '../cartridge/cartridge';
+import { TileCart } from '../cartridge/cartridge3d';
+import type { Cart3D } from '../cartridge/cart3d/api';
 import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui';
-import type { Skin } from './kit';
-import { t } from './i18n';
+import type { Skin } from '../kit';
+import { t } from '../shared/i18n';
 
 const modes = [['normal', '正常启动'], ['preflight', '预检'], ['diagnostic', '带诊断启动']] as const;
 // argv from the host, one flag per line; the page never assembles arguments itself.

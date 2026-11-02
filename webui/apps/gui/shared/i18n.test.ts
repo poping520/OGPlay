@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { en } from './i18n-en';
 import { language, setLanguage, t, tj } from './i18n';
-import { fieldMeta, type SettingField } from './settings';
+import { fieldMeta, type SettingField } from '../settings/settings';
 
 const han = /[一-鿿]/;
 
@@ -46,9 +46,9 @@ function scan(source: string): { literals: string[]; code: string } {
 }
 
 // The 3D bundle's decoder error stays as written: cart3d.js has no access to the launcher language.
-const sources = Object.entries(import.meta.glob(['./*.ts', './*.tsx', './cart3d/*.ts', '!./*.test.ts', '!./*.d.ts', '!./i18n*.ts', '!./cart3d/draco.ts'],
+const sources = Object.entries(import.meta.glob(['../**/*.ts', '../**/*.tsx', '!../**/*.test.ts', '!../**/*.d.ts', '!./i18n*.ts', '!../cartridge/cart3d/draco.ts'],
   { query: '?raw', import: 'default', eager: true }));
-const hostSettings = Object.entries(import.meta.glob(['../../../src/frontend/library/settings.cpp', '../../../src/frontend/library/game_settings.cpp'],
+const hostSettings = Object.entries(import.meta.glob(['../../../../src/frontend/library/settings.cpp', '../../../../src/frontend/library/game_settings.cpp'],
   { query: '?raw', import: 'default', eager: true }));
 
 describe('GUI-14 translation table', () => {

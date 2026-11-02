@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { LibraryItem } from './rpc';
-import { cycle, statusOf, versionLabel } from './library';
+import type { LibraryItem } from '../shared/rpc';
+import { cycle, statusOf, versionLabel } from '../library/library';
 import { Backdrop } from './cartridge';
 import { Inspect3D } from './cartridge3d';
 import { VIEWS, type Cart3D, type View } from './cart3d/api';
-import { Back, Brand, Key, type Skin } from './kit';
-import { t } from './i18n';
+import { Back, Brand, type Skin } from '../kit';
+import { Key } from '../../../packages/ui-kit/key';
+import { t } from '../shared/i18n';
 
 // Cartridge viewer: the selected library entry's 3D cartridge full screen, to turn round, look at from the presets
 // and open up to see the board. Everything printed or lit on it is still a host fact; ←/→ walk the same list as

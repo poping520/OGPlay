@@ -6,6 +6,6 @@ export default defineConfig({
   assetsInclude: ['**/*.glb'],
   build: {
     outDir: '../data/webui/gui', emptyOutDir: false,
-    lib: { entry: 'apps/gui/cart3d/index.ts', name: 'OGPlayCart3D', formats: ['iife'], fileName: () => 'cart3d.js' },
+    lib: { entry: 'apps/gui/cartridge/cart3d/index.ts', name: 'OGPlayCart3D', formats: ['iife'], fileName: () => 'cart3d.js' },
   },
 });

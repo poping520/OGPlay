@@ -1,9 +1,11 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { changedKeys, choiceLabel, fieldMeta, RESERVED_MARK, stepValue, type SettingField, type SettingValue } from './settings';
-import { shellStyle } from './cartridge';
-import { t } from './i18n';
-import { Back, Brand, Glyph, Key, type Skin } from './kit';
+import { shellStyle } from '../cartridge/cartridge';
+import { t } from '../shared/i18n';
+import { Back, Brand, type Skin } from '../kit';
+import { Glyph } from '../../../packages/ui-kit/glyph';
+import { Key } from '../../../packages/ui-kit/key';
 import { SETTING_ICONS } from './setting-icons';
 import './settings.css';
 

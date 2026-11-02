@@ -1,7 +1,7 @@
 // Cartridge viewer: the hero's canvas, renderer and scene re-hosted with orbit controls, camera presets, an exploded
 // view of the board and a readout of the part under the pointer. Hero and viewer never hold the canvas at once.
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { THREE, type Kit } from './kit';
+import { THREE, type Kit } from './scene';
 import type { CartFace, InspectEvents, Inspector, View } from './api';
 
 type Look = Awaited<ReturnType<Kit['lookFor']>>;

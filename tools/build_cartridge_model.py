@@ -2,7 +2,7 @@
 
 blender -b --factory-startup -P tools/build_cartridge_model.py -- webui/apps/gui/assets/cartridge.glb [preview-prefix] [art.png]
 (preview-prefix renders <prefix>-front/back/bottom.png with Cycles). Built with Blender 5.2; the launcher's 3D cartridge
-(webui/apps/gui/cart3d) loads the GLB and <out>-ao.png.
+(webui/apps/gui/cartridge/cart3d) loads the GLB and <out>-ao.png.
 
 Model units: x right, y up, z towards the viewer (label side). The cartridge stands on y=0.
 Materials are named so the page can drive them per game:

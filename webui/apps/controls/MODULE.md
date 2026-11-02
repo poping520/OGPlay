@@ -21,4 +21,4 @@ ADR-0134 的 Web 按键编辑器，由 run-apk 的 loopback 服务以 `/controls
   TOML/JSON 的 template 字段都明确拒绝。
 - 不含导入导出、社区预设与离线编辑。
 - 外观：先导入 ui-kit theme.css（主机之夜令牌、`.pill`、`.seg`、`.led`），style.css 只补编辑器布局与舞台绘制；
-  不引入 gui/kit.tsx（其 logo 等资源不在 `/controls/` 提供的两个文件内）。不跟随玻璃紫。
+  需要键位徽标或线性图标时用 ui-kit 的 `Key`/`Glyph`；不引入 gui/kit.tsx（其 logo 等资源不在 `/controls/` 提供的两个文件内）。不跟随玻璃紫。

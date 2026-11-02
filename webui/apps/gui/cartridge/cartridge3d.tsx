@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Cart3D, CartFace, Inspector, View } from './cart3d/api';
 import { Cartridge, iconSampled, knownIconColor, useIconColor } from './cartridge';
-import { versionLabel } from './library';
-import type { LibraryItem } from './rpc';
-import { t } from './i18n';
+import { versionLabel } from '../library/library';
+import type { LibraryItem } from '../shared/rpc';
+import { t } from '../shared/i18n';
 
 // Resolved while gui.js runs, so cart3d.js is found next to gui.js rather than next to the page.
 const bundle = new URL('cart3d.js', (document.currentScript as HTMLScriptElement | null)?.src ?? location.href).href;

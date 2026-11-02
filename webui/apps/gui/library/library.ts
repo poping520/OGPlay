@@ -1,5 +1,5 @@
-import type { LibraryItem } from './rpc';
-import { t } from './i18n';
+import type { LibraryItem } from '../shared/rpc';
+import { t } from '../shared/i18n';
 
 export type Filter = 'all' | 'launchable' | 'attention';
 export type Sort = 'name' | 'newest' | 'oldest';

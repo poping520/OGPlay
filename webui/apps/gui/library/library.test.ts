@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cycle, shellPalette, vividIconColor, validatePackageSelection, versionLabel, visibleItems } from './library';
-import type { LibraryItem } from './rpc';
+import type { LibraryItem } from '../shared/rpc';
 
 const item = (id: string, values: Partial<LibraryItem> = {}): LibraryItem => ({
   installation_id: id, display_name: id, package: 'org.example.game', version: '1.0',

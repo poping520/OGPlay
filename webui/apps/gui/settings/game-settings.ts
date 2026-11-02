@@ -1,4 +1,4 @@
-import { t } from './i18n';
+import { t } from '../shared/i18n';
 import { settingsError, type SettingField, type SettingValue } from './settings';
 export interface GameSettings {
   schema: number; installation_id: string; display_name: string; profile_id: string | null;

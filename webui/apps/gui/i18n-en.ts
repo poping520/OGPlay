@@ -426,6 +426,7 @@ export const en: Record<string, string> = {
   '屏幕宽度': 'Screen width',
   '屏幕高度': 'Screen height',
   '屏幕密度': 'Screen density',
+  '游戏读到的 DisplayMetrics 密度；160 为 1.0 倍': 'The DisplayMetrics density the game reads; 160 is 1.0x',
   '内存': 'Memory',
   '强制方向': 'Force orientation',
   'FPS 叠层': 'FPS overlay',

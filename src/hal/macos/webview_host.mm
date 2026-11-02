@@ -40,6 +40,37 @@
 }
 @end
 
+// Keeps the launcher resident like other macOS apps: the close button hides the main window and reopening the app
+// (Dock icon, Finder) shows it again; quitting stays with the menu. One instance stands in for webview's window
+// delegate and one for its app delegate; everything else is forwarded to the delegate it replaced.
+@interface OGPlayResidentDelegate : NSObject <NSWindowDelegate, NSApplicationDelegate>
+@property(nonatomic, weak) id inner;
+@property(nonatomic, weak) NSWindow* window;
+@end
+@implementation OGPlayResidentDelegate
+
+- (BOOL)windowShouldClose:(NSWindow*)window {
+    [window orderOut:nil];
+    return NO;
+}
+
+- (BOOL)applicationShouldHandleReopen:(NSApplication*)app hasVisibleWindows:(BOOL)visible {
+    NSWindow* window = self.window;
+    if (window.miniaturized) [window deminiaturize:nil];
+    [window makeKeyAndOrderFront:nil];
+    return NO;
+}
+
+- (BOOL)respondsToSelector:(SEL)selector {
+    return [super respondsToSelector:selector] || [self.inner respondsToSelector:selector];
+}
+
+- (id)forwardingTargetForSelector:(SEL)selector {
+    return self.inner;
+}
+
+@end
+
 namespace ogplay::hal {
 namespace {
 void CheckWeb(webview_error_t result) {
@@ -84,6 +115,7 @@ public:
         CheckWeb(webview_set_size(view_, 960, 640, WEBVIEW_HINT_MIN));
         CheckWeb(webview_set_size(view_, 1280, 800, WEBVIEW_HINT_NONE));
         InstallMenu();
+        KeepResident();
         NSURL* document = FileUrl(gui_root / "index.html", false);
         guard_ = [OGPlayNavigationGuard new];
         guard_.allowed = document.absoluteString;
@@ -190,6 +222,19 @@ private:
         self.CloseAllRuntimeWindows();
         static_cast<void>(webview_terminate(self.view_));
     }
+
+    // Delegates are weak references: webview keeps its own alive, this host keeps the stand-ins.
+    void KeepResident() {
+        NSWindow* window = Window(view_);
+        window_delegate_ = [OGPlayResidentDelegate new];
+        window_delegate_.inner = window.delegate;
+        window_delegate_.window = window;
+        window.delegate = window_delegate_;
+        app_delegate_ = [OGPlayResidentDelegate new];
+        app_delegate_.inner = NSApp.delegate;
+        app_delegate_.window = window;
+        NSApp.delegate = app_delegate_;
+    }
     // webview does not create a main menu; without Edit items text fields lose Cmd+C/V.
     void InstallMenu() {
         menu_target_ = [OGPlayMenuTarget new];
@@ -241,7 +286,7 @@ private:
         polling_ = true;
         struct Reset { bool& flag; ~Reset() { flag = false; } } reset{polling_};
         try {
-            // Closing the launcher window ends the shell even while runtime windows remain.
+            // The close button only hides the launcher; a lost window still ends the shell and its runtime windows.
             if (!Window(view_)) { CloseAllRuntimeWindows(); static_cast<void>(webview_terminate(view_)); return; }
             callbacks_.poll();
             if (options_.smoke_responses && lists_ >= *options_.smoke_responses && !smoke_capture_requested_)
@@ -310,6 +355,8 @@ private:
     webview_t view_{};
     OGPlayNavigationGuard* guard_{};
     OGPlayMenuTarget* menu_target_{};
+    OGPlayResidentDelegate* window_delegate_{};
+    OGPlayResidentDelegate* app_delegate_{};
     NSTimer* timer_{};
     std::uint64_t lists_{};
     bool window_operation_{};

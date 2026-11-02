@@ -17,7 +17,7 @@
 - `WebViewHost`：归 ogplay_desktop_webview，移出 ogplay_hal，仅桌面链接（Windows WebView2、macOS WKWebView）；仅宿主启动器使用的静态页面窗口、RPC 字符串回调、事件轮询与脚本投递；
   不暴露 native handle，不创建 guest。当前仅 Windows 实现；冒烟可记录响应并保存 PNG。
 - `WebViewHost::OpenDashboard/CloseDashboard`：按实例复用独立 loopback 窗口，仅允许指定
-  端口 `/dash/` 导航，禁止弹窗且不绑定启动器 RPC；主窗口关闭同时回收监控窗口。
+  端口 `/dash/` 导航，禁止弹窗且不绑定启动器 RPC；启动器结束（关闭按钮只隐藏主窗口；macOS 经退出菜单，Windows 经通知区域图标菜单）同时回收监控窗口。
 - `WebViewHost::OpenKeyEditor/CloseKeyEditor`：同上规则的按键设置窗口，仅允许 `/controls/`；
   十六进制令牌经 `webview_init` 写入页面 sessionStorage，不出现在地址中。
 - `OpenUrlInBrowser`：经 SDL 用默认浏览器打开 http(s) 地址，失败抛出。

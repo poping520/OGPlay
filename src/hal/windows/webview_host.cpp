@@ -80,6 +80,7 @@ public:
             monitor.rcWork.left + (monitor.rcWork.right - monitor.rcWork.left - actual.cx) / 2,
             monitor.rcWork.top + (monitor.rcWork.bottom - monitor.rcWork.top - actual.cy) / 2,
             actual.cx, actual.cy, SWP_NOZORDER | SWP_NOACTIVATE);
+        if (main_window_) AddTrayIcon();
     }
     ~WebViewWindow() {
         if (window_) KillTimer(window_, kShowTimer);
@@ -128,6 +129,11 @@ public:
 private:
     static constexpr UINT_PTR kShowTimer = 1;
     static constexpr UINT kNavigationReady = WM_APP + 1;
+    static constexpr UINT kTrayMessage = WM_APP + 2;
+    static constexpr UINT kTrayId = 1;
+    // Tray menu commands; WM_COMMAND with kTrayQuit is also how tests quit a hidden launcher.
+    static constexpr UINT kTrayShow = 1;
+    static constexpr UINT kTrayQuit = 2;
     static SIZE FrameSize(int width, int height, UINT dpi) {
         RECT bounds{0, 0, MulDiv(width, static_cast<int>(dpi), 96), MulDiv(height, static_cast<int>(dpi), 96)};
         if (!AdjustWindowRectExForDpi(&bounds, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, FALSE, 0, dpi))
@@ -140,6 +146,57 @@ private:
         RECT bounds{};
         if (widget && GetClientRect(window_, &bounds))
             MoveWindow(widget, 0, 0, bounds.right, bounds.bottom, TRUE);
+    }
+
+    // Main window only: its close button hides it to this notification area icon, which shows it again or quits.
+    // Without the icon (no shell, missing resource) closing keeps ending the launcher.
+    void AddTrayIcon() {
+        NOTIFYICONDATAW tray{};
+        tray.cbSize = sizeof(tray);
+        tray.hWnd = window_;
+        tray.uID = kTrayId;
+        tray.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
+        tray.uCallbackMessage = kTrayMessage;
+        tray.hIcon =
+            static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr), L"OGPLAY_ICON", IMAGE_ICON,
+                                          GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED));
+        wcscpy_s(tray.szTip, L"OGPlay");
+        tray_ = tray.hIcon && Shell_NotifyIconW(NIM_ADD, &tray);
+        tray.uVersion = NOTIFYICON_VERSION_4;
+        if (tray_) Shell_NotifyIconW(NIM_SETVERSION, &tray);
+    }
+
+    void RemoveTrayIcon() {
+        if (!std::exchange(tray_, false)) return;
+        NOTIFYICONDATAW tray{};
+        tray.cbSize = sizeof(tray);
+        tray.hWnd = window_;
+        tray.uID = kTrayId;
+        Shell_NotifyIconW(NIM_DELETE, &tray);
+    }
+
+    void Hide() {
+        KillTimer(window_, kShowTimer);
+        shown_ = true;  // A hide before navigation completes must not be undone by the reveal timer.
+        ShowWindow(window_, SW_HIDE);
+    }
+
+    void ShowTrayMenu() {
+        const auto menu = CreatePopupMenu();
+        if (!menu) return;
+        AppendMenuW(menu, MF_STRING, kTrayShow, L"显示 OGPlay");
+        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(menu, MF_STRING, kTrayQuit, L"退出 OGPlay");
+        SetMenuDefaultItem(menu, kTrayShow, FALSE);
+        POINT cursor{};
+        GetCursorPos(&cursor);
+        // The menu dismisses on outside clicks only while its owner is foreground.
+        SetForegroundWindow(window_);
+        const auto command = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, cursor.x, cursor.y,
+                                              window_, nullptr);
+        DestroyMenu(menu);
+        PostMessageW(window_, WM_NULL, 0, 0);
+        if (command) SendMessageW(window_, WM_COMMAND, static_cast<WPARAM>(command), 0);
     }
     void Show() {
         if (shown_ || !view_) return;
@@ -156,6 +213,12 @@ private:
             SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         }
         if (!self) return DefWindowProcW(window, message, wp, lp);
+        // A (re)started Explorer has no notification area icons; this also covers a shell not ready at first add.
+        static const UINT taskbar_created = RegisterWindowMessageW(L"TaskbarCreated");
+        if (message == taskbar_created && self->main_window_) {
+            self->AddTrayIcon();
+            return 0;
+        }
         switch (message) {
         case WM_SIZE:
             self->ResizeWidget();
@@ -187,11 +250,32 @@ private:
         case WM_TIMER:
             if (wp == kShowTimer) { self->Show(); return 0; }
             break;
+        case kTrayMessage:
+            if (LOWORD(lp) == NIN_SELECT || LOWORD(lp) == NIN_KEYSELECT)
+                self->Restore();
+            else if (LOWORD(lp) == WM_CONTEXTMENU)
+                self->ShowTrayMenu();
+            return 0;
+        case WM_COMMAND:
+            if (!self->tray_ || lp) break;
+            if (LOWORD(wp) == kTrayShow) {
+                self->Restore();
+                return 0;
+            }
+            if (LOWORD(wp) == kTrayQuit) {
+                DestroyWindow(window);
+                return 0;
+            }
+            break;
         case WM_CLOSE:
-            DestroyWindow(window);
+            if (self->tray_)
+                self->Hide();
+            else
+                DestroyWindow(window);
             return 0;
         case WM_DESTROY:
             KillTimer(window, kShowTimer);
+            self->RemoveTrayIcon();
             if (self->main_window_ && self->view_) static_cast<void>(webview_terminate(self->view_));
             return 0;
         case WM_NCDESTROY:
@@ -205,6 +289,7 @@ private:
     webview_t view_{};
     bool main_window_{};
     bool shown_{};
+    bool tray_{};
 };
 
 class NativeWebView final : public WebViewHost {

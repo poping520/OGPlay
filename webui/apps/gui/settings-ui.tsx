@@ -303,7 +303,7 @@ export function SettingsFrame(props: FrameProps) {
       <span class="crumb">{props.crumb}</span>
       <span class="spacer" />
       <span class={`save-state ${props.saving ? 'on' : ''}`} role="status"><i />{props.saving ? t('正在保存…') : props.idle}</span>
-      <button class="pill" disabled={props.busy || props.saving} onClick={props.reload}><Key>⟳</Key>{t('重新载入')}</button>
+      <button class="pill" disabled={props.busy || props.saving} onClick={props.reload}><Key><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66L20 8.5" /><path d="M20 3.5v5h-5" /></svg></Key>{t('重新载入')}</button>
       <button class="pill" disabled={props.busy || !props.loaded || !props.resetKeys.length} onClick={askReset}><Key>X</Key>{props.resetLabel}</button>
     </header>
     <aside class="cfg-side">

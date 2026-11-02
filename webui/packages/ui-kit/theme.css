@@ -42,6 +42,9 @@ dialog p, dialog pre { margin-top: 14px; }
 .led.running { background: var(--running); box-shadow: 0 0 10px var(--running); animation: led-pulse 1.4s infinite; }
 .key { display: grid; place-items: center; flex: none; min-width: 32px; height: 32px; padding: 0 6px; border-radius: 999px; background: var(--cream); color: var(--cream-ink);
   font-size: 14px; font-weight: 900; box-shadow: inset 0 -3px 0 rgba(0,0,0,.15); white-space: nowrap; }
+/* glyph keys draw an SVG at the letters' optical size instead of a font symbol that some system fonts shrink */
+:root .key:has(> svg) { padding: 0; } /* stays round over the pages' key paddings */
+.key svg { width: 1.25em; height: 1.25em; fill: none; stroke: currentColor; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; }
 .kicker { display: flex; align-items: center; gap: 12px; color: var(--yellow); font-size: 12px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase; }
 .kicker i { width: 28px; height: 2px; background: currentColor; }
 

@@ -93,13 +93,27 @@ TEST_CASE("GUI Dashboard windows load without launcher bridge and reopen" * doct
                 close_sent = true;
                 host->OpenDashboard("fixture", server->Port());
 #if defined(_WIN32)
-                EnumThreadWindows(GetCurrentThreadId(), [](HWND window, LPARAM) -> BOOL {
-                    wchar_t title[64]{}; GetWindowTextW(window, title, 64);
-                    if (std::wstring_view(title) == L"OGPlay") SendMessageW(window, WM_CLOSE, 0, 0);
-                    return TRUE;
-                }, 0);
+                HWND launcher{};
+                EnumThreadWindows(
+                    GetCurrentThreadId(),
+                    [](HWND window, LPARAM data) -> BOOL {
+                        wchar_t title[64]{};
+                        GetWindowTextW(window, title, 64);
+                        if (std::wstring_view(title) == L"OGPlay") *reinterpret_cast<HWND*>(data) = window;
+                        return TRUE;
+                    },
+                    reinterpret_cast<LPARAM>(&launcher));
+                REQUIRE(launcher);
+                // The close button hides the launcher to its tray icon; the tray menu's quit (command 2) ends it.
+                // Without a shell the close itself ends it and the quit finds no window.
+                SendMessageW(launcher, WM_CLOSE, 0, 0);
+                REQUIRE_FALSE(IsWindowVisible(launcher));
+                SendMessageW(launcher, WM_COMMAND, 2, 0);
 #else
+                // The close button keeps the launcher resident; quitting from the menu ends it.
                 REQUIRE(ogplay::test::CloseWindowTitled("OGPlay"));
+                REQUIRE_FALSE(ogplay::test::WindowVisible("OGPlay"));
+                REQUIRE(ogplay::test::QuitFromMenu());
 #endif
             }
             if (app::MonotonicClock::NowNs() > close_deadline) throw std::runtime_error("main close timed out");

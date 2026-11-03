@@ -31,7 +31,7 @@ describe('import progress', () => {
     expect(importingStage({ job: '1', state: 'importing' })).toBe('正在加入游戏库，请勿关闭…');
     expect(importingStage({ job: '1', state: 'importing', progress: { copied_bytes: 0, total_bytes: 0 } })).toBe('正在加入游戏库，请勿关闭…');
     expect(importingStage({ job: '1', state: 'importing', progress: { copied_bytes: 512 * 1024 ** 2, total_bytes: 1024 ** 3 } }))
-      .toBe('正在复制数据包… 50%（512.0 MiB / 1.0 GiB）');
+      .toBe('正在复制数据包… 50%（512.0 MB / 1.0 GB）');
     expect(formatBytes(1000)).toBe('1000 B');
   });
 });
@@ -42,6 +42,6 @@ describe('mount preview', () => {
       expect(guestPathError(bad)).not.toBeNull();
     expect(normalizeGuestPath(' /sdcard/games/ ')).toBe('/sdcard/games');
     expect(normalizeGuestPath('/')).toBe('/');
-    expect(describeData({ path: '/x', entries: [], entry_count: 0, files: 3, bytes: 2048, truncated: false })).toBe('3 个文件 · 2.0 KiB');
+    expect(describeData({ path: '/x', entries: [], entry_count: 0, files: 3, bytes: 2048, truncated: false })).toBe('3 个文件 · 2.0 KB');
   });
 });

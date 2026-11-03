@@ -24,13 +24,13 @@ describe('settings drafts', () => {
     expect(changedKeys({ a: 1 }, {})).toEqual(['a']);
   });
   it('splits units, notes and reserved markers out of host labels', () => {
-    const jit = { ...field('jit_cache_mb', 64), label: 'JIT 缓存（MiB）', pending: '预留 · 运行时配置入口尚未接入' };
-    expect(fieldMeta(jit)).toEqual({ label: 'JIT 缓存', unit: 'MiB', hint: '', reserved: '运行时配置入口尚未接入' });
+    const jit = { ...field('jit_cache_mb', 64), label: 'JIT 缓存（MB）', pending: '预留 · 运行时配置入口尚未接入' };
+    expect(fieldMeta(jit)).toEqual({ label: 'JIT 缓存', unit: 'MB', hint: '', reserved: '运行时配置入口尚未接入' });
     const cores = { ...field('cpu_cores', 1), label: '虚拟 CPU 核数', pending: '游戏查询到的核数；不限制宿主线程' };
     expect(fieldMeta(cores)).toEqual({ label: '虚拟 CPU 核数', unit: '', hint: '游戏查询到的核数；不限制宿主线程', reserved: '' });
     const sandbox = { ...field('ephemeral_sandbox', false), label: '临时沙盒（退出不保留本次存档）' };
     expect(fieldMeta(sandbox)).toEqual({ label: '临时沙盒', unit: '', hint: '退出不保留本次存档', reserved: '' });
-    expect(displayValue({ ...jit }, 128)).toBe('128 MiB');
+    expect(displayValue({ ...jit }, 128)).toBe('128 MB');
     expect(displayValue({ ...field('dir', ''), directory: true }, '')).toBe('默认');
     const fps = { ...field('max_fps', 'unlimited'), choices: ['30', '60', 'unlimited'] };
     expect(displayValue(fps, '60')).toBe('60 FPS');

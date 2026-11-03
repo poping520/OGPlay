@@ -11,6 +11,8 @@ export interface LibraryItem {
   sandbox_path: string; log_directory: string;
 }
 export interface Library { items: LibraryItem[]; library_root: string }
+/** `library.storage`: bytes on disk (null when not there yet) and where the data pack mounts in the guest. */
+export interface LibraryStorage { apk_bytes: number | null; external_bytes: number | null; sandbox_bytes: number | null; external_guest_dir: string | null }
 declare global {
   interface Window { rpc?: (request: string) => Promise<unknown>; __ogplaySmoke?: number }
 }

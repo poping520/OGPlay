@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <stdexcept>
 #include <utility>
 #include "ogplay/app/encoding.h"
@@ -56,6 +57,27 @@ app::JsonWriter::Value Condition(app::JsonWriter& writer, const LibraryCondition
     writer.AddBool(value, "owned", condition.owned);
     return value;
 }
+// Bytes of the regular files at or under path, links not followed; nullopt when nothing is there yet.
+std::optional<std::uint64_t> StorageBytes(const std::filesystem::path& path) {
+    const auto status = std::filesystem::symlink_status(path);
+    if (!std::filesystem::exists(status)) return std::nullopt;
+    if (std::filesystem::is_regular_file(status)) return std::filesystem::file_size(path);
+    if (!std::filesystem::is_directory(status)) return 0U;
+    std::uint64_t total{};
+    for (const auto& item : std::filesystem::recursive_directory_iterator(
+             path, std::filesystem::directory_options::skip_permission_denied))
+        if (!item.is_symlink() && item.is_regular_file()) total += item.file_size();
+    return total;
+}
+
+void AddBytes(app::JsonWriter& writer, const app::JsonWriter::Value object, const std::string_view key,
+              const std::optional<std::uint64_t> bytes) {
+    if (bytes)
+        writer.AddUnsignedInteger(object, key, *bytes);
+    else
+        writer.AddNull(object, key);
+}
+
 }  // namespace
 
 GuiRpcService::GuiRpcService(LibraryStore& store, std::filesystem::path game_executable, GuiRpcHost host)
@@ -191,7 +213,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             method.starts_with("library.upload."))
             return ImportRequest(method, params);
         if (method != "library.list" && method != "library.launch" && method != "library.open_dir" &&
-            method != "library.remove" && method != "library.clear_data")
+            method != "library.remove" && method != "library.clear_data" && method != "library.storage")
             return Error(-32601, "unknown method", "使用当前版本支持的 GUI 方法。");
         if (method == "library.list")
             CheckFields(params, {});
@@ -201,6 +223,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             CheckFields(params, {"installation_id", "confirmed", "delete_saves"});
         else if (method == "library.clear_data")
             CheckFields(params, {"installation_id", "confirmed"});
+        else if (method == "library.storage")
+            CheckFields(params, {"installation_id"});
         else
             CheckFields(params, {"installation_id", "kind"});
 
@@ -311,6 +335,17 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 store_.ClearSaves(key);
                 writer.AddString(result, "installation_id", key);
                 writer.AddBool(result, "cleared", true);
+            } else if (method == "library.storage") {
+                // Measured on request (the install info dialog), never for the list: data packs can be large.
+                const bool external = entry->metadata && entry->metadata->external_dir;
+                AddBytes(writer, result, "apk_bytes", StorageBytes(entry->directory / "game.apk"));
+                AddBytes(writer, result, "external_bytes",
+                         external ? StorageBytes(*entry->metadata->external_dir) : std::nullopt);
+                AddBytes(writer, result, "sandbox_bytes", StorageBytes(LauncherSandboxRoot(store_.Root()) / entry->key));
+                if (external)
+                    writer.AddString(result, "external_guest_dir", entry->metadata->external_guest_dir);
+                else
+                    writer.AddNull(result, "external_guest_dir");
             } else if (method == "library.launch") {
                 const auto tile =
                     std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });

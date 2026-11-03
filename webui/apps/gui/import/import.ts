@@ -11,7 +11,7 @@ export interface ImportJob {
   progress?: { copied_bytes: number; total_bytes: number };
 }
 export type ExternalMode = 'copy' | 'link';
-const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+const units = ['B', 'KB', 'MB', 'GB', 'TB'];
 export function formatBytes(value: number): string {
   let unit = 0;
   while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
@@ -36,7 +36,7 @@ export async function pickPath(kind: 'file' | 'directory', call: Call = rpc): Pr
 }
 export async function upload(file: File, onJob: (job: string) => void, progress: (value: number) => void, call: Call = rpc): Promise<ImportJob> {
   if (!/\.apk$/i.test(file.name)) throw new Error(t('当前仅支持单体 APK；XAPK、APKM、APKS 分包安装尚未实现。'));
-  if (!file.size || file.size > 1024 ** 3) throw new Error(t('APK 必须非空且不超过 1 GiB。'));
+  if (!file.size || file.size > 1024 ** 3) throw new Error(t('APK 必须非空且不超过 1 GB。'));
   const result = await call<ImportJob>('library.upload.begin', { name: file.name, size: file.size });
   onJob(result.job);
   for (let offset = 0; offset < file.size; offset += 192 * 1024) {

@@ -367,7 +367,7 @@ export function App() {
     {clearing && <ClearDataDialog item={library.items.find(game => game.installation_id === clearing.installation_id) ?? clearing} busy={busy}
       onConfirm={() => void clearData(clearing)} onClose={() => { if (!busy) setClearing(null); }} />}
     {removing && <RemoveGameDialog item={removing} busy={busy} onConfirm={withSaves => void remove(removing, withSaves)} onClose={() => { if (!busy) setRemoving(null); }} />}
-    {infoOpen && item && <InstallInfoDialog item={item} runtime={instance} busy={busy} openDir={kind => void act('library.open_dir', item, kind)} onClose={() => setInfoOpen(false)} />}
+    {infoOpen && item && <InstallInfoDialog item={item} busy={busy} openDir={kind => void act('library.open_dir', item, kind)} onClose={() => setInfoOpen(false)} />}
     {dashboardListOpen && <Modal title={t('运行中的游戏')} onDismiss={() => setDashboardListOpen(false)}>
       {dashboards.length === 0 ? <p>{t('当前启动器没有运行中的游戏。')}</p> : dashboards.map(instance => <section key={instance.installation_id}>
         <h3>{library.items.find(game => game.installation_id === instance.installation_id)?.display_name ?? instance.installation_id}</h3>

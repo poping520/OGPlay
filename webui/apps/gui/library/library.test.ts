@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cycle, externalText, profileText, shellPalette, statusDetail, vividIconColor, validatePackageSelection, versionLabel, visibleItems } from './library';
+import { cycle, externalText, profileText, shellPalette, statusDetail, storageText, vividIconColor, validatePackageSelection, versionLabel, visibleItems } from './library';
 import type { LibraryItem } from '../shared/rpc';
 import { setLanguage } from '../shared/i18n';
 
@@ -45,6 +45,12 @@ describe('host conditions', () => {
     expect(profileText(gone)).toEqual({ value: 'p.id', detail: '记录的 Profile 在所选目录中不存在。' });
     expect(statusDetail(item('d', { status: 'damaged', damage_reason: null }))).toContain('元数据不可用');
     expect(statusDetail(item('e'))).toBe('');
+    const storage = { apk_bytes: 5 * 1024 ** 2, external_bytes: null, sandbox_bytes: 0, external_guest_dir: null };
+    expect(storageText(undefined, undefined, '尚未生成')).toBe('计算中…');
+    expect(storageText('failed', undefined, '尚未生成')).toBe('无法读取');
+    expect(storageText(storage, storage.apk_bytes, '文件缺失')).toBe('5.0 MB');
+    expect(storageText(storage, storage.sandbox_bytes, '尚未生成')).toBe('0 B');
+    expect(storageText(storage, storage.external_bytes, '目录不可用')).toBe('目录不可用');
     setLanguage('en-US');
     try {
       expect(externalText(item('f', { external: { status: 'not_required', value: '', owned: false } })).value).toBe('Not set');

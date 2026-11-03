@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import type { LibraryItem } from '../shared/rpc';
-import { externalText, profileText, statuses, versionLabel } from './library';
+import { rpc, type LibraryItem, type LibraryStorage } from '../shared/rpc';
+import { externalText, profileText, statuses, storageText, versionLabel } from './library';
 import { t } from '../shared/i18n';
 
 // Dialogs about one library entry, in the import wizard's console look: the same head, game card and pill buttons.
-export interface RuntimeInfo { status: string; detail: string; key_editor_status: string; key_editor_detail: string }
 
 function useModal() {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -50,14 +49,23 @@ function Copyable({ text }: { text: string }) {
     <button class={`ii-copy ${state}`} aria-live="polite" onClick={copy}>{t(state === 'done' ? '已复制' : state === 'failed' ? '复制失败' : '复制')}</button></>;
 }
 
-/** "更多 › 安装信息": install record, directories and runtime state of one entry. */
-export function InstallInfoDialog({ item, runtime, busy, openDir, onClose }: {
-  item: LibraryItem; runtime?: RuntimeInfo; busy: boolean; openDir: (kind: 'sandbox' | 'log') => void; onClose: () => void;
+/** "更多 › 安装信息": install record, disk usage and directories of one entry. */
+export function InstallInfoDialog({ item, busy, openDir, onClose }: {
+  item: LibraryItem; busy: boolean; openDir: (kind: 'sandbox' | 'log') => void; onClose: () => void;
 }) {
   const dialog = useModal();
   const status = statuses[item.status] ?? { label: '状态未知', tone: 'warning' };
   const profile = profileText(item), external = externalText(item);
-  const tone = (ready: boolean) => !runtime ? '' : ready ? 'ready' : 'warning';
+  const hasExternal = item.external.status !== 'not_required';
+  // Measured when the dialog opens, since data packs can be large; the list itself stays cheap.
+  const [storage, setStorage] = useState<LibraryStorage | 'failed'>();
+  useEffect(() => {
+    let live = true;
+    rpc<LibraryStorage>('library.storage', { installation_id: item.installation_id })
+      .then(value => { if (live) setStorage(value); }, () => { if (live) setStorage('failed'); });
+    return () => { live = false; };
+  }, [item.installation_id]);
+  const measured = typeof storage === 'object' ? storage : undefined;
   const path = (label: string, value: string, kind: 'sandbox' | 'log') => <div class="ii-path">
     <small>{label}</small>
     <div class="ii-field"><code>{value}</code><button disabled={busy} onClick={() => openDir(kind)}>{t('打开')}</button></div>
@@ -72,14 +80,15 @@ export function InstallInfoDialog({ item, runtime, busy, openDir, onClose }: {
       <dt>{t('安装 ID')}</dt><dd class="mono">{item.installation_id}</dd>
       <dt>{t('包名')}</dt>{item.package ? <dd class="mono ii-copyable"><Copyable text={item.package} /></dd> : <dd class="mono">{t('包名不可用')}</dd>}
       <dt>{t('数据包')}</dt><dd>{external.value}<small>{external.detail}</small></dd>
+      {hasExternal && measured?.external_guest_dir && <><dt>{t('挂载位置')}</dt><dd class="mono">{measured.external_guest_dir}</dd></>}
     </dl>
+    <div class={`ii-usage ${hasExternal ? '' : 'two'}`} aria-busy={storage === undefined}>
+      <div><small>APK</small><b>{storageText(storage, measured?.apk_bytes, '文件缺失')}</b></div>
+      {hasExternal && <div><small>{t('数据包')}</small><b>{storageText(storage, measured?.external_bytes, '目录不可用')}</b></div>}
+      <div><small>{t('游戏数据')}</small><b>{storageText(storage, measured?.sandbox_bytes, '尚未生成')}</b></div>
+    </div>
     {path(t('沙盒路径'), item.sandbox_path, 'sandbox')}
     {path(t('日志目录'), item.log_directory, 'log')}
-    <div class="ii-runtime">
-      <div><i class={`led ${tone(runtime?.status === 'ready')}`} /><b>Dashboard</b><span>{runtime?.detail ?? t('游戏尚未运行')}</span></div>
-      <div><i class={`led ${tone(runtime?.key_editor_status === 'ready')}`} /><b>{t('按键设置')}</b>
-        <span>{runtime?.key_editor_detail ?? t('先启动游戏；运行中按 F1 查看键位、F2 打开按键设置。')}</span></div>
-    </div>
     <div class="modal-actions"><button autoFocus onClick={onClose}>{t('关闭')}</button></div>
   </dialog>;
 }

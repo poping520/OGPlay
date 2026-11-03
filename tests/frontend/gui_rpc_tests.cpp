@@ -412,6 +412,48 @@ TEST_CASE("GUI RPC opens only an existing instance directory") {
     CHECK(fixture.opens == 1);
 }
 
+TEST_CASE("GUI RPC measures APK, data pack and game data storage on request") {
+    Fixture fixture;
+    const auto directory = fixture.root / "library/org.example.game";
+    const auto storage = [&] {
+        return Decode(fixture.rpc.Handle(
+            R"({"jsonrpc":"2.0","id":1,"method":"library.storage","params":{"installation_id":"org.example.game"}})"));
+    };
+    auto before = storage();
+    auto result = before.Root().Member("result");
+    REQUIRE(result);
+    CHECK(result->Member("apk_bytes")->Integer() ==
+          static_cast<std::int64_t>(std::filesystem::file_size(directory / "game.apk")));
+    // No data pack configured and the game has not run yet: nothing to measure.
+    CHECK(result->Member("external_bytes")->IsNull());
+    CHECK(result->Member("external_guest_dir")->IsNull());
+    CHECK(result->Member("sandbox_bytes")->IsNull());
+
+    const auto external = fixture.root / "external";
+    std::filesystem::create_directories(external / "nested");
+    std::ofstream(external / "a.bin", std::ios::binary) << std::string(100, 'a');
+    std::ofstream(external / "nested/b.bin", std::ios::binary) << std::string(23, 'b');
+    ogplay::app::SaveGameSettings(directory, {{{"external_dir", external.generic_string()},
+                                               {"external_guest_dir", std::string("/sdcard/Android/obb")}}});
+    const auto sandbox = fixture.root / "sandbox/org.example.game";
+    std::filesystem::create_directories(sandbox);
+    std::ofstream(sandbox / "save.dat", std::ios::binary) << std::string(7, 's');
+    auto after = storage();
+    result = after.Root().Member("result");
+    REQUIRE(result);
+    CHECK(result->Member("external_bytes")->Integer() == 123);
+    CHECK(result->Member("external_guest_dir")->String() == "/sdcard/Android/obb");
+    CHECK(result->Member("sandbox_bytes")->Integer() == 7);
+    CHECK(Decode(fixture.rpc.Handle(
+                     R"({"jsonrpc":"2.0","id":1,"method":"library.storage","params":{"installation_id":"nope"}})"))
+              .Root()
+              .Member("error"));
+    CHECK(Decode(fixture.rpc.Handle(
+                     R"({"jsonrpc":"2.0","id":1,"method":"library.storage","params":{"installation_id":"org.example.game","x":1}})"))
+              .Root()
+              .Member("error"));
+}
+
 TEST_CASE("GUI RPC exposes missing metadata as null facts") {
     Fixture fixture;
     std::ofstream(fixture.root / "library/org.example.game/meta.toml") << "broken";

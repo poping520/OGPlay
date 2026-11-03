@@ -257,7 +257,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
             ApkName(source);
             const auto size =
                 method == "library.upload.begin" ? Number(params, "size") : std::filesystem::file_size(Path(source));
-            if (size == 0 || size > maximum_bytes) throw std::invalid_argument("APK 必须非空且不超过 1 GiB。");
+            if (size == 0 || size > maximum_bytes) throw std::invalid_argument("APK 必须非空且不超过 1 GB。");
             job.Reserve(store_.Root());
             const auto snapshot = job.directory / "source.apk";
             if (method == "library.analyze") {

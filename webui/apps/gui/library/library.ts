@@ -1,4 +1,5 @@
-import type { LibraryItem } from '../shared/rpc';
+import type { LibraryItem, LibraryStorage } from '../shared/rpc';
+import { formatBytes } from '../import/import';
 import { t } from '../shared/i18n';
 
 export type Filter = 'all' | 'launchable' | 'attention';
@@ -24,6 +25,12 @@ export function externalText(item: LibraryItem): Worded {
   if (status === 'missing') return { value: t('缺失'), detail: t('记录的数据包目录不可用：{path}', { path }) };
   if (status === 'not_required') return { value: t('未指定'), detail: t('可按需选择外部数据目录。') };
   return { value: t('无法判断'), detail: t('库条目元数据不可用。') };
+}
+/** Size text for one install-info storage cell: measuring, failed, nothing there yet (`absent`), or the byte count. */
+export function storageText(storage: LibraryStorage | 'failed' | undefined, bytes: number | null | undefined, absent: string): string {
+  if (storage === undefined) return t('计算中…');
+  if (storage === 'failed') return t('无法读取');
+  return bytes == null ? t(absent) : formatBytes(bytes);
 }
 export function profileText(item: LibraryItem): Worded | null {
   if (!item.profile) return null;

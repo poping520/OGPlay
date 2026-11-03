@@ -12,7 +12,7 @@
   冒烟失败只返回日志/退出码，交互 GUI 初始化失败显示消息框。入口由 desktop/main 分派；GUI 日志由桌面配置。
   原生窗口、导航限制和目录打开经 `hal::WebViewHost`，不直接包含 Windows/WebView2 API。
 - `GuiRpcService::Handle`：复用 `app::JsonRpcDispatcher` 注入模式；同步分派
-  `library.list`、`library.launch`、`library.open_dir`、`library.remove`、`library.clear_data`，以及导入任务与对话框 RPC。
+  `library.list`、`library.launch`、`library.open_dir`、`library.remove`、`library.clear_data`、`library.storage`，以及导入任务与对话框 RPC。
   宿主上下文、进程、目录打开、分析、选择器与 UTC 时间通过显式回调注入。
 - `library.analyze {path}` / `library.upload.begin/chunk/finish`：原生路径或拖放字节进入独立快照，
   单体 APK 上限 1 GiB；分块 base64 最大 256 KiB，严格顺序/总长度检查。
@@ -82,6 +82,8 @@
 - 模型/RPC 层不 include SDL/WebView，不直接调用窗口或进程 API。
 - `library.open_dir` 只由已枚举 installation id 映射 sandbox/log/external；目录不存在明确失败，
   不创建沙盒。log 为保存 last-run.log 的条目目录。
+- `library.storage` 只在请求时（安装信息弹窗）统计 APK、数据包目录与沙盒（游戏数据）的普通文件字节数，
+  不跟随链接，尚不存在为 null；有数据包时同时返回生效的 guest 挂载位置。`library.list` 不做目录统计。
 - GUI 日志覆盖写入 `<library-root>/gui.log`，桌面入口同时保留 stderr sink。
 - 兼容 `--smoke-frames N` 正整数参数：现表示 WebView 加载后 N 次成功 `library.list`，
   不再声称 ANGLE present 次数；未完成前关闭窗口视为失败。

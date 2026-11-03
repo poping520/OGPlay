@@ -22,6 +22,8 @@ crash-*/
 *.apkm
 *.xapk
 *.obb
+# 例外：OGPlay 自带的原创示例游戏，随仓库交付
+!/samples/sweetshop/out/ogplay-sweetshop.apk
 /games/
 /user-data/
 

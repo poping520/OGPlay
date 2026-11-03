@@ -248,10 +248,14 @@ app::ConsoleResponse GuiRpcService::SettingsRequest(std::string_view method, app
     if (method == "settings.set") {
         if (SettingsBusy()) throw std::runtime_error("正在分析或入库，请稍后保存设置。");
         if (Revision(config) != expected) throw std::runtime_error("设置已被其他窗口修改，请重新载入后再保存。");
+        const bool showed_demos = std::get<bool>(Setting(config, "show_demo_games"));
         for (const auto& field : SettingDefinitions())
             if (params.Member("values")->Member(field.key)) SetSetting(config, field.key, Setting(patch, field.key));
         ValidateLibraryConfigDirectories(config);
         SaveLibraryConfig(store_.Root(), config);
+        // Turning demos back on also restores a demo that was removed.
+        if (!showed_demos && std::get<bool>(Setting(config, "show_demo_games")) && host_.seed_demos)
+            host_.seed_demos();
     }
     app::JsonWriter writer;
     const auto root = writer.Object(), result = writer.Object();

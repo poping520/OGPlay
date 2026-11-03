@@ -268,6 +268,14 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 entry.damage_reason = error.what();
             }
         }
+        const auto demos = host_.demo_packages ? host_.demo_packages() : std::vector<std::string>{};
+        const auto is_demo = [&](const LibraryEntry& entry) {
+            return entry.metadata && std::find(demos.begin(), demos.end(), entry.metadata->package) != demos.end();
+        };
+        // Hidden demos leave the list only; their entries, saves and ids stay as they are.
+        if (method == "library.list" && !demos.empty() &&
+            !std::get<bool>(Setting(LoadLibraryConfig(store_.Root()), "show_demo_games")))
+            std::erase_if(entries, is_demo);
         const auto context = host_.context(entries);
         const auto tiles = BuildLibraryTiles(entries, context);
         app::JsonWriter writer;
@@ -305,6 +313,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                     writer.AddNull(item, "damage_reason");
                 writer.AddBool(item, "running", tile.running);
                 writer.AddBool(item, "can_launch", tile.can_launch);
+                writer.AddBool(item, "builtin_demo", is_demo(*entry));
                 writer.AddString(item, "icon",
                                  tile.icon_png.empty() ? std::string{}
                                                        : "data:image/png;base64," + app::EncodeBase64(tile.icon_png));
@@ -326,8 +335,16 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                     std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
                 if (tile->running) return Error(-32002, "游戏正在运行", "退出游戏后再删除。");
                 store_.Remove(key, delete_saves);
+                // Removing a demo means "no demos": the setting goes off so the next start does not seed it back.
+                const bool demo = is_demo(*entry);
+                if (demo) {
+                    auto config = LoadLibraryConfig(store_.Root());
+                    SetSetting(config, "show_demo_games", false);
+                    SaveLibraryConfig(store_.Root(), config);
+                }
                 writer.AddString(result, "installation_id", key);
                 writer.AddBool(result, "removed", true);
+                writer.AddBool(result, "demo_hidden", demo);
             } else if (method == "library.clear_data") {
                 const auto tile =
                     std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });

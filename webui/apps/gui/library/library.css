@@ -367,6 +367,7 @@
 .rg-col.kept small::before { background: var(--ready); box-shadow: 0 0 8px var(--ready); }
 .rg-col ul { margin: 8px 0 0; padding: 0; list-style: none; }
 .rg-col li { color: var(--soft); font-size: 13px; font-weight: 700; line-height: 1.85; }
+.rg-note { margin: 12px 4px 0; color: var(--soft); font-size: 12.5px; font-weight: 700; line-height: 1.6; }
 .rg-saves { display: flex; align-items: flex-start; gap: 12px; margin-top: 14px; padding: 12px 16px; border: 1px solid transparent; border-radius: 14px; background: rgba(255,176,32,.08); cursor: pointer; }
 .rg-saves.on { border-color: rgba(255,90,82,.45); background: rgba(255,90,82,.1); }
 .rg-saves input { flex: none; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--danger); }

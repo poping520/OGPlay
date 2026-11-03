@@ -2,6 +2,9 @@
 # Data directories are replaced wholesale so files removed from the source tree
 # do not linger in the staged or installed runtime.
 set(OGPLAY_DATA_DIRECTORIES profiles android dexvm branding)
+# OGPlay's own demo games, committed prebuilt by their samples and staged as data/demos; the launcher
+# seeds them into the library while the show_demo_games setting is on.
+set(OGPLAY_DEMO_APKS "${CMAKE_CURRENT_SOURCE_DIR}/samples/sweetshop/out/ogplay-sweetshop.apk")
 set(_ogplay_stage_data_commands)
 foreach(_data_directory IN LISTS OGPLAY_DATA_DIRECTORIES)
     list(APPEND _ogplay_stage_data_commands
@@ -23,6 +26,9 @@ add_custom_target(ogplay_stage_data ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/data/credits.json"
         "$<TARGET_FILE_DIR:ogplaycore>/data/credits.json"
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:ogplaycore>/data/demos"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ogplaycore>/data/demos"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${OGPLAY_DEMO_APKS} "$<TARGET_FILE_DIR:ogplaycore>/data/demos"
     COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:ogplaycore>/data/input"
     ${_ogplay_stage_data_commands}
     COMMENT "Staging OGPlay runtime data"
@@ -117,6 +123,7 @@ endif()
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES data/quirks.toml data/credits.json capabilities.toml
     DESTINATION ${CMAKE_INSTALL_BINDIR}/data COMPONENT Runtime)
+install(FILES ${OGPLAY_DEMO_APKS} DESTINATION ${CMAKE_INSTALL_BINDIR}/data/demos COMPONENT Runtime)
 foreach(_data_directory IN LISTS OGPLAY_DATA_DIRECTORIES)
     install(DIRECTORY data/${_data_directory}
         DESTINATION ${CMAKE_INSTALL_BINDIR}/data COMPONENT Runtime)

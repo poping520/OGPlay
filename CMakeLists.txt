@@ -509,7 +509,7 @@ add_library(ogplay_library STATIC
     src/frontend/library/game_settings.cpp src/frontend/library/profiles.cpp
     src/frontend/library/resolve_launch.cpp src/frontend/library/locks.cpp
     src/frontend/library/external_data.cpp src/frontend/library/data_hint.cpp
-    src/frontend/library/running_icon.cpp)
+    src/frontend/library/running_icon.cpp src/frontend/library/demos.cpp)
 target_link_libraries(ogplay_library PRIVATE OGPlay::Runtime OGPlay::Session OGPlay::Agent)
 target_include_directories(ogplay_library PRIVATE "${OGPLAY_GENERATED_DIR}")
 target_include_directories(ogplay_library SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb")

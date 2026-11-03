@@ -25,6 +25,10 @@ python3 samples/sweetshop/tools/build.py --assets-only
 build/release/ogplay-cli run-apk out/sweetshop/ogplay-sweetshop.apk
 ```
 
+仓库提交的成品在 `samples/sweetshop/out/ogplay-sweetshop.apk`，OGPlay 安装包把它作为内置 Demo 放在
+`data/demos/`：启动器首次启动即出现在游戏库，可在设置 › 常规的「展示内置 Demo 游戏」中隐藏。
+改动游戏后重新构建并把 `out/sweetshop/ogplay-sweetshop.apk` 复制到该位置再提交。
+
 也可以在 OGPlay 桌面端把 APK 拖进窗口导入。鼠标点击或拖动交换糖果，Esc 返回上一层。
 界面支持中文和英文，默认跟随设备语言，标题页右下角的「中 / EN」按钮可以切换。
 

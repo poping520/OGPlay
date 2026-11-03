@@ -14,7 +14,8 @@
 #include <vector>
 
 #include "ogplay/app/library.h"
-#include "ogplay/app/library.h"
+#include "ogplay/app/demo_games.h"
+#include "apk_fixture.h"
 
 namespace {
 
@@ -537,4 +538,35 @@ TEST_CASE("re-import adopts saves left by a removed entry and keeps its id") {
     Write(saves / "org.example.game-5" / "meta.toml", "schema = 3\npackage = \"org.example.other\"\n");
     store.Remove("org.example.game-2", true);
     CHECK_FALSE(store.ReusableInstallationId("org.example.game").has_value());
+}
+
+TEST_CASE("bundled demo games seed once while shown and come back when shown again") {
+    using namespace ogplay::app;
+    TemporaryDirectory root;
+    const auto demos_dir = root.path / "demos";
+    CHECK(FindBundledDemos(demos_dir, ProfileCatalog{}).empty());
+    const auto apk = ogplay::test::MinimalApk();
+    Write(demos_dir / "demo.apk", std::string_view(reinterpret_cast<const char*>(apk.data()), apk.size()));
+    Write(demos_dir / "readme.txt", "not a demo");
+    const auto demos = FindBundledDemos(demos_dir, ProfileCatalog{});
+    REQUIRE(demos.size() == 1);
+    CHECK(IsBundledDemo(demos, "org.example.game"));
+    CHECK_FALSE(IsBundledDemo(demos, "org.example.other"));
+
+    LibraryStore store(root.path / "library");
+    // A new library shows demos by default, so the first start adds the demo.
+    const auto first = SeedBundledDemos(store, demos, "2026-11-03T00:00:00Z");
+    REQUIRE(first.size() == 1);
+    CHECK(store.LoadEntries().size() == 1);
+    CHECK(SeedBundledDemos(store, demos, "2026-11-03T00:00:01Z").empty());
+
+    store.Remove(first.front());
+    auto config = LoadLibraryConfig(store.Root());
+    SetSetting(config, "show_demo_games", false);
+    SaveLibraryConfig(store.Root(), config);
+    CHECK(SeedBundledDemos(store, demos, "2026-11-03T00:00:02Z").empty());
+    CHECK(store.LoadEntries().empty());
+    SetSetting(config, "show_demo_games", true);
+    SaveLibraryConfig(store.Root(), config);
+    CHECK(SeedBundledDemos(store, demos, "2026-11-03T00:00:03Z") == first);
 }

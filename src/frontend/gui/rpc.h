@@ -35,6 +35,10 @@ struct GuiRpcHost final {
     std::function<void(std::string_view)> open_dashboard;
     // Opens the instance's key editor window (ADR-0134) with the launch token.
     std::function<void(std::string_view)> open_key_editor;
+    // OGPlay's bundled demo games: their packages, listed only while show_demo_games is on, and the
+    // import of those the library lacks, run when that setting is turned back on.
+    std::function<std::vector<std::string>()> demo_packages;
+    std::function<void()> seed_demos;
 };
 
 class GuiRpcService final {

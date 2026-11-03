@@ -30,6 +30,8 @@ struct Fixture {
     bool fail_launch{};
     std::optional<frontend::LaunchPlan> plan;
     std::filesystem::path opened;
+    std::vector<std::string> demo_packages;
+    unsigned demo_seeds{};
     frontend::GuiRpcService rpc{store,
                                 root / "ogplay.exe",
                                 {[this](const auto&) {
@@ -68,7 +70,9 @@ struct Fixture {
                                  },
                                  [this] { return dashboards; },
                                  [this](std::string_view id) { opened_dashboard = id; },
-                                 [this](std::string_view id) { opened_editor = id; }}};
+                                 [this](std::string_view id) { opened_editor = id; },
+                                 [this] { return demo_packages; },
+                                 [this] { ++demo_seeds; }}};
 
     Fixture() {
         std::filesystem::create_directories(root);
@@ -452,6 +456,54 @@ TEST_CASE("GUI RPC measures APK, data pack and game data storage on request") {
                      R"({"jsonrpc":"2.0","id":1,"method":"library.storage","params":{"installation_id":"org.example.game","x":1}})"))
               .Root()
               .Member("error"));
+}
+
+TEST_CASE("GUI RPC hides demo games with the setting, and removing one turns demos off") {
+    Fixture fixture;
+    fixture.demo_packages = {"org.example.game"};
+    const auto list = [&] {
+        return Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"library.list"})"));
+    };
+    const auto shown = [&] { return std::get<bool>(ogplay::app::Setting(ogplay::app::LoadLibraryConfig(fixture.root), "show_demo_games")); };
+    auto visible = list();
+    REQUIRE(visible.Root().Member("result")->Member("items")->Size() == 1);
+    CHECK(visible.Root().Member("result")->Member("items")->Element(0)->Member("builtin_demo")->Bool() == true);
+
+    auto config = ogplay::app::LoadLibraryConfig(fixture.root);
+    ogplay::app::SetSetting(config, "show_demo_games", false);
+    ogplay::app::SaveLibraryConfig(fixture.root, config);
+    CHECK(list().Root().Member("result")->Member("items")->Size() == 0);
+    // Hidden only from the list: the entry and its directories stay.
+    CHECK(std::filesystem::exists(fixture.root / "library/org.example.game/meta.toml"));
+
+    // Turning demos back on restores missing demos through the host.
+    const auto settings = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":2,"method":"settings.get"})"));
+    const auto revision = std::string(*settings.Root().Member("result")->Member("revision")->String());
+    const auto set = [&](const std::string& rev, bool value) {
+        app::JsonWriter writer;
+        const auto request = writer.Object(), params = writer.Object(), values = writer.Object();
+        writer.AddString(request, "jsonrpc", "2.0");
+        writer.AddUnsignedInteger(request, "id", 3);
+        writer.AddString(request, "method", "settings.set");
+        writer.AddString(params, "revision", rev);
+        writer.AddBool(values, "show_demo_games", value);
+        writer.Add(params, "values", values);
+        writer.Add(request, "params", params);
+        return Decode(fixture.rpc.Handle(writer.Serialize(request)));
+    };
+    const auto on = set(revision, true);
+    REQUIRE(on.Root().Member("result"));
+    CHECK(fixture.demo_seeds == 1);
+    CHECK(list().Root().Member("result")->Member("items")->Size() == 1);
+    // Saving with demos already on does not seed again.
+    REQUIRE(set(std::string(*on.Root().Member("result")->Member("revision")->String()), true).Root().Member("result"));
+    CHECK(fixture.demo_seeds == 1);
+
+    const auto removed = Decode(fixture.rpc.Handle(
+        R"({"jsonrpc":"2.0","id":4,"method":"library.remove","params":{"installation_id":"org.example.game","confirmed":true}})"));
+    REQUIRE(removed.Root().Member("result"));
+    CHECK(removed.Root().Member("result")->Member("demo_hidden")->Bool() == true);
+    CHECK_FALSE(shown());
 }
 
 TEST_CASE("GUI RPC exposes missing metadata as null facts") {

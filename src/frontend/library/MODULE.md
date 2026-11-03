@@ -16,6 +16,10 @@ APK label 为资源时，默认配置值为 `display_name`，各语言资源（`
 默认值；运行窗口标题和 GUI（webui `gameName` 同规则）都按此显示。
 解释器设置用 `default` 选择通用默认值，`switch/threaded` 为用户显式覆盖。
 
+内置 Demo（`demo_games.h`）：随包数据 `demos/` 下的 *.apk 只放 OGPlay 自己的原创示例游戏；包名与其一致的
+条目即该 Demo，不论是自动放入还是手动导入。`SeedBundledDemos` 仅在全局 `show_demo_games`（常规，默认开）
+为开时，把库中尚无同包名条目的 Demo 按普通导入（无数据包、/sdcard，沿用残留存档 id）放入库，关时不动游戏库。
+
 screen_width/screen_height（屏幕宽高）默认 1280/720，范围 1..4096；density_dpi 默认 320，范围 72..1280；
 supersample 范围 1..4；max_fps（帧率上限）取 30/60/90/120/144/unlimited，默认 unlimited，转为 GameRunOptions.max_fps
 （unlimited 为 0）。五者均经 EffectiveGameSetting 解析游戏 > 全局 > 默认，GUI 编辑同一 schema；不读取 Profile。

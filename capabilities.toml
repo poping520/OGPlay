@@ -303,6 +303,11 @@ status = "partial"
 test = "tests/hal/clock_tests.cpp#frame pacer; tests/runtime/boundary/integration/android_frame_presentation_tests.cpp#frame-rate cap; tests/dexvm/surfaceview_traversal_tests.cpp#frame-rate cap; tests/runtime/choreographer_frame_source_tests.cpp#frame-rate cap; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp; webui/apps/gui/settings/settings.test.ts"
 note = "GUI-18：设置 max_fps（30/60/90/120/144/不限，游戏 > 全局 > 默认不限）经 --max-fps 传入。宿主截止时间节拍：生命周期只在槽位 step 投递 vsync/GL 绘制（step 与逻辑时钟照常），guest 原生 window swap 与非驱动线程画布提交等待槽位；只等不补，与游戏自带限帧互不叠加，手动步进不生效。不改 eglSwapInterval/refreshRate；Windows 未实跑。"
 
+[frontend.bundled_demo_games]
+status = "partial"
+test = "tests/frontend/library_store_tests.cpp#bundled demo; tests/frontend/gui_rpc_tests.cpp#demo games"
+note = "GUI-19：安装包带 data/demos/ogplay-sweetshop.apk（OGPlay 糖果铺）；show_demo_games（常规，默认开）开时启动器启动或重新打开该项即补入库，关时列表隐藏但条目不动，删除 Demo 即关闭该项。macOS 新库首启实测补入；Windows 安装包未验；随包 Demo 升级不替换库中旧版。"
+
 [frontend.running_game_icon]
 status = "partial"
 test = "tests/frontend/library_visuals_tests.cpp#running icon; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp#running icon; tests/frontend/gui_rpc_tests.cpp#settings RPC; webui/apps/gui/settings/settings.test.ts"

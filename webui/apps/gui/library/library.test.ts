@@ -6,7 +6,7 @@ import { setLanguage } from '../shared/i18n';
 const item = (id: string, values: Partial<LibraryItem> = {}): LibraryItem => ({
   installation_id: id, display_name: id, localized_names: {}, package: 'org.example.game',
   version_code: 1, version_name: '1.0', imported_at: null, sandbox_path: '/sandbox', log_directory: '/log',
-  status: 'ready', damage_reason: null, running: false, can_launch: true, icon: '',
+  status: 'ready', damage_reason: null, running: false, can_launch: true, icon: '', builtin_demo: false,
   profile: null, external: { status: 'unavailable', value: '', owned: false }, ...values,
 });
 describe('library presentation', () => {

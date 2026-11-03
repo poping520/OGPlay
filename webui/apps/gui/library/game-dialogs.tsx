@@ -108,6 +108,7 @@ export function RemoveGameDialog({ item, busy, onConfirm, onClose }: {
       <div class="rg-col kept"><small>{t('保留')}</small><ul>
         <li>{t('引用的原数据目录')}</li><li>{t('原始 APK')}</li>{!saves && <li>{t('存档（重新导入时恢复）')}</li>}</ul></div>
     </div>
+    {item.builtin_demo && <p class="rg-note">{t('这是 OGPlay 自带的示例游戏。删除后会关闭「展示内置 Demo 游戏」，可在设置 › 常规中重新打开。')}</p>}
     <label class={`rg-saves ${saves ? 'on' : ''}`}>
       <input type="checkbox" checked={saves} disabled={busy} onChange={event => setSaves(event.currentTarget.checked)} />
       <span><b>{t('同时删除存档（不可恢复）')}</b>

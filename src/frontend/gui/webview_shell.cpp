@@ -12,6 +12,7 @@
 #include "ogplay/app/logging.h"
 #include "frontend/gui/rpc.h"
 #include "ogplay/app/library.h"
+#include "ogplay/app/demo_games.h"
 #include "ogplay/app/host.h"
 #include "ogplay/hal/webview_host.h"
 #include "ogplay/app/profiles.h"
@@ -130,6 +131,20 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
     try {
         PrepareLog(logger, options.library_root);
         LibraryStore store(options.library_root);
+        // Bundled demos are read once; a broken one is logged and leaves the launcher without demos.
+        std::vector<app::ApkImportAnalysis> demos;
+        const auto seed_demos = [&] {
+            for (const auto& id : SeedBundledDemos(store, demos, app::UtcTimestamp()))
+                logger.Write(app::LogLevel::info, "frontend.gui.demo", "demo game added to the library", {},
+                             {{"installation_id", id}});
+        };
+        try {
+            demos = FindBundledDemos(app::BundledDataPaths().root / "demos", app::ProfileCatalog::LoadBundled());
+            seed_demos();
+        } catch (const std::exception& error) {
+            logger.Write(app::LogLevel::warn, "frontend.gui.demo", "demo games unavailable", {},
+                         {{"reason", std::string(error.what())}});
+        }
         GuiProcessManager processes(logger);
         std::unique_ptr<hal::WebViewHost> view;
         GuiRpcService rpc(
@@ -189,7 +204,13 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
              [&](std::string_view instance) {
                  const auto editor = processes.KeyEditor(instance);
                  view->OpenKeyEditor(instance, editor.port, editor.token);
-             }});
+             },
+             [&] {
+                 std::vector<std::string> packages;
+                 for (const auto& demo : demos) packages.push_back(demo.manifest.package);
+                 return packages;
+             },
+             seed_demos});
         // WebView teardown drains callbacks the page already queued: destroy it while rpc is
         // still alive, and refuse those late callbacks because view is already null by then.
         bool closing{};

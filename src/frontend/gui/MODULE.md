@@ -82,6 +82,9 @@
 - 模型/RPC 层不 include SDL/WebView，不直接调用窗口或进程 API。
 - `library.open_dir` 只由已枚举 installation id 映射 sandbox/log/external；目录不存在明确失败，
   不创建沙盒。log 为保存 last-run.log 的条目目录。
+- 内置 Demo：启动器启动时读一次随包 `demos/` 并在 `show_demo_games` 开时补入缺失的 Demo（失败只记 warn）；
+  `library.list` 在该项关时剔除 Demo 条目（条目与存档不动），每项带 `builtin_demo`；`library.remove`
+  删除 Demo 时同时关闭该项并返回 `demo_hidden`；`settings.set` 把它由关改开时立即补入。
 - `library.storage` 只在请求时（安装信息弹窗）统计 APK、数据包目录与沙盒（游戏数据）的普通文件字节数，
   不跟随链接，尚不存在为 null；有数据包时同时返回生效的 guest 挂载位置。`library.list` 不做目录统计。
 - GUI 日志覆盖写入 `<library-root>/gui.log`，桌面入口同时保留 stderr sink。

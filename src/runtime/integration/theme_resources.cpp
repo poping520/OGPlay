@@ -67,7 +67,7 @@ const std::vector<std::byte>* ThemeResources::Animation(std::uint32_t id) const 
 void ThemeResources::Load(std::string_view projection) {
     if (loaded_ || stopped_) throw std::logic_error("theme projection cannot be replaced");
     core::JsonParseError error;
-    const auto json = core::JsonDocument::ParseStrict(projection, error, 4U * 1024U * 1024U, 16);
+    const auto json = core::JsonDocument::ParseStrict(projection, error, 8U * 1024U * 1024U, 16);
     if (!json) throw std::runtime_error("invalid theme projection: " + error.message);
     const auto root = json->Root();
     if (Text(Member(root, "schema")) != "ogplay.bounded-theme" || Number(Member(root, "schema_version")) != 1 ||
@@ -260,8 +260,12 @@ void ThemeResources::Load(std::string_view projection) {
                         skin.items.push_back(std::move(entry));
                     }
                 } else if (kind == "animated-rotate") {
-                    if ((id != 0x010804cf || Text(Member(row, "name")) != "progress_medium_white"))
-                        throw std::runtime_error("unreviewed rotate drawable");
+                    const auto rotate_name = Text(Member(row, "name"));
+                    const std::uint32_t spinner =
+                        id == 0x010804cf && rotate_name == "progress_medium_white"  ? 0x01080580
+                        : id == 0x010804cc && rotate_name == "progress_large_white" ? 0x01080581
+                                                                                    : 0;
+                    if (!spinner) throw std::runtime_error("unreviewed rotate drawable");
                     const auto hex = Text(Member(variant, "xml"));
                     if (hex.empty() || hex.size() % 2 || hex.size() > 131072)
                         throw std::runtime_error("invalid rotate XML bounds");
@@ -283,7 +287,7 @@ void ThemeResources::Load(std::string_view projection) {
                                 throw std::runtime_error("invalid rotate root");
                             for (const auto& attr : node.attributes) {
                                 const auto name = doc->String(attr.name_index);
-                                if (name == "drawable" && attr.value.type == 1 && attr.value.data == 0x01080580)
+                                if (name == "drawable" && attr.value.type == 1 && attr.value.data == spinner)
                                     refs.insert(attr.value.data);
                                 else if ((name == "pivotX" || name == "pivotY") && attr.value.type == 6 &&
                                          attr.value.data == 0x40000030) {
@@ -298,8 +302,7 @@ void ThemeResources::Load(std::string_view projection) {
                     if (!references.IsArray() || references.Size() != 1)
                         throw std::runtime_error("invalid rotate references");
                     declared.insert(Number(*references.Element(0)));
-                    if (!declared.contains(0x01080580))
-                        throw std::runtime_error("unreviewed rotate drawable reference");
+                    if (!declared.contains(spinner)) throw std::runtime_error("unreviewed rotate drawable reference");
                     if (roots != 1 || refs != declared) throw std::runtime_error("unclosed rotate drawable");
                 } else if (kind == "layer-list" || kind == "animation-list") {
                     const bool layers = kind == "layer-list";
@@ -418,6 +421,7 @@ void ThemeResources::Load(std::string_view projection) {
                             }
                         }
                     } else if (!((id == 0x01080580 && Text(Member(row, "name")) == "spinner_white_48") ||
+                                 (id == 0x01080581 && Text(Member(row, "name")) == "spinner_white_76") ||
                                  (id >= 0x010804db && id <= 0x010804e2 &&
                                   Text(Member(row, "name")) ==
                                       "progressbar_indeterminate_holo" + std::to_string(id - 0x010804da))))

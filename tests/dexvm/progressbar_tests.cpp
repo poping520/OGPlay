@@ -78,12 +78,24 @@ TEST_CASE("DVM-365 ProgressBar ROM state measurement attachment and bounded reso
         const auto ctor =
             f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Landroid/widget/ProgressBar;"), "<init>",
                                       "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
-        for (int style : {0x01010079, 0x0101007a}) {
-            const auto rejected = f.vm.Call(*ctor, std::array{VmValue::Ref(horizontal), VmValue::Ref(owner),
-                                                              VmValue::Ref(VmObjectRef{}), VmValue::Int(style)});
-            REQUIRE(rejected.exception.IsValid());
-            CHECK(rejected.exception_message.find("drawable") != std::string::npos);
-        }
+        const auto rejected = f.vm.Call(*ctor, std::array{VmValue::Ref(horizontal), VmValue::Ref(owner),
+                                                          VmValue::Ref(VmObjectRef{}), VmValue::Int(0x01010079)});
+        REQUIRE(rejected.exception.IsValid());
+        CHECK(rejected.exception_message.find("drawable") != std::string::npos);
+        const auto large =
+            f.New("Landroid/widget/ProgressBar;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                  {VmValue::Ref(owner), VmValue::Ref(VmObjectRef{}), VmValue::Int(0x0101007a)});
+        const auto large_root = f.vm.ProtectReferences(std::array{large});
+        for (const auto name : {"mMinWidth", "mMaxWidth", "mMinHeight", "mMaxHeight"})
+            CHECK(slot(large, name, "I").bits == 76);
+        const auto large_drawable =
+            f.On(large, "getIndeterminateDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
+        REQUIRE(large_drawable.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(large_drawable)).descriptor ==
+              "Landroid/graphics/drawable/AnimatedRotateDrawable;");
+        CHECK(f.On(large_drawable, "getIntrinsicWidth", "()I").AsInt() == 72);
+        CHECK(f.On(large_drawable, "getIntrinsicHeight", "()I").AsInt() == 72);
+        CHECK(f.On(large_drawable, "isRunning", "()Z").AsInt() == 0);
         f.On(view, "setPadding", "(IIII)V", {VmValue::Int(2), VmValue::Int(3), VmValue::Int(4), VmValue::Int(5)});
         f.On(view, "measure", "(II)V",
              {VmValue::Int(static_cast<int>(0x80000100U)), VmValue::Int(static_cast<int>(0x80000100U))});

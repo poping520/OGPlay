@@ -2201,7 +2201,7 @@ note = "View 背景支持受审 ROM skin 与 ColorDrawable（含子类）；颜�
 [dexvm.progressbar]
 status = "partial"
 test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/progressbar_tests.cpp#DVM-365; tools/bootdex/compose_bootdex.py check; tools.android_payload_current"
-note = "DVM-365/367：固定 ROM 默认及 Holo dark horizontal 构造、状态、主/非 UI 刷新、测量和生命周期；同 ROM rotate/layer-list/scale/八帧 bitmap 与插值器 XML 封存。字段归 Java，内容一次记账不绘制。Small/Large/Light、实际旋转/帧动画、guest onDraw、Windows 未支持或未验。"
+note = "DVM-365/367：固定 ROM 默认、Large 及 Holo dark horizontal 构造、状态、主/非 UI 刷新、测量和生命周期；同 ROM rotate/layer-list/scale/八帧 bitmap 与插值器 XML 封存。字段归 Java，内容一次记账不绘制。Small/Light、实际旋转/帧动画、guest onDraw、Windows 未支持或未验。"
 
 [dexvm.progressbar_draw]
 status = "unimplemented"

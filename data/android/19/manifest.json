@@ -93,8 +93,8 @@
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 14290275,
-    "sha256": "80fd8af10d770907a4edddaab2748b835fb33ae02f1f4dd71c1cad8eca0195ac",
+    "size": 14319140,
+    "sha256": "dfe3d5592bb9631e131997912161f3aa02eb3d21c79daa5f90d34f3b0e81c620",
     "dex_entry": "classes.dex",
     "dex_size": 6281588,
     "dex_sha256": "bde7dcd0e0259ed2e4af0ee797046b487303146120be5d5b7a3ecaaeb3b7eba9",
@@ -106,24 +106,24 @@
       "path": "tools/bootdex/java-traversal.json",
       "sha256": "20926f677459ac239e4ec74312c0323924a9388030df6cc27ac60dc3214859de",
       "entry": "META-INF/ogplay/java-traversal-recipe.json",
-      "payload_sha256": "7e2a2f287c11d40bebe97edbd9f13b876b4eb45a32b595fb0ce087b9916d185b"
+      "payload_sha256": "21d2d7ecb43144775c6076d8efbc7e1cedfbb9cd8739f179e33fed391a7c7430"
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "4d5904c381a60b509260c3706890d085b73b31dc08030846ccbde7e656bef371",
+      "sha256": "75ff8f2dfffacb702f794f797c567b1014b3f155dd4b271b6bc2e7cb205003f6",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "934e1d874ba280b35d228d61d2a755c9997df10e2a158840ebebe111c1d16912",
+      "manifest_sha256": "dfc9011d72fe50614601af640cbb418e535a015ea005ec8350d962f008f51dc8",
       "composer": "tools/bootdex/compose_bootdex.py",
       "composer_sha256": "1d08e2f555c68426544c094e37ab02dfa4862e37116cf002550d9324893dd6b6"
     },
     "theme_projection": {
       "entry": "META-INF/ogplay/theme-projection.json",
       "schema_version": 1,
-      "sha256": "c416865433d6429f1c1b0977f4793c8ccbab8cc8ad173ff60dff36584ca74b2d"
+      "sha256": "6aa590e87bfebeca7effb612d7dd97be7227688089c6fe41b45993875c74c9e8"
     },
     "experimental_video_adapter": {
       "review": "tools/bootdex/view-video-adapter.json",

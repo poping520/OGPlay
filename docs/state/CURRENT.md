@@ -18,7 +18,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 | Island Castaway 1.3 | macOS | CG 带字幕，PLAY 进入第一关地形与对白 | 原生磁盘空间弹窗；退出 `runFinalizersOnExit` | [SBX-16](../tasks/sandbox/SBX-16.md) |
 | TML 1.0 | macOS | 标题；三点击 survey 零命中；基础场景退出 0 | 正式交互/稳定性待验 | [LUI-18](../tasks/layoutui/LUI-18.md)、[DVM-257](../tasks/dexvm/DVM-257.md) |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | [DVM-247](../tasks/dexvm/DVM-247.md)..249、[BND-54](../tasks/boundary/BND-54.md) |
-| Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 基础场景 1200 帧退出 0 | GAThread `ContentValues$1.<init>` 未实现；CG/Win 待验 | [DVM-257](../tasks/dexvm/DVM-257.md) |
+| Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 安装器 Large ProgressBar 已封存，原命令 120 秒 5550 帧退出 0 | GAThread `ContentValues$1.<init>` 未实现；CG/Win 待验 | [DVM-257](../tasks/dexvm/DVM-257.md) |
 | Tales From Deep Space 1.0.0 | macOS | 1920×1080 存档重载，初始场景 80 FPS | **退出读 0x315f0001**；800×480/1280×720 菜单裁剪 | [DVM-218](../tasks/dexvm/DVM-218.md)、[BND-29](../tasks/boundary/BND-29.md) |
 | Dead Trigger 1.1.0 | Win / macOS | Win 第一关/存档重载；macOS 场景 1200 帧 | macOS 退出 native futex 超 2 秒预算；隔离 f=4740 receiver 错、默认存档缺 `Dialog(Context)` | [DVM-204](../tasks/dexvm/DVM-204.md) |
 | Dungeon Hunter（P1000） | macOS | 1024×600：CG → 标题 → 建档/选职业 → 第一关可移动攻击，SIGTERM 退出 0 | 精灵/光晕白块由 VFS 拒绝纹理父目录路径导致，已修，第一关 MCP 复核；800×480 CG 后 nativeRender 读 0 | [VFS-09](../tasks/vfs/VFS-09.md)、[VFS-11](../tasks/vfs/VFS-11.md)、[DVM-251](../tasks/dexvm/DVM-251.md) |

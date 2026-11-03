@@ -18,6 +18,8 @@ import framework_res_audit as rom
 ROOT = Path(__file__).resolve().parents[2]
 ENTRY = 'META-INF/ogplay/theme-projection.json'
 POLICY = Path(__file__).with_name('theme-projection-inputs.json')
+# Must match the ThemeResources::Load JSON bound.
+MAXIMUM_BYTES = 8 * 1024 * 1024
 
 
 def canonical(document):
@@ -349,16 +351,22 @@ def drawable_closure():
         dropdown, = [row for row in rows if row['type'] == 'drawable' and row['name'] == 'btn_dropdown']
         if dropdown['id'] != 0x01080006:
             raise ValueError('btn_dropdown ROM name/ID mismatch')
-        progress, = [r for r in rows if r['type'] == 'drawable' and r['name'] == 'progress_medium_white']
-        spinner, = [r for r in rows if r['type'] == 'drawable' and r['name'] == 'spinner_white_48']
-        if progress['id'] != 0x010804cf or spinner['id'] != 0x01080580:
-            raise ValueError('progress drawable ROM name/ID mismatch')
+        # Reviewed indeterminate rotate roots and the one spinner bitmap each references.
+        rotates = {}
+        for rotate_name, rotate_id, spinner_name, spinner_id in (
+                ('progress_medium_white', 0x010804cf, 'spinner_white_48', 0x01080580),
+                ('progress_large_white', 0x010804cc, 'spinner_white_76', 0x01080581)):
+            progress, = [r for r in rows if r['type'] == 'drawable' and r['name'] == rotate_name]
+            spinner, = [r for r in rows if r['type'] == 'drawable' and r['name'] == spinner_name]
+            if progress['id'] != rotate_id or spinner['id'] != spinner_id:
+                raise ValueError('progress drawable ROM name/ID mismatch')
+            rotates[rotate_id] = spinner_id
         horizontal = {'progress_horizontal_holo_dark': 0x010804c7,
                       'progress_indeterminate_horizontal_holo': 0x010804c9}
         for name, ident in horizontal.items():
             if by_id[ident]['name'] != name or by_id[ident]['type'] != 'drawable':
                 raise ValueError('horizontal ROM identity mismatch')
-        pending, result = [root['id'], button['id'], holo_button['id'], dropdown['id'], progress['id'], *thumbs.values(), *horizontal.values()], []
+        pending, result = [root['id'], button['id'], holo_button['id'], dropdown['id'], *rotates, *thumbs.values(), *horizontal.values()], []
         while pending:
             ident = pending.pop(0)
             if any(row['id'] == ident for row in result):
@@ -386,7 +394,7 @@ def drawable_closure():
                         pending.extend(facts['references'])
                         variants.append(facts)
                         continue
-                    if ident == progress['id']:
+                    if ident in rotates:
                         table = rom.ResourceTable(raw)
                         strings, ids, roots, targets = [], [], 0, []
                         for at, kind, header, size in table.chunks(8, len(raw)):
@@ -399,13 +407,13 @@ def drawable_closure():
                                 for i in range(count):
                                     ns, key, text, vs, zero, typ, data = table.words('<IIIHBBI', at+16+start+i*width)
                                     attr = by_id[ids[key]]['name']
-                                    if attr == 'drawable' and typ == 1 and data == spinner['id']: targets.append(data)
+                                    if attr == 'drawable' and typ == 1 and data == rotates[ident]: targets.append(data)
                                     elif attr in ('pivotX', 'pivotY') and typ == 6 and data == 0x40000030: pass
                                     elif attr == 'framesCount' and typ == 16 and data == 12: pass
                                     elif attr == 'frameDuration' and typ == 16 and data == 100: pass
                                     else: raise ValueError('unreviewed animated-rotate attribute: '+attr+' '+hex(data))
                             elif kind not in (0x100,0x101,0x103): raise ValueError('unreviewed progress XML chunk')
-                        if roots != 1 or targets != [spinner['id']]: raise ValueError('unclosed progress drawable')
+                        if roots != 1 or targets != [rotates[ident]]: raise ValueError('unclosed progress drawable')
                         facts.update(kind='animated-rotate', xml=raw.hex(), references=targets)
                         pending.extend(targets)
                         variants.append(facts)
@@ -474,7 +482,7 @@ def drawable_closure():
                                  stretch_x=list(struct.unpack_from('>%di' % nx, chunk, 32)),
                                  stretch_y=list(struct.unpack_from('>%di' % ny, chunk, 32 + 4 * nx)),
                                  padding=[left, top, right, bottom], optical=optical)
-                elif (ident == spinner['id'] or row['name'] in {'progressbar_indeterminate_holo' + str(i) for i in range(1, 9)}) and path.endswith('.png'):
+                elif (ident in rotates.values() or row['name'] in {'progressbar_indeterminate_holo' + str(i) for i in range(1, 9)}) and path.endswith('.png'):
                     if not raw.startswith(b'\x89PNG\r\n\x1a\n'): raise ValueError('invalid spinner PNG')
                     width, height = struct.unpack_from('>II', raw, 16)
                     facts.update(kind='bitmap', png=raw.hex(), width=width, height=height)
@@ -819,7 +827,10 @@ def generate(negative_rom_id=False):
                     resource_types={r['resource_type']: r['type_id'] for r in references.values()},
                     resource_names=sorted(references.values(), key=lambda r: r['resource_id']),
                     projected_references=sorted(projected_references.values(), key=lambda r: r['resource_id']))
-    return canonical(document)
+    payload = canonical(document)
+    if len(payload) > MAXIMUM_BYTES:
+        raise ValueError('theme projection exceeds runtime size bound')
+    return payload
 
 
 def check_conflicts(payload, system_payload):

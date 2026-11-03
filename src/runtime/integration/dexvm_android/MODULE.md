@@ -983,12 +983,13 @@ NotFoundException。TextView 保存 MARQUEE 解析状态，实际启动动画仍
 
 ProgressBar 构造、indeterminate/progress/max 字段、异步刷新、叶测量与生命周期归固定 ROM；
 非 UI 线程刷新复用 View.post 与主 Looper，不设宿主状态副本。默认 animated-rotate 的
-progress_medium_white/spinner_white_48 与 linear_interpolator 原 XML 按同 ROM 封存；
+progress_medium_white/spinner_white_48、Large 的 progress_large_white/spinner_white_76
+与 linear_interpolator 原 XML 按同 ROM 封存；
 AnimatedRotateDrawable 的 inflate/尺寸/状态归 ROM，start/帧调度与 guest onDraw 未准入。
 投影只发布普通叶几何，内容按 View 身份一次记账不绘制。DVM-367 另封存同 ROM Holo dark
 horizontal 的 layer-list/scale、ninepatch 和八帧 bitmap；身份、配置、原 XML grammar/引用及 SHA
 受检。ROM tileify/层 ID、level、测量和 AnimationDrawable 帧集合归 Java；仅同步封存 parser
-作用域可分派嵌套标签，任意其他 drawable XML 仍失败。Small/Large/Light 未封存。
+作用域可分派嵌套标签，任意其他 drawable XML 仍失败。Small/Light 未封存。
 DrawableContainer 静态选择与字段归 ROM，既有 selector backing 与新 ROM 容器的查询/回调通过
 显式 adapter 分开；fade、animate=true 的 setFrame、start/run 与 guest draw 不准入。
 BitmapShader 仅保存真实 bitmap/tile 引用及带 GC/finalize 退役的软件描述符；静态 Shape 尺寸更新

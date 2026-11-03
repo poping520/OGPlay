@@ -32,6 +32,9 @@ describe('settings drafts', () => {
     expect(fieldMeta(sandbox)).toEqual({ label: '临时沙盒', unit: '', hint: '退出不保留本次存档', reserved: '' });
     expect(displayValue({ ...jit }, 128)).toBe('128 MiB');
     expect(displayValue({ ...field('dir', ''), directory: true }, '')).toBe('默认');
+    const fps = { ...field('max_fps', 'unlimited'), choices: ['30', '60', 'unlimited'] };
+    expect(displayValue(fps, '60')).toBe('60 FPS');
+    expect(displayValue(fps, 'unlimited')).toBe('不限');
   });
   it('steps booleans, choices and clamped numbers', () => {
     expect(stepValue(fields[2], false, 0)).toBe(true);

@@ -169,7 +169,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     };
     auto [apk_path, external_directory, external_guest_directory, obb_path, profiles_directory, exit_after_frames,
           mcp_port, key_editor_port, dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,
-          diagnostics_enabled, supersample_factor, surface_width, surface_height, density_dpi, cpu_config,
+          diagnostics_enabled, supersample_factor, max_fps, surface_width, surface_height, density_dpi, cpu_config,
           mcp_manual_step, preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox,
           input_config_path, library_root, missing_data_report, window_title, window_icon, window_icon_style] =
         std::move(options);
@@ -322,9 +322,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     if (window_icon) {
         try {
             constexpr std::array<std::uint32_t, 9> kIconSizes{512, 256, 64, 48, 40, 32, 24, 20, 16};
-            icons = app::ComposeRunningIcons(
-                ReadBytes(*window_icon), ReadBytes(bundled_data.root / "branding" / "ogplay-cartridge.png"),
-                window_icon_style, kIconSizes);
+            icons = app::ComposeRunningIcons(ReadBytes(*window_icon),
+                                             ReadBytes(bundled_data.root / "branding" / "ogplay-cartridge.png"),
+                                             window_icon_style, kIconSizes);
         } catch (const std::exception& error) {
             logger.Write(core::LogLevel::warn, "frontend.run_apk.icon", "running icon unavailable; keeping the default",
                          {}, {{"reason", std::string(error.what())}}, kUnrestrictedLog);
@@ -341,6 +341,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         core::LogLevel::info, "frontend.run_apk", "SDL window opened", {},
         {{"hidden", mcp_manual_step},
          {"supersample", static_cast<std::uint64_t>(supersample_factor)},
+         {"max_fps", static_cast<std::uint64_t>(max_fps)},
          {"cpu_cores", static_cast<std::uint64_t>(cpu_config.cores)},
          {"cpu_frequency_mhz", static_cast<std::uint64_t>(cpu_config.frequency_mhz)},
          {"cpu_limit_parallelism", cpu_config.execution.limit_parallelism},
@@ -420,6 +421,11 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         // Pace fast video steps; the lifecycle catches up slow steps using
         // the same unified host Clock. Manual stepping remains deterministic.
         std::uint64_t video_pace_deadline_ns{};
+        // Host frame-rate cap (off for deterministic manual stepping). Lifecycle steps stay unpaced, since
+        // they also drive Loopers and the logical uptime; the lifecycle gates display frames (vsync, GL
+        // draws) itself, while native render threads and SurfaceHolder canvases wait at their posts.
+        const auto frame_period_ns = mcp_manual_step ? 0 : hal::FramePeriodNs(max_fps);
+        dex_context->frame_period_ns = frame_period_ns;
         RunApkGuestCallProgress call_progress{logger};
         HostEventThreadGate event_thread_gate;
         constexpr std::uint64_t kGuestCallEventPumpHz = 250U;
@@ -509,7 +515,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.progress = runtime_progress;
         app_request.boundary_options = {.allow_gles1_material_single_face =
                                             ProfileEnablesQuirk(profile, "gles1_material_front_face"),
-                                        .async_present_readback = !mcp_manual_step};
+                                        .async_present_readback = !mcp_manual_step,
+                                        .frame_period_ns = frame_period_ns};
         app_request.guest_call_slice_observer = guest_slice_observer;
         app_request.guest_call_slice_observer_thread = std::this_thread::get_id();
         app_request.platform = {.installation_id = sandbox.installation_id,
@@ -603,6 +610,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                                 {"profile", selected_profile ? profile.identity.package : "generic"},
                                 {"api_level", std::to_string(api_level)},
                                 {"supersample", std::to_string(supersample_factor)},
+                                {"max_fps", max_fps ? std::to_string(max_fps) : "unlimited"},
                                 {"mode", mcp_manual_step ? "manual-step" : "free-running"},
                                 {"ffmpeg_available", video::FfmpegAvailable() ? "true" : "false"},
                                 {"ffmpeg_reason", video::FfmpegUnavailableReason()}};

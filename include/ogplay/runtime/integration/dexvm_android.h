@@ -960,6 +960,10 @@ struct DexVmAndroidContext final {
     std::uint32_t display_vsync_frame{};
     // Injected logical display fact; independent of host wall-clock pacing.
     float display_refresh_rate_hz{60.0F};
+    // Host frame-rate cap period (0 = none). A SurfaceHolder canvas posted from a thread other
+    // than the paced lifecycle driver waits per holder, like a real buffer queue.
+    std::uint64_t frame_period_ns{};
+    std::unordered_map<std::uint32_t, hal::FramePacer> canvas_pacers;
     enum class AsyncStatus : std::uint8_t { pending, running, finished };
 
     struct AsyncTaskState final {

@@ -216,6 +216,9 @@ private:
     std::optional<runtime::ui::UiNodeId> sized_content_node_;
     bool realtime_video_clock_{};
     std::uint64_t previous_step_ns_{};
+    // Host frame-rate cap (context frame_period_ns): steps keep running Loopers, threads and the
+    // logical clock, but only steps that claim a slot are display frames (vsync, GL draw/release).
+    hal::FramePacer display_pacer_;
 };
 
 }  // namespace ogplay::session

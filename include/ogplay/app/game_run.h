@@ -50,6 +50,8 @@ struct GameRunOptions final {
     std::optional<std::chrono::milliseconds> diagnostic_teardown_timeout;
     bool diagnostics_enabled{};
     std::uint32_t supersample_factor{1};
+    // Host frame-rate cap in frames per second; 0 leaves frames unpaced.
+    std::uint32_t max_fps{};
     std::uint32_t surface_width{kDefaultSurfaceWidth};
     std::uint32_t surface_height{kDefaultSurfaceHeight};
     std::uint32_t density_dpi{kDefaultDensityDpi};

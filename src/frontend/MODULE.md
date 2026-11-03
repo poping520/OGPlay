@@ -29,7 +29,11 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   可用 `--external-guest-dir` 指定 `/sdcard` 内的 guest 根。
   `/mnt/sdcard`、`/storage/emulated/0` 与 `/sdcard` 共用节点。`--obb` 将原文件只读挂到
   `/sdcard/Android/obb/<package>/<filename>`，不按 Profile 解包。
-  `--supersample` 选择 1..4×；`--dexvm-interpreter` 显式选择解释器，
+  `--supersample` 选择 1..4×；`--max-fps <1..1000>` 设宿主帧率上限（省略不限，手动步进不生效）：
+  主循环 step 不等待（step 同时推进 Looper 与逻辑时钟），由 session 生命周期只在槽位到达的 step 产生显示帧；
+  同一周期下发 boundary 原生 window swap 与 DexVM SurfaceHolder 画布提交。截止时间节拍不叠加游戏自带的限帧，
+  实际帧率取两者较低者；
+  不改变 guest eglSwapInterval 与 Display refreshRate 事实；`--dexvm-interpreter` 显式选择解释器，
   默认 `switch`。
 - `--mcp`/`--mcp-port` 同时提供 `/dash/` 页面与 `/dash/rpc` 只读 Dashboard，复用端口。
   静态产物来自 bundled `data/webui/dashboard`；启动前只加载固定文件白名单，每文件最多

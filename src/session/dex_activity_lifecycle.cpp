@@ -730,10 +730,13 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
     // fraction of the playback duration on every frame.
     previous_step_ns_ = previous_step_ns_ == 0 ? wall_ns : previous_step_ns_ + elapsed_ms * 1'000'000U;
     const auto uptime_before = bindings_.context->uptime_millis.load();
+    if (display_pacer_.PeriodNs() != bindings_.context->frame_period_ns)
+        display_pacer_ = hal::FramePacer{bindings_.context->frame_period_ns};
+    const bool display_frame = display_pacer_.TryClaim(wall_ns);
     try {
         RethrowFatalThreadFailure();
         auto& context = *bindings_.context;
-        runtime::DispatchAndroidDisplayFrame(bindings_.bridge->Vm(), context);
+        if (display_frame) runtime::DispatchAndroidDisplayFrame(bindings_.bridge->Vm(), context);
         {
             const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
             if (runtime::EnsureAndroidUiTraversal(bindings_.bridge->Vm(), context,
@@ -782,13 +785,13 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
             }
         }
         if (context.renderer.IsValid()) {
-            RunOnRenderer([this] {
+            RunOnRenderer([this, display_frame] {
                 auto& context = *bindings_.context;
                 auto runtime = RendererState();
                 if (runtime->paused || !runtime->surface_available) return;
                 EnsureRendererCallbacks();
                 RunRendererEvents();
-                if (ConsumeGlSurfaceDrawRequest(context)) {
+                if (display_frame && ConsumeGlSurfaceDrawRequest(context)) {
                     CallOnView(runtime->renderer, "onDrawFrame", "(Ljavax/microedition/khronos/opengles/GL10;)V",
                                {dx::VmValue::Ref(runtime->renderer_gl)});
                     const auto swapped = CallOnView(
@@ -811,7 +814,7 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
                                     ? VideoClockAdvanceMillis(elapsed_ms, context.uptime_millis.load() - uptime_before)
                                     : kMillisPerFrame);
         ++frame_;
-        if (egl_pacer_attached_) {
+        if (egl_pacer_attached_ && display_frame) {
             runtime::AdvanceEglSwapPacer(*bindings_.context);
         }
     } catch (const dx::VmJavaThrow& error) {

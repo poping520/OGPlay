@@ -434,7 +434,9 @@ export const en: Record<string, string> = {
 
   // ---------------------------------------------------------------- host instance setting labels and notes (game_settings.cpp)
   '运行时配置入口尚未接入': 'Runtime configuration is not wired yet',
-  '最大帧率': 'Frame rate cap',
+  '默认帧率上限': 'Default frame rate cap',
+  '帧率上限': 'Frame rate cap',
+  '与游戏自带的帧率限制互不影响': 'Independent of any frame rate limit in the game itself',
   '时钟倍率': 'Clock rate',
   'JIT 缓存': 'JIT cache',
   '虚拟 CPU 核数': 'Virtual CPU cores',

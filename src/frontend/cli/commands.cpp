@@ -19,13 +19,13 @@
 #include "commands.h"
 #include <vector>
 
-using ogplay::cli::Write;
 using ogplay::cli::FormatError;
+using ogplay::cli::Write;
+
 namespace {
 
 std::filesystem::path Utf8Path(std::string_view text) {
-    return std::filesystem::path(std::u8string_view(
-        reinterpret_cast<const char8_t*>(text.data()), text.size()));
+    return std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text.data()), text.size()));
 }
 
 constexpr std::string_view kSynopsis =
@@ -90,6 +90,7 @@ constexpr std::string_view kDetails =
     "    --surface-height <1..4096> Logical height (default 720)\n"
     "    --density-dpi <72..1280>    Guest display density (default 320)\n"
     "    --supersample <1..4>        Render scale factor (default 1)\n"
+    "    --max-fps <1..1000>         Cap presented frames per second (default no cap)\n"
     "    --dexvm-interpreter <switch|threaded>\n"
     "                                DexVM interpreter override\n"
     "  Guest CPU\n"
@@ -136,22 +137,22 @@ int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
         Write(stdout, "OGPlay " OGPLAY_VERSION "\n");
         return 0;
     }
-    if (argc == 2 && (std::string_view(argv[1]) == "--help" ||
-                      std::string_view(argv[1]) == "-h")) return Help();
+    if (argc == 2 && (std::string_view(argv[1]) == "--help" || std::string_view(argv[1]) == "-h")) return Help();
     if (argc < 2) return Usage();
 
     try {
-        if (argc >= 3 && std::string_view(argv[1]) == "dexvm" &&
-            std::string_view(argv[2]) == "dump-surface") {
+        if (argc >= 3 && std::string_view(argv[1]) == "dexvm" && std::string_view(argv[2]) == "dump-surface") {
             std::filesystem::path boot;
-            if (argc == 5 && std::string_view(argv[3]) == "--bootdex") boot = Utf8Path(argv[4]);
-            else if (argc == 3) boot = app::BundledDataPaths().root / "android/19/framework/bootdex.jar";
-            else throw std::invalid_argument("dump-surface accepts only --bootdex <jar>");
+            if (argc == 5 && std::string_view(argv[3]) == "--bootdex")
+                boot = Utf8Path(argv[4]);
+            else if (argc == 3)
+                boot = app::BundledDataPaths().root / "android/19/framework/bootdex.jar";
+            else
+                throw std::invalid_argument("dump-surface accepts only --bootdex <jar>");
             Write(stdout, app::DumpDexSurface(boot) + "\n");
             return 0;
         }
-        if (argc >= 3 && std::string_view(argv[1]) == "dexvm" &&
-            std::string_view(argv[2]) == "run-dex") {
+        if (argc >= 3 && std::string_view(argv[1]) == "dexvm" && std::string_view(argv[2]) == "run-dex") {
             std::vector<std::string_view> args(argv + 3, argv + argc);
             const auto options = app::ParseDexRunArgs(args);
             try {
@@ -162,13 +163,13 @@ int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
                 return 70;
             }
         }
-        if (std::string_view(argv[1]) == "library") return RunLibraryCommand(std::span(argv + 2, static_cast<std::size_t>(argc - 2)));
+        if (std::string_view(argv[1]) == "library")
+            return RunLibraryCommand(std::span(argv + 2, static_cast<std::size_t>(argc - 2)));
         if (std::string_view(argv[1]) == "run-apk") {
             std::vector<std::string_view> args(argv + 2, argv + argc);
             return app::RunGame(app::ParseGameRunArgs(args));
         }
-        if (argc >= 5 && std::string_view(argv[1]) == "diag" &&
-            std::string_view(argv[2]) == "snapshot") {
+        if (argc >= 5 && std::string_view(argv[1]) == "diag" && std::string_view(argv[2]) == "snapshot") {
             std::optional<std::uint64_t> pid;
             std::filesystem::path directory{".local/diagnostics"};
             for (int index = 3; index < argc; ++index) {
@@ -184,20 +185,18 @@ int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
                 } else if (option == "--diag-dir" && index + 1 < argc) {
                     directory = Utf8Path(argv[++index]);
                 } else {
-                    throw std::invalid_argument(
-                        "unknown or incomplete diag snapshot option: " +
-                        std::string(option));
+                    throw std::invalid_argument("unknown or incomplete diag snapshot option: " + std::string(option));
                 }
             }
             if (!pid) throw std::invalid_argument("diag snapshot requires --pid");
-            const auto trigger =
-                ogplay::app::RequestDiagnosticSnapshot(*pid, directory);
+            const auto trigger = ogplay::app::RequestDiagnosticSnapshot(*pid, directory);
             Write(stdout, "OGPlay: requested diagnostic snapshot via " + trigger + "\n");
             return 0;
         }
         if (!(std::string_view(argv[1]) == "capabilities" && argc <= 3) &&
             !(std::string_view(argv[1]) == "agent" && argc == 3) &&
-            !(std::string_view(argv[1]) == "agent-stdio" && argc == 2)) return Usage();
+            !(std::string_view(argv[1]) == "agent-stdio" && argc == 2))
+            return Usage();
         const auto ledger_path = argc >= 3 && std::string_view(argv[1]) == "capabilities"
                                      ? Utf8Path(argv[2])
                                      : ogplay::app::ExecutablePath().parent_path() / "data" / "capabilities.toml";
@@ -214,7 +213,8 @@ int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
         }
         if (argc == 2 && std::string_view(argv[1]) == "agent-stdio") {
             std::string line;
-            while (std::getline(std::cin, line)) Write(stdout, console.HandleJsonRpc(line) + "\n");
+            while (std::getline(std::cin, line))
+                Write(stdout, console.HandleJsonRpc(line) + "\n");
             return 0;
         }
     } catch (...) {

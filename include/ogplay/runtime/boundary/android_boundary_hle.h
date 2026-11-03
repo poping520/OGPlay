@@ -146,6 +146,9 @@ struct AndroidBoundaryOptions final {
     core::CapabilityLedger* ledger{};
     bool async_present_readback{};
     gles::CompressedTextureFamily compressed_texture_family{gles::CompressedTextureFamily::all};
+    // Host frame-rate cap: guest-code eglSwapBuffers on a window surface returns no sooner than
+    // one period after that surface's previous release. 0 leaves swaps unpaced.
+    std::uint64_t frame_period_ns{};
 };
 
 struct FrameReadbackFilter final {

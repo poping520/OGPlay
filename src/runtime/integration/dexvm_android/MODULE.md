@@ -425,6 +425,8 @@ setKeepScreenOn(false) 无需宿主动作；true 仅在宿主窗口报告已阻�
 纯色填充不受 clip 约束，clipRect/save/restore 尚未实现。lockCanvas 仅接受 active
 holder，backing/getWidth/Height/clip 与 dirty 扩展区使用 buffer 尺寸，完整重绘；post 通过有界
 holder 像素快照合成到 View frame。窗口 holder 仍发布原软件基帧。
+context `frame_period_ns` 非零时，生命周期驱动线程以外的 unlockCanvasAndPost 在发布后按 holder 的
+`hal::FramePacer` 释放 VM 执行锁等待槽位；驱动线程由宿主帧循环节拍，不再等待。
 
 NativeActivity/NativeContentView 执行原 Java，private native 经 NativeActivityRuntime 接进程；
 takeSurface/takeInputQueue 支持 null/切换，先销毁旧 owner，首次遍历前解除不收旧事件。

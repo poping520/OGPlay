@@ -11,60 +11,46 @@
 
 namespace ogplay::runtime {
 
-A32CallFrame::A32CallFrame(memory::AddressSpace& address_space,
-                           const cpu::A32State& state,
+A32CallFrame::A32CallFrame(memory::AddressSpace& address_space, const cpu::A32State& state,
                            const std::size_t parameter_count)
     : parameter_count_(parameter_count), thread_id_(state.ThreadId()),
       link_register_(state.Register(cpu::CoreRegister::lr)) {
     if (parameter_count > arguments_.size()) {
         throw std::length_error("A32 HLE call exceeds the supported argument count");
     }
-    constexpr std::array registers{
-        cpu::CoreRegister::r0, cpu::CoreRegister::r1,
-        cpu::CoreRegister::r2, cpu::CoreRegister::r3};
-    for (std::size_t index = 0;
-         index < std::min(parameter_count, registers.size()); ++index) {
+    constexpr std::array registers{cpu::CoreRegister::r0, cpu::CoreRegister::r1, cpu::CoreRegister::r2,
+                                   cpu::CoreRegister::r3};
+    for (std::size_t index = 0; index < std::min(parameter_count, registers.size()); ++index) {
         arguments_[index] = state.Register(registers[index]);
     }
     if (parameter_count <= registers.size()) return;
 
     const auto stack_words = parameter_count - registers.size();
-    std::array<std::byte,
-               (kMaximumA32CallArguments - registers.size()) *
-                   sizeof(std::uint32_t)> bytes{};
-    const auto stack_bytes = std::span(bytes).first(
-        stack_words * sizeof(std::uint32_t));
-    address_space.Read(
-        memory::GuestAddress{state.Register(cpu::CoreRegister::sp)}, stack_bytes,
-        thread_id_);
+    std::array<std::byte, (kMaximumA32CallArguments - registers.size()) * sizeof(std::uint32_t)> bytes{};
+    const auto stack_bytes = std::span(bytes).first(stack_words * sizeof(std::uint32_t));
+    address_space.Read(memory::GuestAddress{state.Register(cpu::CoreRegister::sp)}, stack_bytes, thread_id_);
     for (std::size_t word = 0; word < stack_words; ++word) {
         std::uint32_t value{};
         for (std::size_t byte = 0; byte < sizeof(value); ++byte) {
-            value |= static_cast<std::uint32_t>(
-                         std::to_integer<std::uint8_t>(
-                             bytes[word * sizeof(value) + byte]))
+            value |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[word * sizeof(value) + byte]))
                      << (byte * 8U);
         }
         arguments_[registers.size() + word] = value;
     }
 }
 
-A32CallFrame::A32CallFrame(const std::span<const std::uint32_t> arguments,
-                           const std::uint64_t thread_id,
+A32CallFrame::A32CallFrame(const std::span<const std::uint32_t> arguments, const std::uint64_t thread_id,
                            const std::uint32_t link_register)
-    : parameter_count_(arguments.size()), thread_id_(thread_id),
-      link_register_(link_register) {
+    : parameter_count_(arguments.size()), thread_id_(thread_id), link_register_(link_register), host_invoked_(true) {
     if (arguments.size() > arguments_.size()) {
         throw std::length_error("A32 HLE call exceeds the supported argument count");
     }
     std::copy(arguments.begin(), arguments.end(), arguments_.begin());
 }
 
-A32CallFrame::A32CallFrame(memory::AddressSpace& address_space,
-                           const cpu::A32HostCallContext& context,
+A32CallFrame::A32CallFrame(memory::AddressSpace& address_space, const cpu::A32HostCallContext& context,
                            const std::size_t parameter_count)
-    : parameter_count_(parameter_count), thread_id_(context.thread_id),
-      link_register_(context.registers[14]) {
+    : parameter_count_(parameter_count), thread_id_(context.thread_id), link_register_(context.registers[14]) {
     if (parameter_count > arguments_.size()) {
         throw std::length_error("A32 HLE call exceeds the supported argument count");
     }
@@ -73,19 +59,13 @@ A32CallFrame::A32CallFrame(memory::AddressSpace& address_space,
     if (parameter_count <= 4U) return;
 
     const auto stack_words = parameter_count - 4U;
-    std::array<std::byte, (kMaximumA32CallArguments - 4U) *
-                              sizeof(std::uint32_t)>
-        bytes{};
-    const auto stack_bytes =
-        std::span(bytes).first(stack_words * sizeof(std::uint32_t));
-    address_space.Read(memory::GuestAddress{context.registers[13]}, stack_bytes,
-                       thread_id_);
+    std::array<std::byte, (kMaximumA32CallArguments - 4U) * sizeof(std::uint32_t)> bytes{};
+    const auto stack_bytes = std::span(bytes).first(stack_words * sizeof(std::uint32_t));
+    address_space.Read(memory::GuestAddress{context.registers[13]}, stack_bytes, thread_id_);
     for (std::size_t word = 0; word < stack_words; ++word) {
         std::uint32_t value{};
         for (std::size_t byte = 0; byte < sizeof(value); ++byte) {
-            value |= static_cast<std::uint32_t>(
-                         std::to_integer<std::uint8_t>(
-                             bytes[word * sizeof(value) + byte]))
+            value |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[word * sizeof(value) + byte]))
                      << (byte * 8U);
         }
         arguments_[4U + word] = value;
@@ -105,12 +85,13 @@ std::span<const std::uint32_t> A32CallFrame::Arguments() const noexcept {
 
 std::array<std::uint32_t, 4> A32CallFrame::RegisterArguments() const noexcept {
     std::array<std::uint32_t, 4> result{};
-    std::copy_n(arguments_.begin(), std::min(parameter_count_, result.size()),
-                result.begin());
+    std::copy_n(arguments_.begin(), std::min(parameter_count_, result.size()), result.begin());
     return result;
 }
 
-std::uint64_t A32CallFrame::ThreadId() const noexcept { return thread_id_; }
+std::uint64_t A32CallFrame::ThreadId() const noexcept {
+    return thread_id_;
+}
 
 std::uint32_t A32CallFrame::LinkRegister() const noexcept {
     return link_register_;

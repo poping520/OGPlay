@@ -33,6 +33,7 @@ TEST_CASE("Game run args round trip every value and optional field") {
     o.surface_height = 600;
     o.density_dpi = 240;
     o.supersample_factor = 4;
+    o.max_fps = 144;
     o.cpu_config = {8, 2400, {true, 123}};
     o.survey_gaps_output = "/survey.json";
     o.sandbox_directory = "/sandbox";
@@ -81,6 +82,13 @@ TEST_CASE("Game run args validate direct facade values") {
     o.mcp_port.reset();
     o.diagnostic_teardown_timeout = std::chrono::milliseconds(1);
     CHECK_THROWS_AS(static_cast<void>(FormatGameRunArgs(o)), std::invalid_argument);
+    o.diagnostic_teardown_timeout.reset();
+    o.max_fps = 1001;
+    CHECK_THROWS_AS(static_cast<void>(FormatGameRunArgs(o)), std::invalid_argument);
+    for (const auto value : {"0", "1001", "60fps"}) {
+        const std::array<std::string_view, 3> args{"game.apk", "--max-fps", value};
+        CHECK_THROWS_AS(static_cast<void>(ParseGameRunArgs(args)), std::invalid_argument);
+    }
 }
 
 #include <doctest/doctest.h>

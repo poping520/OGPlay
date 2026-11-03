@@ -380,11 +380,14 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     CHECK(launch.options.surface_height == 720);
     CHECK(launch.options.density_dpi == 320);
     CHECK(launch.options.supersample_factor == 1);
+    CHECK(launch.options.max_fps == 0);
     SetSetting(global, "screen_width", std::uint32_t{960});
     SetSetting(global, "screen_height", std::uint32_t{540});
     SetSetting(global, "density_dpi", std::uint32_t{240});
     SetSetting(global, "supersample", std::uint32_t{2});
+    SetSetting(global, "max_fps", std::string("60"));
     launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
+    CHECK(launch.options.max_fps == 60);
     CHECK(launch.options.surface_width == 960);
     CHECK(launch.options.surface_height == 540);
     CHECK(launch.options.density_dpi == 240);
@@ -392,8 +395,10 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     SaveGameSettings(directory, {{{"screen_width", std::uint32_t{1024}},
                                   {"screen_height", std::uint32_t{600}},
                                   {"density_dpi", std::uint32_t{160}},
-                                  {"supersample", std::uint32_t{3}}}});
+                                  {"supersample", std::uint32_t{3}},
+                                  {"max_fps", std::string("unlimited")}}});
     launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
+    CHECK(launch.options.max_fps == 0);
     CHECK(launch.options.surface_width == 1024);
     CHECK(launch.options.surface_height == 600);
     CHECK(launch.options.density_dpi == 160);

@@ -50,6 +50,9 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     o.surface_height = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "screen_height"));
     o.density_dpi = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "density_dpi"));
     o.supersample_factor = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "supersample"));
+    if (const auto max_fps = std::get<std::string>(EffectiveGameSetting(settings, global, entry, "max_fps"));
+        max_fps != "unlimited")
+        o.max_fps = static_cast<std::uint32_t>(std::stoul(max_fps));
     o.cpu_config.cores = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_cores"));
     o.cpu_config.frequency_mhz =
         std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_frequency_mhz"));

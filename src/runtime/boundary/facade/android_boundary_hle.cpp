@@ -129,7 +129,8 @@ public:
                            std::vector<std::uint8_t> pixels) {
                            return static_cast<Impl*>(owner)->android_module_.PublishSurfacePixels(window, width, height,
                                                                                                   std::move(pixels));
-                       }},
+                       },
+                       options.frame_period_ns},
           android_module_(call_services_, android_services_, options.loopers, options.logger, options.ledger),
           bitmap_module_(call_services_), egl_module_(call_services_, egl_context_),
           gles1_module_(call_services_, graphics_context_, gles1_state_, gles1_legacy_state_, gles1_draw_state_,

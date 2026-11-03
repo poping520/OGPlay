@@ -1537,9 +1537,30 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
     throw std::logic_error("unbound concrete libEGL export");
 }
 
+// The frame-rate cap waits after a successful swap has published its frame and released every
+// module lock, like a real swap blocking for the next free buffer.
+void EglModule::PaceWindowSwap(const A32CallFrame& call) {
+    // Managed (Java) facades already swap once per lifecycle frame, which the host loop paces.
+    if (context_.frame_period_ns == 0 || call.HostInvoked()) return;
+    std::uint64_t wait{};
+    {
+        std::scoped_lock lock(mutex_);
+        const auto found = surfaces_.find(call.Argument(1));
+        if (found == surfaces_.end() || found->second.kind != SurfaceKind::window) return;
+        auto& pacer = found->second.pacer;
+        if (pacer.PeriodNs() == 0) pacer = hal::FramePacer{context_.frame_period_ns};
+        wait = pacer.Reserve(hal::Clock::SteadyTimestampNs());
+    }
+    hal::SleepPreciseNs(wait);
+}
+
 #define OGPLAY_DEFINE_EGL(name, id, count, method)                                                                     \
     std::uint32_t EglModule::method(const A32CallFrame& call) {                                                        \
-        return ExecuteExport<id>(call);                                                                                \
+        const auto result = ExecuteExport<id>(call);                                                                   \
+        if constexpr (id == 8U) {                                                                                      \
+            if (result != 0U) PaceWindowSwap(call);                                                                    \
+        }                                                                                                              \
+        return result;                                                                                                 \
     }
 OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_DEFINE_EGL)
 OGPLAY_GLES_IMAGE_EXPORTS(OGPLAY_DEFINE_EGL)

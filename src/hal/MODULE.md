@@ -29,6 +29,9 @@
 - `OpenHostDirectory`：打开已由上层验证的宿主目录，失败明确传播。
 - `hal::Clock`：所有 guest 时间源使用的抽象。
 - `hal::ClockRate`：正整数分子/分母表示的精确倍率。
+- `hal::FramePeriodNs` / `hal::FramePacer`：宿主帧率上限的纳秒周期（0 表示不限）与按生产者独立的截止时间节拍；
+  早于槽位返回需等待时长，准时或落后不等待，落后不足一个周期保持节拍，超过则从当前时刻重排而不补帧。
+- `hal::SleepPreciseNs`：亚毫秒精度阻塞当前宿主线程（SDL 可用时经 SDL_DelayPrecise，否则 sleep_for）。
 - `hal::FixedStepClock`：无 sleep、按帧推进且保留倍率余数的确定性后端。
 - `hal::RealtimeClock`：基于单调宿主时间的实时后端，支持暂停与倍速。
 - `hal::WindowInput`：不暴露 SDL 类型的窗口生命周期与输入事件接口。

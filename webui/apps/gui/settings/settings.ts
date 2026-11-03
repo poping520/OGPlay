@@ -83,7 +83,9 @@ export function shownGroups<G extends readonly [string, ...string[]]>(groups: re
   return groups.filter(([key]) => shown.some(field => field.group === key) || !fields.some(field => field.group === key));
 }
 export function choiceLabel(field: SettingField, value: string): string {
-  return field.key === 'clock_rate' ? `${value}×` : value in labels ? t(labels[value]) : value;
+  if (field.key === 'clock_rate') return `${value}×`;
+  if (field.key === 'max_fps' && value !== 'unlimited') return `${value} FPS`;
+  return value in labels ? t(labels[value]) : value;
 }
 export function displayValue(field: SettingField, value: SettingValue | undefined): string {
   if (typeof value === 'boolean') return value ? t('开') : t('关');

@@ -362,6 +362,9 @@ DVM-336：Application 回调前准备主 Looper；每次实际 StepFrame 在 gue
 回调中的新请求留到下一帧。Start/Resume/输入与呈现查询的重复屏障不发脉冲。
 停止开始即撤销 DisplayEventReceiver 登记，不在退出回调中合成脉冲；不改变 owner 遍历
 为 Choreographer 调度，也不实现系统同步屏障。平台接缝及主 Looper 限制见 integration MODULE。
+帧率上限（context `frame_period_ns` 非零）只把按 `hal::FramePacer::TryClaim` 抢到槽位的 step 当作显示帧：
+未到槽位的 step 不投递 vsync、不调用 GLSurfaceView onDrawFrame/swap、不放行受控 GL 线程的 swap，
+其余工作（Looper、Java 线程、输入、视频/音频、逻辑时钟按 step 推进）照常，step 本身不等待。
 
 DVM-337：呈现消费冻结的窗口 format；TRANSLUCENT/TRANSPARENT 保留光栅预乘像素 alpha，
 其余应用附加窗口的平面按不透明覆盖下层（未画区域黑）。所有软件光栅平面以预乘

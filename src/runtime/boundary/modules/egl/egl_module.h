@@ -9,6 +9,7 @@
 #include <thread>
 #include <span>
 
+#include "ogplay/hal/clock.h"
 #include "ogplay/runtime/boundary/boundary_symbol.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 #include "runtime/boundary/core/boundary_binding.h"
@@ -39,6 +40,7 @@ struct EglBoundaryContext final {
     void (*surface_buffer_queued)(void*, memory::GuestAddress){};
     bool (*publish_surface_pixels)(void*, memory::GuestAddress, std::uint32_t, std::uint32_t,
                                    std::vector<std::uint8_t>){};
+    std::uint64_t frame_period_ns{};
 };
 
 class EglModule final {
@@ -64,6 +66,7 @@ public:
 
 private:
     BoundaryResult SurfaceExtension(const A32CallFrame& call, bool presentation);
+    void PaceWindowSwap(const A32CallFrame& call);
     BoundaryResult UnsupportedClock(const A32CallFrame& call);
 
     struct ThreadState final {
@@ -112,6 +115,7 @@ private:
         std::uint32_t mipmap_level{};
         memory::GuestAddress native_window{};
         std::optional<std::int64_t> presentation_time_ns{};
+        hal::FramePacer pacer{};
     };
 
     template <std::uint16_t FunctionId>

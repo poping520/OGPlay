@@ -4,13 +4,20 @@
 #include <format>
 #include <limits>
 #include <stdexcept>
+#include <thread>
 #include <utility>
+
+#if OGPLAY_HAS_SDL3
+#include <SDL3/SDL_timer.h>
+#endif
 
 namespace ogplay::hal {
 std::uint64_t Clock::SteadyTimestampNs() {
-    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count());
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count());
 }
+
 std::string Clock::UtcTimestamp() {
     return std::format("{:%FT%TZ}", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()));
 }
@@ -32,8 +39,7 @@ std::uint64_t CheckedAdd(const std::uint64_t left, const std::uint64_t right) {
 
 }  // namespace
 
-FixedStepClock::FixedStepClock(const std::uint64_t ticks_per_frame,
-                               const std::uint64_t ticks_per_second)
+FixedStepClock::FixedStepClock(const std::uint64_t ticks_per_frame, const std::uint64_t ticks_per_second)
     : ticks_per_frame_(ticks_per_frame), ticks_per_second_(ticks_per_second) {
     if (ticks_per_frame_ == 0 || ticks_per_second_ == 0) {
         throw std::invalid_argument("clock rates must be greater than zero");
@@ -45,7 +51,9 @@ std::uint64_t FixedStepClock::Ticks() const {
     return ticks_;
 }
 
-std::uint64_t FixedStepClock::TicksPerSecond() const { return ticks_per_second_; }
+std::uint64_t FixedStepClock::TicksPerSecond() const {
+    return ticks_per_second_;
+}
 
 bool FixedStepClock::IsPaused() const {
     std::scoped_lock lock(mutex_);
@@ -117,7 +125,9 @@ std::uint64_t RealtimeClock::Ticks() const {
     return TicksAt(now_());
 }
 
-std::uint64_t RealtimeClock::TicksPerSecond() const { return ticks_per_second_; }
+std::uint64_t RealtimeClock::TicksPerSecond() const {
+    return ticks_per_second_;
+}
 
 bool RealtimeClock::IsPaused() const {
     std::scoped_lock lock(mutex_);
@@ -166,11 +176,9 @@ std::uint64_t RealtimeClock::TicksAt(const TimePoint now) const {
     if (paused_ || now <= anchor_) return base_ticks_;
     const auto seconds = std::chrono::duration<long double>(now - anchor_).count();
     const auto scaled = seconds * static_cast<long double>(ticks_per_second_) *
-                        static_cast<long double>(rate_.numerator) /
-                        static_cast<long double>(rate_.denominator);
+                        static_cast<long double>(rate_.numerator) / static_cast<long double>(rate_.denominator);
     if (!std::isfinite(scaled) ||
-        scaled > static_cast<long double>(std::numeric_limits<std::uint64_t>::max() -
-                                          base_ticks_)) {
+        scaled > static_cast<long double>(std::numeric_limits<std::uint64_t>::max() - base_ticks_)) {
         throw std::overflow_error("realtime clock tick overflow");
     }
     return base_ticks_ + static_cast<std::uint64_t>(scaled);
@@ -179,6 +187,51 @@ std::uint64_t RealtimeClock::TicksAt(const TimePoint now) const {
 void RealtimeClock::CommitAt(const TimePoint now) {
     base_ticks_ = TicksAt(now);
     anchor_ = now;
+}
+
+std::uint64_t FramePeriodNs(const std::uint32_t frames_per_second) noexcept {
+    return frames_per_second == 0 ? 0 : 1'000'000'000ULL / frames_per_second;
+}
+
+FramePacer::FramePacer(const std::uint64_t period_ns) noexcept : period_ns_(period_ns) {}
+
+std::uint64_t FramePacer::PeriodNs() const noexcept {
+    return period_ns_;
+}
+
+std::uint64_t FramePacer::Reserve(const std::uint64_t now_ns) noexcept {
+    if (period_ns_ == 0) return 0;
+    if (!started_ || now_ns >= next_ns_) {
+        // On time or late: release now. Within one period the schedule is kept so jitter does not
+        // cost frames; further behind, it restarts from now instead of bursting to catch up.
+        next_ns_ = started_ && now_ns - next_ns_ < period_ns_ ? next_ns_ + period_ns_ : now_ns + period_ns_;
+        started_ = true;
+        return 0;
+    }
+    const auto wait = next_ns_ - now_ns;
+    next_ns_ += period_ns_;
+    return wait;
+}
+
+bool FramePacer::TryClaim(const std::uint64_t now_ns) noexcept {
+    if (period_ns_ != 0 && started_ && now_ns < next_ns_) return false;
+    static_cast<void>(Reserve(now_ns));
+    return true;
+}
+
+void FramePacer::Reset() noexcept {
+    started_ = false;
+}
+
+void SleepPreciseNs(const std::uint64_t duration_ns) {
+    if (duration_ns == 0) return;
+#if OGPLAY_HAS_SDL3
+    // Uses the high-resolution waitable timer on Windows, where a plain sleep rounds to the
+    // system timer tick, and finishes the last stretch by yielding.
+    SDL_DelayPrecise(duration_ns);
+#else
+    std::this_thread::sleep_for(std::chrono::nanoseconds(duration_ns));
+#endif
 }
 
 }  // namespace ogplay::hal

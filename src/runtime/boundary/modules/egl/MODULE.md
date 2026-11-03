@@ -38,5 +38,9 @@ EGL_WIDTH/HEIGHT 和实际 ANGLE backing 一致。尺寸变化在下一次 swap 
 托管 holder 的读回按 supersample 解析到 buffer 尺寸，经显式纯像素 hook 交 owner 快照，
 合成缩放至 View frame；普通 standalone/NativeActivity 无 holder 时保持原 frame service。
 
+`AndroidBoundaryOptions::frame_period_ns` 非零时，guest 代码发起且成功的 window swap 在帧发布并释放模块锁后，
+按该 surface 自己的 `hal::FramePacer` 等到槽位再返回，相当于真机等下一空闲 buffer；pbuffer、失败 swap 与
+宿主构造的调用帧（`A32CallFrame::HostInvoked`，即 Java EGL 外观，已由生命周期帧节拍）不等待。
+
 window swap 成功后经显式 native-window 身份回调通知 buffer queued；创建 surface、
 失败 swap 与 pbuffer 不发送该通知，Java EGL 与 native window 共用此路径，不获取 VM 锁。

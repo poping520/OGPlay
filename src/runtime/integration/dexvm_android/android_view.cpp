@@ -1303,6 +1303,23 @@ dx::IntrinsicHandler LockCanvasHandler(const Context& context) {
     };
 }
 
+// Holds a canvas posted by a free-running thread to the host frame-rate cap, outside the VM lock.
+void PaceCanvasPost(dx::IntrinsicContext& call, DexVmAndroidContext& context, const std::uint32_t holder) {
+    if (context.frame_period_ns == 0 || std::this_thread::get_id() == context.clock_driver) return;
+    auto& pacer = context.canvas_pacers.try_emplace(holder, context.frame_period_ns).first->second;
+    const auto wait = pacer.Reserve(hal::Clock::SteadyTimestampNs());
+    if (wait == 0) return;
+    auto& execution_lock = call.vm.ExecutionLock();
+    const auto depth = execution_lock.ReleaseForBlocking();
+    try {
+        hal::SleepPreciseNs(wait);
+    } catch (...) {
+        execution_lock.ReacquireAfterBlocking(depth);
+        throw;
+    }
+    execution_lock.ReacquireAfterBlocking(depth);
+}
+
 dx::IntrinsicHandler UnlockCanvasAndPostHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         const auto canvas = call.arguments[0].ref;
@@ -1336,6 +1353,7 @@ dx::IntrinsicHandler UnlockCanvasAndPostHandler(const Context& context) {
                 for (std::size_t i = 3; i < rgba8.size(); i += 4)
                     rgba8[i] = 255;
             context->session->PublishSoftwareFrame(std::move(rgba8));
+            PaceCanvasPost(call, *context, call.receiver.Value());
             return dx::VmValue::Void();
         }
         {
@@ -1345,6 +1363,7 @@ dx::IntrinsicHandler UnlockCanvasAndPostHandler(const Context& context) {
         }
         context->session->PublishSoftwareFrame(std::vector<std::uint8_t>(
             static_cast<std::size_t>(context->surface_width) * context->surface_height * 4U, 0U));
+        PaceCanvasPost(call, *context, call.receiver.Value());
         return dx::VmValue::Void();
     };
 }

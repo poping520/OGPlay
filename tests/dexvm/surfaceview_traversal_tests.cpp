@@ -1,6 +1,8 @@
 #include "container_traversal_fixture.h"
 #include "../../src/runtime/integration/dexvm_android/shared.h"
 #include <bit>
+#include <thread>
+#include "ogplay/hal/clock.h"
 #include <future>
 #include <algorithm>
 #include <tuple>
@@ -615,6 +617,37 @@ TEST_CASE("DVM-339 SurfaceView independent buffers notify once and return to lay
             CHECK(std::ranges::any_of(gaps, [](const auto& gap) { return gap.id == "dexvm.surface_buffer_geometry"; }));
         }
     }
+}
+
+TEST_CASE("frame-rate cap holds SurfaceHolder canvas posts from free-running threads to the period") {
+    ContainerVm f(InterpreterBackend::switch_dispatch);
+    const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
+    const auto roots = f.vm.ProtectReferences(std::array{owner, view, holder});
+    f.context->surface_width = 800;
+    f.context->surface_height = 480;
+    Size(f, holder, 2, 3);
+    f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+    REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+    constexpr std::uint64_t kPeriodNs = 30'000'000U;
+    f.context->frame_period_ns = kPeriodNs;
+    const auto post = [&] {
+        const auto canvas = f.On(holder, "lockCanvas", "()Landroid/graphics/Canvas;").ref;
+        f.On(holder, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(canvas)});
+    };
+    const auto now = [] { return ogplay::hal::Clock::SteadyTimestampNs(); };
+    // The lifecycle driver thread is paced by the host frame loop and never held here.
+    auto start = now();
+    for (int i = 0; i < 3; ++i)
+        post();
+    CHECK(now() - start < kPeriodNs);
+    // A drawing thread of the game's own waits one period per post.
+    f.context->clock_driver = std::thread::id{};
+    post();
+    start = now();
+    post();
+    post();
+    CHECK(now() - start >= 2U * kPeriodNs - 2'000'000U);
+    f.context->clock_driver = std::this_thread::get_id();
 }
 
 TEST_CASE("DVM-339 software Canvas uses buffer dimensions and stretches across the View frame") {

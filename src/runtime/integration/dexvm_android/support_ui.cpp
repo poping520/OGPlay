@@ -2256,7 +2256,7 @@ void CheckModalFit(const Modal& modal, const ui::Size viewport) {
 
 std::shared_ptr<const DexVmAndroidContext::PresentationSnapshot>
 AcquireAndroidPresentation(const DexVmAndroidContext& context) {
-    return context.presentation_snapshot.load();
+    return context.presentation_snapshot.Load();
 }
 
 void SnapshotAndroidPresentationDiagnostics(const DexVmAndroidContext& context, AndroidUiSnapshot& result) {
@@ -2493,7 +2493,7 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
             ClearModalCapture(context);
     }
     context.dialog_host_revision = next->host_modal_revision;
-    context.presentation_snapshot.store(std::shared_ptr<const Snapshot>{std::move(next)});
+    context.presentation_snapshot.Store(std::shared_ptr<const Snapshot>{std::move(next)});
     return true;
 }
 

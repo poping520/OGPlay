@@ -1,9 +1,9 @@
 #pragma once
 
+#include "ogplay/core/atomic_shared_ptr.h"
 #include "ogplay/runtime/ui/ui_leaf_measure.h"
 
 #include <array>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <compare>
@@ -284,7 +284,7 @@ public:
     // Only successful, complete commits are published. Consumers retain this
     // immutable snapshot for both rendering and hit testing; null before first commit.
     [[nodiscard]] std::shared_ptr<const UiTree> PublishedProjection() const {
-        return published_projection_.load();
+        return published_projection_.Load();
     }
 
     [[nodiscard]] std::optional<UiNodeId> HitTestProjection(std::int32_t x, std::int32_t y) const;
@@ -350,7 +350,7 @@ private:
     bool projection_snapshot_{};
     std::optional<UiProjectionTarget> projection_target_;
     std::uint64_t projection_epoch_{};
-    std::atomic<std::shared_ptr<const UiTree>> published_projection_;
+    core::AtomicSharedPtr<const UiTree> published_projection_;
     std::uint32_t generation_{};
     std::shared_ptr<const UiFallbackFont> fallback_font_;
     std::uint32_t next_node_{};

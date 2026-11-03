@@ -16,7 +16,6 @@ export const SETTING_ICONS: Record<string, string> = {
   settings_style: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.5-.8 1.5-1.6 0-1.2-1-1.6-1-2.6 0-.9.8-1.6 1.8-1.6H17a4 4 0 0 0 4-4c0-4.6-4-8.2-9-8.2z"/><path d="M7.5 11h.01M10 7h.01M15 7.5h.01"/>',
   minimize_on_launch: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 8v6M9 11l3 3 3-3M8 17h8"/>',
   show_exit_log: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h4"/>',
-  confirm_delete: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   // storage, data and compatibility
   profiles_dir: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 12h8M8 15h5"/>',
   default_external_dir: DATA_PACK,

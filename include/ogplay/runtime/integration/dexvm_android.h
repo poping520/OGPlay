@@ -4,6 +4,7 @@
 #include "ogplay/runtime/common/guest_memory_facts.h"
 #include "ogplay/runtime/boundary/sensor_directory.h"
 
+#include "ogplay/core/atomic_shared_ptr.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/hal/clock.h"
 
@@ -540,7 +541,7 @@ struct DexVmAndroidContext final {
     std::array<std::uint64_t, static_cast<std::size_t>(PresentationRejectReason::count)> presentation_reject_counts{};
 
     // Owner builds partitions; render/input acquire only this immutable sequence.
-    std::atomic<std::shared_ptr<const PresentationSnapshot>> presentation_snapshot;
+    core::AtomicSharedPtr<const PresentationSnapshot> presentation_snapshot;
     std::shared_ptr<const PresentationSnapshot> input_presentation;  // Owner-scoped event lease.
 
     struct ModalCapture final {

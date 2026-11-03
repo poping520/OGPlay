@@ -58,7 +58,6 @@ const std::vector<SettingDefinition>& SettingDefinitions() {
          "游戏运行时程序坞/任务栏显示的图标，下次启动生效"},
         {"minimize_on_launch", "general", "启动游戏后最小化", false},
         {"show_exit_log", "general", "异常退出时显示日志末尾", true},
-        {"confirm_delete", "general", "删除游戏前二次确认", true},
         {"profiles_dir", "storage", "Profile 目录覆盖", std::string(), {}, 0, 0, "", true},
         {"default_external_dir", "storage", "默认数据包目录（导入时预填）", std::string(), {}, 0, 0, "", true},
         {"log_retention",

@@ -180,14 +180,11 @@ void WriteText(const std::filesystem::path& path, const std::string_view text) {
     return item->second;
 }
 
-void ExactKeys(const FlatToml& values,
-               const std::initializer_list<std::string_view> allowed) {
-    for (const auto& [key, value] : values) {
-        static_cast<void>(value);
-        if (std::find(allowed.begin(), allowed.end(), key) == allowed.end()) {
-            throw std::runtime_error("unknown TOML key: " + key);
-        }
-    }
+// Loaders skip keys they do not know instead of rejecting the whole file.
+[[nodiscard]] const SettingDefinition* KnownSetting(const std::vector<SettingDefinition>& fields,
+                                                    const std::string_view key) {
+    const auto found = std::find_if(fields.begin(), fields.end(), [&](const auto& field) { return field.key == key; });
+    return found == fields.end() ? nullptr : &*found;
 }
 
 void ValidateMetadata(const LibraryMetadata& metadata) {
@@ -240,9 +237,6 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
 
 [[nodiscard]] LibraryMetadata DecodeMetadata(const std::string_view text) {
     const auto values = ParseFlatToml(text);
-    ExactKeys(values, {"schema", "package", "display_name", "version_code",
-                       "version_name", "imported_at", "profile_id", "external_dir", "external_guest_dir",
-                       "external_data"});
     if (ParseUint32(Require(values, "schema"), "schema") != kSchema) {
         throw std::runtime_error("library metadata schema is not supported");
     }
@@ -286,18 +280,16 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
 
 [[nodiscard]] LibraryConfig DecodeConfig(const std::string_view text) {
     const auto values = ParseFlatToml(text);
-    const auto schema = ParseUint32(Require(values, "schema"), "schema");
-    if (schema != 1 && schema != 2) throw std::runtime_error("library config schema is not supported");
-    if (schema == 1) ExactKeys(values, {"schema", "system_dir", "profiles_dir"});
+    if (ParseUint32(Require(values, "schema"), "schema") != 2)
+        throw std::runtime_error("library config schema is not supported");
     LibraryConfig config;
     for (const auto& [key, value] : values) {
-        if (key == "schema") continue;
-        if (schema == 1 && key == "system_dir") { static_cast<void>(ParseTomlString(value)); continue; }
-        const auto& field = FindSetting(key);
-        if (std::holds_alternative<bool>(field.initial)) {
+        const auto* field = KnownSetting(SettingDefinitions(), key);
+        if (field == nullptr) continue;
+        if (std::holds_alternative<bool>(field->initial)) {
             if (value != "true" && value != "false") throw std::runtime_error(key + " requires a boolean");
             SetSetting(config, key, value == "true");
-        } else if (std::holds_alternative<std::uint32_t>(field.initial)) SetSetting(config, key, ParseUint32(value, key));
+        } else if (std::holds_alternative<std::uint32_t>(field->initial)) SetSetting(config, key, ParseUint32(value, key));
         else SetSetting(config, key, ParseTomlString(value));
     }
     return config;
@@ -373,15 +365,15 @@ static GameSettings LoadGameSettingsUnlocked(const std::filesystem::path& direct
         if (ParseUint32(Require(values, "schema"), "schema") != 1) throw std::invalid_argument("unsupported instance settings schema");
         GameSettings settings;
         for (const auto& [key, value] : values) {
-            if (key == "schema") continue;
-            const auto& field = FindGameSetting(key);
+            const auto* field = KnownSetting(GameSettingDefinitions(), key);
+            if (field == nullptr) continue;
             SettingValue parsed;
-            if (std::holds_alternative<bool>(field.initial)) {
+            if (std::holds_alternative<bool>(field->initial)) {
                 if (value != "true" && value != "false") throw std::invalid_argument("invalid boolean: " + key);
                 parsed = value == "true";
-            } else if (std::holds_alternative<std::uint32_t>(field.initial)) parsed = ParseUint32(value, key);
+            } else if (std::holds_alternative<std::uint32_t>(field->initial)) parsed = ParseUint32(value, key);
             else parsed = ParseTomlString(value);
-            ValidateSettingValue(field, parsed);
+            ValidateSettingValue(*field, parsed);
             settings.values[key] = std::move(parsed);
         }
         return settings;

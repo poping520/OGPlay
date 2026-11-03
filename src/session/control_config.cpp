@@ -65,8 +65,12 @@ constexpr std::size_t kMaxControlFileLines = 200;
     return static_cast<float>(number);
 }
 
-void ExactKeys(const Table& table, const std::string_view field,
+// The user's input.toml skips keys it does not know; key editor requests reject them.
+enum class UnknownKeys { reject, skip };
+
+void ExactKeys(const Table& table, const std::string_view field, const UnknownKeys unknown,
                const std::initializer_list<std::string_view> allowed) {
+    if (unknown == UnknownKeys::skip) return;
     for (const auto& [key, value] : table) {
         static_cast<void>(value);
         if (std::find(allowed.begin(), allowed.end(), key) == allowed.end())
@@ -129,8 +133,9 @@ constexpr std::array kAndroidKeyNames{
     return sources;
 }
 
-[[nodiscard]] input::ZoneSpec DecodeZone(const Table& table, const std::string_view field) {
-    ExactKeys(table, field, {"name", "anchor", "x", "y", "w", "h", "r"});
+[[nodiscard]] input::ZoneSpec DecodeZone(const Table& table, const std::string_view field,
+                                        const UnknownKeys unknown) {
+    ExactKeys(table, field, unknown, {"name", "anchor", "x", "y", "w", "h", "r"});
     input::ZoneSpec zone;
     zone.name = String(table, "name", field);
     if (!core::IsValidLowercaseIdentifier(zone.name))
@@ -150,17 +155,18 @@ constexpr std::array kAndroidKeyNames{
     return zone;
 }
 
-[[nodiscard]] ControlBindingEntry DecodeBinding(const Table& table, const std::string_view field) {
+[[nodiscard]] ControlBindingEntry DecodeBinding(const Table& table, const std::string_view field,
+                                                const UnknownKeys unknown) {
     ControlBindingEntry entry;
     auto& binding = entry.binding;
     const auto& action = String(table, "action", field);
     if (const auto mode = OptionalString(table, "mode", field)) binding.mode = *mode;
     binding.sources = Sources(String(table, "source", field));
     if (action == "none") {
-        ExactKeys(table, field, {"source", "action", "mode"});
+        ExactKeys(table, field, unknown, {"source", "action", "mode"});
         entry.unbind = true;
     } else if (action == "button") {
-        ExactKeys(table, field, {"source", "action", "mode", "zone", "press", "repeat_frames"});
+        ExactKeys(table, field, unknown, {"source", "action", "mode", "zone", "press", "repeat_frames"});
         binding.action = input::ActionKind::button;
         binding.zone = String(table, "zone", field);
         const auto press = OptionalString(table, "press", field).value_or("hold");
@@ -174,7 +180,7 @@ constexpr std::array kAndroidKeyNames{
             binding.repeat_frames = static_cast<std::uint32_t>(*frames);
         }
     } else if (action == "stick") {
-        ExactKeys(table, field, {"source", "action", "mode", "zone", "radius", "settle_frames", "ramp_frames"});
+        ExactKeys(table, field, unknown, {"source", "action", "mode", "zone", "radius", "settle_frames", "ramp_frames"});
         binding.action = input::ActionKind::stick;
         binding.zone = String(table, "zone", field);
         binding.stick_radius = OptionalNumber(table, "radius", field).value_or(binding.stick_radius);
@@ -187,13 +193,13 @@ constexpr std::array kAndroidKeyNames{
             }
         }
     } else if (action == "key") {
-        ExactKeys(table, field, {"source", "action", "mode", "key"});
+        ExactKeys(table, field, unknown, {"source", "action", "mode", "key"});
         binding.action = input::ActionKind::key;
         const auto* key = Find(table, "key");
         if (key == nullptr) throw ControlConfigError(Field(field, "key") + " is missing");
         binding.android_key_code = AndroidKeyCode(*key, Field(field, "key"));
     } else if (action == "mode") {
-        ExactKeys(table, field, {"source", "action", "mode", "target", "switch"});
+        ExactKeys(table, field, unknown, {"source", "action", "mode", "target", "switch"});
         binding.action = input::ActionKind::mode;
         binding.target_mode = String(table, "target", field);
         const auto mode_switch = OptionalString(table, "switch", field).value_or("toggle");
@@ -208,12 +214,13 @@ constexpr std::array kAndroidKeyNames{
     return entry;
 }
 
-[[nodiscard]] std::vector<input::ZoneSpec> DecodeZones(const Table& table, const std::string_view field) {
+[[nodiscard]] std::vector<input::ZoneSpec> DecodeZones(const Table& table, const std::string_view field,
+                                                      const UnknownKeys unknown) {
     std::vector<input::ZoneSpec> zones;
     const auto& items = Tables(table, "zone", field);
     for (std::size_t i = 0; i < items.size(); ++i) {
         auto zone = DecodeZone(std::get<Table>(items[i].value),
-                               Field(field, "zone[" + std::to_string(i) + "]"));
+                               Field(field, "zone[" + std::to_string(i) + "]"), unknown);
         if (std::ranges::any_of(zones, [&](const auto& z) { return z.name == zone.name; }))
             throw ControlConfigError(std::string(field) + " places zone " + zone.name + " twice");
         zones.push_back(std::move(zone));
@@ -222,12 +229,13 @@ constexpr std::array kAndroidKeyNames{
 }
 
 [[nodiscard]] std::vector<ControlBindingEntry> DecodeBindings(const Table& table,
-                                                              const std::string_view field) {
+                                                              const std::string_view field,
+                                                              const UnknownKeys unknown) {
     std::vector<ControlBindingEntry> bindings;
     const auto& items = Tables(table, "binding", field);
     for (std::size_t i = 0; i < items.size(); ++i) {
         bindings.push_back(DecodeBinding(std::get<Table>(items[i].value),
-                                         Field(field, "binding[" + std::to_string(i) + "]")));
+                                         Field(field, "binding[" + std::to_string(i) + "]"), unknown));
     }
     return bindings;
 }
@@ -282,19 +290,17 @@ void ApplyZones(std::vector<input::ZoneSpec>& zones, const std::vector<input::Zo
 
 }  // namespace
 
-ControlLayer DecodeControlLayer(const Table& table, const std::string_view field) {
-    ExactKeys(table, field, {"zone", "binding"});
-    return {DecodeZones(table, field), DecodeBindings(table, field)};
+ControlLayer DecodeControlLayer(const Table& table, const std::string_view field, const UnknownKeys unknown) {
+    ExactKeys(table, field, unknown, {"zone", "binding"});
+    return {DecodeZones(table, field, unknown), DecodeBindings(table, field, unknown)};
 }
 
 }  // namespace detail
 
 ControlLayer LoadControlOverrideText(const std::string_view text) {
     auto root = detail::ParseControlFile(text);
-    detail::ExactKeys(root, "override", {"schema", "zone", "binding"});
     detail::RequireSchema(root);
-    root.erase("schema");
-    return detail::DecodeControlLayer(root, "override");
+    return detail::DecodeControlLayer(root, "override", detail::UnknownKeys::skip);
 }
 
 ControlLayer LoadControlOverride(const std::filesystem::path& path) {
@@ -502,7 +508,8 @@ void SaveControlLayer(const std::filesystem::path& path, const ControlLayer& lay
 ControlLayer DecodeControlLayerJson(const core::JsonValue value) {
     if (!value.IsObject()) throw input::ControlConfigError("input configuration JSON must be an object");
     const auto table = JsonToToml(value, 0);
-    return detail::DecodeControlLayer(std::get<detail::TomlValue::Table>(table.value), "layer");
+    return detail::DecodeControlLayer(std::get<detail::TomlValue::Table>(table.value), "layer",
+                                      detail::UnknownKeys::reject);
 }
 
 core::JsonWriter::Value WriteControlLayerJson(core::JsonWriter& writer, const ControlLayer& layer) {

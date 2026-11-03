@@ -21,9 +21,11 @@ UiTree::UiTree(const UiGeometryOwner owner, std::shared_ptr<const UiFallbackFont
 UiTree::UiTree(const UiTree& other)
     : modification_count_(other.modification_count_), geometry_owner_(other.geometry_owner_),
       projection_snapshot_(other.projection_snapshot_), projection_target_(other.projection_target_),
-      projection_epoch_(other.projection_epoch_), published_projection_(other.published_projection_.load()),
+      projection_epoch_(other.projection_epoch_),
       generation_(other.generation_), fallback_font_(other.fallback_font_), next_node_(other.next_node_),
-      root_(other.root_), focused_(other.focused_), nodes_(other.nodes_), id_index_(other.id_index_) {}
+      root_(other.root_), focused_(other.focused_), nodes_(other.nodes_), id_index_(other.id_index_) {
+    published_projection_.Store(other.published_projection_.Load());
+}
 
 namespace {
 
@@ -86,7 +88,7 @@ void UiTree::CommitProjection(const UiGeometryProjection& projection) {
             !SameTarget(projection.target, *previous->ProjectionTarget()))
             throw std::runtime_error("Window visibility requires matching complete geometry");
         UiTree candidate(*previous);
-        candidate.published_projection_.store(nullptr);
+        candidate.published_projection_.Store(nullptr);
         candidate.modification_count_ = modification_count_;
         candidate.RecordModification();
         candidate.Require(root_).window_visible = *projection.window_visible;
@@ -99,14 +101,14 @@ void UiTree::CommitProjection(const UiGeometryProjection& projection) {
         Require(root_).draw_dirty = true;
         modification_count_ = candidate.modification_count_;
         projection_epoch_ = projection.epoch;
-        published_projection_.store(std::move(snapshot));
+        published_projection_.Store(std::move(snapshot));
         return;
     }
 
     // Prepare and validate in isolation. All potentially throwing work, including
     // allocation of the immutable consumer snapshot, precedes the final swaps.
     UiTree candidate(*this);
-    candidate.published_projection_.store(nullptr);
+    candidate.published_projection_.Store(nullptr);
     for (auto& [id, node] : candidate.nodes_) {
         static_cast<void>(id);
         node.parent.reset();
@@ -191,7 +193,7 @@ void UiTree::CommitProjection(const UiGeometryProjection& projection) {
     id_index_.swap(candidate.id_index_);
     focused_ = candidate.focused_;
     projection_epoch_ = projection.epoch;
-    published_projection_.store(std::move(snapshot));
+    published_projection_.Store(std::move(snapshot));
 }
 
 std::optional<UiNodeId> UiTree::HitTestProjection(const std::int32_t x, const std::int32_t y) const {
@@ -348,7 +350,7 @@ void UiTree::Reset() {
     RecordModification();
     projection_target_.reset();
     projection_epoch_ = 0;
-    published_projection_.store(nullptr);
+    published_projection_.Store(nullptr);
     ++generation_;
     next_node_ = 0;
     nodes_.clear();

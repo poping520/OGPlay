@@ -21,6 +21,6 @@ export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }
     return () => window.clearTimeout(timer);
   }, [leaving]);
   return <div class={`splash glass-sky ${leaving ? 'leaving' : ''}`} role="status" aria-label={t('OGPlay 正在启动')}>
-    <img src={logo} alt="" /><b><span>OG</span>Play</b><small>{t('Android 经典游戏兼容层')}</small><i class="splash-bar" />
+    <img src={logo} alt="" /><b><span>OG</span>Play</b><small>{t('Android 老游戏兼容层')}</small><i class="splash-bar" />
   </div>;
 }

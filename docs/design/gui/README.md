@@ -84,7 +84,7 @@ ogplay
 
 ### 3.3 游戏设置（每实例覆盖）
 
-存储：`<library-root>/library/<installation-id>/settings.toml`（schema 1，严格键集合，未知键失败，
+存储：`<library-root>/library/<installation-id>/settings.toml`（schema 1，读取时跳过未知键，写入只接受已知键，
 与 `GuiConfig` 同一 TOML 私有入口）。`BuildLaunchPlan` 读取它生成 argv；"继承全局"项不写键。
 
 | Tab | 设置项 | 现状 | 传参/落点 |

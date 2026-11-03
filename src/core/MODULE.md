@@ -27,6 +27,8 @@
   ASCII whitespace trim，以及 reject/replace 策略化 UTF-16→UTF-8；
   `IsValidPackageName` / `IsValidLowercaseIdentifier` 提供点分包名与小写标识符的
   共享词法校验，供 session、input 与前端复用。
+- `atomic_shared_ptr.h`：`AtomicSharedPtr` 原子发布/获取 shared_ptr；标准库提供
+  `std::atomic<std::shared_ptr>` 时使用它，否则（libc++）退回 `std::atomic_load/store`。
 - `encoding.h`：标准/URL-safe Base64（padding/wrap/newline 可配置）与大小写可选 hex；
   Android flags 仍由 runtime adapter 解释。
 

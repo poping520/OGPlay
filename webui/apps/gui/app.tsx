@@ -154,8 +154,7 @@ export function App() {
   const requestRemoval = (game: LibraryItem) => {
     setMenuOpen(false);
     if (game.running || busy || importing) return;
-    if (settingsRef.current?.values.confirm_delete === false) void remove(game);
-    else setRemoving(game);
+    setRemoving(game);
   };
   const intake = (files: File[]) => {
     const error = validatePackageSelection(files);
@@ -264,11 +263,11 @@ export function App() {
   const hero = () => {
     if (loading) return <div class="hero-text"><h1 class="small">{t('正在读取游戏库…')}</h1></div>;
     if (library.items.length === 0) return <>
-      <div class="hero-text"><div class="kicker"><i />Welcome to OGPlay</div><h1>{t('把经典游戏')}<br />{t('带回来')}</h1>
-        <div class="sub">{t('安卓老游戏，在桌面上原生运行')}</div>
-        <div class="cta"><button ref={primary} class="pill main" disabled={importing} onClick={startImport}><Key>A</Key>{t('选择安装包')}</button></div>
-        <div class="state">{t('也可以直接把 APK 拖进窗口 · 支持单体 APK，分包格式暂不支持')}</div></div>
-      <div class="showcase"><button class="ghost-cart" aria-label={t('选择安装包')} disabled={importing} onClick={startImport}>＋</button><div class="floor" /></div>
+      <div class="hero-text"><div class="kicker"><i />Welcome to OGPlay</div><h1>{t('添加你的')}<br />{t('第一款游戏')}</h1>
+        <div class="sub">{t('选择安卓游戏安装包（APK），或将它拖入窗口。')}</div>
+        <div class="cta"><button ref={primary} class="pill main" disabled={importing} onClick={startImport}><Key>A</Key>{t('选择 APK 文件')}</button></div>
+        <div class="state">{t('支持单体 APK，分包格式暂不支持')}</div></div>
+      <div class="showcase"><button class="ghost-cart" aria-label={t('选择 APK 文件')} disabled={importing} onClick={startImport}>＋</button><div class="floor" /></div>
     </>;
     if (!item) return <div class="hero-text"><h1 class="small">{query ? t('没有符合条件的游戏') : t('这个分类里没有游戏')}</h1>
       <div class="sub">{t('按 Q / E 切换分类，或换个关键词。')}</div><div class="cta"><button class="pill" onClick={resetFilters}><Key>B</Key>{t('清除筛选')}</button></div></div>;

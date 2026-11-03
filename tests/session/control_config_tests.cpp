@@ -4,7 +4,7 @@
 #include "ogplay/session/control_config.h"
 using namespace ogplay;
 
-TEST_CASE("user input merges only with built-in defaults and rejects templates") {
+TEST_CASE("user input merges only with built-in defaults and skips unknown file keys") {
     const auto empty = session::BuildControlConfig({});
     CHECK(empty.zones.empty());
     CHECK(empty.bindings.size() == input::DefaultControlConfig().bindings.size());
@@ -34,8 +34,10 @@ action = "none"
     const auto frame = mapper.Flush();
     REQUIRE(frame.size() == 1);
     CHECK(frame[0].touch.points[0].x == 1024 - 40 - 50);
-    CHECK_THROWS_WITH_AS(static_cast<void>(session::LoadControlOverrideText(
-        "schema = 1\ntemplate = \"stick_action\"\n")), doctest::Contains("template"), input::ControlConfigError);
+    const auto unknown = session::LoadControlOverrideText(
+        "schema = 1\ntemplate = \"stick_action\"\n[[zone]]\nname = \"fire\"\nanchor = \"center\"\nr = 40\nlegacy = 1\n");
+    REQUIRE(unknown.zones.size() == 1);
+    CHECK(unknown.zones.front().name == "fire");
     const auto unplaced = session::LoadControlOverrideText(
         "schema = 1\n[[binding]]\nsource = \"key:j\"\naction = \"button\"\nzone = \"missing\"\n");
     CHECK_THROWS_WITH_AS(static_cast<void>(session::BuildControlConfig(unplaced)),

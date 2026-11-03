@@ -78,7 +78,7 @@ TEST_CASE("GUI config is strict and round-trips UTF-8 paths") {
     ogplay::app::SaveLibraryConfig(tree.path, config);
     CHECK(ogplay::app::LoadLibraryConfig(tree.path) == config);
 
-    Write(tree.path / "config.toml", "schema = 1\nunknown = \"x\"\n");
+    Write(tree.path / "config.toml", "schema = 1\n");
     try {
         static_cast<void>(ogplay::app::LoadLibraryConfig(tree.path));
         FAIL("damaged config should fail");
@@ -122,18 +122,6 @@ TEST_CASE("GUI config recovers an interrupted replacement backup") {
     CHECK(ogplay::app::LoadLibraryConfig(tree.path).profiles_dir == profiles);
 }
 
-TEST_CASE("GUI config discards the legacy external system directory") {
-    TemporaryDirectory tree;
-    Write(tree.path / "config.toml",
-          "schema = 1\nsystem_dir = \"C:/old-bionic\"\n");
-    CHECK(ogplay::app::LoadLibraryConfig(tree.path) ==
-          ogplay::app::LibraryConfig{});
-    ogplay::app::SaveLibraryConfig(tree.path,
-                                    ogplay::app::LibraryConfig{});
-    CHECK(std::filesystem::file_size(tree.path / "config.toml") ==
-          std::string_view("schema = 2\n").size());
-}
-
 TEST_CASE("GUI schema two validates typed settings without replacing good config") {
     using namespace ogplay::app;
     TemporaryDirectory tree;
@@ -153,8 +141,12 @@ TEST_CASE("GUI schema two validates typed settings without replacing good config
     invalid.values["mcp_port"] = std::uint32_t{0};
     CHECK_THROWS(SaveLibraryConfig(tree.path, invalid));
     CHECK(LoadLibraryConfig(tree.path) == config);
-    for (const auto text : {"schema = 2\ntheme = true\n", "schema = 2\nsupersample = 0\n",
-                            "schema = 2\nunknown = true\n", "schema = 3\n"}) {
+    Write(tree.path / "config.toml", "schema = 2\nunknown = true\nmute = true\n");
+    LibraryConfig known;
+    SetSetting(known, "mute", true);
+    CHECK(LoadLibraryConfig(tree.path) == known);
+    for (const auto text : {"schema = 2\ntheme = true\n", "schema = 2\nsupersample = 0\n", "schema = 1\n",
+                            "schema = 3\n"}) {
         Write(tree.path / "config.toml", text);
         CHECK_THROWS(static_cast<void>(LoadLibraryConfig(tree.path)));
     }
@@ -180,7 +172,9 @@ TEST_CASE("GUI instance settings persist only overrides with strict schema and b
     CHECK_FALSE(std::filesystem::exists(first / "settings.toml.bak"));
     SaveGameSettings(first, {});
     CHECK(std::filesystem::file_size(first / "settings.toml") == std::string_view("schema = 1\n").size());
-    for (const auto text : {"schema = 2\n", "schema = 1\nunknown = true\n", "schema = 1\nmute = 1\n",
+    Write(first / "settings.toml", "schema = 1\nunknown = true\nmute = false\n");
+    CHECK(LoadGameSettings(first) == GameSettings{{{"mute", false}}});
+    for (const auto text : {"schema = 2\n", "schema = 1\nmute = 1\n",
                             "schema = 1\nsupersample = 0\n", "schema = 1\nexternal_dir = \"relative\"\n",
                             "schema = 1\nmute = true\nmute = false\n"}) {
         Write(first / "settings.toml", text);
@@ -350,7 +344,7 @@ TEST_CASE("library exposes corrupt entries instead of silently skipping them") {
     Write(store.EntriesRoot() / "org.example.missing" / "meta.toml",
           "schema = 1\npackage = \"org.example.missing\"\n"
           "display_name = \"Missing\"\nversion_code = 1\nversion_name = \"1\"\n"
-          "imported_at = \"now\"\n");
+          "imported_at = \"now\"\nunknown = true\n");
 
     const auto entries = store.LoadEntries();
     REQUIRE(entries.size() == 2);

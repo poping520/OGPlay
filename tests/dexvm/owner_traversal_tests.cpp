@@ -1765,8 +1765,7 @@ TEST_CASE("DVM-330 presentation cache follows immutable planes and producer fram
         const auto old = AcquireAndroidPresentation(*f.context);
         auto producer = std::make_shared<DexVmAndroidContext::PresentationSnapshot>(*old);
         ++producer->presentation_epoch;
-        std::atomic_store(&f.context->presentation_snapshot,
-                          std::shared_ptr<const DexVmAndroidContext::PresentationSnapshot>{producer});
+        f.context->presentation_snapshot.Store(producer);
         CHECK(present(31).rgba8[0] == 31);
         CHECK(cache.snapshot == producer);
         CHECK(cache.normal.front() == empty);
@@ -1783,16 +1782,14 @@ TEST_CASE("DVM-330 presentation cache follows immutable planes and producer fram
         plane.tree = next->guest_window_epoch_refs.front();
         next->modal_stack.push_back(plane);
         ++next->presentation_epoch;
-        std::atomic_store(&f.context->presentation_snapshot,
-                          std::shared_ptr<const DexVmAndroidContext::PresentationSnapshot>{next});
+        f.context->presentation_snapshot.Store(next);
         CHECK(present(0).rgba8[0] == 255);
         CHECK(cache.normal.front() == red);
         REQUIRE(cache.modal.size() == 1);
         const auto complete = cache.snapshot;
         next = std::make_shared<DexVmAndroidContext::PresentationSnapshot>(*next);
         next->viewport.width = 81;
-        std::atomic_store(&f.context->presentation_snapshot,
-                          std::shared_ptr<const DexVmAndroidContext::PresentationSnapshot>{next});
+        f.context->presentation_snapshot.Store(next);
         CHECK_THROWS(present(0));
         CHECK(cache.snapshot == complete);
         CHECK(cache.normal.front() == red);

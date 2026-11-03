@@ -11,6 +11,9 @@
 
 Profile 摘要只含 id 与 quirk，不提供显示名或 required external。显示名称来自
 APK；数据目录由实例设置/导入选项提供，目录有效性独立于 Profile。
+APK label 为资源时，默认配置值为 `display_name`，各语言资源（`zh-TW` 形式）存入 meta.toml
+`display_name.<locale>`。`LocalizedDisplayName` 按启动器语言依次取完全匹配、仅语言、同语言其他地区、
+默认值；运行窗口标题和 GUI（webui `gameName` 同规则）都按此显示。
 解释器设置用 `default` 选择通用默认值，`switch/threaded` 为用户显式覆盖。
 
 screen_width/screen_height（屏幕宽高）默认 1280/720，范围 1..4096；density_dpi 默认 320，范围 72..1280；

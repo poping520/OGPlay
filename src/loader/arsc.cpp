@@ -63,6 +63,16 @@ struct Chunk final {
     [[nodiscard]] std::size_t End() const { return offset + size; }
 };
 
+// ResTable_config language/country: two ASCII letters, or three 5-bit letters packed
+// into two bytes when the high bit is set (base 'a' for language, '0' for region).
+[[nodiscard]] std::string ConfigCode(const std::uint8_t first, const std::uint8_t second, const std::uint8_t base) {
+    if (first == 0) return {};
+    if ((first & 0x80U) == 0) return {static_cast<char>(first), static_cast<char>(second)};
+    return {static_cast<char>(base + (second & 0x1FU)),
+            static_cast<char>(base + ((second & 0xE0U) >> 5U) + ((first & 0x03U) << 3U)),
+            static_cast<char>(base + ((first & 0x7CU) >> 2U))};
+}
+
 [[nodiscard]] Chunk ReadChunk(const Reader& reader, const std::size_t offset) {
     Chunk chunk;
     chunk.type = reader.U16(offset);
@@ -260,6 +270,11 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
                         const auto config_size = reader.U32(sub.offset + 20);
                         if (config_size < 4 || 20U + config_size > sub.header_size) {
                             Fail(sub.offset, "resources.arsc invalid configuration");
+                        }
+                        if (config_size >= 12) {
+                            entry.locale = ConfigCode(reader.U8(sub.offset + 28), reader.U8(sub.offset + 29), std::uint8_t{'a'});
+                            const auto region = ConfigCode(reader.U8(sub.offset + 30), reader.U8(sub.offset + 31), std::uint8_t{'0'});
+                            if (!entry.locale.empty() && !region.empty()) entry.locale += "-" + region;
                         }
                         if (config_size >= 16) {
                             entry.orientation = reader.U8(sub.offset + 32);

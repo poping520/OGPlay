@@ -1,4 +1,5 @@
 #include "ogplay/app/apk_visuals.h"
+#include "ogplay/app/library.h"
 
 #include <algorithm>
 #include <array>
@@ -218,6 +219,16 @@ ApkApplicationVisuals ExtractApkApplicationVisuals(
         const auto resource_id =
             std::get<std::uint32_t>(*manifest.application_label);
         const auto* entry = resources->FindById(resource_id);
+        for (const auto& candidate : resources->entries) {
+            if (candidate.resource_id != resource_id) continue;
+            if (candidate.locale.empty()) {
+                entry = &candidate;
+            } else if (IsLibraryLocaleTag(candidate.locale) && candidate.string_value.has_value() &&
+                       !candidate.string_value->empty() &&
+                       !ContainsControlCharacters(*candidate.string_value)) {
+                result.localized_names.emplace(candidate.locale, *candidate.string_value);
+            }
+        }
         if (entry == nullptr || !entry->string_value.has_value() ||
             entry->string_value->empty()) {
             result.fallbacks.push_back(

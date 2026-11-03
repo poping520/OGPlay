@@ -6,7 +6,7 @@ export interface SettingField {
 }
 export interface Settings {
   schema: number; revision: string; values: Record<string, SettingValue>; fields: SettingField[];
-  library_root: string; config_path: string; facts: Record<string, string>;
+  library_root: string; config_path: string; facts: Record<string, string | null>;
   reserved_visible: boolean;                     // false in release builds
 }
 // Same priority as the per-game page: graphics before storage, input before audio.
@@ -17,6 +17,26 @@ export const groups = [
   ['network', '网络', '游戏的默认网络意向。'], ['diagnostics', '诊断与日志', '日志、停滞快照与退出诊断。'],
   ['control', '开发者工具', '本机 MCP 服务与 Dashboard，供调试与自动化使用。'], ['about', '关于', '版本与随程序交付的制品清单。'],
 ] as const;
+// Host facts arrive under stable ids with data values (versions, file text, paths, codes); the labels and
+// coded values are worded here, in this order. null is a file the host could not read.
+const factLabels: Record<string, string> = {
+  ogplay_version: 'OGPlay 版本', android_manifest: 'Android / BootDex / guest JNI 制品清单',
+  webui_manifest: 'Web UI 构建清单', webui_licenses: 'Web UI 第三方许可', artifacts_error: '制品信息不可用',
+  profile_status: 'Profile 状态', profile_quirks: 'Profile quirk 列表', profiles_dir: '有效 Profile 目录',
+  profile_error: 'Profile 信息不可用',
+};
+const factValues: Record<string, Record<string, string>> = {
+  profile_status: { recorded: '目录中存在导入记录；适用性由运行服务启动时校验', missing: '记录的 Profile 在所选目录中不存在。' },
+};
+export function factRows(facts: Record<string, string | null>): [string, string][] {
+  const order = Object.keys(factLabels);
+  const rank = (key: string) => order.includes(key) ? order.indexOf(key) : order.length;
+  return Object.entries(facts).sort(([a], [b]) => rank(a) - rank(b)).map(([key, value]) => {
+    const coded = value === null ? undefined : factValues[key]?.[value];
+    const shown = value === null ? t('文件不可用或超过读取上限') : coded ? t(coded) : key === 'profile_quirks' && !value ? t('无') : value;
+    return [factLabels[key] ? t(factLabels[key]) : key, shown];
+  });
+}
 export function settingsError(fields: SettingField[], values: Record<string, SettingValue>): string | null {
   if (Object.keys(values).some(key => !fields.some(field => field.key === key))) return t('包含未知设置。');
   for (const field of fields) {

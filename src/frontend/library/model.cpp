@@ -187,6 +187,35 @@ void WriteText(const std::filesystem::path& path, const std::string_view text) {
     return found == fields.end() ? nullptr : &*found;
 }
 
+}  // namespace
+
+bool IsLibraryLocaleTag(const std::string_view tag) {
+    const auto dash = tag.find('-');
+    const auto language = tag.substr(0, dash);
+    if (language.size() < 2 || language.size() > 3 ||
+        !std::all_of(language.begin(), language.end(), [](char c) { return c >= 'a' && c <= 'z'; }))
+        return false;
+    if (dash == std::string_view::npos) return true;
+    const auto region = tag.substr(dash + 1);
+    return region.size() >= 2 && region.size() <= 3 && std::all_of(region.begin(), region.end(), [](char c) {
+               return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+           });
+}
+
+std::string LocalizedDisplayName(const LibraryMetadata& metadata, const std::string_view language) {
+    const auto& names = metadata.localized_names;
+    if (const auto exact = names.find(std::string(language)); exact != names.end()) return exact->second;
+    const auto base = std::string(language.substr(0, language.find('-')));
+    if (const auto plain = names.find(base); plain != names.end()) return plain->second;
+    // Another region of the same language still reads better than the default.
+    if (const auto variant = names.lower_bound(base + "-");
+        variant != names.end() && variant->first.starts_with(base + "-"))
+        return variant->second;
+    return metadata.display_name;
+}
+
+namespace {
+
 void ValidateMetadata(const LibraryMetadata& metadata) {
     ValidateExternalGuestDirectory(metadata.external_guest_dir);
     if (!core::IsValidPackageName(metadata.package)) {
@@ -198,6 +227,10 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
         !core::IsValidUtf8(metadata.imported_at)) {
         throw LibraryError(LibraryErrorCode::invalid_argument,
                             "library metadata is incomplete or invalid");
+    }
+    for (const auto& [locale, name] : metadata.localized_names) {
+        if (!IsLibraryLocaleTag(locale) || name.empty() || !core::IsValidUtf8(name))
+            throw LibraryError(LibraryErrorCode::invalid_argument, "library localized name is invalid");
     }
     if (metadata.profile_id.has_value() &&
         (metadata.profile_id->empty() || !core::IsValidUtf8(*metadata.profile_id))) {
@@ -217,6 +250,8 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
                        "\nversion_code = " + std::to_string(metadata.version_code) +
                        "\nversion_name = " + EscapeToml(metadata.version_name) +
                        "\nimported_at = " + EscapeToml(metadata.imported_at) + "\n";
+    for (const auto& [locale, name] : metadata.localized_names)
+        text.append("display_name.").append(locale).append(" = ").append(EscapeToml(name)).push_back('\n');
     if (metadata.profile_id.has_value()) {
         text.append("profile_id = ").append(EscapeToml(*metadata.profile_id)).push_back('\n');
     }
@@ -243,6 +278,10 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
     LibraryMetadata metadata;
     metadata.package = ParseTomlString(Require(values, "package"));
     metadata.display_name = ParseTomlString(Require(values, "display_name"));
+    constexpr std::string_view kLocalizedPrefix = "display_name.";
+    for (auto item = values.lower_bound(kLocalizedPrefix);
+         item != values.end() && item->first.starts_with(kLocalizedPrefix); ++item)
+        metadata.localized_names.emplace(item->first.substr(kLocalizedPrefix.size()), ParseTomlString(item->second));
     metadata.version_code = ParseUint32(Require(values, "version_code"), "version_code");
     metadata.version_name = ParseTomlString(Require(values, "version_name"));
     metadata.imported_at = ParseTomlString(Require(values, "imported_at"));

@@ -39,6 +39,9 @@
   损坏配置及过期版本明确失败。运行中可保存下次启动设置，不修改运行中的进程。
   get 返回保存值、继承值、字段定义和三种启动模式的 argv/错误，预览不启动子进程。
 - `BuildLibraryTiles` / `BuildLibraryDetail` / `LibrarySelection`：统一状态、详情和稳定选择模型。
+  库条目与设置页信息只传事实、不传句子：状态码、`damage_reason`、Profile（id 或目录错误原文）、
+  数据包（宿主路径与 `owned`）；settings/game facts 以稳定英文 id 为键，值为版本、文件内容、路径或
+  代码（null 为不可读文件）。界面语言的措辞全部由 webui 用 `t()` 生成。
 - `BuildLaunchPlan` 只调用 ResolveLaunch，再生成令牌/编辑器端口，并用 FormatGameRunArgs 生成 argv，禁止手工拼运行参数。
 - `GuiProcessManager`：SDL3 子进程启动、单实例/端口约束、非阻塞回收；析构只解除跟踪，不杀游戏。
 - `dashboard.list {}` / `dashboard.open {installation_id}`：仅查询/打开当前启动器跟踪的子进程，

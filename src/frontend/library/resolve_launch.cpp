@@ -82,7 +82,8 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     // ADR-0146: what the game failed to find, read by the launcher after exit.
     if (mode != LaunchMode::preflight)
         o.missing_data_report = std::filesystem::absolute(entry.directory / "last-run-missing.json").lexically_normal();
-    if (!entry.metadata->display_name.empty()) o.window_title = entry.metadata->display_name;
+    // The window is named in the launcher's language, like the library tile.
+    o.window_title = LocalizedDisplayName(*entry.metadata, std::get<std::string>(Setting(global, "language")));
     // The running window carries the game's own icon with the OGPlay mark; entries without one keep the default.
     if (const auto icon = entry.directory / "icon.png"; std::filesystem::is_regular_file(icon)) {
         o.window_icon = std::filesystem::absolute(icon).lexically_normal();

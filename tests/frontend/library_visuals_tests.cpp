@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -296,17 +297,24 @@ std::vector<std::byte> Resources(const std::string& icon_path = "res/drawable/ic
     return table;
 }
 
-// Resource table whose icon id (0x7f010000) has one configuration per (density, path),
-// the way aapt emits drawable-ldpi … drawable-xxxhdpi; the label stays a manifest literal.
-std::vector<std::byte> DensityResources(const std::vector<std::pair<std::uint16_t, std::string>>& icons) {
-    std::vector<std::string> paths;
-    for (const auto& [density, path] : icons)
-        paths.push_back(path);
-    const auto global = Utf8Pool(paths);
-    const auto type_pool = Utf8Pool({"drawable"});
-    const auto key_pool = Utf8Pool({"icon"});
+struct ResourceConfig final {
+    std::uint16_t density{};
+    std::string locale;  // ResTable_config language + country bytes, "" or "en" or "zhTW"
+    std::string value;
+};
+
+// Resource table whose one id (0x7f010000) has one entry per configuration, the way aapt
+// emits drawable-ldpi … drawable-xxxhdpi or values, values-en, values-zh-rTW.
+std::vector<std::byte> ConfigResources(const std::string& type_name, const std::string& key,
+                                       const std::vector<ResourceConfig>& configs) {
+    std::vector<std::string> values;
+    for (const auto& config : configs)
+        values.push_back(config.value);
+    const auto global = Utf8Pool(values);
+    const auto type_pool = Utf8Pool({type_name});
+    const auto key_pool = Utf8Pool({key});
     std::vector<std::byte> types;
-    for (std::uint32_t index = 0; index < icons.size(); ++index) {
+    for (std::uint32_t index = 0; index < configs.size(); ++index) {
         std::vector<std::byte> type;
         Push16(type, 0x0201);
         Push16(type, 56);
@@ -319,8 +327,10 @@ std::vector<std::byte> DensityResources(const std::vector<std::pair<std::uint16_
         Push32(type, 36);
         for (int byte = 0; byte < 32; ++byte)
             type.push_back(std::byte{0});
-        type[34] = static_cast<std::byte>(icons[index].first & 0xffU);
-        type[35] = static_cast<std::byte>(icons[index].first >> 8U);
+        for (std::size_t byte = 0; byte < configs[index].locale.size(); ++byte)
+            type[28 + byte] = static_cast<std::byte>(configs[index].locale[byte]);
+        type[34] = static_cast<std::byte>(configs[index].density & 0xffU);
+        type[35] = static_cast<std::byte>(configs[index].density >> 8U);
         Push32(type, 0);
         Patch32(type, 16, static_cast<std::uint32_t>(type.size()));
         Push16(type, 8);
@@ -365,6 +375,14 @@ std::vector<std::byte> DensityResources(const std::vector<std::pair<std::uint16_
     Append(table, package);
     Patch32(table, 4, static_cast<std::uint32_t>(table.size()));
     return table;
+}
+
+// Icon id 0x7f010000 per (density, path); the label stays a manifest literal.
+std::vector<std::byte> DensityResources(const std::vector<std::pair<std::uint16_t, std::string>>& icons) {
+    std::vector<ResourceConfig> configs;
+    for (const auto& [density, path] : icons)
+        configs.push_back({density, "", path});
+    return ConfigResources("drawable", "icon", configs);
 }
 
 // Solid RGBA PNG of any size: zlib "stored" blocks keep the encoder a few lines long.
@@ -532,6 +550,35 @@ TEST_CASE("launcher visual extraction uses literal and explicit fallbacks") {
     CHECK(missing_result.icon_png.empty());
     CHECK(missing_result.Used(ogplay::app::ApplicationVisualFallback::icon_attribute_missing));
     CHECK(missing_result.Used(ogplay::app::ApplicationVisualFallback::label_attribute_missing));
+}
+
+TEST_CASE("launcher keeps every translated resource label and stores it in the library") {
+    const auto apk = StoredZip({{"AndroidManifest.xml", Manifest(true, false, 0x7f020000U, 0x7f010000U)},
+                                {"resources.arsc", ConfigResources("string", "app_name",
+                                                                   {{0, "en", "Sweet Shop"},
+                                                                    {0, "", "糖果铺"},
+                                                                    {0, "zhTW", "糖果舖"},
+                                                                    {0, "ja", ""}})}});
+    const auto visuals = ogplay::app::ExtractApkApplicationVisuals(apk);
+    CHECK(visuals.display_name == "糖果铺");
+    CHECK(visuals.localized_names == std::map<std::string, std::string>{{"en", "Sweet Shop"}, {"zh-TW", "糖果舖"}});
+
+    TempDirectory temporary;
+    const auto source = temporary.Path() / "source.apk";
+    WriteBytes(source, apk);
+    ogplay::app::LibraryStore store(temporary.Path() / "root");
+    ogplay::app::LibraryMetadata metadata{visuals.manifest.package, visuals.display_name, visuals.manifest.version_code,
+                                          "", "2026-11-03T00:00:00Z", std::nullopt, std::nullopt};
+    metadata.localized_names = visuals.localized_names;
+    store.Import({source, metadata, {}}, true);
+    const auto entries = store.LoadEntries();
+    REQUIRE(entries.size() == 1);
+    REQUIRE(entries.front().metadata.has_value());
+    const auto& stored = *entries.front().metadata;
+    CHECK(stored.localized_names == visuals.localized_names);
+    CHECK(ogplay::app::LocalizedDisplayName(stored, "en-US") == "Sweet Shop");
+    CHECK(ogplay::app::LocalizedDisplayName(stored, "zh-CN") == "糖果舖");
+    CHECK(ogplay::app::LocalizedDisplayName(stored, "ja-JP") == "糖果铺");
 }
 
 TEST_CASE("launcher visual extraction rejects damaged APK identity") {

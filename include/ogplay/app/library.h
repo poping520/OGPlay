@@ -68,9 +68,18 @@ struct LibraryMetadata final {
     std::optional<std::filesystem::path> external_dir;
     std::string external_guest_dir{"/sdcard"};
     bool external_owned{};
+    // Label translations from the APK, by resource locale ("en", "zh-TW"); display_name is the default.
+    std::map<std::string, std::string> localized_names;
 
     bool operator==(const LibraryMetadata&) const = default;
 };
+
+// "en", "zh-TW": a lower-case language with an optional upper-case region, as APK resources name them.
+[[nodiscard]] OGPLAYCORE_API bool IsLibraryLocaleTag(std::string_view tag);
+// The name for a launcher language such as "en-US": exact locale, then the bare language, then
+// another region of it, then the APK's default label.
+[[nodiscard]] OGPLAYCORE_API std::string LocalizedDisplayName(const LibraryMetadata& metadata,
+                                                              std::string_view language);
 
 struct LibraryEntry final {
     std::string key;

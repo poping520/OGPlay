@@ -16,6 +16,36 @@ export function statusOf(item: LibraryItem): { label: string; tone: string } {
   const status = statuses[item.status] ?? { label: '状态未知', tone: 'warning' };
   return { ...status, label: t(status.label) };
 }
+export interface Worded { value: string; detail: string }
+// The host sends codes, ids and paths; every sentence about them is written here, in the launcher language.
+export function externalText(item: LibraryItem): Worded {
+  const { status, value: path, owned } = item.external;
+  if (status === 'ready') return { value: t('已就绪'), detail: owned ? t('已复制到游戏库：{path}', { path }) : t('引用原目录：{path}', { path }) };
+  if (status === 'missing') return { value: t('缺失'), detail: t('记录的数据包目录不可用：{path}', { path }) };
+  if (status === 'not_required') return { value: t('未指定'), detail: t('可按需选择外部数据目录。') };
+  return { value: t('无法判断'), detail: t('库条目元数据不可用。') };
+}
+export function profileText(item: LibraryItem): Worded | null {
+  if (!item.profile) return null;
+  const { status, value } = item.profile;
+  if (status === 'ready') return { value, detail: t('精确 Profile 已匹配。') };
+  if (status === 'missing') return { value, detail: t('记录的 Profile 在所选目录中不存在。') };
+  return { value: t('无法判断'), detail: t('Profile 目录不可用：{error}', { error: value }) };
+}
+/** Why the entry needs attention or cannot start now; empty when it is ready. */
+export function statusDetail(item: LibraryItem): string {
+  switch (item.status) {
+  case 'damaged': return t('库条目损坏：{reason}。可在详情中移除后重新导入。', { reason: item.damage_reason ?? t('元数据不可用') });
+  case 'profile_catalog_unavailable': return item.profile?.status === 'missing'
+    ? t('记录的 Profile {id} 在所选目录中不存在。请在设置中选择有效目录或恢复内置数据。', { id: item.profile.value })
+    : t('Profile 目录不可用：{error}。请在设置中选择有效目录或恢复内置数据。', { error: item.profile?.value ?? '' });
+  case 'missing_external': return item.external.owned
+    ? t('游戏库中的数据包缺失：{path}。请重新选择目录。', { path: item.external.value })
+    : t('记录的数据包目录不可用：{path}。请重新选择目录。', { path: item.external.value });
+  case 'running': return t('游戏正在运行；请先退出游戏。');
+  default: return '';
+  }
+}
 export function visibleItems(items: LibraryItem[], query: string, filter: Filter, sort: Sort): LibraryItem[] {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const time = (item: LibraryItem) => {
@@ -23,7 +53,8 @@ export function visibleItems(items: LibraryItem[], query: string, filter: Filter
     return Number.isFinite(parsed) ? parsed : null;
   };
   return items.filter(item => {
-    const text = [item.display_name, item.package, item.installation_id, item.version].join(' ').toLocaleLowerCase();
+    const text = [item.display_name, ...Object.values(item.localized_names), item.package, item.installation_id, versionLabel(item)]
+      .join(' ').toLocaleLowerCase();
     return terms.every(term => text.includes(term)) &&
       (filter === 'all' || (filter === 'launchable' && item.can_launch) ||
        (filter === 'attention' && !['ready', 'running'].includes(item.status)));
@@ -39,7 +70,7 @@ export function visibleItems(items: LibraryItem[], query: string, filter: Filter
   });
 }
 export function versionLabel(item: LibraryItem): string {
-  return item.version_code === null ? item.version :
+  return item.version_code === null ? t('元数据不可用') :
     item.version_name ? `${item.version_name} (${item.version_code})` : `versionCode ${item.version_code}`;
 }
 export function validatePackageSelection(files: Pick<File, 'name' | 'size'>[]): string | null {

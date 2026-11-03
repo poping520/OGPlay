@@ -5,6 +5,7 @@
 #include <deque>
 #include <filesystem>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -34,6 +35,8 @@ struct LibraryViewContext final {
     std::vector<std::string> running_packages;
     std::optional<std::string> profile_catalog_error;
     std::map<std::string, std::string> profile_errors;
+    // Entries whose recorded Profile id is absent from their catalog.
+    std::set<std::string> missing_profiles;
 };
 
 struct LibraryTile final {
@@ -41,25 +44,25 @@ struct LibraryTile final {
     std::string display_name;
     LibraryTileStatus status{LibraryTileStatus::damaged};
     std::vector<std::byte> icon_png;
-    std::string detail;
     bool running{};
     bool can_launch{};
 };
 
+// Facts only; the launcher writes the words in its own language. Profile: `value` is the
+// recorded id, or the catalog error when unavailable. Data pack: the host path, empty when unset.
 struct LibraryCondition final {
     LibraryConditionStatus status{LibraryConditionStatus::unavailable};
     std::string value;
-    std::string detail;
+    bool owned{};  // data pack copied into the library
 };
 
 struct LibraryDetail final {
     std::string key;
     std::string display_name;
     std::string package;
-    std::string version;
     LibraryTileStatus status{LibraryTileStatus::damaged};
     std::vector<std::byte> icon_png;
-    std::string detail;
+    std::optional<std::string> damage_reason;
     // Present only for a recorded exact Profile or an unreadable catalog; the generic
     // path is the default and needs no Profile row.
     std::optional<LibraryCondition> profile;

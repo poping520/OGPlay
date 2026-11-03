@@ -1,8 +1,11 @@
 import { t } from './i18n';
-export interface Condition { status: string; value: string; detail: string }
+// Host facts only: the Profile value is the id or the catalog error, the data pack value the
+// host path; the launcher writes the words.
+export interface Condition { status: string; value: string; owned: boolean }
 export interface LibraryItem {
-  installation_id: string; display_name: string; package: string; version: string;
-  status: string; detail: string; running: boolean; can_launch: boolean; icon: string;
+  installation_id: string; display_name: string; package: string;
+  localized_names: Record<string, string>;
+  status: string; damage_reason: string | null; running: boolean; can_launch: boolean; icon: string;
   profile: Condition | null; external: Condition;
   version_name: string | null; version_code: number | null; imported_at: string | null;
   sandbox_path: string; log_directory: string;

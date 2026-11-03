@@ -326,6 +326,13 @@ TEST_CASE("GUI RPC serializes model facts and enforces launch eligibility") {
     CHECK(items->Element(0)->Member("imported_at")->String() == "now");
     CHECK(items->Element(0)->Member("sandbox_path")->String()->ends_with("/sandbox/org.example.game"));
     CHECK(items->Element(0)->Member("log_directory")->String()->ends_with("/library/org.example.game"));
+    // Facts only: codes, ids and paths; the launcher writes every sentence.
+    CHECK(items->Element(0)->Member("damage_reason")->IsNull());
+    CHECK_FALSE(items->Element(0)->Member("detail").has_value());
+    CHECK_FALSE(items->Element(0)->Member("version").has_value());
+    CHECK(items->Element(0)->Member("external")->Member("status")->String() == "not_required");
+    CHECK(items->Element(0)->Member("external")->Member("value")->String() == "");
+    CHECK(items->Element(0)->Member("external")->Member("owned")->Bool() == false);
     const auto* launch =
         R"({"jsonrpc":"2.0","id":2,"method":"library.launch","params":{"installation_id":"org.example.game"}})";
     auto started = Decode(fixture.rpc.Handle(launch));
@@ -365,6 +372,7 @@ TEST_CASE("GUI RPC exposes missing metadata as null facts") {
     const auto response = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"library.list"})"));
     const auto item = response.Root().Member("result")->Member("items")->Element(0);
     CHECK(item->Member("status")->String() == "damaged");
+    CHECK_FALSE(item->Member("damage_reason")->String()->empty());
     CHECK(item->Member("version_name")->IsNull());
     CHECK(item->Member("version_code")->IsNull());
     CHECK(item->Member("imported_at")->IsNull());

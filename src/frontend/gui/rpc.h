@@ -3,6 +3,7 @@
 #include <functional>
 #include <future>
 #include <memory>
+#include <optional>
 #include "ogplay/app/apk_inspect.h"
 #include "frontend/gui/dashboard.h"
 #include "ogplay/app/agent.h"
@@ -22,7 +23,9 @@ struct GuiRpcHost final {
     std::function<std::future<std::optional<std::filesystem::path>>(bool)> pick;
     std::function<std::string()> timestamp;
     std::function<void()> minimize;
-    std::function<std::map<std::string, std::string>()> settings_facts;
+    // Facts keyed by stable ids; values are data (versions, file text, paths, codes), never
+    // sentences, so the launcher can label them in its language. A null value is an unreadable file.
+    std::function<std::map<std::string, std::optional<std::string>>()> settings_facts;
     std::function<std::map<std::string, std::string>(const LibraryEntry&, const LibraryConfig&)> game_facts;
     std::function<std::vector<GuiDashboard>()> dashboards;
     std::function<void(std::string_view)> open_dashboard;

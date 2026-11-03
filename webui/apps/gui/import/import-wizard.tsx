@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc } from '../shared/rpc';
 import { guestPathError, importingStage, normalizeGuestPath, pause, pickPath, upload, type ExternalMode, type ImportJob } from './import';
 import { MountPreview, useDataDirectory } from './mount-preview';
-import { t } from '../shared/i18n';
+import { gameName, t } from '../shared/i18n';
 
 const MODES: { value: ExternalMode; label: string; hint: string }[] = [
   { value: 'copy', label: '复制到游戏库', hint: '导入后原目录可移动或删除；同一磁盘支持克隆时几乎不占额外空间。' },
@@ -102,7 +102,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
       <section class="iw-game">
         {summary.icon ? <img src={summary.icon} alt="" /> : <span class="iw-icon">?</span>}
         <div>
-          <h3>{summary.display_name}</h3>
+          <h3>{gameName(summary)}</h3>
           <p class="mono">{summary.package}</p>
           <ul class="iw-tags">
             <li>{summary.version_name || t('版本')} ({summary.version_code})</li>

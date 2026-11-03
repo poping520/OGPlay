@@ -103,6 +103,7 @@ ApkImportAnalysis AnalyzeApkImport(
         .display_name = std::move(visuals.display_name),
         .icon_png = std::move(visuals.icon_png),
         .visual_fallbacks = std::move(visuals.fallbacks),
+        .localized_names = std::move(visuals.localized_names),
     };
     std::set<std::string> abis;
     for (const auto& entry : archive.entries) {
@@ -158,6 +159,7 @@ LibraryImport BuildLibraryImport(
         .external_dir = std::move(external_dir),
         .external_guest_dir = std::move(external_guest_dir),
         .external_owned = owned,
+        .localized_names = analysis.localized_names,
     };
     return {analysis.source_apk, std::move(metadata), analysis.icon_png};
 }

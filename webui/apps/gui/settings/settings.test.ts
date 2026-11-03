@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { changedKeys, displayValue, fieldMeta, groups, isDirty, settingsError, shownFields, shownGroups, stepValue, type SettingField } from './settings';
+import { changedKeys, displayValue, factRows, fieldMeta, groups, isDirty, settingsError, shownFields, shownGroups, stepValue, type SettingField } from './settings';
 import { gameGroups } from './game-settings';
 import { SETTING_ICONS, SHARED_ICONS } from './setting-icons';
 const field = (key: string, initial: string | number | boolean, choices: string[] = []): SettingField =>
@@ -76,5 +76,13 @@ describe('setting row icons', () => {
     const repeats = Object.entries(SETTING_ICONS).flatMap(([key, glyph], index, all) =>
       all.slice(index + 1).filter(([, other]) => other === glyph).map(([other]) => [key, other].join()));
     expect(repeats.filter(pair => !shared.has(pair))).toEqual([]);
+  });
+});
+
+describe('host facts', () => {
+  it('labels stable ids, words coded values and keeps data as is', () => {
+    expect(factRows({ webui_manifest: '{}', ogplay_version: '0.1', profile_quirks: '', profile_status: 'missing', custom: 'x', webui_licenses: null }))
+      .toEqual([['OGPlay 版本', '0.1'], ['Web UI 构建清单', '{}'], ['Web UI 第三方许可', '文件不可用或超过读取上限'],
+        ['Profile 状态', '记录的 Profile 在所选目录中不存在。'], ['Profile quirk 列表', '无'], ['custom', 'x']]);
   });
 });

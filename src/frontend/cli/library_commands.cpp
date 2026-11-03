@@ -169,6 +169,9 @@ int RunLibraryCommand(std::span<const char* const> args) {
             if (entry.metadata) {
                 writer.AddString(item, "package", entry.metadata->package);
                 writer.AddString(item, "display_name", entry.metadata->display_name);
+                const auto names = writer.Object();
+                for (const auto& [locale, name] : entry.metadata->localized_names) writer.AddString(names, locale, name);
+                writer.Add(item, "localized_names", names);
                 writer.AddUnsignedInteger(item, "version_code", entry.metadata->version_code);
                 writer.AddString(item, "version_name", entry.metadata->version_name);
             }

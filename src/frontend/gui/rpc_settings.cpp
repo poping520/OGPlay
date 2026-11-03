@@ -167,7 +167,7 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
             for (const auto& [key, value] : host_.game_facts(entry, EffectiveGameConfig(settings, global)))
                 writer.AddString(facts, key, value);
         } catch (const std::exception& error) {
-            writer.AddString(facts, "Profile 信息不可用", error.what());
+            writer.AddString(facts, "profile_error", error.what());
         }
     }
     writer.Add(result, "facts", facts);
@@ -253,10 +253,14 @@ app::ConsoleResponse GuiRpcService::SettingsRequest(std::string_view method, app
     const auto facts = writer.Object();
     if (host_.settings_facts) {
         try {
-            for (const auto& [key, value] : host_.settings_facts())
-                writer.AddString(facts, key, value);
+            for (const auto& [key, value] : host_.settings_facts()) {
+                if (value)
+                    writer.AddString(facts, key, *value);
+                else
+                    writer.AddNull(facts, key);
+            }
         } catch (const std::exception& error) {
-            writer.AddString(facts, "制品信息不可用", error.what());
+            writer.AddString(facts, "artifacts_error", error.what());
         }
     }
     writer.Add(result, "facts", facts);

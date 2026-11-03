@@ -65,31 +65,13 @@ std::vector<LibraryTile> BuildLibraryTiles(
         tile.running = Contains(context.running_packages, entry.key);
         if (entry.Damaged() || !entry.metadata.has_value()) {
             tile.status = LibraryTileStatus::damaged;
-            tile.detail = "库条目损坏：" + entry.damage_reason.value_or(
-                "元数据不可用") + "。可在详情中移除后重新导入。";
-        } else if (profile_error.has_value()) {
+        } else if (profile_error.has_value() || context.missing_profiles.contains(entry.key)) {
             tile.status = LibraryTileStatus::profile_catalog_unavailable;
-            tile.detail = "Profile 目录不可用：" +
-                          *profile_error +
-                          "。请在设置中选择有效目录或恢复内置数据。";
-        } else if (entry.metadata->external_dir.has_value()) {
-            std::error_code error;
-            const auto external = entry.metadata->external_dir;
-            if (!std::filesystem::is_directory(*external, error) || error) {
-                tile.status = LibraryTileStatus::missing_external;
-                tile.detail = (entry.metadata->external_owned ? "游戏库中的数据包缺失：" : "记录的数据包目录不可用：") +
-                              PathUtf8(*external) + "。请重新选择目录。";
-            } else if (tile.running) {
-                tile.status = LibraryTileStatus::running;
-                tile.detail = "游戏正在运行；请先退出游戏。";
-            } else {
-                tile.status = LibraryTileStatus::ready;
-            }
-        } else if (tile.running) {
-            tile.status = LibraryTileStatus::running;
-            tile.detail = "游戏正在运行；请先退出游戏。";
+        } else if (std::error_code error; entry.metadata->external_dir.has_value() &&
+                   (!std::filesystem::is_directory(*entry.metadata->external_dir, error) || error)) {
+            tile.status = LibraryTileStatus::missing_external;
         } else {
-            tile.status = LibraryTileStatus::ready;
+            tile.status = tile.running ? LibraryTileStatus::running : LibraryTileStatus::ready;
         }
         tile.can_launch = !tile.running && tile.status == LibraryTileStatus::ready;
         tiles.push_back(std::move(tile));
@@ -111,10 +93,8 @@ LibraryDetail BuildLibraryDetail(const LibraryEntry& entry,
         .key = tile.key,
         .display_name = tile.display_name,
         .package = tile.key,
-        .version = "元数据不可用",
         .status = tile.status,
         .icon_png = tile.icon_png,
-        .detail = tile.detail,
         .can_launch = tile.can_launch,
         .can_delete = !tile.running,
     };
@@ -122,35 +102,26 @@ LibraryDetail BuildLibraryDetail(const LibraryEntry& entry,
     const auto profile_error = context.profile_errors.contains(entry.key) ?
         std::optional<std::string>(context.profile_errors.at(entry.key)) : context.profile_catalog_error;
     if (!entry.metadata.has_value() || entry.Damaged()) {
-        result.external = {LibraryConditionStatus::unavailable, "无法判断",
-                           "库条目元数据不可用。"};
+        result.damage_reason = entry.damage_reason;
+        result.external = {LibraryConditionStatus::unavailable, {}};
     } else {
         const auto& metadata = *entry.metadata;
         result.package = metadata.package;
-        result.version = metadata.version_name.empty()
-                             ? "versionCode " +
-                                   std::to_string(metadata.version_code)
-                             : metadata.version_name;
         if (profile_error.has_value()) {
-            result.profile = LibraryCondition{LibraryConditionStatus::unavailable, "无法判断",
-                                              "Profile 目录不可用：" + *profile_error};
+            result.profile = LibraryCondition{LibraryConditionStatus::unavailable, *profile_error};
         } else if (metadata.profile_id.has_value()) {
-            result.profile = LibraryCondition{LibraryConditionStatus::ready,
-                                              *metadata.profile_id, "精确 Profile 已匹配。"};
+            result.profile = LibraryCondition{context.missing_profiles.contains(entry.key)
+                                                  ? LibraryConditionStatus::missing
+                                                  : LibraryConditionStatus::ready,
+                                              *metadata.profile_id};
         }
         if (!metadata.external_dir.has_value()) {
-            result.external = {LibraryConditionStatus::not_required, "未指定",
-                               "可按需选择外部数据目录。"};
+            result.external = {LibraryConditionStatus::not_required, {}};
         } else {
             std::error_code error;
-            if (!std::filesystem::is_directory(*metadata.external_dir, error) || error) {
-                result.external = {LibraryConditionStatus::missing, "缺失",
-                                   "记录的数据包目录不可用：" + PathUtf8(*metadata.external_dir)};
-            } else {
-                result.external = {LibraryConditionStatus::ready, "已就绪",
-                                   (metadata.external_owned ? "已复制到游戏库：" : "引用原目录：") +
-                                       PathUtf8(*metadata.external_dir)};
-            }
+            const auto ready = std::filesystem::is_directory(*metadata.external_dir, error) && !error;
+            result.external = {ready ? LibraryConditionStatus::ready : LibraryConditionStatus::missing,
+                               PathUtf8(*metadata.external_dir), metadata.external_owned};
         }
     }
 

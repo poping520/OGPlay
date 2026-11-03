@@ -353,6 +353,9 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
             const auto& analysis = *job.analysis;
             const auto summary = writer.Object();
             writer.AddString(summary, "display_name", analysis.display_name);
+            const auto names = writer.Object();
+            for (const auto& [locale, name] : analysis.localized_names) writer.AddString(names, locale, name);
+            writer.Add(summary, "localized_names", names);
             writer.AddString(summary, "package", analysis.manifest.package);
             writer.AddString(summary, "version_name", analysis.manifest.version_name.value_or(""));
             writer.AddUnsignedInteger(summary, "version_code", analysis.manifest.version_code);

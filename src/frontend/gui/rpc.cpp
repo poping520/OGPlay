@@ -53,7 +53,7 @@ app::JsonWriter::Value Condition(app::JsonWriter& writer, const LibraryCondition
     const auto value = writer.Object();
     writer.AddString(value, "status", names.at(static_cast<std::size_t>(condition.status)));
     writer.AddString(value, "value", condition.value);
-    writer.AddString(value, "detail", condition.detail);
+    writer.AddBool(value, "owned", condition.owned);
     return value;
 }
 }  // namespace
@@ -223,7 +223,10 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 writer.AddString(item, "installation_id", tile.key);
                 writer.AddString(item, "display_name", tile.display_name);
                 writer.AddString(item, "package", detail.package);
-                writer.AddString(item, "version", detail.version);
+                const auto names = writer.Object();
+                if (entry->metadata)
+                    for (const auto& [locale, name] : entry->metadata->localized_names) writer.AddString(names, locale, name);
+                writer.Add(item, "localized_names", names);
                 if (entry->metadata) {
                     writer.AddString(item, "version_name", entry->metadata->version_name);
                     writer.AddUnsignedInteger(item, "version_code", entry->metadata->version_code);
@@ -236,7 +239,10 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 writer.AddString(item, "sandbox_path", PathUtf8(LauncherSandboxRoot(store_.Root()) / entry->key));
                 writer.AddString(item, "log_directory", PathUtf8(entry->directory));
                 writer.AddString(item, "status", Status(tile.status));
-                writer.AddString(item, "detail", tile.detail);
+                if (detail.damage_reason)
+                    writer.AddString(item, "damage_reason", *detail.damage_reason);
+                else
+                    writer.AddNull(item, "damage_reason");
                 writer.AddBool(item, "running", tile.running);
                 writer.AddBool(item, "can_launch", tile.can_launch);
                 writer.AddString(item, "icon",
@@ -272,7 +278,9 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             } else if (method == "library.launch") {
                 const auto tile =
                     std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
-                if (!tile->can_launch) return Error(-32001, tile->detail, "检查运行状态、Profile 和数据包目录。");
+                if (!tile->can_launch)
+                    return Error(-32001, "游戏当前不可启动（" + std::string(Status(tile->status)) + "）",
+                                 "检查运行状态、Profile 和数据包目录。");
                 const auto config = LoadLibraryConfig(store_.Root());
                 const auto minimize = std::get<bool>(Setting(config, "minimize_on_launch"));
                 if (minimize && !host_.minimize) throw std::runtime_error("宿主不支持最小化窗口。");

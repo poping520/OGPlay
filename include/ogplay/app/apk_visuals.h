@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <span>
 #include <string>
 #include <vector>
@@ -44,6 +45,8 @@ enum class ApplicationVisualFallback : std::uint8_t {
 struct OGPLAYCORE_API ApkApplicationVisuals final {
     ManifestSummary manifest;
     std::string display_name;
+    // Label translations by resource locale ("en", "zh-TW"); display_name is the default.
+    std::map<std::string, std::string> localized_names;
     // Empty means that the view must render its built-in placeholder tile.
     std::vector<std::byte> icon_png;
     std::vector<ApplicationVisualFallback> fallbacks;

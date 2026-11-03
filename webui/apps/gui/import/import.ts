@@ -1,7 +1,7 @@
 import { t } from '../shared/i18n';
 import { rpc } from '../shared/rpc';
 export interface ImportSummary {
-  display_name: string; package: string; version_name: string; version_code: number;
+  display_name: string; localized_names: Record<string, string>; package: string; version_name: string; version_code: number;
   min_sdk: number | null; target_sdk: number | null; abis: string[]; icon: string;
   profile: string | null; existing_instances: number;
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { en } from './i18n-en';
-import { language, setLanguage, t, tj } from './i18n';
+import { gameName, language, setLanguage, t, tj } from './i18n';
 import { fieldMeta, type SettingField } from '../settings/settings';
 
 const han = /[一-鿿]/;
@@ -112,5 +112,12 @@ describe('GUI-14 language switching', () => {
     expect(fieldMeta(field('停滞快照阈值（秒）', '预留 · 启动参数尚未接入', 30)))
       .toEqual({ label: 'Stall snapshot threshold', unit: 's', hint: '', reserved: 'Not wired to launch arguments yet' });
     expect(fieldMeta(field('临时沙盒（退出不保留本次存档）', '', false)).hint).toBe('saves from this run are discarded on exit');
+  });
+  it('names games in the launcher language before the APK default', () => {
+    const names = { en: 'Sweet Shop', 'zh-TW': '糖果舖' };
+    expect(gameName({ display_name: '糖果铺', localized_names: names }, 'en-US')).toBe('Sweet Shop');
+    expect(gameName({ display_name: 'Candy', localized_names: names }, 'zh-CN')).toBe('糖果舖');
+    expect(gameName({ display_name: '糖果铺', localized_names: { en: 'Sweet Shop' } }, 'zh-CN')).toBe('糖果铺');
+    expect(gameName({ display_name: 'X', localized_names: { 'en-GB': 'GB', 'en-US': 'US' } }, 'en-US')).toBe('US');
   });
 });

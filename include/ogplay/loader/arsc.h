@@ -12,8 +12,8 @@ namespace ogplay::loader {
 
 // Strict resources.arsc (ResTable) reader for the facts legacy titles
 // actually consume: resource id -> (type, entry name, typed simple value) and
-// (type, entry name) -> resource id. Bag parent/items are retained; locales other
-// than the default configuration and attribute resolution belong to the caller;
+// (type, entry name) -> resource id. Bag parent/items are retained; each entry
+// records its locale, choosing among them and attribute resolution belong to the caller;
 // malformed chunks fail loudly (same posture as ZIP/Manifest/DEX parsing).
 
 struct ArscBagValue final {
@@ -37,6 +37,8 @@ struct ArscEntry final {
     std::uint32_t parent{};
     std::vector<ArscBagValue> bag;
     std::uint32_t changing_configurations{};
+    // BCP 47 style "zh", "zh-TW"; empty for the default configuration.
+    std::string locale;
     std::uint8_t orientation{};
     std::uint16_t density{};
     std::uint16_t sdk_version{};

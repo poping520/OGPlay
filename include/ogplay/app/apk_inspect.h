@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -22,6 +23,7 @@ struct ApkImportAnalysis final {
     std::optional<ProfileSummary> profile;
     std::vector<std::string> abis;
     std::vector<std::string> profile_notes;
+    std::map<std::string, std::string> localized_names;
 };
 
 [[nodiscard]] OGPLAYCORE_API ApkImportAnalysis AnalyzeApkImport(

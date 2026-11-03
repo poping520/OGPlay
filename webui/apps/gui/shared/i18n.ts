@@ -27,6 +27,16 @@ export function useLanguage(): Language {
   return current;
 }
 
+/** A game's name in the launcher language: exact locale ("en-US"), then the bare language ("en"), then another region
+ *  of it ("zh-TW" for zh-CN), then the APK's default label. Mirrors LocalizedDisplayName on the host. */
+export function gameName(item: { display_name: string; localized_names: Record<string, string> },
+                         lang: Language = current): string {
+  const names = item.localized_names;
+  const base = lang.split('-')[0];
+  const variant = Object.keys(names).sort().find(key => key.startsWith(`${base}-`));
+  return names[lang] ?? names[base] ?? (variant === undefined ? item.display_name : names[variant]);
+}
+
 type Params = Record<string, string | number>;
 export function t(text: string, params?: Params): string {
   const template = current === 'en-US' ? en[text] ?? text : text;

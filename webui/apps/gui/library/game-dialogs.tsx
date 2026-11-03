@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { LibraryItem } from '../shared/rpc';
-import { statuses, versionLabel } from './library';
+import { externalText, profileText, statuses, versionLabel } from './library';
 import { t } from '../shared/i18n';
 
 // Dialogs about one library entry, in the import wizard's console look: the same head, game card and pill buttons.
@@ -56,6 +56,7 @@ export function InstallInfoDialog({ item, runtime, busy, openDir, onClose }: {
 }) {
   const dialog = useModal();
   const status = statuses[item.status] ?? { label: '状态未知', tone: 'warning' };
+  const profile = profileText(item), external = externalText(item);
   const tone = (ready: boolean) => !runtime ? '' : ready ? 'ready' : 'warning';
   const path = (label: string, value: string, kind: 'sandbox' | 'log') => <div class="ii-path">
     <small>{label}</small>
@@ -66,11 +67,11 @@ export function InstallInfoDialog({ item, runtime, busy, openDir, onClose }: {
       <span class="iw-stage"><i class={`led ${item.running ? 'running' : status.tone}`} />{t(item.running ? '运行中' : status.label)}</span></header>
     <GameCard item={item}><div class="mono">{versionLabel(item)}</div>
       <ul class="iw-tags"><li title={item.imported_at ?? undefined}>{t('导入于 {date}', { date: importedAt(item.imported_at) })}</li>
-        {item.profile && <li title={item.profile.detail}>Profile · {item.profile.value}</li>}</ul></GameCard>
+        {profile && <li title={profile.detail}>Profile · {profile.value}</li>}</ul></GameCard>
     <dl class="ii-facts">
       <dt>{t('安装 ID')}</dt><dd class="mono">{item.installation_id}</dd>
       <dt>{t('包名')}</dt>{item.package ? <dd class="mono ii-copyable"><Copyable text={item.package} /></dd> : <dd class="mono">{t('包名不可用')}</dd>}
-      <dt>{t('数据包')}</dt><dd>{item.external.value}{item.external.detail && <small>{item.external.detail}</small>}</dd>
+      <dt>{t('数据包')}</dt><dd>{external.value}<small>{external.detail}</small></dd>
     </dl>
     {path(t('沙盒路径'), item.sandbox_path, 'sandbox')}
     {path(t('日志目录'), item.log_directory, 'log')}

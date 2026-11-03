@@ -114,14 +114,6 @@ TEST_CASE("library tile status follows the documented strict priority") {
           ogplay::frontend::LibraryTileStatus::missing_external);
     CHECK(status(running.key) == ogplay::frontend::LibraryTileStatus::running);
     CHECK(status(ready.key) == ogplay::frontend::LibraryTileStatus::ready);
-    const auto detail = [&tiles](const std::string& key) -> std::string {
-        for (const auto& tile : tiles) {
-            if (tile.key == key) return tile.detail;
-        }
-        return {};
-    };
-    CHECK(detail(no_external.key).find("数据包") != std::string::npos);
-    CHECK(detail(running.key).find("先退出游戏") != std::string::npos);
     const auto no_profile_tile = std::find_if(
         tiles.begin(), tiles.end(), [&no_profile](const auto& tile) {
             return tile.key == no_profile.key;
@@ -134,7 +126,6 @@ TEST_CASE("library tile status follows the documented strict priority") {
         std::span<const ogplay::app::LibraryEntry>(&idle_generic, 1), {});
     REQUIRE(generic_tiles.size() == 1);
     CHECK(generic_tiles.front().status == ogplay::frontend::LibraryTileStatus::ready);
-    CHECK(generic_tiles.front().detail.empty());
     CHECK(generic_tiles.front().can_launch);
     // The generic path is the default, so no Profile condition is reported for it.
     CHECK_FALSE(ogplay::frontend::BuildLibraryDetail(idle_generic, generic_tiles.front(), {})
@@ -165,9 +156,28 @@ TEST_CASE("unavailable Profile catalog fails closed before launch readiness") {
     CHECK(damaged_tile->status == ogplay::frontend::LibraryTileStatus::damaged);
     CHECK(ready_tile->status ==
           ogplay::frontend::LibraryTileStatus::profile_catalog_unavailable);
-    CHECK(ready_tile->detail.find("catalog fixture unavailable") !=
-          std::string::npos);
-    CHECK(ready_tile->detail.find("设置") != std::string::npos);
+    // The raw catalog error travels as the Profile condition; the launcher words it.
+    auto ready_entry = ready;
+    ready_entry.metadata->profile_id = "exact.profile";
+    const auto ready_detail = ogplay::frontend::BuildLibraryDetail(
+        ready_entry, *ready_tile, {.profile_catalog_error = "catalog fixture unavailable"});
+    REQUIRE(ready_detail.profile.has_value());
+    CHECK(ready_detail.profile->status == ogplay::frontend::LibraryConditionStatus::unavailable);
+    CHECK(ready_detail.profile->value == "catalog fixture unavailable");
+}
+
+TEST_CASE("recorded Profile missing from its catalog blocks launch with its id") {
+    auto entry = Entry("org.example.game", "Example");
+    entry.metadata->profile_id = "gone.profile";
+    const ogplay::frontend::LibraryViewContext context{.missing_profiles = {entry.key}};
+    const auto tiles = ogplay::frontend::BuildLibraryTiles(std::span<const ogplay::app::LibraryEntry>(&entry, 1), context);
+    REQUIRE(tiles.size() == 1);
+    CHECK(tiles.front().status == ogplay::frontend::LibraryTileStatus::profile_catalog_unavailable);
+    CHECK_FALSE(tiles.front().can_launch);
+    const auto detail = ogplay::frontend::BuildLibraryDetail(entry, tiles.front(), context);
+    REQUIRE(detail.profile.has_value());
+    CHECK(detail.profile->status == ogplay::frontend::LibraryConditionStatus::missing);
+    CHECK(detail.profile->value == "gone.profile");
 }
 
 TEST_CASE("library selection preserves packages and falls back beside removals") {
@@ -212,20 +222,17 @@ TEST_CASE("library detail exposes factual conditions without inferring runtime f
     const auto detail =
         ogplay::frontend::BuildLibraryDetail(entry, tiles.front(), context);
     CHECK(detail.package == entry.key);
-    CHECK(detail.version == "versionCode 42");
-    entry.metadata->version_code = 0;
-    CHECK(ogplay::frontend::BuildLibraryDetail(entry, tiles.front(), context).version == "versionCode 0");
     REQUIRE(detail.profile.has_value());
     CHECK(detail.profile->status ==
           ogplay::frontend::LibraryConditionStatus::ready);
     CHECK(detail.profile->value == "exact.profile");
     CHECK(detail.external.status ==
           ogplay::frontend::LibraryConditionStatus::ready);
-    CHECK(detail.external.value == "已就绪");
+    const auto external_text = external.generic_u8string();
+    CHECK(detail.external.value == std::string(reinterpret_cast<const char*>(external_text.data()), external_text.size()));
+    CHECK_FALSE(detail.external.owned);
     CHECK(detail.can_launch);
     CHECK(detail.can_delete);
-    CHECK_FALSE(detail.version.find("ARM") != std::string::npos);
-    CHECK_FALSE(detail.version.find("API") != std::string::npos);
 }
 
 TEST_CASE("library detail distinguishes external and damaged states") {
@@ -264,6 +271,7 @@ TEST_CASE("library detail distinguishes external and damaged states") {
     const auto damaged_detail = detail(damaged.key);
     CHECK(damaged_detail.external.status ==
           ogplay::frontend::LibraryConditionStatus::unavailable);
+    CHECK(damaged_detail.damage_reason == "broken fixture");
     CHECK_FALSE(damaged_detail.can_launch);
     CHECK(damaged_detail.can_delete);
 }

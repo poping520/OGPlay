@@ -2,7 +2,7 @@ import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc, type LibraryItem } from '../shared/rpc';
 import { pickPath } from '../import/import';
-import { displayValue, shownFields } from './settings';
+import { displayValue, factRows, shownFields } from './settings';
 import { gameGroups, gameSettingsError, inheritSetting, type GameSettings } from './game-settings';
 import { statuses, versionLabel } from '../library/library';
 import { useIconColor } from '../cartridge/cartridge';
@@ -45,7 +45,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
   };
   useEffect(() => { void run(store.load); }, [id]);
   const open = (kind: string) => void run(async () => { await rpc('library.open_dir', { installation_id: id, kind }); });
-  const name = saved?.display_name ?? item?.display_name ?? id;
+  const name = item?.display_name ?? saved?.display_name ?? id;
   const tone = item?.running ? 'running' : statuses[item?.status ?? '']?.tone ?? 'warning';
   const preview = saved?.previews[mode];
   const actions = (...buttons: ComponentChildren[]) => <div class="acts">{buttons}</div>;
@@ -70,7 +70,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
           onClick={() => store.afterSave(clearData)}>{t('清空游戏数据…')}</button>)}</Note>,
     network: <Note icon="network" title={t('仅保存意向')} warn><p>{t('不改变运行时网络策略；“允许网络”是预留配置。')}</p></Note>,
     compatibility: <Note icon="compatibility" title={saved.profile_id ? t('精确 Profile · {id}', { id: saved.profile_id }) : t('兼容性目录')}>
-      {Object.keys(saved.facts).length > 0 && <Paths rows={Object.entries(saved.facts).map(([key, value]) => [t(key), value] as [string, string])} />}</Note>,
+      {Object.keys(saved.facts).length > 0 && <Paths rows={factRows(saved.facts)} />}</Note>,
   } : {};
   const reservedVisible = saved?.reserved_visible ?? true;
   const shown = new Set(shownFields(saved?.fields ?? [], reservedVisible).map(field => field.key));

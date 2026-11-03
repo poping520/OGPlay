@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { cycle, shellPalette, vividIconColor, validatePackageSelection, versionLabel, visibleItems } from './library';
+import { cycle, externalText, profileText, shellPalette, statusDetail, vividIconColor, validatePackageSelection, versionLabel, visibleItems } from './library';
 import type { LibraryItem } from '../shared/rpc';
+import { setLanguage } from '../shared/i18n';
 
 const item = (id: string, values: Partial<LibraryItem> = {}): LibraryItem => ({
-  installation_id: id, display_name: id, package: 'org.example.game', version: '1.0',
+  installation_id: id, display_name: id, localized_names: {}, package: 'org.example.game',
   version_code: 1, version_name: '1.0', imported_at: null, sandbox_path: '/sandbox', log_directory: '/log',
-  status: 'ready', detail: '', running: false, can_launch: true, icon: '',
-  profile: null, external: { status: 'unavailable', value: '', detail: '' }, ...values,
+  status: 'ready', damage_reason: null, running: false, can_launch: true, icon: '',
+  profile: null, external: { status: 'unavailable', value: '', owned: false }, ...values,
 });
 describe('library presentation', () => {
   it('combines search terms and host eligibility without merging installation instances', () => {
@@ -14,6 +15,8 @@ describe('library presentation', () => {
     expect(visibleItems(items, ' 测试 ORG.EXAMPLE ', 'all', 'name')).toHaveLength(2);
     expect(visibleItems(items, '测试', 'launchable', 'name').map(x => x.installation_id)).toEqual(['one']);
     expect(visibleItems(items, 'no match', 'all', 'name')).toEqual([]);
+    expect(visibleItems([item('one', { display_name: '糖果铺', localized_names: { en: 'Sweet Shop' } })], 'sweet', 'all', 'name'))
+      .toHaveLength(1);
   });
   it('keeps a running entry under attention when damage controls the badge', () => {
     const damaged = item('one', { status: 'damaged', running: true, can_launch: false });
@@ -28,7 +31,25 @@ describe('library presentation', () => {
   it('preserves zero version codes and damaged metadata', () => {
     expect(versionLabel(item('zero', { version_code: 0 }))).toBe('1.0 (0)');
     expect(versionLabel(item('none', { version_name: '', version_code: 5 }))).toBe('versionCode 5');
-    expect(versionLabel(item('broken', { version_code: null, version: '元数据不可用' }))).toBe('元数据不可用');
+    expect(versionLabel(item('broken', { version_code: null }))).toBe('元数据不可用');
+  });
+});
+describe('host conditions', () => {
+  it('words codes and paths in the launcher language', () => {
+    const owned = item('a', { status: 'missing_external', external: { status: 'missing', value: '/d', owned: true } });
+    expect(statusDetail(owned)).toBe('游戏库中的数据包缺失：/d。请重新选择目录。');
+    expect(externalText(owned)).toEqual({ value: '缺失', detail: '记录的数据包目录不可用：/d' });
+    expect(externalText(item('b', { external: { status: 'ready', value: '/e', owned: false } })).detail).toBe('引用原目录：/e');
+    const gone = item('c', { status: 'profile_catalog_unavailable', profile: { status: 'missing', value: 'p.id', owned: false } });
+    expect(statusDetail(gone)).toContain('p.id');
+    expect(profileText(gone)).toEqual({ value: 'p.id', detail: '记录的 Profile 在所选目录中不存在。' });
+    expect(statusDetail(item('d', { status: 'damaged', damage_reason: null }))).toContain('元数据不可用');
+    expect(statusDetail(item('e'))).toBe('');
+    setLanguage('en-US');
+    try {
+      expect(externalText(item('f', { external: { status: 'not_required', value: '', owned: false } })).value).toBe('Not set');
+      expect(statusDetail(owned)).toBe('The data pack in the library is missing: /d. Choose the folder again.');
+    } finally { setLanguage('zh-CN'); }
   });
 });
 describe('file intake', () => {

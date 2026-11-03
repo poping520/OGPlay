@@ -3,9 +3,9 @@ import { Key } from '../../packages/ui-kit/key';
 import { Glyph } from '../../packages/ui-kit/glyph';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { rpc, type Library, type LibraryItem } from './shared/rpc';
-import { setLanguage, t, useLanguage } from './shared/i18n';
+import { gameName, setLanguage, t, useLanguage } from './shared/i18n';
 import { recall, remember } from './shared/prefs';
-import { cycle, filters, statusOf, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library/library';
+import { cycle, externalText, filters, profileText, statusDetail, statusOf, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library/library';
 import { SettingsPage } from './settings/settings-page';
 import { GameSettingsPage } from './settings/game-settings-page';
 import { CartViewer } from './cartridge/cart-viewer';
@@ -28,8 +28,11 @@ interface DashboardInfo { installation_id: string; process_id: number; port: num
 
 export const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
 export function App() {
-  useLanguage();
-  const [library, setLibrary] = useState<Library>({ items: [], library_root: '' });
+  const lang = useLanguage();
+  const [hostLibrary, setLibrary] = useState<Library>({ items: [], library_root: '' });
+  // Names follow the launcher language everywhere below: tiles, cartridges, dialogs, sorting.
+  const library = useMemo(() => ({ ...hostLibrary, items: hostLibrary.items.map(game => ({ ...game, display_name: gameName(game, lang) })) }),
+    [hostLibrary, lang]);
   const [dashboards, setDashboards] = useState<DashboardInfo[]>([]);
   const [removing, setRemoving] = useState<LibraryItem | null>(null);
   const [clearing, setClearing] = useState<LibraryItem | null>(null);
@@ -246,7 +249,7 @@ export function App() {
       return <>{dashboard}{controls}{moreMenu(game)}</>;
     }
     return <>
-      <button ref={primary} class="pill main" disabled={busy || !game.can_launch} title={game.can_launch ? t('启动游戏') : game.detail} onClick={() => void act('library.launch', game)}><Key>A</Key>{t('开始游戏')}</button>
+      <button ref={primary} class="pill main" disabled={busy || !game.can_launch} title={game.can_launch ? t('启动游戏') : statusDetail(game)} onClick={() => void act('library.launch', game)}><Key>A</Key>{t('开始游戏')}</button>
       <button class="pill" disabled={busy || importing} onClick={() => openGameSettings(game)}><Key>Y</Key>{t('游戏设置')}</button>
       {moreMenu(game)}
     </>;
@@ -271,7 +274,7 @@ export function App() {
     </>;
     if (!item) return <div class="hero-text"><h1 class="small">{query ? t('没有符合条件的游戏') : t('这个分类里没有游戏')}</h1>
       <div class="sub">{t('按 Q / E 切换分类，或换个关键词。')}</div><div class="cta"><button class="pill" onClick={resetFilters}><Key>B</Key>{t('清除筛选')}</button></div></div>;
-    const status = statusOf(item);
+    const status = statusOf(item), detail = statusDetail(item), profile = profileText(item), external = externalText(item);
     const position = items.indexOf(item) + 1;
     const fix = item.status === 'missing_external' ? <button class="link" onClick={() => openGameSettings(item)}>{t('选择数据包 →')}</button> :
       item.status === 'damaged' && !item.running ? <button class="link" onClick={() => requestRemoval(item)}>{t('删除后重新导入 →')}</button> : null;
@@ -282,11 +285,11 @@ export function App() {
         <h1 title={item.display_name}>{item.display_name}</h1>
         <div class="sub"><span class="mono">{item.package || t('包名不可用')}</span></div>
         <div class="stats">
-          <div title={item.version_code === null ? undefined : `versionCode ${item.version_code}`}><b>{item.version_name || (item.version_code === null ? item.version : String(item.version_code))}</b><small>{item.version_name && item.version_code !== null ? t('版本 · {code}', { code: item.version_code }) : t('版本')}</small></div>
-          {item.profile && <div title={item.profile.detail}><b>{item.profile.value}</b><small>Profile</small></div>}
-          <div title={item.external.detail}><b>{item.external.value || '—'}</b><small>{t('数据包')}</small></div>
+          <div title={item.version_code === null ? undefined : `versionCode ${item.version_code}`}><b>{item.version_name || (item.version_code === null ? t('元数据不可用') : String(item.version_code))}</b><small>{item.version_name && item.version_code !== null ? t('版本 · {code}', { code: item.version_code }) : t('版本')}</small></div>
+          {profile && <div title={profile.detail}><b>{profile.value}</b><small>Profile</small></div>}
+          <div title={external.detail}><b>{external.value}</b><small>{t('数据包')}</small></div>
         </div>
-        <div class="state"><span class={`led ${item.running ? 'running' : status.tone}`} /><span>{status.label}{item.detail ? ` · ${item.detail}` : ''}{runtime}</span>{fix}</div>
+        <div class="state"><span class={`led ${item.running ? 'running' : status.tone}`} /><span>{status.label}{detail ? ` · ${detail}` : ''}{runtime}</span>{fix}</div>
         <div class="cta">{actions(item)}</div>
       </div>
       <div class="showcase" onPointerMove={tilt} onPointerLeave={tilt}>

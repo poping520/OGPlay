@@ -107,7 +107,7 @@ LibraryViewContext BuildContext(const LibraryStore& store_, const GuiProcessMana
                 const auto& profiles = catalogs.at(directory);
                 if (!entry.metadata->profile_id) continue;
                 const auto summary = profiles.Find(*entry.metadata->profile_id);
-                if (!summary) throw std::runtime_error("记录的 Profile 在所选目录中不存在。");
+                if (!summary) context.missing_profiles.insert(entry.key);
             } catch (const LibraryError& error) {
                 if (error.Code() == LibraryErrorCode::busy) throw;
                 context.profile_errors[entry.key] = error.what();
@@ -146,23 +146,21 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
              [&](bool directory) { return view->PickPath(directory); }, [] { return app::UtcTimestamp(); },
              [&] { view->Minimize(); },
              [] {
-                 std::map<std::string, std::string> facts;
-                 facts["OGPlay 版本"] = OGPLAY_VERSION;
+                 std::map<std::string, std::optional<std::string>> facts;
+                 facts["ogplay_version"] = OGPLAY_VERSION;
                  const auto root = app::BundledDataPaths().root;
                  for (const auto& [key, path] : std::array<std::pair<const char*, const char*>, 3>{
-                          {{"Web UI 构建清单", "webui/gui/manifest.json"},
-                           {"Android / BootDex / guest JNI 制品清单", "android/19/manifest.json"},
-                           {"Web UI 第三方许可", "webui/gui/THIRD-PARTY-LICENSES.txt"}}}) {
+                          {{"webui_manifest", "webui/gui/manifest.json"},
+                           {"android_manifest", "android/19/manifest.json"},
+                           {"webui_licenses", "webui/gui/THIRD-PARTY-LICENSES.txt"}}}) {
                      std::error_code error;
                      const auto size = std::filesystem::file_size(root / path, error);
-                     if (error || size > 65536) {
-                         facts[key] = "文件不可用或超过读取上限";
-                         continue;
-                     }
+                     facts[key] = std::nullopt;  // missing, unreadable or over the read limit
+                     if (error || size > 65536) continue;
                      std::ifstream file(root / path, std::ios::binary);
                      std::string text(static_cast<std::size_t>(size), '\0');
                      file.read(text.data(), static_cast<std::streamsize>(size));
-                     facts[key] = file ? text : "读取失败";
+                     if (file) facts[key] = std::move(text);
                  }
                  return facts;
              },
@@ -170,18 +168,18 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
                  std::map<std::string, std::string> facts;
                  const auto bundled = app::BundledDataPaths();
                  const auto directory = config.profiles_dir.value_or(bundled.profiles_directory);
-                 facts["有效 Profile 目录"] = PathUtf8(directory);
+                 facts["profiles_dir"] = PathUtf8(directory);
                  const auto profiles = app::ProfileCatalog::Load(directory);
                  if (entry.metadata && entry.metadata->profile_id) {
                      const auto summary = profiles.Find(*entry.metadata->profile_id);
-                     if (!summary) throw std::runtime_error("记录的 Profile 在所选目录中不存在。");
-                     facts["Profile 状态"] = "目录中存在导入记录；适用性由运行服务启动时校验";
+                     facts["profile_status"] = summary ? "recorded" : "missing";
+                     if (!summary) return facts;
                      std::string names;
                      for (const auto& name : summary->quirks) {
                          if (!names.empty()) names += ", ";
                          names += name;
                      }
-                     facts["Profile quirk 列表"] = names.empty() ? "无" : names;
+                     facts["profile_quirks"] = names;  // comma-separated, empty when none
                  }
                  return facts;
              },

@@ -62,6 +62,10 @@ struct Fixture {
                                  [this] { ++minimized; },
                                  {},
                                  {},
+                                 [] { return frontend::LoadCredits(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data"); },
+                                 [](std::string_view id) {
+                                     return frontend::ReadCreditNotices(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data", id);
+                                 },
                                  [this] { return dashboards; },
                                  [this](std::string_view id) { opened_dashboard = id; },
                                  [this](std::string_view id) { opened_editor = id; }}};
@@ -128,6 +132,13 @@ TEST_CASE("GUI settings RPC applies validated patches and rejects stale writes")
     CHECK(result->Member("reserved_visible")->Bool() == std::optional<bool>{true});
 #endif
     CHECK(result->Member("fields")->Size() == ogplay::app::SettingDefinitions().size());
+    // Unpolished settings stay in the list, flagged hidden, so their values still validate and save.
+    std::vector<std::string> hidden;
+    for (std::size_t index = 0; index < result->Member("fields")->Size(); ++index) {
+        const auto field = result->Member("fields")->Element(index);
+        if (field->Member("hidden")->Bool() == std::optional<bool>{true}) hidden.emplace_back(*field->Member("key")->String());
+    }
+    CHECK(hidden == std::vector<std::string>{"cartridge", "supersample", "dashboard_auto_open"});
     const auto revision = std::string(*result->Member("revision")->String());
     const auto update = [&](std::string_view token, std::string_view key, auto value) {
         app::JsonWriter writer;
@@ -240,6 +251,12 @@ TEST_CASE("GUI instance settings RPC isolates instances and uses the same previe
     auto initial = get("org.example.game");
     REQUIRE(initial.Root().Member("result"));
     CHECK(initial.Root().Member("result")->Member("reserved_visible")->Bool().has_value());
+    std::vector<std::string> hidden;
+    const auto fields = initial.Root().Member("result")->Member("fields");
+    for (std::size_t index = 0; index < fields->Size(); ++index)
+        if (fields->Element(index)->Member("hidden")->Bool() == std::optional<bool>{true})
+            hidden.emplace_back(*fields->Element(index)->Member("key")->String());
+    CHECK(hidden == std::vector<std::string>{"supersample"});  // still saved and launched, as below
     const auto revision = std::string(*initial.Root().Member("result")->Member("revision")->String());
     for (const auto values : {R"({"supersample":5})", R"({"unknown":true})", R"({"supersample":"2"})",
                               R"({"mcp_manual_step":true})", R"({"mute":null})", R"({"external_dir":"relative"})",
@@ -348,6 +365,35 @@ TEST_CASE("GUI RPC serializes model facts and enforces launch eligibility") {
     fixture.context.profile_catalog_error = "unavailable";
     CHECK(Decode(fixture.rpc.Handle(launch)).Root().Member("error").has_value());
     CHECK(fixture.launches == 1);
+}
+
+TEST_CASE("GUI about RPC lists the shipped open-source projects and reads each license on request") {
+    Fixture fixture;
+    auto list = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"about.credits"})"));
+    const auto projects = list.Root().Member("result")->Member("projects");
+    REQUIRE(projects);
+    REQUIRE(projects->Size() > 10);
+    std::vector<std::string> ids;
+    for (std::size_t index = 0; index < projects->Size(); ++index)
+        ids.emplace_back(*projects->Element(index)->Member("id")->String());
+    for (const auto* id : {"sdl", "angle", "dynarmic", "ffmpeg", "preact", "aosp"})
+        CHECK(std::find(ids.begin(), ids.end(), id) != ids.end());
+    // Every listed project has readable, non-empty texts; that is the whole point of the page.
+    for (const auto& id : ids) {
+        auto notices = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":2,"method":"about.notices","params":{"id":")" +
+                                                 id + R"("}})"));
+        const auto texts = notices.Root().Member("result")->Member("notices");
+        REQUIRE_MESSAGE(texts, id);
+        REQUIRE(texts->Size() > 0);
+        for (std::size_t index = 0; index < texts->Size(); ++index)
+            CHECK_FALSE(texts->Element(index)->Member("text")->String()->empty());
+    }
+    CHECK(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":3,"method":"about.notices","params":{"id":"nope"}})"))
+              .Root()
+              .Member("error"));
+    CHECK(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":4,"method":"about.credits","params":{"x":1}})"))
+              .Root()
+              .Member("error"));
 }
 
 TEST_CASE("GUI RPC opens only an existing instance directory") {

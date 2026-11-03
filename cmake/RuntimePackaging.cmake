@@ -20,6 +20,9 @@ add_custom_target(ogplay_stage_data ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/capabilities.toml"
         "$<TARGET_FILE_DIR:ogplaycore>/data/capabilities.toml"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/credits.json"
+        "$<TARGET_FILE_DIR:ogplaycore>/data/credits.json"
     COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:ogplaycore>/data/input"
     ${_ogplay_stage_data_commands}
     COMMENT "Staging OGPlay runtime data"
@@ -112,7 +115,7 @@ if(OGPLAY_FFMPEG_FOUND)
 endif()
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES data/quirks.toml capabilities.toml
+install(FILES data/quirks.toml data/credits.json capabilities.toml
     DESTINATION ${CMAKE_INSTALL_BINDIR}/data COMPONENT Runtime)
 foreach(_data_directory IN LISTS OGPLAY_DATA_DIRECTORIES)
     install(DIRECTORY data/${_data_directory}

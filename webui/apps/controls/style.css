@@ -1,4 +1,4 @@
-/* Key settings window on the ui-kit "主机之夜" base: tokens, element baseline and the shared .pill, .seg and .led come
+/* Key settings window on the ui-kit "磨砂黑" base: tokens, element baseline and the shared .pill, .seg and .led come
    from theme.css (imported first); this file adds the editor layout and its stage drawing. */
 /* the page background sits on :root so short screens (connect, token, done) have no band below the body */
 :root { background: var(--bg); }

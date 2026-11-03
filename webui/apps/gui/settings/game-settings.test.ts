@@ -4,7 +4,7 @@ import { isDirty, type SettingField } from './settings';
 const fields: SettingField[] = [
   { key: 'supersample', initial: 1, min: 1, max: 4 },
   { key: 'mcp_enabled', initial: false }, { key: 'mcp_manual_step', initial: false },
-].map(field => ({ choices: [], directory: false, label: field.key, group: '', pending: '', min: 0, max: 0, ...field }));
+].map(field => ({ choices: [], directory: false, hidden: false, label: field.key, group: '', pending: '', min: 0, max: 0, ...field }));
 const saved = { fields, inherited: { supersample: 2, mcp_enabled: false, mcp_manual_step: false } };
 it('uses inherited values for validation without persisting inherited keys', () => {
   expect(gameSettingsError(saved, {})).toBeNull();

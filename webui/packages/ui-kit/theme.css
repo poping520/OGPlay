@@ -1,4 +1,4 @@
-/* OGPlay launcher kit ("主机之夜"): tokens, element baseline and the controls shared by the library screen, its
+/* OGPlay launcher kit ("磨砂黑"): tokens, element baseline and the controls shared by the library screen, its
    dialogs and the settings pages. Loaded before the app stylesheets, which add layout and contextual sizes. */
 :root {
   font: 13px/1.5 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;

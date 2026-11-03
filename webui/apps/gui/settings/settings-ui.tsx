@@ -9,7 +9,7 @@ import { Key } from '../../../packages/ui-kit/key';
 import { SETTING_ICONS } from './setting-icons';
 import './settings.css';
 
-// Settings pages ("主机之夜" layout): top bar with save state, group sidebar, field rows, gamepad legend. Edits are
+// Settings pages ("磨砂黑" layout): top bar with save state, group sidebar, field rows, gamepad legend. Edits are
 // written as they are made. The skin (kit.tsx) only changes classes.
 const ICON: Record<string, string> = {
   general: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
@@ -215,7 +215,7 @@ export interface FrameProps {
   loaded: boolean;
   who?: ComponentChildren;
   groupsTitle: string;
-  groups: readonly (readonly [string, string, string])[];
+  groups: readonly (readonly [string, string])[];
   group: string;
   setGroup: (group: string) => void;
   fields: SettingField[];                        // all fields of the page
@@ -257,7 +257,7 @@ export function SettingsFrame(props: FrameProps) {
   const main = useRef<HTMLElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const visible = fields.filter(field => field.group === group);
-  const [, title, description] = props.groups.find(([key]) => key === group) ?? props.groups[0];
+  const [, title] = props.groups.find(([key]) => key === group) ?? props.groups[0];
   const selectGroup = (next: string) => { props.setGroup(next); setFocus(0); main.current?.scrollTo({ top: 0 }); };
   useEffect(() => { if (confirm) dialog.current?.showModal(); else dialog.current?.close(); }, [confirm]);
   useEffect(() => { if (focus >= visible.length) setFocus(0); }, [visible.length]);
@@ -331,7 +331,7 @@ export function SettingsFrame(props: FrameProps) {
       <div class="cfg-file">{props.fileLabel}<span title={props.filePath}><span dir="ltr">{props.filePath}</span></span></div>
     </aside>
     <main class="cfg-main" ref={main}>
-      <div class="head"><div><div class="kicker"><i />{props.kicker}</div><h1>{t(title)}</h1><p>{t(description)}</p></div>
+      <div class="head"><div><div class="kicker"><i />{props.kicker}</div><h1>{t(title)}</h1></div>
         <div class="legend">{props.restoreInherit && <span><i class="l-inh" />{t('已单独设置')}</span>}{fields.some(field => fieldMeta(field).reserved) && <span><i class="l-pending" />{t('预留 · 仅保存')}</span>}</div></div>
       <div class="rows" key={group} aria-busy={props.busy}>
         {props.error && <Note icon="info" title={t('操作失败')} warn><pre role="alert">{props.error}</pre></Note>}

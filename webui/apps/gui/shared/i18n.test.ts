@@ -107,7 +107,7 @@ describe('GUI-14 language switching', () => {
 
   it('translates host field labels, units and reserved notes', () => {
     const field = (label: string, pending: string, initial: SettingField['initial']): SettingField =>
-      ({ key: 'k', group: 'g', label, pending, initial, choices: [], min: 0, max: 10, directory: false });
+      ({ key: 'k', group: 'g', label, pending, initial, choices: [], min: 0, max: 10, directory: false, hidden: false });
     setLanguage('en-US');
     expect(fieldMeta(field('停滞快照阈值（秒）', '预留 · 启动参数尚未接入', 30)))
       .toEqual({ label: 'Stall snapshot threshold', unit: 's', hint: '', reserved: 'Not wired to launch arguments yet' });

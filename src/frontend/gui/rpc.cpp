@@ -87,6 +87,42 @@ std::string GuiRpcService::Handle(std::string_view request) {
 
 app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonValue params) {
     try {
+        if (method == "about.credits" || method == "about.notices") {
+            CheckFields(params, method == "about.notices" ? std::initializer_list<std::string_view>{"id"}
+                                                          : std::initializer_list<std::string_view>{});
+            if (!host_.credits || !host_.credit_notices) throw std::runtime_error("宿主未接入开源致谢。");
+            app::JsonWriter writer;
+            const auto root = writer.Object(), result = writer.Object();
+            if (method == "about.credits") {
+                const auto projects = writer.Array();
+                for (const auto& project : host_.credits()) {
+                    const auto item = writer.Object();
+                    writer.AddString(item, "id", project.id);
+                    writer.AddString(item, "name", project.name);
+                    writer.AddString(item, "version", project.version);
+                    writer.AddString(item, "url", project.url);
+                    if (project.license)
+                        writer.AddString(item, "license", *project.license);
+                    else
+                        writer.AddNull(item, "license");
+                    writer.Append(projects, item);
+                }
+                writer.Add(result, "projects", projects);
+            } else {
+                const auto id = RequiredString(params, "id");
+                const auto notices = writer.Array();
+                for (const auto& [title, text] : host_.credit_notices(id)) {
+                    const auto item = writer.Object();
+                    writer.AddString(item, "title", title);
+                    writer.AddString(item, "text", text);
+                    writer.Append(notices, item);
+                }
+                writer.AddString(result, "id", id);
+                writer.Add(result, "notices", notices);
+            }
+            writer.Add(root, "result", result);
+            return {true, writer.Serialize(root)};
+        }
         if (method == "controls.open") {
             CheckFields(params, {"installation_id"});
             const auto id = RequiredString(params, "installation_id");

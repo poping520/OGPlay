@@ -3,10 +3,13 @@
 #include "ogplay/app/encoding.h"
 #include "ogplay/app/host.h"
 #include "ogplay/app/running_icon.h"
+#include <array>
 #include <fstream>
 #include <limits>
 #include <algorithm>
+#include <span>
 #include <stdexcept>
+#include <string_view>
 
 namespace ogplay::frontend {
 using namespace ogplay::app;
@@ -19,6 +22,14 @@ constexpr bool kReservedVisible = false;
 #else
 constexpr bool kReservedVisible = true;
 #endif
+
+// Settings kept off the global and per-game pages until they are polished; comment an entry out to show
+// it again. Like reserved ones, they stay in the schema: saved values, validation and launches are unchanged.
+constexpr std::array<std::string_view, 3> kHiddenSettings{
+    "cartridge",            // 常规 · 主界面卡带
+    "supersample",          // 图形 · 默认超采样，游戏设置 · 显示 · 超采样
+    "dashboard_auto_open",  // 开发者工具 · 自动打开 Dashboard
+};
 
 app::JsonWriter::Value Json(app::JsonWriter& writer, const SettingValue& value) {
     if (const auto flag = std::get_if<bool>(&value)) return writer.Bool(*flag);
@@ -47,7 +58,8 @@ SettingValue ReadValue(app::JsonValue value, const SettingDefinition& field) {
     throw std::invalid_argument(field.key + ": invalid value type");
 }
 
-app::JsonWriter::Value FieldList(app::JsonWriter& writer, const std::vector<SettingDefinition>& definitions) {
+app::JsonWriter::Value FieldList(app::JsonWriter& writer, const std::vector<SettingDefinition>& definitions,
+                                 const std::span<const std::string_view> hidden = {}) {
     const auto fields = writer.Array();
     for (const auto& field : definitions) {
         const auto item = writer.Object(), choices = writer.Array();
@@ -57,6 +69,7 @@ app::JsonWriter::Value FieldList(app::JsonWriter& writer, const std::vector<Sett
         writer.AddString(item, "pending", field.pending);
         writer.Add(item, "initial", Json(writer, field.initial));
         writer.AddBool(item, "directory", field.directory);
+        writer.AddBool(item, "hidden", std::find(hidden.begin(), hidden.end(), field.key) != hidden.end());
         writer.AddUnsignedInteger(item, "min", field.minimum);
         writer.AddUnsignedInteger(item, "max", field.maximum);
         for (const auto& choice : field.choices)
@@ -140,7 +153,7 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
         writer.Add(inherited, field.key, Json(writer, EffectiveGameSetting({}, global, entry, field.key)));
     writer.Add(result, "values", overrides);
     writer.Add(result, "inherited", inherited);
-    writer.Add(result, "fields", FieldList(writer, GameSettingDefinitions()));
+    writer.Add(result, "fields", FieldList(writer, GameSettingDefinitions(), kHiddenSettings));
     writer.AddBool(result, "reserved_visible", kReservedVisible);
     writer.AddString(result, "config_path", PathText(entry.directory / "settings.toml"));
     const auto previews = writer.Object();
@@ -245,7 +258,7 @@ app::ConsoleResponse GuiRpcService::SettingsRequest(std::string_view method, app
     writer.AddUnsignedInteger(result, "schema", 2);
     writer.AddString(result, "revision", Revision(config));
     writer.Add(result, "values", Values(writer, config));
-    const auto fields = FieldList(writer, SettingDefinitions());
+    const auto fields = FieldList(writer, SettingDefinitions(), kHiddenSettings);
     writer.Add(result, "fields", fields);
     writer.AddBool(result, "reserved_visible", kReservedVisible);
     writer.AddString(result, "library_root", PathText(store_.Root()));

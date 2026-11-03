@@ -3,6 +3,7 @@ export type SettingValue = boolean | number | string;
 export interface SettingField {
   key: string; group: string; label: string; pending: string; initial: SettingValue;
   choices: string[]; min: number; max: number; directory: boolean;
+  hidden: boolean;                               // kept off the page by the host until it is polished
 }
 export interface Settings {
   schema: number; revision: string; values: Record<string, SettingValue>; fields: SettingField[];
@@ -11,17 +12,13 @@ export interface Settings {
 }
 // Same priority as the per-game page: graphics before storage, input before audio.
 export const groups = [
-  ['general', '常规', '启动器自身的外观与交互习惯。'], ['graphics', '图形', '新启动游戏的默认渲染选项。'],
-  ['storage', '目录与存储', '游戏库、Profile 与数据包所在位置。'], ['input', '输入', '键位模板与手柄。游戏内按 F2 可打开按键设置。'],
-  ['audio', '音频', '默认音频输出。'], ['vm', '虚拟机', '解释器、时钟与默认虚拟设备。'],
-  ['network', '网络', '游戏的默认网络意向。'], ['diagnostics', '诊断与日志', '日志、停滞快照与退出诊断。'],
-  ['control', '开发者工具', '本机 MCP 服务与 Dashboard，供调试与自动化使用。'], ['about', '关于', '版本与随程序交付的制品清单。'],
+  ['general', '常规'], ['graphics', '图形'], ['storage', '目录与存储'], ['input', '输入'], ['audio', '音频'],
+  ['vm', '虚拟机'], ['network', '网络'], ['diagnostics', '诊断与日志'], ['control', '开发者工具'], ['about', '关于'],
 ] as const;
 // Host facts arrive under stable ids with data values (versions, file text, paths, codes); the labels and
 // coded values are worded here, in this order. null is a file the host could not read.
 const factLabels: Record<string, string> = {
-  ogplay_version: 'OGPlay 版本', android_manifest: 'Android / BootDex / guest JNI 制品清单',
-  webui_manifest: 'Web UI 构建清单', webui_licenses: 'Web UI 第三方许可', artifacts_error: '制品信息不可用',
+  android_manifest: 'Android / BootDex / guest JNI 制品清单', artifacts_error: '制品信息不可用',
   profile_status: 'Profile 状态', profile_quirks: 'Profile quirk 列表', profiles_dir: '有效 Profile 目录',
   profile_error: 'Profile 信息不可用',
 };
@@ -75,12 +72,12 @@ const labels: Record<string, string> = {
   'zh-CN': '简体中文', 'en-US': 'English', switch: 'Switch', threaded: 'Threaded',
   windowed: '窗口', fullscreen: '全屏', aspect: '保持比例', stretch: '拉伸', automatic: '自动', 'hardware-only': '仅硬件', 'software-only': '仅软件',
   disabled: '禁用', loopback: '仅回环', allow: '允许网络', realtime: '实时', fixed: '固定步进', portrait: '竖屏', landscape: '横屏', unlimited: '不限',
-  '3d': '3D 模型', css: 'CSS 轻量', console: '主机之夜', glass: '玻璃紫', cradle: '卡带插槽', badge: '圆形角标',
+  '3d': '3D 模型', css: 'CSS 轻量', console: '磨砂黑', glass: '玻璃紫', cradle: '卡带插槽', badge: '圆形角标',
 };
-// Release builds (host reserved_visible false) leave reserved rows out of the pages, and with them the groups
-// that only had reserved rows; groups without any field (e.g. 关于) stay.
+// Hidden rows never show; release builds (host reserved_visible false) also leave reserved rows out, and with
+// them the groups that only had such rows; groups without any field (e.g. 关于) stay.
 export function shownFields(fields: SettingField[], reservedVisible: boolean): SettingField[] {
-  return reservedVisible ? fields : fields.filter(field => !fieldMeta(field).reserved);
+  return fields.filter(field => !field.hidden && (reservedVisible || !fieldMeta(field).reserved));
 }
 export function shownGroups<G extends readonly [string, ...string[]]>(groups: readonly G[], fields: SettingField[], shown: SettingField[]): G[] {
   return groups.filter(([key]) => shown.some(field => field.group === key) || !fields.some(field => field.group === key));

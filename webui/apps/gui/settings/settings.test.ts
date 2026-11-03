@@ -3,7 +3,7 @@ import { changedKeys, displayValue, factRows, fieldMeta, groups, isDirty, settin
 import { gameGroups } from './game-settings';
 import { SETTING_ICONS, SHARED_ICONS } from './setting-icons';
 const field = (key: string, initial: string | number | boolean, choices: string[] = []): SettingField =>
-  ({ key, label: key, initial, choices, min: 1, max: 4, group: 'general', pending: '', directory: false });
+  ({ key, label: key, initial, choices, min: 1, max: 4, group: 'general', pending: '', directory: false, hidden: false });
 describe('settings drafts', () => {
   const fields = [field('theme', 'dark', ['dark', 'light']), field('supersample', 1), field('enabled', false)];
   const values = { theme: 'dark', supersample: 1, enabled: false };
@@ -59,6 +59,12 @@ describe('reserved settings in release builds', () => {
     expect(shownGroups(pageGroups, all, shown).map(([key]) => key)).toEqual(['graphics', 'about']);
     expect(shownGroups(pageGroups, all, all).map(([key]) => key)).toEqual(['graphics', 'audio', 'about']);
   });
+  it('never shows rows the host hides, in any build', () => {
+    const hidden = { ...field('cartridge', '3d'), hidden: true };
+    const live = field('theme', 'dark');
+    expect(shownFields([hidden, live], true)).toEqual([live]);
+    expect(shownFields([hidden, live], false)).toEqual([live]);
+  });
 });
 
 describe('setting row icons', () => {
@@ -81,8 +87,8 @@ describe('setting row icons', () => {
 
 describe('host facts', () => {
   it('labels stable ids, words coded values and keeps data as is', () => {
-    expect(factRows({ webui_manifest: '{}', ogplay_version: '0.1', profile_quirks: '', profile_status: 'missing', custom: 'x', webui_licenses: null }))
-      .toEqual([['OGPlay 版本', '0.1'], ['Web UI 构建清单', '{}'], ['Web UI 第三方许可', '文件不可用或超过读取上限'],
+    expect(factRows({ profile_quirks: '', android_manifest: null, profile_status: 'missing', custom: 'x', artifacts_error: 'boom' }))
+      .toEqual([['Android / BootDex / guest JNI 制品清单', '文件不可用或超过读取上限'], ['制品信息不可用', 'boom'],
         ['Profile 状态', '记录的 Profile 在所选目录中不存在。'], ['Profile quirk 列表', '无'], ['custom', 'x']]);
   });
 });

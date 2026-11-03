@@ -1,4 +1,4 @@
-/* Launcher main screen ("主机之夜"): layout and screen-specific parts. Tokens and shared controls live in ui-kit. */
+/* Launcher main screen ("磨砂黑"): layout and screen-specific parts. Tokens and shared controls live in ui-kit. */
 .console {
   position: relative; height: 100dvh; min-width: 900px; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 68px minmax(0, 1fr) auto 42px; font: 14px/1.5 var(--font); color: var(--ink); background: var(--bg); color-scheme: dark;

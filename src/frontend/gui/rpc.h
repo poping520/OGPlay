@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include "ogplay/app/apk_inspect.h"
+#include "frontend/gui/credits.h"
 #include "frontend/gui/dashboard.h"
 #include "ogplay/app/agent.h"
 #include "frontend/gui/launch.h"
@@ -27,6 +28,9 @@ struct GuiRpcHost final {
     // sentences, so the launcher can label them in its language. A null value is an unreadable file.
     std::function<std::map<std::string, std::optional<std::string>>()> settings_facts;
     std::function<std::map<std::string, std::string>(const LibraryEntry&, const LibraryConfig&)> game_facts;
+    // Open-source acknowledgements for the About page; license texts are read only when asked for.
+    std::function<std::vector<CreditProject>()> credits;
+    std::function<std::vector<std::pair<std::string, std::string>>(std::string_view)> credit_notices;
     std::function<std::vector<GuiDashboard>()> dashboards;
     std::function<void(std::string_view)> open_dashboard;
     // Opens the instance's key editor window (ADR-0134) with the launch token.

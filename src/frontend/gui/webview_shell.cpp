@@ -149,10 +149,9 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
                  std::map<std::string, std::optional<std::string>> facts;
                  facts["ogplay_version"] = OGPLAY_VERSION;
                  const auto root = app::BundledDataPaths().root;
-                 for (const auto& [key, path] : std::array<std::pair<const char*, const char*>, 3>{
-                          {{"webui_manifest", "webui/gui/manifest.json"},
-                           {"android_manifest", "android/19/manifest.json"},
-                           {"webui_licenses", "webui/gui/THIRD-PARTY-LICENSES.txt"}}}) {
+                 // Web UI licenses are part of the open-source acknowledgements (about.credits).
+                 for (const auto& [key, path] : std::array<std::pair<const char*, const char*>, 1>{
+                          {{"android_manifest", "android/19/manifest.json"}}}) {
                      std::error_code error;
                      const auto size = std::filesystem::file_size(root / path, error);
                      facts[key] = std::nullopt;  // missing, unreadable or over the read limit
@@ -183,6 +182,8 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
                  }
                  return facts;
              },
+             [] { return LoadCredits(app::BundledDataPaths().root); },
+             [](std::string_view id) { return ReadCreditNotices(app::BundledDataPaths().root, id); },
              [&] { return processes.Dashboards(); },
              [&](std::string_view instance) { view->OpenDashboard(instance, processes.DashboardPort(instance)); },
              [&](std::string_view instance) {

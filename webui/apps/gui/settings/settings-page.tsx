@@ -5,6 +5,7 @@ import { pickPath } from '../import/import';
 import { factRows, groups, settingsError, shownFields, type Settings } from './settings';
 import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui';
 import { IconPreview } from './icon-preview';
+import { Credits } from './credits';
 import { skinOf } from '../kit';
 import { setLanguage, t } from '../shared/i18n';
 
@@ -32,14 +33,19 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
   useEffect(() => () => { const language = store.latest()?.values.language; if (language !== undefined) setLanguage(language); }, []);
   const openLibrary = () => void run(async () => { await rpc('settings.open_dir', { kind: 'library' }); });
   const actions = (...buttons: ComponentChildren[]) => <div class="acts">{buttons}</div>;
+  // The version is shown on its own line; the other facts stay folded.
+  const { ogplay_version: _version, ...facts } = saved?.facts ?? {};
   const top: Record<string, ComponentChildren> = saved ? {
     general: <Note icon="info" title={t('关闭启动器后，游戏继续运行')}><p>{t('始终开启。启动器只负责导入与启动，游戏是独立进程。')}</p></Note>,
+    input: <Note icon="input" title={t('按键设置')}><p>{t('游戏运行中按 F1 查看键位，按 F2 打开按键设置。')}</p></Note>,
     storage: <Note icon="storage" title={t('游戏库')}><Paths rows={[[t('库根'), saved.library_root], [t('配置'), saved.config_path], [t('沙盒占用'), t('尚未统计')], ['FFmpeg', t('尚未探测')]]} />
       {actions(<button class="mini" disabled={busy} onClick={openLibrary}>{t('打开库目录')}</button>, <button class="mini" disabled>{t('清理沙盒')}<em>{t('暂未开放')}</em></button>)}</Note>,
     network: <Note icon="network" title={t('仅保存意向')} warn><p>{t('不改变当前运行时策略。回环仅指本机地址；公网能力以运行时契约为准。')}</p></Note>,
-    about: <Note icon="about" title="OGPlay"><p>{t('安卓老游戏兼容层。版本及制品哈希以随程序交付的清单为准；清单缺失时不推测。')}</p>
-      {factRows(saved.facts).map(([label, value]) => <details key={label} class="fact"><summary>{label}</summary><pre>{value}</pre></details>)}
-      {actions(<button class="mini" disabled>{t('导出诊断包')}<em>{t('暂未开放')}</em></button>)}</Note>,
+    about: <><Note icon="about" title="OGPlay"><p>{t('安卓老游戏兼容层。版本及制品哈希以随程序交付的清单为准；清单缺失时不推测。')}</p>
+      <Paths rows={[[t('版本'), saved.facts.ogplay_version ?? t('未知')]]} />
+      {factRows(facts).map(([label, value]) => <details key={label} class="fact"><summary>{label}</summary><pre>{value}</pre></details>)}
+      {actions(<button class="mini" disabled>{t('导出诊断包')}<em>{t('暂未开放')}</em></button>)}</Note>
+      <Credits /></>,
   } : {};
   const end: Record<string, ComponentChildren> = {
     audio: <Note icon="audio"><p>{t('采样率与块大小：启动器不创建音频设备；当前无运行时探测数据。')}</p></Note>,

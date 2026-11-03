@@ -60,6 +60,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
         {mode === 'preflight' ? t('执行预检') : t('执行启动')}</button></div>
   </div>;
   const top: Record<string, ComponentChildren> = saved ? {
+    input: <Note icon="input" title={t('按键设置')}><p>{t('游戏运行中按 F1 查看键位，按 F2 打开按键设置。')}</p></Note>,
     device: <Note icon="device" title="Android 4.4.4 · API 19"><p>{t('系统版本固定。CPU 核数和标称主频在下次启动生效，供游戏查询；主频不限制实际执行速度。')}{saved.reserved_visible && t('机型预设尚未接入，其他预留项仅保存配置。')}</p>
       {actions(<button class="mini" disabled>{t('ANDROID_ID 查看 / 重新生成')}<em>{t('管理接口待接入')}</em></button>)}</Note>,
     data: <Note icon="data" title={t('存档与目录')}><Paths rows={[...(item ? [[t('沙盒'), item.sandbox_path], [t('日志'), item.log_directory]] as [string, string][] : []), [t('游戏配置'), saved.config_path]]} />

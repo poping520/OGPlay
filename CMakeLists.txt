@@ -597,7 +597,8 @@ if(OGPLAY_BUILD_GUI OR OGPLAY_BUILD_TESTS)
     add_library(ogplay_desktop_app STATIC
         src/frontend/gui/launch.cpp src/frontend/gui/dashboard.cpp
         src/frontend/gui/rpc.cpp src/frontend/gui/rpc_import.cpp
-        src/frontend/gui/rpc_settings.cpp src/frontend/gui/rpc_data_hint.cpp src/frontend/gui/view_model.cpp)
+        src/frontend/gui/rpc_settings.cpp src/frontend/gui/rpc_data_hint.cpp src/frontend/gui/view_model.cpp
+        src/frontend/gui/credits.cpp)
     target_link_libraries(ogplay_desktop_app PUBLIC ogplaycore PRIVATE ogplay_desktop_webview)
     target_include_directories(ogplay_desktop_app PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_include_directories(ogplay_desktop_app SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost")

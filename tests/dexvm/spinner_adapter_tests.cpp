@@ -154,10 +154,9 @@ TEST_CASE("DVM-364 Spinner ROM adapter layout and asynchronous selection chain")
         CHECK(number("position") == 2);
         REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
         CHECK(number("calls") == 2);
-        const auto marquee = f.OnOutcome(f.On(spinner, "getSelectedView", "()Landroid/view/View;").ref, "setSelected",
-                                         "(Z)V", {VmValue::Int(1)});
-        REQUIRE(marquee.exception.IsValid());
-        CHECK(marquee.exception_message == "marquee animation is unsupported");
+        const auto marquee_view = f.On(spinner, "getSelectedView", "()Landroid/view/View;").ref;
+        CHECK_FALSE(f.OnOutcome(marquee_view, "setSelected", "(Z)V", {VmValue::Int(1)}).exception.IsValid());
+        CHECK(f.On(marquee_view, "isSelected", "()Z").AsInt() == 1);
         f.On(adapter, "clear", "()V");
         REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                          AndroidUiTraversalPhase::ResolveOnly));

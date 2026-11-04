@@ -114,6 +114,9 @@ void PutAndroidMetaData(dx::IntrinsicContext& call, const Context& context, dx::
 [[nodiscard]] dx::IntrinsicHandler NeutralHandler(char shorty);
 [[nodiscard]] dx::IntrinsicHandler PlaceholderString(std::string value = {});
 void GuestLog(dx::IntrinsicContext& call, core::LogLevel level, const std::string& line);
+// A display-only UI request was ignored instead of failing the game: warns once
+// per id and counts the rest in the ledger. Not for anything guest logic reads back.
+void RecordUiDegraded(dx::Interpreter& vm, std::string_view what);
 dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context, std::vector<std::byte> bytes);
 // Missing or damaged entries throw the Java IOException the glue catches.
 [[nodiscard]] std::vector<std::byte> ReadApkFile(const Context& context, const std::string& path);

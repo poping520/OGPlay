@@ -1084,6 +1084,16 @@ void GuestLog(dx::IntrinsicContext& call, const core::LogLevel level, const std:
     logger->Write(level, "runtime.dexvm.guest", line);
 }
 
+void RecordUiDegraded(dx::Interpreter& vm, const std::string_view what) {
+    auto* ledger = vm.Ledger();
+    const bool first =
+        ledger == nullptr || ledger->RecordWarning(std::string(core::kUiDegradedWarningPrefix) + std::string(what), 0);
+    if (!first) return;
+    if (auto* logger = vm.Log())
+        logger->Write(core::LogLevel::warn, "runtime.dexvm.ui_degraded",
+                      "ignored unsupported UI request: " + std::string(what));
+}
+
 std::string FilePathOf(dx::IntrinsicContext& call, const dx::VmObjectRef file) {
     const auto slots = call.vm.Model().InstanceSlots(file);
     return call.vm.StringUtf8(dx::VmObjectRef(slots[0].bits));

@@ -13,6 +13,9 @@ namespace ogplay::core {
 
 enum class CapabilityStatus : std::uint8_t { unimplemented, stub, partial, complete };
 
+// Warning ids for UI requests the runtime ignored so the game can keep running.
+inline constexpr std::string_view kUiDegradedWarningPrefix = "ui.degraded.";
+
 struct Capability {
     std::string id;
     CapabilityStatus status{CapabilityStatus::unimplemented};
@@ -50,7 +53,8 @@ public:
     [[nodiscard]] std::optional<Capability> Find(std::string_view id) const;
     [[nodiscard]] std::vector<Capability> All() const;
 
-    void RecordWarning(std::string_view id, std::uint64_t link_register);
+    // Returns true on the first hit of this id.
+    bool RecordWarning(std::string_view id, std::uint64_t link_register);
     [[nodiscard]] std::vector<CapabilityWarningHit> Warnings() const;
 
     void RecordUnimplemented(std::string_view id, std::uint64_t link_register);

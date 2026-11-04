@@ -130,7 +130,7 @@ mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄�
 - `generation` 只随内容写入/截断变化；路径替换创建不同节点身份。alias 与 canonical
   路径共享同一节点、锁、SQLite identity 和 overlay。
 - 底层 APK/OBB/宿主来源永不反写；写入只进入内存可写节点或 attached overlay。
-- 未实现能力返回稳定 errno/异常；不得伪造成功或静默返回零。
+- 未实现能力返回稳定 errno/异常。
 
 ## 测试
 

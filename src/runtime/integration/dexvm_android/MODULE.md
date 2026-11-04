@@ -636,6 +636,9 @@ ADR-0161：仅配对 JavaTraversal 的三个 TextView 构造为受审 adapter，
 UiNode 的文本、gravity、行策略及四绝对位图槽是单一文本输入；字号/字体样式是 TextPaint 的投影。
 每 View 的 Java mTextPaint 身份稳定，字号归 PaintMeasureState、Typeface 归 Paint.mTypeface；
 TextView setter 写穿并清测量缓存，getter 读取 Paint；直接改所属 Paint 的字号/字体/flags 记账拒绝。
+TextView/ImageView 未实现的展示类 XML 属性与无返回值 setter 经 `RecordUiDegraded` 忽略，按 id
+首次写 warn、累计 `ui.degraded.*` 账本警告，运行结束汇总；样式 CharSequence 退化为纯文本；
+密码类 password/inputType、超长文本与缺字仍明确失败。
 颜色身份归 Java 字段，UiNode 仅持派生 RGBA；
 View adapter 状态另存独立 singleLine 位，并保活 Drawable 身份及其不可变 backing，随 View trace/sweep。
 mHorizontallyScrolling 由 Java 字段唯一拥有，getter 执行 ROM；setter 值变化才清测量缓存并请求布局/失效。
@@ -977,7 +980,7 @@ Spinner 的 DIALOG 构造、AdapterView/AbsSpinner 状态、ArrayAdapter 布局�
 AttachInfo/IME焦点/无障碍服务、无动画/硬件且背景为静态封存皮肤的软件路径，保留原 flags
 清理与 scrollbar 唤醒，不制造 AttachInfo 或全系统附着信用。
 系统 getLayout 仅加载 ADR-0174 两个封存布局的真实 XmlBlock.Parser；未封存系统布局仍
-NotFoundException。TextView 保存 MARQUEE 解析状态，实际启动动画仍失败；textAlignment=inherit
+NotFoundException。TextView 保存 MARQUEE 解析状态，实际动画不启动并记录降级；textAlignment=inherit
 沿 View 原属性与解析流程，不授予其他对齐/RTL/Editor/Canvas 支持。
 
 

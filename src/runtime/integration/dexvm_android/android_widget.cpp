@@ -584,14 +584,17 @@ Decl ExperimentalImageView(const Context& context) {
                                          {dx::VmValue::Int(indices.at(name)), dx::VmValue::Int(0)})
                     .AsInt();
             };
-            if (boolean("baselineAlignBottom") || get("baseline", "getDimensionPixelSize", -1) != -1 ||
-                boolean("adjustViewBounds") || get("maxWidth", "getDimensionPixelSize", INT32_MAX) != INT32_MAX ||
-                get("maxHeight", "getDimensionPixelSize", INT32_MAX) != INT32_MAX || get("tint", "getInt", 0) != 0 ||
-                boolean("cropToPadding"))
-                ImageFailure(vm, "unsupported ImageView bounds/baseline/tint/crop request");
+            if (boolean("baselineAlignBottom") || get("baseline", "getDimensionPixelSize", -1) != -1)
+                RecordUiDegraded(vm, "ImageView.baseline");
+            if (boolean("adjustViewBounds")) RecordUiDegraded(vm, "ImageView.adjustViewBounds");
+            if (get("maxWidth", "getDimensionPixelSize", INT32_MAX) != INT32_MAX ||
+                get("maxHeight", "getDimensionPixelSize", INT32_MAX) != INT32_MAX)
+                RecordUiDegraded(vm, "ImageView.maxSize");
+            if (get("tint", "getInt", 0) != 0) RecordUiDegraded(vm, "ImageView.tint");
+            if (boolean("cropToPadding")) RecordUiDegraded(vm, "ImageView.cropToPadding");
             const auto st = get("scaleType", "getInt", -1);
-            if (st >= 0) {
-                if (st >= 8) ImageFailure(vm, "invalid ImageView scaleType");
+            if (st >= 8) RecordUiDegraded(vm, "ImageView.scaleType");
+            if (st >= 0 && st < 8) {
                 const auto values =
                     vm.Linker().FindFieldRecursive(vm.Linker().ResolveDescriptor("Landroid/widget/ImageView;"),
                                                    "sScaleTypeArray", "[Landroid/widget/ImageView$ScaleType;");
@@ -629,8 +632,10 @@ Decl ExperimentalImageView(const Context& context) {
             const bool is_color = c.vm.Linker().IsAssignable(
                 c.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/ColorDrawable;"), type);
             const auto found = context->ui_drawables.find(value.Value());
-            if (!is_color && (found == context->ui_drawables.end() || !found->second.bitmap_drawable))
-                ImageFailure(c.vm, "unreviewed Drawable");
+            if (!is_color && (found == context->ui_drawables.end() || !found->second.bitmap_drawable)) {
+                RecordUiDegraded(c.vm, "ImageView.drawable");
+                return dx::VmValue::Void();
+            }
             const auto source = !is_color && found->second.bitmap_drawable
                                     ? CallAndroidMethod(c.vm, value, "getBitmap", "()Landroid/graphics/Bitmap;").ref
                                     : dx::VmObjectRef{};
@@ -666,8 +671,10 @@ Decl ExperimentalImageView(const Context& context) {
         const auto value = c.arguments[0].ref;
         if (!value.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "scaleType"};
         const auto ordinal = CallAndroidMethod(c.vm, value, "ordinal", "()I").AsInt();
-        if (ordinal != 1 && ordinal != 3 && ordinal != 5 && ordinal != 6 && ordinal != 7)
-            ImageFailure(c.vm, "unsupported ImageView scaleType");
+        if (ordinal != 1 && ordinal != 3 && ordinal != 5 && ordinal != 6 && ordinal != 7) {
+            RecordUiDegraded(c.vm, "ImageView.scaleType");
+            return dx::VmValue::Void();
+        }
         dx::IntrinsicCall(c).SetRef(scale, value);
         ProjectAndroidImage(c.vm, *context, c.receiver);
         changed(c);
@@ -722,7 +729,7 @@ Decl ExperimentalImageView(const Context& context) {
                                                              {"setSelected", "(Z)V"}}}) {
         builder.VirtualMethod(name, sig, [name, sig](dx::IntrinsicContext& c) {
             if (std::string_view(name) == "onRtlPropertiesChanged" && c.arguments[0].AsInt() != 0)
-                ImageFailure(c.vm, "RTL image unsupported");
+                RecordUiDegraded(c.vm, "ImageView.rtl");
             const auto type = c.vm.Linker().ResolveDescriptor("Landroid/view/View;");
             const auto index = c.vm.Linker().FindVtableIndex(type, name, sig);
             std::vector<dx::VmValue> args{dx::VmValue::Ref(c.receiver)};
@@ -740,6 +747,27 @@ Decl ExperimentalImageView(const Context& context) {
 [[noreturn]] void TextInputFailure(dx::Interpreter& vm, std::string message) {
     if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
     throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", std::move(message)};
+}
+
+// The text leaf renders plain text only, so styled spans degrade to their text.
+dx::VmObjectRef PlainText(dx::Interpreter& vm, const dx::VmObjectRef value) {
+    if (!value.IsValid() || vm.Linker().Class(vm.Model().ObjectClass(value)).descriptor == "Ljava/lang/String;")
+        return value;
+    RecordUiDegraded(vm, "TextView.textSpans");
+    return CallAndroidMethod(vm, value, "toString", "()Ljava/lang/String;").ref;
+}
+
+// Start/end map to left/right under the fixed LTR direction; any other
+// unsupported axis value degrades to the default top-left edge.
+int BoundedTextGravity(dx::Interpreter& vm, const int requested) {
+    constexpr int kRelative = 0x800000;
+    int horizontal = requested & 7, vertical = requested & 0x70;
+    const bool horizontal_ok = horizontal == 0 || horizontal == 1 || horizontal == 3 || horizontal == 5;
+    const bool vertical_ok = vertical == 0 || vertical == 0x10 || vertical == 0x30 || vertical == 0x50;
+    if ((requested & ~(0x77 | kRelative)) || !horizontal_ok || !vertical_ok) RecordUiDegraded(vm, "TextView.gravity");
+    if (!horizontal_ok || !horizontal) horizontal = 3;
+    if (!vertical_ok || !vertical) vertical = 0x30;
+    return horizontal | vertical;
 }
 
 Decl ExperimentalTextView(const Context& context) {
@@ -864,26 +892,8 @@ Decl ExperimentalTextView(const Context& context) {
         const auto theme_root = vm.ProtectReferences(std::array{theme});
         const auto tva = RomTextAttributes(vm, "TextViewAppearance"), ta = RomTextAttributes(vm, "TextAppearance"),
                    tv = RomTextAttributes(vm, "TextView"), view = RomTextAttributes(vm, "View");
-        if (attrs.IsValid()) {
-            std::set<std::uint32_t> known;
-            for (const auto group : {"View", "TextView", "ViewGroup_Layout", "ViewGroup_MarginLayout",
-                                     "FrameLayout_Layout", "LinearLayout_Layout", "RelativeLayout_Layout"}) {
-                const auto array = RomTextAttributes(vm, group).array;
-                for (JniSize i = 0; i < vm.Model().ArrayLength(array); ++i)
-                    known.insert(static_cast<std::uint32_t>(vm.Model().GetPrimitiveElement(array, i)));
-            }
-            const auto count = CallAndroidMethod(vm, attrs, "getAttributeCount", "()I").AsInt();
-            for (int i = 0; i < count; ++i) {
-                const auto id = static_cast<std::uint32_t>(
-                    CallAndroidMethod(vm, attrs, "getAttributeNameResource", "(I)I", {dx::VmValue::Int(i)}).AsInt());
-                // The unqualified XML style marker is handled by the ROM parser.
-                if (id == 0 && vm.StringUtf8(CallAndroidMethod(vm, attrs, "getAttributeName", "(I)Ljava/lang/String;",
-                                                               {dx::VmValue::Int(i)})
-                                                 .ref) == "style")
-                    continue;
-                if (!known.contains(id)) TextInputFailure(vm, "unknown TextView XML attribute");
-            }
-        }
+        // Like the ROM, only the requested styleables are read: other XML attributes
+        // (subclass or custom ones, unknown parent layout params) are not TextView's.
         const auto obtain = [&](dx::VmObjectRef array) {
             return CallAndroidMethod(vm, theme, "obtainStyledAttributes",
                                      "(Landroid/util/AttributeSet;[III)Landroid/content/res/TypedArray;",
@@ -903,8 +913,8 @@ Decl ExperimentalTextView(const Context& context) {
         std::u16string text;
         std::string family;
         bool has_family = false, single = false;
-        bool editable = editing;
         int ellipsize = -1;
+        const auto ignored = [&vm](const std::string& what) { RecordUiDegraded(vm, "TextView." + what); };
         std::optional<int> min_width_px, min_height_px;
         std::array<ui::CompoundDrawable, 4> compounds{};
         std::array<dx::VmObjectRef, 4> compound_refs{dx::VmObjectRef{}, dx::VmObjectRef{}, dx::VmObjectRef{},
@@ -957,7 +967,10 @@ Decl ExperimentalTextView(const Context& context) {
                                           {dx::VmValue::Int(index)})
                             .ref;
                     const auto root = vm.ProtectReferences(std::array{list});
-                    if (!list.IsValid()) TextInputFailure(vm, "null textColor");
+                    if (!list.IsValid()) {
+                        ignored("textColor");
+                        continue;
+                    }
                     dx::IntrinsicCall(c).SetRef(text_colors, list);
                     color = static_cast<std::uint32_t>(CallAndroidMethod(vm, list, "getDefaultColor", "()I").AsInt());
                 } else if (name == "textColorHint" || name == "textColorLink") {
@@ -982,30 +995,24 @@ Decl ExperimentalTextView(const Context& context) {
                 else if (name == "textStyle")
                     style_index = integer(style_index);
                 else if (name == "text") {
-                    const auto ref = CallAndroidMethod(vm, values, "getText", "(I)Ljava/lang/CharSequence;",
-                                                       {dx::VmValue::Int(index)})
-                                         .ref;
-                    if (ref.IsValid() &&
-                        vm.Linker().Class(vm.Model().ObjectClass(ref)).descriptor != "Ljava/lang/String;")
-                        TextInputFailure(vm, "plain String required");
+                    const auto ref =
+                        PlainText(vm, CallAndroidMethod(vm, values, "getText", "(I)Ljava/lang/CharSequence;",
+                                                        {dx::VmValue::Int(index)})
+                                          .ref);
                     text = ref.IsValid() ? vm.Model().StringValue(ref) : u"";
                 } else if (name == "gravity") {
-                    gravity = integer(-1);
-                    if ((gravity & ~0x77) ||
-                        ((gravity & 7) != 0 && (gravity & 7) != 1 && (gravity & 7) != 3 && (gravity & 7) != 5) ||
-                        ((gravity & 0x70) != 0 && (gravity & 0x70) != 0x10 && (gravity & 0x70) != 0x30 &&
-                         (gravity & 0x70) != 0x50))
-                        TextInputFailure(vm, "unsupported text gravity");
-                    if (!(gravity & 7)) gravity |= 3;
-                    if (!(gravity & 0x70)) gravity |= 0x30;
+                    gravity = BoundedTextGravity(vm, integer(-1));
                 } else if (name == "maxLines") {
-                    max_lines = integer(-1);
-                    if (max_lines < 1) TextInputFailure(vm, "maxLines must be positive");
+                    const auto lines = integer(-1);
+                    if (lines < 1)
+                        ignored(name);
+                    else
+                        max_lines = lines;
                 } else if (name == "singleLine")
                     single = boolean(single);
                 else if (name == "ellipsize") {
                     ellipsize = integer(-1);
-                    if (ellipsize != 0 && ellipsize != 4) TextInputFailure(vm, "ellipsize is unsupported");
+                    if (ellipsize != 0 && ellipsize != 4) ignored(name);
                     if (ellipsize == 4) {
                         const auto type = vm.Linker().ResolveDescriptor("Landroid/text/TextUtils$TruncateAt;");
                         const auto ready = vm.EnsureClassInitialized(type);
@@ -1029,11 +1036,13 @@ Decl ExperimentalTextView(const Context& context) {
                                           {dx::VmValue::Int(index)})
                             .ref;
                     if (ref.IsValid()) {
-                        vm.Model().SetObjectElement(retained, static_cast<JniSize>(slot), ref);
                         const auto backing = context->ui_drawables.find(ref.Value());
                         if (backing == context->ui_drawables.end() || !backing->second.bitmap_drawable ||
-                            !backing->second.leaf_pixels)
-                            TextInputFailure(vm, "compound requires resource BitmapDrawable");
+                            !backing->second.leaf_pixels) {
+                            ignored(name);
+                            continue;
+                        }
+                        vm.Model().SetObjectElement(retained, static_cast<JniSize>(slot), ref);
                         const auto width = CallAndroidMethod(vm, ref, "getIntrinsicWidth", "()I").AsInt();
                         const auto height = CallAndroidMethod(vm, ref, "getIntrinsicHeight", "()I").AsInt();
                         compounds[slot] = {backing->second.resource_id, width, height};
@@ -1046,22 +1055,29 @@ Decl ExperimentalTextView(const Context& context) {
                 } else if (name == "enabled") {
                     // The View super constructor consumed this same value.
                 } else if (name == "includeFontPadding" || name == "cursorVisible" || name == "linksClickable") {
-                    if (!boolean(true)) TextInputFailure(vm, "unsupported non-default " + name);
+                    if (!boolean(true)) ignored(name);
                 } else if (name == "editable") {
-                    editable = boolean(editing);
-                    if (editable != editing) TextInputFailure(vm, "editable override outside bounded EditText");
+                    if (boolean(editing) != editing) ignored(name);
                 } else if (name == "bufferType") {
                     const auto type = integer(0);
-                    if (type != 0 && !(editing && (type == 1 || type == 2)))
-                        TextInputFailure(vm, "unsupported bufferType");
-                } else if (name == "textAllCaps" || name == "password" || name == "textIsSelectable" ||
-                           name == "autoText" || name == "phoneNumber" || name == "selectAllOnFocus" ||
-                           name == "scrollHorizontally") {
-                    if (boolean(false)) TextInputFailure(vm, "unsupported " + name);
+                    if (type != 0 && !(editing && (type == 1 || type == 2))) ignored(name);
+                } else if (name == "password") {
+                    // Ignoring these would show a password in clear text.
+                    if (boolean(false)) TextInputFailure(vm, "unsupported password");
+                } else if (name == "inputType") {
+                    const auto type = integer(0);
+                    const auto variation = type & 0xfff;
+                    if (variation == 0x81 || variation == 0xe1 || variation == 0x12)
+                        TextInputFailure(vm, "unsupported password inputType");
+                    if (type != 0) ignored(name);
+                } else if (name == "textAllCaps" || name == "textIsSelectable" || name == "autoText" ||
+                           name == "phoneNumber" || name == "selectAllOnFocus" || name == "scrollHorizontally") {
+                    if (boolean(false)) ignored(name);
                 } else if (name == "autoLink" || name == "shadowColor") {
-                    if (integer(0) != 0) TextInputFailure(vm, "unsupported " + name);
+                    if (integer(0) != 0) ignored(name);
                 } else {
-                    TextInputFailure(vm, "unsupported TextView attribute: " + name);
+                    // Display and input configuration without an implementation yet.
+                    ignored(name);
                 }
             }
         };
@@ -1079,12 +1095,23 @@ Decl ExperimentalTextView(const Context& context) {
         consume(values, tv);
         static_cast<void>(CallAndroidMethod(vm, values, "recycle", "()V"));
         if (single) {
-            if (ellipsize < 0) TextInputFailure(vm, "singleLine implicitly requests END ellipsize");
-            if (text.find(u'\r') != text.npos) TextInputFailure(vm, "singleLine CR transformation unsupported");
+            // Only views without a KeyListener get the implicit END ellipsize.
+            if (ellipsize < 0 && !editing) ignored("singleLine.ellipsize");
+            std::replace(text.begin(), text.end(), u'\r', u' ');
             max_lines = 1;
         }
-        if (family_index < -1 || family_index > 3 || style_index < -1 || style_index > 3)
-            TextInputFailure(vm, "unsupported typeface/style");
+        if (family_index < -1 || family_index > 3) {
+            ignored("typeface");
+            family_index = -1;
+        }
+        if (style_index < -1 || style_index > 3) {
+            ignored("textStyle");
+            style_index = -1;
+        }
+        if (has_family && family != "sans-serif" && family != "serif" && family != "monospace") {
+            ignored("fontFamily");
+            has_family = false;
+        }
         dx::VmObjectRef face;
         if (has_family || family_index > 0 || style_index > 0) {
             const auto name = has_family          ? family
@@ -1092,8 +1119,6 @@ Decl ExperimentalTextView(const Context& context) {
                               : family_index == 2 ? "serif"
                               : family_index == 3 ? "monospace"
                                                   : "";
-            if (has_family && family != "sans-serif" && family != "serif" && family != "monospace")
-                TextInputFailure(vm, "unsupported fontFamily");
             const auto name_ref = vm.NewStringUtf8(name);
             const auto name_root = vm.ProtectReferences(std::array{name_ref});
             face = TextStatic(vm, "Landroid/graphics/Typeface;", "create",
@@ -1103,8 +1128,11 @@ Decl ExperimentalTextView(const Context& context) {
             vm.Model().SetObjectElement(retained, 4, face);
         }
         const auto font_style = face.IsValid() ? CallAndroidMethod(vm, face, "getStyle", "()I").AsInt() : 0;
-        if (size < 1 || size > 128 || text.size() > ui::kMaxFixedTextUnits)
-            TextInputFailure(vm, "text size/length outside bounded service");
+        if (size < 1 || size > 128) {
+            ignored("textSize");
+            size = std::clamp(size, 1, 128);
+        }
+        if (text.size() > ui::kMaxFixedTextUnits) TextInputFailure(vm, "text length outside bounded service");
         try {
             for (const auto unit : text)
                 if (unit != u'\n') ui::RequireTextGlyph(unit, context->ui_tree.FallbackFont().get());
@@ -1116,8 +1144,7 @@ Decl ExperimentalTextView(const Context& context) {
         }
         // Default START is resolved against the real View direction, not blindly
         // treated as LEFT on an RTL View.
-        if (CallAndroidMethod(vm, c.receiver, "getLayoutDirection", "()I").AsInt() != 0)
-            TextInputFailure(vm, "RTL text direction unsupported");
+        if (CallAndroidMethod(vm, c.receiver, "getLayoutDirection", "()I").AsInt() != 0) ignored("rtl");
         const auto focus_values = obtain(view.array);
         const auto focus_root = vm.ProtectReferences(std::array{focus_values});
         std::array<bool, 3> focus{editing, editing, editing};
@@ -1230,7 +1257,7 @@ Decl ExperimentalTextView(const Context& context) {
         }
     };
     const auto filtered = [filters_field](dx::IntrinsicContext& c) {
-        auto text = c.arguments[0].ref;
+        auto text = PlainText(c.vm, c.arguments[0].ref);
         if (!text.IsValid()) text = c.vm.Model().NewString(u"");
         const auto source_root = c.vm.ProtectReferences(std::array{text});
         const auto holder = c.vm.Model().NewObjectArray(c.vm.Linker().ResolveDescriptor("[Ljava/lang/Object;"),
@@ -1255,16 +1282,12 @@ Decl ExperimentalTextView(const Context& context) {
                 c.vm.Model().SetObjectElement(holder, 0, text);
             }
         }
-        if (c.vm.Linker().Class(c.vm.Model().ObjectClass(text)).descriptor != "Ljava/lang/String;")
-            TextInputFailure(c.vm, "plain String required after filters");
-        return c.vm.Model().StringValue(text);
+        return c.vm.Model().StringValue(PlainText(c.vm, text));
     };
     builder.FinalMethod(
         "setHint", "(Ljava/lang/CharSequence;)V", [context, hint_field, changed, validate](dx::IntrinsicContext& c) {
-            const auto hint = c.arguments[0].ref;
-            if (hint.IsValid() &&
-                c.vm.Linker().Class(c.vm.Model().ObjectClass(hint)).descriptor != "Ljava/lang/String;")
-                TextInputFailure(c.vm, "plain String hint required");
+            const auto hint = PlainText(c.vm, c.arguments[0].ref);
+            const auto hint_root = c.vm.ProtectReferences(std::array{hint});
             const auto& n = *context->ui_tree.Get(TextNode(c, context));
             validate(c, n, hint.IsValid() ? c.vm.Model().StringValue(hint) : u"", n.text_size_px, n.text_style);
             dx::IntrinsicCall(c).SetRef(hint_field, hint);
@@ -1318,9 +1341,6 @@ Decl ExperimentalTextView(const Context& context) {
                                          "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
                                          {c.arguments[0], dx::VmValue::Ref(type)});
             }
-            const auto ref = c.arguments[0].ref;
-            if (ref.IsValid() && c.vm.Linker().Class(c.vm.Model().ObjectClass(ref)).descriptor != "Ljava/lang/String;")
-                TextInputFailure(c.vm, "plain String required");
             auto text = filtered(c);
             auto& n = *context->ui_tree.Get(TextNode(c, context));
             validate(c, n, text, n.text_size_px, n.text_style);
@@ -1333,10 +1353,6 @@ Decl ExperimentalTextView(const Context& context) {
                                   !c.arguments[1].ref.IsValid() ||
                                   CallAndroidMethod(c.vm, c.arguments[1].ref, "ordinal", "()I").AsInt() != 2)
                                   TextInputFailure(c.vm, "only EditText EDITABLE buffer is supported");
-                              const auto text = c.arguments[0].ref;
-                              if (text.IsValid() && c.vm.Linker().Class(c.vm.Model().ObjectClass(text)).descriptor !=
-                                                        "Ljava/lang/String;")
-                                  TextInputFailure(c.vm, "plain String required");
                               const auto value = filtered(c);
                               const auto& n = *context->ui_tree.Get(TextNode(c, context));
                               validate(c, n, value, n.text_size_px, n.text_style);
@@ -1378,8 +1394,10 @@ Decl ExperimentalTextView(const Context& context) {
         // API19 stores finite negative radii too; Paint.cpp disables radius <= 0.
         // Non-finite geometry is outside this bounded raster service.
         if (!std::isfinite(radius) || !std::isfinite(dx) || !std::isfinite(dy) || std::abs(dx) > 4096 ||
-            std::abs(dy) > 4096)
-            TextInputFailure(c.vm, "shadow requires finite radius and offsets within +/-4096 px");
+            std::abs(dy) > 4096) {
+            RecordUiDegraded(c.vm, "TextView.shadowGeometry");
+            return dx::VmValue::Void();
+        }
         auto& n = *context->ui_tree.Get(TextNode(c, context));
         n.text_shadow = {radius, dx, dy, AndroidColorToRgba(static_cast<std::uint32_t>(c.arguments[3].AsInt()))};
         return CallAndroidMethod(c.vm, c.receiver, "invalidate", "()V");
@@ -1405,7 +1423,10 @@ Decl ExperimentalTextView(const Context& context) {
     });
     builder.VirtualMethod("setTextSize", "(IF)V", [context, changed, validate, paint_field](dx::IntrinsicContext& c) {
         const auto unit = c.arguments[0].AsInt();
-        if (unit < 0 || unit > 2) TextInputFailure(c.vm, "unsupported dimension unit");
+        if (unit < 0 || unit > 2) {
+            RecordUiDegraded(c.vm, "TextView.textSizeUnit");
+            return dx::VmValue::Void();
+        }
         const auto size = c.arguments[1].AsFloat() * (unit == 0   ? 1.F
                                                       : unit == 1 ? context->ui_density
                                                                   : context->ui_scaled_density);
@@ -1431,7 +1452,10 @@ Decl ExperimentalTextView(const Context& context) {
         });
     builder.VirtualMethod("setTypeface", "(Landroid/graphics/Typeface;I)V", [](dx::IntrinsicContext& c) {
         const auto style = c.arguments[1].AsInt();
-        if (style < 0 || style > 3) TextInputFailure(c.vm, "unsupported Typeface style");
+        if (style < 0 || style > 3) {
+            RecordUiDegraded(c.vm, "TextView.typefaceStyle");
+            return dx::VmValue::Void();
+        }
         const auto ref =
             TextStatic(c.vm, "Landroid/graphics/Typeface;", "create",
                        "(Landroid/graphics/Typeface;I)Landroid/graphics/Typeface;", {c.arguments[0], c.arguments[1]})
@@ -1465,21 +1489,18 @@ Decl ExperimentalTextView(const Context& context) {
         "getTextColors", "()Landroid/content/res/ColorStateList;",
         [text_colors](dx::IntrinsicContext& c) { return dx::VmValue::Ref(dx::IntrinsicCall(c).GetRef(text_colors)); });
     builder.VirtualMethod("setGravity", "(I)V", [context, changed](dx::IntrinsicContext& c) {
-        auto gravity = c.arguments[0].AsInt();
-        if ((gravity & ~0x77) ||
-            ((gravity & 7) != 0 && (gravity & 7) != 1 && (gravity & 7) != 3 && (gravity & 7) != 5) ||
-            ((gravity & 0x70) != 0 && (gravity & 0x70) != 0x10 && (gravity & 0x70) != 0x30 && (gravity & 0x70) != 0x50))
-            TextInputFailure(c.vm, "unsupported gravity");
-        if (!(gravity & 7)) gravity |= 3;
-        if (!(gravity & 0x70)) gravity |= 0x30;
-        context->ui_tree.Get(TextNode(c, context))->gravity = static_cast<std::uint32_t>(gravity);
+        context->ui_tree.Get(TextNode(c, context))->gravity =
+            static_cast<std::uint32_t>(BoundedTextGravity(c.vm, c.arguments[0].AsInt()));
         return changed(c);
     });
     builder.VirtualMethod("getGravity", "()I", [context](dx::IntrinsicContext& c) {
         return dx::VmValue::Int(static_cast<std::int32_t>(context->ui_tree.Get(TextNode(c, context))->gravity));
     });
     builder.VirtualMethod("setMaxLines", "(I)V", [context, changed](dx::IntrinsicContext& c) {
-        if (c.arguments[0].AsInt() < 1) TextInputFailure(c.vm, "non-positive maxLines");
+        if (c.arguments[0].AsInt() < 1) {
+            RecordUiDegraded(c.vm, "TextView.maxLines");
+            return dx::VmValue::Void();
+        }
         context->ui_tree.Get(TextNode(c, context))->max_lines = c.arguments[0].AsInt();
         return changed(c);
     });
@@ -1534,12 +1555,14 @@ Decl ExperimentalTextView(const Context& context) {
                                                 dx::VmObjectRef{}};
             for (std::size_t i = 0; i < 4; ++i) {
                 const auto ref = c.arguments[i].ref;
-                refs[i] = ref;
                 if (!ref.IsValid()) continue;
                 const auto found = context->ui_drawables.find(ref.Value());
                 if (found == context->ui_drawables.end() || !found->second.bitmap_drawable ||
-                    !found->second.leaf_pixels)
-                    TextInputFailure(c.vm, "compound requires APK bitmap");
+                    !found->second.leaf_pixels) {
+                    RecordUiDegraded(c.vm, "TextView.compoundDrawable");
+                    continue;
+                }
+                refs[i] = ref;
                 values[i] = {found->second.resource_id,
                              CallAndroidMethod(c.vm, ref, "getIntrinsicWidth", "()I").AsInt(),
                              CallAndroidMethod(c.vm, ref, "getIntrinsicHeight", "()I").AsInt()};
@@ -1668,7 +1691,7 @@ Decl ExperimentalTextView(const Context& context) {
         const bool selected = c.arguments[0].AsInt() != 0;
         const bool previous = CallAndroidMethod(c.vm, c.receiver, "isSelected", "()Z").AsInt() != 0;
         if (selected != previous && selected && dx::IntrinsicCall(c).GetRef(ellipsize_field).IsValid())
-            TextInputFailure(c.vm, "marquee animation is unsupported");
+            RecordUiDegraded(c.vm, "TextView.marquee");
         const auto base = c.vm.Linker().ResolveDescriptor("Landroid/view/View;");
         const auto method =
             c.vm.Linker().Class(base).vtable[*c.vm.Linker().FindVtableIndex(base, "setSelected", "(Z)V")];
@@ -1695,7 +1718,7 @@ Decl ExperimentalTextView(const Context& context) {
             if ((std::string_view(name) == "onRtlPropertiesChanged" ||
                  std::string_view(name) == "onResolveDrawables") &&
                 c.arguments[0].AsInt() != 0)
-                TextInputFailure(c.vm, "RTL text unsupported");
+                RecordUiDegraded(c.vm, "TextView.rtl");
             const auto type = c.vm.Linker().ResolveDescriptor("Landroid/view/View;");
             const auto method = c.vm.Linker().FindVtableIndex(type, name, sig);
             std::vector<dx::VmValue> args(c.arguments.begin(), c.arguments.end());

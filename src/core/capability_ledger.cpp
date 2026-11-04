@@ -52,7 +52,7 @@ std::vector<Capability> CapabilityLedger::All() const {
     return result;
 }
 
-void CapabilityLedger::RecordWarning(const std::string_view id, const std::uint64_t lr) {
+bool CapabilityLedger::RecordWarning(const std::string_view id, const std::uint64_t lr) {
     std::scoped_lock lock(mutex_);
     auto [item, inserted] = warnings_.try_emplace(std::string(id));
     auto& hit = item->second;
@@ -62,6 +62,7 @@ void CapabilityLedger::RecordWarning(const std::string_view id, const std::uint6
     }
     ++hit.count;
     hit.last_lr = lr;
+    return inserted;
 }
 
 std::vector<CapabilityWarningHit> CapabilityLedger::Warnings() const {

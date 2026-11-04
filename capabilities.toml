@@ -101,7 +101,7 @@ note = "DVM-331：纯宿主 HostLayout 横纵 LinearLayout 的 padding/margin/we
 [runtime.ui_text_widgets]
 status = "complete"
 test = "tests/runtime/ui_renderer_tests.cpp; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp"
-note = "TextView/Button 文本、字号、gravity、compound 与阴影收敛到 UiNode；5x7 覆盖完整可打印 ASCII，独立 BMP 与 Paint/输入共用 API19 字体链覆盖判定，保留 immutable line-plan。阴影先偏移再高斯模糊（radius<=32px），原值可查询；非有限值及超界偏移明确失败。默认主题、有界 NinePatch、EditText 与 ScrollView 保留。完整字体排版、XML 阴影属性不在范围内。"
+note = "TextView/Button 文本、字号、gravity、compound 与阴影收敛到 UiNode；5x7 覆盖完整可打印 ASCII，独立 BMP 与 Paint/输入共用 API19 字体链覆盖判定，保留 immutable line-plan。阴影先偏移再高斯模糊（radius<=32px），原值可查询；非有限值及超界偏移明确失败。默认主题、有界 NinePatch、EditText 与 ScrollView 保留。完整字体排版不在范围内；XML 阴影等未实现展示属性忽略并记录警告。"
 
 [runtime.ui_relative_layout]
 status = "complete"
@@ -601,7 +601,7 @@ note = "M5 WU-0279 让统一 invocation engine 的 missing-handler 错误携带�
 [runtime.jni_guest_abi]
 status = "complete"
 test = "tests/runtime/jni_guest_abi_tests.cpp"
-note = "M5 WU-0234 将完整 JNIEnv/JavaVM 表、guest 对象与 Thumb SVC trap 事务映射到 32 位只读/RX guest 内存；reserved 保持 null，未实现槽不伪造成功"
+note = "M5 WU-0234 将完整 JNIEnv/JavaVM 表、guest 对象与 Thumb SVC trap 事务映射到 32 位只读/RX guest 内存；reserved 保持 null"
 
 [runtime.framework_hle]
 status = "complete"
@@ -1976,7 +1976,7 @@ note = "DVM-120/342 Typeface 的常量/缓存/工厂/样式/相等查询来自 A
 [dexvm.text_appearance]
 status = "partial"
 test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/arsc_tests.cpp; tests/loader/apk_manifest_tests.cpp"
-note = "DVM-121：ColorStateList、StateSet、R.attr 来自 BootDex；Manifest theme 传入 Activity，TextView 支持 APK style 的 parent/reference/attribute 及直接颜色/尺寸/字体，实际 UI 使用文本色/尺寸/字体；hint/link/highlight 只存储可查询。未登记的 framework style、stateful selector、shadow/allCaps 与完整主题明确失败。"
+note = "DVM-121：ColorStateList、StateSet、R.attr 来自 BootDex；Manifest theme 传入 Activity，TextView 支持 APK style 的 parent/reference/attribute 及直接颜色/尺寸/字体，实际 UI 使用文本色/尺寸/字体；hint/link/highlight 只存储可查询。未登记的 framework style、stateful selector 与完整主题明确失败；shadow/allCaps 等未实现属性忽略并记录警告。"
 
 [dexvm.runtime_shutdown_hooks]
 status = "complete"

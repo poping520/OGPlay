@@ -95,8 +95,12 @@ TEST_CASE("DVM-295 TextView specs state baseline cache and virtual super on both
         CHECK(f.context->view_adapter_references.at(text.Value()).text_measure->line_plan->text == u"HI HI");
         CHECK(f.model.StringValue(f.On(text, "getText", "()Ljava/lang/CharSequence;").ref) == u"HI\nHI");
         CHECK(f.ledger.Unimplemented().empty());
-        CHECK(f.OnOutcome(text, "setMaxLines", "(I)V", {VmValue::Int(0)}).exception.IsValid());
-        CHECK(f.OnOutcome(text, "setGravity", "(I)V", {VmValue::Int(0x800003)}).exception.IsValid());
+        const auto lines = f.On(text, "getMaxLines", "()I").AsInt();
+        CHECK_FALSE(f.OnOutcome(text, "setMaxLines", "(I)V", {VmValue::Int(0)}).exception.IsValid());
+        CHECK(f.On(text, "getMaxLines", "()I").AsInt() == lines);
+        // Gravity.START resolves to LEFT under the fixed LTR direction.
+        CHECK_FALSE(f.OnOutcome(text, "setGravity", "(I)V", {VmValue::Int(0x800003)}).exception.IsValid());
+        CHECK(f.On(text, "getGravity", "()I").AsInt() == 0x33);
     }
 }
 

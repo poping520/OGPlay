@@ -1068,6 +1068,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             if (!guest_fault) guest_fault = error.what();
             mcp_lifecycle = agent::McpLifecycleState::failed;
         }
+        for (const auto& hit : dexvm_ledger.Warnings())
+            if (hit.id.starts_with(core::kUiDegradedWarningPrefix))
+                logger.Write(core::LogLevel::warn, "frontend.run_apk.ui_degraded", hit.id, {},
+                             {{"count", static_cast<std::int64_t>(hit.count)}}, kUnrestrictedLog);
         if (audio_pump) {
             audio_pump->Stop();
             try {

@@ -111,8 +111,7 @@ surface，而不是第二套 EGL。动手前先读 `docs/state/CURRENT.md`、
   （AOSP GLSurfaceView）会读这些错误并走自己的重试/回退路径，必须走规范
   通道而不是宿主异常。例：未知 config 属性 → false + `EGL_BAD_ATTRIBUTE`。
 - **模型破坏（我们的单 surface/单 currency 模型被违反）**：记账
-  （ledger `RecordUnimplemented` 或专用条目）并明确失败（宿主异常），
-  绝不伪造成功。例：第二个并存 window surface、跨线程抢夺 GL currency、
+  （ledger `RecordUnimplemented` 或专用条目）并明确失败（宿主异常）。例：第二个并存 window surface、跨线程抢夺 GL currency、
   在无 managed surface 时 createWindowSurface。
 - 未列入 §4.3 范围的 EGL10 接口方法：接口上声明形状（invoke-interface
   解析需要），Impl 类用 `Unimplemented()` 显式进入记账+失败路径。

@@ -265,7 +265,7 @@ TEST_CASE("DVM-340 subtitle TextView shadow and printable text allow both Views 
     }
 }
 
-TEST_CASE("DVM-340 unsupported shadow geometry fails atomically and is ledgered") {
+TEST_CASE("DVM-340 unsupported shadow geometry is ignored atomically and recorded once") {
     ClickVm vm;
     const auto text = vm.interpreter.NewIntrinsicInstance("Landroid/widget/TextView;");
     vm.CallOn(text, "setShadowLayer", "(FFFI)V",
@@ -281,10 +281,13 @@ TEST_CASE("DVM-340 unsupported shadow geometry fails atomically and is ledgered"
             vm.interpreter.Call(vm.linker.Class(type).vtable[*method],
                                 std::vector{VmValue::Ref(text), VmValue::Float(args[0]), VmValue::Float(args[1]),
                                             VmValue::Float(args[2]), VmValue::Int(0)});
-        REQUIRE(result.exception.IsValid());
-        CHECK(vm.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK_FALSE(result.exception.IsValid());
         CHECK(vm.CallOn(text, "getShadowRadius", "()F").AsFloat() == -2);
         CHECK(vm.CallOn(text, "getShadowDx", "()F").AsFloat() == 1);
     }
-    CHECK_FALSE(vm.ledger.Unimplemented().empty());
+    CHECK(vm.ledger.Unimplemented().empty());
+    const auto warnings = vm.ledger.Warnings();
+    REQUIRE(warnings.size() == 1U);
+    CHECK(warnings[0].id == "ui.degraded.TextView.shadowGeometry");
+    CHECK(warnings[0].count == 3U);
 }

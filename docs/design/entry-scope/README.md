@@ -6,7 +6,7 @@
 > 仅能作为经评审的 optional compatibility override。
 
 把"补不尽的 Java 层"变成"只执行游戏引擎必需的 Java,商业外壳按非目标裁剪"——
-用**通用机制 + 每游戏数据(Title Profile)**表达,不在 `src/` 写游戏分支,不伪造成功。
+用**通用机制 + 每游戏数据(Title Profile)**表达,不在 `src/` 写游戏分支。
 
 面向两类读者:**决策者**(是否立项、是否需要 ADR)与**实施阶段的 AI**(作为该能力
 开发的长期上下文根节点)。
@@ -70,7 +70,7 @@ provisioned(external `files/` 已有 980 个 `file000000.dat…`),这条下载�
 **非目标**
 
 - 不实现 store/DRM-as-store/payment/push/social(章程非目标)。
-- 不在 `src/` 加游戏分支;不伪造成功、不静默返回零。
+- 不在 `src/` 加游戏分支。
 - 不做 Java 静态分析自动判定"哪些可跳"——可跳集合由人工判定并写进 profile,附
   理由,经评审。
 
@@ -86,7 +86,7 @@ provisioned(external `files/` 已有 980 个 `file000000.dat…`),这条下载�
 | GLGame 生命周期 / GLSurfaceView / renderer / native JNI | **不能** | 这就是"游戏本身" |
 
 **判定纪律**:一条外壳能否跳,取决于"引擎路径是否消费其产物"。消费真实数据的
-逻辑(DRM 解出的密钥、安装器解出的资源)不得跳过——跳过=伪造成功。
+逻辑(DRM 解出的密钥、安装器解出的资源)不得跳过。
 
 ---
 

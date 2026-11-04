@@ -254,9 +254,9 @@ TEST_CASE("DVM-296 unsupported image APIs fail and ImageButton uses real default
         const auto before = f.On(image, "getScaleType", "()Landroid/widget/ImageView$ScaleType;").ref;
         CHECK(f.ledger.Unimplemented().empty());
         for (auto st : {0, 2, 4}) {
-            CHECK(f.OnOutcome(image, "setScaleType", "(Landroid/widget/ImageView$ScaleType;)V",
-                              {VmValue::Ref(Scale(f, st))})
-                      .exception.IsValid());
+            CHECK_FALSE(f.OnOutcome(image, "setScaleType", "(Landroid/widget/ImageView$ScaleType;)V",
+                                    {VmValue::Ref(Scale(f, st))})
+                            .exception.IsValid());
             CHECK(f.On(image, "getScaleType", "()Landroid/widget/ImageView$ScaleType;").ref == before);
         }
         for (const auto& [name, sig] :

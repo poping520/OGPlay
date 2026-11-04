@@ -9,7 +9,7 @@
 - `AngleBackendCandidates`：给出 Windows D3D11→Vulkan、Linux Vulkan、macOS Metal
   的稳定硬件顺序，三平台末位软件候选均为 ANGLE Vulkan/SwiftShader。
 - `SelectAngleBackend`：依据显式探测结果与 automatic/hardware-only/software-only 偏好
-  选择候选；没有可用候选时返回空值，不伪造成功。
+  选择候选；没有可用候选时返回空值。
 - `AngleBackendName`：输出可用于配置、日志与 Agent 查询的稳定 renderer/device 名称。
 - `EglApi`：不泄漏原生 EGL 类型的最小调用面；生产实现转调 ANGLE，测试可注入确定性
   失败。调用方必须保证 API 对象比使用它的 `EglLifecycle` 存活更久。
@@ -91,7 +91,7 @@
   `glTexImage2D`。其他压缩格式不得借此伪造支持。
 - PVRTC1 上传优先使用 ANGLE 原生 `GL_IMG_texture_compression_pvrtc`；无原生扩展时，
   在兼容策略允许且官方 2bpp/4bpp 软件解码器真实可用时向 guest 发布该扩展，并转为 RGBA8 调用
-  `glTexImage2D`。未知压缩枚举不得借该回退伪造成功。
+  `glTexImage2D`。未知压缩枚举不走该回退。
 - IDL 标量不得携带搬运元数据；所有指针必须具有 direction/nullable/count，禁止生成器
   猜测 guest 内存长度。
 - GLES1.1/GLES2 core 目录必须分别与固定 ANGLE 头文件的 145/142 个入口完全一致；

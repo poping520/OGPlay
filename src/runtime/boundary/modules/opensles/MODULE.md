@@ -13,7 +13,7 @@
 
 可依赖 boundary core、memory 及窄化 audio service。不得依赖 facade、JNI、Android media
 server、Binder 或 host filesystem；guest address 必须使用强类型并完整预检。范围外 recorder、
-MIDI、3D、effect 与 URI/FD decoding 必须明确失败，不伪造成功。
+MIDI、3D、effect 与 URI/FD decoding 必须明确失败。
 
 ## 不变量
 

@@ -21,9 +21,8 @@ constexpr std::size_t kIndexLimit = 200000, kExamples = 3, kCandidates = 3, kNee
 
 [[nodiscard]] std::string Fold(std::string_view text) {
     std::string result(text);
-    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
-        return static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
-    });
+    std::transform(result.begin(), result.end(), result.begin(),
+                   [](unsigned char c) { return static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c); });
     return result;
 }
 
@@ -88,7 +87,9 @@ MissingDataReport LoadMissingDataReport(const std::filesystem::path& file) {
     const std::string text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     JsonParseError error;
     const auto document = JsonDocument::ParseStrict(text, error);
-    const auto corrupt = [&] { return LibraryError(LibraryErrorCode::corrupt_config, "missing data report is malformed", file); };
+    const auto corrupt = [&] {
+        return LibraryError(LibraryErrorCode::corrupt_config, "missing data report is malformed", file);
+    };
     if (!document) throw corrupt();
     const auto root = document->Root();
     const auto schema = root.Member("schema"), guest = root.Member("external_guest_dir"),
@@ -105,9 +106,11 @@ MissingDataReport LoadMissingDataReport(const std::filesystem::path& file) {
     const auto run_end = *end->String();
     report.failed = std::find(std::begin(kFailedEnds), std::end(kFailedEnds), run_end) != std::end(kFailedEnds);
     if (!report.failed && run_end != "closed" && run_end != "exited") throw corrupt();
-    if (const auto text_value = external->String()) report.external_dir = std::filesystem::path(std::u8string(
-        reinterpret_cast<const char8_t*>(text_value->data()), text_value->size()));
-    else if (!external->IsNull()) throw corrupt();
+    if (const auto text_value = external->String())
+        report.external_dir = std::filesystem::path(
+            std::u8string(reinterpret_cast<const char8_t*>(text_value->data()), text_value->size()));
+    else if (!external->IsNull())
+        throw corrupt();
     for (const auto& [list, into] : {std::pair{*missing, &report.missing}, std::pair{*found, &report.found}}) {
         for (std::size_t index = 0; index < list.Size(); ++index) {
             const auto value = list.Element(index);
@@ -138,7 +141,8 @@ DataMountHint InferDataMount(const MissingDataReport& report, const std::optiona
             auto parts = Components(path);
             if (!parts.empty()) parts.pop_back();
             std::size_t shared = 0;
-            while (shared < common.size() && shared < parts.size() && Fold(common[shared]) == Fold(parts[shared])) ++shared;
+            while (shared < common.size() && shared < parts.size() && Fold(common[shared]) == Fold(parts[shared]))
+                ++shared;
             common.resize(shared);
         }
         hint.kind = DataMountHintKind::needs_data;
@@ -155,6 +159,7 @@ DataMountHint InferDataMount(const MissingDataReport& report, const std::optiona
         std::size_t depth{};
         bool expansion{};
     };
+
     std::map<std::string, std::size_t> depths;
     std::map<std::string, Tally> tallies;
     const auto current = Fold(current_guest_dir);
@@ -212,7 +217,8 @@ std::optional<std::string> GuessDataMount(const std::filesystem::path& dir, cons
     std::optional<std::string> guest;
     const auto below = [&](std::size_t index, std::string_view prefix) {
         std::string result(prefix);
-        for (auto part : std::span(parts).subspan(index)) result.append("/").append(part);
+        for (auto part : std::span(parts).subspan(index))
+            result.append("/").append(part);
         return result;
     };
     // The innermost layout marker wins, so a phone backup nested in another one maps correctly.
@@ -221,8 +227,10 @@ std::optional<std::string> GuessDataMount(const std::filesystem::path& dir, cons
         const auto next = index + 1 < parts.size() ? Fold(parts[index + 1]) : std::string{};
         if (part == "android" && (next.empty() || next == "data" || next == "obb" || next == "media"))
             guest = next.empty() ? below(index + 1, "/sdcard/Android") : below(index + 2, "/sdcard/Android/" + next);
-        else if (part == "sdcard") guest = below(index + 1, "/sdcard");
-        else if (part == "0" && index > 0 && Fold(parts[index - 1]) == "emulated") guest = below(index + 1, "/sdcard");
+        else if (part == "sdcard")
+            guest = below(index + 1, "/sdcard");
+        else if (part == "0" && index > 0 && Fold(parts[index - 1]) == "emulated")
+            guest = below(index + 1, "/sdcard");
     }
     if (!guest && !parts.empty()) {
         bool obb{}, android{};
@@ -234,7 +242,8 @@ std::optional<std::string> GuessDataMount(const std::filesystem::path& dir, cons
         // A copied sdcard root keeps /sdcard; otherwise the picked directory itself appears below it.
         if (!package.empty() && Fold(parts.back()) == Fold(package))
             guest = std::string(obb ? "/sdcard/Android/obb/" : "/sdcard/Android/data/").append(parts.back());
-        else if (!android) guest = std::string("/sdcard/").append(parts.back());
+        else if (!android)
+            guest = std::string("/sdcard/").append(parts.back());
     }
     if (!guest || *guest == "/sdcard") return std::nullopt;
     try {
@@ -253,10 +262,9 @@ LibraryDataHint SuggestDataMount(const LibraryStore& store, const std::string_vi
         throw LibraryError(LibraryErrorCode::not_found, "library entry is unavailable");
     const auto settings = LoadGameSettings(found->directory);
     const auto effective = EffectiveGameEntry(*found, settings);
-    const auto& metadata = *effective.metadata;
-    LibraryDataHint result{.current_guest_dir = metadata.external_guest_dir,
-                           .external_dir = picked ? picked : metadata.external_dir,
-                           .owned = !picked && metadata.external_owned};
+    LibraryDataHint result{.current_guest_dir = effective.external_guest_dir,
+                           .external_dir = picked ? picked : effective.external_dir,
+                           .owned = !picked && effective.external_owned};
     if (!std::get<bool>(EffectiveGameSetting(settings, LoadLibraryConfig(store.Root()), *found, "data_mount_hint")))
         return result;
     MissingDataReport report;
@@ -265,11 +273,12 @@ LibraryDataHint SuggestDataMount(const LibraryStore& store, const std::string_vi
     } catch (const LibraryError&) {
         return result;  // no report, or one this build cannot read: nothing to suggest
     }
-    if (!picked && (report.external_guest_dir != metadata.external_guest_dir ||
-                    report.external_dir.has_value() != metadata.external_dir.has_value())) return result;
+    if (!picked && (report.external_guest_dir != effective.external_guest_dir ||
+                    report.external_dir.has_value() != effective.external_dir.has_value()))
+        return result;
     result.truncated = report.truncated;
     result.hint = InferDataMount(report, result.external_dir,
-                                 picked ? std::string_view{} : std::string_view(metadata.external_guest_dir));
+                                 picked ? std::string_view{} : std::string_view(effective.external_guest_dir));
     return result;
 }
 

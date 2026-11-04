@@ -26,15 +26,16 @@ public:
     TemporaryDirectory() {
         static std::atomic<std::uint64_t> sequence{};
         path = std::filesystem::temp_directory_path() /
-               ("ogplay-gui-import-" + std::to_string(
-                    std::chrono::steady_clock::now().time_since_epoch().count()) +
+               ("ogplay-gui-import-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
                 "-" + std::to_string(sequence.fetch_add(1)));
         std::filesystem::create_directories(path);
     }
+
     ~TemporaryDirectory() {
         std::error_code error;
         static_cast<void>(std::filesystem::remove_all(path, error));
     }
+
     std::filesystem::path path;
 };
 
@@ -57,21 +58,19 @@ TEST_CASE("GUI import modal stays alive while a host dialog is pending") {
 }
 
 TEST_CASE("GUI import builds exact metadata without inventing a Profile") {
-    const auto request = ogplay::app::BuildLibraryImport(
-        Analysis(), std::nullopt, "2026-08-13T00:00:00Z");
+    const auto request = ogplay::app::BuildLibraryImport(Analysis(), std::nullopt, "2026-08-13T00:00:00Z");
     CHECK(request.metadata.package == "org.example.game");
     CHECK(request.metadata.display_name == "示例游戏");
     CHECK(request.metadata.version_code == 42);
     CHECK(request.metadata.version_name == "1.2.3");
     CHECK_FALSE(request.metadata.profile_id.has_value());
-    CHECK_FALSE(request.metadata.external_dir.has_value());
+    CHECK_FALSE(request.external_dir.has_value());
     CHECK(request.icon_png == std::vector<std::byte>{std::byte{1}, std::byte{2}});
 }
 
 TEST_CASE("GUI import analyzes a valid unmatched APK without native libraries") {
     const ogplay::app::ProfileCatalog catalog;
-    const auto analysis = ogplay::app::AnalyzeApkImport(
-        MinimalApk(), "selected.apk", catalog);
+    const auto analysis = ogplay::app::AnalyzeApkImport(MinimalApk(), "selected.apk", catalog);
     CHECK(analysis.manifest.package == "org.example.game");
     CHECK(analysis.manifest.version_code == 9);
     CHECK(analysis.display_name == "org.example.game");
@@ -85,34 +84,28 @@ TEST_CASE("GUI import accepts optional external data only as a real directory") 
     const auto external = temporary.path / "external";
     std::filesystem::create_directories(external);
     auto analysis = Analysis();
-    analysis.profile = ogplay::app::ProfileSummary{
-        "org.example.game"};
+    analysis.profile = ogplay::app::ProfileSummary{"org.example.game"};
 
-    const auto skipped = ogplay::app::BuildLibraryImport(
-        analysis, std::nullopt, "2026-08-13T00:00:00Z");
+    const auto skipped = ogplay::app::BuildLibraryImport(analysis, std::nullopt, "2026-08-13T00:00:00Z");
     CHECK(skipped.metadata.profile_id == "org.example.game");
-    CHECK_FALSE(skipped.metadata.external_dir.has_value());
-    CHECK(skipped.metadata.external_guest_dir == "/sdcard");
+    CHECK_FALSE(skipped.external_dir.has_value());
+    CHECK(skipped.external_guest_dir == "/sdcard");
 
-    const auto selected = ogplay::app::BuildLibraryImport(
-        analysis, external, "2026-08-13T00:00:00Z", "/sdcard/Games/Example");
-    CHECK(selected.metadata.external_guest_dir == "/sdcard/Games/Example");
+    const auto selected =
+        ogplay::app::BuildLibraryImport(analysis, external, "2026-08-13T00:00:00Z", "/sdcard/Games/Example");
+    CHECK(selected.external_guest_dir == "/sdcard/Games/Example");
     CHECK_THROWS(static_cast<void>(ogplay::app::BuildLibraryImport(analysis, external, "now", "/data")));
-    CHECK(selected.metadata.external_dir ==
-          std::filesystem::absolute(external).lexically_normal());
-    CHECK_THROWS_AS(static_cast<void>(ogplay::app::BuildLibraryImport(
-                        analysis, temporary.path / "missing",
-                        "2026-08-13T00:00:00Z")),
+    CHECK(selected.external_dir == std::filesystem::absolute(external).lexically_normal());
+    CHECK_THROWS_AS(static_cast<void>(
+                        ogplay::app::BuildLibraryImport(analysis, temporary.path / "missing", "2026-08-13T00:00:00Z")),
                     ogplay::app::LibraryError);
 }
 
 TEST_CASE("GUI import rejects missing APK and empty timestamp explicitly") {
     const ogplay::app::ProfileCatalog catalog;
-    CHECK_THROWS_AS(static_cast<void>(ogplay::app::AnalyzeApkImportFile(
-                        "missing.apk", catalog)),
+    CHECK_THROWS_AS(static_cast<void>(ogplay::app::AnalyzeApkImportFile("missing.apk", catalog)),
                     ogplay::app::LibraryError);
-    CHECK_THROWS_AS(static_cast<void>(ogplay::app::BuildLibraryImport(
-                        Analysis(), std::nullopt, "")),
+    CHECK_THROWS_AS(static_cast<void>(ogplay::app::BuildLibraryImport(Analysis(), std::nullopt, "")),
                     ogplay::app::LibraryError);
 }
 
@@ -121,13 +114,20 @@ TEST_CASE("GUI RPC imports a real minimal APK from the analyzed snapshot") {
     using namespace ogplay::app;
     TemporaryDirectory temporary;
     ogplay::app::LibraryStore store(temporary.path);
-    frontend::GuiRpcService rpc(store, temporary.path / "ogplay.exe", {
-        [](const auto&) { return frontend::LibraryViewContext{}; }, [](const auto&) {}, [](const auto&) {},
-        [](const auto& source) { return ogplay::app::AnalyzeApkImportFile(source, app::ProfileCatalog{}); }, {},
-        [] { return std::string("2026-09-22T00:00:00Z"); }});
+    frontend::GuiRpcService rpc(
+        store, temporary.path / "ogplay.exe",
+        {[](const auto&) { return frontend::LibraryViewContext{}; },
+         [](const auto&) {},
+         [](const auto&) {},
+         [](const auto& source) { return ogplay::app::AnalyzeApkImportFile(source, app::ProfileCatalog{}); },
+         {},
+         [] { return std::string("2026-09-22T00:00:00Z"); }});
     const auto call = [&](std::string_view method, std::string_view params) {
         app::JsonParseError error;
-        auto document = app::JsonDocument::ParseStrict(rpc.Handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + std::string(method) + "\",\"params\":" + std::string(params) + "}"), error);
+        auto document = app::JsonDocument::ParseStrict(rpc.Handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" +
+                                                                  std::string(method) +
+                                                                  "\",\"params\":" + std::string(params) + "}"),
+                                                       error);
         REQUIRE(document);
         REQUIRE_FALSE(document->Root().Member("error"));
         return std::move(*document);
@@ -154,7 +154,8 @@ TEST_CASE("GUI RPC imports a real minimal APK from the analyzed snapshot") {
     REQUIRE(entries.size() == 1);
     CHECK(entries[0].metadata->package == "org.example.game");
     CHECK(entries[0].metadata->version_code == 9);
-    CHECK(entries[0].metadata->external_guest_dir == "/sdcard/Games/Example");
+    CHECK(std::get<std::string>(ogplay::app::LoadGameSettings(entries[0].directory).values.at("external_guest_dir")) ==
+          "/sdcard/Games/Example");
     const auto analyzed = ogplay::app::AnalyzeApkImportFile(entries[0].directory / "game.apk", app::ProfileCatalog{});
     CHECK(analyzed.manifest.version_code == 9);
     CHECK_FALSE(std::filesystem::exists(temporary.path / ".gui-import-1"));
@@ -165,7 +166,9 @@ TEST_CASE("GUI RPC imports a real minimal APK from the analyzed snapshot") {
     for (unsigned i = 0; i < 100000; ++i) {
         const auto status = call("library.job.poll", R"({"job":"2"})");
         if (status.Root().Member("result")->Member("state")->String() == "failed") {
-            CHECK(status.Root().Member("result")->Member("message")); failed = true; break;
+            CHECK(status.Root().Member("result")->Member("message"));
+            failed = true;
+            break;
         }
         std::this_thread::yield();
     }
@@ -178,20 +181,26 @@ TEST_CASE("GUI RPC describes a data directory for the mount preview") {
     using namespace ogplay;
     TemporaryDirectory temporary;
     app::LibraryStore store(temporary.path / "library");
-    frontend::GuiRpcService rpc(store, temporary.path / "ogplay.exe", {
-        [](const auto&) { return frontend::LibraryViewContext{}; }, [](const auto&) {}, [](const auto&) {},
-        [](const auto& source) { return app::AnalyzeApkImportFile(source, app::ProfileCatalog{}); }, {},
-        [] { return std::string("2026-10-20T00:00:00Z"); }});
+    frontend::GuiRpcService rpc(
+        store, temporary.path / "ogplay.exe",
+        {[](const auto&) { return frontend::LibraryViewContext{}; },
+         [](const auto&) {},
+         [](const auto&) {},
+         [](const auto& source) { return app::AnalyzeApkImportFile(source, app::ProfileCatalog{}); },
+         {},
+         [] { return std::string("2026-10-20T00:00:00Z"); }});
     const auto data = temporary.path / "Pack";
     std::filesystem::create_directories(data / "data" / "levels");
     std::ofstream(data / "data" / "levels" / "one.bin") << "1234";
     std::ofstream(data / "Readme.txt") << "hi";
-    for (int index = 0; index < 9; ++index) std::ofstream(data / ("extra" + std::to_string(index) + ".dat")) << "x";
+    for (int index = 0; index < 9; ++index)
+        std::ofstream(data / ("extra" + std::to_string(index) + ".dat")) << "x";
     const auto handle = [&](const std::filesystem::path& path) {
         app::JsonParseError error;
-        auto document = app::JsonDocument::ParseStrict(rpc.Handle(
-            R"({"jsonrpc":"2.0","id":1,"method":"library.external.inspect","params":{"path":")" +
-            path.generic_string() + "\"}}"), error);
+        auto document = app::JsonDocument::ParseStrict(
+            rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"library.external.inspect","params":{"path":")" +
+                       path.generic_string() + "\"}}"),
+            error);
         REQUIRE(document);
         return std::move(*document);
     };

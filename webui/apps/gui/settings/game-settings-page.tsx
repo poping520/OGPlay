@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc, type LibraryItem } from '../shared/rpc';
 import { pickPath } from '../import/import';
 import { displayValue, factRows, shownFields } from './settings';
-import { gameGroups, gameSettingsError, inheritSetting, type GameSettings } from './game-settings';
+import { gameGroups, gameSettingsError, inheritAllSettings, inheritSetting, isInstanceOnlySetting, type GameSettings } from './game-settings';
 import { statuses, versionLabel } from '../library/library';
 import { useIconColor } from '../cartridge/cartridge';
 import { TileCart } from '../cartridge/cartridge3d';
@@ -75,7 +75,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
   } : {};
   const reservedVisible = saved?.reserved_visible ?? true;
   const shown = new Set(shownFields(saved?.fields ?? [], reservedVisible).map(field => field.key));
-  const resetKeys = Object.keys(draft).filter(key => shown.has(key));
+  const resetKeys = Object.keys(draft).filter(key => shown.has(key) && !isInstanceOnlySetting(key));
   return <SettingsFrame skin={skin} art={item?.icon} tint={item ? color : undefined}
     crumb={<>{t('游戏设置')} · <b>{name}</b></>} idle={t('下次启动生效')} resetLabel={t('全部继承')}
     resetTitle={t('将 {n} 项改回继承？', { n: resetKeys.length })} resetKeys={resetKeys} busy={busy} saving={saving} loaded={!!saved}
@@ -90,7 +90,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
       const overridden = Object.hasOwn(draft, field.key);
       return {
         value: overridden ? draft[field.key] : saved!.inherited[field.key], disabled: busy,
-        inherit: { overridden, source: ['external_dir', 'external_guest_dir'].includes(field.key) ? t('导入记录') : t('全局'),
+        inherit: { overridden, source: isInstanceOnlySetting(field.key) ? t('默认') : t('全局'),
           shown: displayValue(field, saved!.inherited[field.key]) },
       };
     }}
@@ -101,5 +101,5 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
     top={top[group]} end={group === 'advanced' || group === 'compatibility' ? launch : undefined} error={store.error} toast={toast}
     back={() => { if (!busy) store.afterSave(onBack); }}
     reload={() => void run(async () => { await store.load(); say(t('已重新载入')); })}
-    reset={() => store.edit(() => ({}))} />;
+    reset={() => store.edit(inheritAllSettings)} />;
 }

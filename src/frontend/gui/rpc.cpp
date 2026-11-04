@@ -57,6 +57,7 @@ app::JsonWriter::Value Condition(app::JsonWriter& writer, const LibraryCondition
     writer.AddBool(value, "owned", condition.owned);
     return value;
 }
+
 // Bytes of the regular files at or under path, links not followed; nullopt when nothing is there yet.
 std::optional<std::uint64_t> StorageBytes(const std::filesystem::path& path) {
     const auto status = std::filesystem::symlink_status(path);
@@ -294,7 +295,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 writer.AddString(item, "package", detail.package);
                 const auto names = writer.Object();
                 if (entry->metadata)
-                    for (const auto& [locale, name] : entry->metadata->localized_names) writer.AddString(names, locale, name);
+                    for (const auto& [locale, name] : entry->metadata->localized_names)
+                        writer.AddString(names, locale, name);
                 writer.Add(item, "localized_names", names);
                 if (entry->metadata) {
                     writer.AddString(item, "version_name", entry->metadata->version_name);
@@ -355,13 +357,14 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 writer.AddBool(result, "cleared", true);
             } else if (method == "library.storage") {
                 // Measured on request (the install info dialog), never for the list: data packs can be large.
-                const bool external = entry->metadata && entry->metadata->external_dir;
+                const bool external = entry->external_dir.has_value();
                 AddBytes(writer, result, "apk_bytes", StorageBytes(entry->directory / "game.apk"));
                 AddBytes(writer, result, "external_bytes",
-                         external ? StorageBytes(*entry->metadata->external_dir) : std::nullopt);
-                AddBytes(writer, result, "sandbox_bytes", StorageBytes(LauncherSandboxRoot(store_.Root()) / entry->key));
+                         external ? StorageBytes(*entry->external_dir) : std::nullopt);
+                AddBytes(writer, result, "sandbox_bytes",
+                         StorageBytes(LauncherSandboxRoot(store_.Root()) / entry->key));
                 if (external)
-                    writer.AddString(result, "external_guest_dir", entry->metadata->external_guest_dir);
+                    writer.AddString(result, "external_guest_dir", entry->external_guest_dir);
                 else
                     writer.AddNull(result, "external_guest_dir");
             } else if (method == "library.launch") {
@@ -380,9 +383,9 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             } else {
                 auto path = kind == "sandbox" ? LauncherSandboxRoot(store_.Root()) / entry->key : entry->directory;
                 if (kind == "external") {
-                    if (!entry->metadata || !entry->metadata->external_dir)
+                    if (!entry->external_dir)
                         return Error(-32004, "external directory is not configured", "先为这个游戏配置数据包目录。");
-                    path = *entry->metadata->external_dir;
+                    path = *entry->external_dir;
                 }
                 if (!std::filesystem::is_directory(path))
                     return Error(-32004, "directory does not exist", "首次启动后再打开沙盒，或检查目录配置。");

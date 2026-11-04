@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { gameSettingsError, inheritSetting } from './game-settings';
+import { gameSettingsError, inheritAllSettings, inheritSetting } from './game-settings';
 import { isDirty, type SettingField } from './settings';
 const fields: SettingField[] = [
   { key: 'supersample', initial: 1, min: 1, max: 4 },
@@ -18,6 +18,10 @@ it('removes overrides while preserving false and zero for unrelated fields', () 
   expect(draft.supersample).toBe(3);
   expect(isDirty({}, { mcp_enabled: false })).toBe(true);
   expect(isDirty({}, inheritSetting({ supersample: 3 }, 'supersample'))).toBe(false);
+});
+it('keeps the data pack when inheriting everything else', () => {
+  expect(inheritAllSettings({ supersample: 3, external_dir: '/pack', external_guest_dir: '/sdcard/g' }))
+    .toEqual({ external_dir: '/pack', external_guest_dir: '/sdcard/g' });
 });
 it('requires MCP for manual stepping using merged effective values', () => {
   expect(gameSettingsError(saved, { mcp_manual_step: true })).not.toBeNull();

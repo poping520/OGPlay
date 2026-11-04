@@ -33,47 +33,47 @@ struct Fixture {
     std::filesystem::path opened;
     std::vector<std::string> demo_packages;
     unsigned demo_seeds{};
-    frontend::GuiRpcService rpc{store,
-                                root / "ogplay.exe",
-                                {[this](const auto&) {
-                                     ++reads;
-                                     return context;
-                                 },
-                                 [this](const auto& value) {
-                                     if (fail_launch) throw std::runtime_error("spawn failed");
-                                     ++launches;
-                                     plan = value;
-                                 },
-                                 [this](const auto& path) {
-                                     ++opens;
-                                     opened = path;
-                                 },
-                                 [](const auto& path) {
-                                     ogplay::app::ApkImportAnalysis result;
-                                     result.source_apk = path;
-                                     result.display_name = "导入游戏";
-                                     result.manifest.package = "org.example.game";
-                                     result.manifest.version_code = 0;
-                                     return result;
-                                 },
-                                 [](bool) {
-                                     return std::async(
-                                         std::launch::deferred,
-                                         []() -> std::optional<std::filesystem::path> { return std::nullopt; });
-                                 },
-                                 [] { return std::string("2026-09-22T00:00:00Z"); },
-                                 [this] { ++minimized; },
-                                 {},
-                                 {},
-                                 [] { return frontend::LoadCredits(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data"); },
-                                 [](std::string_view id) {
-                                     return frontend::ReadCreditNotices(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data", id);
-                                 },
-                                 [this] { return dashboards; },
-                                 [this](std::string_view id) { opened_dashboard = id; },
-                                 [this](std::string_view id) { opened_editor = id; },
-                                 [this] { return demo_packages; },
-                                 [this] { ++demo_seeds; }}};
+    frontend::GuiRpcService rpc{
+        store,
+        root / "ogplay.exe",
+        {[this](const auto&) {
+             ++reads;
+             return context;
+         },
+         [this](const auto& value) {
+             if (fail_launch) throw std::runtime_error("spawn failed");
+             ++launches;
+             plan = value;
+         },
+         [this](const auto& path) {
+             ++opens;
+             opened = path;
+         },
+         [](const auto& path) {
+             ogplay::app::ApkImportAnalysis result;
+             result.source_apk = path;
+             result.display_name = "导入游戏";
+             result.manifest.package = "org.example.game";
+             result.manifest.version_code = 0;
+             return result;
+         },
+         [](bool) {
+             return std::async(std::launch::deferred,
+                               []() -> std::optional<std::filesystem::path> { return std::nullopt; });
+         },
+         [] { return std::string("2026-09-22T00:00:00Z"); },
+         [this] { ++minimized; },
+         {},
+         {},
+         [] { return frontend::LoadCredits(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data"); },
+         [](std::string_view id) {
+             return frontend::ReadCreditNotices(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data", id);
+         },
+         [this] { return dashboards; },
+         [this](std::string_view id) { opened_dashboard = id; },
+         [this](std::string_view id) { opened_editor = id; },
+         [this] { return demo_packages; },
+         [this] { ++demo_seeds; }}};
 
     Fixture() {
         std::filesystem::create_directories(root);
@@ -141,7 +141,8 @@ TEST_CASE("GUI settings RPC applies validated patches and rejects stale writes")
     std::vector<std::string> hidden;
     for (std::size_t index = 0; index < result->Member("fields")->Size(); ++index) {
         const auto field = result->Member("fields")->Element(index);
-        if (field->Member("hidden")->Bool() == std::optional<bool>{true}) hidden.emplace_back(*field->Member("key")->String());
+        if (field->Member("hidden")->Bool() == std::optional<bool>{true})
+            hidden.emplace_back(*field->Member("key")->String());
     }
     CHECK(hidden == std::vector<std::string>{"cartridge", "supersample", "dashboard_auto_open"});
     const auto revision = std::string(*result->Member("revision")->String());
@@ -300,6 +301,32 @@ TEST_CASE("GUI instance settings RPC isolates instances and uses the same previe
     CHECK(set(fresh, "{}").Root().Member("error").has_value());
 }
 
+TEST_CASE("GUI game settings save past a linked pack that went away but reject a new missing one") {
+    Fixture fixture;
+    const auto directory = fixture.root / "library/org.example.game";
+    const auto pack = (fixture.root / "pack").generic_string();
+    std::filesystem::create_directories(pack);
+    ogplay::app::SaveGameSettings(directory, {{{"external_dir", pack}}});
+    std::filesystem::remove(pack);
+    const auto save = [&](std::string_view values) {
+        const auto got = Decode(fixture.rpc.Handle(
+            R"({"jsonrpc":"2.0","id":1,"method":"game_settings.get","params":{"installation_id":"org.example.game"}})"));
+        app::JsonWriter writer;
+        const auto parsed = Decode(std::string(values));
+        const auto request = writer.Object(), params = writer.Object();
+        writer.AddString(request, "jsonrpc", "2.0");
+        writer.AddUnsignedInteger(request, "id", 2);
+        writer.AddString(request, "method", "game_settings.set");
+        writer.AddString(params, "installation_id", "org.example.game");
+        writer.AddString(params, "revision", *got.Root().Member("result")->Member("revision")->String());
+        writer.Add(params, "values", writer.Copy(parsed.Root()));
+        writer.Add(request, "params", params);
+        return Decode(fixture.rpc.Handle(writer.Serialize(request)));
+    };
+    CHECK(save(R"({"external_dir":")" + pack + R"(","supersample":2})").Root().Member("result"));
+    CHECK(save(R"({"external_dir":")" + pack + R"(-other"})").Root().Member("error"));
+}
+
 TEST_CASE("GUI library facts use instance external directory and isolate broken settings") {
     Fixture fixture;
     const auto directory = fixture.root / "library/org.example.game";
@@ -389,13 +416,14 @@ TEST_CASE("GUI about RPC lists the shipped open-source projects and reads each l
     CHECK(parents.at("zycore") == "zydis");
     CHECK(parents.at("draco") == "three");
     CHECK(parents.at("zlib") == "aosp");
-    for (const auto* id : {"dynarmic", "boost", "three", "aosp"}) CHECK_FALSE(parents.contains(id));
+    for (const auto* id : {"dynarmic", "boost", "three", "aosp"})
+        CHECK_FALSE(parents.contains(id));
     for (const auto* id : {"sdl", "angle", "dynarmic", "ffmpeg", "preact", "aosp"})
         CHECK(std::find(ids.begin(), ids.end(), id) != ids.end());
     // Every listed project has readable, non-empty texts; that is the whole point of the page.
     for (const auto& id : ids) {
-        auto notices = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":2,"method":"about.notices","params":{"id":")" +
-                                                 id + R"("}})"));
+        auto notices = Decode(
+            fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":2,"method":"about.notices","params":{"id":")" + id + R"("}})"));
         const auto texts = notices.Root().Member("result")->Member("notices");
         REQUIRE_MESSAGE(texts, id);
         REQUIRE(texts->Size() > 0);
@@ -462,19 +490,21 @@ TEST_CASE("GUI RPC measures APK, data pack and game data storage on request") {
                      R"({"jsonrpc":"2.0","id":1,"method":"library.storage","params":{"installation_id":"nope"}})"))
               .Root()
               .Member("error"));
-    CHECK(Decode(fixture.rpc.Handle(
-                     R"({"jsonrpc":"2.0","id":1,"method":"library.storage","params":{"installation_id":"org.example.game","x":1}})"))
-              .Root()
-              .Member("error"));
+    CHECK(
+        Decode(
+            fixture.rpc.Handle(
+                R"({"jsonrpc":"2.0","id":1,"method":"library.storage","params":{"installation_id":"org.example.game","x":1}})"))
+            .Root()
+            .Member("error"));
 }
 
 TEST_CASE("GUI RPC hides demo games with the setting, and removing one turns demos off") {
     Fixture fixture;
     fixture.demo_packages = {"org.example.game"};
-    const auto list = [&] {
-        return Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"library.list"})"));
+    const auto list = [&] { return Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"library.list"})")); };
+    const auto shown = [&] {
+        return std::get<bool>(ogplay::app::Setting(ogplay::app::LoadLibraryConfig(fixture.root), "show_demo_games"));
     };
-    const auto shown = [&] { return std::get<bool>(ogplay::app::Setting(ogplay::app::LoadLibraryConfig(fixture.root), "show_demo_games")); };
     auto visible = list();
     REQUIRE(visible.Root().Member("result")->Member("items")->Size() == 1);
     CHECK(visible.Root().Member("result")->Member("items")->Element(0)->Member("builtin_demo")->Bool() == true);

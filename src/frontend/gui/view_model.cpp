@@ -8,8 +8,7 @@
 namespace ogplay::frontend {
 namespace {
 
-[[nodiscard]] bool Contains(const std::vector<std::string>& values,
-                            const std::string& value) {
+[[nodiscard]] bool Contains(const std::vector<std::string>& values, const std::string& value) {
     return std::find(values.begin(), values.end(), value) != values.end();
 }
 
@@ -18,12 +17,9 @@ namespace {
     return {reinterpret_cast<const char*>(value.data()), value.size()};
 }
 
-[[nodiscard]] const LibraryTile* FindTile(
-    const std::span<const LibraryTile> tiles, const std::string_view key) {
-    const auto found = std::find_if(tiles.begin(), tiles.end(),
-                                    [key](const LibraryTile& tile) {
-                                        return tile.key == key;
-                                    });
+[[nodiscard]] const LibraryTile* FindTile(const std::span<const LibraryTile> tiles, const std::string_view key) {
+    const auto found =
+        std::find_if(tiles.begin(), tiles.end(), [key](const LibraryTile& tile) { return tile.key == key; });
     return found == tiles.end() ? nullptr : &*found;
 }
 
@@ -33,8 +29,7 @@ void GuiMessageQueue::Push(std::string title, std::string message) {
     if (title.empty() || message.empty()) {
         throw std::invalid_argument("GUI message title and body must not be empty");
     }
-    pending_.push_back(
-        GuiMessage{.title = std::move(title), .message = std::move(message)});
+    pending_.push_back(GuiMessage{.title = std::move(title), .message = std::move(message)});
 }
 
 bool GuiMessageQueue::ActivateNext(const bool another_popup_open) {
@@ -48,16 +43,18 @@ const GuiMessage* GuiMessageQueue::Active() const noexcept {
     return active_.has_value() ? &*active_ : nullptr;
 }
 
-void GuiMessageQueue::DismissActive() noexcept { active_.reset(); }
+void GuiMessageQueue::DismissActive() noexcept {
+    active_.reset();
+}
 
-std::vector<LibraryTile> BuildLibraryTiles(
-    const std::span<const LibraryEntry> entries,
-    const LibraryViewContext& context) {
+std::vector<LibraryTile> BuildLibraryTiles(const std::span<const LibraryEntry> entries,
+                                           const LibraryViewContext& context) {
     std::vector<LibraryTile> tiles;
     tiles.reserve(entries.size());
     for (const auto& entry : entries) {
-        const auto profile_error = context.profile_errors.contains(entry.key) ?
-            std::optional<std::string>(context.profile_errors.at(entry.key)) : context.profile_catalog_error;
+        const auto profile_error = context.profile_errors.contains(entry.key)
+                                       ? std::optional<std::string>(context.profile_errors.at(entry.key))
+                                       : context.profile_catalog_error;
         LibraryTile tile;
         tile.key = entry.key;
         tile.display_name = entry.metadata ? entry.metadata->display_name : entry.key;
@@ -67,8 +64,8 @@ std::vector<LibraryTile> BuildLibraryTiles(
             tile.status = LibraryTileStatus::damaged;
         } else if (profile_error.has_value() || context.missing_profiles.contains(entry.key)) {
             tile.status = LibraryTileStatus::profile_catalog_unavailable;
-        } else if (std::error_code error; entry.metadata->external_dir.has_value() &&
-                   (!std::filesystem::is_directory(*entry.metadata->external_dir, error) || error)) {
+        } else if (std::error_code error; entry.external_dir.has_value() &&
+                                          (!std::filesystem::is_directory(*entry.external_dir, error) || error)) {
             tile.status = LibraryTileStatus::missing_external;
         } else {
             tile.status = tile.running ? LibraryTileStatus::running : LibraryTileStatus::ready;
@@ -76,8 +73,7 @@ std::vector<LibraryTile> BuildLibraryTiles(
         tile.can_launch = !tile.running && tile.status == LibraryTileStatus::ready;
         tiles.push_back(std::move(tile));
     }
-    std::sort(tiles.begin(), tiles.end(), [](const LibraryTile& left,
-                                              const LibraryTile& right) {
+    std::sort(tiles.begin(), tiles.end(), [](const LibraryTile& left, const LibraryTile& right) {
         if (left.display_name != right.display_name) {
             return left.display_name < right.display_name;
         }
@@ -86,8 +82,7 @@ std::vector<LibraryTile> BuildLibraryTiles(
     return tiles;
 }
 
-LibraryDetail BuildLibraryDetail(const LibraryEntry& entry,
-                                 const LibraryTile& tile,
+LibraryDetail BuildLibraryDetail(const LibraryEntry& entry, const LibraryTile& tile,
                                  const LibraryViewContext& context) {
     LibraryDetail result{
         .key = tile.key,
@@ -99,8 +94,9 @@ LibraryDetail BuildLibraryDetail(const LibraryEntry& entry,
         .can_delete = !tile.running,
     };
 
-    const auto profile_error = context.profile_errors.contains(entry.key) ?
-        std::optional<std::string>(context.profile_errors.at(entry.key)) : context.profile_catalog_error;
+    const auto profile_error = context.profile_errors.contains(entry.key)
+                                   ? std::optional<std::string>(context.profile_errors.at(entry.key))
+                                   : context.profile_catalog_error;
     if (!entry.metadata.has_value() || entry.Damaged()) {
         result.damage_reason = entry.damage_reason;
         result.external = {LibraryConditionStatus::unavailable, {}};
@@ -110,30 +106,27 @@ LibraryDetail BuildLibraryDetail(const LibraryEntry& entry,
         if (profile_error.has_value()) {
             result.profile = LibraryCondition{LibraryConditionStatus::unavailable, *profile_error};
         } else if (metadata.profile_id.has_value()) {
-            result.profile = LibraryCondition{context.missing_profiles.contains(entry.key)
-                                                  ? LibraryConditionStatus::missing
-                                                  : LibraryConditionStatus::ready,
-                                              *metadata.profile_id};
+            result.profile =
+                LibraryCondition{context.missing_profiles.contains(entry.key) ? LibraryConditionStatus::missing
+                                                                              : LibraryConditionStatus::ready,
+                                 *metadata.profile_id};
         }
-        if (!metadata.external_dir.has_value()) {
+        if (!entry.external_dir.has_value()) {
             result.external = {LibraryConditionStatus::not_required, {}};
         } else {
             std::error_code error;
-            const auto ready = std::filesystem::is_directory(*metadata.external_dir, error) && !error;
+            const auto ready = std::filesystem::is_directory(*entry.external_dir, error) && !error;
             result.external = {ready ? LibraryConditionStatus::ready : LibraryConditionStatus::missing,
-                               PathUtf8(*metadata.external_dir), metadata.external_owned};
+                               PathUtf8(*entry.external_dir), entry.external_owned};
         }
     }
 
     return result;
 }
 
-void LibrarySelection::Select(const std::string_view key,
-                              const std::span<const LibraryTile> tiles) {
-    const auto found = std::find_if(tiles.begin(), tiles.end(),
-                                    [key](const LibraryTile& tile) {
-                                        return tile.key == key;
-                                    });
+void LibrarySelection::Select(const std::string_view key, const std::span<const LibraryTile> tiles) {
+    const auto found =
+        std::find_if(tiles.begin(), tiles.end(), [key](const LibraryTile& tile) { return tile.key == key; });
     if (found == tiles.end()) return;
     index_ = static_cast<std::size_t>(found - tiles.begin());
     key_ = found->key;
@@ -160,8 +153,7 @@ const std::optional<std::string>& LibrarySelection::Key() const noexcept {
     return key_;
 }
 
-std::filesystem::path SelectCjkFont(
-    const std::span<const std::filesystem::path> candidates) {
+std::filesystem::path SelectCjkFont(const std::span<const std::filesystem::path> candidates) {
     for (const auto& candidate : candidates) {
         std::error_code error;
         if (std::filesystem::is_regular_file(candidate, error) && !error) {

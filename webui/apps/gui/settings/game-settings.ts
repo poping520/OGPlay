@@ -17,6 +17,12 @@ export const gameGroups = [
 export function inheritSetting(values: Record<string, SettingValue>, key: string): Record<string, SettingValue> {
   const next = { ...values }; delete next[key]; return next;
 }
+// No global value exists for these, so "inherit all" must not silently drop the game's data pack.
+const instanceOnlySettings = ['external_dir', 'external_guest_dir'];
+export const isInstanceOnlySetting = (key: string) => instanceOnlySettings.includes(key);
+export function inheritAllSettings(values: Record<string, SettingValue>): Record<string, SettingValue> {
+  return Object.fromEntries(Object.entries(values).filter(([key]) => isInstanceOnlySetting(key)));
+}
 export function gameSettingsError(saved: Pick<GameSettings, 'fields' | 'inherited'>, draft: Record<string, SettingValue>): string | null {
   const effective = { ...saved.inherited, ...draft };
   const error = settingsError(saved.fields, effective);

@@ -24,8 +24,7 @@ public:
     TemporaryDirectory() {
         static std::atomic<std::uint64_t> sequence{};
         path = std::filesystem::temp_directory_path() /
-               ("ogplay-gui-model-" +
-                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+               ("ogplay-gui-model-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
                 "-" + std::to_string(sequence.fetch_add(1)));
         std::filesystem::create_directories(path);
     }
@@ -51,8 +50,8 @@ std::string Read(const std::filesystem::path& path) {
     return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
 }
 
-ogplay::app::LibraryMetadata Metadata(const std::filesystem::path& external = {}) {
-    ogplay::app::LibraryMetadata metadata{
+ogplay::app::LibraryMetadata Metadata() {
+    return {
         .package = "org.example.game",
         .display_name = "示例游戏",
         .version_code = 42,
@@ -60,8 +59,6 @@ ogplay::app::LibraryMetadata Metadata(const std::filesystem::path& external = {}
         .imported_at = "2026-08-13T12:00:00Z",
         .profile_id = "example_profile",
     };
-    if (!external.empty()) metadata.external_dir = std::filesystem::absolute(external);
-    return metadata;
 }
 
 }  // namespace
@@ -71,8 +68,7 @@ TEST_CASE("GUI config is strict and round-trips UTF-8 paths") {
     CHECK(ogplay::app::LoadLibraryConfig(tree.path) == ogplay::app::LibraryConfig{});
 
     const ogplay::app::LibraryConfig config{
-        .profiles_dir = std::filesystem::absolute(
-            tree.path / std::filesystem::path(std::u8string(u8"配置"))),
+        .profiles_dir = std::filesystem::absolute(tree.path / std::filesystem::path(std::u8string(u8"配置"))),
     };
     ogplay::app::SaveLibraryConfig(tree.path, config);
     CHECK(ogplay::app::LoadLibraryConfig(tree.path) == config);
@@ -93,11 +89,9 @@ TEST_CASE("GUI settings validate every configured directory before save") {
     const auto profiles = tree.path / "profiles";
     std::filesystem::create_directories(profiles);
     CHECK_NOTHROW(ogplay::app::ValidateLibraryConfigDirectories({}));
-    CHECK_NOTHROW(ogplay::app::ValidateLibraryConfigDirectories(
-        {.profiles_dir = profiles}));
+    CHECK_NOTHROW(ogplay::app::ValidateLibraryConfigDirectories({.profiles_dir = profiles}));
     try {
-        ogplay::app::ValidateLibraryConfigDirectories(
-            {.profiles_dir = tree.path / "missing"});
+        ogplay::app::ValidateLibraryConfigDirectories({.profiles_dir = tree.path / "missing"});
         FAIL("missing Profile directory should fail");
     } catch (const ogplay::app::LibraryError& error) {
         CHECK(error.Code() == ogplay::app::LibraryErrorCode::not_found);
@@ -110,8 +104,7 @@ TEST_CASE("GUI config recovers an interrupted replacement backup") {
     const auto profiles = std::filesystem::absolute(tree.path / "profiles");
     std::filesystem::create_directories(profiles);
     ogplay::app::SaveLibraryConfig(tree.path, {.profiles_dir = profiles});
-    std::filesystem::rename(tree.path / "config.toml",
-                            tree.path / "config.toml.bak");
+    std::filesystem::rename(tree.path / "config.toml", tree.path / "config.toml.bak");
     // Shared-lock readers use the backup read-only; the next save republishes it.
     const auto recovered = ogplay::app::LoadLibraryConfig(tree.path);
     CHECK(recovered.profiles_dir == profiles);
@@ -146,8 +139,8 @@ TEST_CASE("GUI schema two validates typed settings without replacing good config
     LibraryConfig known;
     SetSetting(known, "mute", true);
     CHECK(LoadLibraryConfig(tree.path) == known);
-    for (const auto text : {"schema = 2\ntheme = true\n", "schema = 2\nsupersample = 0\n", "schema = 1\n",
-                            "schema = 3\n"}) {
+    for (const auto text :
+         {"schema = 2\ntheme = true\n", "schema = 2\nsupersample = 0\n", "schema = 1\n", "schema = 3\n"}) {
         Write(tree.path / "config.toml", text);
         CHECK_THROWS(static_cast<void>(LoadLibraryConfig(tree.path)));
     }
@@ -157,13 +150,15 @@ TEST_CASE("GUI instance settings persist only overrides with strict schema and b
     using namespace ogplay::app;
     TemporaryDirectory tree;
     const auto first = tree.path / "first", second = tree.path / "second";
-    std::filesystem::create_directories(first); std::filesystem::create_directories(second);
+    std::filesystem::create_directories(first);
+    std::filesystem::create_directories(second);
     CHECK(LoadGameSettings(first).values.empty());
     GameSettings settings{{{"supersample", std::uint32_t{3}}, {"mute", false}, {"model", std::string("测试机型")}}};
     SaveGameSettings(first, settings);
     CHECK(LoadGameSettings(first) == settings);
     CHECK(LoadGameSettings(second).values.empty());
-    auto bad = settings; bad.values["supersample"] = std::uint32_t{5};
+    auto bad = settings;
+    bad.values["supersample"] = std::uint32_t{5};
     CHECK_THROWS(SaveGameSettings(first, bad));
     CHECK(LoadGameSettings(first) == settings);
     std::filesystem::rename(first / "settings.toml", first / "settings.toml.bak");
@@ -175,9 +170,8 @@ TEST_CASE("GUI instance settings persist only overrides with strict schema and b
     CHECK(std::filesystem::file_size(first / "settings.toml") == std::string_view("schema = 1\n").size());
     Write(first / "settings.toml", "schema = 1\nunknown = true\nmute = false\n");
     CHECK(LoadGameSettings(first) == GameSettings{{{"mute", false}}});
-    for (const auto text : {"schema = 2\n", "schema = 1\nmute = 1\n",
-                            "schema = 1\nsupersample = 0\n", "schema = 1\nexternal_dir = \"relative\"\n",
-                            "schema = 1\nmute = true\nmute = false\n"}) {
+    for (const auto text : {"schema = 2\n", "schema = 1\nmute = 1\n", "schema = 1\nsupersample = 0\n",
+                            "schema = 1\nexternal_dir = \"relative\"\n", "schema = 1\nmute = true\nmute = false\n"}) {
         Write(first / "settings.toml", text);
         CHECK_THROWS(static_cast<void>(LoadGameSettings(first)));
     }
@@ -193,41 +187,47 @@ TEST_CASE("library import atomically copies APK metadata and optional icon") {
 
     ogplay::app::LibraryStore store(tree.path / "root");
     const std::vector<std::byte> icon{std::byte{0x89}, std::byte{0x50}};
-    store.Import({.source_apk = source, .metadata = Metadata(external), .icon_png = icon}, true);
+    store.Import({.source_apk = source,
+                  .metadata = Metadata(),
+                  .icon_png = icon,
+                  .external_dir = std::filesystem::absolute(external),
+                  .external_mode = ogplay::app::ExternalDataMode::link},
+                 true);
 
     const auto entries = store.LoadEntries();
     REQUIRE(entries.size() == 1);
     CHECK_FALSE(entries[0].Damaged());
     REQUIRE(entries[0].metadata.has_value());
-    CHECK(*entries[0].metadata == Metadata(external));
+    CHECK(*entries[0].metadata == Metadata());
+    CHECK_FALSE(entries[0].external_dir.has_value());  // only settings.toml names a linked pack
+    const auto linked =
+        ogplay::app::EffectiveGameEntry(entries[0], ogplay::app::LoadGameSettings(entries[0].directory));
+    CHECK(linked.external_dir == std::filesystem::absolute(external));
+    CHECK_FALSE(linked.external_owned);
     CHECK(entries[0].icon_png == icon);
     CHECK(std::filesystem::file_size(entries[0].directory / "game.apk") == 9);
     CHECK(std::filesystem::file_size(entries[0].directory / "icon.png") == 2);
     CHECK(std::filesystem::is_regular_file(external / "keep.dat"));
-    CHECK_FALSE(std::filesystem::exists(
-        store.EntriesRoot() / ".org.example.game.importing"));
+    CHECK_FALSE(std::filesystem::exists(store.EntriesRoot() / ".org.example.game.importing"));
 }
 
-TEST_CASE("library writes external_guest_dir only when it overrides /sdcard") {
+TEST_CASE("library records the mount only in settings.toml and only when it overrides /sdcard") {
     TemporaryDirectory tree;
     const auto source = tree.path / "source.apk";
     Write(source, "apk");
     ogplay::app::LibraryStore store(tree.path / "root");
     store.Import({.source_apk = source, .metadata = Metadata()}, true);
-    auto metadata = Metadata();
-    metadata.external_guest_dir = "/sdcard/Games/Example";
-    store.Import({.source_apk = source, .metadata = metadata}, true);
+    store.Import({.source_apk = source, .metadata = Metadata(), .external_guest_dir = "/sdcard/Games/Example"}, true);
     const auto entries = store.LoadEntries();
     REQUIRE(entries.size() == 2);
     for (const auto& entry : entries) {
         REQUIRE(entry.metadata.has_value());
-        std::ifstream input(entry.directory / "meta.toml", std::ios::binary);
-        const std::string text{std::istreambuf_iterator<char>(input), {}};
-        const bool overridden = entry.metadata->external_guest_dir != "/sdcard";
-        CHECK(overridden == (text.find("external_guest_dir") != std::string::npos));
+        CHECK(Read(entry.directory / "meta.toml").find("external") == std::string::npos);
+        CHECK(ogplay::app::LoadGameSettings(entry.directory).values.contains("external_guest_dir") ==
+              (entry.key == "org.example.game-2"));
     }
-    CHECK(std::ranges::count(entries, std::string("/sdcard/Games/Example"),
-                             [](const auto& entry) { return entry.metadata->external_guest_dir; }) == 1);
+    CHECK(ogplay::app::EffectiveGameEntry(entries[1], ogplay::app::LoadGameSettings(entries[1].directory))
+              .external_guest_dir == "/sdcard/Games/Example");
 }
 
 TEST_CASE("library preserves Android version code zero") {
@@ -260,12 +260,9 @@ TEST_CASE("library assigns a distinct installation id to duplicate packages") {
     missing_version.version_code = 0;
     missing_version.version_name.clear();
     store.Import({.source_apk = third, .metadata = missing_version}, true);
-    CHECK(std::filesystem::file_size(
-              store.EntriesRoot() / "org.example.game" / "game.apk") == 5);
-    CHECK(std::filesystem::file_size(
-              store.EntriesRoot() / "org.example.game-2" / "game.apk") == 6);
-    CHECK(std::filesystem::file_size(
-              store.EntriesRoot() / "org.example.game-3" / "game.apk") == 5);
+    CHECK(std::filesystem::file_size(store.EntriesRoot() / "org.example.game" / "game.apk") == 5);
+    CHECK(std::filesystem::file_size(store.EntriesRoot() / "org.example.game-2" / "game.apk") == 6);
+    CHECK(std::filesystem::file_size(store.EntriesRoot() / "org.example.game-3" / "game.apk") == 5);
 }
 
 TEST_CASE("concurrent library imports reject busy operations and can be retried") {
@@ -295,15 +292,17 @@ TEST_CASE("concurrent library imports reject busy operations and can be retried"
     // Nonblocking OS locks explicitly reject the competing operation. Retrying
     // after it completes allocates the next free installation id.
     const std::array sources{first, second};
-    for (std::size_t i = 0; i < errors.size(); ++i) if (errors[i]) {
-        try { std::rethrow_exception(errors[i]); }
-        catch (const ogplay::app::LibraryError& e) { CHECK(e.Code() == ogplay::app::LibraryErrorCode::busy); }
-        store.Import({.source_apk = sources[i], .metadata = Metadata()}, true);
-    }
-    CHECK(std::filesystem::is_directory(
-        store.EntriesRoot() / "org.example.game"));
-    CHECK(std::filesystem::is_directory(
-        store.EntriesRoot() / "org.example.game-2"));
+    for (std::size_t i = 0; i < errors.size(); ++i)
+        if (errors[i]) {
+            try {
+                std::rethrow_exception(errors[i]);
+            } catch (const ogplay::app::LibraryError& e) {
+                CHECK(e.Code() == ogplay::app::LibraryErrorCode::busy);
+            }
+            store.Import({.source_apk = sources[i], .metadata = Metadata()}, true);
+        }
+    CHECK(std::filesystem::is_directory(store.EntriesRoot() / "org.example.game"));
+    CHECK(std::filesystem::is_directory(store.EntriesRoot() / "org.example.game-2"));
     for (const auto id : {"org.example.game", "org.example.game-2"}) {
         const auto sandbox = tree.path / "root" / "sandbox" / id;
         CHECK(std::filesystem::is_regular_file(sandbox / "meta.toml"));
@@ -317,21 +316,14 @@ TEST_CASE("concurrent library imports reject busy operations and can be retried"
 TEST_CASE("library installation ids use the union of library and sandbox holes") {
     TemporaryDirectory tree;
     ogplay::app::LibraryStore store(tree.path / "root");
-    std::filesystem::create_directories(
-        store.EntriesRoot() / "org.example.game");
-    std::filesystem::create_directories(
-        tree.path / "root" / "sandbox" / "org.example.game-3");
-    std::filesystem::create_directories(
-        store.EntriesRoot() / "org.example.game.similar");
-    CHECK(store.NextInstallationId("org.example.game") ==
-          "org.example.game-2");
-    std::filesystem::create_directories(
-        tree.path / "root" / "sandbox" / "org.example.game-2");
-    CHECK(store.NextInstallationId("org.example.game") ==
-          "org.example.game-4");
+    std::filesystem::create_directories(store.EntriesRoot() / "org.example.game");
+    std::filesystem::create_directories(tree.path / "root" / "sandbox" / "org.example.game-3");
+    std::filesystem::create_directories(store.EntriesRoot() / "org.example.game.similar");
+    CHECK(store.NextInstallationId("org.example.game") == "org.example.game-2");
+    std::filesystem::create_directories(tree.path / "root" / "sandbox" / "org.example.game-2");
+    CHECK(store.NextInstallationId("org.example.game") == "org.example.game-4");
     std::filesystem::remove_all(store.EntriesRoot() / "org.example.game");
-    CHECK(store.NextInstallationId("org.example.game") ==
-          "org.example.game");
+    CHECK(store.NextInstallationId("org.example.game") == "org.example.game");
 }
 
 TEST_CASE("library exposes corrupt entries instead of silently skipping them") {
@@ -364,7 +356,11 @@ TEST_CASE("library removal never touches external data or persistent sandbox") {
     Write(external / "data.bin", "external");
     Write(sandbox / "save.bin", "save");
     ogplay::app::LibraryStore store(tree.path / "root");
-    store.Import({.source_apk = source, .metadata = Metadata(external)}, true);
+    store.Import({.source_apk = source,
+                  .metadata = Metadata(),
+                  .external_dir = std::filesystem::absolute(external),
+                  .external_mode = ogplay::app::ExternalDataMode::link},
+                 true);
 
     store.Remove("org.example.game-2");
     CHECK_FALSE(std::filesystem::exists(store.EntriesRoot() / "org.example.game-2"));
@@ -377,13 +373,11 @@ TEST_CASE("library cleans all stale import temporary directories") {
     TemporaryDirectory tree;
     ogplay::app::LibraryStore store(tree.path / "root");
     std::filesystem::create_directories(store.EntriesRoot() / ".damaged");
-    std::filesystem::create_directories(
-        store.EntriesRoot() / ".org.example.game.importing");
+    std::filesystem::create_directories(store.EntriesRoot() / ".org.example.game.importing");
 
     const auto entries = store.LoadEntries();
     REQUIRE(entries.size() == 1);
-    CHECK_FALSE(std::filesystem::exists(
-        store.EntriesRoot() / ".org.example.game.importing"));
+    CHECK_FALSE(std::filesystem::exists(store.EntriesRoot() / ".org.example.game.importing"));
     CHECK(entries[0].key == ".damaged");
     CHECK(entries[0].Damaged());
     store.Remove(".damaged");
@@ -395,11 +389,9 @@ TEST_CASE("invalid import leaves no temporary library entry") {
     ogplay::app::LibraryStore store(tree.path / "root");
     auto metadata = Metadata();
     metadata.display_name.clear();
-    CHECK_THROWS_AS(store.Import({.source_apk = tree.path / "missing.apk",
-                                  .metadata = metadata}, true),
+    CHECK_THROWS_AS(store.Import({.source_apk = tree.path / "missing.apk", .metadata = metadata}, true),
                     ogplay::app::LibraryError);
-    CHECK_FALSE(std::filesystem::exists(
-        store.EntriesRoot() / ".org.example.game.importing"));
+    CHECK_FALSE(std::filesystem::exists(store.EntriesRoot() / ".org.example.game.importing"));
 }
 
 TEST_CASE("library copies owned external data and removes it with the entry") {
@@ -412,17 +404,16 @@ TEST_CASE("library copies owned external data and removes it with the entry") {
     Write(external / "Readme.txt", "hi");
     std::filesystem::create_directories(external / "empty");
     ogplay::app::LibraryStore store(tree.path / "root");
-    auto metadata = Metadata(external);
-    metadata.external_owned = true;
     ogplay::app::ImportProgress progress;
-    const auto id = store.Import({.source_apk = source, .metadata = metadata}, true, &progress);
+    const auto id = store.Import(
+        {.source_apk = source, .metadata = Metadata(), .external_dir = std::filesystem::absolute(external)}, true,
+        &progress);
 
     CHECK(progress.total_bytes == 11);
     CHECK(progress.copied_bytes == 11);
     const auto entry = store.EntriesRoot() / id;
-    const auto meta = Read(entry / "meta.toml");
-    CHECK(meta.find("external_data = \"library\"") != std::string::npos);
-    CHECK(meta.find("download") == std::string::npos);
+    CHECK(Read(entry / "meta.toml").find("external") == std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(entry / "settings.toml"));
     CHECK(Read(entry / "data" / "data" / "Level1.bin") == "level-one");
     CHECK(Read(entry / "data" / "Readme.txt") == "hi");
     CHECK(std::filesystem::is_directory(entry / "data" / "empty"));
@@ -433,8 +424,8 @@ TEST_CASE("library copies owned external data and removes it with the entry") {
     const auto entries = store.LoadEntries();
     REQUIRE(entries.size() == 1);
     REQUIRE(entries[0].metadata.has_value());
-    CHECK(entries[0].metadata->external_owned);
-    CHECK(entries[0].metadata->external_dir == (entry / "data").lexically_normal());
+    CHECK(entries[0].external_owned);
+    CHECK(entries[0].external_dir == (entry / "data").lexically_normal());
     const auto launch = ogplay::app::ResolveLaunch(store, id);
     CHECK(launch.options.external_directory == (entry / "data").lexically_normal());
     CHECK(launch.options.external_guest_directory == "/sdcard");
@@ -442,13 +433,12 @@ TEST_CASE("library copies owned external data and removes it with the entry") {
     // A different per-game directory links; the owned copy is left unused.
     const auto other = tree.path / "other";
     std::filesystem::create_directories(other);
-    const auto linked = ogplay::app::EffectiveGameEntry(
-        entries[0], {{{"external_dir", other.generic_string()}}});
-    CHECK_FALSE(linked.metadata->external_owned);
-    CHECK(linked.metadata->external_dir == other);
-    const auto same = ogplay::app::EffectiveGameEntry(
-        entries[0], {{{"external_dir", entries[0].metadata->external_dir->generic_string()}}});
-    CHECK(same.metadata->external_owned);
+    const auto linked = ogplay::app::EffectiveGameEntry(entries[0], {{{"external_dir", other.generic_string()}}});
+    CHECK_FALSE(linked.external_owned);
+    CHECK(linked.external_dir == other);
+    const auto same =
+        ogplay::app::EffectiveGameEntry(entries[0], {{{"external_dir", entries[0].external_dir->generic_string()}}});
+    CHECK(same.external_owned);
 
     Write(sandbox / "save.bin", "save");
     store.Remove(id);
@@ -461,10 +451,9 @@ TEST_CASE("owned external data import rejects links, overlap and cancellation") 
     const auto source = tree.path / "source.apk";
     Write(source, "apk");
     ogplay::app::LibraryStore store(tree.path / "root");
-    const auto owned = [](const std::filesystem::path& external) {
-        auto metadata = Metadata(external);
-        metadata.external_owned = true;
-        return metadata;
+    const auto owned = [&](const std::filesystem::path& external) {
+        return ogplay::app::LibraryImport{
+            .source_apk = source, .metadata = Metadata(), .external_dir = std::filesystem::absolute(external)};
     };
     const auto staged_files = [&] {
         std::size_t count = 0;
@@ -481,19 +470,17 @@ TEST_CASE("owned external data import rejects links, overlap and cancellation") 
     // Windows hosts without symlink privilege skip only this case.
     std::filesystem::create_symlink(linked / "real.bin", linked / "alias.bin", symlink_error);
     if (!symlink_error) {
-        CHECK_THROWS_AS(store.Import({.source_apk = source, .metadata = owned(linked)}, true),
-                        ogplay::app::LibraryError);
+        CHECK_THROWS_AS(store.Import(owned(linked), true), ogplay::app::LibraryError);
     }
 
-    CHECK_THROWS_AS(store.Import({.source_apk = source, .metadata = owned(tree.path)}, true),
-                    ogplay::app::LibraryError);
+    CHECK_THROWS_AS(store.Import(owned(tree.path), true), ogplay::app::LibraryError);
 
     const auto plain = tree.path / "plain";
     Write(plain / "a.bin", "aaaa");
     ogplay::app::ImportProgress cancelled;
     cancelled.cancel_requested = true;
     try {
-        static_cast<void>(store.Import({.source_apk = source, .metadata = owned(plain)}, true, &cancelled));
+        static_cast<void>(store.Import(owned(plain), true, &cancelled));
         FAIL("cancelled import must not publish");
     } catch (const ogplay::app::LibraryError& error) {
         CHECK(std::string(error.what()).find("import_cancelled") != std::string::npos);
@@ -504,7 +491,7 @@ TEST_CASE("owned external data import rejects links, overlap and cancellation") 
     // An interrupted import leaves an unlocked staging directory behind.
     Write(tree.path / "root" / "import-staging" / "data-7" / "partial.bin", "partial");
     CHECK(staged_files() == 1);
-    static_cast<void>(store.Import({.source_apk = source, .metadata = owned(plain)}, true));
+    static_cast<void>(store.Import(owned(plain), true));
     CHECK(staged_files() == 0);
     CHECK(Read(store.EntriesRoot() / "org.example.game" / "data" / "a.bin") == "aaaa");
 }

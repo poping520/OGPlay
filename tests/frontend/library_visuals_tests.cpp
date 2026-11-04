@@ -519,7 +519,7 @@ TEST_CASE("launcher extracts resource label and normalized PNG then caches it") 
     ogplay::app::LibraryStore store(temporary.Path() / "root");
     store.Import({source,
                   {visuals.manifest.package, visuals.display_name, visuals.manifest.version_code, "",
-                   "2026-08-13T00:00:00Z", std::nullopt, std::nullopt},
+                   "2026-08-13T00:00:00Z", std::nullopt},
                   visuals.icon_png},
                  true);
     CHECK(std::filesystem::file_size(store.EntriesRoot() / visuals.manifest.package / "icon.png") ==
@@ -553,12 +553,11 @@ TEST_CASE("launcher visual extraction uses literal and explicit fallbacks") {
 }
 
 TEST_CASE("launcher keeps every translated resource label and stores it in the library") {
-    const auto apk = StoredZip({{"AndroidManifest.xml", Manifest(true, false, 0x7f020000U, 0x7f010000U)},
-                                {"resources.arsc", ConfigResources("string", "app_name",
-                                                                   {{0, "en", "Sweet Shop"},
-                                                                    {0, "", "糖果铺"},
-                                                                    {0, "zhTW", "糖果舖"},
-                                                                    {0, "ja", ""}})}});
+    const auto apk = StoredZip(
+        {{"AndroidManifest.xml", Manifest(true, false, 0x7f020000U, 0x7f010000U)},
+         {"resources.arsc",
+          ConfigResources("string", "app_name",
+                          {{0, "en", "Sweet Shop"}, {0, "", "糖果铺"}, {0, "zhTW", "糖果舖"}, {0, "ja", ""}})}});
     const auto visuals = ogplay::app::ExtractApkApplicationVisuals(apk);
     CHECK(visuals.display_name == "糖果铺");
     CHECK(visuals.localized_names == std::map<std::string, std::string>{{"en", "Sweet Shop"}, {"zh-TW", "糖果舖"}});
@@ -567,8 +566,9 @@ TEST_CASE("launcher keeps every translated resource label and stores it in the l
     const auto source = temporary.Path() / "source.apk";
     WriteBytes(source, apk);
     ogplay::app::LibraryStore store(temporary.Path() / "root");
-    ogplay::app::LibraryMetadata metadata{visuals.manifest.package, visuals.display_name, visuals.manifest.version_code,
-                                          "", "2026-11-03T00:00:00Z", std::nullopt, std::nullopt};
+    ogplay::app::LibraryMetadata metadata{visuals.manifest.package,      visuals.display_name,
+                                          visuals.manifest.version_code, "",
+                                          "2026-11-03T00:00:00Z",        std::nullopt};
     metadata.localized_names = visuals.localized_names;
     store.Import({source, metadata, {}}, true);
     const auto entries = store.LoadEntries();
@@ -654,11 +654,8 @@ TEST_CASE("library refresh re-extracts stored icons with the current rule") {
                                   {"res/drawable-xhdpi/icon.png", SolidPng(96, {0, 0, 255, 255})}}));
     ogplay::app::LibraryStore store(temporary.Path() / "root");
     const auto stale = SolidPng(128, {0, 255, 0, 255});
-    const auto id =
-        store.Import({source,
-                      {"org.example.game", "Example Game", 1, "", "2026-10-24T00:00:00Z", std::nullopt, std::nullopt},
-                      stale},
-                     true);
+    const auto id = store.Import(
+        {source, {"org.example.game", "Example Game", 1, "", "2026-10-24T00:00:00Z", std::nullopt}, stale}, true);
     CHECK(store.RefreshIcons() == std::vector<std::string>{id});
     const auto entries = store.LoadEntries();
     REQUIRE(entries.size() == 1);

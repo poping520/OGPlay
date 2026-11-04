@@ -134,11 +134,10 @@ SettingValue EffectiveGameSetting(const GameSettings& settings, const LibraryCon
                                   std::string_view key) {
     const auto& field = FindGameSetting(key);
     if (const auto it = settings.values.find(key); it != settings.values.end()) return it->second;
-    if (key == "external_dir" && entry.metadata && entry.metadata->external_dir) {
-        const auto text = entry.metadata->external_dir->generic_u8string();
+    if (key == "external_dir" && entry.external_dir) {
+        const auto text = entry.external_dir->generic_u8string();
         return std::string(reinterpret_cast<const char*>(text.data()), text.size());
     }
-    if (key == "external_guest_dir" && entry.metadata) return entry.metadata->external_guest_dir;
     const auto& globals = SettingDefinitions();
     if (std::any_of(globals.begin(), globals.end(), [&](const auto& value) { return value.key == key; }))
         return Setting(global, key);
@@ -157,19 +156,18 @@ LibraryConfig EffectiveGameConfig(const GameSettings& settings, const LibraryCon
 LibraryEntry EffectiveGameEntry(const LibraryEntry& entry, const GameSettings& settings) {
     auto result = entry;
     ValidateGameSettings(settings);
-    if (result.metadata)
-        if (const auto it = settings.values.find("external_dir"); it != settings.values.end()) {
-            const auto& text = std::get<std::string>(it->second);
-            auto selected = text.empty() ? std::optional<std::filesystem::path>()
-                                         : std::filesystem::path(std::u8string_view(
-                                               reinterpret_cast<const char8_t*>(text.data()), text.size()));
-            // Any other per-game directory links; library-owned data stays unused on disk.
-            if (selected != result.metadata->external_dir) result.metadata->external_owned = false;
-            result.metadata->external_dir = std::move(selected);
-        }
-    if (result.metadata)
-        if (const auto it = settings.values.find("external_guest_dir"); it != settings.values.end())
-            result.metadata->external_guest_dir = std::get<std::string>(it->second);
+    if (const auto it = settings.values.find("external_dir"); it != settings.values.end()) {
+        const auto& text = std::get<std::string>(it->second);
+        auto selected =
+            text.empty()
+                ? std::optional<std::filesystem::path>()
+                : std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text.data()), text.size()));
+        // Any other per-game directory links; library-owned data stays unused on disk.
+        if (selected != result.external_dir) result.external_owned = false;
+        result.external_dir = std::move(selected);
+    }
+    if (const auto it = settings.values.find("external_guest_dir"); it != settings.values.end())
+        result.external_guest_dir = std::get<std::string>(it->second);
     return result;
 }
 }  // namespace ogplay::app

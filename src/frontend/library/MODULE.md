@@ -25,10 +25,11 @@ supersample 范围 1..4；max_fps（帧率上限）取 30/60/90/120/144/unlimite
 （unlimited 为 0）。五者均经 EffectiveGameSetting 解析游戏 > 全局 > 默认，GUI 编辑同一 schema；不读取 Profile。
 类型模板及 input_template 设置已删除，未知旧设置明确失败。
 
-external_guest_dir 属于安装实例用户数据：导入 meta.toml 默认 /sdcard，settings.toml
-同名项优先于导入值；不提供全局选项。只接受 /sdcard 或其子目录，拒绝越界、点段、
-反斜线与控制字符。ResolveLaunch 仅在启用 external_dir 时转为 --external-guest-dir。
-旧 meta 缺字段读取默认值；不依赖 Profile，也不移动宿主数据。
+数据包配置只有一个来源：meta.toml 只记录导入事实，不含任何数据包字段；external_guest_dir
+与引用的 external_dir 只存于 settings.toml，导入时写入选择的值（/sdcard 不写），之后同样经
+设置修改。external_guest_dir 默认 /sdcard，不提供全局选项。只接受 /sdcard 或其子目录，拒绝越界、
+点段、反斜线与控制字符。ResolveLaunch 仅在启用 external_dir 时转为 --external-guest-dir。
+不依赖 Profile，也不移动宿主数据。目录存在性只校验本次修改的值，已引用目录暂时缺失不阻止其他修改。
 
 数据包挂载提示（ADR-0146）：ResolveLaunch 在非 preflight 时传条目 `last-run-missing.json`。
 只推断失败运行（end 为 startup_failed/fault/crashed/no_frame）；closed/exited 表示游戏已跑起来，
@@ -43,9 +44,9 @@ CLI `library data-hint` 同源。
 之下的部分映射到 /sdcard 下，目录名等于包名时映射 Android/data（含 .obb 为 Android/obb），其余为
 `/sdcard/<目录名>`；顶层含 Android/ 的 sdcard 副本保持 /sdcard。
 
-数据包导入模式（ADR-0144）：copy（默认）把所选目录复制为条目 `data/`，meta 只写
-`external_data = "library"`，加载时 external_dir 解析为该绝对路径并标记 owned；link 只记录
-宿主绝对路径，无该键的旧 meta 均为 link。复制在库锁外进行：库根 `import-staging/data-N`
+数据包导入模式（ADR-0144）：copy（默认）把所选目录复制为条目 `data/`，不写配置，加载时条目
+存在 `data/` 目录即解析为该绝对路径并标记 owned（目录被手动删除后视为无数据包）；link 把宿主
+绝对路径写入 settings.toml 的 external_dir。复制在库锁外进行：库根 `import-staging/data-N`
 由同名 `.lock` 标记存活，导入开始时清理无持有者的残留；逐文件先 hal::TryCloneFile，
 不支持时检查剩余空间后流式复制。只接受普通文件和目录，与库根互相包含、符号链接/特殊文件
 明确失败。ImportProgress 报告字节并在发布前接受取消（`import_cancelled`）。游戏设置

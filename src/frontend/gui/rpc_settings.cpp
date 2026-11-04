@@ -129,7 +129,12 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
     };
     if (save) {
         if (revision() != expected) throw std::runtime_error("游戏或全局设置已变化，请重新载入后保存。");
-        ValidateGameSettings(replacement, true);
+        // Only a changed directory must exist now: an unplugged linked pack must not block unrelated edits.
+        GameSettings changed;
+        for (const auto& [key, value] : replacement.values)
+            if (const auto it = settings.values.find(key); it == settings.values.end() || it->second != value)
+                changed.values[key] = value;
+        ValidateGameSettings(changed, true);
         if (std::get<bool>(EffectiveGameSetting(replacement, global, entry, "mcp_manual_step")) &&
             !std::get<bool>(EffectiveGameSetting(replacement, global, entry, "mcp_enabled")))
             throw std::invalid_argument("MCP 手动步进需要启用 MCP。");
@@ -254,8 +259,7 @@ app::ConsoleResponse GuiRpcService::SettingsRequest(std::string_view method, app
         ValidateLibraryConfigDirectories(config);
         SaveLibraryConfig(store_.Root(), config);
         // Turning demos back on also restores a demo that was removed.
-        if (!showed_demos && std::get<bool>(Setting(config, "show_demo_games")) && host_.seed_demos)
-            host_.seed_demos();
+        if (!showed_demos && std::get<bool>(Setting(config, "show_demo_games")) && host_.seed_demos) host_.seed_demos();
     }
     app::JsonWriter writer;
     const auto root = writer.Object(), result = writer.Object();

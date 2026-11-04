@@ -330,7 +330,6 @@ export const en: Record<string, string> = {
   '全部继承': 'Inherit all',
   ' · 已单独设置 {n} 项': ' · {n} customized',
   '设备身份 · 预留': 'Device identity · reserved',
-  '导入记录': 'import record',
   '全局': 'global',
   'Game settings · 下次启动生效': 'Game settings · applies on next launch',
   '性能': 'Performance',

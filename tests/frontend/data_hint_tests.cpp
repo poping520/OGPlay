@@ -23,10 +23,12 @@ public:
                 "-" + std::to_string(sequence.fetch_add(1)));
         std::filesystem::create_directories(path);
     }
+
     ~TemporaryDirectory() {
         std::error_code error;
         static_cast<void>(std::filesystem::remove_all(path, error));
     }
+
     std::filesystem::path path;
 };
 
@@ -51,8 +53,7 @@ TEST_CASE("ADR-0146 infers the mount from misses that exist in the data pack") {
     MissingDataReport report;
     report.missing = {"/sdcard/vendor/games/title/data/3d/camera/intro.bdae",
                       "/sdcard/vendor/games/title/data/menus/map.tga",
-                      "/sdcard/vendor/games/title/data/menus/absent.tga",
-                      "/sdcard/unrelated/readme.txt"};
+                      "/sdcard/vendor/games/title/data/menus/absent.tga", "/sdcard/unrelated/readme.txt"};
     const auto hint = InferDataMount(report, pack, "/sdcard");
     CHECK(hint.kind == DataMountHintKind::remount);
     REQUIRE(hint.candidates.size() == 1);
@@ -232,9 +233,15 @@ TEST_CASE("ADR-0146 GUI suggests and applies a mount for the current configurati
     const auto pack = Pack(tree.path);
     Write(tree.path / "game.apk", "apk");
     LibraryStore store(tree.path / "library");
-    LibraryMetadata metadata{.package = "org.example.game", .display_name = "Game", .version_code = 1,
-                             .imported_at = "2026-10-20T00:00:00Z", .external_dir = pack};
-    const auto id = store.Import({.source_apk = tree.path / "game.apk", .metadata = metadata}, true);
+    LibraryMetadata metadata{.package = "org.example.game",
+                             .display_name = "Game",
+                             .version_code = 1,
+                             .imported_at = "2026-10-20T00:00:00Z"};
+    const auto id = store.Import({.source_apk = tree.path / "game.apk",
+                                  .metadata = metadata,
+                                  .external_dir = pack,
+                                  .external_mode = ExternalDataMode::link},
+                                 true);
     const auto entry = store.EntriesRoot() / id;
     const auto report = [&](std::string_view guest, bool data, std::string_view end = "fault") {
         Write(
@@ -243,13 +250,19 @@ TEST_CASE("ADR-0146 GUI suggests and applies a mount for the current configurati
                 (data ? "\"/x\"" : "null") + R"(,"external_guest_dir":")" + std::string(guest) +
                 R"(","missing":["/sdcard/vendor/title/data/menus/map.tga","/sdcard/vendor/title/data/3d/camera/intro.bdae"],"truncated":false,"found":[]})");
     };
-    frontend::GuiRpcService rpc(store, tree.path / "ogplay.exe", {
-        [](const auto&) { return frontend::LibraryViewContext{}; }, [](const auto&) {}, [](const auto&) {}, {}, {},
-        [] { return std::string("2026-10-20T00:00:00Z"); }});
+    frontend::GuiRpcService rpc(store, tree.path / "ogplay.exe",
+                                {[](const auto&) { return frontend::LibraryViewContext{}; },
+                                 [](const auto&) {},
+                                 [](const auto&) {},
+                                 {},
+                                 {},
+                                 [] { return std::string("2026-10-20T00:00:00Z"); }});
     const auto call = [&](std::string_view method, const std::string& params) {
         app::JsonParseError error;
-        auto document = app::JsonDocument::ParseStrict(rpc.Handle(
-            std::string(R"({"jsonrpc":"2.0","id":1,"method":")") + std::string(method) + R"(","params":)" + params + "}"), error);
+        auto document =
+            app::JsonDocument::ParseStrict(rpc.Handle(std::string(R"({"jsonrpc":"2.0","id":1,"method":")") +
+                                                      std::string(method) + R"(","params":)" + params + "}"),
+                                           error);
         REQUIRE(document);
         return std::move(*document);
     };
@@ -272,25 +285,26 @@ TEST_CASE("ADR-0146 GUI suggests and applies a mount for the current configurati
     CHECK(result->Member("candidates")->Element(0)->Member("guest_dir")->String() == "/sdcard/vendor/title");
     CHECK(SuggestDataMount(store, id).hint.candidates.at(0).explained == 2);
 
-    SaveGameSettings(entry, {{{"data_mount_hint", false}}});
+    SaveGameSettings(entry, {{{"external_dir", pack.generic_string()}, {"data_mount_hint", false}}});
     CHECK(kind(params) == "none");
-    SaveGameSettings(entry, {});
+    SaveGameSettings(entry, {{{"external_dir", pack.generic_string()}}});
 
     CHECK(call("library.data_mount.apply", R"({"installation_id":")" + id + R"(","external_guest_dir":"/data"})")
-              .Root().Member("error"));
-    const auto applied = call("library.data_mount.apply", R"({"installation_id":")" + id + R"(","external_guest_dir":"/sdcard/vendor/title"})");
+              .Root()
+              .Member("error"));
+    const auto applied = call("library.data_mount.apply",
+                              R"({"installation_id":")" + id + R"(","external_guest_dir":"/sdcard/vendor/title"})");
     REQUIRE(applied.Root().Member("result"));
     const auto settings = LoadGameSettings(entry);
     CHECK(std::get<std::string>(settings.values.at("external_guest_dir")) == "/sdcard/vendor/title");
     CHECK(kind(params) == "none");  // the old report no longer matches the mount
 
     // An entry without data: the hint only asks for a directory, then judges the pick.
-    LibraryMetadata bare = metadata;
-    bare.external_dir.reset();
-    const auto bare_id = store.Import({.source_apk = tree.path / "game.apk", .metadata = bare}, true);
+    const auto bare_id = store.Import({.source_apk = tree.path / "game.apk", .metadata = metadata}, true);
     Write(
         store.EntriesRoot() / bare_id / "last-run-missing.json",
         R"({"schema":2,"end":"no_frame","external_dir":null,"external_guest_dir":"/sdcard","missing":["/sdcard/vendor/title/data/menus/map.tga","/sdcard/vendor/title/data/3d/camera/intro.bdae","/sdcard/vendor/title/data/x.bin"],"truncated":false,"found":[]})");
     CHECK(kind(R"({"installation_id":")" + bare_id + "\"}") == "needs_data");
-    CHECK(kind(R"({"installation_id":")" + bare_id + R"(","external_dir":")" + pack.generic_string() + "\"}") == "remount");
+    CHECK(kind(R"({"installation_id":")" + bare_id + R"(","external_dir":")" + pack.generic_string() + "\"}") ==
+          "remount");
 }

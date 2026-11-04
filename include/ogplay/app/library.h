@@ -31,8 +31,7 @@ enum class LibraryErrorCode : std::uint8_t {
 
 class OGPLAYCORE_API LibraryError final : public std::runtime_error {
 public:
-    LibraryError(LibraryErrorCode code, std::string message,
-                  std::filesystem::path path = {});
+    LibraryError(LibraryErrorCode code, std::string message, std::filesystem::path path = {});
 
     [[nodiscard]] LibraryErrorCode Code() const noexcept;
     [[nodiscard]] const std::filesystem::path& Path() const noexcept;
@@ -53,8 +52,7 @@ struct LibraryConfig final {
 
 [[nodiscard]] OGPLAYCORE_API LibraryConfig LoadLibraryConfig(const std::filesystem::path& library_root);
 OGPLAYCORE_API void ValidateLibraryConfigDirectories(const LibraryConfig& config);
-OGPLAYCORE_API void SaveLibraryConfig(const std::filesystem::path& library_root,
-                   const LibraryConfig& config);
+OGPLAYCORE_API void SaveLibraryConfig(const std::filesystem::path& library_root, const LibraryConfig& config);
 
 struct LibraryMetadata final {
     std::string package;
@@ -63,11 +61,6 @@ struct LibraryMetadata final {
     std::string version_name;
     std::string imported_at;
     std::optional<std::string> profile_id;
-    // Linked data keeps the host path. Library-owned data lives in the entry's
-    // data/ directory; loaded entries report that absolute path here.
-    std::optional<std::filesystem::path> external_dir;
-    std::string external_guest_dir{"/sdcard"};
-    bool external_owned{};
     // Label translations from the APK, by resource locale ("en", "zh-TW"); display_name is the default.
     std::map<std::string, std::string> localized_names;
 
@@ -87,20 +80,26 @@ struct LibraryEntry final {
     std::optional<LibraryMetadata> metadata;
     std::vector<std::byte> icon_png;
     std::optional<std::string> damage_reason;
+    // Resolved data pack; nothing about it is stored in meta.toml. LoadEntries reports the
+    // entry's own data/ directory (owned); EffectiveGameEntry applies settings.toml.
+    std::optional<std::filesystem::path> external_dir;
+    std::string external_guest_dir{"/sdcard"};
+    bool external_owned{};
 
-    [[nodiscard]] bool Damaged() const noexcept {
-        return damage_reason.has_value();
-    }
+    [[nodiscard]] bool Damaged() const noexcept { return damage_reason.has_value(); }
 };
 
 enum class ExternalDataMode : std::uint8_t { copy, link };
 
-// For an owned import, metadata.external_dir names the source directory that
-// Import copies into the entry's data/ directory.
+// external_dir is the selected data pack: copy publishes it as the entry's data/ directory,
+// link records its host path in settings.toml. A non-default mount goes to settings.toml too.
 struct LibraryImport final {
     std::filesystem::path source_apk;
     LibraryMetadata metadata;
     std::vector<std::byte> icon_png;
+    std::optional<std::filesystem::path> external_dir;
+    ExternalDataMode external_mode{ExternalDataMode::copy};
+    std::string external_guest_dir{"/sdcard"};
 };
 
 // Shared with a polling caller; cancellation is honored until publication.
@@ -116,14 +115,11 @@ public:
 
     [[nodiscard]] const std::filesystem::path& Root() const noexcept;
     [[nodiscard]] std::filesystem::path EntriesRoot() const;
-    [[nodiscard]] std::string NextInstallationId(
-        std::string_view package) const;
+    [[nodiscard]] std::string NextInstallationId(std::string_view package) const;
     // Smallest id whose saves outlived their removed library entry.
-    [[nodiscard]] std::optional<std::string> ReusableInstallationId(
-        std::string_view package) const;
+    [[nodiscard]] std::optional<std::string> ReusableInstallationId(std::string_view package) const;
     [[nodiscard]] std::vector<LibraryEntry> LoadEntries() const;
-    std::string Import(const LibraryImport& request, bool new_instance = false,
-                       ImportProgress* progress = nullptr);
+    std::string Import(const LibraryImport& request, bool new_instance = false, ImportProgress* progress = nullptr);
     [[nodiscard]] bool IsRunning(std::string_view key) const;
     // Saves stay by default and are adopted by the next import of the package.
     void Remove(std::string_view key, bool delete_saves = false);
@@ -150,6 +146,7 @@ struct SettingDefinition {
     std::string pending{};
     bool directory{};
 };
+
 [[nodiscard]] OGPLAYCORE_API const std::vector<SettingDefinition>& SettingDefinitions();
 [[nodiscard]] OGPLAYCORE_API const SettingDefinition& FindSetting(std::string_view key);
 [[nodiscard]] OGPLAYCORE_API SettingValue Setting(const LibraryConfig& config, std::string_view key);
@@ -162,29 +159,39 @@ struct GameSettings final {
     std::map<std::string, SettingValue, std::less<>> values;
     bool operator==(const GameSettings&) const = default;
 };
+
 [[nodiscard]] OGPLAYCORE_API const std::vector<SettingDefinition>& GameSettingDefinitions();
 [[nodiscard]] OGPLAYCORE_API const SettingDefinition& FindGameSetting(std::string_view key);
 OGPLAYCORE_API void ValidateGameSettings(const GameSettings& settings, bool directories = false);
 [[nodiscard]] OGPLAYCORE_API GameSettings LoadGameSettings(const std::filesystem::path& entry_directory);
-OGPLAYCORE_API GameSettings PatchGameSettings(const LibraryStore& store, std::string_view id, const GameSettings& changes, std::span<const std::string> unset);
+OGPLAYCORE_API GameSettings PatchGameSettings(const LibraryStore& store, std::string_view id,
+                                              const GameSettings& changes, std::span<const std::string> unset);
 OGPLAYCORE_API void SaveGameSettings(const std::filesystem::path& entry_directory, const GameSettings& settings);
-[[nodiscard]] OGPLAYCORE_API SettingValue EffectiveGameSetting(const GameSettings& settings, const LibraryConfig& global,
-                                                   const LibraryEntry& entry, std::string_view key);
-[[nodiscard]] OGPLAYCORE_API LibraryConfig EffectiveGameConfig(const GameSettings& settings, const LibraryConfig& global);
+[[nodiscard]] OGPLAYCORE_API SettingValue EffectiveGameSetting(const GameSettings& settings,
+                                                               const LibraryConfig& global, const LibraryEntry& entry,
+                                                               std::string_view key);
+[[nodiscard]] OGPLAYCORE_API LibraryConfig EffectiveGameConfig(const GameSettings& settings,
+                                                               const LibraryConfig& global);
 [[nodiscard]] OGPLAYCORE_API LibraryEntry EffectiveGameEntry(const LibraryEntry& entry, const GameSettings& settings);
-}
+}  // namespace ogplay::app
 
 namespace ogplay::app {
 enum class LaunchMode { normal, preflight, diagnostic };
+
 struct ResolvedLaunch final {
     GameRunOptions options;
     std::optional<std::uint16_t> mcp_port;
     bool dashboard_auto_open{};
 };
+
 [[nodiscard]] OGPLAYCORE_API std::filesystem::path LauncherSandboxRoot(const std::filesystem::path& root);
-[[nodiscard]] OGPLAYCORE_API ResolvedLaunch ResolveLaunch(const LibraryStore& store, std::string_view installation_id, LaunchMode mode = LaunchMode::normal);
+[[nodiscard]] OGPLAYCORE_API ResolvedLaunch ResolveLaunch(const LibraryStore& store, std::string_view installation_id,
+                                                          LaunchMode mode = LaunchMode::normal);
 // Value overload supports previews with an explicit global configuration.
-[[nodiscard]] OGPLAYCORE_API ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& entry, const LibraryConfig& config, LaunchMode mode = LaunchMode::normal);
+[[nodiscard]] OGPLAYCORE_API ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& entry,
+                                                          const LibraryConfig& config,
+                                                          LaunchMode mode = LaunchMode::normal);
+
 class OGPLAYCORE_API RunningLease final {
 public:
     RunningLease(const std::filesystem::path& root, std::string_view installation_id);
@@ -193,8 +200,9 @@ public:
     RunningLease& operator=(RunningLease&&) noexcept;
     RunningLease(const RunningLease&) = delete;
     RunningLease& operator=(const RunningLease&) = delete;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
-}
+}  // namespace ogplay::app

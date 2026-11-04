@@ -37,15 +37,15 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
         throw LibraryError(LibraryErrorCode::corrupt_config, "damaged library entry cannot be launched",
                            entry.directory);
     if (config.profiles_dir) RequireDirectory(*config.profiles_dir, "Profile directory");
-    if (entry.metadata->external_dir) RequireDirectory(*entry.metadata->external_dir, "external data directory");
+    if (entry.external_dir) RequireDirectory(*entry.external_dir, "external data directory");
     ResolvedLaunch result;
     auto& o = result.options;
     o.apk_path = std::filesystem::absolute(entry.directory / "game.apk").lexically_normal();
     if (!std::filesystem::is_regular_file(o.apk_path))
         throw LibraryError(LibraryErrorCode::not_found, "library APK copy is missing", o.apk_path);
     o.profiles_directory = config.profiles_dir;
-    o.external_directory = entry.metadata->external_dir;
-    if (o.external_directory) o.external_guest_directory = entry.metadata->external_guest_dir;
+    o.external_directory = entry.external_dir;
+    if (o.external_directory) o.external_guest_directory = entry.external_guest_dir;
     o.surface_width = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "screen_width"));
     o.surface_height = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "screen_height"));
     o.density_dpi = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "density_dpi"));

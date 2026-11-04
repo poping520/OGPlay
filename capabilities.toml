@@ -256,7 +256,7 @@ note = "DVM-189 音乐 OGG/MP3/WAV 增量 bitstream 解码、独立 seek/loop/vo
 [frontend.run_apk_external]
 status = "complete"
 test = "frontend.run_apk_options; tests/frontend/run_apk_vfs_tests.cpp; tests/frontend/gui_launch_tests.cpp#VFS-09; tests/frontend/gui_import_tests.cpp"
-note = "ADR-0074/0143：external 默认挂到 /sdcard；安装实例 meta/settings 的 external_guest_dir 由 GUI 导入/设置编辑并传 CLI，仅允许 /sdcard 子树。storage 别名和挂载/内容均 ASCII case-fold，实际视频出帧已验。--obb 原文件挂到 /sdcard/Android/obb/<package>，不依赖 Profile，不做资源清单预检。"
+note = "ADR-0074/0143：external 默认挂到 /sdcard；安装实例 settings 的 external_guest_dir 由 GUI 导入/设置编辑并传 CLI，仅允许 /sdcard 子树。storage 别名和挂载/内容均 ASCII case-fold，实际视频出帧已验。--obb 原文件挂到 /sdcard/Android/obb/<package>，不依赖 Profile，不做资源清单预检。"
 
 [frontend.data_mount_hint]
 status = "partial"

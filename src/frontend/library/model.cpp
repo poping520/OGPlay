@@ -25,18 +25,16 @@ namespace {
 constexpr std::uint32_t kSchema = 1;
 
 [[nodiscard]] bool SafeEntryKey(const std::string_view key) {
-    if (key.empty() || key == "." || key == ".." ||
-        key.find('/') != std::string_view::npos ||
-        key.find('\\') != std::string_view::npos ||
-        key.find(':') != std::string_view::npos || key.find('\0') != std::string_view::npos) {
+    if (key.empty() || key == "." || key == ".." || key.find('/') != std::string_view::npos ||
+        key.find('\\') != std::string_view::npos || key.find(':') != std::string_view::npos ||
+        key.find('\0') != std::string_view::npos) {
         return false;
     }
     return true;
 }
 
 [[nodiscard]] bool ImportTemporaryKey(const std::string_view key) {
-    return key.size() > std::string_view("..importing").size() &&
-           key.front() == '.' && key.ends_with(".importing");
+    return key.size() > std::string_view("..importing").size() && key.front() == '.' && key.ends_with(".importing");
 }
 
 [[nodiscard]] std::string EscapeToml(const std::string_view text) {
@@ -52,8 +50,7 @@ constexpr std::uint32_t kSchema = 1;
         case '\t': result.append("\\t"); break;
         default:
             if (static_cast<unsigned char>(character) < 0x20U) {
-                throw LibraryError(LibraryErrorCode::invalid_argument,
-                                    "TOML string contains a control character");
+                throw LibraryError(LibraryErrorCode::invalid_argument, "TOML string contains a control character");
             }
             result.push_back(character);
             break;
@@ -104,17 +101,15 @@ using FlatToml = std::map<std::string, std::string, std::less<>>;
     std::size_t begin = 0;
     while (begin <= text.size()) {
         const auto end = text.find('\n', begin);
-        auto line = std::string(core::TrimAsciiWhitespace(text.substr(
-            begin, end == std::string_view::npos ? text.size() - begin : end - begin)));
+        auto line = std::string(core::TrimAsciiWhitespace(
+            text.substr(begin, end == std::string_view::npos ? text.size() - begin : end - begin)));
         if (!line.empty()) {
             const auto equals = line.find('=');
             if (equals == std::string::npos) {
                 throw std::runtime_error("TOML line must contain one assignment");
             }
-            auto key = std::string(core::TrimAsciiWhitespace(
-                std::string_view(line).substr(0, equals)));
-            auto value = std::string(core::TrimAsciiWhitespace(
-                std::string_view(line).substr(equals + 1)));
+            auto key = std::string(core::TrimAsciiWhitespace(std::string_view(line).substr(0, equals)));
+            auto value = std::string(core::TrimAsciiWhitespace(std::string_view(line).substr(equals + 1)));
             if (key.empty() || value.empty() || !values.emplace(key, value).second) {
                 throw std::runtime_error("TOML contains an empty or duplicate key");
             }
@@ -139,8 +134,7 @@ using FlatToml = std::map<std::string, std::string, std::less<>>;
     std::ifstream input(path, std::ios::binary);
     if (!input) return {};
     std::vector<std::byte> bytes(static_cast<std::size_t>(size));
-    input.read(reinterpret_cast<char*>(bytes.data()),
-               static_cast<std::streamsize>(bytes.size()));
+    input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     if (!input) return {};
     return bytes;
 }
@@ -162,19 +156,16 @@ void WriteText(const std::filesystem::path& path, const std::string_view text) {
     return std::filesystem::path(std::u8string(begin, begin + text.size()));
 }
 
-[[nodiscard]] std::uint32_t ParseUint32(const std::string_view value,
-                                        const std::string_view field) {
+[[nodiscard]] std::uint32_t ParseUint32(const std::string_view value, const std::string_view field) {
     std::uint32_t result{};
     const auto parsed = std::from_chars(value.data(), value.data() + value.size(), result);
-    if (value.empty() || parsed.ec != std::errc{} ||
-        parsed.ptr != value.data() + value.size()) {
+    if (value.empty() || parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size()) {
         throw std::runtime_error(std::string(field) + " is not an unsigned integer");
     }
     return result;
 }
 
-[[nodiscard]] const std::string& Require(const FlatToml& values,
-                                         const std::string_view key) {
+[[nodiscard]] const std::string& Require(const FlatToml& values, const std::string_view key) {
     const auto item = values.find(key);
     if (item == values.end()) throw std::runtime_error(std::string(key) + " is missing");
     return item->second;
@@ -217,29 +208,20 @@ std::string LocalizedDisplayName(const LibraryMetadata& metadata, const std::str
 namespace {
 
 void ValidateMetadata(const LibraryMetadata& metadata) {
-    ValidateExternalGuestDirectory(metadata.external_guest_dir);
     if (!core::IsValidPackageName(metadata.package)) {
-        throw LibraryError(LibraryErrorCode::invalid_argument,
-                            "library package name is invalid");
+        throw LibraryError(LibraryErrorCode::invalid_argument, "library package name is invalid");
     }
     if (metadata.display_name.empty() || !core::IsValidUtf8(metadata.display_name) ||
         !core::IsValidUtf8(metadata.version_name) || metadata.imported_at.empty() ||
         !core::IsValidUtf8(metadata.imported_at)) {
-        throw LibraryError(LibraryErrorCode::invalid_argument,
-                            "library metadata is incomplete or invalid");
+        throw LibraryError(LibraryErrorCode::invalid_argument, "library metadata is incomplete or invalid");
     }
     for (const auto& [locale, name] : metadata.localized_names) {
         if (!IsLibraryLocaleTag(locale) || name.empty() || !core::IsValidUtf8(name))
             throw LibraryError(LibraryErrorCode::invalid_argument, "library localized name is invalid");
     }
-    if (metadata.profile_id.has_value() &&
-        (metadata.profile_id->empty() || !core::IsValidUtf8(*metadata.profile_id))) {
-        throw LibraryError(LibraryErrorCode::invalid_argument,
-                            "library profile id is invalid");
-    }
-    if (metadata.external_dir.has_value() && !metadata.external_dir->is_absolute()) {
-        throw LibraryError(LibraryErrorCode::invalid_argument,
-                            "library external directory must be absolute");
+    if (metadata.profile_id.has_value() && (metadata.profile_id->empty() || !core::IsValidUtf8(*metadata.profile_id))) {
+        throw LibraryError(LibraryErrorCode::invalid_argument, "library profile id is invalid");
     }
 }
 
@@ -255,18 +237,6 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
     if (metadata.profile_id.has_value()) {
         text.append("profile_id = ").append(EscapeToml(*metadata.profile_id)).push_back('\n');
     }
-    // Owned data lives beside meta.toml; its path is derived when loading.
-    if (metadata.external_owned) {
-        text.append("external_data = \"library\"\n");
-    } else if (metadata.external_dir.has_value()) {
-        text.append("external_dir = ")
-            .append(EscapeToml(PathUtf8(*metadata.external_dir)))
-            .push_back('\n');
-    }
-    // The default stays implicit so entries remain readable by builds that
-    // predate the key; only a real override needs the newer reader.
-    if (metadata.external_guest_dir != "/sdcard")
-        text.append("external_guest_dir = ").append(EscapeToml(metadata.external_guest_dir)).push_back('\n');
     return text;
 }
 
@@ -288,17 +258,6 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
     if (const auto item = values.find("profile_id"); item != values.end()) {
         metadata.profile_id = ParseTomlString(item->second);
     }
-    if (const auto item = values.find("external_dir"); item != values.end()) {
-        metadata.external_dir = Utf8Path(ParseTomlString(item->second));
-    }
-    if (const auto item = values.find("external_guest_dir"); item != values.end()) {
-        metadata.external_guest_dir = ParseTomlString(item->second);
-    }
-    if (const auto item = values.find("external_data"); item != values.end()) {
-        if (ParseTomlString(item->second) != "library" || metadata.external_dir.has_value())
-            throw std::runtime_error("external_data must be \"library\" without external_dir");
-        metadata.external_owned = true;
-    }
     ValidateMetadata(metadata);
     return metadata;
 }
@@ -309,9 +268,12 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
     if (config.profiles_dir) text += "profiles_dir = " + EscapeToml(PathUtf8(*config.profiles_dir)) + "\n";
     for (const auto& [key, value] : config.values) {
         text += key + " = ";
-        if (const auto flag = std::get_if<bool>(&value)) text += *flag ? "true" : "false";
-        else if (const auto number = std::get_if<std::uint32_t>(&value)) text += std::to_string(*number);
-        else text += EscapeToml(std::get<std::string>(value));
+        if (const auto flag = std::get_if<bool>(&value))
+            text += *flag ? "true" : "false";
+        else if (const auto number = std::get_if<std::uint32_t>(&value))
+            text += std::to_string(*number);
+        else
+            text += EscapeToml(std::get<std::string>(value));
         text += "\n";
     }
     return text;
@@ -328,8 +290,10 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
         if (std::holds_alternative<bool>(field->initial)) {
             if (value != "true" && value != "false") throw std::runtime_error(key + " requires a boolean");
             SetSetting(config, key, value == "true");
-        } else if (std::holds_alternative<std::uint32_t>(field->initial)) SetSetting(config, key, ParseUint32(value, key));
-        else SetSetting(config, key, ParseTomlString(value));
+        } else if (std::holds_alternative<std::uint32_t>(field->initial))
+            SetSetting(config, key, ParseUint32(value, key));
+        else
+            SetSetting(config, key, ParseTomlString(value));
     }
     return config;
 }
@@ -338,13 +302,13 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
 [[nodiscard]] std::optional<std::uint32_t> InstallationNumber(const std::string_view name,
                                                               const std::string_view package) {
     if (name == package) return 1U;
-    if (!name.starts_with(package) || name.size() <= package.size() + 1U ||
-        name[package.size()] != '-') return std::nullopt;
+    if (!name.starts_with(package) || name.size() <= package.size() + 1U || name[package.size()] != '-')
+        return std::nullopt;
     std::uint32_t number{};
     const auto suffix = name.substr(package.size() + 1U);
     const auto parsed = std::from_chars(suffix.data(), suffix.data() + suffix.size(), number);
-    if (parsed.ec != std::errc{} || parsed.ptr != suffix.data() + suffix.size() ||
-        number < 2U || suffix.front() == '0') return std::nullopt;
+    if (parsed.ec != std::errc{} || parsed.ptr != suffix.data() + suffix.size() || number < 2U || suffix.front() == '0')
+        return std::nullopt;
     return number;
 }
 
@@ -356,31 +320,32 @@ void RemoveTree(const std::filesystem::path& path) {
 
 }  // namespace
 
-LibraryError::LibraryError(const LibraryErrorCode code, std::string message,
-                             std::filesystem::path path)
+LibraryError::LibraryError(const LibraryErrorCode code, std::string message, std::filesystem::path path)
     : std::runtime_error(std::move(message)), code_(code), path_(std::move(path)) {}
 
-LibraryErrorCode LibraryError::Code() const noexcept { return code_; }
+LibraryErrorCode LibraryError::Code() const noexcept {
+    return code_;
+}
 
-const std::filesystem::path& LibraryError::Path() const noexcept { return path_; }
+const std::filesystem::path& LibraryError::Path() const noexcept {
+    return path_;
+}
 
 namespace {
-template<class Config, class Decode>
+template <class Config, class Decode>
 Config LoadConfigFile(const std::filesystem::path& path, Decode decode) {
     auto source = path;
     std::error_code error;
     if (!std::filesystem::exists(path, error)) {
         if (error) {
-            throw LibraryError(LibraryErrorCode::io_error,
-                                "cannot inspect library config", path);
+            throw LibraryError(LibraryErrorCode::io_error, "cannot inspect library config", path);
         }
         // Readers share the lock, so an interrupted save's backup is read without
         // republishing it; the next exclusive save writes the primary file again.
         source += ".bak";
         if (!std::filesystem::exists(source, error)) {
             if (error) {
-                throw LibraryError(LibraryErrorCode::io_error,
-                                    "cannot inspect library config backup", source);
+                throw LibraryError(LibraryErrorCode::io_error, "cannot inspect library config backup", source);
             }
             return {};
         }
@@ -389,19 +354,22 @@ Config LoadConfigFile(const std::filesystem::path& path, Decode decode) {
         return decode(ReadText(source));
     } catch (const std::exception& exception) {
         throw LibraryError(LibraryErrorCode::corrupt_config,
-                            std::string("library config is damaged: ") + exception.what(), source);
+                           std::string("library config is damaged: ") + exception.what(), source);
     }
 }
 
-} // namespace
+}  // namespace
+
 LibraryConfig LoadLibraryConfig(const std::filesystem::path& root) {
     auto lock = RequireLibraryReadLock(root);
     return LoadConfigFile<LibraryConfig>(root / "config.toml", DecodeConfig);
 }
+
 static GameSettings LoadGameSettingsUnlocked(const std::filesystem::path& directory) {
     return LoadConfigFile<GameSettings>(directory / "settings.toml", [](std::string_view text) {
         const auto values = ParseFlatToml(text);
-        if (ParseUint32(Require(values, "schema"), "schema") != 1) throw std::invalid_argument("unsupported instance settings schema");
+        if (ParseUint32(Require(values, "schema"), "schema") != 1)
+            throw std::invalid_argument("unsupported instance settings schema");
         GameSettings settings;
         for (const auto& [key, value] : values) {
             const auto* field = KnownSetting(GameSettingDefinitions(), key);
@@ -410,8 +378,10 @@ static GameSettings LoadGameSettingsUnlocked(const std::filesystem::path& direct
             if (std::holds_alternative<bool>(field->initial)) {
                 if (value != "true" && value != "false") throw std::invalid_argument("invalid boolean: " + key);
                 parsed = value == "true";
-            } else if (std::holds_alternative<std::uint32_t>(field->initial)) parsed = ParseUint32(value, key);
-            else parsed = ParseTomlString(value);
+            } else if (std::holds_alternative<std::uint32_t>(field->initial))
+                parsed = ParseUint32(value, key);
+            else
+                parsed = ParseTomlString(value);
             ValidateSettingValue(*field, parsed);
             settings.values[key] = std::move(parsed);
         }
@@ -420,12 +390,10 @@ static GameSettings LoadGameSettingsUnlocked(const std::filesystem::path& direct
 }
 
 void ValidateLibraryConfigDirectories(const LibraryConfig& config) {
-    const auto require_directory = [](const std::filesystem::path& path,
-                                      const std::string_view name) {
+    const auto require_directory = [](const std::filesystem::path& path, const std::string_view name) {
         std::error_code error;
         if (path.empty() || !std::filesystem::is_directory(path, error) || error) {
-            throw LibraryError(LibraryErrorCode::not_found,
-                                std::string(name) + " is unavailable", path);
+            throw LibraryError(LibraryErrorCode::not_found, std::string(name) + " is unavailable", path);
         }
     };
     ValidateLibraryConfigValues(config);
@@ -458,8 +426,7 @@ void SaveConfigFile(const std::filesystem::path& target, const std::string& text
             }
             std::filesystem::rename(target, backup, error);
             if (error) {
-                throw std::filesystem::filesystem_error(
-                    "rename", target, backup, error);
+                throw std::filesystem::filesystem_error("rename", target, backup, error);
             }
         }
         std::filesystem::rename(temporary, target, error);
@@ -475,25 +442,29 @@ void SaveConfigFile(const std::filesystem::path& target, const std::string& text
     } catch (const LibraryError&) {
         throw;
     } catch (const std::exception& exception) {
-        throw LibraryError(LibraryErrorCode::io_error,
-                            std::string("cannot save library config: ") + exception.what(),
-                            target);
+        throw LibraryError(LibraryErrorCode::io_error, std::string("cannot save library config: ") + exception.what(),
+                           target);
     }
 }
-} // namespace
+}  // namespace
+
 void SaveLibraryConfig(const std::filesystem::path& root, const LibraryConfig& config) {
     auto lock = RequireLibraryLock(root);
     SaveConfigFile(root / "config.toml", EncodeConfig(config));
 }
+
 static void SaveGameSettingsUnlocked(const std::filesystem::path& directory, const GameSettings& settings) {
     ValidateGameSettings(settings);
     if (!std::filesystem::is_directory(directory)) throw std::invalid_argument("instance directory unavailable");
     std::string text = "schema = 1\n";
     for (const auto& [key, value] : settings.values) {
         text += key + " = ";
-        if (const auto flag = std::get_if<bool>(&value)) text += *flag ? "true" : "false";
-        else if (const auto number = std::get_if<std::uint32_t>(&value)) text += std::to_string(*number);
-        else text += EscapeToml(std::get<std::string>(value));
+        if (const auto flag = std::get_if<bool>(&value))
+            text += *flag ? "true" : "false";
+        else if (const auto number = std::get_if<std::uint32_t>(&value))
+            text += std::to_string(*number);
+        else
+            text += EscapeToml(std::get<std::string>(value));
         text += "\n";
     }
     SaveConfigFile(directory / "settings.toml", text);
@@ -501,80 +472,86 @@ static void SaveGameSettingsUnlocked(const std::filesystem::path& directory, con
 
 GameSettings LoadGameSettings(const std::filesystem::path& directory) {
     std::optional<hal::FileLock> lock;
-    if (directory.parent_path().filename() == "library") lock.emplace(RequireLibraryReadLock(directory.parent_path().parent_path()));
+    if (directory.parent_path().filename() == "library")
+        lock.emplace(RequireLibraryReadLock(directory.parent_path().parent_path()));
     return LoadGameSettingsUnlocked(directory);
 }
+
 void SaveGameSettings(const std::filesystem::path& directory, const GameSettings& settings) {
     std::optional<hal::FileLock> lock;
-    if (directory.parent_path().filename() == "library") lock.emplace(RequireLibraryLock(directory.parent_path().parent_path()));
+    if (directory.parent_path().filename() == "library")
+        lock.emplace(RequireLibraryLock(directory.parent_path().parent_path()));
     SaveGameSettingsUnlocked(directory, settings);
 }
-GameSettings PatchGameSettings(const LibraryStore& store, std::string_view id, const GameSettings& changes, std::span<const std::string> unset) {
+
+GameSettings PatchGameSettings(const LibraryStore& store, std::string_view id, const GameSettings& changes,
+                               std::span<const std::string> unset) {
     ValidateGameSettings(changes, true);
-    for (const auto& key : unset) static_cast<void>(FindGameSetting(key));
+    for (const auto& key : unset)
+        static_cast<void>(FindGameSetting(key));
     auto lock = RequireLibraryLock(store.Root());
     const auto entries = store.LoadEntries();
     const auto found = std::find_if(entries.begin(), entries.end(), [&](const auto& entry) { return entry.key == id; });
     if (found == entries.end()) throw LibraryError(LibraryErrorCode::not_found, "library entry does not exist");
-    if (found->Damaged()) throw LibraryError(LibraryErrorCode::corrupt_config, "damaged library entry cannot be configured");
+    if (found->Damaged())
+        throw LibraryError(LibraryErrorCode::corrupt_config, "damaged library entry cannot be configured");
     auto result = LoadGameSettingsUnlocked(found->directory);
-    for (const auto& [key, value] : changes.values) result.values[key] = value;
-    for (const auto& key : unset) result.values.erase(key);
-    ValidateGameSettings(result, true);
+    for (const auto& [key, value] : changes.values)
+        result.values[key] = value;
+    for (const auto& key : unset)
+        result.values.erase(key);
+    // Only the changes must exist now: an unplugged linked pack must not block unrelated edits.
+    ValidateGameSettings(result);
     SaveGameSettingsUnlocked(found->directory, result);
     return result;
 }
 
-LibraryStore::LibraryStore(std::filesystem::path library_root)
-    : root_() {
+LibraryStore::LibraryStore(std::filesystem::path library_root) : root_() {
     if (library_root.empty()) {
-        throw LibraryError(LibraryErrorCode::invalid_argument,
-                            "library root must not be empty");
+        throw LibraryError(LibraryErrorCode::invalid_argument, "library root must not be empty");
     }
     root_ = std::filesystem::absolute(std::move(library_root)).lexically_normal();
 }
 
-const std::filesystem::path& LibraryStore::Root() const noexcept { return root_; }
+const std::filesystem::path& LibraryStore::Root() const noexcept {
+    return root_;
+}
 
-std::filesystem::path LibraryStore::EntriesRoot() const { return root_ / "library"; }
+std::filesystem::path LibraryStore::EntriesRoot() const {
+    return root_ / "library";
+}
 
-std::string LibraryStore::NextInstallationId(
-    const std::string_view package) const {
+std::string LibraryStore::NextInstallationId(const std::string_view package) const {
     if (!core::IsValidPackageName(package) || package.find('-') != std::string_view::npos) {
-        throw LibraryError(LibraryErrorCode::invalid_argument,
-                            "package cannot be used as an installation id");
+        throw LibraryError(LibraryErrorCode::invalid_argument, "package cannot be used as an installation id");
     }
     std::set<std::uint32_t> occupied;
     const auto collect = [&](const std::filesystem::path& parent) {
         std::error_code error;
         if (!std::filesystem::exists(parent, error)) return;
-        for (std::filesystem::directory_iterator it(parent, error), end;
-             !error && it != end; it.increment(error)) {
+        for (std::filesystem::directory_iterator it(parent, error), end; !error && it != end; it.increment(error)) {
             if (!it->is_directory(error)) continue;
             if (const auto number = InstallationNumber(PathUtf8(it->path().filename()), package))
                 occupied.insert(*number);
         }
         if (error) {
-            throw LibraryError(LibraryErrorCode::io_error,
-                                "cannot inspect installation ids", parent);
+            throw LibraryError(LibraryErrorCode::io_error, "cannot inspect installation ids", parent);
         }
     };
     collect(EntriesRoot());
     collect(root_ / "sandbox");
     std::uint32_t number = 1U;
-    while (occupied.contains(number)) ++number;
-    return number == 1U ? std::string(package)
-                        : std::string(package) + "-" + std::to_string(number);
+    while (occupied.contains(number))
+        ++number;
+    return number == 1U ? std::string(package) : std::string(package) + "-" + std::to_string(number);
 }
 
-std::optional<std::string> LibraryStore::ReusableInstallationId(
-    const std::string_view package) const {
+std::optional<std::string> LibraryStore::ReusableInstallationId(const std::string_view package) const {
     std::map<std::uint32_t, std::string> orphans;
     std::error_code error;
     const auto sandbox_root = root_ / "sandbox";
     if (!std::filesystem::exists(sandbox_root, error)) return std::nullopt;
-    for (std::filesystem::directory_iterator it(sandbox_root, error), end;
-         !error && it != end; it.increment(error)) {
+    for (std::filesystem::directory_iterator it(sandbox_root, error), end; !error && it != end; it.increment(error)) {
         if (!it->is_directory(error)) continue;
         auto name = PathUtf8(it->path().filename());
         const auto number = InstallationNumber(name, package);
@@ -601,35 +578,30 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
     std::error_code error;
     std::filesystem::create_directories(EntriesRoot(), error);
     if (error) {
-        throw LibraryError(LibraryErrorCode::io_error,
-                            "cannot create game library", EntriesRoot());
+        throw LibraryError(LibraryErrorCode::io_error, "cannot create game library", EntriesRoot());
     }
     auto cleanup_lock = TryLibraryLock(root_);
     std::vector<std::filesystem::path> stale_imports;
-    for (std::filesystem::directory_iterator iterator(EntriesRoot(), error), end;
-         !error && iterator != end; iterator.increment(error)) {
+    for (std::filesystem::directory_iterator iterator(EntriesRoot(), error), end; !error && iterator != end;
+         iterator.increment(error)) {
         if (cleanup_lock && iterator->is_directory(error) &&
             ImportTemporaryKey(PathUtf8(iterator->path().filename()))) {
             stale_imports.push_back(iterator->path());
         }
     }
     if (error) {
-        throw LibraryError(LibraryErrorCode::io_error,
-                            "cannot inspect import temporary directories",
-                            EntriesRoot());
+        throw LibraryError(LibraryErrorCode::io_error, "cannot inspect import temporary directories", EntriesRoot());
     }
     for (const auto& stale : stale_imports) {
         try {
             RemoveTree(stale);
         } catch (const std::exception& exception) {
-            throw LibraryError(
-                LibraryErrorCode::io_error,
-                std::string("cannot clean stale import: ") + exception.what(),
-                stale);
+            throw LibraryError(LibraryErrorCode::io_error,
+                               std::string("cannot clean stale import: ") + exception.what(), stale);
         }
     }
-    for (std::filesystem::directory_iterator iterator(EntriesRoot(), error), end;
-         !error && iterator != end; iterator.increment(error)) {
+    for (std::filesystem::directory_iterator iterator(EntriesRoot(), error), end; !error && iterator != end;
+         iterator.increment(error)) {
         if (!iterator->is_directory(error)) {
             if (error) break;
             continue;
@@ -645,9 +617,11 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
             if (!std::filesystem::is_regular_file(iterator->path() / "game.apk")) {
                 throw std::runtime_error("library APK copy is missing");
             }
-            if (metadata.external_owned)
-                metadata.external_dir = (iterator->path() / "data").lexically_normal();
             entry.metadata = std::move(metadata);
+            if (std::error_code data_error; std::filesystem::is_directory(iterator->path() / "data", data_error)) {
+                entry.external_dir = (iterator->path() / "data").lexically_normal();
+                entry.external_owned = true;
+            }
             entry.icon_png = ReadIcon(iterator->path() / "icon.png");
         } catch (const std::exception& exception) {
             entry.damage_reason = exception.what();
@@ -655,11 +629,9 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
         entries.push_back(std::move(entry));
     }
     if (error) {
-        throw LibraryError(LibraryErrorCode::io_error,
-                            "cannot enumerate game library", EntriesRoot());
+        throw LibraryError(LibraryErrorCode::io_error, "cannot enumerate game library", EntriesRoot());
     }
-    std::sort(entries.begin(), entries.end(), [](const LibraryEntry& left,
-                                                  const LibraryEntry& right) {
+    std::sort(entries.begin(), entries.end(), [](const LibraryEntry& left, const LibraryEntry& right) {
         const auto& left_name = left.metadata ? left.metadata->display_name : left.key;
         const auto& right_name = right.metadata ? right.metadata->display_name : right.key;
         if (left_name != right_name) return left_name < right_name;
@@ -668,67 +640,67 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
     return entries;
 }
 
-std::string LibraryStore::Import(const LibraryImport& request, bool new_instance,
-                                  ImportProgress* progress) {
+std::string LibraryStore::Import(const LibraryImport& request, bool new_instance, ImportProgress* progress) {
     ValidateMetadata(request.metadata);
-    if (request.metadata.external_owned && !request.metadata.external_dir.has_value()) {
-        throw LibraryError(LibraryErrorCode::invalid_argument,
-                            "copying external data requires a source directory");
+    ValidateExternalGuestDirectory(request.external_guest_dir);
+    if (request.external_dir.has_value() && !request.external_dir->is_absolute()) {
+        throw LibraryError(LibraryErrorCode::invalid_argument, "library external directory must be absolute");
     }
+    const bool copy_data = request.external_dir.has_value() && request.external_mode == ExternalDataMode::copy;
     // Copying can take minutes; it runs before the library lock is taken.
     std::optional<StagedExternalData> staged_data;
-    if (request.metadata.external_owned)
-        staged_data.emplace(root_, *request.metadata.external_dir, progress);
+    if (copy_data) staged_data.emplace(root_, *request.external_dir, progress);
     auto library_lock = RequireLibraryLock(root_);
-    auto metadata = request.metadata;
-    if (metadata.external_owned) metadata.external_dir.reset();
+    GameSettings initial_settings;
+    if (request.external_dir.has_value() && !copy_data)
+        initial_settings.values["external_dir"] = PathUtf8(*request.external_dir);
+    if (request.external_guest_dir != "/sdcard")
+        initial_settings.values["external_guest_dir"] = request.external_guest_dir;
     std::error_code error;
     if (!std::filesystem::is_regular_file(request.source_apk, error) || error) {
-        throw LibraryError(LibraryErrorCode::not_found,
-                            "source APK is unavailable", request.source_apk);
+        throw LibraryError(LibraryErrorCode::not_found, "source APK is unavailable", request.source_apk);
     }
     std::filesystem::create_directories(EntriesRoot(), error);
     if (error) {
-        throw LibraryError(LibraryErrorCode::io_error,
-                            "cannot create game library", EntriesRoot());
+        throw LibraryError(LibraryErrorCode::io_error, "cannot create game library", EntriesRoot());
     }
     std::filesystem::create_directories(root_ / "sandbox", error);
     if (error) {
-        throw LibraryError(LibraryErrorCode::io_error,
-                            "cannot create sandbox root", root_ / "sandbox");
+        throw LibraryError(LibraryErrorCode::io_error, "cannot create sandbox root", root_ / "sandbox");
     }
     if (!new_instance) {
         for (const auto& entry : std::filesystem::directory_iterator(EntriesRoot())) {
             if (!entry.is_directory()) continue;
             const auto key = PathUtf8(entry.path().filename());
             bool duplicate = key == request.metadata.package || key.starts_with(request.metadata.package + "-");
-            try { duplicate = duplicate || DecodeMetadata(ReadText(entry.path() / "meta.toml")).package == request.metadata.package; }
-            catch (const std::exception&) { /* Unrelated damaged entries remain visible and occupied. */ }
-            if (duplicate) throw LibraryError(LibraryErrorCode::duplicate_package,
-                "duplicate_package: use --new-instance to import another instance", entry.path());
+            try {
+                duplicate = duplicate ||
+                            DecodeMetadata(ReadText(entry.path() / "meta.toml")).package == request.metadata.package;
+            } catch (const std::exception&) { /* Unrelated damaged entries remain visible and occupied. */
+            }
+            if (duplicate)
+                throw LibraryError(LibraryErrorCode::duplicate_package,
+                                   "duplicate_package: use --new-instance to import another instance", entry.path());
         }
     }
     static std::atomic_uint64_t next_import_token{};
     std::filesystem::path temporary;
     for (;;) {
         const auto token = next_import_token.fetch_add(1U, std::memory_order_relaxed);
-        temporary = EntriesRoot() /
-                    ("." + request.metadata.package + "." + std::to_string(token) +
-                     ".importing");
+        temporary = EntriesRoot() / ("." + request.metadata.package + "." + std::to_string(token) + ".importing");
         error.clear();
         if (std::filesystem::create_directory(temporary, error)) break;
         if (error) {
-            throw LibraryError(LibraryErrorCode::io_error,
-                                "cannot reserve import temporary directory", temporary);
+            throw LibraryError(LibraryErrorCode::io_error, "cannot reserve import temporary directory", temporary);
         }
     }
     std::filesystem::path target;
     std::filesystem::path reserved_sandbox;
     try {
-        std::filesystem::copy_file(request.source_apk, temporary / "game.apk",
-                                   std::filesystem::copy_options::none);
+        std::filesystem::copy_file(request.source_apk, temporary / "game.apk", std::filesystem::copy_options::none);
         if (staged_data) staged_data->Publish(temporary / "data");
-        WriteText(temporary / "meta.toml", EncodeMetadata(metadata));
+        WriteText(temporary / "meta.toml", EncodeMetadata(request.metadata));
+        if (!initial_settings.values.empty()) SaveGameSettingsUnlocked(temporary, initial_settings);
         if (!request.icon_png.empty()) {
             std::ofstream icon(temporary / "icon.png", std::ios::binary | std::ios::trunc);
             if (!icon) throw std::runtime_error("cannot create icon cache");
@@ -742,35 +714,34 @@ std::string LibraryStore::Import(const LibraryImport& request, bool new_instance
         if (const auto reused = ReusableInstallationId(request.metadata.package)) {
             target = EntriesRoot() / Utf8Path(*reused);
             std::filesystem::rename(temporary, target);
-        } else for (;;) {
-            const auto installation_id = NextInstallationId(request.metadata.package);
-            target = EntriesRoot() / installation_id;
-            try {
-                auto reservation = runtime::SandboxStore::Create(
-                    root_ / "sandbox", installation_id, request.metadata.package);
-                reserved_sandbox = reservation->Directory();
-            } catch (const runtime::VfsError& reservation_error) {
-                if (reservation_error.ErrorNumber() == 17) continue;
-                throw;
+        } else
+            for (;;) {
+                const auto installation_id = NextInstallationId(request.metadata.package);
+                target = EntriesRoot() / installation_id;
+                try {
+                    auto reservation =
+                        runtime::SandboxStore::Create(root_ / "sandbox", installation_id, request.metadata.package);
+                    reserved_sandbox = reservation->Directory();
+                } catch (const runtime::VfsError& reservation_error) {
+                    if (reservation_error.ErrorNumber() == 17) continue;
+                    throw;
+                }
+                error.clear();
+                std::filesystem::rename(temporary, target, error);
+                if (!error) break;
+                std::error_code exists_error;
+                const bool collision = std::filesystem::exists(target, exists_error);
+                if (exists_error || !collision) {
+                    throw std::filesystem::filesystem_error("rename", temporary, target,
+                                                            exists_error ? exists_error : error);
+                }
+                std::filesystem::remove_all(reserved_sandbox, exists_error);
+                if (exists_error) {
+                    throw std::filesystem::filesystem_error("remove sandbox reservation", reserved_sandbox,
+                                                            exists_error);
+                }
+                reserved_sandbox.clear();
             }
-            error.clear();
-            std::filesystem::rename(temporary, target, error);
-            if (!error) break;
-            std::error_code exists_error;
-            const bool collision = std::filesystem::exists(target, exists_error);
-            if (exists_error || !collision) {
-                throw std::filesystem::filesystem_error(
-                    "rename", temporary, target,
-                    exists_error ? exists_error : error);
-            }
-            std::filesystem::remove_all(reserved_sandbox, exists_error);
-            if (exists_error) {
-                throw std::filesystem::filesystem_error(
-                    "remove sandbox reservation", reserved_sandbox,
-                    exists_error);
-            }
-            reserved_sandbox.clear();
-        }
     } catch (const LibraryError&) {
         if (std::filesystem::exists(temporary)) RemoveTree(temporary);
         throw;
@@ -778,11 +749,9 @@ std::string LibraryStore::Import(const LibraryImport& request, bool new_instance
         std::error_code cleanup_error;
         static_cast<void>(std::filesystem::remove_all(temporary, cleanup_error));
         if (!reserved_sandbox.empty()) {
-            static_cast<void>(std::filesystem::remove_all(
-                reserved_sandbox, cleanup_error));
+            static_cast<void>(std::filesystem::remove_all(reserved_sandbox, cleanup_error));
         }
-        throw LibraryError(LibraryErrorCode::io_error,
-                            std::string("cannot import game: ") + exception.what(), target);
+        throw LibraryError(LibraryErrorCode::io_error, std::string("cannot import game: ") + exception.what(), target);
     }
     return PathUtf8(target.filename());
 }
@@ -790,17 +759,17 @@ std::string LibraryStore::Import(const LibraryImport& request, bool new_instance
 void LibraryStore::Remove(const std::string_view key, const bool delete_saves) {
     auto library_lock = RequireLibraryLock(root_);
     if (!SafeEntryKey(key)) {
-        throw LibraryError(LibraryErrorCode::invalid_argument,
-                            "library entry key is unsafe");
+        throw LibraryError(LibraryErrorCode::invalid_argument, "library entry key is unsafe");
     }
     const auto target = EntriesRoot() / Utf8Path(key);
     std::error_code error;
     if (!std::filesystem::is_directory(target, error) || error) {
-        throw LibraryError(LibraryErrorCode::not_found,
-                            "library entry does not exist", target);
+        throw LibraryError(LibraryErrorCode::not_found, "library entry does not exist", target);
     }
     auto running = TryRunningLock(*this, key);
-    if (!running) throw LibraryError(LibraryErrorCode::running, "instance_running: game is running; stop it before removing this instance", target);
+    if (!running)
+        throw LibraryError(LibraryErrorCode::running,
+                           "instance_running: game is running; stop it before removing this instance", target);
     // The library lock prevents another launch while the directory is removed.
     running.reset();
     // Saves go first: a failure then leaves the entry to retry, never orphaned partial saves.
@@ -809,30 +778,33 @@ void LibraryStore::Remove(const std::string_view key, const bool delete_saves) {
         try {
             RemoveTree(saves);
         } catch (const std::exception& exception) {
-            throw LibraryError(LibraryErrorCode::io_error,
-                                std::string("cannot remove saves: ") + exception.what(), saves);
+            throw LibraryError(LibraryErrorCode::io_error, std::string("cannot remove saves: ") + exception.what(),
+                               saves);
         }
     }
     try {
         RemoveTree(target);
     } catch (const std::exception& exception) {
-        throw LibraryError(LibraryErrorCode::io_error,
-                            std::string("cannot remove library entry: ") + exception.what(),
-                            target);
+        throw LibraryError(LibraryErrorCode::io_error, std::string("cannot remove library entry: ") + exception.what(),
+                           target);
     }
 }
 
 void LibraryStore::ClearSaves(const std::string_view key) {
     auto library_lock = RequireLibraryLock(root_);
     const auto entries = LoadEntries();
-    const auto found = std::find_if(entries.begin(), entries.end(), [&](const auto& entry) { return entry.key == key; });
+    const auto found =
+        std::find_if(entries.begin(), entries.end(), [&](const auto& entry) { return entry.key == key; });
     if (found == entries.end()) throw LibraryError(LibraryErrorCode::not_found, "library entry does not exist");
     if (found->Damaged() || !found->metadata) {
-        throw LibraryError(LibraryErrorCode::corrupt_config, "damaged library entry cannot clear its saves", found->directory);
+        throw LibraryError(LibraryErrorCode::corrupt_config, "damaged library entry cannot clear its saves",
+                           found->directory);
     }
     // Held through the clear; the library lock also keeps a new launch out.
     const auto running = TryRunningLock(*this, key);
-    if (!running) throw LibraryError(LibraryErrorCode::running, "instance_running: game is running; stop it before clearing its saves", found->directory);
+    if (!running)
+        throw LibraryError(LibraryErrorCode::running,
+                           "instance_running: game is running; stop it before clearing its saves", found->directory);
     const auto saves = root_ / "sandbox" / Utf8Path(key);
     try {
         runtime::SandboxStore::Open(root_ / "sandbox", key, found->metadata->package)->Clear();

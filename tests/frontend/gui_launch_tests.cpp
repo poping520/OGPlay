@@ -51,8 +51,8 @@ ogplay::app::LibraryEntry Entry(const std::filesystem::path& directory, const st
         .version_name = "1",
         .imported_at = "now",
         .profile_id = "org.example.game",
-        .external_dir = external,
     };
+    entry.external_dir = external;
     return entry;
 }
 
@@ -74,7 +74,7 @@ TEST_CASE("GUI global launch settings forward only supported CLI controls") {
     Write(cli, "exe");
     Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {});
-    entry.metadata->external_dir.reset();
+    entry.external_dir.reset();
     LibraryConfig config;
     const auto baseline = WithoutEditorPort(BuildLaunchPlan(cli, tree.path, entry, config).argv);
     SetSetting(config, "network_policy", std::string("allow"));
@@ -106,7 +106,7 @@ TEST_CASE("GUI instance launch overrides inherit and emit valid CLI mode combina
     Write(directory / "game.apk", "apk");
     std::filesystem::create_directories(external);
     auto entry = Entry(directory, {});
-    entry.metadata->external_dir.reset();
+    entry.external_dir.reset();
     LibraryConfig global;
     SetSetting(global, "supersample", std::uint32_t{4});
     SetSetting(global, "mcp_enabled", true);
@@ -148,7 +148,7 @@ TEST_CASE("GUI instance launch overrides inherit and emit valid CLI mode combina
     CHECK(has(inherited, "4"));
     CHECK(has(inherited, "--sandbox-dir"));
     CHECK_FALSE(has(inherited, "--external-dir"));
-    entry.metadata->external_dir = external;
+    entry.external_dir = external;
     SaveGameSettings(directory, {{{"external_dir", std::string()}}});
     CHECK_FALSE(has(BuildLaunchPlan(cli, tree.path, entry, global).argv, "--external-dir"));
 }
@@ -225,7 +225,7 @@ TEST_CASE("GUI LaunchPlan fails before spawn for every missing required input") 
                     ogplay::app::LibraryError);
 
     auto valid = Entry(entry_dir, temporary.path / "external");
-    std::filesystem::create_directories(*valid.metadata->external_dir);
+    std::filesystem::create_directories(*valid.external_dir);
     CHECK_THROWS_AS(
         static_cast<void>(ogplay::frontend::BuildLaunchPlan(temporary.path / "missing-cli", temporary.path, valid, {})),
         ogplay::app::LibraryError);
@@ -248,7 +248,7 @@ TEST_CASE("BND-42 GUI persists and forwards bounded CPU configuration") {
     Write(cli, "exe");
     Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {});
-    entry.metadata->external_dir.reset();
+    entry.external_dir.reset();
     GameSettings settings{{{"cpu_cores", std::uint32_t{4}}, {"cpu_frequency_mhz", std::uint32_t{1500}}}};
     SaveGameSettings(directory, settings);
     const auto plan = BuildLaunchPlan(cli, tree.path, entry, {});
@@ -273,7 +273,7 @@ TEST_CASE("BND-43 GUI persists optional execution limits independently of nomina
     Write(cli, "exe");
     Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {});
-    entry.metadata->external_dir.reset();
+    entry.external_dir.reset();
     GameSettings settings{{{"cpu_limit_parallelism", true}, {"cpu_max_mticks_per_second", std::uint32_t{20}}}};
     SaveGameSettings(directory, settings);
     const auto plan = BuildLaunchPlan(cli, tree.path, entry, {});
@@ -346,7 +346,7 @@ TEST_CASE("INP-7 GUI LaunchPlan gives every game a key editor port and a token o
     Write(cli, "exe");
     Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {});
-    entry.metadata->external_dir.reset();
+    entry.external_dir.reset();
     LibraryConfig config;
     const auto plan = BuildLaunchPlan(cli, tree.path, entry, config);
     REQUIRE(plan.key_editor_port.has_value());
@@ -373,7 +373,7 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     Write(executable, "exe");
     Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {});
-    entry.metadata->external_dir.reset();
+    entry.external_dir.reset();
     LibraryConfig global;
     auto launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
     CHECK(launch.options.surface_width == 1280);
@@ -431,8 +431,6 @@ TEST_CASE("VFS-09 external guest mount is per installation and resolves user ove
     Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, external);
     CHECK(ResolveLaunch(store, entry, {}).options.external_guest_directory == "/sdcard");
-    entry.metadata->external_guest_dir = "/sdcard/Games/Example";
-    CHECK(ResolveLaunch(store, entry, {}).options.external_guest_directory == "/sdcard/Games/Example");
     GameSettings settings{{{"external_guest_dir", std::string("/sdcard/Other")}}};
     SaveGameSettings(directory, settings);
     const auto resolved = ResolveLaunch(store, entry, {});
@@ -456,7 +454,7 @@ TEST_CASE("running icon follows the entry icon and the global style") {
     const auto directory = tree.path / "library/org.example.game";
     Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {});
-    entry.metadata->external_dir.reset();
+    entry.external_dir.reset();
     LibraryConfig global;
     CHECK_FALSE(ResolveLaunch(LibraryStore(tree.path), entry, global).options.window_icon.has_value());
     Write(directory / "icon.png", "png");

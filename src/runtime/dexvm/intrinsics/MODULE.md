@@ -207,5 +207,5 @@
 ## 验证入口
 
 [DexVM 工作单](../../../../docs/tasks/dexvm/README.md)保存迁移和验收历史；定向测试见
-[tests/dexvm](../../../../tests/dexvm/)，架构门禁为 architecture.dexvm_intrinsic_layout。
+[tests/dexvm](../../../../tests/dexvm/)。
 行为改动覆盖 switch/threaded；只构建受影响目标，不因文档调整运行构建或测试。

@@ -8,4 +8,4 @@ Loader.cpp/gl_unimplemented 记账、结构化 error 日志、返回确定性零
 GLES2 与 GLES3 delta 共用 libGLESv2.so，GLES1 使用独立目录；EGL image target 的 guest
 identity 转换复用 EGL 对象表。依赖方向和公共契约见父级 boundary MODULE。
 
-验证：catalog generator gates、boundary integration 和 architecture.boundary_hot_path。
+验证：catalog generator gates 和 boundary integration。

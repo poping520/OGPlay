@@ -27,7 +27,7 @@ SECTION = re.compile(r"\[([a-z0-9_]+(?:\.[a-z0-9_]+)*)\]\Z")
 ASSIGNMENT = re.compile(r'([a-z]+) = "([^"\\]*)"\Z')
 TEST_CASE = re.compile(
     r'\bTEST_CASE(?:_FIXTURE)?\(\s*(?:[A-Za-z_]\w*\s*,\s*)?"((?:[^"\\]|\\.)*)"')
-ADD_TEST = re.compile(r"\badd_test\(\s*NAME\s+([A-Za-z0-9_.\-]+)")
+ADD_TEST = re.compile(r"\b(?:add_test\(\s*NAME\s+|ogplay_add_tool_test\(\s*)([A-Za-z0-9_.\-]+)")
 CTEST_NAME = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+\Z")
 # doctest filters treat these characters as wildcards, separators or escapes.
 FILTER_UNSAFE = re.compile(r"[,*?\\\[\]]")

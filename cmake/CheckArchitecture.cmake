@@ -1,3 +1,29 @@
+# Source rules from AGENTS.md: no raw output, no title-specific code, platform code stays in hal/.
+if(NOT DEFINED ROOT)
+    message(FATAL_ERROR "ROOT is required")
+endif()
+
+file(GLOB_RECURSE _sources
+    "${ROOT}/src/*.cpp"
+    "${ROOT}/src/*.cc"
+    "${ROOT}/src/*.cxx"
+    "${ROOT}/src/*.h"
+    "${ROOT}/src/*.hpp"
+)
+
+set(_violations "")
+foreach(_source IN LISTS _sources)
+    file(READ "${_source}" _content)
+    if(_content MATCHES "std::(cout|cerr)|(^|[^A-Za-z0-9_])printf[ \\t]*\\(")
+        list(APPEND _violations "${_source}")
+    endif()
+endforeach()
+
+if(_violations)
+    list(JOIN _violations "\n  " _formatted)
+    message(FATAL_ERROR "Production sources contain raw output:\n  ${_formatted}")
+endif()
+
 set(_platform_modules
     "${ROOT}/src/hal/windows/MODULE.md"
     "${ROOT}/src/hal/linux/MODULE.md"
@@ -34,7 +60,8 @@ file(GLOB_RECURSE _production_files LIST_DIRECTORIES FALSE
 
 foreach(_file IN LISTS _production_files)
     file(RELATIVE_PATH _relative "${ROOT}/src" "${_file}")
-    if(_relative MATCHES "^hal/(windows|linux|macos)/")
+    # sdl_window_input.cpp is the SDL facade over per-platform window handles.
+    if(_relative MATCHES "^hal/(windows|linux|macos)/|^hal/sdl_window_input\\.cpp$")
         continue()
     endif()
 

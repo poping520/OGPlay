@@ -44,11 +44,36 @@ set(OGPLAY_FFMPEG_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffmpeg-prebu
     CACHE PATH "Root of the platform-partitioned ogplay_ffmpeg prebuilt SDK")
 
 include(GNUInstallDirs)
-include(cmake/CompilerWarnings.cmake)
+function(ogplay_set_project_warnings target)
+    if(MSVC)
+        # Visual Studio parallelizes projects with /m, but each large OGPlay
+        # target still compiles its translation units serially unless cl.exe
+        # receives /MP.  Keep this on our targets rather than applying it
+        # globally to bundled third-party projects.
+        target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8 /MP)
+        if(OGPLAY_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE /WX)
+        endif()
+    else()
+        target_compile_options(${target} PRIVATE
+            -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion
+        )
+        if(OGPLAY_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE -Werror)
+        endif()
+    endif()
+endfunction()
+
+# Vendored sources compiled inside OGPlay targets keep upstream warnings silent.
+function(ogplay_suppress_source_warnings)
+    if(MSVC)
+        set_source_files_properties(${ARGN} PROPERTIES COMPILE_OPTIONS "/w")
+    else()
+        set_source_files_properties(${ARGN} PROPERTIES COMPILE_OPTIONS "-w")
+    endif()
+endfunction()
 include(cmake/ThirdParty.cmake)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-
-include(cmake/RuntimeStaging.cmake)
 
 set(OGPLAY_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
@@ -579,8 +604,6 @@ target_include_directories(ogplaycore PUBLIC
 set_target_properties(ogplaycore PROPERTIES
     CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES)
 ogplay_set_project_warnings(ogplaycore)
-ogplay_stage_angle_runtime(ogplaycore)
-ogplay_stage_ffmpeg_runtime(ogplaycore)
 
 if(OGPLAY_ENABLE_SDL3)
     add_custom_command(TARGET ogplaycore POST_BUILD

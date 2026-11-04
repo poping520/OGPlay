@@ -144,8 +144,7 @@ API19 桩库要求的 GLES ELF 入口始终可解析；缺后端能力时按 4.4
 ## 验证入口
 
 `tests/runtime/boundary/{core,modules,integration}` 分别验证 transport、私有状态与跨模块行为；
-Looper 另见 `tests/runtime/guest_looper_tests.cpp`。architecture.boundary_hot_path 递归检查
-boundary 实现和 TryFastCall；运行证据、未闭合验收以 CURRENT、任务单及 capabilities 为准。
+Looper 另见 `tests/runtime/guest_looper_tests.cpp`。运行证据、未闭合验收以 CURRENT、任务单及 capabilities 为准。
 
 AndroidBoundaryOptions 可在创建前注入压缩纹理格式族策略；所有 Context 继承且只收窄真实
 能力。native/managed 扩展查询与上传遵守同一发布集合，详见 services 契约与 ADR-0128。

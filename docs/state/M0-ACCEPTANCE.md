@@ -16,7 +16,7 @@ POSIX/Cygwin GCC 均在 warnings-as-errors 下编译并通过 27 项测试。Win
 | ADR 机制 | 通过 | ADR-0001 至 ADR-0006，只追加规则已落盘 |
 | 单文件 ≤ 800 行 | 通过 | 最大生产源文件 386 行；DEMO 未迁移且被 Git 忽略 |
 | 结构化日志与诊断 | 通过 | Ring/Console/File/JSONL、三种限流、帧标记、符号 provider、诊断包 |
-| 裸输出门禁 | 通过 | `architecture.no_raw_output` |
+| 裸输出门禁 | 通过 | `architecture.source_rules` |
 | 三平台构建骨架 | 通过 | CMake presets + GitHub Actions Windows/Ubuntu/macOS matrix |
 | doctest + CTest | 通过 | MSVC Release 27/27；Cygwin GCC Release 27/27 |
 | 无 GPU 黄金帧 | 通过 | SoftwareSurface + 像素差 + average hash |

@@ -1,3 +1,29 @@
+# frontend.gui_library_smoke: a non-empty library with a long CJK title loads in the real WebView.
+# It needs a visible desktop session, so it stays a separate test from the entry checks below.
+if(DEFINED GUI_LIBRARY_ROOT)
+    file(REMOVE_RECURSE "${GUI_LIBRARY_ROOT}")
+    file(MAKE_DIRECTORY "${GUI_LIBRARY_ROOT}/library/org.example.game")
+    file(WRITE "${GUI_LIBRARY_ROOT}/library/org.example.game/game.apk" "fixture")
+    file(WRITE "${GUI_LIBRARY_ROOT}/library/org.example.game/meta.toml"
+        "schema = 1\n"
+        "package = \"org.example.game\"\n"
+        "display_name = \"示例游戏名称很长用于验证磁贴省略\"\n"
+        "version_code = 1\n"
+        "version_name = \"1.0\"\n"
+        "imported_at = \"2026-08-13T00:00:00Z\"\n")
+
+    execute_process(
+        COMMAND "${OGPLAY_GUI}" --library-root "${GUI_LIBRARY_ROOT}" --smoke-frames 3
+        RESULT_VARIABLE result
+        OUTPUT_VARIABLE output
+        ERROR_VARIABLE error)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR
+            "non-empty GUI library smoke failed (${result})\nstdout:\n${output}\nstderr:\n${error}")
+    endif()
+    return()
+endif()
+
 if(NOT DEFINED OGPLAY_CLI OR NOT DEFINED ROOT)
     message(FATAL_ERROR "OGPLAY_CLI and ROOT are required")
 endif()
@@ -99,6 +125,30 @@ if(DEFINED OGPLAY_CORE)
         endforeach()
         if(executable STREQUAL OGPLAY_CLI AND imports MATCHES "[Ww]eb[Vv]iew")
             message(FATAL_ERROR "CLI imports WebView")
+        endif()
+    endforeach()
+endif()
+
+if(DEFINED OGPLAY_GUI AND NOT "${OGPLAY_GUI}" STREQUAL "")
+    # Invalid launcher options must fail.
+    set(_cases
+        "--smoke-frames|0"
+        "--smoke-frames|3x"
+        "--smoke-frames"
+        "--smoke-frames|1|--smoke-frames|2"
+        "--library-root"
+        "--library-root|one|--library-root|two"
+        "--unknown")
+
+    foreach(_case IN LISTS _cases)
+        string(REPLACE "|" ";" _arguments "${_case}")
+        execute_process(
+            COMMAND "${OGPLAY_GUI}" ${_arguments}
+            RESULT_VARIABLE _result
+            OUTPUT_QUIET
+            ERROR_QUIET)
+        if(_result EQUAL 0)
+            message(FATAL_ERROR "invalid gui options were accepted: ${_arguments}")
         endif()
     endforeach()
 endif()

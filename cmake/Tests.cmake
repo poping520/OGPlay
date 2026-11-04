@@ -12,7 +12,20 @@ add_test(NAME frontend.app_entrypoints
         -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckAppEntrypoints.cmake)
 set_tests_properties(frontend.app_entrypoints PROPERTIES LABELS "integration;frontend" TIMEOUT 30)
-include(cmake/TestDependencies.cmake)
+# doctest 2.4.11 still declares a pre-3.5 policy baseline. CMake 4 removed the
+# implicit compatibility mode, so keep the exception local to test dependencies.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
+set(doctest_SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/doctest")
+if(NOT EXISTS "${doctest_SOURCE_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR
+        "doctest submodule is missing. Run: git submodule update --init --recursive")
+endif()
+
+set(DOCTEST_WITH_TESTS OFF CACHE BOOL "" FORCE)
+add_subdirectory("${doctest_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/doctest-build"
+    EXCLUDE_FROM_ALL)
+set(OGPLAY_DOCTEST_CMAKE_MODULE "${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
 
 # Test fixtures intentionally use partial aggregate initialization for
 # request structs; production targets keep the warning enabled.
@@ -378,68 +391,23 @@ doctest_discover_tests(ogplay_tests
     PROPERTIES LABELS "unit;contract"
 )
 
+set(_src "${CMAKE_CURRENT_SOURCE_DIR}")
+function(ogplay_add_tool_test name labels)
+    add_test(NAME ${name} COMMAND ${Python3_EXECUTABLE} ${ARGN})
+    set_tests_properties(${name} PROPERTIES LABELS "${labels}")
+endfunction()
+
+ogplay_add_tool_test(tools.capabilities_current tools ${_src}/tools/capabilities.py check)
 add_test(
-    NAME architecture.no_raw_output
+    NAME architecture.source_rules
     COMMAND ${CMAKE_COMMAND}
         -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckNoRawOutput.cmake
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckArchitecture.cmake
 )
-set_tests_properties(architecture.no_raw_output PROPERTIES LABELS architecture)
+set_tests_properties(architecture.source_rules PROPERTIES LABELS architecture)
 
-add_test(
-    NAME architecture.capabilities_monotonic
-    COMMAND ${CMAKE_COMMAND}
-        -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckCapabilitiesMonotonic.cmake
-)
-set_tests_properties(architecture.capabilities_monotonic PROPERTIES LABELS architecture)
-
-add_test(
-    NAME tools.capabilities_current
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/capabilities.py check
-)
-set_tests_properties(tools.capabilities_current PROPERTIES LABELS tools)
-
-add_test(
-    NAME architecture.platform_boundaries
-    COMMAND ${CMAKE_COMMAND}
-        -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckPlatformBoundaries.cmake
-)
-set_tests_properties(architecture.platform_boundaries PROPERTIES LABELS architecture)
-
-add_test(
-    NAME architecture.ui_traversal_entry
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_ui_traversal.py
-)
-set_tests_properties(architecture.ui_traversal_entry PROPERTIES LABELS architecture)
-
-add_test(
-    NAME architecture.documentation_layout
-    COMMAND ${CMAKE_COMMAND}
-        -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckDocumentationLayout.cmake
-)
-set_tests_properties(architecture.documentation_layout PROPERTIES LABELS architecture)
-
-add_test(
-    NAME architecture.dexvm_intrinsic_layout
-    COMMAND ${CMAKE_COMMAND}
-        -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckDexVmIntrinsicLayout.cmake
-)
-set_tests_properties(architecture.dexvm_intrinsic_layout PROPERTIES LABELS architecture)
-
-add_test(
-    NAME architecture.boundary_hot_path
-    COMMAND ${CMAKE_COMMAND}
-        -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckBoundaryHotPath.cmake
-)
-set_tests_properties(architecture.boundary_hot_path PROPERTIES LABELS architecture)
-
+ogplay_add_tool_test(architecture.ui_traversal_entry architecture
+    ${_src}/tools/check_ui_traversal.py)
 add_test(
     NAME frontend.run_apk_options
     COMMAND ${CMAKE_COMMAND}
@@ -468,14 +436,6 @@ if(OGPLAY_BUILD_GUI)
         COMMAND ${CMAKE_COMMAND} -DWEBUI_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/data/webui/gui
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckWebUi.cmake)
     add_test(
-        NAME frontend.gui_options
-        COMMAND ${CMAKE_COMMAND}
-            -DOGPLAY_GUI=$<TARGET_FILE:ogplay>
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckGuiOptions.cmake
-    )
-    set_tests_properties(frontend.gui_options PROPERTIES LABELS "unit;frontend")
-
-    add_test(
         NAME frontend.gui_smoke
         COMMAND $<TARGET_FILE:ogplay>
             --library-root ${CMAKE_CURRENT_BINARY_DIR}/gui-smoke-library
@@ -490,321 +450,89 @@ if(OGPLAY_BUILD_GUI)
         COMMAND ${CMAKE_COMMAND}
             -DOGPLAY_GUI=$<TARGET_FILE:ogplay>
             -DGUI_LIBRARY_ROOT=${CMAKE_CURRENT_BINARY_DIR}/gui-library-smoke
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckGuiLibrarySmoke.cmake
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckAppEntrypoints.cmake
     )
     set_tests_properties(frontend.gui_library_smoke PROPERTIES
         LABELS "integration;frontend"
         TIMEOUT 30)
+
 endif()
 
-add_test(
-    NAME integration.m4_exit_strict_environment
-    COMMAND ${CMAKE_COMMAND}
-        -DOGPLAY_TESTS=$<TARGET_FILE:ogplay_tests>
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckM4ExitStrict.cmake
-)
-set_tests_properties(integration.m4_exit_strict_environment
-    PROPERTIES LABELS "integration;fixtures")
-
-add_test(
-    NAME tools.gles_idl_generator_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
-        --self-test
-)
-set_tests_properties(tools.gles_idl_generator_self_test PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.dexvm_stub_generator_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/dexvm_stub_gen.py
-        --self-test
-)
-set_tests_properties(tools.dexvm_stub_generator_self_test PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.dexvm_api19_surface_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/dexvm_api19_surface.py
-        --self-test
-)
-set_tests_properties(tools.dexvm_api19_surface_self_test PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.framework_contract_self_test
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/conformance/framework_contract.py --self-test
-)
-set_tests_properties(tools.framework_contract_self_test PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.boundary_exports_self_test
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/conformance/boundary_exports.py --self-test
-)
-set_tests_properties(tools.boundary_exports_self_test PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.title_preflight_self_test
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/title_preflight.py --self-test
-)
-set_tests_properties(tools.title_preflight_self_test PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.dexvm_gap_report_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/dexvm_gap_report.py
-        --repo ${CMAKE_CURRENT_SOURCE_DIR}
-        --self-test
-)
-set_tests_properties(tools.dexvm_gap_report_self_test PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.bootdex_builder_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/compose_bootdex.py
-        --self-test
-)
-set_tests_properties(tools.bootdex_builder_self_test
-    PROPERTIES LABELS "tools;dexvm;distribution")
-
-add_test(
-    NAME tools.diagnostics_align_host_threads
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_align_host_threads.py
-)
-set_tests_properties(tools.diagnostics_align_host_threads PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.gles2_extensions_catalog_current
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
-        --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2_extensions.json
-        --output ${OGPLAY_GLES2_EXTENSIONS_CATALOG}
-        --check
-        --verify-header ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES2/gl2ext.h
-)
-set_tests_properties(tools.gles2_extensions_catalog_current PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.gles2_catalog_current
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
-        --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2.json
-        --output ${OGPLAY_GLES2_CATALOG}
-        --check
-        --verify-header
-            ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES2/gl2.h
-)
-set_tests_properties(tools.gles2_catalog_current PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.gles3_catalog_current
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
-        --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles3.json
-        --output ${OGPLAY_GLES3_CATALOG}
-        --check
-        --verify-header
-            ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES3/gl3.h
-)
-set_tests_properties(tools.gles3_catalog_current PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.gles1_catalog_current
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
-        --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles1.json
-        --output ${OGPLAY_GLES1_CATALOG}
-        --check
-        --verify-header
-            ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES/gl.h
-)
-set_tests_properties(tools.gles1_catalog_current PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.gles1_extensions_catalog_current
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
-        --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles1_extensions.json
-        --output ${OGPLAY_GLES1_EXTENSIONS_CATALOG}
-        --check
-        --verify-header
-            ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES/glext.h
-)
-set_tests_properties(tools.gles1_extensions_catalog_current PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.android_payload_current
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_android_payload.py
-        --root ${CMAKE_CURRENT_SOURCE_DIR}/data/android/19
-)
-set_tests_properties(tools.android_payload_current
-    PROPERTIES LABELS "tools;bionic;distribution")
-
-add_test(
-    NAME tools.title_profile_validator_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_title_profiles.py
-        --schema
-            ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v4.schema.json
-        --self-test
-)
-set_tests_properties(tools.title_profile_validator_self_test
-    PROPERTIES LABELS "tools;profiles")
-
-add_test(
-    NAME tools.title_profiles_current
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_title_profiles.py
-        --schema
-            ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v4.schema.json
-        --profiles ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles
-)
-set_tests_properties(tools.title_profiles_current PROPERTIES LABELS "tools;profiles")
-
-add_test(
-    NAME tools.scenario_validator_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_scenarios.py
-        --schema
-            ${CMAKE_CURRENT_SOURCE_DIR}/data/scenarios/scenario-v1.schema.json
-        --self-test
-)
-set_tests_properties(tools.scenario_validator_self_test
-    PROPERTIES LABELS "tools;automation;scenarios")
-
-add_test(
-    NAME tools.scenarios_current
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_scenarios.py
-        --schema
-            ${CMAKE_CURRENT_SOURCE_DIR}/data/scenarios/scenario-v1.schema.json
-        --scenarios ${CMAKE_CURRENT_SOURCE_DIR}/data/scenarios
-        --profiles ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles
-)
-set_tests_properties(tools.scenarios_current
-    PROPERTIES LABELS "tools;automation;scenarios")
-
-add_test(
-    NAME tools.scenario_model_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/scenario_model.py
-        --result-schema
-            ${CMAKE_CURRENT_SOURCE_DIR}/data/scenarios/scenario-result-v1.schema.json
-        --self-test
-)
-set_tests_properties(tools.scenario_model_self_test
-    PROPERTIES LABELS "tools;automation;scenarios")
-
-add_test(
-    NAME tools.scenario_runner_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_scenario.py
-        --result-schema
-            ${CMAKE_CURRENT_SOURCE_DIR}/data/scenarios/scenario-result-v1.schema.json
-        --self-test
-)
-set_tests_properties(tools.scenario_runner_self_test
-    PROPERTIES LABELS "tools;automation;scenarios")
-
-add_test(
-    NAME tools.device_presets_current
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_devices.py
-        --devices ${CMAKE_CURRENT_SOURCE_DIR}/data/devices
-)
-add_test(
-    NAME tools.device_presets_validator
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_validate_devices.py
-)
-set_tests_properties(tools.device_presets_current tools.device_presets_validator
-    PROPERTIES LABELS "tools;devices")
-
-add_test(
-    NAME tools.m4_exit_sample_contract
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/samples/m4_exit/tools/build.py
-        --contract-only
-)
-set_tests_properties(tools.m4_exit_sample_contract PROPERTIES LABELS "tools;fixtures")
-
-add_test(
-    NAME tools.remote_incremental_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/remote_incremental.py
-        --self-test
-)
-set_tests_properties(tools.remote_incremental_self_test PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.dexvm_opcode_generator_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_dexvm_opcodes.py
-        --self-test
-)
-set_tests_properties(tools.dexvm_opcode_generator_self_test
-    PROPERTIES LABELS "tools;dexvm")
-
-add_test(
-    NAME tools.dexvm_opcode_catalog_current
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_dexvm_opcodes.py
-        --catalog ${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json
-        --output ${OGPLAY_DEXVM_OPCODE_TABLE}
-        --check
-)
-set_tests_properties(tools.dexvm_opcode_catalog_current
-    PROPERTIES LABELS "tools;dexvm")
-
-add_test(
-    NAME tools.dalvik_tests_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/conformance/dalvik_tests.py --self-test
-)
-set_tests_properties(tools.dalvik_tests_self_test
-    PROPERTIES LABELS "tools;dexvm")
-
-add_test(
-    NAME tools.dexasm_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/dexasm.py
-        --catalog ${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json
-        --self-test
-)
-set_tests_properties(tools.dexasm_self_test
-    PROPERTIES LABELS "tools;dexvm")
-
-add_test(
-    NAME tools.dex_dependency_survey_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/dex_dependency_survey.py
-        --self-test
-)
-set_tests_properties(tools.dex_dependency_survey_self_test
-    PROPERTIES LABELS "tools;dexvm")
-
-add_test(
-    NAME tools.m4_local_exit_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/m4_exit.py
-        --self-test
-)
-set_tests_properties(tools.m4_local_exit_self_test
-    PROPERTIES LABELS "tools;fixtures")
-
-add_test(
-    NAME tools.angle_build_driver_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuilt/tools/build_angle.py
-        --self-test
-)
-set_tests_properties(tools.angle_build_driver_self_test PROPERTIES LABELS tools)
-
-add_test(
-    NAME tools.angle_sdk_packager_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuilt/tools/package_angle_sdk.py
-        --self-test
-)
-set_tests_properties(tools.angle_sdk_packager_self_test PROPERTIES LABELS tools)
+ogplay_add_tool_test(tools.gles_idl_generator_self_test tools ${_src}/tools/generate_gles_api.py
+    --self-test)
+ogplay_add_tool_test(tools.dexvm_stub_generator_self_test tools ${_src}/tools/dexvm_stub_gen.py
+    --self-test)
+ogplay_add_tool_test(tools.dexvm_api19_surface_self_test tools ${_src}/tools/dexvm_api19_surface.py
+    --self-test)
+ogplay_add_tool_test(tools.framework_contract_self_test tools
+    ${_src}/tools/conformance/framework_contract.py --self-test)
+ogplay_add_tool_test(tools.boundary_exports_self_test tools
+    ${_src}/tools/conformance/boundary_exports.py --self-test)
+ogplay_add_tool_test(tools.title_preflight_self_test tools ${_src}/tools/title_preflight.py
+    --self-test)
+ogplay_add_tool_test(tools.dexvm_gap_report_self_test tools ${_src}/tools/dexvm_gap_report.py --repo
+    ${_src} --self-test)
+ogplay_add_tool_test(tools.bootdex_builder_self_test "tools;dexvm;distribution"
+    ${_src}/tools/bootdex/compose_bootdex.py --self-test)
+ogplay_add_tool_test(tools.diagnostics_align_host_threads tools
+    ${_src}/tests/tools/test_align_host_threads.py)
+ogplay_add_tool_test(tools.gles2_extensions_catalog_current tools ${_src}/tools/generate_gles_api.py
+    --idl ${_src}/data/gles/gles2_extensions.json --output ${OGPLAY_GLES2_EXTENSIONS_CATALOG}
+    --check --verify-header ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES2/gl2ext.h)
+ogplay_add_tool_test(tools.gles2_catalog_current tools ${_src}/tools/generate_gles_api.py --idl
+    ${_src}/data/gles/gles2.json --output ${OGPLAY_GLES2_CATALOG} --check --verify-header
+    ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES2/gl2.h)
+ogplay_add_tool_test(tools.gles3_catalog_current tools ${_src}/tools/generate_gles_api.py --idl
+    ${_src}/data/gles/gles3.json --output ${OGPLAY_GLES3_CATALOG} --check --verify-header
+    ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES3/gl3.h)
+ogplay_add_tool_test(tools.gles1_catalog_current tools ${_src}/tools/generate_gles_api.py --idl
+    ${_src}/data/gles/gles1.json --output ${OGPLAY_GLES1_CATALOG} --check --verify-header
+    ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES/gl.h)
+ogplay_add_tool_test(tools.gles1_extensions_catalog_current tools ${_src}/tools/generate_gles_api.py
+    --idl ${_src}/data/gles/gles1_extensions.json --output ${OGPLAY_GLES1_EXTENSIONS_CATALOG}
+    --check --verify-header ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES/glext.h)
+ogplay_add_tool_test(tools.android_payload_current "tools;bionic;distribution"
+    ${_src}/tools/validate_android_payload.py --root ${_src}/data/android/19)
+ogplay_add_tool_test(tools.title_profile_validator_self_test "tools;profiles"
+    ${_src}/tools/validate_title_profiles.py --schema
+    ${_src}/data/profiles/title-profile-v4.schema.json --self-test)
+ogplay_add_tool_test(tools.title_profiles_current "tools;profiles"
+    ${_src}/tools/validate_title_profiles.py --schema
+    ${_src}/data/profiles/title-profile-v4.schema.json --profiles ${_src}/data/profiles)
+ogplay_add_tool_test(tools.scenario_validator_self_test "tools;automation;scenarios"
+    ${_src}/tools/validate_scenarios.py --schema ${_src}/data/scenarios/scenario-v1.schema.json
+    --self-test)
+ogplay_add_tool_test(tools.scenarios_current "tools;automation;scenarios"
+    ${_src}/tools/validate_scenarios.py --schema ${_src}/data/scenarios/scenario-v1.schema.json
+    --scenarios ${_src}/data/scenarios --profiles ${_src}/data/profiles)
+ogplay_add_tool_test(tools.scenario_model_self_test "tools;automation;scenarios"
+    ${_src}/tools/scenario_model.py --result-schema
+    ${_src}/data/scenarios/scenario-result-v1.schema.json --self-test)
+ogplay_add_tool_test(tools.scenario_runner_self_test "tools;automation;scenarios"
+    ${_src}/tools/run_scenario.py --result-schema
+    ${_src}/data/scenarios/scenario-result-v1.schema.json --self-test)
+ogplay_add_tool_test(tools.device_presets_current "tools;devices" ${_src}/tools/validate_devices.py
+    --devices ${_src}/data/devices)
+ogplay_add_tool_test(tools.device_presets_validator "tools;devices"
+    ${_src}/tests/tools/test_validate_devices.py)
+ogplay_add_tool_test(tools.m4_exit_sample_contract "tools;fixtures"
+    ${_src}/samples/m4_exit/tools/build.py --contract-only)
+ogplay_add_tool_test(tools.remote_incremental_self_test tools ${_src}/tools/remote_incremental.py
+    --self-test)
+ogplay_add_tool_test(tools.dexvm_opcode_generator_self_test "tools;dexvm"
+    ${_src}/tools/generate_dexvm_opcodes.py --self-test)
+ogplay_add_tool_test(tools.dexvm_opcode_catalog_current "tools;dexvm"
+    ${_src}/tools/generate_dexvm_opcodes.py --catalog ${_src}/data/dexvm/dalvik_opcodes.json
+    --output ${OGPLAY_DEXVM_OPCODE_TABLE} --check)
+ogplay_add_tool_test(tools.dalvik_tests_self_test "tools;dexvm"
+    ${_src}/tools/conformance/dalvik_tests.py --self-test)
+ogplay_add_tool_test(tools.dexasm_self_test "tools;dexvm" ${_src}/tools/dexasm.py --catalog
+    ${_src}/data/dexvm/dalvik_opcodes.json --self-test)
+ogplay_add_tool_test(tools.dex_dependency_survey_self_test "tools;dexvm"
+    ${_src}/tools/dex_dependency_survey.py --self-test)
+ogplay_add_tool_test(tools.m4_local_exit_self_test "tools;fixtures" ${_src}/tools/m4_exit.py
+    --self-test)
+ogplay_add_tool_test(tools.angle_build_driver_self_test tools
+    ${_src}/third_party/angle-prebuilt/tools/build_angle.py --self-test)
+ogplay_add_tool_test(tools.angle_sdk_packager_self_test tools
+    ${_src}/third_party/angle-prebuilt/tools/package_angle_sdk.py --self-test)

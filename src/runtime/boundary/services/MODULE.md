@@ -26,7 +26,7 @@ GLES2 混合 client 属性与 element Buffer 绘制按实际 Buffer 的索引区
 
 图形状态不能以进程全局变量替代 Context/share-group 生命周期。内部固定管线临时状态必须
 恢复 guest 的 framebuffer、VAO、整数属性与 buffer binding。测试：boundary integration
-图形用例、BND34 回归及 architecture.boundary_hot_path。其余服务遵守父级 MODULE 契约。
+图形用例和 BND34 回归。其余服务遵守父级 MODULE 契约。
 
 FrameService::TryStats 只 try-lock 复制 GPU 标量统计，不复制 draw_targets，不执行 GL 或读取渲染对象；忙时 nullopt。
 

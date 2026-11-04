@@ -29,6 +29,7 @@ if(OGPLAY_BUILD_GUI)
             target_compile_options(ogplay_webview PRIVATE /w)
         endif()
         add_library(ogplay_desktop_webview STATIC src/hal/windows/webview_host.cpp)
+        target_link_libraries(ogplay_desktop_webview PRIVATE dwmapi)
     else()
         # macOS uses the system WKWebView through the same pinned webview release.
         add_library(ogplay_webview STATIC src/hal/macos/webview_backend.cpp)

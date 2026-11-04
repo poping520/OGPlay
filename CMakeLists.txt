@@ -109,11 +109,12 @@ ogplay_add_module(ogplay_hal Hal
 )
 if(WIN32)
     target_sources(ogplay_hal PRIVATE src/hal/rgb_surface_storage.cpp)
-    target_link_libraries(ogplay_hal PRIVATE bcrypt shell32)
+    target_link_libraries(ogplay_hal PRIVATE bcrypt d2d1 dwmapi dwrite shell32)
     target_sources(ogplay_hal PRIVATE
         src/hal/windows/file_lock.cpp
         src/hal/windows/file_clone.cpp
         src/hal/windows/diagnostic_trigger.cpp
+        src/hal/windows/game_window.cpp
         src/hal/from_chars.cpp
         src/hal/windows/host_environment.cpp
         src/hal/windows/host_read_file.cpp

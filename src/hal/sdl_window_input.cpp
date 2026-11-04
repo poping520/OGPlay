@@ -14,6 +14,7 @@
 #include <SDL3/SDL.h>
 
 #ifdef _WIN32
+#include "windows/game_window.h"
 #include "windows/window_icon.h"
 #endif
 #endif
@@ -206,6 +207,9 @@ public:
         window_ = SDL_CreateWindow(options.title.c_str(), static_cast<int>(options.width),
                                    static_cast<int>(options.height), flags);
         if (window_ == nullptr) throw SdlError("SDL_CreateWindow");
+#ifdef _WIN32
+        windows::ApplyGameWindowChrome(Win32Handle());
+#endif
         renderer_ = SDL_CreateRenderer(window_, nullptr);
         if (renderer_ == nullptr) {
             SDL_DestroyWindow(window_);
@@ -273,14 +277,15 @@ public:
         if (!set) throw SdlError("SDL_SetWindowIcon");
 #ifdef _WIN32
         // SDL hands Windows one HICON for both slots; give each slot the size that matches it instead.
-        win32_icons_.Apply(
-            SDL_GetPointerProperty(SDL_GetWindowProperties(window_), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr),
-            sizes);
+        win32_icons_.Apply(Win32Handle(), sizes);
 #endif
     }
 
     bool ConfirmClose(const CloseConfirmation& text) override {
         if (window_ == nullptr) throw std::logic_error("close confirmation requires an open window");
+#ifdef _WIN32
+        return windows::ShowCloseConfirmation(Win32Handle(), text);
+#else
         const std::string title{text.title};
         const std::string message{text.message};
         const std::string confirm{text.confirm_label};
@@ -305,6 +310,7 @@ public:
         int clicked = kCancel;
         if (!SDL_ShowMessageBox(&dialog, &clicked)) throw SdlError("SDL_ShowMessageBox");
         return clicked == kConfirm;
+#endif
     }
 
     WindowState State() const override {
@@ -404,6 +410,13 @@ public:
     }
 
 private:
+#ifdef _WIN32
+    // Null on the dummy and offscreen backends, which have no native window.
+    [[nodiscard]] void* Win32Handle() const noexcept {
+        return SDL_GetPointerProperty(SDL_GetWindowProperties(window_), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+    }
+#endif
+
     static bool SDLCALL WatchLifecycle(void* userdata, SDL_Event* event) noexcept {
         auto& self = *static_cast<SdlWindowInput*>(userdata);
         const auto type = event->type;

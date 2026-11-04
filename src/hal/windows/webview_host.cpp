@@ -17,6 +17,7 @@
 #include "ogplay/app/logging.h"
 #include "ogplay/hal/webview_host.h"
 #include "launcher_instance.h"
+#include "window_chrome.h"
 
 namespace ogplay::hal {
 namespace {
@@ -90,6 +91,7 @@ public:
                                   monitor.rcWork.left, monitor.rcWork.top, bounds.cx, bounds.cy, nullptr, nullptr,
                                   GetModuleHandleW(nullptr), this);
         if (!window_) throw std::runtime_error("Cannot create GUI window");
+        windows::ApplyWindowChrome(window_);  // Before the first show, so the title bar never flashes white.
         const auto actual = FrameSize(1280, 800, GetDpiForWindow(window_));
         SetWindowPos(window_, nullptr,
                      monitor.rcWork.left + (monitor.rcWork.right - monitor.rcWork.left - actual.cx) / 2,

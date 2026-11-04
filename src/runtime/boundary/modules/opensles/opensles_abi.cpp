@@ -22,14 +22,18 @@ constexpr std::array kNamedIids{
     NamedIid{"SL_IID_3DLOCATION", {0x2b878020, 0xddd3, 0x11db, 0x8a01, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
     NamedIid{"SL_IID_3DMACROSCOPIC", {0x5089aec0, 0xddd3, 0x11db, 0x9ad3, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
     NamedIid{"SL_IID_3DSOURCE", {0x70bc7b00, 0xddd3, 0x11db, 0xa873, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
-    NamedIid{"SL_IID_AUDIODECODERCAPABILITIES", {0x3fe5a3a0, 0xfcc6, 0x11db, 0x94ac, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
+    NamedIid{"SL_IID_AUDIODECODERCAPABILITIES",
+             {0x3fe5a3a0, 0xfcc6, 0x11db, 0x94ac, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
     NamedIid{"SL_IID_AUDIOENCODER", {0xd7d5af7a, 0x351c, 0x41a6, 0x94ec, {0x1a, 0xc9, 0x5c, 0x71, 0x82, 0x2c}}},
-    NamedIid{"SL_IID_AUDIOENCODERCAPABILITIES", {0x0f52a340, 0xfcd1, 0x11db, 0xa993, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
-    NamedIid{"SL_IID_AUDIOIODEVICECAPABILITIES", {0xb2564dc0, 0xddd3, 0x11db, 0xbd62, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
+    NamedIid{"SL_IID_AUDIOENCODERCAPABILITIES",
+             {0x0f52a340, 0xfcd1, 0x11db, 0xa993, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
+    NamedIid{"SL_IID_AUDIOIODEVICECAPABILITIES",
+             {0xb2564dc0, 0xddd3, 0x11db, 0xbd62, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
     NamedIid{"SL_IID_BASSBOOST", {0x0634f220, 0xddd4, 0x11db, 0xa0fc, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
     NamedIid{"SL_IID_BUFFERQUEUE", {0x2bc99cc0, 0xddd4, 0x11db, 0x8d99, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
     NamedIid{"SL_IID_DEVICEVOLUME", {0xe1634760, 0xf3e2, 0x11db, 0x9ca9, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
-    NamedIid{"SL_IID_DYNAMICINTERFACEMANAGEMENT", {0x63936540, 0xf775, 0x11db, 0x9cc4, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
+    NamedIid{"SL_IID_DYNAMICINTERFACEMANAGEMENT",
+             {0x63936540, 0xf775, 0x11db, 0x9cc4, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
     NamedIid{"SL_IID_DYNAMICSOURCE", {0xc55cc100, 0x038b, 0x11dc, 0xbb45, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
     NamedIid{"SL_IID_EFFECTSEND", {0x56e7d200, 0xddd4, 0x11db, 0xaefb, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
     NamedIid{"SL_IID_ENGINE", {0x8d97c260, 0xddd4, 0x11db, 0x958f, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
@@ -62,20 +66,21 @@ constexpr std::array kNamedIids{
     NamedIid{"SL_IID_VOLUME", {0x09e8ede0, 0xddde, 0x11db, 0xb4f6, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
     NamedIid{"SL_IID_OUTPUTMIXEXT", {0xfe5cce00, 0x57bb, 0x11df, 0x951c, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
     NamedIid{"SL_IID_ANDROIDEFFECT", {0xae12da60, 0x99ac, 0x11df, 0xb456, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
-    NamedIid{"SL_IID_ANDROIDEFFECTCAPABILITIES", {0x6a4f6d60, 0xb5e6, 0x11df, 0xbb3b, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
+    NamedIid{"SL_IID_ANDROIDEFFECTCAPABILITIES",
+             {0x6a4f6d60, 0xb5e6, 0x11df, 0xbb3b, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
     NamedIid{"SL_IID_ANDROIDEFFECTSEND", {0x7be462c0, 0xbc43, 0x11df, 0x8670, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
     NamedIid{"SL_IID_ANDROIDCONFIGURATION", {0x89f6a7e0, 0xbeac, 0x11df, 0x8b5c, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
-    NamedIid{"SL_IID_ANDROIDSIMPLEBUFFERQUEUE", {0x198e4940, 0xc5d7, 0x11df, 0xa2a6, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
-    NamedIid{"SL_IID_ANDROIDBUFFERQUEUESOURCE", {0x7fc1a460, 0xeec1, 0x11df, 0xa306, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
+    NamedIid{"SL_IID_ANDROIDSIMPLEBUFFERQUEUE",
+             {0x198e4940, 0xc5d7, 0x11df, 0xa2a6, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
+    NamedIid{"SL_IID_ANDROIDBUFFERQUEUESOURCE",
+             {0x7fc1a460, 0xeec1, 0x11df, 0xa306, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}},
 };
 
 std::array<OpenSlesIidDescriptor, kNamedIids.size()> BuildIids() {
     std::array<OpenSlesIidDescriptor, kNamedIids.size()> result{};
     for (std::size_t index = 0; index < result.size(); ++index) {
-        result[index] = {
-            kNamedIids[index].name, kNamedIids[index].value,
-            kOpenSlesAbiBegin.Add(index * 4U),
-            kOpenSlesIidValuesBegin.Add(index * 16U)};
+        result[index] = {kNamedIids[index].name, kNamedIids[index].value, kOpenSlesAbiBegin.Add(index * 4U),
+                         kOpenSlesIidValuesBegin.Add(index * 16U)};
     }
     return result;
 }
@@ -86,9 +91,12 @@ std::array<BoundaryExportDefinition, kNamedIids.size()> BuildExports() {
     std::array<BoundaryExportDefinition, kNamedIids.size()> result{};
     for (std::size_t index = 0; index < result.size(); ++index) {
         result[index] = {kIids[index].name,
-                         static_cast<std::uint16_t>(200U + index), 0U, {},
+                         static_cast<std::uint16_t>(200U + index),
+                         0U,
+                         {},
                          BoundaryExportKind::public_data,
-                         kIids[index].variable_address, 4U};
+                         kIids[index].variable_address,
+                         4U};
     }
     return result;
 }
@@ -99,6 +107,7 @@ void Append16(std::vector<std::byte>& bytes, const std::uint16_t value) {
     bytes.push_back(static_cast<std::byte>(value));
     bytes.push_back(static_cast<std::byte>(value >> 8U));
 }
+
 void Append32(std::vector<std::byte>& bytes, const std::uint32_t value) {
     for (std::size_t byte = 0; byte < 4U; ++byte) {
         bytes.push_back(static_cast<std::byte>(value >> (byte * 8U)));
@@ -106,18 +115,14 @@ void Append32(std::vector<std::byte>& bytes, const std::uint32_t value) {
 }
 
 template <typename Name, std::size_t Size>
-void WriteVtable(memory::AddressSpace& address_space,
-                 const BoundaryModuleDescriptor& module,
-                 const memory::GuestAddress address,
-                 const std::array<Name, Size>& names) {
+void WriteVtable(memory::AddressSpace& address_space, const BoundaryModuleDescriptor& module,
+                 const memory::GuestAddress address, const std::array<Name, Size>& names) {
     std::vector<std::byte> bytes;
     bytes.reserve(Size * 4U);
     for (const std::string_view name : names) {
-        const auto found = std::find_if(
-            module.exports.begin(), module.exports.end(),
-            [&](const auto& export_) { return export_.name == name; });
-        if (found == module.exports.end() ||
-            found->kind != BoundaryExportKind::private_callable) {
+        const auto found = std::find_if(module.exports.begin(), module.exports.end(),
+                                        [&](const auto& export_) { return export_.name == name; });
+        if (found == module.exports.end() || found->kind != BoundaryExportKind::private_callable) {
             throw std::logic_error("OpenSL vtable callable metadata is missing");
         }
         Append32(bytes, found->address.Value());
@@ -127,23 +132,22 @@ void WriteVtable(memory::AddressSpace& address_space,
 
 }  // namespace
 
-std::span<const OpenSlesIidDescriptor> OpenSlesIids() noexcept { return kIids; }
+std::span<const OpenSlesIidDescriptor> OpenSlesIids() noexcept {
+    return kIids;
+}
 
 std::span<const BoundaryExportDefinition> OpenSlesDataExports() noexcept {
     return kExports;
 }
 
-void MapOpenSlesStaticAbi(memory::AddressSpace& address_space,
-                          const BoundaryModuleDescriptor& module) {
+void MapOpenSlesStaticAbi(memory::AddressSpace& address_space, const BoundaryModuleDescriptor& module) {
     address_space.Map({kOpenSlesAbiBegin, kOpenSlesStaticAbiBytes},
-                      memory::PageProtection::read |
-                          memory::PageProtection::write);
+                      memory::PageProtection::read | memory::PageProtection::write);
     std::vector<std::byte> pointer_data(kIids.size() * 4U);
     for (std::size_t index = 0; index < kIids.size(); ++index) {
         const auto value = kIids[index].value_address.Value();
         for (std::size_t byte = 0; byte < 4U; ++byte) {
-            pointer_data[index * 4U + byte] =
-                static_cast<std::byte>(value >> (byte * 8U));
+            pointer_data[index * 4U + byte] = static_cast<std::byte>(value >> (byte * 8U));
         }
     }
     address_space.Write(kOpenSlesAbiBegin, pointer_data);
@@ -160,50 +164,61 @@ void MapOpenSlesStaticAbi(memory::AddressSpace& address_space,
         }
     }
     address_space.Write(kOpenSlesIidValuesBegin, iid_data);
-    static constexpr std::array object_methods{
-        "$Object.Realize", "$Object.Resume", "$Object.GetState",
-        "$Object.GetInterface", "$Object.RegisterCallback",
-        "$Object.AbortAsyncOperation", "$Object.Destroy",
-        "$Object.SetPriority", "$Object.GetPriority",
-        "$Object.SetLossOfControlInterfaces"};
+    static constexpr std::array object_methods{"$Object.Realize",          "$Object.Resume",
+                                               "$Object.GetState",         "$Object.GetInterface",
+                                               "$Object.RegisterCallback", "$Object.AbortAsyncOperation",
+                                               "$Object.Destroy",          "$Object.SetPriority",
+                                               "$Object.GetPriority",      "$Object.SetLossOfControlInterfaces"};
     WriteVtable(address_space, module, kOpenSlesObjectVtable, object_methods);
-    static constexpr std::array engine_methods{
-        "$Engine.CreateLEDDevice", "$Engine.CreateVibraDevice",
-        "$Engine.CreateAudioPlayer", "$Engine.CreateAudioRecorder",
-        "$Engine.CreateMidiPlayer", "$Engine.CreateListener",
-        "$Engine.Create3DGroup", "$Engine.CreateOutputMix",
-        "$Engine.CreateMetadataExtractor", "$Engine.CreateExtensionObject",
-        "$Engine.QueryNumSupportedInterfaces",
-        "$Engine.QuerySupportedInterfaces",
-        "$Engine.QueryNumSupportedExtensions",
-        "$Engine.QuerySupportedExtension", "$Engine.IsExtensionSupported"};
+    static constexpr std::array engine_methods{"$Engine.CreateLEDDevice",
+                                               "$Engine.CreateVibraDevice",
+                                               "$Engine.CreateAudioPlayer",
+                                               "$Engine.CreateAudioRecorder",
+                                               "$Engine.CreateMidiPlayer",
+                                               "$Engine.CreateListener",
+                                               "$Engine.Create3DGroup",
+                                               "$Engine.CreateOutputMix",
+                                               "$Engine.CreateMetadataExtractor",
+                                               "$Engine.CreateExtensionObject",
+                                               "$Engine.QueryNumSupportedInterfaces",
+                                               "$Engine.QuerySupportedInterfaces",
+                                               "$Engine.QueryNumSupportedExtensions",
+                                               "$Engine.QuerySupportedExtension",
+                                               "$Engine.IsExtensionSupported"};
     WriteVtable(address_space, module, kOpenSlesEngineVtable, engine_methods);
-    static constexpr std::array output_mix_methods{
-        "$OutputMix.GetDestinationOutputDeviceIDs",
-        "$OutputMix.RegisterDeviceChangeCallback", "$OutputMix.ReRoute"};
-    WriteVtable(address_space, module, kOpenSlesOutputMixVtable,
-                output_mix_methods);
-    static constexpr std::array play_methods{
-        "$Play.SetPlayState", "$Play.GetPlayState", "$Play.GetDuration",
-        "$Play.GetPosition", "$Play.RegisterCallback",
-        "$Play.SetCallbackEventsMask", "$Play.GetCallbackEventsMask",
-        "$Play.SetMarkerPosition", "$Play.ClearMarkerPosition",
-        "$Play.GetMarkerPosition", "$Play.SetPositionUpdatePeriod",
-        "$Play.GetPositionUpdatePeriod"};
+    static constexpr std::array output_mix_methods{"$OutputMix.GetDestinationOutputDeviceIDs",
+                                                   "$OutputMix.RegisterDeviceChangeCallback", "$OutputMix.ReRoute"};
+    WriteVtable(address_space, module, kOpenSlesOutputMixVtable, output_mix_methods);
+    static constexpr std::array play_methods{"$Play.SetPlayState",
+                                             "$Play.GetPlayState",
+                                             "$Play.GetDuration",
+                                             "$Play.GetPosition",
+                                             "$Play.RegisterCallback",
+                                             "$Play.SetCallbackEventsMask",
+                                             "$Play.GetCallbackEventsMask",
+                                             "$Play.SetMarkerPosition",
+                                             "$Play.ClearMarkerPosition",
+                                             "$Play.GetMarkerPosition",
+                                             "$Play.SetPositionUpdatePeriod",
+                                             "$Play.GetPositionUpdatePeriod"};
     WriteVtable(address_space, module, kOpenSlesPlayVtable, play_methods);
-    static constexpr std::array queue_methods{
-        "$BufferQueue.Enqueue", "$BufferQueue.Clear",
-        "$BufferQueue.GetState", "$BufferQueue.RegisterCallback"};
-    WriteVtable(address_space, module, kOpenSlesBufferQueueVtable,
-                queue_methods);
-    static constexpr std::array volume_methods{
-        "$Volume.SetVolumeLevel", "$Volume.GetVolumeLevel",
-        "$Volume.GetMaxVolumeLevel", "$Volume.SetMute", "$Volume.GetMute",
-        "$Volume.EnableStereoPosition", "$Volume.IsEnabledStereoPosition",
-        "$Volume.SetStereoPosition", "$Volume.GetStereoPosition"};
+    static constexpr std::array queue_methods{"$BufferQueue.Enqueue", "$BufferQueue.Clear", "$BufferQueue.GetState",
+                                              "$BufferQueue.RegisterCallback"};
+    WriteVtable(address_space, module, kOpenSlesBufferQueueVtable, queue_methods);
+    static constexpr std::array volume_methods{"$Volume.SetVolumeLevel",
+                                               "$Volume.GetVolumeLevel",
+                                               "$Volume.GetMaxVolumeLevel",
+                                               "$Volume.SetMute",
+                                               "$Volume.GetMute",
+                                               "$Volume.EnableStereoPosition",
+                                               "$Volume.IsEnabledStereoPosition",
+                                               "$Volume.SetStereoPosition",
+                                               "$Volume.GetStereoPosition"};
     WriteVtable(address_space, module, kOpenSlesVolumeVtable, volume_methods);
-    address_space.Protect({kOpenSlesAbiBegin, kOpenSlesStaticAbiBytes},
-                          memory::PageProtection::read);
+    static constexpr std::array configuration_methods{"$AndroidConfiguration.SetConfiguration",
+                                                      "$AndroidConfiguration.GetConfiguration"};
+    WriteVtable(address_space, module, kOpenSlesAndroidConfigurationVtable, configuration_methods);
+    address_space.Protect({kOpenSlesAbiBegin, kOpenSlesStaticAbiBytes}, memory::PageProtection::read);
 }
 
 }  // namespace ogplay::runtime

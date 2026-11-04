@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "ogplay/audio/pcm_mix.h"
+#include "ogplay/core/logger.h"
 #include "ogplay/memory/address_space.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 #include "runtime/boundary/core/boundary_binding.h"
@@ -53,22 +54,20 @@ constexpr std::uint32_t kSupportedPlayMask = 0x7U;
 
 enum class ObjectKind : std::uint8_t { engine, output_mix, audio_player };
 
-[[nodiscard]] std::optional<audio::OpenSlesPlayState> DecodePlayState(
-    const std::uint32_t state) {
+[[nodiscard]] std::optional<audio::OpenSlesPlayState> DecodePlayState(const std::uint32_t state) {
     switch (state) {
-        case kPlayStopped: return audio::OpenSlesPlayState::stopped;
-        case kPlayPaused: return audio::OpenSlesPlayState::paused;
-        case kPlayPlaying: return audio::OpenSlesPlayState::playing;
-        default: return std::nullopt;
+    case kPlayStopped: return audio::OpenSlesPlayState::stopped;
+    case kPlayPaused: return audio::OpenSlesPlayState::paused;
+    case kPlayPlaying: return audio::OpenSlesPlayState::playing;
+    default: return std::nullopt;
     }
 }
 
-[[nodiscard]] std::uint32_t EncodePlayState(
-    const audio::OpenSlesPlayState state) {
+[[nodiscard]] std::uint32_t EncodePlayState(const audio::OpenSlesPlayState state) {
     switch (state) {
-        case audio::OpenSlesPlayState::stopped: return kPlayStopped;
-        case audio::OpenSlesPlayState::paused: return kPlayPaused;
-        case audio::OpenSlesPlayState::playing: return kPlayPlaying;
+    case audio::OpenSlesPlayState::stopped: return kPlayStopped;
+    case audio::OpenSlesPlayState::paused: return kPlayPaused;
+    case audio::OpenSlesPlayState::playing: return kPlayPlaying;
     }
     return kPlayStopped;
 }
@@ -77,18 +76,16 @@ enum class ObjectKind : std::uint8_t { engine, output_mix, audio_player };
 
 class OpenSlesModule::Impl final {
 public:
-    Impl(BoundaryCallServices& calls, audio::OpenSlesPcmMixer& mixer,
-         const OpenSlesCallbackSink callbacks)
+    Impl(BoundaryCallServices& calls, audio::OpenSlesPcmMixer& mixer, const OpenSlesCallbackSink callbacks)
         : calls_(calls), mixer_(mixer), callbacks_(callbacks) {}
 
     void MapGuestObjectArena() {
-        calls_.address_space.Map(
-            {kOpenSlesObjectArenaBegin, kOpenSlesObjectArenaBytes},
-            memory::PageProtection::read | memory::PageProtection::write);
+        calls_.address_space.Map({kOpenSlesObjectArenaBegin, kOpenSlesObjectArenaBytes},
+                                 memory::PageProtection::read | memory::PageProtection::write);
     }
-    std::vector<audio::OpenSlesConsumedBuffer> MixInto(
-        const std::span<std::int64_t> accumulator,
-        const std::uint32_t output_rate) {
+
+    std::vector<audio::OpenSlesConsumedBuffer> MixInto(const std::span<std::int64_t> accumulator,
+                                                       const std::uint32_t output_rate) {
         auto consumed = mixer_.MixIntoAccumulator(accumulator, output_rate);
         std::vector<OpenSlesGuestCallback> pending;
         {
@@ -97,31 +94,24 @@ public:
                 if (!object.player.has_value()) continue;
                 const auto player = *object.player;
                 const auto consumed_count = static_cast<std::size_t>(std::count_if(
-                    consumed.begin(), consumed.end(), [&](const auto& event) {
-                        return event.player == player;
-                    }));
+                    consumed.begin(), consumed.end(), [&](const auto& event) { return event.player == player; }));
                 if (object.queue_callback != 0U) {
                     for (std::size_t index = 0; index < consumed_count; ++index) {
-                        pending.push_back(MakeCallback(
-                            object, object.queue_callback,
-                            {object.base.Add(8U).Value(), object.queue_context}));
+                        pending.push_back(MakeCallback(object, object.queue_callback,
+                                                       {object.base.Add(8U).Value(), object.queue_context}));
                     }
                 }
                 const auto position = mixer_.PositionMillis(player);
-                if ((object.play_mask & 0x2U) != 0U && object.marker.has_value() &&
-                    !object.marker_fired && object.last_position < *object.marker &&
-                    position >= *object.marker) {
+                if ((object.play_mask & 0x2U) != 0U && object.marker.has_value() && !object.marker_fired &&
+                    object.last_position < *object.marker && position >= *object.marker) {
                     object.marker_fired = true;
                     AddPlayCallback(pending, object, 0x2U);
                 }
-                if ((object.play_mask & 0x4U) != 0U &&
-                    object.update_period != 0U &&
-                    position / object.update_period >
-                        object.last_position / object.update_period) {
+                if ((object.play_mask & 0x4U) != 0U && object.update_period != 0U &&
+                    position / object.update_period > object.last_position / object.update_period) {
                     AddPlayCallback(pending, object, 0x4U);
                 }
-                if (consumed_count != 0U && (object.play_mask & 0x1U) != 0U &&
-                    mixer_.QueueState(player).count == 0U) {
+                if (consumed_count != 0U && (object.play_mask & 0x1U) != 0U && mixer_.QueueState(player).count == 0U) {
                     AddPlayCallback(pending, object, 0x1U);
                 }
                 object.last_position = position;
@@ -130,19 +120,21 @@ public:
         if (pending.size() > kMaximumOpenSlesPendingCallbacks) {
             pending.resize(kMaximumOpenSlesPendingCallbacks);
         }
-        for (const auto& callback : pending) callbacks_.Enqueue(callback);
+        for (const auto& callback : pending)
+            callbacks_.Enqueue(callback);
         return consumed;
     }
-    std::vector<audio::OpenSlesConsumedBuffer> Mix(
-        const std::span<std::int16_t> output, const std::uint32_t output_rate) {
+
+    std::vector<audio::OpenSlesConsumedBuffer> Mix(const std::span<std::int16_t> output,
+                                                   const std::uint32_t output_rate) {
         std::vector<std::int64_t> accumulator(output.size());
         audio::CopyPcm16IntoAccumulator(output, accumulator);
         auto consumed = MixInto(accumulator, output_rate);
         audio::SaturateStereoPcm16(accumulator, output);
         return consumed;
     }
-    [[nodiscard]] bool CallbackCurrent(const std::uint32_t object_key,
-                                       const std::uint32_t generation) const {
+
+    [[nodiscard]] bool CallbackCurrent(const std::uint32_t object_key, const std::uint32_t generation) const {
         std::scoped_lock lock(mutex_);
         const auto found = objects_.find(ObjectKey(object_key));
         return found != objects_.end() && found->second.generation == generation;
@@ -153,36 +145,34 @@ public:
             return kParameterInvalid;
         }
         Write32(call.Argument(0), 0U, call.ThreadId());
-        if (call.Argument(1) > 16U ||
-            (call.Argument(1) != 0U && call.Argument(2) == 0U)) {
+        if (call.Argument(1) > 16U || (call.Argument(1) != 0U && call.Argument(2) == 0U)) {
             return kParameterInvalid;
         }
         for (std::uint32_t index = 0; index < call.Argument(1); ++index) {
-            const auto feature = Read32(call.Argument(2) + index * 8U,
-                                        call.ThreadId());
+            const auto feature = Read32(call.Argument(2) + index * 8U, call.ThreadId());
             if (feature != 1U && feature != 2U) return kParameterInvalid;
         }
-        const auto interfaces = RequestedInterfaces(
-            call.Argument(3), call.Argument(4), call.Argument(5),
-            {"SL_IID_OBJECT", "SL_IID_ENGINE"}, call.ThreadId());
+        const auto interfaces = RequestedInterfaces(call.Argument(3), call.Argument(4), call.Argument(5),
+                                                    {"SL_IID_OBJECT", "SL_IID_ENGINE"}, call.ThreadId());
         if (!interfaces.has_value()) return kFeatureUnsupported;
         std::scoped_lock lock(mutex_);
         auto& engine = Allocate(ObjectKind::engine, *interfaces, call.ThreadId());
         Write32(call.Argument(0), engine.base.Value(), call.ThreadId());
         return kSuccess;
     }
+
     std::uint32_t QueryNumEngineInterfaces(const A32CallFrame& call) {
         if (call.Argument(0) == 0U) return kParameterInvalid;
         Write32(call.Argument(0), 2U, call.ThreadId());
         return kSuccess;
     }
+
     std::uint32_t QueryEngineInterface(const A32CallFrame& call) {
         static constexpr std::array names{"SL_IID_OBJECT", "SL_IID_ENGINE"};
         if (call.Argument(0) >= names.size() || call.Argument(1) == 0U) {
             return kParameterInvalid;
         }
-        Write32(call.Argument(1), IidAddress(names[call.Argument(0)]).Value(),
-                call.ThreadId());
+        Write32(call.Argument(1), IidAddress(names[call.Argument(0)]).Value(), call.ThreadId());
         return kSuccess;
     }
 
@@ -194,44 +184,48 @@ public:
             auto& object = Require(call.Argument(0));
             object.state = kObjectRealized;
             if (call.Argument(1) != 0U && object.object_callback != 0U) {
-                callback = MakeCallback(
-                    object, object.object_callback,
-                    {object.base.Value(), object.object_context, 2U, kSuccess,
-                     kObjectRealized, 0U});
+                callback =
+                    MakeCallback(object, object.object_callback,
+                                 {object.base.Value(), object.object_context, 2U, kSuccess, kObjectRealized, 0U});
             }
         }
         if (callback.has_value()) callbacks_.Enqueue(*callback);
         return kSuccess;
     }
+
     std::uint32_t ObjectResume(const A32CallFrame& call) {
         if (call.Argument(1) > 1U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
-        return Require(call.Argument(0)).state == kObjectRealized
-                   ? kSuccess
-                   : kPreconditionsViolated;
+        return Require(call.Argument(0)).state == kObjectRealized ? kSuccess : kPreconditionsViolated;
     }
+
     std::uint32_t ObjectGetState(const A32CallFrame& call) {
         if (call.Argument(1) == 0U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
-        Write32(call.Argument(1), Require(call.Argument(0)).state,
-                call.ThreadId());
+        Write32(call.Argument(1), Require(call.Argument(0)).state, call.ThreadId());
         return kSuccess;
     }
+
     std::uint32_t ObjectGetInterface(const A32CallFrame& call) {
+        if (call.Argument(2) != 0U) Write32(call.Argument(2), 0U, call.ThreadId());
         if (call.Argument(1) == 0U || call.Argument(2) == 0U) {
             return kParameterInvalid;
         }
         std::scoped_lock lock(mutex_);
         auto& object = Require(call.Argument(0));
-        if (object.state != kObjectRealized) return kPreconditionsViolated;
         const auto iid = IidName(memory::GuestAddress{call.Argument(1)});
         if (!iid.has_value() || !object.interfaces.contains(*iid)) {
             return kFeatureUnsupported;
         }
-        Write32(call.Argument(2), InterfaceHandle(object, *iid).Value(),
-                call.ThreadId());
+        // AOSP declares AndroidConfiguration EXPLICIT_PREREALIZE. Stream type
+        // must be selected before Realize creates the playback transport.
+        if (object.state != kObjectRealized && *iid != "SL_IID_ANDROIDCONFIGURATION") {
+            return kPreconditionsViolated;
+        }
+        Write32(call.Argument(2), InterfaceHandle(object, *iid).Value(), call.ThreadId());
         return kSuccess;
     }
+
     std::uint32_t ObjectRegisterCallback(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         auto& object = Require(call.Argument(0));
@@ -239,11 +233,13 @@ public:
         object.object_context = call.Argument(2);
         return kSuccess;
     }
+
     std::uint32_t ObjectAbortAsync(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         static_cast<void>(Require(call.Argument(0)));
         return kSuccess;
     }
+
     std::uint32_t ObjectDestroy(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         const auto key = ObjectKey(call.Argument(0));
@@ -267,13 +263,13 @@ public:
             AdvanceGeneration(child->second);
             std::array<std::byte, kObjectStride> zero{};
             calls_.address_space.Write(child->second.base, zero, call.ThreadId());
-            const auto offset =
-                child->second.base.Value() - kOpenSlesObjectArenaBegin.Value();
+            const auto offset = child->second.base.Value() - kOpenSlesObjectArenaBegin.Value();
             free_offsets_.push_back(offset);
             objects_.erase(child);
         }
         return kSuccess;
     }
+
     std::uint32_t ObjectSetPriority(const A32CallFrame& call) {
         if (call.Argument(2) > 1U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
@@ -282,32 +278,29 @@ public:
         object.preemptable = call.Argument(2) != 0U;
         return kSuccess;
     }
+
     std::uint32_t ObjectGetPriority(const A32CallFrame& call) {
         if (call.Argument(1) == 0U || call.Argument(2) == 0U) {
             return kParameterInvalid;
         }
         std::scoped_lock lock(mutex_);
         const auto& object = Require(call.Argument(0));
-        Write32(call.Argument(1), std::bit_cast<std::uint32_t>(object.priority),
-                call.ThreadId());
-        Write32(call.Argument(2), object.preemptable ? 1U : 0U,
-                call.ThreadId());
+        Write32(call.Argument(1), std::bit_cast<std::uint32_t>(object.priority), call.ThreadId());
+        Write32(call.Argument(2), object.preemptable ? 1U : 0U, call.ThreadId());
         return kSuccess;
     }
+
     std::uint32_t ObjectSetLossOfControl(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         static_cast<void>(Require(call.Argument(0)));
-        return call.Argument(1) == 0U && call.Argument(3) <= 1U
-                   ? kSuccess
-                   : kFeatureUnsupported;
+        return call.Argument(1) == 0U && call.Argument(3) <= 1U ? kSuccess : kFeatureUnsupported;
     }
 
     std::uint32_t EngineCreateOutputMix(const A32CallFrame& call) {
         if (call.Argument(1) == 0U) return kParameterInvalid;
         Write32(call.Argument(1), 0U, call.ThreadId());
-        const auto interfaces = RequestedInterfaces(
-            call.Argument(2), call.Argument(3), call.Argument(4),
-            {"SL_IID_OBJECT"}, call.ThreadId());
+        const auto interfaces = RequestedInterfaces(call.Argument(2), call.Argument(3), call.Argument(4),
+                                                    {"SL_IID_OBJECT"}, call.ThreadId());
         if (!interfaces.has_value()) return kFeatureUnsupported;
         std::scoped_lock lock(mutex_);
         const auto& engine = RequireKind(call.Argument(0), ObjectKind::engine);
@@ -317,9 +310,9 @@ public:
         Write32(call.Argument(1), mix.base.Value(), call.ThreadId());
         return kSuccess;
     }
+
     std::uint32_t EngineCreateAudioPlayer(const A32CallFrame& call) {
-        if (call.Argument(1) == 0U || call.Argument(2) == 0U ||
-            call.Argument(3) == 0U) {
+        if (call.Argument(1) == 0U || call.Argument(2) == 0U || call.Argument(3) == 0U) {
             return kParameterInvalid;
         }
         Write32(call.Argument(1), 0U, call.ThreadId());
@@ -330,8 +323,7 @@ public:
             return kParameterInvalid;
         }
         const auto locator_type = Read32(source_locator, call.ThreadId());
-        if (locator_type != kLocatorBufferQueue &&
-            locator_type != kLocatorAndroidSimpleBufferQueue) {
+        if (locator_type != kLocatorBufferQueue && locator_type != kLocatorAndroidSimpleBufferQueue) {
             return kContentUnsupported;
         }
         const auto capacity = Read32(source_locator + 4U, call.ThreadId());
@@ -345,10 +337,8 @@ public:
         const auto container = Read32(source_format + 16U, call.ThreadId());
         const auto endian = Read32(source_format + 24U, call.ThreadId());
         const auto channel_mask = Read32(source_format + 20U, call.ThreadId());
-        if ((channels != 1U && channels != 2U) ||
-            (bits != 8U && bits != 16U) || container != bits ||
-            milli_hz == 0U || milli_hz % 1000U != 0U ||
-            (bits == 16U && endian != kByteOrderLittleEndian)) {
+        if ((channels != 1U && channels != 2U) || (bits != 8U && bits != 16U) || container != bits || milli_hz == 0U ||
+            milli_hz % 1000U != 0U || (bits == 16U && endian != kByteOrderLittleEndian)) {
             return kContentUnsupported;
         }
         if (channel_mask != 0U) {
@@ -362,9 +352,8 @@ public:
             return kContentUnsupported;
         }
         const auto mix_handle = Read32(sink_locator + 4U, call.ThreadId());
-        const auto interfaces = RequestedInterfaces(
-            call.Argument(4), call.Argument(5), call.Argument(6),
-            {"SL_IID_OBJECT", "SL_IID_PLAY"}, call.ThreadId());
+        const auto interfaces = RequestedInterfaces(call.Argument(4), call.Argument(5), call.Argument(6),
+                                                    {"SL_IID_OBJECT", "SL_IID_PLAY"}, call.ThreadId());
         if (!interfaces.has_value()) return kFeatureUnsupported;
         auto exposed = *interfaces;
         // AOSP MPH_to_AudioPlayer aliases ANDROIDSIMPLEBUFFERQUEUE to the
@@ -377,14 +366,11 @@ public:
         if (engine.state != kObjectRealized || mix.state != kObjectRealized) {
             return kPreconditionsViolated;
         }
-        const audio::OpenSlesPcmFormat format{
-            milli_hz / 1000U, static_cast<std::uint8_t>(channels),
-            static_cast<std::uint8_t>(bits)};
-        const auto player_id = mixer_.CreatePlayer(
-            format, static_cast<std::uint8_t>(capacity));
+        const audio::OpenSlesPcmFormat format{milli_hz / 1000U, static_cast<std::uint8_t>(channels),
+                                              static_cast<std::uint8_t>(bits)};
+        const auto player_id = mixer_.CreatePlayer(format, static_cast<std::uint8_t>(capacity));
         try {
-            auto& player = Allocate(ObjectKind::audio_player, exposed,
-                                    call.ThreadId());
+            auto& player = Allocate(ObjectKind::audio_player, exposed, call.ThreadId());
             player.player = player_id;
             player.sample_rate = format.sample_rate;
             player.queue_capacity = capacity;
@@ -396,26 +382,60 @@ public:
         }
         return kSuccess;
     }
+
     std::uint32_t EngineQueryNumInterfaces(const A32CallFrame& call) {
         if (call.Argument(2) == 0U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
         static_cast<void>(RequireKind(call.Argument(0), ObjectKind::engine));
         const auto names = ObjectInterfaces(call.Argument(1));
         if (names.empty()) return kParameterInvalid;
-        Write32(call.Argument(2), static_cast<std::uint32_t>(names.size()),
-                call.ThreadId());
+        Write32(call.Argument(2), static_cast<std::uint32_t>(names.size()), call.ThreadId());
         return kSuccess;
     }
+
+    std::uint32_t AndroidConfigurationSet(const A32CallFrame& call) {
+        const auto key = call.CString(1);
+        const auto value = call.Pointer<std::uint32_t>(2);
+        const auto size = call.Argument(3);
+        if (key.IsNull() || value.IsNull() || size == 0U) return kParameterInvalid;
+        std::scoped_lock lock(mutex_);
+        auto& object = RequirePlayer(call.Argument(0));
+        if (!IsStreamTypeKey(key, call.ThreadId())) return kParameterInvalid;
+        if (size < sizeof(std::uint32_t)) return kBufferInsufficient;
+        if (object.state != kObjectUnrealized) return kPreconditionsViolated;
+        const auto stream = Read32(value.Address().Value(), call.ThreadId());
+        if (stream > 5U) return kParameterInvalid;
+        mixer_.SetAudioStream(*object.player, static_cast<std::int32_t>(stream));
+        object.audio_stream = stream;
+        return kSuccess;
+    }
+
+    std::uint32_t AndroidConfigurationGet(const A32CallFrame& call) {
+        const auto key = call.CString(1);
+        const auto size = call.Pointer<std::uint32_t>(2);
+        const auto value = call.Pointer<std::uint32_t>(3);
+        if (key.IsNull() || size.IsNull()) return kParameterInvalid;
+        std::scoped_lock lock(mutex_);
+        const auto& object = RequirePlayer(call.Argument(0));
+        if (!IsStreamTypeKey(key, call.ThreadId())) return kParameterInvalid;
+        const auto capacity = Read32(size.Address().Value(), call.ThreadId());
+        Write32(size.Address().Value(), sizeof(std::uint32_t), call.ThreadId());
+        if (value.IsNull()) return kSuccess;
+        if (capacity < sizeof(std::uint32_t)) return kBufferInsufficient;
+        Write32(value.Address().Value(), object.audio_stream, call.ThreadId());
+        return kSuccess;
+    }
+
     std::uint32_t EngineQueryInterface(const A32CallFrame& call) {
         if (call.Argument(3) == 0U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
         static_cast<void>(RequireKind(call.Argument(0), ObjectKind::engine));
         const auto names = ObjectInterfaces(call.Argument(1));
         if (call.Argument(2) >= names.size()) return kParameterInvalid;
-        Write32(call.Argument(3), IidAddress(names[call.Argument(2)]).Value(),
-                call.ThreadId());
+        Write32(call.Argument(3), IidAddress(names[call.Argument(2)]).Value(), call.ThreadId());
         return kSuccess;
     }
+
     std::uint32_t EngineQueryNumExtensions(const A32CallFrame& call) {
         if (call.Argument(1) == 0U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
@@ -423,6 +443,7 @@ public:
         Write32(call.Argument(1), 0U, call.ThreadId());
         return kSuccess;
     }
+
     std::uint32_t EngineIsExtensionSupported(const A32CallFrame& call) {
         if (call.Argument(1) == 0U || call.Argument(2) == 0U) {
             return kParameterInvalid;
@@ -438,8 +459,7 @@ public:
         std::scoped_lock lock(mutex_);
         static_cast<void>(RequireKind(call.Argument(0), ObjectKind::output_mix));
         if (call.Argument(2) != 0U) {
-            if (std::bit_cast<std::int32_t>(
-                    Read32(call.Argument(1), call.ThreadId())) < 1) {
+            if (std::bit_cast<std::int32_t>(Read32(call.Argument(1), call.ThreadId())) < 1) {
                 Write32(call.Argument(1), 1U, call.ThreadId());
                 return kBufferInsufficient;
             }
@@ -448,6 +468,7 @@ public:
         Write32(call.Argument(1), 1U, call.ThreadId());
         return kSuccess;
     }
+
     std::uint32_t OutputMixRegisterCallback(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         auto& object = RequireKind(call.Argument(0), ObjectKind::output_mix);
@@ -455,15 +476,14 @@ public:
         object.mix_context = call.Argument(2);
         return kSuccess;
     }
+
     std::uint32_t OutputMixReRoute(const A32CallFrame& call) {
         if (call.Argument(1) != 1U || call.Argument(2) == 0U) {
             return kParameterInvalid;
         }
         std::scoped_lock lock(mutex_);
         static_cast<void>(RequireKind(call.Argument(0), ObjectKind::output_mix));
-        return Read32(call.Argument(2), call.ThreadId()) == 0xfffffffeU
-                   ? kSuccess
-                   : kParameterInvalid;
+        return Read32(call.Argument(2), call.ThreadId()) == 0xfffffffeU ? kSuccess : kParameterInvalid;
     }
 
     std::uint32_t PlaySetState(const A32CallFrame& call) {
@@ -475,14 +495,15 @@ public:
         mixer_.SetPlayState(*object.player, *state);
         return kSuccess;
     }
+
     std::uint32_t PlayGetState(const A32CallFrame& call) {
         if (call.Argument(1) == 0U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
         const auto& object = RequirePlayer(call.Argument(0));
-        Write32(call.Argument(1), EncodePlayState(mixer_.PlayState(*object.player)),
-                call.ThreadId());
+        Write32(call.Argument(1), EncodePlayState(mixer_.PlayState(*object.player)), call.ThreadId());
         return kSuccess;
     }
+
     std::uint32_t PlayGetDuration(const A32CallFrame& call) {
         if (call.Argument(1) == 0U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
@@ -490,14 +511,15 @@ public:
         Write32(call.Argument(1), kTimeUnknown, call.ThreadId());
         return kSuccess;
     }
+
     std::uint32_t PlayGetPosition(const A32CallFrame& call) {
         if (call.Argument(1) == 0U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
         const auto& object = RequirePlayer(call.Argument(0));
-        Write32(call.Argument(1), mixer_.PositionMillis(*object.player),
-                call.ThreadId());
+        Write32(call.Argument(1), mixer_.PositionMillis(*object.player), call.ThreadId());
         return kSuccess;
     }
+
     std::uint32_t PlayRegisterCallback(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         auto& object = RequirePlayer(call.Argument(0));
@@ -506,19 +528,19 @@ public:
         object.play_context = call.Argument(2);
         return kSuccess;
     }
+
     std::uint32_t PlaySetMask(const A32CallFrame& call) {
         constexpr std::uint32_t kKnownMask = 0x1fU;
         if ((call.Argument(1) & ~kKnownMask) != 0U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
-        RequirePlayer(call.Argument(0)).play_mask =
-            call.Argument(1) & kSupportedPlayMask;
+        RequirePlayer(call.Argument(0)).play_mask = call.Argument(1) & kSupportedPlayMask;
         return kSuccess;
     }
+
     std::uint32_t PlayGetMask(const A32CallFrame& call) {
-        return WritePlayer32(call, [](const Object& object) {
-            return object.play_mask;
-        });
+        return WritePlayer32(call, [](const Object& object) { return object.play_mask; });
     }
+
     std::uint32_t PlaySetMarker(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         auto& object = RequirePlayer(call.Argument(0));
@@ -526,26 +548,26 @@ public:
         object.marker_fired = false;
         return kSuccess;
     }
+
     std::uint32_t PlayClearMarker(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         RequirePlayer(call.Argument(0)).marker.reset();
         return kSuccess;
     }
+
     std::uint32_t PlayGetMarker(const A32CallFrame& call) {
-        return WritePlayer32(call, [](const Object& object) {
-            return object.marker.value_or(kTimeUnknown);
-        });
+        return WritePlayer32(call, [](const Object& object) { return object.marker.value_or(kTimeUnknown); });
     }
+
     std::uint32_t PlaySetUpdatePeriod(const A32CallFrame& call) {
         if (call.Argument(1) == 0U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
         RequirePlayer(call.Argument(0)).update_period = call.Argument(1);
         return kSuccess;
     }
+
     std::uint32_t PlayGetUpdatePeriod(const A32CallFrame& call) {
-        return WritePlayer32(call, [](const Object& object) {
-            return object.update_period;
-        });
+        return WritePlayer32(call, [](const Object& object) { return object.update_period; });
     }
 
     std::uint32_t BufferQueueEnqueue(const A32CallFrame& call) {
@@ -562,17 +584,16 @@ public:
             return kBufferInsufficient;
         }
         std::vector<std::byte> bytes(call.Argument(2));
-        calls_.address_space.Read(memory::GuestAddress{call.Argument(1)}, bytes,
-                                  call.ThreadId());
+        calls_.address_space.Read(memory::GuestAddress{call.Argument(1)}, bytes, call.ThreadId());
         try {
-            return mixer_.Enqueue(*object.player, bytes) ? kSuccess
-                                                        : kBufferInsufficient;
+            return mixer_.Enqueue(*object.player, bytes) ? kSuccess : kBufferInsufficient;
         } catch (const std::invalid_argument&) {
             return kParameterInvalid;
         } catch (const std::length_error&) {
             return kMemoryFailure;
         }
     }
+
     std::uint32_t BufferQueueClear(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         auto& object = RequirePlayer(call.Argument(0));
@@ -580,6 +601,7 @@ public:
         mixer_.Clear(*object.player);
         return kSuccess;
     }
+
     std::uint32_t BufferQueueGetState(const A32CallFrame& call) {
         if (call.Argument(1) == 0U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
@@ -589,6 +611,7 @@ public:
         Write32(call.Argument(1) + 4U, state.play_index, call.ThreadId());
         return kSuccess;
     }
+
     std::uint32_t BufferQueueRegisterCallback(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         auto& object = RequirePlayer(call.Argument(0));
@@ -607,12 +630,15 @@ public:
         mixer_.SetVolume(*object.player, level);
         return kSuccess;
     }
+
     std::uint32_t VolumeGetLevel(const A32CallFrame& call) {
         return WritePlayer16(call, [](const Object& object) { return object.volume; });
     }
+
     std::uint32_t VolumeGetMaxLevel(const A32CallFrame& call) {
         return WritePlayer16(call, [](const Object&) { return std::int16_t{}; });
     }
+
     std::uint32_t VolumeSetMute(const A32CallFrame& call) {
         if (call.Argument(1) > 1U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
@@ -621,22 +647,22 @@ public:
         mixer_.SetMute(*object.player, object.mute);
         return kSuccess;
     }
+
     std::uint32_t VolumeGetMute(const A32CallFrame& call) {
-        return WritePlayer32(call, [](const Object& object) {
-            return object.mute ? 1U : 0U;
-        });
+        return WritePlayer32(call, [](const Object& object) { return object.mute ? 1U : 0U; });
     }
+
     std::uint32_t VolumeEnableStereo(const A32CallFrame& call) {
         if (call.Argument(1) > 1U) return kParameterInvalid;
         std::scoped_lock lock(mutex_);
         RequirePlayer(call.Argument(0)).stereo_enabled = call.Argument(1) != 0U;
         return kSuccess;
     }
+
     std::uint32_t VolumeIsStereoEnabled(const A32CallFrame& call) {
-        return WritePlayer32(call, [](const Object& object) {
-            return object.stereo_enabled ? 1U : 0U;
-        });
+        return WritePlayer32(call, [](const Object& object) { return object.stereo_enabled ? 1U : 0U; });
     }
+
     std::uint32_t VolumeSetStereo(const A32CallFrame& call) {
         const auto position = static_cast<std::int16_t>(call.Argument(1));
         if (position < -1000 || position > 1000) return kParameterInvalid;
@@ -647,10 +673,9 @@ public:
         mixer_.SetStereoPosition(*object.player, position);
         return kSuccess;
     }
+
     std::uint32_t VolumeGetStereo(const A32CallFrame& call) {
-        return WritePlayer16(call, [](const Object& object) {
-            return object.stereo_position;
-        });
+        return WritePlayer16(call, [](const Object& object) { return object.stereo_position; });
     }
 
     std::uint32_t Unsupported(const A32CallFrame& call) {
@@ -658,14 +683,23 @@ public:
         static_cast<void>(Require(call.Argument(0)));
         return kFeatureUnsupported;
     }
+
     std::uint32_t EngineCreateLED(const A32CallFrame& call) { return Unsupported(call); }
+
     std::uint32_t EngineCreateVibra(const A32CallFrame& call) { return Unsupported(call); }
+
     std::uint32_t EngineCreateAudioRecorder(const A32CallFrame& call) { return Unsupported(call); }
+
     std::uint32_t EngineCreateMidi(const A32CallFrame& call) { return Unsupported(call); }
+
     std::uint32_t EngineCreateListener(const A32CallFrame& call) { return Unsupported(call); }
+
     std::uint32_t EngineCreate3DGroup(const A32CallFrame& call) { return Unsupported(call); }
+
     std::uint32_t EngineCreateMetadataExtractor(const A32CallFrame& call) { return Unsupported(call); }
+
     std::uint32_t EngineCreateExtensionObject(const A32CallFrame& call) { return Unsupported(call); }
+
     std::uint32_t EngineQueryExtension(const A32CallFrame& call) { return Unsupported(call); }
 
 private:
@@ -698,6 +732,7 @@ private:
         std::uint32_t last_position{};
         std::uint32_t generation{};
         std::uint32_t parent{};
+        std::uint32_t audio_stream{3U};
     };
 
     void AdvanceGeneration(Object& object) {
@@ -707,8 +742,7 @@ private:
         object.generation = ++next_generation_;
     }
 
-    Object& Allocate(const ObjectKind kind, std::set<std::string> interfaces,
-                     const std::uint64_t thread_id) {
+    Object& Allocate(const ObjectKind kind, std::set<std::string> interfaces, const std::uint64_t thread_id) {
         if (objects_.size() >= kMaximumObjects) {
             throw std::length_error("OpenSL object arena exhausted");
         }
@@ -750,10 +784,14 @@ private:
         if (object.interfaces.contains("SL_IID_VOLUME")) {
             Write32(base.Add(12U).Value(), kOpenSlesVolumeVtable.Value(), thread_id);
         }
+        if (object.interfaces.contains("SL_IID_ANDROIDCONFIGURATION")) {
+            Write32(base.Add(16U).Value(), kOpenSlesAndroidConfigurationVtable.Value(), thread_id);
+        }
         auto [found, inserted] = objects_.emplace(base.Value(), std::move(object));
         if (!inserted) throw std::logic_error("duplicate OpenSL object address");
         return found->second;
     }
+
     Object& Require(const std::uint32_t handle) {
         const auto found = objects_.find(ObjectKey(handle));
         if (found == objects_.end() || handle < found->second.base.Value() ||
@@ -762,50 +800,52 @@ private:
         }
         return found->second;
     }
+
     Object& RequireKind(const std::uint32_t handle, const ObjectKind kind) {
         auto& object = Require(handle);
         if (object.kind != kind) throw std::runtime_error("OpenSL object kind mismatch");
         return object;
     }
+
     Object& RequirePlayer(const std::uint32_t handle) {
         auto& object = RequireKind(handle, ObjectKind::audio_player);
         if (!object.player.has_value()) throw std::runtime_error("OpenSL player has no mixer state");
         return object;
     }
+
     static std::uint32_t ObjectKey(const std::uint32_t handle) {
         if (handle < kOpenSlesObjectArenaBegin.Value()) return 0U;
         const auto offset = handle - kOpenSlesObjectArenaBegin.Value();
-        return kOpenSlesObjectArenaBegin.Value() +
-               static_cast<std::uint32_t>((offset / kObjectStride) * kObjectStride);
+        return kOpenSlesObjectArenaBegin.Value() + static_cast<std::uint32_t>((offset / kObjectStride) * kObjectStride);
     }
-    memory::GuestAddress InterfaceHandle(const Object& object,
-                                         const std::string_view iid) const {
+
+    memory::GuestAddress InterfaceHandle(const Object& object, const std::string_view iid) const {
         if (iid == "SL_IID_OBJECT") return object.base;
-        if (iid == "SL_IID_ENGINE" || iid == "SL_IID_OUTPUTMIX" ||
-            iid == "SL_IID_PLAY") return object.base.Add(4U);
-        if (iid == "SL_IID_BUFFERQUEUE" ||
-            iid == "SL_IID_ANDROIDSIMPLEBUFFERQUEUE") return object.base.Add(8U);
+        if (iid == "SL_IID_ENGINE" || iid == "SL_IID_OUTPUTMIX" || iid == "SL_IID_PLAY") return object.base.Add(4U);
+        if (iid == "SL_IID_BUFFERQUEUE" || iid == "SL_IID_ANDROIDSIMPLEBUFFERQUEUE") return object.base.Add(8U);
         if (iid == "SL_IID_VOLUME") return object.base.Add(12U);
+        if (iid == "SL_IID_ANDROIDCONFIGURATION") return object.base.Add(16U);
         throw std::logic_error("OpenSL interface has no guest handle slot");
     }
+
     std::optional<std::string> IidName(const memory::GuestAddress address) const {
         const auto found = std::find_if(OpenSlesIids().begin(), OpenSlesIids().end(),
-                                        [&](const auto& iid) {
-                                            return iid.value_address == address;
-                                        });
+                                        [&](const auto& iid) { return iid.value_address == address; });
         if (found == OpenSlesIids().end()) return std::nullopt;
         return std::string(found->name);
     }
+
     memory::GuestAddress IidAddress(const std::string_view name) const {
         const auto found = std::find_if(OpenSlesIids().begin(), OpenSlesIids().end(),
                                         [&](const auto& iid) { return iid.name == name; });
         if (found == OpenSlesIids().end()) throw std::logic_error("unknown OpenSL IID name");
         return found->value_address;
     }
-    std::optional<std::set<std::string>> RequestedInterfaces(
-        const std::uint32_t count, const std::uint32_t ids,
-        const std::uint32_t required, const std::set<std::string>& supported,
-        const std::uint64_t thread_id) const {
+
+    std::optional<std::set<std::string>> RequestedInterfaces(const std::uint32_t count, const std::uint32_t ids,
+                                                             const std::uint32_t required,
+                                                             const std::set<std::string>& supported,
+                                                             const std::uint64_t thread_id) const {
         if (count > 64U || (count != 0U && (ids == 0U || required == 0U))) {
             return std::nullopt;
         }
@@ -815,12 +855,15 @@ private:
             const auto required_value = Read32(required + index * 4U, thread_id);
             if (required_value > 1U) return std::nullopt;
             const auto name = IidName(memory::GuestAddress{iid_pointer});
-            const auto available = name.has_value() &&
-                (supported.contains(*name) || *name == "SL_IID_VOLUME" ||
-                 *name == "SL_IID_BUFFERQUEUE" ||
-                 *name == "SL_IID_ANDROIDSIMPLEBUFFERQUEUE" ||
-                 *name == "SL_IID_PLAY");
+            const auto available =
+                name.has_value() && (supported.contains(*name) || *name == "SL_IID_VOLUME" ||
+                                     *name == "SL_IID_BUFFERQUEUE" || *name == "SL_IID_ANDROIDSIMPLEBUFFERQUEUE" ||
+                                     (*name == "SL_IID_ANDROIDCONFIGURATION" && supported.contains("SL_IID_PLAY")) ||
+                                     *name == "SL_IID_PLAY");
             if (!available) {
+                if (calls_.logger)
+                    calls_.logger->Write(core::LogLevel::warn, "runtime.opensles", "requested interface unavailable",
+                                         {}, {{"iid", name.value_or("unknown")}, {"required", required_value != 0U}});
                 if (required_value != 0U) return std::nullopt;
                 continue;
             }
@@ -828,38 +871,48 @@ private:
         }
         return result;
     }
-    static std::vector<std::string_view> ObjectInterfaces(
-        const std::uint32_t object_id) {
+
+    static std::vector<std::string_view> ObjectInterfaces(const std::uint32_t object_id) {
         switch (object_id) {
-            case kObjectIdEngine: return {"SL_IID_OBJECT", "SL_IID_ENGINE"};
-            case kObjectIdOutputMix:
-                return {"SL_IID_OBJECT", "SL_IID_OUTPUTMIX"};
-            case kObjectIdAudioPlayer:
-                return {"SL_IID_OBJECT", "SL_IID_PLAY", "SL_IID_BUFFERQUEUE",
-                        "SL_IID_ANDROIDSIMPLEBUFFERQUEUE", "SL_IID_VOLUME"};
-            default: return {};
+        case kObjectIdEngine: return {"SL_IID_OBJECT", "SL_IID_ENGINE"};
+        case kObjectIdOutputMix: return {"SL_IID_OBJECT", "SL_IID_OUTPUTMIX"};
+        case kObjectIdAudioPlayer:
+            return {"SL_IID_OBJECT",      "SL_IID_PLAY",
+                    "SL_IID_BUFFERQUEUE", "SL_IID_ANDROIDSIMPLEBUFFERQUEUE",
+                    "SL_IID_VOLUME",      "SL_IID_ANDROIDCONFIGURATION"};
+        default: return {};
         }
     }
-    std::uint32_t Read32(const std::uint32_t address,
-                         const std::uint64_t thread_id) const {
+
+    std::uint32_t Read32(const std::uint32_t address, const std::uint64_t thread_id) const {
         std::array<std::byte, 4> bytes{};
         calls_.address_space.Read(memory::GuestAddress{address}, bytes, thread_id);
         std::uint32_t result{};
         for (std::size_t index = 0; index < bytes.size(); ++index) {
-            result |= static_cast<std::uint32_t>(
-                          std::to_integer<std::uint8_t>(bytes[index]))
-                      << (index * 8U);
+            result |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[index])) << (index * 8U);
         }
         return result;
     }
-    void Write32(const std::uint32_t address, const std::uint32_t value,
-                 const std::uint64_t thread_id) const {
+
+    bool IsStreamTypeKey(const GuestCString key, const std::uint64_t thread_id) const {
+        constexpr std::string_view expected = "androidPlaybackStreamType";
+        for (std::size_t index = 0; index <= expected.size(); ++index) {
+            std::array<std::byte, 1> byte{};
+            calls_.address_space.Read(key.Address().Add(index), byte, thread_id);
+            const auto want = index == expected.size() ? '\0' : expected[index];
+            if (std::to_integer<unsigned char>(byte[0]) != static_cast<unsigned char>(want)) return false;
+        }
+        return true;
+    }
+
+    void Write32(const std::uint32_t address, const std::uint32_t value, const std::uint64_t thread_id) const {
         std::array<std::byte, 4> bytes{};
         for (std::size_t index = 0; index < bytes.size(); ++index) {
             bytes[index] = static_cast<std::byte>(value >> (index * 8U));
         }
         calls_.address_space.Write(memory::GuestAddress{address}, bytes, thread_id);
     }
+
     template <typename Read>
     std::uint32_t WritePlayer32(const A32CallFrame& call, Read read) {
         if (call.Argument(1) == 0U) return kParameterInvalid;
@@ -869,9 +922,8 @@ private:
         return kSuccess;
     }
 
-    static OpenSlesGuestCallback MakeCallback(
-        const Object& object, const std::uint32_t function,
-        const std::initializer_list<std::uint32_t> arguments) {
+    static OpenSlesGuestCallback MakeCallback(const Object& object, const std::uint32_t function,
+                                              const std::initializer_list<std::uint32_t> arguments) {
         OpenSlesGuestCallback callback;
         callback.function = function;
         callback.argument_count = static_cast<std::uint8_t>(arguments.size());
@@ -880,19 +932,18 @@ private:
         callback.generation = object.generation;
         return callback;
     }
-    static void AddPlayCallback(std::vector<OpenSlesGuestCallback>& pending,
-                                const Object& object,
+
+    static void AddPlayCallback(std::vector<OpenSlesGuestCallback>& pending, const Object& object,
                                 const std::uint32_t event) {
         if (object.play_callback == 0U) return;
-        pending.push_back(MakeCallback(
-            object, object.play_callback,
-            {object.base.Add(4U).Value(), object.play_context, event}));
+        pending.push_back(
+            MakeCallback(object, object.play_callback, {object.base.Add(4U).Value(), object.play_context, event}));
     }
+
     template <typename Read>
     std::uint32_t WritePlayer16(const A32CallFrame& call, Read read) {
         return WritePlayer32(call, [&](const Object& object) {
-            return static_cast<std::uint32_t>(
-                static_cast<std::uint16_t>(read(object)));
+            return static_cast<std::uint32_t>(static_cast<std::uint16_t>(read(object)));
         });
     }
 
@@ -906,30 +957,44 @@ private:
     std::uint32_t next_generation_{};
 };
 
-OpenSlesModule::OpenSlesModule(BoundaryCallServices& calls,
-                               audio::OpenSlesPcmMixer& mixer,
+OpenSlesModule::OpenSlesModule(BoundaryCallServices& calls, audio::OpenSlesPcmMixer& mixer,
                                const OpenSlesCallbackSink callbacks)
     : calls_(calls), impl_(std::make_unique<Impl>(calls, mixer, callbacks)) {}
+
 OpenSlesModule::~OpenSlesModule() = default;
-BoundaryCallServices& OpenSlesModule::CallServices() noexcept { return calls_; }
-void OpenSlesModule::MapGuestObjectArena() { impl_->MapGuestObjectArena(); }
-std::vector<audio::OpenSlesConsumedBuffer>
-OpenSlesModule::MixAdditiveStereoPcm16(
-    const std::span<std::int16_t> output, const std::uint32_t output_rate) {
+
+BoundaryCallServices& OpenSlesModule::CallServices() noexcept {
+    return calls_;
+}
+
+void OpenSlesModule::MapGuestObjectArena() {
+    impl_->MapGuestObjectArena();
+}
+
+std::vector<audio::OpenSlesConsumedBuffer> OpenSlesModule::MixAdditiveStereoPcm16(const std::span<std::int16_t> output,
+                                                                                  const std::uint32_t output_rate) {
     return impl_->Mix(output, output_rate);
 }
-std::vector<audio::OpenSlesConsumedBuffer> OpenSlesModule::MixIntoAccumulator(
-    const std::span<std::int64_t> accumulator, const std::uint32_t output_rate) {
+
+std::vector<audio::OpenSlesConsumedBuffer> OpenSlesModule::MixIntoAccumulator(const std::span<std::int64_t> accumulator,
+                                                                              const std::uint32_t output_rate) {
     return impl_->MixInto(accumulator, output_rate);
 }
-bool OpenSlesModule::CallbackCurrent(const std::uint32_t object_key,
-                                     const std::uint32_t generation) const {
+
+bool OpenSlesModule::CallbackCurrent(const std::uint32_t object_key, const std::uint32_t generation) const {
     return impl_->CallbackCurrent(object_key, generation);
 }
 
-#define OGPLAY_DEFINE_OPENSLES(name, id, count, kind, method)                  \
-    std::uint32_t OpenSlesModule::method(const A32CallFrame& call) {           \
-        return impl_->method(call);                                            \
+#define OGPLAY_DEFINE_OPENSLES(name, id, count, kind, method)                                                          \
+    std::uint32_t OpenSlesModule::method(const A32CallFrame& call) {                                                   \
+        const auto result = impl_->method(call);                                                                       \
+        if (result != 0U && calls_.logger)                                                                             \
+            calls_.logger->Write(core::LogLevel::warn, "runtime.opensles", std::string(name) + " failed",              \
+                                 {.guest_thread = call.ThreadId()},                                                    \
+                                 {{"method", std::string(name)},                                                       \
+                                  {"result", std::uint64_t{result}},                                                   \
+                                  {"guest_lr", core::GuestAddress{call.LinkRegister()}}});                             \
+        return result;                                                                                                 \
     }
 OGPLAY_OPENSLES_BOUNDARY_EXPORTS(OGPLAY_DEFINE_OPENSLES)
 #undef OGPLAY_DEFINE_OPENSLES

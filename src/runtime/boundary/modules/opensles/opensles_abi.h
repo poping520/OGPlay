@@ -18,6 +18,7 @@ inline constexpr auto kOpenSlesPlayVtable = kBoundaryOpenSlesAbi.Start().Add(870
 inline constexpr auto kOpenSlesBufferQueueVtable = kBoundaryOpenSlesAbi.Start().Add(8960U);
 inline constexpr auto kOpenSlesVolumeVtable = kBoundaryOpenSlesAbi.Start().Add(9216U);
 inline constexpr auto kOpenSlesOutputMixVtable = kBoundaryOpenSlesAbi.Start().Add(9472U);
+inline constexpr auto kOpenSlesAndroidConfigurationVtable = kBoundaryOpenSlesAbi.Start().Add(9728U);
 inline constexpr auto kOpenSlesObjectArenaBegin = kBoundaryOpenSlesObjects.Start();
 inline constexpr std::size_t kOpenSlesStaticAbiBytes = kBoundaryOpenSlesAbi.Size();
 inline constexpr std::size_t kOpenSlesObjectArenaBytes = kBoundaryOpenSlesObjects.Size();
@@ -38,9 +39,7 @@ struct OpenSlesIidDescriptor final {
 };
 
 [[nodiscard]] std::span<const OpenSlesIidDescriptor> OpenSlesIids() noexcept;
-[[nodiscard]] std::span<const BoundaryExportDefinition>
-OpenSlesDataExports() noexcept;
-void MapOpenSlesStaticAbi(memory::AddressSpace& address_space,
-                          const BoundaryModuleDescriptor& module);
+[[nodiscard]] std::span<const BoundaryExportDefinition> OpenSlesDataExports() noexcept;
+void MapOpenSlesStaticAbi(memory::AddressSpace& address_space, const BoundaryModuleDescriptor& module);
 
 }  // namespace ogplay::runtime

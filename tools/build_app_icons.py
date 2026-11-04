@@ -29,6 +29,17 @@ def encode_icon_frame(image: Image.Image, size: int) -> bytes:
 
 
 def save_windows_icon(image: Image.Image, path: Path) -> None:
+    # Fill the Windows icon canvas without changing the artwork's aspect ratio.
+    # Keep all visible pixels, including antialiased edges; only trim empty space.
+    image = image.convert("RGBA")
+    bounds = image.getchannel("A").getbbox()
+    if bounds is None:
+        raise ValueError("Windows application icon must contain visible pixels")
+    artwork = image.crop(bounds)
+    side = max(artwork.size)
+    image = Image.new("RGBA", (side, side))
+    image.alpha_composite(artwork, ((side - artwork.width) // 2, (side - artwork.height) // 2))
+
     directory = bytearray(struct.pack("<HHH", 0, 1, len(ICON_SIZES)))
     payload = bytearray()
     offset = 6 + 16 * len(ICON_SIZES)

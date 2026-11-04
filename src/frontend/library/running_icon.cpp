@@ -187,8 +187,13 @@ void DropShadow(Canvas& target, const Canvas& layer, const float sigma, const in
     Over(target, shadow, 0, dy);
 }
 
+// Windows taskbar icons need less padding than the macOS Dock grid.
+#if defined(_WIN32)
+constexpr float kPlateInset = 44.0F / 1024.0F, kPlateRadius = 185.0F / 824.0F;
+#else
 // macOS icon grid: an 824/1024 body with a 185/1024 corner radius (the plate of the OGPlay icon itself).
 constexpr float kPlateInset = 100.0F / 1024.0F, kPlateRadius = 185.0F / 824.0F;
+#endif
 
 // The part of the game icon that fills the square: margins and soft shadows trimmed, zoomed until no
 // transparent pixel is left inside the squircle (checked at 128 px, up to 20%). Size independent, so every
@@ -234,7 +239,11 @@ constexpr float kPlateInset = 100.0F / 1024.0F, kPlateRadius = 185.0F / 824.0F;
 
 [[nodiscard]] Canvas Badge(const Canvas& art, const Canvas& cartridge, const int n) {
     Canvas canvas = Plated(art, n);
+#if defined(_WIN32)
+    const int size = static_cast<int>(std::lround(n * 0.42F));
+#else
     const int size = static_cast<int>(std::lround(n * 0.40F));
+#endif
     Canvas disc(size, size);
     const auto round = RoundedRect(size, size, 0.0F, 0.0F, static_cast<float>(size), static_cast<float>(size), size / 2.0F);
     for (std::size_t i = 0; i < round.size(); ++i)
@@ -244,8 +253,14 @@ constexpr float kPlateInset = 100.0F / 1024.0F, kPlateRadius = 185.0F / 824.0F;
     Over(disc, Resize(cartridge, mark, mark), (size - mark) / 2, (size - mark) / 2 + size / 40);
     const float inset = n * kPlateInset;
     Canvas layer(n, n);
+#if defined(_WIN32)
+    // Keep the full badge inside the canvas as the game plate grows towards the edges.
+    const int offset = static_cast<int>(std::lround(std::min(n - inset - size * 0.80F, n - size - n / 64.0F)));
+    Over(layer, disc, offset, offset);
+#else
     Over(layer, disc, static_cast<int>(std::lround(n - inset - size * 0.80F)),
          static_cast<int>(std::lround(n - inset - size * 0.80F)));
+#endif
     DropShadow(canvas, layer, n * 8.0F / 512.0F, static_cast<int>(std::lround(n * 5.0F / 512.0F)), 0.45F);
     Over(canvas, layer, 0, 0);
     return canvas;
@@ -268,7 +283,11 @@ constexpr float kPlateInset = 100.0F / 1024.0F, kPlateRadius = 185.0F / 824.0F;
 
 [[nodiscard]] Canvas Inserted(const Canvas& art, const Canvas& cartridge, const int n) {
     const Canvas cradle = Cradle(cartridge);
+#if defined(_WIN32)
+    const int width = static_cast<int>(std::lround(n * 0.98F));
+#else
     const int width = static_cast<int>(std::lround(n * 0.86F));
+#endif
     const int height = static_cast<int>(std::lround(static_cast<float>(cradle.height) * width / cradle.width));
     const Canvas base = Resize(cradle, width, height);
     const int bx = (n - width) / 2, by = n - height - static_cast<int>(std::lround(n * 0.05F));

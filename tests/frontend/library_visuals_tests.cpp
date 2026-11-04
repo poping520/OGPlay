@@ -714,9 +714,17 @@ TEST_CASE("running icon composes the game icon with the OGPlay badge or base") {
     const auto badge = ogplay::app::ComposeRunningIcon(red, cartridge, RunningIconStyle::badge, kSide);
     REQUIRE(badge.width == kSide);
     REQUIRE(badge.pixels.size() == kSide * kSide * 4U);
-    CHECK(Pixel(badge, 2, 2)[3] == 0);       // outside the macOS plate
+    CHECK(Pixel(badge, 2, 2)[3] == 0);       // outside the rounded plate
     CHECK(Pixel(badge, 100, 100)[0] > 200);  // the game fills the plate, no backing
     CHECK(Pixel(badge, 100, 100)[3] == 255);
+#if defined(_WIN32)
+    // Match the enlarged application ICO: about 91% solid body, plus the full corner badge.
+    CHECK(Pixel(badge, 12, 128)[3] == 255);
+    CHECK(Pixel(badge, 243, 128)[3] == 255);
+#else
+    CHECK(Pixel(badge, 17, 128)[3] < 128);
+    CHECK(Pixel(badge, 238, 128)[3] < 128);
+#endif
     const auto white = [&](const ogplay::app::RgbaImage& image) {
         int count = 0;
         for (std::uint32_t y = kSide / 2; y < kSide; ++y)
@@ -726,6 +734,11 @@ TEST_CASE("running icon composes the game icon with the OGPlay badge or base") {
         return count;
     };
     CHECK(white(badge) > 500);  // the round white badge, bottom-right
+#if defined(_WIN32)
+    // The larger plate must not crop the circular badge at the right or bottom canvas edge.
+    CHECK(Pixel(badge, 255, 200)[3] < 128);
+    CHECK(Pixel(badge, 200, 255)[3] < 128);
+#endif
 
     const auto cradle = ogplay::app::ComposeRunningIcon(red, cartridge, RunningIconStyle::cradle, kSide);
     CHECK(white(cradle) < 100);
@@ -736,6 +749,10 @@ TEST_CASE("running icon composes the game icon with the OGPlay badge or base") {
         blue += p[2] > 150 && p[0] < 120 && p[3] == 255;
     }
     CHECK(blue > static_cast<int>(kSide / 2) * 9 / 10);  // the OGPlay blue base holds it
+#if defined(_WIN32)
+    CHECK(Pixel(cradle, 38, 100)[0] > 200);  // the game card also uses the expanded Windows grid
+    CHECK(Pixel(cradle, 38, 100)[3] == 255);
+#endif
 
     CHECK(ogplay::app::ParseRunningIconStyle("badge") == RunningIconStyle::badge);
     CHECK_FALSE(ogplay::app::ParseRunningIconStyle("plain").has_value());

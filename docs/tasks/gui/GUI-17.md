@@ -52,3 +52,19 @@ Windows（代码已写，本机无法编译，待用户在 Windows 上验证）�
   前者覆盖图标设置失败后仍可显示。证据：/tmp/ogplay-icon-{startup-build.log,tests-build.log,tests.log}。
 - 用户复测：真实游戏启动图标正常；此前关闭隐藏、托盘恢复与退出功能也测试正常。
 - 缺口：跨 DPI 与固定按钮行为仍待验。
+
+### Windows 任务栏图标尺寸（2026-11-04）
+
+- 原因：共用 macOS Dock 网格时，角标样式的游戏主体只占边长 824/1024，Windows 任务栏中显得偏小。
+- 仅 Windows 收紧合成留白：初版约增大 9%，用户确认与原应用图标大小相近；应用 ICO 裁去透明边后，游戏图标再同步增大约 4%。
+  最终底板占边长约 91.4%、卡槽宽度占 98%、圆形角标直径占 42%，角标向内限位，完整保留圆形边缘。
+  设置预览复用相同参数，原有圆角/阴影和 DPI 尺寸选择机制不变。
+- Windows Release `ogplay` / `ogplay-cli` 按默认编译参数构建通过；两个 EXE 的 10 个图标资源均与新 ICO 字节一致。
+  运行 `ogplay_app_tests --test-case="running icon*"`，
+  4 用例、43 断言通过，验证主体扩大、角标不裁切、卡槽、小尺寸及原有透明边裁剪行为。
+  app 测试目标的既有 ui_text_tests 缺 ostream include、密度夹具整数字面量 C4244 阻塞默认 MSVC 编译；
+  本地仅对失败测试目标加 `_CL_=/FIostream /wd4244`，未改这些无关代码或项目默认选项。
+- 非 Windows 分支保留原表达式；对修改前后的合成源文件以相同头文件做非 Windows 预处理，产物逐字节一致，
+  不改变 macOS 合成算法，macOS 图标文件与源图哈希不变；未在 macOS 重新运行。
+- 用户复测：新版应用 ICO 与游戏进程图标显示正常；跨 DPI 与固定到任务栏后的行为仍待验。
+- 产物：`build/windows-msvc/Release/ogplay.exe`；本地构建与测试日志在 `.local/icon-size/`。

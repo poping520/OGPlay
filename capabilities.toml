@@ -301,7 +301,7 @@ note = "GUI-19：安装包带 data/demos/ogplay-sweetshop.apk（OGPlay 糖果铺
 [frontend.running_game_icon]
 status = "partial"
 test = "tests/frontend/library_visuals_tests.cpp#running icon; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp#running icon; tests/frontend/gui_rpc_tests.cpp#settings RPC; webui/apps/gui/settings/settings.test.ts"
-note = "GUI-17：库启动的游戏窗口/Dock 图标为游戏图标与 OGPlay 标记合成（全局 running_icon：badge 圆形角标默认、cradle 卡带插槽），设置页预览由宿主同一合成器生成；Windows 按 DPI 选尺寸设大小图标并以 AppUserModelID 独立分组。macOS 已验；Windows 编译/任务栏未验；退出时 Dock 闪回为系统限制；无图标条目保留默认图标。"
+note = "GUI-17：库启动的游戏窗口/Dock 图标为游戏图标与 OGPlay 标记合成（全局 running_icon：badge 圆形角标默认、cradle 卡带插槽），设置页预览由宿主同一合成器生成；Windows 按 DPI 设大小图标并以 AppUserModelID 独立分组，合成留白缩小以匹配裁透明边后的应用 ICO。macOS 网格不变且已验；Windows Release 构建、合成定向及用户任务栏复测通过，跨 DPI/固定按钮待验；退出时 Dock 闪回为系统限制；无图标条目保留默认图标。"
 
 [loader.apk_application_visuals]
 status = "complete"

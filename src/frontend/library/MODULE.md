@@ -58,3 +58,4 @@ external_dir 与库内路径不同时即按 link 解析。
 运行中游戏图标（GUI-17）：`ComposeRunningIcon` 把条目图标与随包 OGPlay 卡带合成为方形 RGBA，`badge`（默认，圆形角标）或
 `cradle`（卡带插槽）；游戏图标不加底，裁透明边/软投影后放大至多 20% 直到 macOS 圆角内无透明像素。全局 `running_icon`
 选择样式；ResolveLaunch 仅在条目有 icon.png 时传 window_icon 与样式。
+Windows 合成使用更紧凑的留白（底板占边长约 91%、卡槽宽度占 98%），与裁透明边后的应用 ICO 保持接近的视觉尺寸，角标保持在画布内；macOS 沿用原有 Dock 网格。设置预览与运行图标使用相同的平台参数。

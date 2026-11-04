@@ -12,7 +12,7 @@
 namespace ogplay::app {
 
 // How a running game's window/Dock icon combines the game icon with the OGPlay mark:
-// badge = the game icon fills the macOS plate with a round OGPlay badge bottom-right (default);
+// badge = the game icon fills the platform plate with a round OGPlay badge bottom-right (default);
 // cradle = the game icon is the cartridge, inserted in the OGPlay blue base.
 enum class RunningIconStyle : std::uint8_t { cradle, badge };
 
@@ -26,11 +26,12 @@ struct RgbaImage final {
     std::vector<std::uint8_t> pixels;
 };
 
-// Square icon of `size` pixels (16..1024). The game icon is cropped to fill the macOS rounded square:
+// Square icon of `size` pixels (16..1024). The game icon is cropped to fill the rounded square:
 // transparent margins and soft drop shadows trimmed, then zoomed (at most 20%) until its own corners
 // leave no transparent pixel inside the squircle; no backing plate is added. `cartridge_png` is the
 // bundled OGPlay cartridge (data/branding/ogplay-cartridge.png). Throws std::invalid_argument when
 // either PNG cannot be decoded or the game icon is fully transparent.
+// Windows uses tighter taskbar padding; other platforms retain the macOS Dock grid.
 [[nodiscard]] OGPLAYCORE_API RgbaImage ComposeRunningIcon(std::span<const std::byte> game_icon_png,
                                                           std::span<const std::byte> cartridge_png,
                                                           RunningIconStyle style, std::uint32_t size);

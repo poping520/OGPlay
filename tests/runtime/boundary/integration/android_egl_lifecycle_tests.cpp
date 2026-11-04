@@ -250,6 +250,57 @@ TEST_CASE("Android EGL routes proc addresses by current context version") {
     CHECK(BoundaryCallAddress(fixture, cached, version_args) == 0U);
 }
 
+TEST_CASE("EGL current context routes string queries across both GLES libraries") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1U}) == 1U);
+    const auto surface = AuditSurface(f);
+    const auto es1 = AuditContext(f, 1U);
+    const auto es2 = AuditContext(f, 2U);
+    const auto read = [&](std::uint32_t address) {
+        REQUIRE(address != 0U);
+        const ogplay::memory::GuestAddress pointer{address};
+        std::string value(f.memory.CStringLength(pointer, 4096U, 1U), '\0');
+        f.memory.Read(pointer, std::as_writable_bytes(std::span(value)), 1U);
+        return value;
+    };
+    const auto proc_name = f.output.Add(64U);
+    WriteGuestString(f, proc_name, "glGetString");
+    const auto proc = f.Call("libEGL.so", "eglGetProcAddress", {proc_name.Value()});
+    REQUIRE(proc != 0U);
+    // The ELF relocation and cached proc address remain unchanged on switches.
+    for (const auto context : {es2, es1, es2}) {
+        AuditBind(f, context, surface);
+        for (const auto pname : {0x1F00U, 0x1F01U, 0x1F02U, 0x1F03U, 0x8B8CU}) {
+            CAPTURE(context);
+            CAPTURE(pname);
+            const auto expected =
+                read(f.Call(context == es1 ? "libGLESv1_CM.so" : "libGLESv2.so", "glGetString", {pname}));
+            for (const auto library : {"libGLESv1_CM.so", "libGLESv2.so"}) {
+                CHECK(read(f.Call(library, "glGetString", {pname})) == expected);
+                CHECK(read(FastBoundaryCall(f, library, "glGetString", {pname}, 1U)) == expected);
+            }
+            CHECK(read(BoundaryCallAddress(f, proc, std::array{pname})) == expected);
+            CHECK(read(f.boundary.InvokeManagedGles(ogplay::gles::GlesApi::gles1, "glGetString", std::array{pname},
+                                                    1U)) == expected);
+            if (pname == 0x1F02U) {
+                CHECK((expected == "OpenGL ES-CM 1.1") == (context == es1));
+                if (context == es2) CHECK(expected.starts_with("OpenGL ES "));
+            }
+            if (pname == 0x1F03U) {
+                CHECK((expected.find("GL_OES_matrix_palette ") != std::string::npos) == (context == es1));
+            }
+        }
+    }
+    // Different guest threads retain their own API selection.
+    REQUIRE(FastBoundaryCall(f, "libEGL.so", "eglMakeCurrent", {1U, 0U, 0U, 0U}, 1U) == 1U);
+    REQUIRE(FastBoundaryCall(f, "libEGL.so", "eglMakeCurrent", {1U, surface, surface, es1}, 2U) == 1U);
+    CHECK(read(FastBoundaryCall(f, "libGLESv2.so", "glGetString", {0x1F02U}, 2U)) == "OpenGL ES-CM 1.1");
+    CHECK(FastBoundaryCall(f, "libGLESv1_CM.so", "glGetString", {0x1F02U}, 1U) == 0U);
+    CHECK(FastBoundaryCall(f, "libGLESv2.so", "glGetString", {0x1F02U}, 1U) == 0U);
+    REQUIRE(FastBoundaryCall(f, "libEGL.so", "eglMakeCurrent", {1U, 0U, 0U, 0U}, 2U) == 1U);
+}
+
 TEST_CASE("Android EGL errors and API binding are isolated by guest thread") {
     BoundaryFixture fixture;
     CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglBindAPI",

@@ -61,7 +61,9 @@ TryTrace 只短锁复制有界记录，busy 不等待 graphics 线程。跨线�
   texture 按 object/target 保存 base format、generate-mipmap，cube face 归一为 cube target；
   删除清除所有 unit/target 引用。对象名由 ANGLE 唯一生成/删除。
 - query 返回真实 ANGLE 或对应逻辑 shadow，shape 明确受检；不得泄漏超采样坐标或猜未知 pname。
-  GLES1 version 表示 ES-CM 1.1，GLES1/2 扩展串只发布完整可执行能力，不透传后端扩展全集。
+  glGetString 两个库入口按调用线程 current EGL client version 选择查询实现，不能由 ELF
+  依赖顺序决定。ES1 version 表示 ES-CM 1.1，ES2/3 返回对应 ANGLE 值；扩展串只发布
+  完整可执行能力，不透传后端扩展全集。未启用 guest EGL 的托管路径保持入口 API 语义。
   字符串位于分槽只读 guest 区，不因其他 pname 查询覆盖；GLES1 扩展串保留尾随分隔符。
 - client array 保存定义时 buffer binding，在 draw 按 first/count 或实际最大索引预检并上传；
   staging 仅复用容量，每次重读，内部 VBO/EBO 上传后恢复 guest binding。opaque EBO 与
@@ -83,7 +85,8 @@ Display/config 是进程事实，Context/Surface 使用单调句柄，保存版�
   退役经显式回调清理 map/sync，eglReleaseThread 不清除其他 Context 的记录。
 - eglGetProcAddress 冷查 sealed callable，未知扩展返回 null，不改 hot table。查询无需 current；
   返回的稳定 GLES thunk 按调用线程 current client version 路由，无 current 返回零。
-  直接 ELF import 仍由 SONAME 决定 API family。eglWaitGL/WaitClient 同步真实 ANGLE。
+  直接 ELF import 的 glGetString 同样按 current version 路由，其他入口保持 SONAME
+  对应的 API 语义。eglWaitGL/WaitClient 同步真实 ANGLE。
 - KHR sync/image 与 OES image target 使用 guest identity；只发布后端支持的扩展。texture
   pbuffer 使用真实 native binding；swap 保存/恢复 read framebuffer，只发布 draw surface。
   pixmap、OpenVG、native-buffer/native-fence FD、presentation-time 与任意厂商扩展不在范围。

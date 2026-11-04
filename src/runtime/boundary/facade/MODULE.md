@@ -4,6 +4,9 @@
 状态机。所有跨层调用经显式服务接口。GLES1/2/3 与 EGL image thunk 在 catalog/绑定处一致
 发布；guest Context 状态切换、share group 退役由 EGL registry 驱动。
 
+两个 GLES 库的 glGetString 与缓存 proc 共用 EGL registry 的线程版本事实，路由到现有
+GLES1 或 GLES2 查询实现；无 current 返回零。未启用 guest EGL 的托管入口保留原 API。
+
 managed surface 关闭仅退役自身资源；清空活动 shadow 不能清空其他 Context 的映射。
 遵守父级 boundary MODULE 的依赖方向、日志和 guest 指针约束。验证：boundary integration
 图形/线程回归。

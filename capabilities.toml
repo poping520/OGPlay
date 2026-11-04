@@ -996,7 +996,7 @@ note = "M5 WU-0269 以受检 little-endian guest 数组把 GLES1 glGenTextures/g
 [runtime.gles1_query_strings]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/runtime/boundary/integration/android_boundary_liblog_tests.cpp; tests/runtime/boundary/integration/android_egl_lifecycle_tests.cpp; tests/runtime/boundary/integration/android_boundary_libc_libdl_tests.cpp; tests/runtime/boundary/integration/android_boundary_opensles_tests.cpp; tests/runtime/boundary/integration/android_gles2_shaders_tests.cpp; tests/runtime/boundary/integration/android_gles1_exports_tests.cpp; tests/runtime/boundary/integration/android_gles_shared_resources_tests.cpp; tests/runtime/boundary/integration/android_gles1_state_tests.cpp; tests/runtime/boundary/integration/android_gles1_rendering_tests.cpp; tests/runtime/boundary/integration/android_boundary_looper_tests.cpp; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp; tests/runtime/boundary/integration/android_frame_presentation_tests.cpp; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp; tests/runtime/boundary/integration/android_gles_texture_formats_tests.cpp"
-note = "M5 WU-0270 将真实 ANGLE vendor/renderer/version/extensions 发布到 GLES1 专属分槽只读 guest 区域，并与 GLES2 查询槽隔离；BND-26 追加 VERSION/EXTENSIONS 合成；BND-31 修正枚举为 GL_VERSION=0x1F02，GL_RENDERER 恢复真实 ANGLE 值。固定扩展恰为已实现能力并保留末项分隔符，RGBA8 renderbuffer/FBO 已受检"
+note = "BND-55：两个库的 glGetString 按线程 current EGL client version 路由；ES1 版本为 ES-CM 1.1，ES2/3 查询复用 ANGLE 及受检扩展集合。无 current 返回 null，隐式托管入口保持原 API。各 pname 分槽只读；ES1 固定扩展保留尾随分隔符。macOS 定向验证，Windows/Linux 未实跑。"
 
 [runtime.gles1_guest_error_latch]
 status = "complete"

@@ -200,6 +200,8 @@ public:
         SealBindings();
     }
 
+    [[nodiscard]] BoundaryCallServices& CallServices() noexcept { return call_services_; }
+
     void SetBitmapHooks(AndroidBitmapHooks hooks) { bitmap_module_.SetHooks(hooks); }
 
     void SetDeviceLocaleProvider(std::function<DeviceLocale()> provider) {
@@ -667,13 +669,32 @@ private:
                                     &InvokeBoundarySlow<Module, Method>, Gpu};
     }
 
+    template <gles::GlesApi ExportApi>
+    std::uint32_t InvokeGlGetString(const A32CallFrame& call) {
+        // Both Android GLES libraries use the current thread's EGL hooks.
+        // ELF dependency order must not select the reported client API.
+        const auto version = api_routing_.CurrentVersion(call.ThreadId());
+        if (version == 0U) return 0U;
+        const bool fixed = version.has_value() ? *version == 1U : ExportApi == gles::GlesApi::gles1;
+        if (fixed) return gles1_module_.Invoke<gles::GlesApi::gles1, 63U>(call);
+        return gles2_module_.Invoke<71U>(call);
+    }
+
+    template <std::size_t Index>
+    void BindGles1CoreEntry(const BoundaryModuleDescriptor& descriptor) {
+        constexpr auto function = gles::generated::gles1::kFunctions[Index];
+        if constexpr (function.name == "glGetString") {
+            BindExport<Impl, &Impl::InvokeGlGetString<gles::GlesApi::gles1>, function.parameter_count, true>(
+                descriptor, function.name, *this);
+        } else {
+            BindExport<Gles1Module, &Gles1Module::Invoke<gles::GlesApi::gles1, Index>, function.parameter_count, true>(
+                descriptor, function.name, gles1_module_);
+        }
+    }
+
     template <std::size_t... Index>
     void BindGles1Core(const BoundaryModuleDescriptor& descriptor, std::index_sequence<Index...>) {
-        (BindExport<Gles1Module,
-                    &Gles1Module::template Invoke<gles::GlesApi::gles1, static_cast<gles::GlesThunkId>(Index)>,
-                    gles::generated::gles1::kFunctions[Index].parameter_count, true>(
-             descriptor, gles::generated::gles1::kFunctions[Index].name, gles1_module_),
-         ...);
+        (BindGles1CoreEntry<Index>(descriptor), ...);
     }
 
     template <std::size_t Index>
@@ -696,12 +717,21 @@ private:
         (BindGles1Extension<Index>(descriptor), ...);
     }
 
+    template <std::size_t Index>
+    void BindGles2Entry(const BoundaryModuleDescriptor& descriptor) {
+        constexpr auto function = gles::generated::gles2::kFunctions[Index];
+        if constexpr (function.name == "glGetString") {
+            BindExport<Impl, &Impl::InvokeGlGetString<gles::GlesApi::gles2>, function.parameter_count, true>(
+                descriptor, function.name, *this);
+        } else {
+            BindExport<Gles2Module, &Gles2Module::Invoke<Index>, function.parameter_count, true>(
+                descriptor, function.name, gles2_module_);
+        }
+    }
+
     template <std::size_t... Index>
     void BindGles2(const BoundaryModuleDescriptor& descriptor, std::index_sequence<Index...>) {
-        (BindExport<Gles2Module, &Gles2Module::template Invoke<static_cast<gles::GlesThunkId>(Index)>,
-                    gles::generated::gles2::kFunctions[Index].parameter_count, true>(
-             descriptor, gles::generated::gles2::kFunctions[Index].name, gles2_module_),
-         ...);
+        (BindGles2Entry<Index>(descriptor), ...);
     }
 
     template <std::size_t Index>

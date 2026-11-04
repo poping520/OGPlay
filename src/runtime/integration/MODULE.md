@@ -70,6 +70,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   或 DexVM native context 的 `call_mutex`。进入可能等待这些锁或执行 guest 的边界前，
   按完整递归深度 `ReleaseForBlocking`；正常及异常出口均 `ReacquireAfterBlocking`。
   JNI 回调在桥入口重新获取 VM 锁；释放期间只使用已复制的参数与稳定 owner，不访问 VM 状态。
+  JNI 解释方法因 thread_stopped 展开时，保留调用线程身份转为 A32GuestCallCancelled，供
+  native clone 正常退出；其他解释器错误继续传播为失败，不按消息或关闭阶段吞掉异常。
 
 - AndroidGuestProcess 注册 `/dev/urandom` (1:9) 与 `/dev/random` (1:8)，通过 VFS reader
   注入 `hal::FillSecureRandom`；每次读取生成新的完整随机字节，失败由 VFS 映射 EIO。

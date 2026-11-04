@@ -1240,7 +1240,17 @@ public:
             arguments.push_back(ToVmValue(value, invocation.thread_id));
         }
         const dx::GapSurveyChannelScope survey_channel(dx::GapSurveyChannel::jni);
-        const auto outcome = vm->Call(context, method_id, arguments);
+        dx::VmCallOutcome outcome;
+        try {
+            outcome = vm->Call(context, method_id, arguments);
+        } catch (const dx::DexVmError& error) {
+            // A native clone can be inside a Java callback when shutdown
+            // stops its VM context. Preserve the control unwind recognized
+            // by the clone owner instead of publishing a process failure.
+            if (error.Reason() == dx::DexVmErrorReason::thread_stopped)
+                throw A32GuestCallCancelled(invocation.thread_id);
+            throw;
+        }
         if (outcome.exception.IsValid()) {
             // JNI semantics: leave the exception pending for the caller.
             if (logger != nullptr) {

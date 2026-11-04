@@ -75,6 +75,41 @@ TEST_CASE("JNI native-only attachments detach without a DexVM monitor context") 
     }
 }
 
+TEST_CASE("JNI stopped Java callbacks preserve native thread cancellation") {
+    using namespace ogplay::runtime;
+    using namespace ogplay::runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        auto& session = *f.session;
+        auto& env = session.Environment();
+        JniJavaVm java_vm(env);
+        const auto type = session.Classes().FindClass("java/lang/Thread");
+        REQUIRE(type.has_value());
+        const auto method = session.Classes().GetMethodId(*type, "currentThread", "()Ljava/lang/Thread;", true);
+        REQUIRE(method.has_value());
+        const auto sleep = session.Classes().GetMethodId(*type, "sleep", "(J)V", true);
+        REQUIRE(sleep.has_value());
+        REQUIRE(java_vm.AttachCurrentThread(5, kJniVersion1_6).status == JniStatus::ok);
+        // Establish the attached native thread's Java execution context.
+        CHECK_FALSE(std::get<JniReference>(
+                        session.Invocations().InvokeStatic(5, *type, *method, {}, JniArgumentSource::value_array))
+                        .IsNull());
+        const std::array<JniValue, 1> arguments{JniLong{1}};
+        f.bridge->Threads().RequestShutdown();
+        bool cancelled = false;
+        try {
+            static_cast<void>(
+                session.Invocations().InvokeStatic(5, *type, *sleep, arguments, JniArgumentSource::value_array));
+        } catch (const A32GuestCallCancelled& error) {
+            cancelled = true;
+            CHECK(error.ThreadId() == 5U);
+        }
+        CHECK(cancelled);
+        CHECK_FALSE(env.ExceptionCheck(5));
+        CHECK(java_vm.DetachCurrentThread(5) == JniStatus::ok);
+    }
+}
+
 TEST_CASE("JNI native attachments isolate Java execution identity and detach cleanup") {
     using namespace ogplay::runtime;
     using namespace ogplay::runtime::dexvm;

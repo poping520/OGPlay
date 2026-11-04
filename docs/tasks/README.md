@@ -13,7 +13,7 @@ Work Unit 按所属里程碑或语义化专项存放，创建后不因完成状�
 | 目录 | 编号 | 数量 | 说明 |
 | --- | --- | --- | --- |
 | [`apk-startup/`](apk-startup/) | APS-1..15 | 15 | [APK Startup WU 任务书归档](apk-startup/README.md) |
-| [`boundary/`](boundary/) | BND-1..54 | 54 | — |
+| [`boundary/`](boundary/) | BND-1..55 | 55 | — |
 | [`dexvm/`](dexvm/) | DVM-1..253 | 247 | [DexVM · 有界 DEX 解释执行](dexvm/README.md) |
 | [`diagnostics/`](diagnostics/) | DIAG-1..8 | 8 | [静态体检 WU1](diagnostics/DIAG-4.md)、[survey WU4](diagnostics/DIAG-5.md)、[场景与 survey WU5](diagnostics/DIAG-6.md)、[dalvik/tests 一致性 WU6a](diagnostics/DIAG-7.md)、[JNI 一致性 WU8-0](diagnostics/DIAG-8.md) |
 | [`gui/`](gui/) | DASH-01..05、GUI-1..20 | 25 | [GUI · WebView 启动器](gui/README.md) |

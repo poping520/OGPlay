@@ -57,7 +57,7 @@
   `--key-editor-port`。`GuiProcessManager` 每 500ms 以令牌发 `control.status {client:"launcher"}`，
   据此标记就绪，并在 `edit_requests` 增加（游戏内 F2）时打开窗口、`close_requests` 增加（页面“完成”）时关闭窗口。`controls.open {installation_id}`
   只对就绪实例打开；`dashboard.list` 带 `key_editor_status/detail`，从不返回令牌。
-- `about.credits {}` / `about.notices {id}`：关于页开源致谢。单文件 `data/credits.json` 内嵌许可证原文，由
+- `about.credits {}` / `about.notices {id}`：关于页开源致谢；`parent` 指向引入该项目的已列项目（须排在其前），OGPlay 直接使用的项目没有此字段。单文件 `data/credits.json` 内嵌许可证原文，由
   `tools/credits.py` 生成（`--check` 检查过期）；AOSP NOTICE 以路径引用已发布的 `android/19/notices`，路径不得离开
   数据目录。全文仅在展开时返回，单文件读取上限 1 MiB。
 - `ValidateLibraryConfigDirectories`：共享配置目录验证；全局设置保存前调用。

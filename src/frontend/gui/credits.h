@@ -22,6 +22,7 @@ struct CreditProject final {
     std::string version;  // empty when upstream has no release number for the vendored copy
     std::string url;
     std::optional<std::string> license;  // SPDX-style id; none when the texts carry several
+    std::string parent;                  // listed project that brings this one in; empty when OGPlay uses it itself
     std::vector<CreditNotice> notices;
 };
 

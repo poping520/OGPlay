@@ -164,6 +164,7 @@ details.fact pre { margin: 8px 0 2px; font: 11.5px/1.6 var(--code); color: var(-
 details.credit summary small { margin-left: 10px; font-weight: 600; color: var(--muted); }
 details.credit .credit-url { margin: 6px 0 0; font: 11.5px/1.5 var(--code); color: var(--soft); user-select: text; }
 details.credit h5 { margin: 12px 0 0; font-size: 12px; font-weight: 800; color: var(--soft); }
+details.credit details.credit { background: rgba(255,255,255,.04); }
 .credit-error { color: var(--muted); }
 
 /* launch preview */

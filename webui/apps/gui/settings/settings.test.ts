@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { changedKeys, displayValue, factRows, fieldMeta, groups, isDirty, settingsError, shownFields, shownGroups, stepValue, type SettingField } from './settings';
 import { gameGroups } from './game-settings';
 import { SETTING_ICONS, SHARED_ICONS } from './setting-icons';
+import { creditSummary, creditTree, type CreditProject } from './credits';
 const field = (key: string, initial: string | number | boolean, choices: string[] = []): SettingField =>
   ({ key, label: key, initial, choices, min: 1, max: 4, group: 'general', pending: '', directory: false, hidden: false });
 describe('settings drafts', () => {
@@ -93,5 +94,19 @@ describe('host facts', () => {
     expect(factRows({ profile_quirks: '', android_manifest: null, profile_status: 'missing', custom: 'x', artifacts_error: 'boom' }))
       .toEqual([['Android / BootDex / guest JNI 制品清单', '文件不可用或超过读取上限'], ['制品信息不可用', 'boom'],
         ['Profile 状态', '记录的 Profile 在所选目录中不存在。'], ['Profile quirk 列表', '无'], ['custom', 'x']]);
+  });
+});
+describe('open-source credits', () => {
+  const project = (id: string, parent?: string): CreditProject => ({ id, name: id, version: '1.0', url: '', license: 'MIT', parent });
+  const tree = creditTree([project('dynarmic'), project('oaknut', 'dynarmic'), project('zydis', 'dynarmic'), project('zycore', 'zydis'), project('boost'), project('three'), project('draco', 'three')]);
+  it('keeps direct projects on top and folds the rest inside their parent, in list order', () => {
+    expect(tree.map(node => node.project.id)).toEqual(['dynarmic', 'boost', 'three']);
+    expect(tree[0].children.map(node => node.project.id)).toEqual(['oaknut', 'zydis']);
+    expect(tree[0].children[1].children.map(node => node.project.id)).toEqual(['zycore']);
+  });
+  it('counts nested dependencies in the row summary', () => {
+    expect(creditSummary(tree[0])).toBe('1.0 · MIT · 3 个依赖');
+    expect(creditSummary(tree[1])).toBe('1.0 · MIT');
+    expect(creditSummary(tree[2])).toBe('1.0 · MIT · 1 个依赖');
   });
 });

@@ -52,10 +52,16 @@ std::vector<CreditProject> LoadCredits(const std::filesystem::path& data_root) {
     for (std::size_t index = 0; index < projects->Size(); ++index) {
         const auto item = *projects->Element(index);
         CreditProject project{RequiredString(item, "id"), RequiredString(item, "name"),
-                              RequiredString(item, "version"), RequiredString(item, "url"), std::nullopt, {}};
+                              RequiredString(item, "version"), RequiredString(item, "url"), std::nullopt, {}, {}};
         if (const auto license = item.Member("license"); license && !license->IsNull()) {
             if (!license->String()) throw std::runtime_error("credits.json: license must be a string or null");
             project.license = std::string(*license->String());
+        }
+        if (item.Member("parent")) {
+            project.parent = RequiredString(item, "parent");
+            const auto is_parent = [&](const CreditProject& other) { return other.id == project.parent; };
+            if (std::none_of(result.begin(), result.end(), is_parent))
+                throw std::runtime_error("credits.json: " + project.id + " must follow its parent " + project.parent);
         }
         const auto notices = item.Member("notices");
         if (!notices || !notices->IsArray() || notices->Size() == 0)

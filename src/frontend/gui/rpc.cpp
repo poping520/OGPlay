@@ -127,6 +127,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                         writer.AddString(item, "license", *project.license);
                     else
                         writer.AddNull(item, "license");
+                    if (!project.parent.empty()) writer.AddString(item, "parent", project.parent);
                     writer.Append(projects, item);
                 }
                 writer.Add(result, "projects", projects);

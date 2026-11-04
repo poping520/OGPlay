@@ -118,9 +118,19 @@ PROJECTS = [
      [f"{NOTICES}/tzdata.txt"]),
 ]
 
+# Projects OGPlay only gets through another listed project, nested under it on the About page. Whatever src/ or
+# webui/ uses itself stays top level, even when a listed project needs it too (Boost, for Dynarmic).
+PARENTS = {
+    "fmt": "dynarmic", "mcl": "dynarmic", "unordered_dense": "dynarmic", "oaknut": "dynarmic", "xbyak": "dynarmic",
+    "zydis": "dynarmic", "zycore": "zydis",
+    "draco": "three",
+    "openssl": "aosp", "stlport": "aosp", "zlib": "aosp", "icu": "aosp", "fonts": "aosp", "tzdata": "aosp",
+}
+
 
 def render() -> str:
     projects = []
+    seen = set()
     for project_id, name, version, url, license_id, texts in PROJECTS:
         notices = []
         for item in texts:
@@ -130,8 +140,12 @@ def render() -> str:
                 notices.append({"title": Path(item).name, "path": item})
             else:
                 notices.append({"title": item[0], "text": item[1]})
-        projects.append({"id": project_id, "name": name, "version": version, "url": url,
-                         "license": license_id, "notices": notices})
+        parent = PARENTS.get(project_id)
+        if parent is not None and parent not in seen:
+            raise SystemExit(f"{project_id}: parent {parent} must be listed before it")
+        seen.add(project_id)
+        projects.append({"id": project_id, "name": name, "version": version, "url": url, "license": license_id,
+                         **({"parent": parent} if parent else {}), "notices": notices})
     return json.dumps({"schema": 1, "projects": projects}, ensure_ascii=False, indent=1) + "\n"
 
 

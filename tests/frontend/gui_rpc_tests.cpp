@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <thread>
 #include "ogplay/app/encoding.h"
 #include "frontend/gui/rpc.h"
@@ -378,8 +379,17 @@ TEST_CASE("GUI about RPC lists the shipped open-source projects and reads each l
     REQUIRE(projects);
     REQUIRE(projects->Size() > 10);
     std::vector<std::string> ids;
-    for (std::size_t index = 0; index < projects->Size(); ++index)
+    std::map<std::string, std::string> parents;
+    for (std::size_t index = 0; index < projects->Size(); ++index) {
         ids.emplace_back(*projects->Element(index)->Member("id")->String());
+        if (const auto parent = projects->Element(index)->Member("parent")) parents[ids.back()] = *parent->String();
+    }
+    // Only what OGPlay gets through another project nests; its own dependencies stay top level.
+    CHECK(parents.at("oaknut") == "dynarmic");
+    CHECK(parents.at("zycore") == "zydis");
+    CHECK(parents.at("draco") == "three");
+    CHECK(parents.at("zlib") == "aosp");
+    for (const auto* id : {"dynarmic", "boost", "three", "aosp"}) CHECK_FALSE(parents.contains(id));
     for (const auto* id : {"sdl", "angle", "dynarmic", "ffmpeg", "preact", "aosp"})
         CHECK(std::find(ids.begin(), ids.end(), id) != ids.end());
     // Every listed project has readable, non-empty texts; that is the whole point of the page.

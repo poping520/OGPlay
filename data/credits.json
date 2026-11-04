@@ -70,6 +70,7 @@
    "version": "11.1.4",
    "url": "https://github.com/fmtlib/fmt",
    "license": "MIT",
+   "parent": "dynarmic",
    "notices": [
     {
      "title": "fmt",
@@ -83,6 +84,7 @@
    "version": "0.1.13",
    "url": "https://github.com/azahar-emu/mcl",
    "license": "MIT",
+   "parent": "dynarmic",
    "notices": [
     {
      "title": "mcl",
@@ -96,6 +98,7 @@
    "version": "4.5.0",
    "url": "https://github.com/martinus/unordered_dense",
    "license": "MIT",
+   "parent": "dynarmic",
    "notices": [
     {
      "title": "unordered_dense",
@@ -109,6 +112,7 @@
    "version": "2.0.2",
    "url": "https://github.com/merryhime/oaknut",
    "license": "MIT",
+   "parent": "dynarmic",
    "notices": [
     {
      "title": "oaknut",
@@ -122,6 +126,7 @@
    "version": "7.22",
    "url": "https://github.com/herumi/xbyak",
    "license": "BSD-3-Clause",
+   "parent": "dynarmic",
    "notices": [
     {
      "title": "xbyak",
@@ -135,6 +140,7 @@
    "version": "4.0.0",
    "url": "https://github.com/zyantific/zydis",
    "license": "MIT",
+   "parent": "dynarmic",
    "notices": [
     {
      "title": "zydis",
@@ -148,6 +154,7 @@
    "version": "1.5.2",
    "url": "https://github.com/zyantific/zycore-c",
    "license": "MIT",
+   "parent": "zydis",
    "notices": [
     {
      "title": "zycore",
@@ -308,6 +315,7 @@
    "version": "",
    "url": "https://github.com/google/draco",
    "license": "Apache-2.0",
+   "parent": "three",
    "notices": [
     {
      "title": "Draco",
@@ -367,6 +375,7 @@
    "version": "",
    "url": "https://www.openssl.org",
    "license": "OpenSSL",
+   "parent": "aosp",
    "notices": [
     {
      "title": "libcrypto.so.txt",
@@ -380,6 +389,7 @@
    "version": "",
    "url": "https://sourceforge.net/projects/stlport",
    "license": null,
+   "parent": "aosp",
    "notices": [
     {
      "title": "libstlport.so.txt",
@@ -393,6 +403,7 @@
    "version": "",
    "url": "https://zlib.net",
    "license": "Zlib",
+   "parent": "aosp",
    "notices": [
     {
      "title": "libz.so.txt",
@@ -406,6 +417,7 @@
    "version": "",
    "url": "https://icu.unicode.org",
    "license": "ICU",
+   "parent": "aosp",
    "notices": [
     {
      "title": "icu4c-license.html",
@@ -423,6 +435,7 @@
    "version": "",
    "url": "https://source.android.com",
    "license": "Apache-2.0",
+   "parent": "aosp",
    "notices": [
     {
      "title": "fonts.txt",
@@ -436,6 +449,7 @@
    "version": "2014a",
    "url": "https://www.iana.org/time-zones",
    "license": "Public Domain",
+   "parent": "aosp",
    "notices": [
     {
      "title": "tzdata.txt",

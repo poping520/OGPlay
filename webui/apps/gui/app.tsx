@@ -3,7 +3,7 @@ import { Key } from '../../packages/ui-kit/key';
 import { Glyph } from '../../packages/ui-kit/glyph';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { rpc, type Library, type LibraryItem } from './shared/rpc';
-import { gameName, setLanguage, t, useLanguage } from './shared/i18n';
+import { gameName, resolvedLanguage, setLanguage, t, useLanguage } from './shared/i18n';
 import { recall, remember } from './shared/prefs';
 import { cycle, externalText, filters, profileText, statusDetail, statusOf, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library/library';
 import { SettingsPage } from './settings/settings-page';
@@ -73,7 +73,7 @@ export function App() {
   const runningCount = library.items.filter(game => game.running).length;
   const report = (reason: unknown) => setErrors(queue => [...queue, reason instanceof Error ? reason.message : String(reason)]);
   const applySettings = (value: Settings) => {
-    settingsRef.current = value; setSettings(value); applyLanguage(value.values.language); remember('ogplay.skin', value.values.settings_style);
+    settingsRef.current = value; setSettings(value); applyLanguage(value); remember('ogplay.skin', value.values.settings_style);
   };
   const skin = settings ? skinOf(settings.values.settings_style) : rememberedSkin;
   // Pending until settings load, so a CSS preference never starts loading the 3D bundle; unreadable settings use the default.
@@ -122,7 +122,7 @@ export function App() {
     };
     void poll();
     const timer = window.setInterval(() => void poll(), 1000);
-    const dashboardError = (event: Event) => report((event as CustomEvent<string>).detail);
+    const dashboardError = (event: Event) => report(t((event as CustomEvent<string>).detail));
     window.addEventListener('ogplay-dashboard-error', dashboardError);
     window.addEventListener('ogplay-exit', exited);
     return () => { disposed = true; window.clearInterval(timer); window.removeEventListener('ogplay-dashboard-error', dashboardError); ++generation.current; window.removeEventListener('ogplay-exit', exited); };
@@ -244,8 +244,8 @@ export function App() {
   </div>;
   const actions = (game: LibraryItem) => {
     if (game.running) {
-      const dashboard = instance?.port ? <button ref={primary} class="pill main" disabled={busy || instance.status !== 'ready'} title={instance.detail} onClick={() => void act('dashboard.open', game)}><Key>A</Key>{t('打开 Dashboard')}</button> : null;
-      const controls = <button ref={dashboard ? undefined : primary} class={`pill ${dashboard ? '' : 'main'}`} disabled={busy || !editorReady} title={instance?.key_editor_detail ?? t('游戏内也可按 F2 打开按键设置。')} onClick={() => openControls(game)}><Key>{dashboard ? 'X' : 'A'}</Key>{t('按键设置')}</button>;
+      const dashboard = instance?.port ? <button ref={primary} class="pill main" disabled={busy || instance.status !== 'ready'} title={t(instance.detail)} onClick={() => void act('dashboard.open', game)}><Key>A</Key>{t('打开 Dashboard')}</button> : null;
+      const controls = <button ref={dashboard ? undefined : primary} class={`pill ${dashboard ? '' : 'main'}`} disabled={busy || !editorReady} title={t(instance?.key_editor_detail ?? '游戏内也可按 F2 打开按键设置。')} onClick={() => openControls(game)}><Key>{dashboard ? 'X' : 'A'}</Key>{t('按键设置')}</button>;
       return <>{dashboard}{controls}{moreMenu(game)}</>;
     }
     return <>
@@ -372,14 +372,14 @@ export function App() {
       {dashboards.length === 0 ? <p>{t('当前启动器没有运行中的游戏。')}</p> : dashboards.map(instance => <section key={instance.installation_id}>
         <h3>{library.items.find(game => game.installation_id === instance.installation_id)?.display_name ?? instance.installation_id}</h3>
         <p class="mono">PID {instance.process_id} · {instance.port ? t('端口 {port}', { port: instance.port }) : t('MCP 未启用')}</p>
-        <p>{instance.detail}</p>
+        <p>{t(instance.detail)}</p>
         <button disabled={instance.status !== 'ready'} onClick={() => void rpc('dashboard.open', { installation_id: instance.installation_id }).catch(report)}>{t('打开 Dashboard')}</button>
-        <button disabled={instance.key_editor_status !== 'ready'} title={instance.key_editor_detail} onClick={() => void rpc('controls.open', { installation_id: instance.installation_id }).catch(report)}>{t('按键设置')}</button>
+        <button disabled={instance.key_editor_status !== 'ready'} title={t(instance.key_editor_detail)} onClick={() => void rpc('controls.open', { installation_id: instance.installation_id }).catch(report)}>{t('按键设置')}</button>
       </section>)}
     </Modal>}
     {!importing && errors.length > 0 && <Modal title={t('操作提示')} onDismiss={() => setErrors(queue => queue.slice(1))}><pre>{errors[0]}</pre></Modal>}
   </div>;
 }
 // The host's settings decide; the last language and skin are remembered so the splash does not flash the other one.
-function applyLanguage(value: unknown) { setLanguage(value); remember('ogplay.language', value); }
+function applyLanguage(settings: Settings) { const value = resolvedLanguage(settings.values.language, settings.system_language); setLanguage(value); remember('ogplay.language', value); }
 const rememberedSkin = skinOf(recall('ogplay.skin'));

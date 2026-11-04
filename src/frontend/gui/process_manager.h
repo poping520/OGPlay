@@ -34,8 +34,14 @@ public:
     [[nodiscard]] std::vector<GuiDashboard> Dashboards() const;
     [[nodiscard]] std::uint16_t DashboardPort(std::string_view instance) const;
     [[nodiscard]] std::vector<std::string> TakeAutoOpen();
+
     // Key editor of a running instance (ADR-0134); throws while it is not ready.
-    struct KeyEditorAddress final { std::uint16_t port{}; std::string token; };
+    struct KeyEditorAddress final {
+        std::uint16_t port{};
+        std::string token;
+        UiLanguage language{UiLanguage::en_US};
+    };
+
     [[nodiscard]] KeyEditorAddress KeyEditor(std::string_view instance) const;
     // Instances whose game asked for the editor with F2 since the last call.
     [[nodiscard]] std::vector<std::string> TakeKeyEditorRequests();
@@ -52,6 +58,7 @@ private:
         bool auto_open{};
         std::optional<std::uint16_t> editor_port;
         std::string control_token;
+        UiLanguage ui_language{UiLanguage::en_US};
         std::future<KeyEditorProbe> editor_probe;
         std::uint64_t next_editor_probe{};
         std::uint64_t edit_requests{};
@@ -59,12 +66,12 @@ private:
         std::uint64_t close_requests{};
         bool editor_close_requested{};
     };
+
     app::Logger& logger_;
     LaunchTracker tracker_;
     std::vector<Active> active_;
     std::vector<std::future<DashboardProbe>> retired_probes_;
     std::vector<std::future<KeyEditorProbe>> retired_editor_probes_;
 };
-
 
 }  // namespace ogplay::frontend

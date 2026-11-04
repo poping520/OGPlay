@@ -337,7 +337,7 @@ target_link_libraries(ogplay_file_lock_tests PRIVATE OGPlay::Hal ogplaycore ogpl
 ogplay_add_test_executable(ogplay_app_tests
     tests/frontend/surface_export_tests.cpp
     tests/frontend/run_dex_tests.cpp
-    tests/frontend/game_run_args_tests.cpp
+    tests/frontend/game_run_args_tests.cpp tests/frontend/ui_text_tests.cpp
     tests/frontend/library_store_tests.cpp tests/frontend/library_lock_tests.cpp
     tests/frontend/cli_library_tests.cpp tests/frontend/apk_fixture.cpp tests/frontend/app_serialization_tests.cpp
     tests/frontend/gui_import_tests.cpp tests/frontend/gui_launch_tests.cpp

@@ -77,6 +77,7 @@ constexpr std::string_view kDetails =
     "    --missing-data-report <file>\n"
     "                                Write /sdcard reads that found nothing (JSON)\n"
     "  Window\n"
+    "    --ui-language <zh-CN|en-US> Host UI language (default: system)\n"
     "    --window-title <name>       Name shown in the window caption (default: APK file name)\n"
     "  Sandbox\n"
     "    --sandbox-dir <host-dir>    Sandbox root directory\n"

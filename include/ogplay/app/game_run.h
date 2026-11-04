@@ -9,6 +9,7 @@
 #include <string_view>
 #include <vector>
 #include "ogplay/app/export.h"
+#include "ogplay/app/ui_text.h"
 #include "ogplay/app/logging.h"
 #include "ogplay/app/running_icon.h"
 
@@ -77,6 +78,8 @@ struct GameRunOptions final {
     // window_icon_style; any failure keeps the default icon.
     std::optional<std::filesystem::path> window_icon;
     RunningIconStyle window_icon_style{RunningIconStyle::badge};
+    // Host UI only; absent means the system language at process startup.
+    std::optional<UiLanguage> ui_language;
     bool operator==(const GameRunOptions&) const = default;
 };
 

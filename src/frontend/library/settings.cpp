@@ -22,14 +22,7 @@ void ValidateExternalGuestDirectory(const std::string_view path) {
 const std::vector<SettingDefinition>& SettingDefinitions() {
     // One schema drives persistence, RPC validation and the rendered controls.
     static const std::vector<SettingDefinition> fields{
-        {"language",
-         "general",
-         "语言",
-         std::string("zh-CN"),
-         {"zh-CN", "en-US"},
-         0,
-         0,
-         "启动器界面语言；部分宿主提示暂为中文"},
+        {"language", "general", "语言", std::string("system"), {"system", "zh-CN", "en-US"}, 0, 0, "OGPlay 界面语言"},
         {"theme",
          "general",
          "主题",

@@ -12,6 +12,11 @@ JSON 值为所属文档的借用视图，回调结束/文档销毁后失效；�
 SDL 动态库与桌面共享；RunGame 的状态行默认 stdout，CLI library run 可选 stderr 以保持 JSON 输出。
 验证：ogplay_app_tests、frontend.app_entrypoints（含导出/导入审计）、frontend.run_apk_options 和真实 APK 有界复跑。
 
+`UiLanguage`/`UiText` 提供并排、编译期完整性校验的中英文宿主文案；只接受 zh-CN/en-US，
+`ResolveUiLanguage` 额外接受 system 并读取 HAL 首选 locale，zh 语系归中文，其余及不可用归英文。
+未知设置明确失败；界面语言不修改 guest Locale。GameRunOptions 的可选 ui_language 经
+`--ui-language` 严格解析和往返，缺省由游戏进程启动时解析系统语言。
+
 GameRunOptions 显式携带 surface_width/surface_height（默认 1280×720，每边 1..4096）与 density_dpi
 （默认 320，72..1280），解析、格式化和直接调用共用边界校验；DataPaths 不再暴露模板目录。
 

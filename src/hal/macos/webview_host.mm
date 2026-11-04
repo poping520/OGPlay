@@ -147,6 +147,10 @@ public:
         CheckWeb(webview_eval(view_, std::string(script).c_str()));
     }
     void RecordSmokeResponse() override { ++lists_; }
+    void SetShellText(const WebViewShellText& text) override {
+        options_.shell_text = text;
+        if (view_) InstallMenu();
+    }
     void Minimize() override { [Window(view_) miniaturize:nil]; }
     void OpenDashboard(std::string_view instance, std::uint16_t port) override {
         if (!port || instance.empty()) throw std::invalid_argument("Dashboard instance and port are required");
@@ -154,17 +158,18 @@ public:
                            "OGPlay Dashboard · " + std::string(instance), {});
     }
     void CloseDashboard(std::string_view instance) override { CloseLoopbackWindow(dashboards_, instance); }
-    void OpenKeyEditor(std::string_view instance, std::uint16_t port, std::string_view token) override {
+    void OpenKeyEditor(std::string_view instance, std::uint16_t port, std::string_view token,
+                       std::string_view title) override {
         if (!port || instance.empty()) throw std::invalid_argument("key editor instance and port are required");
         if (token.size() < 16 || !std::all_of(token.begin(), token.end(), [](const char c) { return std::isxdigit(static_cast<unsigned char>(c)) != 0; }))
             throw std::invalid_argument("key editor token must be hexadecimal");
         // The page reads its token from session storage; the address carries no secret.
         OpenLoopbackWindow(key_editors_, instance, "http://127.0.0.1:" + std::to_string(port) + "/controls/",
-                           "OGPlay 按键设置 · " + std::string(instance),
+                           std::string(title),
                            "try{sessionStorage.setItem('ogplay.controls.token','" + std::string(token) + "')}catch(e){}");
     }
     void CloseKeyEditor(std::string_view instance) override { CloseLoopbackWindow(key_editors_, instance); }
-    std::future<std::optional<std::filesystem::path>> PickPath(bool directory) override {
+    std::future<std::optional<std::filesystem::path>> PickPath(bool directory, std::string_view title) override {
         auto promise = std::make_shared<std::promise<std::optional<std::filesystem::path>>>();
         auto result = promise->get_future();
         NSOpenPanel* panel = [NSOpenPanel openPanel];
@@ -172,7 +177,8 @@ public:
         panel.canChooseDirectories = directory;
         panel.allowsMultipleSelection = NO;
         panel.canCreateDirectories = directory;
-        panel.message = directory ? @"选择游戏数据包目录" : @"选择 APK";
+        panel.message = Text(title);
+        panel.title = Text(title);
         if (!directory) {
             UTType* apk = [UTType typeWithFilenameExtension:@"apk"];
             if (apk) panel.allowedContentTypes = @[apk];
@@ -213,7 +219,7 @@ private:
             app::JsonWriter writer;
             const auto result = writer.Object();
             writer.AddString(result, "message", error.what());
-            writer.AddString(result, "next_step", "检查 GUI 日志和前端制品后重试。");
+            writer.AddString(result, "next_step", self.options_.rpc_failure_next_step);
             static_cast<void>(webview_return(self.view_, id, 1, writer.Serialize(result).c_str()));
         }
     }
@@ -243,34 +249,34 @@ private:
         NSMenu* bar = [NSMenu new];
         NSMenuItem* app_item = [NSMenuItem new];
         NSMenu* app_menu = [[NSMenu alloc] initWithTitle:@"OGPlay"];
-        [app_menu addItem:Item(@"隐藏 OGPlay", @selector(hide:), @"h")];
-        NSMenuItem* others = Item(@"隐藏其他", @selector(hideOtherApplications:), @"h");
+        [app_menu addItem:Item(Text(options_.shell_text.menu_hide_app), @selector(hide:), @"h")];
+        NSMenuItem* others = Item(Text(options_.shell_text.menu_hide_others), @selector(hideOtherApplications:), @"h");
         others.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagOption;
         [app_menu addItem:others];
-        [app_menu addItem:Item(@"全部显示", @selector(unhideAllApplications:), @"")];
+        [app_menu addItem:Item(Text(options_.shell_text.menu_show_all), @selector(unhideAllApplications:), @"")];
         [app_menu addItem:[NSMenuItem separatorItem]];
-        NSMenuItem* quit = Item(@"退出 OGPlay", @selector(quitLauncher:), @"q");
+        NSMenuItem* quit = Item(Text(options_.shell_text.menu_quit), @selector(quitLauncher:), @"q");
         quit.target = menu_target_;
         [app_menu addItem:quit];
         app_item.submenu = app_menu;
         [bar addItem:app_item];
         NSMenuItem* edit_item = [NSMenuItem new];
-        NSMenu* edit = [[NSMenu alloc] initWithTitle:@"编辑"];
-        [edit addItem:Item(@"撤销", @selector(undo:), @"z")];
-        NSMenuItem* redo = Item(@"重做", @selector(redo:), @"z");
+        NSMenu* edit = [[NSMenu alloc] initWithTitle:Text(options_.shell_text.menu_edit)];
+        [edit addItem:Item(Text(options_.shell_text.menu_undo), @selector(undo:), @"z")];
+        NSMenuItem* redo = Item(Text(options_.shell_text.menu_redo), @selector(redo:), @"z");
         redo.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
         [edit addItem:redo];
         [edit addItem:[NSMenuItem separatorItem]];
-        [edit addItem:Item(@"剪切", @selector(cut:), @"x")];
-        [edit addItem:Item(@"拷贝", @selector(copy:), @"c")];
-        [edit addItem:Item(@"粘贴", @selector(paste:), @"v")];
-        [edit addItem:Item(@"全选", @selector(selectAll:), @"a")];
+        [edit addItem:Item(Text(options_.shell_text.menu_cut), @selector(cut:), @"x")];
+        [edit addItem:Item(Text(options_.shell_text.menu_copy), @selector(copy:), @"c")];
+        [edit addItem:Item(Text(options_.shell_text.menu_paste), @selector(paste:), @"v")];
+        [edit addItem:Item(Text(options_.shell_text.menu_select_all), @selector(selectAll:), @"a")];
         edit_item.submenu = edit;
         [bar addItem:edit_item];
         NSMenuItem* window_item = [NSMenuItem new];
-        NSMenu* window_menu = [[NSMenu alloc] initWithTitle:@"窗口"];
-        [window_menu addItem:Item(@"最小化", @selector(performMiniaturize:), @"m")];
-        [window_menu addItem:Item(@"关闭", @selector(performClose:), @"w")];
+        NSMenu* window_menu = [[NSMenu alloc] initWithTitle:Text(options_.shell_text.menu_window)];
+        [window_menu addItem:Item(Text(options_.shell_text.menu_minimize), @selector(performMiniaturize:), @"m")];
+        [window_menu addItem:Item(Text(options_.shell_text.menu_close), @selector(performClose:), @"w")];
         window_item.submenu = window_menu;
         [bar addItem:window_item];
         NSApp.mainMenu = bar;

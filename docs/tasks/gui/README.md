@@ -23,6 +23,7 @@
 | [GUI-17](GUI-17.md) | 运行中游戏图标（游戏图标 + OGPlay 卡槽/角标） | macOS 已验；Windows 实现已写，编译与任务栏待验 |
 | [GUI-18](GUI-18.md) | 帧率上限（全局默认 + 每游戏覆盖，宿主截止时间节拍） | macOS 定向与 Java/原生路径实跑已验；App 内点击与 Windows 待验 |
 | [GUI-19](GUI-19.md) | 内置 Demo 游戏（安装包自带、首启入库、设置可隐藏） | macOS 定向与新库首启已验；App 内点击与 Windows 待验 |
+| [GUI-20](GUI-20.md) | 宿主与按键页中英文补全、跟随系统语言 | macOS 定向验证与 GUI 冒烟通过；Windows 与 App 内点击待验 |
 | [DASH-01](DASH-01.md) | Dashboard agent 只读聚合、事件游标与线程关联 | agent 层完成 |
 | [DASH-02](DASH-02.md) | 堆/GC、JNI、CPU 缓存、权限、VFS/动态库快照 | Windows 完成；扩展 BootDex 回归有阻塞 |
 | [DASH-03](DASH-03.md) | Dashboard HTTP、顶栏/拓扑/时间轴/线程表 | Windows 完成；新增来源/面板见 DASH-02/04 |

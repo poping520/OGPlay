@@ -1,57 +1,40 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { en } from './i18n-en';
-import { gameName, language, setLanguage, t, tj } from './i18n';
+import { gameName, initialLanguage, language, resolvedLanguage, setLanguage, t, tj } from './i18n';
 import { fieldMeta, type SettingField } from '../settings/settings';
 
 const han = /[一-鿿]/;
 
-// Splits source into string literals (template text without its ${} parts) and the remaining code,
-// dropping comments, so Chinese can be checked wherever it appears.
-function scan(source: string): { literals: string[]; code: string } {
-  const literals: string[] = [];
-  let code = '', i = 0;
-  const quoted = (quote: string) => {
-    let value = '';
-    for (++i; i < source.length && source[i] !== quote && source[i] !== '\n'; ++i) {
-      if (source[i] === '\\') { value += source[i] + source[i + 1]; ++i; } else value += source[i];
-    }
-    ++i;
-    return value;
-  };
-  const template = () => {
-    let value = '';
-    for (++i; i < source.length && source[i] !== '`';) {
-      if (source[i] === '\\') { value += source.slice(i, i + 2); i += 2; }
-      else if (source[i] === '$' && source[i + 1] === '{') { i += 2; block(true); ++i; }
-      else value += source[i++];
-    }
-    ++i;
-    return value;
-  };
-  const block = (nested: boolean) => {
-    let depth = 0;
-    while (i < source.length) {
-      const char = source[i];
-      if (nested && char === '}' && depth === 0) return;
-      if (char === '/' && source[i + 1] === '/') { while (i < source.length && source[i] !== '\n') ++i; continue; }
-      if (char === '/' && source[i + 1] === '*') { const end = source.indexOf('*/', i + 2); i = end < 0 ? source.length : end + 2; continue; }
-      if (char === '\'' || char === '"') { literals.push(quoted(char)); continue; }
-      if (char === '`') { literals.push(template()); continue; }
-      if (char === '{') ++depth; else if (char === '}') --depth;
-      code += char; ++i;
-    }
-  };
-  block(false);
-  return { literals, code };
-}
-
+import { scan, cppStrings } from '../../../packages/ui-kit/i18n-test-utils';
 // The 3D bundle's decoder error stays as written: cart3d.js has no access to the launcher language.
 const sources = Object.entries(import.meta.glob(['../**/*.ts', '../**/*.tsx', '!../**/*.test.ts', '!../**/*.d.ts', '!./i18n*.ts', '!../cartridge/cart3d/draco.ts'],
   { query: '?raw', import: 'default', eager: true }));
 const hostSettings = Object.entries(import.meta.glob(['../../../../src/frontend/library/settings.cpp', '../../../../src/frontend/library/game_settings.cpp'],
   { query: '?raw', import: 'default', eager: true }));
 
-describe('GUI-14 translation table', () => {
+const hostMessages = Object.entries(import.meta.glob([
+  '../../../../src/frontend/gui/rpc.cpp', '../../../../src/frontend/gui/rpc_import.cpp',
+  '../../../../src/frontend/gui/rpc_settings.cpp', '../../../../src/frontend/gui/rpc_data_hint.cpp',
+  '../../../../src/frontend/gui/dashboard.cpp', '../../../../src/frontend/gui/dashboard.h',
+  '../../../../src/frontend/gui/process_manager.cpp', '../../../../src/frontend/gui/webview_shell.cpp',
+  '../../../../src/frontend/library/resolve_launch.cpp',
+], { query: '?raw', import: 'default', eager: true }));
+const nativeSources = Object.entries(import.meta.glob([
+  '../../../../src/hal/macos/webview_host.mm', '../../../../src/hal/windows/webview_host.cpp',
+  '../../../../src/hal/sdl_window_input.cpp', '../../../../src/frontend/game/run_game.cpp',
+], { query: '?raw', import: 'default', eager: true }));
+
+describe('GUI-20 translation table', () => {
+  it('covers host messages and keeps native hosts free of Chinese strings', () => {
+    expect(hostMessages).toHaveLength(9);
+    expect(nativeSources).toHaveLength(4);
+    const missing = hostMessages.flatMap(([name, source]) => cppStrings(source)
+      .filter(text => han.test(text) && !(text in en)).map(text => `${name}: ${text}`));
+    expect(missing).toEqual([]);
+    expect(nativeSources.flatMap(([name, source]) => cppStrings(source)
+      .filter(text => han.test(text)).map(text => `${name}: ${text}`))).toEqual([]);
+  });
+
   it('covers every Chinese literal and leaves no Chinese outside t()', () => {
     const missing: string[] = [], stray: string[] = [];
     expect(sources.length).toBeGreaterThan(10);
@@ -69,7 +52,7 @@ describe('GUI-14 translation table', () => {
     const missing: string[] = [];
     expect(hostSettings.length).toBe(2);
     for (const [file, text] of hostSettings) {
-      const { literals } = scan(text);
+      const literals = cppStrings(text);
       for (const literal of literals.filter(value => han.test(value))) {
         const bracket = /^(.*?)（([^）]+)）$/.exec(literal);
         const parts = bracket ? [bracket[1], bracket[2]] : [literal.replace(/^预留\s*·\s*/, '')];
@@ -93,6 +76,19 @@ describe('GUI-14 translation table', () => {
 describe('GUI-14 language switching', () => {
   afterEach(() => setLanguage('zh-CN'));
 
+  it('resolves system using the host language', () => {
+    expect(resolvedLanguage('system', 'en-US')).toBe('en-US');
+    expect(resolvedLanguage('system', 'zh-CN')).toBe('zh-CN');
+    expect(resolvedLanguage('zh-CN', 'en-US')).toBe('zh-CN');
+    expect(resolvedLanguage('en-US', 'zh-CN')).toBe('en-US');
+  });
+  it('starts from the remembered language, else the system language', () => {
+    expect(initialLanguage(null, 'en-GB')).toBe('en-US');
+    expect(initialLanguage(null, 'zh-Hant-TW')).toBe('zh-CN');
+    expect(initialLanguage('zh-CN', 'en-US')).toBe('zh-CN');
+    expect(initialLanguage('en-US', 'zh-CN')).toBe('en-US');
+    expect(initialLanguage('system', 'en-US')).toBe('en-US');
+  });
   it('translates in English, falls back to the source text and fills parameters', () => {
     expect(t('开始游戏')).toBe('开始游戏');
     setLanguage('en-US');

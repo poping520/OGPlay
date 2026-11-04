@@ -1,4 +1,5 @@
 #include "frontend/gui/rpc.h"
+#include "frontend/gui/rpc_error.h"
 #include "ogplay/app/library.h"
 
 #include <algorithm>
@@ -33,13 +34,20 @@ std::string RequiredString(app::JsonValue params, std::string_view key) {
     return std::string(*value);
 }
 
-app::ConsoleResponse Error(int code, std::string_view message, std::string_view next) {
+app::ConsoleResponse Error(int code, std::string_view message, std::string_view next,
+                           const std::map<std::string, std::string>& params = {}) {
     app::JsonWriter writer;
     const auto root = writer.Object();
     const auto error = writer.Object();
     writer.AddInteger(error, "code", code);
     writer.AddString(error, "message", message);
     writer.AddString(error, "next_step", next);
+    if (!params.empty()) {
+        const auto values = writer.Object();
+        for (const auto& [key, value] : params)
+            writer.AddString(values, key, value);
+        writer.Add(error, "params", values);
+    }
     writer.Add(root, "error", error);
     return {false, writer.Serialize(root)};
 }
@@ -103,6 +111,7 @@ std::string GuiRpcService::Handle(std::string_view request) {
     const auto failure = writer.Object();
     writer.Add(failure, "code", writer.Copy(*error->Member("code")));
     writer.Add(failure, "message", writer.Copy(*error->Member("message")));
+    if (const auto params = error->Member("params")) writer.Add(failure, "params", writer.Copy(*params));
     writer.AddString(failure, "next_step", "检查 GUI 请求格式和前端版本后重试。");
     writer.Add(root, "error", failure);
     return writer.Serialize(root);
@@ -371,8 +380,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 const auto tile =
                     std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
                 if (!tile->can_launch)
-                    return Error(-32001, "游戏当前不可启动（" + std::string(Status(tile->status)) + "）",
-                                 "检查运行状态、Profile 和数据包目录。");
+                    return Error(-32001, "游戏当前不可启动（{status}）", "检查运行状态、Profile 和数据包目录。",
+                                 {{"status", std::string(Status(tile->status))}});
                 const auto config = LoadLibraryConfig(store_.Root());
                 const auto minimize = std::get<bool>(Setting(config, "minimize_on_launch"));
                 if (minimize && !host_.minimize) throw std::runtime_error("宿主不支持最小化窗口。");
@@ -395,6 +404,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         }
         writer.Add(root, "result", result);
         return {true, writer.Serialize(root)};
+    } catch (const GuiTextError& error) {
+        return Error(-32000, error.what(), "检查库目录、配置和日志后重试。", error.Params());
     } catch (const LibraryError& error) {
         return Error(error.Code() == LibraryErrorCode::busy || error.Code() == LibraryErrorCode::running ? -32002
                                                                                                          : -32000,

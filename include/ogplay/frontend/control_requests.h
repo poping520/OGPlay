@@ -39,12 +39,12 @@ struct ControlRequestContext final {
     // Called for every valid request; true for a launcher poll (control.status with
     // client "launcher"), false for editor traffic, which keeps a freeze alive.
     std::function<void(bool launcher)> seen;
+    std::string_view ui_language{"en-US"};
 };
 
 // control.get / freeze / resume {close?} / frame / apply / status. Configuration errors are JSON-RPC
 // error -32010 with the loader's message; the running layout is unchanged on any failure.
-[[nodiscard]] agent::ControlResponse HandleControlRequest(std::string_view method,
-                                                          core::JsonValue params,
+[[nodiscard]] agent::ControlResponse HandleControlRequest(std::string_view method, core::JsonValue params,
                                                           const ControlRequestContext& context);
 
 }  // namespace ogplay::frontend

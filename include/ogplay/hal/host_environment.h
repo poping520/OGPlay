@@ -10,6 +10,9 @@
 
 namespace ogplay::hal {
 
+// First SDL preferred locale (language-country), empty when unavailable. No guest locale effects.
+[[nodiscard]] std::string HostPreferredLocale();
+
 // OS CSPRNG; failure throws, never falls back to a PRNG.
 void FillSecureRandom(std::span<std::byte> output);
 

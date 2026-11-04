@@ -13,7 +13,10 @@ namespace ogplay::hal {
 enum class VideoBackend : std::uint8_t { automatic, dummy, offscreen };
 
 enum class InputEventType : std::uint8_t {
+    // The host asks the process to end (termination signal, application quit): not refusable.
     quit,
+    // The user asked to close the window; the owner decides whether to stop.
+    close_requested,
     key,
     pointer_motion,
     pointer_button,
@@ -132,6 +135,14 @@ struct IconImage {
     std::uint32_t height{};
 };
 
+// Text of the close confirmation; the caller owns the wording.
+struct CloseConfirmation {
+    std::string_view title;
+    std::string_view message;
+    std::string_view confirm_label;
+    std::string_view cancel_label;
+};
+
 class WindowInput {
 public:
     virtual ~WindowInput() = default;
@@ -146,6 +157,9 @@ public:
     virtual void SetIcon(std::span<const IconImage> sizes) = 0;
     [[nodiscard]] virtual WindowState State() const = 0;
     [[nodiscard]] virtual std::string_view BackendName() const noexcept = 0;
+    // Block the owner thread on a dialog attached to the window. True only when the user chose to close;
+    // a host that cannot show the dialog throws.
+    [[nodiscard]] virtual bool ConfirmClose(const CloseConfirmation& text) = 0;
     virtual void PumpEvents() = 0;
     [[nodiscard]] virtual std::vector<InputEvent> PollEvents() = 0;
     virtual void PresentRgba8(std::span<const std::uint8_t> pixels, std::uint32_t width, std::uint32_t height) = 0;

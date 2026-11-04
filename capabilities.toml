@@ -265,8 +265,8 @@ note = "GUI-13/ADR-0146：运行时记录 /sdcard 查找缺失、挂载内命中
 
 [frontend.gui_language]
 status = "partial"
-test = "webui/apps/gui/shared/i18n.test.ts"
-note = "GUI-14：全局设置“语言”切换启动器主窗口（游戏库、导入向导、数据包提示、全局/实例设置、3D 卡带印刷）中英文，设置页草稿即时预览。前端以中文原文为键翻译，宿主设置字段文字同表覆盖。宿主下发的状态详情、错误与 next_step、原生选择器、按键设置窗口、Dashboard、CLI 与游戏窗口仍为中文。"
+test = "tests/frontend/ui_text_tests.cpp; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp; tests/frontend/gui_rpc_tests.cpp; tests/frontend/control_requests_tests.cpp; webui/apps/gui/shared/i18n.test.ts; webui/apps/controls/i18n.test.ts; frontend.gui_webui_manifest; frontend.gui_smoke; frontend.gui_library_smoke"
+note = "GUI-20：启动器、宿主状态/错误、原生菜单/托盘/选择器、游戏关闭确认及按键页支持中英文；language 默认 system，由宿主解析首选语言，显式语言保留。保存后菜单即时更新，游戏进程语言固定且不影响 guest Locale。Dashboard 页面未翻译；CLI、日志、系统控件文字不接翻译。Windows 未编译验证，App 内点击待验。"
 
 [frontend.gui_shell]
 status = "complete"

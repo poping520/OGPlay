@@ -195,3 +195,26 @@ TEST_CASE("density dpi defaults to xhdpi and validates CLI and facade boundaries
     options.density_dpi = 1281;
     CHECK_THROWS_AS(ValidateGameRunOptions(options), std::invalid_argument);
 }
+
+TEST_CASE("game_run_args ui-language round trips and rejects invalid or repeated values") {
+    using namespace ogplay::app;
+    const std::vector<std::string_view> plain{"game.apk"};
+    CHECK_FALSE(ParseGameRunArgs(plain).ui_language);
+    for (const auto tag : {"zh-CN", "en-US"}) {
+        const std::vector<std::string_view> args{"game.apk", "--ui-language", tag};
+        const auto options = ParseGameRunArgs(args);
+        CHECK(options.ui_language == ParseUiLanguage(tag));
+        CHECK(RoundTrip(options) == options);
+    }
+    for (const auto tag : {"system", "zh", "fr-FR", "", "en-us"}) {
+        const std::vector<std::string_view> args{"game.apk", "--ui-language", tag};
+        CHECK_THROWS_AS(static_cast<void>(ParseGameRunArgs(args)), std::invalid_argument);
+    }
+    for (const auto& args :
+         {std::vector<std::string_view>{"game.apk", "--ui-language"},
+          std::vector<std::string_view>{"game.apk", "--ui-language", "zh-CN", "--ui-language", "en-US"}})
+        CHECK_THROWS_AS(static_cast<void>(ParseGameRunArgs(args)), std::invalid_argument);
+    auto options = ParseGameRunArgs(plain);
+    options.ui_language = static_cast<UiLanguage>(255);
+    CHECK_THROWS_AS(ValidateGameRunOptions(options), std::invalid_argument);
+}

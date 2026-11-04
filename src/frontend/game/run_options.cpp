@@ -202,6 +202,10 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
             if (options.missing_data_report.has_value())
                 throw std::invalid_argument("run-apk accepts --missing-data-report only once");
             options.missing_data_report = Utf8Path(args[++index]);
+        } else if (option == "--ui-language" && index + 1 < args.size()) {
+            if (options.ui_language) throw std::invalid_argument("run-apk accepts --ui-language only once");
+            options.ui_language = ParseUiLanguage(args[++index]);
+            if (!options.ui_language) throw std::invalid_argument("--ui-language requires zh-CN or en-US");
         } else if (option == "--window-title" && index + 1 < args.size()) {
             if (options.window_title.has_value())
                 throw std::invalid_argument("run-apk accepts --window-title only once");
@@ -255,6 +259,7 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
 }
 
 void ValidateGameRunOptions(const GameRunOptions& o) {
+    if (o.ui_language) static_cast<void>(UiLanguageTag(*o.ui_language));
     if (o.apk_path.empty()) throw std::invalid_argument("run-apk requires <apk>");
     if (o.surface_width == 0 || o.surface_width > kMaximumSurfaceDimension || o.surface_height == 0 ||
         o.surface_height > kMaximumSurfaceDimension)
@@ -353,6 +358,7 @@ std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
     optional_path("--input-config", o.input_config_path);
     optional_path("--survey-gaps", o.survey_gaps_output);
     optional_path("--missing-data-report", o.missing_data_report);
+    if (o.ui_language) add("--ui-language", std::string(UiLanguageTag(*o.ui_language)));
     if (o.window_title) add("--window-title", *o.window_title);
     optional_path("--window-icon", o.window_icon);
     if (o.window_icon && o.window_icon_style != RunningIconStyle::badge)

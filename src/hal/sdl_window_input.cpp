@@ -1,4 +1,5 @@
 #include "ogplay/hal/window_input.h"
+#include "ogplay/hal/host_environment.h"
 
 #include <algorithm>
 #include <array>
@@ -18,6 +19,27 @@
 #endif
 
 namespace ogplay::hal {
+std::string HostPreferredLocale() {
+#if OGPLAY_HAS_SDL3
+    int count{};
+    SDL_Locale** locales = SDL_GetPreferredLocales(&count);
+
+    struct FreeLocales {
+        SDL_Locale** value;
+
+        ~FreeLocales() { SDL_free(value); }
+    } cleanup{locales};
+
+    std::string result;
+    if (locales && count > 0 && locales[0] && locales[0]->language) {
+        result = locales[0]->language;
+        if (locales[0]->country && locales[0]->country[0]) result += std::string("-") + locales[0]->country;
+    }
+    return result;
+#else
+    return {};
+#endif
+}
 
 DisplayRect FitDisplayRect(const std::uint32_t source_width, const std::uint32_t source_height,
                            const std::uint32_t target_width, const std::uint32_t target_height) {
@@ -147,6 +169,11 @@ public:
         if (!already_initialized && !requested.empty() && !SDL_SetHint(SDL_HINT_VIDEO_DRIVER, requested.c_str())) {
             throw SdlError("SDL_SetHint(SDL_HINT_VIDEO_DRIVER)");
         }
+        // SDL would otherwise follow the last window's close request with SDL_EVENT_QUIT, which
+        // the owner cannot refuse.
+        if (!SDL_SetHint(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0")) {
+            throw SdlError("SDL_SetHint(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE)");
+        }
         if (!SDL_InitSubSystem(kSdlSubsystems)) {
             SDL_QuitSubSystem(kSdlSubsystems);
             throw SdlError("SDL_InitSubSystem");
@@ -252,6 +279,34 @@ public:
 #endif
     }
 
+    bool ConfirmClose(const CloseConfirmation& text) override {
+        if (window_ == nullptr) throw std::logic_error("close confirmation requires an open window");
+        const std::string title{text.title};
+        const std::string message{text.message};
+        const std::string confirm{text.confirm_label};
+        const std::string cancel{text.cancel_label};
+        constexpr int kCancel = 0;
+        constexpr int kConfirm = 1;
+        // Enter keeps the game running, so keys still being pressed in play cannot close it.
+        const std::array<SDL_MessageBoxButtonData, 2> buttons{{
+            {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, kCancel,
+             cancel.c_str()},
+            {0, kConfirm, confirm.c_str()},
+        }};
+        const SDL_MessageBoxData dialog{
+            .flags = SDL_MESSAGEBOX_WARNING,
+            .window = window_,
+            .title = title.c_str(),
+            .message = message.c_str(),
+            .numbuttons = static_cast<int>(buttons.size()),
+            .buttons = buttons.data(),
+            .colorScheme = nullptr,
+        };
+        int clicked = kCancel;
+        if (!SDL_ShowMessageBox(&dialog, &clicked)) throw SdlError("SDL_ShowMessageBox");
+        return clicked == kConfirm;
+    }
+
     WindowState State() const override {
         if (window_ == nullptr) return {};
         int width{};
@@ -300,8 +355,8 @@ public:
             // Cancel boundaries invalidate queued input, including a partial
             // down/up pair. Do not replay a stale click after resuming.
             std::erase_if(result, [](const auto& input) {
-                return input.type != InputEventType::quit && input.type != InputEventType::gamepad_added &&
-                       input.type != InputEventType::gamepad_removed;
+                return input.type != InputEventType::quit && input.type != InputEventType::close_requested &&
+                       input.type != InputEventType::gamepad_added && input.type != InputEventType::gamepad_removed;
             });
             result.insert(result.begin(), lifecycle_events_.begin(), lifecycle_events_.begin() + lifecycle_count_);
             lifecycle_count_ = 0;
@@ -418,7 +473,7 @@ private:
             break;
         case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
             if (IsOwnedWindow(event.window.windowID)) {
-                result.push_back({.type = InputEventType::quit,
+                result.push_back({.type = InputEventType::close_requested,
                                   .timestamp_ns = event.window.timestamp,
                                   .window_id = event.window.windowID});
             }

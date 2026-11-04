@@ -1,5 +1,6 @@
+import { t } from './i18n';
 export class RpcError extends Error { constructor(readonly code: number, message: string) { super(message); } }
-export class Unauthorized extends Error { constructor() { super('令牌无效或已过期'); } }
+export class Unauthorized extends Error { constructor() { super(t('令牌无效或已过期')); } }
 
 const kStorageKey = 'ogplay.controls.token';
 const kMaximumResponse = 32 * 1024 * 1024;
@@ -33,11 +34,11 @@ export function createRpc(token: string, fetcher: typeof fetch = fetch): Rpc {
     if (response.status === 401) throw new Unauthorized();
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const text = await response.text();
-    if (text.length > kMaximumResponse) throw new Error('响应超过大小限制');
+    if (text.length > kMaximumResponse) throw new Error(t('响应超过大小限制'));
     const value = JSON.parse(text) as { id?: number; result?: T; error?: { code: number; message: string } };
-    if (value.id !== id) throw new Error('响应序号不匹配');
+    if (value.id !== id) throw new Error(t('响应序号不匹配'));
     if (value.error) throw new RpcError(value.error.code, value.error.message);
-    if (value.result === undefined) throw new Error('响应缺少结果');
+    if (value.result === undefined) throw new Error(t('响应缺少结果'));
     return value.result;
   };
 }

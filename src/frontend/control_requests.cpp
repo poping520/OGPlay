@@ -22,7 +22,8 @@ void RequireParams(const core::JsonValue params, const std::initializer_list<std
 [[nodiscard]] session::ControlLayer EffectiveLayer(const input::ControlConfig& config) {
     session::ControlLayer layer;
     layer.zones = config.zones;
-    for (const auto& binding : config.bindings) layer.bindings.push_back({binding, false});
+    for (const auto& binding : config.bindings)
+        layer.bindings.push_back({binding, false});
     return layer;
 }
 
@@ -33,10 +34,13 @@ void RequireParams(const core::JsonValue params, const std::initializer_list<std
     writer.AddUnsignedInteger(surface, "width", context.surface_width);
     writer.AddUnsignedInteger(surface, "height", context.surface_height);
     writer.Add(root, "surface", surface);
+    writer.AddString(root, "language", context.ui_language);
     writer.AddBool(root, "frozen", context.frozen);
     writer.AddString(root, "mode", context.mapper.Mode());
-    if (context.config_path) writer.AddString(root, "config_path", context.config_path->generic_string());
-    else writer.AddNull(root, "config_path");
+    if (context.config_path)
+        writer.AddString(root, "config_path", context.config_path->generic_string());
+    else
+        writer.AddNull(root, "config_path");
     writer.AddBool(root, "persistent", context.config_path.has_value());
     writer.Add(root, "user", session::WriteControlLayerJson(writer, context.user));
     writer.Add(root, "effective", session::WriteControlLayerJson(writer, EffectiveLayer(context.mapper.Config())));
@@ -92,8 +96,10 @@ void RequireParams(const core::JsonValue params, const std::initializer_list<std
     const auto root = writer.Object();
     writer.AddBool(root, "applied", true);
     writer.AddBool(root, "saved", saved);
-    if (context.config_path) writer.AddString(root, "config_path", context.config_path->generic_string());
-    else writer.AddNull(root, "config_path");
+    if (context.config_path)
+        writer.AddString(root, "config_path", context.config_path->generic_string());
+    else
+        writer.AddNull(root, "config_path");
     return agent::ControlResult(writer.Serialize(root));
 }
 

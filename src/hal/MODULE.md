@@ -15,13 +15,16 @@
   无宿主线程池，不泄漏原生句柄。身份不承诺外部原地修改的内容快照。
 
 - `WebViewHost`：归 ogplay_desktop_webview，移出 ogplay_hal，仅桌面链接（Windows WebView2、macOS WKWebView）；仅宿主启动器使用的静态页面窗口、RPC 字符串回调、事件轮询与脚本投递；
-  不暴露 native handle，不创建 guest。当前仅 Windows 实现；冒烟可记录响应并保存 PNG。
+  不暴露 native handle，不创建 guest。macOS/Windows 均在 UI 线程派发 RPC；冒烟可记录响应并保存 PNG。
+- `WebViewShellText` 由上层传入菜单/托盘初值，`SetShellText` 仅在主线程更新；HAL 无翻译表。
+  macOS 重建主菜单并保留快捷键、selector 与 windowsMenu 注册；Windows 在弹出托盘菜单时用当前文字。
+  RPC 异常回退的 next_step 同样由 WebViewHostOptions 提供。
 - `WebViewHost::OpenDashboard/CloseDashboard`：按实例复用独立 loopback 窗口，仅允许指定
   端口 `/dash/` 导航，禁止弹窗且不绑定启动器 RPC；启动器结束（关闭按钮只隐藏主窗口；macOS 经退出菜单，Windows 经通知区域图标菜单）同时回收监控窗口。
 - `WebViewHost::OpenKeyEditor/CloseKeyEditor`：同上规则的按键设置窗口，仅允许 `/controls/`；
-  十六进制令牌经 `webview_init` 写入页面 sessionStorage，不出现在地址中。
+  完整窗口标题由上层传入；十六进制令牌经 `webview_init` 写入页面 sessionStorage，不出现在地址中。
 - `OpenUrlInBrowser`：经 SDL 用默认浏览器打开 http(s) 地址，失败抛出。
-- `WebViewHost::PickPath`：返回文件/目录选择 future，取消返回空；原生句柄不跨接口。
+- `WebViewHost::PickPath`：接受上层提供的 UTF-8 标题，返回文件/目录选择 future，取消返回空；原生句柄不跨接口。
 - `Clock::SteadyTimestampNs`：宿主诊断采集时刻，steady epoch 纳秒，与 guest ticks 分开。
 - `Clock::UtcTimestamp`：仅宿主元数据使用的 UTC 时间，guest 时间仍为 Clock ticks。
 - `TryCloneFile`：把普通文件克隆为尚不存在的目标；macOS clonefile、Linux FICLONE，Windows
@@ -48,6 +51,8 @@
   hal/windows `WindowIcons` 按窗口 DPI 的小/大图标度量各取最接近且不小于的尺寸设 ICON_SMALL/ICON_BIG。失败明确传播。
 - `hal::SetHostApplicationIdentity`：建窗前设置进程任务栏身份，1～128 个 `[A-Za-z0-9._-]`；Windows 为
   AppUserModelID（游戏与启动器分开成组），其他平台只校验。
+- `hal::InputEventType::close_requested`：用户请求关闭窗口，是否停止由窗口拥有者决定；`quit` 是宿主要求进程结束，不可拒绝。
+- `hal::WindowInput::ConfirmClose`：在拥有线程阻塞显示依附窗口的确认框，文案由调用方提供；仅用户选择关闭时返回 true，无法显示时抛错。
 - `hal::WindowInput::PumpEvents`：处理宿主窗口消息但不移除规范化输入事件，供长任务
   在主线程维持窗口响应；关闭窗口上调用明确失败。
 - `hal::WindowInput::PresentRgba8`：校验完整 RGBA8 帧并缩放提交到当前 SDL 窗口。
@@ -66,6 +71,8 @@
   wait/stop/signal，并统一诊断文件权限、宿主 PID 与 native thread id；不含 guest 语义。
 - `hal::ScopedHostEnvironment`：串行覆盖一组宿主进程环境变量并在嵌套、异常和析构路径恢复
   原值；`HostEnvironmentValue` 提供同锁只读查询。
+- `hal::HostPreferredLocale`：SDL 首选 locale 的第一项（含 country 时以 `-` 连接），释放 SDL 分配；
+  无 SDL 或取不到时返回空串，不读取或修改 guest Locale。
 - `hal::HostExecutableDirectory`：通过平台实现返回当前宿主可执行文件所在的绝对目录，
   供上层定位随程序交付且可重定位的运行时资源。
 - `hal::SharedLibraryFileName` / `OpenSharedLibrary` / `ResolveSharedLibrarySymbol`：

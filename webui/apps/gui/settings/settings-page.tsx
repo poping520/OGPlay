@@ -7,7 +7,7 @@ import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui
 import { IconPreview } from './icon-preview';
 import { Credits } from './credits';
 import { skinOf } from '../kit';
-import { setLanguage, t } from '../shared/i18n';
+import { resolvedLanguage, setLanguage, t } from '../shared/i18n';
 
 export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved: (settings: Settings) => void }) {
   const [group, setGroup] = useState<string>('general');
@@ -29,8 +29,8 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
   };
   useEffect(() => { void run(store.load); }, []);
   // Language follows the page at once; if a write never lands, leaving restores the saved one.
-  useEffect(() => { if (saved) setLanguage(draft.language ?? saved.values.language); }, [draft.language, saved]);
-  useEffect(() => () => { const language = store.latest()?.values.language; if (language !== undefined) setLanguage(language); }, []);
+  useEffect(() => { if (saved) setLanguage(resolvedLanguage(draft.language ?? saved.values.language, saved.system_language)); }, [draft.language, saved]);
+  useEffect(() => () => { const latest = store.latest(); if (latest) setLanguage(resolvedLanguage(latest.values.language, latest.system_language)); }, []);
   const openLibrary = () => void run(async () => { await rpc('settings.open_dir', { kind: 'library' }); });
   const actions = (...buttons: ComponentChildren[]) => <div class="acts">{buttons}</div>;
   // The version is shown on its own line; the other facts stay folded.

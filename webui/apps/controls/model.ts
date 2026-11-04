@@ -12,6 +12,7 @@ export interface Binding {
 export interface Layer { zone: Zone[]; binding: Binding[] }
 export interface Surface { width: number; height: number }
 export interface Session {
+  language: 'zh-CN' | 'en-US';
   surface: Surface; frozen: boolean; mode: string; config_path: string | null; persistent: boolean;
   user: Layer; effective: Layer;
 }

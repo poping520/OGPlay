@@ -1,4 +1,5 @@
 #include "frontend/gui/rpc.h"
+#include "frontend/gui/rpc_error.h"
 #include "ogplay/app/library.h"
 #include "ogplay/app/encoding.h"
 #include "ogplay/app/host.h"
@@ -200,7 +201,7 @@ app::ConsoleResponse IconPreview(const app::JsonValue params) {
     const auto branding = BundledDataPaths().root / "branding";
     const auto read = [](const std::filesystem::path& path) {
         std::ifstream file(path, std::ios::binary);
-        if (!file) throw std::runtime_error("图标素材缺失：" + PathText(path));
+        if (!file) throw GuiTextError("图标素材缺失：{path}", {{"path", PathText(path)}});
         std::vector<std::byte> bytes;
         for (char c; file.get(c);)
             bytes.push_back(static_cast<std::byte>(c));
@@ -253,17 +254,21 @@ app::ConsoleResponse GuiRpcService::SettingsRequest(std::string_view method, app
     if (method == "settings.set") {
         if (SettingsBusy()) throw std::runtime_error("正在分析或入库，请稍后保存设置。");
         if (Revision(config) != expected) throw std::runtime_error("设置已被其他窗口修改，请重新载入后再保存。");
+        const auto previous_language = ResolveUiLanguage(std::get<std::string>(Setting(config, "language")));
         const bool showed_demos = std::get<bool>(Setting(config, "show_demo_games"));
         for (const auto& field : SettingDefinitions())
             if (params.Member("values")->Member(field.key)) SetSetting(config, field.key, Setting(patch, field.key));
         ValidateLibraryConfigDirectories(config);
         SaveLibraryConfig(store_.Root(), config);
+        const auto language = ResolveUiLanguage(std::get<std::string>(Setting(config, "language")));
+        if (language != previous_language && host_.language_changed) host_.language_changed(language);
         // Turning demos back on also restores a demo that was removed.
         if (!showed_demos && std::get<bool>(Setting(config, "show_demo_games")) && host_.seed_demos) host_.seed_demos();
     }
     app::JsonWriter writer;
     const auto root = writer.Object(), result = writer.Object();
     writer.AddUnsignedInteger(result, "schema", 2);
+    writer.AddString(result, "system_language", UiLanguageTag(SystemUiLanguage()));
     writer.AddString(result, "revision", Revision(config));
     writer.Add(result, "values", Values(writer, config));
     const auto fields = FieldList(writer, SettingDefinitions(), kHiddenSettings);

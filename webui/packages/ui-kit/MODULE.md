@@ -6,7 +6,10 @@
 `skin-glass` 段（“玻璃紫”）提供皮肤令牌、共享控件与对话框的玻璃外观及 `.glass-sky` 背景；视图根带 `skin-glass` 即生效，
 规则以 `:root` 提一级权重，压过视图自身的磨砂黑默认值。各视图样式只补本视图特有的玻璃差异。
 组件 `glyph.tsx`（线性图标 `Glyph`，24 栅格圆头描边，禁用字体符号作图标）与 `key.tsx`（手柄键位徽标 `Key`）只依赖 Preact，
-不带资源、多语言或 RPC，任何应用可直接导入；依赖 logo、多语言的片段留在应用内（如 gui 的 `kit.tsx`）。
+不带应用资源或 RPC，任何应用可直接导入；依赖 logo、多语言的片段留在应用内（如 gui 的 `kit.tsx`）。
+`i18n.ts` 提供共享 language/setLanguage/useLanguage/t/tj 与英文表注册，中文原文作键，
+缺词回退原文，支持字符串/JSX 占位符；各应用 bundle 只注册自己的表，不依赖 GUI。
+`i18n-test-utils.ts` 只用于测试，提供 TS 与 C++ 字面量扫描；C++ 扫描区分注释、字符、普通与 raw string。
 不访问 RPC、文件或运行时，不决定业务状态。应用通过类名和原生 disabled/ARIA 状态驱动样式。
 按键设置窗口（apps/controls）在自身样式前直接导入本主题，只用磨砂黑（由游戏进程提供，不读启动器的界面风格）；
 Dashboard 仍使用自己的样式文件，尚未接入本主题。

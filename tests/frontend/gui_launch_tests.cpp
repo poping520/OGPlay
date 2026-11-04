@@ -165,7 +165,7 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     std::filesystem::create_directories(external);
     const auto plan =
         ogplay::frontend::BuildLaunchPlan(cli, temporary.path, Entry(entry_dir, external), {.profiles_dir = profiles});
-    REQUIRE(plan.argv.size() == 27);
+    REQUIRE(plan.argv.size() == 29);
     CHECK(plan.argv[1] == "--run-game");
     CHECK(plan.argv[3] == "--profiles-dir");
     CHECK(plan.argv[5] == "--external-dir");
@@ -188,8 +188,10 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     CHECK(plan.argv[24] ==
           std::filesystem::absolute(entry_dir / "last-run-missing.json").lexically_normal().generic_string());
     // The window caption shows the library name, not the stored game.apk.
-    CHECK(plan.argv[25] == "--window-title");
-    CHECK(plan.argv[26] == "Game");
+    CHECK(plan.argv[25] == "--ui-language");
+    CHECK(plan.argv[26] == ogplay::app::UiLanguageTag(ogplay::app::SystemUiLanguage()));
+    CHECK(plan.argv[27] == "--window-title");
+    CHECK(plan.argv[28] == "Game");
     CHECK(plan.package == "org.example.game");
     CHECK(plan.log_path == std::filesystem::absolute(entry_dir / "last-run.log"));
 }
@@ -472,4 +474,30 @@ TEST_CASE("running icon follows the entry icon and the global style") {
     REQUIRE(style != argv.end());
     CHECK(*std::next(style) == "cradle");
     CHECK_THROWS(SetSetting(global, "running_icon", std::string("plain")));
+}
+
+TEST_CASE("gui_launch resolves UI language for the process and localized window name") {
+    using namespace ogplay::app;
+    TemporaryDirectory tree;
+    const auto directory = tree.path / "library/org.example.game";
+    Write(directory / "game.apk", "apk");
+    auto entry = Entry(directory, {});
+    entry.external_dir.reset();
+    entry.metadata->localized_names = {{"zh", "中文游戏"}, {"en", "English Game"}};
+    LibraryConfig config;
+    LibraryStore store(tree.path);
+    const auto executable = tree.path / "ogplay";
+    Write(executable, "exe");
+    for (const auto tag : {"zh-CN", "en-US", "system"}) {
+        SetSetting(config, "language", std::string(tag));
+        const auto resolved = ResolveLaunch(store, entry, config);
+        const auto language = ResolveUiLanguage(tag);
+        CHECK(resolved.options.ui_language == language);
+        CHECK(resolved.options.window_title == (language == UiLanguage::zh_CN ? "中文游戏" : "English Game"));
+        const auto args = FormatGameRunArgs(resolved.options);
+        const auto flag = std::find(args.begin(), args.end(), "--ui-language");
+        REQUIRE(flag != args.end());
+        CHECK(*std::next(flag) == UiLanguageTag(language));
+        CHECK(ogplay::frontend::BuildLaunchPlan(executable, tree.path, entry, config).ui_language == language);
+    }
 }

@@ -24,6 +24,7 @@ struct Harness final {
     std::uint64_t edit_requests{};
     std::uint64_t close_requests{};
     std::vector<bool> seen;
+    std::string_view ui_language{"en-US"};
 
     agent::ControlResponse Call(const std::string& method, const std::string& params = {}) {
         std::optional<core::JsonDocument> document;
@@ -50,6 +51,7 @@ struct Harness final {
                 .close_requests = close_requests,
                 .close = [this] { ++close_requests; },
                 .seen = [this](const bool launcher) { seen.push_back(launcher); },
+                .ui_language = ui_language,
             });
     }
 };
@@ -65,7 +67,8 @@ constexpr std::string_view kLayer = R"({"layer":{"zone":[
 }  // namespace
 
 TEST_CASE("INP-5 control.apply hot-applies, saves and round-trips through control.get") {
-    const auto directory = std::filesystem::temp_directory_path() /
+    const auto directory =
+        std::filesystem::temp_directory_path() /
         ("ogplay-control-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     Harness harness;
     harness.mapper.SetSurface(800, 480);
@@ -102,7 +105,8 @@ TEST_CASE("INP-5 rejected layouts leave the running layout unchanged") {
     REQUIRE(harness.Call("control.apply", std::string(kLayer)).ok);
     CHECK(harness.Call("control.apply", std::string(kLayer)).json.find(R"("saved":false)") != std::string::npos);
 
-    const auto oversized = harness.Call("control.apply",
+    const auto oversized = harness.Call(
+        "control.apply",
         R"({"layer":{"zone":[{"name":"a","anchor":"center","r":900}],"binding":[{"source":"key:j","action":"button","zone":"a"}]}})");
     CHECK_FALSE(oversized.ok);
     CHECK(oversized.json.find("-32010") != std::string::npos);
@@ -154,4 +158,17 @@ TEST_CASE("INP-7 control.resume with close resumes and asks the launcher to clos
     CHECK(harness.Call("control.resume", R"({"close":1})").json.find("-32602") != std::string::npos);
     CHECK(harness.Call("control.resume", R"({"other":true})").json.find("-32602") != std::string::npos);
     CHECK(harness.close_requests == 1);
+}
+
+TEST_CASE("control_requests control.get reports the game's fixed UI language") {
+    Harness harness;
+    for (const auto language : {"zh-CN", "en-US"}) {
+        harness.ui_language = language;
+        const auto response = harness.Call("control.get");
+        REQUIRE(response.ok);
+        core::JsonParseError error;
+        const auto document = core::JsonDocument::ParseStrict(response.json, error);
+        REQUIRE(document);
+        CHECK(document->Root().Member("result")->Member("language")->String() == language);
+    }
 }

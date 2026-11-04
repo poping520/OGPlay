@@ -12,3 +12,13 @@ describe('GUI RPC response boundary', () => {
     expect(() => decodeResponse({ jsonrpc: '2.0', id: 8, error: { code: -32004, message: 'missing', next_step: 'refresh' } }, 8)).toThrow('missing\nrefresh');
   });
 });
+
+it('translates host templates and next steps with parameters', async () => {
+  const { setLanguage } = await import('./i18n');
+  setLanguage('en-US');
+  try {
+    expect(() => decodeResponse({ jsonrpc: '2.0', id: 8, error: {
+      code: -32001, message: '游戏当前不可启动（{status}）', params: { status: 'running' }, next_step: '刷新游戏库后重试。',
+    } }, 8)).toThrow('The game cannot be started (running)\nRefresh the library, then try again.');
+  } finally { setLanguage('zh-CN'); }
+});

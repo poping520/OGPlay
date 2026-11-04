@@ -242,6 +242,20 @@ TEST_CASE("SDL events map gamepad state and quit requests") {
     CHECK(events[1].pressed);
     CHECK(events[2].type == ogplay::hal::InputEventType::quit);
 }
+
+TEST_CASE("a window close request stays refusable") {
+    auto host = OpenDummyWindow();
+    SDL_Event close{};
+    close.window.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+    close.window.windowID = host->State().id;
+    REQUIRE(SDL_PushEvent(&close));
+
+    const auto events = host->PollEvents();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].type == ogplay::hal::InputEventType::close_requested);
+    // SDL must not follow the last window's close request with an SDL_EVENT_QUIT.
+    CHECK_FALSE(SDL_GetHintBoolean(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, true));
+}
 #else
 TEST_CASE("SDL-disabled builds fail the window factory explicitly") {
     CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::hal::CreateSdlWindowInput(ogplay::hal::VideoBackend::dummy)),
@@ -356,8 +370,8 @@ TEST_CASE("GUI-17 Windows window has game icons before its first show") {
     host->Open({.title = "OGPlay icon startup contract", .width = 160, .height = 90, .hidden = true});
     auto* window = SDL_GetWindowFromID(host->State().id);
     REQUIRE(window != nullptr);
-    auto hwnd = static_cast<HWND>(SDL_GetPointerProperty(
-        SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+    auto hwnd = static_cast<HWND>(
+        SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
     REQUIRE(hwnd != nullptr);
     CHECK_FALSE(IsWindowVisible(hwnd));
     const std::vector<std::uint8_t> pixels(32U * 32U * 4U, 0xffU);

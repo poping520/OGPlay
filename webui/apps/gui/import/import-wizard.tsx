@@ -40,7 +40,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
       if (disposed.current) throw new Error(t('向导已关闭'));
       result = await rpc<ImportJob>('library.job.poll', { job: result.job });
     }
-    if (result.state === 'failed') throw new Error(`${result.message ?? t('导入失败')}\n${t('请检查安装包和库目录后重新选择。')}`);
+    if (result.state === 'failed') throw new Error(`${t(result.message ?? '导入失败')}\n${t('请检查安装包和库目录后重新选择。')}`);
     return result;
   }
   async function run(action: () => Promise<void>) {

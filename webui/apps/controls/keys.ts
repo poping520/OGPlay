@@ -1,3 +1,4 @@
+import { t } from './i18n';
 // Physical key names shared with input::ParseInputSource; KeyboardEvent.code is layout independent.
 const named: Record<string, string> = {
   Enter: 'enter', Escape: 'escape', Backspace: 'backspace', Tab: 'tab', Space: 'space',
@@ -25,11 +26,11 @@ export function keyName(code: string): string | undefined {
 }
 
 export function captureKey(event: { code: string; ctrlKey: boolean; metaKey: boolean }): Captured {
-  if (event.metaKey || event.code.startsWith('Meta')) return { error: 'Cmd/Win 组合键保留给宿主' };
-  if (event.ctrlKey && !event.code.startsWith('Control')) return { error: 'Ctrl 组合键保留给宿主' };
+  if (event.metaKey || event.code.startsWith('Meta')) return { error: t('Cmd/Win 组合键保留给宿主') };
+  if (event.ctrlKey && !event.code.startsWith('Control')) return { error: t('Ctrl 组合键保留给宿主') };
   const name = keyName(event.code);
-  if (!name) return { error: `不支持的按键 ${event.code || '（未知）'}` };
-  if (reserved.has(name)) return { error: `${name.toUpperCase()} 保留给宿主` };
+  if (!name) return { error: t("不支持的按键 {key}", { key: event.code || t('（未知）') }) };
+  if (reserved.has(name)) return { error: t("{key} 保留给宿主", { key: name.toUpperCase() }) };
   return { source: `key:${name}` };
 }
 
@@ -37,7 +38,7 @@ const mouseNames = ['left', 'middle', 'right', 'x1', 'x2'];
 // MouseEvent.button: 0 primary, 1 middle, 2 secondary, 3/4 back/forward.
 export function captureMouse(button: number): Captured {
   const name = mouseNames[button];
-  return name ? { source: `mouse:${name}` } : { error: `不支持的鼠标键 ${button}` };
+  return name ? { source: `mouse:${name}` } : { error: t("不支持的鼠标键 {button}", { button }) };
 }
 
 const labels: Record<string, string> = {
@@ -48,10 +49,10 @@ const labels: Record<string, string> = {
   equals: '=', left_bracket: '[', right_bracket: ']', backslash: '\\', semicolon: ';',
   apostrophe: "'", grave: '`', comma: ',', period: '.', slash: '/',
 };
-const mouseLabels: Record<string, string> = { left: '鼠标左键', middle: '鼠标中键', right: '鼠标右键', x1: '鼠标侧键 1', x2: '鼠标侧键 2' };
+const mouseLabels = (): Record<string, string> => ({ left: t('鼠标左键'), middle: t('鼠标中键'), right: t('鼠标右键'), x1: t('鼠标侧键 1'), x2: t('鼠标侧键 2') });
 
 export function sourceLabel(source: string): string {
-  if (source.startsWith('mouse:')) return mouseLabels[source.slice(6)] ?? source;
+  if (source.startsWith('mouse:')) return mouseLabels()[source.slice(6)] ?? source;
   const name = source.startsWith('key:') ? source.slice(4) : source;
   return labels[name] ?? name.toUpperCase();
 }

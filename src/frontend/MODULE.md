@@ -93,6 +93,8 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   `control.get/freeze/resume/frame/apply/status`（`resume {close:true}` 表示编辑完成，计入 `close_requests`），要求 `Authorization: Bearer <token>` 且 Host 为
   loopback；令牌取 `OGPLAY_CONTROL_TOKEN` 环境变量（由启动方提供，不进 argv），缺省时生成
   128 位随机令牌并打印。请求经 `ControlEditorChannel` 在主循环执行（`HandleControlRequest`）。
+  `control.get` 额外返回 `language`（zh-CN/en-US）；`ControlRequestContext::ui_language` 由游戏进程
+  传入启动时固定的宿主界面语言，不读取启动器配置或改变 guest Locale。
   冻结只停止 guest 推进与窗口输入投递并取消现有触点，不触发 Android 生命周期；`apply`
   校验失败返回 -32010 且运行布局不变，成功后热应用并原子写回用户键位文件。run-apk 的
   状态行写入后立即刷新 stdout。

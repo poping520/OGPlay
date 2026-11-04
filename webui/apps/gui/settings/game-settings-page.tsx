@@ -53,7 +53,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
     <div class="launch-h"><b>{t('启动与参数预览')}</b><span class="tag over">{t('来自已保存设置')}</span>
       <div class="seg" role="radiogroup" aria-label={t('启动模式')}>{modes.map(([key, label]) =>
         <button key={key} role="radio" aria-checked={mode === key} class={mode === key ? 'on' : ''} onClick={() => setMode(key)}>{t(label)}</button>)}</div></div>
-    {preview?.error ? <pre class="term" role="alert">{preview.error}</pre> : <Argv argv={preview?.argv ?? []} />}
+    {preview?.error ? <pre class="term" role="alert">{t(preview.error)}</pre> : <Argv argv={preview?.argv ?? []} />}
     <div class="launch-f"><span>{mode === 'preflight' ? t('预检不会启用 MCP，结果写入游戏日志。') : t('参数由宿主生成，前端不拼接自由参数。')}</span>
       <button class="pill main" disabled={busy || saving || !!preview?.error}
         onClick={() => void run(async () => { await rpc('library.launch', { installation_id: id, mode }); say(t('已启动游戏进程；预检结果与诊断信息见游戏日志')); })}>

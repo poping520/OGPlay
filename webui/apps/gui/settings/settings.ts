@@ -6,6 +6,7 @@ export interface SettingField {
   hidden: boolean;                               // kept off the page by the host until it is polished
 }
 export interface Settings {
+  system_language: 'zh-CN' | 'en-US';
   schema: number; revision: string; values: Record<string, SettingValue>; fields: SettingField[];
   library_root: string; config_path: string; facts: Record<string, string | null>;
   reserved_visible: boolean;                     // false in release builds

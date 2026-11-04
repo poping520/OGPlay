@@ -1,3 +1,4 @@
+import { t, setLanguage, useLanguage, updateDocumentLanguage } from './i18n';
 import { render } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import '../../packages/ui-kit/theme.css';
@@ -15,22 +16,22 @@ interface Status { kind: 'info' | 'ok' | 'error'; text: string }
 interface Capture { zone: string; kind: 'button' | 'stick'; collected: string[]; template: Binding; direction?: number }
 type Drag = { kind: 'move' | 'size' | 'travel'; zone: string; start: { x: number; y: number }; box: Box; pointer: number };
 
-const stickSteps = ['上', '左', '下', '右'];
-const pressNames = { tap: '点按', hold: '按住', repeat: '连发' } as const;
+const stickSteps = () => [t('上'), t('左'), t('下'), t('右')];
+const pressNames = () => ({ tap: t('点按'), hold: t('按住'), repeat: t('连发') } as const);
 
 function message(error: unknown): string {
-  if (error instanceof RpcError && error.code === -32010) return `配置无效：${error.message}`;
-  if (error instanceof RpcError && error.code === -32011) return '游戏还没有输出画面，稍后点“重新获取画面”。';
+  if (error instanceof RpcError && error.code === -32010) return t("配置无效：{reason}", { reason: error.message });
+  if (error instanceof RpcError && error.code === -32011) return t('游戏还没有输出画面，稍后点“重新获取画面”。');
   return error instanceof Error ? error.message : String(error);
 }
 
 function TokenForm({ onToken }: { onToken: (token: string) => void }) {
   const [value, setValue] = useState('');
   return <form class="token" onSubmit={event => { event.preventDefault(); if (value.trim()) onToken(value.trim()); }}>
-    <h1>OGPlay 按键设置</h1>
-    <p>请从 OGPlay 启动器打开此页面；命令行启动时，可粘贴终端输出中的编辑器令牌。</p>
-    <input value={value} onInput={event => setValue((event.target as HTMLInputElement).value)} placeholder="令牌" autoFocus />
-    <button class="pill main" type="submit">连接</button>
+    <h1>{t("OGPlay 按键设置")}</h1>
+    <p>{t("请从 OGPlay 启动器打开此页面；命令行启动时，可粘贴终端输出中的编辑器令牌。")}</p>
+    <input value={value} onInput={event => setValue((event.target as HTMLInputElement).value)} placeholder={t("令牌")} autoFocus />
+    <button class="pill main" type="submit">{t("连接")}</button>
   </form>;
 }
 
@@ -91,7 +92,7 @@ function Stage({ session, draft, frame, selected, conflicted, onSelect, onZone, 
             const [dx, dy] = [[0, -1], [-1, 0], [0, 1], [1, 0]][index] ?? [0, 0];
             return <text x={box.cx + dx * box.hw * 0.6} y={box.cy + dy * box.hh * 0.6} font-size={font * 0.8}>{sourceLabel(source)}</text>;
           })}
-        </> : <text x={box.cx} y={box.cy} font-size={font}>{bindings.length ? bindings.map(bindingText).join(' / ') : '未绑定'}</text>}
+        </> : <text x={box.cx} y={box.cy} font-size={font}>{bindings.length ? bindings.map(bindingText).join(' / ') : t('未绑定')}</text>}
         <text class="name" x={box.cx} y={box.cy + box.hh + 12} font-size="11">{zone.name}</text>
         {zone.name === selected && <>
           <circle class="handle" cx={box.cx + box.hw * (box.circle ? Math.SQRT1_2 : 1)} cy={box.cy + box.hh * (box.circle ? Math.SQRT1_2 : 1)} r="7"
@@ -130,44 +131,44 @@ function Inspector({ session, draft, zone, conflictedBindings, capturing, onZone
   return <section class="inspector">
     <h2>{zone.name}</h2>
     <div class="seg">
-      <button class={box.circle ? 'on' : ''} aria-pressed={box.circle} onClick={() => reshape(true)}>圆形</button>
-      <button class={box.circle ? '' : 'on'} aria-pressed={!box.circle} onClick={() => reshape(false)}>矩形</button>
+      <button class={box.circle ? 'on' : ''} aria-pressed={box.circle} onClick={() => reshape(true)}>{t("圆形")}</button>
+      <button class={box.circle ? '' : 'on'} aria-pressed={!box.circle} onClick={() => reshape(false)}>{t("矩形")}</button>
     </div>
     {!binding && <div class="row">
-      <button class="pill main" onClick={() => onCapture(zone.name, 'button')}>设为按钮并绑定按键</button>
-      <button class="pill" onClick={() => onStick(zone.name)}>设为摇杆</button>
+      <button class="pill main" onClick={() => onCapture(zone.name, 'button')}>{t("设为按钮并绑定按键")}</button>
+      <button class="pill" onClick={() => onStick(zone.name)}>{t("设为摇杆")}</button>
     </div>}
     {binding?.action === 'button' && <>
-      <p class={conflictedBindings.has(draft.bindings.indexOf(binding)) ? 'conflict-text' : ''}>按键：<b>{bindingText(binding)}</b></p>
-      <div class="row"><button class="pill" onClick={() => onCapture(zone.name, 'button')}>重新绑定</button></div>
+      <p class={conflictedBindings.has(draft.bindings.indexOf(binding)) ? 'conflict-text' : ''}>{t("按键：")}<b>{bindingText(binding)}</b></p>
+      <div class="row"><button class="pill" onClick={() => onCapture(zone.name, 'button')}>{t("重新绑定")}</button></div>
       <div class="seg">{(['tap', 'hold', 'repeat'] as const).map(press =>
         <button class={(binding.press ?? 'hold') === press ? 'on' : ''} aria-pressed={(binding.press ?? 'hold') === press}
-                onClick={() => onBinding(zone.name, { ...binding, press, repeat_frames: press === 'repeat' ? binding.repeat_frames ?? 6 : undefined })}>{pressNames[press]}</button>)}
+                onClick={() => onBinding(zone.name, { ...binding, press, repeat_frames: press === 'repeat' ? binding.repeat_frames ?? 6 : undefined })}>{pressNames()[press]}</button>)}
       </div>
-      {binding.press === 'repeat' && <NumberField label="连发间隔（帧）" value={binding.repeat_frames ?? 6} min={2} max={120}
+      {binding.press === 'repeat' && <NumberField label={t("连发间隔（帧）")} value={binding.repeat_frames ?? 6} min={2} max={120}
         onChange={value => onBinding(zone.name, { ...binding, repeat_frames: value })} />}
     </>}
     {binding?.action === 'stick' && <>
       <div class={`directions ${conflictedBindings.has(draft.bindings.indexOf(binding)) ? 'conflict-text' : ''}`}>
         {splitSources(binding.source).map((source, index) =>
-          <button key={index} class={capturing === index ? 'on' : ''} aria-label={`${stickSteps[index]}：${sourceLabel(source)}，点击更换`}
-                  onClick={() => onCapture(zone.name, 'stick', index)}><span>{stickSteps[index]}</span><b>{capturing === index ? '…' : sourceLabel(source)}</b></button>)}
+          <button key={index} class={capturing === index ? 'on' : ''} aria-label={t("{direction}：{key}，点击更换", { direction: stickSteps()[index], key: sourceLabel(source) })}
+                  onClick={() => onCapture(zone.name, 'stick', index)}><span>{stickSteps()[index]}</span><b>{capturing === index ? '…' : sourceLabel(source)}</b></button>)}
       </div>
-      <small>点击一个方向后按下新键，只更换该方向。</small>
+      <small>{t("点击一个方向后按下新键，只更换该方向。")}</small>
       <div class="row">
-        <button class="pill" onClick={() => onCapture(zone.name, 'stick')}>逐个绑定</button>
+        <button class="pill" onClick={() => onCapture(zone.name, 'stick')}>{t("逐个绑定")}</button>
         <button class="pill" onClick={() => onBinding(zone.name, { ...binding, source: 'keys:w,a,s,d' })}>WASD</button>
-        <button class="pill" onClick={() => onBinding(zone.name, { ...binding, source: 'keys:up,left,down,right' })}>方向键</button>
+        <button class="pill" onClick={() => onBinding(zone.name, { ...binding, source: 'keys:up,left,down,right' })}>{t("方向键")}</button>
       </div>
-      <NumberField label="行程（相对半径）" value={binding.radius ?? 0.7} min={0.1} max={1} step={0.05}
+      <NumberField label={t("行程（相对半径）")} value={binding.radius ?? 0.7} min={0.1} max={1} step={0.05}
         onChange={value => onBinding(zone.name, { ...binding, radius: Math.round(value * 100) / 100 })} />
-      <NumberField label="按下停留（帧）" value={binding.settle_frames ?? 2} min={0} max={30}
+      <NumberField label={t("按下停留（帧）")} value={binding.settle_frames ?? 2} min={0} max={30}
         onChange={value => onBinding(zone.name, { ...binding, settle_frames: value })} />
-      <NumberField label="滑到目标（帧）" value={binding.ramp_frames ?? 4} min={1} max={30}
+      <NumberField label={t("滑到目标（帧）")} value={binding.ramp_frames ?? 4} min={1} max={30}
         onChange={value => onBinding(zone.name, { ...binding, ramp_frames: value })} />
-      <small>拖动圆内的菱形手柄调整行程。</small>
+      <small>{t("拖动圆内的菱形手柄调整行程。")}</small>
     </>}
-    <div class="row"><button class="pill danger" onClick={() => onRemove(zone.name)}>删除此控件</button></div>
+    <div class="row"><button class="pill danger" onClick={() => onRemove(zone.name)}>{t("删除此控件")}</button></div>
   </section>;
 }
 
@@ -175,24 +176,24 @@ function OtherBindings({ draft, conflictedBindings, onRemove }: { draft: Draft; 
   const others = draft.bindings.map((binding, index) => ({ binding, index })).filter(({ binding }) => !binding.zone);
   if (!others.length) return null;
   return <section class="others">
-    <h3>其他绑定</h3>
+    <h3>{t("其他绑定")}</h3>
     {others.map(({ binding, index }) => <div class={`other ${conflictedBindings.has(index) ? 'conflict-text' : ''}`} key={index}>
-      <span>{bindingText(binding)} → {binding.action === 'key' ? `安卓键 ${binding.key}` : `切换到 ${binding.target}`}
-        {binding.mode && binding.mode !== 'default' ? <small>模式 {binding.mode === '*' ? '全部' : binding.mode}</small> : null}</span>
-      <button class="pill danger" onClick={() => onRemove(index)}>删除</button>
+      <span>{bindingText(binding)} → {binding.action === 'key' ? t("安卓键 {key}", { key: binding.key ?? '' }) : t("切换到 {mode}", { mode: binding.target ?? '' })}
+        {binding.mode && binding.mode !== 'default' ? <small>{t("模式")}{binding.mode === '*' ? t('全部') : binding.mode}</small> : null}</span>
+      <button class="pill danger" onClick={() => onRemove(index)}>{t("删除")}</button>
     </div>)}
   </section>;
 }
 
 function CaptureBanner({ capture, onMouse, onCancel }: { capture: Capture; onMouse: (button: number) => void; onCancel: () => void }) {
-  const prompt = capture.kind === 'button' ? `按下要绑定到 ${capture.zone} 的键`
-    : capture.direction !== undefined ? `按下摇杆“${stickSteps[capture.direction]}”方向的新键`
-    : `按下摇杆“${stickSteps[capture.collected.length]}”方向的键（${capture.collected.length + 1}/4）`;
+  const prompt = capture.kind === 'button' ? t("按下要绑定到 {zone} 的键", { zone: capture.zone })
+    : capture.direction !== undefined ? t("按下摇杆“{direction}”方向的新键", { direction: stickSteps()[capture.direction] })
+    : t("按下摇杆“{direction}”方向的键（{step}/4）", { direction: stickSteps()[capture.collected.length], step: capture.collected.length + 1 });
   return <div class="capture" role="dialog" aria-live="polite">
-    <b>{prompt}</b><span>Esc 取消；F1、F2 与 Ctrl/Cmd 组合键保留给宿主。</span>
+    <b>{prompt}</b><span>{t("Esc 取消；F1、F2 与 Ctrl/Cmd 组合键保留给宿主。")}</span>
     {capture.kind === 'button' && <div class="mouse-pad" onMouseDown={event => { event.preventDefault(); onMouse(event.button); }}
-                                       onContextMenu={event => event.preventDefault()}>在此框内点击鼠标键以绑定鼠标</div>}
-    <button class="pill" onClick={onCancel}>取消</button>
+                                       onContextMenu={event => event.preventDefault()}>{t("在此框内点击鼠标键以绑定鼠标")}</div>}
+    <button class="pill" onClick={onCancel}>{t("取消")}</button>
   </div>;
 }
 
@@ -203,7 +204,7 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
   const [frame, setFrame] = useState<Frame | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [capture, setCapture] = useState<Capture | null>(null);
-  const [status, setStatus] = useState<Status>({ kind: 'info', text: '正在连接游戏…' });
+  const [status, setStatus] = useState<Status>({ kind: 'info', text: t('正在连接游戏…') });
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -223,6 +224,7 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
   };
   const load = async () => {
     const next = await rpc<Session>('control.get');
+    setLanguage(next.language);
     setSession(next); replaceDraft(loadDraft(next)); setBase(baseBindings(next)); setDirty(false);
     return next;
   };
@@ -232,7 +234,7 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
   };
   const freeze = () => run(async () => {
     await rpc('control.freeze'); const next = await load(); await refreshFrame();
-    setStatus({ kind: 'info', text: next.persistent ? '游戏已暂停，可以编辑。' : '游戏已暂停；临时沙盒的修改只在本次运行生效。' });
+    setStatus({ kind: 'info', text: next.persistent ? t('游戏已暂停，可以编辑。') : t('游戏已暂停；临时沙盒的修改只在本次运行生效。') });
   });
   useEffect(() => { void freeze(); }, []);
   // The game resumes by itself when this heartbeat stops (window closed without pagehide).
@@ -256,7 +258,7 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
     const preset = freeStickPreset(current);
     if (!preset) { update(current); startCapture(zone, 'stick'); return; }
     update(setZoneBinding(current, zone, newStick(zone, preset))); setSelected(zone);
-    setStatus({ kind: 'info', text: `${zone} 已用 ${splitSources(preset).map(sourceLabel).join(' ')} 控制上左下右，可在右侧点击单个方向更换按键。` });
+    setStatus({ kind: 'info', text: t("{zone} 已用 {keys} 控制上左下右，可在右侧点击单个方向更换按键。", { zone, keys: splitSources(preset).map(sourceLabel).join(' ') }) });
   };
   // Key events can arrive before the next paint; capture state lives in refs so the listener
   // registered once always sees the latest capture and draft.
@@ -268,11 +270,11 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
     }
     if (active.direction !== undefined) {
       const group = replaceStickSource(active.template.source, active.direction, source);
-      if (!group) { setStatus({ kind: 'error', text: '摇杆四个方向需要不同的键。' }); return; }
+      if (!group) { setStatus({ kind: 'error', text: t('摇杆四个方向需要不同的键。') }); return; }
       update(setZoneBinding(current, active.zone, { ...active.template, source: group })); changeCapture(null);
-      setStatus({ kind: 'info', text: `${active.zone} 的“${stickSteps[active.direction]}”方向改为 ${sourceLabel(source)}。` }); return;
+      setStatus({ kind: 'info', text: t("{zone} 的“{direction}”方向改为 {key}。", { zone: active.zone, direction: stickSteps()[active.direction], key: sourceLabel(source) }) }); return;
     }
-    if (active.collected.includes(source)) { setStatus({ kind: 'error', text: '摇杆四个方向需要不同的键。' }); return; }
+    if (active.collected.includes(source)) { setStatus({ kind: 'error', text: t('摇杆四个方向需要不同的键。') }); return; }
     const collected = [...active.collected, source];
     if (collected.length < 4) { changeCapture({ ...active, collected }); return; }
     update(setZoneBinding(current, active.zone, { ...active.template, source: joinStickSources(collected) })); changeCapture(null);
@@ -299,27 +301,27 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
   const conflictedZones = useMemo(() => new Set([...conflictedBindings].map(index => draft?.bindings[index]?.zone).filter((zone): zone is string => !!zone)), [conflictedBindings]);
 
   if (!session || !draft) {
-    return <div class="loading"><p class={status.kind}>{status.text}</p><button class="pill" onClick={() => void freeze()} disabled={busy}>重试</button></div>;
+    return <div class="loading"><p class={status.kind}>{status.text}</p><button class="pill" onClick={() => void freeze()} disabled={busy}>{t("重试")}</button></div>;
   }
   if (!session.surface.width || !session.surface.height) {
-    return <div class="loading"><p>游戏画面尚未就绪，请在游戏出现画面后重试。</p><button class="pill" onClick={() => void freeze()} disabled={busy}>重试</button></div>;
+    return <div class="loading"><p>{t("游戏画面尚未就绪，请在游戏出现画面后重试。")}</p><button class="pill" onClick={() => void freeze()} disabled={busy}>{t("重试")}</button></div>;
   }
   if (done) {
-    return <div class="loading"><h1>按键已应用</h1><p>游戏继续运行，此窗口会自动关闭；如果没有关闭，可直接关闭此页面。</p></div>;
+    return <div class="loading"><h1>{t("按键已应用")}</h1><p>{t("游戏继续运行，此窗口会自动关闭；如果没有关闭，可直接关闭此页面。")}</p></div>;
   }
   // Editing happens only while the game is paused; 试玩 and 完成 apply the draft first, so what runs is what was edited.
   const editing = session.frozen;
   const applyDraft = async () => {
     if (!dirty) return '';
-    if (conflictedBindings.size) throw new Error('存在按键冲突（红色标出），请先修改。');
+    if (conflictedBindings.size) throw new Error(t('存在按键冲突（红色标出），请先修改。'));
     const result = await rpc<{ saved: boolean; config_path: string | null }>('control.apply', { layer: buildLayer(draft, base) });
     await load();
-    return result.saved ? '已保存' : '临时沙盒不保存到文件';
+    return result.saved ? t('已保存') : t('临时沙盒不保存到文件');
   };
   const tryOut = () => run(async () => {
     const saved = await applyDraft();
     await rpc('control.resume'); setSession({ ...session, frozen: false }); changeCapture(null);
-    setStatus({ kind: 'info', text: `试玩中：到游戏窗口里操作试试${saved ? `（${saved}）` : ''}。要继续修改，点“返回编辑”。` });
+    setStatus({ kind: 'info', text: t("试玩中：到游戏窗口里操作试试{saved}。要继续修改，点“返回编辑”。", { saved: saved ? ` (${saved})` : '' }) });
   });
   // The launcher closes this window once the game reports the finished edit; a browser tab stays on the done page.
   const finish = () => run(async () => {
@@ -331,19 +333,19 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
   const selectedZone = draft.zones.find(zone => zone.name === selected);
   return <div class="editor">
     <header>
-      <h1>按键设置</h1>
-      <span class="state"><span class={`led ${editing ? 'warning' : 'running'}`} />{editing ? '编辑中 · 游戏已暂停' : '试玩中 · 游戏运行'}</span>
+      <h1>{t("按键设置")}</h1>
+      <span class="state"><span class={`led ${editing ? 'warning' : 'running'}`} />{editing ? t('编辑中 · 游戏已暂停') : t('试玩中 · 游戏运行')}</span>
       {editing && <>
-        <button class="pill" onClick={() => { const added = addControl(draft, 'button', session.surface); update(added.draft); startCapture(added.zone, 'button'); }}>添加按钮</button>
-        <button class="pill" onClick={() => { const added = addControl(draft, 'stick', session.surface); makeStick(added.draft, added.zone); }}>添加摇杆</button>
+        <button class="pill" onClick={() => { const added = addControl(draft, 'button', session.surface); update(added.draft); startCapture(added.zone, 'button'); }}>{t("添加按钮")}</button>
+        <button class="pill" onClick={() => { const added = addControl(draft, 'stick', session.surface); makeStick(added.draft, added.zone); }}>{t("添加摇杆")}</button>
       </>}
       <span class="spacer" />
-      {dirty && <span class="unsaved">有未应用的修改</span>}
+      {dirty && <span class="unsaved">{t("有未应用的修改")}</span>}
       {editing ? <>
-        <button class="pill" disabled={busy || !dirty} title="回到上次应用的按键" onClick={() => void run(async () => { await load(); setStatus({ kind: 'info', text: '已放弃未应用的修改。' }); })}>放弃修改</button>
-        <button class="pill" disabled={busy || conflictedBindings.size > 0} title="应用修改并继续游戏；本窗口保持打开，可随时返回编辑" onClick={() => void tryOut()}>试玩</button>
-      </> : <button class="pill" disabled={busy} title="暂停游戏，继续修改按键" onClick={() => void freeze()}>返回编辑</button>}
-      <button class="pill main" disabled={busy || conflictedBindings.size > 0} title="应用修改、继续游戏并关闭此窗口" onClick={() => void finish()}>完成</button>
+        <button class="pill" disabled={busy || !dirty} title={t("回到上次应用的按键")} onClick={() => void run(async () => { await load(); setStatus({ kind: 'info', text: t('已放弃未应用的修改。') }); })}>{t("放弃修改")}</button>
+        <button class="pill" disabled={busy || conflictedBindings.size > 0} title={t("应用修改并继续游戏；本窗口保持打开，可随时返回编辑")} onClick={() => void tryOut()}>{t("试玩")}</button>
+      </> : <button class="pill" disabled={busy} title={t("暂停游戏，继续修改按键")} onClick={() => void freeze()}>{t("返回编辑")}</button>}
+      <button class="pill main" disabled={busy || conflictedBindings.size > 0} title={t("应用修改、继续游戏并关闭此窗口")} onClick={() => void finish()}>{t("完成")}</button>
     </header>
     <p class={`status ${status.kind}`} role="status">{status.text}</p>
     {capture && <CaptureBanner capture={capture} onCancel={() => changeCapture(null)}
@@ -351,25 +353,26 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
     <div class={`workspace ${editing ? '' : 'locked'}`} inert={!editing}>
       <div class="canvas"><Stage session={session} draft={draft} frame={frame} selected={selected} conflicted={conflictedZones}
         onSelect={setSelected} onZone={onZone} onBinding={onBinding} />
-        {!editing && <p class="canvas-note">试玩中，画面为暂停时的截图</p>}
-        {editing && !frame && <div class="canvas-note">还没有游戏画面
-          <button class="pill" disabled={busy} onClick={() => void run(refreshFrame)}>重新获取画面</button></div>}
+        {!editing && <p class="canvas-note">{t("试玩中，画面为暂停时的截图")}</p>}
+        {editing && !frame && <div class="canvas-note">{t("还没有游戏画面")}<button class="pill" disabled={busy} onClick={() => void run(refreshFrame)}>{t("重新获取画面")}</button></div>}
       </div>
       <aside>
         {selectedZone ? <Inspector session={session} draft={draft} zone={selectedZone} conflictedBindings={conflictedBindings}
             capturing={capture?.zone === selectedZone.name ? capture.direction : undefined}
             onZone={onZone} onBinding={onBinding} onCapture={startCapture} onStick={zone => { if (draftRef.current) makeStick(draftRef.current, zone); }}
             onRemove={zone => { update(removeControl(draft, zone)); setSelected(null); }} />
-          : <section class="inspector"><p>点击画面上的控件进行编辑，拖动移动，拖动圆点缩放。新控件放在画面中央。</p></section>}
+          : <section class="inspector"><p>{t("点击画面上的控件进行编辑，拖动移动，拖动圆点缩放。新控件放在画面中央。")}</p></section>}
         <OtherBindings draft={draft} conflictedBindings={conflictedBindings}
           onRemove={index => update({ ...draft, bindings: draft.bindings.filter((_, i) => i !== index) })} />
-        <p class="path"><small>{session.config_path ? `保存位置：${session.config_path}` : '临时沙盒：修改不写入文件'}</small></p>
+        <p class="path"><small>{session.config_path ? t("保存位置：{path}", { path: session.config_path }) : t('临时沙盒：修改不写入文件')}</small></p>
       </aside>
     </div>
   </div>;
 }
 
 function App() {
+  const currentLanguage = useLanguage();
+  useEffect(updateDocumentLanguage, [currentLanguage]);
   const [token, setToken] = useState(() => takeToken(location, sessionStorageOrUndefined(), url => history.replaceState(null, '', url)));
   const rpc = useMemo(() => token ? createRpc(token) : null, [token]);
   useEffect(() => {
@@ -386,4 +389,5 @@ function sessionStorageOrUndefined(): Storage | undefined {
   try { return window.sessionStorage; } catch { return undefined; }
 }
 
+updateDocumentLanguage();
 render(<App />, document.getElementById('app')!);

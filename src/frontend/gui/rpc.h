@@ -8,11 +8,15 @@
 #include "frontend/gui/credits.h"
 #include "frontend/gui/dashboard.h"
 #include "ogplay/app/agent.h"
+#include "ogplay/app/ui_text.h"
 #include "frontend/gui/launch.h"
 #include "frontend/gui/view_model.h"
 
 namespace ogplay::frontend {
-inline bool CanDismissImportModal(bool host_dialog_pending) noexcept { return !host_dialog_pending; }
+inline bool CanDismissImportModal(bool host_dialog_pending) noexcept {
+    return !host_dialog_pending;
+}
+
 using namespace ogplay::app;
 
 // Host operations are explicit callbacks; the RPC model has no SDL/WebView dependency.
@@ -39,6 +43,8 @@ struct GuiRpcHost final {
     // import of those the library lacks, run when that setting is turned back on.
     std::function<std::vector<std::string>()> demo_packages;
     std::function<void()> seed_demos;
+    // RPC bindings run on the WebView UI thread; called after a successful settings save.
+    std::function<void(UiLanguage)> language_changed;
 };
 
 class GuiRpcService final {
@@ -49,6 +55,7 @@ public:
     GuiRpcService(GuiRpcService&&) = delete;
     GuiRpcService& operator=(GuiRpcService&&) = delete;
     [[nodiscard]] std::string Handle(std::string_view request);
+
 private:
     [[nodiscard]] app::ConsoleResponse Request(std::string_view method, app::JsonValue params);
     struct ImportState;

@@ -165,8 +165,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
           mcp_port, key_editor_port, dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,
           diagnostics_enabled, supersample_factor, max_fps, surface_width, surface_height, density_dpi, cpu_config,
           mcp_manual_step, preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox,
-          input_config_path, library_root, missing_data_report, window_title, window_icon, window_icon_style] =
-        std::move(options);
+          input_config_path, library_root, missing_data_report, window_title, window_icon, window_icon_style,
+          ui_language] = std::move(options);
+    const auto language = ui_language ? *ui_language : app::SystemUiLanguage();
     const auto bundled_data = HostBundledDataPaths();
     logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
                  {{"data_root", PathUtf8(bundled_data.root)}});
@@ -503,8 +504,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.backend = NativeBackend();
         app_request.filesystem = &filesystem;
         app_request.progress = runtime_progress;
-        app_request.boundary_options = {.async_present_readback = !mcp_manual_step,
-                                        .frame_period_ns = frame_period_ns};
+        app_request.boundary_options = {.async_present_readback = !mcp_manual_step, .frame_period_ns = frame_period_ns};
         app_request.guest_call_slice_observer = guest_slice_observer;
         app_request.guest_call_slice_observer_thread = std::this_thread::get_id();
         app_request.platform = {.installation_id = sandbox.installation_id,
@@ -786,12 +786,48 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         std::uint64_t active_step_ns{}, active_present_ns{};
         std::size_t frame_sample_count{};
         std::uint64_t active_frame_ns{};
+        // The frame loop stops while the dialog is up. A dialog the host cannot show must not
+        // leave the user with a window that will not close.
+        const auto confirm_close = [&] {
+            host_keys.Reset();
+            control_mapper.Reset();
+            mcp_pointer.Cancel(mcp_inputs.get());
+            driver.cancel_input();
+            if (audio_pump) audio_pump->SetSuspended(true);
+            bool confirmed = true;
+            try {
+                confirmed = window->ConfirmClose({
+                    .title = app::Text(language, app::UiText::close_game_title),
+                    .message = app::Text(language, app::UiText::close_game_message),
+                    .confirm_label = app::Text(language, app::UiText::close_game_confirm),
+                    .cancel_label = app::Text(language, app::UiText::close_game_cancel),
+                });
+            } catch (const std::exception& error) {
+                logger.Write(core::LogLevel::warn, "frontend.run_apk.close_confirmation",
+                             "close confirmation unavailable; closing the game", {},
+                             {{"reason", std::string(error.what())}}, kUnrestrictedLog);
+            }
+            if (!confirmed && audio_pump && mcp_lifecycle == agent::McpLifecycleState::running) {
+                audio_pump->SetSuspended(false);
+            }
+            return confirmed;
+        };
         while (!quit && !guest->ExitRequested() && !(dex_context && runtime::SessionExitRequested(*dex_context))) {
+            bool close_answered = false;
             for (const auto& event : window->PollEvents()) {
                 using Type = hal::InputEventType;
                 if (event.type == Type::quit) {
                     quit = true;
                     exit_state.host_requested = true;
+                } else if (event.type == Type::close_requested) {
+                    // Repeated clicks queued before the dialog opened get one answer. After a
+                    // failure nothing is left to lose, so the window closes directly.
+                    if (quit || close_answered) continue;
+                    close_answered = true;
+                    if (failure || confirm_close()) {
+                        quit = true;
+                        exit_state.host_requested = true;
+                    }
                 } else if (event.type == Type::input_reset || event.type == Type::app_background) {
                     host_keys.Reset();
                     control_mapper.Reset();
@@ -860,6 +896,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                                                         (launcher ? launcher_seen_ns : editor_seen_ns) =
                                                             hal::Clock::SteadyTimestampNs();
                                                     },
+                                                .ui_language = app::UiLanguageTag(language),
                                             });
             });
             // An editor page polls control.status while open; a window closed without

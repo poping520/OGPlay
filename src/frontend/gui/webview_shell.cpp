@@ -26,6 +26,32 @@ std::filesystem::path Utf8Path(std::string_view text) {
     return std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text.data()), text.size()));
 }
 
+hal::WebViewShellText ShellText(UiLanguage language) {
+    return {
+        .menu_hide_app = std::string(Text(language, UiText::menu_hide_app)),
+        .menu_hide_others = std::string(Text(language, UiText::menu_hide_others)),
+        .menu_show_all = std::string(Text(language, UiText::menu_show_all)),
+        .menu_quit = std::string(Text(language, UiText::menu_quit)),
+        .menu_edit = std::string(Text(language, UiText::menu_edit)),
+        .menu_undo = std::string(Text(language, UiText::menu_undo)),
+        .menu_redo = std::string(Text(language, UiText::menu_redo)),
+        .menu_cut = std::string(Text(language, UiText::menu_cut)),
+        .menu_copy = std::string(Text(language, UiText::menu_copy)),
+        .menu_paste = std::string(Text(language, UiText::menu_paste)),
+        .menu_select_all = std::string(Text(language, UiText::menu_select_all)),
+        .menu_window = std::string(Text(language, UiText::menu_window)),
+        .menu_minimize = std::string(Text(language, UiText::menu_minimize)),
+        .menu_close = std::string(Text(language, UiText::menu_close)),
+        .tray_show = std::string(Text(language, UiText::tray_show)),
+        .tray_quit = std::string(Text(language, UiText::tray_quit)),
+    };
+}
+
+// The page shows the game's language, so its window does too, whatever the launcher has switched to since.
+std::string KeyEditorTitle(const GuiProcessManager::KeyEditorAddress& editor, std::string_view instance) {
+    return std::string(Text(editor.language, UiText::key_editor_window_title)) + " · " + std::string(instance);
+}
+
 struct GuiOptions final {
     std::filesystem::path library_root;
     std::optional<std::uint64_t> smoke_frames;
@@ -145,6 +171,13 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
             logger.Write(app::LogLevel::warn, "frontend.gui.demo", "demo games unavailable", {},
                          {{"reason", std::string(error.what())}});
         }
+        auto language = SystemUiLanguage();
+        try {
+            language = ResolveUiLanguage(std::get<std::string>(Setting(LoadLibraryConfig(store.Root()), "language")));
+        } catch (const std::exception& error) {
+            logger.Write(app::LogLevel::warn, "frontend.gui", "UI language configuration unavailable", {},
+                         {{"reason", std::string(error.what())}});
+        }
         GuiProcessManager processes(logger);
         std::unique_ptr<hal::WebViewHost> view;
         GuiRpcService rpc(
@@ -158,8 +191,10 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
                      app::ProfileCatalog::Load(config.profiles_dir.value_or(bundled.profiles_directory));
                  return AnalyzeApkImportFile(path, profiles);
              },
-             [&](bool directory) { return view->PickPath(directory); }, [] { return app::UtcTimestamp(); },
-             [&] { view->Minimize(); },
+             [&](bool directory) {
+                 return view->PickPath(directory, Text(language, directory ? UiText::pick_data_dir : UiText::pick_apk));
+             },
+             [] { return app::UtcTimestamp(); }, [&] { view->Minimize(); },
              [] {
                  std::map<std::string, std::optional<std::string>> facts;
                  facts["ogplay_version"] = OGPLAY_VERSION;
@@ -196,14 +231,19 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
              [&](std::string_view instance) { view->OpenDashboard(instance, processes.DashboardPort(instance)); },
              [&](std::string_view instance) {
                  const auto editor = processes.KeyEditor(instance);
-                 view->OpenKeyEditor(instance, editor.port, editor.token);
+                 view->OpenKeyEditor(instance, editor.port, editor.token, KeyEditorTitle(editor, instance));
              },
              [&] {
                  std::vector<std::string> packages;
-                 for (const auto& demo : demos) packages.push_back(demo.manifest.package);
+                 for (const auto& demo : demos)
+                     packages.push_back(demo.manifest.package);
                  return packages;
              },
-             seed_demos});
+             seed_demos,
+             [&](UiLanguage next) {
+                 language = next;
+                 view->SetShellText(ShellText(language));
+             }});
         // WebView teardown drains callbacks the page already queued: destroy it while rpc is
         // still alive, and refuse those late callbacks because view is already null by then.
         bool closing{};
@@ -220,11 +260,19 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
 
         view = hal::CreateWebViewHost(
             {app::BundledDataPaths().root / "webui/gui/index.html", options.smoke_frames,
-             options.library_root / "gui-smoke.png"},
+             options.library_root / "gui-smoke.png", ShellText(language), "检查 GUI 日志和前端制品后重试。"},
             {[&](std::string_view request) {
-                 if (closing)
-                     return std::string(
-                         R"({"jsonrpc":"2.0","id":null,"error":{"code":-32002,"message":"launcher is closing","next_step":"重新打开 OGPlay。"}})");
+                 if (closing) {
+                     app::JsonWriter writer;
+                     const auto root = writer.Object(), error = writer.Object();
+                     writer.AddString(root, "jsonrpc", "2.0");
+                     writer.AddNull(root, "id");
+                     writer.AddInteger(error, "code", -32002);
+                     writer.AddString(error, "message", "launcher is closing");
+                     writer.AddString(error, "next_step", "重新打开 OGPlay。");
+                     writer.Add(root, "error", error);
+                     return writer.Serialize(root);
+                 }
                  const auto response = rpc.Handle(request);
                  app::JsonParseError error;
                  auto decoded =
@@ -257,7 +305,7 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
                  for (const auto& instance : processes.TakeKeyEditorRequests()) {
                      try {
                          const auto editor = processes.KeyEditor(instance);
-                         view->OpenKeyEditor(instance, editor.port, editor.token);
+                         view->OpenKeyEditor(instance, editor.port, editor.token, KeyEditorTitle(editor, instance));
                      } catch (const std::exception& error) {
                          logger.Write(app::LogLevel::error, "frontend.gui.key_editor", "key editor open failed", {},
                                       {{"reason", std::string(error.what())}});

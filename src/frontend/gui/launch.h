@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "ogplay/app/library.h"
+#include "ogplay/app/ui_text.h"
 
 namespace ogplay::frontend {
 using namespace ogplay::app;
@@ -23,15 +24,13 @@ struct LaunchPlan final {
     std::optional<std::uint16_t> key_editor_port;
     // Per-launch editor token, handed to the game as OGPLAY_CONTROL_TOKEN and never in argv.
     std::string control_token;
+    // Fixed for the process; the key editor page and its window follow it.
+    UiLanguage ui_language{UiLanguage::en_US};
 };
 
-
-
-
-[[nodiscard]] LaunchPlan BuildLaunchPlan(
-    const std::filesystem::path& game_executable,
-    const std::filesystem::path& library_root,
-    const LibraryEntry& entry, const LibraryConfig& config, LaunchMode mode = LaunchMode::normal);
+[[nodiscard]] LaunchPlan BuildLaunchPlan(const std::filesystem::path& game_executable,
+                                         const std::filesystem::path& library_root, const LibraryEntry& entry,
+                                         const LibraryConfig& config, LaunchMode mode = LaunchMode::normal);
 
 struct GameExit final {
     std::string package;
@@ -51,11 +50,11 @@ private:
         std::string package;
         std::filesystem::path log_path;
     };
+
     std::vector<Active> active_;
 };
 
-[[nodiscard]] std::string ReadLogTail(
-    const std::filesystem::path& path, std::size_t maximum_lines = 20,
-    std::size_t maximum_bytes = 16U * 1024U);
+[[nodiscard]] std::string ReadLogTail(const std::filesystem::path& path, std::size_t maximum_lines = 20,
+                                      std::size_t maximum_bytes = 16U * 1024U);
 
 }  // namespace ogplay::frontend

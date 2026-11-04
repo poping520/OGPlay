@@ -10,6 +10,7 @@
 #include <thread>
 #include "ogplay/app/encoding.h"
 #include "frontend/gui/rpc.h"
+#include "frontend/gui/rpc_error.h"
 #include "ogplay/app/library.h"
 
 namespace {
@@ -29,10 +30,12 @@ struct Fixture {
     std::string opened_dashboard;
     std::string opened_editor;
     bool fail_launch{};
+    bool fail_template_launch{};
     std::optional<frontend::LaunchPlan> plan;
     std::filesystem::path opened;
     std::vector<std::string> demo_packages;
     unsigned demo_seeds{};
+    std::vector<UiLanguage> language_changes;
     frontend::GuiRpcService rpc{
         store,
         root / "ogplay.exe",
@@ -41,6 +44,8 @@ struct Fixture {
              return context;
          },
          [this](const auto& value) {
+             if (fail_template_launch)
+                 throw frontend::GuiTextError("图标素材缺失：{path}", {{"path", "/missing/icon.png"}});
              if (fail_launch) throw std::runtime_error("spawn failed");
              ++launches;
              plan = value;
@@ -73,7 +78,8 @@ struct Fixture {
          [this](std::string_view id) { opened_dashboard = id; },
          [this](std::string_view id) { opened_editor = id; },
          [this] { return demo_packages; },
-         [this] { ++demo_seeds; }}};
+         [this] { ++demo_seeds; },
+         [this](UiLanguage language) { language_changes.push_back(language); }}};
 
     Fixture() {
         std::filesystem::create_directories(root);
@@ -804,4 +810,58 @@ TEST_CASE("INP-7 GUI opens the key editor only for a running instance whose edit
             .Root()
             .Member("error")
             .has_value());
+}
+
+TEST_CASE("gui_rpc system_language accompanies get and set and notifies only on actual change") {
+    Fixture fixture;
+    const auto get = [&] { return Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"settings.get"})")); };
+    auto initial = get();
+    const auto result = *initial.Root().Member("result");
+    CHECK(result.Member("system_language")->String() == UiLanguageTag(SystemUiLanguage()));
+    CHECK(result.Member("values")->Member("language")->String() == "system");
+    for (const auto language : {"zh-CN", "en-US", "system", "system"}) {
+        auto current = get();
+        const auto config = LoadLibraryConfig(fixture.root);
+        const auto previous = ResolveUiLanguage(std::get<std::string>(Setting(config, "language")));
+        const auto count = fixture.language_changes.size();
+        app::JsonWriter writer;
+        const auto request = writer.Object(), params = writer.Object(), values = writer.Object();
+        writer.AddString(request, "jsonrpc", "2.0");
+        writer.AddInteger(request, "id", 2);
+        writer.AddString(request, "method", "settings.set");
+        writer.AddString(params, "revision", *current.Root().Member("result")->Member("revision")->String());
+        writer.AddString(values, "language", language);
+        writer.Add(params, "values", values);
+        writer.Add(request, "params", params);
+        auto saved = Decode(fixture.rpc.Handle(writer.Serialize(request)));
+        const auto response = saved.Root().Member("result");
+        REQUIRE(response);
+        CHECK(response->Member("system_language")->String() == UiLanguageTag(SystemUiLanguage()));
+        CHECK(response->Member("values")->Member("language")->String() == language);
+        const auto next = ResolveUiLanguage(language);
+        CHECK(fixture.language_changes.size() == count + (next != previous ? 1U : 0U));
+        if (next != previous) CHECK(fixture.language_changes.back() == next);
+    }
+    CHECK(std::get<std::string>(Setting(LoadLibraryConfig(fixture.root), "language")) == "system");
+}
+
+TEST_CASE("gui_rpc error params keep the template separate from status values") {
+    Fixture fixture;
+    fixture.context.running_packages = {"org.example.game"};
+    const auto document = Decode(fixture.rpc.Handle(
+        R"({"jsonrpc":"2.0","id":3,"method":"library.launch","params":{"installation_id":"org.example.game"}})"));
+    const auto error = document.Root().Member("error");
+    REQUIRE(error);
+    CHECK(error->Member("message")->String() == "游戏当前不可启动（{status}）");
+    CHECK(error->Member("params")->Member("status")->String() == "running");
+    CHECK(error->Member("next_step")->String() == "检查运行状态、Profile 和数据包目录。");
+    CHECK(fixture.launches == 0);
+    fixture.context.running_packages.clear();
+    fixture.fail_template_launch = true;
+    const auto exception = Decode(fixture.rpc.Handle(
+        R"({"jsonrpc":"2.0","id":4,"method":"library.launch","params":{"installation_id":"org.example.game"}})"));
+    const auto failure = exception.Root().Member("error");
+    REQUIRE(failure);
+    CHECK(failure->Member("message")->String() == "图标素材缺失：{path}");
+    CHECK(failure->Member("params")->Member("path")->String() == "/missing/icon.png");
 }

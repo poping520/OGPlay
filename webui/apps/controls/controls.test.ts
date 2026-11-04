@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { setLanguage } from './i18n';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureKey, captureMouse, joinStickSources, keyName, replaceStickSource, sourceLabel, splitSources } from './keys';
 import {
   addControl, baseBindings, buildLayer, chooseAnchor, clampBox, conflicts, freeStickPreset, loadDraft, newStick, placeZone,
@@ -6,6 +7,7 @@ import {
 } from './model';
 import { createRpc, takeToken, RpcError, Unauthorized } from './rpc';
 
+beforeEach(() => setLanguage('zh-CN'));
 const surface = { width: 1024, height: 600 };
 const userBindings: Binding[] = [
   { source: 'keys:w,a,s,d', action: 'stick', zone: 'move', radius: 0.7, settle_frames: 2, ramp_frames: 4 },
@@ -16,7 +18,7 @@ const escape: Binding = { source: 'key:escape', action: 'key', mode: '*', key: '
 function session(): Session {
   const zones = [{ name: 'move', anchor: 'bottom_left' as const, x: 30, y: -115, r: 85 },
                  { name: 'primary', anchor: 'bottom_right' as const, x: -40, y: -40, r: 50 }];
-  return { surface, frozen: true, mode: 'default', config_path: '/tmp/input.toml', persistent: true,
+  return { language: 'zh-CN', surface, frozen: true, mode: 'default', config_path: '/tmp/input.toml', persistent: true,
            user: { zone: zones, binding: [] },
            effective: { zone: zones, binding: [escape, ...userBindings] } };
 }

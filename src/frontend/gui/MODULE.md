@@ -31,6 +31,11 @@
 - LibraryStore、LibraryConfig、SettingDefinitions、GameSettings、APK 检视/图标/Profile、设置继承归
   frontend/library，只经 app 公开头消费。settings.get/set 保存前复用库内 schema/目录校验，
   未知键/损坏配置/过期读取版本拒绝覆盖；后台分析或入库尚未回收时禁止保存。
+- 全局 `language` 支持 system/zh-CN/en-US，默认 system；保存的显式语言不迁移。
+  `settings.get/set` 带 `system_language`（zh-CN/en-US），前端按它解析 system。
+  启动时读配置确定外壳语言，配置不可读时用系统语言；保存后实际语言改变才经
+  `GuiRpcHost::language_changed` 在 WebView UI 线程更新外壳菜单。选择器标题在使用时取当前语言；按键窗口标题取该游戏启动时固定的语言，与页面一致。
+  ResolveLaunch 把解析后的语言写入游戏进程参数和 LocalizedDisplayName；不影响 guest Locale。
 - `settings.get`/`game_settings.get` 带 `reserved_visible`：`NDEBUG` 构建为 false，前端据此隐藏预留项；字段列表仍完整。
   每个字段带 `hidden`：`rpc_settings.cpp` 的 `kHiddenSettings` 列出暂不展示的设置（全局与游戏设置页共用），任何构建都不显示，
   值、校验与启动解析不变。
@@ -66,7 +71,7 @@
 ## 不变量
 
 - 请求 envelope 和方法参数采用 closed schema；未知字段、方法、类型与重复 JSON 键明确失败。
-  前端不传自由 argv、任意目录打开路径或游戏兼容结论；错误返回 code/message/next_step。
+  前端不传自由 argv、任意目录打开路径或游戏兼容结论；错误返回 code/message/next_step 与可选字符串 map `params`；中文模板作翻译键，参数保留原值。
 - Web UI 只渲染模型事实。状态优先级：损坏 > Profile catalog 不可用 > 缺数据包 > 运行中 >
   ready。通用启动路径是默认状态，无 Profile 不产生状态、提示或条件。
 - Profile 条件只在记录了精确 Profile 或 catalog 失效（unavailable）时下发，

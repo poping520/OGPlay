@@ -24,8 +24,8 @@ export function decodeResponse<T>(response: unknown, id: number): T {
   const value = response as Record<string, unknown>;
   if (value.jsonrpc !== '2.0' || value.id !== id) throw new Error(t('宿主响应标识不匹配。'));
   if (value.error) {
-    const error = value.error as { message?: string; next_step?: string };
-    throw new Error(`${error.message ?? t('请求失败')}\n${error.next_step ?? t('检查 GUI 日志后重试。')}`);
+    const error = value.error as { message?: string; next_step?: string; params?: Record<string, string> };
+    throw new Error(`${t(error.message ?? '请求失败', error.params)}\n${t(error.next_step ?? '检查 GUI 日志后重试。')}`);
   }
   if (!('result' in value)) throw new Error(t('宿主响应缺少结果。'));
   return value.result as T;
@@ -33,5 +33,14 @@ export function decodeResponse<T>(response: unknown, id: number): T {
 export async function rpc<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
   if (!window.rpc) throw new Error(t('请通过 OGPlay 启动器打开此页面。'));
   const id = ++sequence;
-  return decodeResponse<T>(await window.rpc(JSON.stringify({ jsonrpc: '2.0', id, method, params })), id);
+  let response: unknown;
+  try { response = await window.rpc(JSON.stringify({ jsonrpc: '2.0', id, method, params })); }
+  catch (reason) {
+    if (reason && typeof reason === 'object' && 'message' in reason) {
+      const error = reason as { message: string; next_step?: string };
+      throw new Error(`${t(error.message)}\n${t(error.next_step ?? '检查 GUI 日志后重试。')}`);
+    }
+    throw reason;
+  }
+  return decodeResponse<T>(response, id);
 }

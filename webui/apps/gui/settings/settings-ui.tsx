@@ -1,5 +1,5 @@
 import { Fragment, type ComponentChildren } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { changedKeys, choiceLabel, fieldMeta, RESERVED_MARK, stepValue, shownFields, shownGroups, type SettingField, type SettingValue } from './settings';
 import { shellStyle } from '../cartridge/cartridge';
 import { t } from '../shared/i18n';
@@ -110,6 +110,7 @@ function Control({ field, value, disabled, change, browse }: {
 export interface RowModel {
   value: SettingValue; disabled: boolean;
   inherit?: { overridden: boolean; source: string; shown: string };
+  confirmed?: boolean;                           // a wrong value stops the game: edits wait for the row's save button
 }
 // Per-game rows never lock: editing one makes it this game's own value (outlined, "已单独设置"), and the restore
 // button beside the control drops it back to the inherited one.
@@ -130,11 +131,46 @@ function FieldRow({ field, model, focused, focus, change, browse, restoreInherit
       </div>}
     </div>
     <div class="ctl">
+      {inherit && overridden &&
+        <button class="restore" disabled={model.disabled} title={t('恢复{source}', { source: inherit.source })} onClick={restoreInherit}>
+          <Glyph name="reload" />{t('恢复{source}', { source: inherit.source })}</button>}
       <Control field={field} value={model.value} disabled={model.disabled} change={change} browse={field.directory ? browse : undefined} />
-      {inherit && (overridden
-        ? <button class="restore" disabled={model.disabled} title={t('恢复{source}', { source: inherit.source })} onClick={restoreInherit}>
-            <Glyph name="reload" />{t('恢复{source}', { source: inherit.source })}</button>
-        : <span class="restore-slot" aria-hidden="true" />)}
+    </div>
+  </div>;
+}
+
+// A path that must be right: the field grows to show all of it, and an edit, typed or browsed, stays in the row
+// until saved. A rejected save stays there too, to be corrected.
+function ConfirmedPathRow({ field, model, saving, focused, focus, change, browse }: {
+  field: SettingField; model: RowModel; saving: boolean; focused: boolean; focus: () => void;
+  change: (value: SettingValue) => void; browse: (apply: (path: string) => void) => void;
+}) {
+  const meta = fieldMeta(field), value = String(model.value);
+  const [text, setText] = useState<string | null>(null);
+  const area = useRef<HTMLTextAreaElement>(null);
+  const shown = text ?? value, dirty = shown !== value;
+  const fit = () => { const el = area.current; if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; } };
+  useLayoutEffect(fit, [shown]);
+  useEffect(() => { const observer = new ResizeObserver(fit); if (area.current) observer.observe(area.current); return () => observer.disconnect(); }, []);
+  // The page shows a write's value before it lands: only once it has can the edit be let go.
+  useEffect(() => { if (!saving && text === value) setText(null); }, [text, value, saving]);
+  const save = () => { if (dirty && !model.disabled) change(shown); };
+  return <div class={`row path-row ${focused ? 'focus' : ''}`} data-row onPointerDown={focus}>
+    <GroupIcon name={field.group} glyph={SETTING_ICONS[field.key]} />
+    <div class="lbl"><b>{meta.label}</b>{dirty && <span class="tag pending">{t('未保存')}</span>}
+      {meta.hint && <div class="meta"><span>{meta.hint}</span></div>}
+    </div>
+    <div class="path-edit">
+      <div class="path-field">
+        <textarea ref={area} rows={1} value={shown} disabled={model.disabled} aria-label={meta.label} placeholder={t('未设置')} spellcheck={false}
+          onInput={event => setText(event.currentTarget.value.replace(/[\r\n]+/g, ''))}
+          onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); save(); } else if (event.key === 'Escape') setText(null); }} />
+        {field.directory && <button disabled={model.disabled} onClick={() => browse(setText)}>{t('浏览…')}</button>}
+      </div>
+      {dirty && <div class="path-acts">
+        <button disabled={model.disabled} onClick={() => setText(null)}>{t('取消')}</button>
+        <button class="save" disabled={model.disabled} onClick={save}>{t('保存')}</button>
+      </div>}
     </div>
   </div>;
 }
@@ -225,7 +261,7 @@ export interface FrameProps {
   after?: Record<string, ComponentChildren>;
   model: (field: SettingField) => RowModel;
   change: (field: SettingField, value: SettingValue) => void;
-  browse: (field: SettingField) => void;
+  browse: (field: SettingField, apply?: (path: string) => void) => void;   // apply: where the path goes instead of the draft
   restoreInherit?: (field: SettingField) => void;   // per-game pages: drop this game's own value
   fileLabel: string;
   filePath: string;
@@ -293,7 +329,7 @@ export function SettingsFrame(props: FrameProps) {
         const model = props.model(field);
         if (model.disabled) return;
         if (typeof field.initial === 'boolean' || field.choices.length) props.change(field, stepValue(field, model.value, 0));
-        else main.current?.querySelectorAll('[data-row]')[focus]?.querySelector<HTMLInputElement>('input')?.focus();
+        else main.current?.querySelectorAll('[data-row]')[focus]?.querySelector<HTMLElement>('input, textarea')?.focus();
       } else if ((event.key === 'q' || event.key === 'e') && groups.length) {
         selectGroup(groups[(at + (event.key === 'e' ? 1 : groups.length - 1)) % groups.length][0]);
       } else if (event.key === 'i' && field && props.restoreInherit && props.model(field).inherit?.overridden) props.restoreInherit(field);
@@ -305,8 +341,11 @@ export function SettingsFrame(props: FrameProps) {
   });
   const rows = visible.map((field, index) => <Fragment key={field.key}>
     {props.sectionBefore?.[field.key] && <div class="sect">{props.sectionBefore[field.key]}</div>}
-    <FieldRow field={field} model={props.model(field)} focused={index === focus} focus={() => setFocus(index)}
-      change={value => props.change(field, value)} browse={() => props.browse(field)} restoreInherit={props.restoreInherit && (() => props.restoreInherit!(field))} />
+    {props.model(field).confirmed
+      ? <ConfirmedPathRow field={field} model={props.model(field)} saving={props.saving} focused={index === focus} focus={() => setFocus(index)}
+          change={value => props.change(field, value)} browse={apply => props.browse(field, apply)} />
+      : <FieldRow field={field} model={props.model(field)} focused={index === focus} focus={() => setFocus(index)}
+          change={value => props.change(field, value)} browse={() => props.browse(field)} restoreInherit={props.restoreInherit && (() => props.restoreInherit!(field))} />}
     {props.after?.[field.key]}
   </Fragment>);
   return <div class={`cfg skin-${skin}`} style={props.tint ? shellStyle(props.tint) : {}}>

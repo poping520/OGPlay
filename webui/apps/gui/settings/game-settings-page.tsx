@@ -82,21 +82,21 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
     who={<div class="who">
       <span class="cart">{item && <TileCart api={cart3d} item={item} tone={tone} />}</span>
       <div><b>{name}</b><small>{id}</small>
-        <span class="chip"><i class={`led ${tone}`} />{item ? versionLabel(item) : ''}{saved ? t(' · 已单独设置 {n} 项', { n: Object.keys(saved.values).length }) : ''}</span></div>
+        <span class="chip"><i class={`led ${tone}`} />{item ? versionLabel(item) : ''}{saved ? t(' · 已单独设置 {n} 项', { n: Object.keys(saved.values).filter(key => !isInstanceOnlySetting(key)).length }) : ''}</span></div>
     </div>}
     groupsTitle={t('游戏设置')} groups={gameGroups} group={group} setGroup={setGroup} fields={saved?.fields ?? []} reservedVisible={reservedVisible}
     sectionBefore={{ brand: t('设备身份 · 预留') }}
     model={field => {
       const overridden = Object.hasOwn(draft, field.key);
       return {
-        value: overridden ? draft[field.key] : saved!.inherited[field.key], disabled: busy,
-        inherit: { overridden, source: isInstanceOnlySetting(field.key) ? t('默认') : t('全局'),
+        value: overridden ? draft[field.key] : saved!.inherited[field.key], disabled: busy, confirmed: isInstanceOnlySetting(field.key),
+        inherit: isInstanceOnlySetting(field.key) ? undefined : { overridden, source: t('全局'),
           shown: displayValue(field, saved!.inherited[field.key]) },
       };
     }}
     change={(field, value) => store.edit(current => ({ ...current, [field.key]: value }))}
     restoreInherit={field => { if (saved && !busy) store.edit(current => inheritSetting(current, field.key)); }}
-    browse={field => void run(async () => { const path = await pickPath('directory'); if (path) store.edit(current => ({ ...current, [field.key]: path })); })}
+    browse={(field, apply) => void run(async () => { const path = await pickPath('directory'); if (path) { if (apply) apply(path); else store.edit(current => ({ ...current, [field.key]: path })); } })}
     fileLabel={t('游戏配置')} filePath={saved?.config_path ?? ''} kicker={t('Game settings · 下次启动生效')} note={t('修改即时保存，下次启动生效')}
     top={top[group]} end={group === 'advanced' || group === 'compatibility' ? launch : undefined} error={store.error} toast={toast}
     back={() => { if (!busy) store.afterSave(onBack); }}

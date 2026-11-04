@@ -153,6 +153,8 @@ export const en: Record<string, string> = {
   '正在取消…': 'Cancelling…',
   '取消导入': 'Cancel import',
   '取消': 'Cancel',
+  '保存': 'Save',
+  '未保存': 'Unsaved',
   '已取消导入，可重新选择 APK': 'Import cancelled; you can choose another APK',
   '宿主未返回导入结果。': 'The host returned no import result.',
   '已加入游戏库': 'Added to the library',

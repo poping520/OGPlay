@@ -116,12 +116,24 @@
 .txt input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); font: 13px var(--code); user-select: text; }
 .txt input::placeholder { color: var(--dim); font-family: var(--font); font-weight: 700; }
 .txt input:focus { outline: none; }
-.cfg .txt button { height: 32px; padding: 0 12px; border-radius: 999px; background: var(--glass2); font-size: 12px; font-weight: 800; white-space: nowrap; }
-.cfg .txt button:hover:not(:disabled) { background: rgba(255,255,255,.16); }
-.cfg :is(.seg, .cyc, .step, .txt, .range) :disabled { cursor: not-allowed; }
-/* restore-to-inherited button beside an overridden control; an empty slot of the same width keeps the controls aligned */
-.cfg .restore, .restore-slot { flex: none; width: 104px; }
-.cfg .restore { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 999px;
+.cfg :is(.txt, .path-field) button { height: 32px; padding: 0 12px; border-radius: 999px; background: var(--glass2); font-size: 12px; font-weight: 800; white-space: nowrap; }
+.cfg :is(.txt, .path-field) button:hover:not(:disabled) { background: rgba(255,255,255,.16); }
+.cfg :is(.seg, .cyc, .step, .txt, .range, .path-edit) :disabled { cursor: not-allowed; }
+/* a path that must be right: the field takes the row's whole width and wraps, so all of it stays readable */
+.cfg .row.path-row { grid-template-columns: auto minmax(0, 1fr); row-gap: 10px; }
+.path-row .lbl .tag { margin-left: 8px; vertical-align: 2px; }
+.path-edit { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.path-field { flex: 1; display: flex; align-items: flex-start; gap: 6px; min-width: 0; padding: 4px 4px 4px 16px; border-radius: 20px; background: var(--field); }
+.path-field textarea { flex: 1; display: block; box-sizing: border-box; min-width: 0; padding: 6px 0; border: 0; background: none; color: var(--ink); font: 13px/20px var(--code);
+  overflow: hidden; resize: none; word-break: break-all; user-select: text; }
+.path-field textarea::placeholder { color: var(--dim); font-family: var(--font); font-weight: 700; }
+.path-field textarea:focus { outline: none; }
+.path-acts { flex: none; display: flex; gap: 6px; }
+.cfg .path-acts button { height: 40px; padding: 0 16px; border-radius: 999px; background: var(--glass2); font-size: 13px; font-weight: 800; white-space: nowrap; }
+.cfg .path-acts button:hover:not(:disabled) { background: rgba(255,255,255,.16); }
+.cfg .path-acts .save, .cfg .path-acts .save:hover:not(:disabled) { background: var(--yellow); color: #2a2000; }
+/* restore-to-inherited button on an overridden control's leading side, so the controls stay on the right edge */
+.cfg .restore { flex: none; width: 104px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 999px;
   background: rgba(74,163,255,.14); color: #b9dbff; font-size: 11.5px; font-weight: 800; white-space: nowrap; transition: background .12s; }
 .cfg .restore:hover:not(:disabled) { background: rgba(74,163,255,.26); }
 .cfg .restore .glyph { width: 13px; height: 13px; }
@@ -253,14 +265,16 @@ details.credit details.credit { background: rgba(255,255,255,.04); }
 .cfg.skin-glass .switch.on { background: linear-gradient(90deg, #4fe3d0, var(--mint)); }
 .cfg.skin-glass .switch::after, .cfg.skin-glass .switch.on::after { background: #fff; }
 .cfg.skin-glass .switch.on::after { box-shadow: 0 2px 8px rgba(0,60,60,.4); }
-.skin-glass :is(.seg, .cyc, .step, .txt) { border-radius: 14px; box-shadow: inset 0 1px 2px rgba(0,0,0,.2), 0 1px 0 rgba(255,255,255,.08); }
+.skin-glass :is(.seg, .cyc, .step, .txt, .path-field) { border-radius: 14px; box-shadow: inset 0 1px 2px rgba(0,0,0,.2), 0 1px 0 rgba(255,255,255,.08); }
 .skin-glass .seg { border-radius: 16px; }
 .cfg.skin-glass .seg button { border-radius: 12px; color: var(--soft); }
 .cfg.skin-glass :is(.cyc, .step) button:hover:not(:disabled) { color: var(--mint); }
 .skin-glass .cyc .pips i.on { background: var(--mint); }
-.cfg.skin-glass .txt button { border-radius: 10px; background: rgba(255,255,255,.16); }
+.cfg.skin-glass :is(.txt, .path-field) button { border-radius: 10px; background: rgba(255,255,255,.16); }
 .skin-glass .range input { background: linear-gradient(90deg, var(--mint) var(--p), rgba(255,255,255,.18) var(--p)); }
 .skin-glass .range input::-webkit-slider-thumb { background: #fff; }
+.cfg.skin-glass .path-acts button { border-radius: 14px; }
+.cfg.skin-glass .path-acts .save, .cfg.skin-glass .path-acts .save:hover:not(:disabled) { background: var(--mint); color: #063a36; }
 .cfg.skin-glass .restore { color: #d8e8ff; background: rgba(127,184,255,.2); }
 .cfg.skin-glass .restore:hover:not(:disabled) { background: rgba(127,184,255,.32); }
 .skin-glass .row.override::before { background: var(--mint2); }

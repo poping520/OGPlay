@@ -12,7 +12,7 @@
 int OgplayMain(int argc, const char* const argv[]) noexcept;
 
 namespace {
-int ForwardApplication(int (*entry)(int, const char* const[]) noexcept) noexcept {
+template <typename Entry> int ForwardApplication(Entry entry) noexcept {
     try {
         int count{};
         auto** wide = CommandLineToArgvW(GetCommandLineW(), &count);

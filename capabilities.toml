@@ -271,7 +271,7 @@ note = "GUI-20：启动器、宿主状态/错误、原生菜单/托盘/选择器
 [frontend.gui_shell]
 status = "complete"
 test = "frontend.app_entrypoints; frontend.gui_dashboard_window; frontend.gui_smoke; frontend.gui_library_smoke; frontend.gui_webui_manifest; tests/frontend/gui_rpc_tests.cpp; webui/apps/gui/shared/rpc.test.ts; webui/apps/gui/library/library.test.ts; webui/apps/gui/import/import.test.ts; webui/apps/gui/settings/settings.test.ts; webui/apps/gui/settings/game-settings.test.ts"
-note = "GUI-1..9：ogplay 桌面主入口与 ogplay-cli 共用 ogplaycore；Windows 使用 WebView2 + Preact 外壳，closed schema JSON-RPC、导航限制与 CSP；支持库视图、单体 APK 导入（分包拒绝）、全局与每实例设置、运行实例 Dashboard 窗口及移除（保留存档）。macOS 使用 WKWebView 与 ad-hoc 签名的 OGPlay.app（GUI-11）。部分设置仅保存不生效，沙盒管理未接入；Linux 暂缓。"
+note = "GUI-1..9/21：ogplay 桌面主入口与 ogplay-cli 共用 ogplaycore；Windows 使用 WebView2 + Preact 外壳，closed schema JSON-RPC、导航限制与 CSP；启动器按登录会话单例，重复打开恢复已有窗口，游戏子进程独立。支持库视图、单体 APK 导入（分包拒绝）、全局与每实例设置、运行实例 Dashboard 窗口及移除（保留存档）。macOS 使用 WKWebView 与 ad-hoc 签名的 OGPlay.app（GUI-11）。部分设置仅保存不生效，沙盒管理未接入；Linux 暂缓。"
 
 [frontend.device_presets]
 status = "partial"

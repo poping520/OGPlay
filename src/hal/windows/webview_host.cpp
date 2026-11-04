@@ -16,6 +16,7 @@
 #include "ogplay/app/json.h"
 #include "ogplay/app/logging.h"
 #include "ogplay/hal/webview_host.h"
+#include "launcher_instance.h"
 
 namespace ogplay::hal {
 namespace {
@@ -94,7 +95,13 @@ public:
                      monitor.rcWork.left + (monitor.rcWork.right - monitor.rcWork.left - actual.cx) / 2,
                      monitor.rcWork.top + (monitor.rcWork.bottom - monitor.rcWork.top - actual.cy) / 2, actual.cx,
                      actual.cy, SWP_NOZORDER | SWP_NOACTIVATE);
-        if (main_window_) AddTrayIcon();
+        if (main_window_) {
+            if (!SetPropW(window_, windows::kLauncherWindowProperty, reinterpret_cast<HANDLE>(INT_PTR{1}))) {
+                DestroyWindow(window_);
+                throw std::runtime_error("Cannot identify OGPlay launcher window");
+            }
+            AddTrayIcon();
+        }
     }
 
     ~WebViewWindow() {
@@ -242,6 +249,11 @@ private:
             SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         }
         if (!self) return DefWindowProcW(window, message, wp, lp);
+        static const UINT activate_launcher = RegisterWindowMessageW(windows::kLauncherActivateMessage);
+        if (activate_launcher && message == activate_launcher && self->main_window_) {
+            self->Restore();
+            return 0;
+        }
         // A (re)started Explorer has no notification area icons; this also covers a shell not ready at first add.
         static const UINT taskbar_created = RegisterWindowMessageW(L"TaskbarCreated");
         if (message == taskbar_created && self->main_window_) {
@@ -309,6 +321,7 @@ private:
             if (self->main_window_ && self->view_) static_cast<void>(webview_terminate(self->view_));
             return 0;
         case WM_NCDESTROY:
+            if (self->main_window_) RemovePropW(window, windows::kLauncherWindowProperty);
             self->window_ = nullptr;
             SetWindowLongPtrW(window, GWLP_USERDATA, 0);
             break;

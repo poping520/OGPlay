@@ -187,13 +187,6 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
                  if (entry.metadata && entry.metadata->profile_id) {
                      const auto summary = profiles.Find(*entry.metadata->profile_id);
                      facts["profile_status"] = summary ? "recorded" : "missing";
-                     if (!summary) return facts;
-                     std::string names;
-                     for (const auto& name : summary->quirks) {
-                         if (!names.empty()) names += ", ";
-                         names += name;
-                     }
-                     facts["profile_quirks"] = names;  // comma-separated, empty when none
                  }
                  return facts;
              },

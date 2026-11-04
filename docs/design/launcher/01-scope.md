@@ -9,7 +9,7 @@ ogplay run-apk <apk> [--profiles-dir <dir>] [--external-dir <host-dir>]
 ```
 
 内核侧的事实是：**启动一个游戏所需的全部校验与运行机制都已存在且受检**——
-APK 精确身份匹配（`profiles.apk_exact_identity_match`）、依赖闭包、quirk
+APK 精确身份匹配（`profiles.apk_exact_identity_match`）、依赖闭包
 交叉验证、external 数据挂载、窗口与输入（`src/frontend/MODULE.md`）。
 缺的只是一层面向非技术用户的壳：
 

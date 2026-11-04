@@ -39,9 +39,9 @@
 
 - 实现后 `.local/aps11-preflight-after.log` 与 `aps11-preflight-library.log` 均退出 0：
   strong_missing=0、weak_missing=16；`.local/aps11-verify-preflight.py` 对实现前精确符号集合及两条入口输出/退出码作机器断言，通过。
-- hasEvents 反向验证：临时将空队列 -1 改为 0，只跑 `APS-11 API19 sensor hasEvents preserves negative idle quirk`，
+- hasEvents 反向验证：临时将空队列 -1 改为 0，只跑 `APS-11 API19 sensor hasEvents preserves negative idle result`，
   退出 1，1 case / 7 assertions 中 1 条按预期失败（`0 == -1`）；源码逐字节恢复。
-  日志 `.local/aps11-mutation-test.log`、`aps11-mutation.json`。此为固定 API19 语义，不增加 Profile quirk 开关。
+  日志 `.local/aps11-mutation-test.log`、`aps11-mutation.json`。此为固定 API19 语义，不增加 Profile 开关。
 - 本机库实例原沙盒缺少空 `obb` 语义目录，最初 library preflight 在 native 前拒绝启动。
   已完整备份到 `.local/aps11-sandbox-before/`，仅补建该空目录，所有既有文件 SHA-256 不变；
   `.local/aps11-sandbox-preparation.json` 保存机器断言，未清理存档，也未改动沙盒代码。

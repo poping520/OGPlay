@@ -10,7 +10,7 @@ APK 启动默认只依赖 Manifest 中的组件事实：
 - intent-filter 中 `android.intent.action.MAIN` + `android.intent.category.LAUNCHER`；
 - 组件 enabled 状态与必要的类名归一化信息。
 
-Profile 可以覆盖 launcher 作为兼容 quirk，但不得成为“没有它就不知道入口”的常规
+Profile 可以覆盖 launcher，但不得成为“没有它就不知道入口”的常规
 路径。
 
 ## 2. 类名归一化

@@ -15,7 +15,7 @@ so_sha256 = ["0000000000000000000000000000000000000000000000000000000000000000"]
 }
 }
 
-TEST_CASE("Title Profile v4 accepts only identity and quirks") {
+TEST_CASE("Title Profile v4 accepts only identity") {
     using namespace ogplay::session;
     const auto profile = LoadTitleProfileText(Profile(), "org.example.game");
     CHECK(profile.schema == 4U);

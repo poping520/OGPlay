@@ -112,8 +112,7 @@ API19 桩库要求的 GLES ELF 入口始终可解析；缺后端能力时按 4.4
 - flat 展开以 primitive 最后顶点提供 provoking 属性；DrawArrays/展开不引入 16 位索引上限。
   point-size array 与 distance attenuation/min/max 由 shader 消费。matrix palette 支持受检
   RAM/VBO 加权变换，Context 隔离；范围以 GLES1 子契约为准。
-- material 默认只接受 FRONT_AND_BACK；allow_gles1_material_single_face 默认关闭，仅已验证
-  Profile quirk 可启用单面状态，reset 不丢策略。clip plane 提交用 modelview 逆转置并拒绝奇异矩阵。
+- material 只接受 FRONT_AND_BACK。clip plane 提交用 modelview 逆转置并拒绝奇异矩阵。
 - texture level 0 成功后按对象 GENERATE_MIPMAP 状态真正生成 mipmap；nullable/image-size/
   unpack alignment 受检，ETC1 无原生能力时规范解码为 RGBA8，guest base format 仍为 RGB。
   OES mapbuffer 仅 WRITE_ONLY、有效未映射对象；内容经 0x72000000 起的 32 MiB guest arena

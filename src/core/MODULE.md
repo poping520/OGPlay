@@ -12,14 +12,14 @@
 - `GuestSymbolProvider`：由 Loader 提供的地址符号化抽象，core 不依赖 ELF 实现。
 - `GpuStateProvider`：图形实现注入统计、渲染目标、能力与有界 trace 的强类型只读快照；
   core 不依赖 GLES 或 Agent。
-- `ogplay::core::CapabilityLedger`：加载账本并记录运行时命中。
+- `ogplay::core::CapabilityLedger`：登记能力并记录运行时命中。
   `RecordWarning/Warnings` 独立累计 warn 级命中及首末 LR，不冒充未实现调用或成功实现。
 - `Logger::TrySnapshot` / `CapabilityLedger::TryUnimplemented`：try-lock 读取同源记录，busy
   返回 nullopt，成功空集合仍有值；不调用 sink/符号化。日志限 128 条、32 fields/条、
   512-byte UTF-8 文本，账本按 id 顺序复制调用方指定上限，不改变原始记录。
 - `JsonDocument` / `JsonWriter`：基于 yyjson 的唯一 JSON 解析、只读访问（含 `Number` 与按
   文档顺序的 `Keys`）、树复制与构造边界；调用方不接触第三方类型。
-- `CapabilityLedger::RecordNullCall/NullCalls`：所有吞错 quirk 共用的空调用观测表。
+- `CapabilityLedger::RecordNullCall/NullCalls`：吞错路径共用的空调用观测表。
 - `SoftwareSurface` + `CompareFrames`：M0 无 GPU 黄金帧生产、像素差与感知哈希基础设施。
 - `byte_order.h` / `arithmetic.h`：overflow-safe range、little-endian 整数读取/写入与
   power-of-two 对齐原语；格式模块负责在调用前检查并保留自己的 typed error。

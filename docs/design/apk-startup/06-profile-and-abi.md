@@ -42,15 +42,13 @@ APS-2 必须先把当前限制测清，再冻结行为，不在设计里凭假�
 APK facts ───────────────┐
                          ├─ AndroidAppProcess config
 optional TitleProfile ───┘
-        only overrides/quirks
+        only overrides
 ```
 
 Profile 可以保留：
 
 - 数据目录/mount 前提；
 - surface/预算等经实测需要的兼容参数；
-- static preset / non-target neutralization 等 entry-scope quirk；
-- GLES/audio/legacy compatibility quirks；
 - 可选的版本/哈希 applicability guard。
 
 Profile 不再负责：
@@ -84,7 +82,7 @@ schema = 3
 [identity]
 package = "com.example.game"
 version_code = [10]
-# 可选：仅当某 quirk 必须绑定特定构建时使用，不再是必填
+# 可选：绑定特定构建时使用，不再是必填
 so_sha256 = ["..."]
 
 [runtime]
@@ -96,8 +94,6 @@ ticks_per_call = 200000000
 [runtime.dexvm.heap]
 growth_limit_bytes = 536870912
 
-[quirks]
-enabled = ["..."]
 ```
 
 v3 约束：
@@ -109,7 +105,7 @@ v3 约束：
   19；扩展到 22/23 必须先由 process/runtime 层提供真实支持；
 - 不再提供“root library”字段；
 - `abi` 若为历史兼容字段，只能作为 assertion/guard，不能覆盖 resolver 选出的 ABI；
-- launcher 默认来自 Manifest，只有 entry-scope 明确 quirk 才覆盖；
+- launcher 默认来自 Manifest，不由 Profile 覆盖；
 - `runtime.lifecycle = dex_activity` 不再决定架构路径；APK startup 是默认路径。
 
 ## 6. Profile 匹配结果类型
@@ -129,7 +125,6 @@ struct CompatibilityProfileSelection {
 
 允许保留的场景：
 
-- 某个 quirk 只对一版 native binary 成立；
 - exact regression fixture 需要确认测试输入没有被替换；
 - 数据补丁的安全 applicability guard。
 
@@ -145,7 +140,6 @@ struct CompatibilityProfileSelection {
 
 ```text
 Manifest / real Java execution
-  ↓ only when a reviewed quirk is enabled
 Profile override
 ```
 

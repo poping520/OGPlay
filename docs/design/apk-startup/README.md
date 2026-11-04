@@ -14,7 +14,7 @@ Android 语义基线固定为 `android-4.4.4_r2.0.1` / API 19；OGPlay 仍然是
 - `docs/design/dexvm/` 继续负责 DEX 解释器、对象模型、intrinsic、JNI/Dex 双向桥；
   本设计不重写 DexVM 内核。
 - 与 `docs/design/entry-scope/` 中“Profile 决定入口/root native 模块”的旧假设
-  冲突时，以本目录为准；选择性裁剪非目标商业外壳的能力仍可作为 quirk 保留。
+  冲突时，以本目录为准；选择性裁剪非目标商业外壳的能力不在此列。
 - 与 `docs/design/dexvm/04-integration.md` 中“Title Profile identity 精确匹配永久作为
   启动安全边界”的旧假设冲突时，以本目录为准：**Profile 不再是启动资格门禁**。
 - 项目元规范不变：WU 有界、机器可判定验收、明确失败、结构化日志、能力记账、

@@ -1,4 +1,4 @@
-# 05 · 去硬编码：Title Profile 与 Quirk 体系
+# 05 · 去硬编码：Title Profile
 
 本篇回答需求 3.2：**如何把"针对个别游戏的硬编码"变成"规范化的通用机制 + 数据"。**
 
@@ -60,7 +60,6 @@ Asphalt 6 的包名 `com.gameloft.android.GAND.GloftAPHP`、A6 的存档目录�
     通用机制（代码）        ×        每游戏数据（Title Profile）
     ─────────────────                ─────────────────────────
     · 挂载点解析器          ←         mounts = [...]
-    · 空指针兼容策略        ←         quirks = ["null_call_page"]
     · JNI 绑定表加载器      ←         [[java.class]] ...
     · 统一帧循环            ←         lifecycle = "gl_surface_view"
     · 输入映射引擎          ←         [[input.binding]] ...
@@ -111,12 +110,6 @@ name = "com/gameloft/android/GAND/GloftAPHP/GLResLoader"
   [[java.class.method]]
   name = "getSoundRaw"; sig = "(I)[B"; impl = "res.sound_raw"
 
-[quirks]
-enabled = ["null_call_page", "legacy_low_address_reads"]
-
-  [quirks.legacy_low_address_reads]
-  range = ["0x01000000", "0x02000000"]
-
 [input]
 profile = "racing_tilt"                     # 引用内置模板，可再覆盖
 ```
@@ -130,46 +123,11 @@ profile = "racing_tilt"                     # 引用内置模板，可再覆盖
 
 ---
 
-## 4. Quirk 体系
+## 4. 通用修复优先
 
-Quirk = **绕过游戏自身 bug 或历史包袱的、不适合默认开启的行为**。
-
-### 4.1 什么不是 quirk
-
-这条比"什么是 quirk"更重要：
-
-- **"扩展字符串以空格结尾"不是 quirk**，是我们本来就该做对的事 → 修进通用代码
-- **"上报 `GL_OES_rgb8_rgba8`"不是 quirk**，宿主确实支持 → 如实上报
-- **"实现某个 libc 函数"不是 quirk** → 是缺失功能
-
-**只有当"正确的通用行为"确实无法满足某个游戏时，才允许开 quirk。**
-每次想加 quirk，先问一遍"是不是我们哪里没做对"。
-
-### 4.2 Quirk 的强制要求
-
-每个 quirk 必须在 `data/quirks.toml` 注册，缺任何一项 CI 直接失败：
-
-```toml
-[null_call_page]
-summary = "映射 0x0–0x2000 的可执行页，让游戏对空对象的虚调用返回而不是崩溃"
-reason  = """
-部分老引擎在可选组件缺失时不检查空指针就发起虚调用。真机上这会崩溃，
-但游戏在真机上从未走到这条路径（因为真机能力更全）。
-"""
-risk    = "会掩盖真实失败，必须配合 null-call 计数一起使用"
-test    = "tests/titles/asphalt6_test.cpp:null_call_page_required"
-owner   = "runtime/memory"
-```
-
-**`test` 字段是核心：必须有一个测试证明"去掉这个 quirk 就会坏"。**
-没有测试的 quirk 会在几年后变成没人敢删的神秘代码。
-
-### 4.3 Quirk 与可观测性绑定
-
-像 `null_call_page` 这种"会掩盖失败"的 quirk，必须同时把被掩盖的事件暴露出来
-（即 DEMO 阶段刚补的 `TALESHLE_TRACE_NULL_CALLS`，正式版进 `hle.null_calls()`）。
-
-**规则：任何"吞掉错误"的 quirk，都必须有配套的计数与查询接口。**
+- 扩展字符串结尾、能力如实上报、缺失的 libc 函数等问题，一律修进通用代码。
+- 遇到游戏行为异常，先问“是不是我们哪里没做对”。
+- 会掩盖失败的吞错路径，必须配套计数与查询接口（如 `hle.null_calls()`）。
 
 ---
 
@@ -218,7 +176,6 @@ FMV 状态机、World/Lua 探针），但至今没跑通。** 这本身就是对
 2. 每条判定归属：
    - **通用缺陷** → 修进通用代码（如扩展串结尾空格、能力上报、身份信息单一来源）
    - **可数据化** → 进 Title Profile（挂载点、资源名、JNI 绑定、生命周期、分辨率）
-   - **真 quirk** → 注册进 quirk 表 + 写证明测试
    - **临时补丁** → 删掉，走正规实现（大部分 `TALESHLE_FIX_A6_*` /
      `TALESHLE_PATCH_A6_*` 属于这类；那些二进制补丁地址多数是在绕过我们自己
      实现不全的 API，补全实现后就不需要了）
@@ -238,8 +195,7 @@ FMV 状态机、World/Lua 探针），但至今没跑通。** 这本身就是对
 
 > **先问"游戏为什么走到这条路径"，补全它真正需要的 API，而不是把它的代码改掉。**
 
-只有确证是游戏自身 bug 的，才允许保留为 quirk，并且必须按 build ID / `.so` 哈希精确限定，
-而不是裸写绝对地址。
+不保留针对单个游戏的绕过逻辑，也不裸写绝对地址。
 
 ---
 

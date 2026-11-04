@@ -110,7 +110,7 @@ dash.thread    {guest_tid}         -> 联动焦点：A32 状态、Java 栈、在
 - 每个 section 携带 `{status: complete|partial|unavailable, captured_at_steady_ns,
   generation}`，与 `GuestStallSnapshot` 一致；前端把 `unavailable` 灰显而非置零。
 - 事件环容量固定（默认 4096），`dropped` 计数必须返回。
-- 输出字段名与 `capabilities.toml`、`quirks.toml`、日志 field 名对齐，不另造词表。
+- 输出字段名与 `capabilities.toml`、日志 field 名对齐，不另造词表。
 
 ## 6. 面板布局（对应效果图）
 

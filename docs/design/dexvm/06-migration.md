@@ -91,7 +91,7 @@ Thread intrinsic、wait/notify 扩展、GC-B、java.* P2/P3（集合/装箱/IO�
    禁止把"解释器 + intrinsic + 生命周期"混进同一 WU（对齐 M8"JNI/GLES/VFS
    不混"的既有规则）。
 4. **诚实失败纪律**：任何未实现 opcode/intrinsic/反射面在实现 WU 合入前
-   必须已经"记账 + 明确失败"可测——先立失败测试，再补实现（quirk 的
+   必须已经"记账 + 明确失败"可测——先立失败测试，再补实现（
    "关闭即失败"纪律推广到能力缺口）。
 5. **每 WU 收尾**：`MODULE.md` 同步、`capabilities.toml` 状态推进、
    `CURRENT.md` 滚动快照——存量规则，无新增。

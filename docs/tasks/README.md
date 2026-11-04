@@ -25,7 +25,7 @@ Work Unit 按所属里程碑或语义化专项存放，创建后不因完成状�
 | [`m2/`](m2/) | WU-0041..0103 | 63 | — |
 | [`m3/`](m3/) | WU-0104..0149 | 46 | [M3 Work Unit](m3/README.md) |
 | [`m4/`](m4/) | WU-0150..0198 | 49 | — |
-| [`m5/`](m5/) | WU-0199..0327 | 129 | [M5 Work Unit 拆分索引](m5/README.md) |
+| [`m5/`](m5/) | WU-0199..0327 | 124 | [M5 Work Unit 拆分索引](m5/README.md) |
 | [`m6/`](m6/) | WU-0328..0359 | 32 | [M6 · AI 自动化测试](m6/README.md) |
 | [`m8/`](m8/) | WU-0360..0379、WU-M8-001..011 | 31 | [M8 · 兼容性冲刺](m8/README.md) |
 | [`maintenance/`](maintenance/) | UTIL-1..3 | 3 | [基础工具维护工作单](maintenance/README.md) |

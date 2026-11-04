@@ -4,7 +4,7 @@
 
 - [ADR-0020 · 安装实例沙盒、资源 lease 与外部数据](#adr-0020)
 - [ADR-0133 · 通用操控映射与游戏进程编辑器](#adr-0133)
-- [ADR-0142 · Profile 仅 identity/quirks，输入与显示归用户](#adr-0142)
+- [ADR-0142 · Profile 仅 identity，输入与显示归用户](#adr-0142)
 - [ADR-0163 · 受管 Activity 的窗口回调附着](#adr-0163)
 - [ADR-0164 · 有界应用附加窗口](#adr-0164)
 - [ADR-0165 · 宿主呈现帧与 Choreographer 时间基](#adr-0165)
@@ -78,7 +78,7 @@ F1 提示由 frontend 在 guest 合成后绘制，F2 请求编辑；保留快捷
 
 <a id="adr-0142"></a>
 
-## ADR-0142 · Profile 仅 identity/quirks，输入与显示归用户
+## ADR-0142 · Profile 仅 identity，输入与显示归用户
 
 - 状态：Accepted
 - 日期：2026-10-19
@@ -89,13 +89,13 @@ F1 提示由 frontend 在 guest 合成后绘制，F2 请求编辑；保留快捷
 
 ### 决定
 
-只接受 Profile v4，root 除 schema 外仅 identity 与 quirks；按 package 和可选 versionCode/SO hash
+只接受 Profile v4，root 除 schema 外仅 identity；按 package 和可选 versionCode/SO hash
 精确匹配，不命中走 generic，身份范围交叠失败。旧 schema、input 和未知字段明确拒绝，不迁移。
 API19、VM/调用默认预算归通用实现；入口取 Manifest MAIN/LAUNCHER（含 alias），ABI 取 APK inventory。
 不恢复 native_call、Java handler 映射、入口/静态字段预置、资源清单预检或 Profile 音乐映射。
 OBB 按原文件名只读挂 Android 标准目录，不展开到 Profile 自定义路径；external 挂载由显式实例/
 运行选项表达，cwd 固定初始 /，不依赖 Profile。音频只经标准 guest API。
-偏离 AOSP 的行为必须注册 quirk 并有“关闭即失败”测试，src 中不含精确游戏分支。
+src 中不含精确游戏分支。
 输入只合并内置鼠标/触摸直通、Esc→Back 与用户 input.toml，不提供类型模板或官方游戏键位。
 用户 schema 1 只接受 zone/binding；template/input_template 明确失败，不静默忽略或改用户文件。
 库实例 input.toml、显式 --input-config 与 sandbox 旁实例配置按既有解析入口选择并保存/热应用。
@@ -104,7 +104,7 @@ OBB 按原文件名只读挂 Android 标准目录，不展开到 Profile 自定�
 
 ### 后果
 
-无 Profile APK 仍可通用启动；旧配置须用户自行修改，发布 quirk 不等于发布操控或显示偏好。
+无 Profile APK 仍可通用启动；旧配置须用户自行修改。
 
 <a id="adr-0163"></a>
 

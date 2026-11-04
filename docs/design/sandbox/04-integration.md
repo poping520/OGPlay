@@ -53,7 +53,7 @@ void AttachSandbox(SandboxStore& store,
   Linux errno；`struct stat64`/`linux_dirent64` 布局按 Android ARM ABI
   固定并加机器测试。
 - 时间戳策略：VFS 不引入真实墙钟（时间源必须经统一 Clock），`stat` 的
-  `st_mtime` 等返回常量 0——老游戏用 mtime 做逻辑的个例交给 quirk，
+  `st_mtime` 等返回常量 0——老游戏用 mtime 做逻辑的个例按需修正，
   默认不伪造时间。
 - 仍不实现的项（`flock`、`*xattr`、`inotify*` 等）维持 `-ENOSYS` 记账。
 

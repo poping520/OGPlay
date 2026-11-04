@@ -14,12 +14,11 @@ from typing import Any, Sequence
 
 
 MAX_PROFILE_LINES = 200
-ROOT_FIELDS = {"schema", "identity", "quirks"}
+ROOT_FIELDS = {"schema", "identity"}
 PACKAGE_PATTERN = re.compile(
     r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+\Z"
 )
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
-ID_PATTERN = re.compile(r"[a-z][a-z0-9_]*\Z")
 
 
 class ProfileError(ValueError):
@@ -94,57 +93,11 @@ def _validate_identity(value: Any, expected_package: str) -> None:
     _unique(hashes, "identity.so_sha256")
 
 
-def _validate_pure_data(value: Any, field: str, depth: int = 0) -> None:
-    if depth > 4:
-        raise ProfileError(f"{field} nesting exceeds four tables")
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return
-    if isinstance(value, list):
-        for index, item in enumerate(value):
-            _validate_pure_data(item, f"{field}[{index}]", depth + 1)
-        return
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if ID_PATTERN.fullmatch(key) is None:
-                raise ProfileError(f"{field} has invalid parameter name {key!r}")
-            _validate_pure_data(item, f"{field}.{key}", depth + 1)
-        return
-    raise ProfileError(f"{field} contains a non-data TOML value")
-
-
-def _validate_quirks(value: Any) -> None:
-    table = _table(value, "quirks")
-    if "enabled" not in table:
-        raise ProfileError("quirks is missing fields: enabled")
-    enabled = _array(table["enabled"], "quirks.enabled")
-    for index, quirk in enumerate(enabled):
-        if ID_PATTERN.fullmatch(_string(quirk, f"quirks.enabled[{index}]")) is None:
-            raise ProfileError(f"quirks.enabled[{index}] must be a quirk id")
-    _unique(enabled, "quirks.enabled")
-    parameters = set(table) - {"enabled"}
-    unknown = sorted(parameters - set(enabled))
-    missing = sorted(set(enabled) - parameters)
-    if unknown:
-        raise ProfileError(
-            "quirks has parameters for disabled quirks: " + ", ".join(unknown)
-        )
-    if missing:
-        raise ProfileError(
-            "quirks is missing parameter tables: " + ", ".join(missing)
-        )
-    for quirk in sorted(parameters):
-        _validate_pure_data(_table(table[quirk], f"quirks.{quirk}"),
-                            f"quirks.{quirk}")
-
-
 def validate_profile(document: Any, expected_package: str) -> dict[str, Any]:
     root = _table(document, "profile")
     _keys(root, "profile", ROOT_FIELDS, {"schema", "identity"})
     _integer(root["schema"], "schema", 4, 4)
     _validate_identity(root["identity"], expected_package)
-    for field, validator in {"quirks": _validate_quirks}.items():
-        if field in root:
-            validator(root[field])
     return root
 
 
@@ -204,10 +157,6 @@ def _valid_profile(package: str = "org.example.game") -> str:
 package = "{package}"
 version_code = [1, 2]
 so_sha256 = ["{'0' * 64}"]
-[quirks]
-enabled = ["legacy_reads"]
-[quirks.legacy_reads]
-range = ["0x1000", "0x2000"]
 '''
 
 
@@ -220,8 +169,7 @@ def self_test(schema_path: Path) -> int:
     cases = [_valid_profile("org.example.other"),
              _valid_profile() + "\n" * MAX_PROFILE_LINES,
              _valid_profile().replace("[1, 2]", "[1, 1]"),
-             _valid_profile().replace("0" * 64, "G" * 64),
-             _valid_profile().replace('enabled = ["legacy_reads"]', 'enabled = []')]
+             _valid_profile().replace("0" * 64, "G" * 64)]
     cases += [_valid_profile().replace("schema = 4", f"schema = {v}") for v in (1, 2, 3, 5)]
     cases += [_valid_profile() + f"\n[{field}]\n" for field in ("runtime", "data", "audio", "java", "input")]
     cases += [_valid_profile().replace("[identity]", f'[identity]\n{field} = "x"')

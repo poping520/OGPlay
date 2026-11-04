@@ -146,7 +146,7 @@ note = "M6 WU-0333 固定 yyjson 0.12.0，提供不暴露第三方类型的 RAII
 [core.capability_ledger]
 status = "complete"
 test = "tests/core/capability_ledger_tests.cpp"
-note = "M0 支持账本读取、未实现命中聚合及相对 Git 基线的单调性 CI 门禁"
+note = "运行时未实现命中聚合及相对 Git 基线的单调性 CI 门禁"
 
 [automation.scenario_schema]
 status = "complete"
@@ -191,27 +191,17 @@ note = "M0 空会话支持 open/close/state；M1 装配 guest"
 [session.title_profile_schema]
 status = "complete"
 test = "tools.title_profile_validator_self_test; tools.title_profiles_current; tests/session/title_profile_tests.cpp"
-note = "ADR-0142：v4 只含 identity/quirks；Python/C++ 拒绝 input、旧 schema、runtime/data/audio、ABI/name 与未知字段，保留 UTF-8 和 200 行限制。"
+note = "ADR-0142：v4 只含 identity；Python/C++ 拒绝 input、旧 schema、runtime/data/audio、ABI/name 与未知字段，保留 UTF-8 和 200 行限制。"
 
 [session.title_profile_loader]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp"
-note = "ADR-0142：纯数据 v4 身份覆盖层，package 精确匹配，versionCode/SO SHA-256 为可选约束；只解析 quirk，不包含输入、显示、资源或 Java 预置。"
+note = "ADR-0142：纯数据 v4 身份覆盖层，package 精确匹配，versionCode/SO SHA-256 为可选约束；不包含输入、显示、资源或 Java 预置。"
 
 [session.title_profile_catalog]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp"
 note = "ADR-0141：稳定加载 *.profile.toml，按 package 与声明的 versionCode/SHA-256 精确约束匹配，非法及交叠身份失败；未命中走通用启动，不选择 ABI 或根库。"
-
-[session.quirk_registry]
-status = "complete"
-test = "tools.quirk_registry_validator_self_test; tests/session/quirk_registry_tests.cpp"
-note = "M5 WU-0204/0205 强制 summary/reason/risk/test/owner、真实测试引用与 profile 交叉引用；C++ 目录对含 quirk 的 profile 强制注入 UTF-8 注册表，未注册或无注册表明确失败"
-
-[profiles.gles1_material_front_face_quirk]
-status = "complete"
-test = "tools.quirk_registry_current; tests/runtime/boundary/modules/gles1_fixed_tests.cpp"
-note = "M5 WU-0265..0267 登记并注入精确 Profile quirk；默认严格拒绝单面 material，启用后独立保存 GL_FRONT/GL_BACK，reset 恢复状态但保留策略"
 
 [session.lifecycle_templates]
 status = "complete"
@@ -771,7 +761,7 @@ note = "M4 已在真实 API 19 Bionic 上启动最小 APK 并完成 2x 超采样
 [frontend.minimal_apk_run]
 status = "partial"
 test = "frontend.run_apk_options; tests/frontend/run_apk_progress_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp#APS-14; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "APS-7：Manifest→rootless AndroidAppProcess→Application→launcher Activity 的 generic path；精确 Profile 只覆盖 surface/预算/data/quirk/entry，无 Profile 使用 API19 默认 surface；前端不组织 ELF/JNI_OnLoad。Java/native exit(n) 返回 n，信号为 128+n；零呈现自行退出记 error，成功码提升为 1；宿主关闭/帧上限/MCP shutdown 为 0，runtime_failure 仍传播。真实标题可玩性逐项验证。"
+note = "APS-7：Manifest→rootless AndroidAppProcess→Application→launcher Activity 的 generic path；无 Profile 使用 API19 默认 surface；前端不组织 ELF/JNI_OnLoad。Java/native exit(n) 返回 n，信号为 128+n；零呈现自行退出记 error，成功码提升为 1；宿主关闭/帧上限/MCP shutdown 为 0，runtime_failure 仍传播。真实标题可玩性逐项验证。"
 
 [loader.hle_boundary_namespace]
 status = "complete"
@@ -811,7 +801,7 @@ note = "ADR-0141：package 与可选 versionCode/SO SHA-256 精确约束决定�
 [profiles.optional_compatibility_v4]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp; tests/session/profile_apk_tests.cpp; tools.title_profile_validator_self_test; tools.title_profiles_current"
-note = "ADR-0142：v4 只含 identity/quirks；package 必填，version/hash 约束可选；input/runtime/data/audio 与旧 schema 均拒绝。无匹配或纯 Java APK 继续 generic startup。"
+note = "ADR-0142：v4 只含 identity；package 必填，version/hash 约束可选；input/runtime/data/audio 与旧 schema 均拒绝。无匹配或纯 Java APK 继续 generic startup。"
 
 [runtime.bionic_guest_dependency_closure]
 status = "complete"
@@ -1050,7 +1040,7 @@ note = "BND-50 固定上游 RGB block decoder 与 alpha 适配层，覆盖 ATC R
 
 [runtime.gles_compressed_texture_policy]
 status = "partial"
-test = "tests/runtime/boundary/integration/android_gles_texture_formats_tests.cpp#BND54; tests/gles/angle_frame_tests.cpp#BND54; tests/dexvm/egl_facade_tests.cpp#WU-3 EGL14; tests/loader/apk_manifest_tests.cpp#supports-gl-texture; tests/runtime/application_startup_tests.cpp#BND54; tools.title_profiles_current; tools.quirk_registry_current"
+test = "tests/runtime/boundary/integration/android_gles_texture_formats_tests.cpp#BND54; tests/gles/angle_frame_tests.cpp#BND54; tests/dexvm/egl_facade_tests.cpp#WU-3 EGL14; tests/loader/apk_manifest_tests.cpp#supports-gl-texture; tests/runtime/application_startup_tests.cpp#BND54; tools.title_profiles_current"
 note = "BND-54/ADR-0128：进程创建前固定 all/atc/pvrtc 策略，Context 首次 current 时冻结；GLES1/2/3 与 Java 的字符串、格式枚举与上传校验共用策略，隐藏格式返回 GL_INVALID_ENUM；始终保留 ETC1 与 GLES3 核心 ETC2/EAC。通用 APK 顶层 supports-gl-texture 保序去重保留原名（含未知扩展），缺名/空名/取值失败跳过并记诊断；明确单族才收窄，否则 all。Profile 不覆盖。Windows/Linux 未验收。"
 
 [gles.pvrtc1_decode_fallback]
@@ -1121,7 +1111,7 @@ note = "BND-33/36/38/49、DVM-168：Java EGL10 与 API19 EGL14 复用 Native EGL
 [frontend.profile_gl_surface_run]
 status = "complete"
 test = "frontend.run_apk_options; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp"
-note = "ADR-0142：标准 Manifest Activity、SDL input、ANGLE 与通用 session 编排；Profile 只提供 quirk。surface、density 与 supersample 为用户设置，经游戏 > 全局 > 默认解析，默认 1280×720 @ 320 dpi；CLI 接受 --surface-width/--surface-height（1..4096）、--density-dpi（72..1280）与 --supersample（1..4）。"
+note = "ADR-0142：标准 Manifest Activity、SDL input、ANGLE 与通用 session 编排；Profile 只提供身份匹配。surface、density 与 supersample 为用户设置，经游戏 > 全局 > 默认解析，默认 1280×720 @ 320 dpi；CLI 接受 --surface-width/--surface-height（1..4096）、--density-dpi（72..1280）与 --supersample（1..4）。"
 
 [gles.gles1_core_catalog]
 status = "complete"

@@ -5,7 +5,7 @@
 #include <string>
 namespace ogplay::app {
 struct DataPaths final {
-    std::filesystem::path root, profiles_directory, quirk_registry;
+    std::filesystem::path root, profiles_directory;
 };
 OGPLAYCORE_API DataPaths BundledDataPaths();
 OGPLAYCORE_API std::filesystem::path ExecutablePath();

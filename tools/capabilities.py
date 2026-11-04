@@ -62,7 +62,7 @@ class Selector:
 
 
 def load(path: Path = LEDGER) -> list[Capability]:
-    """Parse the restricted format shared with core::CapabilityLedger::Load."""
+    """Parse the restricted ledger format."""
     text = path.read_text(encoding="utf-8")
     if tomllib is not None:
         try:

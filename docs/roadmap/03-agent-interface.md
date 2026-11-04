@@ -117,7 +117,7 @@ gpu.shader(id) -> {stage, source, translated_source, log}
 hle.calls({filter, since_frame}) -> [{symbol, count, last_lr}]
 hle.unimplemented() -> [{symbol, count, first_lr, category}]
 hle.null_calls() -> [{lr, symbol, count}]
-hle.capabilities() -> capabilities.toml 的运行时视图
+hle.capabilities() -> 运行时已登记能力
 ```
 
 **这是最重要的一组。** 它把"静默失败"变成可查询的事实：

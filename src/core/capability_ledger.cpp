@@ -1,75 +1,9 @@
 #include "ogplay/core/capability_ledger.h"
 
-#include <fstream>
 #include <stdexcept>
 #include <utility>
 
-#include "ogplay/core/text.h"
-
 namespace ogplay::core {
-namespace {
-
-std::string ParseQuotedValue(const std::string& line) {
-    const auto equals = line.find('=');
-    if (equals == std::string::npos) {
-        throw std::runtime_error("invalid capability assignment");
-    }
-    const auto value = std::string(TrimAsciiWhitespace(line.substr(equals + 1)));
-    if (value.size() < 2 || value.front() != '"' || value.back() != '"') {
-        throw std::runtime_error("capability values must use quoted strings");
-    }
-    return value.substr(1, value.size() - 2);
-}
-
-}  // namespace
-
-CapabilityLedger CapabilityLedger::Load(const std::filesystem::path& path) {
-    std::ifstream input(path, std::ios::binary);
-    if (!input) {
-        throw std::runtime_error("cannot open capability ledger: " + path.string());
-    }
-
-    CapabilityLedger ledger;
-    Capability current;
-    bool in_section = false;
-    std::string line;
-    while (std::getline(input, line)) {
-        line = std::string(TrimAsciiWhitespace(line));
-        if (line.empty() || line.starts_with('#')) {
-            continue;
-        }
-        if (line.front() == '[' && line.back() == ']') {
-            if (in_section) {
-                ledger.Register(std::move(current));
-            }
-            current = Capability{};
-            current.id = std::string(
-                TrimAsciiWhitespace(line.substr(1, line.size() - 2)));
-            if (current.id.empty()) {
-                throw std::runtime_error("empty capability section");
-            }
-            in_section = true;
-            continue;
-        }
-        if (!in_section) {
-            throw std::runtime_error("capability assignment outside a section");
-        }
-        if (line.starts_with("status")) {
-            current.status = ParseCapabilityStatus(ParseQuotedValue(line));
-        } else if (line.starts_with("test")) {
-            current.test = ParseQuotedValue(line);
-        } else if (line.starts_with("note")) {
-            current.note = ParseQuotedValue(line);
-        } else {
-            throw std::runtime_error("unknown capability key in section " + current.id);
-        }
-    }
-    if (in_section) {
-        ledger.Register(std::move(current));
-    }
-    return ledger;
-}
-
 CapabilityLedger::CapabilityLedger(CapabilityLedger&& other) noexcept {
     std::scoped_lock lock(other.mutex_);
     capabilities_ = std::move(other.capabilities_);
@@ -140,8 +74,7 @@ std::vector<CapabilityWarningHit> CapabilityLedger::Warnings() const {
     return result;
 }
 
-void CapabilityLedger::RecordUnimplemented(const std::string_view id,
-                                           const std::uint64_t link_register) {
+void CapabilityLedger::RecordUnimplemented(const std::string_view id, const std::uint64_t link_register) {
     std::scoped_lock lock(mutex_);
     auto [item, inserted] = hits_.try_emplace(std::string(id));
     auto& hit = item->second;
@@ -175,8 +108,8 @@ std::optional<std::vector<UnimplementedHit>> CapabilityLedger::TryUnimplemented(
     }
     return result;
 }
-void CapabilityLedger::RecordNullCall(const std::uint64_t link_register,
-                                      const std::string_view symbol) {
+
+void CapabilityLedger::RecordNullCall(const std::uint64_t link_register, const std::string_view symbol) {
     std::scoped_lock lock(mutex_);
     const auto key = std::make_pair(link_register, std::string(symbol));
     auto [item, inserted] = null_calls_.try_emplace(key);
@@ -207,14 +140,6 @@ std::string_view ToString(const CapabilityStatus status) noexcept {
     case CapabilityStatus::complete: return "complete";
     }
     return "unknown";
-}
-
-CapabilityStatus ParseCapabilityStatus(const std::string_view value) {
-    if (value == "unimplemented") return CapabilityStatus::unimplemented;
-    if (value == "stub") return CapabilityStatus::stub;
-    if (value == "partial") return CapabilityStatus::partial;
-    if (value == "complete") return CapabilityStatus::complete;
-    throw std::invalid_argument("unknown capability status: " + std::string(value));
 }
 
 }  // namespace ogplay::core

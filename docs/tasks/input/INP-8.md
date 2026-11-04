@@ -20,7 +20,7 @@
   ResolveLaunch、GUI RPC 与参数往返用例通过。宽高零值/上限/非法 CLI、直接 facade
   值、游戏覆盖全局及删除覆盖后继承均有机器判据。
 - TypeScript 检查、20 项 controls/game-settings/settings Vitest 通过；GUI/controls 制品
-  已重建。profile/quirk 校验通过，能力账本检查通过。
+  已重建。profile/兼容开关 校验通过，能力账本检查通过。
 - CLI options 门禁使用过时的无参数 usage 断言，改为检查 --help 的现有输出，并加入
   两个显示参数的帮助检查；全门禁通过，没有改写 CLI 的现有短 usage 行为。
 - 实测原 APK Angry Birds 2.3.0：非 Profile 路径，--surface-width 1024 --surface-height 600，

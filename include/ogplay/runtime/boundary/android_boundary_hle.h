@@ -135,7 +135,6 @@ struct AndroidLooperHooks final {
 };
 
 struct AndroidBoundaryOptions final {
-    bool allow_gles1_material_single_face{};
     bool allow_gles1_single_stage_texcoord_fallback{true};
     core::Logger* logger{};
     void* guest_file_owner{};

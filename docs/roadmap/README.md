@@ -19,7 +19,7 @@ FFmpeg 环境验收缺口见专项表）。
 | [02 · AI 主导开发的工程规范](02-ai-workflow.md) | 上下文管理、ADR、任务分片、可机器判定的验收、反熵 |
 | [03 · Agent Control Interface](03-agent-interface.md) | AI 操控/调试模拟器的结构化接口 + MCP |
 | [04 · Android 运行时层](04-android-runtime.md) | Bionic 三版本、syscall、完整 JNI、DEX 决策框架 |
-| [05 · 去硬编码：Title Profile 与 Quirk](05-title-profiles.md) | 把游戏特判变成数据，通用性的核心 |
+| [05 · 去硬编码：Title Profile](05-title-profiles.md) | 把游戏特判变成数据，通用性的核心 |
 | [06 · 用户体验](06-user-experience.md) | 资源导入、输入映射与手柄、前端 |
 | [07 · 开发路线图](07-roadmap.md) | M0–M9 里程碑与出口条件 |
 | [08 · 项目命名](08-naming.md) | 命名决定与配套约定 |
@@ -75,7 +75,7 @@ DEMO 阶段最难的一次排查是这样的：游戏主界面的 3D 场景全�
 
 - 未实现的 syscall **返回 ENOSYS 并记账**，不假装成功（[04 · 4.2](04-android-runtime.md)）
 - 未实现的 JNI/GL 调用**进能力账本并计数**（[02 · 7](02-ai-workflow.md)）
-- 任何"吞掉错误"的 quirk **必须配套计数与查询接口**（[05 · 4.3](05-title-profiles.md)）
+- 任何"吞掉错误"的路径 **必须配套计数与查询接口**（[05 · 4](05-title-profiles.md)）
 - Agent 接口把 `hle.unimplemented()` / `hle.null_calls()` 做成**一等公民**（[03 · 3.6](03-agent-interface.md)）
 - 日志系统禁止"打条 Warn 就算处理了"（[09 · 11](09-logging.md)）
 - 题库回归把 `null_pointer_calls = 0` 作为**断言项**（[02 · 6](02-ai-workflow.md)）

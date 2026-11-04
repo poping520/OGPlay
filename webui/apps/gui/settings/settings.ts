@@ -19,7 +19,7 @@ export const groups = [
 // coded values are worded here, in this order. null is a file the host could not read.
 const factLabels: Record<string, string> = {
   android_manifest: 'Android / BootDex / guest JNI 制品清单', artifacts_error: '制品信息不可用',
-  profile_status: 'Profile 状态', profile_quirks: 'Profile quirk 列表', profiles_dir: '有效 Profile 目录',
+  profile_status: 'Profile 状态', profiles_dir: '有效 Profile 目录',
   profile_error: 'Profile 信息不可用',
 };
 const factValues: Record<string, Record<string, string>> = {
@@ -30,7 +30,7 @@ export function factRows(facts: Record<string, string | null>): [string, string]
   const rank = (key: string) => order.includes(key) ? order.indexOf(key) : order.length;
   return Object.entries(facts).sort(([a], [b]) => rank(a) - rank(b)).map(([key, value]) => {
     const coded = value === null ? undefined : factValues[key]?.[value];
-    const shown = value === null ? t('文件不可用或超过读取上限') : coded ? t(coded) : key === 'profile_quirks' && !value ? t('无') : value;
+    const shown = value === null ? t('文件不可用或超过读取上限') : coded ? t(coded) : value;
     return [factLabels[key] ? t(factLabels[key]) : key, shown];
   });
 }

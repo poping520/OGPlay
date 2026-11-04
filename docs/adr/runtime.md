@@ -299,7 +299,7 @@ PackageManager 查询保留清单事实；不改变其他组件或扩展同进�
 ### 后果
 
 PackageManager 能查到、AMS 不可托管的视图差异是有意为之。依赖独立进程功能的游戏
-会失去该功能，但记账可查；不引入独立 guest 进程、Binder IPC 或游戏专属 quirk。
+会失去该功能，但记账可查；不引入独立 guest 进程、Binder IPC 或游戏专属分支。
 
 <a id="adr-0171"></a>
 

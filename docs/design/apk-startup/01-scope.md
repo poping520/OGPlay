@@ -30,7 +30,7 @@ ClassLoader 请求、加载失败如何反馈给 Java”等语义。
 5. **一个进程只选一个 guest ABI。** ABI 来自宿主支持能力与 APK 实际内容的交集，
    不由 Profile 选 root `.so` 间接决定。
 6. **Title Profile 降级为可选兼容覆盖。** `so_sha256` 不再是通用启动必需字段；
-   它最多作为某条 quirk/profile 的适用性 guard。
+   它最多作为 profile 的适用性 guard。
 
 ## 3. 非目标（本任务明确不做）
 

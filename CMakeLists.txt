@@ -476,7 +476,6 @@ ogplay_add_module(ogplay_session Session
     src/session/ui_compositor.cpp
     src/session/lifecycle.cpp
     src/session/profile_apk.cpp
-    src/session/quirk_registry.cpp
     src/session/session.cpp
     src/session/title_profile.cpp
     src/session/title_profile_toml.cpp

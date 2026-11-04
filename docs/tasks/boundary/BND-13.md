@@ -9,7 +9,7 @@
 
 - [x] A32 call-frame 上限测试使用 `kMaximumA32CallArguments + 1` 验证越界，不再隐含旧的
   9-word 上限；OpenSL 11-word constructor ABI 保持受检。
-- [x] `gles1_material_front_face` quirk 注册表指向模块化后的真实测试源，registry loader 与
+- [x] `gles1_material_front_face` 兼容开关 注册表指向模块化后的真实测试源，registry loader 与
   validator 恢复一致。
 - [x] OpenSL focused CTest 19/19 已在 BND-12 通过。
 - [x] 最终 full CTest 923/923 通过，包含 capability monotonic、documentation layout 与

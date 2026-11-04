@@ -22,7 +22,7 @@
 > 没有 JIT，没有 framework 字节码，没有动态类加载。
 
 由此，游戏 Java 胶水层的行为不再需要人工逆向成 profile 声明——它被真实执行；
-Title Profile 退化为 identity、数据布局、预算与 quirk。
+Title Profile 退化为 identity、数据布局与预算。
 
 实现不从零臆造：以 `.local/aosp/dalvik` 中固定 tag 的 AOSP Dalvik（KitKat，与
 API 19 目标同代）为本地参考基线——目录类数据机器比对、指令语义逐 opcode 对照、结构校验

@@ -33,12 +33,12 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   外部 guest slice observer 及其可选宿主线程限定原样传给 native process。呈现帧的 UI
   overlay 在自有 RGBA8 buffer 上合成；经 renderer 认证的全透明 overlay 省略扫描，
   仍先校验尺寸，混色算法与视频叠放顺序保持一致。
-- `LoadTitleProfileText` / `LoadTitleProfile`：仅接受 v4 的 identity、quirks，
-  旧 schema 和未知字段明确失败；Profile 是“仅 identity + quirks 的精确身份覆盖层”。
+- `LoadTitleProfileText` / `LoadTitleProfile`：仅接受 v4 的 identity，
+  旧 schema 和未知字段明确失败；Profile 是“仅 identity 的精确身份覆盖层”。
 - `SelectApkCompatibilityProfile`：按 package 与可选 version/hash 约束选择覆盖；
   无匹配或纯 Java APK 可走 generic startup，ABI 只由 APK inventory resolver 决定。
 - `TitleProfileCatalog::LoadDirectory`：稳定加载目录，校验非法及交叠身份；已删除旧的
-  单根库 exact adapter，前端只投影 profile id 与 quirk。
+  单根库 exact adapter，前端只投影 profile id。
 - `StartDexApplication` / `DexActivityLifecycle`：先按
   largeHeap 时 VMRuntime.clearGrowthLimit→resolve→`<clinit>`→construct→attach base Context→虚派 `onCreate` 建立稳定的 process
   Application root，再实例化入口 Activity 并解释执行 onCreate/onStart/onResume、
@@ -198,8 +198,6 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   未放置区域明确失败。`FormatControlLayer`/`SaveControlLayer` 保留 TOML 往返与原子替换，
   `DecodeControlLayerJson`/`WriteControlLayerJson` 共用同一 zone/binding 校验。
   `LoadControlOverrideIfPresent` 把缺失文件视为空用户层，不读取 Profile 或 bundled 模板。
-- `QuirkRegistry::Load/LoadPackaged/Validate`：严格加载 `data/quirks.toml` 并交叉验证
-  Profile 引用；源码模式额外验证测试文件/用例存在，发行模式保留测试引用形状验证。
 - `Session::OpenEmpty/Close/State/Step/UntilFrame/Pause/Resume`：确定性会话原语。
 - `AudioOutputPump`：会话拥有的音频消费；实时 worker 按设备队列补 PCM，离线路径按
   统一 Clock 差值换算帧数并保留不足一帧的余数。frontend 只注入 HAL 输出。设备
@@ -217,15 +215,13 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 
 ## 不变量
 
-- Title Profile 仅接受 schema 4，root 只允许 schema/identity/quirks；identity
+- Title Profile 仅接受 schema 4，root 只允许 schema/identity；identity
   只允许 package/version_code/so_sha256。文件 UTF-8、纯数据、不超过 200 行。
-- Profile 只能覆盖注册 quirk，不拥有运行时、资源、入口或音频策略。
+- Profile 不拥有运行时、资源、入口或音频策略。
   API 19 与 VM/guest call 默认值由通用实现决定；逻辑表面尺寸由用户设置提供；Manifest 和 APK inventory
   提供入口与 ABI，前端按标准 Android 路径装配 OBB 和外部目录。
 - exact-key table 校验共用 TOML 私有入口，各 table 声明允许键集合与上下文。
 - 身份必须精确匹配声明条件；`src/` 不出现标题、厂商或包名分支。
-- enabled quirk 必须有注册定义和可定位测试；源码/CI 在打包前验证测试文件与用例存在，
-  packaged runtime 至少严格保留其引用形状；未注入注册表时不得进入匹配目录。
 - 生命周期清理顺序固定，状态推进由固定帧步进驱动，不依赖 sleep。
 - app process 发布逻辑键盘（id=-1）与鼠标映射触摸（id=0）；触摸轴范围采用逻辑窗口坐标。
   QueueInput 将宿主设备编号归一到这两个 id，Java 与 NativeActivity 输入队列共用该映射。
@@ -242,7 +238,7 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 
 ## 测试
 
-`tests/session/` 覆盖 v4 身份/拒绝旧字段、quirk、生命周期、输入与确定性；
+`tests/session/` 覆盖 v4 身份/拒绝旧字段、生命周期、输入与确定性；
 标准入口/音频见 application_startup 与 audio_track 测试，标准挂载见 run_apk_vfs 测试；
 `ui_compositor_tests.cpp` 锁定透明 overlay 基线不变和局部合成 exact pixels；
 `tests/dexvm/widget_click_tests.cpp` 锁定 touch/click ownership 四组合、无 listener 的深层

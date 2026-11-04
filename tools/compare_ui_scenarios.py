@@ -22,7 +22,7 @@ from pathlib import Path
 
 VERSION = 'vd11-reviewed-fault-v1'
 PHASES = ('Application', 'Activity', 'Surface', 'frame', 'shutdown')
-SAME = {'scenario_sha256', 'profile_sha256', 'quirks_sha256', 'fixture_sha256_by_id',
+SAME = {'scenario_sha256', 'profile_sha256', 'fixture_sha256_by_id',
         'sandbox_seed_sha256', 'display_settings', 'backend', 'hardware', 'run_options', 'budgets'}
 BUILD = {'binary_sha256', 'bootdex_sha256', 'member_manifest_sha256', 'mode', 'mode_version',
          'ROM_hashes', 'font_hashes', 'build_id'}

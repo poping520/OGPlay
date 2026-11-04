@@ -74,7 +74,7 @@ TEST_CASE("APS-11 sensor empty catalog and inert callback queue follow API19") {
     CHECK(s.call("ALooper_removeFd", {looper, static_cast<std::uint32_t>(s.pipes.back()[0])}) == 0);
 }
 
-TEST_CASE("APS-11 API19 sensor hasEvents preserves negative idle quirk") {
+TEST_CASE("APS-11 API19 sensor hasEvents preserves negative idle result") {
     SensorFixture s;
     const auto queue = s.queue(s.manager(), s.call("ALooper_prepare", {1}));
     // Mutation guard: replacing the API19 revents!=POLLIN branch with zero

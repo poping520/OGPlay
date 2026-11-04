@@ -24,7 +24,7 @@
 定向 syscall/VFS/sandbox/外部挂载/guest call/application startup 151 用例通过；
 导入/RPC/设置继承/ResolveLaunch/CLI 参数/库 54 用例通过；初始 cwd 的
 Java getAbsolutePath 5 断言通过。WebUI TypeScript 与 46 用例通过。
-Profile/quirk 校验与 capabilities check 通过，最终日志放在证据目录。
+Profile/兼容开关 校验与 capabilities check 通过，最终日志放在证据目录。
 
 真实 APK 数据目录直接包含 data/，两次均 profile=none、无 survey、全新持久沙盒：
 

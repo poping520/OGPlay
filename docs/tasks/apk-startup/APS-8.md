@@ -22,7 +22,7 @@
 - 新增 schema v3；
 - v3 `so_sha256` 可选；
 - v3 不存在 root library 语义，ABI 不可覆盖 process resolver；
-- 现有 data/surface/dexvm budget/quirk/entry-scope override 迁入统一 compatibility config；
+- 现有 data/surface/dexvm budget/兼容开关/entry-scope override 迁入统一 compatibility config；
 - validator 增 v3 正负例。
 
 ## 验收（机器可判定）

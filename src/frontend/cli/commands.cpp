@@ -42,7 +42,6 @@ constexpr std::string_view kSynopsis =
     "                                Manage the game library\n"
     "  diag snapshot --pid <pid> [--diag-dir <dir>]\n"
     "                                Request a snapshot from a running game\n"
-    "  capabilities [path]           Print the capability ledger as JSON\n"
     "  agent <method>                Send one agent request, print the reply\n"
     "  agent-stdio                   Serve JSON-RPC over stdin/stdout\n"
     "  --version                     Print the version\n"
@@ -193,19 +192,11 @@ int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
             Write(stdout, "OGPlay: requested diagnostic snapshot via " + trigger + "\n");
             return 0;
         }
-        if (!(std::string_view(argv[1]) == "capabilities" && argc <= 3) &&
-            !(std::string_view(argv[1]) == "agent" && argc == 3) &&
+        if (!(std::string_view(argv[1]) == "agent" && argc == 3) &&
             !(std::string_view(argv[1]) == "agent-stdio" && argc == 2))
             return Usage();
-        const auto ledger_path = argc >= 3 && std::string_view(argv[1]) == "capabilities"
-                                     ? Utf8Path(argv[2])
-                                     : ogplay::app::ExecutablePath().parent_path() / "data" / "capabilities.toml";
-        ogplay::app::AgentConsole console(ledger_path);
+        ogplay::app::AgentConsole console;
 
-        if (std::string_view(argv[1]) == "capabilities") {
-            Write(stdout, console.Request("hle.capabilities").json + "\n");
-            return 0;
-        }
         if (argc == 3 && std::string_view(argv[1]) == "agent") {
             const auto response = console.Request(argv[2]);
             Write(response.ok ? stdout : stderr, response.json + "\n");

@@ -97,7 +97,7 @@ DexVM → System.loadLibrary(A)
 - 无任何 Profile：通用 fixture 可启动；
 - 有旧 v2 exact profile：能应用 override 但启动不依赖 root-so 预装；
 - 修改 APK 使 old hash 不匹配：旧 profile 不应用，但 generic path 仍继续；
-- v3 无 `so_sha256`：profile 可合法解析并应用非 native-root quirk。
+- v3 无 `so_sha256`：profile 可合法解析。
 
 ## 8. title regression
 
@@ -106,7 +106,7 @@ DexVM → System.loadLibrary(A)
 1. 迁移前记录 exact Scenario baseline；
 2. 新启动路径跑三轮；
 3. golden/frame/tick/guest fault/clean shutdown 等项目既有门禁保持；
-4. 若 title 原 profile 有入口覆盖/静态 preset，证明它们仍作为 quirk 生效；
+4. 若 title 原 profile 有入口覆盖/静态 preset，证明它们仍生效；
 5. 记录 native libraries 的实际 explicit load 顺序，确认不再由 frontend preload。
 
 ## 9. 完成定义（DoD）

@@ -5,8 +5,8 @@ M5 共包含 `WU-0199..0327`，合计 129 个已创建 Work Unit。历史任务�
 
 | 批次 | 编号范围 | 数量 | 主题 | 主要机器证据 |
 | --- | --- | ---: | --- | --- |
-| M5-A | WU-0199..0223 | 25 | Profile/Quirk schema、装配、APK 身份、Bionic 闭包与启动 preflight | schema self-test、session/loader tests、exact preflight |
-| M5-B | WU-0224..0276 | 53 | 首个 exact Profile、native-call/A32/JNI guest ABI、GLES1 bring-up | runtime/session tests、ANGLE CTest、bounded exact smoke |
+| M5-A | WU-0199..0223 | 23 | Profile schema、装配、APK 身份、Bionic 闭包与启动 preflight | schema self-test、session/loader tests、exact preflight |
+| M5-B | WU-0224..0276 | 50 | 首个 exact Profile、native-call/A32/JNI guest ABI、GLES1 bring-up | runtime/session tests、ANGLE CTest、bounded exact smoke |
 | M5-C | WU-0277..0327 | 51 | SoundPool/SDL 音频、输入与呈现、第二 Profile、性能、退出与 suspend/resume | audio/input/runtime tests、exact frame/sound/lifecycle smoke |
 
 边界按依赖闭环划分，不表示批次内每个能力都达到 `complete`。`capabilities.toml` 仍是能力

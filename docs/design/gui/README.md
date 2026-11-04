@@ -68,7 +68,7 @@ ogplay
   不可用 > 无 Profile > 缺数据包 > 运行中 > ready），右上"运行中"角标；悬停出现 ▶。
 - **详情抽屉**：图标、名称、包名、版本、Profile/API/ABI 标签；主按钮 **启动**；四个次级按钮
   **游戏设置 / Dashboard / 打开沙盒目录 / 打开日志目录**；事实表（安装实例、Profile 与
-  quirk 数、数据包状态与大小、沙盒路径与大小、解释器、帧率上限、虚拟设备、导入时间）；
+  数据包状态与大小、沙盒路径与大小、解释器、帧率上限、虚拟设备、导入时间）；
   **最近运行**列表（时间、时长、帧数、退出码，非零可"查看日志"）；底部：预检
   `--preflight`、带诊断启动 `--diag`、删除（保留存档与数据包，二次确认）。
 - **空态**：整卡虚线"拖入 APK / XAPK / APKM / APKS 或点击导入"。
@@ -101,7 +101,7 @@ ogplay
 | 输入 | 输入模板、键位映射到触摸、手柄 | 模板已有；映射预留 | `InputTemplateCatalog` id |
 | 数据与沙盒 | 数据包目录（required external）、打开沙盒/日志、导出/导入存档、**重置沙盒**（危险） | 目录已有；导出预留 | `--external-dir`；沙盒复制 |
 | 网络 | 策略 disabled / loopback / 允许（警示） | 预留（默认 disabled） | `NetworkPolicy` |
-| 兼容性 | Profile id（只读）、quirk 列表（只读）、Profile 目录覆盖、预检、带诊断启动 | 已有 | `--preflight`、`--diag*` |
+| 兼容性 | Profile id（只读）、Profile 目录覆盖、预检、带诊断启动 | 已有 | `--preflight`、`--diag*` |
 | 高级 | MCP 端口、手动步进、临时沙盒、生成 argv 只读预览 | 已有 | `--mcp*`、`--ephemeral-sandbox` |
 
 ### 3.4 全局设置

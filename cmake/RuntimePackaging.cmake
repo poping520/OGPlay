@@ -1,7 +1,7 @@
 # Included from the project root; source/binary paths use that directory scope.
 # Data directories are replaced wholesale so files removed from the source tree
 # do not linger in the staged or installed runtime.
-set(OGPLAY_DATA_DIRECTORIES profiles android dexvm branding)
+set(OGPLAY_DATA_DIRECTORIES profiles android branding)
 # OGPlay's own demo games, committed prebuilt by their samples and staged as data/demos; the launcher
 # seeds them into the library while the show_demo_games setting is on.
 set(OGPLAY_DEMO_APKS "${CMAKE_CURRENT_SOURCE_DIR}/samples/sweetshop/out/ogplay-sweetshop.apk")
@@ -18,12 +18,6 @@ add_custom_target(ogplay_stage_data ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory
         "$<TARGET_FILE_DIR:ogplaycore>/data"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/data/quirks.toml"
-        "$<TARGET_FILE_DIR:ogplaycore>/data/quirks.toml"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/capabilities.toml"
-        "$<TARGET_FILE_DIR:ogplaycore>/data/capabilities.toml"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/data/credits.json"
         "$<TARGET_FILE_DIR:ogplaycore>/data/credits.json"
     COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:ogplaycore>/data/demos"
@@ -31,6 +25,8 @@ add_custom_target(ogplay_stage_data ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${OGPLAY_DEMO_APKS} "$<TARGET_FILE_DIR:ogplaycore>/data/demos"
     COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:ogplaycore>/data/input"
     ${_ogplay_stage_data_commands}
+    COMMAND ${CMAKE_COMMAND} "-DDATA_ROOT=$<TARGET_FILE_DIR:ogplaycore>/data"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/PruneRuntimeData.cmake"
     COMMENT "Staging OGPlay runtime data"
     VERBATIM)
 
@@ -84,6 +80,8 @@ if(TARGET ogplay AND APPLE)
         COMMAND ${CMAKE_COMMAND} -E remove_directory "${_ogplay_app}/Contents/Resources/data"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "$<TARGET_FILE_DIR:ogplaycore>/data" "${_ogplay_app}/Contents/Resources/data"
+        COMMAND ${CMAKE_COMMAND} "-DDATA_ROOT=${_ogplay_app}/Contents/Resources/data"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/PruneRuntimeData.cmake"
         COMMAND codesign --force --sign - --timestamp=none "${_ogplay_app}"
         COMMAND codesign --verify --strict --deep "${_ogplay_app}"
         COMMENT "Assembling and ad-hoc signing OGPlay.app"
@@ -121,10 +119,14 @@ if(OGPLAY_FFMPEG_FOUND)
 endif()
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES data/quirks.toml data/credits.json capabilities.toml
+install(FILES data/credits.json
     DESTINATION ${CMAKE_INSTALL_BINDIR}/data COMPONENT Runtime)
 install(FILES ${OGPLAY_DEMO_APKS} DESTINATION ${CMAKE_INSTALL_BINDIR}/data/demos COMPONENT Runtime)
 foreach(_data_directory IN LISTS OGPLAY_DATA_DIRECTORIES)
     install(DIRECTORY data/${_data_directory}
-        DESTINATION ${CMAKE_INSTALL_BINDIR}/data COMPONENT Runtime)
+        DESTINATION ${CMAKE_INSTALL_BINDIR}/data COMPONENT Runtime
+        PATTERN ".DS_Store" EXCLUDE
+        PATTERN "README.md" EXCLUDE
+        PATTERN "*.schema.json" EXCLUDE
+        PATTERN "source-manifest.xml" EXCLUDE)
 endforeach()

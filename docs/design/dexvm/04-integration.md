@@ -199,7 +199,6 @@ schema v2（v1 冻结不动，二者由 `schema = 1|2` 区分，校验器同仓�
 | runtime | `lifecycle` 新增 `dex_activity`；该模式下 `native_call` **不允许出现**；预算字段保留并新增 dexvm tick/堆预算 |
 | data / audio | 不变（挂载、manifest、资源模式仍是每 title 事实） |
 | java | `[[java.class]]` 在 `dex_activity` 模式下**不允许出现**（应用类查 application DEX，平台类查 curated Boot DEX + intrinsic overlay 目录） |
-| quirks | 不变，并允许 dexvm 域 quirk（如个别 title 的堆预算、帧深度覆盖），仍强制"关闭即失败"测试 |
 
 行数上限随内容收缩重估（目标 < 100 行）；`tools/validate_title_profiles.py`
 同步升级并保留 v1 全部门禁。v2 形态示例（省略号处为 v1 同款语法）：
@@ -224,12 +223,10 @@ growth_limit_bytes = 536870912
 [data]
 working_directory = "/sdcard/example"
 mounts = [ { guest = "/sdcard/example", source = "external", required = true } ]
-[quirks]
-# 仍强制注册表交叉引用与"关闭即失败"测试
 ```
 
 没有 `native_call`，没有 `[[java.class]]`，没有 surface 尺寸手写
-（来自 Manifest 与 intrinsic 默认，quirk 可覆盖）。
+（来自 Manifest 与 intrinsic 默认）。
 
 ## 8. 可观测性与 Agent 接口
 

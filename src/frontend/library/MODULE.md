@@ -9,7 +9,7 @@
 导入优先沿用无库条目且 meta package 一致的残留 sandbox 的最小编号 id（ReusableInstallationId，ADR-0145）。settings 校验、未知键和预留字段规则为两个 EXE 的唯一来源：读取 config/settings/meta 文件时跳过未知键，写入与修改请求仍拒绝未知键；ResolveLaunch 产出值，参数格式仅由 FormatGameRunArgs 维护。
 验证：ogplay_app_tests 的库、锁与参数主题；真实 APK 有界复跑。
 
-Profile 摘要只含 id 与 quirk，不提供显示名或 required external。显示名称来自
+Profile 摘要只含 id，不提供显示名或 required external。显示名称来自
 APK；数据目录由实例设置/导入选项提供，目录有效性独立于 Profile。
 APK label 为资源时，默认配置值为 `display_name`，各语言资源（`zh-TW` 形式）存入 meta.toml
 `display_name.<locale>`。`LocalizedDisplayName` 按启动器语言依次取完全匹配、仅语言、同语言其他地区、

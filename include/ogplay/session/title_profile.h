@@ -2,19 +2,14 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
-
 namespace ogplay::session {
-
-class QuirkRegistry;
 
 struct ProfileIdentity final {
     std::string package;
@@ -22,23 +17,9 @@ struct ProfileIdentity final {
     std::vector<std::string> so_sha256;
 };
 
-struct ProfileValue final {
-    using Array = std::vector<ProfileValue>;
-    using Table = std::map<std::string, ProfileValue, std::less<>>;
-    using Storage = std::variant<bool, std::int64_t, double, std::string, Array, Table>;
-
-    Storage value;
-};
-
-struct ProfileQuirks final {
-    std::vector<std::string> enabled;
-    std::map<std::string, ProfileValue::Table, std::less<>> parameters;
-};
-
 struct TitleProfile final {
     std::uint32_t schema{};
     ProfileIdentity identity;
-    std::optional<ProfileQuirks> quirks;
 };
 
 class TitleProfileError final : public std::runtime_error {
@@ -46,24 +27,18 @@ public:
     using std::runtime_error::runtime_error;
 };
 
-[[nodiscard]] TitleProfile LoadTitleProfileText(std::string_view text,
-                                                std::string_view expected_package);
+[[nodiscard]] TitleProfile LoadTitleProfileText(std::string_view text, std::string_view expected_package);
 [[nodiscard]] TitleProfile LoadTitleProfile(const std::filesystem::path& path);
 
 class TitleProfileCatalog final {
 public:
     explicit TitleProfileCatalog(std::vector<TitleProfile> profiles);
-    TitleProfileCatalog(std::vector<TitleProfile> profiles,
-                        const QuirkRegistry& registry);
 
-    [[nodiscard]] static TitleProfileCatalog LoadDirectory(
-        const std::filesystem::path& directory);
-    [[nodiscard]] static TitleProfileCatalog LoadDirectory(
-        const std::filesystem::path& directory, const QuirkRegistry& registry);
+    [[nodiscard]] static TitleProfileCatalog LoadDirectory(const std::filesystem::path& directory);
     [[nodiscard]] const std::vector<TitleProfile>& Profiles() const noexcept;
 
 private:
-    void Validate(const QuirkRegistry* registry) const;
+    void Validate() const;
 
     std::vector<TitleProfile> profiles_;
 };

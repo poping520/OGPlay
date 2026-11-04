@@ -1,6 +1,6 @@
 # Title Profiles
 
-Profile 是“仅 identity + quirks 的精确身份覆盖层”（ADR-0142），文件名为
+Profile 是“仅 identity 的精确身份覆盖层”（ADR-0142），文件名为
 `<package>.profile.toml`，UTF-8、纯数据、不超过 200 行。只接受 v4；v1/v2/v3
 直接拒绝，不提供迁移或兼容分支。
 
@@ -17,8 +17,7 @@ so_sha256 = ["0000000000000000000000000000000000000000000000000000000000000000"]
 不选根库或 ABI；同包适用范围交叠失败。未命中 Profile 继续通用启动。
 `identity.name` 不再支持，显示名称来自 APK。
 
-可选 `[quirks]` 包含 `enabled` 与每个启用项的参数表，必须在 `data/quirks.toml`
-注册并有“关闭即失败”的测试。`[input]` 不再允许；输入布局和显示尺寸都是用户数据。
+`[input]` 不再允许；输入布局和显示尺寸都是用户数据。
 
 API 固定为 19；ABI 和入口来自 APK inventory 与 Manifest MAIN/LAUNCHER。
 逻辑表面与密度由用户设置提供（默认 1280×720 @ 320 dpi），VM 与 guest call 使用各自默认值。外部目录由显式运行选项
@@ -30,7 +29,6 @@ SoundPool。Profile 禁止 input/runtime/data/audio/Java 预置或脚本；应�
 
 ```sh
 python3 tools/validate_title_profiles.py --schema data/profiles/title-profile-v4.schema.json --profiles data/profiles
-python3 tools/validate_quirks.py --registry data/quirks.toml --profiles data/profiles --root .
 ```
 
 校验脚本需要 Python 3.11+。

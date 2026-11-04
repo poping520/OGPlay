@@ -14,9 +14,6 @@
     },
     "identity": {
       "$ref": "#/$defs/identity"
-    },
-    "quirks": {
-      "$ref": "#/$defs/quirks"
     }
   },
   "$defs": {
@@ -50,25 +47,6 @@
             "pattern": "^[0-9a-f]{64}$"
           }
         }
-      }
-    },
-    "quirks": {
-      "type": "object",
-      "required": [
-        "enabled"
-      ],
-      "properties": {
-        "enabled": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9_]*$"
-          }
-        }
-      },
-      "additionalProperties": {
-        "type": "object"
       }
     }
   }

@@ -40,7 +40,7 @@ python tools/validate_devices.py --devices data/devices
 | `locale` | `language`, `region` | 两位小写/大写 ASCII 字母（如 en/US）；只检查格式，不承诺翻译或地区行为 |
 | `locale` | `timezone` | v1 有限集合 `UTC`、`Asia/Shanghai`；不依赖宿主时区数据库，其他名称明确拒绝 |
 
-预设不包含 ANDROID_ID、路径、安装实例、游戏包名、命令行或 quirk。
+预设不包含 ANDROID_ID、路径、安装实例、游戏包名或命令行。
 ANDROID_ID 继续由每实例沙盒管理。新增支持值先修改 schema 和定向回归，不通过自由扩展表绕过校验。
 
 ## 初始数据

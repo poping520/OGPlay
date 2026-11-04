@@ -57,7 +57,7 @@
 ```
  1. 识别
     APK/XAPK → 解析 AndroidManifest → package/versionCode/minSdk/ABI
-    → .so 指纹 → 匹配 Title Profile（题库）→ 决定 API 版本与 quirks
+    → .so 指纹 → 匹配 Title Profile（题库）→ 决定 API 版本
 
  2. 装配数据
     APK assets + OBB + 外置目录 → 组装成该游戏的虚拟 sdcard（只读挂载，不复制）
@@ -240,7 +240,7 @@ DEMO 的真正价值不是代码，而是**已经验证过的知识**——哪�
 | 失效模式 | 现象 | 正式版对策 |
 | --- | --- | --- |
 | 低地址兼容窗口静默返回 0 | guest 读到全 0，走进"缺省分支"，无任何报错 | 兼容窗口必须计数上报；限定到具体游戏实例，不全局开 |
-| 空页兼容吞掉空指针虚调用 | 功能整块消失，无报错 | quirk 必须配套 `hle.null_calls()` 计数（[05 · 4.3](05-title-profiles.md)） |
+| 空页兼容吞掉空指针虚调用 | 功能整块消失，无报错 | 吞错路径必须配套 `hle.null_calls()` 计数（[05 · 4](05-title-profiles.md)） |
 | 老 ARM 二进制含旧 Android 加载布局的绝对指针 | 指向 `0x01000000–0x02000000` 等未映射区 | 当作"缺失的可选参数"处理，**不要扩大映射来掩盖** |
 
 ### 6.3 执行与线程

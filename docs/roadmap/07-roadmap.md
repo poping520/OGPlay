@@ -108,7 +108,7 @@ M5 在 `WU-0199..0327` 共形成 129 个 Work Unit。为避免继续扩大单一
 
 | 任务 | 出口条件 |
 | --- | --- |
-| M5-A：Profile、Quirk、APK 身份与启动计划（WU-0199..0223） | Profile 保持纯数据，三重身份匹配不猜测，装配失败不发布部分计划 |
+| M5-A：Profile、APK 身份与启动计划（WU-0199..0223） | Profile 保持纯数据，三重身份匹配不猜测，装配失败不发布部分计划 |
 | M5-B：首个 exact title 的 guest ABI 与 GLES bring-up（WU-0224..0276） | Profile 驱动统一 guest session；JNI/GLES 缺口可查询并明确失败 |
 | M5-C：音频、输入、第二 title 与长帧生命周期收敛（WU-0277..0327） | 编码声音经真实解码/混音/SDL 输出；窗口、输入和 lifecycle 保持通用编排 |
 | 生产代码去标题特判 | `grep -ri "asphalt\|gameloft\|dungeon\|fCoreJava" src/` 为空；每个 Profile ≤ 200 行 |

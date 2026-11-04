@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <filesystem>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -41,8 +40,6 @@ struct NullCallHit {
 
 class CapabilityLedger final {
 public:
-    static CapabilityLedger Load(const std::filesystem::path& path);
-
     CapabilityLedger() = default;
     CapabilityLedger(const CapabilityLedger&) = delete;
     CapabilityLedger& operator=(const CapabilityLedger&) = delete;
@@ -71,6 +68,5 @@ private:
 };
 
 [[nodiscard]] std::string_view ToString(CapabilityStatus status) noexcept;
-[[nodiscard]] CapabilityStatus ParseCapabilityStatus(std::string_view value);
 
 }  // namespace ogplay::core

@@ -151,7 +151,7 @@ TEST_CASE("DVM-284 ROM LinearLayout weights baseline RTL cache and one Window pr
         CHECK(f.On(outer, "getBaseline", "()I").AsInt() == 67);
         f.On(outer, "setGravity", "(I)V", {VmValue::Int(0x800053)});
         tick();
-        CHECK(f.On(outer, "getBaseline", "()I").AsInt() == 47);  // bottom: 140-totalLength100 +7 (API19 quirk).
+        CHECK(f.On(outer, "getBaseline", "()I").AsInt() == 47);  // bottom: 140-totalLength100 +7 (API19 behavior).
         f.On(outer, "setGravity", "(I)V", {VmValue::Int(0x800033)});
         // Vertical minor-axis START/END use the same RTL resolver, with width40 in width200.
         slot(tp, "width").bits = 40;

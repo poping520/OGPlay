@@ -78,7 +78,7 @@ loader.apk      loader.elf      loader.link
 cpu.jit         cpu.fault       cpu.thread
 mem.map         mem.fault
 hle.libc        hle.syscall     hle.jni        hle.unimplemented
-hle.null_call   hle.quirk
+hle.null_call
 gl.context      gl.draw         gl.state       gl.shader      gl.error
 audio.sink      audio.opensl    audio.track
 vfs.open        vfs.missing
@@ -161,7 +161,7 @@ crash-2026-08-02-153412/
   unimplemented.json   本次运行触发的未实现 API 清单
   gpu-state.json       GL 状态与最近的帧统计
   last-frame.png       最后一帧画面
-  session.json         游戏、profile、quirks、宿主环境、后端信息
+  session.json         游戏、profile、宿主环境、后端信息
 ```
 
 用户提交 issue 时附上这个目录，问题基本就定位了一半。

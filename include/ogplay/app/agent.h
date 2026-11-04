@@ -1,7 +1,6 @@
 #pragma once
 #include "ogplay/app/export.h"
 #include <cstddef>
-#include <filesystem>
 #include <functional>
 #include "ogplay/app/json.h"
 #include <memory>
@@ -16,7 +15,7 @@ struct ConsoleResponse final {
 
 class OGPLAYCORE_API AgentConsole final {
 public:
-    explicit AgentConsole(const std::filesystem::path& ledger_path);
+    AgentConsole();
     ~AgentConsole();
     AgentConsole(const AgentConsole&) = delete;
     AgentConsole& operator=(const AgentConsole&) = delete;

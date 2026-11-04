@@ -91,9 +91,9 @@ describe('setting row icons', () => {
 
 describe('host facts', () => {
   it('labels stable ids, words coded values and keeps data as is', () => {
-    expect(factRows({ profile_quirks: '', android_manifest: null, profile_status: 'missing', custom: 'x', artifacts_error: 'boom' }))
+    expect(factRows({ android_manifest: null, profile_status: 'missing', custom: 'x', artifacts_error: 'boom' }))
       .toEqual([['Android / BootDex / guest JNI 制品清单', '文件不可用或超过读取上限'], ['制品信息不可用', 'boom'],
-        ['Profile 状态', '记录的 Profile 在所选目录中不存在。'], ['Profile quirk 列表', '无'], ['custom', 'x']]);
+        ['Profile 状态', '记录的 Profile 在所选目录中不存在。'], ['custom', 'x']]);
   });
 });
 describe('open-source credits', () => {

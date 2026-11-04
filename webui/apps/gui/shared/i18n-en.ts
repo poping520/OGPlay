@@ -430,8 +430,6 @@ export const en: Record<string, string> = {
   '有效 Profile 目录': 'Effective profile folder',
   'Profile 状态': 'Profile status',
   '目录中存在导入记录；适用性由运行服务启动时校验': 'The folder has the import record; applicability is checked when the game starts',
-  'Profile quirk 列表': 'Profile quirks',
-  '无': 'None',
   '开源致谢': 'Open-source acknowledgements',
   'OGPlay 使用了以下开源项目，感谢它们的作者与贡献者。展开可查看许可证全文及其依赖的项目。': 'OGPlay is built on these open-source projects; thanks to their authors and contributors. Open one to read its full license and see the projects it depends on.',
   '多种许可证': 'Several licenses',

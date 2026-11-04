@@ -54,7 +54,6 @@
 #include "ogplay/runtime/integration/dexvm_io_vfs.h"
 #include "ogplay/video/ffmpeg_video_player.h"
 #include "ogplay/video/buffered_video_player.h"
-#include "ogplay/session/quirk_registry.h"
 #include "ogplay/session/title_profile.h"
 #include "ogplay/session/android_app_process.h"
 #include "ogplay/session/audio_output_pump.h"
@@ -130,11 +129,6 @@ gles::AngleBackend NativeBackend() {
     throw std::logic_error("unknown configured ANGLE renderer");
 }
 
-[[nodiscard]] bool ProfileEnablesQuirk(const session::TitleProfile& profile, const std::string_view id) {
-    return profile.quirks.has_value() &&
-           std::ranges::find(profile.quirks->enabled, id) != profile.quirks->enabled.end();
-}
-
 std::string Utf16ToUtf8(const std::span<const runtime::JniChar> text) {
     return *core::Utf16ToUtf8(text, core::InvalidUtf16Policy::replace, 0xfffdU);
 }
@@ -178,9 +172,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                  {{"data_root", PathUtf8(bundled_data.root)}});
     const auto apk_bytes = std::make_shared<const std::vector<std::byte>>(ReadBytes(apk_path));
     const auto archive = loader::ParseApkArchive(*apk_bytes);
-    const auto quirks = session::QuirkRegistry::LoadPackaged(bundled_data.quirk_registry);
-    const auto profiles = session::TitleProfileCatalog::LoadDirectory(
-        profiles_directory.value_or(bundled_data.profiles_directory), quirks);
+    const auto profiles =
+        session::TitleProfileCatalog::LoadDirectory(profiles_directory.value_or(bundled_data.profiles_directory));
     const auto manifest = loader::ReadAndroidManifest(*apk_bytes, archive);
     const auto libraries = loader::ReadApkArmNativeLibraries(*apk_bytes, archive);
     const loader::ApkNativeLibraryInventory native_inventory{libraries};
@@ -510,9 +503,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.backend = NativeBackend();
         app_request.filesystem = &filesystem;
         app_request.progress = runtime_progress;
-        app_request.boundary_options = {.allow_gles1_material_single_face =
-                                            ProfileEnablesQuirk(profile, "gles1_material_front_face"),
-                                        .async_present_readback = !mcp_manual_step,
+        app_request.boundary_options = {.async_present_readback = !mcp_manual_step,
                                         .frame_period_ns = frame_period_ns};
         app_request.guest_call_slice_observer = guest_slice_observer;
         app_request.guest_call_slice_observer_thread = std::this_thread::get_id();

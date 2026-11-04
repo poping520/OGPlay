@@ -69,10 +69,10 @@
   前端不传自由 argv、任意目录打开路径或游戏兼容结论；错误返回 code/message/next_step。
 - Web UI 只渲染模型事实。状态优先级：损坏 > Profile catalog 不可用 > 缺数据包 > 运行中 >
   ready。通用启动路径是默认状态，无 Profile 不产生状态、提示或条件。
-- Profile 条件只在记录了精确 Profile（身份与 quirk）或 catalog 失效（unavailable）时下发，
+- Profile 条件只在记录了精确 Profile 或 catalog 失效（unavailable）时下发，
   否则为 null。
   外部数据只检查用户已选择的目录是否有效，不从 Profile 推断 required；默认 Profile
-  与 quirk 来自同一 bundled payload。
+  来自 bundled payload。
 - 启动器主窗口只加载 bundled `webui/gui/index.html`；WebView2 仅允许该入口导航，禁止新窗口。
   静态 CSP 禁止网络、框架、对象、表单和 base 重定向；只绑定 `rpc(string)`，不启用 HTTP 服务。
   Dashboard 独立窗口只允许宿主选择的 loopback `/dash/`，无启动器 RPC，禁止弹窗。按键设置窗口

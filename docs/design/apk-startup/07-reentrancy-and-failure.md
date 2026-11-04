@@ -83,7 +83,7 @@ Application onCreate fails → no launcher Activity
 Activity <clinit>/<init>/onCreate fails → no onStart/onResume
 ```
 
-不要为了“尽量进游戏”吞异常继续。这些失败正是平台 intrinsic 或 title quirk 的真实
+不要为了“尽量进游戏”吞异常继续。这些失败正是平台 intrinsic 的真实
 缺口信号。
 
 ## 7. 生命周期对象所有权

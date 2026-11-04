@@ -130,7 +130,7 @@ BoundaryResult AndroidModule::SensorExport(const A32CallFrame& call, std::uint16
         return 0;
     }
     if (id >= 90 && id <= 92) SensorFailure("ASensor is invalid in the empty device directory", thread);
-    if (id == 93) return std::bit_cast<std::uint32_t>(std::int32_t{-1}); // API19 revents != POLLIN quirk.
+    if (id == 93) return std::bit_cast<std::uint32_t>(std::int32_t{-1}); // API19 returns -1 when revents != POLLIN.
     if (id == 94) return 0; // BitTube maps EAGAIN to zero events.
     throw std::logic_error("unknown sensor export");
 }

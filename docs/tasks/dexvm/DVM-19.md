@@ -10,7 +10,7 @@ pilot title 删除 profile 全部 `native_call` 与 `[[java.class]]`，以 schem
 
 - `data/profiles/com.gameloft.android.GAND.GloftAsphalt5.asphalt5.profile.toml`
   由 201 行 v1（16 条 native_call + 33 条 java 方法映射）替换为 25 行 v2
-  （identity + surface + dexvm 预算 + quirk）——胶水声明清零。
+  （identity + surface + dexvm 预算 + 兼容开关）——胶水声明清零。
 - `asphalt5.title_flow` Scenario 三轮 + 迁移后生产目录复验全部 passed：
   固定 468 帧/468000 tick，主界面 PNG SHA-256
   `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`

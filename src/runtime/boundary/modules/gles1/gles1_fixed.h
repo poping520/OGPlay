@@ -26,10 +26,9 @@ inline constexpr std::uint32_t kGles1SpotExponent = 0x1205U;
 inline constexpr std::uint32_t kGles1MaterialShininess = 0x1601U;
 
 class AndroidBoundaryGles1FixedState final {
-  public:
+public:
     AndroidBoundaryGles1FixedState();
 
-    void SetMaterialSingleFaceQuirk(bool enabled) noexcept;
     void Reset();
     void SetFog(std::uint32_t pname, std::span<const float> values);
     void SetLightModel(std::uint32_t pname, std::span<const float> values);
@@ -43,33 +42,27 @@ class AndroidBoundaryGles1FixedState final {
     [[nodiscard]] const std::vector<float>& LightModel(std::uint32_t pname) const;
     [[nodiscard]] const std::vector<float>& Light(std::uint32_t light, std::uint32_t pname) const;
     [[nodiscard]] const std::vector<float>& Material(std::uint32_t pname) const;
-    [[nodiscard]] const std::vector<float>& Material(
-        std::uint32_t face, std::uint32_t pname) const;
+    [[nodiscard]] const std::vector<float>& Material(std::uint32_t face, std::uint32_t pname) const;
     [[nodiscard]] float PointSize() const noexcept;
     [[nodiscard]] float PointParameter(std::uint32_t pname) const;
     [[nodiscard]] const std::array<float, 3>& PointDistanceAttenuation() const noexcept;
 
-  private:
+private:
     std::map<std::uint32_t, std::vector<float>> fog_;
     std::map<std::uint32_t, std::vector<float>> light_model_;
     std::map<std::uint64_t, std::vector<float>> lights_;
-    std::map<std::uint32_t, std::vector<float>> material_front_;
-    std::map<std::uint32_t, std::vector<float>> material_back_;
+    std::map<std::uint32_t, std::vector<float>> material_;
     float point_size_{1.0F};
     std::map<std::uint32_t, float> point_parameters_;
     std::array<float, 3> point_distance_attenuation_{};
-    bool allow_material_single_face_{};
 };
 
-void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch,
-                                        AndroidBoundaryGles1FixedState& state,
-                                        memory::AddressSpace& address_space,
-                                        AndroidBoundaryFrameResolver require_frame,
+void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch, AndroidBoundaryGles1FixedState& state,
+                                        memory::AddressSpace& address_space, AndroidBoundaryFrameResolver require_frame,
                                         SharedGlState* shared = nullptr,
                                         AndroidBoundaryGles1MatrixState* matrices = nullptr);
 
-[[nodiscard]] std::vector<float> TransformGles1LightParameter(
-    std::uint32_t pname, std::span<const float> values,
-    const Gles1Matrix& modelview);
+[[nodiscard]] std::vector<float> TransformGles1LightParameter(std::uint32_t pname, std::span<const float> values,
+                                                              const Gles1Matrix& modelview);
 
-} // namespace ogplay::runtime::detail
+}  // namespace ogplay::runtime::detail

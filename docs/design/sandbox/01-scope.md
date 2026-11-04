@@ -32,7 +32,7 @@ backing 无绑定——即使 `--external-dir` 挂了宿主目录，新文件也
    一个沙盒目录即一个游戏的全部可变状态，可整体备份/迁移（对齐
    roadmap 06 §2 "每个游戏一个独立的虚拟 sdcard"）。
 3. **沙盒内自由读写**：补齐存档流程必经的文件 syscall（目录创建/枚举/删除/
-   重命名/stat/truncate/sync），游戏在自己的可写命名空间内不需要 quirk
+   重命名/stat/truncate/sync），游戏在自己的可写命名空间内不需要特殊处理
    即可完成常规文件操作。
 4. **三通道收敛**：syscall、framework HLE、DexVM 的文件与 preferences 语义
    全部经由同一 `VirtualFileSystem`；同一路径在三条通道下看到同一份内容。

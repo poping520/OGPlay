@@ -44,7 +44,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 
 ## 支持边界与未验收项
 
-- Profile（[APS-15](../tasks/apk-startup/APS-15.md)）：仅接受 v4 identity/quirks；API 19、入口、ABI、VFS 与音频走通用路径。Angry Birds 无 Profile 可启动并退出 0。
+- Profile（[APS-15](../tasks/apk-startup/APS-15.md)）：仅接受 v4 identity；API 19、入口、ABI、VFS 与音频走通用路径。Angry Birds 无 Profile 可启动并退出 0。
 
 - VFS：语义根删除返回 EBUSY、缺失自动重建并记 warn；37 定向用例/436 断言通过，TML 现有 `-3` 持久沙盒自动恢复 obb，连续两次启动越过打开阶段、根保留且既有文件哈希不变，同达 Mono sigaction / Unity EGL 首错（证据 `.local/sandbox-roots-{tests.log,proof.json}`）。多实例需显式 installation-id；PackageManager 仅当前 APK；多 ROM 未验收。
 - GUI/Dashboard（[GUI-10](../tasks/gui/GUI-10.md)）：core 改为 C++ 外观与共享游戏库，桌面/CLI

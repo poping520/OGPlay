@@ -196,7 +196,6 @@ set(OGPLAY_TEST_SOURCES
     tests/session/audio_output_pump_tests.cpp
     tests/video/video_player_tests.cpp
     tests/video/ffmpeg_video_player_tests.cpp
-    tests/session/quirk_registry_tests.cpp
     tests/session/android_input_mapping_tests.cpp
     tests/session/lifecycle_tests.cpp
     tests/session/ui_compositor_tests.cpp
@@ -721,26 +720,6 @@ add_test(
 )
 set_tests_properties(tools.device_presets_current tools.device_presets_validator
     PROPERTIES LABELS "tools;devices")
-
-add_test(
-    NAME tools.quirk_registry_validator_self_test
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_quirks.py
-        --self-test
-)
-set_tests_properties(tools.quirk_registry_validator_self_test
-    PROPERTIES LABELS "tools;profiles;quirks")
-
-add_test(
-    NAME tools.quirk_registry_current
-    COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_quirks.py
-        --registry ${CMAKE_CURRENT_SOURCE_DIR}/data/quirks.toml
-        --profiles ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles
-        --root ${CMAKE_CURRENT_SOURCE_DIR}
-)
-set_tests_properties(tools.quirk_registry_current
-    PROPERTIES LABELS "tools;profiles;quirks")
 
 add_test(
     NAME tools.m4_exit_sample_contract

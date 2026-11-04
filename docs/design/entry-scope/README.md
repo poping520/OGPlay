@@ -1,6 +1,6 @@
 # 方案：Profile 驱动的启动作用域裁剪
 
-> **启动架构已被取代：** 本文保留 entry/preset quirk 的历史设计与验收事实，但其中
+> **启动架构已被取代：** 本文保留 entry/preset 的历史设计与验收事实，但其中
 > “Profile 决定启动资格、入口或 root native module”的规则已由
 > [APK Startup 设计](../apk-startup/README.md)取代。当前默认入口来自 Manifest，Profile
 > 仅能作为经评审的 optional compatibility override。
@@ -195,7 +195,7 @@ DRM 是唯一不能拍脑袋的一条。`GloftDRM`/`StringEncrypter` 走
 
 - **Scenario gate(结论)**:A6 用裁剪 profile 三轮进入主界面,产出 Result v1;
   通过后 profile 才从 `data/profiles-dexvm/` 迁入 `data/profiles/`。
-- **"关闭即失败"测试(quirk 纪律)**:去掉某条 `preset`/`neutralize` 后,运行必须
+- **"关闭即失败"测试**:去掉某条 `preset`/`neutralize` 后,运行必须
   在原阻塞点失败——证明该裁剪是**必要且被真实使用**,不是无操作的伪装。
 - **诚实性测试**:数据未 provisioned 时,`entry`/`presets` 路径必须明确失败、不进
   游戏(证明"跳过"以真实前提为条件)。

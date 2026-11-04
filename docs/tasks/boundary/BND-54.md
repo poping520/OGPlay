@@ -16,7 +16,7 @@ Context 继承与重建、顶层 supports-gl-texture 解析及 native 初始化�
 验证：Release ogplay/ogplay_tests 构建通过；移除 Profile 设置后 17 个定向用例/2953 断言通过，覆盖声明
 解析（UTF-8/16、去重/未知保留、嵌套忽略及非法名称）、无 Profile 的真实进程装配、
 歧义/未知回退、查询/CPU/PBO 上传、Context/Java、核心格式及 ATC/PVRTC 回归。
-Profile validator self-test/current、quirk registry current 三项通过；boundary_hot_path 在
+Profile validator self-test/current、兼容开关 registry current 三项通过；boundary_hot_path 在
 压缩能力底座实现时通过，声明接入未改变该热边界。只运行相关定向检查。
 
 Lili 的 Profile 已删除，原 APK 直接运行（增加 MCP/diag 取证）；日志 profile=none，

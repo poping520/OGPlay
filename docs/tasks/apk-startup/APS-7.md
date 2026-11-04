@@ -64,7 +64,7 @@ Manifest → process/DexVM prepare → Application → launcher Activity 的 gen
   不加载 app ELF；`run-apk` 已删除 legacy Start/root module/`PrepareApkProfileLaunch` 与显式
   JNI 初始化决策。
 - frontend 无 exact Profile 时使用 Manifest、API 19 与受控 800×480 默认继续；命中旧
-  Profile 时仅消费现有 data/surface/budget/quirk/entry override，ABI 始终由 APK inventory
+  Profile 时仅消费现有 data/surface/budget/兼容开关/entry override，ABI 始终由 APK inventory
   resolver 决定。
 - fixture 覆盖无 Profile/无 ABI pure-Java、Application→Activity onCreate/onStart/onResume、
   no launcher、Activity `<clinit>`/`onCreate` loadLibrary、创建后零 application modules、

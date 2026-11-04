@@ -160,7 +160,7 @@ python tools/run_scenario.py --watch --scenario … --evidence-dir … （其余
 矩阵schema=1、normalizer_version=`vd11-reviewed-fault-v1`、cases长度9。
 每case包含result/evidence的`{path,sha256}`引用（相对矩阵目录或绝对路径），以及：
 
-- inputs：scenario_sha256、profile_sha256、quirks_sha256、fixture_sha256_by_id、
+- inputs：scenario_sha256、profile_sha256、fixture_sha256_by_id、
   sandbox_seed_sha256、display_settings、backend、hardware、run_options、budgets。
 - implementation：binary_sha256、bootdex_sha256、member_manifest_sha256、mode、
   mode_version、ROM_hashes、font_hashes、build_id。

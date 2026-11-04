@@ -24,6 +24,6 @@
 - 删除必要 `sbStarted` preset 的负向 exact 会真实切换至
   `installer/GameInstaller`，并在商业外壳的 `Intent.setPackage` 缺口明确失败；
   未进入 DRM 消费链。APK manifest launcher 本就是 `GLGame`，因此
-  entry override 对该 exact 标题与 manifest 事实等价，不宣称它是必要 quirk。
+  entry override 对该 exact 标题与 manifest 事实等价，不宣称它是必要 兼容开关。
 - 未产生首帧/主界面，`profiles.asphalt6_glstore_v132` 保持 `partial`；
   不用空 `wait()` 伪造成功。后续阶段 4 分解见 DVM-27..30。

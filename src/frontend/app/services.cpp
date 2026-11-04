@@ -51,10 +51,10 @@ struct AgentConsole::Impl {
     agent::ControlService service{ledger, logger, session};
     agent::JsonRpcAdapter rpc{service};
 
-    explicit Impl(const std::filesystem::path& path) : ledger(core::CapabilityLedger::Load(path)) {}
+    Impl() = default;
 };
 
-AgentConsole::AgentConsole(const std::filesystem::path& path) : impl_(std::make_unique<Impl>(path)) {}
+AgentConsole::AgentConsole() : impl_(std::make_unique<Impl>()) {}
 
 AgentConsole::~AgentConsole() = default;
 
@@ -73,7 +73,7 @@ std::string RequestDiagnosticSnapshot(std::uint64_t pid, const std::filesystem::
 
 DataPaths BundledDataPaths() {
     auto paths = frontend::HostBundledDataPaths();
-    return {paths.root, paths.profiles_directory, paths.quirk_registry};
+    return {paths.root, paths.profiles_directory};
 }
 
 std::filesystem::path ExecutablePath() {

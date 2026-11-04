@@ -16,7 +16,7 @@
 | [GUI-9](GUI-9.md) | 库根与持久存档路径统一 | GUI-6、GUI-7 | 完成 |
 | [GUI-10](GUI-10.md) | 宿主选择器期间保持导入模态 | GUI-5 | 完成 |
 | [GUI-11](GUI-11.md) | 运行结果延后排队呈现 | GUI-6、GUI-7 | 完成 |
-| [GUI-12](GUI-12.md) | 可执行文件相对的 Profile/quirk 数据 | GUI-1、GUI-5 | 完成 |
+| [GUI-12](GUI-12.md) | 可执行文件相对的 Profile 数据 | GUI-1、GUI-5 | 完成 |
 | [GUI-13](GUI-13.md) | Profile catalog 失效状态 | GUI-4、GUI-5 | 完成 |
 | [GUI-14](GUI-14.md) | 启动器视觉与空闲呈现质量 | GUI-4、GUI-6 | 完成 |
 | [GUI-15](GUI-15.md) | 启动器持久化与后台分析健壮性 | GUI-2、GUI-5 | 完成 |

@@ -1,6 +1,6 @@
 # APS-15 · Title Profile v4 最小身份覆盖层
 
-目标：Profile 只保留 identity、quirks、input，标准启动不依赖 Profile。
+目标：Profile 只保留 identity、兼容开关、input，标准启动不依赖 Profile。
 依赖：APS-1/2/7/8 的 Manifest/ABI/generic startup；标准音频与 VFS 已有实现。
 决定：[ADR-0141](../../adr/session.md#adr-0141)。
 
@@ -28,7 +28,7 @@
   这些标准 Android 断言不在本次字段删除范围内，未顺带修复。
 - frontend GUI/CLI/library：66 项通过；TypeScript 检查和 GUI import/library 的 10 项
   Vitest 通过。GUI 制品已重建，manifest 检查通过。
-- profile/quirk/scenario 校验与 runner 自检、GUI manifest 共 9 项 CTest 通过；
+- profile/兼容开关/scenario 校验与 runner 自检、GUI manifest 共 9 项 CTest 通过；
   `python3 tools/capabilities.py check` 通过，`git diff --check` 通过。
 - 无 Profile 启动：
   `build/dev/ogplay-cli run-apk .local/games/com.rovio.angrybirds_2.3.0.apk --profiles-dir data/profiles --ephemeral-sandbox --exit-after-frames 120`。

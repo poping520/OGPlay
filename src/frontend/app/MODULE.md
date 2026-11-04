@@ -21,11 +21,9 @@ DumpDexSurface 显式读取 BootDex 归档，以生产相同的 bound core/Andro
 错配制品明确失败，不回落 Legacy。平台注入无 accessibility 服务事实，测试 bool 不参与
 生产装配。无标识制品同样明确失败。不运行 guest、类初始化、图形或游戏会话。
 
-DumpDexSurface 同时装配 bundled API19 骨架索引；只有该显式诊断枚举会物化完整骨架，字段状态区分常量与未实现访问。
-
 RunDex（一致性探针，DIAG-7）复用 AndroidGuestProcess 的 rootless API19 system ELF 进程、
 AndroidGuestCallSession、DexVmGuestBridge 与 NativeLibraryLoader，加载生产同源的 guest JNI、
-ICU 数据与 tzdata；JNI 注册、NIO 和 bound core/Android catalog、BootDex、骨架与 APK 路径共用。
+ICU 数据与 tzdata；JNI 注册、NIO 和 bound core/Android catalog、BootDex 与 APK 路径共用。
 加载单个 dex/jar，经真实 native 入口 `NativeStart.main` 调用 `main(String[])`；无 APK，
 不启动图形或音频呈现；可选 `--native-lib-dir` 将目录内合法 `lib*.so` 作为 armeabi-v7a
 应用库，经同一 NativeLibraryLoader 和 application ClassLoader token 加载。目录不存在、

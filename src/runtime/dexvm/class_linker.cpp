@@ -12,8 +12,7 @@ namespace {
 [[nodiscard]] std::uint8_t LoaderMask(const VmClassLoaderId loader) {
     if (loader == kBootstrapLoader) return 0x01U;
     if (loader == kApplicationLoader) return 0x02U;
-    Fail(DexVmErrorReason::internal_invariant,
-         "class loader role is invalid");
+    Fail(DexVmErrorReason::internal_invariant, "class loader role is invalid");
 }
 
 }  // namespace
@@ -42,11 +41,9 @@ namespace {
     return result;
 }
 
-LinkedAnnotationValue ConvertAnnotationValue(
-    const loader::DexImage& image, const loader::DexAnnotationValue& source);
+LinkedAnnotationValue ConvertAnnotationValue(const loader::DexImage& image, const loader::DexAnnotationValue& source);
 
-LinkedAnnotationValue ConvertAnnotationValue(
-    const loader::DexImage& image, const loader::DexAnnotationValue& source) {
+LinkedAnnotationValue ConvertAnnotationValue(const loader::DexImage& image, const loader::DexAnnotationValue& source) {
     LinkedAnnotationValue value;
     switch (source.kind) {
     case loader::DexAnnotationValueKind::byte_value:
@@ -108,32 +105,27 @@ LinkedAnnotationValue ConvertAnnotationValue(
         value.nested_type = image.types[source.nested_type_index].descriptor;
         value.nested_elements.reserve(source.nested_elements.size());
         for (const auto& element : source.nested_elements) {
-            value.nested_elements.emplace_back(
-                Ascii(image.strings[element.name_string_index]),
-                ConvertAnnotationValue(image, element.value));
+            value.nested_elements.emplace_back(Ascii(image.strings[element.name_string_index]),
+                                               ConvertAnnotationValue(image, element.value));
         }
         break;
     case loader::DexAnnotationValueKind::null_reference:
         value.kind = LinkedAnnotationValue::Kind::null_reference;
         break;
-    default:
-        value.kind = LinkedAnnotationValue::Kind::unsupported;
-        break;
+    default: value.kind = LinkedAnnotationValue::Kind::unsupported; break;
     }
     return value;
 }
 
-[[nodiscard]] LinkedAnnotation ConvertAnnotation(
-    const loader::DexImage& image, const DexUnitId unit,
-    const loader::DexRuntimeAnnotation& source) {
+[[nodiscard]] LinkedAnnotation ConvertAnnotation(const loader::DexImage& image, const DexUnitId unit,
+                                                 const loader::DexRuntimeAnnotation& source) {
     LinkedAnnotation annotation;
     annotation.type_descriptor = image.types[source.type_index].descriptor;
     annotation.dex_unit = unit;
     annotation.elements.reserve(source.elements.size());
     for (const auto& element : source.elements) {
-        annotation.elements.emplace_back(
-            Ascii(image.strings[element.name_string_index]),
-            ConvertAnnotationValue(image, element.value));
+        annotation.elements.emplace_back(Ascii(image.strings[element.name_string_index]),
+                                         ConvertAnnotationValue(image, element.value));
     }
     return annotation;
 }
@@ -147,15 +139,11 @@ LinkedAnnotationValue ConvertAnnotationValue(
     // 正确做法（后续实现）：从固定的 API 19 BOOTCLASSPATH 产物生成精确类描述符索引，
     // 按 boot class path 和 defining ClassLoader 判断归属；intrinsic catalog 只表示
     // 平台类的实现状态。届时应移除此前缀规则及 android/support 特例。
-    return (descriptor.starts_with("Landroid/") &&
-            !descriptor.starts_with("Landroid/support/")) ||
-           descriptor.starts_with("Ljava/") ||
-           descriptor.starts_with("Ljavax/") ||
-           descriptor.starts_with("Ldalvik/") ||
-           descriptor.starts_with("Lorg/apache/http/") ||
+    return (descriptor.starts_with("Landroid/") && !descriptor.starts_with("Landroid/support/")) ||
+           descriptor.starts_with("Ljava/") || descriptor.starts_with("Ljavax/") ||
+           descriptor.starts_with("Ldalvik/") || descriptor.starts_with("Lorg/apache/http/") ||
            // AOSP 随系统提供的库包（SAX、JSON）也暂按平台类处理。
-           descriptor.starts_with("Lorg/xml/") ||
-           descriptor.starts_with("Lorg/json/");
+           descriptor.starts_with("Lorg/xml/") || descriptor.starts_with("Lorg/json/");
 }
 
 [[nodiscard]] bool IsWideDescriptor(const std::string_view descriptor) {
@@ -175,26 +163,22 @@ LinkedAnnotationValue ConvertAnnotationValue(
     try {
         return ClassNameCodec::ParseMethod(descriptor);
     } catch (const ClassNameCodecError&) {
-        Fail(DexVmErrorReason::invalid_member,
-             "method descriptor is malformed: " + descriptor);
+        Fail(DexVmErrorReason::invalid_member, "method descriptor is malformed: " + descriptor);
     }
 }
 
-[[nodiscard]] std::uint16_t ArgumentWords(const DescriptorParts& parts,
-                                          const bool is_static) {
+[[nodiscard]] std::uint16_t ArgumentWords(const DescriptorParts& parts, const bool is_static) {
     std::uint32_t words = is_static ? 0U : 1U;
     for (const auto& parameter : parts.parameters) {
         words += IsWideDescriptor(parameter) ? 2U : 1U;
     }
     if (words > 0xffffU) {
-        Fail(DexVmErrorReason::invalid_member,
-             "method argument words overflow");
+        Fail(DexVmErrorReason::invalid_member, "method argument words overflow");
     }
     return static_cast<std::uint16_t>(words);
 }
 
-[[nodiscard]] MethodShape ShapeOf(const DescriptorParts& parts,
-                                  const bool is_static) {
+[[nodiscard]] MethodShape ShapeOf(const DescriptorParts& parts, const bool is_static) {
     const auto kind_of = [](const std::string_view descriptor) {
         if (descriptor == "V") return ValueKind::void_value;
         if (IsWideDescriptor(descriptor)) return ValueKind::wide;
@@ -208,25 +192,21 @@ LinkedAnnotationValue ConvertAnnotationValue(
     shape.parameter_word_offsets.reserve(parts.parameters.size());
     for (const auto& parameter : parts.parameters) {
         if (words > 0xffffU) {
-            Fail(DexVmErrorReason::invalid_member,
-                 "method argument word offset overflow");
+            Fail(DexVmErrorReason::invalid_member, "method argument word offset overflow");
         }
-        shape.parameter_word_offsets.push_back(
-            static_cast<std::uint16_t>(words));
+        shape.parameter_word_offsets.push_back(static_cast<std::uint16_t>(words));
         const auto kind = kind_of(parameter);
         shape.parameter_kinds.push_back(kind);
         words += kind == ValueKind::wide ? 2U : 1U;
     }
     if (words > 0xffffU) {
-        Fail(DexVmErrorReason::invalid_member,
-             "method argument words overflow");
+        Fail(DexVmErrorReason::invalid_member, "method argument words overflow");
     }
     shape.incoming_words = static_cast<std::uint16_t>(words);
     return shape;
 }
 
-[[nodiscard]] std::string MemberKey(const std::string& name,
-                                    const std::string& descriptor) {
+[[nodiscard]] std::string MemberKey(const std::string& name, const std::string& descriptor) {
     return name + ":" + descriptor;
 }
 
@@ -240,25 +220,25 @@ void DexClassLinker::SetLogger(core::Logger* logger) {
 }
 
 DexClassLinker::DexClassLinker() : impl_(std::make_unique<Impl>()) {}
+
 DexClassLinker::~DexClassLinker() = default;
 
-void DexClassLinker::RegisterIntrinsics(
-    const std::span<const IntrinsicClassDecl> catalog) {
+void DexClassLinker::RegisterIntrinsics(const std::span<const IntrinsicClassDecl> catalog) {
     if (impl_->link_complete) {
-        Fail(DexVmErrorReason::internal_invariant,
-             "intrinsics registered after linking");
+        Fail(DexVmErrorReason::internal_invariant, "intrinsics registered after linking");
     }
+
     struct Pending final {
         const IntrinsicClassDecl* declaration;
         DexClassId id;
     };
+
     std::vector<Pending> pending;
     for (const auto& declaration : catalog) {
         if (const auto existing = FindClass(declaration.descriptor);
             existing.has_value() && impl_->ClassAt(*existing).is_boot_dex) {
             Fail(DexVmErrorReason::internal_invariant,
-                 "intrinsic overlays must be registered before boot dex: " +
-                     declaration.descriptor);
+                 "intrinsic overlays must be registered before boot dex: " + declaration.descriptor);
         }
         LinkedClass linked;
         linked.descriptor = declaration.descriptor;
@@ -276,15 +256,17 @@ void DexClassLinker::RegisterIntrinsics(
         auto& extra = impl_->ExtrasAt(id);
         if (declaration->superclass.has_value()) {
             const auto super = FindClass(*declaration->superclass);
-            if (super.has_value()) linked.super = *super;
-            else extra.missing_super = *declaration->superclass;
+            if (super.has_value())
+                linked.super = *super;
+            else
+                extra.missing_super = *declaration->superclass;
         }
         // Resolve the whole list together so BootDex dependencies do not move
         // behind already registered interfaces in reflection metadata.
         extra.missing_interfaces = declaration->interfaces;
         for (const auto& method : declaration->methods) {
             if (method.guest_native && (method.implementation || !method.is_static ||
-                !(method.access_flags & kAccNative) || (method.access_flags & kAccAbstract))) {
+                                        !(method.access_flags & kAccNative) || (method.access_flags & kAccAbstract))) {
                 Fail(DexVmErrorReason::invalid_member, "invalid guest JNI admission: " + method.name);
             }
             LinkedMethod linked_method;
@@ -296,8 +278,7 @@ void DexClassLinker::RegisterIntrinsics(
             linked_method.kind = method.guest_native ? MethodKind::native : MethodKind::intrinsic;
             linked_method.overridable = method.overridable;
             linked_method.declared_invoke_kind =
-                declaration->is_interface &&
-                        method.invoke_kind == DeclaredInvokeKind::virtual_call
+                declaration->is_interface && method.invoke_kind == DeclaredInvokeKind::virtual_call
                     ? DeclaredInvokeKind::interface_call
                     : method.invoke_kind;
             linked_method.must_override = method.must_override;
@@ -307,18 +288,14 @@ void DexClassLinker::RegisterIntrinsics(
             linked_method.shape = ShapeOf(parts, method.is_static);
             linked_method.return_shorty = ShortyOf(parts.return_type);
             linked_method.ins_words = linked_method.shape.incoming_words;
-            const bool is_direct =
-                linked_method.declared_invoke_kind ==
-                    DeclaredInvokeKind::direct ||
-                linked_method.declared_invoke_kind ==
-                    DeclaredInvokeKind::static_call;
+            const bool is_direct = linked_method.declared_invoke_kind == DeclaredInvokeKind::direct ||
+                                   linked_method.declared_invoke_kind == DeclaredInvokeKind::static_call;
             // vtable_index -2 marks "virtual, pending vtable placement".
             linked_method.vtable_index = is_direct ? -1 : -2;
             const auto method_id = impl_->AddMethod(std::move(linked_method));
             if (is_direct) {
                 linked.own_direct_methods.push_back(method_id);
-                extra.direct_lookup.emplace(
-                    MemberKey(method.name, method.descriptor), method_id);
+                extra.direct_lookup.emplace(MemberKey(method.name, method.descriptor), method_id);
             } else {
                 linked.own_virtual_methods.push_back(method_id);
             }
@@ -334,15 +311,10 @@ void DexClassLinker::RegisterIntrinsics(
             field.is_ref = IsRefDescriptor(declared_field.descriptor);
             const auto field_id = impl_->AddField(std::move(field));
             if (declared_field.binding_token != 0U &&
-                !impl_->intrinsic_field_bindings
-                     .emplace(declared_field.binding_token, field_id)
-                     .second) {
-                Fail(DexVmErrorReason::internal_invariant,
-                     "duplicate intrinsic field binding token");
+                !impl_->intrinsic_field_bindings.emplace(declared_field.binding_token, field_id).second) {
+                Fail(DexVmErrorReason::internal_invariant, "duplicate intrinsic field binding token");
             }
-            (declared_field.is_static ? linked.own_static_fields
-                                      : linked.own_instance_fields)
-                .push_back(field_id);
+            (declared_field.is_static ? linked.own_static_fields : linked.own_instance_fields).push_back(field_id);
             if (declared_field.has_constant) {
                 linked.intrinsic_constants.push_back(declared_field);
             }
@@ -352,12 +324,10 @@ void DexClassLinker::RegisterIntrinsics(
     }
 }
 
-VmFieldId DexClassLinker::ResolveIntrinsicFieldBinding(
-    const std::uint64_t token) const {
+VmFieldId DexClassLinker::ResolveIntrinsicFieldBinding(const std::uint64_t token) const {
     const auto found = impl_->intrinsic_field_bindings.find(token);
     if (token == 0U || found == impl_->intrinsic_field_bindings.end()) {
-        Fail(DexVmErrorReason::internal_invariant,
-             "intrinsic field handle is not bound to this linker");
+        Fail(DexVmErrorReason::internal_invariant, "intrinsic field handle is not bound to this linker");
     }
     return found->second;
 }
@@ -440,7 +410,6 @@ DexUnitId DexClassLinker::RegisterBootDex(std::vector<std::uint8_t> dex_bytes, c
                     const auto source = text(field, "source");
                     if (source != "rom" && source != "failure") invalid("field source " + key);
                     actual.is_unimplemented = source == "failure";
-                    actual.is_skeleton = source == "failure";
                 }
             }
             if (!found) invalid("field identity " + key);
@@ -495,13 +464,11 @@ DexUnitId DexClassLinker::RegisterBootDex(std::vector<std::uint8_t> dex_bytes, c
                 actual->kind = MethodKind::interpreted;
                 actual->implementation = {};
                 actual->adapter_review.clear();
-                actual->is_skeleton = false;
             } else if (source == "failure") {
                 actual->kind = MethodKind::intrinsic;
                 actual->implementation = {};
                 actual->adapter_review.clear();
                 actual->code.reset();
-                actual->is_skeleton = true;
             } else
                 invalid("unknown source " + source);
         }
@@ -520,36 +487,25 @@ DexUnitId DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
 DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, const bool boot,
                                           const std::span<const std::string> failed_native) {
     if (impl_->link_complete) {
-        Fail(DexVmErrorReason::internal_invariant,
-             "dex registered after linking");
+        Fail(DexVmErrorReason::internal_invariant, "dex registered after linking");
     }
-    if ((boot && impl_->boot_unit.has_value()) ||
-        (!boot && impl_->application_unit.has_value())) {
+    if ((boot && impl_->boot_unit.has_value()) || (!boot && impl_->application_unit.has_value())) {
         Fail(DexVmErrorReason::invalid_image,
-             boot ? "only a single boot dex is supported"
-                  : "only a single application dex is supported");
+             boot ? "only a single boot dex is supported" : "only a single application dex is supported");
     }
-    const auto unit_id = DexUnitId{
-        static_cast<std::uint32_t>(impl_->dex_units.size() + 1U)};
+    const auto unit_id = DexUnitId{static_cast<std::uint32_t>(impl_->dex_units.size() + 1U)};
     auto image = [&] {
         try {
             return loader::ParseDex(dex_bytes);
         } catch (const loader::DexError& error) {
             throw loader::DexError(error.Reason(), error.Offset(),
-                std::string(boot ? "boot" : "application") +
-                    " DEX parse failed (bytes=" + std::to_string(dex_bytes.size()) +
-                    "): " + error.what());
+                                   std::string(boot ? "boot" : "application") + " DEX parse failed (bytes=" +
+                                       std::to_string(dex_bytes.size()) + "): " + error.what());
         }
     }();
     auto class_data = loader::ReadDexClassData(dex_bytes, image);
-    impl_->dex_units.push_back({unit_id,
-                                boot,
-                                std::move(dex_bytes),
-                                std::move(image),
-                                std::move(class_data),
-                                {},
-                                {},
-                                {}});
+    impl_->dex_units.push_back(
+        {unit_id, boot, std::move(dex_bytes), std::move(image), std::move(class_data), {}, {}, {}});
     if (boot) {
         impl_->boot_unit = unit_id;
     } else {
@@ -561,14 +517,11 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
     unit.field_cache.assign(unit.image.fields.size(), std::nullopt);
     const auto& image_ref = unit.image;
 
-    for (std::uint32_t class_index = 0; class_index < image_ref.classes.size();
-         ++class_index) {
+    for (std::uint32_t class_index = 0; class_index < image_ref.classes.size(); ++class_index) {
         const auto& definition = image_ref.classes[class_index];
-        const auto descriptor =
-            image_ref.types[definition.class_type_index].descriptor;
+        const auto descriptor = image_ref.types[definition.class_type_index].descriptor;
         const auto existing = FindClass(descriptor);
-        if (!boot && existing.has_value() &&
-            impl_->ClassAt(*existing).defining_loader == kBootstrapLoader) {
+        if (!boot && existing.has_value() && impl_->ClassAt(*existing).defining_loader == kBootstrapLoader) {
             // API19 parent-first delegation: the registered bootstrap identity
             // wins, irrespective of package name or bytecode equality. Never
             // merge the app copy's hierarchy, members, annotations or clinit.
@@ -576,22 +529,14 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
             // ParseDex has already rejected duplicates within this DEX unit.
             continue;
         }
-        if (!boot && impl_->skeleton_index.contains(descriptor)) {
-            // Only real bootstrap definitions shadow APK classes; package names
-            // alone do not define a bootstrap class.
-            continue;
-        }
-        const bool merge_intrinsic =
-            boot && existing.has_value() &&
-            impl_->ClassAt(*existing).is_intrinsic;
+        const bool merge_intrinsic = boot && existing.has_value() && impl_->ClassAt(*existing).is_intrinsic;
         DexClassId id;
         if (merge_intrinsic) {
             id = *existing;
             auto& linked = impl_->ClassAt(id);
             linked.is_intrinsic = false;
             linked.is_boot_dex = true;
-            linked.is_interface =
-                (definition.access_flags & kAccInterface) != 0;
+            linked.is_interface = (definition.access_flags & kAccInterface) != 0;
             linked.defining_loader = kBootstrapLoader;
             linked.initiating_loader_mask = LoaderMask(kBootstrapLoader);
             linked.access_flags = definition.access_flags;
@@ -605,13 +550,10 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
         } else {
             LinkedClass linked;
             linked.descriptor = descriptor;
-            linked.defining_loader =
-                boot ? kBootstrapLoader : kApplicationLoader;
-            linked.initiating_loader_mask =
-                boot ? LoaderMask(kBootstrapLoader) : 0U;
+            linked.defining_loader = boot ? kBootstrapLoader : kApplicationLoader;
+            linked.initiating_loader_mask = boot ? LoaderMask(kBootstrapLoader) : 0U;
             linked.access_flags = definition.access_flags;
-            linked.is_interface =
-                (definition.access_flags & kAccInterface) != 0;
+            linked.is_interface = (definition.access_flags & kAccInterface) != 0;
             linked.is_boot_dex = boot;
             linked.dex_class_def_index = class_index;
             linked.dex_unit = unit_id;
@@ -621,38 +563,30 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
         const auto& data = unit.class_data[class_index];
         auto& stored = impl_->ClassAt(id);
         auto& extra = impl_->ExtrasAt(id);
-        for (const auto* field_list :
-             {&data.static_fields, &data.instance_fields}) {
+        for (const auto* field_list : {&data.static_fields, &data.instance_fields}) {
             const bool is_static = field_list == &data.static_fields;
             std::vector<VmFieldId> dex_order;
             for (const auto& encoded : *field_list) {
                 const auto& field_id_entry = image_ref.fields[encoded.field_index];
                 LinkedField field;
                 field.owner = id;
-                field.name =
-                    Ascii(image_ref.strings[field_id_entry.name_string_index]);
-                field.descriptor =
-                    image_ref.types[field_id_entry.type_index].descriptor;
+                field.name = Ascii(image_ref.strings[field_id_entry.name_string_index]);
+                field.descriptor = image_ref.types[field_id_entry.type_index].descriptor;
                 field.access_flags = encoded.access_flags;
                 field.is_static = is_static;
                 field.is_wide = IsWideDescriptor(field.descriptor);
                 field.is_ref = IsRefDescriptor(field.descriptor);
                 if (encoded.field_index < image_ref.field_runtime_metadata.size()) {
                     field.generic_signature = image_ref.field_runtime_metadata[encoded.field_index].signature;
-                    for (const auto& annotation :
-                         image_ref.field_runtime_metadata[encoded.field_index].annotations) {
-                        field.runtime_annotations.push_back(
-                            ConvertAnnotation(image_ref, unit_id, annotation));
+                    for (const auto& annotation : image_ref.field_runtime_metadata[encoded.field_index].annotations) {
+                        field.runtime_annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
                     }
                 }
-                auto& own_fields = is_static ? stored.own_static_fields
-                                             : stored.own_instance_fields;
-                const auto existing_field = std::find_if(
-                    own_fields.begin(), own_fields.end(),
-                    [&](const VmFieldId candidate) {
+                auto& own_fields = is_static ? stored.own_static_fields : stored.own_instance_fields;
+                const auto existing_field =
+                    std::find_if(own_fields.begin(), own_fields.end(), [&](const VmFieldId candidate) {
                         const auto& current = impl_->FieldAt(candidate);
-                        return current.name == field.name &&
-                               current.descriptor == field.descriptor;
+                        return current.name == field.name && current.descriptor == field.descriptor;
                     });
                 if (existing_field != own_fields.end()) {
                     auto& current = impl_->FieldAt(*existing_field);
@@ -678,25 +612,20 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
                 stored.own_static_fields = std::move(dex_order);
             }
         }
-        for (const auto* method_list :
-             {&data.direct_methods, &data.virtual_methods}) {
+        for (const auto* method_list : {&data.direct_methods, &data.virtual_methods}) {
             const bool direct = method_list == &data.direct_methods;
             for (const auto& encoded : *method_list) {
-                const auto& method_id_entry =
-                    image_ref.methods[encoded.method_index];
+                const auto& method_id_entry = image_ref.methods[encoded.method_index];
                 LinkedMethod method;
                 method.owner = id;
-                method.name =
-                    Ascii(image_ref.strings[method_id_entry.name_string_index]);
-                const auto& prototype =
-                    image_ref.prototypes[method_id_entry.prototype_index];
+                method.name = Ascii(image_ref.strings[method_id_entry.name_string_index]);
+                const auto& prototype = image_ref.prototypes[method_id_entry.prototype_index];
                 std::string method_descriptor = "(";
                 for (const auto parameter : prototype.parameter_type_indices) {
                     method_descriptor += image_ref.types[parameter].descriptor;
                 }
                 method_descriptor += ")";
-                method_descriptor +=
-                    image_ref.types[prototype.return_type_index].descriptor;
+                method_descriptor += image_ref.types[prototype.return_type_index].descriptor;
                 method.descriptor = std::move(method_descriptor);
                 method.access_flags = encoded.access_flags;
                 method.dex_method_index = encoded.method_index;
@@ -714,12 +643,10 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
                     }
                 }
                 method.is_static = (encoded.access_flags & kAccStatic) != 0;
-                method.declared_invoke_kind = direct
-                    ? (method.is_static ? DeclaredInvokeKind::static_call
-                                        : DeclaredInvokeKind::direct)
-                    : (stored.is_interface
-                           ? DeclaredInvokeKind::interface_call
-                           : DeclaredInvokeKind::virtual_call);
+                method.declared_invoke_kind =
+                    direct
+                        ? (method.is_static ? DeclaredInvokeKind::static_call : DeclaredInvokeKind::direct)
+                        : (stored.is_interface ? DeclaredInvokeKind::interface_call : DeclaredInvokeKind::virtual_call);
                 if ((encoded.access_flags & kAccNative) != 0) {
                     method.kind = MethodKind::native;
                 } else if ((encoded.access_flags & kAccAbstract) != 0) {
@@ -727,44 +654,37 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
                 } else {
                     method.kind = MethodKind::interpreted;
                     if (!encoded.code.has_value()) {
-                        Fail(DexVmErrorReason::invalid_member,
-                             "concrete method has no code: " + method.name);
+                        Fail(DexVmErrorReason::invalid_member, "concrete method has no code: " + method.name);
                     }
-                    method.code = loader::ReadDexMethodCode(
-                        unit.bytes, image_ref, *encoded.code);
+                    method.code = loader::ReadDexMethodCode(unit.bytes, image_ref, *encoded.code);
                 }
                 const auto parts = SplitDescriptor(method.descriptor);
                 method.shape = ShapeOf(parts, method.is_static);
                 method.return_shorty = ShortyOf(parts.return_type);
                 method.ins_words = method.shape.incoming_words;
-                if (method.code.has_value() &&
-                    method.code->info.incoming_words != method.ins_words) {
+                if (method.code.has_value() && method.code->info.incoming_words != method.ins_words) {
                     Fail(DexVmErrorReason::invalid_code,
-                         "method ins does not match descriptor: " +
-                             stored.descriptor + "." + method.name);
+                         "method ins does not match descriptor: " + stored.descriptor + "." + method.name);
                 }
                 method.vtable_index = direct ? -1 : -2;
-                auto& own_methods = direct ? stored.own_direct_methods
-                                           : stored.own_virtual_methods;
-                const auto existing_method = std::find_if(
-                    own_methods.begin(), own_methods.end(),
-                    [&](const VmMethodId candidate) {
+                auto& own_methods = direct ? stored.own_direct_methods : stored.own_virtual_methods;
+                const auto existing_method =
+                    std::find_if(own_methods.begin(), own_methods.end(), [&](const VmMethodId candidate) {
                         const auto& current = impl_->MethodAt(candidate);
-                        return current.name == method.name &&
-                               current.descriptor == method.descriptor;
+                        return current.name == method.name && current.descriptor == method.descriptor;
                     });
                 if (existing_method != own_methods.end()) {
                     auto& current = impl_->MethodAt(*existing_method);
                     if (current.is_static != method.is_static ||
-                        current.declared_invoke_kind !=
-                            method.declared_invoke_kind) {
-                        Fail(DexVmErrorReason::invalid_member,
-                             "intrinsic overlay invoke kind differs from "
-                             "boot dex: " + stored.descriptor + "." +
-                                 method.name + method.descriptor);
+                        current.declared_invoke_kind != method.declared_invoke_kind) {
+                        Fail(DexVmErrorReason::invalid_member, "intrinsic overlay invoke kind differs from "
+                                                               "boot dex: " +
+                                                                   stored.descriptor + "." + method.name +
+                                                                   method.descriptor);
                     }
                     if (current.kind == MethodKind::native && method.kind != MethodKind::native) {
-                        Fail(DexVmErrorReason::invalid_member, "guest JNI admission requires a boot native declaration");
+                        Fail(DexVmErrorReason::invalid_member,
+                             "guest JNI admission requires a boot native declaration");
                     }
                     current.access_flags = method.access_flags;
                     current.dex_method_index = method.dex_method_index;
@@ -784,19 +704,15 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
                     if (method.kind == MethodKind::native && boot && !stored.admit_boot_native_methods &&
                         std::find(failed_native.begin(), failed_native.end(),
                                   stored.descriptor + "->" + method.name + method.descriptor) == failed_native.end()) {
-                        Fail(DexVmErrorReason::invalid_member,
-                             "curated boot dex contains an unbound native "
-                             "method: " + stored.descriptor + "." +
-                                 method.name);
+                        Fail(DexVmErrorReason::invalid_member, "curated boot dex contains an unbound native "
+                                                               "method: " +
+                                                                   stored.descriptor + "." + method.name);
                     }
-                    const auto vm_method_id =
-                        impl_->AddMethod(std::move(method));
+                    const auto vm_method_id = impl_->AddMethod(std::move(method));
                     own_methods.push_back(vm_method_id);
                     if (direct) {
                         const auto& added = impl_->MethodAt(vm_method_id);
-                        extra.direct_lookup.emplace(
-                            MemberKey(added.name, added.descriptor),
-                            vm_method_id);
+                        extra.direct_lookup.emplace(MemberKey(added.name, added.descriptor), vm_method_id);
                         if (added.name == "<clinit>") {
                             stored.clinit = vm_method_id;
                         }
@@ -810,15 +726,11 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
             stored.runtime_annotations.clear();
             stored.runtime_annotations.reserve(meta.runtime_annotations.size());
             for (const auto& annotation : meta.runtime_annotations) {
-                stored.runtime_annotations.push_back(
-                    ConvertAnnotation(image_ref, unit_id, annotation));
+                stored.runtime_annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
             }
             stored.annotation_defaults.clear();
             if (meta.annotation_default.has_value()) {
-                stored.annotation_defaults =
-                    ConvertAnnotation(image_ref, unit_id,
-                                      *meta.annotation_default)
-                        .elements;
+                stored.annotation_defaults = ConvertAnnotation(image_ref, unit_id, *meta.annotation_default).elements;
             }
         }
     }
@@ -828,8 +740,7 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
 void DexClassLinker::Link() {
     if (impl_->link_complete) return;
     if (!FindClass("Ljava/lang/Object;").has_value()) {
-        Fail(DexVmErrorReason::unknown_class,
-             "core intrinsic catalog is not registered");
+        Fail(DexVmErrorReason::unknown_class, "core intrinsic catalog is not registered");
     }
     // Native-backed classes may implement interfaces supplied by the BootDex
     // registered after their declarations. Resolve those names before linking.
@@ -838,8 +749,7 @@ void DexClassLinker::Link() {
         auto& extra = impl_->ExtrasAt(linked.id);
         const auto require = [&](const std::string& name) {
             const auto found = FindClass(name);
-            if (!found) Fail(DexVmErrorReason::unknown_class,
-                             "intrinsic hierarchy is not registered: " + name);
+            if (!found) Fail(DexVmErrorReason::unknown_class, "intrinsic hierarchy is not registered: " + name);
             return *found;
         };
         if (extra.missing_super) linked.super = require(*extra.missing_super);
@@ -854,15 +764,13 @@ void DexClassLinker::Link() {
     // defer their layout/vtable work until first use, so those dormant classes
     // do not become process-start requirements.
     for (auto& linked : impl_->classes) {
-        if (linked.is_intrinsic || !linked.dex_class_def_index.has_value() ||
-            !linked.dex_unit.has_value()) {
+        if (linked.is_intrinsic || !linked.dex_class_def_index.has_value() || !linked.dex_unit.has_value()) {
             continue;
         }
         const auto& image = impl_->UnitAt(*linked.dex_unit).image;
         const auto& definition = image.classes[*linked.dex_class_def_index];
         if (definition.superclass_type_index.has_value()) {
-            const auto name =
-                image.types[*definition.superclass_type_index].descriptor;
+            const auto name = image.types[*definition.superclass_type_index].descriptor;
             const auto super = FindClass(name);
             if (!super.has_value()) {
                 impl_->ExtrasAt(linked.id).missing_super = name;
@@ -892,8 +800,7 @@ void DexClassLinker::Link() {
         if (linked.is_intrinsic) impl_->LinkClass(linked.id, visiting);
     }
     if (!impl_->implicit_intrinsic_overrides.empty()) {
-        std::string message =
-            "intrinsic virtual declarations must use OverrideMethod:\n";
+        std::string message = "intrinsic virtual declarations must use OverrideMethod:\n";
         for (const auto& violation : impl_->implicit_intrinsic_overrides) {
             message += "  " + violation + "\n";
         }
@@ -907,43 +814,50 @@ std::string DexClassLinker::DumpSurfaceJson() {
     const auto root = out.Object();
     out.AddInteger(root, "schema", 1);
     std::string startup_error;
-    try { Link(); } catch (const DexVmError& error) { startup_error = error.what(); }
+    try {
+        Link();
+    } catch (const DexVmError& error) {
+        startup_error = error.what();
+    }
     out.AddString(root, "startup_link_error", startup_error);
     const auto real_constant = [&](core::JsonWriter::Value item, const double value) {
-        if (std::isfinite(value)) out.AddReal(item, "constant", value);
+        if (std::isfinite(value))
+            out.AddReal(item, "constant", value);
         else {
             out.AddString(item, "constant", std::isnan(value) ? "NaN" : value > 0 ? "+Infinity" : "-Infinity");
             out.AddString(item, "constant_encoding", "ieee754-nonfinite");
         }
     };
     const auto classes = out.Array();
-    // Explicit diagnostic enumeration may materialize the full surface; normal startup never does.
-    std::vector<std::string> names;
-    for (const auto& [name, range] : impl_->skeleton_index) { (void)range; names.push_back(name); }
-    std::sort(names.begin(), names.end());
-    for (const auto& name : names) { try { (void)ResolveDescriptor(name); } catch (const JavaLinkageError&) {} catch (const DexVmError&) {} }
     auto ids = AllClasses();
-    std::sort(ids.begin(), ids.end(), [&](auto a, auto b) {
-        return Class(a).descriptor < Class(b).descriptor;
-    });
+    std::sort(ids.begin(), ids.end(), [&](auto a, auto b) { return Class(a).descriptor < Class(b).descriptor; });
     for (const auto id : ids) {
         std::string link_error;
-        try { EnsureClassLinked(id); }
-        catch (const JavaLinkageError& error) { link_error = error.what(); }
-        catch (const DexVmError& error) { link_error = error.what(); }
+        try {
+            EnsureClassLinked(id);
+        } catch (const JavaLinkageError& error) {
+            link_error = error.what();
+        } catch (const DexVmError& error) {
+            link_error = error.what();
+        }
         const auto& cls = Class(id);
         const auto& extra = impl_->ExtrasAt(id);
         const auto entry = out.Object();
         out.AddString(entry, "descriptor", cls.descriptor);
-        out.AddString(entry, "source", cls.is_skeleton ? "skeleton" : cls.is_boot_dex ? "bootdex" : "intrinsic");
+        out.AddString(entry, "source", cls.is_boot_dex ? "bootdex" : "intrinsic");
         out.AddString(entry, "link_error", link_error);
         out.AddUnsignedInteger(entry, "access_flags", cls.access_flags);
-        if (cls.super) out.AddString(entry, "superclass", Class(*cls.super).descriptor);
-        else if (extra.missing_super) out.AddString(entry, "superclass", *extra.missing_super);
-        else out.AddNull(entry, "superclass");
+        if (cls.super)
+            out.AddString(entry, "superclass", Class(*cls.super).descriptor);
+        else if (extra.missing_super)
+            out.AddString(entry, "superclass", *extra.missing_super);
+        else
+            out.AddNull(entry, "superclass");
         const auto interfaces = out.Array();
-        for (const auto iface : cls.direct_interfaces) out.Append(interfaces, out.String(Class(iface).descriptor));
-        for (const auto& name : extra.missing_interfaces) out.Append(interfaces, out.String(name));
+        for (const auto iface : cls.direct_interfaces)
+            out.Append(interfaces, out.String(Class(iface).descriptor));
+        for (const auto& name : extra.missing_interfaces)
+            out.Append(interfaces, out.String(name));
         out.Add(entry, "interfaces", interfaces);
         const auto methods = out.Array();
         for (const auto method_id : MethodsOf(id)) {
@@ -954,21 +868,23 @@ std::string DexClassLinker::DumpSurfaceJson() {
             out.AddBool(item, "static", method.is_static);
             out.AddBool(item, "overridable", method.overridable);
             out.AddString(item, "origin",
-                          method.is_skeleton                     ? "skeleton"
+                          cls.is_boot_dex && method.kind == MethodKind::intrinsic && !method.implementation ? "failure"
                           : method.kind == MethodKind::intrinsic ? "handwritten"
                                                                  : "bytecode");
             out.AddUnsignedInteger(item, "access_flags", method.access_flags);
             const bool dynamic = method.kind == MethodKind::native && !method.implementation;
             const bool implemented = static_cast<bool>(method.implementation) ||
-                method.kind == MethodKind::interpreted || method.kind == MethodKind::abstract;
+                                     method.kind == MethodKind::interpreted || method.kind == MethodKind::abstract;
             out.AddString(item, "status", implemented ? "implemented" : "unimplemented-ledger");
             if (!method.adapter_review.empty()) {
                 out.AddString(item, "implementation_source", "adapter");
                 out.AddString(item, "adapter_review", method.adapter_review);
             }
-            out.AddString(item, "binding", dynamic ? "guest-jni-unverified" :
-                method.kind == MethodKind::abstract ? "abstract-contract" :
-                method.kind == MethodKind::interpreted ? "bytecode" : "intrinsic");
+            out.AddString(item, "binding",
+                          dynamic                                  ? "guest-jni-unverified"
+                          : method.kind == MethodKind::abstract    ? "abstract-contract"
+                          : method.kind == MethodKind::interpreted ? "bytecode"
+                                                                   : "intrinsic");
             // Admission permits resolution; it does not prove an exported JNI target exists.
             out.AddBool(item, "guest_native_admitted", dynamic && cls.admit_boot_native_methods);
             out.Append(methods, item);
@@ -990,23 +906,31 @@ std::string DexClassLinker::DumpSurfaceJson() {
                 for (const auto& constant : cls.intrinsic_constants) {
                     if (constant.name != field.name || constant.descriptor != field.descriptor) continue;
                     has_constant = true;
-                    if (field.descriptor == "Ljava/lang/String;") out.AddString(item, "constant", constant.string_value);
-                    else if (field.descriptor == "D") real_constant(item, std::bit_cast<double>(static_cast<std::uint64_t>(constant.integral)));
-                    else if (field.descriptor == "F") real_constant(item, std::bit_cast<float>(static_cast<std::uint32_t>(constant.integral)));
-                    else out.AddInteger(item, "constant", constant.integral);
+                    if (field.descriptor == "Ljava/lang/String;")
+                        out.AddString(item, "constant", constant.string_value);
+                    else if (field.descriptor == "D")
+                        real_constant(item, std::bit_cast<double>(static_cast<std::uint64_t>(constant.integral)));
+                    else if (field.descriptor == "F")
+                        real_constant(item, std::bit_cast<float>(static_cast<std::uint32_t>(constant.integral)));
+                    else
+                        out.AddInteger(item, "constant", constant.integral);
                 }
-                if (!field.is_skeleton && field.is_static && (field.access_flags & kAccFinal) && index < values.size()) {
+                if (!field.is_unimplemented && field.is_static && (field.access_flags & kAccFinal) &&
+                    index < values.size()) {
                     const auto& value = values[index];
                     if (value.kind == loader::DexEncodedValueKind::string_index) {
                         const auto& text = Image(*cls.dex_unit).strings[value.index].value;
-                        out.AddString(item, "constant", core::Utf16ToUtf8(text, core::InvalidUtf16Policy::replace).value());
+                        out.AddString(item, "constant",
+                                      core::Utf16ToUtf8(text, core::InvalidUtf16Policy::replace).value());
                         has_constant = true;
                     } else if (value.kind == loader::DexEncodedValueKind::float_value ||
                                value.kind == loader::DexEncodedValueKind::double_value) {
-                        real_constant(item, value.floating); has_constant = true;
+                        real_constant(item, value.floating);
+                        has_constant = true;
                     } else if (value.kind != loader::DexEncodedValueKind::null_reference &&
                                value.kind != loader::DexEncodedValueKind::type_index) {
-                        out.AddInteger(item, "constant", value.integral); has_constant = true;
+                        out.AddInteger(item, "constant", value.integral);
+                        has_constant = true;
                     }
                 }
                 out.AddBool(item, "has_constant", has_constant);
@@ -1025,112 +949,97 @@ bool DexClassLinker::IsLinked() const noexcept {
     return impl_->link_complete;
 }
 
-std::optional<DexClassId> DexClassLinker::FindClass(
-    const std::string_view descriptor) const {
+std::optional<DexClassId> DexClassLinker::FindClass(const std::string_view descriptor) const {
     const auto found = impl_->class_by_descriptor.find(std::string(descriptor));
     if (found == impl_->class_by_descriptor.end()) return std::nullopt;
     return impl_->classes[found->second].id;
 }
 
-void DexClassLinker::MarkVerificationFailed(DexClassId id) { impl_->ExtrasAt(id).link_failed = true; }
+void DexClassLinker::MarkVerificationFailed(DexClassId id) {
+    impl_->ExtrasAt(id).link_failed = true;
+}
 
 void DexClassLinker::EnsureClassLinked(const DexClassId id) {
     if (!impl_->link_complete) {
-        Fail(DexVmErrorReason::internal_invariant,
-             "class used before initial linking completed");
+        Fail(DexVmErrorReason::internal_invariant, "class used before initial linking completed");
     }
-    if (impl_->ExtrasAt(id).link_failed) throw JavaLinkageError(JavaLinkageKind::no_class, impl_->ClassAt(id).descriptor);
+    if (impl_->ExtrasAt(id).link_failed)
+        throw JavaLinkageError(JavaLinkageKind::no_class, impl_->ClassAt(id).descriptor);
     try {
-    MarkInitiatedBy(id, impl_->ClassAt(id).defining_loader);
-    if (impl_->ExtrasAt(id).linked) return;
+        MarkInitiatedBy(id, impl_->ClassAt(id).defining_loader);
+        if (impl_->ExtrasAt(id).linked) return;
 
-    std::set<std::uint32_t> materializing;
-    const auto materialize = [&](const auto& self,
-                                 const DexClassId current) -> void {
-        if (impl_->ExtrasAt(current).linked) return;
-        if (!materializing.insert(current.Value()).second) return;
+        std::set<std::uint32_t> materializing;
+        const auto materialize = [&](const auto& self, const DexClassId current) -> void {
+            if (impl_->ExtrasAt(current).linked) return;
+            if (!materializing.insert(current.Value()).second) return;
 
-        // ResolveDescriptor may append a survey class and reallocate both
-        // class vectors, so copy pending names and always re-fetch by id.
-        const auto missing_super = impl_->ExtrasAt(current).missing_super;
-        const auto missing_interfaces =
-            impl_->ExtrasAt(current).missing_interfaces;
-        const auto required_by = impl_->ClassAt(current).descriptor;
+            // ResolveDescriptor may append a survey class and reallocate both
+            // class vectors, so copy pending names and always re-fetch by id.
+            const auto missing_super = impl_->ExtrasAt(current).missing_super;
+            const auto missing_interfaces = impl_->ExtrasAt(current).missing_interfaces;
+            const auto required_by = impl_->ClassAt(current).descriptor;
 
-        if (missing_super.has_value()) {
-            if ((!impl_->gap_survey || !IsPlatformDescriptor(*missing_super)) &&
-                !impl_->skeleton_index.contains(*missing_super) && !FindClass(*missing_super)) {
-                throw JavaLinkageError(JavaLinkageKind::no_class,
-                     "class hierarchy is not available: " + *missing_super +
-                         " (required by " + required_by + ")");
-            }
-            const auto super = ResolveDescriptor(*missing_super);
-            impl_->ClassAt(current).super = super;
-            impl_->ExtrasAt(current).missing_super.reset();
-        }
-        if (!missing_interfaces.empty()) {
-            for (const auto& name : missing_interfaces) {
-                if ((!impl_->gap_survey || !IsPlatformDescriptor(name)) &&
-                    !impl_->skeleton_index.contains(name) && !FindClass(name)) {
+            if (missing_super.has_value()) {
+                if ((!impl_->gap_survey || !IsPlatformDescriptor(*missing_super)) && !FindClass(*missing_super)) {
                     throw JavaLinkageError(JavaLinkageKind::no_class,
-                         "class hierarchy is not available: " + name +
-                             " (required by " + required_by + ")");
+                                           "class hierarchy is not available: " + *missing_super + " (required by " +
+                                               required_by + ")");
                 }
-                const auto interface_id = ResolveDescriptor(name);
-                if (impl_->gap_survey) impl_->ClassAt(interface_id).is_interface = true;
-                impl_->ClassAt(current).direct_interfaces.push_back(interface_id);
+                const auto super = ResolveDescriptor(*missing_super);
+                impl_->ClassAt(current).super = super;
+                impl_->ExtrasAt(current).missing_super.reset();
             }
-            impl_->ExtrasAt(current).missing_interfaces.clear();
-        }
+            if (!missing_interfaces.empty()) {
+                for (const auto& name : missing_interfaces) {
+                    if ((!impl_->gap_survey || !IsPlatformDescriptor(name)) && !FindClass(name)) {
+                        throw JavaLinkageError(JavaLinkageKind::no_class, "class hierarchy is not available: " + name +
+                                                                              " (required by " + required_by + ")");
+                    }
+                    const auto interface_id = ResolveDescriptor(name);
+                    if (impl_->gap_survey) impl_->ClassAt(interface_id).is_interface = true;
+                    impl_->ClassAt(current).direct_interfaces.push_back(interface_id);
+                }
+                impl_->ExtrasAt(current).missing_interfaces.clear();
+            }
 
-        const auto super = impl_->ClassAt(current).super;
-        const auto interfaces = impl_->ClassAt(current).direct_interfaces;
-        if (super.has_value()) self(self, *super);
-        for (const auto interface_id : interfaces) {
-            self(self, interface_id);
-        }
-        materializing.erase(current.Value());
-    };
-    materialize(materialize, id);
+            const auto super = impl_->ClassAt(current).super;
+            const auto interfaces = impl_->ClassAt(current).direct_interfaces;
+            if (super.has_value()) self(self, *super);
+            for (const auto interface_id : interfaces) {
+                self(self, interface_id);
+            }
+            materializing.erase(current.Value());
+        };
+        materialize(materialize, id);
 
-    std::set<std::uint32_t> visiting;
-    impl_->LinkClass(id, visiting);
+        std::set<std::uint32_t> visiting;
+        impl_->LinkClass(id, visiting);
     } catch (const JavaLinkageError&) {
         impl_->ExtrasAt(id).link_failed = true;
         throw;
     }
 }
 
-DexClassId DexClassLinker::ResolveDescriptor(
-    const std::string_view descriptor) {
+DexClassId DexClassLinker::ResolveDescriptor(const std::string_view descriptor) {
     if (const auto existing = FindClass(descriptor); existing.has_value()) {
         if (impl_->link_complete) EnsureClassLinked(*existing);
         return *existing;
-    }
-    if (impl_->skeleton_index.contains(std::string(descriptor))) {
-        const auto id = impl_->MaterializeSkeletonClass(std::string(descriptor));
-        if (impl_->link_complete) EnsureClassLinked(id);
-        return id;
     }
     if (descriptor.starts_with("[")) {
         // Synthesize the array class; element ref classes must resolve.
         const auto element = descriptor.substr(1);
         if (IsRefDescriptor(element)) {
             (void)ResolveDescriptor(element);
-        } else if (element.size() != 1 ||
-                   std::string_view("ZBSCIJFD").find(element) ==
-                       std::string_view::npos) {
-            Fail(DexVmErrorReason::unknown_class,
-                 "array element descriptor is invalid: " +
-                     std::string(descriptor));
+        } else if (element.size() != 1 || std::string_view("ZBSCIJFD").find(element) == std::string_view::npos) {
+            Fail(DexVmErrorReason::unknown_class, "array element descriptor is invalid: " + std::string(descriptor));
         }
         LinkedClass linked;
         linked.descriptor = std::string(descriptor);
         linked.is_array = true;
         linked.array_element_descriptor = std::string(element);
         if (IsRefDescriptor(element)) {
-            linked.defining_loader =
-                impl_->ClassAt(ResolveDescriptor(element)).defining_loader;
+            linked.defining_loader = impl_->ClassAt(ResolveDescriptor(element)).defining_loader;
         } else {
             linked.defining_loader = kBootstrapLoader;
         }
@@ -1140,17 +1049,14 @@ DexClassId DexClassLinker::ResolveDescriptor(
             auto& stored = impl_->ClassAt(id);
             auto& object_class = impl_->ClassAt(*stored.super);
             stored.vtable = object_class.vtable;
-            impl_->ExtrasAt(id).virtual_lookup =
-                impl_->ExtrasAt(object_class.id).virtual_lookup;
+            impl_->ExtrasAt(id).virtual_lookup = impl_->ExtrasAt(object_class.id).virtual_lookup;
             impl_->ExtrasAt(id).linked = true;
             ++impl_->linked_class_count;
         }
         MarkInitiatedBy(id, impl_->ClassAt(id).defining_loader);
         return id;
     }
-    if (descriptor.size() == 1 &&
-        std::string_view("ZBSCIJFDV").find(descriptor) !=
-            std::string_view::npos) {
+    if (descriptor.size() == 1 && std::string_view("ZBSCIJFDV").find(descriptor) != std::string_view::npos) {
         // Primitive class identity (Float.TYPE, Array.newInstance): a
         // synthesized class record that only backs a class object. It is
         // never an instance class and never participates in dispatch.
@@ -1165,8 +1071,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
             auto& stored = impl_->ClassAt(id);
             auto& object_class = impl_->ClassAt(*stored.super);
             stored.vtable = object_class.vtable;
-            impl_->ExtrasAt(id).virtual_lookup =
-                impl_->ExtrasAt(object_class.id).virtual_lookup;
+            impl_->ExtrasAt(id).virtual_lookup = impl_->ExtrasAt(object_class.id).virtual_lookup;
             impl_->ExtrasAt(id).linked = true;
             ++impl_->linked_class_count;
         }
@@ -1187,8 +1092,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
             auto& stored = impl_->ClassAt(id);
             const auto object_id = *stored.super;
             stored.vtable = impl_->ClassAt(object_id).vtable;
-            impl_->ExtrasAt(id).virtual_lookup =
-                impl_->ExtrasAt(object_id).virtual_lookup;
+            impl_->ExtrasAt(id).virtual_lookup = impl_->ExtrasAt(object_id).virtual_lookup;
             impl_->ExtrasAt(id).linked = true;
             ++impl_->linked_class_count;
         }
@@ -1198,8 +1102,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
         RecordGapSurveyHit(std::string(descriptor), {}, context);
         return id;
     }
-    throw JavaLinkageError(JavaLinkageKind::no_class,
-         "class is not available: " + std::string(descriptor));
+    throw JavaLinkageError(JavaLinkageKind::no_class, "class is not available: " + std::string(descriptor));
 }
 
 void DexClassLinker::EnableGapSurvey(std::function<std::uint64_t()> uptime_ms) {
@@ -1207,30 +1110,21 @@ void DexClassLinker::EnableGapSurvey(std::function<std::uint64_t()> uptime_ms) {
     impl_->survey_uptime_ms = std::move(uptime_ms);
 }
 
-bool DexClassLinker::HasSkeletonClass(const std::string_view descriptor) const {
-    return impl_->skeleton_index.contains(std::string(descriptor));
-}
-
 bool DexClassLinker::GapSurveyEnabled() const noexcept {
     return impl_->gap_survey;
 }
 
-bool DexClassLinker::IsInitiatedBy(const DexClassId java_class,
-                                   const VmClassLoaderId loader) const {
-    return (impl_->ClassAt(java_class).initiating_loader_mask &
-            LoaderMask(loader)) != 0U;
+bool DexClassLinker::IsInitiatedBy(const DexClassId java_class, const VmClassLoaderId loader) const {
+    return (impl_->ClassAt(java_class).initiating_loader_mask & LoaderMask(loader)) != 0U;
 }
 
-void DexClassLinker::MarkInitiatedBy(const DexClassId java_class,
-                                     const VmClassLoaderId loader) {
+void DexClassLinker::MarkInitiatedBy(const DexClassId java_class, const VmClassLoaderId loader) {
     impl_->ClassAt(java_class).initiating_loader_mask |= LoaderMask(loader);
 }
 
-void DexClassLinker::RecordGapSurveyHit(const std::string& owner_descriptor,
-                                        const std::string& member,
+void DexClassLinker::RecordGapSurveyHit(const std::string& owner_descriptor, const std::string& member,
                                         const GapSurveyContext& context) {
-    const auto key = member.empty() ? owner_descriptor
-                                    : owner_descriptor + "->" + member;
+    const auto key = member.empty() ? owner_descriptor : owner_descriptor + "->" + member;
     const std::lock_guard lock(impl_->survey_mutex);
     const auto index = ++impl_->survey_total_hits;
     auto [entry, inserted] = impl_->survey_hits.try_emplace(key);
@@ -1253,12 +1147,10 @@ void DexClassLinker::RecordGapSurveyHit(const std::string& owner_descriptor,
     }
 }
 
-VmMethodId DexClassLinker::SynthesizeSurveyMethod(
-    const DexClassId owner, const std::string& name,
-    const std::string& descriptor, const InvokeKind kind) {
+VmMethodId DexClassLinker::SynthesizeSurveyMethod(const DexClassId owner, const std::string& name,
+                                                  const std::string& descriptor, const InvokeKind kind) {
     if (!impl_->gap_survey) {
-        Fail(DexVmErrorReason::internal_invariant,
-             "survey stubs require survey mode");
+        Fail(DexVmErrorReason::internal_invariant, "survey stubs require survey mode");
     }
     LinkedMethod method;
     method.owner = owner;
@@ -1267,14 +1159,11 @@ VmMethodId DexClassLinker::SynthesizeSurveyMethod(
     const bool is_static = kind == InvokeKind::static_call;
     method.is_static = is_static;
     method.access_flags = is_static ? kAccStatic : 0U;
-    method.declared_invoke_kind =
-        is_static ? DeclaredInvokeKind::static_call
-        : (kind == InvokeKind::constructor ||
-           kind == InvokeKind::private_direct)
-            ? DeclaredInvokeKind::direct
-        : impl_->ClassAt(owner).is_interface
-            ? DeclaredInvokeKind::interface_call
-            : DeclaredInvokeKind::virtual_call;
+    method.declared_invoke_kind = is_static ? DeclaredInvokeKind::static_call
+                                  : (kind == InvokeKind::constructor || kind == InvokeKind::private_direct)
+                                      ? DeclaredInvokeKind::direct
+                                  : impl_->ClassAt(owner).is_interface ? DeclaredInvokeKind::interface_call
+                                                                       : DeclaredInvokeKind::virtual_call;
     method.kind = MethodKind::intrinsic;
     method.survey_synthesized = true;
     // Deliberately unregistered: the interpreter answers neutrally and
@@ -1284,9 +1173,7 @@ VmMethodId DexClassLinker::SynthesizeSurveyMethod(
     method.shape = ShapeOf(parts, is_static);
     method.return_shorty = ShortyOf(parts.return_type);
     method.ins_words = method.shape.incoming_words;
-    const bool is_direct =
-        is_static || kind == InvokeKind::constructor ||
-        kind == InvokeKind::private_direct;
+    const bool is_direct = is_static || kind == InvokeKind::constructor || kind == InvokeKind::private_direct;
     auto& linked = impl_->ClassAt(owner);
     auto& extra = impl_->ExtrasAt(owner);
     const auto slot = static_cast<std::uint16_t>(linked.vtable.size());
@@ -1297,8 +1184,7 @@ VmMethodId DexClassLinker::SynthesizeSurveyMethod(
         extra.direct_lookup.insert_or_assign(MemberKey(name, descriptor), id);
     } else {
         linked.own_virtual_methods.push_back(id);
-        extra.virtual_lookup.insert_or_assign(MemberKey(name, descriptor),
-                                             slot);
+        extra.virtual_lookup.insert_or_assign(MemberKey(name, descriptor), slot);
         linked.vtable.push_back(id);
     }
     return id;
@@ -1318,15 +1204,19 @@ std::vector<GapSurveyHit> DexClassLinker::GapSurveyHits() const {
 const LinkedClass& DexClassLinker::Class(const DexClassId id) const {
     return impl_->ClassAt(id);
 }
+
 LinkedClass& DexClassLinker::MutableClass(const DexClassId id) {
     return impl_->ClassAt(id);
 }
+
 const LinkedMethod& DexClassLinker::Method(const VmMethodId id) const {
     return impl_->MethodAt(id);
 }
+
 LinkedMethod& DexClassLinker::MutableMethod(const VmMethodId id) {
     return impl_->MethodAt(id);
 }
+
 const LinkedField& DexClassLinker::Field(const VmFieldId id) const {
     return impl_->FieldAt(id);
 }
@@ -1349,54 +1239,43 @@ std::span<const std::uint8_t> DexClassLinker::DexBytes() const {
     return DexBytes(*impl_->application_unit);
 }
 
-std::span<const std::uint8_t> DexClassLinker::DexBytes(
-    const DexUnitId unit) const {
+std::span<const std::uint8_t> DexClassLinker::DexBytes(const DexUnitId unit) const {
     return impl_->UnitAt(unit).bytes;
 }
 
-std::vector<loader::DexEncodedValue> DexClassLinker::StaticValues(
-    const LinkedClass& linked) const {
-    if (!linked.dex_class_def_index.has_value() ||
-        !linked.dex_unit.has_value()) {
+std::vector<loader::DexEncodedValue> DexClassLinker::StaticValues(const LinkedClass& linked) const {
+    if (!linked.dex_class_def_index.has_value() || !linked.dex_unit.has_value()) {
         return {};
     }
     const auto& unit = impl_->UnitAt(*linked.dex_unit);
     const auto& definition = unit.image.classes[*linked.dex_class_def_index];
-    return loader::ReadDexStaticValues(unit.bytes, unit.image,
-                                       definition.static_values_offset);
+    return loader::ReadDexStaticValues(unit.bytes, unit.image, definition.static_values_offset);
 }
 
 std::size_t DexClassLinker::ClassCount() const noexcept {
     return impl_->classes.size();
 }
 
-std::vector<VmMethodId> DexClassLinker::MethodsOf(
-    const DexClassId owner) const {
+std::vector<VmMethodId> DexClassLinker::MethodsOf(const DexClassId owner) const {
     const auto& linked = impl_->ClassAt(owner);
     std::vector<VmMethodId> result = linked.own_direct_methods;
-    result.insert(result.end(), linked.own_virtual_methods.begin(),
-                  linked.own_virtual_methods.end());
+    result.insert(result.end(), linked.own_virtual_methods.begin(), linked.own_virtual_methods.end());
     return result;
 }
 
-DexClassId DexClassLinker::DefineRestrictedAnnotationClass(
-    const DexClassId annotation_type,
-    const std::span<const IntrinsicMethodDecl> methods) {
+DexClassId DexClassLinker::DefineRestrictedAnnotationClass(const DexClassId annotation_type,
+                                                           const std::span<const IntrinsicMethodDecl> methods) {
     if (!impl_->link_complete) {
-        Fail(DexVmErrorReason::internal_invariant,
-             "annotation implementation requires Link()");
+        Fail(DexVmErrorReason::internal_invariant, "annotation implementation requires Link()");
     }
     EnsureClassLinked(annotation_type);
     const auto& annotation = impl_->ClassAt(annotation_type);
-    if (!annotation.is_interface ||
-        (annotation.access_flags & kAccAnnotation) == 0U) {
-        Fail(DexVmErrorReason::invalid_hierarchy,
-             "restricted annotation class requires an annotation interface");
+    if (!annotation.is_interface || (annotation.access_flags & kAccAnnotation) == 0U) {
+        Fail(DexVmErrorReason::invalid_hierarchy, "restricted annotation class requires an annotation interface");
     }
     const auto loader = annotation.defining_loader;
     LinkedClass linked;
-    linked.descriptor = "Ljava/lang/annotation/$Impl$" +
-                        std::to_string(++impl_->next_annotation_impl) + ";";
+    linked.descriptor = "Ljava/lang/annotation/$Impl$" + std::to_string(++impl_->next_annotation_impl) + ";";
     linked.super = FindClass("Ljava/lang/Object;");
     linked.direct_interfaces = {annotation_type};
     linked.defining_loader = loader;
@@ -1434,16 +1313,15 @@ DexClassId DexClassLinker::DefineRestrictedAnnotationClass(
 std::vector<DexClassId> DexClassLinker::AllClasses() const {
     std::vector<DexClassId> result;
     result.reserve(impl_->classes.size());
-    for (const auto& linked : impl_->classes) result.push_back(linked.id);
+    for (const auto& linked : impl_->classes)
+        result.push_back(linked.id);
     return result;
 }
 
-ReflectionClassSystemMetadata DexClassLinker::ReflectionSystemMetadata(
-    const DexClassId java_class) {
+ReflectionClassSystemMetadata DexClassLinker::ReflectionSystemMetadata(const DexClassId java_class) {
     ReflectionClassSystemMetadata result;
     const auto& linked = impl_->ClassAt(java_class);
-    if (!linked.dex_class_def_index.has_value() ||
-        !linked.dex_unit.has_value()) {
+    if (!linked.dex_class_def_index.has_value() || !linked.dex_unit.has_value()) {
         return result;
     }
     const auto unit_id = *linked.dex_unit;
@@ -1458,19 +1336,16 @@ ReflectionClassSystemMetadata DexClassLinker::ReflectionSystemMetadata(
         return ResolveDescriptor(image.types[type_index].descriptor);
     };
     if (source.enclosing_class_type_index.has_value()) {
-        result.enclosing_class = resolve_type(
-            *source.enclosing_class_type_index);
+        result.enclosing_class = resolve_type(*source.enclosing_class_type_index);
     }
     if (source.enclosing_method_index.has_value()) {
         const auto dex_method = *source.enclosing_method_index;
         const auto& method_id = image.methods[dex_method];
         result.enclosing_class = resolve_type(method_id.class_type_index);
-        const auto found = std::find_if(
-            impl_->methods.begin(), impl_->methods.end(),
-            [dex_method, unit_id](const LinkedMethod& method) {
-                return method.dex_method_index == dex_method &&
-                       method.dex_unit == unit_id;
-            });
+        const auto found = std::find_if(impl_->methods.begin(), impl_->methods.end(),
+                                        [dex_method, unit_id](const LinkedMethod& method) {
+                                            return method.dex_method_index == dex_method && method.dex_unit == unit_id;
+                                        });
         if (found != impl_->methods.end()) result.enclosing_method = found->id;
     }
     result.member_classes.reserve(source.member_class_type_indices.size());
@@ -1480,26 +1355,24 @@ ReflectionClassSystemMetadata DexClassLinker::ReflectionSystemMetadata(
     return result;
 }
 
-std::vector<DexClassId> DexClassLinker::ReflectionExceptionTypes(
-    const VmMethodId method) {
+std::vector<DexClassId> DexClassLinker::ReflectionExceptionTypes(const VmMethodId method) {
     const auto& linked = impl_->MethodAt(method);
-    if (!linked.dex_method_index.has_value() ||
-        !linked.dex_unit.has_value()) {
+    if (!linked.dex_method_index.has_value() || !linked.dex_unit.has_value()) {
         return {};
     }
     const auto& image = impl_->UnitAt(*linked.dex_unit).image;
     const auto dex_method = *linked.dex_method_index;
     if (dex_method >= image.method_system_metadata.size()) return {};
     std::vector<DexClassId> result;
-    for (const auto type_index :
-         image.method_system_metadata[dex_method].exception_type_indices) {
-        result.push_back(
-            ResolveDescriptor(image.types[type_index].descriptor));
+    for (const auto type_index : image.method_system_metadata[dex_method].exception_type_indices) {
+        result.push_back(ResolveDescriptor(image.types[type_index].descriptor));
     }
     return result;
 }
 }  // namespace ogplay::runtime::dexvm
 
 namespace ogplay::runtime::dexvm {
-std::size_t DexClassLinker::LinkedClassCount() const noexcept { return impl_->linked_class_count; }
+std::size_t DexClassLinker::LinkedClassCount() const noexcept {
+    return impl_->linked_class_count;
 }
+}  // namespace ogplay::runtime::dexvm

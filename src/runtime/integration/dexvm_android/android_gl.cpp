@@ -55,7 +55,7 @@ std::shared_ptr<DexVmAndroidContext::GlSurfaceRuntime> GlRuntime(const Context& 
 }
 
 // The built-in chooser objects carry the same component request as the existing
-// native config path. Their other skeleton methods remain explicitly unsupported.
+// native config path. Their other methods remain explicitly unsupported.
 constexpr std::array<const char*, 6> kChooserComponents{"mRedSize",   "mGreenSize", "mBlueSize",
                                                         "mAlphaSize", "mDepthSize", "mStencilSize"};
 

@@ -343,8 +343,7 @@ void WriteAps5OnLoad(std::vector<std::byte>& bytes, const std::uint32_t version)
 ApplicationProcess::ApplicationProcess(ogplay::runtime::dexvm::InterpreterBackend backend,
                                        const std::optional<std::string_view> working_directory,
                                        const std::string& dex_fixture,
-                                       const ogplay::runtime::dexvm::JavaObjectModelConfig heap,
-                                       std::vector<std::uint8_t> skeleton) {
+                                       const ogplay::runtime::dexvm::JavaObjectModelConfig heap) {
     if (working_directory.has_value()) {
         std::string directory;
         for (const auto& component : std::filesystem::path(*working_directory)) {
@@ -376,7 +375,7 @@ ApplicationProcess::ApplicationProcess(ogplay::runtime::dexvm::InterpreterBacken
     bridge = std::make_unique<ogplay::runtime::DexVmGuestBridge>(
         *session, ReadDexFixture(dex_fixture), catalog, context, ledger, &logger,
         ogplay::runtime::DexVmBridgeConfig{.interpreter = {.backend = backend}, .heap = heap},
-        ogplay::test::ReadBootDex(), std::move(skeleton));
+        ogplay::test::ReadBootDex());
     context->threads = &bridge->Threads();
 }
 

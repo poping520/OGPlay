@@ -41,8 +41,8 @@
 namespace ogplay::test::android_value {
 
 AndroidValueVm::AndroidValueVm(InterpreterBackend backend, const std::vector<IntrinsicClassDecl>& extras,
-                               bool force_all_bridge, const char* dex_fixture, bool include_skeleton,
-                               AndroidUiTraversalOwner owner, const char* test_bootdex)
+                               bool force_all_bridge, const char* dex_fixture, AndroidUiTraversalOwner owner,
+                               const char* test_bootdex)
     : context(std::make_shared<DexVmAndroidContext>(owner)), runtime([&] {
           if (test_bootdex) {
               std::ifstream stream(test_bootdex, std::ios::binary);
@@ -61,15 +61,12 @@ AndroidValueVm::AndroidValueVm(InterpreterBackend backend, const std::vector<Int
               .diagnostics = {.trace_capacity = 8192U, .event_mask = DexVmTraceBit(DexVmTraceKind::method_enter)}};
           return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
               context, ledger, logger, std::move(catalog),
-              ogplay::test::native_library::ReadDexFixture(dex_fixture ? dex_fixture : "application.dex"), config,
-              include_skeleton);
+              ogplay::test::native_library::ReadDexFixture(dex_fixture ? dex_fixture : "application.dex"), config);
       }()),
       model(runtime->bridge->Model()), linker(runtime->bridge->Linker()), vm(runtime->bridge->Vm()),
       threads(runtime->bridge->Threads()) {}
 
-VmObjectRef AndroidValueVm::New(const char* descriptor,
-                const char* constructor,
-                std::vector<VmValue> arguments) {
+VmObjectRef AndroidValueVm::New(const char* descriptor, const char* constructor, std::vector<VmValue> arguments) {
     if (!arguments.empty() && std::string_view(constructor).starts_with("(Landroid/content/Context;"))
         ogplay::test::AttachViewTestContext(vm, arguments.front().ref);
     const auto klass = linker.ResolveDescriptor(descriptor);
@@ -89,36 +86,30 @@ VmObjectRef AndroidValueVm::New(const char* descriptor,
     return object;
 }
 
-VmValue AndroidValueVm::Static(const char* descriptor, const char* name,
-               const char* signature,
-               std::vector<VmValue> arguments) {
-    const auto outcome = StaticOutcome(
-        descriptor, name, signature, std::move(arguments));
+VmValue AndroidValueVm::Static(const char* descriptor, const char* name, const char* signature,
+                               std::vector<VmValue> arguments) {
+    const auto outcome = StaticOutcome(descriptor, name, signature, std::move(arguments));
     REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
     return outcome.value;
 }
 
-VmCallOutcome AndroidValueVm::StaticOutcome(const char* descriptor, const char* name,
-                            const char* signature,
-                            std::vector<VmValue> arguments) {
+VmCallOutcome AndroidValueVm::StaticOutcome(const char* descriptor, const char* name, const char* signature,
+                                            std::vector<VmValue> arguments) {
     const auto klass = linker.ResolveDescriptor(descriptor);
     const auto method = linker.FindDirectMethod(klass, name, signature);
     REQUIRE(method.has_value());
     return vm.Call(*method, arguments);
 }
 
-VmValue AndroidValueVm::On(const VmObjectRef receiver, const char* name,
-           const char* signature,
-           std::vector<VmValue> arguments) {
-    const auto outcome = OnOutcome(receiver, name, signature,
-                                   std::move(arguments));
+VmValue AndroidValueVm::On(const VmObjectRef receiver, const char* name, const char* signature,
+                           std::vector<VmValue> arguments) {
+    const auto outcome = OnOutcome(receiver, name, signature, std::move(arguments));
     REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
     return outcome.value;
 }
 
-VmCallOutcome AndroidValueVm::OnOutcome(const VmObjectRef receiver, const char* name,
-                        const char* signature,
-                        std::vector<VmValue> arguments) {
+VmCallOutcome AndroidValueVm::OnOutcome(const VmObjectRef receiver, const char* name, const char* signature,
+                                        std::vector<VmValue> arguments) {
     const auto klass = model.ObjectClass(receiver);
     const auto index = linker.FindVtableIndex(klass, name, signature);
     REQUIRE(index.has_value());
@@ -127,9 +118,8 @@ VmCallOutcome AndroidValueVm::OnOutcome(const VmObjectRef receiver, const char* 
 }
 
 VmObjectRef AndroidValueVm::Bytes(const std::string& value) {
-    const auto array = model.NewPrimitiveArray(
-        linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte,
-        static_cast<JniSize>(value.size()));
+    const auto array = model.NewPrimitiveArray(linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+                                               static_cast<JniSize>(value.size()));
     std::vector<std::byte> bytes(value.size());
     for (std::size_t index = 0; index < value.size(); ++index)
         bytes[index] = static_cast<std::byte>(value[index]);
@@ -145,4 +135,4 @@ std::string AndroidValueVm::BytesOf(const VmObjectRef array) {
     return result;
 }
 
-} // namespace ogplay::test::android_value
+}  // namespace ogplay::test::android_value

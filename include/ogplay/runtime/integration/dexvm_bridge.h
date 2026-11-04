@@ -40,14 +40,11 @@ public:
 
 class DexVmGuestBridge final : public dexvm::NativeMethodBridge {
 public:
-    DexVmGuestBridge(
-        AndroidGuestCallSession& session, std::vector<std::uint8_t> dex_bytes,
-        std::span<const dexvm::IntrinsicClassDecl> platform_catalog,
-        const std::shared_ptr<DexVmAndroidContext>& android_context,
-        core::CapabilityLedger& ledger, core::Logger* logger,
-        DexVmBridgeConfig config = {},
-        std::vector<std::uint8_t> boot_dex_bytes = {},
-        std::vector<std::uint8_t> skeleton_bytes = {});
+    DexVmGuestBridge(AndroidGuestCallSession& session, std::vector<std::uint8_t> dex_bytes,
+                     std::span<const dexvm::IntrinsicClassDecl> platform_catalog,
+                     const std::shared_ptr<DexVmAndroidContext>& android_context, core::CapabilityLedger& ledger,
+                     core::Logger* logger, DexVmBridgeConfig config = {},
+                     std::vector<std::uint8_t> boot_dex_bytes = {});
     ~DexVmGuestBridge() override;
     DexVmGuestBridge(const DexVmGuestBridge&) = delete;
     DexVmGuestBridge& operator=(const DexVmGuestBridge&) = delete;
@@ -63,18 +60,14 @@ public:
     // Reference conversions on the session root thread.
     [[nodiscard]] JniReference PublishLocal(dexvm::VmObjectRef ref);
     [[nodiscard]] dexvm::VmObjectRef FromReference(JniReference reference);
-  [[nodiscard]] std::optional<JniObjectIdentity>
-  RegisteredClassIdentity(dexvm::DexClassId java_class) const;
+    [[nodiscard]] std::optional<JniObjectIdentity> RegisteredClassIdentity(dexvm::DexClassId java_class) const;
 
     // Outbound native invocation (dexvm::NativeMethodBridge).
-  [[nodiscard]] dexvm::VmValue
-  Invoke(const dexvm::LinkedMethod &method, dexvm::VmObjectRef receiver,
-        std::span<const dexvm::VmValue> arguments) override;
+    [[nodiscard]] dexvm::VmValue Invoke(const dexvm::LinkedMethod& method, dexvm::VmObjectRef receiver,
+                                        std::span<const dexvm::VmValue> arguments) override;
     [[nodiscard]] std::unique_ptr<dexvm::NativeCleanupScope> EnterResourceCleanup() override;
-    void AttachThread(std::uint64_t guest_thread_id,
-                      std::uint64_t execution_token) override;
-    void DetachThread(std::uint64_t guest_thread_id,
-                      std::uint64_t execution_token) noexcept override;
+    void AttachThread(std::uint64_t guest_thread_id, std::uint64_t execution_token) override;
+    void DetachThread(std::uint64_t guest_thread_id, std::uint64_t execution_token) noexcept override;
 
 private:
     class Impl;

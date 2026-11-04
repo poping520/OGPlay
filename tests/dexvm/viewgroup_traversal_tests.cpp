@@ -24,7 +24,7 @@ TEST_CASE("DVM-281 ROM multi-level hierarchy parameters projection scheduling an
             if (hook) hook();
             return VmValue::Void();
         });
-        AndroidValueVm f(backend, {std::move(hook_type).Build()}, false, "view_measure.dex", false,
+        AndroidValueVm f(backend, {std::move(hook_type).Build()}, false, "view_measure.dex",
                          AndroidUiTraversalOwner::JavaTraversal, OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
         f.vm.SetGcIntegration(
             {{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
@@ -337,7 +337,7 @@ TEST_CASE("DVM-281 ROM multi-level hierarchy parameters projection scheduling an
 
 TEST_CASE("DVM-281 animated removal explicitly fails and is accounted") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "view_measure.dex", false, AndroidUiTraversalOwner::JavaTraversal,
+        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal,
                          OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
         const auto owner = f.New("Landroid/app/Activity;");
         const auto group = f.New("Ltest/HierarchyGroup;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
@@ -357,7 +357,7 @@ TEST_CASE("DVM-281 animated removal explicitly fails and is accounted") {
 
 TEST_CASE("DVM-282 ROM flags listeners focus and bounded capture use Java state") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "view_measure.dex", false, AndroidUiTraversalOwner::JavaTraversal,
+        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal,
                          OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
         f.vm.SetGcIntegration(
             {{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});

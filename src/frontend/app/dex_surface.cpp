@@ -28,10 +28,6 @@ std::string DumpDexSurface(const std::filesystem::path& boot_archive_path) {
     linker.RegisterIntrinsics(runtime::BoundCoreIntrinsicCatalog(context));
     linker.RegisterIntrinsics(runtime::AndroidIntrinsicCatalog(context));
     linker.RegisterBootDex(std::move(dex), sources);
-    const auto skeleton_path = BundledDataPaths().root / "dexvm/api19-skeleton.bin";
-    std::ifstream skeleton(skeleton_path, std::ios::binary);
-    if (!skeleton) throw std::runtime_error("cannot open skeleton surface");
-    linker.RegisterSkeletonSurface(std::vector<std::uint8_t>{std::istreambuf_iterator<char>(skeleton), {}});
     core::JsonParseError error;
     const auto surface = core::JsonDocument::ParseStrict(linker.DumpSurfaceJson(), error, 64U * 1024U * 1024U);
     if (!surface) throw std::runtime_error("invalid runtime surface JSON: " + error.message);
@@ -59,4 +55,4 @@ std::string DumpDexSurface(const std::filesystem::path& boot_archive_path) {
     writer.Add(root, "platform_tables", tables);
     return writer.Serialize(root);
 }
-}
+}  // namespace ogplay::app

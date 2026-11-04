@@ -725,7 +725,7 @@ TEST_CASE("DVM-352 unreviewed background projection clears old color and records
 
 TEST_CASE("DVM-352 Drawable subclasses never silently inherit unsupported state methods") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend, true);
+        ContainerVm f(backend);
         for (const auto* owner : {"BitmapDrawable", "PaintDrawable", "ShapeDrawable", "DrawableContainer",
                                   "NinePatchDrawable", "GradientDrawable", "LayerDrawable", "StateListDrawable"}) {
             const auto descriptor = std::string("Landroid/graphics/drawable/") + owner + ";";
@@ -757,12 +757,12 @@ TEST_CASE("DVM-352 Drawable subclasses never silently inherit unsupported state 
                                                 std::string_view(name) == "setAlpha" ? std::vector{VmValue::Int(128)}
                                                                                      : std::vector<VmValue>{});
                 REQUIRE(result.exception.IsValid());
-                const bool skeleton_only = std::string_view(owner) == "ShapeDrawable" ||
-                                           std::string_view(owner) == "GradientDrawable" ||
-                                           std::string_view(owner) == "LayerDrawable";
-                CHECK(
-                    f.linker.Class(result.exception_class).descriptor ==
-                    (skeleton_only ? "Ljava/lang/UnsatisfiedLinkError;" : "Ljava/lang/UnsupportedOperationException;"));
+                const bool unimplemented_owner = std::string_view(owner) == "ShapeDrawable" ||
+                                                 std::string_view(owner) == "GradientDrawable" ||
+                                                 std::string_view(owner) == "LayerDrawable";
+                CHECK(f.linker.Class(result.exception_class).descriptor ==
+                      (unimplemented_owner ? "Ljava/lang/UnsatisfiedLinkError;"
+                                           : "Ljava/lang/UnsupportedOperationException;"));
             }
         }
         CHECK_FALSE(f.ledger.Unimplemented().empty());

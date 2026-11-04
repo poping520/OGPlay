@@ -48,7 +48,7 @@
 - TML/Dead Trigger 因退出失败，Wild Blood/Angry Birds 因超时失败；未满足全部通过，不标完成。
 - 18 份 Result 通过 JSON Schema，全部 survey 均未出现 passed 状态；仅 7 份 survey JSON 可收集，
   WB/Angry Birds 强制清理前未能写出 JSON，命中数未知，不记作零。
-- 跨游戏去重 1 项：Tales `Display.getRealSize(Point)`，reflection、skeleton、首次 #1、2 次命中；
+- 跨游戏去重 1 项：Tales `Display.getRealSize(Point)`，reflection、未实现声明、首次 #1、2 次命中；
   前十候选只含“显示尺寸”，不足三个主题不补凑。最终报告 38 行。
 
 ## 手动步进停滞修复（2026-10-21，局部行为修复）

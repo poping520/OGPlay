@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rule-based admission of pure-Java ROM classes into BootDex (ADR-0148).
 
-The audited object is the rule set, not individual classes. A skeleton class from the hash-locked
+The audited object is the rule set, not individual classes. A class absent from the runtime in the hash-locked
 ROM sources (including the independent policy reference) is admitted when it has no native method, its superclass chain is Object /
 an admitted class / an implemented intrinsic or BootDex parent (ADR-0156), its <clinit> transitive call closure
 touches only implemented code, and no implemented intrinsic signature or C++ source names it.
@@ -23,7 +23,7 @@ import zipfile
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import build_bootdex as builder
-from api19_skeleton import unpack
+import api19_rom
 
 import policy_rom
 
@@ -143,9 +143,9 @@ class Analyzer:
         for d, c in self.cls.items():
             for parent in ([c['superclass']] if c.get('superclass') else []) + list(c.get('interfaces', [])):
                 self.children[parent].append(d)
-        # Candidates: skeleton-owned classes that exist in the ROM jars.
+        # Candidates: classes only the ROM jars provide.
         self.candidates = sorted(d for d, c in self.cls.items()
-                                 if c['source'] == 'skeleton' and d in smali and d in jar_of)
+                                 if c['source'] == 'rom' and d in smali and d in jar_of)
         self.cand_set = set(self.candidates)
         self._summary_cache, self._subtype_cache, self._impl_cache = {}, {}, {}
         self.local_reasons: dict[str, list] = {}
@@ -569,7 +569,7 @@ class Analyzer:
                         stack.append(array_base(op[2]))
                     elif op[0] == 'ref':
                         stack.append(op[1])
-        return {d for d in selected if self.cls[d]['source'] == 'skeleton'}
+        return {d for d in selected if self.cls[d]['source'] == 'rom'}
 
     def primary(self, d):
         if d in self.interacting and not self.local_reasons[d]:
@@ -693,7 +693,7 @@ def replacement_surface(surface, rom, replacements):
                     if m['status'] == 'implemented' and m['binding'] == 'intrinsic'
                     and m.get('origin') == 'handwritten'}
         bindings.update((d, n, t) for n, t, f in methods if f & ACC_NATIVE and (n, t) in existing)
-        by[d] = dict(descriptor=d, source='skeleton', superclass=parent, interfaces=interfaces,
+        by[d] = dict(descriptor=d, source='rom', superclass=parent, interfaces=interfaces,
                      access_flags=flags, link_error='',
                      methods=[dict(name=n, descriptor=t, access_flags=f,
                                    status='implemented' if f & ACC_ABSTRACT else 'unimplemented-ledger',
@@ -720,12 +720,13 @@ def within_index_budget(indices: dict) -> bool:
 def run(args) -> int:
     recipe = json.loads(builder.RECIPE.read_text(encoding='utf-8'))
     builder.verify_inputs(builder.load_recipe(recipe))
-    surface = policy_rom.extend_surface(json.loads(args.surface.read_text(encoding='utf-8'))['classes'])
+    rom_records = api19_rom.load(args.aosp)
+    surface = api19_rom.extend_surface(json.loads(args.surface.read_text(encoding='utf-8'))['classes'], rom_records)
+    surface = policy_rom.extend_surface(surface)
     replacements = set(args.replace_intrinsic or ())
     native_bindings = set()
     if replacements:
-        surface, native_bindings = replacement_surface(
-            surface, unpack((builder.ROOT / 'data/dexvm/api19-skeleton.bin').read_bytes()), replacements)
+        surface, native_bindings = replacement_surface(surface, rom_records, replacements)
     # Frozen DVM-102 audit: every class it classifies as something other than boot_dex stays out.
     reserved = {d for cat, values in recipe['date_family_audit']['classifications'].items()
                 if cat != 'boot_dex' for d in values}
@@ -733,8 +734,8 @@ def run(args) -> int:
     surface_by = {c['descriptor']: c for c in surface}
     smali, jar_of = {}, {}
     for d, c in surface_by.items():
-        # Only parse bodies we may traverse: skeleton candidates and ROM BootDex classes.
-        if d in texts and texts[d][0] and (c['source'] == 'skeleton' or d in {x for v in recipe['classes'].values() for x in v}):
+        # Only parse bodies we may traverse: ROM candidates and ROM BootDex classes.
+        if d in texts and texts[d][0] and (c['source'] == 'rom' or d in {x for v in recipe['classes'].values() for x in v}):
             smali[d] = parse_smali_class(texts[d][1].read_text(encoding='utf-8'))
             jar_of[d] = texts[d][0]
     # Duplicate-ROM classes lose candidacy.
@@ -754,7 +755,6 @@ def run(args) -> int:
     admitted = analyzer.analyze()
     freq = frequencies(args.scan_dir, builder.file_sha256(args.surface)) if args.scan_dir else None
     by_primary, detail = analyzer.report_tables()
-    skeleton_total = sum(1 for c in surface if c['source'] == 'skeleton')
     owner_runtime = collections.Counter(c['source'] for c in surface)
     def estimate_for(scope: set) -> collections.Counter:
         # declared-unimplemented rows whose defining class (owner or inherited) enters BootDex;
@@ -778,7 +778,7 @@ def run(args) -> int:
         schema=1, policy='ADR-0154 explicit replacement' if replacements else 'ADR-0148 rule-based admission',
         replacements=sorted(replacements), retained_native_bindings=sorted(native_bindings),
         bootdex_sha256=builder.file_sha256(args.bootdex),
-        runtime_classes=dict(owner_runtime), skeleton_classes=skeleton_total,
+        runtime_classes=dict(owner_runtime),
         candidates=len(analyzer.candidates), admitted=len(admitted), rejected=len(analyzer.rejected),
         rejection_by_primary=dict(by_primary.most_common()),
         rejection_top20=[dict(reason=k[0], detail=k[1], classes=n) for k, n in detail.most_common(20)],
@@ -877,14 +877,14 @@ def self_test():
     obj = 'Ljava/lang/Object;'
     impl = lambda n, d, f=1: _method(n, d, f, 'implemented', 'intrinsic')
     unimpl = lambda n, d, f=1: _method(n, d, f)
-    skel = lambda n, d, f=1: _method(n, d, f)
+    cand = lambda n, d, f=1: _method(n, d, f)
     clinit = lambda ops: '.method static constructor <clinit>()V\n .registers 2\n' + ops + ' return-void\n.end method\n'
     ctor = '.method public constructor <init>()V\n .registers 1\n invoke-direct {p0}, Ljava/lang/Object;-><init>()V\n return-void\n.end method\n'
     classes, smali = [], {}
 
     def add(desc, source, methods=(), super_=obj, fields=(), clinit_ops=None, extra='', interfaces=(), flags=1):
         classes.append(_surface(desc, source, super_, methods, fields, interfaces, flags))
-        if source == 'skeleton':
+        if source == 'rom':
             smali[desc] = parse_smali_class(_smali(desc, super_=super_, methods=(clinit(clinit_ops) if clinit_ops is not None else '') + ctor + extra))
     add(obj, 'intrinsic', [impl('<init>', '()V'), impl('toString', '()Ljava/lang/String;')], super_=None)
     add('Ljava/lang/String;', 'intrinsic', [impl('length', '()I')])
@@ -892,46 +892,46 @@ def self_test():
     add('Landroid/os/Handler;', 'intrinsic', [impl('<init>', '()V'), unimpl('post', '(Ljava/lang/Runnable;)Z'),
                                               impl('consume', '(Ltest/Passed;)V')])
     # --- positive cases
-    add('Ltest/Plain;', 'skeleton', [skel('<init>', '()V'), skel('f', '()V')], clinit_ops='', flags=1)
-    add('Ltest/Const;', 'skeleton', [skel('<init>', '()V'), skel('<clinit>', '()V', 8)], clinit_ops=' new-instance v0, Ljava/lang/Object;\n invoke-direct {v0}, Ljava/lang/Object;-><init>()V\n')
-    add('Ltest/ExactType;', 'skeleton', [skel('<init>', '()V'), skel('<clinit>', '()V', 8)],
+    add('Ltest/Plain;', 'rom', [cand('<init>', '()V'), cand('f', '()V')], clinit_ops='', flags=1)
+    add('Ltest/Const;', 'rom', [cand('<init>', '()V'), cand('<clinit>', '()V', 8)], clinit_ops=' new-instance v0, Ljava/lang/Object;\n invoke-direct {v0}, Ljava/lang/Object;-><init>()V\n')
+    add('Ltest/ExactType;', 'rom', [cand('<init>', '()V'), cand('<clinit>', '()V', 8)],
         clinit_ops=' new-instance v0, Ltest/Base;\n invoke-direct {v0}, Ltest/Base;-><init>()V\n invoke-virtual {v0}, Ltest/Base;->f()V\n')
-    add('Ltest/Base;', 'skeleton', [skel('<init>', '()V'), skel('f', '()V')], extra='.method public f()V\n return-void\n.end method\n')
-    add('Ltest/Cycle1;', 'skeleton', [skel('<init>', '()V'), skel('<clinit>', '()V', 8), skel('g', '()V', 9)],
+    add('Ltest/Base;', 'rom', [cand('<init>', '()V'), cand('f', '()V')], extra='.method public f()V\n return-void\n.end method\n')
+    add('Ltest/Cycle1;', 'rom', [cand('<init>', '()V'), cand('<clinit>', '()V', 8), cand('g', '()V', 9)],
         clinit_ops=' invoke-static {}, Ltest/Cycle2;->g()V\n', extra='.method public static g()V\n return-void\n.end method\n')
-    add('Ltest/Cycle2;', 'skeleton', [skel('<init>', '()V'), skel('<clinit>', '()V', 8), skel('g', '()V', 9)],
+    add('Ltest/Cycle2;', 'rom', [cand('<init>', '()V'), cand('<clinit>', '()V', 8), cand('g', '()V', 9)],
         clinit_ops=' invoke-static {}, Ltest/Cycle1;->g()V\n', extra='.method public static g()V\n return-void\n.end method\n')
     # --- parent admission and rejections: native, unimplemented target, Binder, virtual chain
-    add('Ltest/Native;', 'skeleton', [skel('<init>', '()V'), skel('n', '()V', 0x101)])
-    add('Ltest/ExtendsIntrinsic;', 'skeleton', [skel('<init>', '()V')], super_='Landroid/os/Handler;')
+    add('Ltest/Native;', 'rom', [cand('<init>', '()V'), cand('n', '()V', 0x101)])
+    add('Ltest/ExtendsIntrinsic;', 'rom', [cand('<init>', '()V')], super_='Landroid/os/Handler;')
     smali['Ltest/ExtendsIntrinsic;'] = parse_smali_class(_smali(
         'Ltest/ExtendsIntrinsic;', super_='Landroid/os/Handler;',
         methods=ctor.replace('Ljava/lang/Object;', 'Landroid/os/Handler;')))
-    add('Ltest/CallsUnimpl;', 'skeleton', [skel('<init>', '()V'), skel('<clinit>', '()V', 8)],
+    add('Ltest/CallsUnimpl;', 'rom', [cand('<init>', '()V'), cand('<clinit>', '()V', 8)],
         clinit_ops=' new-instance v0, Landroid/os/Handler;\n invoke-direct {v0}, Landroid/os/Handler;-><init>()V\n invoke-virtual {v0, v1}, Landroid/os/Handler;->post(Ljava/lang/Runnable;)Z\n')
-    add('Ltest/TouchesBinder;', 'skeleton', [skel('<init>', '()V'), skel('<clinit>', '()V', 8)],
+    add('Ltest/TouchesBinder;', 'rom', [cand('<init>', '()V'), cand('<clinit>', '()V', 8)],
         clinit_ops=' new-instance v0, Landroid/os/Binder;\n invoke-direct {v0}, Landroid/os/Binder;-><init>()V\n')
     # <clinit> -> static helper -> virtual call on a type with a subclass whose override is unimplemented
-    add('Ltest/Shape;', 'skeleton', [skel('<init>', '()V'), skel('area', '()I', 0x401)], flags=0x401,
+    add('Ltest/Shape;', 'rom', [cand('<init>', '()V'), cand('area', '()I', 0x401)], flags=0x401,
         extra='.method public abstract area()I\n.end method\n')
-    add('Ltest/Square;', 'skeleton', [skel('<init>', '()V'), skel('area', '()I')], super_='Ltest/Shape;',
+    add('Ltest/Square;', 'rom', [cand('<init>', '()V'), cand('area', '()I')], super_='Ltest/Shape;',
         extra='.method public area()I\n const/4 v0, 0x1\n return v0\n.end method\n')
-    add('Ltest/Circle;', 'skeleton', [skel('<init>', '()V'), skel('area', '()I')], super_='Ltest/Shape;',
+    add('Ltest/Circle;', 'rom', [cand('<init>', '()V'), cand('area', '()I')], super_='Ltest/Shape;',
         extra='.method public area()I\n const/4 v0, 0x2\n return v0\n.end method\n')
-    add('Ltest/Helper;', 'skeleton', [skel('<init>', '()V'), skel('run', '(Ltest/Shape;)I', 9)],
+    add('Ltest/Helper;', 'rom', [cand('<init>', '()V'), cand('run', '(Ltest/Shape;)I', 9)],
         extra='.method public static run(Ltest/Shape;)I\n .registers 2\n invoke-virtual {p0}, Ltest/Shape;->area()I\n move-result v0\n return v0\n.end method\n')
-    add('Ltest/ViaVirtualChain;', 'skeleton', [skel('<init>', '()V'), skel('<clinit>', '()V', 8)],
+    add('Ltest/ViaVirtualChain;', 'rom', [cand('<init>', '()V'), cand('<clinit>', '()V', 8)],
         clinit_ops=' const/4 v0, 0x0\n invoke-static {v0}, Ltest/Helper;->run(Ltest/Shape;)I\n')
     # unique-by-CHA target admitted; same shape but a second concrete override makes it non-unique
-    add('Ltest/Solo;', 'skeleton', [skel('<init>', '()V'), skel('name', '()I')],
+    add('Ltest/Solo;', 'rom', [cand('<init>', '()V'), cand('name', '()I')],
         extra='.method public name()I\n const/4 v0, 0x1\n return v0\n.end method\n')
-    add('Ltest/SoloHelper;', 'skeleton', [skel('<init>', '()V'), skel('run', '(Ltest/Solo;)I', 9)],
+    add('Ltest/SoloHelper;', 'rom', [cand('<init>', '()V'), cand('run', '(Ltest/Solo;)I', 9)],
         extra='.method public static run(Ltest/Solo;)I\n .registers 2\n invoke-virtual {p0}, Ltest/Solo;->name()I\n move-result v0\n return v0\n.end method\n')
-    add('Ltest/ViaUniqueChain;', 'skeleton', [skel('<init>', '()V'), skel('<clinit>', '()V', 8)],
+    add('Ltest/ViaUniqueChain;', 'rom', [cand('<init>', '()V'), cand('<clinit>', '()V', 8)],
         clinit_ops=' const/4 v0, 0x0\n invoke-static {v0}, Ltest/SoloHelper;->run(Ltest/Solo;)I\n')
     # parent cascade, interaction, existing
-    add('Ltest/Child;', 'skeleton', [skel('<init>', '()V')], super_='Ltest/Native;')
-    add('Ltest/Passed;', 'skeleton', [skel('<init>', '()V')])
+    add('Ltest/Child;', 'rom', [cand('<init>', '()V')], super_='Ltest/Native;')
+    add('Ltest/Passed;', 'rom', [cand('<init>', '()V')])
     add('Ltest/Existing;', 'bootdex', [_method('<init>', '()V', 1, 'implemented', 'bytecode')])
     for c in classes:
         if c['descriptor'] in smali:
@@ -954,25 +954,25 @@ def self_test():
     assert analyzer.primary('Ltest/Passed;') == 'intrinsic-interaction' and 'Ltest/Passed;' in analyzer.interacting
     assert 'Ltest/Existing;' not in analyzer.rejected and 'Ltest/Existing;' not in admitted
     # ADR-0156: all own bodies, inherited resolution, final methods and overlays.
-    add('Ltest/BadParentCall;', 'skeleton', super_='Landroid/os/Handler;',
+    add('Ltest/BadParentCall;', 'rom', super_='Landroid/os/Handler;',
         extra='.method public f()V\n invoke-virtual {p0, v0}, Ltest/BadParentCall;->post(Ljava/lang/Runnable;)Z\n return-void\n.end method\n')
     final_method = impl('fixed', '()V', ACC_FINAL | 1)
     final_method['overridable'] = False
     add('Ltest/Overlay;', 'bootdex', [impl('<init>', '()V'), final_method],
         fields=[dict(name='missing', descriptor='I', status='unimplemented-ledger')])
-    add('Ltest/OverlayChild;', 'skeleton', super_='Ltest/Overlay;')
-    add('Ltest/BadOverride;', 'skeleton', super_='Ltest/Overlay;',
+    add('Ltest/OverlayChild;', 'rom', super_='Ltest/Overlay;')
+    add('Ltest/BadOverride;', 'rom', super_='Ltest/Overlay;',
         extra='.method public fixed()V\n return-void\n.end method\n')
-    add('Ltest/BadParentField;', 'skeleton', super_='Ltest/Overlay;',
+    add('Ltest/BadParentField;', 'rom', super_='Ltest/Overlay;',
         extra='.method public f()V\n iget v0, p0, Ltest/BadParentField;->missing:I\n return-void\n.end method\n')
     bytecode = _method('ordinary', '()V', 1, 'implemented', 'bytecode')
     bytecode['overridable'] = False  # Exported bit is not used for bytecode methods.
     add('Ltest/BytecodeParent;', 'bootdex', [bytecode])
-    add('Ltest/BytecodeChild;', 'skeleton', super_='Ltest/BytecodeParent;',
+    add('Ltest/BytecodeChild;', 'rom', super_='Ltest/BytecodeParent;',
         extra='.method public ordinary()V\n return-void\n.end method\n')
-    add('Ltest/BadParentConstructor;', 'skeleton', super_='Landroid/os/Handler;',
+    add('Ltest/BadParentConstructor;', 'rom', super_='Landroid/os/Handler;',
         extra='.method public constructor <init>(I)V\n invoke-direct {p0, p1}, Landroid/os/Handler;-><init>(I)V\n return-void\n.end method\n')
-    add('Ltest/BinderChild;', 'skeleton', super_='Landroid/os/Binder;')
+    add('Ltest/BinderChild;', 'rom', super_='Landroid/os/Binder;')
     jar_of.update({d: 'core.jar' for d in smali})
     parent_audit = Analyzer(classes, smali, jar_of, set(), set(), set())
     parent_audit.analyze()
@@ -1031,7 +1031,7 @@ def self_test():
     # The historical scope deliberately does not repair an existing BootDex seed.
     assert analyzer.closure_of({seed}) == set()
     # A second Solo override must turn the unique chain into a rejected one (sensitivity).
-    add('Ltest/Solo2;', 'skeleton', [skel('<init>', '()V'), skel('name', '()I')], super_='Ltest/Solo;',
+    add('Ltest/Solo2;', 'rom', [cand('<init>', '()V'), cand('name', '()I')], super_='Ltest/Solo;',
         extra='.method public name()I\n const/4 v0, 0x2\n return v0\n.end method\n')
     jar_of = {d: 'core.jar' for d in smali}
     second = Analyzer(classes, smali, jar_of, set(), set(), set())
@@ -1081,7 +1081,7 @@ def self_test():
     assert target not in default.cand_set
     try:
         replacement_surface(classes, rom, {'Ltest/Plain;'})
-        assert False, 'skeleton must not be accepted as an intrinsic replacement'
+        assert False, 'ROM candidate must not be accepted as an intrinsic replacement'
     except ValueError:
         pass
     print('select_rom_java self-test passed (admit, native, intrinsic parent, unimplemented target, '
@@ -1096,6 +1096,7 @@ def main():
                    help='payload paired with --surface; alternate payload is read-only evidence')
     p.add_argument('--scan-dir', type=Path)
     p.add_argument('--report', type=Path)
+    p.add_argument('--aosp', type=Path, default=builder.ROOT / '.local/aosp')
     p.add_argument('--cache', type=Path, default=builder.ROOT / '.local/analysis/preflight/wu2a/smali')
     p.add_argument('--only', nargs='*', help='apply only these classes; they must all be admitted by the rules')
     p.add_argument('--replace-intrinsic', nargs='+', metavar='DESCRIPTOR',
@@ -1106,7 +1107,7 @@ def main():
                         'referenced: classes the sample library uses plus their '
                         'superclass/<clinit>-required closure (single classes.dex has a 64K id limit)')
     p.add_argument('--check-closure', action='store_true',
-                   help='fail and list admitted skeleton classes reachable from BootDex/intrinsic declarations')
+                   help='fail and list admitted ROM classes reachable from BootDex/intrinsic declarations')
     p.add_argument('--apply', action='store_true')
     p.add_argument('--self-test', action='store_true')
     args = p.parse_args()

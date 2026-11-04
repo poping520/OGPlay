@@ -206,7 +206,6 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
         loader::ReadApkEntry(context->boot_classpath_bytes, context->boot_classpath_archive, "classes.dex");
     std::vector<std::uint8_t> boot_dex(boot_entry.size());
     std::memcpy(boot_dex.data(), boot_entry.data(), boot_entry.size());
-    auto skeleton = ReadFile(data / "dexvm/api19-skeleton.bin");
 
     core::CapabilityLedger ledger;
     auto catalog = runtime::AndroidIntrinsicCatalog(context);
@@ -301,7 +300,7 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     config.interpreter.backend =
         options.backend == "threaded" ? dx::InterpreterBackend::threaded : dx::InterpreterBackend::switch_dispatch;
     runtime::DexVmGuestBridge bridge(*session, std::move(app_dex), catalog, context, ledger, &logger, config,
-                                     std::move(boot_dex), std::move(skeleton));
+                                     std::move(boot_dex));
     static_cast<void>(native_libraries.LoadLibrary("ogplay_jni", context->application_class_loader_token));
     auto& vm = bridge.Vm();
     auto& linker = bridge.Linker();

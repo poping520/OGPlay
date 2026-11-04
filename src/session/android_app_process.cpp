@@ -254,9 +254,9 @@ public:
         context->vfs = request.filesystem;
 
         const auto catalog = runtime::AndroidIntrinsicCatalog(context);
-        bridge = std::make_unique<runtime::DexVmGuestBridge>(
-            *session, std::move(request.dex_bytes), catalog, context, *request.ledger, request.logger, request.dexvm,
-            std::move(request.boot_dex_bytes), std::move(request.skeleton_bytes));
+        bridge = std::make_unique<runtime::DexVmGuestBridge>(*session, std::move(request.dex_bytes), catalog, context,
+                                                             *request.ledger, request.logger, request.dexvm,
+                                                             std::move(request.boot_dex_bytes));
         if (guest_jni != request.system_libraries.end()) {
             try {
                 static_cast<void>(native_libraries->LoadLibrary("ogplay_jni", context->application_class_loader_token));

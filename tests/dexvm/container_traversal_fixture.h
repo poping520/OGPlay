@@ -25,11 +25,9 @@ struct ContainerVm {
     JavaObjectModel& model;
 
     std::unique_ptr<ogplay::session::AndroidAppProcess> Create(InterpreterBackend backend);
-    std::unique_ptr<ogplay::session::AndroidAppProcess> Create(InterpreterBackend backend, bool include_skeleton,
-                                                               bool native_activity = false);
+    std::unique_ptr<ogplay::session::AndroidAppProcess> Create(InterpreterBackend backend, bool native_activity);
     explicit ContainerVm(InterpreterBackend backend);
-    ContainerVm(InterpreterBackend backend, bool include_skeleton, bool native_activity);
-    ContainerVm(InterpreterBackend backend, bool include_skeleton);
+    ContainerVm(InterpreterBackend backend, bool native_activity);
     VmValue Checked(const VmCallOutcome& result);
     VmCallOutcome OnOutcome(VmObjectRef object, const char* name, const char* descriptor,
                             std::vector<VmValue> args = {});
@@ -52,7 +50,7 @@ struct AndroidTestRuntime final {
 
     AndroidTestRuntime(const std::shared_ptr<DexVmAndroidContext>& context, ogplay::core::CapabilityLedger& ledger,
                        ogplay::core::Logger& logger, std::vector<IntrinsicClassDecl> catalog,
-                       std::vector<std::uint8_t> dex, InterpreterConfig config = {}, bool skeleton = false,
+                       std::vector<std::uint8_t> dex, InterpreterConfig config = {},
                        VirtualFileSystem* filesystem = nullptr);
     ~AndroidTestRuntime();
 };

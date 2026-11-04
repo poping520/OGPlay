@@ -181,7 +181,8 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
             }
             if (overlay && !(linked.access_flags & (kAccNative | kAccAbstract)))
                 CHECK(linked.kind == MethodKind::intrinsic);
-            else if (!overlay && !linked.is_skeleton && !(linked.access_flags & (kAccNative | kAccAbstract))) {
+            else if (!overlay && linked.kind != MethodKind::intrinsic &&
+                     !(linked.access_flags & (kAccNative | kAccAbstract))) {
                 CHECK(linked.kind == MethodKind::interpreted);
                 CHECK(linked.code.has_value());
             }
@@ -430,6 +431,6 @@ TEST_CASE("DVM-276 BootDex exact member sources execute on both backends") {
         const auto id = linker.FindDirectMethod(owner, "rom", "()I");
         CHECK(linker.Method(*id).kind == MethodKind::interpreted);
         CHECK(linker.Method(*linker.FindDirectMethod(owner, "host", "()I")).kind == MethodKind::intrinsic);
-        CHECK(linker.Method(*linker.FindDirectMethod(owner, "missing", "()I")).is_skeleton);
+        CHECK_FALSE(linker.Method(*linker.FindDirectMethod(owner, "missing", "()I")).implementation);
     }
 }

@@ -54,9 +54,9 @@ struct EglVm final {
 
     explicit EglVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
                    AndroidGuestCallSession* session = nullptr, const char* dex_fixture = nullptr,
-                   const std::vector<IntrinsicClassDecl>& extras = {}, const bool include_skeleton = false)
+                   const std::vector<IntrinsicClassDecl>& extras = {})
         : interpreter(
-              [this, dex_fixture, &extras, include_skeleton]() -> DexClassLinker& {
+              [this, dex_fixture, &extras]() -> DexClassLinker& {
                   ogplay::test::BindBootDexArchive(*context);
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                   auto android = AndroidIntrinsicCatalog(context);
@@ -71,7 +71,6 @@ struct EglVm final {
                   linker.RegisterIntrinsics(std::move(android));
                   linker.RegisterIntrinsics(extras);
                   ogplay::test::RegisterBootDex(linker);
-                  if (include_skeleton) ogplay::test::RegisterBootDexSkeleton(linker);
                   if (dex_fixture != nullptr) {
                       const auto path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + dex_fixture;
                       std::ifstream stream(path, std::ios::binary);
@@ -645,7 +644,7 @@ TEST_CASE("DVM-134 GLSurfaceView stores validated render mode per view") {
 }
 
 TEST_CASE("BND37 GLSurfaceView publishes API19 context config and GL queue entrypoints") {
-    EglVm vm(InterpreterBackend::switch_dispatch, nullptr, nullptr, {}, true);
+    EglVm vm(InterpreterBackend::switch_dispatch, nullptr, nullptr, {});
     const auto view = vm.interpreter.NewIntrinsicInstance("Landroid/opengl/GLSurfaceView;");
     static_cast<void>(vm.CallOn(view, "setEGLContextClientVersion", "(I)V", {VmValue::Int(2)}));
     CHECK(vm.context->gl_surface_client_versions.at(view.Value()) == 2);

@@ -49,7 +49,7 @@ using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-281 raw host allocation bypasses failure constructors and class initialization") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "view_measure.dex", true, AndroidUiTraversalOwner::JavaTraversal,
+        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal,
                          OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
         for (const auto descriptor : {"Landroid/view/ViewRootImpl;", "Landroid/view/ViewOverlay$OverlayViewGroup;"}) {
             const auto type = f.linker.ResolveDescriptor(descriptor);
@@ -77,7 +77,7 @@ TEST_CASE("DVM-281 raw host allocation bypasses failure constructors and class i
 TEST_CASE("DVM-279 ROM measure specs state cache and guest overrides use Java authority") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         for (const auto sdk : {17U, 18U, 19U}) {
-            AndroidValueVm f(backend, {}, false, "view_measure.dex", false, AndroidUiTraversalOwner::JavaTraversal,
+            AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal,
                              OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
             f.context->target_sdk_version = sdk;
             const auto owner = f.New("Landroid/app/Activity;");
@@ -222,7 +222,7 @@ TEST_CASE("DVM-280 ROM layout callbacks and two-pass owner scheduling publish Ja
             traverse();
             return VmValue::Void();
         });
-        AndroidValueVm f(backend, {std::move(probe).Build()}, false, "view_layout.dex", true,
+        AndroidValueVm f(backend, {std::move(probe).Build()}, false, "view_layout.dex",
                          AndroidUiTraversalOwner::JavaTraversal, OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
         // Materialize the negative-control type before allocating any instances.
         static_cast<void>(f.linker.ResolveDescriptor("Landroid/view/GLES20DisplayList;"));

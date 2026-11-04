@@ -37,13 +37,10 @@ void Interpreter::Impl::RecordSurveyHit(const LinkedMethod* const method, const 
     GapSurveyContext context;
     context.channel = channel;
     context.kind = method != nullptr ? GapSurveyKind::method : GapSurveyKind::field;
-    const bool generated = method != nullptr ? method->is_skeleton : field->is_skeleton;
     if (method != nullptr && method->survey_synthesized) {
         context.source = GapSurveySource::missing;
     } else if (declaring.is_boot_dex) {
         context.source = GapSurveySource::bootdex;
-    } else if (generated || declaring.is_skeleton) {
-        context.source = GapSurveySource::skeleton;
     } else {
         context.source = GapSurveySource::intrinsic;
     }
@@ -69,14 +66,14 @@ void Interpreter::Impl::RecordSurveyHit(const LinkedMethod* const method, const 
 void Interpreter::Impl::RequireImplementedField(const LinkedField& field, const GapSurveyChannel channel) {
     if (!field.is_unimplemented) return;
     const auto diagnostic = linker->Class(field.owner).descriptor + "->" + field.name + ":" + field.descriptor;
-    if (ledger) ledger->RecordUnimplemented("dexvm.skeleton.field." + diagnostic, 0);
+    if (ledger) ledger->RecordUnimplemented("dexvm.field." + diagnostic, 0);
     if (linker->GapSurveyEnabled()) {
         // Survey mode: record and let the access run on the zero-initialised
         // slot (reads answer 0/null). Never a compatibility result.
         RecordSurveyHit(nullptr, &field, channel);
         return;
     }
-    throw VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;", "skeleton field is not implemented: " + diagnostic};
+    throw VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;", "field is not implemented: " + diagnostic};
 }
 
 void Interpreter::RequireImplementedField(const VmFieldId field, const GapSurveyChannel channel) {
@@ -650,8 +647,7 @@ VmMethodId Interpreter::Impl::SelectInvokeTarget(const VmMethodId symbolic_metho
     }
     const auto slot = linker->FindVtableIndex(receiver_class, named.name, named.descriptor);
     if (slot.has_value()) return vtable[*slot];
-    if (linker->GapSurveyEnabled() &&
-        (linker->Class(receiver_class).is_intrinsic || linker->Class(receiver_class).is_skeleton)) {
+    if (linker->GapSurveyEnabled() && linker->Class(receiver_class).is_intrinsic) {
         const auto name = named.name;
         const auto descriptor = named.descriptor;
         return linker->SynthesizeSurveyMethod(receiver_class, name, descriptor, kind);

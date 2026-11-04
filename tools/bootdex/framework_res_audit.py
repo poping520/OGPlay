@@ -17,12 +17,12 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
 sys.dont_write_bytecode = True
-import api19_skeleton
+import api19_rom
 import dex_survey_lib as dx
 import dexdis
 
 APK = '.local/aosp/framework-res.apk'
-PINNED = {'.local/aosp/' + name: digest for name, digest in api19_skeleton.PINNED.items()}
+PINNED = {'.local/aosp/' + name: digest for name, digest in api19_rom.PINNED.items()}
 PINNED.update({
     '.local/aosp/conscrypt.jar': 'c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004',
     '.local/aosp/android.policy.jar': '660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1',

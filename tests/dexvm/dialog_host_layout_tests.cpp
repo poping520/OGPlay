@@ -55,7 +55,7 @@ VmObjectRef Dialog(Vm& f, VmObjectRef owner, const char* message = "A real messa
 
 TEST_CASE("DVM-304 isolated host Dialog layout leaves guest geometry epoch and focus unchanged") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "view_measure.dex", false, AndroidUiTraversalOwner::JavaTraversal,
+        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal,
                          OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
         f.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
         f.context->ui_test_accessibility_disabled = true;
@@ -229,7 +229,7 @@ TEST_CASE("DVM-305 presentation snapshot composes modal pixels input and atomic 
                 events.emplace_back(name);
                 return VmValue::Void();
             });
-        AndroidValueVm f(backend, {std::move(observer).Build()}, false, "view_measure.dex", false,
+        AndroidValueVm f(backend, {std::move(observer).Build()}, false, "view_measure.dex",
                          AndroidUiTraversalOwner::JavaTraversal, OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
         f.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
         f.context->ui_test_accessibility_disabled = true;

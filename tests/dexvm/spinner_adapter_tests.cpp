@@ -9,7 +9,7 @@ using ogplay::test::container_traversal::ContainerVm;
 
 TEST_CASE("DVM-364 Spinner ROM adapter layout and asynchronous selection chain") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend, true);
+        ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
         ogplay::test::AttachViewTestContext(f.vm, owner);
@@ -186,7 +186,7 @@ TEST_CASE("DVM-364 Spinner ROM adapter layout and asynchronous selection chain")
 
 TEST_CASE("DVM-364 Spinner rejects popup constructors at explicit interaction boundaries") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend, true);
+        ContainerVm f(backend);
         for (const auto [owner, signature] :
              {std::pair{"Landroid/widget/Spinner$DropdownPopup;",
                         "(Landroid/widget/Spinner;Landroid/content/Context;Landroid/util/AttributeSet;I)V"},

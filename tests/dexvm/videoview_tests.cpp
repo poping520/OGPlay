@@ -181,7 +181,7 @@ struct VideoVm final {
               catalog.insert(catalog.end(), std::make_move_iterator(extra.begin()),
                              std::make_move_iterator(extra.end()));
               return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
-                  context, ledger, logger, catalog, ReadFixture("videoview.dex"), config, false, &vfs);
+                  context, ledger, logger, catalog, ReadFixture("videoview.dex"), config, &vfs);
           }()),
           model(runtime->bridge->Model()), linker(runtime->bridge->Linker()), interpreter(runtime->bridge->Vm()) {
         interpreter.Monitors().SetTimeSource([state = context] { return state->uptime_millis.load(); });

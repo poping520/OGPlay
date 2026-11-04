@@ -41,17 +41,12 @@ using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("parameterless nested View hierarchy measures and receives touch") {
     ClickVm vm;
-    const auto top = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/widget/RelativeLayout;");
-    const auto frame = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/widget/FrameLayout;");
+    const auto top = vm.interpreter.NewIntrinsicInstance("Landroid/widget/RelativeLayout;");
+    const auto frame = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
     const auto touch = vm.NewTouchView();
-    vm.CallOn(frame, "addView", "(Landroid/view/View;)V",
-              {VmValue::Ref(touch)});
-    vm.CallOn(top, "addView", "(Landroid/view/View;)V",
-              {VmValue::Ref(frame)});
-    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
-              {VmValue::Ref(top)});
+    vm.CallOn(frame, "addView", "(Landroid/view/View;)V", {VmValue::Ref(touch)});
+    vm.CallOn(top, "addView", "(Landroid/view/View;)V", {VmValue::Ref(frame)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(top)});
 
     CHECK(vm.CallOn(top, "getWidth", "()I").AsInt() == 100);
     CHECK(vm.CallOn(top, "getHeight", "()I").AsInt() == 100);
@@ -64,8 +59,7 @@ TEST_CASE("parameterless nested View hierarchy measures and receives touch") {
     CHECK(receivers.front() == touch.Value());
 
     vm.ResetTouchView(true);
-    const auto result = ogplay::session::DispatchDeepTouchEvent(
-        vm.interpreter, *vm.context, 0, 50.0F, 50.0F, 0U);
+    const auto result = ogplay::session::DispatchDeepTouchEvent(vm.interpreter, *vm.context, 0, 50.0F, 50.0F, 0U);
     CHECK_FALSE(result.error.has_value());
     CHECK(result.handled);
     CHECK(result.captured_view == touch.Value());
@@ -73,51 +67,34 @@ TEST_CASE("parameterless nested View hierarchy measures and receives touch") {
 
 TEST_CASE("RelativeLayout Java rules update attached geometry") {
     ClickVm vm;
-    const auto relative = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/widget/RelativeLayout;");
-    const auto anchor = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/view/View;");
-    const auto dependent = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/view/View;");
+    const auto relative = vm.interpreter.NewIntrinsicInstance("Landroid/widget/RelativeLayout;");
+    const auto anchor = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+    const auto dependent = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
     vm.CallOn(anchor, "setId", "(I)V", {VmValue::Int(1001)});
 
-    const auto content_params = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/view/ViewGroup$LayoutParams;");
-    vm.CallDirect(content_params, "Landroid/view/ViewGroup$LayoutParams;",
-                  "<init>", "(II)V",
+    const auto content_params = vm.interpreter.NewIntrinsicInstance("Landroid/view/ViewGroup$LayoutParams;");
+    vm.CallDirect(content_params, "Landroid/view/ViewGroup$LayoutParams;", "<init>", "(II)V",
                   {VmValue::Int(-1), VmValue::Int(-1)});
-    vm.CallOn(relative, "setLayoutParams",
-              "(Landroid/view/ViewGroup$LayoutParams;)V",
-              {VmValue::Ref(content_params)});
-    const auto anchor_params = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/widget/RelativeLayout$LayoutParams;");
-    vm.CallDirect(anchor_params,
-                  "Landroid/widget/RelativeLayout$LayoutParams;", "<init>",
-                  "(II)V", {VmValue::Int(20), VmValue::Int(10)});
+    vm.CallOn(relative, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V", {VmValue::Ref(content_params)});
+    const auto anchor_params = vm.interpreter.NewIntrinsicInstance("Landroid/widget/RelativeLayout$LayoutParams;");
+    vm.CallDirect(anchor_params, "Landroid/widget/RelativeLayout$LayoutParams;", "<init>", "(II)V",
+                  {VmValue::Int(20), VmValue::Int(10)});
     vm.CallOn(anchor_params, "addRule", "(I)V", {VmValue::Int(9)});
     vm.CallOn(anchor_params, "addRule", "(I)V", {VmValue::Int(10)});
-    const auto dependent_params = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/widget/RelativeLayout$LayoutParams;");
-    vm.CallDirect(dependent_params,
-                  "Landroid/widget/RelativeLayout$LayoutParams;", "<init>",
-                  "(II)V", {VmValue::Int(5), VmValue::Int(5)});
-    vm.CallOn(dependent_params, "addRule", "(II)V",
-              {VmValue::Int(1), VmValue::Int(1001)});
-    vm.CallOn(dependent_params, "addRule", "(II)V",
-              {VmValue::Int(3), VmValue::Int(1001)});
-    vm.CallOn(relative, "addView",
-              "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+    const auto dependent_params = vm.interpreter.NewIntrinsicInstance("Landroid/widget/RelativeLayout$LayoutParams;");
+    vm.CallDirect(dependent_params, "Landroid/widget/RelativeLayout$LayoutParams;", "<init>", "(II)V",
+                  {VmValue::Int(5), VmValue::Int(5)});
+    vm.CallOn(dependent_params, "addRule", "(II)V", {VmValue::Int(1), VmValue::Int(1001)});
+    vm.CallOn(dependent_params, "addRule", "(II)V", {VmValue::Int(3), VmValue::Int(1001)});
+    vm.CallOn(relative, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
               {VmValue::Ref(dependent), VmValue::Ref(dependent_params)});
-    vm.CallOn(relative, "addView",
-              "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+    vm.CallOn(relative, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
               {VmValue::Ref(anchor), VmValue::Ref(anchor_params)});
-    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
-              {VmValue::Ref(relative)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(relative)});
 
     CHECK(vm.CallOn(dependent, "getLeft", "()I").AsInt() == 20);
     CHECK(vm.CallOn(dependent, "getTop", "()I").AsInt() == 10);
-    vm.CallOn(dependent_params, "addRule", "(II)V",
-              {VmValue::Int(1), VmValue::Int(0)});
+    vm.CallOn(dependent_params, "addRule", "(II)V", {VmValue::Int(1), VmValue::Int(0)});
     vm.CallOn(dependent_params, "addRule", "(I)V", {VmValue::Int(14)});
     vm.CallOn(dependent, "requestLayout", "()V");
     CHECK(vm.CallOn(dependent, "getLeft", "()I").AsInt() == 47);
@@ -130,43 +107,35 @@ TEST_CASE("guest View subclass resolves the platform kind by inheritance") {
     REQUIRE(java_class.has_value());
     const auto initialized = vm.interpreter.EnsureClassInitialized(*java_class);
     REQUIRE_FALSE(initialized.exception.IsValid());
-    const auto panel = vm.model.NewInstance(
-        *java_class, vm.linker.Class(*java_class).instance_slots);
-    vm.CallDirect(panel, "LTestPanel;", "<init>",
-                  "(Landroid/content/Context;)V", {VmValue::Ref(vm.activity)});
+    const auto panel = vm.model.NewInstance(*java_class, vm.linker.Class(*java_class).instance_slots);
+    vm.CallDirect(panel, "LTestPanel;", "<init>", "(Landroid/content/Context;)V", {VmValue::Ref(vm.activity)});
     const auto node = FindViewUiNode(*vm.context, panel.Value());
     REQUIRE(node.has_value());
     CHECK(vm.context->ui_tree.Get(*node)->kind == ui::UiClass::LinearLayout);
     vm.CallOn(panel, "setOrientation", "(I)V", {VmValue::Int(1)});
-    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
-              {VmValue::Ref(panel)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(panel)});
     CHECK(vm.CallOn(panel, "getOrientation", "()I").AsInt() == 1);
 }
 
 TEST_CASE("RelativeLayout TRUE rules behave as absent sibling anchors") {
     ClickVm vm;
-    const auto relative = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/widget/RelativeLayout;");
-    const auto child = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/view/View;");
-    const auto params = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/widget/RelativeLayout$LayoutParams;");
-    vm.CallDirect(params, "Landroid/widget/RelativeLayout$LayoutParams;",
-                  "<init>", "(II)V", {VmValue::Int(5), VmValue::Int(5)});
+    const auto relative = vm.interpreter.NewIntrinsicInstance("Landroid/widget/RelativeLayout;");
+    const auto child = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+    const auto params = vm.interpreter.NewIntrinsicInstance("Landroid/widget/RelativeLayout$LayoutParams;");
+    vm.CallDirect(params, "Landroid/widget/RelativeLayout$LayoutParams;", "<init>", "(II)V",
+                  {VmValue::Int(5), VmValue::Int(5)});
     // addRule(7) stores TRUE (-1) for ALIGN_RIGHT: no anchor, default slot.
     vm.CallOn(params, "addRule", "(I)V", {VmValue::Int(7)});
-    vm.CallOn(relative, "addView",
-              "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+    vm.CallOn(relative, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
               {VmValue::Ref(child), VmValue::Ref(params)});
-    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
-              {VmValue::Ref(relative)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(relative)});
     CHECK(vm.CallOn(child, "getLeft", "()I").AsInt() == 0);
     CHECK(vm.CallOn(child, "getTop", "()I").AsInt() == 0);
 }
 
 TEST_CASE("DVM-263 ROM superclass and interface checks execute as DEX instructions") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "framework_override.dex", true);
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "framework_override.dex");
         CHECK(f.Static("Lfixture/FrameworkHierarchyProbe;", "catchAndroidException", "()I").AsInt() == 1);
         for (const auto& [name, owner] : std::array{
                  std::pair{"motion", "Landroid/view/MotionEvent;"}, std::pair{"scroll", "Landroid/widget/ScrollView;"},
@@ -185,7 +154,7 @@ TEST_CASE("DVM-263 ROM superclass and interface checks execute as DEX instructio
 
 TEST_CASE("DVM-263 corrected parents initialize inherited state through their real constructors") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, nullptr, true);
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, nullptr);
         f.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
         std::array<int, 7> calls{};
         const std::array parents{std::pair{"Landroid/util/AndroidException;", "(Ljava/lang/String;)V"},

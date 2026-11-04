@@ -176,12 +176,8 @@ TEST_CASE("DVM NativeCrypto identity and members come from API 19 BootDex") {
     const auto& original = classes.at(*linked.dex_class_def_index);
     CHECK(linked.own_direct_methods.size() == original.direct_methods.size());
     CHECK(linked.own_virtual_methods.size() == original.virtual_methods.size());
-    const auto original_fields = [&](const auto& fields) {
-        return std::count_if(fields.begin(), fields.end(),
-                             [&](const auto id) { return !fixture.linker.Field(id).is_skeleton; });
-    };
-    CHECK(original_fields(linked.own_static_fields) == original.static_fields.size());
-    CHECK(original_fields(linked.own_instance_fields) == original.instance_fields.size());
+    CHECK(linked.own_static_fields.size() == original.static_fields.size());
+    CHECK(linked.own_instance_fields.size() == original.instance_fields.size());
     for (const auto id : linked.own_static_fields) {
         const auto& field = fixture.linker.Field(id);
         CHECK(field.owner == type);

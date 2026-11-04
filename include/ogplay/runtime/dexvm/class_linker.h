@@ -210,7 +210,6 @@ struct LinkedField final {
     std::string descriptor;
     std::uint32_t access_flags{};
     bool is_static{};
-    bool is_skeleton{};
     bool is_unimplemented{};
     bool is_wide{};
     bool is_ref{};
@@ -230,7 +229,6 @@ struct LinkedMethod final {
     std::string descriptor;
     std::uint32_t access_flags{};
     MethodKind kind{MethodKind::interpreted};
-    bool is_skeleton{};
     // Survey-only neutral stub for a member API 19 does not declare.
     bool survey_synthesized{};
     bool is_static{};
@@ -279,7 +277,6 @@ struct LinkedClass final {
     std::uint32_t access_flags{};
     bool is_intrinsic{};
     bool is_boot_dex{};
-    bool is_skeleton{};
     bool is_interface{};
     bool is_array{};
     bool admit_boot_native_methods{};
@@ -324,7 +321,6 @@ struct ResolvedFieldRef final {
 // Gap survey record vocabulary. The source names who declares the reached
 // surface; the channel names how the title reached it. Diagnostic only.
 enum class GapSurveySource : std::uint8_t {
-    skeleton,   // generated API19 declaration with no behavior
     intrinsic,  // handwritten intrinsic declaration with no handler
     bootdex,    // member owned by a BootDex class with no behavior
     missing,    // not declared by API19 at all (survey-synthesized stub)
@@ -373,8 +369,6 @@ public:
     // Optional sealed archive entry; absent on legacy/disabled payloads.
     [[nodiscard]] static std::string BootDexMemberSources(std::span<const std::byte> archive_bytes);
     DexUnitId RegisterDex(std::vector<std::uint8_t> dex_bytes);
-    // Install indexed data before application registration/Link; no classes are built.
-    void RegisterSkeletonSurface(std::vector<std::uint8_t> bytes);
     void Link();
     // Replay early link warnings when the session logger becomes available.
     void SetLogger(core::Logger* logger);
@@ -453,14 +447,13 @@ public:
     // result: every stub is logged and reported, and the frontend must label
     // the run as a survey.
     //
-    // Survey keeps the API19 skeleton: hierarchy, constants and declarations
-    // equal a normal run. Neutral answers are limited to *called* unimplemented
+    // Hierarchy, constants and declarations equal a normal run. Neutral answers
+    // are limited to *called* unimplemented
     // methods and *accessed* non-constant unimplemented fields (every hit is
     // recorded), plus synthesized stubs for members API19 does not declare.
     // uptime_ms stamps first hits with the guest uptime clock (optional).
     void EnableGapSurvey(std::function<std::uint64_t()> uptime_ms = {});
     [[nodiscard]] bool GapSurveyEnabled() const noexcept;
-    [[nodiscard]] bool HasSkeletonClass(std::string_view descriptor) const;
     // member is "name(descriptor)ret" for methods, "name:descriptor" for
     // fields, or empty for a whole missing class.
     void RecordGapSurveyHit(const std::string& owner_descriptor, const std::string& member,

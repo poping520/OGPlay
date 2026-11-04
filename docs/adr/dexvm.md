@@ -6,7 +6,7 @@
 - [ADR-0029 · Java 状态与宿主资源的唯一所有权](#adr-0029)
 - [ADR-0066 · 密码、KeyStore 与 TLS 的 guest 依赖边界](#adr-0066)
 - [ADR-0068 · SQLite Java 栈与唯一 VFS 上的宿主引擎](#adr-0068)
-- [ADR-0147 · API19 表面机器生成，行为按需实现](#adr-0147)
+- [ADR-0147 · 未实现平台成员明确失败](#adr-0147)
 - [ADR-0148 · 固定 ROM Java 类的规则准入与显式撤换](#adr-0148)
 - [ADR-0152 · Java primitive/String 的稳定 guest backing](#adr-0152)
 - [ADR-0157 · Java View 遍历、宿主投影与配对制品](#adr-0157)
@@ -31,7 +31,7 @@
 ### 决定
 
 应用 Java 方法真实解释执行，平台行为由受审 API19 BootDex、VM 原语与窄宿主接缝提供。
-固定 ROM 骨架只承诺结构，不是行为实现；不加载完整 core/framework 运行系统服务。
+不加载完整 core/framework 运行系统服务。
 只提供稳定 application/boot loader 与封存类路径，不开放动态 classpath、自定义加载权限、
 完整 verifier、DEX JIT/AOT、odex/quickened、JDWP 或 instrumentation。
 JNI 与 Java 共用对象身份、字段、数组/String payload 及 GC；不能复制一套宿主 Java 状态。
@@ -129,32 +129,29 @@ Java native 字段保存受检逻辑 token；Clock、线程、取消、GC 与释
 
 <a id="adr-0147"></a>
 
-## ADR-0147 · API19 表面机器生成，行为按需实现
+## ADR-0147 · 未实现平台成员明确失败
 
 - 状态：Accepted
 - 日期：2026-10-20
 
 ### 背景
 
-逐项补平台声明不能摊销结构缺口；准确类型与成员存在，也不证明行为已实现。
+平台类型与成员存在，不证明行为已实现；静默返回零值会让游戏走进错误分支且难以定位。
 
 ### 决定
 
-从固定 ROM core/framework/framework2/ext JAR 生成实际 class_def 的层级、own 成员、flags 和常量；
-输入哈希由配方校验，不以 SDK stubs、包名前缀或正则推断权威表面。
-生成器归 tools、溯源与索引归 data，src 只保留通用机制；只补缺，不覆盖现有 handler/字段权威。
-受审 BootDex、手写 intrinsic 与平台 handler 提供行为；显式成员组合按 ADR-0158 审计。
+受审 BootDex、手写 intrinsic 与平台 handler 提供平台类和行为；BootDex 取自固定 ROM
+core/framework/framework2/ext JAR 的实际 class_def，输入哈希由配方校验，显式成员组合按 ADR-0158 审计。
 BootDex 内每个 class_def 都注册，不在运行时再筛类；方法和常量池按 DexUnit 隔离。
-骨架方法/构造器声明为未实现，调用记账失败；非常量字段访问同样失败，不能返回默认 null/0。
+声明为未实现的方法/构造器调用记账失败；未实现的非常量字段访问同样失败，不能返回默认 null/0。
 真实常量保留原值；不生成伪 clinit、空成功构造或替代对象状态。
 JNI/反射区分“成员缺失”与“存在但未实现”：合法查找可成功，执行/字段访问才暴露行为缺口；
-缺成员按 Dalvik 发布对应 NoSuch* 错误，不能把未实现伪装成不存在。
-索引可预载，类、链接布局与对象首次使用才物化；普通启动不得全量建类。
-未绑定 native 明确失败，诊断 surface 必须报告真实来源；测量冷启动、常驻内存与首次解析成本。
+缺成员或缺类按 Dalvik 发布对应 NoSuch*/NoClassDefFound 错误，不能把未实现伪装成不存在。
+未绑定 native 明确失败，诊断 surface 必须报告真实来源。
 
 ### 后果
 
-结构补齐可能改变 guest 探测分支，需区分机械覆盖与行为支持；不因此引入完整 framework 或系统服务。
+未纳入 BootDex 的类在首次使用时明确失败；不因此引入完整 framework 或系统服务。
 
 <a id="adr-0148"></a>
 
@@ -169,7 +166,7 @@ JNI/反射区分“成员缺失”与“存在但未实现”：合法查找可�
 
 ### 决定
 
-默认由 select_rom_java.py 判定固定 ROM 中尚属 skeleton 的类；本类无 native、无 intrinsic/
+默认由 select_rom_java.py 判定固定 ROM 中尚未纳入运行时的类；本类无 native、无 intrinsic/
 overlay 占用、不在已选 BootDex 或日期冻结的排除分类，双向 intrinsic 交互单独排除。
 clinit 的传递初始化/调用闭包须已实现，虚派目标无法唯一确定、反射/动态加载/线程启动入口拒绝。
 初始化闭包触及 Binder/IBinder/IInterface/ServiceManager/Parcel 及子类型时拒绝。
@@ -178,7 +175,7 @@ clinit 的传递初始化/调用闭包须已实现，虚派目标无法唯一确
 普通方法的其他未实现依赖仍在真实执行时明确失败；组合类仅审计活动 ROM 方法体，见 ADR-0158。
 收录范围为现有 BootDex 与 intrinsic 声明起点沿方法体类型/成员引用的不动点闭包，
 补齐父链及初始化依赖；被拒绝类停止遍历，样本库不再决定生产收录范围。
-实际装载 surface 中可达且规则可准入的骨架缺口须为零，--check-closure 非零阻止验收。
+实际装载 surface 中可达且规则可准入的缺口须为零，--check-closure 非零阻止验收。
 仍为单 classes.dex，实际 method_ids、field_ids 均严格小于 60000，不以配方类数替代制品检查。
 已有 intrinsic 的撤换须显式受审：满足其余规则，只保留既有同签名 native，清除普通 handler/
 声明和替代状态；宿主经 Java 方法访问，VM 约定字段须逐项列账，生命周期耦合另行设计。

@@ -659,7 +659,7 @@ TEST_CASE("DVM-202 explicit local service bindings share instances and cancel qu
 TEST_CASE("DVM-263 component interfaces preserve explicit callback registration failures") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         auto service = IntrinsicClassBuilder::Class("Ltest/CallbackService;", "Landroid/app/Service;");
-        AndroidValueVm f(backend, {std::move(service).Build()}, false, nullptr, true);
+        AndroidValueVm f(backend, {std::move(service).Build()}, false, nullptr);
         const auto app = f.New("Landroid/app/Application;");
         const auto app_root = f.vm.ProtectReferences(std::array{app});
         const auto instance = f.vm.NewIntrinsicInstance("Ltest/CallbackService;");

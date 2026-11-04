@@ -116,14 +116,14 @@ AndroidKeyStore 若确有需求，可另做应用隔离的软件密钥底座，�
 
 JNI 一致性：`python3 tools/conformance/jni_tests.py --coverage --check-baseline`（自测 `--self-test`；见 [DIAG-8](../tasks/diagnostics/DIAG-8.md)）。
 
-## BootDex、骨架与 dexvm 链接定向回归
+## BootDex 与 dexvm 链接定向回归
 
 改 DexVM/BootDex/intrinsic 语义后，跑全量
 `python3 tools/conformance/dalvik_tests.py --check-baseline`；目标用例转 pass 后用
 `--update-baseline` 提交新基线（有回归时拒绝更新）。
 
-涉及 BootDex、API19 骨架或 dexvm 链接的改动，按影响范围仅构建 `ogplay_tests`，使用：
+涉及 BootDex 或 dexvm 链接的改动，按影响范围仅构建 `ogplay_tests`，使用：
 
 ```sh
-build/release/ogplay_tests -tc="*survey*,*skeleton*,*Skeleton*,*DVM-103*,*DVM-254*,*BootDex*,*boot dex*,*PointerCoords*"
+build/release/ogplay_tests -tc="*survey*,*DVM-103*,*DVM-254*,*BootDex*,*boot dex*,*PointerCoords*"
 ```

@@ -7,7 +7,7 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
 ## 范围
 
 - `ogplay-cli dexvm run-dex <dex|jar> [--class] [--backend] [--enable-assertions] [--ledger-json] [-- args]`：
-  以生产相同的 bound core/Android catalog、BootDex、API19 骨架装配独立 VM 并调用 `main(String[])`。
+  以生产相同的 bound core/Android catalog、BootDex、API19 声明装配独立 VM 并调用 `main(String[])`。
   无 APK、Manifest，不启动图形或音频呈现；WU7-H 接入生产 guest 进程与 platform JNI/NIO，src/ 无测试专属分支。
 - 语义对齐 dalvikvm：guest System.out/err 原样写宿主 stdout（run-test 本就合并 2>&1）；
   main 返回 0、未捕获异常经线程 handler 或 ThreadGroup 分派后 1、System.exit(n) 为 n；
@@ -67,7 +67,7 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
   链接检查；此差异只记录，未扩修。
 - 只构建 `ogplay-cli`、`ogplay_tests`；继承主题新增双后端回归，覆盖缩小可见性、
   intrinsic 同包/跨包、同包不同 loader，以及跨包后返回祖先包时复用较早槽。
-  `ogplay_tests -sf='*interpreter_tests.cpp,*intrinsic_contract_tests.cpp,*skeleton_surface_tests.cpp'`：
+  `ogplay_tests -sf='*interpreter_tests.cpp,*intrinsic_contract_tests.cpp,*未实现声明_surface_tests.cpp'`：
   49/49、1261 断言通过；证据 `.local/analysis/wu7-1a-linker-tests.log`。
 - 五个目标用例双后端：077/300 新转 pass，040/301 保持 pass；037 保持 fail:output
   （`64.000000` 与 `64.0` 差异）。日志 `.local/analysis/wu7-1a-target.log`。
@@ -102,7 +102,7 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
   注入前的链接警告暂存，注入后发布，重新设置 logger 不重放。
 - 原包隔离回归改为双后端检查同包、跨包、跨 loader 复用父槽并实际分派到子方法；
   private 不参与，跨包 final 覆盖链接失败，同时验证早期 warn 发布及重复警告的抑制计数。
-  继承/intrinsic/skeleton 主题 50/50、1455 断言通过；只构建 ogplay-cli、ogplay_tests。
+  继承/intrinsic/未实现声明 主题 50/50、1455 断言通过；只构建 ogplay-cli、ogplay_tests。
 - 探针新增固定 ORACLE_DIVERGENCE，与 EXCLUDED 并列，300 记 excluded:oracle：
   expected.txt 对应 4.4 之后修复；4.4 createVtable 因 b/7301030 故意允许覆盖，源码位置 2919。
   只有表内 pass → excluded:oracle 可显式迁移，比较输出单列 oracle migrations；
@@ -149,7 +149,7 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
   双后端独立取证 `.local/analysis/wu7-2/cast-probe/`；未扩修异常消息。
 - 定向 C++：interpreter/core_catalog/intrinsics_p1 的相关 59 例、3237 断言通过；
   `-tce` 排除两项未改逻辑的结构检查：catalog 旧未实现白名单缺 BaseDexClassLoader /
-  ProxySelector / Posix 等项、APK Support 测试期待已由 skeleton 提供的 Activity 不存在。
+  ProxySelector / Posix 等项、APK Support 测试期待已由 未实现声明 提供的 Activity 不存在。
   初跑详情保留 `.local/analysis/wu7-2-tests.log`，最终相关结果 `wu7-2-tests-final.log`；
   未用这些结构检查的失败替代本次行为验证，也未顺带维护其无关断言。
 - Unicode/guest native：在现有 guest crypto/ICU 主题补双后端 regionMatches 回归，覆盖
@@ -241,7 +241,7 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
 
 | 分类 | 用例及处理 |
 | --- | --- |
-| 夹具与生产装配不一致 | network_sqlite 7 例缺 SandboxStore quota volume，SQLiteGlobal 的 StatFs("/data") 因而失败；改用独立临时沙盒并验证 /data 容量。AndroidValue/AndroidVm 补 VmThreadRuntime，Configuration 用例单独启用固定骨架；不改变其他无骨架对照。vm_thread 调整 BootDex/应用 DEX 登记顺序。ICU 日期/自定义时区/ChoiceFormat 与异常序列化的正向验证放到真实 guest JNI/ICU/crypto 夹具，core-only 夹具保留缺桥/缺 native loader 的精确失败检查。TLS oracle 在 POSIX 使用 python3，并显式终止、回收子进程，修复原 pclose 永久等待；服务端补 close_notify，避免 LibreSSL 因 raw shutdown 丢弃 session，原 session 身份/ID/超时判据保留。 |
+| 夹具与生产装配不一致 | network_sqlite 7 例缺 SandboxStore quota volume，SQLiteGlobal 的 StatFs("/data") 因而失败；改用独立临时沙盒并验证 /data 容量。AndroidValue/AndroidVm 补 VmThreadRuntime，Configuration 用例单独启用固定未实现声明；不改变其他无未实现声明对照。vm_thread 调整 BootDex/应用 DEX 登记顺序。ICU 日期/自定义时区/ChoiceFormat 与异常序列化的正向验证放到真实 guest JNI/ICU/crypto 夹具，core-only 夹具保留缺桥/缺 native loader 的精确失败检查。TLS oracle 在 POSIX 使用 python3，并显式终止、回收子进程，修复原 pclose 永久等待；服务端补 close_notify，避免 LibreSSL 因 raw shutdown 丢弃 session，原 session 身份/ID/超时判据保留。 |
 | 线程夹具归属错误 | conditional swap pacing worker 借用了主线程仍在使用的 root context；阻塞释放执行锁不转移 context 所有权。对照 interpreter_context.cpp、interpreter.cpp 与生产 dexvm_bridge.cpp，改用独立 worker context，双后端验证主 context 跨线程调用仍被拒绝及两次 swap 顺序。全量另发现 AudioTrack 阻塞写同源问题，会在主线程异常后的 join 卡死；同样修正 worker context，断言前完成解除等待与 join。生产线程归属保护正确，保持原样。 |
 | 断言过时 | core catalog 补 BaseDexClassLoader/ProxySelector/Posix 等精确未实现白名单；Android catalog 对 XmlResourceParser/FileUtils 明确失败使用精确白名单，对 guest native 放行但仍检查签名/来源。核对 SSLSocketFactory/File/stream/Animation 的 BootDex 来源与真实字段、方法；String/GC/guest override/boundary 编号以必要重载、签名唯一性、注册增量、实际虚表槽和独立 ID 验证不变量。Activity 使用当前仍不支持的自定义 affinity 作为拒绝对照；Intent null Bundle 按 ROM 字节码验证不改变状态；UI 用显式 WRAP_CONTENT 测量，保留原几何判据。ApplicationInfo installed 位、Configuration LTR 位、Resources 值强转、协作 shutdown onDestroy、SurfaceHolder generation、JNI 具体缺类 cause 与现行契约对齐。EGLImage 按后端扩展验证成功或明确拒绝，不新增 skip。 |
 | HEAD 已修复 | reflection DeclaredMethods 缺类型异常、APK Support 的 Activity 期待在当前 HEAD 已分别验证缺失类型异常及 bootstrap Activity/app support 来源，无需再改。 |
@@ -249,7 +249,7 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
 
 - HEAD 初始定向 network/reflection/catalog：76 例中 8 失败（network 7、catalog 1）；monitor
   独立复现 SIGABRT。初始全量在 AudioTrack 阻塞写挂起，采集宿主栈后停止，未作完整结果。
-  清理中间轮完整全量为 1902 例、49 失败；其中统一骨架夹具尝试新增 3 例，已收窄装配撤回。
+  清理中间轮完整全量为 1902 例、49 失败；其中统一未实现声明夹具尝试新增 3 例，已收窄装配撤回。
   后续定向 235 例仅余 6 项断言细节，已修正；倒数一轮全量 1903 例仅 Animation
   缺席旧断言失败，原始 DEX 确认为 BootDex 抽象类后改为来源/类型不变量。未新增 skip。
 - 证据均在 `.local/analysis/`：`wu7-t-{known-before,monitor-before,before-tests,refined-tests,last-assertions}.log`；
@@ -300,7 +300,7 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
 | 用例 | 分类 | 第一处差异 / 后续首错 | ledger |
 | --- | --- | --- | --- |
 | 070-nio-buffer | fail:output | 第 1 行 `has array: true` → `false`；继续至 Main.storeValues:139，负 byte put/get 报 `byte get/store failed` | 空 |
-| 092-locale | fail:unimplemented | 第 3 行应为 `France(GMT): Monday, January 2, 2012`，实际 `UnsupportedOperationException: locale is outside the audited ICU set`（LocaleData.initLocaleData）；捕获后继续至 Main.testNormalizer:126，NFD 骨架字段未实现 | `dexvm.skeleton.field.Ljava/text/Normalizer$Form;->NFD:Ljava/text/Normalizer$Form;` ×1 |
+| 092-locale | fail:unimplemented | 第 3 行应为 `France(GMT): Monday, January 2, 2012`，实际 `UnsupportedOperationException: locale is outside the audited ICU set`（LocaleData.initLocaleData）；捕获后继续至 Main.testNormalizer:126，NFD 未实现声明字段未实现 | `dexvm.未实现声明.field.Ljava/text/Normalizer$Form;->NFD:Ljava/text/Normalizer$Form;` ×1 |
 | 094-pattern | fail:output | 第 1 行应为 `str1 matches: true`，实际 ExceptionInInitializerError；Main.<clinit>:72 的 WEB_URL Pattern.compile 抛 PatternSyntaxException（invalid escaped character / trailing escape） | 空 |
 | 062-character-encodings | fail:unimplemented | 第 1 行应为 `Missing: []`，实际 UnsatisfiedLinkError：Charset.availableCharsets 未实现（Main.main:17） | `dexvm.intrinsic.Ljava/nio/charset/Charset;.availableCharsets()Ljava/util/SortedMap;` ×1 |
 

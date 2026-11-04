@@ -294,7 +294,7 @@ ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
           catalog.insert(catalog.end(), test_catalog.begin(), test_catalog.end());
           return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
               context, ledger, logger, std::move(catalog), ReadFixture("widgetclick.dex"),
-              InterpreterConfig{.backend = backend}, false, &vfs);
+              InterpreterConfig{.backend = backend}, &vfs);
       }()),
       model(runtime->bridge->Model()), linker(runtime->bridge->Linker()), interpreter(runtime->bridge->Vm()) {
     interpreter.Monitors().SetTimeSource([state = context] { return state->uptime_millis.load(); });

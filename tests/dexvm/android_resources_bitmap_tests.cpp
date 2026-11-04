@@ -110,7 +110,7 @@ TEST_CASE("DVM-118 Resources metrics share display facts and BootDex value seman
 
 TEST_CASE("DVM-137 Configuration uses API19 Java shape and managed device facts") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, nullptr, true);
+        AndroidValueVm f(backend, {}, false, nullptr);
         f.context->surface_width = 960;
         f.context->surface_height = 540;
         f.context->ui_density = 1.5F;
@@ -697,7 +697,7 @@ TEST_CASE("DVM-262 Canvas integer pixels forward virtually to the ROM float over
             CHECK(c.arguments[7].AsInt() == 1);
             return VmValue::Void();
         });
-        AndroidValueVm f(backend, {std::move(canvas).Build()}, false, nullptr, true);
+        AndroidValueVm f(backend, {std::move(canvas).Build()}, false, nullptr);
         const auto receiver = f.vm.NewIntrinsicInstance("Ltest/OverloadCanvas;");
         const auto colors = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 64);
         const auto roots = f.vm.ProtectReferences(std::array{receiver, colors});

@@ -67,7 +67,6 @@ struct Vm final {
                   if (load_boot_dex) {
                       ogplay::test::BindBootDexPlatformNatives(linker);
                       ogplay::test::RegisterBootDex(linker);
-                      ogplay::test::RegisterBootDexSkeleton(linker);
                   }
                   linker.RegisterDex(ReadFixture("p1.dex"));
                   linker.Link();

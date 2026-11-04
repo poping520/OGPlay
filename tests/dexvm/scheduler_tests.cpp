@@ -694,7 +694,7 @@ TEST_CASE("AsyncTask preserves background DexVmError and never posts null") {
 TEST_CASE("DVM-262 Message obtain overload calls the ROM no-argument pool factory") {
     using namespace ogplay::test::android_value;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, nullptr, true);
+        AndroidValueVm f(backend, {}, false, nullptr);
         const auto type = f.linker.ResolveDescriptor("Landroid/os/Message;");
         const auto initialized = f.vm.EnsureClassInitialized(type);
         REQUIRE_FALSE(initialized.exception.IsValid());

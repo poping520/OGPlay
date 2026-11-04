@@ -1109,7 +1109,7 @@ TEST_CASE("WU7-4 ActivityManager memory classes share the VM heap limits in both
 
 TEST_CASE("DVM-264 DEX platform service registry preserves supported absent and unsupported results") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         const auto context = f.vm.NewIntrinsicInstance("Landroid/content/Context;");
         const auto roots = f.vm.ProtectReferences(std::array{context});
         const auto service = [&](const char* name) {
@@ -1158,7 +1158,7 @@ TEST_CASE("DVM-264 DEX platform service registry preserves supported absent and 
 
 TEST_CASE("DVM-264 DEX System properties include the frozen ROM keys and match guest uname") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         const auto os = f.vm.NewIntrinsicInstance("Llibcore/io/Posix;");
         const auto roots = f.vm.ProtectReferences(std::array{os});
         const auto identity = f.Static("Lfixture/PlatformTables;", "uname",
@@ -1238,13 +1238,13 @@ TEST_CASE("DVM-264 DEX System properties include the frozen ROM keys and match g
 
 TEST_CASE("DVM-266 AppGlobals keeps the ROM ActivityThread dependency explicit") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         const auto app = f.linker.ResolveDescriptor("Landroid/app/AppGlobals;");
         CHECK(f.linker.Class(app).is_boot_dex);
         const auto result = f.StaticOutcome("Lfixture/PlatformTables;", "coreSetting", "(Ljava/lang/String;I)I",
                                             {VmValue::Ref(f.vm.NewStringUtf8("missing")), VmValue::Int(37)});
         // AOSP returns the default only after currentActivityThread() returns null.
-        // That method is still a skeleton; do not invent an absent-thread result.
+        // That method is still unimplemented; do not invent an absent-thread result.
         REQUIRE(result.exception.IsValid());
         CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
         const auto hits = f.ledger.Unimplemented();
@@ -1258,7 +1258,7 @@ TEST_CASE("DVM-266 AppGlobals keeps the ROM ActivityThread dependency explicit")
 
 TEST_CASE("DVM-267 ROM Handler subclass receives a message through Looper") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         const auto looper = f.Static("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;").ref;
         const auto listener = f.New("Lfixture/RomHandlerProbe;");
         const auto base = f.New("Landroid/os/Handler;", "(Landroid/os/Looper;)V", {VmValue::Ref(looper)});
@@ -1275,7 +1275,7 @@ TEST_CASE("DVM-267 ROM Handler subclass receives a message through Looper") {
 
 TEST_CASE("DVM-267 ROM BroadcastReceiver subclass constructs and dispatches onReceive") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         const auto object = f.New("Landroid/media/MediaRouter$VolumeChangeReceiver;");
         const auto receiver =
             f.Static("Lfixture/RomReceiverProbe;", "receive",

@@ -119,7 +119,7 @@ TEST_CASE("DVM-307 deferred second pass stays in next owner tick and callback ge
             return VmValue::Void();
         });
         probe.StaticMethod("traverse", "()V", [](IntrinsicContext&) { return VmValue::Void(); });
-        AndroidValueVm f(backend, {std::move(probe).Build()}, false, "view_layout.dex", false,
+        AndroidValueVm f(backend, {std::move(probe).Build()}, false, "view_layout.dex",
                          AndroidUiTraversalOwner::JavaTraversal, OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
         const auto owner = f.New("Landroid/app/Activity;");
         const auto view = f.New("Ltest/LayoutLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
@@ -863,7 +863,7 @@ TEST_CASE("DVM-315 NativeActivity style startup observer queries content and dec
 
 TEST_CASE("DVM-315 original NativeActivity startup executes ROM global layout on both backends") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::container_traversal::ContainerVm f(backend, false, true);
+        ogplay::test::container_traversal::ContainerVm f(backend, true);
         f.context->ui_test_accessibility_disabled = true;
         ogplay::session::DexActivityLifecycleBindings bindings;
         bindings.bridge = &f.app->DexVm();
@@ -1038,7 +1038,7 @@ TEST_CASE("DVM-317 NativeActivity style empty content drains detached producer i
 
 TEST_CASE("DVM-317 NativeActivity window producer composes continuous frames with a clean presentation lease") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::container_traversal::ContainerVm f(backend, false, true);
+        ogplay::test::container_traversal::ContainerVm f(backend, true);
         f.context->ui_test_accessibility_disabled = true;
         ogplay::session::DexActivityLifecycleBindings bindings;
         bindings.bridge = &f.app->DexVm();
@@ -1087,7 +1087,7 @@ TEST_CASE("DVM-317 NativeActivity window producer composes continuous frames wit
 TEST_CASE("DVM-318 DVM-321 late GLSurfaceView after NativeActivity takeSurface null starts renderer") {
     for (const int mount : {0, 1, 2})
         for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-            ogplay::test::container_traversal::ContainerVm f(backend, false, true);
+            ogplay::test::container_traversal::ContainerVm f(backend, true);
             f.context->ui_test_accessibility_disabled = true;
             // CPU EGL seam: lifecycle executes the actual EGL Java calls on GLThread;
             // no host display/GPU is opened. Real context creation remains external.

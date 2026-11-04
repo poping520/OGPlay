@@ -918,7 +918,7 @@ TEST_CASE("DVM-348 visibility callback barriers and ancestor hiding preserve own
 
 TEST_CASE("DVM-348 SurfaceView ROM overrides expose bounded behavior and explicit gaps") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend, true);
+        ContainerVm f(backend);
         const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
         const auto roots = f.vm.ProtectReferences(std::array{owner, view, holder});
         f.On(view, "onAttachedToWindow", "()V");
@@ -971,9 +971,6 @@ TEST_CASE("DVM-348 SurfaceView ROM overrides expose bounded behavior and explici
         f.On(view, "setWindowType", "(I)V", {VmValue::Int(1000)});
         reject("gatherTransparentRegion", "(Landroid/graphics/Region;)Z", {VmValue::Ref(VmObjectRef{})});
         f.On(view, "setWindowType", "(I)V", {VmValue::Int(1001)});
-        static_cast<void>(f.linker.ResolveDescriptor("Landroid/graphics/Region;"));
-        const auto region = f.vm.NewIntrinsicInstance("Landroid/graphics/Region;");
-        reject("gatherTransparentRegion", "(Landroid/graphics/Region;)Z", {VmValue::Ref(region)});
         f.On(view, "setWillNotDraw", "(Z)V", {VmValue::Int(0)});
         reject("gatherTransparentRegion", "(Landroid/graphics/Region;)Z", {VmValue::Ref(VmObjectRef{})});
     }

@@ -626,7 +626,7 @@ TEST_CASE("DVM-104 atomic arrays references and immediate timeouts follow API19"
 
 TEST_CASE("DVM-267 ROM Thread subclass executes start and join") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         CHECK(f.Static("Lfixture/PlatformTables;", "romThread", "()I").AsInt() == 0);
         CHECK(f.ledger.Unimplemented().empty());
     }

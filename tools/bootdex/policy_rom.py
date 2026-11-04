@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent, hash-locked policy ROM reference; never extends the API19 skeleton.
+"""Independent, hash-locked policy ROM reference, separate from the four framework jars.
 
 Only the reviewed inflater is selected. The complete source class inventory is
 checked for collisions before selection, including nonselected classes.
@@ -40,7 +40,7 @@ def verify_sources():
     path = builder.source_path(SOURCE)
     if builder.file_sha256(path) != SHA256:
         raise builder.BuildError('pinned policy ROM input hash mismatch')
-    from api19_skeleton import PINNED
+    from api19_rom import PINNED
     for source, digest in PINNED.items():
         if builder.file_sha256(builder.source_path(source)) != digest:
             raise builder.BuildError('pinned framework ROM input hash mismatch: ' + source)
@@ -78,7 +78,7 @@ def extend_surface(surface):
     for owner, shape in reference.items():
         if owner in owners:
             continue
-        extra.append(dict(descriptor=owner, source='skeleton', link_error='',
+        extra.append(dict(descriptor=owner, source='rom', link_error='',
             superclass=shape['superclass'], interfaces=shape['interfaces'],
             access_flags=shape['access_flags'],
             methods=[dict(name=n, descriptor=d, access_flags=f,

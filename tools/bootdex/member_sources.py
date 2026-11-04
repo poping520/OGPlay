@@ -715,7 +715,7 @@ def dispatch_self_test():
         surface = [dict(descriptor=owner, superclass='Ljava/lang/Object;', methods=[], fields=[])]
         for name, status in [('Ready', 'implemented'), ('Failure', 'unimplemented-ledger')]:
             surface.append(dict(descriptor='Ltest/' + name + ';', superclass=owner,
-                source='skeleton' if name == 'Failure' else 'intrinsic', fields=[], methods=[
+                source='intrinsic', fields=[], methods=[
                     dict(name='target', descriptor='()I', status=status, binding='intrinsic'),
                     dict(name='<init>', descriptor='()V', status='implemented', binding='intrinsic')]))
         return doc, {owner: text}, surface
@@ -737,7 +737,7 @@ def dispatch_self_test():
         '.super Ljava/lang/Object;', '.super Ljava/lang/Object;\n.implements Ltest/Contract;')
     interface_doc['classes'][0]['smali_sha256'] = digest(interface_texts[owner].encode())
     interface_surface.append(dict(descriptor='Ltest/Contract;', superclass='Ljava/lang/Object;',
-        access_flags=0x601, source='skeleton', fields=[], methods=[dict(
+        access_flags=0x601, source='intrinsic', fields=[], methods=[dict(
             name='target', descriptor='()I', access_flags=0x401,
             status='implemented', binding='abstract-contract')]))
     interface_sealed = json.loads(validate(interface_doc, interface_texts, interface_surface))
@@ -812,7 +812,7 @@ WRITE
 return-void
 .end method
 '''
-    external = dict(descriptor=target, superclass='Ljava/lang/Object;', source='skeleton',
+    external = dict(descriptor=target, superclass='Ljava/lang/Object;', source='intrinsic',
                     fields=[], methods=[dict(name='target', descriptor='()I', access_flags=1,
                     binding='intrinsic', status='unimplemented-ledger'), dict(name='<init>', descriptor='()V',
                     access_flags=1, binding='intrinsic', status='implemented')])
@@ -877,13 +877,13 @@ def allocation_dispatch_self_test():
     import select_rom_java as selector
     target = 'Ltest/NoInstances;'
     def surface(implemented=False, child=False):
-        classes = [dict(descriptor=target, source='skeleton', superclass=None, access_flags=1, interfaces=[],
+        classes = [dict(descriptor=target, source='intrinsic', superclass=None, access_flags=1, interfaces=[],
                         fields=[], methods=[dict(name='<init>', descriptor='()V', access_flags=1,
                         status='implemented' if implemented else 'unimplemented-ledger', binding='intrinsic'),
                         dict(name='target', descriptor='()V', access_flags=1,
                              status='unimplemented-ledger', binding='intrinsic')])]
         if child:
-            classes.append(dict(descriptor='Ltest/Child;', source='skeleton', superclass=target, access_flags=1, interfaces=[],
+            classes.append(dict(descriptor='Ltest/Child;', source='intrinsic', superclass=target, access_flags=1, interfaces=[],
                                 fields=[], methods=[dict(name='<init>', descriptor='()V', access_flags=1,
                                 status='implemented', binding='intrinsic')]))
         return selector.Analyzer(classes, {}, {}, set(), set(), set())

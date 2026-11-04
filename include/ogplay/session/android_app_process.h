@@ -46,7 +46,6 @@ struct AndroidAppProcessRequest final {
     std::vector<loader::ApkNativeLibrary> native_libraries;
     std::span<const runtime::BionicModuleSource> system_libraries;
     std::vector<std::uint8_t> boot_dex_bytes;
-    std::vector<std::uint8_t> skeleton_bytes;
     std::vector<std::uint8_t> dex_bytes;
     std::vector<std::byte> icu_data;
     std::shared_ptr<runtime::DexVmAndroidContext> context;
@@ -82,23 +81,21 @@ public:
 
 // A sole known vendor family in APK declarations narrows automatic exposure.
 // Absent, ambiguous or unknown facts keep all.
-[[nodiscard]] gles::CompressedTextureFamily ResolveManifestCompressedTextureFamily(
-    const loader::AndroidManifestFacts& manifest);
+[[nodiscard]] gles::CompressedTextureFamily
+ResolveManifestCompressedTextureFamily(const loader::AndroidManifestFacts& manifest);
 
 // Owns the complete generic APK startup chain. Create prepares the rootless
 // native shell, dynamic loader and DexVM; Java execution remains explicit.
 class AndroidAppProcess final {
 public:
-    [[nodiscard]] static std::unique_ptr<AndroidAppProcess> Create(
-        AndroidAppProcessRequest request);
+    [[nodiscard]] static std::unique_ptr<AndroidAppProcess> Create(AndroidAppProcessRequest request);
     ~AndroidAppProcess();
     AndroidAppProcess(const AndroidAppProcess&) = delete;
     AndroidAppProcess& operator=(const AndroidAppProcess&) = delete;
 
     void StartApplication();
     [[nodiscard]] LifecycleFrameState StartLauncherActivity();
-    [[nodiscard]] LifecycleFrameState Stop(
-        DexProcessStopReason reason = DexProcessStopReason::host_shutdown);
+    [[nodiscard]] LifecycleFrameState Stop(DexProcessStopReason reason = DexProcessStopReason::host_shutdown);
 
     [[nodiscard]] AndroidAppProcessState State() const noexcept;
     [[nodiscard]] std::optional<loader::AndroidArmAbi> SelectedAbi() const noexcept;
@@ -106,8 +103,7 @@ public:
     [[nodiscard]] runtime::DexVmGuestBridge& DexVm() noexcept;
     [[nodiscard]] DexActivityLifecycle& ActivityLifecycle() noexcept;
     [[nodiscard]] runtime::NativeLibraryLoader* NativeLibraries() noexcept;
-    [[nodiscard]] const std::shared_ptr<runtime::DexVmAndroidContext>& Context()
-        const noexcept;
+    [[nodiscard]] const std::shared_ptr<runtime::DexVmAndroidContext>& Context() const noexcept;
 
 private:
     class Impl;

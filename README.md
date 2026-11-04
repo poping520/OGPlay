@@ -62,7 +62,7 @@ OGPlay 让你尝试在电脑上运行经典 Android 游戏，把自己的 APK �
 | 内容 | 说明 |
 | --- | --- |
 | 启动器界面（`data/webui/`，仅 macOS / Windows） | 需要 Node.js 24 与 npm：在 `webui/` 目录执行 `npm ci` 和 `npm run build`。缺少时，默认配置下编译会直接报错停止 |
-| Android 运行时数据（BootDex 与 API 19 骨架） | 由 `tools/bootdex/build_bootdex.py` 和 `tools/api19_skeleton.py` 生成，输入包括 Android 4.4.4 系统 framework jar、API 19 `android.jar` 和 Android build-tools 等。缺少时可以编译成功，但无法运行游戏 |
+| Android 运行时数据（BootDex） | 由 `tools/bootdex/compose_bootdex.py` 生成，输入包括 Android 4.4.4 系统 framework jar、API 19 `android.jar` 和 Android build-tools 等。缺少时可以编译成功，但无法运行游戏 |
 | WebView2 SDK（仅 Windows） | 运行 `webui/prepare-sdk.ps1` 准备 |
 
 准备好上述文件后，在 macOS / Linux 上执行（Linux 只编译命令行，最后一步改为 `--target ogplay-cli`）：

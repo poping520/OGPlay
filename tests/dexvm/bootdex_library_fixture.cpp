@@ -63,7 +63,6 @@ Dvm87Vm::Dvm87Vm(const InterpreterBackend backend, const std::string& language, 
               linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
               ogplay::test::BindBootDexPlatformNatives(linker);
               ogplay::test::RegisterBootDex(linker);
-              ogplay::test::RegisterBootDexSkeleton(linker);
               auto callable = IntrinsicClassBuilder::Class("Ltest/Dvm87Callable;", "Ljava/lang/Object;",
                                                            {"Ljava/util/concurrent/Callable;"});
               callable.VirtualMethod("call", "()Ljava/lang/Object;", [](IntrinsicContext& context) {

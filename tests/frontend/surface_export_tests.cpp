@@ -6,14 +6,15 @@
 #include <limits>
 
 TEST_CASE("DIAG-4 surface exports linked intrinsic BootDex constants and missing bindings") {
-    const auto json = ogplay::app::DumpDexSurface(std::filesystem::path(OGPLAY_SOURCE_DIR) /
-        "data/android/19/framework/bootdex.jar");
+    const auto json =
+        ogplay::app::DumpDexSurface(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework/bootdex.jar");
     ogplay::app::JsonParseError error;
     const auto doc = ogplay::app::JsonDocument::ParseStrict(json, error, 64U * 1024U * 1024U);
     REQUIRE(doc.has_value());
     const auto classes = doc->Root().Member("classes");
     REQUIRE(classes.has_value());
-    bool intrinsic = false, boot = false, constant = false, string_constant = false, float_constant = false, infinity = false, ledger = false, bound = false;
+    bool intrinsic = false, boot = false, constant = false, string_constant = false, float_constant = false,
+         infinity = false, ledger = false, bound = false;
     for (std::size_t i = 0; i < classes->Size(); ++i) {
         const auto cls = *classes->Element(i);
         const auto name = *cls.Member("descriptor")->String();
@@ -38,24 +39,27 @@ TEST_CASE("DIAG-4 surface exports linked intrinsic BootDex constants and missing
             CHECK(method.Member("overridable")->Bool().has_value());
             REQUIRE(method.Member("origin").has_value());
             const auto origin = method.Member("origin")->String();
-            CHECK((origin == "handwritten" || origin == "skeleton" || origin == "bytecode"));
+            CHECK((origin == "handwritten" || origin == "failure" || origin == "bytecode"));
             if (name == "Landroid/opengl/GLSurfaceView;" && method.Member("name")->String() == "onPause") {
                 CHECK(origin == "handwritten");
                 CHECK(method.Member("overridable")->Bool() == false);
             }
-            if (name == "Ljava/lang/ThreadGroup;" && method.Member("name")->String() == "<init>" &&
-                method.Member("descriptor")->String() == "(Ljava/lang/String;)V")
-                CHECK(origin == "skeleton");
             if (name == "Ljava/util/ArrayList;" && method.Member("name")->String() == "size")
                 CHECK(origin == "bytecode");
-            if (name == "Landroid/content/res/XmlResourceParser$Impl;" &&
-                method.Member("name")->String() == "getDepth")
+            if (name == "Landroid/content/res/XmlResourceParser$Impl;" && method.Member("name")->String() == "getDepth")
                 ledger = method.Member("status")->String() == "unimplemented-ledger" &&
-                    method.Member("binding")->String() == "intrinsic";
+                         method.Member("binding")->String() == "intrinsic";
             if (name == "Ljava/lang/System;" && method.Member("name")->String() == "loadLibrary")
                 bound = method.Member("status")->String() == "implemented";
         }
     }
-    CHECK(intrinsic); CHECK(boot); CHECK(constant); CHECK(string_constant); CHECK(float_constant); CHECK(infinity); CHECK(ledger); CHECK(bound);
+    CHECK(intrinsic);
+    CHECK(boot);
+    CHECK(constant);
+    CHECK(string_constant);
+    CHECK(float_constant);
+    CHECK(infinity);
+    CHECK(ledger);
+    CHECK(bound);
     CHECK(doc->Root().Member("native_exports")->Size() > 100);
 }

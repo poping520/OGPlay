@@ -1,20 +1,20 @@
 # DIAG-9 · WU9-0 / WU9-0b Framework 契约差分
 
 状态：首轮只降不升基线已建立（2026-10-22）。只记录偏差，不修任何运行期行为。
-依赖：DIAG-8 的基线/自测门禁形态、真实 dump-surface，以及固定 API19 ROM 骨架。
+依赖：DIAG-8 的基线/自测门禁形态、真实 dump-surface，以及固定 API19 ROM 未实现声明。
 
 ## 范围与判据
 
-以 `data/dexvm/api19-skeleton.bin` 的 own-member 形状、flags、超类和直接接口为唯一判据，
+以 `ROM 声明索引` 的 own-member 形状、flags、超类和直接接口为唯一判据，
 覆盖 core/framework/framework2/ext 四个固定 ROM JAR，不以游戏、Java 规范或 ART 为判据。
-二进制读取统一复用 `tools/api19_skeleton.py::unpack`，格式与
-`src/runtime/dexvm/skeleton_surface.cpp` 一致；不另建 ROM 解析器。
+二进制读取统一复用 `tools/api19_rom.py::unpack`，格式与
+`src/runtime/dexvm/未实现声明_surface.cpp` 一致；不另建 ROM 解析器。
 
-仅比较 `source=intrinsic` 的类，排除 BootDex 和 skeleton 类。
+仅比较 `source=intrinsic` 的类，排除 BootDex 和 未实现声明 类。
 `dump-surface` 方法条目新增 `overridable` 和 `origin`，其余字段不变；origin 优先按
-`is_skeleton` 标 skeleton，其次 intrinsic kind 标 handwritten，其余标 bytecode。
+`is_未实现声明` 标 未实现声明，其次 intrinsic kind 标 handwritten，其余标 bytecode。
 现有 title_preflight、select_shapes、select_rom_java、dexvm_stub_gen 按字段读取，兼容新增字段。
-字段没有 origin；intrinsic 类内 ROM own fields 不存在的字段不可能是骨架补入，按手写字段检查 C。
+字段没有 origin；intrinsic 类内 ROM own fields 不存在的字段不可能是未实现声明补入，按手写字段检查 C。
 
 ## 类别与稳定键
 
@@ -50,8 +50,8 @@ python3 tools/conformance/framework_contract.py --surface .local/analysis/wu9-0/
 python3 tools/conformance/framework_contract.py --surface .local/analysis/wu9-0/surface.json --update-baseline
 ```
 
-默认判据和基线分别为 `data/dexvm/api19-skeleton.bin`、
-`tools/conformance/framework_contract_baseline.json`；可用 `--skeleton` / `--baseline` 指定。
+默认判据和基线分别为 `ROM 声明索引`、
+`tools/conformance/framework_contract_baseline.json`；可用 `--aosp` / `--baseline` 指定。
 stdout 和 `--report` 均输出每类总数、按包前 15 名、每类最多 10 个样例、私有类清单及 E 状态。
 
 基线保存稳定键、有 ROM 判据的 intrinsic 类清单及 ROM SHA256。
@@ -296,7 +296,7 @@ ThreadGroup 的 5 条均为 **WU9-4 边界下移候选：ROM 为纯 Java
 已移除误报 34、修复超类 9、对齐接口 29（28 条补充、GenericDeclaration 多余接口移除 1 条）。
 HttpAuthHandler 恢复 Handler 父类并实现无参构造器，额外消除 1 条 B；当前 B 类 X=183。
 
-初次接口注册失败已修：DTDHandler 在 ROM/骨架中，但 Link 的 intrinsic 预解析只查已注册类。
+初次接口注册失败已修：DTDHandler 在 ROM/未实现声明中，但 Link 的 intrinsic 预解析只查已注册类。
 完整检查 33 个新增层级依赖，通过现有 BootDex 配方准入 7 个原版接口；无新 native 或链接机制。
 检查器新增拒绝 startup_link_error，避免将失败 dump 的缺失成员误认作偏差下降。
 WebView/ScrollView 的已有 Context 路径通过正确父类现有构造器初始化；完整默认样式/三参
@@ -305,7 +305,7 @@ WebView/ScrollView 的已有 Context 路径通过正确父类现有构造器初�
 | D 类 X | 原因 |
 | --- | --- |
 | ProgressDialog → AlertDialog | 既有 Dialog 主题/getThemeResId 及 helper 缺口，不伪造父初始化 |
-| PaintDrawable → ShapeDrawable | 父构造器均为 skeleton，缺 ShapeState/Paint 初始化 |
+| PaintDrawable → ShapeDrawable | 父构造器均为 未实现声明，缺 ShapeState/Paint 初始化 |
 
 D 类 X=2，均保留原层级。七项 DEX 正向回归、Application 接口负对照及继承状态/回调检查通过；
 ZIP 行为用例迁到真实 guest JNI 环境并覆盖双后端资源释放，四项定向共 334 断言通过。
@@ -384,7 +384,7 @@ Timer、CountDownTimer 因 Thread/Handler 内部类未准入而退回，Log 因 
 契约 A1/A2/B/C/D 从 **0/542/183/13/2** 降至 **0/536/177/13/2**，
 E1/E2/E3 保持 **27/0/0**；A2 减少 6、B 减少 6，C/D 无变化。
 check-baseline 无新增偏差、重分类或类消失，已 update-baseline 收紧。
-检查器只允许导出来源确为 BootDex 的 ROM 类迁移，继续拒绝缺失/骨架，不按类名放宽。
+检查器只允许导出来源确为 BootDex 的 ROM 类迁移，继续拒绝缺失/未实现声明，不按类名放宽。
 
 新增六条 DEX 回归双后端 6/6、154 断言通过，其中四条验证撤换类，
 另两条验证退回后 Timer/CountDownTimer 的既有回调。主题基点 190/206、候选 197/212，

@@ -7,7 +7,7 @@ std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(Interpre
 }
 
 std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(InterpreterBackend backend,
-                                                                        bool include_skeleton, bool native_activity) {
+                                                                        bool native_activity) {
     using namespace ogplay::test::native_library;
     std::vector<std::vector<std::byte>> bytes;
     std::vector<BionicModuleSource> sources;
@@ -35,12 +35,6 @@ std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(Interpre
     request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
     request.boot_dex_bytes.resize(dex.size());
     std::memcpy(request.boot_dex_bytes.data(), dex.data(), dex.size());
-    if (include_skeleton) {
-        std::ifstream skeleton(std::filesystem::path{OGPLAY_SOURCE_DIR} / "data/dexvm/api19-skeleton.bin",
-                               std::ios::binary);
-        REQUIRE(skeleton.good());
-        request.skeleton_bytes = {std::istreambuf_iterator<char>(skeleton), {}};
-    }
     request.context = context;
     request.dexvm.interpreter.backend = backend;
     request.dexvm.interpreter.diagnostics.trace_capacity = 10000;
@@ -54,12 +48,8 @@ std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(Interpre
 
 ContainerVm::ContainerVm(InterpreterBackend backend) : ContainerVm(backend, false) {}
 
-ContainerVm::ContainerVm(InterpreterBackend backend, bool include_skeleton)
-    : ContainerVm(backend, include_skeleton, false) {}
-
-ContainerVm::ContainerVm(InterpreterBackend backend, bool include_skeleton, bool native_activity)
-    : app(Create(backend, include_skeleton, native_activity)), vm(app->DexVm().Vm()), linker(vm.Linker()),
-      model(vm.Model()) {}
+ContainerVm::ContainerVm(InterpreterBackend backend, bool native_activity)
+    : app(Create(backend, native_activity)), vm(app->DexVm().Vm()), linker(vm.Linker()), model(vm.Model()) {}
 
 VmValue ContainerVm::Checked(const VmCallOutcome& result) {
     REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
@@ -101,7 +91,7 @@ namespace ogplay::test::container_traversal {
 AndroidTestRuntime::AndroidTestRuntime(const std::shared_ptr<DexVmAndroidContext>& context,
                                        ogplay::core::CapabilityLedger& ledger, ogplay::core::Logger& logger,
                                        std::vector<IntrinsicClassDecl> catalog, std::vector<std::uint8_t> dex,
-                                       InterpreterConfig config, bool skeleton, VirtualFileSystem* filesystem)
+                                       InterpreterConfig config, VirtualFileSystem* filesystem)
     : inventory(std::vector<ogplay::loader::ApkNativeLibrary>{}),
       selected(inventory, ogplay::loader::AndroidArmAbi::armeabi_v7a) {
     using namespace ogplay::test::native_library;
@@ -138,16 +128,8 @@ AndroidTestRuntime::AndroidTestRuntime(const std::shared_ptr<DexVmAndroidContext
         ogplay::loader::ReadApkEntry(context->boot_classpath_bytes, context->boot_classpath_archive, "classes.dex");
     std::vector<std::uint8_t> boot_dex(boot.size());
     std::memcpy(boot_dex.data(), boot.data(), boot.size());
-    std::vector<std::uint8_t> skeleton_bytes;
-    if (skeleton) {
-        std::ifstream stream(std::filesystem::path{OGPLAY_SOURCE_DIR} / "data/dexvm/api19-skeleton.bin",
-                             std::ios::binary);
-        REQUIRE(stream.good());
-        skeleton_bytes = {std::istreambuf_iterator<char>(stream), {}};
-    }
     bridge = std::make_unique<DexVmGuestBridge>(*session, std::move(dex), catalog, context, ledger, &logger,
-                                                DexVmBridgeConfig{.interpreter = config}, std::move(boot_dex),
-                                                std::move(skeleton_bytes));
+                                                DexVmBridgeConfig{.interpreter = config}, std::move(boot_dex));
     context->threads = &bridge->Threads();
     static_cast<void>(libraries->LoadLibrary("ogplay_jni", context->application_class_loader_token));
 }

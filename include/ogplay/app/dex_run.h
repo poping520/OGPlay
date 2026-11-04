@@ -6,11 +6,11 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
 namespace ogplay::app {
 
 // `ogplay-cli dexvm run-dex`: runs a standalone dex/jar `main` on the
-// production platform class sources (core/Android intrinsics, BootDex, API19
-// skeleton), the way `dalvikvm -cp <file> <class>` would. No APK, Manifest,
+// production platform class sources (core/Android intrinsics, BootDex), the way `dalvikvm -cp <file> <class>` would. No APK, Manifest,
 // graphics or audio presentation.
 struct DexRunOptions final {
     std::filesystem::path input;           // classes.dex or a jar/zip holding it

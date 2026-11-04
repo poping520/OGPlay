@@ -7,7 +7,6 @@
 // reports the truth. The old handler returned true unconditionally without
 // creating anything, so the mkdirs case below fails if that ever returns.
 
-
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -56,8 +55,7 @@ void Append16(std::vector<std::byte>& bytes, const std::uint16_t value);
 
 void Append32(std::vector<std::byte>& bytes, const std::uint32_t value);
 
-std::vector<std::byte> MakeStoredZip(const std::string_view name,
-                                     const std::span<const std::byte> payload);
+std::vector<std::byte> MakeStoredZip(const std::string_view name, const std::span<const std::byte> payload);
 
 struct TemporaryRoot final {
     std::filesystem::path path;
@@ -84,36 +82,29 @@ struct FileVm final {
 
     explicit FileVm(SandboxStore* sandbox = nullptr, const bool include_android_catalog = true,
                     const InterpreterConfig config = {},
-                    const std::span<const IntrinsicClassDecl> extra_intrinsics = {}, const bool include_boot_dex = true,
-                    const bool include_skeleton = false);
+                    const std::span<const IntrinsicClassDecl> extra_intrinsics = {},
+                    const bool include_boot_dex = true);
 
     [[nodiscard]] VmObjectRef NewFile(const std::string& path);
 
     [[nodiscard]] VmObjectRef NewUri(const std::string& spec);
 
-    [[nodiscard]] VmObjectRef NewFile(const VmObjectRef parent,
-                                      const std::string& name);
+    [[nodiscard]] VmObjectRef NewFile(const VmObjectRef parent, const std::string& name);
 
     [[nodiscard]] VmObjectRef NewFileFromUri(const VmObjectRef uri);
 
-    [[nodiscard]] std::uint64_t StaticField(
-        const std::string_view owner, const std::string_view name,
-        const std::string_view descriptor);
+    [[nodiscard]] std::uint64_t StaticField(const std::string_view owner, const std::string_view name,
+                                            const std::string_view descriptor);
 
-    VmCallOutcome CallOnOutcome(const VmObjectRef receiver,
-                                const std::string& name,
-                                const std::string& descriptor,
+    VmCallOutcome CallOnOutcome(const VmObjectRef receiver, const std::string& name, const std::string& descriptor,
                                 std::vector<VmValue> arguments = {});
 
-    VmValue CallOn(const VmObjectRef receiver, const std::string& name,
-                   const std::string& descriptor,
+    VmValue CallOn(const VmObjectRef receiver, const std::string& name, const std::string& descriptor,
                    std::vector<VmValue> arguments = {});
 
-    VmValue CallStatic(const std::string& owner, const std::string& name,
-                       const std::string& descriptor);
+    VmValue CallStatic(const std::string& owner, const std::string& name, const std::string& descriptor);
 
-    [[nodiscard]] bool BoolOn(const VmObjectRef receiver,
-                              const std::string& name);
+    [[nodiscard]] bool BoolOn(const VmObjectRef receiver, const std::string& name);
 
     // Writes through java.io.FileOutputStream, the channel these games use.
     void JavaWrite(const std::string& path, const std::string& text);
@@ -122,5 +113,4 @@ struct FileVm final {
     [[nodiscard]] std::string NativeRead(const std::string& path);
 };
 
-
-} // namespace ogplay::test::file_vfs
+}  // namespace ogplay::test::file_vfs

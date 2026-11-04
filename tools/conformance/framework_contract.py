@@ -13,7 +13,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
-import api19_skeleton as skeleton
+import api19_rom
 
 BASELINE = Path(__file__).with_name("framework_contract_baseline.json")
 MASK = 0x1 | 0x2 | 0x4 | 0x8 | 0x10 | 0x400
@@ -97,7 +97,7 @@ def analyze(surface, rom, platform_reference=None):
         methods = member_index(cls["methods"])
         fields = member_index(cls["fields"])
         for method in methods.values():
-            if method["origin"] not in ("handwritten", "skeleton", "bytecode"):
+            if method["origin"] not in ("handwritten", "failure", "bytecode"):
                 raise ValueError("invalid method origin")
             if type(method["overridable"]) is not bool:
                 raise ValueError("invalid method overridable")
@@ -154,7 +154,7 @@ def analyze(surface, rom, platform_reference=None):
             for (name, desc), member in sorted(actual.items()):
                 rom_flags = expected.get((name, desc))
                 if rom_flags is None:
-                    # Skeleton fields can only come from ROM own declarations;
+                    # Failure fields can only come from ROM own declarations;
                     # thus a field absent in ROM on an intrinsic class is handwritten.
                     handwritten = kind == "field" or member["origin"] == "handwritten"
                     if handwritten and member["access_flags"] & VISIBLE:
@@ -378,9 +378,9 @@ def self_test():
         interfaces=[],
         methods=[
             method("m", flags=17, overridable=False),
-            method("m", "(I)V", 4, "skeleton", "unimplemented-ledger"),
+            method("m", "(I)V", 4, "failure", "unimplemented-ledger"),
             method("<init>", overridable=False),
-            method("<init>", "(I)V", 1, "skeleton", "unimplemented-ledger", False),
+            method("<init>", "(I)V", 1, "failure", "unimplemented-ledger", False),
             method("extra"),
             method("hidden", flags=2),
             method("privateMethod", flags=2, overridable=False),
@@ -400,8 +400,6 @@ def self_test():
         assert "startup linking failed" in str(error)
     else:
         raise AssertionError("unlinked surface accepted")
-    # Exercise the shared binary reader rather than a second format parser.
-    assert skeleton.unpack(skeleton.pack(rom)) == rom
     result = analyze(surface, rom)
     expected = {
         "A1|Ltest/C;|@class|",
@@ -417,7 +415,7 @@ def self_test():
     assert set(result["deviations"]) == expected
     assert len(result["deviations"]["A1|Ltest/C;|m|()V"]) == 1
     ignored = copy.deepcopy(cls)
-    for source in ("bootdex", "skeleton"):
+    for source in ("bootdex",):
         ignored["source"] = source
         ignored["descriptor"] = "Ltest/Ignored;"
         assert analyze(dict(schema=1, classes=[cls, ignored]), rom) == result
@@ -471,7 +469,7 @@ def self_test():
     # No handwritten constructor: another implemented handwritten method suffices.
     ctor_gap = copy.deepcopy(surface)
     ctor_gap["classes"][0]["methods"][2] = method(
-        "<init>", origin="skeleton", status="unimplemented-ledger", overridable=False
+        "<init>", origin="failure", status="unimplemented-ledger", overridable=False
     )
     split = analyze(ctor_gap, rom)["deviations"]
     assert "B|Ltest/C;|<init>|()V" in split and "B|Ltest/C;|<init>|(I)V" in split
@@ -509,7 +507,7 @@ def self_test():
         assert not compare_baseline(json.loads(original), migrated)["missing_classes"]
         assert save_baseline(path, migrated, "rom")
         path.write_bytes(original)
-        # Skeleton fallback or absent export must still fail (not a migration).
+        # Fallback or absent export must still fail (not a migration).
         fallback = copy.deepcopy(lost)
         fallback["bootdex_classes"] = []
         assert compare_baseline(json.loads(original), fallback)["missing_classes"]
@@ -520,16 +518,9 @@ def self_test():
         assert not changes["new"] and len(changes["removed"]) == 1
         assert save_baseline(path, better, "rom")
         assert not save_baseline(path, result, "rom")
-    for bad in (b"", skeleton.pack(rom)[:-1], skeleton.pack(rom) + b"x"):
-        try:
-            skeleton.unpack(bad)
-        except ValueError:
-            pass
-        else:
-            raise AssertionError("malformed skeleton accepted")
     assert all(cat + " " + name in render(result) for cat, name in CATEGORIES.items())
     print(
-        "framework_contract self-test passed (A-D, own members, origins, monotone baseline, malformed input)"
+        "framework_contract self-test passed (A-D, own members, origins, monotone baseline)"
     )
 
 
@@ -538,9 +529,7 @@ def main():
     parser.add_argument(
         "--surface", type=Path, help="JSON from ogplay-cli dexvm dump-surface"
     )
-    parser.add_argument(
-        "--skeleton", type=Path, default=ROOT / "data/dexvm/api19-skeleton.bin"
-    )
+    parser.add_argument("--aosp", type=Path, default=ROOT / ".local/aosp")
     parser.add_argument("--baseline", type=Path, default=BASELINE)
     parser.add_argument("--report", type=Path)
     mode = parser.add_mutually_exclusive_group()
@@ -553,13 +542,13 @@ def main():
         return 0
     if not args.surface:
         parser.error("--surface is required")
-    raw = args.skeleton.read_bytes()
-    digest = hashlib.sha256(raw).hexdigest()
     result = analyze(
-        json.loads(args.surface.read_text(encoding="utf-8")), skeleton.unpack(raw),
+        json.loads(args.surface.read_text(encoding="utf-8")), api19_rom.load(args.aosp),
         json.loads(PLATFORM_TABLES.read_text(encoding="utf-8")))
-    # Bind the frozen platform evidence into the existing ROM identity.
-    digest = hashlib.sha256(raw + PLATFORM_TABLES.read_bytes()).hexdigest()
+    # Bind the pinned jars and frozen platform evidence into the ROM identity.
+    digest = hashlib.sha256(
+        json.dumps(api19_rom.PINNED, sort_keys=True).encode() + PLATFORM_TABLES.read_bytes()
+    ).hexdigest()
     report = render(result)
     print(report, end="")
     if args.report:

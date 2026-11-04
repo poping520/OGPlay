@@ -1721,8 +1721,7 @@ Decl Declare_android_view_ViewParent(const Context&) {
     builder.UnimplementedVirtual("getParent", "()Landroid/view/ViewParent;", dx::kAccPublic | dx::kAccAbstract);
     builder.UnimplementedVirtual("bringChildToFront", "(Landroid/view/View;)V", dx::kAccPublic | dx::kAccAbstract);
     {
-        // The CPU fixture does not materialize the full skeleton. Declare the
-        // original abstract interface symbols; real receivers supply ROM bodies.
+        // Declare the original abstract interface symbols; real receivers supply ROM bodies.
         for (const auto* name : {"canResolveLayoutDirection", "isLayoutDirectionResolved", "canResolveTextDirection",
                                  "isTextDirectionResolved", "canResolveTextAlignment", "isTextAlignmentResolved"})
             builder.UnimplementedVirtual(name, "()Z", dx::kAccPublic | dx::kAccAbstract);

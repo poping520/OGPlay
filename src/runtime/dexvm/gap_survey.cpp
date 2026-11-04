@@ -19,31 +19,29 @@ namespace {
 
 const char* GapSurveySourceName(const GapSurveySource source) noexcept {
     switch (source) {
-        case GapSurveySource::skeleton: return "skeleton";
-        case GapSurveySource::intrinsic: return "intrinsic";
-        case GapSurveySource::bootdex: return "bootdex";
-        case GapSurveySource::missing: return "missing";
+    case GapSurveySource::intrinsic: return "intrinsic";
+    case GapSurveySource::bootdex: return "bootdex";
+    case GapSurveySource::missing: return "missing";
     }
     return "missing";
 }
 
 const char* GapSurveyChannelName(const GapSurveyChannel channel) noexcept {
     switch (channel) {
-        case GapSurveyChannel::java: return "java";
-        case GapSurveyChannel::jni: return "jni";
-        case GapSurveyChannel::reflection: return "reflection";
+    case GapSurveyChannel::java: return "java";
+    case GapSurveyChannel::jni: return "jni";
+    case GapSurveyChannel::reflection: return "reflection";
     }
     return "java";
 }
 
 }  // namespace
 
-std::string RenderGapSurveyJson(const std::span<const GapSurveyHit> hits,
-                                const std::string_view title) {
+std::string RenderGapSurveyJson(const std::span<const GapSurveyHit> hits, const std::string_view title) {
     std::vector<const GapSurveyHit*> classes;
     std::vector<const GapSurveyHit*> members;
     std::uint64_t total_hits = 0;
-    std::array<std::uint64_t, 4> source_members{};
+    std::array<std::uint64_t, 3> source_members{};
     std::array<std::uint64_t, kGapSurveyChannelCount> channel_hits{};
     for (const auto& hit : hits) {
         (hit.member.empty() ? classes : members).push_back(&hit);
@@ -56,8 +54,7 @@ std::string RenderGapSurveyJson(const std::span<const GapSurveyHit> hits,
         }
     }
     // Hottest first: call counts are the priority signal for the next batch.
-    const auto by_hits = [](const GapSurveyHit* left,
-                            const GapSurveyHit* right) {
+    const auto by_hits = [](const GapSurveyHit* left, const GapSurveyHit* right) {
         if (left->hits != right->hits) return left->hits > right->hits;
         if (left->owner_descriptor != right->owner_descriptor) {
             return left->owner_descriptor < right->owner_descriptor;
@@ -66,8 +63,7 @@ std::string RenderGapSurveyJson(const std::span<const GapSurveyHit> hits,
     };
     // Earliest first: an early hit is more likely the real first fault of a
     // normal run, because neutral answers may divert everything after it.
-    const auto by_first = [&by_hits](const GapSurveyHit* left,
-                                     const GapSurveyHit* right) {
+    const auto by_first = [&by_hits](const GapSurveyHit* left, const GapSurveyHit* right) {
         if (left->first_hit_index != right->first_hit_index) {
             return left->first_hit_index < right->first_hit_index;
         }
@@ -86,21 +82,18 @@ std::string RenderGapSurveyJson(const std::span<const GapSurveyHit> hits,
             "answer may already have diverged from a normal run, so only the "
             "earliest hits can be trusted as real first faults\",\n";
     json += "  \"title\": " + Quoted(title) + ",\n";
-    json += "  \"summary\": {\"missing_classes\": " +
-            std::to_string(classes.size()) + ", \"missing_members\": " +
-            std::to_string(members.size()) + ", \"stub_hits\": " +
-            std::to_string(total_hits) + ", \"members_by_source\": {";
+    json += "  \"summary\": {\"missing_classes\": " + std::to_string(classes.size()) +
+            ", \"missing_members\": " + std::to_string(members.size()) +
+            ", \"stub_hits\": " + std::to_string(total_hits) + ", \"members_by_source\": {";
     for (std::size_t source = 0; source < source_members.size(); ++source) {
         json += (source == 0 ? "" : ", ");
-        json += "\"" +
-                std::string(GapSurveySourceName(static_cast<GapSurveySource>(source))) +
+        json += "\"" + std::string(GapSurveySourceName(static_cast<GapSurveySource>(source))) +
                 "\": " + std::to_string(source_members[source]);
     }
     json += "}, \"member_hits_by_channel\": {";
     for (std::size_t c = 0; c < kGapSurveyChannelCount; ++c) {
         json += (c == 0 ? "" : ", ");
-        json += "\"" +
-                std::string(GapSurveyChannelName(static_cast<GapSurveyChannel>(c))) +
+        json += "\"" + std::string(GapSurveyChannelName(static_cast<GapSurveyChannel>(c))) +
                 "\": " + std::to_string(channel_hits[c]);
     }
     json += "}},\n";
@@ -116,24 +109,19 @@ std::string RenderGapSurveyJson(const std::span<const GapSurveyHit> hits,
     for (std::size_t index = 0; index < members.size(); ++index) {
         const auto& hit = *members[index];
         json += (index == 0 ? "\n    " : ",\n    ");
-        json += "{\"class\": " + Quoted(hit.owner_descriptor) +
-                ", \"member\": " + Quoted(hit.member) + ", \"kind\": \"" +
-                (hit.kind == GapSurveyKind::field ? "field" : "method") +
-                "\", \"source\": \"" + GapSurveySourceName(hit.source) +
-                "\", \"channel\": \"" + GapSurveyChannelName(hit.first_channel) +
+        json += "{\"class\": " + Quoted(hit.owner_descriptor) + ", \"member\": " + Quoted(hit.member) +
+                ", \"kind\": \"" + (hit.kind == GapSurveyKind::field ? "field" : "method") + "\", \"source\": \"" +
+                GapSurveySourceName(hit.source) + "\", \"channel\": \"" + GapSurveyChannelName(hit.first_channel) +
                 "\", \"channel_hits\": {";
         for (std::size_t c = 0; c < kGapSurveyChannelCount; ++c) {
             json += (c == 0 ? "" : ", ");
-            json += "\"" +
-                    std::string(GapSurveyChannelName(static_cast<GapSurveyChannel>(c))) +
+            json += "\"" + std::string(GapSurveyChannelName(static_cast<GapSurveyChannel>(c))) +
                     "\": " + std::to_string(hit.channel_hits[c]);
         }
         json += "}, \"first_hit_index\": " + std::to_string(hit.first_hit_index) +
                 ", \"first_uptime_ms\": " + std::to_string(hit.first_uptime_ms) +
                 ", \"hits\": " + std::to_string(hit.hits) +
-                ", \"first_caller_bootdex\": " +
-                (hit.first_caller_bootdex ? "true" : "false") +
-                ", \"first_stack\": [";
+                ", \"first_caller_bootdex\": " + (hit.first_caller_bootdex ? "true" : "false") + ", \"first_stack\": [";
         for (std::size_t frame = 0; frame < hit.first_stack.size(); ++frame) {
             json += (frame == 0 ? "" : ", ") + Quoted(hit.first_stack[frame]);
         }
@@ -146,8 +134,7 @@ std::string RenderGapSurveyJson(const std::span<const GapSurveyHit> hits,
         json += (index == 0 ? "\n    " : ",\n    ");
         json += "{\"class\": " + Quoted(first_order[index]->owner_descriptor) +
                 ", \"member\": " + Quoted(first_order[index]->member) +
-                ", \"first_hit_index\": " +
-                std::to_string(first_order[index]->first_hit_index) + "}";
+                ", \"first_hit_index\": " + std::to_string(first_order[index]->first_hit_index) + "}";
     }
     json += first_order.empty() ? "]\n}\n" : "\n  ]\n}\n";
     return json;

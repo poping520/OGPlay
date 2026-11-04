@@ -7,7 +7,7 @@ using ogplay::test::container_traversal::ContainerVm;
 
 TEST_CASE("DVM-365 ProgressBar ROM state measurement attachment and bounded resources") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend, true);
+        ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
         ogplay::test::AttachViewTestContext(f.vm, owner);
@@ -178,7 +178,7 @@ TEST_CASE("DVM-365 ProgressBar ROM state measurement attachment and bounded reso
 
 TEST_CASE("DVM-365 arbitrary nested drawable XML remains rejected") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend, true);
+        ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
         const auto view = f.New("Landroid/widget/ProgressBar;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
@@ -196,7 +196,7 @@ TEST_CASE("DVM-365 arbitrary nested drawable XML remains rejected") {
 
 TEST_CASE("DVM-367 horizontal ROM ProgressBar retains layer IDs levels and static animation frames") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend, true);
+        ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
         ogplay::test::AttachViewTestContext(f.vm, owner);

@@ -87,10 +87,10 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   ABI,64 位 setter 第 4 参数从对齐 guest 栈读取;错误 class/reference/field/kind/type/
   栈地址均明确失败。
   static/instance FieldID binding 只共享校验→查类→查字段骨架，storage kind 与错误上下文仍分开。
-- JNI guest FindClass 经 registry 的显式 owner resolver 按需发布真实链接类，不预载全部骨架。
+- JNI guest FindClass 经 registry 的显式 owner resolver 按需发布真实链接类。
   成员 ID 精确匹配描述符与 static；缺失返回 NULL，并挂起 NoSuchMethodError/NoSuchFieldError，
   缺类挂起 NoClassDefFoundError。无效引用/参数仍沿宿主绑定错误，pending 门禁不放宽。
-  骨架非常量字段访问记账并挂起 UnsatisfiedLinkError；ABI 零值仅为带异常的返回哨兵，
+  未实现非常量字段访问记账并挂起 UnsatisfiedLinkError；ABI 零值仅为带异常的返回哨兵，
   不表示读取成功，也不回落侧表。常量经共享 VM 存储返回真实值。
   JNI guest class/object/instance family 解析 class 引用；AllocObject 只搬运强类型引用与调用线程，由 JniEnvironment owner 回调
   初始化类、创建零值 VM 对象并发布 local ref，不复用 NewObject 的构造调用。

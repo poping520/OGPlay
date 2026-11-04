@@ -4,7 +4,7 @@
 
 有界 Dalvik 解释器（ADR-0017、`docs/design/dexvm/`）：负责类链接、Java 对象模型、
 switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intrinsic。只加载应用 DEX
-与受审 API 19 BootDex、固定 ROM 骨架元数据；不提供完整 Dalvik/ART、动态 classpath、JIT 或 Android 服务。
+与受审 API 19 BootDex；不提供完整 Dalvik/ART、动态 classpath、JIT 或 Android 服务。
 
 ## 核心契约
 
@@ -267,8 +267,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - 固定 BootDex 类可按类显式准入其原版 native 声明到 guest JNI；准入不定义类或复制成员，
   未导出的符号仍明确失败。该机制用于 API 19 `NativeCrypto`、`CRC32` 与压缩流 native，
   并由制品审计校验签名集合。
-- Gap survey 默认关闭；开启后与 API19 骨架共存（类层次、常量、成员声明与正常模式一致），仅对被调用的未实现
-  方法/构造器（骨架、intrinsic、BootDex 声明，含 JNI/反射入口）、被访问的非恒定未实现字段及 API19 未声明成员生成
+- Gap survey 默认关闭；开启后类层次、常量、成员声明与正常模式一致，仅对被调用的未实现
+  方法/构造器（intrinsic、BootDex 声明，含 JNI/反射入口）、被访问的非恒定未实现字段及 API19 未声明成员生成
   0/null/void 并记账（来源、通道、首次序号/时间/前 5 帧栈、次数）；结果永远不是兼容性结论。
 
 ## 尚未实现与测试
@@ -309,30 +309,18 @@ BootDex 优先来源、父类/接口、encoded/intrinsic 常量和逐类链接�
 字节码或 abstract 契约；动态 guest JNI 没有静态绑定证据时保守标 unimplemented-ledger，
 并附 guest-jni-unverified，不等价于证明目标后端不存在或全部行为已实现。
 
-### API19 骨架（ADR-0147）
+### 未实现成员（ADR-0147）
 
-`RegisterSkeletonSurface` 在应用注册/Link 前装配固定索引数据，仅持原始字节与类偏移，
-不创建全表面类/成员。ResolveDescriptor/Java loadClass 首次解析物化 bootstrap 类型；
-findLoadedClass 仍不合成。普通启动禁止全量建类；显式 dump-surface 才枚举全表面。
-现有类首次链接前补 own members，既有类的层次、成员、handler 与字段所有权优先。
-已存在的继承 handler 也不被骨架覆盖；补入父声明不会反向要求原手写声明改为 OverrideMethod。
-新骨架类的父类/接口按同一路径解析，四 ROM 之外的未满足依赖仍明确失败。
-新骨架自身声明的重写方法不能借用父 handler：它保留 own 声明并在调用时失败。
-这种无方法体声明的 override 准入按固定 ROM 父成员标志校验，避免手写 final/访问标志近似
-阻断原版结构；不修改手写标志/handler，也不放宽应用字节码的 override 校验。
-
-生成方法（含构造器）为未绑定 intrinsic，调用进入既有能力记账及 UnsatisfiedLinkError；
-生成 clinit 只是未实现声明，不安装初始化 hook。常量独立初始化，非恒定状态不伪造。
-生成的非恒定 static/实例字段带 is_unimplemented，switch/threaded 的 sget/sput/iget/iput
-在访问存储前记 `dexvm.skeleton.field.*` 并抛 UnsatisfiedLinkError；不会返回默认零/null。
-常量保留原始数值位与 UTF-16 字符串；不覆盖手写/BootDex 的初始化值。
-Survey 保留骨架：未实现方法/字段命中时记账（仍写 ledger）并返回 0/null/void，字段读写落在零初始化槽位；
+BootDex 成员组合中声明为 failure 的方法与构造器是未绑定 intrinsic，调用进入既有能力记账及
+UnsatisfiedLinkError。failure 字段带 is_unimplemented，switch/threaded 的 sget/sput/iget/iput
+在访问存储前记 `dexvm.field.*` 并抛 UnsatisfiedLinkError；不会返回默认零/null。
+Survey 下未实现方法/字段命中时记账（仍写 ledger）并返回 0/null/void，字段读写落在零初始化槽位；
 仅 API19 不存在的成员/类沿用合成中性桩。关闭 survey 即恢复上述失败语义；该模式不代表兼容支持。
 JNI/反射查询与枚举复用真实 own-member 表面和修饰符；存在但未实现的成员查找成功。
 解释器、反射和 JNI owner 共用 `RequireImplementedField`，禁止非常量字段回落零值存储。
 JNI 缺成员挂起 NoSuchMethodError/NoSuchFieldError，反射查询抛对应 NoSuch*Exception；
 Method.invoke/Constructor.newInstance 将未实现目标的 UnsatisfiedLinkError 包为 InvocationTargetException。
-这些语义不代表骨架行为已支持；Unsafe/序列化等其余字段访问通道不在此项验收范围。
+未注册的类在首次解析时按 Dalvik 明确失败。Unsafe/序列化等其余字段访问通道不在此项验收范围。
 
 ADR-0153：类初始化的 post-clinit 检查可经显式 owner pending source 交接同线程 JNI
 throwable，按 Dalvik Class.cpp:4485–4497 将类标 failed，非 Error 包装并保留 cause、Error

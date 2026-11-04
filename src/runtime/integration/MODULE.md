@@ -18,7 +18,7 @@ JNI FindClass 的显式 resolver 在 VM 执行锁内按需链接并发布 own �
 既有实现；被动 FindClass 不递归调用 resolver。预发布遇到实现类型非 interface 等 Java
 链接错误时延后到真实 Java/JNI 使用，不因未使用的非法类使进程装配失败；失败发布不保留递归标记。
 值传输复用稳定的双向类身份缓存，成员解析仍经发布入口补齐按需物化的成员。异常 factory 发布真实 local Throwable。
-JNI 字段访问经解释器共享守卫：骨架非常量字段记账、挂起 UnsatisfiedLinkError，禁止侧表回落。
+JNI 字段访问经解释器共享守卫：未实现非常量字段记账、挂起 UnsatisfiedLinkError，禁止侧表回落。
 GC roots 同时包含 JNI 引用与字符串 store 的活动 chars/UTF8 lease；Release 前不得扫除
 相应字符串。进程 quiesce 只 join clone runtime 实际拥有的 child；Java-only 线程交由 Java
 thread owner join，不能依赖惰性 native context 是否存在来区分。
@@ -344,8 +344,6 @@ async pending 替换不重发事件；acquire 将待上传帧独立持有，comm
 
 诊断与生产共用 BoundCoreIntrinsicCatalog 的 core/platform handler 绑定；metadata-only
 DumpAndroidBoundarySurfaceJson 读取同一 API19 boundary 导出目录，不创建进程/窗口或执行 guest。
-
-bridge 可接收固定 API19 骨架字节，在 BootDex 之后、应用 DEX 之前交给 linker 建索引；不在 integration 合成成员或引入新的 JNI 查找规则。
 
 JNI ExceptionDescribe owner hook 在调用线程 context 内虚派 Throwable.printStackTrace()，
 输出沿 Java System.err；Java 打印异常被忽略，pending 的清除、保活与恢复由 JNI 层拥有。

@@ -19,12 +19,10 @@ namespace ogplay::test::android_value {
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
-
 struct AndroidValueVm final {
     ogplay::core::CapabilityLedger ledger;
     ogplay::core::Logger logger;
-    std::shared_ptr<DexVmAndroidContext> context{
-        std::make_shared<DexVmAndroidContext>()};
+    std::shared_ptr<DexVmAndroidContext> context{std::make_shared<DexVmAndroidContext>()};
     std::unique_ptr<ogplay::test::container_traversal::AndroidTestRuntime> runtime;
     JavaObjectModel& model;
     DexClassLinker& linker;
@@ -33,28 +31,22 @@ struct AndroidValueVm final {
 
     AndroidValueVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
                    const std::vector<IntrinsicClassDecl>& extras = {}, bool force_all_bridge = false,
-                   const char* dex_fixture = nullptr, bool include_skeleton = false,
+                   const char* dex_fixture = nullptr,
                    AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::JavaTraversal,
                    const char* test_bootdex = nullptr);
 
-    VmObjectRef New(const char* descriptor,
-                    const char* constructor = "()V",
-                    std::vector<VmValue> arguments = {});
+    VmObjectRef New(const char* descriptor, const char* constructor = "()V", std::vector<VmValue> arguments = {});
 
-    VmValue Static(const char* descriptor, const char* name,
-                   const char* signature,
+    VmValue Static(const char* descriptor, const char* name, const char* signature,
                    std::vector<VmValue> arguments = {});
 
-    VmCallOutcome StaticOutcome(const char* descriptor, const char* name,
-                                const char* signature,
+    VmCallOutcome StaticOutcome(const char* descriptor, const char* name, const char* signature,
                                 std::vector<VmValue> arguments = {});
 
-    VmValue On(const VmObjectRef receiver, const char* name,
-               const char* signature,
+    VmValue On(const VmObjectRef receiver, const char* name, const char* signature,
                std::vector<VmValue> arguments = {});
 
-    VmCallOutcome OnOutcome(const VmObjectRef receiver, const char* name,
-                            const char* signature,
+    VmCallOutcome OnOutcome(const VmObjectRef receiver, const char* name, const char* signature,
                             std::vector<VmValue> arguments = {});
 
     VmObjectRef Bytes(const std::string& value);
@@ -62,4 +54,4 @@ struct AndroidValueVm final {
     std::string BytesOf(const VmObjectRef array);
 };
 
-} // namespace ogplay::test::android_value
+}  // namespace ogplay::test::android_value

@@ -198,7 +198,7 @@ TEST_CASE("DVM-303 VideoView owner metadata invalidates Java and freezes publish
 
 TEST_CASE("DVM-303 VideoView unsupported services and unhandled errors fail with ledger") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend, true);
+        ContainerVm f(backend);
         auto owner = Owner(f), view = Video(f, owner);
         const auto roots = f.vm.ProtectReferences(std::array{owner, view});
         CHECK(f.ledger.Unimplemented().empty());
@@ -234,11 +234,10 @@ TEST_CASE("DVM-303 VideoView unsupported services and unhandled errors fail with
     }
 }
 
-TEST_CASE("VideoView XML constructors reach the bounded Java player instead of the API19 skeleton") {
-    // LayoutInflater.createView uses (Context, AttributeSet); the skeleton would
-    // otherwise supply an unbound declaration that throws UnsatisfiedLinkError.
+TEST_CASE("VideoView XML constructors reach the bounded Java player") {
+    // LayoutInflater.createView uses (Context, AttributeSet).
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend, true);
+        ContainerVm f(backend);
         const auto owner = Owner(f);
         const auto root = f.vm.ProtectReferences(std::array{owner});
         static_cast<void>(Video(f, owner));

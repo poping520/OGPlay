@@ -712,6 +712,54 @@ TEST_CASE("DVM-339 software Canvas uses buffer dimensions and stretches across t
     }
 }
 
+TEST_CASE("SurfaceView default RGB565 ignores producer alpha across Surface lifetimes") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view, holder});
+        CHECK(f.context->surface_requested_formats.at(holder.Value()) == 4);
+        CHECK(Holder(f, view) == holder);
+        Size(f, holder, 1, 1);
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        CHECK(f.On(view, "gatherTransparentRegion", "(Landroid/graphics/Region;)Z", {VmValue::Ref(VmObjectRef{})})
+                  .AsInt() == 1);
+        for (int lifetime = 0; lifetime < 2; ++lifetime) {
+            REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+            REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::changed));
+            CHECK(f.context->surface_active_formats.at(holder.Value()) == 4);
+            CHECK(f.context->surface_callback_formats.at(holder.Value()) == 4);
+            for (auto alpha : {0U, 64U, 128U, 255U}) {
+                // EGL storage remains RGBA8. Fractional framebuffer alpha from
+                // ordinary guest blending must not dim an opaque SurfaceView.
+                {
+                    std::scoped_lock lock(f.context->surface_pixels_mutex);
+                    f.context->surface_pixels[holder.Value()] = {
+                        0, 1, 1, {200, 100, 50, static_cast<std::uint8_t>(alpha)}};
+                }
+                RefreshAndroidSurfaceFrames(*f.context);
+                static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                           AndroidUiTraversalPhase::ResolveOnly));
+                REQUIRE(PublishAndroidPresentation(*f.context));
+                const auto snapshot = AcquireAndroidPresentation(*f.context);
+                REQUIRE(snapshot);
+                const auto id = FindViewUiNode(*f.context, view.Value());
+                REQUIRE(id);
+                CHECK_FALSE(snapshot->alpha_surface_frames.contains(*id));
+                std::vector<std::uint8_t> pixels(320U * 240U * 4U, 0U);
+                ComposeVideoViews(*snapshot, pixels, 320, 240, false);
+                const auto offset = (120U * 320U + 160U) * 4U;
+                CHECK(pixels[offset] == 200);
+                CHECK(pixels[offset + 1] == 100);
+                CHECK(pixels[offset + 2] == 50);
+                CHECK(pixels[offset + 3] == 255);
+            }
+            REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::destroyed));
+            CHECK(f.context->surface_requested_formats.at(holder.Value()) == 4);
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
 TEST_CASE("DVM-347 holder formats preserve a transparent top Canvas and reject unsupported formats") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         for (const auto format : {-3, -2, -1, 1, 2, 3, 4, 6, 7}) {

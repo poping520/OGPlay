@@ -964,6 +964,8 @@ UiTree 修改计数。计数单调递增、复制保留、溢出明确失败；�
 结构、属性、布局结果、焦点及窗口事实的修改均进入计数，dirty 消费本身不改变呈现结果。
 
 
+SurfaceView 的 holder 默认请求 API19 RGB_565（不透明），与 producer 使用的 RGBA8 存储分离；
+默认格式沿 Surface 重建保留，不因帧缓冲 alpha 改变图层不透明性。显式格式请求仍可覆盖默认值。
 SurfaceHolder.setFormat 保存逐 holder 请求，created/changed 应用到 active 格式并交付 changed；
 同尺寸格式改变也交付，销毁不丢请求，holder 退役清除。支持 OPAQUE(-1)、TRANSLUCENT(-3)、
 TRANSPARENT(-2) 与 RGBA_8888/RGBX_8888/RGB_888/RGB_565/RGBA_5551/RGBA_4444 的 RGBA8 表示；其他格式记账抛 IAE；保留 RGBA8 通道精度，不模拟 packed 存储或低位深量化。

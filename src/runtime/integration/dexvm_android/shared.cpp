@@ -833,7 +833,12 @@ dx::IntrinsicHandler ViewNullAttributeSetInitHandler(const Context& context) {
 
 dx::VmObjectRef SurfaceHolderForView(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::VmObjectRef view) {
     auto& holder = context.surface_holders[view.Value()];
-    if (!holder.IsValid()) holder = vm.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;");
+    if (!holder.IsValid()) {
+        holder = vm.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;");
+        // API19 SurfaceView defaults to RGB_565, independently of the RGBA8
+        // storage used by our producers. Its framebuffer alpha is not layer opacity.
+        context.surface_requested_formats.emplace(holder.Value(), 4);
+    }
     return holder;
 }
 

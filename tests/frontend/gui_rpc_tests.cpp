@@ -415,6 +415,14 @@ TEST_CASE("GUI about RPC lists the shipped open-source projects and reads each l
     std::map<std::string, std::string> parents;
     for (std::size_t index = 0; index < projects->Size(); ++index) {
         ids.emplace_back(*projects->Element(index)->Member("id")->String());
+        if (ids.back() == "dynarmic") {
+            CHECK(projects->Element(index)->Member("url")->String() == "https://git.eden-emu.dev/eden-emu/dynarmic");
+            const auto original = projects->Element(index)->Member("original_url");
+            REQUIRE(original);
+            CHECK(original->String() == "https://github.com/merryhime/dynarmic");
+        } else {
+            CHECK_FALSE(projects->Element(index)->Member("original_url"));
+        }
         if (const auto parent = projects->Element(index)->Member("parent")) parents[ids.back()] = *parent->String();
     }
     // Only what OGPlay gets through another project nests; its own dependencies stay top level.
@@ -426,6 +434,11 @@ TEST_CASE("GUI about RPC lists the shipped open-source projects and reads each l
         CHECK_FALSE(parents.contains(id));
     for (const auto* id : {"sdl", "angle", "dynarmic", "ffmpeg", "preact", "aosp"})
         CHECK(std::find(ids.begin(), ids.end(), id) != ids.end());
+#if defined(_WIN32)
+    CHECK(std::find(ids.begin(), ids.end(), "sn-pro") != ids.end());
+#else
+    CHECK(std::find(ids.begin(), ids.end(), "sn-pro") == ids.end());
+#endif
     // Every listed project has readable, non-empty texts; that is the whole point of the page.
     for (const auto& id : ids) {
         auto notices = Decode(
@@ -442,6 +455,73 @@ TEST_CASE("GUI about RPC lists the shipped open-source projects and reads each l
     CHECK(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":4,"method":"about.credits","params":{"x":1}})"))
               .Root()
               .Member("error"));
+}
+
+TEST_CASE("GUI credits apply optional platform declarations to lists and notices") {
+    Fixture fixture;
+    std::ofstream(fixture.root / "credits.json") << R"({"schema":1,"projects":[
+      {"id":"common","name":"Common","version":"","url":"","notices":[{"title":"License","text":"common"}]},
+      {"id":"windows","name":"Windows","version":"","url":"","platforms":["Windows"],"notices":[{"title":"License","text":"windows"}]},
+      {"id":"macos","name":"macOS","version":"","url":"","platforms":["Darwin"],"notices":[{"title":"License","text":"macos"}]},
+      {"id":"linux","name":"Linux","version":"","url":"","platforms":["Linux"],"notices":[{"title":"License","text":"linux"}]},
+      {"id":"multi","name":"Multi","version":"","url":"","platforms":["Windows","Darwin","Linux"],"parent":"common","notices":[{"title":"License","text":"multi"}]}
+    ]})";
+#if defined(_WIN32)
+    const std::string selected = "windows";
+#elif defined(__APPLE__)
+    const std::string selected = "macos";
+#else
+    const std::string selected = "linux";
+#endif
+    const auto projects = frontend::LoadCredits(fixture.root);
+    REQUIRE(projects.size() == 3);
+    CHECK(projects[0].id == "common");
+    CHECK(projects[1].id == selected);
+    CHECK(projects[2].id == "multi");
+    CHECK(projects[2].parent == "common");
+    for (const auto* id : {"windows", "macos", "linux"}) {
+        if (selected == id) {
+            const auto notices = frontend::ReadCreditNotices(fixture.root, id);
+            REQUIRE(notices.size() == 1);
+            CHECK(notices[0].second == selected);
+        } else {
+            CHECK_THROWS_AS(static_cast<void>(frontend::ReadCreditNotices(fixture.root, id)), std::invalid_argument);
+        }
+    }
+}
+
+TEST_CASE("GUI credits reject malformed platform declarations") {
+    Fixture fixture;
+    for (const auto* platforms : {"null", "[]", R"("Windows")", "[17]", R"([""])", R"(["Plan9"])", R"(["Windows",17])"}) {
+        INFO(platforms);
+        std::ofstream(fixture.root / "credits.json")
+            << R"({"schema":1,"projects":[{"id":"test","name":"Test","version":"","url":"","platforms":)"
+            << platforms << R"(,"notices":[{"title":"License","text":"text"}]}]})";
+        CHECK_THROWS_AS(static_cast<void>(frontend::LoadCredits(fixture.root)), std::runtime_error);
+    }
+}
+
+TEST_CASE("GUI credits read optional repository origins without replacing the current source") {
+    Fixture fixture;
+    const auto write = [&](std::string_view extra) {
+        std::ofstream(fixture.root / "credits.json")
+            << R"({"schema":1,"projects":[{"id":"fork","name":"Fork","version":"","url":"https://example.org/current",)"
+            << extra << R"("notices":[{"title":"License","text":"text"}]}]})";
+    };
+    write(R"("original_url":"https://example.org/original",)");
+    auto projects = frontend::LoadCredits(fixture.root);
+    REQUIRE(projects.size() == 1);
+    CHECK(projects[0].url == "https://example.org/current");
+    CHECK(projects[0].original_url == "https://example.org/original");
+    write("");
+    projects = frontend::LoadCredits(fixture.root);
+    REQUIRE(projects.size() == 1);
+    CHECK(projects[0].url == "https://example.org/current");
+    CHECK(projects[0].original_url.empty());
+    for (const auto* extra : {R"("original_url":null,)", R"("original_url":17,)"}) {
+        write(extra);
+        CHECK_THROWS_AS(static_cast<void>(frontend::LoadCredits(fixture.root)), std::runtime_error);
+    }
 }
 
 TEST_CASE("GUI RPC opens only an existing instance directory") {

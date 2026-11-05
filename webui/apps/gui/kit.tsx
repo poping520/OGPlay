@@ -1,6 +1,8 @@
 import logo from './assets/logo.png';
 import { t } from './shared/i18n';
 import '../../packages/ui-kit/theme.css';
+// The build removes this import entirely for hosts that use their system fonts.
+if (__OGPLAY_WINDOWS__) void import('./assets/fonts/fonts.css');
 import { Key } from '../../packages/ui-kit/key';
 
 // Launcher-only markup on the ui-kit controls: these need the logo asset or i18n, so they stay out of the kit's

@@ -436,6 +436,8 @@ export const en: Record<string, string> = {
   '{n} 个依赖': '{n} dependencies',
   '1 个依赖': '1 dependency',
   '依赖项': 'Dependencies',
+  '当前使用仓库': 'Current repository',
+  '原始仓库': 'Original repository',
   '许可证': 'License',
   '游戏运行中按 F1 查看键位，按 F2 打开按键设置。': 'While a game runs, press F1 to see its keys and F2 to open key settings.',
   '未知': 'Unknown',

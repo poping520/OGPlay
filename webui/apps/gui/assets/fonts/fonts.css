@@ -1,0 +1,8 @@
+/* Offline rounded fallback for hosts without SF Pro Rounded. Vite embeds the font in the launcher CSS. */
+@font-face {
+  font-family: 'SN Pro';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('./sn-pro-wght.ttf') format('truetype');
+}

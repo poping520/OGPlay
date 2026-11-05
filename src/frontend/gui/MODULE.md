@@ -63,7 +63,9 @@
   据此标记就绪，并在 `edit_requests` 增加（游戏内 F2）时打开窗口、`close_requests` 增加（页面“完成”）时关闭窗口。`controls.open {installation_id}`
   只对就绪实例打开；`dashboard.list` 带 `key_editor_status/detail`，从不返回令牌。
 - `about.credits {}` / `about.notices {id}`：关于页开源致谢；`parent` 指向引入该项目的已列项目（须排在其前），OGPlay 直接使用的项目没有此字段。单文件 `data/credits.json` 内嵌许可证原文，由
-  `tools/credits.py` 生成（`--check` 检查过期）；AOSP NOTICE 以路径引用已发布的 `android/19/notices`，路径不得离开
+  `tools/credits.py` 生成（`--check` 检查过期）；项目可带非空 `platforms` 数组（`Windows`/`Darwin`/`Linux`），省略则通用。
+  可选 `original_url` 记录原始仓库，经 RPC 原样传递；填写时界面分别显示“当前使用仓库”（`url`）和“原始仓库”，未填写保持单一 URL 展示。
+  全平台原样分发同一份清单，仅宿主读取时按当前平台筛选，其他平台的项目不展示、不可查询全文；筛选后父项目仍须在子项前。AOSP NOTICE 以路径引用已发布的 `android/19/notices`，路径不得离开
   数据目录。全文仅在展开时返回，单文件读取上限 1 MiB。
 - `ValidateLibraryConfigDirectories`：共享配置目录验证；全局设置保存前调用。
 - 原 CJK 字体选择、事件等待与消息队列模型保留用于既有调用/测试，不再驱动 WebView 渲染。

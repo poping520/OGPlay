@@ -16,6 +16,9 @@ Windows 首次在仓库根运行 `./webui/prepare-sdk.ps1`，显式下载并校�
 `npm run check` 执行 TypeScript、协议、库交互及分块上传测试。
 也可配置 `-DOGPLAY_BUILD_WEBUI=ON` 后构建 `webui`，GUI 目标会先构建并校验制品。
 默认关闭该选项时，GUI 构建消费已有制品，缺失或哈希不符明确失败。
+GUI 制品按目标平台生成：仅 Windows 内嵌 SN Pro 字体，macOS 使用系统圆体；字体许可收录在全平台共用的 `data/credits.json`，仅展示时按平台筛选。
+`npm run build` 默认使用构建主机的平台；跨平台准备制品时设置环境变量
+`OGPLAY_WEBUI_PLATFORM=Windows|Darwin|Linux`。CMake 自动指定目标平台，并在打包前拒绝平台不匹配的 GUI 制品。
 
 `cmake --build --preset windows-msvc --config Release --target ogplay ogplay_tests`
 之后运行 `ctest --test-dir build/windows-msvc -C Release -R "^frontend.gui_" --output-on-failure`。

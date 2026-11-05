@@ -3,6 +3,7 @@
 Preact 游戏库与导入向导，只显示宿主返回的事实，经 closed-schema JSON-RPC 操作宿主。
 不执行 guest，不判断游戏兼容性。以 installation id 区分实例，不能按包名合并。
 主题位于 packages/ui-kit，产物由 Vite 生成，Node 仅构建期使用。
+GUI 制品在 manifest 标记目标平台；仅 Windows 构建内嵌 SN Pro 字体，macOS 使用系统圆体，宿主打包前校验平台匹配。许可由统一 `data/credits.json` 声明适用平台。
 
 ## 目录
 

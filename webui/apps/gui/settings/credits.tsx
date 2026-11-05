@@ -6,7 +6,7 @@ import { Note } from './settings-ui';
 // Open-source acknowledgements: the host lists the projects shipped with OGPlay (data/credits, written by
 // tools/credits.py) and reads a project's license texts only when its row is opened. Projects OGPlay uses itself
 // are the top level; the ones it only gets through them fold inside their parent.
-export interface CreditProject { id: string; name: string; version: string; url: string; license: string | null; parent?: string }
+export interface CreditProject { id: string; name: string; version: string; url: string; original_url?: string; license: string | null; parent?: string }
 export interface CreditNode { project: CreditProject; children: CreditNode[] }
 interface CreditNotices { id: string; notices: { title: string; text: string }[] }
 
@@ -38,7 +38,10 @@ function Project({ node }: { node: CreditNode }) {
   };
   return <details class="fact credit" onToggle={event => load((event.currentTarget as HTMLDetailsElement).open)}>
     <summary><span>{project.name}</span><small>{creditSummary(node)}</small></summary>
-    <p class="credit-url">{project.url}</p>
+    {project.original_url ? <>
+      <p class="credit-url">{t('当前使用仓库')}：{project.url}</p>
+      <p class="credit-url">{t('原始仓库')}：{project.original_url}</p>
+    </> : <p class="credit-url">{project.url}</p>}
     {children.length > 0 && <><h5>{t('依赖项')}</h5>{children.map(child => <Project key={child.project.id} node={child} />)}<h5>{t('许可证')}</h5></>}
     {error ? <pre>{error}</pre> : !notices ? <pre>{t('正在读取…')}</pre> : notices.map(notice =>
       <div key={notice.title}>{notices.length > 1 && <h5>{notice.title}</h5>}<pre>{notice.text}</pre></div>)}

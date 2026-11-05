@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { targetPlatform } from './platform.mjs';
 for (const app of ['gui', 'dashboard', 'controls']) {
 const root = resolve(`../data/webui/${app}`);
 copyFileSync(`apps/${app}/index.html`, resolve(root, 'index.html'));
@@ -17,6 +18,7 @@ const files = readdirSync(root).filter(name => name !== 'manifest.json').sort().
   return { path, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
 });
 const manifest = {
+  ...(app === 'gui' ? { platform: targetPlatform } : {}),
   schema: 1, source_commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
   source_dirty: execFileSync('git', ['status', '--porcelain', '--', '.'], { encoding: 'utf8' }).trim().length > 0,
   node: process.version, npm: process.env.npm_config_user_agent ?? 'unknown', files,

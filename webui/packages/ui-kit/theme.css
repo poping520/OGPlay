@@ -7,8 +7,16 @@
   --yellow: #ffc21a; --yellow-hi: #ffd04d; --cream: #f6e9d2; --cream-ink: #3a2f22; --accent: var(--yellow); --field: rgba(0,0,0,.28);
   --ready: #3ddc84; --warning: #ffb020; --danger: #ff5a52; --running: #4aa3ff; --panel: #141a2a; --line: #262f45;
   --font: ui-rounded, 'SF Pro Rounded', -apple-system, 'PingFang SC', 'Segoe UI Variable Display', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
+  --title-weight: 900;
   --code: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
   --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='.9' numOctaves='2'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
+}
+
+/* The launcher marks Windows before rendering. Put the bundled face before generic families so Chromium
+   cannot resolve ui-rounded to a system fallback and skip it. Other hosts keep their native typography. */
+:root[data-platform="windows"] {
+  --font: 'SN Pro', 'Segoe UI Variable Display', 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
+  --title-weight: 800;
 }
 
 /* element baseline: buttons start bare, each control styles itself */
@@ -31,7 +39,7 @@ dialog p, dialog pre { margin-top: 14px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
 
 /* wordmark, status LEDs, gamepad key badges, kicker line */
-.brand { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 900; letter-spacing: -.01em; flex: none; }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: var(--title-weight); letter-spacing: -.01em; flex: none; }
 .brand img { width: 34px; height: 34px; }
 .brand b { font: inherit; }
 .brand b span { color: var(--yellow); }

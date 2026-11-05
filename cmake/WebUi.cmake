@@ -6,7 +6,8 @@ if(OGPLAY_BUILD_WEBUI)
     find_program(OGPLAY_NPM NAMES npm.cmd npm REQUIRED)
     add_custom_target(webui
         COMMAND "${OGPLAY_NPM}" ci --no-audit --no-fund
-        COMMAND "${OGPLAY_NPM}" run build
+        COMMAND "${CMAKE_COMMAND}" -E env "OGPLAY_WEBUI_PLATFORM=${CMAKE_SYSTEM_NAME}"
+            "${OGPLAY_NPM}" run build
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/webui"
         VERBATIM)
 endif()
@@ -47,6 +48,7 @@ if(OGPLAY_BUILD_GUI)
     ogplay_set_project_warnings(ogplay_desktop_webview)
     add_custom_target(ogplay_check_webui
         COMMAND "${CMAKE_COMMAND}" -DWEBUI_ROOT=${PROJECT_SOURCE_DIR}/data/webui/gui
+            -DWEBUI_PLATFORM=${CMAKE_SYSTEM_NAME}
             -P "${PROJECT_SOURCE_DIR}/cmake/CheckWebUi.cmake"
         COMMAND "${CMAKE_COMMAND}" -DWEBUI_ROOT=${PROJECT_SOURCE_DIR}/data/webui/dashboard
             -P "${PROJECT_SOURCE_DIR}/cmake/CheckWebUi.cmake"

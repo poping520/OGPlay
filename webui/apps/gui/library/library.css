@@ -26,7 +26,7 @@
 .splash { position: fixed; inset: 0; z-index: 50; display: grid; place-content: center; justify-items: center; gap: 0;
   background: radial-gradient(60% 55% at 50% 42%, #1d2440, var(--bg) 72%); animation: splash-in .35s ease both; }
 .splash img { width: 128px; height: 128px; filter: drop-shadow(0 18px 34px rgba(0,0,0,.55)); animation: splash-pop .8s cubic-bezier(.2,1.5,.4,1) both; }
-.splash b { margin-top: 18px; font-size: 44px; font-weight: 900; line-height: 1; letter-spacing: -.01em; animation: splash-rise .6s .15s cubic-bezier(.2,.8,.2,1) both; }
+.splash b { margin-top: 18px; font-size: 44px; font-weight: var(--title-weight); line-height: 1; letter-spacing: -.01em; animation: splash-rise .6s .15s cubic-bezier(.2,.8,.2,1) both; }
 .splash b span { color: var(--yellow); }
 .splash small { margin-top: 10px; color: var(--muted); font-size: 13px; font-weight: 700; letter-spacing: .32em; animation: splash-rise .6s .25s cubic-bezier(.2,.8,.2,1) both; }
 .splash-bar { position: relative; width: 132px; height: 3px; margin-top: 30px; overflow: hidden; border-radius: 3px; background: var(--glass2); }
@@ -72,7 +72,7 @@
 .hero-text > :nth-child(2) { animation-delay: .02s; } .hero-text > :nth-child(3) { animation-delay: .04s; } .hero-text > :nth-child(4) { animation-delay: .06s; }
 .hero-text > :nth-child(5) { animation-delay: .08s; } .hero-text > :nth-child(6) { animation-delay: .1s; }
 /* the clamp's overflow cuts at the line box, shorter than the rounded face's descenders: pad them in, take it back from the margin */
-.hero-text h1 { margin: 12px 0 calc(4px - .14em); padding-bottom: .14em; font-size: clamp(40px, min(5.4vw, 8.4vh), 76px); line-height: 1.08; font-weight: 900; letter-spacing: -.02em;
+.hero-text h1 { margin: 12px 0 calc(4px - .14em); padding-bottom: .14em; font-size: clamp(40px, min(5.4vw, 8.4vh), 76px); line-height: 1.08; font-weight: var(--title-weight); letter-spacing: -.02em;
   text-shadow: 0 6px 40px rgba(0,0,0,.4); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 .hero-text h1.small { font-size: clamp(30px, 3.4vw, 42px); }
 .sub { color: var(--soft); font-size: 18px; font-weight: 700; }
@@ -396,7 +396,7 @@
 .viewer .top .pill[aria-pressed=true]:not(.main) { box-shadow: inset 0 0 0 1.5px var(--accent); }
 .viewer-info { position: absolute; left: clamp(36px, 4.5vw, 64px); bottom: 30px; max-width: min(620px, 50%); pointer-events: none; }
 .viewer-info > * { animation: rise .3s backwards cubic-bezier(.2,.8,.2,1); }
-.viewer-info h1 { margin: 10px 0 calc(2px - .14em); padding-bottom: .14em; overflow: hidden; font-size: clamp(30px, 3.6vw, 52px); font-weight: 900; line-height: 1.12; letter-spacing: -.02em;
+.viewer-info h1 { margin: 10px 0 calc(2px - .14em); padding-bottom: .14em; overflow: hidden; font-size: clamp(30px, 3.6vw, 52px); font-weight: var(--title-weight); line-height: 1.12; letter-spacing: -.02em;
   white-space: nowrap; text-overflow: ellipsis; text-shadow: 0 6px 40px rgba(0,0,0,.4); }
 .viewer-info .sub { font-size: 15px; }
 .viewer-views { position: absolute; right: 32px; bottom: 30px; }

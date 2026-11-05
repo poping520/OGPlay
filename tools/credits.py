@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Generate data/credits.json: the open-source acknowledgements shown on the launcher's About page.
 
-PROJECTS is the single list of third-party code OGPlay release builds ship (native libraries, the
+PROJECTS lists the third-party code OGPlay release builds ship (native libraries, the
 Web UI and the API 19 guest runtime). License texts are copied verbatim from the source tree into the
 one JSON file; the guest runtime's NOTICE files already ship under data/android/19/notices and are
-referenced in place. Run after adding, removing or updating a dependency:
+referenced in place. PLATFORMS optionally restricts a project to Windows, Darwin or Linux; omitted
+projects apply everywhere. All platforms ship this same catalog; the native About service filters it.
+Run after adding, removing or updating a dependency:
 
     python3 tools/credits.py           # rewrite data/credits.json
     python3 tools/credits.py --check   # fail when data/credits.json is stale
@@ -64,6 +66,18 @@ def dynarmic_external(name: str, license_file: str = "LICENSE") -> list[tuple[st
 # id, name, version, url, SPDX license (None: several, see the texts), texts. A text is either
 # (title, content) stored inline or a path under data/ to a notice that already ships.
 PROJECTS = [
+    ("aosp", "Android Open Source Project", "4.4.4_r2.0.1", "https://source.android.com", None,
+     [f"{NOTICES}/{name}.txt" for name in
+      ("bootdex.jar", "libc.so", "libm.so", "libdl.so", "libstdc++.so", "libgabi++.so")]),
+    ("openssl", "OpenSSL", "", "https://www.openssl.org", "OpenSSL", [f"{NOTICES}/libcrypto.so.txt"]),
+    ("stlport", "STLport", "", "https://sourceforge.net/projects/stlport", None, [f"{NOTICES}/libstlport.so.txt"]),
+    ("zlib", "zlib", "", "https://zlib.net", "Zlib", [f"{NOTICES}/libz.so.txt"]),
+    ("icu", "ICU", "", "https://icu.unicode.org", "ICU",
+     [f"{NOTICES}/icu4c-license.html", f"{NOTICES}/icu4c-unicode-license.txt"]),
+    ("fonts", "Roboto · Droid Sans Fallback", "", "https://source.android.com", "Apache-2.0",
+     [f"{NOTICES}/fonts.txt"]),
+    ("tzdata", "tz database", "2014a", "https://www.iana.org/time-zones", "Public Domain",
+     [f"{NOTICES}/tzdata.txt"]),
     ("sdl", "SDL", "3.4.10", "https://github.com/libsdl-org/SDL", "Zlib",
      [("SDL", text("third_party/SDL/LICENSE.txt"))]),
     ("angle", "ANGLE", "c24d9971", "https://chromium.googlesource.com/angle/angle", "BSD-3-Clause",
@@ -104,19 +118,16 @@ PROJECTS = [
      [("Draco", "Copyright Google LLC.\n\n" + text("webui/node_modules/typescript/LICENSE.txt"))]),
     ("uplot", "uPlot", npm_version("uplot"), "https://github.com/leeoniya/uPlot", "MIT",
      [("uPlot", text("webui/node_modules/uplot/LICENSE"))]),
-    ("aosp", "Android Open Source Project", "4.4.4_r2.0.1", "https://source.android.com", None,
-     [f"{NOTICES}/{name}.txt" for name in
-      ("bootdex.jar", "libc.so", "libm.so", "libdl.so", "libstdc++.so", "libgabi++.so")]),
-    ("openssl", "OpenSSL", "", "https://www.openssl.org", "OpenSSL", [f"{NOTICES}/libcrypto.so.txt"]),
-    ("stlport", "STLport", "", "https://sourceforge.net/projects/stlport", None, [f"{NOTICES}/libstlport.so.txt"]),
-    ("zlib", "zlib", "", "https://zlib.net", "Zlib", [f"{NOTICES}/libz.so.txt"]),
-    ("icu", "ICU", "", "https://icu.unicode.org", "ICU",
-     [f"{NOTICES}/icu4c-license.html", f"{NOTICES}/icu4c-unicode-license.txt"]),
-    ("fonts", "Roboto · Droid Sans Fallback", "", "https://source.android.com", "Apache-2.0",
-     [f"{NOTICES}/fonts.txt"]),
-    ("tzdata", "tz database", "2014a", "https://www.iana.org/time-zones", "Public Domain",
-     [f"{NOTICES}/tzdata.txt"]),
+    ("sn-pro", "SN Pro", "e025ac47", "https://github.com/supernotes/sn-pro", "OFL-1.1",
+     [("SIL Open Font License 1.1", text("webui/apps/gui/assets/fonts/OFL.txt"))]),
+
 ]
+
+# Optional host restrictions, using CMAKE_SYSTEM_NAME. Unlisted projects apply to every platform.
+PLATFORMS = {"sn-pro": ["Windows"]}
+
+# Historical repository of a project whose current source is a fork or continuation.
+ORIGINAL_URLS = {"dynarmic": "https://github.com/merryhime/dynarmic"}
 
 # Projects OGPlay only gets through another listed project, nested under it on the About page. Whatever src/ or
 # webui/ uses itself stays top level, even when a listed project needs it too (Boost, for Dynarmic).
@@ -145,7 +156,9 @@ def render() -> str:
             raise SystemExit(f"{project_id}: parent {parent} must be listed before it")
         seen.add(project_id)
         projects.append({"id": project_id, "name": name, "version": version, "url": url, "license": license_id,
-                         **({"parent": parent} if parent else {}), "notices": notices})
+                         **({"parent": parent} if parent else {}),
+                         **({"original_url": ORIGINAL_URLS[project_id]} if project_id in ORIGINAL_URLS else {}),
+                         **({"platforms": PLATFORMS[project_id]} if project_id in PLATFORMS else {}), "notices": notices})
     return json.dumps({"schema": 1, "projects": projects}, ensure_ascii=False, indent=1) + "\n"
 
 

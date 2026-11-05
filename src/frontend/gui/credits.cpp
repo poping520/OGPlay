@@ -1,6 +1,7 @@
 #include "frontend/gui/credits.h"
 
 #include <algorithm>
+#include <array>
 #include <fstream>
 #include <iterator>
 #include <stdexcept>
@@ -11,6 +12,32 @@ namespace ogplay::frontend {
 namespace {
 
 constexpr std::uintmax_t kMaximumNoticeBytes = 1024U * 1024U;
+
+constexpr std::string_view CurrentPlatform() {
+#if defined(_WIN32)
+    return "Windows";
+#elif defined(__APPLE__)
+    return "Darwin";
+#else
+    return "Linux";
+#endif
+}
+
+[[nodiscard]] bool AppliesToCurrentPlatform(const app::JsonValue& project) {
+    const auto platforms = project.Member("platforms");
+    if (!platforms) return true;
+    if (!platforms->IsArray() || platforms->Size() == 0)
+        throw std::runtime_error("credits.json: platforms must be a non-empty array");
+    constexpr std::array<std::string_view, 3> supported{"Windows", "Darwin", "Linux"};
+    bool matches = false;
+    for (std::size_t index = 0; index < platforms->Size(); ++index) {
+        const auto platform = platforms->Element(index)->String();
+        if (!platform || std::find(supported.begin(), supported.end(), *platform) == supported.end())
+            throw std::runtime_error("credits.json: invalid platform");
+        matches = matches || *platform == CurrentPlatform();
+    }
+    return matches;
+}
 
 [[nodiscard]] std::string ReadBounded(const std::filesystem::path& path) {
     std::error_code error;
@@ -51,8 +78,10 @@ std::vector<CreditProject> LoadCredits(const std::filesystem::path& data_root) {
     std::vector<CreditProject> result;
     for (std::size_t index = 0; index < projects->Size(); ++index) {
         const auto item = *projects->Element(index);
+        if (!AppliesToCurrentPlatform(item)) continue;
         CreditProject project{RequiredString(item, "id"), RequiredString(item, "name"),
-                              RequiredString(item, "version"), RequiredString(item, "url"), std::nullopt, {}, {}};
+                              RequiredString(item, "version"), RequiredString(item, "url"), std::nullopt, {}, {}, {}};
+        if (item.Member("original_url")) project.original_url = RequiredString(item, "original_url");
         if (const auto license = item.Member("license"); license && !license->IsNull()) {
             if (!license->String()) throw std::runtime_error("credits.json: license must be a string or null");
             project.license = std::string(*license->String());

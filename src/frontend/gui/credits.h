@@ -24,9 +24,11 @@ struct CreditProject final {
     std::optional<std::string> license;  // SPDX-style id; none when the texts carry several
     std::string parent;                  // listed project that brings this one in; empty when OGPlay uses it itself
     std::vector<CreditNotice> notices;
+    std::string original_url;  // optional historical repository; url remains the source currently used
 };
 
-// Throws when the list is missing or malformed, or a notice path leaves the data root.
+// Optional platforms (Windows/Darwin/Linux) restrict a project to those hosts; omitted means universal.
+// Only current-host projects are returned. Throws for malformed declarations, missing parents or unsafe paths.
 [[nodiscard]] std::vector<CreditProject> LoadCredits(const std::filesystem::path& data_root);
 
 // The license texts of one project, in list order, as (title, text); throws for an unknown id

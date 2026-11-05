@@ -1,4 +1,6 @@
 // Vite's eager raw glob, used by tests that read sources.
+declare const __OGPLAY_WINDOWS__: boolean;
+declare module '*.css';
 interface ImportMeta {
   glob(pattern: string | string[], options: { query: '?raw'; import: 'default'; eager: true }): Record<string, string>;
 }

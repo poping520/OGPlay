@@ -133,6 +133,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                     writer.AddString(item, "name", project.name);
                     writer.AddString(item, "version", project.version);
                     writer.AddString(item, "url", project.url);
+                    if (!project.original_url.empty()) writer.AddString(item, "original_url", project.original_url);
                     if (project.license)
                         writer.AddString(item, "license", *project.license);
                     else

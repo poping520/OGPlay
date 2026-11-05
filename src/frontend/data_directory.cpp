@@ -64,7 +64,11 @@ BundledDataPaths ResolveBundledDataPaths(const std::filesystem::path& executable
 }
 
 BundledDataPaths HostBundledDataPaths() {
+#ifdef OGPLAY_SOURCE_DIR
     return ResolveBundledDataPaths(hal::HostExecutableDirectory(), std::filesystem::path(OGPLAY_SOURCE_DIR));
+#else
+    return ResolveBundledDataPaths(hal::HostExecutableDirectory(), std::nullopt);
+#endif
 }
 
 }  // namespace ogplay::frontend

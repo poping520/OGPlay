@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
 
+# Oldest macOS the shipped bundle supports; std::format on floats requires 13.3. Must precede project().
+if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE STRING "Minimum macOS version" FORCE)
+endif()
+
 project(OGPlay VERSION 0.1.0 LANGUAGES C CXX)
 if(WIN32)
     enable_language(RC)
@@ -52,6 +57,11 @@ elseif(NOT APPLE)
     add_compile_options(
         "$<${_ogplay_release_c_cxx}:-ffunction-sections>"
         "$<${_ogplay_release_c_cxx}:-fdata-sections>")
+endif()
+# Published binaries must not carry the build machine's absolute source paths.
+if(NOT MSVC)
+    add_compile_options(
+        "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX,OBJCXX>>:-ffile-prefix-map=${CMAKE_SOURCE_DIR}=.>")
 endif()
 
 include(GNUInstallDirs)
@@ -571,7 +581,7 @@ target_include_directories(ogplay_frontend SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
 target_compile_definitions(ogplay_frontend PRIVATE
     OGPLAY_VERSION="${PROJECT_VERSION}"
-    OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    "$<$<NOT:$<CONFIG:Release>>:OGPLAY_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\">")
 if(WIN32)
     target_link_libraries(ogplay_frontend PRIVATE ws2_32)
 endif()

@@ -63,10 +63,19 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
             REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
             CHECK_FALSE(result.value.ref.IsValid());
         };
+        const auto query_all = [&](VmObjectRef value, int flags = 0) {
+            return f.OnOutcome(manager, "queryIntentServices", "(Landroid/content/Intent;I)Ljava/util/List;",
+                               {VmValue::Ref(value), VmValue::Int(flags)});
+        };
+        fail(query_all(VmObjectRef{}), "Ljava/lang/NullPointerException;");
         fail(query(VmObjectRef{}), "Ljava/lang/NullPointerException;");
         fail(query(intent));  // Missing inventory is not an empty installed-service list.
         f.context->service_inventory_known = true;
         absent();
+        const auto services = query_all(intent, 0x40);
+        REQUIRE_FALSE(services.exception.IsValid());
+        CHECK(f.On(services.value.ref, "size", "()I").AsInt() == 0);
+        fail(query_all(intent, 1));
         const auto filtered = query(intent, 0x40);
         REQUIRE_FALSE(filtered.exception.IsValid());
         CHECK_FALSE(filtered.value.ref.IsValid());
@@ -78,9 +87,10 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
         absent();
         CHECK(f.ledger.Unimplemented().size() == 1);
         CHECK(f.ledger.Unimplemented()[0].id == "dexvm.service_resolution");
-        CHECK(f.ledger.Unimplemented()[0].count == 1);
+        CHECK(f.ledger.Unimplemented()[0].count == 2);
         f.context->service_components.push_back(
             {"example.Candidate", true, {{{"example.SERVICE"}, {"example.EXTRA"}, false}}});
+        fail(query_all(intent));
         fail(query(intent));        // An Intent without categories can match a filter with categories.
         fail(query(intent, 0x40));  // Projection flags do not pretend a positive match is absent.
         f.context->service_components.back().intent_filters[0].has_data = true;
@@ -114,7 +124,7 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
              {VmValue::Ref(VmObjectRef{})});
         static_cast<void>(f.vm.CollectGarbage());
         absent();
-        CHECK(f.ledger.Unimplemented()[0].count == 12);
+        CHECK(f.ledger.Unimplemented()[0].count == 14);
     }
 }
 

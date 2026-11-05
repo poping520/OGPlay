@@ -378,6 +378,7 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     entry.external_dir.reset();
     LibraryConfig global;
     auto launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
+    CHECK_FALSE(launch.options.surface_size_explicit);
     CHECK(launch.options.surface_width == 1280);
     CHECK(launch.options.surface_height == 720);
     CHECK(launch.options.density_dpi == 320);
@@ -390,6 +391,7 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     SetSetting(global, "max_fps", std::string("60"));
     launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
     CHECK(launch.options.max_fps == 60);
+    CHECK_FALSE(launch.options.surface_size_explicit);
     CHECK(launch.options.surface_width == 960);
     CHECK(launch.options.surface_height == 540);
     CHECK(launch.options.density_dpi == 240);
@@ -401,6 +403,7 @@ TEST_CASE("display user settings resolve game over global over defaults") {
                                   {"max_fps", std::string("unlimited")}}});
     launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
     CHECK(launch.options.max_fps == 0);
+    CHECK(launch.options.surface_size_explicit);
     CHECK(launch.options.surface_width == 1024);
     CHECK(launch.options.surface_height == 600);
     CHECK(launch.options.density_dpi == 160);
@@ -413,8 +416,15 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     CHECK(*std::next(density) == "160");
     SaveGameSettings(directory, {});
     launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
+    CHECK_FALSE(launch.options.surface_size_explicit);
     CHECK(launch.options.surface_width == 960);
     CHECK(launch.options.density_dpi == 240);
+    SaveGameSettings(directory, {{{"screen_width", std::uint32_t{1280}}}});
+    launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
+    CHECK(launch.options.surface_size_explicit);
+    ApplyStartupOrientation(launch.options, 1);
+    CHECK(launch.options.surface_width == 1280);
+    CHECK(launch.options.surface_height == 540);
     CHECK_THROWS(SetSetting(global, "screen_width", std::uint32_t{0}));
     CHECK_THROWS(SetSetting(global, "screen_height", std::uint32_t{4097}));
     CHECK_THROWS(SetSetting(global, "density_dpi", std::uint32_t{71}));

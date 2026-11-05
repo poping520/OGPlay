@@ -3,6 +3,7 @@
 #include "ogplay/runtime/dexvm/access_flags.h"
 #include <doctest/doctest.h>
 #include <array>
+#include <future>
 #include <bit>
 #include <limits>
 #include <vector>
@@ -292,7 +293,7 @@ TEST_CASE("DVM-336 animation callbacks precede the frame owner traversal") {
     static_cast<void>(f.f.app->Stop());
 }
 
-TEST_CASE("DVM-336 non main Looper receiver initialization fails explicitly") {
+TEST_CASE("DVM-336 receiver initializes on its own Looper thread and rejects a foreign queue") {
     Frames f(InterpreterBackend::switch_dispatch);
     const auto main = f.Static("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;").ref;
     const auto receiver = f.New("Lfixture/DisplayProbe;", "(Landroid/os/Looper;)V", {VmValue::Ref(main)});
@@ -303,12 +304,20 @@ TEST_CASE("DVM-336 non main Looper receiver initialization fails explicitly") {
         static_cast<void>(f.Static("Landroid/os/Looper;", "prepare", "()V"));
         const auto looper = f.Static("Landroid/os/Looper;", "myLooper", "()Landroid/os/Looper;").ref;
         const auto queue = f.Call(looper, "getQueue", "()Landroid/os/MessageQueue;").ref;
+        const auto accepted = f.StaticOutcome("Landroid/view/DisplayEventReceiver;", "nativeInit",
+                                              "(Landroid/view/DisplayEventReceiver;Landroid/os/MessageQueue;)I",
+                                              {VmValue::Ref(receiver), VmValue::Ref(queue)});
+        REQUIRE_FALSE(accepted.exception.IsValid());
+        CHECK(accepted.value.AsInt() > 0);
+        static_cast<void>(f.StaticOutcome("Landroid/view/DisplayEventReceiver;", "nativeDispose", "(I)V",
+                                          {VmValue::Int(accepted.value.AsInt())}));
+        const auto main_queue = f.Call(main, "getQueue", "()Landroid/os/MessageQueue;").ref;
         const auto result = f.StaticOutcome("Landroid/view/DisplayEventReceiver;", "nativeInit",
                                             "(Landroid/view/DisplayEventReceiver;Landroid/os/MessageQueue;)I",
-                                            {VmValue::Ref(receiver), VmValue::Ref(queue)});
+                                            {VmValue::Ref(receiver), VmValue::Ref(main_queue)});
         REQUIRE(result.exception.IsValid());
         CHECK(f.vm.Linker().Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        CHECK(result.exception_message.find("main Looper") != std::string::npos);
+        CHECK(result.exception_message.find("own Looper") != std::string::npos);
         *rejected = true;
         static_cast<void>(f.Call(looper, "quit", "()V"));
         return VmValue::Void();
@@ -349,5 +358,64 @@ TEST_CASE("frame-rate cap gates display frames while lifecycle steps keep the lo
     for (int i = 0; i < 3; ++i)
         f.Step();
     CHECK(*frames == 4);
+    static_cast<void>(f.f.app->Stop());
+}
+
+TEST_CASE("Choreographer delivers vsync on a non-main owner Looper") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Frames f(backend);
+        std::promise<void> ready, delivered;
+        auto ready_future = ready.get_future(), delivered_future = delivered.get_future();
+        const auto callback = f.New("Lfixture/FrameProbe;", "()V");
+        f.Hook("Lfixture/FrameProbe;", "doFrame", "(J)V", [&](IntrinsicContext&) {
+            CHECK(f.vm.CurrentContextToken() != 1);
+            const auto looper = f.Static("Landroid/os/Looper;", "myLooper", "()Landroid/os/Looper;").ref;
+            static_cast<void>(f.Call(looper, "quit", "()V"));
+            delivered.set_value();
+            return VmValue::Void();
+        });
+        f.Hook("Lfixture/FrameProbe;", "run", "()V", [&](IntrinsicContext&) {
+            static_cast<void>(f.Static("Landroid/os/Looper;", "prepare", "()V"));
+            f.Post(f.Choreographer(), callback);
+            ready.set_value();
+            static_cast<void>(f.Static("Landroid/os/Looper;", "loop", "()V"));
+            return VmValue::Void();
+        });
+        const auto thread = f.New("Ljava/lang/Thread;", "(Ljava/lang/Runnable;)V", {VmValue::Ref(callback)});
+        const auto roots = f.vm.ProtectReferences(std::array{thread, callback});
+        static_cast<void>(f.Call(thread, "start", "()V"));
+        REQUIRE(ready_future.wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+        f.Step();
+        CHECK(delivered_future.wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+        static_cast<void>(f.Call(thread, "join", "()V"));
+        static_cast<void>(f.f.app->Stop());
+    }
+}
+
+TEST_CASE("Worker Looper yields after a callback batch without terminating a self-reposting producer") {
+    Frames f(InterpreterBackend::switch_dispatch);
+    int count = 0;
+    const auto callback = f.New("Lfixture/FrameProbe;", "()V");
+    f.Hook("Landroid/os/Handler;", "handleMessage", "(Landroid/os/Message;)V", [&](IntrinsicContext& call) {
+        if (++count < 10005) {
+            static_cast<void>(f.Call(call.receiver, "sendEmptyMessage", "(I)Z", {VmValue::Int(1)}));
+        } else {
+            const auto looper = f.Static("Landroid/os/Looper;", "myLooper", "()Landroid/os/Looper;").ref;
+            static_cast<void>(f.Call(looper, "quit", "()V"));
+        }
+        return VmValue::Void();
+    });
+    f.Hook("Lfixture/FrameProbe;", "run", "()V", [&](IntrinsicContext&) {
+        static_cast<void>(f.Static("Landroid/os/Looper;", "prepare", "()V"));
+        const auto handler = f.New("Landroid/os/Handler;", "()V");
+        static_cast<void>(f.Call(handler, "sendEmptyMessage", "(I)Z", {VmValue::Int(1)}));
+        static_cast<void>(f.Static("Landroid/os/Looper;", "loop", "()V"));
+        return VmValue::Void();
+    });
+    const auto thread = f.New("Ljava/lang/Thread;", "(Ljava/lang/Runnable;)V", {VmValue::Ref(callback)});
+    const auto roots = f.vm.ProtectReferences(std::array{thread, callback});
+    static_cast<void>(f.Call(thread, "start", "()V"));
+    static_cast<void>(f.Call(thread, "join", "()V"));
+    CHECK(count == 10005);
     static_cast<void>(f.f.app->Stop());
 }

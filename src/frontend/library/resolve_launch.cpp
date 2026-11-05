@@ -46,6 +46,7 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     o.profiles_directory = config.profiles_dir;
     o.external_directory = entry.external_dir;
     if (o.external_directory) o.external_guest_directory = entry.external_guest_dir;
+    o.surface_size_explicit = settings.values.contains("screen_width") || settings.values.contains("screen_height");
     o.surface_width = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "screen_width"));
     o.surface_height = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "screen_height"));
     o.density_dpi = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "density_dpi"));

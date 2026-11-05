@@ -412,6 +412,7 @@ struct ComponentFixture final {
     bool service_meta_data{};
     std::optional<std::uint32_t> launch_mode;
     std::optional<std::string> task_affinity;
+    std::optional<std::uint32_t> screen_orientation;
 };
 
 std::vector<std::byte> StartupManifest(const std::optional<std::string>& application_name,
@@ -446,6 +447,7 @@ std::vector<std::byte> StartupManifest(const std::optional<std::string>& applica
                                      "singleUser",
                                      "meta-data",
                                      "launchMode",
+                                     "screenOrientation",
                                      "taskAffinity",
                                      "value",
                                      "resource",
@@ -515,6 +517,9 @@ std::vector<std::byte> StartupManifest(const std::optional<std::string>& applica
     for (const auto& component : components) {
         std::vector<Attribute> attributes{
             {index("name"), index(component.name), 0x03, index(component.name), android_namespace}};
+        if (component.screen_orientation)
+            attributes.push_back(
+                {index("screenOrientation"), 0xffffffffU, 0x10, *component.screen_orientation, android_namespace});
         if (component.launch_mode)
             attributes.push_back({index("launchMode"), 0xffffffffU, 0x10, *component.launch_mode, android_namespace});
         if (component.task_affinity)
@@ -1823,4 +1828,26 @@ TEST_CASE("DVM-354 Manifest largeHeap preserves true false and absent applicatio
         xml.End("manifest");
         CHECK(ogplay::loader::ParseAndroidBinaryManifest(xml.Bytes()).application_large_heap == (value == 1));
     }
+}
+
+TEST_CASE("APK Manifest Activity screenOrientation preserves API19 values and alias inheritance") {
+    using namespace ogplay::loader;
+    for (const auto orientation : {-1, 0, 1, 7, 9, 12, 14}) {
+        ComponentFixture activity;
+        activity.name = ".Target";
+        activity.screen_orientation = static_cast<std::uint32_t>(orientation);
+        ComponentFixture alias;
+        alias.tag = "activity-alias";
+        alias.name = ".Launcher";
+        alias.target = ".Target";
+        alias.filters = {{"android.intent.action.MAIN", "android.intent.category.LAUNCHER"}};
+        const auto facts = ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {activity, alias}));
+        REQUIRE(facts.activity_components.size() == 2);
+        CHECK(facts.activity_components[0].screen_orientation == orientation);
+        CHECK(facts.activity_components[1].screen_orientation == orientation);
+    }
+    ComponentFixture activity;
+    activity.name = ".Main";
+    const auto facts = ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {activity}));
+    CHECK(facts.activity_components[0].screen_orientation == -1);
 }

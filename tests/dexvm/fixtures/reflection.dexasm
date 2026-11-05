@@ -410,3 +410,15 @@
     sput-object v0, Lreflect/ErrorStaticField;->failure:Ljava/lang/Error;
     throw v0
 .end method
+
+.class public abstract interface Lreflect/CheckedContract;
+.super Ljava/lang/Object;
+.method public abstract checked()V
+.throws Ljava/io/IOException;
+.end method
+
+.class public abstract interface Lreflect/OtherCheckedContract;
+.super Ljava/lang/Object;
+.method public abstract checked()V
+.throws Ljava/lang/Exception;
+.end method

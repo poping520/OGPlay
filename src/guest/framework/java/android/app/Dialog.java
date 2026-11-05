@@ -18,12 +18,17 @@ package android.app;
 
 import android.content.Context;
 import android.content.DialogInterface;
+import android.graphics.PixelFormat;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
 
 /** Bounded API19 dialog client. Ordinary state and callbacks remain guest-owned. */
 public class Dialog implements DialogInterface {
@@ -48,11 +53,14 @@ public class Dialog implements DialogInterface {
     private DialogInterface.OnCancelListener mCancelListener;
     private DialogInterface.OnDismissListener mDismissListener;
     private DialogInterface.OnShowListener mShowListener;
+    // Custom content is one centered child of an application window root.
+    private FrameLayout mContentRoot;
+    private WindowManager mContentManager;
 
     public Dialog(Context context) { this(context, 0); }
     public Dialog(Context context, int theme) {
         if (context == null) throw new NullPointerException("context == null");
-        if (theme != 0) nativeUnsupported("Dialog theme");
+        if (theme != 0) nativeUiDegraded("Dialog.theme");
         mContext = context;
         mHandler = new Handler(Looper.myLooper());
     }
@@ -75,10 +83,32 @@ public class Dialog implements DialogInterface {
         }
     }
     private void present() {
+        if (mContentRoot != null) {
+            Activity activity = mOwnerActivity != null ? mOwnerActivity
+                : mContext instanceof Activity ? (Activity) mContext : null;
+            if (activity == null) nativeUnsupported("custom Dialog content without an Activity");
+            WindowManager manager = (WindowManager) activity.getSystemService(Context.WINDOW_SERVICE);
+            manager.addView(mContentRoot, new WindowManager.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION, 0, PixelFormat.TRANSLUCENT));
+            mContentManager = manager;
+            return;
+        }
         nativeShow(mContext, mOwnerActivity, mTitle, mMessage, mButtonLabels, mGeneration);
     }
+    private void setPresentationVisible(boolean visible) {
+        if (mContentRoot != null) {
+            mContentRoot.setVisibility(visible ? View.VISIBLE : View.GONE);
+            if (mContentManager != null) {
+                WindowManager.LayoutParams params = (WindowManager.LayoutParams) mContentRoot.getLayoutParams();
+                params.flags = visible ? 0 : WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                    | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                mContentManager.updateViewLayout(mContentRoot, params);
+            }
+        } else nativeVisible(visible);
+    }
     public void show() {
-        if (mShowing) { nativeVisible(true); return; }
+        if (mShowing) { setPresentationVisible(true); return; }
         if (mStarting) return;
         mStarting = true;
         long generation = ++mGeneration;
@@ -99,14 +129,19 @@ public class Dialog implements DialogInterface {
             });
         } finally { mStarting = false; }
     }
-    public void hide() { mBackTracking = false; mAcceptButton = 0; if (mShowing) nativeVisible(false); }
+    public void hide() { mBackTracking = false; mAcceptButton = 0; if (mShowing) setPresentationVisible(false); }
     public void dismiss() {
         ++mGeneration;
         ++mShowGeneration;
         mAcceptButton = 0;
         mBackTracking = false;
         if (!mShowing) return;
-        nativeDismiss();
+        if (mContentManager != null) {
+            mContentManager.removeView(mContentRoot);
+            mContentManager = null;
+        } else {
+            nativeDismiss();
+        }
         mShowing = false;
         onStop();
         final DialogInterface.OnDismissListener listener = mDismissListener;
@@ -131,7 +166,20 @@ public class Dialog implements DialogInterface {
     public void setTitle(CharSequence title) { mTitle = title; changed(); }
     public void setTitle(int title) { setTitle(mContext.getResources().getText(title)); }
     public Window getWindow() { nativeUnsupported("Dialog Window facade"); return null; }
-    public void setContentView(View view) { nativeUnsupported("custom Dialog content"); }
+    public void setContentView(View view) {
+        if (mContentRoot == null) {
+            mContentRoot = new FrameLayout(mContext) {
+                @Override public boolean dispatchKeyEvent(KeyEvent event) {
+                    return Dialog.this.dispatchKeyEvent(event) || super.dispatchKeyEvent(event);
+                }
+            };
+        }
+        mContentRoot.removeAllViews();
+        if (view != null) {
+            mContentRoot.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+        }
+    }
     public void setContentView(int id) { nativeUnsupported("custom Dialog layout"); }
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (mKeyListener != null && mKeyListener.onKey(this, event.getKeyCode(), event)) return true;
@@ -144,6 +192,7 @@ public class Dialog implements DialogInterface {
             if (event.getRepeatCount() == 0) mBackTracking = true;
             return true;
         }
+        if (mContentRoot != null) return false;
         if (code == KeyEvent.KEYCODE_TAB) { nativeFocus(event.isShiftPressed() ? -1 : 1); return true; }
         if (code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_DPAD_CENTER) {
             if (event.getRepeatCount() == 0) { mAcceptButton = nativeFocus(0); mAcceptGeneration = mShowGeneration; }
@@ -158,6 +207,7 @@ public class Dialog implements DialogInterface {
             if (tracked && !event.isCanceled() && mCancelable) cancel();
             return true;
         }
+        if (mContentRoot != null) return false;
         if (code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_DPAD_CENTER) {
             int which = mAcceptButton;
             mAcceptButton = 0;
@@ -180,8 +230,9 @@ public class Dialog implements DialogInterface {
             public void run() { if (mShowGeneration == generation && mShowing) dismiss(); }
         });
     }
-    protected final void changed() { if (mShowing) { ++mGeneration; present(); } }
+    protected final void changed() { if (mShowing && mContentRoot == null) { ++mGeneration; present(); } }
     static native void nativeUnsupported(String operation);
+    static native void nativeUiDegraded(String operation);
     private native void nativeShow(Context context, Activity owner, CharSequence title,
                                    CharSequence message, CharSequence[] buttons, long generation);
     private native void nativeDismiss();

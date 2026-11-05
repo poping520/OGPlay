@@ -421,6 +421,7 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/dexvm/big_int_runtime.cpp
     src/runtime/dexvm/io_runtime.cpp
     src/runtime/dexvm/network_runtime.cpp
+    src/runtime/dexvm/proxy_runtime.cpp
     src/runtime/dexvm/unsafe_runtime.cpp
     src/runtime/dexvm/nio_runtime.cpp
     src/runtime/dexvm/zip_runtime.cpp

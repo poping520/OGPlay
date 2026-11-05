@@ -80,6 +80,8 @@ struct GameRunOptions final {
     RunningIconStyle window_icon_style{RunningIconStyle::badge};
     // Host UI only; absent means the system language at process startup.
     std::optional<UiLanguage> ui_language;
+    // CLI or game-specific dimensions suppress Manifest startup adaptation.
+    bool surface_size_explicit{};
     bool operator==(const GameRunOptions&) const = default;
 };
 
@@ -89,6 +91,7 @@ OGPLAYCORE_API void ValidateExternalGuestDirectory(std::string_view path);
 // Arguments start at the APK path, independently of the host entry mode.
 [[nodiscard]] OGPLAYCORE_API GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args);
 [[nodiscard]] OGPLAYCORE_API std::vector<std::string> FormatGameRunArgs(const GameRunOptions& options);
+OGPLAYCORE_API void ApplyStartupOrientation(GameRunOptions& options, std::int32_t screen_orientation);
 OGPLAYCORE_API void ValidateGameRunOptions(const GameRunOptions& options);
 OGPLAYCORE_API int RunGame(GameRunOptions options, const LogConfig& logging = {});
 

@@ -48,3 +48,10 @@ ADR-0162 / DVM-306：AssembleAndroidContext 在 catalog 注册/VM 建立前读�
 Legacy fallback。无标识生产制品仍 Legacy。frontend 三入口共用此装配，显式注入不可变
 平台无 accessibility 服务事实，生产不设置测试 bool；测试覆盖入口保留。
 本阶段不开放 test-root、不改变 StepFrame；模式选择不等于生产遍历/E2E 验收。
+
+启动建窗前只读取入口 Activity 的 screenOrientation（alias 用继承的入口配置）：
+portrait/sensorPortrait/reversePortrait/userPortrait 仅对继承全局或内置尺寸交换宽高，已有竖向或正方形尺寸不变。
+命令行任一 --surface-width/--surface-height 或游戏级任一尺寸显式设置均固定整组尺寸。
+GameRunOptions.surface_size_explicit 保存来源，--inherited-surface-width/height 用于跨进程参数往返，
+不将继承值升级为显式设置；窗口、DisplayMetrics、Surface 和触摸映射共用交换后的同一尺寸。
+不处理 setRequestedOrientation 的运行时旋转或后续 Activity 方向切换。

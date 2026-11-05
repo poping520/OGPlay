@@ -102,3 +102,7 @@
 `tests/cpu/` 的解释器/JIT 指令级对拍。
 
 `DynarmicExecutionContext::TrySnapshot` 只 try-lock 复制最多 128 个活跃 processor 的最近完成 Run 缓存发布值；带发布 Clock 时间戳，未发布不等于零。Windows x64 通过构建目录的受检 Dynarmic 扩展读取 code capacity/used/full flush，不修改固定 submodule；其他后端返回 unavailable。
+
+固定 Dynarmic 的构建树 overlay 准入 A32 ASIMD VADDHN/VRADDHN/VSUBHN/VRSUBHN 与
+VQDMULL/VQDMLAL/VQDMLSL（含 scalar），复用上游向量 IR、饱和与 QC 后端；输入 hash 变化拒绝构建。
+VQRSHL 仍为明确的 unsupported_instruction；Windows x64 overlay 未实测。

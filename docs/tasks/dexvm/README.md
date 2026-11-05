@@ -342,3 +342,5 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 
 - [DVM-367 · 水平 ProgressBar ROM 资源与状态闭包](DVM-367.md)
 - [DVM-368 · TextView 最小尺寸与隐藏子树呈现](DVM-368.md)
+
+- [DVM-369 · Unity 输入复制、启动显示方向与工作 Looper](DVM-369.md)

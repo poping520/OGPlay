@@ -364,7 +364,8 @@ VMRuntime 的利用率、growth limit、native allocation 记账共用 JavaObjec
   flags 误滤）。AccessibleObject/Field/Method/Constructor 的包内 signature getter 保留原版虚派。
 - 通用 Proxy 拆为 [DVM-259](../dexvm/DVM-259.md)：需要独立的 loader/接口集合身份、方法
   合并、协变返回、声明异常交集、InvocationHandler 分派及 GC 回归，不能直接套用单接口的
-  注解合成类。本次保持明确失败，未生成字节码文件或伪造代理成功。
+  注解合成类。此阶段保持明确失败；2026-11-05 通用 Proxy 已在 DVM-259 接入，
+  双后端 044 通过，注解统一迁移仍未完成（见 DVM-369）。
 
 ### 用例结论（两后端一致）
 
@@ -373,7 +374,7 @@ VMRuntime 的利用率、growth limit、native allocation 记账共用 JavaObjec
 | 004-annotations | fail:output | 第 92 行只有实现类名差异：oracle `class $Proxy13`，实际 `class java.lang.annotation.$Impl$14`；其余输出逐字节一致。注解 API 已走通，实现类统一留给 DVM-259 | 空 |
 | 031-class-attributes | fail:output | 第 17 行 oracle `genericSignature: null`，实际 `<unknown>`。固定 API19 Class.smali 与 4.4 Class.java 没有测试反射查找的私有 Class.getSignatureAttribute；泛型公共 API 已正确执行到底。其余差异是成员列表次序及匿名类 modifier 8→0；当前 DEX InnerClass.accessFlags=0，保留产物事实。不擅自把 031 排除或添加虚构私有 API | 空 |
 | 035-enum | pass | isEnumConstant 已按真实 flag 返回 | 空 |
-| 044-proxy | fail:unimplemented | Proxy.generateProxy，拆为 DVM-259 | `dexvm.intrinsic.Ljava/lang/reflect/Proxy;.generateProxy(Ljava/lang/String;[Ljava/lang/Class;Ljava/lang/ClassLoader;)Ljava/lang/Class;` |
+| 044-proxy | pass | 2026-11-05：DVM-259 通用 Proxy 双后端逐字节通过；注解统一迁移仍未闭合，验证见 DVM-369 | 空 |
 | 046-reflect | pass | 泛型 Field、Method、Constructor 查询全部逐字节一致 | 空 |
 | 085-old-style-inner-class | excluded:oracle | 原 build `-source 1.4`；当前 JDK17/1.7 的 Main$1 有 EnclosingClass(Main)+InnerClass，Main$2 有 EnclosingMethod(create)+InnerClass。oracle 的全 null 不适用于该产物，VM 答案保持不变 | 不执行 |
 

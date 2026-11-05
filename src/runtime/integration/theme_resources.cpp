@@ -264,6 +264,10 @@ void ThemeResources::Load(std::string_view projection) {
                     const std::uint32_t spinner =
                         id == 0x010804cf && rotate_name == "progress_medium_white"  ? 0x01080580
                         : id == 0x010804cc && rotate_name == "progress_large_white" ? 0x01080581
+                        : id == 0x010804d7 && rotate_name == "progress_small_white" ? 0x0108057f
+                        : id == 0x010804cd && rotate_name == "progress_medium"      ? 0x01080566
+                        : id == 0x010804ca && rotate_name == "progress_large"       ? 0x01080567
+                        : id == 0x010804d4 && rotate_name == "progress_small"       ? 0x01080564
                                                                                     : 0;
                     if (!spinner) throw std::runtime_error("unreviewed rotate drawable");
                     const auto hex = Text(Member(variant, "xml"));
@@ -304,6 +308,71 @@ void ThemeResources::Load(std::string_view projection) {
                     declared.insert(Number(*references.Element(0)));
                     if (!declared.contains(spinner)) throw std::runtime_error("unreviewed rotate drawable reference");
                     if (roots != 1 || refs != declared) throw std::runtime_error("unclosed rotate drawable");
+                } else if (kind == "rotate-layers") {
+                    const auto root_name = Text(Member(row, "name"));
+                    const auto outer = id == 0x010804d5U && root_name == "progress_small_holo"    ? 0x01080545U
+                                       : id == 0x010804ceU && root_name == "progress_medium_holo" ? 0x01080549U
+                                       : id == 0x010804cbU && root_name == "progress_large_holo"  ? 0x0108054bU
+                                                                                                  : 0U;
+                    if (outer == 0U) throw std::runtime_error("unreviewed spinner drawable identity");
+                    const auto inner = outer - 1U;
+                    const auto hex = Text(Member(variant, "xml"));
+                    if (hex.empty() || hex.size() % 2 || hex.size() > 131072)
+                        throw std::runtime_error("invalid spinner XML bounds");
+                    const auto digit = [](char c) -> unsigned {
+                        if (c >= '0' && c <= '9') return static_cast<unsigned>(c - '0');
+                        if (c >= 'a' && c <= 'f') return static_cast<unsigned>(c - 'a' + 10);
+                        throw std::runtime_error("invalid spinner XML hex");
+                    };
+                    for (std::size_t n = 0; n < hex.size(); n += 2)
+                        skin.xml.push_back(static_cast<std::byte>((digit(hex[n]) << 4) | digit(hex[n + 1])));
+                    if (core::Sha256(skin.xml) != Text(Member(variant, "sha256")))
+                        throw std::runtime_error("spinner XML hash mismatch");
+                    const auto doc = loader::ParseCompiledXmlDocument(skin.xml);
+                    std::vector<std::string> stack;
+                    std::set<std::uint32_t> refs;
+                    unsigned rotates = 0, items = 0, roots = 0;
+                    for (const auto& node : doc->Nodes()) {
+                        const auto tag = doc->String(node.name_index).value_or("");
+                        if (node.type == 0x0103) {
+                            if (stack.empty() || stack.back() != tag)
+                                throw std::runtime_error("unbalanced spinner XML");
+                            stack.pop_back();
+                            continue;
+                        }
+                        if (node.type != 0x0102) continue;
+                        const bool valid_tag = stack.empty() ? tag == "layer-list" && ++roots == 1
+                                               : stack == std::vector<std::string>{"layer-list"}
+                                                   ? tag == "item" && ++items <= 2
+                                               : stack == std::vector<std::string>{"layer-list", "item"}
+                                                   ? tag == "rotate" && ++rotates == items
+                                                   : false;
+                        if (!valid_tag) throw std::runtime_error("unreviewed spinner XML element");
+                        if (node.attributes.size() != (tag == "rotate" ? 5U : 0U))
+                            throw std::runtime_error("invalid spinner XML attributes");
+                        for (const auto& attr : node.attributes) {
+                            const auto name = doc->String(attr.name_index);
+                            const auto type = attr.value.type;
+                            const auto data = attr.value.data;
+                            const auto first = rotates == 1U;
+                            const bool valid_attr =
+                                (name == "drawable" && type == 1 && data == (first ? outer : inner)) ||
+                                (name == "fromDegrees" && type == 4 && data == (first ? 0U : 0x44340000U)) ||
+                                (name == "toDegrees" && type == 4 && data == (first ? 0x44870000U : 0U)) ||
+                                ((name == "pivotX" || name == "pivotY") && type == 6 && data == 0x40000030U);
+                            if (!valid_attr) throw std::runtime_error("unreviewed spinner XML attribute/reference");
+                            if (name == "drawable") refs.insert(data);
+                        }
+                        stack.emplace_back(tag);
+                    }
+                    const auto declared = Member(variant, "references");
+                    if (!declared.IsArray() || declared.Size() != 2)
+                        throw std::runtime_error("invalid spinner references");
+                    std::set<std::uint32_t> declared_refs;
+                    for (std::size_t n = 0; n < declared.Size(); ++n)
+                        declared_refs.insert(Number(*declared.Element(n)));
+                    if (roots != 1 || !stack.empty() || items != 2U || rotates != 2U || refs != declared_refs)
+                        throw std::runtime_error("unclosed spinner XML");
                 } else if (kind == "layer-list" || kind == "animation-list") {
                     const bool layers = kind == "layer-list";
                     if (id != (layers ? 0x010804c7U : 0x010804c9U) ||
@@ -422,6 +491,16 @@ void ThemeResources::Load(std::string_view projection) {
                         }
                     } else if (!((id == 0x01080580 && Text(Member(row, "name")) == "spinner_white_48") ||
                                  (id == 0x01080581 && Text(Member(row, "name")) == "spinner_white_76") ||
+                                 (id == 0x0108057f && Text(Member(row, "name")) == "spinner_white_16") ||
+                                 (id == 0x01080566 && Text(Member(row, "name")) == "spinner_black_48") ||
+                                 (id == 0x01080567 && Text(Member(row, "name")) == "spinner_black_76") ||
+                                 (id == 0x01080564 && Text(Member(row, "name")) == "spinner_black_16") ||
+                                 (id == 0x01080544 && Text(Member(row, "name")) == "spinner_16_inner_holo") ||
+                                 (id == 0x01080545 && Text(Member(row, "name")) == "spinner_16_outer_holo") ||
+                                 (id == 0x01080548 && Text(Member(row, "name")) == "spinner_48_inner_holo") ||
+                                 (id == 0x01080549 && Text(Member(row, "name")) == "spinner_48_outer_holo") ||
+                                 (id == 0x0108054a && Text(Member(row, "name")) == "spinner_76_inner_holo") ||
+                                 (id == 0x0108054b && Text(Member(row, "name")) == "spinner_76_outer_holo") ||
                                  (id >= 0x010804db && id <= 0x010804e2 &&
                                   Text(Member(row, "name")) ==
                                       "progressbar_indeterminate_holo" + std::to_string(id - 0x010804da))))

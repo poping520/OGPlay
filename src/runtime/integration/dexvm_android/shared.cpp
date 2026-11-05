@@ -1279,7 +1279,8 @@ TakeDue(DexVmAndroidContext& context, const dx::VmObjectRef looper, const std::i
 }
 
 [[nodiscard]] std::optional<std::string> PumpLooperDue(dx::Interpreter& vm, DexVmAndroidContext& context,
-                                                       const dx::VmObjectRef looper) {
+                                                       const dx::VmObjectRef looper,
+                                                       const bool yield_on_budget = false) {
     constexpr std::size_t kMaxCallbacksPerPump = 10'000;
     for (std::size_t count = 0; count < kMaxCallbacksPerPump; ++count) {
         const auto work = TakeDue(context, looper, context.uptime_millis.load());
@@ -1289,7 +1290,10 @@ TakeDue(DexVmAndroidContext& context, const dx::VmObjectRef looper, const std::i
             return RenderScheduledFailure(vm, outcome, "scheduled callback");
         }
     }
-    return "Android scheduler exceeded the per-pump callback budget";
+    // A worker Looper is a continuous message loop. A self-reposting producer
+    // yields the execution lock at this boundary instead of killing its thread.
+    return yield_on_budget ? std::nullopt
+                           : std::optional<std::string>{"Android scheduler exceeded the per-pump callback budget"};
 }
 
 }  // namespace
@@ -1528,7 +1532,7 @@ void LoopLooper(dx::IntrinsicContext& call, const Context& context, const dx::Vm
         }
     }
     for (;;) {
-        if (const auto error = PumpLooperDue(call.vm, *context, looper); error.has_value()) {
+        if (const auto error = PumpLooperDue(call.vm, *context, looper, true); error.has_value()) {
             throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
         }
         {
@@ -2073,6 +2077,8 @@ void DispatchAndroidDisplayFrame(dexvm::Interpreter& vm, DexVmAndroidContext& co
             context.scheduled_work.push_back(work);
         }
     }
+    // Choreographers on other Looper threads wait for this delivery themselves.
+    context.scheduler_changed.notify_all();
     if (const auto error = PumpJavaThreads(vm, context)) throw std::runtime_error(*error);
 }
 }  // namespace ogplay::runtime

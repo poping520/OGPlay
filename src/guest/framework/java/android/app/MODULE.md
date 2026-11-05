@@ -25,8 +25,9 @@ Activity 的 managed Dialog 缓存、创建/准备/Bundle 与 dismiss/remove 协
 监听器，onCreate 一次、onStart/onStop/显示状态、取消与关闭区别沿 API19 客户端协议。
 监听器经构造 Looper 的 Handler 排队；按钮旧显示代次不关闭重入的新一轮显示。
 native 仅负责真实模态呈现/可见性/输入焦点，未支持配置记账抛 UOE。
-只支持 plain String 标题/消息/三按钮；主题、列表/custom view/Window facade、状态
-保存恢复与完整 DialogFragment 未支持。普通 Java Array/字段是唯一协议状态，GC 追踪
+plain String 标题/消息/三按钮走 native 模态投影；非零主题记录 UI 降级。
+setContentView(View) 通过 Activity 应用附加窗口显示居中内容，hide/show/dismiss/取消键复用 Java 协议；
+无 Activity 或布局资源重载明确失败。列表/Window facade、状态保存恢复与完整 DialogFragment 未支持。普通 Java Array/字段是唯一协议状态，GC 追踪
 cached Dialog/Bundle/listener/Runnable；无 C++ shadow 管理表。来源：固定 API19
 Activity.java/Dialog.java/AlertDialog.java 的有界改编，保留 Apache-2.0 头。
 

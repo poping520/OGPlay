@@ -274,8 +274,14 @@ Decl Declare_android_view_Display(const Context& context) {
     builder.FinalMethod("getHeight", "()I", [context](dx::IntrinsicContext&) {
         return dx::VmValue::Int(static_cast<std::int32_t>(context->surface_height));
     });
-    // Managed surface coordinates are landscape-natural and never
-    // rotate independently from the host window.
+    builder.FinalMethod("getRefreshRate", "()F", [context](dx::IntrinsicContext& call) {
+        if (!std::isfinite(context->display_refresh_rate_hz) || context->display_refresh_rate_hz <= 0) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.choreographer_frame_source", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "invalid logical display refresh rate"};
+        }
+        return dx::VmValue::Float(context->display_refresh_rate_hz);
+    });
+    // Managed surface coordinates never rotate independently from the host window.
     const auto get_rotation = dx::IntrinsicHandler([](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     builder.FinalMethod("getRotation", "()I", get_rotation);
     builder.FinalMethod("getOrientation", "()I", get_rotation);
@@ -1075,6 +1081,28 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
                     MotionSnapshotReader(call, data).Float(axis == 0 ? Layout::x_precision : Layout::y_precision));
             });
     }
+    builder.StaticMethod(
+        "obtain", "(Landroid/view/MotionEvent;)Landroid/view/MotionEvent;", [data](dx::IntrinsicContext& call) {
+            const auto source = call.arguments[0].ref;
+            if (!source.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "other motion event must not be null"};
+            dx::IntrinsicContext source_call{call.vm, source, {}};
+            // Allocate a new InputEvent header and clone the entire native snapshot.
+            static_cast<void>(MotionSnapshotReader(source_call, data));
+            const auto snapshot = dx::IntrinsicCall(source_call).GetRef(data);
+            const auto copy = call.vm.NewIntrinsicInstance("Landroid/view/MotionEvent;");
+            const auto root = call.vm.ProtectReferences(std::array{copy});
+            const auto constructor =
+                call.vm.Linker().FindDirectMethod(call.vm.Model().ObjectClass(copy), "<init>", "()V");
+            const auto initialized = call.vm.Call(*constructor, std::array{dx::VmValue::Ref(copy)});
+            if (initialized.exception.IsValid())
+                throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
+                                      initialized.exception_message, initialized.exception};
+            const auto copied_snapshot = call.vm.Model().CloneObject(snapshot);
+            dx::IntrinsicContext copy_call{call.vm, copy, {}};
+            dx::IntrinsicCall(copy_call).SetRef(data, copied_snapshot);
+            return dx::VmValue::Ref(copy);
+        });
     builder.StaticMethod("obtain", "(JJII[I[Landroid/view/MotionEvent$PointerCoords;IFFIIII)Landroid/view/MotionEvent;",
                          [](dx::IntrinsicContext& call) { return ObtainMotionEvent(call, true); });
     builder.StaticMethod(
@@ -3899,10 +3927,10 @@ Decl Declare_android_view_DisplayEventReceiver(const Context& context) {
             if (!receiver.IsValid() || context->scheduler_shutdown || context->process_stopping ||
                 looper == context->loopers.end())
                 throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", "MessageQueue is not initialized."};
-            if (!looper->second.main || looper->second.context_token != call.vm.CurrentContextToken()) {
+            if (looper->second.context_token != call.vm.CurrentContextToken()) {
                 if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.choreographer_frame_source", 0);
                 throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "DisplayEventReceiver requires the main Looper thread"};
+                                      "DisplayEventReceiver requires its own Looper thread"};
             }
             if (context->next_display_receiver_token == 0 || context->next_display_receiver_token > 0x7fffffffU)
                 throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "DisplayEventReceiver token space exhausted"};

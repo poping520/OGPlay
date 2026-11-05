@@ -528,6 +528,13 @@ Decl Declare_android_app_Dialog(const Context& context) {
         },
         dx::kAccPrivate | dx::kAccNative);
     builder.StaticMethod(
+        "nativeUiDegraded", "(Ljava/lang/String;)V",
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
+            RecordUiDegraded(call.vm, call.vm.StringUtf8(call.arguments[0].ref));
+            return dx::VmValue::Void();
+        },
+        dx::kAccStatic | dx::kAccNative);
+    builder.StaticMethod(
         "nativeUnsupported", "(Ljava/lang/String;)V",
         [](dx::IntrinsicContext& call) -> dx::VmValue {
             if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("runtime.ui.dialog.presentation", 0);

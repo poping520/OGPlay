@@ -218,3 +218,33 @@ TEST_CASE("game_run_args ui-language round trips and rejects invalid or repeated
     options.ui_language = static_cast<UiLanguage>(255);
     CHECK_THROWS_AS(ValidateGameRunOptions(options), std::invalid_argument);
 }
+
+TEST_CASE("Startup orientation adapts inherited dimensions and preserves explicit dimensions") {
+    GameRunOptions defaults;
+    ApplyStartupOrientation(defaults, 1);
+    CHECK(defaults.surface_width == 720);
+    CHECK(defaults.surface_height == 1280);
+    for (const auto orientation : {-1, 0, 1, 7, 9, 12, 14}) {
+        for (const bool explicit_size : {false, true}) {
+            for (const auto width : {720U, 1280U, 1920U}) {
+                GameRunOptions options;
+                options.apk_path = "game.apk";
+                options.surface_width = width;
+                options.surface_height = 1080;
+                options.surface_size_explicit = explicit_size;
+                CHECK(RoundTrip(options) == options);
+                ApplyStartupOrientation(options, orientation);
+                const bool portrait = orientation == 1 || orientation == 7 || orientation == 9 || orientation == 12;
+                const bool swapped = portrait && !explicit_size && width > 1080;
+                CHECK(options.surface_width == (swapped ? 1080U : width));
+                CHECK(options.surface_height == (swapped ? width : 1080U));
+            }
+        }
+    }
+    for (const auto flag : {"--surface-width", "--surface-height"}) {
+        const std::array<std::string_view, 3> args{"game.apk", flag, "1280"};
+        const auto options = ParseGameRunArgs(args);
+        CHECK(options.surface_size_explicit);
+        CHECK(RoundTrip(options) == options);
+    }
+}

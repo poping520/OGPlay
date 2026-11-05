@@ -554,7 +554,7 @@
           "signature": "getGravity()I",
           "flags": 1,
           "body_sha256": "46cc3ae4606aedf011b5be8272e2ec97d2c10c824c4c364860facc31a194d151",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getIntrinsicHeight()I",
@@ -572,14 +572,7 @@
           "signature": "getOpacity()I",
           "flags": 1,
           "body_sha256": "b236773d261d439acae50d86d780fac20ccd221739eb78c21982521e73a86a6b",
-          "source": "overlay",
-          "review": {
-            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
-            "inputs": "receiver and original API19 arguments",
-            "outputs": "ledger hit and UnsupportedOperationException",
-            "state_owner": "no state created or changed",
-            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
-          }
+          "source": "rom"
         },
         {
           "signature": "getPaint()Landroid/graphics/Paint;",
@@ -687,7 +680,7 @@
           "signature": "setGravity(I)V",
           "flags": 1,
           "body_sha256": "200ed1664c10e22c529f6e2e2491dff7b0ff4ac4c1e5336a66fbd200bf6722e1",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setMipMap(Z)V",

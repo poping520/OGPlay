@@ -183,6 +183,156 @@ foreach(_cp_kind IN ITEMS arm thumb32)
     set_property(TARGET dynarmic PROPERTY SOURCES "${_cp_sources}")
 endforeach()
 
+# ---- A32 ASIMD narrowing and saturating long (all hosts) ----
+# Upstream leaves these A32 decoders commented out although the IR can express them.
+# VQRSHL stays out: it needs a new IR opcode and backend code on every host.
+set(_asimd_output "${CMAKE_BINARY_DIR}/generated/dynarmic-asimd")
+set(_asimd_impl "frontend/A32/translate/impl")
+foreach(_asimd_entry IN ITEMS
+        "frontend/A32/decoder/asimd.h|f9fc42db9bdbef91cba957da781b4caafd11a2d4d5e4ba1d3b7c8ffc42190186"
+        "${_asimd_impl}/a32_translate_impl.h|0c456ec642e9bb5a7a59de868596744574d3852eb2313129a6ee1b45ccbd0a30"
+        "${_asimd_impl}/asimd_three_regs.cpp|ac2af5bf6c5ec9b3ab65c6380f2201d6895ab6b67fc7fbb15624b7cd0be28706"
+        "${_asimd_impl}/asimd_two_regs_scalar.cpp|dc6c75540d348569fbceebd7c785a6a09728f19d540d6becdde27fc59894deda")
+    string(REPLACE "|" ";" _asimd_pair "${_asimd_entry}")
+    list(GET _asimd_pair 0 _asimd_relative)
+    list(GET _asimd_pair 1 _asimd_expected)
+    set(_asimd_input "${PROJECT_SOURCE_DIR}/third_party/dynarmic/src/dynarmic/${_asimd_relative}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_asimd_input}")
+    file(READ "${_asimd_input}" _asimd_source)
+    string(REPLACE "\r\n" "\n" _asimd_source "${_asimd_source}")
+    string(SHA256 _asimd_hash "${_asimd_source}")
+    if(NOT _asimd_hash STREQUAL _asimd_expected)
+        message(FATAL_ERROR "Dynarmic ${_asimd_relative} changed; review the OGPlay ASIMD adaptation")
+    endif()
+    if(_asimd_relative MATCHES "decoder/asimd\\.h$")
+        string(REPLACE "#include \"./asimd.inc\"" [=[#include "dynarmic/frontend/A32/decoder/asimd.inc"
+INST(asimd_VADDHN,          "VADDHN",                   "111100101Dzznnnndddd0100N0M0mmmm") // ASIMD
+INST(asimd_VRADDHN,         "VRADDHN",                  "111100111Dzznnnndddd0100N0M0mmmm") // ASIMD
+INST(asimd_VSUBHN,          "VSUBHN",                   "111100101Dzznnnndddd0110N0M0mmmm") // ASIMD
+INST(asimd_VRSUBHN,         "VRSUBHN",                  "111100111Dzznnnndddd0110N0M0mmmm") // ASIMD
+INST(asimd_VQDMLAL,         "VQDMLAL/VQDMLSL",          "111100101Dzznnnndddd10o1N0M0mmmm") // ASIMD
+INST(asimd_VQDMULL,         "VQDMULL",                  "111100101Dzznnnndddd1101N0M0mmmm") // ASIMD
+INST(asimd_VQDMLAL_scalar,  "VQDMLAL/VQDMLSL (scalar)", "111100101Dzznnnndddd0o11N1M0mmmm") // ASIMD]=] _asimd_source "${_asimd_source}")
+    elseif(_asimd_relative MATCHES "a32_translate_impl\\.h$")
+        string(REPLACE "    bool asimd_VABDL(bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm);" [=[    bool asimd_VABDL(bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm);
+    bool asimd_VADDHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm);
+    bool asimd_VRADDHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm);
+    bool asimd_VSUBHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm);
+    bool asimd_VRSUBHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm);
+    bool asimd_VQDMLAL(bool D, size_t sz, size_t Vn, size_t Vd, bool op, bool N, bool M, size_t Vm);
+    bool asimd_VQDMULL(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm);
+    bool asimd_VQDMLAL_scalar(bool D, size_t sz, size_t Vn, size_t Vd, bool op, bool N, bool M, size_t Vm);]=] _asimd_source "${_asimd_source}")
+    elseif(_asimd_relative MATCHES "asimd_three_regs\\.cpp$")
+        string(REPLACE "// ASIMD Three registers of different length\n" [=[// ASIMD Three registers of different length
+
+// Dd = narrow(high half of Qn +/- Qm); the rounding forms add half of the discarded range first.
+static bool NarrowHighHalf(TranslatorVisitor& v, bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm, bool subtract, bool rounding) {
+    if (sz == 0b11) {
+        return v.DecodeError();
+    }
+    if (mcl::bit::get_bit<0>(Vn) || mcl::bit::get_bit<0>(Vm)) {
+        return v.UndefinedInstruction();
+    }
+    const size_t esize = 8U << sz;
+    const size_t wide = esize * 2;
+    const auto reg_n = v.ir.GetVector(ToVector(true, Vn, N));
+    const auto reg_m = v.ir.GetVector(ToVector(true, Vm, M));
+    auto result = subtract ? v.ir.VectorSub(wide, reg_n, reg_m) : v.ir.VectorAdd(wide, reg_n, reg_m);
+    if (rounding) {
+        const IR::UAny half = sz == 0b00   ? IR::UAny{v.ir.Imm16(u16(1) << 7)}
+                              : sz == 0b01 ? IR::UAny{v.ir.Imm32(u32(1) << 15)}
+                                           : IR::UAny{v.ir.Imm64(u64(1) << 31)};
+        result = v.ir.VectorAdd(wide, result, v.ir.VectorBroadcast(wide, half));
+    }
+    v.ir.SetVector(ToVector(false, Vd, D), v.ir.VectorNarrow(wide, v.ir.VectorLogicalShiftRight(wide, result, static_cast<u8>(esize))));
+    return true;
+}
+
+bool TranslatorVisitor::asimd_VADDHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm) {
+    return NarrowHighHalf(*this, D, sz, Vn, Vd, N, M, Vm, false, false);
+}
+
+bool TranslatorVisitor::asimd_VRADDHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm) {
+    return NarrowHighHalf(*this, D, sz, Vn, Vd, N, M, Vm, false, true);
+}
+
+bool TranslatorVisitor::asimd_VSUBHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm) {
+    return NarrowHighHalf(*this, D, sz, Vn, Vd, N, M, Vm, true, false);
+}
+
+bool TranslatorVisitor::asimd_VRSUBHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm) {
+    return NarrowHighHalf(*this, D, sz, Vn, Vd, N, M, Vm, true, true);
+}
+
+bool TranslatorVisitor::asimd_VQDMULL(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm) {
+    if (sz == 0b11) {
+        return DecodeError();
+    }
+    if (sz == 0b00 || mcl::bit::get_bit<0>(Vd)) {
+        return UndefinedInstruction();
+    }
+    const size_t esize = 8U << sz;
+    const auto reg_n = ir.GetVector(ToVector(false, Vn, N));
+    const auto reg_m = ir.GetVector(ToVector(false, Vm, M));
+    ir.SetVector(ToVector(true, Vd, D), ir.VectorSignedSaturatedDoublingMultiplyLong(esize, reg_n, reg_m));
+    return true;
+}
+
+bool TranslatorVisitor::asimd_VQDMLAL(bool D, size_t sz, size_t Vn, size_t Vd, bool op, bool N, bool M, size_t Vm) {
+    if (sz == 0b11) {
+        return DecodeError();
+    }
+    if (sz == 0b00 || mcl::bit::get_bit<0>(Vd)) {
+        return UndefinedInstruction();
+    }
+    const size_t esize = 8U << sz;
+    const auto d = ToVector(true, Vd, D);
+    const auto product = ir.VectorSignedSaturatedDoublingMultiplyLong(esize, ir.GetVector(ToVector(false, Vn, N)), ir.GetVector(ToVector(false, Vm, M)));
+    const auto reg_d = ir.GetVector(d);
+    ir.SetVector(d, op ? ir.VectorSignedSaturatedSub(esize * 2, reg_d, product) : ir.VectorSignedSaturatedAdd(esize * 2, reg_d, product));
+    return true;
+}
+]=] _asimd_source "${_asimd_source}")
+    else()
+        string(REPLACE "bool TranslatorVisitor::asimd_VQDMULH_scalar(" [=[bool TranslatorVisitor::asimd_VQDMLAL_scalar(bool D, size_t sz, size_t Vn, size_t Vd, bool op, bool N, bool M, size_t Vm) {
+    if (sz == 0b11) {
+        return DecodeError();
+    }
+    if (sz == 0b00 || mcl::bit::get_bit<0>(Vd)) {
+        return UndefinedInstruction();
+    }
+    const size_t esize = 8U << sz;
+    const auto d = ToVector(true, Vd, D);
+    const auto [m, index] = GetScalarLocation(esize, M, Vm);
+    const auto reg_m = ir.VectorBroadcastElement(esize, ir.GetVector(m), index);
+    const auto product = ir.VectorSignedSaturatedDoublingMultiplyLong(esize, ir.GetVector(ToVector(false, Vn, N)), reg_m);
+    const auto reg_d = ir.GetVector(d);
+    ir.SetVector(d, op ? ir.VectorSignedSaturatedSub(esize * 2, reg_d, product) : ir.VectorSignedSaturatedAdd(esize * 2, reg_d, product));
+    return true;
+}
+
+bool TranslatorVisitor::asimd_VQDMULH_scalar(]=] _asimd_source "${_asimd_source}")
+    endif()
+    file(WRITE "${_asimd_output}/dynarmic/${_asimd_relative}.in" "${_asimd_source}")
+    configure_file("${_asimd_output}/dynarmic/${_asimd_relative}.in" "${_asimd_output}/dynarmic/${_asimd_relative}" COPYONLY)
+    if(_asimd_relative MATCHES "\\.cpp$")
+        get_target_property(_asimd_sources dynarmic SOURCES)
+        set(_asimd_found FALSE)
+        foreach(_asimd_item IN LISTS _asimd_sources)
+            if(_asimd_item MATCHES "${_asimd_relative}$")
+                list(REMOVE_ITEM _asimd_sources "${_asimd_item}")
+                set(_asimd_found TRUE)
+            endif()
+        endforeach()
+        if(NOT _asimd_found)
+            message(FATAL_ERROR "Dynarmic ASIMD translation source missing: ${_asimd_relative}")
+        endif()
+        list(APPEND _asimd_sources "${_asimd_output}/dynarmic/${_asimd_relative}")
+        set_property(TARGET dynarmic PROPERTY SOURCES "${_asimd_sources}")
+    endif()
+endforeach()
+target_include_directories(dynarmic BEFORE PRIVATE "${_asimd_output}")
+
 # ---- ARM64 read page table ----
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
 # Checked ARM64 adaptation: keep the pinned vendor tree unchanged. A separate
@@ -322,7 +472,7 @@ target_include_directories(dynarmic BEFORE PUBLIC "$<BUILD_INTERFACE:${_rp_outpu
 # A newly shadowed vendor header is absent from existing dependency files.
 # Bump the ABI marker when adding such a header so incremental builds rebuild
 # both the backend and its consumers rather than mixing object layouts.
-target_compile_definitions(dynarmic PUBLIC OGPLAY_DYNARMIC_READ_PAGES_ABI=8)
+target_compile_definitions(dynarmic PUBLIC OGPLAY_DYNARMIC_READ_PAGES_ABI=9)
 endif()
 
 # ---- Windows x64 cache statistics ----

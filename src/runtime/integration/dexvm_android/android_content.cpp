@@ -2202,6 +2202,18 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
                               // catalog.
                               return dx::VmValue::Ref(dx::VmObjectRef{});
                           });
+    builder.VirtualMethod("queryIntentServices", "(Landroid/content/Intent;I)Ljava/util/List;",
+                          [context](dx::IntrinsicContext& call) {
+                              const auto intent = dx::IntrinsicCall(call).NonNullRef(0, "intent");
+                              if ((call.arguments[1].AsInt() & ~0x40) != 0) {
+                                  if (auto* ledger = call.vm.Ledger())
+                                      ledger->RecordUnimplemented("dexvm.service_resolution", 0);
+                                  throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                                        "queryIntentServices: only GET_RESOLVED_FILTER is supported"};
+                              }
+                              RequireAbsentService(call, context, intent);
+                              return dx::VmValue::Ref(NewQueryObject(call, "Ljava/util/ArrayList;"));
+                          });
     builder.ConstantInt("GET_RESOLVED_FILTER", "I", 0x40, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
     builder.ConstantInt("GET_ACTIVITIES", "I", kGetActivities, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
         .ConstantInt("GET_META_DATA", "I", kGetMetaData, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)

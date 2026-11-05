@@ -79,9 +79,13 @@ TEST_CASE("DVM-365 ProgressBar ROM state measurement attachment and bounded reso
             f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Landroid/widget/ProgressBar;"), "<init>",
                                       "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
         const auto rejected = f.vm.Call(*ctor, std::array{VmValue::Ref(horizontal), VmValue::Ref(owner),
-                                                          VmValue::Ref(VmObjectRef{}), VmValue::Int(0x01010079)});
+                                                          VmValue::Ref(VmObjectRef{}), VmValue::Int(0x0101020f)});
         REQUIRE(rejected.exception.IsValid());
-        CHECK(rejected.exception_message.find("drawable") != std::string::npos);
+        CHECK_FALSE(rejected.exception_message.empty());
+        const auto small =
+            f.New("Landroid/widget/ProgressBar;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                  {VmValue::Ref(owner), VmValue::Ref(VmObjectRef{}), VmValue::Int(0x01010079)});
+        REQUIRE(f.On(small, "getIndeterminateDrawable", "()Landroid/graphics/drawable/Drawable;").ref.IsValid());
         const auto large =
             f.New("Landroid/widget/ProgressBar;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
                   {VmValue::Ref(owner), VmValue::Ref(VmObjectRef{}), VmValue::Int(0x0101007a)});

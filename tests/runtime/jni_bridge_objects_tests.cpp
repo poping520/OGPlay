@@ -73,6 +73,19 @@ TEST_CASE("DexVM bridge canonicalizes JNI jclass as the real Class object") {
     const auto round_trip = fixture.bridge->FromReference(reference);
     CHECK(round_trip == class_object);
     CHECK(fixture.bridge->Model().ClassOfClassObject(round_trip) == *represented);
+    // Native Class[] storage must canonicalize elements on its first VM read.
+    auto& arrays = fixture.session->Objects().ObjectArrays();
+    const auto native_array =
+        arrays.New(*fixture.bridge->RegisteredClassIdentity(*class_class), 1,
+                   runtime::JniObjectValue{*identity, *fixture.bridge->RegisteredClassIdentity(*class_class)});
+    const auto array_ref = fixture.session->Environment().PublishLocalObject(1U, native_array);
+    const auto imported = fixture.bridge->FromReference(array_ref);
+    const auto roots = fixture.bridge->Vm().ProtectReferences(std::array{imported});
+    const auto element = fixture.bridge->Model().GetObjectElement(imported, 0);
+    CHECK(element == class_object);
+    CHECK(fixture.bridge->Model().ClassOfClassObject(element) == *represented);
+    static_cast<void>(fixture.bridge->Vm().CollectGarbage("jni-class-array"));
+    CHECK(fixture.bridge->Model().GetObjectElement(imported, 0) == class_object);
 }
 
 TEST_CASE("DVM-200 JNI reflection conversions share VM members and survive GC") {

@@ -27,6 +27,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；无下一失败，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
 | GTA3 | macOS | Tap To Continue 标题；PlayMovieInWindow 的 View.toString 已通过 | 本次 90 秒未见新 Java 首错；影片解码画面未验，NV clock 提示仍在 | [DVM-363](../tasks/dexvm/DVM-363.md) |
 | GTASA | macOS | OFFLINE → 标题菜单 → Start Game 进入开场过场，约 2 分钟无 fault，SIGINT 退出 0 | OpenSL 播放器 BUFFERQUEUE/ANDROIDSIMPLEBUFFERQUEUE 未互为别名致 OpenAL 启动失败、随后堆损坏，已修；登录界面图片（guest onDraw）未绘制，游戏内交互未验 | [DVM-366](../tasks/dexvm/DVM-366.md) |
+| Monument Valley 2.5.18 | macOS | 720×1280：序章曲柄/行走至终点，进入第二章 The Garden，非零 PCM 已确认 | 默认入口竖屏、触摸复制及长期工作 Looper 已修；退出 IAP 未 bind 却 unbind 抛 IAE，正式 title gate/跨平台未验 | [DVM-369](../tasks/dexvm/DVM-369.md)、[DVM-259](../tasks/dexvm/DVM-259.md) |
 | NFS17 | macOS | 下载布局构造通过，进入 GameActivityMain.onCreate | `Window.getWindowManager()` 未实现；尚未进入游戏 | [DVM-367](../tasks/dexvm/DVM-367.md)、[DVM-368](../tasks/dexvm/DVM-368.md) |
 
 ## 未闭合问题
@@ -36,8 +37,8 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 - 退出顺序：除上表外，GC 全周期、直接写入 ABA、直接访存卸载 quiescence 未验收；
   Java-only 线程误交 clone join 已修，MCP shutdown 稳定性待验。
 - 门禁：[WU7-T](../tasks/diagnostics/DIAG-7.md) 已清理 HEAD
-  测试失败：ogplay_tests 1903/1903、ogplay_app_tests 89/89 通过，0 失败，保留既有 7 skip。
-- 一致性：dalvik/tests 双后端 85/91（93.4%）；035/046/070 通过，085 oracle 排除；070 共享数组已修复，见 [DIAG-7](../tasks/diagnostics/DIAG-7.md)；JNI 双后端 399/399（100%，DVM-260 / ADR-0152、0153：pending 按 Dalvik 非 CheckJNI 放行、heap capacity 对齐 4.4；JNI/dalvik 零回归、基础场景 6/9 无新增失败），静态覆盖 233/233（100%），见 [DIAG-8](../tasks/diagnostics/DIAG-8.md)。 Framework A–D=0/521/173/13/2、E=27/0/0；八类撤换，见 [DVM-268](../tasks/dexvm/DVM-268.md)。 BootDex父类准入，场景待外验。
+  测试失败，但现已不再全绿：受影响主题 672 用例中 ogplay_tests 仍有 31 个失败/崩溃、app 测试 DIAG-4 失败，9b7c1415 上同样存在，见 [DVM-369](../tasks/dexvm/DVM-369.md)；未跑全量。
+- 一致性：dalvik/tests 双后端 86/91（94.5%，044-proxy 已通过，见 DVM-259/369）；035/046/070 通过，085 oracle 排除；070 共享数组已修复，见 [DIAG-7](../tasks/diagnostics/DIAG-7.md)；JNI 双后端 399/399（100%，DVM-260 / ADR-0152、0153：pending 按 Dalvik 非 CheckJNI 放行、heap capacity 对齐 4.4；JNI/dalvik 零回归、基础场景 6/9 无新增失败），静态覆盖 233/233（100%），见 [DIAG-8](../tasks/diagnostics/DIAG-8.md)。 Framework A–D=0/521/173/13/2、E=27/0/0；八类撤换，见 [DVM-268](../tasks/dexvm/DVM-268.md)。 BootDex父类准入，场景待外验。
 - `--ephemeral-sandbox` 下 Dungeon Hunter 约 106 帧抛 `Invalid path: /sdcard`；持久沙盒不复现。
 - 跨平台：近期修复多只在 macOS 实跑；[VFS-07](../tasks/vfs/VFS-07.md) macOS 待验证。
 

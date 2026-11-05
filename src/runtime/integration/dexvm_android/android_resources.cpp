@@ -1340,7 +1340,7 @@ Decl Declare_android_content_res_Resources(const Context& context) {
                         {}};
                     if (!context->theme_resources.CanLoadDrawable(drawable_value, context->arsc))
                         throw std::runtime_error((id >> 24U) == 1
-                                                     ? "unreviewed ROM drawable load"
+                                                     ? "unreviewed ROM drawable load: resource " + std::to_string(id)
                                                      : "leaf Drawable requires APK bitmap or scalar color");
                     if ((id >> 24U) == 1 && type == 1) return dx::VmValue::Ref(MakeRomSkin(call, context, id));
                     std::shared_ptr<const ui::UiBitmap> pixels;
@@ -1766,6 +1766,7 @@ dx::VmObjectRef InflateSealedRomDrawable(dx::IntrinsicContext& call, const Conte
     const char* descriptor = name == "animated-rotate"  ? "Landroid/graphics/drawable/AnimatedRotateDrawable;"
                              : name == "layer-list"     ? "Landroid/graphics/drawable/LayerDrawable;"
                              : name == "scale"          ? "Landroid/graphics/drawable/ScaleDrawable;"
+                             : name == "rotate"         ? "Landroid/graphics/drawable/RotateDrawable;"
                              : name == "animation-list" ? "Landroid/graphics/drawable/AnimationDrawable;"
                                                         : nullptr;
     if (!descriptor)

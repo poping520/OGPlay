@@ -30,6 +30,7 @@
     "findFocus()Landroid/view/View;",
     "findViewById(I)Landroid/view/View;",
     "findViewTraversal(I)Landroid/view/View;",
+    "forceLayout()V",
     "generateViewId()I",
     "getAccessibilityLiveRegion()I",
     "getAccessibilityNodeProvider()Landroid/view/accessibility/AccessibilityNodeProvider;",

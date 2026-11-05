@@ -1631,7 +1631,8 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
                     throw DexVmBridgeError("JNI primitive array kind is invalid");
                 }();
                 return bridge_state->linker.ResolveDescriptor(descriptor);
-            }});
+            },
+            [bridge_state](const JniObjectIdentity identity) { return bridge_state->ClassForJniIdentity(identity); }});
 
     impl_->vm = std::make_unique<dx::Interpreter>(impl_->linker, *impl_->model, this, ledger, config.interpreter);
     impl_->model->SetPrimitiveAllocationMutex(impl_->vm->ExecutionLock());

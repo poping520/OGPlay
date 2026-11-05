@@ -1,5 +1,7 @@
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
+#include "android_value_fixture.h"
+#include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include <algorithm>
 #include <array>
 #include <fstream>
@@ -1364,5 +1366,111 @@ TEST_CASE("WU7-5 generic signatures use original parser and preserve raw types a
         ExpectException(
             f, f.Virtual(FieldWrapper(f, "Lgeneric/Missing;", "value"), "getGenericType", "()Ljava/lang/reflect/Type;"),
             "Ljava/lang/TypeNotPresentException;");
+    }
+}
+
+TEST_CASE("DVM-259 Proxy ordered interfaces cache checked exceptions and GC use real methods") {
+    using ogplay::test::android_value::AndroidValueVm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        int mode = 0;
+        auto handler_decl = IntrinsicClassBuilder::Class("Ltest/ProxyHandler;", "Ljava/lang/Object;",
+                                                         {"Ljava/lang/reflect/InvocationHandler;"});
+        handler_decl.VirtualMethod(
+            "invoke", "(Ljava/lang/Object;Ljava/lang/reflect/Method;[Ljava/lang/Object;)Ljava/lang/Object;",
+            [&mode](IntrinsicContext& call) {
+                const auto& meta = call.vm.Reflection().MethodMetadata(call.arguments[1].ref);
+                CHECK(call.vm.Linker().Class(meta.declaring_class).descriptor != "Ljava/lang/reflect/Proxy;");
+                if (mode == 1) throw VmJavaThrow{"Ljava/io/IOException;", "declared"};
+                if (mode == 2) throw VmJavaThrow{"Ljava/lang/Exception;", "undeclared"};
+                if (mode == 3) return VmValue::Ref(VmObjectRef{});
+                if (mode == 4) return VmValue::Ref(call.vm.NewStringUtf8("wrong type"));
+                if (call.vm.Linker().Method(meta.method).name == "checked") {
+                    CHECK_FALSE(call.arguments[2].ref.IsValid());
+                    return VmValue::Ref(VmObjectRef{});
+                }
+                return VmValue::Ref(
+                    call.vm.Reflection().Codec().BoxReturn(call.vm.Linker().ResolveDescriptor("I"), VmValue::Int(42)));
+            });
+        AndroidValueVm f(backend, {std::move(handler_decl).Build()}, false, "reflection.dex");
+        const auto handler = f.vm.NewIntrinsicInstance("Ltest/ProxyHandler;");
+        const auto interfaces = f.model.NewObjectArray(f.linker.ResolveDescriptor("[Ljava/lang/Class;"),
+                                                       f.linker.ResolveDescriptor("Ljava/lang/Class;"), 3);
+        const auto roots = f.vm.ProtectReferences(std::array{handler, interfaces});
+        const std::array names{"Lreflect/BaseContract;", "Lreflect/CheckedContract;", "Lreflect/OtherCheckedContract;"};
+        for (int i = 0; i < 3; ++i)
+            f.model.SetObjectElement(
+                interfaces, i, f.model.ClassObject(f.linker.ResolveDescriptor(names[static_cast<std::size_t>(i)])));
+        const auto loader = f.vm.ClassLoaders().ApplicationLoader();
+        const auto proxy =
+            f.Static(
+                 "Ljava/lang/reflect/Proxy;", "newProxyInstance",
+                 "(Ljava/lang/ClassLoader;[Ljava/lang/Class;Ljava/lang/reflect/InvocationHandler;)Ljava/lang/Object;",
+                 {VmValue::Ref(loader), VmValue::Ref(interfaces), VmValue::Ref(handler)})
+                .ref;
+        const auto proxy_root = f.vm.ProtectReferences(std::array{proxy});
+        const auto class_object = f.model.ClassObject(f.model.ObjectClass(proxy));
+        const auto cached = [&] {
+            return f
+                .Static("Ljava/lang/reflect/Proxy;", "getProxyClass",
+                        "(Ljava/lang/ClassLoader;[Ljava/lang/Class;)Ljava/lang/Class;",
+                        {VmValue::Ref(loader), VmValue::Ref(interfaces)})
+                .ref;
+        };
+        CHECK(cached() == class_object);
+        CHECK(f.Static("Ljava/lang/reflect/Proxy;", "getInvocationHandler",
+                       "(Ljava/lang/Object;)Ljava/lang/reflect/InvocationHandler;", {VmValue::Ref(proxy)})
+                  .ref == handler);
+        static_cast<void>(f.vm.CollectGarbage("proxy-handler-method-roots"));
+        CHECK(f.On(proxy, "common", "()I").AsInt() == 42);
+        CHECK(f.On(proxy, "hashCode", "()I").AsInt() == 42);
+        f.On(proxy, "checked", "()V");
+        const auto meta =
+            f.vm.Reflection().FindDeclaredMethodByDescriptor(f.model.ObjectClass(proxy), "checked", "()V");
+        REQUIRE(meta.has_value());
+        // Dalvik generated methods have no DEX Throws annotation; public reflection is empty.
+        CHECK(meta->exception_types.empty());
+        const auto declared_meta = f.vm.Reflection().FindDeclaredMethodByDescriptor(
+            f.linker.ResolveDescriptor("Lreflect/CheckedContract;"), "checked", "()V");
+        REQUIRE(declared_meta.has_value());
+        REQUIRE(declared_meta->exception_types.size() == 1);
+        CHECK(f.linker.Class(declared_meta->exception_types[0]).descriptor == "Ljava/io/IOException;");
+        mode = 1;
+        const auto declared = f.OnOutcome(proxy, "checked", "()V");
+        REQUIRE(declared.exception.IsValid());
+        CHECK(f.linker.Class(declared.exception_class).descriptor == "Ljava/io/IOException;");
+        mode = 2;
+        const auto undeclared = f.OnOutcome(proxy, "checked", "()V");
+        REQUIRE(undeclared.exception.IsValid());
+        CHECK(f.linker.Class(undeclared.exception_class).descriptor ==
+              "Ljava/lang/reflect/UndeclaredThrowableException;");
+        for (const int wrong : {3, 4}) {
+            mode = wrong;
+            const auto failed = f.OnOutcome(proxy, "common", "()I");
+            REQUIRE(failed.exception.IsValid());
+            CHECK(f.linker.Class(failed.exception_class).descriptor ==
+                  (wrong == 3 ? "Ljava/lang/NullPointerException;" : "Ljava/lang/ClassCastException;"));
+        }
+        f.model.SetObjectElement(interfaces, 0, f.model.ClassObject(f.linker.ResolveDescriptor(names[1])));
+        f.model.SetObjectElement(interfaces, 1, f.model.ClassObject(f.linker.ResolveDescriptor(names[0])));
+        CHECK(cached() != class_object);
+        const auto boot_interfaces = f.model.NewObjectArray(f.linker.ResolveDescriptor("[Ljava/lang/Class;"),
+                                                            f.linker.ResolveDescriptor("Ljava/lang/Class;"), 1);
+        const auto interfaces_root = f.vm.ProtectReferences(std::array{boot_interfaces});
+        f.model.SetObjectElement(boot_interfaces, 0,
+                                 f.model.ClassObject(f.linker.ResolveDescriptor("Ljava/lang/Runnable;")));
+        const auto loaded_proxy = [&](VmObjectRef defining_loader) {
+            return f
+                .Static("Ljava/lang/reflect/Proxy;", "getProxyClass",
+                        "(Ljava/lang/ClassLoader;[Ljava/lang/Class;)Ljava/lang/Class;",
+                        {VmValue::Ref(defining_loader), VmValue::Ref(boot_interfaces)})
+                .ref;
+        };
+        const auto bootstrap = f.vm.ClassLoaders().BootstrapLoader();
+        const auto boot_proxy = loaded_proxy(bootstrap), app_proxy = loaded_proxy(loader);
+        CHECK(boot_proxy != app_proxy);
+        CHECK(loaded_proxy(bootstrap) == boot_proxy);
+        CHECK(loaded_proxy(loader) == app_proxy);
+        CHECK(f.linker.Class(f.model.ClassOfClassObject(boot_proxy)).defining_loader == kBootstrapLoader);
+        CHECK(f.linker.Class(f.model.ClassOfClassObject(app_proxy)).defining_loader != kBootstrapLoader);
     }
 }

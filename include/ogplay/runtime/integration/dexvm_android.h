@@ -860,6 +860,8 @@ struct DexVmAndroidContext final {
         std::int32_t config{5};
         std::int32_t density{160};
         bool mutable_pixels{true};
+        // Explicit Bitmap.setHasAlpha value; unset derives from config and pixels.
+        std::optional<bool> has_alpha{};
     };
 
     std::unordered_map<std::uint32_t, BitmapState> bitmaps;

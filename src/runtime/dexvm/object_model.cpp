@@ -271,6 +271,13 @@ VmObjectRef JavaObjectModel::FromIdentity(const JniObjectIdentity identity) {
     if (found != impl_->by_identity.end()) {
         return VmObjectRef(found->second + 1);
     }
+    // A published jclass is the class mirror wherever it surfaces, including
+    // elements of object arrays that native code filled.
+    if (impl_->interop.resolve_class_mirror) {
+        if (const auto represented = impl_->interop.resolve_class_mirror(identity); represented.has_value()) {
+            return ClassObject(*represented);
+        }
+    }
     Impl::Record record;
     record.identity = identity;
     // Objects created on the JNI side (NewStringUTF, NewByteArray, ...)
@@ -991,7 +998,10 @@ VmObjectRef JavaObjectModel::ClassObject(const DexClassId java_class) {
 DexClassId JavaObjectModel::ClassOfClassObject(const VmObjectRef ref) const {
     const auto& record = impl_->At(ref);
     if (record.kind != VmObjectKind::class_object) {
-        Fail(DexVmErrorReason::object_model_failure, "object is not a class object");
+        const auto message = "object is not a class object: " +
+                             (impl_->class_descriptor_resolver ? impl_->class_descriptor_resolver(record.java_class)
+                                                               : std::string("<unknown class>"));
+        Fail(DexVmErrorReason::object_model_failure, message.c_str());
     }
     return DexClassId(static_cast<std::uint32_t>(record.host_state));
 }

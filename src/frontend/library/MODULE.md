@@ -59,3 +59,6 @@ external_dir 与库内路径不同时即按 link 解析。
 `cradle`（卡带插槽）；游戏图标不加底，裁透明边/软投影后放大至多 20% 直到 macOS 圆角内无透明像素。全局 `running_icon`
 选择样式；ResolveLaunch 仅在条目有 icon.png 时传 window_icon 与样式。
 Windows 合成使用更紧凑的留白（底板占边长约 91%、卡槽宽度占 98%），与裁透明边后的应用 ICO 保持接近的视觉尺寸，角标保持在画布内；macOS 沿用原有 Dock 网格。设置预览与运行图标使用相同的平台参数。
+
+游戏级任一 screen_width/screen_height 保存为 surface_size_explicit；全局或内置尺寸保留继承来源，
+交由 frontend/game 在建窗前按入口 Manifest 方向调整。GUI 子进程格式化参数也保留此来源。

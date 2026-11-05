@@ -73,6 +73,8 @@ TEST_CASE("DVM-118 Resources metrics share display facts and BootDex value seman
         CHECK(field(other, "densityDpi", "I") == 240);
         CHECK(std::bit_cast<float>(field(other, "scaledDensity", "F")) == 1.5F);
         const auto display = f.vm.NewIntrinsicInstance("Landroid/view/Display;");
+        f.context->display_refresh_rate_hz = 75;
+        CHECK(f.On(display, "getRefreshRate", "()F").AsFloat() == 75);
         f.On(display, "getMetrics", "(Landroid/util/DisplayMetrics;)V", {VmValue::Ref(other)});
         CHECK(f.On(metrics, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(other)}).AsInt() == 1);
         CHECK(f.On(metrics, "hashCode", "()I").AsInt() == f.On(other, "hashCode", "()I").AsInt());
@@ -878,5 +880,56 @@ TEST_CASE("DVM-347 Canvas pure color modes match API19 Skia premultiplied formul
                                            {VmValue::Int(0), VmValue::Ref(VmObjectRef{})});
         REQUIRE(null_mode.exception.IsValid());
         CHECK(f.linker.Class(null_mode.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+    }
+}
+
+TEST_CASE("Bitmap createScaledBitmap preserves metadata and handles filtering mirroring and invalid sizes") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto configs =
+            f.Static("Landroid/graphics/Bitmap$Config;", "values", "()[Landroid/graphics/Bitmap$Config;").ref;
+        const auto config_root = f.vm.ProtectReferences(std::array{configs});
+        const auto source =
+            f.Static("Landroid/graphics/Bitmap;", "createBitmap",
+                     "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+                     {VmValue::Int(2), VmValue::Int(1), VmValue::Ref(f.model.GetObjectElement(configs, 3))})
+                .ref;
+        const auto root = f.vm.ProtectReferences(std::array{source});
+        auto& state = f.context->bitmaps.at(source.Value());
+        state.pixels->Set(0, 0x00ff0000U);
+        state.pixels->Set(1, 0xff0000ffU);
+        state.density = 240;
+        const auto scale = [&](int width, int height, bool filter) {
+            return f.StaticOutcome(
+                "Landroid/graphics/Bitmap;", "createScaledBitmap",
+                "(Landroid/graphics/Bitmap;IIZ)Landroid/graphics/Bitmap;",
+                {VmValue::Ref(source), VmValue::Int(width), VmValue::Int(height), VmValue::Int(filter)});
+        };
+        const auto mutable_copy = scale(2, 1, false);
+        REQUIRE_FALSE(mutable_copy.exception.IsValid());
+        CHECK(mutable_copy.value.ref != source);
+        const auto nearest = scale(3, 1, false), filtered = scale(3, 1, true), mirrored = scale(-2, 1, false);
+        REQUIRE_FALSE(nearest.exception.IsValid());
+        REQUIRE_FALSE(filtered.exception.IsValid());
+        REQUIRE_FALSE(mirrored.exception.IsValid());
+        CHECK(f.context->bitmaps.at(nearest.value.ref.Value()).pixels->Get(1) == 0xff0000ffU);
+        CHECK(f.context->bitmaps.at(filtered.value.ref.Value()).pixels->Get(1) == 0x800000ffU);
+        CHECK(f.context->bitmaps.at(mirrored.value.ref.Value()).pixels->Get(0) == 0xff0000ffU);
+        CHECK(f.On(filtered.value.ref, "getDensity", "()I").AsInt() == 240);
+        CHECK(f.On(filtered.value.ref, "hasAlpha", "()Z").AsInt() == 1);
+        f.On(source, "setHasAlpha", "(Z)V", {VmValue::Int(0)});
+        CHECK(f.On(source, "hasAlpha", "()Z").AsInt() == 0);
+        const auto opaque = scale(3, 1, true);
+        REQUIRE_FALSE(opaque.exception.IsValid());
+        CHECK(f.On(opaque.value.ref, "hasAlpha", "()Z").AsInt() == 0);
+        CHECK((f.context->bitmaps.at(opaque.value.ref.Value()).pixels->Get(1) >> 24U) == 255U);
+        // Map insertion during scaling may rehash; do not retain a reference across it.
+        f.context->bitmaps.at(source.Value()).mutable_pixels = false;
+        CHECK(scale(2, 1, true).value.ref == source);
+        for (const auto size : {std::pair{0, 1}, std::pair{1, 0}}) {
+            const auto failed = scale(size.first, size.second, false);
+            REQUIRE(failed.exception.IsValid());
+            CHECK(f.linker.Class(failed.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        }
     }
 }

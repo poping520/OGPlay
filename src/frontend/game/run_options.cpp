@@ -53,6 +53,14 @@ InterpreterBackend ParseDexVmInterpreter(const std::string_view text) {
 
 }  // namespace
 
+void ApplyStartupOrientation(GameRunOptions& options, const std::int32_t screen_orientation) {
+    // API19 portrait, sensorPortrait, reversePortrait and userPortrait only.
+    const bool portrait =
+        screen_orientation == 1 || screen_orientation == 7 || screen_orientation == 9 || screen_orientation == 12;
+    if (portrait && !options.surface_size_explicit && options.surface_width > options.surface_height)
+        std::swap(options.surface_width, options.surface_height);
+}
+
 GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
     if (args.empty()) throw std::invalid_argument("run-apk requires <apk>");
     GameRunOptions options;
@@ -103,12 +111,15 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
                 options.cpu_config.cores = static_cast<std::uint32_t>(value);
             else
                 options.cpu_config.frequency_mhz = static_cast<std::uint32_t>(value);
-        } else if ((option == "--surface-width" || option == "--surface-height") && index + 1 < args.size()) {
+        } else if ((option == "--surface-width" || option == "--surface-height" ||
+                    option == "--inherited-surface-width" || option == "--inherited-surface-height") &&
+                   index + 1 < args.size()) {
             const auto value = ParsePositive(args[++index], option);
             if (value > kMaximumSurfaceDimension)
                 throw std::invalid_argument(std::string(option) + " exceeds " +
                                             std::to_string(kMaximumSurfaceDimension));
-            if (option == "--surface-width")
+            if (option == "--surface-width" || option == "--surface-height") options.surface_size_explicit = true;
+            if (option == "--surface-width" || option == "--inherited-surface-width")
                 options.surface_width = static_cast<std::uint32_t>(value);
             else
                 options.surface_height = static_cast<std::uint32_t>(value);
@@ -334,8 +345,11 @@ std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
     if (o.cpu_config.execution.limit_parallelism) args.emplace_back("--cpu-limit-parallelism");
     if (o.cpu_config.execution.max_mticks_per_second)
         add("--cpu-max-mticks-per-second", std::to_string(o.cpu_config.execution.max_mticks_per_second));
-    if (o.surface_width != kDefaultSurfaceWidth) add("--surface-width", std::to_string(o.surface_width));
-    if (o.surface_height != kDefaultSurfaceHeight) add("--surface-height", std::to_string(o.surface_height));
+    if (o.surface_size_explicit || o.surface_width != kDefaultSurfaceWidth)
+        add(o.surface_size_explicit ? "--surface-width" : "--inherited-surface-width", std::to_string(o.surface_width));
+    if (o.surface_size_explicit || o.surface_height != kDefaultSurfaceHeight)
+        add(o.surface_size_explicit ? "--surface-height" : "--inherited-surface-height",
+            std::to_string(o.surface_height));
     if (o.density_dpi != kDefaultDensityDpi) add("--density-dpi", std::to_string(o.density_dpi));
     if (o.supersample_factor != 1) add("--supersample", std::to_string(o.supersample_factor));
     if (o.max_fps) add("--max-fps", std::to_string(o.max_fps));

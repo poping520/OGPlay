@@ -1323,7 +1323,18 @@ TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve 
                 }
                 continue;
             }
-            if (i >= 2) {
+            if (i == 2) {
+                // ROM BitmapDrawable.getOpacity lets View.computeOpaqueFlags accept a bitmap background.
+                REQUIRE_FALSE(result.exception.IsValid());
+                const auto bg = f.On(result.value.ref, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref;
+                REQUIRE(bg.IsValid());
+                CHECK(f.linker.Class(f.model.ObjectClass(bg)).descriptor ==
+                      "Landroid/graphics/drawable/BitmapDrawable;");
+                CHECK(f.On(bg, "getOpacity", "()I").AsInt() == -1);
+                CHECK(f.ledger.Unimplemented().empty());
+                continue;
+            }
+            if (i > 2) {
                 REQUIRE(result.exception.IsValid());
                 const auto wrapper = f.vm.DiagnosticThrowableCause(result.exception);
                 REQUIRE(wrapper.IsValid());
@@ -1332,15 +1343,7 @@ TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve 
                 CHECK(f.linker.Class(f.model.ObjectClass(target)).descriptor ==
                       "Ljava/lang/UnsupportedOperationException;");
                 REQUIRE_FALSE(f.ledger.Unimplemented().empty());
-                if (i == 2) {
-                    // Admission/loading succeeds; the pre-existing getOpacity boundary
-                    // in View.computeOpaqueFlags still prevents bitmap background inflation.
-                    CHECK(f.vm.StringUtf8(f.vm.ThrowableMessage(target)) == "Drawable state is not admitted");
-                    CHECK(f.vm.DescribeThrowableCauses(result.exception).find("View;.computeOpaqueFlags (pc 8)") !=
-                          std::string::npos);
-                    CHECK(f.ledger.Unimplemented().back().id == "dexvm.drawable_resource");
-                } else
-                    CHECK(f.ledger.Unimplemented().back().id == "dexvm.theme.unsupported");
+                CHECK(f.ledger.Unimplemented().back().id == "dexvm.theme.unsupported");
                 continue;
             }
             CHECK_FALSE(result.exception.IsValid());

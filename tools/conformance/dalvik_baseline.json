@@ -172,8 +172,8 @@
     "threaded": "pass"
   },
   "044-proxy": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "045-reflect-array": {
     "switch": "pass",
@@ -332,12 +332,12 @@
     "threaded": "excluded:oracle"
   },
   "086-null-super": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "fail:output",
+    "threaded": "fail:output"
   },
   "087-gc-after-link": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "fail:output",
+    "threaded": "fail:output"
   },
   "088-monitor-verification": {
     "switch": "pass",

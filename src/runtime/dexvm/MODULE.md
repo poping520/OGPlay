@@ -79,7 +79,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   Signature 为 system 元数据，由原版 libcore GenericSignatureParser 与 Type 实现解析，
   支持 class/field/method/constructor 泛型、type variable、wildcard 和 generic array；无签名
   回退原始类型，畸形/缺失类型保留原版 Java 异常。enclosing declaration 从受检元数据取得，
-  不按名称猜测。通用 Proxy 生成仍明确失败。
+  不按名称猜测。DVM-259 通用 Proxy 执行原版 Java 校验/loader 有序接口缓存，生成类继承 Proxy；
+  intrinsic 方法通过真实 Method/boxing 转发 handler，异常按声明交集传播或包装。注解仍用受限合成类，
+  私有 throws 字段只保留形状，完整统一迁移未完成。
 
 ### 对象、GC、执行
 
@@ -90,7 +92,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   与分配安全点后创建真实继承布局的零值实例，不执行实例构造器或自动创建 native peer。
   clinit/堆预算/宿主分配错误返回 Java throwable；成功和异常均交给 owner 发布引用。
 - `JavaObjectModel` 提供 session 级非移动句柄（0=null）；VM 实例/Object[] 自有存储，String/
-  primitive array 复用 JNI store。clone 生成新 identity 并浅拷贝；host-backed 对象必须显式声明
+  primitive array 复用 JNI store。JavaObjectInterop.resolve_class_mirror 由 bridge 注入；FromIdentity 在普通
+  对象导入前恢复已有 ClassObject，因此原生 Class[] 元素与直接 jclass 保持同一类镜像。
+  clone 生成新 identity 并浅拷贝；host-backed 对象必须显式声明
   clone/destructor 策略。同一 Object[] 的区间复制由对象模型委托共享 JNI store 或本地存储，
   先验证范围，再重叠安全地批量移动既有引用；跨数组仍逐元素校验并保留失败前缀。
   JNI primitive array 导入时通过显式 interop callback 取得 kind 对应的真实数组类，
@@ -276,7 +280,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 Field 与 Class 共享运行时注解查询：runtime-visible 递归 encoded value、AnnotationDefault、
 `@Inherited` 超类继承与受限实现类成员分派。Method.getDefaultValue 读取声明默认值。
 Method/Constructor/参数注解查询仍明确未实现。未实现 generic reflection、完整 annotation
-proxy、动态 Proxy/defineClass/DexClassLoader、多 classpath
+proxy、defineClass/DexClassLoader、多 classpath
 反射字段、方法、构造器元数据按成员类别独立按需构建；字段查询不得解析无关方法签名。
 namespace、完整 Charset/PKIX/TLS/BigInt 及完整 Java/Android 平台。
 

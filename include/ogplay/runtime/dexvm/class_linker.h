@@ -297,6 +297,7 @@ struct LinkedClass final {
     std::optional<std::uint32_t> dex_class_def_index;
     std::optional<DexUnitId> dex_unit;
     bool is_annotation_implementation{};
+    bool is_proxy{};
     std::optional<DexClassId> annotation_interface;
     std::optional<std::u16string> generic_signature;
     std::vector<LinkedAnnotation> runtime_annotations;
@@ -389,6 +390,12 @@ public:
     // existing class/method identities are not rewritten.
     [[nodiscard]] DexClassId DefineRestrictedAnnotationClass(DexClassId annotation_type,
                                                              std::span<const IntrinsicMethodDecl> methods);
+
+    // After Link(): synthesize a java.lang.reflect.Proxy subclass from caller-built
+    // members, on the same append-only storage as annotation implementations.
+    [[nodiscard]] DexClassId DefineProxyClass(std::string descriptor, DexClassId super,
+                                              std::vector<DexClassId> interfaces, VmClassLoaderId loader,
+                                              std::span<const IntrinsicMethodDecl> methods);
 
     [[nodiscard]] const LinkedClass& Class(DexClassId id) const;
     [[nodiscard]] LinkedClass& MutableClass(DexClassId id);

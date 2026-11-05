@@ -161,21 +161,27 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stream));
         static_cast<void>(std::fflush(stream));
     };
+    const auto apk_bytes = std::make_shared<const std::vector<std::byte>>(ReadBytes(options.apk_path));
+    const auto archive = loader::ParseApkArchive(*apk_bytes);
+    const auto manifest = loader::ReadAndroidManifest(*apk_bytes, archive);
+    if (manifest.launcher_activity) {
+        const auto launcher = loader::ResolveLauncherComponent(manifest);
+        if (const auto* activity =
+                loader::FindAndroidManifestActivityComponent(manifest.activity_components, launcher.component_name))
+            app::ApplyStartupOrientation(options, activity->screen_orientation);
+    }
     auto [apk_path, external_directory, external_guest_directory, obb_path, profiles_directory, exit_after_frames,
           mcp_port, key_editor_port, dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,
           diagnostics_enabled, supersample_factor, max_fps, surface_width, surface_height, density_dpi, cpu_config,
           mcp_manual_step, preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox,
           input_config_path, library_root, missing_data_report, window_title, window_icon, window_icon_style,
-          ui_language] = std::move(options);
+          ui_language, surface_size_explicit] = std::move(options);
     const auto language = ui_language ? *ui_language : app::SystemUiLanguage();
     const auto bundled_data = HostBundledDataPaths();
     logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
                  {{"data_root", PathUtf8(bundled_data.root)}});
-    const auto apk_bytes = std::make_shared<const std::vector<std::byte>>(ReadBytes(apk_path));
-    const auto archive = loader::ParseApkArchive(*apk_bytes);
     const auto profiles =
         session::TitleProfileCatalog::LoadDirectory(profiles_directory.value_or(bundled_data.profiles_directory));
-    const auto manifest = loader::ReadAndroidManifest(*apk_bytes, archive);
     const auto libraries = loader::ReadApkArmNativeLibraries(*apk_bytes, archive);
     const loader::ApkNativeLibraryInventory native_inventory{libraries};
     const auto compatibility = session::SelectApkCompatibilityProfile(manifest, libraries, profiles);

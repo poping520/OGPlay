@@ -267,6 +267,10 @@ def layout_closure():
     return result
 
 
+# Holo indeterminate roots: a layer-list of two counter-rotating spinner bitmaps, by dip size.
+HOLO_SPINNERS = {'progress_small_holo': 16, 'progress_medium_holo': 48, 'progress_large_holo': 76}
+
+
 def horizontal_xml_facts(raw, by_id, root_name):
     """Exact API19 horizontal closures; no general drawable XML admission."""
     table = rom.ResourceTable(raw)
@@ -316,6 +320,16 @@ def horizontal_xml_facts(raw, by_id, root_name):
             expected += [('item', [('drawable', 1, 'progressbar_indeterminate_holo' + str(i)), ('duration', 16, 50)]), ('/item', [])]
         expected += [('/animation-list', [])]
         kind = 'animation-list'
+    elif root_name in HOLO_SPINNERS:
+        pivots = [('pivotX', 6, 0x40000030), ('pivotY', 6, 0x40000030)]
+        outer, inner = [('spinner_%d_%s_holo' % (HOLO_SPINNERS[root_name], side)) for side in ('outer', 'inner')]
+        expected = [('layer-list', []), ('item', []),
+            ('rotate', [('drawable', 1, outer), ('fromDegrees', 4, 0), ('toDegrees', 4, 0x44870000)] + pivots),
+            ('/rotate', []), ('/item', []), ('item', []),
+            ('rotate', [('drawable', 1, inner), ('fromDegrees', 4, 0x44340000), ('toDegrees', 4, 0)] + pivots),
+            ('/rotate', []), ('/item', []), ('/layer-list', [])]
+        expected = [(tag, sorted(attrs)) for tag, attrs in expected]
+        kind = 'rotate-layers'
     else:
         raise ValueError('unreviewed horizontal drawable root')
     if stack or events != expected:
@@ -355,14 +369,21 @@ def drawable_closure():
         rotates = {}
         for rotate_name, rotate_id, spinner_name, spinner_id in (
                 ('progress_medium_white', 0x010804cf, 'spinner_white_48', 0x01080580),
-                ('progress_large_white', 0x010804cc, 'spinner_white_76', 0x01080581)):
+                ('progress_large_white', 0x010804cc, 'spinner_white_76', 0x01080581),
+                ('progress_small_white', 0x010804d7, 'spinner_white_16', 0x0108057f),
+                ('progress_medium', 0x010804cd, 'spinner_black_48', 0x01080566),
+                ('progress_large', 0x010804ca, 'spinner_black_76', 0x01080567),
+                ('progress_small', 0x010804d4, 'spinner_black_16', 0x01080564)):
             progress, = [r for r in rows if r['type'] == 'drawable' and r['name'] == rotate_name]
             spinner, = [r for r in rows if r['type'] == 'drawable' and r['name'] == spinner_name]
             if progress['id'] != rotate_id or spinner['id'] != spinner_id:
                 raise ValueError('progress drawable ROM name/ID mismatch')
             rotates[rotate_id] = spinner_id
         horizontal = {'progress_horizontal_holo_dark': 0x010804c7,
-                      'progress_indeterminate_horizontal_holo': 0x010804c9}
+                      'progress_indeterminate_horizontal_holo': 0x010804c9,
+                      'progress_small_holo': 0x010804d5,
+                      'progress_medium_holo': 0x010804ce,
+                      'progress_large_holo': 0x010804cb}
         for name, ident in horizontal.items():
             if by_id[ident]['name'] != name or by_id[ident]['type'] != 'drawable':
                 raise ValueError('horizontal ROM identity mismatch')
@@ -482,7 +503,8 @@ def drawable_closure():
                                  stretch_x=list(struct.unpack_from('>%di' % nx, chunk, 32)),
                                  stretch_y=list(struct.unpack_from('>%di' % ny, chunk, 32 + 4 * nx)),
                                  padding=[left, top, right, bottom], optical=optical)
-                elif (ident in rotates.values() or row['name'] in {'progressbar_indeterminate_holo' + str(i) for i in range(1, 9)}) and path.endswith('.png'):
+                elif (ident in rotates.values() or row['name'] in {'progressbar_indeterminate_holo' + str(i) for i in range(1, 9)} or
+                      row['name'] in {'spinner_%d_%s_holo' % (size, side) for size in HOLO_SPINNERS.values() for side in ('outer', 'inner')}) and path.endswith('.png'):
                     if not raw.startswith(b'\x89PNG\r\n\x1a\n'): raise ValueError('invalid spinner PNG')
                     width, height = struct.unpack_from('>II', raw, 16)
                     facts.update(kind='bitmap', png=raw.hex(), width=width, height=height)
@@ -675,6 +697,7 @@ def generate(negative_rom_id=False):
     # point, proving every ID against the same pinned ROM field inventory.
     implicit = ('textViewStyle', 'buttonStyle', 'editTextStyle', 'imageButtonStyle',
                 'scrollViewStyle', 'horizontalScrollViewStyle', 'spinnerStyle', 'progressBarStyle', 'progressBarStyleHorizontal', 'progressBarStyleSmall', 'progressBarStyleLarge',
+                'progressBarStyleInverse', 'progressBarStyleSmallInverse', 'progressBarStyleLargeInverse',
                 'spinnerItemStyle', 'spinnerDropDownItemStyle', 'dropdownListPreferredItemHeight')
     extra_demands = set(implicit)
     pending_styles = {row['name'] for row in report['themes'] if row['resource_id'] is not None}

@@ -172,7 +172,7 @@
           "signature": "getOpacity()I",
           "flags": 1,
           "body_sha256": "ccfdc4f0973c5bf654c0472d3c64a0f6704360d2cec475c466fa0d33c15eebee",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getPadding(Landroid/graphics/Rect;)Z",
@@ -292,7 +292,7 @@
           "signature": "setVisible(ZZ)Z",
           "flags": 1,
           "body_sha256": "510e7ebe02a62bd6591911fd5402d4d29ac3583d348d6720775656b202adf131",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "unscheduleDrawable(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;)V",
@@ -414,7 +414,7 @@
           "signature": "getOpacity()I",
           "flags": 17,
           "body_sha256": "1fa497c9d14f9e876f65bc22a30066ba7b8b4983b4ff03ea8b14d2575f75bc63",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "isStateful()Z",

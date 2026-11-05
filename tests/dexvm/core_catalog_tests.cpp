@@ -256,8 +256,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     // Explicit boundaries added by DVM-105/106/109 after the original catalog snapshot.
     for (
         const auto* signature :
-        {"Ljava/lang/reflect/Proxy;.generateProxy(Ljava/lang/String;[Ljava/lang/Class;Ljava/lang/ClassLoader;)Ljava/lang/Class;",
-         "Ljava/lang/reflect/Proxy;.constructorPrototype(Ljava/lang/reflect/InvocationHandler;)V",
+        {"Ljava/lang/reflect/Proxy;.constructorPrototype(Ljava/lang/reflect/InvocationHandler;)V",
          "Ldalvik/system/VMStack;.fillStackTraceElements(Ljava/lang/Thread;[Ljava/lang/StackTraceElement;)I",
          "Ldalvik/system/VMStack;.getThreadStackTrace(Ljava/lang/Thread;)[Ljava/lang/StackTraceElement;",
          "Ldalvik/system/VMStack;.getCallingClassLoader()Ljava/lang/ClassLoader;",

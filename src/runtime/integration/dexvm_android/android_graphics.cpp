@@ -200,6 +200,104 @@ namespace {
     return dx::VmValue::Ref(instance);
 }
 
+// SkBitmap's opaque flag: RGB_565 never has alpha; decoded images are opaque when every
+// pixel is; created ARGB bitmaps default to having alpha until setHasAlpha says otherwise.
+[[nodiscard]] bool BitmapHasAlpha(const DexVmAndroidContext::BitmapState& state) {
+    if (state.config == 3) return false;
+    if (state.has_alpha) return *state.has_alpha;
+    if (state.mutable_pixels || state.config == 1) return true;
+    for (std::size_t index = 0; index < state.pixels->Size(); ++index) {
+        if ((state.pixels->Get(index) >> 24U) != 0xffU) return true;
+    }
+    return false;
+}
+
+// API19 createScaledBitmap keeps a same-size immutable source, otherwise draws through
+// a scale matrix: pixel-center mapping, bilinear when filtered, weighted by alpha.
+[[nodiscard]] dx::VmValue MakeScaledBitmap(dx::IntrinsicContext& call, const Context& context,
+                                           const dx::VmObjectRef source, const std::int32_t requested_width,
+                                           const std::int32_t requested_height, const bool filter) {
+    if (!source.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "createScaledBitmap source is null"};
+    }
+    const auto found = context->bitmaps.find(source.Value());
+    if (found == context->bitmaps.end() || found->second.recycled) {
+        throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", "Canvas: trying to use a recycled bitmap"};
+    }
+    const auto& from = found->second;
+    if (!from.mutable_pixels && requested_width == from.width && requested_height == from.height)
+        return dx::VmValue::Ref(source);
+    const std::int64_t width = std::abs(static_cast<std::int64_t>(requested_width));
+    const std::int64_t height = std::abs(static_cast<std::int64_t>(requested_height));
+    if (width == 0 || height == 0)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "width and height must be > 0"};
+    if (width > std::numeric_limits<std::int32_t>::max() || height > std::numeric_limits<std::int32_t>::max() ||
+        width * height > std::numeric_limits<std::int32_t>::max() / 4) {
+        throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "scaled bitmap is too large"};
+    }
+    const auto has_alpha = BitmapHasAlpha(from);
+    const auto sample = [&from, has_alpha](const std::int32_t x, const std::int32_t y) {
+        const auto color = from.pixels->Get(static_cast<std::size_t>(y) * static_cast<std::size_t>(from.width) +
+                                            static_cast<std::size_t>(x));
+        return has_alpha ? color : color | 0xff000000U;
+    };
+    const auto position = [](const std::int64_t index, const std::int64_t size, const std::int32_t source_size,
+                             const bool mirrored) {
+        const auto logical = mirrored ? size - 1 - index : index;
+        return (static_cast<double>(logical) + 0.5) * source_size / static_cast<double>(size) - 0.5;
+    };
+    DexVmAndroidContext::BitmapState state;
+    state.width = static_cast<std::int32_t>(width);
+    state.height = static_cast<std::int32_t>(height);
+    state.config = from.config == 1 || from.config == 3 ? from.config : 5;
+    state.density = from.density;
+    state.has_alpha = has_alpha;
+    state.pixels = std::make_shared<BitmapPixels>(state.width, state.height, state.config);
+    for (std::int64_t row = 0; row < height; ++row) {
+        const auto source_y = position(row, height, from.height, requested_height < 0);
+        for (std::int64_t column = 0; column < width; ++column) {
+            const auto source_x = position(column, width, from.width, requested_width < 0);
+            const auto index = static_cast<std::size_t>(row * width + column);
+            if (!filter) {
+                state.pixels->Set(
+                    index, sample(std::clamp(static_cast<std::int32_t>(std::lround(source_x)), 0, from.width - 1),
+                                  std::clamp(static_cast<std::int32_t>(std::lround(source_y)), 0, from.height - 1)));
+                continue;
+            }
+            const auto clamped_x = std::clamp(source_x, 0.0, static_cast<double>(from.width - 1));
+            const auto clamped_y = std::clamp(source_y, 0.0, static_cast<double>(from.height - 1));
+            const auto x0 = static_cast<std::int32_t>(clamped_x);
+            const auto y0 = static_cast<std::int32_t>(clamped_y);
+            const auto x1 = std::min(x0 + 1, from.width - 1);
+            const auto y1 = std::min(y0 + 1, from.height - 1);
+            const auto fx = clamped_x - x0;
+            const auto fy = clamped_y - y0;
+            double alpha = 0.0;
+            std::array<double, 3> premultiplied{};
+            for (const auto& [color, weight] :
+                 {std::pair{sample(x0, y0), (1.0 - fx) * (1.0 - fy)}, std::pair{sample(x1, y0), fx * (1.0 - fy)},
+                  std::pair{sample(x0, y1), (1.0 - fx) * fy}, std::pair{sample(x1, y1), fx * fy}}) {
+                const auto a = static_cast<double>(color >> 24U) * weight;
+                alpha += a;
+                for (std::size_t channel = 0; channel < premultiplied.size(); ++channel) {
+                    premultiplied[channel] += static_cast<double>((color >> (16U - 8U * channel)) & 0xffU) * a;
+                }
+            }
+            std::uint32_t result = static_cast<std::uint32_t>(std::lround(alpha)) << 24U;
+            if (alpha > 0.0) {
+                for (std::size_t channel = 0; channel < premultiplied.size(); ++channel) {
+                    result |= static_cast<std::uint32_t>(std::lround(premultiplied[channel] / alpha))
+                              << (16U - 8U * channel);
+                }
+            }
+            state.pixels->Set(index, result);
+        }
+    }
+    const auto instance = call.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
+    context->bitmaps[instance.Value()] = std::move(state);
+    return dx::VmValue::Ref(instance);
+}
+
 }  // namespace
 
 Decl Declare_android_graphics_Bitmap(const Context& context) {
@@ -227,6 +325,11 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
                              const auto height = call.arguments[4].AsInt();
                              return MakeBitmapFromArray(call, context, array, offset, stride, width, height,
                                                         call.arguments[5].ref);
+                         });
+    builder.StaticMethod("createScaledBitmap", "(Landroid/graphics/Bitmap;IIZ)Landroid/graphics/Bitmap;",
+                         [context](dx::IntrinsicContext& call) {
+                             return MakeScaledBitmap(call, context, call.arguments[0].ref, call.arguments[1].AsInt(),
+                                                     call.arguments[2].AsInt(), call.arguments[3].AsInt() != 0);
                          });
     builder.FinalMethod("getWidth", "()I", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(BitmapOf(call, context).width);
@@ -256,6 +359,13 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
         if (density < 0)
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "bitmap density cannot be negative"};
         BitmapOf(call, context).density = density;
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("hasAlpha", "()Z", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(BitmapHasAlpha(BitmapOf(call, context)));
+    });
+    builder.VirtualMethod("setHasAlpha", "(Z)V", [context](dx::IntrinsicContext& call) {
+        BitmapOf(call, context).has_alpha = call.arguments[0].AsInt() != 0;
         return dx::VmValue::Void();
     });
     builder.VirtualMethod("isMutable", "()Z", [context](dx::IntrinsicContext& call) {
@@ -1430,7 +1540,6 @@ Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
     builder.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
     builder.OverrideMethod("getAlpha", "()I", reject_state);
     builder.OverrideMethod("setAlpha", "(I)V", reject_state);
-    builder.OverrideMethod("getOpacity", "()I", reject_state);
 
     const auto bitmap_ctor = [context](const std::size_t index) {
         return dx::IntrinsicHandler([context, index](dx::IntrinsicContext& call) {

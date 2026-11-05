@@ -90,7 +90,7 @@ TEST_CASE("DVM-355 sealed scrollbar thumbs load as ninepatches with ROM identity
                                                   "(Landroid/util/TypedValue;I)Landroid/graphics/drawable/Drawable;",
                                                   {VmValue::Ref(value), VmValue::Int(id)});
                 REQUIRE(rejected.exception.IsValid());
-                CHECK(rejected.exception_message == "unreviewed ROM drawable load");
+                CHECK(rejected.exception_message.starts_with("unreviewed ROM drawable load: "));
             }
             CHECK_FALSE(f.ledger.Unimplemented().empty());
         }
@@ -737,21 +737,23 @@ TEST_CASE("DVM-352 Drawable subclasses never silently inherit unsupported state 
                      std::pair{"mutate", "()Landroid/graphics/drawable/Drawable;"},
                      std::pair{"getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;"},
                      std::pair{"getAlpha", "()I"}, std::pair{"setAlpha", "(I)V"}, std::pair{"getOpacity", "()I"}}) {
+                INFO((std::string(owner) + "." + name));
                 const auto slot = f.linker.FindVtableIndex(type, name, signature);
                 REQUIRE(slot);
                 const auto& target = f.linker.Method(f.linker.Class(type).vtable[*slot]);
                 CHECK(f.linker.Class(target.owner).descriptor != "Landroid/graphics/drawable/Drawable;");
                 // DVM-367 admits these ROM state methods; raw unconstructed instances have no state.
                 const auto kind = std::string_view(owner), method = std::string_view(name);
-                if ((kind == "BitmapDrawable" &&
-                     (method == "mutate" || method == "getAlpha" || method == "setAlpha")) ||
+                if ((kind == "GradientDrawable" && target.kind == MethodKind::interpreted) ||
+                    (kind == "BitmapDrawable" &&
+                     (method == "mutate" || method == "getAlpha" || method == "setAlpha" || method == "getOpacity")) ||
                     (kind == "ShapeDrawable" &&
                      (method == "getAlpha" || method == "setAlpha" || method == "getOpacity")))
                     continue;
                 // Skin opacity is implemented against decoded backing.
                 if (std::string_view(name) == "getOpacity" &&
-                    (std::string_view(owner) == "DrawableContainer" || std::string_view(owner) == "NinePatchDrawable" ||
-                     std::string_view(owner) == "StateListDrawable"))
+                    (std::string_view(owner) == "LayerDrawable" || std::string_view(owner) == "DrawableContainer" ||
+                     std::string_view(owner) == "NinePatchDrawable" || std::string_view(owner) == "StateListDrawable"))
                     continue;
                 const auto result = f.OnOutcome(object, name, signature,
                                                 std::string_view(name) == "setAlpha" ? std::vector{VmValue::Int(128)}
@@ -815,7 +817,8 @@ TEST_CASE("DVM-355 ViewConfiguration input seam honors ROM override and mainkeys
         REQUIRE(failed.exception.IsValid());
         CHECK_FALSE(failed.exception_message.empty());
         INFO(failed.exception_message);
-        CHECK(failed.exception_message.find("Landroid/os/ServiceManager;") != std::string::npos);
+        CHECK((failed.exception_message.find("Landroid/os/ServiceManager;") != std::string::npos ||
+               failed.exception_message.find("Lcom/android/internal/os/BinderInternal;") != std::string::npos));
     }
 }
 

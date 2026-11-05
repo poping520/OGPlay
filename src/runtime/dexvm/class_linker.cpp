@@ -1158,7 +1158,8 @@ VmMethodId DexClassLinker::SynthesizeSurveyMethod(const DexClassId owner, const 
     method.descriptor = descriptor;
     const bool is_static = kind == InvokeKind::static_call;
     method.is_static = is_static;
-    method.access_flags = is_static ? kAccStatic : 0U;
+    // Public: a package-private stub would raise IllegalAccessError and end the survey.
+    method.access_flags = kAccPublic | (is_static ? kAccStatic : 0U);
     method.declared_invoke_kind = is_static ? DeclaredInvokeKind::static_call
                                   : (kind == InvokeKind::constructor || kind == InvokeKind::private_direct)
                                       ? DeclaredInvokeKind::direct
@@ -1303,6 +1304,65 @@ DexClassId DexClassLinker::DefineRestrictedAnnotationClass(const DexClassId anno
         method.ins_words = method.shape.incoming_words;
         const auto method_id = impl_->AddMethod(std::move(method));
         stored.own_virtual_methods.push_back(method_id);
+    }
+    std::set<std::uint32_t> visiting;
+    impl_->LinkClass(id, visiting);
+    MarkInitiatedBy(id, loader);
+    return id;
+}
+
+DexClassId DexClassLinker::DefineProxyClass(std::string descriptor, const DexClassId super,
+                                            std::vector<DexClassId> interfaces, const VmClassLoaderId loader,
+                                            const std::span<const IntrinsicMethodDecl> methods) {
+    if (!impl_->link_complete) {
+        Fail(DexVmErrorReason::internal_invariant, "proxy class requires Link()");
+    }
+    if (FindClass(descriptor).has_value()) {
+        throw JavaLinkageError(JavaLinkageKind::linkage, "proxy class already defined: " + descriptor);
+    }
+    LinkedClass linked;
+    linked.descriptor = std::move(descriptor);
+    linked.super = super;
+    linked.direct_interfaces = std::move(interfaces);
+    linked.defining_loader = loader;
+    linked.access_flags = kAccPublic | kAccFinal;
+    linked.is_intrinsic = true;
+    linked.is_proxy = true;
+    const auto id = impl_->AddClass(std::move(linked));
+    auto& stored = impl_->ClassAt(id);
+    auto& extra = impl_->ExtrasAt(id);
+    // API19 declares this on every proxy class; only its shape is observable, through reflection.
+    LinkedField throws;
+    throws.owner = id;
+    throws.name = "throws";
+    throws.descriptor = "[[Ljava/lang/Throwable;";
+    throws.is_static = true;
+    throws.access_flags = kAccPrivate | kAccStatic;
+    throws.is_ref = true;
+    stored.own_static_fields.push_back(impl_->AddField(std::move(throws)));
+    for (const auto& declaration : methods) {
+        LinkedMethod method;
+        method.owner = id;
+        method.name = declaration.name;
+        method.descriptor = declaration.descriptor;
+        method.access_flags = declaration.access_flags;
+        method.kind = MethodKind::intrinsic;
+        method.is_static = declaration.is_static;
+        method.overridable = declaration.overridable;
+        method.must_override = declaration.must_override;
+        method.declared_invoke_kind = declaration.invoke_kind;
+        method.implementation = declaration.implementation;
+        const auto parts = SplitDescriptor(method.descriptor);
+        method.shape = ShapeOf(parts, method.is_static);
+        method.return_shorty = ShortyOf(parts.return_type);
+        method.ins_words = method.shape.incoming_words;
+        const auto method_id = impl_->AddMethod(std::move(method));
+        if (declaration.invoke_kind == DeclaredInvokeKind::direct) {
+            stored.own_direct_methods.push_back(method_id);
+            extra.direct_lookup.insert_or_assign(MemberKey(declaration.name, declaration.descriptor), method_id);
+        } else {
+            stored.own_virtual_methods.push_back(method_id);
+        }
     }
     std::set<std::uint32_t> visiting;
     impl_->LinkClass(id, visiting);

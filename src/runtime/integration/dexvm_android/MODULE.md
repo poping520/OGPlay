@@ -230,6 +230,8 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   为独立 BitmapPixels；支持 ARGB8888/bounds/inMutable/density scaling，其他选项/资源 NinePatch UOE。
   预算先验、超限 OOME、普通失败 null，默认不可变、density/mutability 属于 owner。getXml 的 AXML
   仅 getEventType/next/getName/getText/close，其他完整 XmlPullParser 方法 UnsatisfiedLinkError；文本 XML 用 KXml。
+- Bitmap.createScaledBitmap 支持像素中心 nearest/bilinear、预乘 alpha 插值、负尺寸镜像与 density；
+  同尺寸不可变输入复用，0 尺寸 IAE，过大 OOME，不宣称完整 Skia 像素等价。
 - Bitmap/getPixels/setPixels/Canvas.drawBitmap/GLUtils/JNI/UI 共用 BitmapPixels；首个 NDK lock
   转移权威至 guest 格式，末次 unlock 回写/退役地址，API19 四格式/stride/预乘/低位量化同源。
   getRowBytes 按 API19 四格式紧密行计算；getByteCount 为 Java int 行字节数×高度，
@@ -453,6 +455,8 @@ Unicode 同源且保留显式宿主 Unicode；动态布局/分类/重音/事件�
 SDL scancode 映射 keyCode/Unicode/meta/repeat；AndroidBoundaryInput 快照物化事件，MotionEvent 数组
 归 VM/GC、保存触点/轴/offset/精度/纳秒时间/历史，getter 不读 host、API19 毫秒/纳秒转换、越界 IAE，
 recycle 清引用后读取失败；KeyEvent 保留 down/event time、flags/source。
+MotionEvent.obtain(MotionEvent) 分配独立 InputEvent 与完整快照，保留全部 pointer/axis/offset/历史；
+原件和副本可独立 recycle/批量追加，null 按 API19 抛 IllegalArgumentException。
 
 JavaTraversal 的 Window 根从 Activity.mWindow→Window.mContentParent 的受审只读 token
 取得真实 FrameLayout，content_view 仅保留首个内容身份；owner 屏障即使空 Activity 也建立该根，
@@ -567,8 +571,9 @@ Dialog/AlertDialog 协议归 Java，native 只投影 plain String 标题/消息/
 子树，active presentation 为 Dialog/Activity roots；按 geometry 捕获输入/取消旧捕获，listener 在
 owner Looper 排队，owner 隐藏/恢复同步可见性，实例退役先 dismiss、进程停止仅退役投影。
 不替换内容/退役 Surface/另建协议或层级权威；最多 8 窗口，title/message/button≤512/4096/128
-UTF-16、density (0,8]、viewport≥48×48，须完整适配否则 UOE；theme/items/custom view/Window facade
-拒绝。每个 modal 为独立 HostLayout，
+UTF-16、density (0,8]、viewport≥48×48，须完整适配否则 UOE；items/Window facade 拒绝。
+非零 Dialog theme 记录 UI 降级。setContentView(View) 使用居中 FrameLayout 作为 Activity 应用附加窗口，
+显示/隐藏/关闭及 Back 走 Java 协议，隐藏时撤销输入/焦点资格；没有可用 Activity 明确失败，布局资源重载仍拒绝。每个 modal 为独立 HostLayout，
 字体/布局/像素复用既有底座，经共同呈现快照合成与命中。
 
 WebView.destroy 可覆盖、检查构造 Looper，targetSdk≥18 跨线程 RuntimeException；清理 settings/
@@ -915,10 +920,10 @@ DVM-336：Choreographer 与 DisplayEventReceiver 普通 Java 均取固定 API19 
 callback 队列/延时/移除、doFrame 及 input→animation→traversal 回调排序归 Java。
 DisplayEventReceiver 仅 nativeInit(receiver,MessageQueue)I/nativeDispose(I)V/nativeScheduleVsync(I)V
 为平台接缝：登记弱 receiver 的不复用 int token、owner trace 队列/Looper；队列无效/已退出
-RuntimeException，非主 Looper 记账 UOE。重复 schedule 合并，一次请求只消费一帧；
+RuntimeException，必须在队列所属 Looper 线程注册，跨线程队列记账 UOE；非主 Looper 可用。重复 schedule 合并，一次请求只消费一帧；
 dispose 幂等，原 CloseGuard/finalize 与 GC sweep 同样退役，排队后失效不交付。
 实际 lifecycle StepFrame 入口在所有 guest owner traversal/projection 前消费到期消息、
-冻结挂起请求并向主 Looper 投递 dispatchVsync，再泵消息交付 ROM doFrame；后续布局/
+冻结挂起请求并向接收者所属 Looper 投递 dispatchVsync，再泵消息交付 ROM doFrame；后续布局/
 输入屏障、Start/Resume/只读呈现不产生脉冲，回调中再 post 只到下一帧。
 timestampNanos=统一 Clock uptime×1e6，与 System.nanoTime 同基，displayId=0，帧计数单调；
 停止即清登记/禁派发，无 hotplug、无 debug.choreographer 属性注入或 vsync=false 回退。
@@ -927,7 +932,9 @@ Handler 队首先入后出，普通同 deadline 先入先出；异步 flags 保�
 没有同步屏障。Handler.dispatchMessage 先 Runnable，再 Handler.Callback，最后虚派 handleMessage。
 DisplayManagerGlobal.getInstance/getDisplayInfo(0) 为注入显示事实的精确 overlay，
 refreshRate=display_refresh_rate_hz（逻辑显示默认 60，非法值 UOE），尺寸/density 与 context 同源；
-其他 display ID 返回 null，不接入 Binder/系统显示服务。属性动画通过 DVM-337 另行准入。
+Display.getRefreshRate 读取同一显示事实；其他 display ID 返回 null，不接入 Binder/系统显示服务。
+工作线程 Looper 达单批消息预算后释放 VM 锁并继续，不因正常的立即重投消息终止线程；
+生命周期主 Looper 的单次泵预算与明确失败保留。属性动画通过 DVM-337 另行准入。
 
 DVM-337：ValueAnimator（AnimationHandler）/ObjectAnimator/PropertyValuesHolder 及原版数值
 Evaluator 沿 API19 ROM Java 算法执行；动画只消费上述主 Looper Choreographer CALLBACK_ANIMATION，

@@ -851,6 +851,9 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                     if (const auto* mode = FindAttribute(attributes, "launchMode", kAndroidNamespace)) {
                         component.launch_mode = ReadIntegerAttribute(*mode, "activity launchMode", strings, true);
                     }
+                    if (const auto* orientation = FindAttribute(attributes, "screenOrientation", kAndroidNamespace))
+                        component.screen_orientation = static_cast<std::int32_t>(
+                            ReadIntegerAttribute(*orientation, "activity screenOrientation", strings, true));
                     if (const auto* theme = FindAttribute(attributes, "theme", kAndroidNamespace))
                         component.theme = ReadReferenceAttribute(*theme, "activity theme");
                 }
@@ -878,6 +881,7 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                     component.theme = target_activity->theme;
                     component.launch_mode = target_activity->launch_mode;
                     component.task_affinity = target_activity->task_affinity;
+                    component.screen_orientation = target_activity->screen_orientation;
                 }
                 facts.activity_components.push_back(std::move(component));
                 current_component = facts.activity_components.size() - 1U;

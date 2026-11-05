@@ -108,6 +108,8 @@ struct AndroidManifestActivityComponent final {
     // Absent in synthetic inventories means the package default; binary
     // Manifest parsing snapshots application inheritance (including empty).
     std::optional<std::string> task_affinity;
+    // API19 ActivityInfo orientation; aliases inherit their preceding target.
+    std::int32_t screen_orientation{-1};
 };
 
 [[nodiscard]] inline bool AndroidManifestActivityExported(const AndroidManifestActivityComponent& component) {

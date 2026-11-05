@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -72,6 +73,8 @@ struct JavaObjectInterop final {
     std::function<std::pair<DexClassId, DexClassId>(JniObjectIdentity)> resolve_object_array_class;
     std::function<std::optional<std::uint16_t>(DexClassId)> resolve_instance_slots;
     std::function<DexClassId(JniPrimitiveKind)> resolve_primitive_array_class;
+    // The VM class a published JNI class reference stands for, if any.
+    std::function<std::optional<DexClassId>(JniObjectIdentity)> resolve_class_mirror;
 };
 
 struct GcMarkResult final {

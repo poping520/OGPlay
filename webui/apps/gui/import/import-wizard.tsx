@@ -4,9 +4,9 @@ import { guestPathError, importingStage, normalizeGuestPath, pause, pickPath, up
 import { MountPreview, useDataDirectory } from './mount-preview';
 import { gameName, t } from '../shared/i18n';
 
-const MODES: { value: ExternalMode; label: string; hint: string }[] = [
-  { value: 'copy', label: '复制到游戏库', hint: '导入后原目录可移动或删除；同一磁盘支持克隆时几乎不占额外空间。' },
-  { value: 'link', label: '引用原目录', hint: '不复制；原目录移动、删除或磁盘断开后游戏无法启动。' },
+const MODES: { value: ExternalMode; label: string }[] = [
+  { value: 'copy', label: '复制到游戏库' },
+  { value: 'link', label: '引用原目录' },
 ];
 
 export function ImportWizard({ file, defaultExternal = '', onClose, onImported }: {
@@ -66,7 +66,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
         activeJob.current = initial.job;
       }
       setStage(t('正在分析 APK…'));
-      setJob(await poll(initial)); setStage(t('确认导入'));
+      setJob(await poll(initial)); setStage('');
     });
   }
   async function close() {
@@ -94,10 +94,13 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   useEffect(() => { if (data && !guestEdited) setExternalGuest(suggested ?? '/sdcard'); }, [data, guestEdited]);
   const canImport = summary && job?.state === 'ready' && !guestError && (!summary.existing_instances || confirmed);
   const led = error || job?.state === 'failed' ? 'danger' : committing || busy ? 'running' : summary ? 'ready' : '';
-  const mode = MODES.find(item => item.value === externalMode)!;
+  const sourceName = source.split(/[\\/]/).pop();
   return <dialog ref={dialog} class="import-wizard" aria-label={t('导入游戏')} onCancel={event => { event.preventDefault(); void close(); }}>
-    <header class="iw-head"><h2>{t('导入游戏')}</h2><span class="iw-stage" role="status"><i class={`led ${led}`} />{stage}</span></header>
-    {source && <p class="iw-file" title={source}><bdi>{source}</bdi></p>}
+    <header class="iw-head"><h2>{t('导入游戏')}</h2>{stage && <span class="iw-stage" role="status"><i class={`led ${led}`} />{stage}</span>}</header>
+    <div class="iw-source">
+      <p class="iw-file" title={source}><bdi>{sourceName}</bdi></p>
+      <button disabled={busy} aria-label={t('重新选择 APK')} onClick={() => void analyze(null)}>{source ? t('更换') : t('选择 APK')}</button>
+    </div>
     {summary && <>
       <section class="iw-game">
         {summary.icon ? <img src={summary.icon} alt="" /> : <span class="iw-icon">?</span>}
@@ -113,9 +116,9 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
         </div>
       </section>
       <section class="iw-data">
-        <div class="iw-title"><b>{t('数据包')}</b><small>{t('可选 · 游戏在 sdcard 上读取的资源目录')}</small></div>
+        <div class="iw-title"><b>{t('数据包')}</b><small>{t('可选')}</small></div>
         <div class="iw-pick">
-          <span class={external ? 'iw-host' : 'iw-host empty'} title={external}><span><bdi>{external || t('未选择；不需要外部数据的游戏可跳过')}</bdi></span></span>
+          <span class={external ? 'iw-host' : 'iw-host empty'} title={external}><span><bdi>{external || t('未选择，不需要可跳过')}</bdi></span></span>
           <button disabled={busy} onClick={() => void run(async () => { const path = await pickPath('directory'); if (path) setExternal(path); })}>{external ? t('更换') : t('选择目录')}</button>
           {external && <button disabled={busy} onClick={() => setExternal('')}>{t('清除')}</button>}
         </div>
@@ -125,23 +128,19 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
               <button role="radio" aria-checked={item.value === externalMode} class={item.value === externalMode ? 'on' : ''} disabled={busy}
                 onClick={() => setExternalMode(item.value)}>{t(item.label)}</button>)}</div>
           </div>
-          <p class="iw-note">{t(mode.hint)}</p>
+          {externalMode === 'link' && <p class="iw-note warn">{t('原目录移动、删除或磁盘断开后，游戏将无法启动。')}</p>}
           <div class="iw-row"><span>{t('挂载位置')}</span>
             <label class={guestError ? 'iw-txt bad' : 'iw-txt'}><input aria-label={t('数据包挂载位置')} value={externalGuest} disabled={busy} spellcheck={false}
               onInput={event => { setExternalGuest(event.currentTarget.value); setGuestEdited(true); }} /></label>
           </div>
-          <p class={guestError ? 'iw-note bad' : 'iw-note'}>{guestError ?? (suggested && guest === suggested && !guestEdited
-            ? t('已按所选目录自动填写；目录内容会出现在此路径下。')
-            : t('目录内容会出现在此路径下；位置不对时，游戏退出后会提示修正。'))}</p>
-          <MountPreview caption={externalMode === 'copy' ? t('复制到游戏库后挂载') : t('直接挂载原目录')} guest={guest} invalid={!!guestError} data={data} error={dataError} />
+          {guestError && <p class="iw-note bad">{guestError}</p>}
+          <MountPreview caption={t('挂载效果预览')} guest={guest} invalid={!!guestError} data={data} error={dataError} />
         </>}
       </section>
       {summary.existing_instances > 0 && <label class="iw-check"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.currentTarget.checked)} />{t('游戏库中已有 {n} 份该游戏；另外添加一份，现有游戏及存档保留。', { n: summary.existing_instances })}</label>}
     </>}
     {error && <pre role="alert">{error}</pre>}
     <div class="modal-actions">
-      <button disabled={busy} onClick={() => void analyze(null)}>{t('重新选择 APK')}</button>
-      <span class="iw-spacer" />
       {committing
         ? <button disabled={cancelling} onClick={() => void cancelImport()}>{cancelling ? t('正在取消…') : t('取消导入')}</button>
         : <button disabled={busy} onClick={() => void close()}>{t('取消')}</button>}

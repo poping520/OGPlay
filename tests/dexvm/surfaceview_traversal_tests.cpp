@@ -1012,8 +1012,8 @@ TEST_CASE("DVM-348 SurfaceView ROM overrides expose bounded behavior and explici
                 CHECK(f.linker.Class(outcome.exception_class).descriptor ==
                       "Ljava/lang/UnsupportedOperationException;");
         };
-        reject("setSecure", "(Z)V", {VmValue::Int(1)});
-        reject("setWindowType", "(I)V", {VmValue::Int(999)});
+        f.On(view, "setSecure", "(Z)V", {VmValue::Int(1)});
+        f.On(view, "setWindowType", "(I)V", {VmValue::Int(999)});
         reject("draw", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(VmObjectRef{})});
         reject("dispatchDraw", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(VmObjectRef{})});
         f.On(view, "setWindowType", "(I)V", {VmValue::Int(1000)});

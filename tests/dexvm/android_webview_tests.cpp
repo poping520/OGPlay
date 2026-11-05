@@ -93,7 +93,8 @@ TEST_CASE("View focus and WebView configuration keep real per-instance state") {
             fixture.On(first, "setHorizontalScrollBarEnabled", "(Z)V", {VmValue::Int(enabled)});
             CHECK(fixture.On(first, "isHorizontalScrollBarEnabled", "()Z").AsInt() == enabled);
         }
-        CHECK(fixture.OnOutcome(first, "setVerticalScrollBarEnabled", "(Z)V", {VmValue::Int(0)}).exception.IsValid());
+        fixture.On(first, "setVerticalScrollBarEnabled", "(Z)V", {VmValue::Int(0)});
+        CHECK(fixture.On(first, "isVerticalScrollBarEnabled", "()Z").AsInt() == 0);
 
         const auto settings = fixture.On(first, "getSettings", "()Landroid/webkit/WebSettings;").ref;
         CHECK(fixture.On(settings, "getJavaScriptEnabled", "()Z").AsInt() == 0);

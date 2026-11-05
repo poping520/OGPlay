@@ -380,10 +380,7 @@ TEST_CASE("DVM-298 EditText real default style and unsupported Editor IME fail e
         const auto owner = Owner(f);
         const auto edit = f.New("Landroid/widget/EditText;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto root = f.vm.ProtectReferences(std::array{owner, edit});
-        const auto editor = f.OnOutcome(edit, "setInputType", "(I)V", {VmValue::Int(1)});
-        CHECK(editor.exception.IsValid());
-        CHECK(editor.exception_message.find("setInputType") != std::string::npos);
-        CHECK_FALSE(f.ledger.Unimplemented().empty());
+        f.On(edit, "setInputType", "(I)V", {VmValue::Int(1)});
         const auto ime =
             f.OnOutcome(edit, "onCreateInputConnection",
                         "(Landroid/view/inputmethod/EditorInfo;)Landroid/view/inputmethod/InputConnection;",
@@ -604,8 +601,9 @@ TEST_CASE("DVM-344 TextView Paint and actual EditText input share copyright cove
         CHECK(State(f, edit).text == u"©");
         const auto paint = f.New("Landroid/graphics/Paint;");
         f.On(paint, "setTextSize", "(F)V", {VmValue::Float(State(f, text).text_size_px)});
-        CHECK(f.On(paint, "measureText", "(Ljava/lang/String;)F", {VmValue::Ref(f.model.NewString(u"©"))}).AsFloat() ==
-              ui::MeasureFixedText(u"©", State(f, text).text_size_px, 0, f.context->ui_tree.FallbackFont().get()).width);
+        CHECK(
+            f.On(paint, "measureText", "(Ljava/lang/String;)F", {VmValue::Ref(f.model.NewString(u"©"))}).AsFloat() ==
+            ui::MeasureFixedText(u"©", State(f, text).text_size_px, 0, f.context->ui_tree.FallbackFont().get()).width);
         REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                          AndroidUiTraversalPhase::ResolveOnly, ui::Size{160, 80}));
         CHECK(f.On(edit, "getMeasuredWidth", "()I").AsInt() > 0);

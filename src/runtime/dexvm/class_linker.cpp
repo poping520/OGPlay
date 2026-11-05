@@ -1,4 +1,5 @@
 #include "class_linker_internal.h"
+#include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/core/json.h"
 #include "ogplay/loader/apk.h"
 #include <set>
@@ -372,7 +373,7 @@ DexUnitId DexClassLinker::RegisterBootDex(std::vector<std::uint8_t> dex_bytes, c
         if (!methods.IsArray()) invalid("methods must be array");
         for (std::size_t j = 0; j < methods.Size(); ++j) {
             const auto method = *methods.Element(j);
-            if (text(method, "source") == "failure")
+            if (text(method, "source") == "failure" || text(method, "source") == "ui-degraded")
                 failed_native.push_back(text(row, "owner") + "->" + text(method, "signature"));
         }
     }
@@ -467,6 +468,19 @@ DexUnitId DexClassLinker::RegisterBootDex(std::vector<std::uint8_t> dex_bytes, c
             } else if (source == "failure") {
                 actual->kind = MethodKind::intrinsic;
                 actual->implementation = {};
+                actual->adapter_review.clear();
+                actual->code.reset();
+            } else if (source == "ui-degraded") {
+                if (!text(method, "signature").ends_with(")V") ||
+                    (actual->access_flags & (kAccAbstract | kAccStatic)) != 0)
+                    invalid("ui-degraded member must be a concrete void instance method " + key);
+                actual->kind = MethodKind::intrinsic;
+                actual->implementation = [what =
+                                              owner.substr(owner.rfind('/') + 1, owner.size() - owner.rfind('/') - 2) +
+                                              "." + actual->name](IntrinsicContext& call) {
+                    call.vm.RecordUiDegraded(what);
+                    return VmValue::Void();
+                };
                 actual->adapter_review.clear();
                 actual->code.reset();
             } else

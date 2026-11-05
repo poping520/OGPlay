@@ -109,6 +109,10 @@ python3 tools/bootdex/select_rom_java.py --check-closure --surface <new-surface.
 检查缺口非零即失败并列出类；method_ids/field_ids 本批不超过 60000，仍为单 dex。
 `--scope referenced --scan-dir <preflight目录>` 只保留作样本引用诊断。
 
+BootDex 成员审计只用一份固定快照 `bootdex/runtime.surface.json.gz`，它不进入产物。新增 overlay
+时只改快照中对应的行，再把所有 `*-sources.json` 和 `member-sources.json` 里的 `surface_sha256`
+统一换成新哈希，不要新增快照文件。
+
 `select_rom_java.py --replace-intrinsic <descriptor...>` 是 ADR-0154 的显式撤换入口，
 需同时提供 `--surface` 与 `--report`；默认只出报告，`--apply` 写入目标及其准入初始化闭包。
 仅允许已有同签名 native 绑定；其他规则不放宽。源码/签名交互需在同批删除或改经 Java 调用，

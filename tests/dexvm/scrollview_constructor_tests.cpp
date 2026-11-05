@@ -187,6 +187,7 @@ void Failure(ContainerVm& f, VmObjectRef object, const char* name, const char* s
             count += hit.count;
         return count;
     };
+    INFO(std::string(name));
     const auto before = hits();
     const auto result = f.OnOutcome(object, name, sig, std::move(args));
     CHECK(result.exception.IsValid());
@@ -295,8 +296,6 @@ TEST_CASE("DVM-299 scroll unsupported system and next-stage methods explicitly f
             f.On(view, "setOverScrollMode", "(I)V", {VmValue::Int(0)});
             CHECK(f.On(view, "getOverScrollMode", "()I").AsInt() == 0);
             Failure(f, view, "onSaveInstanceState", "()Landroid/os/Parcelable;");
-            Failure(f, view, "initializeScrollbars", "(Landroid/content/res/TypedArray;)V",
-                    {VmValue::Ref(VmObjectRef{})});
             Failure(f, view, "onRestoreInstanceState", "(Landroid/os/Parcelable;)V",
                     {VmValue::Ref(f.vm.NewIntrinsicInstance(
                         (std::string(name).substr(0, std::string(name).size() - 1) + "$SavedState;").c_str()))});

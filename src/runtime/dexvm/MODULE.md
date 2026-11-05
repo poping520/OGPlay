@@ -18,6 +18,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   或缺口失败。ROM 来源清除旧 handler，失败来源禁用旧 handler 与字节码；额外 intrinsic
   成员、未批准 overlay/native 拒绝。未启用时沿用既有 overlay 契约。
   构建期固定输入、flags、方法体 hash、字段初始化策略并验证依赖；运行时不接受动态配置。
+  来源 ui-degraded 只用于无返回值的实例显示设置：绑定为记录 UI 降级后返回的 handler，不执行 ROM 字节码（ADR-0147 修订）。
   member-sources 严格 JSON 解析上限为 4 MiB，诊断 surface 入口使用相同上限。
   IntrinsicMethodDecl.adapter_review 是可选的诊断来源引用，随绑定保留至 LinkedMethod；
   dump-surface 同时标 implementation_source=adapter 与 review 引用，origin/binding 仍为

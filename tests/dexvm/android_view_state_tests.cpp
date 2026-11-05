@@ -915,8 +915,10 @@ TEST_CASE("DVM-331 unselected Legacy View APIs fail explicitly without mutating 
         const auto view = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto before = f.On(view, "isClickable", "()Z").AsInt();
-        CHECK(f.OnOutcome(view, "setScrollBarSize", "(I)V", {VmValue::Int(0)}).exception.IsValid());
-        CHECK(f.OnOutcome(view, "setHovered", "(Z)V", {VmValue::Int(1)}).exception.IsValid());
+        CHECK(f.OnOutcome(view, "getScrollBarSize", "()I").exception.IsValid());
+        CHECK(f.OnOutcome(view, "addOnLayoutChangeListener", "(Landroid/view/View$OnLayoutChangeListener;)V",
+                          {VmValue::Ref(VmObjectRef{})})
+                  .exception.IsValid());
         CHECK(f.OnOutcome(group, "getClipChildren", "()Z").exception.IsValid());
         CHECK(f.On(view, "isClickable", "()Z").AsInt() == before);
         CHECK(f.ledger.Unimplemented().size() == 3);
@@ -961,6 +963,73 @@ TEST_CASE("DVM-371 View scrollbar style round-trips and animation state stays in
         CHECK_FALSE(get_animation().IsValid());
         f.On(web, "setVisibility", "(I)V", {VmValue::Int(8)});
         CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-372 display-only setters warn and keep running while getters stay honest") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto owner = f.New("Landroid/app/Activity;");
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        const auto view = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto text = f.New("Landroid/widget/TextView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto paint = f.New("Landroid/graphics/Paint;");
+        const auto roots = f.vm.ProtectReferences(std::array{view, text, paint});
+        const auto warned = [&](std::string_view item) {
+            const auto warnings = f.ledger.Warnings();
+            return std::ranges::any_of(warnings, [&](const auto& hit) {
+                return hit.id == std::string(ogplay::core::kUiDegradedWarningPrefix) + std::string(item);
+            });
+        };
+        // Ignored setter, failing getter: nothing reports state that was not applied.
+        f.On(view, "setRotation", "(F)V", {VmValue::Float(45.0F)});
+        CHECK(warned("View.setRotation"));
+        CHECK(f.OnOutcome(view, "getRotation", "()F").exception.IsValid());
+        f.On(paint, "setColor", "(I)V", {VmValue::Int(0x11223344)});
+        CHECK(warned("Paint.setColor"));
+        CHECK(f.OnOutcome(paint, "getColor", "()I").exception.IsValid());
+        // State pairs execute ROM.
+        const auto tag = f.vm.NewStringUtf8("tag");
+        const auto tag_root = f.vm.ProtectReferences(std::array{tag});
+        f.On(view, "setTag", "(Ljava/lang/Object;)V", {VmValue::Ref(tag)});
+        CHECK(f.On(view, "getTag", "()Ljava/lang/Object;").ref == tag);
+        f.On(view, "setTag", "(ILjava/lang/Object;)V", {VmValue::Int(0x7f010001), VmValue::Ref(tag)});
+        CHECK(f.On(view, "getTag", "(I)Ljava/lang/Object;", {VmValue::Int(0x7f010001)}).ref == tag);
+        for (const bool enabled : {false, true}) {
+            f.On(view, "setVerticalScrollBarEnabled", "(Z)V", {VmValue::Int(enabled)});
+            CHECK(f.On(view, "isVerticalScrollBarEnabled", "()Z").AsInt() == enabled);
+            f.On(text, "setEnabled", "(Z)V", {VmValue::Int(enabled)});
+            CHECK(f.On(text, "isEnabled", "()Z").AsInt() == enabled);
+        }
+        CHECK_FALSE(warned("TextView.bufferType"));
+        // A plain TextView accepts every BufferType; only the unsupported ones warn.
+        const auto shown = [&] { return f.vm.StringUtf8(f.On(text, "getText", "()Ljava/lang/CharSequence;").ref); };
+        const auto buffer = [&](const char* name) {
+            return f
+                .Static("Landroid/widget/TextView$BufferType;", "valueOf",
+                        "(Ljava/lang/String;)Landroid/widget/TextView$BufferType;",
+                        {VmValue::Ref(f.vm.NewStringUtf8(name))})
+                .ref;
+        };
+        const auto set_typed = "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V";
+        const auto normal = buffer("NORMAL");
+        f.On(text, "setText", set_typed, {VmValue::Ref(f.vm.NewStringUtf8("plain")), VmValue::Ref(normal)});
+        CHECK(shown() == "plain");
+        CHECK_FALSE(warned("TextView.bufferType"));
+        const auto spannable = buffer("SPANNABLE");
+        f.On(text, "setText", set_typed, {VmValue::Ref(f.vm.NewStringUtf8("spans")), VmValue::Ref(spannable)});
+        CHECK(shown() == "spans");
+        CHECK(warned("TextView.bufferType"));
+        f.On(text, "setTextKeepState", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.vm.NewStringUtf8("kept"))});
+        CHECK(shown() == "kept");
+        // Logic is never degraded: listeners and transforms still fail.
+        CHECK(f.OnOutcome(view, "addOnLayoutChangeListener", "(Landroid/view/View$OnLayoutChangeListener;)V",
+                          {VmValue::Ref(VmObjectRef{})})
+                  .exception.IsValid());
+        CHECK(f.OnOutcome(f.New("Landroid/graphics/Matrix;"), "setScale", "(FF)V",
+                          {VmValue::Float(2.0F), VmValue::Float(2.0F)})
+                  .exception.IsValid());
     }
 }
 

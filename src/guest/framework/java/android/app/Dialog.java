@@ -158,7 +158,7 @@ public class Dialog implements DialogInterface {
         dismiss();
     }
     public void setCancelable(boolean cancelable) { mCancelable = cancelable; }
-    public void setCanceledOnTouchOutside(boolean cancel) { if (cancel) nativeUnsupported("outside-touch cancellation"); }
+    public void setCanceledOnTouchOutside(boolean cancel) { if (cancel) nativeUiDegraded("Dialog.canceledOnTouchOutside"); }
     public void setOnCancelListener(DialogInterface.OnCancelListener listener) { mCancelListener = listener; }
     public void setOnDismissListener(DialogInterface.OnDismissListener listener) { mDismissListener = listener; }
     public void setOnShowListener(DialogInterface.OnShowListener listener) { mShowListener = listener; }

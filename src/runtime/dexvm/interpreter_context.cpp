@@ -23,27 +23,24 @@ namespace ogplay::runtime::dexvm {
 
 namespace {
 
-thread_local std::unordered_map<const void*, InterpreterExecutionState*>
-    active_executions;
+thread_local std::unordered_map<const void*, InterpreterExecutionState*> active_executions;
 
 }  // namespace
 
-Interpreter::RootScope::RootScope(Interpreter& interpreter,
-                                  const std::uint64_t context_token,
+Interpreter::RootScope::RootScope(Interpreter& interpreter, const std::uint64_t context_token,
                                   const std::size_t base) noexcept
     : interpreter_(&interpreter), context_token_(context_token), base_(base) {}
 
 Interpreter::RootScope::RootScope(RootScope&& other) noexcept
-    : interpreter_(std::exchange(other.interpreter_, nullptr)),
-      context_token_(other.context_token_), base_(other.base_) {}
+    : interpreter_(std::exchange(other.interpreter_, nullptr)), context_token_(other.context_token_),
+      base_(other.base_) {}
 
 Interpreter::RootScope::~RootScope() noexcept {
     if (interpreter_ == nullptr) return;
     try {
         VmExecutionLockScope lock_scope(interpreter_->impl_->execution_lock);
         auto& execution = interpreter_->impl_->Execution();
-        if (execution.token != context_token_ ||
-            execution.intrinsic_roots.size() < base_) {
+        if (execution.token != context_token_ || execution.intrinsic_roots.size() < base_) {
             std::terminate();
         }
         execution.intrinsic_roots.resize(base_);
@@ -67,6 +64,7 @@ public:
 };
 
 VmExecutionLock::VmExecutionLock() : impl_(std::make_unique<Impl>()) {}
+
 VmExecutionLock::~VmExecutionLock() = default;
 
 void VmExecutionLock::Acquire() {
@@ -78,9 +76,7 @@ void VmExecutionLock::Acquire() {
     }
     const auto ticket = impl_->next_ticket++;
     impl_->waiters.push_back(ticket);
-    impl_->released.wait(lock, [this, ticket] {
-        return impl_->depth == 0 && impl_->waiters.front() == ticket;
-    });
+    impl_->released.wait(lock, [this, ticket] { return impl_->depth == 0 && impl_->waiters.front() == ticket; });
     impl_->waiters.pop_front();
     impl_->owner = self;
     impl_->depth = 1;
@@ -104,9 +100,8 @@ bool VmExecutionLock::TryAcquire() {
 void VmExecutionLock::Release() {
     std::unique_lock lock(impl_->mutex);
     if (impl_->depth == 0 || impl_->owner != std::this_thread::get_id()) {
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "releasing a DexVM execution lock that is not held "
-                         "by the calling thread");
+        throw DexVmError(DexVmErrorReason::internal_invariant, "releasing a DexVM execution lock that is not held "
+                                                               "by the calling thread");
     }
     if (--impl_->depth > 0) return;
     impl_->owner = std::thread::id{};
@@ -125,24 +120,18 @@ std::size_t VmExecutionLock::ReleaseForBlocking() {
     impl_->owner = std::thread::id{};
     lock.unlock();
     impl_->released.notify_all();
-    const auto observer =
-        impl_->blocking_observer.load(std::memory_order_acquire);
+    const auto observer = impl_->blocking_observer.load(std::memory_order_acquire);
     if (observer != nullptr) {
-        observer(impl_->blocking_observer_context.load(
-                     std::memory_order_relaxed),
-                 self, true);
+        observer(impl_->blocking_observer_context.load(std::memory_order_relaxed), self, true);
     }
     return held;
 }
 
 void VmExecutionLock::ReacquireAfterBlocking(const std::size_t depth) {
     if (depth == 0) return;
-    const auto observer =
-        impl_->blocking_observer.load(std::memory_order_acquire);
+    const auto observer = impl_->blocking_observer.load(std::memory_order_acquire);
     if (observer != nullptr) {
-        observer(impl_->blocking_observer_context.load(
-                     std::memory_order_relaxed),
-                 std::this_thread::get_id(), false);
+        observer(impl_->blocking_observer_context.load(std::memory_order_relaxed), std::this_thread::get_id(), false);
     }
     // The thread is no longer blocked once it starts competing for the VM
     // lock. Notify first so a conditional pacer makes the current owner park
@@ -161,37 +150,31 @@ void VmExecutionLock::YieldToWaiter() {
     std::unique_lock lock(impl_->mutex);
     if (impl_->waiters.empty()) return;
     if (impl_->depth == 0 || impl_->owner != std::this_thread::get_id())
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "bytecode handoff requires the execution lock");
+        throw DexVmError(DexVmErrorReason::internal_invariant, "bytecode handoff requires the execution lock");
     const auto held = impl_->depth;
     const auto ticket = impl_->next_ticket++;
     impl_->waiters.push_back(ticket);
     impl_->depth = 0;
     impl_->owner = {};
     impl_->released.notify_all();
-    impl_->released.wait(lock, [this, ticket] {
-        return impl_->depth == 0 && impl_->waiters.front() == ticket;
-    });
+    impl_->released.wait(lock, [this, ticket] { return impl_->depth == 0 && impl_->waiters.front() == ticket; });
     impl_->waiters.pop_front();
     impl_->owner = std::this_thread::get_id();
     impl_->depth = held;
 }
 
-void VmExecutionLock::SetBlockingObserver(
-    void* context, const BlockingObserver observer) noexcept {
+void VmExecutionLock::SetBlockingObserver(void* context, const BlockingObserver observer) noexcept {
     impl_->blocking_observer_context.store(context, std::memory_order_relaxed);
     impl_->blocking_observer.store(observer, std::memory_order_release);
 }
 
-InterpreterExecutionScope::InterpreterExecutionScope(
-    void* interpreter, InterpreterExecutionState& execution)
+InterpreterExecutionScope::InterpreterExecutionScope(void* interpreter, InterpreterExecutionState& execution)
     : interpreter_(interpreter), execution_(&execution) {
     const auto found = active_executions.find(interpreter_);
     previous_ = found == active_executions.end() ? nullptr : found->second;
     if (previous_ != nullptr && previous_ != &execution) {
-        throw DexVmError(
-            DexVmErrorReason::internal_invariant,
-            "cannot switch DexVM execution context inside an active call");
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "cannot switch DexVM execution context inside an active call");
     }
     const auto host = std::this_thread::get_id();
     if (execution.bound_host != std::thread::id{} && execution.bound_host != host) {
@@ -199,9 +182,9 @@ InterpreterExecutionScope::InterpreterExecutionScope(
                          "default guest execution is bound to another host thread");
     }
     if (execution.active_entries != 0 && execution.active_host != host) {
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-            "DexVM execution context " + std::to_string(execution.token) +
-            " is active on another host thread");
+        throw DexVmError(DexVmErrorReason::internal_invariant, "DexVM execution context " +
+                                                                   std::to_string(execution.token) +
+                                                                   " is active on another host thread");
     }
     active_executions[interpreter_] = &execution;
     execution.active_host = host;
@@ -229,23 +212,19 @@ const InterpreterExecutionState& Interpreter::Impl::Execution() const {
     return *default_execution;
 }
 
-InterpreterExecutionState& Interpreter::Impl::Execution(
-    const InterpreterExecutionContext& context) {
+InterpreterExecutionState& Interpreter::Impl::Execution(const InterpreterExecutionContext& context) {
     if (!context.BelongsTo(owner)) {
-        throw DexVmError(DexVmErrorReason::invalid_operand,
-                         "execution context belongs to another interpreter");
+        throw DexVmError(DexVmErrorReason::invalid_operand, "execution context belongs to another interpreter");
     }
     const std::lock_guard lock(executions_mutex);
     const auto found = executions.find(context.Token());
     if (found == executions.end()) {
-        throw DexVmError(DexVmErrorReason::invalid_operand,
-                         "execution context is not registered");
+        throw DexVmError(DexVmErrorReason::invalid_operand, "execution context is not registered");
     }
     return *found->second;
 }
 
-const InterpreterExecutionState& Interpreter::Impl::Execution(
-    const InterpreterExecutionContext& context) const {
+const InterpreterExecutionState& Interpreter::Impl::Execution(const InterpreterExecutionContext& context) const {
     return const_cast<Impl*>(this)->Execution(context);
 }
 
@@ -260,21 +239,17 @@ InterpreterExecutionContext Interpreter::CreateExecutionContext() {
     return context;
 }
 
-void Interpreter::DiscardExecutionContext(
-    const InterpreterExecutionContext& context) {
+void Interpreter::DiscardExecutionContext(const InterpreterExecutionContext& context) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     const auto& execution = impl_->Execution(context);
-    if (!execution.frames.empty() || execution.active_entries != 0 ||
-        execution.native_depth != 0) {
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "cannot discard an active execution context");
+    if (!execution.frames.empty() || execution.active_entries != 0 || execution.native_depth != 0) {
+        throw DexVmError(DexVmErrorReason::internal_invariant, "cannot discard an active execution context");
     }
     const std::lock_guard lock(impl_->executions_mutex);
     impl_->executions.erase(context.Token());
 }
 
-InterpreterExecutionSnapshot Interpreter::ExecutionSnapshot(
-    const InterpreterExecutionContext& context) const {
+InterpreterExecutionSnapshot Interpreter::ExecutionSnapshot(const InterpreterExecutionContext& context) const {
     const auto& execution = impl_->Execution(context);
     InterpreterExecutionSnapshot snapshot;
     snapshot.frame_depth = execution.frames.size();
@@ -282,14 +257,12 @@ InterpreterExecutionSnapshot Interpreter::ExecutionSnapshot(
     snapshot.ticks = execution.ticks;
     snapshot.held_monitor_count = impl_->monitors->HeldCount(execution.token);
     snapshot.native_depth = execution.native_depth;
-    snapshot.stop_requested =
-        execution.stop_requested.load(std::memory_order_relaxed);
+    snapshot.stop_requested = execution.stop_requested.load(std::memory_order_relaxed);
     return snapshot;
 }
 
 void Interpreter::RequestStop(const InterpreterExecutionContext& context) {
-    impl_->Execution(context).stop_requested.store(true,
-                                                   std::memory_order_relaxed);
+    impl_->Execution(context).stop_requested.store(true, std::memory_order_relaxed);
     impl_->clinit_changed.notify_all();
 }
 
@@ -303,8 +276,8 @@ void Interpreter::BindDefaultExecutionHost() {
     execution.bound_host = host;
 }
 
-void Interpreter::RunInExecutionContext(
-    const InterpreterExecutionContext& context, const std::function<void()>& action) {
+void Interpreter::RunInExecutionContext(const InterpreterExecutionContext& context,
+                                        const std::function<void()>& action) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution(context);
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
@@ -315,8 +288,7 @@ std::uint64_t Interpreter::ExecutionDeadlineNs(const std::uint64_t context) cons
     if (context == 0) return impl_->Execution().deadline_ns.load(std::memory_order_relaxed);
     const std::lock_guard guard(impl_->executions_mutex);
     const auto found = impl_->executions.find(context);
-    return found == impl_->executions.end() ? 0 :
-        found->second->deadline_ns.load(std::memory_order_relaxed);
+    return found == impl_->executions.end() ? 0 : found->second->deadline_ns.load(std::memory_order_relaxed);
 }
 
 bool Interpreter::ExecutionDeadlineExpired(const std::uint64_t context) const {
@@ -330,20 +302,17 @@ bool Interpreter::HasExecutionDeadline(const std::uint64_t context) const {
 
 void Interpreter::CheckExecutionDeadline(const std::uint64_t context) const {
     if (ExecutionDeadlineExpired(context))
-        throw DexVmError(DexVmErrorReason::budget_exhausted,
-                         "lifecycle execution wall-time budget exhausted");
+        throw DexVmError(DexVmErrorReason::budget_exhausted, "lifecycle execution wall-time budget exhausted");
 }
 
-void Interpreter::RunWithExecutionDeadline(
-    const std::uint64_t deadline_ns, const std::function<void()>& action) {
+void Interpreter::RunWithExecutionDeadline(const std::uint64_t deadline_ns, const std::function<void()>& action) {
     if (deadline_ns == 0 || !action)
         throw DexVmError(DexVmErrorReason::invalid_operand, "invalid lifecycle deadline scope");
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     const auto previous = execution.deadline_ns.load(std::memory_order_relaxed);
-    execution.deadline_ns = previous == 0 ? deadline_ns :
-        std::min(previous, deadline_ns);
+    execution.deadline_ns = previous == 0 ? deadline_ns : std::min(previous, deadline_ns);
     try {
         CheckExecutionDeadline();
         action();
@@ -364,8 +333,7 @@ std::optional<std::int32_t> Interpreter::ExitCode() const noexcept {
 void Interpreter::Exit(const std::int32_t code) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto expected = INT64_C(0x100000000);
-    impl_->exit_code.compare_exchange_strong(expected, code,
-                                             std::memory_order_acq_rel);
+    impl_->exit_code.compare_exchange_strong(expected, code, std::memory_order_acq_rel);
     {
         const std::lock_guard guard(impl_->executions_mutex);
         for (const auto& [_, execution] : impl_->executions)
@@ -373,23 +341,19 @@ void Interpreter::Exit(const std::int32_t code) {
     }
     impl_->clinit_changed.notify_all();
     if (impl_->threads) impl_->threads->RequestShutdown();
-    throw DexVmError(DexVmErrorReason::thread_stopped,
-                     "guest Runtime.nativeExit(" + std::to_string(code) + ")");
+    throw DexVmError(DexVmErrorReason::thread_stopped, "guest Runtime.nativeExit(" + std::to_string(code) + ")");
 }
 
-void Interpreter::UnwindStoppedExecutionContext(
-    const InterpreterExecutionContext& context) {
+void Interpreter::UnwindStoppedExecutionContext(const InterpreterExecutionContext& context) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution(context);
     if (!execution.stop_requested.load(std::memory_order_relaxed)) {
-        throw DexVmError(DexVmErrorReason::invalid_operand,
-                         "cannot unwind an execution context that was not "
-                         "stopped");
+        throw DexVmError(DexVmErrorReason::invalid_operand, "cannot unwind an execution context that was not "
+                                                            "stopped");
     }
     if (execution.native_depth != 0U) {
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "stopped execution context still has live native "
-                         "frames after its host thread joined");
+        throw DexVmError(DexVmErrorReason::internal_invariant, "stopped execution context still has live native "
+                                                               "frames after its host thread joined");
     }
     while (!execution.frames.empty()) {
         impl_->ReleaseFrameMonitor(execution.frames.back());
@@ -415,8 +379,7 @@ void Interpreter::SetThreadRuntime(VmThreadRuntime* threads) noexcept {
 
 VmThreadRuntime& Interpreter::Threads() {
     if (impl_->threads == nullptr) {
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "java.lang.Thread runtime is not attached");
+        throw DexVmError(DexVmErrorReason::internal_invariant, "java.lang.Thread runtime is not attached");
     }
     return *impl_->threads;
 }
@@ -428,19 +391,14 @@ VmThreadRuntime* Interpreter::AttachedThreadRuntime() const noexcept {
 VmObjectRef Interpreter::SharedEnumConstants(const DexClassId java_class) {
     auto& linker = *impl_->linker;
     const auto& linked = linker.Class(java_class);
-    if (!linked.super.has_value() ||
-        linker.Class(*linked.super).descriptor != "Ljava/lang/Enum;") {
-        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                          linked.descriptor + " is not an enum type"};
+    if (!linked.super.has_value() || linker.Class(*linked.super).descriptor != "Ljava/lang/Enum;") {
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", linked.descriptor + " is not an enum type"};
     }
     const auto initialized = EnsureClassInitialized(java_class);
     if (initialized.exception.IsValid()) {
-        throw VmJavaThrow{
-            linker.Class(initialized.exception_class).descriptor,
-            initialized.exception_message};
+        throw VmJavaThrow{linker.Class(initialized.exception_class).descriptor, initialized.exception_message};
     }
-    if (const auto found =
-            impl_->enum_constant_arrays.find(java_class.Value());
+    if (const auto found = impl_->enum_constant_arrays.find(java_class.Value());
         found != impl_->enum_constant_arrays.end()) {
         return found->second;
     }
@@ -449,48 +407,40 @@ VmObjectRef Interpreter::SharedEnumConstants(const DexClassId java_class) {
         std::int32_t ordinal{};
         VmObjectRef object;
     };
+
     std::vector<Constant> constants;
     for (const auto field_id : linked.own_static_fields) {
         const auto& field = linker.Field(field_id);
-        if ((field.access_flags & kAccEnum) == 0U || !field.is_static ||
-            !field.is_ref || field.descriptor != linked.descriptor) {
+        if ((field.access_flags & kAccEnum) == 0U || !field.is_static || !field.is_ref ||
+            field.descriptor != linked.descriptor) {
             continue;
         }
         const auto object = VmObjectRef(linked.static_storage[field.slot]);
         if (!object.IsValid()) {
-            throw DexVmError(DexVmErrorReason::internal_invariant,
-                             "enum constant is null: " + field.name);
+            throw DexVmError(DexVmErrorReason::internal_invariant, "enum constant is null: " + field.name);
         }
-        const auto ordinal_field = linker.FindFieldRecursive(
-            java_class, "ordinal", "I");
+        const auto ordinal_field = linker.FindFieldRecursive(java_class, "ordinal", "I");
         if (!ordinal_field.has_value()) {
-            throw DexVmError(DexVmErrorReason::internal_invariant,
-                             "Enum ordinal field is missing");
+            throw DexVmError(DexVmErrorReason::internal_invariant, "Enum ordinal field is missing");
         }
         const auto& ordinal_linked = linker.Field(*ordinal_field);
         const auto slots = impl_->model->InstanceSlots(object);
         if (ordinal_linked.slot >= slots.size()) {
-            throw DexVmError(DexVmErrorReason::internal_invariant,
-                             "enum ordinal slot is invalid");
+            throw DexVmError(DexVmErrorReason::internal_invariant, "enum ordinal slot is invalid");
         }
-        constants.push_back(
-            {static_cast<std::int32_t>(slots[ordinal_linked.slot].bits),
-             object});
+        constants.push_back({static_cast<std::int32_t>(slots[ordinal_linked.slot].bits), object});
     }
     std::ranges::sort(constants, {}, &Constant::ordinal);
     for (std::size_t index = 0; index < constants.size(); ++index) {
         if (constants[index].ordinal != static_cast<std::int32_t>(index)) {
             throw DexVmError(DexVmErrorReason::internal_invariant,
-                             "enum ordinals are not contiguous: " +
-                                 linked.descriptor);
+                             "enum ordinals are not contiguous: " + linked.descriptor);
         }
     }
     const auto array_class = linker.ResolveDescriptor("[" + linked.descriptor);
-    const auto array = impl_->model->NewObjectArray(
-        array_class, java_class, static_cast<JniSize>(constants.size()));
+    const auto array = impl_->model->NewObjectArray(array_class, java_class, static_cast<JniSize>(constants.size()));
     for (std::size_t index = 0; index < constants.size(); ++index) {
-        impl_->model->SetObjectElement(array, static_cast<JniSize>(index),
-                                       constants[index].object);
+        impl_->model->SetObjectElement(array, static_cast<JniSize>(index), constants[index].object);
     }
     impl_->enum_constant_arrays.emplace(java_class.Value(), array);
     return array;
@@ -509,7 +459,8 @@ void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
             }
             visitor(frame.caught);
         }
-        for (const auto root : execution->intrinsic_roots) visitor(root);
+        for (const auto root : execution->intrinsic_roots)
+            visitor(root);
         visitor(execution->pending_exception);
         if (execution->exit_result.kind == VmValue::Kind::ref) {
             visitor(execution->exit_result.ref);
@@ -522,14 +473,13 @@ void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
         }
     }
     visitor(impl_->system_properties_object);
-    for (const auto& [_, array] : impl_->enum_constant_arrays) visitor(array);
+    for (const auto& [_, array] : impl_->enum_constant_arrays)
+        visitor(array);
     impl_->model->VisitPermanentRoots(visitor);
     impl_->class_loaders->VisitRoots(visitor);
     if (impl_->gc_integration.visit_jni_roots) {
         impl_->gc_integration.visit_jni_roots(
-            [&](const JniObjectIdentity identity) {
-                visitor(impl_->model->FindIdentity(identity));
-            });
+            [&](const JniObjectIdentity identity) { visitor(impl_->model->FindIdentity(identity)); });
     }
     if (impl_->threads != nullptr) impl_->threads->VisitThreadRoots(visitor);
     if (impl_->gc_integration.visit_session_roots) {
@@ -537,8 +487,7 @@ void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
     }
 }
 
-Interpreter::RootScope Interpreter::ProtectReferences(
-    const std::span<const VmObjectRef> references) {
+Interpreter::RootScope Interpreter::ProtectReferences(const std::span<const VmObjectRef> references) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();
     const auto base = execution.intrinsic_roots.size();
@@ -548,8 +497,8 @@ Interpreter::RootScope Interpreter::ProtectReferences(
     return RootScope(*this, execution.token, base);
 }
 
-Interpreter::RootScope Interpreter::ProtectIntrinsicCall(
-    const VmObjectRef receiver, const std::span<const VmValue> arguments) {
+Interpreter::RootScope Interpreter::ProtectIntrinsicCall(const VmObjectRef receiver,
+                                                         const std::span<const VmValue> arguments) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();
     const auto base = execution.intrinsic_roots.size();
@@ -569,24 +518,18 @@ std::size_t Interpreter::RegisteredIntrinsicSideTableCount() const noexcept {
 void Interpreter::RegisterIntrinsicStateTable(IntrinsicStateTableHooks hooks) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     if (hooks.name.empty() || !hooks.sweep) {
-        throw DexVmError(DexVmErrorReason::invalid_operand,
-                         "intrinsic state table needs a name and sweep hook");
+        throw DexVmError(DexVmErrorReason::invalid_operand, "intrinsic state table needs a name and sweep hook");
     }
-    const auto duplicate = std::find_if(
-        impl_->intrinsic_state_tables.begin(),
-        impl_->intrinsic_state_tables.end(), [&](const auto& registered) {
-            return registered.name == hooks.name;
-        });
+    const auto duplicate = std::find_if(impl_->intrinsic_state_tables.begin(), impl_->intrinsic_state_tables.end(),
+                                        [&](const auto& registered) { return registered.name == hooks.name; });
     if (duplicate != impl_->intrinsic_state_tables.end()) {
         throw DexVmError(DexVmErrorReason::invalid_operand,
-                         "intrinsic state table is already registered: " +
-                             hooks.name);
+                         "intrinsic state table is already registered: " + hooks.name);
     }
     impl_->intrinsic_state_tables.push_back(std::move(hooks));
 }
 
-void Interpreter::Impl::TraceIntrinsicSideTables(
-    const VmObjectRef owner_ref, const VmRootVisitor& visitor) const {
+void Interpreter::Impl::TraceIntrinsicSideTables(const VmObjectRef owner_ref, const VmRootVisitor& visitor) const {
     for (const auto& table : intrinsic_state_tables) {
         if (table.trace) table.trace(owner_ref, visitor);
     }
@@ -601,16 +544,16 @@ GcMarkResult Interpreter::MarkReachable(const bool clear_soft_references) {
     const auto reference = impl_->linker->FindClass("Ljava/lang/ref/Reference;");
     const auto soft = impl_->linker->FindClass("Ljava/lang/ref/SoftReference;");
     std::optional<VmFieldId> referent;
-    if (reference) referent = impl_->linker->FindFieldRecursive(
-        *reference, "referent", "Ljava/lang/Object;");
+    if (reference) referent = impl_->linker->FindFieldRecursive(*reference, "referent", "Ljava/lang/Object;");
     return impl_->model->MarkReachable(
-        roots, [this](const VmObjectRef owner, const VmRootVisitor& visitor) {
+        roots,
+        [this](const VmObjectRef owner, const VmRootVisitor& visitor) {
             impl_->TraceIntrinsicSideTables(owner, visitor);
-        }, [this, reference, referent, soft, clear_soft_references](DexClassId owner, std::size_t slot) {
-            return reference && referent && owner.IsValid() &&
-                slot == impl_->linker->Field(*referent).slot &&
-                impl_->linker->IsAssignable(*reference, owner) &&
-                (clear_soft_references || !soft || !impl_->linker->IsAssignable(*soft, owner));
+        },
+        [this, reference, referent, soft, clear_soft_references](DexClassId owner, std::size_t slot) {
+            return reference && referent && owner.IsValid() && slot == impl_->linker->Field(*referent).slot &&
+                   impl_->linker->IsAssignable(*reference, owner) &&
+                   (clear_soft_references || !soft || !impl_->linker->IsAssignable(*soft, owner));
         });
 }
 
@@ -666,57 +609,59 @@ GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
     impl_->ProcessReferences(mark, false, false);
     impl_->ProcessReferences(mark, true, false);
     return impl_->model->Sweep(
-        mark,
-        GcSweepHooks{
-            [this](const VmObjectRef ref, const VmObjectKind kind,
-                   const DexClassId java_class,
-                   const std::uint64_t host_state) -> bool {
-                bool destructor_ran = false;
-                if (kind == VmObjectKind::host_backed &&
-                    java_class.IsValid()) {
-                    const auto& linked = impl_->linker->Class(java_class);
-                    if (linked.host_state_destructor) {
-                        linked.host_state_destructor(host_state);
-                        destructor_ran = true;
-                    }
-                }
-                for (const auto& table : impl_->intrinsic_state_tables) {
-                    table.sweep(ref);
-                }
-                impl_->monitors->ReleaseObjectForGc(ref);
-                return destructor_ran;
-            },
-            [this](VmObjectRef, const JniObjectIdentity identity) {
-                if (impl_->gc_integration.clear_weak_references) {
-                    impl_->gc_integration.clear_weak_references(identity);
-                }
-            }});
+        mark, GcSweepHooks{[this](const VmObjectRef ref, const VmObjectKind kind, const DexClassId java_class,
+                                  const std::uint64_t host_state) -> bool {
+                               bool destructor_ran = false;
+                               if (kind == VmObjectKind::host_backed && java_class.IsValid()) {
+                                   const auto& linked = impl_->linker->Class(java_class);
+                                   if (linked.host_state_destructor) {
+                                       linked.host_state_destructor(host_state);
+                                       destructor_ran = true;
+                                   }
+                               }
+                               for (const auto& table : impl_->intrinsic_state_tables) {
+                                   table.sweep(ref);
+                               }
+                               impl_->monitors->ReleaseObjectForGc(ref);
+                               return destructor_ran;
+                           },
+                           [this](VmObjectRef, const JniObjectIdentity identity) {
+                               if (impl_->gc_integration.clear_weak_references) {
+                                   impl_->gc_integration.clear_weak_references(identity);
+                               }
+                           }});
 }
 
-VmValue Interpreter::Impl::InvokeNativeWithResources(const LinkedMethod& method,
-        const VmObjectRef receiver, const std::span<const VmValue> arguments) {
-    struct ClosingField { VmObjectRef object; VmFieldId field; std::int64_t invalid; };
+VmValue Interpreter::Impl::InvokeNativeWithResources(const LinkedMethod& method, const VmObjectRef receiver,
+                                                     const std::span<const VmValue> arguments) {
+    struct ClosingField {
+        VmObjectRef object;
+        VmFieldId field;
+        std::int64_t invalid;
+    };
+
     std::vector<ClosingField> closing;
     std::vector<VmObjectRef> roots;
-    const auto token = arguments.size() == 1 && arguments[0].kind == VmValue::Kind::wide
-        ? arguments[0].AsLong() : 0;
-    if (token != 0) for (const auto& rule : guest_native_resource_fields) {
-        if (rule.cleanup != method.id) continue;
-        const auto& field = linker->Field(rule.field);
-        model->VisitLiveObjects([&](VmObjectRef object) {
-            if (model->Kind(object) != VmObjectKind::vm_instance ||
-                !linker->IsAssignable(field.owner, model->ObjectClass(object))) return;
-            auto slots = model->InstanceSlots(object);
-            const auto stored = std::bit_cast<std::int64_t>(std::uint64_t(slots[field.slot].bits) |
-                (std::uint64_t(slots[field.slot + 1].bits) << 32U));
-            if (stored != token) return;
-            closing.push_back({object, rule.field, rule.invalid_token});
-            roots.push_back(object);
-            const auto invalid = std::bit_cast<std::uint64_t>(rule.invalid_token);
-            slots[field.slot].bits = static_cast<std::uint32_t>(invalid);
-            slots[field.slot + 1].bits = static_cast<std::uint32_t>(invalid >> 32U);
-        });
-    }
+    const auto token = arguments.size() == 1 && arguments[0].kind == VmValue::Kind::wide ? arguments[0].AsLong() : 0;
+    if (token != 0)
+        for (const auto& rule : guest_native_resource_fields) {
+            if (rule.cleanup != method.id) continue;
+            const auto& field = linker->Field(rule.field);
+            model->VisitLiveObjects([&](VmObjectRef object) {
+                if (model->Kind(object) != VmObjectKind::vm_instance ||
+                    !linker->IsAssignable(field.owner, model->ObjectClass(object)))
+                    return;
+                auto slots = model->InstanceSlots(object);
+                const auto stored = std::bit_cast<std::int64_t>(std::uint64_t(slots[field.slot].bits) |
+                                                                (std::uint64_t(slots[field.slot + 1].bits) << 32U));
+                if (stored != token) return;
+                closing.push_back({object, rule.field, rule.invalid_token});
+                roots.push_back(object);
+                const auto invalid = std::bit_cast<std::uint64_t>(rule.invalid_token);
+                slots[field.slot].bits = static_cast<std::uint32_t>(invalid);
+                slots[field.slot + 1].bits = static_cast<std::uint32_t>(invalid >> 32U);
+            });
+        }
     // Claim the peer under the VM lock, before guest JNI releases that lock.
     // A concurrent GC/finalizer must not schedule the same close again.
     const auto closing_roots = owner->ProtectReferences(roots);
@@ -729,7 +674,7 @@ VmValue Interpreter::Impl::InvokeNativeWithResources(const LinkedMethod& method,
             auto slots = model->InstanceSlots(entry.object);
             const auto slot = linker->Field(entry.field).slot;
             const auto stored = std::bit_cast<std::int64_t>(std::uint64_t(slots[slot].bits) |
-                (std::uint64_t(slots[slot + 1].bits) << 32U));
+                                                            (std::uint64_t(slots[slot + 1].bits) << 32U));
             if (stored != entry.invalid) continue;
             const auto original = std::bit_cast<std::uint64_t>(token);
             slots[slot].bits = static_cast<std::uint32_t>(original);
@@ -739,8 +684,7 @@ VmValue Interpreter::Impl::InvokeNativeWithResources(const LinkedMethod& method,
     }
 }
 
-void Interpreter::Impl::RetireClosedNativeResource(const VmMethodId cleanup,
-                                                   const std::span<const VmValue> arguments) {
+void Interpreter::Impl::RetireClosedNativeResource(const VmMethodId cleanup, const std::span<const VmValue> arguments) {
     if (arguments.size() != 1 || arguments[0].kind != VmValue::Kind::wide) return;
     const auto token = arguments[0].AsLong();
     if (token == 0) return;
@@ -749,26 +693,24 @@ void Interpreter::Impl::RetireClosedNativeResource(const VmMethodId cleanup,
         const auto& field = linker->Field(rule.field);
         model->VisitLiveObjects([&](VmObjectRef object) {
             if (model->Kind(object) != VmObjectKind::vm_instance ||
-                !linker->IsAssignable(field.owner, model->ObjectClass(object))) return;
+                !linker->IsAssignable(field.owner, model->ObjectClass(object)))
+                return;
             auto slots = model->InstanceSlots(object);
             const auto stored = std::bit_cast<std::int64_t>(std::uint64_t(slots[field.slot].bits) |
-                (std::uint64_t(slots[field.slot + 1].bits) << 32U));
+                                                            (std::uint64_t(slots[field.slot + 1].bits) << 32U));
             if (stored != token) return;
             const auto invalid = std::bit_cast<std::uint64_t>(rule.invalid_token);
             slots[field.slot].bits = static_cast<std::uint32_t>(invalid);
             slots[field.slot + 1].bits = static_cast<std::uint32_t>(invalid >> 32U);
         });
     }
-    std::erase_if(guest_native_resources, [&](const auto& item) {
-        return item.second.cleanup == cleanup && item.second.token == token;
-    });
-    std::erase_if(pending_guest_cleanup, [&](const auto& item) {
-        return item.cleanup == cleanup && item.token == token;
-    });
+    std::erase_if(guest_native_resources,
+                  [&](const auto& item) { return item.second.cleanup == cleanup && item.second.token == token; });
+    std::erase_if(pending_guest_cleanup,
+                  [&](const auto& item) { return item.cleanup == cleanup && item.token == token; });
 }
 
-void Interpreter::TrackGuestNativeResourceField(VmFieldId field_id, VmMethodId cleanup,
-                                                std::int64_t invalid_token) {
+void Interpreter::TrackGuestNativeResourceField(VmFieldId field_id, VmMethodId cleanup, std::int64_t invalid_token) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     const auto& field = Linker().Field(field_id);
     const auto& method = Linker().Method(cleanup);
@@ -776,7 +718,8 @@ void Interpreter::TrackGuestNativeResourceField(VmFieldId field_id, VmMethodId c
         throw DexVmError(DexVmErrorReason::invalid_operand, "invalid native resource field");
     for (const auto& rule : impl_->guest_native_resource_fields) {
         if (rule.field == field_id) {
-            if (rule.cleanup != cleanup || rule.invalid_token != invalid_token) throw DexVmError(DexVmErrorReason::invalid_operand, "conflicting native cleanup");
+            if (rule.cleanup != cleanup || rule.invalid_token != invalid_token)
+                throw DexVmError(DexVmErrorReason::invalid_operand, "conflicting native cleanup");
             return;
         }
     }
@@ -790,10 +733,11 @@ void Interpreter::Impl::QueueFieldNativeResources(const GcMarkResult* mark) {
         model->VisitLiveObjects([&](VmObjectRef owner) {
             const auto type = model->ObjectClass(owner);
             if (!type.IsValid() || model->Kind(owner) != VmObjectKind::vm_instance ||
-                !linker->IsAssignable(field.owner, type)) return;
+                !linker->IsAssignable(field.owner, type))
+                return;
             auto slots = model->InstanceSlots(owner);
             const auto token = std::bit_cast<std::int64_t>(std::uint64_t(slots[field.slot].bits) |
-                (std::uint64_t(slots[field.slot + 1].bits) << 32U));
+                                                           (std::uint64_t(slots[field.slot + 1].bits) << 32U));
             if (token == 0 || token == rule.invalid_token) return;
             const bool live = mark && mark->IsMarked(owner);
             auto& retained = tokens[{rule.cleanup.Value(), token}];
@@ -809,7 +753,7 @@ void Interpreter::Impl::QueueFieldNativeResources(const GcMarkResult* mark) {
         const auto cleanup = VmMethodId{key.first};
         const auto token = key.second;
         if (!live && std::none_of(pending_guest_cleanup.begin(), pending_guest_cleanup.end(),
-            [&](const auto& item) { return item.cleanup == cleanup && item.token == token; }))
+                                  [&](const auto& item) { return item.cleanup == cleanup && item.token == token; }))
             pending_guest_cleanup.push_back({cleanup, token});
     }
 }
@@ -821,10 +765,11 @@ std::size_t Interpreter::Impl::FieldNativeResourceCount() const {
         model->VisitLiveObjects([&](VmObjectRef owner) {
             const auto type = model->ObjectClass(owner);
             if (!type.IsValid() || model->Kind(owner) != VmObjectKind::vm_instance ||
-                !linker->IsAssignable(field.owner, type)) return;
+                !linker->IsAssignable(field.owner, type))
+                return;
             const auto slots = model->InstanceSlots(owner);
             const auto token = std::bit_cast<std::int64_t>(std::uint64_t(slots[field.slot].bits) |
-                (std::uint64_t(slots[field.slot + 1].bits) << 32U));
+                                                           (std::uint64_t(slots[field.slot + 1].bits) << 32U));
             if (token != 0 && token != rule.invalid_token) tokens.emplace(rule.cleanup.Value(), token);
         });
     }
@@ -837,10 +782,13 @@ void Interpreter::TrackGuestNativeResource(VmObjectRef owner, VmMethodId cleanup
         !impl_->guest_native_resources.emplace(owner.Value(), Impl::GuestNativeResource{cleanup, token}).second)
         throw DexVmError(DexVmErrorReason::unresolved_reference, "invalid native resource owner");
 }
+
 std::size_t Interpreter::GuestNativeResourceCount() const {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
-    return impl_->guest_native_resources.size() + impl_->pending_guest_cleanup.size() + impl_->FieldNativeResourceCount();
+    return impl_->guest_native_resources.size() + impl_->pending_guest_cleanup.size() +
+           impl_->FieldNativeResourceCount();
 }
+
 void Interpreter::ReleaseGuestNativeResources(const bool all) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();
@@ -849,8 +797,9 @@ void Interpreter::ReleaseGuestNativeResources(const bool all) {
     // to invoke cleanup. Keep the queue for the next owner collection/teardown.
     if ((execution.bound_host != std::thread::id{} && execution.bound_host != std::this_thread::get_id()) ||
         (execution.active_entries != 0 && execution.active_host != std::this_thread::get_id())) {
-        if (all) throw DexVmError(DexVmErrorReason::internal_invariant,
-                                 "native resource cleanup requires its execution owner");
+        if (all)
+            throw DexVmError(DexVmErrorReason::internal_invariant,
+                             "native resource cleanup requires its execution owner");
         return;
     }
     if (all) {
@@ -861,35 +810,38 @@ void Interpreter::ReleaseGuestNativeResources(const bool all) {
         }
         impl_->guest_native_resources.clear();
     }
+
     struct RestorePending final {
         InterpreterExecutionState& execution;
         VmObjectRef exception;
         DexClassId type;
         VmValue result;
+
         ~RestorePending() {
             execution.pending_exception = exception;
             execution.pending_exception_class = type;
             execution.exit_result = result;
         }
     } restore{execution, execution.pending_exception, execution.pending_exception_class, execution.exit_result};
-    const auto roots = ProtectReferences(std::array{restore.exception,
-        restore.result.kind == VmValue::Kind::ref ? restore.result.ref : VmObjectRef{}});
+
+    const auto roots = ProtectReferences(
+        std::array{restore.exception, restore.result.kind == VmValue::Kind::ref ? restore.result.ref : VmObjectRef{}});
     execution.pending_exception = VmObjectRef{};
     execution.pending_exception_class = DexClassId{};
-    const auto native_cleanup = impl_->bridge != nullptr
-        ? impl_->bridge->EnterResourceCleanup() : nullptr;
+    const auto native_cleanup = impl_->bridge != nullptr ? impl_->bridge->EnterResourceCleanup() : nullptr;
     auto pending = std::move(impl_->pending_guest_cleanup);
     impl_->pending_guest_cleanup.clear();
     for (std::size_t index = 0; index < pending.size(); ++index) {
         const auto& resource = pending[index];
         try {
             const auto outcome = Call(resource.cleanup, std::array{VmValue::Long(resource.token)});
-            if (outcome.exception.IsValid()) throw VmJavaThrow{
-                Linker().Class(outcome.exception_class).descriptor, outcome.exception_message, outcome.exception};
+            if (outcome.exception.IsValid())
+                throw VmJavaThrow{Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                                  outcome.exception};
         } catch (...) {
             // Preserve failed/unattempted resources for teardown; never lose the queue.
             impl_->pending_guest_cleanup.insert(impl_->pending_guest_cleanup.end(),
-                pending.begin() + static_cast<std::ptrdiff_t>(index), pending.end());
+                                                pending.begin() + static_cast<std::ptrdiff_t>(index), pending.end());
             throw;
         }
     }
@@ -905,7 +857,8 @@ void Interpreter::RegisterFinalizable(const VmObjectRef object) {
         const auto method_slot = impl_->linker->FindVtableIndex(type, "finalize", "()V");
         if (method_slot) {
             const auto method = impl_->linker->Class(type).vtable[*method_slot];
-            cached->second = impl_->linker->Class(impl_->linker->Method(method).owner).descriptor != "Ljava/lang/Object;";
+            cached->second =
+                impl_->linker->Class(impl_->linker->Method(method).owner).descriptor != "Ljava/lang/Object;";
         }
     }
     if (!cached->second) return;
@@ -914,12 +867,16 @@ void Interpreter::RegisterFinalizable(const VmObjectRef object) {
     const auto add = impl_->linker->FindDirectMethod(*reference, "add", "(Ljava/lang/Object;)V");
     if (!add) throw DexVmError(DexVmErrorReason::unresolved_reference, "FinalizerReference.add");
     const auto outcome = Call(*add, std::array{VmValue::Ref(object)});
-    if (outcome.exception.IsValid()) throw VmJavaThrow{impl_->linker->Class(outcome.exception_class).descriptor, outcome.exception_message, outcome.exception};
+    if (outcome.exception.IsValid())
+        throw VmJavaThrow{impl_->linker->Class(outcome.exception_class).descriptor, outcome.exception_message,
+                          outcome.exception};
 }
 
 void Interpreter::EnsureFinalizerDaemons() {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
-    if (impl_->finalizer_daemons_started || impl_->starting_finalizer_daemons || impl_->threads == nullptr || impl_->threads->ShuttingDown()) return;
+    if (impl_->finalizer_daemons_started || impl_->starting_finalizer_daemons || impl_->threads == nullptr ||
+        impl_->threads->ShuttingDown())
+        return;
     const auto type = impl_->linker->FindClass("Ljava/lang/Daemons;");
     if (!type || !impl_->linker->Class(*type).is_boot_dex) return;
     impl_->starting_finalizer_daemons = true;
@@ -928,10 +885,15 @@ void Interpreter::EnsureFinalizerDaemons() {
         const auto start = impl_->linker->FindDirectMethod(*type, "start", "()V");
         if (!start) throw DexVmError(DexVmErrorReason::unresolved_reference, "Daemons.start");
         const auto outcome = Call(*start, {});
-        if (outcome.exception.IsValid()) throw VmJavaThrow{impl_->linker->Class(outcome.exception_class).descriptor, outcome.exception_message, outcome.exception};
+        if (outcome.exception.IsValid())
+            throw VmJavaThrow{impl_->linker->Class(outcome.exception_class).descriptor, outcome.exception_message,
+                              outcome.exception};
         impl_->finalizer_daemons_started = true;
         impl_->starting_finalizer_daemons = false;
-    } catch (...) { impl_->starting_finalizer_daemons = false; throw; }
+    } catch (...) {
+        impl_->starting_finalizer_daemons = false;
+        throw;
+    }
 }
 
 void Interpreter::RunFinalization() {
@@ -951,7 +913,8 @@ void Interpreter::RunFinalization() {
     const auto daemon_type = impl_->linker->ResolveDescriptor("Ljava/lang/Daemons$FinalizerDaemon;");
     const auto daemon_field = linker.FindFieldRecursive(daemon_type, "INSTANCE", "Ljava/lang/Daemons$FinalizerDaemon;");
     const auto queue_field = linker.FindFieldRecursive(type, "queue", "Ljava/lang/ref/ReferenceQueue;");
-    if (!daemon_field || !queue_field) throw DexVmError(DexVmErrorReason::unresolved_reference, "finalizer queue metadata");
+    if (!daemon_field || !queue_field)
+        throw DexVmError(DexVmErrorReason::unresolved_reference, "finalizer queue metadata");
     const auto daemon = VmObjectRef(linker.Class(daemon_type).static_storage[linker.Field(*daemon_field).slot]);
     const auto queue = VmObjectRef(linker.Class(type).static_storage[linker.Field(*queue_field).slot]);
     std::vector<std::pair<VmObjectRef, VmObjectRef>> batch;
@@ -961,7 +924,8 @@ void Interpreter::RunFinalization() {
     while (next.IsValid() && visited.insert(next.Value()).second) {
         const auto zombie = instance_ref(next, "zombie", "Ljava/lang/Object;");
         batch.emplace_back(next, zombie);
-        roots.push_back(next); roots.push_back(zombie);
+        roots.push_back(next);
+        roots.push_back(zombie);
         next = instance_ref(next, "queueNext", "Ljava/lang/ref/Reference;");
     }
     const auto active = instance_ref(daemon, "finalizingObject", "Ljava/lang/Object;");
@@ -970,20 +934,22 @@ void Interpreter::RunFinalization() {
     const auto result = Call(*method, {});
     if (result.exception.IsValid()) {
         if (impl_->linker->Class(result.exception_class).descriptor != "Ljava/lang/InterruptedException;")
-            throw VmJavaThrow{impl_->linker->Class(result.exception_class).descriptor, result.exception_message, result.exception};
+            throw VmJavaThrow{impl_->linker->Class(result.exception_class).descriptor, result.exception_message,
+                              result.exception};
         impl_->threads->Interrupt(impl_->threads->CurrentThreadObject());
         return;
     }
     while (true) {
         const auto current = instance_ref(daemon, "finalizingObject", "Ljava/lang/Object;");
-        const bool pending = (active.IsValid() && active == current) ||
-            std::any_of(batch.begin(), batch.end(), [&](const auto& entry) {
+        const bool pending =
+            (active.IsValid() && active == current) || std::any_of(batch.begin(), batch.end(), [&](const auto& entry) {
                 return instance_ref(entry.first, "zombie", "Ljava/lang/Object;").IsValid() ||
-                    (entry.second.IsValid() && entry.second == current);
+                       (entry.second.IsValid() && entry.second == current);
             });
         if (!pending) break;
-        try { impl_->threads->Sleep(1); }
-        catch (const VmJavaThrow& error) {
+        try {
+            impl_->threads->Sleep(1);
+        } catch (const VmJavaThrow& error) {
             if (error.descriptor != "Ljava/lang/InterruptedException;") throw;
             impl_->threads->Interrupt(impl_->threads->CurrentThreadObject());
             break;
@@ -1008,43 +974,34 @@ GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger, const 
     const auto swept = SweepGarbage(mark);
     impl_->model->AdjustTargetAfterGc();
     ReleaseGuestNativeResources();
-    impl_->RecordTrace(DexVmTraceKind::gc_end, execution, nullptr, 0, 0,
-                       swept.freed_bytes);
+    impl_->RecordTrace(DexVmTraceKind::gc_end, execution, nullptr, 0, 0, swept.freed_bytes);
     impl_->stats.gc_pause_ns += hal::Clock::SteadyTimestampNs() - gc_started;
     ++impl_->stats.gc_collections;
     impl_->stats.gc_freed_bytes += swept.freed_bytes;
     impl_->stats.gc_host_destructors_run += swept.host_destructors_run;
-    impl_->stats.gc_peak_allocated_bytes = std::max(
-        impl_->stats.gc_peak_allocated_bytes,
-        mark.live_bytes + mark.garbage_bytes);
+    impl_->stats.gc_peak_allocated_bytes =
+        std::max(impl_->stats.gc_peak_allocated_bytes, mark.live_bytes + mark.garbage_bytes);
     const auto pause_ticks = mark.live_objects + mark.garbage_objects;
     impl_->stats.gc_pause_ticks += pause_ticks;
     if (impl_->logger != nullptr) {
-        impl_->logger->Write(
-            core::LogLevel::info, "runtime.dexvm.gc",
-            "trigger=" + std::string(trigger) +
-                " live_bytes=" + std::to_string(mark.live_bytes) +
-                " freed_bytes=" + std::to_string(swept.freed_bytes) +
-                " target_bytes=" +
-                std::to_string(impl_->model->HeapTargetBytes()) +
-                " growth_limit_bytes=" +
-                std::to_string(impl_->model->HeapGrowthLimitBytes()) +
-                " live_objects=" + std::to_string(mark.live_objects) +
-                " freed_objects=" + std::to_string(swept.freed_objects) +
-                " host_destructors_run=" +
-                std::to_string(swept.host_destructors_run) +
-                " pause_ticks=" + std::to_string(pause_ticks));
+        impl_->logger->Write(core::LogLevel::info, "runtime.dexvm.gc",
+                             "trigger=" + std::string(trigger) + " live_bytes=" + std::to_string(mark.live_bytes) +
+                                 " freed_bytes=" + std::to_string(swept.freed_bytes) +
+                                 " target_bytes=" + std::to_string(impl_->model->HeapTargetBytes()) +
+                                 " growth_limit_bytes=" + std::to_string(impl_->model->HeapGrowthLimitBytes()) +
+                                 " live_objects=" + std::to_string(mark.live_objects) +
+                                 " freed_objects=" + std::to_string(swept.freed_objects) +
+                                 " host_destructors_run=" + std::to_string(swept.host_destructors_run) +
+                                 " pause_ticks=" + std::to_string(pause_ticks));
     }
     return swept;
 }
 
-void Interpreter::Impl::PrepareSafeAllocation(
-    const std::uint64_t request_bytes, const std::string_view trigger) {
+void Interpreter::Impl::PrepareSafeAllocation(const std::uint64_t request_bytes, const std::string_view trigger) {
     if (!model->ShouldCollectFor(request_bytes)) return;
     static_cast<void>(owner->CollectGarbage(trigger, false));
     if (model->GrowFor(request_bytes)) return;
-    static_cast<void>(owner->CollectGarbage(
-        std::string(trigger) + "-before-oom", true));
+    static_cast<void>(owner->CollectGarbage(std::string(trigger) + "-before-oom", true));
     static_cast<void>(model->GrowFor(request_bytes));
 }
 
@@ -1063,7 +1020,10 @@ std::vector<DexClassId> Interpreter::CallingStackClasses(std::size_t skip, std::
     std::vector<DexClassId> result;
     const auto& frames = impl_->Execution().frames;
     for (auto it = frames.rbegin(); it != frames.rend() && result.size() < limit; ++it) {
-        if (skip) { --skip; continue; }
+        if (skip) {
+            --skip;
+            continue;
+        }
         // AOSP dvmIsReflectionMethod filters Method only, not the whole package.
         if (impl_->linker->Class(it->method->owner).descriptor == "Ljava/lang/reflect/Method;") continue;
         result.push_back(it->method->owner);
@@ -1071,8 +1031,7 @@ std::vector<DexClassId> Interpreter::CallingStackClasses(std::size_t skip, std::
     return result;
 }
 
-void Interpreter::AttachNativeThread(const std::uint64_t guest_thread_id,
-                                     const std::uint64_t execution_token) {
+void Interpreter::AttachNativeThread(const std::uint64_t guest_thread_id, const std::uint64_t execution_token) {
     if (impl_->bridge != nullptr) {
         impl_->bridge->AttachThread(guest_thread_id, execution_token);
     }
@@ -1089,23 +1048,32 @@ core::CapabilityLedger* Interpreter::Ledger() const noexcept {
     return impl_->ledger;
 }
 
+void Interpreter::RecordUiDegraded(const std::string_view what) {
+    auto* ledger = impl_->ledger;
+    const bool first =
+        ledger == nullptr || ledger->RecordWarning(std::string(core::kUiDegradedWarningPrefix) + std::string(what), 0);
+    if (!first) return;
+    if (auto* logger = Log())
+        logger->Write(core::LogLevel::warn, "runtime.dexvm.ui_degraded",
+                      "ignored unsupported UI request: " + std::string(what));
+}
+
 // ---- monitors ---------------------------------------------------------
 
-VmMonitorTable& Interpreter::Monitors() noexcept { return *impl_->monitors; }
+VmMonitorTable& Interpreter::Monitors() noexcept {
+    return *impl_->monitors;
+}
 
 std::uint64_t Interpreter::CurrentContextToken() const {
     return impl_->Execution().token;
 }
 
-void Interpreter::NotifyMonitor(const VmObjectRef receiver,
-                                const bool all) const {
+void Interpreter::NotifyMonitor(const VmObjectRef receiver, const bool all) const {
     if (!receiver.IsValid()) {
-        throw VmJavaThrow{"Ljava/lang/NullPointerException;",
-                          "notify on null"};
+        throw VmJavaThrow{"Ljava/lang/NullPointerException;", "notify on null"};
     }
     const auto owner = impl_->Execution().token;
-    impl_->RecordTrace(DexVmTraceKind::monitor_notify, impl_->Execution(),
-                       nullptr, 0, 0, receiver.Value());
+    impl_->RecordTrace(DexVmTraceKind::monitor_notify, impl_->Execution(), nullptr, 0, 0, receiver.Value());
     if (all) {
         impl_->monitors->NotifyAll(receiver, owner);
     } else {
@@ -1113,29 +1081,22 @@ void Interpreter::NotifyMonitor(const VmObjectRef receiver,
     }
 }
 
-void Interpreter::WaitOnMonitor(const VmObjectRef receiver,
-                                const std::int64_t timeout_millis) const {
+void Interpreter::WaitOnMonitor(const VmObjectRef receiver, const std::int64_t timeout_millis) const {
     if (!receiver.IsValid()) {
-        throw VmJavaThrow{"Ljava/lang/NullPointerException;",
-                          "wait on null"};
+        throw VmJavaThrow{"Ljava/lang/NullPointerException;", "wait on null"};
     }
-    impl_->RecordTrace(DexVmTraceKind::monitor_wait, impl_->Execution(),
-                       nullptr, 0, 0, receiver.Value());
-    const auto outcome = impl_->monitors->Wait(
-        receiver, impl_->Execution().token, timeout_millis);
+    impl_->RecordTrace(DexVmTraceKind::monitor_wait, impl_->Execution(), nullptr, 0, 0, receiver.Value());
+    const auto outcome = impl_->monitors->Wait(receiver, impl_->Execution().token, timeout_millis);
     switch (outcome) {
-        case VmWaitOutcome::notified:
-        case VmWaitOutcome::timed_out:
-            return;
-        case VmWaitOutcome::interrupted:
-            // Thrown only after the monitor was re-acquired and its
-            // recursion restored (AOSP vm/Sync.cpp waitMonitor).
-            throw VmJavaThrow{"Ljava/lang/InterruptedException;",
-                              "wait interrupted"};
-        case VmWaitOutcome::shut_down:
-            throw DexVmError(DexVmErrorReason::thread_stopped,
-                             "Object.wait woke because the VM is shutting "
-                             "down");
+    case VmWaitOutcome::notified:
+    case VmWaitOutcome::timed_out: return;
+    case VmWaitOutcome::interrupted:
+        // Thrown only after the monitor was re-acquired and its
+        // recursion restored (AOSP vm/Sync.cpp waitMonitor).
+        throw VmJavaThrow{"Ljava/lang/InterruptedException;", "wait interrupted"};
+    case VmWaitOutcome::shut_down:
+        throw DexVmError(DexVmErrorReason::thread_stopped, "Object.wait woke because the VM is shutting "
+                                                           "down");
     }
 }
 

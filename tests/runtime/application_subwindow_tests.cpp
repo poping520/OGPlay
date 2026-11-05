@@ -143,13 +143,9 @@ TEST_CASE("DVM-335 application WindowManager identity validation and bounded lay
                 "Ljava/lang/IllegalArgumentException;", "not attached to window manager");
         f.Error(f.Outcome(manager, "updateViewLayout", layout_sig, {VmValue::Ref(view), VmValue::Ref(params)}),
                 "Ljava/lang/IllegalArgumentException;", "not attached to window manager");
-        for (const auto& [field, value] : std::array<std::pair<const char*, int>, 7>{{{"type", 0},
-                                                                                      {"type", 1000},
-                                                                                      {"type", 2000},
-                                                                                      {"width", 100},
-                                                                                      {"height", 1},
-                                                                                      {"flags", 1},
-                                                                                      {"gravity", 17}}}) {
+        // Only a type outside the application range still fails; other parameters degrade.
+        for (const auto& [field, value] :
+             std::array<std::pair<const char*, int>, 3>{{{"type", 0}, {"type", 1000}, {"type", 2000}}}) {
             const auto invalid = f.Params();
             f.Int(invalid, field, value);
             f.Error(f.Outcome(manager, "addView", layout_sig, {VmValue::Ref(view), VmValue::Ref(invalid)}),
@@ -188,10 +184,11 @@ TEST_CASE("DVM-335 application WindowManager identity validation and bounded lay
         f.Update(view, params);
         f.Step();
         CHECK(f.app.context->application_windows.front().flags == 0x5b8);
+        // An unsupported flag only changes the look: the update still lands, with a warning.
         f.Int(params, "flags", 2);
-        f.Error(f.Outcome(manager, "updateViewLayout", layout_sig, {VmValue::Ref(view), VmValue::Ref(params)}),
-                "Ljava/lang/UnsupportedOperationException;", "layout is not supported");
-        CHECK(f.app.context->application_windows.front().flags == 0x5b8);
+        f.Update(view, params);
+        f.Step();
+        CHECK(f.app.context->application_windows.front().flags == 2);
         static_cast<void>(f.Call(manager, "removeViewImmediate", view_sig, {VmValue::Ref(view)}));
         f.Add(view, f.Params());  // A pending removal does not prevent re-adding the same root.
         f.Step();

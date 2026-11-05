@@ -903,7 +903,7 @@ Decl Declare_android_graphics_drawable_PaintDrawable(const Context& context) {
     builder.OverrideMethod("mutate", "()Landroid/graphics/drawable/Drawable;", reject_state);
     builder.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
     builder.OverrideMethod("getAlpha", "()I", reject_state);
-    builder.OverrideMethod("setAlpha", "(I)V", reject_state);
+    builder.OverrideMethod("setAlpha", "(I)V", IgnoredUiRequest("Drawable.setAlpha"));
     builder.OverrideMethod("getOpacity", "()I", reject_state);
     builder.Constructor("(I)V", GraphicsNoopHandler());
     builder.VirtualMethod("setCornerRadius", "(F)V", GraphicsNoopHandler());
@@ -994,8 +994,8 @@ Decl Declare_android_graphics_Paint(const Context& context) {
         };
         const auto flags = [](dx::IntrinsicContext& call, std::int32_t value) {
             // AA, filter-bitmap, dither and the two API19 default text flags.
-            if ((value & ~0x507) != 0) UnsupportedPaint(call, "unsupported Paint flags");
-            return value;
+            if ((value & ~0x507) != 0) RecordUiDegraded(call.vm, "Paint.flags");
+            return value & 0x507;
         };
         const auto init = [context, face, flags](dx::IntrinsicContext& call) {
             DexVmAndroidContext::PaintMeasureState value;
@@ -1030,19 +1030,21 @@ Decl Declare_android_graphics_Paint(const Context& context) {
             "setAlpha", "(I)V",
             [state](dx::IntrinsicContext& c) {
                 const auto value = c.arguments[0].AsInt();
-                if (value < 0 || value > 255 || state(c).text_view_owned)
-                    UnsupportedPaint(c, "Paint alpha outside bounded drawable state");
-                state(c).alpha = value;
+                if (state(c).text_view_owned) {
+                    RecordUiDegraded(c.vm, "TextViewPaint.alpha");
+                    return dx::VmValue::Void();
+                }
+                state(c).alpha = value & 0xff;  // SkPaint keeps the low byte.
                 return dx::VmValue::Void();
             },
             dx::kAccPublic | dx::kAccNative);
         builder.VirtualMethod("setColorFilter", "(Landroid/graphics/ColorFilter;)Landroid/graphics/ColorFilter;",
                               [state, color_filter](dx::IntrinsicContext& c) {
                                   static_cast<void>(state(c));
-                                  if (c.arguments[0].ref.IsValid())
-                                      UnsupportedPaint(c, "Paint ColorFilter is unsupported");
-                                  dx::IntrinsicCall(c).SetRef(color_filter, dx::VmObjectRef{});
-                                  return dx::VmValue::Ref(dx::VmObjectRef{});
+                                  // Kept for getColorFilter; the fixed-function renderer never applies it.
+                                  if (c.arguments[0].ref.IsValid()) RecordUiDegraded(c.vm, "Paint.colorFilter");
+                                  dx::IntrinsicCall(c).SetRef(color_filter, c.arguments[0].ref);
+                                  return c.arguments[0];
                               });
         for (const auto [name, signature, field] :
              {std::tuple{"setShader", "(Landroid/graphics/Shader;)Landroid/graphics/Shader;", shader},
@@ -1071,7 +1073,10 @@ Decl Declare_android_graphics_Paint(const Context& context) {
         builder.VirtualMethod("getFlags", "()I",
                               [state](dx::IntrinsicContext& c) { return dx::VmValue::Int(state(c).flags); });
         builder.VirtualMethod("setFlags", "(I)V", [state, flags](dx::IntrinsicContext& c) {
-            if (state(c).text_view_owned) UnsupportedPaint(c, "TextView Paint flags are fixed");
+            if (state(c).text_view_owned) {
+                RecordUiDegraded(c.vm, "TextViewPaint.flags");
+                return dx::VmValue::Void();
+            }
             state(c).flags = flags(c, c.arguments[0].AsInt());
             return dx::VmValue::Void();
         });
@@ -1079,14 +1084,20 @@ Decl Declare_android_graphics_Paint(const Context& context) {
                             [state](dx::IntrinsicContext& c) { return dx::VmValue::Int(state(c).flags & 1); });
         builder.VirtualMethod("setAntiAlias", "(Z)V", [state](dx::IntrinsicContext& c) {
             auto& value = state(c);
-            if (value.text_view_owned) UnsupportedPaint(c, "TextView Paint flags are fixed");
+            if (value.text_view_owned) {
+                RecordUiDegraded(c.vm, "TextViewPaint.flags");
+                return dx::VmValue::Void();
+            }
             value.flags = (value.flags & ~1) | (c.arguments[0].AsInt() != 0);
             return dx::VmValue::Void();
         });
         for (const auto [name, bit] : {std::pair{"setFilterBitmap", 0x02}, std::pair{"setDither", 0x04}}) {
             builder.VirtualMethod(name, "(Z)V", [state, bit](dx::IntrinsicContext& c) {
                 auto& value = state(c);
-                if (value.text_view_owned) UnsupportedPaint(c, "TextView Paint flags are fixed");
+                if (value.text_view_owned) {
+                    RecordUiDegraded(c.vm, "TextViewPaint.flags");
+                    return dx::VmValue::Void();
+                }
                 value.flags = (value.flags & ~bit) | (c.arguments[0].AsInt() != 0 ? bit : 0);
                 return dx::VmValue::Void();
             });
@@ -1095,9 +1106,10 @@ Decl Declare_android_graphics_Paint(const Context& context) {
                               [state](dx::IntrinsicContext& c) { return dx::VmValue::Float(state(c).text_size); });
         builder.VirtualMethod("setTextSize", "(F)V", [state](dx::IntrinsicContext& c) {
             const auto size = c.arguments[0].AsFloat();
-            if (!std::isfinite(size) || size < 1 || size > 128)
-                UnsupportedPaint(c, "Paint text size outside 1..128 px");
-            if (state(c).text_view_owned) UnsupportedPaint(c, "TextView Paint text size requires TextView.setTextSize");
+            if (!std::isfinite(size) || size < 1 || size > 128 || state(c).text_view_owned) {
+                RecordUiDegraded(c.vm, "Paint.textSize");
+                return dx::VmValue::Void();
+            }
             state(c).text_size = size;
             return dx::VmValue::Void();
         });
@@ -1107,9 +1119,11 @@ Decl Declare_android_graphics_Paint(const Context& context) {
         });
         builder.VirtualMethod("setTypeface", "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
                               [face, state](dx::IntrinsicContext& c) {
-                                  if (state(c).text_view_owned)
-                                      UnsupportedPaint(c, "TextView Paint typeface requires TextView.setTypeface");
                                   const auto ref = c.arguments[0].ref;
+                                  if (state(c).text_view_owned) {
+                                      RecordUiDegraded(c.vm, "TextViewPaint.typeface");
+                                      return dx::VmValue::Ref(ref);
+                                  }
                                   if (ref.IsValid()) static_cast<void>(CallAndroidMethod(c.vm, ref, "getStyle", "()I"));
                                   dx::IntrinsicCall(c).SetRef(face, ref);
                                   return dx::VmValue::Ref(ref);
@@ -1545,7 +1559,7 @@ Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
     builder.OverrideMethod("mutate", "()Landroid/graphics/drawable/Drawable;", reject_state);
     builder.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
     builder.OverrideMethod("getAlpha", "()I", reject_state);
-    builder.OverrideMethod("setAlpha", "(I)V", reject_state);
+    builder.OverrideMethod("setAlpha", "(I)V", IgnoredUiRequest("Drawable.setAlpha"));
 
     const auto bitmap_ctor = [context](const std::size_t index) {
         return dx::IntrinsicHandler([context, index](dx::IntrinsicContext& call) {
@@ -1865,15 +1879,8 @@ Decl Declare_android_graphics_drawable_DrawableContainer(const Context& context)
     b.OverrideMethod("mutate", "()Landroid/graphics/drawable/Drawable;", reject_state);
     b.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
     b.OverrideMethod("getAlpha", "()I", reject_state);
-    b.OverrideMethod("setAlpha", "(I)V", reject_state);
-    b.VirtualMethod(
-        "animate", "(Z)V",
-        [](dx::IntrinsicContext& c) -> dx::VmValue {
-            if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.progressbar_tiling", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "Drawable fade animation is unsupported"};
-        },
-        0);
+    b.OverrideMethod("setAlpha", "(I)V", IgnoredUiRequest("Drawable.setAlpha"));
+    b.VirtualMethod("animate", "(Z)V", IgnoredUiRequest("DrawableContainer.animate"), 0);
     AddSkinQueries(b, context, true);
     b.VirtualMethod("setVisible", "(ZZ)Z", [context](dx::IntrinsicContext& c) {
         // A virtual base method is resolved explicitly to preserve its ROM field protocol.
@@ -1945,7 +1952,7 @@ Decl Declare_android_graphics_drawable_NinePatchDrawable(const Context& context)
     b.OverrideMethod("mutate", "()Landroid/graphics/drawable/Drawable;", reject_state);
     b.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
     b.OverrideMethod("getAlpha", "()I", reject_state);
-    b.OverrideMethod("setAlpha", "(I)V", reject_state);
+    b.OverrideMethod("setAlpha", "(I)V", IgnoredUiRequest("Drawable.setAlpha"));
     b.VirtualMethod("getChangingConfigurations", "()I", [context](dx::IntrinsicContext& c) {
         // Sealed host skins have no mutable ConstantState configuration producer.
         // Resource loading contributes zero flags; the base ROM field remains observable.
@@ -1954,10 +1961,7 @@ Decl Declare_android_graphics_drawable_NinePatchDrawable(const Context& context)
     });
     b.VirtualMethod("setAutoMirrored", "(Z)V", [context](dx::IntrinsicContext& c) {
         static_cast<void>(Skin(c, context));
-        if (c.arguments[0].AsInt()) {
-            if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "ROM skin mirroring is unsupported"};
-        }
+        if (c.arguments[0].AsInt()) RecordUiDegraded(c.vm, "Drawable.autoMirrored");
         return dx::VmValue::Void();
     });
     AddSkinQueries(b, context, false);
@@ -2077,11 +2081,7 @@ Decl Declare_android_graphics_drawable_AnimationDrawable(const Context&) {
     b.DirectMethod(
         "setFrame", "(IZZ)V",
         [](dx::IntrinsicContext& c) -> dx::VmValue {
-            if (c.arguments[2].AsInt()) {
-                if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.progressbar_tiling", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "frame animation scheduling is unsupported"};
-            }
+            if (c.arguments[2].AsInt()) RecordUiDegraded(c.vm, "AnimationDrawable.schedule");
             const auto frame = c.arguments[0].AsInt();
             if (frame >= CallAndroidMethod(c.vm, c.receiver, "getNumberOfFrames", "()I").AsInt())
                 return dx::VmValue::Void();

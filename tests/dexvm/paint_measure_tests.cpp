@@ -123,10 +123,11 @@ TEST_CASE("DVM-293 unsupported Paint features and invalid ranges fail explicitly
         for (const auto text : {u"\u0627", u"\U0001f600", u"\u0378", u"\n"})
             CHECK(f.OnOutcome(paint, "measureText", "(Ljava/lang/String;)F", {VmValue::Ref(f.model.NewString(text))})
                       .exception.IsValid());
-        CHECK(f.OnOutcome(paint, "setTextSize", "(F)V", {VmValue::Float(0)}).exception.IsValid());
-        CHECK(f.OnOutcome(paint, "setFlags", "(I)V", {VmValue::Int(8)}).exception.IsValid());
+        // Unusable display values keep the last good state; unsupported flag bits are dropped.
+        f.On(paint, "setTextSize", "(F)V", {VmValue::Float(0)});
+        f.On(paint, "setFlags", "(I)V", {VmValue::Int(8)});
         CHECK(f.On(paint, "getTextSize", "()F").AsFloat() == 12);
-        CHECK(f.On(paint, "getFlags", "()I").AsInt() == 0x500);
+        CHECK(f.On(paint, "getFlags", "()I").AsInt() == 0);
         CHECK(f.OnOutcome(paint, "measureText", "(Ljava/lang/String;II)F",
                           {VmValue::Ref(f.model.NewString(u"H")), VmValue::Int(-1), VmValue::Int(1)})
                   .exception.IsValid());
@@ -177,16 +178,9 @@ TEST_CASE("DVM-360 ROM Paint filter-bitmap and dither flags remain independent o
         f.On(paint, "setFlags", "(I)V", {VmValue::Int(0x507)});
         check(0x507);
         CHECK(f.ledger.Unimplemented().empty());
-        for (const auto invalid : {0x08, 0x10, -1}) {
-            const auto outcome = f.OnOutcome(paint, "setFlags", "(I)V", {VmValue::Int(invalid)});
-            REQUIRE(outcome.exception.IsValid());
-            CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-            check(0x507);
-        }
-        const auto hits = f.ledger.Unimplemented();
-        REQUIRE(hits.size() == 1);
-        CHECK(hits[0].id == "dexvm.paint_measure");
-        CHECK(hits[0].count == 3);
+        f.On(paint, "setFlags", "(I)V", {VmValue::Int(-1)});
+        check(0x507);
+        CHECK(f.ledger.Unimplemented().empty());
         for (const auto name : {"isFilterBitmap", "isDither"}) {
             const auto index = f.linker.FindVtableIndex(type, name, "()Z");
             REQUIRE(index);

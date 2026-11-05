@@ -487,11 +487,10 @@ TEST_CASE("DVM-305 presentation snapshot composes modal pixels input and atomic 
                                          AndroidUiTraversalPhase::ResolveOnly));
         const auto recovered = AcquireAndroidPresentation(*f.context);
         CHECK(recovered->viewport == ui::Size{640, 480});
-        // Text/limit failures leave the old sequence unchanged.
-        const auto fail = f.OnOutcome(dialog, "setTitle", "(Ljava/lang/CharSequence;)V",
-                                      {VmValue::Ref(f.vm.NewStringUtf8(std::string(513, 'X')))});
-        REQUIRE(fail.exception.IsValid());
-        CHECK(AcquireAndroidPresentation(*f.context) == recovered);
+        // An over-budget title is truncated and warned about; the Dialog keeps showing.
+        f.On(dialog, "setTitle", "(Ljava/lang/CharSequence;)V",
+             {VmValue::Ref(f.vm.NewStringUtf8(std::string(513, 'X')))});
+        CHECK(AcquireAndroidPresentation(*f.context) != recovered);
         std::vector<VmObjectRef> extra;
         for (int i = 0; i < 6; ++i) {
             extra.push_back(Dialog(f, owner));
@@ -514,7 +513,7 @@ TEST_CASE("DVM-305 presentation snapshot composes modal pixels input and atomic 
         const auto hits = f.ledger.Unimplemented();
         REQUIRE(hits.size() == 1);
         CHECK(hits[0].id == "runtime.ui.dialog.presentation");
-        CHECK(hits[0].count == 3);  // invalid resize metrics, text bound, ninth modal.
+        CHECK(hits[0].count == 2);  // invalid resize metrics, ninth modal.
     }
 }
 
@@ -825,11 +824,10 @@ TEST_CASE("DVM-370 long AlertDialog messages scroll inside bounded chrome on bot
             CHECK(tiny_bounds.top >= 8);
             CHECK(tiny_bounds.bottom <= 40);
             CHECK(f.ledger.Unimplemented().empty());
-            const auto over_budget =
-                f.OnOutcome(dialog, "setMessage", "(Ljava/lang/CharSequence;)V",
-                            {VmValue::Ref(f.vm.NewStringUtf8(std::string(ui::kMaxFixedTextUnits + 1, 'M')))});
-            CHECK(over_budget.exception.IsValid());
-            CHECK(current() == tiny);
+            f.On(dialog, "setMessage", "(Ljava/lang/CharSequence;)V",
+                 {VmValue::Ref(f.vm.NewStringUtf8(std::string(ui::kMaxFixedTextUnits + 1, 'M')))});
+            CHECK(current() != tiny);
+            CHECK(f.ledger.Unimplemented().empty());
         }
     }
 }

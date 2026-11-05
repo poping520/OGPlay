@@ -5,8 +5,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
-      "surface": "tools/bootdex/view-colorfilter.surface.json.gz",
-      "surface_sha256": "a94459bfc7f022d86da536dea6453b7eb008bda45d482e293c324ec664acf462",
+      "surface": "tools/bootdex/runtime.surface.json.gz",
+      "surface_sha256": "52bd4d0cc3ebbe99dd6aa390cefccacf3cb0511554f49e747e4df0c58c12cc80",
       "owner": "Landroid/graphics/ColorFilter;",
       "smali_sha256": "fc0385aba407a8bb8626171da8cab3ecd90a6d669a322ceba925afb2a2ef3d74",
       "methods": [
@@ -57,8 +57,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
-      "surface": "tools/bootdex/view-colorfilter.surface.json.gz",
-      "surface_sha256": "a94459bfc7f022d86da536dea6453b7eb008bda45d482e293c324ec664acf462",
+      "surface": "tools/bootdex/runtime.surface.json.gz",
+      "surface_sha256": "52bd4d0cc3ebbe99dd6aa390cefccacf3cb0511554f49e747e4df0c58c12cc80",
       "owner": "Landroid/graphics/LightingColorFilter;",
       "smali_sha256": "56fd3de045e7d91f241f8f70ec4ead27c20d304fd3d43b5ecb57a242842fc9c0",
       "methods": [

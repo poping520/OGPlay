@@ -145,8 +145,8 @@ TEST_CASE("DVM-365 ProgressBar ROM state measurement attachment and bounded reso
         CHECK(f.On(drawable, "isRunning", "()Z").AsInt() == 0);
         f.On(view, "onDetachedFromWindow", "()V");
         CHECK(f.On(drawable, "isRunning", "()Z").AsInt() == 0);
-        const auto animation = f.OnOutcome(drawable, "start", "()V");
-        REQUIRE(animation.exception.IsValid());
+        f.On(drawable, "start", "()V");  // No animator: ignored with a warning, still not running.
+        CHECK(f.On(drawable, "isRunning", "()Z").AsInt() == 0);
         // Exercise the ROM determinate branch without admitting an unsealed horizontal style.
         slot(view, "mOnlyIndeterminate", "Z").bits = 0;
         f.On(view, "setIndeterminate", "(Z)V", {VmValue::Int(0)});
@@ -278,8 +278,7 @@ TEST_CASE("DVM-367 horizontal ROM ProgressBar retains layer IDs levels and stati
         f.On(copy, "setAlpha", "(I)V", {VmValue::Int(7)});
         CHECK(f.On(paint, "getAlpha", "()I").AsInt() == 128);
         f.On(paint, "setAlpha", "(I)V", {VmValue::Int(255)});
-        const auto start = f.OnOutcome(animation, "start", "()V");
-        REQUIRE(start.exception.IsValid());
+        f.On(animation, "start", "()V");
         CHECK(f.On(animation, "isRunning", "()Z").AsInt() == 0);
         f.On(bar, "setIndeterminate", "(Z)V", {VmValue::Int(1)});
         CHECK(f.On(bar, "isIndeterminate", "()Z").AsInt() == 1);

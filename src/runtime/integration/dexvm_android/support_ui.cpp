@@ -1367,20 +1367,22 @@ void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::
     case 5: scale_type = ui::ImageScaleType::Center; break;
     case 6: scale_type = ui::ImageScaleType::CenterCrop; break;
     case 7: scale_type = ui::ImageScaleType::CenterInside; break;
-    default: throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unsupported ImageView scaleType"};
+    default:
+        RecordUiDegraded(vm, "ImageView.scaleType");
+        scale_type = ui::ImageScaleType::FitCenter;
+        break;
     }
     std::shared_ptr<const ui::UiBitmap> image;
     std::optional<std::uint32_t> color;
     ui::Size intrinsic{};
-    if (drawable.IsValid()) {
-        const auto drawable_type = vm.Model().ObjectClass(drawable);
-        const bool is_color = vm.Linker().IsAssignable(
-            vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/ColorDrawable;"), drawable_type);
-        const auto found = context.ui_drawables.find(drawable.Value());
-        if (!is_color && (found == context.ui_drawables.end() || !found->second.bitmap_drawable)) {
-            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.image_leaf", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unreviewed image Drawable"};
-        }
+    const bool is_color =
+        drawable.IsValid() &&
+        vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/ColorDrawable;"),
+                                 vm.Model().ObjectClass(drawable));
+    const auto found = drawable.IsValid() ? context.ui_drawables.find(drawable.Value()) : context.ui_drawables.end();
+    const bool renderable = is_color || (found != context.ui_drawables.end() && found->second.bitmap_drawable);
+    if (drawable.IsValid() && !renderable) RecordUiDegraded(vm, "ImageView.drawable");
+    if (renderable) {
         auto& state = context.ui_drawables[drawable.Value()];
         if (state.bitmap_drawable) {
             const auto paint = CallAndroidMethod(vm, drawable, "getPaint", "()Landroid/graphics/Paint;").ref;
@@ -1389,11 +1391,8 @@ void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::
                 CallAndroidMethod(vm, paint, "getColorFilter", "()Landroid/graphics/ColorFilter;").ref.IsValid() ||
                 CallAndroidMethod(vm, drawable, "isAutoMirrored", "()Z").AsInt() != 0 ||
                 CallAndroidMethod(vm, paint, "getShader", "()Landroid/graphics/Shader;").ref.IsValid() ||
-                CallAndroidMethod(vm, paint, "getXfermode", "()Landroid/graphics/Xfermode;").ref.IsValid()) {
-                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.image_leaf", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "BitmapDrawable Paint rendering is unsupported"};
-            }
+                CallAndroidMethod(vm, paint, "getXfermode", "()Landroid/graphics/Xfermode;").ref.IsValid())
+                RecordUiDegraded(vm, "BitmapDrawable.paint");
         }
         const auto source = state.bitmap_drawable
                                 ? CallAndroidMethod(vm, drawable, "getBitmap", "()Landroid/graphics/Bitmap;").ref
@@ -2754,10 +2753,17 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
     const auto text = [&](dx::VmObjectRef value, std::size_t maximum) {
         if (!value.IsValid()) return std::u16string{};
         const auto string_type = call.vm.Linker().ResolveDescriptor("Ljava/lang/String;");
-        if (!call.vm.Linker().IsAssignable(string_type, call.vm.Model().ObjectClass(value)))
-            unsupported("Dialog supports plain String text only");
-        auto result = call.vm.Model().StringValue(value);
-        if (result.size() > maximum) unsupported("Dialog text exceeds the bounded presentation budget");
+        auto plain = value;
+        if (!call.vm.Linker().IsAssignable(string_type, call.vm.Model().ObjectClass(value))) {
+            RecordUiDegraded(call.vm, "Dialog.textSpans");
+            plain = CallAndroidMethod(call.vm, value, "toString", "()Ljava/lang/String;").ref;
+            if (!plain.IsValid()) return std::u16string{};
+        }
+        auto result = call.vm.Model().StringValue(plain);
+        if (result.size() > maximum) {
+            RecordUiDegraded(call.vm, "Dialog.textLength");
+            result.resize(maximum);
+        }
         return result;
     };
     const auto title = text(call.arguments[2].ref, 512);

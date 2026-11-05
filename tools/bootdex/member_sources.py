@@ -275,11 +275,14 @@ def validate(document, texts, surface, boot_texts=None, host_allocations=None):
             if any(row[k] != original[k] for k in ('flags', 'body_sha256')):
                 raise ValueError('ROM method identity mismatch: ' + key)
             source = row['source']
-            if source not in ('rom', 'overlay', 'failure'):
+            if source not in ('rom', 'overlay', 'failure', 'ui-degraded'):
                 raise ValueError('invalid member source: ' + key)
+            if source == 'ui-degraded' and (not key.endswith(')V') or original['flags'] & (8 | 1024)
+                                            or not original['flags'] & 1):
+                raise ValueError('ui-degraded must be a public concrete void instance method: ' + key)
             if key == '<clinit>()V' and source != 'rom':
                 raise ValueError('clinit must execute ROM: ' + owner)
-            if original['flags'] & 256 and source != 'failure':
+            if original['flags'] & 256 and source not in ('failure', 'ui-degraded'):
                 if source != 'overlay' or row.get('platform_seam') is not True:
                     raise ValueError('unauthorized native selection: ' + key)
             if source == 'rom' and original['flags'] & (256 | 1024):
@@ -454,7 +457,8 @@ def validate(document, texts, surface, boot_texts=None, host_allocations=None):
         null_initial = (not declaration['initialization'].startswith('rom-encoded:') or
                         declaration['initialization'] == 'rom-encoded:null')
         rows = writers[owner, key]
-        null_writers = null_initial and all(w['source'] == 'failure' or
+        # A ui-degraded setter writes nothing, exactly like a failing one.
+        null_writers = null_initial and all(w['source'] in ('failure', 'ui-degraded') or
                                            w['source'] == 'rom' and w['only_null'] for w in rows)
         for site in sorted(guarded_sites[owner, key]):
             for target in dispatch_ledger[site]:

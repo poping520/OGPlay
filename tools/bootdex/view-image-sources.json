@@ -5,8 +5,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
-      "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "381bffda4f12ba2737d61be20ba4d9cbc35e6f76179925a8ead5fcd4310dc35a",
+      "surface": "tools/bootdex/runtime.surface.json.gz",
+      "surface_sha256": "52bd4d0cc3ebbe99dd6aa390cefccacf3cb0511554f49e747e4df0c58c12cc80",
       "owner": "Landroid/widget/ImageView;",
       "smali_sha256": "2c9457310baf8d41b38d0c3b7247c6e2a96e104b0e5db98e7633b37aa6e361df",
       "methods": [
@@ -284,13 +284,13 @@
           "signature": "setBaseline(I)V",
           "flags": 1,
           "body_sha256": "129e17da1f8ef1e78c9573ea36802a8a27a19f26aaff808fe1490911b42fdfc1",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setBaselineAlignBottom(Z)V",
           "flags": 1,
           "body_sha256": "af2f352a0f86e5e6ac05c644d4c9c381857e06ecdad0861b5cbd8803e9f4372e",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setColorFilter(I)V",
@@ -314,7 +314,7 @@
           "signature": "setCropToPadding(Z)V",
           "flags": 1,
           "body_sha256": "2bfb79b7c02f46789ef143e8f17bd00e6a113b54cdbee8d17183580e98197005",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setFrame(IIII)Z",
@@ -402,13 +402,13 @@
           "signature": "setMaxHeight(I)V",
           "flags": 1,
           "body_sha256": "2244598204a2294b60b4021e23b3693dfee8cd3d5d643978e4bb9b41cbb838ea",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setMaxWidth(I)V",
           "flags": 1,
           "body_sha256": "67dbe242a82387ec40fdaf64e5cb4fd7e870f832037a011f58c6ea72be1aa402",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setScaleType(Landroid/widget/ImageView$ScaleType;)V",
@@ -637,8 +637,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
-      "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "381bffda4f12ba2737d61be20ba4d9cbc35e6f76179925a8ead5fcd4310dc35a",
+      "surface": "tools/bootdex/runtime.surface.json.gz",
+      "surface_sha256": "52bd4d0cc3ebbe99dd6aa390cefccacf3cb0511554f49e747e4df0c58c12cc80",
       "owner": "Landroid/widget/ImageButton;",
       "smali_sha256": "5d115fc88dc4261e773fdfc3416459c630b0338f3f4cd683ea636880bbf93487",
       "methods": [
@@ -686,8 +686,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
-      "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "381bffda4f12ba2737d61be20ba4d9cbc35e6f76179925a8ead5fcd4310dc35a",
+      "surface": "tools/bootdex/runtime.surface.json.gz",
+      "surface_sha256": "52bd4d0cc3ebbe99dd6aa390cefccacf3cb0511554f49e747e4df0c58c12cc80",
       "owner": "Landroid/widget/ImageView$ScaleType;",
       "smali_sha256": "a97b3d7b3478f1bd4b3a8d11d5ad175afba86913a0c587f609c48ef4d8e3824e",
       "methods": [
@@ -784,8 +784,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
-      "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "381bffda4f12ba2737d61be20ba4d9cbc35e6f76179925a8ead5fcd4310dc35a",
+      "surface": "tools/bootdex/runtime.surface.json.gz",
+      "surface_sha256": "52bd4d0cc3ebbe99dd6aa390cefccacf3cb0511554f49e747e4df0c58c12cc80",
       "owner": "Landroid/graphics/Matrix;",
       "smali_sha256": "cd7393d18b7ee4798ebd87d05a024d1cb724172ede1366b5dd696909fe03bd96",
       "methods": [
@@ -1481,8 +1481,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
-      "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "381bffda4f12ba2737d61be20ba4d9cbc35e6f76179925a8ead5fcd4310dc35a",
+      "surface": "tools/bootdex/runtime.surface.json.gz",
+      "surface_sha256": "52bd4d0cc3ebbe99dd6aa390cefccacf3cb0511554f49e747e4df0c58c12cc80",
       "owner": "Landroid/graphics/Matrix$1;",
       "smali_sha256": "57443b017981dc0d481e4193cf2e5bc139812b5ee569ad3e03b4ffbd17c6b07f",
       "methods": [

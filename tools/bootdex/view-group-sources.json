@@ -3,8 +3,8 @@
   "clinit_owner": "rom",
   "rom_input": ".local/aosp/framework.jar",
   "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
-  "surface": "tools/bootdex/view-default.surface.json.gz",
-  "surface_sha256": "381bffda4f12ba2737d61be20ba4d9cbc35e6f76179925a8ead5fcd4310dc35a",
+  "surface": "tools/bootdex/runtime.surface.json.gz",
+  "surface_sha256": "52bd4d0cc3ebbe99dd6aa390cefccacf3cb0511554f49e747e4df0c58c12cc80",
   "owner": "Landroid/view/ViewGroup;",
   "smali_sha256": "0a3dc6e596e42cf79dab4e94ee8894dce65b448a7136f6004767ed7d13f5f22f",
   "fields": [
@@ -580,7 +580,7 @@
       "signature": "addStatesFromChildren()Z",
       "flags": 1,
       "body_sha256": "f0f0fa24f011248b6740fb0fe213b7aade8ad865a6a291ec310653e812366775",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "addTouchTarget(Landroid/view/View;I)Landroid/view/ViewGroup$TouchTarget;",
@@ -1900,7 +1900,7 @@
       "signature": "setAddStatesFromChildren(Z)V",
       "flags": 1,
       "body_sha256": "79fa5f62f924747592ae7fa332a4e52498e18e574533ba6ff744120d9e69cbda",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "setAlwaysDrawnWithCacheEnabled(Z)V",
@@ -1972,7 +1972,7 @@
       "signature": "setLayoutMode(I)V",
       "flags": 1,
       "body_sha256": "7c8030149e031ebf069aa35051dd813f294f5161c11dbce25150d18fb20c0b27",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "setLayoutMode(IZ)V",

@@ -326,13 +326,12 @@ TEST_CASE("DVM-362 TextView Paint hint input and real Java filters on both backe
         f.On(text, "setTypeface", "(Landroid/graphics/Typeface;)V", {VmValue::Ref(face)});
         CHECK(f.On(paint, "getTypeface", "()Landroid/graphics/Typeface;").ref == face);
         CHECK(f.On(text, "getTypeface", "()Landroid/graphics/Typeface;").ref == face);
-        const auto rejected = f.OnOutcome(paint, "setTextSize", "(F)V", {VmValue::Float(32)});
-        REQUIRE(rejected.exception.IsValid());
-        CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        // The TextView owns its Paint: direct writes are ignored with a warning.
+        f.On(paint, "setTextSize", "(F)V", {VmValue::Float(32)});
         CHECK(f.On(paint, "getTextSize", "()F").AsFloat() == 24);
-        CHECK(f.OnOutcome(paint, "setTypeface", "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
-                          {VmValue::Ref(VmObjectRef{})})
-                  .exception.IsValid());
+        f.On(paint, "setTypeface", "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
+             {VmValue::Ref(VmObjectRef{})});
+        CHECK(f.On(paint, "getTypeface", "()Landroid/graphics/Typeface;").ref == face);
         f.On(text, "setTextSize", "(IF)V", {VmValue::Int(0), VmValue::Float(8)});
         f.On(text, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.model.NewString(u""))});
         const auto hint = f.model.NewString(u"WATERMARK");

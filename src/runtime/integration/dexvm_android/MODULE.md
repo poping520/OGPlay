@@ -570,14 +570,14 @@ marker/period 默认及释放后为 0；回压释放全部 VM 锁、恢复复验
 guest worker 静止后 ReleaseAndroidMediaResources 退役 decoder/状态/mixer player/pool/source lease，
 不调 Java prepared/completion/destroy，decoder 退出等待在视频锁外。
 
-Dialog/AlertDialog 协议归 Java，native 只投影 plain String 标题/消息/三按钮为 UiTree 临时模态
+Dialog/AlertDialog 协议归 Java，native 只投影纯文本标题/消息/三按钮为 UiTree 临时模态
 子树，active presentation 为 Dialog/Activity roots；按 geometry 捕获输入/取消旧捕获，listener 在
 owner Looper 排队，owner 隐藏/恢复同步可见性，实例退役先 dismiss、进程停止仅退役投影。
 不替换内容/退役 Surface/另建协议或层级权威；最多 8 窗口，title/button≤512/128 UTF-16，
 message≤kMaxFixedTextUnits；非 String、超预算、density 不在 (0,8] 或 viewport<48×48 明确失败。
 标题最多两行，消息独立 ScrollView；按钮超宽时等分且最多两行，顺序不变。消息超高收缩并滚动，
 resize 保留并夹紧偏移；chrome 超高夹紧并记录 UI 降级，不因容纳失败抛异常。
-无滚轮、滚动条、fling 或 overscroll；items/Window facade 拒绝。
+无滚轮、滚动条、fling 或 overscroll；items/Window facade 拒绝；非 String 文本转 toString、超长文本截断，均记录 UI 降级。
 非零 Dialog theme 记录 UI 降级。setContentView(View) 使用居中 FrameLayout 作为 Activity 应用附加窗口，
 显示/隐藏/关闭及 Back 走 Java 协议，隐藏时撤销输入/焦点资格；没有可用 Activity 明确失败，布局资源重载仍拒绝。每个 modal 为独立 HostLayout，
 字体/布局/像素复用既有底座，经共同呈现快照合成与命中。

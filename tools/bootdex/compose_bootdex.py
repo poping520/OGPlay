@@ -100,6 +100,9 @@ def candidate_classes():
     return recipe
 
 
+UI_DEGRADED = Path(__file__).with_name('ui-degraded.json')
+
+
 def candidate_provenance():
     policy = candidate_policy()
     paths = [builder.RECIPE, member_sources.DEFAULT, CANDIDATE_RECIPE,
@@ -108,6 +111,7 @@ def candidate_provenance():
              Path(__file__).with_name('framework_res_audit.py'),
              Path(__file__).with_name(policy['view_policy']),
              Path(__file__).with_name(policy['video_review']),
+             UI_DEGRADED,
              *(Path(__file__).with_name(p) for p in policy['composition_sources'])]
     return member_sources.canonical(dict(recipe=policy, input_sha256={
         str(p.relative_to(builder.ROOT)): builder.file_sha256(p) for p in paths}))
@@ -146,7 +150,23 @@ def measure_sources(document):
     for name in candidate_policy()['composition_sources']:
         rows = json.loads(Path(__file__).with_name(name).read_text(encoding='utf-8'))
         document['classes'].extend(rows['classes'] if 'classes' in rows else [rows])
+    apply_ui_degraded(document)
     return document
+
+
+def apply_ui_degraded(document):
+    # AGENTS.md UI rule: display-only setters are ignored with a warning. Each entry
+    # must still be a failure row, so ROM admission silently retires it from the list.
+    policy = json.loads(UI_DEGRADED.read_text(encoding='utf-8'))
+    tables = {cls['owner']: {row['signature']: row for row in cls['methods']} for cls in document['classes']}
+    for owner, members in policy['members'].items():
+        if len(set(members)) != len(members):
+            raise builder.BuildError('duplicate ui-degraded member: ' + owner)
+        for signature in members:
+            row = tables.get(owner, {}).get(signature)
+            if row is None or row['source'] != 'failure':
+                raise builder.BuildError(f'ui-degraded entry is not a failure member: {owner}->{signature}')
+            row['source'] = 'ui-degraded'
 
 
 def assemble(recipe, work):

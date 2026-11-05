@@ -1222,8 +1222,7 @@ void SetManagedSurfaceRequest(dx::IntrinsicContext& call, DexVmAndroidContext& c
     if (call.receiver == context.window_surface_holder) {
         if ((width > 0 && static_cast<std::uint32_t>(width) != context.surface_width) ||
             (height > 0 && static_cast<std::uint32_t>(height) != context.surface_height)) {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "window buffer geometry is fixed"};
+            RecordUiDegraded(call.vm, "SurfaceHolder.windowBufferSize");
         }
         return;
     }
@@ -1417,11 +1416,8 @@ void AddCanvasMethods(dx::IntrinsicClassBuilder& builder, const Context& context
         // ROM posts KEEP_SCREEN_ON_MSG so the window keeps the display awake.
         // The host window already holds that for the whole session, so true is
         // satisfied only when the host reports it; false needs no host action.
-        if (call.arguments[0].AsInt() != 0 && !context->host_display_sleep_inhibited) {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_keep_screen_on", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "display wake inhibition is unavailable"};
-        }
+        if (call.arguments[0].AsInt() != 0 && !context->host_display_sleep_inhibited)
+            RecordUiDegraded(call.vm, "SurfaceHolder.keepScreenOn");
         return dx::VmValue::Void();
     });
     builder.FinalMethod("lockCanvas", "()Landroid/graphics/Canvas;", LockCanvasHandler(context));
@@ -1622,19 +1618,14 @@ Decl Declare_android_view_SurfaceView(const Context& context) {
                 !AndroidPixelFormatHasAlpha(format == context->surface_requested_formats.end() ? 1 : format->second));
         });
     builder.VirtualMethod("setSecure", "(Z)V", [](dx::IntrinsicContext& call) {
-        if (call.arguments[0].AsInt()) {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_view_lifecycle", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "Secure Surface display/capture exclusion is unavailable"};
-        }
+        if (call.arguments[0].AsInt()) RecordUiDegraded(call.vm, "SurfaceView.secure");
         return dx::VmValue::Void();
     });
     builder.VirtualMethod("setWindowType", "(I)V", [context](dx::IntrinsicContext& call) {
         const auto type = call.arguments[0].AsInt();
         if (type != 1000 && type != 1001 && type != 1004) {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_view_lifecycle", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "SurfaceView window type is unavailable"};
+            RecordUiDegraded(call.vm, "SurfaceView.windowType");
+            return dx::VmValue::Void();
         }
         const auto node = FindViewUiNode(*context, call.receiver.Value());
         if (!node) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceView has no UI node"};
@@ -1779,10 +1770,6 @@ ui::LayoutParams ReadAndroidLayoutParams(dx::Interpreter& vm, const dx::VmObject
     };
     if (!is("Landroid/view/ViewGroup$LayoutParams;"))
         throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "object is not LayoutParams"};
-    const auto unsupported = [&](const char* message) -> void {
-        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.layout_params", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", message};
-    };
     const auto bits = [&](const char* name, const char* descriptor) {
         const auto field = vm.Linker().FindFieldRecursive(type, name, descriptor);
         if (!field)
@@ -1802,7 +1789,7 @@ ui::LayoutParams ReadAndroidLayoutParams(dx::Interpreter& vm, const dx::VmObject
     result.height = dimension(integer("height"));
     if (bits("layoutAnimationParameters", "Landroid/view/animation/LayoutAnimationController$AnimationParameters;") !=
         0)
-        unsupported("layout animation parameters are unsupported");
+        RecordUiDegraded(vm, "LayoutParams.layoutAnimationParameters");
     if (is("Landroid/view/ViewGroup$MarginLayoutParams;")) {
         // The current UI traversal is LTR. Resolve start/end using API 19 Java.
         static_cast<void>(CallAndroidMethod(vm, object, "resolveLayoutDirection", "(I)V", {dx::VmValue::Int(0)}));
@@ -1818,12 +1805,12 @@ ui::LayoutParams ReadAndroidLayoutParams(dx::Interpreter& vm, const dx::VmObject
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid layout weight"};
     }
     if (is("Landroid/widget/RelativeLayout$LayoutParams;")) {
-        if (bits("alignWithParent", "Z") != 0) unsupported("RelativeLayout alignWithParent is unsupported");
+        if (bits("alignWithParent", "Z") != 0) RecordUiDegraded(vm, "RelativeLayout.alignWithParent");
         const auto rules = CallAndroidMethod(vm, object, "getRules", "(I)[I", {dx::VmValue::Int(0)}).ref;
         const auto rule = [&](int index) {
             return static_cast<std::int32_t>(vm.Model().GetPrimitiveElement(rules, index));
         };
-        if (rule(4) != 0) unsupported("RelativeLayout ALIGN_BASELINE is unsupported");
+        if (rule(4) != 0) RecordUiDegraded(vm, "RelativeLayout.alignBaseline");
         const auto sibling = [&](int index) -> std::optional<std::int32_t> {
             const auto id = rule(index);
             // RelativeLayout.LayoutParams.addRule(verb) stores TRUE (-1);
@@ -3187,9 +3174,11 @@ Decl Declare_android_view_WindowManagerImpl(const Context& context) {
                                   "Application window layout is not supported"};
         };
         const auto type = integer("type"), flags = integer("flags");
-        if (type < 1 || type > 99 || integer("width") != -1 || integer("height") != -1 || integer("gravity") != 0 ||
-            integer("x") != 0 || integer("y") != 0 || (flags & ~0x5b8) != 0)
-            unsupported();
+        if (type < 1 || type > 99) unsupported();
+        // Every application window fills the surface; other geometry or flags only change its look.
+        if (integer("width") != -1 || integer("height") != -1 || integer("gravity") != 0 || integer("x") != 0 ||
+            integer("y") != 0 || (flags & ~0x5b8) != 0)
+            RecordUiDegraded(call.vm, "WindowManager.layoutParams");
         for (const auto name : {"horizontalWeight", "verticalWeight", "horizontalMargin", "verticalMargin"})
             if (WindowSlot(call.vm, params, name, "F").bits != 0) unsupported();
         const auto token = dx::VmObjectRef{WindowSlot(call.vm, params, "token", "Landroid/os/IBinder;").bits};

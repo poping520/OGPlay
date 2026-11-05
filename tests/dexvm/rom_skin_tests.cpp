@@ -755,9 +755,13 @@ TEST_CASE("DVM-352 Drawable subclasses never silently inherit unsupported state 
                     (std::string_view(owner) == "LayerDrawable" || std::string_view(owner) == "DrawableContainer" ||
                      std::string_view(owner) == "NinePatchDrawable" || std::string_view(owner) == "StateListDrawable"))
                     continue;
-                const auto result = f.OnOutcome(object, name, signature,
-                                                std::string_view(name) == "setAlpha" ? std::vector{VmValue::Int(128)}
-                                                                                     : std::vector<VmValue>{});
+                INFO(owner << "." << name);
+                if (std::string_view(name) == "setAlpha") {
+                    // A display setter is ignored with a warning; getAlpha keeps failing.
+                    f.On(object, name, signature, {VmValue::Int(128)});
+                    continue;
+                }
+                const auto result = f.OnOutcome(object, name, signature, {});
                 REQUIRE(result.exception.IsValid());
                 const bool unimplemented_owner = std::string_view(owner) == "ShapeDrawable" ||
                                                  std::string_view(owner) == "GradientDrawable" ||

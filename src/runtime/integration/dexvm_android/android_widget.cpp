@@ -1347,12 +1347,54 @@ Decl ExperimentalTextView(const Context& context) {
             n.text = std::move(text);
             return changed(c);
         });
+    builder.VirtualMethod("setTextKeepState", "(Ljava/lang/CharSequence;)V", [](dx::IntrinsicContext& c) {
+        return CallAndroidMethod(c.vm, c.receiver, "setText", "(Ljava/lang/CharSequence;)V", {c.arguments[0]});
+    });
+    builder.VirtualMethod("setTextKeepState", "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
+                          [](dx::IntrinsicContext& c) {
+                              return CallAndroidMethod(
+                                  c.vm, c.receiver, "setText",
+                                  "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
+                                  {c.arguments[0], c.arguments[1]});
+                          });
+    builder.FinalMethod("setText", "([CII)V", [](dx::IntrinsicContext& c) {
+        const auto array = c.arguments[0].ref;
+        if (!array.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "text == null"};
+        const auto start = c.arguments[1].AsInt(), length = c.arguments[2].AsInt();
+        if (start < 0 || length < 0 || static_cast<std::int64_t>(start) + length > c.vm.Model().ArrayLength(array))
+            throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                                  std::to_string(start) + ", " + std::to_string(length)};
+        std::u16string text;
+        for (std::int32_t i = 0; i < length; ++i)
+            text.push_back(static_cast<char16_t>(c.vm.Model().GetPrimitiveElement(array, start + i)));
+        return CallAndroidMethod(c.vm, c.receiver, "setText", "(Ljava/lang/CharSequence;)V",
+                                 {dx::VmValue::Ref(c.vm.Model().NewString(text))});
+    });
+    builder.VirtualMethod("setEnabled", "(Z)V", [](dx::IntrinsicContext& c) {
+        // No IME or Editor exists here, which leaves only the View state change.
+        const auto type = c.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+        const auto index = c.vm.Linker().FindVtableIndex(type, "setEnabled", "(Z)V");
+        const auto result = c.vm.Call(c.vm.Linker().Class(type).vtable.at(*index),
+                                      std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver), c.arguments[0]});
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        return dx::VmValue::Void();
+    });
     builder.VirtualMethod("setText", "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
-                          [context, validate, filtered](dx::IntrinsicContext& c) {
-                              if (UiClassForObject(c.vm, c.receiver) != ui::UiClass::EditText ||
-                                  !c.arguments[1].ref.IsValid() ||
-                                  CallAndroidMethod(c.vm, c.arguments[1].ref, "ordinal", "()I").AsInt() != 2)
-                                  TextInputFailure(c.vm, "only EditText EDITABLE buffer is supported");
+                          [context, changed, validate, filtered](dx::IntrinsicContext& c) {
+                              if (UiClassForObject(c.vm, c.receiver) != ui::UiClass::EditText) {
+                                  // NORMAL is plain text. Other types lack spans/Editor, so the text still shows.
+                                  if (c.arguments[1].ref.IsValid() &&
+                                      CallAndroidMethod(c.vm, c.arguments[1].ref, "ordinal", "()I").AsInt() != 0)
+                                      RecordUiDegraded(c.vm, "TextView.bufferType");
+                                  auto text = filtered(c);
+                                  auto& n = *context->ui_tree.Get(TextNode(c, context));
+                                  validate(c, n, text, n.text_size_px, n.text_style);
+                                  n.text = std::move(text);
+                                  return changed(c);
+                              }
+                              // EditText.java forces EDITABLE whatever type the caller passes.
                               const auto value = filtered(c);
                               const auto& n = *context->ui_tree.Get(TextNode(c, context));
                               validate(c, n, value, n.text_size_px, n.text_style);
@@ -1614,10 +1656,11 @@ Decl ExperimentalTextView(const Context& context) {
             input.minimum = {CallAndroidMethod(c.vm, c.receiver, "getSuggestedMinimumWidth", "()I").AsInt(),
                              CallAndroidMethod(c.vm, c.receiver, "getSuggestedMinimumHeight", "()I").AsInt()};
             const dx::IntrinsicCall fields(c);
-            if (fields.GetInt(min_width_mode) != 2 ||
+            const bool pixel_width = fields.GetInt(min_width_mode) == 2;
+            if (!pixel_width ||
                 (fields.GetInt(min_mode) != 2 && (fields.GetInt(min_mode) != 1 || fields.GetInt(minimum) != 0)))
-                TextInputFailure(c.vm, "TextView minimum ems/lines are unsupported");
-            input.minimum.width = std::max(input.minimum.width, fields.GetInt(min_width));
+                RecordUiDegraded(c.vm, "TextView.minimumEmsLines");
+            if (pixel_width) input.minimum.width = std::max(input.minimum.width, fields.GetInt(min_width));
             if (fields.GetInt(min_mode) == 2)
                 input.minimum.height = std::max(input.minimum.height, fields.GetInt(minimum));
             const auto spec = [&](int bits) {

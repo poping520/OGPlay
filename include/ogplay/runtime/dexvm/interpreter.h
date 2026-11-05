@@ -380,6 +380,8 @@ public:
     void AttachNativeThread(std::uint64_t guest_thread_id, std::uint64_t execution_token);
     void DetachNativeThread(std::uint64_t guest_thread_id, std::uint64_t execution_token) noexcept;
     [[nodiscard]] core::CapabilityLedger* Ledger() const noexcept;
+    // Ignored display request: warn once per item; the game keeps running.
+    void RecordUiDegraded(std::string_view what);
     // Shared field boundary for interpreter, reflection and JNI owner hooks.
     // In gap survey mode a hit is recorded (channel names the entry route)
     // and the access proceeds on the zero-initialised slot instead of failing.

@@ -5,8 +5,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
-      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "328999dfcb016224a14d0fe147834e26ab11c009c9a2bc7461457c7a613e2332",
+      "surface": "tools/bootdex/runtime.surface.json.gz",
+      "surface_sha256": "52bd4d0cc3ebbe99dd6aa390cefccacf3cb0511554f49e747e4df0c58c12cc80",
       "owner": "Landroid/graphics/Paint;",
       "smali_sha256": "a9a6e699946d088c737d1f8048f7d13cf44814b6c7e2ea67bb910cea1db6f686",
       "methods": [
@@ -1397,8 +1397,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
-      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "328999dfcb016224a14d0fe147834e26ab11c009c9a2bc7461457c7a613e2332",
+      "surface": "tools/bootdex/runtime.surface.json.gz",
+      "surface_sha256": "52bd4d0cc3ebbe99dd6aa390cefccacf3cb0511554f49e747e4df0c58c12cc80",
       "owner": "Landroid/widget/TextView;",
       "smali_sha256": "06b1a220e8e5b6b9e559c6c98b253c17b0cea684d8a3563a26056381873d74af",
       "methods": [
@@ -3265,7 +3265,14 @@
           "signature": "setEnabled(Z)V",
           "flags": 1,
           "body_sha256": "03fd8e3cc3fe48e226a34bea495624ae095031d2a2f2e7c60c61a2bc55549aa5",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "TextView.java setEnabled without InputMethodManager/Editor: no IME exists here",
+            "inputs": "receiver, enabled",
+            "outputs": "View.setEnabled state and dirty protocol",
+            "state_owner": "Java mViewFlags",
+            "failure_boundary": "View.setEnabled exceptions propagate"
+          }
         },
         {
           "signature": "setError(Ljava/lang/CharSequence;)V",
@@ -3352,7 +3359,7 @@
           "signature": "setHighlightColor(I)V",
           "flags": 1,
           "body_sha256": "738cbdd5d8116b6b1be86075aa096a4055f99623d1f1ef23b76b5f874fabc086",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setHint(I)V",
@@ -3710,13 +3717,13 @@
           "signature": "setText(I)V",
           "flags": 17,
           "body_sha256": "36fedc29e1e971815304c25b36927dde7c62ea3aabaa011b243725479f055f39",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setText(ILandroid/widget/TextView$BufferType;)V",
           "flags": 17,
           "body_sha256": "61548df21ea0f5402dafa2298b405c7b1d9980f8c29cbc678fd651bf21f9051b",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setText(Ljava/lang/CharSequence;)V",
@@ -3754,7 +3761,14 @@
           "signature": "setText([CII)V",
           "flags": 17,
           "body_sha256": "b1cfbd665b71ad525d394b443718325a7e96535044177e16905a6c859522f736",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "TextView.java char-array overload copied to a String for the bounded setText path",
+            "inputs": "receiver, array, start, length",
+            "outputs": "Same as setText(CharSequence)",
+            "state_owner": "UiTree text state",
+            "failure_boundary": "Null array NPE and bounds IOOBE as API19; setText failures propagate"
+          }
         },
         {
           "signature": "setTextAppearance(Landroid/content/Context;I)V",
@@ -3798,13 +3812,27 @@
           "signature": "setTextKeepState(Ljava/lang/CharSequence;)V",
           "flags": 17,
           "body_sha256": "c2bfc12afccf4bae414a1f44d0a6bd139a8e97a0e38ea16846aa07fa58465318",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "Bounded setText path; selection is host-owned and keeps its clamp",
+            "inputs": "receiver, text",
+            "outputs": "Same as setText(CharSequence)",
+            "state_owner": "UiTree text state",
+            "failure_boundary": "setText failures propagate"
+          }
         },
         {
           "signature": "setTextKeepState(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
           "flags": 17,
           "body_sha256": "c694000526b374bbdcaa607434f6c0ce92351c6c6786a96f76109be4eec686f4",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "Bounded setText path; selection is host-owned and keeps its clamp",
+            "inputs": "receiver, text, type",
+            "outputs": "Same as setText(CharSequence, BufferType)",
+            "state_owner": "UiTree text state",
+            "failure_boundary": "setText failures propagate"
+          }
         },
         {
           "signature": "setTextLocale(Ljava/util/Locale;)V",
@@ -4623,8 +4651,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
-      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "328999dfcb016224a14d0fe147834e26ab11c009c9a2bc7461457c7a613e2332",
+      "surface": "tools/bootdex/runtime.surface.json.gz",
+      "surface_sha256": "52bd4d0cc3ebbe99dd6aa390cefccacf3cb0511554f49e747e4df0c58c12cc80",
       "owner": "Landroid/graphics/RectF;",
       "smali_sha256": "65034d541516dfe44c801f64a3492ce2b8cd09b0189dd97ecb4ebb298e41797c",
       "methods": [
@@ -4907,8 +4935,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
-      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "328999dfcb016224a14d0fe147834e26ab11c009c9a2bc7461457c7a613e2332",
+      "surface": "tools/bootdex/runtime.surface.json.gz",
+      "surface_sha256": "52bd4d0cc3ebbe99dd6aa390cefccacf3cb0511554f49e747e4df0c58c12cc80",
       "owner": "Landroid/graphics/RectF$1;",
       "smali_sha256": "f889e950e28f121bd482097f9ba13a76fdae40fed5ffdf91ecfd790e70f663ae",
       "methods": [

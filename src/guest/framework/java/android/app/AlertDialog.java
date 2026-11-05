@@ -47,7 +47,7 @@ public class AlertDialog extends Dialog {
         public Builder(Context context) { this(context, 0); }
         public Builder(Context context, int theme) {
             if (context == null) throw new NullPointerException("context == null");
-            if (theme != 0) Dialog.nativeUnsupported("AlertDialog theme");
+            if (theme != 0) Dialog.nativeUiDegraded("AlertDialog.theme");
             mContext = context;
         }
         public Context getContext() { return mContext; }

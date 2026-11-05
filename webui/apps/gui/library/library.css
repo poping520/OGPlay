@@ -334,10 +334,10 @@
 .import-wizard .modal-actions { flex-wrap: wrap; }
 /* install info: the wizard's game card, then facts, disk usage and directory fields */
 .ii-facts { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px 14px; margin: 18px 0 0; padding: 14px 16px; border-radius: 14px; background: var(--glass); }
-.ii-facts dt { margin: 0; color: var(--muted); font-size: 12px; font-weight: 800; line-height: 20px; }
-.ii-facts dd { margin: 0; overflow-wrap: anywhere; color: var(--ink); font-size: 13px; font-weight: 700; line-height: 20px; }
-.ii-facts dd.mono { font-size: 12.5px; color: var(--soft); }
-.ii-facts dd small { display: block; margin-top: 2px; color: var(--dim); font-size: 11.5px; font-weight: 700; }
+.ii-facts dt { margin: 0; color: var(--soft); font-size: 13px; font-weight: 600; line-height: 20px; }
+.ii-facts dd { margin: 0; overflow-wrap: anywhere; color: var(--ink); font-size: 13px; font-weight: 600; line-height: 20px; }
+.ii-facts dd.mono { font-size: 13px; font-weight: 500; }
+.ii-facts dd small { display: block; margin-top: 2px; color: var(--soft); font-size: 12px; font-weight: 500; line-height: 18px; }
 /* copyable fact: the value, then a compact copy pill that keeps the row height */
 .ii-facts dd.ii-copyable { display: flex; align-items: center; gap: 10px; }
 .ii-copyable > span { flex: 1; min-width: 0; user-select: text; }
@@ -346,18 +346,22 @@
 .console .install-info .ii-copy.done { color: var(--ready); }
 .console .install-info .ii-copy.failed { color: var(--danger); }
 .ii-path { margin-top: 14px; }
-.ii-path > small { display: block; margin-left: 4px; color: var(--muted); font-size: 12px; font-weight: 800; }
+.ii-path > small { display: block; margin-left: 4px; color: var(--soft); font-size: 13px; font-weight: 600; }
 /* paths wrap in full so every segment stays readable and selectable */
 .ii-field { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-top: 6px; padding: 5px 5px 5px 16px; border-radius: 22px; background: rgba(0,0,0,.28); }
-.ii-field code { flex: 1; min-width: 0; padding: 4px 0; overflow-wrap: anywhere; color: var(--soft); font: 12.5px/1.6 var(--code); user-select: text; }
+.ii-field code { flex: 1; min-width: 0; padding: 4px 0; overflow-wrap: anywhere; color: var(--ink); font: 13px/1.6 var(--code); user-select: text; }
 .console .install-info .ii-field button { flex: none; margin: 0; height: 34px; padding: 0 14px; border: 0; background: var(--glass2); font-size: 12.5px; }
 .console .install-info .ii-field button:hover:not(:disabled) { background: rgba(255,255,255,.16); }
 .ii-usage { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
 .ii-usage.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ii-usage > div { padding: 12px 16px; border-radius: 14px; background: var(--glass); }
-.ii-usage small { display: block; color: var(--muted); font-size: 12px; font-weight: 800; }
+.ii-usage small { display: block; color: var(--soft); font-size: 13px; font-weight: 600; }
 .ii-usage b { display: block; margin-top: 4px; color: var(--ink); font: 800 17px var(--code); font-variant-numeric: tabular-nums; }
-.ii-usage[aria-busy="true"] b { color: var(--dim); }
+.ii-usage[aria-busy="true"] b { color: var(--muted); }
+/* wizard header and card text shared with import, raised for this read-heavy dialog */
+.install-info .iw-stage { color: var(--soft); font-size: 13px; font-weight: 600; }
+.install-info .iw-game .mono { color: var(--soft); font-size: 13px; }
+.install-info .iw-tags li { font-size: 12px; font-weight: 600; }
 /* remove game: what goes and what stays side by side, the saves opt-in turns red when ticked */
 .rg-scope { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
 .rg-col { padding: 12px 16px; border-radius: 14px; background: var(--glass); }

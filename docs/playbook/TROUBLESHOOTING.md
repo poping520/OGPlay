@@ -48,7 +48,9 @@ python tools\diagnostics\align_host_threads.py --snapshot <diag.json> --stacks <
 Linux/macOS 使用 `lldb -p <pid>`，再执行 `thread backtrace all`；对齐工具识别
 `tid = 0x...`/十进制。PDB/DWARF 缺失时只记录 `module+offset`，禁止按相邻符号猜函数。
 Windows 定向诊断构建使用 `windows-msvc` 预设并保留对应配置目录的 PDB；Release 是否含
-完整符号取决于构建配置，不把缺符号解释为无线程活动。dump 和诊断 JSON 可能含运行现场，
+完整符号取决于构建配置，不把缺符号解释为无线程活动。Release 配置不生成 PDB，macOS/Linux 的
+可执行文件、`ogplaycore` 与 SDL3 只保留导出符号；需要内部函数名时，Windows 用 RelWithDebInfo
+配置，其他平台用 `dev` 或 `ci` 预设复现。dump 和诊断 JSON 可能含运行现场，
 交付前按需要脱敏，确认无用后删除。
 
 ## 已知易误判的症状

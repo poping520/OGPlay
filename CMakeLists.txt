@@ -43,6 +43,17 @@ set_property(CACHE OGPLAY_ENABLE_FFMPEG PROPERTY STRINGS AUTO ON OFF)
 set(OGPLAY_FFMPEG_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffmpeg-prebuilt"
     CACHE PATH "Root of the platform-partitioned ogplay_ffmpeg prebuilt SDK")
 
+# Release splits code and data so the linker can drop what is unreachable, bundled libraries
+# included. Mach-O already splits by symbol and MSVC /O2 implies /Gy for functions.
+set(_ogplay_release_c_cxx "$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>")
+if(MSVC)
+    add_compile_options("$<${_ogplay_release_c_cxx}:/Gw>")
+elseif(NOT APPLE)
+    add_compile_options(
+        "$<${_ogplay_release_c_cxx}:-ffunction-sections>"
+        "$<${_ogplay_release_c_cxx}:-fdata-sections>")
+endif()
+
 include(GNUInstallDirs)
 function(ogplay_set_project_warnings target)
     if(MSVC)
@@ -704,6 +715,23 @@ else()
     set_target_properties(ogplaycore ogplay-cli PROPERTIES
         BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif()
+
+# Release drops unreachable code and non-exported symbols; dev/ci keep function names.
+if(MSVC)
+    set(_ogplay_slim_link_options /OPT:REF /OPT:ICF)
+elseif(APPLE)
+    set(_ogplay_slim_link_options LINKER:-dead_strip LINKER:-x)
+else()
+    set(_ogplay_slim_link_options LINKER:--gc-sections LINKER:-s)
+endif()
+foreach(_ogplay_slim_target IN ITEMS ogplaycore ogplay-cli ogplay SDL3-shared)
+    if(TARGET ${_ogplay_slim_target})
+        foreach(_ogplay_slim_option IN LISTS _ogplay_slim_link_options)
+            target_link_options(${_ogplay_slim_target} PRIVATE
+                "$<$<CONFIG:Release>:${_ogplay_slim_option}>")
+        endforeach()
+    endif()
+endforeach()
 
 include(cmake/RuntimePackaging.cmake)
 

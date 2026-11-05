@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -23,17 +25,19 @@ namespace {
 using Microsoft::WRL::ComPtr;
 
 // Layout in device-independent pixels; Direct2D scales it with the render target's DPI.
-constexpr float kDialogWidth = 400.0F;
-constexpr float kPadding = 24.0F;
-constexpr float kBadgeSize = 36.0F;
-constexpr float kBadgeGap = 14.0F;
-constexpr float kTitleGap = 6.0F;
-constexpr float kButtonsGap = 22.0F;
-constexpr float kButtonHeight = 38.0F;
-constexpr float kButtonMinWidth = 92.0F;
-constexpr float kButtonPadding = 20.0F;
-constexpr float kButtonSpacing = 10.0F;
-constexpr float kBottomPadding = 22.0F;
+constexpr float kDialogWidth = 500.0F;
+constexpr float kPadding = 28.0F;
+constexpr float kIconSize = 64.0F;  // Has its own icon frame at 100%, 150% and 200% scale.
+constexpr float kIconGap = 20.0F;
+constexpr float kTitleSize = 20.0F;
+constexpr float kBodySize = 15.0F;
+constexpr float kTitleGap = 8.0F;
+constexpr float kButtonsGap = 26.0F;
+constexpr float kButtonHeight = 42.0F;
+constexpr float kButtonMinWidth = 112.0F;
+constexpr float kButtonPadding = 24.0F;
+constexpr float kButtonSpacing = 12.0F;
+constexpr float kBottomPadding = 26.0F;
 constexpr float kUnbounded = 10000.0F;
 constexpr BYTE kScrimAlpha = 140;
 
@@ -81,6 +85,47 @@ ATOM RegisterDialogClass(const wchar_t* const name, const WNDPROC procedure, con
     return atom;
 }
 
+// The executable's icon as premultiplied BGRA rows, top down. Empty when it cannot be read: that only changes the
+// artwork, so it is no reason to deny the user the dialog.
+std::vector<BYTE> LoadAppIconPixels(const int size) {
+    const auto icon = static_cast<HICON>(
+        LoadImageW(GetModuleHandleW(nullptr), L"OGPLAY_ICON", IMAGE_ICON, size, size, LR_DEFAULTCOLOR));
+    if (icon == nullptr) return {};
+    std::vector<BYTE> pixels(static_cast<std::size_t>(size) * static_cast<std::size_t>(size) * 4U);
+    ICONINFO parts{};
+    auto rows = 0;
+    if (GetIconInfo(icon, &parts)) {
+        BITMAPINFO info{};
+        info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        info.bmiHeader.biWidth = size;
+        info.bmiHeader.biHeight = -size;
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB;
+        const auto screen = GetDC(nullptr);
+        rows = GetDIBits(screen, parts.hbmColor, 0, static_cast<UINT>(size), pixels.data(), &info, DIB_RGB_COLORS);
+        ReleaseDC(nullptr, screen);
+        DeleteObject(parts.hbmColor);
+        DeleteObject(parts.hbmMask);
+    }
+    DestroyIcon(icon);
+    if (rows != size) return {};
+
+    // Icons store straight alpha, Direct2D wants it premultiplied.
+    auto has_alpha = false;
+    for (std::size_t offset = 0; offset < pixels.size(); offset += 4U) {
+        const auto alpha = static_cast<unsigned>(pixels[offset + 3U]);
+        has_alpha = has_alpha || alpha != 0U;
+        for (std::size_t channel = 0; channel < 3U; ++channel) {
+            auto& value = pixels[offset + channel];
+            value = static_cast<BYTE>((static_cast<unsigned>(value) * alpha + 127U) / 255U);
+        }
+    }
+    // Without any alpha the frame has no usable transparency and would draw as nothing.
+    if (!has_alpha) return {};
+    return pixels;
+}
+
 class CloseDialog final {
 public:
     CloseDialog(const HWND owner, const CloseConfirmation& text) : owner_(owner), text_(text) {}
@@ -91,8 +136,7 @@ public:
     ~CloseDialog() {
         // The owner must be enabled before the dialog goes, or the system activates another application.
         if (owner_disabled_) EnableWindow(owner_, TRUE);
-        brush_.Reset();
-        target_.Reset();
+        ReleaseTarget();
         if (dialog_ != nullptr) DestroyWindow(dialog_);
         if (scrim_ != nullptr) DestroyWindow(scrim_);
         if (owner_disabled_) SetForegroundWindow(owner_);
@@ -103,6 +147,8 @@ public:
         if (IsIconic(owner_)) ShowWindow(owner_, SW_RESTORE);
         dpi_ = GetDpiForWindow(owner_);
         if (dpi_ == 0) dpi_ = USER_DEFAULT_SCREEN_DPI;
+        icon_pixel_size_ = ToPixels(kIconSize);
+        icon_pixels_ = LoadAppIconPixels(icon_pixel_size_);
         BuildText();
         const auto owner_area = OwnerClientArea();
         CreateScrim(owner_area);
@@ -169,13 +215,13 @@ private:
         Check(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
                                   reinterpret_cast<IUnknown**>(write_factory_.GetAddressOf())),
               "DWriteCreateFactory");
-        const auto title_format = CreateFormat(DWRITE_FONT_WEIGHT_SEMI_BOLD, 17.0F);
-        const auto message_format = CreateFormat(DWRITE_FONT_WEIGHT_NORMAL, 14.0F);
-        const auto button_format = CreateFormat(DWRITE_FONT_WEIGHT_SEMI_BOLD, 14.0F);
+        const auto title_format = CreateFormat(DWRITE_FONT_WEIGHT_SEMI_BOLD, kTitleSize);
+        const auto message_format = CreateFormat(DWRITE_FONT_WEIGHT_NORMAL, kBodySize);
+        const auto button_format = CreateFormat(DWRITE_FONT_WEIGHT_SEMI_BOLD, kBodySize);
         Check(button_format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP), "IDWriteTextFormat::SetWordWrapping");
 
         title_wide_ = Wide(text_.title);
-        const auto text_width = kDialogWidth - kPadding * 2.0F - kBadgeSize - kBadgeGap;
+        const auto text_width = kDialogWidth - kPadding * 2.0F - kIconSize - kIconGap;
         title_ = CreateLayout(title_wide_, title_format.Get(), text_width);
         message_ = CreateLayout(Wide(text_.message), message_format.Get(), text_width);
         DWRITE_TEXT_METRICS metrics{};
@@ -183,7 +229,8 @@ private:
         title_height_ = metrics.height;
         Check(message_->GetMetrics(&metrics), "IDWriteTextLayout::GetMetrics");
         const auto text_height = title_height_ + kTitleGap + metrics.height;
-        const auto buttons_top = kPadding + (std::max)(kBadgeSize, text_height) + kButtonsGap;
+        text_top_ = kPadding + (std::max)(0.0F, (kIconSize - text_height) / 2.0F);
+        const auto buttons_top = kPadding + (std::max)(kIconSize, text_height) + kButtonsGap;
         dialog_height_ = buttons_top + kButtonHeight + kBottomPadding;
 
         const std::array labels{Wide(text_.confirm_label), Wide(text_.cancel_label)};
@@ -260,10 +307,43 @@ private:
         auto result = factory_->CreateHwndRenderTarget(properties, window_properties, target_.GetAddressOf());
         if (SUCCEEDED(result)) result = target_->CreateSolidColorBrush(D2D1::ColorF(kInk), brush_.GetAddressOf());
         if (FAILED(result)) {
-            brush_.Reset();
-            target_.Reset();
+            ReleaseTarget();
+            return result;
+        }
+        if (!icon_pixels_.empty()) {
+            const auto size = static_cast<UINT32>(icon_pixel_size_);
+            const auto format = D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED);
+            // On failure the bitmap stays null and Draw falls back to the badge.
+            static_cast<void>(target_->CreateBitmap(D2D1::SizeU(size, size), icon_pixels_.data(), size * 4U,
+                                                    D2D1::BitmapProperties(format, dpi, dpi),
+                                                    icon_bitmap_.GetAddressOf()));
         }
         return result;
+    }
+
+    void ReleaseTarget() noexcept {
+        icon_bitmap_.Reset();
+        brush_.Reset();
+        target_.Reset();
+    }
+
+    void DrawIcon() {
+        if (icon_bitmap_ != nullptr) {
+            target_->DrawBitmap(icon_bitmap_.Get(),
+                                D2D1::RectF(kPadding, kPadding, kPadding + kIconSize, kPadding + kIconSize));
+            return;
+        }
+        // Warning badge, drawn rather than typed so its "!" does not depend on a font's metrics.
+        const auto center_x = kPadding + kIconSize / 2.0F;
+        const auto center_y = kPadding + kIconSize / 2.0F;
+        const auto unit = kIconSize / 36.0F;
+        Fill(D2D1::Ellipse(D2D1::Point2F(center_x, center_y), kIconSize / 2.0F, kIconSize / 2.0F),
+             D2D1::ColorF(kWarning, 0.16F));
+        const auto stem = D2D1::RectF(center_x - 1.5F * unit, center_y - 10.0F * unit, center_x + 1.5F * unit,
+                                      center_y + 3.0F * unit);
+        Fill(D2D1::RoundedRect(stem, 1.5F * unit, 1.5F * unit), D2D1::ColorF(kWarning));
+        Fill(D2D1::Ellipse(D2D1::Point2F(center_x, center_y + 8.0F * unit), 1.9F * unit, 1.9F * unit),
+             D2D1::ColorF(kWarning));
     }
 
     void Fill(const D2D1_ROUNDED_RECT& shape, const D2D1_COLOR_F& color) {
@@ -304,25 +384,16 @@ private:
             brush_->SetColor(D2D1::ColorF(kLine));
             target_->DrawRectangle(D2D1::RectF(0.5F, 0.5F, kDialogWidth - 0.5F, dialog_height_ - 0.5F), brush_.Get());
         }
-        // Warning badge, drawn rather than typed so its "!" does not depend on a font's metrics.
-        const auto badge_x = kPadding + kBadgeSize / 2.0F;
-        const auto badge_y = kPadding + kBadgeSize / 2.0F;
-        Fill(D2D1::Ellipse(D2D1::Point2F(badge_x, badge_y), kBadgeSize / 2.0F, kBadgeSize / 2.0F),
-             D2D1::ColorF(kWarning, 0.16F));
-        Fill(
-            D2D1::RoundedRect(D2D1::RectF(badge_x - 1.5F, badge_y - 10.0F, badge_x + 1.5F, badge_y + 3.0F), 1.5F, 1.5F),
-            D2D1::ColorF(kWarning));
-        Fill(D2D1::Ellipse(D2D1::Point2F(badge_x, badge_y + 8.0F), 1.9F, 1.9F), D2D1::ColorF(kWarning));
+        DrawIcon();
 
-        const auto text_x = kPadding + kBadgeSize + kBadgeGap;
-        DrawLayout(text_x, kPadding, title_.Get(), kInk);
-        DrawLayout(text_x, kPadding + title_height_ + kTitleGap, message_.Get(), kSoft);
+        const auto text_x = kPadding + kIconSize + kIconGap;
+        DrawLayout(text_x, text_top_, title_.Get(), kInk);
+        DrawLayout(text_x, text_top_ + title_height_ + kTitleGap, message_.Get(), kSoft);
         DrawButton(kCloseButton);
         DrawButton(kCancelButton);
         if (target_->EndDraw() == D2DERR_RECREATE_TARGET) {
             // The display device changed; the next paint rebuilds on the new one.
-            brush_.Reset();
-            target_.Reset();
+            ReleaseTarget();
             Invalidate();
         }
     }
@@ -446,10 +517,14 @@ private:
     ComPtr<IDWriteFactory> write_factory_;
     ComPtr<ID2D1HwndRenderTarget> target_;
     ComPtr<ID2D1SolidColorBrush> brush_;
+    ComPtr<ID2D1Bitmap> icon_bitmap_;
+    std::vector<BYTE> icon_pixels_;
+    int icon_pixel_size_{};
     ComPtr<IDWriteTextLayout> title_;
     ComPtr<IDWriteTextLayout> message_;
     std::array<Button, 2> buttons_;
     std::wstring title_wide_;
+    float text_top_{};
     float title_height_{};
     float dialog_height_{};
     int focus_{kCancelButton};  // Enter keeps the game running, so keys still pressed in play cannot close it.

@@ -460,6 +460,7 @@ struct DexVmAndroidContext final {
         ui::Size viewport{};
         float density{1.0F};
         ui::UiNodeId panel;
+        std::optional<ui::UiNodeId> scroll;
 
         struct GuestFocus final {
             dexvm::VmObjectRef view, window_root;
@@ -516,6 +517,7 @@ struct DexVmAndroidContext final {
             std::uint64_t partition{}, generation{}, revision{};
             std::shared_ptr<const ui::UiTree> tree;
             std::array<std::optional<ui::UiNodeId>, 3> buttons;
+            std::optional<ui::UiNodeId> scroll;
         };
 
         std::vector<ModalSnapshot> modal_stack;
@@ -554,6 +556,9 @@ struct DexVmAndroidContext final {
     bool dialog_pointer_tail{};
     std::unordered_set<std::int32_t> dialog_key_tails;
     bool dialog_pointer_active{};
+    bool dialog_scroll_tracking{}, dialog_scroll_dragging{};
+    float dialog_scroll_down_y{};
+    std::int32_t dialog_scroll_start_y{};
     std::optional<ui::UiNodeId> dialog_pressed_button;
     std::unordered_set<std::int32_t> dialog_keys_down;
     // A managed lifecycle sizes a newly installed content root or dynamically

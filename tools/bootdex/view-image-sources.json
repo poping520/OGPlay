@@ -1295,7 +1295,14 @@
           "signature": "reset()V",
           "flags": 1,
           "body_sha256": "4df3592eaeeceea7fc34c475adaffa1a54ccd5f8ab5eb54370c78b19425ab87b",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-371 identity-only Matrix reset seam",
+            "inputs": "receiver",
+            "outputs": "Actual initialized identity state stays identity; no native_instance or transform state is introduced.",
+            "state_owner": "owner-attached immutable identity state; traced Java object identity",
+            "failure_boundary": "Uninitialized receiver throws IllegalStateException; native_instance and every transform operation keep failing."
+          }
         },
         {
           "signature": "set(Landroid/graphics/Matrix;)V",

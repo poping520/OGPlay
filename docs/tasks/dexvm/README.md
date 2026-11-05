@@ -344,3 +344,4 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-368 · TextView 最小尺寸与隐藏子树呈现](DVM-368.md)
 
 - [DVM-369 · Unity 输入复制、启动显示方向与工作 Looper](DVM-369.md)
+- [DVM-371 · WebView 配置链的 scrollbar style 与惰性动画](DVM-371.md)

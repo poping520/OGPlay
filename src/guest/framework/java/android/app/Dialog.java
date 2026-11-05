@@ -193,6 +193,8 @@ public class Dialog implements DialogInterface {
             return true;
         }
         if (mContentRoot != null) return false;
+        if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN)
+            return nativeScroll(code == KeyEvent.KEYCODE_DPAD_UP ? -1 : 1);
         if (code == KeyEvent.KEYCODE_TAB) { nativeFocus(event.isShiftPressed() ? -1 : 1); return true; }
         if (code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_DPAD_CENTER) {
             if (event.getRepeatCount() == 0) { mAcceptButton = nativeFocus(0); mAcceptGeneration = mShowGeneration; }
@@ -238,4 +240,5 @@ public class Dialog implements DialogInterface {
     private native void nativeDismiss();
     private native void nativeVisible(boolean visible);
     private native int nativeFocus(int direction);
+    private native boolean nativeScroll(int direction);
 }

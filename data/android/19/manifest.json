@@ -87,17 +87,17 @@
           "src/guest/framework/java",
           "src/guest/io/java"
         ],
-        "source_sha256": "a010e7cf6cc397d06e3c55ac4c8e41f9f139373c3ad040ef45c7a682a1131f6f",
+        "source_sha256": "b25173cfd7f3769a7c69a787665f6121e210cd1dc74e0fe7f0196810508f4d8c",
         "javac": "17.0.18",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 16915958,
-    "sha256": "be319ed3d6063e6c5319359ccd44a21d6382a49b32b38080293b15923d4a5836",
+    "size": 16919593,
+    "sha256": "3d7517cd5581a393a0f91ea6928279d9e7973a5f7f857479a3906ce39ae84148",
     "dex_entry": "classes.dex",
-    "dex_size": 8504372,
-    "dex_sha256": "4381a40e2e8920cac96344cd6336a49fa7b298ad0578228e3227a47dfa5225ae",
+    "dex_size": 8504440,
+    "dex_sha256": "f3eafe1f6bdee25a6287d61da4ac8c236824c2c9e50930850c0832de7b87b6d0",
     "class_count": 5724,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
@@ -106,17 +106,17 @@
       "path": "tools/bootdex/java-traversal.json",
       "sha256": "20926f677459ac239e4ec74312c0323924a9388030df6cc27ac60dc3214859de",
       "entry": "META-INF/ogplay/java-traversal-recipe.json",
-      "payload_sha256": "c3d1990652302297adc5ae89635b26930ddc27b4b59520d97ac7022d0907ea2b"
+      "payload_sha256": "1df6ee40c9ca94fc29ad333b276105858120e0927fbb6210b6c2390749754e27"
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "3c5661760640601c0166b178e20c27f0eed0fc52f15f6b495df4e8829d061a9c",
+      "sha256": "8a550449a787b8e7f6f0762082088921e59c376610884d2564c91437624a8d75",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "76fed2a6244397944effe588526445661ed07e13f8576a9fda1ce069643f32e5",
+      "manifest_sha256": "8228422d168b45cd8513dc95b13efd21164d9679802e711d766dafff6c515abe",
       "composer": "tools/bootdex/compose_bootdex.py",
       "composer_sha256": "1d08e2f555c68426544c094e37ab02dfa4862e37116cf002550d9324893dd6b6"
     },

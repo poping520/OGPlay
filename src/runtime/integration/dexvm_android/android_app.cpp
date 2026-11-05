@@ -522,6 +522,12 @@ Decl Declare_android_app_Dialog(const Context& context) {
         },
         dx::kAccPrivate | dx::kAccNative);
     builder.DirectMethod(
+        "nativeScroll", "(I)Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(ScrollAndroidDialog(*context, call.receiver, call.arguments[0].AsInt()));
+        },
+        dx::kAccPrivate | dx::kAccNative);
+    builder.DirectMethod(
         "nativeFocus", "(I)I",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Int(FocusAndroidDialog(*context, call.receiver, call.arguments[0].AsInt()));

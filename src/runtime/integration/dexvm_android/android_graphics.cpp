@@ -929,6 +929,12 @@ Decl Declare_android_graphics_Matrix(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Matrix requires construction"};
             return dx::VmValue::Int(1);
         });
+        // Every live Matrix is identity, so resetting one keeps exactly the state it already has.
+        builder.VirtualMethod("reset", "()V", [context](dx::IntrinsicContext& c) {
+            if (!context->identity_matrices.contains(c.receiver.Value()))
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Matrix is not initialized"};
+            return dx::VmValue::Void();
+        });
         builder.VirtualMethod("getValues", "([F)V", [context](dx::IntrinsicContext& c) {
             if (!context->identity_matrices.contains(c.receiver.Value()))
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Matrix requires construction"};

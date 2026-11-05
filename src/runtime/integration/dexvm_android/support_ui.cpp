@@ -6,6 +6,7 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "catalog.h"
+#include "ogplay/runtime/ui/ui_leaf_measure.h"
 
 #include <stdexcept>
 #include <tuple>
@@ -2238,20 +2239,115 @@ void ClearModalCapture(DexVmAndroidContext& context) {
     context.dialog_key_tails.insert(context.dialog_keys_down.begin(), context.dialog_keys_down.end());
     context.dialog_capture.reset();
     context.dialog_pointer_active = false;
+    context.dialog_scroll_tracking = context.dialog_scroll_dragging = false;
     context.dialog_pressed_button.reset();
     context.dialog_keys_down.clear();
 }
 
-void CheckModalFit(const Modal& modal, const ui::Size viewport) {
-    const auto& tree = *modal.host_tree;
-    const auto* panel = tree.Get(modal.panel);
-    const auto bounds = panel->screen_frame;
-    if (bounds.top < 8 || bounds.bottom > viewport.height - 8)
-        throw std::runtime_error("Dialog content cannot fit the bounded viewport");
-    for (const auto button : modal.buttons)
-        if (button && tree.Get(*button)->screen_frame.right > bounds.right - panel->padding.right)
-            throw std::runtime_error("Dialog buttons cannot fit the bounded viewport");
+// Only builders are mutated here; callers commit after every modal is ready.
+void LayoutModal(dexvm::Interpreter& vm, Modal& modal, const ui::Size viewport, const float density) {
+    if (!std::isfinite(density) || density <= 0 || density > 8 || viewport.width < 48 || viewport.height < 48)
+        throw std::runtime_error("Dialog viewport is unavailable or too small");
+    auto& tree = *modal.host_tree;
+    auto* panel = tree.Get(modal.panel);
+    const auto padding = static_cast<std::int32_t>(12 * density);
+    panel->padding = {padding, padding, padding, padding};
+    panel->layout.width = {ui::SizeMode::Fixed,
+                           std::min(static_cast<std::int32_t>(480 * density), viewport.width - 32)};
+    panel->layout.height.mode = ui::SizeMode::WrapContent;
+    for (const auto id : panel->children) {
+        auto* node = tree.Get(id);
+        if (node->kind == ui::UiClass::TextView) {
+            node->text_size_px = 18 * density;
+            node->padding.bottom = static_cast<std::int32_t>(8 * density);
+        }
+    }
+    if (modal.scroll) {
+        auto* scroll = tree.Get(*modal.scroll);
+        scroll->layout.height.mode = ui::SizeMode::WrapContent;
+        auto* message = tree.Get(scroll->children.front());
+        message->text_size_px = 14 * density;
+        message->padding.bottom = static_cast<std::int32_t>(8 * density);
+    }
+    for (const auto id : modal.buttons)
+        if (id) {
+            auto* node = tree.Get(*id);
+            node->text_size_px = 14 * density;
+            node->padding = {padding, padding / 2, padding, padding / 2};
+            node->layout.width = {ui::SizeMode::WrapContent, 0};
+            node->layout.weight = 0;
+            node->max_lines = std::numeric_limits<std::int32_t>::max();
+        }
+    const ui::UiMetrics metrics{viewport.width, viewport.height};
+    tree.MarkLayoutDirty(modal.root);
+    ui::LayoutUiTree(tree, metrics);
+    std::int32_t buttons_width{};
+    for (const auto id : modal.buttons)
+        if (id) buttons_width += tree.Get(*id)->measured.width;
+    if (buttons_width > std::max(0, panel->measured.width - 2 * padding)) {
+        for (const auto id : modal.buttons)
+            if (id) {
+                auto* node = tree.Get(*id);
+                node->layout.width = {ui::SizeMode::Fixed, 0};
+                node->layout.weight = 1;
+                node->max_lines = 2;
+            }
+        tree.MarkLayoutDirty(modal.root);
+        ui::LayoutUiTree(tree, metrics);
+    }
+    // Panel/ScrollView measurements are bounded. Sum chrome separately and read
+    // the message measured with Unspecified height inside ScrollView.
+    auto chrome = 2 * padding;
+    for (const auto id : panel->children)
+        if (id != modal.scroll) chrome += tree.Get(id)->measured.height;
+    const auto height = std::max(0, viewport.height - 16);
+    const auto available = std::max(0, height - chrome);
+    std::int32_t content{};
+    if (modal.scroll) {
+        auto* scroll = tree.Get(*modal.scroll);
+        content = tree.Get(scroll->children.front())->measured.height;
+        if (content > available) scroll->layout.height = {ui::SizeMode::Fixed, available};
+    }
+    if (chrome > height) android_intrinsics::RecordUiDegraded(vm, "Dialog chrome clipped to bounded viewport");
+    panel->layout.height = {ui::SizeMode::Fixed, std::min(height, chrome + std::min(content, available))};
+    tree.MarkLayoutDirty(modal.root);
+    ui::LayoutUiTree(tree, metrics);
+    if (modal.scroll) {
+        auto* scroll = tree.Get(*modal.scroll);
+        scroll->scroll_y = std::clamp(scroll->scroll_y, 0, std::max(0, content - scroll->measured.height));
+        tree.MarkLayoutDirty(*modal.scroll);
+        ui::LayoutUiTree(tree, metrics);
+    }
+    modal.viewport = viewport;
+    modal.density = density;
+    if (auto* logger = vm.Log())
+        logger->Write(
+            core::LogLevel::info, "ui.dialog.layout", "bounded host Dialog layout", {},
+            {{"viewport_width", static_cast<std::int64_t>(viewport.width)},
+             {"viewport_height", static_cast<std::int64_t>(viewport.height)},
+             {"density", static_cast<double>(density)},
+             {"panel_height", static_cast<std::int64_t>(panel->measured.height)},
+             {"chrome_height", static_cast<std::int64_t>(chrome)},
+             {"scroll_height", static_cast<std::int64_t>(modal.scroll ? tree.Get(*modal.scroll)->measured.height : 0)},
+             {"message_height", static_cast<std::int64_t>(content)}},
+            {.mode = core::RateLimitMode::none});
 }
+
+bool SetModalScroll(Modal& modal, const double offset) {
+    if (!modal.scroll) return false;
+    auto& tree = *modal.host_tree;
+    auto* scroll = tree.Get(*modal.scroll);
+    const auto limit = std::max(0, tree.Get(scroll->children.front())->measured.height - scroll->measured.height);
+    if (!limit) return false;
+    const auto clamped = static_cast<std::int32_t>(std::clamp(offset, 0.0, static_cast<double>(limit)));
+    if (clamped != scroll->scroll_y) {
+        scroll->scroll_y = clamped;
+        tree.MarkLayoutDirty(*modal.scroll);
+        ui::LayoutUiTree(tree, {modal.viewport.width, modal.viewport.height});
+    }
+    return true;
+}
+
 }  // namespace
 
 std::shared_ptr<const DexVmAndroidContext::PresentationSnapshot>
@@ -2450,7 +2546,7 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
         if (!frozen && pending_metrics) return reject(Reason::pending_metrics_without_modal);
         if (!frozen) frozen = std::make_shared<const ui::UiTree>(*modal.host_tree);
         next->modal_stack.push_back({modal.dialog, modal.owner, modal.partition, modal.generation, modal.revision,
-                                     std::move(frozen), modal.buttons});
+                                     std::move(frozen), modal.buttons, modal.scroll});
     }
     const auto same_modals = [&] {
         if (!previous || previous->modal_stack.size() != next->modal_stack.size()) return false;
@@ -2512,26 +2608,7 @@ void ResizeAndroidDialogs(dexvm::Interpreter& vm, DexVmAndroidContext& context) 
             auto& tree = *modal.host_tree;
             for (const auto button : modal.buttons)
                 if (button) tree.SetPressed(*button, false);
-            auto* panel = tree.Get(modal.panel);
-            panel->layout.width.px = std::min(static_cast<std::int32_t>(480 * density), viewport.width - 32);
-            const auto padding = static_cast<std::int32_t>(12 * density);
-            panel->padding = {padding, padding, padding, padding};
-            const auto rescale = [&](auto&& self, ui::UiNodeId id) -> void {
-                auto* node = tree.Get(id);
-                if (node->kind == ui::UiClass::TextView) {
-                    node->text_size_px = (node->text_style ? 18 : 14) * density;
-                    node->padding.bottom = static_cast<std::int32_t>(8 * density);
-                } else if (node->kind == ui::UiClass::Button) {
-                    node->text_size_px = 14 * density;
-                    node->padding = {padding, padding / 2, padding, padding / 2};
-                }
-                for (auto child : node->children)
-                    self(self, child);
-            };
-            rescale(rescale, modal.root);
-            const ui::UiMetrics managed_viewport{viewport.width, viewport.height};
-            ui::LayoutUiTree(*modal.host_tree, managed_viewport);
-            CheckModalFit(modal, viewport);
+            LayoutModal(vm, modal, viewport, density);
             if (context.dialog_host_revision == std::numeric_limits<std::uint64_t>::max())
                 throw std::runtime_error("Dialog host revision exhausted");
             modal.revision = context.dialog_host_revision + 1;
@@ -2558,6 +2635,7 @@ bool HasAndroidModalDialog(const DexVmAndroidContext& context) {
 void ReleaseAndroidDialogs(DexVmAndroidContext& context) {
     context.dialog_presentations.clear();
     context.dialog_pointer_active = false;
+    context.dialog_scroll_tracking = context.dialog_scroll_dragging = false;
     context.dialog_pressed_button.reset();
     context.dialog_keys_down.clear();
     {
@@ -2638,6 +2716,13 @@ std::int32_t FocusAndroidDialog(DexVmAndroidContext& context, const dx::VmObject
     return -static_cast<std::int32_t>(buttons[current]) - 1;
 }
 
+bool ScrollAndroidDialog(DexVmAndroidContext& context, const dx::VmObjectRef dialog, const std::int32_t direction) {
+    auto* modal = TopDialog(context);
+    if (!modal || modal->dialog != dialog || !modal->scroll) return false;
+    const auto* scroll = modal->host_tree->Get(*modal->scroll);
+    return SetModalScroll(*modal, scroll->scroll_y + direction * (scroll->measured.height / 2));
+}
+
 void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::IntrinsicFieldHandle generation) {
     const auto unsupported = [&call](const char* reason) -> void {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("runtime.ui.dialog.presentation", 0);
@@ -2676,7 +2761,7 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
         return result;
     };
     const auto title = text(call.arguments[2].ref, 512);
-    const auto message = text(call.arguments[3].ref, 4096);
+    const auto message = text(call.arguments[3].ref, ui::kMaxFixedTextUnits);
     const auto labels = call.arguments[4].ref;
     if (!labels.IsValid() || call.vm.Model().ArrayLength(labels) != 3)
         unsupported("Dialog button inventory is invalid");
@@ -2758,7 +2843,7 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
         const auto padding = static_cast<std::int32_t>(12 * density);
         body->padding = {padding, padding, padding, padding};
         tree.Attach(root, panel);
-        const auto add_text = [&](const std::u16string& value, float size, bool bold) {
+        const auto add_text = [&](ui::UiNodeId parent, const std::u16string& value, float size, bool bold) {
             if (value.empty()) return;
             const auto id = tree.CreateNode(ui::UiClass::TextView);
             auto* node = tree.Get(id);
@@ -2766,13 +2851,21 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
             node->text_color = 0x000000ffU;
             node->text_size_px = size * density;
             node->text_style = bold ? 1U : 0U;
+            if (bold) node->max_lines = 2;
             node->layout.width.mode = ui::SizeMode::MatchParent;
             node->layout.height.mode = ui::SizeMode::WrapContent;
             node->padding.bottom = static_cast<std::int32_t>(8 * density);
-            tree.Attach(panel, id);
+            tree.Attach(parent, id);
         };
-        add_text(title, 18, true);
-        add_text(message, 14, false);
+        add_text(panel, title, 18, true);
+        if (!message.empty()) {
+            const auto scroll = tree.CreateNode(ui::UiClass::ScrollView);
+            modal.scroll = scroll;
+            tree.Get(scroll)->layout.width.mode = ui::SizeMode::MatchParent;
+            tree.Get(scroll)->layout.height.mode = ui::SizeMode::WrapContent;
+            tree.Attach(panel, scroll);
+            add_text(scroll, message, 14, false);
+        }
         const auto row = tree.CreateNode(ui::UiClass::LinearLayout);
         tree.Get(row)->orientation = ui::Orientation::Horizontal;
         tree.Get(row)->layout.width.mode = ui::SizeMode::MatchParent;
@@ -2795,17 +2888,7 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
                 node->layout.height.mode = ui::SizeMode::WrapContent;
                 tree.Attach(row, id);
             }
-        {
-            const ui::UiMetrics managed_viewport{static_cast<std::int32_t>(context->surface_width),
-                                                 static_cast<std::int32_t>(context->surface_height)};
-            ui::LayoutUiTree(*modal.host_tree, managed_viewport);
-        }
-        const auto bounds = tree.Get(panel)->screen_frame;
-        if (bounds.top < 8 || bounds.bottom > static_cast<std::int32_t>(context->surface_height) - 8)
-            unsupported("Dialog content cannot fit the bounded viewport");
-        for (const auto button : modal.buttons)
-            if (button && tree.Get(*button)->screen_frame.right > bounds.right - padding)
-                unsupported("Dialog buttons cannot fit the bounded viewport");
+        LayoutModal(call.vm, modal, modal.viewport, density);
         // No guest callbacks occur during geometry construction. Commit after validation.
         if (previous != context->dialog_presentations.end()) {
             *previous = modal;
@@ -2923,6 +3006,11 @@ bool DispatchAndroidDialogInput(dexvm::Interpreter& vm, DexVmAndroidContext& con
                     }
                     break;
                 }
+            if (!context.dialog_pressed_button && top->scroll && contains(*top->scroll)) {
+                context.dialog_scroll_tracking = true;
+                context.dialog_scroll_down_y = input.y;
+                context.dialog_scroll_start_y = top->tree->Get(*top->scroll)->scroll_y;
+            }
         } else if (action == 1) {
             const auto pressed = context.dialog_pressed_button;
             const bool active = context.dialog_pointer_active && context.dialog_capture &&
@@ -2939,6 +3027,12 @@ bool DispatchAndroidDialogInput(dexvm::Interpreter& vm, DexVmAndroidContext& con
                                                                   {VmValue::Int(-static_cast<std::int32_t>(i) - 1)}));
                         break;
                     }
+            }
+        } else if (action == 2 && context.dialog_scroll_tracking) {
+            if (auto* modal = TopDialog(context)) {
+                const auto delta = static_cast<double>(context.dialog_scroll_down_y) - input.y;
+                if (std::abs(delta) > 8 * modal->density) context.dialog_scroll_dragging = true;
+                if (context.dialog_scroll_dragging) SetModalScroll(*modal, context.dialog_scroll_start_y + delta);
             }
         } else if (action == 2 && context.dialog_pressed_button && !contains(*context.dialog_pressed_button)) {
             if (auto* modal = TopDialog(context)) modal->host_tree->SetPressed(*context.dialog_pressed_button, false);

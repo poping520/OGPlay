@@ -915,12 +915,52 @@ TEST_CASE("DVM-331 unselected Legacy View APIs fail explicitly without mutating 
         const auto view = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto before = f.On(view, "isClickable", "()Z").AsInt();
-        CHECK(f.OnOutcome(view, "getScrollBarStyle", "()I").exception.IsValid());
-        CHECK(f.OnOutcome(view, "setScrollBarStyle", "(I)V", {VmValue::Int(0)}).exception.IsValid());
+        CHECK(f.OnOutcome(view, "setScrollBarSize", "(I)V", {VmValue::Int(0)}).exception.IsValid());
+        CHECK(f.OnOutcome(view, "setHovered", "(Z)V", {VmValue::Int(1)}).exception.IsValid());
         CHECK(f.OnOutcome(group, "getClipChildren", "()Z").exception.IsValid());
         CHECK(f.On(view, "isClickable", "()Z").AsInt() == before);
         CHECK(f.ledger.Unimplemented().size() == 3);
         CHECK_FALSE(f.context->ui_tree.PublishedProjection());
+    }
+}
+
+TEST_CASE("DVM-371 View scrollbar style round-trips and animation state stays inert") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto owner = f.New("Landroid/app/Activity;");
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        const auto view = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto web = f.New("Landroid/webkit/WebView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto parent =
+            f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto roots = f.vm.ProtectReferences(std::array{view, web, parent});
+        for (const auto target : {view, web})
+            for (const int style : {0x01000000, 0x02000000, 0x03000000, 0}) {
+                f.On(target, "setScrollBarStyle", "(I)V", {VmValue::Int(style)});
+                CHECK(f.On(target, "getScrollBarStyle", "()I").AsInt() == style);
+            }
+        f.On(parent, "addView", "(Landroid/view/View;)V", {VmValue::Ref(web)});
+        const auto animation_type = "Landroid/view/animation/Animation;";
+        const auto animation =
+            f.New("Landroid/view/animation/AlphaAnimation;", "(FF)V", {VmValue::Float(0.0F), VmValue::Float(1.0F)});
+        const auto interpolator = f.New("Landroid/view/animation/LinearInterpolator;");
+        const auto animation_roots = f.vm.ProtectReferences(std::array{animation, interpolator});
+        f.On(animation, "setDuration", "(J)V", {VmValue::Long(500)});
+        f.On(animation, "setInterpolator", "(Landroid/view/animation/Interpolator;)V", {VmValue::Ref(interpolator)});
+        const auto get_animation = [&] {
+            return f.On(web, "getAnimation", (std::string("()") + animation_type).c_str()).ref;
+        };
+        f.On(web, "clearAnimation", "()V");
+        CHECK_FALSE(get_animation().IsValid());
+        f.On(web, "startAnimation", (std::string("(") + animation_type + ")V").c_str(), {VmValue::Ref(animation)});
+        CHECK(get_animation() == animation);
+        f.On(web, "setVisibility", "(I)V", {VmValue::Int(0)});
+        f.On(web, "invalidate", "()V");
+        f.On(web, "clearAnimation", "()V");
+        CHECK_FALSE(get_animation().IsValid());
+        f.On(web, "setVisibility", "(I)V", {VmValue::Int(8)});
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }
 

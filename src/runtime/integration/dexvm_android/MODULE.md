@@ -312,7 +312,8 @@ View 树 AttachInfo/dispatchAttachedToWindow、transition 与系统 accessibilit
 Activity 的 Window.Callback 附着/分离由 session 单独编排，Dialog Callback 附着未支持。字段接收者
 failure 虚派按 ADR-0159 封存 a/b/unproven 信息，运行期仍明确失败；支持路径须动态零命中。
 JavaTraversal 的 Dialog 使用各自独立 HostLayout 树；ShowAndroidDialog 只在未发布宿主树上
-按 managed viewport 调用 LayoutUiTree，容纳检查成功才替换对应 presentation 并推进宿主 revision。
+按 managed viewport 统一计算 show/resize：消息 ScrollView 收缩、偏移夹紧，成功才替换对应
+presentation 并推进宿主 revision。
 失败保留旧 modal、guest 投影/epoch、焦点与 revision；纯 modal 操作不请求 guest 遍历。
 UiNodeId 只在所属 modal 树内有效，presentation 的 partition/generation/revision 区分相同原始 ID。
 按钮焦点仅归宿主树；prior_guest_focus 只存真实 Java View/root 身份与窗口 generation，
@@ -323,11 +324,13 @@ host_modal_revision、metrics_revision、viewport 与可见 modal_stack。guest 
 owner 完成 Java measure/layout 后先准备全部待 resize 的宿主分区，再提交 guest 投影；
 resize 失败不发布新 guest epoch，Java 已执行状态不回滚。尺寸/density 与 guest 测量事实匹配才
 发布。设备metrics待齐时，旧modal的隐藏/退役可沿最后完整guest/metrics发布移除；新几何
-不得混入该旧序列。容纳失败保留旧共同快照及宿主集合，不回滚已经发生的Java测量或独立guest投影。
+不得混入该旧序列。非法 metrics/文本等失败保留旧共同快照及宿主集合，不回滚已经发生的Java测量或独立guest投影。
 纯 modal 变更不测量/布局 guest、不推进 guest epoch；owner 可见性/退役先撤销捕获再发布集合。
 输入持共同快照，最上层可见 modal 优先吞输入；捕获含 partition/generation/Dialog 身份。
 更新/隐藏/取消/owner退役使捕获失效，已取消序列仅消费尾事件，不对新 modal/guest 触发动作。
 按钮/Back/Tab/Enter 进入既有 Java 协议及 owner Looper；回调改树只请求下一 owner 遍历。
+宿主消息区内起始的拖动超过 8dp 才滚动，按钮起始不滚动；DPAD 上下经 Java OnKeyListener
+优先处理后按半视口滚动，无可滚动内容返回 false。滚动推进树修改计数，冻结快照保持不可变。
 普通触摸也持有事件快照租约；几何命中读该快照，不在嵌套分发中重测。
 Compose 只读同一共同快照，video/raster/hit 共用 guest 投影与 modal screen_frame；帧尺寸
 不匹配明确失败，不把新 viewport 与旧几何混合。Dialog 必须有独立 HostLayout 树，缺树明确失败。
@@ -570,8 +573,11 @@ guest worker 静止后 ReleaseAndroidMediaResources 退役 decoder/状态/mixer 
 Dialog/AlertDialog 协议归 Java，native 只投影 plain String 标题/消息/三按钮为 UiTree 临时模态
 子树，active presentation 为 Dialog/Activity roots；按 geometry 捕获输入/取消旧捕获，listener 在
 owner Looper 排队，owner 隐藏/恢复同步可见性，实例退役先 dismiss、进程停止仅退役投影。
-不替换内容/退役 Surface/另建协议或层级权威；最多 8 窗口，title/message/button≤512/4096/128
-UTF-16、density (0,8]、viewport≥48×48，须完整适配否则 UOE；items/Window facade 拒绝。
+不替换内容/退役 Surface/另建协议或层级权威；最多 8 窗口，title/button≤512/128 UTF-16，
+message≤kMaxFixedTextUnits；非 String、超预算、density 不在 (0,8] 或 viewport<48×48 明确失败。
+标题最多两行，消息独立 ScrollView；按钮超宽时等分且最多两行，顺序不变。消息超高收缩并滚动，
+resize 保留并夹紧偏移；chrome 超高夹紧并记录 UI 降级，不因容纳失败抛异常。
+无滚轮、滚动条、fling 或 overscroll；items/Window facade 拒绝。
 非零 Dialog theme 记录 UI 降级。setContentView(View) 使用居中 FrameLayout 作为 Activity 应用附加窗口，
 显示/隐藏/关闭及 Back 走 Java 协议，隐藏时撤销输入/焦点资格；没有可用 Activity 明确失败，布局资源重载仍拒绝。每个 modal 为独立 HostLayout，
 字体/布局/像素复用既有底座，经共同呈现快照合成与命中。
@@ -592,7 +598,7 @@ BouncyCastle/TLS 承诺。
 
 Dashboard AudioTrack/UiTree 仅 TryAcquire VM 锁、PCM 用 mixer try-lock，忙 nullopt；UI 计数含根、
 不 layout/draw，视频快照 try-lock≤128 项、不调 decoder，base_position 不冒充实时位置。
-Animation listener 仅类型、无执行器。定向入口为 tests/dexvm 的 android/widget/layout/scheduler/egl、
+Animation listener 仅类型、无执行器。View 的 setAnimation/startAnimation/clearAnimation 执行 ROM（DVM-371），mCurrentAnimation 为惰性 Java 状态：不推进、不回调 listener，invalidate 记录 UI 降级。定向入口为 tests/dexvm 的 android/widget/layout/scheduler/egl、
 runtime JNI/native loader、frontend lifecycle，按实际范围覆盖 switch/threaded/架构约束；title 探索
 不等于 Scenario 验收。外部 package/service resolver、ContentProvider、完整 UI/framework/传感器、
 现代支付/社交/反作弊不在范围；能力与证据仅在 [capabilities](../../../../capabilities.toml)、
@@ -699,7 +705,7 @@ ColorDrawable 原 intrinsic=-1，光栅为内容区纯色填充。
 FIT_XY/FIT_CENTER/CENTER/CENTER_CROP/CENTER_INSIDE 复用 ImageDestination；投影同时冻结
 intrinsic、像素版本、scale、alpha 和几何，CENTER/INSIDE 使用 density 后 Drawable 尺寸，
 像素采样仍用原 backing 尺寸。
-Matrix 接缝只初始化实际 identity 状态并提供 isIdentity/getValues/finalize，随 Java 对象 sweep 退役；
+Matrix 接缝只初始化实际 identity 状态并提供 isIdentity/getValues/reset/finalize，随 Java 对象 sweep 退役；
 原 Matrix.IDENTITY_MATRIX 单例由 ROM clinit/Matrix$1 构造。native_instance/变换操作仍失败。
 其余 scaleType、matrix、tint、adjustViewBounds/maxWidth/maxHeight/baseline/crop 等非中性
 请求、任意 Drawable/custom draw 继续记账失败；原方法不因 adapter 获得 ROM 算法实现信用。

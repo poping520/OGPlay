@@ -1860,6 +1860,9 @@ ui::UiNodeId ViewNode(dx::IntrinsicContext& call, const Context& context) {
 
 }  // namespace
 
+// mCurrentAnimation is inert Java state: nothing steps it, so the View stays at its final look.
+constexpr std::size_t kViewCurrentAnimationState = 3;
+
 Decl Declare_android_view_View(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/View;", "Ljava/lang/Object;",
                                                     {"Landroid/graphics/drawable/Drawable$Callback;",
@@ -2148,7 +2151,10 @@ Decl Declare_android_view_View(const Context& context) {
         const auto& tokens = *context->view_java_measure_fields;
         bool unsupported = (fields.GetInt(tokens.flags[0]) & 0x40) != 0;  // PFLAG_DRAW_ANIMATION
         for (std::size_t i = 0; i < tokens.unsupported_state.size(); ++i)
-            if (i != 1) unsupported = unsupported || fields.GetRef(tokens.unsupported_state[i]).IsValid();
+            if (i != 1 && i != kViewCurrentAnimationState)
+                unsupported = unsupported || fields.GetRef(tokens.unsupported_state[i]).IsValid();
+        if (fields.GetRef(tokens.unsupported_state[kViewCurrentAnimationState]).IsValid())
+            RecordUiDegraded(call.vm, "View.animation");
         RequireAndroidAlphaOnly(call.vm, *context, call.receiver);
         if (unsupported) {
             if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_layout_system_state", 0);
@@ -2208,8 +2214,9 @@ Decl Declare_android_view_View(const Context& context) {
                 !context->UiAccessibilityUnavailable() || (flags & 0x200) != 0 ||
                 CallAndroidMethod(call.vm, call.receiver, "isFocused", "()Z").AsInt() != 0 ||
                 (background.IsValid() && (skin == context->ui_drawables.end() || !skin->second.rom_skin));
-            for (const auto token : tokens.unsupported_state)
-                unsupported = unsupported || fields.GetRef(token).IsValid();
+            for (std::size_t i = 0; i < tokens.unsupported_state.size(); ++i)
+                if (i != kViewCurrentAnimationState)
+                    unsupported = unsupported || fields.GetRef(tokens.unsupported_state[i]).IsValid();
             if (unsupported) {
                 if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_layout_system_state", 0);
                 throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
@@ -2274,7 +2281,8 @@ Decl Declare_android_view_View(const Context& context) {
                 dx::IntrinsicCall fields(c);
                 RequireAndroidAlphaOnly(c.vm, *context, c.receiver);
                 for (std::size_t i = 0; i < context->view_java_measure_fields->unsupported_state.size(); ++i)
-                    if (i != 1 && fields.GetRef(context->view_java_measure_fields->unsupported_state[i]).IsValid()) {
+                    if (i != 1 && i != kViewCurrentAnimationState &&
+                        fields.GetRef(context->view_java_measure_fields->unsupported_state[i]).IsValid()) {
                         if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_drawable_state", 0);
                         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                               "system-attached drawable state unsupported"};

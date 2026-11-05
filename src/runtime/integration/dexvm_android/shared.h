@@ -30,6 +30,7 @@ using Context = std::shared_ptr<DexVmAndroidContext>;
 void InitializeThemeResourceOwner(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef resources,
                                   dx::VmObjectRef assets);
 void InitializeAndroidSystemProperties(dx::Interpreter& vm, const Context& context);
+[[nodiscard]] bool ScrollAndroidDialog(DexVmAndroidContext& context, dx::VmObjectRef dialog, std::int32_t direction);
 void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::IntrinsicFieldHandle generation);
 void DismissAndroidDialog(DexVmAndroidContext& context, dx::VmObjectRef dialog);
 void SetAndroidDialogVisible(DexVmAndroidContext& context, dx::VmObjectRef dialog, bool visible);

@@ -120,8 +120,8 @@ note = "LUI-14、DVM-149：include/merge 展开与 override，深度/环检测�
 
 [runtime.ui_dialog_presentation]
 status = "partial"
-test = "tests/dexvm/dialog_host_layout_tests.cpp#DVM-305; tests/dexvm/widget_window_dialog_tests.cpp#DVM-246; tests/dexvm/widget_window_dialog_tests.cpp#DVM-346; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-339; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-345; tests/runtime/ui_renderer_tests.cpp#DVM-246; tools.android_payload_current"
-note = "DVM-346：独立HostLayout modal经共同快照原子发布，render/input同源；可见性仅由Dialog与owner推导，冻结复用匹配partition/revision/树修改计数，焦点/按下态进入新epoch；拒绝原因及计数可查Dashboard。三按钮/Back/owner退役/有界resize；失败保留旧快照。DVM-345逐holder记录真实queue，全部未出帧或像素已冻结时modal独立出帧，已queue无像素不覆盖producer。主题降级、custom View 走附加窗口；items/完整Window未支持，Windows/title gate未验。"
+test = "tests/dexvm/dialog_host_layout_tests.cpp#DVM-370; tests/dexvm/dialog_host_layout_tests.cpp#DVM-305; tests/dexvm/widget_window_dialog_tests.cpp#DVM-246; tests/dexvm/widget_window_dialog_tests.cpp#DVM-346; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-339; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-345; tests/runtime/ui_renderer_tests.cpp#DVM-246; tools.android_payload_current"
+note = "DVM-370/346：独立HostLayout modal经共同快照原子发布，render/input同源，冻结复用核对树修改计数；失败保留旧快照。长消息独立ScrollView收缩，8dp阈值拖动、DPAD半视口步进，resize保留并夹紧偏移；标题/超宽按钮最多两行，chrome超高夹紧并记录降级。三按钮/Back/owner退役及DVM-345未queue独立出帧保留。无滚轮/滚动条/fling；custom View走附加窗口，items/完整Window及Windows/title gate未支持或未验。"
 
 [dexvm.drawable_resource]
 status = "partial"
@@ -1515,8 +1515,8 @@ note = "DVM-166 发布 API 19 非缓存 KeyguardManager facade，三项只读查
 
 [dexvm.animation_listener_type]
 status = "complete"
-test = "tests/dexvm/android_view_state_tests.cpp#DVM-174; tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check"
-note = "DVM-174 从固定 API 19 framework.jar 精确选入原版 Animation$AnimationListener 嵌套接口，提供类型、访问标志与 onAnimationStart/End/Repeat 抽象签名，使应用实现类可链接、实例化并做接口分派。不包含 Animation 本体、TranslateAnimation、Interpolator、startAnimation 或完成回调；不宣称完整动画框架或游戏可玩。"
+test = "tests/dexvm/android_view_state_tests.cpp#DVM-174; tests/dexvm/android_view_state_tests.cpp#DVM-371; tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check"
+note = "DVM-174 从固定 API 19 framework.jar 精确选入原版 Animation$AnimationListener 嵌套接口，提供类型、访问标志与 onAnimationStart/End/Repeat 抽象签名，使应用实现类可链接、实例化并做接口分派。DVM-371：View start/set/clearAnimation 执行 ROM，动画为惰性状态，不推进也不回调 listener，invalidate 记 UI 降级；不宣称完整动画框架或游戏可玩。"
 
 [dexvm.view_click_listener_override]
 status = "complete"

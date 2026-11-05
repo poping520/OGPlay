@@ -8,6 +8,11 @@
 #include <doctest/doctest.h>
 #include <array>
 #include <sstream>
+#include <fstream>
+#include <filesystem>
+#include <cstring>
+#include "ogplay/runtime/ui/ui_leaf_measure.h"
+#include "ogplay/runtime/ui/ui_fallback_font.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
@@ -158,22 +163,26 @@ TEST_CASE("DVM-304 isolated host Dialog layout leaves guest geometry epoch and f
         CHECK(updated.generation > first.generation);
         CHECK(updated.prior_guest_focus->view == leaf);
         check_guest();
-        // Fail after measurement, not merely at input validation. The old tree,
-        // revision, focus and retained old tree geometry must survive intact.
-        const auto old_focus = updated.host_tree->Focused();
-        const auto old_geometry = Geometry(*updated.host_tree);
+        // Long content now succeeds at the original viewport. Invalid metrics
+        // still preserve the old tree, revision, focus and frozen geometry.
+        f.On(dialog, "setMessage", "(Ljava/lang/CharSequence;)V",
+             {VmValue::Ref(f.vm.NewStringUtf8(std::string(700, 'M')))});
+        CHECK(f.ledger.Unimplemented().empty());
+        const auto retained = f.context->dialog_presentations.front();
+        const auto old_focus = retained.host_tree->Focused();
+        const auto old_geometry = Geometry(*retained.host_tree);
         const auto revision = f.context->dialog_host_revision;
         CHECK(f.ledger.Unimplemented().empty());
-        f.context->surface_height = 100;
+        f.context->surface_height = 47;
         const auto fail = f.OnOutcome(dialog, "setMessage", "(Ljava/lang/CharSequence;)V",
                                       {VmValue::Ref(f.vm.NewStringUtf8(std::string(200, 'M')))});
         f.context->surface_height = 480;
         REQUIRE(fail.exception.IsValid());
         CHECK(f.linker.Class(fail.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        CHECK(f.context->dialog_presentations.front().host_tree == updated.host_tree);
+        CHECK(f.context->dialog_presentations.front().host_tree == retained.host_tree);
         CHECK(f.context->dialog_host_revision == revision);
-        CHECK(updated.host_tree->Focused() == old_focus);
-        CHECK(Geometry(*updated.host_tree) == old_geometry);
+        CHECK(retained.host_tree->Focused() == old_focus);
+        CHECK(Geometry(*retained.host_tree) == old_geometry);
         check_guest();
         CHECK_THROWS_AS(ui::LayoutUiTree(f.context->ui_tree, {800, 480}), std::exception);
         check_guest();
@@ -200,7 +209,7 @@ TEST_CASE("DVM-304 isolated host Dialog layout leaves guest geometry epoch and f
         const auto hits = f.ledger.Unimplemented();
         REQUIRE(hits.size() == 1);
         CHECK(hits.front().id == "runtime.ui.dialog.presentation");
-        CHECK(hits.front().count == 1);  // Oversized content only.
+        CHECK(hits.front().count == 1);  // Invalid viewport only.
         f.context->process_stopping = true;
         SynchronizeAndroidDialogs(*f.context);
         CHECK_FALSE(HasAndroidModalDialog(*f.context));
@@ -463,7 +472,7 @@ TEST_CASE("DVM-305 presentation snapshot composes modal pixels input and atomic 
         CHECK(Geometry(*old->modal_stack.back().tree) == old_modal_geometry);
         // Too-small metrics fail after guest traversal; the complete old presentation survives.
         const auto old_host = f.context->dialog_presentations.front().host_tree;
-        f.context->surface_height = 48;
+        f.context->surface_height = 47;
         CHECK_THROWS_AS(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                                  AndroidUiTraversalPhase::ResolveOnly),
                         VmJavaThrow);
@@ -505,7 +514,7 @@ TEST_CASE("DVM-305 presentation snapshot composes modal pixels input and atomic 
         const auto hits = f.ledger.Unimplemented();
         REQUIRE(hits.size() == 1);
         CHECK(hits[0].id == "runtime.ui.dialog.presentation");
-        CHECK(hits[0].count == 3);  // resize fit, text bound, ninth modal.
+        CHECK(hits[0].count == 3);  // invalid resize metrics, text bound, ninth modal.
     }
 }
 
@@ -591,5 +600,236 @@ TEST_CASE("DVM-305 modal presentation preserves a live managed Surface generatio
         unchanged();
         CHECK(AcquireAndroidPresentation(*f.context)->modal_stack.empty());
         CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-370 long AlertDialog messages scroll inside bounded chrome on both interpreters") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const ui::Size viewport : {ui::Size{1280, 720}, ui::Size{800, 480}}) {
+            CAPTURE(static_cast<int>(backend));
+            CAPTURE(viewport.width);
+            CAPTURE(viewport.height);
+            int clicks = 0;
+            bool consume_key = false;
+            auto observer = IntrinsicClassBuilder::Class("LScrollDialogObserver;", "Ljava/lang/Object;",
+                                                         {"Landroid/content/DialogInterface$OnClickListener;",
+                                                          "Landroid/content/DialogInterface$OnKeyListener;"});
+            observer.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+            observer.VirtualMethod("onClick", "(Landroid/content/DialogInterface;I)V", [&](IntrinsicContext&) {
+                ++clicks;
+                return VmValue::Void();
+            });
+            observer.VirtualMethod("onKey", "(Landroid/content/DialogInterface;ILandroid/view/KeyEvent;)Z",
+                                   [&](IntrinsicContext&) { return VmValue::Int(consume_key); });
+            AndroidValueVm f(backend, {std::move(observer).Build()}, false, "view_measure.dex",
+                             AndroidUiTraversalOwner::JavaTraversal, OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+            f.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
+            f.context->ui_test_accessibility_disabled = true;
+            f.context->surface_width = static_cast<std::uint32_t>(viewport.width);
+            f.context->surface_height = static_cast<std::uint32_t>(viewport.height);
+            f.context->ui_density = 2.0F;
+            const auto owner = f.New("Landroid/app/Activity;");
+            const auto root = f.New("Ltest/HierarchyGroup;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+            const auto listener = f.New("LScrollDialogObserver;");
+            const auto keep = f.vm.ProtectReferences(std::array{owner, root, listener});
+            f.context->content_view = root;
+            REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                             AndroidUiTraversalPhase::ResolveOnly));
+            std::string message;
+            while (message.size() < 700)
+                message += "Read this neutral sample before continuing. ";
+            message.resize(700);
+            const auto dialog = Dialog(f, owner, message.c_str(), listener);
+            const auto dialog_keep = f.vm.ProtectReferences(std::array{dialog});
+            f.On(dialog, "show", "()V");
+            REQUIRE(f.ledger.Unimplemented().empty());
+            const auto current = [&] {
+                REQUIRE(PublishAndroidPresentation(*f.context));
+                return AcquireAndroidPresentation(*f.context);
+            };
+            const auto original = current();
+            const auto& modal = original->modal_stack.back();
+            REQUIRE(modal.scroll);
+            const auto scroll_id = *modal.scroll;
+            const auto message_id = modal.tree->Get(scroll_id)->children.front();
+            const auto panel_id = f.context->dialog_presentations.front().panel;
+            const auto panel = modal.tree->Get(panel_id)->screen_frame;
+            const auto scroll_frame = modal.tree->Get(scroll_id)->screen_frame;
+            CHECK(panel.top >= 8);
+            CHECK(panel.bottom <= viewport.height - 8);
+            REQUIRE(modal.tree->Get(message_id)->measured.height > (scroll_frame.bottom - scroll_frame.top));
+            for (const auto id : modal.buttons) {
+                REQUIRE(id);
+                const auto bounds = modal.tree->Get(*id)->screen_frame;
+                CHECK(bounds.top >= scroll_frame.bottom);
+                CHECK(bounds.bottom <= panel.bottom);
+                CHECK(bounds.left >= panel.left);
+                CHECK(bounds.right <= panel.right);
+            }
+            const auto pixel_check = [&](const ui::UiTree& tree) {
+                ui::UiTree blank(tree), actual(tree);
+                blank.Get(message_id)->text_color = 0xffffffffU;
+                blank.MarkDrawDirty(message_id);
+                ui::UiOverlayRenderer renderer, blank_renderer;
+                const auto pixels = renderer.Render(actual, {}, {viewport.width, viewport.height}).rgba8;
+                const auto clean = blank_renderer.Render(blank, {}, {viewport.width, viewport.height}).rgba8;
+                const auto clip = tree.Get(scroll_id)->screen_frame;
+                int differences = 0;
+                for (int y = 0; y < viewport.height; ++y)
+                    for (int x = 0; x < viewport.width; ++x) {
+                        const auto offset = (y * viewport.width + x) * 4;
+                        if (std::equal(pixels.begin() + offset, pixels.begin() + offset + 4, clean.begin() + offset))
+                            continue;
+                        ++differences;
+                        CHECK(x >= clip.left);
+                        CHECK(x < clip.right);
+                        CHECK(y >= clip.top);
+                        CHECK(y < clip.bottom);
+                    }
+                CHECK(differences > 0);
+            };
+            pixel_check(*modal.tree);
+            const auto pointer = [&](int action, float x, float y) {
+                CHECK(DispatchAndroidDialogInput(
+                    f.vm, *f.context,
+                    {.type = AndroidBoundaryInputType::pointer_button, .x = x, .y = y, .action = action}));
+                return current();
+            };
+            const float x = scroll_frame.left + 10, y = scroll_frame.top + 30;
+            pointer(0, x, y);
+            CHECK(pointer(2, x, y - 15)->modal_stack.back().tree->Get(scroll_id)->scroll_y == 0);
+            const auto moved = pointer(2, x, y - 50);
+            CHECK(moved->modal_stack.back().tree != modal.tree);
+            CHECK(moved->modal_stack.back().tree->Get(scroll_id)->scroll_y == 50);
+            CHECK(moved->modal_stack.back().tree->Get(message_id)->screen_frame.top ==
+                  modal.tree->Get(message_id)->screen_frame.top - 50);
+            CHECK(modal.tree->Get(scroll_id)->scroll_y == 0);
+            pixel_check(*moved->modal_stack.back().tree);
+            const auto bottom = pointer(2, x, -10000);
+            const auto* scrolled = bottom->modal_stack.back().tree->Get(scroll_id);
+            const auto limit =
+                bottom->modal_stack.back().tree->Get(message_id)->measured.height - scrolled->measured.height;
+            CHECK(scrolled->scroll_y == limit);
+            CHECK(pointer(2, x, 10000)->modal_stack.back().tree->Get(scroll_id)->scroll_y == 0);
+            pointer(1, x, 10000);
+            CHECK(clicks == 0);
+            const auto button = modal.tree->Get(*modal.buttons[0])->screen_frame;
+            pointer(0, button.left + 5, button.top + 5);
+            CHECK(pointer(2, x, y - 80)->modal_stack.back().tree->Get(scroll_id)->scroll_y == 0);
+            pointer(1, x, y - 80);
+            CHECK_FALSE(PumpJavaThreads(f.vm, *f.context));
+            CHECK(clicks == 0);
+            const auto key = [&](int code) {
+                const auto event =
+                    MakeAndroidKeyEvent(f.vm, {.type = AndroidBoundaryInputType::key, .code = code, .action = 0});
+                const auto event_keep = f.vm.ProtectReferences(std::array{event});
+                const auto handled =
+                    f.On(dialog, "dispatchKeyEvent", "(Landroid/view/KeyEvent;)Z", {VmValue::Ref(event)}).AsInt();
+                current();
+                return handled;
+            };
+            CHECK(key(20) == 1);
+            const auto step = (scroll_frame.bottom - scroll_frame.top) / 2;
+            CHECK(current()->modal_stack.back().tree->Get(scroll_id)->scroll_y == std::min(step, limit));
+            CHECK(key(19) == 1);
+            CHECK(current()->modal_stack.back().tree->Get(scroll_id)->scroll_y == 0);
+            f.On(dialog, "setOnKeyListener", "(Landroid/content/DialogInterface$OnKeyListener;)V",
+                 {VmValue::Ref(listener)});
+            consume_key = true;
+            CHECK(key(20) == 1);
+            CHECK(current()->modal_stack.back().tree->Get(scroll_id)->scroll_y == 0);
+            consume_key = false;
+            // Resize preserves the bottom offset, clamping to the new range.
+            pointer(0, x, y);
+            pointer(2, x, -10000);
+            pointer(1, x, -10000);
+            const auto before_resize = current();
+            const auto before_geometry = Geometry(*before_resize->modal_stack.back().tree);
+            f.context->surface_width = 1280;
+            f.context->surface_height = 720;
+            const auto traversed = EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                            AndroidUiTraversalPhase::ResolveOnly);
+            if (viewport.width != 1280) REQUIRE(traversed);
+            const auto resized = current();
+            const auto* new_scroll = resized->modal_stack.back().tree->Get(scroll_id);
+            const auto new_limit =
+                resized->modal_stack.back().tree->Get(message_id)->measured.height - new_scroll->measured.height;
+            CHECK(new_scroll->scroll_y == std::min(limit, new_limit));
+            CHECK(Geometry(*before_resize->modal_stack.back().tree) == before_geometry);
+            // Visible buttons still enqueue their listener and dismiss on the Looper.
+            const auto clickable = resized->modal_stack.back().tree->Get(*modal.buttons[0])->screen_frame;
+            pointer(0, clickable.left + 5, clickable.top + 5);
+            pointer(1, clickable.left + 5, clickable.top + 5);
+            CHECK(clicks == 0);
+            CHECK_FALSE(PumpJavaThreads(f.vm, *f.context));
+            CHECK(clicks == 1);
+            f.On(dialog, "setMessage", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.vm.NewStringUtf8("Short"))});
+            f.On(dialog, "show", "()V");
+            CHECK(key(20) == 0);
+            CHECK(key(19) == 0);
+            f.context->surface_width = static_cast<std::uint32_t>(viewport.width);
+            f.context->surface_height = static_cast<std::uint32_t>(viewport.height);
+            static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                       AndroidUiTraversalPhase::ResolveOnly));
+            // Long labels use equal shares, two lines, and preserve the existing order.
+            f.On(dialog, "setTitle", "(Ljava/lang/CharSequence;)V",
+                 {VmValue::Ref(f.vm.NewStringUtf8(std::string(512, 'T')))});
+            for (int which : {-1, -2, -3})
+                f.On(dialog, "setButton",
+                     "(ILjava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)V",
+                     {VmValue::Int(which), VmValue::Ref(f.vm.NewStringUtf8(std::string(128, 'B'))),
+                      VmValue::Ref(listener)});
+            const auto long_labels = current()->modal_stack.back();
+            const auto* title = long_labels.tree->Get(long_labels.tree->Get(panel_id)->children.front());
+            CHECK(title->max_lines == 2);
+            CHECK(title->measured.height <= 2 * 8 * 5 + 16);
+            const auto long_panel = long_labels.tree->Get(panel_id)->screen_frame;
+            int last_left = long_panel.right;
+            for (const auto id : long_labels.buttons) {
+                const auto* node = long_labels.tree->Get(*id);
+                CHECK(node->max_lines == 2);
+                CHECK(node->screen_frame.left >= long_panel.left);
+                CHECK(node->screen_frame.right <= long_panel.right);
+                CHECK(node->screen_frame.bottom <= long_panel.bottom);
+                CHECK(node->screen_frame.left < last_left);
+                last_left = node->screen_frame.left;
+            }
+            // The session's pinned API19 fallback chain also handles long mixed text.
+            const auto repo = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
+            const auto load_font = [&](const char* name) {
+                std::ifstream stream(repo / "data/android/19/fonts" / name, std::ios::binary);
+                REQUIRE(stream.good());
+                const std::vector<char> bytes{std::istreambuf_iterator<char>{stream}, std::istreambuf_iterator<char>{}};
+                std::vector<std::byte> result(bytes.size());
+                std::memcpy(result.data(), bytes.data(), bytes.size());
+                return result;
+            };
+            const auto roboto = load_font("Roboto-Regular.ttf"), droid = load_font("DroidSansFallback.ttf");
+            f.context->ui_tree.SetFallbackFont(std::make_shared<ui::UiFallbackFont>(roboto, droid));
+            f.On(dialog, "setMessage", "(Ljava/lang/CharSequence;)V",
+                 {VmValue::Ref(f.vm.NewStringUtf8(message + " ©"))});
+            const auto mixed = current()->modal_stack.back().tree;
+            CHECK(mixed->FallbackFont() == f.context->ui_tree.FallbackFont());
+            CHECK(mixed->Get(message_id)->text.back() == u'\u00a9');
+            CHECK(mixed->Get(message_id)->measured.height > mixed->Get(scroll_id)->measured.height);
+            pixel_check(*mixed);
+            f.On(dialog, "setMessage", "(Ljava/lang/CharSequence;)V",
+                 {VmValue::Ref(f.vm.NewStringUtf8(std::string(5000, 'M')))});
+            CHECK(current()->modal_stack.back().tree->Get(message_id)->text.size() == 5000);
+            // Even chrome alone exceeding the valid viewport degrades without UOE.
+            f.context->surface_height = 48;
+            REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                             AndroidUiTraversalPhase::ResolveOnly));
+            const auto tiny = current();
+            const auto tiny_bounds = tiny->modal_stack.back().tree->Get(panel_id)->screen_frame;
+            CHECK(tiny_bounds.top >= 8);
+            CHECK(tiny_bounds.bottom <= 40);
+            CHECK(f.ledger.Unimplemented().empty());
+            const auto over_budget =
+                f.OnOutcome(dialog, "setMessage", "(Ljava/lang/CharSequence;)V",
+                            {VmValue::Ref(f.vm.NewStringUtf8(std::string(ui::kMaxFixedTextUnits + 1, 'M')))});
+            CHECK(over_budget.exception.IsValid());
+            CHECK(current() == tiny);
+        }
     }
 }

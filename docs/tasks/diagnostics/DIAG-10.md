@@ -5,7 +5,7 @@
 
 ## 审计结论
 
-基点 `193dfc0f0cddcfcae405957ebff25fb112f972f0`；判据为本地 AOSP Android 4.4
+基点 `1de2edf6766936d3257b6528706d4251e943732d`；判据为本地 AOSP Android 4.4
 framework/base、dalvik 和 libcore。原始证据：
 `.local/analysis/wu11-1/REPORT.md`、`checks.json`、`apk-results.json`。
 

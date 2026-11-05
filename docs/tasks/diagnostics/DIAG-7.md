@@ -51,7 +51,7 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
 
 ## WU7-1a · vtable override 判定（2026-10-21）
 
-以下为 `8b2c7b53` 的历史实施与验证；包隔离规则因原任务判据有误，已由本节末的修正取代。
+以下为 `e2e44e51` 的历史实施与验证；包隔离规则因原任务判据有误，已由本节末的修正取代。
 
 - 局部行为修复，依赖 WU7-0：取消缩小可见性的拒绝；扫描继承槽，private 不覆盖，
   包私有只在同 defining loader、同包名时覆盖，否则追加槽并保留父槽。intrinsic 父类同规则，
@@ -118,7 +118,7 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
   与 CURRENT 的既有阻塞相同，但未达到原 6/9 计数要求，不能宣称九场景结果无变化。
   首跑与独立复跑均保留：`.local/analysis/wu7-1a-correction/scenarios-summary.json`、
   `scenarios/<id>/`、`tml-standalone/`；未修改预算、清理判据或线程退出实现。
-- 回退五份链接/执行源码及声明到提交前 HEAD `cbefa2eb`，核对每份 git blob 哈希后只构建 CLI，
+- 回退五份链接/执行源码及声明到提交前 HEAD `b3249504`，核对每份 git blob 哈希后只构建 CLI，
   TML 同路径新沙盒对照也在 1800 呈现帧后退出报 unknown guest thread id，确认本次修改前
   同错已存在。证据 `tml-control/`、`control-source-proof.json`；修正源码随后按保存字节恢复并重建。
   因此没有证据表明该退出错误由本次 override 修正引入，但本轮 6/9 的计数验收仍未达到。
@@ -194,7 +194,7 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
 - 恢复 ThreadGroup 输出后，全量首轮暴露 029 旧假 pass：setDefaultAssertionStatus 未实现，
   原异常打印缺失掩盖了它。按 libdvm `ClassLoader.java:692` 明确空方法补齐此必要依赖，
   不实现逐 loader 断言策略；双后端验证 setter 不改变 desiredAssertionStatus。
-- A 线 `a57f1d86` 合入后，003 越过 UnresStuff 解析错误，暴露
+- A 线 `69a01e08` 合入后，003 越过 UnresStuff 解析错误，暴露
   InternedString.testDeadInternedString 的弱引用断言：System.gc 原为空操作；既有 sweep
   又将 referent 清空错误地依赖于 ReferenceQueue.head 已链接。为目标验收的必要依赖，
   System.gc 现复用现有 STW 普通收集（对照 Runtime.cpp native gc），无队列的弱引用亦清空；
@@ -236,7 +236,7 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
 
 ## WU7-T：HEAD 测试清理（2026-10-21）
 
-基线 `155bf394`，独立 worktree；沿用 DVM-255 的分类方法。macOS arm64 Release，
+基线 `50dc61d3`，独立 worktree；沿用 DVM-255 的分类方法。macOS arm64 Release，
 只构建 ogplay_tests、ogplay_app_tests；Windows 未复跑。
 
 | 分类 | 用例及处理 |

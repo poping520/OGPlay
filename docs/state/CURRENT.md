@@ -37,7 +37,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。
 - 退出顺序：除上表外，GC 全周期、直接写入 ABA、直接访存卸载 quiescence 未验收；
   Java-only 线程误交 clone join 已修，MCP shutdown 稳定性待验。
 - 门禁：[WU7-T](../tasks/diagnostics/DIAG-7.md) 已清理 HEAD
-  测试失败，但现已不再全绿：受影响主题 672 用例中 ogplay_tests 仍有 31 个失败/崩溃、app 测试 DIAG-4 失败，9b7c1415 上同样存在，见 [DVM-369](../tasks/dexvm/DVM-369.md)；未跑全量。
+  测试失败，但现已不再全绿：受影响主题 672 用例中 ogplay_tests 仍有 31 个失败/崩溃、app 测试 DIAG-4 失败，2409351b 上同样存在，见 [DVM-369](../tasks/dexvm/DVM-369.md)；未跑全量。
 - 一致性：dalvik/tests 双后端 86/91（94.5%，044-proxy 已通过，见 DVM-259/369）；035/046/070 通过，085 oracle 排除；070 共享数组已修复，见 [DIAG-7](../tasks/diagnostics/DIAG-7.md)；JNI 双后端 399/399（100%，DVM-260 / ADR-0152、0153：pending 按 Dalvik 非 CheckJNI 放行、heap capacity 对齐 4.4；JNI/dalvik 零回归、基础场景 6/9 无新增失败），静态覆盖 233/233（100%），见 [DIAG-8](../tasks/diagnostics/DIAG-8.md)。 Framework A–D=0/521/173/13/2、E=27/0/0；八类撤换，见 [DVM-268](../tasks/dexvm/DVM-268.md)。 BootDex父类准入，场景待外验。
 - `--ephemeral-sandbox` 下 Dungeon Hunter 约 106 帧抛 `Invalid path: /sdcard`；持久沙盒不复现。
 - 跨平台：近期修复多只在 macOS 实跑；[VFS-07](../tasks/vfs/VFS-07.md) macOS 待验证。

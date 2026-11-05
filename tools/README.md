@@ -113,6 +113,8 @@ BootDex 成员审计只用一份固定快照 `bootdex/runtime.surface.json.gz`�
 时只改快照中对应的行，再把所有 `*-sources.json` 和 `member-sources.json` 里的 `surface_sha256`
 统一换成新哈希，不要新增快照文件。
 
+2026-11 起旧快照已从 git 历史移除，检出 2026-10-24 至 2026-11-05 之间的提交后无法校验或构建 BootDex。
+
 `select_rom_java.py --replace-intrinsic <descriptor...>` 是 ADR-0154 的显式撤换入口，
 需同时提供 `--surface` 与 `--report`；默认只出报告，`--apply` 写入目标及其准入初始化闭包。
 仅允许已有同签名 native 绑定；其他规则不放宽。源码/签名交互需在同批删除或改经 Java 调用，

@@ -12,7 +12,7 @@ API19 ROM JAR、dex_survey_lib、BoundaryCatalog 与 ELF/DT_NEEDED 规则；不�
 - 体检 APK 全部 DEX 引用/应用父类型闭包、ARM SO 的 JNI 字符串启发式/可识别注册表及
   DT_NEEDED/强弱符号；区分 API19 缺失、非 API19 探测与已声明未绑定；不生成桩。
 - 全题库频次与引擎分组只存 `.local/analysis/preflight/`。
-- 4034054b 独立 worktree 构建仅所需目标并回测 TML；结束删除 worktree。
+- c2271a56 独立 worktree 构建仅所需目标并回测 TML；结束删除 worktree。
   再抽取 10 个 high/medium M1–M3 单元，优先旧版本；成本过高时显式声明移除模拟。
 - 定向导出测试、scanner/API19 自测、capabilities check；不跑全量测试，不按结果修缺口。
   BACKTEST.md ≤80 行，报告命中、总噪声及来源/算法的误报漏报边界。
@@ -23,7 +23,7 @@ API19 ROM JAR、dex_survey_lib、BoundaryCatalog 与 ELF/DT_NEEDED 规则；不�
   不执行 guest/类初始化。完整字段/参数/边界见对应 MODULE 与 tools/README。
 - Release 只构建 ogplay-cli、ogplay_app_tests；导出定向 1 用例/11 断言通过，
   scanner/API19 自测、capabilities check 与差异/UTF-8 静态检查通过，未跑全量测试。
-- 4034054b 独立 worktree 仅移植导出机制，原 BootDex 重建与该提交 manifest 的
+- c2271a56 独立 worktree 仅移植导出机制，原 BootDex 重建与该提交 manifest 的
   JAR/DEX/来源哈希逐项一致；TML 三项 Java/JNI 形状首错 3/3 命中，两个 syscall 参数
   缺口按预期未命中，原始盘点 427 条（16 条 weak、0 条强符号缺失）。工作树已删除。
 - 从历史 55 个 high/medium M1–M3 单元固定种子抽 10 条，不重抽：7 个 HEAD 表面 JSON

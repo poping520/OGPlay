@@ -30,7 +30,7 @@ API19 签名兼容不代表复制过时密码默认值。协议/算法支持集�
 
 ## 2. 已核实现状
 
-- 基线提交 b71e9b10：同一 AOSP android-4.4.4_r2.0.1 构建的 libcrypto.so/libssl.so
+- 基线提交 5825ba03：同一 AOSP android-4.4.4_r2.0.1 构建的 libcrypto.so/libssl.so
   已进入 payload；libssl SHA-256 为 8b1a7d20e405ff73edcaad592cf846f8e28b78bb446874208d65990b16d79734。
 - DVM-172 已完成 BKS、AES/RSA/EC 密钥恢复及持久化；DVM-106 已完成证书解析和验签。
 - BootDex 为 1572 类。javax.net.ssl 普通状态仍有 C++ 类壳；SSLContext.init 明确失败。
@@ -195,7 +195,7 @@ AndroidKeyStore 不是 TrustManagerFactory、默认 CA 或客户端 TLS 的前�
 
 | 单元 | 一句话目标 | 依赖 | 实施范围与验收出口 |
 | --- | --- | --- | --- |
-| TLS-01 | 完成交给应用使用的真实证书信任服务 | DVM-172、b71e9b10 | 固定 API19/Provider/异常、密码策略和资源上限；迁入 TrustManager 公开闭包；实现路径验证、显式 KeyStore/default init、CA 包及只读 AndroidCAStore。验收正反证书矩阵、空库与默认库、只读异常、时间、隔离和资源释放。 |
+| TLS-01 | 完成交给应用使用的真实证书信任服务 | DVM-172、5825ba03 | 固定 API19/Provider/异常、密码策略和资源上限；迁入 TrustManager 公开闭包；实现路径验证、显式 KeyStore/default init、CA 包及只读 AndroidCAStore。验收正反证书矩阵、空库与默认库、只读异常、时间、隔离和资源释放。 |
 | TLS-02 | 完成可真实通信的客户端 TLS/HTTPS | TLS-01 | 一并迁移 SSL API/Context/Session，收敛 raw transport，接入 BIO/token、信任回调、SNI、SSLSocket、session cache、BKS KeyManager/mTLS 和两套 HTTPS 调用链。验收本地独立服务器、主机名、RSA/EC mTLS、部分 I/O、超时取消、autoClose、双线程、GC/Stop 和失败清理。 |
 | TLS-03 | 完成受控在线发布与最终验收 | TLS-02 | 从 TLS-01 开始取证后端维护与 CA 来源，本单元闭合补丁/版本、可复现产物、声明平台和双解释器证据；按 playbook 验收受控网络场景，更新能力、模块契约和 CURRENT。无法闭合的发布条件保持明确阻塞，不能据本地握手成功发布在线能力。 |
 

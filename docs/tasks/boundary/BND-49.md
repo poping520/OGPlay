@@ -21,7 +21,7 @@ guest TID/PC/原始错误并触发进程退出。原 APK reached-fault 及跨平
 验证：macOS Release ogplay/ogplay_tests 构建通过；定向 35 用例/1139 断言通过，包含
 fast/slow 配置选择、RGB 真实 GL 查询/像素/交换、格式失配、Java EGL10/14 双解释器与
 clone CPU fault。3 个额外 Metal read-surface/image 用例在恢复原 EGL module 的对照中
-同样失败，未计入通过数。对照只替换 0d76b07e 的 EGL module，不宣称整树基线验收。
+同样失败，未计入通过数。对照只替换 19c72376 的 EGL module，不宣称整树基线验收。
 原 APK 无 Profile/survey、隔离沙盒越过原空 Context/strstr 路径，6.7 秒报告新的纹理
 初始化空读并退出，无超时；尚未获得实际呈现帧。证据 `.local/tales-black-screen-fix/`。
 静态文档检查通过；全树平台边界检查被未改动的 frontend/gui/process_manager.cpp

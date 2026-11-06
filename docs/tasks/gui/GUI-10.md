@@ -119,9 +119,9 @@ ogplay_desktop_integration_tests ogplay_tests` 退出 0；app 72 例、锁 4 例
 
 | 工作单元 | 提交 |
 | --- | --- |
-| WU-A 外观/参数/动态 SDL | c842e600 |
-| WU-B 游戏库/OS 锁 | 3073f107 |
-| WU-C CLI 与 library 命令 | b8a4ae7d |
-| WU-D 桌面/WebView/导出边界 | 64a79210 |
-| WU-E 契约与验收 | e5baa9a0 |
+| WU-A 外观/参数/动态 SDL | 962d2cec |
+| WU-B 游戏库/OS 锁 | efc63e6b |
+| WU-C CLI 与 library 命令 | 4b096457 |
+| WU-D 桌面/WebView/导出边界 | 68ea2c42 |
+| WU-E 契约与验收 | f51c3bbe |
 | 验收修复：库锁有界等待与过期测试路径 | 本文所在提交 |

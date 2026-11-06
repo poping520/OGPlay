@@ -773,8 +773,12 @@ JavaTraversal 保留有界 VideoView/VideoMediaPlayer Java 播放协议与媒体
 已交付 intrinsic 与虚派 Java padding/suggested minimum，复用 MeasureImageLeaf 的 constrained
 结果（原 ClampSize，不携带 TOO_SMALL），真实虚派 setMeasuredDimension；不写几何。
 源打开仅保存 decoder metadata；owner 交付同时核验 native 与 Java mGeneration 后更新
-intrinsic 输入并 requestLayout。换源/释放撤销输入，旧事件不能恢复尺寸；非 owner 拒绝。
-回调期间不持视频锁；工作线程不进 VM、不写输入或发布快照。Java owner tick 完整提交后
+intrinsic 输入并 requestLayout。换源、测量与 metadata 交付只接受 UI owner；释放接受任意
+guest 执行线程，按代际立即撤下 PCM/decoder，锁外 join decoder。非 owner 释放仅登记
+具备 GC root 的 metadata 撤销请求，owner 视频泵每 tick 处理（源表为空也执行），清输入并
+requestLayout；已成功重开的 decoder 不受旧请求影响，重开失败仍撤销旧尺寸。owner 释放同步
+清理；退出丢弃待办。旧事件不能恢复尺寸。
+回调期间不持视频锁；解码/音频工作线程不进 VM、不写输入或发布快照。Java owner tick 完整提交后
 才发布新几何，视频合成与 raster/hit 读取同一 PublishedProjection 的 frame/clip。
 原播放状态、字幕/网络/MediaController/未处理错误 UI 的明确失败边界保持。
 

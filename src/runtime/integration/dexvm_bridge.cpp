@@ -253,6 +253,11 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
             root(event);
     }
     root(context.ui_touch_activity);
+    {
+        std::scoped_lock lock(context.video_views_mutex);
+        for (const auto view : context.pending_video_metadata_releases)
+            root(view);
+    }
     for (const auto& [_, ref] : context.ui_touch_targets)
         root(ref);
     for (const auto& [_, identity] : context.surface_owner_identities) {
@@ -417,6 +422,7 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
              {
                  std::scoped_lock video_lock(context->video_views_mutex);
                  context->video_views.erase(key);
+                 context->pending_video_metadata_releases.erase(owner);
              }
          },
          {}});

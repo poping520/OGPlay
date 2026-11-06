@@ -100,6 +100,38 @@ public:
 private:
     std::shared_ptr<const audio::EncodedAudioDataSource> source_;
 };
+
+bool IsVideoUiOwner(const DexVmAndroidContext& context, dexvm::Interpreter& vm) {
+    return vm.CurrentContextToken() == 1U && context.ui_java_owner_thread == std::this_thread::get_id();
+}
+
+void FlushReleasedVideoMetadata(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    if (!IsVideoUiOwner(context, vm)) return;
+    std::vector<dexvm::VmObjectRef> released;
+    {
+        std::scoped_lock lock(context.video_views_mutex);
+        released.assign(context.pending_video_metadata_releases.begin(), context.pending_video_metadata_releases.end());
+    }
+    if (released.empty()) return;
+    const auto roots = vm.ProtectReferences(released);
+    for (const auto view : released) {
+        {
+            std::scoped_lock lock(context.video_views_mutex);
+            context.pending_video_metadata_releases.erase(view);
+            // A newer decoder may have opened before this owner tick. Its
+            // prepared event replaces the input; a failed open has none, so
+            // the old size must still be revoked.
+            if (const auto reopened = context.video_views.find(view.Value());
+                reopened != context.video_views.end() && reopened->second.player)
+                continue;
+            if (const auto node = FindViewUiNode(context, view.Value())) {
+                context.ui_tree.MarkDrawDirty(*node);
+                context.ui_tree.Get(*node)->intrinsic = {};
+            }
+        }
+        static_cast<void>(android_intrinsics::CallAndroidMethod(vm, view, "requestLayout", "()V"));
+    }
+}
 }  // namespace
 
 void ReleaseAndroidMediaVideo(DexVmAndroidContext& context, const std::uint32_t owner) {
@@ -308,7 +340,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 void RequireVideoOwner(const Context& context, dx::Interpreter& vm) {
-    if ((vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id()))
+    if (!IsVideoUiOwner(*context, vm))
         throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "VideoView metadata requires owner"};
 }
 
@@ -473,21 +505,19 @@ Decl Declare_android_widget_VideoView(const Context& context) {
     builder.DirectMethod(
         "nativeRelease", "(I)V",
         [context](dx::IntrinsicContext& call) {
-            RequireVideoOwner(context, call.vm);
-            bool released = false;
+            std::unique_ptr<video::VideoPlayer> retired;
             {
                 std::scoped_lock lock(context->video_views_mutex);
                 const auto found = context->video_views.find(call.receiver.Value());
                 if (found != context->video_views.end() && found->second.generation == call.arguments[0].AsInt()) {
+                    retired = std::move(found->second.player);
                     context->video_views.erase(found);
-                    released = true;
-                    if (const auto node = FindViewUiNode(*context, call.receiver.Value())) {
-                        context->ui_tree.MarkDrawDirty(*node);
-                        context->ui_tree.Get(*node)->intrinsic = {};
-                    }
+                    context->pending_video_metadata_releases.insert(call.receiver);
                 }
             }
-            if (released) static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "requestLayout", "()V"));
+            // Decoder join cannot hold the lock used by the audio worker.
+            retired.reset();
+            FlushReleasedVideoMetadata(call.vm, *context);
             return dx::VmValue::Void();
         },
         flags);
@@ -1137,6 +1167,7 @@ void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& 
 std::optional<std::string> PumpVideoViews(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                           const std::function<void(std::vector<std::uint8_t>)>& publish,
                                           const bool compose_canvas) {
+    FlushReleasedVideoMetadata(vm, context);
     std::vector<std::uint64_t> handles;
     {
         std::scoped_lock lock(context.video_views_mutex);
@@ -1345,6 +1376,7 @@ void ReleaseAndroidMediaResources(DexVmAndroidContext& context) {
     {
         std::scoped_lock lock(context.video_views_mutex);
         videos.swap(context.video_views);
+        context.pending_video_metadata_releases.clear();
     }
     videos.clear();
     for (const auto& [_, state] : context.media_players)

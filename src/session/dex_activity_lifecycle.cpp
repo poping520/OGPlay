@@ -930,12 +930,7 @@ void DexActivityLifecycle::PumpJavaThreads() {
 
 void DexActivityLifecycle::PumpVideo() {
     const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
-    {
-        std::scoped_lock lock(bindings_.context->video_views_mutex);
-        if (bindings_.context->video_views.empty()) {
-            return;
-        }
-    }
+    // An empty source table can still hold a worker release awaiting owner cleanup.
     const auto error = runtime::PumpVideoViews(
         bindings_.bridge->Vm(), *bindings_.context,
         [this](std::vector<std::uint8_t> rgba8) {

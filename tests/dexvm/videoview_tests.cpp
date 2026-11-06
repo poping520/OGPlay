@@ -463,6 +463,90 @@ TEST_CASE("videoview stopPlayback releases the player") {
     CHECK(vm.context->video_views.empty());
 }
 
+static void StopPlaybackOnGuestWorker(VideoVm& vm, const VmObjectRef view) {
+    const auto worker = vm.interpreter.CreateExecutionContext();
+    const auto type = vm.model.ObjectClass(view);
+    const auto stop = vm.linker.FindVtableIndex(type, "stopPlayback", "()V");
+    REQUIRE(stop.has_value());
+    VmCallOutcome outcome;
+    std::thread thread(
+        [&] { outcome = vm.interpreter.Call(worker, vm.linker.Class(type).vtable[*stop], std::array{VmValue::Ref(view)}); });
+    thread.join();
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+    vm.interpreter.DiscardExecutionContext(worker);
+}
+
+TEST_CASE("videoview failed reopen after worker release still revokes old metadata") {
+    VideoVm vm(FakeFactory());
+    const auto view = vm.NewVideoView();
+    const auto node = FindViewUiNode(*vm.context, view.Value());
+    REQUIRE(node.has_value());
+    const auto listener = vm.NewListener();
+    vm.CallOn(view, "setOnErrorListener", "(Landroid/media/MediaPlayer$OnErrorListener;)V", {VmValue::Ref(listener)});
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    static_cast<void>(vm.Pump());
+    REQUIRE(vm.context->ui_tree.Get(*node)->intrinsic.width != 0);
+    StopPlaybackOnGuestWorker(vm, view);
+    // The owner reopens before its next tick; the failed source has no decoder.
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/missing.mp4"))});
+    REQUIRE(vm.context->video_views.contains(view.Value()));
+    CHECK(vm.context->video_views.at(view.Value()).player == nullptr);
+    CHECK(vm.context->pending_video_metadata_releases.contains(view));
+    CHECK(vm.context->ui_tree.Get(*node)->intrinsic.width != 0);
+    static_cast<void>(vm.Pump());
+    CHECK(vm.context->pending_video_metadata_releases.empty());
+    CHECK(vm.context->ui_tree.Get(*node)->intrinsic.width == 0);
+    CHECK(vm.Errors() == 1);
+}
+
+TEST_CASE("videoview worker release retires PCM before owner metadata cleanup") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const bool reopen : {false, true}) {
+            CAPTURE(backend);
+            CAPTURE(reopen);
+            VideoVm vm(FakeAudioFactory(48000U, 2U), {.backend = backend});
+            const auto view = vm.NewVideoView();
+            const auto node = FindViewUiNode(*vm.context, view.Value());
+            REQUIRE(node.has_value());
+            const auto open = [&] {
+                vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
+                          {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+                vm.CallOn(view, "start", "()V");
+                static_cast<void>(vm.Pump());
+            };
+            open();
+            std::array<std::int16_t, 2048> samples{};
+            CHECK(MixVideoPcmIntoStereo(*vm.context, samples, 48000U) == 1U);
+            CHECK(std::ranges::any_of(samples, [](auto value) { return value != 0; }));
+            CHECK(vm.context->ui_tree.Get(*node)->intrinsic.width == 8);
+            StopPlaybackOnGuestWorker(vm, view);
+            CHECK(vm.context->video_views.empty());
+            CHECK(vm.context->pending_video_metadata_releases.contains(view));
+            // The worker must neither write UI input nor keep contributing PCM.
+            CHECK(vm.context->ui_tree.Get(*node)->intrinsic.width == 8);
+            samples.fill(0);
+            CHECK(MixVideoPcmIntoStereo(*vm.context, samples, 48000U) == 0U);
+            CHECK(std::ranges::all_of(samples, [](auto value) { return value == 0; }));
+            static_cast<void>(vm.interpreter.CollectGarbage("pending-video-release"));
+            if (reopen) {
+                open();
+                CHECK(vm.context->ui_tree.Get(*node)->intrinsic.width == 8);
+                CHECK(vm.context->video_views.at(view.Value()).playing);
+                CHECK(MixVideoPcmIntoStereo(*vm.context, samples, 48000U) == 1U);
+                CHECK(std::ranges::any_of(samples, [](auto value) { return value != 0; }));
+            } else {
+                static_cast<void>(vm.Pump());
+                CHECK(vm.context->ui_tree.Get(*node)->intrinsic.width == 0);
+                CHECK(vm.context->video_views.empty());
+                vm.CallOn(view, "stopPlayback", "()V");  // repeated release is harmless
+            }
+            CHECK(vm.context->pending_video_metadata_releases.empty());
+        }
+    }
+}
+
 TEST_CASE("videoview production source factory consumes a VFS lease") {
     VideoVm vm(ogplay::video::VideoPlayerFactory{});
     bool opened{};

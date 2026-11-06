@@ -510,6 +510,52 @@ TEST_CASE("DVM-309 owner input lease survives mutation and cancels detached gone
     }
 }
 
+TEST_CASE("DVM-373 real lifecycle revokes worker-released video metadata with no live source") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        ogplay::session::DexActivityLifecycleBindings bindings;
+        bindings.bridge = &f.app->DexVm();
+        bindings.context = f.context;
+        bindings.launcher_descriptor = "Ltest/OwnerActivity;";
+        bindings.application_descriptor = "Landroid/app/Application;";
+        ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+        static_cast<void>(lifecycle.Start());
+        static_cast<void>(lifecycle.StepFrame());
+        const auto video =
+            f.New("Landroid/widget/VideoView;", "(Landroid/content/Context;)V", {VmValue::Ref(f.context->activity)});
+        f.context->vfs = &f.filesystem;
+        f.filesystem.MountHostDirectory("/sdcard", std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/video");
+        f.context->video_source_player_factory = [](auto) {
+            return std::make_unique<ogplay::video::FakeVideoPlayer>(ogplay::video::VideoMetadata{320, 240, 1000}, 10);
+        };
+        f.On(AndroidUiTraversalRoot(f.vm, *f.context), "addView", "(Landroid/view/View;)V", {VmValue::Ref(video)});
+        f.On(video, "setVideoPath", "(Ljava/lang/String;)V",
+             {VmValue::Ref(f.vm.NewStringUtf8("/sdcard/short-mp4v-aac.mp4"))});
+        static_cast<void>(lifecycle.StepFrame());
+        const auto node = FindViewUiNode(*f.context, video.Value());
+        REQUIRE(node);
+        REQUIRE(f.context->ui_tree.Get(*node)->intrinsic == ui::Size{320, 240});
+
+        const auto worker = f.vm.CreateExecutionContext();
+        const auto type = f.model.ObjectClass(video);
+        const auto stop = f.linker.FindVtableIndex(type, "stopPlayback", "()V");
+        REQUIRE(stop);
+        VmCallOutcome outcome;
+        std::thread thread(
+            [&] { outcome = f.vm.Call(worker, f.linker.Class(type).vtable[*stop], std::array{VmValue::Ref(video)}); });
+        thread.join();
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        f.vm.DiscardExecutionContext(worker);
+        REQUIRE(f.context->video_views.empty());
+        REQUIRE(f.context->pending_video_metadata_releases.contains(video));
+
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->pending_video_metadata_releases.empty());
+        CHECK(f.context->ui_tree.Get(*node)->intrinsic == ui::Size{});
+    }
+}
+
 TEST_CASE("DVM-309 session pointer and key Activity fallback borrow the event presentation") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ogplay::test::container_traversal::ContainerVm f(backend);

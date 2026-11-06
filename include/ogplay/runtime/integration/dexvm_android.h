@@ -1158,6 +1158,10 @@ struct DexVmAndroidContext final {
     };
 
     std::unordered_map<std::uint64_t, VideoViewState> video_views;
+    // Release may come from a guest worker. Audio/decoder retirement is
+    // immediate; only the UI owner clears intrinsic input and requests layout.
+    // These references stay rooted until that owner safe point.
+    std::set<dexvm::VmObjectRef> pending_video_metadata_releases;
 
     // Bound View.mContext token. Guest object identity lives in the field slot
     // and is traced by GC; this is not a host-side Context table.

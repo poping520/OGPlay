@@ -6,7 +6,7 @@
 
 **A cross-platform compatibility layer for classic Android games**
 
-Bring classic Android games back to modern devices without booting an Android system image. The project is still in early alpha.
+Bring classic Android games back to modern devices without an Android system image
 
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1f6feb)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-6e7781)
@@ -14,143 +14,110 @@ Bring classic Android games back to modern devices without booting an Android sy
 
 [简体中文](README.md) | English
 
-[Features](#features) · [Getting Started](#getting-started) · [Compatibility](#compatibility) · [Future Plans](#future-plans)
+[Screenshots](#screenshots) · [Getting Started](#getting-started) · [Compatibility](#compatibility) · [How It Works](#how-it-works) · [Future Plans](#future-plans) · [Acknowledgements](#acknowledgements)
 
 </div>
 
 ---
 
-OGPlay lets you try classic Android games on your computer. Add your own APKs and data packages to one game library, then select a game to launch it without first booting a full Android system.
+OGPlay is a compatibility layer for older Android games that lets classic titles run on your computer again. It works much like Wine, with no need to install a full Android system.
+
+> [!NOTE]
+> The project is in **early alpha**. Not every game is guaranteed to work.
+> OGPlay does not include commercial games, only one built-in demo game of its own.
+
+## Screenshots
+
+**Game library**:
 
 ![OGPlay game library](assets/pic/library-store.webp)
 
-> [!NOTE]
-> The project is still in **early alpha, with no release available yet**. Some games reach menus or gameplay, but complete playthroughs are not guaranteed. OGPlay does not include games; you need to supply your own APKs and any required data packages.
+**Games running**:
 
-## Features
+![Android games running in OGPlay on macOS](assets/pic/gameplay-showcase.webp)
 
-| What you can do | How it helps |
-| --- | --- |
-| **Organize your collection** | Import APKs, browse game icons and cartridges, and search by name |
-| **Add game data packages** | Choose a data directory for games that need extra resources; copy it into the library by default or use the original directory |
-| **Play with keyboard and mouse** | Click and drag with the mouse, and map keyboard keys to screen touches; edit mappings while a game is running |
-| **Adjust the picture** | Set display dimensions and supersampling globally or save separate settings for each game |
-| **Keep your progress** | Game saves stay on your computer and are kept by default when removing a game from the library |
-| **Run games independently** | Close the launcher and keep playing a game you have already started |
+**Key settings**:
 
-Whether these features work in a particular game still depends on that game's compatibility.
+![OGPlay key settings](assets/pic/key-settings.webp)
 
 ## Getting Started
 
-### 1. Prepare OGPlay and your game files
+OGPlay supports macOS (13.3 or later) and Windows. A Linux version will be released later.
 
-There is no installer to download yet, so OGPlay has to be built from source. At this stage the source build is aimed at project developers: **a fresh clone cannot yet be built into a working OGPlay on its own** (see “Build from source” below).
+Drag an APK into the window or click “Import game” to add a game, select its data package too if it has one, then click “Play”. Key mappings can be customized, and saves are stored locally.
 
-The launcher interface is currently available in Chinese only; button names below are quoted as they appear, with English translations.
+When importing a data package, check where it will be mounted: common directories such as `Android/data` and `Android/obb` can be adjusted automatically, but unusual paths still need to be set manually.
 
-| Platform | How to use it today |
-| --- | --- |
-| macOS | After building, open `build/release/OGPlay.app` to use the graphical launcher |
-| Windows | After building, open `build/windows-msvc/Release/ogplay.exe` to use the graphical launcher; the Windows build has not been fully verified yet |
-| Linux | Use the command line; a graphical launcher is not available yet |
+### Built-in Game
 
-<details>
-<summary><b>Build from source</b></summary>
+So you can see OGPlay in action right away, it comes with a cute match-3 game, OGPlay Sweet Shop. You can also remove built-in games in settings.
 
-Basic tools: Git, CMake 3.25+, Ninja, a C++20 compiler, and Python 3.
+Source code and assets: [samples/sweetshop](samples/sweetshop).
 
-In addition, the following files needed at runtime are **not distributed with the repository** and must be prepared locally first:
-
-| Item | Notes |
-| --- | --- |
-| Launcher interface (`data/webui/`, macOS / Windows only) | Requires Node.js 24 and npm: run `npm ci` and `npm run build` in `webui/`. Without it, the default configuration stops with a build error |
-| Android runtime data (BootDex) | Generated by `tools/bootdex/compose_bootdex.py` from inputs including Android 4.4.4 system framework jars, the API 19 `android.jar`, and Android build-tools. Without it, the build succeeds but games cannot run |
-| WebView2 SDK (Windows only) | Prepare it with `webui/prepare-sdk.ps1` |
-
-Once these are in place, on macOS / Linux run (Linux builds the command line only, so use `--target ogplay-cli` in the last step):
-
-```sh
-git clone --recurse-submodules https://github.com/poping520/OGPlay.git
-cd OGPlay
-cmake --preset release
-cmake --build --preset release --target ogplay ogplay-cli
-```
-
-Windows (Visual Studio 2026, from the project directory):
-
-```powershell
-cmake --preset windows-msvc
-cmake --build --preset windows-msvc --config Release --target ogplay ogplay-cli
-```
-
-These preparation steps will be simplified as the release process matures.
-
-</details>
-
-Prepare a standalone `.apk` file and any separate data package the game needs. Split package formats such as XAPK, APKM, and APKS are not supported yet.
-
-### 2. Import a game
-
-Open the launcher and click “选择安装包” (Choose APK), or drag an APK into the window. Check the game name and version, then click “导入到游戏库” (Import to Library).
-
-If the game needs external data, select its directory in the import window and check the file locations in the preview:
-
-- **“复制到游戏库” (Copy to Library)** (default): OGPlay uses the copy in the library once the import is complete.
-- **“引用原目录” (Use Original Directory)**: OGPlay uses the selected directory directly, so keep it in place.
-
-Skip this step for games that do not need a data package.
-
-### 3. Launch and adjust
-
-Select a game in the library and click “开始游戏” (Start Game). To adjust the picture, open “游戏设置” (Game Settings), change the display dimensions or supersampling, and save. Changes take effect the next time you launch the game. Options marked “预留” (Reserved) do not take effect yet.
-
-Click and drag with the mouse in the game. To configure keyboard controls, press **F2** to open key settings and map keys to touch positions. Press **F1** to see control hints. Controllers and ready-made official key mapping templates are not supported yet.
-
-### 4. Manage your saves
-
-After exiting a game, your next session uses its locally saved data. Select the game and use “更多 → 打开沙盒目录” (More → Open Sandbox Directory) to view and back up saves and other game data.
-
-Removing a game keeps its saves by default, so they can be reused after importing it again. Saves are deleted only if you select “同时删除存档” (Also Delete Saves).
-
-<details>
-<summary><b>Use the command line (including Linux)</b></summary>
-
-Import an APK and launch it:
-
-```sh
-ogplay-cli library import game.apk
-ogplay-cli library list
-ogplay-cli library run <installation-id>
-```
-
-Replace `<installation-id>` on the last line with the game's installation ID from the list.
-
-You can also run an APK directly with an OBB data package:
-
-```sh
-ogplay-cli run-apk game.apk --obb main.obb
-```
-
-When building from source, `ogplay-cli` is in the corresponding build directory. You can also add it to PATH to use the commands above. See `ogplay-cli --help` for more options.
-
-</details>
+Prebuilt APK: [ogplay-sweetshop.apk](samples/sweetshop/out/ogplay-sweetshop.apk).
 
 ## Compatibility
 
-OGPlay currently focuses on older Android games. **A successful import does not guarantee a complete playthrough**, and different versions of the same game may behave differently.
+OGPlay currently focuses on older Android games from 2010 to 2016.
 
-Some games have reached title screens, menus, or gameplay. These milestones do not mean full playthroughs have been verified. See [Current Status](docs/state/CURRENT.md) for the latest recorded progress and known issues.
+- **Target version:** Android 4.4.4 (API 19)
+- **CPU architecture:** `armeabi` `armeabi-v7a`
 
-Games may still have visual glitches, missing sound, unresponsive controls, or problems exiting. If a game does not run, first check that its APK version and data package match. To report a problem, include the game version, your operating system, steps to reproduce it, and logs. Find logs through “更多 → 打开日志目录” (More → Open Log Directory), then submit a report on [Issues](https://github.com/poping520/OGPlay/issues).
+More than a dozen games can run so far. Testing is not yet comprehensive, so other games may work too, and you are welcome to try them. Different versions of the same game may also behave differently.
+
+For details, see [Compatibility](docs/COMPATIBILITY.md).
+
+## How It Works
+
+Java bytecode in the APK is interpreted by OGPlay's own DexVM, ARM native libraries are dynamically translated by Dynarmic, and the two call each other through JNI.
+
+The Android framework reuses the original API 19 Java code wherever possible, and a compatibility layer connects the parts that need system support to the host system. Graphics are rendered through ANGLE, SDL3 handles windowing, input, and audio output, and game files and saves are managed by a virtual file system.
+
+```mermaid
+flowchart TD
+    A[APK and game data] --> B[Parse manifest, bytecode, and native libraries]
+    B --> C[DexVM interprets Java bytecode]
+    B --> D[Dynarmic translates ARM instructions]
+    C <-->|Two-way JNI calls| D
+    C --> E[Original API 19 framework and compatibility layer]
+    D --> F[Bionic, syscall, and native interface adaptation]
+    E --> G[Host graphics, audio, files, and input]
+    F --> G
+```
 
 ## Future Plans
 
-- Make more classic Android games stable and playable.
-- Explore playing old favorites on modern Android and iOS phones and tablets.
-- Explore `.ipa` imports for classic iOS games from the same era.
-- Expand to classic games from more platforms over time.
+- Android and iOS platform support.
+- Controller support.
+- Runtime panel.
+- Play statistics, such as playtime.
+- Support for more older Android games. (long term)
+
+### Long-Term Plans
+
+- Support for iOS games from the same era.
+- Support for more game platforms.
 
 Mobile devices, iOS games, and other game platforms are future plans. Work on them has not started, and they are not currently available features.
+
+## Acknowledgements
+
+OGPlay is built on many excellent open-source projects. Thanks to these projects and their developers:
+
+| Area | Open-source projects |
+| --- | --- |
+| Android runtime and ARM translation | [Android Open Source Project](https://source.android.com), [Dynarmic](https://git.eden-emu.dev/eden-emu/dynarmic) |
+| Graphics and windowing | [ANGLE](https://chromium.googlesource.com/angle/angle), [SDL](https://github.com/libsdl-org/SDL) |
+| Audio and video | [FFmpeg](https://ffmpeg.org), [minimp3](https://github.com/lieff/minimp3), [stb](https://github.com/nothings/stb) |
+| Texture decoding | [Compressonator](https://github.com/GPUOpen-Tools/compressonator), [PowerVR SDK](https://github.com/powervr-graphics/Native_SDK) |
+| Data processing | [SQLite](https://sqlite.org), [yyjson](https://github.com/ibireme/yyjson), [Boost](https://www.boost.org) |
+| Launcher interface | [webview](https://github.com/webview/webview), [Preact](https://preactjs.com), [three.js](https://threejs.org), [uPlot](https://github.com/leeoniya/uPlot), [SN Pro](https://github.com/supernotes/sn-pro) |
+
+Only direct dependencies are listed here. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list, including indirect dependencies, with versions and licenses. Full license texts for the components shipped in the app are available on the launcher's “About” page.
+
+## Disclaimer
+
+OGPlay is an independent open-source project. It is not affiliated with or endorsed by Google, the Android Open Source Project, or the games and companies mentioned here. All names and trademarks belong to their respective owners, and screenshots are used only to show compatibility progress. OGPlay does not provide APKs or data packages for commercial games. Use only copies of games you legally own.
 
 ## License
 
@@ -158,4 +125,4 @@ Copyright (C) 2026 OGPlay contributors.
 
 Unless explicitly stated otherwise, original OGPlay code is released under the **GNU Affero General Public License v3.0 (version 3 only, SPDX: `AGPL-3.0-only`)**. You may use, modify, and redistribute this program under that license; see [LICENSE](LICENSE) for the full text. This program comes with no warranty; see the license terms for details.
 
-Third-party dependencies, incorporated upstream code, and assets retain their respective copyrights and licenses. This project's license declaration does not relicense them under the AGPL; their respective license terms still apply to use and distribution.
+Third-party dependencies, incorporated upstream code, and assets retain their respective copyrights and licenses. This project's license declaration does not relicense them under the AGPL; their respective license terms still apply to use and distribution. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the list.

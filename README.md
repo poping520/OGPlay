@@ -6,7 +6,7 @@
 
 **Android 经典游戏的跨平台兼容层**
 
-不依赖 Android 系统镜像，让经典 Android 游戏在现代设备上重新运行，项目仍处于早期 Alpha 阶段。
+不依赖 Android 系统镜像，让经典 Android 游戏在现代设备上重新运行
 
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1f6feb)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-6e7781)
@@ -14,145 +14,110 @@
 
 简体中文 | [English](README.en.md)
 
-[功能](#功能) · [开始使用](#开始使用) · [兼容情况](#兼容情况) · [后续计划](#后续计划)
+[效果截图](#效果截图) · [开始使用](#开始使用) · [兼容情况](#兼容情况) · [工作原理](#工作原理) · [后续计划](#后续计划) · [致谢](#致谢)
 
 </div>
 
 ---
 
-OGPlay 让你尝试在电脑上运行经典 Android 游戏，把自己的 APK 和数据包整理到一个游戏库中，选择游戏即可启动，无需先启动完整的 Android 系统。
+OGPlay 是一个 Android 老游戏兼容层，让经典安卓游戏在电脑上重新运行。原理类似 Wine，无需安装完整的 Android 系统。
+
+> [!NOTE]
+> 项目处于**早期 Alpha 阶段**。无法保证支持所有游戏。
+> OGPlay 不附带商业游戏，只内置一款自制演示游戏。
+
+## 效果截图
+
+**游戏库界面**：
 
 ![OGPlay 游戏库界面](assets/pic/library-store.webp)
 
-> [!NOTE]
-> 项目仍处于**早期 Alpha 阶段，暂未发布版本**。部分游戏已能进入菜单或游戏场景，但尚不能保证完整游玩。OGPlay 不附带游戏，使用前需要自行准备 APK 和相应数据包。
+**游戏运行效果**：
 
-## 功能
+![OGPlay 在 macOS 上运行 Android 游戏的效果截图](assets/pic/gameplay-showcase.webp)
 
-| 你可以做什么 | 使用体验 |
-| --- | --- |
-| **整理游戏收藏** | 导入 APK，以游戏图标和卡带浏览收藏，通过名称搜索游戏 |
-| **添加游戏数据包** | 为需要额外资源的游戏选择数据目录，默认复制到游戏库，也可引用原目录 |
-| **用键鼠操作** | 用鼠标点击、拖动，并将键盘按键映射为屏幕触摸；可在游戏运行时编辑按键 |
-| **调整画面** | 设置画面宽高和超采样，可为每款游戏单独保存，也可使用全局设置 |
-| **保留游戏进度** | 游戏存档保存在本地；从游戏库移除游戏时默认保留存档 |
-| **独立运行游戏** | 游戏启动后，关闭启动器也能继续游玩 |
-
-以上功能是否能在某款游戏中正常使用，仍取决于该游戏的兼容情况。
-
-## 开始使用
-
-### 1. 准备 OGPlay 和游戏文件
-
-目前尚无可直接下载的安装包，只能从源码编译；而且现阶段的源码编译主要面向项目开发者，**全新克隆的仓库还不能直接编译出可运行的 OGPlay**（见下方“从源码编译”）。
-
-| 平台 | 当前使用方式 |
-| --- | --- |
-| macOS | 编译后打开 `build/release/OGPlay.app`，使用图形启动器 |
-| Windows | 编译后打开 `build/windows-msvc/Release/ogplay.exe`，使用图形启动器；Windows 版尚未完整验证 |
-| Linux | 目前通过命令行使用，暂无图形启动器 |
-
-<details>
-<summary><b>从源码编译</b></summary>
-
-基础工具：Git、CMake 3.25+、Ninja、支持 C++20 的编译器和 Python 3。
-
-除此之外，以下运行所需的文件**不随仓库分发**，需要事先在本地准备：
-
-| 内容 | 说明 |
-| --- | --- |
-| 启动器界面（`data/webui/`，仅 macOS / Windows） | 需要 Node.js 24 与 npm：在 `webui/` 目录执行 `npm ci` 和 `npm run build`。缺少时，默认配置下编译会直接报错停止 |
-| Android 运行时数据（BootDex） | 由 `tools/bootdex/compose_bootdex.py` 生成，输入包括 Android 4.4.4 系统 framework jar、API 19 `android.jar` 和 Android build-tools 等。缺少时可以编译成功，但无法运行游戏 |
-| WebView2 SDK（仅 Windows） | 运行 `webui/prepare-sdk.ps1` 准备 |
-
-准备好上述文件后，在 macOS / Linux 上执行（Linux 只编译命令行，最后一步改为 `--target ogplay-cli`）：
-
-```sh
-git clone --recurse-submodules https://github.com/poping520/OGPlay.git
-cd OGPlay
-cmake --preset release
-cmake --build --preset release --target ogplay ogplay-cli
-```
-
-Windows（Visual Studio 2026，在项目目录执行）：
-
-```powershell
-cmake --preset windows-msvc
-cmake --build --preset windows-msvc --config Release --target ogplay ogplay-cli
-```
-
-这些准备步骤会随着发布流程完善逐步简化。
-
-</details>
-
-游戏文件需要准备单体 `.apk`；如果游戏另外附带数据包，也请一并准备。分包格式（如 XAPK、APKM、APKS）暂不支持。
-
-### 2. 导入游戏
-
-打开启动器，点击“选择安装包”，或将 APK 拖入窗口。检查游戏名称和版本后，点击“导入到游戏库”。
-
-如果游戏需要外部数据，在导入窗口选择对应目录，并检查预览中的文件位置：
-
-- **复制到游戏库**（默认）：导入完成后，OGPlay 使用库中的副本。
-- **引用原目录**：直接使用所选目录，后续请勿移动或删除它。
-
-不需要数据包的游戏可以跳过此步。
-
-### 3. 启动与调整
-
-在游戏库中选中游戏，点击“开始游戏”。需要调整画面时，打开“游戏设置”，修改画面宽高或超采样并保存，设置将在下次启动时生效。标为“预留”的选项尚未生效。
-
-在游戏中用鼠标点击、拖动。需要配置键盘操作时，按 **F2** 打开按键设置，将按键映射到对应的触摸位置；按 **F1** 查看操作提示。目前不支持手柄，也不提供现成的官方键位模板。
+**按键设置界面**：
 
 ![OGPlay 按键设置界面](assets/pic/key-settings.webp)
 
-### 4. 管理存档
+## 开始使用
 
-退出游戏后，下次启动会继续使用本地保存的数据。选中游戏后，可在“更多”菜单中打开沙盒目录，查看和备份存档等游戏数据。
+支持 macOS（13.3 及以上）和 Windows，Linux 版后续发布。
 
-移除游戏时，默认保留存档，重新导入后可恢复使用；只有勾选“同时删除存档”才会一并删除。
+把 APK 拖进窗口，或点击“导入”按钮添加游戏，有数据包就一起选上，然后点击“开始游戏”。支持自定义键位，存档保存在本地。
 
-<details>
-<summary><b>通过命令行使用（包括 Linux）</b></summary>
+导入数据包时请留意挂载位置：`Android/data`、`Android/obb` 等常见目录可自动调整，特殊路径仍需手动设置。
 
-导入 APK 并启动：
+### 内置小游戏
 
-```sh
-ogplay-cli library import game.apk
-ogplay-cli library list
-ogplay-cli library run <installation-id>
-```
+为了开箱就能体验效果，OGPlay 自带一款可爱风格三消小游戏「OGPlay 糖果铺」，也可以在设置中移除内置游戏。
 
-将最后一行的 `<installation-id>` 替换为列表中显示的游戏安装标识。
+源码及素材：[samples/sweetshop](samples/sweetshop)。
 
-也可以直接运行 APK，并附带 OBB 数据包：
-
-```sh
-ogplay-cli run-apk game.apk --obb main.obb
-```
-
-从源码编译时，`ogplay-cli` 位于相应的构建目录；也可将其加入 PATH 后使用以上命令。更多选项见 `ogplay-cli --help`。
-
-</details>
+编译好的 APK：[ogplay-sweetshop.apk](samples/sweetshop/out/ogplay-sweetshop.apk)。
 
 ## 兼容情况
 
-OGPlay 当前主要适配老版本 Android 游戏。**导入成功不等于可以完整游玩**，同一游戏的不同版本也可能表现不同。
+OGPlay 当前主要适配 2010 - 2016 期间 Android 老游戏。
 
-目前已有部分游戏到达标题界面、菜单或实际游戏场景，但这些进展仍不代表全流程通关验证。最近的实测进度和已知问题见[当前状态](docs/state/CURRENT.md)。
+- **目标版本：** Android 4.4.4（API 19）
+- **CPU 架构：** `armeabi` `armeabi-v7a`
 
-![OGPlay 在 macOS 上运行 7 款经典 Android 游戏的效果截图](assets/pic/gameplay-showcase.webp)
+目前已有十几款游戏可以运行，测试还不全面，其他游戏也可能兼容，欢迎尝试。同一游戏的不同版本也可能表现不同。
 
-游戏仍可能遇到画面异常、声音缺失、无法操作或退出失败。如果无法运行，先确认 APK 版本与数据包匹配；需要反馈时，请附上游戏版本、电脑系统、复现步骤和日志，可通过游戏的“更多 → 打开日志目录”找到日志，再到 [Issues](https://github.com/poping520/OGPlay/issues) 提交。
+具体兼容情况：[兼容情况](docs/COMPATIBILITY.md)
+
+## 工作原理
+
+APK 中的 Java 字节码由自有 DexVM 解释执行，ARM 原生库由 Dynarmic 动态翻译，两者通过 JNI 互相调用。
+
+Android 框架尽量复用 API 19 的原版 Java 代码，需要系统支持的部分由兼容层接到宿主系统。图形通过 ANGLE 渲染，SDL3 负责窗口、输入和音频输出，游戏文件和存档由虚拟文件系统管理。
+
+```mermaid
+flowchart TD
+    A[APK 与游戏数据] --> B[解析清单、字节码和原生库]
+    B --> C[DexVM 解释 Java 字节码]
+    B --> D[Dynarmic 动态翻译 ARM 指令]
+    C <-->|JNI 双向调用| D
+    C --> E[API 19 原版框架与兼容层]
+    D --> F[Bionic、系统调用与原生接口适配]
+    E --> G[宿主图形、声音、文件与输入]
+    F --> G
+```
 
 ## 后续计划
 
-- 让更多经典 Android 游戏可以稳定游玩。
-- 探索在现代 Android 和 iOS 手机、平板上重温老游戏。
-- 探索导入 `.ipa`，支持同时期的经典 iOS 游戏。
-- 长期扩展到更多平台的经典游戏。
+- 适配 Android & iOS 平台。
+- 支持手柄操作。
+- 运行时面板。
+- 游玩时长等数据统计。
+- 支持更多 Android 老游戏。（长期）
+
+### 远期计划
+
+- 支持同时期的 iOS 游戏。
+- 支持更多游戏平台。
 
 移动端、iOS 游戏与其他游戏平台支持均为未来计划，尚未开工，不属于当前可用功能。
+
+## 致谢
+
+OGPlay 建立在众多优秀的开源项目之上，感谢以下开源项目及其开发者：
+
+| 用途 | 开源项目 |
+| --- | --- |
+| Android 运行与 ARM 翻译 | [Android Open Source Project](https://source.android.com)、[Dynarmic](https://git.eden-emu.dev/eden-emu/dynarmic) |
+| 图形与窗口 | [ANGLE](https://chromium.googlesource.com/angle/angle)、[SDL](https://github.com/libsdl-org/SDL) |
+| 音视频 | [FFmpeg](https://ffmpeg.org)、[minimp3](https://github.com/lieff/minimp3)、[stb](https://github.com/nothings/stb) |
+| 纹理解码 | [Compressonator](https://github.com/GPUOpen-Tools/compressonator)、[PowerVR SDK](https://github.com/powervr-graphics/Native_SDK) |
+| 数据处理 | [SQLite](https://sqlite.org)、[yyjson](https://github.com/ibireme/yyjson)、[Boost](https://www.boost.org) |
+| 启动器界面 | [webview](https://github.com/webview/webview)、[Preact](https://preactjs.com)、[three.js](https://threejs.org)、[uPlot](https://github.com/leeoniya/uPlot)、[SN Pro](https://github.com/supernotes/sn-pro) |
+
+这里只列直接依赖。包括间接依赖在内的完整清单、版本和许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，随包发布组件的许可证全文可在启动器的“关于”页查看。
+
+## 免责声明
+
+OGPlay 是独立的开源项目，与 Google、Android 开源项目及本文提到的游戏和厂商均无关联，也未获其认可。相关名称和商标归各自所有者所有，截图仅用于展示兼容进度。OGPlay 不提供商业游戏的 APK 或数据包，请只使用你合法拥有的游戏副本。
 
 ## 许可证
 
@@ -160,4 +125,4 @@ Copyright (C) 2026 OGPlay contributors.
 
 除另有明确声明外，OGPlay 原创代码采用 **GNU Affero General Public License v3.0（仅第 3 版，SPDX: `AGPL-3.0-only`）** 发布。你可以依照该许可证使用、修改和再分发本程序；许可证全文见 [LICENSE](LICENSE)。本程序不提供任何担保，详见许可证条款。
 
-第三方依赖、引入的上游代码及资源保留各自的版权和许可证，不因本项目的许可声明而改用 AGPL；使用及分发时仍须遵守它们各自的许可条件。
+第三方依赖、引入的上游代码及资源保留各自的版权和许可证，不因本项目的许可声明而改用 AGPL；使用及分发时仍须遵守它们各自的许可条件，清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

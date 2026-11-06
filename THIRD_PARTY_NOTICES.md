@@ -33,6 +33,7 @@
 | three.js | 0.169.0 | https://threejs.org | MIT | 启动器 3D 卡带（cart3d.js） |
 | Draco decoder | 随 three.js 0.169.0 | https://github.com/google/draco | Apache-2.0 | cart3d.js 模型解码 |
 | uPlot | 1.6.32 | https://github.com/leeoniya/uPlot | MIT | Dashboard 图表 |
+| SN Pro（仅 Windows） | `e025ac4755352167a4b160bfb77c72068b04b55c` | https://github.com/supernotes/sn-pro | OFL-1.1 | 启动器内嵌的圆体后备字体；许可证见 `webui/apps/gui/assets/fonts/OFL.txt` |
 | AOSP API 19 guest 运行时 | Android 4.4.4 r2.0.1 | https://android.googlesource.com（固定清单见 `data/android/19/source-manifest.xml`） | 见随包逐库 NOTICE（Apache-2.0、BSD、OpenSSL、STLport、zlib、ICU 等） | boot DEX、Bionic libc/libm/libdl/libstdc++、libcrypto、libstlport、libz、ICU、字体与 tzdata |
 
 仅构建与测试使用、不进入发行物：

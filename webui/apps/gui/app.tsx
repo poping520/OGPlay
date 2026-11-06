@@ -350,7 +350,6 @@ export function App() {
       <span class="hint"><Key>← →</Key>{t('选择')}</span><span class="hint"><Key>A</Key>{t('开始')}<kbd>Enter</kbd></span><span class="hint"><Key>B</Key>{t('返回')}<kbd>Esc</kbd></span>
       <span class="hint"><Key>X</Key>{t('按键设置')}</span><span class="hint"><Key>Y</Key>{t('游戏设置')}</span>
       {viewer && <span class="hint"><Key>⧉</Key>{t('查看卡带')}<kbd>V</kbd></span>}<span class="hint"><Key>L R</Key>{t('切换分类')}<kbd>Q E</kbd></span>
-      <span class="path" title={library.library_root}><span dir="ltr">{library.library_root}</span></span>
     </footer>
     {splash && <Splash ready={startReady} onDone={() => setSplash(false)} />}
     {dragging && <div class="drop" aria-live="polite"><div class="slot" /><h2>{t('松开，插入卡槽')}</h2><p>{t('单体 APK · 一次一个文件')}</p></div>}

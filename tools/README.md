@@ -1,5 +1,20 @@
 # 开发工具
 
+## Windows 发布包
+
+在 Windows PowerShell 中执行（需 CMake、Node/npm、Visual Studio C++ 工具及已准备的 WebView2 SDK）：
+
+```powershell
+./tools/package_windows.ps1
+```
+
+使用 `windows-msvc` 构建 Release 和 Windows WebUI，再通过 CMake 的 Runtime 组件导出。
+产物默认位于 `out/releases/`：免安装 ZIP、SHA-256 校验文件和解压目录。
+EXE、依赖 DLL 与 data 位于包根目录；附带匹配构建工具链的 x64 VC++ Release DLL、许可证和逐文件哈希清单。
+打包前检查所有原生模块的 x64 架构及导入依赖。WebView2 使用系统 Evergreen Runtime；初始化失败时提供官方安装入口。
+`-SkipBuild` 仅用于复用刚完成且已验证的 Release 构建，`-CMake` 可指定 CMake 路径，
+`-OutputDirectory` 可指定新的输出目录；已有同名产物时拒绝覆盖。脚本只生成本地包，不创建标签或发布 GitHub Release。
+
 ## 应用图标
 
 `assets/icons/ogplay.png` 保留最初原图，供 Windows 图标使用；`assets/icons/ogplay-macos.png` 是 macOS 图标源图，使用已调整好的 1024×1024 图案、留白及透明度。

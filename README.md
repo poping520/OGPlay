@@ -22,7 +22,7 @@
 
 OGPlay 让你尝试在电脑上运行经典 Android 游戏，把自己的 APK 和数据包整理到一个游戏库中，选择游戏即可启动，无需先启动完整的 Android 系统。
 
-![OGPlay 游戏库界面](assets/pic/LibraryStore.jpg)
+![OGPlay 游戏库界面](assets/pic/library-store.webp)
 
 > [!NOTE]
 > 项目仍处于**早期 Alpha 阶段，暂未发布版本**。部分游戏已能进入菜单或游戏场景，但尚不能保证完整游玩。OGPlay 不附带游戏，使用前需要自行准备 APK 和相应数据包。
@@ -104,6 +104,8 @@ cmake --build --preset windows-msvc --config Release --target ogplay ogplay-cli
 
 在游戏中用鼠标点击、拖动。需要配置键盘操作时，按 **F2** 打开按键设置，将按键映射到对应的触摸位置；按 **F1** 查看操作提示。目前不支持手柄，也不提供现成的官方键位模板。
 
+![OGPlay 按键设置界面](assets/pic/key-settings.webp)
+
 ### 4. 管理存档
 
 退出游戏后，下次启动会继续使用本地保存的数据。选中游戏后，可在“更多”菜单中打开沙盒目录，查看和备份存档等游戏数据。
@@ -138,6 +140,8 @@ ogplay-cli run-apk game.apk --obb main.obb
 OGPlay 当前主要适配老版本 Android 游戏。**导入成功不等于可以完整游玩**，同一游戏的不同版本也可能表现不同。
 
 目前已有部分游戏到达标题界面、菜单或实际游戏场景，但这些进展仍不代表全流程通关验证。最近的实测进度和已知问题见[当前状态](docs/state/CURRENT.md)。
+
+![OGPlay 在 macOS 上运行 7 款经典 Android 游戏的效果截图](assets/pic/gameplay-showcase.webp)
 
 游戏仍可能遇到画面异常、声音缺失、无法操作或退出失败。如果无法运行，先确认 APK 版本与数据包匹配；需要反馈时，请附上游戏版本、电脑系统、复现步骤和日志，可通过游戏的“更多 → 打开日志目录”找到日志，再到 [Issues](https://github.com/poping520/OGPlay/issues) 提交。
 

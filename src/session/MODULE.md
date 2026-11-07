@@ -39,6 +39,7 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   无匹配或纯 Java APK 可走 generic startup，ABI 只由 APK inventory resolver 决定。
 - `TitleProfileCatalog::LoadDirectory`：稳定加载目录，校验非法及交叠身份；已删除旧的
   单根库 exact adapter，前端只投影 profile id。
+  `LoadOptionalDirectory` 在目录缺失时返回空 catalog，已有目录使用相同校验。
 - `StartDexApplication` / `DexActivityLifecycle`：先按
   largeHeap 时 VMRuntime.clearGrowthLimit→resolve→`<clinit>`→construct→attach base Context→虚派 `onCreate` 建立稳定的 process
   Application root，再实例化入口 Activity 并解释执行 onCreate/onStart/onResume、

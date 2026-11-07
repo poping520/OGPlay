@@ -179,9 +179,14 @@ TitleProfile LoadTitleProfile(const std::filesystem::path& path) {
     return LoadTitleProfileText(text, PackageFromFilename(path.filename().string()));
 }
 
-[[nodiscard]] static std::vector<TitleProfile> LoadProfileDirectory(const std::filesystem::path& directory) {
+[[nodiscard]] static std::vector<TitleProfile> LoadProfileDirectory(const std::filesystem::path& directory,
+                                                                   bool allow_missing) {
     std::error_code error;
-    if (!std::filesystem::is_directory(directory, error) || error) {
+    const auto status = std::filesystem::status(directory, error);
+    if (allow_missing && status.type() == std::filesystem::file_type::not_found) {
+        return {};
+    }
+    if (!std::filesystem::is_directory(status) || error) {
         throw TitleProfileError("Title Profile directory is unavailable: " + directory.string());
     }
     std::vector<std::filesystem::path> paths;
@@ -232,7 +237,11 @@ void TitleProfileCatalog::Validate() const {
 }
 
 TitleProfileCatalog TitleProfileCatalog::LoadDirectory(const std::filesystem::path& directory) {
-    return TitleProfileCatalog(LoadProfileDirectory(directory));
+    return TitleProfileCatalog(LoadProfileDirectory(directory, false));
+}
+
+TitleProfileCatalog TitleProfileCatalog::LoadOptionalDirectory(const std::filesystem::path& directory) {
+    return TitleProfileCatalog(LoadProfileDirectory(directory, true));
 }
 
 const std::vector<TitleProfile>& TitleProfileCatalog::Profiles() const noexcept {

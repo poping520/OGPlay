@@ -35,6 +35,7 @@ public:
     explicit TitleProfileCatalog(std::vector<TitleProfile> profiles);
 
     [[nodiscard]] static TitleProfileCatalog LoadDirectory(const std::filesystem::path& directory);
+    [[nodiscard]] static TitleProfileCatalog LoadOptionalDirectory(const std::filesystem::path& directory);
     [[nodiscard]] const std::vector<TitleProfile>& Profiles() const noexcept;
 
 private:

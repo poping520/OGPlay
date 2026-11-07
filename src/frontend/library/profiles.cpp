@@ -7,7 +7,10 @@ namespace ogplay::app {
 ProfileCatalog::ProfileCatalog() : impl_(std::make_shared<Impl>(session::TitleProfileCatalog({}))) {}
 
 ProfileCatalog ProfileCatalog::LoadBundled() {
-    return Load(BundledDataPaths().profiles_directory);
+    ProfileCatalog result;
+    result.impl_ = std::make_shared<Impl>(
+        session::TitleProfileCatalog::LoadOptionalDirectory(BundledDataPaths().profiles_directory));
+    return result;
 }
 
 ProfileCatalog ProfileCatalog::Load(const std::filesystem::path& directory) {

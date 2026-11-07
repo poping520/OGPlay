@@ -301,7 +301,7 @@ note = "GUI-19：安装包带 data/demos/ogplay-sweetshop.apk（OGPlay 糖果铺
 [frontend.android_host]
 status = "unimplemented"
 test = ""
-note = "AND-1：android/ 工程与 arm64-v8a 原生运行时可构建、打包为 APK（minSdk 29、targetSdk 36，ANGLE Vulkan）；运行行为未在设备验证。未接入切后台恢复、游戏库界面、导入与 MCP。"
+note = "AND-1：android/ 工程与 arm64-v8a 原生运行时可打包为 APK（minSdk 29、targetSdk 36，ANGLE Vulkan）；一加 7 Pro 上 Demo 呈现并响应触摸；仅 ES2 的 ANGLE 设备上 ES3 context 明确失败。未接入切后台恢复、游戏库界面、导入与 MCP。"
 
 [frontend.running_game_icon]
 status = "partial"
@@ -805,8 +805,8 @@ note = "ADR-0141：package 与可选 versionCode/SO SHA-256 精确约束决定�
 
 [profiles.optional_compatibility_v4]
 status = "complete"
-test = "tests/session/title_profile_tests.cpp; tests/session/profile_apk_tests.cpp; tools.title_profile_validator_self_test; tools.title_profiles_current"
-note = "ADR-0142：v4 只含 identity；package 必填，version/hash 约束可选；input/runtime/data/audio 与旧 schema 均拒绝。无匹配或纯 Java APK 继续 generic startup。"
+test = "tests/session/title_profile_tests.cpp; tests/session/profile_apk_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.title_profile_validator_self_test; tools.title_profiles_current"
+note = "ADR-0142：v4 只含 identity；package 必填，version/hash 约束可选；input/runtime/data/audio 与旧 schema 均拒绝。内置 profiles 目录缺失、无匹配或纯 Java APK 均可走通用启动；显式 Profile 目录须可读。"
 
 [runtime.bionic_guest_dependency_closure]
 status = "complete"

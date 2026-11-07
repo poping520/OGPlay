@@ -38,6 +38,9 @@
 - `hal::FixedStepClock`：无 sleep、按帧推进且保留倍率余数的确定性后端。
 - `hal::RealtimeClock`：基于单调宿主时间的实时后端，支持暂停与倍速。
 - `hal::WindowInput`：不暴露 SDL 类型的窗口生命周期与输入事件接口。
+  `Open` 按窗口宽高锁定移动设备的屏幕方向：宽 ≥ 高只允许两个横屏方向，否则只允许两个竖屏
+  方向；桌面忽略。运行中不随 guest 的 `setRequestedOrientation` 改变。Android 上窗口总是
+  全屏，并以沉浸式模式隐藏状态栏与导航栏；桌面仍为普通窗口。
 - `hal::PointerButton`：把宿主鼠标按钮规范为 primary/middle/secondary/auxiliary 语义；
   未知按钮显式标记为 unknown，不向上层泄漏 SDL 数值。
 - `hal::InputEvent` 的键盘事实同时携带物理 scancode、当前键盘布局与 modifier 解析出的

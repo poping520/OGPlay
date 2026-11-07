@@ -201,9 +201,23 @@ public:
             throw std::invalid_argument("window dimensions are out of range");
         }
 
+        // On phones and tablets the window always fills the screen, so lock the screen to the
+        // shape of the guest surface; otherwise a resizable window follows the device rotation.
+        // Desktop SDL ignores this hint.
+        const char* orientations = options.width >= options.height ? "LandscapeLeft LandscapeRight"
+                                                                   : "Portrait PortraitUpsideDown";
+        if (!SDL_SetHint(SDL_HINT_ORIENTATIONS, orientations)) {
+            throw SdlError("SDL_SetHint(SDL_HINT_ORIENTATIONS)");
+        }
+
         SDL_WindowFlags flags = 0;
         if (options.hidden) flags |= SDL_WINDOW_HIDDEN;
         if (options.resizable) flags |= SDL_WINDOW_RESIZABLE;
+#ifdef __ANDROID__
+        // A phone window always covers the display; fullscreen also hides the system bars
+        // (SDL keeps them hidden with sticky immersive mode).
+        flags |= SDL_WINDOW_FULLSCREEN;
+#endif
         window_ = SDL_CreateWindow(options.title.c_str(), static_cast<int>(options.width),
                                    static_cast<int>(options.height), flags);
         if (window_ == nullptr) throw SdlError("SDL_CreateWindow");

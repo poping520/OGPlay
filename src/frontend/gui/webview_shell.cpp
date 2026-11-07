@@ -122,15 +122,17 @@ LibraryViewContext BuildContext(const LibraryStore& store_, const GuiProcessMana
                                                      entry.key) == context.running_packages.end())
             context.running_packages.push_back(entry.key);
     try {
-        const auto bundled = app::BundledDataPaths();
         const auto config = LoadLibraryConfig(store_.Root());
-        std::map<std::filesystem::path, app::ProfileCatalog> catalogs;
+        std::map<std::optional<std::filesystem::path>, app::ProfileCatalog> catalogs;
         for (const auto& entry : entries) {
             if (!entry.metadata || entry.Damaged()) continue;
             try {
                 const auto effective = EffectiveGameConfig(LoadGameSettings(entry.directory), config);
-                const auto directory = effective.profiles_dir.value_or(bundled.profiles_directory);
-                if (!catalogs.contains(directory)) catalogs.emplace(directory, app::ProfileCatalog::Load(directory));
+                const auto& directory = effective.profiles_dir;
+                if (!catalogs.contains(directory)) {
+                    catalogs.emplace(directory, directory ? app::ProfileCatalog::Load(*directory)
+                                                          : app::ProfileCatalog::LoadBundled());
+                }
                 const auto& profiles = catalogs.at(directory);
                 if (!entry.metadata->profile_id) continue;
                 const auto summary = profiles.Find(*entry.metadata->profile_id);
@@ -185,10 +187,9 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
             {[&](const auto& entries) { return BuildContext(store, processes, entries); },
              [&](const auto& plan) { processes.Launch(plan); }, [](const auto& path) { hal::OpenHostDirectory(path); },
              [&](const auto& path) {
-                 const auto bundled = app::BundledDataPaths();
                  const auto config = LoadLibraryConfig(store.Root());
-                 const auto profiles =
-                     app::ProfileCatalog::Load(config.profiles_dir.value_or(bundled.profiles_directory));
+                 const auto profiles = config.profiles_dir ? app::ProfileCatalog::Load(*config.profiles_dir)
+                                                           : app::ProfileCatalog::LoadBundled();
                  return AnalyzeApkImportFile(path, profiles);
              },
              [&](bool directory) {
@@ -218,7 +219,8 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
                  const auto bundled = app::BundledDataPaths();
                  const auto directory = config.profiles_dir.value_or(bundled.profiles_directory);
                  facts["profiles_dir"] = PathUtf8(directory);
-                 const auto profiles = app::ProfileCatalog::Load(directory);
+                 const auto profiles = config.profiles_dir ? app::ProfileCatalog::Load(*config.profiles_dir)
+                                                           : app::ProfileCatalog::LoadBundled();
                  if (entry.metadata && entry.metadata->profile_id) {
                      const auto summary = profiles.Find(*entry.metadata->profile_id);
                      facts["profile_status"] = summary ? "recorded" : "missing";

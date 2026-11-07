@@ -9,6 +9,7 @@
 
 #include "ogplay/frontend/data_directory.h"
 #include "ogplay/hal/host_environment.h"
+#include "ogplay/session/title_profile.h"
 
 namespace {
 
@@ -31,7 +32,6 @@ public:
 };
 
 void WritePayload(const std::filesystem::path& root) {
-    std::filesystem::create_directories(root / "profiles");
     const auto libraries = root / "android" / "19" / "lib";
     std::filesystem::create_directories(libraries);
     for (const auto* name : {"libc.so", "libdl.so", "libm.so", "libstdc++.so", "libz.so"}) {
@@ -63,6 +63,14 @@ TEST_CASE("bundled data prefers executable and macOS resource payloads") {
     paths = ogplay::frontend::ResolveBundledDataPaths(executable, source);
     CHECK(paths.root == std::filesystem::absolute(executable / "data"));
     CHECK(paths.profiles_directory == paths.root / "profiles");
+    CHECK_FALSE(std::filesystem::exists(paths.profiles_directory));
+    CHECK(ogplay::session::TitleProfileCatalog::LoadOptionalDirectory(paths.profiles_directory).Profiles().empty());
+    CHECK_THROWS_AS(ogplay::session::TitleProfileCatalog::LoadDirectory(paths.profiles_directory),
+                    ogplay::session::TitleProfileError);
+
+    std::ofstream(paths.profiles_directory) << "not a directory";
+    CHECK_THROWS_AS(ogplay::session::TitleProfileCatalog::LoadOptionalDirectory(paths.profiles_directory),
+                    ogplay::session::TitleProfileError);
 }
 
 TEST_CASE("bundled data rejects payloads without Android libraries") {
@@ -79,7 +87,6 @@ TEST_CASE("bundled data rejects payloads without Android libraries") {
 TEST_CASE("build stages a complete runtime data payload") {
     const auto paths = ogplay::frontend::HostBundledDataPaths();
     CHECK(paths.root == ogplay::hal::HostExecutableDirectory() / "data");
-    CHECK(std::filesystem::is_directory(paths.profiles_directory));
     const auto android = paths.root / "android" / "19";
     CHECK(std::filesystem::is_regular_file(android / "manifest.json"));
     CHECK_FALSE(std::filesystem::exists(android / "source-manifest.xml"));

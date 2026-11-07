@@ -181,7 +181,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
                  {{"data_root", PathUtf8(bundled_data.root)}});
     const auto profiles =
-        session::TitleProfileCatalog::LoadDirectory(profiles_directory.value_or(bundled_data.profiles_directory));
+        profiles_directory ? session::TitleProfileCatalog::LoadDirectory(*profiles_directory)
+                           : session::TitleProfileCatalog::LoadOptionalDirectory(bundled_data.profiles_directory);
     const auto libraries = loader::ReadApkArmNativeLibraries(*apk_bytes, archive);
     const loader::ApkNativeLibraryInventory native_inventory{libraries};
     const auto compatibility = session::SelectApkCompatibilityProfile(manifest, libraries, profiles);

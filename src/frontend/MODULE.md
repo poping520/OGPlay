@@ -25,7 +25,8 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   运行归 game、游戏库归 library、外观装配归 app；GUI/CLI 的交互与呈现各归自己的 EXE。
   EXE 不静态链接内核；SDL 为共享动态库，WebView 仅桌面链接，不在加载 DLL 时初始化应用资源。
 - `HostBundledDataPaths`：优先读取可执行文件同目录（macOS bundle Resources）的
-  `profiles/` 与 `framework/bootdex.jar`，源码树仅作开发回退。
+  Android 运行库与 `framework/bootdex.jar`，源码树仅作开发回退。内置 `profiles/` 缺失时
+  使用空目录索引，显式配置的 Profile 目录仍须可读。
 - `--external-dir` 默认挂到 `/sdcard`；
   可用 `--external-guest-dir` 指定 `/sdcard` 内的 guest 根。
   `/mnt/sdcard`、`/storage/emulated/0` 与 `/sdcard` 共用节点。`--obb` 将原文件只读挂到

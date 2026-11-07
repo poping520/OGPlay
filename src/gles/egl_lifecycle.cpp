@@ -101,6 +101,13 @@ template <typename Target, typename Source>
     throw std::invalid_argument("unknown ANGLE device");
 }
 
+// EGL_OPENGL_ES3_BIT_KHR. ES3-capable configs are preferred, but ANGLE Vulkan exposes only
+// ES2 on some drivers (Adreno 640, Vulkan 1.1.128). ES1/ES2 contexts still need a config
+// there; an ES3 context then fails explicitly at creation.
+constexpr EGLint kEs3RenderableBit = 0x0040;
+constexpr EGLint kPbufferRenderableTypes[]{EGL_OPENGL_ES2_BIT | kEs3RenderableBit,
+                                           EGL_OPENGL_ES2_BIT};
+
 class NativeAngleEglApi final : public EglApi {
 public:
     EglHandle GetPlatformDisplay(const AngleBackend backend) override {
@@ -188,17 +195,25 @@ public:
 
     bool ChoosePbufferConfig(const EglHandle display,
                              EglHandle& config) override {
-        constexpr EGLint attributes[]{
-            EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE,
-            EGL_OPENGL_ES2_BIT | 0x0040, EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8,
-            EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8, EGL_DEPTH_SIZE, 24,
-            EGL_STENCIL_SIZE, 8, EGL_NONE};
-        EGLConfig native_config{};
-        EGLint count{};
-        const auto result = eglChooseConfig(ReinterpretHandle<EGLDisplay>(display),
-                                            attributes, &native_config, 1, &count);
-        config = count > 0 ? ReinterpretHandle<EglHandle>(native_config) : 0;
-        return result == EGL_TRUE && count > 0;
+        config = 0;
+        for (const EGLint renderable : kPbufferRenderableTypes) {
+            const EGLint attributes[]{
+                EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE,
+                renderable, EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8,
+                EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8, EGL_DEPTH_SIZE, 24,
+                EGL_STENCIL_SIZE, 8, EGL_NONE};
+            EGLConfig native_config{};
+            EGLint count{};
+            if (eglChooseConfig(ReinterpretHandle<EGLDisplay>(display), attributes,
+                                &native_config, 1, &count) != EGL_TRUE) {
+                return false;
+            }
+            if (count > 0) {
+                config = ReinterpretHandle<EglHandle>(native_config);
+                return true;
+            }
+        }
+        return false;
     }
 
     bool BindOpenGlesApi() override {
@@ -300,13 +315,19 @@ std::shared_ptr<EglDisplayResources> EglDisplayResources::Create(const AngleBack
     if (!result->api_->ChoosePbufferConfig(result->display_, result->config_))
         ThrowLastError(*result->api_, EglOperation::choose_config);
 #if OGPLAY_HAS_ANGLE
+    const auto native_display = ReinterpretHandle<EGLDisplay>(result->display_);
+    // The RGB config must serve the same client versions as the RGBA one.
+    EGLint renderable{};
+    if (!eglGetConfigAttrib(native_display, ReinterpretHandle<EGLConfig>(result->config_),
+                            EGL_RENDERABLE_TYPE, &renderable))
+        ThrowLastError(*result->api_, EglOperation::choose_config);
+    renderable &= EGL_OPENGL_ES2_BIT | kEs3RenderableBit;
     // Alpha size in eglChooseConfig is a minimum. Select an exact RGB format
     // from the returned candidates instead of relabelling an RGBA config.
     const EGLint attributes[]{EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT | 0x0040, EGL_RED_SIZE, 8,
+        EGL_RENDERABLE_TYPE, renderable, EGL_RED_SIZE, 8,
         EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 0,
         EGL_DEPTH_SIZE, 24, EGL_STENCIL_SIZE, 8, EGL_NONE};
-    const auto native_display = ReinterpretHandle<EGLDisplay>(result->display_);
     EGLint count{};
     if (!eglChooseConfig(native_display, attributes, nullptr, 0, &count))
         ThrowLastError(*result->api_, EglOperation::choose_config);

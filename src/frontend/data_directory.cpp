@@ -25,9 +25,6 @@ void AppendCandidate(std::vector<std::filesystem::path>& candidates, std::filesy
 
 [[nodiscard]] bool CompletePayload(const std::filesystem::path& root) {
     std::error_code error;
-    if (!std::filesystem::is_directory(root / "profiles", error) || error) {
-        return false;
-    }
     for (const auto* name : {"libc.so", "libdl.so", "libm.so", "libstdc++.so", "libz.so"}) {
         error.clear();
         if (!std::filesystem::is_regular_file(root / "android" / "19" / "lib" / name, error) || error) {

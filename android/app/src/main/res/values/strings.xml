@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OGPlay</string>
+    <string name="preparing_runtime">Preparing runtime data…</string>
+    <string name="prepare_runtime_failed">Could not prepare runtime data: %1$s</string>
+    <string name="demo_game">OGPlay Sweet Shop</string>
+</resources>

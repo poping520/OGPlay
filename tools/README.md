@@ -20,6 +20,8 @@ EXE、依赖 DLL 与 data 位于包根目录；附带匹配构建工具链的 x6
 `assets/icons/ogplay.png` 保留最初原图，供 Windows 图标使用；`assets/icons/ogplay-macos.png` 是 macOS 图标源图，使用已调整好的 1024×1024 图案、留白及透明度。
 Windows 生成 ICO 时裁掉原图完全透明的外围，保持图案比例居中放入最小正方形，再生成各尺寸，减少任务栏留白；不修改源图。
 macOS 直接从该 PNG 生成 `ogplay.icns`，不再裁剪、缩放主体或覆盖源图。图标产物随仓库保存。
+Android 使用自适应图标：由原图按最远可见像素缩放进 66 dp 安全圆，生成各密度的前景层
+`android/app/src/main/res/mipmap-*/ic_launcher_foreground.png`；背景色在 `values/ic_launcher_background.xml`，形状由系统裁剪。
 替换源图后运行（需要 Pillow）：
 
 ```text

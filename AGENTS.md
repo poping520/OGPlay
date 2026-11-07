@@ -14,7 +14,7 @@
 
 OGPlay 是安卓老游戏兼容层，不是 Android 模拟器。只实现游戏进程会直接调用的能力。
 禁止引入完整 Android 系统、Binder/system_server/Zygote、完整 ART/Dalvik、Play 服务、
-现代支付/社交/反作弊或手机端运行能力。范围有争议时先写 ADR。
+现代支付/社交/反作弊能力。范围有争议时先写 ADR。
 
 ## 架构规则
 

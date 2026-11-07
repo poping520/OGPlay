@@ -3,7 +3,7 @@
 ## 职责
 
 定义 window、gfx、audio、input、fs、video、thread、clock 的宿主接口；平台实现只能位于
-`hal/windows`、`hal/linux`、`hal/macos`。
+`hal/windows`、`hal/linux`、`hal/macos`、`hal/android`。
 
 ## 公共 API
 

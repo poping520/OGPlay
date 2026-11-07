@@ -13,6 +13,8 @@ MODULE.md；能力状态见 [能力账本](../../capabilities.toml)。
 | [`src/core`](../../src/core/MODULE.md) | core |
 | [`src/cpu`](../../src/cpu/MODULE.md) | cpu |
 | [`src/frontend`](../../src/frontend/MODULE.md) | frontend |
+| [`android`](../../android/MODULE.md) | Android 宿主工程 |
+| [`src/frontend/android`](../../src/frontend/android/MODULE.md) | Android 原生入口 |
 | [`src/frontend/app`](../../src/frontend/app/MODULE.md) | 共享应用入口 |
 | [`src/frontend/cli`](../../src/frontend/cli/MODULE.md) | CLI 系统入口 |
 | [`src/frontend/game`](../../src/frontend/game/MODULE.md) | 统一游戏运行服务 |
@@ -36,6 +38,7 @@ MODULE.md；能力状态见 [能力账本](../../capabilities.toml)。
 | [`src/guest/math`](../../src/guest/math/MODULE.md) | guest 有界整数算术 |
 | [`src/guest/zip`](../../src/guest/zip/MODULE.md) | guest ZIP native 边界 |
 | [`src/hal`](../../src/hal/MODULE.md) | hal |
+| [`src/hal/android`](../../src/hal/android/MODULE.md) | hal/android |
 | [`src/hal/linux`](../../src/hal/linux/MODULE.md) | hal/linux |
 | [`src/hal/macos`](../../src/hal/macos/MODULE.md) | hal/macos |
 | [`src/hal/windows`](../../src/hal/windows/MODULE.md) | hal/windows |

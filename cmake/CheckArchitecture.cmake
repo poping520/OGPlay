@@ -28,6 +28,8 @@ set(_platform_modules
     "${ROOT}/src/hal/windows/MODULE.md"
     "${ROOT}/src/hal/linux/MODULE.md"
     "${ROOT}/src/hal/macos/MODULE.md"
+    "${ROOT}/src/hal/android/MODULE.md"
+    "${ROOT}/src/frontend/android/MODULE.md"
 )
 foreach(_module IN LISTS _platform_modules)
     if(NOT EXISTS "${_module}")
@@ -61,15 +63,16 @@ file(GLOB_RECURSE _production_files LIST_DIRECTORIES FALSE
 foreach(_file IN LISTS _production_files)
     file(RELATIVE_PATH _relative "${ROOT}/src" "${_file}")
     # sdl_window_input.cpp is the SDL facade over per-platform window handles.
-    if(_relative MATCHES "^hal/(windows|linux|macos)/|^hal/sdl_window_input\\.cpp$")
+    # Android's native entry lives in frontend/android because JNI calls reach upward into frontend.
+    if(_relative MATCHES "^hal/(windows|linux|macos|android)/|^hal/sdl_window_input\\.cpp$|^frontend/android/")
         continue()
     endif()
 
     file(READ "${_file}" _content)
-    if(_content MATCHES "#[ \t]*include[ \t]*[<\"](windows\\.h|X11/|TargetConditionals\\.h|Cocoa/)")
+    if(_content MATCHES "#[ \t]*include[ \t]*<(windows\\.h|X11/|TargetConditionals\\.h|Cocoa/|android/)")
         message(FATAL_ERROR "Platform header outside hal/<platform>: ${_relative}")
     endif()
-    if(_content MATCHES "(^|[\n\r])[ \t]*#[ \t]*(if|ifdef|ifndef)[^\n\r]*(_WIN32|__linux__|__APPLE__)")
+    if(_content MATCHES "(^|[\n\r])[ \t]*#[ \t]*(if|ifdef|ifndef)[^\n\r]*(_WIN32|__linux__|__APPLE__|__ANDROID__)")
         message(FATAL_ERROR "Platform preprocessor branch outside hal/<platform>: ${_relative}")
     endif()
 endforeach()

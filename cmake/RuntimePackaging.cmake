@@ -23,6 +23,12 @@ function(ogplay_stage_angle_runtime target)
             endif()
         endforeach()
     endif()
+    if(ANDROID)
+        list(APPEND _ogplay_angle_stage_commands
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${_angle_egl_library}" "${_angle_glesv2_library}" $<TARGET_FILE_DIR:${target}>
+        )
+    endif()
     if(_ogplay_angle_stage_commands)
         add_custom_command(TARGET ${target} POST_BUILD
             ${_ogplay_angle_stage_commands}
@@ -56,27 +62,34 @@ set(OGPLAY_DATA_DIRECTORIES profiles android branding)
 # OGPlay's own demo games, committed prebuilt by their samples and staged as data/demos; the launcher
 # seeds them into the library while the show_demo_games setting is on.
 set(OGPLAY_DEMO_APKS "${CMAKE_CURRENT_SOURCE_DIR}/samples/sweetshop/out/ogplay-sweetshop.apk")
+# Android stages data for Gradle's assets instead of beside the packaged libraries.
+set(OGPLAY_RUNTIME_DATA_DIR "" CACHE PATH "Staged runtime data directory; empty places it beside ogplaycore")
+if(OGPLAY_RUNTIME_DATA_DIR)
+    set(_ogplay_data_root "${OGPLAY_RUNTIME_DATA_DIR}")
+else()
+    set(_ogplay_data_root "$<TARGET_FILE_DIR:ogplaycore>/data")
+endif()
 set(_ogplay_stage_data_commands)
 foreach(_data_directory IN LISTS OGPLAY_DATA_DIRECTORIES)
     list(APPEND _ogplay_stage_data_commands
         COMMAND ${CMAKE_COMMAND} -E remove_directory
-            "$<TARGET_FILE_DIR:ogplaycore>/data/${_data_directory}"
+            "${_ogplay_data_root}/${_data_directory}"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/data/${_data_directory}"
-            "$<TARGET_FILE_DIR:ogplaycore>/data/${_data_directory}")
+            "${_ogplay_data_root}/${_data_directory}")
 endforeach()
 add_custom_target(ogplay_stage_data ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory
-        "$<TARGET_FILE_DIR:ogplaycore>/data"
+        "${_ogplay_data_root}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/data/credits.json"
-        "$<TARGET_FILE_DIR:ogplaycore>/data/credits.json"
-    COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:ogplaycore>/data/demos"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ogplaycore>/data/demos"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${OGPLAY_DEMO_APKS} "$<TARGET_FILE_DIR:ogplaycore>/data/demos"
-    COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:ogplaycore>/data/input"
+        "${_ogplay_data_root}/credits.json"
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${_ogplay_data_root}/demos"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${_ogplay_data_root}/demos"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${OGPLAY_DEMO_APKS} "${_ogplay_data_root}/demos"
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${_ogplay_data_root}/input"
     ${_ogplay_stage_data_commands}
-    COMMAND ${CMAKE_COMMAND} "-DDATA_ROOT=$<TARGET_FILE_DIR:ogplaycore>/data"
+    COMMAND ${CMAKE_COMMAND} "-DDATA_ROOT=${_ogplay_data_root}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/PruneRuntimeData.cmake"
     COMMENT "Staging OGPlay runtime data"
     VERBATIM)

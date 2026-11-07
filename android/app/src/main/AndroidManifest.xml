@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:glEsVersion="0x00020000" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.gamepad"
+        android:required="false" />
+
+    <application
+        android:allowBackup="false"
+        android:appCategory="game"
+        android:icon="@mipmap/ic_launcher"
+        android:isGame="true"
+        android:label="@string/app_name">
+
+        <!-- Old games need the back key themselves; SDL passes it on instead of finishing. -->
+        <meta-data
+            android:name="SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON"
+            android:value="1" />
+
+        <activity
+            android:name=".launcher.LauncherActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.DayNight">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- One game per process: runtime state never has to survive a second launch. -->
+        <activity
+            android:name=".game.GameActivity"
+            android:alwaysRetainTaskState="true"
+            android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:enableOnBackInvokedCallback="false"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:preferMinimalPostProcessing="true"
+            android:process=":game"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen" />
+    </application>
+</manifest>

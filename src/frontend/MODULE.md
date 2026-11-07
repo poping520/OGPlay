@@ -20,6 +20,7 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   剩余空间写为无路径 StatFs 标量。
 - `ogplay`：桌面主入口，默认 GUI；ready 条目只启动当前 EXE 的 `--run-game` 子进程，
   回收状态与退出码。`ogplay-cli run-apk` 与游戏模式共用选项解析和运行服务。
+- `ogplay_android`：Android 入口，SDLActivity 进入 `SDL_main` 后直接调用 `app::RunGame`，见 `frontend/android`。
 - `ogplaycore`：同次构建/同工具链的 C++ 外观，MSVC 统一 /MD，不承诺跨版本 ABI。
   运行归 game、游戏库归 library、外观装配归 app；GUI/CLI 的交互与呈现各归自己的 EXE。
   EXE 不静态链接内核；SDL 为共享动态库，WebView 仅桌面链接，不在加载 DLL 时初始化应用资源。

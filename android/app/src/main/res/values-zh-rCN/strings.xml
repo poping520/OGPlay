@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="preparing_runtime">正在准备运行数据…</string>
+    <string name="prepare_runtime_failed">无法准备运行数据：%1$s</string>
+    <string name="demo_game">OGPlay 糖果铺</string>
+</resources>

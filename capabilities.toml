@@ -298,6 +298,11 @@ status = "partial"
 test = "tests/frontend/library_store_tests.cpp#bundled demo; tests/frontend/gui_rpc_tests.cpp#demo games"
 note = "GUI-19：安装包带 data/demos/ogplay-sweetshop.apk（OGPlay 糖果铺）；show_demo_games（常规，默认开）开时启动器启动或重新打开该项即补入库，关时列表隐藏但条目不动，删除 Demo 即关闭该项。macOS 新库首启实测补入；Windows 安装包未验；随包 Demo 升级不替换库中旧版。"
 
+[frontend.android_host]
+status = "unimplemented"
+test = ""
+note = "AND-1：android/ 工程与 arm64-v8a 原生运行时可构建、打包为 APK（minSdk 29、targetSdk 36，ANGLE Vulkan）；运行行为未在设备验证。未接入切后台恢复、游戏库界面、导入与 MCP。"
+
 [frontend.running_game_icon]
 status = "partial"
 test = "tests/frontend/library_visuals_tests.cpp#running icon; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp#running icon; tests/frontend/gui_rpc_tests.cpp#settings RPC; webui/apps/gui/settings/settings.test.ts"

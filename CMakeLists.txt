@@ -158,6 +158,11 @@ elseif(APPLE)
         src/hal/macos/virtual_memory.cpp)
 elseif(UNIX)
     target_sources(ogplay_hal PRIVATE src/hal/rgb_surface_storage.cpp)
+    if(ANDROID)
+        target_sources(ogplay_hal PRIVATE src/hal/android/host_paths.cpp)
+    else()
+        target_sources(ogplay_hal PRIVATE src/hal/linux/host_paths.cpp)
+    endif()
     target_sources(ogplay_hal PRIVATE
         src/hal/linux/file_lock.cpp
         src/hal/linux/file_clone.cpp
@@ -744,6 +749,9 @@ foreach(_ogplay_slim_target IN ITEMS ogplaycore ogplay-cli ogplay SDL3-shared)
 endforeach()
 
 include(cmake/RuntimePackaging.cmake)
+if(ANDROID)
+    include(cmake/AndroidPackaging.cmake)
+endif()
 
 if(OGPLAY_BUILD_TESTS)
     include(cmake/Tests.cmake)

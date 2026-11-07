@@ -3,6 +3,7 @@
 ## 职责
 
 实现 Linux 宿主专属 HAL 适配，仅处理 OS 资源与跨平台 HAL 类型之间的转换。
+Android 复用本目录除 `host_paths.cpp` 外的全部实现，修改时须同时兼容 Bionic（minSdk 29）。
 
 ## 依赖与边界
 

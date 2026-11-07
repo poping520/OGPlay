@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Generate desktop icons from platform PNG sources (requires Pillow)."""
+"""Generate application icons from platform PNG sources (requires Pillow)."""
 
 from io import BytesIO
+import math
 from pathlib import Path
 import struct
 
@@ -9,6 +10,10 @@ from PIL import Image
 
 
 ICON_SIZES = (16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
+# Adaptive icon foreground: 108 dp canvas per density. Launchers mask it to their own shape
+# and only a centred 66 dp circle is guaranteed to stay visible.
+ANDROID_FOREGROUND_SIZES = {"mdpi": 108, "hdpi": 162, "xhdpi": 216, "xxhdpi": 324, "xxxhdpi": 432}
+ANDROID_SAFE_RADIUS_RATIO = 33 / 108
 
 
 def encode_icon_frame(image: Image.Image, size: int) -> bytes:
@@ -64,14 +69,38 @@ def save_readme_icon(image: Image.Image, path: Path) -> None:
     frame.quantize(colors=256, method=Image.Quantize.FASTOCTREE).save(path, optimize=True)
 
 
+def save_android_foregrounds(image: Image.Image, resources: Path) -> None:
+    # Scale by the farthest visible pixel rather than the bounding box: the artwork's rounded
+    # corners let it stay larger while every launcher mask keeps all of it visible.
+    bounds = image.getchannel("A").getbbox()
+    if bounds is None:
+        raise ValueError("Android application icon must contain visible pixels")
+    artwork = image.crop(bounds)
+    alpha = artwork.getchannel("A").load()
+    center_x, center_y = artwork.width / 2, artwork.height / 2
+    radius = max(math.hypot(x + 0.5 - center_x, y + 0.5 - center_y)
+                 for y in range(artwork.height) for x in range(artwork.width) if alpha[x, y] != 0)
+    for density, canvas in ANDROID_FOREGROUND_SIZES.items():
+        scale = canvas * ANDROID_SAFE_RADIUS_RATIO / radius
+        size = (round(artwork.width * scale), round(artwork.height * scale))
+        frame = Image.new("RGBA", (canvas, canvas))
+        frame.alpha_composite(artwork.resize(size, Image.Resampling.LANCZOS),
+                              ((canvas - size[0]) // 2, (canvas - size[1]) // 2))
+        directory = resources / f"mipmap-{density}"
+        directory.mkdir(parents=True, exist_ok=True)
+        frame.save(directory / "ic_launcher_foreground.png", optimize=True)
+
+
 def main() -> None:
-    root = Path(__file__).resolve().parents[1] / "assets" / "icons"
+    repository = Path(__file__).resolve().parents[1]
+    root = repository / "assets" / "icons"
     with Image.open(root / "ogplay.png") as source:
         if source.width != source.height:
             raise ValueError("Application icon must be square")
         image = source.convert("RGBA")
     save_windows_icon(image, root / "ogplay.ico")
     save_readme_icon(image, root / "ogplay-256.png")
+    save_android_foregrounds(image, repository / "android" / "app" / "src" / "main" / "res")
     with Image.open(root / "ogplay-macos.png") as source:
         if source.width != source.height:
             raise ValueError("macOS application icon must be square")

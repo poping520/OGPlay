@@ -53,9 +53,25 @@
         "OGPLAY_BUILD_TESTS": "ON",
         "OGPLAY_WARNINGS_AS_ERRORS": "ON"
       }
+    },
+    {
+      "name": "android-arm64",
+      "displayName": "OGPlay Android arm64 (native code only; the APK is built by android/)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/android-arm64",
+      "toolchainFile": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "android-29",
+        "ANDROID_STL": "c++_shared",
+        "OGPLAY_BUILD_TESTS": "OFF",
+        "OGPLAY_ENABLE_FFMPEG": "ON"
+      }
     }
   ],
   "buildPresets": [
+    { "name": "android-arm64", "configurePreset": "android-arm64", "targets": ["ogplay_android"] },
     { "name": "dev", "configurePreset": "dev" },
     { "name": "release", "configurePreset": "release" },
     { "name": "ci", "configurePreset": "ci" },

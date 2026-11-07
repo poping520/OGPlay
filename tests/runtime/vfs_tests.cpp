@@ -301,6 +301,40 @@ TEST_CASE("VFS enforces read only files and descriptor access modes") {
     vfs.Close(descriptor);
 }
 
+TEST_CASE("VFS read-only runtime files read through caller-owned bytes") {
+    ogplay::runtime::VirtualFileSystem vfs;
+    const std::vector<std::byte> owner{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+    std::size_t reads{};
+    vfs.PutReadOnlyFile("/data/app/sample-1.apk", owner.size(),
+                        [&](const std::uint64_t offset, const std::span<std::byte> destination) {
+                            ++reads;
+                            const auto count = std::min<std::size_t>(destination.size(), owner.size() - offset);
+                            std::copy_n(owner.begin() + static_cast<std::ptrdiff_t>(offset), count,
+                                        destination.begin());
+                            return count;
+                        });
+    const auto info = vfs.Stat("/data/app/sample-1.apk");
+    CHECK(info.size == owner.size());
+    CHECK_FALSE(info.writable);
+    CHECK(info.source == ogplay::runtime::VfsSource::runtime);
+    CHECK_THROWS_AS(static_cast<void>(vfs.Open("/data/app/sample-1.apk", {.write = true})), ogplay::runtime::VfsError);
+    CHECK_THROWS_AS(vfs.PutReadOnlyFile("/data/app/sample-1.apk", 1,
+                                        [](std::uint64_t, std::span<std::byte>) { return std::size_t{}; }),
+                    ogplay::runtime::VfsError);
+
+    const auto descriptor = vfs.Open("/data/app/sample-1.apk", {.read = true});
+    std::array<std::byte, 2> head{};
+    CHECK(vfs.Read(descriptor, head) == head.size());
+    CHECK(head == std::array{std::byte{1}, std::byte{2}});
+    std::array<std::byte, 1> tail{};
+    CHECK(vfs.ReadAt(descriptor, 3, tail) == tail.size());
+    CHECK(tail[0] == std::byte{4});
+    CHECK(ReadLease(vfs.CaptureReadLease(descriptor, 1, 2)) == std::vector{std::byte{2}, std::byte{3}});
+    vfs.Close(descriptor);
+    CHECK(reads == 3);
+    CHECK(vfs.IoStatistics().full_materialized_bytes == 0);
+}
+
 TEST_CASE("VFS mounts APK OBB and external files through one index") {
     ogplay::runtime::VirtualFileSystem vfs;
     const std::vector<ogplay::runtime::VfsMountEntry> apk{

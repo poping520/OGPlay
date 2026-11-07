@@ -24,7 +24,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。
 | Asphalt 6 1.3.2 | macOS | CG → 中文主菜单 → 自由竞速拿索赛道，车辆/HUD/暂停交互正常，SIGINT 退出 0 | 混合链接 glGetString 错报 ES1、JNI 音频回调关闭取消误报已修；全赛程/跨平台待验 | [BND-55](../tasks/boundary/BND-55.md) |
 | Asphalt 5 1.1.3 | macOS | 语言选择界面 | 无 Profile 场景 600 帧退出 0；交互未验 | [DVM-19](../tasks/dexvm/DVM-19.md)、[WU5](../tasks/diagnostics/DIAG-6.md) |
 | PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
-| Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；换卡 WebView 的 setScrollBarStyle/动画缺口已修（DVM-371），手测正常；画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[DVM-371](../tasks/dexvm/DVM-371.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
+| Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；换卡 WebView 的 setScrollBarStyle/动画缺口已修（DVM-371），手测正常；JIT 整缓存提交与 APK 多副本已修，footprint 932→502 MB（WU-PERF-16）；画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[DVM-371](../tasks/dexvm/DVM-371.md)、[WU-PERF-16](../tasks/optimization/WU-PERF-16.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
 | GTA3 | macOS | 首次启动 EULA 长消息模态已发布（1280×720、320dpi），原容纳异常消失 | 20 秒有界运行未见新 uncaught 异常，SIGINT 退出 0；EULA 手测正常；影片画面与 NV clock 提示仍待验 | [DVM-370](../tasks/dexvm/DVM-370.md)、[DVM-363](../tasks/dexvm/DVM-363.md) |
 | GTASA | macOS | OFFLINE → 标题菜单 → Start Game 进入开场过场，约 2 分钟无 fault，SIGINT 退出 0 | OpenSL 播放器 BUFFERQUEUE/ANDROIDSIMPLEBUFFERQUEUE 未互为别名致 OpenAL 启动失败、随后堆损坏，已修；登录界面图片（guest onDraw）未绘制，游戏内交互未验 | [DVM-366](../tasks/dexvm/DVM-366.md) |
 | Monument Valley 2.5.18 | macOS | 720×1280：序章曲柄/行走至终点，进入第二章 The Garden，非零 PCM 已确认 | 默认入口竖屏、触摸复制及长期工作 Looper 已修；退出 IAP 未 bind 却 unbind 抛 IAE，正式 title gate/跨平台未验 | [DVM-369](../tasks/dexvm/DVM-369.md)、[DVM-259](../tasks/dexvm/DVM-259.md) |

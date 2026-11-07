@@ -258,6 +258,9 @@ public:
     [[nodiscard]] std::unique_ptr<VfsCharacterDeviceRegistration>
     RegisterReadOnlyCharacterDevice(std::string_view path, std::uint64_t device_number, VfsCharacterReader reader);
     void PutFile(std::string_view path, std::span<const std::byte> contents, bool writable);
+    // Read-only runtime file whose bytes stay with the caller; reads, leases
+    // and mappings go through read_at, so the VFS keeps no copy.
+    void PutReadOnlyFile(std::string_view path, std::uint64_t size, VfsReadAtLoader read_at);
     void Mount(VfsSource source, std::string_view root, std::span<const VfsMountEntry> entries);
     void MountLazyReadOnly(VfsSource source, std::string_view root, std::span<const VfsLazyMountEntry> entries);
     void MountHostDirectory(std::string_view root, const std::filesystem::path& directory);

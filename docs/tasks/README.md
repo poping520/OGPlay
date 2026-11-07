@@ -30,7 +30,7 @@ Work Unit 按所属里程碑或语义化专项存放，创建后不因完成状�
 | [`m6/`](m6/) | WU-0328..0359 | 32 | [M6 · AI 自动化测试](m6/README.md) |
 | [`m8/`](m8/) | WU-0360..0379、WU-M8-001..011 | 31 | [M8 · 兼容性冲刺](m8/README.md) |
 | [`maintenance/`](maintenance/) | UTIL-1..3 | 3 | [基础工具维护工作单](maintenance/README.md) |
-| [`optimization/`](optimization/) | WU-GLCTX-01..05、WU-HLE-01..04、WU-PERF-01..15 | 24 | — |
+| [`optimization/`](optimization/) | WU-GLCTX-01..05、WU-HLE-01..04、WU-PERF-01..16 | 25 | — |
 | [`sandbox/`](sandbox/) | SBX-1..15 | 15 | [沙盒 · 每游戏持久沙盒（ADR-0020）](sandbox/README.md) |
 | [`vfs/`](vfs/) | VFS-04..11 | 8 | — |
 | [`video/`](video/) | VID-1 | 1 | — |

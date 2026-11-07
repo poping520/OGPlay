@@ -161,9 +161,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stream));
         static_cast<void>(std::fflush(stream));
     };
-    const auto apk_bytes = std::make_shared<const std::vector<std::byte>>(ReadBytes(options.apk_path));
-    const auto archive = loader::ParseApkArchive(*apk_bytes);
-    const auto manifest = loader::ReadAndroidManifest(*apk_bytes, archive);
+    // Moved into the Android context below, which then owns the only APK copy.
+    auto apk_bytes = ReadBytes(options.apk_path);
+    const auto archive = loader::ParseApkArchive(apk_bytes);
+    const auto manifest = loader::ReadAndroidManifest(apk_bytes, archive);
     if (manifest.launcher_activity) {
         const auto launcher = loader::ResolveLauncherComponent(manifest);
         if (const auto* activity =
@@ -183,7 +184,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     const auto profiles =
         profiles_directory ? session::TitleProfileCatalog::LoadDirectory(*profiles_directory)
                            : session::TitleProfileCatalog::LoadOptionalDirectory(bundled_data.profiles_directory);
-    const auto libraries = loader::ReadApkArmNativeLibraries(*apk_bytes, archive);
+    const auto libraries = loader::ReadApkArmNativeLibraries(apk_bytes, archive);
     const loader::ApkNativeLibraryInventory native_inventory{libraries};
     const auto compatibility = session::SelectApkCompatibilityProfile(manifest, libraries, profiles);
     session::TitleProfile generic_profile;
@@ -384,9 +385,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             dex_context = runtime::AssembleAndroidContext(
                 ReadBytes(bundled_data.root / bionic.data_directory / "framework" / "bootdex.jar"), {true});
             dex_context->native_output_sample_rate = kDesktopAudioOutputSpec.sample_rate;
-            dex_context->apk_bytes = *apk_bytes;
+            dex_context->apk_bytes = std::move(apk_bytes);
             dex_context->archive = archive;
-            const auto arsc_bytes = loader::ReadApkEntry(*apk_bytes, archive, "resources.arsc");
+            const auto arsc_bytes = loader::ReadApkEntry(dex_context->apk_bytes, archive, "resources.arsc");
             dex_context->arsc = loader::ParseArsc(
                 std::span(reinterpret_cast<const std::uint8_t*>(arsc_bytes.data()), arsc_bytes.size()));
             dex_context->package_name = manifest.package;
@@ -464,7 +465,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
 
         LifecycleDriver driver;
         core::CapabilityLedger dexvm_ledger;
-        const auto dex_entry = loader::ReadApkEntry(*apk_bytes, archive, "classes.dex");
+        const auto dex_entry = loader::ReadApkEntry(dex_context->apk_bytes, archive, "classes.dex");
         std::vector<std::uint8_t> dex_bytes(dex_entry.size());
         std::memcpy(dex_bytes.data(), dex_entry.data(), dex_entry.size());
         const auto boot_entry =

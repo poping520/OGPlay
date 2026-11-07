@@ -385,6 +385,15 @@ function(_rp_adapt relative expected)
         string(REPLACE "        .page_table_pointer = mcl::bit_cast<u64>(conf.page_table),"
             "        .page_table_pointer = mcl::bit_cast<u64>(conf.read_page_table ? conf.read_page_table : conf.page_table),\n        .preserve_memory_fpsr = true,\n        .read_page_table_pointer = mcl::bit_cast<u64>(conf.read_page_table),\n        .write_page_table_pointer = mcl::bit_cast<u64>(conf.page_table),\n        .inline_exclusive_memory = conf.inline_exclusive_memory,\n        .exclusive_lock_pointer = conf.global_monitor ? mcl::bit_cast<u64>(GetExclusiveMonitorLockPointer(conf.global_monitor)) : 0,\n        .exclusive_address_pointer = conf.global_monitor ? mcl::bit_cast<u64>(GetExclusiveMonitorAddressPointer(conf.global_monitor, conf.processor_id)) : 0,\n        .exclusive_addresses_pointer = conf.global_monitor ? mcl::bit_cast<u64>(GetExclusiveMonitorAddressPointer(conf.global_monitor, 0)) : 0,\n        .exclusive_value_pointer = conf.global_monitor ? mcl::bit_cast<u64>(GetExclusiveMonitorValuePointer(conf.global_monitor, conf.processor_id)) : 0,\n        .exclusive_epoch_pointer = conf.global_monitor ? mcl::bit_cast<u64>(GetExclusiveMonitorEpochPointer(conf.global_monitor)) : 0,\n        .exclusive_reservation_stride = conf.global_monitor ? GetExclusiveMonitorReservationStride(conf.global_monitor) : 0,\n        .exclusive_processor_bound_pointer = mcl::bit_cast<u64>(conf.exclusive_processor_bound),\n        .exclusive_processor_count = conf.global_monitor ? GetExclusiveMonitorProcessorCount(conf.global_monitor) : 0,"
             _source "${_source}")
+        # Flush only the emitted prelude. Darwin sys_icache_invalidate and the
+        # generic dc/ic loop touch every page, committing the whole code cache
+        # per JIT; each emitted block already flushes its own range.
+        string(REPLACE "    prelude_info.end_of_prelude = code.offset();\n\n    mem.invalidate_all();"
+            "    prelude_info.end_of_prelude = code.offset();\n\n    mem.invalidate(mem.ptr(), static_cast<size_t>(prelude_info.end_of_prelude));"
+            _source "${_source}")
+        if(NOT _source MATCHES "mem\\.invalidate\\(mem\\.ptr\\(\\), static_cast<size_t>\\(prelude_info\\.end_of_prelude\\)\\);")
+            message(FATAL_ERROR "Dynarmic A32 prelude icache flush adaptation did not apply")
+        endif()
         # Keep the more frequent load table in the dedicated backend register.
         string(REPLACE "if (conf.page_table) {\n            code.MOV(Xpagetable, mcl::bit_cast<u64>(conf.page_table));"
             "if (conf.read_page_table || conf.page_table) {\n            code.MOV(Xpagetable, mcl::bit_cast<u64>(conf.read_page_table ? conf.read_page_table : conf.page_table));"

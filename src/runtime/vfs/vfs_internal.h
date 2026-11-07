@@ -153,6 +153,7 @@ public:
     void RegisterGeneratedReadOnly(std::string_view path, std::shared_ptr<VfsGeneratedFileState> state);
     void RegisterReadOnlyCharacterDevice(std::string_view path, std::shared_ptr<VfsCharacterDeviceState> state);
     void PutFile(std::string_view path, std::span<const std::byte> contents, bool writable);
+    void PutReadOnlyFile(std::string_view path, std::uint64_t size, VfsReadAtLoader read_at);
     void Mount(VfsSource source, std::string_view root, std::span<const VfsMountEntry> entries);
     void MountLazy(VfsSource source, std::string_view root, std::span<const VfsLazyMountEntry> entries, bool writable,
                    std::span<const std::shared_ptr<HostFileBacking>> host_backings = {});

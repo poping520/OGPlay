@@ -20,6 +20,8 @@
   保存其 `shared_ptr`。Close 先移除表项，再等待旧打开状态的在途操作；复用同一数字不会
   将旧结果提交到新 FD。
 - 内存、小文件、宿主文件和上层注入的 APK/OBB backing 共用 `Read`/`ReadAt` 数据面。
+  `PutReadOnlyFile` 发布 runtime 来源只读节点，字节由调用方经 `read_at` 持有，VFS
+  不复制；读取、lease 与映射均走 `read_at`，仅需自有内容的路径才整份物化。
   `ReadAt`/`WriteAt` 不移动 offset；普通 Read/Write/Seek 在同一打开状态串行，同一节点
   的读写/截断由节点锁排序。失败未交付字节时不推进 offset。
 - create+exclusive 在同一索引锁内检查存在并创建，已存在路径返回 EEXIST，早于截断/写入。

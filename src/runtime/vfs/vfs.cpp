@@ -216,6 +216,28 @@ void VirtualFileSystem::Impl::PutFile(const std::string_view path, const std::sp
     files_.emplace(normalized, std::move(file));
 }
 
+void VirtualFileSystem::Impl::PutReadOnlyFile(const std::string_view path, const std::uint64_t size,
+                                              VfsReadAtLoader read_at) {
+    if (!read_at || size > std::numeric_limits<std::size_t>::max()) {
+        throw VfsError(kEinval, "VFS read-only backing is invalid");
+    }
+    const auto normalized = NormalizePath(path);
+    // Fallback for paths that require owned contents; positioned reads never use it.
+    VfsReadOnlyLoader read_all = [read_at, size] {
+        std::vector<std::byte> bytes(static_cast<std::size_t>(size));
+        if (read_at(0, bytes) != bytes.size()) throw std::runtime_error("VFS read-only backing was truncated");
+        return bytes;
+    };
+    std::scoped_lock lock(mutex_);
+    if (files_.contains(normalized)) {
+        throw VfsError(kEexist, "VFS path already exists");
+    }
+    auto file = std::make_shared<File>(
+        File{{}, size, std::move(read_all), std::move(read_at), false, VfsSource::runtime, false, {}});
+    file->node_id = next_node_id_++;
+    files_.emplace(normalized, std::move(file));
+}
+
 VfsCharacterDeviceRegistration::~VfsCharacterDeviceRegistration() {
     std::scoped_lock lock(state_->mutex);
     state_->active = false;
@@ -1084,6 +1106,11 @@ VirtualFileSystem::RegisterGeneratedReadOnly(const std::string_view path, const 
 void VirtualFileSystem::PutFile(const std::string_view path, const std::span<const std::byte> contents,
                                 const bool writable) {
     impl_->PutFile(path, contents, writable);
+}
+
+void VirtualFileSystem::PutReadOnlyFile(const std::string_view path, const std::uint64_t size,
+                                        VfsReadAtLoader read_at) {
+    impl_->PutReadOnlyFile(path, size, std::move(read_at));
 }
 
 void VirtualFileSystem::Mount(const VfsSource source, const std::string_view root,

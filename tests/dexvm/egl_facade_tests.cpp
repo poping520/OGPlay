@@ -2009,25 +2009,23 @@ TEST_CASE("DVM-339 EGL buffer geometry changes on swap and publishes independent
     const auto window = f.boundary.AcquireSurfaceWindow({holder, 2, 3});
 
     struct Capture {
-        unsigned width{}, height{}, queues{};
-        std::vector<std::uint8_t> pixels;
+        unsigned queues{};
+        std::shared_ptr<const ogplay::video::VideoFrame> frame;
     } capture;
 
-    f.boundary.SetSurfaceHooks({&capture,
-                                +[](void*, std::uint64_t, ogplay::memory::GuestAddress,
-                                    ogplay::runtime::SurfaceJavaReference) { return ogplay::memory::GuestAddress{}; },
-                                +[](void* owner, ogplay::memory::GuestAddress identity, std::uint32_t width,
-                                    std::uint32_t height, std::vector<std::uint8_t> pixels) {
-                                    CHECK(identity == ogplay::memory::GuestAddress{0x1234});
-                                    auto& captured = *static_cast<Capture*>(owner);
-                                    captured.width = width;
-                                    captured.height = height;
-                                    captured.pixels = std::move(pixels);
-                                },
-                                +[](void* owner, ogplay::memory::GuestAddress identity) {
-                                    CHECK(identity == ogplay::memory::GuestAddress{0x1234});
-                                    ++static_cast<Capture*>(owner)->queues;
-                                }});
+    f.boundary.SetSurfaceHooks(
+        {&capture,
+         +[](void*, std::uint64_t, ogplay::memory::GuestAddress, ogplay::runtime::SurfaceJavaReference) {
+             return ogplay::memory::GuestAddress{};
+         },
+         +[](void* owner, ogplay::memory::GuestAddress identity, std::shared_ptr<ogplay::video::VideoFrame> frame) {
+             CHECK(identity == ogplay::memory::GuestAddress{0x1234});
+             static_cast<Capture*>(owner)->frame = std::move(frame);
+         },
+         +[](void* owner, ogplay::memory::GuestAddress identity) {
+             CHECK(identity == ogplay::memory::GuestAddress{0x1234});
+             ++static_cast<Capture*>(owner)->queues;
+         }});
     REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1);
     auto producer = window.Value();
     SUBCASE("ANativeWindow handle") {}
@@ -2061,21 +2059,28 @@ TEST_CASE("DVM-339 EGL buffer geometry changes on swap and publishes independent
     CHECK(query(0x3057) == 2);  // old dequeued buffer is still current
     REQUIRE(f.Call("libEGL.so", "eglSwapBuffers", {1, surface}) == 1);
     CHECK(capture.queues == 1);
-    CHECK(capture.width == 2);
-    CHECK(capture.height == 3);
+    REQUIRE(capture.frame);
+    const auto first = capture.frame;
+    CHECK(capture.frame->width == 2);
+    CHECK(capture.frame->height == 3);
     CHECK(query(0x3057) == 3);
     CHECK(query(0x3056) == 2);
     clear();
     REQUIRE(f.Call("libEGL.so", "eglSwapBuffers", {1, surface}) == 1);
     CHECK(capture.queues == 2);
-    CHECK(capture.width == 3);
-    CHECK(capture.height == 2);
-    REQUIRE(capture.pixels.size() == 24);
+    REQUIRE(capture.frame);
+    CHECK(capture.frame != first);
+    CHECK(first->width == 2);
+    CHECK(first->height == 3);
+    CHECK(first->rgba8.front() == 255);
+    CHECK(capture.frame->width == 3);
+    CHECK(capture.frame->height == 2);
+    REQUIRE(capture.frame->rgba8.size() == 24);
     for (unsigned i = 0; i < 24; i += 4) {
-        CHECK(capture.pixels[i] == 255);
-        CHECK(capture.pixels[i + 1] == 0);
-        CHECK(capture.pixels[i + 2] == 0);
-        CHECK(capture.pixels[i + 3] == 255);
+        CHECK(capture.frame->rgba8[i] == 255);
+        CHECK(capture.frame->rgba8[i + 1] == 0);
+        CHECK(capture.frame->rgba8[i + 2] == 0);
+        CHECK(capture.frame->rgba8[i + 3] == 255);
     }
     f.boundary.RetireSurfaceWindow(holder);
     CHECK(f.Call("libEGL.so", "eglSwapBuffers", {1, surface}) == 0);

@@ -1236,8 +1236,12 @@ void SetWindowSurfaceCallback(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             context.holder_surfaces.erase(previous);
         }
         context.window_surface_callback = callback;
-        context.window_surface_holder =
+        const auto holder =
             callback.IsValid() ? vm.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;") : dexvm::VmObjectRef{};
+        {
+            std::scoped_lock lock(context.surface_pixels_mutex);
+            context.window_surface_holder = holder;
+        }
         if (callback.IsValid()) {
             context.window_surface_holders.insert(context.window_surface_holder.Value());
             context.surface_callbacks[context.window_surface_holder.Value()] = {callback};
@@ -1447,7 +1451,6 @@ std::optional<std::string> RetireSurfaceHolderGeneration(dexvm::Interpreter& vm,
     context.window_surface_holders.clear();
     context.surface_owner_identities.clear();
     context.window_surface_callback = dexvm::VmObjectRef{};
-    context.window_surface_holder = dexvm::VmObjectRef{};
     context.window_input_callback = dexvm::VmObjectRef{};
     context.window_input_queue = dexvm::VmObjectRef{};
     context.holder_surfaces.clear();
@@ -1459,6 +1462,7 @@ std::optional<std::string> RetireSurfaceHolderGeneration(dexvm::Interpreter& vm,
     context.active_surface_holders.clear();
     {
         std::scoped_lock lock(context.surface_pixels_mutex);
+        context.window_surface_holder = dexvm::VmObjectRef{};
         context.surface_buffer_queued.clear();
     }
     context.surface_callback_sizes.clear();

@@ -732,18 +732,21 @@ TEST_CASE("DVM-310 presentation freezes producer layers bitmap backing and non-o
         bitmap->rgba8 = {10, 20, 30, 255};
         f.context->ui_bitmaps[77] = bitmap;
         auto& producer = f.context->video_views[view.Value()];
-        producer.latest_frame = ogplay::video::VideoFrame{0, 1, 1, {255, 0, 0, 255}};
+        producer.latest_frame =
+            std::make_shared<const ogplay::video::VideoFrame>(ogplay::video::VideoFrame{0, 1, 1, {255, 0, 0, 255}});
         REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                          AndroidUiTraversalPhase::ResolveOnly));
         const auto lease = AcquireAndroidPresentation(*f.context);
         REQUIRE(lease);
-        CHECK(lease->video_frames.at(id).rgba8 == std::vector<std::uint8_t>{255, 0, 0, 255});
+        CHECK(lease->video_frames.at(id) == producer.latest_frame);
+        CHECK(lease->video_frames.at(id)->rgba8 == std::vector<std::uint8_t>{255, 0, 0, 255});
         CHECK(lease->guest_window_epoch_refs.front()->Get(id)->surface_has_frame);
         CHECK(lease->bitmaps.at(77) == bitmap);
         auto replacement = std::make_shared<ui::UiBitmap>(*bitmap);
         replacement->rgba8 = {40, 50, 60, 255};
         f.context->ui_bitmaps[77] = replacement;
-        producer.latest_frame->rgba8 = {0, 255, 0, 255};
+        producer.latest_frame =
+            std::make_shared<const ogplay::video::VideoFrame>(ogplay::video::VideoFrame{0, 1, 1, {0, 255, 0, 255}});
         f.context->ui_tree.Get(id)->surface_layer = ui::SurfaceLayer::on_top;
         f.context->ui_tree.MarkDrawDirty(id);
         const auto epoch = f.context->ui_measure_epoch;
@@ -772,7 +775,7 @@ TEST_CASE("DVM-310 presentation freezes producer layers bitmap backing and non-o
         REQUIRE(next != lease);
         CHECK(next->bitmaps.at(77) == replacement);
         CHECK(lease->bitmaps.at(77)->rgba8 == std::vector<std::uint8_t>{10, 20, 30, 255});
-        CHECK(next->video_frames.at(id).rgba8 == std::vector<std::uint8_t>{0, 255, 0, 255});
+        CHECK(next->video_frames.at(id)->rgba8 == std::vector<std::uint8_t>{0, 255, 0, 255});
         CHECK(next->guest_window_epoch_refs.front()->Get(id)->surface_layer == ui::SurfaceLayer::on_top);
         producer.latest_frame.reset();
         CHECK_FALSE(PublishAndroidPresentation(*f.context));
@@ -783,7 +786,7 @@ TEST_CASE("DVM-310 presentation freezes producer layers bitmap backing and non-o
         CHECK(AcquireAndroidPresentation(*f.context)->video_frames.empty());
         CHECK_FALSE(
             AcquireAndroidPresentation(*f.context)->guest_window_epoch_refs.front()->Get(id)->surface_has_frame);
-        CHECK(lease->video_frames.at(id).rgba8.front() == 255);
+        CHECK(lease->video_frames.at(id)->rgba8.front() == 255);
         CHECK(f.ledger.Unimplemented().empty());
     }
 }

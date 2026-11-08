@@ -1911,26 +1911,19 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
              +[](void* owner, std::uint64_t thread, memory::GuestAddress env, SurfaceJavaReference ref) {
                  return static_cast<Impl*>(owner)->SurfaceFromJava(thread, env, ref);
              },
-             +[](void* owner, memory::GuestAddress holder, std::uint32_t width, std::uint32_t height,
-                 std::vector<std::uint8_t> pixels) {
+             +[](void* owner, memory::GuestAddress holder, std::shared_ptr<video::VideoFrame> pixels) {
                  auto& state = *static_cast<Impl*>(owner);
                  const auto context = state.android_context;
                  if (!context) throw DexVmBridgeError("Surface producer has no live owner");
-                 {
-                     std::scoped_lock lock(context->surface_pixels_mutex);
-                     const auto queued = context->surface_buffer_queued.find(holder.Value());
-                     if (queued != context->surface_buffer_queued.end()) queued->second = true;
-                 }
+                 std::scoped_lock lock(context->surface_pixels_mutex);
+                 const auto queued = context->surface_buffer_queued.find(holder.Value());
+                 if (queued != context->surface_buffer_queued.end()) queued->second = true;
                  if (holder.Value() == context->window_surface_holder.Value()) {
-                     state.session->PublishSoftwareFrame(std::move(pixels));
-                     return;
+                     state.session->PublishSoftwareFrame(std::move(pixels->rgba8));
+                 } else {
+                     context->surface_pixels[holder.Value()] = std::move(pixels);
+                     state.session->PublishBlankFrame(0U);
                  }
-                 {
-                     std::scoped_lock lock(context->surface_pixels_mutex);
-                     context->surface_pixels[holder.Value()] = video::VideoFrame{0, width, height, std::move(pixels)};
-                 }
-                 state.session->PublishSoftwareFrame(std::vector<std::uint8_t>(
-                     static_cast<std::size_t>(context->surface_width) * context->surface_height * 4U, 0U));
              },
              +[](void* owner, memory::GuestAddress holder) {
                  const auto context = static_cast<Impl*>(owner)->android_context;

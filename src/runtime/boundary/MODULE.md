@@ -93,7 +93,8 @@ Display/config 是进程事实，Context/Surface 使用单调句柄，保存版�
 - managed surface 的 open/present/close 严格配对，guest EGL 不得替换/终止；pbuffer 仍有独立
   backing。创建线程保持 GL currency，显式释放后才可由新渲染线程接管，不允许跨线程抢夺。
 - 帧经统一 resolve/sequence 发布；仅回收布局匹配的容量，不复用内容/序号。PublishSoftwareFrame
-  只接受完整逻辑尺寸 RGBA8。RetireGuestGraphics 永久关闭 guest 图形：后续调用 idle/零返回，
+  只接受完整逻辑尺寸 RGBA8；PublishBlankFrame 以 alpha 标记提交同尺寸黑底，取帧时物化。
+  RetireGuestGraphics 永久关闭 guest 图形：后续调用 idle/零返回，
   swap 返回 false 并锁存 BAD_NATIVE_WINDOW；此规则仅用于 teardown。
 
 ## GLES 支持边界

@@ -162,7 +162,7 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   隐藏/detach 后恢复底图，关闭前清除回调。
 - frontend 取回最终 present frame 后必须交 session `ComposePresentedFrame` 与 cached UI
   overlay 做整数 source-over；纯 View Activity 在 UiTree dirty 且没有 guest renderer 时由
-  lifecycle 发布不透明软件基帧，再走同一合成入口。screenshot/window 只读取返回结果，
+  lifecycle 提交不透明黑底标记，取帧后走同一合成入口。screenshot/window 只读取返回结果，
   video 不依赖 UI。EditText 键盘编辑和 ScrollView 手势都更新 UiTree 的唯一状态，绘制、
   裁剪与命中使用同一次布局产生的 frame。
 - JavaTraversal 的 Start/Resume/StepFrame 由 owner 建立首个完整快照；输入前开始逻辑 tick，

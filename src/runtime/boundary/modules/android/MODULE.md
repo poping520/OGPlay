@@ -76,7 +76,8 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
   回收 Java 窗口。registry width/height 是 holder buffer 尺寸，changed 同步后 NDK getter 立即可见。
 - Java EGL 的 holder token 使用同源几何别名；退役别名不回落到 standalone 窗口。
   纯像素 publisher、成功 swap 的 buffer-queued 身份通知与退役串行，经显式 hooks
-  投递到 integration，boundary 不获取 VM 锁；退役窗口不通知新一代 holder。
+  投递到 integration。两种通知都复核读回前的窗口代次，且与 fromSurface 的 JNI hook
+  分锁，通知期间无需获取 VM 锁。
   ANativeWindow_setBuffersGeometry 仍只接受重置或当前尺寸/格式，不新增任意 NDK resize。
 
 ## AConfiguration 语言地区

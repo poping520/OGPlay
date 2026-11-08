@@ -115,19 +115,16 @@ public:
                        gles1_draw_state_,
                        gles1_legacy_state_,
                        this,
-                       +[](void* owner, memory::GuestAddress window) {
-                           return static_cast<Impl*>(owner)->android_module_.NativeWindowIsCurrent(window);
-                       },
                        options.ledger,
                        +[](void* owner, memory::GuestAddress window) {
                            return static_cast<Impl*>(owner)->android_module_.NativeWindowGeometry(window);
                        },
-                       +[](void* owner, memory::GuestAddress window) {
-                           static_cast<Impl*>(owner)->android_module_.NotifySurfaceBufferQueued(window);
+                       +[](void* owner, memory::GuestAddress window, const AndroidSurfaceWindow& expected) {
+                           static_cast<Impl*>(owner)->android_module_.NotifySurfaceBufferQueued(window, expected);
                        },
-                       +[](void* owner, memory::GuestAddress window, std::uint32_t width, std::uint32_t height,
-                           std::vector<std::uint8_t> pixels) {
-                           return static_cast<Impl*>(owner)->android_module_.PublishSurfacePixels(window, width, height,
+                       +[](void* owner, memory::GuestAddress window, const AndroidSurfaceWindow& expected,
+                           std::shared_ptr<video::VideoFrame> pixels) {
+                           return static_cast<Impl*>(owner)->android_module_.PublishSurfacePixels(window, expected,
                                                                                                   std::move(pixels));
                        },
                        options.frame_period_ns},
@@ -484,6 +481,8 @@ public:
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
         frame_service_.PublishSoftwareFrame(std::move(rgba8));
     }
+
+    void PublishBlankFrame(std::uint8_t alpha) { frame_service_.PublishBlankFrame(alpha); }
 
     void RecycleFrame(AndroidBoundaryFrame&& frame) { frame_service_.RecycleFrame(std::move(frame)); }
 
@@ -1152,6 +1151,10 @@ std::optional<AndroidBoundaryFrame> AndroidBoundaryHle::TakeLatestFrame() {
 
 void AndroidBoundaryHle::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
     impl_->PublishSoftwareFrame(std::move(rgba8));
+}
+
+void AndroidBoundaryHle::PublishBlankFrame(std::uint8_t alpha) {
+    impl_->PublishBlankFrame(alpha);
 }
 
 void AndroidBoundaryHle::SetFrameReadbackFilter(FrameReadbackFilter covered) {

@@ -412,7 +412,22 @@ void RequireInitialized(dx::IntrinsicContext& call, const Context& context) {
     if (context->session == nullptr) {
         ModelFailure(call, "Java EGL native registry is unavailable");
     }
-    return context->session->InvokeManagedEgl(name, arguments, EglThreadId(call, context));
+    const auto thread = EglThreadId(call, context);
+    if (name != "eglSwapBuffers") return context->session->InvokeManagedEgl(name, arguments, thread);
+
+    // The boundary swap uses resolved handles and has its own graphics lock.
+    // Reacquire the VM only after the boundary has released that lock.
+    auto& lock = call.vm.ExecutionLock();
+    const auto depth = lock.ReleaseForBlocking();
+    std::uint32_t result;
+    try {
+        result = context->session->InvokeManagedEgl(name, arguments, thread);
+    } catch (...) {
+        lock.ReacquireAfterBlocking(depth);
+        throw;
+    }
+    lock.ReacquireAfterBlocking(depth);
+    return result;
 }
 
 void LatchEglError(dx::IntrinsicContext& call, const Context& context, const std::uint32_t error) {

@@ -35,8 +35,10 @@ presentation-time 校验后保存 surface 的有符号 64 位生产者时间戳�
 EGL_WIDTH/HEIGHT 和实际 ANGLE backing 一致。尺寸变化在下一次 swap 发布旧 buffer 后，
 重新分配并绑定下一 buffer；成功后 query 返回新尺寸，GL viewport 保持 guest 自己的状态。
 分配/绑定失败传播真实 EGL 错误，不冒充 resize 成功。NDK getter 可先于 EGL dequeue 变化。
-托管 holder 的读回按 supersample 解析到 buffer 尺寸，经显式纯像素 hook 交 owner 快照，
-合成缩放至 View frame；普通 standalone/NativeActivity 无 holder 时保持原 frame service。
+托管 holder 同步读取本次 swap 的 draw buffer，按 supersample 解析到 buffer 尺寸。
+显式纯像素 hook 共享帧所有权，1× 读回仅在最后一个消费者释放后复用 RGBA8 存储。
+发布及 queue 通知复核 swap 捕获的窗口代次，尺寸变化不使已出队的旧尺寸 buffer 失效。
+普通 standalone/NativeActivity 无 holder 时继续使用 FrameService。
 
 `AndroidBoundaryOptions::frame_period_ns` 非零时，guest 代码发起且成功的 window swap 在帧发布并释放模块锁后，
 按该 surface 自己的 `hal::FramePacer` 等到槽位再返回，相当于真机等下一空闲 buffer；pbuffer、失败 swap 与

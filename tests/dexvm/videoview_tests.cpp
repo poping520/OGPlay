@@ -469,8 +469,9 @@ static void StopPlaybackOnGuestWorker(VideoVm& vm, const VmObjectRef view) {
     const auto stop = vm.linker.FindVtableIndex(type, "stopPlayback", "()V");
     REQUIRE(stop.has_value());
     VmCallOutcome outcome;
-    std::thread thread(
-        [&] { outcome = vm.interpreter.Call(worker, vm.linker.Class(type).vtable[*stop], std::array{VmValue::Ref(view)}); });
+    std::thread thread([&] {
+        outcome = vm.interpreter.Call(worker, vm.linker.Class(type).vtable[*stop], std::array{VmValue::Ref(view)});
+    });
     thread.join();
     REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
     vm.interpreter.DiscardExecutionContext(worker);
@@ -1281,7 +1282,7 @@ TEST_CASE("DVM-249 Surface binding rejects stale competing and wake requests") {
     vm.CallOn(player, "setSurface", "(Landroid/view/Surface;)V", {VmValue::Ref(surface)});
     CHECK(vm.Pump() == 1);  // same paused position is decoded for the new binding
     vm.CallOn(player, "setSurface", "(Landroid/view/Surface;)V", {VmValue::Ref(surface)});
-    CHECK(vm.context->video_views.at(player.Value()).latest_frame.has_value());  // repeat is idempotent
+    CHECK(vm.context->video_views.at(player.Value()).latest_frame != nullptr);  // repeat is idempotent
     vm.CallOn(player, "start", "()V");
     vm.CallOn(player, "setSurface", "(Landroid/view/Surface;)V", {VmValue::Ref(VmObjectRef{})});
     vm.context->uptime_millis += 100;
@@ -1456,7 +1457,7 @@ TEST_CASE("DVM-339 MediaPlayer size event fixes buffer and stretches pixels to t
                 const auto src = ((y * 320U / 32U) * 480U + x * 480U / 64U) * 4U;
                 const auto dst = (y * 64U + x) * 4U;
                 for (unsigned c = 0; c < 3; ++c)
-                    CHECK(pixels[dst + c] == source.rgba8[src + c]);
+                    CHECK(pixels[dst + c] == source->rgba8[src + c]);
                 CHECK(pixels[dst + 3] == 255);
             }
         CHECK(vm.ledger.Unimplemented().empty());

@@ -1968,6 +1968,8 @@ public:
 
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) { boundary_.PublishSoftwareFrame(std::move(rgba8)); }
 
+    void PublishBlankFrame(std::uint8_t alpha) { boundary_.PublishBlankFrame(alpha); }
+
     void SetFrameReadbackFilter(FrameReadbackFilter covered) { boundary_.SetFrameReadbackFilter(std::move(covered)); }
 
     void RecycleFrame(AndroidBoundaryFrame&& frame) { boundary_.RecycleFrame(std::move(frame)); }
@@ -2699,6 +2701,10 @@ void AndroidGuestProcess::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) 
     impl_->PublishSoftwareFrame(std::move(rgba8));
 }
 
+void AndroidGuestProcess::PublishBlankFrame(std::uint8_t alpha) {
+    impl_->PublishBlankFrame(alpha);
+}
+
 void AndroidGuestProcess::SetFrameReadbackFilter(FrameReadbackFilter covered) {
     impl_->SetFrameReadbackFilter(std::move(covered));
 }
@@ -3084,6 +3090,10 @@ std::optional<AndroidBoundaryFrame> AndroidGuestCallSession::TakeLatestFrame() {
 
 void AndroidGuestCallSession::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
     process_->PublishSoftwareFrame(std::move(rgba8));
+}
+
+void AndroidGuestCallSession::PublishBlankFrame(std::uint8_t alpha) {
+    process_->PublishBlankFrame(alpha);
 }
 
 void AndroidGuestCallSession::SetFrameReadbackFilter(FrameReadbackFilter covered) {

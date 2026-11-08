@@ -23,18 +23,6 @@ BoundaryCallServices& AndroidModule::CallServices() noexcept {
     return calls_;
 }
 
-bool AndroidModule::NativeWindowIsCurrent(memory::GuestAddress window) {
-    std::scoped_lock lock(mutex_);
-    const auto found = windows_.find(window.Value());
-    if (found != windows_.end()) return found->second.active;
-    if (const auto alias = surface_geometries_.find(window.Value()); alias != surface_geometries_.end())
-        return alias->second.width != 0 && alias->second.height != 0;
-    // Java SurfaceHolder and standalone-runner identities retain their existing
-    // registry path. Reserved NativeActivity identities must never fall back.
-    return window.Value() < kNativeActivityWindowHandleBegin.Value() ||
-           window.Value() >= kNativeActivityWindowHandleEnd.Value();
-}
-
 void AndroidModule::NotifyFileWrite() {
     ready_.notify_all();
 }

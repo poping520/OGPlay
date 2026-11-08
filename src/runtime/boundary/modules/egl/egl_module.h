@@ -34,12 +34,11 @@ struct EglBoundaryContext final {
     detail::AndroidBoundaryGles1DrawState& gles1_draw;
     detail::AndroidBoundaryGles1LegacyState& gles1_legacy;
     void* native_window_owner{};
-    bool (*native_window_is_current)(void*, memory::GuestAddress){};
     core::CapabilityLedger* ledger{};
     std::optional<AndroidSurfaceWindow> (*native_window_geometry)(void*, memory::GuestAddress){};
-    void (*surface_buffer_queued)(void*, memory::GuestAddress){};
-    bool (*publish_surface_pixels)(void*, memory::GuestAddress, std::uint32_t, std::uint32_t,
-                                   std::vector<std::uint8_t>){};
+    void (*surface_buffer_queued)(void*, memory::GuestAddress, const AndroidSurfaceWindow&){};
+    bool (*publish_surface_pixels)(void*, memory::GuestAddress, const AndroidSurfaceWindow&,
+                                   std::shared_ptr<video::VideoFrame>){};
     std::uint64_t frame_period_ns{};
 };
 
@@ -67,6 +66,10 @@ public:
 private:
     BoundaryResult SurfaceExtension(const A32CallFrame& call, bool presentation);
     void PaceWindowSwap(const A32CallFrame& call);
+    [[nodiscard]] std::optional<AndroidSurfaceWindow> WindowGeometry(memory::GuestAddress window) const;
+
+    class SurfaceReadbackPool;
+    std::shared_ptr<SurfaceReadbackPool> surface_readbacks_;
     BoundaryResult UnsupportedClock(const A32CallFrame& call);
 
     struct ThreadState final {

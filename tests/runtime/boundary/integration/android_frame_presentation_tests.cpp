@@ -145,15 +145,40 @@ TEST_CASE("async window presentation warms once drains final frame and retires o
     clear(0, 0, 1);
     REQUIRE(fixture.Call("libEGL.so", "eglSwapBuffers", {1U, 3U}) == 1U);
     fixture.boundary.PublishSoftwareFrame(std::vector<std::uint8_t>(4U * 3U * 4U, 77));
-    const auto software = fixture.boundary.TakeLatestFrame();
+    auto software = fixture.boundary.TakeLatestFrame();
     REQUIRE(software.has_value());
     CHECK(software->rgba8 == std::vector<std::uint8_t>(48U, 77U));
+    CHECK_FALSE(fixture.boundary.TakeLatestFrame().has_value());
+
+    const auto* storage = software->rgba8.data();
+    const auto software_sequence = software->sequence;
+    fixture.boundary.RecycleFrame(std::move(*software));
+    fixture.boundary.PublishBlankFrame(0U);
+    fixture.boundary.PublishBlankFrame(255U);
+    const auto blank = fixture.boundary.TakeLatestFrame();
+    REQUIRE(blank);
+    CHECK(blank->sequence == software_sequence + 2U);
+    CHECK(blank->rgba8.data() == storage);
+    for (std::size_t i = 0; i < blank->rgba8.size(); ++i)
+        CHECK(blank->rgba8[i] == (i % 4U == 3U ? 255U : 0U));
     CHECK_FALSE(fixture.boundary.TakeLatestFrame().has_value());
     clear(1, 0, 0);
     REQUIRE(fixture.Call("libEGL.so", "eglSwapBuffers", {1U, 3U}) == 1U);
     const auto restarted = fixture.boundary.TakeLatestFrame();
     REQUIRE(restarted.has_value());
     CHECK(restarted->rgba8[0] == 255U);
+    clear(0, 0, 1);
+    REQUIRE(fixture.Call("libEGL.so", "eglSwapBuffers", {1U, 3U}) == 1U);
+    fixture.boundary.PublishBlankFrame(0U);
+    const auto transparent = fixture.boundary.TakeLatestFrame();
+    REQUIRE(transparent);
+    CHECK(transparent->rgba8 == std::vector<std::uint8_t>(48U, 0U));
+    CHECK_FALSE(fixture.boundary.TakeLatestFrame().has_value());
+
+    // Warm a new collector and leave work pending before a context switch.
+    clear(1, 0, 0);
+    REQUIRE(fixture.Call("libEGL.so", "eglSwapBuffers", {1U, 3U}) == 1U);
+    REQUIRE(fixture.boundary.TakeLatestFrame());
     clear(0, 0, 1);
     REQUIRE(fixture.Call("libEGL.so", "eglSwapBuffers", {1U, 3U}) == 1U);
     fixture.bus.Write32(fixture.output, 0x3098U, 1U);

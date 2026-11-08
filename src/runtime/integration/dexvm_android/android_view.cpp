@@ -1385,11 +1385,10 @@ dx::IntrinsicHandler UnlockCanvasAndPostHandler(const Context& context) {
         }
         {
             std::scoped_lock lock(context->surface_pixels_mutex);
-            context->surface_pixels[call.receiver.Value()] =
-                video::VideoFrame{0, state.width, state.height, std::move(rgba8)};
+            context->surface_pixels[call.receiver.Value()] = std::make_shared<const video::VideoFrame>(
+                video::VideoFrame{0, state.width, state.height, std::move(rgba8)});
         }
-        context->session->PublishSoftwareFrame(std::vector<std::uint8_t>(
-            static_cast<std::size_t>(context->surface_width) * context->surface_height * 4U, 0U));
+        context->session->PublishBlankFrame(0U);
         PaceCanvasPost(call, *context, call.receiver.Value());
         return dx::VmValue::Void();
     };

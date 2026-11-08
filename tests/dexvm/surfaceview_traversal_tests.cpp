@@ -733,8 +733,8 @@ TEST_CASE("SurfaceView default RGB565 ignores producer alpha across Surface life
                 // ordinary guest blending must not dim an opaque SurfaceView.
                 {
                     std::scoped_lock lock(f.context->surface_pixels_mutex);
-                    f.context->surface_pixels[holder.Value()] = {
-                        0, 1, 1, {200, 100, 50, static_cast<std::uint8_t>(alpha)}};
+                    f.context->surface_pixels[holder.Value()] = std::make_shared<const ogplay::video::VideoFrame>(
+                        ogplay::video::VideoFrame{0, 1, 1, {200, 100, 50, static_cast<std::uint8_t>(alpha)}});
                 }
                 RefreshAndroidSurfaceFrames(*f.context);
                 static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
@@ -758,6 +758,24 @@ TEST_CASE("SurfaceView default RGB565 ignores producer alpha across Surface life
         }
         CHECK(f.ledger.Unimplemented().empty());
     }
+}
+
+TEST_CASE("opaque 1:1 SurfaceView copies clipped source rows and forces alpha") {
+    auto tree = std::make_shared<ui::UiTree>(nullptr);
+    const auto id = tree->Root();
+    tree->Get(id)->screen_frame = {-1, -1, 2, 1};
+    tree->Get(id)->surface_layer = ui::SurfaceLayer::media;
+    DexVmAndroidContext::PresentationSnapshot snapshot;
+    snapshot.viewport = {3, 2};
+    snapshot.guest_window_epoch_refs = {tree};
+    snapshot.scaled_surface_frames.insert(id);
+    snapshot.video_frames.emplace(
+        id, std::make_shared<const ogplay::video::VideoFrame>(ogplay::video::VideoFrame{
+                0, 3, 2, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24}}));
+    std::vector<std::uint8_t> canvas(24, 42);
+    ComposeVideoViews(snapshot, canvas, 3, 2, false);
+    CHECK(canvas == std::vector<std::uint8_t>{17, 18, 19, 255, 21, 22, 23, 255, 42, 42, 42, 42,
+                                              42, 42, 42, 42,  42, 42, 42, 42,  42, 42, 42, 42});
 }
 
 TEST_CASE("DVM-347 holder formats preserve a transparent top Canvas and reject unsupported formats") {
@@ -815,7 +833,8 @@ TEST_CASE("DVM-347 holder formats preserve a transparent top Canvas and reject u
                 CHECK(pixels[0] == (alpha ? 20 : 0));
                 auto partial = *snapshot;
                 auto& frame = partial.video_frames.at(*FindViewUiNode(*f.context, view.Value()));
-                frame.rgba8 = {200, 100, 50, 128};
+                frame = std::make_shared<const ogplay::video::VideoFrame>(
+                    ogplay::video::VideoFrame{0, 1, 1, {200, 100, 50, 128}});
                 for (std::size_t i = 0; i < pixels.size(); i += 4) {
                     pixels[i] = 20;
                     pixels[i + 1] = 40;

@@ -170,7 +170,7 @@ TEST_CASE("DVM-303 VideoView owner metadata invalidates Java and freezes publish
         frame.width = 2;
         frame.height = 1;
         frame.rgba8 = {255, 0, 0, 255, 255, 0, 0, 255};
-        state.latest_frame = frame;
+        state.latest_frame = std::make_shared<const ogplay::video::VideoFrame>(std::move(frame));
         // DVM-310: producer pixels/opening are frozen by the owner, never Compose.
         RefreshAndroidSurfaceFrames(*f.context);
         static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::BeforePresent,

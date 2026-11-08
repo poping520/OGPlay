@@ -508,7 +508,7 @@ struct DexVmAndroidContext final {
         ui::Size viewport{};
         dexvm::VmObjectRef activity{};
         ui::UiBitmapCache bitmaps;
-        std::map<ui::UiNodeId, video::VideoFrame> video_frames;
+        std::map<ui::UiNodeId, std::shared_ptr<const video::VideoFrame>> video_frames;
         std::unordered_set<ui::UiNodeId, ui::UiNodeIdHash> scaled_surface_frames;
         std::unordered_set<ui::UiNodeId, ui::UiNodeIdHash> alpha_surface_frames;
 
@@ -722,7 +722,7 @@ struct DexVmAndroidContext final {
     std::function<void(dexvm::VmObjectRef, std::uint32_t, std::uint32_t)> update_native_surface;
     // Producer pixels contain no Java references; boundary workers never acquire the VM lock.
     std::mutex surface_pixels_mutex;
-    std::unordered_map<std::uint32_t, video::VideoFrame> surface_pixels;
+    std::unordered_map<std::uint32_t, std::shared_ptr<const video::VideoFrame>> surface_pixels;
     // Protected by surface_pixels_mutex, including boundary-worker notifications.
     // An entry belongs to one created lifetime; missing/retired holders cannot be revived.
     std::unordered_map<std::uint32_t, bool> surface_buffer_queued;
@@ -1142,7 +1142,7 @@ struct DexVmAndroidContext final {
         bool frame_requested{};
         float left_volume{1.0F};
         float right_volume{1.0F};
-        std::optional<video::VideoFrame> latest_frame;
+        std::shared_ptr<const video::VideoFrame> latest_frame;
         std::int64_t duration_ms{};
         // Playback position = base_position_ms + (uptime - start_uptime)
         // while playing; frozen at base_position_ms otherwise.

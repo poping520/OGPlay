@@ -3,7 +3,7 @@
 
 namespace ogplay::runtime {
 void AndroidModule::SetSurfaceHooks(AndroidSurfaceHooks hooks) {
-    std::scoped_lock guard(surface_hook_mutex_);
+    std::scoped_lock guard(surface_hook_mutex_, surface_publish_mutex_);
     surface_hooks_ = hooks;
     if (!hooks.from_java) {
         std::scoped_lock lock(mutex_);
@@ -17,7 +17,8 @@ void AndroidModule::RetireSurfaceWindow(memory::GuestAddress identity) {
     // already owns that VM lock, so serialize pixels with a separate mutex.
     std::scoped_lock guard(surface_publish_mutex_);
     std::scoped_lock lock(mutex_);
-    surface_geometries_[identity.Value()] = {identity, 0, 0};
+    auto& geometry = surface_geometries_[identity.Value()];
+    geometry = {identity, 0, 0, geometry.generation + 1U};
     for (auto it = windows_.begin(); it != windows_.end();) {
         auto& window = it->second;
         if (window.surface_identity == identity && window.owned) {
@@ -43,7 +44,8 @@ BoundaryResult AndroidModule::SurfaceFromJava(const A32CallFrame& call) {
 
 void AndroidModule::UpdateSurfaceWindow(const AndroidSurfaceWindow& surface) {
     std::scoped_lock lock(mutex_);
-    surface_geometries_[surface.identity.Value()] = surface;
+    auto& geometry = surface_geometries_[surface.identity.Value()];
+    geometry = {surface.identity, surface.width, surface.height, geometry.generation};
     for (auto& [_, window] : windows_) {
         if (window.surface_identity == surface.identity && window.active) {
             window.width = surface.width;
@@ -81,28 +83,37 @@ std::optional<AndroidSurfaceWindow> AndroidModule::NativeWindowGeometry(memory::
     const auto found = windows_.find(window.Value());
     if (found == windows_.end()) {
         const auto alias = surface_geometries_.find(window.Value());
-        if (alias != surface_geometries_.end() && alias->second.width && alias->second.height) return alias->second;
-        return std::nullopt;
+        if (alias != surface_geometries_.end()) {
+            if (alias->second.width && alias->second.height) return alias->second;
+            return std::nullopt;
+        }
+        // Unregistered runner identities use the session layout. Reserved
+        // NativeActivity handles must never fall back after retirement.
+        if (window.Value() >= kNativeActivityWindowHandleBegin.Value() &&
+            window.Value() < kNativeActivityWindowHandleEnd.Value())
+            return std::nullopt;
+        return AndroidSurfaceWindow{};
     }
     if (!found->second.active) return std::nullopt;
     return AndroidSurfaceWindow{found->second.surface_identity, found->second.width, found->second.height};
 }
 
-void AndroidModule::NotifySurfaceBufferQueued(memory::GuestAddress window) {
-    std::scoped_lock guard(surface_hook_mutex_);
+void AndroidModule::NotifySurfaceBufferQueued(memory::GuestAddress window, const AndroidSurfaceWindow& expected) {
     std::scoped_lock publish(surface_publish_mutex_);
     const auto geometry = NativeWindowGeometry(window);
-    if (geometry && !geometry->identity.IsNull() && surface_hooks_.buffer_queued)
-        surface_hooks_.buffer_queued(surface_hooks_.owner, geometry->identity);
+    if (geometry && geometry->identity == expected.identity && geometry->generation == expected.generation &&
+        surface_hooks_.buffer_queued)
+        surface_hooks_.buffer_queued(surface_hooks_.owner, expected.identity);
 }
 
-bool AndroidModule::PublishSurfacePixels(memory::GuestAddress window, std::uint32_t width, std::uint32_t height,
-                                         std::vector<std::uint8_t> pixels) {
-    std::scoped_lock guard(surface_hook_mutex_);
+bool AndroidModule::PublishSurfacePixels(memory::GuestAddress window, const AndroidSurfaceWindow& expected,
+                                         std::shared_ptr<video::VideoFrame> pixels) {
     std::scoped_lock publish(surface_publish_mutex_);
     const auto geometry = NativeWindowGeometry(window);
-    if (!geometry || geometry->identity.IsNull() || !surface_hooks_.publish) return false;
-    surface_hooks_.publish(surface_hooks_.owner, geometry->identity, width, height, std::move(pixels));
+    if (!geometry || geometry->identity != expected.identity || geometry->generation != expected.generation ||
+        !surface_hooks_.publish)
+        return false;
+    surface_hooks_.publish(surface_hooks_.owner, expected.identity, std::move(pixels));
     return true;
 }
 }  // namespace ogplay::runtime

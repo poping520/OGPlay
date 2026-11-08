@@ -251,7 +251,7 @@ void RefreshAndroidSurfaceFrames(DexVmAndroidContext& context) {
             (holder != context.surface_holders.end() && context.surface_pixels.contains(holder->second.Value())) ||
             std::any_of(context.video_views.begin(), context.video_views.end(), [&](const auto& entry) {
                 const auto& state = entry.second;
-                return state.latest_frame.has_value() &&
+                return state.latest_frame &&
                        (state.media_player ? state.display_view.Value() : entry.first) == object.Value();
             });
         if (node->surface_has_frame != has_frame) {
@@ -1033,8 +1033,23 @@ void ComposeFrozenVideo(const ui::UiTree& tree, const FindFrame& find_frame, con
                     const auto image_left = bounds.left + (rect_width - image_width) / 2;
                     const auto image_top = bounds.top + (rect_height - image_height) / 2;
                     const auto visible = intersect(clip, bounds);
-                    if (!has_alpha(id) && alpha == 1.0F && visible.right > visible.left &&
-                        visible.bottom > visible.top) {
+                    const bool opaque =
+                        !has_alpha(id) && alpha == 1.0F && visible.right > visible.left && visible.bottom > visible.top;
+                    if (opaque && image_width == frame.width && image_height == frame.height &&
+                        image_width == rect_width && image_height == rect_height) {
+                        const auto row_bytes = static_cast<std::size_t>(visible.right - visible.left) * 4U;
+                        const auto source_x = static_cast<std::size_t>(visible.left - image_left);
+                        for (auto y = visible.top; y < visible.bottom; ++y) {
+                            const auto source_y = static_cast<std::size_t>(y - image_top);
+                            const auto* source = frame.rgba8.data() + (source_y * frame.width + source_x) * 4U;
+                            auto* target =
+                                canvas.data() +
+                                (static_cast<std::size_t>(y) * width + static_cast<std::size_t>(visible.left)) * 4U;
+                            std::memcpy(target, source, row_bytes);
+                            for (std::size_t i = 3; i < row_bytes; i += 4)
+                                target[i] = 255U;
+                        }
+                    } else if (opaque) {
                         // Resolve each column once, then reuse identical source
                         // rows. Integer nearest-neighbour pixels remain exact.
                         constexpr auto black = std::numeric_limits<std::size_t>::max();
@@ -1147,7 +1162,7 @@ void ComposeVideoViews(const DexVmAndroidContext::PresentationSnapshot& presenta
             *tree,
             [&](ui::UiNodeId id) -> const video::VideoFrame* {
                 const auto found = presentation.video_frames.find(id);
-                return found == presentation.video_frames.end() ? nullptr : &found->second;
+                return found == presentation.video_frames.end() ? nullptr : found->second.get();
             },
             [&](ui::UiNodeId id) { return presentation.scaled_surface_frames.contains(id); },
             [&](ui::UiNodeId id) { return presentation.alpha_surface_frames.contains(id); }, canvas, width, height,
@@ -1208,7 +1223,7 @@ std::optional<std::string> PumpVideoViews(dexvm::Interpreter& vm, DexVmAndroidCo
         if (event != 0) {
             if (auto error = android_intrinsics::InvokeVideoEvent(vm, context, handle, generation, event)) return error;
         }
-        std::optional<video::VideoFrame> frame;
+        std::shared_ptr<const video::VideoFrame> frame;
         bool frame_visible = !media_player;
         event = 0;
         {
@@ -1236,9 +1251,9 @@ std::optional<std::string> PumpVideoViews(dexvm::Interpreter& vm, DexVmAndroidCo
                         state.latest_frame.reset();
                     }
                 }
-                frame = state.player->TakeFrame(position);
-                if (frame) {
-                    state.latest_frame = *frame;
+                if (auto decoded = state.player->TakeFrame(position)) {
+                    frame = std::make_shared<const video::VideoFrame>(std::move(*decoded));
+                    state.latest_frame = frame;
                     const auto holder = context.surface_holders.find(media_player ? state.display_view.Value()
                                                                                   : static_cast<std::uint32_t>(handle));
                     if (holder != context.surface_holders.end()) {

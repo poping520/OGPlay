@@ -23,7 +23,7 @@ public:
                   core::Logger* logger = nullptr, core::CapabilityLedger* ledger = nullptr);
     ~AndroidModule();
     void SetSurfaceHooks(AndroidSurfaceHooks hooks);
-    void NotifySurfaceBufferQueued(memory::GuestAddress window);
+    void NotifySurfaceBufferQueued(memory::GuestAddress window, const AndroidSurfaceWindow& expected);
     void RetireSurfaceWindow(memory::GuestAddress identity);
     memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface);
     void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface);
@@ -33,10 +33,9 @@ public:
     memory::GuestAddress PrepareThreadLooper(std::uint64_t thread_id, std::uint32_t opts = 0);
     void RetireThreadLooper(std::uint64_t thread_id);
     void ShutdownLoopers();
-    bool NativeWindowIsCurrent(memory::GuestAddress window);
     std::optional<AndroidSurfaceWindow> NativeWindowGeometry(memory::GuestAddress window);
-    bool PublishSurfacePixels(memory::GuestAddress window, std::uint32_t width, std::uint32_t height,
-                              std::vector<std::uint8_t> pixels);
+    bool PublishSurfacePixels(memory::GuestAddress window, const AndroidSurfaceWindow& expected,
+                              std::shared_ptr<video::VideoFrame> pixels);
     void PushInput(const AndroidBoundaryInput& input);
     void RegisterNativeActivity(NativeActivityBoundaryResources resources);
     void UnregisterNativeActivity(memory::GuestAddress activity);

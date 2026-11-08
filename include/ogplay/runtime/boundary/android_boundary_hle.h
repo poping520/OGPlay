@@ -29,6 +29,10 @@ class Logger;
 class CapabilityLedger;
 }  // namespace ogplay::core
 
+namespace ogplay::video {
+struct VideoFrame;
+}
+
 namespace ogplay::runtime {
 
 enum class AndroidBoundaryInputType : std::uint8_t {
@@ -113,14 +117,17 @@ struct SurfaceJavaReference final {
 };
 
 struct AndroidSurfaceWindow final {
-    memory::GuestAddress identity;
+    memory::GuestAddress identity{};
     std::uint32_t width{}, height{};
+    std::uint64_t generation{};
 };
 
 struct AndroidSurfaceHooks final {
     void* owner{};
     memory::GuestAddress (*from_java)(void*, std::uint64_t, memory::GuestAddress, SurfaceJavaReference){};
-    void (*publish)(void*, memory::GuestAddress, std::uint32_t, std::uint32_t, std::vector<std::uint8_t>){};
+    // May retain the pixels as an immutable frame or move the RGBA8 storage out
+    // synchronously for the window base. Never acquires the VM lock.
+    void (*publish)(void*, memory::GuestAddress, std::shared_ptr<video::VideoFrame>){};
     // Successful window swap only. Carries holder identity; must not acquire the VM lock.
     void (*buffer_queued)(void*, memory::GuestAddress){};
 };
@@ -212,6 +219,7 @@ public:
     // Publishes a host-composed RGBA frame (logical surface size) into the
     // same frame store and sequence as GL presents.
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
+    void PublishBlankFrame(std::uint8_t alpha);
     void RecycleFrame(AndroidBoundaryFrame&& frame);
     // Explicit upper-layer coverage certificate; true suppresses only host
     // present readback. Guest GL/readPixels execution is unaffected.

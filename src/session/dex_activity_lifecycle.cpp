@@ -776,11 +776,7 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
             std::scoped_lock pixels_lock(context.surface_pixels_mutex);
             if (snapshot && CanPublishOwnerSoftwareBase(context, *snapshot, non_holder_producers_idle) &&
                 snapshot->presentation_epoch != submitted_presentation_epoch_) {
-                const auto pixels = static_cast<std::size_t>(context.surface_width) * context.surface_height;
-                std::vector<std::uint8_t> rgba8(pixels * 4U, 0U);
-                for (std::size_t pixel = 0; pixel < pixels; ++pixel)
-                    rgba8[pixel * 4U + 3U] = 0xffU;
-                context.session->PublishSoftwareFrame(std::move(rgba8));
+                context.session->PublishBlankFrame(0xffU);
                 submitted_presentation_epoch_ = snapshot->presentation_epoch;
             }
         }

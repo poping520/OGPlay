@@ -42,6 +42,8 @@ FrameService 的 async_present_readback 为显式实时选项，默认 false；�
 context/surface/尺寸变更、软件帧、覆盖及关闭退役旧读回代际，旧 callback 不得覆盖新帧。
 回调只锁 frame store，不查询 UI/guest；Reset/析构不持有此锁 join。显式路径传播 worker
 错误，析构仅兜底清理；同步和不具备实际能力的路径保持原完成语义。
+空白基帧与其他软件帧共用帧序号和读回退役规则，只在取帧时生成黑色 RGBA8，
+优先使用已回收的逻辑尺寸存储，保留提交时指定的 alpha。
 
 压缩纹理的扩展发布取自 AngleFrame 压缩能力快照，native、Java 及 GLES1/2/3 的
 扩展/格式查询共用策略结果；GLES1 的其他固定功能扩展保持独立支持边界。

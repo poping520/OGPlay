@@ -809,8 +809,9 @@ SurfaceView 请求，Window.takeSurface holder 只用真实 managed window buffe
 Rect 身份稳定，销毁后 retire native surface 并清除 producer 像素；完整 WMS/updateWindow 未启用。
 Canvas、NDK/EGL 与 MediaPlayer 使用 buffer→View frame 最近邻缩放；MediaPlayer 先在 buffer
 内保留比例，VideoView 仍走原 letterbox。呈现快照冻结像素及缩放策略，alpha/ZOrder/输入不变。
-EGL producer 经显式 boundary hook 投递纯像素，不获取 VM 锁或保存 Java 引用；surface 退役与
-发布串行，owner 安全点才共同发布新像素与几何。
+Java EGL swap 在 VM 锁内解析句柄，在锁外同步调用 boundary，图形锁释放后恢复 VM 锁。
+EGL producer 经显式 hook 投递纯像素，与 surface 退役串行；owner 安全点共同发布像素与几何。
+View holder 和视频生产者发布共享不可变帧，快照 lease 保活其像素直到最后一个读者释放。
 holder 的 buffer queue 事实由 created 复位、destroyed/退役清除；Canvas post、媒体实际帧及
 纯像素发布置位。Java/native 共用 EGL 成功 window swap 通过显式 holder 身份回调上报，
 只操作独立同步的 producer 状态，不在 boundary worker 获取 VM 锁。EGL 创建/Canvas lock

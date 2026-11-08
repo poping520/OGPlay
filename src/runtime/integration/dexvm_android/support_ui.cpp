@@ -2474,17 +2474,16 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
             if (!id) continue;
             for (const auto& partition : next->guest_window_epoch_refs) {
                 if (!partition->Get(*id) || !partition->IsAttached(*id) || !partition->IsVisible(*id)) continue;
-                auto pixels = frame;
+                auto pixels = state.latest_frame;
                 if (state.media_player) {
                     const auto holder = context.surface_holders.find(state.display_view.Value());
                     if (holder == context.surface_holders.end()) continue;
                     const auto size = context.surface_callback_sizes.find(holder->second.Value());
                     if (size == context.surface_callback_sizes.end()) continue;
-                    if (pixels.width != size->second.first || pixels.height != size->second.second) {
-                        pixels.rgba8 = video::ComposeRgbaOnCanvas(frame, size->second.first, size->second.second);
-                        pixels.width = size->second.first;
-                        pixels.height = size->second.second;
-                    }
+                    if (frame.width != size->second.first || frame.height != size->second.second)
+                        pixels = std::make_shared<const video::VideoFrame>(video::VideoFrame{
+                            frame.position_ms, size->second.first, size->second.second,
+                            video::ComposeRgbaOnCanvas(frame, size->second.first, size->second.second)});
                     next->scaled_surface_frames.insert(*id);
                 }
                 if (state.media_player) {
@@ -2555,13 +2554,15 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
     }();
     const auto same_video = [&] {
         if (!previous || previous->video_frames.size() != next->video_frames.size() ||
-            previous->alpha_surface_frames != next->alpha_surface_frames)
+            previous->alpha_surface_frames != next->alpha_surface_frames ||
+            previous->scaled_surface_frames != next->scaled_surface_frames)
             return false;
         for (const auto& [id, frame] : next->video_frames) {
             const auto old = previous->video_frames.find(id);
-            if (old == previous->video_frames.end() || old->second.width != frame.width ||
-                old->second.height != frame.height || old->second.position_ms != frame.position_ms ||
-                old->second.rgba8 != frame.rgba8)
+            if (old == previous->video_frames.end()) return false;
+            if (old->second != frame &&
+                (old->second->width != frame->width || old->second->height != frame->height ||
+                 old->second->position_ms != frame->position_ms || old->second->rgba8 != frame->rgba8))
                 return false;
         }
         return true;

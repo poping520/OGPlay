@@ -49,6 +49,10 @@ p.canvas-note { padding: 8px 16px; }
 .zone text.name { fill: var(--soft); font-weight: 700; }
 .zone .handle { fill: #fff; stroke: var(--accent); stroke-width: 2; cursor: nwse-resize; }
 .zone .travel-handle { fill: var(--running); stroke: #fff; cursor: ew-resize; }
+/* crosshair: a ringed cross; when selected, a dashed box shows where its finger may travel */
+.zone.crosshair line { stroke: rgba(255,194,26,.95); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.zone.crosshair.selected line { stroke: #fff; }
+.zone.crosshair rect.range { fill: rgba(255,255,255,.04); stroke: rgba(255,255,255,.7); stroke-dasharray: 8 6; pointer-events: none; }
 
 /* inspector */
 aside { display: flex; flex: none; flex-direction: column; gap: 18px; width: 320px; padding: 18px; border-radius: 18px; background: var(--glass); overflow: auto; }
@@ -79,3 +83,40 @@ aside p { color: var(--soft); font-size: 13px; }
 .token h1, .loading h1 { font-size: 22px; font-weight: 900; }
 .token input { align-self: stretch; }
 @media (max-width: 760px) { .workspace { flex-direction: column; } aside { width: auto; } }
+
+/* game shortcuts: a strip under the header with keycaps, the mouse lock entry highlighted */
+.shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin: 0 20px 10px; padding: 10px 16px; border-radius: 14px;
+  background: rgba(255,194,26,.1); border: 1px solid rgba(255,194,26,.35); color: #fff; font-size: 14px; font-weight: 700; }
+.shortcuts > b { color: var(--accent); font-size: 13px; }
+.shortcut { display: inline-flex; align-items: center; gap: 8px; }
+.shortcut.primary { padding: 4px 10px 4px 6px; border-radius: 10px; background: rgba(255,194,26,.18); }
+.or { color: var(--soft); font-size: 12px; font-weight: 700; }
+.keycap-group { display: inline-flex; align-items: center; gap: 5px; }
+.keycap-group small { color: var(--soft); font-size: 12px; font-weight: 700; }
+.keycap { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 30px; padding: 0 9px; box-sizing: border-box;
+  border-radius: 7px; border: 1px solid rgba(255,255,255,.55); border-bottom-width: 3px; background: #1f2638; color: #fff;
+  font: 800 16px/1 ui-monospace, SFMono-Regular, Menlo, monospace; box-shadow: 0 2px 0 rgba(0,0,0,.35); }
+.lock-row { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center; padding: 12px; border-radius: 12px;
+  background: rgba(255,194,26,.12); border: 1px solid rgba(255,194,26,.4); }
+.lock-row .lock-title { grid-column: 1 / -1; color: var(--accent); font-weight: 800; }
+.lock-row .lock-keys { display: inline-flex; align-items: center; gap: 8px; }
+.lock-row small { grid-column: 1 / -1; color: var(--soft); }
+.field-title { color: var(--soft); font-size: 13px; font-weight: 700; }
+.check { display: flex; gap: 10px; align-items: flex-start; font-weight: 700; cursor: pointer; }
+.check small { display: block; color: var(--soft); font-weight: 600; }
+.zone.crosshair.warn circle, .zone.crosshair.warn line { stroke: var(--danger); }
+p.warning { margin: 0; padding: 10px 12px; border-radius: 10px; background: rgba(255,90,82,.14); border: 1px solid rgba(255,90,82,.5); color: #ffb4ae; font-weight: 700; }
+/* a titled option block, set apart from the controls above it */
+.inspector > .option-group { display: flex; flex-direction: column; gap: 8px; margin-top: 22px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.08); }
+.option-group .field-title { color: var(--ink); font-size: 14px; }
+.option-group small { color: var(--soft); }
+.option-group .option-note { padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.05); }
+.shortcut.warning-chip, em.warning-chip { padding: 4px 10px; border-radius: 10px; background: rgba(255,90,82,.16); color: #ffb4ae; font-style: normal; }
+.check.inline { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; font-size: 12px; color: var(--soft); }
+/* right-click menu on a control */
+.context-menu { position: fixed; z-index: 20; display: flex; flex-direction: column; min-width: 150px; padding: 6px; border-radius: 12px;
+  background: #1b2133; border: 1px solid rgba(255,255,255,.14); box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.context-menu .context-title { padding: 6px 10px; color: var(--soft); font-size: 12px; font-weight: 700; }
+.context-menu button { padding: 9px 10px; border: 0; border-radius: 8px; background: none; color: var(--ink); font-weight: 800; text-align: left; cursor: pointer; }
+.context-menu button:hover { background: rgba(255,255,255,.08); }
+.context-menu button.danger { color: #ff8f87; }

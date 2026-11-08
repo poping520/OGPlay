@@ -46,6 +46,8 @@
 - `hal::InputEvent` 的键盘事实同时携带物理 scancode、当前键盘布局与 modifier 解析出的
   Unicode key symbol、左右 modifier/caps/num 状态及 repeat；这里不生成 Android keyCode。
   SDL 指针事件使用队列中此前键盘事件的修饰键状态，失焦或生命周期切换时清除。
+- `hal::WindowInput::SetRelativePointer`：窗口打开期间切换相对指针（隐藏并约束光标，
+  `pointer_motion` 只看 delta）；宿主拒绝时返回 false，失焦期间由宿主临时释放。
 - `hal::WindowInput::SetTitle`：只在窗口打开期间更新宿主标题，拒绝内嵌 NUL，SDL
   失败必须明确传播。
 - `hal::WindowInput::Show`：显示已打开的隐藏窗口；未打开或宿主显示失败明确抛错。可先配置图标再显示，避免任务栏首次显示默认图标。

@@ -14,3 +14,5 @@
 | [INP-6](INP-6.md) | Web 按键编辑器（由 run-apk 提供） | INP-5 | 完成 |
 | [INP-7](INP-7.md) | 编辑器入口：GUI“按键设置”窗口、游戏内 F2、浏览器回退；P0.5 实机验收 | INP-4、INP-6 | 实现完成，实机验收待用户 |
 | [INP-8](INP-8.md) | 输入/显示纯用户数据，删除 Profile 输入与类型模板 | INP-5..7、APS-15 | 完成 |
+| [INP-9](INP-9.md) | HAL 滚轮/触控板捏合事件与内置双指捏合 | INP-8 | 完成（macOS 滚轮/触控板手测） |
+| [INP-10](INP-10.md) | 相对鼠标、`look` 视角原语、`mouse:motion`/`wheel:*` 输入源（FPS 键鼠 P1a） | INP-9 | 实现完成，实机验收待用户 |

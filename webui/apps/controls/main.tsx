@@ -3,17 +3,17 @@ import { render } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import '../../packages/ui-kit/theme.css';
 import './style.css';
-import { captureKey, captureMouse, joinStickSources, replaceStickSource, sourceLabel, splitSources } from './keys';
+import { captureKey, captureMouse, captureWheel, joinStickSources, keyCaption, replaceStickSource, sourceLabel, splitSources } from './keys';
 import {
-  addControl, baseBindings, buildLayer, clampBox, conflicts, freeStickPreset, loadDraft, newStick, placeZone, removeControl,
-  resolveZone, setZoneBinding, toGuest, type Binding, type Box, type Draft, type Session, type Zone,
+  addControl, backBinding, baseBindings, buildLayer, clampBox, conflicts, crosshairTooLeft, freeStickPreset, hasLook, loadDraft, lockBinding, lookRange, newLook, newStick,
+  placeZone, removeControl, resolveZone, setLock, setZoneBinding, toGuest, withLock, type Binding, type Box, type Draft, type Session, type Zone,
 } from './model';
 import { createRpc, rememberToken, resumeOnUnload, RpcError, takeToken, Unauthorized, type Rpc } from './rpc';
 
 interface Frame { url: string; sequence: number }
 interface Status { kind: 'info' | 'ok' | 'error'; text: string }
 // direction: rebind only that stick direction instead of collecting all four.
-interface Capture { zone: string; kind: 'button' | 'stick'; collected: string[]; template: Binding; direction?: number }
+interface Capture { zone: string; kind: 'button' | 'stick' | 'lock'; collected: string[]; template: Binding; direction?: number }
 type Drag = { kind: 'move' | 'size' | 'travel'; zone: string; start: { x: number; y: number }; box: Box; pointer: number };
 
 const stickSteps = () => [t('上'), t('左'), t('下'), t('右')];
@@ -39,12 +39,35 @@ function zoneBindings(draft: Draft, zone: string) { return draft.bindings.filter
 
 function bindingText(binding: Binding): string {
   if (binding.action === 'stick') return splitSources(binding.source).map(sourceLabel).join(' ');
+  if (binding.action === 'look') return t('准星');
   return sourceLabel(binding.source);
 }
 
-function Stage({ session, draft, frame, selected, conflicted, onSelect, onZone, onBinding }: {
+// A key drawn as a keycap, with a spoken caption when the cap is only a symbol ("~ 波浪键").
+function Keycap({ source, text }: { source?: string; text?: string }) {
+  const caption = source ? keyCaption(source) : undefined;
+  return <span class="keycap-group"><kbd class="keycap">{text ?? (source ? sourceLabel(source) : '')}</kbd>{caption && <small>{caption}</small>}</span>;
+}
+
+// The shortcuts that work inside the game window; the mouse lock ones appear once there is a crosshair.
+function ShortcutBar({ draft }: { draft: Draft }) {
+  const lock = lockBinding(draft), back = backBinding(draft), look = hasLook(draft);
+  return <div class="shortcuts" role="note">
+    <b>{t("游戏中快捷键")}</b>
+    {look && (lock
+      ? <span class="shortcut primary"><Keycap source={lock.source} /><span>{t("锁定 / 放开鼠标（锁定后鼠标转视角）")}</span></span>
+      : <span class="shortcut warning-chip">{t("未设置锁定鼠标的按键，选中准星后设置")}</span>)}
+    {back && <span class="shortcut"><Keycap text="Esc" />
+      <span>{look && back.release_pointer ? t("安卓返回键（同时放开鼠标）") : t("安卓返回键")}</span></span>}
+    <span class="shortcut"><Keycap text="F1" /><span>{t("显示按键提示")}</span></span>
+    <span class="shortcut"><Keycap text="F2" /><span>{t("打开按键设置")}</span></span>
+  </div>;
+}
+
+function Stage({ session, draft, frame, selected, conflicted, onSelect, onZone, onBinding, onMenu }: {
   session: Session; draft: Draft; frame: Frame | null; selected: string | null; conflicted: Set<string>;
   onSelect: (zone: string | null) => void; onZone: (zone: Zone) => void; onBinding: (zone: string, binding: Binding) => void;
+  onMenu: (zone: string, x: number, y: number) => void;
 }) {
   const { width, height } = session.surface;
   const svg = useRef<SVGSVGElement>(null);
@@ -52,6 +75,7 @@ function Stage({ session, draft, frame, selected, conflicted, onSelect, onZone, 
   const point = (event: PointerEvent) => toGuest(event.clientX, event.clientY, svg.current!.getBoundingClientRect(), session.surface);
   const begin = (event: PointerEvent, kind: Drag['kind'], zone: Zone) => {
     event.stopPropagation(); event.preventDefault();
+    if (event.button !== 0) { onSelect(zone.name); return; }  // right click opens the menu, never drags
     svg.current!.setPointerCapture(event.pointerId);
     drag.current = { kind, zone: zone.name, start: point(event), box: resolveZone(zone, session.surface), pointer: event.pointerId };
     onSelect(zone.name);
@@ -74,17 +98,34 @@ function Stage({ session, draft, frame, selected, conflicted, onSelect, onZone, 
     }
   };
   const end = (event: PointerEvent) => { if (drag.current?.pointer === event.pointerId) drag.current = null; };
+  const menu = (event: MouseEvent, zone: Zone) => { event.preventDefault(); event.stopPropagation(); onSelect(zone.name); onMenu(zone.name, event.clientX, event.clientY); };
   return <svg ref={svg} class="stage" viewBox={`0 0 ${width} ${height}`} style={{ aspectRatio: `${width} / ${height}` }}
-              onPointerDown={() => onSelect(null)} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
+              onPointerDown={() => onSelect(null)} onPointerMove={move} onPointerUp={end} onPointerCancel={end}
+              onContextMenu={event => event.preventDefault()}>
     {frame ? <image href={frame.url} x="0" y="0" width={width} height={height} preserveAspectRatio="none" />
            : <rect class="placeholder" width={width} height={height} />}
     {draft.zones.map(zone => {
       const box = resolveZone(zone, session.surface);
       const bindings = zoneBindings(draft, zone.name);
       const stick = bindings.find(binding => binding.action === 'stick');
+      const look = bindings.find(binding => binding.action === 'look');
       const classes = ['zone', zone.name === selected ? 'selected' : '', conflicted.has(zone.name) ? 'conflict' : '', bindings.length ? '' : 'unbound'].join(' ');
       const font = Math.max(12, Math.min(28, box.hh * 0.45));
-      return <g key={zone.name} class={classes} onPointerDown={event => begin(event as PointerEvent, 'move', zone)}>
+      if (look) {
+        // The crosshair: where the finger presses; when selected, the dashed box is where it may travel.
+        const range = lookRange(box, look, session.surface), arm = box.hw * 1.8;
+        return <g key={zone.name} class={`${classes} crosshair ${crosshairTooLeft(box, session.surface) ? 'warn' : ''}`} onPointerDown={event => begin(event as PointerEvent, 'move', zone)}
+                  onContextMenu={event => menu(event as MouseEvent, zone)}>
+          {zone.name === selected && <rect class="range" x={range.x} y={range.y} width={range.width} height={range.height} />}
+          <circle cx={box.cx} cy={box.cy} r={box.hw} />
+          <line x1={box.cx - arm} y1={box.cy} x2={box.cx + arm} y2={box.cy} />
+          <line x1={box.cx} y1={box.cy - arm} x2={box.cx} y2={box.cy + arm} />
+          <text x={box.cx} y={box.cy - arm - 12} font-size="16">{t('准星')}</text>
+          <text class="name" x={box.cx} y={box.cy + arm + 12} font-size="11">{zone.name}</text>
+        </g>;
+      }
+      return <g key={zone.name} class={classes} onPointerDown={event => begin(event as PointerEvent, 'move', zone)}
+                onContextMenu={event => menu(event as MouseEvent, zone)}>
         {box.circle ? <circle cx={box.cx} cy={box.cy} r={box.hw} /> : <rect x={box.cx - box.hw} y={box.cy - box.hh} width={box.hw * 2} height={box.hh * 2} rx="6" />}
         {stick ? <>
           <circle class="travel" cx={box.cx} cy={box.cy} r={box.hw * (stick.radius ?? 0.7)} />
@@ -116,10 +157,11 @@ function NumberField({ label, value, min, max, step = 1, onChange }: { label: st
   </label>;
 }
 
-function Inspector({ session, draft, zone, conflictedBindings, capturing, onZone, onBinding, onCapture, onStick, onRemove }: {
+function Inspector({ session, draft, zone, conflictedBindings, capturing, onZone, onBinding, onCapture, onStick, onLook, onRemove }: {
   session: Session; draft: Draft; zone: Zone; conflictedBindings: Set<number>; capturing?: number;
   onZone: (zone: Zone) => void; onBinding: (zone: string, binding: Binding) => void;
-  onCapture: (zone: string, kind: 'button' | 'stick', direction?: number) => void; onStick: (zone: string) => void; onRemove: (zone: string) => void;
+  onCapture: (zone: string, kind: 'button' | 'stick' | 'lock', direction?: number) => void; onStick: (zone: string) => void;
+  onLook: (zone: string) => void; onRemove: (zone: string) => void;
 }) {
   const box = resolveZone(zone, session.surface);
   const bindings = zoneBindings(draft, zone.name);
@@ -130,23 +172,29 @@ function Inspector({ session, draft, zone, conflictedBindings, capturing, onZone
   };
   return <section class="inspector">
     <h2>{zone.name}</h2>
-    <div class="seg">
+    {binding?.action !== 'look' && <div class="seg">
       <button class={box.circle ? 'on' : ''} aria-pressed={box.circle} onClick={() => reshape(true)}>{t("圆形")}</button>
       <button class={box.circle ? '' : 'on'} aria-pressed={!box.circle} onClick={() => reshape(false)}>{t("矩形")}</button>
-    </div>
+    </div>}
     {!binding && <div class="row">
       <button class="pill main" onClick={() => onCapture(zone.name, 'button')}>{t("设为按钮并绑定按键")}</button>
       <button class="pill" onClick={() => onStick(zone.name)}>{t("设为摇杆")}</button>
+      {!hasLook(draft) && <button class="pill" onClick={() => onLook(zone.name)}>{t("设为准星")}</button>}
     </div>}
     {binding?.action === 'button' && <>
       <p class={conflictedBindings.has(draft.bindings.indexOf(binding)) ? 'conflict-text' : ''}>{t("按键：")}<b>{bindingText(binding)}</b></p>
       <div class="row"><button class="pill" onClick={() => onCapture(zone.name, 'button')}>{t("重新绑定")}</button></div>
       <div class="seg">{(['tap', 'hold', 'repeat'] as const).map(press =>
         <button class={(binding.press ?? 'hold') === press ? 'on' : ''} aria-pressed={(binding.press ?? 'hold') === press}
-                onClick={() => onBinding(zone.name, { ...binding, press, repeat_frames: press === 'repeat' ? binding.repeat_frames ?? 6 : undefined })}>{pressNames()[press]}</button>)}
+                onClick={() => onBinding(zone.name, { ...binding, press, repeat_frames: press === 'repeat' ? binding.repeat_frames ?? 2 : undefined })}>{pressNames()[press]}</button>)}
       </div>
-      {binding.press === 'repeat' && <NumberField label={t("连发间隔（帧）")} value={binding.repeat_frames ?? 6} min={2} max={120}
+      {binding.press === 'repeat' && <NumberField label={t("连发间隔（帧）")} value={binding.repeat_frames ?? 2} min={2} max={120}
         onChange={value => onBinding(zone.name, { ...binding, repeat_frames: value })} />}
+      {hasLook(draft) && <label class="check">
+        <input type="checkbox" checked={!!binding.release_pointer}
+               onChange={event => onBinding(zone.name, { ...binding, release_pointer: (event.target as HTMLInputElement).checked || undefined })} />
+        <span>{t("按下时放开鼠标")}<small>{t("用于地图、背包等需要用鼠标点选的界面")}</small></span>
+      </label>}
     </>}
     {binding?.action === 'stick' && <>
       <div class={`directions ${conflictedBindings.has(draft.bindings.indexOf(binding)) ? 'conflict-text' : ''}`}>
@@ -168,31 +216,82 @@ function Inspector({ session, draft, zone, conflictedBindings, capturing, onZone
         onChange={value => onBinding(zone.name, { ...binding, ramp_frames: value })} />
       <small>{t("拖动圆内的菱形手柄调整行程。")}</small>
     </>}
+    {binding?.action === 'look' && (() => {
+      const lock = lockBinding(draft);
+      return <>
+        <p class={conflictedBindings.has(draft.bindings.indexOf(binding)) ? 'conflict-text' : ''}>{t("鼠标移动转动视角：手指从准星按下，随鼠标拖动，可以划过整个画面。")}</p>
+        {crosshairTooLeft(box, session.surface) && <p class="warning">{t("准星离画面中线太近或在左半边。手指每次回到准星重新按下时，可能被游戏当成左侧的移动摇杆。请把准星拖到右半边的空白处。")}</p>}
+        <div class={`lock-row ${lock && conflictedBindings.has(draft.bindings.indexOf(lock)) ? 'conflict-text' : ''}`}>
+          <span class="lock-title">{t("锁定 / 放开鼠标")}</span>
+          <span class="lock-keys">{lock ? <Keycap source={lock.source} /> : <em class="warning-chip">{t("未设置")}</em>}</span>
+          <button class="pill" onClick={() => onCapture(zone.name, 'lock')}>{lock ? t("更换按键") : t("设置按键")}</button>
+          <small>{t("进入游戏后鼠标是自由的；按一次锁定，用鼠标转视角，再按一次放开。勾选了“同时放开鼠标”的按键（默认 Esc）按下时也会放开。")}</small>
+        </div>
+        <NumberField label={t("水平灵敏度")} value={binding.sensitivity ?? 1} min={0.05} max={20} step={0.05}
+          onChange={value => onBinding(zone.name, { ...binding, sensitivity: Math.round(value * 100) / 100 })} />
+        <NumberField label={t("垂直灵敏度")} value={binding.sensitivity_y ?? binding.sensitivity ?? 1} min={0.05} max={20} step={0.05}
+          onChange={value => onBinding(zone.name, { ...binding, sensitivity_y: Math.round(value * 100) / 100 })} />
+        <div class="seg">
+          <button class={binding.invert_y ? '' : 'on'} aria-pressed={!binding.invert_y} onClick={() => onBinding(zone.name, { ...binding, invert_y: false })}>{t("垂直正常")}</button>
+          <button class={binding.invert_y ? 'on' : ''} aria-pressed={!!binding.invert_y} onClick={() => onBinding(zone.name, { ...binding, invert_y: true })}>{t("垂直反转")}</button>
+        </div>
+        <div class="option-group">
+          <span class="field-title">{t("手指拖到画面边缘后")}</span>
+          <small>{t("手指不能拖出画面，会回到准星重新按下，继续转动。")}</small>
+          <div class="seg">
+            <button class={binding.regrip === 'handoff' ? '' : 'on'} aria-pressed={binding.regrip !== 'handoff'} onClick={() => onBinding(zone.name, { ...binding, regrip: 'single' })}>{t("抬起再按下（推荐）")}</button>
+            <button class={binding.regrip === 'handoff' ? 'on' : ''} aria-pressed={binding.regrip === 'handoff'} onClick={() => onBinding(zone.name, { ...binding, regrip: 'handoff' })}>{t("双指交接")}</button>
+          </div>
+          {binding.regrip === 'handoff'
+            ? <small class="option-note">{t("先按下新手指，再抬起旧手指，转动更连贯。部分游戏会把新手指当成移动摇杆，出现误操作时请改回推荐方式。")}</small>
+            : <small class="option-note">{t("先抬起手指，下一帧再在准星按下。适合大多数游戏。")}</small>}
+        </div>
+        <NumberField label={t("最大水平偏移（像素，0 为整个画面）")} value={binding.max_offset_x ?? 0} min={0} max={session.surface.width}
+          onChange={value => onBinding(zone.name, { ...binding, max_offset_x: value })} />
+        <NumberField label={t("最大垂直偏移（像素，0 为整个画面）")} value={binding.max_offset_y ?? 0} min={0} max={session.surface.height}
+          onChange={value => onBinding(zone.name, { ...binding, max_offset_y: value })} />
+        <NumberField label={t("按下停留（帧）")} value={binding.settle_frames ?? 0} min={0} max={30}
+          onChange={value => onBinding(zone.name, { ...binding, settle_frames: value })} />
+        <small>{t("把准星放在不会碰到其他按钮的位置；虚线框是手指能拖到的范围。")}</small>
+      </>;
+    })()}
     <div class="row"><button class="pill danger" onClick={() => onRemove(zone.name)}>{t("删除此控件")}</button></div>
   </section>;
 }
 
-function OtherBindings({ draft, conflictedBindings, onRemove }: { draft: Draft; conflictedBindings: Set<number>; onRemove: (index: number) => void }) {
+function OtherBindings({ draft, conflictedBindings, onRemove, onChange }: {
+  draft: Draft; conflictedBindings: Set<number>; onRemove: (index: number) => void; onChange: (index: number, binding: Binding) => void;
+}) {
   const others = draft.bindings.map((binding, index) => ({ binding, index })).filter(({ binding }) => !binding.zone);
   if (!others.length) return null;
+  const look = hasLook(draft);
   return <section class="others">
     <h3>{t("其他绑定")}</h3>
     {others.map(({ binding, index }) => <div class={`other ${conflictedBindings.has(index) ? 'conflict-text' : ''}`} key={index}>
-      <span>{bindingText(binding)} → {binding.action === 'key' ? t("安卓键 {key}", { key: binding.key ?? '' }) : t("切换到 {mode}", { mode: binding.target ?? '' })}
-        {binding.mode && binding.mode !== 'default' ? <small>{t("模式")}{binding.mode === '*' ? t('全部') : binding.mode}</small> : null}</span>
+      <span>{bindingText(binding)} → {binding.action === 'key' ? t("安卓键 {key}", { key: binding.key ?? '' }) : binding.action === 'lock' ? t('锁定/放开鼠标') : t("切换到 {mode}", { mode: binding.target ?? '' })}
+        {binding.mode && binding.mode !== 'default' ? <small>{t("模式")}{binding.mode === '*' ? t('全部') : binding.mode}</small> : null}
+        {look && binding.action === 'key' && <label class="check inline">
+          <input type="checkbox" checked={!!binding.release_pointer}
+                 onChange={event => onChange(index, { ...binding, release_pointer: (event.target as HTMLInputElement).checked || undefined })} />
+          <span>{t("同时放开鼠标")}</span>
+        </label>}</span>
       <button class="pill danger" onClick={() => onRemove(index)}>{t("删除")}</button>
     </div>)}
   </section>;
 }
 
-function CaptureBanner({ capture, onMouse, onCancel }: { capture: Capture; onMouse: (button: number) => void; onCancel: () => void }) {
-  const prompt = capture.kind === 'button' ? t("按下要绑定到 {zone} 的键", { zone: capture.zone })
+function CaptureBanner({ capture, onMouse, onWheel, onCancel }: {
+  capture: Capture; onMouse: (button: number) => void; onWheel: (deltaY: number) => void; onCancel: () => void;
+}) {
+  const prompt = capture.kind === 'lock' ? t("按下用于锁定/放开鼠标的键")
+    : capture.kind === 'button' ? t("按下要绑定到 {zone} 的键", { zone: capture.zone })
     : capture.direction !== undefined ? t("按下摇杆“{direction}”方向的新键", { direction: stickSteps()[capture.direction] })
     : t("按下摇杆“{direction}”方向的键（{step}/4）", { direction: stickSteps()[capture.collected.length], step: capture.collected.length + 1 });
   return <div class="capture" role="dialog" aria-live="polite">
     <b>{prompt}</b><span>{t("Esc 取消；F1、F2 与 Ctrl/Cmd 组合键保留给宿主。")}</span>
     {capture.kind === 'button' && <div class="mouse-pad" onMouseDown={event => { event.preventDefault(); onMouse(event.button); }}
-                                       onContextMenu={event => event.preventDefault()}>{t("在此框内点击鼠标键以绑定鼠标")}</div>}
+                                       onWheel={event => { event.preventDefault(); onWheel(event.deltaY); }}
+                                       onContextMenu={event => event.preventDefault()}>{t("在此框内点击鼠标键或滚动滚轮以绑定")}</div>}
     <button class="pill" onClick={onCancel}>{t("取消")}</button>
   </div>;
 }
@@ -204,6 +303,19 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
   const [frame, setFrame] = useState<Frame | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [capture, setCapture] = useState<Capture | null>(null);
+  const [menu, setMenu] = useState<{ zone: string; x: number; y: number } | null>(null);
+  // The control menu closes on any other click, Escape, scrolling or resizing.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    window.addEventListener('pointerdown', close); window.addEventListener('keydown', key);
+    window.addEventListener('scroll', close, true); window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('pointerdown', close); window.removeEventListener('keydown', key);
+      window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close);
+    };
+  }, [menu]);
   const [status, setStatus] = useState<Status>({ kind: 'info', text: t('正在连接游戏…') });
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -246,9 +358,9 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
   const update = (next: Draft) => { replaceDraft(next); setDirty(true); };
   const onZone = (zone: Zone) => { const current = draftRef.current; if (current) update({ ...current, zones: current.zones.map(item => item.name === zone.name ? zone : item) }); };
   const onBinding = (zone: string, binding: Binding) => { const current = draftRef.current; if (current) update(setZoneBinding(current, zone, binding)); };
-  const startCapture = (zone: string, kind: 'button' | 'stick', direction?: number) => {
-    const existing = draftRef.current && zoneBindings(draftRef.current, zone).find(binding => binding.action === kind);
-    const template: Binding = existing ?? (kind === 'stick' ? newStick(zone, '') : { source: '', action: 'button', zone, press: 'tap' });
+  const startCapture = (zone: string, kind: 'button' | 'stick' | 'lock', direction?: number) => {
+    const existing = draftRef.current && (kind === 'lock' ? lockBinding(draftRef.current) : zoneBindings(draftRef.current, zone).find(binding => binding.action === kind));
+    const template: Binding = existing ?? (kind === 'stick' ? newStick(zone, '') : kind === 'lock' ? { source: '', action: 'lock', mode: '*' } : { source: '', action: 'button', zone, press: 'tap' });
     // A focused button would be activated again by the key's keyup (Space/Enter).
     (document.activeElement as HTMLElement | null)?.blur?.();
     setSelected(zone); changeCapture({ zone, kind, collected: [], template, direction });
@@ -260,13 +372,27 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
     update(setZoneBinding(current, zone, newStick(zone, preset))); setSelected(zone);
     setStatus({ kind: 'info', text: t("{zone} 已用 {keys} 控制上左下右，可在右侧点击单个方向更换按键。", { zone, keys: splitSources(preset).map(sourceLabel).join(' ') }) });
   };
+  const makeLook = (current: Draft, zone: string) => {
+    const next = withLock(setZoneBinding(current, zone, newLook(zone)));
+    update(next); setSelected(zone);
+    const lock = lockBinding(next);
+    if (!lock) { setStatus({ kind: 'error', text: t("{zone} 是准星，但 ~、F3、F4 都已被占用，请在右侧为它设置锁定鼠标的按键。", { zone }) }); return; }
+    const key = [sourceLabel(lock.source), keyCaption(lock.source)].filter(Boolean).join(' ');
+    setStatus({ kind: 'info', text: t("{zone} 是准星：把它放在不碰其他按钮的地方。进入游戏后按 {key} 锁定鼠标转视角。", { zone, key }) });
+  };
   // Key events can arrive before the next paint; capture state lives in refs so the listener
   // registered once always sees the latest capture and draft.
   const finishSource = (source: string) => {
     const active = captureRef.current, current = draftRef.current;
     if (!active || !current) return;
+    if (active.kind === 'lock') {
+      if (!source.startsWith('key:')) { setStatus({ kind: 'error', text: t('锁定/放开鼠标需要用键盘按键。') }); return; }
+      update(setLock(current, source)); changeCapture(null); return;
+    }
     if (active.kind === 'button') {
-      update(setZoneBinding(current, active.zone, { ...active.template, source })); changeCapture(null); return;
+      // A new mouse button usually fires or aims, which games read as held; keys stay taps.
+      const press = !active.template.source && source.startsWith('mouse:') ? 'hold' : active.template.press;
+      update(setZoneBinding(current, active.zone, { ...active.template, source, press })); changeCapture(null); return;
     }
     if (active.direction !== undefined) {
       const group = replaceStickSource(active.template.source, active.direction, source);
@@ -338,6 +464,8 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
       {editing && <>
         <button class="pill" onClick={() => { const added = addControl(draft, 'button', session.surface); update(added.draft); startCapture(added.zone, 'button'); }}>{t("添加按钮")}</button>
         <button class="pill" onClick={() => { const added = addControl(draft, 'stick', session.surface); makeStick(added.draft, added.zone); }}>{t("添加摇杆")}</button>
+        <button class="pill" disabled={hasLook(draft)} title={hasLook(draft) ? t('已有准星') : t('第一/第三人称 3D 游戏：锁定鼠标转动镜头')}
+                onClick={() => { const added = addControl(draft, 'look', session.surface); makeLook(added.draft, added.zone); }}>{t("添加准星（鼠标视角）")}</button>
       </>}
       <span class="spacer" />
       {dirty && <span class="unsaved">{t("有未应用的修改")}</span>}
@@ -347,12 +475,20 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
       </> : <button class="pill" disabled={busy} title={t("暂停游戏，继续修改按键")} onClick={() => void freeze()}>{t("返回编辑")}</button>}
       <button class="pill main" disabled={busy || conflictedBindings.size > 0} title={t("应用修改、继续游戏并关闭此窗口")} onClick={() => void finish()}>{t("完成")}</button>
     </header>
+    <ShortcutBar draft={draft} />
+    {menu && editing && <div class="context-menu" role="menu" style={{ left: `${menu.x}px`, top: `${menu.y}px` }}
+                              onPointerDown={event => event.stopPropagation()}>
+      <span class="context-title">{menu.zone}</span>
+      <button class="danger" role="menuitem" onClick={() => { update(removeControl(draft, menu.zone)); setSelected(null); setMenu(null); }}>{t("删除此控件")}</button>
+      <button role="menuitem" onClick={() => setMenu(null)}>{t("取消")}</button>
+    </div>}
     <p class={`status ${status.kind}`} role="status">{status.text}</p>
     {capture && <CaptureBanner capture={capture} onCancel={() => changeCapture(null)}
-      onMouse={button => { const result = captureMouse(button); if ('error' in result) setStatus({ kind: 'error', text: result.error }); else finishSource(result.source); }} />}
+      onMouse={button => { const result = captureMouse(button); if ('error' in result) setStatus({ kind: 'error', text: result.error }); else finishSource(result.source); }}
+      onWheel={deltaY => { const result = captureWheel(deltaY); if ('error' in result) setStatus({ kind: 'error', text: result.error }); else finishSource(result.source); }} />}
     <div class={`workspace ${editing ? '' : 'locked'}`} inert={!editing}>
       <div class="canvas"><Stage session={session} draft={draft} frame={frame} selected={selected} conflicted={conflictedZones}
-        onSelect={setSelected} onZone={onZone} onBinding={onBinding} />
+        onSelect={setSelected} onZone={onZone} onBinding={onBinding} onMenu={(zone, x, y) => setMenu({ zone, x, y })} />
         {!editing && <p class="canvas-note">{t("试玩中，画面为暂停时的截图")}</p>}
         {editing && !frame && <div class="canvas-note">{t("还没有游戏画面")}<button class="pill" disabled={busy} onClick={() => void run(refreshFrame)}>{t("重新获取画面")}</button></div>}
       </div>
@@ -360,10 +496,12 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
         {selectedZone ? <Inspector session={session} draft={draft} zone={selectedZone} conflictedBindings={conflictedBindings}
             capturing={capture?.zone === selectedZone.name ? capture.direction : undefined}
             onZone={onZone} onBinding={onBinding} onCapture={startCapture} onStick={zone => { if (draftRef.current) makeStick(draftRef.current, zone); }}
+            onLook={zone => { if (draftRef.current) makeLook(draftRef.current, zone); }}
             onRemove={zone => { update(removeControl(draft, zone)); setSelected(null); }} />
           : <section class="inspector"><p>{t("点击画面上的控件进行编辑，拖动移动，拖动圆点缩放。新控件放在画面中央。")}</p></section>}
         <OtherBindings draft={draft} conflictedBindings={conflictedBindings}
-          onRemove={index => update({ ...draft, bindings: draft.bindings.filter((_, i) => i !== index) })} />
+          onRemove={index => update({ ...draft, bindings: draft.bindings.filter((_, i) => i !== index) })}
+          onChange={(index, binding) => update({ ...draft, bindings: draft.bindings.map((item, i) => i === index ? binding : item) })} />
         <p class="path"><small>{session.config_path ? t("保存位置：{path}", { path: session.config_path }) : t('临时沙盒：修改不写入文件')}</small></p>
       </aside>
     </div>

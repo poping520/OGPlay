@@ -31,6 +31,15 @@ enum class InputEventType : std::uint8_t {
     input_reset,
     app_background,
     app_foreground,
+    // Mouse wheel or trackpad scroll at window point (x, y). delta_x/delta_y are in notches as
+    // the host reports them (natural-scrolling inversion already applied); +delta_y scrolls up.
+    pointer_wheel,
+    // Trackpad pinch gesture. begin carries the cursor's window point (x, y) and is reported only
+    // while the cursor is over the window; update carries the span ratio since the previous
+    // update in scale (> 1 spreads, zoom in); end closes the gesture.
+    pinch_begin,
+    pinch_update,
+    pinch_end,
 };
 
 enum class PointerButton : std::int32_t {
@@ -126,6 +135,7 @@ struct InputEvent {
     std::uint32_t key_modifiers{};
     std::uint64_t touch_device_id{}, contact_id{};
     float pressure{};
+    float scale{1.0F};  // pinch_update only
 };
 
 // One size of a window icon: straight RGBA8, row-major, width*height*4 bytes.
@@ -160,6 +170,9 @@ public:
     // Block the owner thread on a dialog attached to the window. True only when the user chose to close;
     // a host that cannot show the dialog throws.
     [[nodiscard]] virtual bool ConfirmClose(const CloseConfirmation& text) = 0;
+    // Relative pointer mode: hides and confines the cursor so pointer_motion reports only deltas.
+    // The host releases it while the window is unfocused. False when the host cannot provide it.
+    [[nodiscard]] virtual bool SetRelativePointer(bool enabled) = 0;
     virtual void PumpEvents() = 0;
     [[nodiscard]] virtual std::vector<InputEvent> PollEvents() = 0;
     virtual void PresentRgba8(std::span<const std::uint8_t> pixels, std::uint32_t width, std::uint32_t height) = 0;

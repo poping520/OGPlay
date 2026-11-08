@@ -211,7 +211,7 @@ note = "通用 dex_activity 固定回调路由，唯一状态机执行输入、�
 [input.control_mapper]
 status = "partial"
 test = "tests/input/control_mapper_tests.cpp; tests/frontend/mcp_input_dispatch_tests.cpp; frontend.run_apk_options"
-note = "INP-1/3、ADR-0133：run-apk 全部窗口输入与 MCP 手势经 ControlMapper 统一触点分配（最多 16、pointerId 稳定、溢出拒绝计数），合成 direct/button/stick/key/mode，帧对齐且按下抬起至少隔一帧，未绑定键直通，Esc 默认 Back。提示叠加层与游戏键位数据（INP-4）、滚轮/相对鼠标/手柄/look/swipe/pinch/tilt 未实现。"
+note = "INP-1/3/9/10：窗口输入与 MCP 手势经 ControlMapper 统一分配触点（≤16、pointerId 稳定），合成 direct/button/stick/key/mode，帧对齐、按下抬起至少隔一帧，未绑定键直通。滚轮/触控板合成捏合；look 准星相对鼠标全屏拖动、每帧限速、单指或双指交接回中，lock 键锁定，release_pointer 键（默认 Esc）放开；wheel:up/down 可绑定。按键/拖动 pinch、手柄/swipe/tilt、观察键未实现。"
 
 [session.input_control_config]
 status = "partial"

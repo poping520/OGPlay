@@ -195,7 +195,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 - `BuildControlConfig` / `LoadControlOverride`（ADR-0142）：只合并“内置默认 → 用户
   input.toml”。内置仅鼠标/触摸直通与 Esc→Back，不提供官方区域或游戏键位。
   用户层只读取 zone/binding；schema 1、UTF-8、不超过 200 行，input.toml 中未知键跳过，
-  按键编辑器 JSON 请求中的未知键明确失败。
+  按键编辑器 JSON 请求中的未知键明确失败。look 绑定字段为 zone、sensitivity、
+  sensitivity_y、invert_y（布尔）、settle_frames、max_offset_x、max_offset_y、regrip
+  （single/handoff）；button/key 可选布尔 release_pointer；lock 绑定只有 source/action/mode（INP-10）。
   后层绑定替换同模式（或 `*`）共享输入源的默认绑定，none 解绑，区域按名称替换；
   未放置区域明确失败。`FormatControlLayer`/`SaveControlLayer` 保留 TOML 往返与原子替换，
   `DecodeControlLayerJson`/`WriteControlLayerJson` 共用同一 zone/binding 校验。

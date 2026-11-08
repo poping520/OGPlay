@@ -62,7 +62,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。
 - 音视频（[DVM-189](../tasks/dexvm/DVM-189.md)）：视频改为链接裁剪版 ogplay_ffmpeg
   （[VID-1](../tasks/video/VID-1.md)），macOS arm64 真实 CG 实测正常；预编译包已含 macOS arm64 与 Windows x64，Windows CG 未验；
   raw-resource 完整链、手动音频写入、媒体主时钟与影音同步未验收。
-- 输入/显示（[INP-8](../tasks/input/INP-8.md)、ADR-0142）：仅内置直通/Esc + 用户 input.toml，删除 Profile 输入与类型模板。显示宽高（默认 1280×720、1..4096）、密度（默认 320 dpi、72..1280，写入 guest DisplayMetrics）和超采样经游戏 > 全局 > 默认解析；Angry Birds 720p/480p 活跃帧耗时中位数 5.29/1.83→1.30/0.78 ms，macOS 各 4000 帧退出 0（[WU-PERF-17](../tasks/optimization/WU-PERF-17.md)），basic 场景待复验；Angry Birds 1024×600 启动、F2 创建 J 键保存、重启加载及 F1 提示已实测，两次退出 0。input.toml 未知键（含旧 template）读取时跳过；Windows/Linux 未实跑。
+- 输入/显示（[INP-8](../tasks/input/INP-8.md)、ADR-0142）：仅内置直通/Esc + 用户 input.toml，删除 Profile 输入与类型模板。显示宽高（默认 1280×720、1..4096）、密度（默认 320 dpi、72..1280，写入 guest DisplayMetrics）和超采样经游戏 > 全局 > 默认解析；Angry Birds 720p/480p 活跃帧耗时中位数 5.29/1.83→1.30/0.78 ms，macOS 各 4000 帧退出 0（[WU-PERF-17](../tasks/optimization/WU-PERF-17.md)），basic 场景待复验；Angry Birds 1024×600 启动、F2 创建 J 键保存、重启加载及 F1 提示已实测，两次退出 0。input.toml 未知键（含旧 template）读取时跳过；滚轮与触控板捏合内置合成双指捏合（[INP-9](../tasks/input/INP-9.md)），Angry Birds 滚轮与 macOS 触控板缩放已手测；FPS 准星 look/相对鼠标（[INP-10](../tasks/input/INP-10.md)）待实机验；Windows/Linux 未实跑。
 - Android（[AND-1](../tasks/android/AND-1.md)）：一加 7 Pro（Adreno 640，ANGLE 仅 ES 2.0）上 Demo 标题画面呈现、触摸进入选关；退出、切后台与屏幕方向未验。
 - WebView 仅基础配置与回调（[DVM-187](../tasks/dexvm/DVM-187.md)/[188](../tasks/dexvm/DVM-188.md)），
   页面、JavaScript、TextToSpeech 未实现。

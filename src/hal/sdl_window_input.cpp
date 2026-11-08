@@ -251,6 +251,11 @@ public:
         if (!SDL_ShowWindow(window_)) throw SdlError("SDL_ShowWindow");
     }
 
+    bool SetRelativePointer(const bool enabled) override {
+        if (window_ == nullptr) throw std::logic_error("relative pointer requires an open window");
+        return SDL_SetWindowRelativeMouseMode(window_, enabled);
+    }
+
     void SetTitle(const std::string_view title) override {
         if (window_ == nullptr) {
             throw std::logic_error("window title requires an open window");
@@ -594,6 +599,46 @@ private:
                     .pressed = event.button.down,
                     .key_modifiers = modifiers_,
                 });
+            }
+            break;
+        case SDL_EVENT_MOUSE_WHEEL:
+            if (IsOwnedWindow(event.wheel.windowID) && event.wheel.which != SDL_TOUCH_MOUSEID) {
+                result.push_back({
+                    .type = InputEventType::pointer_wheel,
+                    .timestamp_ns = event.wheel.timestamp,
+                    .window_id = event.wheel.windowID,
+                    .device_id = event.wheel.which,
+                    .x = event.wheel.mouse_x,
+                    .y = event.wheel.mouse_y,
+                    .delta_x = event.wheel.x,
+                    .delta_y = event.wheel.y,
+                    .key_modifiers = modifiers_,
+                });
+            }
+            break;
+        case SDL_EVENT_PINCH_BEGIN:
+        case SDL_EVENT_PINCH_UPDATE:
+        case SDL_EVENT_PINCH_END:
+            // Cocoa reports trackpad pinches without a window or position: a gesture starts
+            // here only while the cursor is over this window, and uses the cursor point.
+            if (event.type == SDL_EVENT_PINCH_BEGIN) {
+                if (SDL_GetMouseFocus() != window_) break;
+                float x = 0;
+                float y = 0;
+                static_cast<void>(SDL_GetMouseState(&x, &y));
+                result.push_back({.type = InputEventType::pinch_begin,
+                                  .timestamp_ns = event.pinch.timestamp,
+                                  .window_id = SDL_GetWindowID(window_),
+                                  .x = x,
+                                  .y = y,
+                                  .key_modifiers = modifiers_});
+            } else if (IsOwnedWindow(event.pinch.windowID)) {
+                result.push_back({.type = event.type == SDL_EVENT_PINCH_UPDATE ? InputEventType::pinch_update
+                                                                               : InputEventType::pinch_end,
+                                  .timestamp_ns = event.pinch.timestamp,
+                                  .window_id = SDL_GetWindowID(window_),
+                                  .key_modifiers = modifiers_,
+                                  .scale = event.type == SDL_EVENT_PINCH_UPDATE ? event.pinch.scale : 1.0F});
             }
             break;
         case SDL_EVENT_GAMEPAD_AXIS_MOTION:

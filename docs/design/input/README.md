@@ -37,7 +37,7 @@
 
 | 层 | 已有 | 缺口 |
 | --- | --- | --- |
-| hal | `InputEvent` 含键盘（物理 scancode + 布局 keysym + 修饰键）、指针移动/按键（含 delta）、宿主触摸、手柄轴/按键/插拔、`input_reset`、前后台 | 无滚轮事件；无相对鼠标（指针锁定）接口；手柄事件无消费者 |
+| hal | `InputEvent` 含键盘（物理 scancode + 布局 keysym + 修饰键）、指针移动/按键（含 delta）、宿主触摸、手柄轴/按键/插拔、`input_reset`、前后台 | 滚轮事件已于 INP-9、相对鼠标（指针锁定）已于 INP-10 补齐；手柄事件无消费者 |
 | input | `MouseTouchMapper` 鼠标主键→单点触摸；`TouchMapper` 合并宿主触摸，最多 16 触点，但同一时刻只捕获一个物理来源；`InputTemplateCatalog` 按 id 选择 mapper | 模板目录未接入运行路径；没有按键/手柄到触摸的合成 |
 | session | `MapAndroidTouch` 把 `TouchSnapshot` 投影为 API19 动作；`MapAndroidInput` 把物理键直通为 Android KeyEvent；`AndroidInputTimeline` 用 guest Clock 重定时 | 无操控配置的装载与合并 |
 | frontend | run-apk 事件循环：`TouchMapper` → 触摸，其余键 → KeyEvent；MCP 指针手势仅在本地触摸未激活时注入 | MCP 与本地触摸互斥；无提示叠加层与编辑器 |

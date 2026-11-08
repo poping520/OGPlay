@@ -39,6 +39,8 @@ TEST_CASE("INP-4 F1 and F2 are host shortcuts and never reach the guest") {
     decision = filter.Filter(Key(kF2, true));
     CHECK(decision.shortcut == HostShortcut::open_key_editor);
     CHECK(filter.Filter(Key(kF2, false)).consumed);
+    CHECK_FALSE(filter.Filter(Key(60, true)).consumed);  // F3 is an ordinary key again
+    CHECK_FALSE(filter.Filter(Key(60, false)).consumed);
     CHECK_FALSE(filter.Filter(Key(kW, true)).consumed);
     CHECK_FALSE(filter.Filter(Key(kW, false)).consumed);
     CHECK_FALSE(filter.Filter({.type = hal::InputEventType::pointer_button, .code = 0, .pressed = true}).consumed);
@@ -103,4 +105,28 @@ TEST_CASE("INP-4 hint labels are short ASCII names") {
     CHECK(frontend::HintLabel(input::ParseInputSource("key:slash")) == "/");
     CHECK(frontend::HintLabel(input::ParseInputSource("mouse:right")) == "RMB");
     CHECK(frontend::HintLabel(input::ParseInputSource("mouse:x1")) == "X1");
+}
+
+TEST_CASE("INP-10 the hint banner names the mouse lock keys for a crosshair") {
+    input::ControlConfig config = input::DefaultControlConfig();
+    config.zones = {{.name = "aim", .anchor = input::Anchor::center, .radius = 10}};
+    input::Binding look;
+    look.action = input::ActionKind::look;
+    look.sources = {input::ParseInputSource("mouse:motion")};
+    look.zone = "aim";
+    config.bindings.push_back(look);
+    input::Binding lock;
+    lock.action = input::ActionKind::lock;
+    lock.mode = std::string(input::kEveryMode);
+    lock.sources = {input::ParseInputSource("key:grave")};
+    config.bindings.push_back(lock);
+    input::ControlMapper mapper(config);
+    mapper.SetSurface(800, 480);
+    CHECK(frontend::HintLabel(input::ParseInputSource("key:grave")) == "~");
+    CHECK(frontend::PointerHintLine(mapper) == "~ LOCK MOUSE");
+    CHECK(mapper.TogglePointerLock());
+    CHECK(frontend::PointerHintLine(mapper) == "~ FREE MOUSE");
+    config.bindings.pop_back();
+    CHECK(frontend::PointerHintLine(input::ControlMapper{config}) == "NO MOUSE LOCK KEY");
+    CHECK(frontend::PointerHintLine(input::ControlMapper{}).empty());
 }

@@ -132,3 +132,75 @@ TEST_CASE("INP-5 saving replaces the file and missing files are empty layers") {
     CHECK_FALSE(std::filesystem::exists(directory / "nested" / "input.toml.tmp"));
     std::filesystem::remove_all(directory);
 }
+
+TEST_CASE("INP-10 look and wheel bindings round-trip through TOML and JSON") {
+    const auto layer = session::LoadControlOverrideText(R"(schema = 1
+
+[[zone]]
+name = "view"
+anchor = "right"
+x = -20
+y = 0
+w = 400
+h = 300
+
+[[zone]]
+name = "weapon"
+anchor = "top_right"
+x = -10
+y = 10
+r = 40
+
+[[binding]]
+source = "mouse:motion"
+action = "look"
+zone = "view"
+sensitivity = 1.5
+sensitivity_y = 0.75
+invert_y = true
+settle_frames = 1
+max_offset_x = 120
+max_offset_y = 0
+regrip = "handoff"
+
+[[binding]]
+source = "wheel:up"
+action = "button"
+zone = "weapon"
+press = "tap"
+release_pointer = true
+
+[[binding]]
+source = "key:grave"
+action = "lock"
+mode = "*"
+)");
+    REQUIRE(layer.bindings.size() == 3);
+    const auto& look = layer.bindings[0].binding;
+    CHECK(look.action == input::ActionKind::look);
+    CHECK(look.look_sensitivity_x == doctest::Approx(1.5F));
+    CHECK(look.look_sensitivity_y == doctest::Approx(0.75F));
+    CHECK(look.look_invert_y);
+    CHECK(look.look_max_offset_x == doctest::Approx(120));
+    CHECK(look.look_handoff);
+    CHECK(layer.bindings[1].binding.release_pointer);
+    CHECK(layer.bindings[1].binding.sources[0] == input::ParseInputSource("wheel:up"));
+    CHECK(layer.bindings[2].binding.action == input::ActionKind::lock);
+
+    const auto text = session::FormatControlLayer(layer);
+    CHECK(text.find("invert_y = true") != std::string::npos);
+    CHECK(session::FormatControlLayer(session::LoadControlOverrideText(text)) == text);
+    core::JsonWriter writer;
+    const auto json = writer.Serialize(session::WriteControlLayerJson(writer, layer));
+    core::JsonParseError error;
+    const auto document = core::JsonDocument::ParseStrict(json, error);
+    REQUIRE(document.has_value());
+    CHECK(session::FormatControlLayer(session::DecodeControlLayerJson(document->Root())) == text);
+    const auto config = session::BuildControlConfig(layer);
+    CHECK_NOTHROW(input::ControlMapper{config});
+
+    CHECK_THROWS_AS(static_cast<void>(session::LoadControlOverrideText(
+                        "schema = 1\n[[zone]]\nname = \"v\"\nanchor = \"center\"\nr = 9\n[[binding]]\n"
+                        "source = \"mouse:motion\"\naction = \"look\"\nzone = \"v\"\ninvert_y = 1\n")),
+                    input::ControlConfigError);
+}

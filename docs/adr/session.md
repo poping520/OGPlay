@@ -97,7 +97,7 @@ API19、VM/调用默认预算归通用实现；入口取 Manifest MAIN/LAUNCHER�
 OBB 按原文件名只读挂 Android 标准目录，不展开到 Profile 自定义路径；external 挂载由显式实例/
 运行选项表达，cwd 固定初始 /，不依赖 Profile。音频只经标准 guest API。
 src 中不含精确游戏分支。
-输入只合并内置鼠标/触摸直通、Esc→Back 与用户 input.toml，不提供类型模板或官方游戏键位。
+输入只合并内置鼠标/触摸直通、滚轮/触控板捏合→主指在光标的双指捏合（INP-9；当前模式绑定滚轮或 look 锁定指针时不生效，INP-10）、Esc→Back（同时放开 look 锁定的指针，INP-10）与用户 input.toml，不提供类型模板或官方游戏键位。
 用户 schema 1 只接受 zone/binding；template/input_template 明确失败，不静默忽略或改用户文件。
 库实例 input.toml、显式 --input-config 与 sandbox 旁实例配置按既有解析入口选择并保存/热应用。
 显示设置 screen_width/height（运行选项 surface 宽高）每边 1..4096，density_dpi 72..1280，supersample 1..4；按游戏 > 全局 >

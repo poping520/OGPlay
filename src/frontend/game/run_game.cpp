@@ -734,6 +734,20 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         HostShortcutFilter host_keys;
         bool hints_visible{};
         std::vector<std::uint8_t> hint_frame;
+        // A look binding holds the pointer in relative mode while the guest runs normally; editing,
+        // suspension, background and failure give the cursor back.
+        bool pointer_relative{};
+        const auto sync_pointer = [&] {
+            const bool wanted = !failure && !control_frozen && !host_background &&
+                                mcp_lifecycle == agent::McpLifecycleState::running &&
+                                control_mapper.WantsRelativePointer();
+            if (wanted == pointer_relative) return;
+            pointer_relative = wanted;
+            if (!window->SetRelativePointer(wanted)) {
+                logger.Write(core::LogLevel::warn, "frontend.run_apk.relative_pointer",
+                             "host refused the relative pointer mode", {}, {{"enabled", wanted}}, kUnrestrictedLog);
+            }
+        };
         // F2: a launcher that polled control.status recently opens its own editor window;
         // otherwise the default browser opens the same page.
         constexpr std::uint64_t kLauncherPollWindowNs = 3'000'000'000ULL;
@@ -772,7 +786,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 if (hints_visible) {
                     hint_frame.assign(frame->rgba8.begin(), frame->rgba8.end());
                     DrawControlHints(hint_frame, frame->width, frame->height, control_mapper.Hints(),
-                                     control_mapper.Mode());
+                                     control_mapper.Mode(), PointerHintLine(control_mapper));
                     window->PresentRgba8(hint_frame, frame->width, frame->height);
                 } else {
                     window->PresentRgba8(frame->rgba8, frame->width, frame->height);
@@ -914,6 +928,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 logger.Write(core::LogLevel::warn, "frontend.run_apk.key_editor",
                              "key editor stopped responding; resuming the game", {}, {}, kUnrestrictedLog);
             }
+            sync_pointer();
             bool frame_presented = false;
             try {
                 if (audio_pump) audio_pump->RethrowWorkerFailure();

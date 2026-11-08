@@ -33,16 +33,17 @@ struct ZoneSpec final {
     float radius{};
 };
 
-enum class SourceKind : std::uint8_t { key, mouse_button };
+enum class SourceKind : std::uint8_t { key, mouse_button, mouse_motion, wheel };
 
-// key: USB HID / SDL physical scancode; mouse_button: hal::PointerButton value.
+// key: USB HID / SDL physical scancode; mouse_button: hal::PointerButton value; mouse_motion: 0;
+// wheel: +1 up, -1 down (one press per whole notch).
 struct InputSource final {
     SourceKind kind{SourceKind::key};
     std::int32_t code{};
     bool operator==(const InputSource&) const = default;
 };
 
-enum class ActionKind : std::uint8_t { button, stick, key, mode };
+enum class ActionKind : std::uint8_t { button, stick, key, mode, look, lock };
 enum class PressMode : std::uint8_t { tap, hold, repeat };
 enum class ModeSwitch : std::uint8_t { toggle, hold };
 
@@ -62,6 +63,22 @@ struct Binding final {
     // new direction over ramp frames instead of jumping in a single MOVE.
     std::uint32_t stick_settle_frames{2};
     std::uint32_t stick_ramp_frames{4};
+    // look (the crosshair): mouse motion drags a finger that presses at the zone center and may
+    // travel the whole surface, keeping a margin from its edges; max offsets > 0 limit the travel
+    // around the center per axis (guest pixels). Sensitivity is guest pixels per host pointer
+    // unit; the finger rests settle frames after each press and stays down while the pointer is
+    // locked. lock: a key that locks or frees the pointer for the look bindings.
+    float look_sensitivity_x{1.0F};
+    float look_sensitivity_y{1.0F};
+    bool look_invert_y{};
+    std::uint32_t look_settle_frames{};
+    float look_max_offset_x{};
+    float look_max_offset_y{};
+    // Regrip by lifting and pressing in one frame (false), or by pressing the new finger first and
+    // lifting the old one a frame later so a finger is always down (true).
+    bool look_handoff{};
+    // button, key: pressing also frees a locked pointer (for map, bag and menu keys).
+    bool release_pointer{};
     std::int32_t android_key_code{};   // key
     std::string target_mode;           // mode
     ModeSwitch mode_switch{ModeSwitch::toggle};
@@ -72,10 +89,11 @@ struct ControlConfig final {
     std::vector<Binding> bindings;
 };
 
-// Built-in tier: mouse and host touch stay direct, Escape sends KEYCODE_BACK, other keys pass through.
+// Built-in tier: mouse and host touch stay direct, Escape sends KEYCODE_BACK and frees a locked
+// pointer, other keys pass through.
 [[nodiscard]] ControlConfig DefaultControlConfig();
 // "key:<name>" with physical key names such as w, space, escape, f1, left_shift, up;
-// "mouse:left|middle|right|x1|x2".
+// "mouse:left|middle|right|x1|x2"; "mouse:motion" (look only); "wheel:up|down".
 [[nodiscard]] InputSource ParseInputSource(std::string_view text);
 // Inverse of ParseInputSource: "key:w", "mouse:right".
 [[nodiscard]] std::string FormatInputSource(const InputSource& source);
@@ -147,6 +165,22 @@ public:
     [[nodiscard]] std::vector<ControlHint> Hints() const;
 
     [[nodiscard]] bool Active() const noexcept;
+    // True while a look binding is active: the host should hold the pointer in relative mode.
+    // The mouse then drives only bindings; unbound buttons no longer touch at the cursor.
+    [[nodiscard]] bool WantsRelativePointer() const noexcept;
+    // The pointer starts free. A lock binding locks it for the active look bindings and frees it
+    // again; release_pointer bindings (Esc by default) free it too. Released pauses the looks,
+    // lifts their fingers and gives the mouse, its buttons and the wheel back to direct use. The
+    // state survives Reconfigure.
+    void SetPointerReleased(bool released) noexcept;
+    [[nodiscard]] bool PointerReleased() const noexcept;
+    // Locks a free pointer when a look binding is active, frees a locked one; false when there is
+    // nothing to lock.
+    bool TogglePointerLock() noexcept;
+    // An active look binding exists, so the pointer can be locked.
+    [[nodiscard]] bool LookActive() const noexcept;
+    // Keys of the lock bindings active in the current modes, for the host's hint banner.
+    [[nodiscard]] std::vector<InputSource> LockSources() const;
     [[nodiscard]] std::string_view Mode() const noexcept;
     [[nodiscard]] std::uint64_t RejectedContacts() const noexcept;
 

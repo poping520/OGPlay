@@ -79,8 +79,39 @@ constexpr std::array kMouseNames{
 
 [[nodiscard]] bool Finite(const float value) { return std::isfinite(value); }
 
+// Wheel pinch geometry as fractions of the surface width. The primary finger lands on the
+// cursor and stays there, so the user chooses what the first touch hits; only the second finger
+// moves, horizontally, span away from it.
+constexpr float kPinchNotchScale = 1.2F;  // span ratio per wheel notch
+constexpr float kPinchStartSpan = 0.30F;
+constexpr float kPinchMinSpan = 0.08F;
+constexpr float kPinchMaxSpan = 0.60F;
+constexpr float kPinchStepPerFrame = 0.02F;
+constexpr std::uint64_t kPinchSettleFrames = 2;  // rest after DOWN before the first MOVE
+constexpr std::uint64_t kPinchLingerFrames = 3;  // still frames before lifting
+// A look finger stops this far (fraction of the surface's shorter side) inside the surface edge,
+// and like a real finger moves at most kLookMaxStepPerFrame per frame. Motion waiting beyond
+// kLookBacklogSteps such steps is dropped, so the view stops within a frame or two of the mouse
+// instead of sliding on after it.
+constexpr float kLookEdgeMargin = 0.03F;
+constexpr float kLookMaxStepPerFrame = 0.35F;
+constexpr float kLookBacklogSteps = 2.0F;
+
+// A wheel- or trackpad-driven two-finger pinch. pending_log is the not yet applied log span
+// ratio; a span limit lifts the fingers and the remainder continues from a fresh grip at the
+// start span. held: a trackpad gesture is in progress, so the fingers stay down while it pauses.
+struct PinchState final {
+    bool active{}, held{};
+    float anchor_x{}, anchor_y{};
+    float side{1.0F};  // +1: second finger to the right of the cursor, -1: to the left
+    float max_span{};
+    float span{}, target_span{};
+    float pending_log{};
+    std::uint64_t down_frame{}, still_since{};
+};
+
 struct OwnerKey final {
-    enum class Kind : std::uint8_t { mouse, touch, external, binding };
+    enum class Kind : std::uint8_t { mouse, touch, external, binding, pinch };
     Kind kind{};
     std::uint64_t a{}, b{};
     bool operator==(const OwnerKey&) const = default;
@@ -109,9 +140,18 @@ struct BindingRuntime final {
     std::uint64_t start_frame{};
     bool key_down{};
     std::uint64_t key_down_frame{};
+    // stick and look: finger down, its press frame and offset from the zone center.
     bool stick_active{};
     std::uint64_t stick_down_frame{};
     float offset_x{}, offset_y{};
+    // look: motion not yet applied (guest pixels), a regrip due next frame, and which of two
+    // finger identities is current, so a regrip lifts one finger and presses the next together.
+    float look_dx{}, look_dy{};
+    bool look_regrip{};
+    std::uint64_t look_slot{};
+    // Handoff regrip: the previous finger stays down one more frame at this offset.
+    bool look_old_held{};
+    float look_old_x{}, look_old_y{};
 };
 
 struct ResolvedZone final {
@@ -147,6 +187,14 @@ void ValidateConfig(const ControlConfig& config) {
     std::vector<Claim> claims;
     for (const auto& binding : config.bindings) {
         if (binding.mode.empty()) throw ControlConfigError("binding mode must not be empty");
+        for (const auto& source : binding.sources) {
+            if ((source.kind == SourceKind::mouse_motion) != (binding.action == ActionKind::look))
+                throw ControlConfigError("mouse:motion drives exactly the look action");
+            if (binding.action == ActionKind::lock && source.kind != SourceKind::key)
+                throw ControlConfigError("the pointer lock toggles from a key");
+            if (source.kind == SourceKind::wheel && binding.action == ActionKind::stick)
+                throw ControlConfigError("a stick cannot use the wheel");
+        }
         const auto expected = binding.action == ActionKind::stick ? 4U : 1U;
         if (binding.sources.size() != expected)
             throw ControlConfigError(binding.action == ActionKind::stick
@@ -176,7 +224,22 @@ void ValidateConfig(const ControlConfig& config) {
             if (binding.target_mode.empty() || binding.target_mode == kEveryMode)
                 throw ControlConfigError("mode binding needs a concrete target mode");
             break;
+        case ActionKind::look:
+            if (!has_zone(binding.zone)) throw ControlConfigError("unknown zone: " + binding.zone);
+            for (const float sensitivity : {binding.look_sensitivity_x, binding.look_sensitivity_y}) {
+                if (!Finite(sensitivity) || sensitivity <= 0 || sensitivity > 100)
+                    throw ControlConfigError("look sensitivity must be in (0, 100]");
+            }
+            if (binding.look_settle_frames > 60) throw ControlConfigError("look settle frames must be 0..60");
+            for (const float offset : {binding.look_max_offset_x, binding.look_max_offset_y}) {
+                if (!Finite(offset) || offset < 0 || offset > 4096)
+                    throw ControlConfigError("look max offsets must be 0..4096 guest pixels");
+            }
+            break;
+        case ActionKind::lock: break;
         }
+        if (binding.release_pointer && binding.action != ActionKind::button && binding.action != ActionKind::key)
+            throw ControlConfigError("only buttons and keys can free the pointer");
         for (const auto& source : binding.sources) {
             for (const auto& claim : claims) {
                 if (claim.source != source) continue;
@@ -198,6 +261,8 @@ ControlConfig DefaultControlConfig() {
     back.action = ActionKind::key;
     back.sources = {{SourceKind::key, kEscapeScancode}};
     back.android_key_code = kAndroidKeyBack;
+    // Back usually opens a menu that needs the mouse; the user may untick this.
+    back.release_pointer = true;
     config.bindings.push_back(std::move(back));
     return config;
 }
@@ -210,14 +275,24 @@ InputSource ParseInputSource(const std::string_view text) {
         if (kind == "key") {
             if (const auto code = KeyScancode(name)) return {SourceKind::key, *code};
         } else if (kind == "mouse") {
+            if (name == "motion") return {SourceKind::mouse_motion, 0};
             for (const auto& entry : kMouseNames)
                 if (entry.name == name) return {SourceKind::mouse_button, entry.code};
+        } else if (kind == "wheel") {
+            if (name == "up") return {SourceKind::wheel, 1};
+            if (name == "down") return {SourceKind::wheel, -1};
         }
     }
     throw ControlConfigError("unknown input source: " + std::string{text});
 }
 
 std::string FormatInputSource(const InputSource& source) {
+    if (source.kind == SourceKind::mouse_motion) return "mouse:motion";
+    if (source.kind == SourceKind::wheel) {
+        if (source.code == 1) return "wheel:up";
+        if (source.code == -1) return "wheel:down";
+        throw ControlConfigError("unknown wheel direction " + std::to_string(source.code));
+    }
     if (source.kind == SourceKind::mouse_button) {
         for (const auto& entry : kMouseNames)
             if (entry.code == source.code) return "mouse:" + std::string(entry.name);
@@ -264,6 +339,9 @@ struct ControlMapper::State final {
     std::uint32_t mouse_window{}, mouse_device{};
     std::vector<std::pair<std::pair<std::uint64_t, std::uint64_t>, DirectState>> touches;
     std::vector<std::pair<std::uint64_t, DirectState>> externals;
+    PinchState pinch;
+    float wheel_notches{};        // fractional wheel travel toward the next bound wheel press
+    bool pointer_released{true};  // the cursor is free: look bindings pause
     std::vector<hal::InputEvent> passthrough_down;
     std::vector<QueuedOutput> queued;
     std::vector<Contact> contacts;
@@ -278,6 +356,27 @@ struct ControlMapper::State final {
     [[nodiscard]] bool IsActive(const Binding& binding) const {
         if (binding.mode == kEveryMode || binding.mode == base_mode) return true;
         return std::ranges::any_of(overlays, [&](const auto& o) { return o.mode == binding.mode; });
+    }
+
+    [[nodiscard]] bool LookActive() const {
+        return std::ranges::any_of(config.bindings,
+                                   [&](const auto& b) { return b.action == ActionKind::look && IsActive(b); });
+    }
+
+    [[nodiscard]] bool WantsRelative() const { return !pointer_released && LookActive(); }
+
+    // A look is set up but the pointer is free (not yet locked, or freed for a menu): the mouse,
+    // its buttons and the wheel act directly instead of through bindings.
+    [[nodiscard]] bool MouseFreed() const { return pointer_released && LookActive(); }
+
+    bool TogglePointerLock() {
+        if (!pointer_released) {
+            pointer_released = true;
+            return true;
+        }
+        if (!LookActive()) return false;
+        pointer_released = false;
+        return true;
     }
 
     [[nodiscard]] std::optional<std::size_t> Route(const InputSource& source) const {
@@ -334,6 +433,8 @@ struct ControlMapper::State final {
         rt.tap_pending = false;
         rt.stick_active = false;
         rt.offset_x = rt.offset_y = 0;
+        rt.look_dx = rt.look_dy = 0;
+        rt.look_regrip = rt.look_old_held = false;
         if (config.bindings[index].action == ActionKind::key)
             QueueAndroidKey(rt, config.bindings[index], false, 0);
         std::erase_if(overlays, [index](const auto& o) { return o.binding == index; });
@@ -362,12 +463,15 @@ struct ControlMapper::State final {
         auto& rt = runtime[index];
         rt.held[source] = true;
         rt.latched[source] = true;
+        if (binding.release_pointer && LookActive()) pointer_released = true;
         switch (binding.action) {
         case ActionKind::button:
             if (binding.press == PressMode::tap) rt.tap_pending = true;
             if (binding.press == PressMode::repeat) rt.start_frame = frame;
             break;
-        case ActionKind::stick: break;
+        case ActionKind::stick:
+        case ActionKind::look: break;
+        case ActionKind::lock: static_cast<void>(TogglePointerLock()); break;
         case ActionKind::key: QueueAndroidKey(rt, binding, true, device); break;
         case ActionKind::mode:
             if (binding.mode_switch == ModeSwitch::toggle) {
@@ -438,10 +542,22 @@ struct ControlMapper::State final {
     }
 
     void AcceptMouse(const hal::InputEvent& event, const hal::WindowState& window) {
-        if (event.type == hal::InputEventType::pointer_button &&
-            RouteSource({SourceKind::mouse_button, event.code}, event.pressed, event.device_id))
-            return;
+        if (event.type == hal::InputEventType::pointer_button) {
+            // A host-released pointer is for clicking menus: its buttons touch directly, though a
+            // binding held from before the release still lets go through its binding.
+            const InputSource source{SourceKind::mouse_button, event.code};
+            if ((!MouseFreed() || Engaged(source)) && RouteSource(source, event.pressed, event.device_id)) return;
+        }
         if (!SurfaceReady()) return;
+        if (event.type == hal::InputEventType::pointer_motion && WantsRelative()) {
+            if (const auto index = Route({SourceKind::mouse_motion, 0})) {
+                AddLook(*index, event.delta_x, event.delta_y);
+                return;
+            }
+        }
+        // A captured pointer has no meaningful position: it presses nothing directly, though a
+        // drag that began before the capture still ends normally.
+        if (event.type == hal::InputEventType::pointer_button && event.pressed && WantsRelative()) return;
         const bool primary = event.code == static_cast<std::int32_t>(hal::PointerButton::primary);
         const auto mapped = hal::MapDisplayPoint(event.x, event.y, width, height,
                                                  window.width, window.height);
@@ -449,6 +565,7 @@ struct ControlMapper::State final {
             if (!primary) return;
             if (event.pressed) {
                 if (mouse.held || !mapped.inside) return;
+                pinch = {};
                 mouse = {true, true, Clamp(mapped.x, width), Clamp(mapped.y, height), 1.0F};
                 mouse_window = event.window_id;
                 mouse_device = event.device_id;
@@ -479,6 +596,7 @@ struct ControlMapper::State final {
                                                  window.width, window.height);
         if (event.type == hal::InputEventType::touch_down) {
             if (!mapped.inside || (found != touches.end() && found->second.held)) return;
+            pinch = {};
             if (found == touches.end()) {
                 touches.push_back({key, {}});
                 found = touches.end() - 1;
@@ -494,9 +612,128 @@ struct ControlMapper::State final {
         if (event.type == hal::InputEventType::touch_up) found->second.held = false;
     }
 
+    void AddLook(const std::size_t index, const float dx, const float dy) {
+        if (!Finite(dx) || !Finite(dy)) return;
+        const auto& binding = config.bindings[index];
+        auto& rt = runtime[index];
+        const float cap = static_cast<float>(std::min(width, height)) * kLookMaxStepPerFrame * kLookBacklogSteps;
+        rt.look_dx = std::clamp(rt.look_dx + dx * binding.look_sensitivity_x, -cap, cap);
+        const float vertical = dy * binding.look_sensitivity_y * (binding.look_invert_y ? -1.0F : 1.0F);
+        rt.look_dy = std::clamp(rt.look_dy + vertical, -cap, cap);
+    }
+
+    // A wheel bound in the active modes presses its binding once per whole notch and leaves the
+    // built-in pinch alone. Returns false when neither direction is bound.
+    bool RouteWheel(const hal::InputEvent& event) {
+        const InputSource up{SourceKind::wheel, 1};
+        const InputSource down{SourceKind::wheel, -1};
+        if (MouseFreed() || (!Route(up) && !Route(down))) return false;
+        if (wheel_notches * event.delta_y < 0) wheel_notches = 0;
+        wheel_notches += event.delta_y;
+        for (int i = 0; i < 3 && std::abs(wheel_notches) >= 1; ++i) {
+            const auto& source = wheel_notches > 0 ? up : down;
+            wheel_notches -= std::copysign(1.0F, wheel_notches);
+            RouteSource(source, true, event.device_id);
+            RouteSource(source, false, event.device_id);
+        }
+        if (std::abs(wheel_notches) >= 1) wheel_notches = 0;
+        return true;
+    }
+
+    // Only the pinch's own fingers may be down: a wheel turn never adds two fingers to a drag,
+    // a held key contact or an external gesture.
+    [[nodiscard]] bool PinchBlocked() const {
+        return mouse.held || mouse.latched || !touches.empty() || !externals.empty() ||
+               std::ranges::any_of(contacts, [](const auto& c) { return c.owner.kind != OwnerKey::Kind::pinch; });
+    }
+
+    [[nodiscard]] float PinchUnit() const { return static_cast<float>(width); }
+
+    void AddPinchLog(const float log_ratio) {
+        const float limit = std::log(kPinchMaxSpan / kPinchMinSpan);
+        pinch.pending_log = std::clamp(pinch.pending_log + log_ratio, -limit, limit);
+    }
+
+    // Places the primary on the cursor while no fingers are down. The second finger goes right
+    // while the start span fits there, otherwise to the roomier side; the widest span stays
+    // inside the surface on that side.
+    void AimPinch(const hal::MappedDisplayPoint& mapped) {
+        if (pinch.active) return;
+        pinch.anchor_x = Clamp(mapped.x, width);
+        pinch.anchor_y = Clamp(mapped.y, height);
+        const float right = std::nextafter(static_cast<float>(width), 0.0F) - pinch.anchor_x;
+        const float left = pinch.anchor_x;
+        pinch.side = right >= kPinchStartSpan * PinchUnit() || right >= left ? 1.0F : -1.0F;
+        pinch.max_span = std::min(kPinchMaxSpan * PinchUnit(), pinch.side > 0 ? right : left);
+    }
+
+    void AcceptWheel(const hal::InputEvent& event, const hal::WindowState& window) {
+        if (!Finite(event.delta_y) || event.delta_y == 0 || RouteWheel(event)) return;
+        if (!SurfaceReady() || pinch.held || WantsRelative() || PinchBlocked()) return;
+        const auto mapped = hal::MapDisplayPoint(event.x, event.y, width, height, window.width, window.height);
+        if (!mapped.inside) return;
+        AddPinchLog(event.delta_y * std::log(kPinchNotchScale));
+        AimPinch(mapped);
+    }
+
+    // Trackpad pinch: begin grips at the cursor, each update applies its span ratio, end lets the
+    // fingers lift after the usual still frames. Updates without an accepted begin are ignored.
+    void AcceptPinch(const hal::InputEvent& event, const hal::WindowState& window) {
+        using Type = hal::InputEventType;
+        if (event.type == Type::pinch_begin) {
+            if (!SurfaceReady() || pinch.held || WantsRelative() || PinchBlocked()) return;
+            const auto mapped = hal::MapDisplayPoint(event.x, event.y, width, height, window.width, window.height);
+            if (!mapped.inside) return;
+            AimPinch(mapped);
+            pinch.held = true;
+        } else if (event.type == Type::pinch_update) {
+            if (pinch.held && Finite(event.scale) && event.scale > 0) AddPinchLog(std::log(event.scale));
+        } else {
+            pinch.held = false;
+        }
+    }
+
+    // Grips, rests, glides toward the wheel's span and lifts after a few still frames; a span
+    // limit with wheel input left over lifts at once so the next frame grips again.
+    void UpdatePinch() {
+        if (!SurfaceReady()) {
+            pinch = {};
+            return;
+        }
+        if (!pinch.active) {
+            if (pinch.pending_log == 0 && !pinch.held) return;
+            if (PinchBlocked()) {
+                pinch = {};
+                return;
+            }
+            pinch.active = true;
+            pinch.span = pinch.target_span = std::min(kPinchStartSpan * PinchUnit(), pinch.max_span);
+            pinch.down_frame = pinch.still_since = frame;
+            return;
+        }
+        if (frame - pinch.down_frame <= kPinchSettleFrames) return;
+        const float unit = PinchUnit();
+        const float wanted = pinch.target_span * std::exp(pinch.pending_log);
+        const float target = std::clamp(wanted, std::min(kPinchMinSpan * unit, pinch.max_span), pinch.max_span);
+        pinch.pending_log = wanted == target ? 0 : std::log(wanted / target);
+        pinch.target_span = target;
+        const float rest = pinch.target_span - pinch.span;
+        const float step = kPinchStepPerFrame * unit;
+        if (rest != 0) {
+            pinch.span = std::abs(rest) <= step ? pinch.target_span : pinch.span + std::copysign(step, rest);
+            pinch.still_since = frame;
+            return;
+        }
+        if (pinch.pending_log != 0 || (!pinch.held && frame - pinch.still_since >= kPinchLingerFrames)) {
+            pinch.active = false;  // the remainder, if any, grips again at the same anchor
+        }
+    }
+
     void Cancel() {
         pending_cancel = pending_cancel || !contacts.empty();
         mouse = {};
+        pinch = {};
+        wheel_notches = 0;
         touches.clear();
         externals.clear();
         for (std::size_t i = 0; i < runtime.size(); ++i) Deactivate(i);
@@ -517,10 +754,12 @@ struct ControlMapper::State final {
     void RequestBinding(const std::size_t index, std::vector<Request>& requests) const {
         const auto& binding = config.bindings[index];
         const auto& rt = runtime[index];
-        if (binding.action != ActionKind::button && binding.action != ActionKind::stick) return;
+        if (binding.action != ActionKind::button && binding.action != ActionKind::stick &&
+            binding.action != ActionKind::look)
+            return;
         if (!SurfaceReady()) return;
         const auto& zone = zones[binding_zone[index]];
-        const OwnerKey owner{OwnerKey::Kind::binding, index, 0};
+        const OwnerKey owner{OwnerKey::Kind::binding, index, binding.action == ActionKind::look ? rt.look_slot : 0};
         const auto on = [&](const std::size_t s) { return rt.held[s] || rt.latched[s]; };
         if (binding.action == ActionKind::button) {
             bool wanted = false;
@@ -538,6 +777,12 @@ struct ControlMapper::State final {
         if (!rt.stick_active) return;
         requests.push_back({owner, Clamp(zone.center_x + rt.offset_x, width),
                             Clamp(zone.center_y + rt.offset_y, height), 1.0F});
+        if (rt.look_old_held) {
+            requests.push_back({{OwnerKey::Kind::binding, index, rt.look_slot ^ 1U},
+                                Clamp(zone.center_x + rt.look_old_x, width),
+                                Clamp(zone.center_y + rt.look_old_y, height),
+                                1.0F});
+        }
     }
 
     // Advances each stick one frame: press at the origin, rest for settle frames, then move
@@ -581,6 +826,83 @@ struct ControlMapper::State final {
         }
     }
 
+    // Advances each look finger one frame. The finger presses at the zone center once motion
+    // arrives while the pointer is locked, rests settle frames, then follows the accumulated
+    // motion, at most kLookMaxStepPerFrame of the shorter side per frame, anywhere on the surface
+    // short of an edge margin (and within the max offsets). At a limit it stops there; next frame it
+    // lifts and the frame after a fresh finger presses at the center (with handoff, the fresh finger
+    // presses first and the old one lifts a frame later), and the remaining motion carries on. It
+    // stays down until unlock or a mode change.
+    void UpdateLooks() {
+        for (std::size_t index = 0; index < config.bindings.size(); ++index) {
+            const auto& binding = config.bindings[index];
+            if (binding.action != ActionKind::look) continue;
+            auto& rt = runtime[index];
+            if (!SurfaceReady() || !IsActive(binding) || pointer_released) {
+                rt.stick_active = rt.look_regrip = rt.look_old_held = false;
+                rt.offset_x = rt.offset_y = rt.look_dx = rt.look_dy = 0;
+                continue;
+            }
+            rt.look_old_held = false;  // a handed-off finger lifts the frame after the new one lands
+            if (!rt.stick_active) {
+                if (rt.look_dx == 0 && rt.look_dy == 0) continue;
+                rt.stick_active = true;
+                rt.stick_down_frame = frame;
+                rt.offset_x = rt.offset_y = 0;
+                continue;
+            }
+            if (rt.look_regrip) {
+                rt.look_regrip = false;
+                if (!binding.look_handoff) {
+                    // Lift now and press again next frame: engines that sample touches per frame
+                    // (Unity) merge a same-frame lift and press of one pointer id into a jump back.
+                    rt.stick_active = false;
+                    rt.offset_x = rt.offset_y = 0;
+                    continue;
+                }
+                rt.look_old_held = true;
+                rt.look_old_x = rt.offset_x;
+                rt.look_old_y = rt.offset_y;
+                rt.look_slot ^= 1U;
+                rt.stick_down_frame = frame;
+                rt.offset_x = rt.offset_y = 0;
+                continue;
+            }
+            if (frame - rt.stick_down_frame <= binding.look_settle_frames) continue;
+            if (rt.look_dx == 0 && rt.look_dy == 0) continue;
+            const auto& zone = zones[binding_zone[index]];
+            const float shorter = static_cast<float>(std::min(width, height));
+            const float margin = shorter * kLookEdgeMargin;
+            // Offset limits per axis: from the center to the surface margin, cut to the max offset.
+            const auto limits = [&](const float center, const std::uint32_t extent, const float max_offset) {
+                float low = margin - center;
+                float high = static_cast<float>(extent) - margin - center;
+                if (max_offset > 0) {
+                    low = std::max(low, -max_offset);
+                    high = std::min(high, max_offset);
+                }
+                return std::pair{std::min(low, 0.0F), std::max(high, 0.0F)};
+            };
+            // Take this frame's share of the motion, then stop at the limits; what does not fit
+            // stays pending.
+            const float length = std::hypot(rt.look_dx, rt.look_dy);
+            const float share = std::min(1.0F, shorter * kLookMaxStepPerFrame / length);
+            bool stopped = false;
+            const auto follow = [&](float& offset, float& pending, const std::pair<float, float> range) {
+                const float step = pending * share;
+                const float wanted = offset + step;
+                offset = std::clamp(wanted, range.first, range.second);
+                pending -= offset - (wanted - step);
+                stopped = stopped || wanted != offset;
+            };
+            follow(rt.offset_x, rt.look_dx, limits(zone.center_x, width, binding.look_max_offset_x));
+            follow(rt.offset_y, rt.look_dy, limits(zone.center_y, height, binding.look_max_offset_y));
+            if (std::abs(rt.look_dx) < 1e-3F) rt.look_dx = 0;
+            if (std::abs(rt.look_dy) < 1e-3F) rt.look_dy = 0;
+            rt.look_regrip = stopped && (rt.look_dx != 0 || rt.look_dy != 0);
+        }
+    }
+
     [[nodiscard]] std::vector<Request> Requests() const {
         std::vector<Request> requests;
         if (mouse.held || mouse.latched)
@@ -595,6 +917,14 @@ struct ControlMapper::State final {
                 requests.push_back({{OwnerKey::Kind::external, id, 0}, external.x, external.y, 1.0F});
         }
         for (std::size_t i = 0; i < config.bindings.size(); ++i) RequestBinding(i, requests);
+        if (pinch.active) {
+            // Primary first: it becomes ACTION_DOWN, the moving finger ACTION_POINTER_DOWN.
+            requests.push_back({{OwnerKey::Kind::pinch, 0, 0}, pinch.anchor_x, pinch.anchor_y, 1.0F});
+            requests.push_back({{OwnerKey::Kind::pinch, 1, 0},
+                                Clamp(pinch.anchor_x + pinch.side * pinch.span, width),
+                                pinch.anchor_y,
+                                1.0F});
+        }
         return requests;
     }
 
@@ -626,6 +956,8 @@ struct ControlMapper::State final {
         queued = std::move(later);
 
         UpdateSticks();
+        UpdateLooks();
+        UpdatePinch();
         const auto requests = Requests();
         const auto requested = [&](const OwnerKey& owner) {
             return std::ranges::find_if(requests, [&](const auto& r) { return r.owner == owner; });
@@ -689,7 +1021,8 @@ ControlMapper::ControlMapper(ControlConfig config) : state_(std::make_unique<Sta
         const auto& binding = config.bindings[i];
         state_->runtime.push_back({std::vector<bool>(binding.sources.size()),
                                    std::vector<bool>(binding.sources.size())});
-        if (binding.action == ActionKind::button || binding.action == ActionKind::stick) {
+        if (binding.action == ActionKind::button || binding.action == ActionKind::stick ||
+            binding.action == ActionKind::look) {
             state_->binding_zone[i] = static_cast<std::size_t>(std::ranges::find_if(
                 config.zones, [&](const auto& z) { return z.name == binding.zone; }) - config.zones.begin());
         }
@@ -737,6 +1070,10 @@ void ControlMapper::Accept(const hal::InputEvent& event, const hal::WindowState&
         state.modifiers = event.key_modifiers;
         state.AcceptMouse(event, window);
         return;
+    case Type::pointer_wheel: state.AcceptWheel(event, window); return;
+    case Type::pinch_begin:
+    case Type::pinch_update:
+    case Type::pinch_end: state.AcceptPinch(event, window); return;
     case Type::touch_down:
     case Type::touch_motion:
     case Type::touch_up:
@@ -759,6 +1096,7 @@ void ControlMapper::SetExternalContact(const std::uint64_t id, const float x, co
     }
     if (!found->second.held) found->second.latched = true;
     found->second.held = true;
+    state.pinch = {};
     found->second.x = Clamp(x, state.width);
     found->second.y = Clamp(y, state.height);
 }
@@ -776,6 +1114,8 @@ void ControlMapper::Cancel() { state_->Cancel(); }
 void ControlMapper::Reset() noexcept {
     auto& state = *state_;
     state.mouse = {};
+    state.pinch = {};
+    state.wheel_notches = 0;
     state.touches.clear();
     state.externals.clear();
     for (auto& rt : state.runtime) {
@@ -785,6 +1125,8 @@ void ControlMapper::Reset() noexcept {
         rt.key_down = false;
         rt.stick_active = false;
         rt.offset_x = rt.offset_y = 0;
+        rt.look_dx = rt.look_dy = 0;
+        rt.look_regrip = rt.look_old_held = false;
     }
     state.overlays.clear();
     state.passthrough_down.clear();
@@ -800,6 +1142,7 @@ std::vector<ControlOutput> ControlMapper::Reconfigure(ControlConfig config) {
     state_->Cancel();
     auto outputs = state_->Flush();
     next.state_->frame = state_->frame;
+    next.state_->pointer_released = state_->pointer_released;  // the lock survives a key edit
     std::swap(state_, next.state_);
     return outputs;
 }
@@ -826,6 +1169,10 @@ std::vector<ControlHint> ControlMapper::Hints() const {
     for (std::size_t i = 0; i < state.config.bindings.size(); ++i) {
         const auto& binding = state.config.bindings[i];
         if (!state.IsActive(binding) || binding.zone.empty()) continue;
+        // A freed mouse drives no binding, so its mouse and wheel zones are not offered.
+        if (state.MouseFreed() &&
+            std::ranges::none_of(binding.sources, [](const auto& source) { return source.kind == SourceKind::key; }))
+            continue;
         const auto& zone = layout[state.binding_zone[i]];
         const bool stick = binding.action == ActionKind::stick;
         auto found = std::ranges::find_if(hints, [&](const auto& hint) {
@@ -842,12 +1189,42 @@ std::vector<ControlHint> ControlMapper::Hints() const {
 
 bool ControlMapper::Active() const noexcept {
     const auto& state = *state_;
-    if (!state.contacts.empty() || state.mouse.held || !state.touches.empty() ||
-        !state.externals.empty())
+    if (!state.contacts.empty() || state.mouse.held || !state.touches.empty() || !state.externals.empty() ||
+        state.pinch.active || state.pinch.held || state.pinch.pending_log != 0)
         return true;
     return std::ranges::any_of(state.runtime, [](const auto& rt) {
-        return std::find(rt.held.begin(), rt.held.end(), true) != rt.held.end();
+        return std::find(rt.held.begin(), rt.held.end(), true) != rt.held.end() || rt.stick_active || rt.look_dx != 0 ||
+               rt.look_dy != 0;
     });
+}
+
+bool ControlMapper::WantsRelativePointer() const noexcept {
+    return state_->WantsRelative();
+}
+
+void ControlMapper::SetPointerReleased(const bool released) noexcept {
+    state_->pointer_released = released;
+}
+
+bool ControlMapper::PointerReleased() const noexcept {
+    return state_->pointer_released;
+}
+
+bool ControlMapper::TogglePointerLock() noexcept {
+    return state_->TogglePointerLock();
+}
+
+bool ControlMapper::LookActive() const noexcept {
+    return state_->LookActive();
+}
+
+std::vector<InputSource> ControlMapper::LockSources() const {
+    std::vector<InputSource> sources;
+    for (const auto& binding : state_->config.bindings) {
+        if (binding.action == ActionKind::lock && state_->IsActive(binding))
+            sources.insert(sources.end(), binding.sources.begin(), binding.sources.end());
+    }
+    return sources;
 }
 
 std::string_view ControlMapper::Mode() const noexcept { return state_->base_mode; }

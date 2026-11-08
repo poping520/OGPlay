@@ -41,20 +41,39 @@ export function captureMouse(button: number): Captured {
   return name ? { source: `mouse:${name}` } : { error: t("不支持的鼠标键 {button}", { button }) };
 }
 
+// WheelEvent.deltaY < 0 scrolls up, matching the host's +delta_y.
+export function captureWheel(deltaY: number): Captured {
+  if (deltaY < 0) return { source: 'wheel:up' };
+  if (deltaY > 0) return { source: 'wheel:down' };
+  return { error: t('请上下滚动滚轮') };
+}
+
 const labels: Record<string, string> = {
   space: 'Space', enter: 'Enter', escape: 'Esc', backspace: '⌫', tab: 'Tab', up: '↑', down: '↓',
   left: '←', right: '→', left_shift: 'LShift', right_shift: 'RShift', left_ctrl: 'LCtrl',
   right_ctrl: 'RCtrl', left_alt: 'LAlt', right_alt: 'RAlt', caps_lock: 'Caps', page_up: 'PgUp',
   page_down: 'PgDn', delete: 'Del', insert: 'Ins', home: 'Home', end: 'End', minus: '-',
   equals: '=', left_bracket: '[', right_bracket: ']', backslash: '\\', semicolon: ';',
-  apostrophe: "'", grave: '`', comma: ',', period: '.', slash: '/',
+  apostrophe: "'", grave: '~', comma: ',', period: '.', slash: '/',
 };
 const mouseLabels = (): Record<string, string> => ({ left: t('鼠标左键'), middle: t('鼠标中键'), right: t('鼠标右键'), x1: t('鼠标侧键 1'), x2: t('鼠标侧键 2') });
 
 export function sourceLabel(source: string): string {
+  if (source === 'mouse:motion') return t('鼠标移动');
+  if (source === 'wheel:up') return t('滚轮上');
+  if (source === 'wheel:down') return t('滚轮下');
   if (source.startsWith('mouse:')) return mouseLabels()[source.slice(6)] ?? source;
   const name = source.startsWith('key:') ? source.slice(4) : source;
   return labels[name] ?? name.toUpperCase();
+}
+
+// A spoken name for keys whose cap is only a symbol, so "~" reads as the tilde key.
+const captions = (): Record<string, string> => ({
+  grave: t('波浪键'), minus: t('减号键'), equals: t('等号键'), left_bracket: t('左方括号'), right_bracket: t('右方括号'),
+  backslash: t('反斜杠'), semicolon: t('分号键'), apostrophe: t('引号键'), comma: t('逗号键'), period: t('句号键'), slash: t('斜杠键'),
+});
+export function keyCaption(source: string): string | undefined {
+  return source.startsWith('key:') ? captions()[source.slice(4)] : undefined;
 }
 
 // "keys:w,a,s,d" -> ["key:w", ...]; any other source is one entry.

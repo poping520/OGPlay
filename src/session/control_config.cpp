@@ -48,6 +48,21 @@ constexpr std::size_t kMaxControlFileLines = 200;
     return String(table, key, field);
 }
 
+[[nodiscard]] std::optional<bool> OptionalBool(const Table& table, const std::string_view key,
+                                               const std::string_view field) {
+    const auto* value = Find(table, key);
+    if (value == nullptr) return std::nullopt;
+    const auto* flag = std::get_if<bool>(&value->value);
+    if (flag == nullptr) throw ControlConfigError(Field(field, key) + " must be true or false");
+    return *flag;
+}
+
+[[nodiscard]] std::uint32_t WholeNumber(const float value, const std::string_view field) {
+    if (value < 0 || std::floor(value) != value)
+        throw ControlConfigError(std::string(field) + " must be a whole number");
+    return static_cast<std::uint32_t>(value);
+}
+
 [[nodiscard]] std::optional<float> OptionalNumber(const Table& table, const std::string_view key,
                                                   const std::string_view field) {
     const auto* value = Find(table, key);
@@ -166,8 +181,10 @@ constexpr std::array kAndroidKeyNames{
         ExactKeys(table, field, unknown, {"source", "action", "mode"});
         entry.unbind = true;
     } else if (action == "button") {
-        ExactKeys(table, field, unknown, {"source", "action", "mode", "zone", "press", "repeat_frames"});
+        ExactKeys(table, field, unknown,
+                  {"source", "action", "mode", "zone", "press", "repeat_frames", "release_pointer"});
         binding.action = input::ActionKind::button;
+        binding.release_pointer = OptionalBool(table, "release_pointer", field).value_or(false);
         binding.zone = String(table, "zone", field);
         const auto press = OptionalString(table, "press", field).value_or("hold");
         if (press == "tap") binding.press = input::PressMode::tap;
@@ -192,9 +209,32 @@ constexpr std::array kAndroidKeyNames{
                 *target = static_cast<std::uint32_t>(*frames);
             }
         }
+    } else if (action == "look") {
+        ExactKeys(table, field, unknown,
+                  {"source", "action", "mode", "zone", "sensitivity", "sensitivity_y", "invert_y", "settle_frames",
+                   "max_offset_x", "max_offset_y", "regrip"});
+        binding.action = input::ActionKind::look;
+        binding.zone = String(table, "zone", field);
+        if (const auto sensitivity = OptionalNumber(table, "sensitivity", field))
+            binding.look_sensitivity_x = binding.look_sensitivity_y = *sensitivity;
+        if (const auto vertical = OptionalNumber(table, "sensitivity_y", field)) binding.look_sensitivity_y = *vertical;
+        binding.look_invert_y = OptionalBool(table, "invert_y", field).value_or(false);
+        if (const auto frames = OptionalNumber(table, "settle_frames", field))
+            binding.look_settle_frames = WholeNumber(*frames, Field(field, "settle_frames"));
+        binding.look_max_offset_x = OptionalNumber(table, "max_offset_x", field).value_or(0);
+        binding.look_max_offset_y = OptionalNumber(table, "max_offset_y", field).value_or(0);
+        const auto regrip = OptionalString(table, "regrip", field).value_or("single");
+        if (regrip == "handoff")
+            binding.look_handoff = true;
+        else if (regrip != "single")
+            throw ControlConfigError(Field(field, "regrip") + " must be single or handoff");
+    } else if (action == "lock") {
+        ExactKeys(table, field, unknown, {"source", "action", "mode"});
+        binding.action = input::ActionKind::lock;
     } else if (action == "key") {
-        ExactKeys(table, field, unknown, {"source", "action", "mode", "key"});
+        ExactKeys(table, field, unknown, {"source", "action", "mode", "key", "release_pointer"});
         binding.action = input::ActionKind::key;
+        binding.release_pointer = OptionalBool(table, "release_pointer", field).value_or(false);
         const auto* key = Find(table, "key");
         if (key == nullptr) throw ControlConfigError(Field(field, "key") + " is missing");
         binding.android_key_code = AndroidKeyCode(*key, Field(field, "key"));
@@ -326,7 +366,7 @@ input::ControlConfig BuildControlConfig(const ControlLayer& user) {
 
 namespace {
 
-using FieldValue = std::variant<std::string, std::int64_t, double>;
+using FieldValue = std::variant<std::string, std::int64_t, double, bool>;
 using Fields = std::vector<std::pair<std::string, FieldValue>>;
 
 [[nodiscard]] FieldValue Number(const float value) {
@@ -385,6 +425,7 @@ using Fields = std::vector<std::pair<std::string, FieldValue>>;
         fields.emplace_back("press", std::string(press[static_cast<std::size_t>(binding.press)]));
         if (binding.press == input::PressMode::repeat)
             fields.emplace_back("repeat_frames", static_cast<std::int64_t>(binding.repeat_frames));
+        if (binding.release_pointer) fields.emplace_back("release_pointer", true);
         break;
     }
     case input::ActionKind::stick:
@@ -400,8 +441,22 @@ using Fields = std::vector<std::pair<std::string, FieldValue>>;
         for (const auto& [name, code] : detail::kAndroidKeyNames)
             if (code == binding.android_key_code) key = std::string(name);
         fields.emplace_back("key", key);
+        if (binding.release_pointer) fields.emplace_back("release_pointer", true);
         break;
     }
+    case input::ActionKind::look:
+        fields.emplace_back("action", std::string("look"));
+        fields.emplace_back("zone", binding.zone);
+        fields.emplace_back("sensitivity", Number(binding.look_sensitivity_x));
+        if (binding.look_sensitivity_y != binding.look_sensitivity_x)
+            fields.emplace_back("sensitivity_y", Number(binding.look_sensitivity_y));
+        fields.emplace_back("invert_y", binding.look_invert_y);
+        fields.emplace_back("settle_frames", static_cast<std::int64_t>(binding.look_settle_frames));
+        fields.emplace_back("max_offset_x", Number(binding.look_max_offset_x));
+        fields.emplace_back("max_offset_y", Number(binding.look_max_offset_y));
+        fields.emplace_back("regrip", std::string(binding.look_handoff ? "handoff" : "single"));
+        break;
+    case input::ActionKind::lock: fields.emplace_back("action", std::string("lock")); break;
     case input::ActionKind::mode:
         fields.emplace_back("action", std::string("mode"));
         fields.emplace_back("target", binding.target_mode);
@@ -436,6 +491,8 @@ void AppendTomlTable(std::string& text, const std::string_view header, const Fie
         text += key + " = ";
         if (const auto* string = std::get_if<std::string>(&value)) text += Quoted(*string);
         else if (const auto* integer = std::get_if<std::int64_t>(&value)) text += std::to_string(*integer);
+        else if (const auto* flag = std::get_if<bool>(&value))
+            text += *flag ? "true" : "false";
         else text += NumberText(std::get<double>(value));
         text += "\n";
     }
@@ -446,6 +503,8 @@ void AppendTomlTable(std::string& text, const std::string_view header, const Fie
     for (const auto& [key, value] : fields) {
         if (const auto* string = std::get_if<std::string>(&value)) writer.AddString(object, key, *string);
         else if (const auto* integer = std::get_if<std::int64_t>(&value)) writer.AddInteger(object, key, *integer);
+        else if (const auto* flag = std::get_if<bool>(&value))
+            writer.AddBool(object, key, *flag);
         else writer.AddReal(object, key, std::get<double>(value));
     }
     return object;

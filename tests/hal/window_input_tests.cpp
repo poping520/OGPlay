@@ -188,8 +188,23 @@ TEST_CASE("SDL events map to backend-independent keyboard and pointer events") {
     button.button.y = 24.5F;
     REQUIRE(SDL_PushEvent(&button));
 
+    SDL_Event wheel{};
+    wheel.wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.timestamp = 104;
+    wheel.wheel.windowID = window_id;
+    wheel.wheel.which = 8;
+    wheel.wheel.y = -1.5F;
+    wheel.wheel.mouse_x = 30.0F;
+    wheel.wheel.mouse_y = 40.0F;
+    REQUIRE(SDL_PushEvent(&wheel));
+
     const auto events = host->PollEvents();
-    REQUIRE(events.size() == 3);
+    REQUIRE(events.size() == 4);
+    CHECK(events[3].type == ogplay::hal::InputEventType::pointer_wheel);
+    CHECK(events[3].timestamp_ns == 104);
+    CHECK(events[3].x == doctest::Approx(30.0F));
+    CHECK(events[3].y == doctest::Approx(40.0F));
+    CHECK(events[3].delta_y == doctest::Approx(-1.5F));
     CHECK(events[1].key_modifiers == events[0].key_modifiers);
     CHECK(events[2].key_modifiers == events[0].key_modifiers);
     CHECK(events[0].type == ogplay::hal::InputEventType::key);
@@ -264,6 +279,37 @@ TEST_CASE("SDL-disabled builds fail the window factory explicitly") {
 #endif
 
 #if OGPLAY_TEST_HAS_SDL3
+TEST_CASE("INP-9 SDL trackpad pinch maps windowless events to this window") {
+    auto host = OpenDummyWindow();
+    const auto window_id = host->State().id;
+    SDL_Event event{};
+    event.pinch.type = SDL_EVENT_PINCH_BEGIN;  // Cocoa sends pinches without a window
+    event.pinch.timestamp = 201;
+    REQUIRE(SDL_PushEvent(&event));
+    event.pinch.type = SDL_EVENT_PINCH_UPDATE;
+    event.pinch.timestamp = 202;
+    event.pinch.scale = 1.25F;
+    REQUIRE(SDL_PushEvent(&event));
+    event.pinch.type = SDL_EVENT_PINCH_END;
+    event.pinch.timestamp = 203;
+    event.pinch.scale = 0;
+    REQUIRE(SDL_PushEvent(&event));
+
+    const auto events = host->PollEvents();
+    // begin is only reported while the cursor is over the window.
+    const bool focused = SDL_GetMouseFocus() == SDL_GetWindowFromID(window_id);
+    REQUIRE(events.size() == (focused ? 3U : 2U));
+    const auto& update = events[focused ? 1 : 0];
+    const auto& end = events[focused ? 2 : 1];
+    if (focused) CHECK(events[0].type == ogplay::hal::InputEventType::pinch_begin);
+    CHECK(update.type == ogplay::hal::InputEventType::pinch_update);
+    CHECK(update.window_id == window_id);
+    CHECK(update.timestamp_ns == 202);
+    CHECK(update.scale == doctest::Approx(1.25F));
+    CHECK(end.type == ogplay::hal::InputEventType::pinch_end);
+    CHECK(end.scale == 1.0F);
+}
+
 TEST_CASE("BND46 SDL touch input preserves identities filters synthesis and publishes cancellation") {
     using namespace ogplay::hal;
     auto host = OpenDummyWindow();

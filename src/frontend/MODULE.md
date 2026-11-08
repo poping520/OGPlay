@@ -89,7 +89,9 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   启动前明确失败。用户键位文件为 `--input-config <file>`，否则为持久沙盒根下的
   `<installation_id>.input.toml`，临时沙盒不落盘；文件不存在视为空布局。窗口事件全部交给
   `ControlMapper`，每个 guest step 前 `Flush` 并经 `session::MapControlOutput` 入队；呈现
-  尺寸变化时更新 surface。GUI 总以 `--input-config <实例目录>/input.toml` 启动，该文件独立于
+  尺寸变化时更新 surface。每帧按 `ControlMapper::WantsRelativePointer` 切换窗口相对指针；
+  编辑冻结、MCP 暂停、后台与失败时放开；宿主拒绝时记 warn。锁定与放开由用户的 lock 绑定
+  与 `release_pointer` 绑定（默认 Esc）决定，宿主不截留其他键。GUI 总以 `--input-config <实例目录>/input.toml` 启动，该文件独立于
   `settings.toml`。
 - 按键编辑器会话（ADR-0134）：loopback 服务存在时，`/controls/rpc` 提供
   `control.get/freeze/resume/frame/apply/status`（`resume {close:true}` 表示编辑完成，计入 `close_requests`），要求 `Authorization: Bearer <token>` 且 Host 为
@@ -109,7 +111,8 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   都没有时游戏内首次 F2 在空闲端口懒启动。帧快照存储在每个窗口会话中存在，供 `control.frame`。
 - 宿主快捷键（`HostShortcutFilter`）：F1、F2、Cmd/Win 及 Ctrl/Cmd 按住时按下的键由宿主截留，
   同一按键的重复与抬起跟随按下的归属（先松修饰键也不漏给 guest）；Ctrl 单独按下仍是普通键。
-  F1 切换提示叠加层：`DrawControlHints` 在呈现副本上绘制 `ControlMapper::Hints` 的区域与键名
+  F1 切换提示叠加层：`DrawControlHints` 在呈现副本上绘制 `ControlMapper::Hints` 的区域与键名，
+  有准星时第二行由 `PointerHintLine` 给出锁定键（如 `~ LOCK MOUSE`、`~ FREE MOUSE`，无锁定键时 `NO MOUSE LOCK KEY`）
   （内置 5×7 ASCII 字形），guest 帧、MCP 截图与 `control.frame` 不含叠加层；切换在下一帧生效。
   F2：最近 3 秒内有启动器以 `control.status {client:"launcher"}` 轮询时计入 `edit_requests` 交给
   启动器打开，否则用默认浏览器打开 `/controls/#token=…`。`control.status` 同时报告

@@ -75,6 +75,7 @@ Runtime.nativeExit 共用不可返回 VM 退出协议，展开 Java 并终止 ex
 
 仅发布 session 封存的当前 APK Manifest/path/label/permission/feature，不从默认字段猜安装状态。
 值对象来自 BootDex，Context 保持稳定 ApplicationInfo，查询返回独立值；FLAG_INSTALLED 是已知事实。
+ApplicationInfo.theme 和 ActivityInfo.theme 发布各自的 Manifest 值，未声明为 0。alias 沿用目标快照，ActivityInfo.getThemeResource() 由 ROM 回落到应用主题。
 meta-data 的 value 解码 ARSC 类型（含 float→Bundle.putFloat），非 RIGID 不支持类型告警忽略，
 TYPE_NULL 缺 value/resource 仍失败；Manifest TYPE_STRING 转换失败保留 Bundle null string，
 key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保留 ID，application/组件分别物化；selected-ABI 库
@@ -157,6 +158,7 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   APK ARSC bag 与投影统一 parent/reference/?attr 有界解析；applyStyle 顺序为显式 XML、
   XML style、默认 style、theme，同名 defStyleAttr reference 替代 defStyleRes；@null 遮蔽、
   force 与独立 copy 遵循 API19。retrieveAttributes 只读 XML/资源，不套 style/theme。
+  applyThemeStyle 校验 token 后对样式 ID 0 执行无操作。非零未知 ID 仍明确失败。
   六槽 type/data/cookie/resourceId/configFlags/density 和 indices 先受检容量再写 Java int[]；
   XML cookie=-1，APK 原池 cookie=1，flags/density 来自 ARSC。APK owner 注入单 entry 配置
   选择与文件验证回调，沿 API19 候选优先级；引用链保留累计 flags 和最终资源 ID。

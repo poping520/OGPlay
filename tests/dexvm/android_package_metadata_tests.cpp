@@ -118,6 +118,8 @@ TEST_CASE("PackageManager getInstallerPackageName reports direct-load provenance
 TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
     using ogplay::loader::AndroidManifestActivityComponent;
     using ogplay::loader::AndroidManifestComponentKind;
+    constexpr auto kApplicationTheme = 0x01030006;
+    constexpr auto kActivityTheme = 0x01030007;
     constexpr auto kGetActivities = 0x00000001;
     constexpr auto kGetMetaData = 0x00000080;
     constexpr auto kGetPermissions = 0x00001000;
@@ -135,7 +137,7 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
              std::nullopt,
              true,
              {{{"android.intent.action.MAIN"}, {"android.intent.category.LAUNCHER"}, false}},
-             std::nullopt,
+             kActivityTheme,
              true},
             {AndroidManifestComponentKind::activity,
              "org.example.game.Hidden",
@@ -163,7 +165,7 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
              std::optional<std::string>{".Main"},
              true,
              {{{"android.intent.action.MAIN"}, {"android.intent.category.DEFAULT"}, false}},
-             std::nullopt,
+             kActivityTheme,
              std::nullopt},
         };
 
@@ -203,7 +205,11 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
         const auto none = query(0);
         CHECK_FALSE(ref_field(none.ref, "activities", "[Landroid/content/pm/ActivityInfo;").IsValid());
         CHECK_FALSE(ref_field(none.ref, "requestedPermissions", "[Ljava/lang/String;").IsValid());
+        CHECK(
+            field(ref_field(none.ref, "applicationInfo", "Landroid/content/pm/ApplicationInfo;"), "theme", "I").bits ==
+            0);
 
+        f.context->application_theme = kApplicationTheme;
         const auto permissions_only = query(kGetPermissions);
         CHECK_FALSE(ref_field(permissions_only.ref, "activities", "[Landroid/content/pm/ActivityInfo;").IsValid());
         const auto permissions = ref_field(permissions_only.ref, "requestedPermissions", "[Ljava/lang/String;");
@@ -212,6 +218,7 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
         CHECK(f.vm.StringUtf8(f.model.GetObjectElement(permissions, 0)) == "android.permission.INTERNET");
 
         const auto activities_only = query(kGetActivities);
+        const auto activities_root = f.vm.ProtectReferences(std::array{activities_only.ref});
         CHECK_FALSE(ref_field(activities_only.ref, "requestedPermissions", "[Ljava/lang/String;").IsValid());
         auto activities = ref_field(activities_only.ref, "activities", "[Landroid/content/pm/ActivityInfo;");
         REQUIRE(activities.IsValid());
@@ -236,6 +243,11 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
         REQUIRE(application.IsValid());
         CHECK(f.vm.StringUtf8(ref_field(application, "packageName", "Ljava/lang/String;")) == "org.example.game");
         CHECK(ref_field(activities_only.ref, "applicationInfo", "Landroid/content/pm/ApplicationInfo;") == application);
+        CHECK(field(application, "theme", "I").bits == kApplicationTheme);
+        CHECK(field(main, "theme", "I").bits == kActivityTheme);
+        CHECK(field(alias, "theme", "I").bits == kActivityTheme);
+        CHECK(field(hidden, "theme", "I").bits == 0);
+        CHECK(f.On(hidden, "getThemeResource", "()I").AsInt() == kApplicationTheme);
 
         const auto combined = query(kGetActivities | kGetPermissions | kGetMetaData);
         CHECK(f.model.ArrayLength(ref_field(combined.ref, "activities", "[Landroid/content/pm/ActivityInfo;")) == 4);
@@ -303,6 +315,7 @@ TEST_CASE("DVM-240 installed applications use sealed facts independent values an
         context.application_process_name = "org.example.game:main";
         context.application_uid = 10042;
         context.target_sdk_version = 19;
+        context.application_theme = 0x01030006;
         context.application_meta_data.emplace("fixture.setting", std::string("sealed"));
         const auto base = f.New("Landroid/content/Context;");
         const auto base_root = f.vm.ProtectReferences(std::array{base});
@@ -354,6 +367,8 @@ TEST_CASE("DVM-240 installed applications use sealed facts independent values an
         const auto direct_root = f.vm.ProtectReferences(std::array{direct});
         CHECK(info != stable);
         CHECK(info != direct);
+        for (const auto application : {info, stable, direct})
+            CHECK(field(application, "theme", "I").bits == 0x01030006);
         for (const auto* name : {"packageName", "className", "processName", "sourceDir", "publicSourceDir", "dataDir",
                                  "nativeLibraryDir"}) {
             CHECK(f.vm.StringUtf8(ref(info, name)) == f.vm.StringUtf8(ref(stable, name)));

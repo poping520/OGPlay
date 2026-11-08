@@ -266,6 +266,9 @@ TEST_CASE("API19 ROM style IDs named by later SDKs apply inert bags and reject p
     CHECK_THROWS_WITH(r.Apply(token, 0x01030012, true, table),
                       "unregistered framework theme ID 16973842 (ROM style Widget)");
     CHECK_THROWS_WITH(r.Apply(token, 0x0103ffff, true, table), "unregistered framework theme ID 17039359");
+    CHECK_NOTHROW(r.Apply(token, 0, true, table));
+    CHECK(r.Attribute(token, 0x01010078, false, table)->Slots() == before->Slots());
+    CHECK_THROWS(r.Apply({}, 0, true, table));
 }
 
 TEST_CASE("API19 ContextImpl default theme underlies an activity theme with an inert ROM parent") {
@@ -279,6 +282,7 @@ TEST_CASE("API19 ContextImpl default theme underlies an activity theme with an i
         const auto owner = f.New("Landroid/app/Activity;");
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});
         ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.On(owner, "setTheme", "(I)V", {VmValue::Int(0)});
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020020)});
         const auto theme = f.On(owner, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
         const auto value = f.New("Landroid/util/TypedValue;");

@@ -825,6 +825,7 @@ ThemeResources::Bag ThemeResources::Style(std::uint32_t style, const loader::Ars
 
 void ThemeResources::Apply(ThemeToken token, std::uint32_t style, bool force, const loader::ArscTable& table) {
     const auto& current = Require(token);
+    if (style == 0) return;
     const auto bag = Style(style, table);
     auto result = current;
     for (const auto& [id, value] : bag) {

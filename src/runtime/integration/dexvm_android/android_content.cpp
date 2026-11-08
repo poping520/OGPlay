@@ -1885,6 +1885,7 @@ void SetComponentMetaData(dx::IntrinsicContext& call, const Context& context, co
                                   component.enabled, loader::AndroidManifestActivityExported(component),
                                   context->application_process_name, std::nullopt, application_info);
     const auto roots = call.vm.ProtectReferences(std::array{info});
+    SetInt(call, info, "theme", static_cast<std::int32_t>(component.theme.value_or(0U)));
     SetInt(call, info, "launchMode", static_cast<std::int32_t>(component.launch_mode));
     const auto affinity = component.task_affinity.value_or(context->package_name);
     SetRef(call, info, "taskAffinity", "Ljava/lang/String;",

@@ -436,6 +436,7 @@ dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call, const Context& c
         call, info, "processName", "Ljava/lang/String;",
         string(context->application_process_name.empty() ? context->package_name : context->application_process_name));
     SetApplicationInfoInt(call, info, "icon", static_cast<std::int32_t>(context->application_icon));
+    SetApplicationInfoInt(call, info, "theme", static_cast<std::int32_t>(context->application_theme));
     // Every DexVM process is assembled from a non-empty classes.dex. This is
     // the API19 PackageParser default unless android:hasCode explicitly says
     // otherwise; that attribute is not yet part of the sealed manifest facts.

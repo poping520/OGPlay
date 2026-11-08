@@ -347,3 +347,4 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-370 · AlertDialog 长消息滚动](DVM-370.md)
 - [DVM-371 · WebView 配置链的 scrollbar style 与惰性动画](DVM-371.md)
 - [DVM-372 · UI 显示设置统一降级](DVM-372.md)
+- [DVM-374 · Manifest 主题元数据与空样式](DVM-374.md)

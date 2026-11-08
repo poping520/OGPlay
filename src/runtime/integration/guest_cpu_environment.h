@@ -2,6 +2,7 @@
 
 #include <string_view>
 
+#include "ogplay/cpu/cpu.h"
 #include "ogplay/loader/link_namespace.h"
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/common/guest_cpu_config.h"
@@ -23,6 +24,8 @@ public:
     [[nodiscard]] std::shared_ptr<cpu::ExecutionBudget> MakeExecutionBudget() const;
     void Publish(VirtualFileSystem& filesystem);
     void BindSysconf(loader::Elf32LinkNamespace& symbols, memory::AddressSpace& memory) const;
+    [[nodiscard]] static bool ClassifyUserUndefined(cpu::RunStopReason reason, std::uint32_t instruction,
+                                                    cpu::ExecutionState state) noexcept;
 
 private:
     struct VirtualCpuIdentity {

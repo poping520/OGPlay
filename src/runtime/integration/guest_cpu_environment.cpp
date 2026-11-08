@@ -18,6 +18,36 @@ GuestCpuEnvironment::GuestCpuEnvironment(const GuestCpuConfig config) : config_(
         throw std::invalid_argument("guest CPU rate requires 0..10000 million ticks/s");
 }
 
+bool GuestCpuEnvironment::ClassifyUserUndefined(const cpu::RunStopReason reason, const std::uint32_t instruction,
+                                                const cpu::ExecutionState state) noexcept {
+    if (reason == cpu::RunStopReason::undefined_instruction) return true;
+    if (reason != cpu::RunStopReason::unsupported_instruction) return false;
+    if (state == cpu::ExecutionState::thumb && (instruction & 0xe0000000U) != 0xe0000000U) return false;
+
+    // CDP/MCR/MRC (1110) and LDC/STC/MCRR/MRRC (110), including their 2 forms.
+    const auto encoding = instruction & 0x0f000000U;
+    if (encoding != 0x0c000000U && encoding != 0x0d000000U && encoding != 0x0e000000U) return false;
+    const auto coprocessor = (instruction >> 8U) & 15U;
+    if (coprocessor <= 9 || coprocessor == 12 || coprocessor == 13) return true;
+    if (coprocessor != 15) return false;
+
+    // PL0 access on the Cortex-A9 model above. The exceptions are ordinary
+    // MCR/MRC encodings only (bit 28 selects the 2 form in Thumb).
+    const bool ordinary =
+        state == cpu::ExecutionState::thumb ? (instruction & 0x10000000U) == 0 : (instruction >> 28U) != 15U;
+    if (!ordinary) return true;
+    switch (instruction & 0x0fff0fffU) {
+    case 0x0e0d0f50U:  // TPIDRURW write
+    case 0x0e1d0f50U:  // TPIDRURW read
+    case 0x0e1d0f70U:  // TPIDRURO read
+    case 0x0e070fbaU:  // DMB
+    case 0x0e070f9aU:  // DSB
+    case 0x0e070f95U:  // ISB
+        return false;
+    default: return true;
+    }
+}
+
 std::shared_ptr<cpu::ExecutionBudget> GuestCpuEnvironment::MakeExecutionBudget() const {
     if (!config_.execution.limit_parallelism && config_.execution.max_mticks_per_second == 0) return {};
     return std::make_shared<cpu::ExecutionBudget>(

@@ -11,6 +11,7 @@
 #include <cstdint>
 
 #include "ogplay/runtime/syscall/syscall.h"
+#include "runtime/integration/guest_cpu_environment.h"
 
 namespace {
 
@@ -181,7 +182,8 @@ template <typename Cpu> struct SignalFixture {
         lifecycle.Register(1); lifecycle.Register(2);
         runtime::BindAndroidThreadSyscalls(dispatcher, futex, bus);
         runtime::BindAndroidTimeSyscalls(dispatcher, clock, memory, std::move(admit_sleep));
-        runtime::BindAndroidSignalSyscalls(dispatcher, memory, &lifecycle);
+        runtime::BindAndroidSignalSyscalls(dispatcher, memory, &lifecycle,
+                                           runtime::GuestCpuEnvironment::ClassifyUserUndefined);
         cpu::A32State state;
         state.SetThreadId(2);
         state.SetRegister(CoreRegister::sp, 0x24000);
@@ -316,6 +318,131 @@ TEST_CASE_TEMPLATE("ARM signal handlers restore core Thumb VFP and mask state", 
         CHECK(f.cpu.GetState() == initial);
         CHECK_FALSE(f.dispatcher.signal_binding->runtime->Pending(2));
     }
+}
+
+TEST_CASE_TEMPLATE("BND-57 synchronous SIGILL signal handler resumes an A32 or Thumb guest call", Cpu,
+                   cpu::InterpreterCpu, cpu::DynarmicCpu) {
+    SignalFixture<Cpu> f;
+    constexpr GuestAddress stack_top{0x24000}, return_trap{0x100f0}, report{0x20080};
+    f.Code(return_trap.Value(), {0xef000001});
+    f.Code(0x10040, {0xe3a070ae, 0xef000000, 0xe12fff1e});  // mov r7,#174; svc #0; bx lr
+    f.Code(0x20000, {0x10100, 4, 0, 0, 0});                 // rt_sigaction with SA_SIGINFO
+    f.Code(0x10100, {
+                        0xe3a03802,
+                        0xe2833080,  // r3 = report
+                        0xe5830000,  // handler signo
+                        0xe5910000,
+                        0xe5830004,  // si_signo
+                        0xe5910004,
+                        0xe5830008,  // si_errno
+                        0xe5910008,
+                        0xe583000c,  // si_code
+                        0xe591000c,
+                        0xe5830010,  // si_addr
+                        0xe5920060,
+                        0xe5830014,  // ucontext CPSR
+                        0xe592005c,
+                        0xe5830018,  // ucontext PC
+                        0xe2800004,
+                        0xe582005c,  // advance saved PC by one instruction
+                        0xe12fff1e,  // bx lr
+                    });
+    const auto install = runtime::InvokeA32GuestCall(
+        f.cpu, f.dispatcher, f.lifecycle, f.memory,
+        {.target = GuestAddress{0x10040}, .registers = {4, 0x20000, 0, 8}, .stack_words = {}, .thread_id = 2},
+        stack_top, return_trap, 128);
+    REQUIRE(install.return_value == 0);
+
+    bool thumb = false;
+    SUBCASE("A32") {
+        f.Code(0x10000, {0xec510f1e, 0xe3a02007, 0xe5832000, 0xe12fff1e});
+    }
+    SUBCASE("Thumb-2") {
+        thumb = true;
+        f.Code(0x10000, {0x0f1eec51, 0x601a2207, 0xbf004770});  // MRRC; movs r2,#7; str r2,[r3]; bx lr
+    }
+    const auto result = runtime::InvokeA32GuestCall(f.cpu, f.dispatcher, f.lifecycle, f.memory,
+                                                    {.target = GuestAddress{0x10000U | static_cast<unsigned>(thumb)},
+                                                     .registers = {0x13579bdf, 0xfedcba98, 0, 0x200a0},
+                                                     .stack_words = {},
+                                                     .thread_id = 2},
+                                                    stack_top, return_trap, 128);
+    CHECK(f.memory.Read32(report) == 4);
+    CHECK(f.memory.Read32(report.Add(4)) == 4);
+    CHECK(f.memory.Read32(report.Add(8)) == 0);
+    CHECK(f.memory.Read32(report.Add(12)) == 1);
+    CHECK(f.memory.Read32(report.Add(16)) == 0x10000);
+    CHECK((f.memory.Read32(report.Add(20)) & 0x20) == (thumb ? 0x20 : 0));
+    CHECK(f.memory.Read32(report.Add(24)) == 0x10000);
+    CHECK(f.memory.Read32(GuestAddress{0x200a0}) == 7);
+    CHECK(result.return_value == 0x13579bdf);
+    CHECK(result.return_value_high == 0xfedcba98);
+}
+
+TEST_CASE_TEMPLATE("BND-57 ineligible synchronous signals preserve the original CPU stop", Cpu, cpu::InterpreterCpu,
+                   cpu::DynarmicCpu) {
+    SignalFixture<Cpu> f;
+    std::uint32_t instruction = 0xec510f1e;
+    SUBCASE("default disposition") {}
+    SUBCASE("ignored disposition") {
+        f.Action(4, 1);
+    }
+    SUBCASE("blocked SIGILL") {
+        f.Action(4, 0x10100);
+        f.memory.Write64(GuestAddress{0x20020}, 1U << (4 - 1));
+        REQUIRE(f.Call(175, {0, 0x20020, 0, 8}) == 0);
+    }
+    SUBCASE("TPIDRURW write") {
+        f.Action(4, 0x10100);
+        instruction = 0xee0d0f50;
+    }
+    SUBCASE("CP14 access") {
+        f.Action(4, 0x10100);
+        instruction = 0xee100e10;
+    }
+    f.Code(0x10000, {instruction});
+    f.Code(0x10100, {0xe3a00063, 0xe12fff1e});  // mov r0,#99; bx lr
+    const auto result = runtime::RunAndroidArmGuestThread(f.cpu, f.dispatcher, f.lifecycle, f.bus, f.futex, 32);
+    CHECK(result.reason == runtime::GuestThreadRunStop::cpu_stop);
+    CHECK(result.cpu_stop.reason == cpu::RunStopReason::unsupported_instruction);
+    CHECK(result.cpu_stop.pc == GuestAddress{0x10000});
+    CHECK(result.cpu_stop.instruction == instruction);
+    CHECK(f.cpu.GetState().Register(CoreRegister::r0) == 0);
+    CHECK(f.lifecycle.State(2).status == runtime::GuestThreadStatus::running);
+}
+
+TEST_CASE("BND-57 interpreter does not deliver SIGILL for an unsupported non-coprocessor instruction") {
+    SignalFixture<cpu::InterpreterCpu> f;
+    f.Code(0x10000, {0xe16f0f10});  // clz r0,r0
+    f.Code(0x10100, {0xe12fff1e});
+    f.Action(4, 0x10100);
+    const auto result = runtime::RunAndroidArmGuestThread(f.cpu, f.dispatcher, f.lifecycle, f.bus, f.futex, 32);
+    CHECK(result.reason == runtime::GuestThreadRunStop::cpu_stop);
+    CHECK(result.cpu_stop.reason == cpu::RunStopReason::unsupported_instruction);
+    CHECK(result.cpu_stop.pc == GuestAddress{0x10000});
+    CHECK(result.cpu_stop.instruction == 0xe16f0f10);
+}
+
+TEST_CASE("BND-57 sigreturn retries an undefined Thumb instruction with its original IT state") {
+    SignalFixture<cpu::DynarmicCpu> f;
+    f.Code(0x10000, {0xde00bf08});              // it eq; udf #0
+    f.Code(0x10100, {0xe5832000, 0xe12fff1e});  // str r2,[r3]; bx lr
+    f.Action(4, 0x10100, 0x80000004);           // SA_RESETHAND | SA_SIGINFO
+    auto state = f.cpu.GetState();
+    state.SetState(cpu::ExecutionState::thumb);
+    state.SetCpsr(state.Cpsr() | (1U << 30U));  // Z
+    state.SetRegister(CoreRegister::r3, 0x20080);
+    f.cpu.SetState(state);
+
+    const auto result = runtime::RunAndroidArmGuestThread(f.cpu, f.dispatcher, f.lifecycle, f.bus, f.futex, 128);
+    CHECK(result.reason == runtime::GuestThreadRunStop::cpu_stop);
+    CHECK(result.cpu_stop.reason == cpu::RunStopReason::undefined_instruction);
+    CHECK(result.cpu_stop.pc == GuestAddress{0x10002});
+    const GuestAddress context{f.memory.Read32(GuestAddress{0x20080})};
+    REQUIRE_FALSE(context.IsNull());
+    CHECK(f.memory.Read32(context.Add(92)) == 0x10002);
+    CHECK((f.memory.Read32(context.Add(96)) & 0x0600fc20U) == 0x820);
+    CHECK(f.cpu.GetState().Cpsr() == f.memory.Read32(context.Add(96)));
 }
 
 TEST_CASE("ARM signal pending coalesces inherits mask and retires thread state") {

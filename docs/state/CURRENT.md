@@ -29,7 +29,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。
 | GTASA | macOS | OFFLINE → 标题菜单 → Start Game 进入开场过场，约 2 分钟无 fault，SIGINT 退出 0 | OpenSL 播放器 BUFFERQUEUE/ANDROIDSIMPLEBUFFERQUEUE 未互为别名致 OpenAL 启动失败、随后堆损坏，已修；登录界面图片（guest onDraw）未绘制，游戏内交互未验 | [DVM-366](../tasks/dexvm/DVM-366.md) |
 | Monument Valley 2.5.18 | macOS | 720×1280：序章曲柄/行走至终点，进入第二章 The Garden，非零 PCM 已确认 | 默认入口竖屏、触摸复制及长期工作 Looper 已修；退出 IAP 未 bind 却 unbind 抛 IAE，正式 title gate/跨平台未验 | [DVM-369](../tasks/dexvm/DVM-369.md)、[DVM-259](../tasks/dexvm/DVM-259.md) |
 | NFS17 | macOS | 下载布局构造通过，进入 GameActivityMain.onCreate | `Window.getWindowManager()` 未实现；尚未进入游戏 | [DVM-367](../tasks/dexvm/DVM-367.md)、[DVM-368](../tasks/dexvm/DVM-368.md) |
-| Bad Piggies HD 1.9.1 | macOS | Unity `setTheme(0)` 已通过，进入 Surface 回调，故障时 `f=3542` | `System.load` 遇到未支持的 A32 指令 `0xec510f1e`，随后 FMOD `fmodGetInfo` 因 guest CPU 状态不可用失败 | [DVM-374](../tasks/dexvm/DVM-374.md) |
+| Bad Piggies HD 1.9.1 | macOS | Surface 回调后 `libRCSSDK.so` 加载及 JNI_OnLoad 完成，已越过 `0xec510f1e` 探测 | `f=3951` 时 UnityMain `UnityPlayer.nativeRender()Z` 报 `JNI object is not a string in this store`，本次未出现此前 FMOD 退出 | [DVM-374](../tasks/dexvm/DVM-374.md)、[BND-57](../tasks/boundary/BND-57.md) |
 
 ## 未闭合问题
 

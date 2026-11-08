@@ -22,8 +22,10 @@
 #include "ogplay/runtime/syscall/arm_kernel_helpers.h"
 #include "ogplay/runtime/execution/guest_clone_thread_runtime.h"
 #include "ogplay/runtime/execution/guest_lifecycle.h"
+#include "ogplay/runtime/execution/guest_thread_runner.h"
 #include "ogplay/runtime/syscall/syscall_bridge.h"
 #include "ogplay/runtime/vfs/vfs.h"
+#include "guest_cpu_environment.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -173,6 +175,7 @@ void InitializeEmptyPropertyArea(
             stopped.immediate == 1 && stopped.pc == kReturnAddress) {
             return consumed;
         }
+        if (TryDeliverSynchronousCpuSignal(cpu, stopped, dispatcher)) continue;
         if (stopped.reason != cpu::RunStopReason::supervisor_call ||
             stopped.immediate != 0) {
             const auto stopped_state = cpu.GetState();
@@ -332,7 +335,7 @@ HeadlessBionicRunReport RunHeadlessBionicEntry(
     BindAndroidTimeSyscalls(dispatcher, clock, address_space);
     BindAndroidMemorySyscalls(dispatcher, address_space);
     BindAndroidThreadSyscalls(dispatcher, futex_table, memory_bus);
-    BindAndroidSignalSyscalls(dispatcher, address_space, &lifecycle);
+    BindAndroidSignalSyscalls(dispatcher, address_space, &lifecycle, GuestCpuEnvironment::ClassifyUserUndefined);
     BindAndroidProcessSyscalls(
         dispatcher, address_space,
         [&vma_annotations, &vma_annotations_mutex](

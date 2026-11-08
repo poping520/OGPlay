@@ -84,7 +84,8 @@
 - 所有停止结果必须显式初始化指令、立即数和 fault 字段，跨编译器不得依赖聚合尾字段补零。
 - Dynarmic 指令能力缺口返回 `unsupported_instruction`，不是 guest 非法指令；其 fallback
   保留原 PC，协处理器缺口保留当前 IT 及已执行效果，禁止当作 NOP。非法/不可预测编码
-  返回 `undefined_instruction`，内部 DecodeError 返回 `backend_error`；不自动投递 SIGILL。
+  返回 `undefined_instruction` 并保留故障 PC/IT，内部 DecodeError 返回 `backend_error`。
+  Thumb-2 指令字以首半字为高 16 位。CPU 层不投递 SIGILL，由上层按虚拟 CPU 模型决定。
 - SVC/BKPT 返回陷阱 PC，同时 CPU 状态 PC 指向下一条指令。
 - A32/Thumb-2 `MRC p15,0,*,c13,c0,3` 只读取当前线程 TPIDRURO；其他 CP15 访问
   返回明确能力缺口。旧式非 MCR2 CP15 `c7,c10,5/4` 和 `c7,c5,4` 复用 DMB/DSB/ISB

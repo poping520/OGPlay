@@ -18,10 +18,12 @@
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/execution/guest_clone_thread_runtime.h"
 #include "ogplay/runtime/execution/guest_lifecycle.h"
+#include "ogplay/runtime/execution/guest_thread_runner.h"
 #include "ogplay/runtime/integration/api19_guest_process.h"
 #include "ogplay/runtime/syscall/arm_kernel_helpers.h"
 #include "ogplay/runtime/syscall/syscall_bridge.h"
 #include "ogplay/runtime/vfs/vfs.h"
+#include "guest_cpu_environment.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -287,7 +289,7 @@ private:
         BindAndroidTimeSyscalls(dispatcher_, clock_, address_space_);
         BindAndroidMemorySyscalls(dispatcher_, address_space_);
         BindAndroidThreadSyscalls(dispatcher_, futex_table_, memory_bus_);
-        BindAndroidSignalSyscalls(dispatcher_, address_space_, &lifecycle_);
+        BindAndroidSignalSyscalls(dispatcher_, address_space_, &lifecycle_, GuestCpuEnvironment::ClassifyUserUndefined);
         BindAndroidProcessSyscalls(dispatcher_, address_space_,
             [this](const GuestVmaAnnotation& annotation) {
                 std::scoped_lock lock(vma_mutex_); vma_annotations_.push_back(annotation);
@@ -355,6 +357,7 @@ private:
                 return;
             }
             ThrowIfChildFailed();
+            if (TryDeliverSynchronousCpuSignal(*root_cpu_, stopped, dispatcher_)) continue;
             if (ConsumeAndroidArmSupervisorCall(
                     *root_cpu_, stopped, dispatcher_,
                     [this](cpu::Cpu& cpu, const cpu::RunResult& trap) {

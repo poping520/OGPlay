@@ -81,6 +81,18 @@ namespace {
 
 }  // namespace
 
+bool TryDeliverSynchronousCpuSignal(cpu::Cpu& cpu, const cpu::RunResult& stopped,
+                                    const A32SyscallDispatcher& dispatcher) {
+    if (stopped.reason != cpu::RunStopReason::unsupported_instruction &&
+        stopped.reason != cpu::RunStopReason::undefined_instruction) {
+        return false;
+    }
+    const auto& binding = *dispatcher.signal_binding;
+    return binding.runtime && binding.classify_user_undefined &&
+           binding.classify_user_undefined(stopped.reason, stopped.instruction, cpu.GetState().State()) &&
+           binding.runtime->DeliverSynchronousSigill(cpu, stopped.pc);
+}
+
 SupervisorCallProgress ConsumeAndroidArmSupervisorCall(
     cpu::Cpu& cpu, const cpu::RunResult& stopped,
     A32SyscallDispatcher& dispatcher,
@@ -215,6 +227,7 @@ A32GuestCallResult InvokeA32GuestCall(
             if (slice_observer) slice_observer(consumed);
             continue;
         }
+        if (TryDeliverSynchronousCpuSignal(cpu, stopped, dispatcher)) continue;
         const auto boundary_progress = ConsumeAndroidArmSupervisorCall(
             cpu, stopped, dispatcher, hle_handler);
         if (boundary_progress == SupervisorCallProgress::not_handled) {
@@ -284,6 +297,7 @@ GuestThreadRunOutcome RunAndroidArmGuestThread(
             return {consumed, GuestThreadRunStop::budget_exhausted, last,
                     std::nullopt};
         }
+        if (TryDeliverSynchronousCpuSignal(cpu, last, dispatcher)) continue;
         if (last.reason != cpu::RunStopReason::supervisor_call &&
             last.reason != cpu::RunStopReason::host_call_fault) {
             return {consumed, GuestThreadRunStop::cpu_stop, last,
@@ -339,6 +353,11 @@ std::string DescribeA32GuestStop(const cpu::RunResult& stopped,
                       " crn=" + std::to_string((word >> 16U) & 15U) +
                       " crm=" + std::to_string(word & 15U) +
                       " opc2=" + std::to_string((word >> 5U) & 7U);
+        } else if ((word & 0x0fe00000U) == 0x0c400000U) {
+            result += "\n  coproc:    operation=" + std::string{(word & (1U << 20U)) ? "MRRC" : "MCRR"} +
+                      " p=" + std::to_string((word >> 8U) & 15U) + " rt=" + std::to_string((word >> 12U) & 15U) +
+                      " rt2=" + std::to_string((word >> 16U) & 15U) + " opc1=" + std::to_string((word >> 4U) & 15U) +
+                      " crm=" + std::to_string(word & 15U);
         }
     }
     if (stopped.fault.has_value()) {

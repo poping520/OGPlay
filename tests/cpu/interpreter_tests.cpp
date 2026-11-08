@@ -268,13 +268,13 @@ TEST_CASE("interpreter reports budgets halt undefined instructions and fetch fau
         CHECK(fixture.cpu.GetState().Register(ogplay::cpu::CoreRegister::pc) ==
               fixture.code.Value());
     }
-    SUBCASE("undefined Thumb-32 instruction") {
+    SUBCASE("unsupported Thumb-32 instruction") {
         CpuFixture fixture;
         fixture.WriteThumb({0xf000, 0x8000});
         fixture.Start(ogplay::cpu::ExecutionState::thumb);
         const auto result = fixture.cpu.Run(10);
-        CHECK(result.reason == ogplay::cpu::RunStopReason::undefined_instruction);
-        CHECK(result.instruction == 0x8000f000);
+        CHECK(result.reason == ogplay::cpu::RunStopReason::unsupported_instruction);
+        CHECK(result.instruction == 0xf0008000);
         CHECK(fixture.cpu.GetState().Register(ogplay::cpu::CoreRegister::pc) ==
               fixture.code.Value());
     }

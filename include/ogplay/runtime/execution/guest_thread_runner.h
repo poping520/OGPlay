@@ -33,6 +33,9 @@ using GuestSupervisorCallHandler =
     std::function<SupervisorCallProgress(cpu::Cpu&, const cpu::RunResult&)>;
 using A32GuestCallSliceObserver = std::function<void(std::uint64_t)>;
 
+[[nodiscard]] bool TryDeliverSynchronousCpuSignal(cpu::Cpu& cpu, const cpu::RunResult& stopped,
+                                                  const A32SyscallDispatcher& dispatcher);
+
 inline constexpr std::uint64_t kA32GuestCallSliceTicks = UINT64_C(20000000);
 
 struct A32GuestCallFrame final {

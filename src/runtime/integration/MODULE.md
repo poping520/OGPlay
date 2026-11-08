@@ -30,6 +30,8 @@ sysfs 拓扑/标称频率。cpuinfo 遵循 Linux 3.4 ARM SMP 格式，微架构�
 Revision/Serial 为无板级信息时的零值，不采样宿主。API19 `sysconf` 导出通过进程私有 RX guest 桥处理核数 selector
 96/97，其余参数保持原 ABI 尾调用原 libc。重定位、dlsym 与 linker 视图使用同一导出；
 不修改原 ELF 指令。DexVM bridge 从该进程取得核数，禁止另用宿主硬件事实。
+同一 Cortex-A9 模型向信号 binding 注入 PL0 UNDEFINED 分类，仅对非法编码、PL0 不可访问的
+CP15 和不存在的协处理器启用同步 SIGILL，见 ADR-0079。
 不支持统计负载、热插拔、调频控制或周期精确模拟，见 ADR-0080。
 
 `GuestNetworkEnvironment` 从会话 offline_connectivity 派生不可变接口表，仅发布 API19

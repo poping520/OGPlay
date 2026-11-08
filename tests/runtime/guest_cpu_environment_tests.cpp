@@ -30,6 +30,46 @@ std::string ReadCpuFile(runtime::VirtualFileSystem& fs, const std::string& path)
 }
 }  // namespace
 
+TEST_CASE("BND-57 guest cpu environment classifies Cortex-A9 PL0 undefined stops") {
+    using enum cpu::ExecutionState;
+    using enum cpu::RunStopReason;
+    constexpr auto classify = runtime::GuestCpuEnvironment::ClassifyUserUndefined;
+    constexpr std::array coprocessor_operations{
+        0xee000f10U,  // MCR
+        0xee100f10U,  // MRC
+        0xee000f00U,  // CDP
+        0xec410f00U,  // MCRR
+        0xec510f1eU,  // MRRC (CNTVCT)
+        0xedb00f01U,  // LDC
+        0xeda00f01U,  // STC
+    };
+    for (const auto state : {a32, thumb}) {
+        CAPTURE(state);
+        for (const auto operation : coprocessor_operations) {
+            for (unsigned coprocessor = 0; coprocessor < 16; ++coprocessor) {
+                const auto word = (operation & ~0xf00U) | (coprocessor << 8U);
+                const auto undefined = coprocessor <= 9 || coprocessor == 12 || coprocessor == 13 || coprocessor == 15;
+                CAPTURE(word);
+                CHECK(classify(unsupported_instruction, word, state) == undefined);
+                CHECK(classify(unsupported_instruction, word | 0x10000000U, state) == undefined);
+            }
+        }
+        for (const auto word : {0xee0d0f50U, 0xee1d3f50U, 0xee1d7f70U, 0xee073fbaU, 0xee071f9aU, 0xee074f95U}) {
+            CAPTURE(word);
+            CHECK_FALSE(classify(unsupported_instruction, word, state));
+            CHECK(classify(unsupported_instruction, word | 0x10000000U, state));
+        }
+        CHECK_FALSE(classify(unsupported_instruction, 0xef000000U, state));
+        CHECK_FALSE(classify(unsupported_instruction, 0xe16f0f10U, state));
+        CHECK_FALSE(classify(memory_fault, 0xec510f1eU, state));
+        CHECK_FALSE(classify(backend_error, 0xec510f1eU, state));
+        CHECK(classify(undefined_instruction, 0xde00U, state));
+    }
+    CHECK_FALSE(classify(unsupported_instruction, 0xec51U, thumb));
+    CHECK_FALSE(classify(unsupported_instruction, 0x0e000f10U, thumb));
+    CHECK(classify(unsupported_instruction, 0x0e000f10U, a32));
+}
+
 TEST_CASE("BND-42 cpuinfo matches Linux 3.4 SMP format with 1 core") {
     runtime::VirtualFileSystem fs;
     runtime::GuestCpuEnvironment environment({1, 1000});

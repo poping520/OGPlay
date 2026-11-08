@@ -485,8 +485,8 @@ note = "主执行后端，遵守 MemoryBus、tick、停止与 fault 契约，支
 
 [cpu.arm_user_coprocessor]
 status = "partial"
-test = "tests/cpu/dynarmic_tests.cpp#BND-44; tests/runtime/guest_thread_runner_tests.cpp#BND-44"
-note = "BND-44/ADR-0082：A32/T32 旧式 CP15 DMB/DSB/ISB 映射为原生屏障，TPIDRURO 只读；其他协处理器操作返回 unsupported_instruction，保留条件、fault PC/IT 与已执行效果，诊断含指令字。完整 CP15、同步 fault-to-signal、ARM64 宿主验收与 JIT 内部断言隔离未完成。"
+test = "tests/cpu/dynarmic_tests.cpp#BND-44; tests/runtime/guest_thread_runner_tests.cpp#BND-44; tests/runtime/guest_thread_runner_tests.cpp#BND-57; tests/runtime/guest_cpu_environment_tests.cpp#BND-57"
+note = "BND-44/57：A32/T32 旧式 CP15 DMB/DSB/ISB 映射为原生屏障，TPIDRURO 只读；其他协处理器操作停在原 PC/IT。上层仅将虚拟 Cortex-A9 PL0 不可访问的 CP15、不存在的协处理器和非法编码转同步 SIGILL。TPIDRURW、CP14、完整 CP15、访存 fault 到 SIGSEGV 与 JIT 内部断言隔离仍有缺口。"
 
 [cpu.thread_model]
 status = "complete"
@@ -2020,8 +2020,8 @@ note = "VFS-05/ADR-0078：定向 56 用例/351 断言通过，同路径 APK 越�
 
 [runtime.guest_signals]
 status = "partial"
-test = "tests/runtime/syscall_signal_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp; tests/cpu/futex_tests.cpp"
-note = "BND-41/ADR-0079：进程内 ARM legacy/RT 信号 action、mask、pending、suspend 与 return，tkill/tgkill 投递标准信号 handler 及默认忽略/终止；在目标线程安全点执行，支持 ARM/Thumb/VFP、备用栈、嵌套与 ucontext 修改；SA_RESTART 仅对无超时 futex，nanosleep 支持信号/退出中断及剩余时间。保留 SA_NOCLDSTOP，非 SIGCHLD 无效果。实时队列、作业控制、同步 CPU fault 转信号与其他宿主 IO 中断未实现。"
+test = "tests/runtime/syscall_signal_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp; tests/cpu/futex_tests.cpp; tests/runtime/guest_cpu_environment_tests.cpp#BND-57"
+note = "BND-41/57、ADR-0079：ARM legacy/RT 帧支持 ARM/Thumb/VFP、备用栈、嵌套及 ucontext 修改。tkill/tgkill 投递标准信号及默认忽略/终止。Cortex-A9 PL0 不可访问的 CP15、不存在的协处理器和非法编码同步 SIGILL，仅投未屏蔽的用户 handler。SA_RESTART 仅重启无超时 futex，nanosleep 可中断并返回剩余时间。访存 fault 到 SIGSEGV、CP14、TPIDRURW、实时队列及作业控制未实现。"
 
 [runtime.guest_cpu_facts]
 status = "partial"

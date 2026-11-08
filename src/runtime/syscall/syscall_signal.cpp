@@ -24,6 +24,8 @@ constexpr std::int32_t kEnomem = 12;
 constexpr std::uint32_t kSigBlock = 0;
 constexpr std::uint32_t kSigUnblock = 1;
 constexpr std::uint32_t kSigSetmask = 2;
+constexpr std::uint32_t kSigill = 4;
+constexpr std::uint32_t kIllIllopc = 1;
 constexpr std::uint64_t kUnblockableSignals =
     (UINT64_C(1) << (9U - 1U)) | (UINT64_C(1) << (19U - 1U));
 
@@ -135,6 +137,8 @@ public:
     A32SyscallOutcome Send(const A32SyscallFrame&);
     A32SyscallOutcome Suspend(const A32SyscallFrame&);
     A32SyscallOutcome Return(const A32SyscallFrame&);
+    void DeliverHandler(cpu::Cpu&, const cpu::A32State&, std::uint32_t signal, const SignalAction&,
+                        std::uint64_t old_mask, std::optional<memory::GuestAddress> fault_address);
     bool Ready(std::uint64_t id) { return (pending[id] & ~masks[id]) != 0; }
 };
 
@@ -144,12 +148,12 @@ GuestSignalRuntime::GuestSignalRuntime(memory::AddressSpace& memory,
     : impl_(std::make_shared<Impl>(memory, lifecycle, process_id, user_id)) {}
 GuestSignalRuntime::~GuestSignalRuntime() = default;
 
-void BindAndroidSignalSyscalls(A32SyscallDispatcher& dispatcher,
-                               memory::AddressSpace& address_space,
-                               GuestThreadLifecycle* lifecycle) {
+void BindAndroidSignalSyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space,
+                               GuestThreadLifecycle* lifecycle, UserUndefinedClassifier classifier) {
     dispatcher.signal_binding->runtime = std::make_shared<GuestSignalRuntime>(
         address_space, lifecycle, dispatcher.identity.process_id, dispatcher.identity.user_id);
     dispatcher.signal_binding->runtime->Bind(dispatcher);
+    dispatcher.signal_binding->classify_user_undefined = classifier;
 }
 
 void GuestSignalRuntime::Bind(A32SyscallDispatcher& dispatcher) {
@@ -506,7 +510,6 @@ void GuestSignalRuntime::Deliver(cpu::Cpu& cpu) {
              .signal_number = signal, .target_thread_id = id});
         return;
     }
-    if (s.frames[id].size() >= 32) throw SyscallError("guest signal nesting limit exceeded");
     if (const auto found = s.restart.find(id); found != s.restart.end()) {
         if ((action.flags & 0x10000000U) != 0) {
             saved = *found->second.cpu_state;
@@ -515,7 +518,32 @@ void GuestSignalRuntime::Deliver(cpu::Cpu& cpu) {
         s.restart.erase(found);
     }
     const auto old_mask = s.suspend_masks.contains(id) ? s.suspend_masks.at(id) : s.masks[id];
-    const auto alt = s.alternate_stacks.contains(id) ? s.alternate_stacks.at(id) : AlternateStack{};
+    s.DeliverHandler(cpu, saved, signal, action, old_mask, std::nullopt);
+    s.suspend_masks.erase(id);
+    s.pending[id] &= ~bit;
+}
+
+bool GuestSignalRuntime::DeliverSynchronousSigill(cpu::Cpu& cpu, const memory::GuestAddress fault_address) {
+    auto saved = cpu.GetState();
+    const auto id = saved.ThreadId();
+    auto& s = *impl_;
+    std::scoped_lock lock(s.mutex);
+    const auto action = s.actions[kSigill];
+    const auto mask = s.masks[id];
+    if (action.handler.Value() <= 1 || (mask & (UINT64_C(1) << (kSigill - 1))) != 0) return false;
+    if (s.lifecycle && s.lifecycle->State(id).status != GuestThreadStatus::running) return false;
+    saved.SetRegister(cpu::CoreRegister::pc, fault_address.Value());
+    s.DeliverHandler(cpu, saved, kSigill, action, mask, fault_address);
+    return true;
+}
+
+void GuestSignalRuntime::Impl::DeliverHandler(cpu::Cpu& cpu, const cpu::A32State& saved, const std::uint32_t signal,
+                                              const SignalAction& action, const std::uint64_t old_mask,
+                                              const std::optional<memory::GuestAddress> fault_address) {
+    const auto id = saved.ThreadId();
+    const auto bit = UINT64_C(1) << (signal - 1);
+    if (frames[id].size() >= 32) throw SyscallError("guest signal nesting limit exceeded");
+    const auto alt = alternate_stacks.contains(id) ? alternate_stacks.at(id) : AlternateStack{};
     const auto sp = saved.Register(cpu::CoreRegister::sp);
     const bool on_alt = alt.flags != 2 && sp >= alt.pointer && static_cast<std::uint64_t>(sp) < static_cast<std::uint64_t>(alt.pointer) + alt.size;
     const auto top = ((action.flags & 0x08000000U) && alt.flags != 2 && !on_alt)
@@ -535,8 +563,15 @@ void GuestSignalRuntime::Deliver(cpu::Cpu& cpu) {
         std::copy(encoded.begin(), encoded.end(), bytes.begin() + offset);
     };
     if (rt) {
-        word(0, signal); word(8, static_cast<std::uint32_t>(-6)); // SI_TKILL
-        word(12, s.process_id); word(16, s.user_id);
+        word(0, signal);
+        if (fault_address) {
+            word(8, kIllIllopc);
+            word(12, fault_address->Value());
+        } else {
+            word(8, static_cast<std::uint32_t>(-6));  // SI_TKILL
+            word(12, process_id);
+            word(16, user_id);
+        }
     }
     word(prefix + 8, alt.pointer); word(prefix + 12, on_alt ? 1U : alt.flags); word(prefix + 16, alt.size);
     word(prefix + 28, static_cast<std::uint32_t>(old_mask));
@@ -547,24 +582,22 @@ void GuestSignalRuntime::Deliver(cpu::Cpu& cpu) {
     word(prefix + 232, 0x56465001); word(prefix + 236, 288);
     for (std::uint32_t i = 0; i < 64; ++i) word(prefix + 240 + i * 4, saved.ExtendedRegisters()[i]);
     word(prefix + 496, saved.Fpscr()); word(prefix + 504, saved.Fpexc());
-    if (s.trampoline.IsNull()) {
-        s.trampoline = s.memory.MapAnywhere({memory::GuestAddress{0x7e000000}, 0x01000000},
-            s.memory.PageSize(), memory::PageProtection::read | memory::PageProtection::write);
-        s.memory.Write32(s.trampoline, 0xe3a07077); // mov r7, #119
-        s.memory.Write32(s.trampoline.Add(4), 0xef000000);
-        s.memory.Write32(s.trampoline.Add(8), 0xe3a070ad); // mov r7, #173
-        s.memory.Write32(s.trampoline.Add(12), 0xef000000);
-        s.memory.Protect({s.trampoline, s.memory.PageSize()}, memory::PageProtection::read | memory::PageProtection::execute);
+    if (trampoline.IsNull()) {
+        trampoline = memory.MapAnywhere({memory::GuestAddress{0x7e000000}, 0x01000000}, memory.PageSize(),
+                                        memory::PageProtection::read | memory::PageProtection::write);
+        memory.Write32(trampoline, 0xe3a07077);  // mov r7, #119
+        memory.Write32(trampoline.Add(4), 0xef000000);
+        memory.Write32(trampoline.Add(8), 0xe3a070ad);  // mov r7, #173
+        memory.Write32(trampoline.Add(12), 0xef000000);
+        memory.Protect({trampoline, memory.PageSize()}, memory::PageProtection::read | memory::PageProtection::execute);
     }
-    const auto restorer = (action.flags & 0x04000000U) ? action.restorer : s.trampoline.Add(rt ? 8 : 0);
-    s.memory.Validate({memory::GuestAddress{action.handler.Value() & ~1U}, 2}, memory::AccessType::execute, id);
-    s.memory.Validate({memory::GuestAddress{restorer.Value() & ~1U}, 2}, memory::AccessType::execute, id);
-    s.memory.Write(stack, bytes, id);
-    s.frames[id].push_back({stack, context, rt, saved});
-    s.suspend_masks.erase(id);
-    s.pending[id] &= ~bit;
-    s.masks[id] = (s.masks[id] | action.mask | ((action.flags & 0x40000000U) ? 0 : bit)) & ~kUnblockableSignals;
-    if (action.flags & 0x80000000U) s.actions[signal] = {};
+    const auto restorer = (action.flags & 0x04000000U) ? action.restorer : trampoline.Add(rt ? 8 : 0);
+    memory.Validate({memory::GuestAddress{action.handler.Value() & ~1U}, 2}, memory::AccessType::execute, id);
+    memory.Validate({memory::GuestAddress{restorer.Value() & ~1U}, 2}, memory::AccessType::execute, id);
+    memory.Write(stack, bytes, id);
+    frames[id].push_back({stack, context, rt, saved});
+    masks[id] = (masks[id] | action.mask | ((action.flags & 0x40000000U) ? 0 : bit)) & ~kUnblockableSignals;
+    if (action.flags & 0x80000000U) actions[signal] = {};
     auto next = saved;
     next.SetRegister(cpu::CoreRegister::r0, signal);
     if (rt) { next.SetRegister(cpu::CoreRegister::r1, stack.Value()); next.SetRegister(cpu::CoreRegister::r2, context.Value()); }

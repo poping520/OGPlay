@@ -185,11 +185,16 @@ clone 仅继承 mask；发送方只登记 pending，不改写目标 CPU。目标
 旧与 RT 入口独立编组；信号帧使用 ucontext/siginfo/VFP，返回桥使用 RX guest 页。
 进程内 tkill/tgkill 校验真实 TID/PID；标准信号合并，支持屏蔽、嵌套、备用栈及已实现 flags。
 futex 通知不制造 WAKE token；SA_RESTART 只重启无超时 WAIT，其余中断按既有 errno 返回。
+integration 从虚拟 Cortex-A9 PL0 模型注入分类策略。非法/不可预测编码、PL0 不可访问的 CP15
+和不存在的协处理器在原 CPU 停止点同步投递 SIGILL。仅向未屏蔽该信号的用户 handler 投递，
+RT siginfo 使用 ILL_ILLOPC 和故障 PC，ucontext 保存故障 PC 及原 CPSR。默认、忽略或屏蔽时
+保留原 CPU fault 诊断与退出归因。
 
 ### 后果
 
-不安装宿主 OS handler；不实现实时信号队列、作业控制、外部进程/定时器信号或 CPU fault
-自动转信号。坏帧、坏栈明确失败；不能以此宣称完整 Linux 信号或游戏 GC 兼容。
+不安装宿主 OS handler；不实现实时信号队列、作业控制或外部进程/定时器信号。
+TPIDRURW、CP14、VFP/NEON 等后端缺口继续明确失败，避免伪装成硬件不支持。
+访存故障保留原诊断，访存 fault 到 SIGSEGV 的语义仍待实现。坏帧、坏栈明确失败。
 
 <a id="adr-0168"></a>
 

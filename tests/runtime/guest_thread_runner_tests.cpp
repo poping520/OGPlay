@@ -709,6 +709,19 @@ TEST_CASE("A32 guest stop BND-44 reports unsupported instruction without masking
     }
 }
 
+TEST_CASE("BND-57 guest stop reports MRRC and MCRR operands") {
+    using namespace ogplay;
+    memory::AddressSpace memory;
+    const cpu::A32State state;
+    cpu::RunResult stopped{
+        1, cpu::RunStopReason::unsupported_instruction, memory::GuestAddress{0x10000}, 0xec510f1eU, 0, std::nullopt};
+    CHECK(runtime::DescribeA32GuestStop(stopped, state, memory).find("operation=MRRC p=15 rt=0 rt2=1 opc1=1 crm=14") !=
+          std::string::npos);
+    stopped.instruction = 0xfc410f1eU;
+    CHECK(runtime::DescribeA32GuestStop(stopped, state, memory).find("operation=MCRR p=15 rt=0 rt2=1 opc1=1 crm=14") !=
+          std::string::npos);
+}
+
 TEST_CASE("BND45 null PC report retains readable caller code without guessing a frame") {
     using namespace ogplay;
     memory::AddressSpace memory;

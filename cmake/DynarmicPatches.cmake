@@ -183,6 +183,34 @@ foreach(_cp_kind IN ITEMS arm thumb32)
     set_property(TARGET dynarmic PROPERTY SOURCES "${_cp_sources}")
 endforeach()
 
+# ---- A32 precise undefined exception state (all hosts) ----
+# RaiseException publishes the next Thumb IT state. Carry the faulting IT
+# state separately for undefined/unpredictable stops, as for coprocessor stops.
+set(_undef_name "a32_translate_impl.cpp")
+set(_undef_input "${_cp_root}/${_undef_name}")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_undef_input}")
+file(READ "${_undef_input}" _undef_source)
+string(REPLACE "\r\n" "\n" _undef_source "${_undef_source}")
+string(SHA256 _undef_hash "${_undef_source}")
+if(NOT _undef_hash STREQUAL "5d548d1249bcebc37005d98085a76c1f5476397427f080482cbddf7f777250e6")
+    message(FATAL_ERROR "Dynarmic ${_undef_name} changed; review the OGPlay undefined exception adaptation")
+endif()
+string(REPLACE "namespace Dynarmic::A32 {" "#include \"dynarmic_guest_fault.h\"\n\nnamespace Dynarmic::A32 {" _undef_source "${_undef_source}")
+string(REPLACE "    ir.ExceptionRaised(exception);" [=[
+    if (exception == Exception::UndefinedInstruction || exception == Exception::UnpredictableInstruction) {
+        static_assert(static_cast<u32>(Exception::UndefinedInstruction) <= 0xff &&
+                      static_cast<u32>(Exception::UnpredictableInstruction) <= 0xff);
+        exception = static_cast<Exception>(ogplay::cpu::detail::kUndefinedInstructionTag |
+                                           (static_cast<u32>(exception) << 8) | ir.current_location.IT().Value());
+    }
+    ir.ExceptionRaised(exception);]=] _undef_source "${_undef_source}")
+file(WRITE "${_cp_output}/${_undef_name}.in" "${_undef_source}")
+configure_file("${_cp_output}/${_undef_name}.in" "${_cp_output}/${_undef_name}" COPYONLY)
+get_target_property(_undef_sources dynarmic SOURCES)
+list(FILTER _undef_sources EXCLUDE REGEX "frontend/A32/translate/impl/${_undef_name}$")
+list(APPEND _undef_sources "${_cp_output}/${_undef_name}")
+set_property(TARGET dynarmic PROPERTY SOURCES "${_undef_sources}")
+
 # ---- A32 ASIMD narrowing and saturating long (all hosts) ----
 # Upstream leaves these A32 decoders commented out although the IR can express them.
 # VQRSHL stays out: it needs a new IR opcode and backend code on every host.

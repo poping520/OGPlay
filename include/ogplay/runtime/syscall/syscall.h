@@ -132,9 +132,12 @@ struct A32SyscallOutcome final {
         : return_value(value), progress(made_progress) {}
 };
 
+using UserUndefinedClassifier = bool (*)(cpu::RunStopReason, std::uint32_t, cpu::ExecutionState) noexcept;
+
 struct GuestSignalBinding final {
     std::shared_ptr<GuestSignalRuntime> runtime;
     cpu::FutexTable* waiters{};
+    UserUndefinedClassifier classify_user_undefined{};
 };
 
 class A32SyscallDispatcher final {
@@ -181,7 +184,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
 void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher, cpu::FutexTable& futex_table,
                                memory::MemoryBus& memory_bus);
 void BindAndroidSignalSyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space,
-                               GuestThreadLifecycle* lifecycle = nullptr);
+                               GuestThreadLifecycle* lifecycle = nullptr, UserUndefinedClassifier classifier = nullptr);
 void BindAndroidProcessSyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space,
                                 GuestVmaAnnotationSink vma_annotation_sink);
 void BindAndroidArmPrivateSyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space,

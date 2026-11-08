@@ -72,6 +72,8 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   两者共用投递及等待唤醒，保留原 syscall/PC/LR 归因。标准信号合并，
   由目标线程安全边界投递，禁止发送方改写目标 CPU。细节与未支持边界见
   [ADR-0079](../../../docs/adr/runtime.md#adr-0079)。SIGABRT 默认终止继续保留退出来源。
+- 同步 SIGILL 仅投递给未屏蔽的用户 handler，与异步信号共用帧和 flags 语义。RT siginfo
+  为 ILL_ILLOPC 并携带故障地址，保存故障 PC/CPSR，不消费异步 pending 或触发默认终止。
 - signal return 通过 syscall outcome 显式恢复整个 CPU 状态，bridge 不再覆盖其 r0。
   guest frame 保存 ucontext/VFP；坏帧明确失败。clone mask 继承与线程退役由上层通知。
 - action 保留 SA_NOCLDSTOP 供查询；对非 SIGCHLD 无效果，不扩展子进程/作业控制支持面。

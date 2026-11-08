@@ -19,6 +19,7 @@ public:
     ~GuestSignalRuntime();
     void Bind(A32SyscallDispatcher&);
     void Deliver(cpu::Cpu&);
+    [[nodiscard]] bool DeliverSynchronousSigill(cpu::Cpu&, memory::GuestAddress fault_address);
     [[nodiscard]] bool Pending(std::uint64_t thread_id) const;
     void Inherit(std::uint64_t parent, std::uint64_t child);
     void Retire(std::uint64_t thread_id);

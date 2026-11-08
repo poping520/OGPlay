@@ -275,11 +275,14 @@ public:
         void ExceptionRaised(const Dynarmic::A32::VAddr pc,
                              const Dynarmic::A32::Exception exception) override {
             const auto code = static_cast<std::uint32_t>(exception);
-            if (detail::IsUnsupportedInstruction(code)) {
+            const bool undefined = detail::IsUndefinedInstruction(code);
+            if (undefined || detail::IsUnsupportedInstruction(code)) {
                 jit_->SetCpsr(detail::RestoreItState(jit_->Cpsr(), code));
                 jit_->Regs()[15] = pc;
-                RecordStop({RunStopReason::unsupported_instruction,
-                            memory::GuestAddress{pc}, InstructionAt(pc), 0, std::nullopt});
+                const auto reason =
+                    undefined ? RunStopReason::undefined_instruction : RunStopReason::unsupported_instruction;
+                const auto immediate = undefined ? (code >> 8U) & 0xffU : 0U;
+                RecordStop({reason, memory::GuestAddress{pc}, InstructionAt(pc), immediate, std::nullopt});
                 return;
             }
             using Exception = Dynarmic::A32::Exception;

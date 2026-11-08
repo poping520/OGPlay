@@ -8,10 +8,15 @@ namespace ogplay::cpu::detail {
 // tagged exception avoids the x64-only Interpret terminal and preserves state
 // without depending on a JIT backend's implementation of CPSR writes.
 inline constexpr std::uint32_t kUnsupportedInstructionTag = 0x4f470000U;
+inline constexpr std::uint32_t kUndefinedInstructionTag = 0x4f480000U;
 inline constexpr std::uint32_t kItCpsrMask = 0x0600fc00U;
 
 [[nodiscard]] constexpr bool IsUnsupportedInstruction(std::uint32_t value) noexcept {
     return (value & 0xffffff00U) == kUnsupportedInstructionTag;
+}
+
+[[nodiscard]] constexpr bool IsUndefinedInstruction(std::uint32_t value) noexcept {
+    return (value & 0xffff0000U) == kUndefinedInstructionTag;
 }
 
 [[nodiscard]] constexpr std::uint32_t RestoreItState(std::uint32_t cpsr,

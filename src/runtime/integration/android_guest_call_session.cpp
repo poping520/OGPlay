@@ -1624,7 +1624,7 @@ public:
             });
         BindAndroidMemorySyscalls(dispatcher_, address_space_);
         BindAndroidThreadSyscalls(dispatcher_, futex_table_, memory_bus_);
-        BindAndroidSignalSyscalls(dispatcher_, address_space_, &lifecycle_);
+        BindAndroidSignalSyscalls(dispatcher_, address_space_, &lifecycle_, GuestCpuEnvironment::ClassifyUserUndefined);
         BindAndroidProcessSyscalls(dispatcher_, address_space_, [this](const GuestVmaAnnotation& annotation) {
             std::scoped_lock lock(vma_mutex_);
             vma_annotations_.push_back(annotation);

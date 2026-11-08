@@ -112,6 +112,10 @@ void SetMoveFlags(A32State& state, const std::uint32_t value,
     return Stop(RunStopReason::undefined_instruction, pc, instruction);
 }
 
+[[nodiscard]] RunResult Unsupported(const memory::GuestAddress pc, const std::uint32_t instruction) {
+    return Stop(RunStopReason::unsupported_instruction, pc, instruction);
+}
+
 }  // namespace
 
 InterpreterCpu::InterpreterCpu(memory::MemoryBus& memory_bus) noexcept
@@ -141,15 +145,17 @@ RunResult InterpreterCpu::Run(const std::uint64_t tick_budget) {
                 if ((first & 0xf800U) >= 0xe800U) {
                     const auto second = memory_bus_.Fetch16(
                         memory::GuestAddress{pc_value + 2U}, state_.ThreadId());
-                    instruction |= static_cast<std::uint32_t>(second) << 16U;
+                    instruction = (static_cast<std::uint32_t>(first) << 16U) | second;
                     if (first == 0xee1dU && (second & 0x0fffU) == 0x0f70U &&
                         (second >> 12U) != 0x0fU) {
                         state_.SetRegister(
                             static_cast<CoreRegister>(second >> 12U),
                             state_.ThreadPointer().Value());
                         state_.SetRegister(CoreRegister::pc, pc_value + 4U);
-                    } else {
+                    } else if ((instruction & 0xfff0f000U) == 0xf7f0a000U) {  // UDF.W
                         stop = Undefined(pc, instruction);
+                    } else {
+                        stop = Unsupported(pc, instruction);
                     }
                 } else {
                     stop = ExecuteThumb(pc, first);
@@ -185,12 +191,13 @@ void InterpreterCpu::RequestHalt() noexcept { halt_requested_.store(true); }
 std::optional<RunResult> InterpreterCpu::ExecuteA32(
     const memory::GuestAddress pc, const std::uint32_t instruction) {
     const auto condition = static_cast<std::uint8_t>(instruction >> 28U);
-    if (condition == 0xfU) return Undefined(pc, instruction);
+    if (condition == 0xfU) return Unsupported(pc, instruction);
     const auto next = pc.Value() + 4U;
     if (!ConditionPassed(state_, condition)) {
         state_.SetRegister(CoreRegister::pc, next);
         return std::nullopt;
     }
+    if ((instruction & 0x0ff000f0U) == 0x07f000f0U) return Undefined(pc, instruction);  // UDF
 
     if ((instruction & 0x0f000000U) == 0x0f000000U) {
         state_.SetRegister(CoreRegister::pc, next);
@@ -242,7 +249,7 @@ std::optional<RunResult> InterpreterCpu::ExecuteA32(
             (write_back && (rn == static_cast<std::uint8_t>(CoreRegister::pc) ||
                             (load && rn == rd))) ||
             (!load && rd == static_cast<std::uint8_t>(CoreRegister::pc))) {
-            return Undefined(pc, instruction);
+            return Unsupported(pc, instruction);
         }
         const auto base = ReadOperandRegister(state_, rn, pc.Value(), 8);
         const auto offset = static_cast<std::int64_t>(instruction & 0xfffU) *
@@ -273,7 +280,7 @@ std::optional<RunResult> InterpreterCpu::ExecuteA32(
         }
         return std::nullopt;
     }
-    if ((instruction & 0x0c000000U) != 0) return Undefined(pc, instruction);
+    if ((instruction & 0x0c000000U) != 0) return Unsupported(pc, instruction);
 
     const bool immediate = (instruction & (1U << 25U)) != 0;
     std::uint32_t operand2 = 0;
@@ -283,7 +290,7 @@ std::optional<RunResult> InterpreterCpu::ExecuteA32(
         operand2 = std::rotr(instruction & 0xffU, static_cast<int>(rotate));
         if (rotate != 0) shifter_carry = (operand2 & kNegativeFlag) != 0;
     } else {
-        if ((instruction & 0x00000ff0U) != 0) return Undefined(pc, instruction);
+        if ((instruction & 0x00000ff0U) != 0) return Unsupported(pc, instruction);
         operand2 = ReadOperandRegister(
             state_, static_cast<std::uint8_t>(instruction & 0xfU), pc.Value(), 8);
     }
@@ -309,7 +316,7 @@ std::optional<RunResult> InterpreterCpu::ExecuteA32(
         break;
     }
     case 0xa: {
-        if (!set_flags) return Undefined(pc, instruction);
+        if (!set_flags) return Unsupported(pc, instruction);
         SetArithmeticFlags(state_, AddWithCarry(left, ~operand2, true));
         write_result = false;
         break;
@@ -318,7 +325,7 @@ std::optional<RunResult> InterpreterCpu::ExecuteA32(
         result = operand2;
         if (set_flags) SetMoveFlags(state_, result, shifter_carry);
         break;
-    default: return Undefined(pc, instruction);
+    default: return Unsupported(pc, instruction);
     }
 
     if (write_result) {
@@ -421,7 +428,7 @@ std::optional<RunResult> InterpreterCpu::ExecuteThumb(
                            AddSigned(pc.Value() + 4U, displacement));
         return std::nullopt;
     } else {
-        return Undefined(pc, instruction);
+        return Unsupported(pc, instruction);
     }
     state_.SetRegister(CoreRegister::pc, next);
     return std::nullopt;

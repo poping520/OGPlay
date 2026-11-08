@@ -73,6 +73,7 @@ ZIP_JAVA_NAMES = ("org/ogplay/zip/NativeZip.java",)
 
 IO_JAVA_ROOT = ROOT / "src/guest/io/java"
 IO_JAVA_NAMES = ("org/ogplay/io/LogOutputStream.java",)
+XML_JAVA = ROOT / "src/guest/xml/java/org/ogplay/xml/SaxReader.java"
 
 FRAMEWORK_JAVA_ROOT = ROOT / "src/guest/framework/java"
 FRAMEWORK_JAVA_NAMES = (
@@ -104,7 +105,7 @@ def guest_java_sources() -> tuple[Path, ...]:
         FRAMEWORK_JAVA_ROOT / name for name in FRAMEWORK_JAVA_NAMES) + tuple(
         ZIP_JAVA_ROOT / name for name in ZIP_JAVA_NAMES) + tuple(
         MATH_JAVA_ROOT / name for name in MATH_JAVA_NAMES) + tuple(
-        IO_JAVA_ROOT / name for name in IO_JAVA_NAMES)
+        IO_JAVA_ROOT / name for name in IO_JAVA_NAMES) + (XML_JAVA,)
 
 
 WINDOWS_JAVAC = Path(r"D:\01_software\jdk-17.0.2\bin\javac.exe")
@@ -364,7 +365,7 @@ def compile_guest_java(work: Path) -> tuple[Path, tuple[str, ...]]:
     if not version.startswith("javac 17."):
         raise BuildError(f"unexpected javac: {version}")
     # Hidden API19 types are absent from the public SDK android.jar. These are
-    # compile-only declarations; production definitions stay in framework.jar.
+    # compile-only declarations; production definitions come from the ROM.
     compile_only = work / "guest-java-compile-only"
     hidden_sources = {
         "android/hardware/usb/IUsbManager.java":
@@ -372,6 +373,9 @@ def compile_guest_java(work: Path) -> tuple[Path, tuple[str, ...]]:
         "android/os/SystemProperties.java":
             "package android.os; public class SystemProperties {"
             " public static String get(String key, String def) { throw new AssertionError(); } }",
+        "org/kxml2/io/KXmlParser.java":
+            "package org.kxml2.io; public abstract class KXmlParser"
+            " implements org.xmlpull.v1.XmlPullParser { public abstract String getRootElementName(); }",
     }
     for name, source in hidden_sources.items():
         path = compile_only / name
@@ -787,7 +791,8 @@ def boot_metadata(jar: bytes, dex: bytes,
         ] + [{
             "source_project": "OGPlay",
             "source_root": "src/guest",
-            "source_roots": ["src/guest/crypto/java", "src/guest/framework/java", "src/guest/io/java"],
+            "source_roots": ["src/guest/crypto/java", "src/guest/framework/java", "src/guest/io/java",
+                             "src/guest/xml/java"],
             "source_sha256": sha256(b"".join(
                 path.relative_to(ROOT).as_posix().encode("utf-8") + b"\0" +
                 path.read_bytes() for path in

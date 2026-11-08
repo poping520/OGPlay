@@ -89,7 +89,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   intrinsic renderer 复用 VmThreadRuntime 建立独立 Java/host 线程，拥有 JNI/TLS、renderer
   回调、queueEvent 与 EGL 生命周期；不预先创建 Looper。生命周期等待绘帧时继续泵送主
   Looper；通过 `AndroidAppProcessHost.pump_host_events` 透传的显式回调在等待线程上、
-  释放 worker/VM 锁后泵送宿主窗口消息，回调不得重入 guest 生命周期。空闲及暂停时
+  释放 worker/VM 锁后泵送宿主窗口消息，回调不得重入 guest 生命周期。同步等待 GLThread
+  时保持同一 Clock 停摆区间，轮询中临时拿回 VM 锁泵回调不重置补时起点。空闲及暂停时
   queueEvent 仍可唤醒 GLThread。JavaTraversal owner 安全点也消费尚未附着 producer 的初始化
   事件（独立 GLThread，不要求 Surface/EGL）；内容挂载后才开放 EGL/renderer 回调，
   原生帧到达不要求 presentation epoch 改变。真正 detach/finish 或进程关闭先停止并等待

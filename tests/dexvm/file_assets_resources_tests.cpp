@@ -586,6 +586,100 @@ TEST_CASE("XML Pull original factory parses BOM APK assets through KXml on both 
     }
 }
 
+TEST_CASE("DVM-375 SAX dispatches APK text XML to a guest handler on both backends") {
+    constexpr auto handler_type = "Ltest/SaxHandler;";
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        std::vector<std::string> events;
+        auto builder = IntrinsicClassBuilder::Class(handler_type, "Lorg/xml/sax/helpers/DefaultHandler;");
+        builder.VirtualMethod("startDocument", "()V", [&](IntrinsicContext&) {
+            events.emplace_back("start");
+            return VmValue::Void();
+        });
+        builder.VirtualMethod(
+            "startElement", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lorg/xml/sax/Attributes;)V",
+            [&](IntrinsicContext& call) {
+                const auto attributes = call.arguments[3].ref;
+                const auto type = call.vm.Model().ObjectClass(attributes);
+                const auto slot =
+                    call.vm.Linker().FindVtableIndex(type, "getValue", "(Ljava/lang/String;)Ljava/lang/String;");
+                REQUIRE(slot.has_value());
+                const auto name = call.vm.NewStringUtf8("name");
+                const auto value = call.vm.Call(call.vm.Linker().Class(type).vtable[*slot],
+                                                std::array{VmValue::Ref(attributes), VmValue::Ref(name)});
+                REQUIRE_FALSE(value.exception.IsValid());
+                REQUIRE(value.value.ref.IsValid());
+                events.push_back(call.vm.StringUtf8(call.arguments[0].ref) + "/" +
+                                 call.vm.StringUtf8(call.arguments[1].ref) + "=" + call.vm.StringUtf8(value.value.ref));
+                return VmValue::Void();
+            });
+        builder.VirtualMethod("characters", "([CII)V", [&](IntrinsicContext& call) {
+            std::string text;
+            const auto offset = call.arguments[1].AsInt();
+            for (auto index = 0; index < call.arguments[2].AsInt(); ++index)
+                text += static_cast<char>(call.vm.Model().GetPrimitiveElement(call.arguments[0].ref, offset + index));
+            events.push_back(text);
+            return VmValue::Void();
+        });
+        builder.VirtualMethod("endElement", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+                              [&](IntrinsicContext& call) {
+                                  events.push_back("/" + call.vm.StringUtf8(call.arguments[1].ref));
+                                  return VmValue::Void();
+                              });
+        builder.VirtualMethod("endDocument", "()V", [&](IntrinsicContext&) {
+            events.emplace_back("end");
+            return VmValue::Void();
+        });
+        const std::array extra{std::move(builder).Build()};
+        FileVm vm(nullptr, true, {.backend = backend}, extra);
+        const auto factory = vm.CallStatic("Ljavax/xml/parsers/SAXParserFactory;", "newInstance",
+                                           "()Ljavax/xml/parsers/SAXParserFactory;")
+                                 .ref;
+        const auto factory_root = vm.interpreter.ProtectReferences(std::array{factory});
+        const auto parser = vm.CallOn(factory, "newSAXParser", "()Ljavax/xml/parsers/SAXParser;").ref;
+        const auto parser_root = vm.interpreter.ProtectReferences(std::array{parser});
+        const auto reader = vm.CallOn(parser, "getXMLReader", "()Lorg/xml/sax/XMLReader;").ref;
+        CHECK(vm.CallOn(parser, "getXMLReader", "()Lorg/xml/sax/XMLReader;").ref == reader);
+        const auto handler = vm.interpreter.NewIntrinsicInstance(handler_type);
+        vm.CallOn(reader, "setContentHandler", "(Lorg/xml/sax/ContentHandler;)V", {VmValue::Ref(handler)});
+        CHECK(vm.CallOn(reader, "getContentHandler", "()Lorg/xml/sax/ContentHandler;").ref == handler);
+        const auto input_type = vm.linker.ResolveDescriptor("Lorg/xml/sax/InputSource;");
+        const auto ctor = vm.linker.FindDirectMethod(input_type, "<init>", "(Ljava/io/InputStream;)V");
+        REQUIRE(ctor.has_value());
+        const auto parse = [&](const std::string_view document) {
+            vm.context->apk_bytes = MakeStoredZip("assets/settings.xml", std::as_bytes(std::span(document)));
+            vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
+            const auto assets = vm.interpreter.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
+            const auto assets_root = vm.interpreter.ProtectReferences(std::array{assets});
+            const auto stream = vm.CallOn(assets, "open", "(Ljava/lang/String;)Ljava/io/InputStream;",
+                                          {VmValue::Ref(vm.interpreter.NewStringUtf8("settings.xml"))})
+                                    .ref;
+            const auto stream_root = vm.interpreter.ProtectReferences(std::array{stream});
+            const auto source = vm.interpreter.NewIntrinsicInstance("Lorg/xml/sax/InputSource;");
+            const auto source_root = vm.interpreter.ProtectReferences(std::array{source});
+            const auto initialized = vm.interpreter.Call(*ctor, std::array{VmValue::Ref(source), VmValue::Ref(stream)});
+            REQUIRE_FALSE(initialized.exception.IsValid());
+            return vm.CallOnOutcome(reader, "parse", "(Lorg/xml/sax/InputSource;)V", {VmValue::Ref(source)});
+        };
+        const auto good = parse("\xEF\xBB\xBF<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                "<cfg:item xmlns:cfg=\"urn:config\" name=\"texture\">1 &amp; 2</cfg:item>");
+        INFO(good.exception_message);
+        REQUIRE_FALSE(good.exception.IsValid());
+        CHECK(events == std::vector<std::string>{"start", "urn:config/item=texture", "1 & 2", "/item", "end"});
+
+        events.clear();
+        const auto malformed = parse("<item name=\"texture\"></different>");
+        REQUIRE(malformed.exception.IsValid());
+        CHECK(vm.linker.Class(malformed.exception_class).descriptor == "Lorg/xml/sax/SAXParseException;");
+        CHECK(events == std::vector<std::string>{"start", "/item=texture"});
+
+        events.clear();
+        const auto dtd = parse("<!DOCTYPE item SYSTEM \"file:///external.dtd\"><item name=\"texture\"/>");
+        REQUIRE(dtd.exception.IsValid());
+        CHECK(vm.linker.Class(dtd.exception_class).descriptor == "Lorg/xml/sax/SAXNotSupportedException;");
+        CHECK(events == std::vector<std::string>{"start"});
+    }
+}
+
 TEST_CASE("DVM-338 ROM PFD duplicates detaches opens and rejects unsupported transports") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         CAPTURE(backend);

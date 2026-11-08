@@ -14,6 +14,8 @@
 - java.*、javax.net/xml 与 org.xml.sax 归 core；平台事实只经 CoreIntrinsicServices 注入，
   不读取 DexVmAndroidContext 或宿主 locale、环境、网络。XML Pull 的完整接口、工厂与 KXml
   文本解析/序列化实现归固定 API 19 BootDex，不注册 XML Pull class intrinsic。
+  SAX intrinsic 提供工厂和 parser 构造，parser 通过 guest 字段持有一个 BootDex XMLReader。
+  SAX handler 及其回调全部归 guest，复用 KXml 和 ROM SAX 类型。
 - 普通 Java 状态只在 guest 字段/数组；资源交给 per-VM runtime，不重建算法或影子侧表。
   跨 nested guest call 的新引用必须用 RootScope；宿主 VmObjectRef 容器不是 GC 根。
   未支持的方法记账并明确失败，不能用默认值伪造能力。

@@ -45,6 +45,7 @@ public:
     VmClockAdvance advance;
     VmMonotonicMillis realtime;
     bool driver_blocked{};
+    std::size_t driver_wait_depth{};
     std::int64_t stall_realtime{};
     std::int64_t stall_uptime{};
     mutable std::mutex mutex;
@@ -56,6 +57,22 @@ public:
     // notified again until they re-enter one.
     std::unordered_set<std::uint64_t> woken;
     bool shutting_down{};
+
+    [[nodiscard]] bool ClockDriverStalled() const noexcept {
+        return driver_blocked || driver_wait_depth != 0;
+    }
+
+    // Called with clock_advance_mutex held on entry to a new stall.
+    void BeginClockDriverStall() {
+        if (!realtime) return;
+        VmMonotonicMillis uptime;
+        {
+            const std::lock_guard guard(mutex);
+            uptime = now;
+        }
+        stall_realtime = realtime();
+        stall_uptime = uptime ? uptime() : 0;
+    }
 
     [[nodiscard]] Monitor& MonitorFor(const VmObjectRef object) {
         auto& slot = monitors[object.Value()];
@@ -153,12 +170,26 @@ void VmMonitorTable::SetRealtimeSource(VmMonotonicMillis source) {
 
 void VmMonitorTable::ObserveClockDriverBlocking(const bool blocked) {
     const std::lock_guard guard(impl_->clock_advance_mutex);
-    if (blocked && !impl_->driver_blocked && impl_->realtime) {
-        const auto now = TimeSource();
-        impl_->stall_realtime = impl_->realtime();
-        impl_->stall_uptime = now ? now() : 0;
-    }
+    if (blocked && !impl_->ClockDriverStalled()) impl_->BeginClockDriverStall();
     impl_->driver_blocked = blocked;
+}
+
+void VmMonitorTable::ChangeClockDriverWait(const bool entered) {
+    const std::lock_guard guard(impl_->clock_advance_mutex);
+    if (entered) {
+        if (!impl_->ClockDriverStalled()) impl_->BeginClockDriverStall();
+        ++impl_->driver_wait_depth;
+    } else {
+        --impl_->driver_wait_depth;
+    }
+}
+
+VmClockDriverWaitScope::VmClockDriverWaitScope(VmMonitorTable* const monitors) : monitors_(monitors) {
+    if (monitors_) monitors_->ChangeClockDriverWait(true);
+}
+
+VmClockDriverWaitScope::~VmClockDriverWaitScope() {
+    if (monitors_) monitors_->ChangeClockDriverWait(false);
 }
 
 bool VmMonitorTable::TryAdvanceClockForTimedPark(const std::uint64_t, const std::int64_t deadline_millis) const {
@@ -173,7 +204,7 @@ bool VmMonitorTable::TryAdvanceClockForTimedPark(const std::uint64_t, const std:
     if (!now) return false;
     const auto current = now();
     if (current >= deadline_millis) return true;
-    if (!advance || !impl_->realtime || !impl_->driver_blocked) return false;
+    if (!advance || !impl_->realtime || !impl_->ClockDriverStalled()) return false;
     const auto elapsed = std::max<std::int64_t>(0, impl_->realtime() - impl_->stall_realtime);
     const auto allowed = std::min(deadline_millis, impl_->stall_uptime + elapsed);
     if (allowed > current) advance(allowed - current);

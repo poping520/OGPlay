@@ -476,6 +476,35 @@ TEST_CASE("dexvm root timed wait catches up using injected real time") {
     CHECK(vm.interpreter.Monitors().HeldCount(kRootLifecycleToken) == 0U);
 }
 
+TEST_CASE("DVM-353 synchronous worker wait retains elapsed time across VM lock polls") {
+    MonitorVm vm;
+    vm.UseTestClock();
+    auto& monitors = vm.interpreter.Monitors();
+    std::int64_t realtime = 100;
+    monitors.SetRealtimeSource([&] { return realtime; });
+    monitors.SetClockAdvance([&](const std::int64_t delta) { vm.clock_millis += delta; });
+
+    {
+        const VmClockDriverWaitScope wait(&monitors);
+        for (int poll = 0; poll < 16; ++poll) {
+            monitors.ObserveClockDriverBlocking(true);
+            realtime += 2;
+            monitors.ObserveClockDriverBlocking(false);
+        }
+        {
+            const VmClockDriverWaitScope nested(&monitors);
+            CHECK_FALSE(monitors.TryAdvanceClockForTimedPark(2U, 33));
+            CHECK(vm.clock_millis.load() == 32);
+        }
+        ++realtime;
+        CHECK(monitors.TryAdvanceClockForTimedPark(2U, 33));
+        CHECK(vm.clock_millis.load() == 33);
+    }
+    realtime += 50;
+    CHECK_FALSE(monitors.TryAdvanceClockForTimedPark(2U, 34));
+    CHECK(vm.clock_millis.load() == 33);
+}
+
 TEST_CASE("dexvm worker timed wait advances only with a blocked clock driver") {
     MonitorVm vm;
     vm.UseTestClock();

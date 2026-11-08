@@ -23,6 +23,7 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/core/byte_order.h"
 #include "ogplay/core/encoding.h"
+#include "ogplay/core/text.h"
 #include "ogplay/memory/address_space.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 
@@ -388,6 +389,13 @@ public:
         const auto bytes = std::min<std::size_t>(message.size() + tag.size() + 3U,
                                                  std::numeric_limits<std::int32_t>::max());
         if (context_.logger != nullptr) {
+            // Android log strings are bytes. Encode non-UTF-8 data before JSON output.
+            const auto log_text = [](const std::string& value) {
+                if (core::IsValidUtf8(value)) return value;
+                return "<hex:" + core::EncodeHex(std::as_bytes(std::span{value.data(), value.size()})) + ">";
+            };
+            tag = log_text(tag);
+            message = log_text(message);
             const auto rendered = "[guest] " + tag + ": " + message;
             context_.logger->Write(ProjectLevel(priority), "guest.liblog",
                 rendered,

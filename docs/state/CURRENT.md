@@ -30,6 +30,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。
 | Monument Valley 2.5.18 | macOS | 720×1280：序章曲柄/行走至终点，进入第二章 The Garden，非零 PCM 已确认 | 默认入口竖屏、触摸复制及长期工作 Looper 已修；退出 IAP 未 bind 却 unbind 抛 IAE，正式 title gate/跨平台未验 | [DVM-369](../tasks/dexvm/DVM-369.md)、[DVM-259](../tasks/dexvm/DVM-259.md) |
 | NFS17 | macOS | 下载布局构造通过，进入 GameActivityMain.onCreate | `Window.getWindowManager()` 未实现；尚未进入游戏 | [DVM-367](../tasks/dexvm/DVM-367.md)、[DVM-368](../tasks/dexvm/DVM-368.md) |
 | Bad Piggies HD 1.9.1 | macOS | Surface 回调后 `libRCSSDK.so` 加载及 JNI_OnLoad 完成，已越过 `0xec510f1e` 探测 | `f=3951` 时 UnityMain `UnityPlayer.nativeRender()Z` 报 `JNI object is not a string in this store`，本次未出现此前 FMOD 退出 | [DVM-374](../tasks/dexvm/DVM-374.md)、[BND-57](../tasks/boundary/BND-57.md) |
+| Sacred Odyssey 1.1.0 | macOS | 800×480：Logo 可见，Release 主菜单实测 24.3 FPS；NEW GAME → Mission 开场对白/Skip，MCP 关闭退出 0 | 非全屏视频黑屏、进关日志非 UTF-8 崩溃已修；开场 3D 区域仍黑；1280×720 Splash 的 `nativeRender` 读 `0x0`；游戏内操作待验 | [DVM-375](../tasks/dexvm/DVM-375.md)、[DVM-353](../tasks/dexvm/DVM-353.md)、[DVM-303](../tasks/dexvm/DVM-303.md)、[BND-5](../tasks/boundary/BND-5.md) |
 
 ## 未闭合问题
 

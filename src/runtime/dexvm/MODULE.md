@@ -152,7 +152,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 ### 线程、monitor、时间
 
 - 一个 guest Thread 对应一个 host thread、execution context、A32 CPU、guest stack、Bionic
-  TLS/JNI local frame；解释仍由全 VM 锁串行。start 虚派真实 `run()`；interrupt/join/sleep/
+  TLS/JNI local frame；解释仍由全 VM 锁串行。同步 worker 等待可显式维持 Clock 停摆区间，
+  短暂重取 VM 锁不重置起点，补时仍受该区间真实耗时限制。start 虚派真实 `run()`；interrupt/join/sleep/
   park/uncaught handler/ThreadGroup 使用唯一 runtime。priority/daemon 不映射宿主调度或退出。
 - monitor owner 是 context token；wait 完全释放并恢复 recursion，notify/interrupt/shutdown/
   Clock 唤醒。非 owner 操作抛 IllegalMonitorStateException。deadline 只用注入 Clock；无 Clock
@@ -200,7 +201,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   native overlay；宿主不得访问私有字段或保留替代状态。Thread/Handler 等生命周期耦合另行设计。
   DatagramPacket 状态归 Java；DatagramSocket 经 VM 虚派 getter/setter 读取 payload 区间、
   地址和端口、提交接收长度及来源，NetworkRuntime 只消费一次性的 Endpoint/payload 快照，
-  不保存 packet 侧表。InputSource 的值状态和 Appendable 接口归 ROM，SAX 解析边界仍明确失败。
+  不保存 packet 侧表。InputSource 的值状态和 Appendable 接口归 ROM；SAX 使用 [BootDex 文本流适配器](../../guest/xml/MODULE.md)。
 - `IoRuntime` 只持文件资源、本地接口查询描述符与增量解码状态，文件仅走注入 `IoFileSystem`；API 19
   File/FIS/FOS/RAF/FileChannelImpl 普通算法来自 BootDex，Posix 文件 native 是唯一入口。FIS/FOS 的
   OpenFileDescription 保存隔离的 VFS descriptor 与访问模式，同一逻辑 FileDescriptor 共享

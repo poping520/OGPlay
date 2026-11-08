@@ -54,7 +54,6 @@ struct CoreIntrinsicServices final {
     std::string default_timezone{"GMT"};
     std::function<VmObjectRef(Interpreter&, std::string_view, std::string_view)> singleton;
     std::function<std::int64_t()> current_time_millis;
-    std::function<void(VmObjectRef, VmObjectRef)> set_sax_content_handler;
     std::function<std::optional<std::string>(std::string_view)> environment_value;
     std::function<std::vector<std::pair<std::string, std::string>>()> environment_entries;
 };

@@ -290,7 +290,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     CHECK_FALSE(descriptors.contains("Ljava/util/Locale;"));
     CHECK_FALSE(descriptors.contains("Ljavax/net/ssl/SSLSocketFactory;"));
     CHECK(descriptors.contains("Ljavax/xml/parsers/SAXParserFactory;"));
-    CHECK(descriptors.contains("Lorg/xml/sax/XMLReader;"));
+    CHECK_FALSE(descriptors.contains("Lorg/xml/sax/XMLReader;"));
 
     DexClassLinker boot_linker;
     boot_linker.RegisterIntrinsics(catalog);

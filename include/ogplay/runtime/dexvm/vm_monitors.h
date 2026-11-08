@@ -110,8 +110,24 @@ public:
     void ReleaseObjectForGc(VmObjectRef object);
 
 private:
+    friend class VmClockDriverWaitScope;
+    void ChangeClockDriverWait(bool entered);
+
     class Impl;
     std::unique_ptr<Impl> impl_;
+};
+
+// The driver can remain unable to advance frames while temporarily reacquiring
+// the VM lock to pump callbacks in a synchronous worker wait.
+class VmClockDriverWaitScope final {
+public:
+    explicit VmClockDriverWaitScope(VmMonitorTable* monitors);
+    ~VmClockDriverWaitScope();
+    VmClockDriverWaitScope(const VmClockDriverWaitScope&) = delete;
+    VmClockDriverWaitScope& operator=(const VmClockDriverWaitScope&) = delete;
+
+private:
+    VmMonitorTable* monitors_;
 };
 
 }  // namespace ogplay::runtime::dexvm

@@ -808,7 +808,6 @@ struct DexVmAndroidContext final {
 
     // SAX reader setup is real local state. Parsing remains an explicit gap
     // until the bounded XML callback pipeline is implemented.
-    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> sax_content_handlers;
 
     // SoundPoolImpl native tokens map the Java instance to a mixer pool.
     struct SoundPoolState final {

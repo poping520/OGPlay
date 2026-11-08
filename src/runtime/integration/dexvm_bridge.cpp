@@ -312,9 +312,6 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
              if (const auto found = context->global_layout_listeners.find(key);
                  found != context->global_layout_listeners.end())
                  visit_ref(found->second);
-             if (const auto found = context->sax_content_handlers.find(key);
-                 found != context->sax_content_handlers.end())
-                 visit_ref(found->second);
              if (const auto found = context->holder_canvases.find(key); found != context->holder_canvases.end())
                  visit_ref(found->second);
              if (const auto found = context->view_adapter_references.find(key);
@@ -372,7 +369,6 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
              context->managed_window_tokens.erase(key);
              context->view_tree_observers.erase(key);
              context->global_layout_listeners.erase(key);
-             context->sax_content_handlers.erase(key);
              context->bitmaps.erase(key);
              context->identity_matrices.erase(key);
              context->canvases.erase(key);

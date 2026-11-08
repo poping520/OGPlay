@@ -1836,47 +1836,6 @@ TEST_CASE("Intent integer ArrayList extra preserves identity and typed keys") {
   CHECK_FALSE(outcome.value.ref.IsValid());
 }
 
-TEST_CASE("SAX setup retains its handler and parsing fails explicitly") {
-  AndroidVm vm;
-  const auto factory_class =
-      vm.linker.FindClass("Ljavax/xml/parsers/SAXParserFactory;");
-  REQUIRE(factory_class.has_value());
-  const auto new_instance = vm.linker.FindDirectMethod(
-      *factory_class, "newInstance", "()Ljavax/xml/parsers/SAXParserFactory;");
-  REQUIRE(new_instance.has_value());
-  auto outcome = vm.interpreter.Call(*new_instance, {});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  const auto factory = outcome.value.ref;
-  outcome = vm.interpreter.Call(
-      vm.Virtual("Ljavax/xml/parsers/SAXParserFactory;", "newSAXParser",
-                 "()Ljavax/xml/parsers/SAXParser;"),
-      std::vector<VmValue>{VmValue::Ref(factory)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  const auto parser = outcome.value.ref;
-  outcome = vm.interpreter.Call(vm.Virtual("Ljavax/xml/parsers/SAXParser;",
-                                           "getXMLReader",
-                                           "()Lorg/xml/sax/XMLReader;"),
-                                std::vector<VmValue>{VmValue::Ref(parser)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  const auto reader = outcome.value.ref;
-  const auto handler =
-      vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
-  outcome = vm.interpreter.Call(
-      vm.Virtual("Lorg/xml/sax/XMLReader$Impl;", "setContentHandler",
-                 "(Lorg/xml/sax/ContentHandler;)V"),
-      std::vector<VmValue>{VmValue::Ref(reader), VmValue::Ref(handler)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(vm.context->sax_content_handlers.at(reader.Value()) == handler);
-  const auto input =
-      vm.interpreter.NewIntrinsicInstance("Lorg/xml/sax/InputSource;");
-  outcome = vm.interpreter.Call(
-      vm.Virtual("Lorg/xml/sax/XMLReader$Impl;", "parse",
-                 "(Lorg/xml/sax/InputSource;)V"),
-      std::vector<VmValue>{VmValue::Ref(reader), VmValue::Ref(input)});
-  REQUIRE(outcome.exception.IsValid());
-  CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-        "Ljava/lang/UnsupportedOperationException;");
-}
 
 TEST_CASE("bounded method reflection enumerates and invokes display rotation") {
   AndroidVm vm;

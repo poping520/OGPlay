@@ -24,6 +24,7 @@
 #include "ogplay/cpu/interpreter.h"
 #include "ogplay/cpu/dynarmic.h"
 #include "ogplay/core/logger.h"
+#include "ogplay/core/json.h"
 #include "ogplay/gles/egl_lifecycle.h"
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/gles_transfer_state.h"
@@ -93,6 +94,35 @@ TEST_CASE("Android liblog text and A32 variadic calls enter structured guest log
     records = fixture.logger.Snapshot(std::nullopt, "guest.liblog");
     REQUIRE(records.size() == 3U);
     CHECK(records.back().message == "[guest] PVZ: score=7 name=pea");
+}
+
+TEST_CASE("Android liblog preserves byte counts and renders non UTF-8 tag and message bytes safely") {
+    struct Sample {
+        std::string tag;
+        std::string message;
+        std::string rendered;
+    };
+
+    const std::array samples{Sample{"Tag", "text\xff", "[guest] Tag: <hex:74657874ff>"},
+                             Sample{"tag\xff", "text", "[guest] <hex:746167ff>: text"},
+                             Sample{"Tag", "\xe4\xb8", "[guest] Tag: <hex:e4b8>"},
+                             Sample{"Tag", "\xc0\x80", "[guest] Tag: <hex:c080>"},
+                             Sample{"标记", "读取存档 \xf0\x9f\x8e\xae", "[guest] 标记: 读取存档 \xf0\x9f\x8e\xae"}};
+    for (const auto& sample : samples) {
+        CAPTURE(sample.rendered);
+        BoundaryFixture fixture;
+        const auto tag = fixture.output;
+        const auto message = fixture.output.Add(64U);
+        WriteGuestString(fixture, tag, sample.tag);
+        WriteGuestString(fixture, message, sample.message);
+        CHECK(FastBoundaryCall(fixture, "liblog.so", "__android_log_write", {4U, tag.Value(), message.Value(), 0U}) ==
+              sample.tag.size() + sample.message.size() + 3U);
+        const auto records = fixture.logger.Snapshot(std::nullopt, "guest.liblog");
+        REQUIRE(records.size() == 1U);
+        CHECK(records.front().message == sample.rendered);
+        ogplay::core::JsonParseError error;
+        CHECK(ogplay::core::JsonDocument::ParseStrict(fixture.logger.RenderJson(records.front()), error));
+    }
 }
 
 TEST_CASE("Android liblog format handles apply AOSP-style priority filters") {

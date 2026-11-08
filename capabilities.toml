@@ -2008,6 +2008,11 @@ status = "partial"
 test = "tests/dexvm/file_assets_resources_tests.cpp#XML Pull original factory parses BOM APK assets through KXml on both backends; tests/dexvm/file_assets_resources_tests.cpp#Resources getXml exposes compiled APK XML as pull events; tests/dexvm/xml_block_tests.cpp#DVM-287; tools/bootdex/compose_bootdex.py check"
 note = "API19 core.jar 提供完整 XML Pull 接口/工厂与 KXml，原版工厂反射创建 parser/serializer，无解析 intrinsic；验证 AssetManager InputStream、namespace、UTF-8 BOM 与畸形 XML 异常。serializer 长尾未验收；DVM-287 默认 ROM XmlBlock/Parser 支持 APK compiled XML typed/raw 查询与生命周期；StringBlock 仅无样式池，系统 XML/span 失败。"
 
+[dexvm.sax_text_stream]
+status = "partial"
+test = "tests/dexvm/file_assets_resources_tests.cpp#DVM-375; tools/bootdex/compose_bootdex.py check"
+note = "DVM-375：SAXParser 的 XMLReader 使用 API19 KXml 和 ROM SAX 类型，支持显式字符/字节流、namespace、文档/元素/文本回调和属性。选中的输入流由解析器关闭；DTD 和仅指定 system ID 的输入明确拒绝。未支持验证、外部实体或处理指令事件。"
+
 [dexvm.bounded_theme]
 status = "partial"
 test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/rom_skin_tests.cpp#DVM-355; tests/dexvm/edittext_traversal_tests.cpp#DVM-328; tests/dexvm/rom_skin_tests.cpp#DVM-327; tests/dexvm/rom_skin_tests.cpp#DVM-326; tools/bootdex/theme_projection.py --self-test; tests/dexvm/theme_resources_tests.cpp#DVM-325; tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/theme_resources_tests.cpp#DVM-292; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"

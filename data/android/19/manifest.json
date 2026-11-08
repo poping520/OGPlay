@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "d5093f04c3fcc2fca749715d46c860f8112a050b97c609a1558eeccbbbf2747c",
+    "recipe_sha256": "8b94c05c0d5daa6651a892d3df622baf4d55c73a8a45f8b727d3ecde98569463",
     "system_resources": {
       "table": "tools/bootdex/api19-system-resources.json",
       "table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3",
@@ -85,20 +85,21 @@
         "source_roots": [
           "src/guest/crypto/java",
           "src/guest/framework/java",
-          "src/guest/io/java"
+          "src/guest/io/java",
+          "src/guest/xml/java"
         ],
-        "source_sha256": "656700b241ffde9a81a4b191b74452f9659103b188aeef8198fe3ba6371c2fcc",
+        "source_sha256": "6938d29726165a8e9384cf2e44b2f7221075b68178a8bb953eda068b739f96b3",
         "javac": "17.0.18",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 16901067,
-    "sha256": "74e26ea2b6e1a6246a0fb0d278a69314c98cfeed19f963788b856bfe04c5cf7a",
+    "size": 16907186,
+    "sha256": "145e631d1bf6cb4e219e190f79f7de7135f4cf8493be177055db1707fed02247",
     "dex_entry": "classes.dex",
-    "dex_size": 8504436,
-    "dex_sha256": "3f96e733f0b94cab80556687e5fa3f1b205d1bb63c6cafd09622d2bcd57d7fd5",
-    "class_count": 5724,
+    "dex_size": 8510440,
+    "dex_sha256": "ac3f67acd5401e7df50a1355bd15be277d402e7703af2c07f4f28459c8d23f92",
+    "class_count": 5729,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a",
@@ -106,17 +107,17 @@
       "path": "tools/bootdex/java-traversal.json",
       "sha256": "20926f677459ac239e4ec74312c0323924a9388030df6cc27ac60dc3214859de",
       "entry": "META-INF/ogplay/java-traversal-recipe.json",
-      "payload_sha256": "70057fe4b7cbe81dcc99967c98a7d1fdfe3ca2fa7d7dfcff6bcb446b6b058fb6"
+      "payload_sha256": "b2f09e8a13c0480019addcabca85d02faa3d18fee8628f4b3712e3595b438085"
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "010f891a3fd248876316c3e9da31124ac1af07bef96bc3477d81fa100e46e886",
+      "sha256": "015ec03cdf7507d8e6a67ea7c89e10bb6c217860ac078cf4388bc6bab86acc82",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "d516863397377cb6f003357e69b24dccc26263c649dc379b0a0042fb5b42342b",
+      "manifest_sha256": "8cd6c676c7cb4dac8837364a1a57305d15b619b1a050231c3d604ae7bfb463dc",
       "composer": "tools/bootdex/compose_bootdex.py",
       "composer_sha256": "7f3879fea5fd4692384c24b7c6c69abedd57e46685c762466b0df0abc37fc266"
     },

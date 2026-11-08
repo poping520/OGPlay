@@ -1,4 +1,4 @@
-// SAX construction and explicit unsupported parsing boundary. XML Pull is BootDex.
+// SAX factory/parser construction. Readers and XML Pull execute in BootDex.
 #include "catalog.h"
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
@@ -8,32 +8,20 @@ namespace ogplay::runtime::dexvm::intrinsics {
 
 namespace {
 
-IntrinsicHandler SaxParseUnsupported() {
-    return [](IntrinsicContext&) -> VmValue {
-        throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                          "SAX parsing is not implemented"};
-    };
-}
-
-IntrinsicHandler SaxSetContentHandler(
-    const CoreIntrinsicServices& services) {
-    return [set_handler = services.set_sax_content_handler](
-               IntrinsicContext& call) {
-        const auto handler = call.arguments[0].ref;
-        if (!handler.IsValid()) {
-            throw VmJavaThrow{"Ljava/lang/NullPointerException;",
-                              "SAX content handler is null"};
-        }
-        if (set_handler) set_handler(call.receiver, handler);
-        return VmValue::Void();
-    };
-}
-
 IntrinsicClassDecl DeclareSaxParser() {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Ljavax/xml/parsers/SAXParser;", "Ljava/lang/Object;");
-    builder.VirtualMethod("getXMLReader", "()Lorg/xml/sax/XMLReader;", [](IntrinsicContext& call) {
-        return VmValue::Ref(call.vm.NewIntrinsicInstance("Lorg/xml/sax/XMLReader$Impl;"));
+    auto builder = IntrinsicClassBuilder::Class("Ljavax/xml/parsers/SAXParser;", "Ljava/lang/Object;");
+    const auto reader_field = builder.BoundInstanceField("ogplayReader", "Lorg/xml/sax/XMLReader;", kAccPrivate);
+    builder.VirtualMethod("getXMLReader", "()Lorg/xml/sax/XMLReader;", [reader_field](IntrinsicContext& call) {
+        IntrinsicCall fields(call);
+        if (const auto reader = fields.GetRef(reader_field); reader.IsValid()) return VmValue::Ref(reader);
+        const auto adapter = call.vm.Linker().ResolveDescriptor("Lorg/ogplay/xml/SaxReader;");
+        const auto create = call.vm.Linker().FindDirectMethod(adapter, "create", "()Lorg/xml/sax/XMLReader;");
+        const auto result = call.vm.Call(*create, {});
+        if (result.exception.IsValid())
+            throw VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                              result.exception};
+        fields.SetRef(reader_field, result.value.ref);
+        return result.value;
     });
     // AOSP 4.4 ROM line 80.
     builder.Constructor(
@@ -53,14 +41,10 @@ IntrinsicClassDecl DeclareSaxParser() {
 }
 
 IntrinsicClassDecl DeclareSaxParserFactory() {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Ljavax/xml/parsers/SAXParserFactory;", "Ljava/lang/Object;");
-    builder.StaticMethod(
-        "newInstance", "()Ljavax/xml/parsers/SAXParserFactory;",
-        [](IntrinsicContext& call) {
-            return VmValue::Ref(call.vm.NewIntrinsicInstance(
-                "Ljavax/xml/parsers/SAXParserFactory;"));
-        });
+    auto builder = IntrinsicClassBuilder::Class("Ljavax/xml/parsers/SAXParserFactory;", "Ljava/lang/Object;");
+    builder.StaticMethod("newInstance", "()Ljavax/xml/parsers/SAXParserFactory;", [](IntrinsicContext& call) {
+        return VmValue::Ref(call.vm.NewIntrinsicInstance("Ljavax/xml/parsers/SAXParserFactory;"));
+    });
     builder.VirtualMethod("newSAXParser", "()Ljavax/xml/parsers/SAXParser;", [](IntrinsicContext& call) {
         return VmValue::Ref(call.vm.NewIntrinsicInstance("Ljavax/xml/parsers/SAXParser;"));
     });
@@ -80,52 +64,11 @@ IntrinsicClassDecl DeclareSaxParserFactory() {
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl DeclareContentHandler() {
-    return std::move(IntrinsicClassBuilder::Interface(
-                         "Lorg/xml/sax/ContentHandler;"))
-        .Build();
-}
-
-IntrinsicClassDecl DeclareXmlReaderImpl(
-    const CoreIntrinsicServices& services) {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Lorg/xml/sax/XMLReader$Impl;", "Ljava/lang/Object;",
-        {"Lorg/xml/sax/XMLReader;"});
-    builder.FinalMethod(
-        "setContentHandler", "(Lorg/xml/sax/ContentHandler;)V",
-        SaxSetContentHandler(services));
-    builder.FinalMethod("parse", "(Lorg/xml/sax/InputSource;)V",
-                        SaxParseUnsupported());
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl DeclareXmlReader(const CoreIntrinsicServices&) {
-    auto builder =
-        IntrinsicClassBuilder::Interface("Lorg/xml/sax/XMLReader;");
-    builder.UnimplementedVirtual("setContentHandler", "(Lorg/xml/sax/ContentHandler;)V", kAccPublic | kAccAbstract);
-    builder.UnimplementedVirtual("parse", "(Lorg/xml/sax/InputSource;)V", kAccPublic | kAccAbstract);
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl DeclareDefaultHandler() {
-    auto builder = IntrinsicClassBuilder::Class("Lorg/xml/sax/helpers/DefaultHandler;", "Ljava/lang/Object;",
-                                                {"Lorg/xml/sax/EntityResolver;", "Lorg/xml/sax/DTDHandler;",
-                                                 "Lorg/xml/sax/ContentHandler;", "Lorg/xml/sax/ErrorHandler;"});
-    builder.Constructor("()V",
-                        [](IntrinsicContext&) { return VmValue::Void(); });
-    return std::move(builder).Build();
-}
-
 }  // namespace
 
-void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog,
-                   const CoreIntrinsicServices& services) {
+void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog) {
     catalog.push_back(DeclareSaxParser());
     catalog.push_back(DeclareSaxParserFactory());
-    catalog.push_back(DeclareContentHandler());
-    catalog.push_back(DeclareXmlReaderImpl(services));
-    catalog.push_back(DeclareXmlReader(services));
-    catalog.push_back(DeclareDefaultHandler());
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

@@ -293,7 +293,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   不等于已播放。display.change_mode/process.exit 只发布可查询请求，由上层实施窗口/清理策略。
 - 网络默认离线，只用注入 policy/transport；设备/身份/服务仅发布已配置事实，不伪造广播、
   传感器、电话或在线服务。Activity 当前/根身份来自 lifecycle，finish/handoff 不混为进程退出；
-  SQL 持久化只用 guest VFS，SAX 未支持 parse 明确失败。Typeface/主题边界见 Android 子模块。
+  SQL 持久化只用 guest VFS。Typeface/主题边界见 Android 子模块。
 
 Debug 当前进程查询的默认 provider 在 bridge 装配后安装，析构撤销自有回调；
 外部 provider 保留。VM 执行锁内读取托管堆账本和 guest 已映射页（含 PROT_NONE），

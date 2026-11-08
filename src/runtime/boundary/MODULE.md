@@ -141,6 +141,7 @@ API19 桩库要求的 GLES ELF 入口始终可解析；缺后端能力时按 4.4
 - liblog 使用固定 API19 surface 和 LogBoundaryContext；内存经 AddressSpace，event tag map
   经注入 VFS reader，tag 存只读页。输出结构化 guest.liblog/[guest]，不访问 host filesystem、
   伪造 logger device 或裸输出；message/guest_log_tag 从同一未移动值构造。
+  tag/message 含非 UTF-8 字节时以 `<hex:…>` 无损表示后投递结构化日志；返回值仍按原字节数计算。
 - [OpenSL ES](modules/opensles/MODULE.md) 以 immutable vtable thunk 与防陈旧句柄表实现
   Engine→OutputMix→PCM AudioPlayer；范围外 constructor 返回 FEATURE_UNSUPPORTED。
   唯一 OpenSlesPcmMixer 经 façade 提供 AudioTrack 适配，module 不依赖 integration/façade/HAL。

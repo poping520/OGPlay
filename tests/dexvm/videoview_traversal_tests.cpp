@@ -3,6 +3,8 @@
 #include "ogplay/runtime/ui/ui_leaf_measure.h"
 #include "ogplay/runtime/ui/ui_renderer.h"
 #include "ogplay/video/fake_video_player.h"
+#include "ogplay/session/dex_activity_lifecycle.h"
+#include <algorithm>
 #include <bit>
 #include <thread>
 
@@ -192,6 +194,59 @@ TEST_CASE("DVM-303 VideoView owner metadata invalidates Java and freezes publish
         Deliver(f, view, gen);
         Tick(f);
         CHECK(f.context->ui_tree.PublishedProjection()->Get(id)->intrinsic == ui::Size{});
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-303 nonfullscreen VideoView presents successive decoded frames through real lifecycle") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        ogplay::session::DexActivityLifecycleBindings bindings;
+        bindings.bridge = &f.app->DexVm();
+        bindings.context = f.context;
+        bindings.launcher_descriptor = "Ltest/OwnerActivity;";
+        bindings.application_descriptor = "Landroid/app/Application;";
+        ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+        static_cast<void>(lifecycle.Start());
+        static_cast<void>(lifecycle.StepFrame());
+        const auto view = Video(f, f.context->activity);
+        const auto params =
+            f.New("Landroid/widget/FrameLayout$LayoutParams;", "(II)V", {VmValue::Int(96), VmValue::Int(64)});
+        const auto roots = f.vm.ProtectReferences(std::array{view, params});
+        f.On(AndroidUiTraversalRoot(f.vm, *f.context), "addView",
+             "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V", {VmValue::Ref(view), VmValue::Ref(params)});
+        Open(f, view);
+        f.On(view, "start", "()V");
+        static_cast<void>(lifecycle.StepFrame());
+        static_cast<void>(f.context->session->TakeLatestFrame());
+        const auto node = FindViewUiNode(*f.context, view.Value());
+        REQUIRE(node);
+        const auto holder = f.On(view, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        std::uint64_t sequence{};
+        std::vector<std::uint8_t> previous_pixels;
+        for (unsigned i = 0; i < 2; ++i) {
+            AdvanceAndroidClock(*f.context, 100);
+            static_cast<void>(lifecycle.StepFrame());
+            const auto snapshot = AcquireAndroidPresentation(*f.context);
+            REQUIRE(snapshot);
+            REQUIRE(snapshot->video_frames.contains(*node));
+            CHECK_FALSE(snapshot->scaled_surface_frames.contains(*node));
+            CHECK_FALSE(HasOpaqueFullscreenVideo(*f.context));
+            REQUIRE(f.context->active_surface_holders.contains(holder.Value()));
+            REQUIRE(f.context->surface_buffer_queued.at(holder.Value()));
+            auto frame = f.context->session->TakeLatestFrame();
+            REQUIRE(frame);
+            CHECK(frame->sequence > sequence);
+            sequence = frame->sequence;
+            const auto composed = lifecycle.ComposePresentedFrame(std::move(*frame));
+            const auto& decoded = snapshot->video_frames.at(*node)->rgba8;
+            const auto offset = (32U * composed.width + 48U) * 4U;
+            CHECK(std::equal(decoded.begin(), decoded.begin() + 4, composed.rgba8.begin() + offset));
+            CHECK(composed.rgba8 != previous_pixels);
+            previous_pixels = composed.rgba8;
+        }
+        static_cast<void>(lifecycle.Stop());
         CHECK(f.ledger.Unimplemented().empty());
     }
 }

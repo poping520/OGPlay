@@ -31,7 +31,8 @@ bool CanPublishOwnerSoftwareBase(const runtime::DexVmAndroidContext& context,
         for (const auto& [view, candidate] : context.surface_holders) {
             if (candidate.Value() != holder) continue;
             const auto id = runtime::FindViewUiNode(context, view);
-            if (id && snapshot.scaled_surface_frames.contains(*id) && snapshot.video_frames.contains(*id)) return true;
+            // VideoView retains letterboxed pixels without the scaled-surface flag.
+            if (id && snapshot.video_frames.contains(*id)) return true;
             break;
         }
         const auto queued = context.surface_buffer_queued.find(holder);
@@ -1721,6 +1722,8 @@ void DexActivityLifecycle::RunOnRenderer(const std::shared_ptr<GlSurfaceRuntime>
         worker.busy = true;
         worker.changed.notify_all();
     }
+    const dx::VmClockDriverWaitScope clock_wait(
+        std::this_thread::get_id() == bindings_.context->clock_driver ? &vm.Monitors() : nullptr);
     for (;;) {
         {
             std::unique_lock lock(worker.mutex);

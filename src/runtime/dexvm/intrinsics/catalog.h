@@ -32,8 +32,7 @@ void AppendJavaConcurrent(std::vector<IntrinsicClassDecl>& catalog,
 void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog,
                            const CoreIntrinsicServices& services);
-void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog,
-                   const CoreIntrinsicServices& services);
+void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog);
 
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Object();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_ClassLoader(

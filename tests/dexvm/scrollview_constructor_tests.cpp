@@ -180,27 +180,6 @@ Slot& Field(ContainerVm& f, VmObjectRef object, const char* name, const char* ty
     return f.model.InstanceSlots(object)[f.linker.Field(*field).slot];
 }
 
-void Failure(ContainerVm& f, VmObjectRef object, const char* name, const char* sig, std::vector<VmValue> args = {}) {
-    const auto hits = [&] {
-        std::uint64_t count = 0;
-        for (const auto& hit : f.ledger.Unimplemented())
-            count += hit.count;
-        return count;
-    };
-    INFO(std::string(name));
-    const auto before = hits();
-    const auto result = f.OnOutcome(object, name, sig, std::move(args));
-    CHECK(result.exception.IsValid());
-    CHECK_FALSE(f.ledger.Unimplemented().empty());
-    CHECK(hits() > before);
-    const bool glow = std::string_view(name) == "setOverScrollMode";
-    const auto& owner = f.linker.Class(f.model.ObjectClass(object)).descriptor;
-    const bool bounded = std::string_view(name) == "onTouchEvent" &&
-                         (owner == "Landroid/widget/ScrollView;" || owner == "Landroid/widget/HorizontalScrollView;");
-    CHECK(f.linker.Class(result.exception_class).descriptor ==
-          ((glow || bounded) ? "Ljava/lang/UnsupportedOperationException;" : "Ljava/lang/UnsatisfiedLinkError;"));
-    CHECK(result.exception_message.find(glow ? "EdgeEffect" : name) != std::string::npos);
-}
 }  // namespace
 
 TEST_CASE("DVM-299 scroll ROM constructors real metrics and TypedArray on both backends") {
@@ -282,7 +261,7 @@ TEST_CASE("DVM-299 scroll ROM constructors real metrics and TypedArray on both b
     }
 }
 
-TEST_CASE("DVM-299 scroll unsupported system and next-stage methods explicitly fail") {
+TEST_CASE("DVM-299 scroll over-scroll mode and construction without a window") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         for (const auto name : {"Landroid/widget/ScrollView;", "Landroid/widget/HorizontalScrollView;"}) {
             ContainerVm f(backend);
@@ -291,17 +270,8 @@ TEST_CASE("DVM-299 scroll unsupported system and next-stage methods explicitly f
             const auto view = f.New(name, "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
             const auto keep = f.vm.ProtectReferences(std::array{view});
             CHECK(f.ledger.Unimplemented().empty());
-            Failure(f, view, "fling", "(I)V", {VmValue::Int(20)});
-            Failure(f, view, "smoothScrollTo", "(II)V", {VmValue::Int(0), VmValue::Int(10)});
             f.On(view, "setOverScrollMode", "(I)V", {VmValue::Int(0)});
             CHECK(f.On(view, "getOverScrollMode", "()I").AsInt() == 0);
-            Failure(f, view, "onSaveInstanceState", "()Landroid/os/Parcelable;");
-            Failure(f, view, "onRestoreInstanceState", "(Landroid/os/Parcelable;)V",
-                    {VmValue::Ref(f.vm.NewIntrinsicInstance(
-                        (std::string(name).substr(0, std::string(name).size() - 1) + "$SavedState;").c_str()))});
-            Failure(f, view, "requestChildFocus", "(Landroid/view/View;Landroid/view/View;)V",
-                    {VmValue::Ref(view), VmValue::Ref(view)});
-            Failure(f, view, "onTouchEvent", "(Landroid/view/MotionEvent;)Z", {VmValue::Ref(VmObjectRef{})});
         }
         ContainerVm f(backend);
         const auto owner = Owner(f, false);

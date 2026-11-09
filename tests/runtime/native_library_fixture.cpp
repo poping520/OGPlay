@@ -463,7 +463,7 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
     request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
     request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
     request.dex_bytes = ReadDexFixture("application.dex");
-    request.boot_dex_bytes = ogplay::test::ReadBootDex();
+    request.boot_dex_files = ogplay::test::ReadBootDex();
     ogplay::test::BindBootDexArchive(*context);
     context->ui_test_accessibility_disabled = true;
     request.context = context;

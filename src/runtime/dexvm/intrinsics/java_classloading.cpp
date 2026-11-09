@@ -335,6 +335,7 @@ IntrinsicClassDecl Declare_java_lang_ClassLoader(const CoreIntrinsicServices& se
 
 IntrinsicClassDecl Declare_dalvik_system_VMStack() {
     auto b = IntrinsicClassBuilder::Class("Ldalvik/system/VMStack;");
+    b.MergesBootClass();
     b.StaticMethod(
         "getClasses", "(I)[Ljava/lang/Class;",
         [](IntrinsicContext& c) {

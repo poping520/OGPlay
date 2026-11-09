@@ -15,6 +15,7 @@
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_os_Debug_MemoryInfo(const Context&, DebugMemoryInfoFields& fields) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Debug$MemoryInfo;");
+    builder.MergesBootClass();
     constexpr std::array names{"dalvikPss",          "dalvikSwappablePss", "dalvikPrivateDirty", "dalvikSharedDirty",
                                "dalvikPrivateClean", "dalvikSharedClean",  "dalvikSwappedOut",   "nativePss",
                                "nativeSwappablePss", "nativePrivateDirty", "nativeSharedDirty",  "nativePrivateClean",
@@ -207,6 +208,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_SystemProperties(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/SystemProperties;");
+    builder.MergesBootClass();
     constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
     builder.StaticMethod(
         "native_get", "(Ljava/lang/String;)Ljava/lang/String;",
@@ -643,6 +645,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Binder(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Binder;");
+    builder.MergesBootClass();
     constexpr auto public_native = dx::kAccPublic | dx::kAccStatic | dx::kAccFinal | dx::kAccNative;
     constexpr auto private_native = dx::kAccPrivate | dx::kAccFinal | dx::kAccNative;
     builder.StaticMethod(
@@ -1044,6 +1047,7 @@ Decl Declare_android_os_Parcel(const Context& context) {
     using Backing = DexVmAndroidContext::ParcelBacking;
     constexpr std::size_t kMaxParcelBytes = 16U * 1024U * 1024U;
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Parcel;");
+    builder.MergesBootClass();
     const auto native_ptr = builder.BoundInstanceField("mNativePtr", "I", dx::kAccPrivate);
     const auto owns = builder.BoundInstanceField("mOwnsNativeParcelObject", "Z", dx::kAccPrivate);
 

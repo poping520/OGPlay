@@ -37,109 +37,6 @@
       "java": "OpenJDK 1.6.0_41"
     }
   },
-  "boot_dex": {
-    "path": "framework/bootdex.jar",
-    "generator": "tools/bootdex/build_bootdex.py",
-    "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "8b94c05c0d5daa6651a892d3df622baf4d55c73a8a45f8b727d3ecde98569463",
-    "system_resources": {
-      "table": "tools/bootdex/api19-system-resources.json",
-      "table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3",
-      "entry": "META-INF/ogplay/system-resources.json",
-      "payload_sha256": "f82ea1f528a7603e0d9f8211bf68bd19c5357792ca4f19611b2f59fc0038eff9"
-    },
-    "sources": [
-      {
-        "source_project": "platform/libcore",
-        "source_jar": "core.jar",
-        "source_jar_sha256": "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"
-      },
-      {
-        "source_project": "platform/libcore",
-        "source_jar": "conscrypt.jar",
-        "source_jar_sha256": "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"
-      },
-      {
-        "source_project": "platform/external/apache-http",
-        "source_jar": "ext.jar",
-        "source_jar_sha256": "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2"
-      },
-      {
-        "source_project": "platform/frameworks/base",
-        "source_jar": "framework.jar",
-        "source_jar_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"
-      },
-      {
-        "source_project": "platform/frameworks/base",
-        "source_jar": "framework2.jar",
-        "source_jar_sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
-      },
-      {
-        "source_project": "platform/frameworks/base",
-        "source_jar": "android.policy.jar",
-        "source_jar_sha256": "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1"
-      },
-      {
-        "source_project": "OGPlay",
-        "source_root": "src/guest",
-        "source_roots": [
-          "src/guest/crypto/java",
-          "src/guest/framework/java",
-          "src/guest/io/java",
-          "src/guest/xml/java"
-        ],
-        "source_sha256": "bcc5ae4578452729236cfb534b811897f866fe12ad1d357795d7f73b48b9d1a9",
-        "javac": "17.0.18",
-        "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
-        "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
-      }
-    ],
-    "size": 16928209,
-    "sha256": "18a792d890457a07e7c33f54f529081e8ebdca6cc9067e669f053d51547593e3",
-    "dex_entry": "classes.dex",
-    "dex_size": 8530768,
-    "dex_sha256": "d89b1482e400a358d2cfea4390c1f63222069425a7b15fa38e7bb3ce51d0e387",
-    "class_count": 5736,
-    "selection_policy": "load-all",
-    "notice": "notices/bootdex.jar.txt",
-    "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a",
-    "candidate_recipe": {
-      "path": "tools/bootdex/java-traversal.json",
-      "sha256": "870142eebe7437e3fe1378cd9a759c28099756b92832f1fab47f352b8f1fbc16",
-      "entry": "META-INF/ogplay/java-traversal-recipe.json",
-      "payload_sha256": "bb709f1f8ad8dbfd7456fbefb05cf5e7b84fe5c74028fdb4fd00047f56d22e0f"
-    },
-    "vm_pairing": {
-      "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "d4d8dbb3da87cdf7d2f72d76827ff572756672d8b43bf3faaefc2500d904ef0a",
-      "mode": "java-traversal",
-      "version": 1
-    },
-    "member_sources": {
-      "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "1366648692b01bd334ecd8594295e6abfbe1d8563ae49c1984df409720d57ed4",
-      "composer": "tools/bootdex/compose_bootdex.py",
-      "composer_sha256": "a9c91c09d8389315fc281a0ff2c1e87c3d3776408236cd42228b818c7d4b3552"
-    },
-    "theme_projection": {
-      "entry": "META-INF/ogplay/theme-projection.json",
-      "schema_version": 1,
-      "sha256": "fd7746dbf251b46785b0d94c100c12c8840faef4c18831548add08d1aee3c3b5"
-    },
-    "experimental_video_adapter": {
-      "review": "tools/bootdex/view-video-adapter.json",
-      "sha256": "60254644776b857c344aea28148619cae5005baee74f3eb155f5f6c7cafe188a",
-      "entry": "META-INF/ogplay/view-video-adapter.json",
-      "rom_algorithm_credit": false
-    },
-    "experimental_inflater": {
-      "source": "android.policy.jar",
-      "sha256": "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1",
-      "owner": "Lcom/android/internal/policy/impl/PhoneLayoutInflater;",
-      "reference_sha256": "4ad8d16d37b9218b9f6929649a07f684803c90e90c434b3960062e2579c0ad68",
-      "baseline_sha256": "03ae9e0c2f5caf958f821965190004c5ea248faaa4ea156cdab310266f09bb96"
-    }
-  },
   "icu": {
     "source_project": "platform/external/icu4c",
     "source_revision": "18668f3b015a110275f5cc9a8722b2f65f3333bf",
@@ -288,7 +185,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "aecd67f21d52d97d389f15eb690de236893540888f635ca8672c0f781fbaa819",
+        "generator_sha256": "3d270668cb076d17faeac7c48e72c64150244b65063e33778df23bb37bbabab8",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",
@@ -436,5 +333,74 @@
       }
     ],
     "source_directory": "data/fonts"
+  },
+  "boot_classpath": {
+    "directory": "framework",
+    "generator": "tools/bootdex/build_bootdex.py",
+    "classpath": [
+      {
+        "path": "framework/ogplay.jar",
+        "source_project": "OGPlay",
+        "size": 4726354,
+        "sha256": "3425118312fe3f0a592f2140762c8783750a07d60ba8719dddeee95138845b96",
+        "sources": {
+          "roots": [
+            "src/guest/crypto/java",
+            "src/guest/framework/java",
+            "src/guest/io/java",
+            "src/guest/math/java",
+            "src/guest/xml/java",
+            "src/guest/zip/java"
+          ],
+          "sha256": "a096156d50302971ba6f2b07ff76378e66f52cc5b28178f9d20b309400d58a3a",
+          "javac": "17.0.18",
+          "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
+          "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
+        },
+        "resources": {
+          "META-INF/ogplay/system-resources.json": "846de14035dc7f261b34b7fe2e5b2e11820032613ad9653318d704cf0f986db0",
+          "META-INF/ogplay/theme-projection.json": "fd7746dbf251b46785b0d94c100c12c8840faef4c18831548add08d1aee3c3b5"
+        },
+        "system_resources_table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3"
+      },
+      {
+        "path": "framework/core.jar",
+        "source_project": "platform/libcore",
+        "size": 1231555,
+        "sha256": "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"
+      },
+      {
+        "path": "framework/conscrypt.jar",
+        "source_project": "platform/libcore",
+        "size": 145349,
+        "sha256": "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"
+      },
+      {
+        "path": "framework/ext.jar",
+        "source_project": "platform/external/apache-http",
+        "size": 1222968,
+        "sha256": "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2"
+      },
+      {
+        "path": "framework/framework.jar",
+        "source_project": "platform/frameworks/base",
+        "size": 3669632,
+        "sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"
+      },
+      {
+        "path": "framework/framework2.jar",
+        "source_project": "platform/frameworks/base",
+        "size": 583993,
+        "sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
+      },
+      {
+        "path": "framework/android.policy.jar",
+        "source_project": "platform/frameworks/base",
+        "size": 108252,
+        "sha256": "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1"
+      }
+    ],
+    "notice": "notices/boot-classpath.txt",
+    "notice_sha256": "940207b35da0d64684af4caae22b5bcb475adf183d4d151066bb1a7b8525d641"
   }
 }

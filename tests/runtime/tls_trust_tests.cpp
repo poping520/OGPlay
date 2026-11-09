@@ -329,7 +329,7 @@ struct TlsApp final {
         request.system_libraries = libraries;
         request.dex_bytes = ReadDexFixture("cipher.dex");
         request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_bytes = ogplay::test::ReadBootDex();
+        request.boot_dex_files = ogplay::test::ReadBootDex();
         request.context = context;
         request.dexvm.interpreter.backend = backend;
         request.surface_width = 64;

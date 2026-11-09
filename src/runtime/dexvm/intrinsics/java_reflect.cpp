@@ -1264,6 +1264,7 @@ IntrinsicClassDecl Declare_libcore_reflect_AnnotationAccess() {
 
 IntrinsicClassDecl Declare_java_lang_reflect_Proxy() {
     auto b = IntrinsicClassBuilder::Class("Ljava/lang/reflect/Proxy;");
+    b.MergesBootClass();
     b.StaticMethod(
         "generateProxy", "(Ljava/lang/String;[Ljava/lang/Class;Ljava/lang/ClassLoader;)Ljava/lang/Class;",
         [](IntrinsicContext& context) {

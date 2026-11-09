@@ -66,8 +66,7 @@ host DatabaseRuntime：connection / statement / window 资源及生命周期
 
 ## 4. BootDex 迁移边界
 
-从现有固定 API 19 framework JAR 按闭包选类，源码目录用于语义对照。最终类清单只维护
-在 `tools/bootdex/api19.json`，不将整个 android.database 包无条件导入。
+android.database 类族直接来自原样加载的 API 19 framework.jar，源码目录用于语义对照。
 
 | 类族 | 处理方向 |
 | --- | --- |

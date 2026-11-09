@@ -48,6 +48,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
 
 void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog) {
     auto block_guard = IntrinsicClassBuilder::Class("Ldalvik/system/BlockGuard;");
+    block_guard.MergesBootClass();
     block_guard.StaticMethod(
         "getThreadPolicy", "()Ldalvik/system/BlockGuard$Policy;",
         [](IntrinsicContext& call) {
@@ -61,6 +62,7 @@ void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog) {
         kAccPublic | kAccStatic);
     catalog.push_back(std::move(block_guard).Build());
     auto file = IntrinsicClassBuilder::Class("Ljava/io/File;");
+    file.MergesBootClass();
     file.StaticMethod(
         "listImpl", "(Ljava/lang/String;)[Ljava/lang/String;",
         [](IntrinsicContext& call) {
@@ -106,6 +108,7 @@ using namespace detail;
 namespace ogplay::runtime::dexvm::intrinsics {
 IntrinsicClassDecl Declare_org_ogplay_io_LogOutputStream() {
     auto builder = IntrinsicClassBuilder::Class("Lorg/ogplay/io/LogOutputStream;");
+    builder.MergesBootClass();
     builder.StaticMethod(
         "emit", "(Ljava/lang/String;ZZ)V",
         [](IntrinsicContext& c) {
@@ -375,6 +378,7 @@ IntrinsicClassDecl DeclareOutputStreamWriter() {
 
 IntrinsicClassDecl Declare_java_io_ObjectStreamClass() {
     auto b = IntrinsicClassBuilder::Class("Ljava/io/ObjectStreamClass;");
+    b.MergesBootClass();
     b.StaticMethod(
         "getConstructorId", "(Ljava/lang/Class;)J",
         [](IntrinsicContext& c) {
@@ -418,6 +422,7 @@ IntrinsicClassDecl Declare_java_io_ObjectStreamClass() {
 
 IntrinsicClassDecl Declare_java_io_ObjectOutputStream() {
     auto b = IntrinsicClassBuilder::Class("Ljava/io/ObjectOutputStream;");
+    b.MergesBootClass();
     b.UnimplementedStatic("getFieldL",
                           "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
                           kAccPrivate | kAccNative);

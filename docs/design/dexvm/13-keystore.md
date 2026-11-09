@@ -41,7 +41,7 @@ PKCS12/JKS、UBER/BouncyCastle 加密 store 类型另行规划，不为规避 BK
 | 网络 | SSLContext.init 明确失败；真实 TLS/PKIX 尚未实现 | 独立后续能力，不能据 KeyStore 完成宣称在线可用 |
 
 依据：[CURRENT](../../state/CURRENT.md)、[DVM-169](../../tasks/dexvm/DVM-169.md)、
-[DVM-164](../../tasks/dexvm/DVM-164.md)、[BootDex 配方](../../../tools/bootdex/api19.json)、
+[DVM-164](../../tasks/dexvm/DVM-164.md)、[启动类路径构建](../../../tools/bootdex/build_bootdex.py)、
 [provider 配置](../../../src/runtime/dexvm/intrinsics/java_crypto.cpp)、
 [SSL 边界](../../../src/runtime/dexvm/intrinsics/java_net.cpp)、
 [crypto 契约](../../../src/guest/crypto/MODULE.md)、

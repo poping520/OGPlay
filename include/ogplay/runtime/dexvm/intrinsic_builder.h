@@ -105,6 +105,12 @@ public:
     // class. This does not define or replace the class or its methods.
     IntrinsicClassBuilder& AdmitBootNativeMethods();
 
+    // Declares handlers for selected members of the boot classpath class
+    // of the same name; its remaining members keep their DEX bytecode.
+    // Without this (or AdmitBootNativeMethods) the declaration replaces
+    // the whole boot class.
+    IntrinsicClassBuilder& MergesBootClass();
+
     IntrinsicClassBuilder& VirtualMethod(std::string name, std::string descriptor, IntrinsicHandler handler,
                                          std::uint32_t access_flags = kAccPublic);
 

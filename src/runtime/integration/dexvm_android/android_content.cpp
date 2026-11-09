@@ -475,6 +475,7 @@ InvokeAndroidVirtual(dx::IntrinsicContext& context, const dx::VmObjectRef receiv
 Decl Declare_android_content_ContentResolver(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/ContentResolver;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     builder.StaticMethod(
         "hasHandler", "(Landroid/database/ContentObserver;)Z",
         [](dx::IntrinsicContext& call) {
@@ -614,6 +615,7 @@ Decl Declare_android_database_CursorWindow(const Context& context) {
     };
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/database/CursorWindow;", "Landroid/database/sqlite/SQLiteClosable;", {"Landroid/os/Parcelable;"});
+    builder.MergesBootClass();
     builder.StaticMethod("nativeCreate", "(Ljava/lang/String;I)I", [context](dx::IntrinsicContext& call) {
         const auto size = call.arguments[1].AsInt();
         if (size <= 0) DbThrow("CursorWindow capacity is invalid");
@@ -787,6 +789,7 @@ Decl Declare_android_database_sqlite_SQLiteConnection(const Context& context) {
         return found->second;
     };
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/database/sqlite/SQLiteConnection;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     builder.StaticMethod(
         "nativeOpen", "(Ljava/lang/String;ILjava/lang/String;ZZ)I", DbNative([context](dx::IntrinsicContext& call) {
             if (context->vfs == nullptr) DbThrow("SQLite VFS is unavailable");
@@ -937,6 +940,7 @@ Decl Declare_android_database_sqlite_SQLiteConnection(const Context& context) {
 
 Decl Declare_android_database_sqlite_SQLiteDebug(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/database/sqlite/SQLiteDebug;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     builder.StaticMethod("nativeGetPagerStats", "(Landroid/database/sqlite/SQLiteDebug$PagerStats;)V",
                          [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     return std::move(builder).Build();
@@ -945,6 +949,7 @@ Decl Declare_android_database_sqlite_SQLiteDebug(const Context&) {
 Decl Declare_android_database_sqlite_SQLiteConnection_Operation(const Context&) {
     auto builder =
         dx::IntrinsicClassBuilder::Class("Landroid/database/sqlite/SQLiteConnection$Operation;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     // sDateFormat is used only by verbose operation diagnostics. Normal SQL
     // execution never reads it; keep it null until NativeDecimalFormat exists.
     builder.ClassInitializer([](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
@@ -953,6 +958,7 @@ Decl Declare_android_database_sqlite_SQLiteConnection_Operation(const Context&) 
 
 Decl Declare_android_database_sqlite_SQLiteGlobal(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/database/sqlite/SQLiteGlobal;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     builder.StaticMethod("nativeReleaseMemory", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     return std::move(builder).Build();
 }
@@ -1134,6 +1140,7 @@ void LoadPreferencesOnce(const Context& context, const std::string& name) {
 
 Decl Declare_android_content_Context(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Context;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     const auto inflater = std::optional<dx::IntrinsicFieldHandle>{};
     {
         builder.VirtualMethod(

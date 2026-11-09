@@ -4,39 +4,26 @@
 
 有界 Dalvik 解释器（ADR-0017、`docs/design/dexvm/`）：负责类链接、Java 对象模型、
 switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intrinsic。只加载应用 DEX
-与受审 API 19 BootDex；不提供完整 Dalvik/ART、动态 classpath、JIT 或 Android 服务。
+与 API 19 启动类路径；不提供完整 Dalvik/ART、动态 classpath、JIT 或 Android 服务。
 
 ## 核心契约
 
 ### 链接、类加载、反射
 
-- 装配顺序固定为 `RegisterIntrinsics → RegisterBootDex → RegisterDex → Link`。Boot/App 分别
-  保存 DEX unit 与常量池缓存；解析使用方法所属 unit。BootDex 提供 class/field/hierarchy，
-  同签名 intrinsic 只 overlay 方法；未绑定 native 明确失败。
-  ADR-0158 显式组合由封存 JAR 的 `META-INF/ogplay/member-sources.json` 传入
-  `RegisterBootDex`：完整 ROM 形状/字段/clinit 唯一；逐签名选择 ROM 字节码、受审 handler
-  或缺口失败。ROM 来源清除旧 handler，失败来源禁用旧 handler 与字节码；额外 intrinsic
-  成员、未批准 overlay/native 拒绝。未启用时沿用既有 overlay 契约。
-  构建期固定输入、flags、方法体 hash、字段初始化策略并验证依赖；运行时不接受动态配置。
-  来源 ui-degraded 只用于无返回值的实例显示设置：绑定为记录 UI 降级后返回的 handler，不执行 ROM 字节码（ADR-0147 修订）。
-  member-sources 严格 JSON 解析上限为 4 MiB，诊断 surface 入口使用相同上限。
+- 装配顺序固定为 `RegisterIntrinsics → RegisterBootDex（按启动类路径顺序逐个 DEX）→
+  RegisterDex → Link`。各 DEX unit 保存自己的常量池缓存，解析使用方法所属 unit。
+  同一描述符以先注册者为准，后续 boot DEX 副本忽略；应用 DEX 父优先。
+  intrinsic 默认是整类定义，boot DEX 同名类被忽略；声明 `MergesBootClass` 或
+  `AdmitBootNativeMethods` 时，第一个 boot DEX 定义并入该声明：DEX 提供 class/field/
+  hierarchy，带 handler 的同签名 intrinsic 覆盖方法体，无 handler 的声明让位 DEX 字节码。
+  无绑定的 boot native 调用时记账并抛 `UnsatisfiedLinkError`；`SetUnboundNativePolicy`
+  可由集成层为特定签名提供 handler（Android 用于 UI 降级），dexvm 本身不含平台名单。
   IntrinsicMethodDecl.adapter_review 是可选的诊断来源引用，随绑定保留至 LinkedMethod；
   dump-surface 同时标 implementation_source=adapter 与 review 引用，origin/binding 仍为
-  handwritten/intrinsic。此标识不授予成员准入或 ROM 算法信用；切换 rom/failure 时清除。
-  组合字段逐项选择 rom/failure：前者由 Java 唯一维护，后者保持 ROM 布局但访问经
-  is_unimplemented/RequireImplementedField 记账失败；被选字节码不得读写 failure 字段。
-  clinit 必须执行原版 ROM，其依赖按常规规则准入；无空初始化或自动跳过。
+  handwritten/intrinsic。DEX 字节码接管该方法时清除。
   ADR-0173 的 constructor_inputs 是实例构造器进入 ROM 帧前的受审输入接缝；参数受 GC 保护、
   异常透传、必须返回 void，不替换方法体或改变字段 flags。Android 只绑定 ViewConfiguration
   Context 构造器的两个原有 private 实例输入字段，原 ROM 构造器仍完整执行。
-  ADR-0159 仅对组合普通方法的非唯一 virtual/interface 调用开放：构建封存逐调用点的全部
-  implemented/failure 目标 ledger，应用覆写不在构建期集合。direct/static/super、精确接收者、
-  failure 字段及动态入口仍严格检查，clinit 传递闭包与默认 selector 不变。
-  runtime 不将 ledger 中的 failure 目标升为实现；支持路径须以运行记账零命中验收。
-  字段接收者按 ADR-0159 VD-06a 第三次修订封存 null-writer / 不可分配 / unproven 分类；
-  构造器和宿主分配证据只提供信心，不拒绝 unproven，也不把 failure 目标升为实现。
-  严格调用/字段/clinit 不变；组合类按 ADR-0158 VD-06a 补充只审计 rom/clinit 活动体的
-  父成员引用，全部成员形状仍检查。非组合类默认 selector 保持全 own-body 审计。
 
   DEX 解析失败保留 loader 的 reason/offset，并标识 boot/application 来源及输入字节数。
 - APK class_def 经同源重复校验；已登记 bootstrap 身份按 parent-first 胜出，不登记或混合
@@ -311,14 +298,14 @@ RealToString 只保留 bigIntDigitGenerator native，字段经绑定 handle，�
 直接 native 调用将 VmJavaThrow 转为 VmCallOutcome，保留原异常身份和消息。
 
 诊断 `DexClassLinker::DumpSurfaceJson` 对专用装配实例执行链接（不初始化类），导出实际成员、
-BootDex 优先来源、父类/接口、encoded/intrinsic 常量和逐类链接错误。implemented 表示有 handler、
+启动类路径来源、父类/接口、encoded/intrinsic 常量和逐类链接错误。implemented 表示有 handler、
 字节码或 abstract 契约；动态 guest JNI 没有静态绑定证据时保守标 unimplemented-ledger，
 并附 guest-jni-unverified，不等价于证明目标后端不存在或全部行为已实现。
 
 ### 未实现成员（ADR-0147）
 
-BootDex 成员组合中声明为 failure 的方法与构造器是未绑定 intrinsic，调用进入既有能力记账及
-UnsatisfiedLinkError。failure 字段带 is_unimplemented，switch/threaded 的 sget/sput/iget/iput
+无 handler 的 intrinsic 方法、构造器与未绑定的 boot native 调用时进入既有能力记账及
+UnsatisfiedLinkError。带 is_unimplemented 的字段，switch/threaded 的 sget/sput/iget/iput
 在访问存储前记 `dexvm.field.*` 并抛 UnsatisfiedLinkError；不会返回默认零/null。
 Survey 下未实现方法/字段命中时记账（仍写 ledger）并返回 0/null/void，字段读写落在零初始化槽位；
 仅 API19 不存在的成员/类沿用合成中性桩。关闭 survey 即恢复上述失败语义；该模式不代表兼容支持。

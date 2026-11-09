@@ -75,10 +75,12 @@ python3 tools/conformance/dalvik_tests.py --update-baseline # 无回归才更新
 
 产物默认写 `.local/analysis/wu6/`（summary.md/json、逐用例 stdout/stderr/ledger），不进仓库。
 
-## API 19 BootDex
+## API 19 启动类路径
 
-`bootdex/build_bootdex.py` 根据 [`bootdex/api19.json`](bootdex/api19.json) 从 API 19 ROM/AOSP jar
-精确选取 class_def，以 smali/baksmali 3.0.10 重组 DEX，并生成固定格式的 JAR。
+`bootdex/build_bootdex.py` 生成 `data/android/19/framework/`：六个 ROM jar（core、conscrypt、
+ext、framework、framework2、android.policy）从 `.local/aosp` 原样复制并校验固定 SHA-256；
+`src/guest/*/java` 下的 OGPlay Java 用 javac 17 + API 19 android.jar + d8 编成 `ogplay.jar`，
+排在启动类路径最前，同名类以它为准。manifest 记录每个 jar 的顺序、来源与哈希。
 
 ```text
 python3 tools/bootdex/build_bootdex.py build
@@ -86,73 +88,14 @@ python3 tools/bootdex/build_bootdex.py check
 ```
 
 `api19-system-resources.json` 保存受审资源名、类型、消费者及 OGPlay 配置值，不固定 ROM
-资源 ID，也不依赖本地 AOSP config.xml。build/check 从最终 DEX 中的实际 Resources 调用
-提取 ID，生成 `META-INF/ogplay/system-resources.json` 并与 classes.dex 同包发布。
-运行时从当前 BootDex 归档读取映射；更换输入后重新 build/check，无需因 ID 变化重编译宿主。
-SQLite journal mode 保留 DELETE；读取 WAL 配置不代表支持 WAL。
-
+资源 ID。build/check 从 framework.jar 中实际的 Resources 调用提取 ID，生成
+`META-INF/ogplay/system-resources.json` 放入 ogplay.jar；主题投影
+（`theme_projection.py`）同样放入 ogplay.jar。SQLite journal mode 保留 DELETE；读取 WAL 配置不代表支持 WAL。
 提取器支持常量、普通 move 和 invoke/range；分支/标签清除常量事实，无法证明的 ID、
-类型变化、重复 ID、遗漏/新增查询明确失败并指出消费者。它不自动适配厂商新增类或 native。
+类型变化、重复 ID、遗漏/新增查询明确失败并指出消费者。
 
-`bootdex/select_shapes.py` 用四个 ROM JAR 的 class_def/原版 smali 筛选纯形状：
-
-```text
-python3 tools/bootdex/select_shapes.py --self-test
-python3 tools/bootdex/select_shapes.py --surface <dump-surface.json> --scan-dir <preflight目录> --report <本地报告.json>
-# 审阅 candidates/conflicts/依赖后，同参数加 --apply 才修改 api19.json；随后 build/check。
-```
-
-只选题库引用且依赖已在当前运行时可链接的类；跳过已有 intrinsic、BootDex 及策略归属。
-当前保守子集只接受全 abstract 的接口/注解、encoded 基元/String 常量 final 类及空 clinit；
-不接受构造器、枚举、计算式初始化或其他行为代码。依赖包括签名/注解中的类型；
-未引用的依赖不自动纳入。报告/反汇编缓存留 `.local/`，边界见 [DVM-252](../docs/tasks/dexvm/DVM-252.md)。
-
-`select_rom_java.py --scope closure` 按 [ADR-0155](../docs/adr/dexvm.md#adr-0155)
-从当前 BootDex 配方与 intrinsic 声明出发，沿 ROM 方法体引用补全准入闭包，包含父类与
-初始化必需类；不依赖样本库。拒绝类不作为继续遍历的桥梁。
-父类按 [ADR-0156](../docs/adr/dexvm.md#adr-0156) 统一处理 intrinsic 与 overlay BootDex：
-检查全部自身方法体，不触及父类未实现成员，不覆写不可覆写方法；字节码父类以 ROM
-final 标志为准，intrinsic 以 overridable 契约为准。Binder 父类和被拒父类继续级联拒绝。
-拒绝原因分别为 `parent-intrinsic-unimplemented-member`、`overrides-nonoverridable`。
-
-```text
-python3 tools/bootdex/select_rom_java.py --scope closure --surface <dump-surface.json> --report <selection.json> --apply
-python3 tools/bootdex/build_bootdex.py build
-python3 tools/bootdex/build_bootdex.py check
-# 用当前 ogplay-cli dexvm dump-surface 重新导出后：
-python3 tools/bootdex/select_rom_java.py --check-closure --surface <new-surface.json> --report <closure-check.json>
-```
-
-检查缺口非零即失败并列出类；method_ids/field_ids 本批不超过 60000，仍为单 dex。
-`--scope referenced --scan-dir <preflight目录>` 只保留作样本引用诊断。
-
-BootDex 成员审计只用一份固定快照 `bootdex/runtime.surface.json.gz`，它不进入产物。新增 overlay
-时只改快照中对应的行，再把所有 `*-sources.json` 和 `member-sources.json` 里的 `surface_sha256`
-统一换成新哈希，不要新增快照文件。
-
-2026-11 起旧快照已从 git 历史移除，检出 2026-10-24 至 2026-11-05 之间的提交后无法校验或构建 BootDex。
-
-`select_rom_java.py --replace-intrinsic <descriptor...>` 是 ADR-0154 的显式撤换入口，
-需同时提供 `--surface` 与 `--report`；默认只出报告，`--apply` 写入目标及其准入初始化闭包。
-仅允许已有同签名 native 绑定；其他规则不放宽。源码/签名交互需在同批删除或改经 Java 调用，
-选择通过不能代替状态所有权审计与回归门禁。默认 ADR-0148 筛选保持原行为。
-首批撤换及退回原因、基点与回归证据见 [DVM-265](../docs/tasks/dexvm/DVM-265.md)。
-
-输入默认位于 `.local/aosp` 和 `.local/tools`；换 ROM 时应使用同一来源配套的输入 JAR。
-JAR 哈希记录于 manifest 供追溯，不作为固定来源准入条件；工具下载仍校验固定 SHA-256。
-新增类时修改 recipe 对应源 jar 的有序列表，运行时仍全量加载生成物中的 class_def。
-`build`/`check` 均执行两次独立重组并核对 DEX 一致；check 校验 JAR、内嵌映射和 manifest。
-
-`api19.json` 的 `date_family_audit` 保存 DVM-102 日期闭包的依赖分类、native 边界与
-ICU 来源；`roots` 冻结原 42 类审计样本，不随依赖迁移扩大；其中 `boot_dex` 是主类清单的受检子集，外部依赖分类不得与主清单冲突。
-`audit` 校验固定 `core.jar`、全部引用分类与 native 签名，完整派生成员表写入
-`.local/dvm102-date-family-audit.json`。`--report` 可指定报告路径；`--emit-expectations`
-只打印观测指标供审阅，不修改冻结值。清单结构校验与审计自测统一由 builder 执行：
-
-```text
-python3 tools/bootdex/build_bootdex.py audit
-python3 tools/bootdex/build_bootdex.py --self-test
-```
+`build` 两次独立编译 guest Java 并核对 DEX 一致；`check` 重新生成并与现有制品、manifest 比对。
+输入默认位于 `.local/aosp`、`.local/toolchain` 和 `.local/tools`（baksmali 下载时校验 SHA-256）。
 
 `generate_virtual_keymap.py` 从本地 API19 `Virtual.kcm` 与 `KeyEvent.java` 生成虚拟键盘
 native 查询表；`--check` 核对生成数据及来源哈希。只接受受审属性，未知行为明确失败。
@@ -252,7 +195,7 @@ CMake 会按宿主选择平台/CPU，并逐文件验证清单。普通 Debug 构
 
 ### 静态体检（DIAG-4 / WU1）
 
-`ogplay-cli dexvm dump-surface [--bootdex <jar>]` 导出真实 linked catalog/BootDex 表面，
+`ogplay-cli dexvm dump-surface [--framework <dir>]` 导出真实 linked catalog/启动类路径表面，
 保留链接错误、来源、常量和动态 guest JNI 未核实状态。`dexvm_api19_surface.py --jar ...`
 可重复指定 API19 core/framework/framework2/ext ROM JAR，提取全部类层级及 public/protected
 成员、encoded 常量和输入哈希，沿用 schema 1 的 classes 列表；源码模式保持可用。

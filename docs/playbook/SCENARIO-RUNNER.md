@@ -50,31 +50,8 @@ python tools/run_scenario.py \
   是单个 JSON 文档，失败时形如 `{"schema":1,"status":"invalid","reason":"…"}`，
   可直接被包装脚本消费。
 
-> DVM-331：默认载荷及装配均为 JavaTraversal。下述 staging 工具保留为隔离调试用途，
-> 不再用于启用实验模式；旧 Legacy 只能使用冻结基线整包，不能交给当前 CLI 回落。
-
-默认制品使用 `python3 tools/bootdex/compose_bootdex.py build` 重建，build 后无需再跑 `check`（它只做同样的构建并比对已提交制品）；
-旧 `build_bootdex.py` 仅保留固定 native/JNI 来源生成与审计职责，不用于重建默认 guest View 制品。
-默认和调试候选必须具有相同五项配对身份；当前 CLI 对旧无配对归档明确失败。
-
-## JavaTraversal 独立 staging（VD-11）
-
-先构建当前 `ogplay-cli` 并生成配对制品，再复制为新的独立目录；脚本不启动游戏，
-不会覆盖仓库 data 或原 CLI。可执行文件相邻依赖库与 data 副本一起复制，只有
-`data/android/19/framework/bootdex.jar` 被指定配对 JAR 替换；生产 manifest 仍是原副本，
-实验身份以配对 JAR 与 staging-manifest.json 为准。
-
-```text
-python3 tools/bootdex/compose_bootdex.py build --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar
-python3 tools/stage_java_traversal.py --ogplay-cli build/release/ogplay-cli \
-  --bootdex build/release/dexvm_fixtures/view-measure.jar --output .local/staging/java-traversal
-```
-
-`staging-manifest.json` 列出全部相对路径/SHA-256、模式版本和唯一替换项，可逐项重算。
-输出目录必须不存在；未知模式、封存身份不符、缺主题投影拒绝。VM owner 在建立前固定，
-运行中不可切换，不自动回落 Legacy。后续运行沿用上节 runner 参数，改为
-`--ogplay-cli <staging>/ogplay-cli`（Windows 为 `.exe`）；保持相同 fixture/存档源/显示/
-后端并使用新证据目录。11-1 尚未完成生产遍历接线，不代表实验九场景已通过。
+启动类路径用 `python3 tools/bootdex/build_bootdex.py build` 重建（ogplay.jar + 原样 ROM jar），
+`check` 只做同样的构建并比对已有制品。
 
 ## 适配与回归：相同输入，两种模式
 
@@ -150,49 +127,3 @@ python tools/run_scenario.py --watch --scenario … --evidence-dir … （其余
 `tools.scenario_validator_self_test` 与 `tools.scenarios_current` 覆盖场景校验。
 改 runner 或 schema 后这三项必须过。真 APK 场景不入 CI（题库不入库），基础回归各跑一次；正式 title gate/golden 才三轮复跑。
 
-## View 遍历迁移离线比较
-
-`python3 tools/compare_ui_scenarios.py --baseline A.json --candidate B.json --output AB.json`
-比较九个Result v1；同样比较A/C。`--self-test`只生成临时合成夹具，不启动APK。
-退出码0通过，1失败/needs_review，2输入或证据无效。签名改变总是needs_review，
-即使阶段更晚也不自动通过；阶段提前或成功checkpoint前缀减少失败。
-
-矩阵schema=1、normalizer_version=`vd11-reviewed-fault-v1`、cases长度9。
-每case包含result/evidence的`{path,sha256}`引用（相对矩阵目录或绝对路径），以及：
-
-- inputs：scenario_sha256、profile_sha256、fixture_sha256_by_id、
-  sandbox_seed_sha256、display_settings、backend、hardware、run_options、budgets。
-- implementation：binary_sha256、bootdex_sha256、member_manifest_sha256、mode、
-  mode_version、ROM_hashes、font_hashes、build_id。
-- fault_source：passed为null；failed为`{phase,checkpoint,log:{path,sha256}}`。
-  phase是原始trace审阅后的Application/Activity/Surface/frame/shutdown；checkpoint是首个
-  failed checkpoint ID（启动/退出无failed checkpoint时null），不能按耗时/帧数猜阶段。
-
-归一化器读取原始log中的`exception: L...;`和紧随的`message:`，保留异常、精确成员及
-消息（含尺寸/计数）；没有消息内成员时读取首个Java stack成员。native支持显式
-`native fault: <category> module=<soname> relative_pc=0x...`证据，拒绝裸guest PC。
-退出码从Result的`exited with status N`提取，timeout另列。未知格式、缺模块映射、
-无精确成员或阶段证据须先审阅归一化规则，不能手写fault签名或把退出1当相同首错。
-阶段注记须匹配原始`[owner] phase=...`记录、明确的生命周期错误上下文或Result的checkpoint阶段；
-未知阶段拒绝。仍需人工trace审阅，哈希只证明证据未变化，不替代该审阅。
-
-`freeze` 将已完成的 B/C 证据封存为矩阵，不启动进程：
-
-```text
-python3 tools/compare_ui_scenarios.py freeze --group B \
-  --evidence-root <preserved-B-evidence> --bundle <preserved-B-bundle> --output B.json
-python3 tools/compare_ui_scenarios.py freeze --group C \
-  --evidence-root <C-evidence> --bundle <C-bundle> --output C.json
-```
-
-bundle 可以是已有 schema=1 矩阵文件（保留原实现身份），或可重算 CLI/库/BootDex/font
-哈希的目录。目录须含 `comparison-manifest.json`：同矩阵 schema/normalizer_version/cases，
-每 case 保存完整 inputs、implementation 的 ROM_hashes 及 scenarioId；也可直接复制一份
-已封存输入矩阵作为 sidecar。目录实际 BootDex pairing 决定模式，B=Legacy、C=JavaTraversal；
-不得拿当前 bundle 冒充旧运行制品。没有保存的历史输入身份即拒绝，不从当前环境推断。
-旧矩阵无 scenarioId 时读取并核验其原 Result 哈希及 profile，再按 scenarioId 匹配新证据。
-输出前重新验证九个 Result、全部证据及首错；失败保留已有输出。
-
-无 fault 的 checkpoint wall-time 超时以 Result 的已开始 checkpoint 证明 frame 阶段，
-签名含 checkpoint 和 presented 序号；后续 teardown 超时仍单列，不替换首错。
-未知 fatal/native/cause 或缺少无 fault 断言仍拒绝；此分类不宣称画面通过验收。

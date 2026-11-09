@@ -200,7 +200,9 @@ ParsedUri ParseUri(std::string spec) {
 }
 
 IntrinsicClassDecl DeclarePlatformHttpURLConnection() {
-    return std::move(IntrinsicClassBuilder::Class("Ljava/net/HttpURLConnection;", "Ljava/net/URLConnection;")).Build();
+    return std::move(IntrinsicClassBuilder::Class("Ljava/net/HttpURLConnection;", "Ljava/net/URLConnection;")
+                         .MergesBootClass())
+        .Build();
 }
 
 IntrinsicClassDecl DeclareProxySelector() {
@@ -428,6 +430,7 @@ struct UrlConnectionDeclaration final {
 
 UrlConnectionDeclaration DeclarePlatformUrlConnection() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/net/URLConnection;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     const auto url = builder.BoundInstanceField("url", "Ljava/net/URL;", kAccProtected);
     const auto connected = builder.BoundInstanceField("connected", "Z", kAccProtected);
     return {std::move(builder).Build(), url, connected};
@@ -760,6 +763,7 @@ std::string NumericAddress(Interpreter& vm, const VmObjectRef address) {
 void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services) {
     auto constants =
         IntrinsicClassBuilder::Class("Llibcore/io/OsConstants;", "Ljava/lang/Object;", {}, kAccPublic | kAccFinal);
+    constants.MergesBootClass();
     std::vector<std::pair<IntrinsicFieldHandle, std::int32_t>> fields;
     fields.reserve(kApi19OsConstants.size());
     for (const auto& value : kApi19OsConstants)
@@ -778,6 +782,7 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
 
     auto posix = IntrinsicClassBuilder::Class("Llibcore/io/Posix;", "Ljava/lang/Object;", {"Llibcore/io/Os;"},
                                               kAccPublic | kAccFinal);
+    posix.MergesBootClass();
 #include "api19_posix_natives.inc"
     posix.VirtualMethod("sysconf", "(I)J", [cores = services.cpu_cores](IntrinsicContext& call) {
         const auto selector = call.arguments[0].AsInt();
@@ -1562,6 +1567,7 @@ IntrinsicClassDecl DeclareDatagramSocket() {
 
 IntrinsicClassDecl DeclareSocketFactory(const CoreIntrinsicServices& services) {
     auto builder = IntrinsicClassBuilder::Class("Ljavax/net/SocketFactory;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     builder.StaticMethod("getDefault", "()Ljavax/net/SocketFactory;", [services](IntrinsicContext& call) {
         if (services.singleton) {
             return VmValue::Ref(services.singleton(call.vm, "socket_factory", "Ljavax/net/SocketFactory;"));

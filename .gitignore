@@ -27,6 +27,6 @@ crash-*/
 /games/
 /user-data/
 
-bootdex.jar
+/data/android/19/framework/
 /data/webui/
 /webui/node_modules/

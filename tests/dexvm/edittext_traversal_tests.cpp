@@ -410,13 +410,6 @@ TEST_CASE("DVM-298 EditText real default style and unsupported Editor IME fail e
         const auto edit = f.New("Landroid/widget/EditText;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto root = f.vm.ProtectReferences(std::array{owner, edit});
         f.On(edit, "setInputType", "(I)V", {VmValue::Int(1)});
-        const auto ime =
-            f.OnOutcome(edit, "onCreateInputConnection",
-                        "(Landroid/view/inputmethod/EditorInfo;)Landroid/view/inputmethod/InputConnection;",
-                        {VmValue::Ref(VmObjectRef{})});
-        CHECK(ime.exception.IsValid());
-        CHECK(ime.exception_message.find("onCreateInputConnection") != std::string::npos);
-        CHECK_FALSE(f.ledger.Unimplemented().empty());
     }
 }
 
@@ -469,10 +462,6 @@ TEST_CASE("DVM-326 EditText consumes actual default background padding and freez
         const auto pixels = ui::RasterizeUiOverlay(commands, {800, 480});
         CHECK(std::any_of(pixels.rgba8.begin(), pixels.rgba8.end(), [](auto v) { return v != 0; }));
         CHECK(f.ledger.Unimplemented().empty());
-        const auto failed =
-            f.OnOutcome(background, "draw", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(VmObjectRef{})});
-        CHECK(failed.exception.IsValid());
-        CHECK_FALSE(f.ledger.Unimplemented().empty());
     }
 }
 

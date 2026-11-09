@@ -246,6 +246,7 @@ void DexClassLinker::RegisterIntrinsics(const std::span<const IntrinsicClassDecl
         linked.is_intrinsic = true;
         linked.is_interface = declaration.is_interface;
         linked.admit_boot_native_methods = declaration.admit_boot_native_methods;
+        linked.merges_boot_class = declaration.merges_boot_class || declaration.admit_boot_native_methods;
         linked.defining_loader = kBootstrapLoader;
         linked.initiating_loader_mask = LoaderMask(kBootstrapLoader);
         linked.access_flags = declaration.access_flags;
@@ -333,179 +334,24 @@ VmFieldId DexClassLinker::ResolveIntrinsicFieldBinding(const std::uint64_t token
     return found->second;
 }
 
-std::string DexClassLinker::BootDexMemberSources(const std::span<const std::byte> archive_bytes) {
-    if (archive_bytes.empty()) return {};
-    constexpr std::string_view name = "META-INF/ogplay/member-sources.json";
-    const auto archive = loader::ParseApkArchive(archive_bytes);
-    for (const auto& entry : archive.entries) {
-        if (entry.name != name) continue;
-        const auto bytes = loader::ReadApkEntry(archive_bytes, archive, name);
-        return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
-    }
-    return {};
+DexUnitId DexClassLinker::RegisterBootDex(std::vector<std::uint8_t> dex_bytes) {
+    return RegisterDexUnit(std::move(dex_bytes), true);
 }
 
-DexUnitId DexClassLinker::RegisterBootDex(std::vector<std::uint8_t> dex_bytes, const std::string_view member_sources) {
-    if (member_sources.empty()) return RegisterDexUnit(std::move(dex_bytes), true);
-    const auto invalid = [](const std::string& message) {
-        Fail(DexVmErrorReason::invalid_member, "boot member sources: " + message);
-    };
-    core::JsonParseError error;
-    const auto document = core::JsonDocument::ParseStrict(member_sources, error, 4U * 1024U * 1024U);
-    if (!document) invalid("invalid JSON: " + error.message);
-    const auto member = [&](const core::JsonValue value, const std::string_view name) {
-        const auto found = value.Member(name);
-        if (!found) invalid("missing " + std::string(name));
-        return *found;
-    };
-    const auto text = [&](const core::JsonValue value, const std::string_view name) {
-        const auto result = member(value, name).String();
-        if (!result) invalid("non-string " + std::string(name));
-        return std::string(*result);
-    };
-    if (member(document->Root(), "schema").Integer() != 1) invalid("schema");
-    const auto classes = member(document->Root(), "classes");
-    if (!classes.IsArray()) invalid("classes must be array");
-    std::vector<std::string> failed_native;
-    for (std::size_t i = 0; i < classes.Size(); ++i) {
-        const auto row = *classes.Element(i);
-        const auto methods = member(row, "methods");
-        if (!methods.IsArray()) invalid("methods must be array");
-        for (std::size_t j = 0; j < methods.Size(); ++j) {
-            const auto method = *methods.Element(j);
-            if (text(method, "source") == "failure" || text(method, "source") == "ui-degraded")
-                failed_native.push_back(text(row, "owner") + "->" + text(method, "signature"));
-        }
-    }
-    const auto unit = RegisterDexUnit(std::move(dex_bytes), true, failed_native);
-    std::set<std::string> owners;
-    for (std::size_t i = 0; i < classes.Size(); ++i) {
-        const auto row = *classes.Element(i);
-        const auto owner = text(row, "owner");
-        if (!owners.insert(owner).second) invalid("duplicate class " + owner);
-        const auto id = FindClass(owner);
-        if (!id || !impl_->ClassAt(*id).is_boot_dex) invalid("not a ROM class " + owner);
-        auto& cls = impl_->ClassAt(*id);
-        const auto& rom_data = impl_->UnitAt(unit).class_data[*cls.dex_class_def_index];
-        if (rom_data.static_fields.size() + rom_data.instance_fields.size() !=
-                cls.own_static_fields.size() + cls.own_instance_fields.size() ||
-            rom_data.direct_methods.size() + rom_data.virtual_methods.size() !=
-                cls.own_direct_methods.size() + cls.own_virtual_methods.size())
-            invalid("legacy members outside ROM shape " + owner);
-        if (text(row, "shape_owner") != "rom") invalid("shape owner");
-        const auto clinit = text(row, "clinit_owner");
-        if (clinit != "rom" && clinit != "rom-absent") invalid("clinit owner");
-        const auto fields = member(row, "fields");
-        if (!fields.IsArray()) invalid("fields must be array");
-        std::set<std::string> field_keys;
-        for (std::size_t j = 0; j < fields.Size(); ++j) {
-            const auto field = *fields.Element(j);
-            const auto key = text(field, "signature");
-            if (!field_keys.insert(key).second) invalid("duplicate field " + key);
-            bool found = false;
-            for (const auto* list : {&cls.own_static_fields, &cls.own_instance_fields}) {
-                for (const auto fid : *list) {
-                    auto& actual = impl_->FieldAt(fid);
-                    if (actual.name + ":" + actual.descriptor != key) continue;
-                    found = member(field, "flags").UnsignedInteger() == actual.access_flags;
-                    const auto source = text(field, "source");
-                    if (source != "rom" && source != "failure") invalid("field source " + key);
-                    actual.is_unimplemented = source == "failure";
-                }
-            }
-            if (!found) invalid("field identity " + key);
-        }
-        if (field_keys.size() != cls.own_static_fields.size() + cls.own_instance_fields.size())
-            invalid("non-ROM field survived " + owner);
-        // DEX field IDs determine the single ROM layout, independently of the
-        // order in which legacy intrinsic field handles were registered.
-        for (auto* list : {&cls.own_static_fields, &cls.own_instance_fields}) {
-            std::sort(list->begin(), list->end(), [&](const VmFieldId a, const VmFieldId b) {
-                const auto& left = impl_->FieldAt(a);
-                const auto& right = impl_->FieldAt(b);
-                return std::tie(left.name, left.descriptor) < std::tie(right.name, right.descriptor);
-            });
-        }
-        const auto methods = member(row, "methods");
-        if (!methods.IsArray()) invalid("methods must be array");
-        std::set<std::string> method_keys;
-        bool has_clinit = false;
-        for (std::size_t j = 0; j < methods.Size(); ++j) {
-            const auto method = *methods.Element(j);
-            const auto key = text(method, "signature");
-            if (!method_keys.insert(key).second) invalid("duplicate method " + key);
-            LinkedMethod* actual = nullptr;
-            for (const auto* list : {&cls.own_direct_methods, &cls.own_virtual_methods}) {
-                for (const auto mid : *list) {
-                    auto& candidate = impl_->MethodAt(mid);
-                    if (candidate.name + candidate.descriptor == key) actual = &candidate;
-                }
-            }
-            if (!actual || member(method, "flags").UnsignedInteger() != actual->access_flags)
-                invalid("method identity " + key);
-            if (actual->dex_unit != unit) invalid("member outside ROM DEX " + key);
-            actual->overridable = (actual->access_flags & (kAccStatic | kAccPrivate | kAccFinal)) == 0;
-            actual->must_override = false;
-            const auto source = text(method, "source");
-            if (key == "<clinit>()V") {
-                has_clinit = true;
-                if (source != "rom") invalid("ROM must own clinit");
-            }
-            if (source == "overlay") {
-                if (actual->kind != MethodKind::intrinsic || !actual->implementation)
-                    invalid("missing approved handler " + key);
-                const auto review = member(method, "review");
-                for (const auto name : {"reason", "inputs", "outputs", "state_owner", "failure_boundary"})
-                    if (text(review, name).empty()) invalid("empty overlay review");
-                if ((actual->access_flags & kAccNative) != 0 && member(method, "platform_seam").Bool() != true)
-                    invalid("unapproved native seam " + key);
-            } else if (source == "rom") {
-                if (!actual->code || (actual->access_flags & (kAccNative | kAccAbstract)) != 0)
-                    invalid("ROM method has no bytecode " + key);
-                actual->kind = MethodKind::interpreted;
-                actual->implementation = {};
-                actual->adapter_review.clear();
-            } else if (source == "failure") {
-                actual->kind = MethodKind::intrinsic;
-                actual->implementation = {};
-                actual->adapter_review.clear();
-                actual->code.reset();
-            } else if (source == "ui-degraded") {
-                if (!text(method, "signature").ends_with(")V") ||
-                    (actual->access_flags & (kAccAbstract | kAccStatic)) != 0)
-                    invalid("ui-degraded member must be a concrete void instance method " + key);
-                actual->kind = MethodKind::intrinsic;
-                actual->implementation = [what =
-                                              owner.substr(owner.rfind('/') + 1, owner.size() - owner.rfind('/') - 2) +
-                                              "." + actual->name](IntrinsicContext& call) {
-                    call.vm.RecordUiDegraded(what);
-                    return VmValue::Void();
-                };
-                actual->adapter_review.clear();
-                actual->code.reset();
-            } else
-                invalid("unknown source " + source);
-        }
-        if (has_clinit != (clinit == "rom")) invalid("clinit declaration mismatch");
-        cls.clinit_implementation = {};
-        if (method_keys.size() != cls.own_direct_methods.size() + cls.own_virtual_methods.size())
-            invalid("non-ROM method survived " + owner);
-    }
-    return unit;
+void DexClassLinker::SetUnboundNativePolicy(UnboundNativePolicy policy) {
+    impl_->unbound_native_policy = std::move(policy);
 }
 
 DexUnitId DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
     return RegisterDexUnit(std::move(dex_bytes), false);
 }
 
-DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, const bool boot,
-                                          const std::span<const std::string> failed_native) {
+DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, const bool boot) {
     if (impl_->link_complete) {
         Fail(DexVmErrorReason::internal_invariant, "dex registered after linking");
     }
-    if ((boot && impl_->boot_unit.has_value()) || (!boot && impl_->application_unit.has_value())) {
-        Fail(DexVmErrorReason::invalid_image,
-             boot ? "only a single boot dex is supported" : "only a single application dex is supported");
+    if (!boot && impl_->application_unit.has_value()) {
+        Fail(DexVmErrorReason::invalid_image, "only a single application dex is supported");
     }
     const auto unit_id = DexUnitId{static_cast<std::uint32_t>(impl_->dex_units.size() + 1U)};
     auto image = [&] {
@@ -520,11 +366,7 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
     auto class_data = loader::ReadDexClassData(dex_bytes, image);
     impl_->dex_units.push_back(
         {unit_id, boot, std::move(dex_bytes), std::move(image), std::move(class_data), {}, {}, {}});
-    if (boot) {
-        impl_->boot_unit = unit_id;
-    } else {
-        impl_->application_unit = unit_id;
-    }
+    if (!boot) impl_->application_unit = unit_id;
     auto& unit = impl_->UnitAt(unit_id);
     unit.type_cache.assign(unit.image.types.size(), std::nullopt);
     unit.method_cache.assign(unit.image.methods.size(), {});
@@ -541,6 +383,12 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
             // merge the app copy's hierarchy, members, annotations or clinit.
             // Constant-pool references resolve lazily to that same identity.
             // ParseDex has already rejected duplicates within this DEX unit.
+            continue;
+        }
+        if (boot && existing.has_value() &&
+            (impl_->ClassAt(*existing).is_boot_dex || !impl_->ClassAt(*existing).merges_boot_class)) {
+            // Boot classpath order: the first definition wins. An intrinsic
+            // that does not merge is the whole class, so the DEX copy is unused.
             continue;
         }
         const bool merge_intrinsic = boot && existing.has_value() && impl_->ClassAt(*existing).is_intrinsic;
@@ -618,12 +466,13 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
             }
             if (is_static && merge_intrinsic) {
                 // encoded_array values are indexed by DEX declaration order,
-                // not by the order in which overlay fields were registered.
-                for (const auto field : stored.own_static_fields) {
+                // not by the order in which intrinsic fields were registered.
+                auto& own_fields = stored.own_static_fields;
+                for (const auto field : own_fields) {
                     if (std::find(dex_order.begin(), dex_order.end(), field) == dex_order.end())
                         dex_order.push_back(field);
                 }
-                stored.own_static_fields = std::move(dex_order);
+                own_fields = std::move(dex_order);
             }
         }
         for (const auto* method_list : {&data.direct_methods, &data.virtual_methods}) {
@@ -657,6 +506,7 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
                     }
                 }
                 method.is_static = (encoded.access_flags & kAccStatic) != 0;
+                method.overridable = (encoded.access_flags & (kAccStatic | kAccPrivate | kAccFinal)) == 0;
                 method.declared_invoke_kind =
                     direct
                         ? (method.is_static ? DeclaredInvokeKind::static_call : DeclaredInvokeKind::direct)
@@ -700,7 +550,16 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
                         Fail(DexVmErrorReason::invalid_member,
                              "guest JNI admission requires a boot native declaration");
                     }
+                    if (current.kind == MethodKind::intrinsic && !current.implementation &&
+                        method.kind == MethodKind::interpreted) {
+                        // A declaration without a handler leaves the DEX body in charge.
+                        current.kind = MethodKind::interpreted;
+                        current.adapter_review.clear();
+                    }
                     current.access_flags = method.access_flags;
+                    // The DEX flags decide overriding, as for any boot class.
+                    current.overridable = (method.access_flags & (kAccStatic | kAccPrivate | kAccFinal)) == 0;
+                    current.must_override = false;
                     current.dex_method_index = method.dex_method_index;
                     current.dex_unit = method.dex_unit;
                     current.generic_signature = std::move(method.generic_signature);
@@ -715,12 +574,13 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
                         stored.clinit = current.id;
                     }
                 } else {
-                    if (method.kind == MethodKind::native && boot && !stored.admit_boot_native_methods &&
-                        std::find(failed_native.begin(), failed_native.end(),
-                                  stored.descriptor + "->" + method.name + method.descriptor) == failed_native.end()) {
-                        Fail(DexVmErrorReason::invalid_member, "curated boot dex contains an unbound native "
-                                                               "method: " +
-                                                                   stored.descriptor + "." + method.name);
+                    if (method.kind == MethodKind::native && boot && !stored.admit_boot_native_methods) {
+                        // Unbound framework native: calling it records the gap and
+                        // throws UnsatisfiedLinkError, as a missing JNI symbol would.
+                        method.kind = MethodKind::intrinsic;
+                        if (impl_->unbound_native_policy)
+                            method.implementation =
+                                impl_->unbound_native_policy(stored.descriptor, method.name, method.descriptor);
                     }
                     const auto vm_method_id = impl_->AddMethod(std::move(method));
                     own_methods.push_back(vm_method_id);

@@ -15,13 +15,7 @@ std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(Interpre
         bytes.push_back(ReadPayloadBytes("lib/" + std::string(name)));
         sources.push_back({std::string(name), bytes.back()});
     }
-    std::ifstream stream(OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar", std::ios::binary);
-    const std::vector<char> raw{std::istreambuf_iterator<char>(stream), {}};
-    context->boot_classpath_bytes.resize(raw.size());
-    std::memcpy(context->boot_classpath_bytes.data(), raw.data(), raw.size());
-    context->boot_classpath_archive = ogplay::loader::ParseApkArchive(context->boot_classpath_bytes);
-    const auto dex = ogplay::loader::ReadApkEntry(
-        context->boot_classpath_bytes, ogplay::loader::ParseApkArchive(context->boot_classpath_bytes), "classes.dex");
+    ogplay::test::BindBootDexArchive(*context);
     ogplay::session::AndroidAppProcessRequest request;
     request.manifest = AppManifest(native_activity ? "android.app.NativeActivity" : "fixture.MainActivity");
     const auto native = native_activity ? NativeActivityElf() : std::vector<std::byte>{};
@@ -33,8 +27,7 @@ std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(Interpre
     request.dex_bytes = ReadDexFixture("view_measure.dex");
     request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
     request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
-    request.boot_dex_bytes.resize(dex.size());
-    std::memcpy(request.boot_dex_bytes.data(), dex.data(), dex.size());
+    request.boot_dex_files = ogplay::test::ReadBootDex();
     request.context = context;
     request.dexvm.interpreter.backend = backend;
     request.dexvm.interpreter.diagnostics.trace_capacity = 10000;
@@ -124,10 +117,7 @@ AndroidTestRuntime::AndroidTestRuntime(const std::shared_ptr<DexVmAndroidContext
     context->native_libraries = libraries.get();
     context->vfs = &fs;
     context->ui_test_accessibility_disabled = true;
-    const auto boot =
-        ogplay::loader::ReadApkEntry(context->boot_classpath_bytes, context->boot_classpath_archive, "classes.dex");
-    std::vector<std::uint8_t> boot_dex(boot.size());
-    std::memcpy(boot_dex.data(), boot.data(), boot.size());
+    auto boot_dex = ogplay::test::ReadBootDex();
     bridge = std::make_unique<DexVmGuestBridge>(*session, std::move(dex), catalog, context, ledger, &logger,
                                                 DexVmBridgeConfig{.interpreter = config}, std::move(boot_dex));
     context->threads = &bridge->Threads();

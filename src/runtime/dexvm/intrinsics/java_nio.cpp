@@ -92,6 +92,7 @@ VmObjectRef FileChannelDescriptor(IntrinsicContext& c, VmObjectRef channel) {
 
 IntrinsicClassDecl DeclareFileChannelTransferBoundary() {
     auto b = IntrinsicClassBuilder::Class("Ljava/nio/FileChannelImpl;");
+    b.MergesBootClass();
     b.VirtualMethod(
         "transferTo", "(JJLjava/nio/channels/WritableByteChannel;)J",
         [](IntrinsicContext& c) {

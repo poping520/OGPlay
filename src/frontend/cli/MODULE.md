@@ -8,7 +8,7 @@ list 可选 `--filter all|attention|launchable`（GUI-23）：attention = 条目
 settings set 经库内原子 patch 合并/撤销覆盖，校验和预留字段语义与 GUI 共用。library run 当前进程内 ResolveLaunch → RunGame，状态行写 stderr、结果 JSON 写 stdout，运行锁由共享服务持有。
 验证：ogplay_app_tests 的 cli_library_tests、frontend.app_entrypoints、frontend.run_apk_options 与真实 APK 有界复跑。
 
-dexvm dump-surface [--bootdex <jar>] 输出单份 JSON；缺省使用 bundled BootDex，显式归档
+dexvm dump-surface [--framework <dir>] 输出单份 JSON；缺省使用 bundled 启动类路径，显式目录
 不依赖旁置 data。只经 app 外观调用，参数/归档失败非零退出；链接缺口作为 JSON 诊断保留。
 dexvm run-dex <dex|jar> 按 dalvikvm 语义运行独立 main：guest System.out/err 原样写 stdout，
 退出码为 main 返回 0、未捕获 1、System.exit(n)；VM/装配错误以 error 块和 70 区分。

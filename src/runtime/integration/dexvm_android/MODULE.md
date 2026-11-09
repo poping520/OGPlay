@@ -19,9 +19,12 @@ content/os/view/graphics/gl/media/database/device family TU 同址。`shared.*` 
 - guest 引用强类型，字段用 bound token，flags 来自 `access_flags.h`；override 显式声明、不复制
   继承成员。token 不保存 host 指针，保存在 Java long；MediaPlayer.mNativeContext 沿 API19
   为非零 32 位 token；资源均登记 GC/teardown。原版 Java 的参数异常、状态及监听协议不另建副本。
-- 资源/设备/路径/身份仅取显式 context，不探测 host。classpath 封存 BootDex/APK：bootstrap
-  不见 APK、application parent-first，返回归档 guest 路径/entry，校验来源及 ZIP/CRC。
-  BootDex 身份 `/system/framework/bootdex.jar`，APK 用 package_resource_path；无宿主文件映射/跨 VM 缓存。
+- 资源/设备/路径/身份仅取显式 context，不探测 host。classpath 由启动类路径 jar 与 APK 组成：
+  bootstrap 不见 APK、application parent-first，返回归档 guest 路径/entry，校验来源及 ZIP/CRC。
+  启动类路径按 `kBootClasspathJars` 顺序（ogplay.jar 在前，其后为原样 ROM jar），各 jar 身份为
+  `/system/framework/<名称>`，APK 用 package_resource_path；无宿主文件映射/跨 VM 缓存。
+  ROM 类调用未绑定 native 时抛 UnsatisfiedLinkError；`AndroidUnboundNative` 仅把 Paint 的
+  显示 setter native 降级为 RecordUiDegraded，直到图形 native 接入。
 - 未实现记账并抛可捕获 Java 异常，禁止伪成功；结构化日志保留异常，回调保持身份/代际。
   Clock 唯一时间源，一个 guest 对应一个 host 线程，共用 VM 锁；图形 ANGLE，窗口/输入 SDL3。
 
@@ -174,7 +177,7 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   makeStringBlocks 将 APK 原池/cookie1 与投影 ROM 字符串池/cookie2 分别绑定真实 ROM
   StringBlock，不合成 system AssetManager；池由 context 保活至 Shutdown，StringBlock
   不拥有借用池。投影按同 ROM attr format 和本属性枚举表解析，不跨属性猜名称。
-  native 准入逐签名封存在 view-theme-sources；支持域限当前 APK owner 与封存 ROM 投影，init(true)、完整系统池、
+  native 由 C++ 声明逐签名提供；支持域限当前 APK owner 与封存 ROM 投影，init(true)、完整系统池、
   未登记 selector/ninepatch、animation/spans 请求失败；TypedArray/Resources 的 getDrawable/getColorStateList
   执行 ROM，loadDrawable/loadColorStateList 为逐签名 adapter，单态颜色调用 ROM valueOf。
   同 ROM res/color XML 按 selector/item、android:color 与 state_* 结构开放，原始编译 XML
@@ -342,7 +345,7 @@ Compose 只读同一共同快照，video/raster/hit 共用 guest 投影与 modal
 不匹配明确失败，不把新 viewport 与旧几何混合。Dialog 必须有独立 HostLayout 树，缺树明确失败。
 UI 下层不获 VM 或 Java 引用。
 
-View 使用封存成员组合：ROM 唯一拥有完整形状及 clinit；保留受审的既有行为 handler。
+View 以 ROM 类为准（MergesBootClass）：ROM 唯一拥有完整形状及 clinit；带 handler 的声明覆盖对应方法。
 未迁移、仍由宿主维护的 ROM 实例字段在 guest 访问时明确失败；integration 的受审 adapter
 可访问自身绑定槽，不以这些槽宣称 Java 已拥有整组状态。mContext 由构造/inflation 写入；
 SDK 兼容静态 flags 从注入的当前进程 targetSdk 按 API19 条件初始化。
@@ -789,10 +792,8 @@ requestLayout；已成功重开的 decoder 不受旧请求影响，重开失败�
 才发布新几何，视频合成与 raster/hit 读取同一 PublishedProjection 的 frame/clip。
 原播放状态、字幕/网络/MediaController/未处理错误 UI 的明确失败边界保持。
 
-ADR-0162 / DVM-331：AssembleAndroidContext 在 catalog 注册/VM 建立前读取同一份 BootDex
-归档，要求 java-traversal v1 模式及 DEX/成员表/主题投影/video review/recipe 五项 SHA-256，
-并校验主题 schema。缺项、未知模式/版本、身份错配均明确失败；无标识旧制品也拒绝。
-默认、调试候选与 fixture 共用 java-traversal.json，不存在 guest Legacy 选择或回落。
+AssembleAndroidContext 在 catalog 注册/VM 建立前解析全部启动类路径 jar，缺 jar 或缺
+classes.dex 明确失败；主题投影与系统资源表从 ogplay.jar 读取。不存在 guest Legacy 选择或回落。
 frontend 三入口共用此装配，显式注入平台无 accessibility 服务事实，生产不设置测试 bool。
 宿主 Dialog 必须拥有独立 HostLayout 树；缺失时拒绝，不向 guest 构建树回落。
 `setClickable` 按原 setter 虚派 ROM `setFlags(II)V`，仅在真实 CLICKABLE 位改变时标投影
@@ -961,7 +962,7 @@ Evaluator 沿 API19 ROM Java 算法执行；动画只消费上述主 Looper Chor
 反射回退，调用重验 ID/类型并虚派，原 Java 异常传播。无效 ID/类型 IAE。
 View setAlpha/getAlpha/ensureTransformationInfo/onSetAlpha/hasOverlappingRendering 取 ROM，
 mTransformationInfo.mAlpha 是唯一事实，PFLAG_ALPHA_SET 尊重子类自绘；mDisplayList 恒 null，
-软件 invalidate 仅 draw dirty，无 measure/layout。非 alpha 几何变换继续拒绝。投影节点保存自身
+软件 invalidate 仅 draw dirty，无 measure/layout。非 alpha 几何变换按 UI 降级忽略并记警告（投影保持未变换几何）。投影节点保存自身
 与祖先有效 alpha 的乘积，绘制按命令相乘；未实现离屏层，存在“重叠子树的组不透明度差异”。
 软件光栅平面是预乘 RGBA，呈现合成不得二次乘 alpha；应用子窗口与 holder 共用 API19 PixelFormat.formatHasAlpha 判定
 （含 TRANSLUCENT/TRANSPARENT 及已知含 alpha 具体格式），按像素 alpha source-over，

@@ -42,8 +42,8 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
             if (found == archive.entries.end()) return std::nullopt;
             return dexvm::CoreIntrinsicServices::ClasspathResource{std::string(path), std::string(name)};
         };
-        if (const auto boot = find("/system/framework/bootdex.jar", context->boot_classpath_archive)) {
-            return boot;
+        for (const auto& jar : context->boot_classpath) {
+            if (const auto boot = find(jar.guest_path, jar.archive)) return boot;
         }
         if (role == dexvm::CoreIntrinsicServices::ClasspathLoader::bootstrap) return std::nullopt;
         return find(context->package_resource_path, context->archive);
@@ -51,18 +51,20 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
     services.read_classpath_resource =
         [context](
             const dexvm::CoreIntrinsicServices::ClasspathResource& resource) -> std::optional<std::vector<std::byte>> {
-        const auto boot = resource.archive_path == "/system/framework/bootdex.jar";
-        if (!boot &&
+        const auto boot =
+            std::find_if(context->boot_classpath.begin(), context->boot_classpath.end(),
+                         [&resource](const BootClasspathJar& jar) { return jar.guest_path == resource.archive_path; });
+        const bool is_boot = boot != context->boot_classpath.end();
+        if (!is_boot &&
             (context->package_resource_path.empty() || resource.archive_path != context->package_resource_path)) {
             throw std::invalid_argument("classpath archive is not registered: " + resource.archive_path);
         }
-        const auto& archive = boot ? context->boot_classpath_archive : context->archive;
+        const auto& archive = is_boot ? boot->archive : context->archive;
         const auto found =
             std::find_if(archive.entries.begin(), archive.entries.end(),
                          [&resource](const loader::ApkEntry& entry) { return entry.name == resource.entry_name; });
         if (found == archive.entries.end()) return std::nullopt;
-        return loader::ReadApkEntry(boot ? context->boot_classpath_bytes : context->apk_bytes, archive,
-                                    resource.entry_name);
+        return loader::ReadApkEntry(is_boot ? boot->bytes : context->apk_bytes, archive, resource.entry_name);
     };
     services.singleton = [context](dexvm::Interpreter& vm, const std::string_view key,
                                    const std::string_view descriptor) {
@@ -226,6 +228,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_util_Log(context),
         Declare_android_util_EventLog(context),
         Declare_android_util_AttributeSet(context),
+        Declare_android_util_FloatMath(context),
         Declare_android_util_Base64(context),
         Declare_android_util_DisplayMetrics(context),
         Declare_android_view_Display(context),

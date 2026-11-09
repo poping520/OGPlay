@@ -7,6 +7,7 @@
 契约见各模块 MODULE，任务见 [任务总览](../tasks/README.md)。
 
 JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。无返回值的显示设置忽略并记警告（DVM-372）。
+启动类路径改为 ogplay.jar + 原样 API19 ROM jar（core/conscrypt/ext/framework/framework2/android.policy），成员来源审计与配对制品已删除；未绑定 native 调用时抛 UnsatisfiedLinkError，Paint 显示 setter 暂按 UI 降级。
 
 ## 游戏进度
 
@@ -31,7 +32,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。
 | NFS17 | macOS | 下载布局构造通过，进入 GameActivityMain.onCreate | `Window.getWindowManager()` 未实现；尚未进入游戏 | [DVM-367](../tasks/dexvm/DVM-367.md)、[DVM-368](../tasks/dexvm/DVM-368.md) |
 | Bad Piggies HD 1.9.1 | macOS | Surface 回调后 `libRCSSDK.so` 加载及 JNI_OnLoad 完成，已越过 `0xec510f1e` 探测 | `f=3951` 时 UnityMain `UnityPlayer.nativeRender()Z` 报 `JNI object is not a string in this store`，本次未出现此前 FMOD 退出 | [DVM-374](../tasks/dexvm/DVM-374.md)、[BND-57](../tasks/boundary/BND-57.md) |
 | Sacred Odyssey 1.1.0 | macOS | 800×480：Logo 可见，Release 主菜单实测 24.3 FPS；NEW GAME → Mission 开场对白/Skip，MCP 关闭退出 0 | 非全屏视频黑屏、进关日志非 UTF-8 崩溃已修；开场 3D 区域仍黑；1280×720 Splash 的 `nativeRender` 读 `0x0`；游戏内操作待验 | [DVM-375](../tasks/dexvm/DVM-375.md)、[DVM-353](../tasks/dexvm/DVM-353.md)、[DVM-303](../tasks/dexvm/DVM-303.md)、[BND-5](../tasks/boundary/BND-5.md) |
-| 水果忍者 1.8.8 | macOS | 第 110 帧越过原版 `View.isInEditMode` 调用 | 地图手势初始化缺 `VelocityTracker` native 能力 | — |
+| 水果忍者 1.8.8 | macOS | 第 110 帧越过原版 `View.isInEditMode` 调用 | 地图手势初始化：ROM `VelocityTracker` 已加载，`nativeInitialize` 未实现 | — |
 | 割绳子 2.3.8（广告版） | macOS | ACRA 构造与 Application 生命周期回调注册通过，进入首个 Activity 的 onCreate，未呈现 | FragmentActivity 调用 `getLastNonConfigurationInstance()` 缺失 | [DVM-376](../tasks/dexvm/DVM-376.md) |
 | 保卫萝卜 1.1.0 | macOS | Time 构造、setToNow 与 onCreate 通过，进入 Cocos2d nativeInit，未呈现 | 首个 Java 异常为 `Paint.getFontMetricsInt()` 未实现，随后 native 读 0x0 退出 | [DVM-376](../tasks/dexvm/DVM-376.md) |
 | 鳄鱼小顽皮 1.13.1 | macOS | 越过 `ThreadGroup(String)` 和离线 `WifiInfo` 查询，到达 `onResume`，未呈现 | `AlarmManager.setRepeating` 调度未实现 | [DVM-211](../tasks/dexvm/DVM-211.md) |

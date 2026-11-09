@@ -25,7 +25,7 @@ TEST_CASE("DVM-281 ROM multi-level hierarchy parameters projection scheduling an
             return VmValue::Void();
         });
         AndroidValueVm f(backend, {std::move(hook_type).Build()}, false, "view_measure.dex",
-                         AndroidUiTraversalOwner::JavaTraversal, OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+                         AndroidUiTraversalOwner::JavaTraversal);
         f.vm.SetGcIntegration(
             {{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
         f.context->target_sdk_version = 19;
@@ -337,8 +337,7 @@ TEST_CASE("DVM-281 ROM multi-level hierarchy parameters projection scheduling an
 
 TEST_CASE("DVM-281 animated removal explicitly fails and is accounted") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal,
-                         OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal);
         const auto owner = f.New("Landroid/app/Activity;");
         const auto group = f.New("Ltest/HierarchyGroup;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto leaf = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
@@ -357,8 +356,7 @@ TEST_CASE("DVM-281 animated removal explicitly fails and is accounted") {
 
 TEST_CASE("DVM-282 ROM flags listeners focus and bounded capture use Java state") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal,
-                         OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal);
         f.vm.SetGcIntegration(
             {{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
         f.context->ui_test_accessibility_disabled = true;

@@ -9,6 +9,7 @@
 #include "ogplay/hal/clock.h"
 
 #include <deque>
+#include <filesystem>
 
 #include <array>
 #include <atomic>
@@ -124,10 +125,37 @@ struct AndroidPlatformServices final {
     bool accessibility_service_absent{};
 };
 
-// Validates mode/version and payload identities before constructing any context,
-// registering catalogs or creating a VM. Unmarked experimental payloads fail closed.
-[[nodiscard]] std::shared_ptr<struct DexVmAndroidContext> AssembleAndroidContext(std::vector<std::byte> boot_archive,
-                                                                                 AndroidPlatformServices platform);
+// One archive of the API 19 boot classpath, as the guest sees it under /system/framework.
+struct BootClasspathJar final {
+    std::string guest_path;
+    std::vector<std::byte> bytes;
+    loader::ApkArchive archive;
+};
+
+// Boot classpath order. OGPlay's own classes come first so that they replace
+// the ROM class of the same name; the ROM jars follow unmodified.
+inline constexpr std::array<std::string_view, 7> kBootClasspathJars{
+    "ogplay.jar", "core.jar", "conscrypt.jar", "ext.jar", "framework.jar", "framework2.jar", "android.policy.jar"};
+inline constexpr std::string_view kBootClasspathDirectory = "/system/framework/";
+
+// Reads every kBootClasspathJars archive from a payload framework directory.
+[[nodiscard]] std::vector<BootClasspathJar> ReadBootClasspath(const std::filesystem::path& framework_directory);
+
+// Parses the archives and builds the context; fails before any VM exists if a jar is unusable.
+[[nodiscard]] std::shared_ptr<struct DexVmAndroidContext>
+AssembleAndroidContext(std::vector<BootClasspathJar> boot_classpath, AndroidPlatformServices platform);
+
+// classes.dex, classes2.dex, ... of every boot jar, in classpath order.
+[[nodiscard]] std::vector<std::vector<std::uint8_t>> BootClasspathDexFiles(std::span<const BootClasspathJar> jars);
+
+// Unbound boot natives: Paint display setters are ignored with a UI-degraded
+// warning until the graphics natives exist; everything else throws.
+[[nodiscard]] dexvm::IntrinsicHandler AndroidUnboundNative(std::string_view owner, std::string_view name,
+                                                           std::string_view descriptor);
+
+// First boot jar, in classpath order, that contains the entry.
+[[nodiscard]] const BootClasspathJar* FindBootClasspathEntry(const struct DexVmAndroidContext& context,
+                                                             std::string_view entry);
 
 // Java colors are ARGB; UiTree and solid draw commands consume RGBA.
 [[nodiscard]] constexpr std::uint32_t AndroidColorToRgba(std::uint32_t argb) {
@@ -219,8 +247,7 @@ struct DexVmAndroidContext final {
     loader::ArscTable arsc;
     std::vector<std::byte> apk_bytes;
     loader::ApkArchive archive;
-    std::vector<std::byte> boot_classpath_bytes;
-    loader::ApkArchive boot_classpath_archive;
+    std::vector<BootClasspathJar> boot_classpath;
     std::string package_name;
     // Guest-visible path of the installed APK. Context code/resource paths and
     // ApplicationInfo source paths expose this instead of leaking the

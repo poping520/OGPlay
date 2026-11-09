@@ -71,7 +71,7 @@ std::vector<std::byte> StringPool(const std::vector<std::string>& strings, const
 }
 
 std::string Projection() {
-    std::ifstream input(OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar", std::ios::binary);
+    std::ifstream input(OGPLAY_SOURCE_DIR "/data/android/19/framework/ogplay.jar", std::ios::binary);
     const std::vector<char> raw{std::istreambuf_iterator<char>(input), {}};
     std::vector<std::byte> bytes(raw.size());
     std::memcpy(bytes.data(), raw.data(), raw.size());

@@ -472,8 +472,6 @@ ogplay_add_tool_test(tools.title_preflight_self_test tools ${_src}/tools/title_p
     --self-test)
 ogplay_add_tool_test(tools.dexvm_gap_report_self_test tools ${_src}/tools/dexvm_gap_report.py --repo
     ${_src} --self-test)
-ogplay_add_tool_test(tools.bootdex_builder_self_test "tools;dexvm;distribution"
-    ${_src}/tools/bootdex/compose_bootdex.py --self-test)
 ogplay_add_tool_test(tools.diagnostics_align_host_threads tools
     ${_src}/tests/tools/test_align_host_threads.py)
 ogplay_add_tool_test(tools.gles2_extensions_catalog_current tools ${_src}/tools/generate_gles_api.py

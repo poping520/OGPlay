@@ -418,7 +418,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         std::shared_ptr<runtime::DexVmAndroidContext> dex_context;
         {
             dex_context = runtime::AssembleAndroidContext(
-                ReadBytes(bundled_data.root / bionic.data_directory / "framework" / "bootdex.jar"), {true});
+                runtime::ReadBootClasspath(bundled_data.root / bionic.data_directory / "framework"), {true});
             dex_context->native_output_sample_rate = kDesktopAudioOutputSpec.sample_rate;
             dex_context->apk_bytes = std::move(apk_bytes);
             dex_context->archive = archive;
@@ -503,10 +503,6 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         const auto dex_entry = loader::ReadApkEntry(dex_context->apk_bytes, archive, "classes.dex");
         std::vector<std::uint8_t> dex_bytes(dex_entry.size());
         std::memcpy(dex_bytes.data(), dex_entry.data(), dex_entry.size());
-        const auto boot_entry =
-            loader::ReadApkEntry(dex_context->boot_classpath_bytes, dex_context->boot_classpath_archive, "classes.dex");
-        std::vector<std::uint8_t> boot_dex_bytes(boot_entry.size());
-        std::memcpy(boot_dex_bytes.data(), boot_entry.data(), boot_entry.size());
         runtime::DexVmBridgeConfig bridge_config;
         if (dexvm_interpreter.has_value()) {
             bridge_config.interpreter.backend = *dexvm_interpreter == app::InterpreterBackend::threaded
@@ -531,7 +527,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.manifest = manifest;
         app_request.native_libraries = libraries;
         app_request.system_libraries = system_sources;
-        app_request.boot_dex_bytes = std::move(boot_dex_bytes);
+        app_request.boot_dex_files = runtime::BootClasspathDexFiles(dex_context->boot_classpath);
         app_request.dex_bytes = std::move(dex_bytes);
         app_request.icu_data = ReadBytes(bundled_data.root / bionic.data_directory / "icu" / "icudt51l.dat");
         app_request.tzdata = ReadBytes(bundled_data.root / bionic.data_directory / "zoneinfo" / "tzdata");

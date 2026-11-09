@@ -25,6 +25,7 @@ void RequireNotificationPackage(dx::IntrinsicContext& call, const Context& conte
 
 Decl Declare_android_app_Notification(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Notification;");
+    builder.MergesBootClass();
     builder.StaticMethod(
         "nativeUnsupported", "(Ljava/lang/String;)V",
         [](dx::IntrinsicContext& call) -> dx::VmValue {
@@ -46,6 +47,7 @@ Decl Declare_android_app_Notification(const Context&) {
 
 Decl Declare_android_app_ActivityManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/ActivityManager;");
+    builder.MergesBootClass();
     builder.StaticMethod("staticGetMemoryClass", "()I", [](dx::IntrinsicContext& c) {
         return dx::VmValue::Int(static_cast<std::int32_t>(c.vm.Model().NormalHeapGrowthLimitBytes() / (1024U * 1024U)));
     });
@@ -88,6 +90,7 @@ Decl Declare_android_app_ActivityManager(const Context& context) {
 
 Decl Declare_android_app_ActivityManager_MemoryInfo(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/ActivityManager$MemoryInfo;");
+    builder.MergesBootClass();
     const std::array fields{builder.BoundInstanceField("availMem", "J", dx::kAccPublic),
                             builder.BoundInstanceField("totalMem", "J", dx::kAccPublic),
                             builder.BoundInstanceField("threshold", "J", dx::kAccPublic),
@@ -147,6 +150,7 @@ dx::VmObjectRef ActivityManagerForContext(dx::IntrinsicContext& call, const Cont
 
 Decl Declare_android_app_NotificationManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/NotificationManager;");
+    builder.MergesBootClass();
     builder.DirectMethod(
         "nativeCancel", "(Ljava/lang/String;Ljava/lang/String;IZ)V",
         [context](dx::IntrinsicContext& call) {
@@ -215,6 +219,7 @@ Decl Declare_android_app_KeyguardManager(const Context& context) {
 
 Decl Declare_android_app_backup_BackupManager(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/backup/BackupManager;");
+    builder.MergesBootClass();
     const auto service = builder.BoundStaticField("sService", "Landroid/app/backup/IBackupManager;", dx::kAccPrivate);
     // This process has no Android backup service. API 19 Java owns the
     // absent-service returns; no Binder lookup or backup job is simulated.
@@ -233,6 +238,7 @@ Decl Declare_android_app_backup_BackupManager(const Context&) {
 
 Decl Declare_android_app_Activity(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Activity;", "Landroid/view/ContextThemeWrapper;");
+    builder.MergesBootClass();
     const auto component = builder.BoundInstanceField("mComponent", "Landroid/content/ComponentName;", dx::kAccPrivate);
     const auto intent = builder.BoundInstanceField("mIntent", "Landroid/content/Intent;", 0);
     builder.VirtualMethod("getComponentName", "()Landroid/content/ComponentName;",
@@ -475,16 +481,19 @@ Decl Declare_android_app_Activity(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_app_AlertDialog_Builder(const Context&) {
-    return std::move(dx::IntrinsicClassBuilder::Class("Landroid/app/AlertDialog$Builder;")).Build();
+    return std::move(dx::IntrinsicClassBuilder::Class("Landroid/app/AlertDialog$Builder;").MergesBootClass()).Build();
 }
 
 Decl Declare_android_app_AlertDialog(const Context&) {
-    return std::move(dx::IntrinsicClassBuilder::Class("Landroid/app/AlertDialog;", "Landroid/app/Dialog;")).Build();
+    return std::move(
+               dx::IntrinsicClassBuilder::Class("Landroid/app/AlertDialog;", "Landroid/app/Dialog;").MergesBootClass())
+        .Build();
 }
 
 Decl Declare_android_app_Dialog(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Dialog;", "Ljava/lang/Object;",
                                                     {"Landroid/content/DialogInterface;"});
+    builder.MergesBootClass();
     const auto generation = builder.BoundInstanceField("mGeneration", "J", dx::kAccPrivate);
     builder.DirectMethod(
         "nativeShow",
@@ -1507,6 +1516,7 @@ void AttachAndroidActivityIdentity(dexvm::Interpreter& vm, const std::shared_ptr
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_app_NativeActivity(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/NativeActivity;", "Landroid/app/Activity;");
+    builder.MergesBootClass();
     const auto bind = [&](const char* name, const char* signature) {
         builder.DirectMethod(
             name, signature,

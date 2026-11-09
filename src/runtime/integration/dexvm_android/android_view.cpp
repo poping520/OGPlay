@@ -16,12 +16,15 @@ namespace ogplay::runtime::android_intrinsics {
 namespace {}  // namespace
 
 Decl Declare_android_view_ContextThemeWrapper(const Context&) {
-    return dx::IntrinsicClassBuilder::Class("Landroid/view/ContextThemeWrapper;", "Landroid/content/ContextWrapper;")
+    return std::move(dx::IntrinsicClassBuilder::Class("Landroid/view/ContextThemeWrapper;",
+                                                      "Landroid/content/ContextWrapper;")
+                         .MergesBootClass())
         .Build();
 }
 
 Decl Declare_android_view_LayoutInflater(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/LayoutInflater;");
+    builder.MergesBootClass();
     {
         const auto owner =
             builder.BoundInstanceField("mContext", "Landroid/content/Context;", dx::kAccProtected | dx::kAccFinal);
@@ -218,6 +221,7 @@ void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& co
 
 Decl Declare_android_util_DisplayMetrics(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/DisplayMetrics;");
+    builder.MergesBootClass();
     builder.StaticMethod(
         "getDeviceDensity", "()I",
         [context](dx::IntrinsicContext&) { return dx::VmValue::Int(DeviceDensityDpi(context)); }, dx::kAccPrivate);
@@ -227,6 +231,7 @@ Decl Declare_android_util_DisplayMetrics(const Context& context) {
 Decl Declare_android_hardware_display_DisplayManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/hardware/display/DisplayManager;", "Ljava/lang/Object;",
                                                     {}, dx::kAccPublic | dx::kAccFinal);
+    builder.MergesBootClass();
     const auto owner =
         builder.BoundInstanceField("mContext", "Landroid/content/Context;", dx::kAccPrivate | dx::kAccFinal);
     builder.Constructor("(Landroid/content/Context;)V", [owner](dx::IntrinsicContext& call) {
@@ -425,6 +430,7 @@ dx::VmObjectRef NewKeyCharacterMap(dx::Interpreter& vm, bool keyboard) {
 Decl Declare_android_view_KeyEvent(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/KeyEvent;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     const auto action = builder.BoundInstanceField("mAction", "I", dx::kAccPrivate);
     const auto key_code = builder.BoundInstanceField("mKeyCode", "I", dx::kAccPrivate);
     const auto repeat_count = builder.BoundInstanceField("mRepeatCount", "I", dx::kAccPrivate);
@@ -520,6 +526,7 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
 
 Decl Declare_android_view_KeyCharacterMap(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/KeyCharacterMap;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     builder.StaticMethod("load", "(I)Landroid/view/KeyCharacterMap;", [context](dx::IntrinsicContext& call) {
         const auto find = [&](std::int32_t id) {
             return std::find_if(context->input_devices.begin(), context->input_devices.end(),
@@ -656,6 +663,7 @@ namespace ogplay::runtime::android_intrinsics {
 // cross this boundary; no InputManager/Binder singleton is initialized.
 Decl Declare_android_view_InputDevice(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/InputDevice;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     builder.StaticMethod("getDeviceIds", "()[I", [context](dx::IntrinsicContext& call) {
         const auto ids =
             call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[I"), JniPrimitiveKind::integer,
@@ -1493,6 +1501,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_SurfaceView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceView;", "Landroid/view/View;");
+    builder.MergesBootClass();
     const auto window_visible = builder.BoundInstanceField("mWindowVisibility", "Z", 0);
     const auto view_visible = builder.BoundInstanceField("mViewVisibility", "Z", 0);
     const auto requested_visible = builder.BoundInstanceField("mRequestedVisible", "Z", 0);
@@ -1854,6 +1863,7 @@ Decl Declare_android_view_View(const Context& context) {
                                                     {"Landroid/graphics/drawable/Drawable$Callback;",
                                                      "Landroid/view/KeyEvent$Callback;",
                                                      "Landroid/view/accessibility/AccessibilityEventSource;"});
+    builder.MergesBootClass();
 
     builder.VirtualMethod("post", "(Ljava/lang/Runnable;)Z", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(PostViewRunnable(call, context, call.receiver, call.arguments[0].ref, 0));
@@ -2239,13 +2249,6 @@ Decl Declare_android_view_View(const Context& context) {
             return dx::VmValue::Void();
         });
         builder.VirtualMethod("needGlobalAttributesUpdate", "(Z)V", software_dirty, dx::kAccNone);
-        builder.DirectMethod(
-            "initialAwakenScrollBars", "()Z",
-            [](dx::IntrinsicContext& call) -> dx::VmValue {
-                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_attached_scrollbars", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Attached scrollbars unsupported"};
-            },
-            dx::kAccPrivate);
         builder.VirtualMethod("clearAccessibilityFocus", "()V", [context, software_dirty](dx::IntrinsicContext& call) {
             static_cast<void>(software_dirty(call));
             if (dx::IntrinsicCall(call).GetInt(context->view_java_measure_fields->flags[1]) & 0x04000000) {
@@ -2515,6 +2518,7 @@ namespace {
 Decl Declare_android_view_ViewGroup(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/ViewGroup;", "Landroid/view/View;",
                                                     {"Landroid/view/ViewParent;", "Landroid/view/ViewManager;"});
+    builder.MergesBootClass();
     {
         context->view_group_java_fields = DexVmAndroidContext::ViewGroupJavaFields{
             builder.BoundInstanceField("mChildren", "[Landroid/view/View;", dx::kAccPrivate),
@@ -2636,6 +2640,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;");
+    builder.MergesBootClass();
     return std::move(builder).Build();
 }
 
@@ -2647,7 +2652,9 @@ Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context&
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_ViewTreeObserver(const Context&) {
-    return dx::IntrinsicClassBuilder::Class("Landroid/view/ViewTreeObserver;", "Ljava/lang/Object;").Build();
+    return std::move(dx::IntrinsicClassBuilder::Class("Landroid/view/ViewTreeObserver;", "Ljava/lang/Object;")
+                         .MergesBootClass())
+        .Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
@@ -3612,6 +3619,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_test_AccessibilityManager(const Context& context) {
     auto builder =
         dx::IntrinsicClassBuilder::Class("Landroid/view/accessibility/AccessibilityManager;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     const auto singleton =
         builder.BoundStaticField("sInstance", "Landroid/view/accessibility/AccessibilityManager;", dx::kAccPrivate);
     const auto enabled = builder.BoundInstanceField("mIsEnabled", "Z", dx::kAccNone);
@@ -3652,6 +3660,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_test_ListenerInfo(const Context& context) {
     auto builder =
         dx::IntrinsicClassBuilder::Class("Landroid/view/View$ListenerInfo;", "Ljava/lang/Object;", {}, dx::kAccNone);
+    builder.MergesBootClass();
     context->view_java_listener_fields = std::array{
         builder.BoundInstanceField("mOnClickListener", "Landroid/view/View$OnClickListener;", dx::kAccPublic),
         builder.BoundInstanceField("mOnTouchListener", "Landroid/view/View$OnTouchListener;", dx::kAccPrivate),
@@ -3667,6 +3676,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_view_LayoutInflater_BlinkLayout(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/LayoutInflater$BlinkLayout;",
                                                     "Landroid/widget/FrameLayout;", {}, 0);
+    builder.MergesBootClass();
     builder.Constructor(
         "(Landroid/content/Context;Landroid/util/AttributeSet;)V", [](dx::IntrinsicContext& call) -> dx::VmValue {
             if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_inflater_blink", 0);
@@ -3849,6 +3859,7 @@ Decl Declare_android_view_WindowManager_BadTokenException(const Context&) {
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_animation_PropertyValuesHolder(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/animation/PropertyValuesHolder;");
+    builder.MergesBootClass();
     for (const bool floating : {false, true}) {
         const std::string signature = floating ? "(F)V" : "(I)V";
         builder.StaticMethod(
@@ -3912,6 +3923,7 @@ Decl Declare_android_animation_PropertyValuesHolder(const Context& context) {
 
 Decl Declare_android_view_DisplayEventReceiver(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/DisplayEventReceiver;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     builder.StaticMethod(
         "nativeInit", "(Landroid/view/DisplayEventReceiver;Landroid/os/MessageQueue;)I",
         [context](dx::IntrinsicContext& call) {
@@ -3962,6 +3974,7 @@ Decl Declare_android_view_DisplayEventReceiver(const Context& context) {
 Decl Declare_android_hardware_display_DisplayManagerGlobal(const Context& context) {
     auto builder =
         dx::IntrinsicClassBuilder::Class("Landroid/hardware/display/DisplayManagerGlobal;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     const auto singleton =
         builder.BoundStaticField("sInstance", "Landroid/hardware/display/DisplayManagerGlobal;", dx::kAccPrivate);
     builder.StaticMethod(

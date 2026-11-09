@@ -156,6 +156,7 @@ std::vector<Decl> Declare_android_graphics_StateObjects(const Context& context) 
     context->graphics_state_store = store;
     std::vector<Decl> result;
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Interpolator;");
+    b.MergesBootClass();
     b.StaticMethod(
         "nativeConstructor", "(II)I",
         [store](dx::IntrinsicContext& c) {
@@ -235,6 +236,7 @@ std::vector<Decl> Declare_android_graphics_StateObjects(const Context& context) 
         native_static);
     result.push_back(std::move(b).Build());
     auto gradient = dx::IntrinsicClassBuilder::Class("Landroid/graphics/LinearGradient;", "Landroid/graphics/Shader;");
+    gradient.MergesBootClass();
     for (bool array : {false, true}) {
         const char* signature = array ? "(FFFF[I[FI)I" : "(FFFFIII)I";
         gradient.DirectMethod(
@@ -275,6 +277,7 @@ std::vector<Decl> Declare_android_graphics_StateObjects(const Context& context) 
     result.push_back(std::move(gradient).Build());
     auto shape = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/ShapeDrawable;",
                                                   "Landroid/graphics/drawable/Drawable;");
+    shape.MergesBootClass();
     shape.DirectMethod(
         "updateShape", "()V",
         [](dx::IntrinsicContext& c) {
@@ -305,6 +308,7 @@ std::vector<Decl> Declare_android_graphics_StateObjects(const Context& context) 
     result.push_back(std::move(shape).Build());
     auto bitmap_shader =
         dx::IntrinsicClassBuilder::Class("Landroid/graphics/BitmapShader;", "Landroid/graphics/Shader;");
+    bitmap_shader.MergesBootClass();
     const auto bitmap_field =
         bitmap_shader.BoundInstanceField("mBitmap", "Landroid/graphics/Bitmap;", dx::kAccPublic | dx::kAccFinal);
     const auto tile_x =
@@ -343,6 +347,7 @@ std::vector<Decl> Declare_android_graphics_StateObjects(const Context& context) 
         });
     result.push_back(std::move(bitmap_shader).Build());
     auto shader = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Shader;");
+    shader.MergesBootClass();
     shader.StaticMethod(
         "nativeDestructor", "(II)V",
         [store](dx::IntrinsicContext& c) {
@@ -354,6 +359,7 @@ std::vector<Decl> Declare_android_graphics_StateObjects(const Context& context) 
     result.push_back(std::move(shader).Build());
     auto xfer =
         dx::IntrinsicClassBuilder::Class("Landroid/graphics/PorterDuffXfermode;", "Landroid/graphics/Xfermode;");
+    xfer.MergesBootClass();
     xfer.StaticMethod(
         "nativeCreateXfermode", "(I)I",
         [store](dx::IntrinsicContext& c) {
@@ -366,6 +372,7 @@ std::vector<Decl> Declare_android_graphics_StateObjects(const Context& context) 
         native_static);
     result.push_back(std::move(xfer).Build());
     auto base = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Xfermode;");
+    base.MergesBootClass();
     base.StaticMethod(
         "finalizer", "(I)V",
         [store](dx::IntrinsicContext& c) {
@@ -378,6 +385,7 @@ std::vector<Decl> Declare_android_graphics_StateObjects(const Context& context) 
     // the parameters are retained; no color arithmetic or drawing consumes them.
     auto lighting =
         dx::IntrinsicClassBuilder::Class("Landroid/graphics/LightingColorFilter;", "Landroid/graphics/ColorFilter;");
+    lighting.MergesBootClass();
     lighting.StaticMethod(
         "native_CreateLightingFilter", "(II)I",
         [store](dx::IntrinsicContext& c) {
@@ -401,6 +409,7 @@ std::vector<Decl> Declare_android_graphics_StateObjects(const Context& context) 
         native_static);
     result.push_back(std::move(lighting).Build());
     auto filter = dx::IntrinsicClassBuilder::Class("Landroid/graphics/ColorFilter;");
+    filter.MergesBootClass();
     filter.StaticMethod(
         "finalizer", "(II)V",
         [store](dx::IntrinsicContext& c) {

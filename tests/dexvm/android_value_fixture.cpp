@@ -41,18 +41,9 @@
 namespace ogplay::test::android_value {
 
 AndroidValueVm::AndroidValueVm(InterpreterBackend backend, const std::vector<IntrinsicClassDecl>& extras,
-                               bool force_all_bridge, const char* dex_fixture, AndroidUiTraversalOwner owner,
-                               const char* test_bootdex)
+                               bool force_all_bridge, const char* dex_fixture, AndroidUiTraversalOwner owner)
     : context(std::make_shared<DexVmAndroidContext>(owner)), runtime([&] {
-          if (test_bootdex) {
-              std::ifstream stream(test_bootdex, std::ios::binary);
-              REQUIRE(stream.good());
-              const std::vector<char> raw{std::istreambuf_iterator<char>(stream), {}};
-              const auto bytes = std::as_bytes(std::span(raw));
-              context->boot_classpath_bytes.assign(bytes.begin(), bytes.end());
-              context->boot_classpath_archive = ogplay::loader::ParseApkArchive(bytes);
-          } else
-              ogplay::test::BindBootDexArchive(*context);
+          ogplay::test::BindBootDexArchive(*context);
           auto catalog = AndroidIntrinsicCatalog(context);
           catalog.insert(catalog.end(), extras.begin(), extras.end());
           InterpreterConfig config{

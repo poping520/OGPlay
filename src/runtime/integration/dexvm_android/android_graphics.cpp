@@ -586,6 +586,7 @@ dx::VmValue DecodeBitmapBytes(dx::IntrinsicContext& call, const Context& context
 
 Decl Declare_android_graphics_BitmapFactory_Options(const Context&, DecodeFields& fields) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/BitmapFactory$Options;");
+    builder.MergesBootClass();
     constexpr std::array<std::pair<const char*, const char*>, 19> shape{
         {{"inBitmap", "Landroid/graphics/Bitmap;"},
          {"inPreferredConfig", "Landroid/graphics/Bitmap$Config;"},
@@ -622,6 +623,7 @@ Decl Declare_android_graphics_BitmapFactory_Options(const Context&, DecodeFields
 
 Decl Declare_android_graphics_BitmapFactory(const Context& context, const DecodeFields& fields) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/BitmapFactory;");
+    builder.MergesBootClass();
     builder.StaticMethod(
         "nativeValidateOptions", "(Landroid/graphics/BitmapFactory$Options;)V",
         [fields](dx::IntrinsicContext& call) {
@@ -854,6 +856,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/Drawable;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     builder.StaticMethod(
         "createFromXmlInner",
         "(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)Landroid/graphics/drawable/Drawable;",
@@ -920,6 +923,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_graphics_Matrix(const Context& context) {
     {
         auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Matrix;", "Ljava/lang/Object;");
+        builder.MergesBootClass();
         builder.Constructor("()V", [context](dx::IntrinsicContext& c) {
             context->identity_matrices.insert(c.receiver.Value());
             return dx::VmValue::Void();
@@ -981,6 +985,7 @@ namespace {
 Decl Declare_android_graphics_Paint(const Context& context) {
     {
         auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Paint;", "Ljava/lang/Object;");
+        builder.MergesBootClass();
         const auto face = builder.BoundInstanceField("mTypeface", "Landroid/graphics/Typeface;", dx::kAccPrivate);
         const auto shader = builder.BoundInstanceField("mShader", "Landroid/graphics/Shader;", dx::kAccPrivate);
         const auto xfer = builder.BoundInstanceField("mXfermode", "Landroid/graphics/Xfermode;", dx::kAccPrivate);
@@ -1552,14 +1557,15 @@ Decl Declare_android_graphics_PorterDuff(const Context& context) {
 Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/BitmapDrawable;",
                                                     "Landroid/graphics/drawable/Drawable;");
-    const auto reject_state = [](dx::IntrinsicContext& call) -> dx::VmValue {
-        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Drawable state is not admitted"};
-    };
-    builder.OverrideMethod("mutate", "()Landroid/graphics/drawable/Drawable;", reject_state);
-    builder.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
-    builder.OverrideMethod("getAlpha", "()I", reject_state);
-    builder.OverrideMethod("setAlpha", "(I)V", IgnoredUiRequest("Drawable.setAlpha"));
+    builder.MergesBootClass();
+    // mutate, alpha and getBitmap keep the ROM bodies.
+    builder.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;",
+                           [](dx::IntrinsicContext& call) -> dx::VmValue {
+                               if (auto* ledger = call.vm.Ledger())
+                                   ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+                               throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                                     "Drawable state is not admitted"};
+                           });
 
     const auto bitmap_ctor = [context](const std::size_t index) {
         return dx::IntrinsicHandler([context, index](dx::IntrinsicContext& call) {
@@ -1630,9 +1636,6 @@ Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
     };
     builder.Constructor("(Landroid/graphics/Bitmap;)V", bitmap_ctor(0))
         .Constructor("(Landroid/content/res/Resources;Landroid/graphics/Bitmap;)V", bitmap_ctor(1));
-    builder.FinalMethod("getBitmap", "()Landroid/graphics/Bitmap;", [](dx::IntrinsicContext& call) {
-        return dx::VmValue::Ref(dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits));
-    });
     return std::move(builder).Build();
 }
 
@@ -1660,6 +1663,7 @@ int CheckTypefaceToken(int token) {
 
 Decl Declare_android_graphics_Typeface(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Typeface;");
+    builder.MergesBootClass();
     constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
     builder.StaticMethod(
         "nativeCreate", "(Ljava/lang/String;I)I",
@@ -1872,6 +1876,7 @@ Decl Declare_android_graphics_drawable_DrawableContainer(const Context& context)
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/DrawableContainer;",
                                               "Landroid/graphics/drawable/Drawable;",
                                               {"Landroid/graphics/drawable/Drawable$Callback;"});
+    b.MergesBootClass();
     const auto reject_state = [](dx::IntrinsicContext& call) -> dx::VmValue {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Drawable state is not admitted"};
@@ -1941,6 +1946,7 @@ Decl Declare_android_graphics_drawable_DrawableContainer(const Context& context)
 Decl Declare_android_graphics_drawable_NinePatchDrawable(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/NinePatchDrawable;",
                                               "Landroid/graphics/drawable/Drawable;");
+    b.MergesBootClass();
     b.Constructor("()V", [context](dx::IntrinsicContext& c) {
         SkinInit(c, context);
         return dx::VmValue::Void();
@@ -1971,6 +1977,7 @@ Decl Declare_android_graphics_drawable_NinePatchDrawable(const Context& context)
 Decl Declare_android_graphics_drawable_StateListDrawable(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/StateListDrawable;",
                                               "Landroid/graphics/drawable/DrawableContainer;");
+    b.MergesBootClass();
     b.OverrideMethod("mutate", "()Landroid/graphics/drawable/Drawable;", [](dx::IntrinsicContext& c) -> dx::VmValue {
         if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "StateListDrawable.mutate is not admitted"};
@@ -2077,6 +2084,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_graphics_drawable_AnimationDrawable(const Context&) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/AnimationDrawable;",
                                               "Landroid/graphics/drawable/DrawableContainer;");
+    b.MergesBootClass();
     // Preserve the ROM unscheduled setFrame branch. Actual frame animation is not admitted.
     b.DirectMethod(
         "setFrame", "(IZZ)V",

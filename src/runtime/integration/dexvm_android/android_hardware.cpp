@@ -5,6 +5,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_hardware_LocalSensorManager(const Context& context) {
     auto builder =
         dx::IntrinsicClassBuilder::Class("Landroid/hardware/LocalSensorManager;", "Landroid/hardware/SensorManager;");
+    builder.MergesBootClass();
     builder.StaticMethod(
         "nativeGetSensors", "()[Landroid/hardware/Sensor;",
         [context](dx::IntrinsicContext& call) {
@@ -52,6 +53,7 @@ Decl Declare_android_hardware_LocalSensorManager(const Context& context) {
 
 Decl Declare_android_hardware_LegacySensorManager(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/hardware/LegacySensorManager;");
+    builder.MergesBootClass();
     builder.StaticMethod(
         "nativeGetDisplayRotation", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); },
         dx::kAccPrivate | dx::kAccNative);

@@ -35,7 +35,7 @@ struct IcuVm final {
         request.dex_bytes = ReadDexFixture("cipher.dex");
         request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
         request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
-        request.boot_dex_bytes = test::ReadBootDex();
+        request.boot_dex_files = test::ReadBootDex();
         test::BindBootDexArchive(*context);
         request.context = context;
         request.dexvm.interpreter.backend = backend;

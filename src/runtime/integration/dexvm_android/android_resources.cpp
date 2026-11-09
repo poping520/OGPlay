@@ -34,16 +34,17 @@ const std::variant<std::string, std::int32_t>* FindSystemResource(const Context&
     std::call_once(cache.loaded, [&] {
         try {
             constexpr std::string_view name = "META-INF/ogplay/system-resources.json";
+            const auto* jar = FindBootClasspathEntry(*context, name);
+            if (jar == nullptr) throw std::runtime_error("boot classpath system resource entry is missing");
             std::size_t matches = 0;
-            for (const auto& entry : context->boot_classpath_archive.entries) {
+            for (const auto& entry : jar->archive.entries) {
                 if (entry.name != name) continue;
                 ++matches;
                 if (entry.compression_method != 0 || entry.uncompressed_size > 65536U)
                     throw std::runtime_error("invalid BootDex system resource entry size/encoding");
             }
-            if (matches != 1) throw std::runtime_error("BootDex system resource entry missing or duplicated");
-            const auto bytes =
-                loader::ReadStoredApkEntry(context->boot_classpath_bytes, context->boot_classpath_archive, name);
+            if (matches != 1) throw std::runtime_error("BootDex system resource entry duplicated");
+            const auto bytes = loader::ReadStoredApkEntry(jar->bytes, jar->archive, name);
             const std::string_view text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
             core::JsonParseError error;
             const auto document = core::JsonDocument::ParseStrict(text, error, 65536U, 8U);
@@ -256,6 +257,7 @@ dx::VmValue PlainPoolString(dx::IntrinsicContext& call, const Context& context, 
 Decl Declare_android_content_res_XmlBlock(const Context& context) {
     auto builder =
         dx::IntrinsicClassBuilder::Class("Landroid/content/res/XmlBlock;", "Ljava/lang/Object;", {}, dx::kAccFinal);
+    builder.MergesBootClass();
     const auto bind = [&](const char* name, const char* desc, auto operation) {
         builder.StaticMethod(
             name, desc,
@@ -356,6 +358,7 @@ Decl Declare_android_content_res_XmlBlock(const Context& context) {
 Decl Declare_android_content_res_StringBlock(const Context& context) {
     auto builder =
         dx::IntrinsicClassBuilder::Class("Landroid/content/res/StringBlock;", "Ljava/lang/Object;", {}, dx::kAccFinal);
+    builder.MergesBootClass();
     const auto bind = [&](const char* name, const char* desc, auto operation) {
         builder.StaticMethod(
             name, desc,
@@ -508,12 +511,12 @@ void ThemeField(dx::Interpreter& vm, dx::VmObjectRef object, const char* name, c
 void ThemeLoad(dx::IntrinsicContext& call, const Context& context) {
     if (!context->theme_projection_loaded) {
         constexpr std::string_view entry = "META-INF/ogplay/theme-projection.json";
-        const auto count = std::count_if(
-            context->boot_classpath_archive.entries.begin(), context->boot_classpath_archive.entries.end(),
-            [](const auto& row) { return row.name == "META-INF/ogplay/theme-projection.json"; });
-        if (count != 1) throw std::runtime_error("theme projection entry missing or duplicated");
-        const auto bytes =
-            loader::ReadStoredApkEntry(context->boot_classpath_bytes, context->boot_classpath_archive, entry);
+        const auto* jar = FindBootClasspathEntry(*context, entry);
+        if (jar == nullptr) throw std::runtime_error("theme projection entry is missing");
+        const auto count = std::count_if(jar->archive.entries.begin(), jar->archive.entries.end(),
+                                         [entry](const auto& row) { return row.name == entry; });
+        if (count != 1) throw std::runtime_error("theme projection entry duplicated");
+        const auto bytes = loader::ReadStoredApkEntry(jar->bytes, jar->archive, entry);
         context->theme_resources.Load(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
         context->theme_projection_loaded = true;
     }
@@ -822,6 +825,7 @@ dx::VmValue OpenCompiledXml(dx::IntrinsicContext& call, std::span<const std::byt
 
 Decl Declare_android_content_res_AssetManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/res/AssetManager;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     AddThemeAssetMethods(builder, context);
     // Equivalent APK-only opening boundary. Construction/counts stay in ROM;
     // no AssetManager native declaration is admitted by this adapter.
@@ -1226,6 +1230,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_content_res_Resources(const Context& context) {
     const auto system_resources = std::make_shared<SystemResourceCache>();
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/res/Resources;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     const auto assets =
         builder.BoundInstanceField("mAssets", "Landroid/content/res/AssetManager;", dx::kAccPrivate | dx::kAccFinal);
     builder.VirtualMethod(

@@ -45,7 +45,7 @@ struct AndroidAppProcessRequest final {
     loader::AndroidManifestFacts manifest;
     std::vector<loader::ApkNativeLibrary> native_libraries;
     std::span<const runtime::BionicModuleSource> system_libraries;
-    std::vector<std::uint8_t> boot_dex_bytes;
+    std::vector<std::vector<std::uint8_t>> boot_dex_files;
     std::vector<std::uint8_t> dex_bytes;
     std::vector<std::byte> icu_data;
     std::shared_ptr<runtime::DexVmAndroidContext> context;

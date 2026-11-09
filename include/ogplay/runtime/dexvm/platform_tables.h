@@ -76,7 +76,11 @@ inline constexpr auto kSystemProperties = std::to_array<PlatformProperty>({
     {"android.icu.unicode.version", "", "ICU.getUnicodeVersion()"},
     {"file.encoding", "UTF-8", ""},
     {"file.separator", "/", ""},
-    {"java.boot.class.path", "/system/framework/bootdex.jar", "runtime.bootClassPath()"},
+    {"java.boot.class.path",
+     "/system/framework/ogplay.jar:/system/framework/core.jar:/system/framework/conscrypt.jar:"
+     "/system/framework/ext.jar:/system/framework/framework.jar:/system/framework/framework2.jar:"
+     "/system/framework/android.policy.jar",
+     "runtime.bootClassPath()"},
     {"java.class.path", ".", "runtime.classPath()"},
     {"java.class.version", "50.0", ""},
     {"java.compiler", "", ""},

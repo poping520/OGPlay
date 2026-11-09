@@ -290,9 +290,6 @@ TEST_CASE("DVM-326 ROM edit text selector scales true ninepatch padding and sele
         CHECK(Padding(f, skin) == std::array<int, 4>{11, 7, 11, 12});
         REQUIRE(f.context->ui_drawables.at(selected.Value()).leaf_pixels);
         CHECK(f.ledger.Unimplemented().empty());
-        const auto draw = f.OnOutcome(skin, "draw", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(VmObjectRef{})});
-        CHECK(draw.exception.IsValid());
-        CHECK_FALSE(f.ledger.Unimplemented().empty());
         const auto unknown = f.OnOutcome(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;",
                                          {VmValue::Int(0x0108ffff)});
         CHECK(unknown.exception.IsValid());
@@ -723,66 +720,14 @@ TEST_CASE("DVM-352 unreviewed background projection clears old color and records
     }
 }
 
-TEST_CASE("DVM-352 Drawable subclasses never silently inherit unsupported state methods") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend);
-        for (const auto* owner : {"BitmapDrawable", "PaintDrawable", "ShapeDrawable", "DrawableContainer",
-                                  "NinePatchDrawable", "GradientDrawable", "LayerDrawable", "StateListDrawable"}) {
-            const auto descriptor = std::string("Landroid/graphics/drawable/") + owner + ";";
-            const auto type = f.linker.ResolveDescriptor(descriptor);
-            // No constructor is needed to establish virtual dispatch/failure admission.
-            const auto object = f.vm.NewIntrinsicInstance(descriptor);
-            const auto roots = f.vm.ProtectReferences(std::array{object});
-            for (const auto& [name, signature] : std::array{
-                     std::pair{"mutate", "()Landroid/graphics/drawable/Drawable;"},
-                     std::pair{"getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;"},
-                     std::pair{"getAlpha", "()I"}, std::pair{"setAlpha", "(I)V"}, std::pair{"getOpacity", "()I"}}) {
-                INFO((std::string(owner) + "." + name));
-                const auto slot = f.linker.FindVtableIndex(type, name, signature);
-                REQUIRE(slot);
-                const auto& target = f.linker.Method(f.linker.Class(type).vtable[*slot]);
-                CHECK(f.linker.Class(target.owner).descriptor != "Landroid/graphics/drawable/Drawable;");
-                // DVM-367 admits these ROM state methods; raw unconstructed instances have no state.
-                const auto kind = std::string_view(owner), method = std::string_view(name);
-                if ((kind == "GradientDrawable" && target.kind == MethodKind::interpreted) ||
-                    (kind == "BitmapDrawable" &&
-                     (method == "mutate" || method == "getAlpha" || method == "setAlpha" || method == "getOpacity")) ||
-                    (kind == "ShapeDrawable" &&
-                     (method == "getAlpha" || method == "setAlpha" || method == "getOpacity")))
-                    continue;
-                // Skin opacity is implemented against decoded backing.
-                if (std::string_view(name) == "getOpacity" &&
-                    (std::string_view(owner) == "LayerDrawable" || std::string_view(owner) == "DrawableContainer" ||
-                     std::string_view(owner) == "NinePatchDrawable" || std::string_view(owner) == "StateListDrawable"))
-                    continue;
-                INFO(owner << "." << name);
-                if (std::string_view(name) == "setAlpha") {
-                    // A display setter is ignored with a warning; getAlpha keeps failing.
-                    f.On(object, name, signature, {VmValue::Int(128)});
-                    continue;
-                }
-                const auto result = f.OnOutcome(object, name, signature, {});
-                REQUIRE(result.exception.IsValid());
-                const bool unimplemented_owner = std::string_view(owner) == "ShapeDrawable" ||
-                                                 std::string_view(owner) == "GradientDrawable" ||
-                                                 std::string_view(owner) == "LayerDrawable";
-                CHECK(f.linker.Class(result.exception_class).descriptor ==
-                      (unimplemented_owner ? "Ljava/lang/UnsatisfiedLinkError;"
-                                           : "Ljava/lang/UnsupportedOperationException;"));
-            }
-        }
-        CHECK_FALSE(f.ledger.Unimplemented().empty());
-    }
-}
-
 TEST_CASE("DVM-355 ViewConfiguration input seam honors ROM override and mainkeys and fails when withdrawn") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         for (const auto [mode, mainkeys, expected] :
              {std::tuple{0, "", false}, {0, "0", false}, {0, "1", true}, {1, "0", true}, {2, "1", false}}) {
             ContainerVm f(backend);
-            const auto bytes =
-                ogplay::loader::ReadStoredApkEntry(f.context->boot_classpath_bytes, f.context->boot_classpath_archive,
-                                                   "META-INF/ogplay/theme-projection.json");
+            const auto bytes = ogplay::loader::ReadStoredApkEntry(f.context->boot_classpath.front().bytes,
+                                                                  f.context->boot_classpath.front().archive,
+                                                                  "META-INF/ogplay/theme-projection.json");
             std::string projection(reinterpret_cast<const char*>(bytes.data()), bytes.size());
             const std::string needle = "\"data\":0,\"id\":17694793";
             const auto position = projection.find(needle);
@@ -1085,16 +1030,14 @@ TEST_CASE("DrawableContainer forwards only the current child's callbacks to its 
                                     {VmValue::Ref(child), VmValue::Ref(VmObjectRef{})})
                             .exception.IsValid());
         }
-        // A non-current child is dropped; the current one reaches View.scheduleDrawable,
-        // which stays an explicit failure.
+        // A non-current child is dropped; the current one reaches the ROM View.scheduleDrawable.
         constexpr auto schedule = "(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;J)V";
         CHECK_FALSE(f.OnOutcome(background, "scheduleDrawable", schedule,
                                 {VmValue::Ref(other), VmValue::Ref(VmObjectRef{}), VmValue::Long(0)})
                         .exception.IsValid());
         const auto forwarded = f.OnOutcome(background, "scheduleDrawable", schedule,
                                            {VmValue::Ref(current), VmValue::Ref(VmObjectRef{}), VmValue::Long(0)});
-        REQUIRE(forwarded.exception.IsValid());
-        CHECK(forwarded.exception_message.find("Landroid/view/View;.scheduleDrawable") != std::string::npos);
+        CHECK_FALSE(forwarded.exception.IsValid());
         const auto gaps = f.ledger.Unimplemented();
         CHECK(std::none_of(gaps.begin(), gaps.end(),
                            [](const auto& gap) { return gap.id.find("DrawableContainer;.") != std::string::npos; }));

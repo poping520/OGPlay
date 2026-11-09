@@ -56,7 +56,7 @@ note = "DVM-331：固定 HostLayout/ExternalProjection 分区；guest 唯一 Jav
 [runtime.ui_dexvm_binding]
 status = "partial"
 test = "tests/dexvm/android_view_state_tests.cpp#DVM-372; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/egl_facade_tests.cpp#DVM-233"
-note = "DVM-372：无返回值的显示设置按 tools/bootdex/ui-degraded.json 忽略并记警告，getter 不跟随。DVM-331：Java 唯一拥有 guest hierarchy/id/visibility/listener/focus/geometry，integration 通过受审 token 读取并发布完整投影；弱节点绑定不成为 Java GC roots；窗口焦点经ROM View/ViewGroup dispatch递归，不按投影过滤或缓存逐View焦点。无 guest 宿主遍历回落；动画、系统 accessibility 与未审成员仍明确失败。"
+note = "DVM-372：无返回值的显示设置忽略并记警告（Paint setter native 暂降级），getter 不跟随。DVM-331：Java 唯一拥有 guest hierarchy/id/visibility/listener/focus/geometry，integration 通过受审 token 读取并发布完整投影；弱节点绑定不成为 Java GC roots；窗口焦点经ROM View/ViewGroup dispatch递归，不按投影过滤或缓存逐View焦点。无 guest 宿主遍历回落；动画、系统 accessibility 与未审成员仍明确失败。"
 
 [runtime.ui_inflater]
 status = "partial"
@@ -590,7 +590,7 @@ note = "ADR-0071/0074/0110/0129、VFS-01..11：节点/打开状态/backing 分�
 
 [runtime.vfs_filesystem_stats]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/runtime/vfs_sandbox_tests.cpp#DVM-243; tests/dexvm/file_vfs_tests.cpp#DVM-243; tests/runtime/jni_android_platform_tests.cpp#DVM-243"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/runtime/vfs_sandbox_tests.cpp#DVM-243; tests/dexvm/file_vfs_tests.cpp#DVM-243; tests/runtime/jni_android_platform_tests.cpp#DVM-243"
 note = "DVM-243/ADR-0122：原版 StatFs Java 算法，Posix.statvfs 经 IoFileSystem 原子查询 VFS；仅支持已挂沙盒可写根及其祖先目录，容量为配额减已持久与脏数据，4096 字节块向下取整，不报告物理磁盘/inode、不读宿主剩余空间。其他卷、fstatvfs、原生 statfs 记账并按 errno 失败；跨平台未验收。"
 
 [runtime.jni]
@@ -1310,22 +1310,22 @@ note = "DVM-256、ADR-0150：Boot/App 按实际 bootstrap 身份 parent-first；
 
 [dexvm.boot_dex]
 status = "complete"
-test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current; tools/bootdex/select_shapes.py --self-test"
-note = "DVM-99..151：从 API19 core/framework 精确选取的 curated BootDex（类集合以配方 tools/bootdex/api19.json 为准，制品身份见 data/android/19/manifest.json），全部可链接；原版 Java 覆盖日期、集合、流、JCA/AES、证书、Bundle、Configuration、Formatter、Uri 等。overlay 与 guest JNI 声明受审。完整 core/framework、multidex、动态 classpath、宿主传感器与系统服务未纳入。"
+test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.android_payload_current; tools/bootdex/build_bootdex.py check"
+note = "启动类路径为 ogplay.jar + 原样 API19 core/conscrypt/ext/framework/framework2/android.policy（身份见 data/android/19/manifest.json），同名类先到先得；intrinsic 未标 MergesBootClass 时整类替换 ROM 类。未绑定 native 调用时抛 UnsatisfiedLinkError 并记账，Paint 显示 setter 暂按 UI 降级。依赖缺失的 ROM 类按需链接失败。multidex、动态 classpath、系统服务进程未纳入。"
 
 [dexvm.string_format_api19]
 status = "partial"
-test = "tests/runtime/guest_native_values_tests.cpp#DVM-126; tests/dexvm/bootdex_library_tests.cpp#all BootDex classes link; tools.bootdex_builder_self_test; tools.android_payload_current"
+test = "tests/runtime/guest_native_values_tests.cpp#DVM-126; tests/dexvm/bootdex_library_tests.cpp#intrinsic handlers win over boot DEX bodies; tools.android_payload_current"
 note = "DVM-126/151：Formatter 及格式异常族来自 pinned core.jar，格式解析、宽度/flag、Locale 与日期转换执行 API19 Java；String.format 仅实现 AOSP 包装链，StringBuilder 等已在 BootDex。double/BigDecimal formatter 与具名时区长尾明确失败。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"
-test = "tools.bootdex_builder_self_test; tools/bootdex/build_bootdex.py audit"
+test = "tools/bootdex/build_bootdex.py audit"
 note = "DVM-102/122 从 pinned API 19 core.jar 冻结日期闭包：42 class_def、127 object types、1273 methods、479 fields、44 native；25 项 required_backend、19 项 explicit_failure 和 6 个 overlay 均由 api19.json/audit 门禁。ICU 51 来源、哈希、许可及 Locale/时区边界固定。"
 
 [dexvm.print_stream_bootdex]
 status = "partial"
-test = "tests/dexvm/android_logging_tests.cpp#DVM226; tools/bootdex/compose_bootdex.py check; tools.android_payload_current"
+test = "tests/dexvm/android_logging_tests.cpp#DVM226; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
 note = "DVM-226：原版 PrintStream 在 BootDex 中执行，目标流、编码、刷新、错误与 Throwable 输出归 Java；System.out/err 经独立 LogOutputStream 的 native emit 写结构化日志。printf/format 受 Formatter/ICU 长尾限制；任意编码、二进制终端与跨平台未验收。"
 
 [dexvm.throwable_bootdex]
@@ -1345,22 +1345,22 @@ note = "DVM-257/WU7-6：日期与数字普通协议执行 API19 BootDex，区域
 
 [dexvm.sql_date_value_types]
 status = "complete"
-test = "tests/runtime/guest_icu_tests.cpp#DVM-183; tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check"
+test = "tests/runtime/guest_icu_tests.cpp#DVM-183; tools/bootdex/build_bootdex.py check"
 note = "API19 SQL 日期值类型纳入 BootDex。DVM-183 从固定 API 19 core.jar 精确选入 java.sql.Date/Time/Timestamp。继承 java.util.Date，构造、日期归一化与 Timestamp 纳秒语义执行原版 Java。不引入 JDBC、Driver、Connection 或其余 java.sql 包。"
 
 [dexvm.guest_jni_api19]
 status = "complete"
-test = "tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tests/runtime/guest_crypto_certificates_tests.cpp#DVM-106; tests/runtime/guest_crypto_certificates_tests.cpp#DVM-108; tests/runtime/bionic_profile_tests.cpp; tools.android_payload_current; tools/bootdex/compose_bootdex.py check"
+test = "tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tests/runtime/guest_crypto_certificates_tests.cpp#DVM-106; tests/runtime/guest_crypto_certificates_tests.cpp#DVM-108; tests/runtime/bionic_profile_tests.cpp; tools.android_payload_current; tools/bootdex/build_bootdex.py check"
 note = "DVM-122 将 crypto/ICU 统一为 libogplay_jni.so 和单一 JNI_OnLoad。NDK r25c ARMv7 API19 重复构建一致；ELF ABI、SONAME、DT_NEEDED、输入/输出哈希受构建器和 validator 约束。ICU data 禁止文件回退并立即初始化，teardown 先 cleanup 再释放；未审计 native 明确失败，不引入 libjavacore。"
 
 [dexvm.zip_byte_streams]
 status = "partial"
-test = "tests/runtime/guest_zlib_tests.cpp#DVM-350; tests/runtime/guest_zlib_tests.cpp#DVM-214; tools/bootdex/compose_bootdex.py check; tools.bootdex_builder_self_test; tools.android_payload_current"
+test = "tests/runtime/guest_zlib_tests.cpp#DVM-350; tests/runtime/guest_zlib_tests.cpp#DVM-214; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
 note = "DVM-214/350：API19 GZIP、Deflater/Inflater、ZipEntry/ZipInputStream/ZipFile 算法及状态归 BootDex；数组 native 经 guest JNI 到 libz。ZipFile 支持 guest VFS ZIP32 stored/deflated 读取，FD 输入复用 IoRuntime，实际短读快照交 guest zlib；token 与 IO 资源按关闭/GC 回收。不支持 ZIP64、OPEN_DELETE、宿主路径、JarFile 签名校验；跨平台实跑未验收。"
 
 [dexvm.crc32]
 status = "complete"
-test = "tests/runtime/guest_zlib_tests.cpp#DVM-201; tools/bootdex/compose_bootdex.py check; tools.android_payload_current"
+test = "tests/runtime/guest_zlib_tests.cpp#DVM-201; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
 note = "DVM-201：Checksum/CRC32 公开方法、参数检查与 crc/tbytes 状态执行原版 API19 BootDex；两个私有实例 native 经统一 guest JNI 调用既有 libz，数组有界分块读取，空区间保持累积值，32 位结果无符号扩展。双解释器覆盖标准/大数组向量、增量/单字节、范围异常、reset/GC/实例隔离与 DigestOutputStream；不含 Adler32、Inflater/Deflater 或完整 ZIP 流。"
 
 [dexvm.unsafe]
@@ -1525,7 +1525,7 @@ note = "DVM-166 发布 API 19 非缓存 KeyguardManager facade，三项只读查
 
 [dexvm.animation_listener_type]
 status = "complete"
-test = "tests/dexvm/android_view_state_tests.cpp#DVM-174; tests/dexvm/android_view_state_tests.cpp#DVM-371; tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check"
+test = "tests/dexvm/android_view_state_tests.cpp#DVM-174; tests/dexvm/android_view_state_tests.cpp#DVM-371; tools/bootdex/build_bootdex.py check"
 note = "DVM-174 从固定 API 19 framework.jar 精确选入原版 Animation$AnimationListener 嵌套接口，提供类型、访问标志与 onAnimationStart/End/Repeat 抽象签名，使应用实现类可链接、实例化并做接口分派。DVM-371：View start/set/clearAnimation 执行 ROM，动画为惰性状态，不推进也不回调 listener，invalidate 记 UI 降级；不宣称完整动画框架或游戏可玩。"
 
 [dexvm.view_click_listener_override]
@@ -1665,7 +1665,7 @@ note = "DVM-83/197/203、BND-35/37/38：API19 Java GLES、GLES30 专用桥接、
 
 [dexvm.java_gl_interfaces]
 status = "partial"
-test = "tests/dexvm/egl_facade_tests.cpp#DVM225; tools/generate_java_gles_surface.py --check; tools/bootdex/compose_bootdex.py check"
+test = "tests/dexvm/egl_facade_tests.cpp#DVM225; tools/generate_java_gles_surface.py --check; tools/bootdex/build_bootdex.py check"
 note = "DVM-225：javax GL 接口与 GLImpl 状态归 BootDex，native 复用 Java GLES/ANGLE 边界；每个 EGLContext 独立 GLImpl，由线程 current 决定目标。支持 direct Buffer client array；heap Buffer 在现代 targetSdk 报 IAE，旧兼容路径记账报 UOE。完整 JNI 参数检查、暂停恢复与 context-loss 未验收。"
 
 [dexvm.audio_track]
@@ -1680,12 +1680,12 @@ note = "DVM-230：root guest 线程按真实 UiTree frame 向附着子树派发 
 
 [dexvm.choreographer_frame_source]
 status = "partial"
-test = "tests/runtime/choreographer_frame_source_tests.cpp; tests/dexvm/scheduler_tests.cpp; tools/bootdex/compose_bootdex.py check; tools.android_payload_current"
+test = "tests/runtime/choreographer_frame_source_tests.cpp; tests/dexvm/scheduler_tests.cpp; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
 note = "ROM API19 Choreographer 队列/单例/帧回调；DisplayEventReceiver 逐签名 native 以不复用 int token 连接所属 Looper。每实际 StepFrame 在 owner 遍历前一次 vsync，Clock nanoTime 同基；一次性请求合并，dispose/GC/停止撤销，无 hotplug。显示刷新率来自注入事实（默认 60）。Handler 队首 LIFO、普通 FIFO，异步标志只保存；无同步屏障。支持非主 Looper，跨线程队列失败；属性动画见 dexvm.property_animation，GPU/跨平台未验。"
 
 [dexvm.android_scheduler]
 status = "complete"
-test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/scheduler_tests.cpp#DVM-135; tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/session/lifecycle_tests.cpp"
+test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/scheduler_tests.cpp#DVM-135; tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/session/lifecycle_tests.cpp"
 note = "DVM-357：Looper/Handler/Message/有界 AsyncTask 共用调度器与 Clock（60秒 boot-age）。CountDownTimer、Timer/TimerTask 状态归 Java。主队列在 lifecycle 安全点泵送。View.post/postDelayed 沿 Java 父链判附着，复用单一主 Handler；detached 按 guest 线程暂存、转入起算。Runnable 为 GC 根，shutdown 清空；runOnUiThread 共用主队列。无 suspend、Binder 队列、AsyncTask 并行策略。"
 
 [dexvm.android_value_services]
@@ -1695,7 +1695,7 @@ note = "DVM-86/107/117：Base64、SparseArray、TypedValue、TextUtils、Color/R
 
 [dexvm.wifi_lock]
 status = "partial"
-test = "tests/dexvm/android_wifi_locks_tests.cpp#DVM-209; tools/bootdex/compose_bootdex.py check"
+test = "tests/dexvm/android_wifi_locks_tests.cpp#DVM-209; tools/bootdex/build_bootdex.py check"
 note = "DVM-209/ADR-0092/0093：WifiLock 与 MulticastLock 的 Java 计数/held 独立，native 仅登记离线租约；权限、模式、两类锁合计每 manager 50 个及逐 owner/GC/退出清理受检。WorkSource/组播传输/无线服务不支持；跨平台实跑未验收"
 
 [dexvm.java_util_algorithms]
@@ -1720,7 +1720,7 @@ note = "DVM-152/153/164/173：URI、InetAddress、URLConnection/HttpURLConnectio
 
 [dexvm.connectivity_offline]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-241; tests/dexvm/android_value_tests.cpp#DVM-98; tests/dexvm/android_wifi_locks_tests.cpp#Offline WifiInfo; tests/runtime/jni_android_platform_tests.cpp#DVM-241; tests/dexvm/network_sqlite_tests.cpp#DVM-343"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-241; tests/dexvm/android_value_tests.cpp#DVM-98; tests/dexvm/android_wifi_locks_tests.cpp#Offline WifiInfo; tests/runtime/jni_android_platform_tests.cpp#DVM-241; tests/dexvm/network_sqlite_tests.cpp#DVM-343"
 note = "DVM-241/343：原版 NetworkInfo 与有界 ConnectivityManager，断开逻辑 WiFi、活动网络 null，查询需 ACCESS_NETWORK_STATE。WifiManager.getConnectionInfo 需 ACCESS_WIFI_STATE，离线返回 WifiInfo（networkId=-1、UNINITIALIZED、MAC=null）。拓扑派生 lo、只读 sysfs/proc、IPv4 ioctl 与 ROM NetworkInterface。缺事实/在线策略记账 UOE；无宿主探测、通用 socket、netlink 或无线控制。"
 
 [dexvm.apache_http_bootdex]
@@ -1730,7 +1730,7 @@ note = "DVM-149/164/173：从 API19 ext.jar 选入 Apache HTTP（含完整 org.a
 
 [dexvm.sqlite_vfs]
 status = "complete"
-test = "tests/dexvm/network_sqlite_tests.cpp#DVM-88; tests/dexvm/network_sqlite_tests.cpp#DVM-186; tests/dexvm/network_sqlite_tests.cpp#DVM-194; tests/dexvm/network_sqlite_tests.cpp#DVM-198; tools/bootdex/compose_bootdex.py check; tools.bootdex_builder_self_test"
+test = "tests/dexvm/network_sqlite_tests.cpp#DVM-88; tests/dexvm/network_sqlite_tests.cpp#DVM-186; tests/dexvm/network_sqlite_tests.cpp#DVM-194; tests/dexvm/network_sqlite_tests.cpp#DVM-198; tools/bootdex/build_bootdex.py check"
 note = "DVM-186/198：固定 SQLite amalgamation 经 OGPlay VFS 读写主库、rollback journal 与临时文件；原版 API19 数据库栈、异常子类、CursorWindow、事务与 hot-journal 恢复，与 Android sqlite3 文件互通，损坏库按 EventLog→删除→重建处理；配置资源 ID 由 BootDex 构建自动提取。仅进程内 rollback-journal；WAL、跨进程共享与完整 ICU collation 不支持。"
 
 [dexvm.api19_capability_stack]
@@ -1785,7 +1785,7 @@ note = "DVM-103/109：Serializable/Externalizable、DataInput/Output、ObjectInp
 
 [dexvm.luni_value_io_bootdex]
 status = "complete"
-test = "tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/gc_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
+test = "tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/gc_tests.cpp; tools.android_payload_current"
 note = "DVM-104/ADR-0034：工具/事件/beans、同步器与 atomic、MessageFormat、内存/Buffer/Filter/Data/Reader/Writer、X500 名字/DER 与 key spec 在 BootDex 执行，状态归 guest 字段；InputStreamReader 使用 ICU 增量解码，支持六种标准字符集与畸形输入替换。完整 formatter、Charset provider API 与证书验证不在此范围。"
 
 [dexvm.native_bn_asn1]
@@ -1795,7 +1795,7 @@ note = "DVM-104/106：NativeBN 分配/释放/拷贝/比较、long/符号/bitLeng
 
 [dexvm.native_bn_arithmetic]
 status = "partial"
-test = "tests/runtime/guest_native_values_tests.cpp#DVM-215; tools.bootdex_builder_self_test; tools.android_payload_current"
+test = "tests/runtime/guest_native_values_tests.cpp#DVM-215; tools.android_payload_current"
 note = "DVM-215：有界 BN_add/mul/mul_word/shift/div/exp，服务原版 BigDecimal 数值转换，经值快照桥接 guest libcrypto BIGNUM；输入/结果最多 1 MiB，运算量保守上限 16777216 次 limb 乘积，超限记账失败且旧值不变。其他 NativeBN、Logical/Primality 与完整大数/密码学不支持；Windows/Linux 未实跑。"
 
 [dexvm.cipher_aes]
@@ -1805,7 +1805,7 @@ note = "DVM-105/ADR-0035：AES-128/192/256 的 ECB/CBC NoPadding/PKCS5Padding、
 
 [dexvm.jca_random_keygen]
 status = "complete"
-test = "tests/dexvm/bootdex_security_tests.cpp#DVM-208; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tools/bootdex/compose_bootdex.py check"
+test = "tests/dexvm/bootdex_security_tests.cpp#DVM-208; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tools/bootdex/build_bootdex.py check"
 note = "DVM-147/208：AndroidOpenSSL SHA1PRNG 首用由统一 CSPRNG 注入熵，再经 guest libcrypto RAND；受限 Crypto Provider 仅发布原版 Harmony SHA1PRNG（显式首次播种可复现）；未播种与 generateSeed 读 VFS /dev/urandom。AES KeyGenerator 支持 128/192/256 位。其他 PRNG/KeyGenerator、PRNG 序列化与完整 JCA Provider 未验收。"
 
 [dexvm.android_log]
@@ -1830,7 +1830,7 @@ note = "DVM-106/ADR-0036：Certificate/X509Certificate/CertificateFactory 与 Ha
 
 [dexvm.framework_value_bootdex]
 status = "complete"
-test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/paint_measure_tests.cpp#DVM-356; tools.bootdex_builder_self_test; tools.android_payload_current"
+test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/paint_measure_tests.cpp#DVM-356; tools.android_payload_current"
 note = "DVM-107/142/ADR-0038：Pair、ComponentName、Parcelable、PackageManager Info/ResolveInfo、ArraySet/LruCache/Pools/Property、Point/Rect、MathUtils/Patterns 与 framework 异常等值类来自 BootDex，全部可链接。DVM-356：RectF 纯 Java 值语义归 API19 ROM；Parcel 读写/creator 与 FloatMath roundOut 明确失败。完整 framework、Intent 与系统服务不因此实现。"
 
 [dexvm.activity_component_identity]
@@ -1850,22 +1850,22 @@ note = "DVM-108/ADR-0039：原版 MessageDigest、Digest 流与 Conscrypt MD5/SH
 
 [dexvm.hmac_sha1]
 status = "complete"
-test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tools/bootdex/compose_bootdex.py check"
+test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tools/bootdex/build_bootdex.py check"
 note = "DVM-169/171：原版 Mac/MacSpi 与 OpenSSLMac HmacSHA1 在 BootDex；conscrypt.jar 原版 NativeCrypto 为唯一类定义，26 个 native 后端经 guest libcrypto，其余 190 个 native 明确失败。其他 Mac 算法、BouncyCastle 与 TLS 不在此项。"
 
 [dexvm.secret_key_factory]
 status = "complete"
-test = "tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tools/bootdex/compose_bootdex.py check; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105/169/175-180"
+test = "tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tools/bootdex/build_bootdex.py check; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105/169/175-180"
 note = "DVM-199：原版 SecretKeyFactory、PBEKey/PBEKeySpec、DES/DESedeKeySpec 与参数规格在 BootDex；OGPlayCrypto 仅注册 PBEWITHSHAAND256BITAES-CBC-BC（PKCS12 SHA-1 KDF，固定 256 位）及别名。密码最多 65536 单元、盐最多 64 KiB、迭代最多 100 万，超限失败。不含 BC Provider、PBE Cipher、PBKDF2 与其他算法。"
 
 [dexvm.keystore_api]
 status = "complete"
-test = "tools/bootdex/compose_bootdex.py check; tests/dexvm/bootdex_security_tests.cpp#DVM-173/174 KeyStore; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105/169/175-180"
+test = "tools/bootdex/build_bootdex.py check; tests/dexvm/bootdex_security_tests.cpp#DVM-173/174 KeyStore; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105/169/175-180"
 note = "DVM-172：原版 KeyStore/KeyStoreSpi 公开闭包与自有 Provider 在 BootDex，条目与 Entry/ProtectionParameter/Builder 状态在 guest 对象图；OGPlayKeyStore 注册 KeyStore.BKS，keystore.type=BKS，支持 getEntry、Builder 与默认 CallbackHandler。不承诺复合调用原子性；不含 AndroidKeyStore、PKIX、系统 CA 与 TLS。"
 
 [dexvm.bks_store]
 status = "complete"
-test = "tools/bootdex/compose_bootdex.py check; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105/169/175-180"
+test = "tools/bootdex/build_bootdex.py check; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105/169/175-180"
 note = "DVM-172：Java 实现 PKCS#12 SHA-1 KDF、HMAC-SHA1、BKS v2 写出与 v0/v1/v2 读取；null/空密码跳过 store MAC 仍严格解析。上限：读写 16 MiB、blob 1 MiB、4096 条目、证书链 64、迭代 100 万。库文件经 VFS 写入沙盒并可跨进程重载，不同应用沙盒隔离。"
 
 [dexvm.bks_key_protection]
@@ -1905,12 +1905,12 @@ note = "DVM-173：HttpsURLConnection 与 Apache HTTPS 出口接到同一 OGPlayJ
 
 [dexvm.object_stream_bootdex]
 status = "complete"
-test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
+test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tools.android_payload_current"
 note = "DVM-109/ADR-0040：ObjectInputStream/ObjectOutputStream 与描述符辅助类执行原版 Java，ObjectStreamClass native 使用受检反射元数据，VMStack.getClasses 提供真实栈；支持私有读写回调、GetField/PutField、循环引用、数组与 Externalizable；SoftReference 在内存压力下清除。getFieldL 与 VMStack 其余 native 未实现；Proxy 生成见 DVM-259。"
 
 [dexvm.scheduled_executor_bootdex]
 status = "complete"
-test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/unsafe_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/reflection_tests.cpp; tools.bootdex_builder_self_test; tools.android_payload_current"
+test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/unsafe_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/reflection_tests.cpp; tools.android_payload_current"
 note = "DVM-110/111/ADR-0041：ScheduledThreadPoolExecutor、FutureTask、Executors 包装类、completion service 与拒绝策略执行原版 Java，worker 复用 Thread/AQS/Unsafe 与统一 Clock，不另建调度器（解释执行仍串行）。privileged 工厂、动态安全上下文、高争用与硬实时精度不在范围。"
 
 [dexvm.layout_params]
@@ -1975,7 +1975,7 @@ note = "DVM-191：Manifest service 保存名称、启用、exported、process、
 
 [dexvm.permission_info]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp"
+test = "tools/bootdex/build_bootdex.py check; tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp"
 note = "DVM-192：API19 PermissionInfo 与 CREATOR 归 BootDex；Manifest 顶层 permission 定义独立于 uses-permission 请求和现有 granted 集合。getPermissionInfo 仅查询当前 APK 定义，支持 0、GET_META_DATA，返回原版 PermissionInfo；未定义抛 NameNotFoundException，未知 flags/未装配 inventory 记账失败。不提供外部包或平台权限目录。"
 
 [dexvm.typeface]
@@ -2000,7 +2000,7 @@ note = "BND-34：KHR sync/image、OES image target 共用 guest identity/ANGLE�
 
 [dexvm.surface_texture]
 status = "partial"
-test = "tests/gles/angle_frame_tests.cpp#SurfaceTexture; tests/dexvm/egl_facade_tests.cpp#SurfaceTexture; tests/runtime/surface_stream_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services; tools/bootdex/compose_bootdex.py check; tools.android_payload_current"
+test = "tests/gles/angle_frame_tests.cpp#SurfaceTexture; tests/dexvm/egl_facade_tests.cpp#SurfaceTexture; tests/runtime/surface_stream_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
 note = "APS-13/14：原版 SurfaceTexture Java、native 生命周期、Surface producer 与有界 RGBA 队列已接入，双解释器/SwiftShader 验证像素、事件、PTS/矩阵、GC/释放。Metal 无 external，更新明确失败。MediaPlayer/NDK/EGL window producer、Camera、Parcel、context-loss 恢复及启动后端选择未接入，跨平台未验收。"
 
 [dexvm.native_activity]
@@ -2010,17 +2010,17 @@ note = "DVM-195/ADR-0075：原版 API19 NativeActivity 接入 ARMv7 进程，提
 
 [dexvm.xml_pull_bootdex]
 status = "partial"
-test = "tests/dexvm/file_assets_resources_tests.cpp#XML Pull original factory parses BOM APK assets through KXml on both backends; tests/dexvm/file_assets_resources_tests.cpp#Resources getXml exposes compiled APK XML as pull events; tests/dexvm/xml_block_tests.cpp#DVM-287; tools/bootdex/compose_bootdex.py check"
+test = "tests/dexvm/file_assets_resources_tests.cpp#XML Pull original factory parses BOM APK assets through KXml on both backends; tests/dexvm/file_assets_resources_tests.cpp#Resources getXml exposes compiled APK XML as pull events; tests/dexvm/xml_block_tests.cpp#DVM-287; tools/bootdex/build_bootdex.py check"
 note = "API19 core.jar 提供完整 XML Pull 接口/工厂与 KXml，原版工厂反射创建 parser/serializer，无解析 intrinsic；验证 AssetManager InputStream、namespace、UTF-8 BOM 与畸形 XML 异常。serializer 长尾未验收；DVM-287 默认 ROM XmlBlock/Parser 支持 APK compiled XML typed/raw 查询与生命周期；StringBlock 仅无样式池，系统 XML/span 失败。"
 
 [dexvm.sax_text_stream]
 status = "partial"
-test = "tests/dexvm/file_assets_resources_tests.cpp#DVM-375; tools/bootdex/compose_bootdex.py check"
+test = "tests/dexvm/file_assets_resources_tests.cpp#DVM-375; tools/bootdex/build_bootdex.py check"
 note = "DVM-375：SAXParser 的 XMLReader 使用 API19 KXml 和 ROM SAX 类型，支持显式字符/字节流、namespace、文档/元素/文本回调和属性。选中的输入流由解析器关闭；DTD 和仅指定 system ID 的输入明确拒绝。未支持验证、外部实体或处理指令事件。"
 
 [dexvm.bounded_theme]
 status = "partial"
-test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/rom_skin_tests.cpp#DVM-355; tests/dexvm/edittext_traversal_tests.cpp#DVM-328; tests/dexvm/rom_skin_tests.cpp#DVM-327; tests/dexvm/rom_skin_tests.cpp#DVM-326; tools/bootdex/theme_projection.py --self-test; tests/dexvm/theme_resources_tests.cpp#DVM-325; tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/theme_resources_tests.cpp#DVM-292; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
+test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/rom_skin_tests.cpp#DVM-355; tests/dexvm/edittext_traversal_tests.cpp#DVM-328; tests/dexvm/rom_skin_tests.cpp#DVM-327; tests/dexvm/rom_skin_tests.cpp#DVM-326; tools/bootdex/theme_projection.py --self-test; tests/dexvm/theme_resources_tests.cpp#DVM-325; tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/theme_resources_tests.cpp#DVM-292; tools/bootdex/build_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
 note = "ADR-0160/0161、DVM-367：同 ROM ARSC 各类型引用按真实 ID 投影，身份不给加载信用；封存 XML 引用亦可查询。ContextImpl 使用默认基础主题，Activity 叠加自身主题；ROM 中 parent 链不设置投影属性的 inert 样式可应用，其他未知样式明确失败。支持既有颜色/皮肤和 Holo dark horizontal 静态资源；未封存内容、可见 scrollbar 绘制与完整主题未支持。"
 
 [runtime.guest_proc_maps]
@@ -2060,7 +2060,7 @@ note = "DVM-219：API19 Bionic tzdata 2014a 原版归档经来源/哈希/TZif �
 
 [dexvm.sensor_absent_facade]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-220; tests/dexvm/android_context_services_tests.cpp#DVM-136; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services; tests/runtime/boundary/integration/android_boundary_sensor_tests.cpp#APS-11"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-220; tests/dexvm/android_context_services_tests.cpp#DVM-136; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services; tests/runtime/boundary/integration/android_boundary_sensor_tests.cpp#APS-11"
 note = "Java Sensor/SensorManager 保留原版算法；LocalSensorManager 与 NDK ASensorManager 共用注入空目录。NDK 非空 manager/空 guest 数组，队列持 VFS pipe；无事件 getEvents=0/hasEvents=-1，失效句柄明确失败。无宿主设备/真实事件/动态目录/Looper callback 派发；viewport 为 ROTATION_0。"
 
 [runtime.asset_manager]
@@ -2070,7 +2070,7 @@ note = "Java/NativeActivity/NDK 共用 manager 与 APK 来源；read 保持有�
 
 [dexvm.bitmap_decode]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/android_resources_bitmap_tests.cpp#DVM-244; tests/runtime/jni_android_platform_tests.cpp#DVM-244; tests/runtime/jni_android_platform_tests.cpp#DVM-221"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_resources_bitmap_tests.cpp#DVM-244; tests/runtime/jni_android_platform_tests.cpp#DVM-244; tests/runtime/jni_android_platform_tests.cpp#DVM-221"
 note = "DVM-244/359：BitmapFactory Options，resource/stream/array 共用 codec/BitmapPixels 与资源密度；支持 ARGB8888、bounds、inMutable、密度缩放。Bitmap 四格式 getRowBytes/getByteCount/getAllocationByteCount/isRecycled，Java 行不对齐，回收后元数据保留。输入≤16 MiB、宽高≤8192，超限 OOME；reuse、inSampleSize>1、其他解码 config、资源 NinePatch 记账 UOE。不宣称 Skia 像素一致。"
 
 [runtime.bitmap_ndk]
@@ -2080,7 +2080,7 @@ note = "DVM-221/ADR-0102：sealed libjnigraphics.so 发布三项 API19 AndroidBi
 
 [dexvm.usb_absent_facade]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-341"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-341"
 note = "DVM-341：Context 构造并缓存 API19 UsbManager；无设备时列表为空、配件为 null，权限为 false，操作入口记账并明确拒绝。属性查询保留 ROM SystemProperties 算法。无宿主 USB 透传、UsbService、Binder 或 UsbDeviceConnection。"
 
 [dexvm.usb_transport]
@@ -2090,7 +2090,7 @@ note = "USB 权限查询及设备打开记账，权限请求、配件打开和�
 
 [dexvm.nfc_absent_facade]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-222"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-222"
 note = "DVM-222/ADR-0103：NfcManager、NDEF 回调接口与值类来自 framework.jar；Context 缓存 manager，native 工厂报告无硬件，默认 adapter 查询返回 null，旧式查询 UOE，feature 为 false，注册不产生回调。无适配器实例、NFC feature 与系统服务。"
 
 [dexvm.nfc_transport]
@@ -2100,12 +2100,12 @@ note = "不实现 NFC 通信、标签读写、Beam、扫描或卡模拟。已声
 
 [dexvm.activity_memory_query]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM228; tests/runtime/android_guest_call_session_tests.cpp#proc memory; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM228; tests/runtime/android_guest_call_session_tests.cpp#proc memory; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services"
 note = "DVM-228/ADR-0111：有界 ActivityManager 客户端与原版 MemoryInfo，native 只提交受检进程快照（默认总量 1 GiB、空闲 512 MiB、缓存 256 MiB，可显式配置）；availMem=MemFree+Cached，阈值比较归 Java，不执行 LMK；Java/JNI/proc 共用事实。动态统计与其他 ActivityManager 服务未提供；macOS/Linux 未实跑。"
 
 [dexvm.debug_process_memory]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-239; tests/runtime/jni_android_platform_tests.cpp#DVM-239"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-239; tests/runtime/jni_android_platform_tests.cpp#DVM-239"
 note = "DVM-239/ADR-0118：原版 Debug.MemoryInfo；getMemoryInfo 校验后提交 KiB 快照，缺事实 UOE、非法数据 IAE、空参数 NPE；默认模型以 VM 堆计 dalvik、已映射私有 guest RAM 计 other。无 swap/共享内存、smaps 或宿主 RSS；GPU/媒体缓存、真实 residency 与其他 Debug API 未提供。"
 
 [dexvm.activity_process_query]
@@ -2115,7 +2115,7 @@ note = "ActivityManager.getRunningAppProcesses 每次返回仅本进程的新列
 
 [dexvm.android_time]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tests/runtime/guest_icu_tests.cpp#DVM-376"
+test = "tools/bootdex/build_bootdex.py check; tests/runtime/guest_icu_tests.cpp#DVM-376"
 note = "DVM-376：API19 原版字段及 Java 方法；guest Calendar/ZoneInfo 与统一 Clock 支持字段归一化、DST、RFC 2445/3339 及 API19 strftime。日期格式模板使用默认系统资源，本地化文本/数字走 guest ICU。未知转换符抛 UOE；限 API19 32 位 epoch 秒。"
 
 [dexvm.application_lifecycle_callbacks]
@@ -2125,7 +2125,7 @@ note = "DVM-376：原版 Application 回调注册、注销与快照派发，Acti
 
 [dexvm.activity_result]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/runtime/activity_task_stack_tests.cpp#APS-14; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-197; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-334; tests/runtime/activity_task_stack_tests.cpp#DVM-250; tests/loader/apk_manifest_tests.cpp#DVM-223; tests/loader/apk_manifest_tests.cpp#DVM-250"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/runtime/activity_task_stack_tests.cpp#APS-14; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-197; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-334; tests/runtime/activity_task_stack_tests.cpp#DVM-250; tests/loader/apk_manifest_tests.cpp#DVM-223; tests/loader/apk_manifest_tests.cpp#DVM-250"
 note = "同包有界 task 保留实例/窗口/结果；默认 affinity 四种 launchMode，结果先于恢复，onNewIntent 不改 Intent。后台窗口隐藏，Surface/GL 保留。finishing/destroyed 取 Java 字段。Window.Callback 在 resume 后首次可见且未 finish 时附着一次，销毁后分离；进程关闭不合成分离。无 View 树/AttachInfo、Dialog Callback 附着。自定义 affinity、跨 task/包结果、复杂 flags 失败；多窗口/透明 Activity/context-loss 未验。"
 
 [dexvm.surface_buffer_geometry]
@@ -2135,7 +2135,7 @@ note = "DVM-339：View holder支持独立固定buffer及回到View frame，每�
 
 [dexvm.notification_values]
 status = "partial"
-test = "tests/dexvm/android_pending_notifications_tests.cpp#DVM227; tools/bootdex/compose_bootdex.py check; tools.android_payload_current"
+test = "tests/dexvm/android_pending_notifications_tests.cpp#DVM227; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
 note = "DVM-227/ADR-0109：Notification 有界 Java 值对象保留 API19 常见字段/常量、Bundle、默认及 icon/ticker/when 构造，普通字段/GC/统一 Clock 受检。setLatestEventInfo 对缺席的系统模板记账抛可捕获 UOE，不改现有值或构造 contentView。Parcelable/CREATOR 形状存在，传输拒绝；完整 Builder/Style/Action/RemoteViews 执行和反射闭包、clone、跨平台/完整游戏未验收。"
 
 [dexvm.notification_template]
@@ -2150,7 +2150,7 @@ note = "Notification Parcel 构造/写出拒绝并记账，不提供跨进程通
 
 [dexvm.notification_cancel]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/android_pending_notifications_tests.cpp#DVM-224"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_pending_notifications_tests.cpp#DVM-224"
 note = "DVM-224/ADR-0105：Context 缓存 BootDex NotificationManager；cancel/cancelAll 作用于当前应用已知的空通知集合，支持 null/空 tag 与任意 id，不取消 PendingIntent；跨包工厂或取消记账拒绝。无通知发布与持久库存。"
 
 [dexvm.notification_post]
@@ -2165,17 +2165,17 @@ note = "DIAG-4/WU1：真实 catalog/BootDex/平台绑定导出 JSON；API19 ROM 
 
 [dexvm.bootdex_rom_java]
 status = "partial"
-test = "tools/bootdex/select_rom_java.py --self-test; tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/intrinsics_p1_tests.cpp#DVM-265; tests/dexvm/network_sqlite_tests.cpp#DVM-265; tests/dexvm/android_intent_uri_tests.cpp#DVM-265; tests/dexvm/core_catalog_tests.cpp#DVM-265; tests/dexvm/android_value_tests.cpp#DVM-266; tests/dexvm/android_context_services_tests.cpp#DVM-266; tests/dexvm/android_value_tests.cpp#DVM-267; tests/dexvm/android_context_services_tests.cpp#DVM-267; tests/dexvm/bootdex_concurrency_tests.cpp#DVM-267"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/intrinsics_p1_tests.cpp#DVM-265; tests/dexvm/network_sqlite_tests.cpp#DVM-265; tests/dexvm/android_intent_uri_tests.cpp#DVM-265; tests/dexvm/core_catalog_tests.cpp#DVM-265; tests/dexvm/android_value_tests.cpp#DVM-266; tests/dexvm/android_context_services_tests.cpp#DVM-266; tests/dexvm/android_value_tests.cpp#DVM-267; tests/dexvm/android_context_services_tests.cpp#DVM-267; tests/dexvm/bootdex_concurrency_tests.cpp#DVM-267"
 note = "DVM-255/265/266/267、ADR-0148/0154/0155/0156：固定ROM规则准入，closure按BootDex方法体与intrinsic声明补全。允许intrinsic及overlay父类；全部自身字节码不得触及父类未实现成员或覆写不可覆写方法。native、Binder、交互、初始化及日期冻结仍受限；显式撤换保留已有native边界。单dex实际制品method/field索引均须<60000，--check-closure强制零缺口；游戏及帧时间由外部验收。"
 
 [dexvm.bootdex_member_composition]
 status = "partial"
 note = "DVM-331：默认唯一 JavaTraversal；缺配对、未知模式/版本、DEX/成员表/主题/视频 adapter/配方错配均明确失败。ROM 独占 guest 几何及遍历；输入/Surface/呈现同投影，Dialog 保留独立 HostLayout。无 Legacy guest 回落。CPU/一致性与外验分列；Windows windows-msvc 未验；未实现仍记账失败。"
-test = "tests/dexvm/owner_traversal_tests.cpp#DVM-330; tests/dexvm/owner_traversal_tests.cpp#DVM-329; tests/runtime/ui_tree_tests.cpp#DVM-321; tests/dexvm/owner_traversal_tests.cpp#DVM-321; tests/dexvm/owner_traversal_tests.cpp#DVM-320; tests/dexvm/owner_traversal_tests.cpp#DVM-319; tests/dexvm/owner_traversal_tests.cpp#DVM-318; tests/dexvm/owner_traversal_tests.cpp#DVM-317; tests/dexvm/owner_traversal_tests.cpp#DVM-316; tests/dexvm/theme_resources_tests.cpp#DVM-316; tests/dexvm/throwable_contract_tests.cpp#DVM-316; tests/dexvm/owner_traversal_tests.cpp#DVM-315; tests/dexvm/surfaceview_traversal_tests.cpp#DVM-315; tools/compare_ui_scenarios.py --self-test; tests/dexvm/owner_traversal_tests.cpp#DVM-310; tests/dexvm/owner_traversal_tests.cpp#DVM-309; tests/dexvm/owner_traversal_tests.cpp#DVM-308; tests/dexvm/owner_traversal_tests.cpp#DVM-307; tests/dexvm/android_view_state_tests.cpp#DVM-306; tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check; tests/dexvm/bootdex_library_tests.cpp#DVM-276; tests/dexvm/android_view_state_tests.cpp#DVM-277; tests/dexvm/android_view_state_tests.cpp#DVM-331; tests/dexvm/android_view_state_tests.cpp#DVM-279; tests/dexvm/android_view_state_tests.cpp#DVM-280; tests/dexvm/android_view_state_tests.cpp#DVM-281; tests/dexvm/viewgroup_traversal_tests.cpp#DVM-281; tests/dexvm/viewgroup_traversal_tests.cpp#DVM-282; tests/dexvm/framelayout_traversal_tests.cpp#DVM-283; tests/dexvm/linearlayout_traversal_tests.cpp#DVM-284; tests/dexvm/relativelayout_traversal_tests.cpp#DVM-285; tests/runtime/ui_tree_tests.cpp#VD-06a"
+test = "tests/dexvm/owner_traversal_tests.cpp#DVM-330; tests/dexvm/owner_traversal_tests.cpp#DVM-329; tests/runtime/ui_tree_tests.cpp#DVM-321; tests/dexvm/owner_traversal_tests.cpp#DVM-321; tests/dexvm/owner_traversal_tests.cpp#DVM-320; tests/dexvm/owner_traversal_tests.cpp#DVM-319; tests/dexvm/owner_traversal_tests.cpp#DVM-318; tests/dexvm/owner_traversal_tests.cpp#DVM-317; tests/dexvm/owner_traversal_tests.cpp#DVM-316; tests/dexvm/theme_resources_tests.cpp#DVM-316; tests/dexvm/throwable_contract_tests.cpp#DVM-316; tests/dexvm/owner_traversal_tests.cpp#DVM-315; tests/dexvm/surfaceview_traversal_tests.cpp#DVM-315; tests/dexvm/owner_traversal_tests.cpp#DVM-310; tests/dexvm/owner_traversal_tests.cpp#DVM-309; tests/dexvm/owner_traversal_tests.cpp#DVM-308; tests/dexvm/owner_traversal_tests.cpp#DVM-307; tests/dexvm/android_view_state_tests.cpp#DVM-306; tools/bootdex/build_bootdex.py check; tests/dexvm/android_view_state_tests.cpp#DVM-277; tests/dexvm/android_view_state_tests.cpp#DVM-331; tests/dexvm/android_view_state_tests.cpp#DVM-279; tests/dexvm/android_view_state_tests.cpp#DVM-280; tests/dexvm/android_view_state_tests.cpp#DVM-281; tests/dexvm/viewgroup_traversal_tests.cpp#DVM-281; tests/dexvm/viewgroup_traversal_tests.cpp#DVM-282; tests/dexvm/framelayout_traversal_tests.cpp#DVM-283; tests/dexvm/linearlayout_traversal_tests.cpp#DVM-284; tests/dexvm/relativelayout_traversal_tests.cpp#DVM-285; tests/runtime/ui_tree_tests.cpp#VD-06a"
 
 [dexvm.scroll_constructor]
 status = "partial"
-test = "tests/dexvm/rom_skin_tests.cpp#DVM-355; tests/dexvm/scrollview_constructor_tests.cpp; tests/dexvm/scrollview_traversal_tests.cpp; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
+test = "tests/dexvm/rom_skin_tests.cpp#DVM-355; tests/dexvm/scrollview_constructor_tests.cpp; tests/dexvm/scrollview_traversal_tests.cpp; tools/bootdex/build_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
 note = "DVM-299..301：默认配对两Scroll完整ROM形状、真主题构造、metrics和ROM OverScroller；默认EdgeEffect仅idle，激活/draw失败。双轴ROM测量/单child/layout/clamp及水平初次RTL/forceLeftGravity，Java位置唯一，owner delta与同epoch XY投影/clip/CANCEL。DVM-355 默认 scrollbar 构造/ROM padding 与淡出支持；可见滚动条仅记账，SavedState、focus滚动和fling/smoothScroll失败；"
 
 [dexvm.paint_measure]
@@ -2195,7 +2195,7 @@ test = "tests/dexvm/imageview_traversal_tests.cpp; tests/dexvm/theme_resources_t
 
 [dexvm.spinner_adapter]
 status = "partial"
-test = "tests/dexvm/spinner_adapter_tests.cpp; tools/bootdex/compose_bootdex.py check; tools.android_payload_current"
+test = "tests/dexvm/spinner_adapter_tests.cpp; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
 note = "DVM-364/ADR-0174：固定 ROM DIALOG Spinner/AbsSpinner/AdapterView 构造、ArrayAdapter/getView、两种测量、单子项布局、数据观察者与 View.post 选择通知；btn_dropdown 同 ROM selector/ninepatch，两个系统布局封存原 XML/身份/配置/引用。未封存系统布局 NotFoundException。marquee 可解析，启动动画失败；弹窗、触摸、guest 绘制与跨平台未支持。"
 
 [dexvm.spinner_popup]
@@ -2206,7 +2206,7 @@ note = "Spinner.performClick、DropdownPopup 和转发触摸 listener 构造在�
 [dexvm.property_animation]
 status = "partial"
 note = "DVM-337：API19 ROM ValueAnimator/ObjectAnimator/PVH 沿主 Looper Choreographer 推进；四个 PVH native 使用稳定方法 ID、虚派及异常传播，缺方法供反射回退。View Java alpha 唯一事实，祖先乘积投影只失效绘制；透明应用窗口像素合成、不透明窗口覆盖。无离屏组不透明度、XML 动画、ViewPropertyAnimator、LayoutTransition/postOnAnimation；跨平台未验。"
-test = "tests/runtime/property_animation_tests.cpp#DVM-337; tools/bootdex/compose_bootdex.py check"
+test = "tests/runtime/property_animation_tests.cpp#DVM-337; tools/bootdex/build_bootdex.py check"
 
 [dexvm.view_background_draw]
 status = "partial"
@@ -2215,7 +2215,7 @@ note = "View 背景支持受审 ROM skin 与 ColorDrawable（含子类）；颜�
 
 [dexvm.progressbar]
 status = "partial"
-test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/progressbar_tests.cpp#DVM-365; tools/bootdex/compose_bootdex.py check; tools.android_payload_current"
+test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/progressbar_tests.cpp#DVM-365; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
 note = "DVM-365/367：固定 ROM 默认、Large 及 Holo dark horizontal 构造、状态、主/非 UI 刷新、测量和生命周期；同 ROM rotate/layer-list/scale/八帧 bitmap 与插值器 XML 封存。字段归 Java，内容一次记账不绘制。Small/Large/Light spinner 资源已封存；实际旋转/帧动画、guest onDraw、Windows 未支持或未验。"
 
 [dexvm.progressbar_draw]

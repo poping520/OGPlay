@@ -164,7 +164,7 @@ JNI/反射区分“成员缺失”与“存在但未实现”：合法查找可�
 
 ## ADR-0148 · 固定 ROM Java 类的规则准入与显式撤换
 
-- 状态：Accepted
+- 状态：已取代（2026-11-09：启动类路径改为原样加载整份 ROM jar，不再逐类准入或撤换）
 - 日期：2026-10-20
 
 ### 背景
@@ -233,7 +233,7 @@ allocateDirect 创建真实 byte[] 并与所有 NIO view 共享地址/GC；JNI �
 
 ## ADR-0157 · Java View 遍历、宿主投影与配对制品
 
-- 状态：Accepted
+- 状态：Accepted（2026-11-09 修订：配对制品与五项身份校验已删除，其余遍历/投影决定不变）
 - 日期：2026-10-24
 
 ### 背景
@@ -272,7 +272,7 @@ PhoneLayoutInflater 只取同 ROM 受审闭包，不拉入 Policy/PhoneWindow �
 
 ## ADR-0158 · 固定 ROM 成员组合与开放世界虚派准入
 
-- 状态：Accepted
+- 状态：已取代（2026-11-09：成员来源审计与 member-sources 删除，ROM 方法体照常执行，intrinsic 仅以 MergesBootClass 覆盖带 handler 的方法）
 - 日期：2026-10-24
 
 ### 背景

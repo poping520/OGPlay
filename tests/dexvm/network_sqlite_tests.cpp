@@ -171,6 +171,14 @@ std::vector<std::byte> MakeStoredZip(const std::string_view name, const std::spa
     return bytes;
 }
 
+void SingleBootJar(DexVmAndroidContext& context, std::vector<std::byte> bytes) {
+    BootClasspathJar jar;
+    jar.guest_path = "/system/framework/ogplay.jar";
+    jar.bytes = std::move(bytes);
+    jar.archive = ogplay::loader::ParseApkArchive(jar.bytes);
+    context.boot_classpath = {std::move(jar)};
+}
+
 // The production SQLiteGlobal reads StatFs("/data") before opening a database.
 // A bare in-memory VFS has no quota volume; mount a real test-owned sandbox.
 struct SqliteSandboxRoot final {
@@ -901,10 +909,8 @@ TEST_CASE("DVM-198 system resource mapping follows each BootDex archive") {
             const std::string document = R"({"schema_version":1,"api_level":19,"resources":[{"id":)" +
                                          std::to_string(id) +
                                          R"(,"name":"journal","type":"string","value":"DELETE"}]})";
-            fixture.context->boot_classpath_bytes = MakeStoredZip(
-                "META-INF/ogplay/system-resources.json", std::as_bytes(std::span(document.data(), document.size())));
-            fixture.context->boot_classpath_archive =
-                ogplay::loader::ParseApkArchive(fixture.context->boot_classpath_bytes);
+            SingleBootJar(*fixture.context, MakeStoredZip("META-INF/ogplay/system-resources.json",
+                                                          std::as_bytes(std::span(document.data(), document.size()))));
             const auto resources =
                 fixture.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
             CHECK(fixture.vm.StringUtf8(
@@ -925,13 +931,11 @@ TEST_CASE("DVM-198 missing or malformed BootDex resource maps fail without APK f
          R"({"schema_version":1,"api_level":19,"resources":[{"id":17039657,"name":"a","type":"integer","value":2147483648}]})",
          R"({"schema_version":1,"api_level":19,"resources":[{"id":17039657,"name":"a","type":"string","value":"x"},{"id":17039657,"name":"b","type":"integer","value":1}]})"}) {
         NetworkSqliteVm fixture;
-        fixture.context->apk_bytes = fixture.context->boot_classpath_bytes;
-        fixture.context->archive = fixture.context->boot_classpath_archive;
-        fixture.context->boot_classpath_bytes =
-            MakeStoredZip(document.empty() ? "other.json" : "META-INF/ogplay/system-resources.json",
-                          std::as_bytes(std::span(document.data(), document.size())));
-        fixture.context->boot_classpath_archive =
-            ogplay::loader::ParseApkArchive(fixture.context->boot_classpath_bytes);
+        fixture.context->apk_bytes = fixture.context->boot_classpath.front().bytes;
+        fixture.context->archive = fixture.context->boot_classpath.front().archive;
+        SingleBootJar(*fixture.context,
+                      MakeStoredZip(document.empty() ? "other.json" : "META-INF/ogplay/system-resources.json",
+                                    std::as_bytes(std::span(document.data(), document.size()))));
         const auto resources =
             fixture.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
         const auto invalid = fixture.linker.ResolveDescriptor("Ljava/lang/IllegalStateException;");
@@ -963,8 +967,8 @@ TEST_CASE("DVM-194 SQLiteGlobal reads reviewed system resources through BootDex"
             fixture.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
         const auto resource_root = fixture.vm.ProtectReferences(std::array{resources});
 
-        const auto bytes = ogplay::loader::ReadStoredApkEntry(fixture.context->boot_classpath_bytes,
-                                                              fixture.context->boot_classpath_archive,
+        const auto bytes = ogplay::loader::ReadStoredApkEntry(fixture.context->boot_classpath.front().bytes,
+                                                              fixture.context->boot_classpath.front().archive,
                                                               "META-INF/ogplay/system-resources.json");
         ogplay::core::JsonParseError parse_error;
         const auto document = ogplay::core::JsonDocument::ParseStrict(
@@ -1666,11 +1670,8 @@ TEST_CASE("Sealed classpath URLs read registered ZIP entries with parent first a
             context.package_resource_path = "/data/app/test.game-1.apk";
             context.apk_bytes = MakeStoredZip(name, std::as_bytes(std::span(contents)));
             context.archive = ogplay::loader::ParseApkArchive(context.apk_bytes);
-            context.boot_classpath_archive = {};
-            if (boot_present) {
-                context.boot_classpath_bytes = MakeStoredZip(name, std::as_bytes(std::span(boot_contents)));
-                context.boot_classpath_archive = ogplay::loader::ParseApkArchive(context.boot_classpath_bytes);
-            }
+            context.boot_classpath.clear();
+            if (boot_present) SingleBootJar(context, MakeStoredZip(name, std::as_bytes(std::span(boot_contents))));
             const auto loader = fixture.vm.ClassLoaders().ApplicationLoader();
             const auto url = fixture
                                  .On(loader, "getResource", "(Ljava/lang/String;)Ljava/net/URL;",
@@ -1679,7 +1680,7 @@ TEST_CASE("Sealed classpath URLs read registered ZIP entries with parent first a
             REQUIRE(url.IsValid());
             const auto form = fixture.vm.StringUtf8(fixture.On(url, "toExternalForm", "()Ljava/lang/String;").ref);
             CHECK(form == std::string("jar:file:") +
-                              (boot_present ? "/system/framework/bootdex.jar" : "/data/app/test.game-1.apk") +
+                              (boot_present ? "/system/framework/ogplay.jar" : "/data/app/test.game-1.apk") +
                               "!/java/lang/config%20%25%21%3F%23%20%2B.properties");
             const auto boot = fixture.vm.ClassLoaders().BootstrapLoader();
             CHECK(fixture
@@ -1695,7 +1696,7 @@ TEST_CASE("Sealed classpath URLs read registered ZIP entries with parent first a
                                             .ref) == (boot_present ? "boot" : "2.0.5"));
             fixture.On(stream, "close", "()V");
             // Simulate sealed backing corruption without changing directory metadata.
-            auto& bytes = boot_present ? context.boot_classpath_bytes : context.apk_bytes;
+            auto& bytes = boot_present ? context.boot_classpath.front().bytes : context.apk_bytes;
             bytes[30 + name.size()] ^= std::byte{1};
             const auto broken = fixture.OnOutcome(url, "openStream", "()Ljava/io/InputStream;");
             REQUIRE(broken.exception.IsValid());

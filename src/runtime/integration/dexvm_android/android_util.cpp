@@ -1,6 +1,7 @@
 // DVM-80: API-family translation unit. DVM-86 adds stateful API 19 utility
 // primitives to the same family.
 
+#include <cmath>
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -254,6 +255,7 @@ void TruncateEventString(std::string& value) {
 Decl Declare_android_util_EventLog(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/EventLog;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     builder.StaticMethod("writeEvent", "(II)I", [](dx::IntrinsicContext& call) {
         const auto tag = call.arguments[0].AsInt();
         const auto value = call.arguments[1].AsInt();
@@ -337,9 +339,35 @@ Decl Declare_android_util_EventLog(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
+// FloatMath natives are float wrappers over libm, exactly as the API 19 JNI does.
+Decl Declare_android_util_FloatMath(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/FloatMath;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
+    const auto unary = [&builder](const char* name, float (*function)(float)) {
+        builder.StaticMethod(name, "(F)F", [function](dx::IntrinsicContext& call) {
+            return dx::VmValue::Float(function(call.arguments[0].AsFloat()));
+        });
+    };
+    unary("floor", [](float value) { return std::floor(value); });
+    unary("ceil", [](float value) { return std::ceil(value); });
+    unary("sin", [](float value) { return std::sin(value); });
+    unary("cos", [](float value) { return std::cos(value); });
+    unary("sqrt", [](float value) { return std::sqrt(value); });
+    unary("exp", [](float value) { return std::exp(value); });
+    const auto binary = [&builder](const char* name, float (*function)(float, float)) {
+        builder.StaticMethod(name, "(FF)F", [function](dx::IntrinsicContext& call) {
+            return dx::VmValue::Float(function(call.arguments[0].AsFloat(), call.arguments[1].AsFloat()));
+        });
+    };
+    binary("pow", [](float x, float y) { return std::pow(x, y); });
+    binary("hypot", [](float x, float y) { return std::hypot(x, y); });
+    return std::move(builder).Build();
+}
+
 Decl Declare_android_util_AttributeSet(const Context& context) {
     static_cast<void>(context);
-    return std::move(dx::IntrinsicClassBuilder::Interface("Landroid/util/AttributeSet;")).Build();
+    return std::move(dx::IntrinsicClassBuilder::Interface("Landroid/util/AttributeSet;").MergesBootClass()).Build();
 }
 
 namespace {

@@ -5,12 +5,14 @@ namespace ogplay::runtime::dexvm::intrinsics {
 void AppendJavaRegex(std::vector<IntrinsicClassDecl>& catalog) {
     {
         auto b = IntrinsicClassBuilder::Class("Ljava/util/regex/Pattern;");
+        b.MergesBootClass();
         b.GuestNativeStatic("closeImpl", "(J)V", kAccPrivate | kAccStatic | kAccNative);
         b.GuestNativeStatic("compileImpl", "(Ljava/lang/String;I)J", kAccPrivate | kAccStatic | kAccNative);
         catalog.push_back(std::move(b).Build());
     }
     {
         auto b = IntrinsicClassBuilder::Class("Ljava/util/regex/Matcher;");
+        b.MergesBootClass();
         b.GuestNativeStatic("closeImpl", "(J)V", kAccPrivate | kAccStatic | kAccNative);
         b.GuestNativeStatic("findImpl", "(JLjava/lang/String;I[I)Z", kAccPrivate | kAccStatic | kAccNative);
         b.GuestNativeStatic("findNextImpl", "(JLjava/lang/String;[I)Z", kAccPrivate | kAccStatic | kAccNative);

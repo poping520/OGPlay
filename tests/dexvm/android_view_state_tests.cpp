@@ -49,8 +49,7 @@ using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("View edit mode defaults to false and preserves guest overrides") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal,
-                         OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal);
         const auto context = f.New("Landroid/app/Activity;");
         const auto context_root = f.vm.ProtectReferences(std::array{context});
         const auto base = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(context)});
@@ -60,38 +59,10 @@ TEST_CASE("View edit mode defaults to false and preserves guest overrides") {
     }
 }
 
-TEST_CASE("DVM-281 raw host allocation bypasses failure constructors and class initialization") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal,
-                         OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
-        for (const auto descriptor : {"Landroid/view/ViewRootImpl;", "Landroid/view/ViewOverlay$OverlayViewGroup;"}) {
-            const auto type = f.linker.ResolveDescriptor(descriptor);
-            const auto signature = std::string_view(descriptor) == "Landroid/view/ViewRootImpl;"
-                                       ? "(Landroid/content/Context;Landroid/view/Display;)V"
-                                       : "(Landroid/content/Context;Landroid/view/View;)V";
-            const auto constructor = f.linker.FindDirectMethod(type, "<init>", signature);
-            REQUIRE(constructor.has_value());
-            REQUIRE(f.linker.Method(*constructor).kind != MethodKind::interpreted);
-            REQUIRE_FALSE(f.linker.Method(*constructor).implementation);
-            // Existing by-name host allocation performs neither clinit nor
-            // construction; failure constructors alone cannot prove absence.
-            const auto object = f.vm.NewIntrinsicInstance(descriptor);
-            const auto roots = f.vm.ProtectReferences(std::array{object});
-            REQUIRE(object.IsValid());
-            CHECK(f.model.ObjectClass(object) == type);
-            const auto rejected = f.vm.Call(*constructor, std::array{VmValue::Ref(object), VmValue::Ref(VmObjectRef{}),
-                                                                     VmValue::Ref(VmObjectRef{})});
-            CHECK(rejected.exception.IsValid());
-            CHECK(f.model.ObjectClass(object) == type);
-        }
-    }
-}
-
 TEST_CASE("DVM-279 ROM measure specs state cache and guest overrides use Java authority") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         for (const auto sdk : {17U, 18U, 19U}) {
-            AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal,
-                             OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+            AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal);
             f.context->target_sdk_version = sdk;
             const auto owner = f.New("Landroid/app/Activity;");
             const auto make = [&](const char* type) {
@@ -236,7 +207,7 @@ TEST_CASE("DVM-280 ROM layout callbacks and two-pass owner scheduling publish Ja
             return VmValue::Void();
         });
         AndroidValueVm f(backend, {std::move(probe).Build()}, false, "view_layout.dex",
-                         AndroidUiTraversalOwner::JavaTraversal, OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+                         AndroidUiTraversalOwner::JavaTraversal);
         // Materialize the negative-control type before allocating any instances.
         static_cast<void>(f.linker.ResolveDescriptor("Landroid/view/GLES20DisplayList;"));
         const auto owner = f.New("Landroid/content/Context;");
@@ -562,10 +533,7 @@ TEST_CASE("DVM-138 View.getParent follows the live UiTree hierarchy") {
         CHECK_FALSE(f.On(child, "getParent", "()Landroid/view/ViewParent;").ref.IsValid());
         f.On(second_parent, "addView", "(Landroid/view/View;)V", {VmValue::Ref(child)});
         CHECK(f.On(child, "getParent", "()Landroid/view/ViewParent;").ref == second_parent);
-        CHECK(
-            f.OnOutcome(second_parent, "removeViews", "(II)V", {VmValue::Int(0), VmValue::Int(1)}).exception.IsValid());
-        CHECK(f.On(child, "getParent", "()Landroid/view/ViewParent;").ref == second_parent);
-        f.On(second_parent, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(child)});
+        f.On(second_parent, "removeViews", "(II)V", {VmValue::Int(0), VmValue::Int(1)});
         CHECK_FALSE(f.On(child, "getParent", "()Landroid/view/ViewParent;").ref.IsValid());
 
         f.On(activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(first_parent)});
@@ -726,35 +694,27 @@ TEST_CASE("DVM-184 View.getContext preserves constructor and inflation identity"
     }
 }
 
-TEST_CASE("DVM-306 sealed BootDex assembly fixes owner and platform facts before VM creation") {
-    const auto read = [](const std::filesystem::path& path) {
-        std::ifstream stream(path, std::ios::binary);
-        REQUIRE(stream.good());
-        const std::vector<char> raw{std::istreambuf_iterator<char>(stream), {}};
-        const auto bytes = std::as_bytes(std::span(raw));
-        return std::vector<std::byte>(bytes.begin(), bytes.end());
-    };
-    const auto production = AssembleAndroidContext(
-        read(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework/bootdex.jar"), {true});
-    CHECK(production->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal);
-    CHECK(production->ui_tree.GeometryOwner() == ui::UiGeometryOwner::ExternalProjection);
-    auto bytes = read(std::filesystem::path(OGPLAY_DEXVM_FIXTURE_DIR) / "view-measure.jar");
-    const auto context = AssembleAndroidContext(bytes, {true});
+TEST_CASE("DVM-306 boot classpath assembly fixes owner and platform facts before VM creation") {
+    const auto framework = std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework";
+    const auto context = AssembleAndroidContext(ReadBootClasspath(framework), {true});
     CHECK(context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal);
     CHECK(context->ui_tree.GeometryOwner() == ui::UiGeometryOwner::ExternalProjection);
     CHECK(context->platform_services.accessibility_service_absent);
     CHECK(context->UiAccessibilityUnavailable());
     CHECK_FALSE(context->ui_test_accessibility_disabled);
+    REQUIRE(context->boot_classpath.size() == kBootClasspathJars.size());
+    CHECK(context->boot_classpath.front().guest_path == "/system/framework/ogplay.jar");
+    CHECK(FindBootClasspathEntry(*context, "META-INF/ogplay/theme-projection.json") ==
+          &context->boot_classpath.front());
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        const auto assembled = AssembleAndroidContext(bytes, {true});
+        const auto assembled = AssembleAndroidContext(ReadBootClasspath(framework), {true});
         DexClassLinker linker;
         linker.RegisterIntrinsics(BoundCoreIntrinsicCatalog(assembled));
         linker.RegisterIntrinsics(AndroidIntrinsicCatalog(assembled));
         ogplay::test::BindBootDexPlatformNatives(linker);
-        const auto dex = ogplay::loader::ReadApkEntry(bytes, assembled->boot_classpath_archive, "classes.dex");
-        std::vector<std::uint8_t> code(dex.size());
-        std::memcpy(code.data(), dex.data(), dex.size());
-        linker.RegisterBootDex(std::move(code), DexClassLinker::BootDexMemberSources(bytes));
+        linker.SetUnboundNativePolicy(AndroidUnboundNative);
+        for (auto& dex : BootClasspathDexFiles(assembled->boot_classpath))
+            linker.RegisterBootDex(std::move(dex));
         linker.Link();
         HostCopyJavaPayloadProvider strings_payload, arrays_payload;
         JniStringStore strings{strings_payload};
@@ -781,58 +741,16 @@ TEST_CASE("DVM-306 sealed BootDex assembly fixes owner and platform facts before
         CHECK_FALSE(assembled->ui_test_accessibility_disabled);
         CHECK(ledger.Unimplemented().empty());
     }
-    const auto undeclared = AssembleAndroidContext(bytes, {});
+    const auto undeclared = AssembleAndroidContext(ReadBootClasspath(framework), {});
     CHECK_FALSE(undeclared->UiAccessibilityUnavailable());
     undeclared->ui_test_accessibility_disabled = true;
     CHECK(undeclared->UiAccessibilityUnavailable());
     static_assert(!std::is_assignable_v<decltype((context->ui_traversal_owner)), AndroidUiTraversalOwner>);
     static_assert(!std::is_assignable_v<decltype((context->platform_services)), AndroidPlatformServices>);
-    const auto replace = [&](std::string_view from, std::string_view to) {
-        REQUIRE(from.size() == to.size());
-        std::string raw(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-        std::size_t offset = 0, count = 0;
-        while ((offset = raw.find(from, offset)) != std::string::npos) {
-            raw.replace(offset, from.size(), to);
-            offset += to.size();
-            ++count;
-        }
-        REQUIRE(count > 0);
-        const auto result = std::as_bytes(std::span(raw));
-        return std::vector<std::byte>(result.begin(), result.end());
-    };
-    CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(replace("java-traversal", "unknown-mode!!"), {true})),
-                      "BootDex pairing: unknown mode/schema/version");
-    CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(replace("\"version\":1", "\"version\":2"), {true})),
-                      "BootDex pairing: unknown mode/schema/version");
-    CHECK_THROWS_WITH(
-        static_cast<void>(AssembleAndroidContext(replace("theme-projection.json", "theme-projectioX.json"), {true})),
-        "BootDex pairing: missing META-INF/ogplay/theme-projection.json");
-    CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(replace("vm-pairing.json", "vm-pairinX.json"), {true})),
-                      "BootDex pairing: missing sealed JavaTraversal mode");
-    CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(
-                          replace("view-video-adapter.json", "view-video-adapteX.json"), {true})),
-                      "BootDex pairing: missing META-INF/ogplay/view-video-adapter.json");
-    CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(
-                          replace("java-traversal-recipe.json", "java-traversal-recipX.json"), {true})),
-                      "BootDex pairing: missing META-INF/ogplay/java-traversal-recipe.json");
-    // Each sealed identity is required even when the archive remains readable.
-    const auto archive = ogplay::loader::ParseApkArchive(bytes);
-    const auto pairing_offset =
-        ogplay::loader::StoredApkEntryDataOffset(bytes, archive, "META-INF/ogplay/vm-pairing.json");
-    const auto pairing = ogplay::loader::ReadApkEntry(bytes, archive, "META-INF/ogplay/vm-pairing.json");
-    const std::string text(reinterpret_cast<const char*>(pairing.data()), pairing.size());
-    for (const auto* key : {"dex_sha256", "member_sources_sha256", "theme_projection_sha256", "video_adapter_sha256",
-                            "candidate_recipe_sha256"}) {
-        auto mismatched = bytes;
-        const auto position = text.find(std::string("\"") + key + "\":\"");
-        REQUIRE(position != std::string::npos);
-        const auto hash = position + std::string_view(key).size() + 4;
-        auto& digit = mismatched.at(pairing_offset + hash);
-        digit = digit == std::byte{'0'} ? std::byte{'1'} : std::byte{'0'};
-        CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(std::move(mismatched), {true})),
-                          (std::string("BootDex pairing: identity mismatch: ") + key).c_str());
-    }
-    CHECK(context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal);
+    CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext({}, {true})), "boot classpath is empty");
+    auto broken = ReadBootClasspath(framework);
+    broken.back().bytes.resize(16);
+    CHECK_THROWS(static_cast<void>(AssembleAndroidContext(std::move(broken), {true})));
 }
 
 TEST_CASE("DVM-175 View.setOnClickListener is overridable and super registers the listener") {
@@ -921,24 +839,6 @@ TEST_CASE("DVM-175 View.setOnClickListener is overridable and super registers th
     }
 }
 
-TEST_CASE("DVM-331 unselected Legacy View APIs fail explicitly without mutating state") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend);
-        const auto owner = f.New("Landroid/content/Context;");
-        const auto view = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-        const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-        const auto before = f.On(view, "isClickable", "()Z").AsInt();
-        CHECK(f.OnOutcome(view, "getScrollBarSize", "()I").exception.IsValid());
-        CHECK(f.OnOutcome(view, "addOnLayoutChangeListener", "(Landroid/view/View$OnLayoutChangeListener;)V",
-                          {VmValue::Ref(VmObjectRef{})})
-                  .exception.IsValid());
-        CHECK(f.OnOutcome(group, "getClipChildren", "()Z").exception.IsValid());
-        CHECK(f.On(view, "isClickable", "()Z").AsInt() == before);
-        CHECK(f.ledger.Unimplemented().size() == 3);
-        CHECK_FALSE(f.context->ui_tree.PublishedProjection());
-    }
-}
-
 TEST_CASE("DVM-371 View scrollbar style round-trips and animation state stays inert") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ogplay::test::container_traversal::ContainerVm f(backend);
@@ -995,10 +895,10 @@ TEST_CASE("DVM-372 display-only setters warn and keep running while getters stay
                 return hit.id == std::string(ogplay::core::kUiDegradedWarningPrefix) + std::string(item);
             });
         };
-        // Ignored setter, failing getter: nothing reports state that was not applied.
+        // ROM View keeps transform state; the projection ignores it with a warning.
         f.On(view, "setRotation", "(F)V", {VmValue::Float(45.0F)});
-        CHECK(warned("View.setRotation"));
-        CHECK(f.OnOutcome(view, "getRotation", "()F").exception.IsValid());
+        CHECK(f.On(view, "getRotation", "()F").AsFloat() == 45.0F);
+        // Paint setter natives are ignored until the graphics natives exist; getters fail.
         f.On(paint, "setColor", "(I)V", {VmValue::Int(0x11223344)});
         CHECK(warned("Paint.setColor"));
         CHECK(f.OnOutcome(paint, "getColor", "()I").exception.IsValid());
@@ -1036,10 +936,7 @@ TEST_CASE("DVM-372 display-only setters warn and keep running while getters stay
         CHECK(warned("TextView.bufferType"));
         f.On(text, "setTextKeepState", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.vm.NewStringUtf8("kept"))});
         CHECK(shown() == "kept");
-        // Logic is never degraded: listeners and transforms still fail.
-        CHECK(f.OnOutcome(view, "addOnLayoutChangeListener", "(Landroid/view/View$OnLayoutChangeListener;)V",
-                          {VmValue::Ref(VmObjectRef{})})
-                  .exception.IsValid());
+        // Logic is never degraded: a Matrix native without a backend still fails.
         CHECK(f.OnOutcome(f.New("Landroid/graphics/Matrix;"), "setScale", "(FF)V",
                           {VmValue::Float(2.0F), VmValue::Float(2.0F)})
                   .exception.IsValid());

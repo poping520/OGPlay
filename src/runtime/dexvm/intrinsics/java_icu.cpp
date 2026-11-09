@@ -24,6 +24,7 @@ VmObjectRef StringArray(Interpreter& vm, const std::vector<std::u16string>& valu
 
 IntrinsicClassDecl IcuBoundary() {
     auto b = IntrinsicClassBuilder::Class("Llibcore/icu/ICU;");
+    b.MergesBootClass();
     for (const auto& [name, descriptor, flags] : std::array{
              std::tuple{"getBestDateTimePatternNative", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
                         kAccPrivate | kAccStatic | kAccNative},
@@ -76,6 +77,7 @@ IntrinsicClassDecl IcuBoundary() {
 
 IntrinsicClassDecl DecimalBoundary() {
     auto b = IntrinsicClassBuilder::Class("Llibcore/icu/NativeDecimalFormat;");
+    b.MergesBootClass();
     constexpr std::pair<const char*, const char*> methods[]{
         {"applyPatternImpl", "(JZLjava/lang/String;)V"},
         {"cloneImpl", "(J)J"},
@@ -106,6 +108,7 @@ IntrinsicClassDecl DecimalBoundary() {
 
 IntrinsicClassDecl TimeZoneNamesBoundary() {
     auto b = IntrinsicClassBuilder::Class("Llibcore/icu/TimeZoneNames;");
+    b.MergesBootClass();
     b.GuestNativeStatic("fillZoneStrings", "(Ljava/lang/String;[[Ljava/lang/String;)V",
                         kAccPrivate | kAccStatic | kAccNative);
     return std::move(b).Build();
@@ -113,6 +116,7 @@ IntrinsicClassDecl TimeZoneNamesBoundary() {
 
 IntrinsicClassDecl TimeZoneBoundary(const CoreIntrinsicServices& services) {
     auto b = IntrinsicClassBuilder::Class("Ljava/util/TimeZone;");
+    b.MergesBootClass();
     const auto gmt = b.BoundStaticField("GMT", "Ljava/util/TimeZone;", kAccPrivate | kAccStatic | kAccFinal);
     const auto utc = b.BoundStaticField("UTC", "Ljava/util/TimeZone;", kAccPrivate | kAccStatic | kAccFinal);
     const auto default_zone = b.BoundStaticField("defaultTimeZone", "Ljava/util/TimeZone;", kAccPrivate | kAccStatic);
@@ -188,6 +192,7 @@ IntrinsicClassDecl TimeZoneBoundary(const CoreIntrinsicServices& services) {
 void AppendJavaIcu(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services) {
     {
         auto b = IntrinsicClassBuilder::Class("Llibcore/icu/NativeNormalizer;");
+        b.MergesBootClass();
         b.GuestNativeStatic("normalizeImpl", "(Ljava/lang/String;I)Ljava/lang/String;",
                             kAccPrivate | kAccStatic | kAccNative);
         b.GuestNativeStatic("isNormalizedImpl", "(Ljava/lang/String;I)Z", kAccPrivate | kAccStatic | kAccNative);

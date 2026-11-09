@@ -9,6 +9,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_nfc_NfcAdapter(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/nfc/NfcAdapter;");
+    builder.MergesBootClass();
     constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
     builder.StaticMethod(
         "nativeGetAdapter", "()Landroid/nfc/NfcAdapter;",
@@ -51,6 +52,7 @@ dx::VmObjectRef NfcManagerForContext(dx::IntrinsicContext& call, const Context& 
 
 Decl Declare_android_hardware_usb_UsbManager(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/hardware/usb/UsbManager;");
+    builder.MergesBootClass();
     constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
     builder.StaticMethod(
         "nativeGetDeviceList", "(Landroid/os/Bundle;)V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); },
@@ -179,6 +181,7 @@ Decl Declare_android_location_LocationManager(const Context& context) {
 
 Decl Declare_android_provider_Settings_NameValueCache(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/provider/Settings$NameValueCache;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     const auto get_command =
         builder.BoundInstanceField("mCallGetCommand", "Ljava/lang/String;", dx::kAccPrivate | dx::kAccFinal);
     const auto set_command =

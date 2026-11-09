@@ -70,7 +70,7 @@ TEST_CASE("DVM-219 pinned tzdata serves real Bionic UTC and Shanghai queries") {
     request.manifest = AppManifest("fixture.DelayedContentActivity");
     request.system_libraries = libraries;
     request.dex_bytes = ReadDexFixture("application.dex");
-    request.boot_dex_bytes = test::ReadBootDex();
+    request.boot_dex_files = test::ReadBootDex();
     request.context = std::make_shared<runtime::DexVmAndroidContext>();
     request.filesystem = &filesystem;
     request.ledger = &ledger;
@@ -148,7 +148,7 @@ TEST_CASE("DVM-126 String.format delegates Locale formatting to API19 Formatter"
         request.system_libraries = libraries;
         request.dex_bytes = ReadDexFixture("cipher.dex");
         request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_bytes = test::ReadBootDex();
+        request.boot_dex_files = test::ReadBootDex();
         request.context = context;
         request.dexvm.interpreter.backend = backend;
         request.surface_width = 64;
@@ -275,7 +275,7 @@ TEST_CASE("DVM-215 API19 decimal JSON uses bounded guest BIGNUM arithmetic") {
         // Minimal APK fixture; math/JSON classes come from the audited BootDex.
         request.dex_bytes = ReadDexFixture("crc32.dex");
         request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_bytes = test::ReadBootDex();
+        request.boot_dex_files = test::ReadBootDex();
         request.context = context;
         request.dexvm.interpreter.backend = backend;
         request.surface_width = 64;
@@ -550,7 +550,7 @@ void CheckPlatformPropertySources(bool load_icu) {
         request.system_libraries = libraries;
         request.dex_bytes = ReadDexFixture("platform_tables.dex");
         request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_bytes = test::ReadBootDex();
+        request.boot_dex_files = test::ReadBootDex();
         request.context = std::make_shared<runtime::DexVmAndroidContext>();
         request.dexvm.interpreter.backend = backend;
         request.filesystem = &filesystem;

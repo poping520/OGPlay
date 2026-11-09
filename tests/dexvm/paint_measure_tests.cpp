@@ -317,34 +317,19 @@ TEST_CASE("DVM-356 RectF ROM value semantics and explicit failure boundaries on 
             CHECK(f.OnOutcome(creator, "newArray", desc, {VmValue::Int(-1)}).exception.IsValid());
         }
         CHECK(f.ledger.Unimplemented().empty());
-        for (const auto& entry : {std::pair{"roundOut", "(Landroid/graphics/Rect;)V"},
-                                  std::pair{"writeToParcel", "(Landroid/os/Parcel;I)V"}}) {
-            const auto outcome =
-                entry.first == std::string_view("roundOut")
-                    ? f.OnOutcome(a, entry.first, entry.second, {VmValue::Ref(rect)})
-                    : f.OnOutcome(a, entry.first, entry.second, {VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
-            REQUIRE(outcome.exception.IsValid());
-            CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
-            const auto hits = f.ledger.Unimplemented();
-            CHECK(std::any_of(hits.begin(), hits.end(), [&](const auto& hit) {
-                return hit.id ==
-                           std::string("dexvm.intrinsic.Landroid/graphics/RectF;.") + entry.first + entry.second &&
-                       hit.count == 1;
-            }));
-        }
-        CHECK(f.ledger.Unimplemented().size() == 2);
+        // The whole ROM RectF runs, including roundOut and Parcel writes.
+        f.On(a, "roundOut", "(Landroid/graphics/Rect;)V", {VmValue::Ref(rect)});
+        const auto parcel =
+            f.OnOutcome(a, "writeToParcel", "(Landroid/os/Parcel;I)V", {VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
+        REQUIRE(parcel.exception.IsValid());
+        CHECK(f.linker.Class(parcel.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        CHECK(f.ledger.Unimplemented().empty());
         for (const auto* methods :
              {&f.linker.Class(type).own_direct_methods, &f.linker.Class(type).own_virtual_methods}) {
             for (const auto id : *methods) {
                 const auto& method = f.linker.Method(id);
-                if (method.name == "roundOut" || method.name == "writeToParcel" || method.name == "readFromParcel") {
-                    CHECK(method.kind == MethodKind::intrinsic);
-                    CHECK_FALSE(method.implementation);
-                    CHECK_FALSE(method.code);
-                } else {
-                    CHECK(method.kind == MethodKind::interpreted);
-                    CHECK(method.code.has_value());
-                }
+                CHECK(method.kind == MethodKind::interpreted);
+                CHECK(method.code.has_value());
             }
         }
     }

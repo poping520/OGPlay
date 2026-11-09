@@ -3213,6 +3213,7 @@ Decl Declare_javax_microedition_khronos_egl_EGLSurface(const Context& context) {
 
 Decl Declare_com_google_android_gles_jni_GLImpl(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lcom/google/android/gles_jni/GLImpl;");
+    builder.MergesBootClass();
     for (const auto& method : generated_java_gles::kGLImplNativeMethods) {
         dx::IntrinsicHandler handler;
         std::string name = method.name;

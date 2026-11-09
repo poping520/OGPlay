@@ -36,8 +36,8 @@
 
 namespace ogplay::test::bootdex_library {
 
-std::vector<std::uint8_t> Dvm102BootDex() {
-    const auto path = std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework/bootdex.jar";
+std::vector<std::uint8_t> BootJarDex(const std::string_view jar) {
+    const auto path = std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework" / std::string(jar);
     std::ifstream stream(path, std::ios::binary);
     REQUIRE_MESSAGE(stream.good(), path.string());
     const std::vector<char> raw{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};

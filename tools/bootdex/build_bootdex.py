@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Build, check and audit curated API 19 BootDex from API 19 ROM/AOSP inputs."""
+"""Build and check the API 19 boot classpath payload.
+
+The ROM jars are copied unmodified from .local/aosp. OGPlay's own guest Java is
+compiled into ogplay.jar, which comes first on the boot classpath, together with
+the system resource table and the theme projection. The same script builds the
+guest JNI library (build-guest-jni).
+"""
 
 from __future__ import annotations
 
@@ -16,14 +22,10 @@ import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
-from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import dex_survey_lib
-
-RECIPE = ROOT / "tools/bootdex/api19.json"
 SYSTEM_RESOURCES = ROOT / "tools/bootdex/api19-system-resources.json"
 SYSTEM_RESOURCES_ENTRY = "META-INF/ogplay/system-resources.json"
 SYSTEM_RESOURCE_CONSUMERS = (
@@ -31,82 +33,86 @@ SYSTEM_RESOURCE_CONSUMERS = (
 )
 AOSP = ROOT / ".local/aosp"
 SMALI = ROOT / ".local/tools"
-OUTPUT = ROOT / "data/android/19/framework/bootdex.jar"
+FRAMEWORK = ROOT / "data/android/19/framework"
+OGPLAY_JAR = FRAMEWORK / "ogplay.jar"
 MANIFEST = ROOT / "data/android/19/manifest.json"
-NOTICE = ROOT / "data/android/19/notices/bootdex.jar.txt"
-AUDIT_REPORT = ROOT / ".local/dvm102-date-family-audit.json"
-NATIVE_CRYPTO_AUDIT_REPORT = ROOT / ".local/nativecrypto-api19-audit.json"
-JAVA_SOURCE_ROOT = ROOT / "src/guest/crypto/java"
-JAVA_SOURCE_NAMES = tuple(sorted((
-    "org/ogplay/security/AesCbcZeroBytePadding.java",
-    "org/ogplay/security/AndroidCaStoreSpi.java",
-    "org/ogplay/security/BksKeyStoreSpi.java",
-    "org/ogplay/security/BksLimits.java",
-    "org/ogplay/security/BksPrivateKey.java",
-    "org/ogplay/security/CaBundle.java",
-    "org/ogplay/security/NativeKeyStoreCrypto.java",
-    "org/ogplay/security/NativeTls.java",
-    "org/ogplay/security/NativeTrust.java",
-    "org/ogplay/security/OgPlayHttpURLConnection.java",
-    "org/ogplay/security/OgPlayHttpsURLConnection.java",
-    "org/ogplay/security/OgPlayJsseProvider.java",
-    "org/ogplay/security/OgPlayCryptoProvider.java",
-    "org/ogplay/security/OgPlayKeyManager.java",
-    "org/ogplay/security/OgPlayKeyManagerFactorySpi.java",
-    "org/ogplay/security/OgPlayKeyStoreProvider.java",
-    "org/ogplay/security/OgPlaySslContextSpi.java",
-    "org/ogplay/security/OgPlaySslSession.java",
-    "org/ogplay/security/OgPlaySslSessionContext.java",
-    "org/ogplay/security/OgPlaySslSocket.java",
-    "org/ogplay/security/OgPlaySslSocketFactory.java",
-    "org/ogplay/security/Pkcs12Kdf.java",
-    "org/ogplay/security/Pkcs12AesSecretKeyFactory.java",
-    "org/ogplay/security/PkixTrustManagerFactorySpi.java",
-    "org/ogplay/security/TrustLimits.java",
-    "org/ogplay/security/X509TrustManagerImpl.java",
-)))
-MATH_JAVA_ROOT = ROOT / "src/guest/math/java"
-MATH_JAVA_NAMES = ("org/ogplay/math/NativeBigInteger.java",)
+NOTICE = ROOT / "data/android/19/notices/boot-classpath.txt"
+GUEST_JAVA_ROOTS = tuple(ROOT / "src/guest" / name / "java"
+                         for name in ("crypto", "framework", "io", "math", "xml", "zip"))
 
-ZIP_JAVA_ROOT = ROOT / "src/guest/zip/java"
-ZIP_JAVA_NAMES = ("org/ogplay/zip/NativeZip.java",)
+# API 19 ROM jars in boot classpath order, after ogplay.jar.
+ROM_JARS = {
+    "core.jar": ("platform/libcore",
+                 "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"),
+    "conscrypt.jar": ("platform/libcore",
+                      "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"),
+    "ext.jar": ("platform/external/apache-http",
+                "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2"),
+    "framework.jar": ("platform/frameworks/base",
+                      "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"),
+    "framework2.jar": ("platform/frameworks/base",
+                       "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"),
+    "android.policy.jar": ("platform/frameworks/base",
+                           "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1"),
+}
 
-IO_JAVA_ROOT = ROOT / "src/guest/io/java"
-IO_JAVA_NAMES = ("org/ogplay/io/LogOutputStream.java",)
-XML_JAVA = ROOT / "src/guest/xml/java/org/ogplay/xml/SaxReader.java"
-
-FRAMEWORK_JAVA_ROOT = ROOT / "src/guest/framework/java"
-FRAMEWORK_JAVA_NAMES = (
-    "android/app/Activity.java",
-    "android/app/ActivityManager.java",
-    "android/app/AlertDialog.java",
-    "android/app/Dialog.java",
-    "android/app/Notification.java",
-    "android/app/NotificationManager.java",
-    "android/graphics/BitmapFactory.java",
-    "android/hardware/LegacySensorManager.java",
-    "android/hardware/LocalSensorManager.java",
-    "android/hardware/Sensor.java",
-    "android/hardware/SensorManager.java",
-    "android/hardware/usb/UsbManager.java",
-    "android/net/ConnectivityManager.java",
-    "android/net/wifi/WifiManager.java",
-    "android/nfc/NfcAdapter.java",
-    "android/view/ContextThemeWrapper.java",
-    "android/view/LayoutInflater.java",
-    "android/view/Surface.java",
-    "android/widget/VideoView.java",
-    "com/google/android/gles_jni/GLImpl.java",
-)
-
-
-def guest_java_sources() -> tuple[Path, ...]:
-    return tuple(JAVA_SOURCE_ROOT / name for name in JAVA_SOURCE_NAMES) + tuple(
-        FRAMEWORK_JAVA_ROOT / name for name in FRAMEWORK_JAVA_NAMES) + tuple(
-        ZIP_JAVA_ROOT / name for name in ZIP_JAVA_NAMES) + tuple(
-        MATH_JAVA_ROOT / name for name in MATH_JAVA_NAMES) + tuple(
-        IO_JAVA_ROOT / name for name in IO_JAVA_NAMES) + (XML_JAVA,)
-
+# Hidden API 19 types are absent from the public SDK android.jar. These
+# declarations only satisfy javac; the ROM jars supply the real classes.
+COMPILE_ONLY_SOURCES = {
+    "android/hardware/usb/IUsbManager.java":
+        "package android.hardware.usb; public interface IUsbManager {}",
+    "android/os/SystemProperties.java":
+        "package android.os; public class SystemProperties {"
+        " public static String get(String key, String def) { throw new AssertionError(); } }",
+    "org/kxml2/io/KXmlParser.java":
+        "package org.kxml2.io; public abstract class KXmlParser"
+        " implements org.xmlpull.v1.XmlPullParser { public abstract String getRootElementName(); }",
+    "android/app/Application.java": """package android.app;
+import android.os.Bundle;
+public class Application extends android.content.ContextWrapper {
+    public Application() { super(null); }
+    void dispatchActivityCreated(Activity activity, Bundle state) {}
+    void dispatchActivityStarted(Activity activity) {}
+    void dispatchActivityResumed(Activity activity) {}
+    void dispatchActivityPaused(Activity activity) {}
+    void dispatchActivityStopped(Activity activity) {}
+    void dispatchActivitySaveInstanceState(Activity activity, Bundle state) {}
+    void dispatchActivityDestroyed(Activity activity) {}
+}""",
+    "libcore/io/BufferIterator.java": """package libcore.io;
+public abstract class BufferIterator {
+    public abstract void seek(int offset);
+    public abstract void skip(int count);
+    public abstract void readByteArray(byte[] dst, int offset, int count);
+    public abstract byte readByte();
+    public abstract int readInt();
+    public abstract void readIntArray(int[] dst, int offset, int count);
+    public abstract short readShort();
+}""",
+    "libcore/util/ZoneInfo.java": """package libcore.util;
+public abstract class ZoneInfo extends java.util.TimeZone {
+    public static java.util.TimeZone makeTimeZone(String id, libcore.io.BufferIterator it) {
+        throw new AssertionError();
+    }
+}""",
+}
+# The SDK hides ActivityManager.RunningAppProcessInfo from javac; the overlay
+# ActivityManager compiles against this nested shape and the ROM supplies it.
+ACTIVITY_MANAGER_NESTED = """
+    public static class RunningAppProcessInfo {
+        public static final int REASON_UNKNOWN = 0;
+        public int uid, flags, importance, lru, lastTrimLevel;
+        public int importanceReasonCode, importanceReasonPid;
+        public android.content.ComponentName importanceReasonComponent;
+        public RunningAppProcessInfo(String name, int pid, String[] packages) {
+            throw new AssertionError();
+        }
+    }
+}
+"""
+COMPILE_ONLY_CLASSES = tuple(sorted(
+    [name[:-len(".java")] + ".class" for name in COMPILE_ONLY_SOURCES]
+    + ["android/app/ActivityManager$RunningAppProcessInfo.class"]))
 
 WINDOWS_JAVAC = Path(r"D:\01_software\jdk-17.0.2\bin\javac.exe")
 WINDOWS_ANDROID_JAR = Path(
@@ -180,52 +186,16 @@ JAVAC = resolve_javac()
 JAVA = resolve_java(JAVAC)
 ANDROID_JAR = resolve_android_jar()
 D8_JAR = resolve_d8_jar()
-CATEGORIES = ("boot_dex", "existing_vm_intrinsic", "native_boundary", "deferred")
-NATIVE_DISPOSITIONS = ("required_backend", "explicit_failure")
-NATIVE_CRYPTO_OWNER = "Lcom/android/org/conscrypt/NativeCrypto;"
-NATIVE_CRYPTO_ADAPTED = {f"{NATIVE_CRYPTO_OWNER}->clinit()V"}
-NATIVE_CRYPTO_BACKENDS = {
-    f"{NATIVE_CRYPTO_OWNER}->{member}" for member in (
-        "EVP_get_cipherbyname(Ljava/lang/String;)J",
-        "EVP_CIPHER_CTX_new()J", "EVP_CIPHER_CTX_cleanup(J)V",
-        "EVP_CIPHER_CTX_block_size(J)I", "get_EVP_CIPHER_CTX_buf_len(J)I",
-        "EVP_CIPHER_CTX_set_padding(JZ)V", "EVP_CIPHER_CTX_set_key_length(JI)V",
-        "EVP_CIPHER_iv_length(J)I", "EVP_CipherInit_ex(JJ[B[BZ)V",
-        "EVP_CipherUpdate(J[BI[BII)I", "EVP_CipherFinal_ex(J[BI)I",
-        "EVP_get_digestbyname(Ljava/lang/String;)J", "EVP_MD_size(J)I",
-        "EVP_DigestInit(J)J", "EVP_DigestUpdate(J[BII)V",
-        "EVP_DigestFinal(J[BI)I", "EVP_MD_CTX_copy(J)J",
-        "EVP_MD_CTX_create()J", "EVP_MD_CTX_init(J)V",
-        "EVP_MD_CTX_destroy(J)V", "EVP_PKEY_new_mac_key(I[B)J",
-        "EVP_PKEY_free(J)V", "EVP_DigestSignInit(JJJ)V",
-        "EVP_DigestSignFinal(J)[B", "RAND_seed([B)V", "RAND_bytes([B)V",
-    )
-}
 
-
-def source_path(source: str) -> Path:
-    return AOSP / source
-
-SOURCES = {
-    "conscrypt.jar": ("platform/libcore",),
-    "core.jar": ("platform/libcore",),
-    "ext.jar": ("platform/external/apache-http",),
-    "framework.jar": ("platform/frameworks/base",),
-    "framework2.jar": ("platform/frameworks/base",),
-}
-TOOLS = {
+SMALI_TOOLS = {
     "baksmali.jar": (
         "https://github.com/baksmali/smali/releases/download/3.0.10/"
         "baksmali-3.0.10-fat-release.jar",
         "37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f"),
-    "smali.jar": (
-        "https://github.com/baksmali/smali/releases/download/3.0.10/"
-        "smali-3.0.10-fat-release.jar",
-        "32fa0e88a6c397b3922201adf5f3e534fbaed5a663c71d0c558c3ddce0af844a"),
 }
 JAR_MANIFEST = (
     b"Manifest-Version: 1.0\r\n"
-    b"Created-By: OGPlay BootDex Builder\r\n\r\n"
+    b"Created-By: OGPlay Boot Classpath Builder\r\n\r\n"
 )
 
 
@@ -255,63 +225,6 @@ def ensure_tool(path: Path, url: str, digest: str) -> None:
     path.write_bytes(data)
 
 
-def load_recipe(document: dict | None = None) -> dict[str, tuple[str, ...]]:
-    if document is None:
-        document = json.loads(RECIPE.read_text(encoding="utf-8"))
-    if not isinstance(document, dict) or set(document) != {
-            "api_level", "classes", "resources", "date_family_audit"}:
-        raise BuildError(
-            "recipe must contain api_level, classes, resources and date_family_audit")
-    if document["api_level"] != 19 or not isinstance(document["classes"], dict):
-        raise BuildError("recipe must describe API 19 classes")
-    result = {}
-    all_classes = []
-    for source, classes in document["classes"].items():
-        if source not in SOURCES or not isinstance(classes, list) or not classes:
-            raise BuildError(f"invalid source class list: {source}")
-        values = tuple(classes)
-        if any(not isinstance(item, str) or not item.startswith("L") or
-               not item.endswith(";") for item in values) or \
-                values != tuple(sorted(set(values))):
-            raise BuildError(f"invalid class list: {source}")
-        result[source] = values
-        all_classes.extend(values)
-    if not result or len(all_classes) != len(set(all_classes)):
-        raise BuildError("recipe has no classes or contains duplicates")
-    validate_date_family_audit(document["date_family_audit"], result)
-    load_resources(document)
-    return result
-
-
-def load_resources(document: dict | None = None) -> dict[str, tuple[str, ...]]:
-    if document is None:
-        document = json.loads(RECIPE.read_text(encoding="utf-8"))
-    resources = document.get("resources")
-    if not isinstance(resources, dict) or not resources:
-        raise BuildError("resources must be a non-empty object")
-    result = {}
-    for source, names in resources.items():
-        if source not in SOURCES or not isinstance(names, list) or not names:
-            raise BuildError(f"invalid resource list: {source}")
-        values = tuple(names)
-        if values != tuple(sorted(set(values))) or any(
-                not isinstance(name, str) or not name or name.startswith("/") or
-                "/../" in f"/{name}/" or "/./" in f"/{name}/"
-                for name in values):
-            raise BuildError(f"invalid resource list: {source}")
-        result[source] = values
-    return result
-
-
-def verify_inputs(recipe: dict[str, tuple[str, ...]]) -> None:
-    for source in recipe:
-        path = source_path(source)
-        if not path.is_file():
-            raise BuildError(f"missing input: {path}")
-    for name, (url, digest) in TOOLS.items():
-        ensure_tool(SMALI / name, url, digest)
-
-
 def run(command: list[str]) -> None:
     result = subprocess.run(
         command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -329,291 +242,6 @@ def javac_release() -> str:
     if result.returncode or not version.startswith(prefix):
         raise BuildError(f"unexpected javac: {version}")
     return version[len(prefix):]
-
-
-def compile_guest_java(work: Path) -> tuple[Path, tuple[str, ...]]:
-    sources = guest_java_sources()
-    observed = tuple(sorted(
-        path.relative_to(JAVA_SOURCE_ROOT).as_posix()
-        for path in JAVA_SOURCE_ROOT.rglob("*.java")))
-    if observed != JAVA_SOURCE_NAMES:
-        added = sorted(set(observed) - set(JAVA_SOURCE_NAMES))
-        missing = sorted(set(JAVA_SOURCE_NAMES) - set(observed))
-        details = []
-        if added:
-            details.append("added: " + ", ".join(added))
-        if missing:
-            details.append("missing: " + ", ".join(missing))
-        raise BuildError("guest Java source list changed (" + "; ".join(details) + ")")
-    framework_observed = tuple(sorted(
-        path.relative_to(FRAMEWORK_JAVA_ROOT).as_posix()
-        for path in FRAMEWORK_JAVA_ROOT.rglob("*.java")))
-    if framework_observed != FRAMEWORK_JAVA_NAMES:
-        raise BuildError("framework guest Java source list changed")
-    io_observed = tuple(sorted(path.relative_to(IO_JAVA_ROOT).as_posix()
-                              for path in IO_JAVA_ROOT.rglob("*.java")))
-    if io_observed != IO_JAVA_NAMES:
-        raise BuildError("IO guest Java source list changed")
-    if not all(path.is_file() for path in sources) or not JAVAC.is_file() or \
-            not JAVA.is_file() or not ANDROID_JAR.is_file() or not D8_JAR.is_file():
-        raise BuildError("KeyStore Java toolchain or sources are missing")
-    if file_sha256(ANDROID_JAR) != ANDROID_JAR_SHA256:
-        raise BuildError("unexpected API 19 android.jar")
-    if file_sha256(D8_JAR) != D8_JAR_SHA256:
-        raise BuildError("unexpected Android build-tools 29.0.2 d8.jar")
-    version = "javac " + javac_release()
-    if not version.startswith("javac 17."):
-        raise BuildError(f"unexpected javac: {version}")
-    # Hidden API19 types are absent from the public SDK android.jar. These are
-    # compile-only declarations; production definitions come from the ROM.
-    compile_only = work / "guest-java-compile-only"
-    hidden_sources = {
-        "android/hardware/usb/IUsbManager.java":
-            "package android.hardware.usb; public interface IUsbManager {}",
-        "android/os/SystemProperties.java":
-            "package android.os; public class SystemProperties {"
-            " public static String get(String key, String def) { throw new AssertionError(); } }",
-        "org/kxml2/io/KXmlParser.java":
-            "package org.kxml2.io; public abstract class KXmlParser"
-            " implements org.xmlpull.v1.XmlPullParser { public abstract String getRootElementName(); }",
-    }
-    for name, source in hidden_sources.items():
-        path = compile_only / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(source, encoding="utf-8")
-    classes = work / "guest-java-classes"
-    classes.mkdir()
-    run([
-        str(JAVAC), "-J-Duser.language=en", "-encoding", "UTF-8", "-source", "7", "-target", "7",
-        "-Xlint:-options", "-g:none", "-bootclasspath", str(ANDROID_JAR),
-        "-d", str(classes), *(str(source) for source in sources),
-        *(str(compile_only / name) for name in hidden_sources),
-    ])
-    for name in hidden_sources:
-        (classes / Path(name).with_suffix(".class")).unlink()
-    class_files = tuple(sorted(classes.rglob("*.class")))
-    if not class_files:
-        raise BuildError("KeyStore Java compilation produced no classes")
-    dex_dir = work / "guest-java-dex"
-    dex_dir.mkdir()
-    run([
-        str(JAVA), "-cp", str(D8_JAR), "com.android.tools.r8.D8",
-        "--min-api", "19", "--output", str(dex_dir),
-        *(str(path) for path in class_files),
-    ])
-    dex_path = dex_dir / "classes.dex"
-    dex = dex_path.read_bytes()
-    descriptors = class_names(dex)
-    if any(item.startswith("Lcom/android/org/bouncycastle/") for item in
-           dex_survey_lib.parse_dex(dex).type_descriptors):
-        raise BuildError("guest Java production code references BouncyCastle")
-    destination = work / "guest-java-smali"
-    run([
-        str(JAVA), "-jar", str(SMALI / "baksmali.jar"), "disassemble",
-        "--api", "19", "--jobs", "1", "--output", str(destination), str(dex_path),
-    ])
-    return destination, descriptors
-
-
-def assemble(recipe: dict[str, tuple[str, ...]], work: Path,
-             include_guest_java: bool = True) -> bytes:
-    smali_roots = []
-    for source, classes in recipe.items():
-        destination = work / (source + "-smali")
-        # Keep each command below the Windows command-line length limit.
-        for offset in range(0, len(classes), 100):
-            run([
-                str(JAVA), "-jar", str(SMALI / "baksmali.jar"), "disassemble",
-                "--api", "19", "--jobs", "1",
-                "--classes", ",".join(classes[offset:offset + 100]),
-                "--output", str(destination), str(source_path(source)),
-            ])
-        smali_roots.append(str(destination))
-    if include_guest_java:
-        destination, custom_classes = compile_guest_java(work)
-        selected = {item for values in recipe.values() for item in values}
-        duplicate = selected.intersection(custom_classes)
-        if duplicate:
-            raise BuildError(f"duplicate guest Java class: {sorted(duplicate)[0]}")
-        smali_roots.append(str(destination))
-    output = work / "classes.dex"
-    run([
-        str(JAVA), "-jar", str(SMALI / "smali.jar"), "assemble",
-        "--api", "19", "--jobs", "1", "--output", str(output), *smali_roots,
-    ])
-    return output.read_bytes()
-
-
-def class_names(dex: bytes) -> tuple[str, ...]:
-    parsed = dex_survey_lib.parse_dex(dex)
-    return tuple(sorted(parsed.type_name(item.type_index)
-                        for item in parsed.classes))
-
-
-def expected_class_names(
-        recipe: dict[str, tuple[str, ...]],
-        custom_classes: tuple[str, ...]) -> tuple[str, ...]:
-    selected = tuple(item for values in recipe.values() for item in values)
-    if len(custom_classes) != len(set(custom_classes)):
-        raise BuildError("guest Java compilation contains duplicate classes")
-    duplicate = set(selected).intersection(custom_classes)
-    if duplicate:
-        raise BuildError(f"duplicate guest Java class: {sorted(duplicate)[0]}")
-    return tuple(sorted(selected + custom_classes))
-
-
-def compile_expected_class_names(
-        recipe: dict[str, tuple[str, ...]], work: Path) -> tuple[str, ...]:
-    _, custom_classes = compile_guest_java(work)
-    return expected_class_names(recipe, custom_classes)
-
-
-def audit_crc32(dex_bytes: bytes) -> None:
-    """Class-wide guest admission must not silently acquire new native methods."""
-    dex = dex_survey_lib.parse_dex(dex_bytes)
-    observed = {}
-    for parsed_class in dex.classes:
-        if dex.type_name(parsed_class.type_index) != "Ljava/util/zip/CRC32;":
-            continue
-        for method in parsed_class.direct_methods + parsed_class.virtual_methods:
-            if method.access_flags & dex_survey_lib.ACC_NATIVE:
-                _, name, descriptor = dex.method_signature(method.method_index)
-                observed[name + descriptor] = method.access_flags
-    # ACC_PRIVATE | ACC_NATIVE; neither method is static.
-    expected = {"updateImpl([BIIJ)J": 0x102, "updateByteImpl(BJ)J": 0x102}
-    if observed != expected:
-        raise BuildError(f"CRC32 private instance native signature drift: {observed}")
-
-
-def zip_stream_native_signatures() -> dict[str, dict[str, int]]:
-    common = {"endImpl(J)V", "getAdlerImpl(J)I", "getTotalInImpl(J)J",
-              "getTotalOutImpl(J)J", "resetImpl(J)V", "setDictionaryImpl([BIIJ)V",
-              "setInputImpl([BIIJ)V"}
-    return {
-        "Landroid/view/DisplayEventReceiver;": {
-            "nativeInit(Landroid/view/DisplayEventReceiver;Landroid/os/MessageQueue;)I": 0x10a,
-            "nativeDispose(I)V": 0x10a,
-            "nativeScheduleVsync(I)V": 0x10a},
-        "Landroid/app/Activity;": {
-            "nativeStartActivityForResult(Landroid/content/Intent;ILandroid/os/Bundle;)V": 0x102,
-            "nativeFinish(ILandroid/content/Intent;)V": 0x102},
-        "Landroid/hardware/usb/UsbManager;": {
-            "nativeGetDeviceList(Landroid/os/Bundle;)V": 0x10a,
-            "nativeGetCurrentAccessory()Landroid/hardware/usb/UsbAccessory;": 0x10a,
-            "nativeHasPermission()Z": 0x10a,
-            "nativeOpenDevice(Ljava/lang/String;)V": 0x10a,
-            "nativeUnsupported(Ljava/lang/String;)V": 0x10a},
-        "Landroid/nfc/NfcAdapter;": {
-            "nativeGetAdapter()Landroid/nfc/NfcAdapter;": 0x10a,
-            "nativeUnsupported(Ljava/lang/String;)V": 0x10a},
-        "Landroid/widget/VideoView;": {m: 0x102 for m in {
-            "nativeOpenPath(Ljava/lang/String;I)V", "nativeOpenFd(Ljava/io/FileDescriptor;JJI)V",
-            "nativeOpenError(ILjava/lang/String;)V", "nativeUnhandledError()V",
-            "nativeUnsupported(Ljava/lang/String;)V", "nativeStart(I)V", "nativePause(I)V",
-            "nativeStop(I)V", "nativeRelease(I)V", "nativeSeek(II)V", "nativeVolume(IFF)V",
-            "nativeDuration(I)I", "nativePosition(I)I", "nativeWidth(I)I", "nativeHeight(I)I",
-            "nativeIsPlaying(I)Z"}},
-        "Lorg/ogplay/math/NativeBigInteger;": {
-            **{m + "([B[B)[B": 0x109 for m in ("add", "multiply", "power")},
-            "divide([B[B)[B": 0x109, "shift([BI)[B": 0x109,
-            "multiplyWord([BI)[B": 0x109},
-        "Ljava/util/zip/Deflater;": {m: 0x102 for m in common | {
-            "createStream(IIZ)J", "deflateImpl([BIIJI)I", "setLevelsImpl(IIJ)V"}},
-        "Ljava/util/zip/Inflater;": {m: 0x102 for m in common | {
-            "createStream(Z)J", "inflateImpl([BIIJ)I",
-            "setFileInputImpl(Ljava/io/FileDescriptor;JIJ)I"}},
-        "Lorg/ogplay/zip/NativeZip;": {"release(J)V": 0x10a},
-        "Landroid/app/NotificationManager;": {
-            "nativeCancel(Ljava/lang/String;Ljava/lang/String;IZ)V": 0x102,
-            "nativeRejectPost(Ljava/lang/String;)V": 0x102},
-        "Landroid/view/LayoutInflater;": {
-            "nativeInflate(Landroid/content/Context;ILandroid/view/ViewGroup;Z)Landroid/view/View;": 0x102},
-    }
-
-
-def audit_zip_streams(dex_bytes: bytes) -> None:
-    """Pin ZIP and value-arithmetic native ABIs, including the explicit ZIP FD gap."""
-    expected = zip_stream_native_signatures()
-    dex = dex_survey_lib.parse_dex(dex_bytes)
-    observed = {owner: {} for owner in expected}
-    for cls in dex.classes:
-        owner = dex.type_name(cls.type_index)
-        if owner not in observed:
-            continue
-        for method in cls.direct_methods + cls.virtual_methods:
-            if method.access_flags & dex_survey_lib.ACC_NATIVE:
-                _, name, descriptor = dex.method_signature(method.method_index)
-                observed[owner][name + descriptor] = method.access_flags
-    if observed != expected:
-        raise BuildError(f"ZIP stream native signature drift: {observed}")
-
-
-def audit_native_crypto(dex_bytes: bytes) -> dict:
-    dex = dex_survey_lib.parse_dex(dex_bytes)
-    observed = set()
-    for parsed_class in dex.classes:
-        if dex.type_name(parsed_class.type_index) != NATIVE_CRYPTO_OWNER:
-            continue
-        for method in parsed_class.direct_methods + parsed_class.virtual_methods:
-            if method.access_flags & dex_survey_lib.ACC_NATIVE:
-                owner, name, descriptor = dex.method_signature(method.method_index)
-                observed.add(f"{owner}->{name}{descriptor}")
-    required = NATIVE_CRYPTO_BACKENDS | NATIVE_CRYPTO_ADAPTED
-    missing = sorted(required.difference(observed))
-    if missing:
-        raise BuildError(f"NativeCrypto backend signature drift: missing={missing}")
-    records = {
-        "source": "conscrypt.jar",
-        "owner": NATIVE_CRYPTO_OWNER,
-        "native_methods": {
-            "existing_backend": sorted(NATIVE_CRYPTO_BACKENDS),
-            "ogplay_initialization_adapter": sorted(NATIVE_CRYPTO_ADAPTED),
-            "explicit_failure": sorted(observed.difference(required)),
-        },
-        "counts": {
-            "total": len(observed),
-            "existing_backend": len(NATIVE_CRYPTO_BACKENDS),
-            "ogplay_initialization_adapter": len(NATIVE_CRYPTO_ADAPTED),
-            "explicit_failure": len(observed.difference(required)),
-        },
-    }
-    NATIVE_CRYPTO_AUDIT_REPORT.parent.mkdir(parents=True, exist_ok=True)
-    NATIVE_CRYPTO_AUDIT_REPORT.write_text(
-        json.dumps(records, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return records
-
-
-def make_jar(dex: bytes, resources: dict[str, bytes] | None = None) -> bytes:
-    output = io.BytesIO()
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
-        entries = [
-                ("META-INF/MANIFEST.MF", JAR_MANIFEST),
-                ("classes.dex", dex)]
-        entries.extend(sorted((resources or {}).items()))
-        for name, content in entries:
-            info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_STORED
-            info.create_system = 3
-            info.external_attr = 0o100644 << 16
-            archive.writestr(info, content)
-    return output.getvalue()
-
-
-def resource_payload(
-        recipe: dict[str, tuple[str, ...]]) -> dict[str, bytes]:
-    resources = {}
-    for source, names in recipe.items():
-        with zipfile.ZipFile(source_path(source)) as archive:
-            for name in names:
-                try:
-                    content = archive.read(name)
-                except KeyError as error:
-                    raise BuildError(
-                        f"missing resource {name} in {source}") from error
-                if name in resources:
-                    raise BuildError(f"duplicate resource: {name}")
-                resources[name] = content
-    return resources
 
 
 def load_system_resources(document: dict | None = None) -> dict:
@@ -733,489 +361,177 @@ def resolve_system_resource_contents(document: dict, consumers: dict[str, str]) 
     return {"schema_version": 1, "api_level": 19, "resources": resources}
 
 
-def system_resources_payload(dex: bytes) -> bytes:
-    document = load_system_resources()
-    with tempfile.TemporaryDirectory(prefix="ogplay-system-resources-") as work:
-        source = Path(work) / "classes.dex"
-        source.write_bytes(dex)
+
+
+def guest_java_sources() -> tuple[Path, ...]:
+    return tuple(sorted(path for root in GUEST_JAVA_ROOTS for path in root.rglob("*.java")))
+
+
+def check_toolchain() -> None:
+    if not JAVAC.is_file() or not JAVA.is_file() or not ANDROID_JAR.is_file() or not D8_JAR.is_file():
+        raise BuildError("javac 17, API 19 android.jar or d8.jar is missing")
+    if file_sha256(ANDROID_JAR) != ANDROID_JAR_SHA256:
+        raise BuildError("unexpected API 19 android.jar")
+    if file_sha256(D8_JAR) != D8_JAR_SHA256:
+        raise BuildError("unexpected Android build-tools 29.0.2 d8.jar")
+    if not javac_release().startswith("17."):
+        raise BuildError(f"unexpected javac: {javac_release()}")
+    for name, (url, digest) in SMALI_TOOLS.items():
+        ensure_tool(SMALI / name, url, digest)
+
+
+def compile_guest_java(work: Path) -> bytes:
+    sources = guest_java_sources()
+    compile_only = work / "compile-only"
+    for name, text in COMPILE_ONLY_SOURCES.items():
+        path = compile_only / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    manager = ROOT / "src/guest/framework/java/android/app/ActivityManager.java"
+    manager_compile = work / "activity-manager/android/app/ActivityManager.java"
+    manager_compile.parent.mkdir(parents=True, exist_ok=True)
+    text = manager.read_text(encoding="utf-8")
+    manager_compile.write_text(text[:text.rfind("}")] + ACTIVITY_MANAGER_NESTED, encoding="utf-8")
+    sources = tuple(manager_compile if source == manager else source for source in sources)
+    classes = work / "classes"
+    classes.mkdir()
+    run([
+        str(JAVAC), "-J-Duser.language=en", "-encoding", "UTF-8", "-source", "7", "-target", "7",
+        "-Xlint:-options", "-g:none", "-bootclasspath", str(ANDROID_JAR),
+        "-d", str(classes), *(str(source) for source in sources),
+        *(str(compile_only / name) for name in COMPILE_ONLY_SOURCES),
+    ])
+    for name in COMPILE_ONLY_CLASSES:
+        (classes / name).unlink()
+    class_files = sorted(classes.rglob("*.class"))
+    if not class_files:
+        raise BuildError("guest Java compilation produced no classes")
+    dex_dir = work / "dex"
+    dex_dir.mkdir()
+    run([str(JAVA), "-cp", str(D8_JAR), "com.android.tools.r8.D8", "--min-api", "19",
+         "--output", str(dex_dir), *(str(path) for path in class_files)])
+    if sorted(path.name for path in dex_dir.iterdir()) != ["classes.dex"]:
+        raise BuildError("guest Java must fit one classes.dex")
+    return (dex_dir / "classes.dex").read_bytes()
+
+
+def rom_smali(jar: str, classes: tuple[str, ...]) -> dict[str, str]:
+    with tempfile.TemporaryDirectory(prefix="ogplay-rom-smali-") as work:
         output = Path(work) / "smali"
-        run([str(JAVA), "-jar", str(SMALI / "baksmali.jar"), "disassemble",
-             "--api", "19", "--jobs", "1", "--classes", ",".join(SYSTEM_RESOURCE_CONSUMERS),
-             "--output", str(output), str(source)])
-        consumers = {owner: (output / (owner[1:-1] + ".smali")).read_text(encoding="utf-8")
-                     for owner in SYSTEM_RESOURCE_CONSUMERS}
-    resolved = resolve_system_resource_contents(document, consumers)
+        run([str(JAVA), "-jar", str(SMALI / "baksmali.jar"), "disassemble", "--api", "19", "--jobs", "1",
+             "--classes", ",".join(classes), "--output", str(output), str(AOSP / jar)])
+        return {owner: (output / (owner[1:-1] + ".smali")).read_text(encoding="utf-8") for owner in classes}
+
+
+def time_system_resources(smali: str) -> list[dict]:
+    # API 19 Time.format resolves three resource IDs in this order.
+    formats = (
+        ("time_of_day", "%-l:%M:%S %p"),
+        ("month_day_year", "%B %-e, %Y"),
+        ("date_and_time", "%b %-e, %Y, %-l:%M:%S %p"),
+    )
+    match = re.search(r"^\.method [^\n]* format\(Ljava/lang/String;\)Ljava/lang/String;\n"
+                      r"(.*?)^\.end method", smali, re.M | re.S)
+    if match is None:
+        raise BuildError("API 19 Time.format is missing")
+    calls = resource_call_ids(match[1])
+    if len(calls) != len(formats) or any(kind != "string" or ident >> 24 != 1 for ident, kind in calls):
+        raise BuildError("API 19 Time.format system resource lookups changed")
+    return [dict(id=ident, name=name, type="string", value=value)
+            for (ident, _), (name, value) in zip(calls, formats)]
+
+
+def system_resources_payload() -> bytes:
+    smali = rom_smali("framework.jar", (*SYSTEM_RESOURCE_CONSUMERS, "Landroid/text/format/Time;"))
+    resolved = resolve_system_resource_contents(
+        load_system_resources(), {owner: smali[owner] for owner in SYSTEM_RESOURCE_CONSUMERS})
+    resolved["resources"].extend(time_system_resources(smali["Landroid/text/format/Time;"]))
+    if len({row["id"] for row in resolved["resources"]}) != len(resolved["resources"]):
+        raise BuildError("conflicting system resource ID")
     return (json.dumps(resolved, sort_keys=True, indent=2) + "\n").encode("utf-8")
 
 
-def build() -> tuple[bytes, bytes, dict[str, tuple[str, ...]]]:
-    recipe = load_recipe()
-    resource_recipe = load_resources()
-    verify_inputs(recipe)
-    with tempfile.TemporaryDirectory(prefix="ogplay-bootdex-a-") as first, \
-            tempfile.TemporaryDirectory(prefix="ogplay-bootdex-b-") as second:
-        dex = assemble(recipe, Path(first))
-        if dex != assemble(recipe, Path(second)):
-            raise BuildError("two BootDex assemblies differ")
-    with tempfile.TemporaryDirectory(prefix="ogplay-bootdex-java-audit-") as work:
-        selected = compile_expected_class_names(recipe, Path(work))
-    if class_names(dex) != selected:
-        raise BuildError("generated classes differ from recipe")
-    resources = resource_payload(resource_recipe)
-    if SYSTEM_RESOURCES_ENTRY in resources:
-        raise BuildError("reserved system resource entry in input")
-    resources[SYSTEM_RESOURCES_ENTRY] = system_resources_payload(dex)
-    return make_jar(dex, resources), dex, recipe
+def make_jar(dex: bytes, resources: dict[str, bytes]) -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
+        for name, content in [("META-INF/MANIFEST.MF", JAR_MANIFEST), ("classes.dex", dex),
+                              *sorted(resources.items())]:
+            info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_STORED
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, content)
+    return output.getvalue()
 
 
-def boot_metadata(jar: bytes, dex: bytes,
-                  recipe: dict[str, tuple[str, ...]]) -> dict:
+def build_ogplay_jar() -> tuple[bytes, dict[str, bytes]]:
+    import theme_projection
+    check_toolchain()
+    with tempfile.TemporaryDirectory(prefix="ogplay-jar-a-") as first, \
+            tempfile.TemporaryDirectory(prefix="ogplay-jar-b-") as second:
+        dex = compile_guest_java(Path(first))
+        if dex != compile_guest_java(Path(second)):
+            raise BuildError("two guest Java builds differ")
+    system = system_resources_payload()
+    projection = theme_projection.generate()
+    theme_projection.check_conflicts(projection, system)
+    resources = {SYSTEM_RESOURCES_ENTRY: system, theme_projection.ENTRY: projection}
+    return make_jar(dex, resources), resources
+
+
+def rom_jar(name: str) -> bytes:
+    data = (AOSP / name).read_bytes()
+    if sha256(data) != ROM_JARS[name][1]:
+        raise BuildError(f"unexpected ROM input: .local/aosp/{name}")
+    return data
+
+
+def boot_metadata(jar: bytes, resources: dict[str, bytes]) -> dict:
     return {
-        "path": "framework/bootdex.jar",
+        "directory": "framework",
         "generator": "tools/bootdex/build_bootdex.py",
-        "recipe": "tools/bootdex/api19.json",
-        "recipe_sha256": file_sha256(RECIPE),
-        "system_resources": {
-            "table": SYSTEM_RESOURCES.relative_to(ROOT).as_posix(),
-            "table_sha256": file_sha256(SYSTEM_RESOURCES),
-            "entry": SYSTEM_RESOURCES_ENTRY,
-            "payload_sha256": sha256(zipfile.ZipFile(io.BytesIO(jar)).read(SYSTEM_RESOURCES_ENTRY)),
-        },
-        "sources": [
-            {
-                "source_project": SOURCES[source][0],
-                "source_jar": source,
-                "source_jar_sha256": file_sha256(source_path(source)),
-            }
-            for source in recipe
-        ] + [{
-            "source_project": "OGPlay",
-            "source_root": "src/guest",
-            "source_roots": ["src/guest/crypto/java", "src/guest/framework/java", "src/guest/io/java",
-                             "src/guest/xml/java"],
-            "source_sha256": sha256(b"".join(
-                path.relative_to(ROOT).as_posix().encode("utf-8") + b"\0" +
-                path.read_bytes() for path in
-                guest_java_sources())),
-            "javac": javac_release(),
-            "android_jar_sha256": ANDROID_JAR_SHA256,
-            "d8_sha256": D8_JAR_SHA256,
-        }],
-        "size": len(jar),
-        "sha256": sha256(jar),
-        "dex_entry": "classes.dex",
-        "dex_size": len(dex),
-        "dex_sha256": sha256(dex),
-        "class_count": len(class_names(dex)),
-        "selection_policy": "load-all",
-        "notice": "notices/bootdex.jar.txt",
+        "classpath": [
+            {"path": "framework/ogplay.jar", "source_project": "OGPlay", "size": len(jar), "sha256": sha256(jar),
+             "sources": {
+                 "roots": [root.relative_to(ROOT).as_posix() for root in GUEST_JAVA_ROOTS],
+                 "sha256": sha256(b"".join(path.relative_to(ROOT).as_posix().encode("utf-8") + b"\0"
+                                           + path.read_bytes() for path in guest_java_sources())),
+                 "javac": javac_release(), "android_jar_sha256": ANDROID_JAR_SHA256,
+                 "d8_sha256": D8_JAR_SHA256},
+             "resources": {
+                 name: sha256(content) for name, content in sorted(resources.items())},
+             "system_resources_table_sha256": file_sha256(SYSTEM_RESOURCES)},
+            *({"path": f"framework/{name}", "source_project": project, "size": (AOSP / name).stat().st_size,
+               "sha256": digest} for name, (project, digest) in ROM_JARS.items()),
+        ],
+        "notice": NOTICE.relative_to(MANIFEST.parent).as_posix(),
         "notice_sha256": file_sha256(NOTICE),
     }
 
 
 def manifest_bytes(metadata: dict) -> bytes:
     document = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    document["boot_dex"] = metadata
+    document.pop("boot_dex", None)
+    document["boot_classpath"] = metadata
     return (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode()
 
 
-def sorted_unique_strings(value: object, name: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or not value or any(
-            not isinstance(item, str) or not item for item in value):
-        raise BuildError(f"{name} must be a non-empty string list")
-    result = tuple(value)
-    if result != tuple(sorted(set(result))):
-        raise BuildError(f"{name} must be sorted and unique")
-    return result
-
-
-def validate_date_family_audit(
-        document: dict, recipe: dict[str, tuple[str, ...]]) -> None:
-    required = {
-        "source", "icu", "roots", "classifications",
-        "native_methods", "retained_overlays", "expected",
-    }
-    if not isinstance(document, dict) or set(document) != required:
-        raise BuildError("policy has unexpected top-level keys")
-    if document["source"] != "core.jar":
-        raise BuildError("date-family audit must use pinned core.jar")
-    icu = document["icu"]
-    if not isinstance(icu, dict) or set(icu) != {
-            "project", "tag", "tag_object", "commit", "tree",
-            "archive_sha256", "version", "data_version", "license_files"}:
-        raise BuildError("invalid ICU policy")
-    for key in ("tag_object", "commit", "tree"):
-        if not isinstance(icu[key], str) or len(icu[key]) != 40:
-            raise BuildError(f"invalid ICU {key}")
-    if not isinstance(icu["archive_sha256"], str) or \
-            len(icu["archive_sha256"]) != 64:
-        raise BuildError("invalid ICU archive SHA-256")
-    sorted_unique_strings(icu["license_files"], "icu.license_files")
-    roots = sorted_unique_strings(document["roots"], "roots")
-    classifications = document["classifications"]
-    if not isinstance(classifications, dict) or set(classifications) != set(CATEGORIES):
-        raise BuildError("invalid classification categories")
-    classified: dict[str, str] = {}
-    for category in CATEGORIES:
-        for descriptor in sorted_unique_strings(
-                classifications[category], f"classifications.{category}"):
-            if not descriptor.startswith("L") or not descriptor.endswith(";"):
-                raise BuildError(f"invalid descriptor: {descriptor}")
-            if descriptor in classified:
-                raise BuildError(f"descriptor classified twice: {descriptor}")
-            classified[descriptor] = category
-    if any(classified.get(root) != "boot_dex" for root in roots):
-        raise BuildError("every root must be a BootDex class")
-    selected = set(classifications["boot_dex"])
-    if not selected.issubset(recipe.get(document["source"], ())):
-        raise BuildError("date-family BootDex classes are missing from the source recipe")
-    all_classes = {item for values in recipe.values() for item in values}
-    if (set(classified) - selected).intersection(all_classes):
-        raise BuildError("date-family classification conflicts with the BootDex recipe")
-    natives = document["native_methods"]
-    if not isinstance(natives, dict) or set(natives) != set(NATIVE_DISPOSITIONS):
-        raise BuildError("invalid native method dispositions")
-    seen_native: set[str] = set()
-    for disposition in NATIVE_DISPOSITIONS:
-        values = sorted_unique_strings(
-            natives[disposition], f"native_methods.{disposition}")
-        overlap = seen_native.intersection(values)
-        if overlap:
-            raise BuildError(f"native method classified twice: {sorted(overlap)[0]}")
-        seen_native.update(values)
-    overlays = sorted_unique_strings(document["retained_overlays"], "retained_overlays")
-    if any("->" not in item for item in overlays):
-        raise BuildError("retained overlays must be exact members")
-    expected = document["expected"]
-    if not isinstance(expected, dict) or set(expected) != {
-            "class_defs", "object_types", "method_ids", "field_ids",
-            "native_methods", "classified_members_sha256"}:
-        raise BuildError("invalid expected metrics")
-    if any(not isinstance(expected[key], int) or expected[key] <= 0
-           for key in ("class_defs", "object_types", "method_ids",
-                       "field_ids", "native_methods")) or \
-            not isinstance(expected["classified_members_sha256"], str) or \
-            len(expected["classified_members_sha256"]) != 64:
-        raise BuildError("invalid expected metric values")
-
-
-def object_descriptor(descriptor: str) -> str | None:
-    while descriptor.startswith("["):
-        descriptor = descriptor[1:]
-    return descriptor if descriptor.startswith("L") and descriptor.endswith(";") else None
-
-
-def field_signature(dex: dex_survey_lib.DexFile, index: int) -> str:
-    owner_index, type_index, name_index = dex.field_ids[index]
-    return (f"{dex.type_name(owner_index)}->{dex.strings[name_index]}:"
-            f"{dex.type_name(type_index)}")
-
-
-def selected_dex(source: str, classes: tuple[str, ...]) -> bytes:
-    recipe = {source: classes}
-    verify_inputs(recipe)
-    with tempfile.TemporaryDirectory(prefix="ogplay-date-family-audit-") as work:
-        return assemble(recipe, Path(work), include_guest_java=False)
-
-
-def classified_records(policy: dict, dex: dex_survey_lib.DexFile) -> dict:
-    categories = {
-        descriptor: category
-        for category, descriptors in policy["classifications"].items()
-        for descriptor in descriptors
-    }
-    observed_types = sorted({
-        item for raw in dex.type_descriptors
-        if (item := object_descriptor(raw)) is not None
-    })
-    missing = sorted(set(observed_types).difference(categories))
-    stale = sorted(set(categories).difference(observed_types))
-    if missing or stale:
-        raise BuildError(
-            f"type classification mismatch; missing={missing}, stale={stale}")
-
-    def member_category(owner: str) -> str:
-        if owner.startswith("["):
-            return "existing_vm_intrinsic"
-        return categories[owner]
-
-    methods = []
-    for index in range(len(dex.method_ids)):
-        owner, name, descriptor = dex.method_signature(index)
-        methods.append({
-            "member": f"{owner}->{name}{descriptor}",
-            "classification": member_category(owner),
-        })
-    fields = []
-    for index, (owner_index, _, _) in enumerate(dex.field_ids):
-        owner = dex.type_name(owner_index)
-        fields.append({
-            "member": field_signature(dex, index),
-            "classification": member_category(owner),
-        })
-
-    native_dispositions = {
-        member: disposition
-        for disposition, members in policy["native_methods"].items()
-        for member in members
-    }
-    observed_natives = []
-    for parsed_class in dex.classes:
-        for method in parsed_class.direct_methods + parsed_class.virtual_methods:
-            if method.access_flags & dex_survey_lib.ACC_NATIVE:
-                owner, name, descriptor = dex.method_signature(method.method_index)
-                observed_natives.append(f"{owner}->{name}{descriptor}")
-    observed_natives.sort()
-    if set(observed_natives) != set(native_dispositions):
-        raise BuildError(
-            "native method policy mismatch; "
-            f"missing={sorted(set(observed_natives).difference(native_dispositions))}, "
-            f"stale={sorted(set(native_dispositions).difference(observed_natives))}")
-
-    types = [{"descriptor": item, "classification": categories[item]}
-             for item in observed_types]
-    methods.sort(key=lambda item: item["member"])
-    fields.sort(key=lambda item: item["member"])
-    natives = [{"member": item, "disposition": native_dispositions[item]}
-               for item in observed_natives]
-    method_members = {item["member"] for item in methods}
-    stale_overlays = sorted(set(policy["retained_overlays"]).difference(method_members))
-    if stale_overlays:
-        raise BuildError(f"retained overlay is not in the selected DEX: {stale_overlays}")
-    return {"types": types, "methods": methods, "fields": fields, "natives": natives}
-
-
-def make_audit_report(policy: dict) -> dict:
-    classes = tuple(policy["roots"])
-    dex = dex_survey_lib.parse_dex(selected_dex(policy["source"], classes))
-    actual_classes = tuple(sorted(dex.type_name(item.type_index) for item in dex.classes))
-    if actual_classes != classes:
-        raise BuildError("selected class_defs differ from BootDex policy")
-    records = classified_records(policy, dex)
-    canonical = json.dumps(records, ensure_ascii=False, sort_keys=True,
-                           separators=(",", ":")).encode("utf-8")
-    metrics = {
-        "class_defs": len(actual_classes),
-        "object_types": len(records["types"]),
-        "method_ids": len(records["methods"]),
-        "field_ids": len(records["fields"]),
-        "native_methods": len(records["natives"]),
-        "classified_members_sha256": hashlib.sha256(canonical).hexdigest(),
-    }
-    return {
-        "schema": 1,
-        "source_sha256": file_sha256(source_path(policy["source"])),
-        "icu_commit": policy["icu"]["commit"],
-        "metrics": metrics,
-        "records": records,
-    }
-
-
-def audit_date_family(report_path: Path, emit_expectations: bool = False) -> int:
-    document = json.loads(RECIPE.read_text(encoding="utf-8"))
-    load_recipe(document)
-    policy = document["date_family_audit"]
-    report = make_audit_report(policy)
-    if emit_expectations:
-        print(json.dumps(report["metrics"], indent=2))
-        return 0
-    if report["metrics"] != policy["expected"]:
-        raise BuildError(f"audit metrics changed: {report['metrics']!r}")
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"Date-family audit passed: {report['metrics']['class_defs']} classes, "
-          f"{report['metrics']['native_methods']} native methods; report={report_path}")
-    return 0
-
-
-def self_test() -> int:
-    document = json.loads(RECIPE.read_text(encoding="utf-8"))
-    load_recipe(document)
-    if any(source_path(source) != AOSP / source
-           for source in SOURCES if source.endswith(".jar")):
-        raise BuildError("BootDex jars must come from .local/aosp")
-    if object_descriptor("[[Ljava/lang/String;") != "Ljava/lang/String;" or \
-            object_descriptor("[I") is not None:
-        raise BuildError("descriptor normalization failed")
-
-    def reject_recipe(candidate: dict, reason: str) -> None:
-        try:
-            load_recipe(candidate)
-        except BuildError:
-            return
-        raise BuildError(f"invalid recipe accepted: {reason}")
-
-    # Each mutation exercises an integration boundary without AOSP inputs or Java.
-    for case in ("missing audit", "missing class", "conflicting classification",
-                 "duplicate native", "unordered roots", "wrong source"):
-        candidate = json.loads(json.dumps(document))
-        policy = candidate["date_family_audit"]
-        if case == "missing audit":
-            del candidate["date_family_audit"]
-        elif case == "missing class":
-            candidate["classes"][policy["source"]].remove(
-                policy["classifications"]["boot_dex"][0])
-        elif case == "conflicting classification":
-            candidate["classes"][policy["source"]].append(
-                policy["classifications"]["deferred"][0])
-            candidate["classes"][policy["source"]].sort()
-        elif case == "duplicate native":
-            policy["native_methods"]["explicit_failure"].append(
-                policy["native_methods"]["required_backend"][0])
-            policy["native_methods"]["explicit_failure"].sort()
-        elif case == "unordered roots":
-            policy["roots"].reverse()
-        else:
-            policy["source"] = "framework.jar"
-        reject_recipe(candidate, case)
-    # Native admission mutations need neither AOSP inputs nor Java tooling.
-    from types import SimpleNamespace
-    for target_index in (0, 1, 2, 3, 4, 7, 8):  # Activity, NFC, video, value arithmetic, ZIP and notification admission.
-        for mutation in ("valid", "signature", "flags", "extra", "missing"):
-            names, signatures, classes = [], [], []
-            for owner, members in zip_stream_native_signatures().items():
-                names.append(owner)
-                methods = []
-                for signature, flags in sorted(members.items()):
-                    name, descriptor = signature.split("(", 1)
-                    methods.append(SimpleNamespace(method_index=len(signatures), access_flags=flags))
-                    signatures.append((owner, name, "(" + descriptor))
-                classes.append(SimpleNamespace(type_index=len(names)-1,
-                    direct_methods=methods, virtual_methods=[]))
-            native = classes[target_index].direct_methods[0]
-            if mutation == "flags":
-                native.access_flags ^= 8
-            elif mutation == "missing":
-                classes[target_index].direct_methods.remove(native)
-            elif mutation == "extra":
-                classes[target_index].direct_methods.append(SimpleNamespace(method_index=len(signatures), access_flags=0x102))
-                signatures.append((names[target_index], "unreviewedZipNative", "()V"))
-            elif mutation == "signature":
-                owner, _, descriptor = signatures[native.method_index]
-                signatures[native.method_index] = (owner, "unreviewedZipNative", descriptor)
-            parsed = SimpleNamespace(classes=classes, type_name=lambda i: names[i],
-                                     method_signature=lambda i: signatures[i])
-            with patch.object(dex_survey_lib, "parse_dex", return_value=parsed):
-                try:
-                    audit_zip_streams(b"")
-                except BuildError:
-                    if mutation == "valid":
-                        raise
-                else:
-                    if mutation != "valid":
-                        raise BuildError(f"ZIP native drift accepted: {mutation}")
-    resources = load_system_resources()
-    # Mutation checks need neither local framework inputs nor Java tooling.
-    sample_resource = json.loads(json.dumps(resources))
-    sample_resource["resources"] = [sample_resource["resources"][0]]
-    owner = sample_resource["resources"][0]["consumer"]["class"]
-    consumer = """.method public static getDefaultJournalMode()Ljava/lang/String;
-    .registers 3
-    const v2, 0x104011c
-    .line 77
-    invoke-virtual {v1, v2}, Landroid/content/res/Resources;->getString(I)Ljava/lang/String;
-.end method
-"""
-    for resource_id in (0x0104011c, 0x01040029):
-        text = consumer.replace("0x104011c", hex(resource_id))
-        resolved = resolve_system_resource_contents(sample_resource, {owner: text})
-        assert resolved["resources"][0]["id"] == resource_id
-        assert resolved["resources"][0]["value"] == "DELETE"
-    moved = consumer.replace("const v2, 0x104011c", "const v0, 0x1040029\n    move/from16 v2, v0")
-    assert resolve_system_resource_contents(sample_resource, {owner: moved})["resources"][0]["id"] == 0x01040029
-    ranged = consumer.replace("invoke-virtual {v1, v2}", "invoke-virtual/range {v1 .. v2}")
-    assert resolve_system_resource_contents(sample_resource, {owner: ranged})["resources"][0]["id"] == 0x0104011c
-    for case in ("ID", "unknown ID", "branch", "type",
-                 "method", "register", "duplicate", "override reason", "unreviewed query"):
-        changed = json.loads(json.dumps(sample_resource))
-        entry = changed["resources"][0]
-        text = consumer
-        if case == "ID":
-            text = text.replace("0x104011c", "0x7f040029")
-        elif case == "unknown ID":
-            text = text.replace("const v2, 0x104011c", "move-result v2")
-        elif case == "branch":
-            text = text.replace(".line 77", ":join")
-        elif case == "type":
-            entry["type"] = "integer"
-        elif case == "method":
-            entry["consumer"]["method"] = "missing()I"
-        elif case == "register":
-            text = text.replace("{v1, v2}", "{v1, v0}")
-        elif case == "duplicate":
-            changed["resources"].append(entry)
-        elif case == "unreviewed query":
-            text += consumer.replace("getDefaultJournalMode", "getNewConfig")
-        else:
-            entry["override"]["reason"] = ""
-        try:
-            load_system_resources(changed)
-            resolve_system_resource_contents(changed, {owner: text})
-        except BuildError:
-            continue
-        raise BuildError(f"invalid system resource mapping accepted: {case}")
-    collision = json.loads(json.dumps(sample_resource))
-    extra = json.loads(json.dumps(collision["resources"][0]))
-    extra["name"] = "second_resource"
-    extra["consumer"]["method"] = "getOtherMode()Ljava/lang/String;"
-    collision["resources"].append(extra)
-    try:
-        resolve_system_resource_contents(collision, {owner: consumer + consumer.replace("getDefaultJournalMode", "getOtherMode")})
-    except BuildError:
-        pass
+def build_or_check(mode: str) -> int:
+    jar, resources = build_ogplay_jar()
+    roms = {name: rom_jar(name) for name in ROM_JARS}
+    manifest = manifest_bytes(boot_metadata(jar, resources))
+    outputs = {OGPLAY_JAR: jar, **{FRAMEWORK / name: data for name, data in roms.items()}, MANIFEST: manifest}
+    if mode == "build":
+        FRAMEWORK.mkdir(parents=True, exist_ok=True)
+        for path, data in outputs.items():
+            if not path.is_file() or path.read_bytes() != data:
+                path.write_bytes(data)
     else:
-        raise BuildError("conflicting resource IDs accepted")
-    wrong_type = consumer.replace("getString(I)Ljava/lang/String;", "getInteger(I)I")
-    try:
-        resolve_system_resource_contents(sample_resource, {owner: wrong_type})
-    except BuildError:
-        pass
-    else:
-        raise BuildError("consumer type mismatch accepted")
-    sample = b"dex\n035\0sample"
-    if make_jar(sample) != make_jar(sample):
-        raise BuildError("JAR output is not deterministic")
-    recipe_classes = {"source.jar": ("Ltest/Original;",)}
-    expected = expected_class_names(recipe_classes, ("Ltest/Custom;",))
-    if expected != ("Ltest/Custom;", "Ltest/Original;") or \
-            expected_class_names(recipe_classes, ()) == expected or \
-            expected_class_names(recipe_classes,
-                                 ("Ltest/Custom;", "Ltest/Extra;")) == expected:
-        raise BuildError("final BootDex class selection does not include exact custom classes")
-    try:
-        expected_class_names(recipe_classes, ("Ltest/Original;",))
-    except BuildError:
-        pass
-    else:
-        raise BuildError("custom/original duplicate class was accepted")
-    with tempfile.TemporaryDirectory(prefix="ogplay-bootdex-tool-") as work:
-        source = Path(work) / "source.jar"
-        destination = Path(work) / "downloaded.jar"
-        source.write_bytes(sample)
-        ensure_tool(destination, source.as_uri(), sha256(sample))
-        if destination.read_bytes() != sample:
-            raise BuildError("tool download failed")
-        with patch.dict(globals(), {
-                "AOSP": Path(work),
-                "SOURCES": {"source.jar": ("test",)},
-                "TOOLS": {},
-        }):
-            verify_inputs({"source.jar": ()})
-        # The builder must consume only the explicitly prepared, pinned payload.
-        fake_manifest = Path(work) / "payload/manifest.json"
-        with patch.dict(globals(), {"MANIFEST": fake_manifest,
-                                   "CRYPTO_SHA256": sha256(sample)}):
-            try:
-                build_guest_jni()
-            except BuildError as error:
-                if "data/android/19/lib/libcrypto.so" not in str(error):
-                    raise
-            else:
-                raise BuildError("guest crypto build accepted an unprepared input")
-        if fake_manifest.parent.exists():
-            raise BuildError("guest crypto build restored an unprepared payload")
-    print("BootDex builder self-test passed")
+        stale = [path.relative_to(ROOT).as_posix() for path, data in outputs.items()
+                 if not path.is_file() or path.read_bytes() != data]
+        if stale:
+            raise BuildError("boot classpath payload is stale (run build): " + ", ".join(stale))
+    print(f"boot classpath {mode}: ogplay.jar {sha256(jar)} + {len(roms)} ROM jars")
     return 0
 
 
@@ -1336,45 +652,17 @@ def build_guest_jni() -> int:
     return 0
 
 
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", nargs="?", choices=("build", "check", "audit", "build-guest-jni"))
-    parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--report", type=Path, help="audit report destination")
-    parser.add_argument("--emit-expectations", action="store_true",
-                        help="print observed audit metrics without checking expectations")
+    parser.add_argument("mode", choices=("build", "check", "build-guest-jni"))
     arguments = parser.parse_args()
     try:
-        if arguments.self_test:
-            return self_test()
-        if arguments.mode is None:
-            parser.error("mode is required")
-        if arguments.mode == "audit":
-            return audit_date_family(
-                arguments.report or AUDIT_REPORT, arguments.emit_expectations)
-        if arguments.report is not None or arguments.emit_expectations:
-            parser.error("--report and --emit-expectations require audit mode")
         if arguments.mode == "build-guest-jni":
             return build_guest_jni()
-        jar, dex, recipe = build()
-        audit_crc32(dex)
-        audit_zip_streams(dex)
-        native_crypto = audit_native_crypto(dex)
-        manifest = manifest_bytes(boot_metadata(jar, dex, recipe))
-        if arguments.mode == "build":
-            OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-            OUTPUT.write_bytes(jar)
-            MANIFEST.write_bytes(manifest)
-        elif not OUTPUT.is_file() or OUTPUT.read_bytes() != jar or \
-                MANIFEST.read_bytes() != manifest:
-            raise BuildError("BootDex payload is stale; run build")
-        print(f"BootDex {arguments.mode}: {len(class_names(dex))} classes, "
-              f"DEX {sha256(dex)}, JAR {sha256(jar)}")
-        print(f"NativeCrypto audit: {native_crypto['counts']}; "
-              f"report={NATIVE_CRYPTO_AUDIT_REPORT}")
-        return 0
-    except (BuildError, OSError, json.JSONDecodeError,
-            dex_survey_lib.DexFormatError) as error:
+        return build_or_check(arguments.mode)
+    except (BuildError, OSError, ValueError, json.JSONDecodeError) as error:
         parser.error(str(error))
 
 

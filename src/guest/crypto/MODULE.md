@@ -1,4 +1,4 @@
-# 模块：BootDex guest crypto JNI 源码
+# 模块：guest crypto JNI 源码
 
 crypto_jni.c 与 `src/guest/icu/icu_jni.c` 统一编译为 API 19 ARM
 `libogplay_jni.so`。本目录只拥有 crypto 注册、状态和 OpenSSL 调用；唯一 JNI_OnLoad
@@ -45,7 +45,7 @@ DVM-171 使用固定 JAR 的原版 `NativeCrypto` 类和全部 native descriptor
 不初始化或发布 TLS。OGPlay 私有证书验签导出归 `NativeVerification.verify`；digest/HMAC/
 OpenSSLKey 的字段 token 清理由 VM 统一登记，registry、锁、GC/teardown 语义不变。
 
-DVM-172 的 `java/` 目录以固定 API 19 类路径编译进入 BootDex，拥有自有 KeyStore
+DVM-172 的 `java/` 目录以固定 API 19 类路径编译进入 ogplay.jar，拥有自有 KeyStore
 Provider、SPI、条目、BKS codec 与 PKCS#12 KDF；Provider 以 `OGPlayKeyStore` 独立身份发布
 标准 BKS v2 写出和 v0/v1/v2 读取。BC 仅为隔离 oracle，生产 DEX 拒绝其类型引用。
 标准/历史 3DES PBE 调用 guest libcrypto；RSA/EC PKCS#8 使用独立 EVP_PKEY token registry，

@@ -32,7 +32,7 @@ constexpr std::string_view kSynopsis =
     "usage: ogplay-cli <command> [arguments]\n"
     "\n"
     "Commands:\n"
-    "  dexvm dump-surface [--bootdex <jar>]  Export linked platform JSON\n"
+    "  dexvm dump-surface [--framework <dir>]  Export linked platform JSON\n"
     "  dexvm run-dex <dex|jar> [--class <name>] [--backend switch|threaded] [--native-lib-dir <dir>]\n"
     "        [--enable-assertions] [--merge-console] [--ledger-json <file>] [-- args...]\n"
     "                                Run a standalone main like dalvikvm;\n"
@@ -146,12 +146,12 @@ int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
     try {
         if (argc >= 3 && std::string_view(argv[1]) == "dexvm" && std::string_view(argv[2]) == "dump-surface") {
             std::filesystem::path boot;
-            if (argc == 5 && std::string_view(argv[3]) == "--bootdex")
+            if (argc == 5 && std::string_view(argv[3]) == "--framework")
                 boot = Utf8Path(argv[4]);
             else if (argc == 3)
-                boot = app::BundledDataPaths().root / "android/19/framework/bootdex.jar";
+                boot = app::BundledDataPaths().root / "android/19/framework";
             else
-                throw std::invalid_argument("dump-surface accepts only --bootdex <jar>");
+                throw std::invalid_argument("dump-surface accepts only --framework <directory>");
             Write(stdout, app::DumpDexSurface(boot) + "\n");
             return 0;
         }

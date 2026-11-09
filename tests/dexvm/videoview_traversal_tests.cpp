@@ -133,7 +133,7 @@ TEST_CASE("DVM-303 VideoView adapter metadata matrix rejects stale generations o
         REQUIRE(slot);
         const auto& method = f.linker.Method(f.linker.Class(type).vtable[*slot]);
         CHECK(method.kind == MethodKind::intrinsic);
-        CHECK(method.adapter_review == "tools/bootdex/view-video-adapter.json#onMeasure");
+        CHECK(method.adapter_review == "DVM-303 VideoView.onMeasure adapter");
         std::ofstream out(std::string(".local/analysis/vd-10b5/measure-") +
                           (backend == InterpreterBackend::threaded ? "threaded" : "switch") + ".trace.json");
         out << RenderDexVmTraceJson(f.vm.Trace("", 10000));

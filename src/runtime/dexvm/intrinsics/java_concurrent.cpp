@@ -14,6 +14,7 @@ namespace {
 
 IntrinsicClassDecl DeclareAtomicLongNative() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/util/concurrent/atomic/AtomicLong;");
+    builder.MergesBootClass();
     builder.StaticMethod(
         "VMSupportsCS8", "()Z",
         [](IntrinsicContext&) {

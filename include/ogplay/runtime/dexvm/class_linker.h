@@ -160,6 +160,10 @@ struct IntrinsicClassDecl final {
     // The BootDex class is the sole definition; every native declaration in
     // that class is admitted to guest JNI without duplicating its member list.
     bool admit_boot_native_methods{};
+    // Supplies members for the boot classpath class of the same name: the
+    // first boot DEX definition merges into this declaration. Without it the
+    // declaration is the whole class and every boot DEX copy is ignored.
+    bool merges_boot_class{};
     std::uint32_t access_flags{};
     std::vector<IntrinsicMethodDecl> methods;
     std::vector<IntrinsicFieldDecl> fields;
@@ -279,6 +283,7 @@ struct LinkedClass final {
     bool is_interface{};
     bool is_array{};
     bool admit_boot_native_methods{};
+    bool merges_boot_class{};
     std::string array_element_descriptor;
     std::uint16_t instance_slots{};
     std::vector<VmFieldId> own_instance_fields;
@@ -365,9 +370,14 @@ public:
     DexClassLinker& operator=(const DexClassLinker&) = delete;
 
     void RegisterIntrinsics(std::span<const IntrinsicClassDecl> catalog);
-    DexUnitId RegisterBootDex(std::vector<std::uint8_t> dex_bytes, std::string_view member_sources = {});
-    // Optional sealed archive entry; absent on legacy/disabled payloads.
-    [[nodiscard]] static std::string BootDexMemberSources(std::span<const std::byte> archive_bytes);
+    // Call once per boot classpath DEX, in classpath order. The first
+    // definition of a descriptor wins; later boot copies are ignored.
+    DexUnitId RegisterBootDex(std::vector<std::uint8_t> dex_bytes);
+    // Handler for a boot DEX native that no intrinsic binds. An empty result
+    // (the default) records the gap and throws UnsatisfiedLinkError on call.
+    using UnboundNativePolicy =
+        std::function<IntrinsicHandler(std::string_view owner, std::string_view name, std::string_view descriptor)>;
+    void SetUnboundNativePolicy(UnboundNativePolicy policy);
     DexUnitId RegisterDex(std::vector<std::uint8_t> dex_bytes);
     void Link();
     // Replay early link warnings when the session logger becomes available.
@@ -471,8 +481,7 @@ public:
 
 private:
     void MarkVerificationFailed(DexClassId id);
-    [[nodiscard]] DexUnitId RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, bool boot,
-                                            std::span<const std::string> failed_native = {});
+    [[nodiscard]] DexUnitId RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, bool boot);
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

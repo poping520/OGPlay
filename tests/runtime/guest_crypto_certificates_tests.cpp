@@ -81,7 +81,7 @@ TEST_CASE("DVM-171 failed unified crypto JNI initialization aborts process creat
     request.system_libraries = libraries;
     request.dex_bytes = ReadDexFixture("cipher.dex");
     request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-    request.boot_dex_bytes = test::ReadBootDex();
+    request.boot_dex_files = test::ReadBootDex();
     request.context = context;
     request.surface_width = 64;
     request.surface_height = 36;
@@ -127,7 +127,7 @@ TEST_CASE("DVM-106 Certificate parses DER PEM and verifies RSA EC through guest 
         request.system_libraries = libraries;
         request.dex_bytes = ReadDexFixture("cipher.dex");
         request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_bytes = test::ReadBootDex();
+        request.boot_dex_files = test::ReadBootDex();
         request.context = context;
         request.dexvm.interpreter.backend = backend;
         request.surface_width = 64;
@@ -446,7 +446,7 @@ TEST_CASE("DVM-108/109 UUID MessageDigest and serialization use BootDex with rea
         request.system_libraries = libraries;
         request.dex_bytes = ReadDexFixture("cipher.dex");
         request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_bytes = test::ReadBootDex();
+        request.boot_dex_files = test::ReadBootDex();
         request.context = context;
         request.dexvm.interpreter.backend = backend;
         request.surface_width = 64;

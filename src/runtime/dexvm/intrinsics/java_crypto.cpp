@@ -53,6 +53,7 @@ void Put(Interpreter& vm, VmObjectRef object, const std::string& key, const std:
 
 IntrinsicClassDecl SecurityConfiguration() {
     auto b = IntrinsicClassBuilder::Class("Ljava/security/Security;");
+    b.MergesBootClass();
     b.ClassInitializer([](IntrinsicContext& c) {
         auto& vm = c.vm;
         const auto props = Construct(vm, "Ljava/util/Properties;");
@@ -97,6 +98,7 @@ IntrinsicClassDecl HarmonyCryptoProvider() {
 
 IntrinsicClassDecl CryptoProvider() {
     auto b = IntrinsicClassBuilder::Class(kProvider, "Ljava/security/Provider;");
+    b.MergesBootClass();
     b.Constructor("()V", [](IntrinsicContext& c) {
         auto& vm = c.vm;
         const auto name = vm.NewStringUtf8("AndroidOpenSSL");
@@ -330,6 +332,7 @@ IntrinsicClassDecl AesKeyGenerator() {
 
 IntrinsicClassDecl CipherContext() {
     auto b = IntrinsicClassBuilder::Class("Lcom/android/org/conscrypt/OpenSSLCipherContext;");
+    b.MergesBootClass();
     const auto field = b.BoundInstanceField("context", "J", kAccPrivate | kAccFinal);
     b.Constructor(
         "(J)V",
@@ -355,6 +358,7 @@ IntrinsicClassDecl NativeVerificationBoundary() {
 
 IntrinsicClassDecl NativeKeyStoreBoundary() {
     auto b = IntrinsicClassBuilder::Class(kKeyStoreNative);
+    b.MergesBootClass();
     b.GuestNativeStatic("desEdeCbc", "(Z[B[B[B)[B");
     b.GuestNativeStatic("decodePrivateKey", "([B)J");
     b.GuestNativeStatic("encodePrivateKey", "(J)[B");
@@ -428,6 +432,7 @@ bool SetInstanceRefField(Interpreter& vm, VmObjectRef object, const char* name, 
 
 IntrinsicClassDecl NativeTrustBoundary() {
     auto b = IntrinsicClassBuilder::Class(kTrustNative);
+    b.MergesBootClass();
     b.GuestNativeStatic("subjectHashOld", "([B)I");
     b.GuestNativeStatic("verifyPath", "([B[B[BLjava/lang/String;)Z");
     b.StaticMethod("encodedCopy", "(Ljava/security/cert/X509Certificate;)[B", [](IntrinsicContext& c) {
@@ -438,6 +443,7 @@ IntrinsicClassDecl NativeTrustBoundary() {
 
 IntrinsicClassDecl NativeTlsBoundary() {
     auto b = IntrinsicClassBuilder::Class(kTlsNative);
+    b.MergesBootClass();
     b.StaticMethod("markTls", "(Ljava/net/Socket;)V", [](IntrinsicContext& c) {
         const auto socket = IntrinsicCall(c).NonNullRef(0, "socket");
         try {

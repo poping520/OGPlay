@@ -1558,7 +1558,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
                                    const std::span<const dexvm::IntrinsicClassDecl> platform_catalog,
                                    const std::shared_ptr<DexVmAndroidContext>& android_context,
                                    core::CapabilityLedger& ledger, core::Logger* logger, const DexVmBridgeConfig config,
-                                   std::vector<std::uint8_t> boot_dex_bytes)
+                                   std::vector<std::vector<std::uint8_t>> boot_dex_files)
     : impl_(std::make_unique<Impl>()) {
     impl_->session = &session;
     impl_->ledger = &ledger;
@@ -1590,12 +1590,9 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
     if (!platform_catalog.empty()) {
         impl_->linker.RegisterIntrinsics(platform_catalog);
     }
-    if (!boot_dex_bytes.empty()) {
-        impl_->linker.RegisterBootDex(
-            std::move(boot_dex_bytes),
-            android_context ? dexvm::DexClassLinker::BootDexMemberSources(android_context->boot_classpath_bytes)
-                            : std::string{});
-    }
+    if (android_context) impl_->linker.SetUnboundNativePolicy(AndroidUnboundNative);
+    for (auto& boot_dex : boot_dex_files)
+        impl_->linker.RegisterBootDex(std::move(boot_dex));
     impl_->linker.RegisterDex(std::move(dex_bytes));
     impl_->linker.Link();
 

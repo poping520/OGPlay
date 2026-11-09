@@ -139,6 +139,7 @@ Decl Declare_android_view_InputQueue(const Context& context);
 [[nodiscard]] Decl Declare_android_util_Log(const Context& context);
 [[nodiscard]] Decl Declare_android_util_EventLog(const Context& context);
 [[nodiscard]] Decl Declare_android_util_AttributeSet(const Context& context);
+[[nodiscard]] Decl Declare_android_util_FloatMath(const Context& context);
 [[nodiscard]] Decl Declare_android_util_Base64(const Context& context);
 [[nodiscard]] Decl Declare_android_util_DisplayMetrics(const Context& context);
 [[nodiscard]] Decl Declare_android_hardware_display_DisplayManager(const Context& context);

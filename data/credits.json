@@ -9,8 +9,8 @@
    "license": null,
    "notices": [
     {
-     "title": "bootdex.jar.txt",
-     "path": "android/19/notices/bootdex.jar.txt"
+     "title": "boot-classpath.txt",
+     "path": "android/19/notices/boot-classpath.txt"
     },
     {
      "title": "libc.so.txt",

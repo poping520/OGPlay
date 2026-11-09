@@ -239,6 +239,7 @@ Decl Declare_android_text_TextUtils(const Context& context) {
 
 Decl Declare_android_text_format_Time(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/text/format/Time;");
+    builder.MergesBootClass();
     const auto delegate = [](const char* name, const char* signature, bool instance) {
         const std::string target = instance ? std::string("(Landroid/text/format/Time;") + (signature + 1) : signature;
         return [name, target, instance](dx::IntrinsicContext& call) {

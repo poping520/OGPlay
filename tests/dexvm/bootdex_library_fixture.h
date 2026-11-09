@@ -39,7 +39,8 @@ namespace ogplay::test::bootdex_library {
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
-std::vector<std::uint8_t> Dvm102BootDex();
+// classes.dex of one payload boot classpath jar.
+std::vector<std::uint8_t> BootJarDex(std::string_view jar);
 
 struct Dvm87Vm final {
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;

@@ -43,9 +43,9 @@ bool AndroidAlphaOnly(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmO
 }
 
 void RequireAndroidAlphaOnly(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view) {
-    if (AndroidAlphaOnly(vm, context, view)) return;
-    if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_layout_transform", 0);
-    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Only View alpha transformation is supported"};
+    // Rotation, scale, translation and pivots are display-only: the projection
+    // keeps the untransformed frame and warns (AGENTS UI degradation rule).
+    if (!AndroidAlphaOnly(vm, context, view)) vm.RecordUiDegraded("View.transform");
 }
 
 void InitializeAndroidSystemProperties(dx::Interpreter& vm, const Context& context) {

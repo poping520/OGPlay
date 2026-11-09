@@ -220,7 +220,7 @@ TEST_CASE("Android app process registers the last Activity theme and preserves a
     request.manifest.activity_components.push_back(last);
     request.system_libraries = std::span{&system, 1};
     request.dex_bytes = ReadDexFixture("application.dex");
-    request.boot_dex_bytes = test::ReadBootDex();
+    request.boot_dex_files = test::ReadBootDex();
     request.context = std::make_shared<runtime::DexVmAndroidContext>();
     test::BindBootDexArchive(*request.context);
     request.platform.android_id = "0123456789abcdef";

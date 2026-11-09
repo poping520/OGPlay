@@ -24,7 +24,9 @@ Decl ExperimentalImageView(const Context& context);
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_Button(const Context&) {
-    return dx::IntrinsicClassBuilder::Class("Landroid/widget/Button;", "Landroid/widget/TextView;").Build();
+    return std::move(dx::IntrinsicClassBuilder::Class("Landroid/widget/Button;", "Landroid/widget/TextView;")
+                         .MergesBootClass())
+        .Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
@@ -37,6 +39,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_widget_EditText(const Context& context) {
     {
         auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/EditText;", "Landroid/widget/TextView;");
+        builder.MergesBootClass();
         builder.VirtualMethod("getText", "()Landroid/text/Editable;", [context](dx::IntrinsicContext& c) {
             auto& refs = context->view_adapter_references.at(c.receiver.Value());
             if (!refs.text_editable.IsValid()) {
@@ -78,6 +81,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_widget_FrameLayout(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/FrameLayout;", "Landroid/view/ViewGroup;");
+    builder.MergesBootClass();
 
     // AOSP 4.4 ROM line 211.
 
@@ -92,7 +96,9 @@ Decl Declare_android_widget_FrameLayout(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ImageButton(const Context&) {
-    return dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageButton;", "Landroid/widget/ImageView;").Build();
+    return std::move(dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageButton;", "Landroid/widget/ImageView;")
+                         .MergesBootClass())
+        .Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
@@ -103,7 +109,9 @@ Decl Declare_android_widget_ImageButton(const Context&) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ImageView_ScaleType(const Context&) {
-    return dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageView$ScaleType;", "Ljava/lang/Enum;").Build();
+    return std::move(dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageView$ScaleType;", "Ljava/lang/Enum;")
+                         .MergesBootClass())
+        .Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
@@ -126,6 +134,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_LinearLayout(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/LinearLayout;", "Landroid/view/ViewGroup;");
+    builder.MergesBootClass();
 
     // AOSP 4.4 ROM line 1802.
 
@@ -146,7 +155,9 @@ Decl Declare_android_widget_LinearLayout(const Context&) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ProgressBar(const Context&) {
-    return dx::IntrinsicClassBuilder::Class("Landroid/widget/ProgressBar;", "Landroid/view/View;").Build();
+    return std::move(dx::IntrinsicClassBuilder::Class("Landroid/widget/ProgressBar;", "Landroid/view/View;")
+                         .MergesBootClass())
+        .Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
@@ -158,6 +169,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_RelativeLayout(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/RelativeLayout;", "Landroid/view/ViewGroup;");
+    builder.MergesBootClass();
 
     {
         // Retain these containers' own ROM failure boundary instead of inheriting
@@ -179,6 +191,7 @@ namespace {
 // ADR-0161: Java geometry and bounded scroll position; animation remains failure.
 Decl ExperimentalScrollView(const Context& context, const char* owner) {
     auto b = dx::IntrinsicClassBuilder::Class(owner, "Landroid/widget/FrameLayout;");
+    b.MergesBootClass();
     const auto scroller = b.BoundInstanceField("mScroller", "Landroid/widget/OverScroller;", dx::kAccPrivate);
     std::vector<dx::IntrinsicFieldHandle> config;
     const std::array names{"mTouchSlop", "mMinimumVelocity", "mMaximumVelocity", "mOverscrollDistance",
@@ -229,40 +242,43 @@ Decl ExperimentalScrollView(const Context& context, const char* owner) {
                                     CallAndroidMethod(c.vm, c.receiver, "getChildCount", "()I").AsInt() != 0);
         });
     }
-    // Both axes use the reviewed idle-only EdgeEffect seam.
-    b.OverrideMethod("setOverScrollMode", "(I)V", [=](dx::IntrinsicContext& c) {
-        dx::IntrinsicCall fields(c);
-        if (c.arguments[0].AsInt() != 2 && !fields.GetRef(edge_a).IsValid()) {
-            const auto context = CallAndroidMethod(c.vm, c.receiver, "getContext", "()Landroid/content/Context;").ref;
-            const auto create = [&] {
-                const auto object = c.vm.NewIntrinsicInstance("Landroid/widget/EdgeEffect;");
-                const auto keep = c.vm.ProtectReferences(std::array{object});
-                const auto ctor = c.vm.Linker().FindDirectMethod(c.vm.Model().ObjectClass(object), "<init>",
-                                                                 "(Landroid/content/Context;)V");
-                const auto result = c.vm.Call(*ctor, std::array{dx::VmValue::Ref(object), dx::VmValue::Ref(context)});
-                if (result.exception.IsValid())
-                    throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor,
-                                          result.exception_message, result.exception};
-                return object;
-            };
-            const auto first = create();
-            const auto keep = c.vm.ProtectReferences(std::array{first});
-            const auto second = create();
-            fields.SetRef(edge_a, first);
-            fields.SetRef(edge_b, second);
-        } else if (c.arguments[0].AsInt() == 2) {
-            fields.SetRef(edge_a, dx::VmObjectRef{});
-            fields.SetRef(edge_b, dx::VmObjectRef{});
-        }
-        const auto type = c.vm.Linker().ResolveDescriptor("Landroid/view/View;");
-        const auto index = c.vm.Linker().FindVtableIndex(type, "setOverScrollMode", "(I)V");
-        const auto result = c.vm.Call(c.vm.Linker().Class(type).vtable[*index],
-                                      std::array{dx::VmValue::Ref(c.receiver), c.arguments[0]});
-        if (result.exception.IsValid())
-            throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                                  result.exception};
-        return result.value;
-    });
+    // HorizontalScrollView uses the idle-only EdgeEffect seam; ScrollView keeps the ROM body.
+    if (std::string_view(owner) != "Landroid/widget/ScrollView;")
+        b.OverrideMethod("setOverScrollMode", "(I)V", [=](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall fields(c);
+            if (c.arguments[0].AsInt() != 2 && !fields.GetRef(edge_a).IsValid()) {
+                const auto context =
+                    CallAndroidMethod(c.vm, c.receiver, "getContext", "()Landroid/content/Context;").ref;
+                const auto create = [&] {
+                    const auto object = c.vm.NewIntrinsicInstance("Landroid/widget/EdgeEffect;");
+                    const auto keep = c.vm.ProtectReferences(std::array{object});
+                    const auto ctor = c.vm.Linker().FindDirectMethod(c.vm.Model().ObjectClass(object), "<init>",
+                                                                     "(Landroid/content/Context;)V");
+                    const auto result =
+                        c.vm.Call(*ctor, std::array{dx::VmValue::Ref(object), dx::VmValue::Ref(context)});
+                    if (result.exception.IsValid())
+                        throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor,
+                                              result.exception_message, result.exception};
+                    return object;
+                };
+                const auto first = create();
+                const auto keep = c.vm.ProtectReferences(std::array{first});
+                const auto second = create();
+                fields.SetRef(edge_a, first);
+                fields.SetRef(edge_b, second);
+            } else if (c.arguments[0].AsInt() == 2) {
+                fields.SetRef(edge_a, dx::VmObjectRef{});
+                fields.SetRef(edge_b, dx::VmObjectRef{});
+            }
+            const auto type = c.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+            const auto index = c.vm.Linker().FindVtableIndex(type, "setOverScrollMode", "(I)V");
+            const auto result = c.vm.Call(c.vm.Linker().Class(type).vtable[*index],
+                                          std::array{dx::VmValue::Ref(c.receiver), c.arguments[0]});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        });
     b.DirectMethod("initScrollView", "()V", [=](dx::IntrinsicContext& c) {
         auto& vm = c.vm;
         const auto context = CallAndroidMethod(vm, c.receiver, "getContext", "()Landroid/content/Context;").ref;
@@ -314,6 +330,7 @@ Decl ExperimentalScrollView(const Context& context, const char* owner) {
 
 Decl Declare_android_widget_EdgeEffect(const Context&) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/widget/EdgeEffect;", "Ljava/lang/Object;");
+    b.MergesBootClass();
     const auto state = b.BoundInstanceField("mState", "I", dx::kAccPrivate);
     const auto pull = b.BoundInstanceField("mPullDistance", "F", dx::kAccPrivate);
     const auto bounds = b.BoundInstanceField("mBounds", "Landroid/graphics/Rect;", dx::kAccPrivate | dx::kAccFinal);
@@ -493,6 +510,7 @@ TextStyleable RomTextAttributes(dx::Interpreter& vm, std::string_view group) {
 
 Decl ExperimentalImageView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageView;", "Landroid/view/View;");
+    builder.MergesBootClass();
     const auto drawable =
         builder.BoundInstanceField("mDrawable", "Landroid/graphics/drawable/Drawable;", dx::kAccPrivate);
     const auto scale =
@@ -772,6 +790,7 @@ int BoundedTextGravity(dx::Interpreter& vm, const int requested) {
 
 Decl ExperimentalTextView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/TextView;", "Landroid/view/View;");
+    builder.MergesBootClass();
     {
         builder.OverrideMethod("onWindowFocusChanged", "(Z)V", [](dx::IntrinsicContext& call) {
             const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/View;");
@@ -1840,6 +1859,7 @@ dx::VmValue RejectSpinnerPopup(dx::IntrinsicContext& call) {
 
 Decl Declare_android_widget_Spinner(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/Spinner;", "Landroid/widget/AbsSpinner;");
+    builder.MergesBootClass();
     builder.VirtualMethod("performClick", "()Z", RejectSpinnerPopup);
     return std::move(builder).Build();
 }
@@ -1847,6 +1867,7 @@ Decl Declare_android_widget_Spinner(const Context&) {
 Decl Declare_android_widget_Spinner_DropdownPopup(const Context&) {
     auto builder =
         dx::IntrinsicClassBuilder::Class("Landroid/widget/Spinner$DropdownPopup;", "Landroid/widget/ListPopupWindow;");
+    builder.MergesBootClass();
     builder.Constructor("(Landroid/widget/Spinner;Landroid/content/Context;Landroid/util/AttributeSet;I)V",
                         RejectSpinnerPopup);
     return std::move(builder).Build();
@@ -1855,6 +1876,7 @@ Decl Declare_android_widget_Spinner_DropdownPopup(const Context&) {
 Decl Declare_android_widget_Spinner_ForwardingListener(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/Spinner$1;",
                                                     "Landroid/widget/ListPopupWindow$ForwardingListener;");
+    builder.MergesBootClass();
     builder.Constructor("(Landroid/widget/Spinner;Landroid/view/View;Landroid/widget/Spinner$DropdownPopup;)V",
                         RejectSpinnerPopup);
     return std::move(builder).Build();

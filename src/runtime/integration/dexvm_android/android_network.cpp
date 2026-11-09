@@ -57,6 +57,7 @@ dx::VmObjectRef NewOfflineWifiNetworkInfo(dx::IntrinsicContext& call) {
 
 Decl Declare_android_net_ConnectivityManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/ConnectivityManager;");
+    builder.MergesBootClass();
     builder.DirectMethod(
         "nativeRequireOffline", "()V",
         [context](dx::IntrinsicContext& call) {
@@ -183,6 +184,7 @@ void RequireMulticastPermission(const Context& context) {
 
 Decl Declare_android_net_wifi_WifiManager_WifiLock(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/wifi/WifiManager$WifiLock;");
+    builder.MergesBootClass();
     builder.DirectMethod(
         "nativeAcquire", "(Landroid/net/wifi/WifiManager;I)V",
         [context](dx::IntrinsicContext& call) {
@@ -214,6 +216,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_net_wifi_WifiManager_MulticastLock(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/wifi/WifiManager$MulticastLock;");
+    builder.MergesBootClass();
     builder.DirectMethod(
         "nativeAcquire", "(Landroid/net/wifi/WifiManager;)V",
         [context](dx::IntrinsicContext& call) {
@@ -236,6 +239,7 @@ Decl Declare_android_net_wifi_WifiManager_MulticastLock(const Context& context) 
 
 Decl Declare_android_net_wifi_WifiManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/wifi/WifiManager;", "Ljava/lang/Object;");
+    builder.MergesBootClass();
     builder.FinalMethod("isWifiEnabled", "()Z", [context](dx::IntrinsicContext& call) {
         static_cast<void>(RequireOfflineConnectivity(call, context, false));
         return dx::VmValue::Int(0);

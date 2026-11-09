@@ -104,7 +104,7 @@ TEST_CASE("DVM-237 APS-11 real ARM Android asset surface and sensor boundaries s
             request.manifest = AppManifest("fixture.DelayedContentActivity");
             request.system_libraries = libraries;
             request.dex_bytes = ReadDexFixture("application.dex");
-            request.boot_dex_bytes = test::ReadBootDex();
+            request.boot_dex_files = test::ReadBootDex();
             request.context = context;
             request.filesystem = &filesystem;
             request.ledger = &ledger;

@@ -348,8 +348,6 @@ TEST_CASE("DVM-284 LinearLayout default copy parameters and explicit unsupported
         REQUIRE(f.OnOutcome(ll, "measure", "(II)V", {VmValue::Int(0x400000c8), VmValue::Int(0x4000008c)})
                     .exception.IsValid());
         CHECK(f.ledger.Unimplemented().empty());  // ROM rejects weighted predecessor, rather than an unsupported hit.
-        REQUIRE(f.OnOutcome(ll, "onDraw", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(VmObjectRef{})})
-                    .exception.IsValid());
         CHECK_FALSE(f.OnOutcome(ll, "setDividerDrawable", "(Landroid/graphics/drawable/Drawable;)V",
                                 {VmValue::Ref(VmObjectRef{})})
                         .exception.IsValid());
@@ -362,6 +360,5 @@ TEST_CASE("DVM-284 LinearLayout default copy parameters and explicit unsupported
                           .exception.IsValid());
         CHECK((slot(ll, "mViewFlags").bits & 0x300U) == 0);
         CHECK(slot(ll, "mScrollCache", "Landroid/view/View$ScrollabilityCache;").bits == 0);
-        CHECK_FALSE(f.ledger.Unimplemented().empty());
     }
 }

@@ -170,7 +170,7 @@ TEST_CASE("DVM NativeCrypto identity and members come from API 19 BootDex") {
     const auto type = fixture.linker.ResolveDescriptor("Lcom/android/org/conscrypt/NativeCrypto;");
     const auto& linked = fixture.linker.Class(type);
     CHECK(linked.is_boot_dex);
-    const auto bytes = Dvm102BootDex();
+    const auto bytes = BootJarDex("conscrypt.jar");
     const auto dex = ogplay::loader::ParseDex(bytes);
     const auto classes = ogplay::loader::ReadDexClassData(bytes, dex);
     const auto& original = classes.at(*linked.dex_class_def_index);

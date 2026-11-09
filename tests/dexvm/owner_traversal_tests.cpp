@@ -120,7 +120,7 @@ TEST_CASE("DVM-307 deferred second pass stays in next owner tick and callback ge
         });
         probe.StaticMethod("traverse", "()V", [](IntrinsicContext&) { return VmValue::Void(); });
         AndroidValueVm f(backend, {std::move(probe).Build()}, false, "view_layout.dex",
-                         AndroidUiTraversalOwner::JavaTraversal, OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+                         AndroidUiTraversalOwner::JavaTraversal);
         const auto owner = f.New("Landroid/app/Activity;");
         const auto view = f.New("Ltest/LayoutLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         f.context->ui_test_accessibility_disabled = true;

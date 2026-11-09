@@ -126,82 +126,47 @@ TEST_CASE("API19 Build family executes from BootDex without class intrinsics") {
     }
 }
 
-TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intrinsic overlay") {
+TEST_CASE("DVM-103 intrinsic handlers win over boot DEX bodies and collections stay ordinary DEX") {
     Dvm87Vm f;
-    const auto all = f.linker.AllClasses();
     auto catalog = CoreIntrinsicCatalog();
     const auto android = AndroidIntrinsicCatalog(f.context);
     catalog.insert(catalog.end(), android.begin(), android.end());
-    // Sealed ROM member ownership takes precedence over the legacy catalog.
-    ogplay::test::BindBootDexArchive(*f.context);
-    ogplay::core::JsonParseError error;
-    const auto policy = ogplay::core::JsonDocument::ParseStrict(
-        DexClassLinker::BootDexMemberSources(f.context->boot_classpath_bytes), error, 4U * 1024U * 1024U);
-    REQUIRE(policy.has_value());
-    std::map<std::string, std::string> member_sources;
-    const auto classes = *policy->Root().Member("classes");
-    for (std::size_t i = 0; i < classes.Size(); ++i) {
-        const auto row = *classes.Element(i);
-        const auto owner = std::string(*row.Member("owner")->String());
-        const auto methods = *row.Member("methods");
-        for (std::size_t j = 0; j < methods.Size(); ++j) {
-            const auto method = *methods.Element(j);
-            member_sources.emplace(owner + "->" + std::string(*method.Member("signature")->String()),
-                                   std::string(*method.Member("source")->String()));
-        }
-    }
-    std::size_t count{};
-    for (const auto type : all) {
-        if (!f.linker.Class(type).is_boot_dex) continue;
-        const auto descriptor = f.linker.Class(type).descriptor;
+    std::map<std::string, bool> handled;  // "owner->name(descriptor)" -> has a handler
+    for (const auto& declaration : catalog)
+        for (const auto& method : declaration.methods)
+            handled[declaration.descriptor + "->" + method.name + method.descriptor] =
+                static_cast<bool>(method.implementation);
+    const auto collection = f.linker.ResolveDescriptor("Ljava/util/Collection;");
+    const auto map = f.linker.ResolveDescriptor("Ljava/util/Map;");
+    std::size_t checked{};
+    for (const auto type : f.linker.AllClasses()) {
+        const auto& linked = f.linker.Class(type);
+        if (!linked.is_boot_dex) continue;
+        const auto descriptor = linked.descriptor;
         CAPTURE(std::string(descriptor));
-        f.linker.EnsureClassLinked(type);
-        ++count;
-        // Handwritten overlays remain authoritative. Compare every own method
-        // with the production catalogs rather than a growing class whitelist.
-        const auto check = [&](VmMethodId method) {
-            const auto& linked = f.linker.Method(method);
-            CAPTURE(linked.name);
-            CAPTURE(linked.descriptor);
-            bool overlay = false;
-            for (const auto& declaration : catalog) {
-                if (declaration.descriptor != descriptor) continue;
-                for (const auto& candidate : declaration.methods)
-                    if (candidate.name == linked.name && candidate.descriptor == linked.descriptor) overlay = true;
-            }
-            const auto source = member_sources.find(std::string(descriptor) + "->" + linked.name + linked.descriptor);
-            if (source != member_sources.end()) {
-                if (source->second == "rom") {
-                    CHECK(linked.kind == MethodKind::interpreted);
-                    CHECK(linked.code.has_value());
-                } else if (source->second == "overlay") {
-                    CHECK(linked.kind == MethodKind::intrinsic);
+        const bool java_util = descriptor.starts_with("Ljava/util/");
+        if (java_util) f.linker.EnsureClassLinked(type);
+        for (const auto* list : {&linked.own_virtual_methods, &linked.own_direct_methods}) {
+            for (const auto method : *list) {
+                const auto& m = f.linker.Method(method);
+                CAPTURE(m.name);
+                CAPTURE(m.descriptor);
+                const auto found = handled.find(std::string(descriptor) + "->" + m.name + m.descriptor);
+                if (found != handled.end() && found->second) {
+                    CHECK(m.kind == MethodKind::intrinsic);
+                } else if (!(m.access_flags & (kAccNative | kAccAbstract))) {
+                    CHECK(m.kind == MethodKind::interpreted);
+                    CHECK(m.code.has_value());
                 }
-                return;
+                ++checked;
             }
-            if (overlay && !(linked.access_flags & (kAccNative | kAccAbstract)))
-                CHECK(linked.kind == MethodKind::intrinsic);
-            else if (!overlay && linked.kind != MethodKind::intrinsic &&
-                     !(linked.access_flags & (kAccNative | kAccAbstract))) {
-                CHECK(linked.kind == MethodKind::interpreted);
-                CHECK(linked.code.has_value());
-            }
-        };
-        for (const auto method : f.linker.Class(type).own_virtual_methods)
-            check(method);
-        for (const auto method : f.linker.Class(type).own_direct_methods)
-            check(method);
-        if (!descriptor.starts_with("Ljava/util/")) continue;
-        // All newly selected collection implementations are ordinary DEX.
-        const auto collection = f.linker.ResolveDescriptor("Ljava/util/Collection;");
-        const auto map = f.linker.ResolveDescriptor("Ljava/util/Map;");
-        if (!f.linker.IsAssignable(collection, type) && !f.linker.IsAssignable(map, type)) continue;
-        for (const auto method : f.linker.Class(type).own_virtual_methods)
-            CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
-        for (const auto method : f.linker.Class(type).own_direct_methods)
-            CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
+        }
+        if (!java_util || (!f.linker.IsAssignable(collection, type) && !f.linker.IsAssignable(map, type))) continue;
+        for (const auto* list : {&linked.own_virtual_methods, &linked.own_direct_methods})
+            for (const auto method : *list)
+                CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == ogplay::loader::ParseDex(Dvm102BootDex()).classes.size());
+    CHECK(checked > 50000);
 }
 
 TEST_CASE("DVM-103 deferred intrinsic interfaces preserve declaration order") {
@@ -354,83 +319,5 @@ TEST_CASE("DVM-104 formatters events tokenizer and key parameters use guest stat
             CHECK(copied.value.ref != keybytes);
             CHECK(f.model.ReadByteRegion(copied.value.ref, 0, 3) == f.model.ReadByteRegion(keybytes, 0, 3));
         }
-    }
-}
-
-TEST_CASE("DVM-276 BootDex exact member sources execute on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        DexClassLinker linker;
-        linker.RegisterIntrinsics(CoreIntrinsicCatalog());
-        linker.RegisterIntrinsics(AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>()));
-        auto builder = IntrinsicClassBuilder::Class("Ltest/MemberComposition;");
-        builder.StaticMethod("host", "()I", [](IntrinsicContext&) { return VmValue::Int(29); });
-        // This legacy implementation must lose to the explicit ROM source.
-        builder.StaticMethod("rom", "()I", [](IntrinsicContext&) { return VmValue::Int(-100); });
-        builder.StaticMethod("missing", "()I", [](IntrinsicContext&) { return VmValue::Int(-200); });
-        auto declaration = std::move(builder).Build();
-        int legacy_clinit_calls = 0;
-        declaration.clinit_implementation = [&](IntrinsicContext&) {
-            ++legacy_clinit_calls;
-            return VmValue::Void();
-        };
-        linker.RegisterIntrinsics(std::array{declaration});
-        const auto read = [](const std::string& name) {
-            std::ifstream input(std::filesystem::path(OGPLAY_DEXVM_FIXTURE_DIR) / name, std::ios::binary);
-            REQUIRE(input.good());
-            return std::vector<std::uint8_t>{std::istreambuf_iterator<char>(input), {}};
-        };
-        const auto jar = read("member-sources.jar");
-        const auto archive = std::span<const std::byte>{reinterpret_cast<const std::byte*>(jar.data()), jar.size()};
-        const auto dex_entry =
-            ogplay::loader::ReadApkEntry(archive, ogplay::loader::ParseApkArchive(archive), "classes.dex");
-        std::vector<std::uint8_t> dex(dex_entry.size());
-        std::memcpy(dex.data(), dex_entry.data(), dex.size());
-        linker.RegisterBootDex(std::move(dex), DexClassLinker::BootDexMemberSources(archive));
-        linker.RegisterDex(read("member_field_access.dex"));
-        linker.Link();
-        ogplay::runtime::HostCopyJavaPayloadProvider string_payload;
-        JniStringStore strings{string_payload};
-        ogplay::runtime::HostCopyJavaPayloadProvider array_payload;
-        JniPrimitiveArrayStore arrays{array_payload};
-        JavaObjectModel model{strings, arrays};
-        ogplay::core::CapabilityLedger ledger;
-        Interpreter vm{linker, model, nullptr, ledger, InterpreterConfig{.backend = backend}};
-        const auto owner = linker.ResolveDescriptor("Ltest/MemberComposition;");
-        const auto call = [&](const std::string& name) {
-            const auto id = linker.FindDirectMethod(owner, name, "()I");
-            REQUIRE(id.has_value());
-            return vm.Call(*id, {});
-        };
-        const auto rom = call("rom");
-        REQUIRE_FALSE(rom.exception.IsValid());
-        CHECK(legacy_clinit_calls == 0);
-        CHECK(rom.value.AsInt() == 17);  // encoded 5 is overwritten by the ROM clinit.
-        CHECK(call("host").value.AsInt() == 29);
-        CHECK(call("combined").value.AsInt() == 46);
-        const auto missing = call("missing");
-        REQUIRE(missing.exception.IsValid());
-        CHECK(linker.Class(missing.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
-        CHECK(call("unavailable").exception.IsValid());
-        const auto hits = ledger.Unimplemented();
-        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
-            return hit.id.find("MemberComposition;") != std::string::npos &&
-                   hit.id.find("missing") != std::string::npos;
-        }));
-        CHECK(linker.Class(owner).own_static_fields.size() == 2);
-        const auto blocked = linker.FindFieldRecursive(owner, "blocked", "I");
-        REQUIRE(blocked.has_value());
-        CHECK(linker.Field(*blocked).is_unimplemented);
-        const auto consumer = linker.ResolveDescriptor("Ltest/MemberFieldAccess;");
-        for (const auto name : {"read", "write"}) {
-            const auto access = linker.FindDirectMethod(consumer, name, "()I");
-            REQUIRE(access.has_value());
-            const auto outcome = vm.Call(*access, {});
-            REQUIRE(outcome.exception.IsValid());
-            CHECK(linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
-        }
-        const auto id = linker.FindDirectMethod(owner, "rom", "()I");
-        CHECK(linker.Method(*id).kind == MethodKind::interpreted);
-        CHECK(linker.Method(*linker.FindDirectMethod(owner, "host", "()I")).kind == MethodKind::intrinsic);
-        CHECK_FALSE(linker.Method(*linker.FindDirectMethod(owner, "missing", "()I")).implementation);
     }
 }

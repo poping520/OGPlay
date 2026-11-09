@@ -9,7 +9,6 @@ import json
 import re
 import struct
 import sys
-import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -20,9 +19,6 @@ sys.path.insert(0, str(TOOLS_DIR))
 sys.path.insert(0, str(TOOLS_DIR / "bootdex"))
 
 import build_bootdex as bootdex
-import compose_bootdex as composition
-import member_sources
-import dex_survey_lib
 
 
 LIBRARIES = {
@@ -49,8 +45,8 @@ NOTICES = {
     "notices/libstlport.so.txt",
     "notices/libz.so.txt",
 }
-BOOT_DEX = "framework/bootdex.jar"
-BOOT_DEX_NOTICE = "notices/bootdex.jar.txt"
+BOOT_CLASSPATH = ("framework/ogplay.jar",) + tuple(f"framework/{name}" for name in bootdex.ROM_JARS)
+BOOT_CLASSPATH_NOTICE = "notices/boot-classpath.txt"
 ICU_DATA = "icu/icudt51l.dat"
 TZDATA = "zoneinfo/tzdata"
 TZDATA_NOTICE = "notices/tzdata.txt"
@@ -62,7 +58,7 @@ ICU_NOTICES = {
     "notices/icu4c-unicode-license.txt",
 }
 PAYLOAD_FILES = LIBRARIES | NOTICES | {
-    BOOT_DEX, BOOT_DEX_NOTICE, ICU_DATA, "manifest.json",
+    *BOOT_CLASSPATH, BOOT_CLASSPATH_NOTICE, ICU_DATA, "manifest.json",
     "source-manifest.xml", TZDATA, TZDATA_NOTICE, UI_PRIMARY_FONT, UI_FONT, UI_FONT_NOTICE, "fonts/README.md"} | ICU_NOTICES
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -282,83 +278,38 @@ def validate(root: Path) -> None:
     if _digest(root / TZDATA_NOTICE) != tzdata.get("notice_sha256"):
         raise PayloadError("tzdata notice SHA-256 does not match")
 
+    boot = _mapping(manifest.get("boot_classpath"), "boot_classpath")
+    if boot.get("generator") != "tools/bootdex/build_bootdex.py" or boot.get("directory") != "framework" or \
+            boot.get("notice") != BOOT_CLASSPATH_NOTICE or \
+            boot.get("notice_sha256") != _digest(root / BOOT_CLASSPATH_NOTICE):
+        raise PayloadError("boot_classpath identity or notice does not match")
+    entries = boot.get("classpath")
+    if not isinstance(entries, list) or tuple(entry.get("path") for entry in entries) != BOOT_CLASSPATH:
+        raise PayloadError("boot_classpath order does not match")
+    for entry in entries:
+        _validate_digest(root / entry["path"], entry.get("size"), entry.get("sha256"), entry["path"])
+        name = Path(entry["path"]).name
+        if name in bootdex.ROM_JARS:
+            project, digest = bootdex.ROM_JARS[name]
+            if entry.get("source_project") != project or entry.get("sha256") != digest or \
+                    project not in source_projects:
+                raise PayloadError(f"{name} is not the pinned API 19 ROM jar")
     try:
-        recipe = composition.candidate_classes()
-        resource_recipe = bootdex.load_resources()
-        resources = bootdex.resource_payload(resource_recipe)
-        member_document = composition.measure_sources(member_sources.load())
-    except (bootdex.BuildError, OSError, ValueError, KeyError, TypeError) as error:
-        raise PayloadError(f"BootDex recipe is invalid: {error}") from error
-    try:
-        jar_bytes = (root / BOOT_DEX).read_bytes()
-        with zipfile.ZipFile(root / BOOT_DEX) as archive:
+        with zipfile.ZipFile(root / BOOT_CLASSPATH[0]) as archive:
+            names = archive.namelist()
+            resources = entries[0].get("resources", {})
+            if names != ["META-INF/MANIFEST.MF", "classes.dex", *sorted(resources)] or archive.comment or \
+                    archive.read("META-INF/MANIFEST.MF") != bootdex.JAR_MANIFEST or \
+                    any(info.compress_type != zipfile.ZIP_STORED for info in archive.infolist()):
+                raise PayloadError("ogplay.jar layout is not canonical")
+            for name, digest in resources.items():
+                if bootdex.sha256(archive.read(name)) != digest:
+                    raise PayloadError(f"ogplay.jar resource {name} does not match")
             dex = archive.read("classes.dex")
-            sealed_members = archive.read(member_sources.ENTRY)
-            sealed_document = json.loads(sealed_members)
-            review = {k: v for k, v in sealed_document.items()
-                      if k not in {'dispatch_ledger', 'allocation_ledger', 'host_allocation_scan'}}
-            if review != member_document or member_sources.canonical(sealed_document) != sealed_members:
-                raise PayloadError("boot_dex member review does not match the current composition")
-            if sealed_document.get('host_allocation_scan') != member_sources.scan_host_allocations(bootdex.ROOT):
-                raise PayloadError("boot_dex host allocation evidence is stale")
-            # The manifest seals the audited dispatch/allocation ledgers. Full
-            # body admission and deterministic regeneration remain composer check's job.
-            resources[member_sources.ENTRY] = sealed_members
-            resources[bootdex.SYSTEM_RESOURCES_ENTRY] = composition.system_resources_payload(dex)
-            resources[composition.theme_projection.ENTRY] = composition.theme_projection.generate()
-            video_review = json.loads((TOOLS_DIR / 'bootdex/view-video-adapter.json').read_text(encoding='utf-8'))
-            resources[composition.VIDEO_ENTRY] = member_sources.canonical(video_review)
-            resources[composition.RECIPE_ENTRY] = composition.candidate_provenance()
-            resources['META-INF/ogplay/vm-pairing.json'] = member_sources.canonical(dict(
-                schema=1, mode='java-traversal', version=1,
-                dex_sha256=bootdex.sha256(dex),
-                member_sources_sha256=bootdex.sha256(sealed_members),
-                theme_projection_sha256=bootdex.sha256(resources[composition.theme_projection.ENTRY]),
-                video_adapter_sha256=bootdex.sha256(resources[composition.VIDEO_ENTRY]),
-                candidate_recipe_sha256=bootdex.sha256(resources[composition.RECIPE_ENTRY])))
-            expected_entries = ["META-INF/MANIFEST.MF", "classes.dex"] + \
-                sorted(resources)
-            if archive.namelist() != expected_entries:
-                raise PayloadError("boot_dex archive entries do not match")
-            if archive.comment or \
-                    archive.read("META-INF/MANIFEST.MF") != \
-                    bootdex.JAR_MANIFEST:
-                raise PayloadError("boot_dex JAR manifest is not canonical")
-            dex = archive.read("classes.dex")
-    except (OSError, zipfile.BadZipFile, KeyError, ValueError, TypeError, bootdex.BuildError) as error:
-        raise PayloadError(f"boot_dex archive is invalid: {error}") from error
-    try:
-        expected_metadata = composition.boot_metadata(jar_bytes, dex, recipe)
-    except OSError as error:
-        raise PayloadError(f"BootDex metadata input is missing: {error}") from error
-    if _mapping(manifest.get("boot_dex"), "boot_dex") != expected_metadata:
-        raise PayloadError("boot_dex metadata does not match its recipe")
-    if any(bootdex.SOURCES[source][0] not in source_projects
-           for source in recipe if source not in {"conscrypt.jar", composition.policy_rom.SOURCE}):
-        raise PayloadError("BootDex source project is not pinned")
-    if len(dex) < 0x70 or dex[:8] != b"dex\n035\0" or \
-            struct.unpack_from("<I", dex, 0x20)[0] != len(dex) or \
-            struct.unpack_from("<I", dex, 0x28)[0] != 0x12345678:
-        raise PayloadError("boot_dex classes.dex is not canonical DEX 035")
-    if bootdex.make_jar(dex, resources) != jar_bytes:
-        raise PayloadError("boot_dex archive metadata is not canonical")
-    try:
-        classes = bootdex.class_names(dex)
-    except dex_survey_lib.DexFormatError as error:
-        raise PayloadError(f"boot_dex DEX structure is invalid: {error}") \
-            from error
-    try:
-        with tempfile.TemporaryDirectory(
-                prefix="ogplay-payload-bootdex-java-") as work:
-            _, custom = bootdex.compile_guest_java(Path(work))
-            replaced = {'Landroid/view/ContextThemeWrapper;', 'Landroid/view/LayoutInflater;',
-                        'Landroid/view/LayoutInflater$Factory;', 'Landroid/view/LayoutInflater$LocalInflater;'}
-            selected = bootdex.expected_class_names(recipe, tuple(c for c in custom if c not in replaced))
-    except (bootdex.BuildError, OSError) as error:
-        raise PayloadError(
-            f"BootDex custom Java class selection is invalid: {error}") from error
-    if classes != selected:
-        raise PayloadError("boot_dex exact class selection does not match")
+    except (OSError, zipfile.BadZipFile, KeyError) as error:
+        raise PayloadError(f"ogplay.jar is invalid: {error}") from error
+    if len(dex) < 0x70 or dex[:8] != b"dex\n035\0" or struct.unpack_from("<I", dex, 0x20)[0] != len(dex):
+        raise PayloadError("ogplay.jar classes.dex is not DEX 035")
 
     icu = _mapping(manifest.get("icu"), "icu")
     expected_icu = {

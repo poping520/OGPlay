@@ -386,6 +386,7 @@ void OpenVideoSource(const Context& context, dx::IntrinsicContext& call,
 
 Decl Declare_android_widget_VideoView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/VideoView;", "Landroid/view/SurfaceView;");
+    builder.MergesBootClass();
     {
         // Bounded Java playback protocol is retained; this is deliberately not
         // ROM VideoView.onMeasure (ADR-0161). No ROM geometry is written here.
@@ -608,7 +609,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
     auto declaration = std::move(builder).Build();
     for (auto& method : declaration.methods)
         if (method.name == "onMeasure" && method.descriptor == "(II)V")
-            method.adapter_review = "tools/bootdex/view-video-adapter.json#onMeasure";
+            method.adapter_review = "DVM-303 VideoView.onMeasure adapter";
     return declaration;
 }
 

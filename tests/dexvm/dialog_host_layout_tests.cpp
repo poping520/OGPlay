@@ -60,8 +60,7 @@ VmObjectRef Dialog(Vm& f, VmObjectRef owner, const char* message = "A real messa
 
 TEST_CASE("DVM-304 isolated host Dialog layout leaves guest geometry epoch and focus unchanged") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal,
-                         OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal);
         f.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
         f.context->ui_test_accessibility_disabled = true;
         f.context->target_sdk_version = 19;
@@ -239,7 +238,7 @@ TEST_CASE("DVM-305 presentation snapshot composes modal pixels input and atomic 
                 return VmValue::Void();
             });
         AndroidValueVm f(backend, {std::move(observer).Build()}, false, "view_measure.dex",
-                         AndroidUiTraversalOwner::JavaTraversal, OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+                         AndroidUiTraversalOwner::JavaTraversal);
         f.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
         f.context->ui_test_accessibility_disabled = true;
         f.context->surface_width = 800;
@@ -621,7 +620,7 @@ TEST_CASE("DVM-370 long AlertDialog messages scroll inside bounded chrome on bot
             observer.VirtualMethod("onKey", "(Landroid/content/DialogInterface;ILandroid/view/KeyEvent;)Z",
                                    [&](IntrinsicContext&) { return VmValue::Int(consume_key); });
             AndroidValueVm f(backend, {std::move(observer).Build()}, false, "view_measure.dex",
-                             AndroidUiTraversalOwner::JavaTraversal, OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+                             AndroidUiTraversalOwner::JavaTraversal);
             f.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
             f.context->ui_test_accessibility_disabled = true;
             f.context->surface_width = static_cast<std::uint32_t>(viewport.width);

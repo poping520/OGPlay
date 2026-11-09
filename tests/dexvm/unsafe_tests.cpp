@@ -54,11 +54,7 @@ struct UnsafeVm {
                   services.current_time_millis = [this] { return 1'400'000'000'000LL + millis.load(); };
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
                   if (boot) {
-                      DexVmAndroidContext archive;
-                      ogplay::test::BindBootDexArchive(archive);
-                      const auto policy = DexClassLinker::BootDexMemberSources(archive.boot_classpath_bytes);
-                      ogplay::test::BindBootDexPlatformNatives(linker);
-                      linker.RegisterBootDex(ogplay::test::ReadBootDex(), policy);
+                      ogplay::test::RegisterBootDex(linker);
                   }
                   linker.RegisterDex(ReadBytes(std::filesystem::path(OGPLAY_DEXVM_FIXTURE_DIR) / "unsafe.dex"));
                   linker.Link();

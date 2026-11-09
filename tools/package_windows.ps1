@@ -113,7 +113,7 @@ Visual C++ runtime redistribution: https://learn.microsoft.com/cpp/windows/redis
         }
     }
     foreach ($required in 'ogplay.exe', 'ogplay-cli.exe', 'ogplaycore.dll', 'data/profiles', 'data/webui/gui/manifest.json',
-        'data/android/19/framework/bootdex.jar', 'data/credits.json') {
+        'data/android/19/framework/ogplay.jar', 'data/android/19/framework/framework.jar', 'data/credits.json') {
         if (!(Test-Path (Join-Path $stage $required))) { throw "Missing runtime file: $required" }
     }
     $files = @(Get-ChildItem $stage -File -Recurse | ForEach-Object {

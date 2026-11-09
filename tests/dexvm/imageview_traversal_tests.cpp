@@ -260,16 +260,19 @@ TEST_CASE("DVM-296 unsupported image APIs fail and ImageButton uses real default
             CHECK(f.On(image, "getScaleType", "()Landroid/widget/ImageView$ScaleType;").ref == before);
         }
         for (const auto& [name, sig] :
-             std::array<std::pair<const char*, const char*>, 7>{{{"setMaxWidth", "(I)V"},
+             std::array<std::pair<const char*, const char*>, 6>{{{"setMaxWidth", "(I)V"},
                                                                  {"setMaxHeight", "(I)V"},
                                                                  {"setBaseline", "(I)V"},
                                                                  {"setBaselineAlignBottom", "(Z)V"},
                                                                  {"setCropToPadding", "(Z)V"},
-                                                                 {"setColorFilter", "(I)V"},
                                                                  {"setImageLevel", "(I)V"}}})
             f.On(image, name, sig, {VmValue::Int(1)});
         f.On(image, "setImageMatrix", "(Landroid/graphics/Matrix;)V", {VmValue::Ref(VmObjectRef{})});
         CHECK(f.ledger.Unimplemented().empty());
+        // ROM setColorFilter needs the PorterDuffColorFilter native, which the graphics backend lacks.
+        const auto filter = f.OnOutcome(image, "setColorFilter", "(I)V", {VmValue::Int(1)});
+        REQUIRE(filter.exception.IsValid());
+        CHECK(f.linker.Class(filter.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
         const auto button =
             f.New("Landroid/widget/ImageButton;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto button_root = f.vm.ProtectReferences(std::array{button});

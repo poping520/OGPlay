@@ -13,21 +13,14 @@
 #include <stdexcept>
 
 namespace ogplay::app {
-std::string DumpDexSurface(const std::filesystem::path& boot_archive_path) {
-    std::ifstream input(boot_archive_path, std::ios::binary);
-    if (!input) throw std::runtime_error("cannot open BootDex archive");
-    const std::vector<char> raw{std::istreambuf_iterator<char>(input), {}};
-    std::vector<std::byte> archive(raw.size());
-    std::memcpy(archive.data(), raw.data(), raw.size());
-    const auto bytes = loader::ReadApkEntry(archive, loader::ParseApkArchive(archive), "classes.dex");
-    std::vector<std::uint8_t> dex(bytes.size());
-    std::memcpy(dex.data(), bytes.data(), bytes.size());
-    const auto context = runtime::AssembleAndroidContext(std::move(archive), {true});
-    const auto sources = runtime::dexvm::DexClassLinker::BootDexMemberSources(context->boot_classpath_bytes);
+std::string DumpDexSurface(const std::filesystem::path& framework_directory) {
+    const auto context = runtime::AssembleAndroidContext(runtime::ReadBootClasspath(framework_directory), {true});
     runtime::dexvm::DexClassLinker linker;
     linker.RegisterIntrinsics(runtime::BoundCoreIntrinsicCatalog(context));
     linker.RegisterIntrinsics(runtime::AndroidIntrinsicCatalog(context));
-    linker.RegisterBootDex(std::move(dex), sources);
+    linker.SetUnboundNativePolicy(runtime::AndroidUnboundNative);
+    for (auto& dex : runtime::BootClasspathDexFiles(context->boot_classpath))
+        linker.RegisterBootDex(std::move(dex));
     core::JsonParseError error;
     const auto surface = core::JsonDocument::ParseStrict(linker.DumpSurfaceJson(), error, 64U * 1024U * 1024U);
     if (!surface) throw std::runtime_error("invalid runtime surface JSON: " + error.message);

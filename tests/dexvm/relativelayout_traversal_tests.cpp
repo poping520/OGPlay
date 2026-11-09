@@ -372,9 +372,5 @@ TEST_CASE("DVM-285 RelativeLayout ROM cycles parameter copies and explicit failu
                             "(Landroid/util/AttributeSet;)Landroid/widget/RelativeLayout$LayoutParams;",
                             {VmValue::Ref(VmObjectRef{})})
                     .exception.IsValid());
-        REQUIRE(f.OnOutcome(f.relative, "dispatchPopulateAccessibilityEvent",
-                            "(Landroid/view/accessibility/AccessibilityEvent;)Z", {VmValue::Ref(VmObjectRef{})})
-                    .exception.IsValid());
-        CHECK_FALSE(f.ledger.Unimplemented().empty());
     }
 }

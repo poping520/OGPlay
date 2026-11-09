@@ -25,7 +25,7 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   运行归 game、游戏库归 library、外观装配归 app；GUI/CLI 的交互与呈现各归自己的 EXE。
   EXE 不静态链接内核；SDL 为共享动态库，WebView 仅桌面链接，不在加载 DLL 时初始化应用资源。
 - `HostBundledDataPaths`：优先读取可执行文件同目录（macOS bundle Resources）的
-  Android 运行库与 `framework/bootdex.jar`，源码树仅作开发回退。内置 `profiles/` 缺失时
+  Android 运行库与 `framework/` 启动类路径 jar，源码树仅作开发回退。内置 `profiles/` 缺失时
   使用空目录索引，显式配置的 Profile 目录仍须可读。
 - `--external-dir` 默认挂到 `/sdcard`；
   可用 `--external-guest-dir` 指定 `/sdcard` 内的 guest 根。
@@ -65,7 +65,7 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   不限制 Java 解释/HLE、宿主 CPU 占用或物理频率，也不改变游戏 Clock。
 
 - CLI/GUI 共用 session、Profile 与 bundled payload。API 固定 19，入口来自 Manifest MAIN/LAUNCHER，ABI 来自 APK inventory；系统
-  库依赖闭包不得由 CLI 手写。API 19 缺 `bootdex.jar` 与缺 ELF 同样在装配前失败。
+  库依赖闭包不得由 CLI 手写。API 19 缺任一启动类路径 jar 与缺 ELF 同样在装配前失败。
   run-apk 读取固定 payload 的 `zoneinfo/tzdata` 并注入 session，缺失明确失败；来源、
   格式与哈希由 Android payload 校验入口维护，不使用宿主时区数据。
 - Profile 仅接受 v4 identity，旧 schema 与 runtime/data/audio 明确拒绝。

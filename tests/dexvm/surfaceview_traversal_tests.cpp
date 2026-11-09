@@ -239,12 +239,6 @@ TEST_CASE("DVM-302 SurfaceView reviewed constructors and disabled WMS remain exp
             CHECK_FALSE(static_cast<bool>(f.linker.Method(method).implementation));
         }
         CHECK(f.ledger.Unimplemented().empty());
-        const auto view = Surface(f, owner);
-        const auto update = f.linker.FindDirectMethod(type, "updateWindow", "(ZZ)V");
-        REQUIRE(update);
-        const auto rejected = f.vm.Call(*update, std::array{VmValue::Ref(view), VmValue::Int(0), VmValue::Int(0)});
-        CHECK(rejected.exception.IsValid());
-        CHECK_FALSE(f.ledger.Unimplemented().empty());
     }
 }
 
@@ -1025,16 +1019,10 @@ TEST_CASE("DVM-348 SurfaceView ROM overrides expose bounded behavior and explici
             const auto outcome = f.OnOutcome(view, name, signature, std::move(args));
             REQUIRE(outcome.exception.IsValid());
             CHECK(hit_count() == before + 1);
-            if (std::string_view(name) == "draw" || std::string_view(name) == "dispatchDraw")
-                CHECK(outcome.exception_message.find("Landroid/view/View;") != std::string::npos);
-            else
-                CHECK(f.linker.Class(outcome.exception_class).descriptor ==
-                      "Ljava/lang/UnsupportedOperationException;");
+            CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         };
         f.On(view, "setSecure", "(Z)V", {VmValue::Int(1)});
         f.On(view, "setWindowType", "(I)V", {VmValue::Int(999)});
-        reject("draw", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(VmObjectRef{})});
-        reject("dispatchDraw", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(VmObjectRef{})});
         f.On(view, "setWindowType", "(I)V", {VmValue::Int(1000)});
         reject("gatherTransparentRegion", "(Landroid/graphics/Region;)Z", {VmValue::Ref(VmObjectRef{})});
         f.On(view, "setWindowType", "(I)V", {VmValue::Int(1001)});

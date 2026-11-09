@@ -7,7 +7,7 @@
 
 TEST_CASE("DIAG-4 surface exports linked intrinsic BootDex constants and missing bindings") {
     const auto json =
-        ogplay::app::DumpDexSurface(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework/bootdex.jar");
+        ogplay::app::DumpDexSurface(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework");
     ogplay::app::JsonParseError error;
     const auto doc = ogplay::app::JsonDocument::ParseStrict(json, error, 64U * 1024U * 1024U);
     REQUIRE(doc.has_value());

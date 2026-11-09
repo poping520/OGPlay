@@ -79,7 +79,7 @@ TEST_CASE("DVM-201 CRC32 uses BootDex state and real guest zlib on both backends
         request.system_libraries = libraries;
         request.dex_bytes = ReadDexFixture("crc32.dex");
         request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_bytes = test::ReadBootDex();
+        request.boot_dex_files = test::ReadBootDex();
         request.context = context;
         request.dexvm.interpreter.backend = backend;
         request.surface_width = 64;
@@ -260,7 +260,7 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
         // Existing minimal APK fixture; compression classes come only from BootDex.
         request.dex_bytes = ReadDexFixture("crc32.dex");
         request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_bytes = test::ReadBootDex();
+        request.boot_dex_files = test::ReadBootDex();
         request.context = context;
         request.dexvm.interpreter.backend = backend;
         request.surface_width = 64;
@@ -580,7 +580,7 @@ TEST_CASE("ZipInputStream reads guest source bytes and dispatches entry operatio
         // Existing minimal APK fixture; compression classes come only from BootDex.
         request.dex_bytes = ReadDexFixture("crc32.dex");
         request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_bytes = test::ReadBootDex();
+        request.boot_dex_files = test::ReadBootDex();
         request.context = context;
         request.dexvm.interpreter.backend = backend;
         request.surface_width = 64;
@@ -718,7 +718,7 @@ TEST_CASE("DVM-350 ZipFile reads stored and deflated entries from guest VFS") {
         // Existing minimal APK fixture; compression classes come only from BootDex.
         request.dex_bytes = ReadDexFixture("crc32.dex");
         request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_bytes = test::ReadBootDex();
+        request.boot_dex_files = test::ReadBootDex();
         request.context = context;
         request.dexvm.interpreter.backend = backend;
         request.surface_width = 64;

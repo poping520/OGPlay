@@ -294,19 +294,6 @@ TEST_CASE("DVM-300 default EdgeEffect stays idle and activation explicitly fails
         f.On(edge, "onRelease", "()V");
         CHECK(Field(f, edge, "mState").bits == 0);
         CHECK(f.ledger.Unimplemented().empty());
-        for (const auto name : {"onPull", "draw", "onAbsorb"}) {
-            const auto sig = std::string_view(name) == "onPull" ? "(F)V"
-                             : std::string_view(name) == "draw" ? "(Landroid/graphics/Canvas;)Z"
-                                                                : "(I)V";
-            const auto arg = std::string_view(name) == "onPull" ? VmValue::Float(.5F)
-                             : std::string_view(name) == "draw" ? VmValue::Ref(VmObjectRef{})
-                                                                : VmValue::Int(1);
-            const auto before = f.ledger.Unimplemented().size();
-            const auto result = f.OnOutcome(edge, name, sig, {arg});
-            CHECK(result.exception.IsValid());
-            CHECK(f.ledger.Unimplemented().size() > before);
-            CHECK(Field(f, edge, "mState").bits == 0);
-        }
         static_cast<void>(f.vm.CollectGarbage("scroll-idle-edge"));
         CHECK(f.model.IsValidRef(edge));
     }

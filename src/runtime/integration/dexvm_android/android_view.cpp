@@ -3,7 +3,6 @@
 // ---- migrated from android_view_Display.cpp ----
 #include "catalog.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
-#include "ogplay/runtime/integration/bitmap_pixels.h"
 
 #include <bit>
 #include <array>

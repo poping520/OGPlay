@@ -14,7 +14,7 @@
 #include "ogplay/loader/apk.h"
 #include "ogplay/loader/apk_manifest.h"
 #include "ogplay/loader/arsc.h"
-#include "ogplay/runtime/integration/host_image_decode.h"
+#include "ogplay/runtime/raster/image_decode.h"
 
 namespace ogplay::app {
 namespace {

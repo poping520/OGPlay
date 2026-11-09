@@ -264,6 +264,7 @@ public:
     void SetDeviceLocaleProvider(std::function<DeviceLocale()> provider);
     [[nodiscard]] memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);
     void UnregisterAssetManager(memory::GuestAddress manager);
+    [[nodiscard]] std::shared_ptr<const AndroidAssetSource> ResolveAsset(memory::GuestAddress token);
     [[nodiscard]] memory::GuestAddress FindModuleExport(std::size_t module_index, std::string_view name) const;
     // Query an already-loaded library by identity; does not load missing libraries.
     [[nodiscard]] std::optional<memory::GuestAddress> FindLibraryExport(std::string_view library,

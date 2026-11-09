@@ -182,6 +182,7 @@ public:
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
     [[nodiscard]] memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);
     void UnregisterAssetManager(memory::GuestAddress manager);
+    [[nodiscard]] std::shared_ptr<const AndroidAssetSource> ResolveAsset(memory::GuestAddress token);
     void OpenManagedSurface();
     void BindManagedSurfaceOnCallingThread();
     void ReleaseManagedSurfaceFromCallingThread();

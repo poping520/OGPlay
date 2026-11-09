@@ -50,7 +50,7 @@ try {
     Copy-Item 'LICENSE' $stage
     # Native/Web UI license texts already live in credits.json. This SDK license
     # is platform-specific and is not included in that catalog.
-    Copy-Item 'third_party/angle-prebuilt/windows-x64/release/licenses/Microsoft-Windows-SDK.rtf' `
+    Copy-Item 'third_party/angle-prebuilt/licenses/Microsoft-Windows-SDK.rtf' `
         (Join-Path $stage 'WINDOWS-SDK-LICENSE.rtf')
     $credits = Get-Content (Join-Path $stage 'data/credits.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     foreach ($project in $credits.projects) {

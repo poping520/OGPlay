@@ -341,8 +341,8 @@
       {
         "path": "framework/ogplay.jar",
         "source_project": "OGPlay",
-        "size": 4726354,
-        "sha256": "3425118312fe3f0a592f2140762c8783750a07d60ba8719dddeee95138845b96",
+        "size": 4723810,
+        "sha256": "dd24e34d17685853c626ffb0ac8d6f9c11aadeda6aa54a81879790c39a1c282d",
         "sources": {
           "roots": [
             "src/guest/crypto/java",
@@ -352,7 +352,7 @@
             "src/guest/xml/java",
             "src/guest/zip/java"
           ],
-          "sha256": "a096156d50302971ba6f2b07ff76378e66f52cc5b28178f9d20b309400d58a3a",
+          "sha256": "a2f34def031a5b484c1ff1d8d88aa6d63b36ad054235379851d662b9562207e9",
           "javac": "17.0.18",
           "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
           "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"

@@ -21,6 +21,7 @@ struct ImageInfo final {
     std::int32_t width{}, height{};
     const char* mime_type{};
 };
+
 inline constexpr std::size_t kMaximumImageEncodedBytes = 16U * 1024U * 1024U;
 inline constexpr std::size_t kMaximumImagePixels = 16U * 1024U * 1024U;
 [[nodiscard]] std::optional<ImageInfo> ProbeImage(std::span<const std::byte> bytes);
@@ -30,7 +31,6 @@ inline constexpr std::size_t kMaximumImagePixels = 16U * 1024U * 1024U;
 
 // Returns nullopt when the payload is not a decodable image; the caller
 // maps that to the documented BitmapFactory null result.
-[[nodiscard]] std::optional<DecodedImage> DecodeImageToArgb(
-    std::span<const std::byte> bytes);
+[[nodiscard]] std::optional<DecodedImage> DecodeImageToArgb(std::span<const std::byte> bytes);
 
 }  // namespace ogplay::runtime

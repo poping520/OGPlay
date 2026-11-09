@@ -1,4 +1,4 @@
-#include "ogplay/runtime/integration/bitmap_pixels.h"
+#include "ogplay/runtime/raster/bitmap.h"
 #include "ogplay/runtime/integration/native_activity_runtime.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/runtime/debug/stall_diagnostics.h"
@@ -370,7 +370,6 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
              context->view_tree_observers.erase(key);
              context->global_layout_listeners.erase(key);
              context->bitmaps.erase(key);
-             context->identity_matrices.erase(key);
              context->canvases.erase(key);
              context->holder_canvases.erase(key);
              const auto media = context->media_players.find(key);
@@ -599,7 +598,7 @@ public:
             const auto [object, state] = BitmapObject(thread, input);
             android_context->bitmap_lock_roots.emplace(object.Value(), object);
             try {
-                address = state->pixels->Lock(session->Process().GuestMemoryAccess());
+                address = state->pixels->Lock();
             } catch (...) {
                 if (state->pixels->Locks() == 0) android_context->bitmap_lock_roots.erase(object.Value());
                 throw;
@@ -2151,6 +2150,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         }
     }
     if (impl_->android_context) {
+        ReleaseAndroidRasterResources(*impl_->android_context);
         impl_->android_context->native_activity.reset();
         impl_->android_context->threads = nullptr;
         impl_->android_context->prepare_native_looper = {};

@@ -1,4 +1,4 @@
-#include "ogplay/runtime/integration/bitmap_pixels.h"
+#include "ogplay/runtime/raster/bitmap.h"
 #include "runtime/boundary/core/boundary_symbols.h"
 #include "ogplay/runtime/dexvm/big_int_runtime.h"
 #include <set>
@@ -885,34 +885,26 @@ TEST_CASE("DVM-241 ARM JNI connectivity query returns the original disconnected 
 TEST_CASE("DVM-221 pixel formats use API19 stride and native packed layout") {
     using namespace ogplay;
     OrchestratedApp f("fixture.DelayedContentActivity", true, false);
-    const auto access = f.app->NativeProcess().GuestMemoryAccess();
-    for (const auto spec : {std::array<std::uint32_t, 5>{1, 8, 0x80000000U, 0x80, 0},
-                            std::array<std::uint32_t, 5>{3, 4, 0xffff0000U, 0, 0xf8},
-                            std::array<std::uint32_t, 5>{4, 7, 0xff00ff00U, 0x0f, 0x0f}}) {
-        runtime::BitmapPixels pixels(1, 2, static_cast<std::int32_t>(spec[0]), {spec[2], spec[2]});
-        CHECK(pixels.Format() == static_cast<std::int32_t>(spec[1]));
-        CHECK(pixels.Stride() == 4);
-        const auto address = pixels.Lock(access);
-        std::array<std::byte, 8> bytes{};
-        access.read(address, bytes);
-        CHECK(bytes[0] == static_cast<std::byte>(spec[3]));
-        CHECK(bytes[4] == bytes[0]);
-        if (spec[0] != 1) {
-            CHECK(bytes[1] == static_cast<std::byte>(spec[4]));
-            CHECK(bytes[5] == bytes[1]);
+    for (const auto spec : {std::array<std::uint32_t, 6>{1, 8, 1, 0x80000000U, 0x80, 0},
+                            std::array<std::uint32_t, 6>{3, 4, 2, 0xffff0000U, 0, 0xf8},
+                            std::array<std::uint32_t, 6>{4, 7, 2, 0xff00ff00U, 0x0f, 0x0f}}) {
+        auto backing = std::make_shared<std::array<std::byte, 4>>();
+        runtime::raster::Bitmap pixels(1, 2, static_cast<int>(spec[0]), true, true, *backing, backing,
+                                       memory::GuestAddress{0x1000});
+        pixels.Set(0, spec[3]);
+        pixels.Set(1, spec[3]);
+        CHECK(pixels.Format() == static_cast<int>(spec[1]));
+        CHECK(pixels.Stride() == spec[2]);
+        CHECK(pixels.Lock() == memory::GuestAddress{0x1000});
+        CHECK((*backing)[0] == static_cast<std::byte>(spec[4]));
+        CHECK((*backing)[spec[2]] == (*backing)[0]);
+        if (spec[2] > 1) {
+            CHECK((*backing)[1] == static_cast<std::byte>(spec[5]));
+            CHECK((*backing)[spec[2] + 1] == (*backing)[1]);
         }
-        CHECK(bytes[2] == std::byte{0});
-        CHECK(bytes[3] == std::byte{0});
-        CHECK(pixels.Snapshot() == std::vector<std::uint32_t>{spec[2], spec[2]});
+        CHECK(pixels.Snapshot() == std::vector<std::uint32_t>{spec[3], spec[3]});
         pixels.Unlock();
-        CHECK_FALSE(access.validate(address, 8));
     }
-    runtime::BitmapPixels failed(1, 1, 5);
-    auto unavailable = access;
-    unavailable.allocate = [](std::uint32_t) { return memory::GuestAddress{}; };
-    CHECK_THROWS_AS(static_cast<void>(failed.Lock(unavailable)), std::bad_alloc);
-    CHECK(failed.Locks() == 0);
-    CHECK(failed.Snapshot() == std::vector<std::uint32_t>{0});
     static_cast<void>(f.app->Stop());
 }
 
@@ -999,6 +991,10 @@ TEST_CASE("DVM-221 real ARM NDK Bitmap shares Java pixels and survives GC and re
         CHECK(f.context->bitmaps.at(bitmap.Value()).pixels->Locks() == 0);
         CHECK(ndk("AndroidBitmap_lockPixels", scratch.Add(24).Value()) == 0);
         const memory::GuestAddress pixels{word(24)};
+        const auto buffer_field = linker.FindFieldRecursive(vm.Model().ObjectClass(bitmap), "mBuffer", "[B");
+        REQUIRE(buffer_field);
+        const auto buffer = VmObjectRef{vm.Model().InstanceSlots(bitmap)[linker.Field(*buffer_field).slot].bits};
+        CHECK(pixels == vm.Model().PrimitiveArrayAddress(buffer));
         CHECK(!pixels.IsNull());
         std::array<std::byte, 8> actual{};
         access.read(pixels, actual);

@@ -13,7 +13,7 @@
 #include <bit>
 #include <cmath>
 #include <limits>
-#include "ogplay/runtime/integration/bitmap_pixels.h"
+#include "ogplay/runtime/raster/bitmap.h"
 
 namespace ogplay::runtime {
 
@@ -1003,7 +1003,7 @@ ui::UiClass UiClassForObject(dexvm::Interpreter& vm, const dexvm::VmObjectRef vi
 #include <stdexcept>
 #include <string>
 
-#include "ogplay/runtime/integration/host_image_decode.h"
+#include "ogplay/runtime/raster/image_decode.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -1324,7 +1324,6 @@ dx::VmObjectRef MakeResourceDrawable(dx::IntrinsicContext& call, const Context& 
     if (color)
         args.push_back(dx::VmValue::Int(static_cast<std::int32_t>(entry.value_data)));
     else {
-        bitmap = vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
         std::vector<std::uint32_t> argb;
         argb.reserve(decoded->rgba8.size() / 4U);
         for (std::size_t i = 0; i < decoded->rgba8.size(); i += 4U) {
@@ -1332,9 +1331,7 @@ dx::VmObjectRef MakeResourceDrawable(dx::IntrinsicContext& call, const Context& 
                            (static_cast<std::uint32_t>(decoded->rgba8[i]) << 16U) |
                            (static_cast<std::uint32_t>(decoded->rgba8[i + 1U]) << 8U) | decoded->rgba8[i + 2U]);
         }
-        context->bitmaps[bitmap.Value()] = {
-            decoded->width, decoded->height,
-            std::make_shared<BitmapPixels>(decoded->width, decoded->height, 5, std::move(argb))};
+        bitmap = CreateAndroidBitmap(vm, *context, decoded->width, decoded->height, argb, false);
         signature = "(Landroid/content/res/Resources;Landroid/graphics/Bitmap;)V";
         args.push_back(dx::VmValue::Ref(call.receiver));
         args.push_back(dx::VmValue::Ref(bitmap));

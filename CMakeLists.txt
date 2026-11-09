@@ -34,7 +34,13 @@ if(OGPLAY_BUILD_GUI AND (NOT (WIN32 OR APPLE) OR NOT OGPLAY_ENABLE_SDL3))
 endif()
 # All internal and bundled static libraries must also be usable in ogplaycore.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+# Windows uses the release DLL CRT with iterator debugging off in every configuration: MSVC
+# refuses to link objects with a different CRT or _ITERATOR_DEBUG_LEVEL, and prebuilt static
+# SDKs such as Skia are /MD with level 0.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+if(MSVC)
+    add_compile_definitions("$<$<COMPILE_LANGUAGE:C,CXX>:_ITERATOR_DEBUG_LEVEL=0>")
+endif()
 option(OGPLAY_ENABLE_DYNARMIC "Configure the bundled Dynarmic CPU dependency" ON)
 option(OGPLAY_ENABLE_ANGLE "Link an externally GN-built ANGLE SDK" ON)
 set(OGPLAY_ANGLE_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuilt"
@@ -42,6 +48,8 @@ set(OGPLAY_ANGLE_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuil
 set(OGPLAY_ANGLE_SDK_CONFIGURATION "release" CACHE STRING
     "ANGLE SDK configuration to consume (release or debug)")
 set_property(CACHE OGPLAY_ANGLE_SDK_CONFIGURATION PROPERTY STRINGS release debug)
+set(OGPLAY_SKIA_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/skia-prebuilt"
+    CACHE PATH "Root of the platform-partitioned Skia prebuilt SDK")
 set(OGPLAY_ENABLE_FFMPEG "AUTO" CACHE STRING
     "Link the prebuilt ogplay_ffmpeg SDK: AUTO (when this platform has a package), ON or OFF")
 set_property(CACHE OGPLAY_ENABLE_FFMPEG PROPERTY STRINGS AUTO ON OFF)
@@ -352,7 +360,26 @@ target_compile_definitions(ogplay_sqlite PRIVATE
     SQLITE_DEFAULT_MEMSTATUS=0)
 set_target_properties(ogplay_sqlite PROPERTIES C_EXTENSIONS ON)
 
+ogplay_add_module(ogplay_raster Raster
+    src/runtime/raster/bitmap.cpp
+    src/runtime/raster/bitmap_decode.cpp
+    src/runtime/raster/image_decode.cpp
+    src/runtime/raster/objects.cpp
+)
+target_link_libraries(ogplay_raster PRIVATE Skia::Skia)
+
+file(GLOB OGPLAY_SKIA_BINDING_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/integration/dexvm_android/android_skia*.cpp")
+list(REMOVE_ITEM OGPLAY_DEXVM_ANDROID_SOURCES ${OGPLAY_SKIA_BINDING_SOURCES})
+add_library(ogplay_skia_bindings OBJECT ${OGPLAY_SKIA_BINDING_SOURCES})
+target_include_directories(ogplay_skia_bindings PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include" "${CMAKE_CURRENT_SOURCE_DIR}/src" "${OGPLAY_GENERATED_DIR}")
+target_link_libraries(ogplay_skia_bindings PRIVATE Skia::Skia)
+ogplay_set_project_warnings(ogplay_skia_bindings)
+add_dependencies(ogplay_skia_bindings ogplay_dexvm_codegen)
+
 ogplay_add_module(ogplay_runtime Runtime
+    $<TARGET_OBJECTS:ogplay_skia_bindings>
     src/runtime/database/database_runtime.cpp
     src/runtime/database/sqlite_vfs.cpp
     src/runtime/debug/stall_diagnostics.cpp
@@ -426,12 +453,10 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/integration/android_link_preflight.cpp
     ${OGPLAY_DEXVM_ANDROID_SOURCES}
     src/runtime/integration/surface_stream.cpp
-    src/runtime/integration/bitmap_pixels.cpp
     src/runtime/integration/theme_resources.cpp
     src/runtime/integration/apk_assets.cpp
     src/runtime/integration/dexvm_bridge.cpp
     src/runtime/integration/dexvm_io_vfs.cpp
-    src/runtime/integration/host_image_decode.cpp
     src/runtime/jni_guest/jni_guest_abi.cpp
     src/runtime/jni_guest/jni_guest_bindings.cpp
     src/runtime/jni_guest/jni_guest_array_bindings.cpp
@@ -508,7 +533,7 @@ target_link_libraries(ogplay_runtime PUBLIC
     OGPlay::Audio OGPlay::Core OGPlay::Cpu OGPlay::Hal OGPlay::Loader OGPlay::Memory
     OGPlay::Video
 )
-target_link_libraries(ogplay_runtime PRIVATE OGPlay::Gles ogplay_sqlite)
+target_link_libraries(ogplay_runtime PRIVATE OGPlay::Gles OGPlay::Raster ogplay_sqlite)
 target_include_directories(ogplay_runtime PRIVATE
     "${OGPLAY_GENERATED_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -518,8 +543,7 @@ target_include_directories(ogplay_runtime SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
 target_compile_definitions(ogplay_runtime PRIVATE BOOST_URL_NO_LIB=1)
-ogplay_suppress_source_warnings(src/runtime/integration/host_image_decode.cpp
-    ${OGPLAY_BOOST_URL_CODEC_SOURCES})
+ogplay_suppress_source_warnings(${OGPLAY_BOOST_URL_CODEC_SOURCES})
 
 ogplay_add_module(ogplay_session Session
     src/session/android_input_mapping.cpp
@@ -561,7 +585,7 @@ add_library(ogplay_library STATIC
     src/frontend/library/resolve_launch.cpp src/frontend/library/locks.cpp
     src/frontend/library/external_data.cpp src/frontend/library/data_hint.cpp
     src/frontend/library/running_icon.cpp src/frontend/library/demos.cpp)
-target_link_libraries(ogplay_library PRIVATE OGPlay::Runtime OGPlay::Session OGPlay::Agent)
+target_link_libraries(ogplay_library PRIVATE OGPlay::Runtime OGPlay::Session OGPlay::Agent OGPlay::Raster)
 target_include_directories(ogplay_library PRIVATE "${OGPLAY_GENERATED_DIR}")
 target_include_directories(ogplay_library SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb")
 target_compile_definitions(ogplay_library PRIVATE ogplaycore_EXPORTS)

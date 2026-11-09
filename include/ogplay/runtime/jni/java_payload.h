@@ -8,6 +8,7 @@
 #include <memory>
 #include <functional>
 #include <stdexcept>
+#include <span>
 #include <type_traits>
 
 #include "ogplay/memory/address.h"
@@ -125,6 +126,21 @@ private:
     friend class JavaPayloadProvider;
 };
 
+// Lease for stable byte payload storage. Access obeys the usual guest memory
+// synchronization rules. Derived spans expire with the final lease.
+class JavaPayloadHostBytes final {
+public:
+    [[nodiscard]] std::span<std::byte> Bytes() const noexcept { return bytes_; }
+
+private:
+    JavaPayloadHostBytes(JavaPayloadAccessor<std::uint8_t> lifetime, std::span<std::byte> bytes)
+        : lifetime_(std::move(lifetime)), bytes_(bytes) {}
+
+    JavaPayloadAccessor<std::uint8_t> lifetime_;
+    std::span<std::byte> bytes_;
+    friend class JavaPayloadProvider;
+};
+
 class JavaPayloadBorrow final {
 private:
     JavaPayloadHandle payload_;
@@ -171,6 +187,13 @@ public:
     [[nodiscard]] virtual JavaPayloadBorrow Pin(const JavaPayloadHandle& handle) = 0;
     virtual void Unpin(const JavaPayloadBorrow& borrow) = 0;
     [[nodiscard]] virtual JavaPayloadStatistics Statistics() const = 0;
+
+    [[nodiscard]] std::shared_ptr<JavaPayloadHostBytes> BorrowHostBytes(const JavaPayloadHandle& handle) const {
+        auto access = Access<std::uint8_t>(handle);
+        const auto& block = handle.Require();
+        return std::shared_ptr<JavaPayloadHostBytes>(
+            new JavaPayloadHostBytes(std::move(access), {block.base, block.bytes}));
+    }
 
     template <typename T>
     [[nodiscard]] JavaPayloadAccessor<T> Access(const JavaPayloadHandle& handle) const {

@@ -225,6 +225,10 @@ public:
         return android_module_.RegisterAssetManager(std::move(source));
     }
 
+    std::shared_ptr<const AndroidAssetSource> ResolveAsset(memory::GuestAddress token) {
+        return android_module_.ResolveAsset(token);
+    }
+
     void UnregisterAssetManager(memory::GuestAddress manager) { android_module_.UnregisterAssetManager(manager); }
 
     void MapThunks() {
@@ -1266,6 +1270,10 @@ void AndroidBoundaryHle::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) {
 
 memory::GuestAddress AndroidBoundaryHle::RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) {
     return impl_->RegisterAssetManager(std::move(source));
+}
+
+std::shared_ptr<const AndroidAssetSource> AndroidBoundaryHle::ResolveAsset(memory::GuestAddress token) {
+    return impl_->ResolveAsset(token);
 }
 
 void AndroidBoundaryHle::UnregisterAssetManager(memory::GuestAddress manager) {

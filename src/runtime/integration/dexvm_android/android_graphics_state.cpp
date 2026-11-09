@@ -34,7 +34,7 @@ struct GraphicsStateStore final {
     };
 
     struct BitmapPattern final {
-        std::shared_ptr<BitmapPixels> pixels;
+        std::shared_ptr<raster::Bitmap> pixels;
         int tile_x{}, tile_y{};
     };
 

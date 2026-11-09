@@ -94,6 +94,8 @@ public:
     void EnsureCharged(JniObjectIdentity array);
     void VisitAccessRoots(const std::function<void(JniObjectIdentity)>& visit) const;
     [[nodiscard]] JniPrimitiveArrayView View(JniObjectIdentity array) const;
+    // DexVM supplies the GC root for the lifetime of this lease.
+    [[nodiscard]] std::shared_ptr<JavaPayloadHostBytes> BorrowHostByteArray(JniObjectIdentity array) const;
     // Does not pin; caller must keep the array reachable until address use ends.
     [[nodiscard]] memory::GuestAddress Address(JniObjectIdentity array) const;
     [[nodiscard]] JniArrayAllocationStatistics AllocationStatistics() const;

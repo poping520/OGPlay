@@ -1,5 +1,5 @@
 #include "ogplay/runtime/dexvm/vm_monitors.h"
-#include "ogplay/runtime/integration/bitmap_pixels.h"
+#include "ogplay/runtime/raster/bitmap.h"
 // DVM-80: API-family translation unit. Physical consolidation only.
 
 // ---- migrated from android_opengl_GLSurfaceView_EGLConfigChooser.cpp ----
@@ -1653,54 +1653,6 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context, const gles::GlesApi
     return found->second;
 }
 
-[[nodiscard]] std::vector<std::byte> GlBitmapPixels(const DexVmAndroidContext::BitmapState& bitmap,
-                                                    const std::uint32_t format, const std::uint32_t type) {
-    const bool unsigned_byte = type == 0x1401U;
-    const auto bytes_per_pixel = unsigned_byte ? (format == 0x1906U ? 1U : format == 0x190AU ? 2U : 4U) : 2U;
-    const auto colors = bitmap.pixels->Snapshot();
-    std::vector<std::byte> bytes(colors.size() * bytes_per_pixel);
-    for (std::size_t index = 0; index < colors.size(); ++index) {
-        const auto pixel = colors[index];
-        if (unsigned_byte && format == 0x1906U) {
-            bytes[index] = static_cast<std::byte>(pixel >> 24U);
-        } else if (unsigned_byte && format == 0x190AU && bitmap.config == 3) {
-            const auto packed = static_cast<std::uint16_t>(((pixel >> 19U) & 0x1FU) << 11U |
-                                                           ((pixel >> 10U) & 0x3FU) << 5U | ((pixel >> 3U) & 0x1FU));
-            bytes[index * 2U] = static_cast<std::byte>(packed);
-            bytes[index * 2U + 1U] = static_cast<std::byte>(packed >> 8U);
-        } else if (unsigned_byte && format == 0x190AU && bitmap.config == 4) {
-            const auto packed =
-                static_cast<std::uint16_t>(((pixel >> 20U) & 0xFU) << 12U | ((pixel >> 12U) & 0xFU) << 8U |
-                                           ((pixel >> 4U) & 0xFU) << 4U | ((pixel >> 28U) & 0xFU));
-            bytes[index * 2U] = static_cast<std::byte>(packed);
-            bytes[index * 2U + 1U] = static_cast<std::byte>(packed >> 8U);
-        } else if (type == 0x8363U) {
-            const auto packed = static_cast<std::uint16_t>(((pixel >> 19U) & 0x1FU) << 11U |
-                                                           ((pixel >> 10U) & 0x3FU) << 5U | ((pixel >> 3U) & 0x1FU));
-            bytes[index * 2U] = static_cast<std::byte>(packed);
-            bytes[index * 2U + 1U] = static_cast<std::byte>(packed >> 8U);
-        } else if (type == 0x8033U) {
-            const auto packed =
-                static_cast<std::uint16_t>(((pixel >> 20U) & 0xFU) << 12U | ((pixel >> 12U) & 0xFU) << 8U |
-                                           ((pixel >> 4U) & 0xFU) << 4U | ((pixel >> 28U) & 0xFU));
-            bytes[index * 2U] = static_cast<std::byte>(packed);
-            bytes[index * 2U + 1U] = static_cast<std::byte>(packed >> 8U);
-        } else if (type == 0x8034U) {
-            const auto packed =
-                static_cast<std::uint16_t>(((pixel >> 19U) & 0x1FU) << 11U | ((pixel >> 11U) & 0x1FU) << 6U |
-                                           ((pixel >> 3U) & 0x1FU) << 1U | ((pixel >> 31U) & 0x1U));
-            bytes[index * 2U] = static_cast<std::byte>(packed);
-            bytes[index * 2U + 1U] = static_cast<std::byte>(packed >> 8U);
-        } else {
-            bytes[index * 4U] = static_cast<std::byte>(pixel >> 16U);
-            bytes[index * 4U + 1U] = static_cast<std::byte>(pixel >> 8U);
-            bytes[index * 4U + 2U] = static_cast<std::byte>(pixel);
-            bytes[index * 4U + 3U] = static_cast<std::byte>(pixel >> 24U);
-        }
-    }
-    return bytes;
-}
-
 dx::IntrinsicHandler GlUtilsTextureHandler(const Context& context, const bool sub_image, std::string descriptor) {
     return [context, sub_image, descriptor = std::move(descriptor)](dx::IntrinsicContext& call) {
         if (context->session == nullptr) ModelFailure(call, "guest session is absent");
@@ -1725,17 +1677,15 @@ dx::IntrinsicHandler GlUtilsTextureHandler(const Context& context, const bool su
             format = call.arguments[5].cat1;
             type = call.arguments[6].cat1;
         }
-        const bool compatible =
-            ((bitmap.config == 1 || bitmap.config == 5) && (type == kUnsignedByte || type == kUnsignedShort4444 ||
-                                                            type == kUnsignedShort565 || type == kUnsignedShort5551)) ||
-            ((bitmap.config == 3 || bitmap.config == 4) &&
-             (type == kUnsignedShort4444 || type == kUnsignedShort565 || type == kUnsignedShort5551 ||
-              (type == kUnsignedByte && format == kLuminanceAlpha)));
+        const bool compatible = ((bitmap.config == 1 || bitmap.config == 5) && type == kUnsignedByte) ||
+                                ((bitmap.config == 3 || bitmap.config == 4) &&
+                                 (type == kUnsignedShort4444 || type == kUnsignedShort565 ||
+                                  type == kUnsignedShort5551 || (type == kUnsignedByte && format == kLuminanceAlpha)));
         if (!compatible) {
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
                                   "GLUtils format/type is incompatible with Bitmap.Config"};
         }
-        const auto pixels = GlBitmapPixels(bitmap, format, type);
+        const auto pixels = bitmap.pixels->RawPixels();
         static_cast<void>(
             context->session->NIO().WithTemporaryGuestMemory(pixels, false, [&](const memory::GuestAddress address) {
                 if (sub_image) {

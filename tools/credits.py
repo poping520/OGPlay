@@ -36,7 +36,7 @@ def npm_version(package: str) -> str:
 
 def stb_license() -> str:
     # stb ships its dual MIT / public-domain license at the end of each header.
-    source = text("third_party/stb/stb_image.h")
+    source = text("third_party/stb/stb_image_write.h")
     start = source.index("This software is available under 2 licenses")
     end = source.index("*/", start)
     return source[start:end].rstrip() + "\n"
@@ -52,11 +52,18 @@ def sqlite_blessing() -> str:
 
 
 def angle_licenses() -> list[tuple[str, str]]:
-    base = "third_party/angle-prebuilt/macos-arm64/release/licenses"
+    base = "third_party/angle-prebuilt/licenses"
     result = [("ANGLE", text(f"{base}/ANGLE.txt"))]
     for path in sorted((ROOT / base / "third-party").glob("*.txt")):
         result.append((path.stem, text(str(path.relative_to(ROOT)))))
     return result
+
+
+def skia_licenses() -> list[tuple[str, str]]:
+    base = ROOT / "third_party/skia-prebuilt/licenses"
+    manifest = json.loads((base / "manifest.json").read_text(encoding="utf-8"))
+    return [(item["path"], text(str((base / item["path"]).relative_to(ROOT))))
+            for item in manifest["files"]]
 
 
 def dynarmic_external(name: str, license_file: str = "LICENSE") -> list[tuple[str, str]]:
@@ -82,6 +89,7 @@ PROJECTS = [
      [("SDL", text("third_party/SDL/LICENSE.txt"))]),
     ("angle", "ANGLE", "c24d9971", "https://chromium.googlesource.com/angle/angle", "BSD-3-Clause",
      angle_licenses()),
+    ("skia", "Skia", "chrome/m157", "https://skia.googlesource.com/skia", None, skia_licenses()),
     ("dynarmic", "Dynarmic", "6.7.0", "https://git.eden-emu.dev/eden-emu/dynarmic", "0BSD",
      [("Dynarmic", text("third_party/dynarmic/LICENSE.txt"))]),
     ("fmt", "{fmt}", "11.1.4", "https://github.com/fmtlib/fmt", "MIT", dynarmic_external("fmt")),

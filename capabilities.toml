@@ -451,7 +451,7 @@ note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿�
 [runtime.java_payload_backing]
 status = "partial"
 test = "tests/runtime/java_payload_provider_tests.cpp; tests/runtime/jni_array_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/dexvm/gc_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/memory/address_space_tests.cpp"
-note = "ADR-0152 / DVM-260：primitive/不可变 String 共用稳定 guest payload，Elements/Critical 与 Chars/Critical 直接借用 FALSE、身份 pin 为 GC 强根。VM 唯一收费及应急预留；allocateDirect 真实 byte[] 计入 Java 堆，与 direct 地址共用 payload，视图/数组引用保活、GC 单次回收；外部 JNI direct 非拥有。MUTF8 仍复制；对象数组 addressOf 明确失败，Windows 未实跑。"
+note = "ADR-0152 / DVM-260：primitive/不可变 String 共用稳定 guest payload，Elements/Critical 与 Chars/Critical 直接借用 FALSE、身份 pin 为 GC 强根。VM 唯一收费及应急预留；allocateDirect 真实 byte[] 计入 Java 堆，与 direct 地址共用 payload，视图/数组引用保活、GC 单次回收；外部 JNI direct 非拥有。宿主 byte[] 借用保活至最后一份 lease 释放。MUTF8 仍复制；对象数组 addressOf 明确失败，Windows 未实跑。"
 
 [dexvm.runtime.address_of_object_array]
 status = "unimplemented"
@@ -2070,13 +2070,18 @@ note = "Java/NativeActivity/NDK 共用 manager 与 APK 来源；read 保持有�
 
 [dexvm.bitmap_decode]
 status = "partial"
-test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_resources_bitmap_tests.cpp#DVM-244; tests/runtime/jni_android_platform_tests.cpp#DVM-244; tests/runtime/jni_android_platform_tests.cpp#DVM-221"
-note = "DVM-244/359：BitmapFactory Options，resource/stream/array 共用 codec/BitmapPixels 与资源密度；支持 ARGB8888、bounds、inMutable、密度缩放。Bitmap 四格式 getRowBytes/getByteCount/getAllocationByteCount/isRecycled，Java 行不对齐，回收后元数据保留。输入≤16 MiB、宽高≤8192，超限 OOME；reuse、inSampleSize>1、其他解码 config、资源 NinePatch 记账 UOE。不宣称 Skia 像素一致。"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/graphics_bitmap_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp#DVM-244; tests/runtime/jni_android_platform_tests.cpp#DVM-244"
+note = "API19 ROM Bitmap/BitmapFactory 绑定 Skia CPU。Bitmap 四格式共用稳定 Java byte[]，支持预乘转换、复用、采样、尺寸查询、密度缩放、PNG NinePatch 元数据及 PNG/JPEG 编码。单个编码输入≤16 MiB，宽高≤8192。WebP 编码与共享内存 Parcel blob 未支持。"
+
+[dexvm.skia_geometry]
+status = "partial"
+test = "tests/dexvm/graphics_geometry_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp#DVM-86"
+note = "ROM Java 绑定 Skia CPU 矩阵、路径、路径测量、区域与 HSV。几何句柄分型、按会话持有，finalizer、GC 和 teardown 退役。支持 API19 路径布尔运算，失败时保留目标路径。硬件 Canvas 不可用。已验证 macOS arm64。"
 
 [runtime.bitmap_ndk]
 status = "partial"
 test = "tests/runtime/jni_android_platform_tests.cpp#DVM-221; tests/dexvm/android_resources_bitmap_tests.cpp#Bitmap Config; tests/dexvm/egl_facade_tests.cpp#DVM-83; tests/runtime/bionic_profile_tests.cpp"
-note = "DVM-221/ADR-0102：sealed libjnigraphics.so 发布三项 API19 AndroidBitmap，boundary 经 bridge hooks 解析线程与引用；输出 guest 像素地址，支持重入锁计数、GC 强根与 recycle/退出退役；BitmapPixels 在逻辑 ARGB 与 guest 四种格式间转移唯一数据，Java、GLUtils 与 Canvas 共用。完整 Skia 颜色管理与未同步并发写未验收。"
+note = "DVM-221：NDK lock 直接借用 ROM Bitmap.mBuffer 的 guest 地址。四格式共用 Skia 像素存储，重入锁保活 Java owner。回收后的旧锁可归还，最后一次 unlock 推进像素版本。调用者负责 Java/宿主/guest 并发像素同步。"
 
 [dexvm.usb_absent_facade]
 status = "partial"
@@ -2226,4 +2231,4 @@ note = "ProgressBar 作为普通叶测量和布局；内容每 View 一次记账
 [dexvm.progressbar_tiling]
 status = "partial"
 test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/progressbar_tests.cpp#DVM-365"
-note = "DVM-367：ROM tileify 保留层 ID，bitmap 转 Shape/BitmapShader/Clip，静态 AnimationDrawable 帧集合、level、尺寸受检。Path 记录有限正面积圆角矩形与非负半径；ShaderFactory、fade、animate=true、start/run、调度及绘制仍失败。"
+note = "DVM-367：ROM tileify 保留层 ID，bitmap 转 Shape/BitmapShader/Clip，静态 AnimationDrawable 帧集合、level、尺寸受检。圆角形状经 ROM Path 与 Skia；ShaderFactory、fade、animate=true、start/run、调度及绘制仍失败。"

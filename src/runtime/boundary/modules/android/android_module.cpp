@@ -51,6 +51,12 @@ memory::GuestAddress AndroidModule::RegisterAssetManager(std::shared_ptr<Android
     return handle;
 }
 
+std::shared_ptr<const AndroidAssetSource> AndroidModule::ResolveAsset(memory::GuestAddress token) {
+    std::scoped_lock lock(mutex_);
+    const auto found = assets_.find(token.Value());
+    return found == assets_.end() ? nullptr : found->second->source;
+}
+
 void AndroidModule::UnregisterAssetManager(memory::GuestAddress manager) {
     std::scoped_lock guard(mutex_);
     // Existing Assets have independent backing leases, like API19 _FileAsset.

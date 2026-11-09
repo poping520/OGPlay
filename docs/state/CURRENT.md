@@ -62,7 +62,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。
   游戏退出后按运行时缺失路径提示挂载位置（[GUI-13](../tasks/gui/GUI-13.md)），App 内点击未实测。
   每次库启动记录运行结果（last-run.json），失败游戏归入“待排查”，CLI `library list --filter attention` 同源（[GUI-23](../tasks/gui/GUI-23.md)），App 内点击未实测。
   Windows 启动器单例与托盘/最小化恢复已通过 Debug / Release 专项实测（[GUI-21](../tasks/gui/GUI-21.md)），Release 已重建。
-- 图形：实际 context-loss、多窗口/透明 Activity 未验收；GLES1 vertex-array 首错未重达。
+- 图形：P1 已接通 ROM 几何、Bitmap 与 BitmapFactory。Skia 像素使用 Java byte[]，Canvas、Paint 和绘制效果仍待迁移。实际 context-loss、多窗口/透明 Activity 未验收；GLES1 vertex-array 首错未重达。
   SurfaceTexture 公共队列/Java 与 SwiftShader 合成帧外部采样闭环已验；Metal 无 external，
   MediaPlayer/NDK producer 与启动后端选择未接入（[APS-14](../tasks/apk-startup/APS-14.md)）。
 - 音视频（[DVM-189](../tasks/dexvm/DVM-189.md)）：视频改为链接裁剪版 ogplay_ffmpeg

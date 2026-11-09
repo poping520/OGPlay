@@ -1,6 +1,5 @@
 #include "container_traversal_fixture.h"
 #include "ogplay/runtime/ui/ui_renderer.h"
-#include "ogplay/runtime/integration/bitmap_pixels.h"
 
 using ogplay::test::container_traversal::ContainerVm;
 
@@ -315,6 +314,8 @@ TEST_CASE("DVM-296 Drawable density drives CENTER and backing follows Java GC") 
                                          "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
                                          {VmValue::Int(12), VmValue::Int(6), VmValue::Ref(config)})
                                     .ref;
+            // Exercise an mdpi bitmap on an xhdpi view independently of the ROM device-density default.
+            f.On(bitmap, "setDensity", "(I)V", {VmValue::Int(160)});
             f.On(image, "setImageBitmap", "(Landroid/graphics/Bitmap;)V", {VmValue::Ref(bitmap)});
             const auto d = f.On(image, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
             CHECK(f.On(d, "getIntrinsicWidth", "()I").AsInt() == 24);
@@ -360,7 +361,6 @@ TEST_CASE("DVM-296 Drawable density drives CENTER and backing follows Java GC") 
         CHECK_FALSE(f.context->ui_view_images.contains(image.Value()));
         CHECK(f.context->ui_drawables.empty());
         CHECK_FALSE(f.model.IsValidRef(image_matrix));
-        CHECK_FALSE(f.context->identity_matrices.contains(image_matrix.Value()));
         CHECK(f.ledger.Unimplemented().empty());
     }
 }

@@ -795,6 +795,29 @@ TEST_CASE("DVM-260 direct pin is a strong root until final release") {
     CHECK(f.model.InstanceSlots(weak)[referent_slot].bits == 0);
 }
 
+TEST_CASE("DexVM byte-array host lease shares the protected guest mapping and roots it through GC") {
+    GcVm f;
+    const auto array = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 8);
+    const auto identity = f.model.ToIdentity(array);
+    const auto guest = f.model.PrimitiveArrayAddress(array);
+    auto lease = f.model.BorrowByteArray(array);
+    auto consumer = lease;
+    const auto* stable = lease->Bytes().data();
+    lease->Bytes()[0] = std::byte{0x12};
+    CHECK((f.memory.Read32(guest) & 0xffU) == 0x12);
+    f.memory.Write32(guest, 0x44332211);
+    CHECK(lease->Bytes()[1] == std::byte{0x22});
+    CHECK(f.model.GetPrimitiveElement(array, 3) == 0x44);
+    lease.reset();
+    static_cast<void>(f.vm.CollectGarbage());
+    REQUIRE(f.model.IsValidRef(array));
+    CHECK(consumer->Bytes().data() == stable);
+    CHECK(f.model.PrimitiveArrayAddress(array) == guest);
+    consumer.reset();
+    static_cast<void>(f.vm.CollectGarbage());
+    CHECK_THROWS_AS(static_cast<void>(f.arrays.Length(identity)), JniArrayError);
+}
+
 TEST_CASE("DVM-260 direct String pins survive GC until final cross-kind release") {
     GcVm f;
     const auto text = f.model.NewString(u"A\0\U0001f600");

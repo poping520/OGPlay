@@ -235,6 +235,8 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/android_intent_uri_tests.cpp
     tests/dexvm/android_parcel_bundle_tests.cpp
     tests/dexvm/android_resources_bitmap_tests.cpp
+    tests/dexvm/graphics_geometry_tests.cpp
+    tests/dexvm/graphics_bitmap_tests.cpp
     tests/dexvm/android_view_state_tests.cpp
     tests/dexvm/owner_traversal_tests.cpp
     tests/dexvm/viewgroup_traversal_tests.cpp

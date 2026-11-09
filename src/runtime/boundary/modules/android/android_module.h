@@ -44,6 +44,7 @@ public:
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
     memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);
     void UnregisterAssetManager(memory::GuestAddress manager);
+    [[nodiscard]] std::shared_ptr<const AndroidAssetSource> ResolveAsset(memory::GuestAddress token);
 
 #define OGPLAY_DECLARE_ANDROID(name, id, count, method) BoundaryResult method(const A32CallFrame& call);
     OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_DECLARE_ANDROID)

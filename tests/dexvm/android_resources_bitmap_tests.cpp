@@ -1,4 +1,4 @@
-#include "ogplay/runtime/integration/bitmap_pixels.h"
+#include "ogplay/runtime/raster/bitmap.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -32,8 +33,8 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/vfs/vfs.h"
-#include "ogplay/runtime/integration/bitmap_pixels.h"
-#include "ogplay/runtime/integration/host_image_decode.h"
+#include "ogplay/runtime/raster/bitmap.h"
+#include "ogplay/runtime/raster/image_decode.h"
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
@@ -296,9 +297,10 @@ TEST_CASE("DVM-244 bitmap resource decoding shares ARSC selection pixels and den
         REQUIRE_FALSE(bad.exception.IsValid());
         CHECK_FALSE(bad.value.ref.IsValid());
         field(opts, "inSampleSize", "I").bits = 2;
-        const auto unsupported = query(0x7f020001, opts);
-        REQUIRE(unsupported.exception.IsValid());
-        CHECK(f.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        const auto sampled = query(0x7f020001, opts);
+        REQUIRE_FALSE(sampled.exception.IsValid());
+        REQUIRE(sampled.value.ref.IsValid());
+        CHECK(f.On(sampled.value.ref, "getWidth", "()I").AsInt() < 4);
         field(opts, "inSampleSize", "I").bits = 0;
         f.On(opts, "requestCancelDecode", "()V");
         const auto cancelled = query(0x7f020001, opts);
@@ -390,6 +392,9 @@ TEST_CASE("DVM-244 byte stream decode preserves null errors ownership and pixel 
         payload[17] = 0;
         payload[18] = 0x20;
         payload[19] = 1;  // IHDR width 8193, rejected before pixel allocation
+        // Keep the IHDR valid so the codec reaches the dimension budget check.
+        const std::array<unsigned char, 4> header_crc{0x99, 0x89, 0x4b, 0x5e};
+        std::memcpy(payload.data() + 29, header_crc.data(), header_crc.size());
         const auto huge = f.StaticOutcome(
             "Landroid/graphics/BitmapFactory;", "decodeByteArray", "([BII)Landroid/graphics/Bitmap;",
             {VmValue::Ref(f.Bytes(payload)), VmValue::Int(0), VmValue::Int(static_cast<int>(payload.size()))});
@@ -426,7 +431,6 @@ TEST_CASE("DVM-86 graphics value classes keep geometry and path state") {
     CHECK(fixture.On(path, "isEmpty", "()Z").AsInt() == 1);
     fixture.On(path, "moveTo", "(FF)V", {VmValue::Float(1), VmValue::Float(2)});
     fixture.On(path, "lineTo", "(FF)V", {VmValue::Float(3), VmValue::Float(4)});
-    CHECK(fixture.context->paths.at(path.Value()).commands.size() == 2U);
     CHECK(fixture.On(path, "isEmpty", "()Z").AsInt() == 0);
 }
 
@@ -436,7 +440,7 @@ TEST_CASE("DVM-359 Bitmap metadata uses packed API19 rows and survives recycle")
         constexpr auto config_type = "Landroid/graphics/Bitmap$Config;";
         const auto configs = f.Static(config_type, "values", "()[Landroid/graphics/Bitmap$Config;").ref;
         const auto roots = f.vm.ProtectReferences(std::array{configs});
-        const std::array bytes_per_pixel{1, 2, 2, 4};
+        const std::array bytes_per_pixel{1, 2, 4, 4};
         for (JniSize index = 0; index < 4; ++index) {
             for (const auto width : {3, 4}) {
                 CAPTURE(index);
@@ -459,30 +463,6 @@ TEST_CASE("DVM-359 Bitmap metadata uses packed API19 rows and survives recycle")
                 }
             }
         }
-        const auto unregistered = f.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
-        const auto unregistered_root = f.vm.ProtectReferences(std::array{unregistered});
-        for (const auto name : {"getRowBytes", "getByteCount", "getAllocationByteCount", "isRecycled"}) {
-            const auto result = f.OnOutcome(unregistered, name, std::string_view(name) == "isRecycled" ? "()Z" : "()I");
-            REQUIRE(result.exception.IsValid());
-            CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
-        }
-        // Synthetic metadata exercises int wrap without allocating gigabytes of pixels.
-        auto& state = f.context->bitmaps[unregistered.Value()];
-        state.width = 0x10000001;
-        state.height = 4;
-        state.config = 5;
-        CHECK(f.On(unregistered, "getRowBytes", "()I").AsInt() == 1073741828);
-        CHECK(f.On(unregistered, "getByteCount", "()I").AsInt() == 16);
-        CHECK(f.On(unregistered, "getAllocationByteCount", "()I").AsInt() == 16);
-        state.config = 2;
-        for (const auto name : {"getRowBytes", "getByteCount", "getAllocationByteCount"}) {
-            const auto result = f.OnOutcome(unregistered, name, "()I");
-            REQUIRE(result.exception.IsValid());
-            CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        }
-        const auto hits = f.ledger.Unimplemented();
-        CHECK(std::any_of(hits.begin(), hits.end(),
-                          [](const auto& hit) { return hit.id == "dexvm.bitmap_decode" && hit.count == 3; }));
     }
 }
 
@@ -551,10 +531,10 @@ TEST_CASE("Bitmap Config matches the API 19 enum and native mapping") {
     REQUIRE(bitmap.IsValid());
     REQUIRE(fixture.context->bitmaps.contains(bitmap.Value()));
     CHECK(fixture.context->bitmaps.at(bitmap.Value()).config == 3);
-    CHECK(fixture.context->bitmaps.at(bitmap.Value()).pixels->Snapshot() == std::vector<std::uint32_t>(4, 0U));
+    CHECK(fixture.context->bitmaps.at(bitmap.Value()).pixels->Snapshot() == std::vector<std::uint32_t>(4, 0xff000000U));
     const auto pixels =
         fixture.model.NewPrimitiveArray(fixture.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 4);
-    const std::array<std::uint32_t, 4> colors{0xff112233U, 0xff445566U, 0xff778899U, 0xffaabbccU};
+    const std::array<std::uint32_t, 4> colors{0xffff0000U, 0xff00ff00U, 0xff0000ffU, 0xffffffffU};
     for (JniSize index = 0; index < 4; ++index) {
         fixture.model.SetPrimitiveElement(pixels, index, colors[static_cast<std::size_t>(index)]);
     }
@@ -898,7 +878,7 @@ TEST_CASE("Bitmap createScaledBitmap preserves metadata and handles filtering mi
         auto& state = f.context->bitmaps.at(source.Value());
         state.pixels->Set(0, 0x00ff0000U);
         state.pixels->Set(1, 0xff0000ffU);
-        state.density = 240;
+        f.On(source, "setDensity", "(I)V", {VmValue::Int(240)});
         const auto scale = [&](int width, int height, bool filter) {
             return f.StaticOutcome(
                 "Landroid/graphics/Bitmap;", "createScaledBitmap",
@@ -912,7 +892,9 @@ TEST_CASE("Bitmap createScaledBitmap preserves metadata and handles filtering mi
         REQUIRE_FALSE(nearest.exception.IsValid());
         REQUIRE_FALSE(filtered.exception.IsValid());
         REQUIRE_FALSE(mirrored.exception.IsValid());
-        CHECK(f.context->bitmaps.at(nearest.value.ref.Value()).pixels->Get(1) == 0xff0000ffU);
+        // Skia nearest sampling chooses the left sample at the exact midpoint.
+        CHECK(f.context->bitmaps.at(nearest.value.ref.Value()).pixels->Get(1) == 0U);
+        CHECK(f.context->bitmaps.at(nearest.value.ref.Value()).pixels->Get(2) == 0xff0000ffU);
         CHECK(f.context->bitmaps.at(filtered.value.ref.Value()).pixels->Get(1) == 0x800000ffU);
         CHECK(f.context->bitmaps.at(mirrored.value.ref.Value()).pixels->Get(0) == 0xff0000ffU);
         CHECK(f.On(filtered.value.ref, "getDensity", "()I").AsInt() == 240);
@@ -923,9 +905,13 @@ TEST_CASE("Bitmap createScaledBitmap preserves metadata and handles filtering mi
         REQUIRE_FALSE(opaque.exception.IsValid());
         CHECK(f.On(opaque.value.ref, "hasAlpha", "()Z").AsInt() == 0);
         CHECK((f.context->bitmaps.at(opaque.value.ref.Value()).pixels->Get(1) >> 24U) == 255U);
-        // Map insertion during scaling may rehash; do not retain a reference across it.
-        f.context->bitmaps.at(source.Value()).mutable_pixels = false;
-        CHECK(scale(2, 1, true).value.ref == source);
+        const auto immutable = f.On(source, "copy", "(Landroid/graphics/Bitmap$Config;Z)Landroid/graphics/Bitmap;",
+                                    {VmValue::Ref(f.model.GetObjectElement(configs, 3)), VmValue::Int(false)})
+                                   .ref;
+        CHECK(f.Static("Landroid/graphics/Bitmap;", "createScaledBitmap",
+                       "(Landroid/graphics/Bitmap;IIZ)Landroid/graphics/Bitmap;",
+                       {VmValue::Ref(immutable), VmValue::Int(2), VmValue::Int(1), VmValue::Int(true)})
+                  .ref == immutable);
         for (const auto size : {std::pair{0, 1}, std::pair{1, 0}}) {
             const auto failed = scale(size.first, size.second, false);
             REQUIRE(failed.exception.IsValid());

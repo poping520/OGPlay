@@ -1739,6 +1739,7 @@ namespace ogplay::runtime {
 void RegisterAndroidValueStateTables(dexvm::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context) {
     if (context == nullptr) return;
     android_intrinsics::RegisterGraphicsStateTables(vm, context);
+    android_intrinsics::RegisterSkiaStateTables(vm, context);
     const auto configuration = vm.Linker().ResolveDescriptor("Landroid/view/ViewConfiguration;");
     const auto constructor = vm.Linker().FindDirectMethod(configuration, "<init>", "(Landroid/content/Context;)V");
     if (!constructor) throw std::runtime_error("ROM ViewConfiguration constructor unavailable");
@@ -1832,7 +1833,6 @@ void RegisterAndroidValueStateTables(dexvm::Interpreter& vm, const std::shared_p
                                     [context](const dexvm::VmObjectRef owner) {
                                         context->pending_intents.erase(owner.Value());
                                         context->service_connections.erase(owner.Value());
-                                        context->paths.erase(owner.Value());
                                         if (const auto token = context->parcel_owner_tokens.find(owner.Value());
                                             token != context->parcel_owner_tokens.end()) {
                                             context->parcel_backings.erase(token->second);
@@ -1859,6 +1859,7 @@ Decl Declare_android_os_Trace(const Context&) {
                                                     dx::kAccPublic | dx::kAccFinal);
     const auto trace = [](const bool begin) {
         return [begin](dx::IntrinsicContext& call) {
+            if (call.arguments[0].AsLong() == 2) return dx::VmValue::Void();  // Graphics trace is disabled.
             if (call.arguments[0].AsLong() != 8) {
                 if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.trace.tag", 0);
                 throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "only View trace tag is connected"};
@@ -1870,6 +1871,7 @@ Decl Declare_android_os_Trace(const Context&) {
         };
     };
     builder.StaticMethod("isTagEnabled", "(J)Z", [](dx::IntrinsicContext& call) {
+        if (call.arguments[0].AsLong() == 2) return dx::VmValue::Int(0);
         if (call.arguments[0].AsLong() != 8) {
             if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.trace.tag", 0);
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "only View trace tag is connected"};

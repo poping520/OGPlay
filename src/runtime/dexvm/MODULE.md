@@ -95,6 +95,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   至少 8-byte 对齐，发布仍依赖 monitor/volatile/pthread/futex，不承诺多元素一致快照。
   sweep 先退役 Record view，再由 store 退役 entry view/释放 backing。VM Reserve 是唯一
   堆账本；native New 创建即收费，import 不重复收费，JNI 导入 String 补计既有 payload。
+- BorrowByteArray 在 VM 锁内为宿主消费者借用稳定 byte[]。最后一份借用释放前，数组是
+  GC 强根且 backing 不移动。消费者释放借用时丢弃所有指针和跨度，借用必须早于 VM teardown 退役。
 - GC 是分配驱动的精确 STW mark-sweep；roots 包括 frame、结果/异常、static、JNI、Thread、
   intern/Class 与 integration roots。持 guest ref 的 intrinsic 状态用具名 state table trace/sweep；
   嵌套调用的新引用用 `RootScope`。Weak/SoftReference、JNI weak、intern 与 identity hash 遵循

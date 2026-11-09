@@ -39,6 +39,8 @@ Bionic、syscall、execution 或 integration。
   丢失定位所需的注册表身份。
 - guest handle 保持固定宽度，不暴露宿主指针。引用 handle 低位编码类别，表项决定存活性；
   GetObjectRefType 不解引用 handle，严格模式下已删除 local 按 Dalvik ReportJniError 致命失败。
+- byte[] 可通过宿主借用取得与受保护 guest payload 共址的跨度。对象模型负责 GC 保活，
+  消费者须在退役前释放借用，且按既有 guest 内存同步规则协调读写。
 - JniStringStore.VisitAccessRoots 在锁外枚举仍有 chars/UTF8/critical lease 的字符串身份；
   VM owner 将其纳入 GC roots，直至对应 Release，不因局部引用或线程退役提前删除。
 - 默认严格执行 local reference 生命周期。仅由上层根据 Manifest `targetSdkVersion` 1..13

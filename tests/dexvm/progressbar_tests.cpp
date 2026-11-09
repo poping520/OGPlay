@@ -289,10 +289,9 @@ TEST_CASE("DVM-367 horizontal ROM ProgressBar retains layer IDs levels and stati
                                          AndroidUiTraversalPhase::ResolveOnly));
         const auto round_shape = f.On(shape, "getShape", "()Landroid/graphics/drawable/shapes/Shape;").ref;
         const auto path = read_ref(round_shape, "mPath", "Landroid/graphics/Path;");
-        const auto& commands = f.context->paths.at(path.Value()).commands;
-        REQUIRE(commands.size() == 1);
-        CHECK(commands[0].verb == DexVmAndroidContext::PathState::Verb::round_rect);
-        CHECK(commands[0].radii == std::array<float, 8>{5, 5, 5, 5, 5, 5, 5, 5});
+        CHECK(f.On(path, "isEmpty", "()Z").AsInt() == 0);
+        const auto bounds = f.New("Landroid/graphics/RectF;");
+        CHECK(f.On(path, "isRect", "(Landroid/graphics/RectF;)Z", {VmValue::Ref(bounds)}).AsInt() == 0);
         static_cast<void>(f.vm.CollectGarbage("horizontal-drawable-tree"));
         CHECK(f.model.IsValidRef(bitmap));
         CHECK(f.model.IsValidRef(shader));

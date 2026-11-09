@@ -80,6 +80,7 @@ public:
     std::vector<std::uint32_t> free_fallback_object_arrays;
     std::unordered_map<std::u16string, VmObjectRef> intern_table;
     std::unordered_map<std::u16string, VmObjectRef> weak_intern_table;
+    std::unordered_map<std::uint32_t, std::weak_ptr<JavaPayloadHostBytes>> borrowed_byte_arrays;
     std::unordered_map<std::uint32_t, VmObjectRef> class_objects;
     std::function<std::string(DexClassId)> class_descriptor_resolver;
 
@@ -390,6 +391,11 @@ void JavaObjectModel::VisitPermanentRoots(const RootVisitor& visitor) const {
         visitor(ref);
     for (const auto& [_, ref] : impl_->class_objects)
         visitor(ref);
+    std::erase_if(impl_->borrowed_byte_arrays, [&](const auto& entry) {
+        if (entry.second.expired()) return true;
+        visitor(VmObjectRef{entry.first});
+        return false;
+    });
 }
 
 GcMarkResult
@@ -726,6 +732,15 @@ VmObjectRef JavaObjectModel::NewPrimitiveArray(const DexClassId array_class, con
 memory::GuestAddress JavaObjectModel::PrimitiveArrayAddress(const VmObjectRef ref) const {
     static_cast<void>(PrimitiveArrayKind(ref));
     return impl_->arrays->Address(impl_->At(ref).identity);
+}
+
+std::shared_ptr<JavaPayloadHostBytes> JavaObjectModel::BorrowByteArray(VmObjectRef ref) {
+    static_cast<void>(PrimitiveArrayKind(ref));
+    auto& entry = impl_->borrowed_byte_arrays[ref.Value()];
+    if (auto active = entry.lock()) return active;
+    auto lease = impl_->arrays->BorrowHostByteArray(impl_->At(ref).identity);
+    entry = lease;
+    return lease;
 }
 
 JniPrimitiveKind JavaObjectModel::PrimitiveArrayKind(const VmObjectRef ref) const {

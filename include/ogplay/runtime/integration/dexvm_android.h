@@ -55,12 +55,19 @@ class EncodedAudioDataSource;
 namespace ogplay::runtime {
 struct GraphicsStateStore;
 
+namespace raster {
+struct GraphicsObjects;
+[[nodiscard]] std::shared_ptr<GraphicsObjects> NewGraphicsObjects();
+}  // namespace raster
+
 // Shared application-window/holder alpha rule (PixelFormat.formatHasAlpha, API19).
 [[nodiscard]] constexpr bool AndroidPixelFormatHasAlpha(std::int32_t format) {
     return format == -3 || format == -2 || format == 1 || format == 6 || format == 7 || format == 8 || format == 10;
 }
 
-class BitmapPixels;
+namespace raster {
+class Bitmap;
+}
 class AndroidAssetManagerSource;
 struct AndroidBoundaryInput;
 
@@ -653,24 +660,6 @@ struct DexVmAndroidContext final {
 
     std::unordered_map<std::uint32_t, SQLiteHelperState> sqlite_helpers;
 
-    struct PathState final {
-        enum class Verb : std::uint8_t { move, line, close, rect, round_rect };
-
-        struct Command final {
-            Verb verb{};
-            float x1{};
-            float y1{};
-            float x2{};
-            float y2{};
-            std::int32_t direction{};
-            std::array<float, 8> radii{};
-        };
-
-        std::vector<Command> commands;
-    };
-
-    std::unordered_map<std::uint32_t, PathState> paths;
-
     struct ParcelBinderRecord final {
         std::size_t offset{};
         std::size_t span{};
@@ -885,7 +874,7 @@ struct DexVmAndroidContext final {
     struct BitmapState final {
         std::int32_t width{};
         std::int32_t height{};
-        std::shared_ptr<BitmapPixels> pixels;
+        std::shared_ptr<raster::Bitmap> pixels;
         bool recycled{};
         // android.graphics.Bitmap.Config nativeInt (API 19 values 1/3/4/5).
         std::int32_t config{5};
@@ -1130,8 +1119,7 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint64_t, dexvm::VmObjectRef> ui_view_images;
     std::unordered_map<std::uint64_t, UiDrawableState> ui_drawables;
 
-    // Experimental bounded measurement state; Typeface remains a Java strong field.
-    std::unordered_set<std::uint32_t> identity_matrices;
+    const std::shared_ptr<raster::GraphicsObjects> skia_objects = raster::NewGraphicsObjects();
 
     struct PaintMeasureState final {
         std::int32_t flags{0x500};  // API19 DEV_KERN_TEXT | EMBEDDED_BITMAP_TEXT.
@@ -1267,6 +1255,7 @@ struct DexVmAndroidContext final {
 void RegisterAndroidAudioTrackStateTable(dexvm::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context);
 
 // Called after guest workers are joined; retires media without Java callbacks.
+void ReleaseAndroidRasterResources(DexVmAndroidContext& context);
 void ReleaseAndroidMediaResources(DexVmAndroidContext& context);
 
 void RegisterAndroidValueStateTables(dexvm::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context);

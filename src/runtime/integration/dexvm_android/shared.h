@@ -9,6 +9,12 @@
 namespace ogplay::runtime::android_intrinsics {
 
 namespace dx = dexvm;
+[[nodiscard]] dx::VmObjectRef CreateAndroidBitmap(dx::Interpreter& vm, DexVmAndroidContext& context, int width,
+                                                  int height, std::span<const std::uint32_t> argb,
+                                                  bool mutable_pixels = true, int density = -1);
+[[nodiscard]] bool AndroidMatrixIsIdentity(dx::Interpreter& vm, const DexVmAndroidContext& context,
+                                           dx::VmObjectRef matrix);
+
 [[nodiscard]] std::u16string ReadAndroidTextDisplay(dx::Interpreter&, DexVmAndroidContext&, dx::VmObjectRef);
 [[nodiscard]] dx::VmObjectRef InflateSealedRomDrawable(dx::IntrinsicContext&,
                                                        const std::shared_ptr<DexVmAndroidContext>&,

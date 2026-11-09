@@ -101,8 +101,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
     DebugMemoryInfoFields memory_fields;
     auto debug_memory_info = Declare_android_os_Debug_MemoryInfo(context, memory_fields);
     auto debug = Declare_android_os_Debug(context, memory_fields);
-    std::vector<dx::IntrinsicFieldHandle> bitmap_options;
-    auto options_decl = Declare_android_graphics_BitmapFactory_Options(context, bitmap_options);
     std::vector<dexvm::IntrinsicClassDecl> result{
         std::move(debug_memory_info),
         std::move(debug),
@@ -147,20 +145,21 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_database_sqlite_SQLiteConnection_Operation(context),
         Declare_android_database_sqlite_SQLiteDebug(context),
         Declare_android_database_sqlite_SQLiteGlobal(context),
-        Declare_android_graphics_Bitmap_Config(context),
         Declare_android_graphics_Bitmap(context),
-        std::move(options_decl),
-        Declare_android_graphics_BitmapFactory(context, bitmap_options),
+        Declare_android_graphics_BitmapFactory_Options(context),
+        Declare_android_graphics_BitmapFactory(context),
+        Declare_android_graphics_NinePatch(context),
         Declare_android_graphics_Canvas(context),
         Declare_android_graphics_Matrix(context),
         Declare_android_graphics_Paint(context),
-        Declare_android_graphics_PointF(context),
-        Declare_android_graphics_Path_Direction(context),
         Declare_android_graphics_Path(context),
         Declare_android_graphics_Color(context),
         Declare_android_graphics_PorterDuff(context),
         Declare_android_graphics_PorterDuff_Mode(context),
-        Declare_android_graphics_Region_Op(context),
+        Declare_android_graphics_Region(context),
+        Declare_android_graphics_RegionIterator(context),
+        Declare_android_graphics_PathMeasure(context),
+        Declare_android_view_GLES20Canvas(context),
         Declare_android_graphics_Typeface(context),
         Declare_android_graphics_drawable_Drawable(context),
         Declare_android_graphics_drawable_AnimationDrawable(context),

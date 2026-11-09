@@ -6,7 +6,7 @@
 #include <utility>
 
 #include "catalog.h"
-#include "ogplay/runtime/integration/host_image_decode.h"
+#include "ogplay/runtime/raster/image_decode.h"
 #include "ogplay/core/json.h"
 #include <limits>
 #include <mutex>
@@ -14,7 +14,6 @@
 #include <variant>
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/integration/apk_assets.h"
-#include "ogplay/runtime/integration/bitmap_pixels.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -1368,23 +1367,17 @@ Decl Declare_android_content_res_Resources(const Context& context) {
                     if (color)
                         args.push_back(XmlInt(data));
                     else {
-                        bitmap = call.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
                         std::vector<std::uint32_t> argb;
                         for (std::size_t i = 0; i < pixels->rgba8.size(); i += 4)
                             argb.push_back((static_cast<std::uint32_t>(pixels->rgba8[i + 3]) << 24U) |
                                            (static_cast<std::uint32_t>(pixels->rgba8[i]) << 16U) |
                                            (static_cast<std::uint32_t>(pixels->rgba8[i + 1]) << 8U) |
                                            pixels->rgba8[i + 2]);
-                        auto& backing = context->bitmaps[bitmap.Value()];
-                        backing.width = pixels->width;
-                        backing.height = pixels->height;
-                        backing.mutable_pixels = false;
-                        backing.pixels =
-                            std::make_shared<BitmapPixels>(pixels->width, pixels->height, 5, std::move(argb));
                         const auto density = XmlField(call.vm, value, "density");
-                        backing.density = density == 65535 ? 0
-                                          : density == 0   ? 160
-                                                           : static_cast<std::int32_t>(density);
+                        bitmap = CreateAndroidBitmap(call.vm, *context, pixels->width, pixels->height, argb, false,
+                                                     density == 65535 ? 0
+                                                     : density == 0   ? 160
+                                                                      : static_cast<int>(density));
                         signature = "(Landroid/content/res/Resources;Landroid/graphics/Bitmap;)V";
                         args.push_back(dx::VmValue::Ref(call.receiver));
                         args.push_back(dx::VmValue::Ref(bitmap));
@@ -1832,14 +1825,9 @@ dx::VmObjectRef MakeRomSkin(dx::IntrinsicContext& call, const Context& context, 
         if (!decoded || decoded->width != static_cast<int>(resource->width) ||
             decoded->height != static_cast<int>(resource->height))
             throw std::runtime_error("ROM bitmap decode/facts mismatch");
-        const auto bitmap = allocate("Landroid/graphics/Bitmap;");
+        const auto bitmap = CreateAndroidBitmap(call.vm, *context, decoded->width, decoded->height, decoded->argb,
+                                                false, static_cast<int>(resource->density));
         const auto roots = call.vm.ProtectReferences(std::array{bitmap});
-        auto& backing = context->bitmaps[bitmap.Value()];
-        backing.width = decoded->width;
-        backing.height = decoded->height;
-        backing.mutable_pixels = false;
-        backing.pixels = std::make_shared<BitmapPixels>(decoded->width, decoded->height, 5, decoded->argb);
-        backing.density = static_cast<std::int32_t>(resource->density);
         const auto object = allocate("Landroid/graphics/drawable/BitmapDrawable;");
         const auto object_root = call.vm.ProtectReferences(std::array{object});
         const auto type = call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/BitmapDrawable;");

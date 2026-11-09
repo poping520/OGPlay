@@ -11,6 +11,7 @@
 | --- | --- | --- | --- | --- |
 | SDL | 3.4.10（`8e37db5e797b6167f3a00d697d816a684bd259c7`） | https://github.com/libsdl-org/SDL | zlib | 窗口、输入与宿主多媒体 HAL |
 | ANGLE（预编译 libEGL/libGLESv2） | `c24d9971269a878a221238a5923abdcc933fa2e9` | https://github.com/poping520/OGPlay-angle-prebuilt（上游 https://chromium.googlesource.com/angle/angle） | BSD-3-Clause，附带组件见包内 `licenses/third-party/` | GLES 到 Metal/Vulkan 的图形后端 |
+| Skia CPU SDK | chrome/m157（`682482c8`） | https://skia.googlesource.com/skia | BSD-3-Clause，附带组件见 SDK `licenses/` | CPU 图形几何、图像解码与缩放 |
 | Dynarmic | 6.7.0（`05b7ba50588d1004e23ef91f1bda8be234be68f4`） | https://git.eden-emu.dev/eden-emu/dynarmic | 0BSD | ARM 动态翻译后端 |
 | {fmt} | 11.1.4（Dynarmic externals） | https://github.com/fmtlib/fmt | MIT | Dynarmic 依赖 |
 | mcl | 0.1.13（Dynarmic externals） | https://github.com/azahar-emu/mcl | MIT | Dynarmic 依赖 |
@@ -23,7 +24,7 @@
 | FFmpeg（`ogplay_ffmpeg` 预编译共享库） | n8.1.3（`1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7`） | https://github.com/poping520/OGPlay-ffmpeg-prebuilt（上游 https://git.ffmpeg.org/ffmpeg.git） | LGPL-2.1-or-later | 游戏 CG 视频解码：mov 容器、H.264/MPEG-4/H.263/AAC |
 | SQLite amalgamation | 3.53.4（`ed6f533374f8340dee587f714115e75d6d8d6aa6`） | https://github.com/poping520/sqlite-amalgamation | Public Domain | guest SQLite 数据库运行时 |
 | yyjson | 0.12.0（`8b4a38dc994a110abaec8a400615567bd996105f`） | https://github.com/ibireme/yyjson | MIT | JSON 解析与生成 |
-| stb | stb_image 2.30、stb_image_write 1.16、stb_truetype 1.26、stb_vorbis 1.22 | https://github.com/nothings/stb | MIT 或 Public Domain（Unlicense） | 图片解码/编码、字体栅格化、Ogg Vorbis 解码 |
+| stb | stb_image_write 1.16、stb_truetype 1.26、stb_vorbis 1.22 | https://github.com/nothings/stb | MIT 或 Public Domain（Unlicense） | 图片编码、字体栅格化、Ogg Vorbis 解码 |
 | minimp3 | `ea99364f61c14656440e8d77e9c233ccf3124633` | https://github.com/lieff/minimp3 | CC0-1.0 | MP3 解码 |
 | Compressonator（ATC 解码文件） | `f4b53d79ec5abbb50924f58aebb7bf2793200b94` | https://github.com/GPUOpen-Tools/compressonator | MIT | ATC 纹理软件解码 |
 | PowerVR Native SDK | `2b1bf2f14d3365d0bb801e2a6a131a319d3a2e48` | https://github.com/powervr-graphics/Native_SDK | MIT | 原样引入 `PVRTDecompress.cpp/.h` 实现 PVRTC1 软件解码 |

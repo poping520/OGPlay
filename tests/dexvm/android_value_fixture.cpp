@@ -1,6 +1,5 @@
 #include "android_value_fixture.h"
 
-#include "ogplay/runtime/integration/bitmap_pixels.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
@@ -34,8 +33,6 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/vfs/vfs.h"
-#include "ogplay/runtime/integration/bitmap_pixels.h"
-#include "ogplay/runtime/integration/host_image_decode.h"
 #include "../fixtures/bitmap_decode_data.h"
 
 namespace ogplay::test::android_value {

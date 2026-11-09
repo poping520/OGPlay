@@ -23,7 +23,6 @@
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
-#include "ogplay/runtime/integration/bitmap_pixels.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/ui/ui_renderer.h"
 #include "ogplay/runtime/vfs/vfs.h"

@@ -9,7 +9,7 @@
 
 #include <stb_image_write.h>
 
-#include "ogplay/runtime/integration/host_image_decode.h"
+#include "ogplay/runtime/raster/image_decode.h"
 
 namespace ogplay::app {
 namespace {

@@ -1,6 +1,5 @@
 #include "container_traversal_fixture.h"
 #include <regex>
-#include "ogplay/runtime/integration/bitmap_pixels.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
@@ -36,8 +35,6 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/vfs/vfs.h"
-#include "ogplay/runtime/integration/bitmap_pixels.h"
-#include "ogplay/runtime/integration/host_image_decode.h"
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
@@ -936,10 +933,10 @@ TEST_CASE("DVM-372 display-only setters warn and keep running while getters stay
         CHECK(warned("TextView.bufferType"));
         f.On(text, "setTextKeepState", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.vm.NewStringUtf8("kept"))});
         CHECK(shown() == "kept");
-        // Logic is never degraded: a Matrix native without a backend still fails.
-        CHECK(f.OnOutcome(f.New("Landroid/graphics/Matrix;"), "setScale", "(FF)V",
-                          {VmValue::Float(2.0F), VmValue::Float(2.0F)})
-                  .exception.IsValid());
+        // The standalone Matrix retains its native transform even when the View projection degrades transforms.
+        const auto matrix = f.New("Landroid/graphics/Matrix;");
+        f.On(matrix, "setScale", "(FF)V", {VmValue::Float(2.0F), VmValue::Float(2.0F)});
+        CHECK(f.On(matrix, "isIdentity", "()Z").AsInt() == 0);
     }
 }
 

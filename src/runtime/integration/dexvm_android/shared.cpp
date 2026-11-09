@@ -34,11 +34,11 @@ bool AndroidAlphaOnly(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmO
     for (const auto name : {"mScaleX", "mScaleY", "mTransitionAlpha"})
         if (std::bit_cast<float>(static_cast<std::uint32_t>(bits(name, "F"))) != 1.0F) return false;
     // ROM setFrame marks the matrix dirty when dimensions change, even if
-    // TransformationInfo exists solely for alpha. The constructed Matrix stays
-    // identity; no geometric property or matrix mutation is admitted here.
+    // TransformationInfo exists solely for alpha.
     return bits("mMatrixIsIdentity", "Z") != 0 &&
-           context.identity_matrices.contains(
-               static_cast<std::uint32_t>(bits("mMatrix", "Landroid/graphics/Matrix;"))) &&
+           AndroidMatrixIsIdentity(
+               vm, context,
+               dx::VmObjectRef{static_cast<std::uint32_t>(bits("mMatrix", "Landroid/graphics/Matrix;"))}) &&
            bits("mCamera", "Landroid/graphics/Camera;") == 0;
 }
 

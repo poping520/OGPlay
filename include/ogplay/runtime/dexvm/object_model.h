@@ -161,6 +161,9 @@ public:
     [[nodiscard]] VmObjectRef NewPrimitiveArray(DexClassId array_class, JniPrimitiveKind kind, JniSize length);
     [[nodiscard]] JniPrimitiveKind PrimitiveArrayKind(VmObjectRef ref) const;
     [[nodiscard]] memory::GuestAddress PrimitiveArrayAddress(VmObjectRef ref) const;
+    // Under the VM lock. The byte[] is a GC root while any copy of the
+    // returned lease exists. Release every lease before VM teardown.
+    [[nodiscard]] std::shared_ptr<JavaPayloadHostBytes> BorrowByteArray(VmObjectRef ref);
     [[nodiscard]] std::uint64_t GetPrimitiveElement(VmObjectRef ref, JniSize index) const;
     void SetPrimitiveElement(VmObjectRef ref, JniSize index, std::uint64_t bits);
 

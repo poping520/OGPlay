@@ -1781,6 +1781,10 @@ public:
         return boundary_.RegisterAssetManager(std::move(source));
     }
 
+    std::shared_ptr<const AndroidAssetSource> ResolveAsset(memory::GuestAddress token) {
+        return boundary_.ResolveAsset(token);
+    }
+
     void UnregisterAssetManager(memory::GuestAddress manager) { boundary_.UnregisterAssetManager(manager); }
 
     memory::GuestAddress FindModuleExport(const std::size_t index, const std::string_view name) const {
@@ -3231,6 +3235,10 @@ void AndroidGuestProcess::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) {
 
 memory::GuestAddress AndroidGuestProcess::RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) {
     return impl_->RegisterAssetManager(std::move(source));
+}
+
+std::shared_ptr<const AndroidAssetSource> AndroidGuestProcess::ResolveAsset(memory::GuestAddress token) {
+    return impl_->ResolveAsset(token);
 }
 
 void AndroidGuestProcess::UnregisterAssetManager(memory::GuestAddress manager) {

@@ -372,6 +372,14 @@ JniPrimitiveArrayView JniPrimitiveArrayStore::View(JniObjectIdentity array) cons
     return *impl_->Require(array)->second.view;
 }
 
+std::shared_ptr<JavaPayloadHostBytes> JniPrimitiveArrayStore::BorrowHostByteArray(JniObjectIdentity array) const {
+    std::scoped_lock lock(impl_->mutex_);
+    const auto& entry = impl_->Require(array)->second;
+    if (entry.kind != JniPrimitiveKind::byte)
+        throw JniArrayError(JniArrayErrorReason::type_mismatch, "host byte borrow requires byte[]");
+    return impl_->provider.BorrowHostBytes(entry.payload);
+}
+
 JniArrayAllocationStatistics JniPrimitiveArrayStore::AllocationStatistics() const {
     std::scoped_lock lock(impl_->mutex_);
     return impl_->stats;

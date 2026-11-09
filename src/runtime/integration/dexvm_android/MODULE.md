@@ -234,19 +234,14 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   View→Drawable→Bitmap 强边，Button 默认非空背景、普通 View 可 null；setImageBitmap 每次新建
   BitmapDrawable（含 null），经 Context 虚派 getResources/setImageDrawable，临时保活、异常保持身份。
   alpha 按实例，空对象不绘制，替换/清空解绑 callback、仅有效 node 重绘。
-- openRawResource 两重载共享配置/引用选择，TypedValue 发布文件/ID/cookie/density，缺/非文件
-  NotFoundException。BitmapFactory Java 管资源流关闭/default density，native 同源解码 stream/array
-  为独立 BitmapPixels；支持 ARGB8888/bounds/inMutable/density scaling，其他选项/资源 NinePatch UOE。
-  预算先验、超限 OOME、普通失败 null，默认不可变、density/mutability 属于 owner。getXml 的 AXML
-  仅 getEventType/next/getName/getText/close，其他完整 XmlPullParser 方法 UnsatisfiedLinkError；文本 XML 用 KXml。
-- Bitmap.createScaledBitmap 支持像素中心 nearest/bilinear、预乘 alpha 插值、负尺寸镜像与 density；
-  同尺寸不可变输入复用，0 尺寸 IAE，过大 OOME，不宣称完整 Skia 像素等价。
-- Bitmap/getPixels/setPixels/Canvas.drawBitmap/GLUtils/JNI/UI 共用 BitmapPixels；首个 NDK lock
-  转移权威至 guest 格式，末次 unlock 回写/退役地址，API19 四格式/stride/预乘/低位量化同源。
-  getRowBytes 按 API19 四格式紧密行计算；getByteCount 为 Java int 行字节数×高度，
-  无复用/重配置时 getAllocationByteCount 等于内容大小。三项查询及 isRecycled 在 recycle 后仍可读；
-  未登记 receiver 失败，未知 config 记账 UOE。recycle 禁止新像素访问、旧锁存活至 unlock/退出；布局/呈现前投影不可变 UiBitmap，native 锁期间
-  读当前像素，不建第二份可变权威；无完整 Skia/颜色管理/未同步并发裸写。
+- openRawResource 复用同一资源配置及引用选择。ROM BitmapFactory 管理资源和流协议。
+  Skia CPU 解码处理采样、尺寸查询、密度缩放、原地复用及 PNG NinePatch 元数据。
+  输入字节、尺寸和像素预算在解码前检查。取消或普通解码错误返回 null，由 ROM 包装处理。
+  getXml 的 AXML 仅 getEventType/next/getName/getText/close，文本 XML 用 KXml。
+- ROM Bitmap 的 mBuffer 是计入 Java 堆的 byte[]。Skia 直接在借用的宿主跨度读写像素，
+  NDK lock 返回同一数组的 guest 地址。Java、Canvas 与 GLUtils 共用这一存储，UI 发布不可变快照。
+  RGBA 默认预乘。回收后已有 NDK 锁可正常归还，最后一次 unlock 推进像素版本。
+  不支持 WebP 编码和共享内存 Parcel blob。
 - StatFs 字段/构造/restat/getter 归 Java，Posix.statvfs 只查 VFS 沙盒配额卷，其他卷失败、无 host
   空间采样，见 [ADR-0122](../../../../docs/adr/runtime.md#adr-0122)。SQLite 固定真实引擎，只经 VFS
   访问主库/journal/临时文件；Java 拥有事务/连接池/Cursor，native 仅 ABI/token/错误码/受审配置。
@@ -434,7 +429,7 @@ SurfaceView(Context,null) 复用 View 初始化，null Context NPE、非空 Attr
 setZOrderOnTop 后调用覆盖前调用；compositor 即时消费，不承诺 WMS 重建/任意 GLES 多层。
 View.bringToFront 虚派 UiTree 父 ViewParent.bringChildToFront，合成 root 按 ViewRootImpl 空操作；
 ViewGroup.bringChildToFront 忽略非子节点/null，移至末尾后虚派 requestLayout/invalidate。
-setKeepScreenOn(false) 无需宿主动作；true 仅在宿主窗口报告已阻止显示休眠时成功，否则记账拒绝；Canvas/Bitmap 为非预乘 ARGB。Canvas 纯色填充在预乘空间按 API19 Skia 的18种 PorterDuff 模式计算，
+setKeepScreenOn(false) 无需宿主动作；true 仅在宿主窗口报告已阻止显示休眠时成功，否则记账拒绝；旧 Surface Canvas 缓冲使用逻辑 ARGB。Canvas 纯色填充在预乘空间按 API19 Skia 的18种 PorterDuff 模式计算，
 再回写非预乘像素；drawColor(int)、drawARGB、drawRGB 使用 SRC_OVER，null Mode 抛 NPE。
 纯色填充不受 clip 约束，clipRect/save/restore 尚未实现。lockCanvas 仅接受 active
 holder，backing/getWidth/Height/clip 与 dirty 扩展区使用 buffer 尺寸，完整重绘；post 通过有界
@@ -634,6 +629,13 @@ Context 服务派发与 dump-surface 共用 platform_tables.h：未知名称返�
 未提供的服务记账并抛 UOE。DisplayManager 只查询既有 managed Display；不提供
 外接/虚拟显示及监听。属性来源经显式 core 回调注入；有 ICU 导出时查询 guest，
 无导出时保留随附 manifest 元数据生成的默认值，不隐式加载或访问宿主 ICU。
+
+## 图形几何 native
+
+几何类与枚举执行 API19 ROM Java。矩阵、路径、区域及迭代器的对象操作绑定 Skia CPU，
+经分型 int 令牌寻址；ROM finalizer、owner sweep 和会话退出幂等退役。区域迭代保有独立快照。
+投影读取同一 native 矩阵的 identity 状态，继续使用现有不变换的 UI 几何。
+路径布尔运算沿 API19 的五种 Op 映射至 Skia PathOps，失败时保留目标路径。硬件 Canvas 查询返回不可用。
 
 ## JavaTraversal Paint 测量接缝
 

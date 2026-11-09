@@ -1,4 +1,3 @@
-#include "ogplay/runtime/integration/bitmap_pixels.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
@@ -32,8 +31,6 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/vfs/vfs.h"
-#include "ogplay/runtime/integration/bitmap_pixels.h"
-#include "ogplay/runtime/integration/host_image_decode.h"
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
@@ -188,19 +185,16 @@ TEST_CASE("DVM-86 Parcel Bundle and bounded services share session state") {
 TEST_CASE("DVM-86 value side tables sweep with their guest owners") {
     AndroidValueVm fixture;
     static_cast<void>(fixture.New("Landroid/util/SparseArray;"));
-    static_cast<void>(fixture.New("Landroid/graphics/Path;"));
     static_cast<void>(fixture.Static(
         "Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;"));
     const auto power = fixture.New("Landroid/os/PowerManager;");
     static_cast<void>(fixture.On(power, "newWakeLock",
         "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;",
         {VmValue::Int(1), VmValue::Ref(fixture.vm.NewStringUtf8("sweep"))}));
-    REQUIRE_FALSE(fixture.context->paths.empty());
     REQUIRE_FALSE(fixture.context->parcel_backings.empty());
     REQUIRE_FALSE(fixture.context->wake_locks.empty());
     const auto result = fixture.vm.CollectGarbage("dvm86-value-state");
     CHECK(result.freed_objects >= 4U);
-    CHECK(fixture.context->paths.empty());
     // Parcel.obtain() may retain the recycled owner in the API 19 Java pool;
     // its backing is released by recycle/nativeFreeBuffer and is safe to reuse.
     CHECK(fixture.context->parcel_backings.size() <= 1U);

@@ -1,5 +1,4 @@
 #include "ogplay/core/json.h"
-#include "ogplay/runtime/integration/bitmap_pixels.h"
 #include "runtime/boundary/core/boundary_symbols.h"
 #include "ogplay/runtime/dexvm/big_int_runtime.h"
 #include <set>

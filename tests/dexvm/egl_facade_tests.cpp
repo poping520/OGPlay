@@ -2,7 +2,7 @@
 #include <mutex>
 #include "../runtime/boundary/integration/android_boundary_fixture.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
-#include "ogplay/runtime/integration/bitmap_pixels.h"
+#include "ogplay/runtime/raster/bitmap.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
 
@@ -1142,12 +1142,13 @@ TEST_CASE("DVM-83 publishes the API 19 Java GLES link surface") {
     CHECK(vm.linker.Class(vm.linker.ResolveDescriptor("Landroid/opengl/GLES11;")).super ==
           vm.linker.ResolveDescriptor("Landroid/opengl/GLES10;"));
 
+    auto pixels = std::make_shared<std::array<std::byte, 4>>();
     const auto bitmap = vm.interpreter.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
     vm.context->bitmaps.emplace(
         bitmap.Value(),
-        DexVmAndroidContext::BitmapState{
-            1, 1, std::make_shared<ogplay::runtime::BitmapPixels>(1, 1, 5, std::vector<std::uint32_t>{0xff112233U}),
-            false});
+        DexVmAndroidContext::BitmapState{1, 1,
+                                         std::make_shared<ogplay::runtime::raster::Bitmap>(
+                                             1, 1, 5, true, true, *pixels, pixels, ogplay::memory::GuestAddress{})});
     CHECK(vm.CallStatic("Landroid/opengl/GLUtils;", "getInternalFormat", "(Landroid/graphics/Bitmap;)I",
                         {VmValue::Ref(bitmap)})
               .AsInt() == 0x1908);

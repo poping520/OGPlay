@@ -290,6 +290,8 @@ if(OGPLAY_ENABLE_ANGLE)
         INTERFACE_INCLUDE_DIRECTORIES "${_angle_include_dir}")
 endif()
 
+include("${CMAKE_CURRENT_LIST_DIR}/Skia.cmake")
+
 # ogplay_ffmpeg: trimmed FFmpeg merged into one shared library, built by the
 # separate OGPlay-ffmpeg repository and consumed only through its prebuilt
 # package (ADR-0136). AUTO builds without video decoding on platforms that

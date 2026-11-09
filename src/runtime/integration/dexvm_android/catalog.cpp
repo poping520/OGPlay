@@ -222,6 +222,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_text_TextPaint(context),
         Declare_android_text_TextWatcher(context),
         Declare_android_text_TextUtils(context),
+        Declare_android_text_format_Time(context),
         Declare_android_util_Log(context),
         Declare_android_util_EventLog(context),
         Declare_android_util_AttributeSet(context),
@@ -301,7 +302,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_javax_microedition_khronos_egl_EGLDisplay(context),
         Declare_javax_microedition_khronos_egl_EGLSurface(context),
         Declare_com_google_android_gles_jni_GLImpl(context),
-        Declare_android_app_Application(context),
     };
     {
         result.push_back(Declare_android_graphics_drawable_StateListDrawable(context));

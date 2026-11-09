@@ -22,7 +22,7 @@ const AndroidOfflineConnectivity& RequireOfflineConnectivity(
 
 // The SDK compile stubs hide these constructors/setters. The native fact
 // factory invokes the original BootDex methods; it does not reimplement them.
-dx::VmObjectRef NewOfflineWifiInfo(dx::IntrinsicContext& call) {
+dx::VmObjectRef NewOfflineWifiNetworkInfo(dx::IntrinsicContext& call) {
     auto& vm = call.vm;
     auto& linker = vm.Linker();
     const auto propagate = [&](const dx::VmCallOutcome& outcome) {
@@ -67,7 +67,7 @@ Decl Declare_android_net_ConnectivityManager(const Context& context) {
         const auto& facts = RequireOfflineConnectivity(call, context, true);
         if (call.arguments[0].AsInt() != 1 || !facts.wifi_type_supported)
             return dx::VmValue::Ref(dx::VmObjectRef{});
-        return dx::VmValue::Ref(NewOfflineWifiInfo(call));
+        return dx::VmValue::Ref(NewOfflineWifiNetworkInfo(call));
     }, dx::kAccPrivate | dx::kAccNative);
     return std::move(builder).Build();
 }
@@ -98,6 +98,33 @@ Decl Declare_android_net_wifi_WifiInfo(const Context& context) {
     const auto wu_mLinkSpeed = builder.BoundInstanceField("mLinkSpeed", "I", dx::kAccPrivate);
     const auto wu_mIpAddress = builder.BoundInstanceField("mIpAddress", "Ljava/net/InetAddress;", dx::kAccPrivate);
     const auto wu_mMeteredHint = builder.BoundInstanceField("mMeteredHint", "Z", dx::kAccPrivate);
+    builder.Constructor(
+        "()V",
+        [wu_mNetworkId, wu_mSupplicantState, wu_mRssi, wu_mLinkSpeed](dx::IntrinsicContext& c) {
+            const auto state = c.vm.Linker().ResolveDescriptor("Landroid/net/wifi/SupplicantState;");
+            const auto initialized = c.vm.EnsureClassInitialized(state);
+            if (initialized.exception.IsValid()) {
+                throw dx::VmJavaThrow{c.vm.Linker().Class(initialized.exception_class).descriptor,
+                                      initialized.exception_message, initialized.exception};
+            }
+            const auto field =
+                c.vm.Linker().FindFieldRecursive(state, "UNINITIALIZED", "Landroid/net/wifi/SupplicantState;");
+            const auto& storage = c.vm.Linker().Class(state).static_storage;
+            const dx::IntrinsicCall api(c);
+            api.SetRef(wu_mSupplicantState, dx::VmObjectRef{storage.at(c.vm.Linker().Field(*field).slot)});
+            api.SetInt(wu_mNetworkId, -1);
+            api.SetInt(wu_mRssi, -9999);
+            api.SetInt(wu_mLinkSpeed, -1);
+            return dx::VmValue::Void();
+        },
+        dx::kAccNone);
+    builder.VirtualMethod("getNetworkId", "()I", [wu_mNetworkId](dx::IntrinsicContext& c) {
+        return dx::VmValue::Int(dx::IntrinsicCall(c).GetInt(wu_mNetworkId));
+    });
+    builder.VirtualMethod("getSupplicantState", "()Landroid/net/wifi/SupplicantState;",
+                          [wu_mSupplicantState](dx::IntrinsicContext& c) {
+                              return dx::VmValue::Ref(dx::IntrinsicCall(c).GetRef(wu_mSupplicantState));
+                          });
     // AOSP 4.4 ROM line 96.
     builder.Constructor(
         "(Landroid/net/wifi/WifiInfo;)V",
@@ -213,11 +240,19 @@ Decl Declare_android_net_wifi_WifiManager(const Context& context) {
     builder.FinalMethod("setWifiEnabled", "(Z)Z", [](dx::IntrinsicContext&) {
         return dx::VmValue::Int(0);  // There is no radio to enable.
     });
-    builder.FinalMethod("getConnectionInfo", "()Landroid/net/wifi/WifiInfo;",
-        [context](dx::IntrinsicContext& call) {
-            static_cast<void>(RequireOfflineConnectivity(call, context, false));
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        });
+    builder.FinalMethod("getConnectionInfo", "()Landroid/net/wifi/WifiInfo;", [context](dx::IntrinsicContext& call) {
+        if (!context->granted_permissions.contains("android.permission.ACCESS_WIFI_STATE"))
+            throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "ACCESS_WIFI_STATE is required"};
+        static_cast<void>(RequireOfflineConnectivity(call, context, false));
+        auto& vm = call.vm;
+        const auto info = vm.NewIntrinsicInstance("Landroid/net/wifi/WifiInfo;");
+        const auto constructor = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(info), "<init>", "()V");
+        const auto result = vm.Call(*constructor, std::array{dx::VmValue::Ref(info)});
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        return dx::VmValue::Ref(info);
+    });
     return std::move(builder).Build();
 }
 

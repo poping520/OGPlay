@@ -1058,7 +1058,7 @@ TEST_CASE("DVM-241 offline connectivity distinguishes unsupported types and pres
         const auto wifi_root = f.vm.ProtectReferences(std::array{wifi});
         CHECK_FALSE(f.On(wifi, "isWifiEnabled", "()Z").AsInt());
         CHECK(f.On(wifi, "getWifiState", "()I").AsInt() == 1);
-        CHECK_FALSE(f.On(wifi, "getConnectionInfo", "()Landroid/net/wifi/WifiInfo;").ref.IsValid());
+        fail(f.OnOutcome(wifi, "getConnectionInfo", "()Landroid/net/wifi/WifiInfo;"), "Ljava/lang/SecurityException;");
         CHECK_THROWS_AS(static_cast<void>(f.vm.Network().Resolve("offline.test")), NetworkRuntimeError);
         f.context->offline_connectivity->wifi_type_supported = false;
         const auto unsupported = query(1);

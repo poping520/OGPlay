@@ -42,6 +42,38 @@ using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
+TEST_CASE("Offline WifiInfo requires ACCESS_WIFI_STATE and reports no connection") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto manager = f.New("Landroid/net/wifi/WifiManager;");
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+        constexpr auto signature = "()Landroid/net/wifi/WifiInfo;";
+        const auto denied = f.OnOutcome(manager, "getConnectionInfo", signature);
+        REQUIRE(denied.exception.IsValid());
+        CHECK(f.linker.Class(denied.exception_class).descriptor == "Ljava/lang/SecurityException;");
+
+        f.context->granted_permissions.insert("android.permission.ACCESS_WIFI_STATE");
+        const auto info = f.On(manager, "getConnectionInfo", signature).ref;
+        REQUIRE(info.IsValid());
+        const auto info_root = f.vm.ProtectReferences(std::array{info});
+        const auto copy = f.New("Landroid/net/wifi/WifiInfo;", "(Landroid/net/wifi/WifiInfo;)V", {VmValue::Ref(info)});
+        const auto copy_root = f.vm.ProtectReferences(std::array{copy});
+        CHECK(f.On(manager, "getConnectionInfo", signature).ref != info);
+        for (const auto value : {info, copy}) {
+            CHECK(f.On(value, "getNetworkId", "()I").AsInt() == -1);
+            CHECK_FALSE(f.On(value, "getMacAddress", "()Ljava/lang/String;").ref.IsValid());
+            const auto state = f.On(value, "getSupplicantState", "()Landroid/net/wifi/SupplicantState;").ref;
+            REQUIRE(state.IsValid());
+            CHECK(f.vm.StringUtf8(f.On(state, "name", "()Ljava/lang/String;").ref) == "UNINITIALIZED");
+        }
+
+        f.context->offline_connectivity.reset();
+        const auto missing = f.OnOutcome(manager, "getConnectionInfo", signature);
+        REQUIRE(missing.exception.IsValid());
+        CHECK(f.linker.Class(missing.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+    }
+}
+
 TEST_CASE("DVM-209 WifiLock Java state supports counted and uncounted ownership") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);
@@ -85,7 +117,6 @@ TEST_CASE("DVM-209 WifiLock Java state supports counted and uncounted ownership"
         CHECK_FALSE(f.On(uncounted, "isHeld", "()Z").AsInt());
         CHECK_FALSE(f.On(manager, "isWifiEnabled", "()Z").AsInt());
         CHECK(f.On(manager, "getWifiState", "()I").AsInt() == 1);
-        CHECK_FALSE(f.On(manager, "getConnectionInfo", "()Landroid/net/wifi/WifiInfo;").ref.IsValid());
     }
 }
 
@@ -221,7 +252,6 @@ TEST_CASE("DVM-209 MulticastLock Java state and finalization preserve API19 sema
         CHECK(f.context->wifi_lock_leases.empty());
         CHECK(f.vm.StringUtf8(f.On(abandoned, "toString", "()Ljava/lang/String;").ref).find("not refcounted") != std::string::npos);
         CHECK_FALSE(f.On(manager, "isWifiEnabled", "()Z").AsInt());
-        CHECK_FALSE(f.On(manager, "getConnectionInfo", "()Landroid/net/wifi/WifiInfo;").ref.IsValid());
     }
 }
 

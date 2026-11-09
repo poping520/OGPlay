@@ -1650,7 +1650,7 @@
           "signature": "createEditorIfNeeded()V",
           "flags": 2,
           "body_sha256": "0bcffc18550867627d2349e00aca8a38eddef4dc8192272e9d5e693bd00fb1fe",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "debug(I)V",
@@ -3567,7 +3567,7 @@
           "signature": "setOnEditorActionListener(Landroid/widget/TextView$OnEditorActionListener;)V",
           "flags": 1,
           "body_sha256": "88da29a088c81981d0cba484da0de005289e632ccd2344a4ad50e01e84cc76e9",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setPadding(IIII)V",
@@ -4275,7 +4275,7 @@
         {
           "signature": "mEditor:Landroid/widget/Editor;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {

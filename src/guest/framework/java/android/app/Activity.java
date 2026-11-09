@@ -45,6 +45,38 @@ public class Activity extends ContextThemeWrapper {
         startActivityForResult(intent, requestCode, null);
     }
 
+    public final native Application getApplication();
+
+    protected void onCreate(Bundle savedInstanceState) {
+        Application app = getApplication();
+        if (app != null) app.dispatchActivityCreated(this, savedInstanceState);
+    }
+
+    protected void onStart() {
+        Application app = getApplication();
+        if (app != null) app.dispatchActivityStarted(this);
+    }
+
+    protected void onResume() {
+        Application app = getApplication();
+        if (app != null) app.dispatchActivityResumed(this);
+    }
+
+    protected void onPause() {
+        Application app = getApplication();
+        if (app != null) app.dispatchActivityPaused(this);
+    }
+
+    protected void onStop() {
+        Application app = getApplication();
+        if (app != null) app.dispatchActivityStopped(this);
+    }
+
+    protected void onSaveInstanceState(Bundle outState) {
+        Application app = getApplication();
+        if (app != null) app.dispatchActivitySaveInstanceState(this, outState);
+    }
+
     public final void setResult(int resultCode) {
         synchronized (this) {
             mResultCode = resultCode;
@@ -143,6 +175,8 @@ public class Activity extends ContextThemeWrapper {
         if (dialogs != null) {
             for (int i = 0; i < dialogs.size(); i++) dialogs.valueAt(i).mDialog.dismiss();
         }
+        Application app = getApplication();
+        if (app != null) app.dispatchActivityDestroyed(this);
     }
 
     private native void nativeStartActivityForResult(Intent intent, int requestCode, Bundle options);

@@ -47,6 +47,19 @@ using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
+TEST_CASE("View edit mode defaults to false and preserves guest overrides") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal,
+                         OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+        const auto context = f.New("Landroid/app/Activity;");
+        const auto context_root = f.vm.ProtectReferences(std::array{context});
+        const auto base = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(context)});
+        CHECK(f.On(base, "isInEditMode", "()Z").AsInt() == 0);
+        const auto leaf = f.New("Ltest/BaselineLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(context)});
+        CHECK(f.On(leaf, "isInEditMode", "()Z").AsInt() == 1);
+    }
+}
+
 TEST_CASE("DVM-281 raw host allocation bypasses failure constructors and class initialization") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal,

@@ -515,3 +515,76 @@ TEST_CASE("Activity.isTaskRoot is true for the launcher and false after a handof
                                 "getRootSeen") == 0);
     static_cast<void>(fixture.app->Stop());
 }
+
+TEST_CASE("DVM-376 Application lifecycle callbacks follow the Activity super calls") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    using runtime::android_intrinsics::CallAndroidMethod;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.LauncherActivity", true, false, {}, {}, true, backend);
+        loader::AndroidManifestActivityComponent component;
+        component.name = "fixture.LauncherChildActivity";
+        f.context->activity_components.push_back(std::move(component));
+        f.app->StartApplication();
+        auto& vm = f.app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        const auto new_instance = [&](const char* descriptor) {
+            const auto object = vm.NewIntrinsicInstance(descriptor);
+            const auto root = vm.ProtectReferences(std::array{object});
+            const auto ctor = linker.FindDirectMethod(vm.Model().ObjectClass(object), "<init>", "()V");
+            REQUIRE(ctor);
+            const auto result = vm.Call(*ctor, std::array{VmValue::Ref(object)});
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return object;
+        };
+        const auto app = f.context->application;
+        const auto listener = new_instance("Lfixture/LifecycleObserver;");
+        const auto listener_root = vm.ProtectReferences(std::array{listener});
+        constexpr auto signature = "(Landroid/app/Application$ActivityLifecycleCallbacks;)V";
+        const auto trace = [&](VmObjectRef object) { return CallAndroidMethod(vm, object, "getTrace", "()I").AsInt(); };
+        static_cast<void>(
+            CallAndroidMethod(vm, app, "registerActivityLifecycleCallbacks", signature, {VmValue::Ref(listener)}));
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        CHECK(trace(listener) == 123);
+        static_cast<void>(
+            CallAndroidMethod(vm, app, "unregisterActivityLifecycleCallbacks", signature, {VmValue::Ref(listener)}));
+
+        const auto parent = f.context->activity;
+        const auto intent = new_instance("Landroid/content/Intent;");
+        const auto intent_root = vm.ProtectReferences(std::array{intent});
+        static_cast<void>(CallAndroidMethod(vm, intent, "setClassName",
+                                            "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+                                            {VmValue::Ref(vm.NewStringUtf8("fixture")),
+                                             VmValue::Ref(vm.NewStringUtf8("fixture.LauncherChildActivity"))}));
+        const auto observer = new_instance("Lfixture/LifecycleObserver;");
+        const auto observer_root = vm.ProtectReferences(std::array{observer});
+        static_cast<void>(
+            CallAndroidMethod(vm, app, "registerActivityLifecycleCallbacks", signature, {VmValue::Ref(observer)}));
+        static_cast<void>(
+            CallAndroidMethod(vm, parent, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)}));
+        static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+        const auto child = f.context->activity;
+        REQUIRE(child != parent);
+        const auto before_save = trace(observer);
+        // The parent pauses before child startup and stops after the window handoff.
+        CHECK(before_save == 51236);
+
+        const auto state = new_instance("Landroid/os/Bundle;");
+        const auto state_root = vm.ProtectReferences(std::array{state});
+        static_cast<void>(
+            CallAndroidMethod(vm, child, "onSaveInstanceState", "(Landroid/os/Bundle;)V", {VmValue::Ref(state)}));
+        CHECK(trace(observer) == before_save * 10 + 4);
+        const auto saved = linker.FindFieldRecursive(vm.Model().ObjectClass(observer), "saved", "Landroid/os/Bundle;");
+        REQUIRE(saved);
+        CHECK(vm.Model().InstanceSlots(observer)[linker.Field(*saved).slot].bits == state.Value());
+        const auto trace_field = linker.FindFieldRecursive(vm.Model().ObjectClass(observer), "trace", "I");
+        REQUIRE(trace_field);
+        vm.Model().InstanceSlots(observer)[linker.Field(*trace_field).slot] = {0, SlotTag::cat1};
+        static_cast<void>(CallAndroidMethod(vm, child, "finish", "()V"));
+        static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+        CHECK(f.context->activity == parent);
+        CHECK(trace(observer) == 56723);
+        CHECK(trace(listener) == 123);
+        static_cast<void>(f.app->Stop());
+    }
+}

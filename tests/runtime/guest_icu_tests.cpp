@@ -630,3 +630,137 @@ TEST_CASE("DVM-342 Locale executes ROM Java with injected device facts and ICU51
         static_cast<void>(f.app->Stop());
     }
 }
+
+TEST_CASE("DVM-376 Android Time uses fixed Clock and API19 guest date rules") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend);
+        IcuVm f(backend);
+        auto& vm = f.Vm();
+        constexpr auto owner = "Landroid/text/format/Time;";
+        constexpr auto text_signature = "Ljava/lang/String;";
+        constexpr std::int64_t now = 1704045845000LL;  // 2023-12-31 18:04:05Z
+        f.context->uptime_millis = now - 1400000000000LL;
+
+        const auto new_time = [&](const char* zone) {
+            return f.New(owner, "(Ljava/lang/String;)V", {VmValue::Ref(f.Text(zone))});
+        };
+        const auto time = new_time("GMT+8");
+        const auto root = vm.ProtectReferences(std::array{time});
+        const auto slot = [&](const char* name, const char* type = "I") {
+            const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(time), name, type);
+            REQUIRE_MESSAGE(field, name);
+            return vm.Linker().Field(*field).slot;
+        };
+        const auto get = [&](VmObjectRef object, const char* name, const char* type = "I") {
+            return vm.Model().InstanceSlots(object)[slot(name, type)].bits;
+        };
+        const auto format = [&](VmObjectRef object, const char* pattern) {
+            return f.String(
+                f.On(object, "format", "(Ljava/lang/String;)Ljava/lang/String;", {VmValue::Ref(f.Text(pattern))}));
+        };
+        const auto millis = [&](VmObjectRef object, bool ignore_dst = false) {
+            return f.On(object, "toMillis", "(Z)J", {VmValue::Int(ignore_dst)}).AsLong();
+        };
+        const auto set = [&](VmObjectRef object, std::int64_t value) {
+            f.On(object, "set", "(J)V", {VmValue::Long(value)});
+        };
+        const auto basic = [&](VmObjectRef object) {
+            return f.String(f.On(object, "format2445", "()Ljava/lang/String;"));
+        };
+        const auto rfc3339 = [&](VmObjectRef object, bool all_day = false) {
+            return f.String(f.On(object, "format3339", "(Z)Ljava/lang/String;", {VmValue::Int(all_day)}));
+        };
+        const auto expect_error = [&](const VmCallOutcome& outcome, std::string_view type) {
+            REQUIRE_MESSAGE(outcome.exception.IsValid(), type);
+            CHECK(vm.Linker().Class(outcome.exception_class).descriptor == type);
+        };
+
+        f.On(time, "setToNow", "()V");
+        CHECK(get(time, "year") == 2024);
+        CHECK(get(time, "month") == 0);
+        CHECK(get(time, "monthDay") == 1);
+        CHECK(get(time, "weekDay") == 1);
+        CHECK(get(time, "yearDay") == 0);
+        CHECK(get(time, "gmtoff", "J") == 28800);
+        CHECK(millis(time) == now);
+        CHECK(basic(time) == "20240101T020405");
+        CHECK(rfc3339(time) == "2024-01-01T02:04:05.000+08:00");
+        CHECK(format(time, "%A %a %B %b %-B %j %u %G-%V %z %%") ==
+              "Monday Mon January Jan January 001 1 2024-01 +0800 %");
+        CHECK(format(time, "%c|%x|%X") == "Jan 1, 2024, 2:04:05 AM|January 1, 2024|2:04:05 AM");
+        CHECK(f.String(f.On(time, "toString", "()Ljava/lang/String;")) ==
+              "20240101T020405GMT+8(1,0,28800,0,1704045845)");
+        expect_error(f.Invoke(time, "format", "(Ljava/lang/String;)Ljava/lang/String;", {VmValue::Ref(f.Text("%Q"))}),
+                     "Ljava/lang/UnsupportedOperationException;");
+
+        vm.Model().InstanceSlots(time)[slot("minute")] = {64, SlotTag::cat1};
+        CHECK(millis(time, true) == now + 3600000);
+        CHECK(get(time, "minute") == 64);
+        CHECK(f.On(time, "normalize", "(Z)J", {VmValue::Int(1)}).AsLong() == now + 3600000);
+        CHECK(get(time, "minute") == 4);
+        CHECK(get(time, "hour") == 3);
+        set(time, now + 999);
+        CHECK(millis(time) == now);
+        f.On(time, "switchTimezone", "(Ljava/lang/String;)V", {VmValue::Ref(f.Text("UTC"))});
+        CHECK(basic(time) == "20231231T180405Z");
+        CHECK(rfc3339(time) == "2023-12-31T18:04:05.000Z");
+        CHECK(millis(time) == now);
+
+        const auto east = new_time("America/New_York");
+        const auto east_root = vm.ProtectReferences(std::array{east});
+        set(east, 1710053999000LL);
+        CHECK(basic(east) == "20240310T015959");
+        CHECK(get(east, "isDst") == 0);
+        CHECK(format(east, "%Z %z") == "EST -0500");
+        CHECK(millis(east) == 1710053999000LL);
+        set(east, 1710054000000LL);
+        CHECK(basic(east) == "20240310T030000");
+        CHECK(get(east, "isDst") == 1);
+        CHECK(format(east, "%Z %z") == "EDT -0400");
+        CHECK(millis(east) == 1710054000000LL);
+        CHECK(rfc3339(east) == "2024-03-10T03:00:00.000-04:00");
+        for (auto value : {1730611800000LL, 1730615400000LL}) {
+            set(east, value);
+            CHECK(basic(east) == "20241103T013000");
+            CHECK(millis(east) == value);
+        }
+        f.On(east, "set", "(IIIIII)V",
+             {VmValue::Int(0), VmValue::Int(30), VmValue::Int(2), VmValue::Int(10), VmValue::Int(2),
+              VmValue::Int(2024)});
+        CHECK(millis(east, true) == -1);
+
+        const auto zone = f.Static("Ljava/util/TimeZone;", "getTimeZone", "(Ljava/lang/String;)Ljava/util/TimeZone;",
+                                   {VmValue::Ref(f.Text("America/New_York"))});
+        f.Static("Ljava/util/TimeZone;", "setDefault", "(Ljava/util/TimeZone;)V", {zone});
+        const auto default_time = f.New(owner, "()V");
+        const auto default_root = vm.ProtectReferences(std::array{default_time});
+        CHECK(vm.StringUtf8(VmObjectRef(get(default_time, "timezone", text_signature))) == "America/New_York");
+        f.On(default_time, "setToNow", "()V");
+        CHECK(basic(default_time) == "20231231T130405");
+        CHECK(f.Static(owner, "compare", "(Landroid/text/format/Time;Landroid/text/format/Time;)I",
+                       {VmValue::Ref(time), VmValue::Ref(default_time)})
+                  .AsInt() == 0);
+
+        const auto parse = [&](const char* name, const char* value) {
+            return f.On(time, name, "(Ljava/lang/String;)Z", {VmValue::Ref(f.Text(value))}).AsInt();
+        };
+        CHECK(parse("parse3339", "2024-01-01T02:30:00.999+02:00") == 1);
+        CHECK(basic(time) == "20240101T003000Z");
+        CHECK(millis(time) == 1704069000000LL);
+        CHECK(get(time, "isDst") == UINT32_MAX);
+        CHECK(get(time, "gmtoff", "J") == 0);
+        CHECK(parse("parse3339", "2024-01-02T04:05:06.000Z") == 1);
+        CHECK(rfc3339(time) == "2024-01-02T04:05:06.000Z");
+        CHECK(parse("parse3339", "2024-02-29") == 0);
+        CHECK(get(time, "allDay", "Z") == 1);
+        CHECK(basic(time) == "20240229");
+        CHECK(rfc3339(time, true) == "2024-02-29");
+        CHECK(parse("parse", "20240229T120000Z") == 1);
+        CHECK(basic(time) == "20240229T120000Z");
+        expect_error(f.Invoke(time, "parse3339", "(Ljava/lang/String;)Z", {VmValue::Ref(f.Text("bad"))}),
+                     "Landroid/util/TimeFormatException;");
+        CHECK(parse("parse", "20240229") == 0);
+        vm.Model().InstanceSlots(time)[slot("hour")] = {1, SlotTag::cat1};
+        expect_error(f.Invoke(time, "normalize", "(Z)J", {VmValue::Int(0)}), "Ljava/lang/IllegalArgumentException;");
+    }
+}

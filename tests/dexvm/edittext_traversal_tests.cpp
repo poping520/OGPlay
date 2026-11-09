@@ -212,6 +212,35 @@ VmCallOutcome Construct(ContainerVm& f, VmObjectRef owner, const char* sig = "(L
 }
 }  // namespace
 
+TEST_CASE("TextView stores and clears the editor action listener in ROM fields") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto activity = Owner(f);
+        const auto activity_root = f.vm.ProtectReferences(std::array{activity});
+        const auto edit = f.New("Landroid/widget/EditText;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
+        const auto edit_root = f.vm.ProtectReferences(std::array{edit});
+        const auto listener = f.New("Ltest/EditorActionListener;");
+        constexpr auto setter = "(Landroid/widget/TextView$OnEditorActionListener;)V";
+        const auto read = [&](VmObjectRef owner, const char* name, const char* descriptor) {
+            const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(owner), name, descriptor);
+            REQUIRE(field.has_value());
+            return VmObjectRef{f.model.InstanceSlots(owner)[f.linker.Field(*field).slot].bits};
+        };
+
+        f.On(edit, "setOnEditorActionListener", setter, {VmValue::Ref(listener)});
+        const auto editor = read(edit, "mEditor", "Landroid/widget/Editor;");
+        REQUIRE(editor.IsValid());
+        const auto input = read(editor, "mInputContentType", "Landroid/widget/Editor$InputContentType;");
+        REQUIRE(input.IsValid());
+        constexpr auto listener_type = "Landroid/widget/TextView$OnEditorActionListener;";
+        CHECK(read(input, "onEditorActionListener", listener_type) == listener);
+        CHECK(f.vm.MarkReachable().IsMarked(listener));
+        f.On(edit, "setOnEditorActionListener", setter, {VmValue::Ref(VmObjectRef{})});
+        CHECK_FALSE(read(input, "onEditorActionListener", listener_type).IsValid());
+        CHECK_FALSE(f.vm.MarkReachable().IsMarked(listener));
+    }
+}
+
 TEST_CASE("DVM-298 EditText ROM shape style defaults and bounded editable on both backends") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);

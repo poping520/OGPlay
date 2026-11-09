@@ -127,6 +127,7 @@
     "isImportantForAccessibility()Z",
     "isLaidOut()Z",
     "isLayoutDirectionInherited()Z",
+    "isInEditMode()Z",
     "isLayoutDirectionResolved()Z",
     "isLayoutRequested()Z",
     "isLayoutRtl()Z",

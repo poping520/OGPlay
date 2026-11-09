@@ -231,15 +231,6 @@ Decl Declare_android_app_backup_BackupManager(const Context&) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_app_Application(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Application;", "Landroid/content/ContextWrapper;",
-                                                    {"Landroid/content/ComponentCallbacks2;"});
-    builder.Constructor("()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.VirtualMethod("onCreate", "()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    return std::move(builder).Build();
-}
-
 Decl Declare_android_app_Activity(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Activity;", "Landroid/view/ContextThemeWrapper;");
     const auto component = builder.BoundInstanceField("mComponent", "Landroid/content/ComponentName;", dx::kAccPrivate);
@@ -274,13 +265,7 @@ Decl Declare_android_app_Activity(const Context& context) {
         "isChild", "()Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); }, dx::kAccPublic | dx::kAccFinal);
     const auto lifecycle_noop = dx::IntrinsicHandler([](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     builder.VirtualMethod("onLowMemory", "()V", lifecycle_noop);
-    builder.VirtualMethod("onSaveInstanceState", "(Landroid/os/Bundle;)V", lifecycle_noop, dx::kAccProtected);
-    builder.VirtualMethod("onCreate", "(Landroid/os/Bundle;)V", lifecycle_noop, dx::kAccProtected);
-    builder.VirtualMethod("onStart", "()V", lifecycle_noop, dx::kAccProtected);
     builder.VirtualMethod("onRestart", "()V", lifecycle_noop, dx::kAccProtected);
-    builder.VirtualMethod("onResume", "()V", lifecycle_noop, dx::kAccProtected);
-    builder.VirtualMethod("onPause", "()V", lifecycle_noop, dx::kAccProtected);
-    builder.VirtualMethod("onStop", "()V", lifecycle_noop, dx::kAccProtected);
     builder.VirtualMethod("onWindowFocusChanged", "(Z)V", lifecycle_noop);
     builder.VirtualMethod("hasWindowFocus", "()Z", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(context->window_has_focus.load() &&
@@ -309,8 +294,10 @@ Decl Declare_android_app_Activity(const Context& context) {
         }
         return dx::VmValue::Ref(value);
     });
-    builder.FinalMethod("getApplication", "()Landroid/app/Application;",
-                        [context](dx::IntrinsicContext&) { return dx::VmValue::Ref(context->application); });
+    builder.FinalMethod(
+        "getApplication", "()Landroid/app/Application;",
+        [context](dx::IntrinsicContext&) { return dx::VmValue::Ref(context->application); },
+        dx::kAccPublic | dx::kAccNative);
     builder.FinalMethod("requestWindowFeature", "(I)Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });
     builder.VirtualMethod("onContentChanged", "()V", lifecycle_noop);
     const auto content_delegate = [](const char* name, const char* signature) {

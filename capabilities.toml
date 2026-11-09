@@ -1461,7 +1461,7 @@ note = "DVM-52/76/131：在 VmExecutionLock 安全点给出全部 execution cont
 [dexvm.threads]
 status = "complete"
 test = "tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp"
-note = "guest/host 线程及 execution context 1:1，子线程独立 A32 CPU/栈、TLS/JNI attach。Thread 含 loader、handler、group/State、park/interrupt；ThreadGroup 按 parent/default/stderr 分派，APK 无 handler 工作线程保持致命出口。VM 单写锁串行、FIFO 准入、1024 tick 轮转；root/worker sleep/join/park 按停摆真实流速补时。 DVM-353：停摆补时受注入真实流逝时间节流（ADR-0171）。"
+note = "guest/host 线程及 execution context 1:1，子线程独立 A32 CPU/栈、TLS/JNI attach。Thread 含 loader、handler、group/State、park/interrupt；ThreadGroup 支持父子组构造、存活枚举和子树中断，按 parent/default/stderr 分派，APK 无 handler 工作线程保持致命出口。VM 单写锁串行、FIFO 准入、1024 tick 轮转；root/worker sleep/join/park 停摆时按注入真实流逝时间补时（DVM-353、ADR-0171）。"
 
 [dexvm.monitors]
 status = "complete"
@@ -1720,8 +1720,8 @@ note = "DVM-152/153/164/173：URI、InetAddress、URLConnection/HttpURLConnectio
 
 [dexvm.connectivity_offline]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-241; tests/dexvm/android_value_tests.cpp#DVM-98; tests/dexvm/android_wifi_locks_tests.cpp#DVM-209; tests/runtime/jni_android_platform_tests.cpp#DVM-241; tests/dexvm/network_sqlite_tests.cpp#DVM-343"
-note = "DVM-241/343：原版 NetworkInfo 与有界 ConnectivityManager；断开逻辑 WiFi/活动网络 null。相同离线拓扑派生 lo，只读 sysfs/proc 与三项 IPv4 ioctl 同表，ROM NetworkInterface 枚举回环；Posix 仅接口查询描述符，close 幂等。本地查询不受 transport policy 限制。连接状态需 ACCESS_NETWORK_STATE；缺事实/context 在线策略记账 UOE。不探测宿主网络，不提供通用 socket、netlink 或无线控制。"
+test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-241; tests/dexvm/android_value_tests.cpp#DVM-98; tests/dexvm/android_wifi_locks_tests.cpp#Offline WifiInfo; tests/runtime/jni_android_platform_tests.cpp#DVM-241; tests/dexvm/network_sqlite_tests.cpp#DVM-343"
+note = "DVM-241/343：原版 NetworkInfo 与有界 ConnectivityManager，断开逻辑 WiFi、活动网络 null，查询需 ACCESS_NETWORK_STATE。WifiManager.getConnectionInfo 需 ACCESS_WIFI_STATE，离线返回 WifiInfo（networkId=-1、UNINITIALIZED、MAC=null）。拓扑派生 lo、只读 sysfs/proc、IPv4 ioctl 与 ROM NetworkInterface。缺事实/在线策略记账 UOE；无宿主探测、通用 socket、netlink 或无线控制。"
 
 [dexvm.apache_http_bootdex]
 status = "partial"
@@ -2055,8 +2055,8 @@ note = "DVM-211：alarm 单例与 API19 cancel(null/无匹配/匹配令牌)；�
 
 [runtime.guest_timezone_data]
 status = "partial"
-test = "tools.android_payload_current; tests/runtime/guest_native_values_tests.cpp#DVM-219 pinned tzdata; tests/runtime/api19_guest_process_tests.cpp"
-note = "DVM-219：API19 Bionic tzdata 2014a 原版归档经来源/哈希/TZif 校验进入 payload，在 native 初始化前以只读 /system/usr/share/zoneinfo/tzdata 发布；初始 TZ=UTC，guest 可经 setenv/tzset 修改本进程时区；不读宿主 TZ。Java ZoneInfoDB/完整 TimeZone、全部地区 DST 与 2038 边界未验收。"
+test = "tools.android_payload_current; tests/runtime/guest_native_values_tests.cpp#DVM-219 pinned tzdata; tests/runtime/api19_guest_process_tests.cpp; tests/runtime/guest_icu_tests.cpp#DVM-376"
+note = "DVM-219：API19 Bionic tzdata 2014a 原版归档经来源/哈希/TZif 校验进入 payload，在 native 初始化前以只读 /system/usr/share/zoneinfo/tzdata 发布；初始 TZ=UTC，guest 可经 setenv/tzset 修改本进程时区；不读宿主 TZ。DVM-376 让 Java TimeZone/ZoneInfo 从同一归档查询地区时区；完整时区枚举、外部更新、全部地区历史转换与 2038 边界未验收。"
 
 [dexvm.sensor_absent_facade]
 status = "partial"
@@ -2112,6 +2112,16 @@ note = "DVM-239/ADR-0118：原版 Debug.MemoryInfo；getMemoryInfo 校验后提�
 status = "partial"
 test = "tests/dexvm/android_context_services_tests.cpp#DVM228"
 note = "ActivityManager.getRunningAppProcesses 每次返回仅本进程的新列表和值对象，身份来自会话事实，importance 按 Activity 栈推导；仅本进程、不枚举宿主。不实现 AMS/Binder、其他进程查询或任务管理。"
+
+[dexvm.android_time]
+status = "partial"
+test = "tools/bootdex/compose_bootdex.py check; tests/runtime/guest_icu_tests.cpp#DVM-376"
+note = "DVM-376：API19 原版字段及 Java 方法；guest Calendar/ZoneInfo 与统一 Clock 支持字段归一化、DST、RFC 2445/3339 及 API19 strftime。日期格式模板使用默认系统资源，本地化文本/数字走 guest ICU。未知转换符抛 UOE；限 API19 32 位 epoch 秒。"
+
+[dexvm.application_lifecycle_callbacks]
+status = "partial"
+test = "tests/runtime/activity_task_stack_tests.cpp#DVM-376"
+note = "DVM-376：原版 Application 回调注册、注销与快照派发，Activity 的 base onCreate/start/resume/pause/stop/save/destroy 转发。支持已附着的单进程 Activity；会话没有系统状态保存/恢复调度，进程关闭不合成 destroy。"
 
 [dexvm.activity_result]
 status = "partial"
@@ -2176,7 +2186,7 @@ note = "DVM-293/362/366/367：实例 Paint flags（0x507）、1..128px 字号、
 [dexvm.text_constructor]
 status = "partial"
 test = "tests/dexvm/edittext_traversal_tests.cpp#DVM-327; tests/dexvm/edittext_traversal_tests.cpp#DVM-326; tests/dexvm/theme_resources_tests.cpp#DVM-294; tests/dexvm/textview_traversal_tests.cpp; tests/dexvm/button_traversal_tests.cpp; tests/dexvm/edittext_traversal_tests.cpp"
-note = "DVM-368：TextView 真实主题构造、plain 文本叶测量与冻结 line-plan；像素最小宽高归 Java，构造/ROM setter/getter 与 MeasureSpec 受检。隐藏祖先不准备绘制内容。稳定 TextPaint、hint、状态色、singleLine/密码、InputFilter、MARQUEE 解析及非编辑触摸已支持。Button/EditText 复用同一机制；无完整 Editor/IME/Layout、最小 ems/非零行数、最大尺寸、键盘、Spanned、RTL/shaping。"
+note = "DVM-368：TextView 真实主题构造、plain 文本叶测量与冻结 line-plan；像素最小宽高归 Java，构造/ROM setter/getter 与 MeasureSpec 受检。隐藏祖先不准备绘制。支持 TextPaint、hint、状态色、singleLine/密码、InputFilter、MARQUEE 解析及非编辑触摸。Button/EditText 复用；editor action listener 由 ROM Editor 保存，无动作派发及完整 Editor/IME/Layout、最小 ems/非零行数、最大尺寸、键盘、Spanned、RTL/shaping。"
 
 [dexvm.image_leaf]
 status = "partial"

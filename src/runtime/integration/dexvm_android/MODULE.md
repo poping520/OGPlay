@@ -28,6 +28,8 @@ content/os/view/graphics/gl/media/database/device family TU 同址。`shared.*` 
 IntentFilter 的 actions、categories、MIME、scheme、authority 和 Parcelable 协议归原版 BootDex；
 Context 不持过滤器内容副本。宿主仅登记 receiver 身份，方法/签名中的类型引用使用同一 Java 类。
 CountDownTimer 的状态和 tick/finish 算法归 BootDex，通过既有 Handler/Looper 与统一 Clock 调度，无宿主倒计时侧表。
+Time 的 native 入口仅转发到 guest Calendar/TimeZone 实现；format 转发原版 LocaleData 和
+系统资源字段，当前时间取既有 System.currentTimeMillis。
 
 ## Context、组件与进程
 
@@ -50,6 +52,8 @@ Context→ContextWrapper→Application/Service/ContextThemeWrapper→Activity �
 Application/base Context/ClassLoader/descriptor 身份稳定，wrapper 虚派委托 base；getClassLoader
 返回关联应用 facade，不取 receiver defining loader/Thread context loader。Activity 仅顶层，isChild=false。
 Window/attributes/decor 按实例持有，decor 焦点由 owner 判定；Intent/结果字段及默认回调归 Java。
+Application 生命周期监听注册和快照派发归原版 BootDex。Activity 的 base 回调从
+getApplication 取得本进程对象并派发，时机遵循 guest 的 super 调用。
 
 启动/结束经 private native 提交 FIFO 命令，Intent 用原复制构造器。同包显式启动受检；隐式仅
 匹配 sealed APK 中 action/category、无 data/type、含 DEFAULT 的唯一 enabled Activity。
@@ -122,7 +126,7 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
 | Notification | base Context 缓存 manager（独立无 Application 时用当前 Context）；字段/构造/from/重载归 Java。仅当前包取消已知空集合，不建表/保活通知/改 PendingIntent；未知不视为空，新增发布须更新 backing。发布及跨包 factory/取消/发布拒绝记账；值构造/extras 支持，模板/Parcel 分别 UOE、不改对象/contentView，null Context NPE；Parcelable 标记无传输，无系统展示/声振/点击/外部生产者/持久库存 |
 | NFC | 正常构造/缓存原 NfcManager，构造器捕获 native 工厂 UOE 后保存 null，查询/参数错误沿 API19、无 NFC feature；越界记账失败，无监听/通信 |
 | PendingIntent/AlarmManager | 当前 APK service/broadcast 令牌，创建不解析/启动目标；原 Intent 复制/filterEquals/replaceExtras 快照，extras 不参与身份，种类/包/requestCode/ONE_SHOT/fill-in flags 参与，NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT 控制查找，CANCEL_CURRENT\|NO_CREATE 返回旧已取消令牌。仅普通 Intent/BootDex Uri；selector/content MIME provider/未知 flags/Parcel/克隆失败。VM 锁串行 registry、非永久根，live wrapper trace Intent、GC 删除记录、包装同对象；闹钟条目为 session roots。alarm 单例，cancel(null/无匹配) 正常，移除闹钟不取消令牌；令牌 cancel 后不匹配。退出停止创建/清理；注册/调度/send/started service UOE |
-| Connectivity/Wifi | core policy/transport 默认离线，仅注入事实，无 host 网络/DNS/代理/证书探测。默认断开的逻辑 WiFi，可声明类型缺席；独立原版 NetworkInfo=DISCONNECTED/不可用、活动网络 null/Wifi 禁用。查询需 ACCESS_NETWORK_STATE，缺事实/online policy UOE，不支持类型按 API19 null；值/枚举/Parcel/范围算法归 Java，native 校验并调用原构造/setter；无在线 provider/事件/无线控制；同一离线拓扑派生只读 lo 内核视图与本地地址 ioctl，不受 transport IO 授权限制 |
+| Connectivity/Wifi | core policy/transport 默认离线，仅注入事实，无 host 网络/DNS/代理/证书探测。默认断开的逻辑 WiFi，可声明类型缺席；独立原版 NetworkInfo=DISCONNECTED/不可用、活动网络 null/Wifi 禁用。NetworkInfo 查询需 ACCESS_NETWORK_STATE，缺事实/online policy UOE，不支持类型按 API19 null；NetworkInfo 值/枚举/Parcel/范围算法归 Java，native 校验并调用原构造/setter。getConnectionInfo 需 ACCESS_WIFI_STATE，离线返回独立 WifiInfo（networkId=-1、UNINITIALIZED、MAC=null）；无在线 provider/事件/无线控制；同一离线拓扑派生只读 lo 内核视图与本地地址 ioctl，不受 transport IO 授权限制 |
 | WifiLock/MulticastLock | Java 客户端/native 租约；校验 WAKE_LOCK、mode 1/2/3 或 CHANGE_WIFI_MULTICAST_STATE（获取/释放均受检），每 manager 合计≤50，owner/GC/退出释放；不改变连接/网卡/组播，无 WorkSource/无线服务（ADR-0092/0093） |
 | Sensor/Telephony/Location/Keyguard | Sensor 算法/缓存/Legacy 位掩码/监听映射归 Java，Context 执行原 LocalSensorManager 构造；native 读取与 NDK 共用的注入设备目录（当前仅空目录）、注册 false、无登记注销，Legacy 旋转为 managed viewport ROTATION_0，无 WMS/C++ 副本/伪回调。电话按 API 允许缺席，getSubscriberId 公开可覆盖、无订阅 null，Java/JNI 同源；listen(null) 沿 API19 捕获 NPE 返回。location 仅值/listener/facade，无 provider/历史，更新注册/移除失败。Keyguard 不缓存对象，三查询读进程 provider，未注入为桌面无锁屏；无 Sensor/SystemUI/WMS 事件源不伪造回调 |
 
@@ -656,9 +660,9 @@ TextView/ImageView 未实现的展示类 XML 属性与无返回值 setter 经 `R
 View adapter 状态另存独立 singleLine 位，并保活 Drawable 身份及其不可变 backing，随 View trace/sweep。
 mHorizontallyScrolling 由 Java 字段唯一拥有，getter 执行 ROM；setter 值变化才清测量缓存并请求布局/失效。
 setSingleLine 同时设置该字段；测量和光栅计划都传独立 no_wrap，只有 singleLine 转换换行为空格。
-不实现滚动偏移或 marquee。不写 mText/mLayout/mEditor。
+不实现滚动偏移或 marquee。测量 adapter 不写 mText/mLayout/mEditor。
 mHint/mFilters 归 Java，getter 及资源 hint setter 执行 ROM；setText 按序真实虚派 InputFilter，null filters 抛 IAE。
-输入类型归有界 adapter（无 Editor），经 setSingleLine 同步行策略，密码变体显示 U+2022；
+输入类型归有界 adapter，经 setSingleLine 同步行策略，密码变体显示 U+2022；
 空正文时测量及光栅计划选择 hint 与当前 hint 色。无 KeyListener、IME 选项或数字/邮箱键盘。
 ROM 状态色的 TextView 消费：mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor 保存
 真实 Java 值；getTextColors 保持列表身份，hint/link/highlight getter 执行 ROM。
@@ -729,15 +733,16 @@ JavaTraversal 配对保留 EditText 完整 ROM 形状；三个薄构造及默认
 EDITABLE 强制与 covariant bridge 执行 ROM。editTextStyle 与 defStyleAttr 真解析，默认
 系统皮肤仅封存 edit_text selector/ninepatch 可参与状态与 padding/叶测量，其他皮肤失败；
 应用可显式覆盖。复用同一 TextView 文本与冻结测量服务，皮肤绘制请求仍失败。
-TextView.onTouchEvent 受审 overlay：Java mEditor/mMovement 恒为 null、mText 非 Spannable，非编辑 TextView
-原样返回 View.onTouchEvent；EditText 或带 movement 的 TextView 触摸（光标、链接、IME）记账并明确失败。
+TextView.setOnEditorActionListener 执行原版方法，监听器保存在 Java Editor.InputContentType。
+有界文本输入不产生 editor action。TextView.onTouchEvent 的受审 overlay 将非编辑 TextView
+交给 View.onTouchEvent；EditText 或带 movement 的 TextView 触摸（光标、链接、IME）记账并明确失败。
 宿主 UiNode 唯一拥有可变文本；View adapter 仅保存有界 selection 与 Editable/movement 身份，
-不写 ROM mText/mEditor/mLayout，不伪造 Editor/InputConnection。Editable 复用既有的
+不写 ROM mText/mEditor/mLayout。Editable 复用既有的
 length/toString/clear/replace 服务；其身份从 View 强边保活，反向保活 View，循环随 GC 回收。
 编辑使用已有 ApplyTextEdit；提交接缝提交 selection、失效测量缓存并调用 Java requestLayout/
 invalidate，先全部 before、提交、全部 on、全部 after，after 可重入。
 边界为与 TextView/Paint 共用的 ui::kMaxFixedTextUnits（65536）UTF-16单位、已支持固定字体字符、普通字符串与下标 selection；EditText 不另设默认长度，长度语义只来自 InputFilter；完整 Spannable、
-IME/composition、Editor、布局对象、修改键移动/删除及未支持字形请求均记账失败。
+IME/composition、Editor 编辑动作、布局对象、修改键移动/删除及未支持字形请求均记账失败。
 输入按同一 Java findFocus/父链定位 EditText，消费选区替换、左右移动、删除与文本键；
 不使用 focused_edit_text 或 UiTree 焦点作owner。失败校验不改 selection；提交后回调
 异常保留已发生的 guest 动作，下一成功 owner tick 才发布新 text/line-plan/geometry epoch。

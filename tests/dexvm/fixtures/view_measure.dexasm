@@ -219,6 +219,12 @@
     return v0
 .end method
 
+.method public isInEditMode()Z
+.registers 2
+    const/4 v0, 1
+    return v0
+.end method
+
 .class public Ltest/InflatedLeaf;
 .super Landroid/view/View;
 .method public constructor <init>(Landroid/content/Context;Landroid/util/AttributeSet;)V
@@ -401,6 +407,22 @@
 .method public calls()I
 .registers 2
     iget v0, v1, Ltest/ImageMeasureSuper;->counter:I
+    return v0
+.end method
+
+.class public Ltest/EditorActionListener;
+.super Ljava/lang/Object;
+.implements Landroid/widget/TextView$OnEditorActionListener;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public onEditorAction(Landroid/widget/TextView;ILandroid/view/KeyEvent;)Z
+.registers 5
+    const/4 v0, 1
     return v0
 .end method
 

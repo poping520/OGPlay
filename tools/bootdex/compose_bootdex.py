@@ -11,6 +11,7 @@ import copy
 import io
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 import zipfile
@@ -23,7 +24,9 @@ import policy_rom
 
 # Extend bounded clients here: the JNI payload generator remains hash-pinned.
 builder.FRAMEWORK_JAVA_NAMES = tuple(sorted((*builder.FRAMEWORK_JAVA_NAMES,
-    'android/content/ContentResolver.java')))
+    'android/content/ContentResolver.java',
+    'android/text/format/TimeNative.java',
+    'libcore/util/GuestZoneInfo.java')))
 
 
 _original_compile_guest_java = builder.compile_guest_java
@@ -50,12 +53,49 @@ def compile_guest_java(work):
 """, encoding='utf-8')
     sources = tuple(manager_compile if source == manager_source else source
                     for source in builder.guest_java_sources())
+    hidden_sources = {
+        'android/app/Application.java': """package android.app;
+import android.os.Bundle;
+public class Application extends android.content.ContextWrapper {
+    public Application() { super(null); }
+    void dispatchActivityCreated(Activity activity, Bundle state) {}
+    void dispatchActivityStarted(Activity activity) {}
+    void dispatchActivityResumed(Activity activity) {}
+    void dispatchActivityPaused(Activity activity) {}
+    void dispatchActivityStopped(Activity activity) {}
+    void dispatchActivitySaveInstanceState(Activity activity, Bundle state) {}
+    void dispatchActivityDestroyed(Activity activity) {}
+}""",
+        'libcore/io/BufferIterator.java': """package libcore.io;
+public abstract class BufferIterator {
+    public abstract void seek(int offset);
+    public abstract void skip(int count);
+    public abstract void readByteArray(byte[] dst, int offset, int count);
+    public abstract byte readByte();
+    public abstract int readInt();
+    public abstract void readIntArray(int[] dst, int offset, int count);
+    public abstract short readShort();
+}""",
+        'libcore/util/ZoneInfo.java': """package libcore.util;
+public abstract class ZoneInfo extends java.util.TimeZone {
+    public static java.util.TimeZone makeTimeZone(String id, libcore.io.BufferIterator it) {
+        throw new AssertionError();
+    }
+}""",
+    }
+    for name, source in hidden_sources.items():
+        path = work / 'composition-compile-only' / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding='utf-8')
+        sources += (path,)
     original_run = builder.run
 
     def run(command):
         result = original_run(command)
         if command[0] == str(builder.JAVAC):
             (work / 'guest-java-classes/android/app/ActivityManager$RunningAppProcessInfo.class').unlink()
+            for name in hidden_sources:
+                (work / 'guest-java-classes' / Path(name).with_suffix('.class')).unlink()
         return result
 
     with patch.object(builder, 'guest_java_sources', return_value=sources), patch.object(builder, 'run', run):
@@ -200,6 +240,40 @@ def assemble(recipe, work):
     return dex, payload
 
 
+def time_system_resources(smali):
+    # API 19 Time.format resolves three resource IDs in this order.
+    formats = (
+        ('time_of_day', '%-l:%M:%S %p'),
+        ('month_day_year', '%B %-e, %Y'),
+        ('date_and_time', '%b %-e, %Y, %-l:%M:%S %p'),
+    )
+    match = re.search(r'^\.method [^\n]* format\(Ljava/lang/String;\)Ljava/lang/String;\n'
+                      r'(.*?)^\.end method', smali, re.M | re.S)
+    if match is None:
+        raise builder.BuildError('API 19 Time.format is missing')
+    calls = builder.resource_call_ids(match[1])
+    if len(calls) != len(formats) or any(kind != 'string' or ident >> 24 != 1 for ident, kind in calls):
+        raise builder.BuildError('API 19 Time.format system resource lookups changed')
+    return [dict(id=ident, name=name, type='string', value=value)
+            for (ident, _), (name, value) in zip(calls, formats)]
+
+
+def system_resources_payload(dex):
+    system = json.loads(builder.system_resources_payload(dex))
+    with tempfile.TemporaryDirectory(prefix='ogplay-time-resources-') as work:
+        path = Path(work) / 'classes.dex'
+        path.write_bytes(dex)
+        output = Path(work) / 'smali'
+        builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'baksmali.jar'),
+                     'disassemble', '--api', '19', '--jobs', '1', '--classes', 'Landroid/text/format/Time;',
+                     '--output', str(output), str(path)])
+        time_smali = (output / 'android/text/format/Time.smali').read_text(encoding='utf-8')
+    system['resources'].extend(time_system_resources(time_smali))
+    if len({r['id'] for r in system['resources']}) != len(system['resources']):
+        raise builder.BuildError('conflicting system resource ID')
+    return member_sources.canonical(system)
+
+
 def build():
     recipe = candidate_classes()
     builder.verify_inputs(recipe)
@@ -216,7 +290,7 @@ def build():
         raise builder.BuildError('reserved BootDex resource entry in input')
     if payload is not None:
         resources[member_sources.ENTRY] = payload
-    resources[builder.SYSTEM_RESOURCES_ENTRY] = builder.system_resources_payload(dex)
+    resources[builder.SYSTEM_RESOURCES_ENTRY] = system_resources_payload(dex)
     projected = theme_projection.generate()
     theme_projection.check_conflicts(projected, resources[builder.SYSTEM_RESOURCES_ENTRY])
     resources[theme_projection.ENTRY] = projected
@@ -327,6 +401,26 @@ def main():
             'query(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;': 0x111,
             'getType(Landroid/net/Uri;)Ljava/lang/String;': 0x111,
             'hasHandler(Landroid/database/ContentObserver;)Z': 0x10a,
+        }
+        expected['Landroid/text/format/Time;'] = {
+            'normalize(Z)J': 0x101,
+            'switchTimezone(Ljava/lang/String;)V': 0x101,
+            'nativeCompare(Landroid/text/format/Time;Landroid/text/format/Time;)I': 0x10a,
+            'format1(Ljava/lang/String;)Ljava/lang/String;': 0x102,
+            'toString()Ljava/lang/String;': 0x101,
+            'nativeParse(Ljava/lang/String;)Z': 0x102,
+            'nativeParse3339(Ljava/lang/String;)Z': 0x102,
+            'setToNow()V': 0x101,
+            'toMillis(Z)J': 0x101,
+            'set(J)V': 0x101,
+            'format2445()Ljava/lang/String;': 0x101,
+        }
+        expected['Llibcore/util/ZoneInfo;'] = {}
+        expected['Landroid/app/Application;'] = {}
+        expected['Landroid/app/Activity;'] = {
+            'getApplication()Landroid/app/Application;': 0x111,
+            'nativeStartActivityForResult(Landroid/content/Intent;ILandroid/os/Bundle;)V': 0x102,
+            'nativeFinish(ILandroid/content/Intent;)V': 0x102,
         }
         parsed = builder.dex_survey_lib.parse_dex(dex)
         observed = {owner: {} for owner in expected}

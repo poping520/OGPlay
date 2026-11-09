@@ -46,7 +46,7 @@
       "table": "tools/bootdex/api19-system-resources.json",
       "table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3",
       "entry": "META-INF/ogplay/system-resources.json",
-      "payload_sha256": "e920b02a5b6e776e7e69c43e300f72a4e8c5b802d7f021c93ebe9876344ba081"
+      "payload_sha256": "f82ea1f528a7603e0d9f8211bf68bd19c5357792ca4f19611b2f59fc0038eff9"
     },
     "sources": [
       {
@@ -88,38 +88,38 @@
           "src/guest/io/java",
           "src/guest/xml/java"
         ],
-        "source_sha256": "6938d29726165a8e9384cf2e44b2f7221075b68178a8bb953eda068b739f96b3",
+        "source_sha256": "bcc5ae4578452729236cfb534b811897f866fe12ad1d357795d7f73b48b9d1a9",
         "javac": "17.0.18",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 16907186,
-    "sha256": "145e631d1bf6cb4e219e190f79f7de7135f4cf8493be177055db1707fed02247",
+    "size": 16928209,
+    "sha256": "18a792d890457a07e7c33f54f529081e8ebdca6cc9067e669f053d51547593e3",
     "dex_entry": "classes.dex",
-    "dex_size": 8510440,
-    "dex_sha256": "ac3f67acd5401e7df50a1355bd15be277d402e7703af2c07f4f28459c8d23f92",
-    "class_count": 5729,
+    "dex_size": 8530768,
+    "dex_sha256": "d89b1482e400a358d2cfea4390c1f63222069425a7b15fa38e7bb3ce51d0e387",
+    "class_count": 5736,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a",
     "candidate_recipe": {
       "path": "tools/bootdex/java-traversal.json",
-      "sha256": "20926f677459ac239e4ec74312c0323924a9388030df6cc27ac60dc3214859de",
+      "sha256": "870142eebe7437e3fe1378cd9a759c28099756b92832f1fab47f352b8f1fbc16",
       "entry": "META-INF/ogplay/java-traversal-recipe.json",
-      "payload_sha256": "b2f09e8a13c0480019addcabca85d02faa3d18fee8628f4b3712e3595b438085"
+      "payload_sha256": "bb709f1f8ad8dbfd7456fbefb05cf5e7b84fe5c74028fdb4fd00047f56d22e0f"
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "015ec03cdf7507d8e6a67ea7c89e10bb6c217860ac078cf4388bc6bab86acc82",
+      "sha256": "d4d8dbb3da87cdf7d2f72d76827ff572756672d8b43bf3faaefc2500d904ef0a",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "8cd6c676c7cb4dac8837364a1a57305d15b619b1a050231c3d604ae7bfb463dc",
+      "manifest_sha256": "1366648692b01bd334ecd8594295e6abfbe1d8563ae49c1984df409720d57ed4",
       "composer": "tools/bootdex/compose_bootdex.py",
-      "composer_sha256": "7f3879fea5fd4692384c24b7c6c69abedd57e46685c762466b0df0abc37fc266"
+      "composer_sha256": "a9c91c09d8389315fc281a0ff2c1e87c3d3776408236cd42228b818c7d4b3552"
     },
     "theme_projection": {
       "entry": "META-INF/ogplay/theme-projection.json",

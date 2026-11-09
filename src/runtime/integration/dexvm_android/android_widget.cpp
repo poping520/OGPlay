@@ -784,9 +784,8 @@ Decl ExperimentalTextView(const Context& context) {
             return dx::VmValue::Void();
         });
     }
-    // API19 TextView.onTouchEvent with null mEditor/mMovement and a non-Spannable
-    // mText (always true here) returns View.onTouchEvent. Editors need Editor,
-    // MovementMethod and IME, which stay unimplemented.
+    // Plain text uses View touch handling. The ROM editor action registration
+    // alone does not enable the editing, movement or IME touch paths.
     builder.VirtualMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z", [context](dx::IntrinsicContext& call) {
         if (UiClassForObject(call.vm, call.receiver) == ui::UiClass::EditText ||
             context->view_adapter_references[call.receiver.Value()].text_movement.IsValid())

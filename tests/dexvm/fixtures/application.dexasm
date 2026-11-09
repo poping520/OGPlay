@@ -223,6 +223,85 @@
     return v0
 .end method
 
+
+.class public Lfixture/LifecycleObserver;
+.super Ljava/lang/Object;
+.implements Landroid/app/Application$ActivityLifecycleCallbacks;
+
+.field private trace:I
+.field public saved:Landroid/os/Bundle;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method private record(I)V
+.registers 3
+    iget v0, v1, Lfixture/LifecycleObserver;->trace:I
+    mul-int/lit8 v0, v0, 10
+    add-int/2addr v0, v2
+    iput v0, v1, Lfixture/LifecycleObserver;->trace:I
+    return-void
+.end method
+
+.method public getTrace()I
+.registers 1
+    iget v0, v0, Lfixture/LifecycleObserver;->trace:I
+    return v0
+.end method
+
+.method public onActivityCreated(Landroid/app/Activity;Landroid/os/Bundle;)V
+.registers 4
+    const/4 v0, 1
+    invoke-direct {v1, v0}, Lfixture/LifecycleObserver;->record(I)V
+    return-void
+.end method
+
+.method public onActivityStarted(Landroid/app/Activity;)V
+.registers 3
+    const/4 v0, 2
+    invoke-direct {v1, v0}, Lfixture/LifecycleObserver;->record(I)V
+    return-void
+.end method
+
+.method public onActivityResumed(Landroid/app/Activity;)V
+.registers 3
+    const/4 v0, 3
+    invoke-direct {v1, v0}, Lfixture/LifecycleObserver;->record(I)V
+    return-void
+.end method
+
+.method public onActivitySaveInstanceState(Landroid/app/Activity;Landroid/os/Bundle;)V
+.registers 4
+    const/4 v0, 4
+    invoke-direct {v1, v0}, Lfixture/LifecycleObserver;->record(I)V
+    iput-object v3, v1, Lfixture/LifecycleObserver;->saved:Landroid/os/Bundle;
+    return-void
+.end method
+
+.method public onActivityPaused(Landroid/app/Activity;)V
+.registers 3
+    const/4 v0, 5
+    invoke-direct {v1, v0}, Lfixture/LifecycleObserver;->record(I)V
+    return-void
+.end method
+
+.method public onActivityStopped(Landroid/app/Activity;)V
+.registers 3
+    const/4 v0, 6
+    invoke-direct {v1, v0}, Lfixture/LifecycleObserver;->record(I)V
+    return-void
+.end method
+
+.method public onActivityDestroyed(Landroid/app/Activity;)V
+.registers 3
+    const/4 v0, 7
+    invoke-direct {v1, v0}, Lfixture/LifecycleObserver;->record(I)V
+    return-void
+.end method
+
 .class public Lfixture/LauncherChildActivity;
 .super Lfixture/LauncherActivity;
 

@@ -49,7 +49,9 @@
   已注册 JNI 附加 context 的 currentThread 使用独立、已启动的 Thread；默认名称/priority 5、
   main group、daemon 附加事实及 null context loader 遵循 API19 原生附加构造边界。
   实例 uncaught handler 优先于默认 handler；handler 自身异常按 API19 忽略，无 handler
-  保留进程致命诊断。ThreadGroup 仅 bounded system/main、名称和存活枚举，结束后 group 为 null。
+  保留进程致命诊断。ThreadGroup 保留 system/main，支持按当前组或显式父组构造、查询祖先关系，
+  并从唯一线程运行时枚举本组或子树的存活线程；interrupt 虚派子树内存活 Thread 的 interrupt。
+  结束后 Thread.getThreadGroup 返回 null。组销毁、daemon 和组优先级未纳入。
   ThreadGroup.uncaughtException 依次虚派 parent、默认 handler；无 handler 时向 System.err 打印线程名前缀和原版 Throwable 栈，ThreadDeath 不输出。APK 无 handler 的工作线程仍走原有进程致命出口。
   线程栈来自本 VM safe-point snapshot，不伪造完整 ThreadGroup/State。
 - Runtime 的单例、hook List、shuttingDown、add/remove/exit/halt 执行原版 Java；System.exit
@@ -168,7 +170,8 @@
   LocaleData、显示名和 ISO3 使用 guest ICU51 的资源与回退；未知 ISO3 的异常由 ROM Java 决定。
   ISO 与可用区域枚举读取固定 ICU51 原表，缓存与防御性复制归 Java。
 - Date/Calendar/Format/NumberFormat/TimeZone 普通状态和算法归 BootDex；TimeZone default
-  只消费注入值且保持 clone/reset。ICU 数字/日期能力走固定 guest ICU，不恢复 java_text TU；
+  只消费注入值且保持 clone/reset。地区时区查询复用原版 ZoneInfo 和 guest 只读 tzdata；
+  固定偏移走原版 getCustomTimeZone。ICU 数字/日期能力走固定 guest ICU，不恢复 java_text TU；
   formatter long/double/digit-list 仅存 per-VM token，guest JNI 管 clone/close/错误，GC/teardown 回收。
   Pattern/Matcher/PatternSyntaxException、Splitter 与 Normalizer 普通协议归 API19 BootDex；
   native 经 guest ICU51，String 正则委托同一路径。

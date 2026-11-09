@@ -3713,6 +3713,22 @@ struct ThreadFields final {
 
 void PropagateOutcome(Interpreter& vm, const VmCallOutcome& outcome);
 
+VmValue InvokeThreadVirtual(Interpreter& vm, VmObjectRef receiver, const char* method, const char* signature,
+                            std::vector<VmValue> args = {}) {
+    if (!receiver.IsValid()) {
+        throw VmJavaThrow{"Ljava/lang/NullPointerException;", "null thread or group receiver"};
+    }
+    const auto type = vm.Model().ObjectClass(receiver);
+    const auto slot = vm.Linker().FindVtableIndex(type, method, signature);
+    args.insert(args.begin(), VmValue::Ref(receiver));
+    const auto result = vm.Call(vm.Linker().Class(type).vtable.at(*slot), args);
+    if (result.exception.IsValid()) {
+        throw VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                          result.exception};
+    }
+    return result.value;
+}
+
 [[nodiscard]] VmObjectRef StackTraceArray(Interpreter& vm, const std::uint64_t thread_id) {
     const auto snapshots = vm.StackSnapshot();
     const auto found =
@@ -4181,8 +4197,8 @@ IntrinsicClassDecl Declare_java_lang_Thread() {
     // 返回当前线程组内存活线程的估计数量。
     builder.StaticMethod("activeCount", "()I", [fields](IntrinsicContext& context) {
         const IntrinsicCall call(context);
-        (void)EnsureCurrentThread(call, fields);
-        return VmValue::Int(static_cast<std::int32_t>(context.vm.Threads().LiveCount() + 1U));
+        const auto thread = EnsureCurrentThread(call, fields);
+        return InvokeThreadVirtual(context.vm, call.GetRef(fields.group, thread), "activeCount", "()I");
     });
     // 将当前线程的 Java 栈打印到标准错误流。
     builder.StaticMethod("dumpStack", "()V", [](IntrinsicContext& context) {
@@ -4201,19 +4217,12 @@ IntrinsicClassDecl Declare_java_lang_Thread() {
                          context.vm.Call(context.vm.Linker().Class(throwable_class).vtable[*print], print_args));
         return VmValue::Void();
     });
-    // 将当前 VM 的存活线程复制到调用方数组。
+    // 将当前线程组及其子组的存活线程复制到调用方数组。
     builder.StaticMethod("enumerate", "([Ljava/lang/Thread;)I", [fields](IntrinsicContext& context) {
         IntrinsicCall call(context);
-        (void)EnsureCurrentThread(call, fields);
-        const auto array = call.NonNullRef(0, "threads");
-        const auto capacity = context.vm.Model().ArrayLength(array);
-        JniSize written = 0;
-        for (const auto& thread : context.vm.Threads().Snapshot()) {
-            if (written >= capacity) break;
-            if (thread.status != VmThreadStatus::created && thread.status != VmThreadStatus::running) continue;
-            context.vm.Model().SetObjectElement(array, written++, VmObjectRef{thread.object});
-        }
-        return VmValue::Int(written);
+        const auto thread = EnsureCurrentThread(call, fields);
+        return InvokeThreadVirtual(context.vm, call.GetRef(fields.group, thread), "enumerate", "([Ljava/lang/Thread;)I",
+                                   {VmValue::Ref(call.Ref(0))});
     });
     // API 19 中访问检查为空操作。
     builder.FinalMethod("checkAccess", "()V", [](IntrinsicContext&) { return VmValue::Void(); });
@@ -4408,6 +4417,30 @@ IntrinsicClassDecl Declare_java_lang_Thread_UncaughtExceptionHandler() {
     return std::move(builder).Build();
 }
 
+namespace {
+bool GroupContains(const IntrinsicCall& call, IntrinsicFieldHandle parent, VmObjectRef group) {
+    for (; group.IsValid(); group = call.GetRef(parent, group)) {
+        if (group == call.Receiver()) return true;
+    }
+    return false;
+}
+
+std::vector<VmObjectRef> LiveGroupThreads(IntrinsicContext& context, IntrinsicFieldHandle parent, bool recurse) {
+    auto& vm = context.vm;
+    const IntrinsicCall call(context);
+    std::vector<VmObjectRef> threads;
+    for (const auto& state : vm.Threads().Snapshot()) {
+        const auto thread = VmObjectRef{state.object};
+        if (!vm.Threads().IsAlive(thread)) continue;
+        const auto group = InvokeThreadVirtual(vm, thread, "getThreadGroup", "()Ljava/lang/ThreadGroup;").ref;
+        if (group == context.receiver || (recurse && GroupContains(call, parent, group))) {
+            threads.push_back(thread);
+        }
+    }
+    return threads;
+}
+}  // namespace
+
 IntrinsicClassDecl Declare_java_lang_ThreadGroup() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/ThreadGroup;", "Ljava/lang/Object;",
                                                 {"Ljava/lang/Thread$UncaughtExceptionHandler;"});
@@ -4427,31 +4460,59 @@ IntrinsicClassDecl Declare_java_lang_ThreadGroup() {
         call.SetRef(name, main_group, context.vm.NewStringUtf8("main"));
         return VmValue::Void();
     });
+    builder.Constructor("(Ljava/lang/String;)V", [name, parent](IntrinsicContext& context) {
+        const IntrinsicCall call(context);
+        const auto thread =
+            InvokeGuestDirect(context.vm, "Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;", {}).ref;
+        const auto group = InvokeThreadVirtual(context.vm, thread, "getThreadGroup", "()Ljava/lang/ThreadGroup;").ref;
+        call.SetRef(parent, group);
+        call.SetRef(name, call.Ref(0));
+        return VmValue::Void();
+    });
+    builder.Constructor("(Ljava/lang/ThreadGroup;Ljava/lang/String;)V", [name, parent](IntrinsicContext& context) {
+        const IntrinsicCall call(context);
+        call.SetRef(parent, call.NonNullRef(0, "parent"));
+        call.SetRef(name, call.Ref(1));
+        return VmValue::Void();
+    });
     builder.FinalMethod("getName", "()Ljava/lang/String;", [name](IntrinsicContext& context) {
         return VmValue::Ref(IntrinsicCall(context).GetRef(name));
     });
-    builder.VirtualMethod("activeCount", "()I", [](IntrinsicContext& context) {
-        std::int32_t count = 0;
-        for (const auto& thread : context.vm.Threads().Snapshot()) {
-            if (thread.status == VmThreadStatus::created || thread.status == VmThreadStatus::running) {
-                ++count;
-            }
-        }
-        return VmValue::Int(count);
+    builder.FinalMethod("getParent", "()Ljava/lang/ThreadGroup;", [parent](IntrinsicContext& context) {
+        return VmValue::Ref(IntrinsicCall(context).GetRef(parent));
+    });
+    builder.FinalMethod("parentOf", "(Ljava/lang/ThreadGroup;)Z", [parent](IntrinsicContext& context) {
+        const IntrinsicCall call(context);
+        return VmValue::Int(GroupContains(call, parent, call.Ref(0)));
+    });
+    builder.VirtualMethod("activeCount", "()I", [parent](IntrinsicContext& context) {
+        return VmValue::Int(static_cast<std::int32_t>(LiveGroupThreads(context, parent, true).size()));
     });
     builder.VirtualMethod("enumerate", "([Ljava/lang/Thread;)I", [](IntrinsicContext& context) {
-        IntrinsicCall call(context);
+        return InvokeThreadVirtual(context.vm, context.receiver, "enumerate", "([Ljava/lang/Thread;Z)I",
+                                   {context.arguments[0], VmValue::Int(1)});
+    });
+    builder.VirtualMethod("enumerate", "([Ljava/lang/Thread;Z)I", [parent](IntrinsicContext& context) {
+        const IntrinsicCall call(context);
         const auto array = call.NonNullRef(0, "threads");
         const auto capacity = context.vm.Model().ArrayLength(array);
         JniSize written = 0;
-        for (const auto& thread : context.vm.Threads().Snapshot()) {
+        for (const auto thread : LiveGroupThreads(context, parent, call.Int(1) != 0)) {
             if (written >= capacity) break;
-            if (thread.status != VmThreadStatus::created && thread.status != VmThreadStatus::running) {
-                continue;
-            }
-            context.vm.Model().SetObjectElement(array, written++, VmObjectRef{thread.object});
+            context.vm.Model().SetObjectElement(array, written++, thread);
         }
         return VmValue::Int(written);
+    });
+    builder.FinalMethod("interrupt", "()V", [parent](IntrinsicContext& context) {
+        auto& vm = context.vm;
+        const auto threads = LiveGroupThreads(context, parent, true);
+        const auto roots = vm.ProtectReferences(threads);
+        for (const auto thread : threads) {
+            if (vm.Threads().IsAlive(thread)) {
+                static_cast<void>(InvokeThreadVirtual(vm, thread, "interrupt", "()V"));
+            }
+        }
+        return VmValue::Void();
     });
     builder.VirtualMethod(
         "uncaughtException", "(Ljava/lang/Thread;Ljava/lang/Throwable;)V", [parent](IntrinsicContext& context) {

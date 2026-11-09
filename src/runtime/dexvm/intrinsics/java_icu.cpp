@@ -168,8 +168,16 @@ IntrinsicClassDecl TimeZoneBoundary(const CoreIntrinsicServices& services) {
                 return outcome.value.ref.IsValid() ? outcome.value
                                                    : VmValue::Ref(call.Vm().CloneObject(call.GetRef(gmt)));
             }
-            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                              "named time-zone database is not packaged: " + id};
+            const auto owner = call.Vm().Linker().ResolveDescriptor("Llibcore/util/GuestZoneInfo;");
+            const auto find =
+                call.Vm().Linker().FindDirectMethod(owner, "find", "(Ljava/lang/String;)Ljava/util/TimeZone;");
+            if (!find) throw DexVmError{DexVmErrorReason::invalid_member, "GuestZoneInfo.find is missing"};
+            const auto outcome = call.Vm().Call(*find, std::array{VmValue::Ref(ref)});
+            if (outcome.exception.IsValid()) {
+                call.Vm().SetPendingException(outcome.exception);
+                return VmValue::Ref(VmObjectRef{});
+            }
+            return outcome.value.ref.IsValid() ? outcome.value : VmValue::Ref(call.Vm().CloneObject(call.GetRef(gmt)));
         },
         kAccPublic | kAccSynchronized);
     return std::move(b).Build();

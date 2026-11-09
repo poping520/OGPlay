@@ -456,6 +456,72 @@ TEST_CASE("dexvm Thread diagnostics and group APIs follow bounded API19 semantic
     }
 }
 
+TEST_CASE("ThreadGroup enumerates live threads and interrupts only its subtree") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ThreadVm vm(backend);
+        const auto current = vm.Static("Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;").value.ref;
+        const auto group = vm.New("Ljava/lang/ThreadGroup;");
+        const auto child = vm.New("Ljava/lang/ThreadGroup;");
+        const auto roots = vm.interpreter.ProtectReferences(std::array{group, child});
+        RequireOk(vm.Construct(group, "Ljava/lang/ThreadGroup;", "(Ljava/lang/String;)V",
+                               {VmValue::Ref(vm.interpreter.NewStringUtf8("target"))}));
+        RequireOk(vm.Construct(child, "Ljava/lang/ThreadGroup;", "(Ljava/lang/ThreadGroup;Ljava/lang/String;)V",
+                               {VmValue::Ref(group), VmValue::Ref(vm.interpreter.NewStringUtf8("child"))}));
+        const auto main_group = vm.Virtual(current, "getThreadGroup", "()Ljava/lang/ThreadGroup;").value.ref;
+        CHECK(vm.Virtual(group, "getParent", "()Ljava/lang/ThreadGroup;").value.ref == main_group);
+        CHECK(vm.Virtual(child, "getParent", "()Ljava/lang/ThreadGroup;").value.ref == group);
+        CHECK(vm.Virtual(group, "parentOf", "(Ljava/lang/ThreadGroup;)Z", {VmValue::Ref(child)}).value.AsInt() == 1);
+        CHECK(vm.Virtual(child, "parentOf", "(Ljava/lang/ThreadGroup;)Z", {VmValue::Ref(group)}).value.AsInt() == 0);
+
+        const auto new_sleeper = [&](VmObjectRef thread_group) {
+            const auto thread = vm.New("LThreadSleeper;");
+            const auto root = vm.interpreter.ProtectReferences(std::array{thread});
+            RequireOk(
+                vm.Construct(thread, "Ljava/lang/Thread;", "(Ljava/lang/ThreadGroup;Ljava/lang/String;)V",
+                             {VmValue::Ref(thread_group), VmValue::Ref(vm.interpreter.NewStringUtf8("sleeper"))}));
+            return thread;
+        };
+        const auto direct = new_sleeper(group);
+        const auto direct_root = vm.interpreter.ProtectReferences(std::array{direct});
+        const auto nested = new_sleeper(child);
+        const auto nested_root = vm.interpreter.ProtectReferences(std::array{nested});
+        const auto outside = new_sleeper(main_group);
+        const auto outside_root = vm.interpreter.ProtectReferences(std::array{outside});
+        CHECK(vm.Virtual(group, "activeCount", "()I").value.AsInt() == 0);
+        for (const auto thread : {direct, nested, outside}) {
+            RequireOk(vm.Virtual(thread, "start", "()V"));
+            REQUIRE(WaitFor([&] {
+                return std::ranges::any_of(vm.threads.Snapshot(), [&](const auto& state) {
+                    return state.object == thread.Value() && state.wait_state == VmThreadWaitState::sleeping;
+                });
+            }));
+        }
+
+        const auto threads = vm.model.NewObjectArray(vm.linker.ResolveDescriptor("[Ljava/lang/Thread;"),
+                                                     vm.Class("Ljava/lang/Thread;"), 2);
+        CHECK(vm.Virtual(group, "activeCount", "()I").value.AsInt() == 2);
+        CHECK(vm.Virtual(group, "enumerate", "([Ljava/lang/Thread;Z)I", {VmValue::Ref(threads), VmValue::Int(0)})
+                  .value.AsInt() == 1);
+        CHECK(vm.model.GetObjectElement(threads, 0) == direct);
+        CHECK(vm.Virtual(group, "enumerate", "([Ljava/lang/Thread;)I", {VmValue::Ref(threads)}).value.AsInt() == 2);
+        const auto first = vm.model.GetObjectElement(threads, 0);
+        const auto second = vm.model.GetObjectElement(threads, 1);
+        CHECK(((first == direct && second == nested) || (first == nested && second == direct)));
+
+        RequireOk(vm.Virtual(group, "interrupt", "()V"));
+        REQUIRE(WaitFor([&] { return !vm.threads.IsAlive(direct) && !vm.threads.IsAlive(nested); }));
+        RequireOk(vm.Virtual(direct, "join", "()V"));
+        RequireOk(vm.Virtual(nested, "join", "()V"));
+        CHECK(vm.Observed("LThreadSleeper;") == 2);
+        CHECK(vm.Virtual(group, "activeCount", "()I").value.AsInt() == 0);
+        CHECK(vm.threads.IsAlive(outside));
+        CHECK_FALSE(vm.threads.IsInterrupted(outside));
+        CHECK_FALSE(vm.threads.IsInterrupted(current));
+        RequireOk(vm.Virtual(outside, "interrupt", "()V"));
+        RequireOk(vm.Virtual(outside, "join", "()V"));
+    }
+}
+
 TEST_CASE("dexvm Thread third priority APIs expose bounded API19 behavior") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ThreadVm vm(backend);

@@ -32,7 +32,11 @@
     "view-horizontal-sources.json"
   ],
   "class_additions": {
+    "core.jar": [
+      "Llibcore/util/ZoneInfo;"
+    ],
     "framework.jar": [
+      "Landroid/app/Application;",
       "Landroid/content/Context;",
       "Landroid/content/res/AssetManager$AssetInputStream;",
       "Landroid/content/res/AssetManager;",
@@ -80,6 +84,7 @@
       "Landroid/graphics/drawable/StateListDrawable$StateListState;",
       "Landroid/graphics/drawable/StateListDrawable;",
       "Landroid/text/Annotation;",
+      "Landroid/text/format/Time;",
       "Landroid/text/method/AllCapsTransformationMethod;",
       "Landroid/text/method/ArrowKeyMovementMethod;",
       "Landroid/text/method/DateKeyListener;",

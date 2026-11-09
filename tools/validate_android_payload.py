@@ -304,7 +304,7 @@ def validate(root: Path) -> None:
             # The manifest seals the audited dispatch/allocation ledgers. Full
             # body admission and deterministic regeneration remain composer check's job.
             resources[member_sources.ENTRY] = sealed_members
-            resources[bootdex.SYSTEM_RESOURCES_ENTRY] = bootdex.system_resources_payload(dex)
+            resources[bootdex.SYSTEM_RESOURCES_ENTRY] = composition.system_resources_payload(dex)
             resources[composition.theme_projection.ENTRY] = composition.theme_projection.generate()
             video_review = json.loads((TOOLS_DIR / 'bootdex/view-video-adapter.json').read_text(encoding='utf-8'))
             resources[composition.VIDEO_ENTRY] = member_sources.canonical(video_review)

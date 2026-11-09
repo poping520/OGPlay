@@ -44,3 +44,7 @@ GLImpl 的 [Java 客户端](java/com/google/android/gles_jni/MODULE.md) 保留 A
 [view 客户端](java/android/view/MODULE.md) 提供 LayoutInflater 的 Context、clone/from、
 同步/重载以及 ContextThemeWrapper 服务缓存；native 复用固定注册表的 XML 构建，
 构建与窗口替换分离，不加载完整 PhoneWindow 或反射工厂。
+
+
+[Time 的 guest 客户端](java/android/text/format/MODULE.md) 为原版类实现 native 算法。
+[时区数据适配](java/libcore/util/MODULE.md) 复用原版 ZoneInfo 读取 guest 固定 tzdata。

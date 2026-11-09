@@ -55,6 +55,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。
   （[GUI-11](../tasks/gui/GUI-11.md)），冒烟/包/游戏模式与真实导入→启动→移除流程已验；Linux GUI 未接入。
   数据包导入默认复制入库（[GUI-12](../tasks/gui/GUI-12.md)，APFS 克隆），GUI 向导点击未实测；
   游戏退出后按运行时缺失路径提示挂载位置（[GUI-13](../tasks/gui/GUI-13.md)），App 内点击未实测。
+  每次库启动记录运行结果（last-run.json），失败游戏归入“待排查”，CLI `library list --filter attention` 同源（[GUI-23](../tasks/gui/GUI-23.md)），App 内点击未实测。
   Windows 启动器单例与托盘/最小化恢复已通过 Debug / Release 专项实测（[GUI-21](../tasks/gui/GUI-21.md)），Release 已重建。
 - 图形：实际 context-loss、多窗口/透明 Activity 未验收；GLES1 vertex-array 首错未重达。
   SurfaceTexture 公共队列/Java 与 SwiftShader 合成帧外部采样闭环已验；Metal 无 external，

@@ -6,6 +6,7 @@
 #include "ogplay/app/host.h"
 #include "ogplay/app/json.h"
 #include "ogplay/app/library.h"
+#include "ogplay/app/run_report.h"
 #include <algorithm>
 #include <charconv>
 #include <set>
@@ -158,9 +159,37 @@ int RunLibraryCommand(std::span<const char* const> args) {
     JsonWriter writer;
     Value result;
     if (command == "list") {
+        std::string_view filter = "all";
+        if (index < args.size()) {
+            if (require() != "--filter")
+                throw std::invalid_argument("library list accepts --filter all|attention|launchable");
+            filter = require();
+            if (filter != "all" && filter != "attention" && filter != "launchable")
+                throw std::invalid_argument("--filter requires all, attention or launchable");
+        }
         end();
         result = writer.Array();
-        for (const auto& entry : store.LoadEntries()) {
+        for (auto entry : store.LoadEntries()) {
+            // As in the GUI list: settings resolve the data pack, and unreadable settings damage the entry.
+            try {
+                entry = EffectiveGameEntry(entry, LoadGameSettings(entry.directory));
+            } catch (const LibraryError& error) {
+                if (error.Code() == LibraryErrorCode::busy) throw;
+                entry.damage_reason = error.what();
+            } catch (const std::exception& error) {
+                entry.damage_reason = error.what();
+            }
+            const bool running = store.IsRunning(entry.key);
+            std::error_code missing_error;
+            const bool data_missing =
+                entry.external_dir.has_value() &&
+                (!std::filesystem::is_directory(*entry.external_dir, missing_error) || missing_error);
+            const bool problem = entry.Damaged() || !entry.metadata || data_missing;
+            // GUI-23: a failed last run puts a launchable entry under attention too.
+            const auto last_run = LoadLastRunReport(entry.directory / "last-run.json");
+            const bool attention = problem || (last_run && LastRunFailed(*last_run, running));
+            const bool launchable = !problem && !running;
+            if ((filter == "attention" && !attention) || (filter == "launchable" && !launchable)) continue;
             const auto item = writer.Object();
             writer.AddString(item, "installation_id", entry.key);
             writer.AddString(item, "directory", Text(entry.directory));
@@ -170,11 +199,21 @@ int RunLibraryCommand(std::span<const char* const> args) {
                 writer.AddString(item, "package", entry.metadata->package);
                 writer.AddString(item, "display_name", entry.metadata->display_name);
                 const auto names = writer.Object();
-                for (const auto& [locale, name] : entry.metadata->localized_names) writer.AddString(names, locale, name);
+                for (const auto& [locale, name] : entry.metadata->localized_names)
+                    writer.AddString(names, locale, name);
                 writer.Add(item, "localized_names", names);
                 writer.AddUnsignedInteger(item, "version_code", entry.metadata->version_code);
                 writer.AddString(item, "version_name", entry.metadata->version_name);
             }
+            writer.AddBool(item, "running", running);
+            writer.AddBool(item, "data_missing", data_missing);
+            writer.AddBool(item, "launchable", launchable);
+            writer.AddBool(item, "attention", attention);
+            writer.AddString(item, "log", Text(entry.directory / "last-run.log"));
+            if (last_run)
+                writer.Add(item, "last_run", LastRunJson(writer, *last_run, running));
+            else
+                writer.AddNull(item, "last_run");
             writer.Append(result, item);
         }
     } else if (command == "inspect" || command == "import") {

@@ -41,6 +41,7 @@ TEST_CASE("Game run args round trip every value and optional field") {
     o.input_config_path = "/input.toml";
     o.library_root = "/library";
     o.missing_data_report = "/missing.json";
+    o.run_report = "/last-run.json";
     o.window_title = "狂野之血 · Title";
     o.window_icon = "/library/org.example.app-1/icon.png";
     o.window_icon_style = RunningIconStyle::cradle;

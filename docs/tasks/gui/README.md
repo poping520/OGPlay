@@ -26,6 +26,8 @@
 | [GUI-20](GUI-20.md) | 宿主与按键页中英文补全、跟随系统语言 | macOS 定向验证与 GUI 冒烟通过；Windows 与 App 内点击待验 |
 | [GUI-21](GUI-21.md) | Windows 启动器单例与重复打开恢复 | Windows Debug / Release 构建与专项测试通过 |
 | [GUI-22](GUI-22.md) | Windows 深色标题栏与自绘游戏关闭确认框 | 实现完成；Windows 待编译和目测 |
+| [GUI-23](GUI-23.md) | 运行结果记录、“待排查”分类与 CLI 筛选 | macOS 定向与真实 APK 通过；App 内点击待验 |
+| [GUI-24](GUI-24.md) | 游戏标记：内置颜色与自定义标记 | 未开始（暂缓） |
 | [DASH-01](DASH-01.md) | Dashboard agent 只读聚合、事件游标与线程关联 | agent 层完成 |
 | [DASH-02](DASH-02.md) | 堆/GC、JNI、CPU 缓存、权限、VFS/动态库快照 | Windows 完成；扩展 BootDex 回归有阻塞 |
 | [DASH-03](DASH-03.md) | Dashboard HTTP、顶栏/拓扑/时间轴/线程表 | Windows 完成；新增来源/面板见 DASH-02/04 |

@@ -213,6 +213,9 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
             if (options.missing_data_report.has_value())
                 throw std::invalid_argument("run-apk accepts --missing-data-report only once");
             options.missing_data_report = Utf8Path(args[++index]);
+        } else if (option == "--run-report" && index + 1 < args.size()) {
+            if (options.run_report.has_value()) throw std::invalid_argument("run-apk accepts --run-report only once");
+            options.run_report = Utf8Path(args[++index]);
         } else if (option == "--ui-language" && index + 1 < args.size()) {
             if (options.ui_language) throw std::invalid_argument("run-apk accepts --ui-language only once");
             options.ui_language = ParseUiLanguage(args[++index]);
@@ -309,7 +312,7 @@ void ValidateGameRunOptions(const GameRunOptions& o) {
         throw std::invalid_argument("invalid interpreter");
     for (const auto* path :
          {&o.external_directory, &o.obb_path, &o.profiles_directory, &o.survey_gaps_output, &o.sandbox_directory,
-          &o.input_config_path, &o.library_root, &o.missing_data_report, &o.window_icon})
+          &o.input_config_path, &o.library_root, &o.missing_data_report, &o.run_report, &o.window_icon})
         if (*path && (*path)->empty()) throw std::invalid_argument("option requires a non-empty path");
     if (o.external_guest_directory) ValidateExternalGuestDirectory(*o.external_guest_directory);
     if (o.installation_id && o.installation_id->empty()) throw std::invalid_argument("installation id is empty");
@@ -372,6 +375,7 @@ std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
     optional_path("--input-config", o.input_config_path);
     optional_path("--survey-gaps", o.survey_gaps_output);
     optional_path("--missing-data-report", o.missing_data_report);
+    optional_path("--run-report", o.run_report);
     if (o.ui_language) add("--ui-language", std::string(UiLanguageTag(*o.ui_language)));
     if (o.window_title) add("--window-title", *o.window_title);
     optional_path("--window-icon", o.window_icon);

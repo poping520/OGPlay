@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "ogplay/core/logger.h"
@@ -49,6 +50,8 @@ enum class RunEnd { startup_failed, fault, crashed, no_frame, closed, exited };
 
 // The game's own exit wins over a fault, since a native exit unwinds as one.
 [[nodiscard]] RunEnd ClassifyRunEnd(const RunApkExitState& state, bool fault) noexcept;
+// The report spelling shared by last-run-missing.json and last-run.json.
+[[nodiscard]] std::string_view RunEndName(RunEnd end) noexcept;
 
 // ADR-0146: collects /sdcard read lookups that found nothing, and paths found
 // under the external mount, while attached and writes them with the mount facts

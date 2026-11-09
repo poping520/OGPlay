@@ -263,6 +263,11 @@ status = "partial"
 test = "tests/runtime/vfs_tests.cpp#ADR-0146; tests/frontend/run_apk_vfs_tests.cpp#ADR-0146; tests/frontend/data_hint_tests.cpp; tests/frontend/gui_launch_tests.cpp; frontend.run_apk_options"
 note = "GUI-13/ADR-0146：运行时记录 /sdcard 查找缺失、挂载内命中与运行结局，退出写报告；仅启动失败/故障/崩溃/无帧的运行才按缺失路径与数据包实际文件推断挂载点，不建议移走正在读取的数据包；GUI 退出后提示，用户确认才改 external_guest_dir；未配置数据包时只提示需要数据包。不分析 APK。游戏跑起来但数据不全不提示；OGPlay.app 内点击与 Windows/Linux 未验。"
 
+[frontend.run_outcome_triage]
+status = "partial"
+test = "tests/frontend/cli_library_tests.cpp#GUI-23; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp; webui/apps/gui/library/library.test.ts"
+note = "GUI-23：库启动的游戏进程开局写未完成的 last-run.json，结束写结局、退出码、呈现帧、首错与退出错误；进程中途消失即视为中断。启动失败/故障/崩溃/无帧/中断/退出错误计为失败，与条目问题同入“待排查”分类及 CLI `library list --filter attention`。CLI 不判 Profile 目录；OGPlay.app 内点击与 Windows 未验。"
+
 [frontend.gui_language]
 status = "partial"
 test = "tests/frontend/ui_text_tests.cpp; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp; tests/frontend/gui_rpc_tests.cpp; tests/frontend/control_requests_tests.cpp; webui/apps/gui/shared/i18n.test.ts; webui/apps/controls/i18n.test.ts; frontend.gui_webui_manifest; frontend.gui_smoke; frontend.gui_library_smoke"

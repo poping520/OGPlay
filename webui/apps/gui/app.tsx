@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { rpc, type Library, type LibraryItem } from './shared/rpc';
 import { gameName, resolvedLanguage, setLanguage, t, useLanguage } from './shared/i18n';
 import { recall, remember } from './shared/prefs';
-import { cycle, externalText, filters, profileText, statusDetail, statusOf, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library/library';
+import { cycle, externalText, filters, lastRunText, profileText, statusDetail, statusOf, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library/library';
 import { SettingsPage } from './settings/settings-page';
 import { GameSettingsPage } from './settings/game-settings-page';
 import { CartViewer } from './cartridge/cart-viewer';
@@ -275,6 +275,7 @@ export function App() {
     if (!item) return <div class="hero-text"><h1 class="small">{query ? t('没有符合条件的游戏') : t('这个分类里没有游戏')}</h1>
       <div class="sub">{t('按 Q / E 切换分类，或换个关键词。')}</div><div class="cta"><button class="pill" onClick={resetFilters}><Key>B</Key>{t('清除筛选')}</button></div></div>;
     const status = statusOf(item), detail = statusDetail(item), profile = profileText(item), external = externalText(item);
+    const lastRun = item.running ? null : lastRunText(item);
     const position = items.indexOf(item) + 1;
     const fix = item.status === 'missing_external' ? <button class="link" onClick={() => openGameSettings(item)}>{t('选择数据包 →')}</button> :
       item.status === 'damaged' && !item.running ? <button class="link" onClick={() => requestRemoval(item)}>{t('删除后重新导入 →')}</button> : null;
@@ -289,7 +290,12 @@ export function App() {
           {profile && <div title={profile.detail}><b>{profile.value}</b><small>Profile</small></div>}
           <div title={external.detail}><b>{external.value}</b><small>{t('数据包')}</small></div>
         </div>
-        <div class="state"><span class={`led ${item.running ? 'running' : status.tone}`} /><span>{status.label}{detail ? ` · ${detail}` : ''}{runtime}</span>{fix}</div>
+        <div class="state-row">
+          <div class="state"><span class={`led ${item.running ? 'running' : status.tone}`} /><span>{status.label}{detail ? ` · ${detail}` : ''}{runtime}</span>{fix}</div>
+          {lastRun && <div class="state last-run" title={lastRun.error || undefined}><span class="led danger" />
+            <b>{lastRun.label}</b>
+            <button class="link" disabled={busy} onClick={() => void act('library.open_dir', item, 'log')}>{t('日志 →')}</button></div>}
+        </div>
         <div class="cta">{actions(item)}</div>
       </div>
       <div class="showcase" onPointerMove={tilt} onPointerLeave={tilt}>

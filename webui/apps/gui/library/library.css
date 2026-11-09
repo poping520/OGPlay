@@ -84,6 +84,13 @@
 .state { display: inline-flex; align-items: center; gap: 10px; max-width: min(620px, 100%); margin-top: 4px; padding: 8px 14px; border-radius: 12px; background: var(--glass);
   color: #cfd5e3; font-size: 13px; font-weight: 700; user-select: text; }
 .state > span:not(.led) { min-width: 0; overflow-wrap: anywhere; }
+/* GUI-23: a failed last run is a second pill on the status row, so the hero keeps its height. */
+.state-row { display: flex; align-items: center; gap: 10px; max-width: min(760px, 100%); margin-top: 4px; }
+.state-row > .state { min-width: 0; margin-top: 0; }
+.state.last-run { overflow: hidden; }
+.state.last-run { flex: 0 1 auto; min-width: 0; border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.state.last-run > b { flex: none; white-space: nowrap; }
 .console .link { color: var(--accent); font-weight: 900; white-space: nowrap; }
 .console .link:hover { text-decoration: underline; }
 .hero-text > .state:last-child { margin-top: 22px; }

@@ -2,6 +2,12 @@ import { t } from './i18n';
 // Host facts only: the Profile value is the id or the catalog error, the data pack value the
 // host path; the launcher writes the words.
 export interface Condition { status: string; value: string; owned: boolean }
+/** GUI-23 `last-run.json` as the host reads it: outcome is the run end, `running`, or `interrupted` (the process died
+ *  mid-run); failed marks a run worth investigating. */
+export interface LastRun {
+  outcome: string; failed: boolean; started_at: string; ended_at: string | null;
+  exit_code: number | null; presented: number; error: string | null; exit_error: string | null;
+}
 export interface LibraryItem {
   installation_id: string; display_name: string; package: string;
   localized_names: Record<string, string>;
@@ -11,6 +17,7 @@ export interface LibraryItem {
   profile: Condition | null; external: Condition;
   version_name: string | null; version_code: number | null; imported_at: string | null;
   sandbox_path: string; log_directory: string;
+  last_run: LastRun | null;
 }
 export interface Library { items: LibraryItem[]; library_root: string }
 /** `library.storage`: bytes on disk (null when not there yet) and where the data pack mounts in the guest. */

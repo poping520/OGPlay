@@ -4,6 +4,7 @@
 #include "apk_fixture.h"
 #include "ogplay/app/json.h"
 #include "ogplay/app/library.h"
+#include "ogplay/app/run_report.h"
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
@@ -118,6 +119,60 @@ TEST_CASE("CLI library inspect import duplicates and remove retain saves") {
     JsonSuccess(f.Run({"remove", "org.example.game", "--yes"}));
     CHECK(std::filesystem::exists(f.root / "sandbox/org.example.game/meta.toml"));
     CHECK(std::filesystem::exists(f.root / "library/org.example.game-2/game.apk"));
+}
+
+TEST_CASE("GUI-23 last run report round trips and drives the CLI attention filter") {
+    using ogplay::app::LastRunReport;
+    Fixture f;
+    JsonSuccess(f.Run({"import", f.Text("sample.apk")}));
+    JsonSuccess(f.Run({"import", f.Text("sample.apk"), "--new-instance"}));
+    JsonSuccess(f.Run({"import", f.Text("sample.apk"), "--new-instance"}));
+    const auto entries = f.root / "library";
+    // A guest message with invalid UTF-8 is kept readable instead of failing the write.
+    const LastRunReport fault{.finished = true,
+                              .started_at = "2026-11-08T10:00:00Z",
+                              .ended_at = "2026-11-08T10:01:00Z",
+                              .end = "fault",
+                              .presented = 12,
+                              .error = std::string("java/lang/IllegalStateException: bad \xff byte")};
+    ogplay::app::WriteLastRunReport(entries / "org.example.game" / "last-run.json", fault);
+    const auto loaded = ogplay::app::LoadLastRunReport(entries / "org.example.game" / "last-run.json");
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->error == "java/lang/IllegalStateException: bad ? byte");
+    auto expected = fault;
+    expected.error = loaded->error;
+    CHECK(*loaded == expected);
+    CHECK(ogplay::app::LastRunFailed(*loaded, false));
+    // A clean close is not a failure; the same close with a teardown error is.
+    LastRunReport closed{.finished = true, .started_at = "t", .end = "closed", .exit_code = 0, .presented = 50};
+    CHECK_FALSE(ogplay::app::LastRunFailed(closed, false));
+    closed.exit_error = "onDestroy failed";
+    CHECK(ogplay::app::LastRunFailed(closed, false));
+    // Unfinished: in progress while the entry runs, interrupted (a failure) once nothing runs it.
+    const LastRunReport unfinished{.started_at = "2026-11-08T10:00:00Z"};
+    CHECK(ogplay::app::LastRunOutcome(unfinished, true) == "running");
+    CHECK_FALSE(ogplay::app::LastRunFailed(unfinished, true));
+    CHECK(ogplay::app::LastRunOutcome(unfinished, false) == "interrupted");
+    ogplay::app::WriteLastRunReport(entries / "org.example.game-2" / "last-run.json", unfinished);
+    ogplay::app::WriteLastRunReport(
+        entries / "org.example.game-3" / "last-run.json",
+        LastRunReport{.finished = true, .started_at = "t", .end = "exited", .presented = 9});
+    const auto attention = f.Run({"list", "--filter", "attention"});
+    JsonSuccess(attention);
+    CHECK(attention.out.find("\"installation_id\":\"org.example.game\"") != std::string::npos);
+    CHECK(attention.out.find("\"outcome\":\"fault\"") != std::string::npos);
+    CHECK(attention.out.find("\"outcome\":\"interrupted\"") != std::string::npos);
+    CHECK(attention.out.find("org.example.game-3") == std::string::npos);
+    const auto launchable = f.Run({"list", "--filter", "launchable"});
+    JsonSuccess(launchable);
+    CHECK(launchable.out.find("org.example.game-3") != std::string::npos);
+    CHECK(launchable.out.find("\"attention\":true") != std::string::npos);
+    // A report this build cannot read is no run information, not entry damage.
+    std::ofstream(entries / "org.example.game-3" / "last-run.json") << "{\"schema\":99}";
+    const auto all = f.Run({"list"});
+    JsonSuccess(all);
+    CHECK(all.out.find("\"damaged\":true") == std::string::npos);
+    CHECK(f.Run({"list", "--filter", "broken"}).code == 1);
 }
 
 TEST_CASE("CLI library settings reuse strict schema inheritance and reserved values") {

@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { cycle, externalText, profileText, shellPalette, statusDetail, storageText, vividIconColor, validatePackageSelection, versionLabel, visibleItems } from './library';
-import type { LibraryItem } from '../shared/rpc';
+import { cycle, externalText, lastRunText, profileText, shellPalette, statusDetail, storageText, vividIconColor, validatePackageSelection, versionLabel, visibleItems } from './library';
+import type { LastRun, LibraryItem } from '../shared/rpc';
 import { setLanguage } from '../shared/i18n';
 
 const item = (id: string, values: Partial<LibraryItem> = {}): LibraryItem => ({
   installation_id: id, display_name: id, localized_names: {}, package: 'org.example.game',
   version_code: 1, version_name: '1.0', imported_at: null, sandbox_path: '/sandbox', log_directory: '/log',
   status: 'ready', damage_reason: null, running: false, can_launch: true, icon: '', builtin_demo: false,
-  profile: null, external: { status: 'unavailable', value: '', owned: false }, ...values,
+  profile: null, external: { status: 'unavailable', value: '', owned: false }, last_run: null, ...values,
+});
+const run = (values: Partial<LastRun>): LastRun => ({
+  outcome: 'closed', failed: false, started_at: '2026-11-08T10:00:00Z', ended_at: '2026-11-08T10:05:00Z',
+  exit_code: 0, presented: 100, error: null, exit_error: null, ...values,
 });
 describe('library presentation', () => {
   it('combines search terms and host eligibility without merging installation instances', () => {
@@ -21,6 +25,16 @@ describe('library presentation', () => {
   it('keeps a running entry under attention when damage controls the badge', () => {
     const damaged = item('one', { status: 'damaged', running: true, can_launch: false });
     expect(visibleItems([damaged], '', 'attention', 'name')).toEqual([damaged]);
+  });
+  it('puts a failed last run under attention while the entry stays launchable', () => {
+    const failed = item('failed', { last_run: run({ outcome: 'fault', failed: true, error: 'java/lang/NullPointerException: x\nmore' }) });
+    const fine = item('fine', { last_run: run({}) });
+    expect(visibleItems([failed, fine, item('never')], '', 'attention', 'name')).toEqual([failed]);
+    expect(visibleItems([failed, fine], '', 'launchable', 'name')).toHaveLength(2);
+    expect(lastRunText(fine)).toBeNull();
+    expect(lastRunText(failed)?.label).toMatch(/^上次运行运行出错 · /);
+    expect(lastRunText(failed)?.error).toBe('java/lang/NullPointerException: x\nmore');
+    expect(lastRunText(item('exit', { last_run: run({ failed: true, exit_error: 'onDestroy' }) }))?.label).toMatch(/^上次运行退出时出错/);
   });
   it('sorts dates with missing facts last and leaves host order untouched', () => {
     const items = [item('unknown'), item('older', { imported_at: '2025-01-01' }), item('newer', { imported_at: '2026-01-01' })];

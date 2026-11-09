@@ -50,7 +50,9 @@ constexpr std::string_view kSynopsis =
 constexpr std::string_view kDetails =
     "\n"
     "Library subcommands:\n"
-    "  list                          List installations\n"
+    "  list [--filter all|attention|launchable]\n"
+    "                                List installations with their last run;\n"
+    "                                attention: entry problems or a failed last run\n"
     "  inspect <apk>                 Inspect an APK without importing it\n"
     "  import <apk> [--external-dir <dir> [--link-external]] [--new-instance]\n"
     "                                Import an APK; the data directory is copied\n"
@@ -76,6 +78,7 @@ constexpr std::string_view kDetails =
     "    --input-config <file>       Control config (input.toml)\n"
     "    --missing-data-report <file>\n"
     "                                Write /sdcard reads that found nothing (JSON)\n"
+    "    --run-report <file>         Write how the run started and ended (JSON)\n"
     "  Window\n"
     "    --ui-language <zh-CN|en-US> Host UI language (default: system)\n"
     "    --window-title <name>       Name shown in the window caption (default: APK file name)\n"

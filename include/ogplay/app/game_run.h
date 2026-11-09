@@ -72,6 +72,8 @@ struct GameRunOptions final {
     std::optional<std::filesystem::path> library_root;
     // ADR-0146: JSON of /sdcard reads that found nothing, written at exit.
     std::optional<std::filesystem::path> missing_data_report;
+    // GUI-23: last-run.json, marked unfinished at start and replaced with the outcome at exit.
+    std::optional<std::filesystem::path> run_report;
     // Window caption name; the APK file name when absent (library launches pass the game's name).
     std::optional<std::string> window_title;
     // Window/Dock icon (library launches pass the entry's icon.png): composed with the OGPlay mark in

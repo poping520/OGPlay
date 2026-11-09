@@ -4,7 +4,7 @@ import { t } from '../shared/i18n';
 
 export type Filter = 'all' | 'launchable' | 'attention';
 export type Sort = 'name' | 'newest' | 'oldest';
-export const filters: readonly (readonly [Filter, string])[] = [['all', '全部'], ['launchable', '可启动'], ['attention', '需检查']];
+export const filters: readonly (readonly [Filter, string])[] = [['all', '全部'], ['launchable', '可启动'], ['attention', '待排查']];
 export const statuses: Record<string, { label: string; tone: string }> = {
   damaged: { label: '条目损坏', tone: 'danger' },
   profile_catalog_unavailable: { label: 'Profile 不可用', tone: 'danger' },
@@ -53,6 +53,23 @@ export function statusDetail(item: LibraryItem): string {
   default: return '';
   }
 }
+const runOutcomes: Record<string, string> = {
+  startup_failed: '启动失败', fault: '运行出错', crashed: '异常退出', no_frame: '没有画面', interrupted: '进程意外终止',
+};
+/** The failed last run in the launcher language: what happened and when; the host's error text is only the tooltip.
+ *  Null when the last run went well. */
+export function lastRunText(item: LibraryItem): { label: string; error: string } | null {
+  const run = item.last_run;
+  if (!run?.failed) return null;
+  const outcome = runOutcomes[run.outcome] ?? '退出时出错';
+  const time = Date.parse(run.ended_at ?? run.started_at);
+  const when = Number.isFinite(time)
+    ? new Date(time).toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+  return {
+    label: when ? t('上次运行{outcome} · {when}', { outcome: t(outcome), when }) : t('上次运行{outcome}', { outcome: t(outcome) }),
+    error: run.error ?? run.exit_error ?? '',
+  };
+}
 export function visibleItems(items: LibraryItem[], query: string, filter: Filter, sort: Sort): LibraryItem[] {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const time = (item: LibraryItem) => {
@@ -64,7 +81,7 @@ export function visibleItems(items: LibraryItem[], query: string, filter: Filter
       .join(' ').toLocaleLowerCase();
     return terms.every(term => text.includes(term)) &&
       (filter === 'all' || (filter === 'launchable' && item.can_launch) ||
-       (filter === 'attention' && !['ready', 'running'].includes(item.status)));
+       (filter === 'attention' && (!['ready', 'running'].includes(item.status) || !!item.last_run?.failed)));
   }).sort((left, right) => {
     if (sort !== 'name') {
       const a = time(left), b = time(right);

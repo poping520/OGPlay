@@ -1,6 +1,7 @@
 #include "frontend/gui/rpc.h"
 #include "frontend/gui/rpc_error.h"
 #include "ogplay/app/library.h"
+#include "ogplay/app/run_report.h"
 
 #include <algorithm>
 #include <array>
@@ -335,6 +336,11 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 else
                     writer.AddNull(item, "profile");
                 writer.Add(item, "external", Condition(writer, detail.external));
+                // GUI-23: the last run, for the attention filter and the hero line.
+                if (const auto last_run = LoadLastRunReport(entry->directory / "last-run.json"))
+                    writer.Add(item, "last_run", LastRunJson(writer, *last_run, tile.running));
+                else
+                    writer.AddNull(item, "last_run");
                 writer.Append(items, item);
             }
             writer.Add(result, "items", items);

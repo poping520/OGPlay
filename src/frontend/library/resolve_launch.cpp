@@ -84,8 +84,11 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     o.library_root = store.Root();
     o.input_config_path = std::filesystem::absolute(entry.directory / "input.toml").lexically_normal();
     // ADR-0146: what the game failed to find, read by the launcher after exit.
-    if (mode != LaunchMode::preflight)
+    // GUI-23: how the run went, read back by the library list and the attention filter.
+    if (mode != LaunchMode::preflight) {
         o.missing_data_report = std::filesystem::absolute(entry.directory / "last-run-missing.json").lexically_normal();
+        o.run_report = std::filesystem::absolute(entry.directory / "last-run.json").lexically_normal();
+    }
     // The window is named in the launcher's language, like the library tile.
     o.ui_language = ResolveUiLanguage(std::get<std::string>(Setting(global, "language")));
     o.window_title = LocalizedDisplayName(*entry.metadata, UiLanguageTag(*o.ui_language));

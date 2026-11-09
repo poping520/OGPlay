@@ -84,8 +84,7 @@ RunEnd ClassifyRunEnd(const RunApkExitState& state, const bool fault) noexcept {
     return state.presented == 0 ? RunEnd::no_frame : RunEnd::closed;
 }
 
-namespace {
-[[nodiscard]] std::string_view RunEndName(const RunEnd end) noexcept {
+std::string_view RunEndName(const RunEnd end) noexcept {
     switch (end) {
     case RunEnd::fault: return "fault";
     case RunEnd::crashed: return "crashed";
@@ -96,7 +95,6 @@ namespace {
     }
     return "startup_failed";
 }
-}  // namespace
 
 struct MissingDataRecorder::State final {
     static constexpr std::size_t kLimit = 512;

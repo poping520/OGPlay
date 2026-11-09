@@ -40,6 +40,10 @@ supersample 范围 1..4；max_fps（帧率上限）取 30/60/90/120/144/unlimite
 needs_data（示例与最深共同目录只取扩展文件），否则缺失 ≥3 条才是。SuggestDataMount 只读 schema 2 报告，
 `data_mount_hint` 关闭、报告缺失/损坏/旧 schema 或与当前挂载不符时为 none；用户新选目录单独评估。
 CLI `library data-hint` 同源。
+
+运行结果（GUI-23）：ResolveLaunch 在非 preflight 时同时传条目 `last-run.json`（`--run-report`）。报告由游戏进程写，
+格式、失败判定与列表 JSON（`LastRunJson`）只在 `app/run_report.h` 定义：未完成且无运行锁为 interrupted；
+startup_failed/fault/crashed/no_frame、interrupted 或带 exit_error 为失败。读不出的报告视为无运行信息，不改变条目状态。
 导入前 GuessDataMount 只看宿主路径：最内层 `Android/data|obb|media`、`sdcard`、`emulated/0`
 之下的部分映射到 /sdcard 下，目录名等于包名时映射 Android/data（含 .obb 为 Android/obb），其余为
 `/sdcard/<目录名>`；顶层含 Android/ 的 sdcard 副本保持 /sdcard。

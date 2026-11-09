@@ -47,7 +47,9 @@
 #include "ogplay/session/profile_apk.h"
 #include "ogplay/loader/arsc.h"
 #include "ogplay/frontend/user_data_dir.h"
+#include "ogplay/app/run_report.h"
 #include "ogplay/runtime/dexvm/gap_survey.h"
+#include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/debug/stall_diagnostics.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
@@ -153,10 +155,43 @@ void ReleaseCapturedFrame(agent::FrameSnapshotStore* frames, Guest& guest) {
     }
 }
 
+// GUI-23: what the session knew about its end when it returned or threw.
+struct SessionOutcome final {
+    std::optional<RunEnd> end;
+    bool loop_entered{};
+    std::optional<std::string> fault;
+    std::optional<std::string> exit_error;
+};
+
+[[nodiscard]] std::string DescribeFailure(const std::exception_ptr& failure) {
+    try {
+        std::rethrow_exception(failure);
+    } catch (const runtime::dexvm::VmJavaThrow& error) {
+        return error.descriptor + ": " + error.message;
+    } catch (const std::exception& error) {
+        return error.what();
+    } catch (...) {
+        return "unknown failure";
+    }
+}
+
+void WriteRunReport(core::Logger& logger, const std::filesystem::path& file, const app::LastRunReport& report) {
+    try {
+        app::WriteLastRunReport(file, report);
+    } catch (const std::exception& error) {
+        // A diagnostic report never changes how the game session ends.
+        try {
+            logger.Write(core::LogLevel::warn, "frontend.run_report", error.what(), {}, {{"path", PathUtf8(file)}},
+                         kUnrestrictedLog);
+        } catch (...) {
+        }
+    }
+}
+
 }  // namespace
 
 static int RunGameSession(GameRunOptions options, core::Logger& logger, bool status_to_stderr,
-                          RunApkExitState& exit_state) {
+                          RunApkExitState& exit_state, SessionOutcome& outcome) {
     const auto Write = [stream = status_to_stderr ? stderr : stdout](std::string_view text) {
         static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stream));
         static_cast<void>(std::fflush(stream));
@@ -175,15 +210,15 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
           mcp_port, key_editor_port, dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,
           diagnostics_enabled, supersample_factor, max_fps, surface_width, surface_height, density_dpi, cpu_config,
           mcp_manual_step, preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox,
-          input_config_path, library_root, missing_data_report, window_title, window_icon, window_icon_style,
-          ui_language, surface_size_explicit] = std::move(options);
+          input_config_path, library_root, missing_data_report, run_report, window_title, window_icon,
+          window_icon_style, ui_language, surface_size_explicit] = std::move(options);
     const auto language = ui_language ? *ui_language : app::SystemUiLanguage();
     const auto bundled_data = HostBundledDataPaths();
     logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
                  {{"data_root", PathUtf8(bundled_data.root)}});
-    const auto profiles =
-        profiles_directory ? session::TitleProfileCatalog::LoadDirectory(*profiles_directory)
-                           : session::TitleProfileCatalog::LoadOptionalDirectory(bundled_data.profiles_directory);
+    const auto profiles = profiles_directory
+                              ? session::TitleProfileCatalog::LoadDirectory(*profiles_directory)
+                              : session::TitleProfileCatalog::LoadOptionalDirectory(bundled_data.profiles_directory);
     const auto libraries = loader::ReadApkArmNativeLibraries(apk_bytes, archive);
     const loader::ApkNativeLibraryInventory native_inventory{libraries};
     const auto compatibility = session::SelectApkCompatibilityProfile(manifest, libraries, profiles);
@@ -834,6 +869,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             }
             return confirmed;
         };
+        outcome.loop_entered = true;
         while (!quit && !guest->ExitRequested() && !(dex_context && runtime::SessionExitRequested(*dex_context))) {
             bool close_answered = false;
             for (const auto& event : window->PollEvents()) {
@@ -1036,6 +1072,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 if (!failure) {
                     capture_exit();
                     failure = std::current_exception();
+                    outcome.fault = error.what();
                     try {
                         logger.Write(core::LogLevel::error, "frontend.run_apk.fault", error.what(),
                                      {.frame = driver.state().frame}, {}, kUnrestrictedLog);
@@ -1070,6 +1107,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         if (!failure) capture_exit();
         // Judged before teardown: an onDestroy error after the user closed a running game is not a failed run.
         const auto run_end = ClassifyRunEnd(exit_state, failure != nullptr);
+        outcome.end = run_end;
         control_channel->Close();
         ReleaseCapturedFrame(mcp_frames.get(), *guest);
         // onPause may join an AudioTrack producer. Keep its consumer alive even
@@ -1087,7 +1125,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             if (!failure) mcp_lifecycle = agent::McpLifecycleState::stopped;
         } catch (const std::exception& error) {
             logger.Write(core::LogLevel::error, "frontend.run_apk.teardown", error.what(), {}, {}, kUnrestrictedLog);
-            if (!failure) failure = std::current_exception();
+            if (!failure) {
+                outcome.exit_error = error.what();
+                failure = std::current_exception();
+            }
             if (!guest_fault) guest_fault = error.what();
             mcp_lifecycle = agent::McpLifecycleState::failed;
         }
@@ -1118,13 +1159,46 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
 
 int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr) {
     RunApkExitState exit_state;
+    SessionOutcome outcome;
+    // GUI-23: an unfinished report first, so a process that dies mid-run still leaves one.
+    const auto report_path = options.preflight ? std::nullopt : options.run_report;
+    app::LastRunReport report{.started_at = hal::Clock::UtcTimestamp()};
+    if (report_path) WriteRunReport(logger, *report_path, report);
+    const auto finish = [&](const std::optional<int> code, const std::exception_ptr& failure) {
+        if (!report_path) return;
+        const auto end = outcome.end                                     ? *outcome.end
+                         : !failure                                      ? ClassifyRunEnd(exit_state, false)
+                         : outcome.loop_entered || exit_state.guest_exit ? ClassifyRunEnd(exit_state, true)
+                                                                         : RunEnd::startup_failed;
+        report.finished = true;
+        report.ended_at = hal::Clock::UtcTimestamp();
+        report.end = std::string(RunEndName(end));
+        report.exit_code = code;
+        report.presented = exit_state.presented;
+        if (end == RunEnd::closed || end == RunEnd::exited) {
+            report.exit_error = outcome.exit_error;
+            if (!report.exit_error && failure) report.exit_error = DescribeFailure(failure);
+        } else {
+            report.error = outcome.fault;
+            if (!report.error && failure) report.error = DescribeFailure(failure);
+        }
+        WriteRunReport(logger, *report_path, report);
+    };
     try {
-        return RunGameSession(std::move(options), logger, status_to_stderr, exit_state);
+        const auto code = RunGameSession(std::move(options), logger, status_to_stderr, exit_state, outcome);
+        finish(code, nullptr);
+        return code;
     } catch (...) {
+        const auto failure = std::current_exception();
         // Native invocation may wrap its exit exception. Use the original
         // process facts captured before teardown, never parse error text.
-        if (!exit_state.termination_signal && !exit_state.native_exit_code) throw;
-        return ReportRunApkExit(logger, exit_state);
+        if (!exit_state.termination_signal && !exit_state.native_exit_code) {
+            finish(std::nullopt, failure);
+            throw;
+        }
+        const auto code = ReportRunApkExit(logger, exit_state);
+        finish(code, failure);
+        return code;
     }
 }
 }  // namespace ogplay::frontend

@@ -1057,9 +1057,23 @@ public:
             publish(field);
     }
 
+    void PublishMethod(const JniObjectIdentity identity, const dx::LinkedMethod& method) {
+        const auto implementation = "dexvm.m" + std::to_string(method.id.Value());
+        try {
+            static_cast<void>(session->Classes().RegisterMethod(
+                identity, {method.name, method.descriptor, implementation, method.is_static}));
+        } catch (const JniClassRegistryError& error) {
+            throw DexVmBridgeError("cannot publish DexVM method to JNI: " + linker.Class(method.owner).descriptor +
+                                   "." + method.name + method.descriptor + ": " + error.what());
+        }
+        session->Invocations().RegisterHandler(implementation,
+                                               [this, method_id = method.id](const JniInvocation& invocation) {
+                                                   return InvokeInterpreted(method_id, invocation);
+                                               });
+    }
+
     void PublishMissingMethods(const dx::DexClassId class_id, const JniObjectIdentity identity) {
         auto& classes = session->Classes();
-        auto& invocations = session->Invocations();
         for (const auto method_id : linker.MethodsOf(class_id)) {
             const auto& method = linker.Method(method_id);
             if (method.name == "<clinit>") continue;
@@ -1067,24 +1081,40 @@ public:
             if (existing.has_value() && classes.ResolveMethod(*existing).declaring_class == identity) {
                 continue;
             }
-            const auto implementation = "dexvm.m" + std::to_string(method_id.Value());
-            try {
-                static_cast<void>(classes.RegisterMethod(
-                    identity, {method.name, method.descriptor, implementation, method.is_static}));
-            } catch (const JniClassRegistryError& error) {
-                throw DexVmBridgeError("cannot publish DexVM method to JNI: " + linker.Class(class_id).descriptor +
-                                       "." + method.name + method.descriptor + ": " + error.what());
-            }
-            invocations.RegisterHandler(implementation, [this, method_id](const JniInvocation& invocation) {
-                return InvokeInterpreted(method_id, invocation);
-            });
+            PublishMethod(identity, method);
         }
     }
 
-    [[nodiscard]] JniObjectIdentity RegisterClassForNative(const dx::DexClassId class_id) {
+    void PublishDeferredNativeMembers(const JniObjectIdentity identity) {
+        session->Classes().PublishDeferredMembers(identity, [&](const JniObjectIdentity declaring) {
+            const auto class_id = native_class_ids.at(declaring.value);
+            const auto& linked = linker.Class(class_id);
+            const auto publish_field = [&](const dx::VmFieldId field_id) {
+                const auto& field = linker.Field(field_id);
+                const auto jni_id = session->Classes().RegisterField(
+                    declaring,
+                    {field.name, field.descriptor, "dexvm.f" + std::to_string(field_id.Value()), field.is_static});
+                field_identities.insert_or_assign(jni_id.Value(), field_id);
+            };
+            for (const auto field : linked.own_instance_fields)
+                publish_field(field);
+            for (const auto field : linked.own_static_fields)
+                publish_field(field);
+            for (const auto method_id : linker.MethodsOf(class_id)) {
+                const auto& method = linker.Method(method_id);
+                if (method.name != "<clinit>") PublishMethod(declaring, method);
+            }
+        });
+    }
+
+    [[nodiscard]] JniObjectIdentity RegisterClassForNative(const dx::DexClassId class_id, const bool startup = false) {
         auto& classes = session->Classes();
         auto& invocations = session->Invocations();
-        const auto& linked = linker.Class(class_id);
+        const auto& linked = linker.ClassHeader(class_id);
+        if (startup) {
+            const auto registered = class_identities.find(class_id.Value());
+            if (registered != class_identities.end()) return registered->second;
+        }
         if (linked.is_array) {
             throw DexVmBridgeError("dexvm bridge cannot register an array JNI class");
         }
@@ -1092,6 +1122,7 @@ public:
         if (const auto existing = classes.FindClass(name); existing.has_value()) {
             class_identities.emplace(class_id.Value(), *existing);
             native_class_ids.emplace(existing->value, class_id);
+            PublishDeferredNativeMembers(*existing);
             PublishMissingMethods(class_id, *existing);
             PublishMissingFields(class_id, *existing);
             return *existing;
@@ -1104,50 +1135,57 @@ public:
         JniClassDeclaration declaration;
         declaration.name = name;
         if (linked.super.has_value()) {
-            const auto& super = linker.Class(*linked.super);
+            const auto& super = linker.ClassHeader(*linked.super);
             if (!super.is_array) {
-                static_cast<void>(RegisterClassForNative(*linked.super));
+                static_cast<void>(RegisterClassForNative(*linked.super, startup));
                 declaration.superclass = super.descriptor.substr(1, super.descriptor.size() - 2);
             }
         }
         declaration.is_interface = linked.is_interface;
         declaration.interfaces.reserve(linked.direct_interfaces.size());
         for (const auto interface_id : linked.direct_interfaces) {
-            const auto& interface_class = linker.Class(interface_id);
+            const auto& interface_class = linker.ClassHeader(interface_id);
             if (!interface_class.is_interface) {
                 throw dx::JavaLinkageError(dx::JavaLinkageKind::incompatible_class_change,
                                            "implemented type is not an interface: " + interface_class.descriptor);
             }
-            static_cast<void>(RegisterClassForNative(interface_id));
+            static_cast<void>(RegisterClassForNative(interface_id, startup));
             declaration.interfaces.push_back(
                 interface_class.descriptor.substr(1, interface_class.descriptor.size() - 2));
         }
+        // Preserve the registered class and hierarchy for passive JNI queries.
+        // Newly registered boot members are only needed on explicit lookup.
+        const bool defer_members = startup && linked.is_boot_dex;
+        if (!defer_members) static_cast<void>(linker.Class(class_id));
         std::vector<std::pair<std::string, dx::VmMethodId>> handlers;
         const auto append_field = [&](const dx::VmFieldId field_id) {
             const auto& field = linker.Field(field_id);
             declaration.fields.push_back(
                 {field.name, field.descriptor, "dexvm.f" + std::to_string(field_id.Value()), field.is_static});
         };
-        for (const auto field : linked.own_instance_fields)
-            append_field(field);
-        for (const auto field : linked.own_static_fields)
-            append_field(field);
-        for (const auto method_id : linker.MethodsOf(class_id)) {
-            const auto& method = linker.Method(method_id);
-            if (method.name == "<clinit>") continue;
-            const auto implementation = "dexvm.m" + std::to_string(method_id.Value());
-            declaration.methods.push_back({method.name, method.descriptor, implementation, method.is_static});
-            handlers.emplace_back(implementation, method_id);
+        if (!defer_members) {
+            for (const auto field : linked.own_instance_fields)
+                append_field(field);
+            for (const auto field : linked.own_static_fields)
+                append_field(field);
+            for (const auto method_id : linker.MethodsOf(class_id)) {
+                const auto& method = linker.Method(method_id);
+                if (method.name == "<clinit>") continue;
+                const auto implementation = "dexvm.m" + std::to_string(method_id.Value());
+                declaration.methods.push_back({method.name, method.descriptor, implementation, method.is_static});
+                handlers.emplace_back(implementation, method_id);
+            }
         }
         JniObjectIdentity identity;
         try {
-            identity = classes.RegisterClass(declaration);
+            identity = classes.RegisterClass(declaration, defer_members);
         } catch (const JniClassRegistryError& error) {
             throw DexVmBridgeError("cannot publish DexVM class to JNI: " + name + ": " + error.what());
         }
         registering_classes.erase(class_id.Value());
         class_identities.emplace(class_id.Value(), identity);
         native_class_ids.emplace(identity.value, class_id);
+        if (defer_members) return identity;
         for (const auto field : linked.own_instance_fields)
             BindField(identity, field);
         for (const auto field : linked.own_static_fields)
@@ -1186,10 +1224,10 @@ public:
         // registration path is also the single owner of superclass publication:
         // interpreted classes must retain intrinsic parents in JNI type checks.
         for (const auto class_id : linker.AllClasses()) {
-            const auto& linked = linker.Class(class_id);
+            const auto& linked = linker.ClassHeader(class_id);
             if (linked.is_array) continue;
             try {
-                static_cast<void>(RegisterClassForNative(class_id));
+                static_cast<void>(RegisterClassForNative(class_id, true));
             } catch (const dx::JavaLinkageError&) {
                 // Eager JNI projection must not turn an unused, invalid Java class
                 // into an assembly error. Its first Java/JNI use reports the linkage
@@ -1227,11 +1265,11 @@ public:
     }
 
     [[nodiscard]] JniValue InvokeInterpreted(const dx::VmMethodId method_id, const JniInvocation& invocation) {
-        const auto& method = linker.Method(method_id);
         // A native method executes outside the interpreter lock. Every JNI
         // re-entry reacquires it so object-model and linker state still have
         // one writer, while unrelated Java threads may run between calls.
         const dx::VmExecutionLockScope execution_guard(vm->ExecutionLock());
+        const auto& method = linker.Method(method_id);
         const auto context = ContextForJniThread(invocation.thread_id);
         std::vector<dx::VmValue> arguments;
         arguments.reserve(invocation.arguments.size() + 1);
@@ -1450,13 +1488,14 @@ public:
         // lock at their bridge entry points.
         A32GuestCallResult result{};
         auto& execution_lock = vm->ExecutionLock();
+        const auto found = class_identities.find(method.owner.Value());
+        const auto identity = found == class_identities.end() ? std::nullopt : std::optional{found->second};
         const auto execution_depth = execution_lock.ReleaseForBlocking();
         try {
-            const auto identity = class_identities.find(method.owner.Value());
             bool invoked = false;
-            if (identity != class_identities.end()) {
+            if (identity) {
                 const auto registered =
-                    session->TryInvokeRegisteredNative(identity->second, method.name, method.descriptor, frame);
+                    session->TryInvokeRegisteredNative(*identity, method.name, method.descriptor, frame);
                 if (registered.has_value()) {
                     result = *registered;
                     invoked = true;
@@ -1870,6 +1909,10 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
                                          if (android_context) VisitAndroidSessionRoots(*android_context, visit);
                                      }});
 
+    session.Classes().SetMemberLoader([bridge_state](const JniObjectIdentity identity) {
+        const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+        bridge_state->PublishDeferredNativeMembers(identity);
+    });
     impl_->RegisterDexClasses();
 
     if (android_context != nullptr) {
@@ -2119,6 +2162,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->session->Environment().SetReflectionHooks({});
         impl_->session->Environment().SetObjectAllocationHook({});
         impl_->session->Classes().SetClassResolver({});
+        impl_->session->Classes().SetMemberLoader({});
         impl_->session->Environment().SetExceptionDescriber({});
         impl_->session->Environment().SetThrowableFactory({});
         impl_->session->Objects().ObjectArrays().SetAssignability({});

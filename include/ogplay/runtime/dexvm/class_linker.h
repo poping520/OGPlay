@@ -406,7 +406,10 @@ public:
                                               std::vector<DexClassId> interfaces, VmClassLoaderId loader,
                                               std::span<const IntrinsicMethodDecl> methods);
 
+    // Materializes declared members without linking the hierarchy. Runtime callers hold the VM execution lock.
     [[nodiscard]] const LinkedClass& Class(DexClassId id) const;
+    // Does not materialize a dormant class. Its member lists may still be empty.
+    [[nodiscard]] const LinkedClass& ClassHeader(DexClassId id) const;
     [[nodiscard]] LinkedClass& MutableClass(DexClassId id);
     [[nodiscard]] const LinkedMethod& Method(VmMethodId id) const;
     [[nodiscard]] LinkedMethod& MutableMethod(VmMethodId id);

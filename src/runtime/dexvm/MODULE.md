@@ -29,6 +29,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - APK class_def 经同源重复校验；已登记 bootstrap 身份按 parent-first 胜出，不登记或混合
   APK 副本的层级、字段、方法、注解与 clinit，不要求字节码相同。常量池经现有惰性解析
   指向同一父类身份；同包 APK 独有类仍归 application。层级/布局/vtable/iftable 懒链接。
+  启动时登记 ROM 类身份并校验 DEX 结构。非 overlay 的 ROM 成员及方法体按类物化，
+  运行期受 VM 执行锁保护。GC 只扫描已分配的静态引用槽，不为扫描物化类。
   未触达可选类不阻断启动；触达后
   缺失层级、循环继承、非法覆盖只使触达的类及其依赖类不可用。bootstrap 未提供的类型
   即使位于 android.* 也从应用 DEX 加载；数组按需合成并支持引用协变及 Object/Cloneable/Serializable 关系。

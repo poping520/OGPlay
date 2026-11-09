@@ -15,8 +15,10 @@ DexVM bridge 拥有 JNI 反射转换适配：FromReflected 使用 ReflectionRunt
 校验引用类型、声明类与 static 标志，在 VM 执行锁内发布调用线程 local reference；ID 不
 拥有 wrapper，不另建字段存储。销毁前先停止调用，再清除 JniEnvironment 的反射 hooks。
 JNI FindClass 的显式 resolver 在 VM 执行锁内按需链接并发布 own 成员，保留平台注册表
-既有实现；被动 FindClass 不递归调用 resolver。预发布遇到实现类型非 interface 等 Java
-链接错误时延后到真实 Java/JNI 使用，不因未使用的非法类使进程装配失败；失败发布不保留递归标记。
+既有实现；被动 FindClass 不递归调用 resolver。启动时预发布类身份和声明层级，
+新登记的 BootDex 类由显式类或成员查询按需发布成员，过程受 VM 执行锁保护。
+预发布遇到实现类型非 interface 等 Java 链接错误时延后到真实 Java/JNI 使用，
+不因未使用的非法类使进程装配失败；失败发布不保留递归标记。
 值传输复用稳定的双向类身份缓存，成员解析仍经发布入口补齐按需物化的成员。异常 factory 发布真实 local Throwable。
 JNI 字段访问经解释器共享守卫：未实现非常量字段记账、挂起 UnsatisfiedLinkError，禁止侧表回落。
 GC roots 同时包含 JNI 引用与字符串 store 的活动 chars/UTF8 lease；Release 前不得扫除

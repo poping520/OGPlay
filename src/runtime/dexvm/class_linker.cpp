@@ -346,6 +346,40 @@ DexUnitId DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
     return RegisterDexUnit(std::move(dex_bytes), false);
 }
 
+namespace {
+
+std::string DexMethodDescriptor(const loader::DexImage& image, const std::uint32_t prototype_index) {
+    const auto& prototype = image.prototypes[prototype_index];
+    std::string descriptor = "(";
+    for (const auto parameter : prototype.parameter_type_indices)
+        descriptor += image.types[parameter].descriptor;
+    descriptor += ")";
+    descriptor += image.types[prototype.return_type_index].descriptor;
+    return descriptor;
+}
+
+// ReadDexClassData checks code-item ranges but not the encoded catch handlers.
+// Keep the remaining structural checks at registration without retaining code buffers.
+void ValidateDeferredDexMethods(const std::span<const std::uint8_t> bytes, const loader::DexImage& image,
+                                const loader::DexClassData& data, const std::string& owner,
+                                const std::span<std::optional<std::uint16_t>> prototype_words) {
+    for (const auto* list : {&data.direct_methods, &data.virtual_methods}) {
+        for (const auto& method : *list) {
+            if (method.code && method.code->tries_size)
+                static_cast<void>(loader::ReadDexMethodCode(bytes, image, *method.code));
+            const auto& entry = image.methods[method.method_index];
+            auto& words = prototype_words[entry.prototype_index];
+            if (!words) words = ArgumentWords(SplitDescriptor(DexMethodDescriptor(image, entry.prototype_index)), true);
+            const auto receiver = (method.access_flags & kAccStatic) ? 0U : 1U;
+            if (method.code && method.code->incoming_words != *words + receiver)
+                Fail(DexVmErrorReason::invalid_code, "method ins does not match descriptor: " + owner + "." +
+                                                         Ascii(image.strings[entry.name_string_index]));
+        }
+    }
+}
+
+}  // namespace
+
 DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, const bool boot) {
     if (impl_->link_complete) {
         Fail(DexVmErrorReason::internal_invariant, "dex registered after linking");
@@ -372,6 +406,7 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
     unit.method_cache.assign(unit.image.methods.size(), {});
     unit.field_cache.assign(unit.image.fields.size(), std::nullopt);
     const auto& image_ref = unit.image;
+    std::vector<std::optional<std::uint16_t>> boot_prototype_words(boot ? image_ref.prototypes.size() : 0U);
 
     for (std::uint32_t class_index = 0; class_index < image_ref.classes.size(); ++class_index) {
         const auto& definition = image_ref.classes[class_index];
@@ -422,193 +457,212 @@ DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, c
             id = impl_->AddClass(std::move(linked));
         }
 
-        const auto& data = unit.class_data[class_index];
-        auto& stored = impl_->ClassAt(id);
-        auto& extra = impl_->ExtrasAt(id);
-        for (const auto* field_list : {&data.static_fields, &data.instance_fields}) {
-            const bool is_static = field_list == &data.static_fields;
-            std::vector<VmFieldId> dex_order;
-            for (const auto& encoded : *field_list) {
-                const auto& field_id_entry = image_ref.fields[encoded.field_index];
-                LinkedField field;
-                field.owner = id;
-                field.name = Ascii(image_ref.strings[field_id_entry.name_string_index]);
-                field.descriptor = image_ref.types[field_id_entry.type_index].descriptor;
-                field.access_flags = encoded.access_flags;
-                field.is_static = is_static;
-                field.is_wide = IsWideDescriptor(field.descriptor);
-                field.is_ref = IsRefDescriptor(field.descriptor);
-                if (encoded.field_index < image_ref.field_runtime_metadata.size()) {
-                    field.generic_signature = image_ref.field_runtime_metadata[encoded.field_index].signature;
-                    for (const auto& annotation : image_ref.field_runtime_metadata[encoded.field_index].annotations) {
-                        field.runtime_annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
-                    }
-                }
-                auto& own_fields = is_static ? stored.own_static_fields : stored.own_instance_fields;
-                const auto existing_field =
-                    std::find_if(own_fields.begin(), own_fields.end(), [&](const VmFieldId candidate) {
-                        const auto& current = impl_->FieldAt(candidate);
-                        return current.name == field.name && current.descriptor == field.descriptor;
-                    });
-                if (existing_field != own_fields.end()) {
-                    auto& current = impl_->FieldAt(*existing_field);
-                    current.access_flags = field.access_flags;
-                    current.is_wide = field.is_wide;
-                    current.is_ref = field.is_ref;
-                    current.runtime_annotations = std::move(field.runtime_annotations);
-                    current.generic_signature = std::move(field.generic_signature);
-                    dex_order.push_back(*existing_field);
-                } else {
-                    const auto field_id = impl_->AddField(std::move(field));
-                    own_fields.push_back(field_id);
-                    dex_order.push_back(field_id);
-                }
-            }
-            if (is_static && merge_intrinsic) {
-                // encoded_array values are indexed by DEX declaration order,
-                // not by the order in which intrinsic fields were registered.
-                auto& own_fields = stored.own_static_fields;
-                for (const auto field : own_fields) {
-                    if (std::find(dex_order.begin(), dex_order.end(), field) == dex_order.end())
-                        dex_order.push_back(field);
-                }
-                own_fields = std::move(dex_order);
-            }
-        }
-        for (const auto* method_list : {&data.direct_methods, &data.virtual_methods}) {
-            const bool direct = method_list == &data.direct_methods;
-            for (const auto& encoded : *method_list) {
-                const auto& method_id_entry = image_ref.methods[encoded.method_index];
-                LinkedMethod method;
-                method.owner = id;
-                method.name = Ascii(image_ref.strings[method_id_entry.name_string_index]);
-                const auto& prototype = image_ref.prototypes[method_id_entry.prototype_index];
-                std::string method_descriptor = "(";
-                for (const auto parameter : prototype.parameter_type_indices) {
-                    method_descriptor += image_ref.types[parameter].descriptor;
-                }
-                method_descriptor += ")";
-                method_descriptor += image_ref.types[prototype.return_type_index].descriptor;
-                method.descriptor = std::move(method_descriptor);
-                method.access_flags = encoded.access_flags;
-                method.dex_method_index = encoded.method_index;
-                method.dex_unit = unit_id;
-                if (encoded.method_index < image_ref.method_annotation_metadata.size()) {
-                    const auto& metadata = image_ref.method_annotation_metadata[encoded.method_index];
-                    method.generic_signature = metadata.signature;
-                    method.has_parameter_annotations = metadata.has_parameter_annotations;
-                    for (const auto& annotation : metadata.annotations)
-                        method.runtime_annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
-                    for (const auto& parameter : metadata.parameters) {
-                        auto& annotations = method.parameter_annotations.emplace_back();
-                        for (const auto& annotation : parameter)
-                            annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
-                    }
-                }
-                method.is_static = (encoded.access_flags & kAccStatic) != 0;
-                method.overridable = (encoded.access_flags & (kAccStatic | kAccPrivate | kAccFinal)) == 0;
-                method.declared_invoke_kind =
-                    direct
-                        ? (method.is_static ? DeclaredInvokeKind::static_call : DeclaredInvokeKind::direct)
-                        : (stored.is_interface ? DeclaredInvokeKind::interface_call : DeclaredInvokeKind::virtual_call);
-                if ((encoded.access_flags & kAccNative) != 0) {
-                    method.kind = MethodKind::native;
-                } else if ((encoded.access_flags & kAccAbstract) != 0) {
-                    method.kind = MethodKind::abstract;
-                } else {
-                    method.kind = MethodKind::interpreted;
-                    if (!encoded.code.has_value()) {
-                        Fail(DexVmErrorReason::invalid_member, "concrete method has no code: " + method.name);
-                    }
-                    method.code = loader::ReadDexMethodCode(unit.bytes, image_ref, *encoded.code);
-                }
-                const auto parts = SplitDescriptor(method.descriptor);
-                method.shape = ShapeOf(parts, method.is_static);
-                method.return_shorty = ShortyOf(parts.return_type);
-                method.ins_words = method.shape.incoming_words;
-                if (method.code.has_value() && method.code->info.incoming_words != method.ins_words) {
-                    Fail(DexVmErrorReason::invalid_code,
-                         "method ins does not match descriptor: " + stored.descriptor + "." + method.name);
-                }
-                method.vtable_index = direct ? -1 : -2;
-                auto& own_methods = direct ? stored.own_direct_methods : stored.own_virtual_methods;
-                const auto existing_method =
-                    std::find_if(own_methods.begin(), own_methods.end(), [&](const VmMethodId candidate) {
-                        const auto& current = impl_->MethodAt(candidate);
-                        return current.name == method.name && current.descriptor == method.descriptor;
-                    });
-                if (existing_method != own_methods.end()) {
-                    auto& current = impl_->MethodAt(*existing_method);
-                    if (current.is_static != method.is_static ||
-                        current.declared_invoke_kind != method.declared_invoke_kind) {
-                        Fail(DexVmErrorReason::invalid_member, "intrinsic overlay invoke kind differs from "
-                                                               "boot dex: " +
-                                                                   stored.descriptor + "." + method.name +
-                                                                   method.descriptor);
-                    }
-                    if (current.kind == MethodKind::native && method.kind != MethodKind::native) {
-                        Fail(DexVmErrorReason::invalid_member,
-                             "guest JNI admission requires a boot native declaration");
-                    }
-                    if (current.kind == MethodKind::intrinsic && !current.implementation &&
-                        method.kind == MethodKind::interpreted) {
-                        // A declaration without a handler leaves the DEX body in charge.
-                        current.kind = MethodKind::interpreted;
-                        current.adapter_review.clear();
-                    }
-                    current.access_flags = method.access_flags;
-                    // The DEX flags decide overriding, as for any boot class.
-                    current.overridable = (method.access_flags & (kAccStatic | kAccPrivate | kAccFinal)) == 0;
-                    current.must_override = false;
-                    current.dex_method_index = method.dex_method_index;
-                    current.dex_unit = method.dex_unit;
-                    current.generic_signature = std::move(method.generic_signature);
-                    current.runtime_annotations = std::move(method.runtime_annotations);
-                    current.parameter_annotations = std::move(method.parameter_annotations);
-                    current.has_parameter_annotations = method.has_parameter_annotations;
-                    current.code = std::move(method.code);
-                    current.shape = std::move(method.shape);
-                    current.return_shorty = method.return_shorty;
-                    current.ins_words = method.ins_words;
-                    if (current.name == "<clinit>") {
-                        stored.clinit = current.id;
-                    }
-                } else {
-                    if (method.kind == MethodKind::native && boot && !stored.admit_boot_native_methods) {
-                        // Unbound framework native: calling it records the gap and
-                        // throws UnsatisfiedLinkError, as a missing JNI symbol would.
-                        method.kind = MethodKind::intrinsic;
-                        if (impl_->unbound_native_policy)
-                            method.implementation =
-                                impl_->unbound_native_policy(stored.descriptor, method.name, method.descriptor);
-                    }
-                    const auto vm_method_id = impl_->AddMethod(std::move(method));
-                    own_methods.push_back(vm_method_id);
-                    if (direct) {
-                        const auto& added = impl_->MethodAt(vm_method_id);
-                        extra.direct_lookup.emplace(MemberKey(added.name, added.descriptor), vm_method_id);
-                        if (added.name == "<clinit>") {
-                            stored.clinit = vm_method_id;
-                        }
-                    }
-                }
-            }
-        }
-        if (class_index < image_ref.class_annotation_metadata.size()) {
-            const auto& meta = image_ref.class_annotation_metadata[class_index];
-            stored.generic_signature = meta.signature;
-            stored.runtime_annotations.clear();
-            stored.runtime_annotations.reserve(meta.runtime_annotations.size());
-            for (const auto& annotation : meta.runtime_annotations) {
-                stored.runtime_annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
-            }
-            stored.annotation_defaults.clear();
-            if (meta.annotation_default.has_value()) {
-                stored.annotation_defaults = ConvertAnnotation(image_ref, unit_id, *meta.annotation_default).elements;
-            }
+        if (boot && !merge_intrinsic) {
+            impl_->ExtrasAt(id).dex_members_pending = true;
+            ValidateDeferredDexMethods(unit.bytes, image_ref, unit.class_data[class_index], descriptor,
+                                       boot_prototype_words);
+        } else {
+            impl_->LoadDexMembers(id, merge_intrinsic);
         }
     }
     return unit_id;
+}
+
+void DexClassLinker::Impl::LoadDexMembers(const DexClassId id, const bool merge_intrinsic) {
+    auto& stored = ClassAt(id);
+    const auto unit_id = *stored.dex_unit;
+    const auto class_index = *stored.dex_class_def_index;
+    auto& unit = UnitAt(unit_id);
+    const auto& image_ref = unit.image;
+    const bool boot = stored.is_boot_dex;
+    auto& data = unit.class_data[class_index];
+    auto& extra = ExtrasAt(id);
+    for (const auto* field_list : {&data.static_fields, &data.instance_fields}) {
+        const bool is_static = field_list == &data.static_fields;
+        std::vector<VmFieldId> dex_order;
+        for (const auto& encoded : *field_list) {
+            const auto& field_id_entry = image_ref.fields[encoded.field_index];
+            LinkedField field;
+            field.owner = id;
+            field.name = Ascii(image_ref.strings[field_id_entry.name_string_index]);
+            field.descriptor = image_ref.types[field_id_entry.type_index].descriptor;
+            field.access_flags = encoded.access_flags;
+            field.is_static = is_static;
+            field.is_wide = IsWideDescriptor(field.descriptor);
+            field.is_ref = IsRefDescriptor(field.descriptor);
+            if (encoded.field_index < image_ref.field_runtime_metadata.size()) {
+                field.generic_signature = image_ref.field_runtime_metadata[encoded.field_index].signature;
+                for (const auto& annotation : image_ref.field_runtime_metadata[encoded.field_index].annotations) {
+                    field.runtime_annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
+                }
+            }
+            auto& own_fields = is_static ? stored.own_static_fields : stored.own_instance_fields;
+            const auto existing_field =
+                std::find_if(own_fields.begin(), own_fields.end(), [&](const VmFieldId candidate) {
+                    const auto& current = FieldAt(candidate);
+                    return current.name == field.name && current.descriptor == field.descriptor;
+                });
+            if (existing_field != own_fields.end()) {
+                auto& current = FieldAt(*existing_field);
+                current.access_flags = field.access_flags;
+                current.is_wide = field.is_wide;
+                current.is_ref = field.is_ref;
+                current.runtime_annotations = std::move(field.runtime_annotations);
+                current.generic_signature = std::move(field.generic_signature);
+                dex_order.push_back(*existing_field);
+            } else {
+                const auto field_id = AddField(std::move(field));
+                own_fields.push_back(field_id);
+                dex_order.push_back(field_id);
+            }
+        }
+        if (is_static && merge_intrinsic) {
+            // encoded_array values are indexed by DEX declaration order,
+            // not by the order in which intrinsic fields were registered.
+            auto& own_fields = stored.own_static_fields;
+            for (const auto field : own_fields) {
+                if (std::find(dex_order.begin(), dex_order.end(), field) == dex_order.end()) dex_order.push_back(field);
+            }
+            own_fields = std::move(dex_order);
+        }
+    }
+    for (const auto* method_list : {&data.direct_methods, &data.virtual_methods}) {
+        const bool direct = method_list == &data.direct_methods;
+        for (const auto& encoded : *method_list) {
+            const auto& method_id_entry = image_ref.methods[encoded.method_index];
+            LinkedMethod method;
+            method.owner = id;
+            method.name = Ascii(image_ref.strings[method_id_entry.name_string_index]);
+            method.descriptor = DexMethodDescriptor(image_ref, method_id_entry.prototype_index);
+            method.access_flags = encoded.access_flags;
+            method.dex_method_index = encoded.method_index;
+            method.dex_unit = unit_id;
+            if (encoded.method_index < image_ref.method_annotation_metadata.size()) {
+                const auto& metadata = image_ref.method_annotation_metadata[encoded.method_index];
+                method.generic_signature = metadata.signature;
+                method.has_parameter_annotations = metadata.has_parameter_annotations;
+                for (const auto& annotation : metadata.annotations)
+                    method.runtime_annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
+                for (const auto& parameter : metadata.parameters) {
+                    auto& annotations = method.parameter_annotations.emplace_back();
+                    for (const auto& annotation : parameter)
+                        annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
+                }
+            }
+            method.is_static = (encoded.access_flags & kAccStatic) != 0;
+            method.overridable = (encoded.access_flags & (kAccStatic | kAccPrivate | kAccFinal)) == 0;
+            method.declared_invoke_kind =
+                direct ? (method.is_static ? DeclaredInvokeKind::static_call : DeclaredInvokeKind::direct)
+                       : (stored.is_interface ? DeclaredInvokeKind::interface_call : DeclaredInvokeKind::virtual_call);
+            if ((encoded.access_flags & kAccNative) != 0) {
+                method.kind = MethodKind::native;
+            } else if ((encoded.access_flags & kAccAbstract) != 0) {
+                method.kind = MethodKind::abstract;
+            } else {
+                method.kind = MethodKind::interpreted;
+                if (!encoded.code.has_value()) {
+                    Fail(DexVmErrorReason::invalid_member, "concrete method has no code: " + method.name);
+                }
+                method.code = loader::ReadDexMethodCode(unit.bytes, image_ref, *encoded.code);
+            }
+            const auto parts = SplitDescriptor(method.descriptor);
+            method.shape = ShapeOf(parts, method.is_static);
+            method.return_shorty = ShortyOf(parts.return_type);
+            method.ins_words = method.shape.incoming_words;
+            if (method.code.has_value() && method.code->info.incoming_words != method.ins_words) {
+                Fail(DexVmErrorReason::invalid_code,
+                     "method ins does not match descriptor: " + stored.descriptor + "." + method.name);
+            }
+            method.vtable_index = direct ? -1 : -2;
+            auto& own_methods = direct ? stored.own_direct_methods : stored.own_virtual_methods;
+            const auto existing_method =
+                std::find_if(own_methods.begin(), own_methods.end(), [&](const VmMethodId candidate) {
+                    const auto& current = MethodAt(candidate);
+                    return current.name == method.name && current.descriptor == method.descriptor;
+                });
+            if (existing_method != own_methods.end()) {
+                auto& current = MethodAt(*existing_method);
+                if (current.is_static != method.is_static ||
+                    current.declared_invoke_kind != method.declared_invoke_kind) {
+                    Fail(DexVmErrorReason::invalid_member, "intrinsic overlay invoke kind differs from "
+                                                           "boot dex: " +
+                                                               stored.descriptor + "." + method.name +
+                                                               method.descriptor);
+                }
+                if (current.kind == MethodKind::native && method.kind != MethodKind::native) {
+                    Fail(DexVmErrorReason::invalid_member, "guest JNI admission requires a boot native declaration");
+                }
+                if (current.kind == MethodKind::intrinsic && !current.implementation &&
+                    method.kind == MethodKind::interpreted) {
+                    // A declaration without a handler leaves the DEX body in charge.
+                    current.kind = MethodKind::interpreted;
+                    current.adapter_review.clear();
+                }
+                current.access_flags = method.access_flags;
+                // The DEX flags decide overriding, as for any boot class.
+                current.overridable = (method.access_flags & (kAccStatic | kAccPrivate | kAccFinal)) == 0;
+                current.must_override = false;
+                current.dex_method_index = method.dex_method_index;
+                current.dex_unit = method.dex_unit;
+                current.generic_signature = std::move(method.generic_signature);
+                current.runtime_annotations = std::move(method.runtime_annotations);
+                current.parameter_annotations = std::move(method.parameter_annotations);
+                current.has_parameter_annotations = method.has_parameter_annotations;
+                current.code = std::move(method.code);
+                current.shape = std::move(method.shape);
+                current.return_shorty = method.return_shorty;
+                current.ins_words = method.ins_words;
+                if (current.name == "<clinit>") {
+                    stored.clinit = current.id;
+                }
+            } else {
+                if (method.kind == MethodKind::native && boot && !stored.admit_boot_native_methods) {
+                    // Unbound framework native: calling it records the gap and
+                    // throws UnsatisfiedLinkError, as a missing JNI symbol would.
+                    method.kind = MethodKind::intrinsic;
+                    if (unbound_native_policy)
+                        method.implementation =
+                            unbound_native_policy(stored.descriptor, method.name, method.descriptor);
+                }
+                const auto vm_method_id = AddMethod(std::move(method));
+                own_methods.push_back(vm_method_id);
+                if (direct) {
+                    const auto& added = MethodAt(vm_method_id);
+                    extra.direct_lookup.emplace(MemberKey(added.name, added.descriptor), vm_method_id);
+                    if (added.name == "<clinit>") {
+                        stored.clinit = vm_method_id;
+                    }
+                }
+            }
+        }
+    }
+    if (class_index < image_ref.class_annotation_metadata.size()) {
+        const auto& meta = image_ref.class_annotation_metadata[class_index];
+        stored.generic_signature = meta.signature;
+        stored.runtime_annotations.clear();
+        stored.runtime_annotations.reserve(meta.runtime_annotations.size());
+        for (const auto& annotation : meta.runtime_annotations) {
+            stored.runtime_annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
+        }
+        stored.annotation_defaults.clear();
+        if (meta.annotation_default.has_value()) {
+            stored.annotation_defaults = ConvertAnnotation(image_ref, unit_id, *meta.annotation_default).elements;
+        }
+    }
+    data = {};
+}
+
+void DexClassLinker::Impl::EnsureDexMembers(const DexClassId id) {
+    auto& extra = ExtrasAt(id);
+    if (extra.dex_member_error) std::rethrow_exception(extra.dex_member_error);
+    if (!extra.dex_members_pending) return;
+    extra.dex_members_pending = false;
+    try {
+        LoadDexMembers(id, false);
+    } catch (...) {
+        extra.dex_member_error = std::current_exception();
+        throw;
+    }
 }
 
 void DexClassLinker::Link() {
@@ -704,7 +758,8 @@ std::string DexClassLinker::DumpSurfaceJson() {
     };
     const auto classes = out.Array();
     auto ids = AllClasses();
-    std::sort(ids.begin(), ids.end(), [&](auto a, auto b) { return Class(a).descriptor < Class(b).descriptor; });
+    std::sort(ids.begin(), ids.end(),
+              [&](auto a, auto b) { return ClassHeader(a).descriptor < ClassHeader(b).descriptor; });
     for (const auto id : ids) {
         std::string link_error;
         try {
@@ -1077,11 +1132,19 @@ std::vector<GapSurveyHit> DexClassLinker::GapSurveyHits() const {
 }
 
 const LinkedClass& DexClassLinker::Class(const DexClassId id) const {
+    const auto& linked = ClassHeader(id);
+    impl_->EnsureDexMembers(id);
+    return linked;
+}
+
+const LinkedClass& DexClassLinker::ClassHeader(const DexClassId id) const {
     return impl_->ClassAt(id);
 }
 
 LinkedClass& DexClassLinker::MutableClass(const DexClassId id) {
-    return impl_->ClassAt(id);
+    auto& linked = impl_->ClassAt(id);
+    impl_->EnsureDexMembers(id);
+    return linked;
 }
 
 const LinkedMethod& DexClassLinker::Method(const VmMethodId id) const {
@@ -1132,7 +1195,7 @@ std::size_t DexClassLinker::ClassCount() const noexcept {
 }
 
 std::vector<VmMethodId> DexClassLinker::MethodsOf(const DexClassId owner) const {
-    const auto& linked = impl_->ClassAt(owner);
+    const auto& linked = Class(owner);
     std::vector<VmMethodId> result = linked.own_direct_methods;
     result.insert(result.end(), linked.own_virtual_methods.begin(), linked.own_virtual_methods.end());
     return result;

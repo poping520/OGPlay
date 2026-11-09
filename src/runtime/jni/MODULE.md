@@ -17,7 +17,8 @@ Bionic、syscall、execution 或 integration。
 ## 不变量
 
 - `JniClassRegistry::FindClass` 为被动查询；`ResolveClass` 可经 owner 的显式 resolver
-  按需链接/发布类。回调在注册表锁外执行，owner 停止调用后撤销，不启动全量物化。
+  按需链接/发布类。显式类查询和成员查找可请求 owner 补齐延迟发布的类成员，
+  继承搜索按原声明顺序进行。回调在注册表锁外执行，owner 负责串行发布，并在停止调用后撤销。
 - `ThrowNew` 可由 owner 的 ThrowableFactory 发布真实 local Throwable，保留异常类/消息
   元数据；无 VM 时保留独立 JNI 表示。factory 在锁外执行，真实新抛出的异常可按 Dalvik 替换原 pending。
 - 字段 owner 用 `JniFieldAccessPending` 表示已挂起 Java 异常；禁止据此回落零值侧表。

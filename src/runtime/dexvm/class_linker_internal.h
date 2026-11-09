@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <deque>
+#include <exception>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -59,6 +60,8 @@ public:
         std::unordered_map<std::string, VmFieldId> field_lookup;
         std::optional<std::string> missing_super;
         std::vector<std::string> missing_interfaces;
+        std::exception_ptr dex_member_error;
+        bool dex_members_pending{};
         bool linked{};
         bool link_failed{};
     };
@@ -225,6 +228,9 @@ public:
         throw JavaLinkageError(kind, std::move(message));
     }
 
+    void LoadDexMembers(DexClassId id, bool merge_intrinsic);
+    void EnsureDexMembers(DexClassId id);
+
     void LinkClass(const DexClassId id, std::set<std::uint32_t>& visiting) {
         auto& extra = ExtrasAt(id);
         if (extra.link_failed) throw JavaLinkageError(JavaLinkageKind::no_class, ClassAt(id).descriptor);
@@ -250,6 +256,7 @@ public:
             BadDefinition(id, JavaLinkageKind::linkage, DexVmErrorReason::invalid_hierarchy,
                           "class without superclass: " + linked.descriptor);
         }
+        EnsureDexMembers(id);
         std::uint16_t slot_cursor = 0;
         if (linked.super.has_value()) {
             LinkClass(*linked.super, visiting);

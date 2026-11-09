@@ -1,5 +1,6 @@
 #include "ogplay/runtime/jni/jni_class_registry.h"
 
+#include <exception>
 #include <limits>
 #include <map>
 #include <mutex>
@@ -61,8 +62,7 @@ JniClassRegistryErrorReason JniClassRegistryError::Reason() const noexcept {
 
 class JniClassRegistry::Impl final {
 public:
-  [[nodiscard]] JniObjectIdentity
-  Register(const JniClassDeclaration &declaration) {
+    [[nodiscard]] JniObjectIdentity Register(const JniClassDeclaration& declaration, const bool defer_members) {
         ValidateClassName(declaration.name);
         std::set<MemberKey> method_keys;
         std::vector<JniMethodDescriptor> method_layouts;
@@ -133,9 +133,9 @@ public:
         }
         EnsureIds(declaration.methods.size(), declaration.fields.size());
 
-        ClassEntry entry{declaration.name, superclass, std::move(interfaces),
-                         declaration.is_interface, {}, {}};
-    for (std::size_t index = 0; index < declaration.methods.size(); ++index) {
+        ClassEntry entry{declaration.name, superclass, std::move(interfaces), declaration.is_interface, {}, {},
+                         defer_members,    {}};
+        for (std::size_t index = 0; index < declaration.methods.size(); ++index) {
             const JniMethodId id{next_method_id_++};
             const auto& method = declaration.methods[index];
             entry.methods.emplace(MemberKey{method.name, method.descriptor}, id);
@@ -274,7 +274,7 @@ public:
                                                   const bool is_static) const {
         ValidateMemberName(name);
         static_cast<void>(ParseJniMethodDescriptor(descriptor));
-        std::scoped_lock lock(mutex_);
+        std::unique_lock lock(mutex_);
         const bool constructor = name == "<init>";
         if (!constructor && RequireClass(java_class).is_interface) {
             std::vector<JniObjectIdentity> pending{java_class};
@@ -283,7 +283,7 @@ public:
                 const auto current = pending.back();
                 pending.pop_back();
                 if (!visited.emplace(current.value).second) continue;
-                const auto& entry = RequireClass(current);
+                const auto& entry = LoadMembers(current, lock);
                 const auto found = entry.methods.find({name, descriptor});
                 if (found != entry.methods.end()) {
                     const auto& resolved = methods_.at(found->second.Value());
@@ -297,7 +297,7 @@ public:
             return std::nullopt;
         }
         while (true) {
-            const auto& entry = RequireClass(java_class);
+            const auto& entry = LoadMembers(java_class, lock);
             const auto found = entry.methods.find({name, descriptor});
             if (found != entry.methods.end()) {
                 const auto& resolved = methods_.at(found->second.Value());
@@ -317,7 +317,7 @@ public:
                                                 const bool is_static) const {
         ValidateMemberName(name);
         static_cast<void>(ParseJniFieldDescriptor(descriptor));
-        std::scoped_lock lock(mutex_);
+        std::unique_lock lock(mutex_);
         const MemberKey key{name, descriptor};
         const auto declared_field = [&](const ClassEntry& entry) {
             const auto found = entry.fields.find(key);
@@ -336,7 +336,7 @@ public:
             if (!visited.emplace(interface_class.value).second) {
                 return std::nullopt;
             }
-            const auto& entry = RequireClass(interface_class);
+            const auto& entry = LoadMembers(interface_class, lock);
             if (const auto found = declared_field(entry); found.has_value()) {
                 return found;
             }
@@ -349,7 +349,7 @@ public:
             return std::nullopt;
         };
         while (true) {
-            const auto& entry = RequireClass(java_class);
+            const auto& entry = LoadMembers(java_class, lock);
             if (const auto found = declared_field(entry); found.has_value()) {
                 return found;
             }
@@ -393,7 +393,25 @@ private:
         bool is_interface{};
         std::map<MemberKey, JniMethodId> methods;
         std::map<MemberKey, JniFieldId> fields;
+        bool members_pending{};
+        std::exception_ptr member_error;
     };
+
+    [[nodiscard]] const ClassEntry& LoadMembers(const JniObjectIdentity java_class,
+                                                std::unique_lock<std::mutex>& lock) const {
+        const auto& entry = RequireClass(java_class);
+        if (entry.member_error) std::rethrow_exception(entry.member_error);
+        if (entry.members_pending) {
+            const auto loader = member_loader_;
+            if (!loader) InvalidMember("no loader for deferred members");
+            lock.unlock();
+            loader(java_class);
+            lock.lock();
+            if (entry.member_error) std::rethrow_exception(entry.member_error);
+            if (entry.members_pending) InvalidMember("deferred members were not published");
+        }
+        return entry;
+    }
 
   [[nodiscard]] const ClassEntry &
   RequireClass(const JniObjectIdentity java_class) const {
@@ -435,14 +453,43 @@ public:
         std::scoped_lock lock(mutex_);
         resolver_ = std::move(resolver);
     }
+
+    void SetMemberLoader(MemberLoader loader) {
+        std::scoped_lock lock(mutex_);
+        member_loader_ = std::move(loader);
+    }
+
+    void PublishDeferredMembers(const JniObjectIdentity java_class, const MemberLoader& publish) {
+        std::unique_lock lock(mutex_);
+        static_cast<void>(RequireClass(java_class));
+        auto& entry = classes_.at(java_class.value);
+        if (entry.member_error) std::rethrow_exception(entry.member_error);
+        if (!entry.members_pending) return;
+        lock.unlock();
+        try {
+            publish(java_class);
+        } catch (...) {
+            lock.lock();
+            entry.member_error = std::current_exception();
+            throw;
+        }
+        lock.lock();
+        entry.members_pending = false;
+    }
+
     std::optional<JniObjectIdentity> Resolve(const std::string& name) const {
-        if (auto found = Find(name)) return found;
+        if (auto found = Find(name)) {
+            std::unique_lock lock(mutex_);
+            static_cast<void>(LoadMembers(*found, lock));
+            return found;
+        }
         ClassResolver resolver;
         { std::scoped_lock lock(mutex_); resolver = resolver_; }
         return resolver ? resolver(name) : std::nullopt;
     }
 private:
     ClassResolver resolver_;
+    MemberLoader member_loader_;
     mutable std::mutex mutex_;
     std::map<std::string, JniObjectIdentity> classes_by_name_;
     std::map<std::uint64_t, ClassEntry> classes_;
@@ -458,9 +505,8 @@ JniClassRegistry::JniClassRegistry(JniClassRegistry&&) noexcept = default;
 JniClassRegistry &
 JniClassRegistry::operator=(JniClassRegistry &&) noexcept = default;
 
-JniObjectIdentity
-JniClassRegistry::RegisterClass(const JniClassDeclaration &declaration) {
-    return impl_->Register(declaration);
+JniObjectIdentity JniClassRegistry::RegisterClass(const JniClassDeclaration& declaration, const bool defer_members) {
+    return impl_->Register(declaration, defer_members);
 }
 JniMethodId
 JniClassRegistry::RegisterMethod(const JniObjectIdentity java_class,
@@ -478,6 +524,14 @@ JniClassRegistry::FindClass(const std::string &name) const {
 }
 void JniClassRegistry::SetClassResolver(ClassResolver resolver) {
     impl_->SetResolver(std::move(resolver));
+}
+
+void JniClassRegistry::SetMemberLoader(MemberLoader loader) {
+    impl_->SetMemberLoader(std::move(loader));
+}
+
+void JniClassRegistry::PublishDeferredMembers(const JniObjectIdentity java_class, const MemberLoader& publish) {
+    impl_->PublishDeferredMembers(java_class, publish);
 }
 std::optional<JniObjectIdentity> JniClassRegistry::ResolveClass(const std::string& name) const {
     return impl_->Resolve(name);

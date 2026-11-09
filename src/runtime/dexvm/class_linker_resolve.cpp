@@ -230,6 +230,7 @@ std::optional<VmMethodId> DexClassLinker::FindDirectMethod(
     const std::string& descriptor) const {
     auto current = std::optional<DexClassId>(owner);
     while (current.has_value()) {
+        impl_->EnsureDexMembers(*current);
         const auto& extra = impl_->ExtrasAt(*current);
         const auto found =
             extra.direct_lookup.find(MemberKey(name, descriptor));

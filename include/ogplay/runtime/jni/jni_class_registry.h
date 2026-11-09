@@ -80,32 +80,30 @@ public:
     JniClassRegistry(JniClassRegistry&&) noexcept;
     JniClassRegistry& operator=(JniClassRegistry&&) noexcept;
 
-  [[nodiscard]] JniObjectIdentity
-  RegisterClass(const JniClassDeclaration &declaration);
-  // Adds one declared method to an existing class. This is used when two
-  // platform providers share a class identity but own disjoint methods;
-  // an existing declaration with the same name/descriptor is rejected.
-  [[nodiscard]] JniMethodId
-  RegisterMethod(JniObjectIdentity java_class,
-                 const JniMethodDeclaration &declaration);
-  // Adds one declared field to an existing class. DexVM uses this when a
-  // code-defined class shares an already-published platform class identity.
-  [[nodiscard]] JniFieldId
-  RegisterField(JniObjectIdentity java_class,
-                const JniFieldDeclaration& declaration);
-  [[nodiscard]] std::optional<JniObjectIdentity>
-  FindClass(const std::string &name) const;
-  // Explicit VM lookup: passive FindClass remains safe during publication.
-  using ClassResolver = std::function<std::optional<JniObjectIdentity>(const std::string&)>;
-  void SetClassResolver(ClassResolver resolver);
-  [[nodiscard]] std::optional<JniObjectIdentity> ResolveClass(const std::string& name) const;
-  // Reverse lookup used by boundary diagnostics. Returns the JNI binary
-  // class name (for example java/lang/String) for a stable class identity.
-  [[nodiscard]] std::string ClassName(JniObjectIdentity java_class) const;
-  [[nodiscard]] std::optional<JniObjectIdentity>
-  GetSuperclass(JniObjectIdentity java_class) const;
-  [[nodiscard]] std::vector<JniObjectIdentity>
-  GetInterfaces(JniObjectIdentity java_class) const;
+    [[nodiscard]] JniObjectIdentity RegisterClass(const JniClassDeclaration& declaration, bool defer_members = false);
+    // Adds one declared method to an existing class. This is used when two
+    // platform providers share a class identity but own disjoint methods;
+    // an existing declaration with the same name/descriptor is rejected.
+    [[nodiscard]] JniMethodId RegisterMethod(JniObjectIdentity java_class, const JniMethodDeclaration& declaration);
+    // Adds one declared field to an existing class. DexVM uses this when a
+    // code-defined class shares an already-published platform class identity.
+    [[nodiscard]] JniFieldId RegisterField(JniObjectIdentity java_class, const JniFieldDeclaration& declaration);
+    [[nodiscard]] std::optional<JniObjectIdentity> FindClass(const std::string& name) const;
+    // Explicit VM lookup: passive FindClass remains safe during publication.
+    using ClassResolver = std::function<std::optional<JniObjectIdentity>(const std::string&)>;
+    void SetClassResolver(ClassResolver resolver);
+    [[nodiscard]] std::optional<JniObjectIdentity> ResolveClass(const std::string& name) const;
+    // Called outside the registry lock when lookup reaches a class with deferred members.
+    using MemberLoader = std::function<void(JniObjectIdentity)>;
+    void SetMemberLoader(MemberLoader loader);
+    // The owner serializes publication with its execution lock. Concurrent lookups
+    // can request the same class, but only the first publishes it.
+    void PublishDeferredMembers(JniObjectIdentity java_class, const MemberLoader& publish);
+    // Reverse lookup used by boundary diagnostics. Returns the JNI binary
+    // class name (for example java/lang/String) for a stable class identity.
+    [[nodiscard]] std::string ClassName(JniObjectIdentity java_class) const;
+    [[nodiscard]] std::optional<JniObjectIdentity> GetSuperclass(JniObjectIdentity java_class) const;
+    [[nodiscard]] std::vector<JniObjectIdentity> GetInterfaces(JniObjectIdentity java_class) const;
     [[nodiscard]] bool IsAssignableFrom(JniObjectIdentity target,
                                         JniObjectIdentity source) const;
 

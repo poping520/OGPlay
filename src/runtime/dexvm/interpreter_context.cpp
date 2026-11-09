@@ -467,7 +467,7 @@ void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
         }
     }
     for (const auto class_id : impl_->linker->AllClasses()) {
-        const auto& linked = impl_->linker->Class(class_id);
+        const auto& linked = impl_->linker->ClassHeader(class_id);
         for (const auto slot : linked.static_ref_slots) {
             visitor(VmObjectRef(linked.static_storage[slot]));
         }

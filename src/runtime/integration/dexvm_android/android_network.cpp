@@ -5,16 +5,14 @@
 
 namespace ogplay::runtime::android_intrinsics {
 namespace {
-const AndroidOfflineConnectivity& RequireOfflineConnectivity(
-    dx::IntrinsicContext& call, const Context& context, bool network_permission) {
-    if (network_permission &&
-        !context->granted_permissions.contains("android.permission.ACCESS_NETWORK_STATE"))
+const AndroidOfflineConnectivity& RequireOfflineConnectivity(dx::IntrinsicContext& call, const Context& context,
+                                                             bool network_permission) {
+    if (network_permission && !context->granted_permissions.contains("android.permission.ACCESS_NETWORK_STATE"))
         throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "ACCESS_NETWORK_STATE is required"};
-    if (!context->offline_connectivity || context->network_policy.enabled ||
-        call.vm.Network().Policy().enabled) {
-        if (auto* ledger = call.vm.Ledger())
-            ledger->RecordUnimplemented("dexvm.connectivity_offline", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+    if (!context->offline_connectivity || context->network_policy.enabled || call.vm.Network().Policy().enabled) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.connectivity_offline", 0);
+        throw dx::VmJavaThrow{
+            "Ljava/lang/UnsupportedOperationException;",
             "offline connectivity facts are absent or an online policy requires a separate state provider"};
     }
     return *context->offline_connectivity;
@@ -27,8 +25,8 @@ dx::VmObjectRef NewOfflineWifiNetworkInfo(dx::IntrinsicContext& call) {
     auto& linker = vm.Linker();
     const auto propagate = [&](const dx::VmCallOutcome& outcome) {
         if (outcome.exception.IsValid())
-            throw dx::VmJavaThrow{linker.Class(outcome.exception_class).descriptor,
-                                 outcome.exception_message, outcome.exception};
+            throw dx::VmJavaThrow{linker.Class(outcome.exception_class).descriptor, outcome.exception_message,
+                                  outcome.exception};
     };
     const auto type = linker.ResolveDescriptor("Landroid/net/NetworkInfo;");
     propagate(vm.EnsureClassInitialized(type));
@@ -41,39 +39,44 @@ dx::VmObjectRef NewOfflineWifiNetworkInfo(dx::IntrinsicContext& call) {
     const auto constructor = linker.FindDirectMethod(type, "<init>", "(IILjava/lang/String;Ljava/lang/String;)V");
     if (!constructor)
         throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "NetworkInfo constructor is unavailable");
-    propagate(vm.Call(*constructor, std::array{dx::VmValue::Ref(info), dx::VmValue::Int(1),
-        dx::VmValue::Int(0), dx::VmValue::Ref(type_name), dx::VmValue::Ref(subtype_name)}));
+    propagate(vm.Call(*constructor, std::array{dx::VmValue::Ref(info), dx::VmValue::Int(1), dx::VmValue::Int(0),
+                                               dx::VmValue::Ref(type_name), dx::VmValue::Ref(subtype_name)}));
     const auto detailed_type = linker.ResolveDescriptor("Landroid/net/NetworkInfo$DetailedState;");
     propagate(vm.EnsureClassInitialized(detailed_type));
-    const auto field = linker.FindFieldRecursive(detailed_type, "DISCONNECTED", "Landroid/net/NetworkInfo$DetailedState;");
-    if (!field)
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "NetworkInfo state is unavailable");
+    const auto field =
+        linker.FindFieldRecursive(detailed_type, "DISCONNECTED", "Landroid/net/NetworkInfo$DetailedState;");
+    if (!field) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "NetworkInfo state is unavailable");
     const auto disconnected = dx::VmObjectRef{linker.Class(detailed_type).static_storage[linker.Field(*field).slot]};
-    static_cast<void>(CallAndroidMethod(vm, info, "setDetailedState",
-        "(Landroid/net/NetworkInfo$DetailedState;Ljava/lang/String;Ljava/lang/String;)V",
+    static_cast<void>(CallAndroidMethod(
+        vm, info, "setDetailedState", "(Landroid/net/NetworkInfo$DetailedState;Ljava/lang/String;Ljava/lang/String;)V",
         {dx::VmValue::Ref(disconnected), dx::VmValue::Ref(dx::VmObjectRef{}), dx::VmValue::Ref(dx::VmObjectRef{})}));
     static_cast<void>(CallAndroidMethod(vm, info, "setIsAvailable", "(Z)V", {dx::VmValue::Int(0)}));
     return info;
 }
-} // namespace
+}  // namespace
 
 Decl Declare_android_net_ConnectivityManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/ConnectivityManager;");
-    builder.DirectMethod("nativeRequireOffline", "()V", [context](dx::IntrinsicContext& call) {
-        static_cast<void>(RequireOfflineConnectivity(call, context, true));
-        return dx::VmValue::Void();
-    }, dx::kAccPrivate | dx::kAccNative);
-    builder.DirectMethod("nativeGetNetworkInfo", "(I)Landroid/net/NetworkInfo;", [context](dx::IntrinsicContext& call) {
-        const auto& facts = RequireOfflineConnectivity(call, context, true);
-        if (call.arguments[0].AsInt() != 1 || !facts.wifi_type_supported)
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        return dx::VmValue::Ref(NewOfflineWifiNetworkInfo(call));
-    }, dx::kAccPrivate | dx::kAccNative);
+    builder.DirectMethod(
+        "nativeRequireOffline", "()V",
+        [context](dx::IntrinsicContext& call) {
+            static_cast<void>(RequireOfflineConnectivity(call, context, true));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPrivate | dx::kAccNative);
+    builder.DirectMethod(
+        "nativeGetNetworkInfo", "(I)Landroid/net/NetworkInfo;",
+        [context](dx::IntrinsicContext& call) {
+            const auto& facts = RequireOfflineConnectivity(call, context, true);
+            if (call.arguments[0].AsInt() != 1 || !facts.wifi_type_supported)
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            return dx::VmValue::Ref(NewOfflineWifiNetworkInfo(call));
+        },
+        dx::kAccPrivate | dx::kAccNative);
     return std::move(builder).Build();
 }
 
-} // namespace ogplay::runtime::android_intrinsics
-
+}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_net_wifi_WifiInfo.cpp ----
 #include "catalog.h"
@@ -152,17 +155,14 @@ Decl Declare_android_net_wifi_WifiInfo(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_net_wifi_WifiManager_WifiLock.cpp ----
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
 namespace {
-void AcquireWifiManagerLease(const Context& context, dx::IntrinsicContext& call,
-                             const dx::VmObjectRef manager) {
-    if (!manager.IsValid())
-        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "WifiManager is null"};
+void AcquireWifiManagerLease(const Context& context, dx::IntrinsicContext& call, const dx::VmObjectRef manager) {
+    if (!manager.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "WifiManager is null"};
     if (context->wifi_lock_leases.contains(call.receiver.Value())) return;
     // WifiLock and MulticastLock share the manager's active lease quota.
     std::size_t active{};
@@ -171,20 +171,20 @@ void AcquireWifiManagerLease(const Context& context, dx::IntrinsicContext& call,
         if (service == manager) ++active;
     }
     if (active >= 50U)
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-            "Exceeded maximum number of wifi locks"};
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Exceeded maximum number of wifi locks"};
     context->wifi_lock_leases[call.receiver.Value()] = manager;
 }
+
 void RequireMulticastPermission(const Context& context) {
     if (!context->granted_permissions.contains("android.permission.CHANGE_WIFI_MULTICAST_STATE"))
-        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;",
-            "MulticastLock requires CHANGE_WIFI_MULTICAST_STATE"};
+        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "MulticastLock requires CHANGE_WIFI_MULTICAST_STATE"};
 }
 }  // namespace
 
 Decl Declare_android_net_wifi_WifiManager_WifiLock(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/wifi/WifiManager$WifiLock;");
-    builder.DirectMethod("nativeAcquire", "(Landroid/net/wifi/WifiManager;I)V",
+    builder.DirectMethod(
+        "nativeAcquire", "(Landroid/net/wifi/WifiManager;I)V",
         [context](dx::IntrinsicContext& call) {
             if (!context->granted_permissions.contains("android.permission.WAKE_LOCK"))
                 throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "WifiLock requires WAKE_LOCK"};
@@ -193,16 +193,19 @@ Decl Declare_android_net_wifi_WifiManager_WifiLock(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unsupported WifiLock mode"};
             AcquireWifiManagerLease(context, call, call.arguments[0].ref);
             return dx::VmValue::Void();
-        }, dx::kAccPrivate | dx::kAccNative);
-    builder.DirectMethod("nativeRelease", "()V", [context](dx::IntrinsicContext& call) {
-        context->wifi_lock_leases.erase(call.receiver.Value());
-        return dx::VmValue::Void();
-    }, dx::kAccPrivate | dx::kAccNative);
+        },
+        dx::kAccPrivate | dx::kAccNative);
+    builder.DirectMethod(
+        "nativeRelease", "()V",
+        [context](dx::IntrinsicContext& call) {
+            context->wifi_lock_leases.erase(call.receiver.Value());
+            return dx::VmValue::Void();
+        },
+        dx::kAccPrivate | dx::kAccNative);
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_net_wifi_WifiManager.cpp ----
 #include "catalog.h"
@@ -211,28 +214,32 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_net_wifi_WifiManager_MulticastLock(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/wifi/WifiManager$MulticastLock;");
-    builder.DirectMethod("nativeAcquire", "(Landroid/net/wifi/WifiManager;)V",
+    builder.DirectMethod(
+        "nativeAcquire", "(Landroid/net/wifi/WifiManager;)V",
         [context](dx::IntrinsicContext& call) {
             RequireMulticastPermission(context);
             AcquireWifiManagerLease(context, call, call.arguments[0].ref);
             return dx::VmValue::Void();
-        }, dx::kAccPrivate | dx::kAccNative);
-    builder.DirectMethod("nativeRelease", "()V", [context](dx::IntrinsicContext& call) {
-        RequireMulticastPermission(context);
-        // Each lease has a guest owner; releasing it cannot release another lock.
-        context->wifi_lock_leases.erase(call.receiver.Value());
-        return dx::VmValue::Void();
-    }, dx::kAccPrivate | dx::kAccNative);
+        },
+        dx::kAccPrivate | dx::kAccNative);
+    builder.DirectMethod(
+        "nativeRelease", "()V",
+        [context](dx::IntrinsicContext& call) {
+            RequireMulticastPermission(context);
+            // Each lease has a guest owner; releasing it cannot release another lock.
+            context->wifi_lock_leases.erase(call.receiver.Value());
+            return dx::VmValue::Void();
+        },
+        dx::kAccPrivate | dx::kAccNative);
     return std::move(builder).Build();
 }
 
 Decl Declare_android_net_wifi_WifiManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/wifi/WifiManager;", "Ljava/lang/Object;");
-    builder.FinalMethod("isWifiEnabled", "()Z",
-        [context](dx::IntrinsicContext& call) {
-            static_cast<void>(RequireOfflineConnectivity(call, context, false));
-            return dx::VmValue::Int(0);
-        });
+    builder.FinalMethod("isWifiEnabled", "()Z", [context](dx::IntrinsicContext& call) {
+        static_cast<void>(RequireOfflineConnectivity(call, context, false));
+        return dx::VmValue::Int(0);
+    });
     builder.FinalMethod("getWifiState", "()I", [context](dx::IntrinsicContext& call) {
         static_cast<void>(RequireOfflineConnectivity(call, context, false));
         return dx::VmValue::Int(1);  // WIFI_STATE_DISABLED

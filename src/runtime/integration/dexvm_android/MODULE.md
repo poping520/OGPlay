@@ -549,7 +549,8 @@ null Runnable 抛 NPE、始终异步；pending/scheduled Runnable 为 session ro
 不构造 AttachInfo/ViewRootImpl/RunQueue；其他 View posting API 仍按配方明确失败。
 Clock 默认确定性 60 秒 boot-age，无 suspend 时 uptime/elapsedRealtime 同源。
 prepare_native_looper 显式关联 Java/native 线程、主 Looper 仅首次关联，查询/消息泵不重 prepare；
-Java scheduler 持消息，quit 不清存活线程 native Looper。root Thread 稳定、空泵不重入 Java/VM 锁，
+Java scheduler 持消息，quit 不清存活线程 native Looper。root Thread 稳定、空泵不重入 Java/VM 锁；
+排队工作只在队内是 session root，有到期工作时从出队到调用持 VM 锁，防止其他 Java 线程在此间回收；
 myQueue/getQueue 共享稳定队列身份；runOnUiThread 仅 root 同步虚派、worker 投主 Looper。worker join 后/root
 JNI detach 前释放 token；AsyncTask DexVmError 保留故障并终止，不转 null/继续 onPostExecute，Thread/JNI
 复用 core。ResultReceiver 本地协议归 Java，有 Handler 排队/无 Handler 同步，Parcel 保留本地 Binder identity。

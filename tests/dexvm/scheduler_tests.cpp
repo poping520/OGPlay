@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <future>
 #include <memory>
+#include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -275,6 +277,49 @@ TEST_CASE("empty scheduler pump uses the attached main Thread without acquiring 
     CHECK(ready == std::future_status::ready);
     CHECK_FALSE(pump.get().has_value());
     CHECK(fixture.context->main_looper == main.value.ref);
+}
+
+TEST_CASE("main Looper dispatch keeps dequeued Runnables alive while another thread collects") {
+    SchedulerVm fixture;
+    // Production session roots: queued work is a root only while it stays queued.
+    fixture.vm.SetGcIntegration(
+        {{}, {}, [&fixture](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*fixture.context, visit); }});
+    const auto main = fixture.Direct("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;");
+    SchedulerVm::RequireOk(main);
+    const auto handler = fixture.New("Ltest/RecordingHandler;");
+    const auto handler_root = fixture.vm.ProtectReferences(std::array{handler});
+    fixture.ConstructAs(handler, "Landroid/os/Handler;", "(Landroid/os/Looper;)V", {VmValue::Ref(main.value.ref)});
+    constexpr int kRunnables = 2000;
+    for (int index = 0; index < kRunnables; ++index) {
+        // After post returns, only the queued work references the Runnable.
+        const auto runnable = fixture.New("Ltest/RecordingRunnable;");
+        SchedulerVm::RequireOk(fixture.Virtual(handler, "post", "(Ljava/lang/Runnable;)Z", {VmValue::Ref(runnable)}));
+    }
+    static_cast<void>(fixture.vm.CollectGarbage("scheduler-queued"));
+    REQUIRE(fixture.context->scheduled_work.size() == static_cast<std::size_t>(kRunnables));
+
+    // The lifecycle thread pumps the main Looper without holding the VM lock,
+    // while a Java thread collects.
+    std::atomic<bool> stop{};
+    std::atomic<std::uint64_t> collections{};
+    std::thread collector([&] {
+        while (!stop.load()) {
+            static_cast<void>(fixture.vm.CollectGarbage("scheduler-dispatch-race"));
+            ++collections;
+        }
+    });
+    std::optional<std::string> failure;
+    try {
+        failure = PumpJavaThreads(fixture.vm, *fixture.context);
+    } catch (const std::exception& error) {
+        failure = error.what();
+    }
+    stop = true;
+    collector.join();
+    INFO(failure.value_or(""));
+    CHECK_FALSE(failure.has_value());
+    CHECK(fixture.runnable_calls.load() == kRunnables);
+    CHECK(collections.load() > 0U);
 }
 
 TEST_CASE("DVM-89 ResultReceiver dispatches locally and through its Handler") {

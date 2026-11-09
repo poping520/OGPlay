@@ -1209,6 +1209,12 @@ void EnqueueLocked(DexVmAndroidContext& context, DexVmAndroidContext::ScheduledW
     context.scheduled_work.push_back(work);
 }
 
+[[nodiscard]] bool HasDue(DexVmAndroidContext& context, const dx::VmObjectRef looper, const std::int64_t now) {
+    std::scoped_lock lock(context.scheduler_mutex);
+    return std::ranges::any_of(context.scheduled_work,
+                               [&](const auto& work) { return work.looper == looper && work.deadline_millis <= now; });
+}
+
 [[nodiscard]] std::optional<DexVmAndroidContext::ScheduledWork>
 TakeDue(DexVmAndroidContext& context, const dx::VmObjectRef looper, const std::int64_t now) {
     std::scoped_lock lock(context.scheduler_mutex);
@@ -1285,7 +1291,15 @@ TakeDue(DexVmAndroidContext& context, const dx::VmObjectRef looper, const std::i
                                                        const bool yield_on_budget = false) {
     constexpr std::size_t kMaxCallbacksPerPump = 10'000;
     for (std::size_t count = 0; count < kMaxCallbacksPerPump; ++count) {
-        const auto work = TakeDue(context, looper, context.uptime_millis.load());
+        const auto now = context.uptime_millis.load();
+        // An idle pump must not wait for the VM lock.
+        if (!HasDue(context, looper, now)) return std::nullopt;
+        // Queued work is a GC root only while queued. The lifecycle thread pumps
+        // the main Looper without the VM lock, so hold it from removal until the
+        // call has copied the references into its frame. Otherwise another Java
+        // thread can collect in that window and reclaim the payload.
+        const dx::VmExecutionLockScope guard(vm.ExecutionLock());
+        const auto work = TakeDue(context, looper, now);
         if (!work.has_value()) return std::nullopt;
         const auto outcome = DispatchScheduled(vm, context, *work);
         if (outcome.exception.IsValid()) {

@@ -198,20 +198,17 @@ public:
         context->secure_settings.insert_or_assign("android_id", android_id);
         context->package_resource_path = "/data/app/" + manifest.package + "-1.apk";
         if (!context->apk_bytes.empty()) {
-            // The context owns the only APK copy; the package node reads through it.
-            const std::weak_ptr<const runtime::DexVmAndroidContext> apk_owner = context;
-            request.filesystem->PutReadOnlyFile(
-                context->package_resource_path, context->apk_bytes.size(),
-                [apk_owner](const std::uint64_t offset, const std::span<std::byte> destination) {
-                    const auto owner = apk_owner.lock();
-                    if (!owner) throw std::runtime_error("package APK owner was released");
-                    const auto& bytes = owner->apk_bytes;
-                    if (offset >= bytes.size()) return std::size_t{};
-                    const auto count =
-                        std::min<std::size_t>(destination.size(), bytes.size() - static_cast<std::size_t>(offset));
-                    std::copy_n(bytes.begin() + static_cast<std::ptrdiff_t>(offset), count, destination.begin());
-                    return count;
-                });
+            const auto bytes = std::make_shared<const std::vector<std::byte>>(std::move(context->apk_bytes));
+            context->sealed_apk_bytes = bytes;
+            request.filesystem->PutReadOnlyFile(context->package_resource_path, bytes->size(),
+                                                [bytes](std::uint64_t offset, std::span<std::byte> destination) {
+                                                    if (offset >= bytes->size()) return std::size_t{};
+                                                    const auto start = static_cast<std::size_t>(offset);
+                                                    const auto count =
+                                                        std::min(destination.size(), bytes->size() - start);
+                                                    std::copy_n(bytes->data() + start, count, destination.begin());
+                                                    return count;
+                                                });
         }
         context->package_version_code = manifest.version_code;
         context->package_version_name = manifest.version_name.value_or("");

@@ -31,6 +31,7 @@ Work Unit 按所属里程碑或语义化专项存放，创建后不因完成状�
 | [`m8/`](m8/) | WU-0360..0379、WU-M8-001..011 | 31 | [M8 · 兼容性冲刺](m8/README.md) |
 | [`maintenance/`](maintenance/) | UTIL-1..3 | 3 | [基础工具维护工作单](maintenance/README.md) |
 | [`optimization/`](optimization/) | WU-GLCTX-01..05、WU-HLE-01..04、WU-PERF-01..16 | 25 | — |
+| [`resources/`](resources/) | RES-1～2 | 2 | [API19 资源核心](resources/RES-1.md)、[ROM 资源接入](resources/RES-2.md) |
 | [`sandbox/`](sandbox/) | SBX-1..15 | 15 | [沙盒 · 每游戏持久沙盒（ADR-0020）](sandbox/README.md) |
 | [`vfs/`](vfs/) | VFS-04..11 | 8 | — |
 | [`video/`](video/) | VID-1 | 1 | — |

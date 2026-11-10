@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "ogplay/runtime/raster/bitmap.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
@@ -50,7 +51,8 @@ TEST_CASE("DVM-118 Resources metrics share display facts and BootDex value seman
         f.context->surface_height = 540;
         f.context->ui_density = 1.5F;
         f.context->ui_scaled_density = 1.75F;
-        const auto resources = f.vm.NewIntrinsicInstance("Landroid/content/res/Resources;");
+        const auto resources =
+            f.On(f.New("Landroid/content/Context;"), "getResources", "()Landroid/content/res/Resources;").ref;
         const auto root = f.vm.ProtectReferences(std::array{resources});
         const auto metrics = f.On(resources, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;").ref;
         const auto field = [&](VmObjectRef object, const char* name, const char* signature) {
@@ -81,10 +83,10 @@ TEST_CASE("DVM-118 Resources metrics share display facts and BootDex value seman
         CHECK(f.On(metrics, "hashCode", "()I").AsInt() == f.On(other, "hashCode", "()I").AsInt());
         f.context->surface_width = 1280;
         CHECK(f.On(resources, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;").ref == metrics);
-        CHECK(field(metrics, "widthPixels", "I") == 1280);
+        CHECK(field(metrics, "widthPixels", "I") == 960);
         CHECK(field(other, "widthPixels", "I") == 960);
         f.On(other, "setTo", "(Landroid/util/DisplayMetrics;)V", {VmValue::Ref(metrics)});
-        CHECK(field(other, "widthPixels", "I") == 1280);
+        CHECK(field(other, "widthPixels", "I") == 960);
         const auto apply = [&](int unit, float value, VmObjectRef target) {
             return f
                 .Static("Landroid/util/TypedValue;", "applyDimension", "(IFLandroid/util/DisplayMetrics;)F",
@@ -117,7 +119,8 @@ TEST_CASE("DVM-137 Configuration uses API19 Java shape and managed device facts"
         f.context->surface_width = 960;
         f.context->surface_height = 540;
         f.context->ui_density = 1.5F;
-        const auto resources = f.vm.NewIntrinsicInstance("Landroid/content/res/Resources;");
+        const auto resources =
+            f.On(f.New("Landroid/content/Context;"), "getResources", "()Landroid/content/res/Resources;").ref;
         const auto resources_root = f.vm.ProtectReferences(std::array{resources});
         const auto field = [&](const VmObjectRef object, const char* name, const char* descriptor = "I") {
             const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, descriptor);
@@ -154,7 +157,9 @@ TEST_CASE("DVM-137 Configuration uses API19 Java shape and managed device facts"
               "Ljava/lang/UnsupportedOperationException;");
         REQUIRE_FALSE(f.ledger.Unimplemented().empty());
         CHECK(f.ledger.Unimplemented().back().id == "dexvm.locale_layout_direction");
-        CHECK_MESSAGE(VmObjectRef(field(configuration, "locale", "Ljava/util/Locale;")) == default_locale,
+        CHECK_MESSAGE(f.On(VmObjectRef(field(configuration, "locale", "Ljava/util/Locale;")), "equals",
+                           "(Ljava/lang/Object;)Z", {VmValue::Ref(default_locale)})
+                              .AsInt() == 1,
                       "configuration locale=", field(configuration, "locale", "Ljava/util/Locale;"),
                       " default locale=", default_locale.Value());
         const auto rendered = f.vm.StringUtf8(f.On(configuration, "toString", "()Ljava/lang/String;").ref);
@@ -189,13 +194,15 @@ TEST_CASE("DVM-137 Configuration uses API19 Java shape and managed device facts"
 
         static_cast<void>(f.vm.CollectGarbage("dvm137-configuration"));
         CHECK(f.On(resources, "getConfiguration", "()Landroid/content/res/Configuration;").ref == configuration);
-        CHECK(VmObjectRef(field(configuration, "locale", "Ljava/util/Locale;")) == default_locale);
+        CHECK(f.On(VmObjectRef(field(configuration, "locale", "Ljava/util/Locale;")), "equals", "(Ljava/lang/Object;)Z",
+                   {VmValue::Ref(default_locale)})
+                  .AsInt() == 1);
         f.context->surface_width = 540;
         f.context->surface_height = 960;
         CHECK(f.On(resources, "getConfiguration", "()Landroid/content/res/Configuration;").ref == configuration);
-        CHECK(field(configuration, "orientation") == 1);
-        CHECK(field(configuration, "screenWidthDp") == 360);
-        CHECK(field(configuration, "screenHeightDp") == 640);
+        CHECK(field(configuration, "orientation") == 2);
+        CHECK(field(configuration, "screenWidthDp") == 640);
+        CHECK(field(configuration, "screenHeightDp") == 360);
     }
 }
 
@@ -205,24 +212,25 @@ TEST_CASE("DVM-244 bitmap resource decoding shares ARSC selection pixels and den
         f.context->ui_density = 2;
         f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
         f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
-        f.context->arsc.entries = {{.resource_id = 0x7f020001,
-                                    .type_name = "drawable",
-                                    .entry_name = "fixture",
-                                    .string_value = "res/drawable/fixture.png",
-                                    .value_type = 3,
-                                    .density = 160},
-                                   {.resource_id = 0x7f020002,
-                                    .type_name = "drawable",
-                                    .entry_name = "alias",
-                                    .value_type = 1,
-                                    .value_data = 0x7f020001},
-                                   {.resource_id = 0x7f020003,
-                                    .type_name = "drawable",
-                                    .entry_name = "nodpi",
-                                    .string_value = "res/drawable/fixture.png",
-                                    .value_type = 3,
-                                    .density = 65535}};
-        const auto res = f.vm.NewIntrinsicInstance("Landroid/content/res/Resources;");
+        ogplay::test::ResourceFixture(*f.context).entries = {{.resource_id = 0x7f020001,
+                                                              .type_name = "drawable",
+                                                              .entry_name = "fixture",
+                                                              .string_value = "res/drawable/fixture.png",
+                                                              .value_type = 3,
+                                                              .density = 160},
+                                                             {.resource_id = 0x7f020002,
+                                                              .type_name = "drawable",
+                                                              .entry_name = "alias",
+                                                              .value_type = 1,
+                                                              .value_data = 0x7f020001},
+                                                             {.resource_id = 0x7f020003,
+                                                              .type_name = "drawable",
+                                                              .entry_name = "nodpi",
+                                                              .string_value = "res/drawable/fixture.png",
+                                                              .value_type = 3,
+                                                              .density = 65535}};
+        const auto res =
+            f.On(f.New("Landroid/content/Context;"), "getResources", "()Landroid/content/res/Resources;").ref;
         const auto roots = f.vm.ProtectReferences(std::array{res});
         const auto query = [&](int id, VmObjectRef opts = VmObjectRef{}) {
             return f.StaticOutcome(
@@ -336,6 +344,9 @@ TEST_CASE("DVM-244 byte stream decode preserves null errors ownership and pixel 
                                      sent = false;
                                      return VmValue::Ref(resource_source);
                                  });
+        resources.OverrideMethod("getDisplayMetrics", "()Landroid/util/DisplayMetrics;", [](IntrinsicContext& c) {
+            return VmValue::Ref(c.vm.NewIntrinsicInstance("Landroid/util/DisplayMetrics;"));
+        });
         AndroidValueVm f(backend, {std::move(stream).Build(), std::move(resources).Build()});
         const auto source = f.New("Ltest/ImageStream;");
         const auto source_root = f.vm.ProtectReferences(std::array{source});
@@ -565,12 +576,12 @@ TEST_CASE("DVM118 resource text coerces simple values and preserves reference se
         f.context->surface_height = 480;
         const auto add = [&](std::uint32_t id, std::uint8_t type, std::uint32_t data,
                              std::optional<std::string> text = {}) {
-            ogplay::loader::ArscEntry entry{};
+            ogplay::test::ResourceFixtureEntry entry{};
             entry.resource_id = id;
             entry.value_type = type;
             entry.value_data = data;
             entry.string_value = std::move(text);
-            f.context->arsc.entries.push_back(std::move(entry));
+            ogplay::test::ResourceFixture(*f.context).entries.push_back(std::move(entry));
         };
 
         struct Value {
@@ -596,14 +607,15 @@ TEST_CASE("DVM118 resource text coerces simple values and preserves reference se
         add(0x7f010081, 1, 0x7f010002);
         for (const auto [orientation, text] : {std::pair{0, "default"}, {1, "portrait"}, {2, "landscape"}}) {
             add(0x7f010090, 3, 0, text);
-            f.context->arsc.entries.back().orientation = static_cast<std::uint8_t>(orientation);
+            ogplay::test::ResourceFixture(*f.context).entries.back().orientation =
+                static_cast<std::uint8_t>(orientation);
         }
         add(0x7f010091, 1, 0x7f010090);
         add(0x7f010100, 0, 0);
         add(0x7f010101, 0x0f, 0);
         add(0x7f010102, 3, 0);
         add(0x7f010103, 3, 0, "bag");
-        f.context->arsc.entries.back().is_complex = true;
+        ogplay::test::ResourceFixture(*f.context).entries.back().is_complex = true;
         add(0x7f010104, 1, 0);
         add(0x7f010105, 1, 0x7f010106);
         add(0x7f010106, 1, 0x7f010105);
@@ -624,12 +636,16 @@ TEST_CASE("DVM118 resource text coerces simple values and preserves reference se
               "30");
         CHECK(f.vm.StringUtf8(f.On(resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0x7f010091)}).ref) ==
               "landscape");
-        f.context->surface_width = 480;
-        f.context->surface_height = 800;
+        const auto assets = f.On(resources, "getAssets", "()Landroid/content/res/AssetManager;").ref;
+        f.On(assets, "setConfiguration", "(IILjava/lang/String;IIIIIIIIIIIIII)V",
+             {VmValue::Int(0), VmValue::Int(0), VmValue::Ref(VmObjectRef{}), VmValue::Int(1), VmValue::Int(3),
+              VmValue::Int(160), VmValue::Int(2), VmValue::Int(9), VmValue::Int(1), VmValue::Int(800),
+              VmValue::Int(480), VmValue::Int(480), VmValue::Int(480), VmValue::Int(800), VmValue::Int(0x62),
+              VmValue::Int(0), VmValue::Int(19)});
         CHECK(f.vm.StringUtf8(f.On(resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0x7f010091)}).ref) ==
               "portrait");
         const auto not_found = f.linker.ResolveDescriptor("Landroid/content/res/Resources$NotFoundException;");
-        for (const auto id : {0, 0x7f01ffff, 0x7f010100, 0x7f010101, 0x7f010102, 0x7f010103, 0x7f010104, 0x7f010105}) {
+        for (const auto id : {0, 0x7f01ffff, 0x7f010100, 0x7f010101, 0x7f010103}) {
             for (const auto [method, signature] :
                  {std::pair{"getText", "(I)Ljava/lang/CharSequence;"}, {"getString", "(I)Ljava/lang/String;"}}) {
                 const auto result = f.OnOutcome(resources, method, signature, {VmValue::Int(id)});

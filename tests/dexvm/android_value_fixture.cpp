@@ -55,6 +55,7 @@ AndroidValueVm::AndroidValueVm(InterpreterBackend backend, const std::vector<Int
       threads(runtime->bridge->Threads()) {}
 
 VmObjectRef AndroidValueVm::New(const char* descriptor, const char* constructor, std::vector<VmValue> arguments) {
+    ogplay::test::MountResourceFixture(*context, vm);
     if (!arguments.empty() && std::string_view(constructor).starts_with("(Landroid/content/Context;"))
         ogplay::test::AttachViewTestContext(vm, arguments.front().ref);
     const auto klass = linker.ResolveDescriptor(descriptor);
@@ -83,6 +84,7 @@ VmValue AndroidValueVm::Static(const char* descriptor, const char* name, const c
 
 VmCallOutcome AndroidValueVm::StaticOutcome(const char* descriptor, const char* name, const char* signature,
                                             std::vector<VmValue> arguments) {
+    ogplay::test::MountResourceFixture(*context, vm);
     const auto klass = linker.ResolveDescriptor(descriptor);
     const auto method = linker.FindDirectMethod(klass, name, signature);
     REQUIRE(method.has_value());
@@ -98,6 +100,7 @@ VmValue AndroidValueVm::On(const VmObjectRef receiver, const char* name, const c
 
 VmCallOutcome AndroidValueVm::OnOutcome(const VmObjectRef receiver, const char* name, const char* signature,
                                         std::vector<VmValue> arguments) {
+    ogplay::test::MountResourceFixture(*context, vm);
     const auto klass = model.ObjectClass(receiver);
     const auto index = linker.FindVtableIndex(klass, name, signature);
     REQUIRE(index.has_value());

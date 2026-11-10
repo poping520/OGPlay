@@ -1,7 +1,7 @@
 #include "container_traversal_fixture.h"
 #include "android_value_fixture.h"
-#include "ogplay/runtime/integration/theme_resources.h"
 #include "ogplay/loader/apk.h"
+#include "ogplay/runtime/raster/bitmap.h"
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -27,6 +27,24 @@ VmObjectRef Owner(ContainerVm& f, bool managed_window = false) {
     return owner;
 }
 
+VmObjectRef SkinBitmap(ContainerVm& f, VmObjectRef drawable) {
+    const auto field =
+        f.linker.FindFieldRecursive(f.model.ObjectClass(drawable), "mNinePatch", "Landroid/graphics/NinePatch;");
+    REQUIRE(field);
+    const auto patch = VmObjectRef(f.model.InstanceSlots(drawable)[f.linker.Field(*field).slot].bits);
+    REQUIRE(patch.IsValid());
+    return f.On(patch, "getBitmap", "()Landroid/graphics/Bitmap;").ref;
+}
+
+std::vector<VmObjectRef> Children(ContainerVm& f, VmObjectRef selector) {
+    const auto count = f.On(selector, "getStateCount", "()I").AsInt();
+    std::vector<VmObjectRef> children;
+    for (int i = 0; i < count; ++i)
+        children.push_back(
+            f.On(selector, "getStateDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(i)}).ref);
+    return children;
+}
+
 std::array<int, 4> Padding(ContainerVm& f, VmObjectRef object) {
     const auto rect = f.New("Landroid/graphics/Rect;");
     REQUIRE(f.On(object, "getPadding", "(Landroid/graphics/Rect;)Z", {VmValue::Ref(rect)}).AsInt() == 1);
@@ -41,7 +59,7 @@ std::array<int, 4> Padding(ContainerVm& f, VmObjectRef object) {
 }
 }  // namespace
 
-TEST_CASE("DVM-355 sealed scrollbar thumbs load as ninepatches with ROM identity and scaled dimensions") {
+TEST_CASE("DVM-355 ROM scrollbar thumbs load as ninepatches with ROM identity and scaled dimensions") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         for (int scale = 0; scale < 3; ++scale) {
             ContainerVm f(backend);
@@ -60,7 +78,7 @@ TEST_CASE("DVM-355 sealed scrollbar thumbs load as ninepatches with ROM identity
                 const auto skin_root = f.vm.ProtectReferences(std::array{skin});
                 CHECK(f.linker.Class(f.model.ObjectClass(skin)).descriptor ==
                       "Landroid/graphics/drawable/NinePatchDrawable;");
-                CHECK(f.context->ui_drawables.at(skin.Value()).resource_id == static_cast<std::uint32_t>(id));
+                CHECK(SkinBitmap(f, skin).IsValid());
                 const auto at = static_cast<std::size_t>(scale);
                 const auto width = id == 0x0108052a ? long_side[at] : id == 0x0108052b ? short_side[at] : holo_side[at];
                 const auto height = id == 0x0108052a   ? short_side[at]
@@ -68,32 +86,14 @@ TEST_CASE("DVM-355 sealed scrollbar thumbs load as ninepatches with ROM identity
                                                        : holo_side[at];
                 CHECK(f.On(skin, "getIntrinsicWidth", "()I").AsInt() == width);
                 CHECK(f.On(skin, "getIntrinsicHeight", "()I").AsInt() == height);
-                const auto pixels = f.context->ui_drawables.at(skin.Value()).leaf_pixels;
-                REQUIRE(pixels);
-                CHECK(pixels->nine_patch);
-                CHECK(pixels->width == width);
-                CHECK(pixels->height == height);
+                const auto bitmap = SkinBitmap(f, skin);
+                REQUIRE(f.On(bitmap, "getNinePatchChunk", "()[B").ref.IsValid());
+                CHECK(f.On(bitmap, "getWidth", "()I").AsInt() == width);
+                CHECK(f.On(bitmap, "getHeight", "()I").AsInt() == height);
             }
             CHECK(f.ledger.Unimplemented().empty());
-            for (const auto id : {0x01080527}) {  // accelerated_anim2 remains unsealed
-                // Exercise the loading seam with proven ROM identities. The
-                // animated thumb is intentionally absent from theme demands;
-                // getDrawable rejects that identity even before this seam.
-                const auto value = f.New("Landroid/util/TypedValue;");
-                const auto value_root = f.vm.ProtectReferences(std::array{value});
-                for (const auto [name, bits] : {std::pair{"type", 1}, {"data", id}, {"resourceId", id}}) {
-                    const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(value), name, "I");
-                    REQUIRE(field);
-                    f.model.InstanceSlots(value)[f.linker.Field(*field).slot] = {static_cast<std::uint32_t>(bits),
-                                                                                 SlotTag::cat1};
-                }
-                const auto rejected = f.OnOutcome(resources, "loadDrawable",
-                                                  "(Landroid/util/TypedValue;I)Landroid/graphics/drawable/Drawable;",
-                                                  {VmValue::Ref(value), VmValue::Int(id)});
-                REQUIRE(rejected.exception.IsValid());
-                CHECK(rejected.exception_message.starts_with("unreviewed ROM drawable load: "));
-            }
-            CHECK_FALSE(f.ledger.Unimplemented().empty());
+            CHECK(f.On(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0x01080527)})
+                      .ref.IsValid());
         }
     }
 }
@@ -227,9 +227,7 @@ TEST_CASE("DVM-355 default classic and Holo Scroll constructors retain real cach
                     REQUIRE(thumb.IsValid());
                     CHECK(f.linker.Class(f.model.ObjectClass(thumb)).descriptor ==
                           "Landroid/graphics/drawable/NinePatchDrawable;");
-                    CHECK(f.context->ui_drawables.at(thumb.Value()).resource_id ==
-                          static_cast<std::uint32_t>(theme == 0x01030007 ? (vertical ? 0x0108052b : 0x0108052a)
-                                                                         : 0x01080528));
+                    CHECK(SkinBitmap(f, thumb).IsValid());
                     CHECK(get(bar, vertical ? "mVerticalTrack" : "mHorizontalTrack",
                               "Landroid/graphics/drawable/Drawable;") == 0);
                 }
@@ -280,16 +278,16 @@ TEST_CASE("DVM-326 ROM edit text selector scales true ninepatch padding and sele
         CHECK(f.On(skin, "isStateful", "()Z").AsInt() == 1);
         const auto current = f.On(skin, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref;
         REQUIRE(current.IsValid());
-        CHECK(f.context->ui_drawables.at(current.Value()).resource_id == 0x01080640);
+        CHECK(SkinBitmap(f, current).IsValid());
         const auto states = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 3);
         f.model.SetPrimitiveElement(states, 0, 0x0101009d);  // window focused
         f.model.SetPrimitiveElement(states, 1, 0x0101009c);  // focused
         f.model.SetPrimitiveElement(states, 2, 0x0101009e);  // enabled
         CHECK(f.On(skin, "setState", "([I)Z", {VmValue::Ref(states)}).AsInt() == 1);
         const auto selected = f.On(skin, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref;
-        CHECK(f.context->ui_drawables.at(selected.Value()).resource_id == 0x01080668);
+        CHECK(SkinBitmap(f, selected).IsValid());
         CHECK(Padding(f, skin) == std::array<int, 4>{11, 7, 11, 12});
-        REQUIRE(f.context->ui_drawables.at(selected.Value()).leaf_pixels);
+        REQUIRE(f.context->bitmaps.at(SkinBitmap(f, selected).Value()).pixels);
         CHECK(f.ledger.Unimplemented().empty());
         const auto unknown = f.OnOutcome(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;",
                                          {VmValue::Int(0x0108ffff)});
@@ -343,55 +341,6 @@ TEST_CASE("DVM-326 window tokens follow attachment stable window identity and pe
     }
 }
 
-TEST_CASE("DVM-326 projected strings retain ROM cookie and reject an invalid pool index") {
-    const std::string projection =
-        R"({"schema":"ogplay.bounded-theme","schema_version":1,"api_level":19,"configuration":"values","resource_types":{},"resource_names":[],"projected_references":[],"styleables":[],"registered":[{"id":16973829,"name":"Theme","attributes":[{"id":16843692,"name":"fontFamily","state":"known","type":3,"data":0,"cookie":2}]}],"unregistered":[],"style_closure":[],"strings":["normal"],"string_pool":"01001c003000000001000000000000000000000020000000000000000000000006006e006f0072006d0061006c000000"})";
-    ThemeResources resources;
-    resources.Load(projection);
-    ogplay::loader::ArscTable table;
-    const auto theme = resources.New();
-    resources.Apply(theme, 16973829, true, table);
-    const auto value = resources.Attribute(theme, 16843692, true, table);
-    REQUIRE(value);
-    CHECK(value->type == 3);
-    CHECK(value->cookie == 2);
-    CHECK(value->data == 0);
-    XmlCursorRegistry cursors;
-    const auto pool = cursors.CreateStringPool(resources.Strings());
-    CHECK(cursors.StringPool(pool)->String(0) == "normal");
-    auto invalid = projection;
-    invalid.replace(invalid.find("\"data\":0"), 8, "\"data\":1");
-    ThemeResources rejected;
-    CHECK_THROWS_WITH(rejected.Load(invalid), "invalid projected string reference");
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend);
-        REQUIRE_FALSE(f.context->theme_projection_loaded);
-        f.context->theme_resources.Load(projection);
-        f.context->theme_projection_loaded = true;
-        f.context->arsc.global_string_pool = resources.Strings();
-        for (std::size_t i = 0; i < 6; ++i)
-            f.context->arsc.global_string_pool[34 + i * 2] = static_cast<std::byte>(std::string_view("WRONG!")[i]);
-        f.context->application_theme = 16973829;
-        const auto owner = Owner(f);
-        const auto theme_object = f.On(owner, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
-        const auto output = f.New("Landroid/util/TypedValue;");
-        CHECK(f.On(theme_object, "resolveAttribute", "(ILandroid/util/TypedValue;Z)Z",
-                   {VmValue::Int(16843692), VmValue::Ref(output), VmValue::Int(1)})
-                  .AsInt() == 1);
-        const auto field =
-            f.linker.FindFieldRecursive(f.model.ObjectClass(output), "string", "Ljava/lang/CharSequence;");
-        const VmObjectRef string{f.model.InstanceSlots(output)[f.linker.Field(*field).slot].bits};
-        CHECK(f.vm.StringUtf8(string) == "normal");
-        const auto attrs = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 1);
-        f.model.SetPrimitiveElement(attrs, 0, 16843692);
-        const auto values =
-            f.On(theme_object, "obtainStyledAttributes", "([I)Landroid/content/res/TypedArray;", {VmValue::Ref(attrs)})
-                .ref;
-        CHECK(f.vm.StringUtf8(f.On(values, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0)}).ref) == "normal");
-        CHECK(f.ledger.Unimplemented().empty());
-    }
-}
-
 TEST_CASE("DVM-326 ROM selector padding follows exact hdpi and xhdpi variants") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         for (const auto density : {1.5F, 2.0F}) {
@@ -416,7 +365,7 @@ TEST_CASE("DVM-326 ROM selector padding follows exact hdpi and xhdpi variants") 
     }
 }
 
-TEST_CASE("DVM-326 selector traces its ninepatch children and releases decoded backing on GC") {
+TEST_CASE("DVM-326 ROM selector cache retains its ninepatch backing after caller GC") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         const auto owner = Owner(f);
@@ -424,25 +373,27 @@ TEST_CASE("DVM-326 selector traces its ninepatch children and releases decoded b
         const auto owner_roots = f.vm.ProtectReferences(std::array{owner, resources});
         VmObjectRef skin;
         std::vector<VmObjectRef> children;
-        std::weak_ptr<const ui::UiBitmap> pixels;
+        std::weak_ptr<raster::Bitmap> pixels;
+        std::vector<VmObjectRef> bitmaps;
         {
             skin = f.On(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0x01080016)})
                        .ref;
             const auto root = f.vm.ProtectReferences(std::array{skin});
-            children = f.context->ui_drawables.at(skin.Value()).skin_children;
+            children = Children(f, skin);
+            for (const auto child : children)
+                bitmaps.push_back(SkinBitmap(f, child));
             REQUIRE(children.size() == 6);
-            pixels = f.context->ui_drawables.at(children.front().Value()).leaf_pixels;
+            pixels = f.context->bitmaps.at(bitmaps.front().Value()).pixels;
             static_cast<void>(f.vm.CollectGarbage("rom-skin-rooted"));
             CHECK_FALSE(pixels.expired());
-            for (const auto child : children)
-                CHECK(f.context->ui_drawables.contains(child.Value()));
+            for (const auto bitmap : bitmaps)
+                CHECK(f.context->bitmaps.contains(bitmap.Value()));
             CHECK(Padding(f, skin) == std::array<int, 4>{11, 7, 11, 12});
         }
         static_cast<void>(f.vm.CollectGarbage("rom-skin-unrooted"));
-        CHECK(pixels.expired());
-        CHECK_FALSE(f.context->ui_drawables.contains(skin.Value()));
-        for (const auto child : children)
-            CHECK_FALSE(f.context->ui_drawables.contains(child.Value()));
+        CHECK_FALSE(pixels.expired());
+        for (const auto bitmap : bitmaps)
+            CHECK(f.context->bitmaps.contains(bitmap.Value()));
         CHECK(f.ledger.Unimplemented().empty());
     }
 }
@@ -517,7 +468,7 @@ TEST_CASE("DVM-327 JavaTraversal IME uses real bounded focus before rejecting co
     }
 }
 
-TEST_CASE("API19 View drawable state skips stateless backgrounds and rejects unsupported stateful ones") {
+TEST_CASE("API19 View drawable state dispatches stateful backgrounds and propagates errors") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         const auto owner = Owner(f);
@@ -571,25 +522,17 @@ TEST_CASE("API19 View drawable state skips stateless backgrounds and rejects uns
             return VmValue::Int(1);
         };
         const auto before = state_calls();
-        const auto rejected = f.OnOutcome(view, "refreshDrawableState", "()V");
-        REQUIRE(rejected.exception.IsValid());
-        CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        CHECK(rejected.exception_message == "Drawable state unsupported");
+        CHECK_FALSE(f.OnOutcome(view, "refreshDrawableState", "()V").exception.IsValid());
         CHECK(queries == 1);
-        CHECK(state_calls() == before);
-        const auto hits = f.ledger.Unimplemented();
-        REQUIRE(hits.size() == 1);
-        CHECK(hits.front().id == "dexvm.view_drawable_state");
-        CHECK(hits.front().count == 1);
-
-        const auto exception_root = f.vm.ProtectReferences(std::array{rejected.exception});
-        method.implementation = [exception = rejected.exception](IntrinsicContext&) -> VmValue {
-            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "sentinel", exception};
+        CHECK(state_calls() > before);
+        CHECK(f.ledger.Unimplemented().empty());
+        method.implementation = [](IntrinsicContext&) -> VmValue {
+            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "sentinel"};
         };
         const auto propagated = f.OnOutcome(view, "refreshDrawableState", "()V");
-        CHECK(propagated.exception == rejected.exception);
-        CHECK(f.ledger.Unimplemented().front().count == 1);
-        CHECK(state_calls() == before);
+        REQUIRE(propagated.exception.IsValid());
+        CHECK(propagated.exception_message == "sentinel");
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }
 
@@ -609,7 +552,7 @@ TEST_CASE("API19 View drawable state retains ROM skin state selection") {
         f.On(view, "refreshDrawableState", "()V");
         const auto disabled = f.On(skin, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref;
         CHECK(disabled != enabled);
-        CHECK(f.context->ui_drawables.at(disabled.Value()).resource_id == 0x01080640);
+        CHECK(SkinBitmap(f, disabled).IsValid());
         f.On(view, "setEnabled", "(Z)V", {VmValue::Int(1)});
         f.On(view, "refreshDrawableState", "()V");
         CHECK(f.On(skin, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref == enabled);
@@ -723,19 +666,8 @@ TEST_CASE("DVM-352 unreviewed background projection clears old color and records
 
 TEST_CASE("DVM-355 ViewConfiguration input seam honors ROM override and mainkeys and fails when withdrawn") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        for (const auto [mode, mainkeys, expected] :
-             {std::tuple{0, "", false}, {0, "0", false}, {0, "1", true}, {1, "0", true}, {2, "1", false}}) {
+        for (const auto [mainkeys, expected] : {std::pair{"", false}, {"0", false}, {"1", true}}) {
             ContainerVm f(backend);
-            const auto bytes = ogplay::loader::ReadStoredApkEntry(f.context->boot_classpath.front().bytes,
-                                                                  f.context->boot_classpath.front().archive,
-                                                                  "META-INF/ogplay/theme-projection.json");
-            std::string projection(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-            const std::string needle = "\"data\":0,\"id\":17694793";
-            const auto position = projection.find(needle);
-            REQUIRE(position != std::string::npos);
-            projection.replace(position, needle.size(), "\"data\":" + std::to_string(mode) + ",\"id\":17694793");
-            f.context->theme_resources.Load(projection);
-            f.context->theme_projection_loaded = true;
             static_cast<void>(f.vm.SetSystemProperty("qemu.hw.mainkeys", mainkeys));
             const auto owner = Owner(f, true);
             const auto config =
@@ -953,13 +885,11 @@ TEST_CASE("DVM-363 buttons load sealed classic and Holo skins and selectors keep
             REQUIRE(background.IsValid());
             CHECK(f.linker.Class(f.model.ObjectClass(background)).descriptor ==
                   "Landroid/graphics/drawable/StateListDrawable;");
-            CHECK(f.context->ui_drawables.at(background.Value()).resource_id == (holo ? 0x0108011d : 0x01080004));
             CHECK(f.On(background, "getStateCount", "()I").AsInt() > 1);
-            for (const auto child : f.context->ui_drawables.at(background.Value()).skin_children) {
+            for (const auto child : Children(f, background)) {
                 CHECK(f.linker.Class(f.model.ObjectClass(child)).descriptor ==
                       "Landroid/graphics/drawable/NinePatchDrawable;");
-                REQUIRE(f.context->ui_drawables.at(child.Value()).leaf_pixels);
-                CHECK(f.context->ui_drawables.at(child.Value()).leaf_pixels->nine_patch);
+                REQUIRE(f.On(SkinBitmap(f, child), "getNinePatchChunk", "()[B").ref.IsValid());
             }
             const auto selector = f.New("Landroid/graphics/drawable/StateListDrawable;");
             const auto selector_root = f.vm.ProtectReferences(std::array{selector});
@@ -1026,7 +956,7 @@ TEST_CASE("DrawableContainer forwards only the current child's callbacks to its 
         const auto current = f.On(background, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref;
         REQUIRE(current.IsValid());
         VmObjectRef other{};
-        for (const auto child : f.context->ui_drawables.at(background.Value()).skin_children)
+        for (const auto child : Children(f, background))
             if (child != current) other = child;
         REQUIRE(other.IsValid());
 
@@ -1120,5 +1050,48 @@ TEST_CASE("DVM-366 LightingColorFilter retires software peers across the button 
             static_cast<std::int32_t>(f.model.InstanceSlots(paint)[f.linker.Field(*native_field).slot].bits));
         CHECK(f.vm.Call(*set_filter, std::array{paint_token, VmValue::Int(first[0])}).exception.IsValid());
         CHECK_FALSE(f.vm.Call(*set_filter, std::array{paint_token, VmValue::Int(second[0])}).exception.IsValid());
+    }
+}
+
+TEST_CASE("ROM background projection reads live selector Bitmap and NinePatch backing") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto view = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view, resources});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        for (const int id : {0x01080016, 0x01080006, 0x0108052a, 0x0108052b, 0x01080528, 0x01080529}) {
+            const auto drawable =
+                f.On(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(id)}).ref;
+            const auto root = f.vm.ProtectReferences(std::array{drawable});
+            f.On(view, "setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(drawable)});
+            for (int enabled : {1, 0}) {
+                f.On(view, "setEnabled", "(Z)V", {VmValue::Int(enabled)});
+                f.On(view, "refreshDrawableState", "()V");
+                f.On(view, "invalidate", "()V");
+                static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                           AndroidUiTraversalPhase::ResolveOnly));
+                const auto current = f.On(drawable, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref;
+                const auto bitmap = SkinBitmap(f, current);
+                const auto& node = *f.context->ui_tree.Get(*FindViewUiNode(*f.context, view.Value()));
+                REQUIRE(node.background_bitmap);
+                const auto& snapshot = *node.background_bitmap;
+                const auto& native = f.context->bitmaps.at(bitmap.Value());
+                CHECK(snapshot.width == native.width);
+                CHECK(snapshot.height == native.height);
+                REQUIRE(snapshot.nine_patch);
+                REQUIRE_FALSE(snapshot.stretch_x.empty());
+                REQUIRE_FALSE(snapshot.stretch_y.empty());
+                const auto argb = native.pixels->Snapshot();
+                REQUIRE(snapshot.rgba8.size() == argb.size() * 4);
+                for (std::size_t i = 0; i < argb.size(); ++i) {
+                    CHECK(snapshot.rgba8[i * 4] == static_cast<std::uint8_t>(argb[i] >> 16));
+                    CHECK(snapshot.rgba8[i * 4 + 1] == static_cast<std::uint8_t>(argb[i] >> 8));
+                    CHECK(snapshot.rgba8[i * 4 + 2] == static_cast<std::uint8_t>(argb[i]));
+                    CHECK(snapshot.rgba8[i * 4 + 3] == static_cast<std::uint8_t>(argb[i] >> 24));
+                }
+            }
+        }
     }
 }

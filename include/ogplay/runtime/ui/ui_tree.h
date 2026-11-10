@@ -172,13 +172,13 @@ struct LayoutParams final {
     RelativeRules relative;
 };
 
-// One compound drawable slot of a TextView: the resolved resource plus the
-// intrinsic size used by measure/draw. resource_id 0 means "unset".
+// One TextView compound slot: a render snapshot (or host resource) and intrinsic size.
 struct CompoundDrawable final {
     std::uint32_t resource_id{};
     std::int32_t width{};
     std::int32_t height{};
-    constexpr auto operator<=>(const CompoundDrawable&) const = default;
+    std::shared_ptr<const UiBitmap> bitmap{};
+    auto operator<=>(const CompoundDrawable&) const = default;
 };
 
 // RGBA color; radius <= 0 disables drawing. Raster blur is capped at 32 px.
@@ -222,6 +222,7 @@ struct UiNode final {
     std::array<CompoundDrawable, 4> compound_drawables{};
     std::optional<std::uint32_t> background_color;
     std::uint32_t background_resource_id{};
+    std::shared_ptr<const UiBitmap> background_bitmap;
     float background_alpha{1.0F};
     std::u16string text;
     std::shared_ptr<const TextLinePlan> text_line_plan;  // Frozen with Java projection geometry.
@@ -283,9 +284,7 @@ public:
 
     // Only successful, complete commits are published. Consumers retain this
     // immutable snapshot for both rendering and hit testing; null before first commit.
-    [[nodiscard]] std::shared_ptr<const UiTree> PublishedProjection() const {
-        return published_projection_.Load();
-    }
+    [[nodiscard]] std::shared_ptr<const UiTree> PublishedProjection() const { return published_projection_.Load(); }
 
     [[nodiscard]] std::optional<UiNodeId> HitTestProjection(std::int32_t x, std::int32_t y) const;
 

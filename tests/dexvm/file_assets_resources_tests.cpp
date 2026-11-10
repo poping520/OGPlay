@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "boot_dex.h"
 // java.io.File through the shared VFS (SBX-5, ADR-0020). Two things matter
 // here: a Java save and a native read see one filesystem, and File.mkdirs
@@ -44,6 +45,7 @@
 #include "ogplay/runtime/vfs/vfs.h"
 
 #include "file_vfs_fixture.h"
+#include "../runtime/resources_test_support.h"
 
 using namespace ogplay::test::file_vfs;
 using namespace ogplay::runtime;
@@ -141,7 +143,7 @@ TEST_CASE("AssetManager openFd publishes exact logical asset length") {
                                          std::byte{'c'}};
     vm.context->apk_bytes = MakeStoredZip("assets/main.obb", payload);
     vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
-    const auto manager = vm.interpreter.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
+    const auto manager = vm.AppAssets();
     const auto descriptor =
         vm.CallOn(manager, "openFd", "(Ljava/lang/String;)Landroid/content/res/AssetFileDescriptor;",
                   {VmValue::Ref(vm.interpreter.NewStringUtf8("main.obb"))})
@@ -152,13 +154,16 @@ TEST_CASE("AssetManager openFd publishes exact logical asset length") {
     CHECK(start == 30 + std::string_view("assets/main.obb").size());
     const auto fd = vm.CallOn(descriptor, "getFileDescriptor", "()Ljava/io/FileDescriptor;").ref;
     REQUIRE(fd.IsValid());
-    CHECK_FALSE(vm.BoolOn(fd, "valid"));
-    CHECK(vm.CallOn(fd, "getInt$", "()I").AsInt() == -1);
+    CHECK(vm.BoolOn(fd, "valid"));
     const auto* state = vm.interpreter.IO().FindDescriptor(fd);
     REQUIRE(state != nullptr);
-    CHECK(state->kind == IoRuntime::DescriptorKind::apk_entry);
-    CHECK(state->source == "assets/main.obb");
-    CHECK(state->base_offset == static_cast<std::uint64_t>(start));
+    CHECK(state->kind == IoRuntime::DescriptorKind::vfs_path);
+    CHECK(state->source == vm.context->package_resource_path);
+    REQUIRE(state->file);
+    CHECK_FALSE(state->file->writable);
+    std::vector<std::byte> actual(payload.size());
+    CHECK(vm.vfs.ReadAt(state->file->handle, static_cast<std::uint64_t>(start), actual) == actual.size());
+    CHECK(actual == payload);
     static_cast<void>(vm.CallOn(descriptor, "close", "()V"));
     static_cast<void>(vm.CallOn(descriptor, "close", "()V"));
     CHECK_FALSE(vm.BoolOn(fd, "valid"));
@@ -171,26 +176,52 @@ TEST_CASE("AssetManager openFd publishes exact logical asset length") {
     CHECK(vm.linker.Class(missing.exception_class).descriptor == "Ljava/io/FileNotFoundException;");
 }
 
-TEST_CASE("AssetManager open returns a readable concrete byte stream") {
-    FileVm vm;
-    const std::vector<std::byte> payload{std::byte{0x47}, std::byte{0x41}, std::byte{0x4d}, std::byte{0x45}};
-    vm.context->apk_bytes = MakeStoredZip("assets/gamecfg.bar", payload);
-    vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
-    const auto manager = vm.interpreter.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
-    const auto stream = vm.CallOn(manager, "open", "(Ljava/lang/String;)Ljava/io/InputStream;",
-                                  {VmValue::Ref(vm.interpreter.NewStringUtf8("gamecfg.bar"))})
-                            .ref;
-    REQUIRE(stream.IsValid());
-    CHECK(vm.linker.Class(vm.model.ObjectClass(stream)).descriptor == "Ljava/io/ByteArrayInputStream;");
-    CHECK(vm.CallOn(stream, "available", "()I").AsInt() == static_cast<std::int32_t>(payload.size()));
-
-    const auto bytes = vm.model.NewPrimitiveArray(vm.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte,
-                                                  static_cast<JniSize>(payload.size()));
-    CHECK(vm.CallOn(stream, "read", "([BII)I",
-                    {VmValue::Ref(bytes), VmValue::Int(0), VmValue::Int(static_cast<std::int32_t>(payload.size()))})
-              .AsInt() == static_cast<std::int32_t>(payload.size()));
-    CHECK(vm.model.ReadByteRegion(bytes, 0, static_cast<JniSize>(payload.size())) == payload);
-    CHECK(vm.CallOn(stream, "read", "()I").AsInt() == -1);
+TEST_CASE("AssetManager opens ROM AssetInputStream for STORED and DEFLATED entries") {
+    const std::array payload{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
+    const std::array deflate{std::byte{0x4b}, std::byte{0x4c}, std::byte{0x4a}, std::byte{0x06}, std::byte{0}};
+    for (const bool compressed : {false, true}) {
+        FileVm vm;
+        vm.context->apk_bytes =
+            MakeStoredZip("assets/gamecfg.bar", payload,
+                          compressed ? std::span<const std::byte>(deflate) : std::span<const std::byte>());
+        const auto manager = vm.AppAssets();
+        CHECK_FALSE(vm.CallStatic("Landroid/content/res/AssetManager;", "getAssetAllocations", "()Ljava/lang/String;")
+                        .ref.IsValid());
+        const auto stream = vm.CallOn(manager, "open", "(Ljava/lang/String;)Ljava/io/InputStream;",
+                                      {VmValue::Ref(vm.interpreter.NewStringUtf8("gamecfg.bar"))})
+                                .ref;
+        REQUIRE(stream.IsValid());
+        const auto root = vm.interpreter.ProtectReferences(std::array{stream});
+        CHECK(vm.linker.Class(vm.model.ObjectClass(stream)).descriptor ==
+              "Landroid/content/res/AssetManager$AssetInputStream;");
+        CHECK(vm.CallOn(stream, "available", "()I").AsInt() == 3);
+        CHECK(vm.CallOn(stream, "read", "()I").AsInt() == 'a');
+        vm.CallOn(stream, "mark", "(I)V", {VmValue::Int(32)});
+        CHECK(vm.CallOn(stream, "skip", "(J)J", {VmValue::Long(1)}).AsLong() == 1);
+        CHECK(vm.CallOn(stream, "available", "()I").AsInt() == 1);
+        vm.CallOn(stream, "reset", "()V");
+        CHECK(vm.CallOn(stream, "available", "()I").AsInt() == 2);
+        const auto bytes = vm.model.NewPrimitiveArray(vm.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 2);
+        CHECK(vm.CallOn(stream, "read", "([BII)I", {VmValue::Ref(bytes), VmValue::Int(0), VmValue::Int(2)}).AsInt() ==
+              2);
+        CHECK(vm.model.ReadByteRegion(bytes, 0, 2) == std::vector<std::byte>{std::byte{'b'}, std::byte{'c'}});
+        CHECK(vm.CallOn(stream, "read", "()I").AsInt() == -1);
+        const auto assetField = vm.linker.FindFieldRecursive(vm.model.ObjectClass(stream), "mAsset", "I");
+        REQUIRE(assetField);
+        const auto token = vm.model.InstanceSlots(stream)[vm.linker.Field(*assetField).slot].bits;
+        vm.CallOn(stream, "close", "()V");
+        const auto native = [&](const char* name, const char* signature, std::vector<VmValue> args) {
+            const auto method = vm.linker.FindDirectMethod(vm.model.ObjectClass(manager), name, signature);
+            REQUIRE(method);
+            args.insert(args.begin(), VmValue::Ref(manager));
+            return vm.interpreter.Call(*method, args);
+        };
+        CHECK(native("destroyAsset", "(I)V", {VmValue::Int(static_cast<std::int32_t>(token))}).exception.IsValid());
+        CHECK(native("readAssetChar", "(I)I", {VmValue::Int(static_cast<std::int32_t>(token))}).exception.IsValid());
+        CHECK_FALSE(native("destroy", "()V", {}).exception.IsValid());
+        CHECK(native("destroy", "()V", {}).exception.IsValid());
+        CHECK(vm.CallOnOutcome(manager, "getLocales", "()[Ljava/lang/String;").exception.IsValid());
+    }
 }
 
 TEST_CASE("Resources Context and PackageManager share application assets and isolate system assets") {
@@ -238,7 +269,7 @@ TEST_CASE("Resources Context and PackageManager share application assets and iso
             vm.CallOnOutcome(resource_assets, "open", "(Ljava/lang/String;)Ljava/io/InputStream;",
                              {VmValue::Ref(vm.interpreter.NewStringUtf8("missing.bin"))});
         REQUIRE(missing_asset.exception.IsValid());
-        CHECK(vm.linker.Class(missing_asset.exception_class).descriptor == "Ljava/io/IOException;");
+        CHECK(vm.linker.Class(missing_asset.exception_class).descriptor == "Ljava/io/FileNotFoundException;");
 
         for (const auto* other_package : {"org.example.other", "", "system"}) {
             const auto missing_package = vm.CallOnOutcome(manager, "getResourcesForApplication", kPackageResources,
@@ -262,7 +293,7 @@ TEST_CASE("Resources Context and PackageManager share application assets and iso
         const auto system_assets = vm.CallOn(system, "getAssets", "()Landroid/content/res/AssetManager;").ref;
         REQUIRE(system_assets.IsValid());
         CHECK(system_assets != direct_assets);
-        static_cast<void>(vm.interpreter.CollectGarbage("system-resources-assets"));
+        static_cast<void>(vm.interpreter.CollectGarbage("system-assets"));
         CHECK(vm.CallOn(system, "getAssets", "()Landroid/content/res/AssetManager;").ref == system_assets);
         const auto missing =
             vm.CallOnOutcome(system_assets, "open", "(Ljava/lang/String;)Ljava/io/InputStream;", {VmValue::Ref(name)});
@@ -278,15 +309,16 @@ TEST_CASE("Resources getXml exposes compiled APK XML as pull events") {
         const auto xml = MakeBinaryXmlTextResource();
         vm.context->apk_bytes = MakeStoredZip("res/xml/settings.xml", xml);
         vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
-        vm.context->arsc.entries.push_back({
-            .resource_id = kResourceId,
-            .type_name = "xml",
-            .entry_name = "settings",
-            .string_value = "res/xml/settings.xml",
-            .value_type = 3,
-        });
+        ogplay::test::ResourceFixture(*vm.context)
+            .entries.push_back({
+                .resource_id = kResourceId,
+                .type_name = "xml",
+                .entry_name = "settings",
+                .string_value = "res/xml/settings.xml",
+                .value_type = 3,
+            });
 
-        const auto resources = vm.interpreter.NewIntrinsicInstance("Landroid/content/res/Resources;");
+        const auto resources = vm.AppResources();
         const auto parser = vm.CallOn(resources, "getXml", "(I)Landroid/content/res/XmlResourceParser;",
                                       {VmValue::Int(static_cast<std::int32_t>(kResourceId))})
                                 .ref;
@@ -300,22 +332,12 @@ TEST_CASE("Resources getXml exposes compiled APK XML as pull events") {
         const auto pull = vm.linker.ResolveDescriptor("Lorg/xmlpull/v1/XmlPullParser;");
         CHECK(vm.linker.Class(pull).is_boot_dex);
         CHECK(vm.linker.IsAssignable(pull, vm.model.ObjectClass(parser)));
-        for (const auto method : vm.linker.Class(pull).own_virtual_methods) {
-            const auto& declared = vm.linker.Method(method);
-            const auto slot =
-                vm.linker.FindVtableIndex(vm.model.ObjectClass(parser), declared.name, declared.descriptor);
-            REQUIRE_MESSAGE(slot.has_value(), declared.name);
-            CHECK(vm.linker.Method(vm.linker.Class(vm.model.ObjectClass(parser)).vtable[*slot]).kind ==
-                  MethodKind::intrinsic);
-        }
-        const auto unsupported = vm.CallOnOutcome(parser, "getAttributeCount", "()I");
-        REQUIRE(unsupported.exception.IsValid());
-        CHECK(vm.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
-        const auto hits = vm.ledger.Unimplemented();
-        REQUIRE(hits.size() == 1);
-        CHECK(hits.front().id == "dexvm.intrinsic.Landroid/content/res/XmlResourceParser$Impl;.getAttributeCount()I");
+        CHECK(vm.linker.Class(vm.model.ObjectClass(parser)).descriptor == "Landroid/content/res/XmlBlock$Parser;");
+        CHECK(vm.CallOn(parser, "getAttributeCount", "()I").AsInt() <= 0);
+        CHECK(vm.ledger.Unimplemented().empty());
 
         CHECK(event_type() == 0);
+        CHECK(next() == 0);
         CHECK(next() == 2);
         CHECK(string_value("getName") == "settings");
         CHECK(next() == 2);
@@ -330,9 +352,7 @@ TEST_CASE("Resources getXml exposes compiled APK XML as pull events") {
         CHECK(next() == 1);
         static_cast<void>(vm.CallOn(parser, "close", "()V"));
         static_cast<void>(vm.CallOn(parser, "close", "()V"));
-        const auto after_close = vm.CallOnOutcome(parser, "getEventType", "()I");
-        REQUIRE(after_close.exception.IsValid());
-        CHECK(vm.linker.Class(after_close.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+        CHECK(vm.CallOn(parser, "getEventType", "()I").AsInt() == 1);
 
         const auto missing = vm.CallOnOutcome(resources, "getXml", "(I)Landroid/content/res/XmlResourceParser;",
                                               {VmValue::Int(0x7f010001)});
@@ -340,13 +360,14 @@ TEST_CASE("Resources getXml exposes compiled APK XML as pull events") {
         CHECK(vm.linker.Class(missing.exception_class).descriptor ==
               "Landroid/content/res/Resources$NotFoundException;");
 
-        vm.context->arsc.entries.push_back({
-            .resource_id = 0x7f010002U,
-            .type_name = "xml",
-            .entry_name = "missing",
-            .string_value = "res/xml/missing.xml",
-            .value_type = 3,
-        });
+        ogplay::test::ResourceFixture(*vm.context)
+            .entries.push_back({
+                .resource_id = 0x7f010002U,
+                .type_name = "xml",
+                .entry_name = "missing",
+                .string_value = "res/xml/missing.xml",
+                .value_type = 3,
+            });
         const auto absent_entry = vm.CallOnOutcome(resources, "getXml", "(I)Landroid/content/res/XmlResourceParser;",
                                                    {VmValue::Int(0x7f010002)});
         REQUIRE(absent_entry.exception.IsValid());
@@ -361,14 +382,15 @@ TEST_CASE("Resources openRawResourceFd exposes a stored raw APK window") {
     const std::vector<std::byte> payload{std::byte{'O'}, std::byte{'g'}, std::byte{'g'}, std::byte{'S'}};
     vm.context->apk_bytes = MakeStoredZip("res/raw/click.ogg", payload);
     vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
-    vm.context->arsc.entries.push_back({
-        .resource_id = kResourceId,
-        .type_name = "raw",
-        .entry_name = "click",
-        .string_value = "res/raw/click.ogg",
-        .value_type = 3,
-    });
-    const auto resources = vm.interpreter.NewIntrinsicInstance("Landroid/content/res/Resources;");
+    ogplay::test::ResourceFixture(*vm.context)
+        .entries.push_back({
+            .resource_id = kResourceId,
+            .type_name = "raw",
+            .entry_name = "click",
+            .string_value = "res/raw/click.ogg",
+            .value_type = 3,
+        });
+    const auto resources = vm.AppResources();
     const auto afd = vm.CallOn(resources, "openRawResourceFd", "(I)Landroid/content/res/AssetFileDescriptor;",
                                {VmValue::Int(static_cast<std::int32_t>(kResourceId))})
                          .ref;
@@ -377,8 +399,8 @@ TEST_CASE("Resources openRawResourceFd exposes a stored raw APK window") {
     const auto fd = vm.CallOn(afd, "getFileDescriptor", "()Ljava/io/FileDescriptor;").ref;
     const auto* state = vm.interpreter.IO().FindDescriptor(fd);
     REQUIRE(state != nullptr);
-    CHECK(state->kind == IoRuntime::DescriptorKind::apk_entry);
-    CHECK(state->source == "res/raw/click.ogg");
+    CHECK(state->kind == IoRuntime::DescriptorKind::vfs_path);
+    CHECK(state->source == vm.context->package_resource_path);
 }
 
 TEST_CASE("AssetManager openFd rejects a compressed APK entry") {
@@ -389,7 +411,7 @@ TEST_CASE("AssetManager openFd rejects a compressed APK entry") {
     const auto central = 30U + name.size() + 1U;
     vm.context->apk_bytes[central + 10U] = std::byte{8};
     vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
-    const auto manager = vm.interpreter.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
+    const auto manager = vm.AppAssets();
     const auto outcome =
         vm.CallOnOutcome(manager, "openFd", "(Ljava/lang/String;)Landroid/content/res/AssetFileDescriptor;",
                          {VmValue::Ref(vm.interpreter.NewStringUtf8("compressed.bin"))});
@@ -444,11 +466,13 @@ TEST_CASE("ParcelFileDescriptor open rejects missing paths and invalid modes") {
 
 TEST_CASE("AssetManager list returns sorted unique direct children") {
     FileVm vm;
-    for (const auto& name : {"assets/root.txt", "assets/sounds/z.ogg", "assets/sounds/a.ogg",
-                             "assets/sounds/sub/deep.ogg", "assets/sounds/sub/second.ogg", "res/not-an-asset"}) {
-        vm.context->archive.entries.push_back({.name = name});
-    }
-    const auto manager = vm.interpreter.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
+    std::vector<std::pair<std::string, std::vector<std::byte>>> entries;
+    for (const auto* name :
+         {"assets/root.txt", "assets/fixture-sounds/z.ogg", "assets/fixture-sounds/a.ogg",
+          "assets/fixture-sounds/sub/deep.ogg", "assets/fixture-sounds/sub/second.ogg", "res/not-an-asset"})
+        entries.emplace_back(name, std::vector<std::byte>{});
+    vm.context->apk_bytes = ogplay::test::resources::Zip(entries);
+    const auto manager = vm.AppAssets();
     const auto list = [&](const std::string& path) {
         return vm
             .CallOn(manager, "list", "(Ljava/lang/String;)[Ljava/lang/String;",
@@ -463,8 +487,8 @@ TEST_CASE("AssetManager list returns sorted unique direct children") {
         return result;
     };
 
-    CHECK(strings(list("")) == std::vector<std::string>{"root.txt", "sounds"});
-    CHECK(strings(list("sounds")) == std::vector<std::string>{"a.ogg", "sub", "z.ogg"});
+    CHECK(strings(list("")) == std::vector<std::string>{"fixture-sounds", "images", "root.txt", "sounds", "webkit"});
+    CHECK(strings(list("fixture-sounds")) == std::vector<std::string>{"a.ogg", "sub", "z.ogg"});
     const auto missing = list("missing");
     REQUIRE(missing.IsValid());
     CHECK(vm.model.ArrayLength(missing) == 0);
@@ -525,7 +549,10 @@ TEST_CASE("XML Pull original factory parses BOM APK assets through KXml on both 
             std::memcpy(bytes.data(), text.data(), text.size());
             vm.context->apk_bytes = MakeStoredZip("assets/settings.xml", bytes);
             vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
-            const auto manager = vm.interpreter.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
+            vm.context->sealed_apk_bytes.reset();
+            if (!vm.context->package_resource_path.empty()) vm.context->package_resource_path += ".next";
+            vm.context->singletons.erase("resources");
+            const auto manager = vm.AppAssets();
             const auto manager_root = vm.interpreter.ProtectReferences(std::array{manager});
             return vm
                 .CallOn(manager, "open", "(Ljava/lang/String;)Ljava/io/InputStream;",
@@ -648,7 +675,10 @@ TEST_CASE("DVM-375 SAX dispatches APK text XML to a guest handler on both backen
         const auto parse = [&](const std::string_view document) {
             vm.context->apk_bytes = MakeStoredZip("assets/settings.xml", std::as_bytes(std::span(document)));
             vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
-            const auto assets = vm.interpreter.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
+            vm.context->sealed_apk_bytes.reset();
+            if (!vm.context->package_resource_path.empty()) vm.context->package_resource_path += ".next";
+            vm.context->singletons.erase("resources");
+            const auto assets = vm.AppAssets();
             const auto assets_root = vm.interpreter.ProtectReferences(std::array{assets});
             const auto stream = vm.CallOn(assets, "open", "(Ljava/lang/String;)Ljava/io/InputStream;",
                                           {VmValue::Ref(vm.interpreter.NewStringUtf8("settings.xml"))})

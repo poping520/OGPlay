@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "android_value_fixture.h"
 #include "container_traversal_fixture.h"
 #include "boot_dex.h"
@@ -624,8 +625,8 @@ TEST_CASE("DVM-310 lifecycle window partitions retain Java identity scroll focus
         const auto leaf = f.context->content_view;
         f.On(leaf, "setFocusableInTouchMode", "(Z)V", {VmValue::Int(1)});
         REQUIRE(f.On(leaf, "requestFocus", "()Z").AsInt() == 1);
-        f.context->arsc.package_id = 0x7f;
-        ogplay::loader::ArscEntry theme;
+        ogplay::test::ResourceFixture(*f.context).package_id = 0x7f;
+        ogplay::test::ResourceFixtureEntry theme;
         theme.resource_id = 0x7f020001;
         theme.type_name = "style";
         theme.entry_name = "surface";
@@ -633,7 +634,7 @@ TEST_CASE("DVM-310 lifecycle window partitions retain Java identity scroll focus
         theme.parent = 0x01030005;
         for (auto id : {0x01010064U, 0x01010065U, 0x01010034U, 0x010100d4U})
             theme.bag.push_back({id, 1, 0, {}});
-        f.context->arsc.entries = {theme};
+        ogplay::test::ResourceFixture(*f.context).entries = {theme};
         f.On(a, "setTheme", "(I)V", {VmValue::Int(static_cast<int>(theme.resource_id))});
         const auto surface_view =
             f.New("Landroid/view/SurfaceView;", "(Landroid/content/Context;)V", {VmValue::Ref(a)});

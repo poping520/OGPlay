@@ -42,6 +42,12 @@ function(ogplay_add_test_executable target)
 endfunction()
 
 set(OGPLAY_TEST_SOURCES
+    tests/frontend/apk_fixture.cpp
+    tests/runtime/resources_table_tests.cpp
+    tests/runtime/resources_theme_tests.cpp
+    tests/runtime/resources_xml_tests.cpp
+    tests/runtime/resources_assets_tests.cpp
+    tests/runtime/resources_test_support.cpp
     tests/core/capability_ledger_tests.cpp
     tests/core/encoding_tests.cpp
     tests/core/json_tests.cpp
@@ -310,7 +316,6 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/widget_window_dialog_tests.cpp
     tests/dexvm/widget_fixture.cpp
     tests/dexvm/ui_include_tests.cpp
-    tests/dexvm/arsc_tests.cpp
 )
 if(OGPLAY_ENABLE_DYNARMIC)
     list(APPEND OGPLAY_TEST_SOURCES
@@ -358,7 +363,7 @@ add_dependencies(ogplay_app_tests ogplay_stage_data ogplay_dexvm_fixtures)
 
 ogplay_add_test_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
 target_link_libraries(ogplay_tests PRIVATE
-    OGPlay::Frontend OGPlay::Cpu OGPlay::Gles OGPlay::Loader OGPlay::Runtime OGPlay::Video Skia::Skia
+    OGPlay::Frontend OGPlay::Cpu OGPlay::Gles OGPlay::Loader OGPlay::Runtime OGPlay::Resources OGPlay::Video Skia::Skia
 )
 target_include_directories(ogplay_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/samples/m1_guest/include

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -43,6 +44,8 @@ struct ApkEntryRangeStatistics final {
 [[nodiscard]] std::span<const std::byte> ValidatedStoredApkEntryData(
     std::span<const std::byte> bytes, const ApkArchive& archive,
     std::string_view name, std::stop_token stop = {});
+[[nodiscard]] std::span<const std::byte> ValidatedStoredApkEntryData(std::span<const std::byte> bytes,
+                                                                     const ApkEntry& entry, std::stop_token stop = {});
 // Checks ZIP bounds and Deflate output size, then copies the requested window.
 // Stored entries borrow payload and do not scan it; validation_scan_bytes counts
 // only Deflate output scanned. CRC is not a read-time integrity contract.
@@ -51,5 +54,18 @@ struct ApkEntryRangeStatistics final {
     std::string_view name, std::uint64_t offset,
     std::span<std::byte> destination, std::stop_token stop = {},
     ApkEntryRangeStatistics* statistics = nullptr);
+
+// Borrows the immutable ZIP bytes. Sequential reads preserve inflater state;
+// backward reads replay from the start. EOF validates the declared size.
+class ApkDeflateStream final {
+public:
+    ApkDeflateStream(std::span<const std::byte> bytes, const ApkEntry& entry);
+    ~ApkDeflateStream();
+    [[nodiscard]] std::size_t Read(std::size_t offset, std::span<std::byte> destination);
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
 
 }  // namespace ogplay::loader

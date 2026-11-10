@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "ogplay/loader/binary_xml.h"
-#include "ogplay/runtime/integration/xml_cursor.h"
 #include "ogplay/loader/apk.h"
 
 namespace {
@@ -643,109 +642,6 @@ TEST_CASE("DVM-286 compiled XML rejects invalid indices and unsupported bounded 
     bad[27] = std::byte{0xff};  // attribute stride
     CHECK_THROWS_WITH(static_cast<void>(ParseCompiledXmlDocument(XmlDocument({pool, bad}))),
                       "binary XML field is out of range");
-}
-
-TEST_CASE("DVM-286 XML cursors isolate progression and reject retired identities") {
-    using namespace ogplay::runtime;
-    using Type = ogplay::loader::BinaryXmlPullEventType;
-    XmlCursorRegistry registry, other;
-    const auto bytes = CompiledFactsFixture();
-    const auto owner = registry.CreateDocument(bytes);
-    std::weak_ptr<const ogplay::loader::CompiledXmlDocument> lifetime = registry.Document(owner);
-    const auto a = registry.CreateCursor(owner), b = registry.CreateCursor(owner);
-    CHECK(registry.LiveDocuments() == 1);
-    CHECK(registry.LiveCursors() == 2);
-    CHECK(registry.Current(a).event == Type::start_document);
-    CHECK_THROWS_AS(static_cast<void>(registry.StartTag(a)), std::logic_error);
-    CHECK_THROWS_AS(static_cast<void>(other.Current(a)), std::invalid_argument);
-    CHECK_THROWS_AS(static_cast<void>(other.CreateCursor(owner)), std::invalid_argument);
-    const auto root = registry.Next(a);
-    CHECK(root.event == Type::start_tag);
-    CHECK(root.depth == 1);
-    REQUIRE(root.node);
-    CHECK(root.node->line == 41);
-    CHECK(root.node->namespace_index == 3);
-    CHECK(registry.StartTag(a).id_index == 2);
-    CHECK(registry.StartTag(a).class_index == 6);
-    CHECK(registry.StartTag(a).style_index == 7);
-    CHECK(registry.Attribute(a, 6).value.data == 0);
-    CHECK(registry.Attribute(a, 6).value.type == 1);
-    CHECK(registry.FindAttribute(a, "urn:a", "same") == 0);
-    CHECK(registry.FindAttribute(a, "urn:b", "same") == 1);
-    CHECK_FALSE(registry.FindAttribute(a, std::nullopt, "same"));
-    CHECK_THROWS_AS(static_cast<void>(registry.Attribute(a, 9)), std::out_of_range);
-    CHECK(registry.Current(b).event == Type::start_document);
-    const auto child = registry.Next(a);
-    CHECK(child.depth == 2);
-    REQUIRE(child.node);
-    CHECK(child.node->line == 42);
-    CHECK(registry.StartTag(a).attributes.size() == 1);
-    CHECK(registry.FindAttribute(a, std::nullopt, "same") == 0);
-    CHECK_FALSE(registry.FindAttribute(a, "urn:a", "same"));
-    CHECK(registry.Next(b).depth == 1);
-    CHECK(registry.StartTag(b).attributes.size() == 9);
-    const auto text = registry.Next(a);
-    CHECK(text.event == Type::text);
-    CHECK(text.depth == 2);
-    REQUIRE(text.node);
-    CHECK(text.node->line == 43);
-    CHECK_THROWS_AS(static_cast<void>(registry.Attribute(a, 0)), std::logic_error);
-    CHECK(registry.Next(a).depth == 2);
-    const auto end = registry.Next(a);
-    CHECK(end.depth == 1);
-    REQUIRE(end.node);
-    CHECK(end.node->line == 49);
-    CHECK_THROWS_AS(static_cast<void>(registry.FindAttribute(a, std::nullopt, "same")), std::logic_error);
-    CHECK(registry.Next(a).event == Type::end_document);
-    CHECK(registry.Current(a).depth == 0);
-    CHECK_FALSE(registry.Current(a).node);
-    CHECK(registry.Next(a).event == Type::end_document);
-    registry.Close(a);
-    CHECK(registry.LiveCursors() == 1);
-    CHECK_THROWS_AS(static_cast<void>(registry.Current(a)), std::invalid_argument);
-    CHECK_THROWS_AS(static_cast<void>(registry.Next(a)), std::invalid_argument);
-    CHECK_THROWS_AS(static_cast<void>(registry.Close(a)), std::invalid_argument);
-    const auto c = registry.CreateCursor(owner);
-    CHECK(c.value != a.value);
-    registry.RetireOwner(owner);
-    CHECK(registry.LiveCursors() == 0);
-    CHECK(registry.LiveDocuments() == 0);
-    CHECK(lifetime.expired());
-    CHECK_THROWS_AS(static_cast<void>(registry.Next(b)), std::invalid_argument);
-    CHECK_THROWS_AS(static_cast<void>(registry.Current(c)), std::invalid_argument);
-    CHECK_THROWS_AS(static_cast<void>(registry.Document(owner)), std::invalid_argument);
-    CHECK_THROWS_AS(static_cast<void>(registry.CreateCursor(owner)), std::invalid_argument);
-    const auto replacement = registry.CreateDocument(bytes);
-    CHECK(replacement.value != owner.value);
-    const auto last = registry.CreateCursor(replacement);
-    registry.Shutdown();
-    registry.Shutdown();
-    CHECK(registry.LiveCursors() == 0);
-    CHECK(registry.LiveDocuments() == 0);
-    CHECK_THROWS_AS(static_cast<void>(registry.Current(last)), std::invalid_argument);
-    CHECK_THROWS_AS(static_cast<void>(registry.CreateDocument(bytes)), std::logic_error);
-    {
-        XmlCursorRegistry temporary;
-        const auto owned = temporary.CreateDocument(bytes);
-        lifetime = temporary.Document(owned);
-        static_cast<void>(temporary.CreateCursor(owned));
-    }
-    CHECK(lifetime.expired());
-}
-
-TEST_CASE("DVM-286 XML namespace queries distinguish absent from pooled empty URI") {
-    using namespace ogplay::runtime;
-    const auto bytes =
-        XmlDocument({StringPool({"root", "same", ""}, true),
-                     StartElement(0, {{1, 0xffffffffU, 0x10, 1, 2}, {1, 0xffffffffU, 0x10, 2}}), EndElement(0)});
-    XmlCursorRegistry registry;
-    const auto owner = registry.CreateDocument(bytes);
-    const auto parser = registry.CreateCursor(owner);
-    static_cast<void>(registry.Next(parser));
-    CHECK(registry.FindAttribute(parser, "", "same") == 0);
-    CHECK(registry.FindAttribute(parser, std::nullopt, "same") == 1);
-    registry.RetireOwner(owner);
-    CHECK(registry.LiveCursors() == 0);
 }
 
 TEST_CASE("DVM-286 compiled XML checks namespace pairs and node headers") {

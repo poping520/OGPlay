@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "container_traversal_fixture.h"
 #include "ogplay/runtime/ui/ui_renderer.h"
 #include "ogplay/runtime/ui/ui_fallback_font.h"
@@ -12,8 +13,8 @@ namespace {
 VmObjectRef Owner(ContainerVm& f) {
     f.context->ui_test_accessibility_disabled = true;
     f.context->target_sdk_version = 19;
-    f.context->arsc.package_id = 0x7f;
-    ogplay::loader::ArscEntry theme;
+    ogplay::test::ResourceFixture(*f.context).package_id = 0x7f;
+    ogplay::test::ResourceFixtureEntry theme;
     theme.resource_id = 0x7f020001;
     theme.type_name = "style";
     theme.is_complex = true;
@@ -28,7 +29,7 @@ VmObjectRef Owner(ContainerVm& f) {
         theme.bag.push_back({id, 1, 0, {}});
         style.bag.push_back({id, 1, 0, {}});
     }
-    f.context->arsc.entries = {theme, style};
+    ogplay::test::ResourceFixture(*f.context).entries = {theme, style};
     f.context->application_theme = theme.resource_id;
     const auto owner = f.New("Landroid/app/Activity;");
     ogplay::test::AttachViewTestContext(f.vm, owner);

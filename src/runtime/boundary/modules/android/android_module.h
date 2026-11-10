@@ -148,6 +148,8 @@ private:
     std::map<std::uint32_t, Resource> resources_;
     std::map<std::uint32_t, std::shared_ptr<Asset>> assets_;
     std::map<std::uint32_t, std::shared_ptr<AndroidAssetManagerSource>> asset_managers_;
+    std::map<std::uint32_t, resources::ResTable_config> configurations_;
+    memory::GuestAddress next_configuration_{0x6e003000U};
     memory::GuestAddress next_asset_manager_{0x6e300000U};
     std::recursive_mutex asset_hook_mutex_;
     AndroidAssetManagerHooks asset_hooks_;

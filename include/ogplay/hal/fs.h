@@ -20,10 +20,16 @@ struct HostReadFileInfo final {
     bool operator==(const HostReadFileInfo&) const = default;
 };
 
+struct HostReadMapping final {
+    std::shared_ptr<const void> owner;
+    std::span<const std::byte> bytes;
+};
+
 class HostReadFile {
 public:
     virtual ~HostReadFile() = default;
     [[nodiscard]] virtual HostReadFileInfo Info() const noexcept = 0;
+    [[nodiscard]] virtual HostReadMapping Map() const = 0;
     [[nodiscard]] virtual std::size_t ReadAt(
         std::uint64_t offset, std::span<std::byte> destination,
         std::stop_token stop = {}) const = 0;

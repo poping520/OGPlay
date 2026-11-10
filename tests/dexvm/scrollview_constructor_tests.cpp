@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "container_traversal_fixture.h"
 #include "../fixtures/bitmap_decode_data.h"
 #include "file_vfs_fixture.h"
@@ -67,8 +68,9 @@ std::vector<std::byte> StringPool(const std::vector<std::string>& strings, const
     return chunk;
 }
 
-ogplay::loader::ArscEntry Style(std::uint32_t id, std::uint32_t parent, std::vector<ogplay::loader::ArscBagValue> bag) {
-    ogplay::loader::ArscEntry e;
+ogplay::test::ResourceFixtureEntry Style(std::uint32_t id, std::uint32_t parent,
+                                         std::vector<ogplay::test::ResourceFixtureBagValue> bag) {
+    ogplay::test::ResourceFixtureEntry e;
     e.resource_id = id;
     e.type_name = "style";
     e.entry_name = "fixture";
@@ -160,13 +162,14 @@ constexpr std::uint32_t theme = 0x7f020001, vertical = 0x7f020002, horizontal = 
 VmObjectRef Owner(ContainerVm& f, bool supported = true) {
     f.context->ui_test_accessibility_disabled = true;
     f.context->target_sdk_version = 19;
-    f.context->arsc.package_id = 0x7f;
+    ogplay::test::ResourceFixture(*f.context).package_id = 0x7f;
     auto t = Style(theme, 0x01030005, {{0x01010080, 1, vertical, {}}, {0x01010353, 1, horizontal, {}}});
     for (const auto id : {0x01010064U, 0x01010065U, 0x01010034U, 0x010100d4U})
         t.bag.push_back({id, 1, 0, {}});
     if (supported) t.bag.push_back({0x010102c1, 16, 2, {}});  // overScrollMode=never
-    f.context->arsc.entries = {t, Style(vertical, 0, {{0x0101017a, 18, 1, {}}}),
-                               Style(horizontal, 0, {{0x0101017a, 18, 0, {}}})};  // fillViewport
+    ogplay::test::ResourceFixture(*f.context).entries = {
+        t, Style(vertical, 0, {{0x0101017a, 18, 1, {}}}),
+        Style(horizontal, 0, {{0x0101017a, 18, 0, {}}})};  // fillViewport
     f.context->application_theme = theme;
     const auto owner = f.New("Landroid/app/Activity;");
     ogplay::test::AttachViewTestContext(f.vm, owner);

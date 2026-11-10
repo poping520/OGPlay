@@ -134,103 +134,21 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
 
 ## 资源、图像与存储
 
-- DexVmAndroidContext::xml_cursors 为 context 独占的受检 document/cursor registry，
-  VM 锁串行访问。document/cursor token 分型，32 位 ID 不含指针、跨 context/生命周期不复用；
-  空间耗尽明确失败。cursor 独立推进 START/TEXT/END，namespace 节点仅内部保留；
-  END depth 在下一事件才递减，行号及当前 start-tag 属性来自原事实，非 start-tag 查询失败。
-  查询返回值/不可变所有权，不发布可悬空的可变引用。close 立即退役 cursor，owner 退役
-  同时撤销其 parsers；bridge teardown Shutdown 后活跃数为零，context 析构也释放所有权。
-  旧/关闭/跨 context token、错误属性索引均抛确定的 C++ 异常。
-  JavaTraversal 配对逐签名批准 XmlBlock native 与 StringBlock 四个 plain-string native；
-  Parser typed getter/event/depth/open-count/close 执行原 ROM。document/cursor/string-pool token
-  分型且共用不复用 ID 域；XML 借用池随 document 退役，不能由 StringBlock 销毁。
-  独立池由 StringBlock owner/原 finalizer 退役；GC hooks 只读原 owner 字段，Java 强边保活
-  Parser→XmlBlock→StringBlock，无 native 强根。sweep 检查是否已退役，不重复销毁；Shutdown 清零。
-  StringBlock.get 为受审 plain-string adapter，缓存身份只存原 mStrings/mSparseStrings 字段；
-  mUseSparse=true 且池大于250时复用 Java SparseArray。每次查询含缓存命中都检查活 token、
-  索引与无样式池；nativeGetStyle/样式 helper 保留 failure，含样式的池记账并抛 UOE。
-  AssetManager.openXmlResourceParser 两重载为 APK-only 等价入口：cookie=0/1、res/ 原字节，
-  执行 ROM byte-slice 构造/newParser/close，不接通 openXmlAssetNative 或系统 XML。
-  ROM XmlBlock/inflater 的有界接入见下文。
-- Resources 名称查询通过 ThemeResources.Identity 读取 APK ARSC 或封存同 ROM 身份表，
-  不解析值引用、不受值配置选择限制，不授予内容加载支持；缺名抛 NotFoundException。
-  View.toString 保留 ROM 格式及捕获路径；焦点方向 ID、声音/横向 scrollbar flags 归 ROM 字段，
-  ImageView adjustViewBounds 与 drawable-state 合并执行 ROM，不引入宿主状态副本。
-- JavaTraversal 的 ThemeResources 独占 theme 状态，ThemeToken 为无指针、不复用的
-  32 位强类型 ID；VM 锁串行访问。封存 BootDex 独立 theme-projection entry，严格 schema 1/
-  API19/values 与大小、数量边界；固定源码/ROM 哈希、名→ID、styleable 数组与 ADR-0077
-  查询域冲突在构建期校验。仅登记投影主题及消费闭包属性可报告确证缺席；无 ROM ID 绑定
-  的主题按名称明确失败，未知 ID/属性、不支持值与循环不回退成缺席。
-  APK ARSC bag 与投影统一 parent/reference/?attr 有界解析；applyStyle 顺序为显式 XML、
-  XML style、默认 style、theme，同名 defStyleAttr reference 替代 defStyleRes；@null 遮蔽、
-  force 与独立 copy 遵循 API19。retrieveAttributes 只读 XML/资源，不套 style/theme。
-  applyThemeStyle 校验 token 后对样式 ID 0 执行无操作。非零未知 ID 仍明确失败。
-  六槽 type/data/cookie/resourceId/configFlags/density 和 indices 先受检容量再写 Java int[]；
-  XML cookie=-1，APK 原池 cookie=1，flags/density 来自 ARSC。APK owner 注入单 entry 配置
-  选择与文件验证回调，沿 API19 候选优先级；引用链保留累计 flags 和最终资源 ID。
-  仅 APK drawable PNG/JPEG 与 TYPE_INT_COLOR_* 可供叶消费；文件编码/扩展名、解码边界、
-  ninepatch/光学布局 chunk 在六槽发布前验证，未知文件和类型明确失败。
-  ROM Theme/TypedArray 独占字段、缓存与 recycle；selectDefaultTheme 执行 ROM targetSdk 算法。
-  AssetManager 普通构造 adapter 初始化真实 mOpen/mNumRefs/mValue/mOffsets，Resources 应用
-  对象工厂初始化 mAccessLock/mMetrics，原 clinit 与 Theme/TypedArray 构造执行 ROM。
-  makeStringBlocks 将 APK 原池/cookie1 与投影 ROM 字符串池/cookie2 分别绑定真实 ROM
-  StringBlock，不合成 system AssetManager；池由 context 保活至 Shutdown，StringBlock
-  不拥有借用池。投影按同 ROM attr format 和本属性枚举表解析，不跨属性猜名称。
-  native 由 C++ 声明逐签名提供；支持域限当前 APK owner 与封存 ROM 投影，init(true)、完整系统池、
-  未登记 selector/ninepatch、animation/spans 请求失败；TypedArray/Resources 的 getDrawable/getColorStateList
-  执行 ROM，loadDrawable/loadColorStateList 为逐签名 adapter，单态颜色调用 ROM valueOf。
-  同 ROM res/color XML 按 selector/item、android:color 与 state_* 结构开放，原始编译 XML
-  通过既有 XmlBlock cursor 交 ROM createFromXml/inflate；颜色引用沿同 ROM ARSC 标量解析。
-  结构外 XML、未知属性/引用及未登记配置明确失败，不按颜色名称白名单。
-  ROM color XML 路径使用 cookie2；无 APK ARSC 时 cookie1 StringBlock 槽保持缺席，
-  对缺席池的查询仍失败，不合成空成功池。
-  缺席或 @null 返回 null；Styled 与 loadDrawable 共用 ThemeResources.CanLoadDrawable：
-  封存 ROM skin、type28–31 纯色及 cookie1/非 ROM 有效资源 ID 的 APK 位图可延迟加载；
-  APK entry 的 type/data/density、配置选择与文件验证共用既有 owner 回调，未封存 ROM 在 Styled 提前失败。
-  background 额外支持封存 edit_text 闭包的状态、测量及现有叶 bitmap 平面冻结；
-  ninepatch divisions/像素按目标密度缩放，选中叶及像素随共同快照冻结；
-  其他非空值（含应用 XML drawable、未封存 scrollbar）仍明确失败并记账。
-  styleable 与 defStyleAttr/?attr/default-style 消费闭包从固定输入生成三态，不能删掉主题请求。
-  Drawable 构造、尺寸与绘制状态使用 ROM 对象。BitmapDrawable 的受审构造登记投影 backing，
-  并调用 ROM 私有构造初始化状态。资源位图以源 density 保存，intrinsic 按 API19 换算。
-  编译 NinePatch PNG 经 BitmapFactory 保留 chunk 和 padding，ROM NinePatchDrawable 交给 Skia Canvas。
-  Drawable 的 draw(Canvas) 归 ROM，容器的当前子项同步 Java mCurrDrawable 与投影选择。
+- API19 ROM Java 管理 Resources、AssetManager、Theme、TypedArray、XML 与流的状态和调用协议。
+  native 使用 [资源核心](../../resources/MODULE.md)，按类型分配非零 32 位令牌，销毁后拒绝旧令牌。
+  每个 manager 的 Java/NDK 操作共用锁，XML parser 和独立 StringBlock 由 VM 串行化。
+  表与 XML 的 StringBlock 借用池，独立 StringBlock 及 nativeCreate 的输入副本由对应句柄拥有。
+- 默认 manager 映射只读 framework-res，应用 manager 通过 guest VFS 路径追加当前 APK。
+  framework/app cookie 为 1/2，字符串表 block 从 0 开始，内联 XML 值 cookie 为 -1。
+  资源选择使用 managed 显示尺寸、density、方向、区域和 API19 配置。
+- AssetInputStream 直接读核心流。STORED FD 是完整 APK 的只读 guest 描述符，加受检的
+  起点与长度，压缩条目抛 FileNotFoundException。ROM AssetFileDescriptor 持有 PFD。
+  媒体在调用时捕获同一 VFS 区间，调用者随后可关闭描述符。
+- 编译 XML 使用核心 parser，Java inflation 负责构造对象。软件位图经 ROM BitmapFactory
+  选择源、密度和关闭协议，Skia 解码直接借用 STORED 字节并处理采样、缩放和 NinePatch。
+  UI 投影读取 View 当前 Drawable 的 Java 状态及 P1 Bitmap/NinePatch/Paint backing。普通 BitmapDrawable（含 ROM 缓存的副本）
+  从其 Java Bitmap 发布既有 UI 位图快照，投影键为内部身份，不对外充当资源 ID。布局和绘制支持仍由 UI 层决定。
 
-  UI 皮肤仍封存为同 ROM edit_text、btn_default selector/ninepatch 闭包及四个 scrollbar thumb。
-  查询、状态选择、回调与不可变叶像素 adapter 供 runtime/ui 投影使用，保留至 P3。
-  selector 保留 int[] 与子 Drawable 身份并由 owner trace，ROM StateSet 做顺序匹配与 wildcard 回退。
-  DrawableContainer 仅以当前子项转发 owner 回调。投影固定 padding 取子项最大值，
-  divisions/像素按密度缩放，与 View 几何和颜色共同冻结；发布快照只持有不可变像素。
-  未封存的系统皮肤、任意 XML inflate 与动画调度仍明确失败，应用软件 Drawable 绘制使用 ROM。
-  GC hooks 不加 native 强根：Theme 原字段及 AssetManager owner 退役 token，destroy/Shutdown
-  清空状态；旧/跨 context token 明确失败并按 ADR-0147 记账。默认配对必须加载投影。
-
-- Resources/AssetManager 为稳定应用对象对，mAssets 为 GC 强边；getSystem 独立且不回退 APK。
-  getIdentifier：应用路径先按 Integer.parseInt，再解析 @/@*、pkg:type/name（最后 ':'/'/'），
-  缺省取 defPackage/defType，缺包/类型/名字返回 0；当前 ARSC 包精确查询，其他包返回 0，
-  android 仅保留 ThemeId style，其他系统类型及 ^ 内部名记账抛 UOE；系统 Resources 原拒绝边界不变。
-  只读 APK/ARSC/AXML，open 返回 ByteArrayInputStream；openFd/raw-resource FD 仅 STORED 文件，
-  与 NDK 共用校验/逻辑 FD/区间，错误 IOException/NotFoundException。AssetFileDescriptor.close
-  虚派原版 PFD.close，getFileDescriptor 同样虚派；PFD 的状态、adopt/fromFd/dup/detach/finalize 归 ROM。
-  平台 apk_entry 无真实 fd，descriptor 固定 -1；宿主构造 PFD 必须经 PFD(FileDescriptor) 构造器。
-  getText/getString 可覆盖，getString 虚派 getText→CharSequence.toString，
-  Context 经 getResources 委托；配置/引用选择后字符串读原值，其他 simple value 用
-  TypedValue.coerceToString，复杂/null/未知类型/无效引用 NotFoundException；无 spans/完整主题/locale qualifier。
-- 系统 getString/getInteger 每 context 从封存 BootDex 的 META-INF/ogplay/system-resources.json
-  加载一次（schema 1/API19、STORED、≤64 KiB/256 项），配方拥有名称/类型/消费者/配置，ID 取最终
-  DEX、build/check 校验；无 host/APK 回退/旧 ID 别名。缺失/重复/畸形映射 ISE，未知 ID/非整数
-  getInteger NotFoundException，映射整数可转文本。Configuration 稳定对象用 VM Locale.getDefault/
-  原 setLayoutDirection，TextUtils 仅 ROOT/en/zh 的 LTR，其他在 likely-subtags 接通前失败。
-- app getDrawable 将封存 ROM 系统标量颜色构造为 ColorDrawable；既有受审 ROM 皮肤保留，其余系统 drawable 仍失败，getSystem 路径保持拒绝。
-- getDrawable 返回 ROM 位图、纯色或 NinePatch Drawable；缺/无效资源抛 NotFoundException，
-  未开放的 XML Drawable 仍明确失败。背景及 ImageView 投影保持 Drawable 身份与
-  View→Drawable→Bitmap 强边，Button 默认非空背景、普通 View 可 null；setImageBitmap 每次新建
-  BitmapDrawable（含 null），经 Context 虚派 getResources/setImageDrawable，临时保活、异常保持身份。
-  alpha 按实例，空对象不绘制，替换/清空解绑 callback、仅有效 node 重绘。
-- openRawResource 复用同一资源配置及引用选择。ROM BitmapFactory 管理资源和流协议。
-  Skia CPU 解码处理采样、尺寸查询、密度缩放、原地复用及 PNG NinePatch 元数据。
-  输入字节、尺寸和像素预算在解码前检查。取消或普通解码错误返回 null，由 ROM 包装处理。
-  getXml 的 AXML 仅 getEventType/next/getName/getText/close，文本 XML 用 KXml。
 - ROM Bitmap 的 mBuffer 是计入 Java 堆的 byte[]。Skia 直接在借用的宿主跨度读写像素，
   NDK lock 返回同一数组的 guest 地址。Java、Canvas 与 GLUtils 共用这一存储，UI 发布不可变快照。
   RGBA 默认预乘。Canvas 的 Java mBitmap 与 Bitmap.mBuffer 形成强边，native 像素借用随句柄退役。
@@ -257,8 +175,7 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
 
 `EnsureAndroidUiTraversal` 是 integration/session 的唯一 guest 布局调度入口，调用方显式提供 VM、
 reason 与 phase。owner 在 context 构造时固定为 JavaTraversal，无用户配置、运行期切换或
-Legacy guest 遍历。生产 BootDex 必须具有封存模式、DEX/成员表/主题投影配对；缺失、未知
-版本及身份错配均在 VM/catalog 创建前明确失败。ROM 执行 hierarchy、参数、measure/RTL/缓存及
+Legacy guest 遍历。生产启动类路径为 ogplay.jar 与原样 API19 ROM jars；制品由 payload 校验锁定。ROM 执行 hierarchy、参数、measure/RTL/缓存及
 layout/setFrame/sizeChange，Java 唯一拥有 measured、局部 bounds、旧 specs 与相关 flags。
 onSizeChanged 由 ROM 同步调用，先于 onLayout；getter 读当前 Java 字段，重入不再遍历。
 `ReadAndroidUiGeometry` 在 owner 回调内从当前 Java 字段建立临时 const 投影，
@@ -354,7 +271,7 @@ resolvePadding 与 scrollbar inset 执行 ROM；mPrivateFlags2、真实 Applicat
 决定 RTL，mUserPadding 保留原输入，只有实际变化才虚派 requestLayout。未选 relative-padding API 仍失败。
 ViewConfiguration 的原 ROM Context 构造器前，受审实例输入接缝只写两个 private 菜单键字段；
 Resources 读取同 ROM override 与 showNavigationBar，再由现有 qemu.hw.mainkeys 属性覆盖，
-读失败透传。固定 ARSC showNavigationBar=true，默认永久菜单键=false；无 Binder 或新快照字段。
+读失败透传。显示事实采用 framework-res 的实际配置，不引入 Binder 或新快照字段。
 Display.getRealSize 使用现有真实显示配置。Interpolator native 只用参数时间维护关键帧/repeat/mirror；
 Shader、混合、颜色/遮罩滤镜与路径效果通过分型 token 持有 Skia 对象，Paint 的 ROM Java 引用
 参与 GC 追踪；native 复制共享 Skia 引用。局部矩阵生成新的不可变 Shader 包装，
@@ -494,7 +411,7 @@ ROM Context 没有 mOgplayInflater，catalog 不声明额外字段；基础进�
 View、具体测试 ViewGroup 与 Frame/Linear/RelativeLayout 的两/三参属性构造、五组 LP 的
 属性构造与 generateLayoutParams 执行 ROM；width/height 缺席或类型不符由 getLayoutDimension
 抛异常。宿主不补尺寸或重写属性几何，遍历仍只读 Java 输入。应用主题可显式 @null 覆盖
-基础主题 scrollbar 引用；封存 thumb 的非零标志初始化执行 ROM，绘制仍仅记账。LinearLayout 属性构造缺席 weightSum=-1，与 Context-only 的0保持区分；
+基础主题 scrollbar 引用；thumb 从 framework-res 加载，非零标志初始化执行 ROM，绘制仍仅记账。LinearLayout 属性构造缺席 weightSum=-1，与 Context-only 的0保持区分；
 null divider 设置沿 ROM，绘制仍失败。
 
 LayoutInflater 的 inflate 各重载、递归、include/merge、Factory/Factory2 链归原 ROM；
@@ -726,15 +643,15 @@ Button 与 TextView 同步冻结 line-plan；focus/click 沿真实 View 协议�
 plain 文本的 TextView.onFocusChanged 为受审父协议接缝；Editor/spans/marquee/
 transformation 不在支持输入内，不读取相应 failure 字段或伪初始化其状态。
 Button 不取得旧宿主默认背景、padding、clickable 或行数投影；属性仍通过真实
-Theme/TypedArray 解析。默认主题的不支持背景/状态色等请求沿 ADR-0147 明确失败，
-应用 style/主题可用纯色或 @null 显式覆盖。accessibility 两个 Button 覆写仍 failure。
+Theme/TypedArray 解析。默认 selector 由 ROM 选择当前叶；投影读取支持的 NinePatch/Bitmap 或纯色，
+应用 style/主题可显式覆盖。accessibility 两个 Button 覆写仍 failure。
 
 ## JavaTraversal EditText 有界编辑
 
 JavaTraversal 配对保留 EditText 完整 ROM 形状；三个薄构造及默认 editable/movement、
 EDITABLE 强制与 covariant bridge 执行 ROM。editTextStyle 与 defStyleAttr 真解析，默认
-系统皮肤仅封存 edit_text selector/ninepatch 可参与状态与 padding/叶测量，其他皮肤失败；
-应用可显式覆盖。复用同一 TextView 文本与冻结测量服务，皮肤绘制请求仍失败。
+系统及应用皮肤由 Resources 加载，selector、padding 和叶尺寸来自当前 ROM 对象；投影读取
+NinePatch/Bitmap 的原生 backing。复用同一 TextView 文本与冻结测量服务，完整 guest 绘制仍留待 P3。
 TextView.setOnEditorActionListener 执行原版方法，监听器保存在 Java Editor.InputContentType。
 有界文本输入不产生 editor action。TextView.onTouchEvent 的受审 overlay 将非编辑 TextView
 交给 View.onTouchEvent；EditText 或带 movement 的 TextView 触摸（光标、链接、IME）记账并明确失败。
@@ -792,7 +709,7 @@ requestLayout；已成功重开的 decoder 不受旧请求影响，重开失败�
 原播放状态、字幕/网络/MediaController/未处理错误 UI 的明确失败边界保持。
 
 AssembleAndroidContext 在 catalog 注册/VM 建立前解析全部启动类路径 jar，缺 jar 或缺
-classes.dex 明确失败；主题投影与系统资源表从 ogplay.jar 读取。不存在 guest Legacy 选择或回落。
+classes.dex 明确失败；UI 皮肤投影从 ogplay.jar 读取。不存在 guest Legacy 选择或回落。
 frontend 三入口共用此装配，显式注入平台无 accessibility 服务事实，生产不设置测试 bool。
 宿主 Dialog 必须拥有独立 HostLayout 树；缺失时拒绝，不向 guest 构建树回落。
 `setClickable` 按原 setter 虚派 ROM `setFlags(II)V`，仅在真实 CLICKABLE 位改变时标投影
@@ -852,12 +769,6 @@ recomputeViewAttributes adapter，managed 平台无系统栏/WMS，不造 callba
 WebView 经 ROM AbsoluteLayout 父构造；保留 WebView 自有 onMeasure 的浏览器后端失败边界。
 Surface 新 created 代次撤销旧尺寸去重事实，created 后必派 changed；同代同值仍去重。
 
-有界主题中同 ROM ARSC 能绑定的任意类型引用均以真实 TYPE_REFERENCE/id 进入六槽；
-不按属性名白名单发放、不预先解析目标内容。资源类型编号与 ID type 段一致，输入锁定
-同 ROM framework-res.apk 并交叉核对共享 R 常量；真实缺名、冲突仍拒绝。
-TypedArray.getResourceId/peekValue 只读取身份；实际消费者调用时检查加载支持，未支持
-目标按 ADR-0147 记账失败。实际 drawable 加载限既有 ColorStateList、edit_text/btn_default/btn_dropdown 闭包及四个 scrollbar thumb；
-scrollbar 初始化与状态对象边界见上文；未封存资源保持关闭即失败。
 
 DVM-315：JavaTraversal 的 managed 全屏 Window 以稳定 Java 内容根同时提供 decor，
 共享窗口 observer 与真实父链坐标。Surface 回调事务以
@@ -1006,30 +917,23 @@ Spinner 的 DIALOG 构造、AdapterView/AbsSpinner 状态、ArrayAdapter 布局�
 子项通过 Java addViewInLayout/removeAllViewsInLayout 进入原父链，由 JavaTraversal 完整投影；
 选择通知复用 View.post/主 Looper，不建立宿主选择状态。弹窗点击、dropdown 构造、触摸选择
 与 guest draw 保持记账失败。ViewGroup 附着父协议归 ROM；View 附着接缝仅接受无系统
-AttachInfo/IME焦点/无障碍服务、无动画/硬件且背景为静态封存皮肤的软件路径，保留原 flags
+AttachInfo/IME焦点/无障碍服务、无动画/硬件且背景为静态 ROM Drawable 的软件路径，保留原 flags
 清理与 scrollbar 唤醒，不制造 AttachInfo 或全系统附着信用。
-系统 getLayout 仅加载 ADR-0174 两个封存布局的真实 XmlBlock.Parser；未封存系统布局仍
-NotFoundException。TextView 保存 MARQUEE 解析状态，实际动画不启动并记录降级；textAlignment=inherit
+系统及应用 getLayout 均通过真实 Resources/XmlBlock.Parser 加载；缺资源仍抛 NotFoundException。TextView 保存 MARQUEE 解析状态，实际动画不启动并记录降级；textAlignment=inherit
 沿 View 原属性与解析流程，不授予其他对齐/RTL/Editor/Canvas 支持。
 
 
 ProgressBar 构造、indeterminate/progress/max 字段、异步刷新、叶测量与生命周期归固定 ROM；
-非 UI 线程刷新复用 View.post 与主 Looper，不设宿主状态副本。默认 animated-rotate 的
-progress_medium_white/spinner_white_48、Large 的 progress_large_white/spinner_white_76
-与 linear_interpolator 原 XML 按同 ROM 封存；
-AnimatedRotateDrawable 的 inflate/尺寸/状态归 ROM，start/帧调度与 guest onDraw 未准入。
-投影只发布普通叶几何，内容按 View 身份一次记账不绘制。DVM-367 另封存同 ROM Holo dark
-horizontal 的 layer-list/scale、ninepatch 和八帧 bitmap；身份、配置、原 XML grammar/引用及 SHA
-受检。ROM tileify/层 ID、level、测量和 AnimationDrawable 帧集合归 Java；仅同步封存 parser
-作用域可分派嵌套标签，任意其他 drawable XML 仍失败。Small/Light 未封存。
-DrawableContainer 静态选择与字段归 ROM，既有 selector backing 与新 ROM 容器的查询/回调通过
-显式 adapter 分开；fade、animate=true 的 setFrame 与 start/run 调度仍不准入。
+非 UI 线程刷新复用 View.post 与主 Looper，不设宿主状态副本。Drawable XML、嵌套标签、
+状态、level、测量及帧集合由 ROM 经真实资源读取，不按封存名单准入。AnimatedRotateDrawable
+及 AnimationDrawable 的动画调度仍受现有 UI 边界限制；ProgressBar 投影只发布叶几何，内容
+按 View 身份一次记账不绘制。DrawableContainer 的查询/回调只读其 Java 字段，不保留皮肤侧表。
 Shape 尺寸与 ShaderFactory 执行 ROM，Paint 原生效果用于软件 Canvas。
 ImageView 投影仍拒绝非默认 bitmap alpha/filter/mirroring。
 View 分离清理执行 ROM，removeCallbacks 只取消既有主 Handler 与当前 guest 线程待转移 action，null 不取消其他任务；
 Drawable stop 的 unschedule 回调不创建帧任务。BitmapDrawable 原 BitmapState/Paint 保存
 filter/anti-alias 状态；投影遇到非默认 Paint flags、shader/xfermode 明确失败，不吞掉效果。
-系统 getAnimation 仅加载 ADR-0174 封存 linear_interpolator，其他系统 anim 抛 NotFoundException。
+系统及应用 getAnimation 使用真实 XML；资源加载成功不授予动画调度或 guest draw 能力。
 WebView initial scale 保存 API19 原始 int 请求，WebSettings wide viewport 按实例往返；
 前进查询 false/操作无历史变更，均检查线程与存活；附着转发 ROM ViewGroup 父协议。
 这些配置不授予页面加载、历史、缩放渲染或系统 AttachInfo 支持。

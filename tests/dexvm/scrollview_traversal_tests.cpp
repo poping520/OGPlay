@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "container_traversal_fixture.h"
 #include "ogplay/runtime/ui/ui_renderer.h"
 #include <algorithm>
@@ -18,8 +19,8 @@ VmObjectRef Owner(ContainerVm& f) {
     f.context->target_sdk_version = 19;
     f.context->surface_width = 200;
     f.context->surface_height = 150;
-    f.context->arsc.package_id = 0x7f;
-    ogplay::loader::ArscEntry theme;
+    ogplay::test::ResourceFixture(*f.context).package_id = 0x7f;
+    ogplay::test::ResourceFixtureEntry theme;
     theme.resource_id = 0x7f020001;
     theme.type_name = "style";
     theme.entry_name = "scroll";
@@ -34,7 +35,7 @@ VmObjectRef Owner(ContainerVm& f) {
     scroll_style.parent = 0;
     scroll_style.bag.clear();
     theme.bag.push_back({0x01010353, 1, 0x7f020002, {}});
-    f.context->arsc.entries = {theme, scroll_style};
+    ogplay::test::ResourceFixture(*f.context).entries = {theme, scroll_style};
     f.context->application_theme = theme.resource_id;
     const auto owner = f.New("Landroid/app/Activity;");
     f.context->activity = owner;

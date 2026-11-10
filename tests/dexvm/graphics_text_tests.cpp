@@ -150,7 +150,8 @@ TEST_CASE("ROM Typeface loads APK and VFS fonts with API19 exceptions") {
     auto& vfs = *f.context->vfs;
     vfs.PutFile("/fixture.ttf", font, false);
     vfs.PutFile("/bad.ttf", std::array{std::byte{0}}, false);
-    const auto manager = f.New("Landroid/content/res/AssetManager;");
+    const auto owner = f.New("Landroid/content/Context;");
+    const auto manager = f.On(owner, "getAssets", "()Landroid/content/res/AssetManager;").ref;
     const auto manager_root = f.vm.ProtectReferences(std::array{manager});
     constexpr auto kAssetSig = "(Landroid/content/res/AssetManager;Ljava/lang/String;)Landroid/graphics/Typeface;";
     constexpr auto kFileSig = "(Ljava/lang/String;)Landroid/graphics/Typeface;";

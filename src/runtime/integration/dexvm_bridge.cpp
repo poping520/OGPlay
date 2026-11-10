@@ -275,9 +275,6 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
         for (const auto& [ref, _] : (*identity)->mounts)
             root(ref);
     }
-
-    for (const auto& [_, ref] : context.ui_view_backgrounds)
-        root(ref);
 }
 
 void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context) {
@@ -328,13 +325,6 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
                  found != context->ui_view_layout_params.end())
                  visit_ref(found->second);
 
-             if (const auto state = context->ui_drawables.find(key); state != context->ui_drawables.end()) {
-                 visit_ref(state->second.bitmap);
-                 for (const auto array : state->second.skin_state_arrays)
-                     visit_ref(array);
-                 for (const auto child : state->second.skin_children)
-                     visit_ref(child);
-             }
              if (const auto found = context->text_watchers.find(key); found != context->text_watchers.end()) {
                  for (const auto watcher : found->second)
                      visit_ref(watcher);
@@ -395,23 +385,9 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
              }
              context->view_adapter_references.erase(key);
              context->ui_view_layout_params.erase(key);
-             context->ui_image_scale_types.erase(key);
              context->text_watchers.erase(key);
-             if (const auto background = context->ui_view_backgrounds.find(key);
-                 background != context->ui_view_backgrounds.end()) {
-                 if (auto state = context->ui_drawables.find(background->second.Value());
-                     state != context->ui_drawables.end()) {
-                     state->second.callback_node.reset();
-                 }
-                 context->ui_view_backgrounds.erase(background);
-             }
              context->ui_drawables.erase(key);
-             if (const auto image = context->ui_view_images.find(key); image != context->ui_view_images.end()) {
-                 if (const auto state = context->ui_drawables.find(image->second.Value());
-                     state != context->ui_drawables.end())
-                     state->second.callback_node.reset();
-                 context->ui_view_images.erase(image);
-             }
+             context->ui_view_images.erase(key);
              {
                  std::scoped_lock video_lock(context->video_views_mutex);
                  context->video_views.erase(key);
@@ -458,13 +434,12 @@ public:
         if (!object.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "assetManager is null"};
         if (linker.Class(model->ObjectClass(object)).descriptor != "Landroid/content/res/AssetManager;")
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "object is not an AssetManager"};
-        if (!android_context || android_intrinsics::IsSystemAssets(android_context, object)) {
-            if (auto* vm_ledger = vm->Ledger()) vm_ledger->RecordUnimplemented("runtime.asset_manager", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "system NDK assets are unavailable"};
-        }
+        if (!android_context)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "AssetManager context is missing"};
+        const auto source = ResolveResourceAssetManager(*vm, *android_context, object);
         const auto identity = model->ToIdentity(object).value;
         if (const auto found = asset_managers.find(identity); found != asset_managers.end()) return found->second;
-        const auto manager = session->Process().RegisterAssetManager(ApkAssets(android_context));
+        const auto manager = session->Process().RegisterAssetManager(source);
         try {
             asset_managers.emplace(identity, manager);
         } catch (...) {
@@ -2127,8 +2102,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     }
 
     if (impl_->android_context) {
-        impl_->android_context->theme_resources.Shutdown();
-        impl_->android_context->xml_cursors.Shutdown();
+        impl_->android_context->resource_natives.reset();
         impl_->android_context->wifi_lock_leases.clear();
         if (impl_->vm) ShutdownPendingIntents(*impl_->vm, *impl_->android_context);
     }

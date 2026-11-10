@@ -45,7 +45,6 @@
 #include "ogplay/runtime/integration/android_link_preflight.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/session/profile_apk.h"
-#include "ogplay/loader/arsc.h"
 #include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/app/run_report.h"
 #include "ogplay/runtime/dexvm/gap_survey.h"
@@ -415,16 +414,16 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     if (guest_width != 0 && guest_height != 0) control_mapper.SetSurface(guest_width, guest_height);
     McpPointerDispatcher mcp_pointer;
     {
+        MountFrameworkPayload(filesystem, bundled_data.root / bionic.data_directory / "framework");
         std::shared_ptr<runtime::DexVmAndroidContext> dex_context;
         {
             dex_context = runtime::AssembleAndroidContext(
                 runtime::ReadBootClasspath(bundled_data.root / bionic.data_directory / "framework"), {true});
             dex_context->native_output_sample_rate = kDesktopAudioOutputSpec.sample_rate;
+            dex_context->framework_resource_apk =
+                bundled_data.root / bionic.data_directory / "framework/framework-res.apk";
             dex_context->apk_bytes = std::move(apk_bytes);
             dex_context->archive = archive;
-            const auto arsc_bytes = loader::ReadApkEntry(dex_context->apk_bytes, archive, "resources.arsc");
-            dex_context->arsc = loader::ParseArsc(
-                std::span(reinterpret_cast<const std::uint8_t*>(arsc_bytes.data()), arsc_bytes.size()));
             dex_context->package_name = manifest.package;
             dex_context->surface_width = surface_width;
             dex_context->surface_height = surface_height;

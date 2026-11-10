@@ -1,144 +1,126 @@
 #include "ogplay/runtime/integration/apk_assets.h"
 
 #include <algorithm>
-#include <map>
-#include <mutex>
-#include <stdexcept>
-#include <string>
-#include "ogplay/loader/apk.h"
+
+#include "ogplay/hal/fs.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
 namespace ogplay::runtime {
+namespace res = resources;
+
 namespace {
-using Context = std::shared_ptr<DexVmAndroidContext>;
+constexpr std::string_view kFrameworkPath = "/system/framework/framework-res.apk";
 
-class ApkAsset final : public AndroidAssetSource {
+class NdkResourceAsset final : public AndroidAssetSource {
 public:
-    ApkAsset(Context context, loader::ApkEntry entry, std::uint64_t start)
-        : context_(std::move(context)), entry_(std::move(entry)), start_(start) {}
-    std::uint64_t Length() const override { return entry_.uncompressed_size; }
-    std::size_t ReadAt(std::uint64_t offset, std::span<std::byte> out) const override {
-        if (offset >= Length() || out.empty()) return 0;
-        const auto count = static_cast<std::size_t>(
-            std::min<std::uint64_t>(out.size(), Length() - offset));
-        if (entry_.compression_method == 0) {
-            const auto data = std::span(context_->apk_bytes).subspan(
-                static_cast<std::size_t>(start_ + offset), count);
-            std::copy(data.begin(), data.end(), out.begin());
-            return count;
-        }
-        return loader::ReadApkEntryRange(context_->apk_bytes, context_->archive,
-            entry_.name, offset, out.first(count));
+    NdkResourceAsset(std::unique_ptr<res::Asset> asset, VirtualFileSystem* vfs) : asset_(std::move(asset)), vfs_(vfs) {}
+
+    std::uint64_t Length() const override { return asset_->length(); }
+
+    std::size_t ReadAt(std::uint64_t offset, std::span<std::byte> output) const override {
+        std::scoped_lock lock(mutex_);
+        if (offset >= asset_->length()) return 0;
+        static_cast<void>(asset_->seek(static_cast<std::int64_t>(offset), 0));
+        return asset_->read(output);
     }
+
     AssetFileDescriptor OpenFileDescriptor() const override {
-        if (entry_.compression_method != 0) return {};
-        if (!context_->vfs || context_->package_resource_path.empty())
-            throw std::runtime_error("APK asset descriptor backing is unavailable");
-        // AOSP returns a fresh descriptor for the complete APK, plus its range.
-        const auto fd = context_->vfs->Open(context_->package_resource_path, {.read = true});
-        return {fd, start_, Length()};
+        if (!vfs_ || !asset_->isStored()) return {};
+        const auto range = asset_->openFd();
+        if (range.source.isUpToDate && !range.source.isUpToDate()) return {};
+        return {vfs_->Open(range.source.name, {.read = true}), range.offset, range.length};
     }
-    void CloseFileDescriptor(std::int32_t fd) const override { context_->vfs->Close(fd); }
-private:
-    Context context_;
-    loader::ApkEntry entry_;
-    std::uint64_t start_{};
-};
 
-class ApkAssetManager final : public AndroidAssetManagerSource {
-public:
-    explicit ApkAssetManager(const Context& context) : context_(context) {}
-    std::shared_ptr<const AndroidAssetSource> Open(std::string_view name) override {
-        if (name.empty() || name.front() == '/' || name.find('\\') != std::string_view::npos)
-            return {};
-        for (std::size_t cursor = 0; cursor <= name.size();) {
-            const auto end = name.find('/', cursor);
-            const auto part = name.substr(cursor, end == std::string_view::npos ? name.size() - cursor : end - cursor);
-            if (part.empty() || part == "." || part == "..") return {};
-            if (end == std::string_view::npos) break;
-            cursor = end + 1;
-        }
-        return OpenEntry("assets/" + std::string(name));
-    }
-    std::vector<AndroidAssetDirectoryEntry> ListDirectory(std::string_view name) override {
-        const auto context = context_.lock();
-        if (!context) throw std::runtime_error("APK asset source is retired");
-        // An invalid/nonexistent directory is an empty iterator, never a host path.
-        if (!name.empty()) {
-            if (name.front() == '/' || name.back() == '/' || name.find('\\') != std::string_view::npos) return {};
-            for (std::size_t cursor = 0; cursor < name.size();) {
-                const auto end = name.find('/', cursor);
-                const auto part = name.substr(cursor, end == std::string_view::npos ? name.size() - cursor : end - cursor);
-                if (part.empty() || part == "." || part == "..") return {};
-                if (end == std::string_view::npos) break;
-                cursor = end + 1;
-            }
-        }
-        const auto prefix = "assets/" + std::string(name) + (name.empty() ? "" : "/");
-        std::map<std::string, bool, std::less<>> entries;
-        std::uint64_t name_bytes{};
-        for (const auto& entry : context->archive.entries) {
-            if (!entry.name.starts_with(prefix)) continue;
-            const auto suffix = std::string_view(entry.name).substr(prefix.size());
-            if (suffix.empty()) continue;
-            const auto slash = suffix.find('/');
-            const auto base = suffix.substr(0, slash);
-            if (base.empty()) continue;
-            const bool regular = slash == std::string_view::npos;
-            if (!entries.contains(base)) {
-                if (base.size() >= 4096 || entries.size() >= 4096 || name_bytes + base.size() > 1024U * 1024U)
-                    throw std::length_error("asset directory listing budget exhausted");
-                name_bytes += base.size();
-            }
-            const auto [it, inserted] = entries.emplace(base, regular);
-            if (!inserted && !regular) it->second = false;
-        }
-        std::vector<AndroidAssetDirectoryEntry> result;
-        for (const auto& [base, regular] : entries) result.push_back({base, regular});
-        return result;
-    }
-    std::shared_ptr<const AndroidAssetSource> OpenEntry(std::string_view name) {
-        const auto context = context_.lock();
-        if (!context) throw std::runtime_error("APK asset source is retired");
-        const auto entry = std::ranges::find_if(context->archive.entries,
-            [&](const auto& item) { return item.name == name; });
-        if (entry == context->archive.entries.end()) return {};
-        std::uint64_t start{};
-        if (entry->compression_method == 0) {
-            std::scoped_lock guard(mutex_);
-            const auto found = stored_offsets_.find(entry->name);
-            if (found != stored_offsets_.end()) start = found->second;
-            else {
-                // Full CRC/local-header validation once, with no resource copy.
-                const auto bytes = loader::ValidatedStoredApkEntryData(
-                    context->apk_bytes, context->archive, entry->name);
-                start = static_cast<std::uint64_t>(bytes.data() - context->apk_bytes.data());
-                stored_offsets_.emplace(entry->name, start);
-            }
-        }
-        return std::make_shared<ApkAsset>(context, *entry, start);
-    }
-private:
-    std::weak_ptr<DexVmAndroidContext> context_;
-    std::mutex mutex_;
-    std::map<std::string, std::uint64_t> stored_offsets_;
-};
-} // namespace
+    void CloseFileDescriptor(std::int32_t fd) const override { vfs_->Close(fd); }
 
-std::shared_ptr<AndroidAssetManagerSource> ApkAssets(const Context& context) {
-    // Called while the VM lock is held; sealed production APK facts never change.
-    if (!context->apk_asset_source)
-        context->apk_asset_source = std::make_shared<ApkAssetManager>(context);
-    return context->apk_asset_source;
+private:
+    std::unique_ptr<res::Asset> asset_;
+    VirtualFileSystem* vfs_;
+    mutable std::mutex mutex_;
+};
+}  // namespace
+
+ResourceAssetManager::ResourceAssetManager(std::shared_ptr<const res::AssetPath> framework, VirtualFileSystem* vfs)
+    : core(std::move(framework)), vfs_(vfs) {}
+
+std::shared_ptr<const AndroidAssetSource> ResourceAssetManager::Open(std::string_view name) {
+    std::scoped_lock lock(mutex);
+    if (retired) throw std::invalid_argument("AAssetManager is retired");
+    auto asset = core.open(name);
+    return asset ? std::make_shared<NdkResourceAsset>(std::move(asset), vfs_) : nullptr;
 }
 
-StoredApkAssetRange StoredApkAsset(const Context& context, std::string_view entry) {
-    const auto source = std::static_pointer_cast<ApkAssetManager>(ApkAssets(context))->OpenEntry(entry);
-    if (!source) throw std::runtime_error("APK asset is unavailable");
-    const auto item = std::ranges::find_if(context->archive.entries,
-        [&](const auto& candidate) { return candidate.name == entry; });
-    if (item->compression_method != 0) throw std::runtime_error("APK asset is compressed");
-    return {loader::StoredApkEntryDataOffset(context->apk_bytes, context->archive, entry), source->Length()};
+std::vector<AndroidAssetDirectoryEntry> ResourceAssetManager::ListDirectory(std::string_view name) {
+    std::scoped_lock lock(mutex);
+    if (retired) throw std::invalid_argument("AAssetManager is retired");
+    if (name.ends_with('/') || name.find("//") != std::string_view::npos) return {};
+    std::vector<AndroidAssetDirectoryEntry> result;
+    std::vector<std::string> names;
+    try {
+        names = core.list(name);
+    } catch (const res::ResourceError&) {
+        return {};
+    }
+    for (auto& entry : names) {
+        auto path = name.empty() ? entry : std::string(name) + "/" + entry;
+        const auto asset = core.open(path);
+        result.push_back({std::move(entry), static_cast<bool>(asset)});
+    }
+    return result;
+}
+
+std::optional<res::ResTable_config> ResourceAssetManager::Configuration() const {
+    std::scoped_lock lock(mutex);
+    if (retired) return {};
+    return core.resources().parameters();
+}
+
+std::shared_ptr<const res::AssetPath> FrameworkResourceApk(const DexVmAndroidContext& context) {
+    if (context.framework_resource_apk.empty()) throw res::ResourceError("framework resource APK was not injected");
+    return res::sharedFramework([&] {
+        const auto file = hal::OpenHostReadFile(context.framework_resource_apk);
+        auto mapping = file->Map();
+        return res::Source{std::move(mapping.owner), mapping.bytes, std::string(kFrameworkPath), {}};
+    });
+}
+
+res::Source ReadResourceApk(DexVmAndroidContext& context, const std::string& path) {
+    if (path == kFrameworkPath) return FrameworkResourceApk(context)->source();
+    if (!context.vfs) throw res::ResourceError("asset paths require a guest filesystem");
+    const auto info = context.vfs->Stat(path);
+    auto unchanged = [vfs = context.vfs, path, generation = info.generation] {
+        try {
+            return vfs->Stat(path).generation == generation;
+        } catch (const VfsError&) {
+            return false;
+        }
+    };
+    if (path == context.package_resource_path && context.sealed_apk_bytes && !info.writable &&
+        info.size == context.sealed_apk_bytes->size()) {
+        // The installed node and the resource path borrow the same immutable APK.
+        return {context.sealed_apk_bytes, *context.sealed_apk_bytes, path, unchanged};
+    }
+    if (info.size > 1024ULL * 1024 * 1024) throw res::ResourceError("asset path exceeds APK size limit");
+    const auto fd = context.vfs->Open(path, {.read = true});
+    std::shared_ptr<const VfsReadLease> lease;
+    try {
+        lease = context.vfs->CaptureReadLease(fd, 0, info.size);
+    } catch (...) {
+        context.vfs->Close(fd);
+        throw;
+    }
+    context.vfs->Close(fd);
+    auto bytes = std::make_shared<std::vector<std::byte>>(static_cast<std::size_t>(lease->Size()));
+    if (lease->ReadAt(0, *bytes) != bytes->size()) throw res::ResourceError("short asset path read");
+    return {bytes, *bytes, path, std::move(unchanged)};
+}
+
+std::vector<std::byte> ReadResourceAsset(res::Asset& asset, std::size_t limit) {
+    if (asset.length() > limit) throw res::ResourceError("asset exceeds consumer byte limit");
+    static_cast<void>(asset.seek(0, 0));
+    std::vector<std::byte> bytes(static_cast<std::size_t>(asset.length()));
+    if (asset.read(bytes) != bytes.size()) throw res::ResourceError("short asset read");
+    return bytes;
 }
 } // namespace ogplay::runtime

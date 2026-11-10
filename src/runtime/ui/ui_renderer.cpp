@@ -86,7 +86,9 @@ void AppendNode(const UiTree& tree, const UiNodeId id, const UiBitmapCache& bitm
     if (node.background_color.has_value() && !(id == tree.Root() && plane == UiRenderPlane::modal)) {
         out.emplace_back(DrawSolidRect{node.screen_frame, *node.background_color, node.alpha * node.background_alpha});
     }
-    if (node.background_resource_id != 0) {
+    if (node.background_bitmap) {
+        out.emplace_back(DrawBitmap{node.screen_frame, node.background_bitmap, node.alpha * node.background_alpha});
+    } else if (node.background_resource_id != 0) {
         const auto found = bitmaps.find(node.background_resource_id);
         if (found != bitmaps.end() && found->second != nullptr) {
             out.emplace_back(DrawBitmap{node.screen_frame, found->second, node.alpha * node.background_alpha});
@@ -112,7 +114,7 @@ void AppendNode(const UiTree& tree, const UiNodeId id, const UiBitmapCache& bitm
     }
     if (!node.text.empty() || (node.text_line_plan && !node.text_line_plan->text.empty()) ||
         std::any_of(node.compound_drawables.begin(), node.compound_drawables.end(),
-                    [](const CompoundDrawable& drawable) { return drawable.resource_id != 0; })) {
+                    [](const CompoundDrawable& drawable) { return drawable.bitmap || drawable.resource_id != 0; })) {
         auto rendered_text = node.text;
         const auto content =
             Rect{node.screen_frame.left + node.padding.left, node.screen_frame.top + node.padding.top,
@@ -155,11 +157,14 @@ void AppendNode(const UiTree& tree, const UiNodeId id, const UiBitmapCache& bitm
         };
         for (std::size_t index = 0; index < compound.size(); ++index) {
             const auto& drawable = compound[index];
-            if (drawable.resource_id == 0) continue;
-            const auto found = bitmaps.find(drawable.resource_id);
-            if (found == bitmaps.end() || found->second == nullptr) continue;
-            out.emplace_back(DrawBitmap{drawable_rect(index, content, found->second->width, found->second->height),
-                                        found->second, node.alpha});
+            auto bitmap = drawable.bitmap;
+            if (!bitmap && drawable.resource_id != 0) {
+                const auto found = bitmaps.find(drawable.resource_id);
+                if (found != bitmaps.end()) bitmap = found->second;
+            }
+            if (bitmap)
+                out.emplace_back(
+                    DrawBitmap{drawable_rect(index, content, bitmap->width, bitmap->height), bitmap, node.alpha});
         }
         std::int32_t x = text_content.left;
         std::int32_t y = text_content.top;

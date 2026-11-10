@@ -46,6 +46,8 @@ NOTICES = {
     "notices/libz.so.txt",
 }
 BOOT_CLASSPATH = ("framework/ogplay.jar",) + tuple(f"framework/{name}" for name in bootdex.ROM_JARS)
+FRAMEWORK_RES = "framework/framework-res.apk"
+ORIGINAL_FRAMEWORK_RES_SHA256 = "5beb897ee2ede51f02e2fdf1a004ce3f12d7d5cd938b56672f70a7cba96471e3"
 BOOT_CLASSPATH_NOTICE = "notices/boot-classpath.txt"
 ICU_DATA = "icu/icudt51l.dat"
 TZDATA = "zoneinfo/tzdata"
@@ -79,7 +81,7 @@ ICU_NOTICES = {
     "notices/icu4c-unicode-license.txt",
 }
 PAYLOAD_FILES = LIBRARIES | NOTICES | {
-    *BOOT_CLASSPATH, *SYSTEM_FONTS, BOOT_CLASSPATH_NOTICE, ICU_DATA, "manifest.json",
+    FRAMEWORK_RES, *BOOT_CLASSPATH, *SYSTEM_FONTS, BOOT_CLASSPATH_NOTICE, ICU_DATA, "manifest.json",
     "source-manifest.xml", TZDATA, TZDATA_NOTICE, UI_PRIMARY_FONT, UI_FONT, UI_FONT_NOTICE, "fonts/README.md"} | ICU_NOTICES
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -252,6 +254,18 @@ def validate(root: Path) -> None:
             "manifest")
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise PayloadError(f"manifest.json is invalid: {error}") from error
+    resources = _mapping(manifest.get("framework_resources"), "framework_resources")
+    if resources.get("path") != FRAMEWORK_RES or resources.get("source_project") != "platform/frameworks/base" or \
+            resources.get("tag") != "android-4.4.4_r2.0.1" or resources.get("original_sha256") != ORIGINAL_FRAMEWORK_RES_SHA256 or \
+            resources.get("notice") != BOOT_CLASSPATH_NOTICE:
+        raise PayloadError("framework resources identity does not match the pinned API19 archive")
+    _validate_digest(root / FRAMEWORK_RES, resources.get("size"), resources.get("sha256"), FRAMEWORK_RES)
+    try:
+        with zipfile.ZipFile(root / FRAMEWORK_RES) as archive:
+            if archive.getinfo("resources.arsc").compress_type != zipfile.ZIP_STORED:
+                raise PayloadError("framework resources.arsc must be STORED")
+    except (OSError, zipfile.BadZipFile, KeyError) as error:
+        raise PayloadError(f"framework resources archive is invalid: {error}") from error
     font = _mapping(manifest.get("ui_fallback_font"), "ui_fallback_font")
     fonts = font.get("fonts")
     if not isinstance(fonts, list) or len(fonts) != 2:
@@ -324,14 +338,10 @@ def validate(root: Path) -> None:
     try:
         with zipfile.ZipFile(root / BOOT_CLASSPATH[0]) as archive:
             names = archive.namelist()
-            resources = entries[0].get("resources", {})
-            if names != ["META-INF/MANIFEST.MF", "classes.dex", *sorted(resources)] or archive.comment or \
+            if names != ["META-INF/MANIFEST.MF", "classes.dex"] or archive.comment or \
                     archive.read("META-INF/MANIFEST.MF") != bootdex.JAR_MANIFEST or \
                     any(info.compress_type != zipfile.ZIP_STORED for info in archive.infolist()):
                 raise PayloadError("ogplay.jar layout is not canonical")
-            for name, digest in resources.items():
-                if bootdex.sha256(archive.read(name)) != digest:
-                    raise PayloadError(f"ogplay.jar resource {name} does not match")
             dex = archive.read("classes.dex")
     except (OSError, zipfile.BadZipFile, KeyError) as error:
         raise PayloadError(f"ogplay.jar is invalid: {error}") from error

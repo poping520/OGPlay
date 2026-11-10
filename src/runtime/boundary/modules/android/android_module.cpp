@@ -8,8 +8,6 @@
 
 namespace ogplay::runtime {
 namespace {
-constexpr std::uint32_t kFakeConfiguration = 0x6e003000U;
-
 std::uint32_t SignedResult(const std::int32_t value) noexcept {
     return std::bit_cast<std::uint32_t>(value);
 }
@@ -194,8 +192,42 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
     if constexpr ((FunctionId >= 13U && FunctionId <= 18U) || (FunctionId >= 37U && FunctionId <= 81U)) {
         return ReadInput<FunctionId>(call);
     }
-    if constexpr (FunctionId == 0U) return kFakeConfiguration;
-    if constexpr (FunctionId == 1U || FunctionId == 2U) return 0;
+    if constexpr (FunctionId == 0U) {
+        resources::ResTable_config config;
+        if (services_.device_locale) {
+            const auto locale = services_.device_locale();
+            std::copy_n(locale.language.begin(), 2, config.language);
+            std::copy_n(locale.region.begin(), 2, config.country);
+        }
+        std::scoped_lock lock(mutex_);
+        if (next_configuration_.Value() >= 0x6e100000U)
+            throw std::runtime_error("AConfiguration handle budget exhausted");
+        const auto token = next_configuration_;
+        configurations_.emplace(token.Value(), config);
+        next_configuration_ = token.Add(1);
+        return token.Value();
+    }
+    if constexpr (FunctionId == 1U) {
+        std::scoped_lock lock(mutex_);
+        if (!configurations_.erase(args[0])) throw std::invalid_argument("AConfiguration is stale");
+        return 0;
+    }
+    if constexpr (FunctionId == 2U) {
+        std::shared_ptr<AndroidAssetManagerSource> manager;
+        {
+            std::scoped_lock lock(mutex_);
+            const auto found = asset_managers_.find(args[1]);
+            if (found == asset_managers_.end()) throw std::invalid_argument("AAssetManager is stale");
+            manager = found->second;
+        }
+        const auto config = manager->Configuration();
+        if (!config) throw std::invalid_argument("AAssetManager has no resource configuration");
+        std::scoped_lock lock(mutex_);
+        const auto found = configurations_.find(args[0]);
+        if (found == configurations_.end()) throw std::invalid_argument("AConfiguration is stale");
+        found->second = *config;
+        return 0;
+    }
     if constexpr (FunctionId == 9U || FunctionId == 11U || FunctionId == 82U) {
         std::scoped_lock lock(mutex_);
         auto& queue = InputQueue(args[0]);
@@ -336,10 +368,14 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
     if constexpr (FunctionId == 3U || FunctionId == 4U) {
         const auto output = call.Pointer<std::byte>(1);
         if (!output.IsNull()) {
-            if (!services_.device_locale) throw std::runtime_error("AConfiguration requires a device locale provider");
-            const auto locale = services_.device_locale();
-            const auto code = FunctionId == 3U ? locale.language : locale.region;
-            const std::array bytes{static_cast<std::byte>(code[0]), static_cast<std::byte>(code[1])};
+            std::array<std::byte, 2> bytes;
+            {
+                std::scoped_lock lock(mutex_);
+                const auto found = configurations_.find(args[0]);
+                if (found == configurations_.end()) throw std::invalid_argument("AConfiguration is stale");
+                const auto& code = FunctionId == 3U ? found->second.language : found->second.country;
+                bytes = {static_cast<std::byte>(code[0]), static_cast<std::byte>(code[1])};
+            }
             services_.address_space.Write(output.Address(), bytes, tid);
         }
         return 0;

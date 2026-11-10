@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "container_traversal_fixture.h"
 #include <regex>
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
@@ -701,8 +702,7 @@ TEST_CASE("DVM-306 boot classpath assembly fixes owner and platform facts before
     CHECK_FALSE(context->ui_test_accessibility_disabled);
     REQUIRE(context->boot_classpath.size() == kBootClasspathJars.size());
     CHECK(context->boot_classpath.front().guest_path == "/system/framework/ogplay.jar");
-    CHECK(FindBootClasspathEntry(*context, "META-INF/ogplay/theme-projection.json") ==
-          &context->boot_classpath.front());
+    CHECK(FindBootClasspathEntry(*context, "classes.dex") == &context->boot_classpath.front());
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         const auto assembled = AssembleAndroidContext(ReadBootClasspath(framework), {true});
         DexClassLinker linker;
@@ -975,13 +975,13 @@ TEST_CASE("DVM-363 View flags focus ids and ROM toString resolve actual resource
             plain,
             std::regex(
                 R"(android\.view\.View\{[0-9a-f]+ [VIG.][F.][E.][D.][H.][V.][C.][L.] [R.][F.][S.][pP.][H.][A.][I.][D.] 1,2-30,40\})")));
-        f.context->arsc.package_id = 0x7f;
-        f.context->arsc.package_name = "fixture";
-        ogplay::loader::ArscEntry entry;
+        ogplay::test::ResourceFixture(*f.context).package_id = 0x7f;
+        ogplay::test::ResourceFixture(*f.context).package_name = "fixture";
+        ogplay::test::ResourceFixtureEntry entry;
         entry.resource_id = 0x7f0a0042;
         entry.type_name = "id";
         entry.entry_name = "player";
-        f.context->arsc.entries.push_back(entry);
+        ogplay::test::ResourceFixture(*f.context).entries.push_back(entry);
         const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
         for (const auto [id, suffix] :
              {std::pair{0x7f0a0042, " #7f0a0042 app:id/player}"},

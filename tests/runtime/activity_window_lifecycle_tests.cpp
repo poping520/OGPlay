@@ -1202,6 +1202,8 @@ TEST_CASE("API19 Window background follows its unique lazy content root") {
         auto& resource_method =
             f.linker.MutableMethod(f.linker.Class(f.model.ObjectClass(resources)).vtable[*resources_slot]);
         const auto resource_original = resource_method.implementation;
+        const auto original_kind = resource_method.kind;
+        resource_method.kind = MethodKind::intrinsic;
         const auto exception_root = f.vm.ProtectReferences(std::array{failed.exception});
         resource_method.implementation = [exception = failed.exception](IntrinsicContext&) -> VmValue {
             throw VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", "sentinel", exception};
@@ -1211,6 +1213,7 @@ TEST_CASE("API19 Window background follows its unique lazy content root") {
         CHECK(propagated.exception == failed.exception);
         CHECK_FALSE(background().IsValid());
         resource_method.implementation = resource_original;
+        resource_method.kind = original_kind;
     }
 }
 

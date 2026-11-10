@@ -134,9 +134,8 @@ void SetNativeContext(dx::IntrinsicContext& call, const std::int32_t token) {
     if (offset < 0 || length < 0) {
         throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "offset and length must be non-negative"};
     }
-    // Platform-created descriptors keep their registered source (openFd has
-    // no process fd). Others follow jniGetFDFromFileDescriptor: the int field
-    // names a guest VFS descriptor, e.g. NDK AAsset_openFileDescriptor.
+    // Both ROM and NDK asset descriptors carry the same VFS descriptor and APK range.
+    // The media lease keeps that range alive after the caller closes the descriptor.
     const auto* registered = call.vm.IO().FindDescriptor(fd);
     if (registered == nullptr || registered->file != nullptr) {
         const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(fd), "descriptor", "I");

@@ -55,11 +55,6 @@ Decl Declare_android_view_InputQueue(const Context& context);
 [[nodiscard]] Decl Declare_android_content_SharedPreferencesEditorImpl(const Context& context);
 [[nodiscard]] Decl Declare_android_content_SharedPreferencesImpl(const Context& context);
 [[nodiscard]] Decl Declare_android_content_res_AssetManager(const Context& context);
-[[nodiscard]] Decl Declare_android_content_res_AssetFileDescriptor(const Context& context);
-[[nodiscard]] Decl Declare_android_content_res_Resources_NotFoundException(const Context& context);
-[[nodiscard]] Decl Declare_android_content_res_XmlResourceParser(const Context& context);
-[[nodiscard]] Decl Declare_android_content_res_XmlResourceParser_Impl(const Context& context);
-[[nodiscard]] Decl Declare_android_content_res_Resources(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_Bitmap(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_BitmapFactory(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_NinePatch(const Context& context);
@@ -225,15 +220,15 @@ Decl Declare_android_graphics_SurfaceTexture(const Context&);
 }
 
 namespace ogplay::runtime::android_intrinsics {
+bool ProjectBitmapDrawable(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef drawable);
 void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view);
-}
+}  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_graphics_drawable_StateListDrawable(const Context&);
 [[nodiscard]] Decl Declare_android_graphics_drawable_DrawableContainer(const Context&);
 [[nodiscard]] Decl Declare_android_graphics_drawable_NinePatchDrawable(const Context&);
 [[nodiscard]] Decl Declare_managed_WindowToken(const Context&);
-[[nodiscard]] dx::VmObjectRef MakeRomSkin(dx::IntrinsicContext&, const Context&, std::uint32_t);
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {

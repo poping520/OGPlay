@@ -18,7 +18,7 @@
 
 #include "ogplay/core/byte_order.h"
 #include "ogplay/core/text.h"
-#include "ogplay/loader/arsc.h"
+#include "ogplay/loader/resources.h"
 
 namespace ogplay::loader {
 namespace {
@@ -1137,43 +1137,24 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
 AndroidManifestFacts ReadAndroidManifest(const std::span<const std::byte> apk_bytes, const ApkArchive& archive,
                                          const AndroidManifestResourceResolver& external_resources) {
     const auto manifest = ReadApkEntry(apk_bytes, archive, "AndroidManifest.xml");
-    std::optional<ArscTable> table;
+    std::optional<resources::ResTable> table;
     const AndroidManifestResourceResolver resources =
         [&](const std::uint32_t id) -> std::optional<AndroidManifestResourceValue> {
         if ((id >> 24U) == 1U) return external_resources ? external_resources(id) : std::nullopt;
         if (!table) {
-            const auto bytes = ReadApkEntry(apk_bytes, archive, "resources.arsc");
-            table = ParseArsc({reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()});
+            auto bytes =
+                std::make_shared<const std::vector<std::byte>>(ReadApkEntry(apk_bytes, archive, "resources.arsc"));
+            table.emplace();
+            table->add(
+                std::make_shared<resources::ResTableData>(resources::Source{bytes, *bytes, "resources.arsc", {}}), 1);
+            table->setParameters({.density = 160, .sdkVersion = 19});
         }
-        const ArscEntry* best{};
-        for (const auto& entry : table->entries) {
-            // Package parsing uses the default configuration, fixed to API 19.
-            if (entry.resource_id != id || entry.sdk_version > 19U || entry.orientation || entry.smallest_width_dp ||
-                entry.screen_width_dp || entry.screen_height_dp || (entry.screen_layout & 0x0fU))
-                continue;
-            const auto density_better = [](std::uint16_t left, std::uint16_t right) {
-                if (left == right) return false;
-                if (left == 0xffffU) return true;
-                if (right == 0xffffU) return false;
-                int high = left ? left : 160;
-                int low = right ? right : 160;
-                bool left_high = true;
-                if (low > high) {
-                    std::swap(low, high);
-                    left_high = false;
-                }
-                if (160 >= high) return left_high;
-                if (low >= 160) return !left_high;
-                return ((2 * low - 160) * high > 160 * 160) ? !left_high : left_high;
-            };
-            if (!best || (entry.density != best->density ? density_better(entry.density, best->density)
-                                                         : entry.sdk_version > best->sdk_version))
-                best = &entry;
-        }
-        if (!best) return std::nullopt;
-        if (best->is_complex)
-            throw std::runtime_error("binary AndroidManifest scalar resource is a bag: " + std::to_string(id));
-        return AndroidManifestResourceValue{best->value_type, best->value_data, best->string_value};
+        const auto value = table->getResource(id);
+        if (!value) return std::nullopt;
+        return AndroidManifestResourceValue{
+            value->value.type, value->value.data,
+            value->value.type == 3 ? std::optional(table->strings(value->cookie).stringAt(value->value.data))
+                                   : std::nullopt};
     };
     return ParseAndroidBinaryManifest(manifest, resources);
 }

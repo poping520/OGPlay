@@ -1,4 +1,5 @@
 #include "ogplay/app/dex_run.h"
+#include "../game/run_game_vfs.h"
 #include "ogplay/app/host.h"
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/json.h"
@@ -224,6 +225,8 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     core::Logger logger;
     logger.AddSink(std::make_shared<core::ConsoleSink>(stderr), core::LogLevel::warn);
     runtime::VirtualFileSystem vfs;
+    context->framework_resource_apk = data / "android/19/framework/framework-res.apk";
+    frontend::MountFrameworkPayload(vfs, data / "android/19/framework");
     const auto& bionic = runtime::SelectBionicProfile(19);
     std::vector<runtime::BionicOwnedModule> owned_system;
     for (const auto name : bionic.guest_libraries) {

@@ -60,7 +60,9 @@ void Append32(std::vector<std::byte>& bytes, const std::uint32_t value) {
     }
 }
 
-std::vector<std::byte> MakeStoredZip(const std::string_view name, const std::span<const std::byte> payload) {
+std::vector<std::byte> MakeStoredZip(const std::string_view name, const std::span<const std::byte> payload,
+                                     const std::span<const std::byte> deflated) {
+    const auto encoded = deflated.empty() ? payload : deflated;
     std::uint32_t crc = 0xffffffffU;
     for (const auto byte : payload) {
         crc ^= std::to_integer<std::uint8_t>(byte);
@@ -79,26 +81,26 @@ std::vector<std::byte> MakeStoredZip(const std::string_view name, const std::spa
     Append32(bytes, 0x04034b50U);
     Append16(bytes, 20);
     Append16(bytes, 0);
-    Append16(bytes, 0);
+    Append16(bytes, deflated.empty() ? 0 : 8);
     Append16(bytes, 0);
     Append16(bytes, 0);
     Append32(bytes, crc);
-    Append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    Append32(bytes, static_cast<std::uint32_t>(encoded.size()));
     Append32(bytes, static_cast<std::uint32_t>(payload.size()));
     Append16(bytes, static_cast<std::uint16_t>(name.size()));
     Append16(bytes, 0);
     append_name(bytes);
-    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    bytes.insert(bytes.end(), encoded.begin(), encoded.end());
     const auto central_offset = static_cast<std::uint32_t>(bytes.size());
     Append32(bytes, 0x02014b50U);
     Append16(bytes, 20);
     Append16(bytes, 20);
     Append16(bytes, 0);
-    Append16(bytes, 0);
+    Append16(bytes, deflated.empty() ? 0 : 8);
     Append16(bytes, 0);
     Append16(bytes, 0);
     Append32(bytes, crc);
-    Append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    Append32(bytes, static_cast<std::uint32_t>(encoded.size()));
     Append32(bytes, static_cast<std::uint32_t>(payload.size()));
     Append16(bytes, static_cast<std::uint16_t>(name.size()));
     Append16(bytes, 0);
@@ -153,11 +155,21 @@ FileVm::FileVm(SandboxStore* sandbox, const bool include_android_catalog, const 
           }(),
           model, nullptr, ledger, config) {
     interpreter.Monitors().SetTimeSource([] { return std::int64_t{1}; });
+    if (include_boot_dex) ogplay::test::BindBootDexArchive(*context);
     context->vfs = &vfs;
     interpreter.IO().SetFileSystem(&io_file_system);
     context->package_name = kPackage;
     interpreter.SetLogger(&logger);
     if (sandbox != nullptr) vfs.AttachSandbox(*sandbox, kWritableRoots);
+}
+
+VmObjectRef FileVm::AppAssets() {
+    return CallOn(AppResources(), "getAssets", "()Landroid/content/res/AssetManager;").ref;
+}
+
+VmObjectRef FileVm::AppResources() {
+    const auto owner = interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    return CallOn(owner, "getResources", "()Landroid/content/res/Resources;").ref;
 }
 
 VmObjectRef FileVm::NewFile(const std::string& path) {
@@ -198,6 +210,7 @@ std::uint64_t FileVm::StaticField(const std::string_view owner, const std::strin
 
 VmCallOutcome FileVm::CallOnOutcome(const VmObjectRef receiver, const std::string& name, const std::string& descriptor,
                                     std::vector<VmValue> arguments) {
+    ogplay::test::MountResourceFixture(*context, interpreter);
     const auto receiver_class = model.ObjectClass(receiver);
     const auto index = linker.FindVtableIndex(receiver_class, name, descriptor);
     const auto target = index.has_value() ? linker.Class(receiver_class).vtable[*index] : [&] {
@@ -217,6 +230,7 @@ VmValue FileVm::CallOn(const VmObjectRef receiver, const std::string& name, cons
 }
 
 VmValue FileVm::CallStatic(const std::string& owner, const std::string& name, const std::string& descriptor) {
+    ogplay::test::MountResourceFixture(*context, interpreter);
     const auto java_class = linker.FindClass(owner);
     REQUIRE_MESSAGE(java_class.has_value(), owner);
     const auto method = linker.FindDirectMethod(*java_class, name, descriptor);

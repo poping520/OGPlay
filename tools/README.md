@@ -87,15 +87,14 @@ python3 tools/bootdex/build_bootdex.py build
 python3 tools/bootdex/build_bootdex.py check
 ```
 
-`api19-system-resources.json` 保存受审资源名、类型、消费者及 OGPlay 配置值，不固定 ROM
-资源 ID。build/check 从 framework.jar 中实际的 Resources 调用提取 ID，生成
-`META-INF/ogplay/system-resources.json` 放入 ogplay.jar；主题投影
-（`theme_projection.py`）同样放入 ogplay.jar。SQLite journal mode 保留 DELETE；读取 WAL 配置不代表支持 WAL。
-提取器支持常量、普通 move 和 invoke/range；分支/标签清除常量事实，无法证明的 ID、
-类型变化、重复 ID、遗漏/新增查询明确失败并指出消费者。
+ogplay.jar 只含 manifest 和 DEX；系统资源由 payload 中的 framework-res.apk 提供。
+
+`trim_framework_resources.py` 从 `.local/aosp/framework-res.apk` 生成
+`data/android/19/framework/framework-res.apk`：校验 manifest 登记的原版 SHA-256，去掉三张
+default_wallpaper.jpg 和 `META-INF/`，其余条目原样保留，resources.arsc 不压缩并按 4 字节对齐。
 
 `build` 两次独立编译 guest Java 并核对 DEX 一致；`check` 重新生成并与现有制品、manifest 比对。
-输入默认位于 `.local/aosp`、`.local/toolchain` 和 `.local/tools`（baksmali 下载时校验 SHA-256）。
+输入默认位于 `.local/aosp` 和 `.local/toolchain`。
 
 `generate_virtual_keymap.py` 从本地 API19 `Virtual.kcm` 与 `KeyEvent.java` 生成虚拟键盘
 native 查询表；`--check` 核对生成数据及来源哈希。只接受受审属性，未知行为明确失败。

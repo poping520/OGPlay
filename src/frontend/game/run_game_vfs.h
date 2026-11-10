@@ -20,6 +20,9 @@
 
 namespace ogplay::frontend {
 
+// Read-only raw framework archives, shared by Java IO and native VFS callers.
+void MountFrameworkPayload(runtime::VirtualFileSystem& filesystem, const std::filesystem::path& directory);
+
 struct SandboxOptions final {
     // Explicit root wins; otherwise the platform user data directory.
     std::optional<std::filesystem::path> directory;

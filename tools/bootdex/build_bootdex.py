@@ -2,9 +2,8 @@
 """Build and check the API 19 boot classpath payload.
 
 The ROM jars are copied unmodified from .local/aosp. OGPlay's own guest Java is
-compiled into ogplay.jar, which comes first on the boot classpath, together with
-the system resource table and the theme projection. The same script builds the
-guest JNI library (build-guest-jni).
+compiled into ogplay.jar, which comes first on the boot classpath. The same
+script builds the guest JNI library (build-guest-jni).
 """
 
 from __future__ import annotations
@@ -19,20 +18,14 @@ import subprocess
 import shutil
 import sys
 import tempfile
-import urllib.request
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-SYSTEM_RESOURCES = ROOT / "tools/bootdex/api19-system-resources.json"
-SYSTEM_RESOURCES_ENTRY = "META-INF/ogplay/system-resources.json"
-SYSTEM_RESOURCE_CONSUMERS = (
-    "Landroid/database/CursorWindow;", "Landroid/database/sqlite/SQLiteGlobal;",
-)
+
 AOSP = ROOT / ".local/aosp"
-SMALI = ROOT / ".local/tools"
 FRAMEWORK = ROOT / "data/android/19/framework"
 OGPLAY_JAR = FRAMEWORK / "ogplay.jar"
 MANIFEST = ROOT / "data/android/19/manifest.json"
@@ -187,12 +180,6 @@ JAVA = resolve_java(JAVAC)
 ANDROID_JAR = resolve_android_jar()
 D8_JAR = resolve_d8_jar()
 
-SMALI_TOOLS = {
-    "baksmali.jar": (
-        "https://github.com/baksmali/smali/releases/download/3.0.10/"
-        "baksmali-3.0.10-fat-release.jar",
-        "37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f"),
-}
 JAR_MANIFEST = (
     b"Manifest-Version: 1.0\r\n"
     b"Created-By: OGPlay Boot Classpath Builder\r\n\r\n"
@@ -209,20 +196,6 @@ def sha256(data: bytes) -> str:
 
 def file_sha256(path: Path) -> str:
     return sha256(path.read_bytes())
-
-
-def ensure_tool(path: Path, url: str, digest: str) -> None:
-    if path.is_file():
-        if file_sha256(path) != digest:
-            raise BuildError(f"unexpected tool: {path}")
-        return
-    print(f"Downloading {path.name} ...")
-    with urllib.request.urlopen(url) as response:
-        data = response.read()
-    if sha256(data) != digest:
-        raise BuildError(f"downloaded tool has unexpected SHA-256: {path.name}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
 
 
 def run(command: list[str]) -> None:
@@ -244,125 +217,6 @@ def javac_release() -> str:
     return version[len(prefix):]
 
 
-def load_system_resources(document: dict | None = None) -> dict:
-    if document is None:
-        document = json.loads(SYSTEM_RESOURCES.read_text(encoding="utf-8"))
-    if document.get("api_level") != 19 or \
-            document.get("framework", {}).get("jar") != "framework.jar":
-        raise BuildError("invalid system resource source identity")
-    entries = document.get("resources", [])
-    if not entries:
-        raise BuildError("system resource table is empty")
-    names, consumers = set(), set()
-    for entry in entries:
-        name, kind = entry.get("name", ""), entry.get("type")
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", name) or \
-                kind not in ("string", "integer") or \
-                name in names:
-            raise BuildError("invalid or duplicate system resource")
-        names.add(name)
-        values = [entry.get("aosp_default")]
-        if "override" in entry:
-            if not entry["override"].get("reason", "").strip():
-                raise BuildError("system resource override requires a reason")
-            values.append(entry["override"].get("value"))
-        for value in values:
-            if (kind == "string" and (not isinstance(value, str) or "\0" in value)) or \
-                    (kind == "integer" and (type(value) is not int or
-                                           not -(2**31) <= value < 2**31)):
-                raise BuildError("system resource value has wrong type or range")
-        consumer = entry.get("consumer", {})
-        if consumer.get("class") not in SYSTEM_RESOURCE_CONSUMERS or \
-                not re.fullmatch(r"(?:[A-Za-z]+|<clinit>)\(\)(?:I|V|Ljava/lang/String;)",
-                                 consumer.get("method", "")):
-            raise BuildError("invalid system resource consumer")
-        identity = (consumer["class"], consumer["method"])
-        if identity in consumers:
-            raise BuildError("duplicate system resource consumer")
-        consumers.add(identity)
-    return document
-
-
-def resource_call_ids(body: str) -> list[tuple[int, str]]:
-    # Conservative straight-line propagation. Branches and labels discard facts;
-    # an ID crossing a control-flow join must be re-established or is rejected.
-    registers: dict[str, int] = {}
-    calls = []
-    for raw in body.splitlines():
-        line = raw.split("#", 1)[0].strip()
-        if not line or line.startswith("."):
-            continue
-        if line.startswith(":") or re.match(r"(?:if-|goto|packed-switch|sparse-switch)", line):
-            registers.clear()
-            continue
-        lookup = re.search(r"Landroid/content/res/Resources;->(getString|getInteger)\(I\)", line)
-        if lookup:
-            args = re.search(r"\{([^}]+)\}", line)
-            if not args:
-                raise BuildError("system resource call has no arguments")
-            argument_text = args[1].strip()
-            if ".." in argument_text:
-                span = re.fullmatch(r"([vp])(\d+) \.\. ([vp])(\d+)", argument_text)
-                if not span or span[1] != span[3] or int(span[4]) != int(span[2]) + 1:
-                    raise BuildError("unsupported system resource invoke range")
-                arguments = [span[1] + span[2], span[3] + span[4]]
-            else:
-                arguments = [value.strip() for value in argument_text.split(",")]
-            if len(arguments) != 2 or arguments[1] not in registers:
-                raise BuildError("system resource ID is not a proven constant")
-            calls.append((registers[arguments[1]], "string" if lookup[1] == "getString" else "integer"))
-        constant = re.fullmatch(r"const(?:/4|/16|/high16)? ([vp]\d+), (-?0x[0-9a-f]+|-?\d+)", line)
-        move = re.fullmatch(r"move(?:/from16|/16)? ([vp]\d+), ([vp]\d+)", line)
-        if constant:
-            # baksmali writes the expanded value for const/high16.
-            registers[constant[1]] = int(constant[2], 0) & 0xffffffff
-        elif move:
-            value = registers.get(move[2])
-            registers.pop(move[1], None)
-            if value is not None:
-                registers[move[1]] = value
-        elif not line.startswith(("invoke-", "return", "throw", "iput", "sput", "aput", "monitor-")):
-            destination = re.match(r"\S+ ([vp]\d+)", line)
-            if destination:
-                registers.pop(destination[1], None)
-                # Wide writes also invalidate the adjacent register.
-                if "wide" in line.split()[0]:
-                    registers.pop(destination[1][0] + str(int(destination[1][1:]) + 1), None)
-    return calls
-
-
-def resolve_system_resource_contents(document: dict, consumers: dict[str, str]) -> dict:
-    declared = {(e["consumer"]["class"], e["consumer"]["method"]) for e in document["resources"]}
-    methods = {}
-    observed = set()
-    for owner, text in consumers.items():
-        for signature, body in re.findall(r"^\.method [^\n]* ([^ \n]+)\n(.*?)^\.end method", text, re.M | re.S):
-            methods[(owner, signature)] = body
-            if re.search(r"Landroid/content/res/Resources;->get(?:String|Integer)\(I\)", body):
-                observed.add((owner, signature))
-    if observed != declared:
-        raise BuildError("system resource consumer coverage differs from reviewed table: "
-                         f"missing={sorted(declared - observed)}, extra={sorted(observed - declared)}")
-    resources, ids = [], set()
-    for entry in document["resources"]:
-        consumer = entry["consumer"]
-        try:
-            calls = resource_call_ids(methods[(consumer["class"], consumer["method"])])
-        except BuildError as error:
-            raise BuildError(f"{consumer['class']}->{consumer['method']}: {error}") from error
-        if len(calls) != 1 or calls[0][1] != entry["type"]:
-            raise BuildError(f"system resource call/type mismatch: {entry['name']}")
-        resource_id = calls[0][0]
-        if resource_id >> 24 != 1 or resource_id in ids:
-            raise BuildError(f"invalid or conflicting system resource ID: {entry['name']}")
-        ids.add(resource_id)
-        resources.append({"id": resource_id, "name": entry["name"], "type": entry["type"],
-                          "value": entry.get("override", {}).get("value", entry["aosp_default"])})
-    return {"schema_version": 1, "api_level": 19, "resources": resources}
-
-
-
-
 def guest_java_sources() -> tuple[Path, ...]:
     return tuple(sorted(path for root in GUEST_JAVA_ROOTS for path in root.rglob("*.java")))
 
@@ -376,8 +230,6 @@ def check_toolchain() -> None:
         raise BuildError("unexpected Android build-tools 29.0.2 d8.jar")
     if not javac_release().startswith("17."):
         raise BuildError(f"unexpected javac: {javac_release()}")
-    for name, (url, digest) in SMALI_TOOLS.items():
-        ensure_tool(SMALI / name, url, digest)
 
 
 def compile_guest_java(work: Path) -> bytes:
@@ -415,47 +267,10 @@ def compile_guest_java(work: Path) -> bytes:
     return (dex_dir / "classes.dex").read_bytes()
 
 
-def rom_smali(jar: str, classes: tuple[str, ...]) -> dict[str, str]:
-    with tempfile.TemporaryDirectory(prefix="ogplay-rom-smali-") as work:
-        output = Path(work) / "smali"
-        run([str(JAVA), "-jar", str(SMALI / "baksmali.jar"), "disassemble", "--api", "19", "--jobs", "1",
-             "--classes", ",".join(classes), "--output", str(output), str(AOSP / jar)])
-        return {owner: (output / (owner[1:-1] + ".smali")).read_text(encoding="utf-8") for owner in classes}
-
-
-def time_system_resources(smali: str) -> list[dict]:
-    # API 19 Time.format resolves three resource IDs in this order.
-    formats = (
-        ("time_of_day", "%-l:%M:%S %p"),
-        ("month_day_year", "%B %-e, %Y"),
-        ("date_and_time", "%b %-e, %Y, %-l:%M:%S %p"),
-    )
-    match = re.search(r"^\.method [^\n]* format\(Ljava/lang/String;\)Ljava/lang/String;\n"
-                      r"(.*?)^\.end method", smali, re.M | re.S)
-    if match is None:
-        raise BuildError("API 19 Time.format is missing")
-    calls = resource_call_ids(match[1])
-    if len(calls) != len(formats) or any(kind != "string" or ident >> 24 != 1 for ident, kind in calls):
-        raise BuildError("API 19 Time.format system resource lookups changed")
-    return [dict(id=ident, name=name, type="string", value=value)
-            for (ident, _), (name, value) in zip(calls, formats)]
-
-
-def system_resources_payload() -> bytes:
-    smali = rom_smali("framework.jar", (*SYSTEM_RESOURCE_CONSUMERS, "Landroid/text/format/Time;"))
-    resolved = resolve_system_resource_contents(
-        load_system_resources(), {owner: smali[owner] for owner in SYSTEM_RESOURCE_CONSUMERS})
-    resolved["resources"].extend(time_system_resources(smali["Landroid/text/format/Time;"]))
-    if len({row["id"] for row in resolved["resources"]}) != len(resolved["resources"]):
-        raise BuildError("conflicting system resource ID")
-    return (json.dumps(resolved, sort_keys=True, indent=2) + "\n").encode("utf-8")
-
-
-def make_jar(dex: bytes, resources: dict[str, bytes]) -> bytes:
+def make_jar(dex: bytes) -> bytes:
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
-        for name, content in [("META-INF/MANIFEST.MF", JAR_MANIFEST), ("classes.dex", dex),
-                              *sorted(resources.items())]:
+        for name, content in [("META-INF/MANIFEST.MF", JAR_MANIFEST), ("classes.dex", dex)]:
             info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_STORED
             info.create_system = 3
@@ -464,19 +279,14 @@ def make_jar(dex: bytes, resources: dict[str, bytes]) -> bytes:
     return output.getvalue()
 
 
-def build_ogplay_jar() -> tuple[bytes, dict[str, bytes]]:
-    import theme_projection
+def build_ogplay_jar() -> bytes:
     check_toolchain()
     with tempfile.TemporaryDirectory(prefix="ogplay-jar-a-") as first, \
             tempfile.TemporaryDirectory(prefix="ogplay-jar-b-") as second:
         dex = compile_guest_java(Path(first))
         if dex != compile_guest_java(Path(second)):
             raise BuildError("two guest Java builds differ")
-    system = system_resources_payload()
-    projection = theme_projection.generate()
-    theme_projection.check_conflicts(projection, system)
-    resources = {SYSTEM_RESOURCES_ENTRY: system, theme_projection.ENTRY: projection}
-    return make_jar(dex, resources), resources
+    return make_jar(dex)
 
 
 def rom_jar(name: str) -> bytes:
@@ -486,7 +296,7 @@ def rom_jar(name: str) -> bytes:
     return data
 
 
-def boot_metadata(jar: bytes, resources: dict[str, bytes]) -> dict:
+def boot_metadata(jar: bytes) -> dict:
     return {
         "directory": "framework",
         "generator": "tools/bootdex/build_bootdex.py",
@@ -497,10 +307,7 @@ def boot_metadata(jar: bytes, resources: dict[str, bytes]) -> dict:
                  "sha256": sha256(b"".join(path.relative_to(ROOT).as_posix().encode("utf-8") + b"\0"
                                            + path.read_bytes() for path in guest_java_sources())),
                  "javac": javac_release(), "android_jar_sha256": ANDROID_JAR_SHA256,
-                 "d8_sha256": D8_JAR_SHA256},
-             "resources": {
-                 name: sha256(content) for name, content in sorted(resources.items())},
-             "system_resources_table_sha256": file_sha256(SYSTEM_RESOURCES)},
+                 "d8_sha256": D8_JAR_SHA256}},
             *({"path": f"framework/{name}", "source_project": project, "size": (AOSP / name).stat().st_size,
                "sha256": digest} for name, (project, digest) in ROM_JARS.items()),
         ],
@@ -517,9 +324,9 @@ def manifest_bytes(metadata: dict) -> bytes:
 
 
 def build_or_check(mode: str) -> int:
-    jar, resources = build_ogplay_jar()
+    jar = build_ogplay_jar()
     roms = {name: rom_jar(name) for name in ROM_JARS}
-    manifest = manifest_bytes(boot_metadata(jar, resources))
+    manifest = manifest_bytes(boot_metadata(jar))
     outputs = {OGPLAY_JAR: jar, **{FRAMEWORK / name: data for name, data in roms.items()}, MANIFEST: manifest}
     if mode == "build":
         FRAMEWORK.mkdir(parents=True, exist_ok=True)

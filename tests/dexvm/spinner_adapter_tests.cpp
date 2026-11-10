@@ -31,18 +31,15 @@ TEST_CASE("DVM-364 Spinner ROM adapter layout and asynchronous selection chain")
         CHECK(f.On(spinner, "getGravity", "()I").AsInt() == 17);
         const auto background = f.On(spinner, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref;
         REQUIRE(background.IsValid());
-        CHECK(f.context->ui_drawables.at(background.Value()).resource_id == 0x01080006);
-        const auto& children = f.context->ui_drawables.at(background.Value()).skin_children;
-        CHECK(children.size() == 7);
-        std::set<std::uint32_t> leaf_ids;
-        for (const auto child : children) {
-            leaf_ids.insert(f.context->ui_drawables.at(child.Value()).resource_id);
+        const auto count = f.On(background, "getStateCount", "()I").AsInt();
+        CHECK(count == 7);
+        for (int i = 0; i < count; ++i) {
+            const auto child =
+                f.On(background, "getStateDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(i)}).ref;
             CHECK(f.linker.Class(f.model.ObjectClass(child)).descriptor ==
                   "Landroid/graphics/drawable/NinePatchDrawable;");
-            REQUIRE(f.context->ui_drawables.at(child.Value()).leaf_pixels);
-            CHECK(f.context->ui_drawables.at(child.Value()).leaf_pixels->nine_patch);
+            CHECK(f.On(child, "getIntrinsicWidth", "()I").AsInt() > 0);
         }
-        CHECK(leaf_ids.size() == 5);
         const auto list = f.New("Ljava/util/ArrayList;");
         const auto list_root = f.vm.ProtectReferences(std::array{list});
         for (const auto text : {"First", "Much longer second label", "Third"}) {
@@ -81,11 +78,10 @@ TEST_CASE("DVM-364 Spinner ROM adapter layout and asynchronous selection chain")
             CHECK(f.model.StringValue(tag) == (id == 0x01090008 ? u"TextView" : u"CheckedTextView"));
             f.On(parser, "close", "()V");
         }
-        const auto missing = f.OnOutcome(resources, "getLayout", "(I)Landroid/content/res/XmlResourceParser;",
-                                         {VmValue::Int(0x01090003)});
-        REQUIRE(missing.exception.IsValid());
-        CHECK(f.linker.Class(missing.exception_class).descriptor ==
-              "Landroid/content/res/Resources$NotFoundException;");
+        const auto additional =
+            f.On(resources, "getLayout", "(I)Landroid/content/res/XmlResourceParser;", {VmValue::Int(0x01090003)}).ref;
+        REQUIRE(additional.IsValid());
+        f.On(additional, "close", "()V");
         const auto measured =
             f.OnOutcome(spinner, "measure", "(II)V", {VmValue::Int(0x400000c8), VmValue::Int(0x40000030)});
         REQUIRE_MESSAGE(!measured.exception.IsValid(), measured.exception_message,

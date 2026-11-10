@@ -1,29 +1,24 @@
 #pragma once
-
 #include <cstdint>
-#include <optional>
-#include <span>
+#include <cstddef>
 #include <string>
 #include <vector>
+#include <optional>
+#include <span>
 
-#include "ogplay/loader/dex.h"
+namespace ogplay::runtime {
+struct DexVmAndroidContext;
+}
 
-namespace ogplay::loader {
-
-// Strict resources.arsc (ResTable) reader for the facts legacy titles
-// actually consume: resource id -> (type, entry name, typed simple value) and
-// (type, entry name) -> resource id. Bag parent/items are retained; each entry
-// records its locale, choosing among them and attribute resolution belong to the caller;
-// malformed chunks fail loudly (same posture as ZIP/Manifest/DEX parsing).
-
-struct ArscBagValue final {
+namespace ogplay::test {
+struct ResourceFixtureBagValue final {
     std::uint32_t name{};
     std::uint8_t value_type{};
     std::uint32_t value_data{};
     std::optional<std::string> string_value;
 };
 
-struct ArscEntry final {
+struct ResourceFixtureEntry final {
     std::uint32_t resource_id{};
     std::string type_name;   // "raw", "drawable", ...
     std::string entry_name;  // "raw_000", "icon", ...
@@ -35,7 +30,7 @@ struct ArscEntry final {
     std::uint32_t value_data{};
     bool is_complex{};
     std::uint32_t parent{};
-    std::vector<ArscBagValue> bag;
+    std::vector<ResourceFixtureBagValue> bag;
     std::uint32_t changing_configurations{};
     // BCP 47 style "zh", "zh-TW"; empty for the default configuration.
     std::string locale;
@@ -48,20 +43,14 @@ struct ArscEntry final {
     std::uint16_t screen_height_dp{};
 };
 
-struct ArscTable final {
+struct ResourceFixtureTable final {
     std::string package_name;
     std::uint32_t package_id{};
-    std::vector<ArscEntry> entries;
+    std::vector<ResourceFixtureEntry> entries;
     // Original global pool chunk, including style metadata and pool indices.
     std::vector<std::byte> global_string_pool;
-
-    [[nodiscard]] const ArscEntry* FindById(
-        std::uint32_t resource_id) const noexcept;
-    [[nodiscard]] const ArscEntry* FindByName(
-        std::string_view type_name,
-        std::string_view entry_name) const noexcept;
 };
 
-[[nodiscard]] ArscTable ParseArsc(std::span<const std::uint8_t> bytes);
-
-}  // namespace ogplay::loader
+ResourceFixtureTable ReadResourceFixture(std::span<const std::byte>);
+ResourceFixtureTable& ResourceFixture(runtime::DexVmAndroidContext&);
+}  // namespace ogplay::test

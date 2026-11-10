@@ -399,23 +399,35 @@ void PutAndroidMetaData(dx::IntrinsicContext& call, const Context& context, cons
     } else if (const auto* text = std::get_if<std::string>(&value)) {
         put_string(*text);
     } else if (const auto* reference = std::get_if<loader::AndroidManifestMetaDataValueReference>(&value)) {
-        const auto& resolved = ResolveUiResourceEntry(*context, reference->resource_id);
-        if (!resolved.is_complex && resolved.value_type == 0U)
-            throw std::runtime_error("meta-data value resource is null: " + name);
-        if (resolved.value_type == 0x03U && !resolved.string_value)
-            throw std::runtime_error("meta-data value resource string is missing: " + name);
-        if (resolved.value_type == 0x03U && resolved.string_value) {
-            put_string(*resolved.string_value);
-        } else if (resolved.value_type == 0x04U) {
-            put_float(std::bit_cast<float>(resolved.value_data));
-        } else if (resolved.value_type == 0x12U) {
-            put_boolean(resolved.value_data != 0U);
-        } else if (resolved.value_type >= 0x10U && resolved.value_type <= 0x1fU) {
-            put_integer(static_cast<std::int32_t>(resolved.value_data));
-        } else {
-            if (auto* logger = call.vm.Log())
-                logger->Write(core::LogLevel::warn, "runtime.manifest", "ignored unsupported meta-data value type", {},
-                              {{"name", name}, {"type", static_cast<std::uint64_t>(resolved.value_type)}});
+        const auto resources = ResourceObject(call, context, false);
+        const auto typed = call.vm.NewIntrinsicInstance("Landroid/util/TypedValue;");
+        const auto roots = call.vm.ProtectReferences(std::array{resources, typed});
+        static_cast<void>(CallAndroidMethod(call.vm, resources, "getValue", "(ILandroid/util/TypedValue;Z)V",
+                                            {dx::VmValue::Int(static_cast<std::int32_t>(reference->resource_id)),
+                                             dx::VmValue::Ref(typed), dx::VmValue::Int(1)}));
+        const auto get = [&](const char* field, const char* descriptor) {
+            const auto member =
+                call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(typed), field, descriptor);
+            if (!member) throw std::logic_error("ROM TypedValue field is missing");
+            return call.vm.Model().InstanceSlots(typed)[call.vm.Linker().Field(*member).slot].bits;
+        };
+        const auto type = get("type", "I"), data = get("data", "I");
+        if (!type) throw std::runtime_error("meta-data value resource is null: " + name);
+        if (type == 3) {
+            const auto text = dx::VmObjectRef(get("string", "Ljava/lang/CharSequence;"));
+            if (!text.IsValid()) throw std::runtime_error("meta-data value resource string is missing: " + name);
+            const auto string = CallAndroidMethod(call.vm, text, "toString", "()Ljava/lang/String;");
+            static_cast<void>(CallAndroidMethod(call.vm, bundle, "putString", "(Ljava/lang/String;Ljava/lang/String;)V",
+                                                {dx::VmValue::Ref(key), string}));
+        } else if (type == 4) {
+            put_float(std::bit_cast<float>(data));
+        } else if (type == 0x12) {
+            put_boolean(data != 0);
+        } else if (type >= 0x10 && type <= 0x1f) {
+            put_integer(static_cast<std::int32_t>(data));
+        } else if (auto* logger = call.vm.Log()) {
+            logger->Write(core::LogLevel::warn, "runtime.manifest", "ignored unsupported meta-data value type", {},
+                          {{"name", name}, {"type", static_cast<std::uint64_t>(type)}});
         }
     } else {
         put_integer(
@@ -1020,40 +1032,28 @@ namespace android_intrinsics {
     return instance;
 }
 
-[[nodiscard]] bool IsSystemResources(const Context& context, const dx::VmObjectRef object) {
-    const auto found = context->singletons.find("system_resources");
-    return found != context->singletons.end() && found->second == object;
-}
-
-[[nodiscard]] bool IsSystemAssets(const Context& context, const dx::VmObjectRef object) {
-    const auto found = context->singletons.find("system_assets");
-    return found != context->singletons.end() && found->second == object;
-}
-
-[[nodiscard]] dx::VmObjectRef ResourceObject(dx::IntrinsicContext& call, const Context& context, const bool system) {
-    const char* resource_key = system ? "system_resources" : "resources";
-    const char* asset_key = system ? "system_assets" : "assets";
-    if (const auto found = context->singletons.find(resource_key); found != context->singletons.end())
-        return found->second;
-    const auto resources = call.vm.NewIntrinsicInstance("Landroid/content/res/Resources;");
-    const auto resource_root = call.vm.ProtectReferences(std::array{resources});
-    const auto assets = call.vm.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
-    const auto asset_root = call.vm.ProtectReferences(std::array{assets});
-    const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(resources), "mAssets",
-                                                           "Landroid/content/res/AssetManager;");
-    if (!field.has_value()) {
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Resources.mAssets is not linked");
+[[nodiscard]] dx::VmObjectRef ResourceObject(dx::IntrinsicContext& call, const Context& context, bool system) {
+    if (system) {
+        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/content/res/Resources;");
+        const auto method = call.vm.Linker().FindDirectMethod(type, "getSystem", "()Landroid/content/res/Resources;");
+        if (!method) throw std::logic_error("ROM Resources.getSystem is missing");
+        const auto result = call.vm.Call(*method, {});
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        return result.value.ref;
     }
-    call.vm.Model().InstanceSlots(resources)[call.vm.Linker().Field(*field).slot] = {assets.Value(), dx::SlotTag::ref};
-    if (!system) InitializeThemeResourceOwner(call, context, resources, assets);
-    context->singletons.emplace(asset_key, assets);
-    context->singletons.emplace(resource_key, resources);
+    if (const auto found = context->singletons.find("resources"); found != context->singletons.end())
+        return found->second;
+    const auto resources = CreateApplicationResources(call, context);
+    context->singletons.emplace("resources", resources);
     return resources;
 }
 
-[[nodiscard]] dx::VmObjectRef ResourceAssets(dx::IntrinsicContext& call, const Context& context, const bool system) {
-    static_cast<void>(ResourceObject(call, context, system));
-    return context->singletons.at(system ? "system_assets" : "assets");
+[[nodiscard]] dx::VmObjectRef ResourceAssets(dx::IntrinsicContext& call, const Context& context, bool system) {
+    const auto resources = ResourceObject(call, context, system);
+    const auto root = call.vm.ProtectReferences(std::array{resources});
+    return CallAndroidMethod(call.vm, resources, "getAssets", "()Landroid/content/res/AssetManager;").ref;
 }
 
 [[nodiscard]] dx::VmValue MakeString(dx::IntrinsicContext& call, const std::string& value) {
@@ -1104,33 +1104,6 @@ dx::IntrinsicHandler IgnoredUiRequest(std::string what) {
 std::string FilePathOf(dx::IntrinsicContext& call, const dx::VmObjectRef file) {
     const auto slots = call.vm.Model().InstanceSlots(file);
     return call.vm.StringUtf8(dx::VmObjectRef(slots[0].bits));
-}
-
-dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context, std::vector<std::byte> bytes) {
-    const auto instance = call.vm.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
-    const std::array roots{instance};
-    const auto protect = call.vm.ProtectReferences(roots);
-    const auto array = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"),
-                                                         JniPrimitiveKind::byte, static_cast<JniSize>(bytes.size()));
-    call.vm.Model().WriteByteRegion(array, 0, bytes);
-    const auto ctor = call.vm.Linker().FindDirectMethod(call.vm.Model().ObjectClass(instance), "<init>", "([B)V");
-    const std::array args{dx::VmValue::Ref(instance), dx::VmValue::Ref(array)};
-    const auto outcome = call.vm.Call(*ctor, args);
-    if (outcome.exception.IsValid())
-        throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                              outcome.exception};
-    static_cast<void>(context);
-    return instance;
-}
-
-[[nodiscard]] std::vector<std::byte> ReadApkFile(const Context& context, const std::string& path) {
-    try {
-        return loader::ReadApkEntry(context->apk_bytes, context->archive, path);
-    } catch (const std::exception& error) {
-        // Missing/damaged entries surface as the Java IOException the
-        // interpreted glue actually catches, not a host-side abort.
-        throw dx::VmJavaThrow{"Ljava/io/IOException;", "APK entry is unavailable: " + path + " (" + error.what() + ")"};
-    }
 }
 
 dx::VmValue UnsupportedNetwork(dx::IntrinsicContext&) {

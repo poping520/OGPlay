@@ -68,20 +68,16 @@ TEST_CASE("DVM-365 ProgressBar ROM state measurement attachment and bounded reso
         const auto paint = f.On(bitmap_drawable, "getPaint", "()Landroid/graphics/Paint;").ref;
         CHECK((f.On(paint, "getFlags", "()I").AsInt() & 3) == 3);
         const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
-        const auto missing = f.OnOutcome(resources, "getAnimation", "(I)Landroid/content/res/XmlResourceParser;",
-                                         {VmValue::Int(0x010a000a)});
-        REQUIRE(missing.exception.IsValid());
-        CHECK(f.linker.Class(missing.exception_class).descriptor ==
-              "Landroid/content/res/Resources$NotFoundException;");
-        const auto horizontal = f.vm.NewIntrinsicInstance("Landroid/widget/ProgressBar;");
+        const auto animation =
+            f.On(resources, "getAnimation", "(I)Landroid/content/res/XmlResourceParser;", {VmValue::Int(0x010a000a)})
+                .ref;
+        REQUIRE(animation.IsValid());
+        f.On(animation, "close", "()V");
+        const auto horizontal =
+            f.New("Landroid/widget/ProgressBar;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                  {VmValue::Ref(owner), VmValue::Ref(VmObjectRef{}), VmValue::Int(0x01010078)});
         const auto horizontal_root = f.vm.ProtectReferences(std::array{horizontal});
-        const auto ctor =
-            f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Landroid/widget/ProgressBar;"), "<init>",
-                                      "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
-        const auto rejected = f.vm.Call(*ctor, std::array{VmValue::Ref(horizontal), VmValue::Ref(owner),
-                                                          VmValue::Ref(VmObjectRef{}), VmValue::Int(0x0101020f)});
-        REQUIRE(rejected.exception.IsValid());
-        CHECK_FALSE(rejected.exception_message.empty());
+        REQUIRE(f.On(horizontal, "getProgressDrawable", "()Landroid/graphics/drawable/Drawable;").ref.IsValid());
         const auto small =
             f.New("Landroid/widget/ProgressBar;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
                   {VmValue::Ref(owner), VmValue::Ref(VmObjectRef{}), VmValue::Int(0x01010079)});
@@ -180,7 +176,7 @@ TEST_CASE("DVM-365 ProgressBar ROM state measurement attachment and bounded reso
     }
 }
 
-TEST_CASE("DVM-365 arbitrary nested drawable XML remains rejected") {
+TEST_CASE("DVM-365 ROM drawable XML rejects a null parser") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
@@ -194,7 +190,7 @@ TEST_CASE("DVM-365 arbitrary nested drawable XML remains rejected") {
         const auto nested = f.vm.Call(
             *xml, std::array{VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
         REQUIRE(nested.exception.IsValid());
-        CHECK(nested.exception_message == "nested drawable XML is unsupported");
+        CHECK(f.linker.Class(nested.exception_class).descriptor == "Ljava/lang/NullPointerException;");
     }
 }
 

@@ -33,10 +33,7 @@
 #include "ogplay/audio/java_sound_pool_mixer.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/loader/apk_manifest.h"
-#include "ogplay/loader/arsc.h"
 #include "ogplay/loader/binary_xml.h"
-#include "ogplay/runtime/integration/xml_cursor.h"
-#include "ogplay/runtime/integration/theme_resources.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/network_runtime.h"
@@ -68,7 +65,8 @@ struct GraphicsObjects;
 namespace raster {
 class Bitmap;
 }
-class AndroidAssetManagerSource;
+struct ResourceNativeState;
+class ResourceAssetManager;
 struct AndroidBoundaryInput;
 
 namespace database {
@@ -235,19 +233,16 @@ struct DexVmAndroidContext final {
     NativeLibraryLoader* native_libraries{};
     std::shared_ptr<NativeActivityRuntime> native_activity;
     std::uint64_t application_class_loader_token{1U};
-    ThemeResources theme_resources;
-    std::set<dexvm::VmObjectRef> theme_asset_owners;
-    std::map<ThemeToken, dexvm::VmObjectRef> theme_owners;
-    bool theme_projection_loaded{};
-    bool theme_gc_registered{};
-    XmlStringPoolToken resource_string_pool;
-    XmlStringPoolToken rom_string_pool;
-    XmlCursorRegistry xml_cursors;
-    // Synchronous, rooted ROM inflate scopes; arbitrary nested XML stays rejected.
-    std::vector<dexvm::VmObjectRef> rom_drawable_parsers;
-    bool xml_gc_registered{};
-    loader::ArscTable arsc;
+    std::shared_ptr<ResourceNativeState> resource_natives;
+    std::weak_ptr<ResourceAssetManager> application_resource_manager;
+    std::filesystem::path framework_resource_apk;
+    std::shared_ptr<const std::vector<std::byte>> sealed_apk_bytes;
     std::vector<std::byte> apk_bytes;
+
+    [[nodiscard]] std::span<const std::byte> ApkBytes() const {
+        return sealed_apk_bytes ? std::span<const std::byte>(*sealed_apk_bytes) : std::span<const std::byte>(apk_bytes);
+    }
+
     loader::ApkArchive archive;
     std::vector<BootClasspathJar> boot_classpath;
     std::string package_name;
@@ -258,8 +253,6 @@ struct DexVmAndroidContext final {
     // The installed guest inventory is sealed and contains only this APK.
     // Missing standalone context facts are not an empty installation list.
     bool package_inventory_known{};
-    // Internal sealed APK source, initialized only by ApkAssets().
-    std::shared_ptr<AndroidAssetManagerSource> apk_asset_source;
     std::uint32_t package_version_code{};
     std::string package_version_name;
     std::uint32_t target_sdk_version{};
@@ -1031,9 +1024,6 @@ struct DexVmAndroidContext final {
     // and callbacks keyed by UiNodeId.
     ui::UiTree ui_tree;
     ui::UiBitmapCache ui_bitmaps;
-    std::uint32_t ui_bitmap_config_width{};
-    std::uint32_t ui_bitmap_config_height{};
-    std::uint32_t ui_bitmap_config_density_bits{};
     ui::UiOverlayRenderer ui_overlay_renderer;
     ui::UiOverlayRenderer ui_modal_renderer;
 
@@ -1080,31 +1070,15 @@ struct DexVmAndroidContext final {
 
     std::unordered_map<std::uint32_t, ViewAdapterReferences> view_adapter_references;
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef> ui_view_layout_params;
-    std::unordered_map<std::uint32_t, ui::ImageScaleType> ui_image_scale_types;
 
     struct UiDrawableState final {
-        std::uint32_t resource_id{};
-        std::uint8_t alpha{255};
-        ui::Rect bounds;
-        std::optional<ui::UiNodeId> callback_node;
-        dexvm::VmObjectRef bitmap{};
         bool bitmap_drawable{false};
         std::shared_ptr<const ui::UiBitmap> image_projection;
         std::uint64_t bitmap_revision{};
         std::shared_ptr<const ui::UiBitmap> leaf_pixels;
-        bool rom_skin{};
-        bool selector_state{};
-        std::array<std::int32_t, 4> skin_padding{}, skin_optical{};
-        std::int32_t skin_width{-1}, skin_height{-1};
-        std::vector<dexvm::VmObjectRef> skin_children;
-        std::vector<dexvm::VmObjectRef> skin_state_arrays;
-        std::int32_t skin_current{-1};
     };
 
-    // Immutable leaf-resource backing belongs to its Java Drawable, never to a cache.
-    // View owns the guest Drawable reference; immutable decoded pixels remain
-    // shared in ui_bitmaps while alpha/bounds stay per Drawable instance.
-    std::unordered_map<std::uint64_t, dexvm::VmObjectRef> ui_view_backgrounds;
+    // Java owns Drawable and Bitmap. This weak index retains only render snapshots.
     std::unordered_map<std::uint64_t, dexvm::VmObjectRef> ui_view_images;
     std::unordered_map<std::uint64_t, UiDrawableState> ui_drawables;
 
@@ -1280,20 +1254,6 @@ void WriteAndroidViewPadding(dexvm::Interpreter& vm, DexVmAndroidContext& contex
                              ui::Insets padding, std::optional<bool> explicit_padding = true);
 void WriteAndroidViewMinimum(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
                              ui::Size minimum);
-[[nodiscard]] std::u16string ResolveUiString(const DexVmAndroidContext& context, std::uint32_t resource_id);
-[[nodiscard]] std::string ResolveResourceString(const DexVmAndroidContext& context, std::uint32_t resource_id);
-[[nodiscard]] std::uint32_t ResolveUiColor(const DexVmAndroidContext& context, std::uint32_t resource_id);
-[[nodiscard]] std::int32_t ResolveUiDimension(const DexVmAndroidContext& context, std::uint32_t resource_id,
-                                              bool scaled);
-[[nodiscard]] std::shared_ptr<const ui::UiBitmap> ResolveUiDrawable(DexVmAndroidContext& context,
-                                                                    std::uint32_t resource_id);
-[[nodiscard]] const loader::ArscEntry* SelectUiResourceEntry(const DexVmAndroidContext& context,
-                                                             std::uint32_t resource_id);
-[[nodiscard]] std::shared_ptr<const ui::UiBitmap> DecodeLeafBitmap(const DexVmAndroidContext& context,
-                                                                   const loader::ArscEntry& entry);
-[[nodiscard]] const loader::ArscEntry& ResolveUiResourceEntry(const DexVmAndroidContext& context,
-                                                              std::uint32_t resource_id);
-
 // Installs/removes the generic VmExecutionLock blocking observer for the
 // lifecycle thread. The observer filters by the registered host thread id;
 // a GLThread's own blocking release never changes driver state.

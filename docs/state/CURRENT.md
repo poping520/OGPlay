@@ -8,6 +8,7 @@
 
 JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。无返回值的显示设置忽略并记警告（DVM-372）。
 启动类路径改为 ogplay.jar + 原样 API19 ROM jar（core/conscrypt/ext/framework/framework2/android.policy），成员来源审计与配对制品已删除；未绑定 native 调用时抛 UnsatisfiedLinkError。
+P2 完成。API19 资源 native 使用裁剪版 framework-res.apk、游戏 APK 和唯一资源表核心，Java 与 NDK 共用 AssetManager。UI 读 ROM 对象，绘制投影留给 P3。见 [RES-1](../tasks/resources/RES-1.md)。
 
 ## 游戏进度
 

@@ -17,6 +17,8 @@
 - `ReadApkEntryRange`：stored 校验范围后只复制窗口；Deflate 完整扫描受界流并核对输出
   尺寸，只保留 32 KiB history，按 64 KiB 输出检查取消。
   `ApkEntryRangeStatistics` 的扫描量仅累计 Deflate 输出，stored 为 0；交付量独立累计。
+- `ApkDeflateStream`：借用同一 ZIP 字节，复用解码器逐段读取；连续读保留当前块和 32 KiB
+  历史，向后读从头重放，读到 EOF 校验声明长度。
 - `ParseAndroidBinaryManifest` / `ReadAndroidManifest`：受检解析 binary XML chunk、UTF-8/
   UTF-16 string pool、元素与 typed attribute，产出 package/version/SDK、默认或自定义
   Application 类与 largeHeap 布尔事实，以及按声明顺序保留 enabled、逐 intent-filter、alias target 的 Activity
@@ -92,18 +94,7 @@
   坏字符串取 null，raw_string 保留缺席。首节点前后池替换，节点后的池跳过。
   空名称和未闭合/错名/多余 END 不做格式拒绝；事件深度沿 XmlBlock 计数，父索引仅用于
   START 投影。chunk、节点扩展、属性及字符串读取范围受检，残缺尾部仍明确失败。
-- `ParseArsc`：严格读取 resources.arsc（ResTable/string pool/package/type/entry），
-  产出 resid ↔ (type, name, typed simple value/文件路径) 双向事实；Res_value type/data
-  原样保留给上层有界 string/color/dimension/reference resolver；DVM-121 保留复杂 bag 的
-  parent/typed items，重复 child key 按声明序保留；校验 entry/value/map 边界与字符串索引。
-  原全局字符串池 chunk（含 style 元数据及索引）与逐 entry 的 typeSpec 配置变更 flags
-  无损保留，供上层资源池身份及 TypedArray 六槽输出使用；loader 不持有 theme 状态。
-  每个 entry 记录配置的 language/country（含三字母压缩编码）为 `locale`（如 `zh-TW`，默认为空），
-  按语言挑选由上层决定。
-  零包表合法，实际 package chunk 数须与声明一致，全局字符串池不可缺失；DVM-148 同时保留
-  orientation、density、SDK、screenLayout size 与屏幕 dp 配置事实，由上层按固定 API 19
-  的 qualifier 优先级选择候选；仍不扩展
-  locale/动态 qualifier，越界/截断即失败。
+- [资源表核心](resources/MODULE.md)：唯一 API19 ARSC 解析器、字符串池和配置匹配，供清单、游戏库与运行时共用。清单标量引用按默认配置和 API19 读取；loader 不持有主题或 VM 状态。
 - `ReadApkArmNativeLibraries` / `ReadApkNativeLibraryInventory`：稳定枚举
   `lib/armeabi[-v7a]/*.so`，拥有解压字节与小写 SHA-256，并按 ABI、entry basename
   soname、`lib<logical>.so` logical name 建立不可变 inventory；此阶段不解析 ELF

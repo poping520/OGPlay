@@ -64,7 +64,8 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
             std::find_if(archive.entries.begin(), archive.entries.end(),
                          [&resource](const loader::ApkEntry& entry) { return entry.name == resource.entry_name; });
         if (found == archive.entries.end()) return std::nullopt;
-        return loader::ReadApkEntry(is_boot ? boot->bytes : context->apk_bytes, archive, resource.entry_name);
+        return loader::ReadApkEntry(is_boot ? std::span<const std::byte>(boot->bytes) : context->ApkBytes(), archive,
+                                    resource.entry_name);
     };
     services.singleton = [context](dexvm::Interpreter& vm, const std::string_view key,
                                    const std::string_view descriptor) {
@@ -134,12 +135,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_content_pm_PackageManager(context),
         Declare_android_content_SharedPreferencesEditorImpl(context),
         Declare_android_content_SharedPreferencesImpl(context),
-        Declare_android_content_res_AssetFileDescriptor(context),
         Declare_android_content_res_AssetManager(context),
-        Declare_android_content_res_Resources_NotFoundException(context),
-        Declare_android_content_res_XmlResourceParser(context),
-        Declare_android_content_res_XmlResourceParser_Impl(context),
-        Declare_android_content_res_Resources(context),
         Declare_android_database_CursorWindow(context),
         Declare_android_database_sqlite_SQLiteConnection(context),
         Declare_android_database_sqlite_SQLiteConnection_Operation(context),

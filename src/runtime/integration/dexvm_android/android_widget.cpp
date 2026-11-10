@@ -649,6 +649,7 @@ Decl ExperimentalImageView(const Context& context) {
             const auto type = c.vm.Model().ObjectClass(value);
             const bool is_color = c.vm.Linker().IsAssignable(
                 c.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/ColorDrawable;"), type);
+            static_cast<void>(ProjectBitmapDrawable(c.vm, *context, value));
             const auto found = context->ui_drawables.find(value.Value());
             if (!is_color && (found == context->ui_drawables.end() || !found->second.bitmap_drawable)) {
                 RecordUiDegraded(c.vm, "ImageView.drawable");
@@ -1054,6 +1055,7 @@ Decl ExperimentalTextView(const Context& context) {
                                           {dx::VmValue::Int(index)})
                             .ref;
                     if (ref.IsValid()) {
+                        static_cast<void>(ProjectBitmapDrawable(vm, *context, ref));
                         const auto backing = context->ui_drawables.find(ref.Value());
                         if (backing == context->ui_drawables.end() || !backing->second.bitmap_drawable ||
                             !backing->second.leaf_pixels) {
@@ -1063,7 +1065,7 @@ Decl ExperimentalTextView(const Context& context) {
                         vm.Model().SetObjectElement(retained, static_cast<JniSize>(slot), ref);
                         const auto width = CallAndroidMethod(vm, ref, "getIntrinsicWidth", "()I").AsInt();
                         const auto height = CallAndroidMethod(vm, ref, "getIntrinsicHeight", "()I").AsInt();
-                        compounds[slot] = {backing->second.resource_id, width, height};
+                        compounds[slot] = {0, width, height, backing->second.leaf_pixels};
                         compound_refs[slot] = ref;
                     }
                 } else if (name == "textEditPasteWindowLayout" || name == "textEditNoPasteWindowLayout" ||
@@ -1619,6 +1621,7 @@ Decl ExperimentalTextView(const Context& context) {
             for (std::size_t i = 0; i < 4; ++i) {
                 const auto ref = c.arguments[i].ref;
                 if (!ref.IsValid()) continue;
+                static_cast<void>(ProjectBitmapDrawable(c.vm, *context, ref));
                 const auto found = context->ui_drawables.find(ref.Value());
                 if (found == context->ui_drawables.end() || !found->second.bitmap_drawable ||
                     !found->second.leaf_pixels) {
@@ -1626,9 +1629,9 @@ Decl ExperimentalTextView(const Context& context) {
                     continue;
                 }
                 refs[i] = ref;
-                values[i] = {found->second.resource_id,
-                             CallAndroidMethod(c.vm, ref, "getIntrinsicWidth", "()I").AsInt(),
-                             CallAndroidMethod(c.vm, ref, "getIntrinsicHeight", "()I").AsInt()};
+                values[i] = {0, CallAndroidMethod(c.vm, ref, "getIntrinsicWidth", "()I").AsInt(),
+                             CallAndroidMethod(c.vm, ref, "getIntrinsicHeight", "()I").AsInt(),
+                             found->second.leaf_pixels};
             }
             context->ui_tree.Get(TextNode(c, context))->compound_drawables = values;
             context->view_adapter_references.at(c.receiver.Value()).text_compounds = refs;

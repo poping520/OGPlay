@@ -1,3 +1,5 @@
+#include "dexvm/resource_fixture.h"
+#include "../dexvm/file_vfs_fixture.h"
 #include "ogplay/runtime/raster/bitmap.h"
 #include "runtime/boundary/core/boundary_symbols.h"
 #include "ogplay/runtime/dexvm/big_int_runtime.h"
@@ -81,19 +83,10 @@ TEST_CASE("DVM-237 APS-11 real ARM Android asset surface and sensor boundaries s
             const std::vector<std::byte> payload{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
             const std::vector<std::byte> deflate{std::byte{0x4b}, std::byte{0x4c}, std::byte{0x4a}, std::byte{0x06},
                                                  std::byte{0x00}};
-            const auto& encoded = compressed ? deflate : payload;
-            auto& zip = context->apk_bytes;
-            zip.resize(30 + entry.size());
-            Put32(zip, 0, 0x04034b50);
-            Put16(zip, 8, compressed ? 8 : 0);
-            Put32(zip, 14, 0x352441c2);
-            Put32(zip, 18, static_cast<std::uint32_t>(encoded.size()));
-            Put32(zip, 22, 3);
-            Put16(zip, 26, static_cast<std::uint16_t>(entry.size()));
-            std::memcpy(zip.data() + 30, entry.data(), entry.size());
-            zip.insert(zip.end(), encoded.begin(), encoded.end());
-            context->archive.entries.push_back({entry, 0, static_cast<std::uint16_t>(compressed ? 8 : 0), 0x352441c2,
-                                                static_cast<std::uint32_t>(encoded.size()), 3, 0});
+            context->apk_bytes = test::file_vfs::MakeStoredZip(
+                entry, payload, compressed ? std::span<const std::byte>(deflate) : std::span<const std::byte>());
+            context->archive = loader::ParseApkArchive(context->apk_bytes);
+            test::BindBootDexArchive(*context);
             std::vector<std::vector<std::byte>> contents;
             std::vector<runtime::BionicModuleSource> libraries;
             for (const auto* name : {"libc.so", "libdl.so", "libm.so", "libstdc++.so"}) {
@@ -169,50 +162,31 @@ TEST_CASE("DVM-237 APS-11 real ARM Android asset surface and sensor boundaries s
             CHECK(static_cast<std::int32_t>(invoke("ASensorEventQueue_hasEvents", {sensor_queue, 0, 0, 0})) == -1);
             CHECK(invoke("ASensorEventQueue_getEvents", {sensor_queue, scratch.Value(), 1, 0}) == 0);
             CHECK(invoke("ASensorManager_destroyEventQueue", {sensor_manager, sensor_queue, 0, 0}) == 0);
-            const auto object = vm.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
+            using Value = runtime::dexvm::VmValue;
+            const auto managerClass = vm.Linker().ResolveDescriptor("Landroid/content/res/AssetManager;");
+            const auto ctor = vm.Linker().FindDirectMethod(managerClass, "<init>", "()V").value();
+            const auto newManager = [&] {
+                const auto manager = vm.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
+                const auto root = vm.ProtectReferences(std::array{manager});
+                const auto result = vm.Call(ctor, std::array{Value::Ref(manager)});
+                REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+                return manager;
+            };
+            const auto object = newManager();
+            const auto add = vm.Linker().FindVtableIndex(managerClass, "addAssetPath", "(Ljava/lang/String;)I").value();
+            CHECK(vm.Call(vm.Linker().Class(managerClass).vtable[add],
+                          std::array{Value::Ref(object), Value::Ref(vm.NewStringUtf8(context->package_resource_path))})
+                      .value.AsInt() == 2);
             auto reference = bridge.PublishLocal(object);
             const auto convert = [&](runtime::JniReference ref) {
                 return invoke("AAssetManager_fromJava", {process.GuestEnvironment().Value(), ref.Value(), 0, 0});
             };
             const auto manager = convert(reference);
             REQUIRE(manager != 0);
-            // Real ARM JNI Surface conversion uses the existing active holder facts.
-            const auto surface_object = vm.NewIntrinsicInstance("Landroid/view/Surface;");
-            const auto holder_object = vm.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;");
-            context->holder_surfaces.emplace(holder_object.Value(), surface_object);
-            context->active_surface_holders.insert(holder_object.Value());
-            runtime::InitializeManagedJavaSurface(vm, *context, surface_object, holder_object.Value());
-            context->managed_host_surface_open = true;
-            const auto surface_reference = bridge.PublishLocal(surface_object);
-            const auto from_surface = [&](runtime::JniReference ref) {
-                return invoke("ANativeWindow_fromSurface", {process.GuestEnvironment().Value(), ref.Value(), 0, 0});
-            };
-            CHECK(from_surface(runtime::JniReference{}) == 0);
-            CHECK(from_surface(reference) == 0);
-            const auto surface_window = from_surface(surface_reference);
-            REQUIRE(surface_window != 0);
-            CHECK(from_surface(surface_reference) == surface_window);
-            CHECK(invoke("ANativeWindow_getWidth", {surface_window, 0, 0, 0}) == context->surface_width);
-            const auto release_method =
-                vm.Linker().FindVtableIndex(vm.Model().ObjectClass(surface_object), "release", "()V");
-            REQUIRE(release_method);
-            const auto released_surface =
-                vm.Call(vm.Linker().Class(vm.Model().ObjectClass(surface_object)).vtable[*release_method],
-                        std::array{runtime::dexvm::VmValue::Ref(surface_object)});
-            REQUIRE_FALSE(released_surface.exception.IsValid());
-            CHECK(from_surface(surface_reference) == 0);
-            CHECK(invoke("ANativeWindow_getWidth", {surface_window, 0, 0, 0}) == context->surface_width);
-            CHECK_FALSE(runtime::DispatchSurfaceHolderCallbacks(vm, *context, runtime::SurfaceHolderPhase::destroyed)
-                            .has_value());
-            CHECK(from_surface(surface_reference) == 0);
-            invoke("ANativeWindow_release", {surface_window, 0, 0, 0});
-            invoke("ANativeWindow_release", {surface_window, 0, 0, 0});
-            env.DeleteLocalRef(1, surface_reference);
-            context->holder_surfaces.clear();
             CHECK(convert(reference) == manager);
             const auto weak = env.NewWeakGlobalRef(1, reference);
             CHECK(convert(weak) == manager);
-            const auto second_object = vm.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
+            const auto second_object = newManager();
             const auto second_reference = bridge.PublishLocal(second_object);
             CHECK(convert(second_reference) != manager);
             env.DeleteLocalRef(1, second_reference);
@@ -221,20 +195,66 @@ TEST_CASE("DVM-237 APS-11 real ARM Android asset surface and sensor boundaries s
             CHECK(convert(runtime::JniReference{}) == 0);
             REQUIRE(env.ExceptionCheck(1));
             env.ExceptionClear(1);
-            const auto system_object = vm.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
-            context->singletons.emplace("system_assets", system_object);
+            const auto system =
+                vm.Linker().FindDirectMethod(managerClass, "getSystem", "()Landroid/content/res/AssetManager;").value();
+            const auto system_object = vm.Call(system, {}).value.ref;
             const auto system_reference = bridge.PublishLocal(system_object);
-            CHECK(convert(system_reference) == 0);
-            REQUIRE(env.ExceptionCheck(1));
-            const auto system_exception = env.ExceptionOccurred(1);
-            env.ExceptionClear(1);
-            CHECK(vm.Linker().Class(vm.Model().ObjectClass(bridge.FromReference(system_exception))).descriptor ==
-                  "Ljava/lang/UnsupportedOperationException;");
-            env.DeleteLocalRef(1, system_exception);
+            CHECK(convert(system_reference) != 0);
+            CHECK(convert(system_reference) != manager);
             env.DeleteLocalRef(1, system_reference);
-            context->singletons.erase("system_assets");
             const auto global = env.NewGlobalRef(1, reference);
             CHECK(convert(global) == manager);
+            const auto localeSlot =
+                vm.Linker().FindVtableIndex(managerClass, "setLocale", "(Ljava/lang/String;)V").value();
+            const auto locale = vm.Call(vm.Linker().Class(managerClass).vtable[localeSlot],
+                                        std::array{Value::Ref(object), Value::Ref(vm.NewStringUtf8("zh_CN"))});
+            REQUIRE_FALSE(locale.exception.IsValid());
+            const auto config = invoke("AConfiguration_new", {});
+            invoke("AConfiguration_fromAssetManager", {config, manager, 0, 0});
+            invoke("AConfiguration_getLanguage", {config, scratch.Add(128).Value(), 0, 0});
+            invoke("AConfiguration_getCountry", {config, scratch.Add(130).Value(), 0, 0});
+            std::array<std::byte, 4> localeBytes{};
+            memory.read(scratch.Add(128), localeBytes);
+            CHECK(localeBytes == std::array{std::byte{'z'}, std::byte{'h'}, std::byte{'C'}, std::byte{'N'}});
+            invoke("AConfiguration_delete", {config, 0, 0, 0});
+            const auto streamSlot =
+                vm.Linker().FindVtableIndex(managerClass, "open", "(Ljava/lang/String;)Ljava/io/InputStream;").value();
+            const auto stream = vm.Call(vm.Linker().Class(managerClass).vtable[streamSlot],
+                                        std::array{Value::Ref(object), Value::Ref(vm.NewStringUtf8("hello"))});
+            REQUIRE_MESSAGE(!stream.exception.IsValid(), stream.exception_message);
+            const auto streamRoot = vm.ProtectReferences(std::array{stream.value.ref});
+            const auto streamType = vm.Model().ObjectClass(stream.value.ref);
+            const auto read = vm.Linker().FindVtableIndex(streamType, "read", "()I").value();
+            CHECK(vm.Call(vm.Linker().Class(streamType).vtable[read], std::array{stream.value}).value.AsInt() == 'a');
+            const auto close = vm.Linker().FindVtableIndex(streamType, "close", "()V").value();
+            REQUIRE_FALSE(
+                vm.Call(vm.Linker().Class(streamType).vtable[close], std::array{stream.value}).exception.IsValid());
+            if (!compressed) {
+                const auto on = [&](runtime::dexvm::VmObjectRef receiver, const char* name, const char* signature,
+                                    std::vector<Value> args = {}) {
+                    const auto type = vm.Model().ObjectClass(receiver);
+                    const auto slot = vm.Linker().FindVtableIndex(type, name, signature);
+                    const auto method = slot ? vm.Linker().Class(type).vtable[*slot]
+                                             : vm.Linker().FindDirectMethod(type, name, signature).value();
+                    args.insert(args.begin(), Value::Ref(receiver));
+                    const auto result = vm.Call(method, args);
+                    REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+                    return result.value;
+                };
+                const auto afd = on(object, "openFd", "(Ljava/lang/String;)Landroid/content/res/AssetFileDescriptor;",
+                                    {Value::Ref(vm.NewStringUtf8("hello"))})
+                                     .ref;
+                const auto afdRoot = vm.ProtectReferences(std::array{afd});
+                const auto start = static_cast<std::uint32_t>(on(afd, "getStartOffset", "()J").AsLong());
+                const auto fd = on(afd, "getFileDescriptor", "()Ljava/io/FileDescriptor;").ref;
+                const auto descriptor = static_cast<std::uint32_t>(on(fd, "getInt$", "()I").AsInt());
+                CHECK(libc("lseek", {descriptor, start, 0, 0}) == start);
+                CHECK(libc("read", {descriptor, scratch.Add(96).Value(), 3, 0}) == 3);
+                std::vector<std::byte> actual(3);
+                memory.read(scratch.Add(96), actual);
+                CHECK(actual == payload);
+                on(afd, "close", "()V");
+            }
             const auto open = [&](const char* path) {
                 std::array<std::byte, 32> text{};
                 std::memcpy(text.data(), path, std::strlen(path));
@@ -248,13 +268,6 @@ TEST_CASE("DVM-237 APS-11 real ARM Android asset surface and sensor boundaries s
             REQUIRE(asset != 0);
             REQUIRE(other != 0);
             CHECK(asset != other);
-            if (!compressed) {
-                auto damaged = std::make_shared<runtime::DexVmAndroidContext>();
-                damaged->apk_bytes = context->apk_bytes;
-                damaged->archive = context->archive;
-                damaged->apk_bytes.back() ^= std::byte{1};
-                CHECK_THROWS(runtime::ApkAssets(damaged)->Open("hello"));
-            }
             CHECK(invoke("AAsset_read", {asset, scratch.Add(32).Value(), 2, 0}) == 2);
             CHECK(invoke("AAsset_getRemainingLength", {asset, 0, 0, 0}) == 1);
             CHECK(invoke("AAsset_getRemainingLength", {other, 0, 0, 0}) == 3);
@@ -300,6 +313,39 @@ TEST_CASE("DVM-237 APS-11 real ARM Android asset surface and sensor boundaries s
             }
             if (compressed) invoke("AAsset_close", {asset, 0, 0, 0});
             CHECK_THROWS(memory.read(buffer, buffered));
+            // Real ARM JNI Surface conversion uses the existing active holder facts.
+            const auto surface_object = vm.NewIntrinsicInstance("Landroid/view/Surface;");
+            const auto holder_object = vm.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;");
+            context->holder_surfaces.emplace(holder_object.Value(), surface_object);
+            context->active_surface_holders.insert(holder_object.Value());
+            runtime::InitializeManagedJavaSurface(vm, *context, surface_object, holder_object.Value());
+            context->managed_host_surface_open = true;
+            const auto surface_reference = bridge.PublishLocal(surface_object);
+            const auto from_surface = [&](runtime::JniReference ref) {
+                return invoke("ANativeWindow_fromSurface", {process.GuestEnvironment().Value(), ref.Value(), 0, 0});
+            };
+            CHECK(from_surface(runtime::JniReference{}) == 0);
+            CHECK(from_surface(reference) == 0);
+            const auto surface_window = from_surface(surface_reference);
+            REQUIRE(surface_window != 0);
+            CHECK(from_surface(surface_reference) == surface_window);
+            CHECK(invoke("ANativeWindow_getWidth", {surface_window, 0, 0, 0}) == context->surface_width);
+            const auto release_method =
+                vm.Linker().FindVtableIndex(vm.Model().ObjectClass(surface_object), "release", "()V");
+            REQUIRE(release_method);
+            const auto released_surface =
+                vm.Call(vm.Linker().Class(vm.Model().ObjectClass(surface_object)).vtable[*release_method],
+                        std::array{runtime::dexvm::VmValue::Ref(surface_object)});
+            REQUIRE_FALSE(released_surface.exception.IsValid());
+            CHECK(from_surface(surface_reference) == 0);
+            CHECK(invoke("ANativeWindow_getWidth", {surface_window, 0, 0, 0}) == context->surface_width);
+            CHECK_FALSE(runtime::DispatchSurfaceHolderCallbacks(vm, *context, runtime::SurfaceHolderPhase::destroyed)
+                            .has_value());
+            CHECK(from_surface(surface_reference) == 0);
+            invoke("ANativeWindow_release", {surface_window, 0, 0, 0});
+            invoke("ANativeWindow_release", {surface_window, 0, 0, 0});
+            env.DeleteLocalRef(1, surface_reference);
+            context->holder_surfaces.clear();
             // Conversion must preserve a pending throwable and never root a manager.
             const auto throwable = vm.NewIntrinsicInstance("Ljava/lang/IllegalStateException;");
             const auto throwable_reference = bridge.PublishLocal(throwable);
@@ -318,6 +364,8 @@ TEST_CASE("DVM-237 APS-11 real ARM Android asset surface and sensor boundaries s
             env.DeleteLocalRef(1, reference);
             env.DeleteGlobalRef(1, global);
             static_cast<void>(vm.CollectGarbage("ndk-asset-manager-lifetime"));
+            vm.RunFinalization();
+            static_cast<void>(vm.CollectGarbage("ndk-asset-manager-finalized"));
             CHECK(convert(weak) == 0);
             REQUIRE(env.ExceptionCheck(1));
             env.ExceptionClear(1);
@@ -459,7 +507,7 @@ TEST_CASE("DVM-240 ARM JNI installed applications expose the session APK and rej
         const auto fd = f.filesystem.Open(vm.StringUtf8(path), {.read = true});
         std::array<std::byte, 4> apk_header{};
         CHECK(f.filesystem.Read(fd, apk_header) == apk_header.size());
-        CHECK(std::equal(apk_header.begin(), apk_header.end(), f.context->apk_bytes.begin()));
+        CHECK(std::equal(apk_header.begin(), apk_header.end(), f.context->ApkBytes().begin()));
         f.filesystem.Close(fd);
         bytes[129] = std::byte{0x20};  // GET_UNINSTALLED_PACKAGES (8192).
         memory.write(scratch, bytes);
@@ -659,12 +707,12 @@ TEST_CASE("DVM-244 ARM JNI resource bitmap decoding publishes shared pixel stora
         ApplicationProcess f(backend);
         f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
         f.context->archive = loader::ParseApkArchive(f.context->apk_bytes);
-        f.context->arsc.entries = {{.resource_id = 0x7f020001,
-                                    .type_name = "drawable",
-                                    .entry_name = "fixture",
-                                    .string_value = "res/drawable/fixture.png",
-                                    .value_type = 3,
-                                    .density = 160}};
+        ogplay::test::ResourceFixture(*f.context).entries = {{.resource_id = 0x7f020001,
+                                                              .type_name = "drawable",
+                                                              .entry_name = "fixture",
+                                                              .string_value = "res/drawable/fixture.png",
+                                                              .value_type = 3,
+                                                              .density = 160}};
         auto& bridge = *f.bridge;
         auto& vm = bridge.Vm();
         auto& linker = vm.Linker();
@@ -675,7 +723,13 @@ TEST_CASE("DVM-244 ARM JNI resource bitmap decoding publishes shared pixel stora
         env.PushLocalFrame(1, 32);
         const auto factory =
             bridge.PublishLocal(vm.Model().ClassObject(linker.ResolveDescriptor("Landroid/graphics/BitmapFactory;")));
-        const auto resources = bridge.PublishLocal(vm.NewIntrinsicInstance("Landroid/content/res/Resources;"));
+        f.context->vfs = &f.filesystem;
+        test::MountResourceFixture(*f.context, vm);
+        const auto resourceOwner = vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto resources =
+            bridge.PublishLocal(runtime::android_intrinsics::CallAndroidMethod(vm, resourceOwner, "getResources",
+                                                                               "()Landroid/content/res/Resources;")
+                                    .ref);
         std::array<std::byte, 256> data{};
         constexpr char name[] = "decodeResource";
         constexpr char descriptor[] = "(Landroid/content/res/Resources;I)Landroid/graphics/Bitmap;";
@@ -742,7 +796,13 @@ TEST_CASE("DVM-244 ARM JNI resource bitmap decoding publishes shared pixel stora
         REQUIRE_FALSE(env.ExceptionCheck(1));
         static_cast<void>(vm.CollectGarbage("image-bitmap-jni"));
         const auto drawable = f.context->ui_view_images.at(image.Value());
-        CHECK(f.context->ui_drawables.at(drawable.Value()).bitmap == first);
+        const auto bitmap_getter =
+            linker.FindVtableIndex(vm.Model().ObjectClass(drawable), "getBitmap", "()Landroid/graphics/Bitmap;");
+        REQUIRE(bitmap_getter);
+        const auto bitmap_result = vm.Call(linker.Class(vm.Model().ObjectClass(drawable)).vtable[*bitmap_getter],
+                                           std::array{VmValue::Ref(drawable)});
+        REQUIRE_FALSE(bitmap_result.exception.IsValid());
+        CHECK(bitmap_result.value.ref == first);
         const auto node = *FindViewUiNode(*f.context, image.Value());
         REQUIRE(f.context->ui_tree.Get(node)->image_bitmap);
         CHECK(f.context->ui_tree.Get(node)->image_bitmap->rgba8[0] == 255);

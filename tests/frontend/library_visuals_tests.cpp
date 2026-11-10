@@ -124,7 +124,13 @@ std::vector<std::byte> Utf8Pool(const std::vector<std::string>& strings) {
     std::vector<std::uint32_t> offsets;
     for (const auto& value : strings) {
         offsets.push_back(static_cast<std::uint32_t>(data.size()));
-        data.push_back(static_cast<std::byte>(value.size()));
+        std::size_t units{};
+        for (const char byte : value) {
+            const auto lead = static_cast<std::uint8_t>(byte);
+            if ((lead & 0xc0U) != 0x80U) units += lead >= 0xf0U ? 2U : 1U;
+        }
+        REQUIRE(value.size() < 128);
+        data.push_back(static_cast<std::byte>(units));
         data.push_back(static_cast<std::byte>(value.size()));
         PushText(data, value);
         data.push_back(std::byte{0});

@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "container_traversal_fixture.h"
 #include "../../src/runtime/integration/dexvm_android/shared.h"
 #include <bit>
@@ -25,8 +26,8 @@ VmObjectRef Owner(ContainerVm& f) {
     f.context->target_sdk_version = 19;
     f.context->surface_width = 320;
     f.context->surface_height = 240;
-    f.context->arsc.package_id = 0x7f;
-    ogplay::loader::ArscEntry theme;
+    ogplay::test::ResourceFixture(*f.context).package_id = 0x7f;
+    ogplay::test::ResourceFixtureEntry theme;
     theme.resource_id = 0x7f020001;
     theme.type_name = "style";
     theme.entry_name = "surface";
@@ -34,7 +35,7 @@ VmObjectRef Owner(ContainerVm& f) {
     theme.parent = 0x01030005;
     for (auto id : {0x01010064U, 0x01010065U, 0x01010034U, 0x010100d4U})
         theme.bag.push_back({id, 1, 0, {}});
-    f.context->arsc.entries = {theme};
+    ogplay::test::ResourceFixture(*f.context).entries = {theme};
     f.context->application_theme = theme.resource_id;
     const auto owner = f.New("Landroid/app/Activity;");
     f.context->activity = owner;

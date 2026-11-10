@@ -7,6 +7,7 @@
 // is not part of the module's public surface.
 
 namespace ogplay::runtime::android_intrinsics {
+void ProjectNinePatchGeometry(dexvm::Interpreter&, DexVmAndroidContext&, dexvm::VmObjectRef, ui::UiBitmap&);
 
 namespace dx = dexvm;
 [[nodiscard]] dx::VmObjectRef CreateAndroidBitmap(dx::Interpreter& vm, DexVmAndroidContext& context, int width,
@@ -17,10 +18,6 @@ namespace dx = dexvm;
                                            dx::VmObjectRef matrix);
 
 [[nodiscard]] std::u16string ReadAndroidTextDisplay(dx::Interpreter&, DexVmAndroidContext&, dx::VmObjectRef);
-[[nodiscard]] dx::VmObjectRef InflateSealedRomDrawable(dx::IntrinsicContext&,
-                                                       const std::shared_ptr<DexVmAndroidContext>&,
-                                                       dx::VmObjectRef resources, dx::VmObjectRef parser,
-                                                       dx::VmObjectRef attrs);
 void InitializeCanvasPaint(dx::IntrinsicContext& call, DexVmAndroidContext& context);
 void RetireCanvasPaint(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef paint);
 void AddCanvasPaintMethods(dx::IntrinsicClassBuilder& builder, const std::shared_ptr<DexVmAndroidContext>& context);
@@ -35,10 +32,7 @@ AndroidPaintProjection ReadAndroidPaintProjection(dx::Interpreter& vm, DexVmAndr
                                                   dx::VmObjectRef owner);
 void AddManagedCanvasNatives(dx::IntrinsicClassBuilder& builder, const std::shared_ptr<DexVmAndroidContext>& context);
 void ResetManagedCanvas(DexVmAndroidContext& context, std::uint32_t holder);
-std::shared_ptr<const ui::UiBitmap> DecodeNinePatchPixels(std::span<const std::byte> bytes);
 void RetireAndroidNinePatch(dx::Interpreter& vm, DexVmAndroidContext& context, int bits, dx::VmObjectRef owner);
-dx::VmObjectRef DecodeNinePatchDrawable(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef resources,
-                                        std::span<const std::byte> bytes, int density);
 void RegisterGraphicsStateTables(dx::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context);
 inline constexpr std::int32_t kGuestProcessId = 1;
 [[nodiscard]] dx::VmObjectRef ManagedViewTreeObserver(dx::Interpreter& vm, DexVmAndroidContext& context,
@@ -51,8 +45,7 @@ void RequireAndroidAlphaOnly(dx::Interpreter&, DexVmAndroidContext&, dx::VmObjec
 
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
-void InitializeThemeResourceOwner(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef resources,
-                                  dx::VmObjectRef assets);
+dx::VmObjectRef CreateApplicationResources(dx::IntrinsicContext& call, const Context& context);
 void InitializeAndroidSystemProperties(dx::Interpreter& vm, const Context& context);
 [[nodiscard]] bool ScrollAndroidDialog(DexVmAndroidContext& context, dx::VmObjectRef dialog, std::int32_t direction);
 void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::IntrinsicFieldHandle generation);
@@ -124,8 +117,6 @@ void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& co
                                         const char* descriptor);
 [[nodiscard]] dx::VmObjectRef ResourceObject(dx::IntrinsicContext& call, const Context& context, bool system);
 [[nodiscard]] dx::VmObjectRef ResourceAssets(dx::IntrinsicContext& call, const Context& context, bool system);
-[[nodiscard]] bool IsSystemResources(const Context& context, dx::VmObjectRef object);
-[[nodiscard]] bool IsSystemAssets(const Context& context, dx::VmObjectRef object);
 [[nodiscard]] dx::VmValue MakeString(dx::IntrinsicContext& call, const std::string& value);
 // Materialize the current package's ApplicationInfo from sealed process
 // facts. Context keeps one object for the LoadedApk lifetime; bounded
@@ -144,11 +135,10 @@ void GuestLog(dx::IntrinsicContext& call, core::LogLevel level, const std::strin
 void RecordUiDegraded(dx::Interpreter& vm, std::string_view what);
 // Handler for a void display request that is ignored with a warning.
 [[nodiscard]] dx::IntrinsicHandler IgnoredUiRequest(std::string what);
-dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context, std::vector<std::byte> bytes);
 // Missing or damaged entries throw the Java IOException the glue catches.
 void RetireAndroidTypeface(DexVmAndroidContext& context, int bits);
-std::vector<std::byte> ReadAndroidApkAsset(const Context& context, dx::VmObjectRef manager, const std::string& name);
-[[nodiscard]] std::vector<std::byte> ReadApkFile(const Context& context, const std::string& path);
+std::vector<std::byte> ReadAndroidApkAsset(dx::Interpreter& vm, const Context& context, dx::VmObjectRef manager,
+                                           const std::string& name);
 // The session thread runtime; absent only if the platform context was never
 // wired to a bridge, which is a host assembly defect rather than a gap.
 [[nodiscard]] dx::VmThreadRuntime& ThreadRuntime(const Context& context);
@@ -215,8 +205,6 @@ inline constexpr std::int32_t kGone = 8;
 void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler, dx::VmObjectRef message);
 [[nodiscard]] dx::VmObjectRef MakeMessage(dx::IntrinsicContext& call, std::int32_t what, dx::VmObjectRef object,
                                           dx::VmObjectRef target);
-[[nodiscard]] dx::VmObjectRef MakeResourceDrawable(dx::IntrinsicContext& call, const Context& context,
-                                                   std::uint32_t resource_id);
 
 // Shared handler factories: cross-class handlers built on demand by the
 // per-class declaration units. Factories that bind session state take the

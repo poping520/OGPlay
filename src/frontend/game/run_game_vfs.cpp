@@ -16,6 +16,7 @@
 #include "ogplay/core/json.h"
 #include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/hal/host_environment.h"
+#include "ogplay/hal/fs.h"
 
 namespace ogplay::frontend {
 namespace {
@@ -68,6 +69,16 @@ constexpr core::RateLimitPolicy kUnrestrictedLog{.mode = core::RateLimitMode::no
 }
 
 }  // namespace
+
+void MountFrameworkPayload(runtime::VirtualFileSystem& filesystem, const std::filesystem::path& directory) {
+    for (const auto name : {"ogplay.jar", "core.jar", "conscrypt.jar", "ext.jar", "framework.jar", "framework2.jar",
+                            "android.policy.jar", "framework-res.apk"}) {
+        const auto file = hal::OpenHostReadFile(directory / name);
+        filesystem.PutReadOnlyFile(std::string("/system/framework/") + name, file->Info().size,
+                                   [file](std::uint64_t offset, std::span<std::byte> destination,
+                                          std::stop_token stop) { return file->ReadAt(offset, destination, stop); });
+    }
+}
 
 std::string SandboxSession::Describe() const {
     if (!store) return "ephemeral";

@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "container_traversal_fixture.h"
 #include "ogplay/runtime/ui/ui_renderer.h"
 
@@ -7,8 +8,8 @@ namespace {
 VmObjectRef Owner(ContainerVm& f) {
     f.context->ui_test_accessibility_disabled = true;
     f.context->target_sdk_version = 19;
-    f.context->arsc.package_id = 0x7f;
-    ogplay::loader::ArscEntry theme;
+    ogplay::test::ResourceFixture(*f.context).package_id = 0x7f;
+    ogplay::test::ResourceFixtureEntry theme;
     theme.resource_id = 0x7f020001;
     theme.type_name = "style";
     theme.is_complex = true;
@@ -22,7 +23,7 @@ VmObjectRef Owner(ContainerVm& f) {
     style.resource_id = 0x7f020002;
     style.parent = 0;
     style.bag.clear();
-    f.context->arsc.entries = {theme, style};
+    ogplay::test::ResourceFixture(*f.context).entries = {theme, style};
     f.context->application_theme = theme.resource_id;
     const auto owner = f.New("Landroid/app/Activity;");
     ogplay::test::AttachViewTestContext(f.vm, owner);
@@ -285,7 +286,7 @@ TEST_CASE("DVM-296 unsupported image APIs fail and ImageButton uses real default
         REQUIRE(ctor);
         CHECK(f.linker.Class(f.linker.Method(*ctor).owner).is_boot_dex);
         // Use the real registered system default style, only masking unrelated scrollbar demands.
-        f.context->arsc.entries.front().bag.pop_back();
+        ogplay::test::ResourceFixture(*f.context).entries.front().bag.pop_back();
         const auto default_owner = f.New("Landroid/app/Activity;");
         ogplay::test::AttachViewTestContext(f.vm, default_owner);
         f.On(default_owner, "setTheme", "(I)V", {VmValue::Int(0x7f020001)});

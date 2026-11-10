@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "container_traversal_fixture.h"
 #include "../fixtures/bitmap_decode_data.h"
 #include "file_vfs_fixture.h"
@@ -68,8 +69,9 @@ std::vector<std::byte> StringPool(const std::vector<std::string>& strings, const
     return chunk;
 }
 
-ogplay::loader::ArscEntry Style(std::uint32_t id, std::uint32_t parent, std::vector<ogplay::loader::ArscBagValue> bag) {
-    ogplay::loader::ArscEntry e;
+ogplay::test::ResourceFixtureEntry Style(std::uint32_t id, std::uint32_t parent,
+                                         std::vector<ogplay::test::ResourceFixtureBagValue> bag) {
+    ogplay::test::ResourceFixtureEntry e;
     e.resource_id = id;
     e.type_name = "style";
     e.entry_name = "fixture";
@@ -166,8 +168,8 @@ constexpr std::uint32_t theme = 0x7f020001, button_style = 0x7f020002, xml_style
 VmObjectRef Owner(ContainerVm& f, int defaults = 0) {
     f.context->ui_test_accessibility_disabled = true;
     f.context->target_sdk_version = 19;
-    f.context->arsc.package_id = 0x7f;
-    f.context->arsc.global_string_pool = StringPool({"res/drawable/fixture.png"}, true);
+    ogplay::test::ResourceFixture(*f.context).package_id = 0x7f;
+    ogplay::test::ResourceFixture(*f.context).global_string_pool = StringPool({"res/drawable/fixture.png"}, true);
     auto t = Style(theme, 0x01030005, {{0x0101006e, 1, button_style, {}}, {0x01010095, 5, 0x1000, {}}});
     auto b = Style(button_style, 0,
                    {{0x01010095, 5, 0x1400, {}},
@@ -189,7 +191,7 @@ VmObjectRef Owner(ContainerVm& f, int defaults = 0) {
         b.bag.push_back({0x01010034, 1, 0, {}});
         b.bag.push_back({0x010100af, 16, 0x11, {}});
     }
-    f.context->arsc.entries = {t, b, Style(xml_style, 0, {{0x01010095, 5, 0x1600, {}}})};
+    ogplay::test::ResourceFixture(*f.context).entries = {t, b, Style(xml_style, 0, {{0x01010095, 5, 0x1600, {}}})};
     f.context->application_theme = theme;
     const auto owner = f.New("Landroid/app/Activity;");
     ogplay::test::AttachViewTestContext(f.vm, owner);
@@ -259,7 +261,7 @@ TEST_CASE("DVM-298 EditText ROM shape style defaults and bounded editable on bot
                       {VmValue::Ref(owner), VmValue::Ref(parser)});
             CHECK(State(f, styled).text_size_px == (explicit_xml ? 24 : 22));
         }
-        f.context->arsc.entries.front().bag.push_back({0x7f010001, 1, xml_style, {}});
+        ogplay::test::ResourceFixture(*f.context).entries.front().bag.push_back({0x7f010001, 1, xml_style, {}});
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(theme)});
         const auto custom =
             f.New("Landroid/widget/EditText;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
@@ -413,7 +415,7 @@ TEST_CASE("DVM-298 EditText real default style and unsupported Editor IME fail e
     }
 }
 
-TEST_CASE("DVM-326 EditText consumes actual default background padding and freezes bounded leaf pixels") {
+TEST_CASE("DVM-326 EditText consumes actual default background padding and projects ROM leaf pixels") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         const auto owner = Owner(f, 5);
@@ -421,7 +423,9 @@ TEST_CASE("DVM-326 EditText consumes actual default background padding and freez
         const auto roots = f.vm.ProtectReferences(std::array{owner, edit});
         const auto background = f.On(edit, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref;
         REQUIRE(background.IsValid());
-        CHECK(f.context->ui_drawables.at(background.Value()).resource_id == 0x01080016);
+        CHECK(f.linker.Class(f.model.ObjectClass(background)).descriptor ==
+              "Landroid/graphics/drawable/StateListDrawable;");
+        CHECK(f.On(background, "getStateCount", "()I").AsInt() > 1);
         CHECK(f.On(edit, "getPaddingLeft", "()I").AsInt() == 11);
         CHECK(f.On(edit, "getPaddingTop", "()I").AsInt() == 7);
         CHECK(f.On(edit, "getPaddingRight", "()I").AsInt() == 11);
@@ -447,14 +451,14 @@ TEST_CASE("DVM-326 EditText consumes actual default background padding and freez
         REQUIRE(frozen);
         CHECK(frozen != before);
         const auto id = *FindViewUiNode(*f.context, edit.Value());
-        const auto resource = frozen->Get(id)->background_resource_id;
-        REQUIRE(f.context->ui_bitmaps.contains(resource));
-        CHECK(f.context->ui_bitmaps.at(resource)->nine_patch);
+        const auto pixels_snapshot = frozen->Get(id)->background_bitmap;
+        REQUIRE(pixels_snapshot);
+        CHECK(pixels_snapshot->nine_patch);
         const auto commands = ui::BuildUiRenderList(*frozen, f.context->ui_bitmaps);
         bool found = false;
         for (const auto& command : commands) {
             if (const auto* bitmap = std::get_if<ui::DrawBitmap>(&command)) {
-                CHECK(bitmap->bitmap == f.context->ui_bitmaps.at(resource));
+                CHECK(bitmap->bitmap == pixels_snapshot);
                 found = true;
             }
         }
@@ -514,11 +518,11 @@ TEST_CASE("DVM-328 ROM default TextView XML and EditText constructors retain laz
                                              false);
         const auto input_roots = f.vm.ProtectReferences(std::array{owner, parser});
         for (const auto id : {0x7f080039U, 0x7f08003aU}) {
-            ogplay::loader::ArscEntry entry;
+            ogplay::test::ResourceFixtureEntry entry;
             entry.resource_id = id;
             entry.type_name = "id";
             entry.value_type = 18;
-            f.context->arsc.entries.push_back(entry);
+            ogplay::test::ResourceFixture(*f.context).entries.push_back(entry);
         }
         const auto inflater = f.On(owner, "getLayoutInflater", "()Landroid/view/LayoutInflater;").ref;
         const auto inflater_root = f.vm.ProtectReferences(std::array{inflater});
@@ -562,10 +566,11 @@ TEST_CASE("DVM-328 ROM default TextView XML and EditText constructors retain laz
             if (!identity.id) {
                 CHECK_FALSE(value.IsValid());  // Actual default cursor is @null.
             } else {
-                for (const auto field_name : {"data", "resourceId"}) {
-                    const auto field = *f.linker.FindFieldRecursive(f.model.ObjectClass(value), field_name, "I");
-                    CHECK(f.model.InstanceSlots(value)[f.linker.Field(field).slot].bits == identity.id);
-                }
+                const auto resource_id = *f.linker.FindFieldRecursive(f.model.ObjectClass(value), "resourceId", "I");
+                const auto type = *f.linker.FindFieldRecursive(f.model.ObjectClass(value), "type", "I");
+                CHECK(f.model.InstanceSlots(value)[f.linker.Field(resource_id).slot].bits == identity.id);
+                CHECK(f.model.InstanceSlots(value)[f.linker.Field(type).slot].bits ==
+                      3);  // Resolved file path, data is a pool index.
             }
             for (const auto view : {text, edit}) {
                 const auto field = *f.linker.FindFieldRecursive(f.model.ObjectClass(view), identity.field, "I");
@@ -573,10 +578,11 @@ TEST_CASE("DVM-328 ROM default TextView XML and EditText constructors retain laz
             }
         }
         CHECK(f.ledger.Unimplemented().empty());
-        const auto failed =
-            f.OnOutcome(array, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0)});
-        CHECK(failed.exception.IsValid());
-        CHECK_FALSE(f.ledger.Unimplemented().empty());
+        const auto handle =
+            f.On(array, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0)}).ref;
+        REQUIRE(handle.IsValid());
+        CHECK(f.On(handle, "getIntrinsicWidth", "()I").AsInt() > 0);
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }
 

@@ -6,7 +6,7 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
 ## APK Asset
 
 - manager 身份与 Activity 分离：fromJava 经显式 hooks 转换真实 JNI 引用，NativeActivity
-  使用同一 manager。句柄单调分配且不复用，最多 1024 个 live manager/4096 个 Asset。
+  使用同一 manager。AConfiguration_fromAssetManager 复制该 manager 的配置快照。句柄单调分配且不复用，最多 1024 个 live manager/4096 个 Asset。
 - source 接口只发布 length/ReadAt/直接 FD，不依赖 JNI、loader 或 VFS。open 在 registry
   锁外查询；每个 Asset 有独立游标和操作锁，read 使用至多 64 KiB 的临时窗口，不物化
   整个条目。读输出预检失败不推进游标。seek 限于资源范围，EOF 为真实零字节读取。

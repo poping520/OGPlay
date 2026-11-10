@@ -1,3 +1,4 @@
+#include "resources_test_support.h"
 #include "native_library_fixture.h"
 
 #include "ogplay/runtime/bionic/bionic_profile.h"
@@ -409,7 +410,8 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
                                  bool large_heap) {
     if (activity == "android.app.NativeActivity" || activity == "fixture.NativeTakeoverActivity")
         native_a = NativeActivityElf();
-    context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{0x03}, std::byte{0x04}};
+    const std::array entries{std::pair{std::string("fixture"), std::vector<std::byte>{}}};
+    context->apk_bytes = ogplay::test::resources::Zip(entries);
     // Match production process assembly: the pinned guest JNI library supplies
     // ICU regex natives used by ROM Rect initialization during View construction.
     std::vector<std::vector<std::byte>> system_bytes;

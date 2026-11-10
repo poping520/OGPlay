@@ -14,6 +14,7 @@
 - [syscall](syscall/MODULE.md)：ARM syscall、kernel helper 与线程退出状态。
 - [execution](execution/MODULE.md)：guest 生命周期、线程 runner 与 clone 执行。
 - [vfs](vfs/MODULE.md)：Android 路径、挂载和 descriptor 核心。
+- [resources](resources/MODULE.md)：独立的 API19 资源表、主题、编译 XML 和归档资产。
 - [ui](ui/MODULE.md)：有界 Android View hierarchy/state、布局、绘制与 hit-test。
 - [integration](integration/MODULE.md)：无界面累计装配和出口报告。
 

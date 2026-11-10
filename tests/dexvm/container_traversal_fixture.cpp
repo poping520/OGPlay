@@ -51,6 +51,7 @@ VmValue ContainerVm::Checked(const VmCallOutcome& result) {
 
 VmCallOutcome ContainerVm::OnOutcome(VmObjectRef object, const char* name, const char* descriptor,
                                      std::vector<VmValue> args) {
+    ogplay::test::MountResourceFixture(*context, vm);
     const auto type = model.ObjectClass(object);
     const auto index = linker.FindVtableIndex(type, name, descriptor);
     REQUIRE(index);
@@ -63,6 +64,7 @@ VmValue ContainerVm::On(VmObjectRef object, const char* name, const char* descri
 }
 
 VmValue ContainerVm::Static(const char* owner, const char* name, const char* descriptor, std::vector<VmValue> args) {
+    ogplay::test::MountResourceFixture(*context, vm);
     const auto method = linker.FindDirectMethod(linker.ResolveDescriptor(owner), name, descriptor);
     REQUIRE(method);
     return Checked(vm.Call(*method, args));

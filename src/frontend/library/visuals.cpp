@@ -13,7 +13,7 @@
 
 #include "ogplay/loader/apk.h"
 #include "ogplay/loader/apk_manifest.h"
-#include "ogplay/loader/arsc.h"
+#include "ogplay/loader/resources.h"
 #include "ogplay/runtime/raster/image_decode.h"
 
 namespace ogplay::app {
@@ -48,8 +48,7 @@ void AppendPngBytes(void* context, void* data, const int size) noexcept {
 
 // Square icon at the source's own size up to kLauncherIconMaxSize: the view scales it
 // once, so upscaling here would only add a second resample.
-[[nodiscard]] std::vector<std::byte> NormalizeIcon(
-    const std::span<const std::byte> encoded) {
+[[nodiscard]] std::vector<std::byte> NormalizeIcon(const std::span<const std::byte> encoded) {
     const auto decoded = runtime::DecodeImageToArgb(encoded);
     if (!decoded.has_value() || decoded->width == 0 || decoded->height == 0) return {};
 
@@ -101,12 +100,49 @@ void AppendPngBytes(void* context, void* data, const int size) noexcept {
     return static_cast<std::uint64_t>(be32(16)) * be32(20);
 }
 
-[[nodiscard]] std::optional<loader::ArscTable> ReadResources(
-    const std::span<const std::byte> apk_bytes, const loader::ApkArchive& archive) {
+struct LibraryResource {
+    std::uint32_t resource_id{};
+    std::optional<std::string> string_value;
+    std::string locale;
+    std::uint16_t density{};
+};
+
+struct LibraryResources {
+    std::string package_name;
+    std::vector<LibraryResource> entries;
+
+    const LibraryResource* FindById(std::uint32_t id) const {
+        for (const auto& entry : entries)
+            if (entry.resource_id == id) return &entry;
+        return nullptr;
+    }
+};
+
+[[nodiscard]] std::optional<LibraryResources> ReadResources(const std::span<const std::byte> apk_bytes,
+                                                            const loader::ApkArchive& archive,
+                                                            std::optional<std::uint32_t> label,
+                                                            std::optional<std::uint32_t> icon) {
     try {
-        const auto bytes = loader::ReadApkEntry(apk_bytes, archive, "resources.arsc");
-        return loader::ParseArsc(std::span(
-            reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()));
+        auto bytes =
+            std::make_shared<const std::vector<std::byte>>(loader::ReadApkEntry(apk_bytes, archive, "resources.arsc"));
+        loader::resources::ResTable table;
+        table.add(std::make_shared<loader::resources::ResTableData>(
+                      loader::resources::Source{bytes, *bytes, "resources.arsc", {}}),
+                  1);
+        LibraryResources result;
+        const auto packages = table.packageNames();
+        // Preserve the established archive package gate, including secondary
+        // packages with no entries.
+        if (!packages.empty()) result.package_name = packages.back();
+        table.forEachVariant([&](const loader::resources::ResourceVariant& variant) {
+            if (variant.id != label && variant.id != icon) return;
+            auto locale = variant.config.localeName();
+            std::replace(locale.begin(), locale.end(), '_', '-');
+            std::optional<std::string> text;
+            if (!variant.complex && variant.value.type == 3) text = table.strings(1).stringAt(variant.value.data);
+            result.entries.push_back({variant.id, std::move(text), std::move(locale), variant.config.density});
+        });
+        return result;
     } catch (const std::exception&) {
         return std::nullopt;
     }
@@ -114,58 +150,44 @@ void AppendPngBytes(void* context, void* data, const int size) noexcept {
 
 }  // namespace
 
-std::vector<std::uint32_t> ResizeArgbBilinear(
-    const std::span<const std::uint32_t> source,
-    const std::uint32_t source_width, const std::uint32_t source_height,
-    const std::uint32_t destination_width,
-    const std::uint32_t destination_height) {
-    const auto source_pixels = static_cast<std::uint64_t>(source_width) *
-                               static_cast<std::uint64_t>(source_height);
-    if (source_width == 0 || source_height == 0 || destination_width == 0 ||
-        destination_height == 0 || source_pixels != source.size()) {
+std::vector<std::uint32_t> ResizeArgbBilinear(const std::span<const std::uint32_t> source,
+                                              const std::uint32_t source_width, const std::uint32_t source_height,
+                                              const std::uint32_t destination_width,
+                                              const std::uint32_t destination_height) {
+    const auto source_pixels = static_cast<std::uint64_t>(source_width) * static_cast<std::uint64_t>(source_height);
+    if (source_width == 0 || source_height == 0 || destination_width == 0 || destination_height == 0 ||
+        source_pixels != source.size()) {
         throw std::invalid_argument("ARGB resize dimensions are invalid");
     }
-    std::vector<std::uint32_t> result(
-        static_cast<std::size_t>(destination_width) * destination_height);
+    std::vector<std::uint32_t> result(static_cast<std::size_t>(destination_width) * destination_height);
     const auto channel = [](const std::uint32_t pixel, const unsigned shift) {
         return static_cast<float>((pixel >> shift) & 0xffU);
     };
     for (std::uint32_t y = 0; y < destination_height; ++y) {
-        const auto source_y = std::clamp(
-            (static_cast<float>(y) + 0.5F) *
-                    static_cast<float>(source_height) /
-                    static_cast<float>(destination_height) -
-                0.5F,
-            0.0F, static_cast<float>(source_height - 1U));
+        const auto source_y = std::clamp((static_cast<float>(y) + 0.5F) * static_cast<float>(source_height) /
+                                                 static_cast<float>(destination_height) -
+                                             0.5F,
+                                         0.0F, static_cast<float>(source_height - 1U));
         const auto y0 = static_cast<std::uint32_t>(std::floor(source_y));
         const auto y1 = std::min(y0 + 1U, source_height - 1U);
         const auto fy = source_y - static_cast<float>(y0);
         for (std::uint32_t x = 0; x < destination_width; ++x) {
-            const auto source_x = std::clamp(
-                (static_cast<float>(x) + 0.5F) *
-                        static_cast<float>(source_width) /
-                        static_cast<float>(destination_width) -
-                    0.5F,
-                0.0F, static_cast<float>(source_width - 1U));
+            const auto source_x = std::clamp((static_cast<float>(x) + 0.5F) * static_cast<float>(source_width) /
+                                                     static_cast<float>(destination_width) -
+                                                 0.5F,
+                                             0.0F, static_cast<float>(source_width - 1U));
             const auto x0 = static_cast<std::uint32_t>(std::floor(source_x));
             const auto x1 = std::min(x0 + 1U, source_width - 1U);
             const auto fx = source_x - static_cast<float>(x0);
-            const auto top_left = source[static_cast<std::size_t>(y0) *
-                                         source_width + x0];
-            const auto top_right = source[static_cast<std::size_t>(y0) *
-                                          source_width + x1];
-            const auto bottom_left = source[static_cast<std::size_t>(y1) *
-                                            source_width + x0];
-            const auto bottom_right = source[static_cast<std::size_t>(y1) *
-                                             source_width + x1];
+            const auto top_left = source[static_cast<std::size_t>(y0) * source_width + x0];
+            const auto top_right = source[static_cast<std::size_t>(y0) * source_width + x1];
+            const auto bottom_left = source[static_cast<std::size_t>(y1) * source_width + x0];
+            const auto bottom_right = source[static_cast<std::size_t>(y1) * source_width + x1];
             std::uint32_t pixel{};
             for (const auto shift : {24U, 16U, 8U, 0U}) {
-                const auto top = channel(top_left, shift) * (1.0F - fx) +
-                                 channel(top_right, shift) * fx;
-                const auto bottom = channel(bottom_left, shift) * (1.0F - fx) +
-                                    channel(bottom_right, shift) * fx;
-                const auto value = static_cast<std::uint32_t>(std::lround(
-                    top * (1.0F - fy) + bottom * fy));
+                const auto top = channel(top_left, shift) * (1.0F - fx) + channel(top_right, shift) * fx;
+                const auto bottom = channel(bottom_left, shift) * (1.0F - fx) + channel(bottom_right, shift) * fx;
+                const auto value = static_cast<std::uint32_t>(std::lround(top * (1.0F - fy) + bottom * fy));
                 pixel |= value << shift;
             }
             result[static_cast<std::size_t>(y) * destination_width + x] = pixel;
@@ -174,94 +196,79 @@ std::vector<std::uint32_t> ResizeArgbBilinear(
     return result;
 }
 
-bool ApkApplicationVisuals::Used(
-    const ApplicationVisualFallback fallback) const noexcept {
+bool ApkApplicationVisuals::Used(const ApplicationVisualFallback fallback) const noexcept {
     return std::find(fallbacks.begin(), fallbacks.end(), fallback) != fallbacks.end();
 }
 
-ApkApplicationVisuals ExtractApkApplicationVisuals(
-    const std::span<const std::byte> apk_bytes) {
+ApkApplicationVisuals ExtractApkApplicationVisuals(const std::span<const std::byte> apk_bytes) {
     const auto archive = loader::ParseApkArchive(apk_bytes);
     ApkApplicationVisuals result;
     const auto manifest = loader::ReadAndroidManifest(apk_bytes, archive);
-    result.manifest = {manifest.package, manifest.version_code, manifest.version_name, manifest.min_sdk, manifest.target_sdk};
+    result.manifest = {manifest.package, manifest.version_code, manifest.version_name, manifest.min_sdk,
+                       manifest.target_sdk};
     result.display_name = result.manifest.package;
 
     const auto label_is_reference =
-        manifest.application_label.has_value() &&
-        std::holds_alternative<std::uint32_t>(*manifest.application_label);
-    const auto needs_resources = manifest.application_icon.has_value() ||
-                                 label_is_reference;
-    auto resources = needs_resources ? ReadResources(apk_bytes, archive)
-                                     : std::optional<loader::ArscTable>{};
-    if (resources.has_value() &&
-        resources->package_name != result.manifest.package) {
+        manifest.application_label.has_value() && std::holds_alternative<std::uint32_t>(*manifest.application_label);
+    const auto needs_resources = manifest.application_icon.has_value() || label_is_reference;
+    const auto label_id =
+        label_is_reference ? std::optional(std::get<std::uint32_t>(*manifest.application_label)) : std::nullopt;
+    auto resources = needs_resources ? ReadResources(apk_bytes, archive, label_id, manifest.application_icon)
+                                     : std::optional<LibraryResources>{};
+    if (resources.has_value() && resources->package_name != result.manifest.package) {
         resources.reset();
     }
 
     if (!manifest.application_label.has_value()) {
-        result.fallbacks.push_back(
-            ApplicationVisualFallback::label_attribute_missing);
-    } else if (std::holds_alternative<std::string>(
-                   *manifest.application_label)) {
-        const auto& literal =
-            std::get<std::string>(*manifest.application_label);
+        result.fallbacks.push_back(ApplicationVisualFallback::label_attribute_missing);
+    } else if (std::holds_alternative<std::string>(*manifest.application_label)) {
+        const auto& literal = std::get<std::string>(*manifest.application_label);
         if (literal.empty()) {
-            result.fallbacks.push_back(
-                ApplicationVisualFallback::label_literal_empty);
+            result.fallbacks.push_back(ApplicationVisualFallback::label_literal_empty);
         } else {
             result.display_name = literal;
         }
     } else if (!resources.has_value()) {
-        result.fallbacks.push_back(
-            ApplicationVisualFallback::label_resources_unavailable);
+        result.fallbacks.push_back(ApplicationVisualFallback::label_resources_unavailable);
     } else {
-        const auto resource_id =
-            std::get<std::uint32_t>(*manifest.application_label);
+        const auto resource_id = std::get<std::uint32_t>(*manifest.application_label);
         const auto* entry = resources->FindById(resource_id);
         for (const auto& candidate : resources->entries) {
             if (candidate.resource_id != resource_id) continue;
             if (candidate.locale.empty()) {
                 entry = &candidate;
             } else if (IsLibraryLocaleTag(candidate.locale) && candidate.string_value.has_value() &&
-                       !candidate.string_value->empty() &&
-                       !ContainsControlCharacters(*candidate.string_value)) {
+                       !candidate.string_value->empty() && !ContainsControlCharacters(*candidate.string_value)) {
                 result.localized_names.emplace(candidate.locale, *candidate.string_value);
             }
         }
-        if (entry == nullptr || !entry->string_value.has_value() ||
-            entry->string_value->empty()) {
-            result.fallbacks.push_back(
-                ApplicationVisualFallback::label_resource_missing);
+        if (entry == nullptr || !entry->string_value.has_value() || entry->string_value->empty()) {
+            result.fallbacks.push_back(ApplicationVisualFallback::label_resource_missing);
         } else {
             result.display_name = *entry->string_value;
         }
     }
     if (ContainsControlCharacters(result.display_name)) {
         result.display_name = result.manifest.package;
-        result.fallbacks.push_back(
-            ApplicationVisualFallback::label_control_characters);
+        result.fallbacks.push_back(ApplicationVisualFallback::label_control_characters);
     }
 
     if (!manifest.application_icon.has_value()) {
-        result.fallbacks.push_back(
-            ApplicationVisualFallback::icon_attribute_missing);
+        result.fallbacks.push_back(ApplicationVisualFallback::icon_attribute_missing);
         return result;
     }
     if (!resources.has_value()) {
-        result.fallbacks.push_back(
-            ApplicationVisualFallback::icon_resources_unavailable);
+        result.fallbacks.push_back(ApplicationVisualFallback::icon_resources_unavailable);
         return result;
     }
     // The icon id has one entry per density/configuration (ldpi … xxxhdpi, anydpi XML);
     // the largest PNG wins, the next one is tried if it does not decode.
-    std::vector<const loader::ArscEntry*> configurations;
+    std::vector<const LibraryResource*> configurations;
     for (const auto& entry : resources->entries)
         if (entry.resource_id == *manifest.application_icon && entry.string_value.has_value())
             configurations.push_back(&entry);
     if (configurations.empty()) {
-        result.fallbacks.push_back(
-            ApplicationVisualFallback::icon_resource_missing);
+        result.fallbacks.push_back(ApplicationVisualFallback::icon_resource_missing);
         return result;
     }
 
@@ -284,13 +291,11 @@ ApkApplicationVisuals ExtractApkApplicationVisuals(
         }
     }
     if (!supported) {
-        result.fallbacks.push_back(
-            ApplicationVisualFallback::icon_path_unsupported);
+        result.fallbacks.push_back(ApplicationVisualFallback::icon_path_unsupported);
         return result;
     }
     if (candidates.empty()) {
-        result.fallbacks.push_back(
-            ApplicationVisualFallback::icon_entry_unavailable);
+        result.fallbacks.push_back(ApplicationVisualFallback::icon_entry_unavailable);
         return result;
     }
     std::stable_sort(candidates.begin(), candidates.end(), [](const auto& left, const auto& right) {
@@ -301,8 +306,7 @@ ApkApplicationVisuals ExtractApkApplicationVisuals(
         if (!result.icon_png.empty()) break;
     }
     if (result.icon_png.empty()) {
-        result.fallbacks.push_back(
-            ApplicationVisualFallback::icon_decode_failed);
+        result.fallbacks.push_back(ApplicationVisualFallback::icon_decode_failed);
     }
     return result;
 }

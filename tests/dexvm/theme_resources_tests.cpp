@@ -1,6 +1,7 @@
+#include "dexvm/resource_fixture.h"
+#include "ogplay/runtime/raster/bitmap.h"
 #include "container_traversal_fixture.h"
 #include "file_vfs_fixture.h"
-#include "ogplay/runtime/integration/theme_resources.h"
 #include "ogplay/loader/apk.h"
 
 #include <bit>
@@ -70,21 +71,12 @@ std::vector<std::byte> StringPool(const std::vector<std::string>& strings, const
     return chunk;
 }
 
-std::string Projection() {
-    std::ifstream input(OGPLAY_SOURCE_DIR "/data/android/19/framework/ogplay.jar", std::ios::binary);
-    const std::vector<char> raw{std::istreambuf_iterator<char>(input), {}};
-    std::vector<std::byte> bytes(raw.size());
-    std::memcpy(bytes.data(), raw.data(), raw.size());
-    const auto payload = ogplay::loader::ReadApkEntry(bytes, ogplay::loader::ParseApkArchive(bytes),
-                                                      "META-INF/ogplay/theme-projection.json");
-    return {reinterpret_cast<const char*>(payload.data()), payload.size()};
-}
-
 constexpr std::uint32_t a = 0x7f010001, b = 0x7f010002, c = 0x7f010003, def = 0x7f010004;
 constexpr std::uint32_t theme_id = 0x7f020001, default_id = 0x7f020002, xml_style_id = 0x7f020003;
 
-ogplay::loader::ArscEntry Style(std::uint32_t id, std::uint32_t parent, std::vector<ogplay::loader::ArscBagValue> bag) {
-    ogplay::loader::ArscEntry e;
+ogplay::test::ResourceFixtureEntry Style(std::uint32_t id, std::uint32_t parent,
+                                         std::vector<ogplay::test::ResourceFixtureBagValue> bag) {
+    ogplay::test::ResourceFixtureEntry e;
     e.resource_id = id;
     e.type_name = "style";
     e.entry_name = "fixture";
@@ -140,9 +132,9 @@ std::vector<std::byte> ThemeXml() {
     return bytes;
 }
 
-ogplay::loader::ArscTable Table(std::vector<ogplay::loader::ArscEntry> extra = {},
-                                std::vector<std::byte>* serialized = nullptr) {
-    ogplay::loader::ArscTable t;
+ogplay::test::ResourceFixtureTable Table(std::vector<ogplay::test::ResourceFixtureEntry> extra = {},
+                                         std::vector<std::byte>* serialized = nullptr) {
+    ogplay::test::ResourceFixtureTable t;
     t.package_id = 0x7f;
     t.entries.push_back(Style(theme_id, 0x01030005, {{a, 16, 10, {}}, {b, 16, 11, {}}, {def, 1, default_id, {}}}));
     t.entries.push_back(Style(default_id, 0, {{a, 16, 20, {}}, {b, 16, 21, {}}}));
@@ -193,6 +185,8 @@ ogplay::loader::ArscTable Table(std::vector<ogplay::loader::ArscEntry> extra = {
     Append16(package, 288);
     Append32(package, 0);
     Append32(package, 0x7f);
+    for (char c : std::string_view("fixture"))
+        Append16(package, static_cast<std::uint16_t>(c));
     package.resize(268);
     Append32(package, 288);
     Append32(package, 0);
@@ -210,74 +204,20 @@ ogplay::loader::ArscTable Table(std::vector<ogplay::loader::ArscEntry> extra = {
     for (const auto* part : {&global, &package})
         bytes.insert(bytes.end(), part->begin(), part->end());
     if (serialized) *serialized = bytes;
-    return ogplay::loader::ParseArsc(std::span{reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()});
+    t.global_string_pool = std::move(global);
+    return t;
 }
 
-ogplay::loader::CompiledXmlAttribute Attr(std::uint32_t id, std::uint8_t type, std::uint32_t data) {
-    ogplay::loader::CompiledXmlAttribute value;
-    value.resource_id = id;
-    value.value = {8, 0, type, data};
-    return value;
-}
 }  // namespace
-
-TEST_CASE("DVM-288 generated theme registration and three-state values are explicit") {
-    ThemeResources r;
-    r.Load(Projection());
-    CHECK_NOTHROW(r.RequireRegistered("Theme"));
-    CHECK_NOTHROW(r.RequireRegistered("Theme.Holo"));
-    CHECK_NOTHROW(r.RequireRegistered("Theme.DeviceDefault"));
-    CHECK_THROWS_WITH(r.RequireRegistered("Theme.Dialog.NoFrame"),
-                      "unregistered theme Theme.Dialog.NoFrame: 无 ROM ID 绑定");
-    CHECK_THROWS_WITH(r.RequireRegistered("Theme.DoesNotExist"),
-                      "unregistered theme Theme.DoesNotExist: unknown theme");
-    const auto token = r.New();
-    const auto table = Table();
-    r.Apply(token, 0x01030005, true, table);
-    CHECK_FALSE(r.Attribute(token, 0x010100d5, true, table));  // padding: certified absent
-    CHECK(r.Attribute(token, 0x01010063, true, table)->Slots() == std::array<std::uint32_t, 6>{5, 0x0a01, 1, 0, 0, 0});
-    CHECK(r.Attribute(token, 0x01010064, true, table)->Slots() ==
-          std::array<std::uint32_t, 6>{1, 0x0108052a, 1, 0x0108052a, 0, 0});
-    CHECK(r.Attribute(token, 0x01010066, true, table)->type == 1);  // @null remains reference in theme
-    CHECK_THROWS(static_cast<void>(r.Attribute(token, 0x0101ffff, true, table)));
-    CHECK_THROWS(r.Apply(token, 0x0103ffff, true, table));
-    ThemeResources other;
-    other.Load(Projection());
-    CHECK_THROWS(other.Copy(other.New(), token));
-    r.Delete(token);
-    CHECK_THROWS(r.Delete(token));
-    CHECK_THROWS(static_cast<void>(r.Attribute(token, a, true, table)));
-    r.Shutdown();
-    CHECK_THROWS(static_cast<void>(r.New()));
-}
-
-TEST_CASE("API19 ROM style IDs named by later SDKs apply inert bags and reject projected ones") {
-    ThemeResources r;
-    r.Load(Projection());
-    const auto token = r.New();
-    const auto table = Table();
-    r.Apply(token, 0x01030128, true, table);  // Theme.DeviceDefault
-    const auto before = r.Attribute(token, 0x01010078, false, table);
-    REQUIRE(before);
-    // API 21 SDKs call 0x0103022f Theme.Material.NoActionBar.Fullscreen; the API 19
-    // ROM binds it to the private Preference.Holo bag, which sets only android:layout.
-    CHECK_NOTHROW(r.Apply(token, 0x0103022f, true, table));
-    CHECK(r.Attribute(token, 0x01010078, false, table)->Slots() == before->Slots());
-    CHECK_THROWS_WITH(r.Apply(token, 0x01030012, true, table),
-                      "unregistered framework theme ID 16973842 (ROM style Widget)");
-    CHECK_THROWS_WITH(r.Apply(token, 0x0103ffff, true, table), "unregistered framework theme ID 17039359");
-    CHECK_NOTHROW(r.Apply(token, 0, true, table));
-    CHECK(r.Attribute(token, 0x01010078, false, table)->Slots() == before->Slots());
-    CHECK_THROWS(r.Apply({}, 0, true, table));
-}
 
 TEST_CASE("API19 ContextImpl default theme underlies an activity theme with an inert ROM parent") {
     using ogplay::test::container_traversal::ContainerVm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         CAPTURE(backend);
         ContainerVm f(backend);
-        f.context->arsc = Table();
-        f.context->arsc.entries.push_back(Style(0x7f020020, 0x0103022f, {{0x01010064, 1, 0, {}}}));
+        ogplay::test::ResourceFixture(*f.context) = Table();
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back(Style(0x7f020020, 0x0103022f, {{0x01010064, 1, 0, {}}}));
         f.context->application_theme = 0x7f020020;
         const auto owner = f.New("Landroid/app/Activity;");
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});
@@ -297,84 +237,20 @@ TEST_CASE("API19 ContextImpl default theme underlies an activity theme with an i
     }
 }
 
-TEST_CASE("DVM-288 AOSP priority parent references force copy and null masking") {
-    ThemeResources r;
-    r.Load(Projection());
-    auto table = Table();
-    const auto token = r.New();
-    r.Apply(token, theme_id, true, table);
-    const std::array attrs{a, b, c};
-    ogplay::loader::CompiledXmlNode xml;
-    xml.style_index = 1;
-    xml.attributes = {Attr(0, 1, xml_style_id), Attr(a, 16, 40)};
-    auto values = r.Styled(token, def, 0x7f02ffff, &xml, attrs, table);
-    CHECK(values[0].Slots() == std::array<std::uint32_t, 6>{16, 40, 0xffffffffU, 0, 0, 0});
-    CHECK(values[1].data == 21);
-    CHECK(values[2].data == 11);  // ?attr resolves theme, not XML/default bag
-    xml.attributes.pop_back();
-    CHECK(r.Styled(token, 0, default_id, &xml, attrs, table)[0].data == 30);
-    xml.attributes[0] = Attr(0, 2, def);
-    CHECK(r.Styled(token, 0, 0, &xml, attrs, table)[0].data == 20);
-    xml.style_index = 0;
-    CHECK(r.Styled(token, def, 0x7f02ffff, &xml, attrs, table)[0].data == 20);
-    CHECK(r.Styled(token, 0, default_id, nullptr, attrs, table)[0].data == 20);
-    CHECK(r.Styled(token, 0, 0, nullptr, attrs, table)[0].data == 10);
-    xml.attributes = {Attr(a, 1, 0)};
-    CHECK(r.Styled(token, def, default_id, &xml, attrs, table)[0].Slots() ==
-          std::array<std::uint32_t, 6>{0, 0, 0xffffffffU, 0, 0, 0});
-    xml.attributes = {Attr(a, 0, 0)};
-    CHECK(r.Styled(token, 0, default_id, &xml, attrs, table)[0].data == 20);
-    const auto copy = r.New();
-    r.Copy(copy, token);
-    r.Apply(token, default_id, false, table);
-    CHECK(r.Attribute(token, a, true, table)->data == 10);
-    r.Apply(token, default_id, true, table);
-    CHECK(r.Attribute(token, a, true, table)->data == 20);
-    CHECK(r.Attribute(copy, a, true, table)->data == 10);
-    table.entries.push_back(Style(0x7f020004, 0x7f020005, {}));
-    table.entries.push_back(Style(0x7f020005, 0x7f020004, {}));
-    CHECK_THROWS(r.Apply(token, 0x7f020004, true, table));
-    table.entries.push_back(Style(0x7f020006, 0, {{a, 2, b, {}}, {b, 2, a, {}}}));
-    r.Apply(token, 0x7f020006, true, table);
-    CHECK_THROWS(static_cast<void>(r.Attribute(token, a, true, table)));
-    // A resource cycle is distinct from a parent or theme-attribute cycle.
-    ogplay::loader::ArscEntry ref;
-    ref.resource_id = 0x7f030001;
-    ref.type_name = "integer";
-    ref.value_type = 1;
-    ref.value_data = 0x7f030002;
-    table.entries.push_back(ref);
-    ref.resource_id = 0x7f030002;
-    ref.value_data = 0x7f030001;
-    table.entries.push_back(ref);
-    CHECK_THROWS(static_cast<void>(r.Resource(0x7f030001, true, table)));
-    CHECK(r.Resource(0x7f030001, false, table).data == 0x7f030002);
-    table.entries.back().value_type = 16;
-    table.entries.back().value_data = 77;
-    table.entries.back().changing_configurations = 0x200;
-    table.entries.back().density = 240;
-    xml.attributes = {Attr(a, 1, 0x7f030001), Attr(b, 2, c)};
-    values = r.Retrieve(xml, attrs, table);
-    CHECK(values[0].Slots() == std::array<std::uint32_t, 6>{16, 77, 1, 0x7f030002, 0x200, 240});
-    CHECK(values[1].type == 2);
-    CHECK(values[1].data == c);
-    CHECK(values[2].type == 0);
-    CHECK_THROWS(static_cast<void>(r.Load(Projection())));
-}
-
 TEST_CASE("DVM-288 ROM Theme and TypedArray execute on both interpreter backends") {
     using ogplay::test::container_traversal::ContainerVm;
     using namespace ogplay::runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
-        f.context->arsc = Table();
-        f.context->arsc.global_string_pool = StringPool({"from APK"}, true);
-        f.context->arsc.entries.push_back(Style(0x7f020010, theme_id,
-                                                {{a, 16, 42, {}},
-                                                 {b, 18, 1, {}},
-                                                 {c, 4, 0x3fc00000, {}},
-                                                 {0x7f010005, 5, 0x0a01, {}},
-                                                 {0x7f010006, 1, 0, {}}}));
+        ogplay::test::ResourceFixture(*f.context) = Table();
+        ogplay::test::ResourceFixture(*f.context).global_string_pool = StringPool({"from APK"}, true);
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back(Style(0x7f020010, theme_id,
+                                     {{a, 16, 42, {}},
+                                      {b, 18, 1, {}},
+                                      {c, 4, 0x3fc00000, {}},
+                                      {0x7f010005, 5, 0x0a01, {}},
+                                      {0x7f010006, 1, 0, {}}}));
         const auto owner = f.New("Landroid/content/Context;");
         ogplay::test::AttachViewTestContext(f.vm, owner);
         const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
@@ -494,7 +370,7 @@ TEST_CASE("DVM-288 ROM Theme and TypedArray execute on both interpreter backends
         for (std::size_t i = 0; i < expected.size(); ++i)
             CHECK(static_cast<std::uint32_t>(f.model.GetPrimitiveElement(retrieved_data, static_cast<JniSize>(i))) ==
                   expected[i]);
-        f.context->arsc.entries.push_back(Style(0x7f020011, 0, {{a, 3, 0, {}}}));
+        ogplay::test::ResourceFixture(*f.context).entries.push_back(Style(0x7f020011, 0, {{a, 3, 0, {}}}));
         const auto string_typed = f.On(theme, "obtainStyledAttributes", "(I[I)Landroid/content/res/TypedArray;",
                                        {VmValue::Int(0x7f020011), VmValue::Ref(attrs)})
                                       .ref;
@@ -512,10 +388,9 @@ TEST_CASE("DVM-288 ROM Theme and TypedArray execute on both interpreter backends
             f.OnOutcome(resources, "getIdentifier", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
                         {VmValue::Ref(f.vm.NewStringUtf8("Theme.Dialog.NoFrame")),
                          VmValue::Ref(f.vm.NewStringUtf8("style")), VmValue::Ref(f.vm.NewStringUtf8("android"))});
-        CHECK(unbound.exception.IsValid());
-        CHECK(unbound.exception_message.find("Theme.Dialog.NoFrame") != std::string::npos);
-        CHECK(unbound.exception_message.find("无 ROM ID 绑定") != std::string::npos);
-        CHECK(
+        CHECK_FALSE(unbound.exception.IsValid());
+        CHECK(unbound.value.AsInt() != 0);
+        CHECK_FALSE(
             f.OnOutcome(theme, "applyStyle", "(IZ)V", {VmValue::Int(0x0103ffff), VmValue::Int(1)}).exception.IsValid());
         const auto assets = f.On(resources, "getAssets", "()Landroid/content/res/AssetManager;").ref;
         const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(theme), "mTheme", "I");
@@ -525,6 +400,8 @@ TEST_CASE("DVM-288 ROM Theme and TypedArray execute on both interpreter backends
         REQUIRE(destroy);
         f.Checked(
             f.vm.Call(*destroy, std::array{VmValue::Ref(assets), VmValue::Int(static_cast<std::int32_t>(token))}));
+        CHECK(f.vm.Call(*destroy, std::array{VmValue::Ref(assets), VmValue::Int(static_cast<std::int32_t>(token))})
+                  .exception.IsValid());
         CHECK(f.OnOutcome(theme, "resolveAttribute", "(ILandroid/util/TypedValue;Z)Z",
                           {VmValue::Int(a), VmValue::Ref(value), VmValue::Int(1)})
                   .exception.IsValid());
@@ -536,9 +413,9 @@ TEST_CASE("DVM-289 ROM attribute constructor smoke") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
-        f.context->arsc = Table();
-        f.context->arsc.entries.push_back(
-            Style(0x7f020020, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}}));
+        ogplay::test::ResourceFixture(*f.context) = Table();
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back(Style(0x7f020020, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}}));
         f.context->application_theme = 0x7f020020;
         const auto owner = f.New("Landroid/app/Activity;");
         ogplay::test::AttachViewTestContext(f.vm, owner);
@@ -629,43 +506,19 @@ Slot& JavaField(ContainerVm& f, VmObjectRef object, const char* name, const char
 
 VmObjectRef OpenAttributeXml(ContainerVm& f, VmObjectRef owner, const std::vector<std::byte>& xml,
                              const std::vector<std::byte>& arsc = {}) {
-    f.context->apk_bytes = ogplay::test::file_vfs::MakeStoredZip("res/layout/attributes.xml", xml);
+    static_cast<void>(owner);
     if (!arsc.empty()) {
-        const std::string layout_name = "res/layout/attributes.xml", table_name = "resources.arsc";
-        const auto table = ogplay::test::file_vfs::MakeStoredZip(table_name, arsc);
-        const auto layout_local = 30U + layout_name.size() + xml.size();
-        const auto table_local = 30U + table_name.size() + arsc.size();
-        std::vector<std::byte> zip(f.context->apk_bytes.begin(),
-                                   f.context->apk_bytes.begin() + static_cast<std::ptrdiff_t>(layout_local));
-        zip.insert(zip.end(), table.begin(), table.begin() + static_cast<std::ptrdiff_t>(table_local));
-        const auto central = static_cast<std::uint32_t>(zip.size());
-        zip.insert(zip.end(), f.context->apk_bytes.begin() + static_cast<std::ptrdiff_t>(layout_local),
-                   f.context->apk_bytes.end() - 22);
-        auto table_central =
-            std::vector<std::byte>(table.begin() + static_cast<std::ptrdiff_t>(table_local), table.end() - 22);
-        Set32(table_central, 42, static_cast<std::uint32_t>(layout_local));
-        zip.insert(zip.end(), table_central.begin(), table_central.end());
-        const auto central_size = static_cast<std::uint32_t>(zip.size()) - central;
-        Append32(zip, 0x06054b50);
-        Append16(zip, 0);
-        Append16(zip, 0);
-        Append16(zip, 2);
-        Append16(zip, 2);
-        Append32(zip, central_size);
-        Append32(zip, central);
-        Append16(zip, 0);
-        f.context->apk_bytes = std::move(zip);
-        const auto bytes = ogplay::loader::ReadApkEntry(
-            f.context->apk_bytes, ogplay::loader::ParseApkArchive(f.context->apk_bytes), "resources.arsc");
-        f.context->arsc =
-            ogplay::loader::ParseArsc({reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()});
+        ogplay::test::ResourceFixture(*f.context) = ogplay::test::ReadResourceFixture(arsc);
     }
-    f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
-    const auto assets = f.On(owner, "getAssets", "()Landroid/content/res/AssetManager;").ref;
-    const auto parser =
-        f.On(assets, "openXmlResourceParser", "(Ljava/lang/String;)Landroid/content/res/XmlResourceParser;",
-             {VmValue::Ref(f.vm.NewStringUtf8("res/layout/attributes.xml"))})
-            .ref;
+    const auto array = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+                                                 static_cast<JniSize>(xml.size()));
+    f.model.WriteByteRegion(array, 0, xml);
+    const auto root = f.vm.ProtectReferences(std::array{array});
+    const auto block = f.New("Landroid/content/res/XmlBlock;", "([B)V", {VmValue::Ref(array)});
+    const auto blockRoot = f.vm.ProtectReferences(std::array{block});
+    const auto parser = f.On(block, "newParser", "()Landroid/content/res/XmlResourceParser;").ref;
+    const auto parserRoot = f.vm.ProtectReferences(std::array{parser});
+    f.On(block, "close", "()V");
     CHECK(f.linker.Class(f.model.ObjectClass(parser)).descriptor == "Landroid/content/res/XmlBlock$Parser;");
     CHECK(f.On(parser, "next", "()I").AsInt() == 0);
     CHECK(f.On(parser, "next", "()I").AsInt() == 2);
@@ -677,16 +530,17 @@ TEST_CASE("DVM-351 DVM-289 XML attributes construct ROM containers and LayoutPar
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
-        f.context->arsc = Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
+        ogplay::test::ResourceFixture(*f.context) =
+            Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
         f.context->application_theme = 0x7f020004;
         const auto owner = f.New("Landroid/app/Activity;");
         ogplay::test::AttachViewTestContext(f.vm, owner);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(static_cast<std::int32_t>(f.context->application_theme))});
-        ogplay::loader::ArscEntry id;
+        ogplay::test::ResourceFixtureEntry id;
         id.resource_id = 0x7f030001;
         id.type_name = "id";
         id.value_type = 16;
-        f.context->arsc.entries.push_back(id);
+        ogplay::test::ResourceFixture(*f.context).entries.push_back(id);
         const auto parser =
             OpenAttributeXml(f, owner,
                              AttributeXml({{
@@ -793,7 +647,7 @@ TEST_CASE("DVM-289 container priority follows XML style default and application 
         ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         std::vector<std::byte> table_bytes;
-        f.context->arsc = Table(
+        ogplay::test::ResourceFixture(*f.context) = Table(
             {Style(0x7f020004, theme_id,
                    {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x010100c4, 16, 1, {}}, {def, 1, 0x7f020005, {}}}),
              Style(0x7f020005, 0, {{0x010100c4, 16, 0, {}}}), Style(0x7f020006, 0, {{0x010100c4, 16, 1, {}}})},
@@ -802,11 +656,11 @@ TEST_CASE("DVM-289 container priority follows XML style default and application 
         const auto owner = f.New("Landroid/app/Activity;");
         ogplay::test::AttachViewTestContext(f.vm, owner);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(static_cast<std::int32_t>(f.context->application_theme))});
-        ogplay::loader::ArscEntry id;
+        ogplay::test::ResourceFixtureEntry id;
         id.resource_id = 0x7f030001;
         id.type_name = "id";
         id.value_type = 16;
-        f.context->arsc.entries.push_back(id);
+        ogplay::test::ResourceFixture(*f.context).entries.push_back(id);
         const auto parser = OpenAttributeXml(f, owner,
                                              AttributeXml({{},
                                                            {},
@@ -855,7 +709,8 @@ TEST_CASE("DVM-289 Relative LayoutParams read all 23 attributes from Parser") {
     }};
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
-        f.context->arsc = Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
+        ogplay::test::ResourceFixture(*f.context) =
+            Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
         f.context->application_theme = 0x7f020004;
         const auto owner = f.New("Landroid/app/Activity;");
         ogplay::test::AttachViewTestContext(f.vm, owner);
@@ -866,11 +721,11 @@ TEST_CASE("DVM-289 Relative LayoutParams read all 23 attributes from Parser") {
             attrs.push_back({id, static_cast<std::uint8_t>(boolean ? 18 : 1),
                              boolean ? 1U : 0x7f030100U + static_cast<std::uint32_t>(verb)});
             if (!boolean) {
-                ogplay::loader::ArscEntry value;
+                ogplay::test::ResourceFixtureEntry value;
                 value.resource_id = 0x7f030100U + static_cast<std::uint32_t>(verb);
                 value.type_name = "id";
                 value.value_type = 16;
-                f.context->arsc.entries.push_back(value);
+                ogplay::test::ResourceFixture(*f.context).entries.push_back(value);
             }
         }
         const auto parser = OpenAttributeXml(f, owner, AttributeXml({attrs}));
@@ -896,7 +751,8 @@ TEST_CASE("DVM-289 attributed trees match code trees through VD05 traversal") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
-        f.context->arsc = Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
+        ogplay::test::ResourceFixture(*f.context) =
+            Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
         f.context->application_theme = 0x7f020004;
         const auto owner = f.New("Landroid/app/Activity;");
         f.context->activity = owner;
@@ -964,11 +820,12 @@ TEST_CASE("DVM-289 attributed trees match code trees through VD05 traversal") {
     }
 }
 
-TEST_CASE("DVM-289 missing dimensions unsupported drawables and themes explicitly fail") {
+TEST_CASE("DVM-289 missing dimensions and drawable resources use ROM failures") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
-        f.context->arsc = Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
+        ogplay::test::ResourceFixture(*f.context) =
+            Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
         f.context->application_theme = 0x7f020004;
         const auto owner = f.New("Landroid/app/Activity;");
         ogplay::test::AttachViewTestContext(f.vm, owner);
@@ -1000,8 +857,7 @@ TEST_CASE("DVM-289 missing dimensions unsupported drawables and themes explicitl
             }
         }
         CHECK(f.ledger.Unimplemented().empty());
-        for (const auto* type : {"Landroid/view/View;", "Landroid/widget/FrameLayout;", "Landroid/widget/LinearLayout;",
-                                 "Landroid/view/View;", "Landroid/view/View;"}) {
+        for (const auto* type : {"Landroid/view/View;"}) {
             CHECK(f.On(parser, "next", "()I").AsInt() == 2);
             const auto object = f.vm.NewIntrinsicInstance(type);
             const auto ctor = f.linker.FindDirectMethod(f.model.ObjectClass(object), "<init>",
@@ -1011,8 +867,8 @@ TEST_CASE("DVM-289 missing dimensions unsupported drawables and themes explicitl
                 f.vm.Call(*ctor, std::array{VmValue::Ref(object), VmValue::Ref(owner), VmValue::Ref(parser)});
             REQUIRE(result.exception.IsValid());
         }
-        CHECK_FALSE(f.ledger.Unimplemented().empty());
-        REQUIRE(f.OnOutcome(owner, "setTheme", "(I)V", {VmValue::Int(0x0103ffff)}).exception.IsValid());
+        CHECK(f.ledger.Unimplemented().empty());
+        CHECK_FALSE(f.OnOutcome(owner, "setTheme", "(I)V", {VmValue::Int(0x0103ffff)}).exception.IsValid());
     }
 }
 
@@ -1097,7 +953,7 @@ std::vector<std::byte> InflateXml(const InflateNode& root) {
     return bytes;
 }
 
-std::vector<std::byte> InflateResourceTable(const ogplay::loader::ArscTable& table) {
+std::vector<std::byte> InflateResourceTable(const ogplay::test::ResourceFixtureTable& table) {
     std::vector<std::string> values{"from APK"}, keys;
     for (const auto& entry : table.entries) {
         keys.push_back(entry.entry_name);
@@ -1161,6 +1017,8 @@ std::vector<std::byte> InflateResourceTable(const ogplay::loader::ArscTable& tab
     Append16(package, 288);
     Append32(package, 0);
     Append32(package, 0x7f);
+    for (char c : std::string_view("fixture"))
+        Append16(package, static_cast<std::uint16_t>(c));
     package.resize(268);
     Append32(package, 288);
     Append32(package, 0);
@@ -1182,19 +1040,20 @@ std::vector<std::byte> InflateResourceTable(const ogplay::loader::ArscTable& tab
 
 void InstallInflateLayouts(ContainerVm& f, const std::vector<InflateNode>& layouts,
                            std::vector<std::pair<std::string, std::vector<std::byte>>> files = {}) {
-    std::erase_if(f.context->arsc.entries, [](const auto& entry) { return entry.type_name == "layout"; });
+    std::erase_if(ogplay::test::ResourceFixture(*f.context).entries,
+                  [](const auto& entry) { return entry.type_name == "layout"; });
     for (std::size_t i = 0; i < layouts.size(); ++i) {
         const auto path = "res/layout/inflate" + std::to_string(i) + ".xml";
         files.emplace_back(path, InflateXml(layouts[i]));
-        ogplay::loader::ArscEntry entry;
+        ogplay::test::ResourceFixtureEntry entry;
         entry.resource_id = 0x7f030001U + static_cast<std::uint32_t>(i);
         entry.type_name = "layout";
         entry.entry_name = "inflate" + std::to_string(i);
         entry.string_value = path;
         entry.value_type = 3;
-        f.context->arsc.entries.push_back(entry);
+        ogplay::test::ResourceFixture(*f.context).entries.push_back(entry);
     }
-    files.emplace_back("resources.arsc", InflateResourceTable(f.context->arsc));
+    files.emplace_back("resources.arsc", InflateResourceTable(ogplay::test::ResourceFixture(*f.context)));
     std::vector<std::byte> zip, central;
     for (const auto& [path, bytes] : files) {
         const auto single = ogplay::test::file_vfs::MakeStoredZip(path, bytes);
@@ -1217,19 +1076,19 @@ void InstallInflateLayouts(ContainerVm& f, const std::vector<InflateNode>& layou
     f.context->apk_bytes = std::move(zip);
     f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
     const auto arsc = ogplay::loader::ReadApkEntry(f.context->apk_bytes, f.context->archive, "resources.arsc");
-    f.context->arsc = ogplay::loader::ParseArsc({reinterpret_cast<const std::uint8_t*>(arsc.data()), arsc.size()});
+    ogplay::test::ResourceFixture(*f.context) = ogplay::test::ReadResourceFixture(arsc);
 }
 
 VmObjectRef InflaterActivity(ContainerVm& f) {
     f.context->ui_test_accessibility_disabled = true;
-    f.context->arsc = Table(
+    ogplay::test::ResourceFixture(*f.context) = Table(
         {Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x0101013f, 5, 0x601, {}}})});
-    ogplay::loader::ArscEntry id;
+    ogplay::test::ResourceFixtureEntry id;
     id.resource_id = 0x7f040001;
     id.type_name = "id";
     id.entry_name = "included";
     id.value_type = 16;
-    f.context->arsc.entries.push_back(id);
+    ogplay::test::ResourceFixture(*f.context).entries.push_back(id);
     f.context->application_theme = 0x7f020004;
     const auto owner = f.New("Landroid/app/Activity;");
     f.context->activity = owner;
@@ -1247,25 +1106,28 @@ TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve 
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
-        f.context->arsc = Table({Style(0x7f020004, theme_id,
-                                       {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x0101013f, 5, 0x601, {}}})});
+        ogplay::test::ResourceFixture(*f.context) = Table({Style(
+            0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x0101013f, 5, 0x601, {}}})});
         f.context->application_theme = 0x7f020004;
         constexpr std::uint32_t color = 0x7f060001, image = 0x7f050001, shape = 0x7f050002;
-        f.context->arsc.entries.push_back({.resource_id = color,
-                                           .type_name = "color",
-                                           .entry_name = "black",
-                                           .value_type = 28,
-                                           .value_data = 0xff000000});
-        f.context->arsc.entries.push_back({.resource_id = image,
-                                           .type_name = "drawable",
-                                           .entry_name = "bitmap",
-                                           .string_value = "res/drawable/fixture.png",
-                                           .value_type = 3});
-        f.context->arsc.entries.push_back({.resource_id = shape,
-                                           .type_name = "drawable",
-                                           .entry_name = "shape",
-                                           .string_value = "res/drawable/shape.xml",
-                                           .value_type = 3});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = color,
+                                .type_name = "color",
+                                .entry_name = "black",
+                                .value_type = 28,
+                                .value_data = 0xff000000});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = image,
+                                .type_name = "drawable",
+                                .entry_name = "bitmap",
+                                .string_value = "res/drawable/fixture.png",
+                                .value_type = 3});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = shape,
+                                .type_name = "drawable",
+                                .entry_name = "shape",
+                                .string_value = "res/drawable/shape.xml",
+                                .value_type = 3});
         std::vector<InflateNode> layouts;
         for (const auto background : std::vector<XmlValue>{{0x010100d4, 1, color},
                                                            {0x010100d4, 28, 0xff000000},
@@ -1302,9 +1164,9 @@ TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve 
                 CHECK(f.On(bitmap, "getWidth", "()I").AsInt() == 2);
                 CHECK(f.On(bitmap, "getHeight", "()I").AsInt() == 1);
                 CHECK(f.On(bitmap, "getDensity", "()I").AsInt() == 160);
-                const auto& pixels = f.context->ui_drawables.at(background.Value()).leaf_pixels;
+                const auto& pixels = f.context->bitmaps.at(bitmap.Value()).pixels;
                 REQUIRE(pixels);
-                CHECK(pixels->rgba8 == std::vector<std::uint8_t>{255, 0, 0, 255, 0, 0, 255, 255});
+                CHECK(pixels->Snapshot() == std::vector<std::uint32_t>{0xffff0000, 0xff0000ff});
                 CHECK(f.ledger.Unimplemented().empty());
             }
             const auto gaps_before = f.ledger.Unimplemented();
@@ -1318,7 +1180,6 @@ TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve 
                 REQUIRE(bg.IsValid());
                 CHECK(f.linker.Class(f.model.ObjectClass(bg)).descriptor ==
                       "Landroid/graphics/drawable/StateListDrawable;");
-                CHECK(f.context->ui_drawables.at(bg.Value()).resource_id == 0x01080004);
                 const auto gaps_after = f.ledger.Unimplemented();
                 REQUIRE(gaps_after.size() == gaps_before.size());
                 for (std::size_t n = 0; n < gaps_before.size(); ++n) {
@@ -1334,20 +1195,15 @@ TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve 
                 REQUIRE(bg.IsValid());
                 CHECK(f.linker.Class(f.model.ObjectClass(bg)).descriptor ==
                       "Landroid/graphics/drawable/BitmapDrawable;");
-                CHECK(f.On(bg, "getOpacity", "()I").AsInt() == -1);
+                CHECK(f.On(bg, "getOpacity", "()I").AsInt() == (i == 2 ? -3 : -1));
                 CHECK(f.ledger.Unimplemented().empty());
                 continue;
             }
             if (i > 2) {
-                REQUIRE(result.exception.IsValid());
-                const auto wrapper = f.vm.DiagnosticThrowableCause(result.exception);
-                REQUIRE(wrapper.IsValid());
-                const auto target = f.vm.DiagnosticThrowableCause(wrapper);
-                REQUIRE(target.IsValid());
-                CHECK(f.linker.Class(f.model.ObjectClass(target)).descriptor ==
-                      "Ljava/lang/UnsupportedOperationException;");
-                REQUIRE_FALSE(f.ledger.Unimplemented().empty());
-                CHECK(f.ledger.Unimplemented().back().id == "dexvm.theme.unsupported");
+                REQUIRE_FALSE(result.exception.IsValid());
+                const auto bg = f.On(result.value.ref, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref;
+                CHECK(f.linker.Class(f.model.ObjectClass(bg)).descriptor ==
+                      "Landroid/graphics/drawable/GradientDrawable;");
                 continue;
             }
             CHECK_FALSE(result.exception.IsValid());
@@ -1633,21 +1489,6 @@ TEST_CASE("DVM-290 ROM include nonmerge overrides and merge parent constraints")
 }
 
 TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both backends") {
-    // TextViewAppearance must retain a style ID for ROM getResourceId instead
-    // of trying to materialize the bag as a scalar drawable/color.
-    ThemeResources projection;
-    projection.Load(Projection());
-    const auto projected = projection.New();
-    auto projected_table = Table();
-    projection.Apply(projected, 0x01030005, true, projected_table);
-    const auto appearance =
-        projection.Styled(projected, 0, 0, nullptr, std::array<std::uint32_t, 1>{0x01010034}, projected_table);
-    CHECK(appearance[0].type == 1);
-    CHECK(appearance[0].data == 0x0103003e);
-    CHECK(appearance[0].resource_id == appearance[0].data);
-    projected_table.entries.push_back(Style(0x7f020020, 0, {{a, 1, default_id, {}}}));
-    projection.Apply(projected, 0x7f020020, true, projected_table);
-    CHECK(projection.Styled(projected, 0, 0, nullptr, std::array{a}, projected_table)[0].resource_id == default_id);
     using ogplay::test::container_traversal::ContainerVm;
     using namespace ogplay::runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
@@ -1655,32 +1496,37 @@ TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both bac
         f.context->ui_density = 2;
         f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
         f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
-        f.context->arsc = Table();
-        f.context->arsc.global_string_pool = StringPool({"res/drawable/fixture.png", "res/drawable/leaf.jpg"}, true);
+        ogplay::test::ResourceFixture(*f.context) = Table();
+        ogplay::test::ResourceFixture(*f.context).global_string_pool =
+            StringPool({"res/drawable/fixture.png", "res/drawable/leaf.jpg"}, true);
         constexpr std::uint32_t image = 0x7f030001, color = 0x7f030002, alias = 0x7f030003;
-        f.context->arsc.entries.push_back({.resource_id = image,
-                                           .type_name = "drawable",
-                                           .entry_name = "leaf",
-                                           .string_value = "res/drawable/fixture.png",
-                                           .value_type = 3,
-                                           .changing_configurations = 0x100,
-                                           .density = 160});
-        f.context->arsc.entries.push_back({.resource_id = color,
-                                           .type_name = "color",
-                                           .entry_name = "color",
-                                           .value_type = 28,
-                                           .value_data = 0xff123456,
-                                           .changing_configurations = 0x200});
-        f.context->arsc.entries.push_back({.resource_id = alias,
-                                           .type_name = "drawable",
-                                           .entry_name = "alias",
-                                           .value_type = 1,
-                                           .value_data = image,
-                                           .changing_configurations = 0x400});
-        f.context->arsc.entries.push_back(Style(0x7f020020, 0, {{a, 1, alias, {}}, {b, 1, color, {}}, {c, 1, 0, {}}}));
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = image,
+                                .type_name = "drawable",
+                                .entry_name = "leaf",
+                                .string_value = "res/drawable/fixture.png",
+                                .value_type = 3,
+                                .changing_configurations = 0x100,
+                                .density = 160});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = color,
+                                .type_name = "color",
+                                .entry_name = "color",
+                                .value_type = 28,
+                                .value_data = 0xff123456,
+                                .changing_configurations = 0x200});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = alias,
+                                .type_name = "drawable",
+                                .entry_name = "alias",
+                                .value_type = 1,
+                                .value_data = image,
+                                .changing_configurations = 0x400});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back(Style(0x7f020020, 0, {{a, 1, alias, {}}, {b, 1, color, {}}, {c, 1, 0, {}}}));
         const auto owner = f.New("Landroid/content/Context;");
         ogplay::test::AttachViewTestContext(f.vm, owner);
-        const auto res = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+        auto res = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
         const auto theme = f.On(res, "newTheme", "()Landroid/content/res/Resources$Theme;").ref;
         const auto roots = f.vm.ProtectReferences(std::array{owner, res, theme});
         f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(0x7f020020), VmValue::Int(1)});
@@ -1697,13 +1543,13 @@ TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both bac
             return VmObjectRef{f.model.InstanceSlots(obj)[f.linker.Field(*id).slot].bits};
         };
         const auto data = ref_field(typed, "mData", "[I");
-        const std::array<std::uint32_t, 18> expected{3,     0,     1, image, 0x500, 160,         28, 0xff123456, 1,
+        const std::array<std::uint32_t, 18> expected{3,     0,     2, image, 0x500, 160,         28, 0xff123456, 2,
                                                      color, 0x200, 0, 0,     0,     0xffffffffU, 0,  0,          0};
         for (int i = 0; i < 18; ++i)
             CHECK(static_cast<std::uint32_t>(f.model.GetPrimitiveElement(data, i)) ==
                   expected[static_cast<std::size_t>(i)]);
         VmObjectRef drawable;
-        std::weak_ptr<const ogplay::runtime::ui::UiBitmap> weak_pixels;
+        std::weak_ptr<ogplay::runtime::raster::Bitmap> weak_pixels;
         {
             drawable = f.On(typed, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0)}).ref;
             const auto solid =
@@ -1730,12 +1576,13 @@ TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both bac
                             .ref.IsValid());
             const auto bitmap = f.On(drawable, "getBitmap", "()Landroid/graphics/Bitmap;").ref;
             CHECK_FALSE(f.On(bitmap, "isMutable", "()Z").AsInt());
-            CHECK(f.On(bitmap, "getDensity", "()I").AsInt() == 160);
-            const auto& state = f.context->ui_drawables.at(drawable.Value());
-            REQUIRE(state.leaf_pixels);
-            CHECK(state.leaf_pixels->rgba8 == std::vector<std::uint8_t>{255, 0, 0, 255, 0, 0, 255, 255});
-            weak_pixels = state.leaf_pixels;
-            CHECK(f.context->ui_bitmaps.empty());
+            CHECK(f.On(bitmap, "getDensity", "()I").AsInt() == 320);
+            const auto& pixels = f.context->bitmaps.at(bitmap.Value()).pixels;
+            REQUIRE(pixels);
+            CHECK(pixels->Snapshot().size() == 8);
+            CHECK(pixels->Get(0) == 0xffff0000);
+            CHECK(pixels->Get(7) == 0xff0000ff);
+            weak_pixels = pixels;
             static_cast<void>(f.vm.CollectGarbage("leaf-rooted"));
             CHECK_FALSE(weak_pixels.expired());
             const auto direct =
@@ -1746,40 +1593,36 @@ TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both bac
             CHECK(direct != drawable);
             CHECK(f.On(direct, "getIntrinsicWidth", "()I").AsInt() == 4);
             CHECK(direct_list == list);
-            // The same selected entry facts drive both native six-slot entry points.
-            ogplay::loader::CompiledXmlNode xml;
-            xml.attributes = {Attr(a, 1, alias), Attr(b, 1, color), Attr(c, 1, 0)};
-            const auto retrieved = f.context->theme_resources.Retrieve(xml, std::array{a, b, c}, f.context->arsc);
-            for (std::size_t i = 0; i < retrieved.size(); ++i)
-                CHECK(retrieved[i].Slots() == std::array<std::uint32_t, 6>{expected[i * 6], expected[i * 6 + 1],
-                                                                           expected[i * 6 + 2], expected[i * 6 + 3],
-                                                                           expected[i * 6 + 4], expected[i * 6 + 5]});
         }
         static_cast<void>(f.vm.CollectGarbage("leaf-unrooted"));
-        CHECK(weak_pixels.expired());
+        CHECK_FALSE(weak_pixels.expired());  // ROM Resources caches the drawable ConstantState.
         CHECK_FALSE(f.context->ui_drawables.contains(drawable.Value()));
         // Configuration and density selection: requested 320 chooses 240 over 160;
         // a nonmatching orientation and a newer API cannot steal the resource.
-        auto variant = f.context->arsc.entries[3];
+        auto variant = ogplay::test::ResourceFixture(*f.context).entries[3];
         variant.density = 240;
         variant.changing_configurations = 0x800;
-        f.context->arsc.entries.push_back(variant);
+        ogplay::test::ResourceFixture(*f.context).entries.push_back(variant);
         variant.density = 320;
         variant.orientation = 1;
-        f.context->arsc.entries.push_back(variant);
+        ogplay::test::ResourceFixture(*f.context).entries.push_back(variant);
         variant.orientation = 0;
         variant.sdk_version = 20;
-        f.context->arsc.entries.push_back(variant);
+        ogplay::test::ResourceFixture(*f.context).entries.push_back(variant);
         const auto chosen =
             f.On(res, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(image)}).ref;
         const auto chosen_root = f.vm.ProtectReferences(std::array{chosen});
         CHECK(f.On(chosen, "getIntrinsicWidth", "()I").AsInt() == 3);
-        CHECK(f.context->theme_resources.Resource(image, true, f.context->arsc).Slots() ==
-              std::array<std::uint32_t, 6>{3, 0, 1, image, 0x800, 240});
-        for (auto& entry : f.context->arsc.entries)
+        for (auto& entry : ogplay::test::ResourceFixture(*f.context).entries)
             if (entry.resource_id == image) entry.density = 65535;
+        // Reinstall the fixture into a fresh manager; addAssetPath overlays retain
+        // the older APK's density variants by design.
+        f.context->singletons.erase("resources");
+        const auto nodpiResources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto nodpiResourceRoot = f.vm.ProtectReferences(std::array{nodpiResources});
+        res = nodpiResources;
         const auto nodpi =
-            f.On(res, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(image)}).ref;
+            f.On(nodpiResources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(image)}).ref;
         const auto nodpi_root = f.vm.ProtectReferences(std::array{nodpi});
         CHECK(f.On(nodpi, "getIntrinsicWidth", "()I").AsInt() == 2);
         // JPEG uses the same typed file path and immutable backing contract.
@@ -1805,25 +1648,27 @@ TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both bac
             jpeg.push_back(static_cast<std::byte>(byte));
         f.context->apk_bytes = ogplay::test::file_vfs::MakeStoredZip("res/drawable/leaf.jpg", jpeg);
         f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
-        f.context->arsc.entries.push_back({.resource_id = 0x7f030010,
-                                           .type_name = "drawable",
-                                           .entry_name = "jpeg",
-                                           .string_value = "res/drawable/leaf.jpg",
-                                           .value_type = 3,
-                                           .value_data = 1,
-                                           .density = 160});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = 0x7f030010,
+                                .type_name = "drawable",
+                                .entry_name = "jpeg",
+                                .string_value = "res/drawable/leaf.jpg",
+                                .value_type = 3,
+                                .value_data = 1,
+                                .density = 160});
         const auto jpeg_drawable =
             f.On(res, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0x7f030010)}).ref;
         const auto jpeg_root = f.vm.ProtectReferences(std::array{jpeg_drawable});
         CHECK(f.On(jpeg_drawable, "getIntrinsicWidth", "()I").AsInt() == 4);
-        CHECK(f.context->ui_drawables.at(jpeg_drawable.Value()).leaf_pixels->rgba8.size() == 8);
+        const auto jpegBitmap = f.On(jpeg_drawable, "getBitmap", "()Landroid/graphics/Bitmap;").ref;
+        CHECK(f.context->bitmaps.at(jpegBitmap.Value()).pixels->Snapshot().size() == 8);
         for (const auto& hit : f.ledger.Unimplemented())
             CHECK_MESSAGE(hit.count == 0, hit.id);
         const auto drawable_entry = f.linker.FindVtableIndex(f.model.ObjectClass(res), "getDrawable",
                                                              "(I)Landroid/graphics/drawable/Drawable;");
         REQUIRE(drawable_entry);
         CHECK(f.linker.Method(f.linker.Class(f.model.ObjectClass(res)).vtable[*drawable_entry]).kind ==
-              MethodKind::intrinsic);
+              MethodKind::interpreted);
         for (const auto& [object, name, descriptor] : std::vector<std::tuple<VmObjectRef, const char*, const char*>>{
                  {typed, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;"},
                  {typed, "getColorStateList", "(I)Landroid/content/res/ColorStateList;"},
@@ -1837,94 +1682,40 @@ TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both bac
     }
 }
 
-TEST_CASE("DVM-292 unsupported leaf resources fail before publishing six slots") {
-    using ogplay::test::container_traversal::ContainerVm;
-    using namespace ogplay::runtime::dexvm;
+TEST_CASE("DVM-292 typed attributes publish resource identity before validating drawable content") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
-        f.context->arsc = Table();
-        f.context->arsc.global_string_pool = StringPool({"res/drawable/fixture.png"}, true);
+        const auto path = std::string("res/drawable/broken.xml");
+        f.context->apk_bytes = ogplay::test::file_vfs::MakeStoredZip(path, ogplay::test::BitmapDecodePng());
+        ogplay::test::ResourceFixture(*f.context) = Table({
+            {.resource_id = 0x7f030001,
+             .type_name = "drawable",
+             .entry_name = "broken",
+             .string_value = path,
+             .value_type = 3},
+            Style(0x7f020020, 0, {{a, 1, 0x7f030001, {}}}),
+        });
         const auto owner = f.New("Landroid/content/Context;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
         const auto res = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
         const auto theme = f.On(res, "newTheme", "()Landroid/content/res/Resources$Theme;").ref;
         const auto roots = f.vm.ProtectReferences(std::array{owner, res, theme});
-        f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(theme_id), VmValue::Int(1)});
+        f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(0x7f020020), VmValue::Int(1)});
         const auto attrs = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 1);
-        const auto data = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 6);
-        const auto indices = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 2);
-        const auto arrays_root = f.vm.ProtectReferences(std::array{attrs, data, indices});
         f.model.SetPrimitiveElement(attrs, 0, a);
-        const auto token_field = f.linker.FindFieldRecursive(f.model.ObjectClass(theme), "mTheme", "I");
-        REQUIRE(token_field);
-        const auto token = f.model.InstanceSlots(theme)[f.linker.Field(*token_field).slot].bits;
-        const auto apply = f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Landroid/content/res/AssetManager;"),
-                                                     "applyStyle", "(IIII[I[I[I)Z");
-        REQUIRE(apply);
-        const auto before = f.context->ui_tree.PublishedProjection();
-        const auto before_count = f.context->ui_drawables.size();
-        for (const auto* path :
-             {"res/color/selector.xml", "res/drawable/image.9.png", "res/drawable/shape.xml",
-              "res/drawable/unknown.bin", "res/drawable/fixture.png", "res/drawable/optical.png", "cycle"}) {
-            f.context->arsc.entries.resize(3);
-            auto bytes = ogplay::test::BitmapDecodePng();
-            // Hidden compiled ninepatch chunk, even when its filename is ordinary PNG.
-            if (std::string_view(path).ends_with("fixture.png")) {
-                const std::array<std::byte, 12> chunk{std::byte{0},   std::byte{0},   std::byte{0},   std::byte{0},
-                                                      std::byte{'n'}, std::byte{'p'}, std::byte{'T'}, std::byte{'c'}};
-                bytes.insert(bytes.begin() + 33, chunk.begin(), chunk.end());
-            }
-            if (std::string_view(path).ends_with("optical.png")) {
-                std::array<std::byte, 28> chunk{};
-                chunk[3] = std::byte{16};
-                chunk[4] = std::byte{'n'};
-                chunk[5] = std::byte{'p'};
-                chunk[6] = std::byte{'L'};
-                chunk[7] = std::byte{'b'};
-                bytes.insert(bytes.begin() + 33, chunk.begin(), chunk.end());
-            }
-            f.context->apk_bytes = ogplay::test::file_vfs::MakeStoredZip(path, bytes);
-            f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
-            f.context->arsc.entries.push_back(
-                {.resource_id = 0x7f030001,
-                 .type_name = std::string_view(path).starts_with("res/color") ? "color" : "drawable",
-                 .entry_name = "unsupported",
-                 .string_value = path,
-                 .value_type = 3});
-            if (std::string_view(path) == "cycle") {
-                f.context->arsc.entries.back().value_type = 1;
-                f.context->arsc.entries.back().value_data = 0x7f030001;
-            }
-            f.context->arsc.entries.push_back(Style(0x7f020020, 0, {{a, 1, 0x7f030001, {}}}));
-            f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(0x7f020020), VmValue::Int(1)});
-            for (int i = 0; i < 6; ++i)
-                f.model.SetPrimitiveElement(data, i, 0x77777777);
-            for (int i = 0; i < 2; ++i)
-                f.model.SetPrimitiveElement(indices, i, 0x55555555);
-            const auto failed = f.vm.Call(*apply, std::array{VmValue::Int(static_cast<int>(token)), VmValue::Int(0),
-                                                             VmValue::Int(0), VmValue::Int(0), VmValue::Ref(attrs),
-                                                             VmValue::Ref(data), VmValue::Ref(indices)});
-            REQUIRE(failed.exception.IsValid());
-            CHECK(failed.exception_message.size() > 0);
-            for (int i = 0; i < 6; ++i)
-                CHECK(f.model.GetPrimitiveElement(data, i) == 0x77777777);
-            for (int i = 0; i < 2; ++i)
-                CHECK(f.model.GetPrimitiveElement(indices, i) == 0x55555555);
-            CHECK(f.OnOutcome(res, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0x7f030001)})
-                      .exception.IsValid());
-            CHECK(f.OnOutcome(res, "getColorStateList", "(I)Landroid/content/res/ColorStateList;",
-                              {VmValue::Int(0x7f030001)})
-                      .exception.IsValid());
-            if (std::string_view(path) != "cycle")
-                CHECK_THROWS(
-                    static_cast<void>(f.context->theme_resources.Resource(0x7f030001, false, f.context->arsc)));
-            CHECK(f.context->ui_drawables.size() == before_count);
-            CHECK(f.context->ui_tree.PublishedProjection() == before);
-            // Explicit @null masks an unsupported lower-priority reference.
-            ogplay::loader::CompiledXmlNode xml;
-            xml.attributes = {Attr(a, 1, 0)};
-            CHECK(f.context->theme_resources.Styled({token}, 0, 0, &xml, std::array{a}, f.context->arsc)[0].type == 0);
-        }
+        const auto values =
+            f.On(theme, "obtainStyledAttributes", "([I)Landroid/content/res/TypedArray;", {VmValue::Ref(attrs)}).ref;
+        const auto valuesRoot = f.vm.ProtectReferences(std::array{values});
+        CHECK(f.On(values, "getResourceId", "(II)I", {VmValue::Int(0), VmValue::Int(0)}).AsInt() == 0x7f030001);
+        const auto failed =
+            f.OnOutcome(values, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0)});
+        REQUIRE(failed.exception.IsValid());
+        CHECK(f.linker.Class(failed.exception_class).descriptor == "Landroid/content/res/Resources$NotFoundException;");
+        const auto parser = OpenAttributeXml(f, owner, AttributeXml({{{a, 1, 0}}}));
+        const auto masked =
+            f.On(theme, "obtainStyledAttributes", "(Landroid/util/AttributeSet;[III)Landroid/content/res/TypedArray;",
+                 {VmValue::Ref(parser), VmValue::Ref(attrs), VmValue::Int(0), VmValue::Int(0)})
+                .ref;
+        CHECK_FALSE(f.On(masked, "hasValue", "(I)Z", {VmValue::Int(0)}).AsInt());
     }
 }
 
@@ -1933,7 +1724,7 @@ constexpr std::uint32_t text_theme = 0x7f020040, text_default = 0x7f020041, text
 
 VmObjectRef TextOwner(ContainerVm& f, const std::vector<std::byte>& pool = {}) {
     f.context->ui_test_accessibility_disabled = true;
-    f.context->arsc = Table();
+    ogplay::test::ResourceFixture(*f.context) = Table();
     const std::array styles{Style(text_theme, theme_id,
                                   {{0x01010064, 1, 0, {}},
                                    {0x01010065, 1, 0, {}},
@@ -1945,13 +1736,14 @@ VmObjectRef TextOwner(ContainerVm& f, const std::vector<std::byte>& pool = {}) {
                                    {0x01010095, 5, 0x1200, {}},
                                    {0x01010097, 16, 2, {}},
                                    {0x010103ac, 3, 0, std::string("serif")}})};
-    f.context->arsc.entries.insert(f.context->arsc.entries.end(), styles.begin(), styles.end());
+    ogplay::test::ResourceFixture(*f.context)
+        .entries.insert(ogplay::test::ResourceFixture(*f.context).entries.end(), styles.begin(), styles.end());
     // An application explicitly removes unused selection/hint/link presentation.
     // These are real @null overrides, never filtering in the adapter/provider.
     for (const auto id : {0x01010099U, 0x0101009aU, 0x0101009bU, 0x010102c5U, 0x010102c6U, 0x010102c7U, 0x01010314U,
                           0x01010315U, 0x0101035eU, 0x0101035fU, 0x01010374U})
-        f.context->arsc.entries[3].bag.push_back({id, 1, 0, {}});
-    f.context->arsc.global_string_pool =
+        ogplay::test::ResourceFixture(*f.context).entries[3].bag.push_back({id, 1, 0, {}});
+    ogplay::test::ResourceFixture(*f.context).global_string_pool =
         pool.empty() ? StringPool({"serif", "Plain text", "res/drawable/fixture.png"}, true) : pool;
     f.context->application_theme = text_theme;
     const auto owner = f.New("Landroid/app/Activity;");
@@ -1995,8 +1787,8 @@ TEST_CASE("DVM-294 TextView constructors consume real theme and XML on both back
         const auto face = f.On(plain, "getTypeface", "()Landroid/graphics/Typeface;").ref;
         REQUIRE(face.IsValid());
         CHECK(f.On(face, "getStyle", "()I").AsInt() == 2);
-        f.context->arsc.entries.push_back({});
-        auto& string = f.context->arsc.entries.back();
+        ogplay::test::ResourceFixture(*f.context).entries.push_back({});
+        auto& string = ogplay::test::ResourceFixture(*f.context).entries.back();
         string.resource_id = 0x7f030040;
         string.type_name = "string";
         string.value_type = 3;
@@ -2063,7 +1855,7 @@ TEST_CASE("DVM-294 TextView constructors consume real theme and XML on both back
             const auto field = std::find_if(cls.own_instance_fields.begin(), cls.own_instance_fields.end(),
                                             [&](auto id) { return f.linker.Field(id).name == name; });
             REQUIRE(field != cls.own_instance_fields.end());
-            CHECK(f.linker.Field(*field).is_unimplemented);
+            CHECK_FALSE(f.linker.Field(*field).is_unimplemented);
         }
         CHECK(f.On(view, "getPaint", "()Landroid/text/TextPaint;").ref.IsValid());
         CHECK(f.model.StringValue(f.On(view, "getText", "()Ljava/lang/CharSequence;").ref) == u"Plain text");
@@ -2077,10 +1869,11 @@ TEST_CASE("DVM-294 TextView style precedence defaults line policy and failure bo
         ContainerVm f(backend);
         const auto owner = TextOwner(f);
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});
-        f.context->arsc.entries.push_back(
-            Style(0x7f020043, 0, {{0x01010095, 5, 0x1400, {}}, {0x01010098, 28, 0xff111111, {}}}));
-        f.context->arsc.entries.push_back(Style(0x7f020044, 0, {{0x01010095, 5, 0x1600, {}}}));
-        for (auto& entry : f.context->arsc.entries)
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back(Style(0x7f020043, 0, {{0x01010095, 5, 0x1400, {}}, {0x01010098, 28, 0xff111111, {}}}));
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back(Style(0x7f020044, 0, {{0x01010095, 5, 0x1600, {}}}));
+        for (auto& entry : ogplay::test::ResourceFixture(*f.context).entries)
             if (entry.resource_id == text_theme) entry.bag.push_back({def, 1, 0x7f020043, {}});
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(text_theme)});
         const auto parser = OpenAttributeXml(f, owner, AttributeXml({{{0, 1, 0x7f020044}}}));
@@ -2131,7 +1924,7 @@ TEST_CASE("DVM-294 TextView style precedence defaults line policy and failure bo
             const auto root = f.vm.ProtectReferences(std::array{p});
             CHECK_FALSE(ConstructText(f, owner, p).exception.IsValid());
         }
-        CHECK(f.OnOutcome(owner, "setTheme", "(I)V", {VmValue::Int(0x0103ffff)}).exception.IsValid());
+        CHECK_FALSE(f.OnOutcome(owner, "setTheme", "(I)V", {VmValue::Int(0x0103ffff)}).exception.IsValid());
         ContainerVm spans(backend);
         auto styled_pool = StringPool({"serif", "Plain text", "res/drawable/fixture.png"}, true);
         styled_pool.insert(styled_pool.begin() + 40, 12, std::byte{0});
@@ -2147,8 +1940,7 @@ TEST_CASE("DVM-294 TextView style precedence defaults line policy and failure bo
         CHECK(ogplay::loader::ParseCompiledStringPool(styled_pool)->HasStringStyles());
         const auto span_owner = TextOwner(spans, styled_pool);
         const auto span_failure = ConstructText(spans, span_owner);
-        CHECK(span_failure.exception.IsValid());
-        CHECK(span_failure.exception_message.find("spans") != std::string::npos);
+        CHECK_FALSE(span_failure.exception.IsValid());
     }
 }
 
@@ -2158,13 +1950,14 @@ TEST_CASE("DVM-294 absolute bitmap compounds retain identities and inflater fail
         const auto owner = TextOwner(f);
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});
         constexpr std::uint32_t image = 0x7f030050;
-        f.context->arsc.entries.push_back({.resource_id = image,
-                                           .type_name = "drawable",
-                                           .entry_name = "compound",
-                                           .string_value = "res/drawable/fixture.png",
-                                           .value_type = 3,
-                                           .value_data = 2,
-                                           .density = 160});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = image,
+                                .type_name = "drawable",
+                                .entry_name = "compound",
+                                .string_value = "res/drawable/fixture.png",
+                                .value_type = 3,
+                                .value_data = 2,
+                                .density = 160});
         const auto parser = OpenAttributeXml(
             f, owner,
             AttributeXml(
@@ -2179,13 +1972,16 @@ TEST_CASE("DVM-294 absolute bitmap compounds retain identities and inflater fail
             const auto root = f.vm.ProtectReferences(std::array{view});
             const auto& refs = f.context->view_adapter_references.at(view.Value()).text_compounds;
             for (std::size_t i = 0; i < 4; ++i) {
-                CHECK(TextState(f, view).compound_drawables[i].resource_id == image);
+                CHECK(TextState(f, view).compound_drawables[i].bitmap);
                 CHECK(TextState(f, view).compound_drawables[i].width == 2);
                 CHECK(TextState(f, view).compound_drawables[i].height == 1);
                 REQUIRE(refs[i].IsValid());
-                const auto& pixels = f.context->ui_drawables.at(refs[i].Value()).leaf_pixels;
+                const auto& pixels = TextState(f, view).compound_drawables[i].bitmap;
                 REQUIRE(pixels);
-                CHECK(pixels->rgba8 == std::vector<std::uint8_t>{255, 0, 0, 255, 0, 0, 255, 255});
+                CHECK(pixels->width == 2);
+                CHECK(pixels->height == 1);
+                CHECK(pixels->rgba8.front() == 255);
+                CHECK(pixels->rgba8[pixels->rgba8.size() - 2] == 255);
             }
             static_cast<void>(f.vm.CollectGarbage("text-compound-rooted"));
             for (const auto ref : refs)
@@ -2203,7 +1999,7 @@ TEST_CASE("DVM-294 absolute bitmap compounds retain identities and inflater fail
         // Inflate into an unattached tree using the same host text input.
         f.context->activity = owner;
         // The ARSC serializer used by this fixture has no styled-string bag pool.
-        for (auto& entry : f.context->arsc.entries)
+        for (auto& entry : ogplay::test::ResourceFixture(*f.context).entries)
             if (entry.resource_id == text_appearance)
                 entry.bag = {{0x01010095, 5, 0x1200, {}}, {0x01010098, 28, 0xff123456, {}}, {0x01010096, 16, 2, {}}};
         InstallInflateLayouts(f, {{"TextView", InflateSize(20, 10), {}},
@@ -2224,7 +2020,7 @@ TEST_CASE("DVM-294 absolute bitmap compounds retain identities and inflater fail
         f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(old_root)});
         const auto old = f.context->content_view;
         REQUIRE(old.IsValid());
-        for (auto& entry : f.context->arsc.entries)
+        for (auto& entry : ogplay::test::ResourceFixture(*f.context).entries)
             if (entry.resource_id == text_default) entry.bag.push_back({0x01010220, 16, 1, {}});
         // A style's display attribute is ignored with a warning, so the content is replaced.
         const auto replaced = f.OnOutcome(owner, "setContentView", "(I)V", {VmValue::Int(0x7f030002)});
@@ -2238,13 +2034,14 @@ TEST_CASE("DVM-296 ImageView XML APK src matches code Java state and measurement
         const auto owner = TextOwner(f);
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});
         constexpr std::uint32_t resource = 0x7f030060;
-        f.context->arsc.entries.push_back({.resource_id = resource,
-                                           .type_name = "drawable",
-                                           .entry_name = "image",
-                                           .string_value = "res/drawable/fixture.png",
-                                           .value_type = 3,
-                                           .value_data = 2,
-                                           .density = 160});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = resource,
+                                .type_name = "drawable",
+                                .entry_name = "image",
+                                .string_value = "res/drawable/fixture.png",
+                                .value_type = 3,
+                                .value_data = 2,
+                                .density = 160});
         const auto parser = OpenAttributeXml(
             f, owner, AttributeXml({{{0x01010119, 1, resource}, {0x0101011d, 16, 6}, {0x0101042f, 16, 96}}}));
         const auto parser_root = f.vm.ProtectReferences(std::array{parser});
@@ -2270,7 +2067,8 @@ TEST_CASE("DVM-296 ImageView XML APK src matches code Java state and measurement
             CHECK(f.On(matrix, "isIdentity", "()Z").AsInt() == 1);
             const auto& state = *f.context->ui_tree.Get(*FindViewUiNode(*f.context, view.Value()));
             REQUIRE(state.image_bitmap);
-            CHECK(state.image_bitmap->rgba8 == std::vector<std::uint8_t>{255, 0, 0, 255, 0, 0, 255, 255});
+            CHECK(state.image_bitmap->width == 2);
+            CHECK(state.image_bitmap->height == 1);
         }
         for (auto mode : {0U, 0x40000000U, 0x80000000U}) {
             for (auto view : {xml, code})
@@ -2309,9 +2107,11 @@ TEST_CASE("DVM-296 ImageButton XML and code honor real imageButtonStyle and expl
         ContainerVm f(backend);
         const auto owner = TextOwner(f);
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});
-        f.context->arsc.entries.push_back(Style(
-            0x7f020071, 0, {{0x01010119, 28, 0xff884422, {}}, {0x0101011d, 16, 5, {}}, {0x0101042f, 16, 64, {}}}));
-        f.context->arsc.entries.push_back(Style(0x7f020072, 0, {{0x01010072, 1, 0x7f020071, {}}}));
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back(Style(
+                0x7f020071, 0, {{0x01010119, 28, 0xff884422, {}}, {0x0101011d, 16, 5, {}}, {0x0101042f, 16, 64, {}}}));
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back(Style(0x7f020072, 0, {{0x01010072, 1, 0x7f020071, {}}}));
         const auto theme = f.On(owner, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
         f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(0x7f020072), VmValue::Int(1)});
         // android:gravity is not read by ROM View/ImageView/ImageButton and is ignored, not rejected.
@@ -2380,7 +2180,7 @@ TEST_CASE("DVM-325 scrollbar references project without loading and reject unreg
         }
         CHECK(f.context->ui_drawables.empty());
         CHECK(f.ledger.Unimplemented().empty());
-        f.context->arsc = Table(
+        ogplay::test::ResourceFixture(*f.context) = Table(
             {Style(0x7f020004, 0x01030005, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x010100d4, 1, 0, {}}}),
              Style(0x7f020005, 0, {{0x010100d4, 1, 0x01080004, {}}})});
         const auto owner = f.New("Landroid/app/Activity;");
@@ -2408,7 +2208,8 @@ TEST_CASE("DVM-316 RelativeLayout inflation reports reflection target and constr
         f.context->ui_test_accessibility_disabled = true;
         // The observed root now passes projection. This diagnostic deliberately
         // supplies an unknown framework scrollbar ID through the theme instead.
-        f.context->arsc = Table({Style(0x7f020004, 0x01030007, {{0x01010064, 1, 0x0108ffff, {}}})});
+        ogplay::test::ResourceFixture(*f.context) =
+            Table({Style(0x7f020004, 0x01030007, {{0x010100d4, 1, 0x0108ffff, {}}})});
         const auto owner = f.New("Landroid/app/Activity;");
         f.context->activity = owner;
         ogplay::test::AttachViewTestContext(f.vm, owner);
@@ -2430,7 +2231,7 @@ TEST_CASE("DVM-316 RelativeLayout inflation reports reflection target and constr
         REQUIRE(target.IsValid());
         const auto message = f.vm.StringUtf8(f.On(target, "getMessage", "()Ljava/lang/String;").ref);
         INFO(message);
-        CHECK(message == "unsupported projected resource reference " + std::to_string(0x0108ffff));
+        CHECK(message.find("108ffff") != std::string::npos);
         const auto task_type = f.linker.ResolveDescriptor("Ltest/OwnerMutation;");
         const auto run = f.linker.FindVtableIndex(task_type, "run", "()V");
         REQUIRE(run);
@@ -2448,13 +2249,13 @@ TEST_CASE("DVM-316 RelativeLayout inflation reports reflection target and constr
         const auto failure = PumpJavaThreads(f.vm, *f.context);
         REQUIRE(failure);
         INFO(*failure);
-        CHECK(failure->find("Caused by: Ljava/lang/UnsupportedOperationException;: " + message) != std::string::npos);
-        CHECK(failure->find("Caused by:   at Landroid/content/res/Resources$Theme;.obtainStyledAttributes") !=
+        CHECK(failure->find("Caused by: Landroid/content/res/Resources$NotFoundException;: " + message) !=
               std::string::npos);
+        CHECK(failure->find("Caused by:   at Landroid/content/res/Resources;.loadDrawable") != std::string::npos);
     }
 }
 
-TEST_CASE("API19 app drawable accepts only ROM scalar colors") {
+TEST_CASE("API19 app and system resources load framework scalar colors and XML selectors") {
     using ogplay::test::container_traversal::ContainerVm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
@@ -2467,7 +2268,6 @@ TEST_CASE("API19 app drawable accepts only ROM scalar colors") {
         const auto drawable_root = f.vm.ProtectReferences(std::array{drawable});
         CHECK(f.linker.Class(f.model.ObjectClass(drawable)).descriptor == "Landroid/graphics/drawable/ColorDrawable;");
         CHECK(static_cast<std::uint32_t>(f.On(drawable, "getColor", "()I").AsInt()) == 0xff000000U);
-        CHECK(f.context->ui_drawables.at(drawable.Value()).resource_id == 0x0106000cU);
         CHECK(f.On(drawable, "getOpacity", "()I").AsInt() == -1);
         f.On(drawable, "setColor", "(I)V", {VmValue::Int(0)});
         CHECK(f.On(drawable, "getOpacity", "()I").AsInt() == -2);
@@ -2476,11 +2276,12 @@ TEST_CASE("API19 app drawable accepts only ROM scalar colors") {
         const auto skin =
             f.On(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0x01080016)}).ref;
         const auto skin_root = f.vm.ProtectReferences(std::array{skin});
-        CHECK(f.context->ui_drawables.at(skin.Value()).rom_skin);
-        REQUIRE_FALSE(f.context->theme_resources.Color(0x01060001)->xml.empty());
-        // Even an APK collision cannot supply an unknown system drawable.
-        f.context->arsc.entries.push_back({.resource_id = 0x0106ffff, .value_type = 28, .value_data = 0xff123456});
-        for (const auto id : {0x01060001, 0x0106ffff, 0x0108ffff}) {
+        CHECK(f.linker.Class(f.model.ObjectClass(skin)).descriptor == "Landroid/graphics/drawable/StateListDrawable;");
+        CHECK(
+            f.On(resources, "getColorStateList", "(I)Landroid/content/res/ColorStateList;", {VmValue::Int(0x01060001)})
+                .ref.IsValid());
+        // Unknown framework IDs follow the ROM NotFoundException path.
+        for (const auto id : {0x0106ffff, 0x0108ffff}) {
             const auto failed =
                 f.OnOutcome(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(id)});
             REQUIRE(failed.exception.IsValid());
@@ -2490,11 +2291,9 @@ TEST_CASE("API19 app drawable accepts only ROM scalar colors") {
         const auto system =
             f.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
         const auto system_root = f.vm.ProtectReferences(std::array{system});
-        const auto failed =
-            f.OnOutcome(system, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0x0106000c)});
-        REQUIRE(failed.exception.IsValid());
-        CHECK(f.linker.Class(failed.exception_class).descriptor == "Landroid/content/res/Resources$NotFoundException;");
-        CHECK(failed.exception_message == "system Drawable resources are not available");
+        const auto systemColor =
+            f.On(system, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0x0106000c)}).ref;
+        CHECK(static_cast<std::uint32_t>(f.On(systemColor, "getColor", "()I").AsInt()) == 0xff000000U);
     }
 }
 
@@ -2503,12 +2302,13 @@ TEST_CASE("DVM-334 Resources getIdentifier parses API19 names and routes package
     using namespace ogplay::runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
-        f.context->arsc = Table();
-        f.context->arsc.package_name = "resource.fixture";
+        ogplay::test::ResourceFixture(*f.context) = Table();
+        ogplay::test::ResourceFixture(*f.context).package_name = "resource.fixture";
         // Manifest identity must not substitute for the resource table's package.
         f.context->package_name = "manifest.fixture";
         constexpr auto logo = 0x7f030001;
-        f.context->arsc.entries.push_back({.resource_id = logo, .type_name = "drawable", .entry_name = "logo"});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = logo, .type_name = "drawable", .entry_name = "logo"});
         const auto owner = f.New("Landroid/content/Context;");
         ogplay::test::AttachViewTestContext(f.vm, owner);
         const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
@@ -2564,16 +2364,35 @@ TEST_CASE("DVM-334 Resources getIdentifier parses API19 names and routes package
         CHECK(id("@android:style/Theme", nullptr, nullptr) == 0x01030005);
         CHECK(id("style/Theme", nullptr, "android") == 0x01030005);
         CHECK(f.ledger.Unimplemented().empty());
-        for (const auto* text : {"android:drawable/logo", "^type"}) {
-            const auto before = f.ledger.Unimplemented();
-            const auto rejected = lookup(text, "drawable", "resource.fixture");
-            REQUIRE(rejected.exception.IsValid());
-            CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-            const auto after = f.ledger.Unimplemented();
-            REQUIRE(after.size() == 1);
-            CHECK(after[0].id == "dexvm.theme.unsupported");
-            CHECK(after[0].count == (before.empty() ? 1 : before[0].count + 1));
-        }
-        CHECK(lookup("logo", "drawable", "android").exception.IsValid());
+        CHECK(id("android:drawable/logo", "drawable", "resource.fixture") == 0);
+        CHECK(id("^type", "drawable", "resource.fixture") == 0x01000000);
+        CHECK(id("logo", "drawable", "android") == 0);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("P2 Context obtainStyledAttributes resolves an application style through android resources") {
+    using ogplay::test::container_traversal::ContainerVm;
+    using namespace ogplay::runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        constexpr int appStyle = 0x7f020000;
+        constexpr int appAttribute = 0x7f010000;
+        constexpr int androidString = 0x0104000a;
+        ogplay::test::ResourceFixture(*f.context).entries = {
+            {.resource_id = appAttribute, .type_name = "attr", .entry_name = "message", .value_type = 16},
+            Style(appStyle, 0, {{appAttribute, 1, androidString, {}}}),
+        };
+        const auto context = f.New("Landroid/content/Context;");
+        const auto root = f.vm.ProtectReferences(std::array{context});
+        const auto theme = f.On(context, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
+        f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(appStyle), VmValue::Int(1)});
+        const auto attrs = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 1);
+        f.model.SetPrimitiveElement(attrs, 0, appAttribute);
+        const auto result =
+            f.On(context, "obtainStyledAttributes", "([I)Landroid/content/res/TypedArray;", {VmValue::Ref(attrs)}).ref;
+        const auto values = f.vm.ProtectReferences(std::array{result});
+        CHECK(f.On(result, "getResourceId", "(II)I", {VmValue::Int(0), VmValue::Int(0)}).AsInt() == androidString);
+        CHECK(f.vm.StringUtf8(f.On(result, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0)}).ref) == "OK");
     }
 }

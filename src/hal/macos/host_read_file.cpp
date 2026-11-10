@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <limits>
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include <system_error>
 #include <unistd.h>
 
@@ -28,6 +29,16 @@ public:
     }
     ~PosixReadFile() override { ::close(descriptor_); }
     HostReadFileInfo Info() const noexcept override { return info_; }
+
+    HostReadMapping Map() const override {
+        if (!info_.size) return {};
+        if (info_.size > SIZE_MAX) throw std::length_error("host mapping exceeds address space");
+        const auto size = static_cast<std::size_t>(info_.size);
+        auto* bytes = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, descriptor_, 0);
+        if (bytes == MAP_FAILED) throw std::system_error(errno, std::generic_category(), "map host backing");
+        return {std::shared_ptr<const void>(bytes, [size](const void* data) { munmap(const_cast<void*>(data), size); }),
+                {static_cast<const std::byte*>(bytes), size}};
+    }
     std::size_t ReadAt(std::uint64_t offset, std::span<std::byte> output,
                        std::stop_token stop) const override {
         if (offset > static_cast<std::uint64_t>((std::numeric_limits<off_t>::max)()) ||

@@ -28,12 +28,15 @@ inline std::vector<std::vector<std::uint8_t>> ReadBootDex() {
 std::vector<std::byte> ReadTestSystemFont(std::string_view name);
 
 inline void BindBootDexArchive(runtime::DexVmAndroidContext& context) {
+    context.framework_resource_apk =
+        std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework/framework-res.apk";
     context.boot_classpath = BootClasspathJars();
     context.system_font_source = ReadTestSystemFont;
 }
 
 // Fill absent Android declarations using the production catalog. Existing test
 // declarations remain explicit overrides; callers install Core first.
+void MountResourceFixture(runtime::DexVmAndroidContext& context, runtime::dexvm::Interpreter& vm);
 void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker);
 // View constructors now call Context.getResources. UI fixtures must supply
 // attached wrappers, just as the production Activity driver does.

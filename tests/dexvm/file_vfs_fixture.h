@@ -55,7 +55,8 @@ void Append16(std::vector<std::byte>& bytes, const std::uint16_t value);
 
 void Append32(std::vector<std::byte>& bytes, const std::uint32_t value);
 
-std::vector<std::byte> MakeStoredZip(const std::string_view name, const std::span<const std::byte> payload);
+std::vector<std::byte> MakeStoredZip(const std::string_view name, const std::span<const std::byte> payload,
+                                     std::span<const std::byte> deflated = {});
 
 struct TemporaryRoot final {
     std::filesystem::path path;
@@ -85,6 +86,8 @@ struct FileVm final {
                     const std::span<const IntrinsicClassDecl> extra_intrinsics = {},
                     const bool include_boot_dex = true);
 
+    [[nodiscard]] VmObjectRef AppAssets();
+    [[nodiscard]] VmObjectRef AppResources();
     [[nodiscard]] VmObjectRef NewFile(const std::string& path);
 
     [[nodiscard]] VmObjectRef NewUri(const std::string& spec);

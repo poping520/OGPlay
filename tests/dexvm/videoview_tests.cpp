@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 #include "container_traversal_fixture.h"
@@ -228,6 +229,7 @@ struct VideoVm final {
     }
 
     [[nodiscard]] VmObjectRef NewVideoView() {
+        ogplay::test::MountResourceFixture(*context, interpreter);
         const auto view = interpreter.NewIntrinsicInstance("Landroid/widget/VideoView;");
         const auto owner = linker.ResolveDescriptor("Landroid/widget/VideoView;");
         const auto ctor = linker.FindDirectMethod(owner, "<init>", "(Landroid/content/Context;)V");
@@ -252,6 +254,7 @@ struct VideoVm final {
     }
 
     [[nodiscard]] VmObjectRef NewSurfaceView() {
+        ogplay::test::MountResourceFixture(*context, interpreter);
         const auto view = interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
         const auto owner = linker.ResolveDescriptor("Landroid/view/SurfaceView;");
         const auto ctor = linker.FindDirectMethod(owner, "<init>", "(Landroid/content/Context;)V");
@@ -285,6 +288,7 @@ struct VideoVm final {
 
     VmValue CallOn(const VmObjectRef receiver, const std::string& name, const std::string& descriptor,
                    std::vector<VmValue> arguments = {}) {
+        ogplay::test::MountResourceFixture(*context, interpreter);
         const auto receiver_class = model.ObjectClass(receiver);
         const auto index = linker.FindVtableIndex(receiver_class, name, descriptor);
         REQUIRE_MESSAGE(index.has_value(), name);
@@ -957,11 +961,12 @@ TEST_CASE("DVM216 VideoView resource URIs retain a sealed APK range after AFD cl
     const std::array payload{std::byte{'v'}, std::byte{'i'}, std::byte{'d'}, std::byte{'0'}};
     vm.context->apk_bytes = MakeStoredZip("res/raw/movie.mp4", payload);
     vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
-    vm.context->arsc.entries.push_back({.resource_id = 0x7f040001U,
-                                        .type_name = "raw",
-                                        .entry_name = "movie",
-                                        .string_value = "res/raw/movie.mp4",
-                                        .value_type = 3});
+    ogplay::test::ResourceFixture(*vm.context)
+        .entries.push_back({.resource_id = 0x7f040001U,
+                            .type_name = "raw",
+                            .entry_name = "movie",
+                            .string_value = "res/raw/movie.mp4",
+                            .value_type = 3});
     std::shared_ptr<const ogplay::video::VideoDataSource> retained;
     vm.context->video_source_player_factory = [&](auto source) {
         retained = source;
@@ -1075,7 +1080,7 @@ TEST_CASE("DVM216 decoder and audio failures dispatch error through the main vid
     }
 }
 
-TEST_CASE("video APK media source validates once and retains exact stored range reads") {
+TEST_CASE("video APK media source retains immutable ranges across APK replacement") {
     VideoVm vm(FakeFactory());
     const std::vector<std::byte> payload{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4},
                                          std::byte{5}, std::byte{6}, std::byte{7}, std::byte{8}};
@@ -1086,6 +1091,9 @@ TEST_CASE("video APK media source validates once and retains exact stored range 
     source.name = "res/raw/movie.mp4";
     source.offset = 2;
     source.length = 4;
+    const auto owner = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    const auto resources = vm.CallOn(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+    const auto root = vm.interpreter.ProtectReferences(std::array{owner, resources});
     auto data = LoadEncodedAudioSource(*vm.context, source);
     REQUIRE(data != nullptr);
     CHECK(data->Size() == 4U);
@@ -1098,12 +1106,20 @@ TEST_CASE("video APK media source validates once and retains exact stored range 
     std::stop_source stop;
     stop.request_stop();
     CHECK(data->ReadAt(0, read, stop.get_token()) == 0U);
-    data.reset();
-    // Corrupt before capturing a new sealed source; the old view is retired.
+    // A new asset path captures replacement bytes; the existing source still
+    // owns its sealed mapping. API19 STORED asset reads do not check ZIP CRC.
     const auto offset =
         ogplay::loader::StoredApkEntryDataOffset(vm.context->apk_bytes, vm.context->archive, source.name);
     vm.context->apk_bytes[static_cast<std::size_t>(offset)] = std::byte{9};
-    CHECK(LoadEncodedAudioSource(*vm.context, source) == nullptr);
+    ogplay::test::MountResourceFixture(*vm.context, vm.interpreter);
+    source.offset = 0;
+    source.length = 1;
+    const auto replacement = LoadEncodedAudioSource(*vm.context, source);
+    REQUIRE(replacement);
+    CHECK(replacement->ReadAt(0, std::span(read).first(1)) == 1);
+    CHECK(read[0] == std::byte{9});
+    CHECK(data->ReadAt(0, read) == 3);
+    CHECK(read == std::array{std::byte{3}, std::byte{4}, std::byte{5}});
 }
 
 TEST_CASE("DVM-249 ordinary MediaPlayer video events transport looping and Surface retirement") {
@@ -1182,11 +1198,12 @@ TEST_CASE("DVM-249 ordinary video FD range survives close and prepared callback 
     const std::array payload{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}, std::byte{5}, std::byte{6}};
     vm.context->apk_bytes = MakeStoredZip("res/raw/movie.mp4", payload);
     vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
-    vm.context->arsc.entries.push_back({.resource_id = 0x7f040001U,
-                                        .type_name = "raw",
-                                        .entry_name = "movie",
-                                        .string_value = "res/raw/movie.mp4",
-                                        .value_type = 3});
+    ogplay::test::ResourceFixture(*vm.context)
+        .entries.push_back({.resource_id = 0x7f040001U,
+                            .type_name = "raw",
+                            .entry_name = "movie",
+                            .string_value = "res/raw/movie.mp4",
+                            .value_type = 3});
     const auto surface = vm.NewSurfaceView(), player = vm.NewPlainPlayer();
     const auto context = vm.CallOn(surface, "getContext", "()Landroid/content/Context;").ref;
     const auto resources = vm.CallOn(context, "getResources", "()Landroid/content/res/Resources;").ref;

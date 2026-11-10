@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "android_value_fixture.h"
 #include "file_vfs_fixture.h"
 #include "ogplay/loader/apk.h"
@@ -167,12 +168,12 @@ TEST_CASE("ROM BitmapFactory preserves aapt chunk for NinePatchDrawable drawing"
     image.insert(image.begin() + 33, block.begin(), block.end());
     f.context->apk_bytes = ogplay::test::file_vfs::MakeStoredZip("res/drawable/patch.9.png", image);
     f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
-    f.context->arsc.entries = {{.resource_id = 0x7f020001,
-                                .type_name = "drawable",
-                                .entry_name = "patch",
-                                .string_value = "res/drawable/patch.9.png",
-                                .value_type = 3,
-                                .density = 160}};
+    ogplay::test::ResourceFixture(*f.context).entries = {{.resource_id = 0x7f020001,
+                                                          .type_name = "drawable",
+                                                          .entry_name = "patch",
+                                                          .string_value = "res/drawable/patch.9.png",
+                                                          .value_type = 3,
+                                                          .density = 160}};
     const std::string path = "res/drawable/patch.9.png";
     std::vector<std::byte> pool(32);
     pool[0] = std::byte{1};
@@ -189,7 +190,7 @@ TEST_CASE("ROM BitmapFactory preserves aapt chunk for NinePatchDrawable drawing"
         pool.push_back(std::byte{0});
     for (std::size_t i = 0; i < 4; ++i)
         pool[4 + i] = static_cast<std::byte>(pool.size() >> (8 * i));
-    f.context->arsc.global_string_pool = std::move(pool);
+    ogplay::test::ResourceFixture(*f.context).global_string_pool = std::move(pool);
     const auto owner = f.New("Landroid/app/Activity;");
     const auto owner_root = f.vm.ProtectReferences(std::array{owner});
     ogplay::test::AttachViewTestContext(f.vm, owner);

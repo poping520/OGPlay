@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include "../../resources_test_support.h"
 
 #include <algorithm>
 #include <array>
@@ -544,11 +545,13 @@ TEST_CASE("APS-11 NDK fromSurface acquires the holder window and respects destro
 TEST_CASE("APS-11 APK Asset directories enumerate root subdirectory and absent paths through ARM ABI") {
     using namespace ogplay;
     BoundaryFixture f;
-    auto context = std::make_shared<runtime::DexVmAndroidContext>();
+    std::vector<std::pair<std::string, std::vector<std::byte>>> entries;
     for (const auto* name : {"assets/z", "assets/a", "assets/sub/", "assets/sub/file",
                              "assets/sub/deeper/item", "assets/sub/other", "res/raw/ignored"})
-        context->archive.entries.push_back({name, 0, 0, 0, 0, 0, 0});
-    const auto manager = f.boundary.RegisterAssetManager(runtime::ApkAssets(context));
+        entries.emplace_back(name, std::vector<std::byte>{std::byte{42}});
+    auto source = std::make_shared<runtime::ResourceAssetManager>(test::resources::Framework(), nullptr);
+    CHECK(source->core.addAssetPath(test::resources::OwnedSource(test::resources::Zip(entries))) == 2);
+    const auto manager = f.boundary.RegisterAssetManager(source);
     const auto list = [&](const char* path) {
         WriteGuestString(f, f.output, path);
         const auto directory = f.Call("libandroid.so", "AAssetManager_openDir", {manager.Value(), f.output.Value()});
@@ -571,5 +574,17 @@ TEST_CASE("APS-11 APK Asset directories enumerate root subdirectory and absent p
     CHECK(list("") == std::vector<std::string>{"a", "z"});
     CHECK(list("sub") == std::vector<std::string>{"file", "other"});
     for (const auto* path : {"missing", "a", "../sub", "/sub", "sub/../sub", "sub//deeper"}) CHECK(list(path).empty());
-    CHECK(context->apk_bytes.empty()); // Enumeration never extracts file contents.
+    std::atomic<bool> failed{};
+    {
+        std::vector<std::jthread> readers;
+        for (int i = 0; i < 4; ++i)
+            readers.emplace_back([&] {
+                for (int j = 0; j < 100; ++j) {
+                    const auto asset = source->Open("z");
+                    std::byte byte{};
+                    if (!asset || asset->ReadAt(0, {&byte, 1}) != 1 || byte != std::byte{42}) failed = true;
+                }
+            });
+    }
+    CHECK_FALSE(failed.load());
 }

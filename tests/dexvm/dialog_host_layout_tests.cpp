@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "android_value_fixture.h"
 #include "container_traversal_fixture.h"
 #include "../../src/runtime/integration/dexvm_android/shared.h"
@@ -523,8 +524,8 @@ TEST_CASE("DVM-305 modal presentation preserves a live managed Surface generatio
         f.context->ui_test_accessibility_disabled = true;
         f.context->surface_width = 800;
         f.context->surface_height = 480;
-        f.context->arsc.package_id = 0x7f;
-        ogplay::loader::ArscEntry theme;
+        ogplay::test::ResourceFixture(*f.context).package_id = 0x7f;
+        ogplay::test::ResourceFixtureEntry theme;
         theme.resource_id = 0x7f020001;
         theme.type_name = "style";
         theme.entry_name = "surface";
@@ -532,7 +533,7 @@ TEST_CASE("DVM-305 modal presentation preserves a live managed Surface generatio
         theme.parent = 0x01030005;
         for (auto id : {0x01010064U, 0x01010065U, 0x01010034U, 0x010100d4U})
             theme.bag.push_back({id, 1, 0, {}});
-        f.context->arsc.entries = {theme};
+        ogplay::test::ResourceFixture(*f.context).entries = {theme};
         f.context->application_theme = theme.resource_id;
         const auto owner = f.New("Landroid/app/Activity;");
         f.context->activity = owner;

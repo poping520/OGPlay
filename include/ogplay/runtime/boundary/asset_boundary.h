@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include "ogplay/memory/address.h"
+#include "ogplay/runtime/resources/resources.h"
 
 namespace ogplay::runtime {
 
@@ -39,6 +40,8 @@ public:
     virtual ~AndroidAssetManagerSource() = default;
     virtual std::shared_ptr<const AndroidAssetSource> Open(std::string_view) = 0;
     virtual std::vector<AndroidAssetDirectoryEntry> ListDirectory(std::string_view) = 0;
+
+    virtual std::optional<resources::ResTable_config> Configuration() const { return {}; }
 };
 
 struct AssetManagerJavaReference final { std::uint32_t token{}; };

@@ -263,7 +263,9 @@ ogplay_add_module(ogplay_loader Loader
     src/loader/dex.cpp
     src/loader/dex_analysis.cpp
     src/loader/dex_class_data.cpp
-    src/loader/arsc.cpp
+    src/loader/resources/table.cpp
+    src/loader/resources/string_pool.cpp
+    src/loader/resources/configuration.cpp
     src/loader/dex_code.cpp
     src/loader/dynamic_linker.cpp
     src/loader/elf.cpp
@@ -359,6 +361,13 @@ target_compile_definitions(ogplay_sqlite PRIVATE
     SQLITE_THREADSAFE=1 SQLITE_OMIT_LOAD_EXTENSION=1
     SQLITE_DEFAULT_MEMSTATUS=0)
 set_target_properties(ogplay_sqlite PROPERTIES C_EXTENSIONS ON)
+
+ogplay_add_module(ogplay_resources Resources
+    src/runtime/resources/xml.cpp
+    src/runtime/resources/theme.cpp
+    src/runtime/resources/assets.cpp
+)
+target_link_libraries(ogplay_resources PRIVATE OGPlay::Loader OGPlay::Core)
 
 ogplay_add_module(ogplay_raster Raster
     src/runtime/raster/bitmap.cpp
@@ -458,7 +467,6 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/integration/android_link_preflight.cpp
     ${OGPLAY_DEXVM_ANDROID_SOURCES}
     src/runtime/integration/surface_stream.cpp
-    src/runtime/integration/theme_resources.cpp
     src/runtime/integration/apk_assets.cpp
     src/runtime/integration/dexvm_bridge.cpp
     src/runtime/integration/dexvm_io_vfs.cpp
@@ -538,7 +546,7 @@ target_link_libraries(ogplay_runtime PUBLIC
     OGPlay::Audio OGPlay::Core OGPlay::Cpu OGPlay::Hal OGPlay::Loader OGPlay::Memory
     OGPlay::Video
 )
-target_link_libraries(ogplay_runtime PRIVATE OGPlay::Gles OGPlay::Raster ogplay_sqlite)
+target_link_libraries(ogplay_runtime PRIVATE OGPlay::Resources OGPlay::Gles OGPlay::Raster ogplay_sqlite)
 target_include_directories(ogplay_runtime PRIVATE
     "${OGPLAY_GENERATED_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -784,4 +792,11 @@ endif()
 
 if(OGPLAY_BUILD_TESTS)
     include(cmake/Tests.cmake)
+endif()
+
+# Explicit host benchmark, excluded from normal production/test builds.
+add_executable(ogplay_resources_benchmark EXCLUDE_FROM_ALL tools/resources_benchmark.cpp)
+target_link_libraries(ogplay_resources_benchmark PRIVATE OGPlay::Resources OGPlay::Core OGPlay::Hal)
+if(WIN32)
+    target_link_libraries(ogplay_resources_benchmark PRIVATE psapi)
 endif()

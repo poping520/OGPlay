@@ -350,6 +350,7 @@ ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
 
 VmValue ClickVm::CallOn(const VmObjectRef receiver, const std::string& name, const std::string& descriptor,
                         std::vector<VmValue> arguments) {
+    ogplay::test::MountResourceFixture(*context, interpreter);
     const auto activity_type = linker.ResolveDescriptor("Landroid/app/Activity;");
     if (linker.IsAssignable(activity_type, model.ObjectClass(receiver)) && context->activity == receiver &&
         (context->activity_stack.empty() || context->activity_stack.back().object != receiver)) {
@@ -427,6 +428,7 @@ VmObjectRef ClickVm::NewTextDialog(VmObjectRef owner, VmObjectRef listener, bool
 
 VmValue ClickVm::CallDirect(const VmObjectRef receiver, const std::string& class_descriptor, const std::string& name,
                             const std::string& descriptor, std::vector<VmValue> arguments) {
+    ogplay::test::MountResourceFixture(*context, interpreter);
     if (name == "<init>" && descriptor.starts_with("(Landroid/content/Context;") && !arguments.empty()) {
         ogplay::test::AttachViewTestContext(interpreter, arguments.front().ref);
     }

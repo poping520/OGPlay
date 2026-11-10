@@ -16,3 +16,10 @@ Copyright 2006 The Apache Software Foundation
 
 Licensed under the Apache License, Version 2.0. You may obtain a copy at
 https://www.apache.org/licenses/LICENSE-2.0
+
+framework-res.apk is derived from the API 19 resource archive from AOSP frameworks/base at
+android-4.4.4_r2.0.1, distributed under Apache-2.0. OGPlay removed META-INF/
+and default_wallpaper.jpg from res/drawable-nodpi, res/drawable-sw600dp-nodpi,
+and res/drawable-sw720dp-nodpi. The resource table is unchanged.
+OGPlay resource core algorithms derived from ResourceTypes.cpp, AssetManager.cpp
+and android_util_AssetManager.cpp retain AOSP copyright and Apache-2.0 notices.

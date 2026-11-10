@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "container_traversal_fixture.h"
 #include "../fixtures/bitmap_decode_data.h"
 #include "file_vfs_fixture.h"
@@ -67,8 +68,9 @@ std::vector<std::byte> StringPool(const std::vector<std::string>& strings, const
     return chunk;
 }
 
-ogplay::loader::ArscEntry Style(std::uint32_t id, std::uint32_t parent, std::vector<ogplay::loader::ArscBagValue> bag) {
-    ogplay::loader::ArscEntry e;
+ogplay::test::ResourceFixtureEntry Style(std::uint32_t id, std::uint32_t parent,
+                                         std::vector<ogplay::test::ResourceFixtureBagValue> bag) {
+    ogplay::test::ResourceFixtureEntry e;
     e.resource_id = id;
     e.type_name = "style";
     e.entry_name = "fixture";
@@ -160,8 +162,8 @@ constexpr std::uint32_t theme = 0x7f020001, button_style = 0x7f020002, xml_style
 VmObjectRef Owner(ContainerVm& f, int defaults = 0) {
     f.context->ui_test_accessibility_disabled = true;
     f.context->target_sdk_version = 19;
-    f.context->arsc.package_id = 0x7f;
-    f.context->arsc.global_string_pool = StringPool({"res/drawable/fixture.png"}, true);
+    ogplay::test::ResourceFixture(*f.context).package_id = 0x7f;
+    ogplay::test::ResourceFixture(*f.context).global_string_pool = StringPool({"res/drawable/fixture.png"}, true);
     auto t = Style(theme, 0x01030005, {{0x01010048, 1, button_style, {}}, {0x01010095, 5, 0x1000, {}}});
     auto b = Style(button_style, 0,
                    {{0x01010095, 5, 0x1400, {}},
@@ -183,7 +185,7 @@ VmObjectRef Owner(ContainerVm& f, int defaults = 0) {
         b.bag.push_back({0x01010034, 1, 0, {}});
         b.bag.push_back({0x010100af, 16, 0x11, {}});
     }
-    f.context->arsc.entries = {t, b, Style(xml_style, 0, {{0x01010095, 5, 0x1600, {}}})};
+    ogplay::test::ResourceFixture(*f.context).entries = {t, b, Style(xml_style, 0, {{0x01010095, 5, 0x1600, {}}})};
     f.context->application_theme = theme;
     const auto owner = f.New("Landroid/app/Activity;");
     ogplay::test::AttachViewTestContext(f.vm, owner);
@@ -226,7 +228,6 @@ TEST_CASE("DVM-297 Button ROM constructors real buttonStyle precedence on both b
         CHECK(State(f, button).text_style == 2);
         CHECK(State(f, button).padding == ui::Insets{});
         CHECK_FALSE(State(f, button).background_color.has_value());
-        CHECK_FALSE(f.context->ui_view_backgrounds.contains(button.Value()));
         CHECK(f.On(button, "isFocusable", "()Z").AsInt() == 1);
         CHECK(f.On(button, "isClickable", "()Z").AsInt() == 1);
         for (bool explicit_xml : {false, true}) {
@@ -241,7 +242,7 @@ TEST_CASE("DVM-297 Button ROM constructors real buttonStyle precedence on both b
             CHECK(State(f, styled).text_color == 0x123456ff);
         }
         // Caller-supplied defStyleAttr remains real, not hardcoded to buttonStyle.
-        f.context->arsc.entries.front().bag.push_back({0x7f010001, 1, xml_style, {}});
+        ogplay::test::ResourceFixture(*f.context).entries.front().bag.push_back({0x7f010001, 1, xml_style, {}});
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(theme)});
         const auto custom = f.New("Landroid/widget/Button;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
                                   {VmValue::Ref(owner), VmValue::Ref(VmObjectRef{}), VmValue::Int(0x7f010001)});
@@ -263,12 +264,13 @@ TEST_CASE("DVM-297 Button inherited text measure click focus compound and frozen
         f.On(button, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.model.NewString(u"HI HI"))});
         f.On(button, "setTextSize", "(IF)V", {VmValue::Int(0), VmValue::Float(8)});
         constexpr std::uint32_t image = 0x7f030050;
-        f.context->arsc.entries.push_back({.resource_id = image,
-                                           .type_name = "drawable",
-                                           .entry_name = "compound",
-                                           .string_value = "res/drawable/fixture.png",
-                                           .value_type = 3,
-                                           .density = 160});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = image,
+                                .type_name = "drawable",
+                                .entry_name = "compound",
+                                .string_value = "res/drawable/fixture.png",
+                                .value_type = 3,
+                                .density = 160});
         f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
         f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
         const auto res = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
@@ -336,8 +338,12 @@ TEST_CASE("DVM-368 TextView pixel minimums preserve ROM fields and constrain bot
         ContainerVm f(backend);
         const auto owner = Owner(f);
         const auto root = f.vm.ProtectReferences(std::array{owner});
-        f.context->arsc.entries[1].bag.push_back({0x0101013f, 5, 0x5000, {}});  // minWidth=80dp
-        f.context->arsc.entries[1].bag.push_back({0x01010140, 5, 0x3000, {}});  // minHeight=48dp
+        ogplay::test::ResourceFixture(*f.context)
+            .entries[1]
+            .bag.push_back({0x0101013f, 5, 0x5000, {}});  // minWidth=80dp
+        ogplay::test::ResourceFixture(*f.context)
+            .entries[1]
+            .bag.push_back({0x01010140, 5, 0x3000, {}});  // minHeight=48dp
         const auto parser =
             OpenAttributeXml(f, owner, AttributeXml({{{0x0101013f, 5, 0x5e00}, {0x01010140, 5, 0x2800}}}));
         const auto parser_root = f.vm.ProtectReferences(std::array{parser});

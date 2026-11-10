@@ -1,3 +1,4 @@
+#include "dexvm/resource_fixture.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
@@ -740,11 +741,12 @@ TEST_CASE("PackageManager getPermissionInfo queries definitions, not requests") 
         f.context->permission_inventory_known = true;
         f.context->requested_permissions = {"external.REQUESTED"};
         f.context->granted_permissions.insert("external.REQUESTED");
-        f.context->arsc.entries.push_back({.resource_id = 0x7f050001U,
-                                           .type_name = "string",
-                                           .entry_name = "permission_value",
-                                           .string_value = "resolved",
-                                           .value_type = 0x03U});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = 0x7f050001U,
+                                .type_name = "string",
+                                .entry_name = "permission_value",
+                                .string_value = "resolved",
+                                .value_type = 0x03U});
         ogplay::loader::AndroidManifestPermissionDefinition definition;
         definition.name = "org.example.game.C2D_MESSAGE";
         definition.package_name = "org.example.game";
@@ -851,21 +853,24 @@ TEST_CASE("PackageManager getServiceInfo uses current Manifest service facts") {
         f.context->application_process_name = "org.example.game:app";
         f.context->service_inventory_known = true;
         f.context->application_meta_data.emplace("application.key", std::string("app"));
-        f.context->arsc.entries.push_back({.resource_id = 0x7f050001U,
-                                           .type_name = "string",
-                                           .entry_name = "service_value",
-                                           .string_value = "resolved",
-                                           .value_type = 0x03U});
-        f.context->arsc.entries.push_back({.resource_id = 0x7f050002U,
-                                           .type_name = "float",
-                                           .entry_name = "floating",
-                                           .value_type = 0x04U,
-                                           .value_data = 0x40066666U});
-        f.context->arsc.entries.push_back({.resource_id = 0x7f050003U,
-                                           .type_name = "dimen",
-                                           .entry_name = "ignored",
-                                           .value_type = 0x05U,
-                                           .value_data = 0x00000e02U});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = 0x7f050001U,
+                                .type_name = "string",
+                                .entry_name = "service_value",
+                                .string_value = "resolved",
+                                .value_type = 0x03U});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = 0x7f050002U,
+                                .type_name = "float",
+                                .entry_name = "floating",
+                                .value_type = 0x04U,
+                                .value_data = 0x40066666U});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = 0x7f050003U,
+                                .type_name = "dimen",
+                                .entry_name = "ignored",
+                                .value_type = 0x05U,
+                                .value_data = 0x00000e02U});
         ogplay::loader::AndroidManifestServiceComponent push;
         push.name = "org.example.game.PushService";
         push.exported = true;
@@ -1004,11 +1009,12 @@ TEST_CASE("PackageManager getReceiverInfo uses current Manifest receiver facts")
         f.context->application_process_name = "org.example.game:app";
         f.context->receiver_inventory_known = true;
         f.context->application_meta_data.emplace("application.key", std::string("app"));
-        f.context->arsc.entries.push_back({.resource_id = 0x7f050001U,
-                                           .type_name = "string",
-                                           .entry_name = "receiver_value",
-                                           .string_value = "resolved",
-                                           .value_type = 0x03U});
+        ogplay::test::ResourceFixture(*f.context)
+            .entries.push_back({.resource_id = 0x7f050001U,
+                                .type_name = "string",
+                                .entry_name = "receiver_value",
+                                .string_value = "resolved",
+                                .value_type = 0x03U});
         f.context->receiver_components = {
             {.name = "org.example.game.CoreReceiver",
              .enabled = true,

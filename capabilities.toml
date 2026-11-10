@@ -115,8 +115,8 @@ note = "DVM-344/ADR-0169：固定 SHA-256 的 API19 Roboto-Regular → DroidSans
 
 [runtime.ui_include_resources_images]
 status = "complete"
-test = "tests/dexvm/ui_include_tests.cpp; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/ui_renderer_tests.cpp; tests/dexvm/arsc_tests.cpp"
-note = "LUI-14、DVM-149：include/merge 展开与 override，深度/环检测；Arsc 驱动 16 层 string/color/dimen/reference 与 bitmap/color drawable 解析；ImageView 五种 scaleType。资源按 screenLayout、方向、sw/w/h、density、SDK 依 API19 顺序选择，配置变化使 drawable 缓存失效。locale 等其他 qualifier 不支持。"
+test = "tests/dexvm/ui_include_tests.cpp; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/ui_renderer_tests.cpp"
+note = "LUI-14、DVM-149：include/merge 展开与 override，深度/环检测；ROM Resources/TypedArray 从 framework 与应用 ARSC 解析 string/color/dimen/reference 与 Drawable；ImageView 五种 scaleType。资源核心按 API19 配置匹配；运行期配置事件派发未接入。"
 
 [runtime.ui_dialog_presentation]
 status = "partial"
@@ -125,8 +125,8 @@ note = "DVM-370/346：独立HostLayout modal经共同快照原子发布，render
 
 [dexvm.drawable_resource]
 status = "partial"
-test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/theme_resources_tests.cpp#API19 app drawable; tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/rom_skin_tests.cpp#DVM-352; tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "ROM 软件 Drawable 绘制使用 Skia，资源支持纯色、APK PNG/JPEG 与编译 NinePatch。同 ROM edit_text/btn_default/dropdown、scrollbar、ProgressBar medium/horizontal 维持封存投影与原 XML 闭包，层 ID、level、静态帧和 selector 状态可查。未封存系统皮肤、应用 drawable XML、动画调度/过渡和投影 ConstantState clone 仍失败。"
+test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/theme_resources_tests.cpp#API19 app and system resources; tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/rom_skin_tests.cpp#DVM-352; tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
+note = "ROM Resources 选择并加载 framework 与应用的 Drawable，软件位图/NinePatch 经资源核心 Asset 和 Skia 解码。View 投影只读当前 ROM Drawable 及 Bitmap/NinePatch/Paint backing，未覆盖的绘制、动画调度及过渡仍受 UI 支持范围限制。"
 
 [runtime.ui_multi_title_convergence]
 status = "complete"
@@ -316,7 +316,7 @@ note = "GUI-17：库启动的游戏窗口/Dock 图标为游戏图标与 OGPlay �
 [loader.apk_application_visuals]
 status = "complete"
 test = "tests/loader/apk_manifest_tests.cpp; tests/frontend/library_visuals_tests.cpp"
-note = "Launcher GUI-3/14/16 严格产出 application icon resource id 与 label resource/string 二选一事实；提取链复用 ParseArsc/ReadApkEntry 和既有 stb，从图标的全部密度配置中取最大可解码 PNG（跳过 XML），只缩小不放大、上限 256 的方形 RGBA PNG，`library refresh-icons` 按此规则重提已入库图标；资源/路径/条目/解码或 label 控制字符均以结构化 fallback 回到占位图标或 package name"
+note = "Launcher GUI-3/14/16 严格产出 application icon resource id 与 label resource/string 二选一事实；提取链复用 Loader 的资源表核心、ReadApkEntry 和既有图像解码，从图标的全部密度配置中取最大可解码 PNG（跳过 XML），只缩小不放大、上限 256 的方形 RGBA PNG，`library refresh-icons` 按此规则重提已入库图标；资源/路径/条目/解码或 label 控制字符均以结构化 fallback 回到占位图标或 package name"
 
 [agent.run]
 status = "complete"
@@ -1750,8 +1750,8 @@ note = "DVM-18/273：发布编译 XML 的 START/TEXT/END；字符串按需沿 AP
 
 [loader.arsc]
 status = "complete"
-test = "tests/dexvm/arsc_tests.cpp"
-note = "DVM-15 严格 resources.arsc 读取：resid↔(type,name,文件路径)双向查询，UTF-8/UTF-16 string pool，保留既有配置选择；DVM-121 保留复杂 bag parent/typed items，校验 entry/value/map 边界和字符串索引，重复 child key 按声明序保留；零包合法、包数匹配且全局池必需；条目延迟失败及缺名投影待扩展；多 locale/动态 qualifier 未扩展，越界即失败；本地 exact 交叉验证 0x7f040009→res/raw/raw_000.ogg 与 v1 人工 pattern 一致"
+test = "tests/runtime/resources_table_tests.cpp; tests/runtime/resources_theme_tests.cpp; tests/frontend/library_visuals_tests.cpp; tests/loader/apk_manifest_tests.cpp"
+note = "唯一 API19 ARSC 表核心供清单、游戏库和资源 native 共用。支持字符串池、配置匹配、跨包引用、bag 与配置缓存；entry 按 type chunk 首次访问同步校验。Overlay/idmap、动态包 ID 和新格式不支持。"
 
 [session.dex_activity_lifecycle]
 status = "complete"
@@ -1985,8 +1985,8 @@ note = "ROM Typeface 使用注入的 API19 系统字体 family、别名及样式
 
 [dexvm.text_appearance]
 status = "partial"
-test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/arsc_tests.cpp; tests/loader/apk_manifest_tests.cpp"
-note = "DVM-121：ColorStateList、StateSet、R.attr 来自 BootDex；Manifest theme 传入 Activity，TextView 支持 APK style 的 parent/reference/attribute 及直接颜色/尺寸/字体，实际 UI 使用文本色/尺寸/字体；hint/link/highlight 只存储可查询。未登记的 framework style、stateful selector 与完整主题明确失败；shadow/allCaps 等未实现属性忽略并记录警告。"
+test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/loader/apk_manifest_tests.cpp"
+note = "DVM-121：ColorStateList、StateSet、R.attr 来自 BootDex；Manifest theme 传入 Activity，TextView 支持 APK style 的 parent/reference/attribute 及直接颜色/尺寸/字体，实际 UI 使用文本色/尺寸/字体；hint/link/highlight 只存储可查询。主题与 ColorStateList 通过 ROM Resources 读取，完整 UI 绘制仍受投影边界限制；shadow/allCaps 等未实现属性忽略并记录警告。"
 
 [dexvm.runtime_shutdown_hooks]
 status = "complete"
@@ -2011,7 +2011,7 @@ note = "DVM-195/ADR-0075：原版 API19 NativeActivity 接入 ARMv7 进程，提
 [dexvm.xml_pull_bootdex]
 status = "partial"
 test = "tests/dexvm/file_assets_resources_tests.cpp#XML Pull original factory parses BOM APK assets through KXml on both backends; tests/dexvm/file_assets_resources_tests.cpp#Resources getXml exposes compiled APK XML as pull events; tests/dexvm/xml_block_tests.cpp#DVM-287; tools/bootdex/build_bootdex.py check"
-note = "API19 core.jar 提供完整 XML Pull 接口/工厂与 KXml，原版工厂反射创建 parser/serializer，无解析 intrinsic；验证 AssetManager InputStream、namespace、UTF-8 BOM 与畸形 XML 异常。serializer 长尾未验收；DVM-287 默认 ROM XmlBlock/Parser 支持 APK compiled XML typed/raw 查询与生命周期；StringBlock 仅无样式池，系统 XML/span 失败。"
+note = "API19 core.jar 的 KXml 解析文本 XML。ROM XmlBlock/Parser 使用资源核心读取 framework 和应用编译 XML，支持 typed/raw 属性、独立游标及生命周期检查。StringBlock 支持 UTF-16 和样式 span。"
 
 [dexvm.sax_text_stream]
 status = "partial"
@@ -2020,8 +2020,8 @@ note = "DVM-375：SAXParser 的 XMLReader 使用 API19 KXml 和 ROM SAX 类型�
 
 [dexvm.bounded_theme]
 status = "partial"
-test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/rom_skin_tests.cpp#DVM-355; tests/dexvm/edittext_traversal_tests.cpp#DVM-328; tests/dexvm/rom_skin_tests.cpp#DVM-327; tests/dexvm/rom_skin_tests.cpp#DVM-326; tools/bootdex/theme_projection.py --self-test; tests/dexvm/theme_resources_tests.cpp#DVM-325; tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/theme_resources_tests.cpp#DVM-292; tools/bootdex/build_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
-note = "ADR-0160/0161、DVM-367：同 ROM ARSC 各类型引用按真实 ID 投影，身份不给加载信用；封存 XML 引用亦可查询。ContextImpl 使用默认基础主题，Activity 叠加自身主题；ROM 中 parent 链不设置投影属性的 inert 样式可应用，其他未知样式明确失败。支持既有颜色/皮肤和 Holo dark horizontal 静态资源；未封存内容、可见 scrollbar 绘制与完整主题未支持。"
+test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/rom_skin_tests.cpp#DVM-355; tests/dexvm/edittext_traversal_tests.cpp#DVM-328; tests/dexvm/rom_skin_tests.cpp#DVM-327; tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/theme_resources_tests.cpp#DVM-325; tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/runtime/resources_theme_tests.cpp; tools/bootdex/build_bootdex.py check"
+note = "ROM Theme/TypedArray 使用 framework 和应用 ARSC 的真实配置、bag 与跨包引用。UI 颜色、外观、尺寸及皮肤读取当前 ROM 对象。overlay/idmap 和配置变更事件未接入。"
 
 [runtime.guest_proc_maps]
 status = "partial"
@@ -2066,7 +2066,7 @@ note = "Java Sensor/SensorManager 保留原版算法；LocalSensorManager 与 ND
 [runtime.asset_manager]
 status = "partial"
 test = "tests/runtime/jni_android_platform_tests.cpp#DVM-237; tests/runtime/native_activity_process_tests.cpp#DVM-195; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp#DVM-237; tests/dexvm/file_assets_resources_tests.cpp#AssetManager openFd; tests/dexvm/file_assets_resources_tests.cpp#Parcel; tests/dexvm/file_assets_resources_tests.cpp#asset file descriptors; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp#APS-11"
-note = "Java/NativeActivity/NDK 共用 manager 与 APK 来源；read 保持有界窗口，STORED FD 共用校验。openDir 枚举排序直接条目、只返回文件，名称在下次 next/close 失效；getBuffer 按需物化 STORED/Deflate，只读稳定地址，单项≤32 MiB，close 释放。系统 assets、64 位导出与 addAssetPath 未支持。"
+note = "ROM AssetManager 与 NativeActivity/NDK 共用同一核心 manager 和配置，从 framework-res 和游戏 APK 读取。framework/app cookie 为 1/2，支持流式 DEFLATE 与 STORED 只读 FD，getBuffer 按需物化单项≤32 MiB。64 位导出与 ObbScanner 未接入。"
 
 [dexvm.bitmap_decode]
 status = "partial"
@@ -2205,7 +2205,7 @@ note = "DVM-368：TextView 真实主题构造、plain 文本叶测量与冻结 l
 
 [dexvm.image_leaf]
 status = "partial"
-note = "DVM-296/363：ImageView/ImageButton 完整 ROM 形状、clinit、真实主题构造与纯叶测量 adapter；Java 拥有图片/scale/alpha，五种 scale、bitmap 版本与纯色同 epoch 冻结。btn_default 默认背景已封存，adjustViewBounds 和 drawable-state 合并执行 ROM。其他皮肤、其余 scale、matrix/tint/max/baseline/crop 非中性请求失败。"
+note = "DVM-296/363：ImageView/ImageButton 完整 ROM 形状、clinit、真实主题构造与纯叶测量 adapter；Java 拥有图片/scale/alpha，五种 scale、bitmap 版本与纯色同 epoch 冻结。btn_default 默认背景从 framework-res 加载，adjustViewBounds 和 drawable-state 合并执行 ROM。未覆盖的 Drawable 绘制、其余 scale、matrix/tint/max/baseline/crop 非中性请求仍受 UI 边界限制。"
 test = "tests/dexvm/imageview_traversal_tests.cpp; tests/dexvm/theme_resources_tests.cpp#DVM-296"
 
 [dexvm.spinner_adapter]

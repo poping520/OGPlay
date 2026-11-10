@@ -8,7 +8,7 @@
 
 #include "ogplay/audio/encoded_audio.h"
 #include "ogplay/audio/encoded_audio_stream.h"
-#include "ogplay/loader/apk.h"
+#include "ogplay/runtime/integration/apk_assets.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
 namespace ogplay::runtime {
@@ -30,42 +30,25 @@ private:
     std::shared_ptr<const VfsReadLease> lease_;
 };
 
-class ApkAudioSource final : public audio::EncodedAudioDataSource {
+class ResourceAudioSource final : public audio::EncodedAudioDataSource {
 public:
-    ApkAudioSource(const std::span<const std::byte> bytes,
-                   const loader::ApkArchive& archive, std::string name,
-                   const std::uint64_t offset, const std::uint64_t length)
-        : bytes_(bytes), archive_(&archive), name_(std::move(name)),
-          offset_(offset), length_(length) {
-        const auto entry = std::find_if(archive.entries.begin(), archive.entries.end(),
-            [this](const auto& value) { return value.name == name_; });
-        if (entry != archive.entries.end() && entry->compression_method == 0U) {
-            stored_ = loader::ValidatedStoredApkEntryData(bytes_, archive, name_)
-                .subspan(static_cast<std::size_t>(offset_), static_cast<std::size_t>(length_));
-        }
-    }
+    ResourceAudioSource(std::unique_ptr<resources::Asset> asset, std::uint64_t offset, std::uint64_t length)
+        : asset_(std::move(asset)), offset_(offset), length_(length) {}
     [[nodiscard]] std::uint64_t Size() const noexcept override { return length_; }
-    [[nodiscard]] std::size_t ReadAt(
-        const std::uint64_t offset, const std::span<std::byte> destination,
-        const std::stop_token stop) const override {
+
+    [[nodiscard]] std::size_t ReadAt(std::uint64_t offset, std::span<std::byte> destination,
+                                     std::stop_token stop) const override {
         if (stop.stop_requested() || offset >= length_) return 0;
-        const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(
-            destination.size(), length_ - offset));
-        if (stored_) {
-            std::copy_n(stored_->begin() + static_cast<std::ptrdiff_t>(offset), count,
-                        destination.begin());
-            return count;
-        }
-        return loader::ReadApkEntryRange(bytes_, *archive_, name_, offset_ + offset,
-                                         destination.first(count), stop);
+        std::scoped_lock lock(mutex_);
+        static_cast<void>(asset_->seek(static_cast<std::int64_t>(offset_ + offset), 0));
+        return asset_->read(
+            destination.first(static_cast<std::size_t>(std::min<std::uint64_t>(destination.size(), length_ - offset))));
     }
+
 private:
-    std::span<const std::byte> bytes_;
-    const loader::ApkArchive* archive_{};
-    std::string name_;
-    std::uint64_t offset_{};
-    std::uint64_t length_{};
-    std::optional<std::span<const std::byte>> stored_;
+    std::unique_ptr<resources::Asset> asset_;
+    std::uint64_t offset_{}, length_{};
+    mutable std::mutex mutex_;
 };
 
 [[nodiscard]] bool TakesRemainder(const std::uint64_t length) {
@@ -108,32 +91,30 @@ std::shared_ptr<const audio::EncodedAudioDataSource> LoadEncodedAudioSource(
         if (found == context.encoded_audio_leases.end()) return nullptr;
         return found->second;
     }
-    std::string apk_name;
-    if (source.kind == audio::EncodedAudioSource::Kind::resource) {
-        const auto* entry = context.arsc.FindById(
-            static_cast<std::uint32_t>(source.resource));
-        if (entry == nullptr || !entry->string_value.has_value()) return nullptr;
-        apk_name = *entry->string_value;
-    }
     if (source.kind == audio::EncodedAudioSource::Kind::apk_entry ||
         source.kind == audio::EncodedAudioSource::Kind::resource) {
-        if (apk_name.empty()) apk_name = source.name;
-        const auto found = std::find_if(
-            context.archive.entries.begin(), context.archive.entries.end(),
-            [&apk_name](const loader::ApkEntry& entry) {
-                return entry.name == apk_name;
-            });
-        if (found == context.archive.entries.end() || source.offset > found->uncompressed_size)
-            return nullptr;
-        const auto available = found->uncompressed_size - source.offset;
-        const auto length = WindowLength(available, source.length);
-        if (length > available || length > audio::kMaximumEncodedAudioBytes) return nullptr;
+        const auto manager = context.application_resource_manager.lock();
+        if (!manager) return nullptr;
         try {
-            return std::make_shared<ApkAudioSource>(
-                context.apk_bytes, context.archive, apk_name, source.offset, length);
+            std::scoped_lock lock(manager->mutex);
+            if (manager->retired) return nullptr;
+            std::unique_ptr<resources::Asset> asset;
+            if (source.kind == audio::EncodedAudioSource::Kind::resource) {
+                const auto& table = manager->core.resources();
+                const auto value =
+                    resources::loadResourceValue(table, static_cast<std::uint32_t>(source.resource), 0, true);
+                if (!value || value->value.type != 3) return nullptr;
+                asset =
+                    manager->core.openNonAsset(table.strings(value->cookie).stringAt(value->value.data), value->cookie);
+            } else {
+                asset = manager->core.openNonAsset(source.name);
+            }
+            if (!asset || source.offset > asset->length()) return nullptr;
+            const auto available = asset->length() - source.offset;
+            const auto length = WindowLength(available, source.length);
+            if (length > available || length > audio::kMaximumEncodedAudioBytes) return nullptr;
+            return std::make_shared<ResourceAudioSource>(std::move(asset), source.offset, length);
         } catch (const std::runtime_error&) {
-            // Preserve the existing unavailable-source result; Java consumers
-            // report prepare/open failure rather than a host exception.
             return nullptr;
         }
     }

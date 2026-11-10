@@ -2126,7 +2126,7 @@ void SetComponentMetaData(dx::IntrinsicContext& call, const Context& context, co
         UnsupportedPackageArchive(call, "sealed current-package facts are unavailable");
     if (canonical != context->vfs->CanonicalPath(context->package_resource_path))
         UnsupportedPackageArchive(call, "only the sealed current APK is supported");
-    if (stat.writable || context->apk_bytes.empty() || stat.size != context->apk_bytes.size())
+    if (stat.writable || context->ApkBytes().empty() || stat.size != context->ApkBytes().size())
         UnsupportedPackageArchive(call, "current APK backing is not sealed");
     const auto flags = call.arguments[1].AsInt();
     if ((flags & ~(kGetActivities | kGetDisabledComponents)) != 0)
@@ -2388,8 +2388,10 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
                                   if (const auto* literal = std::get_if<std::string>(&*context->application_label)) {
                                       return MakeString(call, *literal);
                                   }
-                                  return dx::VmValue::Ref(call.vm.NewStringUtf8(ResolveResourceString(
-                                      *context, std::get<std::uint32_t>(*context->application_label))));
+                                  const auto resources = ResourceObject(call, context, false);
+                                  return CallAndroidMethod(call.vm, resources, "getText", "(I)Ljava/lang/CharSequence;",
+                                                           {dx::VmValue::Int(static_cast<std::int32_t>(
+                                                               std::get<std::uint32_t>(*context->application_label)))});
                               }
                               return MakeString(call, context->package_name);
                           });

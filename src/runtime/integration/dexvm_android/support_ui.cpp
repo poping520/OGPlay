@@ -42,6 +42,51 @@ ui::Size ReadAndroidViewMinimum(dexvm::Interpreter& vm, DexVmAndroidContext& con
 }
 
 namespace {
+bool ProjectRomBackground(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef drawable,
+                          ui::UiNode& target) {
+    using namespace android_intrinsics;
+    const auto original = drawable;
+    const auto container = vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/DrawableContainer;");
+    if (vm.Linker().IsAssignable(container, vm.Model().ObjectClass(drawable)))
+        drawable = CallAndroidMethod(vm, drawable, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref;
+    if (!drawable.IsValid()) return false;
+    const auto type = vm.Model().ObjectClass(drawable);
+    if (drawable == original &&
+        vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/ColorDrawable;"), type)) {
+        const auto color = static_cast<std::uint32_t>(CallAndroidMethod(vm, drawable, "getColor", "()I").AsInt());
+        if (color >> 24U) target.background_color = AndroidColorToRgba(color);
+        return true;
+    }
+    const auto ref = [&](dexvm::VmObjectRef owner, const char* name, const char* descriptor) {
+        const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(owner), name, descriptor);
+        if (!field) throw std::logic_error("ROM drawable field is missing");
+        vm.RequireImplementedField(*field);
+        return dexvm::VmObjectRef(vm.Model().InstanceSlots(owner)[vm.Linker().Field(*field).slot].bits);
+    };
+    const bool nine =
+        vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/NinePatchDrawable;"), type);
+    if (!nine) return false;
+    const auto patch = ref(drawable, "mNinePatch", "Landroid/graphics/NinePatch;");
+    const auto bitmap = ref(patch, "mBitmap", "Landroid/graphics/Bitmap;");
+    const auto found = context.bitmaps.find(bitmap.Value());
+    if (found == context.bitmaps.end() || found->second.recycled || !found->second.pixels)
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "drawable bitmap backing unavailable"};
+    const auto& backing = found->second;
+    auto pixels = std::make_shared<ui::UiBitmap>();
+    pixels->width = backing.width;
+    pixels->height = backing.height;
+    for (const auto argb : backing.pixels->Snapshot()) {
+        pixels->rgba8.push_back(static_cast<std::uint8_t>(argb >> 16U));
+        pixels->rgba8.push_back(static_cast<std::uint8_t>(argb >> 8U));
+        pixels->rgba8.push_back(static_cast<std::uint8_t>(argb));
+        pixels->rgba8.push_back(static_cast<std::uint8_t>(argb >> 24U));
+    }
+    ProjectNinePatchGeometry(vm, context, patch, *pixels);
+    target.background_bitmap = std::move(pixels);
+    target.background_alpha = static_cast<float>(CallAndroidMethod(vm, drawable, "getAlpha", "()I").AsInt()) / 255;
+    return true;
+}
+
 void ProjectScrollbarState(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view, bool visible,
                            std::int32_t flags) {
     const auto slot = [&](dexvm::VmObjectRef object, const char* name, const char* type) -> dexvm::Slot& {
@@ -374,42 +419,16 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
             auto& target = *context.ui_tree.Get(*node);
             target.background_color.reset();
             target.background_resource_id = 0;
+            target.background_bitmap.reset();
             target.background_alpha = 1.0F;
             const auto background = fields.GetRef((*context.view_java_input_fields)[1]);
-            const auto skin = context.ui_drawables.find(background.Value());
-            if (skin != context.ui_drawables.end() && skin->second.rom_skin) {
-                const auto& state = skin->second;
-                const auto selected = state.skin_children.empty() ? background
-                                      : state.skin_current >= 0
-                                          ? state.skin_children.at(static_cast<std::size_t>(state.skin_current))
-                                          : dexvm::VmObjectRef{};
-                const auto leaf = context.ui_drawables.find(selected.Value());
-                if (leaf == context.ui_drawables.end() || !leaf->second.leaf_pixels ||
-                    !leaf->second.leaf_pixels->nine_patch) {
-                    if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.rom_skin_draw", 0);
-                    throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                             "ROM skin pixels unavailable"};
-                }
-                // Freeze the selected immutable leaf into the existing bitmap plane.
-                // Java remains the owner of selector state and all View geometry.
-                context.ui_bitmaps[leaf->second.resource_id] = leaf->second.leaf_pixels;
-                target.background_resource_id = leaf->second.resource_id;
-                target.background_alpha = state.alpha / 255.0F;
-            } else if (background.IsValid()) {
-                const auto type = vm.Model().ObjectClass(background);
-                if (vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/ColorDrawable;"),
-                                             type)) {
-                    const auto color = static_cast<std::uint32_t>(
-                        android_intrinsics::CallAndroidMethod(vm, background, "getColor", "()I").AsInt());
-                    if ((color >> 24U) != 0) target.background_color = AndroidColorToRgba(color);
-                } else {
-                    if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_background_draw", 0);
-                    if (auto* logger = vm.Log())
-                        logger->Write(core::LogLevel::warn, "ui.background.unreviewed",
-                                      "unreviewed View background Drawable", {},
-                                      {{"drawable", vm.Linker().Class(type).descriptor}},
-                                      {.mode = core::RateLimitMode::first_and_count});
-                }
+            if (background.IsValid() && !ProjectRomBackground(vm, context, background, target)) {
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_background_draw", 0);
+                if (auto* logger = vm.Log())
+                    logger->Write(core::LogLevel::warn, "ui.background.unreviewed",
+                                  "unreviewed View background Drawable", {},
+                                  {{"drawable", vm.Linker().Class(vm.Model().ObjectClass(background)).descriptor}},
+                                  {.mode = core::RateLimitMode::first_and_count});
             }
         }
         if (render && (kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton))
@@ -828,7 +847,6 @@ void ResetViewUiState(DexVmAndroidContext& context) {
     context.object_to_ui_node.clear();
     context.ui_node_to_object.clear();
     context.ui_view_layout_params.clear();
-    context.ui_view_backgrounds.clear();
     context.ui_view_images.clear();
     context.ui_drawables.clear();
     context.text_watchers.clear();
@@ -923,7 +941,6 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
             }
             context.object_to_ui_node.erase(object);
             context.ui_view_layout_params.erase(object);
-            context.ui_view_backgrounds.erase(object);
             context.ui_view_images.erase(object);
             context.text_watchers.erase(object);
             context.ui_node_to_object.erase(found);
@@ -1009,344 +1026,40 @@ namespace ogplay::runtime {
 namespace {
 
 constexpr std::string_view kAndroidNamespace = "http://schemas.android.com/apk/res/android";
-constexpr std::uint8_t kTypeDimension = 0x05;
 
 constexpr std::uint8_t kTypeReference = 0x01;
 
-constexpr std::uint8_t kTypeString = 0x03;
-constexpr std::uint8_t kTypeFirstColor = 0x1c;
-constexpr std::uint8_t kTypeLastColor = 0x1f;
-
 }  // namespace
-
-const loader::ArscEntry* SelectUiResourceEntry(const DexVmAndroidContext& context, std::uint32_t resource_id) {
-    const loader::ArscEntry* entry = nullptr;
-    const auto width_dp = static_cast<int>(std::lround(context.surface_width / context.ui_density));
-    const auto height_dp = static_cast<int>(std::lround(context.surface_height / context.ui_density));
-    const auto smallest_dp = std::min(width_dp, height_dp);
-    const auto orientation = width_dp > height_dp ? 2U : 1U;
-    const auto density = static_cast<int>(std::lround(context.ui_density * 160.0F));
-    const auto long_dp = std::max(width_dp, height_dp);
-    const auto short_dp = std::min(width_dp, height_dp);
-    const auto screen_size = long_dp < 470                       ? 1U
-                             : long_dp >= 960 && short_dp >= 720 ? 4U
-                             : long_dp >= 640 && short_dp >= 480 ? 3U
-                                                                 : 2U;
-    const auto density_better = [density](const std::uint16_t lhs, const std::uint16_t rhs) {
-        if (lhs == rhs) return false;
-        int high = lhs != 0 ? lhs : 160;
-        int low = rhs != 0 ? rhs : 160;
-        bool lhs_high = true;
-        if (low > high) {
-            std::swap(low, high);
-            lhs_high = false;
-        }
-        const int requested = density != 0 ? density : 160;
-        if (requested >= high) return lhs_high;
-        if (low >= requested) return !lhs_high;
-        return (((2 * low) - requested) * high > requested * requested) ? !lhs_high : lhs_high;
-    };
-    const auto better = [&](const loader::ArscEntry& lhs, const loader::ArscEntry& rhs) {
-        if (lhs.smallest_width_dp != rhs.smallest_width_dp) return lhs.smallest_width_dp > rhs.smallest_width_dp;
-        const auto lhs_delta = width_dp - lhs.screen_width_dp + height_dp - lhs.screen_height_dp;
-        const auto rhs_delta = width_dp - rhs.screen_width_dp + height_dp - rhs.screen_height_dp;
-        if (lhs_delta != rhs_delta) return lhs_delta < rhs_delta;
-        auto lhs_size = lhs.screen_layout & 0x0fU;
-        auto rhs_size = rhs.screen_layout & 0x0fU;
-        const auto lhs_raw_size = lhs_size;
-        const auto rhs_raw_size = rhs_size;
-        if (screen_size >= 2U) {
-            if (lhs_size == 0U) lhs_size = 2U;
-            if (rhs_size == 0U) rhs_size = 2U;
-        }
-        if (lhs_size != rhs_size) return lhs_size > rhs_size;
-        if (lhs_raw_size != rhs_raw_size) return lhs_raw_size != 0U;
-        if (lhs.orientation != rhs.orientation) return lhs.orientation != 0U;
-        if (lhs.density != rhs.density) return density_better(lhs.density, rhs.density);
-        if (lhs.sdk_version != rhs.sdk_version) return lhs.sdk_version > rhs.sdk_version;
-        return std::tie(lhs.screen_layout, lhs.value_type, lhs.value_data, lhs.string_value) <
-               std::tie(rhs.screen_layout, rhs.value_type, rhs.value_data, rhs.string_value);
-    };
-    for (const auto& candidate : context.arsc.entries) {
-        if (candidate.resource_id != resource_id || (candidate.sdk_version != 0 && candidate.sdk_version > 19) ||
-            (candidate.orientation != 0 && candidate.orientation != orientation) ||
-            candidate.smallest_width_dp > smallest_dp || candidate.screen_width_dp > width_dp ||
-            candidate.screen_height_dp > height_dp ||
-            ((candidate.screen_layout & 0x0fU) != 0U && (candidate.screen_layout & 0x0fU) > screen_size)) {
-            continue;
-        }
-        if (entry == nullptr || better(candidate, *entry)) {
-            entry = &candidate;
-        }
-    }
-    if (entry == nullptr) {
-        throw std::runtime_error("UI resource id is missing: " + std::to_string(resource_id));
-    }
-    return entry;
-}
-
-[[nodiscard]] const loader::ArscEntry& ResolveUiResourceEntry(const DexVmAndroidContext& context,
-                                                              std::uint32_t resource_id) {
-    std::unordered_set<std::uint32_t> seen;
-    for (std::size_t depth = 0; depth < 16; ++depth) {
-        if (!seen.insert(resource_id).second) {
-            throw std::runtime_error("UI resource reference cycle");
-        }
-        const auto* entry = SelectUiResourceEntry(context, resource_id);
-        if (entry->value_type != kTypeReference) return *entry;
-        if (entry->value_data == 0U) {
-            throw std::runtime_error("UI resource reference is null");
-        }
-        resource_id = entry->value_data;
-    }
-    throw std::runtime_error("UI resource reference depth exceeds 16");
-}
-
-namespace {
-
-[[nodiscard]] std::int32_t ComplexDimensionPx(const DexVmAndroidContext& context, const std::uint32_t data,
-                                              const bool scaled) {
-    static constexpr std::array<double, 4> kRadixMultipliers{1.0 / 256.0, 1.0 / 32768.0, 1.0 / 8388608.0,
-                                                             1.0 / 2147483648.0};
-    const auto radix = (data >> 4U) & 0x03U;
-    const auto unit = data & 0x0fU;
-    const auto mantissa = static_cast<std::int32_t>(data & 0xffffff00U);
-    double multiplier = 1.0;
-    if (unit == 1U) {
-        multiplier = context.ui_density;
-    } else if (unit == 2U) {
-        multiplier = scaled ? context.ui_scaled_density : context.ui_density;
-    } else if (unit != 0U) {
-        throw std::runtime_error("unsupported UI dimension unit");
-    }
-    const auto value = static_cast<double>(mantissa) * kRadixMultipliers[radix] * multiplier;
-    if (!std::isfinite(value) || value < 0.0 || value > std::numeric_limits<std::int32_t>::max()) {
-        throw std::runtime_error("UI dimension is outside integer px range");
-    }
-    return static_cast<std::int32_t>(std::lround(value));
-}
-
-[[nodiscard]] std::u16string AsciiText(const std::string& text) {
-    std::u16string value;
-    value.reserve(text.size());
-    for (const auto byte : text) {
-        if (static_cast<unsigned char>(byte) >= 0x80U) {
-            throw std::runtime_error("fixed-font XML text must use the supported ASCII subset");
-        }
-        value.push_back(static_cast<char16_t>(byte));
-    }
-    static_cast<void>(ui::MeasureFixedText(value, 8.0F));
-    return value;
-}
-
-}  // namespace
-
-std::string ResolveResourceString(const DexVmAndroidContext& context, const std::uint32_t resource_id) {
-    const auto& entry = ResolveUiResourceEntry(context, resource_id);
-    if (entry.value_type != kTypeString || !entry.string_value.has_value()) {
-        throw std::runtime_error("resource is not a string");
-    }
-    return *entry.string_value;
-}
-
-std::u16string ResolveUiString(const DexVmAndroidContext& context, const std::uint32_t resource_id) {
-    return AsciiText(ResolveResourceString(context, resource_id));
-}
-
-std::uint32_t ResolveUiColor(const DexVmAndroidContext& context, const std::uint32_t resource_id) {
-    const auto& entry = ResolveUiResourceEntry(context, resource_id);
-    if (entry.value_type < kTypeFirstColor || entry.value_type > kTypeLastColor) {
-        throw std::runtime_error("UI resource is not a color");
-    }
-    return AndroidColorToRgba(entry.value_data);
-}
-
-std::int32_t ResolveUiDimension(const DexVmAndroidContext& context, const std::uint32_t resource_id,
-                                const bool scaled) {
-    const auto& entry = ResolveUiResourceEntry(context, resource_id);
-    if (entry.value_type != kTypeDimension) {
-        throw std::runtime_error("UI resource is not a dimension");
-    }
-    return ComplexDimensionPx(context, entry.value_data, scaled);
-}
-
-std::shared_ptr<const ui::UiBitmap> DecodeLeafBitmap(const DexVmAndroidContext& context,
-                                                     const loader::ArscEntry& entry) {
-    if (entry.is_complex || entry.value_type != kTypeString || !entry.string_value)
-        throw std::runtime_error("leaf bitmap requires a scalar APK file");
-    const auto& path = *entry.string_value;
-    if (entry.type_name != "drawable" || !path.starts_with("res/") ||
-        !(path.ends_with(".png") || path.ends_with(".jpg") || path.ends_with(".jpeg")))
-        throw std::runtime_error("unsupported selector/ninepatch/XML/unknown bitmap file: " + path);
-    const auto bytes = loader::ReadApkEntry(context.apk_bytes, context.archive, path);
-    const auto u8 = [&](std::size_t i) { return std::to_integer<std::uint32_t>(bytes[i]); };
-    const bool png = bytes.size() >= 8 && u8(0) == 137 && u8(1) == 80 && u8(2) == 78 && u8(3) == 71 && u8(4) == 13 &&
-                     u8(5) == 10 && u8(6) == 26 && u8(7) == 10;
-    const bool jpeg = bytes.size() >= 3 && u8(0) == 255 && u8(1) == 216 && u8(2) == 255;
-    if ((path.ends_with(".png") && !png) || (!path.ends_with(".png") && !jpeg))
-        throw std::runtime_error("bitmap extension and encoding disagree");
-    if (png) {
-        for (std::size_t at = 8; at < bytes.size();) {
-            if (bytes.size() - at < 12) throw std::runtime_error("truncated PNG chunk");
-            const auto length = (u8(at) << 24U) | (u8(at + 1) << 16U) | (u8(at + 2) << 8U) | u8(at + 3);
-            if (length > bytes.size() - at - 12) throw std::runtime_error("invalid PNG chunk length");
-            if (u8(at + 4) == 'n' && u8(at + 5) == 'p' && u8(at + 6) == 'T' && u8(at + 7) == 'c')
-                return android_intrinsics::DecodeNinePatchPixels(bytes);
-            if (u8(at + 4) == 'n' && u8(at + 5) == 'p' && u8(at + 6) == 'L' && u8(at + 7) == 'b')
-                throw std::runtime_error("optical layout PNG chunk is unsupported");
-            at += length + 12U;
-        }
-    }
-    if (path.ends_with(".9.png")) throw std::runtime_error("compiled NinePatch PNG has no npTc chunk");
-    const auto decoded = DecodeImageToArgb(bytes);
-    if (!decoded || decoded->width <= 0 || decoded->height <= 0 || decoded->width > 4096 || decoded->height > 4096)
-        throw std::runtime_error("leaf bitmap decode failed or exceeds bounds");
-    auto result = std::make_shared<ui::UiBitmap>();
-    result->width = decoded->width;
-    result->height = decoded->height;
-    result->rgba8.reserve(decoded->argb.size() * 4U);
-    for (auto pixel : decoded->argb) {
-        result->rgba8.push_back(static_cast<std::uint8_t>(pixel >> 16U));
-        result->rgba8.push_back(static_cast<std::uint8_t>(pixel >> 8U));
-        result->rgba8.push_back(static_cast<std::uint8_t>(pixel));
-        result->rgba8.push_back(static_cast<std::uint8_t>(pixel >> 24U));
-    }
-    return result;
-}
-
-std::shared_ptr<const ui::UiBitmap> ResolveUiDrawable(DexVmAndroidContext& context, const std::uint32_t resource_id) {
-    if (resource_id == 0U) {
-        throw std::runtime_error("UI drawable resource id is null");
-    }
-    const auto density_bits = std::bit_cast<std::uint32_t>(context.ui_density);
-    if (context.ui_bitmap_config_width != context.surface_width ||
-        context.ui_bitmap_config_height != context.surface_height ||
-        context.ui_bitmap_config_density_bits != density_bits) {
-        context.ui_bitmaps.clear();
-        context.ui_bitmap_config_width = context.surface_width;
-        context.ui_bitmap_config_height = context.surface_height;
-        context.ui_bitmap_config_density_bits = density_bits;
-    }
-    if (const auto cached = context.ui_bitmaps.find(resource_id); cached != context.ui_bitmaps.end()) {
-        return cached->second;
-    }
-    const auto& drawable = ResolveUiResourceEntry(context, resource_id);
-    auto bitmap = std::make_shared<ui::UiBitmap>();
-    if (drawable.value_type >= kTypeFirstColor && drawable.value_type <= kTypeLastColor) {
-        const auto rgba = AndroidColorToRgba(drawable.value_data);
-        bitmap->width = 1;
-        bitmap->height = 1;
-        bitmap->rgba8 = {static_cast<std::uint8_t>(rgba >> 24U), static_cast<std::uint8_t>(rgba >> 16U),
-                         static_cast<std::uint8_t>(rgba >> 8U), static_cast<std::uint8_t>(rgba)};
-    } else if (drawable.value_type == kTypeString && drawable.string_value.has_value()) {
-        const auto bytes = loader::ReadApkEntry(context.apk_bytes, context.archive, *drawable.string_value);
-        const auto decoded = DecodeImageToArgb(bytes);
-        if (!decoded.has_value()) {
-            throw std::runtime_error("UI drawable image decode failed");
-        }
-        bitmap->width = decoded->width;
-        bitmap->height = decoded->height;
-        bitmap->rgba8.reserve(decoded->argb.size() * 4U);
-        for (const auto argb : decoded->argb) {
-            bitmap->rgba8.push_back(static_cast<std::uint8_t>(argb >> 16U));
-            bitmap->rgba8.push_back(static_cast<std::uint8_t>(argb >> 8U));
-            bitmap->rgba8.push_back(static_cast<std::uint8_t>(argb));
-            bitmap->rgba8.push_back(static_cast<std::uint8_t>(argb >> 24U));
-        }
-        // Android's compiled nine-patch chunk is stored as big-endian words
-        // in the PNG. Keep stretch divisions and content padding beside the
-        // shared immutable pixels; Drawable alpha/bounds remain per instance.
-        const auto be32 = [&bytes](const std::size_t offset) {
-            const auto byte = [&bytes](const std::size_t at) { return std::to_integer<std::uint32_t>(bytes[at]); };
-            return (byte(offset) << 24U) | (byte(offset + 1) << 16U) | (byte(offset + 2) << 8U) | byte(offset + 3);
-        };
-        for (std::size_t offset = 8; offset + 12 <= bytes.size();) {
-            const auto size = be32(offset);
-            if (size > bytes.size() - offset - 12U) break;
-            if (std::to_integer<char>(bytes[offset + 4]) == 'n' && std::to_integer<char>(bytes[offset + 5]) == 'p' &&
-                std::to_integer<char>(bytes[offset + 6]) == 'T' && std::to_integer<char>(bytes[offset + 7]) == 'c' &&
-                size >= 48U && std::to_integer<unsigned>(bytes[offset + 9]) == 2U &&
-                std::to_integer<unsigned>(bytes[offset + 10]) == 2U) {
-                const auto data = offset + 8U;
-                bitmap->nine_patch = true;
-                bitmap->nine_patch_padding = {
-                    static_cast<std::int32_t>(be32(data + 12U)), static_cast<std::int32_t>(be32(data + 20U)),
-                    static_cast<std::int32_t>(be32(data + 16U)), static_cast<std::int32_t>(be32(data + 24U))};
-                bitmap->stretch_x = {static_cast<std::int32_t>(be32(data + 32U)),
-                                     static_cast<std::int32_t>(be32(data + 36U))};
-                bitmap->stretch_y = {static_cast<std::int32_t>(be32(data + 40U)),
-                                     static_cast<std::int32_t>(be32(data + 44U))};
-                break;
-            }
-            offset += 12U + size;
-        }
-    } else {
-        throw std::runtime_error("UI resource is not a drawable");
-    }
-    const auto immutable = std::shared_ptr<const ui::UiBitmap>{bitmap};
-    context.ui_bitmaps.emplace(resource_id, immutable);
-    return immutable;
-}
 
 namespace android_intrinsics {
-dx::VmObjectRef MakeResourceDrawable(dx::IntrinsicContext& call, const Context& context,
-                                     const std::uint32_t resource_id) {
-    loader::ArscEntry system_color;
-    const bool system = (resource_id >> 24U) == 0x01U;
-    if (system) {
-        const auto* color = context->theme_resources.Color(resource_id);
-        if (!color || color->value.type < kTypeFirstColor || color->value.type > kTypeLastColor ||
-            !color->xml.empty() || !color->value.unsupported.empty())
-            throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
-                                  "system Drawable resource is not a supported scalar color"};
-        system_color.value_type = static_cast<std::uint8_t>(color->value.type);
-        system_color.value_data = color->value.data;
-    }
-    const auto& entry = system ? system_color : ResolveUiResourceEntry(*context, resource_id);
-    if (entry.string_value && entry.string_value->ends_with(".xml")) {
-        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "XML Drawable objects are not implemented"};
-    }
-    const auto decoded = system ? std::shared_ptr<const ui::UiBitmap>{} : ResolveUiDrawable(*context, resource_id);
-    const bool color = entry.value_type >= kTypeFirstColor && entry.value_type <= kTypeLastColor;
-    if (decoded && decoded->nine_patch) {
-        const auto bytes = loader::ReadApkEntry(context->apk_bytes, context->archive, *entry.string_value);
-        const auto drawable = DecodeNinePatchDrawable(call.vm, *context, call.receiver, bytes, entry.density);
-        context->ui_drawables[drawable.Value()].resource_id = resource_id;
-        return drawable;
-    }
-    auto& vm = call.vm;
-    const char* descriptor =
-        color ? "Landroid/graphics/drawable/ColorDrawable;" : "Landroid/graphics/drawable/BitmapDrawable;";
-    const auto object = vm.NewIntrinsicInstance(descriptor);
-    const auto object_root = vm.ProtectReferences(std::array{object});
-    dx::VmObjectRef bitmap;
-    std::vector<dx::VmValue> args{dx::VmValue::Ref(object)};
-    const char* signature = "(I)V";
-    if (color)
-        args.push_back(dx::VmValue::Int(static_cast<std::int32_t>(entry.value_data)));
-    else {
-        std::vector<std::uint32_t> argb;
-        argb.reserve(decoded->rgba8.size() / 4U);
-        for (std::size_t i = 0; i < decoded->rgba8.size(); i += 4U) {
-            argb.push_back((static_cast<std::uint32_t>(decoded->rgba8[i + 3U]) << 24U) |
-                           (static_cast<std::uint32_t>(decoded->rgba8[i]) << 16U) |
-                           (static_cast<std::uint32_t>(decoded->rgba8[i + 1U]) << 8U) | decoded->rgba8[i + 2U]);
+
+bool ProjectBitmapDrawable(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef drawable) {
+    if (!drawable.IsValid() ||
+        !vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/BitmapDrawable;"),
+                                  vm.Model().ObjectClass(drawable)))
+        return false;
+    const auto bitmap = CallAndroidMethod(vm, drawable, "getBitmap", "()Landroid/graphics/Bitmap;").ref;
+    const auto found = context.bitmaps.find(bitmap.Value());
+    if (found == context.bitmaps.end() || found->second.recycled || !found->second.pixels)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "drawable bitmap backing unavailable"};
+    auto& state = context.ui_drawables[drawable.Value()];
+    state.bitmap_drawable = true;
+    const auto& backing = found->second;
+    if (backing.mutable_pixels) return true;
+    if (!state.leaf_pixels || state.bitmap_revision != backing.pixels->Revision() || backing.pixels->Locks()) {
+        auto pixels = std::make_shared<ui::UiBitmap>();
+        pixels->width = backing.width;
+        pixels->height = backing.height;
+        for (const auto argb : backing.pixels->Snapshot()) {
+            pixels->rgba8.push_back(static_cast<std::uint8_t>(argb >> 16U));
+            pixels->rgba8.push_back(static_cast<std::uint8_t>(argb >> 8U));
+            pixels->rgba8.push_back(static_cast<std::uint8_t>(argb));
+            pixels->rgba8.push_back(static_cast<std::uint8_t>(argb >> 24U));
         }
-        bitmap = CreateAndroidBitmap(vm, *context, decoded->width, decoded->height, argb, false);
-        signature = "(Landroid/content/res/Resources;Landroid/graphics/Bitmap;)V";
-        args.push_back(dx::VmValue::Ref(call.receiver));
-        args.push_back(dx::VmValue::Ref(bitmap));
+        state.leaf_pixels = std::move(pixels);
+        state.bitmap_revision = backing.pixels->Revision();
     }
-    const auto roots = vm.ProtectReferences(std::array{object, bitmap});
-    const auto constructor = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(object), "<init>", signature);
-    if (!constructor) throw std::logic_error("resource Drawable constructor is unavailable");
-    const auto outcome = vm.Call(*constructor, args);
-    if (outcome.exception.IsValid())
-        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                              outcome.exception};
-    context->ui_drawables[object.Value()].resource_id = resource_id;
-    return object;
+    return true;
 }
 
 void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view) {
@@ -1378,6 +1091,7 @@ void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::
         drawable.IsValid() &&
         vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/ColorDrawable;"),
                                  vm.Model().ObjectClass(drawable));
+    static_cast<void>(ProjectBitmapDrawable(vm, context, drawable));
     const auto found = drawable.IsValid() ? context.ui_drawables.find(drawable.Value()) : context.ui_drawables.end();
     const bool renderable = is_color || (found != context.ui_drawables.end() && found->second.bitmap_drawable);
     if (drawable.IsValid() && !renderable) RecordUiDegraded(vm, "ImageView.drawable");

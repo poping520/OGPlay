@@ -2116,13 +2116,17 @@ Decl Declare_android_view_View(const Context& context) {
             const auto& tokens = *context->view_java_measure_fields;
             const auto flags = fields.GetInt(tokens.flags[0]);
             const auto background = fields.GetRef((*context->view_java_input_fields)[1]);
-            const auto skin = context->ui_drawables.find(background.Value());
             // Managed windows have no AttachInfo/IME or animated DrawableContainer.
-            // Static sealed selectors have no pending transition to jump over.
+            // Static ROM selectors have no pending transition to jump over.
             bool unsupported =
                 !context->UiAccessibilityUnavailable() || (flags & 0x200) != 0 ||
                 CallAndroidMethod(call.vm, call.receiver, "isFocused", "()Z").AsInt() != 0 ||
-                (background.IsValid() && (skin == context->ui_drawables.end() || !skin->second.rom_skin));
+                (background.IsValid() &&
+                 CallAndroidMethod(call.vm, background, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref !=
+                     background &&
+                 !call.vm.Linker().IsAssignable(
+                     call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/StateListDrawable;"),
+                     call.vm.Model().ObjectClass(background)));
             for (std::size_t i = 0; i < tokens.unsupported_state.size(); ++i)
                 if (i != kViewCurrentAnimationState)
                     unsupported = unsupported || fields.GetRef(tokens.unsupported_state[i]).IsValid();
@@ -2236,16 +2240,9 @@ Decl Declare_android_view_View(const Context& context) {
                 if (background.IsValid()) {
                     if (!CallAndroidMethod(call.vm, background, "isStateful", "()Z").AsInt())
                         return dx::VmValue::Void();
-                    const auto state = context->ui_drawables.find(background.Value());
-                    if (state != context->ui_drawables.end() &&
-                        (state->second.rom_skin || state->second.selector_state)) {
-                        const auto states = CallAndroidMethod(call.vm, call.receiver, "getDrawableState", "()[I").ref;
-                        static_cast<void>(
-                            CallAndroidMethod(call.vm, background, "setState", "([I)Z", {dx::VmValue::Ref(states)}));
-                        return dx::VmValue::Void();
-                    }
-                    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_drawable_state", 0);
-                    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Drawable state unsupported"};
+                    const auto states = CallAndroidMethod(call.vm, call.receiver, "getDrawableState", "()[I").ref;
+                    static_cast<void>(
+                        CallAndroidMethod(call.vm, background, "setState", "([I)Z", {dx::VmValue::Ref(states)}));
                 }
                 return dx::VmValue::Void();
             },

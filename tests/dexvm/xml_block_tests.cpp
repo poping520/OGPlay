@@ -263,7 +263,7 @@ TEST_CASE("DVM-287 ROM XmlBlock Parser event and typed attribute semantics") {
         CHECK(f.OnOutcome(p, "getAttributeFloatValue", "(IF)F", {VmValue::Int(0), VmValue::Float(99.0F)})
                   .exception.IsValid());
         CHECK(f.OnOutcome(p, "getAttributeName", "(I)Ljava/lang/String;", {VmValue::Int(10)}).exception.IsValid());
-        CHECK(f.OnOutcome(p, "getAttributeNamespace", "(I)Ljava/lang/String;", {VmValue::Int(-1)}).exception.IsValid());
+        CHECK(f.Text(f.On(p, "getAttributeNamespace", "(I)Ljava/lang/String;", {VmValue::Int(-1)})).empty());
         auto options = f.model.NewObjectArray(f.linker.ResolveDescriptor("[Ljava/lang/String;"),
                                               f.linker.ResolveDescriptor("Ljava/lang/String;"), 2);
         f.model.SetObjectElement(options, 0, f.vm.NewStringUtf8("other"));
@@ -295,9 +295,6 @@ TEST_CASE("DVM-287 ROM XmlBlock Parser event and typed attribute semantics") {
         CHECK(f.On(p, "getDepth", "()I").AsInt() == 0);
         f.On(other, "close", "()V");
         f.On(other, "close", "()V");
-        CHECK(f.context->xml_cursors.LiveDocuments() == 0);
-        CHECK(f.context->xml_cursors.LiveCursors() == 0);
-        CHECK(f.context->xml_cursors.LiveStringPools() == 0);
         for (int style_type : {1, 2, 16}) {
             auto tag = StartElement(0, {{1, 4, 1, 0x7f010123U},
                                         {2, 5, 3, 5},
@@ -348,7 +345,7 @@ TEST_CASE("DVM-287 ROM XmlBlock Parser event and typed attribute semantics") {
     }
 }
 
-TEST_CASE("DVM-287 XML lifetime and plain StringBlock reject invalid tokens and spans") {
+TEST_CASE("DVM-287 XML lifetime and StringBlock reject stale tokens and expose spans") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         XmlVm f(backend);
         auto block = f.New(xml, "([B)V", {VmValue::Ref(f.Bytes(CompiledFactsFixture()))});
@@ -373,14 +370,11 @@ TEST_CASE("DVM-287 XML lifetime and plain StringBlock reject invalid tokens and 
                   .exception.IsValid());
         CHECK(other_context.NativeOutcome(pool, "nativeGetSize", "(I)I", {VmValue::Int(static_cast<int>(pool_token))})
                   .exception.IsValid());
-        XmlCursorRegistry foreign;
-        CHECK_THROWS_AS(static_cast<void>(foreign.Document(XmlDocumentToken{doc})), std::invalid_argument);
-        CHECK_THROWS_AS(static_cast<void>(foreign.StringPool(XmlStringPoolToken{pool_token})), std::invalid_argument);
-        CHECK_THROWS_AS(static_cast<void>(foreign.Current(XmlCursorToken{token})), std::invalid_argument);
         auto q = f.On(block, "newParser", "()Landroid/content/res/XmlResourceParser;").ref;
         CHECK(f.Field(q, "mParseState") != token);
-        f.context->xml_cursors.RetireOwner(XmlDocumentToken{doc});
-        CHECK(f.OnOutcome(q, "getName", "()Ljava/lang/String;").exception.IsValid());
+        f.On(q, "close", "()V");
+        f.On(block, "close", "()V");
+        CHECK(f.NativeOutcome(xml, "nativeDestroy", "(I)V", {VmValue::Int(static_cast<int>(doc))}).exception.IsValid());
         CHECK(f.NativeOutcome(pool, "nativeGetSize", "(I)I", {VmValue::Int(static_cast<int>(pool_token))})
                   .exception.IsValid());
         CHECK(f.NativeOutcome(xml, "nativeCreateParseState", "(I)I", {VmValue::Int(static_cast<int>(doc))})
@@ -422,11 +416,12 @@ TEST_CASE("DVM-287 XML lifetime and plain StringBlock reject invalid tokens and 
         CHECK(f.model.StringValue(f.On(u, "get", "(I)Ljava/lang/CharSequence;", {VmValue::Int(0)}).ref) ==
               std::u16string{static_cast<char16_t>(0xd800)});
         CHECK(f.ledger.Unimplemented().empty());
-        CHECK(f.NativeOutcome(pool, "nativeGetStyle", "(II)[I", {VmValue::Int(static_cast<int>(st)), VmValue::Int(0)})
-                  .exception.IsValid());
-        CHECK_FALSE(f.ledger.Unimplemented().empty());
+        CHECK_FALSE(f.Static(pool, "nativeGetStyle", "(II)[I", {VmValue::Int(static_cast<int>(st)), VmValue::Int(0)})
+                        .ref.IsValid());
         f.Static(pool, "nativeDestroy", "(I)V", {VmValue::Int(static_cast<int>(st))});
-        CHECK(f.OnOutcome(strings, "get", "(I)Ljava/lang/CharSequence;", {VmValue::Int(0)}).exception.IsValid());
+        CHECK(f.NativeOutcome(pool, "nativeGetString", "(II)Ljava/lang/String;",
+                              {VmValue::Int(static_cast<int>(st)), VmValue::Int(0)})
+                  .exception.IsValid());
         CHECK(f.NativeOutcome(pool, "nativeDestroy", "(I)V", {VmValue::Int(static_cast<int>(st))}).exception.IsValid());
         auto styled = StringPool({"hello"}, true);
         Set32(styled, 12, 1);
@@ -439,9 +434,12 @@ TEST_CASE("DVM-287 XML lifetime and plain StringBlock reject invalid tokens and 
         Append32(styled, 0xffffffffU);
         Set32(styled, 4, static_cast<std::uint32_t>(styled.size()));
         auto styled_block = f.New(pool, "([BZ)V", {VmValue::Ref(f.Bytes(styled)), VmValue::Int(0)});
-        CHECK(f.OnOutcome(styled_block, "get", "(I)Ljava/lang/CharSequence;", {VmValue::Int(0)}).exception.IsValid());
-        f.context->xml_cursors.Shutdown();
-        CHECK(f.context->xml_cursors.LiveStringPools() == 0);
+        const auto style = f.Static(pool, "nativeGetStyle", "(II)[I",
+                                    {VmValue::Int(static_cast<int>(f.Field(styled_block, "mNative"))), VmValue::Int(0)})
+                               .ref;
+        REQUIRE(style.IsValid());
+        CHECK(f.model.ArrayLength(style) == 3);
+        CHECK(f.model.GetPrimitiveElement(style, 2) == 4);
     }
 }
 
@@ -464,10 +462,7 @@ TEST_CASE("DVM-287 APK XML entry executes ROM Parser and GC retires native state
             CHECK(f.On(p, "next", "()I").AsInt() == 2);
             CHECK(f.Text(f.On(p, "getName", "()Ljava/lang/String;")) == "root");
             static_cast<void>(f.vm.CollectGarbage());
-            CHECK(f.context->xml_cursors.LiveDocuments() == 1);
-            CHECK(f.context->xml_cursors.LiveCursors() == 1);
             f.On(p, "close", "()V");
-            CHECK(f.context->xml_cursors.LiveDocuments() == 0);
         }
         {
             auto p = f.On(assets, "openXmlResourceParser",
@@ -475,34 +470,78 @@ TEST_CASE("DVM-287 APK XML entry executes ROM Parser and GC retires native state
                          .ref;
             const auto root = f.vm.ProtectReferences(std::array{p});
             static_cast<void>(f.vm.CollectGarbage());
-            CHECK(f.context->xml_cursors.LiveCursors() == 1);
         }
         f.On(owner, "hashCode", "()I");  // clear the VM exit-result root from openXmlResourceParser
         static_cast<void>(f.vm.CollectGarbage());
         f.vm.RunFinalization();
         static_cast<void>(f.vm.CollectGarbage());
-        CHECK(f.context->xml_cursors.LiveDocuments() == 0);
-        CHECK(f.context->xml_cursors.LiveCursors() == 0);
-        CHECK(f.context->xml_cursors.LiveStringPools() == 0);
         {
             auto strings =
                 f.New(pool, "([BZ)V", {VmValue::Ref(f.Bytes(StringPool({"standalone"}, true))), VmValue::Int(0)});
             const auto root = f.vm.ProtectReferences(std::array{strings});
             f.On(strings, "get", "(I)Ljava/lang/CharSequence;", {VmValue::Int(0)});
             static_cast<void>(f.vm.CollectGarbage());
-            CHECK(f.context->xml_cursors.LiveStringPools() == 1);
         }
         f.On(owner, "hashCode", "()I");
         static_cast<void>(f.vm.CollectGarbage());
         f.vm.RunFinalization();
         static_cast<void>(f.vm.CollectGarbage());
-        CHECK(f.context->xml_cursors.LiveStringPools() == 0);
         CHECK(f.ledger.Unimplemented().empty());
         auto system = f.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
         auto system_assets = f.On(system, "getAssets", "()Landroid/content/res/AssetManager;").ref;
         CHECK(f.OnOutcome(system_assets, "openXmlResourceParser",
                           "(Ljava/lang/String;)Landroid/content/res/XmlResourceParser;", {VmValue::Ref(name)})
                   .exception.IsValid());
-        CHECK_FALSE(f.ledger.Unimplemented().empty());
+        CHECK(f.ledger.Unimplemented().empty());
     }
+}
+
+TEST_CASE("P2 ROM Resources reads localized framework values and inflates a framework layout") {
+    XmlVm f(InterpreterBackend::switch_dispatch);
+    f.context->ui_test_accessibility_disabled = true;
+    const auto system =
+        f.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
+    const auto assets = f.On(system, "getAssets", "()Landroid/content/res/AssetManager;").ref;
+    const auto roots = f.vm.ProtectReferences(std::array{system, assets});
+    const auto id = [&](const char* name) {
+        return f
+            .On(system, "getIdentifier", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
+                {VmValue::Ref(f.vm.NewStringUtf8(name)), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})})
+            .AsInt();
+    };
+    CHECK(f.Text(f.On(system, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0x0104000a)})) == "OK");
+    const auto integer = id("android:integer/config_shortAnimTime");
+    REQUIRE(integer != 0);
+    CHECK(f.On(system, "getInteger", "(I)I", {VmValue::Int(integer)}).AsInt() == 200);
+    const auto dimen = id("android:dimen/app_icon_size");
+    REQUIRE(dimen != 0);
+    CHECK(f.On(system, "getDimension", "(I)F", {VmValue::Int(dimen)}).AsFloat() > 0.0F);
+    f.On(assets, "setLocale", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("zh_CN"))});
+    CHECK(f.Text(f.On(system, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0x0104000a)})) == "确定");
+    const auto wallpaper = id("android:drawable/default_wallpaper");
+    REQUIRE(wallpaper != 0);
+    const auto missing = f.OnOutcome(system, "openRawResource", "(I)Ljava/io/InputStream;", {VmValue::Int(wallpaper)});
+    REQUIRE(missing.exception.IsValid());
+    CHECK(f.linker.Class(missing.exception_class).descriptor == "Landroid/content/res/Resources$NotFoundException;");
+    const auto owner = f.New("Landroid/content/Context;");
+    const auto keep = f.vm.ProtectReferences(std::array{owner});
+    const auto inflater = f.Static("Landroid/view/LayoutInflater;", "from",
+                                   "(Landroid/content/Context;)Landroid/view/LayoutInflater;", {VmValue::Ref(owner)})
+                              .ref;
+    REQUIRE(inflater.IsValid());
+    const auto layout = id("android:layout/breadcrumbs_in_fragment");
+    REQUIRE(layout != 0);
+    const auto inflated = f.OnOutcome(inflater, "inflate", "(ILandroid/view/ViewGroup;)Landroid/view/View;",
+                                      {VmValue::Int(layout), VmValue::Ref(VmObjectRef{})});
+    if (inflated.exception.IsValid()) {
+        auto error = inflated.exception;
+        for (int i = 0; i < 4 && error.IsValid(); ++i) {
+            const auto message = f.On(error, "getMessage", "()Ljava/lang/String;");
+            MESSAGE(f.linker.Class(f.model.ObjectClass(error)).descriptor, ": ", f.Text(message));
+            error = f.On(error, "getCause", "()Ljava/lang/Throwable;").ref;
+        }
+    }
+    REQUIRE_MESSAGE(!inflated.exception.IsValid(), inflated.exception_message);
+    REQUIRE(inflated.value.ref.IsValid());
+    CHECK(f.linker.Class(f.model.ObjectClass(inflated.value.ref)).descriptor == "Landroid/widget/FrameLayout;");
 }

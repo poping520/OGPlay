@@ -1859,7 +1859,8 @@ Decl Declare_android_os_Trace(const Context&) {
                                                     dx::kAccPublic | dx::kAccFinal);
     const auto trace = [](const bool begin) {
         return [begin](dx::IntrinsicContext& call) {
-            if (call.arguments[0].AsLong() == 2) return dx::VmValue::Void();  // Graphics trace is disabled.
+            if (call.arguments[0].AsLong() == 2 || call.arguments[0].AsLong() == 8192)
+                return dx::VmValue::Void();  // Graphics and resource traces are disabled.
             if (call.arguments[0].AsLong() != 8) {
                 if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.trace.tag", 0);
                 throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "only View trace tag is connected"};
@@ -1871,7 +1872,7 @@ Decl Declare_android_os_Trace(const Context&) {
         };
     };
     builder.StaticMethod("isTagEnabled", "(J)Z", [](dx::IntrinsicContext& call) {
-        if (call.arguments[0].AsLong() == 2) return dx::VmValue::Int(0);
+        if (call.arguments[0].AsLong() == 2 || call.arguments[0].AsLong() == 8192) return dx::VmValue::Int(0);
         if (call.arguments[0].AsLong() != 8) {
             if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.trace.tag", 0);
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "only View trace tag is connected"};

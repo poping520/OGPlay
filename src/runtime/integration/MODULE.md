@@ -53,15 +53,8 @@ syscall/execution/vfs 及下层；下层不得反向依赖 integration。不直�
 内容树触摸分发、reverse-Z hit-test、intercept/CANCEL 与非 split 捕获归 integration，
 session 宿主输入和 guest Window 入口共用相同状态与算法；integration 不消费宿主设备。
 
-实验主题 provider 的资源选择与文件验证通过 APK owner 显式回调注入；六槽与 indices
-完整解析、校验后发布。叶 drawable 的不可变像素按 Java 对象身份持有并随 sweep/teardown
-释放，不建立全局强根；布局与几何不在值桥写入。同 ROM 属性 format/枚举表决定投影类型，
-ROM 字符串独立使用 cookie2/StringBlock；cookie1 保持 APK。封存的默认背景 selector/ninepatch
-提供状态、padding/密度尺寸与像素 backing；选中叶在现有 bitmap 平面冻结。
-编译 APK NinePatch PNG 通过资源文件校验，元数据来自 Skia 解码，ROM Drawable 使用软件 Canvas 绘制。
-任意 XML 与动画调度仍限已封存的范围。
-同 ROM color 目录按 selector/item、android:color/state_* 结构封存原始 XML，经 ROM
-ColorStateList.createFromXml 构造；标量颜色引用取同 ROM ARSC，未知结构/属性/引用失败。
+ROM 资源 native 通过 [资源核心](../resources/MODULE.md) 解析 framework 与应用资源。
+UI 投影只读 View 当前持有的 ROM Drawable、颜色和文字属性；Bitmap/NinePatch/Paint 的 native backing 为权威。绘制边界保留到 P3，发布时只生成既有呈现快照，不保留另一套资源或皮肤身份。
 
 Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 [DexVM](../dexvm/MODULE.md)拥有解释/GC/线程，[session](../../session/MODULE.md)编排生命周期，
@@ -148,11 +141,9 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - NDK AssetManager 经 bridge hooks 校验 JNI env/thread/reference，与 NativeActivity 共享
   同一 Java 对象的 opaque 身份；不永久保活 Java 对象，GC 撤销 manager，现存 Asset
   持有独立来源。bridge 在停止线程后撤销 hooks、退役所有来源和注册。
-  `ApkAssets/StoredApkAsset` 共用封存 APK 的受检 STORED offset/length，首次完整 CRC
-  校验后缓存事实；open/read 不复制整个资源，压缩读取沿用 loader 区间接口。
-  每次直接 FD 为完整只读 guest APK 的独立 VFS descriptor，caller 自行 close；
-  不暴露宿主 FD，不随 Asset.close 关闭 FD。source 存活期间 APK 字节/元数据不可变，
-  manager 弱持 context，打开的 Asset 保持 sealed context；source 不保活 Java manager。
+  Java 与 NDK 使用同一资源核心 manager、配置和 APK backing。STORED FD 借用原 APK 区间，
+  普通读取使用有界窗口，现存 Asset 可在 manager 退役后继续读取。
+
 - NativeActivityRuntime 借用当前 process 的 guest 分配、模块导出查询、JNI/JavaVM 与执行器，
   只拥有 ARMv7 ANativeActivity/callbacks、路径/state backing 和真实 Activity/AssetManager global
   refs；回调要求创建线程，native 执行释放 VM 锁，销毁退役注册并解除引用。
@@ -272,8 +263,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - View↔UiNode 一一绑定，identity/listener 由 integration 持有，几何/命中只读唯一 UiTree。
   XML inflation 用通用 registry，未知结构明确失败；LayoutParams/Bundle/Configuration、
   framework 值类等普通状态与算法归 BootDex，当前具体支持面见 [Android 子模块](dexvm_android/MODULE.md)。
-- ThemeResources.Identity 统一查询当前 APK ARSC 与同 ROM 封存名称表，只返回包/类型/条目身份；
-  与值配置选择、引用解析及内容加载分离，缺失返回空，由 Resources 抛 NotFoundException。
+
 - SurfaceHolder 按 view 保持身份与 active generation；callback 去重、null 拒绝，按事件
   快照向全部注册者分发，缺方法明确失败。attach/detach 驱动对应事件，不新建像素 owner。
   EGL policy setter 只保留受 GC 追踪的策略身份，未支持行为不越权调用；render mode 不创建
@@ -424,12 +414,9 @@ Typeface/compound Drawable 身份由 View adapter 强边 trace/sweep，不镜像
 默认不支持资源明确失败，应用可显式覆盖。Legacy 固定控件投影仅作用于 Legacy owner。
 
 
-ADR-0162 / DVM-306：AssembleAndroidContext 在 catalog 注册/VM 建立前读取同一份 BootDex
-归档，校验固定 java-traversal v1 模式及 DEX/成员表/主题投影 SHA-256 与主题 schema，
-再选择不可变 context owner；未知模式、错配、缺投影或无标识实验制品明确失败，无自动
-Legacy fallback。无标识生产制品仍 Legacy。frontend 三入口共用此装配，显式注入不可变
-平台无 accessibility 服务事实，生产不设置测试 bool；测试覆盖入口保留。
-本阶段不开放 test-root、不改变 StepFrame；模式选择不等于生产遍历/E2E 验收。
+AssembleAndroidContext 在 catalog 注册/VM 建立前读取固定启动类路径并选择不可变的
+JavaTraversal owner。frontend 入口共用该装配，显式注入平台无 accessibility 服务的事实；
+生产不设置测试 bool。制品身份由 Android payload 校验，不再维护主题或成员配对表。
 
 JavaTraversal 的 owner 在 bridge 装配主 guest context 状态表时绑定；View 构造只校验，
 不能通过换宿主线程重新绑定。请求/调度表为按稳定窗口根保存的弱 Java 身份，
@@ -454,12 +441,6 @@ JavaTraversal共同发布冻结逐窗口完整投影、视频像素与bitmap版�
 消费者显式共享同一lease，不在consumer读取当前producer/绑定表。窗口退役只清构建
 身份，旧不可变presentation可继续保留；缺匹配新窗口投影时拒绝替换。
 
-有界主题投影携带封存的 projected_references 与 ARSC 类型编号；provider 严查名称、
-package/type 与数量，任意同 ROM 类型均可作为 terminal 引用/resourceId。生成器锁定
-framework-res.apk 并交叉核对共享 R 常量，只投影名称到真实 ID，不按属性名或加载能力
-筛选、不预先解析目标内容。消费者实际调用才加载，未支持目标按 ADR-0147 记账失败；
-加载范围见 dexvm_android MODULE。封存 drawable XML 的资源引用同样进入身份投影；
-ROM 样式仅在完整 parent 链不设置任何投影属性时可作为空 bag，非 inert 或未知样式仍失败。
 ContextImpl 基础主题从 selectDefaultTheme(0,targetSdk) 选择，Activity 再叠加自身主题。
 
 DVM-329：JavaTraversal 的干净屏障不执行 guest、不扫描投影；只在真实 Java 布局/绘制请求、
@@ -467,6 +448,5 @@ DVM-329：JavaTraversal 的干净屏障不执行 guest、不扫描投影；只�
 未发布绑定等待下一 owner 发布；不弱化 guest 不可达请求的明确失败。
 
 
-ADR-0174 的两个同 ROM Spinner 布局以原始二进制 XML 封存在主题 payload；内容 SHA、
-名称/ID、默认配置、属性及引用闭包必须受检。布局身份不代表加载准入，只有显式封存内容
-可进入原 XmlBlock/Parser。nine-patch backing 保存有序的多个伸缩区，缩放保持全部分割点。
+系统及应用布局经 ROM Resources/XmlBlock 从真实归档加载，不按布局名单准入。
+UI nine-patch 呈现读取 ROM NinePatch 的 native 伸缩区与同一 Bitmap 像素，支持多个有序伸缩区。

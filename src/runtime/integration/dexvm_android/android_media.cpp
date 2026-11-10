@@ -454,18 +454,16 @@ Decl Declare_android_widget_VideoView(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             const auto* fd = call.vm.IO().FindDescriptor(call.arguments[0].ref);
             const auto offset = call.arguments[1].AsLong(), length = call.arguments[2].AsLong();
-            if (!fd || fd->closed || fd->kind != dx::IoRuntime::DescriptorKind::apk_entry || offset < 0 ||
-                length <= 0 || static_cast<std::uint64_t>(offset) < fd->base_offset)
+            if (!context->vfs || !fd || fd->closed || !fd->file || fd->file->closed || offset < 0 || length <= 0)
                 throw dx::VmJavaThrow{"Ljava/io/IOException;", "invalid raw-resource descriptor range"};
-            audio::EncodedAudioSource source;
-            source.kind = audio::EncodedAudioSource::Kind::apk_entry;
-            source.name = fd->source;
-            source.offset = static_cast<std::uint64_t>(offset) - fd->base_offset;
-            source.length = static_cast<std::uint64_t>(length);
-            const auto data = LoadEncodedAudioSource(*context, source);
-            if (!data) throw dx::VmJavaThrow{"Ljava/io/IOException;", "raw-resource video range unavailable"};
-            OpenVideoSource(context, call, std::make_shared<EncodedVideoSource>(data), source.name,
-                            call.arguments[3].AsInt());
+            try {
+                auto lease = context->vfs->CaptureReadLease(fd->file->handle, static_cast<std::uint64_t>(offset),
+                                                            static_cast<std::uint64_t>(length));
+                OpenVideoSource(context, call, std::make_shared<VfsVideoSource>(std::move(lease)), fd->source,
+                                call.arguments[3].AsInt());
+            } catch (const VfsError& error) {
+                throw dx::VmJavaThrow{"Ljava/io/IOException;", error.what()};
+            }
             return dx::VmValue::Void();
         },
         flags);

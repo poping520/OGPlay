@@ -909,7 +909,7 @@ TEST_CASE("DVM-198 system resource mapping follows each BootDex archive") {
             const std::string document = R"({"schema_version":1,"api_level":19,"resources":[{"id":)" +
                                          std::to_string(id) +
                                          R"(,"name":"journal","type":"string","value":"DELETE"}]})";
-            SingleBootJar(*fixture.context, MakeStoredZip("META-INF/ogplay/system-resources.json",
+            SingleBootJar(*fixture.context, MakeStoredZip("META-INF/ogplay/fixture-document.json",
                                                           std::as_bytes(std::span(document.data(), document.size()))));
             const auto resources =
                 fixture.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
@@ -934,7 +934,7 @@ TEST_CASE("DVM-198 missing or malformed BootDex resource maps fail without APK f
         fixture.context->apk_bytes = fixture.context->boot_classpath.front().bytes;
         fixture.context->archive = fixture.context->boot_classpath.front().archive;
         SingleBootJar(*fixture.context,
-                      MakeStoredZip(document.empty() ? "other.json" : "META-INF/ogplay/system-resources.json",
+                      MakeStoredZip(document.empty() ? "other.json" : "META-INF/ogplay/fixture-document.json",
                                     std::as_bytes(std::span(document.data(), document.size()))));
         const auto resources =
             fixture.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
@@ -969,7 +969,7 @@ TEST_CASE("DVM-194 SQLiteGlobal reads reviewed system resources through BootDex"
 
         const auto bytes = ogplay::loader::ReadStoredApkEntry(fixture.context->boot_classpath.front().bytes,
                                                               fixture.context->boot_classpath.front().archive,
-                                                              "META-INF/ogplay/system-resources.json");
+                                                              "META-INF/ogplay/fixture-document.json");
         ogplay::core::JsonParseError parse_error;
         const auto document = ogplay::core::JsonDocument::ParseStrict(
             std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()), parse_error);

@@ -185,7 +185,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "3d270668cb076d17faeac7c48e72c64150244b65063e33778df23bb37bbabab8",
+        "generator_sha256": "1511689ceb3e288937b779424e195dcb4fbbd859c1ca40b920554d0bcde29195",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",
@@ -341,8 +341,8 @@
       {
         "path": "framework/ogplay.jar",
         "source_project": "OGPlay",
-        "size": 4724370,
-        "sha256": "23aef5fe7ee7443568937a14948c31bd4ed7ea6d9920f0e4739c4006ce919227",
+        "size": 150396,
+        "sha256": "429267fa1f1cb1a4fff69f391aac38228160bd2fa58da4f0963291e8ef4a01a5",
         "sources": {
           "roots": [
             "src/guest/crypto/java",
@@ -356,12 +356,7 @@
           "javac": "17.0.18",
           "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
           "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
-        },
-        "resources": {
-          "META-INF/ogplay/system-resources.json": "846de14035dc7f261b34b7fe2e5b2e11820032613ad9653318d704cf0f986db0",
-          "META-INF/ogplay/theme-projection.json": "fd7746dbf251b46785b0d94c100c12c8840faef4c18831548add08d1aee3c3b5"
-        },
-        "system_resources_table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3"
+        }
       },
       {
         "path": "framework/core.jar",
@@ -401,7 +396,7 @@
       }
     ],
     "notice": "notices/boot-classpath.txt",
-    "notice_sha256": "940207b35da0d64684af4caae22b5bcb475adf183d4d151066bb1a7b8525d641"
+    "notice_sha256": "3e7cd7cb89b2bc4a4cc238caddd94662719081c99cee185908f0184fd97a7deb"
   },
   "system_fonts": [
     {
@@ -499,5 +494,14 @@
       "bytes": 119380,
       "sha256": "12b552de765dc1265d64f9f5566649930dde4dba07da0251d9f92801e70a1047"
     }
-  ]
+  ],
+  "framework_resources": {
+    "path": "framework/framework-res.apk",
+    "source_project": "platform/frameworks/base",
+    "tag": "android-4.4.4_r2.0.1",
+    "size": 12455693,
+    "sha256": "90a1d76a0f64be8016f5323b8a8be48ee54ff258bf0f6f2bfada7bf247b2b501",
+    "notice": "notices/boot-classpath.txt",
+    "original_sha256": "5beb897ee2ede51f02e2fdf1a004ce3f12d7d5cd938b56672f70a7cba96471e3"
+  }
 }

@@ -42,6 +42,17 @@ public:
                  (static_cast<std::uint64_t>(native.nFileSizeHigh) << 32U) | native.nFileSizeLow};
     }
     HostReadFileInfo Info() const noexcept override { return info_; }
+
+    HostReadMapping Map() const override {
+        if (!info_.size) return {};
+        if (info_.size > SIZE_MAX) throw std::length_error("host mapping exceeds address space");
+        const OwnedHandle mapping(CreateFileMappingW(handle_.Get(), nullptr, PAGE_READONLY, 0, 0, nullptr));
+        auto* bytes = MapViewOfFile(mapping.Get(), FILE_MAP_READ, 0, 0, 0);
+        if (!bytes)
+            throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), "map host backing");
+        return {std::shared_ptr<const void>(bytes, UnmapViewOfFile),
+                {static_cast<const std::byte*>(bytes), static_cast<std::size_t>(info_.size)}};
+    }
     std::size_t ReadAt(std::uint64_t offset, std::span<std::byte> output,
                        std::stop_token stop) const override {
         if (offset > static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)()) ||

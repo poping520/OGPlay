@@ -1,7 +1,9 @@
+#include "dexvm/resource_fixture.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <doctest/doctest.h>
 
 #include "../dexvm/boot_dex.h"
+#include "../dexvm/android_value_fixture.h"
 
 #include <algorithm>
 #include <bit>
@@ -28,12 +30,10 @@ using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 std::vector<std::uint8_t> ReadInterpreterFixture() {
-    const std::string path =
-        std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/interp.dex";
+    const std::string path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/interp.dex";
     std::ifstream stream(path, std::ios::binary);
     REQUIRE(stream.good());
-    return {std::istreambuf_iterator<char>(stream),
-            std::istreambuf_iterator<char>()};
+    return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
 }
 
 struct AndroidVm final {
@@ -63,921 +63,750 @@ struct AndroidVm final {
               }(),
               model, nullptr, ledger, config),
           threads(interpreter) {
+        ogplay::test::BindBootDexArchive(*context);
         context->threads = &threads;
     }
 
-  [[nodiscard]] VmMethodId Virtual(const std::string_view descriptor,
-                                   const std::string_view name,
-                                   const std::string_view signature) {
-    const auto owner = linker.FindClass(descriptor);
-    REQUIRE(owner.has_value());
-    const auto index = linker.FindVtableIndex(*owner, std::string(name),
-                                              std::string(signature));
-    REQUIRE(index.has_value());
-    return linker.Class(*owner).vtable[*index];
-  }
+    [[nodiscard]] VmMethodId Virtual(const std::string_view descriptor, const std::string_view name,
+                                     const std::string_view signature) {
+        const auto owner = linker.FindClass(descriptor);
+        REQUIRE(owner.has_value());
+        const auto index = linker.FindVtableIndex(*owner, std::string(name), std::string(signature));
+        REQUIRE(index.has_value());
+        return linker.Class(*owner).vtable[*index];
+    }
 
-  [[nodiscard]] VmMethodId Direct(const std::string_view descriptor,
-                                  const std::string_view signature) {
-    const auto owner = linker.FindClass(descriptor);
-    REQUIRE(owner.has_value());
-    const auto method = linker.FindDirectMethod(
-        *owner, "<init>", std::string(signature));
-    REQUIRE(method.has_value());
-    return *method;
-  }
+    [[nodiscard]] VmMethodId Direct(const std::string_view descriptor, const std::string_view signature) {
+        const auto owner = linker.FindClass(descriptor);
+        REQUIRE(owner.has_value());
+        const auto method = linker.FindDirectMethod(*owner, "<init>", std::string(signature));
+        REQUIRE(method.has_value());
+        return *method;
+    }
 
-  void AttachBase(const VmObjectRef object, const VmObjectRef base) {
-    const auto java_class = model.ObjectClass(object);
-    const auto index = linker.FindVtableIndex(
-        java_class, "attachBaseContext", "(Landroid/content/Context;)V");
-    REQUIRE(index.has_value());
-    const auto outcome = interpreter.Call(
-        linker.Class(java_class).vtable[*index],
-        std::vector{VmValue::Ref(object), VmValue::Ref(base)});
-    REQUIRE_FALSE(outcome.exception.IsValid());
-  }
+    void AttachBase(const VmObjectRef object, const VmObjectRef base) {
+        const auto java_class = model.ObjectClass(object);
+        const auto index = linker.FindVtableIndex(java_class, "attachBaseContext", "(Landroid/content/Context;)V");
+        REQUIRE(index.has_value());
+        const auto outcome = interpreter.Call(linker.Class(java_class).vtable[*index],
+                                              std::vector{VmValue::Ref(object), VmValue::Ref(base)});
+        REQUIRE_FALSE(outcome.exception.IsValid());
+    }
+};
+
+struct ResourceVm final {
+    ogplay::test::android_value::AndroidValueVm fixture;
+    std::shared_ptr<DexVmAndroidContext> context{fixture.context};
+    JavaObjectModel& model{fixture.model};
+    DexClassLinker& linker{fixture.linker};
+    Interpreter& interpreter{fixture.vm};
+
+    explicit ResourceVm(InterpreterConfig config = {}) : fixture(config.backend) {}
+
+    VmMethodId Virtual(std::string_view owner, std::string_view name, std::string_view signature) {
+        ogplay::test::MountResourceFixture(*context, interpreter);
+        const auto type = linker.ResolveDescriptor(owner);
+        return linker.Class(type).vtable.at(
+            linker.FindVtableIndex(type, std::string(name), std::string(signature)).value());
+    }
+
+    void AttachBase(VmObjectRef object, VmObjectRef base) {
+        const auto result =
+            fixture.OnOutcome(object, "attachBaseContext", "(Landroid/content/Context;)V", {VmValue::Ref(base)});
+        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+    }
 };
 
 TEST_CASE("android intrinsic catalog is unique and directly bound") {
-  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
-  const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  REQUIRE_FALSE(catalog.empty());
+    auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
+    const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
+    REQUIRE_FALSE(catalog.empty());
 
-  const std::unordered_set<std::string> intentionally_unimplemented{
-      "Landroid/content/res/XmlResourceParser$Impl;.defineEntityReplacementText(Ljava/lang/String;Ljava/lang/String;)V",
-      "Landroid/content/res/XmlResourceParser$Impl;.getAttributeCount()I",
-      "Landroid/content/res/XmlResourceParser$Impl;.getAttributeName(I)Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getAttributeNamespace(I)Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getAttributePrefix(I)Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getAttributeType(I)Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getAttributeValue(I)Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getAttributeValue(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getColumnNumber()I",
-      "Landroid/content/res/XmlResourceParser$Impl;.getDepth()I",
-      "Landroid/content/res/XmlResourceParser$Impl;.getFeature(Ljava/lang/String;)Z",
-      "Landroid/content/res/XmlResourceParser$Impl;.getInputEncoding()Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getLineNumber()I",
-      "Landroid/content/res/XmlResourceParser$Impl;.getNamespace()Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getNamespace(Ljava/lang/String;)Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getNamespaceCount(I)I",
-      "Landroid/content/res/XmlResourceParser$Impl;.getNamespacePrefix(I)Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getNamespaceUri(I)Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getPositionDescription()Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getPrefix()Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getProperty(Ljava/lang/String;)Ljava/lang/Object;",
-      "Landroid/content/res/XmlResourceParser$Impl;.getTextCharacters([I)[C",
-      "Landroid/content/res/XmlResourceParser$Impl;.isAttributeDefault(I)Z",
-      "Landroid/content/res/XmlResourceParser$Impl;.isEmptyElementTag()Z",
-      "Landroid/content/res/XmlResourceParser$Impl;.isWhitespace()Z",
-      "Landroid/content/res/XmlResourceParser$Impl;.nextTag()I",
-      "Landroid/content/res/XmlResourceParser$Impl;.nextText()Ljava/lang/String;",
-      "Landroid/content/res/XmlResourceParser$Impl;.nextToken()I",
-      "Landroid/content/res/XmlResourceParser$Impl;.require(ILjava/lang/String;Ljava/lang/String;)V",
-      "Landroid/content/res/XmlResourceParser$Impl;.setFeature(Ljava/lang/String;Z)V",
-      "Landroid/content/res/XmlResourceParser$Impl;.setInput(Ljava/io/InputStream;Ljava/lang/String;)V",
-      "Landroid/content/res/XmlResourceParser$Impl;.setInput(Ljava/io/Reader;)V",
-      "Landroid/content/res/XmlResourceParser$Impl;.setProperty(Ljava/lang/String;Ljava/lang/Object;)V",
-  };
-  std::unordered_set<std::string> unimplemented;
-  std::unordered_set<std::string> descriptors;
-  for (const auto& declaration : catalog) {
-    CHECK_FALSE(declaration.descriptor.starts_with("Ljava/io/"));
-    CHECK_FALSE(declaration.descriptor.starts_with("Ljava/util/zip/"));
-    CHECK_FALSE(declaration.descriptor.starts_with("Ljava/net/"));
-    CHECK_FALSE(declaration.descriptor.starts_with("Ljava/nio/"));
-    CHECK_FALSE(declaration.descriptor.starts_with("Ljava/util/"));
-    CHECK_FALSE(declaration.descriptor.starts_with("Ljavax/net/"));
-    CHECK_FALSE(declaration.descriptor.starts_with("Ljavax/xml/"));
-    CHECK_FALSE(declaration.descriptor.starts_with("Lorg/xml/"));
-    CHECK(descriptors.insert(declaration.descriptor).second);
-    for (const auto& method : declaration.methods) {
-      if ((method.access_flags & 0x0400U) == 0U && !method.guest_native) {
-        CAPTURE(declaration.descriptor);
-        CAPTURE(method.name);
-        CAPTURE(method.descriptor);
-        if (!method.implementation) {
-          const auto key = declaration.descriptor + "." + method.name + method.descriptor;
-          CHECK(intentionally_unimplemented.contains(key));
-          unimplemented.insert(key);
+    const std::unordered_set<std::string> intentionally_unimplemented{
+        "Landroid/content/res/XmlResourceParser$Impl;.defineEntityReplacementText(Ljava/lang/String;Ljava/lang/String;)V",
+        "Landroid/content/res/XmlResourceParser$Impl;.getAttributeCount()I",
+        "Landroid/content/res/XmlResourceParser$Impl;.getAttributeName(I)Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getAttributeNamespace(I)Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getAttributePrefix(I)Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getAttributeType(I)Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getAttributeValue(I)Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getAttributeValue(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getColumnNumber()I",
+        "Landroid/content/res/XmlResourceParser$Impl;.getDepth()I",
+        "Landroid/content/res/XmlResourceParser$Impl;.getFeature(Ljava/lang/String;)Z",
+        "Landroid/content/res/XmlResourceParser$Impl;.getInputEncoding()Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getLineNumber()I",
+        "Landroid/content/res/XmlResourceParser$Impl;.getNamespace()Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getNamespace(Ljava/lang/String;)Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getNamespaceCount(I)I",
+        "Landroid/content/res/XmlResourceParser$Impl;.getNamespacePrefix(I)Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getNamespaceUri(I)Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getPositionDescription()Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getPrefix()Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getProperty(Ljava/lang/String;)Ljava/lang/Object;",
+        "Landroid/content/res/XmlResourceParser$Impl;.getTextCharacters([I)[C",
+        "Landroid/content/res/XmlResourceParser$Impl;.isAttributeDefault(I)Z",
+        "Landroid/content/res/XmlResourceParser$Impl;.isEmptyElementTag()Z",
+        "Landroid/content/res/XmlResourceParser$Impl;.isWhitespace()Z",
+        "Landroid/content/res/XmlResourceParser$Impl;.nextTag()I",
+        "Landroid/content/res/XmlResourceParser$Impl;.nextText()Ljava/lang/String;",
+        "Landroid/content/res/XmlResourceParser$Impl;.nextToken()I",
+        "Landroid/content/res/XmlResourceParser$Impl;.require(ILjava/lang/String;Ljava/lang/String;)V",
+        "Landroid/content/res/XmlResourceParser$Impl;.setFeature(Ljava/lang/String;Z)V",
+        "Landroid/content/res/XmlResourceParser$Impl;.setInput(Ljava/io/InputStream;Ljava/lang/String;)V",
+        "Landroid/content/res/XmlResourceParser$Impl;.setInput(Ljava/io/Reader;)V",
+        "Landroid/content/res/XmlResourceParser$Impl;.setProperty(Ljava/lang/String;Ljava/lang/Object;)V",
+    };
+    std::unordered_set<std::string> unimplemented;
+    std::unordered_set<std::string> descriptors;
+    for (const auto& declaration : catalog) {
+        CHECK_FALSE(declaration.descriptor.starts_with("Ljava/io/"));
+        CHECK_FALSE(declaration.descriptor.starts_with("Ljava/util/zip/"));
+        CHECK_FALSE(declaration.descriptor.starts_with("Ljava/net/"));
+        CHECK_FALSE(declaration.descriptor.starts_with("Ljava/nio/"));
+        CHECK_FALSE(declaration.descriptor.starts_with("Ljava/util/"));
+        CHECK_FALSE(declaration.descriptor.starts_with("Ljavax/net/"));
+        CHECK_FALSE(declaration.descriptor.starts_with("Ljavax/xml/"));
+        CHECK_FALSE(declaration.descriptor.starts_with("Lorg/xml/"));
+        CHECK(descriptors.insert(declaration.descriptor).second);
+        for (const auto& method : declaration.methods) {
+            if ((method.access_flags & 0x0400U) == 0U && !method.guest_native) {
+                CAPTURE(declaration.descriptor);
+                CAPTURE(method.name);
+                CAPTURE(method.descriptor);
+                if (!method.implementation) {
+                    const auto key = declaration.descriptor + "." + method.name + method.descriptor;
+                    CHECK(intentionally_unimplemented.contains(key));
+                    unimplemented.insert(key);
+                }
+            }
         }
-      }
+        if (declaration.clinit_implementation) {
+            CHECK(static_cast<bool>(declaration.clinit_implementation));
+        }
     }
-    if (declaration.clinit_implementation) {
-      CHECK(static_cast<bool>(declaration.clinit_implementation));
-    }
-  }
 
-  CHECK(unimplemented == intentionally_unimplemented);
-  for (const auto* descriptor : {"Landroid/content/SharedPreferences;",
-                                 "Landroid/content/SharedPreferences$Editor;",
-                                 "Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;",
-                                 "Landroid/preference/PreferenceManager;"}) {
-    CHECK_FALSE(descriptors.contains(descriptor));
-  }
-  const auto method_count = [&catalog](const std::string_view descriptor) {
-    const auto found = std::find_if(
-        catalog.begin(), catalog.end(), [descriptor](const auto& declaration) {
-          return declaration.descriptor == descriptor;
+    CHECK(unimplemented == intentionally_unimplemented);
+    for (const auto* descriptor : {"Landroid/content/SharedPreferences;", "Landroid/content/SharedPreferences$Editor;",
+                                   "Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;",
+                                   "Landroid/preference/PreferenceManager;"}) {
+        CHECK_FALSE(descriptors.contains(descriptor));
+    }
+    const auto method_count = [&catalog](const std::string_view descriptor) {
+        const auto found = std::find_if(catalog.begin(), catalog.end(), [descriptor](const auto& declaration) {
+            return declaration.descriptor == descriptor;
         });
-    REQUIRE(found != catalog.end());
-    return found->methods.size();
-  };
-  const auto has_method = [&catalog](const std::string_view owner,
-                                     const std::string_view name,
-                                     const std::string_view descriptor) {
-    const auto found = std::find_if(
-        catalog.begin(), catalog.end(), [owner](const auto& declaration) {
-          return declaration.descriptor == owner;
-        });
-    REQUIRE(found != catalog.end());
-    return std::ranges::any_of(found->methods, [&](const auto& method) {
-      return method.name == name && method.descriptor == descriptor;
-    });
-  };
-  CHECK(method_count("Landroid/app/Application;") == 2);
-  CHECK(has_method("Landroid/app/Activity;", "hasWindowFocus", "()Z"));
-  CHECK(has_method("Landroid/app/Activity;", "onWindowFocusChanged", "(Z)V"));
-  CHECK(method_count("Landroid/app/Service;") == 13);
-  CHECK(has_method("Landroid/content/Context;", "getResources", "()Landroid/content/res/Resources;"));
-  CHECK(has_method("Landroid/content/ContextWrapper;", "getBaseContext", "()Landroid/content/Context;"));
-  CHECK(has_method("Landroid/content/Context;", "checkPermission",
-                   "(Ljava/lang/String;II)I"));
-  CHECK(has_method("Landroid/content/ContextWrapper;", "checkPermission",
-                   "(Ljava/lang/String;II)I"));
-  CHECK(has_method("Landroid/content/Context;", "getMainLooper",
-                   "()Landroid/os/Looper;"));
-  CHECK(has_method("Landroid/content/ContextWrapper;", "getMainLooper",
-                   "()Landroid/os/Looper;"));
-  CHECK(has_method("Landroid/content/Context;", "getObbDir",
-                   "()Ljava/io/File;"));
-  CHECK(has_method("Landroid/content/Context;", "getObbDirs",
-                   "()[Ljava/io/File;"));
-  CHECK(has_method("Landroid/content/ContextWrapper;", "getObbDir",
-                   "()Ljava/io/File;"));
-  CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 0); // Java methods belong to BootDex.
-  CHECK_FALSE(descriptors.contains("Landroid/content/IntentFilter;"));
-  AndroidVm rom;
-  CHECK(rom.linker.Class(rom.linker.ResolveDescriptor("Landroid/content/IntentFilter;")).is_boot_dex);
-  CHECK_FALSE(descriptors.contains("Landroid/os/Bundle;"));
-  CHECK_FALSE(descriptors.contains("Landroid/os/IBinder;"));
-  CHECK_FALSE(descriptors.contains("Landroid/os/ResultReceiver;"));
-  CHECK(method_count("Landroid/os/Binder;") == 10);
-  CHECK(method_count("Landroid/view/View$OnFocusChangeListener;") == 1);
-  CHECK(has_method("Landroid/view/View;", "hasWindowFocus", "()Z"));
-  CHECK(has_method("Landroid/content/pm/PackageManager;", "getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;"));
-  CHECK(has_method("Landroid/widget/TextView;", "setText", "(Ljava/lang/CharSequence;)V"));
-  CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10;") == 25);
-  CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10$Impl;") == 25);
+        REQUIRE(found != catalog.end());
+        return found->methods.size();
+    };
+    const auto has_method = [&catalog](const std::string_view owner, const std::string_view name,
+                                       const std::string_view descriptor) {
+        const auto found = std::find_if(catalog.begin(), catalog.end(),
+                                        [owner](const auto& declaration) { return declaration.descriptor == owner; });
+        REQUIRE(found != catalog.end());
+        return std::ranges::any_of(
+            found->methods, [&](const auto& method) { return method.name == name && method.descriptor == descriptor; });
+    };
+    CHECK(method_count("Landroid/app/Application;") == 2);
+    CHECK(has_method("Landroid/app/Activity;", "hasWindowFocus", "()Z"));
+    CHECK(has_method("Landroid/app/Activity;", "onWindowFocusChanged", "(Z)V"));
+    CHECK(method_count("Landroid/app/Service;") == 13);
+    CHECK(has_method("Landroid/content/Context;", "getResources", "()Landroid/content/res/Resources;"));
+    CHECK(has_method("Landroid/content/ContextWrapper;", "getBaseContext", "()Landroid/content/Context;"));
+    CHECK(has_method("Landroid/content/Context;", "checkPermission", "(Ljava/lang/String;II)I"));
+    CHECK(has_method("Landroid/content/ContextWrapper;", "checkPermission", "(Ljava/lang/String;II)I"));
+    CHECK(has_method("Landroid/content/Context;", "getMainLooper", "()Landroid/os/Looper;"));
+    CHECK(has_method("Landroid/content/ContextWrapper;", "getMainLooper", "()Landroid/os/Looper;"));
+    CHECK(has_method("Landroid/content/Context;", "getObbDir", "()Ljava/io/File;"));
+    CHECK(has_method("Landroid/content/Context;", "getObbDirs", "()[Ljava/io/File;"));
+    CHECK(has_method("Landroid/content/ContextWrapper;", "getObbDir", "()Ljava/io/File;"));
+    CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 0);  // Java methods belong to BootDex.
+    CHECK_FALSE(descriptors.contains("Landroid/content/IntentFilter;"));
+    AndroidVm rom;
+    CHECK(rom.linker.Class(rom.linker.ResolveDescriptor("Landroid/content/IntentFilter;")).is_boot_dex);
+    CHECK_FALSE(descriptors.contains("Landroid/os/Bundle;"));
+    CHECK_FALSE(descriptors.contains("Landroid/os/IBinder;"));
+    CHECK_FALSE(descriptors.contains("Landroid/os/ResultReceiver;"));
+    CHECK(method_count("Landroid/os/Binder;") == 10);
+    CHECK(method_count("Landroid/view/View$OnFocusChangeListener;") == 1);
+    CHECK(has_method("Landroid/view/View;", "hasWindowFocus", "()Z"));
+    CHECK(has_method("Landroid/content/pm/PackageManager;", "getApplicationInfo",
+                     "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;"));
+    CHECK(has_method("Landroid/widget/TextView;", "setText", "(Ljava/lang/CharSequence;)V"));
+    CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10;") == 25);
+    CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10$Impl;") == 25);
 }
 
 TEST_CASE("API 19 Context wrappers publish the real superclass chain") {
-  AndroidVm vm;
-  const auto require_class = [&vm](const std::string_view descriptor) {
-    const auto java_class = vm.linker.FindClass(descriptor);
-    REQUIRE(java_class.has_value());
-    return *java_class;
-  };
-  const auto context = require_class("Landroid/content/Context;");
-  const auto wrapper = require_class("Landroid/content/ContextWrapper;");
-  const auto themed = require_class("Landroid/view/ContextThemeWrapper;");
-  const auto application = require_class("Landroid/app/Application;");
-  const auto activity = require_class("Landroid/app/Activity;");
-  const auto service = require_class("Landroid/app/Service;");
-  const auto intent_service = require_class("Landroid/app/IntentService;");
+    AndroidVm vm;
+    const auto require_class = [&vm](const std::string_view descriptor) {
+        const auto java_class = vm.linker.FindClass(descriptor);
+        REQUIRE(java_class.has_value());
+        return *java_class;
+    };
+    const auto context = require_class("Landroid/content/Context;");
+    const auto wrapper = require_class("Landroid/content/ContextWrapper;");
+    const auto themed = require_class("Landroid/view/ContextThemeWrapper;");
+    const auto application = require_class("Landroid/app/Application;");
+    const auto activity = require_class("Landroid/app/Activity;");
+    const auto service = require_class("Landroid/app/Service;");
+    const auto intent_service = require_class("Landroid/app/IntentService;");
 
-  CHECK(vm.linker.Class(wrapper).super == context);
-  CHECK(vm.linker.Class(themed).super == wrapper);
-  CHECK(vm.linker.Class(application).super == wrapper);
-  CHECK(vm.linker.Class(activity).super == themed);
-  CHECK(vm.linker.Class(service).super == wrapper);
-  CHECK(vm.linker.Class(intent_service).super == service);
-  CHECK(vm.linker.IsAssignable(context, application));
-  CHECK(vm.linker.IsAssignable(context, activity));
-  CHECK(vm.linker.IsAssignable(wrapper, activity));
-  CHECK(vm.linker.IsAssignable(themed, activity));
-  CHECK(vm.linker.IsAssignable(wrapper, intent_service));
+    CHECK(vm.linker.Class(wrapper).super == context);
+    CHECK(vm.linker.Class(themed).super == wrapper);
+    CHECK(vm.linker.Class(application).super == wrapper);
+    CHECK(vm.linker.Class(activity).super == themed);
+    CHECK(vm.linker.Class(service).super == wrapper);
+    CHECK(vm.linker.Class(intent_service).super == service);
+    CHECK(vm.linker.IsAssignable(context, application));
+    CHECK(vm.linker.IsAssignable(context, activity));
+    CHECK(vm.linker.IsAssignable(wrapper, activity));
+    CHECK(vm.linker.IsAssignable(themed, activity));
+    CHECK(vm.linker.IsAssignable(wrapper, intent_service));
 }
 
 TEST_CASE("ContextWrapper owns one base identity and delegates supported calls") {
-  AndroidVm vm;
-  vm.context->package_name = "org.example.wrapper";
-  vm.context->package_resource_path =
-      "/data/app/org.example.wrapper-1.apk";
-  vm.context->application_class_name = "org.example.wrapper.Application";
-  vm.context->target_sdk_version = 19;
-  const auto base =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
-  const auto wrapper = vm.interpreter.NewIntrinsicInstance(
-      "Landroid/content/ContextWrapper;");
-  auto outcome = vm.interpreter.Call(
-      vm.Direct("Landroid/content/ContextWrapper;",
-                "(Landroid/content/Context;)V"),
-      std::vector{VmValue::Ref(wrapper), VmValue::Ref(base)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
+    AndroidVm vm;
+    vm.context->package_name = "org.example.wrapper";
+    vm.context->package_resource_path = "/data/app/org.example.wrapper-1.apk";
+    vm.context->application_class_name = "org.example.wrapper.Application";
+    vm.context->target_sdk_version = 19;
+    const auto base = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    const auto wrapper = vm.interpreter.NewIntrinsicInstance("Landroid/content/ContextWrapper;");
+    auto outcome = vm.interpreter.Call(vm.Direct("Landroid/content/ContextWrapper;", "(Landroid/content/Context;)V"),
+                                       std::vector{VmValue::Ref(wrapper), VmValue::Ref(base)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
 
-  outcome = vm.interpreter.Call(
-      vm.Virtual("Landroid/content/ContextWrapper;", "getBaseContext",
-                 "()Landroid/content/Context;"),
-      std::vector{VmValue::Ref(wrapper)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(outcome.value.ref == base);
+    outcome = vm.interpreter.Call(
+        vm.Virtual("Landroid/content/ContextWrapper;", "getBaseContext", "()Landroid/content/Context;"),
+        std::vector{VmValue::Ref(wrapper)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.ref == base);
 
-  outcome = vm.interpreter.Call(
-      vm.Virtual("Landroid/content/ContextWrapper;", "getPackageName",
-                 "()Ljava/lang/String;"),
-      std::vector{VmValue::Ref(wrapper)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(vm.interpreter.StringUtf8(outcome.value.ref) ==
-        "org.example.wrapper");
+    outcome =
+        vm.interpreter.Call(vm.Virtual("Landroid/content/ContextWrapper;", "getPackageName", "()Ljava/lang/String;"),
+                            std::vector{VmValue::Ref(wrapper)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(vm.interpreter.StringUtf8(outcome.value.ref) == "org.example.wrapper");
 
-  outcome = vm.interpreter.Call(
-      vm.Virtual("Landroid/content/ContextWrapper;", "getPackageResourcePath",
-                 "()Ljava/lang/String;"),
-      std::vector{VmValue::Ref(wrapper)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(vm.interpreter.StringUtf8(outcome.value.ref) ==
-        "/data/app/org.example.wrapper-1.apk");
+    outcome = vm.interpreter.Call(
+        vm.Virtual("Landroid/content/ContextWrapper;", "getPackageResourcePath", "()Ljava/lang/String;"),
+        std::vector{VmValue::Ref(wrapper)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(vm.interpreter.StringUtf8(outcome.value.ref) == "/data/app/org.example.wrapper-1.apk");
 
-  outcome = vm.interpreter.Call(
-      vm.Virtual("Landroid/content/ContextWrapper;", "getPackageCodePath",
-                 "()Ljava/lang/String;"),
-      std::vector{VmValue::Ref(wrapper)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(vm.interpreter.StringUtf8(outcome.value.ref) ==
-        "/data/app/org.example.wrapper-1.apk");
+    outcome = vm.interpreter.Call(
+        vm.Virtual("Landroid/content/ContextWrapper;", "getPackageCodePath", "()Ljava/lang/String;"),
+        std::vector{VmValue::Ref(wrapper)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(vm.interpreter.StringUtf8(outcome.value.ref) == "/data/app/org.example.wrapper-1.apk");
 
-  const auto base_info = vm.interpreter.Call(
-      vm.Virtual("Landroid/content/Context;", "getApplicationInfo",
-                 "()Landroid/content/pm/ApplicationInfo;"),
-      std::vector{VmValue::Ref(base)});
-  REQUIRE_FALSE(base_info.exception.IsValid());
-  const auto wrapper_info = vm.interpreter.Call(
-      vm.Virtual("Landroid/content/ContextWrapper;", "getApplicationInfo",
-                 "()Landroid/content/pm/ApplicationInfo;"),
-      std::vector{VmValue::Ref(wrapper)});
-  REQUIRE_FALSE(wrapper_info.exception.IsValid());
-  CHECK(wrapper_info.value.ref == base_info.value.ref);
-  const auto info_field = [&](const std::string& name,
-                              const std::string& descriptor) {
-    const auto field = vm.linker.FindFieldRecursive(
-        vm.model.ObjectClass(base_info.value.ref), name, descriptor);
-    REQUIRE(field.has_value());
-    return vm.model.InstanceSlots(base_info.value.ref)
-        [vm.linker.Field(*field).slot];
-  };
-  CHECK(vm.interpreter.StringUtf8(VmObjectRef{
-            static_cast<std::uint32_t>(
-                info_field("sourceDir", "Ljava/lang/String;").bits)}) ==
-        "/data/app/org.example.wrapper-1.apk");
-  CHECK(static_cast<std::int32_t>(
-            info_field("targetSdkVersion", "I").bits) == 19);
-  CHECK(static_cast<std::int32_t>(info_field("flags", "I").bits) == ((1 << 2) | (1 << 23)));
+    const auto base_info = vm.interpreter.Call(
+        vm.Virtual("Landroid/content/Context;", "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;"),
+        std::vector{VmValue::Ref(base)});
+    REQUIRE_FALSE(base_info.exception.IsValid());
+    const auto wrapper_info = vm.interpreter.Call(
+        vm.Virtual("Landroid/content/ContextWrapper;", "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;"),
+        std::vector{VmValue::Ref(wrapper)});
+    REQUIRE_FALSE(wrapper_info.exception.IsValid());
+    CHECK(wrapper_info.value.ref == base_info.value.ref);
+    const auto info_field = [&](const std::string& name, const std::string& descriptor) {
+        const auto field = vm.linker.FindFieldRecursive(vm.model.ObjectClass(base_info.value.ref), name, descriptor);
+        REQUIRE(field.has_value());
+        return vm.model.InstanceSlots(base_info.value.ref)[vm.linker.Field(*field).slot];
+    };
+    CHECK(vm.interpreter.StringUtf8(VmObjectRef{static_cast<std::uint32_t>(
+              info_field("sourceDir", "Ljava/lang/String;").bits)}) == "/data/app/org.example.wrapper-1.apk");
+    CHECK(static_cast<std::int32_t>(info_field("targetSdkVersion", "I").bits) == 19);
+    CHECK(static_cast<std::int32_t>(info_field("flags", "I").bits) == ((1 << 2) | (1 << 23)));
 
-  outcome = vm.interpreter.Call(
-      vm.Virtual("Landroid/content/ContextWrapper;", "attachBaseContext",
-                 "(Landroid/content/Context;)V"),
-      std::vector{VmValue::Ref(wrapper), VmValue::Ref(base)});
-  REQUIRE(outcome.exception.IsValid());
-  CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-        "Ljava/lang/IllegalStateException;");
+    outcome = vm.interpreter.Call(
+        vm.Virtual("Landroid/content/ContextWrapper;", "attachBaseContext", "(Landroid/content/Context;)V"),
+        std::vector{VmValue::Ref(wrapper), VmValue::Ref(base)});
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
 }
 
 TEST_CASE("Context getString is final and resolves through inherited Resources") {
-  AndroidVm vm;
-  constexpr std::uint32_t kTitle = 0x7f010001U;
-  constexpr std::uint32_t kAlias = 0x7f010002U;
-  constexpr std::uint32_t kCycleA = 0x7f010003U;
-  constexpr std::uint32_t kCycleB = 0x7f010004U;
-  constexpr std::uint32_t kNotString = 0x7f020001U;
-  vm.context->arsc.entries = {
-      {.resource_id = kTitle,
-       .type_name = "string",
-       .entry_name = "title",
-       .string_value = "Terms \xE6\x9D\xA1\xE6\xAC\xBE",
-       .value_type = 0x03},
-      {.resource_id = kAlias,
-       .type_name = "string",
-       .entry_name = "title_alias",
-       .value_type = 0x01,
-       .value_data = kTitle},
-      {.resource_id = kCycleA,
-       .type_name = "string",
-       .entry_name = "cycle_a",
-       .value_type = 0x01,
-       .value_data = kCycleB},
-      {.resource_id = kCycleB,
-       .type_name = "string",
-       .entry_name = "cycle_b",
-       .value_type = 0x01,
-       .value_data = kCycleA},
-      {.resource_id = kNotString,
-       .type_name = "color",
-       .entry_name = "black",
-       .value_type = 0x1c,
-       .value_data = 0xff000000U},
-  };
+    ResourceVm vm;
+    constexpr std::uint32_t kTitle = 0x7f010001U;
+    constexpr std::uint32_t kAlias = 0x7f010002U;
+    constexpr std::uint32_t kCycleA = 0x7f010003U;
+    constexpr std::uint32_t kCycleB = 0x7f010004U;
+    constexpr std::uint32_t kNotString = 0x7f020001U;
+    ogplay::test::ResourceFixture(*vm.context).entries = {
+        {.resource_id = kTitle,
+         .type_name = "string",
+         .entry_name = "title",
+         .string_value = "Terms \xE6\x9D\xA1\xE6\xAC\xBE",
+         .value_type = 0x03},
+        {.resource_id = kAlias,
+         .type_name = "string",
+         .entry_name = "title_alias",
+         .value_type = 0x01,
+         .value_data = kTitle},
+        {.resource_id = kCycleA,
+         .type_name = "string",
+         .entry_name = "cycle_a",
+         .value_type = 0x01,
+         .value_data = kCycleB},
+        {.resource_id = kCycleB,
+         .type_name = "string",
+         .entry_name = "cycle_b",
+         .value_type = 0x01,
+         .value_data = kCycleA},
+        {.resource_id = kNotString,
+         .type_name = "color",
+         .entry_name = "black",
+         .value_type = 0x1c,
+         .value_data = 0xff000000U},
+    };
 
-  const auto base =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
-  const auto wrapper = vm.interpreter.NewIntrinsicInstance(
-      "Landroid/content/ContextWrapper;");
-  const auto activity =
-      vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
-  vm.AttachBase(wrapper, base);
-  vm.AttachBase(activity, base);
+    const auto base = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    const auto wrapper = vm.interpreter.NewIntrinsicInstance("Landroid/content/ContextWrapper;");
+    const auto activity = vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+    vm.AttachBase(wrapper, base);
+    vm.AttachBase(activity, base);
 
-  const auto context_method = vm.Virtual(
-      "Landroid/content/Context;", "getString", "(I)Ljava/lang/String;");
-  const auto inherited_method = vm.Virtual(
-      "Landroid/content/ContextWrapper;", "getString",
-      "(I)Ljava/lang/String;");
-  const auto activity_method = vm.Virtual(
-      "Landroid/app/Activity;", "getString", "(I)Ljava/lang/String;");
-  CHECK(inherited_method == context_method);
-  CHECK(activity_method == context_method);
-  const auto& linked = vm.linker.Method(inherited_method);
-  CHECK(vm.linker.Class(linked.owner).descriptor ==
-        "Landroid/content/Context;");
-  CHECK_FALSE(linked.overridable);
+    const auto context_method = vm.Virtual("Landroid/content/Context;", "getString", "(I)Ljava/lang/String;");
+    const auto inherited_method = vm.Virtual("Landroid/content/ContextWrapper;", "getString", "(I)Ljava/lang/String;");
+    const auto activity_method = vm.Virtual("Landroid/app/Activity;", "getString", "(I)Ljava/lang/String;");
+    CHECK(inherited_method == context_method);
+    CHECK(activity_method == context_method);
+    const auto& linked = vm.linker.Method(inherited_method);
+    CHECK(vm.linker.Class(linked.owner).descriptor == "Landroid/content/Context;");
+    CHECK_FALSE(linked.overridable);
 
-  const auto outcome = vm.interpreter.Call(
-      activity_method,
-      std::vector{VmValue::Ref(activity),
-                  VmValue::Int(static_cast<std::int32_t>(kAlias))});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(vm.interpreter.StringUtf8(outcome.value.ref) ==
-        "Terms \xE6\x9D\xA1\xE6\xAC\xBE");
+    const auto outcome = vm.interpreter.Call(
+        activity_method, std::vector{VmValue::Ref(activity), VmValue::Int(static_cast<std::int32_t>(kAlias))});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(vm.interpreter.StringUtf8(outcome.value.ref) == "Terms \xE6\x9D\xA1\xE6\xAC\xBE");
 
-  const auto resources_outcome = vm.interpreter.Call(
-      vm.Virtual("Landroid/content/ContextWrapper;", "getResources",
-                 "()Landroid/content/res/Resources;"),
-      std::vector{VmValue::Ref(wrapper)});
-  REQUIRE_FALSE(resources_outcome.exception.IsValid());
-  const auto direct = vm.interpreter.Call(
-      vm.Virtual("Landroid/content/res/Resources;", "getString",
-                 "(I)Ljava/lang/String;"),
-      std::vector{VmValue::Ref(resources_outcome.value.ref),
-                  VmValue::Int(static_cast<std::int32_t>(kTitle))});
-  REQUIRE_FALSE(direct.exception.IsValid());
-  CHECK(vm.interpreter.StringUtf8(direct.value.ref) ==
-        "Terms \xE6\x9D\xA1\xE6\xAC\xBE");
+    const auto resources_outcome = vm.interpreter.Call(
+        vm.Virtual("Landroid/content/ContextWrapper;", "getResources", "()Landroid/content/res/Resources;"),
+        std::vector{VmValue::Ref(wrapper)});
+    REQUIRE_FALSE(resources_outcome.exception.IsValid());
+    const auto direct = vm.interpreter.Call(
+        vm.Virtual("Landroid/content/res/Resources;", "getString", "(I)Ljava/lang/String;"),
+        std::vector{VmValue::Ref(resources_outcome.value.ref), VmValue::Int(static_cast<std::int32_t>(kTitle))});
+    REQUIRE_FALSE(direct.exception.IsValid());
+    CHECK(vm.interpreter.StringUtf8(direct.value.ref) == "Terms \xE6\x9D\xA1\xE6\xAC\xBE");
 
-  for (const auto bad_id : {0x7f010099U, kCycleA}) {
-    const auto failure = vm.interpreter.Call(
-        inherited_method,
-        std::vector{VmValue::Ref(wrapper),
-                    VmValue::Int(static_cast<std::int32_t>(bad_id))});
-    REQUIRE(failure.exception.IsValid());
-    CHECK(vm.linker.Class(failure.exception_class).descriptor ==
-          "Landroid/content/res/Resources$NotFoundException;");
-  }
+    for (const auto bad_id : {0x7f010099U}) {
+        const auto failure = vm.interpreter.Call(
+            inherited_method, std::vector{VmValue::Ref(wrapper), VmValue::Int(static_cast<std::int32_t>(bad_id))});
+        REQUIRE(failure.exception.IsValid());
+        CHECK(vm.linker.Class(failure.exception_class).descriptor ==
+              "Landroid/content/res/Resources$NotFoundException;");
+    }
 }
 
 TEST_CASE("ContextThemeWrapper keeps bounded theme state on the same base") {
-  AndroidVm vm;
-  const auto base =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
-  const auto themed = vm.interpreter.NewIntrinsicInstance(
-      "Landroid/view/ContextThemeWrapper;");
-  auto outcome = vm.interpreter.Call(
-      vm.Direct("Landroid/view/ContextThemeWrapper;",
-                "(Landroid/content/Context;I)V"),
-      std::vector{VmValue::Ref(themed), VmValue::Ref(base),
-                  VmValue::Int(0x1234)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  outcome = vm.interpreter.Call(
-      vm.Virtual("Landroid/view/ContextThemeWrapper;", "getBaseContext",
-                 "()Landroid/content/Context;"),
-      std::vector{VmValue::Ref(themed)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(outcome.value.ref == base);
-  outcome = vm.interpreter.Call(
-      vm.Virtual("Landroid/view/ContextThemeWrapper;", "getThemeResId",
-                 "()I"),
-      std::vector{VmValue::Ref(themed)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(outcome.value.AsInt() == 0x1234);
+    AndroidVm vm;
+    const auto base = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    const auto themed = vm.interpreter.NewIntrinsicInstance("Landroid/view/ContextThemeWrapper;");
+    auto outcome = vm.interpreter.Call(vm.Direct("Landroid/view/ContextThemeWrapper;", "(Landroid/content/Context;I)V"),
+                                       std::vector{VmValue::Ref(themed), VmValue::Ref(base), VmValue::Int(0x1234)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    outcome = vm.interpreter.Call(
+        vm.Virtual("Landroid/view/ContextThemeWrapper;", "getBaseContext", "()Landroid/content/Context;"),
+        std::vector{VmValue::Ref(themed)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.ref == base);
+    outcome = vm.interpreter.Call(vm.Virtual("Landroid/view/ContextThemeWrapper;", "getThemeResId", "()I"),
+                                  std::vector{VmValue::Ref(themed)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.AsInt() == 0x1234);
 }
 
 TEST_CASE("Context package manager has one process identity") {
-  AndroidVm vm;
-  const auto activity =
-      vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
-  const auto context =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
-  vm.AttachBase(activity, context);
-  const auto activity_target = vm.Virtual(
-      "Landroid/app/Activity;", "getPackageManager",
-      "()Landroid/content/pm/PackageManager;");
+    AndroidVm vm;
+    const auto activity = vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+    const auto context = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    vm.AttachBase(activity, context);
+    const auto activity_target =
+        vm.Virtual("Landroid/app/Activity;", "getPackageManager", "()Landroid/content/pm/PackageManager;");
 
-  const auto from_activity = vm.interpreter.Call(
-      activity_target, std::vector{VmValue::Ref(activity)});
-  REQUIRE_FALSE(from_activity.exception.IsValid());
-  REQUIRE(from_activity.value.ref.IsValid());
-  const auto from_context = vm.interpreter.Call(
-      vm.Virtual("Landroid/content/Context;", "getPackageManager",
-                 "()Landroid/content/pm/PackageManager;"),
-      std::vector{VmValue::Ref(context)});
-  REQUIRE_FALSE(from_context.exception.IsValid());
-  CHECK(from_context.value.ref == from_activity.value.ref);
-  CHECK(vm.linker.Class(vm.model.ObjectClass(from_activity.value.ref))
-            .descriptor == "Landroid/content/pm/PackageManager;");
+    const auto from_activity = vm.interpreter.Call(activity_target, std::vector{VmValue::Ref(activity)});
+    REQUIRE_FALSE(from_activity.exception.IsValid());
+    REQUIRE(from_activity.value.ref.IsValid());
+    const auto from_context = vm.interpreter.Call(
+        vm.Virtual("Landroid/content/Context;", "getPackageManager", "()Landroid/content/pm/PackageManager;"),
+        std::vector{VmValue::Ref(context)});
+    REQUIRE_FALSE(from_context.exception.IsValid());
+    CHECK(from_context.value.ref == from_activity.value.ref);
+    CHECK(vm.linker.Class(vm.model.ObjectClass(from_activity.value.ref)).descriptor ==
+          "Landroid/content/pm/PackageManager;");
 }
 
 TEST_CASE("Context permission checks use the explicit guest process grant set") {
-  for (const auto backend : {InterpreterBackend::switch_dispatch,
-                             InterpreterBackend::threaded}) {
-    InterpreterConfig config;
-    config.backend = backend;
-    AndroidVm vm(config);
-    vm.context->application_uid = 10000U;
-    vm.context->granted_permissions.insert("android.permission.GET_ACCOUNTS");
-    const auto base =
-        vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
-    const auto activity =
-        vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
-    vm.AttachBase(activity, base);
-    const auto granted =
-        vm.interpreter.NewStringUtf8("android.permission.GET_ACCOUNTS");
-    const auto denied =
-        vm.interpreter.NewStringUtf8("android.permission.CAMERA");
-    const auto check = [&](const VmObjectRef receiver,
-                           const VmObjectRef permission, const std::int32_t pid,
-                           const std::int32_t uid) {
-      return vm.interpreter.Call(
-          vm.Virtual("Landroid/content/Context;", "checkPermission",
-                     "(Ljava/lang/String;II)I"),
-          std::vector{VmValue::Ref(receiver), VmValue::Ref(permission),
-                      VmValue::Int(pid), VmValue::Int(uid)});
-    };
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        InterpreterConfig config;
+        config.backend = backend;
+        AndroidVm vm(config);
+        vm.context->application_uid = 10000U;
+        vm.context->granted_permissions.insert("android.permission.GET_ACCOUNTS");
+        const auto base = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto activity = vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+        vm.AttachBase(activity, base);
+        const auto granted = vm.interpreter.NewStringUtf8("android.permission.GET_ACCOUNTS");
+        const auto denied = vm.interpreter.NewStringUtf8("android.permission.CAMERA");
+        const auto check = [&](const VmObjectRef receiver, const VmObjectRef permission, const std::int32_t pid,
+                               const std::int32_t uid) {
+            return vm.interpreter.Call(
+                vm.Virtual("Landroid/content/Context;", "checkPermission", "(Ljava/lang/String;II)I"),
+                std::vector{VmValue::Ref(receiver), VmValue::Ref(permission), VmValue::Int(pid), VmValue::Int(uid)});
+        };
 
-    auto outcome = check(base, granted, 1, 10000);
-    REQUIRE_FALSE(outcome.exception.IsValid());
-    CHECK(outcome.value.AsInt() == 0);
-    outcome = check(activity, granted, 1, 10000);
-    REQUIRE_FALSE(outcome.exception.IsValid());
-    CHECK(outcome.value.AsInt() == 0);
-    CHECK(check(base, denied, 1, 10000).value.AsInt() == -1);
-    CHECK(check(base, granted, 2, 10000).value.AsInt() == -1);
-    CHECK(check(base, granted, 1, 10001).value.AsInt() == -1);
+        auto outcome = check(base, granted, 1, 10000);
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        CHECK(outcome.value.AsInt() == 0);
+        outcome = check(activity, granted, 1, 10000);
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        CHECK(outcome.value.AsInt() == 0);
+        CHECK(check(base, denied, 1, 10000).value.AsInt() == -1);
+        CHECK(check(base, granted, 2, 10000).value.AsInt() == -1);
+        CHECK(check(base, granted, 1, 10001).value.AsInt() == -1);
 
-    const auto check_calling = [&](const VmObjectRef receiver,
-                                   const VmObjectRef permission,
-                                   const bool self_too) {
-      const auto name = self_too ? "checkCallingOrSelfPermission"
-                                 : "checkCallingPermission";
-      return vm.interpreter.Call(
-          vm.Virtual("Landroid/content/Context;", name,
-                     "(Ljava/lang/String;)I"),
-          std::vector{VmValue::Ref(receiver), VmValue::Ref(permission)});
-    };
-    CHECK(check_calling(base, granted, true).value.AsInt() == 0);
-    CHECK(check_calling(activity, granted, true).value.AsInt() == 0);
-    CHECK(check_calling(base, denied, true).value.AsInt() == -1);
-    CHECK(check_calling(base, granted, false).value.AsInt() == -1);
+        const auto check_calling = [&](const VmObjectRef receiver, const VmObjectRef permission, const bool self_too) {
+            const auto name = self_too ? "checkCallingOrSelfPermission" : "checkCallingPermission";
+            return vm.interpreter.Call(vm.Virtual("Landroid/content/Context;", name, "(Ljava/lang/String;)I"),
+                                       std::vector{VmValue::Ref(receiver), VmValue::Ref(permission)});
+        };
+        CHECK(check_calling(base, granted, true).value.AsInt() == 0);
+        CHECK(check_calling(activity, granted, true).value.AsInt() == 0);
+        CHECK(check_calling(base, denied, true).value.AsInt() == -1);
+        CHECK(check_calling(base, granted, false).value.AsInt() == -1);
 
-    const auto enforce = [&](const VmObjectRef receiver,
-                             const VmObjectRef permission,
-                             const bool self_too) {
-      const auto name = self_too ? "enforceCallingOrSelfPermission"
-                                 : "enforceCallingPermission";
-      return vm.interpreter.Call(
-          vm.Virtual("Landroid/content/Context;", name,
-                     "(Ljava/lang/String;Ljava/lang/String;)V"),
-          std::vector{VmValue::Ref(receiver), VmValue::Ref(permission),
-                      VmValue::Ref(VmObjectRef{})});
-    };
-    outcome = enforce(activity, granted, true);
-    CHECK_FALSE(outcome.exception.IsValid());
-    outcome = enforce(base, denied, true);
-    REQUIRE(outcome.exception.IsValid());
-    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-          "Ljava/lang/SecurityException;");
-    outcome = enforce(base, granted, false);
-    REQUIRE(outcome.exception.IsValid());
-    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-          "Ljava/lang/SecurityException;");
-    const auto enforce_explicit = [&](const std::int32_t pid) {
-      return vm.interpreter.Call(
-          vm.Virtual("Landroid/content/Context;", "enforcePermission",
-                     "(Ljava/lang/String;IILjava/lang/String;)V"),
-          std::vector{VmValue::Ref(base), VmValue::Ref(granted),
-                      VmValue::Int(pid), VmValue::Int(10000),
-                      VmValue::Ref(VmObjectRef{})});
-    };
-    CHECK_FALSE(enforce_explicit(1).exception.IsValid());
-    outcome = enforce_explicit(2);
-    REQUIRE(outcome.exception.IsValid());
-    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-          "Ljava/lang/SecurityException;");
+        const auto enforce = [&](const VmObjectRef receiver, const VmObjectRef permission, const bool self_too) {
+            const auto name = self_too ? "enforceCallingOrSelfPermission" : "enforceCallingPermission";
+            return vm.interpreter.Call(
+                vm.Virtual("Landroid/content/Context;", name, "(Ljava/lang/String;Ljava/lang/String;)V"),
+                std::vector{VmValue::Ref(receiver), VmValue::Ref(permission), VmValue::Ref(VmObjectRef{})});
+        };
+        outcome = enforce(activity, granted, true);
+        CHECK_FALSE(outcome.exception.IsValid());
+        outcome = enforce(base, denied, true);
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/SecurityException;");
+        outcome = enforce(base, granted, false);
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/SecurityException;");
+        const auto enforce_explicit = [&](const std::int32_t pid) {
+            return vm.interpreter.Call(vm.Virtual("Landroid/content/Context;", "enforcePermission",
+                                                  "(Ljava/lang/String;IILjava/lang/String;)V"),
+                                       std::vector{VmValue::Ref(base), VmValue::Ref(granted), VmValue::Int(pid),
+                                                   VmValue::Int(10000), VmValue::Ref(VmObjectRef{})});
+        };
+        CHECK_FALSE(enforce_explicit(1).exception.IsValid());
+        outcome = enforce_explicit(2);
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/SecurityException;");
 
-    outcome = check(base, VmObjectRef{}, 1, 10000);
-    REQUIRE(outcome.exception.IsValid());
-    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-          "Ljava/lang/IllegalArgumentException;");
-    outcome = check_calling(base, VmObjectRef{}, true);
-    REQUIRE(outcome.exception.IsValid());
-    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-          "Ljava/lang/IllegalArgumentException;");
-    vm.context->granted_permissions.clear();
-    CHECK(check(base, granted, 1, 10000).value.AsInt() == -1);
-  }
+        outcome = check(base, VmObjectRef{}, 1, 10000);
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        outcome = check_calling(base, VmObjectRef{}, true);
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        vm.context->granted_permissions.clear();
+        CHECK(check(base, granted, 1, 10000).value.AsInt() == -1);
+    }
 }
 
 TEST_CASE("PackageManager P0 exposes only explicit current-package facts") {
-  for (const auto backend : {InterpreterBackend::switch_dispatch,
-                             InterpreterBackend::threaded}) {
-    InterpreterConfig config;
-    config.backend = backend;
-    AndroidVm vm(config);
-    vm.context->package_name = "org.example.game";
-    vm.context->package_resource_path =
-        "/data/app/org.example.game-1.apk";
-    vm.context->package_version_code = 7U;
-    vm.context->package_version_name = "1.2.3";
-    vm.context->target_sdk_version = 19U;
-    vm.context->application_class_name = "org.example.game.GameApplication";
-    vm.context->application_label = std::string("OGPlay Game");
-    vm.context->application_icon = 0x7f020001U;
-    vm.context->application_meta_data.emplace(
-        "com.example.configuration", std::string("live"));
-    vm.context->application_meta_data.emplace("com.example.number",
-                                               std::int32_t{42});
-    vm.context->application_meta_data.emplace("com.example.enabled", true);
-    vm.context->application_meta_data.emplace(
-        "com.example.resolved",
-        ogplay::loader::AndroidManifestMetaDataValueReference{0x7f050001U});
-    vm.context->application_meta_data.emplace(
-        "com.example.resource",
-        ogplay::loader::AndroidManifestMetaDataResourceReference{0x7f050001U});
-    vm.context->arsc.entries.push_back(
-        {.resource_id = 0x7f050001U,
-         .type_name = "string",
-         .entry_name = "metadata_value",
-         .string_value = "false",
-         .value_type = 0x03U});
-    vm.context->requested_permissions = {"android.permission.INTERNET"};
-    vm.context->granted_permissions.insert("android.permission.INTERNET");
-    vm.context->system_features.insert("android.hardware.touchscreen");
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        InterpreterConfig config;
+        config.backend = backend;
+        ResourceVm vm(config);
+        vm.context->package_name = "org.example.game";
+        vm.context->package_resource_path = "/data/app/org.example.game-1.apk";
+        vm.context->package_version_code = 7U;
+        vm.context->package_version_name = "1.2.3";
+        vm.context->target_sdk_version = 19U;
+        vm.context->application_class_name = "org.example.game.GameApplication";
+        vm.context->application_label = std::string("OGPlay Game");
+        vm.context->application_icon = 0x7f020001U;
+        vm.context->application_meta_data.emplace("com.example.configuration", std::string("live"));
+        vm.context->application_meta_data.emplace("com.example.number", std::int32_t{42});
+        vm.context->application_meta_data.emplace("com.example.enabled", true);
+        vm.context->application_meta_data.emplace("com.example.resolved",
+                                                  ogplay::loader::AndroidManifestMetaDataValueReference{0x7f050001U});
+        vm.context->application_meta_data.emplace(
+            "com.example.resource", ogplay::loader::AndroidManifestMetaDataResourceReference{0x7f050001U});
+        ogplay::test::ResourceFixture(*vm.context)
+            .entries.push_back({.resource_id = 0x7f050001U,
+                                .type_name = "string",
+                                .entry_name = "metadata_value",
+                                .string_value = "false",
+                                .value_type = 0x03U});
+        vm.context->requested_permissions = {"android.permission.INTERNET"};
+        vm.context->granted_permissions.insert("android.permission.INTERNET");
+        vm.context->system_features.insert("android.hardware.touchscreen");
 
-    const auto manager = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/content/pm/PackageManager;");
-    const auto package = vm.interpreter.NewStringUtf8("org.example.game");
-    const auto invoke = [&](const std::string_view name,
-                            const std::string_view descriptor,
-                            std::vector<VmValue> arguments) {
-      arguments.insert(arguments.begin(), VmValue::Ref(manager));
-      return vm.interpreter.Call(
-          vm.Virtual("Landroid/content/pm/PackageManager;", name, descriptor),
-          arguments);
-    };
-    const auto field = [&](const VmObjectRef object, const std::string& name,
-                           const std::string& descriptor) {
-      const auto found = vm.linker.FindFieldRecursive(
-          vm.model.ObjectClass(object), name, descriptor);
-      REQUIRE(found.has_value());
-      return vm.model.InstanceSlots(object)[vm.linker.Field(*found).slot];
-    };
-    const auto ref_field = [&](const VmObjectRef object,
-                               const std::string& name,
-                               const std::string& descriptor) {
-      const auto slot = field(object, name, descriptor);
-      if (slot.bits == 0U && slot.tag == SlotTag::uninit) {
-        return VmObjectRef{};
-      }
-      REQUIRE(slot.tag == SlotTag::ref);
-      return VmObjectRef{static_cast<std::uint32_t>(slot.bits)};
-    };
-    const auto int_field = [&](const VmObjectRef object,
-                               const std::string& name) {
-      const auto slot = field(object, name, "I");
-      REQUIRE(slot.tag == SlotTag::cat1);
-      return static_cast<std::int32_t>(slot.bits);
-    };
+        const auto manager = vm.interpreter.NewIntrinsicInstance("Landroid/content/pm/PackageManager;");
+        const auto package = vm.interpreter.NewStringUtf8("org.example.game");
+        const auto invoke = [&](const std::string_view name, const std::string_view descriptor,
+                                std::vector<VmValue> arguments) {
+            arguments.insert(arguments.begin(), VmValue::Ref(manager));
+            return vm.interpreter.Call(vm.Virtual("Landroid/content/pm/PackageManager;", name, descriptor), arguments);
+        };
+        const auto field = [&](const VmObjectRef object, const std::string& name, const std::string& descriptor) {
+            const auto found = vm.linker.FindFieldRecursive(vm.model.ObjectClass(object), name, descriptor);
+            REQUIRE(found.has_value());
+            return vm.model.InstanceSlots(object)[vm.linker.Field(*found).slot];
+        };
+        const auto ref_field = [&](const VmObjectRef object, const std::string& name, const std::string& descriptor) {
+            const auto slot = field(object, name, descriptor);
+            if (slot.bits == 0U && slot.tag == SlotTag::uninit) {
+                return VmObjectRef{};
+            }
+            REQUIRE(slot.tag == SlotTag::ref);
+            return VmObjectRef{static_cast<std::uint32_t>(slot.bits)};
+        };
+        const auto int_field = [&](const VmObjectRef object, const std::string& name) {
+            const auto slot = field(object, name, "I");
+            REQUIRE(slot.tag == SlotTag::cat1);
+            return static_cast<std::int32_t>(slot.bits);
+        };
 
-    const auto application = invoke(
-        "getApplicationInfo",
-        "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
-        {VmValue::Ref(package), VmValue::Int(0x80)});
-    REQUIRE_FALSE(application.exception.IsValid());
-    REQUIRE(application.value.ref.IsValid());
-    CHECK(vm.interpreter.StringUtf8(ref_field(
-              application.value.ref, "packageName", "Ljava/lang/String;")) ==
-          "org.example.game");
-    CHECK(vm.interpreter.StringUtf8(ref_field(
-              application.value.ref, "className", "Ljava/lang/String;")) ==
-          "org.example.game.GameApplication");
-    CHECK(int_field(application.value.ref, "uid") == 10000);
-    CHECK(int_field(application.value.ref, "targetSdkVersion") == 19);
-    CHECK(int_field(application.value.ref, "icon") ==
-          static_cast<std::int32_t>(0x7f020001U));
-    CHECK(int_field(application.value.ref, "flags") == ((1 << 2) | (1 << 23)));
-    CHECK(vm.interpreter.StringUtf8(ref_field(
-              application.value.ref, "sourceDir", "Ljava/lang/String;")) ==
-          "/data/app/org.example.game-1.apk");
-    CHECK(vm.interpreter.StringUtf8(ref_field(
-              application.value.ref, "publicSourceDir",
-              "Ljava/lang/String;")) ==
-          "/data/app/org.example.game-1.apk");
-    const auto metadata = ref_field(application.value.ref, "metaData",
-                                    "Landroid/os/Bundle;");
-    REQUIRE(metadata.IsValid());
-    const auto metadata_key =
-        vm.interpreter.NewStringUtf8("com.example.configuration");
-    const auto metadata_value = vm.interpreter.Call(
-        vm.Virtual("Landroid/os/Bundle;", "getString",
-                   "(Ljava/lang/String;)Ljava/lang/String;"),
-        std::vector{VmValue::Ref(metadata), VmValue::Ref(metadata_key)});
-    REQUIRE_FALSE(metadata_value.exception.IsValid());
-    CHECK(vm.interpreter.StringUtf8(metadata_value.value.ref) == "live");
-    const auto metadata_string_reference_key =
-        vm.interpreter.NewStringUtf8("com.example.resolved");
-    const auto metadata_string_reference = vm.interpreter.Call(
-        vm.Virtual("Landroid/os/Bundle;", "getString",
-                   "(Ljava/lang/String;)Ljava/lang/String;"),
-        std::vector{VmValue::Ref(metadata),
-                    VmValue::Ref(metadata_string_reference_key)});
-    REQUIRE_FALSE(metadata_string_reference.exception.IsValid());
-    CHECK(vm.interpreter.StringUtf8(metadata_string_reference.value.ref) ==
-          "false");
-    const auto metadata_boolean_key =
-        vm.interpreter.NewStringUtf8("com.example.enabled");
-    const auto metadata_boolean = vm.interpreter.Call(
-        vm.Virtual("Landroid/os/Bundle;", "getBoolean",
-                   "(Ljava/lang/String;)Z"),
-        std::vector{VmValue::Ref(metadata), VmValue::Ref(metadata_boolean_key)});
-    REQUIRE_FALSE(metadata_boolean.exception.IsValid());
-    CHECK(metadata_boolean.value.AsInt() == 1);
-    const auto metadata_resource_key =
-        vm.interpreter.NewStringUtf8("com.example.resource");
-    const auto metadata_resource = vm.interpreter.Call(
-        vm.Virtual("Landroid/os/Bundle;", "getInt", "(Ljava/lang/String;)I"),
-        std::vector{VmValue::Ref(metadata), VmValue::Ref(metadata_resource_key)});
-    REQUIRE_FALSE(metadata_resource.exception.IsValid());
-    CHECK(static_cast<std::uint32_t>(metadata_resource.value.AsInt()) ==
-          0x7f050001U);
+        const auto application =
+            invoke("getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
+                   {VmValue::Ref(package), VmValue::Int(0x80)});
+        REQUIRE_FALSE(application.exception.IsValid());
+        REQUIRE(application.value.ref.IsValid());
+        CHECK(vm.interpreter.StringUtf8(ref_field(application.value.ref, "packageName", "Ljava/lang/String;")) ==
+              "org.example.game");
+        CHECK(vm.interpreter.StringUtf8(ref_field(application.value.ref, "className", "Ljava/lang/String;")) ==
+              "org.example.game.GameApplication");
+        CHECK(int_field(application.value.ref, "uid") == 10000);
+        CHECK(int_field(application.value.ref, "targetSdkVersion") == 19);
+        CHECK(int_field(application.value.ref, "icon") == static_cast<std::int32_t>(0x7f020001U));
+        CHECK(int_field(application.value.ref, "flags") == ((1 << 2) | (1 << 23)));
+        CHECK(vm.interpreter.StringUtf8(ref_field(application.value.ref, "sourceDir", "Ljava/lang/String;")) ==
+              "/data/app/org.example.game-1.apk");
+        CHECK(vm.interpreter.StringUtf8(ref_field(application.value.ref, "publicSourceDir", "Ljava/lang/String;")) ==
+              "/data/app/org.example.game-1.apk");
+        const auto metadata = ref_field(application.value.ref, "metaData", "Landroid/os/Bundle;");
+        REQUIRE(metadata.IsValid());
+        const auto metadata_key = vm.interpreter.NewStringUtf8("com.example.configuration");
+        const auto metadata_value = vm.interpreter.Call(
+            vm.Virtual("Landroid/os/Bundle;", "getString", "(Ljava/lang/String;)Ljava/lang/String;"),
+            std::vector{VmValue::Ref(metadata), VmValue::Ref(metadata_key)});
+        REQUIRE_FALSE(metadata_value.exception.IsValid());
+        CHECK(vm.interpreter.StringUtf8(metadata_value.value.ref) == "live");
+        const auto metadata_string_reference_key = vm.interpreter.NewStringUtf8("com.example.resolved");
+        const auto metadata_string_reference = vm.interpreter.Call(
+            vm.Virtual("Landroid/os/Bundle;", "getString", "(Ljava/lang/String;)Ljava/lang/String;"),
+            std::vector{VmValue::Ref(metadata), VmValue::Ref(metadata_string_reference_key)});
+        REQUIRE_FALSE(metadata_string_reference.exception.IsValid());
+        CHECK(vm.interpreter.StringUtf8(metadata_string_reference.value.ref) == "false");
+        const auto metadata_boolean_key = vm.interpreter.NewStringUtf8("com.example.enabled");
+        const auto metadata_boolean =
+            vm.interpreter.Call(vm.Virtual("Landroid/os/Bundle;", "getBoolean", "(Ljava/lang/String;)Z"),
+                                std::vector{VmValue::Ref(metadata), VmValue::Ref(metadata_boolean_key)});
+        REQUIRE_FALSE(metadata_boolean.exception.IsValid());
+        CHECK(metadata_boolean.value.AsInt() == 1);
+        const auto metadata_resource_key = vm.interpreter.NewStringUtf8("com.example.resource");
+        const auto metadata_resource =
+            vm.interpreter.Call(vm.Virtual("Landroid/os/Bundle;", "getInt", "(Ljava/lang/String;)I"),
+                                std::vector{VmValue::Ref(metadata), VmValue::Ref(metadata_resource_key)});
+        REQUIRE_FALSE(metadata_resource.exception.IsValid());
+        CHECK(static_cast<std::uint32_t>(metadata_resource.value.AsInt()) == 0x7f050001U);
 
-    const auto without_metadata = invoke(
-        "getApplicationInfo",
-        "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
-        {VmValue::Ref(package), VmValue::Int(0)});
-    REQUIRE_FALSE(without_metadata.exception.IsValid());
-    CHECK_FALSE(ref_field(without_metadata.value.ref, "metaData",
-                          "Landroid/os/Bundle;").IsValid());
+        const auto without_metadata =
+            invoke("getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
+                   {VmValue::Ref(package), VmValue::Int(0)});
+        REQUIRE_FALSE(without_metadata.exception.IsValid());
+        CHECK_FALSE(ref_field(without_metadata.value.ref, "metaData", "Landroid/os/Bundle;").IsValid());
 
-    const auto package_info = invoke(
-        "getPackageInfo",
-        "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
-        {VmValue::Ref(package), VmValue::Int(0x1080)});
-    REQUIRE_FALSE(package_info.exception.IsValid());
-    REQUIRE(package_info.value.ref.IsValid());
-    CHECK(int_field(package_info.value.ref, "versionCode") == 7);
-    CHECK(vm.interpreter.StringUtf8(ref_field(
-              package_info.value.ref, "versionName", "Ljava/lang/String;")) ==
-          "1.2.3");
-    const auto permissions = ref_field(package_info.value.ref,
-                                       "requestedPermissions",
-                                       "[Ljava/lang/String;");
-    REQUIRE(permissions.IsValid());
-    REQUIRE(vm.model.ArrayLength(permissions) == 1);
-    CHECK(vm.interpreter.StringUtf8(vm.model.GetObjectElement(permissions, 0)) ==
-          "android.permission.INTERNET");
+        const auto package_info = invoke("getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
+                                         {VmValue::Ref(package), VmValue::Int(0x1080)});
+        REQUIRE_FALSE(package_info.exception.IsValid());
+        REQUIRE(package_info.value.ref.IsValid());
+        CHECK(int_field(package_info.value.ref, "versionCode") == 7);
+        CHECK(vm.interpreter.StringUtf8(ref_field(package_info.value.ref, "versionName", "Ljava/lang/String;")) ==
+              "1.2.3");
+        const auto permissions = ref_field(package_info.value.ref, "requestedPermissions", "[Ljava/lang/String;");
+        REQUIRE(permissions.IsValid());
+        REQUIRE(vm.model.ArrayLength(permissions) == 1);
+        CHECK(vm.interpreter.StringUtf8(vm.model.GetObjectElement(permissions, 0)) == "android.permission.INTERNET");
 
-    const auto label = invoke(
-        "getApplicationLabel",
-        "(Landroid/content/pm/ApplicationInfo;)Ljava/lang/CharSequence;",
-        {VmValue::Ref(application.value.ref)});
-    REQUIRE_FALSE(label.exception.IsValid());
-    CHECK(vm.interpreter.StringUtf8(label.value.ref) == "OGPlay Game");
+        const auto label =
+            invoke("getApplicationLabel", "(Landroid/content/pm/ApplicationInfo;)Ljava/lang/CharSequence;",
+                   {VmValue::Ref(application.value.ref)});
+        REQUIRE_FALSE(label.exception.IsValid());
+        CHECK(vm.interpreter.StringUtf8(label.value.ref) == "OGPlay Game");
 
-    constexpr std::uint32_t kUnicodeLabel = 0x7f05004dU;
-    vm.context->application_label = kUnicodeLabel;
-    vm.context->arsc.entries.push_back(
-        {.resource_id = kUnicodeLabel,
-         .type_name = "string",
-         .entry_name = "app_name",
-         .string_value =
-             "\xE6\xA4\x8D\xE7\x89\xA9\xE5\xA4\xA7\xE6\x88\x98"
-             "\xE5\x83\xB5\xE5\xB0\xB8",
-         .value_type = 0x03});
-    const auto unicode_label = invoke(
-        "getApplicationLabel",
-        "(Landroid/content/pm/ApplicationInfo;)Ljava/lang/CharSequence;",
-        {VmValue::Ref(application.value.ref)});
-    REQUIRE_FALSE(unicode_label.exception.IsValid());
-    CHECK(vm.interpreter.StringUtf8(unicode_label.value.ref) ==
-          "\xE6\xA4\x8D\xE7\x89\xA9\xE5\xA4\xA7\xE6\x88\x98"
-          "\xE5\x83\xB5\xE5\xB0\xB8");
+        constexpr std::uint32_t kUnicodeLabel = 0x7f05004dU;
+        vm.context->application_label = kUnicodeLabel;
+        ogplay::test::ResourceFixture(*vm.context)
+            .entries.push_back({.resource_id = kUnicodeLabel,
+                                .type_name = "string",
+                                .entry_name = "app_name",
+                                .string_value = "\xE6\xA4\x8D\xE7\x89\xA9\xE5\xA4\xA7\xE6\x88\x98"
+                                                "\xE5\x83\xB5\xE5\xB0\xB8",
+                                .value_type = 0x03});
+        const auto unicode_label =
+            invoke("getApplicationLabel", "(Landroid/content/pm/ApplicationInfo;)Ljava/lang/CharSequence;",
+                   {VmValue::Ref(application.value.ref)});
+        REQUIRE_FALSE(unicode_label.exception.IsValid());
+        CHECK(vm.interpreter.StringUtf8(unicode_label.value.ref) == "\xE6\xA4\x8D\xE7\x89\xA9\xE5\xA4\xA7\xE6\x88\x98"
+                                                                    "\xE5\x83\xB5\xE5\xB0\xB8");
 
-    const auto internet =
-        vm.interpreter.NewStringUtf8("android.permission.INTERNET");
-    const auto camera =
-        vm.interpreter.NewStringUtf8("android.permission.CAMERA");
-    CHECK(invoke("checkPermission",
-                 "(Ljava/lang/String;Ljava/lang/String;)I",
-                 {VmValue::Ref(internet), VmValue::Ref(package)})
-              .value.AsInt() == 0);
-    CHECK(invoke("checkPermission",
-                 "(Ljava/lang/String;Ljava/lang/String;)I",
-                 {VmValue::Ref(camera), VmValue::Ref(package)})
-              .value.AsInt() == -1);
-    const auto touchscreen =
-        vm.interpreter.NewStringUtf8("android.hardware.touchscreen");
-    const auto gps =
-        vm.interpreter.NewStringUtf8("android.hardware.location.gps");
-    CHECK(invoke("hasSystemFeature", "(Ljava/lang/String;)Z",
-                 {VmValue::Ref(touchscreen)})
-              .value.AsInt() == 1);
-    CHECK(invoke("hasSystemFeature", "(Ljava/lang/String;)Z",
-                 {VmValue::Ref(gps)})
-              .value.AsInt() == 0);
+        const auto internet = vm.interpreter.NewStringUtf8("android.permission.INTERNET");
+        const auto camera = vm.interpreter.NewStringUtf8("android.permission.CAMERA");
+        CHECK(invoke("checkPermission", "(Ljava/lang/String;Ljava/lang/String;)I",
+                     {VmValue::Ref(internet), VmValue::Ref(package)})
+                  .value.AsInt() == 0);
+        CHECK(invoke("checkPermission", "(Ljava/lang/String;Ljava/lang/String;)I",
+                     {VmValue::Ref(camera), VmValue::Ref(package)})
+                  .value.AsInt() == -1);
+        const auto touchscreen = vm.interpreter.NewStringUtf8("android.hardware.touchscreen");
+        const auto gps = vm.interpreter.NewStringUtf8("android.hardware.location.gps");
+        CHECK(invoke("hasSystemFeature", "(Ljava/lang/String;)Z", {VmValue::Ref(touchscreen)}).value.AsInt() == 1);
+        CHECK(invoke("hasSystemFeature", "(Ljava/lang/String;)Z", {VmValue::Ref(gps)}).value.AsInt() == 0);
 
-    const auto unknown = vm.interpreter.NewStringUtf8("org.example.missing");
-    const auto missing = invoke(
-        "getApplicationInfo",
-        "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
-        {VmValue::Ref(unknown), VmValue::Int(0)});
-    REQUIRE(missing.exception.IsValid());
-    CHECK(vm.linker.Class(vm.model.ObjectClass(missing.exception)).descriptor ==
-          "Landroid/content/pm/PackageManager$NameNotFoundException;");
-    const auto unsupported = invoke(
-        "getApplicationInfo",
-        "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
-        {VmValue::Ref(package), VmValue::Int(0x40)});
-    REQUIRE(unsupported.exception.IsValid());
-    CHECK(vm.linker.Class(vm.model.ObjectClass(unsupported.exception)).descriptor ==
-          "Ljava/lang/UnsupportedOperationException;");
-  }
+        const auto unknown = vm.interpreter.NewStringUtf8("org.example.missing");
+        const auto missing = invoke("getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
+                                    {VmValue::Ref(unknown), VmValue::Int(0)});
+        REQUIRE(missing.exception.IsValid());
+        CHECK(vm.linker.Class(vm.model.ObjectClass(missing.exception)).descriptor ==
+              "Landroid/content/pm/PackageManager$NameNotFoundException;");
+        const auto unsupported =
+            invoke("getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
+                   {VmValue::Ref(package), VmValue::Int(0x40)});
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(vm.linker.Class(vm.model.ObjectClass(unsupported.exception)).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+    }
 }
 
 TEST_CASE("Window policy and Activity orientation preserve API19 state") {
-  AndroidVm vm;
-  const auto window =
-      vm.interpreter.NewIntrinsicInstance("Landroid/view/Window;");
-  const auto invoke_window = [&](const std::string_view name,
-                                 const std::string_view descriptor,
-                                 std::vector<VmValue> arguments = {}) {
-    arguments.insert(arguments.begin(), VmValue::Ref(window));
-    return vm.interpreter.Call(
-        vm.Virtual("Landroid/view/Window;", name, descriptor), arguments);
-  };
-  const auto first = invoke_window("getAttributes",
-      "()Landroid/view/WindowManager$LayoutParams;");
-  const auto second = invoke_window("getAttributes",
-      "()Landroid/view/WindowManager$LayoutParams;");
-  REQUIRE_FALSE(first.exception.IsValid());
-  REQUIRE(first.value.ref.IsValid());
-  CHECK(first.value.ref == second.value.ref);
+    AndroidVm vm;
+    const auto window = vm.interpreter.NewIntrinsicInstance("Landroid/view/Window;");
+    const auto invoke_window = [&](const std::string_view name, const std::string_view descriptor,
+                                   std::vector<VmValue> arguments = {}) {
+        arguments.insert(arguments.begin(), VmValue::Ref(window));
+        return vm.interpreter.Call(vm.Virtual("Landroid/view/Window;", name, descriptor), arguments);
+    };
+    const auto first = invoke_window("getAttributes", "()Landroid/view/WindowManager$LayoutParams;");
+    const auto second = invoke_window("getAttributes", "()Landroid/view/WindowManager$LayoutParams;");
+    REQUIRE_FALSE(first.exception.IsValid());
+    REQUIRE(first.value.ref.IsValid());
+    CHECK(first.value.ref == second.value.ref);
 
-  const auto read_attribute = [&](const std::string& name) {
-    const auto owner = vm.model.ObjectClass(first.value.ref);
-    const auto field = vm.linker.FindFieldRecursive(owner, name, "I");
-    REQUIRE(field.has_value());
-    return static_cast<std::int32_t>(
-        vm.model.InstanceSlots(first.value.ref)[vm.linker.Field(*field).slot]
-            .bits);
-  };
-  REQUIRE_FALSE(invoke_window("setFlags", "(II)V",
-      {VmValue::Int(5), VmValue::Int(7)}).exception.IsValid());
-  CHECK(read_attribute("flags") == 5);
-  REQUIRE_FALSE(invoke_window("addFlags", "(I)V", {VmValue::Int(8)})
-                    .exception.IsValid());
-  CHECK(read_attribute("flags") == 13);
-  REQUIRE_FALSE(invoke_window("clearFlags", "(I)V", {VmValue::Int(4)})
-                    .exception.IsValid());
-  CHECK(read_attribute("flags") == 9);
-  REQUIRE_FALSE(invoke_window("setSoftInputMode", "(I)V",
-      {VmValue::Int(0x20)}).exception.IsValid());
-  CHECK(read_attribute("softInputMode") == 0x20);
-  REQUIRE_FALSE(invoke_window("setSoftInputMode", "(I)V",
-      {VmValue::Int(0)}).exception.IsValid());
-  CHECK(read_attribute("softInputMode") == 0x20);
-  REQUIRE_FALSE(invoke_window("setType", "(I)V", {VmValue::Int(3)})
-                    .exception.IsValid());
-  CHECK(read_attribute("type") == 3);
+    const auto read_attribute = [&](const std::string& name) {
+        const auto owner = vm.model.ObjectClass(first.value.ref);
+        const auto field = vm.linker.FindFieldRecursive(owner, name, "I");
+        REQUIRE(field.has_value());
+        return static_cast<std::int32_t>(vm.model.InstanceSlots(first.value.ref)[vm.linker.Field(*field).slot].bits);
+    };
+    REQUIRE_FALSE(invoke_window("setFlags", "(II)V", {VmValue::Int(5), VmValue::Int(7)}).exception.IsValid());
+    CHECK(read_attribute("flags") == 5);
+    REQUIRE_FALSE(invoke_window("addFlags", "(I)V", {VmValue::Int(8)}).exception.IsValid());
+    CHECK(read_attribute("flags") == 13);
+    REQUIRE_FALSE(invoke_window("clearFlags", "(I)V", {VmValue::Int(4)}).exception.IsValid());
+    CHECK(read_attribute("flags") == 9);
+    REQUIRE_FALSE(invoke_window("setSoftInputMode", "(I)V", {VmValue::Int(0x20)}).exception.IsValid());
+    CHECK(read_attribute("softInputMode") == 0x20);
+    REQUIRE_FALSE(invoke_window("setSoftInputMode", "(I)V", {VmValue::Int(0)}).exception.IsValid());
+    CHECK(read_attribute("softInputMode") == 0x20);
+    REQUIRE_FALSE(invoke_window("setType", "(I)V", {VmValue::Int(3)}).exception.IsValid());
+    CHECK(read_attribute("type") == 3);
 
-  const auto first_activity =
-      vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
-  const auto second_activity =
-      vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
-  const auto get_orientation = vm.Virtual(
-      "Landroid/app/Activity;", "getRequestedOrientation", "()I");
-  const auto set_orientation = vm.Virtual(
-      "Landroid/app/Activity;", "setRequestedOrientation", "(I)V");
-  auto outcome = vm.interpreter.Call(
-      get_orientation, std::vector{VmValue::Ref(first_activity)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(outcome.value.AsInt() == -1);
-  REQUIRE_FALSE(vm.interpreter.Call(
-      set_orientation,
-      std::vector{VmValue::Ref(first_activity), VmValue::Int(0)})
-                    .exception.IsValid());
-  CHECK(vm.interpreter.Call(
-            get_orientation, std::vector{VmValue::Ref(first_activity)})
-            .value.AsInt() == 0);
-  CHECK(vm.interpreter.Call(
-            get_orientation, std::vector{VmValue::Ref(second_activity)})
-            .value.AsInt() == -1);
+    const auto first_activity = vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+    const auto second_activity = vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+    const auto get_orientation = vm.Virtual("Landroid/app/Activity;", "getRequestedOrientation", "()I");
+    const auto set_orientation = vm.Virtual("Landroid/app/Activity;", "setRequestedOrientation", "(I)V");
+    auto outcome = vm.interpreter.Call(get_orientation, std::vector{VmValue::Ref(first_activity)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.AsInt() == -1);
+    REQUIRE_FALSE(vm.interpreter.Call(set_orientation, std::vector{VmValue::Ref(first_activity), VmValue::Int(0)})
+                      .exception.IsValid());
+    CHECK(vm.interpreter.Call(get_orientation, std::vector{VmValue::Ref(first_activity)}).value.AsInt() == 0);
+    CHECK(vm.interpreter.Call(get_orientation, std::vector{VmValue::Ref(second_activity)}).value.AsInt() == -1);
 }
 
 TEST_CASE("Display metrics publish the injected API19 surface facts") {
-  AndroidVm vm;
-  vm.context->surface_width = 800;
-  vm.context->surface_height = 480;
-  vm.context->ui_density = 1.5F;
-  vm.context->ui_scaled_density = 1.75F;
-  const auto display =
-      vm.interpreter.NewIntrinsicInstance("Landroid/view/Display;");
-  const auto metrics =
-      vm.interpreter.NewIntrinsicInstance("Landroid/util/DisplayMetrics;");
-  const auto invoke = [&](const std::string_view name,
-                          const VmObjectRef output) {
-    return vm.interpreter.Call(
-        vm.Virtual("Landroid/view/Display;", name,
-                   "(Landroid/util/DisplayMetrics;)V"),
-        std::vector{VmValue::Ref(display), VmValue::Ref(output)});
-  };
-  REQUIRE_FALSE(invoke("getMetrics", metrics).exception.IsValid());
+    AndroidVm vm;
+    vm.context->surface_width = 800;
+    vm.context->surface_height = 480;
+    vm.context->ui_density = 1.5F;
+    vm.context->ui_scaled_density = 1.75F;
+    const auto display = vm.interpreter.NewIntrinsicInstance("Landroid/view/Display;");
+    const auto metrics = vm.interpreter.NewIntrinsicInstance("Landroid/util/DisplayMetrics;");
+    const auto invoke = [&](const std::string_view name, const VmObjectRef output) {
+        return vm.interpreter.Call(vm.Virtual("Landroid/view/Display;", name, "(Landroid/util/DisplayMetrics;)V"),
+                                   std::vector{VmValue::Ref(display), VmValue::Ref(output)});
+    };
+    REQUIRE_FALSE(invoke("getMetrics", metrics).exception.IsValid());
 
-  const auto read = [&](const std::string& name,
-                        const std::string& descriptor) {
-    const auto field = vm.linker.FindFieldRecursive(
-        vm.model.ObjectClass(metrics), name, descriptor);
-    REQUIRE(field.has_value());
-    return vm.model.InstanceSlots(metrics)[vm.linker.Field(*field).slot].bits;
-  };
-  CHECK(static_cast<std::int32_t>(read("widthPixels", "I")) == 800);
-  CHECK(static_cast<std::int32_t>(read("heightPixels", "I")) == 480);
-  CHECK(std::bit_cast<float>(read("density", "F")) == doctest::Approx(1.5F));
-  CHECK(static_cast<std::int32_t>(read("densityDpi", "I")) == 240);
-  CHECK(std::bit_cast<float>(read("scaledDensity", "F")) ==
-        doctest::Approx(1.75F));
-  CHECK(std::bit_cast<float>(read("xdpi", "F")) == doctest::Approx(240.0F));
-  CHECK(static_cast<std::int32_t>(read("noncompatWidthPixels", "I")) == 800);
-  REQUIRE_FALSE(invoke("getRealMetrics", metrics).exception.IsValid());
-  CHECK(invoke("getMetrics", VmObjectRef{}).exception.IsValid());
+    const auto read = [&](const std::string& name, const std::string& descriptor) {
+        const auto field = vm.linker.FindFieldRecursive(vm.model.ObjectClass(metrics), name, descriptor);
+        REQUIRE(field.has_value());
+        return vm.model.InstanceSlots(metrics)[vm.linker.Field(*field).slot].bits;
+    };
+    CHECK(static_cast<std::int32_t>(read("widthPixels", "I")) == 800);
+    CHECK(static_cast<std::int32_t>(read("heightPixels", "I")) == 480);
+    CHECK(std::bit_cast<float>(read("density", "F")) == doctest::Approx(1.5F));
+    CHECK(static_cast<std::int32_t>(read("densityDpi", "I")) == 240);
+    CHECK(std::bit_cast<float>(read("scaledDensity", "F")) == doctest::Approx(1.75F));
+    CHECK(std::bit_cast<float>(read("xdpi", "F")) == doctest::Approx(240.0F));
+    CHECK(static_cast<std::int32_t>(read("noncompatWidthPixels", "I")) == 800);
+    REQUIRE_FALSE(invoke("getRealMetrics", metrics).exception.IsValid());
+    CHECK(invoke("getMetrics", VmObjectRef{}).exception.IsValid());
 
-  const auto get_id = vm.interpreter.Call(
-      vm.Virtual("Landroid/view/Display;", "getDisplayId", "()I"),
-      std::vector{VmValue::Ref(display)});
-  REQUIRE_FALSE(get_id.exception.IsValid());
-  CHECK(get_id.value.AsInt() == 0);
+    const auto get_id = vm.interpreter.Call(vm.Virtual("Landroid/view/Display;", "getDisplayId", "()I"),
+                                            std::vector{VmValue::Ref(display)});
+    REQUIRE_FALSE(get_id.exception.IsValid());
+    CHECK(get_id.value.AsInt() == 0);
 }
 
 TEST_CASE("Configuration derives API19 screen layout from injected metrics") {
-  AndroidVm vm;
-  const auto resources =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/res/Resources;");
-  const auto get_configuration = vm.Virtual(
-      "Landroid/content/res/Resources;", "getConfiguration",
-      "()Landroid/content/res/Configuration;");
-  const auto read_field = [&](const VmObjectRef configuration,
-                              const char* name) {
-    const auto field = vm.linker.FindFieldRecursive(
-        vm.model.ObjectClass(configuration), name, "I");
-    REQUIRE(field.has_value());
-    return static_cast<std::int32_t>(
-        vm.model.InstanceSlots(configuration)[vm.linker.Field(*field).slot]
-            .bits);
-  };
-  const auto get = [&] {
-    const auto outcome = vm.interpreter.Call(
-        get_configuration, std::vector{VmValue::Ref(resources)});
-    REQUIRE_FALSE(outcome.exception.IsValid());
-    return outcome.value.ref;
-  };
+    ResourceVm vm;
+    const auto get_configuration =
+        vm.Virtual("Landroid/content/res/Resources;", "getConfiguration", "()Landroid/content/res/Configuration;");
+    const auto read_field = [&](const VmObjectRef configuration, const char* name) {
+        const auto field = vm.linker.FindFieldRecursive(vm.model.ObjectClass(configuration), name, "I");
+        REQUIRE(field.has_value());
+        return static_cast<std::int32_t>(vm.model.InstanceSlots(configuration)[vm.linker.Field(*field).slot].bits);
+    };
+    const auto get = [&] {
+        const auto context = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto root = vm.interpreter.ProtectReferences(std::array{context});
+        const auto resources = vm.interpreter.Call(
+            vm.Virtual("Landroid/content/Context;", "getResources", "()Landroid/content/res/Resources;"),
+            std::array{VmValue::Ref(context)});
+        REQUIRE_MESSAGE(!resources.exception.IsValid(), resources.exception_message);
+        const auto outcome = vm.interpreter.Call(get_configuration, std::array{resources.value});
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        return outcome.value.ref;
+    };
 
-  vm.context->surface_width = 800;
-  vm.context->surface_height = 480;
-  vm.context->ui_density = 1.0F;
-  const auto configuration = get();
-  CHECK(vm.linker.Class(vm.model.ObjectClass(configuration)).is_boot_dex);
-  CHECK(read_field(configuration, "touchscreen") == 3);
-  CHECK(read_field(configuration, "keyboard") == 2);
-  CHECK(read_field(configuration, "keyboardHidden") == 1);
-  CHECK(read_field(configuration, "hardKeyboardHidden") == 1);
-  CHECK(read_field(configuration, "navigation") == 1);
-  CHECK(read_field(configuration, "navigationHidden") == 2);
-  CHECK(read_field(configuration, "orientation") == 2);
-  CHECK(read_field(configuration, "screenWidthDp") == 800);
-  CHECK(read_field(configuration, "screenHeightDp") == 480);
-  CHECK(read_field(configuration, "smallestScreenWidthDp") == 480);
-  CHECK(read_field(configuration, "densityDpi") == 160);
-  CHECK(read_field(configuration, "screenLayout") == (0x10000000 | 0x40 | 0x20 | 0x3));
+    vm.context->surface_width = 800;
+    vm.context->surface_height = 480;
+    vm.context->ui_density = 1.0F;
+    const auto configuration = get();
+    CHECK(vm.linker.Class(vm.model.ObjectClass(configuration)).is_boot_dex);
+    CHECK(read_field(configuration, "touchscreen") == 3);
+    CHECK(read_field(configuration, "keyboard") == 2);
+    CHECK(read_field(configuration, "keyboardHidden") == 1);
+    CHECK(read_field(configuration, "hardKeyboardHidden") == 1);
+    CHECK(read_field(configuration, "navigation") == 1);
+    CHECK(read_field(configuration, "navigationHidden") == 2);
+    CHECK(read_field(configuration, "orientation") == 2);
+    CHECK(read_field(configuration, "screenWidthDp") == 800);
+    CHECK(read_field(configuration, "screenHeightDp") == 480);
+    CHECK(read_field(configuration, "smallestScreenWidthDp") == 480);
+    CHECK(read_field(configuration, "densityDpi") == 160);
+    CHECK(read_field(configuration, "screenLayout") == (0x10000000 | 0x40 | 0x20 | 0x3));
 
-  vm.context->surface_width = 320;
-  vm.context->surface_height = 480;
-  CHECK(get() == configuration);
-  CHECK(read_field(configuration, "orientation") == 1);
-  CHECK(read_field(configuration, "screenWidthDp") == 320);
-  CHECK(read_field(configuration, "screenHeightDp") == 480);
-  CHECK(read_field(configuration, "smallestScreenWidthDp") == 320);
-  CHECK(read_field(configuration, "screenLayout") == (0x40 | 0x10 | 0x2));
-
-  vm.context->ui_density = 0.0F;
-  CHECK_THROWS(static_cast<void>(vm.interpreter.Call(
-      get_configuration, std::vector{VmValue::Ref(resources)})));
+    vm.context->surface_width = 320;
+    vm.context->surface_height = 480;
+    CHECK(get() == configuration);
+    CHECK(read_field(configuration, "orientation") == 2);
+    CHECK(read_field(configuration, "screenWidthDp") == 800);
 }
 
 }  // namespace
@@ -992,23 +821,20 @@ TEST_CASE("AudioManager reports the deterministic external music fact") {
     auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
+    catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     ogplay::core::CapabilityLedger ledger;
-  Interpreter interpreter(linker, model, nullptr, ledger);
-  const auto audio_class = linker.FindClass("Landroid/media/AudioManager;");
+    Interpreter interpreter(linker, model, nullptr, ledger);
+    const auto audio_class = linker.FindClass("Landroid/media/AudioManager;");
     REQUIRE(audio_class.has_value());
-  const auto index =
-      linker.FindVtableIndex(*audio_class, "isMusicActive", "()Z");
+    const auto index = linker.FindVtableIndex(*audio_class, "isMusicActive", "()Z");
     REQUIRE(index.has_value());
-  const auto instance =
-      interpreter.NewIntrinsicInstance("Landroid/media/AudioManager;");
-  const auto outcome =
-      interpreter.Call(linker.Class(*audio_class).vtable[*index],
-        std::vector<VmValue>{VmValue::Ref(instance)});
+    const auto instance = interpreter.NewIntrinsicInstance("Landroid/media/AudioManager;");
+    const auto outcome =
+        interpreter.Call(linker.Class(*audio_class).vtable[*index], std::vector<VmValue>{VmValue::Ref(instance)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK(outcome.value.AsInt() == 0);
 }
@@ -1023,47 +849,39 @@ TEST_CASE("TelephonyManager records and cancels offline listeners") {
     auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
+    catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     ogplay::core::CapabilityLedger ledger;
-  Interpreter interpreter(linker, model, nullptr, ledger);
-    const auto manager_class =
-        linker.FindClass("Landroid/telephony/TelephonyManager;");
+    Interpreter interpreter(linker, model, nullptr, ledger);
+    const auto manager_class = linker.FindClass("Landroid/telephony/TelephonyManager;");
     REQUIRE(manager_class.has_value());
-    const auto index = linker.FindVtableIndex(
-      *manager_class, "listen", "(Landroid/telephony/PhoneStateListener;I)V");
+    const auto index = linker.FindVtableIndex(*manager_class, "listen", "(Landroid/telephony/PhoneStateListener;I)V");
     REQUIRE(index.has_value());
-  const auto manager =
-      interpreter.NewIntrinsicInstance("Landroid/telephony/TelephonyManager;");
-    const auto listener = interpreter.NewIntrinsicInstance(
-        "Landroid/telephony/PhoneStateListener;");
+    const auto manager = interpreter.NewIntrinsicInstance("Landroid/telephony/TelephonyManager;");
+    const auto listener = interpreter.NewIntrinsicInstance("Landroid/telephony/PhoneStateListener;");
     const auto target = linker.Class(*manager_class).vtable[*index];
-    auto outcome = interpreter.Call(
-        target, std::vector<VmValue>{VmValue::Ref(manager),
-                                   VmValue::Ref(listener), VmValue::Int(32)});
+    auto outcome =
+        interpreter.Call(target, std::vector<VmValue>{VmValue::Ref(manager), VmValue::Ref(listener), VmValue::Int(32)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK(context->telephony_listeners.at(listener.Value()) == 32);
-    outcome = interpreter.Call(
-        target, std::vector<VmValue>{VmValue::Ref(manager),
-                                   VmValue::Ref(listener), VmValue::Int(0)});
+    outcome =
+        interpreter.Call(target, std::vector<VmValue>{VmValue::Ref(manager), VmValue::Ref(listener), VmValue::Int(0)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK_FALSE(context->telephony_listeners.contains(listener.Value()));
 
-  const auto sim_state =
-      linker.FindVtableIndex(*manager_class, "getSimState", "()I");
-  const auto phone_type =
-      linker.FindVtableIndex(*manager_class, "getPhoneType", "()I");
+    const auto sim_state = linker.FindVtableIndex(*manager_class, "getSimState", "()I");
+    const auto phone_type = linker.FindVtableIndex(*manager_class, "getPhoneType", "()I");
     REQUIRE(sim_state.has_value());
     REQUIRE(phone_type.has_value());
-  outcome = interpreter.Call(linker.Class(*manager_class).vtable[*sim_state],
-        std::vector<VmValue>{VmValue::Ref(manager)});
+    outcome =
+        interpreter.Call(linker.Class(*manager_class).vtable[*sim_state], std::vector<VmValue>{VmValue::Ref(manager)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK(outcome.value.AsInt() == 1);
-  outcome = interpreter.Call(linker.Class(*manager_class).vtable[*phone_type],
-        std::vector<VmValue>{VmValue::Ref(manager)});
+    outcome =
+        interpreter.Call(linker.Class(*manager_class).vtable[*phone_type], std::vector<VmValue>{VmValue::Ref(manager)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK(outcome.value.AsInt() == 0);
 }
@@ -1078,44 +896,36 @@ TEST_CASE("SurfaceView owns a stable holder and callback identity") {
     auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
+    catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     ogplay::core::CapabilityLedger ledger;
-  Interpreter interpreter(linker, model, nullptr, ledger);
+    Interpreter interpreter(linker, model, nullptr, ledger);
     const auto view_class = linker.FindClass("Landroid/view/SurfaceView;");
     REQUIRE(view_class.has_value());
-    const auto get_holder = linker.FindVtableIndex(
-        *view_class, "getHolder", "()Landroid/view/SurfaceHolder;");
+    const auto get_holder = linker.FindVtableIndex(*view_class, "getHolder", "()Landroid/view/SurfaceHolder;");
     REQUIRE(get_holder.has_value());
-    const auto view =
-        interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+    const auto view = interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
     const auto target = linker.Class(*view_class).vtable[*get_holder];
-  const auto first =
-      interpreter.Call(target, std::vector<VmValue>{VmValue::Ref(view)});
-  const auto second =
-      interpreter.Call(target, std::vector<VmValue>{VmValue::Ref(view)});
+    const auto first = interpreter.Call(target, std::vector<VmValue>{VmValue::Ref(view)});
+    const auto second = interpreter.Call(target, std::vector<VmValue>{VmValue::Ref(view)});
     REQUIRE_FALSE(first.exception.IsValid());
     REQUIRE_FALSE(second.exception.IsValid());
     CHECK(first.value.ref.IsValid());
     CHECK(first.value.ref == second.value.ref);
 
-  const auto holder_class = linker.FindClass("Landroid/view/SurfaceHolder;");
+    const auto holder_class = linker.FindClass("Landroid/view/SurfaceHolder;");
     REQUIRE(holder_class.has_value());
-    const auto add_callback = linker.FindVtableIndex(
-      *holder_class, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V");
+    const auto add_callback =
+        linker.FindVtableIndex(*holder_class, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V");
     REQUIRE(add_callback.has_value());
-    const auto callback =
-        interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
-  const auto added =
-      interpreter.Call(linker.Class(*holder_class).vtable[*add_callback],
-        std::vector<VmValue>{VmValue::Ref(first.value.ref),
-                             VmValue::Ref(callback)});
+    const auto callback = interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+    const auto added = interpreter.Call(linker.Class(*holder_class).vtable[*add_callback],
+                                        std::vector<VmValue>{VmValue::Ref(first.value.ref), VmValue::Ref(callback)});
     REQUIRE_FALSE(added.exception.IsValid());
-    CHECK(context->surface_callbacks.at(first.value.ref.Value()) ==
-          std::vector<VmObjectRef>{callback});
+    CHECK(context->surface_callbacks.at(first.value.ref.Value()) == std::vector<VmObjectRef>{callback});
 }
 
 TEST_CASE("managed surface delivers holder callbacks to every registration") {
@@ -1128,8 +938,7 @@ TEST_CASE("managed surface delivers holder callbacks to every registration") {
     auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-    catalog.insert(catalog.end(), android_catalog.begin(),
-                   android_catalog.end());
+    catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
@@ -1141,8 +950,7 @@ TEST_CASE("managed surface delivers holder callbacks to every registration") {
 
     const auto probe_class = linker.FindClass("LSurfaceProbe;");
     REQUIRE(probe_class.has_value());
-    const auto make =
-        linker.FindDirectMethod(*probe_class, "make", "()Ljava/lang/Object;");
+    const auto make = linker.FindDirectMethod(*probe_class, "make", "()Ljava/lang/Object;");
     REQUIRE(make.has_value());
     const auto read = [&](const std::string& name) {
         const auto method = linker.FindDirectMethod(*probe_class, name, "()I");
@@ -1152,33 +960,26 @@ TEST_CASE("managed surface delivers holder callbacks to every registration") {
         return outcome.value.AsInt();
     };
 
-    const auto view =
-        interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
-    const auto view_node = context->ui_tree.CreateNode(
-        ogplay::runtime::ui::UiClass::View);
+    const auto view = interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+    const auto view_node = context->ui_tree.CreateNode(ogplay::runtime::ui::UiClass::View);
     ogplay::runtime::BindViewToUiNode(*context, view, view_node);
     context->ui_tree.Attach(context->ui_tree.Root(), view_node);
     const auto view_class = linker.FindClass("Landroid/view/SurfaceView;");
     REQUIRE(view_class.has_value());
-    const auto get_holder = linker.FindVtableIndex(
-        *view_class, "getHolder", "()Landroid/view/SurfaceHolder;");
+    const auto get_holder = linker.FindVtableIndex(*view_class, "getHolder", "()Landroid/view/SurfaceHolder;");
     REQUIRE(get_holder.has_value());
     const auto holder =
-        interpreter.Call(linker.Class(*view_class).vtable[*get_holder],
-                         std::vector<VmValue>{VmValue::Ref(view)});
+        interpreter.Call(linker.Class(*view_class).vtable[*get_holder], std::vector<VmValue>{VmValue::Ref(view)});
     REQUIRE_FALSE(holder.exception.IsValid());
 
     const auto holder_class = linker.FindClass("Landroid/view/SurfaceHolder;");
     REQUIRE(holder_class.has_value());
-    const auto add_callback = linker.FindVtableIndex(
-        *holder_class, "addCallback",
-        "(Landroid/view/SurfaceHolder$Callback;)V");
+    const auto add_callback =
+        linker.FindVtableIndex(*holder_class, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V");
     REQUIRE(add_callback.has_value());
     const auto add = [&](const VmObjectRef callback) {
-        return interpreter.Call(
-            linker.Class(*holder_class).vtable[*add_callback],
-            std::vector<VmValue>{VmValue::Ref(holder.value.ref),
-                                 VmValue::Ref(callback)});
+        return interpreter.Call(linker.Class(*holder_class).vtable[*add_callback],
+                                std::vector<VmValue>{VmValue::Ref(holder.value.ref), VmValue::Ref(callback)});
     };
 
     // These titles register both the view and the activity on one holder.
@@ -1191,21 +992,18 @@ TEST_CASE("managed surface delivers holder callbacks to every registration") {
     CHECK(context->surface_callbacks.at(holder.value.ref.Value()).size() == 2);
     REQUIRE(add(VmObjectRef{}).exception.IsValid());
 
-    CHECK_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(
-                    interpreter, *context,
-                    ogplay::runtime::SurfaceHolderPhase::created)
+    CHECK_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(interpreter, *context,
+                                                                ogplay::runtime::SurfaceHolderPhase::created)
                     .has_value());
     CHECK(read("created") == 2);
 
-    CHECK_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(
-                    interpreter, *context,
-                    ogplay::runtime::SurfaceHolderPhase::changed)
+    CHECK_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(interpreter, *context,
+                                                                ogplay::runtime::SurfaceHolderPhase::changed)
                     .has_value());
     CHECK(read("width") == 1280);
     CHECK(read("height") == 720);
 
-    CHECK_FALSE(ogplay::runtime::RetireSurfaceHolderGeneration(
-                    interpreter, *context).has_value());
+    CHECK_FALSE(ogplay::runtime::RetireSurfaceHolderGeneration(interpreter, *context).has_value());
     CHECK(read("destroyed") == 2);
     CHECK(context->surface_callbacks.empty());
     CHECK(context->surface_holders.empty());
@@ -1213,9 +1011,8 @@ TEST_CASE("managed surface delivers holder callbacks to every registration") {
     // A registration that cannot receive the event is reported, not skipped.
     context->surface_holders[view.Value()] = holder.value.ref;
     context->surface_callbacks[holder.value.ref.Value()] = {view};
-    CHECK(ogplay::runtime::DispatchSurfaceHolderCallbacks(
-              interpreter, *context,
-              ogplay::runtime::SurfaceHolderPhase::created)
+    CHECK(ogplay::runtime::DispatchSurfaceHolderCallbacks(interpreter, *context,
+                                                          ogplay::runtime::SurfaceHolderPhase::created)
               .has_value());
 }
 
@@ -1243,8 +1040,7 @@ TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
 
     const auto probe_class = linker.FindClass("LSurfaceProbe;");
     REQUIRE(probe_class.has_value());
-    const auto make =
-        linker.FindDirectMethod(*probe_class, "make", "()Ljava/lang/Object;");
+    const auto make = linker.FindDirectMethod(*probe_class, "make", "()Ljava/lang/Object;");
     REQUIRE(make.has_value());
     const auto read = [&](const std::string& name) {
         const auto method = linker.FindDirectMethod(*probe_class, name, "()I");
@@ -1253,113 +1049,82 @@ TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
         REQUIRE_FALSE(outcome.exception.IsValid());
         return outcome.value.AsInt();
     };
-    const auto call_on = [&](const VmObjectRef receiver, const std::string& name,
-                             const std::string& descriptor,
+    const auto call_on = [&](const VmObjectRef receiver, const std::string& name, const std::string& descriptor,
                              std::vector<VmValue> arguments = {}) {
         const auto java_class = model.ObjectClass(receiver);
         const auto index = linker.FindVtableIndex(java_class, name, descriptor);
         REQUIRE(index.has_value());
         arguments.insert(arguments.begin(), VmValue::Ref(receiver));
-        const auto outcome = interpreter.Call(
-            linker.Class(java_class).vtable[*index], arguments);
+        const auto outcome = interpreter.Call(linker.Class(java_class).vtable[*index], arguments);
         REQUIRE_FALSE(outcome.exception.IsValid());
         return outcome.value;
     };
 
-    const auto live_parent =
-        interpreter.NewIntrinsicInstance("Landroid/view/ViewGroup;");
-    const auto parent_node = context->ui_tree.CreateNode(
-        ogplay::runtime::ui::UiClass::View);
+    const auto live_parent = interpreter.NewIntrinsicInstance("Landroid/view/ViewGroup;");
+    const auto parent_node = context->ui_tree.CreateNode(ogplay::runtime::ui::UiClass::View);
     ogplay::runtime::BindViewToUiNode(*context, live_parent, parent_node);
     context->ui_tree.Attach(context->ui_tree.Root(), parent_node);
-    REQUIRE_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(
-                      interpreter, *context,
-                      ogplay::runtime::SurfaceHolderPhase::created)
+    REQUIRE_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(interpreter, *context,
+                                                                  ogplay::runtime::SurfaceHolderPhase::created)
                       .has_value());
-    REQUIRE_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(
-                      interpreter, *context,
-                      ogplay::runtime::SurfaceHolderPhase::changed)
+    REQUIRE_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(interpreter, *context,
+                                                                  ogplay::runtime::SurfaceHolderPhase::changed)
                       .has_value());
 
-    const auto surface =
-        interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
-    const auto constructor = linker.FindDirectMethod(
-        linker.ResolveDescriptor("Landroid/view/SurfaceView;"), "<init>",
-        "(Landroid/content/Context;Landroid/util/AttributeSet;)V");
+    const auto surface = interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+    const auto constructor = linker.FindDirectMethod(linker.ResolveDescriptor("Landroid/view/SurfaceView;"), "<init>",
+                                                     "(Landroid/content/Context;Landroid/util/AttributeSet;)V");
     REQUIRE(constructor.has_value());
-    const auto app_context = interpreter.NewIntrinsicInstance(
-        "Landroid/app/Application;");
+    const auto app_context = interpreter.NewIntrinsicInstance("Landroid/app/Application;");
     ogplay::test::AttachViewTestContext(interpreter, app_context);
-    const auto initialized = interpreter.Call(
-        *constructor,
-        std::vector<VmValue>{VmValue::Ref(surface), VmValue::Ref(app_context),
-                             VmValue::Ref(VmObjectRef{})});
+    const auto initialized =
+        interpreter.Call(*constructor, std::vector<VmValue>{VmValue::Ref(surface), VmValue::Ref(app_context),
+                                                            VmValue::Ref(VmObjectRef{})});
     REQUIRE_FALSE(initialized.exception.IsValid());
     const auto surface_node = FindViewUiNode(*context, surface.Value());
     REQUIRE(surface_node.has_value());
     CHECK_FALSE(context->ui_tree.IsAttached(*surface_node));
-    const auto holder = call_on(surface, "getHolder",
-                                "()Landroid/view/SurfaceHolder;")
-                            .ref;
+    const auto holder = call_on(surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
     const auto callback = interpreter.Call(*make, {}).value.ref;
-    call_on(holder, "addCallback",
-            "(Landroid/view/SurfaceHolder$Callback;)V",
-            {VmValue::Ref(callback)});
+    call_on(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
 
     // A live parent conditionally attaches the new subtree. The holder sees
     // created then changed exactly once.
-    call_on(live_parent, "addView", "(Landroid/view/View;)V",
-            {VmValue::Ref(surface)});
+    call_on(live_parent, "addView", "(Landroid/view/View;)V", {VmValue::Ref(surface)});
     CHECK(read("created") == 1);
     CHECK(read("width") == 800);
     CHECK(read("height") == 480);
     CHECK(context->active_surface_holders.contains(holder.Value()));
 
-    call_on(live_parent, "removeView", "(Landroid/view/View;)V",
-            {VmValue::Ref(surface)});
+    call_on(live_parent, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(surface)});
     CHECK(read("destroyed") == 1);
     CHECK_FALSE(context->active_surface_holders.contains(holder.Value()));
 
     // A detached parent does not synthesize attach events. Attaching that
     // parent later traverses the whole subtree and starts a fresh generation.
-    const auto detached_parent =
-        interpreter.NewIntrinsicInstance("Landroid/view/ViewGroup;");
-    call_on(detached_parent, "addView", "(Landroid/view/View;)V",
-            {VmValue::Ref(surface)});
+    const auto detached_parent = interpreter.NewIntrinsicInstance("Landroid/view/ViewGroup;");
+    call_on(detached_parent, "addView", "(Landroid/view/View;)V", {VmValue::Ref(surface)});
     CHECK(read("created") == 1);
-    call_on(live_parent, "addView", "(Landroid/view/View;)V",
-            {VmValue::Ref(detached_parent)});
+    call_on(live_parent, "addView", "(Landroid/view/View;)V", {VmValue::Ref(detached_parent)});
     CHECK(read("created") == 2);
     CHECK(context->active_surface_holders.contains(holder.Value()));
 
     // removeCallback is idempotent and affects later lifecycle snapshots.
-    call_on(holder, "removeCallback",
-            "(Landroid/view/SurfaceHolder$Callback;)V",
-            {VmValue::Ref(callback)});
-    call_on(holder, "removeCallback",
-            "(Landroid/view/SurfaceHolder$Callback;)V",
-            {VmValue::Ref(callback)});
-    call_on(live_parent, "removeView", "(Landroid/view/View;)V",
-            {VmValue::Ref(detached_parent)});
+    call_on(holder, "removeCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+    call_on(holder, "removeCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+    call_on(live_parent, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(detached_parent)});
     CHECK(read("destroyed") == 1);
     CHECK_FALSE(context->active_surface_holders.contains(holder.Value()));
 
     // A callback registered after an already-attached SurfaceView does not
     // receive past created/changed or a destroy for a generation it never saw.
-    const auto late_surface =
-        interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
-    call_on(live_parent, "addView", "(Landroid/view/View;)V",
-            {VmValue::Ref(late_surface)});
-    const auto late_holder = call_on(late_surface, "getHolder",
-                                     "()Landroid/view/SurfaceHolder;")
-                                 .ref;
+    const auto late_surface = interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+    call_on(live_parent, "addView", "(Landroid/view/View;)V", {VmValue::Ref(late_surface)});
+    const auto late_holder = call_on(late_surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
     const auto late_callback = interpreter.Call(*make, {}).value.ref;
-    call_on(late_holder, "addCallback",
-            "(Landroid/view/SurfaceHolder$Callback;)V",
-            {VmValue::Ref(late_callback)});
+    call_on(late_holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(late_callback)});
     CHECK(read("created") == 2);
-    call_on(live_parent, "removeView", "(Landroid/view/View;)V",
-            {VmValue::Ref(late_surface)});
+    call_on(live_parent, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(late_surface)});
     CHECK(read("destroyed") == 1);
 
     // Exact replacement sequence used by frameworks that switch from a
@@ -1367,40 +1132,27 @@ TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
     // then a distinct view/holder/callback is constructed and attached while
     // the same host window surface remains open.
     CHECK(context->managed_host_surface_open);
-    const auto replacement_surface =
-        interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
-    const auto replacement_holder =
-        call_on(replacement_surface, "getHolder",
-                "()Landroid/view/SurfaceHolder;")
-            .ref;
+    const auto replacement_surface = interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+    const auto replacement_holder = call_on(replacement_surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
     const auto replacement_callback = interpreter.Call(*make, {}).value.ref;
-    call_on(replacement_holder, "addCallback",
-            "(Landroid/view/SurfaceHolder$Callback;)V",
+    call_on(replacement_holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V",
             {VmValue::Ref(replacement_callback)});
-    call_on(live_parent, "addView", "(Landroid/view/View;)V",
-            {VmValue::Ref(replacement_surface)});
+    call_on(live_parent, "addView", "(Landroid/view/View;)V", {VmValue::Ref(replacement_surface)});
     CHECK(read("created") == 3);
     CHECK(read("width") == 800);
     CHECK(read("height") == 480);
-    CHECK(context->active_surface_holders.contains(
-        replacement_holder.Value()));
+    CHECK(context->active_surface_holders.contains(replacement_holder.Value()));
     CHECK(context->managed_host_surface_open);
 
-    call_on(live_parent, "removeView", "(Landroid/view/View;)V",
-            {VmValue::Ref(replacement_surface)});
+    call_on(live_parent, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(replacement_surface)});
     CHECK(read("destroyed") == 2);
-    CHECK_FALSE(context->active_surface_holders.contains(
-        replacement_holder.Value()));
+    CHECK_FALSE(context->active_surface_holders.contains(replacement_holder.Value()));
     CHECK(context->managed_host_surface_open);
 
-    const auto lifecycle_logs = logger.Snapshot(
-        ogplay::core::LogLevel::info, "session.dex_lifecycle");
+    const auto lifecycle_logs = logger.Snapshot(ogplay::core::LogLevel::info, "session.dex_lifecycle");
     const auto event_count = [&](const std::string_view phase) {
-        const auto expected = "managed surface " + std::string(phase) +
-                              " delivered to 1 holder callback(s)";
-        return std::ranges::count_if(lifecycle_logs, [&](const auto& record) {
-            return record.message == expected;
-        });
+        const auto expected = "managed surface " + std::string(phase) + " delivered to 1 holder callback(s)";
+        return std::ranges::count_if(lifecycle_logs, [&](const auto& record) { return record.message == expected; });
     };
     CHECK(event_count("surfaceCreated") == 3);
     CHECK(event_count("surfaceChanged") == 3);
@@ -1417,67 +1169,55 @@ TEST_CASE("Thread priority validates and records the guest fact") {
     auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
+    catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     ogplay::core::CapabilityLedger ledger;
-  Interpreter interpreter(linker, model, nullptr, ledger);
+    Interpreter interpreter(linker, model, nullptr, ledger);
     VmThreadRuntime threads(interpreter);
     const auto thread_class = linker.FindClass("Ljava/lang/Thread;");
     REQUIRE(thread_class.has_value());
-  const auto set_priority =
-      linker.FindVtableIndex(*thread_class, "setPriority", "(I)V");
+    const auto set_priority = linker.FindVtableIndex(*thread_class, "setPriority", "(I)V");
     REQUIRE(set_priority.has_value());
-  const auto thread = interpreter.NewIntrinsicInstance("Ljava/lang/Thread;");
-    const auto constructor =
-        linker.FindDirectMethod(*thread_class, "<init>", "()V");
+    const auto thread = interpreter.NewIntrinsicInstance("Ljava/lang/Thread;");
+    const auto constructor = linker.FindDirectMethod(*thread_class, "<init>", "()V");
     REQUIRE(constructor.has_value());
-    auto outcome = interpreter.Call(
-        *constructor, std::vector<VmValue>{VmValue::Ref(thread)});
+    auto outcome = interpreter.Call(*constructor, std::vector<VmValue>{VmValue::Ref(thread)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     const auto target = linker.Class(*thread_class).vtable[*set_priority];
-    outcome = interpreter.Call(
-        target, std::vector<VmValue>{VmValue::Ref(thread), VmValue::Int(7)});
+    outcome = interpreter.Call(target, std::vector<VmValue>{VmValue::Ref(thread), VmValue::Int(7)});
     REQUIRE_FALSE(outcome.exception.IsValid());
-    const auto get_priority =
-        linker.FindVtableIndex(*thread_class, "getPriority", "()I");
+    const auto get_priority = linker.FindVtableIndex(*thread_class, "getPriority", "()I");
     REQUIRE(get_priority.has_value());
-    outcome = interpreter.Call(
-        linker.Class(*thread_class).vtable[*get_priority],
-        std::vector<VmValue>{VmValue::Ref(thread)});
+    outcome =
+        interpreter.Call(linker.Class(*thread_class).vtable[*get_priority], std::vector<VmValue>{VmValue::Ref(thread)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK(outcome.value.AsInt() == 7);
 
-  const auto get_id = linker.FindVtableIndex(*thread_class, "getId", "()J");
-  const auto set_name =
-      linker.FindVtableIndex(*thread_class, "setName", "(Ljava/lang/String;)V");
-  const auto get_name =
-      linker.FindVtableIndex(*thread_class, "getName", "()Ljava/lang/String;");
-  REQUIRE(get_id.has_value());
-  REQUIRE(set_name.has_value());
-  REQUIRE(get_name.has_value());
-  outcome = interpreter.Call(linker.Class(*thread_class).vtable[*get_id],
-                             std::vector<VmValue>{VmValue::Ref(thread)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(outcome.value.AsLong() > 1);
-  outcome = interpreter.Call(
-      linker.Class(*thread_class).vtable[*set_name],
-      std::vector<VmValue>{VmValue::Ref(thread),
-                           VmValue::Ref(interpreter.NewStringUtf8("render"))});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  outcome = interpreter.Call(linker.Class(*thread_class).vtable[*get_name],
-                             std::vector<VmValue>{VmValue::Ref(thread)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(interpreter.StringUtf8(outcome.value.ref) == "render");
+    const auto get_id = linker.FindVtableIndex(*thread_class, "getId", "()J");
+    const auto set_name = linker.FindVtableIndex(*thread_class, "setName", "(Ljava/lang/String;)V");
+    const auto get_name = linker.FindVtableIndex(*thread_class, "getName", "()Ljava/lang/String;");
+    REQUIRE(get_id.has_value());
+    REQUIRE(set_name.has_value());
+    REQUIRE(get_name.has_value());
+    outcome = interpreter.Call(linker.Class(*thread_class).vtable[*get_id], std::vector<VmValue>{VmValue::Ref(thread)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.AsLong() > 1);
+    outcome =
+        interpreter.Call(linker.Class(*thread_class).vtable[*set_name],
+                         std::vector<VmValue>{VmValue::Ref(thread), VmValue::Ref(interpreter.NewStringUtf8("render"))});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    outcome =
+        interpreter.Call(linker.Class(*thread_class).vtable[*get_name], std::vector<VmValue>{VmValue::Ref(thread)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(interpreter.StringUtf8(outcome.value.ref) == "render");
 
-    outcome = interpreter.Call(
-        target, std::vector<VmValue>{VmValue::Ref(thread), VmValue::Int(11)});
+    outcome = interpreter.Call(target, std::vector<VmValue>{VmValue::Ref(thread), VmValue::Int(11)});
     CHECK(outcome.exception.IsValid());
-    outcome = interpreter.Call(
-        linker.Class(*thread_class).vtable[*get_priority],
-        std::vector<VmValue>{VmValue::Ref(thread)});
+    outcome =
+        interpreter.Call(linker.Class(*thread_class).vtable[*get_priority], std::vector<VmValue>{VmValue::Ref(thread)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK(outcome.value.AsInt() == 7);
 }
@@ -1492,43 +1232,36 @@ TEST_CASE("ViewTreeObserver retains stable observer and listener identity") {
     auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
+    catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     ogplay::core::CapabilityLedger ledger;
-  Interpreter interpreter(linker, model, nullptr, ledger);
+    Interpreter interpreter(linker, model, nullptr, ledger);
     const auto view_class = linker.FindClass("Landroid/view/View;");
     REQUIRE(view_class.has_value());
-    const auto get_observer = linker.FindVtableIndex(
-      *view_class, "getViewTreeObserver", "()Landroid/view/ViewTreeObserver;");
+    const auto get_observer =
+        linker.FindVtableIndex(*view_class, "getViewTreeObserver", "()Landroid/view/ViewTreeObserver;");
     REQUIRE(get_observer.has_value());
     const auto view = interpreter.NewIntrinsicInstance("Landroid/view/View;");
     const auto get_target = linker.Class(*view_class).vtable[*get_observer];
-  const auto first =
-      interpreter.Call(get_target, std::vector<VmValue>{VmValue::Ref(view)});
-  const auto second =
-      interpreter.Call(get_target, std::vector<VmValue>{VmValue::Ref(view)});
+    const auto first = interpreter.Call(get_target, std::vector<VmValue>{VmValue::Ref(view)});
+    const auto second = interpreter.Call(get_target, std::vector<VmValue>{VmValue::Ref(view)});
     REQUIRE_FALSE(first.exception.IsValid());
     REQUIRE_FALSE(second.exception.IsValid());
     CHECK(first.value.ref == second.value.ref);
 
-    const auto observer_class =
-        linker.FindClass("Landroid/view/ViewTreeObserver;");
+    const auto observer_class = linker.FindClass("Landroid/view/ViewTreeObserver;");
     REQUIRE(observer_class.has_value());
-    const auto add_listener = linker.FindVtableIndex(
-        *observer_class, "addOnGlobalLayoutListener",
-        "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V");
+    const auto add_listener = linker.FindVtableIndex(*observer_class, "addOnGlobalLayoutListener",
+                                                     "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V");
     REQUIRE(add_listener.has_value());
-  const auto listener = interpreter.NewIntrinsicInstance("Landroid/view/View;");
-  const auto added =
-      interpreter.Call(linker.Class(*observer_class).vtable[*add_listener],
-        std::vector<VmValue>{VmValue::Ref(first.value.ref),
-                             VmValue::Ref(listener)});
+    const auto listener = interpreter.NewIntrinsicInstance("Landroid/view/View;");
+    const auto added = interpreter.Call(linker.Class(*observer_class).vtable[*add_listener],
+                                        std::vector<VmValue>{VmValue::Ref(first.value.ref), VmValue::Ref(listener)});
     REQUIRE_FALSE(added.exception.IsValid());
-    CHECK(context->global_layout_listeners.at(first.value.ref.Value()) ==
-          listener);
+    CHECK(context->global_layout_listeners.at(first.value.ref.Value()) == listener);
 }
 
 TEST_CASE("URLEncoder applies UTF-8 form encoding") {
@@ -1541,344 +1274,275 @@ TEST_CASE("URLEncoder applies UTF-8 form encoding") {
     auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
+    catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     ogplay::test::RegisterBootDex(linker);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
     ogplay::core::CapabilityLedger ledger;
-  Interpreter interpreter(linker, model, nullptr, ledger);
+    Interpreter interpreter(linker, model, nullptr, ledger);
     const auto encoder = linker.FindClass("Ljava/net/URLEncoder;");
     REQUIRE(encoder.has_value());
-    const auto encode = linker.FindDirectMethod(
-        *encoder, "encode",
-        "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+    const auto encode =
+        linker.FindDirectMethod(*encoder, "encode", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
     REQUIRE(encode.has_value());
-    auto outcome = interpreter.Call(
-      *encode, std::vector<VmValue>{
-            VmValue::Ref(interpreter.NewStringUtf8("a b+c/\xC3\xA9")),
-            VmValue::Ref(interpreter.NewStringUtf8("UTF-8"))});
+    auto outcome =
+        interpreter.Call(*encode, std::vector<VmValue>{VmValue::Ref(interpreter.NewStringUtf8("a b+c/\xC3\xA9")),
+                                                       VmValue::Ref(interpreter.NewStringUtf8("UTF-8"))});
     REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(interpreter.StringUtf8(outcome.value.ref) == "a+b%2Bc%2F%C3%A9");
+    CHECK(interpreter.StringUtf8(outcome.value.ref) == "a+b%2Bc%2F%C3%A9");
 
-    outcome = interpreter.Call(
-        *encode,
-      std::vector<VmValue>{VmValue::Ref(interpreter.NewStringUtf8("value")),
-            VmValue::Ref(interpreter.NewStringUtf8("UTF-16"))});
+    outcome = interpreter.Call(*encode, std::vector<VmValue>{VmValue::Ref(interpreter.NewStringUtf8("value")),
+                                                             VmValue::Ref(interpreter.NewStringUtf8("UTF-16"))});
     CHECK(outcome.exception.IsValid());
 }
 
 TEST_CASE("Bundle preserves typed values and clear state") {
-  AndroidVm vm;
-  const auto bundle =
-      vm.interpreter.NewIntrinsicInstance("Landroid/os/Bundle;");
-  REQUIRE_FALSE(vm.interpreter.Call(vm.Direct("Landroid/os/Bundle;", "()V"),
-      std::vector{VmValue::Ref(bundle)}).exception.IsValid());
-  const auto key = vm.interpreter.NewStringUtf8("count");
-  auto outcome = vm.interpreter.Call(
-      vm.Virtual("Landroid/os/Bundle;", "putInt", "(Ljava/lang/String;I)V"),
-      std::vector<VmValue>{VmValue::Ref(bundle), VmValue::Ref(key),
-                           VmValue::Int(37)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  outcome = vm.interpreter.Call(
-      vm.Virtual("Landroid/os/Bundle;", "containsKey", "(Ljava/lang/String;)Z"),
-      std::vector<VmValue>{VmValue::Ref(bundle), VmValue::Ref(key)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(outcome.value.AsInt() == 1);
-  outcome = vm.interpreter.Call(
-      vm.Virtual("Landroid/os/Bundle;", "getInt", "(Ljava/lang/String;)I"),
-      std::vector<VmValue>{VmValue::Ref(bundle), VmValue::Ref(key)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(outcome.value.AsInt() == 37);
-  outcome =
-      vm.interpreter.Call(vm.Virtual("Landroid/os/Bundle;", "clear", "()V"),
-                          std::vector<VmValue>{VmValue::Ref(bundle)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  outcome = vm.interpreter.Call(vm.Virtual("Landroid/os/Bundle;", "isEmpty", "()Z"),
-      std::vector{VmValue::Ref(bundle)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(outcome.value.AsInt() == 1);
+    AndroidVm vm;
+    const auto bundle = vm.interpreter.NewIntrinsicInstance("Landroid/os/Bundle;");
+    REQUIRE_FALSE(vm.interpreter.Call(vm.Direct("Landroid/os/Bundle;", "()V"), std::vector{VmValue::Ref(bundle)})
+                      .exception.IsValid());
+    const auto key = vm.interpreter.NewStringUtf8("count");
+    auto outcome = vm.interpreter.Call(vm.Virtual("Landroid/os/Bundle;", "putInt", "(Ljava/lang/String;I)V"),
+                                       std::vector<VmValue>{VmValue::Ref(bundle), VmValue::Ref(key), VmValue::Int(37)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    outcome = vm.interpreter.Call(vm.Virtual("Landroid/os/Bundle;", "containsKey", "(Ljava/lang/String;)Z"),
+                                  std::vector<VmValue>{VmValue::Ref(bundle), VmValue::Ref(key)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.AsInt() == 1);
+    outcome = vm.interpreter.Call(vm.Virtual("Landroid/os/Bundle;", "getInt", "(Ljava/lang/String;)I"),
+                                  std::vector<VmValue>{VmValue::Ref(bundle), VmValue::Ref(key)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.AsInt() == 37);
+    outcome = vm.interpreter.Call(vm.Virtual("Landroid/os/Bundle;", "clear", "()V"),
+                                  std::vector<VmValue>{VmValue::Ref(bundle)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    outcome =
+        vm.interpreter.Call(vm.Virtual("Landroid/os/Bundle;", "isEmpty", "()Z"), std::vector{VmValue::Ref(bundle)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.AsInt() == 1);
 }
 
 TEST_CASE("Context unregisterReceiver enforces per-context registration") {
-  AndroidVm vm;
-  const auto first_context =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
-  const auto second_context =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
-  const auto receiver =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/BroadcastReceiver;");
-  const auto filter =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
-  const auto register_receiver = vm.Virtual(
-      "Landroid/content/Context;", "registerReceiver",
-      "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)Landroid/content/Intent;");
-  const auto unregister_receiver = vm.Virtual(
-      "Landroid/content/Context;", "unregisterReceiver",
-      "(Landroid/content/BroadcastReceiver;)V");
+    AndroidVm vm;
+    const auto first_context = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    const auto second_context = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    const auto receiver = vm.interpreter.NewIntrinsicInstance("Landroid/content/BroadcastReceiver;");
+    const auto filter = vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
+    const auto register_receiver =
+        vm.Virtual("Landroid/content/Context;", "registerReceiver",
+                   "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)Landroid/content/Intent;");
+    const auto unregister_receiver =
+        vm.Virtual("Landroid/content/Context;", "unregisterReceiver", "(Landroid/content/BroadcastReceiver;)V");
 
-  auto outcome = vm.interpreter.Call(
-      register_receiver,
-      std::vector<VmValue>{VmValue::Ref(first_context), VmValue::Ref(receiver),
-                           VmValue::Ref(filter)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK_FALSE(outcome.value.ref.IsValid());
-  CHECK(vm.context->broadcast_receivers.at(first_context.Value()).contains(
-      receiver.Value()));
+    auto outcome =
+        vm.interpreter.Call(register_receiver, std::vector<VmValue>{VmValue::Ref(first_context), VmValue::Ref(receiver),
+                                                                    VmValue::Ref(filter)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK_FALSE(outcome.value.ref.IsValid());
+    CHECK(vm.context->broadcast_receivers.at(first_context.Value()).contains(receiver.Value()));
 
-  outcome = vm.interpreter.Call(
-      unregister_receiver,
-      std::vector<VmValue>{VmValue::Ref(second_context), VmValue::Ref(receiver)});
-  REQUIRE(outcome.exception.IsValid());
-  CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-        "Ljava/lang/IllegalArgumentException;");
-  CHECK(vm.context->broadcast_receivers.at(first_context.Value()).contains(
-      receiver.Value()));
+    outcome = vm.interpreter.Call(unregister_receiver,
+                                  std::vector<VmValue>{VmValue::Ref(second_context), VmValue::Ref(receiver)});
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+    CHECK(vm.context->broadcast_receivers.at(first_context.Value()).contains(receiver.Value()));
 
-  outcome = vm.interpreter.Call(
-      unregister_receiver,
-      std::vector<VmValue>{VmValue::Ref(first_context), VmValue::Ref(receiver)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK_FALSE(vm.context->broadcast_receivers.contains(first_context.Value()));
-  outcome = vm.interpreter.Call(
-      unregister_receiver,
-      std::vector<VmValue>{VmValue::Ref(first_context), VmValue::Ref(receiver)});
-  REQUIRE(outcome.exception.IsValid());
-  CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-        "Ljava/lang/IllegalArgumentException;");
+    outcome = vm.interpreter.Call(unregister_receiver,
+                                  std::vector<VmValue>{VmValue::Ref(first_context), VmValue::Ref(receiver)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK_FALSE(vm.context->broadcast_receivers.contains(first_context.Value()));
+    outcome = vm.interpreter.Call(unregister_receiver,
+                                  std::vector<VmValue>{VmValue::Ref(first_context), VmValue::Ref(receiver)});
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
 }
 
 TEST_CASE("IntentFilter retains distinct case-sensitive data schemes") {
-  AndroidVm vm;
-  const auto first =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
-  const auto second =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
-  const auto add_scheme = vm.Virtual(
-      "Landroid/content/IntentFilter;", "addDataScheme",
-      "(Ljava/lang/String;)V");
-  const auto add = [&](const VmObjectRef filter, const VmObjectRef scheme) {
-    return vm.interpreter.Call(
-        add_scheme,
-        std::vector<VmValue>{VmValue::Ref(filter), VmValue::Ref(scheme)});
-  };
+    AndroidVm vm;
+    const auto first = vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
+    const auto second = vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
+    const auto add_scheme = vm.Virtual("Landroid/content/IntentFilter;", "addDataScheme", "(Ljava/lang/String;)V");
+    const auto add = [&](const VmObjectRef filter, const VmObjectRef scheme) {
+        return vm.interpreter.Call(add_scheme, std::vector<VmValue>{VmValue::Ref(filter), VmValue::Ref(scheme)});
+    };
 
-  const auto http = vm.interpreter.NewStringUtf8("http");
-  const auto upper_http = vm.interpreter.NewStringUtf8("HTTP");
-  REQUIRE_FALSE(add(first, http).exception.IsValid());
-  REQUIRE_FALSE(add(first, http).exception.IsValid());
-  REQUIRE_FALSE(add(first, upper_http).exception.IsValid());
-  REQUIRE_FALSE(add(second, upper_http).exception.IsValid());
-  const auto count = vm.Virtual("Landroid/content/IntentFilter;", "countDataSchemes", "()I");
-  const auto get = vm.Virtual("Landroid/content/IntentFilter;", "getDataScheme", "(I)Ljava/lang/String;");
-  CHECK(vm.interpreter.Call(count, std::vector<VmValue>{VmValue::Ref(first)}).value.AsInt() == 2);
-  CHECK(vm.interpreter.Call(count, std::vector<VmValue>{VmValue::Ref(second)}).value.AsInt() == 1);
-  const auto scheme = [&](VmObjectRef filter, std::int32_t index) {
-      return vm.interpreter.StringUtf8(
-          vm.interpreter.Call(get, std::vector<VmValue>{VmValue::Ref(filter), VmValue::Int(index)}).value.ref);
-  };
-  CHECK(scheme(first, 0) == "http");
-  CHECK(scheme(first, 1) == "HTTP");
-  CHECK(scheme(second, 0) == "HTTP");
+    const auto http = vm.interpreter.NewStringUtf8("http");
+    const auto upper_http = vm.interpreter.NewStringUtf8("HTTP");
+    REQUIRE_FALSE(add(first, http).exception.IsValid());
+    REQUIRE_FALSE(add(first, http).exception.IsValid());
+    REQUIRE_FALSE(add(first, upper_http).exception.IsValid());
+    REQUIRE_FALSE(add(second, upper_http).exception.IsValid());
+    const auto count = vm.Virtual("Landroid/content/IntentFilter;", "countDataSchemes", "()I");
+    const auto get = vm.Virtual("Landroid/content/IntentFilter;", "getDataScheme", "(I)Ljava/lang/String;");
+    CHECK(vm.interpreter.Call(count, std::vector<VmValue>{VmValue::Ref(first)}).value.AsInt() == 2);
+    CHECK(vm.interpreter.Call(count, std::vector<VmValue>{VmValue::Ref(second)}).value.AsInt() == 1);
+    const auto scheme = [&](VmObjectRef filter, std::int32_t index) {
+        return vm.interpreter.StringUtf8(
+            vm.interpreter.Call(get, std::vector<VmValue>{VmValue::Ref(filter), VmValue::Int(index)}).value.ref);
+    };
+    CHECK(scheme(first, 0) == "http");
+    CHECK(scheme(first, 1) == "HTTP");
+    CHECK(scheme(second, 0) == "HTTP");
 
-  const auto null_outcome = add(first, VmObjectRef{});
-  REQUIRE(null_outcome.exception.IsValid());
-  CHECK(vm.linker.Class(null_outcome.exception_class).descriptor ==
-        "Ljava/lang/NullPointerException;");
+    const auto null_outcome = add(first, VmObjectRef{});
+    REQUIRE(null_outcome.exception.IsValid());
+    CHECK(vm.linker.Class(null_outcome.exception_class).descriptor == "Ljava/lang/NullPointerException;");
 }
 
 TEST_CASE("IntentFilter retains API19 data authority metadata") {
-  AndroidVm vm;
-  const auto first =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
-  const auto second =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
-  const auto add_authority = vm.Virtual(
-      "Landroid/content/IntentFilter;", "addDataAuthority",
-      "(Ljava/lang/String;Ljava/lang/String;)V");
-  const auto add = [&](const VmObjectRef filter, const VmObjectRef host,
-                       const VmObjectRef port) {
-    return vm.interpreter.Call(
-        add_authority,
-        std::vector<VmValue>{VmValue::Ref(filter), VmValue::Ref(host),
-                             VmValue::Ref(port)});
-  };
-  const auto wildcard = vm.interpreter.NewStringUtf8("*.example.com");
-  const auto plain = vm.interpreter.NewStringUtf8("example.org");
-  const auto port = vm.interpreter.NewStringUtf8("+443");
-  REQUIRE_FALSE(add(first, wildcard, port).exception.IsValid());
-  REQUIRE_FALSE(add(first, wildcard, port).exception.IsValid());
-  REQUIRE_FALSE(add(second, plain, VmObjectRef{}).exception.IsValid());
+    AndroidVm vm;
+    const auto first = vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
+    const auto second = vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
+    const auto add_authority =
+        vm.Virtual("Landroid/content/IntentFilter;", "addDataAuthority", "(Ljava/lang/String;Ljava/lang/String;)V");
+    const auto add = [&](const VmObjectRef filter, const VmObjectRef host, const VmObjectRef port) {
+        return vm.interpreter.Call(add_authority,
+                                   std::vector<VmValue>{VmValue::Ref(filter), VmValue::Ref(host), VmValue::Ref(port)});
+    };
+    const auto wildcard = vm.interpreter.NewStringUtf8("*.example.com");
+    const auto plain = vm.interpreter.NewStringUtf8("example.org");
+    const auto port = vm.interpreter.NewStringUtf8("+443");
+    REQUIRE_FALSE(add(first, wildcard, port).exception.IsValid());
+    REQUIRE_FALSE(add(first, wildcard, port).exception.IsValid());
+    REQUIRE_FALSE(add(second, plain, VmObjectRef{}).exception.IsValid());
 
-  const auto count = vm.Virtual("Landroid/content/IntentFilter;", "countDataAuthorities", "()I");
-  CHECK(vm.interpreter.Call(count, std::vector<VmValue>{VmValue::Ref(first)}).value.AsInt() == 2);
-  CHECK(vm.interpreter.Call(count, std::vector<VmValue>{VmValue::Ref(second)}).value.AsInt() == 1);
-  const auto get = vm.Virtual("Landroid/content/IntentFilter;", "getDataAuthority",
-                              "(I)Landroid/content/IntentFilter$AuthorityEntry;");
-  const auto get_host = vm.Virtual("Landroid/content/IntentFilter$AuthorityEntry;", "getHost", "()Ljava/lang/String;");
-  const auto get_port = vm.Virtual("Landroid/content/IntentFilter$AuthorityEntry;", "getPort", "()I");
-  const auto verify = [&](VmObjectRef filter, std::int32_t index, const char* expected_host,
-                          std::int32_t expected_port) {
-      const auto entry =
-          vm.interpreter.Call(get, std::vector<VmValue>{VmValue::Ref(filter), VmValue::Int(index)}).value.ref;
-      CHECK(vm.interpreter.StringUtf8(
-                vm.interpreter.Call(get_host, std::vector<VmValue>{VmValue::Ref(entry)}).value.ref) == expected_host);
-      CHECK(vm.interpreter.Call(get_port, std::vector<VmValue>{VmValue::Ref(entry)}).value.AsInt() == expected_port);
-  };
-  verify(first, 0, "*.example.com", 443);
-  verify(first, 1, "*.example.com", 443);
-  verify(second, 0, "example.org", -1);
+    const auto count = vm.Virtual("Landroid/content/IntentFilter;", "countDataAuthorities", "()I");
+    CHECK(vm.interpreter.Call(count, std::vector<VmValue>{VmValue::Ref(first)}).value.AsInt() == 2);
+    CHECK(vm.interpreter.Call(count, std::vector<VmValue>{VmValue::Ref(second)}).value.AsInt() == 1);
+    const auto get = vm.Virtual("Landroid/content/IntentFilter;", "getDataAuthority",
+                                "(I)Landroid/content/IntentFilter$AuthorityEntry;");
+    const auto get_host =
+        vm.Virtual("Landroid/content/IntentFilter$AuthorityEntry;", "getHost", "()Ljava/lang/String;");
+    const auto get_port = vm.Virtual("Landroid/content/IntentFilter$AuthorityEntry;", "getPort", "()I");
+    const auto verify = [&](VmObjectRef filter, std::int32_t index, const char* expected_host,
+                            std::int32_t expected_port) {
+        const auto entry =
+            vm.interpreter.Call(get, std::vector<VmValue>{VmValue::Ref(filter), VmValue::Int(index)}).value.ref;
+        CHECK(vm.interpreter.StringUtf8(
+                  vm.interpreter.Call(get_host, std::vector<VmValue>{VmValue::Ref(entry)}).value.ref) == expected_host);
+        CHECK(vm.interpreter.Call(get_port, std::vector<VmValue>{VmValue::Ref(entry)}).value.AsInt() == expected_port);
+    };
+    verify(first, 0, "*.example.com", 443);
+    verify(first, 1, "*.example.com", 443);
+    verify(second, 0, "example.org", -1);
 
-  auto outcome = add(first, VmObjectRef{}, VmObjectRef{});
-  REQUIRE(outcome.exception.IsValid());
-  CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-        "Ljava/lang/NullPointerException;");
-  for (const char* invalid : {"443x", "2147483648", "-2147483649"}) {
-    outcome = add(first, plain, vm.interpreter.NewStringUtf8(invalid));
+    auto outcome = add(first, VmObjectRef{}, VmObjectRef{});
     REQUIRE(outcome.exception.IsValid());
-    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-          "Ljava/lang/NumberFormatException;");
-  }
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+    for (const char* invalid : {"443x", "2147483648", "-2147483649"}) {
+        outcome = add(first, plain, vm.interpreter.NewStringUtf8(invalid));
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/NumberFormatException;");
+    }
 }
 
 TEST_CASE("Intent removeExtra clears the Java Bundle mapping") {
-  AndroidVm vm;
-  const auto intent = vm.interpreter.NewIntrinsicInstance("Landroid/content/Intent;");
-  const auto key = vm.interpreter.NewStringUtf8("shared-key");
-  const auto put = vm.Virtual("Landroid/content/Intent;", "putExtra", "(Ljava/lang/String;I)Landroid/content/Intent;");
-  REQUIRE_FALSE(vm.interpreter.Call(put, std::vector{VmValue::Ref(intent),
-      VmValue::Ref(key), VmValue::Int(42)}).exception.IsValid());
-  const auto has = vm.Virtual("Landroid/content/Intent;", "hasExtra", "(Ljava/lang/String;)Z");
-  const auto remove = vm.Virtual("Landroid/content/Intent;", "removeExtra", "(Ljava/lang/String;)V");
-  const std::vector arguments{VmValue::Ref(intent), VmValue::Ref(key)};
-  CHECK(vm.interpreter.Call(has, arguments).value.AsInt() == 1);
-  REQUIRE_FALSE(vm.interpreter.Call(remove, arguments).exception.IsValid());
-  CHECK(vm.interpreter.Call(has, arguments).value.AsInt() == 0);
-  REQUIRE_FALSE(vm.interpreter.Call(remove, arguments).exception.IsValid());
+    AndroidVm vm;
+    const auto intent = vm.interpreter.NewIntrinsicInstance("Landroid/content/Intent;");
+    const auto key = vm.interpreter.NewStringUtf8("shared-key");
+    const auto put =
+        vm.Virtual("Landroid/content/Intent;", "putExtra", "(Ljava/lang/String;I)Landroid/content/Intent;");
+    REQUIRE_FALSE(vm.interpreter.Call(put, std::vector{VmValue::Ref(intent), VmValue::Ref(key), VmValue::Int(42)})
+                      .exception.IsValid());
+    const auto has = vm.Virtual("Landroid/content/Intent;", "hasExtra", "(Ljava/lang/String;)Z");
+    const auto remove = vm.Virtual("Landroid/content/Intent;", "removeExtra", "(Ljava/lang/String;)V");
+    const std::vector arguments{VmValue::Ref(intent), VmValue::Ref(key)};
+    CHECK(vm.interpreter.Call(has, arguments).value.AsInt() == 1);
+    REQUIRE_FALSE(vm.interpreter.Call(remove, arguments).exception.IsValid());
+    CHECK(vm.interpreter.Call(has, arguments).value.AsInt() == 0);
+    REQUIRE_FALSE(vm.interpreter.Call(remove, arguments).exception.IsValid());
 }
 
 TEST_CASE("Intent integer ArrayList extra preserves identity and typed keys") {
-  AndroidVm vm;
-  const auto intent =
-      vm.interpreter.NewIntrinsicInstance("Landroid/content/Intent;");
-  const auto list =
-      vm.interpreter.NewIntrinsicInstance("Ljava/util/ArrayList;");
-  const auto key = vm.interpreter.NewStringUtf8("levels");
-  const auto missing = vm.interpreter.NewStringUtf8("missing");
-  const auto put = vm.Virtual(
-      "Landroid/content/Intent;", "putIntegerArrayListExtra",
-      "(Ljava/lang/String;Ljava/util/ArrayList;)Landroid/content/Intent;");
-  const auto get = vm.Virtual(
-      "Landroid/content/Intent;", "getIntegerArrayListExtra",
-      "(Ljava/lang/String;)Ljava/util/ArrayList;");
-  auto outcome = vm.interpreter.Call(
-      put, std::vector{VmValue::Ref(intent), VmValue::Ref(key),
-                       VmValue::Ref(list)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(outcome.value.ref == intent);
+    AndroidVm vm;
+    const auto intent = vm.interpreter.NewIntrinsicInstance("Landroid/content/Intent;");
+    const auto list = vm.interpreter.NewIntrinsicInstance("Ljava/util/ArrayList;");
+    const auto key = vm.interpreter.NewStringUtf8("levels");
+    const auto missing = vm.interpreter.NewStringUtf8("missing");
+    const auto put = vm.Virtual("Landroid/content/Intent;", "putIntegerArrayListExtra",
+                                "(Ljava/lang/String;Ljava/util/ArrayList;)Landroid/content/Intent;");
+    const auto get =
+        vm.Virtual("Landroid/content/Intent;", "getIntegerArrayListExtra", "(Ljava/lang/String;)Ljava/util/ArrayList;");
+    auto outcome = vm.interpreter.Call(put, std::vector{VmValue::Ref(intent), VmValue::Ref(key), VmValue::Ref(list)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.ref == intent);
 
-  outcome = vm.interpreter.Call(
-      get, std::vector{VmValue::Ref(intent), VmValue::Ref(key)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(outcome.value.ref == list);
-  outcome = vm.interpreter.Call(
-      get, std::vector{VmValue::Ref(intent), VmValue::Ref(missing)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK_FALSE(outcome.value.ref.IsValid());
+    outcome = vm.interpreter.Call(get, std::vector{VmValue::Ref(intent), VmValue::Ref(key)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.ref == list);
+    outcome = vm.interpreter.Call(get, std::vector{VmValue::Ref(intent), VmValue::Ref(missing)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK_FALSE(outcome.value.ref.IsValid());
 
-  const auto put_int = vm.Virtual(
-      "Landroid/content/Intent;", "putExtra",
-      "(Ljava/lang/String;I)Landroid/content/Intent;");
-  outcome = vm.interpreter.Call(
-      put_int, std::vector{VmValue::Ref(intent), VmValue::Ref(key),
-                           VmValue::Int(7)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  outcome = vm.interpreter.Call(
-      get, std::vector{VmValue::Ref(intent), VmValue::Ref(key)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK_FALSE(outcome.value.ref.IsValid());
+    const auto put_int =
+        vm.Virtual("Landroid/content/Intent;", "putExtra", "(Ljava/lang/String;I)Landroid/content/Intent;");
+    outcome = vm.interpreter.Call(put_int, std::vector{VmValue::Ref(intent), VmValue::Ref(key), VmValue::Int(7)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    outcome = vm.interpreter.Call(get, std::vector{VmValue::Ref(intent), VmValue::Ref(key)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK_FALSE(outcome.value.ref.IsValid());
 
-  outcome = vm.interpreter.Call(
-      put, std::vector{VmValue::Ref(intent), VmValue::Ref(key),
-                       VmValue::Ref(list)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  const auto get_int = vm.Virtual(
-      "Landroid/content/Intent;", "getIntExtra", "(Ljava/lang/String;I)I");
-  outcome = vm.interpreter.Call(
-      get_int,
-      std::vector{VmValue::Ref(intent), VmValue::Ref(key),
-                  VmValue::Int(99)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(outcome.value.AsInt() == 99);
+    outcome = vm.interpreter.Call(put, std::vector{VmValue::Ref(intent), VmValue::Ref(key), VmValue::Ref(list)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    const auto get_int = vm.Virtual("Landroid/content/Intent;", "getIntExtra", "(Ljava/lang/String;I)I");
+    outcome = vm.interpreter.Call(get_int, std::vector{VmValue::Ref(intent), VmValue::Ref(key), VmValue::Int(99)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.AsInt() == 99);
 
-  const auto put_string = vm.Virtual(
-      "Landroid/content/Intent;", "putExtra",
-      "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;");
-  const auto string_value = vm.interpreter.NewStringUtf8("campaign");
-  outcome = vm.interpreter.Call(
-      put_string,
-      std::vector{VmValue::Ref(intent), VmValue::Ref(key),
-                  VmValue::Ref(string_value)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  outcome = vm.interpreter.Call(
-      get, std::vector{VmValue::Ref(intent), VmValue::Ref(key)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK_FALSE(outcome.value.ref.IsValid());
+    const auto put_string = vm.Virtual("Landroid/content/Intent;", "putExtra",
+                                       "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;");
+    const auto string_value = vm.interpreter.NewStringUtf8("campaign");
+    outcome = vm.interpreter.Call(put_string,
+                                  std::vector{VmValue::Ref(intent), VmValue::Ref(key), VmValue::Ref(string_value)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    outcome = vm.interpreter.Call(get, std::vector{VmValue::Ref(intent), VmValue::Ref(key)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK_FALSE(outcome.value.ref.IsValid());
 
-  const auto null_key = vm.interpreter.NewStringUtf8("nullable");
-  outcome = vm.interpreter.Call(
-      put, std::vector{VmValue::Ref(intent), VmValue::Ref(null_key),
-                       VmValue::Ref(VmObjectRef{})});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  outcome = vm.interpreter.Call(
-      get, std::vector{VmValue::Ref(intent), VmValue::Ref(null_key)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK_FALSE(outcome.value.ref.IsValid());
+    const auto null_key = vm.interpreter.NewStringUtf8("nullable");
+    outcome = vm.interpreter.Call(
+        put, std::vector{VmValue::Ref(intent), VmValue::Ref(null_key), VmValue::Ref(VmObjectRef{})});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    outcome = vm.interpreter.Call(get, std::vector{VmValue::Ref(intent), VmValue::Ref(null_key)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK_FALSE(outcome.value.ref.IsValid());
 }
 
-
 TEST_CASE("bounded method reflection enumerates and invokes display rotation") {
-  AndroidVm vm;
-  const auto display_class = vm.linker.FindClass("Landroid/view/Display;");
-  REQUIRE(display_class.has_value());
-  const auto display_class_object = vm.model.ClassObject(*display_class);
-  auto outcome = vm.interpreter.Call(
-      vm.Virtual("Ljava/lang/Class;", "getDeclaredMethods",
-                 "()[Ljava/lang/reflect/Method;"),
-      std::vector<VmValue>{VmValue::Ref(display_class_object)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  const auto methods = outcome.value.ref;
-  VmObjectRef rotation;
-  for (JniSize index = 0; index < vm.model.ArrayLength(methods); ++index) {
-    const auto method = vm.model.GetObjectElement(methods, index);
-    const auto named =
-        vm.interpreter.Call(vm.Virtual("Ljava/lang/reflect/Method;", "getName",
-                                       "()Ljava/lang/String;"),
-                            std::vector<VmValue>{VmValue::Ref(method)});
-    REQUIRE_FALSE(named.exception.IsValid());
-    if (vm.interpreter.StringUtf8(named.value.ref) == "getRotation") {
-      rotation = method;
-      break;
+    AndroidVm vm;
+    const auto display_class = vm.linker.FindClass("Landroid/view/Display;");
+    REQUIRE(display_class.has_value());
+    const auto display_class_object = vm.model.ClassObject(*display_class);
+    auto outcome =
+        vm.interpreter.Call(vm.Virtual("Ljava/lang/Class;", "getDeclaredMethods", "()[Ljava/lang/reflect/Method;"),
+                            std::vector<VmValue>{VmValue::Ref(display_class_object)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    const auto methods = outcome.value.ref;
+    VmObjectRef rotation;
+    for (JniSize index = 0; index < vm.model.ArrayLength(methods); ++index) {
+        const auto method = vm.model.GetObjectElement(methods, index);
+        const auto named =
+            vm.interpreter.Call(vm.Virtual("Ljava/lang/reflect/Method;", "getName", "()Ljava/lang/String;"),
+                                std::vector<VmValue>{VmValue::Ref(method)});
+        REQUIRE_FALSE(named.exception.IsValid());
+        if (vm.interpreter.StringUtf8(named.value.ref) == "getRotation") {
+            rotation = method;
+            break;
+        }
     }
-  }
-  REQUIRE(rotation.IsValid());
-  const auto display =
-      vm.interpreter.NewIntrinsicInstance("Landroid/view/Display;");
-  const auto object_class = vm.linker.ResolveDescriptor("Ljava/lang/Object;");
-  const auto object_array_class =
-      vm.linker.ResolveDescriptor("[Ljava/lang/Object;");
-  const auto no_arguments =
-      vm.model.NewObjectArray(object_array_class, object_class, 0);
-  outcome = vm.interpreter.Call(
-      vm.Virtual("Ljava/lang/reflect/Method;", "invoke",
-                 "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"),
-      std::vector<VmValue>{VmValue::Ref(rotation), VmValue::Ref(display),
-                           VmValue::Ref(no_arguments)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  const auto boxed = outcome.value.ref;
-  outcome =
-      vm.interpreter.Call(vm.Virtual("Ljava/lang/Integer;", "intValue", "()I"),
-                          std::vector<VmValue>{VmValue::Ref(boxed)});
-  REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(outcome.value.AsInt() == 0);
+    REQUIRE(rotation.IsValid());
+    const auto display = vm.interpreter.NewIntrinsicInstance("Landroid/view/Display;");
+    const auto object_class = vm.linker.ResolveDescriptor("Ljava/lang/Object;");
+    const auto object_array_class = vm.linker.ResolveDescriptor("[Ljava/lang/Object;");
+    const auto no_arguments = vm.model.NewObjectArray(object_array_class, object_class, 0);
+    outcome = vm.interpreter.Call(
+        vm.Virtual("Ljava/lang/reflect/Method;", "invoke", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"),
+        std::vector<VmValue>{VmValue::Ref(rotation), VmValue::Ref(display), VmValue::Ref(no_arguments)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    const auto boxed = outcome.value.ref;
+    outcome = vm.interpreter.Call(vm.Virtual("Ljava/lang/Integer;", "intValue", "()I"),
+                                  std::vector<VmValue>{VmValue::Ref(boxed)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.AsInt() == 0);
 }

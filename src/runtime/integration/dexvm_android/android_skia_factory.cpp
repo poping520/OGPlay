@@ -1,3 +1,4 @@
+#include "ogplay/runtime/integration/apk_assets.h"
 #include "android_skia_bitmap.h"
 #include "ogplay/runtime/boundary/asset_boundary.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
@@ -230,13 +231,14 @@ Decl Declare_android_graphics_BitmapFactory(const Context& context) {
             const dx::IntrinsicCall a(c);
             const auto opts = a.Ref(2);
             ResetOptions(c.vm, opts);
-            if (!context->session || Cancelled(c.vm, opts)) return V::Ref(dx::VmObjectRef{});
-            const auto source =
-                context->session->Process().ResolveAsset(memory::GuestAddress{std::bit_cast<std::uint32_t>(a.Int(0))});
-            if (!source) return V::Ref(dx::VmObjectRef{});
-            const auto bytes = ReadBounded(
-                [&](std::uint64_t offset, std::span<std::byte> chunk) { return source->ReadAt(offset, chunk); });
-            return Decode(c.vm, *context, bytes, a.Ref(1), opts);
+            if (Cancelled(c.vm, opts)) return V::Ref(dx::VmObjectRef{});
+            const auto asset = ResolveResourceAsset(*context, std::bit_cast<std::uint32_t>(a.Int(0)));
+            if (asset->length() > kMaximumImageEncodedBytes) return V::Ref(dx::VmObjectRef{});
+            std::vector<std::byte> expanded;
+            if (!asset->isStored()) expanded = ReadResourceAsset(*asset, kMaximumImageEncodedBytes);
+            const auto bytes = asset->isStored() ? asset->storedBuffer() : std::span<const std::byte>(expanded);
+            const auto bitmap = Decode(c.vm, *context, bytes, a.Ref(1), opts);
+            return bitmap;
         },
         kStaticNative);
     return std::move(b).Build();

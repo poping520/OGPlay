@@ -95,8 +95,8 @@ Decl Declare_android_graphics_Typeface(const Context& context) {
             if (!manager.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "AssetManager"};
             RequireFontPath(path);
             try {
-                return MakeTypeface(
-                    *context, raster::DecodeTypeface(ReadAndroidApkAsset(context, manager, c.vm.StringUtf8(path))));
+                return MakeTypeface(*context, raster::DecodeTypeface(
+                                                  ReadAndroidApkAsset(c.vm, context, manager, c.vm.StringUtf8(path))));
             } catch (const dx::VmJavaThrow& error) {
                 if (error.descriptor != "Ljava/io/FileNotFoundException;" &&
                     error.descriptor != "Ljava/io/IOException;")

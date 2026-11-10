@@ -16,8 +16,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   intrinsic 默认是整类定义，boot DEX 同名类被忽略；声明 `MergesBootClass` 或
   `AdmitBootNativeMethods` 时，第一个 boot DEX 定义并入该声明：DEX 提供 class/field/
   hierarchy，带 handler 的同签名 intrinsic 覆盖方法体，无 handler 的声明让位 DEX 字节码。
-  无绑定的 boot native 调用时记账并抛 `UnsatisfiedLinkError`；`SetUnboundNativePolicy`
-  可由集成层为特定签名提供 handler（Android 用于 UI 降级），dexvm 本身不含平台名单。
+  无绑定的 boot native 调用时记账并抛 `UnsatisfiedLinkError`。
   IntrinsicMethodDecl.adapter_review 是可选的诊断来源引用，随绑定保留至 LinkedMethod；
   dump-surface 同时标 implementation_source=adapter 与 review 引用，origin/binding 仍为
   handwritten/intrinsic。DEX 字节码接管该方法时清除。

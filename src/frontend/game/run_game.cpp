@@ -532,6 +532,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.icu_data = ReadBytes(bundled_data.root / bionic.data_directory / "icu" / "icudt51l.dat");
         app_request.tzdata = ReadBytes(bundled_data.root / bionic.data_directory / "zoneinfo" / "tzdata");
         app_request.context = dex_context;
+        dex_context->system_font_source = [fonts = bundled_data.root / bionic.data_directory /
+                                                   "fonts"](std::string_view file) { return ReadBytes(fonts / file); };
         app_request.ui_primary_font =
             ReadBytes(bundled_data.root / bionic.data_directory / "fonts" / "Roboto-Regular.ttf");
         app_request.ui_fallback_font =

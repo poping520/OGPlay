@@ -2,6 +2,7 @@
 #include "android_value_fixture.h"
 #include "ogplay/runtime/integration/theme_resources.h"
 #include "ogplay/loader/apk.h"
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <set>
@@ -820,7 +821,7 @@ TEST_CASE("DVM-355 Interpolator samples ScrollabilityCache alpha keys repeat mir
     }
 }
 
-TEST_CASE("DVM-355 Paint retains state objects through GC and Canvas rejects shader or xfermode drawing") {
+TEST_CASE("DVM-355 Paint retains drawable effects through GC") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         const auto tile_name = f.vm.NewStringUtf8("CLAMP");
@@ -838,32 +839,43 @@ TEST_CASE("DVM-355 Paint retains state objects through GC and Canvas rejects sha
         const auto xfer = f.New("Landroid/graphics/PorterDuffXfermode;", "(Landroid/graphics/PorterDuff$Mode;)V",
                                 {VmValue::Ref(mode)});
         const auto paint = f.New("Landroid/graphics/Paint;");
-        const auto canvas = f.vm.NewIntrinsicInstance("Landroid/graphics/Canvas;");
+        const auto canvas = f.New("Landroid/graphics/Canvas;");
         const auto roots = f.vm.ProtectReferences(std::array{paint, canvas});
         CHECK(f.On(paint, "setShader", "(Landroid/graphics/Shader;)Landroid/graphics/Shader;", {VmValue::Ref(shader)})
                   .ref == shader);
         CHECK(
             f.On(paint, "setXfermode", "(Landroid/graphics/Xfermode;)Landroid/graphics/Xfermode;", {VmValue::Ref(xfer)})
                 .ref == xfer);
+        const auto matrix = f.New("Landroid/graphics/Matrix;");
+        const auto matrix_root = f.vm.ProtectReferences(std::array{matrix});
+        f.On(matrix, "setTranslate", "(FF)V", {VmValue::Float(3), VmValue::Float(4)});
+        f.On(shader, "setLocalMatrix", "(Landroid/graphics/Matrix;)V", {VmValue::Ref(matrix)});
+        const auto copy = f.New("Landroid/graphics/Paint;", "(Landroid/graphics/Paint;)V", {VmValue::Ref(paint)});
+        const auto copy_root = f.vm.ProtectReferences(std::array{copy});
+        const auto shader_copy = f.On(copy, "getShader", "()Landroid/graphics/Shader;").ref;
+        CHECK(shader_copy != shader);
+        const auto copied_matrix = f.New("Landroid/graphics/Matrix;");
+        CHECK(f.On(shader_copy, "getLocalMatrix", "(Landroid/graphics/Matrix;)Z", {VmValue::Ref(copied_matrix)})
+                  .AsInt() != 0);
+        CHECK(f.On(copied_matrix, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(matrix)}).AsInt() != 0);
+        CHECK(f.On(copy, "getXfermode", "()Landroid/graphics/Xfermode;").ref == xfer);
+        f.On(copy, "reset", "()V");
         static_cast<void>(f.vm.CollectGarbage("paint-retains-graphics-state"));
         CHECK(f.model.IsValidRef(shader));
         CHECK(f.model.IsValidRef(xfer));
         CHECK(f.On(paint, "getShader", "()Landroid/graphics/Shader;").ref == shader);
         CHECK(f.On(paint, "getXfermode", "()Landroid/graphics/Xfermode;").ref == xfer);
         CHECK(f.ledger.Unimplemented().empty());
-        const auto draw = [&] {
-            const auto failed =
-                f.OnOutcome(canvas, "drawBitmap", "(Landroid/graphics/Bitmap;FFLandroid/graphics/Paint;)V",
-                            {VmValue::Ref(VmObjectRef{}), VmValue::Float(0), VmValue::Float(0), VmValue::Ref(paint)});
-            REQUIRE(failed.exception.IsValid());
-            CHECK(failed.exception_message == "Canvas shader/xfermode drawing is unsupported");
-            const auto hits = f.ledger.Unimplemented();
-            REQUIRE(hits.size() == 1);
-            CHECK(hits.front().id == "dexvm.canvas_draw");
+        f.On(canvas, "drawPaint", "(Landroid/graphics/Paint;)V", {VmValue::Ref(paint)});
+        const auto effects_supported = [&] {
+            const auto warnings = f.ledger.Warnings();
+            CHECK(std::ranges::none_of(warnings,
+                                       [](const auto& hit) { return hit.id.starts_with("ui.degraded.Canvas.Paint"); }));
         };
-        draw();
+        effects_supported();
         f.On(paint, "setShader", "(Landroid/graphics/Shader;)Landroid/graphics/Shader;", {VmValue::Ref(VmObjectRef{})});
-        draw();
+        f.On(canvas, "drawPaint", "(Landroid/graphics/Paint;)V", {VmValue::Ref(paint)});
+        effects_supported();
         f.On(paint, "setXfermode", "(Landroid/graphics/Xfermode;)Landroid/graphics/Xfermode;",
              {VmValue::Ref(VmObjectRef{})});
         static_cast<void>(f.vm.CollectGarbage("paint-releases-graphics-state"));
@@ -1044,7 +1056,7 @@ TEST_CASE("DrawableContainer forwards only the current child's callbacks to its 
     }
 }
 
-TEST_CASE("DVM-366 LightingColorFilter keeps bounded native handles across the button press path") {
+TEST_CASE("DVM-366 LightingColorFilter retires software peers across the button press path") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         constexpr auto owner_type = "Landroid/graphics/LightingColorFilter;";
@@ -1086,24 +1098,27 @@ TEST_CASE("DVM-366 LightingColorFilter keeps bounded native handles across the b
             first = handles(pressed);
         }
         CHECK(first[0] != 0);
-        CHECK(first[1] != 0);
-        CHECK(std::set<std::int32_t>{first[0], first[1], second[0], second[1]}.size() == 4);
+        CHECK(first[1] == 0);
+        CHECK(second[1] == 0);
+        CHECK(first[0] != second[0]);
 
-        // The HWUI view only accepts the Skia handle with its own parameters.
-        CHECK_FALSE(view_of(first[0], -6710887, 0).exception.IsValid());
-        for (const auto& [native, mul, add] :
-             {std::tuple{first[0], -6710887, 1}, std::tuple{first[0], 0x00ff00, 0x10}, std::tuple{0, 0, 0}}) {
-            const auto rejected = view_of(native, mul, add);
-            REQUIRE(rejected.exception.IsValid());
-            CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
-        }
+        // Software-only API19 post-create entry points return a null HWUI peer.
+        CHECK(view_of(first[0], -6710887, 0).value.AsInt() == 0);
         CHECK(f.ledger.Unimplemented().empty());
 
         // ACTION_UP drops the filter; ROM finalize retires both handles.
         static_cast<void>(f.vm.CollectGarbage("lighting-filter-release"));
         f.vm.RunFinalization();
         static_cast<void>(f.vm.CollectGarbage("lighting-filter-finalized"));
-        CHECK(view_of(first[0], -6710887, 0).exception.IsValid());
-        CHECK_FALSE(view_of(second[0], 0x00ff00, 0x10).exception.IsValid());
+        const auto set_filter = f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Landroid/graphics/Paint;"),
+                                                          "native_setColorFilter", "(II)I");
+        REQUIRE(set_filter);
+        const auto paint = f.New("Landroid/graphics/Paint;");
+        const auto native_field = f.linker.FindFieldRecursive(f.model.ObjectClass(paint), "mNativePaint", "I");
+        REQUIRE(native_field);
+        const auto paint_token = VmValue::Int(
+            static_cast<std::int32_t>(f.model.InstanceSlots(paint)[f.linker.Field(*native_field).slot].bits));
+        CHECK(f.vm.Call(*set_filter, std::array{paint_token, VmValue::Int(first[0])}).exception.IsValid());
+        CHECK_FALSE(f.vm.Call(*set_filter, std::array{paint_token, VmValue::Int(second[0])}).exception.IsValid());
     }
 }

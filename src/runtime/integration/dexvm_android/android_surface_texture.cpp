@@ -97,7 +97,11 @@ void ReleaseSurface(DexVmAndroidContext& context, const dx::VmObjectRef surface,
     if (found == context.stream_surface_owners.end() || found->second != token)
         throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "invalid Surface endpoint"};
     context.stream_surfaces.erase(token);
-    context.managed_surface_tokens.erase(token);
+    if (const auto managed = context.managed_surface_tokens.find(token);
+        managed != context.managed_surface_tokens.end()) {
+        android_intrinsics::ResetManagedCanvas(context, managed->second);
+        context.managed_surface_tokens.erase(managed);
+    }
     context.stream_surface_owners.erase(found);
 }
 }  // namespace
@@ -395,6 +399,7 @@ Decl Declare_android_view_Surface(const Context& context) {
                                      context->destroying_surface_holders.contains(managed->second)));
         },
         native_static);
+    AddManagedCanvasNatives(builder, context);
     return std::move(builder).Build();
 }
 }  // namespace android_intrinsics

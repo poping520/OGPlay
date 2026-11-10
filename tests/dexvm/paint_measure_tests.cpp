@@ -1,38 +1,39 @@
 #include "container_traversal_fixture.h"
-#include "ogplay/runtime/ui/ui_fallback_font.h"
-#include "ogplay/runtime/ui/ui_leaf_measure.h"
-#include <filesystem>
+#include "boot_dex.h"
+#include "include/core/SkData.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkFontMetrics.h"
+#include "include/core/SkFontTypes.h"
+#include "include/core/SkFontMgr.h"
+#include "include/core/SkTypeface.h"
+#include "include/ports/SkFontMgr_empty.h"
+#include <cmath>
 #include <algorithm>
 
 using ogplay::test::container_traversal::ContainerVm;
 
+namespace {
+SkFont TestFont(std::string_view name, float size) {
+    const auto bytes = ogplay::test::ReadTestSystemFont(name);
+    const auto manager = SkFontMgr_New_Custom_Empty();
+    auto face = manager->makeFromData(SkData::MakeWithCopy(bytes.data(), bytes.size()));
+    REQUIRE(face);
+    SkFont font(std::move(face), size);
+    font.setEdging(SkFont::Edging::kAlias);
+    font.setEmbeddedBitmaps(true);
+    return font;
+}
+
+float SkiaWidth(const SkFont& font, std::u16string_view text) {
+    return std::ceil(font.measureText(text.data(), text.size() * sizeof(char16_t), SkTextEncoding::kUTF16));
+}
+}  // namespace
+
 TEST_CASE("DVM-293 ROM TextView clinit measures H through instance Paint on both backends") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
-        const auto root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
-        std::ifstream input(root / "data/android/19/fonts/DroidSansFallback.ttf", std::ios::binary);
-        REQUIRE(input.good());
-        const std::vector<char> raw{std::istreambuf_iterator<char>(input), {}};
-        std::vector<std::byte> bytes(raw.size());
-        std::memcpy(bytes.data(), raw.data(), raw.size());
-        std::ifstream primary(root / "data/android/19/fonts/Roboto-Regular.ttf", std::ios::binary);
-        REQUIRE(primary.good());
-        const std::vector<char> primary_raw{std::istreambuf_iterator<char>{primary}, std::istreambuf_iterator<char>{}};
-        std::vector<std::byte> roboto(primary_raw.size());
-        std::memcpy(roboto.data(), primary_raw.data(), primary_raw.size());
-        f.context->ui_tree.SetFallbackFont(std::make_shared<ui::UiFallbackFont>(roboto, bytes));
         const auto type = f.linker.ResolveDescriptor("Landroid/widget/TextView;");
         f.Checked(f.vm.EnsureClassInitialized(type));
-        REQUIRE(f.context->paint_measure_states.size() == 1);
-        const auto& warmup = f.context->paint_measure_states.begin()->second;
-        CHECK(warmup.flags == 0x501);
-        CHECK(warmup.text_size == 12.0F);
-        CHECK(warmup.measurements == 1);
-        CHECK(warmup.last_text == u"H");
-        CHECK(warmup.last_width > 0);
-        CHECK(warmup.last_width == ui::MeasureFixedText(u"H", 12, 0, f.context->ui_tree.FallbackFont().get()).width);
-        f.Checked(f.vm.EnsureClassInitialized(type));
-        CHECK(warmup.measurements == 1);
         const auto entered = f.vm.Trace("", 10000);
         for (const auto signature : {"Landroid/widget/TextView;-><clinit>()V", "Landroid/graphics/RectF;-><init>()V",
                                      "Landroid/text/SpannedString;-><init>(Ljava/lang/CharSequence;)V",
@@ -59,7 +60,7 @@ TEST_CASE("DVM-293 ROM TextView clinit measures H through instance Paint on both
         const auto measure = [&](VmObjectRef paint, const char* desc, std::vector<VmValue> args) {
             return f.On(paint, "measureText", desc, std::move(args)).AsFloat();
         };
-        const auto expected = ui::MeasureFixedText(u"HI", 24, 0, f.context->ui_tree.FallbackFont().get()).width;
+        const auto expected = SkiaWidth(TestFont("Roboto-Regular.ttf", 24), u"HI");
         CHECK(measure(a, "(Ljava/lang/String;II)F", {VmValue::Ref(text), VmValue::Int(1), VmValue::Int(3)}) ==
               expected);
         CHECK(measure(a, "(Ljava/lang/CharSequence;II)F", {VmValue::Ref(text), VmValue::Int(1), VmValue::Int(3)}) ==
@@ -73,7 +74,7 @@ TEST_CASE("DVM-293 ROM TextView clinit measures H through instance Paint on both
         CHECK(measure(a, "(Ljava/lang/CharSequence;II)F", {VmValue::Ref(builder), VmValue::Int(1), VmValue::Int(3)}) ==
               expected);
         CHECK(measure(b, "(Ljava/lang/String;)F", {VmValue::Ref(f.model.NewString(u"H"))}) ==
-              ui::MeasureFixedText(u"H", 12).width);
+              SkiaWidth(TestFont("Roboto-Regular.ttf", 12), u"H"));
         CHECK(measure(a, "(Ljava/lang/String;)F", {VmValue::Ref(f.model.NewString(u""))}) == 0);
         const auto face = f.Static("Landroid/graphics/Typeface;", "defaultFromStyle", "(I)Landroid/graphics/Typeface;",
                                    {VmValue::Int(3)})
@@ -83,18 +84,17 @@ TEST_CASE("DVM-293 ROM TextView clinit measures H through instance Paint on both
         CHECK(f.On(a, "getTypeface", "()Landroid/graphics/Typeface;").ref == face);
         CHECK_FALSE(f.On(b, "getTypeface", "()Landroid/graphics/Typeface;").ref.IsValid());
         const auto cjk = f.model.NewString(u"王");
-        CHECK(measure(a, "(Ljava/lang/String;)F", {VmValue::Ref(cjk)}) ==
-              ui::MeasureFixedText(u"王", 24, 3, f.context->ui_tree.FallbackFont().get()).width);
+        auto fallback = TestFont("DroidSansFallback.ttf", 24);
+        fallback.setEmbolden(true);
+        fallback.setSkewX(-0.25F);
+        CHECK(measure(a, "(Ljava/lang/String;)F", {VmValue::Ref(cjk)}) == SkiaWidth(fallback, u"王"));
         const auto copyright = f.model.NewString(u"©");
         CHECK(measure(a, "(Ljava/lang/String;)F", {VmValue::Ref(copyright)}) ==
-              ui::MeasureFixedText(u"©", 24, 3, f.context->ui_tree.FallbackFont().get()).width);
-        const auto retired = f.New("Landroid/graphics/Paint;");
+              SkiaWidth(TestFont("Roboto-BoldItalic.ttf", 24), u"©"));
+        f.New("Landroid/graphics/Paint;");
         static_cast<void>(f.vm.CollectGarbage("paint-measure-owners"));
         f.vm.RunFinalization();
         static_cast<void>(f.vm.CollectGarbage("paint-measure-finalized"));
-        CHECK(f.context->paint_measure_states.contains(a.Value()));
-        CHECK(f.context->paint_measure_states.contains(b.Value()));
-        CHECK_FALSE(f.context->paint_measure_states.contains(retired.Value()));
         CHECK(f.On(a, "getTypeface", "()Landroid/graphics/Typeface;").ref == face);
         CHECK(f.ledger.Unimplemented().empty());
         // TextView construction and the full TextPaint/Layout stack remain closed.
@@ -106,7 +106,7 @@ TEST_CASE("DVM-293 ROM TextView clinit measures H through instance Paint on both
     }
 }
 
-TEST_CASE("DVM-293 unsupported Paint features and invalid ranges fail explicitly") {
+TEST_CASE("DVM-293 Paint measures unshaped text and rejects invalid ranges") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         const auto paint = f.New("Landroid/graphics/Paint;");
@@ -117,24 +117,19 @@ TEST_CASE("DVM-293 unsupported Paint features and invalid ranges fail explicitly
         for (const auto entry :
              {std::pair{"setPathEffect", "(Landroid/graphics/PathEffect;)Landroid/graphics/PathEffect;"},
               std::pair{"setMaskFilter", "(Landroid/graphics/MaskFilter;)Landroid/graphics/MaskFilter;"}}) {
-            CHECK(f.OnOutcome(paint, entry.first, entry.second, {VmValue::Ref(VmObjectRef{})}).exception.IsValid());
-            CHECK_FALSE(f.ledger.Unimplemented().empty());
+            CHECK_FALSE(f.On(paint, entry.first, entry.second, {VmValue::Ref(VmObjectRef{})}).ref.IsValid());
+            CHECK(f.ledger.Unimplemented().empty());
         }
         for (const auto text : {u"\u0627", u"\U0001f600", u"\u0378", u"\n"})
-            CHECK(f.OnOutcome(paint, "measureText", "(Ljava/lang/String;)F", {VmValue::Ref(f.model.NewString(text))})
-                      .exception.IsValid());
-        // Unusable display values keep the last good state; unsupported flag bits are dropped.
+            CHECK(f.On(paint, "measureText", "(Ljava/lang/String;)F", {VmValue::Ref(f.model.NewString(text))})
+                      .AsFloat() >= 0);
         f.On(paint, "setTextSize", "(F)V", {VmValue::Float(0)});
         f.On(paint, "setFlags", "(I)V", {VmValue::Int(8)});
-        CHECK(f.On(paint, "getTextSize", "()F").AsFloat() == 12);
-        CHECK(f.On(paint, "getFlags", "()I").AsInt() == 0);
+        CHECK(f.On(paint, "getTextSize", "()F").AsFloat() == 0);
+        CHECK(f.On(paint, "getFlags", "()I").AsInt() == 8);
         CHECK(f.OnOutcome(paint, "measureText", "(Ljava/lang/String;II)F",
                           {VmValue::Ref(f.model.NewString(u"H")), VmValue::Int(-1), VmValue::Int(1)})
                   .exception.IsValid());
-        CHECK(f.OnOutcome(paint, "measureText", "(Ljava/lang/String;)F",
-                          {VmValue::Ref(f.model.NewString(std::u16string(ui::kMaxFixedTextUnits + 1, u'H')))})
-                  .exception.IsValid());
-        CHECK(f.context->paint_measure_states.at(paint.Value()).measurements == 0);
     }
 }
 
@@ -163,7 +158,7 @@ TEST_CASE("DVM-360 ROM Paint filter-bitmap and dither flags remain independent o
             const auto outcome = f.OnOutcome(raw, setter, "(Z)V", {VmValue::Int(1)});
             REQUIRE(outcome.exception.IsValid());
             CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
-            CHECK(outcome.exception_message == "Paint measurement requires construction");
+            CHECK(outcome.exception_message == "invalid or retired graphics native handle");
         }
         // Exercise all transitions with AA interleaved; each setter preserves every other bit.
         int current = 0x500;
@@ -179,7 +174,7 @@ TEST_CASE("DVM-360 ROM Paint filter-bitmap and dither flags remain independent o
         check(0x507);
         CHECK(f.ledger.Unimplemented().empty());
         f.On(paint, "setFlags", "(I)V", {VmValue::Int(-1)});
-        check(0x507);
+        check(0xffff);
         CHECK(f.ledger.Unimplemented().empty());
         for (const auto name : {"isFilterBitmap", "isDither"}) {
             const auto index = f.linker.FindVtableIndex(type, name, "()Z");
@@ -335,7 +330,7 @@ TEST_CASE("DVM-356 RectF ROM value semantics and explicit failure boundaries on 
     }
 }
 
-TEST_CASE("DVM-362 Paint and TextPaint bounds share fixed glyph widths on both backends") {
+TEST_CASE("DVM-362 Paint and TextPaint bounds share Skia glyph metrics on both backends") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         for (const auto type : {"Landroid/graphics/Paint;", "Landroid/text/TextPaint;"}) {
@@ -356,31 +351,32 @@ TEST_CASE("DVM-362 Paint and TextPaint bounds share fixed glyph widths on both b
                     REQUIRE(field);
                     return std::bit_cast<float>(f.model.InstanceSlots(fm)[f.linker.Field(*field).slot].bits);
                 };
-                const auto line = ui::MeasureFixedText(u"M", size, 0);
-                CHECK(metric("ascent") < 0);
-                CHECK(metric("descent") >= 0);
-                CHECK(metric("descent") - metric("ascent") == line.height);
-                CHECK(-metric("ascent") == 7 * line.scale);
-                CHECK(metric("top") == metric("ascent"));
-                CHECK(metric("bottom") == metric("descent"));
-                CHECK(metric("leading") == 0);
-                CHECK(f.On(paint, "ascent", "()F").AsFloat() == metric("ascent"));
-                CHECK(f.On(paint, "descent", "()F").AsFloat() == metric("descent"));
-                CHECK(f.On(paint, "getFontMetrics", "(Landroid/graphics/Paint$FontMetrics;)F", {VmValue::Ref(fm)})
-                          .AsFloat() == line.height);
-                CHECK(f.On(paint, "getFontMetrics", "(Landroid/graphics/Paint$FontMetrics;)F",
-                           {VmValue::Ref(VmObjectRef{})})
-                          .AsFloat() == line.height);
-                const auto width = f.On(paint, "measureText", "(Ljava/lang/String;II)F",
-                                        {VmValue::Ref(string), VmValue::Int(1), VmValue::Int(3)})
-                                       .AsFloat();
+                const auto font = TestFont("Roboto-Regular.ttf", size);
+                SkFontMetrics expected;
+                const auto spacing = font.getMetrics(&expected);
+                CHECK(metric("ascent") == expected.fAscent);
+                CHECK(metric("descent") == expected.fDescent);
+                CHECK(metric("top") == expected.fTop);
+                CHECK(metric("bottom") == expected.fBottom);
+                CHECK(metric("leading") == expected.fLeading);
+                CHECK(f.On(paint, "ascent", "()F").AsFloat() == expected.fAscent);
+                CHECK(f.On(paint, "descent", "()F").AsFloat() == expected.fDescent);
+                for (const auto ref : {fm, VmObjectRef{}})
+                    CHECK(f.On(paint, "getFontMetrics", "(Landroid/graphics/Paint$FontMetrics;)F", {VmValue::Ref(ref)})
+                              .AsFloat() == spacing);
+                CHECK(f.On(paint, "measureText", "(Ljava/lang/String;II)F",
+                           {VmValue::Ref(string), VmValue::Int(1), VmValue::Int(3)})
+                          .AsFloat() == SkiaWidth(font, u"HI"));
+                SkRect bounds;
+                font.measureText(u"HI", 2 * sizeof(char16_t), SkTextEncoding::kUTF16, &bounds);
+                const auto rounded = bounds.roundOut();
                 for (bool array : {false, true}) {
                     f.On(paint, "getTextBounds",
                          array ? "([CIILandroid/graphics/Rect;)V" : "(Ljava/lang/String;IILandroid/graphics/Rect;)V",
                          {VmValue::Ref(array ? chars : string), VmValue::Int(1), VmValue::Int(array ? 2 : 3),
                           VmValue::Ref(rect)});
-                    CHECK(f.On(rect, "width", "()I").AsInt() == width);
-                    CHECK(f.On(rect, "height", "()I").AsInt() == ui::MeasureFixedText(u"HI", size, 0).height);
+                    CHECK(f.On(rect, "width", "()I").AsInt() == rounded.width());
+                    CHECK(f.On(rect, "height", "()I").AsInt() == rounded.height());
                 }
             }
             CHECK(f.OnOutcome(paint, "getTextBounds", "(Ljava/lang/String;IILandroid/graphics/Rect;)V",

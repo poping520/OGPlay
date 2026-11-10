@@ -92,6 +92,20 @@ void RegisterSkiaStateTables(dx::Interpreter& vm, const Context& context) {
                  }
                  if (name == "Landroid/graphics/Bitmap$BitmapFinalizer;")
                      return retire(objects.bitmaps, "mNativeBitmap");
+                 if (name == "Landroid/graphics/Canvas$CanvasFinalizer;")
+                     return retire(objects.canvases, "mNativeCanvas");
+                 if (name == "Landroid/graphics/DrawFilter;") return retire(objects.draw_filters, "mNativeInt");
+                 if (name == "Landroid/graphics/Typeface;")
+                     return RetireAndroidTypeface(*context, skia::IntField(vm, owner, "native_instance"));
+                 if (name == "Landroid/graphics/Shader;") return retire(objects.shaders, "native_instance");
+                 if (name == "Landroid/graphics/ColorFilter;") return retire(objects.color_filters, "native_instance");
+                 if (name == "Landroid/graphics/MaskFilter;") return retire(objects.mask_filters, "native_instance");
+                 if (name == "Landroid/graphics/PathEffect;") return retire(objects.path_effects, "native_instance");
+                 if (name == "Landroid/graphics/Xfermode;") return retire(objects.xfermodes, "native_instance");
+                 if (name == "Landroid/graphics/NinePatch;")
+                     return RetireAndroidNinePatch(vm, *context, skia::IntField(vm, owner, "mNativeChunk"), owner);
+                 if (name == "Landroid/graphics/Camera;") return retire(objects.cameras, "native_instance");
+                 if (name == "Landroid/graphics/Paint;") return retire(objects.paints, "mNativePaint");
                  if (name == "Landroid/graphics/Matrix;") return retire(objects.matrices, "native_instance");
                  if (name == "Landroid/graphics/Path;") return retire(objects.paths, "mNativePath");
                  if (name == "Landroid/graphics/PathMeasure;") return retire(objects.measures, "native_instance");
@@ -102,6 +116,13 @@ void RegisterSkiaStateTables(dx::Interpreter& vm, const Context& context) {
              }
          },
          {}});
+}
+
+std::optional<std::array<float, 9>> AndroidMatrixSnapshot(DexVmAndroidContext& context, int token) {
+    if (!token) return std::nullopt;
+    std::array<float, 9> values;
+    skia::Require(context.skia_objects->matrices, token).get9(values.data());
+    return values;
 }
 
 bool AndroidMatrixIsIdentity(dx::Interpreter& vm, const DexVmAndroidContext& context, dx::VmObjectRef matrix) {

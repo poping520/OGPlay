@@ -155,11 +155,6 @@ AssembleAndroidContext(std::vector<BootClasspathJar> boot_classpath, AndroidPlat
 // classes.dex, classes2.dex, ... of every boot jar, in classpath order.
 [[nodiscard]] std::vector<std::vector<std::uint8_t>> BootClasspathDexFiles(std::span<const BootClasspathJar> jars);
 
-// Unbound boot natives: Paint display setters are ignored with a UI-degraded
-// warning until the graphics natives exist; everything else throws.
-[[nodiscard]] dexvm::IntrinsicHandler AndroidUnboundNative(std::string_view owner, std::string_view name,
-                                                           std::string_view descriptor);
-
 // First boot jar, in classpath order, that contains the entry.
 [[nodiscard]] const BootClasspathJar* FindBootClasspathEntry(const struct DexVmAndroidContext& context,
                                                              std::string_view entry);
@@ -887,19 +882,13 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t, BitmapState> bitmaps;
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef> bitmap_lock_roots;
 
-    // SurfaceHolder software rendering owns a Canvas only while locked. The
-    // Canvas buffer uses straight (not premultiplied) Android ARGB words and is converted to boundary RGBA
-    // exactly once by unlockCanvasAndPost.
-    struct CanvasState final {
-        std::uint32_t holder{};
-        std::uint32_t width{};
-        std::uint32_t height{};
-        std::vector<std::uint32_t> argb;
-        bool locked{};
+    // The last canvas keeps the holder on the software presentation path.
+    struct HolderCanvas {
+        dexvm::VmObjectRef object{};
+        std::int32_t locked_token{};
     };
 
-    std::unordered_map<std::uint32_t, CanvasState> canvases;
-    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> holder_canvases;
+    std::unordered_map<std::uint32_t, HolderCanvas> holder_canvases;
 
     struct MediaPlayerState final {
         enum class Phase { idle, initialized, preparing, prepared, started, paused, stopped, completed, error };
@@ -1119,19 +1108,9 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint64_t, dexvm::VmObjectRef> ui_view_images;
     std::unordered_map<std::uint64_t, UiDrawableState> ui_drawables;
 
+    std::function<std::vector<std::byte>(std::string_view)> system_font_source;
     const std::shared_ptr<raster::GraphicsObjects> skia_objects = raster::NewGraphicsObjects();
 
-    struct PaintMeasureState final {
-        std::int32_t flags{0x500};  // API19 DEV_KERN_TEXT | EMBEDDED_BITMAP_TEXT.
-        bool text_view_owned{};
-        std::int32_t alpha{255};
-        float text_size{12.0F};  // API19 SkPaint default.
-        std::uint64_t measurements{};
-        std::u16string last_text;
-        float last_width{};
-    };
-
-    std::unordered_map<std::uint64_t, PaintMeasureState> paint_measure_states;
     std::shared_ptr<GraphicsStateStore> graphics_state_store;
     // Real VideoView playback (ADR-0021). The factory is injected by the
     // frontend. Preparation and errors are deferred to the guest main pump;

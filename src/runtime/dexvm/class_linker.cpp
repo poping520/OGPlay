@@ -338,10 +338,6 @@ DexUnitId DexClassLinker::RegisterBootDex(std::vector<std::uint8_t> dex_bytes) {
     return RegisterDexUnit(std::move(dex_bytes), true);
 }
 
-void DexClassLinker::SetUnboundNativePolicy(UnboundNativePolicy policy) {
-    impl_->unbound_native_policy = std::move(policy);
-}
-
 DexUnitId DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
     return RegisterDexUnit(std::move(dex_bytes), false);
 }
@@ -620,9 +616,6 @@ void DexClassLinker::Impl::LoadDexMembers(const DexClassId id, const bool merge_
                     // Unbound framework native: calling it records the gap and
                     // throws UnsatisfiedLinkError, as a missing JNI symbol would.
                     method.kind = MethodKind::intrinsic;
-                    if (unbound_native_policy)
-                        method.implementation =
-                            unbound_native_policy(stored.descriptor, method.name, method.descriptor);
                 }
                 const auto vm_method_id = AddMethod(std::move(method));
                 own_methods.push_back(vm_method_id);

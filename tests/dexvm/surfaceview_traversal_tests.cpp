@@ -652,11 +652,14 @@ TEST_CASE("DVM-339 software Canvas uses buffer dimensions and stretches across t
         f.context->surface_width = 800;
         f.context->surface_height = 480;
         Size(f, holder, 2, 3);
+        f.On(holder, "setFormat", "(I)V", {VmValue::Int(1)});
         f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
         REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
         const auto dirty = f.New("Landroid/graphics/Rect;");
+        const auto surface = f.On(holder, "getSurface", "()Landroid/view/Surface;").ref;
         const auto canvas =
-            f.On(holder, "lockCanvas", "(Landroid/graphics/Rect;)Landroid/graphics/Canvas;", {VmValue::Ref(dirty)}).ref;
+            f.On(surface, "lockCanvas", "(Landroid/graphics/Rect;)Landroid/graphics/Canvas;", {VmValue::Ref(dirty)})
+                .ref;
         const auto canvas_roots = f.vm.ProtectReferences(std::array{canvas, dirty});
         CHECK(Get(f, canvas, "getWidth") == 2);
         CHECK(Get(f, canvas, "getHeight") == 3);
@@ -681,7 +684,9 @@ TEST_CASE("DVM-339 software Canvas uses buffer dimensions and stretches across t
         const auto bitmap_root = f.vm.ProtectReferences(std::array{bitmap});
         f.On(canvas, "drawBitmap", "(Landroid/graphics/Bitmap;FFLandroid/graphics/Paint;)V",
              {VmValue::Ref(bitmap), VmValue::Float(0), VmValue::Float(0), VmValue::Ref(VmObjectRef{})});
-        f.On(holder, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(canvas)});
+        CHECK(f.OnOutcome(holder, "lockCanvas", "()Landroid/graphics/Canvas;").exception.IsValid());
+        f.On(surface, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(canvas)});
+        CHECK(f.OnOutcome(canvas, "drawColor", "(I)V", {VmValue::Int(0)}).exception.IsValid());
         RefreshAndroidSurfaceFrames(*f.context);
         static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                                    AndroidUiTraversalPhase::ResolveOnly));
@@ -793,12 +798,22 @@ TEST_CASE("DVM-347 holder formats preserve a transparent top Canvas and reject u
                 REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
                 REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::changed));
                 CHECK(f.context->surface_active_formats.at(holder.Value()) == format);
+                if (format == 3 || format == 6) {
+                    const auto failed = f.OnOutcome(holder, "lockCanvas", "()Landroid/graphics/Canvas;");
+                    REQUIRE(failed.exception.IsValid());
+                    CHECK(f.linker.Class(failed.exception_class).descriptor ==
+                          "Ljava/lang/UnsupportedOperationException;");
+                    REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::destroyed));
+                    continue;
+                }
                 const auto canvas = f.On(holder, "lockCanvas", "()Landroid/graphics/Canvas;").ref;
                 const bool alpha = AndroidPixelFormatHasAlpha(format);
-                CHECK(f.context->canvases.at(canvas.Value()).argb[0] == (alpha ? 0U : 0xff000000U));
+                CHECK(f.On(canvas, "isOpaque", "()Z").AsInt() == !alpha);
                 f.On(canvas, "drawColor", "(ILandroid/graphics/PorterDuff$Mode;)V",
                      {VmValue::Int(0), VmValue::Ref(clear)});
                 f.On(holder, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(canvas)});
+                CHECK(f.context->surface_pixels.at(holder.Value())->rgba8 ==
+                      std::vector<std::uint8_t>{0, 0, 0, static_cast<std::uint8_t>(alpha ? 0 : 255)});
                 RefreshAndroidSurfaceFrames(*f.context);
                 static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                                            AndroidUiTraversalPhase::ResolveOnly));
@@ -850,7 +865,14 @@ TEST_CASE("DVM-347 holder formats preserve a transparent top Canvas and reject u
                 f.On(holder, "setFormat", "(I)V", {VmValue::Int(format)});
                 REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::destroyed));
             }
-            CHECK(f.ledger.Unimplemented().empty());
+            const auto gaps = f.ledger.Unimplemented();
+            if (format == 3 || format == 6) {
+                REQUIRE(gaps.size() == 1);
+                CHECK(gaps.front().id == "dexvm.surface_canvas_format");
+                CHECK(gaps.front().count == 2);
+            } else {
+                CHECK(gaps.empty());
+            }
             const auto unsupported = f.OnOutcome(holder, "setFormat", "(I)V", {VmValue::Int(99)});
             REQUIRE(unsupported.exception.IsValid());
             CHECK(f.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
@@ -858,6 +880,34 @@ TEST_CASE("DVM-347 holder formats preserve a transparent top Canvas and reject u
                                       [](const auto& gap) { return gap.id == "dexvm.surface_video_layers"; }));
             CHECK(f.context->surface_requested_formats.at(holder.Value()) == format);
         }
+    }
+}
+
+TEST_CASE("Surface.lockCanvas rasterizes to packed holder formats with the real clip") {
+    for (const auto& [format, color] :
+         {std::pair{4, std::array<std::uint8_t, 4>{24, 125, 57, 255}}, {7, {17, 119, 51, 255}}}) {
+        CAPTURE(format);
+        ContainerVm f(InterpreterBackend::switch_dispatch);
+        const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view, holder});
+        f.context->surface_width = 800;
+        f.context->surface_height = 480;
+        f.On(holder, "setFormat", "(I)V", {VmValue::Int(format)});
+        Size(f, holder, 2, 1);
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+        const auto surface = f.On(holder, "getSurface", "()Landroid/view/Surface;").ref;
+        const auto canvas = f.On(surface, "lockCanvas", "(Landroid/graphics/Rect;)Landroid/graphics/Canvas;",
+                                 {VmValue::Ref(VmObjectRef{})})
+                                .ref;
+        REQUIRE(
+            f.On(canvas, "clipRect", "(IIII)Z", {VmValue::Int(1), VmValue::Int(0), VmValue::Int(2), VmValue::Int(1)})
+                .AsInt());
+        f.On(canvas, "drawColor", "(I)V", {VmValue::Int(std::bit_cast<int>(0xff197f39U))});
+        f.On(surface, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(canvas)});
+        const auto& pixels = f.context->surface_pixels.at(holder.Value())->rgba8;
+        CHECK(pixels == std::vector<std::uint8_t>{0, 0, 0, static_cast<std::uint8_t>(format == 4 ? 255 : 0), color[0],
+                                                  color[1], color[2], color[3]});
     }
 }
 

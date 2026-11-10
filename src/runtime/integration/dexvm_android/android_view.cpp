@@ -1305,102 +1305,6 @@ void PublishSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context
 
 namespace {
 
-dx::IntrinsicHandler LockCanvasHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        auto& canvas = context->holder_canvases[call.receiver.Value()];
-        if (!canvas.IsValid()) {
-            canvas = call.vm.NewIntrinsicInstance("Landroid/graphics/Canvas;");
-        }
-        auto& state = context->canvases[canvas.Value()];
-        if (state.locked) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceHolder canvas is already locked"};
-        }
-        state.holder = call.receiver.Value();
-        if (!context->active_surface_holders.contains(call.receiver.Value()))
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceHolder is not active"};
-        const auto size = ManagedSurfaceBufferSize(call.vm, *context, call.receiver);
-        state.width = static_cast<std::uint32_t>(size.width);
-        state.height = static_cast<std::uint32_t>(size.height);
-        const auto format = context->surface_active_formats.find(call.receiver.Value());
-        const bool alpha =
-            format != context->surface_active_formats.end() && AndroidPixelFormatHasAlpha(format->second);
-        // Surface contents in the complete dirty region are undefined; choose deterministic initial pixels.
-        state.argb.assign(static_cast<std::size_t>(state.width) * state.height, alpha ? 0U : 0xff000000U);
-        if (!call.arguments.empty() && call.arguments[0].ref.IsValid()) {
-            // Every lock currently redraws the complete buffer; advertise the expanded dirty region.
-            static_cast<void>(CallAndroidMethod(call.vm, call.arguments[0].ref, "set", "(IIII)V",
-                                                {dx::VmValue::Int(0), dx::VmValue::Int(0), dx::VmValue::Int(size.width),
-                                                 dx::VmValue::Int(size.height)}));
-        }
-        state.locked = true;
-        return dx::VmValue::Ref(canvas);
-    };
-}
-
-// Holds a canvas posted by a free-running thread to the host frame-rate cap, outside the VM lock.
-void PaceCanvasPost(dx::IntrinsicContext& call, DexVmAndroidContext& context, const std::uint32_t holder) {
-    if (context.frame_period_ns == 0 || std::this_thread::get_id() == context.clock_driver) return;
-    auto& pacer = context.canvas_pacers.try_emplace(holder, context.frame_period_ns).first->second;
-    const auto wait = pacer.Reserve(hal::Clock::SteadyTimestampNs());
-    if (wait == 0) return;
-    auto& execution_lock = call.vm.ExecutionLock();
-    const auto depth = execution_lock.ReleaseForBlocking();
-    try {
-        hal::SleepPreciseNs(wait);
-    } catch (...) {
-        execution_lock.ReacquireAfterBlocking(depth);
-        throw;
-    }
-    execution_lock.ReacquireAfterBlocking(depth);
-}
-
-dx::IntrinsicHandler UnlockCanvasAndPostHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        const auto canvas = call.arguments[0].ref;
-        const auto found = context->canvases.find(canvas.Value());
-        if (!canvas.IsValid() || found == context->canvases.end() || !found->second.locked ||
-            found->second.holder != call.receiver.Value()) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Canvas is not locked by this SurfaceHolder"};
-        }
-        if (context->session == nullptr) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceHolder has no guest session"};
-        }
-        if (!context->active_surface_holders.contains(call.receiver.Value()))
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceHolder is no longer active"};
-        auto& state = found->second;
-        std::vector<std::uint8_t> rgba8;
-        rgba8.reserve(state.argb.size() * 4U);
-        for (const auto pixel : state.argb) {
-            rgba8.push_back(static_cast<std::uint8_t>(pixel >> 16U));
-            rgba8.push_back(static_cast<std::uint8_t>(pixel >> 8U));
-            rgba8.push_back(static_cast<std::uint8_t>(pixel));
-            rgba8.push_back(static_cast<std::uint8_t>(pixel >> 24U));
-        }
-        state.locked = false;
-        {
-            std::scoped_lock lock(context->surface_pixels_mutex);
-            context->surface_buffer_queued[call.receiver.Value()] = true;
-        }
-        if (call.receiver == context->window_surface_holder) {
-            const auto format = context->surface_active_formats.find(call.receiver.Value());
-            if (format == context->surface_active_formats.end() || !AndroidPixelFormatHasAlpha(format->second))
-                for (std::size_t i = 3; i < rgba8.size(); i += 4)
-                    rgba8[i] = 255;
-            context->session->PublishSoftwareFrame(std::move(rgba8));
-            PaceCanvasPost(call, *context, call.receiver.Value());
-            return dx::VmValue::Void();
-        }
-        {
-            std::scoped_lock lock(context->surface_pixels_mutex);
-            context->surface_pixels[call.receiver.Value()] = std::make_shared<const video::VideoFrame>(
-                video::VideoFrame{0, state.width, state.height, std::move(rgba8)});
-        }
-        context->session->PublishBlankFrame(0U);
-        PaceCanvasPost(call, *context, call.receiver.Value());
-        return dx::VmValue::Void();
-    };
-}
-
 dx::IntrinsicHandler HolderGetSurface(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         auto& surface = context->holder_surfaces[call.receiver.Value()];
@@ -1426,9 +1330,19 @@ void AddCanvasMethods(dx::IntrinsicClassBuilder& builder, const Context& context
             RecordUiDegraded(call.vm, "SurfaceHolder.keepScreenOn");
         return dx::VmValue::Void();
     });
-    builder.FinalMethod("lockCanvas", "()Landroid/graphics/Canvas;", LockCanvasHandler(context));
-    builder.FinalMethod("lockCanvas", "(Landroid/graphics/Rect;)Landroid/graphics/Canvas;", LockCanvasHandler(context));
-    builder.FinalMethod("unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V", UnlockCanvasAndPostHandler(context));
+    const auto lock = [context](dx::IntrinsicContext& c) {
+        const auto surface = HolderGetSurface(context)(c).ref;
+        const auto dirty = c.arguments.empty() ? dx::VmValue::Ref(dx::VmObjectRef{}) : c.arguments[0];
+        return CallAndroidMethod(c.vm, surface, "lockCanvas", "(Landroid/graphics/Rect;)Landroid/graphics/Canvas;",
+                                 {dirty});
+    };
+    builder.FinalMethod("lockCanvas", "()Landroid/graphics/Canvas;", lock);
+    builder.FinalMethod("lockCanvas", "(Landroid/graphics/Rect;)Landroid/graphics/Canvas;", lock);
+    builder.FinalMethod("unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V", [context](dx::IntrinsicContext& c) {
+        const auto surface = HolderGetSurface(context)(c).ref;
+        return CallAndroidMethod(c.vm, surface, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V",
+                                 {c.arguments[0]});
+    });
 }
 
 }  // namespace

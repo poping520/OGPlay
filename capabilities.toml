@@ -56,7 +56,7 @@ note = "DVM-331：固定 HostLayout/ExternalProjection 分区；guest 唯一 Jav
 [runtime.ui_dexvm_binding]
 status = "partial"
 test = "tests/dexvm/android_view_state_tests.cpp#DVM-372; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/egl_facade_tests.cpp#DVM-233"
-note = "DVM-372：无返回值的显示设置忽略并记警告（Paint setter native 暂降级），getter 不跟随。DVM-331：Java 唯一拥有 guest hierarchy/id/visibility/listener/focus/geometry，integration 通过受审 token 读取并发布完整投影；弱节点绑定不成为 Java GC roots；窗口焦点经ROM View/ViewGroup dispatch递归，不按投影过滤或缓存逐View焦点。无 guest 宿主遍历回落；动画、系统 accessibility 与未审成员仍明确失败。"
+note = "DVM-372：无返回值的显示设置忽略并记警告，getter 不跟随。DVM-331：Java 唯一拥有 guest hierarchy/id/visibility/listener/focus/geometry，integration 通过受审 token 读取并发布完整投影；弱节点绑定不成为 Java GC roots；窗口焦点经ROM View/ViewGroup dispatch递归，不按投影过滤或缓存逐View焦点。无 guest 宿主遍历回落；动画、系统 accessibility 与未审成员仍明确失败。"
 
 [runtime.ui_inflater]
 status = "partial"
@@ -111,7 +111,7 @@ note = "DVM-331：纯宿主 HostLayout parent/sibling 约束、环检测与 grav
 [runtime.ui_fallback_font]
 status = "partial"
 test = "tests/runtime/ui_renderer_tests.cpp#DVM-235; tests/dexvm/widget_window_dialog_tests.cpp#DVM-344; tests/dexvm/edittext_traversal_tests.cpp#DVM-344; tools.android_payload_current"
-note = "DVM-344/ADR-0169：固定 SHA-256 的 API19 Roboto-Regular → DroidSansFallback 不可变链，所有会话宿主树同源注入；首个覆盖字体有界栅格化独立 BMP，ASCII 保留原 5x7 像素/度量，粗斜体合成。Paint/TextView/输入统一覆盖判定，缺字及 shaping/bidi/补充平面失败携带码点。整链缓存128项，不读宿主/应用字体；完整排版、跨平台及 title gate 未验收。"
+note = "DVM-344/ADR-0169：固定 SHA-256 的 API19 Roboto-Regular → DroidSansFallback 不可变链，所有会话宿主树同源注入；首个覆盖字体有界栅格化独立 BMP，ASCII 保留原 5x7 像素/度量，粗斜体合成。TextView/输入统一覆盖判定，缺字及 shaping/bidi/补充平面失败携带码点。整链缓存128项，不读宿主/应用字体；完整排版、跨平台及 title gate 未验收。"
 
 [runtime.ui_include_resources_images]
 status = "complete"
@@ -126,7 +126,7 @@ note = "DVM-370/346：独立HostLayout modal经共同快照原子发布，render
 [dexvm.drawable_resource]
 status = "partial"
 test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/theme_resources_tests.cpp#API19 app drawable; tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/rom_skin_tests.cpp#DVM-352; tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "DVM-363/367：纯色、APK PNG/JPEG、同 ROM edit_text/btn_default（含 Holo dark）/dropdown、scrollbar 和 ProgressBar medium/horizontal 静态闭包受审加载。水平 layer-list/scale/八帧 XML 沿 ROM inflate，嵌套仅允许同步封存 parser。层 ID/level/尺寸和静态帧状态可查；运行时 selector 保持原状态匹配。未封存皮肤、应用 drawable XML、实际动画/过渡、ConstantState clone 与 guest draw 失败。"
+note = "ROM 软件 Drawable 绘制使用 Skia，资源支持纯色、APK PNG/JPEG 与编译 NinePatch。同 ROM edit_text/btn_default/dropdown、scrollbar、ProgressBar medium/horizontal 维持封存投影与原 XML 闭包，层 ID、level、静态帧和 selector 状态可查。未封存系统皮肤、应用 drawable XML、动画调度/过渡和投影 ConstantState clone 仍失败。"
 
 [runtime.ui_multi_title_convergence]
 status = "complete"
@@ -1311,7 +1311,7 @@ note = "DVM-256、ADR-0150：Boot/App 按实际 bootstrap 身份 parent-first；
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.android_payload_current; tools/bootdex/build_bootdex.py check"
-note = "启动类路径为 ogplay.jar + 原样 API19 core/conscrypt/ext/framework/framework2/android.policy（身份见 data/android/19/manifest.json），同名类先到先得；intrinsic 未标 MergesBootClass 时整类替换 ROM 类。未绑定 native 调用时抛 UnsatisfiedLinkError 并记账，Paint 显示 setter 暂按 UI 降级。依赖缺失的 ROM 类按需链接失败。multidex、动态 classpath、系统服务进程未纳入。"
+note = "启动类路径为 ogplay.jar + 原样 API19 core/conscrypt/ext/framework/framework2/android.policy（身份见 data/android/19/manifest.json），同名类先到先得；intrinsic 未标 MergesBootClass 时整类替换 ROM 类。未绑定 native 调用时抛 UnsatisfiedLinkError 并记账。依赖缺失的 ROM 类按需链接失败。multidex、动态 classpath、系统服务进程未纳入。"
 
 [dexvm.string_format_api19]
 status = "partial"
@@ -1511,7 +1511,7 @@ note = "DVM-210：JNI 附加原生线程首次 Java 调用/字段 clinit/monitor
 [dexvm.intrinsics_android_core]
 status = "partial"
 test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/loader/binary_xml_tests.cpp; tests/dexvm/videoview_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "Android 核心有界 facade：Context/files/cache/obb、Resources、当前 APK PackageManager、输入及软件 Surface。Canvas drawColor 两重载/drawARGB/drawRGB 支持 API19 SRC_OVER 与18种 PorterDuff 纯色填充，预乘计算后回写非预乘 ARGB；纯色填充不受 clip 约束，clipRect/save/restore 未实现。跨包、Binder/AMS、service 进程、ContentProvider 与 AttributeSet 长尾不支持。"
+note = "Android 核心有界 facade：Context/files/cache/obb、Resources、当前 APK PackageManager、输入及软件 Surface。跨包、Binder/AMS、service 进程、ContentProvider 与 AttributeSet 长尾不支持。"
 
 [dexvm.location_absent_facade]
 status = "complete"
@@ -1641,7 +1641,7 @@ note = "DVM-348：保留ROM测量/固定尺寸，View父调用维护visibility/l
 [dexvm.surface_video_layers]
 status = "partial"
 test = "tests/dexvm/videoview_traversal_tests.cpp; tests/dexvm/owner_traversal_tests.cpp#DVM-310; tests/dexvm/surfaceview_traversal_tests.cpp#DVM-347"
-note = "DVM-347：holder记录OPAQUE/TRANSLUCENT/TRANSPARENT及RGBA8888/RGBX8888/RGB888/RGB565/RGBA5551/RGBA4444，创建/changed应用并跨Surface重建保留请求；其他格式记账抛IAE。完整dirty初值透明0/不透明黑，快照按格式混合像素alpha，不透明强制255，层序不变。Canvas纯色填充不受clip约束。DVM-345真实queue事实不变；固定buffer按View缩放。保留RGBA8精度，不模拟packed存储/低位深量化。GPU/EGL与跨平台外验未完成。"
+note = "DVM-347：holder 请求格式随 Surface 重建保留；软件锁定按 RGBA8888、RGBX8888、RGB565 或 RGBA4444 栅格化，RGB888/RGBA5551 软件锁明确失败。完整 dirty 初值透明0或不透明黑。非预乘 RGBA8 快照按格式混合，保留队列事实、View 层序和固定 buffer 缩放。GPU/EGL 与跨平台外验未完成。"
 
 [dexvm.media_player_local_video]
 status = "partial"
@@ -1980,8 +1980,8 @@ note = "DVM-192：API19 PermissionInfo 与 CREATOR 归 BootDex；Manifest 顶层
 
 [dexvm.typeface]
 status = "partial"
-test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp"
-note = "DVM-120/342 Typeface 的常量/缓存/工厂/样式/相等查询来自 AOSP BootDex；内置字体四样式通过有限不可变 native 描述符对接真实 measure/raster。family 保留身份并使用内置回退字形；TextView 保存 Java 引用，文件/asset 字体明确记账失败。CM recreateDefaults/nativeFreeCaches 不提供，按缺失成员失败。不含 Skia、系统字体匹配或完整 Paint/Canvas 字体能力。"
+test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/graphics_text_tests.cpp"
+note = "ROM Typeface 使用注入的 API19 系统字体 family、别名及样式，按需共享不可变 SkTypeface。缺样式合成粗体和斜切。应用字体只经 APK asset 或 VFS，坏字体遵循 ROM RuntimeException。"
 
 [dexvm.text_appearance]
 status = "partial"
@@ -2072,6 +2072,16 @@ note = "Java/NativeActivity/NDK 共用 manager 与 APK 来源；read 保持有�
 status = "partial"
 test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/graphics_bitmap_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp#DVM-244; tests/runtime/jni_android_platform_tests.cpp#DVM-244"
 note = "API19 ROM Bitmap/BitmapFactory 绑定 Skia CPU。Bitmap 四格式共用稳定 Java byte[]，支持预乘转换、复用、采样、尺寸查询、密度缩放、PNG NinePatch 元数据及 PNG/JPEG 编码。单个编码输入≤16 MiB，宽高≤8192。WebP 编码与共享内存 Parcel blob 未支持。"
+
+[dexvm.canvas_draw]
+status = "partial"
+test = "tests/dexvm/graphics_canvas_tests.cpp; tests/dexvm/surfaceview_traversal_tests.cpp#DVM-339 software Canvas; tests/dexvm/graphics_text_tests.cpp"
+note = "ROM 软件 Canvas 直接绘制 Bitmap 或 managed Surface 像素，支持保存、图层、矩阵、设备空间裁切、图形、位图、顶点和文字。Paint 效果、阴影和 DrawFilter 使用 Skia。文字逐码点映射，整形与双向重排显示降级。"
+
+[dexvm.skia_effects]
+status = "partial"
+note = "API19 ROM 软件效果绑定 Skia，支持 Shader/TileMode/局部矩阵、颜色与 Blur 滤镜、PorterDuff、路径效果、阴影和 DrawFilter。BitmapShader 保留像素并跟随后续写入。NinePatch 支持 chunk、密度与透明区域，Camera 支持变换和位置投影。Rasterizer、Emboss/Table、Avoid/PixelXor 及硬件绘制排除；macOS arm64 实测，x64 仅链接。"
+test = "tests/dexvm/graphics_effects_tests.cpp; tests/dexvm/graphics_nine_patch_tests.cpp; tests/dexvm/graphics_camera_tests.cpp"
 
 [dexvm.skia_geometry]
 status = "partial"
@@ -2185,8 +2195,8 @@ note = "DVM-299..301：默认配对两Scroll完整ROM形状、真主题构造、
 
 [dexvm.paint_measure]
 status = "partial"
-test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/paint_measure_tests.cpp; tests/dexvm/rom_skin_tests.cpp#DVM-355; tests/dexvm/rom_skin_tests.cpp#DVM-366; tests/dexvm/textview_traversal_tests.cpp#DVM-366"
-note = "DVM-293/362/366/367：实例 Paint flags（0x507）、1..128px 字号、Typeface、65536 单位内固定字体度量/FontMetrics。支持复制既有状态、独立 alpha 0..255 和 null filter；shader/xfermode 保留 Java 引用。TextView 直接改字号/字体/flags/alpha 拒绝。ASCII 与字体链独立 BMP 可测量；shaping、滤镜运算、Canvas 绘制、Layout/Editor 未支持。"
+test = "tests/dexvm/progressbar_tests.cpp#DVM-367; tests/dexvm/paint_measure_tests.cpp; tests/dexvm/rom_skin_tests.cpp#DVM-355; tests/dexvm/rom_skin_tests.cpp#DVM-366; tests/dexvm/textview_traversal_tests.cpp#DVM-366; tests/dexvm/graphics_text_tests.cpp"
+note = "ROM Paint 的 native peer 持有 SkPaint、SkFont 和 Android 文字状态。度量、逐码点 advance、cursor、bounds、字形与轮廓同 Canvas 使用 API19 family → DroidSansFallback；整形和双向重排降级。UI 投影沿用独立固定字体。"
 
 [dexvm.text_constructor]
 status = "partial"
@@ -2216,7 +2226,7 @@ test = "tests/runtime/property_animation_tests.cpp#DVM-337; tools/bootdex/build_
 [dexvm.view_background_draw]
 status = "partial"
 test = "tests/dexvm/rom_skin_tests.cpp#DVM-352; tests/dexvm/rom_skin_tests.cpp#DVM-355"
-note = "View 背景支持受审 ROM skin 与 ColorDrawable（含子类）；颜色每次由 ROM getColor 读取，透明/null 清空。其他非空 Drawable 记录未实现与限流 warn，不绘制、不抛异常；DVM-355 可见 scrollbar 记账但不绘制；ROM cache 淡出经 Handler/统一时钟。Paint 追踪 shader/xfermode，含状态的 Canvas 绘制明确失败；不支持任意 Drawable.draw。"
+note = "View 背景投影支持受审 ROM skin 与 ColorDrawable（含子类）；颜色每次由 ROM getColor 读取，透明/null 清空。其他非空 Drawable 记账并警告。可见 scrollbar 记账，ROM cache 淡出经 Handler/统一时钟。"
 
 [dexvm.progressbar]
 status = "partial"

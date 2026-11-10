@@ -831,7 +831,6 @@ void ResetViewUiState(DexVmAndroidContext& context) {
     context.ui_view_backgrounds.clear();
     context.ui_view_images.clear();
     context.ui_drawables.clear();
-    context.paint_measure_states.clear();
     context.text_watchers.clear();
 }
 
@@ -906,6 +905,7 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
                 context.holder_surfaces.erase(key);
                 if (context.retire_native_surface) context.retire_native_surface(dexvm::VmObjectRef(key));
                 context.active_surface_holders.erase(key);
+                android_intrinsics::ResetManagedCanvas(context, key);
                 {
                     std::scoped_lock lock(context.surface_pixels_mutex);
                     context.surface_pixels.erase(key);
@@ -1175,7 +1175,7 @@ std::shared_ptr<const ui::UiBitmap> DecodeLeafBitmap(const DexVmAndroidContext& 
     if (entry.is_complex || entry.value_type != kTypeString || !entry.string_value)
         throw std::runtime_error("leaf bitmap requires a scalar APK file");
     const auto& path = *entry.string_value;
-    if (entry.type_name != "drawable" || !path.starts_with("res/") || path.ends_with(".9.png") ||
+    if (entry.type_name != "drawable" || !path.starts_with("res/") ||
         !(path.ends_with(".png") || path.ends_with(".jpg") || path.ends_with(".jpeg")))
         throw std::runtime_error("unsupported selector/ninepatch/XML/unknown bitmap file: " + path);
     const auto bytes = loader::ReadApkEntry(context.apk_bytes, context.archive, path);
@@ -1191,12 +1191,13 @@ std::shared_ptr<const ui::UiBitmap> DecodeLeafBitmap(const DexVmAndroidContext& 
             const auto length = (u8(at) << 24U) | (u8(at + 1) << 16U) | (u8(at + 2) << 8U) | u8(at + 3);
             if (length > bytes.size() - at - 12) throw std::runtime_error("invalid PNG chunk length");
             if (u8(at + 4) == 'n' && u8(at + 5) == 'p' && u8(at + 6) == 'T' && u8(at + 7) == 'c')
-                throw std::runtime_error("ninepatch PNG chunk is unsupported");
+                return android_intrinsics::DecodeNinePatchPixels(bytes);
             if (u8(at + 4) == 'n' && u8(at + 5) == 'p' && u8(at + 6) == 'L' && u8(at + 7) == 'b')
                 throw std::runtime_error("optical layout PNG chunk is unsupported");
             at += length + 12U;
         }
     }
+    if (path.ends_with(".9.png")) throw std::runtime_error("compiled NinePatch PNG has no npTc chunk");
     const auto decoded = DecodeImageToArgb(bytes);
     if (!decoded || decoded->width <= 0 || decoded->height <= 0 || decoded->width > 4096 || decoded->height > 4096)
         throw std::runtime_error("leaf bitmap decode failed or exceeds bounds");
@@ -1309,9 +1310,10 @@ dx::VmObjectRef MakeResourceDrawable(dx::IntrinsicContext& call, const Context& 
     const auto decoded = system ? std::shared_ptr<const ui::UiBitmap>{} : ResolveUiDrawable(*context, resource_id);
     const bool color = entry.value_type >= kTypeFirstColor && entry.value_type <= kTypeLastColor;
     if (decoded && decoded->nine_patch) {
-        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                              "resource NinePatch Drawable objects are not implemented"};
+        const auto bytes = loader::ReadApkEntry(context->apk_bytes, context->archive, *entry.string_value);
+        const auto drawable = DecodeNinePatchDrawable(call.vm, *context, call.receiver, bytes, entry.density);
+        context->ui_drawables[drawable.Value()].resource_id = resource_id;
+        return drawable;
     }
     auto& vm = call.vm;
     const char* descriptor =

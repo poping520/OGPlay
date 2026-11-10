@@ -1218,7 +1218,9 @@ Decl ExperimentalTextView(const Context& context) {
                                             "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
                                             {dx::VmValue::Ref(face)}));
         static_cast<void>(CallAndroidMethod(vm, paint, "setAntiAlias", "(Z)V", {dx::VmValue::Int(1)}));
-        context->paint_measure_states.at(paint.Value()).text_view_owned = true;
+        const auto projected = ReadAndroidPaintProjection(vm, *context, paint);
+        state->text_size_px = projected.size;
+        state->text_style = static_cast<std::uint32_t>(projected.style);
         dx::IntrinsicCall(c).SetRef(
             filters_field, vm.Model().NewObjectArray(vm.Linker().ResolveDescriptor("[Landroid/text/InputFilter;"),
                                                      vm.Linker().ResolveDescriptor("Landroid/text/InputFilter;"), 0));
@@ -1492,8 +1494,9 @@ Decl ExperimentalTextView(const Context& context) {
                                                                   : context->ui_scaled_density);
         auto& n = *context->ui_tree.Get(TextNode(c, context));
         validate(c, n, n.text, size, n.text_style);
-        context->paint_measure_states.at(dx::IntrinsicCall(c).GetRef(paint_field).Value()).text_size = size;
-        n.text_size_px = size;
+        const auto paint = dx::IntrinsicCall(c).GetRef(paint_field);
+        static_cast<void>(CallAndroidMethod(c.vm, paint, "setTextSize", "(F)V", {dx::VmValue::Float(size)}));
+        n.text_size_px = ReadAndroidPaintProjection(c.vm, *context, paint).size;
         return changed(c);
     });
     builder.VirtualMethod(
@@ -1504,10 +1507,10 @@ Decl ExperimentalTextView(const Context& context) {
             auto& n = *context->ui_tree.Get(TextNode(c, context));
             validate(c, n, n.text, n.text_size_px, static_cast<std::uint32_t>(style));
             const auto paint = dx::IntrinsicCall(c).GetRef(paint_field);
-            const auto field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(paint), "mTypeface",
-                                                                "Landroid/graphics/Typeface;");
-            c.vm.Model().InstanceSlots(paint)[c.vm.Linker().Field(*field).slot] = {ref.Value(), dx::SlotTag::ref};
-            n.text_style = static_cast<std::uint32_t>(style);
+            static_cast<void>(CallAndroidMethod(c.vm, paint, "setTypeface",
+                                                "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
+                                                {dx::VmValue::Ref(ref)}));
+            n.text_style = static_cast<std::uint32_t>(ReadAndroidPaintProjection(c.vm, *context, paint).style);
             return changed(c);
         });
     builder.VirtualMethod("setTypeface", "(Landroid/graphics/Typeface;I)V", [](dx::IntrinsicContext& c) {
@@ -1644,11 +1647,14 @@ Decl ExperimentalTextView(const Context& context) {
     }
     builder.VirtualMethod(
         "onMeasure", "(II)V",
-        [context, horizontal, min_width, min_width_mode, minimum, min_mode](dx::IntrinsicContext& c) {
+        [context, horizontal, min_width, min_width_mode, minimum, min_mode, paint_field](dx::IntrinsicContext& c) {
             if (c.vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id())
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Text measure requires owner"};
             const auto revision = context->view_adapter_references.at(c.receiver.Value()).text_revision;
-            const auto& n = *context->ui_tree.Get(TextNode(c, context));
+            auto& n = *context->ui_tree.Get(TextNode(c, context));
+            const auto projected = ReadAndroidPaintProjection(c.vm, *context, dx::IntrinsicCall(c).GetRef(paint_field));
+            n.text_size_px = projected.size;
+            n.text_style = static_cast<std::uint32_t>(projected.style | ((projected.flags & 0x20) ? 1 : 0));
             ui::TextLeafInput input;
             input.text = ReadAndroidTextDisplay(c.vm, *context, c.receiver);
             if (context->view_adapter_references.at(c.receiver.Value()).text_single_line)

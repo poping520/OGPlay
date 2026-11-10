@@ -18,7 +18,6 @@ std::string DumpDexSurface(const std::filesystem::path& framework_directory) {
     runtime::dexvm::DexClassLinker linker;
     linker.RegisterIntrinsics(runtime::BoundCoreIntrinsicCatalog(context));
     linker.RegisterIntrinsics(runtime::AndroidIntrinsicCatalog(context));
-    linker.SetUnboundNativePolicy(runtime::AndroidUnboundNative);
     for (auto& dex : runtime::BootClasspathDexFiles(context->boot_classpath))
         linker.RegisterBootDex(std::move(dex));
     core::JsonParseError error;

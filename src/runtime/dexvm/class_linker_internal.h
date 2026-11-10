@@ -102,7 +102,6 @@ public:
 
     std::deque<DexUnit> dex_units;
     std::optional<DexUnitId> application_unit;
-    DexClassLinker::UnboundNativePolicy unbound_native_policy;
 
     bool link_complete{};
     std::vector<std::string> implicit_intrinsic_overrides;

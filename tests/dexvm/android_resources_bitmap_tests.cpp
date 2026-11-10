@@ -544,12 +544,17 @@ TEST_CASE("Bitmap Config matches the API 19 enum and native mapping") {
     CHECK(fixture.context->bitmaps.at(bitmap.Value()).pixels->Snapshot() ==
           std::vector<std::uint32_t>(colors.begin(), colors.end()));
 
-    const auto canvas = fixture.vm.NewIntrinsicInstance("Landroid/graphics/Canvas;");
-    fixture.context->canvases.emplace(
-        canvas.Value(), DexVmAndroidContext::CanvasState{1U, 3U, 2U, std::vector<std::uint32_t>(6, 0xff000000U), true});
+    const auto target = fixture
+                            .Static("Landroid/graphics/Bitmap;", "createBitmap",
+                                    "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+                                    {VmValue::Int(3), VmValue::Int(2), VmValue::Ref(constants[1])})
+                            .ref;
+    const auto canvas =
+        fixture.New("Landroid/graphics/Canvas;", "(Landroid/graphics/Bitmap;)V", {VmValue::Ref(target)});
+
     fixture.On(canvas, "drawBitmap", "(Landroid/graphics/Bitmap;FFLandroid/graphics/Paint;)V",
                {VmValue::Ref(bitmap), VmValue::Float(1.0F), VmValue::Float(0.0F), VmValue::Ref(VmObjectRef{0})});
-    CHECK(fixture.context->canvases.at(canvas.Value()).argb ==
+    CHECK(fixture.context->bitmaps.at(target.Value()).pixels->Snapshot() ==
           std::vector<std::uint32_t>{0xff000000U, colors[0], colors[1], 0xff000000U, colors[2], colors[3]});
 }
 
@@ -688,178 +693,8 @@ TEST_CASE("DVM-262 Canvas integer pixels forward virtually to the ROM float over
                                         VmValue::Int(5),      VmValue::Int(1),  VmValue::Ref(VmObjectRef{})};
         f.On(receiver, "drawBitmap", "([IIIIIIIZLandroid/graphics/Paint;)V", args);
         CHECK(calls == 1);
-        // The base float/native renderer remains X; the wrapper must not fake success.
-        const auto base = f.vm.NewIntrinsicInstance("Landroid/graphics/Canvas;");
-        const auto unsupported = f.OnOutcome(base, "drawBitmap", "([IIIIIIIZLandroid/graphics/Paint;)V", args);
-        REQUIRE(unsupported.exception.IsValid());
-        CHECK(f.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
-    }
-}
-
-TEST_CASE("DVM-347 Canvas pure color modes match API19 Skia premultiplied formulas") {
-    // Frozen oracle: android-4.4_r1 SkXfermode.cpp modeprocs, with straight
-    // ARGB conversion at the CanvasState boundary. MULTIPLY maps to MODULATE.
-    constexpr std::array names{"CLEAR",  "SRC",     "DST",      "SRC_OVER", "DST_OVER", "SRC_IN",
-                               "DST_IN", "SRC_OUT", "DST_OUT",  "SRC_ATOP", "DST_ATOP", "XOR",
-                               "DARKEN", "LIGHTEN", "MULTIPLY", "SCREEN",   "ADD",      "OVERLAY"};
-
-    struct Sample {
-        std::uint32_t source, destination;
-        std::array<std::uint32_t, 18> expected;
-    };
-
-    constexpr std::array samples{
-        Sample{0x8064c832U,
-               0xc8326496U,
-               {
-                   0x00000000U,
-                   0x8064c732U,
-                   0xc8326496U,
-                   0xe44d9b5eU,
-                   0xe4376f8aU,
-                   0x6463c730U,
-                   0x64306396U,
-                   0x1c5bbf2eU,
-                   0x64306396U,
-                   0xc84a9565U,
-                   0x803e7a80U,
-                   0x803c7a80U,
-                   0xe438705eU,
-                   0xe44d9b8aU,
-                   0x64144f1fU,
-                   0xe45ba493U,
-                   0xff59b28fU,
-                   0xe433886eU,
-               }},
-        Sample{0x00000000U,
-               0xff123456U,
-               {
-                   0x00000000U,
-                   0x00000000U,
-                   0xff123456U,
-                   0xff123456U,
-                   0xff123456U,
-                   0x00000000U,
-                   0x00000000U,
-                   0x00000000U,
-                   0xff123456U,
-                   0xff123456U,
-                   0x00000000U,
-                   0xff123456U,
-                   0xff123456U,
-                   0xff123456U,
-                   0x00000000U,
-                   0xff123456U,
-                   0xff123456U,
-                   0xff123456U,
-               }},
-        Sample{0xffdc2878U,
-               0x4064dc14U,
-               {
-                   0x00000000U,
-                   0xffdc2878U,
-                   0x4064dc14U,
-                   0xffdc2878U,
-                   0xffbe555fU,
-                   0x40db2878U,
-                   0x4064db14U,
-                   0xbfdc2878U,
-                   0x00000000U,
-                   0x40db2878U,
-                   0xffbe555fU,
-                   0xbfdc2878U,
-                   0xffbe285fU,
-                   0xffdc5578U,
-                   0x40582408U,
-                   0xffdf567bU,
-                   0xfff55f7dU,
-                   0xffd04f5fU,
-               }},
-        Sample{0x01234567U,
-               0x02010203U,
-               {
-                   0x00000000U,
-                   0x01000000U,
-                   0x02010203U,
-                   0x02000000U,
-                   0x02000000U,
-                   0x00000000U,
-                   0x00000000U,
-                   0x00000000U,
-                   0x01000000U,
-                   0x02000000U,
-                   0x01000000U,
-                   0x03000000U,
-                   0x03000000U,
-                   0x03000000U,
-                   0x00000000U,
-                   0x03000000U,
-                   0x03000000U,
-                   0x03000000U,
-               }},
-        Sample{0x80808080U,
-               0x80808080U,
-               {
-                   0x00000000U,
-                   0x80808080U,
-                   0x80808080U,
-                   0xc0808080U,
-                   0xc0808080U,
-                   0x40808080U,
-                   0x40808080U,
-                   0x40808080U,
-                   0x40808080U,
-                   0x80808080U,
-                   0x80808080U,
-                   0x80808080U,
-                   0xc0808080U,
-                   0xc0808080U,
-                   0x40404040U,
-                   0xc0959595U,
-                   0xff808080U,
-                   0xc0808080U,
-               }},
-    };
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend);
-        const auto canvas = f.vm.NewIntrinsicInstance("Landroid/graphics/Canvas;");
-        const auto roots = f.vm.ProtectReferences(std::array{canvas});
-        auto& state = f.context->canvases[canvas.Value()];
-        state.width = state.height = 1;
-        state.locked = true;
-        for (std::size_t mode = 0; mode < names.size(); ++mode) {
-            const auto value = f.Static("Landroid/graphics/PorterDuff$Mode;", "valueOf",
-                                        "(Ljava/lang/String;)Landroid/graphics/PorterDuff$Mode;",
-                                        {VmValue::Ref(f.vm.NewStringUtf8(names[mode]))})
-                                   .ref;
-            const auto keep = f.vm.ProtectReferences(std::array{value});
-            for (const auto& sample : samples) {
-                CAPTURE(names[mode]);
-                CAPTURE(sample.source);
-                CAPTURE(sample.destination);
-                state.argb = {sample.destination};
-                f.On(canvas, "drawColor", "(ILandroid/graphics/PorterDuff$Mode;)V",
-                     {VmValue::Int(std::bit_cast<int>(sample.source)), VmValue::Ref(value)});
-                CHECK(state.argb[0] == sample.expected[mode]);
-                if (mode == 3) {
-                    state.argb = {sample.destination};
-                    f.On(canvas, "drawColor", "(I)V", {VmValue::Int(std::bit_cast<int>(sample.source))});
-                    CHECK(state.argb[0] == sample.expected[mode]);
-                    state.argb = {sample.destination};
-                    f.On(canvas, "drawARGB", "(IIII)V",
-                         {VmValue::Int(sample.source >> 24), VmValue::Int((sample.source >> 16) & 255),
-                          VmValue::Int((sample.source >> 8) & 255), VmValue::Int(sample.source & 255)});
-                    CHECK(state.argb[0] == sample.expected[mode]);
-                }
-            }
-        }
-        state.argb = {0};
-        f.On(canvas, "drawRGB", "(III)V", {VmValue::Int(12), VmValue::Int(34), VmValue::Int(56)});
-        CHECK(state.argb[0] == 0xff0c2238U);
-        const auto null_mode = f.OnOutcome(canvas, "drawColor", "(ILandroid/graphics/PorterDuff$Mode;)V",
-                                           {VmValue::Int(0), VmValue::Ref(VmObjectRef{})});
-        REQUIRE(null_mode.exception.IsValid());
-        CHECK(f.linker.Class(null_mode.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        const auto base = f.New("Landroid/graphics/Canvas;");
+        f.On(base, "drawBitmap", "([IIIIIIIZLandroid/graphics/Paint;)V", args);
     }
 }
 

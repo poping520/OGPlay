@@ -1,0 +1,33 @@
+.class public Ltest/TextBitmap;
+.super Ljava/lang/Object;
+
+.method public static raster(Ljava/lang/String;)Landroid/graphics/Bitmap;
+.registers 12
+    new-instance v0, Landroid/graphics/Paint;
+    const/4 v1, 1
+    invoke-direct {v0, v1}, Landroid/graphics/Paint;-><init>(I)V
+    const v1, 0x41c00000
+    invoke-virtual {v0, v1}, Landroid/graphics/Paint;->setTextSize(F)V
+    const v1, 0xffffffff
+    invoke-virtual {v0, v1}, Landroid/graphics/Paint;->setColor(I)V
+
+    new-instance v1, Landroid/graphics/Paint$FontMetricsInt;
+    invoke-direct {v1}, Landroid/graphics/Paint$FontMetricsInt;-><init>()V
+    invoke-virtual {v0, v1}, Landroid/graphics/Paint;->getFontMetricsInt(Landroid/graphics/Paint$FontMetricsInt;)I
+    move-result v2
+    iget v3, v1, Landroid/graphics/Paint$FontMetricsInt;->ascent:I
+    neg-int v3, v3
+    int-to-float v3, v3
+    invoke-virtual {v0, v11}, Landroid/graphics/Paint;->measureText(Ljava/lang/String;)F
+    move-result v4
+    float-to-int v4, v4
+
+    sget-object v5, Landroid/graphics/Bitmap$Config;->ARGB_8888:Landroid/graphics/Bitmap$Config;
+    invoke-static {v4, v2, v5}, Landroid/graphics/Bitmap;->createBitmap(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;
+    move-result-object v6
+    new-instance v7, Landroid/graphics/Canvas;
+    invoke-direct {v7, v6}, Landroid/graphics/Canvas;-><init>(Landroid/graphics/Bitmap;)V
+    const/4 v8, 0
+    invoke-virtual {v7, v11, v8, v3, v0}, Landroid/graphics/Canvas;->drawText(Ljava/lang/String;FFLandroid/graphics/Paint;)V
+    return-object v6
+.end method

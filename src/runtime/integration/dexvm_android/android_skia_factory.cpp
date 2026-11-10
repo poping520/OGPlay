@@ -242,18 +242,4 @@ Decl Declare_android_graphics_BitmapFactory(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_android_graphics_NinePatch(const Context&) {
-    auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/NinePatch;");
-    b.MergesBootClass();
-    b.StaticMethod(
-        "isNinePatchChunk", "([B)Z",
-        [](dx::IntrinsicContext& c) {
-            const auto bytes = dx::IntrinsicCall(c).Ref(0);
-            return V::Int(bytes.IsValid() && c.vm.Model().ArrayLength(bytes) >= 32 &&
-                          c.vm.Model().GetPrimitiveElement(bytes, 0) != UINT8_MAX);
-        },
-        dx::kAccPublic | dx::kAccNative);
-    return std::move(b).Build();
-}
-
 }  // namespace ogplay::runtime::android_intrinsics

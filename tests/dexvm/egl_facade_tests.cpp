@@ -1015,6 +1015,47 @@ TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
     CHECK(std::to_integer<std::uint8_t>(pixel_output[0]) == doctest::Approx(64).epsilon(0.04));
     CHECK(std::to_integer<std::uint8_t>(pixel_output[1]) == doctest::Approx(128).epsilon(0.04));
     CHECK(std::to_integer<std::uint8_t>(pixel_output[2]) == doctest::Approx(191).epsilon(0.04));
+    // GLUtils passes API19 premultiplied storage verbatim to GL.
+    const auto bitmap = vm.interpreter.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
+    auto upload_bytes = std::make_shared<std::array<std::byte, 4>>();
+    auto upload = std::make_shared<ogplay::runtime::raster::Bitmap>(1, 1, 5, true, true, *upload_bytes, upload_bytes,
+                                                                    ogplay::memory::GuestAddress{});
+    upload->Set(0, 0x80804020U);
+    vm.context->bitmaps.emplace(bitmap.Value(), DexVmAndroidContext::BitmapState{1, 1, upload});
+    const auto names = vm.IntArray({0});
+    vm.CallStatic("Landroid/opengl/GLES20;", "glGenTextures", "(I[II)V",
+                  {VmValue::Int(1), VmValue::Ref(names), VmValue::Int(0)});
+    const auto texture = static_cast<int>(vm.model.GetPrimitiveElement(names, 0));
+    vm.CallStatic("Landroid/opengl/GLES20;", "glBindTexture", "(II)V", {VmValue::Int(0x0DE1), VmValue::Int(texture)});
+    vm.CallStatic("Landroid/opengl/GLUtils;", "texImage2D", "(IILandroid/graphics/Bitmap;I)V",
+                  {VmValue::Int(0x0DE1), VmValue::Int(0), VmValue::Ref(bitmap), VmValue::Int(0)});
+    vm.CallStatic("Landroid/opengl/GLES20;", "glGenFramebuffers", "(I[II)V",
+                  {VmValue::Int(1), VmValue::Ref(names), VmValue::Int(0)});
+    const auto framebuffer = static_cast<int>(vm.model.GetPrimitiveElement(names, 0));
+    vm.CallStatic("Landroid/opengl/GLES20;", "glBindFramebuffer", "(II)V",
+                  {VmValue::Int(0x8D40), VmValue::Int(framebuffer)});
+    vm.CallStatic(
+        "Landroid/opengl/GLES20;", "glFramebufferTexture2D", "(IIIII)V",
+        {VmValue::Int(0x8D40), VmValue::Int(0x8CE0), VmValue::Int(0x0DE1), VmValue::Int(texture), VmValue::Int(0)});
+    REQUIRE(
+        vm.CallStatic("Landroid/opengl/GLES20;", "glCheckFramebufferStatus", "(I)I", {VmValue::Int(0x8D40)}).AsInt() ==
+        0x8CD5);
+    static_cast<void>(session->NIO().WithTemporaryGuestMemory(
+        pixel_staging, true,
+        [&](const ogplay::memory::GuestAddress address) {
+            return session->InvokeManagedGles(ogplay::gles::GlesApi::gles2, "glReadPixels",
+                                              std::array{0U, 0U, 1U, 1U, 0x1908U, 0x1401U, address.Value()}, thread_id);
+        },
+        &pixel_output));
+    CHECK(pixel_output == std::vector<std::byte>{std::byte{64}, std::byte{32}, std::byte{16}, std::byte{128}});
+    CHECK(vm.CallStatic("Landroid/opengl/GLES20;", "glGetError", "()I").AsInt() == 0);
+    vm.CallStatic("Landroid/opengl/GLES20;", "glBindFramebuffer", "(II)V", {VmValue::Int(0x8D40), VmValue::Int(0)});
+    vm.model.SetPrimitiveElement(names, 0, static_cast<std::uint32_t>(framebuffer));
+    vm.CallStatic("Landroid/opengl/GLES20;", "glDeleteFramebuffers", "(I[II)V",
+                  {VmValue::Int(1), VmValue::Ref(names), VmValue::Int(0)});
+    vm.model.SetPrimitiveElement(names, 0, static_cast<std::uint32_t>(texture));
+    vm.CallStatic("Landroid/opengl/GLES20;", "glDeleteTextures", "(I[II)V",
+                  {VmValue::Int(1), VmValue::Ref(names), VmValue::Int(0)});
     const auto output = vm.IntArray({-1, -1});
     CHECK(vm.CallStatic("Landroid/opengl/EGL14;", "eglQuerySurface",
                         "(Landroid/opengl/EGLDisplay;Landroid/opengl/EGLSurface;I[II)Z",

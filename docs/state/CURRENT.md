@@ -1,13 +1,13 @@
 # 当前状态
 
-更新：2026-11-09。
+更新：2026-11-10。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 修复过程、验证明细及证据写入任务单。能力见 [capabilities.toml](../../capabilities.toml)，
 契约见各模块 MODULE，任务见 [任务总览](../tasks/README.md)。
 
 JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。无返回值的显示设置忽略并记警告（DVM-372）。
-启动类路径改为 ogplay.jar + 原样 API19 ROM jar（core/conscrypt/ext/framework/framework2/android.policy），成员来源审计与配对制品已删除；未绑定 native 调用时抛 UnsatisfiedLinkError，Paint 显示 setter 暂按 UI 降级。
+启动类路径改为 ogplay.jar + 原样 API19 ROM jar（core/conscrypt/ext/framework/framework2/android.policy），成员来源审计与配对制品已删除；未绑定 native 调用时抛 UnsatisfiedLinkError。
 
 ## 游戏进度
 
@@ -34,7 +34,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。
 | Sacred Odyssey 1.1.0 | macOS | 800×480：Logo 可见，Release 主菜单实测 24.3 FPS；NEW GAME → Mission 开场对白/Skip，MCP 关闭退出 0 | 非全屏视频黑屏、进关日志非 UTF-8 崩溃已修；开场 3D 区域仍黑；1280×720 Splash 的 `nativeRender` 读 `0x0`；游戏内操作待验 | [DVM-375](../tasks/dexvm/DVM-375.md)、[DVM-353](../tasks/dexvm/DVM-353.md)、[DVM-303](../tasks/dexvm/DVM-303.md)、[BND-5](../tasks/boundary/BND-5.md) |
 | 水果忍者 1.8.8 | macOS | 第 110 帧越过原版 `View.isInEditMode` 调用 | 地图手势初始化：ROM `VelocityTracker` 已加载，`nativeInitialize` 未实现 | — |
 | 割绳子 2.3.8（广告版） | macOS | ACRA 构造与 Application 生命周期回调注册通过，进入首个 Activity 的 onCreate，未呈现 | FragmentActivity 调用 `getLastNonConfigurationInstance()` 缺失 | [DVM-376](../tasks/dexvm/DVM-376.md) |
-| 保卫萝卜 1.1.0 | macOS | Time 构造、setToNow 与 onCreate 通过，进入 Cocos2d nativeInit，未呈现 | 首个 Java 异常为 `Paint.getFontMetricsInt()` 未实现，随后 native 读 0x0 退出 | [DVM-376](../tasks/dexvm/DVM-376.md) |
+| 保卫萝卜 1.1.0 | macOS | Cocos2d 文字位图越过 `Paint.getFontMetricsInt()`，呈现 2 帧 | `nativeRender` 的 JNI `CallStaticObjectMethodV` 返回类型与描述符不符 | [DVM-376](../tasks/dexvm/DVM-376.md) |
 | 鳄鱼小顽皮 1.13.1 | macOS | 越过 `ThreadGroup(String)` 和离线 `WifiInfo` 查询，到达 `onResume`，未呈现 | `AlarmManager.setRepeating` 调度未实现 | [DVM-211](../tasks/dexvm/DVM-211.md) |
 
 ## 未闭合问题
@@ -62,7 +62,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。
   游戏退出后按运行时缺失路径提示挂载位置（[GUI-13](../tasks/gui/GUI-13.md)），App 内点击未实测。
   每次库启动记录运行结果（last-run.json），失败游戏归入“待排查”，CLI `library list --filter attention` 同源（[GUI-23](../tasks/gui/GUI-23.md)），App 内点击未实测。
   Windows 启动器单例与托盘/最小化恢复已通过 Debug / Release 专项实测（[GUI-21](../tasks/gui/GUI-21.md)），Release 已重建。
-- 图形：P1 已接通 ROM 几何、Bitmap 与 BitmapFactory。Skia 像素使用 Java byte[]，Canvas、Paint 和绘制效果仍待迁移。实际 context-loss、多窗口/透明 Activity 未验收；GLES1 vertex-array 首错未重达。
+- 图形：P1 范围内的 ROM 图形、软件 Canvas、效果、NinePatch 与 Camera 已接通 Skia。整形与双向重排仍降级；WebP 编码、Parcel blob、排除的图形能力及 P3 UI 投影清理仍有缺口。macOS arm64 已验证，x64 仅交叉链接，Windows/Android 未实跑。实际 context-loss、多窗口/透明 Activity 未验收；GLES1 vertex-array 首错未重达。
   SurfaceTexture 公共队列/Java 与 SwiftShader 合成帧外部采样闭环已验；Metal 无 external，
   MediaPlayer/NDK producer 与启动后端选择未接入（[APS-14](../tasks/apk-startup/APS-14.md)）。
 - 音视频（[DVM-189](../tasks/dexvm/DVM-189.md)）：视频改为链接裁剪版 ogplay_ffmpeg

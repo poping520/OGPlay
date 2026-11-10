@@ -373,11 +373,6 @@ public:
     // Call once per boot classpath DEX, in classpath order. The first
     // definition of a descriptor wins; later boot copies are ignored.
     DexUnitId RegisterBootDex(std::vector<std::uint8_t> dex_bytes);
-    // Handler for a boot DEX native that no intrinsic binds. An empty result
-    // (the default) records the gap and throws UnsatisfiedLinkError on call.
-    using UnboundNativePolicy =
-        std::function<IntrinsicHandler(std::string_view owner, std::string_view name, std::string_view descriptor)>;
-    void SetUnboundNativePolicy(UnboundNativePolicy policy);
     DexUnitId RegisterDex(std::vector<std::uint8_t> dex_bytes);
     void Link();
     // Replay early link warnings when the session logger becomes available.

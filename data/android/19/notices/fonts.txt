@@ -1,6 +1,7 @@
-API19 UI fonts: Roboto-Regular.ttf and DroidSansFallback.ttf
+API19 system and UI fonts from system_fonts.xml and DroidSansFallback.ttf
 Source: AOSP android-4.4.4_r2.0.1 platform/frameworks/base/data/fonts
-The following is the original data/fonts/NOTICE, applicable to both fonts.
+The following is the original data/fonts/NOTICE.
+
 
    Copyright (c) 2005-2008, The Android Open Source Project
 

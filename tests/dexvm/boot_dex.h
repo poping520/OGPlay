@@ -25,8 +25,11 @@ inline std::vector<std::vector<std::uint8_t>> ReadBootDex() {
     return runtime::BootClasspathDexFiles(BootClasspathJars());
 }
 
+std::vector<std::byte> ReadTestSystemFont(std::string_view name);
+
 inline void BindBootDexArchive(runtime::DexVmAndroidContext& context) {
     context.boot_classpath = BootClasspathJars();
+    context.system_font_source = ReadTestSystemFont;
 }
 
 // Fill absent Android declarations using the production catalog. Existing test
@@ -38,7 +41,6 @@ void AttachViewTestContext(runtime::dexvm::Interpreter& vm, runtime::dexvm::VmOb
 
 inline void RegisterBootDex(runtime::dexvm::DexClassLinker& linker) {
     BindBootDexPlatformNatives(linker);
-    linker.SetUnboundNativePolicy(runtime::AndroidUnboundNative);
     for (auto& dex : ReadBootDex())
         linker.RegisterBootDex(std::move(dex));
 }

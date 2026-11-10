@@ -2,7 +2,21 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 
+#include <cstring>
+#include <fstream>
+
 namespace ogplay::test {
+std::vector<std::byte> ReadTestSystemFont(std::string_view name) {
+    std::ifstream stream(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/fonts" / name,
+                         std::ios::binary | std::ios::ate);
+    if (!stream) throw std::runtime_error("test font is missing: " + std::string(name));
+    std::vector<std::byte> bytes(static_cast<std::size_t>(stream.tellg()));
+    stream.seekg(0);
+    if (!stream.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size())))
+        throw std::runtime_error("failed to read test font");
+    return bytes;
+}
+
 void AttachViewTestContext(runtime::dexvm::Interpreter& vm, runtime::dexvm::VmObjectRef owner) {
     using namespace runtime::dexvm;
     const auto roots = vm.ProtectReferences(std::array{owner});
@@ -30,6 +44,7 @@ void AttachViewTestContext(runtime::dexvm::Interpreter& vm, runtime::dexvm::VmOb
 
 void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker) {
     const auto context = std::make_shared<runtime::DexVmAndroidContext>();
+    context->system_font_source = ReadTestSystemFont;
     for (const auto& declaration : runtime::AndroidIntrinsicCatalog(context)) {
         if (!linker.FindClass(declaration.descriptor)) linker.RegisterIntrinsics(std::array{declaration});
     }

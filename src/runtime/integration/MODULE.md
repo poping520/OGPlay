@@ -57,7 +57,9 @@ session 宿主输入和 guest Window 入口共用相同状态与算法；integra
 完整解析、校验后发布。叶 drawable 的不可变像素按 Java 对象身份持有并随 sweep/teardown
 释放，不建立全局强根；布局与几何不在值桥写入。同 ROM 属性 format/枚举表决定投影类型，
 ROM 字符串独立使用 cookie2/StringBlock；cookie1 保持 APK。封存的默认背景 selector/ninepatch
-可提供状态、padding/密度尺寸与像素 backing；选中叶在现有 bitmap 平面冻结，guest draw 仍明确失败。
+提供状态、padding/密度尺寸与像素 backing；选中叶在现有 bitmap 平面冻结。
+编译 APK NinePatch PNG 通过资源文件校验，元数据来自 Skia 解码，ROM Drawable 使用软件 Canvas 绘制。
+任意 XML 与动画调度仍限已封存的范围。
 同 ROM color 目录按 selector/item、android:color/state_* 结构封存原始 XML，经 ROM
 ColorStateList.createFromXml 构造；标量颜色引用取同 ROM ARSC，未知结构/属性/引用失败。
 

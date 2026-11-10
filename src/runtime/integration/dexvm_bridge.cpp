@@ -313,7 +313,7 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
                  found != context->global_layout_listeners.end())
                  visit_ref(found->second);
              if (const auto found = context->holder_canvases.find(key); found != context->holder_canvases.end())
-                 visit_ref(found->second);
+                 visit_ref(found->second.object);
              if (const auto found = context->view_adapter_references.find(key);
                  found != context->view_adapter_references.end()) {
                  visit_ref(found->second.window_owner);
@@ -370,8 +370,7 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
              context->view_tree_observers.erase(key);
              context->global_layout_listeners.erase(key);
              context->bitmaps.erase(key);
-             context->canvases.erase(key);
-             context->holder_canvases.erase(key);
+             android_intrinsics::ResetManagedCanvas(*context, key);
              const auto media = context->media_players.find(key);
              if (media != context->media_players.end()) {
                  if (context->encoded_music != nullptr) {
@@ -407,7 +406,6 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
                  context->ui_view_backgrounds.erase(background);
              }
              context->ui_drawables.erase(key);
-             context->paint_measure_states.erase(key);
              if (const auto image = context->ui_view_images.find(key); image != context->ui_view_images.end()) {
                  if (const auto state = context->ui_drawables.find(image->second.Value());
                      state != context->ui_drawables.end())
@@ -1628,7 +1626,6 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
     if (!platform_catalog.empty()) {
         impl_->linker.RegisterIntrinsics(platform_catalog);
     }
-    if (android_context) impl_->linker.SetUnboundNativePolicy(AndroidUnboundNative);
     for (auto& boot_dex : boot_dex_files)
         impl_->linker.RegisterBootDex(std::move(boot_dex));
     impl_->linker.RegisterDex(std::move(dex_bytes));

@@ -268,10 +268,12 @@ TEST_CASE("DVM-296 unsupported image APIs fail and ImageButton uses real default
             f.On(image, name, sig, {VmValue::Int(1)});
         f.On(image, "setImageMatrix", "(Landroid/graphics/Matrix;)V", {VmValue::Ref(VmObjectRef{})});
         CHECK(f.ledger.Unimplemented().empty());
-        // ROM setColorFilter needs the PorterDuffColorFilter native, which the graphics backend lacks.
         const auto filter = f.OnOutcome(image, "setColorFilter", "(I)V", {VmValue::Int(1)});
-        REQUIRE(filter.exception.IsValid());
-        CHECK(f.linker.Class(filter.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+        CHECK_FALSE(filter.exception.IsValid());
+        const auto color_filter = f.On(image, "getColorFilter", "()Landroid/graphics/ColorFilter;").ref;
+        REQUIRE(color_filter.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(color_filter)).descriptor ==
+              "Landroid/graphics/PorterDuffColorFilter;");
         const auto button =
             f.New("Landroid/widget/ImageButton;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto button_root = f.vm.ProtectReferences(std::array{button});

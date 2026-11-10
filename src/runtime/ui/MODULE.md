@@ -112,7 +112,7 @@ UiTree 构造必须显式给出字体资源（独立 ASCII 测试可传 nullptr�
   其他 producer 创建的帧默认 false，消费者不得从命令数量猜测透明性。
 - `TextView/Button`：UiNode 唯一保存 text、RGBA textColor、textSize、gravity 与行数边界；
   内置 5x7 完整可打印 ASCII（0x20–0x7E）同时提供确定性 measure/raster，共用固定字体算法；空文本
-  所有固定字体消费方（TextView、Paint、Editable、measure/wrap/raster）共用 `kMaxFixedTextUnits`=65536
+  所有固定字体消费方（TextView、Editable、measure/wrap/raster）共用 `kMaxFixedTextUnits`=65536
   字形单位上限；换行计划另允许同等数量的换行符。128px 下宽高与光栅坐标仍在 int32 内，超限明确失败。
   控件仍保留一行字体高度。wrap_content 加入 padding，Button
   提供固定 background/padding/clickable 默认语义。compound drawables 以资源 id +
@@ -128,6 +128,8 @@ UiTree 构造必须显式给出字体资源（独立 ASCII 测试可传 nullptr�
 - `ImageView/ImageButton`：UiNode 保存 CENTER/CENTER_INSIDE/FIT_CENTER/FIT_XY/CENTER_CROP；
   图片可来自资源缓存或 integration 提供的不可变 RGBA 投影，颜色使用 RGBA 填充；
   image alpha 与 View alpha 相乘。UI 不持有 guest Drawable/Bitmap，不读取 guest 像素。
+  输入快照由 dexvm_android 从 Skia Bitmap 与 ROM Drawable 状态冻结；软件 Canvas 的效果与绘制
+  由 raster 负责，本投影继续使用既有叶类型、固定字体和皮肤范围。
   render-list 在 node content box 内按 API19 对齐语义生成目标 rect，CPU raster 使用确定性
   nearest-neighbor scale。CENTER_CROP 的 dest 可超出 content box；默认父容器
   `clipChildren` 把该子 View 裁回自身 bounds。关闭父容器 clip 后，溢出仍受祖先与输出

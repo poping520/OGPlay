@@ -12,6 +12,7 @@ namespace dx = dexvm;
 [[nodiscard]] dx::VmObjectRef CreateAndroidBitmap(dx::Interpreter& vm, DexVmAndroidContext& context, int width,
                                                   int height, std::span<const std::uint32_t> argb,
                                                   bool mutable_pixels = true, int density = -1);
+[[nodiscard]] std::optional<std::array<float, 9>> AndroidMatrixSnapshot(DexVmAndroidContext& context, int token);
 [[nodiscard]] bool AndroidMatrixIsIdentity(dx::Interpreter& vm, const DexVmAndroidContext& context,
                                            dx::VmObjectRef matrix);
 
@@ -20,7 +21,24 @@ namespace dx = dexvm;
                                                        const std::shared_ptr<DexVmAndroidContext>&,
                                                        dx::VmObjectRef resources, dx::VmObjectRef parser,
                                                        dx::VmObjectRef attrs);
-void RequirePlainCanvasPaint(dx::IntrinsicContext& call, dx::VmObjectRef paint);
+void InitializeCanvasPaint(dx::IntrinsicContext& call, DexVmAndroidContext& context);
+void RetireCanvasPaint(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef paint);
+void AddCanvasPaintMethods(dx::IntrinsicClassBuilder& builder, const std::shared_ptr<DexVmAndroidContext>& context);
+
+struct AndroidPaintProjection {
+    float size;
+    int style;
+    int flags;
+};
+
+AndroidPaintProjection ReadAndroidPaintProjection(dx::Interpreter& vm, DexVmAndroidContext& context,
+                                                  dx::VmObjectRef owner);
+void AddManagedCanvasNatives(dx::IntrinsicClassBuilder& builder, const std::shared_ptr<DexVmAndroidContext>& context);
+void ResetManagedCanvas(DexVmAndroidContext& context, std::uint32_t holder);
+std::shared_ptr<const ui::UiBitmap> DecodeNinePatchPixels(std::span<const std::byte> bytes);
+void RetireAndroidNinePatch(dx::Interpreter& vm, DexVmAndroidContext& context, int bits, dx::VmObjectRef owner);
+dx::VmObjectRef DecodeNinePatchDrawable(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef resources,
+                                        std::span<const std::byte> bytes, int density);
 void RegisterGraphicsStateTables(dx::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context);
 inline constexpr std::int32_t kGuestProcessId = 1;
 [[nodiscard]] dx::VmObjectRef ManagedViewTreeObserver(dx::Interpreter& vm, DexVmAndroidContext& context,
@@ -128,6 +146,8 @@ void RecordUiDegraded(dx::Interpreter& vm, std::string_view what);
 [[nodiscard]] dx::IntrinsicHandler IgnoredUiRequest(std::string what);
 dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context, std::vector<std::byte> bytes);
 // Missing or damaged entries throw the Java IOException the glue catches.
+void RetireAndroidTypeface(DexVmAndroidContext& context, int bits);
+std::vector<std::byte> ReadAndroidApkAsset(const Context& context, dx::VmObjectRef manager, const std::string& name);
 [[nodiscard]] std::vector<std::byte> ReadApkFile(const Context& context, const std::string& path);
 // The session thread runtime; absent only if the platform context was never
 // wired to a bridge, which is a host assembly defect rather than a gap.

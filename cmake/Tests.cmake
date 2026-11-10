@@ -235,7 +235,12 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/android_intent_uri_tests.cpp
     tests/dexvm/android_parcel_bundle_tests.cpp
     tests/dexvm/android_resources_bitmap_tests.cpp
+    tests/dexvm/graphics_camera_tests.cpp
+    tests/dexvm/graphics_nine_patch_tests.cpp
+    tests/dexvm/graphics_effects_tests.cpp
     tests/dexvm/graphics_geometry_tests.cpp
+    tests/dexvm/graphics_canvas_tests.cpp
+    tests/dexvm/graphics_text_tests.cpp
     tests/dexvm/graphics_bitmap_tests.cpp
     tests/dexvm/android_view_state_tests.cpp
     tests/dexvm/owner_traversal_tests.cpp
@@ -353,7 +358,7 @@ add_dependencies(ogplay_app_tests ogplay_stage_data ogplay_dexvm_fixtures)
 
 ogplay_add_test_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
 target_link_libraries(ogplay_tests PRIVATE
-    OGPlay::Frontend OGPlay::Cpu OGPlay::Gles OGPlay::Loader OGPlay::Runtime OGPlay::Video
+    OGPlay::Frontend OGPlay::Cpu OGPlay::Gles OGPlay::Loader OGPlay::Runtime OGPlay::Video Skia::Skia
 )
 target_include_directories(ogplay_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/samples/m1_guest/include

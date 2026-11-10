@@ -94,8 +94,8 @@ TEST_CASE("DVM-120 Typeface Java cache and styles drive measured rendered text")
         const auto factory = *f.linker.FindDirectMethod(owner, "createFromFile", "(Ljava/lang/String;)Landroid/graphics/Typeface;");
         const auto result = f.vm.Call(factory, std::array{VmValue::Ref(f.vm.NewStringUtf8("/font.ttf"))});
         REQUIRE(result.exception.IsValid());
-        CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        CHECK(f.ledger.Unimplemented().back().id == "dexvm.typeface");
+        CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/RuntimeException;");
+        CHECK(result.exception_message == "native typeface cannot be made");
     }
 }
 

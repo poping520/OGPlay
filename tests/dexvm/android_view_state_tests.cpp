@@ -709,7 +709,6 @@ TEST_CASE("DVM-306 boot classpath assembly fixes owner and platform facts before
         linker.RegisterIntrinsics(BoundCoreIntrinsicCatalog(assembled));
         linker.RegisterIntrinsics(AndroidIntrinsicCatalog(assembled));
         ogplay::test::BindBootDexPlatformNatives(linker);
-        linker.SetUnboundNativePolicy(AndroidUnboundNative);
         for (auto& dex : BootClasspathDexFiles(assembled->boot_classpath))
             linker.RegisterBootDex(std::move(dex));
         linker.Link();
@@ -895,10 +894,12 @@ TEST_CASE("DVM-372 display-only setters warn and keep running while getters stay
         // ROM View keeps transform state; the projection ignores it with a warning.
         f.On(view, "setRotation", "(F)V", {VmValue::Float(45.0F)});
         CHECK(f.On(view, "getRotation", "()F").AsFloat() == 45.0F);
-        // Paint setter natives are ignored until the graphics natives exist; getters fail.
+        // ROM Paint stores supported color state. Shadow geometry is retained with a display warning.
         f.On(paint, "setColor", "(I)V", {VmValue::Int(0x11223344)});
-        CHECK(warned("Paint.setColor"));
-        CHECK(f.OnOutcome(paint, "getColor", "()I").exception.IsValid());
+        CHECK(f.On(paint, "getColor", "()I").AsInt() == 0x11223344);
+        f.On(paint, "setShadowLayer", "(FFFI)V",
+             {VmValue::Float(2), VmValue::Float(1), VmValue::Float(1), VmValue::Int(0x11223344)});
+        CHECK_FALSE(warned("Paint.shadowLayer"));
         // State pairs execute ROM.
         const auto tag = f.vm.NewStringUtf8("tag");
         const auto tag_root = f.vm.ProtectReferences(std::array{tag});

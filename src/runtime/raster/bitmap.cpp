@@ -162,6 +162,10 @@ void Bitmap::Reconfigure(int width, int height, int config, bool alpha, bool pre
     impl_->premultiplied = premultiplied;
 }
 
+bool Bitmap::Recycled() const noexcept {
+    return impl_->retired;
+}
+
 void Bitmap::Retire() {
     impl_->retired = true;
     if (impl_->locks == 0) AbortLocks();

@@ -1,15 +1,16 @@
-# API19 UI font chain
+# API19 fonts
 
 Copied unchanged from AOSP android-4.4.4_r2.0.1,
-platform/frameworks/base/data/fonts/:
+platform/frameworks/base/data/fonts/.
 
-1. Roboto-Regular.ttf: sans-serif Regular in system_fonts.xml.
-2. DroidSansFallback.ttf: fallback in fallback_fonts.xml.
+- ROM Paint and Typeface use the seven families, styles and aliases in
+  `system_fonts.xml`. DroidSansFallback.ttf is the sole fallback.
+- The UI projection uses only Roboto-Regular.ttf and DroidSansFallback.ttf,
+  in that order. It keeps the existing ASCII 5x7 raster and fixed metrics.
 
-The ordered, pinned subset selects the first covering glyph. ASCII retains
-OGPlay's 5x7 font and metrics; bold/italic remain synthetic. Only independent
-BMP glyphs are supported; shaping, combining, bidi and supplementary scalars
-fail explicitly. No host or application fonts are read.
+The font data is supplied by the runtime payload. The ROM path shares
+immutable Skia typefaces per process and opens custom fonts through APK
+assets or the guest VFS. The UI projection keeps its own font chain.
 
-Apache-2.0 notice: ../notices/fonts.txt (AOSP data/fonts/NOTICE with a source header).
-Hashes and sizes are recorded in ../manifest.json.
+The [Apache-2.0 notice](../notices/fonts.txt) contains the original AOSP
+notice. Sizes and SHA-256 hashes are recorded in [manifest.json](../manifest.json).

@@ -952,6 +952,20 @@ TEST_CASE("DVM-221 real ARM NDK Bitmap shares Java pixels and survives GC and re
                                  {VmValue::Int(2), VmValue::Int(1), VmValue::Ref(config)})
                                 .ref;
         auto reference = bridge.PublishLocal(bitmap);
+        const auto canvas = vm.NewIntrinsicInstance("Landroid/graphics/Canvas;");
+        const auto canvas_root = vm.ProtectReferences(std::array{canvas});
+        const auto canvas_type = vm.Model().ObjectClass(canvas);
+        const auto canvas_ctor = linker.FindDirectMethod(canvas_type, "<init>", "(Landroid/graphics/Bitmap;)V");
+        REQUIRE(canvas_ctor);
+        REQUIRE_FALSE(
+            vm.Call(*canvas_ctor, std::array{VmValue::Ref(canvas), VmValue::Ref(bitmap)}).exception.IsValid());
+        const auto draw = linker.FindVtableIndex(canvas_type, "drawColor", "(I)V");
+        REQUIRE(draw);
+        const auto draw_red = [&] {
+            return vm.Call(linker.Class(canvas_type).vtable[*draw],
+                           std::array{VmValue::Ref(canvas), VmValue::Int(std::bit_cast<int>(0xffff0000U))});
+        };
+
         const auto on = [&](const char* name, const char* sig, std::vector<VmValue> args) {
             const auto type = vm.Model().ObjectClass(bitmap);
             const auto index = linker.FindVtableIndex(type, name, sig);
@@ -1002,10 +1016,21 @@ TEST_CASE("DVM-221 real ARM NDK Bitmap shares Java pixels and survives GC and re
                                                  std::byte{17}, std::byte{34}, std::byte{51}, std::byte{255}});
         CHECK(ndk("AndroidBitmap_lockPixels", scratch.Add(28).Value()) == 0);
         CHECK(word(28) == pixels.Value());
+        const auto locked_draw = draw_red();
+        REQUIRE(locked_draw.exception.IsValid());
+        CHECK(linker.Class(locked_draw.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+        const auto set = linker.FindVtableIndex(canvas_type, "setBitmap", "(Landroid/graphics/Bitmap;)V");
+        REQUIRE(set);
+        const auto set_bitmap = [&](VmObjectRef target) {
+            return vm.Call(linker.Class(canvas_type).vtable[*set],
+                           std::array{VmValue::Ref(canvas), VmValue::Ref(target)});
+        };
+        REQUIRE_FALSE(set_bitmap(VmObjectRef{}).exception.IsValid());
         env.DeleteLocalRef(1, reference);
         static_cast<void>(vm.CollectGarbage("ndk-bitmap-lock-root"));
         CHECK(f.context->bitmap_lock_roots.contains(bitmap.Value()));
         reference = bridge.PublishLocal(bitmap);
+        REQUIRE_FALSE(set_bitmap(bitmap).exception.IsValid());
         const std::array changed{std::byte{5}, std::byte{6}, std::byte{7}, std::byte{255}};
         access.write(pixels, changed);
         on("getPixels", "([IIIIIII)V",
@@ -1025,6 +1050,8 @@ TEST_CASE("DVM-221 real ARM NDK Bitmap shares Java pixels and survives GC and re
         CHECK(ndk("AndroidBitmap_unlockPixels") == 0);
         CHECK_FALSE(f.context->bitmap_lock_roots.contains(bitmap.Value()));
         CHECK(f.context->bitmaps.at(bitmap.Value()).pixels->Snapshot()[0] == 0xffaabbccU);
+        REQUIRE_FALSE(draw_red().exception.IsValid());
+        CHECK(f.context->bitmaps.at(bitmap.Value()).pixels->Snapshot()[0] == 0xffff0000U);
         CHECK(ndk("AndroidBitmap_unlockPixels") == UINT32_MAX - 1);
         REQUIRE(env.ExceptionCheck(1));
         const auto pending = env.ExceptionOccurred(1);

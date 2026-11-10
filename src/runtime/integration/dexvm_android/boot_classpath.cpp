@@ -58,19 +58,6 @@ std::vector<std::vector<std::uint8_t>> BootClasspathDexFiles(const std::span<con
     return files;
 }
 
-dexvm::IntrinsicHandler AndroidUnboundNative(const std::string_view owner, const std::string_view name,
-                                             const std::string_view descriptor) {
-    // Only setters: void natives that report through an out parameter (bounds,
-    // text paths) and the finalizer keep failing.
-    const bool setter =
-        name.starts_with("set") || name.starts_with("native_set") || name.starts_with("nSet") || name == "native_reset";
-    if (owner != "Landroid/graphics/Paint;" || !descriptor.ends_with(")V") || !setter) return {};
-    return [what = "Paint." + std::string(name)](dexvm::IntrinsicContext& call) {
-        call.vm.RecordUiDegraded(what);
-        return dexvm::VmValue::Void();
-    };
-}
-
 const BootClasspathJar* FindBootClasspathEntry(const DexVmAndroidContext& context, const std::string_view entry) {
     for (const auto& jar : context.boot_classpath)
         if (HasEntry(jar.archive, entry)) return &jar;

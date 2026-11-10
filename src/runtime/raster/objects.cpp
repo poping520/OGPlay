@@ -6,6 +6,16 @@
 
 namespace ogplay::runtime::raster {
 
+void Camera::GetMatrix(SkMatrix& matrix) const {
+    if (projection.fLocation == SkV3{0, 0, -576}) {
+        view.getMatrix(&matrix);
+        return;
+    }
+    SkPatch3D patch;
+    patch.transform(transforms.back());
+    projection.patchToMatrix(patch, &matrix);
+}
+
 std::uint32_t AllocateToken() {
     static std::atomic<std::uint64_t> next{1};
     const auto bits = next.fetch_add(1, std::memory_order_relaxed);

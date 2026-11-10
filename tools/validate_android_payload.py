@@ -53,12 +53,33 @@ TZDATA_NOTICE = "notices/tzdata.txt"
 UI_PRIMARY_FONT = "fonts/Roboto-Regular.ttf"
 UI_FONT = "fonts/DroidSansFallback.ttf"
 UI_FONT_NOTICE = "notices/fonts.txt"
+SYSTEM_FONTS = (
+    "fonts/Roboto-Regular.ttf",
+    "fonts/Roboto-Bold.ttf",
+    "fonts/Roboto-Italic.ttf",
+    "fonts/Roboto-BoldItalic.ttf",
+    "fonts/Roboto-Light.ttf",
+    "fonts/Roboto-LightItalic.ttf",
+    "fonts/Roboto-Thin.ttf",
+    "fonts/Roboto-ThinItalic.ttf",
+    "fonts/RobotoCondensed-Regular.ttf",
+    "fonts/RobotoCondensed-Bold.ttf",
+    "fonts/RobotoCondensed-Italic.ttf",
+    "fonts/RobotoCondensed-BoldItalic.ttf",
+    "fonts/DroidSerif-Regular.ttf",
+    "fonts/DroidSerif-Bold.ttf",
+    "fonts/DroidSerif-Italic.ttf",
+    "fonts/DroidSerif-BoldItalic.ttf",
+    "fonts/DroidSans.ttf",
+    "fonts/DroidSans-Bold.ttf",
+    "fonts/DroidSansMono.ttf",
+)
 ICU_NOTICES = {
     "notices/icu4c-license.html",
     "notices/icu4c-unicode-license.txt",
 }
 PAYLOAD_FILES = LIBRARIES | NOTICES | {
-    *BOOT_CLASSPATH, BOOT_CLASSPATH_NOTICE, ICU_DATA, "manifest.json",
+    *BOOT_CLASSPATH, *SYSTEM_FONTS, BOOT_CLASSPATH_NOTICE, ICU_DATA, "manifest.json",
     "source-manifest.xml", TZDATA, TZDATA_NOTICE, UI_PRIMARY_FONT, UI_FONT, UI_FONT_NOTICE, "fonts/README.md"} | ICU_NOTICES
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -245,6 +266,12 @@ def validate(root: Path) -> None:
         if entry.get("path") != relative:
             raise PayloadError("fallback font asset path differs")
         _validate_digest(root / relative, entry.get("bytes"), entry.get("sha256"), f"ui_fallback_font.{key}")
+    system_fonts = _items(manifest.get("system_fonts"), "system_fonts")
+    paths = tuple(_mapping(item, "system_fonts entry").get("path") for item in system_fonts)
+    if paths != SYSTEM_FONTS:
+        raise PayloadError("API19 system font set differs")
+    for relative, entry in zip(paths, system_fonts):
+        _validate_digest(root / relative, entry.get("bytes"), entry.get("sha256"), relative)
     if manifest.get("schema_version") != 1 or manifest.get("api_level") != 19 \
             or manifest.get("android_release") != "4.4.4":
         raise PayloadError("manifest does not describe Android 4.4.4 API 19")

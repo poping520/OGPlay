@@ -822,6 +822,12 @@ dx::VmValue OpenCompiledXml(dx::IntrinsicContext& call, std::span<const std::byt
 }
 }  // namespace
 
+std::vector<std::byte> ReadAndroidApkAsset(const Context& context, dx::VmObjectRef manager, const std::string& name) {
+    if (IsSystemAssets(context, manager))
+        throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;", "system asset is unavailable"};
+    return ReadApkFile(context, "assets/" + name);
+}
+
 Decl Declare_android_content_res_AssetManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/res/AssetManager;", "Ljava/lang/Object;");
     builder.MergesBootClass();
@@ -915,16 +921,12 @@ Decl Declare_android_content_res_AssetManager(const Context& context) {
         return dx::VmValue::Ref(array);
     });
     builder.FinalMethod("open", "(Ljava/lang/String;)Ljava/io/InputStream;", [context](dx::IntrinsicContext& call) {
-        if (IsSystemAssets(context, call.receiver))
-            throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;", "system asset is unavailable"};
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
-        return dx::VmValue::Ref(OpenStream(call, context, ReadApkFile(context, "assets/" + name)));
+        return dx::VmValue::Ref(OpenStream(call, context, ReadAndroidApkAsset(context, call.receiver, name)));
     });
     builder.FinalMethod("open", "(Ljava/lang/String;I)Ljava/io/InputStream;", [context](dx::IntrinsicContext& call) {
-        if (IsSystemAssets(context, call.receiver))
-            throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;", "system asset is unavailable"};
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
-        return dx::VmValue::Ref(OpenStream(call, context, ReadApkFile(context, "assets/" + name)));
+        return dx::VmValue::Ref(OpenStream(call, context, ReadAndroidApkAsset(context, call.receiver, name)));
     });
     return std::move(builder).Build();
 }
@@ -1351,6 +1353,19 @@ Decl Declare_android_content_res_Resources(const Context& context) {
                     if (!color) {
                         const auto* entry = SelectUiResourceEntry(*context, id);
                         pixels = DecodeLeafBitmap(*context, *entry);
+                        if (pixels->nine_patch) {
+                            const auto bytes =
+                                loader::ReadApkEntry(context->apk_bytes, context->archive, *entry->string_value);
+                            const auto drawable =
+                                DecodeNinePatchDrawable(call.vm, *context, call.receiver, bytes,
+                                                        entry->density == 65535 ? 0
+                                                        : entry->density == 0   ? 160
+                                                                                : static_cast<int>(entry->density));
+                            auto& state = context->ui_drawables[drawable.Value()];
+                            state.resource_id = id;
+                            state.leaf_pixels = std::move(pixels);
+                            return dx::VmValue::Ref(drawable);
+                        }
                     }
                     const auto* descriptor = color ? "Landroid/graphics/drawable/ColorDrawable;"
                                                    : "Landroid/graphics/drawable/BitmapDrawable;";
@@ -1850,13 +1865,19 @@ dx::VmObjectRef MakeRomSkin(dx::IntrinsicContext& call, const Context& context, 
     if (init.exception.IsValid())
         throw dx::VmJavaThrow{call.vm.Linker().Class(init.exception_class).descriptor, init.exception_message,
                               init.exception};
-    const auto object = call.vm.NewIntrinsicInstance(descriptor);
+    const auto object = selector ? call.vm.NewIntrinsicInstance(descriptor)
+                                 : DecodeNinePatchDrawable(call.vm, *context, ResourceObject(call, context, false),
+                                                           resource->png, static_cast<int>(resource->density));
     const auto roots = call.vm.ProtectReferences(std::array{object});
-    const auto ctor = call.vm.Linker().FindDirectMethod(klass, "<init>", "()V");
-    const auto out = call.vm.Call(*ctor, std::array{dx::VmValue::Ref(object)});
-    if (out.exception.IsValid())
-        throw dx::VmJavaThrow{call.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
-                              out.exception};
+    if (selector) {
+        const auto ctor = call.vm.Linker().FindDirectMethod(klass, "<init>", "()V");
+        const auto out = call.vm.Call(*ctor, std::array{dx::VmValue::Ref(object)});
+        if (out.exception.IsValid())
+            throw dx::VmJavaThrow{call.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                                  out.exception};
+    } else {
+        context->ui_drawables.try_emplace(object.Value());
+    }
     // Do not retain unordered-map references across recursive allocations.
     context->ui_drawables.at(object.Value()).resource_id = id;
     context->ui_drawables.at(object.Value()).rom_skin = true;

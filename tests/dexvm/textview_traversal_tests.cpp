@@ -326,12 +326,15 @@ TEST_CASE("DVM-362 TextView Paint hint input and real Java filters on both backe
         f.On(text, "setTypeface", "(Landroid/graphics/Typeface;)V", {VmValue::Ref(face)});
         CHECK(f.On(paint, "getTypeface", "()Landroid/graphics/Typeface;").ref == face);
         CHECK(f.On(text, "getTypeface", "()Landroid/graphics/Typeface;").ref == face);
-        // The TextView owns its Paint: direct writes are ignored with a warning.
+        // The TextView getter reads the same native Paint that the projection consumes.
         f.On(paint, "setTextSize", "(F)V", {VmValue::Float(32)});
-        CHECK(f.On(paint, "getTextSize", "()F").AsFloat() == 24);
+        CHECK(f.On(paint, "getTextSize", "()F").AsFloat() == 32);
+        CHECK(f.On(text, "getTextSize", "()F").AsFloat() == 32);
         f.On(paint, "setTypeface", "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
              {VmValue::Ref(VmObjectRef{})});
-        CHECK(f.On(paint, "getTypeface", "()Landroid/graphics/Typeface;").ref == face);
+        CHECK_FALSE(f.On(paint, "getTypeface", "()Landroid/graphics/Typeface;").ref.IsValid());
+        CHECK_FALSE(f.On(text, "getTypeface", "()Landroid/graphics/Typeface;").ref.IsValid());
+        f.On(text, "setTypeface", "(Landroid/graphics/Typeface;)V", {VmValue::Ref(face)});
         f.On(text, "setTextSize", "(IF)V", {VmValue::Int(0), VmValue::Float(8)});
         f.On(text, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.model.NewString(u""))});
         const auto hint = f.model.NewString(u"WATERMARK");
@@ -416,7 +419,7 @@ TEST_CASE("DVM-362 TextView Paint hint input and real Java filters on both backe
     }
 }
 
-TEST_CASE("DVM-366 TextView Paint and Editable share one fixed-font length bound on both backends") {
+TEST_CASE("DVM-366 TextView and Editable keep their fixed-font length bound on both backends") {
     constexpr auto bound = ui::kMaxFixedTextUnits;
     // One glyph per wrapped line at 128 px bold-italic keeps every coordinate inside int32.
     const std::u16string longest(bound, u'W');
@@ -465,10 +468,11 @@ TEST_CASE("DVM-366 TextView Paint and Editable share one fixed-font length bound
             return f.OnOutcome(paint, "measureText", "(Ljava/lang/String;)F",
                                {VmValue::Ref(f.model.NewString(std::u16string(size, u'H')))});
         };
-        REQUIRE_FALSE(measure(bound).exception.IsValid());
-        CHECK(measure(bound).value.AsFloat() ==
-              static_cast<float>(ui::MeasureFixedText(std::u16string(bound, u'H'), 12).width));
-        CHECK(measure(bound + 1).exception.IsValid());
+        const auto at_limit = measure(bound);
+        const auto past_limit = measure(bound + 1);
+        REQUIRE_FALSE(at_limit.exception.IsValid());
+        REQUIRE_FALSE(past_limit.exception.IsValid());
+        CHECK(past_limit.value.AsFloat() > at_limit.value.AsFloat());
 
         const auto edit = Text(f, owner, "Landroid/widget/EditText;");
         const auto edit_root = f.vm.ProtectReferences(std::array{edit});

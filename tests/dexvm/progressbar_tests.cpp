@@ -274,7 +274,11 @@ TEST_CASE("DVM-367 horizontal ROM ProgressBar retains layer IDs levels and stati
         const auto copy = f.New("Landroid/graphics/Paint;", "(Landroid/graphics/Paint;)V", {VmValue::Ref(paint)});
         const auto copy_root = f.vm.ProtectReferences(std::array{copy});
         CHECK(f.On(copy, "getAlpha", "()I").AsInt() == 128);
-        CHECK(f.On(copy, "getShader", "()Landroid/graphics/Shader;").ref == shader);
+        const auto shader_copy = f.On(copy, "getShader", "()Landroid/graphics/Shader;").ref;
+        REQUIRE(shader_copy.IsValid());
+        CHECK(shader_copy != shader);
+        CHECK(f.model.ObjectClass(shader_copy) == f.model.ObjectClass(shader));
+        CHECK(read_ref(shader_copy, "mBitmap", "Landroid/graphics/Bitmap;") == bitmap);
         f.On(copy, "setAlpha", "(I)V", {VmValue::Int(7)});
         CHECK(f.On(paint, "getAlpha", "()I").AsInt() == 128);
         f.On(paint, "setAlpha", "(I)V", {VmValue::Int(255)});

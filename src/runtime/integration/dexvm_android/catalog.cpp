@@ -150,12 +150,12 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_graphics_BitmapFactory(context),
         Declare_android_graphics_NinePatch(context),
         Declare_android_graphics_Canvas(context),
+        Declare_android_graphics_DrawFilter(context),
+        Declare_android_graphics_PaintFlagsDrawFilter(context),
         Declare_android_graphics_Matrix(context),
         Declare_android_graphics_Paint(context),
         Declare_android_graphics_Path(context),
         Declare_android_graphics_Color(context),
-        Declare_android_graphics_PorterDuff(context),
-        Declare_android_graphics_PorterDuff_Mode(context),
         Declare_android_graphics_Region(context),
         Declare_android_graphics_RegionIterator(context),
         Declare_android_graphics_PathMeasure(context),
@@ -163,7 +163,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_graphics_Typeface(context),
         Declare_android_graphics_drawable_Drawable(context),
         Declare_android_graphics_drawable_AnimationDrawable(context),
-        Declare_android_graphics_drawable_PaintDrawable(context),
+        Declare_android_graphics_Camera(context),
         Declare_android_graphics_drawable_BitmapDrawable(context),
         Declare_android_hardware_LocalSensorManager(context),
         Declare_android_hardware_LegacySensorManager(context),
@@ -221,6 +221,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_text_Editable(context),
         Declare_android_text_EditableImpl(context),
         Declare_android_text_TextPaint(context),
+        Declare_android_text_AndroidBidi(context),
         Declare_android_text_TextWatcher(context),
         Declare_android_text_TextUtils(context),
         Declare_android_text_format_Time(context),
@@ -319,6 +320,8 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         result.push_back(Declare_test_AccessibilityManager(context));
         result.push_back(Declare_test_ListenerInfo(context));
     }
+    for (auto& declaration : Declare_android_graphics_Effects(context))
+        result.push_back(std::move(declaration));
     for (auto& declaration : Declare_android_graphics_StateObjects(context))
         result.push_back(std::move(declaration));
     return result;

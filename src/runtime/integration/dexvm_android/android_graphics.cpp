@@ -22,163 +22,6 @@ std::int32_t ReadIntField(dx::Interpreter& vm, dx::VmObjectRef object, std::stri
 }  // namespace
 }  // namespace ogplay::runtime::android_intrinsics
 
-// ---- migrated from android_graphics_Canvas.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-namespace {
-// AOSP android-4.4_r1 external/skia/src/core/SkXfermode.cpp and
-// include/core/SkColorPriv.h; framework SkPorterDuff maps MULTIPLY to MODULATE.
-// CanvasState.argb is straight ARGB, so convert to premultiplied bytes for
-// Skia's integer operations, then unpremultiply for the existing pixel consumers.
-std::uint32_t BlendCanvasColor(std::uint32_t color, std::uint32_t destination, int mode) {
-    if (mode == 0) return 0;
-    if (mode == 2) return destination;
-    const auto mul = [](int x, int y) { return (x * y + 127) / 255; };
-    const int sa = static_cast<int>(color >> 24), da = static_cast<int>(destination >> 24);
-    const auto channel = [&](int sc, int dc, bool alpha) {
-        switch (mode) {
-        case 1: return sc;
-        case 3: return sc + ((dc * (256 - sa)) >> 8);
-        case 4: return dc + ((sc * (256 - da)) >> 8);
-        case 5: return (sc * (da + 1)) >> 8;
-        case 6: return (dc * (sa + 1)) >> 8;
-        case 7: return (sc * (256 - da)) >> 8;
-        case 8: return (dc * (256 - sa)) >> 8;
-        case 9: return alpha ? da : mul(sc, da) + mul(dc, 255 - sa);
-        case 10: return alpha ? sa : mul(sc, 255 - da) + mul(dc, sa);
-        case 11: return alpha ? sa + da - 2 * mul(sa, da) : mul(sc, 255 - da) + mul(dc, 255 - sa);
-        case 12: return alpha ? sa + da - mul(sa, da) : sc + dc - (std::max(sc * da, dc * sa) + 127) / 255;
-        case 13: return alpha ? sa + da - mul(sa, da) : sc + dc - (std::min(sc * da, dc * sa) + 127) / 255;
-        case 14: return mul(sc, dc);
-        case 15: return sc + dc - mul(sc, dc);
-        case 16: return std::min(255, sc + dc);
-        case 17: {
-            if (alpha) return sa + da - mul(sa, da);
-            const int blend = 2 * dc <= da ? 2 * sc * dc : sa * da - 2 * (da - dc) * (sa - sc);
-            return std::clamp((blend + sc * (255 - da) + dc * (255 - sa) + 127) / 255, 0, 255);
-        }
-        default: throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid PorterDuff Mode.nativeInt"};
-        }
-    };
-    const int a = channel(sa, da, true);
-    std::uint32_t result = static_cast<std::uint32_t>(a) << 24;
-    for (const auto shift : {16, 8, 0}) {
-        const int sc = mul(static_cast<int>((color >> shift) & 255U), sa);
-        const int dc = mul(static_cast<int>((destination >> shift) & 255U), da);
-        const int value = channel(sc, dc, false);
-        result |= static_cast<std::uint32_t>(a ? std::clamp((value * 255 + a / 2) / a, 0, 255) : 0) << shift;
-    }
-    return result;
-}
-
-dx::VmValue FillCanvasColor(const Context& context, dx::IntrinsicContext& call, std::uint32_t color, int mode) {
-    const auto found = context->canvases.find(call.receiver.Value());
-    if (found == context->canvases.end() || !found->second.locked)
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Canvas is not locked"};
-    // Pure color fills are not constrained by clip: clipRect/save/restore remain unimplemented.
-    for (auto& pixel : found->second.argb)
-        pixel = BlendCanvasColor(color, pixel, mode);
-    return dx::VmValue::Void();
-}
-}  // namespace
-
-Decl Declare_android_graphics_Canvas(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Canvas;", "Ljava/lang/Object;");
-    for (const bool width : {true, false}) {
-        builder.VirtualMethod(width ? "getWidth" : "getHeight", "()I", [context, width](dx::IntrinsicContext& call) {
-            const auto found = context->canvases.find(call.receiver.Value());
-            if (found == context->canvases.end() || !found->second.locked)
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Canvas is not locked"};
-            return dx::VmValue::Int(static_cast<std::int32_t>(width ? found->second.width : found->second.height));
-        });
-    }
-    builder.VirtualMethod("save", "(I)I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });
-    builder.VirtualMethod("restore", "()V", GraphicsNoopHandler());
-    builder.VirtualMethod("clipRect", "(FFFFLandroid/graphics/Region$Op;)Z",
-                          [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });
-    builder.FinalMethod("getClipBounds", "()Landroid/graphics/Rect;", [context](dx::IntrinsicContext& call) {
-        const auto rect = call.vm.NewIntrinsicInstance("Landroid/graphics/Rect;");
-        const auto root = call.vm.ProtectReferences(std::array{rect});
-        const auto found = context->canvases.find(call.receiver.Value());
-        if (found == context->canvases.end() || !found->second.locked)
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Canvas is not locked"};
-        static_cast<void>(CallAndroidMethod(call.vm, rect, "set", "(IIII)V",
-                                            {dx::VmValue::Int(0), dx::VmValue::Int(0),
-                                             dx::VmValue::Int(static_cast<std::int32_t>(found->second.width)),
-                                             dx::VmValue::Int(static_cast<std::int32_t>(found->second.height))}));
-        return dx::VmValue::Ref(rect);
-    });
-    builder.VirtualMethod("drawColor", "(I)V", [context](dx::IntrinsicContext& call) {
-        return FillCanvasColor(context, call, static_cast<std::uint32_t>(call.arguments[0].AsInt()), 3);
-    });
-    builder.VirtualMethod("drawColor", "(ILandroid/graphics/PorterDuff$Mode;)V", [context](dx::IntrinsicContext& call) {
-        const auto mode = call.arguments[1].ref;
-        if (!mode.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "PorterDuff mode is null"};
-        return FillCanvasColor(context, call, static_cast<std::uint32_t>(call.arguments[0].AsInt()),
-                               ReadIntField(call.vm, mode, "nativeInt"));
-    });
-    for (const bool argb : {false, true}) {
-        builder.VirtualMethod(
-            argb ? "drawARGB" : "drawRGB", argb ? "(IIII)V" : "(III)V", [context, argb](dx::IntrinsicContext& call) {
-                const std::size_t first = argb ? 1 : 0;
-                auto color = argb ? (static_cast<std::uint32_t>(call.arguments[0].AsInt()) & 255U) << 24 : 0xff000000U;
-                for (std::size_t i = 0; i < 3; ++i)
-                    color |= (static_cast<std::uint32_t>(call.arguments[first + i].AsInt()) & 255U) << (16 - i * 8);
-                return FillCanvasColor(context, call, color, 3);
-            });
-    }
-    builder.VirtualMethod(
-        "drawBitmap", "(Landroid/graphics/Bitmap;FFLandroid/graphics/Paint;)V", [context](dx::IntrinsicContext& call) {
-            RequirePlainCanvasPaint(call, call.arguments[3].ref);
-            const auto canvas = context->canvases.find(call.receiver.Value());
-            const auto bitmap = context->bitmaps.find(call.arguments[0].ref.Value());
-            if (canvas == context->canvases.end() || !canvas->second.locked) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Canvas is not locked"};
-            }
-            if (!call.arguments[0].ref.IsValid() || bitmap == context->bitmaps.end() || bitmap->second.recycled) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "drawBitmap source is invalid"};
-            }
-            const auto left_value = call.arguments[1].AsFloat();
-            const auto top_value = call.arguments[2].AsFloat();
-            if (!std::isfinite(left_value) || !std::isfinite(top_value)) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "drawBitmap coordinates are not finite"};
-            }
-            const auto left = static_cast<std::int32_t>(std::floor(left_value));
-            const auto top = static_cast<std::int32_t>(std::floor(top_value));
-            auto& target = canvas->second;
-            const auto& source = bitmap->second;
-            for (std::int32_t y = 0; y < source.height; ++y) {
-                const auto destination_y = top + y;
-                if (destination_y < 0 || destination_y >= static_cast<std::int32_t>(target.height)) {
-                    continue;
-                }
-                for (std::int32_t x = 0; x < source.width; ++x) {
-                    const auto destination_x = left + x;
-                    if (destination_x < 0 || destination_x >= static_cast<std::int32_t>(target.width)) {
-                        continue;
-                    }
-                    target.argb[static_cast<std::size_t>(destination_y) * target.width +
-                                static_cast<std::size_t>(destination_x)] =
-                        source.pixels->Get(static_cast<std::size_t>(y) * static_cast<std::size_t>(source.width) +
-                                           static_cast<std::size_t>(x));
-                }
-            }
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod("drawBitmap", "([IIIIIIIZLandroid/graphics/Paint;)V", [](dx::IntrinsicContext& c) {
-        return CallAndroidMethod(c.vm, c.receiver, "drawBitmap", "([IIIFFIIZLandroid/graphics/Paint;)V",
-                                 {c.arguments[0], c.arguments[1], c.arguments[2],
-                                  dx::VmValue::Float(static_cast<float>(c.arguments[3].AsInt())),
-                                  dx::VmValue::Float(static_cast<float>(c.arguments[4].AsInt())), c.arguments[5],
-                                  c.arguments[6], c.arguments[7], c.arguments[8]});
-    });
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
 // ---- migrated from android_graphics_drawable_Drawable.cpp ----
 #include "catalog.h"
 
@@ -194,361 +37,12 @@ Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
             return dx::VmValue::Ref(InflateSealedRomDrawable(call, context, call.arguments[0].ref,
                                                              call.arguments[1].ref, call.arguments[2].ref));
         });
-    const auto dimension = [context](const bool width) {
-        return dx::IntrinsicHandler([context, width](dx::IntrinsicContext& call) {
-            const auto found = context->ui_drawables.find(call.receiver.Value());
-            if (found == context->ui_drawables.end() || !found->second.bitmap_drawable) return dx::VmValue::Int(-1);
-            if (found->second.bitmap.IsValid()) {
-                const auto bitmap = context->bitmaps.find(found->second.bitmap.Value());
-                if (bitmap == context->bitmaps.end() || bitmap->second.recycled)
-                    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Drawable bitmap is recycled"};
-                return dx::VmValue::Int(width ? bitmap->second.width : bitmap->second.height);
-            }
-            if (found->second.resource_id != 0) {
-                const auto bitmap = ResolveUiDrawable(*context, found->second.resource_id);
-                return dx::VmValue::Int(width ? bitmap->width : bitmap->height);
-            }
-            return dx::VmValue::Int(-1);
-        });
-    };
-
-    // AOSP 4.4 ROM line 165.
-
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-// ---- migrated from android_graphics_drawable_PaintDrawable.cpp ----
-#include "catalog.h"
-
 namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_graphics_drawable_PaintDrawable(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/PaintDrawable;",
-                                                    "Landroid/graphics/drawable/Drawable;");
-    // PaintDrawable inherits AOSP ShapeDrawable's state overrides.
-    const auto reject_state = [](dx::IntrinsicContext& call) -> dx::VmValue {
-        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Drawable state is not admitted"};
-    };
-    builder.OverrideMethod("mutate", "()Landroid/graphics/drawable/Drawable;", reject_state);
-    builder.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
-    builder.OverrideMethod("getAlpha", "()I", reject_state);
-    builder.OverrideMethod("setAlpha", "(I)V", IgnoredUiRequest("Drawable.setAlpha"));
-    builder.OverrideMethod("getOpacity", "()I", reject_state);
-    builder.Constructor("(I)V", GraphicsNoopHandler());
-    builder.VirtualMethod("setCornerRadius", "(F)V", GraphicsNoopHandler());
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-// ---- migrated from android_graphics_Paint.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-namespace {
-[[noreturn]] void UnsupportedPaint(dx::IntrinsicContext& call, const std::string& detail) {
-    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.paint_measure", 0);
-    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", detail};
-}
-}  // namespace
-
-Decl Declare_android_graphics_Paint(const Context& context) {
-    {
-        auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Paint;", "Ljava/lang/Object;");
-        builder.MergesBootClass();
-        const auto face = builder.BoundInstanceField("mTypeface", "Landroid/graphics/Typeface;", dx::kAccPrivate);
-        const auto shader = builder.BoundInstanceField("mShader", "Landroid/graphics/Shader;", dx::kAccPrivate);
-        const auto xfer = builder.BoundInstanceField("mXfermode", "Landroid/graphics/Xfermode;", dx::kAccPrivate);
-        const auto color_filter =
-            builder.BoundInstanceField("mColorFilter", "Landroid/graphics/ColorFilter;", dx::kAccPrivate);
-        const auto state = [context](dx::IntrinsicContext& call) -> DexVmAndroidContext::PaintMeasureState& {
-            const auto found = context->paint_measure_states.find(call.receiver.Value());
-            if (found == context->paint_measure_states.end())
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Paint measurement requires construction"};
-            return found->second;
-        };
-        const auto flags = [](dx::IntrinsicContext& call, std::int32_t value) {
-            // AA, filter-bitmap, dither and the two API19 default text flags.
-            if ((value & ~0x507) != 0) RecordUiDegraded(call.vm, "Paint.flags");
-            return value & 0x507;
-        };
-        const auto init = [context, face, flags](dx::IntrinsicContext& call) {
-            DexVmAndroidContext::PaintMeasureState value;
-            value.flags = flags(call, (call.arguments.empty() ? 0 : call.arguments[0].AsInt()) | 0x500);
-            context->paint_measure_states.insert_or_assign(call.receiver.Value(), std::move(value));
-            dx::IntrinsicCall(call).SetRef(face, dx::VmObjectRef{});
-            return dx::VmValue::Void();
-        };
-        builder.Constructor("()V", init).Constructor("(I)V", init);
-        builder.Constructor("(Landroid/graphics/Paint;)V",
-                            [context, face, shader, xfer, color_filter](dx::IntrinsicContext& c) {
-                                const auto source = c.arguments[0].ref;
-                                if (!source.IsValid())
-                                    throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "Paint source is null"};
-                                const auto found = context->paint_measure_states.find(source.Value());
-                                if (found == context->paint_measure_states.end())
-                                    UnsupportedPaint(c, "Paint source requires construction");
-                                DexVmAndroidContext::PaintMeasureState copy;
-                                copy.flags = found->second.flags;
-                                copy.text_size = found->second.text_size;
-                                copy.alpha = found->second.alpha;
-                                const dx::IntrinsicCall fields(c);
-                                for (const auto field : {face, shader, xfer, color_filter})
-                                    fields.SetRef(field, fields.GetRef(field, source));
-                                context->paint_measure_states.insert_or_assign(c.receiver.Value(), std::move(copy));
-                                return dx::VmValue::Void();
-                            });
-        builder.VirtualMethod(
-            "getAlpha", "()I", [state](dx::IntrinsicContext& c) { return dx::VmValue::Int(state(c).alpha); },
-            dx::kAccPublic | dx::kAccNative);
-        builder.VirtualMethod(
-            "setAlpha", "(I)V",
-            [state](dx::IntrinsicContext& c) {
-                const auto value = c.arguments[0].AsInt();
-                if (state(c).text_view_owned) {
-                    RecordUiDegraded(c.vm, "TextViewPaint.alpha");
-                    return dx::VmValue::Void();
-                }
-                state(c).alpha = value & 0xff;  // SkPaint keeps the low byte.
-                return dx::VmValue::Void();
-            },
-            dx::kAccPublic | dx::kAccNative);
-        builder.VirtualMethod("setColorFilter", "(Landroid/graphics/ColorFilter;)Landroid/graphics/ColorFilter;",
-                              [state, color_filter](dx::IntrinsicContext& c) {
-                                  static_cast<void>(state(c));
-                                  // Kept for getColorFilter; the fixed-function renderer never applies it.
-                                  if (c.arguments[0].ref.IsValid()) RecordUiDegraded(c.vm, "Paint.colorFilter");
-                                  dx::IntrinsicCall(c).SetRef(color_filter, c.arguments[0].ref);
-                                  return c.arguments[0];
-                              });
-        for (const auto [name, signature, field] :
-             {std::tuple{"setShader", "(Landroid/graphics/Shader;)Landroid/graphics/Shader;", shader},
-              std::tuple{"setXfermode", "(Landroid/graphics/Xfermode;)Landroid/graphics/Xfermode;", xfer}}) {
-            builder.VirtualMethod(name, signature, [state, field](dx::IntrinsicContext& c) {
-                static_cast<void>(state(c));
-                dx::IntrinsicCall(c).SetRef(field, c.arguments[0].ref);
-                return dx::VmValue::Ref(c.arguments[0].ref);
-            });
-        }
-        builder.VirtualMethod(
-            "finalize", "()V",
-            [context](dx::IntrinsicContext& c) {
-                context->paint_measure_states.erase(c.receiver.Value());
-                const auto object = c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;");
-                const auto index = c.vm.Linker().FindVtableIndex(object, "finalize", "()V");
-                if (!index) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Object.finalize missing");
-                const auto outcome =
-                    c.vm.Call(c.vm.Linker().Class(object).vtable[*index], std::array{dx::VmValue::Ref(c.receiver)});
-                if (outcome.exception.IsValid())
-                    throw dx::VmJavaThrow{c.vm.Linker().Class(outcome.exception_class).descriptor,
-                                          outcome.exception_message, outcome.exception};
-                return outcome.value;
-            },
-            dx::kAccProtected);
-        builder.VirtualMethod("getFlags", "()I",
-                              [state](dx::IntrinsicContext& c) { return dx::VmValue::Int(state(c).flags); });
-        builder.VirtualMethod("setFlags", "(I)V", [state, flags](dx::IntrinsicContext& c) {
-            if (state(c).text_view_owned) {
-                RecordUiDegraded(c.vm, "TextViewPaint.flags");
-                return dx::VmValue::Void();
-            }
-            state(c).flags = flags(c, c.arguments[0].AsInt());
-            return dx::VmValue::Void();
-        });
-        builder.FinalMethod("isAntiAlias", "()Z",
-                            [state](dx::IntrinsicContext& c) { return dx::VmValue::Int(state(c).flags & 1); });
-        builder.VirtualMethod("setAntiAlias", "(Z)V", [state](dx::IntrinsicContext& c) {
-            auto& value = state(c);
-            if (value.text_view_owned) {
-                RecordUiDegraded(c.vm, "TextViewPaint.flags");
-                return dx::VmValue::Void();
-            }
-            value.flags = (value.flags & ~1) | (c.arguments[0].AsInt() != 0);
-            return dx::VmValue::Void();
-        });
-        for (const auto [name, bit] : {std::pair{"setFilterBitmap", 0x02}, std::pair{"setDither", 0x04}}) {
-            builder.VirtualMethod(name, "(Z)V", [state, bit](dx::IntrinsicContext& c) {
-                auto& value = state(c);
-                if (value.text_view_owned) {
-                    RecordUiDegraded(c.vm, "TextViewPaint.flags");
-                    return dx::VmValue::Void();
-                }
-                value.flags = (value.flags & ~bit) | (c.arguments[0].AsInt() != 0 ? bit : 0);
-                return dx::VmValue::Void();
-            });
-        }
-        builder.VirtualMethod("getTextSize", "()F",
-                              [state](dx::IntrinsicContext& c) { return dx::VmValue::Float(state(c).text_size); });
-        builder.VirtualMethod("setTextSize", "(F)V", [state](dx::IntrinsicContext& c) {
-            const auto size = c.arguments[0].AsFloat();
-            if (!std::isfinite(size) || size < 1 || size > 128 || state(c).text_view_owned) {
-                RecordUiDegraded(c.vm, "Paint.textSize");
-                return dx::VmValue::Void();
-            }
-            state(c).text_size = size;
-            return dx::VmValue::Void();
-        });
-        builder.VirtualMethod("getTypeface", "()Landroid/graphics/Typeface;", [face, state](dx::IntrinsicContext& c) {
-            static_cast<void>(state(c));
-            return dx::VmValue::Ref(dx::IntrinsicCall(c).GetRef(face));
-        });
-        builder.VirtualMethod("setTypeface", "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
-                              [face, state](dx::IntrinsicContext& c) {
-                                  const auto ref = c.arguments[0].ref;
-                                  if (state(c).text_view_owned) {
-                                      RecordUiDegraded(c.vm, "TextViewPaint.typeface");
-                                      return dx::VmValue::Ref(ref);
-                                  }
-                                  if (ref.IsValid()) static_cast<void>(CallAndroidMethod(c.vm, ref, "getStyle", "()I"));
-                                  dx::IntrinsicCall(c).SetRef(face, ref);
-                                  return dx::VmValue::Ref(ref);
-                              });
-        const auto measure = [context, state, face](int kind) {
-            return dx::IntrinsicHandler([context, state, face, kind](dx::IntrinsicContext& c) {
-                auto& value = state(c);
-                const auto ref = c.arguments[0].ref;
-                if (!ref.IsValid())
-                    throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "text cannot be null"};
-                std::int32_t length{};
-                const bool chars = kind == 2 || kind == 5;
-                if (chars)
-                    length = c.vm.Model().ArrayLength(ref);
-                else if (kind == 3)
-                    length = CallAndroidMethod(c.vm, ref, "length", "()I").AsInt();
-                else
-                    length = c.vm.Model().StringLength(ref);
-                const auto start = kind == 0 ? 0 : c.arguments[1].AsInt();
-                const std::int64_t end = kind == 0 ? length
-                                         : chars   ? static_cast<std::int64_t>(start) + c.arguments[2].AsInt()
-                                                   : c.arguments[2].AsInt();
-                if (start < 0 || end < start || end > length)
-                    throw dx::VmJavaThrow{chars ? "Ljava/lang/ArrayIndexOutOfBoundsException;"
-                                                : "Ljava/lang/IndexOutOfBoundsException;",
-                                          "Paint text range"};
-                if (end - start > static_cast<std::int64_t>(ui::kMaxFixedTextUnits))
-                    UnsupportedPaint(c, "Paint text exceeds fixed-font service bound");
-                std::u16string text;
-                if (chars) {
-                    for (auto i = start; i < end; ++i)
-                        text.push_back(static_cast<char16_t>(c.vm.Model().GetPrimitiveElement(ref, i)));
-                } else if (kind == 3) {
-                    for (auto i = start; i < end; ++i)
-                        text.push_back(static_cast<char16_t>(
-                            CallAndroidMethod(c.vm, ref, "charAt", "(I)C", {dx::VmValue::Int(i)}).AsInt()));
-                } else
-                    text = c.vm.Model().StringRegion(ref, start, static_cast<JniSize>(end - start));
-                // Paint remains single-line; use the same glyph coverage as TextView.
-                try {
-                    for (const auto unit : text)
-                        ui::RequireTextGlyph(unit, context->ui_tree.FallbackFont().get());
-                } catch (const std::runtime_error& error) {
-                    UnsupportedPaint(c, error.what());
-                }
-                const auto typeface = dx::IntrinsicCall(c).GetRef(face);
-                const auto style =
-                    typeface.IsValid() ? CallAndroidMethod(c.vm, typeface, "getStyle", "()I").AsInt() : 0;
-                float width{};
-                try {
-                    width = static_cast<float>(ui::MeasureFixedText(text, value.text_size,
-                                                                    static_cast<std::uint32_t>(style),
-                                                                    context->ui_tree.FallbackFont().get())
-                                                   .width);
-                } catch (const std::runtime_error& error) {
-                    UnsupportedPaint(c, error.what());
-                }
-                if (kind >= 4) {
-                    const auto rect = c.arguments[3].ref;
-                    if (!rect.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "bounds rect"};
-                    const auto metrics = ui::MeasureFixedText(text, value.text_size, static_cast<std::uint32_t>(style),
-                                                              context->ui_tree.FallbackFont().get());
-                    const auto top = text.empty() ? 0 : -7 * metrics.scale;
-                    const auto bottom = text.empty() ? 0 : top + metrics.height;
-                    return CallAndroidMethod(c.vm, rect, "set", "(IIII)V",
-                                             {dx::VmValue::Int(0), dx::VmValue::Int(top),
-                                              dx::VmValue::Int(metrics.width), dx::VmValue::Int(bottom)});
-                }
-                ++value.measurements;
-                value.last_text = text;
-                value.last_width = width;
-                return dx::VmValue::Float(width);
-            });
-        };
-        builder.VirtualMethod("measureText", "(Ljava/lang/String;)F", measure(0));
-        builder.VirtualMethod("measureText", "(Ljava/lang/String;II)F", measure(1));
-        builder.VirtualMethod("measureText", "([CII)F", measure(2));
-        builder.VirtualMethod("measureText", "(Ljava/lang/CharSequence;II)F", measure(3));
-        const auto font_metrics = [context, state](dx::IntrinsicContext& c) {
-            // The fixed raster cell has seven rows, baseline at its bottom and no descender.
-            // Non-ASCII fallback is rasterized into this same cell by the UI font service.
-            const auto metrics =
-                ui::MeasureFixedText(u"M", state(c).text_size, 0, context->ui_tree.FallbackFont().get());
-            const auto ascent = -static_cast<float>(metrics.height);
-            if (!c.arguments.empty() && c.arguments[0].ref.IsValid()) {
-                const auto object = c.arguments[0].ref;
-                for (const auto name : {"top", "ascent", "descent", "bottom", "leading"}) {
-                    const auto field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(object), name, "F");
-                    if (!field)
-                        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "FontMetrics field missing");
-                    const auto value =
-                        std::string_view(name) == "top" || std::string_view(name) == "ascent" ? ascent : 0.F;
-                    c.vm.Model().InstanceSlots(object)[c.vm.Linker().Field(*field).slot] = {
-                        dx::VmValue::Float(value).cat1, dx::SlotTag::cat1};
-                }
-            }
-            return dx::VmValue::Float(static_cast<float>(metrics.height));
-        };
-        builder.VirtualMethod("getFontMetrics", "(Landroid/graphics/Paint$FontMetrics;)F", font_metrics);
-        builder.VirtualMethod("ascent", "()F", [font_metrics](dx::IntrinsicContext& c) {
-            return dx::VmValue::Float(-font_metrics(c).AsFloat());
-        });
-        builder.VirtualMethod("descent", "()F", [state](dx::IntrinsicContext& c) {
-            static_cast<void>(state(c));
-            return dx::VmValue::Float(0.F);
-        });
-        builder.VirtualMethod("getTextBounds", "(Ljava/lang/String;IILandroid/graphics/Rect;)V", measure(4));
-        builder.VirtualMethod("getTextBounds", "([CIILandroid/graphics/Rect;)V", measure(5));
-        return std::move(builder).Build();
-    }
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-// ---- migrated from android_graphics_PorterDuff.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_graphics_PorterDuff_Mode(const Context& context) {
-    static_cast<void>(context);
-    constexpr std::array modes{std::pair{"CLEAR", 0},    std::pair{"SRC", 1},       std::pair{"DST", 2},
-                               std::pair{"SRC_OVER", 3}, std::pair{"DST_OVER", 4},  std::pair{"SRC_IN", 5},
-                               std::pair{"DST_IN", 6},   std::pair{"SRC_OUT", 7},   std::pair{"DST_OUT", 8},
-                               std::pair{"SRC_ATOP", 9}, std::pair{"DST_ATOP", 10}, std::pair{"XOR", 11},
-                               std::pair{"DARKEN", 12},  std::pair{"LIGHTEN", 13},  std::pair{"MULTIPLY", 14},
-                               std::pair{"SCREEN", 15},  std::pair{"ADD", 16},      std::pair{"OVERLAY", 17}};
-    dx::IntrinsicEnumBuilder enum_builder("Landroid/graphics/PorterDuff$Mode;",
-                                          {"CLEAR", "SRC", "DST", "SRC_OVER", "DST_OVER", "SRC_IN", "DST_IN", "SRC_OUT",
-                                           "DST_OUT", "SRC_ATOP", "DST_ATOP", "XOR", "DARKEN", "LIGHTEN", "MULTIPLY",
-                                           "SCREEN", "ADD", "OVERLAY"});
-    const auto native_int =
-        enum_builder.ClassBuilder().BoundInstanceField("nativeInt", "I", dx::kAccPublic | dx::kAccFinal);
-    enum_builder.WithConstantInitializer([native_int, modes](dx::IntrinsicContext& context, const dx::VmObjectRef value,
-                                                             std::string_view, const std::int32_t ordinal) {
-        const dx::IntrinsicCall call(context);
-        call.SetInt(native_int, value, modes[static_cast<std::size_t>(ordinal)].second);
-    });
-    return std::move(enum_builder).Build();
-}
-
-Decl Declare_android_graphics_PorterDuff(const Context& context) {
-    static_cast<void>(context);
-    return dx::IntrinsicClassBuilder::Class("Landroid/graphics/PorterDuff;", "Ljava/lang/Object;").Build();
-}
 
 Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/BitmapDrawable;",
@@ -569,63 +63,22 @@ Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
             if (bitmap.IsValid() && !context->bitmaps.contains(bitmap.Value()))
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
                                       "BitmapDrawable requires a Bitmap backing"};
-            {
-                const auto ctor = call.vm.Linker().FindDirectMethod(
-                    call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/Drawable;"), "<init>", "()V");
-                const auto result = call.vm.Call(*ctor, std::array{dx::VmValue::Ref(call.receiver)});
-                if (result.exception.IsValid())
-                    throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
-                                          result.exception_message, result.exception};
-                const auto write = [&](const char* name, const char* type, std::uint32_t bits,
-                                       dx::SlotTag tag = dx::SlotTag::cat1) {
-                    const auto field =
-                        call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(call.receiver), name, type);
-                    if (!field) throw std::logic_error("missing ROM BitmapDrawable field");
-                    call.vm.Model().InstanceSlots(call.receiver)[call.vm.Linker().Field(*field).slot] = {bits, tag};
-                };
-
-                const auto state_type =
-                    call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/BitmapDrawable$BitmapState;");
-                const auto state_initialized = call.vm.EnsureClassInitialized(state_type);
-                if (state_initialized.exception.IsValid())
-                    throw dx::VmJavaThrow{call.vm.Linker().Class(state_initialized.exception_class).descriptor,
-                                          state_initialized.exception_message, state_initialized.exception};
-                const auto state =
-                    call.vm.NewIntrinsicInstance("Landroid/graphics/drawable/BitmapDrawable$BitmapState;");
-                const auto state_root = call.vm.ProtectReferences(std::array{state});
-                const auto state_ctor = call.vm.Linker().FindDirectMethod(
-                    call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/BitmapDrawable$BitmapState;"),
-                    "<init>", "(Landroid/graphics/Bitmap;)V");
-                const auto initialized =
-                    call.vm.Call(*state_ctor, std::array{dx::VmValue::Ref(state), dx::VmValue::Ref(bitmap)});
-                if (initialized.exception.IsValid())
-                    throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
-                                          initialized.exception_message, initialized.exception};
-                write("mBitmapState", "Landroid/graphics/drawable/BitmapDrawable$BitmapState;", state.Value(),
-                      dx::SlotTag::ref);
-                write("mBitmap", "Landroid/graphics/Bitmap;", bitmap.Value(), dx::SlotTag::ref);
-                std::int32_t target = 160;
-                if (index == 1 && call.arguments[0].ref.IsValid()) {
-                    const auto metrics = CallAndroidMethod(call.vm, call.arguments[0].ref, "getDisplayMetrics",
-                                                           "()Landroid/util/DisplayMetrics;")
-                                             .ref;
-                    target = ReadIntField(call.vm, metrics, "densityDpi");
-                    if (target == 0) target = 160;
-                }
-                write("mTargetDensity", "I", static_cast<std::uint32_t>(target));
-                const auto dimension = [&](bool width) {
-                    if (!bitmap.IsValid()) return -1;
-                    const auto& state = context->bitmaps.at(bitmap.Value());
-                    const auto size = width ? state.width : state.height;
-                    const auto density = ReadIntField(call.vm, bitmap, "mDensity");
-                    return density == 0 || density == target
-                               ? size
-                               : static_cast<std::int32_t>((static_cast<std::int64_t>(size) * target + (density >> 1)) /
-                                                           density);
-                };
-                write("mBitmapWidth", "I", static_cast<std::uint32_t>(dimension(true)));
-                write("mBitmapHeight", "I", static_cast<std::uint32_t>(dimension(false)));
-            }
+            const auto state_type =
+                call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/BitmapDrawable$BitmapState;");
+            const auto state = call.vm.NewIntrinsicInstance("Landroid/graphics/drawable/BitmapDrawable$BitmapState;");
+            const auto root = call.vm.ProtectReferences(std::array{state});
+            const auto state_ctor =
+                call.vm.Linker().FindDirectMethod(state_type, "<init>", "(Landroid/graphics/Bitmap;)V");
+            const auto initialized =
+                call.vm.Call(*state_ctor, std::array{dx::VmValue::Ref(state), dx::VmValue::Ref(bitmap)});
+            if (initialized.exception.IsValid()) throw dx::VmJavaThrow{"", "", initialized.exception};
+            const auto ctor = call.vm.Linker().FindDirectMethod(
+                call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/BitmapDrawable;"), "<init>",
+                "(Landroid/graphics/drawable/BitmapDrawable$BitmapState;Landroid/content/res/Resources;)V");
+            const auto resources = index == 1 ? call.arguments[0] : dx::VmValue::Ref(dx::VmObjectRef{});
+            const auto made =
+                call.vm.Call(*ctor, std::array{dx::VmValue::Ref(call.receiver), dx::VmValue::Ref(state), resources});
+            if (made.exception.IsValid()) throw dx::VmJavaThrow{"", "", made.exception};
 
             context->ui_drawables[call.receiver.Value()].bitmap_drawable = true;
             return dx::VmValue::Void();
@@ -633,72 +86,6 @@ Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
     };
     builder.Constructor("(Landroid/graphics/Bitmap;)V", bitmap_ctor(0))
         .Constructor("(Landroid/content/res/Resources;Landroid/graphics/Bitmap;)V", bitmap_ctor(1));
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-// ---- migrated from android_graphics_Typeface.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-namespace {
-// Immutable descriptors of the built-in bitmap-font backend, not guest pointers.
-// Families retain identity; rendering uses the documented built-in fallback face.
-int TypefaceToken(int family, int style) {
-    if (style < 0 || style > 3) style = 0;
-    return 1 + family * 4 + style;
-}
-
-int CheckTypefaceToken(int token) {
-    if (token < 1 || token > 16)
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid typeface descriptor"};
-    return token - 1;
-}
-}  // namespace
-
-Decl Declare_android_graphics_Typeface(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Typeface;");
-    builder.MergesBootClass();
-    constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
-    builder.StaticMethod(
-        "nativeCreate", "(Ljava/lang/String;I)I",
-        [](dx::IntrinsicContext& call) {
-            const auto name =
-                call.arguments[0].ref.IsValid() ? call.vm.StringUtf8(call.arguments[0].ref) : std::string{};
-            // API19 unknown family names fall back to the default face.
-            const int family = name == "sans-serif" ? 1 : name == "serif" ? 2 : name == "monospace" ? 3 : 0;
-            return dx::VmValue::Int(TypefaceToken(family, call.arguments[1].AsInt()));
-        },
-        flags);
-    builder.StaticMethod(
-        "nativeCreateFromTypeface", "(II)I",
-        [](dx::IntrinsicContext& call) {
-            const auto token = call.arguments[0].AsInt();
-            const auto family = token == 0 ? 0 : CheckTypefaceToken(token) / 4;
-            return dx::VmValue::Int(TypefaceToken(family, call.arguments[1].AsInt()));
-        },
-        flags);
-    builder.StaticMethod(
-        "nativeGetStyle", "(I)I",
-        [](dx::IntrinsicContext& call) { return dx::VmValue::Int(CheckTypefaceToken(call.arguments[0].AsInt()) % 4); },
-        flags);
-    builder.StaticMethod(
-        "nativeUnref", "(I)V",
-        [](dx::IntrinsicContext& call) {
-            // Finite immutable descriptors own no allocation or native reference count.
-            static_cast<void>(CheckTypefaceToken(call.arguments[0].AsInt()));
-            return dx::VmValue::Void();
-        },
-        flags);
-    const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
-        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.typeface", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "external font files are unsupported"};
-    };
-    builder.StaticMethod("nativeCreateFromAsset", "(Landroid/content/res/AssetManager;Ljava/lang/String;)I",
-                         unsupported, flags);
-    builder.StaticMethod("nativeCreateFromFile", "(Ljava/lang/String;)I", unsupported, flags);
     return std::move(builder).Build();
 }
 
@@ -744,6 +131,8 @@ void AddSkinQueries(dx::IntrinsicClassBuilder& b, const Context& context, bool c
     b.VirtualMethod("getOpticalInsets", "()Landroid/graphics/Insets;", [context, container](dx::IntrinsicContext& c) {
         if (container && RomContainerState(c).IsValid())
             return dx::VmValue::Ref(DrawableRef(c, c.receiver, "mInsets", "Landroid/graphics/Insets;"));
+        if (!container && DrawableRef(c, c.receiver, "mNinePatch", "Landroid/graphics/NinePatch;").IsValid())
+            return dx::VmValue::Ref(DrawableRef(c, c.receiver, "mOpticalInsets", "Landroid/graphics/Insets;"));
         const auto& state = Skin(c, context);
         if (container && state.skin_current >= 0)
             return CallAndroidMethod(c.vm, state.skin_children.at(static_cast<std::size_t>(state.skin_current)),
@@ -771,6 +160,13 @@ void AddSkinQueries(dx::IntrinsicClassBuilder& b, const Context& context, bool c
                     return dx::VmValue::Int(-2);
                 return CallAndroidMethod(c.vm, state, "getOpacity", "()I");
             }
+        }
+        if (!container && DrawableRef(c, c.receiver, "mNinePatch", "Landroid/graphics/NinePatch;").IsValid()) {
+            const auto patch = DrawableRef(c, c.receiver, "mNinePatch", "Landroid/graphics/NinePatch;");
+            const auto paint = DrawableRef(c, c.receiver, "mPaint", "Landroid/graphics/Paint;");
+            const bool alpha = CallAndroidMethod(c.vm, patch, "hasAlpha", "()Z").AsInt() ||
+                               (paint.IsValid() && CallAndroidMethod(c.vm, paint, "getAlpha", "()I").AsInt() < 255);
+            return dx::VmValue::Int(alpha ? -3 : -1);
         }
         const auto& state = Skin(c, context);
         if (container) {
@@ -812,6 +208,17 @@ void AddSkinQueries(dx::IntrinsicClassBuilder& b, const Context& context, bool c
                 return dx::VmValue::Int(0);
             }
         }
+        if (!container && DrawableRef(call, call.receiver, "mNinePatch", "Landroid/graphics/NinePatch;").IsValid()) {
+            const auto padding = DrawableRef(call, call.receiver, "mPadding", "Landroid/graphics/Rect;");
+            if (padding.IsValid()) {
+                static_cast<void>(CallAndroidMethod(call.vm, call.arguments[0].ref, "set", "(Landroid/graphics/Rect;)V",
+                                                    {dx::VmValue::Ref(padding)}));
+                return dx::VmValue::Int(
+                    (ReadIntField(call.vm, padding, "left") | ReadIntField(call.vm, padding, "top") |
+                     ReadIntField(call.vm, padding, "right") | ReadIntField(call.vm, padding, "bottom")) != 0);
+            }
+            return dx::VmValue::Int(0);
+        }
         const auto& state = Skin(call, context);
         const auto rect = call.arguments[0].ref;
         if (!rect.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "padding rect == null"};
@@ -840,6 +247,8 @@ void AddSkinQueries(dx::IntrinsicClassBuilder& b, const Context& context, bool c
                                : dx::VmValue::Int(-1);
                 }
             }
+            if (!container && DrawableRef(call, call.receiver, "mNinePatch", "Landroid/graphics/NinePatch;").IsValid())
+                return dx::VmValue::Int(ReadIntField(call.vm, call.receiver, width ? "mBitmapWidth" : "mBitmapHeight"));
             const auto& state = Skin(call, context);
             if (container && state.skin_current >= 0) {
                 const auto child = state.skin_children.at(static_cast<std::size_t>(state.skin_current));
@@ -944,29 +353,6 @@ Decl Declare_android_graphics_drawable_NinePatchDrawable(const Context& context)
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/NinePatchDrawable;",
                                               "Landroid/graphics/drawable/Drawable;");
     b.MergesBootClass();
-    b.Constructor("()V", [context](dx::IntrinsicContext& c) {
-        SkinInit(c, context);
-        return dx::VmValue::Void();
-    });
-    const auto reject_state = [](dx::IntrinsicContext& call) -> dx::VmValue {
-        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Drawable state is not admitted"};
-    };
-    b.OverrideMethod("mutate", "()Landroid/graphics/drawable/Drawable;", reject_state);
-    b.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
-    b.OverrideMethod("getAlpha", "()I", reject_state);
-    b.OverrideMethod("setAlpha", "(I)V", IgnoredUiRequest("Drawable.setAlpha"));
-    b.VirtualMethod("getChangingConfigurations", "()I", [context](dx::IntrinsicContext& c) {
-        // Sealed host skins have no mutable ConstantState configuration producer.
-        // Resource loading contributes zero flags; the base ROM field remains observable.
-        static_cast<void>(Skin(c, context));
-        return dx::VmValue::Int(ReadIntField(c.vm, c.receiver, "mChangingConfigurations"));
-    });
-    b.VirtualMethod("setAutoMirrored", "(Z)V", [context](dx::IntrinsicContext& c) {
-        static_cast<void>(Skin(c, context));
-        if (c.arguments[0].AsInt()) RecordUiDegraded(c.vm, "Drawable.autoMirrored");
-        return dx::VmValue::Void();
-    });
     AddSkinQueries(b, context, false);
     return std::move(b).Build();
 }
@@ -1067,6 +453,17 @@ Decl Declare_android_graphics_drawable_StateListDrawable(const Context& context)
             }
             const bool changed = selected != s.skin_current;
             s.skin_current = selected;
+            const auto current =
+                selected >= 0 ? s.skin_children.at(static_cast<std::size_t>(selected)) : dx::VmObjectRef{};
+            const auto field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(c.receiver), "mCurrDrawable",
+                                                                "Landroid/graphics/drawable/Drawable;");
+            c.vm.Model().InstanceSlots(c.receiver)[c.vm.Linker().Field(*field).slot] = {current.Value(),
+                                                                                        dx::SlotTag::ref};
+            if (current.IsValid()) {
+                const auto bounds = CallAndroidMethod(c.vm, c.receiver, "getBounds", "()Landroid/graphics/Rect;").ref;
+                static_cast<void>(CallAndroidMethod(c.vm, current, "setBounds", "(Landroid/graphics/Rect;)V",
+                                                    {dx::VmValue::Ref(bounds)}));
+            }
             if (selected >= 0)
                 static_cast<void>(CallAndroidMethod(c.vm, s.skin_children.at(static_cast<std::size_t>(selected)),
                                                     "setState", "([I)Z", {c.arguments[0]}));

@@ -81,7 +81,7 @@ PROJECTS = [
     ("zlib", "zlib", "", "https://zlib.net", "Zlib", [f"{NOTICES}/libz.so.txt"]),
     ("icu", "ICU", "", "https://icu.unicode.org", "ICU",
      [f"{NOTICES}/icu4c-license.html", f"{NOTICES}/icu4c-unicode-license.txt"]),
-    ("fonts", "Roboto · Droid Sans Fallback", "", "https://source.android.com", "Apache-2.0",
+    ("fonts", "Roboto · Droid Sans · Droid Serif", "", "https://source.android.com", "Apache-2.0",
      [f"{NOTICES}/fonts.txt"]),
     ("tzdata", "tz database", "2014a", "https://www.iana.org/time-zones", "Public Domain",
      [f"{NOTICES}/tzdata.txt"]),

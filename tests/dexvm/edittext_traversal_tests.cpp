@@ -580,7 +580,7 @@ TEST_CASE("DVM-328 ROM default TextView XML and EditText constructors retain laz
     }
 }
 
-TEST_CASE("DVM-344 TextView Paint and actual EditText input share copyright coverage") {
+TEST_CASE("DVM-344 TextView and actual EditText input share projection copyright coverage") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         const auto root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
@@ -617,11 +617,6 @@ TEST_CASE("DVM-344 TextView Paint and actual EditText input share copyright cove
         }
         CHECK(State(f, edit).text == State(f, text).text);
         CHECK(State(f, edit).text == u"©");
-        const auto paint = f.New("Landroid/graphics/Paint;");
-        f.On(paint, "setTextSize", "(F)V", {VmValue::Float(State(f, text).text_size_px)});
-        CHECK(
-            f.On(paint, "measureText", "(Ljava/lang/String;)F", {VmValue::Ref(f.model.NewString(u"©"))}).AsFloat() ==
-            ui::MeasureFixedText(u"©", State(f, text).text_size_px, 0, f.context->ui_tree.FallbackFont().get()).width);
         REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                          AndroidUiTraversalPhase::ResolveOnly, ui::Size{160, 80}));
         CHECK(f.On(edit, "getMeasuredWidth", "()I").AsInt() > 0);

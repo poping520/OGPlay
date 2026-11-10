@@ -23,8 +23,7 @@ content/os/view/graphics/gl/media/database/device family TU 同址。`shared.*` 
   bootstrap 不见 APK、application parent-first，返回归档 guest 路径/entry，校验来源及 ZIP/CRC。
   启动类路径按 `kBootClasspathJars` 顺序（ogplay.jar 在前，其后为原样 ROM jar），各 jar 身份为
   `/system/framework/<名称>`，APK 用 package_resource_path；无宿主文件映射/跨 VM 缓存。
-  ROM 类调用未绑定 native 时抛 UnsatisfiedLinkError；`AndroidUnboundNative` 仅把 Paint 的
-  显示 setter native 降级为 RecordUiDegraded，直到图形 native 接入。
+  ROM 类调用未绑定 native 时记账并抛 UnsatisfiedLinkError。已绑定的显示降级由具体入口记账。
 - 未实现记账并抛可捕获 Java 异常，禁止伪成功；结构化日志保留异常，回调保持身份/代际。
   Clock 唯一时间源，一个 guest 对应一个 host 线程，共用 VM 锁；图形 ANGLE，窗口/输入 SDL3。
 
@@ -189,26 +188,20 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   封存 ROM skin、type28–31 纯色及 cookie1/非 ROM 有效资源 ID 的 APK 位图可延迟加载；
   APK entry 的 type/data/density、配置选择与文件验证共用既有 owner 回调，未封存 ROM 在 Styled 提前失败。
   background 额外支持封存 edit_text 闭包的状态、测量及现有叶 bitmap 平面冻结；
-  ninepatch divisions/像素按目标密度缩放，选中叶及像素随共同快照冻结，guest draw 仍失败；
+  ninepatch divisions/像素按目标密度缩放，选中叶及像素随共同快照冻结；
   其他非空值（含应用 XML drawable、未封存 scrollbar）仍明确失败并记账。
   styleable 与 defStyleAttr/?attr/default-style 消费闭包从固定输入生成三态，不能删掉主题请求。
-  三个 Drawable 类保留完整 ROM 形状；Drawable 原 clinit/基础构造执行 ROM，BitmapDrawable
-  受审构造写 mBitmap/mTargetDensity/mBitmapWidth/Height，intrinsic/getBitmap 读取原字段。
-  资源 Bitmap 不可变，像素以源 density 保存，intrinsic 按 API19 scaleFromDensity 向目标 density
-  换算；ColorDrawable 状态由 Java 字段拥有，投影虚派 getColor，Java Canvas draw 不准入。
-  皮肤封存范围为同 ROM edit_text、btn_default selector/ninepatch 闭包加四个 scrollbar thumb
-  （classic 横/竖、Holo 深/浅）；thumb 复用密度缩放、npTc 与 NinePatchDrawable 加载，
-  不开放其他系统皮肤。DrawableContainer/StateListDrawable/
-  NinePatchDrawable 保持 ROM 形状、受审对象状态 adapter 与失败成员表；DrawableContainer 的
-  Drawable.Callback 按 ROM 仅把当前子项请求以容器身份转给 owner 回调，其余子项丢弃。PNG 由既有服务解码，
-  npTc 提供 padding，按 density 缩放；selector 按有序状态项选择，默认固定 padding 取全部子项最大值。
-  运行时 StateListDrawable 复用同一状态 backing，保留 int[] 与子 Drawable 身份并由 owner trace；
-  ROM StateSet 做顺序匹配，支持零终止/负状态和 wildcard 回退；View 可更新其状态，
-  运行时 selector 无皮肤绘制信用，背景只记账不绘制。
-  不支持任意 inflateFromXml、动画/过渡或 guest 皮肤 draw。edit_text 选中叶的 ninepatch
-  divisions/像素按密度缩放后进入既有 ui_bitmaps 平面，与 View 几何及颜色共同冻结；
-  不可变 leaf_pixels 由 Java Drawable 身份拥有，发布快照仅持有不可变像素；mBitmap 为 Java 强边，
-  sweep/teardown 退役 backing。
+  Drawable 构造、尺寸与绘制状态使用 ROM 对象。BitmapDrawable 的受审构造登记投影 backing，
+  并调用 ROM 私有构造初始化状态。资源位图以源 density 保存，intrinsic 按 API19 换算。
+  编译 NinePatch PNG 经 BitmapFactory 保留 chunk 和 padding，ROM NinePatchDrawable 交给 Skia Canvas。
+  Drawable 的 draw(Canvas) 归 ROM，容器的当前子项同步 Java mCurrDrawable 与投影选择。
+
+  UI 皮肤仍封存为同 ROM edit_text、btn_default selector/ninepatch 闭包及四个 scrollbar thumb。
+  查询、状态选择、回调与不可变叶像素 adapter 供 runtime/ui 投影使用，保留至 P3。
+  selector 保留 int[] 与子 Drawable 身份并由 owner trace，ROM StateSet 做顺序匹配与 wildcard 回退。
+  DrawableContainer 仅以当前子项转发 owner 回调。投影固定 padding 取子项最大值，
+  divisions/像素按密度缩放，与 View 几何和颜色共同冻结；发布快照只持有不可变像素。
+  未封存的系统皮肤、任意 XML inflate 与动画调度仍明确失败，应用软件 Drawable 绘制使用 ROM。
   GC hooks 不加 native 强根：Theme 原字段及 AssetManager owner 退役 token，destroy/Shutdown
   清空状态；旧/跨 context token 明确失败并按 ADR-0147 记账。默认配对必须加载投影。
 
@@ -229,8 +222,8 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   getInteger NotFoundException，映射整数可转文本。Configuration 稳定对象用 VM Locale.getDefault/
   原 setLayoutDirection，TextUtils 仅 ROOT/en/zh 的 LTR，其他在 likely-subtags 接通前失败。
 - app getDrawable 将封存 ROM 系统标量颜色构造为 ColorDrawable；既有受审 ROM 皮肤保留，其余系统 drawable 仍失败，getSystem 路径保持拒绝。
-- getDrawable 返回真实 BitmapDrawable/ColorDrawable；缺/无效资源 NotFoundException，XML Drawable/
-  资源 NinePatch 对象 UOE、自定义 Drawable 绘制拒绝。背景及 ImageView 保持 Drawable 身份与
+- getDrawable 返回 ROM 位图、纯色或 NinePatch Drawable；缺/无效资源抛 NotFoundException，
+  未开放的 XML Drawable 仍明确失败。背景及 ImageView 投影保持 Drawable 身份与
   View→Drawable→Bitmap 强边，Button 默认非空背景、普通 View 可 null；setImageBitmap 每次新建
   BitmapDrawable（含 null），经 Context 虚派 getResources/setImageDrawable，临时保活、异常保持身份。
   alpha 按实例，空对象不绘制，替换/清空解绑 callback、仅有效 node 重绘。
@@ -240,7 +233,10 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   getXml 的 AXML 仅 getEventType/next/getName/getText/close，文本 XML 用 KXml。
 - ROM Bitmap 的 mBuffer 是计入 Java 堆的 byte[]。Skia 直接在借用的宿主跨度读写像素，
   NDK lock 返回同一数组的 guest 地址。Java、Canvas 与 GLUtils 共用这一存储，UI 发布不可变快照。
-  RGBA 默认预乘。回收后已有 NDK 锁可正常归还，最后一次 unlock 推进像素版本。
+  RGBA 默认预乘。Canvas 的 Java mBitmap 与 Bitmap.mBuffer 形成强边，native 像素借用随句柄退役。
+  VM 锁串行化 Canvas 绘制和 NDK lock/unlock。NDK 持锁期间可能在 VM 锁外写像素，Canvas 拒绝
+  读写该 Bitmap（包括图层合成），抛 IllegalStateException。回收后已有 NDK 锁可正常归还。
+  最后一次 NDK unlock、Canvas 绘制及图层合成推进像素版本；Canvas 绘制到回收目标抛 RuntimeException。
   不支持 WebP 编码和共享内存 Parcel blob。
 - StatFs 字段/构造/restat/getter 归 Java，Posix.statvfs 只查 VFS 沙盒配额卷，其他卷失败、无 host
   空间采样，见 [ADR-0122](../../../../docs/adr/runtime.md#adr-0122)。SQLite 固定真实引擎，只经 VFS
@@ -360,9 +356,10 @@ ViewConfiguration 的原 ROM Context 构造器前，受审实例输入接缝只�
 Resources 读取同 ROM override 与 showNavigationBar，再由现有 qemu.hw.mainkeys 属性覆盖，
 读失败透传。固定 ARSC showNavigationBar=true，默认永久菜单键=false；无 Binder 或新快照字段。
 Display.getRealSize 使用现有真实显示配置。Interpolator native 只用参数时间维护关键帧/repeat/mirror；
-Shader/LinearGradient、Xfermode/PorterDuffXfermode 只保存强类型句柄及真实参数，Paint 的 Java 引用
-参与 GC 追踪；含 shader/xfermode 的 Canvas 绘制记账并明确失败。LightingColorFilter 的 Skia/HWUI 两个 native
-句柄只保存 mul/add，后者须引用参数一致的前者；ROM finalize 与 GC 清扫回收两者。不做颜色运算，不被任何绘制消费。可见 scrollbar 仅记账不改像素，
+Shader、混合、颜色/遮罩滤镜与路径效果通过分型 token 持有 Skia 对象，Paint 的 ROM Java 引用
+参与 GC 追踪；native 复制共享 Skia 引用。局部矩阵生成新的不可变 Shader 包装，
+BitmapShader 保留初始像素引用并跟随后续写入。HWUI post-create peer 按软件构建返回 0。
+可见 scrollbar 仅记账不改像素，
 ROM awaken/cache.run 经已有 Handler 与统一时钟推进；无 AttachInfo 时投影只向既有 ViewRoot Handler 队列转发真实 fade deadline。
 ui 不读取 Java 字段；guest measured/bounds 与遍历权威唯一归 Java。
 
@@ -429,11 +426,11 @@ SurfaceView(Context,null) 复用 View 初始化，null Context NPE、非空 Attr
 setZOrderOnTop 后调用覆盖前调用；compositor 即时消费，不承诺 WMS 重建/任意 GLES 多层。
 View.bringToFront 虚派 UiTree 父 ViewParent.bringChildToFront，合成 root 按 ViewRootImpl 空操作；
 ViewGroup.bringChildToFront 忽略非子节点/null，移至末尾后虚派 requestLayout/invalidate。
-setKeepScreenOn(false) 无需宿主动作；true 仅在宿主窗口报告已阻止显示休眠时成功，否则记账拒绝；旧 Surface Canvas 缓冲使用逻辑 ARGB。Canvas 纯色填充在预乘空间按 API19 Skia 的18种 PorterDuff 模式计算，
-再回写非预乘像素；drawColor(int)、drawARGB、drawRGB 使用 SRC_OVER，null Mode 抛 NPE。
-纯色填充不受 clip 约束，clipRect/save/restore 尚未实现。lockCanvas 仅接受 active
-holder，backing/getWidth/Height/clip 与 dirty 扩展区使用 buffer 尺寸，完整重绘；post 通过有界
-holder 像素快照合成到 View frame。窗口 holder 仍发布原软件基帧。
+setKeepScreenOn(false) 无需宿主动作；true 仅在宿主窗口报告已阻止显示休眠时成功，否则记账拒绝。
+SurfaceHolder 委托自研 Surface 的 lockCanvas/unlockCanvasAndPost。软件锁仅接受 active managed
+holder，直接在 buffer 尺寸的 Skia raster device 绘制；dirty 扩展到全 buffer。post 退役该 Canvas，
+把像素转为合成器的非预乘 RGBA8 快照。View holder 合成到 View frame，窗口 holder 发布软件基帧。
+created/destroyed 与 Surface.release 撤销旧的锁定及节拍状态。
 context `frame_period_ns` 非零时，生命周期驱动线程以外的 unlockCanvasAndPost 在发布后按 holder 的
 `hal::FramePacer` 释放 VM 执行锁等待槽位；驱动线程由宿主帧循环节拍，不再等待。
 
@@ -637,28 +634,27 @@ Context 服务派发与 dump-surface 共用 platform_tables.h：未知名称返�
 投影读取同一 native 矩阵的 identity 状态，继续使用现有不变换的 UI 几何。
 路径布尔运算沿 API19 的五种 Op 映射至 Skia PathOps，失败时保留目标路径。硬件 Canvas 查询返回不可用。
 
-## JavaTraversal Paint 测量接缝
+## ROM Paint、Typeface 与文字
 
-固定 JavaTraversal 配对中，ROM TextView clinit 原样执行 Paint 默认构造、antiAlias 与测量。
-Paint 完整 ROM shape/clinit 保留，逐签名 adapter 仅开放实例 flags/字号/typeface 与四种
-measureText 重载及同源 bounds/FontMetrics/ascent/descent；flags/字号由每对象宿主服务状态唯一拥有，mTypeface 为 Java 唯一强边。
-测量只向纯固定字体服务传值，字体 fallback 读取 UiTree 注入事实，不写 guest 几何。
-固定 ASCII 或会话 API19 字体链覆盖的独立 BMP、ui::kMaxFixedTextUnits（65536）单位、1..128px、flags位集0x507以外明确失败并记账；
-完整 shaping、Paint 绘制与 Layout/Editor 保持 failure。
-FontMetrics 使用固定七行格子：top/ascent=-7×scale，descent/bottom/leading=0，无下伸部，不等价 Skia。
-TextPaint 继承 Paint 的同源 bounds，不另设度量口径。
-FILTER_BITMAP(0x02)/DITHER(0x04) setter 仅修改各自位，查询执行 ROM Java/getFlags overlay。
-现有 Canvas.drawBitmap(Bitmap,FF,Paint) 将坐标向下取整后仅做整数对齐的 1:1 像素拷贝，
-FILTER_BITMAP/DITHER/AA 位不改变结果；将来新增缩放或采样绘制时必须消费 FILTER_BITMAP 位，不得忽略。
-真实finalize及GC sweep/teardown 删除实例测量状态。
+ROM 构造、参数检查、兼容缩放及 Java 效果强边执行原字节码。Paint 的分型 int 令牌持有
+SkPaint、SkFont、字体引用、文字属性和效果引用，native reset/set/复制与 ROM 字段同步。
+终结及 GC sweep 幂等退役会话句柄。系统字体由 context 注入，按 API19 family/别名选面，
+APK asset 经 AssetManager 读取，文件只走 VFS。无效字体按 ROM 构造器抛 RuntimeException。
+Paint 和软件 Canvas 使用同一字形、度量及回退，未整形或未重排的文字按逻辑顺序处理并记显示降级。
+几何、位图、网格/顶点及文字使用同一 Paint 效果，PorterDuff 模式共用统一映射。
+Blur 半径转换为 API19 sigma，颜色矩阵平移按 0～255 换算，阴影半径非正时清除。
+DrawFilter 在绘制副本上清除和设置 flags，native 状态随 Canvas save/restore 保存。
+Rasterizer setter 记录显示降级，其他排除的返回值能力由未绑定 native 明确失败。
+NinePatch chunk 由 ROM Bitmap 持有；副本共享 chunk 时最后一个 Java owner sweep 后退役。
+Camera 的变换、位置、矩阵与 Canvas 应用使用同一 Skia 投影。
 
 ## JavaTraversal TextView 构造输入
 
 ADR-0161：仅配对 JavaTraversal 的三个 TextView 构造为受审 adapter，精确调用 ROM View
 属性构造与 Theme/TypedArray；默认 defStyleAttr、appearance/style/theme 优先级真实消费。
 UiNode 的文本、gravity、行策略及四绝对位图槽是单一文本输入；字号/字体样式是 TextPaint 的投影。
-每 View 的 Java mTextPaint 身份稳定，字号归 PaintMeasureState、Typeface 归 Paint.mTypeface；
-TextView setter 写穿并清测量缓存，getter 读取 Paint；直接改所属 Paint 的字号/字体/flags 记账拒绝。
+每 View 的 Java mTextPaint 身份稳定。TextView setter 写穿 native Paint 并清测量缓存。
+投影从该 Paint 读取字号、字体样式和 flags，继续使用 runtime/ui 的固定字体度量和栅格。
 TextView/ImageView 未实现的展示类 XML 属性与无返回值 setter 经 `RecordUiDegraded` 忽略，按 id
 首次写 warn、累计 `ui.degraded.*` 账本警告，运行结束汇总；样式 CharSequence 退化为纯文本；
 密码类 password/inputType、超长文本与缺字仍明确失败。
@@ -747,7 +743,7 @@ TextView.setOnEditorActionListener 执行原版方法，监听器保存在 Java 
 length/toString/clear/replace 服务；其身份从 View 强边保活，反向保活 View，循环随 GC 回收。
 编辑使用已有 ApplyTextEdit；提交接缝提交 selection、失效测量缓存并调用 Java requestLayout/
 invalidate，先全部 before、提交、全部 on、全部 after，after 可重入。
-边界为与 TextView/Paint 共用的 ui::kMaxFixedTextUnits（65536）UTF-16单位、已支持固定字体字符、普通字符串与下标 selection；EditText 不另设默认长度，长度语义只来自 InputFilter；完整 Spannable、
+边界为与 TextView 共用的 ui::kMaxFixedTextUnits（65536）UTF-16单位、已支持固定字体字符、普通字符串与下标 selection；EditText 不另设默认长度，长度语义只来自 InputFilter；完整 Spannable、
 IME/composition、Editor 编辑动作、布局对象、修改键移动/删除及未支持字形请求均记账失败。
 输入按同一 Java findFocus/父链定位 EditText，消费选区替换、左右移动、删除与文本键；
 不使用 focused_edit_text 或 UiTree 焦点作owner。失败校验不改 selection；提交后回调
@@ -982,7 +978,7 @@ ROM 基线只保留 AOSP 4.4.4 声明；CM 的 Typeface 缓存重建/清理、Me
 
 DVM-344：会话主树保存注入的 API19 Roboto-Regular → DroidSansFallback 不可变链，
 CreateHostUiTree 从同一来源建立 Dialog HostLayout；投影和模态复制保持资源身份。
-Paint、TextView 构造/setText 与 EditText 实际输入复用 UI 的 RequireTextGlyph 覆盖判定，
+TextView 构造/setText 与 EditText 实际输入复用 UI 的 RequireTextGlyph 覆盖判定，
 各接缝保留原记账/Java 异常转换；宿主 raster 的缺字也报告码点。
 
 
@@ -993,11 +989,13 @@ UiTree 修改计数。计数单调递增、复制保留、溢出明确失败；�
 结构、属性、布局结果、焦点及窗口事实的修改均进入计数，dirty 消费本身不改变呈现结果。
 
 
-SurfaceView 的 holder 默认请求 API19 RGB_565（不透明），与 producer 使用的 RGBA8 存储分离；
+SurfaceView 的 holder 默认请求 API19 RGB_565（不透明）；
 默认格式沿 Surface 重建保留，不因帧缓冲 alpha 改变图层不透明性。显式格式请求仍可覆盖默认值。
 SurfaceHolder.setFormat 保存逐 holder 请求，created/changed 应用到 active 格式并交付 changed；
 同尺寸格式改变也交付，销毁不丢请求，holder 退役清除。支持 OPAQUE(-1)、TRANSLUCENT(-3)、
-TRANSPARENT(-2) 与 RGBA_8888/RGBX_8888/RGB_888/RGB_565/RGBA_5551/RGBA_4444 的 RGBA8 表示；其他格式记账抛 IAE；保留 RGBA8 通道精度，不模拟 packed 存储或低位深量化。
+TRANSPARENT(-2) 与 RGBA_8888/RGBX_8888/RGB_888/RGB_565/RGBA_5551/RGBA_4444；
+其他请求记账抛 IAE。软件 Canvas 使用 RGBA8888、RGBX8888、RGB565 或 RGBA4444 栅格存储。
+RGB888 与 RGBA5551 缺少 Skia raster device，软件锁定记账并抛 UnsupportedOperationException。
 完整 dirty 区内容按 Surface 协议未定义，此实现取确定初值：透明格式0、不透明格式黑。
 格式 alpha 判定与 application window 共用 PixelFormat 规则；共同快照冻结 alpha 属性，
 透明 holder 按非预乘像素 alpha source-over 合成，不透明强制 alpha=255，保留 View alpha 与层序。
@@ -1025,11 +1023,9 @@ horizontal 的 layer-list/scale、ninepatch 和八帧 bitmap；身份、配置�
 受检。ROM tileify/层 ID、level、测量和 AnimationDrawable 帧集合归 Java；仅同步封存 parser
 作用域可分派嵌套标签，任意其他 drawable XML 仍失败。Small/Light 未封存。
 DrawableContainer 静态选择与字段归 ROM，既有 selector backing 与新 ROM 容器的查询/回调通过
-显式 adapter 分开；fade、animate=true 的 setFrame、start/run 与 guest draw 不准入。
-BitmapShader 仅保存真实 bitmap/tile 引用及带 GC/finalize 退役的软件描述符；静态 Shape 尺寸更新
-拒绝 ShaderFactory，Path 仅记录有限正面积圆角矩形与八个非负半径，不提供 Skia/Canvas 绘制。
-Paint 支持独立复制已支持的状态、0..255 alpha 与 null ColorFilter；TextView alpha、非空 filter
-仍拒绝。ImageView 投影拒绝非默认 bitmap alpha/filter/mirroring，不吞掉未实现效果。
+显式 adapter 分开；fade、animate=true 的 setFrame 与 start/run 调度仍不准入。
+Shape 尺寸与 ShaderFactory 执行 ROM，Paint 原生效果用于软件 Canvas。
+ImageView 投影仍拒绝非默认 bitmap alpha/filter/mirroring。
 View 分离清理执行 ROM，removeCallbacks 只取消既有主 Handler 与当前 guest 线程待转移 action，null 不取消其他任务；
 Drawable stop 的 unschedule 回调不创建帧任务。BitmapDrawable 原 BitmapState/Paint 保存
 filter/anti-alias 状态；投影遇到非默认 Paint flags、shader/xfermode 明确失败，不吞掉效果。

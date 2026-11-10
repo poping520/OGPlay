@@ -115,6 +115,24 @@ Decl Declare_android_text_TextUtils(const Context& context) {
     const auto utf8 = [](dx::IntrinsicContext& call, const dx::VmObjectRef ref) {
         return ref.IsValid() ? call.vm.StringUtf8(ref) : std::string{};
     };
+    // ROM Paint and Canvas use this entry when CharSequence is neither a String nor GraphicsOperations.
+    builder.StaticMethod("getChars", "(Ljava/lang/CharSequence;II[CI)V", [](dx::IntrinsicContext& call) {
+        const dx::IntrinsicCall a(call);
+        const auto source = a.Ref(0);
+        const auto output = a.Ref(3);
+        if (!source.IsValid() || !output.IsValid())
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "TextUtils.getChars"};
+        const auto begin = a.Int(1), end = a.Int(2), offset = a.Int(4);
+        const auto length = CallAndroidMethod(call.vm, source, "length", "()I").AsInt();
+        if (begin < 0 || end < begin || end > length || offset < 0 ||
+            static_cast<std::int64_t>(offset) + end - begin > call.vm.Model().ArrayLength(output))
+            throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "TextUtils.getChars range"};
+        for (int i = begin; i < end; ++i) {
+            const auto ch = CallAndroidMethod(call.vm, source, "charAt", "(I)C", {dx::VmValue::Int(i)});
+            call.vm.Model().SetPrimitiveElement(output, offset + (i - begin), ch.cat1);
+        }
+        return dx::VmValue::Void();
+    });
     builder.StaticMethod("isEmpty", "(Ljava/lang/CharSequence;)Z", [utf8](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(!call.arguments[0].ref.IsValid() || utf8(call, call.arguments[0].ref).empty());
     });

@@ -1004,6 +1004,7 @@ std::optional<std::string> DispatchHolderCallbacks(
             }
             if (hidden) continue;
             if (context.active_surface_holders.contains(holder_handle)) continue;
+            android_intrinsics::ResetManagedCanvas(context, holder_handle);
             // A new Surface must receive changed even when its buffer size is unchanged.
             context.surface_callback_sizes.erase(holder_handle);
             // AOSP sets mSurfaceCreated before invoking callbacks.
@@ -1030,6 +1031,7 @@ std::optional<std::string> DispatchHolderCallbacks(
             }
         } else if (phase == SurfaceHolderPhase::destroyed) {
             if (context.active_surface_holders.erase(holder_handle) == 0U) continue;
+            android_intrinsics::ResetManagedCanvas(context, holder_handle);
             context.surface_owner_identities.erase(holder_handle);
             context.surface_active_formats.erase(holder_handle);
             context.surface_callback_formats.erase(holder_handle);

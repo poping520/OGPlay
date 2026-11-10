@@ -34,6 +34,7 @@ public:
     void Write(int x, int y, int width, int height, std::span<const std::uint32_t> argb);
     [[nodiscard]] std::span<std::byte> RawPixels() const;
 
+    [[nodiscard]] bool Recycled() const noexcept;
     [[nodiscard]] bool HasAlpha() const;
     [[nodiscard]] bool Premultiplied() const;
     void SetAlpha(bool alpha, bool premultiplied);

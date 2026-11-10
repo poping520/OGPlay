@@ -310,13 +310,13 @@
   "ui_fallback_font": {
     "notice": {
       "path": "notices/fonts.txt",
-      "sha256": "76c385d70648368a8793a9f2a0b40b2446e14fcb832a77993a8b61ca0d84f6a1",
-      "bytes": 10901
+      "bytes": 10889,
+      "sha256": "4341623e378c29cb71c2c362c1c5eae9caf87dcfe1a524609ba36ec1d21761d5"
     },
     "provenance": {
       "path": "fonts/README.md",
-      "sha256": "70307c7d610c8bfb10eb615a250671d8d50a05847f7fce2b0b232753d22f457c",
-      "bytes": 658
+      "bytes": 761,
+      "sha256": "4df4f44f0557ea18b6c9266dccb47cfb2ed16f13d9d3665689e20a9ec2009aa1"
     },
     "source_project": "platform/frameworks/base",
     "tag": "android-4.4.4_r2.0.1",
@@ -341,8 +341,8 @@
       {
         "path": "framework/ogplay.jar",
         "source_project": "OGPlay",
-        "size": 4723810,
-        "sha256": "dd24e34d17685853c626ffb0ac8d6f9c11aadeda6aa54a81879790c39a1c282d",
+        "size": 4724370,
+        "sha256": "23aef5fe7ee7443568937a14948c31bd4ed7ea6d9920f0e4739c4006ce919227",
         "sources": {
           "roots": [
             "src/guest/crypto/java",
@@ -352,7 +352,7 @@
             "src/guest/xml/java",
             "src/guest/zip/java"
           ],
-          "sha256": "a2f34def031a5b484c1ff1d8d88aa6d63b36ad054235379851d662b9562207e9",
+          "sha256": "4f2764b942160ad3742f459b3d2e12f4867cf6daa75c7d6b5370306fed833f65",
           "javac": "17.0.18",
           "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
           "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
@@ -402,5 +402,102 @@
     ],
     "notice": "notices/boot-classpath.txt",
     "notice_sha256": "940207b35da0d64684af4caae22b5bcb475adf183d4d151066bb1a7b8525d641"
-  }
+  },
+  "system_fonts": [
+    {
+      "path": "fonts/Roboto-Regular.ttf",
+      "bytes": 114976,
+      "sha256": "f87925e2be4c38abba7920ec54e5634f0538ba6368d758e4da300d9af12c9d27"
+    },
+    {
+      "path": "fonts/Roboto-Bold.ttf",
+      "bytes": 117240,
+      "sha256": "fc5df69d67460b525125f2ed02fa70105b70988155e66f91ab4cac638bf42ea7"
+    },
+    {
+      "path": "fonts/Roboto-Italic.ttf",
+      "bytes": 101180,
+      "sha256": "b8144ec6a73aaa3ceb74c447609a69465db395ca10d222884e240476b73eaea6"
+    },
+    {
+      "path": "fonts/Roboto-BoldItalic.ttf",
+      "bytes": 120668,
+      "sha256": "0dba2dde4c4c4fea33a6155ee9abf5b45d17bf2ea02b87737dd0b4c9e8bc9c7e"
+    },
+    {
+      "path": "fonts/Roboto-Light.ttf",
+      "bytes": 115200,
+      "sha256": "700dad97db74c358c16c4de998bd8b1a9d9718fea262fc3253102307c7d22761"
+    },
+    {
+      "path": "fonts/Roboto-LightItalic.ttf",
+      "bytes": 118728,
+      "sha256": "4b96d556f514db6927a7778b167c6a9f9d981f2677f02e9aa9f1a39e7aa1ea37"
+    },
+    {
+      "path": "fonts/Roboto-Thin.ttf",
+      "bytes": 115632,
+      "sha256": "2bb66c948e89b9e765243232a09189bb26462375e55e2acaf88b313f8cf65ecd"
+    },
+    {
+      "path": "fonts/Roboto-ThinItalic.ttf",
+      "bytes": 119376,
+      "sha256": "c89094bed0134196b12ee7e56d04280fe428be397e4cba339bd2dc9d11d7ca14"
+    },
+    {
+      "path": "fonts/RobotoCondensed-Regular.ttf",
+      "bytes": 114568,
+      "sha256": "67aa909bf3d7aa3c0e854eaa5149a6ead0994dc2f20710ba1b85446d95078aaa"
+    },
+    {
+      "path": "fonts/RobotoCondensed-Bold.ttf",
+      "bytes": 115036,
+      "sha256": "ae01d956edc5a944ebbbd0c1d344b03973ab634419bc06093ce89f737e7e6e9a"
+    },
+    {
+      "path": "fonts/RobotoCondensed-Italic.ttf",
+      "bytes": 118064,
+      "sha256": "dd8022146053158a669cfe59f5475573a658497d3755737876e17f6f1570952d"
+    },
+    {
+      "path": "fonts/RobotoCondensed-BoldItalic.ttf",
+      "bytes": 118580,
+      "sha256": "7a535ac061bd1f4599670a911f535a8670b8c27a3ab245d05c64ba989f964efe"
+    },
+    {
+      "path": "fonts/DroidSerif-Regular.ttf",
+      "bytes": 248904,
+      "sha256": "22aea9471bea5bce1ec3bf7136c84f075b3d11cf09dffdc3dba05e570094cbde"
+    },
+    {
+      "path": "fonts/DroidSerif-Bold.ttf",
+      "bytes": 249880,
+      "sha256": "d28533eed8368f047eb5f57a88a91ba2ffc8b69a2dec5e50fe3f0c11ae3f4d8e"
+    },
+    {
+      "path": "fonts/DroidSerif-Italic.ttf",
+      "bytes": 251944,
+      "sha256": "8a55a4823886234792991dd304dfa1fa120ae99483ec6c2255597d7d913b9a55"
+    },
+    {
+      "path": "fonts/DroidSerif-BoldItalic.ttf",
+      "bytes": 265008,
+      "sha256": "3fdf15b911c04317e5881ae1e4b9faefcdc4bf4cfb60223597d5c9455c3e4156"
+    },
+    {
+      "path": "fonts/DroidSans.ttf",
+      "bytes": 190776,
+      "sha256": "f51b88945f4c1b236f44b8d55a2d304316869127e95248c435c23f1e4142a7db"
+    },
+    {
+      "path": "fonts/DroidSans-Bold.ttf",
+      "bytes": 194488,
+      "sha256": "2f529a3e60c007979d95d29794c3660694217fb882429fb33919d2245fe969e9"
+    },
+    {
+      "path": "fonts/DroidSansMono.ttf",
+      "bytes": 119380,
+      "sha256": "12b552de765dc1265d64f9f5566649930dde4dba07da0251d9f92801e70a1047"
+    }
+  ]
 }

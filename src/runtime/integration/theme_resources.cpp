@@ -713,7 +713,7 @@ void ThemeResources::ValidateFile(const ThemeValue& value, const loader::ArscTab
     const auto* entry = value.resource_id ? Entry(value.resource_id, table) : nullptr;
     if (!entry || !entry->string_value || !entry->string_value->starts_with("res/")) return;
     const auto& path = *entry->string_value;
-    if (entry->type_name != "drawable" || path.ends_with(".9.png") ||
+    if (entry->type_name != "drawable" ||
         !(path.ends_with(".png") || path.ends_with(".jpg") || path.ends_with(".jpeg")))
         throw std::runtime_error("unsupported selector/ninepatch/XML/unknown resource file: " + path);
     if (!validate_file_) throw std::runtime_error("APK bitmap file validator unavailable");

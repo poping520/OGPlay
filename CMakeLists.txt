@@ -362,8 +362,13 @@ set_target_properties(ogplay_sqlite PROPERTIES C_EXTENSIONS ON)
 
 ogplay_add_module(ogplay_raster Raster
     src/runtime/raster/bitmap.cpp
+    src/runtime/raster/canvas.cpp
+    src/runtime/raster/effects.cpp
+    src/runtime/raster/fonts.cpp
+    src/runtime/raster/paint.cpp
     src/runtime/raster/bitmap_decode.cpp
     src/runtime/raster/image_decode.cpp
+    src/runtime/raster/nine_patch.cpp
     src/runtime/raster/objects.cpp
 )
 target_link_libraries(ogplay_raster PRIVATE Skia::Skia)

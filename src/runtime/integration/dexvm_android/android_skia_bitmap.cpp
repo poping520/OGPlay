@@ -1,7 +1,6 @@
 #include "android_skia_bitmap.h"
 
 #include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkStream.h"
 #include "include/encode/SkJpegEncoder.h"
@@ -203,55 +202,6 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
     const auto get = [context](const dx::IntrinsicCall& a, unsigned index = 0) -> raster::Bitmap& {
         return BitmapPeer(*context, a.Int(index));
     };
-    // Bridge the ROM crop/scale wrapper until the Canvas phase supplies the
-    // Bitmap-backed Canvas entry points used by that wrapper.
-    b.StaticMethod(
-        "createBitmap", "(Landroid/graphics/Bitmap;IIIILandroid/graphics/Matrix;Z)Landroid/graphics/Bitmap;",
-        [context](dx::IntrinsicContext& c) {
-            const dx::IntrinsicCall a(c);
-            const auto owner = a.NonNullRef(0, "source");
-            auto& source = BitmapPeer(*context, IntField(c.vm, owner, "mNativeBitmap"));
-            const int x = a.Int(1), y = a.Int(2), w = a.Int(3), h = a.Int(4);
-            CheckRect(source, x, y, w, h);
-            if (w <= 0 || h <= 0) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Bitmap crop is empty"};
-            const auto matrix = a.Ref(5);
-            const auto& transform =
-                matrix.IsValid() ? Require(context->skia_objects->matrices, IntField(c.vm, matrix, "native_instance"))
-                                 : SkMatrix::I();
-            const auto& sk = source.SkiaBitmap();
-            if (transform.isIdentity() && x == 0 && y == 0 && w == sk.width() && h == sk.height() &&
-                !CallVirtual(c.vm, owner, "isMutable", "()Z").AsInt())
-                return V::Ref(owner);
-            const auto dest = SkRect::MakeWH(static_cast<float>(w), static_cast<float>(h));
-            const auto bounds = transform.mapRect(dest);
-            if (!bounds.isFinite() || bounds.width() >= static_cast<float>(std::numeric_limits<int>::max()) ||
-                bounds.height() >= static_cast<float>(std::numeric_limits<int>::max()))
-                throw std::bad_alloc{};
-            const int width = static_cast<int>(std::lround(bounds.width()));
-            const int height = static_cast<int>(std::lround(bounds.height()));
-            if (width <= 0 || height <= 0)
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Bitmap transform is empty"};
-            const bool rect = transform.rectStaysRect();
-            const auto config = rect && source.Config() != 4 ? source.Config() : 5;
-            const auto result = CreateBitmap(
-                c.vm, *context,
-                {width, height, config, IntField(c.vm, owner, "mDensity"), true, true, !rect || source.HasAlpha()});
-            const auto image = SkImages::RasterFromBitmap(sk);
-            if (!image) throw std::bad_alloc{};
-            auto& target = *context->bitmaps.at(result.Value()).pixels;
-            SkCanvas canvas(target.SkiaBitmap());
-            canvas.translate(-bounds.left(), -bounds.top());
-            canvas.concat(transform);
-            SkPaint paint;
-            paint.setAntiAlias(!rect);
-            const auto src = SkRect::MakeXYWH(static_cast<float>(x), static_cast<float>(y), static_cast<float>(w),
-                                              static_cast<float>(h));
-            canvas.drawImageRect(image, src, dest,
-                                 SkSamplingOptions(a.Int(6) ? SkFilterMode::kLinear : SkFilterMode::kNearest), &paint,
-                                 SkCanvas::kStrict_SrcRectConstraint);
-            target.SetAlpha(target.HasAlpha(), source.Premultiplied());
-            return V::Ref(result);
-        });
     b.StaticMethod(
         "nativeCreate", "([IIIIIIZ)Landroid/graphics/Bitmap;",
         [context](dx::IntrinsicContext& c) {

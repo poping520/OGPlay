@@ -63,12 +63,6 @@ void AddEnum(dx::IntrinsicClassBuilder& builder, const Context& context, const c
 }
 }  // namespace
 
-AndroidPaintProjection ReadAndroidPaintProjection(dx::Interpreter& vm, DexVmAndroidContext& context,
-                                                  dx::VmObjectRef owner) {
-    const auto& paint = PaintPeer(context, IntField(vm, owner, "mNativePaint"));
-    return {paint.font.getSize(), paint.typeface ? paint.typeface->style : 0, paint.flags};
-}
-
 Decl Declare_android_graphics_Paint(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Paint;");
     b.MergesBootClass();

@@ -498,7 +498,6 @@ TEST_CASE("DVM-287 APK XML entry executes ROM Parser and GC retires native state
 
 TEST_CASE("P2 ROM Resources reads localized framework values and inflates a framework layout") {
     XmlVm f(InterpreterBackend::switch_dispatch);
-    f.context->ui_test_accessibility_disabled = true;
     const auto system =
         f.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
     const auto assets = f.On(system, "getAssets", "()Landroid/content/res/AssetManager;").ref;

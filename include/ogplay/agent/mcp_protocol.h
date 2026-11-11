@@ -3,7 +3,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <mutex>
+#include <span>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -18,6 +20,11 @@ struct FrameSnapshot final {
     std::uint32_t height{};
     std::uint64_t sequence{};
     std::vector<std::uint8_t> rgba8;
+    std::shared_ptr<const std::vector<std::uint8_t>> shared_rgba8{};
+
+    [[nodiscard]] std::span<const std::uint8_t> Pixels() const {
+        return shared_rgba8 ? std::span<const std::uint8_t>(*shared_rgba8) : std::span<const std::uint8_t>(rgba8);
+    }
 };
 
 // JPEG (quality 85) bytes of a validated RGBA8 frame.
@@ -57,12 +64,11 @@ public:
     static constexpr std::size_t kMaximumPendingGestures = 64U;
     static constexpr std::uint32_t kMaximumSwipeSteps = 120U;
 
-    [[nodiscard]] std::optional<std::uint64_t> TryEnqueueClick(
-        std::uint64_t frame_sequence, std::uint32_t x, std::uint32_t y);
-    [[nodiscard]] std::optional<std::uint64_t> TryEnqueueSwipe(
-        std::uint64_t frame_sequence, std::uint32_t start_x,
-        std::uint32_t start_y, std::uint32_t end_x, std::uint32_t end_y,
-        std::uint32_t steps);
+    [[nodiscard]] std::optional<std::uint64_t> TryEnqueueClick(std::uint64_t frame_sequence, std::uint32_t x,
+                                                               std::uint32_t y);
+    [[nodiscard]] std::optional<std::uint64_t> TryEnqueueSwipe(std::uint64_t frame_sequence, std::uint32_t start_x,
+                                                               std::uint32_t start_y, std::uint32_t end_x,
+                                                               std::uint32_t end_y, std::uint32_t steps);
     [[nodiscard]] std::optional<McpPointerEvent> TakeNextPointerEvent();
     [[nodiscard]] std::size_t PendingGestures() const;
     void CancelPending();
@@ -86,12 +92,9 @@ private:
 
 class McpProtocolAdapter final {
 public:
-    explicit McpProtocolAdapter(FrameSnapshotStore& frames,
-                                std::string server_version = "0.1.0");
-    McpProtocolAdapter(FrameSnapshotStore& frames, McpInputQueue& inputs,
-                       std::string server_version = "0.1.0");
-    McpProtocolAdapter(FrameSnapshotStore& frames, McpInputQueue& inputs,
-                       McpSessionControl& session_control,
+    explicit McpProtocolAdapter(FrameSnapshotStore& frames, std::string server_version = "0.1.0");
+    McpProtocolAdapter(FrameSnapshotStore& frames, McpInputQueue& inputs, std::string server_version = "0.1.0");
+    McpProtocolAdapter(FrameSnapshotStore& frames, McpInputQueue& inputs, McpSessionControl& session_control,
                        std::string server_version = "0.1.0");
 
     // Notifications return nullopt. Requests always return one JSON-RPC response.

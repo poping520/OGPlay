@@ -49,8 +49,7 @@ ValidateExternalGuestDirectory 为 CLI、导入与游戏设置提供统一 /sdca
 启动与循环外 idle sleep。关闭时不读额外时间源，不输出逐帧明细。
 
 
-`AssembleAndroidContext` 在建立 VM 前读取固定的 API19 启动类路径，选定不可变的
-JavaTraversal owner，并注入平台无 accessibility 服务的事实。会话将 framework-res 以
+`AssembleAndroidContext` 在建立 VM 前校验 API19 启动类路径。会话将 framework-res 以
 只读方式挂载到 guest VFS。ROM AssetManager 从框架归档及当前应用 APK 建立资源视图。
 
 启动建窗前只读取入口 Activity 的 screenOrientation（alias 用继承的入口配置）：

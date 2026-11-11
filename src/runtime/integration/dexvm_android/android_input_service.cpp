@@ -41,21 +41,22 @@ void InputCallback(dx::Interpreter& vm, const char* type, Ref receiver, const ch
                               outcome.exception};
 }
 
-void Wake(dx::Interpreter& vm, const Context& context, RomInputState::Receiver& r) {
-    const auto token = static_cast<unsigned>(ChannelToken(vm, r.queue));
+void Wake(dx::Interpreter& vm, const Context& context, Ref queue, std::uint64_t thread) {
+    const auto token = static_cast<unsigned>(ChannelToken(vm, queue));
     {
         std::scoped_lock lock(context->scheduler_mutex);
         if (auto q = context->message_queues.find(token); q != context->message_queues.end()) q->second->wake = true;
     }
-    if (context->wake_native_looper) context->wake_native_looper(r.thread);
+    if (context->wake_native_looper) context->wake_native_looper(thread);
     context->scheduler_changed.notify_all();
 }
 
-void Deliver(dx::Interpreter& vm, RomInputState::Receiver& receiver, const RomInputState::Event& e) {
+void Deliver(dx::Interpreter& vm, const Context& context, RomInputState::Receiver& receiver,
+             const RomInputState::Event& e) {
     const auto target = Receiver(vm, receiver);
     if (!target.IsValid()) return;
     const auto root = vm.ProtectReferences(std::array{target});
-    const auto event = MakeInputEvent(vm, e.input);
+    const auto event = MakeInputEvent(vm, context, e.input);
     const auto event_root = vm.ProtectReferences(std::array{event});
     receiver.inflight.insert(e.sequence);
     ++receiver.channel->inflight;
@@ -80,16 +81,34 @@ Ref BindInput(dx::Interpreter& vm, RomInputState& s, Ref client, Ref context) {
     if (s.active_client != client) ImeVisible(s, false);
     s.active_client = client;
     s.active_context = context;
-    static_cast<void>(CallAndroidMethod(vm, client, "setActive", "(ZZ)V", {V::Int(1), V::Int(0)}));
+    static_cast<void>(CallAndroidMethod(vm, client, "setActive", "(Z)V", {V::Int(1)}));
+    if (!s.ime_method.IsValid())
+        s.ime_method = NewPlatformObject(vm, "Lorg/ogplay/framework/LocalInputMethodSession;", "()V", {});
+    if (!s.ime_channel.IsValid() || !ChannelToken(vm, s.ime_channel)) {
+        s.ime_channel = NewPlatformObject(vm, "Landroid/view/InputChannel;", "()V", {});
+        auto channel = std::make_shared<RomInputState::Channel>();
+        channel->name = "local input method";
+        channel->local_ime = true;
+        const auto id = AllocateRomInputHandle(s);
+        s.endpoints.emplace(id, RomInputState::Endpoint{std::move(channel), false});
+        SetChannelToken(vm, s.ime_channel, id);
+    }
+    const auto method_id = vm.NewStringUtf8("local input method");
+    const auto root = vm.ProtectReferences(std::array{method_id});
     return NewPlatformObject(
         vm, "Lcom/android/internal/view/InputBindResult;",
         "(Lcom/android/internal/view/IInputMethodSession;Landroid/view/InputChannel;Ljava/lang/String;I)V",
-        {null, null, null, V::Int(++s.ime_sequence)});
+        {V::Ref(s.ime_method), V::Ref(s.ime_channel), V::Ref(method_id), V::Int(++s.ime_sequence)});
 }
 }  // namespace
 
 RomInputState& RomInput(const Context& context) {
-    if (!context->rom_input) context->rom_input = std::make_shared<RomInputState>();
+    if (!context->rom_input) {
+        context->rom_input = std::make_shared<RomInputState>();
+        context->rom_input->text_input = [weak = std::weak_ptr(context)](bool visible) {
+            if (const auto owner = weak.lock()) owner->host_ime_visible.store(visible);
+        };
+    }
     return *context->rom_input;
 }
 
@@ -115,6 +134,10 @@ void VisitRomInputRoots(const DexVmAndroidContext& context, const dx::VmRootVisi
         root(r.weak);
         root(r.queue);
     }
+    for (const auto& [_, sender] : s.ime_senders) {
+        root(sender.weak);
+        root(sender.queue);
+    }
     for (const auto& [_, q] : s.native_queues) {
         root(q->weak);
         root(q->queue);
@@ -127,6 +150,8 @@ void VisitRomInputRoots(const DexVmAndroidContext& context, const dx::VmRootVisi
     root(s.active_context);
     root(s.focused_window);
     root(s.window_focus);
+    root(s.ime_method);
+    root(s.ime_channel);
 }
 
 int CreateWindowInputChannel(dx::Interpreter& vm, const Context& context, Ref out) {
@@ -161,13 +186,30 @@ void QueueRomWindowInput(dx::Interpreter& vm, const Context& context, std::span<
             throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "input dispatch queue budget exhausted"};
         endpoint.channel->pending.push_back({AllocateRomInputSequence(s), delivery.input});
         for (auto& [_, r] : s.receivers)
-            if (r.channel == endpoint.channel) Wake(vm, context, r);
+            if (r.channel == endpoint.channel) Wake(vm, context, r.queue, r.thread);
     }
 }
 
 void PumpRomInputEvents(dx::Interpreter& vm, const Context& context) {
     if (!context->rom_input) return;
     auto& s = *context->rom_input;
+    std::vector<int> senders;
+    for (const auto& [id, sender] : s.ime_senders)
+        if (sender.thread == vm.CurrentContextToken() && !sender.pending.empty()) senders.push_back(id);
+    for (const auto id : senders) {
+        auto found = s.ime_senders.find(id);
+        if (found == s.ime_senders.end()) continue;
+        auto pending = std::exchange(found->second.pending, {});
+        const auto owner = CallAndroidMethod(vm, found->second.weak, "get", "()Ljava/lang/Object;").ref;
+        if (!owner.IsValid()) continue;
+        const auto root = vm.ProtectReferences(std::array{owner});
+        // SDL produces composed text separately. Unhandled physical events continue through ViewRootImpl.
+        for (const auto sequence : pending) {
+            if (!s.ime_senders.contains(id)) break;
+            InputCallback(vm, "Landroid/view/InputEventSender;", owner, "dispatchInputEventFinished", "(IZ)V",
+                          {V::Int(sequence), V::Int(0)});
+        }
+    }
     std::vector<std::shared_ptr<RomInputState::NativeQueue>> queues;
     for (const auto& [_, q] : s.native_queues)
         if (q->thread == vm.CurrentContextToken()) queues.push_back(q);
@@ -208,16 +250,19 @@ void PumpRomInputEvents(dx::Interpreter& vm, const Context& context) {
             }
             const auto e = pending.front();
             pending.pop_front();
-            Deliver(vm, r, e);
+            Deliver(vm, context, r, e);
         }
     }
 }
 
 void CommitRomInputText(dx::Interpreter& vm, const Context& context, const std::u16string& text, bool composing) {
+    CommitRomInputText(vm, context, vm.Model().NewString(text), composing);
+}
+
+void CommitRomInputText(dx::Interpreter& vm, const Context& context, dx::VmObjectRef string, bool composing) {
     auto& s = RomInput(context);
     if (!s.ime_visible || !s.active_context.IsValid()) return;
     const auto target = s.active_context;
-    const auto string = vm.Model().NewString(text);
     const auto roots = vm.ProtectReferences(std::array{target, string});
     static_cast<void>(CallAndroidMethod(vm, target, composing ? "setComposingText" : "commitText",
                                         "(Ljava/lang/CharSequence;I)V", {V::Ref(string), V::Int(1)}));
@@ -230,7 +275,7 @@ void SetRomInputWindowFocus(dx::Interpreter& vm, const Context& context, Ref win
     if (s.focused_window != window) {
         ImeVisible(s, false);
         if (s.active_client.IsValid())
-            static_cast<void>(CallAndroidMethod(vm, s.active_client, "setActive", "(ZZ)V", {V::Int(0), V::Int(0)}));
+            static_cast<void>(CallAndroidMethod(vm, s.active_client, "setActive", "(Z)V", {V::Int(0)}));
         s.active_context = Ref{};
     }
 }
@@ -238,7 +283,6 @@ void SetRomInputWindowFocus(dx::Interpreter& vm, const Context& context, Ref win
 Decl Declare_android_view_InputChannel(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/view/InputChannel;");
     b.MergesBootClass();
-    if (!context->rom_window_services_enabled) return std::move(b).Build();
     b.StaticMethod(
         "nativeOpenInputChannelPair", "(Ljava/lang/String;)[Landroid/view/InputChannel;",
         [context](dx::IntrinsicContext& c) {
@@ -300,7 +344,6 @@ Decl Declare_android_view_InputChannel(const Context& context) {
 Decl Declare_android_view_InputEventReceiver(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/view/InputEventReceiver;");
     b.MergesBootClass();
-    if (!context->rom_window_services_enabled) return std::move(b).Build();
     b.StaticMethod(
         "nativeInit", "(Ljava/lang/ref/WeakReference;Landroid/view/InputChannel;Landroid/os/MessageQueue;)I",
         [context](dx::IntrinsicContext& c) {
@@ -388,11 +431,75 @@ Decl Declare_android_view_InputEventReceiver(const Context& context) {
                     e = std::move(next);
                 }
                 consumed = true;
-                Deliver(c.vm, r, e);
+                Deliver(c.vm, context, r, e);
             }
             return V::Int(consumed);
         },
         static_native);
+    return std::move(b).Build();
+}
+
+Decl Declare_android_view_InputEventSender(const Context& context) {
+    auto b = dx::IntrinsicClassBuilder::Class("Landroid/view/InputEventSender;");
+    b.MergesBootClass();
+    b.StaticMethod(
+        "nativeInit", "(Ljava/lang/ref/WeakReference;Landroid/view/InputChannel;Landroid/os/MessageQueue;)I",
+        [context](dx::IntrinsicContext& c) {
+            auto& s = RomInput(context);
+            const auto channel = dx::IntrinsicCall(c).NonNullRef(1, "input channel");
+            if (!Endpoint(s, ChannelToken(c.vm, channel)).channel->local_ime)
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unsupported input sender channel"};
+            const auto id = AllocateRomInputHandle(s);
+            s.ime_senders.emplace(
+                id, RomInputState::ImeSender{c.arguments[0].ref, c.arguments[2].ref, c.vm.CurrentContextToken(), {}});
+            return V::Int(id);
+        },
+        static_native);
+    b.StaticMethod(
+        "nativeDispose", "(I)V",
+        [context](dx::IntrinsicContext& c) {
+            RomInput(context).ime_senders.erase(c.arguments[0].AsInt());
+            return V::Void();
+        },
+        static_native);
+    for (bool key : {true, false})
+        b.StaticMethod(
+            key ? "nativeSendKeyEvent" : "nativeSendMotionEvent",
+            key ? "(IILandroid/view/KeyEvent;)Z" : "(IILandroid/view/MotionEvent;)Z",
+            [context](dx::IntrinsicContext& c) {
+                auto& s = RomInput(context);
+                const auto found = s.ime_senders.find(c.arguments[0].AsInt());
+                if (found == s.ime_senders.end() || found->second.pending.size() >= 4096) return V::Int(0);
+                auto& sender = found->second;
+                sender.pending.push_back(c.arguments[1].AsInt());
+                Wake(c.vm, context, sender.queue, sender.thread);
+                return V::Int(1);
+            },
+            static_native);
+    return std::move(b).Build();
+}
+
+Decl Declare_local_InputMethodSession(const Context& context) {
+    constexpr auto stub = "Lcom/android/internal/view/IInputMethodSession$Stub;";
+    auto b = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalInputMethodSession;", stub);
+    b.Constructor("()V", [](dx::IntrinsicContext& c) {
+        const auto ctor = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor(stub), "<init>", "()V");
+        const auto result = c.vm.Call(*ctor, std::array{V::Ref(c.receiver)});
+        if (result.exception.IsValid()) throw dx::VmJavaThrow{"", "", result.exception};
+        return V::Void();
+    });
+    for (const auto& [name, signature] :
+         std::array{std::pair{"finishInput", "()V"}, std::pair{"finishSession", "()V"},
+                    std::pair{"updateSelection", "(IIIIII)V"}, std::pair{"viewClicked", "(Z)V"},
+                    std::pair{"updateExtractedText", "(ILandroid/view/inputmethod/ExtractedText;)V"},
+                    std::pair{"updateCursor", "(Landroid/graphics/Rect;)V"},
+                    std::pair{"displayCompletions", "([Landroid/view/inputmethod/CompletionInfo;)V"}})
+        b.VirtualMethod(name, signature, [](dx::IntrinsicContext&) { return V::Void(); });
+    b.VirtualMethod("toggleSoftInput", "(II)V", [context](dx::IntrinsicContext&) {
+        auto& s = RomInput(context);
+        if (s.active_context.IsValid()) ImeVisible(s, !s.ime_visible);
+        return V::Void();
+    });
     return std::move(b).Build();
 }
 

@@ -26,6 +26,7 @@ public:
 
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
+    void PublishSharedFrame(std::shared_ptr<const video::VideoFrame> pixels);
     void PublishBlankFrame(std::uint8_t alpha);
     void PublishAngleFrame(gles::AngleFrame& frame);
     void RecycleFrame(AndroidBoundaryFrame&& frame);

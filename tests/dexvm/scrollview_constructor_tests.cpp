@@ -160,7 +160,6 @@ VmObjectRef OpenAttributeXml(ContainerVm& f, VmObjectRef owner, const std::vecto
 constexpr std::uint32_t theme = 0x7f020001, vertical = 0x7f020002, horizontal = 0x7f020003;
 
 VmObjectRef Owner(ContainerVm& f, bool supported = true) {
-    f.context->ui_test_accessibility_disabled = true;
     f.context->target_sdk_version = 19;
     ogplay::test::ResourceFixture(*f.context).package_id = 0x7f;
     auto t = Style(theme, 0x01030005, {{0x01010080, 1, vertical, {}}, {0x01010353, 1, horizontal, {}}});

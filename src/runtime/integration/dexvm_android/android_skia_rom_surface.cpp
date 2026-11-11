@@ -1,5 +1,6 @@
 #include "android_skia.h"
 #include "rom_window.h"
+#include "ogplay/runtime/integration/android_guest_call_session.h"
 
 #include <limits>
 #include <cmath>
@@ -62,8 +63,11 @@ void Release(const Context& context, int token) {
     const auto found = s.surfaces.find(token);
     if (found == s.surfaces.end()) return;
     if (--found->second.refs == 0) {
-        if (found->second.valid && found->second.window.value && s.system.Exists(found->second.window))
+        if (found->second.valid && found->second.window.value && s.system.Exists(found->second.window)) {
+            if (context->session)
+                context->session->Process().RetireSurfaceWindow(memory::GuestAddress{found->second.window.value});
             s.system.Remove(found->second.window);
+        }
         if (found->second.canvas_token)
             context->skia_objects->canvases.Retire(NativeToken<raster::Canvas>(found->second.canvas_token));
         s.surfaces.erase(found);
@@ -86,8 +90,23 @@ std::vector<WindowRect> ReadWindowRegion(dx::Interpreter& vm, const Context& con
     return result;
 }
 
+std::optional<AndroidSurfaceWindow> ResolveRomSurfaceWindow(dx::Interpreter& vm, const Context& context,
+                                                            dx::VmObjectRef surface) {
+    if (!surface.IsValid() || !context->rom_windows) return std::nullopt;
+    auto& state = *context->rom_windows;
+    const auto native = static_cast<int>(WindowField(vm, surface, "mNativeObject", "I").bits);
+    const auto found = state.surfaces.find(native);
+    if (found == state.surfaces.end() || !found->second.valid || !found->second.window.value) return std::nullopt;
+    const auto& data = found->second;
+    const auto frame = state.system.Frame(data.window);
+    const auto width = data.buffer_width > 0 ? data.buffer_width : frame.Width();
+    const auto height = data.buffer_height > 0 ? data.buffer_height : frame.Height();
+    if (width <= 0 || height <= 0) return std::nullopt;
+    return AndroidSurfaceWindow{memory::GuestAddress{data.window.value}, static_cast<unsigned>(width),
+                                static_cast<unsigned>(height)};
+}
+
 void AddRomSurfaceNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
-    if (!context->rom_window_services_enabled) return;
     b.StaticMethod("nativeCreateFromSurfaceControl", "(I)I", SurfaceNative([context](dx::IntrinsicContext& c) {
                        auto& s = RomWindows(context);
                        const auto found = s.controls.find(c.arguments[0].AsInt());
@@ -223,7 +242,6 @@ void AddRomSurfaceNatives(dx::IntrinsicClassBuilder& b, const Context& context) 
 Decl Declare_android_view_SurfaceSession(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceSession;");
     b.MergesBootClass();
-    if (!context->rom_window_services_enabled) return std::move(b).Build();
     b.StaticMethod("nativeCreate", "()I", SurfaceNative([context](dx::IntrinsicContext&) {
                        auto& s = RomWindows(context);
                        const auto id = Handle(s);
@@ -256,7 +274,6 @@ Decl Declare_android_view_SurfaceSession(const Context& context) {
 Decl Declare_android_view_SurfaceControl(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceControl;");
     b.MergesBootClass();
-    if (!context->rom_window_services_enabled) return std::move(b).Build();
     b.StaticMethod("nativeCreate", "(Landroid/view/SurfaceSession;Ljava/lang/String;IIII)I",
                    SurfaceNative([context](dx::IntrinsicContext& c) {
                        auto& s = RomWindows(context);

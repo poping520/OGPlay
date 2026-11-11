@@ -297,7 +297,6 @@ TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex
 
         const auto unsupported = [&](const VmCallOutcome& outcome) {
             CHECK(outcome.exception_class == f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
-
         };
         for (const int flags : {0x80, 0x200, 0x10000, -1})
             unsupported(query(intent, flags));
@@ -428,67 +427,6 @@ TEST_CASE("DVM-195 getActivityInfo returns only the requested activity metadata"
         CHECK(f.model.InstanceSlots(alias_info)[f.linker.Field(*mode).slot].bits == 1);
         f.context->activity_inventory_known = false;
         CHECK(query(0).exception.IsValid());
-    }
-}
-
-TEST_CASE("duplicate Activity filters resolve once and launches use the registered configuration") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend);
-        f.context->package_name = "fixture";
-        f.context->activity_inventory_known = true;
-        ogplay::loader::AndroidManifestActivityComponent first;
-        first.name = "fixture.Main";
-        first.intent_filters = {{{"fixture.OPEN", "fixture.FIRST"}, {"android.intent.category.DEFAULT"}, false}};
-        auto last = first;
-        last.intent_filters.front().actions = {"fixture.OPEN", "fixture.LAST"};
-        f.context->activity_components = {first, last};
-        const auto context = f.New("Landroid/content/Context;");
-        const auto base = f.New("Landroid/app/Activity;");
-        f.On(base, "attachBaseContext", "(Landroid/content/Context;)V", {VmValue::Ref(context)});
-        const auto root = f.vm.ProtectReferences(std::array{base});
-        const auto launch = [&](const char* action, bool explicit_component) {
-            f.context->activity_commands.clear();
-            f.context->activity_switch_pending = false;
-            f.context->pending_activity_descriptor.clear();
-            const auto intent =
-                f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8(action))});
-            const auto intent_root = f.vm.ProtectReferences(std::array{intent});
-            if (explicit_component)
-                f.On(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
-                     {VmValue::Ref(f.vm.NewStringUtf8("fixture")), VmValue::Ref(f.vm.NewStringUtf8("fixture.Main"))});
-            return f.OnOutcome(base, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
-        };
-        for (const auto* action : {"fixture.OPEN", "fixture.FIRST", "fixture.LAST"}) {
-            CHECK_FALSE(launch(action, false).exception.IsValid());
-            CHECK(f.context->pending_activity_descriptor == "Lfixture/Main;");
-            CHECK(f.context->pending_activity_component_name == "fixture.Main");
-        }
-        CHECK_FALSE(launch("fixture.OPEN", true).exception.IsValid());
-
-        // The last declaration owns launch configuration, including unsupported affinity matching.
-        f.context->activity_components.back().launch_mode = 2;
-        f.context->activity_components.back().task_affinity = "another.task";
-        for (const bool explicit_component : {false, true}) {
-            const auto blocked = launch("fixture.FIRST", explicit_component);
-            REQUIRE(blocked.exception.IsValid());
-            CHECK(f.linker.Class(blocked.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-            CHECK_FALSE(f.context->activity_switch_pending);
-        }
-        f.context->activity_components.back().launch_mode = 0;
-        f.context->activity_components.back().task_affinity.reset();
-        f.context->activity_components.back().enabled = false;
-        for (const bool explicit_component : {false, true}) {
-            const auto blocked = launch("fixture.OPEN", explicit_component);
-            REQUIRE(blocked.exception.IsValid());
-            CHECK(f.linker.Class(blocked.exception_class).descriptor == "Landroid/content/ActivityNotFoundException;");
-        }
-        f.context->activity_components.back().enabled = true;
-        auto other = last;
-        other.name = "fixture.Other";
-        f.context->activity_components.push_back(other);
-        const auto ambiguous = launch("fixture.OPEN", false);
-        REQUIRE(ambiguous.exception.IsValid());
-        CHECK(f.linker.Class(ambiguous.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
     }
 }
 
@@ -662,7 +600,7 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
     const auto outcome = f.vm.Call(*attach, std::array{VmValue::Ref(thread), VmValue::Int(0)});
     REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message,
                     f.vm.DescribeThrowableCauses(outcome.exception));
-    const auto error = PumpJavaThreads(f.vm, *f.context);
+    const auto error = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
     REQUIRE_MESSAGE(!error.has_value(), error.value_or(""));
     const auto application =
         f.Static("Landroid/app/ActivityThread;", "currentApplication", "()Landroid/app/Application;").ref;
@@ -709,11 +647,11 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
                      {VmValue::Ref(receiver), VmValue::Ref(filter)})
                     .ref.IsValid());
     f.On(application, "sendBroadcast", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
-    REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+    REQUIRE_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
     CHECK(received == 1);
     f.On(application, "unregisterReceiver", "(Landroid/content/BroadcastReceiver;)V", {VmValue::Ref(receiver)});
     f.On(application, "sendBroadcast", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
-    REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+    REQUIRE_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
     CHECK(received == 1);
     constexpr auto register_signature =
         "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)Landroid/content/Intent;";
@@ -731,7 +669,7 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
     f.On(application, "sendStickyBroadcast", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
     CHECK(f.On(application, "registerReceiver", register_signature, {VmValue::Ref(receiver), VmValue::Ref(filter)})
               .ref.IsValid());
-    REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+    REQUIRE_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
     CHECK(received == 2);
     CHECK(sticky_received == 1);
     f.On(application, "unregisterReceiver", "(Landroid/content/BroadcastReceiver;)V", {VmValue::Ref(receiver)});
@@ -751,7 +689,7 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
         CHECK(f.On(application, "startService", "(Landroid/content/Intent;)Landroid/content/ComponentName;",
                    {VmValue::Ref(request)})
                   .ref.IsValid());
-    const auto starts = PumpJavaThreads(f.vm, *f.context);
+    const auto starts = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
     REQUIRE_MESSAGE(!starts.has_value(), starts.value_or(""));
     CHECK(created == 1);
     CHECK(started == 2);
@@ -760,16 +698,16 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
     CHECK(f.On(application, "bindService", "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z",
                {VmValue::Ref(request), VmValue::Ref(connection), VmValue::Int(1)})
               .AsInt() == 1);
-    const auto binding = PumpJavaThreads(f.vm, *f.context);
+    const auto binding = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
     REQUIRE_MESSAGE(!binding.has_value(), binding.value_or(""));
     CHECK(bound == 1);
     CHECK(connected == 1);
     CHECK(f.On(application, "stopService", "(Landroid/content/Intent;)Z", {VmValue::Ref(request)}).AsInt() == 1);
-    const auto stop = PumpJavaThreads(f.vm, *f.context);
+    const auto stop = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
     REQUIRE_MESSAGE(!stop.has_value(), stop.value_or(""));
     CHECK(destroyed == 0);
     f.On(application, "unbindService", "(Landroid/content/ServiceConnection;)V", {VmValue::Ref(connection)});
-    const auto unbinding = PumpJavaThreads(f.vm, *f.context);
+    const auto unbinding = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
     REQUIRE_MESSAGE(!unbinding.has_value(), unbinding.value_or(""));
     CHECK(unbound == 1);
     CHECK(destroyed == 1);

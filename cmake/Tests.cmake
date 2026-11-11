@@ -162,11 +162,8 @@ set(OGPLAY_TEST_SOURCES
     tests/runtime/jni_bridge_threads_tests.cpp
     tests/runtime/property_animation_tests.cpp
     tests/runtime/choreographer_frame_source_tests.cpp
-    tests/runtime/application_subwindow_tests.cpp
-    tests/runtime/activity_window_lifecycle_tests.cpp
     tests/runtime/jni_android_platform_tests.cpp
     tests/runtime/guest_native_values_tests.cpp
-    tests/runtime/activity_task_stack_tests.cpp
     tests/runtime/guest_zlib_tests.cpp
     tests/runtime/guest_icu_tests.cpp
     tests/runtime/guest_crypto_bks_tests.cpp
@@ -175,10 +172,9 @@ set(OGPLAY_TEST_SOURCES
     tests/runtime/native_activity_process_tests.cpp
     tests/runtime/native_dlopen_tests.cpp
     tests/runtime/native_library_fixture.cpp
+    tests/runtime/rom_window_integration_tests.cpp
     tests/runtime/tls_trust_tests.cpp
     tests/runtime/preferences_xml_tests.cpp
-    tests/runtime/ui_tree_tests.cpp
-    tests/runtime/ui_renderer_tests.cpp
     tests/runtime/sandbox_store_tests.cpp
     tests/runtime/vfs_sandbox_tests.cpp
     tests/runtime/vfs_tests.cpp
@@ -217,7 +213,6 @@ set(OGPLAY_TEST_SOURCES
     tests/video/ffmpeg_video_player_tests.cpp
     tests/session/android_input_mapping_tests.cpp
     tests/session/lifecycle_tests.cpp
-    tests/session/ui_compositor_tests.cpp
     tests/session/profile_apk_tests.cpp
     tests/session/profile_entry_scope_tests.cpp
     tests/session/session_tests.cpp
@@ -249,25 +244,11 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/graphics_text_tests.cpp
     tests/dexvm/graphics_bitmap_tests.cpp
     tests/dexvm/android_view_state_tests.cpp
-    tests/dexvm/owner_traversal_tests.cpp
-    tests/dexvm/viewgroup_traversal_tests.cpp
-    tests/dexvm/framelayout_traversal_tests.cpp
     tests/dexvm/container_traversal_fixture.cpp
-    tests/dexvm/linearlayout_traversal_tests.cpp
-    tests/dexvm/relativelayout_traversal_tests.cpp
     tests/dexvm/xml_block_tests.cpp
-    tests/dexvm/rom_skin_tests.cpp
     tests/dexvm/progressbar_tests.cpp
-    tests/dexvm/spinner_adapter_tests.cpp
     tests/dexvm/theme_resources_tests.cpp
-    tests/dexvm/imageview_traversal_tests.cpp
-    tests/dexvm/button_traversal_tests.cpp
-    tests/dexvm/edittext_traversal_tests.cpp
-    tests/dexvm/scrollview_traversal_tests.cpp
-    tests/dexvm/surfaceview_traversal_tests.cpp
-    tests/dexvm/videoview_traversal_tests.cpp
     tests/dexvm/scrollview_constructor_tests.cpp
-    tests/dexvm/textview_traversal_tests.cpp
     tests/dexvm/paint_measure_tests.cpp
     tests/dexvm/android_pending_notifications_tests.cpp
     tests/dexvm/android_value_tests.cpp
@@ -305,20 +286,10 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/boot_dex.cpp
     tests/dexvm/observable_tests.cpp
     tests/dexvm/network_sqlite_tests.cpp
-    tests/dexvm/session_exit_tests.cpp
     tests/dexvm/intrinsics_p1_tests.cpp
     tests/dexvm/thread_intrinsic_tests.cpp
     tests/dexvm/vm_monitor_tests.cpp
     tests/dexvm/vm_thread_tests.cpp
-    tests/dexvm/videoview_tests.cpp
-    tests/dexvm/widget_click_tests.cpp
-    tests/dexvm/widget_hierarchy_tests.cpp
-    tests/dexvm/widget_resources_tests.cpp
-    tests/dexvm/widget_focus_input_tests.cpp
-    tests/dexvm/dialog_host_layout_tests.cpp
-    tests/dexvm/widget_window_dialog_tests.cpp
-    tests/dexvm/widget_fixture.cpp
-    tests/dexvm/ui_include_tests.cpp
 )
 if(OGPLAY_ENABLE_DYNARMIC)
     list(APPEND OGPLAY_TEST_SOURCES
@@ -421,8 +392,6 @@ add_test(
 )
 set_tests_properties(architecture.source_rules PROPERTIES LABELS architecture)
 
-ogplay_add_tool_test(architecture.ui_traversal_entry architecture
-    ${_src}/tools/check_ui_traversal.py)
 add_test(
     NAME frontend.run_apk_options
     COMMAND ${CMAKE_COMMAND}

@@ -209,8 +209,6 @@ Decl Declare_android_webkit_WebView(const Context& context) {
                                                     {"Landroid/view/ViewTreeObserver$OnGlobalFocusChangeListener;",
                                                      "Landroid/view/ViewGroup$OnHierarchyChangeListener;",
                                                      "Landroid/view/ViewDebug$HierarchyHandler;"});
-    // API19 WebView.onMeasure delegates to the unsupported browser provider.
-    builder.UnimplementedOverride("onMeasure", "(II)V", dx::kAccProtected);
     const auto webview_thread = builder.BoundInstanceField("mWebViewThread", "Landroid/os/Looper;", dx::kAccPrivate);
     const auto initial_scale = builder.BoundInstanceField("mInitialScale", "I", dx::kAccPrivate);
     const auto destroyed = builder.BoundInstanceField("mDestroyed", "Z", dx::kAccPrivate);
@@ -273,8 +271,6 @@ Decl Declare_android_webkit_WebView(const Context& context) {
         if (result.exception.IsValid())
             throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
                                   result.exception};
-        const auto node = EnsureViewUiNode(*context, call.receiver, ui::UiClass::View);
-        static_cast<void>(node);
         static_cast<void>(
             CallAndroidMethod(call.vm, call.receiver, "setFocusableInTouchMode", "(Z)V", {dx::VmValue::Int(1)}));
         dx::IntrinsicCall(call).SetRef(webview_thread, CurrentLooper(context, call.vm.CurrentContextToken()));
@@ -332,7 +328,14 @@ Decl Declare_android_webkit_WebView(const Context& context) {
             return dx::VmValue::Void();
         }
         dx::IntrinsicCall(call).SetRef(pending_load, callback);
-        static_cast<void>(PostViewRunnable(call, context, call.receiver, callback, 0));
+        const auto looper = CurrentLooper(context, call.vm.CurrentContextToken());
+        if (!looper.IsValid())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "WebView callback requires a Looper"};
+        const auto handler =
+            NewPlatformObject(call.vm, "Landroid/os/Handler;", "(Landroid/os/Looper;)V", {dx::VmValue::Ref(looper)});
+        const auto handler_root = call.vm.ProtectReferences(std::array{handler});
+        static_cast<void>(
+            CallAndroidMethod(call.vm, handler, "post", "(Ljava/lang/Runnable;)Z", {dx::VmValue::Ref(callback)}));
         return dx::VmValue::Void();
     };
     builder.VirtualMethod("loadUrl", "(Ljava/lang/String;)V", [disabled_load](dx::IntrinsicContext& call) {

@@ -705,6 +705,8 @@ TEST_CASE("dexvm API 19 primitive wrapper family inventory is complete") {
     CHECK(*character.superclass == "Ljava/lang/Object;");
     CHECK(character.interfaces.size() == 2U);
     CHECK(signatures(character) == std::set<std::string>{"<init>(C)V",
+                                                         "getDirectionality(C)B",
+                                                         "getDirectionality(I)B",
                                                          "charValue()C",
                                                          "valueOf(C)Ljava/lang/Character;",
                                                          "compareTo(Ljava/lang/Character;)I",

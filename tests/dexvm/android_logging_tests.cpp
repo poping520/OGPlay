@@ -370,7 +370,7 @@ TEST_CASE("DVM226 PrintStream owns error and autoFlush semantics and System stre
         f.On(stderr_stream, "println", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("stderr"))});
         f.On(stdout_stream, "append", "(Ljava/lang/CharSequence;)Ljava/io/PrintStream;",
              {VmValue::Ref(f.vm.NewStringUtf8(""))});
-        auto logs = f.logger.Snapshot();
+        auto logs = f.logger.Snapshot(std::nullopt, "runtime.dexvm.guest");
         REQUIRE(logs.size() == 2);
         CHECK(logs[0].message == "stdout 中文");
         CHECK(logs[1].message == "stderr");
@@ -384,7 +384,7 @@ TEST_CASE("DVM226 PrintStream owns error and autoFlush semantics and System stre
         f.vm.SetConsoleSink({});
         f.On(stdout_stream, "close", "()V");
         f.On(stderr_stream, "println", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("still-open"))});
-        logs = f.logger.Snapshot();
+        logs = f.logger.Snapshot(std::nullopt, "runtime.dexvm.guest");
         CHECK(logs.back().message == "still-open");
         CHECK(f.On(stdout_stream, "checkError", "()Z").AsInt() == 0);
         f.On(stdout_stream, "print", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("closed"))});

@@ -199,8 +199,7 @@ DexRunOptions ParseDexRunArgs(const std::span<const std::string_view> args) {
 int RunDex(const DexRunOptions& options, const DexConsole& console) {
     auto app_dex = ReadDex(options.input);
     const auto data = BundledDataPaths().root;
-    const auto context =
-        runtime::AssembleAndroidContext(runtime::ReadBootClasspath(data / "android/19/framework"), {true});
+    const auto context = runtime::AssembleAndroidContext(runtime::ReadBootClasspath(data / "android/19/framework"));
     auto boot_dex = runtime::BootClasspathDexFiles(context->boot_classpath);
 
     core::CapabilityLedger ledger;

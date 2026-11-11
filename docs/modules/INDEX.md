@@ -65,7 +65,6 @@ MODULE.md；能力状态见 [能力账本](../../capabilities.toml)。
 | [`src/runtime/jni`](../../src/runtime/jni/MODULE.md) | runtime/jni |
 | [`src/runtime/jni_guest`](../../src/runtime/jni_guest/MODULE.md) | runtime/jni_guest |
 | [`src/runtime/syscall`](../../src/runtime/syscall/MODULE.md) | runtime/syscall |
-| [`src/runtime/ui`](../../src/runtime/ui/MODULE.md) | runtime/ui |
 | [`src/runtime/vfs`](../../src/runtime/vfs/MODULE.md) | runtime/vfs |
 | [`src/session`](../../src/session/MODULE.md) | session |
 | [`src/video`](../../src/video/MODULE.md) | video |

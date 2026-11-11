@@ -1,5 +1,7 @@
 # Layout UI · 有界 Android XML UI 方案设计
 
+此文档记录已退役的 Layout UI 设计。当前窗口路径见 [P3 窗口与生命周期](../../tasks/dexvm/P3-window.md)。
+
 本目录定义 OGPlay 对 Android 4.4 时代 Java/XML UI 的**有界兼容方案**。首个必须闭合的
 真实场景是启动视频上的 Java `ImageButton`：游戏通过 `Activity.setContentView()` inflate
 XML，运行时切换按钮可见性，用户点击按钮后回调游戏自己的 `OnClickListener`。

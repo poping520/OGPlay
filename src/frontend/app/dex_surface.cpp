@@ -14,7 +14,7 @@
 
 namespace ogplay::app {
 std::string DumpDexSurface(const std::filesystem::path& framework_directory) {
-    const auto context = runtime::AssembleAndroidContext(runtime::ReadBootClasspath(framework_directory), {true});
+    const auto context = runtime::AssembleAndroidContext(runtime::ReadBootClasspath(framework_directory));
     runtime::dexvm::DexClassLinker linker;
     linker.RegisterIntrinsics(runtime::BoundCoreIntrinsicCatalog(context));
     linker.RegisterIntrinsics(runtime::AndroidIntrinsicCatalog(context));

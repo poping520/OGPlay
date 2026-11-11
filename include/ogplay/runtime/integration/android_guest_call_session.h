@@ -315,11 +315,13 @@ public:
                         std::function<void(bool)> finish);
     void RegisterNativeActivity(NativeActivityBoundaryResources resources);
     void UnregisterNativeActivity(memory::GuestAddress activity);
-    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active);
+    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active,
+                                                 std::optional<AndroidSurfaceWindow> surface = std::nullopt);
     void SetNativeActivityInput(memory::GuestAddress activity, bool active);
 
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
+    void PublishSharedFrame(std::shared_ptr<const video::VideoFrame> pixels);
     void PublishBlankFrame(std::uint8_t alpha);
     void RecycleFrame(AndroidBoundaryFrame&& frame);
     void SetFrameReadbackFilter(FrameReadbackFilter covered);
@@ -448,6 +450,7 @@ public:
     void PushInput(const AndroidBoundaryInput& input);
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
+    void PublishSharedFrame(std::shared_ptr<const video::VideoFrame> pixels);
     void PublishBlankFrame(std::uint8_t alpha);
     void RecycleFrame(AndroidBoundaryFrame&& frame);
     void SetFrameReadbackFilter(FrameReadbackFilter covered);

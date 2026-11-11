@@ -476,8 +476,9 @@ public:
 
     void UnregisterNativeActivity(memory::GuestAddress activity) { android_module_.UnregisterNativeActivity(activity); }
 
-    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active) {
-        return android_module_.SetNativeActivityWindow(activity, active);
+    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active,
+                                                 std::optional<AndroidSurfaceWindow> surface) {
+        return android_module_.SetNativeActivityWindow(activity, active, surface);
     }
 
     void SetNativeActivityInput(memory::GuestAddress activity, bool active) {
@@ -497,6 +498,10 @@ public:
     // sequence as GL presents; the layout contract stays logical-sized.
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
         frame_service_.PublishSoftwareFrame(std::move(rgba8));
+    }
+
+    void PublishSharedFrame(std::shared_ptr<const video::VideoFrame> pixels) {
+        frame_service_.PublishSharedFrame(std::move(pixels));
     }
 
     void PublishBlankFrame(std::uint8_t alpha) { frame_service_.PublishBlankFrame(alpha); }
@@ -1175,6 +1180,10 @@ void AndroidBoundaryHle::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
     impl_->PublishSoftwareFrame(std::move(rgba8));
 }
 
+void AndroidBoundaryHle::PublishSharedFrame(std::shared_ptr<const video::VideoFrame> pixels) {
+    impl_->PublishSharedFrame(std::move(pixels));
+}
+
 void AndroidBoundaryHle::PublishBlankFrame(std::uint8_t alpha) {
     impl_->PublishBlankFrame(alpha);
 }
@@ -1244,8 +1253,9 @@ void AndroidBoundaryHle::UnregisterNativeActivity(memory::GuestAddress activity)
     impl_->UnregisterNativeActivity(activity);
 }
 
-memory::GuestAddress AndroidBoundaryHle::SetNativeActivityWindow(memory::GuestAddress activity, bool active) {
-    return impl_->SetNativeActivityWindow(activity, active);
+memory::GuestAddress AndroidBoundaryHle::SetNativeActivityWindow(memory::GuestAddress activity, bool active,
+                                                                 std::optional<AndroidSurfaceWindow> surface) {
+    return impl_->SetNativeActivityWindow(activity, active, surface);
 }
 
 void AndroidBoundaryHle::SetNativeActivityInput(memory::GuestAddress activity, bool active) {

@@ -27,10 +27,23 @@ void Int(AndroidValueVm& f, VmObjectRef ref, const char* name, int value) {
     WindowField(f.vm, ref, name, "I") = {static_cast<unsigned>(value), SlotTag::cat1};
 }
 
-std::unique_ptr<AndroidValueVm> StagedVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
-                                         const std::vector<IntrinsicClassDecl>& extras = {}) {
-    return std::make_unique<AndroidValueVm>(backend, extras, false, nullptr, AndroidUiTraversalOwner::JavaTraversal,
-                                            ogplay::gles::AngleBackend{}, true);
+std::unique_ptr<AndroidValueVm> WindowVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+                                         std::vector<IntrinsicClassDecl> extras = {}) {
+    auto client =
+        IntrinsicClassBuilder::Class("Lprobe/WindowImeClient;", "Lcom/android/internal/view/IInputMethodClient$Stub;");
+    client.Constructor("()V", [](IntrinsicContext&) { return V::Void(); });
+    extras.push_back(std::move(client).Build());
+    return std::make_unique<AndroidValueVm>(backend, extras, false, nullptr);
+}
+
+VmObjectRef OpenSession(AndroidValueVm& f, VmObjectRef wms) {
+    const auto client = f.New("Lprobe/WindowImeClient;");
+    const auto root = f.vm.ProtectReferences(std::array{client});
+    return f
+        .On(wms, "openSession",
+            "(Lcom/android/internal/view/IInputMethodClient;Lcom/android/internal/view/IInputContext;)Landroid/view/IWindowSession;",
+            {V::Ref(client), null})
+        .ref;
 }
 
 IntrinsicClassDecl WindowProbe() {
@@ -43,7 +56,7 @@ IntrinsicClassDecl WindowProbe() {
 
 TEST_CASE("P3 local WMS opens a rooted session and supplies display facts") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        auto fixture = StagedVm(backend);
+        auto fixture = WindowVm(backend);
         auto& f = *fixture;
         f.context->surface_width = 800;
         f.context->surface_height = 480;
@@ -57,11 +70,7 @@ TEST_CASE("P3 local WMS opens a rooted session and supplies display facts") {
         CHECK(f.On(wms, "hasNavigationBar", "()Z").AsInt() == 0);
         CHECK(Service(f, "input").IsValid());
         CHECK(Service(f, "input_method").IsValid());
-        const auto session =
-            f.On(wms, "openSession",
-                 "(Lcom/android/internal/view/IInputMethodClient;Lcom/android/internal/view/IInputContext;)Landroid/view/IWindowSession;",
-                 {null, null})
-                .ref;
+        const auto session = OpenSession(f, wms);
         REQUIRE(session.IsValid());
         CHECK(f.vm.MarkReachable().IsMarked(session));
         f.On(session, "setInTouchMode", "(Z)V", {V::Int(0)});
@@ -69,39 +78,13 @@ TEST_CASE("P3 local WMS opens a rooted session and supplies display facts") {
     }
 }
 
-TEST_CASE("P3 staged services cannot switch the production window path") {
-    AndroidValueVm f;
-    const auto has_binding = [&](VmObjectRef service, const char* name, const char* signature) {
-        const auto type = f.model.ObjectClass(service);
-        const auto index = f.linker.FindVtableIndex(type, name, signature);
-        return index && f.linker.Method(f.linker.Class(type).vtable[*index]).kind == MethodKind::intrinsic;
-    };
-    const auto wms = Service(f, "window");
-    CHECK_FALSE(has_binding(wms, "hasNavigationBar", "()Z"));
-    CHECK_FALSE(has_binding(
-        wms, "openSession",
-        "(Lcom/android/internal/view/IInputMethodClient;Lcom/android/internal/view/IInputContext;)Landroid/view/IWindowSession;"));
-    CHECK_FALSE(f.context->rom_windows);
-    const auto am = Service(f, "activity");
-    CHECK_FALSE(has_binding(
-        am, "startActivity",
-        "(Landroid/app/IApplicationThread;Ljava/lang/String;Landroid/content/Intent;Ljava/lang/String;Landroid/os/IBinder;Ljava/lang/String;IILjava/lang/String;Landroid/os/ParcelFileDescriptor;Landroid/os/Bundle;)I"));
-    CHECK_FALSE(Service(f, "input").IsValid());
-    CHECK_FALSE(Service(f, "input_method").IsValid());
-    CHECK(f.context->activity_stack.empty());
-}
-
 TEST_CASE("P3 local WMS add relayout and remove use one Surface and InputChannel") {
-    auto fixture = StagedVm(InterpreterBackend::threaded, {WindowProbe()});
+    auto fixture = WindowVm(InterpreterBackend::threaded, {WindowProbe()});
     auto& f = *fixture;
     f.context->surface_width = 800;
     f.context->surface_height = 480;
     auto wms = Service(f, "window");
-    auto session =
-        f.On(wms, "openSession",
-             "(Lcom/android/internal/view/IInputMethodClient;Lcom/android/internal/view/IInputContext;)Landroid/view/IWindowSession;",
-             {null, null})
-            .ref;
+    auto session = OpenSession(f, wms);
     auto window = f.New("Lprobe/Window;");
     auto attrs = f.New("Landroid/view/WindowManager$LayoutParams;");
     auto inset = f.New("Landroid/graphics/Rect;");
@@ -117,7 +100,7 @@ TEST_CASE("P3 local WMS add relayout and remove use one Surface and InputChannel
             .AsInt();
     CHECK((added & 2) == 2);
     CHECK(WindowField(f.vm, channel, "mPtr", "I").bits != 0);
-    CHECK(f.context->rom_windows->system.Focus().value != 0);
+    CHECK(f.context->rom_windows->system.Focus().value == 0);
     const auto frame = f.New("Landroid/graphics/Rect;"), config = f.New("Landroid/content/res/Configuration;"),
                output = f.New(surface);
     const auto out_roots = f.vm.ProtectReferences(std::array{frame, config, output});
@@ -128,6 +111,7 @@ TEST_CASE("P3 local WMS add relayout and remove use one Surface and InputChannel
               V::Ref(inset), V::Ref(inset), V::Ref(inset), V::Ref(config), V::Ref(output)})
             .AsInt();
     CHECK((relayout & 2) == 2);
+    CHECK(f.context->rom_windows->system.Focus().value != 0);
     const auto token = static_cast<int>(WindowField(f.vm, output, "mNativeObject", "I").bits);
     CHECK(f.Static(surface, "nativeIsValid", "(I)Z", {V::Int(token)}).AsInt() == 1);
     f.On(session, "finishDrawing", "(Landroid/view/IWindow;)V", {V::Ref(window)});
@@ -137,7 +121,7 @@ TEST_CASE("P3 local WMS add relayout and remove use one Surface and InputChannel
 }
 
 TEST_CASE("P3 ROM Surface native dirty lock retains pixels and publishes immutable frames") {
-    auto fixture = StagedVm();
+    auto fixture = WindowVm();
     auto& f = *fixture;
     f.context->surface_width = 4;
     f.context->surface_height = 4;
@@ -186,7 +170,7 @@ TEST_CASE("P3 ROM Surface native dirty lock retains pixels and publishes immutab
 
 TEST_CASE("P3 VelocityTracker ROM computes API19 lsq2 and preserves lift velocity") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        auto fixture = StagedVm(backend);
+        auto fixture = WindowVm(backend);
         auto& f = *fixture;
         f.context->surface_width = 800;
         f.context->surface_height = 480;
@@ -202,7 +186,7 @@ TEST_CASE("P3 VelocityTracker ROM computes API19 lsq2 and preserves lift velocit
             input.pointers = {AndroidInputPointer{}};
             input.pointers[0].axes[0] = static_cast<float>(i) * 10;
             input.pointers[0].axes[1] = static_cast<float>(i) * 20;
-            const auto event = MakeInputEvent(f.vm, input);
+            const auto event = MakeInputEvent(f.vm, f.context, input);
             f.On(tracker, "addMovement", "(Landroid/view/MotionEvent;)V", {V::Ref(event)});
         }
         f.On(tracker, "computeCurrentVelocity", "(IF)V", {V::Int(1000), V::Float(1500)});
@@ -256,7 +240,7 @@ TEST_CASE("P3 InputEventReceiver dispatch and Choreographer batch consumption us
         ++observed->batches;
         return V::Void();
     });
-    auto fixture = StagedVm(InterpreterBackend::threaded, {std::move(b).Build()});
+    auto fixture = WindowVm(InterpreterBackend::threaded, {std::move(b).Build()});
     auto& f = *fixture;
     f.context->surface_width = 100;
     f.context->surface_height = 100;
@@ -324,7 +308,7 @@ TEST_CASE("P3 input_method transports commit composing hide and SDL activation")
     auto client =
         IntrinsicClassBuilder::Class("Lprobe/ImeClient;", "Lcom/android/internal/view/IInputMethodClient$Stub;");
     client.Constructor("()V", [](IntrinsicContext&) { return V::Void(); });
-    client.VirtualMethod("setActive", "(ZZ)V", [](IntrinsicContext&) { return V::Void(); });
+    client.VirtualMethod("setActive", "(Z)V", [](IntrinsicContext&) { return V::Void(); });
     auto input = IntrinsicClassBuilder::Class("Lprobe/InputContext;", "Lcom/android/internal/view/IInputContext$Stub;");
     input.Constructor("()V", [](IntrinsicContext&) { return V::Void(); });
     for (bool composing : {false, true})
@@ -337,7 +321,7 @@ TEST_CASE("P3 input_method transports commit composing hide and SDL activation")
                                     text->committed = value;
                                 return V::Void();
                             });
-    auto fixture = StagedVm(InterpreterBackend::threaded, {std::move(client).Build(), std::move(input).Build()});
+    auto fixture = WindowVm(InterpreterBackend::threaded, {std::move(client).Build(), std::move(input).Build()});
     auto& f = *fixture;
     auto service = Service(f, "input_method"), ic = f.New("Lprobe/InputContext;"), cl = f.New("Lprobe/ImeClient;");
     const auto roots = f.vm.ProtectReferences(std::array{service, ic, cl});
@@ -348,6 +332,7 @@ TEST_CASE("P3 input_method transports commit composing hide and SDL activation")
         service, "startInput",
         "(Lcom/android/internal/view/IInputMethodClient;Lcom/android/internal/view/IInputContext;Landroid/view/inputmethod/EditorInfo;I)Lcom/android/internal/view/InputBindResult;",
         {V::Ref(cl), V::Ref(ic), null, V::Int(0)});
+    RomInput(f.context).text_input = {};
     const auto absent = f.OnOutcome(service, "showSoftInput",
                                     "(Lcom/android/internal/view/IInputMethodClient;ILandroid/os/ResultReceiver;)Z",
                                     {V::Ref(cl), V::Int(0), null});
@@ -379,7 +364,7 @@ TEST_CASE("P3 ROM InputQueue native predispatch completes on the queue thread") 
         ++*completed;
         return V::Void();
     });
-    auto fixture = StagedVm(InterpreterBackend::threaded, {std::move(callback).Build()});
+    auto fixture = WindowVm(InterpreterBackend::threaded, {std::move(callback).Build()});
     auto& f = *fixture;
     PrepareAndroidMainLooper(f.vm, f.context);
     auto queue = f.New("Landroid/view/InputQueue;"), done = f.New("Lprobe/FinishedInput;"),
@@ -403,7 +388,7 @@ TEST_CASE("P3 ROM InputQueue native predispatch completes on the queue thread") 
 }
 
 TEST_CASE("P3 MotionEvent native snapshots preserve axes offsets histories and copies") {
-    auto fixture = StagedVm();
+    auto fixture = WindowVm();
     auto& f = *fixture;
     const auto props =
         f.model.NewObjectArray(f.linker.ResolveDescriptor("[Landroid/view/MotionEvent$PointerProperties;"),
@@ -468,7 +453,7 @@ TEST_CASE("P3 host vsync queues a deterministic Clock pulse without running gues
         ++pulse->count;
         return V::Void();
     });
-    auto fixture = StagedVm(InterpreterBackend::threaded, {std::move(b).Build()});
+    auto fixture = WindowVm(InterpreterBackend::threaded, {std::move(b).Build()});
     auto& f = *fixture;
     PrepareAndroidMainLooper(f.vm, f.context);
     const auto looper = f.Static("Landroid/os/Looper;", "myLooper", "()Landroid/os/Looper;").ref;

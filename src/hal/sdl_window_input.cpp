@@ -204,8 +204,8 @@ public:
         // On phones and tablets the window always fills the screen, so lock the screen to the
         // shape of the guest surface; otherwise a resizable window follows the device rotation.
         // Desktop SDL ignores this hint.
-        const char* orientations = options.width >= options.height ? "LandscapeLeft LandscapeRight"
-                                                                   : "Portrait PortraitUpsideDown";
+        const char* orientations =
+            options.width >= options.height ? "LandscapeLeft LandscapeRight" : "Portrait PortraitUpsideDown";
         if (!SDL_SetHint(SDL_HINT_ORIENTATIONS, orientations)) {
             throw SdlError("SDL_SetHint(SDL_HINT_ORIENTATIONS)");
         }
@@ -254,6 +254,21 @@ public:
     bool SetRelativePointer(const bool enabled) override {
         if (window_ == nullptr) throw std::logic_error("relative pointer requires an open window");
         return SDL_SetWindowRelativeMouseMode(window_, enabled);
+    }
+
+    bool SetTextInput(bool enabled) override {
+        if (window_ == nullptr) throw std::logic_error("text input requires an open window");
+        return enabled ? SDL_StartTextInput(window_) : SDL_StopTextInput(window_);
+    }
+
+    bool SetOrientation(WindowOrientation orientation) override {
+        const char* directions = "";
+        switch (orientation) {
+        case WindowOrientation::automatic: break;
+        case WindowOrientation::portrait: directions = "Portrait PortraitUpsideDown"; break;
+        case WindowOrientation::landscape: directions = "LandscapeLeft LandscapeRight"; break;
+        }
+        return SDL_SetHint(SDL_HINT_ORIENTATIONS, directions);
     }
 
     void SetTitle(const std::string_view title) override {
@@ -551,6 +566,20 @@ private:
                     .pressure = event.tfinger.pressure,
                 });
             }
+            break;
+        case SDL_EVENT_TEXT_INPUT:
+            if (IsOwnedWindow(event.text.windowID) && event.text.text)
+                result.push_back({.type = InputEventType::text_input,
+                                  .timestamp_ns = event.text.timestamp,
+                                  .window_id = event.text.windowID,
+                                  .text = event.text.text});
+            break;
+        case SDL_EVENT_TEXT_EDITING:
+            if (IsOwnedWindow(event.edit.windowID) && event.edit.text)
+                result.push_back({.type = InputEventType::text_editing,
+                                  .timestamp_ns = event.edit.timestamp,
+                                  .window_id = event.edit.windowID,
+                                  .text = event.edit.text});
             break;
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP:

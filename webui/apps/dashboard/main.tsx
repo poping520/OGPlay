@@ -10,7 +10,7 @@ import { selectedSnapshot, health } from './store';
 import { EventLanes } from './lanes';
 const store = new DashboardStore();
 const labels: Record<Status, string> = {complete: '可用', partial: '部分可用', unavailable: '不可用'};
-const sectionNames: Record<string, string> = {session: '会话', diagnostics: '运行时诊断', gpu: 'GPU · GLES', vfs: 'VFS · IO', audio: '音频', capabilities: '能力账本', log: '结构化日志', dexvm:'DexVM', jni:'JNI', memory:'内存', cpu:'CPU 缓存', libraries:'动态库', ui:'Input / UiTree', video:'视频'};
+const sectionNames: Record<string, string> = {session: '会话', diagnostics: '运行时诊断', gpu: 'GPU · GLES', vfs: 'VFS · IO', audio: '音频', capabilities: '能力账本', log: '结构化日志', dexvm:'DexVM', jni:'JNI', memory:'内存', cpu:'CPU 缓存', libraries:'动态库', ui:'输入 / 窗口', video:'视频'};
 function reasonText(reason?: string) {
   if (!reason) return '来源已连接';
   if (reason === 'not_connected') return '尚未接入';

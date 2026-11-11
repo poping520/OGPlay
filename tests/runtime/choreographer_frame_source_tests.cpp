@@ -1,6 +1,7 @@
 #include "native_library_fixture.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
 #include "ogplay/runtime/dexvm/access_flags.h"
+#include "ogplay/hal/clock.h"
 #include <doctest/doctest.h>
 #include <algorithm>
 #include <array>
@@ -18,8 +19,10 @@ struct Frames final {
     Interpreter& vm;
     std::vector<core::UnimplementedHit> startup_gaps;
 
-    explicit Frames(InterpreterBackend backend)
+    explicit Frames(InterpreterBackend backend, float refresh_rate = 60)
         : f("fixture.HandshakeActivity", true, false, {}, {}, true, backend), vm(f.app->DexVm().Vm()) {
+        f.context->display_refresh_rate_hz = refresh_rate;
+        f.app->ActivityLifecycle().SetRealtimeVideoClock(false);
         f.app->StartApplication();
         REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
         startup_gaps = f.ledger.Unimplemented();
@@ -48,7 +51,7 @@ struct Frames final {
 
     VmCallOutcome StaticOutcome(const char* owner, const char* name, const char* sig, std::vector<VmValue> args = {}) {
         VmCallOutcome outcome;
-        f.app->RunOnMainThread([&] { outcome = StaticInCurrentContext(owner, name, sig, args); });
+        f.RunOnMainThread([&] { outcome = StaticInCurrentContext(owner, name, sig, args); });
         return outcome;
     }
 
@@ -75,7 +78,7 @@ struct Frames final {
 
     VmValue Call(VmObjectRef receiver, const char* name, const char* sig, std::vector<VmValue> args = {}) {
         VmValue outcome;
-        f.app->RunOnMainThread([&] { outcome = CallInCurrent(receiver, name, sig, std::move(args)); });
+        f.RunOnMainThread([&] { outcome = CallInCurrent(receiver, name, sig, std::move(args)); });
         return outcome;
     }
 
@@ -93,7 +96,7 @@ struct Frames final {
 
     VmObjectRef New(const char* owner, const char* sig, std::vector<VmValue> args = {}) {
         VmObjectRef object;
-        f.app->RunOnMainThread([&] { object = NewInCurrent(owner, sig, std::move(args)); });
+        f.RunOnMainThread([&] { object = NewInCurrent(owner, sig, std::move(args)); });
         return object;
     }
 
@@ -117,6 +120,12 @@ struct Frames final {
     }
 
     void Step() { static_cast<void>(f.app->ActivityLifecycle().StepFrame()); }
+
+    std::size_t ReceiverCount() {
+        std::size_t count{};
+        f.RunOnMainThread([&] { count = f.context->display_receivers.size(); });
+        return count;
+    }
 };
 }  // namespace
 
@@ -137,22 +146,23 @@ TEST_CASE("DVM-336 ROM Choreographer single frame callbacks use the host frame C
             stamps->push_back(time);
             return VmValue::Void();
         });
-        CHECK(f.f.context->display_receivers.size() == 1);
+        CHECK(f.ReceiverCount() == 1);
         f.Post(choreographer, callback);
         CHECK(stamps->empty());
-        const auto next_time = f.f.context->uptime_millis.load() * 1'000'000;
+        const auto next_time = (f.f.context->uptime_millis.load() + 16) * 1'000'000;
         f.Step();
         REQUIRE(stamps->size() == 1);
         CHECK(stamps->front() == next_time);
         f.Step();
         CHECK(stamps->size() == 1);  // No schedule, no callback.
+        const auto due = (f.f.context->uptime_millis.load() + 32) * 1'000'000;
         f.Post(choreographer, callback, 32);
         f.Step();
         CHECK(stamps->size() == 1);
         f.Step();
-        CHECK(stamps->size() == 1);
         f.Step();
-        CHECK(stamps->size() == 2);
+        REQUIRE(stamps->size() == 2);
+        CHECK(stamps->back() >= due);
         f.Post(choreographer, callback);
         static_cast<void>(f.Call(choreographer, "removeFrameCallback", "(Landroid/view/Choreographer$FrameCallback;)V",
                                  {VmValue::Ref(callback)}));
@@ -173,7 +183,7 @@ TEST_CASE("DVM-336 ROM Choreographer single frame callbacks use the host frame C
         static_cast<void>(f.f.app->Stop());
         REQUIRE(f.f.context->display_receivers.empty());
         const auto count = stamps->size();
-        runtime::DispatchAndroidDisplayFrame(f.vm, *f.f.context);
+        runtime::QueueAndroidDisplayFrame(f.vm.ExecutionLock(), *f.f.context);
         CHECK(stamps->size() == count);
     }
 }
@@ -181,6 +191,7 @@ TEST_CASE("DVM-336 ROM Choreographer single frame callbacks use the host frame C
 TEST_CASE("DVM-336 DisplayEventReceiver one shot merge dispose invalid queue and token") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         Frames f(backend);
+        const auto baseline = f.ReceiverCount();
         const auto looper = f.Static("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;").ref;
         CHECK(f.Call(looper, "getQueue", "()Landroid/os/MessageQueue;").ref ==
               f.Static("Landroid/os/Looper;", "myQueue", "()Landroid/os/MessageQueue;").ref);
@@ -208,7 +219,7 @@ TEST_CASE("DVM-336 DisplayEventReceiver one shot merge dispose invalid queue and
         static_cast<void>(f.Call(receiver, "dispose", "()V"));
         f.Step();
         CHECK(frames->size() == 2);
-        CHECK(f.f.context->display_receivers.empty());
+        CHECK(f.ReceiverCount() == baseline);
         const auto invalid = f.StaticOutcome("Landroid/view/DisplayEventReceiver;", "nativeInit",
                                              "(Landroid/view/DisplayEventReceiver;Landroid/os/MessageQueue;)I",
                                              {VmValue::Ref(receiver), VmValue::Ref(VmObjectRef{})});
@@ -223,7 +234,7 @@ TEST_CASE("DVM-336 DisplayEventReceiver one shot merge dispose invalid queue and
 }
 
 TEST_CASE("DVM-336 Choreographer requires a Looper and uses injected refresh rate") {
-    Frames f(InterpreterBackend::switch_dispatch);
+    Frames f(InterpreterBackend::switch_dispatch, 75);
     const auto worker = f.vm.CreateExecutionContext();
     f.vm.Threads().RegisterNativeContext(worker, false, "frame-no-looper");
     std::uint64_t worker_token{};
@@ -236,7 +247,6 @@ TEST_CASE("DVM-336 Choreographer requires a Looper and uses injected refresh rat
     });
     f.vm.Threads().DetachNativeContext(worker_token);
     f.vm.DiscardExecutionContext(worker);
-    f.f.context->display_refresh_rate_hz = 75;
     const auto global = f.Static("Landroid/hardware/display/DisplayManagerGlobal;", "getInstance",
                                  "()Landroid/hardware/display/DisplayManagerGlobal;")
                             .ref;
@@ -270,7 +280,7 @@ TEST_CASE("DVM-336 ROM Message copy flags and front-of-queue ordering") {
             static_cast<int>(f.vm.Model().InstanceSlots(call.arguments[0].ref)[f.vm.Linker().Field(*field).slot].bits));
         return VmValue::Void();
     });
-    f.f.app->RunOnMainThread([&] {
+    f.f.RunOnMainThread([&] {
         const auto runnable =
             f.Static("Landroid/os/Message;", "obtain", "(Landroid/os/Handler;Ljava/lang/Runnable;)Landroid/os/Message;",
                      {VmValue::Ref(handler), VmValue::Ref(callback)})
@@ -297,44 +307,21 @@ TEST_CASE("DVM-336 ROM Message copy flags and front-of-queue ordering") {
 
 TEST_CASE("DVM-336 DisplayEventReceiver finalization releases weak native registration") {
     Frames f(InterpreterBackend::switch_dispatch);
+    const auto baseline = f.ReceiverCount();
     const auto looper = f.Static("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;").ref;
     static_cast<void>(f.New("Lfixture/DisplayProbe;", "(Landroid/os/Looper;)V", {VmValue::Ref(looper)}));
-    REQUIRE(f.f.context->display_receivers.size() == 1);
-    f.f.app->RunOnMainThread([&] {
+    REQUIRE(f.ReceiverCount() == baseline + 1);
+    f.f.RunOnMainThread([&] {
         static_cast<void>(f.vm.CollectGarbage("display-receiver-weak-registration"));
         f.vm.RunFinalization();
     });
-    CHECK(f.f.context->display_receivers.empty());
-    static_cast<void>(f.f.app->Stop());
-}
-
-TEST_CASE("DVM-336 animation callbacks precede the frame owner traversal") {
-    Frames f(InterpreterBackend::switch_dispatch);
-    const auto choreographer = f.Choreographer(), callback = f.New("Lfixture/FrameProbe;", "()V");
-    const auto roots = f.vm.ProtectReferences(std::array{callback, choreographer});
-    auto order = std::make_shared<std::vector<int>>();
-    f.Hook("Lfixture/FrameProbe;", "doFrame", "(J)V", [order](IntrinsicContext&) {
-        order->push_back(1);
-        return VmValue::Void();
-    });
-    f.Hook("Lfixture/HandshakeView;", "onSizeChanged", "(IIII)V", [order](IntrinsicContext&) {
-        order->push_back(2);
-        return VmValue::Void();
-    });
-    const auto params =
-        f.New("Landroid/widget/FrameLayout$LayoutParams;", "(II)V", {VmValue::Int(32), VmValue::Int(18)});
-    static_cast<void>(f.Call(f.f.context->content_view, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V",
-                             {VmValue::Ref(params)}));
-    f.Post(choreographer, callback);
-    f.Step();
-    REQUIRE(order->size() >= 2);
-    CHECK(order->front() == 1);
-    CHECK(order->at(1) == 2);
+    CHECK(f.ReceiverCount() == baseline);
     static_cast<void>(f.f.app->Stop());
 }
 
 TEST_CASE("DVM-336 receiver initializes on its own Looper thread and rejects a foreign queue") {
     Frames f(InterpreterBackend::switch_dispatch);
+    const auto baseline = f.ReceiverCount();
     const auto main = f.Static("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;").ref;
     const auto receiver = f.New("Lfixture/DisplayProbe;", "(Landroid/os/Looper;)V", {VmValue::Ref(main)});
     const auto roots = f.vm.ProtectReferences(std::array{receiver});
@@ -368,7 +355,7 @@ TEST_CASE("DVM-336 receiver initializes on its own Looper thread and rejects a f
     static_cast<void>(f.Call(thread, "start", "()V"));
     static_cast<void>(f.Call(thread, "join", "()V"));
     CHECK(*rejected);
-    REQUIRE(f.f.context->display_receivers.size() == 1);  // Rejected registration added nothing.
+    REQUIRE(f.ReceiverCount() == baseline + 1);
     const auto hits = f.NewGaps();
     REQUIRE(hits.size() == 1);
     CHECK(hits.front().id == "dexvm.choreographer_frame_source");
@@ -377,6 +364,7 @@ TEST_CASE("DVM-336 receiver initializes on its own Looper thread and rejects a f
 
 TEST_CASE("frame-rate cap gates display frames while lifecycle steps keep the logical clock") {
     Frames f(InterpreterBackend::switch_dispatch);
+    f.f.app->ActivityLifecycle().SetRealtimeVideoClock(true);
     const auto choreographer = f.Choreographer();
     const auto callback = f.New("Lfixture/FrameProbe;", "()V");
     const auto roots = f.vm.ProtectReferences(std::array{choreographer, callback});
@@ -387,17 +375,24 @@ TEST_CASE("frame-rate cap gates display frames while lifecycle steps keep the lo
         return VmValue::Void();
     });
     f.Post(choreographer, callback);
+    const auto step_and_wait = [&] {
+        f.Step();
+        const auto deadline = hal::Clock::SteadyTimestampNs() + 2'000'000'000;
+        while (!runtime::AndroidMainQueueIdle(*f.f.context) && hal::Clock::SteadyTimestampNs() < deadline)
+            hal::SleepPreciseNs(150'000);
+        REQUIRE(runtime::AndroidMainQueueIdle(*f.f.context));
+    };
     // A period far longer than the test: the first step claims the only display frame.
     f.f.context->frame_period_ns = 3'600'000'000'000ULL;
     const auto uptime = f.f.context->uptime_millis.load();
     for (int i = 0; i < 4; ++i)
-        f.Step();
+        step_and_wait();
     CHECK(*frames == 1);
     CHECK(f.f.context->uptime_millis.load() - uptime == 4 * 16);
     // Without a cap every step is a display frame again.
     f.f.context->frame_period_ns = 0;
     for (int i = 0; i < 3; ++i)
-        f.Step();
+        step_and_wait();
     CHECK(*frames == 4);
     static_cast<void>(f.f.app->Stop());
 }

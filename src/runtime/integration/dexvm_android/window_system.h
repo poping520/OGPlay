@@ -47,7 +47,7 @@ struct WindowLayer {
     std::vector<WindowRect> transparent;
     int format{};
     float alpha{1};
-    bool premultiplied{}, opaque_pixels{};
+    bool premultiplied{}, opaque_pixels{}, egl{};
     std::shared_ptr<const video::VideoFrame> pixels;
 };
 
@@ -55,7 +55,7 @@ struct WindowComposition {
     // A null image denotes FrameService's lazy black base. A single full-screen
     // opaque producer is returned by lease, without visiting or copying pixels.
     std::shared_ptr<const video::VideoFrame> pixels;
-    bool blank{true}, borrowed{};
+    bool blank{true}, borrowed{}, borrowed_egl{};
 };
 
 struct WindowInputDelivery {
@@ -87,14 +87,17 @@ public:
     void SetInsets(WindowId window, int touchable, WindowRect content, WindowRect visible,
                    std::vector<WindowRect> region);
     void Post(WindowId window, std::shared_ptr<const video::VideoFrame> pixels, bool premultiplied,
-              bool opaque_pixels = false, bool transparent_pixels = false);
+              bool opaque_pixels = false, bool transparent_pixels = false, bool egl = false);
+    void ClearFrame(WindowId window, const std::shared_ptr<const video::VideoFrame>& expected);
     WindowRect Frame(WindowId window) const;
     bool Exists(WindowId window) const;
+    bool OpaqueFormat(WindowId window) const;
 
     WindowRect DisplayFrame() const { return {0, 0, width_, height_}; }
 
     std::vector<WindowLayer> Layers() const;
     WindowComposition Compose() const;
+    std::optional<WindowComposition> ComposeIfChanged(std::uint64_t& revision) const;
     std::vector<WindowInputDelivery> Dispatch(const AndroidBoundaryInput& input);
     std::vector<WindowInputDelivery> CancelTouch();
     std::vector<WindowInputDelivery> CancelWindowTouch(WindowId window);
@@ -110,7 +113,7 @@ private:
         WindowAttributes attrs;
         WindowRect frame, crop;
         bool visible{}, input_channel{}, premultiplied{}, opaque_pixels{};
-        bool transparent_pixels{};
+        bool transparent_pixels{}, egl{};
         int touchable{};
         WindowRect content_insets, visible_insets;
         std::vector<WindowRect> transparent, touchable_region;
@@ -118,6 +121,8 @@ private:
         std::optional<int> layer;
     };
 
+    std::vector<WindowLayer> ReadLayers() const;
+    WindowComposition Compose(std::vector<WindowLayer> layers) const;
     Window& Require(WindowId window);
     const Window& Require(WindowId window) const;
     bool Visible(WindowId window) const;
@@ -132,6 +137,7 @@ private:
     std::map<WindowId, Window> windows_;
     std::map<std::uint32_t, bool> application_visibility_;
     std::uint32_t next_window_{1};
+    std::uint64_t revision_{};
     bool in_touch_mode_{true};
     WindowId touch_target_{};
     std::optional<AndroidBoundaryInput> last_touch_;

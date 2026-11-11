@@ -44,11 +44,6 @@ void ReadCoords(dx::Interpreter& vm, Ref array, std::vector<AndroidInputPointer>
     }
 }
 
-Ref ClassArray(dx::Interpreter& vm, const char* descriptor, const char* array, int size) {
-    return vm.Model().NewObjectArray(vm.Linker().ResolveDescriptor(array), vm.Linker().ResolveDescriptor(descriptor),
-                                     size);
-}
-
 void Put(dx::Interpreter& vm, Ref ref, const char* name, int value) {
     WindowField(vm, ref, name, "I") = {static_cast<unsigned>(value), dx::SlotTag::cat1};
 }
@@ -94,7 +89,7 @@ AndroidBoundaryInput ReadMotionEvent(dx::Interpreter& vm, Ref event) {
     return m;
 }
 
-Ref MakeInputEvent(dx::Interpreter& vm, const AndroidBoundaryInput& input) {
+Ref MakeInputEvent(dx::Interpreter& vm, const Context& context, const AndroidBoundaryInput& input) {
     if (input.type == AndroidBoundaryInputType::key)
         return NewPlatformObject(vm, "Landroid/view/KeyEvent;", "(JJIIIIIIII)V",
                                  {V::Long(input.down_time_ns / 1'000'000), V::Long(input.event_time_ms),
@@ -104,65 +99,21 @@ Ref MakeInputEvent(dx::Interpreter& vm, const AndroidBoundaryInput& input) {
                                   V::Int(input.code), V::Int(input.repeat_count), V::Int(input.meta_state),
                                   V::Int(input.device_id), V::Int(input.scan_code), V::Int(input.flags),
                                   V::Int(input.source)});
-    const auto count = static_cast<int>(input.pointers.size());
-    auto props = ClassArray(vm, "Landroid/view/MotionEvent$PointerProperties;",
-                            "[Landroid/view/MotionEvent$PointerProperties;", count);
-    const auto props_root = vm.ProtectReferences(std::array{props});
-    auto coords =
-        ClassArray(vm, "Landroid/view/MotionEvent$PointerCoords;", "[Landroid/view/MotionEvent$PointerCoords;", count);
-    const auto coords_root = vm.ProtectReferences(std::array{coords});
-    for (int i = 0; i < count; ++i) {
-        const auto prop = NewPlatformObject(vm, "Landroid/view/MotionEvent$PointerProperties;", "()V", {});
-        vm.Model().SetObjectElement(props, i, prop);
-        const auto& p = input.pointers[static_cast<std::size_t>(i)];
-        Put(vm, prop, "id", p.id);
-        Put(vm, prop, "toolType", p.tool_type);
-        vm.Model().SetObjectElement(coords, i,
-                                    NewPlatformObject(vm, "Landroid/view/MotionEvent$PointerCoords;", "()V", {}));
-    }
-    const auto set_coords = [&](const std::vector<AndroidInputPointer>& pointers, bool offset) {
-        for (int i = 0; i < count; ++i) {
-            const auto coord = vm.Model().GetObjectElement(coords, i);
-            for (int axis = 0; axis < 64; ++axis) {
-                auto value = pointers[static_cast<std::size_t>(i)].axes[static_cast<std::size_t>(axis)];
-                if (offset && axis == 0) value += input.x_offset;
-                if (offset && axis == 1) value += input.y_offset;
-                static_cast<void>(
-                    CallAndroidMethod(vm, coord, "setAxisValue", "(IF)V", {V::Int(axis), V::Float(value)}));
-            }
-        }
-    };
-    const auto first_time = input.history.empty() ? input.event_time_ns : input.history.front().event_time_ns;
-    set_coords(input.history.empty() ? input.pointers : input.history.front().pointers, false);
-    const auto method = vm.Linker().FindDirectMethod(
-        vm.Linker().ResolveDescriptor(motion_class), "obtain",
-        "(JJII[Landroid/view/MotionEvent$PointerProperties;[Landroid/view/MotionEvent$PointerCoords;IIFFIIII)Landroid/view/MotionEvent;");
-    const auto result = vm.Call(
-        *method,
-        std::vector<V>{V::Long(input.down_time_ns / 1'000'000), V::Long(first_time / 1'000'000), V::Int(input.action),
-                       V::Int(count), V::Ref(props), V::Ref(coords), V::Int(input.meta_state),
-                       V::Int(input.button_state), V::Float(input.x_precision), V::Float(input.y_precision),
-                       V::Int(input.device_id), V::Int(input.edge_flags), V::Int(input.source), V::Int(input.flags)});
+    const auto method = vm.Linker().FindDirectMethod(vm.Linker().ResolveDescriptor(motion_class), "obtain",
+                                                     "()Landroid/view/MotionEvent;");
+    if (!method) throw std::logic_error("ROM MotionEvent pool is unavailable");
+    const auto result = vm.Call(*method, {});
     if (result.exception.IsValid()) throw dx::VmJavaThrow{"", "", result.exception};
     const auto event = result.value.ref;
-    const auto root = vm.ProtectReferences(std::array{event});
-    if (input.x_offset != 0 || input.y_offset != 0)
-        static_cast<void>(CallAndroidMethod(vm, event, "offsetLocation", "(FF)V",
-                                            {V::Float(input.x_offset), V::Float(input.y_offset)}));
-    const auto append = [&](const AndroidInputSample& sample) {
-        set_coords(sample.pointers, true);
-        static_cast<void>(
-            CallAndroidMethod(vm, event, "addBatch", "(J[Landroid/view/MotionEvent$PointerCoords;I)V",
-                              {V::Long(sample.event_time_ns / 1'000'000), V::Ref(coords), V::Int(input.meta_state)}));
-    };
-    for (std::size_t i = 1; i < input.history.size(); ++i)
-        append(input.history[i]);
-    if (!input.history.empty()) append({input.event_time_ns, input.pointers});
+    auto& s = RomInput(context);
+    auto& pointer = WindowField(vm, event, "mNativePtr", "I");
+    const auto id = pointer.bits ? static_cast<int>(pointer.bits) : AllocateRomInputHandle(s);
+    s.motions.insert_or_assign(id, input);
+    pointer = {static_cast<unsigned>(id), dx::SlotTag::cat1};
     return event;
 }
 
 void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
-    if (!context->rom_window_services_enabled) return;
     b.StaticMethod(
         "nativeInitialize",
         "(IIIIIIIIFFFFJJI[Landroid/view/MotionEvent$PointerProperties;[Landroid/view/MotionEvent$PointerCoords;)I",

@@ -111,7 +111,7 @@ $guestProcessId = 12345 # 替换为该会话的 process_id
 | 空泳道、空表、无匹配记录 | 可能未装配、缺共享键、被筛选或已覆盖 | 没有事件、没有缺口 |
 | CPU 缓存 | 最近完成 Run 的 owner 发布值，行时间戳可查 | 当前运行中的即时值；未发布不等于零 |
 | GL error | run-apk 统计边界已捕获的 GL 错误调用次数，trace 带精确 GLenum；未装配来源仍为 null/unavailable | 全部原生 GL 错误；零计数或有界 trace 无 error 证明游戏无错 |
-| AudioTrack / VideoView / UiTree | 已接入 player 统计、视频基准位置、树/dirty/focus | 全部音源、实时解码队列或输入 capture/队列 |
+| AudioTrack / MediaPlayer / WMS | 已接入 player 统计、视频基准位置、窗口数与焦点 | 全部音源、实时解码队列或输入 capture/队列 |
 
 FFmpeg 不可用原因在视频面板显示；解码未装配不是播放器没有请求。
 GLES trace 没有线程/帧键时不强行归属；VFS FD 可以复用，node_id 缺失时不能跨时间认定同一文件。

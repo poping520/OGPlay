@@ -72,10 +72,8 @@ TEST_CASE("ROM Application startup preserves order identity and native loads") {
         fixture.app->StartApplication();
         const auto first = fixture.context->application;
         REQUIRE(first.IsValid());
-        fixture.app->RunOnMainThread([&] {
-            CHECK(session::StartDexApplication(fixture.app->DexVm(), fixture.context, "Landroid/app/Application;") ==
-                  first);
-        });
+        CHECK_THROWS(fixture.app->StartApplication());
+        CHECK(fixture.context->application == first);
         CHECK(fixture.context->application_base_context.IsValid());
     }
     SUBCASE("custom startup observes clinit construct attach onCreate order") {
@@ -84,13 +82,9 @@ TEST_CASE("ROM Application startup preserves order identity and native loads") {
         fixture.app->StartApplication();
         REQUIRE(fixture.context->application.IsValid());
         CHECK(fixture.CallStaticInt("Lfixture/CustomApplication;", "getStage") == 4);
-        fixture.app->RunOnMainThread([&] {
-            CHECK(session::StartDexApplication(fixture.app->DexVm(), fixture.context, "Lfixture/CustomApplication;") ==
-                  fixture.context->application);
-            CHECK_THROWS_AS(static_cast<void>(session::StartDexApplication(fixture.app->DexVm(), fixture.context,
-                                                                           "Landroid/app/Application;")),
-                            session::DexActivityLifecycleError);
-        });
+        const auto application = fixture.context->application;
+        CHECK_THROWS(fixture.app->StartApplication());
+        CHECK(fixture.context->application == application);
     }
     SUBCASE("Application callbacks load the first native library") {
         for (const auto application : {"fixture.ClinitLoadingApplication", "fixture.OnCreateLoadingApplication"}) {
@@ -112,8 +106,8 @@ TEST_CASE("Application failure prevents launcher construction and surface effect
                             runtime::dexvm::InterpreterBackend::switch_dispatch, "fixture.ThrowingApplication");
     CHECK_THROWS(fixture.app->StartApplication());
     CHECK_FALSE(fixture.context->application.IsValid());
-    CHECK_FALSE(fixture.context->activity.IsValid());
-    CHECK_FALSE(fixture.context->managed_host_surface_open);
+    CHECK_FALSE(fixture.context->foreground_activity.IsValid());
+    CHECK_FALSE(fixture.app->NativeProcess().ManagedSurfaceIsOpen());
     CHECK(fixture.ReadStaticInt("Lfixture/LauncherActivity;", "instances") == 0);
 }
 
@@ -164,7 +158,7 @@ TEST_CASE("AndroidAppProcess starts a manifest launcher without preloading app E
     CHECK(started.state == session::LifecycleRunState::running);
     CHECK(fixture.CallStaticInt("Lfixture/LauncherActivity;", "getStage") == 3);
     CHECK(fixture.app->Context()->application.IsValid());
-    CHECK(fixture.app->Context()->activity.IsValid());
+    CHECK(fixture.app->Context()->foreground_activity.IsValid());
 
     const auto stopped = fixture.app->Stop();
     CHECK(stopped.state == session::LifecycleRunState::stopped);
@@ -293,9 +287,9 @@ TEST_CASE("DVM-107 manifest launcher alias retains its component identity") {
     fixture.app->StartApplication();
     REQUIRE(fixture.app->StartLauncherActivity().state == session::LifecycleRunState::running);
     auto& bridge = fixture.app->DexVm();
-    const auto activity = fixture.context->activity;
+    const auto activity = fixture.context->foreground_activity;
     CHECK(bridge.Linker().Class(bridge.Model().ObjectClass(activity)).descriptor == "Lfixture/LauncherActivity;");
-    fixture.app->RunOnMainThread([&] {
+    fixture.RunOnMainThread([&] {
         const auto invoke = [&](VmObjectRef receiver, const char* name, const char* signature) {
             const auto type = bridge.Model().ObjectClass(receiver);
             const auto slot = bridge.Linker().FindVtableIndex(type, name, signature);
@@ -423,17 +417,21 @@ TEST_CASE("DVM-264 ROM application binding publishes tmpdir before Application c
         request.dexvm.interpreter.backend = backend;
         auto app = session::AndroidAppProcess::Create(std::move(request));
         app->StartApplication();
-        app->RunOnMainThread([&] {
+        {
             auto& vm = app->DexVm().Vm();
+            const VmExecutionLockScope lock(vm.ExecutionLock());
             const auto type = vm.Linker().ResolveDescriptor("Lfixture/PlatformApplication;");
-            const auto method = vm.Linker().FindDirectMethod(type, "initial", "()Ljava/lang/String;");
-            REQUIRE(method);
-            const auto result = vm.Call(*method, {});
-            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
-            CHECK(vm.StringUtf8(result.value.ref) == "/data/data/fixture.platform/cache");
-            CHECK(vm.GetSystemProperty("java.io.tmpdir") == "/data/data/fixture.platform/cache");
-            CHECK(vm.GetSystemProperty("user.dir") == "/data/game");
-        });
+            const auto field = vm.Linker().FindFieldRecursive(type, "initialTmp", "Ljava/lang/String;");
+            REQUIRE(field);
+            const auto value = VmObjectRef{vm.Linker().Class(type).static_storage[vm.Linker().Field(*field).slot]};
+            CHECK(vm.StringUtf8(value) == "/data/data/fixture.platform/cache");
+            const auto reader = vm.CreateExecutionContext();
+            vm.RunInExecutionContext(reader, [&] {
+                CHECK(vm.GetSystemProperty("java.io.tmpdir") == "/data/data/fixture.platform/cache");
+                CHECK(vm.GetSystemProperty("user.dir") == "/data/game");
+            });
+            vm.DiscardExecutionContext(reader);
+        }
         static_cast<void>(app->Stop());
     }
 }
@@ -449,7 +447,7 @@ TEST_CASE("DVM-354 API19 heap classes and largeHeap are applied before Applicati
             fixture.app->StartApplication();
             auto& vm = fixture.app->DexVm().Vm();
             auto& linker = vm.Linker();
-            fixture.app->RunOnMainThread([&] {
+            fixture.RunOnMainThread([&] {
                 const auto call = [&](const char* owner, const char* name, const char* signature,
                                       std::vector<VmValue> args = {}) {
                     const auto type = linker.ResolveDescriptor(owner);
@@ -516,6 +514,7 @@ TEST_CASE("AndroidAppProcess runs host requests inside the ROM main Looper on on
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         OrchestratedApp f("fixture.LauncherActivity", true, false, {}, {}, true, backend);
+        f.app->StartApplication();
         const auto host_thread = std::this_thread::get_id();
         std::thread::id main_thread;
         auto& vm = f.app->DexVm().Vm();
@@ -523,7 +522,7 @@ TEST_CASE("AndroidAppProcess runs host requests inside the ROM main Looper on on
         {
             const auto root = vm.ProtectReferences(std::array{held});
             for (int request = 0; request < 2; ++request) {
-                f.app->RunOnMainThread([&] {
+                f.RunOnMainThread([&] {
                     if (request == 0) main_thread = std::this_thread::get_id();
                     CHECK(std::this_thread::get_id() == main_thread);
                     CHECK(main_thread != host_thread);
@@ -545,7 +544,7 @@ TEST_CASE("AndroidAppProcess runs host requests inside the ROM main Looper on on
                 });
             }
         }
-        f.app->RunOnMainThread([&] {
+        f.RunOnMainThread([&] {
             static_cast<void>(vm.CollectGarbage("main-channel-root-release"));
             CHECK_FALSE(vm.Model().IsValidRef(held));
         });

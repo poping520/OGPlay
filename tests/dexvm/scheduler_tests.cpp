@@ -235,15 +235,6 @@ std::size_t QueuedMessages(Interpreter& vm, VmObjectRef looper) {
     return count;
 }
 
-std::int64_t QueueDeadline(Interpreter& vm, VmObjectRef looper) {
-    const auto message = QueueHead(vm, looper);
-    REQUIRE(message.IsValid());
-    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(message), "when", "J");
-    const auto first = vm.Linker().Field(*field).slot;
-    const auto slots = vm.Model().InstanceSlots(message);
-    return static_cast<std::int64_t>(slots[first].bits | (static_cast<std::uint64_t>(slots[first + 1].bits) << 32));
-}
-
 template <typename Predicate>
 bool WaitFor(Predicate predicate) {
     for (int attempt = 0; attempt < 2000; ++attempt) {
@@ -278,7 +269,7 @@ TEST_CASE("empty ROM main queue keeps its Looper and Thread identities") {
     SchedulerVm::RequireOk(main);
     const auto thread = fixture.Virtual(main.value.ref, "getThread", "()Ljava/lang/Thread;").value.ref;
     REQUIRE(thread.IsValid());
-    CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.Virtual(main.value.ref, "getThread", "()Ljava/lang/Thread;").value.ref == thread);
     CHECK(fixture.context->main_looper == main.value.ref);
 }
@@ -314,7 +305,7 @@ TEST_CASE("main Looper dispatch keeps dequeued Runnables alive while another thr
     });
     std::optional<std::string> failure;
     try {
-        failure = PumpJavaThreads(fixture.vm, *fixture.context);
+        failure = ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context);
     } catch (const std::exception& error) {
         failure = error.what();
     }
@@ -347,7 +338,7 @@ TEST_CASE("DVM-89 ResultReceiver dispatches locally and through its Handler") {
     SchedulerVm::RequireOk(
         fixture.Virtual(asynchronous, "send", "(ILandroid/os/Bundle;)V", {VmValue::Int(9), VmValue::Ref(bundle)}));
     CHECK(fixture.receiver_results.size() == 1);
-    CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     REQUIRE(fixture.receiver_results.size() == 2);
     CHECK(fixture.receiver_results[1] == std::pair{9, bundle});
 
@@ -437,7 +428,7 @@ TEST_CASE("Message five-argument obtain preserves fields and queued ownership on
         CHECK(fixture.vm.StringUtf8(reference(first, "obj", "Ljava/lang/Object;")) == "NULL");
         CHECK_FALSE(reference(second, "obj", "Ljava/lang/Object;").IsValid());
         CHECK(reference(first, "target", "Landroid/os/Handler;") == handler);
-        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
         CHECK(fixture.messages == std::vector<std::int32_t>{12, 13});
         const auto untargeted = fixture.Direct("Landroid/os/Message;", "obtain",
                                                "(Landroid/os/Handler;IIILjava/lang/Object;)Landroid/os/Message;",
@@ -477,12 +468,12 @@ TEST_CASE("DVM-85 Handler queue is delayed ordered and removable") {
     SchedulerVm::RequireOk(fixture.Virtual(handler, "removeMessages", "(I)V", {VmValue::Int(3)}));
 
     AdvanceAndroidClock(*fixture.context, 9);
-    CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.messages.empty());
     CHECK(fixture.runnable_calls.load() == 0);
 
     AdvanceAndroidClock(*fixture.context, 1);
-    CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.messages == std::vector<std::int32_t>{2, 1});
     CHECK(fixture.Direct("Landroid/os/SystemClock;", "uptimeMillis", "()J").value.AsLong() ==
           kDefaultAndroidDeviceUptimeMillis + 10);
@@ -492,6 +483,14 @@ TEST_CASE("DVM-170 Activity runOnUiThread posts workers to the main Looper") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         SchedulerVm fixture(backend);
         const auto activity = fixture.New("Landroid/app/Activity;");
+        fixture.ConstructAs(activity, "Landroid/app/Activity;", "()V");
+        const auto field = fixture.linker.FindFieldRecursive(fixture.vm.Model().ObjectClass(activity), "mUiThread",
+                                                             "Ljava/lang/Thread;");
+        REQUIRE(field);
+        const auto root_thread = fixture.Direct("Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;");
+        SchedulerVm::RequireOk(root_thread);
+        fixture.vm.Model().InstanceSlots(activity)[fixture.linker.Field(*field).slot] = {root_thread.value.ref.Value(),
+                                                                                         SlotTag::ref};
         const auto runnable = fixture.New("Ltest/RecordingRunnable;");
         const auto activity_type = fixture.Class("Landroid/app/Activity;");
         const auto slot = fixture.linker.FindVtableIndex(activity_type, "runOnUiThread", "(Ljava/lang/Runnable;)V");
@@ -499,134 +498,17 @@ TEST_CASE("DVM-170 Activity runOnUiThread posts workers to the main Looper") {
         const auto method = fixture.linker.Class(activity_type).vtable[*slot];
 
         const auto worker = fixture.vm.CreateExecutionContext();
+        fixture.threads.RegisterNativeContext(worker, false, "fixture input worker");
         const std::array arguments{VmValue::Ref(activity), VmValue::Ref(runnable)};
         SchedulerVm::RequireOk(fixture.vm.Call(worker, method, arguments));
         CHECK(fixture.runnable_calls.load() == 0);
-        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
         CHECK(fixture.runnable_calls.load() == 1);
+        fixture.threads.DetachNativeContext(worker.Token());
         fixture.vm.DiscardExecutionContext(worker);
 
         SchedulerVm::RequireOk(fixture.vm.Call(method, arguments));
         CHECK(fixture.runnable_calls.load() == 2);
-    }
-}
-
-TEST_CASE("DVM-135 View posts through attached and detached main queues") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        std::atomic_int runnable_calls{};
-        auto callback =
-            IntrinsicClassBuilder::Class("Ltest/ViewPostRunnable;", "Ljava/lang/Object;", {"Ljava/lang/Runnable;"});
-        callback.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
-        callback.VirtualMethod("run", "()V", [&runnable_calls](IntrinsicContext&) {
-            ++runnable_calls;
-            return VmValue::Void();
-        });
-        ogplay::test::android_value::AndroidValueVm fixture(backend, {std::move(callback).Build()});
-        CHECK(fixture.context->ui_java_owner_thread == std::this_thread::get_id());
-        const auto activity = fixture.New("Landroid/app/Activity;");
-        fixture.context->activity = activity;
-        fixture.context->ui_test_accessibility_disabled = true;
-        fixture.context->surface_width = 160;
-        fixture.context->surface_height = 100;
-        auto& record = fixture.context->activity_stack.emplace_back();
-        record.object = activity;
-        record.visible = true;
-        record.resumed = true;
-        const auto frame =
-            fixture.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
-        const auto owners = fixture.vm.ProtectReferences(std::array{activity, frame});
-        const auto runnable = fixture.New("Ltest/ViewPostRunnable;");
-
-        const auto detached = fixture.OnOutcome(frame, "postDelayed", "(Ljava/lang/Runnable;J)Z",
-                                                {VmValue::Ref(runnable), VmValue::Long(20)});
-        SchedulerVm::RequireOk(detached);
-        CHECK(detached.value.AsInt() == 1);
-        REQUIRE(fixture.context->pending_view_actions.size() == 1);
-        static_cast<void>(fixture.vm.CollectGarbage("view-post-pending"));
-        CHECK(fixture.model.IsValidRef(runnable));
-        AdvanceAndroidClock(*fixture.context, 100);
-        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
-        CHECK(runnable_calls.load() == 0);
-
-        SchedulerVm::RequireOk(
-            fixture.OnOutcome(activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(frame)}));
-        REQUIRE(EnsureAndroidUiTraversal(fixture.vm, *fixture.context, AndroidUiTraversalReason::OwnerTick,
-                                         AndroidUiTraversalPhase::ResolveOnly));
-        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
-        CHECK(runnable_calls.load() == 0);
-        CHECK(fixture.context->pending_view_actions.empty());
-        static_cast<void>(fixture.vm.CollectGarbage("view-post-scheduled"));
-        CHECK(fixture.model.IsValidRef(runnable));
-        AdvanceAndroidClock(*fixture.context, 19);
-        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
-        CHECK(runnable_calls.load() == 0);
-        AdvanceAndroidClock(*fixture.context, 1);
-        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
-        CHECK(runnable_calls.load() == 1);
-
-        const auto posted = fixture.OnOutcome(frame, "post", "(Ljava/lang/Runnable;)Z", {VmValue::Ref(runnable)});
-        SchedulerVm::RequireOk(posted);
-        CHECK(posted.value.AsInt() == 1);
-        CHECK(runnable_calls.load() == 1);
-        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
-        CHECK(runnable_calls.load() == 2);
-
-        const auto attached_delayed = fixture.OnOutcome(frame, "postDelayed", "(Ljava/lang/Runnable;J)Z",
-                                                        {VmValue::Ref(runnable), VmValue::Long(10)});
-        SchedulerVm::RequireOk(attached_delayed);
-        CHECK(attached_delayed.value.AsInt() == 1);
-        AdvanceAndroidClock(*fixture.context, 9);
-        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
-        CHECK(runnable_calls.load() == 2);
-        AdvanceAndroidClock(*fixture.context, 1);
-        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
-        CHECK(runnable_calls.load() == 3);
-
-        // Add after the initial projection; Java mParent is already authoritative.
-        const auto child =
-            fixture.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
-        fixture.On(frame, "addView", "(Landroid/view/View;)V", {VmValue::Ref(child)});
-        const auto child_node = FindViewUiNode(*fixture.context, child.Value());
-        REQUIRE(child_node.has_value());
-        CHECK_FALSE(fixture.context->ui_tree.IsAttached(*child_node));
-        const auto base = fixture.context->uptime_millis.load();
-        CHECK(fixture.On(child, "postDelayed", "(Ljava/lang/Runnable;J)Z", {VmValue::Ref(runnable), VmValue::Long(10)})
-                  .AsInt() == 1);
-        CHECK(fixture.context->pending_view_actions.empty());
-        REQUIRE(QueuedMessages(fixture.vm, fixture.context->main_looper) == 1);
-        CHECK(QueueDeadline(fixture.vm, fixture.context->main_looper) == base + 10);
-        // First pump only at the deadline: a detached misclassification would start delay here.
-        AdvanceAndroidClock(*fixture.context, 10);
-        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
-        CHECK(runnable_calls.load() == 4);
-        CHECK(fixture.On(child, "postDelayed", "(Ljava/lang/Runnable;J)Z", {VmValue::Ref(runnable), VmValue::Long(-10)})
-                  .AsInt() == 1);
-        CHECK(runnable_calls.load() == 4);
-        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
-        CHECK(runnable_calls.load() == 5);
-        for (const bool delayed : {false, true}) {
-            const auto result =
-                delayed ? fixture.OnOutcome(child, "postDelayed", "(Ljava/lang/Runnable;J)Z",
-                                            {VmValue::Ref(VmObjectRef{}), VmValue::Long(1)})
-                        : fixture.OnOutcome(child, "post", "(Ljava/lang/Runnable;)Z", {VmValue::Ref(VmObjectRef{})});
-            REQUIRE(result.exception.IsValid());
-            CHECK(fixture.linker.Class(result.exception_class).descriptor == "Ljava/lang/NullPointerException;");
-        }
-        const auto detached_view =
-            fixture.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
-        fixture.On(detached_view, "post", "(Ljava/lang/Runnable;)Z", {VmValue::Ref(runnable)});
-        fixture.On(child, "postDelayed", "(Ljava/lang/Runnable;J)Z", {VmValue::Ref(runnable), VmValue::Long(100)});
-        REQUIRE(fixture.context->pending_view_actions.size() == 1);
-        REQUIRE(QueuedMessages(fixture.vm, fixture.context->main_looper) == 1);
-        ShutdownAndroidScheduler(*fixture.context);
-        CHECK(fixture.context->pending_view_actions.empty());
-        CHECK(fixture.context->scheduled_work.empty());
-        static_cast<void>(fixture.vm.CollectGarbage("view-post-shutdown"));
-        // The stopped main Looper retains its Java queue until VM retirement.
-        CHECK(fixture.model.IsValidRef(runnable));
-        AdvanceAndroidClock(*fixture.context, 100);
-        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
-        CHECK(runnable_calls.load() == 5);
     }
 }
 
@@ -650,16 +532,16 @@ TEST_CASE("DVM-85 Timer and CountDownTimer share the Android clock") {
     REQUIRE(invalid.exception.IsValid());
     CHECK(fixture.linker.Class(invalid.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
 
-    CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     const auto countdown = fixture.New("Ltest/RecordingCountDown;");
     fixture.ConstructAs(countdown, "Landroid/os/CountDownTimer;", "(JJ)V", {VmValue::Long(30), VmValue::Long(10)});
     SchedulerVm::RequireOk(fixture.Virtual(countdown, "start", "()Landroid/os/CountDownTimer;"));
-    CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.ticks == std::vector<std::int64_t>{30});
 
     for (int step = 0; step < 3; ++step) {
         AdvanceAndroidClock(*fixture.context, 10);
-        CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+        CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     }
     REQUIRE(WaitFor([&] { return fixture.timer_calls.load() == 1; }));
     SchedulerVm::RequireOk(fixture.Virtual(timer, "cancel", "()V"));
@@ -674,7 +556,7 @@ TEST_CASE("scheduled callback diagnostics include the throwable cause chain") {
     const auto runnable = fixture.New("Ltest/FailingRunnable;");
     SchedulerVm::RequireOk(fixture.Virtual(handler, "post", "(Ljava/lang/Runnable;)Z", {VmValue::Ref(runnable)}));
 
-    const auto failure = PumpJavaThreads(fixture.vm, *fixture.context);
+    const auto failure = ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context);
     REQUIRE(failure.has_value());
     INFO(*failure);
     CHECK(failure->find("scheduled callback raised: "
@@ -716,7 +598,7 @@ TEST_CASE("DVM-85 AsyncTask runs background work then posts to main") {
         fixture.Virtual(task, "execute", "([Ljava/lang/Object;)Landroid/os/AsyncTask;", {VmValue::Ref(params)}));
     REQUIRE(WaitFor([&] { return fixture.async_background.load() == 1; }));
     CHECK(fixture.async_post.load() == 0);
-    CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.async_post.load() == 1);
     const auto status = fixture.Virtual(task, "getStatus", "()Landroid/os/AsyncTask$Status;").value.ref;
     REQUIRE(status.IsValid());
@@ -734,7 +616,7 @@ TEST_CASE("AsyncTask preserves background DexVmError and never posts null") {
         fixture.Virtual(task, "execute", "([Ljava/lang/Object;)Landroid/os/AsyncTask;", {VmValue::Ref(params)}));
     std::optional<std::string> failure;
     REQUIRE(WaitFor([&] {
-        failure = PumpJavaThreads(fixture.vm, *fixture.context);
+        failure = ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context);
         return failure.has_value();
     }));
     CHECK(failure->find("missing HTTP capability") != std::string::npos);
@@ -796,7 +678,7 @@ TEST_CASE("DVM-268 DEX Timer schedules once and cancel rejects more work") {
                                         "(Ljava/util/Timer;Ljava/util/TimerTask;)V",
                                         {VmValue::Ref(timer), VmValue::Ref(task)}));
         AdvanceAndroidClock(*f.context, 10);
-        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
         REQUIRE(WaitFor([&] { return f.timer_calls.load() == 1; }));
         SchedulerVm::RequireOk(f.Virtual(timer, "cancel", "()V"));
         const auto other = f.New("Ltest/RecordingTimerTask;");
@@ -814,17 +696,17 @@ TEST_CASE("DVM-268 DEX Timer schedules once and cancel rejects more work") {
 TEST_CASE("DVM-268 DEX CountDownTimer ticks and finishes") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         SchedulerVm f(backend);
-        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
         const auto timer = f.New("Ltest/RecordingCountDown;");
         const auto roots = f.vm.ProtectReferences(std::array{timer});
         f.ConstructAs(timer, "Landroid/os/CountDownTimer;", "(JJ)V", {VmValue::Long(30), VmValue::Long(10)});
         SchedulerVm::RequireOk(f.Direct("Ltest/RomJavaReplacement;", "countdown", "(Landroid/os/CountDownTimer;)V",
                                         {VmValue::Ref(timer)}));
-        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
         CHECK(f.ticks == std::vector<std::int64_t>{30});
         for (int i = 0; i < 3; ++i) {
             AdvanceAndroidClock(*f.context, 10);
-            CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+            CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
         }
         CHECK(f.ticks == std::vector<std::int64_t>{30, 20, 10});
         CHECK(f.finishes.load() == 1);
@@ -865,10 +747,10 @@ TEST_CASE("ROM MessageQueue barriers pass asynchronous messages and protect the 
         };
         message(1, false);
         message(2, true);
-        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
         CHECK(f.messages == std::vector<std::int32_t>{2});
         SchedulerVm::RequireOk(f.Virtual(main, "removeSyncBarrier", "(I)V", {barrier.value}));
-        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
         CHECK(f.messages == std::vector<std::int32_t>{2, 1});
         const auto duplicate = f.Virtual(main, "removeSyncBarrier", "(I)V", {barrier.value});
         REQUIRE(duplicate.exception.IsValid());

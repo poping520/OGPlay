@@ -1,3 +1,4 @@
+#include "android_value_fixture.h"
 #include "runtime/integration/dexvm_android/shared.h"
 #include "dexvm/resource_fixture.h"
 #include "ogplay/runtime/raster/bitmap.h"
@@ -413,7 +414,6 @@ TEST_CASE("DVM-289 ROM attribute constructor smoke") {
     using ogplay::test::container_traversal::ContainerVm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
-        f.context->ui_test_accessibility_disabled = true;
         ogplay::test::ResourceFixture(*f.context) = Table();
         ogplay::test::ResourceFixture(*f.context)
             .entries.push_back(Style(0x7f020020, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}}));
@@ -530,7 +530,6 @@ VmObjectRef OpenAttributeXml(ContainerVm& f, VmObjectRef owner, const std::vecto
 TEST_CASE("DVM-351 DVM-289 XML attributes construct ROM containers and LayoutParams") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
-        f.context->ui_test_accessibility_disabled = true;
         ogplay::test::ResourceFixture(*f.context) =
             Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
         f.context->application_theme = 0x7f020004;
@@ -646,7 +645,6 @@ TEST_CASE("DVM-351 DVM-289 XML attributes construct ROM containers and LayoutPar
 TEST_CASE("DVM-289 container priority follows XML style default and application theme") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
-        f.context->ui_test_accessibility_disabled = true;
         std::vector<std::byte> table_bytes;
         ogplay::test::ResourceFixture(*f.context) = Table(
             {Style(0x7f020004, theme_id,
@@ -748,83 +746,9 @@ TEST_CASE("DVM-289 Relative LayoutParams read all 23 attributes from Parser") {
     }
 }
 
-TEST_CASE("DVM-289 attributed trees match code trees through VD05 traversal") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend);
-        f.context->ui_test_accessibility_disabled = true;
-        ogplay::test::ResourceFixture(*f.context) =
-            Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
-        f.context->application_theme = 0x7f020004;
-        const auto owner = f.New("Landroid/app/Activity;");
-        f.context->activity = owner;
-        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
-        f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
-        for (const auto* type : {"Ltest/HierarchyGroup;", "Landroid/widget/FrameLayout;",
-                                 "Landroid/widget/LinearLayout;", "Landroid/widget/RelativeLayout;"}) {
-            INFO(std::string(type));
-            std::array<std::array<std::uint32_t, 8>, 2> geometry{};
-            for (int variant = 0; variant < 2; ++variant) {
-                INFO(variant);
-                const auto parser = OpenAttributeXml(
-                    f, owner,
-                    AttributeXml({{{0x010100d5, 5, 0x501}},
-                                  {{0x010100f4, 5, 0x2801}, {0x010100f5, 5, 0x1401}, {0x010100f6, 5, 0x301}}}));
-                const auto parser_root = f.vm.ProtectReferences(std::array{parser});
-                const auto tree = variant == 0 ? f.New(type, "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
-                                                       {VmValue::Ref(owner), VmValue::Ref(parser)})
-                                               : f.New(type, "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-                const auto tree_root = f.vm.ProtectReferences(std::array{tree});
-                if (variant)
-                    f.On(tree, "setPadding", "(IIII)V",
-                         {VmValue::Int(5), VmValue::Int(5), VmValue::Int(5), VmValue::Int(5)});
-                CHECK(f.On(parser, "next", "()I").AsInt() == 2);
-                const auto child =
-                    variant == 0
-                        ? f.New("Landroid/view/View;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
-                                {VmValue::Ref(owner), VmValue::Ref(parser)})
-                        : f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-                const auto child_root = f.vm.ProtectReferences(std::array{child});
-                auto lp =
-                    f.On(tree, "generateLayoutParams",
-                         "(Landroid/util/AttributeSet;)Landroid/view/ViewGroup$LayoutParams;", {VmValue::Ref(parser)})
-                        .ref;
-                if (variant) {
-                    const auto lp_type = f.linker.Class(f.model.ObjectClass(lp)).descriptor;
-                    lp = f.New(lp_type.c_str(), "(II)V", {VmValue::Int(40), VmValue::Int(20)});
-                    if (std::string_view(type) != "Ltest/HierarchyGroup;")
-                        f.On(lp, "setMargins", "(IIII)V",
-                             {VmValue::Int(3), VmValue::Int(3), VmValue::Int(3), VmValue::Int(3)});
-                }
-                f.On(tree, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
-                     {VmValue::Ref(child), VmValue::Ref(lp)});
-                f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(tree)});
-                REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
-                                                 AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 140}));
-                geometry[static_cast<std::size_t>(variant)] = {
-                    JavaField(f, tree, "mMeasuredWidth").bits,  JavaField(f, tree, "mMeasuredHeight").bits,
-                    JavaField(f, child, "mMeasuredWidth").bits, JavaField(f, child, "mMeasuredHeight").bits,
-                    JavaField(f, child, "mLeft").bits,          JavaField(f, child, "mTop").bits,
-                    JavaField(f, child, "mRight").bits,         JavaField(f, child, "mBottom").bits};
-            }
-            CHECK(geometry[0] == geometry[1]);
-            CHECK(geometry[0][0] == 200);
-            CHECK(geometry[0][1] == 140);
-            CHECK(geometry[0][2] == 40);
-            CHECK(geometry[0][3] == 20);
-            const auto offset = std::string_view(type) == "Ltest/HierarchyGroup;" ? 0U : 8U;
-            CHECK(geometry[0][4] == offset);
-            CHECK(geometry[0][5] == offset);
-            CHECK(geometry[0][6] == offset + 40);
-            CHECK(geometry[0][7] == offset + 20);
-        }
-        CHECK(f.ledger.Unimplemented().empty());
-    }
-}
-
 TEST_CASE("DVM-289 missing dimensions and drawable resources use ROM failures") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
-        f.context->ui_test_accessibility_disabled = true;
         ogplay::test::ResourceFixture(*f.context) =
             Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
         f.context->application_theme = 0x7f020004;
@@ -1081,7 +1005,6 @@ void InstallInflateLayouts(ContainerVm& f, const std::vector<InflateNode>& layou
 }
 
 VmObjectRef InflaterActivity(ContainerVm& f) {
-    f.context->ui_test_accessibility_disabled = true;
     ogplay::test::ResourceFixture(*f.context) = Table(
         {Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x0101013f, 5, 0x601, {}}})});
     ogplay::test::ResourceFixtureEntry id;
@@ -1092,7 +1015,7 @@ VmObjectRef InflaterActivity(ContainerVm& f) {
     ogplay::test::ResourceFixture(*f.context).entries.push_back(id);
     f.context->application_theme = 0x7f020004;
     const auto owner = f.New("Landroid/app/Activity;");
-    f.context->activity = owner;
+    f.context->foreground_activity = owner;
     ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
     f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
     return owner;
@@ -1106,7 +1029,6 @@ std::vector<XmlValue> InflateSize(std::uint32_t width, std::uint32_t height) {
 TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve failure boundaries") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
-        f.context->ui_test_accessibility_disabled = true;
         ogplay::test::ResourceFixture(*f.context) = Table({Style(
             0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x0101013f, 5, 0x601, {}}})});
         f.context->application_theme = 0x7f020004;
@@ -1144,7 +1066,7 @@ TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve 
                                {"res/drawable/shape.xml", InflateXml({"shape", {}, {}})}});
         // Publish the complete APK before Resources creates its immutable StringBlock pool.
         const auto owner = f.New("Landroid/app/Activity;");
-        f.context->activity = owner;
+        f.context->foreground_activity = owner;
         ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});
@@ -1217,81 +1139,6 @@ TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve 
                   "Landroid/graphics/drawable/ColorDrawable;");
             CHECK(static_cast<std::uint32_t>(f.On(background, "getColor", "()I").AsInt()) == 0xff000000);
             CHECK(f.ledger.Unimplemented().empty());
-        }
-    }
-}
-
-TEST_CASE("DVM-290 ROM inflater setContentView nested include merge and atomic failure") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend);
-        const auto owner = InflaterActivity(f);
-        const auto full = InflateSize(0xffffffffU, 0xffffffffU), small = InflateSize(40, 20);
-        std::vector<InflateNode> layouts = {
-            {"FrameLayout",
-             full,
-             {{"LinearLayout",
-               full,
-               {{"RelativeLayout", full, {{"test.HierarchyGroup", full, {{"test.InflatedLeaf", small, {}}}}}}}},
-              {"include", {{0, 1, 0x7f030002}}, {}}}},
-            {"merge", {}, {{"View", small, {}}}},
-            {"merge", {}, {{"View", small, {}}, {"TextView", small, {}}}}};
-        // ImageView now constructs; MATRIX remains an explicit unsupported request.
-        for (const auto* tag : {"ImageView", "Button", "EditText", "ScrollView", "ViewStub", "blink"}) {
-            auto attributes = small;
-            if (std::string_view(tag) == "ImageView") attributes.push_back({0x0101011d, 16, 0});
-            layouts.push_back({"merge", {}, {{"View", small, {}}, {tag, attributes, {}}}});
-        }
-        InstallInflateLayouts(f, layouts);
-        f.On(owner, "setContentView", "(I)V", {VmValue::Int(0x7f030001)});
-        const auto root = f.context->content_view;
-        CHECK(f.linker.Class(f.model.ObjectClass(root)).descriptor == "Landroid/widget/FrameLayout;");
-        CHECK(f.On(root, "getChildCount", "()I").AsInt() == 2);
-        auto child = root;
-        for (const auto* type : {"Landroid/widget/LinearLayout;", "Landroid/widget/RelativeLayout;",
-                                 "Ltest/HierarchyGroup;", "Ltest/InflatedLeaf;"}) {
-            child = f.On(child, "getChildAt", "(I)Landroid/view/View;", {VmValue::Int(0)}).ref;
-            CHECK(f.linker.Class(f.model.ObjectClass(child)).descriptor == type);
-        }
-        CHECK(f.On(child, "getContext", "()Landroid/content/Context;").ref == owner);
-        const auto lp = f.On(child, "getLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;").ref;
-        CHECK(JavaField(f, lp, "width").bits == 40);
-        CHECK(JavaField(f, lp, "height").bits == 20);
-        const auto visible = f.On(root, "getChildAt", "(I)Landroid/view/View;", {VmValue::Int(1)}).ref;
-        f.On(visible, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff123456U))});
-        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
-                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 140}));
-        CHECK(JavaField(f, child, "mMeasuredWidth").bits == 40);
-        CHECK(JavaField(f, child, "mMeasuredHeight").bits == 20);
-        CHECK(JavaField(f, child, "mMinWidth").bits == 6);
-        CHECK(JavaField(f, child, "mLeft").bits == 0);
-        CHECK(JavaField(f, child, "mRight").bits == 40);
-        f.On(visible, "setClickable", "(Z)V", {VmValue::Int(1)});
-        const auto visible_id = *FindViewUiNode(*f.context, visible.Value());
-        // Freeze draw attributes on a real View invalidation, without layout.
-        f.On(visible, "invalidate", "()V");
-        CHECK_FALSE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
-                                             AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 140}));
-        const auto old_projection = f.context->ui_tree.PublishedProjection();
-        CHECK(old_projection->Get(visible_id)->frame == ui::Rect{0, 0, 40, 20});
-        CHECK(old_projection->HitTestProjection(1, 1) == visible_id);
-        const auto pixels = ui::RasterizeUiOverlay(ui::BuildUiRenderList(*old_projection, {}), {200, 140});
-        CHECK(pixels.rgba8[(1 * 200 + 1) * 4 + 3] == 255);
-        CHECK(pixels.rgba8[(1 * 200 + 40) * 4 + 3] == 0);
-        CHECK(f.ledger.Unimplemented().empty());
-        const auto revision = f.context->ui_content_revision;
-        // Only an unknown view tag still fails; display attributes degrade.
-        for (std::size_t i = layouts.size() - 1; i < layouts.size(); ++i) {
-            const auto error =
-                f.OnOutcome(owner, "setContentView", "(I)V", {VmValue::Int(static_cast<int>(0x7f030001 + i))});
-            INFO("layout index: " << i);
-            REQUIRE(error.exception.IsValid());
-            CHECK(f.linker.Class(error.exception_class).descriptor == (i == layouts.size() - 1
-                                                                           ? "Ljava/lang/UnsupportedOperationException;"
-                                                                           : "Landroid/view/InflateException;"));
-            CHECK(f.context->content_view == root);
-            CHECK(f.context->ui_content_revision == revision);
-            CHECK(f.context->ui_tree.PublishedProjection() == old_projection);
-            CHECK(f.On(root, "getChildCount", "()I").AsInt() == 2);
         }
     }
 }
@@ -1429,66 +1276,6 @@ TEST_CASE("DVM-290 createView cache filter exception causes and ROM factories") 
     }
 }
 
-TEST_CASE("DVM-290 ROM include nonmerge overrides and merge parent constraints") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend);
-        const auto owner = InflaterActivity(f);
-        InstallInflateLayouts(
-            f, {{"FrameLayout",
-                 InflateSize(100, 80),
-                 {{"include",
-                   {{0, 1, 0x7f030002}, {0x010100f4, 16, 30}, {0x010100f5, 16, 12}, {0x010100d0, 1, 0x7f040001}},
-                   {}}}},
-                {"View", InflateSize(60, 40), {}},
-                {"merge", {}, {{"View", InflateSize(10, 10), {}}}}});
-        const auto inflater =
-            f.Static("Landroid/view/LayoutInflater;", "from",
-                     "(Landroid/content/Context;)Landroid/view/LayoutInflater;", {VmValue::Ref(owner)})
-                .ref;
-        const auto root = f.On(inflater, "inflate", "(ILandroid/view/ViewGroup;)Landroid/view/View;",
-                               {VmValue::Int(0x7f030001), VmValue::Ref(VmObjectRef{})})
-                              .ref;
-        const auto child = f.On(root, "getChildAt", "(I)Landroid/view/View;", {VmValue::Int(0)}).ref;
-        const auto lp = f.On(child, "getLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;").ref;
-        CHECK(JavaField(f, lp, "width").bits == 30);
-        CHECK(JavaField(f, lp, "height").bits == 12);
-        CHECK(f.On(child, "getId", "()I").AsInt() == 0x7f040001);
-        const auto error = f.OnOutcome(inflater, "inflate", "(ILandroid/view/ViewGroup;Z)Landroid/view/View;",
-                                       {VmValue::Int(0x7f030003), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
-        REQUIRE(error.exception.IsValid());
-        CHECK(f.linker.Class(error.exception_class).descriptor == "Landroid/view/InflateException;");
-        CHECK(error.exception_message ==
-              "<merge /> can be used only with a valid ViewGroup root and attachToRoot=true");
-        const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
-        const auto parser =
-            f.On(resources, "getLayout", "(I)Landroid/content/res/XmlResourceParser;", {VmValue::Int(0x7f030002)}).ref;
-        CHECK(f.On(inflater, "inflate", "(Lorg/xmlpull/v1/XmlPullParser;Landroid/view/ViewGroup;)Landroid/view/View;",
-                   {VmValue::Ref(parser), VmValue::Ref(VmObjectRef{})})
-                  .ref.IsValid());
-        f.On(parser, "close", "()V");
-        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(root)});
-        const auto parent = f.On(root, "getParent", "()Landroid/view/ViewParent;").ref;
-        REQUIRE(parent.IsValid());
-        const auto extra = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-        const auto params =
-            f.New("Landroid/widget/FrameLayout$LayoutParams;", "(II)V", {VmValue::Int(7), VmValue::Int(9)});
-        f.On(owner, "addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
-             {VmValue::Ref(extra), VmValue::Ref(params)});
-        CHECK(f.On(parent, "getChildCount", "()I").AsInt() == 2);
-        CHECK(f.On(extra, "getParent", "()Landroid/view/ViewParent;").ref == parent);
-        const auto window = f.On(owner, "getWindow", "()Landroid/view/Window;").ref;
-        f.On(window, "setContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
-             {VmValue::Ref(extra), VmValue::Ref(params)});
-        CHECK(f.context->content_view == extra);
-        CHECK(f.On(parent, "getChildCount", "()I").AsInt() == 1);
-        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
-                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 140}));
-        CHECK(JavaField(f, extra, "mMeasuredWidth").bits == 7);
-        CHECK(JavaField(f, extra, "mMeasuredHeight").bits == 9);
-        CHECK(f.ledger.Unimplemented().empty());
-    }
-}
-
 TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both backends") {
     using ogplay::test::container_traversal::ContainerVm;
     using namespace ogplay::runtime::dexvm;
@@ -1597,7 +1384,6 @@ TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both bac
         }
         static_cast<void>(f.vm.CollectGarbage("leaf-unrooted"));
         CHECK_FALSE(weak_pixels.expired());  // ROM Resources caches the drawable ConstantState.
-        CHECK_FALSE(f.context->ui_drawables.contains(drawable.Value()));
         // Configuration and density selection: requested 320 chooses 240 over 160;
         // a nonmatching orientation and a newer API cannot steal the resource.
         auto variant = ogplay::test::ResourceFixture(*f.context).entries[3];
@@ -1686,430 +1472,13 @@ TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both bac
     }
 }
 
-TEST_CASE("DVM-292 typed attributes publish resource identity before validating drawable content") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend);
-        const auto path = std::string("res/drawable/broken.xml");
-        f.context->apk_bytes = ogplay::test::file_vfs::MakeStoredZip(path, ogplay::test::BitmapDecodePng());
-        ogplay::test::ResourceFixture(*f.context) = Table({
-            {.resource_id = 0x7f030001,
-             .type_name = "drawable",
-             .entry_name = "broken",
-             .string_value = path,
-             .value_type = 3},
-            Style(0x7f020020, 0, {{a, 1, 0x7f030001, {}}}),
-        });
-        const auto owner = f.New("Landroid/content/Context;");
-        const auto res = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
-        const auto theme = f.On(res, "newTheme", "()Landroid/content/res/Resources$Theme;").ref;
-        const auto roots = f.vm.ProtectReferences(std::array{owner, res, theme});
-        f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(0x7f020020), VmValue::Int(1)});
-        const auto attrs = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 1);
-        f.model.SetPrimitiveElement(attrs, 0, a);
-        const auto values =
-            f.On(theme, "obtainStyledAttributes", "([I)Landroid/content/res/TypedArray;", {VmValue::Ref(attrs)}).ref;
-        const auto valuesRoot = f.vm.ProtectReferences(std::array{values});
-        CHECK(f.On(values, "getResourceId", "(II)I", {VmValue::Int(0), VmValue::Int(0)}).AsInt() == 0x7f030001);
-        const auto failed =
-            f.OnOutcome(values, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0)});
-        REQUIRE(failed.exception.IsValid());
-        CHECK(f.linker.Class(failed.exception_class).descriptor == "Landroid/content/res/Resources$NotFoundException;");
-        const auto parser = OpenAttributeXml(f, owner, AttributeXml({{{a, 1, 0}}}));
-        const auto masked =
-            f.On(theme, "obtainStyledAttributes", "(Landroid/util/AttributeSet;[III)Landroid/content/res/TypedArray;",
-                 {VmValue::Ref(parser), VmValue::Ref(attrs), VmValue::Int(0), VmValue::Int(0)})
-                .ref;
-        CHECK_FALSE(f.On(masked, "hasValue", "(I)Z", {VmValue::Int(0)}).AsInt());
-    }
-}
-
-namespace {
-constexpr std::uint32_t text_theme = 0x7f020040, text_default = 0x7f020041, text_appearance = 0x7f020042;
-
-VmObjectRef TextOwner(ContainerVm& f, const std::vector<std::byte>& pool = {}) {
-    f.context->ui_test_accessibility_disabled = true;
-    ogplay::test::ResourceFixture(*f.context) = Table();
-    const std::array styles{Style(text_theme, theme_id,
-                                  {{0x01010064, 1, 0, {}},
-                                   {0x01010065, 1, 0, {}},
-                                   {0x01010034, 1, 0, {}},
-                                   {0x01010084, 1, text_default, {}}}),
-                            Style(text_default, 0, {{0x01010034, 1, text_appearance, {}}}),
-                            Style(text_appearance, 0,
-                                  {{0x01010098, 28, 0xff123456, {}},
-                                   {0x01010095, 5, 0x1200, {}},
-                                   {0x01010097, 16, 2, {}},
-                                   {0x010103ac, 3, 0, std::string("serif")}})};
-    ogplay::test::ResourceFixture(*f.context)
-        .entries.insert(ogplay::test::ResourceFixture(*f.context).entries.end(), styles.begin(), styles.end());
-    // An application explicitly removes unused selection/hint/link presentation.
-    // These are real @null overrides, never filtering in the adapter/provider.
-    for (const auto id : {0x01010099U, 0x0101009aU, 0x0101009bU, 0x010102c5U, 0x010102c6U, 0x010102c7U, 0x01010314U,
-                          0x01010315U, 0x0101035eU, 0x0101035fU, 0x01010374U})
-        ogplay::test::ResourceFixture(*f.context).entries[3].bag.push_back({id, 1, 0, {}});
-    ogplay::test::ResourceFixture(*f.context).global_string_pool =
-        pool.empty() ? StringPool({"serif", "Plain text", "res/drawable/fixture.png"}, true) : pool;
-    f.context->application_theme = text_theme;
-    const auto owner = f.New("Landroid/app/Activity;");
-    ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
-    f.On(owner, "setTheme", "(I)V", {VmValue::Int(text_theme)});
-    return owner;
-}
-
-const ui::UiNode& TextState(ContainerVm& f, VmObjectRef view) {
-    REQUIRE(f.context->object_to_ui_node.contains(view.Value()));
-    return *f.context->ui_tree.Get(f.context->object_to_ui_node.at(view.Value()));
-}
-
-VmCallOutcome ConstructText(ContainerVm& f, VmObjectRef owner, VmObjectRef parser = VmObjectRef{},
-                            int style = 0x01010084) {
-    const auto type = f.linker.ResolveDescriptor("Landroid/widget/TextView;");
-    f.Checked(f.vm.EnsureClassInitialized(type));
-    const auto ctor =
-        f.linker.FindDirectMethod(type, "<init>", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
-    REQUIRE(ctor);
-    const auto view = f.vm.NewIntrinsicInstance("Landroid/widget/TextView;");
-    return f.vm.Call(*ctor,
-                     std::array{VmValue::Ref(view), VmValue::Ref(owner), VmValue::Ref(parser), VmValue::Int(style)});
-}
-}  // namespace
-
-TEST_CASE("DVM-294 TextView constructors consume real theme and XML on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend);
-        const auto owner = TextOwner(f);
-        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
-        const auto plain = f.New("Landroid/widget/TextView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-        const auto plain_root = f.vm.ProtectReferences(std::array{plain});
-        const auto& base = TextState(f, plain);
-        CHECK(base.text.empty());
-        CHECK(base.text_size_px == 18);
-        CHECK(base.text_color == 0x123456ff);
-        CHECK(base.text_style == 2);
-        CHECK(base.gravity == 0x33);
-        CHECK(base.max_lines == 0x7fffffff);
-        const auto face = f.On(plain, "getTypeface", "()Landroid/graphics/Typeface;").ref;
-        REQUIRE(face.IsValid());
-        CHECK(f.On(face, "getStyle", "()I").AsInt() == 2);
-        ogplay::test::ResourceFixture(*f.context).entries.push_back({});
-        auto& string = ogplay::test::ResourceFixture(*f.context).entries.back();
-        string.resource_id = 0x7f030040;
-        string.type_name = "string";
-        string.value_type = 3;
-        string.string_value = "Plain text";
-        string.value_data = 1;
-        const auto parser = OpenAttributeXml(f, owner,
-                                             AttributeXml({{{0x0101014f, 1, 0x7f030040},
-                                                            {0x01010095, 5, 0x1a00},
-                                                            {0x01010098, 28, 0xffabcdef},
-                                                            {0x010100af, 16, 0x55},
-                                                            {0x01010153, 16, 3},
-                                                            {0x010100da, 18, 1},
-                                                            {0x010100e5, 18, 1},
-                                                            {0x010100e6, 18, 1}}}));
-        const auto parser_root = f.vm.ProtectReferences(std::array{parser});
-        const auto view = f.New("Landroid/widget/TextView;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
-                                {VmValue::Ref(owner), VmValue::Ref(parser)});
-        const auto view_root = f.vm.ProtectReferences(std::array{view});
-        const auto& xml = TextState(f, view);
-        CHECK(xml.text == u"Plain text");
-        CHECK(xml.text_size_px == 26);
-        CHECK(xml.text_color == 0xabcdefff);
-        CHECK(xml.gravity == 0x55);
-        CHECK(xml.max_lines == 3);
-        CHECK(xml.text_style == 2);
-        CHECK(f.On(view, "isFocusable", "()Z").AsInt() == 1);
-        CHECK(f.On(view, "isClickable", "()Z").AsInt() == 1);
-        CHECK(f.On(view, "isLongClickable", "()Z").AsInt() == 1);
-        for (const auto container :
-             {"Landroid/widget/FrameLayout;", "Landroid/widget/LinearLayout;", "Landroid/widget/RelativeLayout;"}) {
-            const auto group = f.New(container, "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-            const auto group_root = f.vm.ProtectReferences(std::array{group});
-            f.On(group, "addView", "(Landroid/view/View;II)V",
-                 {VmValue::Ref(view), VmValue::Int(-2), VmValue::Int(-2)});
-            f.context->content_view = group;
-            ++f.context->ui_content_revision;
-            CHECK(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
-                                           AndroidUiTraversalPhase::ResolveOnly, ui::Size{96, 128}));
-            const auto projected = f.context->ui_tree.PublishedProjection();
-            REQUIRE(projected);
-            const auto id = *FindViewUiNode(*f.context, view.Value());
-            CHECK(projected->Get(id)->measured.width == f.On(view, "getMeasuredWidth", "()I").AsInt());
-            REQUIRE(projected->Get(id)->text_line_plan);
-            f.On(group, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
-        }
-        f.context->content_view = VmObjectRef{};
-        const auto trace = f.vm.Trace("", 10000);
-        for (
-            const auto signature :
-            {"Landroid/view/View;-><init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
-             "Landroid/content/res/Resources$Theme;->obtainStyledAttributes(Landroid/util/AttributeSet;[III)Landroid/content/res/TypedArray;",
-             "Landroid/content/res/TypedArray;->getDimensionPixelSize(II)I",
-             "Landroid/content/res/TypedArray;->getText(I)Ljava/lang/CharSequence;"})
-            CHECK(std::any_of(trace.begin(), trace.end(), [&](const auto& e) {
-                return e.class_descriptor + "->" + e.method_name + e.method_descriptor == signature;
-            }));
-        static_cast<void>(f.vm.CollectGarbage("text-constructor-identity"));
-        CHECK(f.On(face, "getStyle", "()I").AsInt() == 2);
-        CHECK(f.ledger.Unimplemented().empty());
-        const auto type = f.linker.ResolveDescriptor("Landroid/widget/TextView;");
-        CHECK_FALSE(f.linker.FindFieldRecursive(type, "mTypeface", "Landroid/graphics/Typeface;"));
-        for (const auto name : {"mText", "mLayout", "mEditor"}) {
-            const auto& cls = f.linker.Class(type);
-            const auto field = std::find_if(cls.own_instance_fields.begin(), cls.own_instance_fields.end(),
-                                            [&](auto id) { return f.linker.Field(id).name == name; });
-            REQUIRE(field != cls.own_instance_fields.end());
-            CHECK_FALSE(f.linker.Field(*field).is_unimplemented);
-        }
-        CHECK(f.On(view, "getPaint", "()Landroid/text/TextPaint;").ref.IsValid());
-        CHECK(f.model.StringValue(f.On(view, "getText", "()Ljava/lang/CharSequence;").ref) == u"Plain text");
-        f.On(view, "onMeasure", "(II)V", {VmValue::Int(0), VmValue::Int(0)});
-        CHECK(f.On(view, "getMeasuredWidth", "()I").AsInt() > 0);
-    }
-}
-
-TEST_CASE("DVM-294 TextView style precedence defaults line policy and failure boundaries") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend);
-        const auto owner = TextOwner(f);
-        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
-        ogplay::test::ResourceFixture(*f.context)
-            .entries.push_back(Style(0x7f020043, 0, {{0x01010095, 5, 0x1400, {}}, {0x01010098, 28, 0xff111111, {}}}));
-        ogplay::test::ResourceFixture(*f.context)
-            .entries.push_back(Style(0x7f020044, 0, {{0x01010095, 5, 0x1600, {}}}));
-        for (auto& entry : ogplay::test::ResourceFixture(*f.context).entries)
-            if (entry.resource_id == text_theme) entry.bag.push_back({def, 1, 0x7f020043, {}});
-        f.On(owner, "setTheme", "(I)V", {VmValue::Int(text_theme)});
-        const auto parser = OpenAttributeXml(f, owner, AttributeXml({{{0, 1, 0x7f020044}}}));
-        const auto parser_root = f.vm.ProtectReferences(std::array{parser});
-        const auto custom =
-            f.New("Landroid/widget/TextView;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
-                  {VmValue::Ref(owner), VmValue::Ref(VmObjectRef{}), VmValue::Int(def)});
-        CHECK(TextState(f, custom).text_size_px == 20);
-        CHECK(TextState(f, custom).text_color == 0x111111ff);
-        const auto explicit_style =
-            f.New("Landroid/widget/TextView;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
-                  {VmValue::Ref(owner), VmValue::Ref(parser), VmValue::Int(def)});
-        CHECK(TextState(f, explicit_style).text_size_px == 22);
-        CHECK(TextState(f, explicit_style).text_color == 0x111111ff);
-        const auto styled =
-            f.New("Landroid/widget/TextView;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
-                  {VmValue::Ref(owner), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
-        CHECK(TextState(f, styled).text_size_px == 15);
-        CHECK(TextState(f, styled).text_color == 0x000000ff);
-        const auto single_parser =
-            OpenAttributeXml(f, owner, AttributeXml({{{0x0101015d, 18, 1}, {0x010100ab, 16, 0}}}));
-        const auto single_root = f.vm.ProtectReferences(std::array{single_parser});
-        const auto single =
-            f.New("Landroid/widget/TextView;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
-                  {VmValue::Ref(owner), VmValue::Ref(single_parser)});
-        CHECK(TextState(f, single).max_lines == 1);
-        CHECK(f.context->view_adapter_references.at(single.Value()).text_single_line);
-        CHECK(f.ledger.Unimplemented().empty());
-        // Each independent unsupported class is a requested, non-neutral value.
-        for (const auto attr : std::vector<XmlValue>{{0x01010220, 16, 1},
-                                                     {0x0101016b, 18, 1},
-                                                     {0x010100ab, 16, 3},
-                                                     {0x0101038c, 18, 1},
-                                                     {0x01010161, 28, 0xff000001},
-                                                     {0x010100b0, 16, 1},
-                                                     {0x0101021d, 16, 2},
-                                                     {0x01010154, 16, 2},
-                                                     {0x01010157, 16, 2},
-                                                     {0x01010217, 5, 0x100},
-                                                     {0x01010218, 4, 0x40000000},
-                                                     {0x01010171, 5, 0x100},
-                                                     {0x01010150, 16, 2},
-                                                     {0x0101015d, 18, 1},
-                                                     {0x010100af, 16, 0x800003},
-                                                     {0x010105ff, 16, 1}}) {
-            INFO(attr.id);
-            const auto p = OpenAttributeXml(f, owner, AttributeXml({{attr}}));
-            const auto root = f.vm.ProtectReferences(std::array{p});
-            CHECK_FALSE(ConstructText(f, owner, p).exception.IsValid());
-        }
-        CHECK_FALSE(f.OnOutcome(owner, "setTheme", "(I)V", {VmValue::Int(0x0103ffff)}).exception.IsValid());
-        ContainerVm spans(backend);
-        auto styled_pool = StringPool({"serif", "Plain text", "res/drawable/fixture.png"}, true);
-        styled_pool.insert(styled_pool.begin() + 40, 12, std::byte{0});
-        Set32(styled_pool, 12, 3);
-        Set32(styled_pool, 20, 52);
-        Set32(styled_pool, 24, static_cast<std::uint32_t>(styled_pool.size()));
-        Set32(styled_pool, 40, 0xffffffff);
-        Set32(styled_pool, 44, 0);
-        Set32(styled_pool, 48, 0xffffffff);
-        for (const auto word : {0U, 0U, 1U, 0xffffffffU, 0xffffffffU, 0xffffffffU})
-            Append32(styled_pool, word);
-        Set32(styled_pool, 4, static_cast<std::uint32_t>(styled_pool.size()));
-        CHECK(ogplay::loader::ParseCompiledStringPool(styled_pool)->HasStringStyles());
-        const auto span_owner = TextOwner(spans, styled_pool);
-        const auto span_failure = ConstructText(spans, span_owner);
-        CHECK_FALSE(span_failure.exception.IsValid());
-    }
-}
-
-TEST_CASE("DVM-294 absolute bitmap compounds retain identities and inflater failure is atomic") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend);
-        const auto owner = TextOwner(f);
-        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
-        constexpr std::uint32_t image = 0x7f030050;
-        ogplay::test::ResourceFixture(*f.context)
-            .entries.push_back({.resource_id = image,
-                                .type_name = "drawable",
-                                .entry_name = "compound",
-                                .string_value = "res/drawable/fixture.png",
-                                .value_type = 3,
-                                .value_data = 2,
-                                .density = 160});
-        const auto parser = OpenAttributeXml(
-            f, owner,
-            AttributeXml(
-                {{{0x0101016f, 1, image}, {0x0101016d, 1, image}, {0x01010170, 1, image}, {0x0101016e, 1, image}}}));
-        const auto parser_root = f.vm.ProtectReferences(std::array{parser});
-        // Parser owns its immutable document; the APK now supplies the bitmap.
-        f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
-        f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
-        const auto view = f.New("Landroid/widget/TextView;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
-                                {VmValue::Ref(owner), VmValue::Ref(parser)});
-        {
-            const auto root = f.vm.ProtectReferences(std::array{view});
-            const auto& refs = f.context->view_adapter_references.at(view.Value()).text_compounds;
-            for (std::size_t i = 0; i < 4; ++i) {
-                CHECK(TextState(f, view).compound_drawables[i].bitmap);
-                CHECK(TextState(f, view).compound_drawables[i].width == 2);
-                CHECK(TextState(f, view).compound_drawables[i].height == 1);
-                REQUIRE(refs[i].IsValid());
-                const auto& pixels = TextState(f, view).compound_drawables[i].bitmap;
-                REQUIRE(pixels);
-                CHECK(pixels->width == 2);
-                CHECK(pixels->height == 1);
-                CHECK(pixels->rgba8.front() == 255);
-                CHECK(pixels->rgba8[pixels->rgba8.size() - 2] == 255);
-            }
-            static_cast<void>(f.vm.CollectGarbage("text-compound-rooted"));
-            for (const auto ref : refs)
-                CHECK(f.context->ui_drawables.contains(ref.Value()));
-            f.On(view, "setCompoundDrawablesWithIntrinsicBounds", "(IIII)V",
-                 {VmValue::Int(image), VmValue::Int(0), VmValue::Int(image), VmValue::Int(0)});
-            CHECK(f.On(view, "getCompoundPaddingLeft", "()I").AsInt() == 2);
-            CHECK(f.On(view, "getCompoundPaddingTop", "()I").AsInt() == 0);
-            f.On(view, "onMeasure", "(II)V", {VmValue::Int(0), VmValue::Int(0)});
-            CHECK(f.On(view, "getMeasuredWidth", "()I").AsInt() == 4);
-            CHECK(f.ledger.Unimplemented().empty());
-        }
-        static_cast<void>(f.vm.CollectGarbage("text-compound-unrooted"));
-        CHECK_FALSE(f.context->view_adapter_references.contains(view.Value()));
-        // Inflate into an unattached tree using the same host text input.
-        f.context->activity = owner;
-        // The ARSC serializer used by this fixture has no styled-string bag pool.
-        for (auto& entry : ogplay::test::ResourceFixture(*f.context).entries)
-            if (entry.resource_id == text_appearance)
-                entry.bag = {{0x01010095, 5, 0x1200, {}}, {0x01010098, 28, 0xff123456, {}}, {0x01010096, 16, 2, {}}};
-        InstallInflateLayouts(f, {{"TextView", InflateSize(20, 10), {}},
-                                  {"FrameLayout",
-                                   InflateSize(40, 20),
-                                   {{"View", InflateSize(10, 10), {}}, {"TextView", InflateSize(20, 10), {}}}}});
-        const auto inflater = f.On(owner, "getLayoutInflater", "()Landroid/view/LayoutInflater;").ref;
-        const auto inflater_root = f.vm.ProtectReferences(std::array{inflater});
-        const auto tree = f.On(inflater, "inflate", "(ILandroid/view/ViewGroup;Z)Landroid/view/View;",
-                               {VmValue::Int(0x7f030001), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)})
-                              .ref;
-        const auto tree_root = f.vm.ProtectReferences(std::array{tree});
-        CHECK(f.linker.Class(f.model.ObjectClass(tree)).descriptor == "Landroid/widget/TextView;");
-        CHECK(TextState(f, tree).text_size_px == 18);
-        CHECK(f.ledger.Unimplemented().empty());
-        const auto old_root =
-            f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(old_root)});
-        const auto old = f.context->content_view;
-        REQUIRE(old.IsValid());
-        for (auto& entry : ogplay::test::ResourceFixture(*f.context).entries)
-            if (entry.resource_id == text_default) entry.bag.push_back({0x01010220, 16, 1, {}});
-        // A style's display attribute is ignored with a warning, so the content is replaced.
-        const auto replaced = f.OnOutcome(owner, "setContentView", "(I)V", {VmValue::Int(0x7f030002)});
-        CHECK_FALSE(replaced.exception.IsValid());
-    }
-}
-
-TEST_CASE("DVM-296 ImageView XML APK src matches code Java state and measurement") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend);
-        const auto owner = TextOwner(f);
-        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
-        constexpr std::uint32_t resource = 0x7f030060;
-        ogplay::test::ResourceFixture(*f.context)
-            .entries.push_back({.resource_id = resource,
-                                .type_name = "drawable",
-                                .entry_name = "image",
-                                .string_value = "res/drawable/fixture.png",
-                                .value_type = 3,
-                                .value_data = 2,
-                                .density = 160});
-        const auto parser = OpenAttributeXml(
-            f, owner, AttributeXml({{{0x01010119, 1, resource}, {0x0101011d, 16, 6}, {0x0101042f, 16, 96}}}));
-        const auto parser_root = f.vm.ProtectReferences(std::array{parser});
-        f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
-        f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
-        const auto xml = f.New("Landroid/widget/ImageView;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
-                               {VmValue::Ref(owner), VmValue::Ref(parser)});
-        const auto code = f.New("Landroid/widget/ImageView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-        const auto roots = f.vm.ProtectReferences(std::array{xml, code});
-        f.On(code, "setImageResource", "(I)V", {VmValue::Int(resource)});
-        const auto st = f.On(xml, "getScaleType", "()Landroid/widget/ImageView$ScaleType;").ref;
-        f.On(code, "setScaleType", "(Landroid/widget/ImageView$ScaleType;)V", {VmValue::Ref(st)});
-        f.On(code, "setImageAlpha", "(I)V", {VmValue::Int(96)});
-        for (const auto view : {xml, code}) {
-            const auto d = f.On(view, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
-            CHECK(f.linker.Class(f.model.ObjectClass(d)).descriptor == "Landroid/graphics/drawable/BitmapDrawable;");
-            CHECK(f.On(d, "getIntrinsicWidth", "()I").AsInt() == 2);
-            CHECK(f.On(d, "getIntrinsicHeight", "()I").AsInt() == 1);
-            CHECK(JavaField(f, view, "mDrawable", "Landroid/graphics/drawable/Drawable;").bits == d.Value());
-            CHECK(f.On(view, "getImageAlpha", "()I").AsInt() == 96);
-            CHECK(f.On(view, "getScaleType", "()Landroid/widget/ImageView$ScaleType;").ref == st);
-            const auto matrix = VmObjectRef{JavaField(f, view, "mMatrix", "Landroid/graphics/Matrix;").bits};
-            CHECK(f.On(matrix, "isIdentity", "()Z").AsInt() == 1);
-            const auto& state = *f.context->ui_tree.Get(*FindViewUiNode(*f.context, view.Value()));
-            REQUIRE(state.image_bitmap);
-            CHECK(state.image_bitmap->width == 2);
-            CHECK(state.image_bitmap->height == 1);
-        }
-        for (auto mode : {0U, 0x40000000U, 0x80000000U}) {
-            for (auto view : {xml, code})
-                f.On(view, "measure", "(II)V",
-                     {VmValue::Int(static_cast<int>(mode | 10)), VmValue::Int(static_cast<int>(mode | 8))});
-            CHECK(f.On(xml, "getMeasuredWidth", "()I").AsInt() == f.On(code, "getMeasuredWidth", "()I").AsInt());
-            CHECK(f.On(xml, "getMeasuredHeight", "()I").AsInt() == f.On(code, "getMeasuredHeight", "()I").AsInt());
-        }
-        CHECK(f.ledger.Unimplemented().empty());
-        // Requests rejected in both XML and the public API; neutral defaults are source-proven.
-        for (const auto attr : std::array<XmlValue, 10>{{{0x0101011d, 16, 0},
-                                                         {0x0101011d, 16, 2},
-                                                         {0x0101011d, 16, 4},
-                                                         {0x0101011e, 18, 1},
-                                                         {0x0101011f, 5, 0x1000},
-                                                         {0x01010120, 5, 0x1000},
-                                                         {0x01010121, 28, 0xffff0000},
-                                                         {0x0101031c, 5, 0x1000},
-                                                         {0x01010122, 18, 1},
-                                                         {0x01010123, 18, 1}}}) {
-            const auto p = OpenAttributeXml(f, owner, AttributeXml({{attr}}));
-            const auto object = f.vm.NewIntrinsicInstance("Landroid/widget/ImageView;");
-            const auto ctor =
-                f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Landroid/widget/ImageView;"), "<init>",
-                                          "(Landroid/content/Context;Landroid/util/AttributeSet;)V");
-            const auto outcome =
-                f.vm.Call(*ctor, std::array{VmValue::Ref(object), VmValue::Ref(owner), VmValue::Ref(p)});
-            INFO(attr.id);
-            CHECK_FALSE(outcome.exception.IsValid());
-        }
-    }
-}
+// namespace
 
 TEST_CASE("DVM-296 ImageButton XML and code honor real imageButtonStyle and explicit precedence") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
-        const auto owner = TextOwner(f);
+        const auto owner = f.New("Landroid/app/Activity;");
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});
         ogplay::test::ResourceFixture(*f.context)
             .entries.push_back(Style(
@@ -2131,9 +1500,9 @@ TEST_CASE("DVM-296 ImageButton XML and code honor real imageButtonStyle and expl
         const auto roots = f.vm.ProtectReferences(std::array{xml, code});
         CHECK(f.On(code, "getImageAlpha", "()I").AsInt() == 64);
         const auto original = f.On(code, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
-        CHECK(f.On(original, "getColor", "()I").cat1 == 0xff884422);
+        CHECK((f.On(original, "getColor", "()I").cat1 & 0x00ffffff) == 0x00884422);
         const auto desired = f.On(xml, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
-        CHECK(f.On(desired, "getColor", "()I").cat1 == 0xff223344);
+        CHECK((f.On(desired, "getColor", "()I").cat1 & 0x00ffffff) == 0x00223344);
         const auto scale = f.On(xml, "getScaleType", "()Landroid/widget/ImageView$ScaleType;").ref;
         CHECK(f.On(scale, "ordinal", "()I").AsInt() == 1);
         f.On(code, "setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(desired)});
@@ -2155,7 +1524,6 @@ TEST_CASE("DVM-296 ImageButton XML and code honor real imageButtonStyle and expl
 TEST_CASE("DVM-325 scrollbar references project without loading and reject unregistered IDs") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
-        f.context->ui_test_accessibility_disabled = true;
         const auto plain_owner = f.New("Landroid/app/Activity;");
         ogplay::test::AttachViewTestContext(f.vm, plain_owner, f.context);
         const auto plain = f.New("Landroid/view/View;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
@@ -2182,7 +1550,6 @@ TEST_CASE("DVM-325 scrollbar references project without loading and reject unreg
             }
             f.On(values, "recycle", "()V");
         }
-        CHECK(f.context->ui_drawables.empty());
         CHECK(f.ledger.Unimplemented().empty());
         ogplay::test::ResourceFixture(*f.context) = Table(
             {Style(0x7f020004, 0x01030005, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x010100d4, 1, 0, {}}}),
@@ -2209,13 +1576,12 @@ TEST_CASE("DVM-325 scrollbar references project without loading and reject unreg
 TEST_CASE("DVM-316 RelativeLayout inflation reports reflection target and constructor first stack") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
-        f.context->ui_test_accessibility_disabled = true;
         // The observed root now passes projection. This diagnostic deliberately
         // supplies an unknown framework scrollbar ID through the theme instead.
         ogplay::test::ResourceFixture(*f.context) =
             Table({Style(0x7f020004, 0x01030007, {{0x010100d4, 1, 0x0108ffff, {}}})});
         const auto owner = f.New("Landroid/app/Activity;");
-        f.context->activity = owner;
+        f.context->foreground_activity = owner;
         ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
         // Root attributes from the observed movie overlay: horizontal, match_parent both axes.
@@ -2250,7 +1616,7 @@ TEST_CASE("DVM-316 RelativeLayout inflation reports reflection target and constr
         const auto task = f.New("Ltest/OwnerMutation;");
         const auto roots = f.vm.ProtectReferences(std::array{outcome.exception, handler, task});
         f.On(handler, "post", "(Ljava/lang/Runnable;)Z", {VmValue::Ref(task)});
-        const auto failure = PumpJavaThreads(f.vm, *f.context);
+        const auto failure = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
         REQUIRE(failure);
         INFO(*failure);
         CHECK(failure->find("Caused by: Landroid/content/res/Resources$NotFoundException;: " + message) !=

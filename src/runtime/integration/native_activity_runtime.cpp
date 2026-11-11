@@ -277,7 +277,13 @@ public:
         else if (method == "onSurfaceCreatedNative") {
             if (item.window_active)
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "NativeActivity surface already created"};
-            item.window = session.Process().SetNativeActivityWindow(item.address, true);
+            const auto android = context.lock();
+            const auto surface =
+                android ? android_intrinsics::ResolveRomSurfaceWindow(call.vm, android, call.arguments[1].ref)
+                        : std::nullopt;
+            if (!surface)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "NativeActivity Surface is invalid"};
+            item.window = session.Process().SetNativeActivityWindow(item.address, true, surface);
             item.window_active = true;
             static_cast<void>(Callback(call, item, 7, {item.window.Value()}));
         } else if (method == "onSurfaceChangedNative")

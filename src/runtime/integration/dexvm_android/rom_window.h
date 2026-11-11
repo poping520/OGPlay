@@ -49,6 +49,8 @@ std::vector<WindowRect> ReadWindowRegion(dx::Interpreter& vm, const Context& con
 void WriteWindowRect(dx::Interpreter& vm, dx::VmObjectRef object, WindowRect rect);
 dx::Slot& WindowField(dx::Interpreter& vm, dx::VmObjectRef object, const char* name, const char* type);
 void AddWindowManagerMethods(dx::IntrinsicClassBuilder& builder, const Context& context);
+std::optional<AndroidSurfaceWindow> ResolveRomSurfaceWindow(dx::Interpreter& vm, const Context& context,
+                                                            dx::VmObjectRef surface);
 void AddRomSurfaceNatives(dx::IntrinsicClassBuilder& builder, const Context& context);
 void ReleaseRomSurfaceReference(const Context& context, int token);
 void SetRomApplicationVisibility(dx::Interpreter& vm, const Context& context, dx::VmObjectRef token, bool visible);

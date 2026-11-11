@@ -25,7 +25,7 @@
 | 编排 | `agent` | 传输无关 Control Service + MCP 适配 | 命令队列深度、gesture 队列 | √ |
 | VM | `runtime/dexvm` | 有界 Dalvik 解释器：链接、对象模型、GC、线程/monitor、intrinsic | 堆 used/target/growth/max、GC 次数/STW、类注册/链接计数、invoke 三路计数、Java 线程表、monitor owner/waiters、confirmed cycle、execution lock 持有者、DexVM 事件环 | √ `DiagnosticDexVmSnapshot`/monitor provider；△ 堆/GC/类计数/invoke 计数 |
 | VM | `runtime/jni` + `jni_guest` | JNI/JavaVM 语义与 32 位 guest ABI 表 | slot 绑定覆盖（217/233）、local/global/weak 引用数、pending exception、在途 native 调用、未绑定槽命中 | √ native call 环；△ 引用表计数 |
-| VM | `runtime/framework` / `ui` | 声明式框架 HLE；View hierarchy/layout/hit-test | UiTree generation/节点数/dirty/focus owner、overlay 合成事实 | △ |
+| VM | `runtime/integration/dexvm_android` | 本地窗口服务和图层合成 | WMS 窗口数和焦点 | △ |
 | VM | `runtime/integration` | 组合进程会话、动态加载、出口报告 | NativeLibraryLoader registry（Loading/Loaded/Failed）、dlopen handle 表、`/proc` 事实 | △ |
 | 边界 | `runtime/boundary` | Virtual SO catalog、dense thunk、fast router、FrameService | 已 seal 的 VSO 列表、每 VSO 调用计数、unbound thunk 命中、pending fault、GLES trace、GPU stats | √ `TryTrace`/`GpuStateProvider`；△ per-VSO 计数 |
 | 边界 | `gles` | ANGLE 接入、EGL 生命周期、GLES 目录 | backend 名、ES 版本、draw/state 计数、texture/buffer/program 数、GL error、supersample | √ `gpu.stats/render_targets/capabilities/trace` |
@@ -50,7 +50,7 @@ Dashboard 的联动只使用运行时已有的**共享键**，不新造关联：
 | `guest_tid` / `context_token` / `host_tid` | cpu、execution、dexvm、jni_guest、syscall、monitor、futex | 线程表、Java 栈、A32 状态、native 在途调用、syscall 环、monitor 边 | 选中线程 → 全部面板按该键筛选高亮，右侧“联动焦点”纵向拼出一条 guest→host 调用链 |
 | `frame` / `presented` / `steady_ns` | session、FrameService、GC、audio、ledger | 帧时间轴（主轴）、所有事件表 | 拖动帧游标 → 各事件表只显示该帧窗口；GC/GL error/underrun/miss 以刻度落在同一轴 |
 | `capability id` | CapabilityLedger、DexVM unimplemented 事件、JNI/GLES 未绑定槽 | 能力账本、日志、DexVM 事件 | 点击缺口 → 定位最近触发方法与 ctx，日志过滤该 id |
-| `lifecycle_phase` / `generation` | session、pacer、AudioOutputPump、UiTree | 顶栏、拓扑、GLES pacer、音频 | 阶段切换 → 时间轴 lifecycle 泳道打点，pacer/surface generation 同步刷新 |
+| `lifecycle_phase` / `generation` | session、pacer、AudioOutputPump、WMS | 顶栏、拓扑、GLES pacer、音频 | 阶段切换 → 时间轴 lifecycle 泳道打点，pacer/surface generation 同步刷新 |
 | `monitor object` / `futex addr` | dexvm、cpu | 线程表 wait 列、monitor 表 | `BLOCKED entry 0x1c3f ← #5` 可点击跳转 owner 线程；只有 entry→owner 成环才标红（ADR-0026） |
 | `node_id`（VFS）/ `fd` | vfs、syscall file、IoRuntime | VFS 表、syscall 环 | 点击 fd → syscall 环过滤该 fd 的 open/read/lseek |
 | `player id` | audio、session pump | 音频表、时间轴 underrun 泳道 | underrun 打点 → 该 player 行闪烁并显示当帧队列字节 |
@@ -124,7 +124,7 @@ dash.thread    {guest_tid}         -> 联动焦点：A32 状态、Java 栈、在
 │           ├───────────────────────────┼──────────────────────────┤ 能力账本 未实现命中   │
 │           │ GLES/EGL·GPU·trace        │ CPU·memory·syscall 环    │ top-N + 最近来源      │
 ├───────────┼───────────┬───────────────┼─────────────┬────────────┴───────────────────────┤
-│           │ VFS·沙盒  │ Audio·Video   │ Input·UiTree│ 结构化日志尾部（过滤同步 selection）│
+│           │ VFS·沙盒  │ Audio·Video   │ 输入·窗口│ 结构化日志尾部（过滤同步 selection）│
 └───────────┴───────────┴───────────────┴─────────────┴────────────────────────────────────┘
 ```
 

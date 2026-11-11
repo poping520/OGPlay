@@ -5,6 +5,7 @@
 #include <tuple>
 #include "native_library_fixture.h"
 #include "../dexvm/boot_dex.h"
+#include "../dexvm/container_traversal_fixture.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/session/android_app_process.h"
@@ -19,37 +20,25 @@ struct IcuVm final {
     core::CapabilityLedger ledger;
     core::Logger logger;
     std::shared_ptr<runtime::DexVmAndroidContext> context{std::make_shared<runtime::DexVmAndroidContext>()};
-    std::unique_ptr<session::AndroidAppProcess> app;
+    std::unique_ptr<test::container_traversal::AndroidTestRuntime> guest;
 
     explicit IcuVm(InterpreterBackend backend, std::string_view language = "en", std::string_view region = "US") {
         context->locale_language = language;
         context->locale_region = region;
-        std::vector<std::vector<std::byte>> bytes;
-        std::vector<runtime::BionicModuleSource> sources;
-        for (const auto name : runtime::SelectBionicProfile(19).guest_libraries) {
-            bytes.push_back(ReadPayloadBytes("lib/" + std::string(name)));
-            sources.push_back({std::string(name), bytes.back()});
-        }
-        session::AndroidAppProcessRequest request;
-        request.manifest = AppManifest("fixture.MainActivity");
-        request.system_libraries = sources;
-        request.dex_bytes = ReadDexFixture("cipher.dex");
-        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
-        request.boot_dex_files = test::ReadBootDex();
         test::BindBootDexArchive(*context);
-        request.context = context;
-        request.dexvm.interpreter.backend = backend;
-        request.surface_width = 64;
-        request.surface_height = 36;
-        request.maximum_ticks_per_call = UINT64_C(100000000);
-        request.filesystem = &filesystem;
-        request.ledger = &ledger;
-        request.logger = &logger;
-        app = session::AndroidAppProcess::Create(std::move(request));
+        context->surface_width = 64;
+        context->surface_height = 36;
+        guest = std::make_unique<test::container_traversal::AndroidTestRuntime>(
+            context, ledger, logger, runtime::AndroidIntrinsicCatalog(context), ReadDexFixture("cipher.dex"),
+            InterpreterConfig{.backend = backend}, &filesystem);
     }
 
-    Interpreter& Vm() { return app->DexVm().Vm(); }
+    Interpreter& Vm() { return guest->bridge->Vm(); }
+
+    void RunOnMainThread(const std::function<void()>& action) {
+        const VmExecutionLockScope lock(Vm().ExecutionLock());
+        action();
+    }
 
     VmValue Checked(const VmCallOutcome& outcome) {
         REQUIRE_MESSAGE(!outcome.exception.IsValid(),
@@ -120,7 +109,7 @@ struct IcuVm final {
 TEST_CASE("WU7-6 ICU51 supplies locale data decimal double digit lists and date fields") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         IcuVm f(backend);
-        f.app->RunOnMainThread([&] {
+        f.RunOnMainThread([&] {
             auto& vm = f.Vm();
             // TimeZone clinit compiles a platform ICU pattern. Keep the DEX
             // static-field ordering regression on the production guest path.
@@ -179,7 +168,7 @@ TEST_CASE("WU7-6 ICU51 supplies locale data decimal double digit lists and date 
 TEST_CASE("WU7-6 ICU51 regex preserves UTF16 groups regions replacement syntax errors and cleanup") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         IcuVm f(backend);
-        f.app->RunOnMainThread([&] {
+        f.RunOnMainThread([&] {
             auto& vm = f.Vm();
             std::string stage = "unicode";
             INFO(stage);
@@ -272,7 +261,7 @@ TEST_CASE("WU7-6 ICU51 regex preserves UTF16 groups regions replacement syntax e
 TEST_CASE("WU7-6 charset enumeration exposes only supported ICU codecs in an immutable case insensitive map") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         IcuVm f(backend);
-        f.app->RunOnMainThread([&] {
+        f.RunOnMainThread([&] {
             auto& vm = f.Vm();
             const auto map = f.Static("Ljava/nio/charset/Charset;", "availableCharsets", "()Ljava/util/SortedMap;").ref;
             const auto root = vm.ProtectReferences(std::array{map});
@@ -297,9 +286,9 @@ TEST_CASE("WU7-6 charset enumeration exposes only supported ICU codecs in an imm
 TEST_CASE("WU7-6 JNI chars leases keep strings alive across guest cleanup GC") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         IcuVm f(backend);
-        f.app->RunOnMainThread([&] {
+        f.RunOnMainThread([&] {
             auto& vm = f.Vm();
-            auto& strings = f.app->NativeProcess().Strings();
+            auto& strings = f.guest->session->Process().Strings();
             const auto text = f.Text("leased");
             const auto identity = vm.Model().ToIdentity(text);
             const auto access = strings.Acquire(identity, runtime::JniStringAccessKind::chars);
@@ -317,7 +306,7 @@ TEST_CASE("DVM-183 SQL date value types use API 19 BootDex") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         IcuVm fixture(backend);
-        fixture.app->RunOnMainThread([&] {
+        fixture.RunOnMainThread([&] {
             auto& vm = fixture.Vm();
             auto& linker = vm.Linker();
             const auto util_date = linker.ResolveDescriptor("Ljava/util/Date;");
@@ -390,7 +379,7 @@ TEST_CASE("DVM-183 SQL date value types use API 19 BootDex") {
 TEST_CASE("WU7-6 guest timezone defaults clone reset and isolate production VM state") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         IcuVm f(backend);
-        f.app->RunOnMainThread([&] {
+        f.RunOnMainThread([&] {
             auto& vm = f.Vm();
             const auto get = [&] {
                 return f.Static("Ljava/util/TimeZone;", "getDefault", "()Ljava/util/TimeZone;").ref;
@@ -406,7 +395,7 @@ TEST_CASE("WU7-6 guest timezone defaults clone reset and isolate production VM s
             f.On(zone, "setRawOffset", "(I)V", {VmValue::Int(0)});
             CHECK(f.On(get(), "getRawOffset", "()I").AsInt() == 28800000);
             IcuVm separate(backend);
-            separate.app->RunOnMainThread([&] {
+            separate.RunOnMainThread([&] {
                 const auto other = separate.Static("Ljava/util/TimeZone;", "getDefault", "()Ljava/util/TimeZone;").ref;
                 CHECK(separate.On(other, "getRawOffset", "()I").AsInt() == 0);
             });
@@ -419,8 +408,9 @@ TEST_CASE("WU7-6 guest timezone defaults clone reset and isolate production VM s
                                                              "getTimeZone", "(Ljava/lang/String;)Ljava/util/TimeZone;");
             REQUIRE(method);
             const auto named = vm.Call(*method, std::array{VmValue::Ref(f.Text("CET"))});
-            REQUIRE(named.exception.IsValid());
-            CHECK(vm.Linker().Class(named.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+            REQUIRE_FALSE(named.exception.IsValid());
+            REQUIRE(named.value.ref.IsValid());
+            CHECK(f.On(named.value.ref, "getRawOffset", "()I").AsInt() == 3600000);
         });
     }
 }
@@ -428,7 +418,7 @@ TEST_CASE("WU7-6 guest timezone defaults clone reset and isolate production VM s
 TEST_CASE("DVM-260 guest String backing preserves char array builder substring and value semantics") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         IcuVm f(backend);
-        f.app->RunOnMainThread([&] {
+        f.RunOnMainThread([&] {
             auto& vm = f.Vm();
             auto& model = vm.Model();
             const auto array =
@@ -454,7 +444,7 @@ TEST_CASE("DVM-260 guest String backing preserves char array builder substring a
             CHECK(f.On(text, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(snapshot)}).AsInt() == 1);
             CHECK(f.On(text, "intern", "()Ljava/lang/String;").ref ==
                   f.On(snapshot, "intern", "()Ljava/lang/String;").ref);
-            auto& strings = f.app->NativeProcess().Strings();
+            auto& strings = f.guest->session->Process().Strings();
             const auto a = strings.Acquire(model.ToIdentity(text), runtime::JniStringAccessKind::chars);
             const auto b = strings.Acquire(model.ToIdentity(sub), runtime::JniStringAccessKind::critical);
             const auto c = strings.Acquire(model.ToIdentity(snapshot), runtime::JniStringAccessKind::chars);
@@ -473,7 +463,7 @@ TEST_CASE("DVM-331 orchestrated ROM FrameLayout construction uses guest ICU rege
         OrchestratedApp fixture("fixture.ResultCaller", true, false, {}, {}, true, backend);
         fixture.app->StartApplication();
         const auto startup_gaps = fixture.ledger.Unimplemented().size();
-        fixture.app->RunOnMainThread([&] {
+        fixture.RunOnMainThread([&] {
             auto& vm = fixture.app->DexVm().Vm();
             const auto owner = fixture.context->application_base_context;
             const auto frame = vm.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
@@ -512,7 +502,7 @@ TEST_CASE("DVM-342 Locale executes ROM Java with injected device facts and ICU51
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         IcuVm f(backend, "fr", "CA");
-        f.app->RunOnMainThread([&] {
+        f.RunOnMainThread([&] {
             auto& vm = f.Vm();
             auto& linker = vm.Linker();
             const auto direct = [&](const char* owner, const char* name, const char* desc, std::vector<VmValue> args) {
@@ -673,7 +663,6 @@ TEST_CASE("DVM-342 Locale executes ROM Java with injected device facts and ICU51
                 vm.Model().InstanceSlots(updated.ref)[linker.Field(*locale_field).slot].bits};
             CHECK(f.String(f.On(updated_locale, "getLanguage", "()Ljava/lang/String;")) == "zh");
         });
-        static_cast<void>(f.app->Stop());
     }
 }
 
@@ -681,7 +670,7 @@ TEST_CASE("DVM-376 Android Time uses fixed Clock and API19 guest date rules") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         CAPTURE(backend);
         IcuVm f(backend);
-        f.app->RunOnMainThread([&] {
+        f.RunOnMainThread([&] {
             auto& vm = f.Vm();
             constexpr auto owner = "Landroid/text/format/Time;";
             constexpr auto text_signature = "Ljava/lang/String;";
@@ -819,7 +808,7 @@ TEST_CASE("DVM-376 Android Time uses fixed Clock and API19 guest date rules") {
 TEST_CASE("ROM TextUtils layout direction uses pinned guest ICU likely subtags and scripts") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         IcuVm fixture(backend);
-        fixture.app->RunOnMainThread([&] {
+        fixture.RunOnMainThread([&] {
             for (const auto& [language, script, direction] :
                  std::array{std::tuple{"en", "Latn", 0}, std::tuple{"zh", "Hans", 0}, std::tuple{"ar", "Arab", 1}}) {
                 const auto locale = fixture.Vm().NewIntrinsicInstance("Ljava/util/Locale;");

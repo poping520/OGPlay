@@ -15,7 +15,6 @@
 - [execution](execution/MODULE.md)：guest 生命周期、线程 runner 与 clone 执行。
 - [vfs](vfs/MODULE.md)：Android 路径、挂载和 descriptor 核心。
 - [resources](resources/MODULE.md)：独立的 API19 资源表、主题、编译 XML 和归档资产。
-- [ui](ui/MODULE.md)：有界 Android View hierarchy/state、布局、绘制与 hit-test。
 - [integration](integration/MODULE.md)：无界面累计装配和出口报告。
 
 依赖方向由 [ADR-0013](../../docs/adr/runtime.md#adr-0013) 冻结；根契约只保留
@@ -145,7 +144,7 @@
 - `FrameworkPackageHle`：从显式会话配置提供 Context.getPackageName/getPackageManager 与
   当前包 getPackageInfo；只接受 flags=0，只声明 PackageInfo.versionName/versionCode，
   String 字段使用 HLE Global reference 跨线程稳定，不实现完整 PackageManager 服务。
-- 子域按 `jni/framework/bionic/syscall/execution/vfs/ui/integration` 分目录，禁止巨型
+- 子域按 `jni/framework/bionic/syscall/execution/vfs/integration` 分目录，禁止巨型
   dispatcher。
 
 ## 不变量

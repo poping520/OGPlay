@@ -80,6 +80,11 @@ dx::VmObjectRef UsbManagerForContext(dx::IntrinsicContext& call, const Context& 
 Decl Declare_local_LocationService(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalLocationService;",
                                                     "Landroid/location/ILocationManager$Stub;");
+    const auto no_providers = [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(NewPlatformObject(call.vm, "Ljava/util/ArrayList;", "()V", {}));
+    };
+    builder.VirtualMethod("getAllProviders", "()Ljava/util/List;", no_providers);
+    builder.VirtualMethod("getProviders", "(Landroid/location/Criteria;Z)Ljava/util/List;", no_providers);
     builder.VirtualMethod("getBestProvider", "(Landroid/location/Criteria;Z)Ljava/lang/String;",
                           [](dx::IntrinsicContext&) { return dx::VmValue::Ref(dx::VmObjectRef{}); });
     builder.VirtualMethod("getLastLocation",

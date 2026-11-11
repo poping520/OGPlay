@@ -17,6 +17,7 @@ struct RomInputState {
         std::string name;
         std::deque<Event> pending;
         bool batch_notified{};
+        bool local_ime{};
         std::size_t inflight{};
     };
 
@@ -34,6 +35,14 @@ struct RomInputState {
 
     std::map<int, Endpoint> endpoints;
     std::map<int, Receiver> receivers;
+
+    struct ImeSender {
+        dexvm::VmObjectRef weak{}, queue{};
+        std::uint64_t thread{};
+        std::deque<int> pending;
+    };
+
+    std::map<int, ImeSender> ime_senders;
     int next_handle{1}, next_sequence{1};
     std::map<int, AndroidBoundaryInput> motions;
     std::map<int, std::shared_ptr<android_intrinsics::VelocityTracker>> velocities;
@@ -56,6 +65,7 @@ struct RomInputState {
     std::map<std::uint32_t, ImeClient> ime_clients;
     dexvm::VmObjectRef active_client{}, active_context{}, focused_window{};
     dexvm::VmObjectRef window_focus{};
+    dexvm::VmObjectRef ime_method{}, ime_channel{};
     bool ime_visible{};
     int ime_sequence{};
     std::function<void(bool)> text_input;
@@ -70,12 +80,13 @@ void CloseWindowInputChannel(const Context& context, int token);
 void DispatchRomWindowInput(dx::Interpreter& vm, const Context& context, const AndroidBoundaryInput& input);
 void QueueRomWindowInput(dx::Interpreter& vm, const Context& context, std::span<const WindowInputDelivery> deliveries);
 void PumpRomInputEvents(dx::Interpreter& vm, const Context& context);
+void CommitRomInputText(dx::Interpreter& vm, const Context& context, dx::VmObjectRef text, bool composing);
 void CommitRomInputText(dx::Interpreter& vm, const Context& context, const std::u16string& text, bool composing);
 void SetRomInputWindowFocus(dx::Interpreter& vm, const Context& context, dx::VmObjectRef window);
 void VisitRomInputRoots(const DexVmAndroidContext& context, const dx::VmRootVisitor& visit);
 void AddRomMotionNatives(dx::IntrinsicClassBuilder& builder, const Context& context);
 void AddRomInputQueueNatives(dx::IntrinsicClassBuilder& builder, const Context& context);
 AndroidBoundaryInput ReadMotionEvent(dx::Interpreter& vm, dx::VmObjectRef event);
-dx::VmObjectRef MakeInputEvent(dx::Interpreter& vm, const AndroidBoundaryInput& input);
+dx::VmObjectRef MakeInputEvent(dx::Interpreter& vm, const Context& context, const AndroidBoundaryInput& input);
 }  // namespace android_intrinsics
 }  // namespace ogplay::runtime

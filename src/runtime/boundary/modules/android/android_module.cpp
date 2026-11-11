@@ -92,7 +92,8 @@ void AndroidModule::RetireWindow(Resource& resource) {
     resource.window = memory::GuestAddress{};
 }
 
-memory::GuestAddress AndroidModule::SetNativeActivityWindow(memory::GuestAddress activity, bool active) {
+memory::GuestAddress AndroidModule::SetNativeActivityWindow(memory::GuestAddress activity, bool active,
+                                                            std::optional<AndroidSurfaceWindow> surface) {
     std::scoped_lock lock(mutex_);
     auto& item = resources_.at(activity.Value());
     if (!active) {
@@ -104,7 +105,9 @@ memory::GuestAddress AndroidModule::SetNativeActivityWindow(memory::GuestAddress
         throw std::runtime_error("NativeActivity window identity budget exhausted");
     const auto window = next_window_;
     next_window_ = next_window_.Add(4);
-    windows_.emplace(window.Value(), WindowResource{item.resources.width, item.resources.height, 1, true, true});
+    const auto geometry =
+        surface.value_or(AndroidSurfaceWindow{memory::GuestAddress{}, item.resources.width, item.resources.height});
+    windows_.emplace(window.Value(), WindowResource{geometry.width, geometry.height, 1, true, true, geometry.identity});
     item.window = window;
     return window;
 }

@@ -40,8 +40,7 @@ using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("Binder BootDex Bundle Parcel uses the byte protocol and reconstructs values") {
-    for (const auto backend :
-         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);
         const auto parcel = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
         const auto parcel_root = f.vm.ProtectReferences(std::array{parcel});
@@ -51,8 +50,7 @@ TEST_CASE("Binder BootDex Bundle Parcel uses the byte protocol and reconstructs 
         const auto bytes = f.Bytes("snapshot child");
         f.On(bundle, "putSerializable", "(Ljava/lang/String;Ljava/io/Serializable;)V",
              {VmValue::Ref(key), VmValue::Ref(bytes)});
-        f.On(bundle, "writeToParcel", "(Landroid/os/Parcel;I)V",
-             {VmValue::Ref(parcel), VmValue::Int(0)});
+        f.On(bundle, "writeToParcel", "(Landroid/os/Parcel;I)V", {VmValue::Ref(parcel), VmValue::Int(0)});
         f.On(bundle, "clear", "()V");
         CHECK_FALSE(f.vm.MarkReachable().IsMarked(bytes));
         CHECK_FALSE(f.vm.MarkReachable().IsMarked(bundle));
@@ -62,8 +60,8 @@ TEST_CASE("Binder BootDex Bundle Parcel uses the byte protocol and reconstructs 
         const auto creator_field = f.linker.FindFieldRecursive(type, "CREATOR", "Landroid/os/Parcelable$Creator;");
         REQUIRE(creator_field.has_value());
         const auto creator = VmObjectRef(f.linker.Class(type).static_storage[f.linker.Field(*creator_field).slot]);
-        const auto copy = f.On(creator, "createFromParcel", "(Landroid/os/Parcel;)Ljava/lang/Object;",
-                               {VmValue::Ref(parcel)}).ref;
+        const auto copy =
+            f.On(creator, "createFromParcel", "(Landroid/os/Parcel;)Ljava/lang/Object;", {VmValue::Ref(parcel)}).ref;
         const auto copy_root = f.vm.ProtectReferences(std::array{copy});
         CHECK(f.BytesOf(f.On(copy, "getByteArray", "(Ljava/lang/String;)[B", {VmValue::Ref(key)}).ref) ==
               "snapshot child");
@@ -72,10 +70,8 @@ TEST_CASE("Binder BootDex Bundle Parcel uses the byte protocol and reconstructs 
         f.On(copy, "clear", "()V");
         f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
         const auto another = f.On(parcel, "readBundle", "()Landroid/os/Bundle;").ref;
-        const auto another_bytes = f.On(
-            another, "getSerializable",
-            "(Ljava/lang/String;)Ljava/io/Serializable;",
-            {VmValue::Ref(key)}).ref;
+        const auto another_bytes =
+            f.On(another, "getSerializable", "(Ljava/lang/String;)Ljava/io/Serializable;", {VmValue::Ref(key)}).ref;
         CHECK(f.BytesOf(another_bytes) == "snapshot child");
         f.On(parcel, "recycle", "()V");
         // Retire the nested Bundle copy constructor's last Java return root.
@@ -84,13 +80,10 @@ TEST_CASE("Binder BootDex Bundle Parcel uses the byte protocol and reconstructs 
 }
 
 TEST_CASE("Binder byte Parcel preserves API19 positions append and pure marshalling") {
-    for (const auto backend :
-         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);
-        const auto source = f.Static(
-            "Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
-        const auto target = f.Static(
-            "Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto source = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto target = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
         const auto roots = f.vm.ProtectReferences(std::array{source, target});
         const auto text = f.model.NewString(u"Parcel \U0001F331");
         f.On(source, "writeInt", "(I)V", {VmValue::Int(0x12345678)});
@@ -103,9 +96,7 @@ TEST_CASE("Binder byte Parcel preserves API19 positions append and pure marshall
         f.On(source, "recycle", "()V");
         f.On(target, "setDataPosition", "(I)V", {VmValue::Int(0)});
         CHECK(f.On(target, "readInt", "()I").AsInt() == 0x12345678);
-        CHECK(f.model.StringValue(
-                  f.On(target, "readString", "()Ljava/lang/String;").ref) ==
-              u"Parcel \U0001F331");
+        CHECK(f.model.StringValue(f.On(target, "readString", "()Ljava/lang/String;").ref) == u"Parcel \U0001F331");
         f.On(target, "setDataPosition", "(I)V", {VmValue::Int(0)});
         const auto wire = f.On(target, "marshall", "()[B").ref;
         CHECK(f.model.ArrayLength(wire) == size);
@@ -114,48 +105,38 @@ TEST_CASE("Binder byte Parcel preserves API19 positions append and pure marshall
         const auto wrong = f.vm.NewStringUtf8("example.other");
         f.On(target, "setDataSize", "(I)V", {VmValue::Int(0)});
         f.On(target, "setDataPosition", "(I)V", {VmValue::Int(0)});
-        f.On(target, "writeInterfaceToken", "(Ljava/lang/String;)V",
-             {VmValue::Ref(token)});
+        f.On(target, "writeInterfaceToken", "(Ljava/lang/String;)V", {VmValue::Ref(token)});
         f.On(target, "setDataPosition", "(I)V", {VmValue::Int(0)});
-        const auto mismatch = f.OnOutcome(
-            target, "enforceInterface", "(Ljava/lang/String;)V",
-            {VmValue::Ref(wrong)});
+        const auto mismatch = f.OnOutcome(target, "enforceInterface", "(Ljava/lang/String;)V", {VmValue::Ref(wrong)});
         REQUIRE(mismatch.exception.IsValid());
-        CHECK(f.linker.Class(mismatch.exception_class).descriptor ==
-              "Ljava/lang/SecurityException;");
+        CHECK(f.linker.Class(mismatch.exception_class).descriptor == "Ljava/lang/SecurityException;");
     }
 }
 
 TEST_CASE("DVM-86 Parcel Bundle and bounded services share session state") {
     AndroidValueVm fixture;
-    const auto parcel = fixture.Static(
-        "Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+    const auto parcel = fixture.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
     fixture.On(parcel, "writeInt", "(I)V", {VmValue::Int(37)});
-    fixture.On(parcel, "writeString", "(Ljava/lang/String;)V",
-               {VmValue::Ref(fixture.vm.NewStringUtf8("value"))});
+    fixture.On(parcel, "writeString", "(Ljava/lang/String;)V", {VmValue::Ref(fixture.vm.NewStringUtf8("value"))});
     CHECK(fixture.On(parcel, "dataSize", "()I").AsInt() > 4);
     fixture.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
     CHECK(fixture.On(parcel, "readInt", "()I").AsInt() == 37);
-    CHECK(fixture.vm.StringUtf8(
-              fixture.On(parcel, "readString", "()Ljava/lang/String;").ref) ==
-          "value");
+    CHECK(fixture.vm.StringUtf8(fixture.On(parcel, "readString", "()Ljava/lang/String;").ref) == "value");
 
     const auto bundle = fixture.New("Landroid/os/Bundle;");
     fixture.On(bundle, "putString", "(Ljava/lang/String;Ljava/lang/String;)V",
-        {VmValue::Ref(fixture.vm.NewStringUtf8("key")),
-         VmValue::Ref(fixture.vm.NewStringUtf8("stored"))});
-    const auto parcel2 = fixture.Static(
-        "Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+               {VmValue::Ref(fixture.vm.NewStringUtf8("key")), VmValue::Ref(fixture.vm.NewStringUtf8("stored"))});
+    const auto parcel2 = fixture.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
     fixture.On(parcel2, "writeBundle", "(Landroid/os/Bundle;)V", {VmValue::Ref(bundle)});
     fixture.On(bundle, "putString", "(Ljava/lang/String;Ljava/lang/String;)V",
-        {VmValue::Ref(fixture.vm.NewStringUtf8("key")),
-         VmValue::Ref(fixture.vm.NewStringUtf8("mutated"))});
+               {VmValue::Ref(fixture.vm.NewStringUtf8("key")), VmValue::Ref(fixture.vm.NewStringUtf8("mutated"))});
     fixture.On(parcel2, "setDataPosition", "(I)V", {VmValue::Int(0)});
     const auto copy = fixture.On(parcel2, "readBundle", "()Landroid/os/Bundle;").ref;
     CHECK(copy != bundle);
-    CHECK(fixture.vm.StringUtf8(fixture.On(
-              copy, "getString", "(Ljava/lang/String;)Ljava/lang/String;",
-              {VmValue::Ref(fixture.vm.NewStringUtf8("key"))}).ref) == "stored");
+    CHECK(fixture.vm.StringUtf8(fixture
+                                    .On(copy, "getString", "(Ljava/lang/String;)Ljava/lang/String;",
+                                        {VmValue::Ref(fixture.vm.NewStringUtf8("key"))})
+                                    .ref) == "stored");
 
     const auto android_context = fixture.New("Landroid/content/Context;");
     const auto context_root = fixture.vm.ProtectReferences(std::array{android_context});
@@ -165,9 +146,10 @@ TEST_CASE("DVM-86 Parcel Bundle and bounded services share session state") {
                            .ref;
     REQUIRE(power.IsValid());
     CHECK(fixture.linker.Class(fixture.model.ObjectClass(power)).is_boot_dex);
-    const auto lock = fixture.On(power, "newWakeLock",
-        "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;",
-        {VmValue::Int(1), VmValue::Ref(fixture.vm.NewStringUtf8("test"))}).ref;
+    const auto lock = fixture
+                          .On(power, "newWakeLock", "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;",
+                              {VmValue::Int(1), VmValue::Ref(fixture.vm.NewStringUtf8("test"))})
+                          .ref;
     fixture.On(lock, "acquire", "()V");
     CHECK(fixture.On(lock, "isHeld", "()Z").AsInt() == 1);
     fixture.On(lock, "release", "()V");
@@ -175,10 +157,10 @@ TEST_CASE("DVM-86 Parcel Bundle and bounded services share session state") {
 
     fixture.On(lock, "acquire", "(J)V", {VmValue::Long(10)});
     AdvanceAndroidClock(*fixture.context, 9);
-    REQUIRE_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    REQUIRE_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.On(lock, "isHeld", "()Z").AsInt() == 1);
     AdvanceAndroidClock(*fixture.context, 1);
-    REQUIRE_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    REQUIRE_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.On(lock, "isHeld", "()Z").AsInt() == 0);
 
     const auto vibrator = fixture
@@ -193,10 +175,14 @@ TEST_CASE("DVM-86 Parcel Bundle and bounded services share session state") {
     CHECK(fixture.context->last_vibration_millis == 0);
 
     const auto service_name = fixture.vm.NewStringUtf8("power");
-    const auto service1 = fixture.On(android_context, "getSystemService",
-        "(Ljava/lang/String;)Ljava/lang/Object;", {VmValue::Ref(service_name)}).ref;
-    const auto service2 = fixture.On(android_context, "getSystemService",
-        "(Ljava/lang/String;)Ljava/lang/Object;", {VmValue::Ref(service_name)}).ref;
+    const auto service1 = fixture
+                              .On(android_context, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                                  {VmValue::Ref(service_name)})
+                              .ref;
+    const auto service2 = fixture
+                              .On(android_context, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                                  {VmValue::Ref(service_name)})
+                              .ref;
     CHECK(service1.IsValid());
     CHECK(service1 == service2);
 }
@@ -218,18 +204,16 @@ TEST_CASE("DVM-86 rooted Bundle traces byte arrays and Parcelable identities") {
     const auto bundle = fixture.New("Landroid/os/Bundle;");
     const auto bytes = fixture.Bytes("kept");
     const auto key = fixture.vm.NewStringUtf8("payload");
-    fixture.On(bundle, "putByteArray", "(Ljava/lang/String;[B)V",
-               {VmValue::Ref(key), VmValue::Ref(bytes)});
-    fixture.vm.SetGcIntegration(
-        {{}, {}, [bundle](const VmRootVisitor& visit) { visit(bundle); }});
+    fixture.On(bundle, "putByteArray", "(Ljava/lang/String;[B)V", {VmValue::Ref(key), VmValue::Ref(bytes)});
+    fixture.vm.SetGcIntegration({{}, {}, [bundle](const VmRootVisitor& visit) { visit(bundle); }});
 
     const auto marked = fixture.vm.MarkReachable();
     CHECK(marked.IsMarked(bundle));
     CHECK(marked.IsMarked(bytes));
     static_cast<void>(fixture.vm.CollectGarbage("dvm86-bundle-edge"));
-    CHECK(fixture.On(bundle, "getByteArray", "(Ljava/lang/String;)[B",
-                     {VmValue::Ref(fixture.vm.NewStringUtf8("payload"))}).ref ==
-          bytes);
+    CHECK(fixture
+              .On(bundle, "getByteArray", "(Ljava/lang/String;)[B", {VmValue::Ref(fixture.vm.NewStringUtf8("payload"))})
+              .ref == bytes);
     CHECK(fixture.BytesOf(bytes) == "kept");
 }
 
@@ -301,7 +285,7 @@ TEST_CASE("DVM-144 Binder Parcel references survive append and release on overwr
         f.On(source, "writeStrongBinder", "(Landroid/os/IBinder;)V", {VmValue::Ref(binder)});
         CHECK(f.On(source, "dataSize", "()I").AsInt() == 16);
         const auto partial = f.OnOutcome(target, "appendFrom", "(Landroid/os/Parcel;II)V",
-                                        {VmValue::Ref(source), VmValue::Int(0), VmValue::Int(4)});
+                                         {VmValue::Ref(source), VmValue::Int(0), VmValue::Int(4)});
         REQUIRE(partial.exception.IsValid());
         f.On(target, "appendFrom", "(Landroid/os/Parcel;II)V",
              {VmValue::Ref(source), VmValue::Int(0), VmValue::Int(16)});
@@ -334,11 +318,12 @@ TEST_CASE("ROM ServiceManager returns rooted local AIDL objects and records abse
                        "(Landroid/os/IBinder;)Landroid/os/IServiceManager;", {VmValue::Ref(registry)})
                   .ref == registry);
         const auto names = f.Static(manager, "listServices", "()[Ljava/lang/String;").ref;
-        constexpr std::array expected{
-            "activity",     "alarm",    "audio",         "backup", "clipboard",          "connectivity",
-            "content",      "display",  "iphonesubinfo", "isms",   "location",           "mount",
-            "notification", "package",  "phone",         "power",  "telephony.registry", "uimode",
-            "usb",          "vibrator", "wifi",          "window"};
+        constexpr std::array expected{"accessibility", "activity",      "alarm",   "audio",    "backup",
+                                      "clipboard",     "connectivity",  "content", "display",  "input",
+                                      "input_method",  "iphonesubinfo", "isms",    "location", "mount",
+                                      "notification",  "package",       "phone",   "power",    "telephony.registry",
+                                      "textservices",  "uimode",        "usb",     "vibrator", "wifi",
+                                      "window"};
         REQUIRE(f.model.ArrayLength(names) == expected.size());
         for (JniSize index = 0; index < static_cast<JniSize>(expected.size()); ++index)
             CHECK(f.vm.StringUtf8(f.model.GetObjectElement(names, index)) == expected[static_cast<std::size_t>(index)]);

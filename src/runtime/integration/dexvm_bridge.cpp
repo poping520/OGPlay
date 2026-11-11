@@ -1,3 +1,4 @@
+#include "runtime/integration/dexvm_android/rom_window.h"
 #include "ogplay/runtime/raster/bitmap.h"
 #include "ogplay/runtime/integration/native_activity_runtime.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
@@ -146,28 +147,6 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
             root(dx::VmObjectRef(static_cast<std::uint32_t>(handle)));
         }
     };
-    root(context.activity);
-    for (const auto& record : context.activity_stack) {
-        root(record.object);
-        root(record.intent);
-        root(record.content);
-        root(record.caller);
-        root(record.window_manager);
-        root(record.app_window_token);
-        for (const auto& result : record.results)
-            root(result.data);
-    }
-    for (const auto& command : context.activity_commands) {
-        root(command.owner);
-        root(command.intent);
-    }
-    for (const auto& window : context.application_windows) {
-        root(window.owner);
-        root(window.root);
-        root(window.params);
-    }
-    root(context.application_pointer_root);
-    root(context.focused_application_window);
     root(context.application);
     root(context.application_base_context);
     for (const auto& [receiver, filter] : context.local_broadcast_filters) {
@@ -188,50 +167,8 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
     }
     for (const auto operation : context.alarm_operations)
         root(operation);
-    root(context.renderer);
-    for (const auto& [_, state] : context.gl_surface_runtimes) {
-        root(state->view);
-        root(state->owner);
-        root(state->renderer);
-        root(state->egl_context_factory);
-        root(state->egl_config_chooser);
-        root(state->renderer_egl);
-        root(state->renderer_display);
-        root(state->renderer_config);
-        root(state->renderer_context);
-        root(state->renderer_surface);
-        root(state->renderer_gl);
-        for (const auto event : state->events)
-            root(event);
-    }
-    root(context.egl_context_factory);
-    root(context.egl_config_chooser);
-    root(context.renderer_egl);
-    root(context.renderer_display);
-    root(context.renderer_config);
-    root(context.renderer_context);
-    root(context.renderer_surface);
-    root(context.renderer_gl);
-    root(context.content_view);
-    for (const auto& presentation : context.dialog_presentations) {
-        root(presentation.dialog);
-        root(presentation.owner);
-    }
-    root(context.window_surface_callback);
-    root(context.window_surface_holder);
-    for (const auto holder : context.window_surface_holders) {
-        root(dexvm::VmObjectRef{holder});
-        if (const auto found = context.surface_callbacks.find(holder); found != context.surface_callbacks.end())
-            for (const auto callback : found->second)
-                root(callback);
-    }
-    root(context.window_input_callback);
-    root(context.window_input_queue);
-    for (const auto& [holder, surface] : context.holder_surfaces) {
-        root(dx::VmObjectRef(holder));
-        root(surface);
-    }
-    root(context.current_intent);
+    for (const auto& toast : context.toasts)
+        root(toast.callback);
     android_intrinsics::VisitRomActivityRoots(context, root);
     android_intrinsics::VisitRomInputRoots(context, root);
     if (context.rom_windows) {
@@ -249,24 +186,12 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
         root(value);
     for (const auto& [_, value] : context.bitmap_lock_roots)
         root(value);
-    root(context.egl.display);
-    root(context.egl.no_display);
-    root(context.egl.no_context);
-    root(context.egl.no_surface);
-    root(context.egl.window_surface);
-    root(context.egl.current_display);
-    root(context.egl.current_surface);
-    root(context.egl.current_context);
-    key_root(context.egl.configs);
-    key_root(context.egl.contexts);
-    key_root(context.egl.surfaces);
     key_root(context.egl.egl14_configs);
     key_root(context.egl.egl14_contexts);
     key_root(context.egl.egl14_surfaces);
     {
         std::scoped_lock lock(context.scheduler_mutex);
         root(context.main_looper);
-        root(context.view_root_handler);
         for (const auto& work : context.scheduled_work) {
             root(work.looper);
             root(work.owner);
@@ -274,154 +199,25 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
             root(work.payload);
             root(work.token);
         }
-        for (const auto& action : context.pending_view_actions) {
-            root(action.runnable);
-        }
-        for (const auto event : context.gl_surface_events)
-            root(event);
-    }
-    root(context.ui_touch_activity);
-    {
-        std::scoped_lock lock(context.video_views_mutex);
-        for (const auto view : context.pending_video_metadata_releases)
-            root(view);
-    }
-    for (const auto& [_, ref] : context.ui_touch_targets)
-        root(ref);
-    for (const auto& [_, identity] : context.surface_owner_identities) {
-        root(identity.activity);
-        root(identity.root);
-        root(identity.view);
-        for (const auto& mount : identity.mounts)
-            root(mount.first);
-    }
-    for (const auto* identity : {&context.input_capture_identity, &context.input_scroll_identity}) {
-        if (!*identity) continue;
-        root((*identity)->activity);
-        root((*identity)->root);
-        root((*identity)->view);
-        for (const auto& [ref, _] : (*identity)->mounts)
-            root(ref);
     }
 }
 
 void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context) {
     if (context == nullptr) return;
-    vm.RegisterIntrinsicStateTable(
-        {"android.owner-attached",
-         [context](const dx::VmObjectRef owner, const dx::VmRootVisitor& visit) {
-             const auto visit_ref = [&visit](const dx::VmObjectRef ref) {
-                 if (ref.IsValid()) visit(ref);
-             };
-             const auto key = owner.Value();
-             if (const auto found = context->editable_owner.find(key); found != context->editable_owner.end()) {
-                 visit_ref(dx::VmObjectRef(found->second));
-             }
-             if (const auto found = context->broadcast_receivers.find(key);
-                 found != context->broadcast_receivers.end()) {
-                 for (const auto receiver : found->second) {
-                     visit_ref(dx::VmObjectRef(receiver));
-                 }
-             }
-             if (const auto found = context->surface_holders.find(key); found != context->surface_holders.end())
-                 visit_ref(found->second);
-             if (const auto found = context->surface_callbacks.find(key); found != context->surface_callbacks.end()) {
-                 for (const auto callback : found->second)
-                     visit_ref(callback);
-             }
-             if (const auto schedule = context->ui_window_schedules.find(owner);
-                 schedule != context->ui_window_schedules.end())
-                 visit_ref(schedule->second.window_token);
-             if (const auto found = context->view_tree_observers.find(key); found != context->view_tree_observers.end())
-                 visit_ref(found->second);
-             if (const auto found = context->global_layout_listeners.find(key);
-                 found != context->global_layout_listeners.end())
-                 visit_ref(found->second);
-             if (const auto found = context->holder_canvases.find(key); found != context->holder_canvases.end())
-                 visit_ref(found->second.object);
-             if (const auto found = context->view_adapter_references.find(key);
-                 found != context->view_adapter_references.end()) {
-                 visit_ref(found->second.window_owner);
-                 visit_ref(found->second.focus_listener);
-                 visit_ref(found->second.system_ui_listener);
-                 visit_ref(found->second.text_editable);
-                 visit_ref(found->second.text_movement);
-                 for (const auto ref : found->second.text_compounds)
-                     visit_ref(ref);
-             }
-             if (const auto found = context->ui_view_layout_params.find(key);
-                 found != context->ui_view_layout_params.end())
-                 visit_ref(found->second);
-
-             if (const auto found = context->text_watchers.find(key); found != context->text_watchers.end()) {
-                 for (const auto watcher : found->second)
-                     visit_ref(watcher);
-             }
-         },
-         [context](const dx::VmObjectRef owner) {
-             const auto key = owner.Value();
-             context->editable_owner.erase(key);
-             context->telephony_listeners.erase(key);
-             context->broadcast_receivers.erase(key);
-             context->requested_orientations.erase(key);
-             context->gl_surface_render_modes.erase(key);
-             context->gl_surface_render_requests.erase(key);
-             if (context->gl_surface_renderer_view.Value() == key) {
-                 context->gl_surface_renderer_view = dexvm::VmObjectRef{};
-             }
-             context->gl_surface_client_versions.erase(key);
-             context->gl_surface_config_specs.erase(key);
-             context->surface_holders.erase(key);
-             context->surface_callbacks.erase(key);
-             context->surface_requested_formats.erase(key);
-             context->surface_active_formats.erase(key);
-             context->surface_callback_formats.erase(key);
-
-             if (context->retire_native_surface) context->retire_native_surface(dx::VmObjectRef(key));
-             context->active_surface_holders.erase(key);
-             {
-                 std::scoped_lock lock(context->surface_pixels_mutex);
-                 context->surface_buffer_queued.erase(key);
-             }
-             context->managed_window_tokens.erase(key);
-             context->view_tree_observers.erase(key);
-             context->global_layout_listeners.erase(key);
-             context->bitmaps.erase(key);
-             android_intrinsics::ResetManagedCanvas(*context, key);
-             const auto media = context->media_players.find(key);
-             if (media != context->media_players.end()) {
-                 if (context->encoded_music != nullptr) {
-                     context->encoded_music->Destroy(media->second.music);
-                 }
-                 if (media->second.source.lease != 0U) {
-                     context->encoded_audio_leases.erase(media->second.source.lease);
-                 }
-                 context->media_players.erase(media);
-             }
-             const auto pool = context->sound_pools.find(key);
-             if (pool != context->sound_pools.end()) {
-                 if (context->encoded_audio_playback != nullptr) {
-                     for (const auto& source : context->encoded_audio_playback->PoolSources(pool->second.pool)) {
-                         if (source.lease != 0U) {
-                             context->encoded_audio_leases.erase(source.lease);
-                         }
-                     }
-                     context->encoded_audio_playback->DestroyPool(pool->second.pool);
-                 }
-                 context->sound_pools.erase(pool);
-             }
-             context->view_adapter_references.erase(key);
-             context->ui_view_layout_params.erase(key);
-             context->text_watchers.erase(key);
-             context->ui_drawables.erase(key);
-             context->ui_view_images.erase(key);
-             {
-                 std::scoped_lock video_lock(context->video_views_mutex);
-                 context->video_views.erase(key);
-                 context->pending_video_metadata_releases.erase(owner);
-             }
-         },
-         {}});
+    vm.RegisterIntrinsicStateTable({"android.owner-attached",
+                                    [context](dx::VmObjectRef owner, const dx::VmRootVisitor& visit) {
+                                        if (const auto found = context->broadcast_receivers.find(owner.Value());
+                                            found != context->broadcast_receivers.end())
+                                            for (const auto receiver : found->second)
+                                                visit(dx::VmObjectRef{receiver});
+                                    },
+                                    [context](dx::VmObjectRef owner) {
+                                        const auto key = owner.Value();
+                                        context->telephony_listeners.erase(key);
+                                        context->broadcast_receivers.erase(key);
+                                        context->bitmaps.erase(key);
+                                    },
+                                    {}});
 }
 
 class DexVmGuestBridge::Impl final {
@@ -501,29 +297,8 @@ public:
             const auto object = FromReference(JniReference{reference.token}, thread);
             if (!object.IsValid() || linker.Class(model->ObjectClass(object)).descriptor != "Landroid/view/Surface;")
                 return memory::GuestAddress{};
-            if (!android_context->stream_surface_owners.contains(object.Value())) return memory::GuestAddress{};
-            if (ResolveAndroidSurfaceStream(*vm, *android_context, object)) {
-                if (auto* vm_ledger = vm->Ledger())
-                    vm_ledger->RecordUnimplemented("dexvm.surface_texture.native_window_producer", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "stream ANativeWindow producer is not connected"};
-            }
-            for (const auto& [holder, surface] : android_context->holder_surfaces) {
-                // Surface.isValid(): live holders, and holders still inside
-                // surfaceDestroyed, whose window retires after the callbacks.
-                const bool live = android_context->managed_host_surface_open &&
-                                  android_context->active_surface_holders.contains(holder);
-                if (surface != object || !(live || android_context->destroying_surface_holders.contains(holder)))
-                    continue;
-                return session->Process().AcquireSurfaceWindow(
-                    {memory::GuestAddress{holder},
-                     static_cast<std::uint32_t>(
-                         android_intrinsics::ManagedSurfaceBufferSize(*vm, *android_context, dx::VmObjectRef{holder})
-                             .width),
-                     static_cast<std::uint32_t>(
-                         android_intrinsics::ManagedSurfaceBufferSize(*vm, *android_context, dx::VmObjectRef{holder})
-                             .height)});
-            }
+            const auto window = android_intrinsics::ResolveRomSurfaceWindow(*vm, android_context, object);
+            if (window) return session->Process().AcquireSurfaceWindow(*window);
         } catch (const dx::VmJavaThrow& error) {
             static_cast<void>(NativeApiException(thread, error));
         } catch (const std::exception& error) {
@@ -1945,7 +1720,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
                     throw DexVmBridgeError("activity.current requires a live DexVM");
                 }
                 const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
-                return JniValue{bridge_state->PublishLocal(context->activity, invocation.thread_id)};
+                return JniValue{bridge_state->PublishLocal(context->foreground_activity, invocation.thread_id)};
             });
     }
 
@@ -1959,34 +1734,14 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
              +[](void* owner, std::uint64_t thread, memory::GuestAddress env, SurfaceJavaReference ref) {
                  return static_cast<Impl*>(owner)->SurfaceFromJava(thread, env, ref);
              },
-             +[](void* owner, memory::GuestAddress holder, std::shared_ptr<video::VideoFrame> pixels) {
-                 auto& state = *static_cast<Impl*>(owner);
-                 const auto context = state.android_context;
-                 if (!context) throw DexVmBridgeError("Surface producer has no live owner");
-                 std::scoped_lock lock(context->surface_pixels_mutex);
-                 const auto queued = context->surface_buffer_queued.find(holder.Value());
-                 if (queued != context->surface_buffer_queued.end()) queued->second = true;
-                 if (holder.Value() == context->window_surface_holder.Value()) {
-                     state.session->PublishSoftwareFrame(std::move(pixels->rgba8));
-                 } else {
-                     context->surface_pixels[holder.Value()] = std::move(pixels);
-                     state.session->PublishBlankFrame(0U);
-                 }
+             +[](void* owner, memory::GuestAddress identity, std::shared_ptr<video::VideoFrame> pixels) {
+                 const auto& context = static_cast<Impl*>(owner)->android_context;
+                 if (!context || !context->rom_windows) throw DexVmBridgeError("Surface producer has no live owner");
+                 const auto id = android_intrinsics::WindowId{identity.Value()};
+                 const bool opaque = context->rom_windows->system.OpaqueFormat(id);
+                 context->rom_windows->system.Post(id, std::move(pixels), false, opaque, false, true);
              },
-             +[](void* owner, memory::GuestAddress holder) {
-                 const auto context = static_cast<Impl*>(owner)->android_context;
-                 if (!context) return;
-                 std::scoped_lock lock(context->surface_pixels_mutex);
-                 const auto queued = context->surface_buffer_queued.find(holder.Value());
-                 if (queued != context->surface_buffer_queued.end()) queued->second = true;
-             }});
-        android_context->update_native_surface = [bridge_state](dx::VmObjectRef holder, std::uint32_t width,
-                                                                std::uint32_t height) {
-            bridge_state->session->Process().UpdateSurfaceWindow({memory::GuestAddress{holder.Value()}, width, height});
-        };
-        android_context->retire_native_surface = [bridge_state](dx::VmObjectRef holder) {
-            bridge_state->session->Process().RetireSurfaceWindow(memory::GuestAddress{holder.Value()});
-        };
+             {}});
         session.Process().SetAssetManagerHooks(
             {bridge_state,
              +[](void* owner, std::uint64_t thread, memory::GuestAddress env, AssetManagerJavaReference ref) {
@@ -2153,8 +1908,6 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     if (impl_->vm) impl_->vm->SetClassInitializationPendingSource({});
     impl_->session->Process().SetBitmapHooks({});
     if (impl_->android_context) {
-        impl_->android_context->retire_native_surface = {};
-        impl_->android_context->update_native_surface = {};
     }
     impl_->session->Process().SetDeviceLocaleProvider({});
     impl_->session->Process().SetSurfaceHooks({});

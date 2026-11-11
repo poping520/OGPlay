@@ -368,7 +368,6 @@ ApplicationProcess::ApplicationProcess(ogplay::runtime::dexvm::InterpreterBacken
     libraries = std::make_unique<ogplay::runtime::NativeLibraryLoader>(session->Process(), *selected);
     context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     ogplay::test::BindBootDexArchive(*context);
-    context->ui_test_accessibility_disabled = true;
     context->session = session.get();
     context->native_libraries = libraries.get();
     if (working_directory.has_value()) context->vfs = &filesystem;
@@ -419,8 +418,7 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
                                  const bool application_enabled,
                                  const ogplay::runtime::dexvm::InterpreterBackend interpreter_backend,
                                  const std::string& application_class, std::function<void()> pump_host_events,
-                                 ogplay::runtime::ui::UiMetrics viewport, std::vector<std::string> gl_textures,
-                                 bool large_heap) {
+                                 Viewport viewport, std::vector<std::string> gl_textures, bool large_heap) {
     if (activity == "android.app.NativeActivity" || activity == "fixture.NativeTakeoverActivity")
         native_a = NativeActivityElf();
     const std::array entries{std::pair{std::string("fixture"), std::vector<std::byte>{}}};
@@ -479,7 +477,6 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
     request.dex_bytes = ReadDexFixture("application.dex");
     request.boot_dex_files = ogplay::test::ReadBootDex();
     ogplay::test::BindBootDexArchive(*context);
-    context->ui_test_accessibility_disabled = true;
     request.context = context;
     request.surface_width = static_cast<std::uint32_t>(viewport.width);
     request.surface_height = static_cast<std::uint32_t>(viewport.height);
@@ -498,7 +495,71 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
     request.logger = &logger;
     request.dexvm.interpreter.backend = interpreter_backend;
     request.host.pump_host_events = std::move(pump_host_events);
+    request.configure_dex_vm = [this](ogplay::runtime::dexvm::Interpreter& vm) {
+        namespace dx = ogplay::runtime::dexvm;
+        const auto type = vm.Linker().ResolveDescriptor("Lfixture/MainAction;");
+        const auto slot = vm.Linker().FindVtableIndex(type, "run", "()V");
+        if (!slot) throw std::logic_error("missing main-thread test action");
+        auto& method = vm.Linker().MutableMethod(vm.Linker().Class(type).vtable[*slot]);
+        method.kind = dx::MethodKind::intrinsic;
+        method.implementation = [this](dx::IntrinsicContext& c) {
+            const auto found = main_actions.find(c.receiver.Value());
+            if (found != main_actions.end()) {
+                auto action = std::move(found->second);
+                main_actions.erase(found);
+                try {
+                    action->run();
+                    action->done.set_value();
+                } catch (...) {
+                    action->done.set_exception(std::current_exception());
+                }
+            }
+            return dx::VmValue::Void();
+        };
+    };
     app = ogplay::session::AndroidAppProcess::Create(std::move(request));
+}
+
+void OrchestratedApp::RunOnMainThread(const std::function<void()>& action) {
+    namespace dx = ogplay::runtime::dexvm;
+    using namespace ogplay::runtime::android_intrinsics;
+    auto& vm = app->DexVm().Vm();
+    if (vm.ExecutionLock().HeldByCurrentThread() && vm.CurrentContextToken() == 1U) {
+        action();
+        return;
+    }
+    auto pending = std::make_shared<MainAction>();
+    pending->run = action;
+    auto done = pending->done.get_future();
+    dx::VmObjectRef callback;
+    const auto driver = vm.CreateExecutionContext();
+    try {
+        vm.RunInExecutionContext(driver, [&] {
+            const dx::VmExecutionLockScope lock(vm.ExecutionLock());
+            callback = vm.NewIntrinsicInstance("Lfixture/MainAction;");
+            const auto roots = vm.ProtectReferences(std::array{callback});
+            const auto handler = NewPlatformObject(vm, "Landroid/os/Handler;", "(Landroid/os/Looper;)V",
+                                                   {dx::VmValue::Ref(context->main_looper)});
+            const auto handler_root = vm.ProtectReferences(std::array{handler});
+            main_actions.emplace(callback.Value(), pending);
+            if (!CallAndroidMethod(vm, handler, "postAtFrontOfQueue", "(Ljava/lang/Runnable;)Z",
+                                   {dx::VmValue::Ref(callback)})
+                     .AsInt())
+                throw std::runtime_error("guest main queue rejected fixture action");
+        });
+    } catch (...) {
+        const dx::VmExecutionLockScope lock(vm.ExecutionLock());
+        if (callback.IsValid()) main_actions.erase(callback.Value());
+        vm.DiscardExecutionContext(driver);
+        throw;
+    }
+    vm.DiscardExecutionContext(driver);
+    if (done.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+        const dx::VmExecutionLockScope lock(vm.ExecutionLock());
+        if (main_actions.erase(callback.Value()))
+            throw std::runtime_error("guest main queue did not run fixture action");
+    }
+    done.get();
 }
 
 ogplay::runtime::dexvm::VmCallOutcome
@@ -507,7 +568,7 @@ OrchestratedApp::CallGuest(ogplay::runtime::dexvm::VmMethodId method,
     auto& vm = app->DexVm().Vm();
     if (vm.ExecutionLock().HeldByCurrentThread()) return vm.Call(method, arguments);
     ogplay::runtime::dexvm::VmCallOutcome result;
-    app->RunOnMainThread([&] { result = app->DexVm().Vm().Call(method, arguments); });
+    RunOnMainThread([&] { result = app->DexVm().Vm().Call(method, arguments); });
     return result;
 }
 
@@ -519,7 +580,7 @@ ogplay::runtime::dexvm::VmValue OrchestratedApp::CallGuest(ogplay::runtime::dexv
         return ogplay::runtime::android_intrinsics::CallAndroidMethod(vm, receiver, name, descriptor,
                                                                       std::move(arguments));
     ogplay::runtime::dexvm::VmValue result;
-    app->RunOnMainThread([&] {
+    RunOnMainThread([&] {
         result = ogplay::runtime::android_intrinsics::CallAndroidMethod(app->DexVm().Vm(), receiver, name, descriptor,
                                                                         std::move(arguments));
     });
@@ -530,11 +591,12 @@ ogplay::runtime::dexvm::VmObjectRef OrchestratedApp::NewGuest(std::string_view d
     auto& vm = app->DexVm().Vm();
     if (vm.ExecutionLock().HeldByCurrentThread()) return vm.NewIntrinsicInstance(std::string(descriptor));
     ogplay::runtime::dexvm::VmObjectRef result;
-    app->RunOnMainThread([&] { result = app->DexVm().Vm().NewIntrinsicInstance(std::string(descriptor)); });
+    RunOnMainThread([&] { result = app->DexVm().Vm().NewIntrinsicInstance(std::string(descriptor)); });
     return result;
 }
 
 std::int32_t OrchestratedApp::ReadStaticInt(const std::string& owner, const std::string& name) {
+    const ogplay::runtime::dexvm::VmExecutionLockScope lock(app->DexVm().Vm().ExecutionLock());
     auto& linker = app->DexVm().Linker();
     const auto type = linker.ResolveDescriptor(owner);
     const auto field = linker.FindFieldRecursive(type, name, "I");

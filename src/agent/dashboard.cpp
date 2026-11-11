@@ -456,11 +456,9 @@ ControlResponse DashboardService::Request(std::string_view method, core::JsonVal
                         if (connected)
                             if (const auto s = sources_.ui()) {
                                 const auto value = writer.Object();
-                                writer.AddUnsignedInteger(value, "nodes", s->nodes);
-                                writer.AddUnsignedInteger(value, "layout_dirty", s->layout_dirty);
-                                writer.AddUnsignedInteger(value, "draw_dirty", s->draw_dirty);
+                                writer.AddUnsignedInteger(value, "windows", s->windows);
                                 Optional(writer, value, "focus", s->focus);
-                                section(name, "partial", s->generation, "UiTree only", value);
+                                section(name, "complete", 0, "", value);
                                 continue;
                             }
                     } else if (name == "video") {
@@ -502,34 +500,6 @@ ControlResponse DashboardService::Request(std::string_view method, core::JsonVal
                                 writer.AddUnsignedInteger(value, "gc_collections", s->stats.gc_collections);
                                 writer.AddUnsignedInteger(value, "gc_pause_ns", s->stats.gc_pause_ns);
                                 writer.AddUnsignedInteger(value, "gc_freed_bytes", s->stats.gc_freed_bytes);
-                                const auto ui =
-                                    sources_.ui ? sources_.ui() : std::optional<runtime::AndroidUiSnapshot>{};
-                                if (ui) {
-                                    const auto presentation = writer.Object();
-                                    writer.AddString(presentation, "last_reject", ui->presentation_last_reject);
-                                    const auto counts = writer.Object();
-                                    for (const auto& [reason, count] : ui->presentation_reject_counts)
-                                        writer.AddUnsignedInteger(counts, reason, count);
-                                    writer.Add(presentation, "reject_counts", counts);
-                                    const auto modals = writer.Array();
-                                    for (const auto& modal : ui->modals) {
-                                        const auto row = writer.Object();
-                                        writer.AddUnsignedInteger(row, "partition", modal.partition);
-                                        writer.AddUnsignedInteger(row, "revision", modal.revision);
-                                        writer.AddUnsignedInteger(row, "live_modifications", modal.live_modifications);
-                                        writer.AddUnsignedInteger(row, "frozen_modifications",
-                                                                  modal.frozen_modifications);
-                                        writer.AddBool(row, "visible", modal.visible);
-                                        writer.AddBool(row, "owner_visible", modal.owner_visible);
-                                        writer.AddBool(row, "live_root_visible", modal.live_root_visible);
-                                        writer.AddBool(row, "frozen_root_visible", modal.frozen_root_visible);
-                                        writer.Append(modals, row);
-                                    }
-                                    writer.Add(presentation, "modals", modals);
-                                    writer.Add(value, "presentation", presentation);
-                                } else {
-                                    writer.AddNull(value, "presentation");
-                                }
                                 section(name, "complete", 0, "", value);
                                 continue;
                             }

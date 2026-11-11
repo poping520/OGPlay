@@ -1,245 +1,7 @@
+#include "rom_window.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/raster/bitmap.h"
 // DVM-80: API-family translation unit. Physical consolidation only.
-
-// ---- migrated from android_opengl_GLSurfaceView_EGLConfigChooser.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_opengl_GLSurfaceView_EGLConfigChooser(const Context&) {
-    return std::move(dx::IntrinsicClassBuilder::Interface("Landroid/opengl/GLSurfaceView$EGLConfigChooser;")).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-// ---- migrated from android_opengl_GLSurfaceView_EGLContextFactory.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_opengl_GLSurfaceView_EGLContextFactory(const Context&) {
-    return std::move(dx::IntrinsicClassBuilder::Interface("Landroid/opengl/GLSurfaceView$EGLContextFactory;")).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-// ---- migrated from android_opengl_GLSurfaceView_Renderer.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_opengl_GLSurfaceView_Renderer(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/opengl/GLSurfaceView$Renderer;");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-// ---- migrated from android_opengl_GLSurfaceView.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-namespace {
-std::shared_ptr<DexVmAndroidContext::GlSurfaceRuntime> GlRuntime(const Context& context, dx::IntrinsicContext& call) {
-    auto& state = context->gl_surface_runtimes[call.receiver.Value()];
-    if (!state) {
-        state = std::make_shared<DexVmAndroidContext::GlSurfaceRuntime>();
-        state->view = call.receiver;
-        state->owner = CallAndroidMethod(call.vm, call.receiver, "getContext", "()Landroid/content/Context;").ref;
-        state->surface_available = SurfaceViewReadyForRendering(*context, call.receiver);
-    }
-    return state;
-}
-
-// The built-in chooser objects carry the same component request as the existing
-// native config path. Their other methods remain explicitly unsupported.
-constexpr std::array<const char*, 6> kChooserComponents{"mRedSize",   "mGreenSize", "mBlueSize",
-                                                        "mAlphaSize", "mDepthSize", "mStencilSize"};
-
-auto& ChooserSlot(dx::Interpreter& vm, const dx::VmObjectRef object, const char* name, const char* descriptor) {
-    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, descriptor);
-    if (!field)
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "built-in EGL chooser field is unavailable");
-    return vm.Model().InstanceSlots(object)[vm.Linker().Field(*field).slot];
-}
-
-dx::VmObjectRef NewBuiltinChooser(dx::IntrinsicContext& call, const std::array<std::int32_t, 6>& values,
-                                  const bool simple) {
-    const auto descriptor = simple ? "Landroid/opengl/GLSurfaceView$SimpleEGLConfigChooser;"
-                                   : "Landroid/opengl/GLSurfaceView$ComponentSizeChooser;";
-    static_cast<void>(call.vm.Linker().ResolveDescriptor(descriptor));
-    const auto chooser = call.vm.NewIntrinsicInstance(descriptor);
-    const auto roots = call.vm.ProtectReferences(std::array{chooser});
-    for (std::size_t i = 0; i < values.size(); ++i)
-        ChooserSlot(call.vm, chooser, kChooserComponents[i], "I") = {static_cast<std::uint32_t>(values[i]),
-                                                                     dx::SlotTag::cat1};
-    const auto value =
-        call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[I"), JniPrimitiveKind::integer, 1);
-    ChooserSlot(call.vm, chooser, "mValue", "[I") = {value.Value(), dx::SlotTag::ref};
-    return chooser;
-}
-}  // namespace
-
-Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/GLSurfaceView;", "Landroid/view/SurfaceView;",
-                                                    {"Landroid/view/SurfaceHolder$Callback;"});
-    builder.ConstantInt("RENDERMODE_WHEN_DIRTY", "I", 0).ConstantInt("RENDERMODE_CONTINUOUSLY", "I", 1);
-    {
-        builder.Constructor("(Landroid/content/Context;)V", [](dx::IntrinsicContext& call) {
-            const auto parent =
-                call.vm.Linker().FindDirectMethod(call.vm.Linker().ResolveDescriptor("Landroid/view/SurfaceView;"),
-                                                  "<init>", "(Landroid/content/Context;)V");
-            const auto result = call.vm.Call(*parent, std::array{dx::VmValue::Ref(call.receiver), call.arguments[0]});
-            if (result.exception.IsValid())
-                throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
-                                      result.exception_message, result.exception};
-            return dx::VmValue::Void();
-        });
-    }
-    // API19 stores this preference on the View, independently of renderer
-    // creation. It is a request, not evidence that an EGL context survived.
-    const auto preserve_context = builder.BoundInstanceField("mPreserveEGLContextOnPause", "Z", dx::kAccPrivate);
-    builder.VirtualMethod("setPreserveEGLContextOnPause", "(Z)V", [preserve_context](dx::IntrinsicContext& call) {
-        dx::IntrinsicCall(call).SetInt(preserve_context, call.arguments[0].AsInt() != 0 ? 1 : 0);
-        return dx::VmValue::Void();
-    });
-    builder.VirtualMethod("getPreserveEGLContextOnPause", "()Z", [preserve_context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(preserve_context));
-    });
-    builder.VirtualMethod(
-        "setRenderer", "(Landroid/opengl/GLSurfaceView$Renderer;)V", [context](dx::IntrinsicContext& call) {
-            const auto state = GlRuntime(context, call);
-            if (state->renderer.IsValid())
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "renderer is already set"};
-            if (state->owner == context->activity || context->activity_stack.empty()) {
-                context->renderer = call.arguments[0].ref;
-                context->gl_surface_thread_stopped = false;
-                context->gl_surface_renderer_view = call.receiver;
-                context->egl_context_factory = state->egl_context_factory;
-                context->egl_config_chooser = state->egl_config_chooser;
-            }
-            context->gl_surface_render_requests[call.receiver.Value()] = true;
-            state->renderer = call.arguments[0].ref;
-            state->stopped = false;
-            RecordAndroidSurfaceDiagnostic(
-                call.vm, *context, "ui.surface.producer", "renderer registered",
-                {{"view", std::uint64_t(call.receiver.Value())}, {"owner", std::uint64_t(state->owner.Value())}},
-                {.mode = core::RateLimitMode::none});
-            RecordAndroidProducerDiagnostic(call.vm, *context, call.receiver, "registered");
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod("setEGLContextFactory", "(Landroid/opengl/GLSurfaceView$EGLContextFactory;)V",
-                          [context](dx::IntrinsicContext& call) {
-                              if (context->gl_surface_renderer_view == call.receiver)
-                                  context->egl_context_factory = call.arguments[0].ref;
-                              GlRuntime(context, call)->egl_context_factory = call.arguments[0].ref;
-                              return dx::VmValue::Void();
-                          });
-    builder.VirtualMethod(
-        "setEGLConfigChooser", "(Landroid/opengl/GLSurfaceView$EGLConfigChooser;)V",
-        [context](dx::IntrinsicContext& call) {
-            auto chooser = call.arguments[0].ref;
-            if (chooser.IsValid()) {
-                const auto& owner = call.vm.Linker().Class(call.vm.Model().ObjectClass(chooser)).descriptor;
-                if (owner == "Landroid/opengl/GLSurfaceView$SimpleEGLConfigChooser;" ||
-                    owner == "Landroid/opengl/GLSurfaceView$ComponentSizeChooser;") {
-                    std::vector<std::int32_t> values;
-                    for (const auto name : kChooserComponents)
-                        values.push_back(static_cast<std::int32_t>(ChooserSlot(call.vm, chooser, name, "I").bits));
-                    context->gl_surface_config_specs[call.receiver.Value()] = std::move(values);
-                    return dx::VmValue::Void();
-                }
-            }
-            if (context->gl_surface_renderer_view == call.receiver) context->egl_config_chooser = chooser;
-            GlRuntime(context, call)->egl_config_chooser = chooser;
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod("setEGLContextClientVersion", "(I)V", [context](dx::IntrinsicContext& call) {
-        const auto version = call.arguments[0].AsInt();
-        if (version < 1 || version > 3) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unsupported EGL context client version"};
-        }
-        context->gl_surface_client_versions[call.receiver.Value()] = version;
-        return dx::VmValue::Void();
-    });
-    builder.VirtualMethod("setEGLConfigChooser", "(Z)V", [](dx::IntrinsicContext& call) {
-        const auto chooser = NewBuiltinChooser(call, {8, 8, 8, 8, call.arguments[0].AsInt() != 0 ? 16 : 0, 0}, true);
-        const auto roots = call.vm.ProtectReferences(std::array{chooser});
-        return CallAndroidMethod(call.vm, call.receiver, "setEGLConfigChooser",
-                                 "(Landroid/opengl/GLSurfaceView$EGLConfigChooser;)V", {dx::VmValue::Ref(chooser)});
-    });
-    builder.VirtualMethod("setEGLConfigChooser", "(IIIIII)V", [](dx::IntrinsicContext& call) {
-        std::array<std::int32_t, 6> values{};
-        for (std::size_t i = 0; i < values.size(); ++i) {
-            values[i] = call.arguments[i].AsInt();
-            if (values[i] < 0)
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "negative EGL config component"};
-        }
-        const auto chooser = NewBuiltinChooser(call, values, false);
-        const auto roots = call.vm.ProtectReferences(std::array{chooser});
-        return CallAndroidMethod(call.vm, call.receiver, "setEGLConfigChooser",
-                                 "(Landroid/opengl/GLSurfaceView$EGLConfigChooser;)V", {dx::VmValue::Ref(chooser)});
-    });
-    builder.VirtualMethod("setRenderMode", "(I)V", [context](dx::IntrinsicContext& call) {
-        const auto mode = call.arguments[0].AsInt();
-        if (mode != 0 && mode != 1) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "renderMode"};
-        }
-        context->gl_surface_render_modes[call.receiver.Value()] = mode;
-        return dx::VmValue::Void();
-    });
-    builder.VirtualMethod("getRenderMode", "()I", [context](dx::IntrinsicContext& call) {
-        const auto found = context->gl_surface_render_modes.find(call.receiver.Value());
-        return dx::VmValue::Int(found == context->gl_surface_render_modes.end() ? 1 : found->second);
-    });
-    builder.VirtualMethod("requestRender", "()V", [context](dx::IntrinsicContext& call) {
-        context->gl_surface_render_requests[call.receiver.Value()] = true;
-        return dx::VmValue::Void();
-    });
-    builder.VirtualMethod("queueEvent", "(Ljava/lang/Runnable;)V", [context](dx::IntrinsicContext& call) {
-        const auto runnable = call.arguments[0].ref;
-        if (!runnable.IsValid()) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "runnable must not be null"};
-        }
-        std::scoped_lock lock(context->scheduler_mutex);
-        const auto state = context->gl_surface_runtimes.find(call.receiver.Value());
-        if (context->scheduler_shutdown || state == context->gl_surface_runtimes.end() || state->second->stopped) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "GL thread is stopped"};
-        }
-        state->second->events.push_back(runnable);
-        if (state->second->wake) state->second->wake();
-        return dx::VmValue::Void();
-    });
-    const auto pause = [context](dx::IntrinsicContext& call, const bool paused) {
-        const auto state = context->gl_surface_runtimes.find(call.receiver.Value());
-        if (state == context->gl_surface_runtimes.end())
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "GLSurfaceView has no renderer"};
-        if (state->second->pause)
-            state->second->pause(paused);
-        else
-            state->second->paused = paused;
-        return dx::VmValue::Void();
-    };
-    builder.VirtualMethod("onPause", "()V", [pause](dx::IntrinsicContext& call) { return pause(call, true); });
-    builder.VirtualMethod("onResume", "()V", [pause](dx::IntrinsicContext& call) { return pause(call, false); });
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_opengl_GLSurfaceView_GLThread(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/GLSurfaceView$GLThread;", "Ljava/lang/Thread;");
-    builder.OverrideMethod("run", "()V", [context](dx::IntrinsicContext& call) {
-        if (!context->run_gl_surface_thread)
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "GL thread has no driver"};
-        context->run_gl_surface_thread(call.receiver);
-        return dx::VmValue::Void();
-    });
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from javax_microedition_khronos_egl.cpp ----
 #include "catalog.h"
@@ -267,8 +29,6 @@ Decl Declare_android_opengl_GLSurfaceView_GLThread(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 namespace {
 
-constexpr std::int32_t kSuccess = 0x3000;
-constexpr std::int32_t kBadAttribute = 0x3004;
 constexpr std::int32_t kBadConfig = 0x3005;
 constexpr std::int32_t kBadContext = 0x3006;
 constexpr std::int32_t kBadDisplay = 0x3008;
@@ -276,7 +36,6 @@ constexpr std::int32_t kBadNativeWindow = 0x300B;
 constexpr std::int32_t kBadParameter = 0x300C;
 constexpr std::int32_t kBadSurface = 0x300D;
 constexpr std::int32_t kNone = 0x3038;
-constexpr std::int32_t kDontCare = -1;
 
 const std::unordered_map<std::int32_t, std::int32_t> kConfigFacts{
     {0x3020, 32},    {0x3021, 8},    {0x3022, 8},     {0x3023, 8}, {0x3024, 8}, {0x3025, 24},     {0x3026, 8},
@@ -298,18 +57,6 @@ void Record(dx::IntrinsicContext& call, const std::string& id) {
     throw std::runtime_error("EGL facade model violation: " + detail);
 }
 
-void SetError(const Context& context, const std::int32_t error) {
-    context->egl.last_error = error;
-}
-
-[[nodiscard]] bool IsDisplay(const Context& context, const dx::VmObjectRef ref) {
-    return ref.IsValid() && ref == context->egl.display;
-}
-
-[[nodiscard]] bool IsConfig(const Context& context, const dx::VmObjectRef ref) {
-    return ref.IsValid() && context->egl.configs.contains(ref.Value());
-}
-
 [[nodiscard]] std::uint32_t ConfigHandle(const std::unordered_map<std::uint32_t, std::uint32_t>& configs,
                                          const dx::VmObjectRef ref) {
     const auto found = configs.find(ref.Value());
@@ -318,79 +65,11 @@ void SetError(const Context& context, const std::int32_t error) {
 
 void LatchEglError(dx::IntrinsicContext& call, const Context& context, std::uint32_t error);
 
-[[nodiscard]] bool ValidateDisplay(dx::IntrinsicContext& call, const Context& context, const dx::VmObjectRef ref) {
-    if (!IsDisplay(context, ref)) {
-        LatchEglError(call, context, kBadDisplay);
-        return false;
-    }
-    return true;
-}
-
 [[nodiscard]] bool ValidateEgl14Display(dx::IntrinsicContext& call, const Context& context,
                                         const dx::VmObjectRef display) {
     if (display.IsValid() && display == context->egl.egl14_display) return true;
     LatchEglError(call, context, kBadDisplay);
     return false;
-}
-
-[[nodiscard]] std::int32_t IntElement(dx::IntrinsicContext& call, const dx::VmObjectRef array,
-                                      const std::int32_t index) {
-    return static_cast<std::int32_t>(static_cast<std::uint32_t>(call.vm.Model().GetPrimitiveElement(array, index)));
-}
-
-void SetIntElement(dx::IntrinsicContext& call, const dx::VmObjectRef array, const std::int32_t index,
-                   const std::int32_t value) {
-    call.vm.Model().SetPrimitiveElement(array, index, static_cast<std::uint32_t>(value));
-}
-
-[[nodiscard]] std::optional<bool> AttributeListMatches(dx::IntrinsicContext& call, const Context& context,
-                                                       const dx::VmObjectRef list) {
-    if (!list.IsValid()) return true;
-    const auto length = call.vm.Model().ArrayLength(list);
-    for (std::int32_t index = 0; index < length;) {
-        const auto attribute = IntElement(call, list, index++);
-        if (attribute == kNone) return true;
-        if (index >= length) {
-            LatchEglError(call, context, kBadAttribute);
-            return std::nullopt;
-        }
-        const auto requested = IntElement(call, list, index++);
-        const auto fact = kConfigFacts.find(attribute);
-        if (fact == kConfigFacts.end()) {
-            Record(call, "dexvm.egl_facade.config_attribute." + std::to_string(attribute));
-            LatchEglError(call, context, kBadAttribute);
-            return std::nullopt;
-        }
-        if (requested == kDontCare) continue;
-        const bool minimum = attribute == 0x3020 || (attribute >= 0x3021 && attribute <= 0x3026) ||
-                             attribute == 0x3031 || attribute == 0x3032 || attribute == 0x303D || attribute == 0x303E;
-        const bool mask = attribute == 0x3033 || attribute == 0x3040;
-        if ((minimum && fact->second < requested) || (mask && (fact->second & requested) != requested) ||
-            (!minimum && !mask && fact->second != requested)) {
-            return false;
-        }
-    }
-    LatchEglError(call, context, kBadAttribute);
-    return std::nullopt;
-}
-
-void RequireInitialized(dx::IntrinsicContext& call, const Context& context) {
-    if (context->session != nullptr) return;
-    if (!context->egl.initialized) ModelFailure(call, "display is not initialized");
-}
-
-[[nodiscard]] dx::VmObjectRef EnsureDisplay(dx::IntrinsicContext& call, const Context& context) {
-    if (!context->egl.display.IsValid()) {
-        context->egl.display = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLDisplay;");
-    }
-    return context->egl.display;
-}
-
-[[nodiscard]] dx::VmObjectRef EnsureConfig(dx::IntrinsicContext& call, const Context& context,
-                                           const std::uint32_t handle) {
-    const auto wrapper = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLConfig;");
-    context->egl.configs.emplace(wrapper.Value(), handle);
-    return wrapper;
 }
 
 [[nodiscard]] std::uint64_t EglThreadId(dx::IntrinsicContext& call, const Context& context) {
@@ -434,7 +113,7 @@ void LatchEglError(dx::IntrinsicContext& call, const Context& context, const std
     if (context->session != nullptr) {
         context->session->LatchManagedEglError(EglThreadId(call, context), error);
     } else {
-        SetError(context, static_cast<std::int32_t>(error));
+        ModelFailure(call, "Java EGL native registry is unavailable");
     }
 }
 
@@ -521,658 +200,6 @@ auto WithIntArrayOffset(dx::IntrinsicContext& call, const Context& context, cons
 }  // namespace
 
 namespace {
-
-dx::IntrinsicHandler EglGetDisplayHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (call.arguments[0].ref.IsValid()) {
-            Record(call, "dexvm.egl_facade.non_default_display");
-            LatchEglError(call, context, kBadParameter);
-            return dx::VmValue::Ref(context->egl.no_display);
-        }
-        const auto display = EnsureDisplay(call, context);
-        if (context->session != nullptr) {
-            context->egl.native_display = NativeEgl(call, context, "eglGetDisplay", std::array{0U});
-            if (context->egl.native_display == 0U) {
-                return dx::VmValue::Ref(context->egl.no_display);
-            }
-        }
-        return dx::VmValue::Ref(display);
-    };
-}
-
-dx::IntrinsicHandler EglInitializeHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
-        if (context->session != nullptr) {
-            if (context->egl.native_display == 0U) {
-                context->egl.native_display = NativeEgl(call, context, "eglGetDisplay", std::array{0U});
-                if (context->egl.native_display == 0U) return Bool(false);
-            }
-            const auto versions = call.arguments[1].ref;
-            if (versions.IsValid() && call.vm.Model().ArrayLength(versions) < 2) {
-                return Bool(false);
-            }
-            const auto result = WithIntArray(call, context, versions, true, [&](const std::uint32_t output) {
-                const auto minor = output == 0U ? 0U : output + 4U;
-                return Bool(NativeEgl(call, context, "eglInitialize",
-                                      std::array{context->egl.native_display, output, minor}) != 0U);
-            });
-            context->egl.initialized = result.AsInt() != 0;
-            return result;
-        }
-        const auto versions = call.arguments[1].ref;
-        if (versions.IsValid()) {
-            if (call.vm.Model().ArrayLength(versions) < 2) {
-                LatchEglError(call, context, kBadParameter);
-                return Bool(false);
-            }
-            SetIntElement(call, versions, 0, 1);
-            SetIntElement(call, versions, 1, 4);
-        }
-        context->egl.initialized = true;
-        return Bool(true);
-    };
-}
-
-dx::IntrinsicHandler EglChooseConfigHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
-        if (context->session != nullptr) {
-            const auto size = call.arguments[3].AsInt();
-            const auto configs = call.arguments[2].ref;
-            const auto count = call.arguments[4].ref;
-            if (size < 0 || !count.IsValid() || call.vm.Model().ArrayLength(count) < 1) return Bool(false);
-            return WithIntArray(call, context, call.arguments[1].ref, false, [&](const std::uint32_t attributes) {
-                return WithIntArray(call, context, count, true, [&](const std::uint32_t count_address) {
-                    const auto capacity = configs.IsValid() && size > 0
-                                              ? std::min<std::int32_t>(size, call.vm.Model().ArrayLength(configs))
-                                              : 0;
-                    std::vector<std::byte> config_bytes(static_cast<std::size_t>(capacity) * 4U);
-                    std::vector<std::byte> config_output;
-                    const auto result = context->session->NIO().WithTemporaryGuestMemory(
-                        config_bytes, true,
-                        [&](const memory::GuestAddress config_address) {
-                            return NativeEgl(call, context, "eglChooseConfig",
-                                             std::array{context->egl.native_display, attributes,
-                                                        capacity > 0 ? config_address.Value() : 0U,
-                                                        static_cast<std::uint32_t>(capacity), count_address});
-                        },
-                        &config_output);
-                    if (result != 0U && capacity > 0) {
-                        for (std::int32_t index = 0; index < capacity; ++index) {
-                            std::uint32_t handle{};
-                            for (std::size_t byte = 0; byte < 4U; ++byte)
-                                handle |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(
-                                              config_output[static_cast<std::size_t>(index) * 4U + byte]))
-                                          << (byte * 8U);
-                            if (handle != 0U) {
-                                const auto wrapper = EnsureConfig(call, context, handle);
-                                call.vm.Model().SetObjectElement(configs, index, wrapper);
-                            }
-                        }
-                    }
-                    return Bool(result != 0U);
-                });
-            });
-        }
-        RequireInitialized(call, context);
-        const auto size = call.arguments[3].AsInt();
-        const auto num = call.arguments[4].ref;
-        if (size < 0 || !num.IsValid() || call.vm.Model().ArrayLength(num) < 1) {
-            LatchEglError(call, context, kBadParameter);
-            return Bool(false);
-        }
-        const auto matches = AttributeListMatches(call, context, call.arguments[1].ref);
-        if (!matches.has_value()) return Bool(false);
-        SetIntElement(call, num, 0, *matches ? 1 : 0);
-        const auto configs = call.arguments[2].ref;
-        if (*matches && configs.IsValid() && size > 0) {
-            if (call.vm.Model().ArrayLength(configs) < 1) {
-                LatchEglError(call, context, kBadParameter);
-                return Bool(false);
-            }
-            const auto wrapper = EnsureConfig(call, context, 1U);
-            call.vm.Model().SetObjectElement(configs, 0, wrapper);
-        }
-        return Bool(true);
-    };
-}
-
-dx::IntrinsicHandler EglGetConfigAttribHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
-        if (!IsConfig(context, call.arguments[1].ref)) {
-            LatchEglError(call, context, kBadConfig);
-            return Bool(false);
-        }
-        const auto output = call.arguments[3].ref;
-        if (!output.IsValid() || call.vm.Model().ArrayLength(output) < 1) {
-            LatchEglError(call, context, kBadParameter);
-            return Bool(false);
-        }
-        const auto attribute = call.arguments[2].AsInt();
-        if (context->session != nullptr) {
-            const auto result = WithIntArray(call, context, output, true, [&](const std::uint32_t output) {
-                return Bool(NativeEgl(call, context, "eglGetConfigAttrib",
-                                      std::array{context->egl.native_display,
-                                                 ConfigHandle(context->egl.configs, call.arguments[1].ref),
-                                                 call.arguments[2].cat1, output}) != 0U);
-            });
-            return result;
-        }
-        const auto fact = kConfigFacts.find(attribute);
-        if (fact == kConfigFacts.end()) {
-            Record(call, "dexvm.egl_facade.config_attribute." + std::to_string(attribute));
-            LatchEglError(call, context, kBadAttribute);
-            return Bool(false);
-        }
-        SetIntElement(call, output, 0, fact->second);
-        return Bool(true);
-    };
-}
-
-dx::IntrinsicHandler EglGetConfigsHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
-        if (context->session != nullptr) {
-            const auto configs = call.arguments[1].ref;
-            const auto size = call.arguments[2].AsInt();
-            const auto count = call.arguments[3].ref;
-            if (size < 0 || !count.IsValid()) return Bool(false);
-            return WithIntArray(call, context, count, true, [&](const std::uint32_t count_address) {
-                const auto capacity = configs.IsValid() && size > 0
-                                          ? std::min<std::int32_t>(size, call.vm.Model().ArrayLength(configs))
-                                          : 0;
-                std::vector<std::byte> config_bytes(static_cast<std::size_t>(capacity) * 4U);
-                std::vector<std::byte> config_output;
-                const auto result = context->session->NIO().WithTemporaryGuestMemory(
-                    config_bytes, true,
-                    [&](const memory::GuestAddress config_address) {
-                        return NativeEgl(call, context, "eglGetConfigs",
-                                         std::array{context->egl.native_display,
-                                                    capacity > 0 ? config_address.Value() : 0U,
-                                                    static_cast<std::uint32_t>(capacity), count_address});
-                    },
-                    &config_output);
-                if (result != 0U && capacity > 0) {
-                    for (std::int32_t index = 0; index < capacity; ++index) {
-                        std::uint32_t handle{};
-                        for (std::size_t byte = 0; byte < 4U; ++byte)
-                            handle |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(
-                                          config_output[static_cast<std::size_t>(index) * 4U + byte]))
-                                      << (byte * 8U);
-                        if (handle != 0U)
-                            call.vm.Model().SetObjectElement(configs, index, EnsureConfig(call, context, handle));
-                    }
-                }
-                return Bool(result != 0U);
-            });
-        }
-        RequireInitialized(call, context);
-        const auto configs = call.arguments[1].ref;
-        const auto size = call.arguments[2].AsInt();
-        const auto count = call.arguments[3].ref;
-        if (size < 0 || !count.IsValid() || call.vm.Model().ArrayLength(count) < 1 ||
-            (configs.IsValid() && call.vm.Model().ArrayLength(configs) < size)) {
-            LatchEglError(call, context, kBadParameter);
-            return Bool(false);
-        }
-        SetIntElement(call, count, 0, 1);
-        if (configs.IsValid() && size > 0) {
-            call.vm.Model().SetObjectElement(configs, 0, EnsureConfig(call, context, 1U));
-        }
-        return Bool(true);
-    };
-}
-
-dx::IntrinsicHandler EglCreateContextHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return dx::VmValue::Ref(context->egl.no_context);
-        RequireInitialized(call, context);
-        if (!IsConfig(context, call.arguments[1].ref)) {
-            GuestLog(call, core::LogLevel::warn,
-                     "EGL context rejected config wrapper=" + std::to_string(call.arguments[1].ref.Value()) +
-                         "; available=" + std::to_string(context->egl.configs.size()));
-            LatchEglError(call, context, kBadConfig);
-            return dx::VmValue::Ref(context->egl.no_context);
-        }
-        const auto share = call.arguments[2].ref;
-        if (context->session != nullptr) {
-            std::uint32_t share_handle{};
-            if (share.IsValid() && share != context->egl.no_context) {
-                const auto found = context->egl.contexts.find(share.Value());
-                if (found == context->egl.contexts.end()) {
-                    return dx::VmValue::Ref(context->egl.no_context);
-                }
-                share_handle = found->second;
-            }
-            return WithIntArray(call, context, call.arguments[3].ref, false, [&](const std::uint32_t attributes) {
-                const auto handle = NativeEgl(call, context, "eglCreateContext",
-                                              std::array{context->egl.native_display,
-                                                         ConfigHandle(context->egl.configs, call.arguments[1].ref),
-                                                         share_handle, attributes});
-                if (handle == 0U) {
-                    return dx::VmValue::Ref(context->egl.no_context);
-                }
-                const auto instance = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLContext;");
-                context->egl.contexts.emplace(instance.Value(), handle);
-                return dx::VmValue::Ref(instance);
-            });
-        }
-        if (share.IsValid() && share != context->egl.no_context) ModelFailure(call, "shared contexts are unsupported");
-        std::int32_t version = 1;
-        const auto attributes = call.arguments[3].ref;
-        if (attributes.IsValid()) {
-            const auto length = call.vm.Model().ArrayLength(attributes);
-            if (length == 1 && IntElement(call, attributes, 0) == kNone) {
-                version = 1;
-            } else if (length == 3 && IntElement(call, attributes, 0) == 12440 &&
-                       IntElement(call, attributes, 2) == kNone) {
-                version = IntElement(call, attributes, 1);
-            } else {
-                LatchEglError(call, context, kBadAttribute);
-                return dx::VmValue::Ref(context->egl.no_context);
-            }
-        }
-        if (version != 1 && version != 2) {
-            LatchEglError(call, context, kBadAttribute);
-            return dx::VmValue::Ref(context->egl.no_context);
-        }
-        const auto instance = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLContext;");
-        context->egl.contexts.emplace(instance.Value(), version);
-        return dx::VmValue::Ref(instance);
-    };
-}
-
-dx::IntrinsicHandler EglCreateWindowSurfaceHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return dx::VmValue::Ref(context->egl.no_surface);
-        RequireInitialized(call, context);
-        if (!IsConfig(context, call.arguments[1].ref)) {
-            LatchEglError(call, context, kBadConfig);
-            return dx::VmValue::Ref(context->egl.no_surface);
-        }
-        const auto holder = call.arguments[2].ref;
-        const auto registered_holder = std::find_if(context->surface_holders.begin(), context->surface_holders.end(),
-                                                    [holder](const auto& entry) { return entry.second == holder; });
-        if (!holder.IsValid() || registered_holder == context->surface_holders.end() ||
-            !context->active_surface_holders.contains(holder.Value())) {
-            LatchEglError(call, context, kBadNativeWindow);
-            return dx::VmValue::Ref(context->egl.no_surface);
-        }
-        if (context->session == nullptr || !context->session->ManagedSurfaceIsOpen())
-            ModelFailure(call, "managed surface is not open");
-        if (context->session == nullptr && context->egl.window_surface.IsValid())
-            ModelFailure(call, "a second headless window surface is unsupported");
-        const auto attributes = call.arguments[3].ref;
-        if (context->session != nullptr) {
-            return WithIntArray(call, context, attributes, false, [&](const std::uint32_t attribute_address) {
-                const auto handle = NativeEgl(call, context, "eglCreateWindowSurface",
-                                              std::array{context->egl.native_display,
-                                                         ConfigHandle(context->egl.configs, call.arguments[1].ref),
-                                                         holder.Value(), attribute_address});
-                if (handle == 0U) {
-                    return dx::VmValue::Ref(context->egl.no_surface);
-                }
-                const auto wrapper = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLSurface;");
-                context->egl.window_surface = wrapper;
-                context->egl.surfaces.emplace(wrapper.Value(), handle);
-                return dx::VmValue::Ref(wrapper);
-            });
-        }
-        if (attributes.IsValid() &&
-            (call.vm.Model().ArrayLength(attributes) != 1 || IntElement(call, attributes, 0) != kNone)) {
-            LatchEglError(call, context, kBadAttribute);
-            return dx::VmValue::Ref(context->egl.no_surface);
-        }
-        context->egl.window_surface = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLSurface;");
-        return dx::VmValue::Ref(context->egl.window_surface);
-    };
-}
-
-dx::IntrinsicHandler EglCreatePbufferSurfaceHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref) || !IsConfig(context, call.arguments[1].ref)) {
-            return dx::VmValue::Ref(context->egl.no_surface);
-        }
-        return WithIntArray(call, context, call.arguments[2].ref, false, [&](const std::uint32_t attributes) {
-            const auto handle =
-                NativeEgl(call, context, "eglCreatePbufferSurface",
-                          std::array{context->egl.native_display,
-                                     ConfigHandle(context->egl.configs, call.arguments[1].ref), attributes});
-            if (handle == 0U) {
-                return dx::VmValue::Ref(context->egl.no_surface);
-            }
-            const auto wrapper = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLSurface;");
-            context->egl.surfaces.emplace(wrapper.Value(), handle);
-            return dx::VmValue::Ref(wrapper);
-        });
-    };
-}
-
-dx::IntrinsicHandler EglDestroySurfaceHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
-        if (context->session != nullptr) {
-            const auto found = context->egl.surfaces.find(call.arguments[1].ref.Value());
-            if (found == context->egl.surfaces.end()) {
-                LatchEglError(call, context, kBadSurface);
-                return Bool(false);
-            }
-            const auto result =
-                NativeEgl(call, context, "eglDestroySurface", std::array{context->egl.native_display, found->second});
-            if (result != 0U) {
-                context->egl.surfaces.erase(found);
-                if (context->egl.window_surface == call.arguments[1].ref)
-                    context->egl.window_surface = dx::VmObjectRef{};
-            }
-            return Bool(result != 0U);
-        }
-        if (call.arguments[1].ref != context->egl.window_surface) {
-            LatchEglError(call, context, kBadSurface);
-            return Bool(false);
-        }
-        if (context->egl.current_surface == context->egl.window_surface)
-            ModelFailure(call, "current surface cannot be destroyed");
-        context->egl.window_surface = dx::VmObjectRef{};
-        return Bool(true);
-    };
-}
-
-dx::IntrinsicHandler EglDestroyContextHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
-        const auto ref = call.arguments[1].ref;
-        if (context->session != nullptr) {
-            const auto found = context->egl.contexts.find(ref.Value());
-            if (found == context->egl.contexts.end()) {
-                LatchEglError(call, context, kBadContext);
-                return Bool(false);
-            }
-            const auto result =
-                NativeEgl(call, context, "eglDestroyContext", std::array{context->egl.native_display, found->second});
-            if (result != 0U) context->egl.contexts.erase(found);
-            return Bool(result != 0U);
-        }
-        if (!context->egl.contexts.contains(ref.Value())) {
-            LatchEglError(call, context, kBadContext);
-            return Bool(false);
-        }
-        if (context->egl.current_context == ref) ModelFailure(call, "current context cannot be destroyed");
-        context->egl.contexts.erase(ref.Value());
-        return Bool(true);
-    };
-}
-
-dx::IntrinsicHandler EglMakeCurrentHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
-        const auto draw = call.arguments[1].ref;
-        const auto read = call.arguments[2].ref;
-        const auto egl_context = call.arguments[3].ref;
-        const bool unbind = draw == context->egl.no_surface && read == context->egl.no_surface &&
-                            egl_context == context->egl.no_context;
-        if (context->session != nullptr) {
-            const auto surface_handle = [&](const dx::VmObjectRef value) {
-                if (value == context->egl.no_surface) return 0U;
-                const auto found = context->egl.surfaces.find(value.Value());
-                return found == context->egl.surfaces.end() ? 0U : found->second;
-            };
-            const auto context_handle = [&] {
-                if (egl_context == context->egl.no_context) return 0U;
-                const auto found = context->egl.contexts.find(egl_context.Value());
-                return found == context->egl.contexts.end() ? 0U : found->second;
-            }();
-            return Bool(NativeEgl(call, context, "eglMakeCurrent",
-                                  std::array{context->egl.native_display, surface_handle(draw), surface_handle(read),
-                                             context_handle}) != 0U);
-        }
-        if (unbind) {
-            if (context->egl.current_thread.has_value() && *context->egl.current_thread != std::this_thread::get_id())
-                ModelFailure(call, "another thread owns facade currency");
-            if (context->session == nullptr) ModelFailure(call, "guest session is absent");
-            context->session->ReleaseManagedSurfaceFromCallingThread();
-            context->egl.current_display = dx::VmObjectRef{};
-            context->egl.current_surface = dx::VmObjectRef{};
-            context->egl.current_context = dx::VmObjectRef{};
-            context->egl.current_thread.reset();
-            return Bool(true);
-        }
-        if (draw != read || draw != context->egl.window_surface || !context->egl.contexts.contains(egl_context.Value()))
-            ModelFailure(call, "invalid draw/read/context binding shape");
-        if (context->egl.current_thread.has_value() && *context->egl.current_thread != std::this_thread::get_id())
-            ModelFailure(call, "another thread owns facade currency");
-        if (context->session == nullptr) ModelFailure(call, "guest session is absent");
-        context->session->BindManagedSurfaceOnCallingThread();
-        context->egl.current_display = call.arguments[0].ref;
-        context->egl.current_surface = draw;
-        context->egl.current_context = egl_context;
-        context->egl.current_thread = std::this_thread::get_id();
-        return Bool(true);
-    };
-}
-
-dx::IntrinsicHandler EglSwapBuffersHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (context->egl.surface_retired.load(std::memory_order_acquire)) {
-            LatchEglError(call, context, kBadNativeWindow);
-            return Bool(false);
-        }
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
-        if (context->session != nullptr) {
-            const auto found = context->egl.surfaces.find(call.arguments[1].ref.Value());
-            if (found == context->egl.surfaces.end()) {
-                LatchEglError(call, context, kBadSurface);
-                return Bool(false);
-            }
-            const auto result =
-                NativeEgl(call, context, "eglSwapBuffers", std::array{context->egl.native_display, found->second});
-            if (result != 0U) PaceEglSwap(*context, call.vm.ExecutionLock());
-            return Bool(result != 0U);
-        }
-        if (call.arguments[1].ref != context->egl.current_surface || !context->egl.current_thread.has_value() ||
-            *context->egl.current_thread != std::this_thread::get_id()) {
-            LatchEglError(call, context, kBadSurface);
-            return Bool(false);
-        }
-        if (context->session == nullptr) ModelFailure(call, "guest session is absent");
-        context->session->PresentManagedSurface();
-        PaceEglSwap(*context, call.vm.ExecutionLock());
-        return Bool(true);
-    };
-}
-
-dx::IntrinsicHandler EglGetCurrentDisplayHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (context->session != nullptr) {
-            return dx::VmValue::Ref(NativeEgl(call, context, "eglGetCurrentDisplay", {}) == context->egl.native_display
-                                        ? context->egl.display
-                                        : context->egl.no_display);
-        }
-        const auto current =
-            context->egl.current_thread.has_value() && *context->egl.current_thread == std::this_thread::get_id();
-        return dx::VmValue::Ref(current ? context->egl.current_display : context->egl.no_display);
-    };
-}
-
-dx::IntrinsicHandler EglGetCurrentContextHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (context->session != nullptr) {
-            return dx::VmValue::Ref(FindWrapper(
-                context->egl.contexts, NativeEgl(call, context, "eglGetCurrentContext", {}), context->egl.no_context));
-        }
-        const auto current =
-            context->egl.current_thread.has_value() && *context->egl.current_thread == std::this_thread::get_id();
-        return dx::VmValue::Ref(current ? context->egl.current_context : context->egl.no_context);
-    };
-}
-
-dx::IntrinsicHandler EglGetCurrentSurfaceHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        const auto which = call.arguments[0].AsInt();
-        if (context->session != nullptr) {
-            return dx::VmValue::Ref(
-                FindWrapper(context->egl.surfaces,
-                            NativeEgl(call, context, "eglGetCurrentSurface", std::array{call.arguments[0].cat1}),
-                            context->egl.no_surface));
-        }
-        if (which != 0x3059 && which != 0x305A) {
-            LatchEglError(call, context, kBadParameter);
-            return dx::VmValue::Ref(context->egl.no_surface);
-        }
-        const auto current =
-            context->egl.current_thread.has_value() && *context->egl.current_thread == std::this_thread::get_id();
-        return dx::VmValue::Ref(current ? context->egl.current_surface : context->egl.no_surface);
-    };
-}
-
-dx::IntrinsicHandler EglQueryContextHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
-        if (context->session != nullptr) {
-            const auto found = context->egl.contexts.find(call.arguments[1].ref.Value());
-            if (found == context->egl.contexts.end()) {
-                LatchEglError(call, context, kBadContext);
-                return Bool(false);
-            }
-            return WithIntArray(call, context, call.arguments[3].ref, true, [&](const std::uint32_t output) {
-                return Bool(NativeEgl(call, context, "eglQueryContext",
-                                      std::array{context->egl.native_display, found->second, call.arguments[2].cat1,
-                                                 output}) != 0U);
-            });
-        }
-        RequireInitialized(call, context);
-        const auto found = context->egl.contexts.find(call.arguments[1].ref.Value());
-        if (found == context->egl.contexts.end()) {
-            LatchEglError(call, context, kBadContext);
-            return Bool(false);
-        }
-        const auto output = call.arguments[3].ref;
-        if (!output.IsValid() || call.vm.Model().ArrayLength(output) < 1) {
-            LatchEglError(call, context, kBadParameter);
-            return Bool(false);
-        }
-        if (call.arguments[2].AsInt() != 0x3098) {
-            LatchEglError(call, context, kBadAttribute);
-            return Bool(false);
-        }
-        SetIntElement(call, output, 0, static_cast<std::int32_t>(found->second));
-        return Bool(true);
-    };
-}
-
-dx::IntrinsicHandler EglQueryStringHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) {
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        }
-        RequireInitialized(call, context);
-        if (context->session != nullptr &&
-            NativeEgl(call, context, "eglQueryString",
-                      std::array{context->egl.native_display, call.arguments[1].cat1}) == 0U) {
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        }
-        switch (call.arguments[1].AsInt()) {
-        case 0x3053: return MakeString(call, "OGPlay");
-        case 0x3054: return MakeString(call, "1.4 OGPlay");
-        case 0x3055:
-            return MakeString(call, context->session != nullptr ? context->session->ManagedEglString(0x3055U)
-                                                                : std::string{"EGL_KHR_get_all_proc_addresses "});
-        case 0x308D: return MakeString(call, "OpenGL_ES");
-        default: LatchEglError(call, context, kBadParameter); return dx::VmValue::Ref(dx::VmObjectRef{});
-        }
-    };
-}
-
-dx::IntrinsicHandler EglQuerySurfaceHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
-        if (context->session != nullptr) {
-            const auto found = context->egl.surfaces.find(call.arguments[1].ref.Value());
-            if (found == context->egl.surfaces.end()) {
-                LatchEglError(call, context, kBadSurface);
-                return Bool(false);
-            }
-            return WithIntArray(call, context, call.arguments[3].ref, true, [&](const std::uint32_t output) {
-                return Bool(NativeEgl(call, context, "eglQuerySurface",
-                                      std::array{context->egl.native_display, found->second, call.arguments[2].cat1,
-                                                 output}) != 0U);
-            });
-        }
-        RequireInitialized(call, context);
-        if (call.arguments[1].ref != context->egl.window_surface) {
-            LatchEglError(call, context, kBadSurface);
-            return Bool(false);
-        }
-        const auto output = call.arguments[3].ref;
-        if (!output.IsValid() || call.vm.Model().ArrayLength(output) < 1) {
-            LatchEglError(call, context, kBadParameter);
-            return Bool(false);
-        }
-        switch (call.arguments[2].AsInt()) {
-        case 0x3056: SetIntElement(call, output, 0, static_cast<std::int32_t>(context->surface_height)); break;
-        case 0x3057: SetIntElement(call, output, 0, static_cast<std::int32_t>(context->surface_width)); break;
-        case 0x3086: SetIntElement(call, output, 0, 0x3084); break;
-        default: LatchEglError(call, context, kBadAttribute); return Bool(false);
-        }
-        return Bool(true);
-    };
-}
-
-dx::IntrinsicHandler EglReleaseThreadHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (context->session != nullptr) {
-            return Bool(NativeEgl(call, context, "eglReleaseThread", {}) != 0U);
-        }
-        if (!context->egl.current_thread.has_value() || *context->egl.current_thread != std::this_thread::get_id()) {
-            return Bool(true);
-        }
-        if (context->session == nullptr) {
-            ModelFailure(call, "guest session is absent");
-        }
-        context->session->ReleaseManagedSurfaceFromCallingThread();
-        context->egl.current_display = dx::VmObjectRef{};
-        context->egl.current_surface = dx::VmObjectRef{};
-        context->egl.current_context = dx::VmObjectRef{};
-        context->egl.current_thread.reset();
-        return Bool(true);
-    };
-}
-
-dx::IntrinsicHandler EglGetErrorHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (context->session != nullptr) {
-            return dx::VmValue::Int(static_cast<std::int32_t>(NativeEgl(call, context, "eglGetError", {})));
-        }
-        const auto error = context->egl.last_error;
-        context->egl.last_error = kSuccess;
-        return dx::VmValue::Int(error);
-    };
-}
-
-dx::IntrinsicHandler EglTerminateHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (!ValidateDisplay(call, context, call.arguments[0].ref)) return Bool(false);
-        if (context->session != nullptr) {
-            const auto result = NativeEgl(call, context, "eglTerminate", std::array{context->egl.native_display});
-            if (result != 0U) {
-                context->egl.native_display = 0U;
-                context->egl.configs.clear();
-                context->egl.egl14_configs.clear();
-                context->egl.contexts.clear();
-                context->egl.surfaces.clear();
-                context->egl.window_surface = dx::VmObjectRef{};
-                context->egl.initialized = false;
-            }
-            return Bool(result != 0U);
-        }
-        if (context->egl.window_surface.IsValid() || !context->egl.contexts.empty() ||
-            context->egl.current_context.IsValid())
-            ModelFailure(call, "terminate requires retired facade objects");
-        context->egl.initialized = false;
-        return Bool(true);
-    };
-}
 
 dx::IntrinsicHandler GlGetStringHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
@@ -1731,13 +758,6 @@ Decl DeclareJavaGlesClass(const Context& context, const char* class_descriptor, 
     return std::move(builder).Build();
 }
 
-dx::IntrinsicHandler EglUnsupportedHandler(std::string method) {
-    return [method = std::move(method)](dx::IntrinsicContext& call) -> dx::VmValue {
-        Record(call, "dexvm.egl_facade." + method);
-        throw std::runtime_error("EGL facade method is not implemented: " + method);
-    };
-}
-
 [[nodiscard]] dx::VmObjectRef EnsureEgl14Object(dx::IntrinsicContext& call, dx::VmObjectRef& object,
                                                 const char* descriptor) {
     if (!object.IsValid()) object = call.vm.NewIntrinsicInstance(descriptor);
@@ -1795,12 +815,9 @@ dx::IntrinsicHandler Egl14SimpleHandler(const Context& context, std::string name
         if (name == "eglTerminate") {
             const auto result = NativeEgl(call, context, name, std::array{egl.native_display});
             if (result != 0U) {
-                egl.contexts.clear();
-                egl.surfaces.clear();
                 egl.egl14_contexts.clear();
                 egl.egl14_surfaces.clear();
                 egl.native_display = 0U;
-                egl.configs.clear();
                 egl.egl14_configs.clear();
             }
             return Bool(result != 0U);
@@ -1917,17 +934,30 @@ dx::IntrinsicHandler Egl14CreateWindowHandler(const Context& context) {
             LatchEglError(call, context, kBadConfig);
             return dx::VmValue::Ref(egl.egl14_no_surface);
         }
-        if (!call.arguments[2].ref.IsValid()) {
+        auto window = call.arguments[2].ref;
+        const auto unwrap = [&](std::string_view type) {
+            return window.IsValid() && call.vm.Linker().IsAssignable(call.vm.Linker().ResolveDescriptor(type),
+                                                                     call.vm.Model().ObjectClass(window));
+        };
+        if (unwrap("Landroid/view/SurfaceView;"))
+            window = CallAndroidMethod(call.vm, window, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        const auto root = call.vm.ProtectReferences(std::array{window});
+        if (unwrap("Landroid/view/SurfaceHolder;"))
+            window = CallAndroidMethod(call.vm, window, "getSurface", "()Landroid/view/Surface;").ref;
+        const auto surface =
+            unwrap("Landroid/view/Surface;") ? ResolveRomSurfaceWindow(call.vm, context, window) : std::nullopt;
+        if (!surface) {
             LatchEglError(call, context, kBadNativeWindow);
             return dx::VmValue::Ref(egl.egl14_no_surface);
         }
+        context->session->Process().UpdateSurfaceWindow(*surface);
         return WithIntArrayOffset(call, context, call.arguments[3].ref, call.arguments[4].AsInt(), false,
                                   [&](const std::uint32_t attributes) {
                                       const auto handle =
                                           NativeEgl(call, context, "eglCreateWindowSurface",
                                                     std::array{egl.native_display,
                                                                ConfigHandle(egl.egl14_configs, call.arguments[1].ref),
-                                                               call.arguments[2].ref.Value(), attributes});
+                                                               surface->identity.Value(), attributes});
                                       if (handle == 0U) return dx::VmValue::Ref(egl.egl14_no_surface);
                                       const auto wrapper = call.vm.NewIntrinsicInstance("Landroid/opengl/EGLSurface;");
                                       egl.egl14_surfaces.emplace(wrapper.Value(), handle);
@@ -2095,7 +1125,7 @@ dx::IntrinsicHandler Egl14ConfigsHandler(const Context& context, const bool choo
 namespace ogplay::runtime {
 
 void AttachEglSwapPacer(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock) {
-    const auto driver = std::this_thread::get_id();
+    const auto driver = context.clock_driver;
     {
         std::scoped_lock lock(context.egl.pace_mutex);
         context.egl.pace_driver = driver;
@@ -2770,44 +1800,6 @@ Decl Declare_android_opengl_GLES30(const Context& context) {
                                 generated_java_gles::kGLES30Methods, generated_java_gles::kGLES30Constants);
 }
 
-dx::IntrinsicHandler EglWaitHandler(const Context& context, std::string name) {
-    return [context, name = std::move(name)](dx::IntrinsicContext& call) {
-        if (context->session == nullptr) return EglUnsupportedHandler(name)(call);
-        if (name == "eglWaitNative") {
-            return Bool(NativeEgl(call, context, name, std::array{call.arguments[0].cat1}) != 0U);
-        }
-        return Bool(NativeEgl(call, context, name, {}) != 0U);
-    };
-}
-
-dx::IntrinsicHandler EglCreatePixmapHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (context->session == nullptr) {
-            return EglUnsupportedHandler("eglCreatePixmapSurface")(call);
-        }
-        return WithIntArray(call, context, call.arguments[3].ref, false, [&](const std::uint32_t attributes) {
-            const auto result = NativeEgl(call, context, "eglCreatePixmapSurface",
-                                          std::array{context->egl.native_display,
-                                                     ConfigHandle(context->egl.configs, call.arguments[1].ref),
-                                                     call.arguments[2].ref.Value(), attributes});
-            return dx::VmValue::Ref(result == 0U ? context->egl.no_surface : dx::VmObjectRef{});
-        });
-    };
-}
-
-dx::IntrinsicHandler EglCopyBuffersHandler(const Context& context) {
-    return [context](dx::IntrinsicContext& call) {
-        if (context->session == nullptr) {
-            return EglUnsupportedHandler("eglCopyBuffers")(call);
-        }
-        const auto found = context->egl.surfaces.find(call.arguments[1].ref.Value());
-        return Bool(found != context->egl.surfaces.end() &&
-                    NativeEgl(call, context, "eglCopyBuffers",
-                              std::array{context->egl.native_display, found->second, call.arguments[2].ref.Value()}) !=
-                        0U);
-    };
-}
-
 [[nodiscard]] std::uint32_t Egl14WrapperHandle(const DexVmAndroidContext::EglFacadeState& egl,
                                                const dx::VmObjectRef object) {
     if (object == egl.egl14_no_display || object == egl.egl14_no_context || object == egl.egl14_no_surface) return 0U;
@@ -2877,287 +1869,226 @@ Decl Declare_android_opengl_EGLSurface(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_javax_microedition_khronos_egl_EGL(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Ljavax/microedition/khronos/egl/EGL;");
-    return std::move(builder).Build();
+namespace {
+using EglValue = dx::VmValue;
+
+std::uint32_t RomEglHandle(dx::IntrinsicContext& call, std::size_t index, const char* field) {
+    return WindowField(call.vm, dx::IntrinsicCall(call).NonNullRef(index, field), field, "I").bits;
 }
 
-Decl Declare_javax_microedition_khronos_egl_EGL10(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Interface("Ljavax/microedition/khronos/egl/EGL10;",
-                                                        {"Ljavax/microedition/khronos/egl/EGL;"});
-    constexpr std::array constants{std::pair{"EGL_SUCCESS", 0x3000},
-                                   std::pair{"EGL_NOT_INITIALIZED", 0x3001},
-                                   std::pair{"EGL_BAD_ACCESS", 0x3002},
-                                   std::pair{"EGL_BAD_ALLOC", 0x3003},
-                                   std::pair{"EGL_BAD_ATTRIBUTE", 0x3004},
-                                   std::pair{"EGL_BAD_CONFIG", 0x3005},
-                                   std::pair{"EGL_BAD_CONTEXT", 0x3006},
-                                   std::pair{"EGL_BAD_CURRENT_SURFACE", 0x3007},
-                                   std::pair{"EGL_BAD_DISPLAY", 0x3008},
-                                   std::pair{"EGL_BAD_MATCH", 0x3009},
-                                   std::pair{"EGL_BAD_NATIVE_PIXMAP", 0x300A},
-                                   std::pair{"EGL_BAD_NATIVE_WINDOW", 0x300B},
-                                   std::pair{"EGL_BAD_PARAMETER", 0x300C},
-                                   std::pair{"EGL_BAD_SURFACE", 0x300D},
-                                   std::pair{"EGL_BUFFER_SIZE", 0x3020},
-                                   std::pair{"EGL_ALPHA_SIZE", 0x3021},
-                                   std::pair{"EGL_BLUE_SIZE", 0x3022},
-                                   std::pair{"EGL_GREEN_SIZE", 0x3023},
-                                   std::pair{"EGL_RED_SIZE", 0x3024},
-                                   std::pair{"EGL_DEPTH_SIZE", 0x3025},
-                                   std::pair{"EGL_STENCIL_SIZE", 0x3026},
-                                   std::pair{"EGL_CONFIG_CAVEAT", 0x3027},
-                                   std::pair{"EGL_CONFIG_ID", 0x3028},
-                                   std::pair{"EGL_LEVEL", 0x3029},
-                                   std::pair{"EGL_MAX_PBUFFER_HEIGHT", 0x302A},
-                                   std::pair{"EGL_MAX_PBUFFER_PIXELS", 0x302B},
-                                   std::pair{"EGL_MAX_PBUFFER_WIDTH", 0x302C},
-                                   std::pair{"EGL_NATIVE_RENDERABLE", 0x302D},
-                                   std::pair{"EGL_NATIVE_VISUAL_ID", 0x302E},
-                                   std::pair{"EGL_NATIVE_VISUAL_TYPE", 0x302F},
-                                   std::pair{"EGL_SAMPLES", 0x3031},
-                                   std::pair{"EGL_SAMPLE_BUFFERS", 0x3032},
-                                   std::pair{"EGL_SURFACE_TYPE", 0x3033},
-                                   std::pair{"EGL_TRANSPARENT_TYPE", 0x3034},
-                                   std::pair{"EGL_TRANSPARENT_BLUE_VALUE", 0x3035},
-                                   std::pair{"EGL_TRANSPARENT_GREEN_VALUE", 0x3036},
-                                   std::pair{"EGL_TRANSPARENT_RED_VALUE", 0x3037},
-                                   std::pair{"EGL_NONE", 0x3038},
-                                   std::pair{"EGL_LUMINANCE_SIZE", 0x303D},
-                                   std::pair{"EGL_ALPHA_MASK_SIZE", 0x303E},
-                                   std::pair{"EGL_COLOR_BUFFER_TYPE", 0x303F},
-                                   std::pair{"EGL_RENDERABLE_TYPE", 0x3040},
-                                   std::pair{"EGL_SLOW_CONFIG", 0x3050},
-                                   std::pair{"EGL_NON_CONFORMANT_CONFIG", 0x3051},
-                                   std::pair{"EGL_TRANSPARENT_RGB", 0x3052},
-                                   std::pair{"EGL_VENDOR", 0x3053},
-                                   std::pair{"EGL_VERSION", 0x3054},
-                                   std::pair{"EGL_EXTENSIONS", 0x3055},
-                                   std::pair{"EGL_HEIGHT", 0x3056},
-                                   std::pair{"EGL_WIDTH", 0x3057},
-                                   std::pair{"EGL_LARGEST_PBUFFER", 0x3058},
-                                   std::pair{"EGL_DRAW", 0x3059},
-                                   std::pair{"EGL_READ", 0x305A},
-                                   std::pair{"EGL_CORE_NATIVE_ENGINE", 0x305B},
-                                   std::pair{"EGL_SINGLE_BUFFER", 0x3085},
-                                   std::pair{"EGL_RENDER_BUFFER", 0x3086},
-                                   std::pair{"EGL_COLORSPACE", 0x3087},
-                                   std::pair{"EGL_ALPHA_FORMAT", 0x3088},
-                                   std::pair{"EGL_RGB_BUFFER", 0x308E},
-                                   std::pair{"EGL_LUMINANCE_BUFFER", 0x308F},
-                                   std::pair{"EGL_HORIZONTAL_RESOLUTION", 0x3090},
-                                   std::pair{"EGL_VERTICAL_RESOLUTION", 0x3091},
-                                   std::pair{"EGL_PIXEL_ASPECT_RATIO", 0x3092},
-                                   std::pair{"EGL_DONT_CARE", -1},
-                                   std::pair{"EGL_PBUFFER_BIT", 0x01},
-                                   std::pair{"EGL_PIXMAP_BIT", 0x02},
-                                   std::pair{"EGL_WINDOW_BIT", 0x04}};
-    for (const auto& [name, value] : constants)
-        builder.ConstantInt(name, "I", value);
-    builder.StaticField("EGL_DEFAULT_DISPLAY", "Ljava/lang/Object;")
-        .StaticField("EGL_NO_DISPLAY", "Ljavax/microedition/khronos/egl/EGLDisplay;")
-        .StaticField("EGL_NO_CONTEXT", "Ljavax/microedition/khronos/egl/EGLContext;")
-        .StaticField("EGL_NO_SURFACE", "Ljavax/microedition/khronos/egl/EGLSurface;");
-    builder.ClassInitializer([context](dx::IntrinsicContext& call) {
-        context->egl.no_display = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLDisplay;");
-        context->egl.no_context = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLContext;");
-        context->egl.no_surface = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLSurface;");
-        call.vm.SetIntrinsicStaticRef("Ljavax/microedition/khronos/egl/EGL10;", "EGL_NO_DISPLAY",
-                                      "Ljavax/microedition/khronos/egl/EGLDisplay;", context->egl.no_display);
-        call.vm.SetIntrinsicStaticRef("Ljavax/microedition/khronos/egl/EGL10;", "EGL_NO_CONTEXT",
-                                      "Ljavax/microedition/khronos/egl/EGLContext;", context->egl.no_context);
-        call.vm.SetIntrinsicStaticRef("Ljavax/microedition/khronos/egl/EGL10;", "EGL_NO_SURFACE",
-                                      "Ljavax/microedition/khronos/egl/EGLSurface;", context->egl.no_surface);
-        return dx::VmValue::Void();
-    });
-    const auto method = [&](const char* name, const char* descriptor) {
-        builder.VirtualMethod(name, descriptor, EglUnsupportedHandler(name));
+dx::IntrinsicHandler RomEglForward(const Context& context, std::string name, std::vector<const char*> fields,
+                                   bool pace = false) {
+    return [context, name = std::move(name), fields = std::move(fields), pace](dx::IntrinsicContext& call) {
+        std::vector<std::uint32_t> args;
+        for (std::size_t i = 0; i < fields.size(); ++i)
+            args.push_back(fields[i] ? RomEglHandle(call, i, fields[i]) : call.arguments[i].cat1);
+        const auto result = NativeEgl(call, context, name, args);
+        if (pace && result) PaceEglSwap(*context, call.vm.ExecutionLock());
+        return EglValue::Int(static_cast<int>(result));
     };
-    method("eglChooseConfig",
-           "(Ljavax/microedition/khronos/egl/EGLDisplay;[I[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z");
-    method(
-        "eglCopyBuffers",
-        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljava/lang/Object;)Z");
-    method(
-        "eglCreateContext",
-        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljavax/microedition/khronos/egl/EGLContext;[I)Ljavax/microedition/khronos/egl/EGLContext;");
-    method(
-        "eglCreatePbufferSurface",
-        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;[I)Ljavax/microedition/khronos/egl/EGLSurface;");
-    method(
-        "eglCreatePixmapSurface",
-        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljava/lang/Object;[I)Ljavax/microedition/khronos/egl/EGLSurface;");
-    method(
-        "eglCreateWindowSurface",
-        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljava/lang/Object;[I)Ljavax/microedition/khronos/egl/EGLSurface;");
-    method("eglDestroyContext",
-           "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)Z");
-    method("eglDestroySurface",
-           "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z");
-    method("eglGetConfigAttrib",
-           "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z");
-    method("eglGetConfigs",
-           "(Ljavax/microedition/khronos/egl/EGLDisplay;[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z");
-    method("eglGetCurrentContext", "()Ljavax/microedition/khronos/egl/EGLContext;");
-    method("eglGetCurrentDisplay", "()Ljavax/microedition/khronos/egl/EGLDisplay;");
-    method("eglGetCurrentSurface", "(I)Ljavax/microedition/khronos/egl/EGLSurface;");
-    method("eglGetDisplay", "(Ljava/lang/Object;)Ljavax/microedition/khronos/egl/EGLDisplay;");
-    method("eglGetError", "()I");
-    method("eglInitialize", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I)Z");
-    method(
-        "eglMakeCurrent",
-        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLContext;)Z");
-    method("eglQueryContext",
-           "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;I[I)Z");
-    method("eglQueryString", "(Ljavax/microedition/khronos/egl/EGLDisplay;I)Ljava/lang/String;");
-    method("eglQuerySurface",
-           "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;I[I)Z");
-    method("eglReleaseThread", "()Z");
-    method("eglSwapBuffers",
-           "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z");
-    method("eglTerminate", "(Ljavax/microedition/khronos/egl/EGLDisplay;)Z");
-    method("eglWaitGL", "()Z");
-    method("eglWaitNative", "(ILjava/lang/Object;)Z");
-    return std::move(builder).Build();
 }
 
-Decl Declare_javax_microedition_khronos_egl_EGL10_Impl(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Ljavax/microedition/khronos/egl/EGL10$Impl;", "Ljava/lang/Object;",
-                                                    {"Ljavax/microedition/khronos/egl/EGL10;"});
-    builder.FinalMethod(
+dx::IntrinsicHandler RomEglConfigs(const Context& context, bool choose) {
+    return [context, choose](dx::IntrinsicContext& call) {
+        const auto display = RomEglHandle(call, 0, "mEGLDisplay");
+        const auto configs = call.arguments[choose ? 2U : 1U].ref;
+        const auto capacity = call.arguments[choose ? 3U : 2U].AsInt();
+        const auto count = call.arguments[choose ? 4U : 3U].ref;
+        if (capacity < 0 || !count.IsValid() || call.vm.Model().ArrayLength(count) < 1 ||
+            (configs.IsValid() && call.vm.Model().ArrayLength(configs) < capacity)) {
+            LatchEglError(call, context, kBadParameter);
+            return Bool(false);
+        }
+        const auto length = configs.IsValid() ? static_cast<std::size_t>(capacity) : 0U;
+        return WithIntArray(call, context, count, true, [&](std::uint32_t count_addr) {
+            const auto execute = [&](std::uint32_t attributes) {
+                std::vector<std::byte> storage(length * sizeof(std::uint32_t)), output;
+                const auto result = context->session->NIO().WithTemporaryGuestMemory(
+                    storage, true,
+                    [&](memory::GuestAddress config_addr) {
+                        const auto data = length == 0 ? 0U : config_addr.Value();
+                        return choose ? NativeEgl(call, context, "eglChooseConfig",
+                                                  std::array{display, attributes, data, static_cast<unsigned>(length),
+                                                             count_addr})
+                                      : NativeEgl(call, context, "eglGetConfigs",
+                                                  std::array{display, data, static_cast<unsigned>(length), count_addr});
+                    },
+                    &output);
+                if (result != 0U) {
+                    for (std::size_t i = 0; i < length; ++i) {
+                        std::uint32_t handle{};
+                        for (std::size_t byte = 0; byte < sizeof(handle); ++byte)
+                            handle |= std::to_integer<std::uint32_t>(output[i * sizeof(handle) + byte]) << (byte * 8U);
+                        if (handle == 0U) break;
+                        const auto wrapper = NewPlatformObject(call.vm, "Lcom/google/android/gles_jni/EGLConfigImpl;",
+                                                               "(I)V", {EglValue::Int(static_cast<int>(handle))});
+                        call.vm.Model().SetObjectElement(configs, static_cast<JniSize>(i), wrapper);
+                    }
+                }
+                return Bool(result != 0U);
+            };
+            if (choose) return WithIntArray(call, context, call.arguments[1].ref, false, execute);
+            return execute(0U);
+        });
+    };
+}
+}  // namespace
+
+Decl Declare_com_google_android_gles_jni_EGLImpl(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lcom/google/android/gles_jni/EGLImpl;");
+    builder.MergesBootClass();
+    constexpr auto kPublicNative = dx::kAccPublic | dx::kAccNative;
+    constexpr auto kPrivateNative = dx::kAccPrivate | dx::kAccNative;
+    constexpr auto dpy = "mEGLDisplay";
+    constexpr auto cfg = "mEGLConfig";
+    constexpr auto ctx = "mEGLContext";
+    constexpr auto surf = "mEGLSurface";
+    builder.StaticMethod(
+        "_nativeClassInit", "()V", [](dx::IntrinsicContext&) { return EglValue::Void(); },
+        dx::kAccPrivate | dx::kAccStatic | dx::kAccNative);
+
+    builder.DirectMethod(
+        "_eglGetDisplay", "(Ljava/lang/Object;)I",
+        [context](dx::IntrinsicContext& c) {
+            if (c.arguments[0].ref.IsValid()) {
+                LatchEglError(c, context, kBadParameter);
+                return EglValue::Int(0);
+            }
+            return EglValue::Int(static_cast<int>(NativeEgl(c, context, "eglGetDisplay", std::array{0U})));
+        },
+        kPrivateNative);
+    for (const auto& [name, signature, native] :
+         std::array{std::tuple{"_eglGetCurrentDisplay", "()I", "eglGetCurrentDisplay"},
+                    std::tuple{"_eglGetCurrentContext", "()I", "eglGetCurrentContext"},
+                    std::tuple{"_eglGetCurrentSurface", "(I)I", "eglGetCurrentSurface"}}) {
+        builder.DirectMethod(
+            name, signature,
+            RomEglForward(context, native,
+                          signature[1] == 'I' ? std::vector<const char*>{nullptr} : std::vector<const char*>{}),
+            kPrivateNative);
+    }
+    builder.VirtualMethod(
+        "eglInitialize", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I)Z",
+        [context](dx::IntrinsicContext& c) {
+            const auto display = RomEglHandle(c, 0, dpy);
+            const auto out = c.arguments[1].ref;
+            if (out.IsValid() && c.vm.Model().ArrayLength(out) < 2) {
+                LatchEglError(c, context, kBadParameter);
+                return Bool(false);
+            }
+            return WithIntArray(c, context, out, true, [&](std::uint32_t address) {
+                const auto result =
+                    NativeEgl(c, context, "eglInitialize", std::array{display, address, address ? address + 4 : 0U});
+                return Bool(result != 0U);
+            });
+        },
+        kPublicNative);
+    builder.VirtualMethod(
         "eglChooseConfig",
         "(Ljavax/microedition/khronos/egl/EGLDisplay;[I[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
-        EglChooseConfigHandler(context));
-    builder.FinalMethod(
-        "eglCreateContext",
-        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljavax/microedition/khronos/egl/EGLContext;[I)Ljavax/microedition/khronos/egl/EGLContext;",
-        EglCreateContextHandler(context));
-    builder.FinalMethod(
-        "eglCreatePbufferSurface",
-        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;[I)Ljavax/microedition/khronos/egl/EGLSurface;",
-        EglCreatePbufferSurfaceHandler(context));
-    builder.FinalMethod(
-        "eglCreateWindowSurface",
-        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljava/lang/Object;[I)Ljavax/microedition/khronos/egl/EGLSurface;",
-        EglCreateWindowSurfaceHandler(context));
-    builder.FinalMethod("eglDestroyContext",
-                        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)Z",
-                        EglDestroyContextHandler(context));
-    builder.FinalMethod("eglDestroySurface",
-                        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z",
-                        EglDestroySurfaceHandler(context));
-    builder.FinalMethod("eglGetConfigAttrib",
-                        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
-                        EglGetConfigAttribHandler(context));
-    builder.FinalMethod("eglGetConfigs",
-                        "(Ljavax/microedition/khronos/egl/EGLDisplay;[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
-                        EglGetConfigsHandler(context));
-    builder.FinalMethod("eglGetCurrentContext", "()Ljavax/microedition/khronos/egl/EGLContext;",
-                        EglGetCurrentContextHandler(context));
-    builder.FinalMethod("eglGetCurrentDisplay", "()Ljavax/microedition/khronos/egl/EGLDisplay;",
-                        EglGetCurrentDisplayHandler(context));
-    builder.FinalMethod("eglGetCurrentSurface", "(I)Ljavax/microedition/khronos/egl/EGLSurface;",
-                        EglGetCurrentSurfaceHandler(context));
-    builder.FinalMethod("eglGetDisplay", "(Ljava/lang/Object;)Ljavax/microedition/khronos/egl/EGLDisplay;",
-                        EglGetDisplayHandler(context));
-    builder.FinalMethod("eglGetError", "()I", EglGetErrorHandler(context));
-    builder.FinalMethod("eglInitialize", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I)Z",
-                        EglInitializeHandler(context));
-    builder.FinalMethod(
+        RomEglConfigs(context, true), kPublicNative);
+    builder.VirtualMethod(
+        "eglGetConfigs", "(Ljavax/microedition/khronos/egl/EGLDisplay;[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
+        RomEglConfigs(context, false), kPublicNative);
+
+    builder.DirectMethod(
+        "_eglCreateContext",
+        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljavax/microedition/khronos/egl/EGLContext;[I)I",
+        [context](dx::IntrinsicContext& c) {
+            const auto display = RomEglHandle(c, 0, dpy);
+            const auto config = RomEglHandle(c, 1, cfg);
+            const auto share = RomEglHandle(c, 2, ctx);
+            return WithIntArray(c, context, c.arguments[3].ref, false, [&](std::uint32_t address) {
+                return EglValue::Int(static_cast<int>(
+                    NativeEgl(c, context, "eglCreateContext", std::array{display, config, share, address})));
+            });
+        },
+        kPrivateNative);
+    builder.DirectMethod(
+        "_eglCreatePbufferSurface",
+        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;[I)I",
+        [context](dx::IntrinsicContext& c) {
+            const auto display = RomEglHandle(c, 0, dpy);
+            const auto config = RomEglHandle(c, 1, cfg);
+            return WithIntArray(c, context, c.arguments[2].ref, false, [&](std::uint32_t address) {
+                return EglValue::Int(static_cast<int>(
+                    NativeEgl(c, context, "eglCreatePbufferSurface", std::array{display, config, address})));
+            });
+        },
+        kPrivateNative);
+    builder.DirectMethod(
+        "_eglCreateWindowSurface",
+        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljava/lang/Object;[I)I",
+        [context](dx::IntrinsicContext& c) {
+            const auto display = RomEglHandle(c, 0, dpy);
+            const auto config = RomEglHandle(c, 1, cfg);
+            const auto surface = ResolveRomSurfaceWindow(c.vm, context, c.arguments[2].ref);
+            if (!surface) {
+                LatchEglError(c, context, kBadNativeWindow);
+                return EglValue::Int(0);
+            }
+            context->session->Process().UpdateSurfaceWindow(*surface);
+            return WithIntArray(c, context, c.arguments[3].ref, false, [&](std::uint32_t address) {
+                return EglValue::Int(
+                    static_cast<int>(NativeEgl(c, context, "eglCreateWindowSurface",
+                                               std::array{display, config, surface->identity.Value(), address})));
+            });
+        },
+        kPrivateNative);
+
+    const auto query = [&](const char* name, const char* sig, const char* target) {
+        builder.VirtualMethod(
+            name, sig,
+            [context, name, target](dx::IntrinsicContext& c) {
+                const auto display = RomEglHandle(c, 0, dpy);
+                const auto resource = RomEglHandle(c, 1, target);
+                const auto output = c.arguments[3].ref;
+                if (!output.IsValid() || c.vm.Model().ArrayLength(output) < 1) {
+                    LatchEglError(c, context, kBadParameter);
+                    return Bool(false);
+                }
+                return WithIntArray(c, context, output, true, [&](std::uint32_t address) {
+                    return Bool(
+                        NativeEgl(c, context, name, std::array{display, resource, c.arguments[2].cat1, address}) != 0U);
+                });
+            },
+            kPublicNative);
+    };
+    query("eglGetConfigAttrib",
+          "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z", cfg);
+    query("eglQuerySurface",
+          "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;I[I)Z", surf);
+    query("eglQueryContext",
+          "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;I[I)Z", ctx);
+    builder.VirtualMethod(
+        "eglQueryString", "(Ljavax/microedition/khronos/egl/EGLDisplay;I)Ljava/lang/String;",
+        [context](dx::IntrinsicContext& c) {
+            const auto param = c.arguments[1].cat1;
+            if (NativeEgl(c, context, "eglQueryString", std::array{RomEglHandle(c, 0, dpy), param}) == 0U)
+                return EglValue::Ref(dx::VmObjectRef{});
+            return MakeString(c, context->session->ManagedEglString(param));
+        },
+        kPublicNative);
+    builder.VirtualMethod(
         "eglMakeCurrent",
         "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLContext;)Z",
-        EglMakeCurrentHandler(context));
-    builder.FinalMethod("eglQueryContext",
-                        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;I[I)Z",
-                        EglQueryContextHandler(context));
-    builder.FinalMethod("eglQueryString", "(Ljavax/microedition/khronos/egl/EGLDisplay;I)Ljava/lang/String;",
-                        EglQueryStringHandler(context));
-    builder.FinalMethod("eglQuerySurface",
-                        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;I[I)Z",
-                        EglQuerySurfaceHandler(context));
-    builder.FinalMethod("eglReleaseThread", "()Z", EglReleaseThreadHandler(context));
-    builder.FinalMethod("eglSwapBuffers",
-                        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z",
-                        EglSwapBuffersHandler(context));
-    builder.FinalMethod("eglTerminate", "(Ljavax/microedition/khronos/egl/EGLDisplay;)Z", EglTerminateHandler(context));
-    builder.FinalMethod(
-        "eglCopyBuffers",
-        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljava/lang/Object;)Z",
-        EglCopyBuffersHandler(context));
-    builder.FinalMethod(
-        "eglCreatePixmapSurface",
-        "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljava/lang/Object;[I)Ljavax/microedition/khronos/egl/EGLSurface;",
-        EglCreatePixmapHandler(context));
-    builder.FinalMethod("eglWaitGL", "()Z", EglWaitHandler(context, "eglWaitGL"));
-    builder.FinalMethod("eglWaitNative", "(ILjava/lang/Object;)Z", EglWaitHandler(context, "eglWaitNative"));
-    return std::move(builder).Build();
-}
-
-Decl Declare_javax_microedition_khronos_egl_EGLConfig(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Ljavax/microedition/khronos/egl/EGLConfig;", "Ljava/lang/Object;");
-    return std::move(builder).Build();
-}
-
-Decl Declare_javax_microedition_khronos_egl_EGLContext(const Context& context) {
-    auto builder =
-        dx::IntrinsicClassBuilder::Class("Ljavax/microedition/khronos/egl/EGLContext;", "Ljava/lang/Object;");
-    builder.StaticMethod("getEGL", "()Ljavax/microedition/khronos/egl/EGL;", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Ref(Singleton(call, context, "egl10_impl", "Ljavax/microedition/khronos/egl/EGL10$Impl;"));
-    });
-    const auto gl_field =
-        builder.BoundInstanceField("mGLContext", "Lcom/google/android/gles_jni/GLImpl;", dx::kAccPrivate);
-    builder.VirtualMethod(
-        "getGL", "()Ljavax/microedition/khronos/opengles/GL;", [gl_field](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall bound{call};
-            auto gl = bound.GetRef(gl_field);
-            if (!gl.IsValid()) {
-                auto& vm = call.vm;
-                const auto type = vm.Linker().ResolveDescriptor("Lcom/google/android/gles_jni/GLImpl;");
-                const auto require = [&](const dx::VmCallOutcome& result) {
-                    if (result.exception.IsValid())
-                        throw dx::VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor,
-                                              result.exception_message, result.exception};
-                };
-                require(vm.EnsureClassInitialized(type));
-                gl = vm.NewIntrinsicInstance("Lcom/google/android/gles_jni/GLImpl;");
-                const auto roots = vm.ProtectReferences(std::array{gl});
-                const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "()V");
-                if (!constructor.has_value()) ModelFailure(call, "GLImpl constructor is absent");
-                require(vm.Call(*constructor, std::array{dx::VmValue::Ref(gl)}));
-                bound.SetRef(gl_field, gl);
-            }
-            return dx::VmValue::Ref(gl);
-        });
-    // AOSP 4.4 ROM line 21.
-    builder.Constructor(
-        "()V",
-        [](dx::IntrinsicContext& c) {
-            const auto target =
-                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), "<init>", "()V");
-            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
-            if (result.exception.IsValid())
-                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                                      result.exception};
-            return result.value;
-        },
-        dx::kAccPublic);
-
-    return std::move(builder).Build();
-}
-
-Decl Declare_javax_microedition_khronos_egl_EGLDisplay(const Context& context) {
-    static_cast<void>(context);
-    auto builder =
-        dx::IntrinsicClassBuilder::Class("Ljavax/microedition/khronos/egl/EGLDisplay;", "Ljava/lang/Object;");
-    return std::move(builder).Build();
-}
-
-Decl Declare_javax_microedition_khronos_egl_EGLSurface(const Context& context) {
-    static_cast<void>(context);
-    auto builder =
-        dx::IntrinsicClassBuilder::Class("Ljavax/microedition/khronos/egl/EGLSurface;", "Ljava/lang/Object;");
+        RomEglForward(context, "eglMakeCurrent", {dpy, surf, surf, ctx}), kPublicNative);
+    builder.VirtualMethod("eglDestroyContext",
+                          "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)Z",
+                          RomEglForward(context, "eglDestroyContext", {dpy, ctx}), kPublicNative);
+    builder.VirtualMethod("eglDestroySurface",
+                          "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z",
+                          RomEglForward(context, "eglDestroySurface", {dpy, surf}), kPublicNative);
+    builder.VirtualMethod("eglSwapBuffers",
+                          "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z",
+                          RomEglForward(context, "eglSwapBuffers", {dpy, surf}, true), kPublicNative);
+    builder.VirtualMethod("eglTerminate", "(Ljavax/microedition/khronos/egl/EGLDisplay;)Z",
+                          RomEglForward(context, "eglTerminate", {dpy}), kPublicNative);
+    builder.VirtualMethod("eglGetError", "()I", RomEglForward(context, "eglGetError", {}), kPublicNative);
+    builder.VirtualMethod("eglReleaseThread", "()Z", RomEglForward(context, "eglReleaseThread", {}), kPublicNative);
+    builder.VirtualMethod("eglWaitGL", "()Z", RomEglForward(context, "eglWaitGL", {}), kPublicNative);
+    builder.VirtualMethod("eglWaitNative", "(ILjava/lang/Object;)Z", RomEglForward(context, "eglWaitNative", {nullptr}),
+                          kPublicNative);
     return std::move(builder).Build();
 }
 

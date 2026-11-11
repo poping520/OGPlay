@@ -1125,7 +1125,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             static_cast<void>(RequireMedia(context, call));
             try {
-                BindAndroidMediaSurface(*context, call.receiver.Value(), call.arguments[0].ref);
+                BindAndroidMediaSurface(call.vm, context, call.receiver.Value(), call.arguments[0].ref);
             } catch (const dx::VmJavaThrow& error) {
                 if (error.descriptor == "Ljava/lang/UnsupportedOperationException;")
                     if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.media.video_surface", 0);
@@ -1135,12 +1135,67 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         },
         kPrivNat);
     builder.DirectMethod(
-        "native_getMetadata", "(ZZLandroid/os/Parcel;)Z",
-        [](dx::IntrinsicContext& call) -> dx::VmValue { Unsupported(call, "MediaPlayer.native_getMetadata"); },
+        "native_getMetadata", "(ZZLandroid/os/Parcel;)Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); },
         kPrivNatFin);
     builder.DirectMethod(
         "native_invoke", "(Landroid/os/Parcel;Landroid/os/Parcel;)I",
-        [](dx::IntrinsicContext& call) -> dx::VmValue { Unsupported(call, "MediaPlayer.native_invoke"); }, kPrivNatFin);
+        [context](dx::IntrinsicContext& call) -> dx::VmValue {
+            using V = dx::VmValue;
+            auto& vm = call.vm;
+            const auto request = dx::IntrinsicCall(call).NonNullRef(0, "request");
+            const auto reply = dx::IntrinsicCall(call).NonNullRef(1, "reply");
+            const auto position = CallAndroidMethod(vm, request, "dataPosition", "()I");
+            const auto token = vm.NewStringUtf8("android.media.IMediaPlayer");
+            const auto root = vm.ProtectReferences(std::array{token});
+            const auto thread = vm.CurrentContextToken();
+            const auto policy = context->binder_threads[thread].strict_mode_policy;
+            const auto restore = [&] {
+                context->binder_threads[thread].strict_mode_policy = policy;
+                static_cast<void>(CallAndroidMethod(vm, request, "setDataPosition", "(I)V", {position}));
+            };
+            int operation{};
+            int scale{};
+            static_cast<void>(CallAndroidMethod(vm, request, "setDataPosition", "(I)V", {V::Int(0)}));
+            try {
+                static_cast<void>(
+                    CallAndroidMethod(vm, request, "enforceInterface", "(Ljava/lang/String;)V", {V::Ref(token)}));
+                operation = CallAndroidMethod(vm, request, "readInt", "()I").AsInt();
+                if (operation == 6) scale = CallAndroidMethod(vm, request, "readInt", "()I").AsInt();
+            } catch (...) {
+                restore();
+                throw;
+            }
+            restore();
+            const auto& media = RequireMedia(context, call);
+            if (operation == 6 && scale == 1) return V::Int(0);  // VIDEO_SCALING_MODE_SCALE_TO_FIT
+            if (operation != 1) Unsupported(call, "MediaPlayer.native_invoke");
+
+            bool has_video{}, has_audio{};
+            {
+                std::scoped_lock lock(context->video_views_mutex);
+                const auto* video = VideoStateOf(context, call.receiver.Value());
+                if (video) {
+                    has_video = true;
+                    has_audio = video->player->Metadata().HasAudio();
+                } else {
+                    has_audio = media.phase != DexVmAndroidContext::MediaPlayerState::Phase::idle;
+                }
+            }
+            const auto write = [&](int value) {
+                static_cast<void>(CallAndroidMethod(vm, reply, "writeInt", "(I)V", {V::Int(value)}));
+            };
+            write(static_cast<int>(has_video) + static_cast<int>(has_audio));
+            const auto track = [&](int type) {
+                write(1);
+                write(type);
+                static_cast<void>(CallAndroidMethod(vm, reply, "writeString", "(Ljava/lang/String;)V",
+                                                    {V::Ref(vm.NewStringUtf8("und"))}));
+            };
+            if (has_video) track(1);
+            if (has_audio) track(2);
+            return V::Int(0);
+        },
+        kPrivNatFin);
     builder.StaticMethod(
         "native_pullBatteryData", "(Landroid/os/Parcel;)I",
         [](dx::IntrinsicContext& call) -> dx::VmValue { Unsupported(call, "MediaPlayer.native_pullBatteryData"); },

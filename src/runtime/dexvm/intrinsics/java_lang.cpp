@@ -1897,6 +1897,17 @@ IntrinsicClassDecl Declare_java_lang_Character() {
     });
     builder.GuestNativeStatic("toLowerCaseImpl", "(I)I", kAccPrivate | kAccStatic | kAccNative);
     builder.GuestNativeStatic("toUpperCaseImpl", "(I)I", kAccPrivate | kAccStatic | kAccNative);
+    builder.GuestNativeStatic("getDirectionality", "(I)B", kAccPublic | kAccStatic | kAccNative);
+    builder.StaticMethod("getDirectionality", "(C)B", [](IntrinsicContext& c) {
+        const auto owner = c.vm.Linker().ResolveDescriptor("Ljava/lang/Character;");
+        const auto method = c.vm.Linker().FindDirectMethod(owner, "getDirectionality", "(I)B");
+        const auto outcome =
+            c.vm.Call(*method, std::array{VmValue::Int(static_cast<std::uint16_t>(c.arguments[0].AsInt()))});
+        if (outcome.exception.IsValid())
+            throw VmJavaThrow{c.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                              outcome.exception};
+        return outcome.value;
+    });
     const auto map_case = [](IntrinsicContext& c, bool upper, bool as_char) {
         const auto cp = as_char ? static_cast<std::uint16_t>(c.arguments[0].AsInt()) : c.arguments[0].AsInt();
         std::int32_t result = cp;

@@ -71,7 +71,6 @@ struct AndroidAppProcessRequest final {
     std::optional<std::thread::id> guest_call_slice_observer_thread;
     // Pinned API19 system time-zone archive, mounted read-only when supplied.
     std::vector<std::byte> tzdata;
-    std::vector<std::byte> ui_primary_font, ui_fallback_font;
 };
 
 class AndroidAppProcessError final : public std::runtime_error {
@@ -95,7 +94,6 @@ public:
 
     void StartApplication();
     // Transitional host adapter: execute guest work through the ROM main Handler.
-    void RunOnMainThread(const std::function<void()>& action);
     [[nodiscard]] LifecycleFrameState StartLauncherActivity();
     [[nodiscard]] LifecycleFrameState Stop(DexProcessStopReason reason = DexProcessStopReason::host_shutdown);
 

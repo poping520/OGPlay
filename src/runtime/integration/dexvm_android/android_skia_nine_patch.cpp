@@ -7,14 +7,6 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
-void ProjectNinePatchGeometry(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef patch,
-                              ui::UiBitmap& pixels) {
-    const auto& native = skia::Require(context.skia_objects->nine_patches, skia::IntField(vm, patch, "mNativeChunk"));
-    pixels.nine_patch = true;
-    pixels.stretch_x = native->x;
-    pixels.stretch_y = native->y;
-}
-
 void RetireAndroidNinePatch(dx::Interpreter& vm, DexVmAndroidContext& context, int bits, dx::VmObjectRef owner) {
     // ROM's copy constructor shares the native chunk. Retain it until the last
     // Java owner is swept, including owners that share a pending finalizer.

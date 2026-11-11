@@ -113,7 +113,7 @@ void VmExecutionLock::Release() {
     impl_->released.notify_all();
 }
 
-std::size_t VmExecutionLock::ReleaseForBlocking() {
+std::size_t VmExecutionLock::ReleaseForBlocking(bool notify_observer) {
     const auto self = std::this_thread::get_id();
     std::unique_lock lock(impl_->mutex);
     if (impl_->depth == 0 || impl_->owner != self) {
@@ -125,16 +125,16 @@ std::size_t VmExecutionLock::ReleaseForBlocking() {
     lock.unlock();
     impl_->released.notify_all();
     const auto observer = impl_->blocking_observer.load(std::memory_order_acquire);
-    if (observer != nullptr) {
+    if (observer != nullptr && notify_observer) {
         observer(impl_->blocking_observer_context.load(std::memory_order_relaxed), self, true);
     }
     return held;
 }
 
-void VmExecutionLock::ReacquireAfterBlocking(const std::size_t depth) {
+void VmExecutionLock::ReacquireAfterBlocking(const std::size_t depth, bool notify_observer) {
     if (depth == 0) return;
     const auto observer = impl_->blocking_observer.load(std::memory_order_acquire);
-    if (observer != nullptr) {
+    if (observer != nullptr && notify_observer) {
         observer(impl_->blocking_observer_context.load(std::memory_order_relaxed), std::this_thread::get_id(), false);
     }
     // The thread is no longer blocked once it starts competing for the VM
@@ -309,6 +309,10 @@ bool Interpreter::HasExecutionDeadline(const std::uint64_t context) const {
     return ExecutionDeadlineNs(context) != 0;
 }
 
+void Interpreter::SetDefaultExecutionDeadline(const std::uint64_t deadline_ns) noexcept {
+    impl_->default_execution->deadline_ns.store(deadline_ns, std::memory_order_relaxed);
+}
+
 void Interpreter::CheckExecutionDeadline(const std::uint64_t context) const {
     if (ExecutionDeadlineExpired(context))
         throw DexVmError(DexVmErrorReason::budget_exhausted, "lifecycle execution wall-time budget exhausted");
@@ -460,22 +464,24 @@ void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
     for (const auto& [_, roots] : impl_->external_roots)
         for (const auto root : roots)
             visitor(root);
-    const std::lock_guard contexts_lock(impl_->executions_mutex);
-    for (const auto& [_, execution] : impl_->executions) {
-        for (const auto& frame : execution->frames) {
-            for (const auto& slot : frame.regs) {
-                if (slot.tag == SlotTag::ref) visitor(VmObjectRef(slot.bits));
+    {
+        const std::lock_guard contexts_lock(impl_->executions_mutex);
+        for (const auto& [_, execution] : impl_->executions) {
+            for (const auto& frame : execution->frames) {
+                for (const auto& slot : frame.regs) {
+                    if (slot.tag == SlotTag::ref) visitor(VmObjectRef(slot.bits));
+                }
+                if (frame.last_result.kind == VmValue::Kind::ref) {
+                    visitor(frame.last_result.ref);
+                }
+                visitor(frame.caught);
             }
-            if (frame.last_result.kind == VmValue::Kind::ref) {
-                visitor(frame.last_result.ref);
+            for (const auto root : execution->intrinsic_roots)
+                visitor(root);
+            visitor(execution->pending_exception);
+            if (execution->exit_result.kind == VmValue::Kind::ref) {
+                visitor(execution->exit_result.ref);
             }
-            visitor(frame.caught);
-        }
-        for (const auto root : execution->intrinsic_roots)
-            visitor(root);
-        visitor(execution->pending_exception);
-        if (execution->exit_result.kind == VmValue::Kind::ref) {
-            visitor(execution->exit_result.ref);
         }
     }
     for (const auto class_id : impl_->linker->AllClasses()) {

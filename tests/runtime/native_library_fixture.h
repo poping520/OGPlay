@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <future>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -103,6 +105,15 @@ struct RomValueProcess final {
 };
 
 struct OrchestratedApp final {
+    struct Viewport {
+        std::uint32_t width, height;
+    };
+
+    struct MainAction {
+        std::function<void()> run;
+        std::promise<void> done;
+    };
+
     std::vector<std::byte> libc{LibcElf()};
     std::vector<std::byte> native_a{AppElf({"liba.so", "libc.so", ogplay::runtime::kJniVersion1_6})};
     ogplay::runtime::VirtualFileSystem filesystem;
@@ -110,6 +121,7 @@ struct OrchestratedApp final {
         std::make_shared<ogplay::runtime::DexVmAndroidContext>()};
     ogplay::core::CapabilityLedger ledger;
     ogplay::core::Logger logger;
+    std::map<std::uint32_t, std::shared_ptr<MainAction>> main_actions;
     std::unique_ptr<ogplay::session::AndroidAppProcess> app;
 
     explicit OrchestratedApp(const std::string& activity, const bool has_launcher = true, const bool with_native = true,
@@ -119,10 +131,10 @@ struct OrchestratedApp final {
                              const ogplay::runtime::dexvm::InterpreterBackend interpreter_backend =
                                  ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
                              const std::string& application_class = "android.app.Application",
-                             std::function<void()> pump_host_events = {},
-                             ogplay::runtime::ui::UiMetrics viewport = {64, 36},
+                             std::function<void()> pump_host_events = {}, Viewport viewport = {64, 36},
                              std::vector<std::string> gl_textures = {}, bool large_heap = false);
 
+    void RunOnMainThread(const std::function<void()>& action);
     ogplay::runtime::dexvm::VmCallOutcome CallGuest(ogplay::runtime::dexvm::VmMethodId method,
                                                     std::span<const ogplay::runtime::dexvm::VmValue> arguments);
     ogplay::runtime::dexvm::VmValue CallGuest(ogplay::runtime::dexvm::VmObjectRef receiver, const char* name,

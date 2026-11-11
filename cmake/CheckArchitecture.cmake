@@ -37,9 +37,7 @@ foreach(_module IN LISTS _platform_modules)
     endif()
 endforeach()
 
-# Runtime behavior must remain title-neutral, and UiTree must stay the sole UI
-# geometry source after Layout UI convergence. Include public runtime headers because session
-# state used to carry the retired LayoutViewFact side table there.
+# Runtime behavior and public runtime headers must remain title-neutral.
 file(GLOB_RECURSE _runtime_policy_files LIST_DIRECTORIES FALSE
     "${ROOT}/src/*.c" "${ROOT}/src/*.cc" "${ROOT}/src/*.cpp"
     "${ROOT}/src/*.h" "${ROOT}/src/*.hpp"

@@ -1,4 +1,5 @@
 #include "rom_window.h"
+#include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "rom_input.h"
 #include "rom_activity.h"
 
@@ -115,11 +116,18 @@ WindowAttributes ReadWindowAttributes(dx::Interpreter& vm, const Context& contex
 }
 
 void AddWindowManagerMethods(dx::IntrinsicClassBuilder& builder, const Context& context) {
-    if (!context->rom_window_services_enabled) return;
     builder.VirtualMethod(
         "openSession",
         "(Lcom/android/internal/view/IInputMethodClient;Lcom/android/internal/view/IInputContext;)Landroid/view/IWindowSession;",
         [context](dx::IntrinsicContext& c) {
+            const auto input_method =
+                GetLocalServiceInterface(c.vm, "input_method", "Lcom/android/internal/view/IInputMethodManager$Stub;",
+                                         "Lcom/android/internal/view/IInputMethodManager;");
+            static_cast<void>(CallAndroidMethod(
+                c.vm, input_method, "addClient",
+                "(Lcom/android/internal/view/IInputMethodClient;Lcom/android/internal/view/IInputContext;II)V",
+                {c.arguments[0], c.arguments[1], V::Int(static_cast<int>(context->application_uid)),
+                 V::Int(kGuestProcessId)}));
             auto& state = RomWindows(context);
             if (!state.session.IsValid())
                 state.session = NewPlatformObject(c.vm, "Lorg/ogplay/framework/LocalWindowSession;", "()V", {});
@@ -163,8 +171,15 @@ void AddWindowManagerMethods(dx::IntrinsicClassBuilder& builder, const Context& 
     RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "exitKeyguardSecurely",
                                    "(Landroid/view/IOnKeyguardExitResult;)V");
     RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "freezeRotation", "(I)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "getAnimationScale", "(I)F");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "getAnimationScales", "()[F");
+    // Window transitions are disabled. App ValueAnimator duration keeps its default scale.
+    builder.VirtualMethod("getAnimationScale", "(I)F",
+                          [](dx::IntrinsicContext& c) { return V::Float(c.arguments[0].AsInt() == 2 ? 1.0F : 0.0F); });
+    builder.VirtualMethod("getAnimationScales", "()[F", [](dx::IntrinsicContext& c) {
+        const auto scales =
+            c.vm.Model().NewPrimitiveArray(c.vm.Linker().ResolveDescriptor("[F"), JniPrimitiveKind::float_value, 3);
+        c.vm.Model().SetPrimitiveElement(scales, 2, std::bit_cast<std::uint32_t>(1.0F));
+        return V::Ref(scales);
+    });
     RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "getAppOrientation",
                                    "(Landroid/view/IApplicationToken;)I");
     RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "getCompatibleMagnificationSpecForWindow",
@@ -246,6 +261,38 @@ void AddWindowManagerMethods(dx::IntrinsicClassBuilder& builder, const Context& 
                                    "(Landroid/os/IBinder;Landroid/os/IRemoteCallback;)Z");
 }
 
+Decl Declare_local_AccessibilityService(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalAccessibilityService;",
+                                                    "Landroid/view/accessibility/IAccessibilityManager$Stub;");
+    builder.VirtualMethod("addClient", "(Landroid/view/accessibility/IAccessibilityManagerClient;I)I",
+                          [](dx::IntrinsicContext&) { return V::Int(0); });
+    const auto empty_list = [](dx::IntrinsicContext& c) {
+        return V::Ref(NewPlatformObject(c.vm, "Ljava/util/ArrayList;", "()V", {}));
+    };
+    builder.VirtualMethod("getInstalledAccessibilityServiceList", "(I)Ljava/util/List;", empty_list);
+    builder.VirtualMethod("getEnabledAccessibilityServiceList", "(II)Ljava/util/List;", empty_list);
+    return std::move(builder).Build();
+}
+
+Decl Declare_local_TextServices() {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalTextServices;",
+                                                    "Lcom/android/internal/textservice/ITextServicesManager$Stub;");
+    builder.VirtualMethod("isSpellCheckerEnabled", "()Z", [](dx::IntrinsicContext&) { return V::Int(0); });
+    const auto absent = [](dx::IntrinsicContext&) { return V::Ref(dx::VmObjectRef{}); };
+    builder.VirtualMethod("getCurrentSpellChecker", "(Ljava/lang/String;)Landroid/view/textservice/SpellCheckerInfo;",
+                          absent);
+    builder.VirtualMethod("getCurrentSpellCheckerSubtype",
+                          "(Ljava/lang/String;Z)Landroid/view/textservice/SpellCheckerSubtype;", absent);
+    builder.VirtualMethod("getEnabledSpellCheckers", "()[Landroid/view/textservice/SpellCheckerInfo;",
+                          [](dx::IntrinsicContext& call) {
+                              auto& linker = call.vm.Linker();
+                              return V::Ref(call.vm.Model().NewObjectArray(
+                                  linker.ResolveDescriptor("[Landroid/view/textservice/SpellCheckerInfo;"),
+                                  linker.ResolveDescriptor("Landroid/view/textservice/SpellCheckerInfo;"), 0));
+                          });
+    return std::move(builder).Build();
+}
+
 Decl Declare_local_WindowSession(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalWindowSession;",
                                               "Landroid/view/IWindowSession$Stub;");
@@ -271,7 +318,9 @@ Decl Declare_local_WindowSession(const Context& context) {
                                 const auto attrs = c.arguments[2].ref;
                                 const auto before = state.system.Focus();
                                 const auto attributes = ReadWindowAttributes(c.vm, context, attrs);
-                                const auto id = state.system.Add(attributes, c.arguments[3].AsInt() == 0, channel);
+                                // ViewRootImpl clears AttachInfo focus on its first traversal. The first
+                                // relayout delivers focus after that traversal has attached the view.
+                                const auto id = state.system.Add(attributes, false, channel);
                                 state.clients.emplace(
                                     binder.Value(), RomWindowState::Client{id, binder, attrs, 0, 0, false, attributes});
                                 if (channel)
@@ -287,6 +336,11 @@ Decl Declare_local_WindowSession(const Context& context) {
                         const auto client = Client(s, c.arguments[0].ref);
                         const auto focus = s.system.Focus();
                         QueueRomWindowInput(c.vm, context, s.system.CancelWindowTouch(client.window));
+                        if (context->session)
+                            for (const auto& [_, child] : s.clients)
+                                if (child.window == client.window || child.attributes.parent == client.window)
+                                    context->session->Process().RetireSurfaceWindow(
+                                        memory::GuestAddress{child.window.value});
                         s.system.Remove(client.window);
                         for (auto& [_, surface] : s.surfaces)
                             if (surface.window.value && !s.system.Exists(surface.window)) surface.valid = false;
@@ -312,36 +366,49 @@ Decl Declare_local_WindowSession(const Context& context) {
             const auto attrs = c.arguments[2].ref.IsValid() ? c.arguments[2].ref : client.attrs;
             const auto attributes =
                 c.arguments[2].ref.IsValid() ? ReadWindowAttributes(c.vm, context, attrs) : client.attributes;
-            if (c.arguments[5].AsInt() != 0 || (attributes.flags & 0x10))
+            const bool visible = c.arguments[5].AsInt() == 0;
+            if (!visible || (attributes.flags & 0x10))
                 QueueRomWindowInput(c.vm, context, s.system.CancelWindowTouch(client.window));
-            const auto frame = s.system.Relayout(client.window, attributes, c.arguments[3].AsInt(),
-                                                 c.arguments[4].AsInt(), c.arguments[5].AsInt() == 0);
+            const memory::GuestAddress identity{client.window.value};
+            const bool retired = !visible && client.surface != 0;
+            if (retired) {
+                if (context->session) context->session->Process().RetireSurfaceWindow(identity);
+                s.surfaces.at(client.surface).valid = false;
+                ReleaseRomSurfaceReference(context, std::exchange(client.surface, 0));
+            }
+            const auto frame =
+                s.system.Relayout(client.window, attributes, c.arguments[3].AsInt(), c.arguments[4].AsInt(), visible);
             client.attrs = attrs;
             client.attributes = attributes;
             WriteWindowRect(c.vm, c.arguments[7].ref, frame);
             for (std::size_t i = 8; i <= 10; ++i)
                 WriteWindowRect(c.vm, c.arguments[i].ref, {});
-            const bool first = client.surface == 0;
+            const bool first = visible && client.surface == 0;
             if (first) {
                 client.surface = s.next_handle++;
                 s.surfaces.emplace(client.surface, RomWindowState::Surface{client.window});
             }
-            s.surfaces.at(client.surface).format = attributes.format;
-            s.surfaces.at(client.surface).buffer_width =
-                c.arguments[3].AsInt() > 0 ? c.arguments[3].AsInt() : frame.Width();
-            s.surfaces.at(client.surface).buffer_height =
-                c.arguments[4].AsInt() > 0 ? c.arguments[4].AsInt() : frame.Height();
+            if (client.surface) {
+                auto& surface = s.surfaces.at(client.surface);
+                surface.format = attributes.format;
+                surface.buffer_width = c.arguments[3].AsInt() > 0 ? c.arguments[3].AsInt() : frame.Width();
+                surface.buffer_height = c.arguments[4].AsInt() > 0 ? c.arguments[4].AsInt() : frame.Height();
+                if (context->session && surface.buffer_width > 0 && surface.buffer_height > 0)
+                    context->session->Process().UpdateSurfaceWindow({identity,
+                                                                     static_cast<unsigned>(surface.buffer_width),
+                                                                     static_cast<unsigned>(surface.buffer_height)});
+            }
             // In-process out parameters need no Parcel. The ROM Surface owns a native ref.
             auto& native = WindowField(c.vm, c.arguments[12].ref, "mNativeObject", "I");
             if (native.bits != static_cast<std::uint32_t>(client.surface)) {
                 if (native.bits) ReleaseRomSurfaceReference(context, static_cast<int>(native.bits));
-                ++s.surfaces.at(client.surface).refs;
+                if (client.surface) ++s.surfaces.at(client.surface).refs;
                 native = {static_cast<std::uint32_t>(client.surface), dx::SlotTag::cat1};
                 auto& generation = WindowField(c.vm, c.arguments[12].ref, "mGenerationId", "I");
                 ++generation.bits;
             }
             FocusChanged(c.vm, context, s, focus);
-            return V::Int((first ? 2 | 4 : 0) | (s.system.InTouchMode() ? 1 : 0));
+            return V::Int((first ? 2 | 4 : retired ? 4 : 0) | (s.system.InTouchMode() ? 1 : 0));
         }));
     b.VirtualMethod("finishDrawing", "(Landroid/view/IWindow;)V", [context](dx::IntrinsicContext& c) {
         Client(RomWindows(context), c.arguments[0].ref).drawn = true;
@@ -392,11 +459,13 @@ Decl Declare_local_WindowSession(const Context& context) {
                                    "(Landroid/view/IWindow;)V");
     RejectUnsupportedServiceMethod(b, "android.view.IWindowSession", "getWindowId",
                                    "(Landroid/os/IBinder;)Landroid/view/IWindowId;");
-    RejectUnsupportedServiceMethod(b, "android.view.IWindowSession", "onRectangleOnScreenRequested",
-                                   "(Landroid/os/IBinder;Landroid/graphics/Rect;Z)V");
+    b.VirtualMethod("onRectangleOnScreenRequested", "(Landroid/os/IBinder;Landroid/graphics/Rect;Z)V",
+                    [](dx::IntrinsicContext&) { return V::Void(); });
     RejectUnsupportedServiceMethod(b, "android.view.IWindowSession", "outOfMemory", "(Landroid/view/IWindow;)Z");
-    RejectUnsupportedServiceMethod(b, "android.view.IWindowSession", "performDeferredDestroy",
-                                   "(Landroid/view/IWindow;)V");
+    b.VirtualMethod("performDeferredDestroy", "(Landroid/view/IWindow;)V", [context](dx::IntrinsicContext& c) {
+        Client(RomWindows(context), c.arguments[0].ref);
+        return V::Void();
+    });
     RejectUnsupportedServiceMethod(b, "android.view.IWindowSession", "performDrag",
                                    "(Landroid/view/IWindow;Landroid/os/IBinder;FFFFLandroid/content/ClipData;)Z");
     RejectUnsupportedServiceMethod(b, "android.view.IWindowSession", "prepareDrag",

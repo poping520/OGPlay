@@ -40,7 +40,11 @@ enum class InputEventType : std::uint8_t {
     pinch_begin,
     pinch_update,
     pinch_end,
+    text_input,
+    text_editing,
 };
+
+enum class WindowOrientation { automatic, portrait, landscape };
 
 enum class PointerButton : std::int32_t {
     unknown = -1,
@@ -135,6 +139,7 @@ struct InputEvent {
     std::uint32_t key_modifiers{};
     std::uint64_t touch_device_id{}, contact_id{};
     float pressure{};
+    std::string text{};
     float scale{1.0F};  // pinch_update only
 };
 
@@ -173,6 +178,8 @@ public:
     // Relative pointer mode: hides and confines the cursor so pointer_motion reports only deltas.
     // The host releases it while the window is unfocused. False when the host cannot provide it.
     [[nodiscard]] virtual bool SetRelativePointer(bool enabled) = 0;
+    [[nodiscard]] virtual bool SetTextInput(bool enabled) = 0;
+    [[nodiscard]] virtual bool SetOrientation(WindowOrientation orientation) = 0;
     virtual void PumpEvents() = 0;
     [[nodiscard]] virtual std::vector<InputEvent> PollEvents() = 0;
     virtual void PresentRgba8(std::span<const std::uint8_t> pixels, std::uint32_t width, std::uint32_t height) = 0;

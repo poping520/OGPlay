@@ -1,3 +1,4 @@
+#include "runtime/integration/dexvm_android/rom_window.h"
 #include "runtime/integration/dexvm_android/shared.h"
 #include "dexvm/resource_fixture.h"
 #include "boot_dex.h"
@@ -111,7 +112,35 @@ runtime::dexvm::VmObjectRef MakeRomAppContext(runtime::dexvm::Interpreter& vm,
 void AttachViewTestContext(runtime::dexvm::Interpreter& vm, runtime::dexvm::VmObjectRef owner,
                            const std::shared_ptr<runtime::DexVmAndroidContext>& state) {
     using namespace runtime::dexvm;
+    using namespace runtime::android_intrinsics;
     const auto roots = vm.ProtectReferences(std::array{owner});
+    const auto activity = vm.Linker().ResolveDescriptor("Landroid/app/Activity;");
+    if (owner.IsValid() && vm.Linker().IsAssignable(activity, vm.Model().ObjectClass(owner))) {
+        auto& base_field = WindowField(vm, owner, "mBase", "Landroid/content/Context;");
+        if (!base_field.bits) {
+            const auto base = MakeRomAppContext(vm, state);
+            static_cast<void>(CallAndroidMethod(vm, owner, "attachBaseContext", "(Landroid/content/Context;)V",
+                                                {VmValue::Ref(base)}));
+        }
+        if (!WindowField(vm, owner, "mWindow", "Landroid/view/Window;").bits) {
+            const auto base = VmObjectRef{WindowField(vm, owner, "mBase", "Landroid/content/Context;").bits};
+            const auto window = NewPlatformObject(vm, "Lcom/android/internal/policy/impl/PhoneWindow;",
+                                                  "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+            const auto window_root = vm.ProtectReferences(std::array{window});
+            const auto manager =
+                CallAndroidMethod(vm, base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                                  {VmValue::Ref(vm.NewStringUtf8("window"))})
+                    .ref;
+            const auto manager_root = vm.ProtectReferences(std::array{manager});
+            static_cast<void>(CallAndroidMethod(
+                vm, window, "setWindowManager", "(Landroid/view/WindowManager;Landroid/os/IBinder;Ljava/lang/String;)V",
+                {VmValue::Ref(manager), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})}));
+            const auto local = CallAndroidMethod(vm, window, "getWindowManager", "()Landroid/view/WindowManager;").ref;
+            WindowField(vm, owner, "mWindow", "Landroid/view/Window;") = {window.Value(), SlotTag::ref};
+            WindowField(vm, owner, "mWindowManager", "Landroid/view/WindowManager;") = {local.Value(), SlotTag::ref};
+        }
+        return;
+    }
     const auto wrapper = vm.Linker().ResolveDescriptor("Landroid/content/ContextWrapper;");
     for (unsigned depth = 0; owner.IsValid() && depth < 16; ++depth) {
         const auto type = vm.Model().ObjectClass(owner);

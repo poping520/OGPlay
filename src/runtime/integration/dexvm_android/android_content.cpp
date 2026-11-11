@@ -238,24 +238,6 @@ ResolveAndroidActivity(dx::IntrinsicContext& call, const Context& context, const
         if (target != nullptr) {
             launch_mode = target->launch_mode;
             package_affinity = !target->task_affinity || *target->task_affinity == context->package_name;
-            const auto source = std::find_if(context->activity_stack.begin(), context->activity_stack.end(),
-                                             [&](const auto& record) { return record.object == call.receiver; });
-            auto descriptor = "L" + activity_class + ";";
-            std::replace(descriptor.begin(), descriptor.end(), '.', '/');
-            const bool same_top =
-                context->activity.IsValid() &&
-                call.vm.Linker().Class(call.vm.Model().ObjectClass(context->activity)).descriptor == descriptor;
-            const bool source_isolated = source != context->activity_stack.end() && source->launch_mode == 3;
-            // Affinity is irrelevant to ordinary same-task starts and to
-            // singleInstance's component-based identity. Reject only a request
-            // which actually needs an unsupported affinity match.
-            if ((!package_affinity && (launch_mode == 2 || (source_isolated && launch_mode != 3))) ||
-                (request_code >= 0 && (launch_mode > 1 || (launch_mode == 1 && same_top) ||
-                                       (source != context->activity_stack.end() && source->launch_mode == 3)))) {
-                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "Activity custom affinity or cross-task results are unsupported"};
-            }
         }
     }
     std::replace(activity_class.begin(), activity_class.end(), '.', '/');
@@ -269,30 +251,8 @@ ResolveAndroidActivity(dx::IntrinsicContext& call, const Context& context, const
     if (copied.exception.IsValid())
         throw dx::VmJavaThrow{call.vm.Linker().Class(copied.exception_class).descriptor, copied.exception_message,
                               copied.exception};
-    const auto owner =
-        std::ranges::any_of(context->activity_stack, [&](const auto& record) { return record.object == call.receiver; })
-            ? call.receiver
-            : context->activity;
-    return DexVmAndroidContext::ActivityCommand{DexVmAndroidContext::ActivityCommand::Kind::launch,
-                                                owner,
-                                                copy,
-                                                "L" + activity_class + ";",
-                                                component_name,
-                                                request_code,
-                                                0,
-                                                launch_mode,
-                                                package_affinity};
-}
-
-dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& context, const std::int32_t request_code) {
-    const auto command = ResolveAndroidActivity(call, context, request_code);
-    if (!command) return dx::VmValue::Void();
-    context->activity_commands.push_back(*command);
-    context->pending_activity_descriptor = command->descriptor;
-    context->pending_activity_component_name = command->component;
-    context->activity_switch_pending = true;
-    context->current_intent = command->intent;
-    return dx::VmValue::Void();
+    return DexVmAndroidContext::ActivityCommand{
+        call.receiver, copy, "L" + activity_class + ";", component_name, request_code, launch_mode, package_affinity};
 }
 
 // android.content.SharedPreferences, $Editor and
@@ -1081,7 +1041,7 @@ void SetComponentMetaData(dx::IntrinsicContext& call, const Context& context, co
     const auto roots = call.vm.ProtectReferences(std::array{info});
     SetInt(call, info, "theme", static_cast<std::int32_t>(component.theme.value_or(0U)));
     SetInt(call, info, "launchMode", static_cast<std::int32_t>(component.launch_mode));
-    if (context->rom_window_services_enabled) SetInt(call, info, "screenOrientation", component.screen_orientation);
+    SetInt(call, info, "screenOrientation", component.screen_orientation);
     const auto affinity = component.task_affinity.value_or(context->package_name);
     SetRef(call, info, "taskAffinity", "Ljava/lang/String;",
            affinity.empty() ? dx::VmObjectRef{} : String(call, affinity));
@@ -1608,10 +1568,9 @@ void PublishRomServiceConnection(dx::Interpreter& vm, const RomService& service,
                                         {dx::VmValue::Ref(service.component), dx::VmValue::Ref(service.binder)}));
 }
 
-void RequireRomServiceRequest(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef type,
-                              std::int32_t user) {
-    if (user != 0 || type.IsValid() || context->local_services_stopping)
-        UnsupportedLocalService(call.vm, "service request requires current user, no resolved type and a live process");
+void RequireRomServiceRequest(dx::IntrinsicContext& call, dx::VmObjectRef type, std::int32_t user) {
+    if (user != 0 || type.IsValid())
+        UnsupportedLocalService(call.vm, "service request requires current user and no resolved type");
 }
 }  // namespace
 
@@ -1847,10 +1806,11 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
         "startService",
         "(Landroid/app/IApplicationThread;Landroid/content/Intent;Ljava/lang/String;I)Landroid/content/ComponentName;",
         [context](dx::IntrinsicContext& call) {
-            RequireRomServiceRequest(call, context, call.arguments[2].ref, call.arguments[3].AsInt());
+            RequireRomServiceRequest(call, call.arguments[2].ref, call.arguments[3].AsInt());
             const auto intent = dx::IntrinsicCall(call).NonNullRef(1, "service");
             const auto target = ResolveExplicitService(call.vm, context, intent);
-            if (!context->application_enabled || !target.declaration || !target.declaration->enabled)
+            if (context->local_services_stopping || !context->application_enabled || !target.declaration ||
+                !target.declaration->enabled)
                 return dx::VmValue::Ref(dx::VmObjectRef{});
             if (!target.hostable) {
                 RecordSecondaryProcessService(call.vm, "startService", *target.declaration);
@@ -1874,7 +1834,7 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
     builder.VirtualMethod(
         "stopService", "(Landroid/app/IApplicationThread;Landroid/content/Intent;Ljava/lang/String;I)I",
         [context](dx::IntrinsicContext& call) {
-            RequireRomServiceRequest(call, context, call.arguments[2].ref, call.arguments[3].AsInt());
+            RequireRomServiceRequest(call, call.arguments[2].ref, call.arguments[3].AsInt());
             const auto target =
                 ResolveExplicitService(call.vm, context, dx::IntrinsicCall(call).NonNullRef(1, "service"));
             if (!target.declaration) return dx::VmValue::Int(0);
@@ -1902,7 +1862,7 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
         "(Landroid/app/IApplicationThread;Landroid/os/IBinder;Landroid/content/Intent;Ljava/lang/String;"
         "Landroid/app/IServiceConnection;II)I",
         [context](dx::IntrinsicContext& call) {
-            RequireRomServiceRequest(call, context, call.arguments[3].ref, call.arguments[6].AsInt());
+            RequireRomServiceRequest(call, call.arguments[3].ref, call.arguments[6].AsInt());
             auto& vm = call.vm;
             const auto intent = dx::IntrinsicCall(call).NonNullRef(2, "service");
             const auto component =
@@ -1912,7 +1872,8 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
                 return dx::VmValue::Int(0);
             }
             const auto target = ResolveExplicitService(vm, context, intent);
-            if (!context->application_enabled || !target.declaration || !target.declaration->enabled)
+            if (context->local_services_stopping || !context->application_enabled || !target.declaration ||
+                !target.declaration->enabled)
                 return dx::VmValue::Int(0);
             if (!target.hostable) {
                 RecordSecondaryProcessService(vm, "bindService", *target.declaration);
@@ -2012,9 +1973,6 @@ void ShutdownLocalServices(dexvm::Interpreter& vm, DexVmAndroidContext& context)
     }
     context.local_broadcast_filters.clear();
     context.local_sticky_broadcasts.clear();
-    if (!failure) {
-        if (const auto error = PumpJavaThreads(vm, context); error.has_value()) throw std::runtime_error(*error);
-    }
     if (failure) std::rethrow_exception(failure);
 }
 }  // namespace ogplay::runtime

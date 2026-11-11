@@ -22,7 +22,6 @@ std::unique_ptr<AndroidTestRuntime> ContainerVm::Create(InterpreterBackend backe
     context->activity_components = std::move(manifest.activity_components);
     context->surface_width = 800;
     context->surface_height = 480;
-    context->ui_java_owner_thread = std::this_thread::get_id();
     auto dex = ReadDexFixture("view_measure.dex");
     if (sealed_apk) {
         const auto bytes = std::as_bytes(std::span{dex});
@@ -130,7 +129,6 @@ AndroidTestRuntime::AndroidTestRuntime(const std::shared_ptr<DexVmAndroidContext
     context->session = session.get();
     context->native_libraries = libraries.get();
     context->vfs = &fs;
-    context->ui_test_accessibility_disabled = true;
     auto boot_dex = ogplay::test::ReadBootDex();
     bridge = std::make_unique<DexVmGuestBridge>(*session, std::move(dex), catalog, context, ledger, &logger,
                                                 DexVmBridgeConfig{.interpreter = config}, std::move(boot_dex));

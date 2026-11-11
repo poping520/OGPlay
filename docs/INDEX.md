@@ -26,7 +26,7 @@
 - [方案：Profile 驱动的启动作用域裁剪](design/entry-scope/README.md)
 - [OGPlay 主界面 + 设置页 设计（GUI v2）](design/gui/README.md)
 - [Launcher · 主面板（游戏启动器）方案设计](design/launcher/README.md)
-- [Layout UI · 有界 Android XML UI 方案设计](design/layout-ui/README.md)
+- [Layout UI · 有界 Android XML UI 历史方案](design/layout-ui/README.md)
 - [Sandbox · 每游戏持久沙盒方案设计](design/sandbox/README.md)
 - [VFS · 资源读取、寿命与安装实例沙盒规划](design/vfs/README.md)
 

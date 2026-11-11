@@ -1969,8 +1969,9 @@ public:
 
     void UnregisterNativeActivity(memory::GuestAddress activity) { boundary_.UnregisterNativeActivity(activity); }
 
-    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active) {
-        return boundary_.SetNativeActivityWindow(activity, active);
+    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active,
+                                                 std::optional<AndroidSurfaceWindow> surface) {
+        return boundary_.SetNativeActivityWindow(activity, active, surface);
     }
 
     void SetNativeActivityInput(memory::GuestAddress activity, bool active) {
@@ -1993,6 +1994,10 @@ public:
     std::optional<AndroidBoundaryFrame> TakeLatestFrame() { return boundary_.TakeLatestFrame(); }
 
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) { boundary_.PublishSoftwareFrame(std::move(rgba8)); }
+
+    void PublishSharedFrame(std::shared_ptr<const video::VideoFrame> pixels) {
+        boundary_.PublishSharedFrame(std::move(pixels));
+    }
 
     void PublishBlankFrame(std::uint8_t alpha) { boundary_.PublishBlankFrame(alpha); }
 
@@ -2732,6 +2737,10 @@ void AndroidGuestProcess::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) 
     impl_->PublishSoftwareFrame(std::move(rgba8));
 }
 
+void AndroidGuestProcess::PublishSharedFrame(std::shared_ptr<const video::VideoFrame> pixels) {
+    impl_->PublishSharedFrame(std::move(pixels));
+}
+
 void AndroidGuestProcess::PublishBlankFrame(std::uint8_t alpha) {
     impl_->PublishBlankFrame(alpha);
 }
@@ -3123,6 +3132,10 @@ void AndroidGuestCallSession::PublishSoftwareFrame(std::vector<std::uint8_t> rgb
     process_->PublishSoftwareFrame(std::move(rgba8));
 }
 
+void AndroidGuestCallSession::PublishSharedFrame(std::shared_ptr<const video::VideoFrame> pixels) {
+    process_->PublishSharedFrame(std::move(pixels));
+}
+
 void AndroidGuestCallSession::PublishBlankFrame(std::uint8_t alpha) {
     process_->PublishBlankFrame(alpha);
 }
@@ -3218,8 +3231,9 @@ void AndroidGuestProcess::UnregisterNativeActivity(memory::GuestAddress activity
     impl_->UnregisterNativeActivity(activity);
 }
 
-memory::GuestAddress AndroidGuestProcess::SetNativeActivityWindow(memory::GuestAddress activity, bool active) {
-    return impl_->SetNativeActivityWindow(activity, active);
+memory::GuestAddress AndroidGuestProcess::SetNativeActivityWindow(memory::GuestAddress activity, bool active,
+                                                                  std::optional<AndroidSurfaceWindow> surface) {
+    return impl_->SetNativeActivityWindow(activity, active, surface);
 }
 
 void AndroidGuestProcess::SetNativeActivityInput(memory::GuestAddress activity, bool active) {

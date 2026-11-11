@@ -32,7 +32,6 @@ IntrinsicClassDecl ThreadProbe(const std::shared_ptr<Trace>& trace) {
             std::pair{"scheduleStopActivity", "(Landroid/os/IBinder;ZI)V"},
             std::pair{"scheduleResumeActivity", "(Landroid/os/IBinder;IZ)V"},
             std::pair{"scheduleDestroyActivity", "(Landroid/os/IBinder;ZI)V"},
-            std::pair{"scheduleWindowVisibility", "(Landroid/os/IBinder;Z)V"},
             std::pair{"scheduleNewIntent", "(Ljava/util/List;Landroid/os/IBinder;)V"},
             std::pair{"scheduleSendResult", "(Landroid/os/IBinder;Ljava/util/List;)V"}})
         b.VirtualMethod(name, sig, [trace, name](IntrinsicContext& c) {
@@ -45,8 +44,7 @@ IntrinsicClassDecl ThreadProbe(const std::shared_ptr<Trace>& trace) {
 
 struct Fixture {
     std::shared_ptr<Trace> trace = std::make_shared<Trace>();
-    AndroidValueVm f{InterpreterBackend::threaded,           {ThreadProbe(trace)},         false, nullptr,
-                     AndroidUiTraversalOwner::JavaTraversal, ogplay::gles::AngleBackend{}, true};
+    AndroidValueVm f{InterpreterBackend::threaded, {ThreadProbe(trace)}, false, nullptr};
     VmObjectRef am{}, thread{};
 
     Fixture() {
@@ -127,16 +125,15 @@ TEST_CASE("P3 AMS suspend resume and shutdown order is pause stop destroy") {
     RequestRomActivitySuspend(x.f.vm, x.f.context, true);
     REQUIRE(x.trace->calls == std::vector<std::string>{"schedulePauseActivity"});
     x.Paused(token);
-    CHECK(x.trace->calls ==
-          std::vector<std::string>{"schedulePauseActivity", "scheduleWindowVisibility", "scheduleStopActivity"});
+    CHECK(x.trace->calls == std::vector<std::string>{"schedulePauseActivity", "scheduleStopActivity"});
     RequestRomActivitySuspend(x.f.vm, x.f.context, false);
     CHECK(x.trace->calls.back() == "scheduleResumeActivity");
     x.Resumed();
     x.trace->calls.clear();
     RequestRomActivityExit(x.f.vm, x.f.context);
     x.Paused(token);
-    CHECK(x.trace->calls == std::vector<std::string>{"schedulePauseActivity", "scheduleWindowVisibility",
-                                                     "scheduleStopActivity", "scheduleDestroyActivity"});
+    CHECK(x.trace->calls ==
+          std::vector<std::string>{"schedulePauseActivity", "scheduleStopActivity", "scheduleDestroyActivity"});
     CHECK(x.f.On(x.am, "getTaskForActivity", "(Landroid/os/IBinder;Z)I", {V::Ref(token), V::Int(1)}).AsInt() == -1);
     x.f.On(x.am, "activityDestroyed", "(Landroid/os/IBinder;)V", {V::Ref(token)});
     CHECK(x.f.context->rom_activities->exit_requested);
@@ -195,8 +192,7 @@ TEST_CASE("P3 AMS moveTaskToBack stops the root and keeps the task queryable") {
     x.trace->calls.clear();
     CHECK(x.f.On(x.am, "moveActivityTaskToBack", "(Landroid/os/IBinder;Z)Z", {V::Ref(token), V::Int(0)}).AsInt() == 1);
     x.Paused(token);
-    CHECK(x.trace->calls ==
-          std::vector<std::string>{"schedulePauseActivity", "scheduleWindowVisibility", "scheduleStopActivity"});
+    CHECK(x.trace->calls == std::vector<std::string>{"schedulePauseActivity", "scheduleStopActivity"});
     CHECK_FALSE(x.f.context->rom_activities->exit_requested);
 }
 
@@ -209,6 +205,6 @@ TEST_CASE("P3 AMS a fast host resume keeps the queued pause stop resume order") 
     RequestRomActivitySuspend(x.f.vm, x.f.context, true);
     RequestRomActivitySuspend(x.f.vm, x.f.context, false);
     x.Paused(token);
-    CHECK(x.trace->calls == std::vector<std::string>{"schedulePauseActivity", "scheduleWindowVisibility",
-                                                     "scheduleStopActivity", "scheduleResumeActivity"});
+    CHECK(x.trace->calls ==
+          std::vector<std::string>{"schedulePauseActivity", "scheduleStopActivity", "scheduleResumeActivity"});
 }

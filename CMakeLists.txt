@@ -397,11 +397,6 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/database/database_runtime.cpp
     src/runtime/database/sqlite_vfs.cpp
     src/runtime/debug/stall_diagnostics.cpp
-    src/runtime/ui/ui_leaf_measure.cpp
-    src/runtime/ui/ui_layout.cpp
-    src/runtime/ui/ui_renderer.cpp
-    src/runtime/ui/ui_fallback_font.cpp
-    src/runtime/ui/ui_tree.cpp
     src/runtime/syscall/arm_kernel_helpers.cpp
     src/runtime/bionic/bionic_module_set.cpp
     src/runtime/bionic/bionic_profile.cpp
@@ -563,7 +558,6 @@ ogplay_add_module(ogplay_session Session
     src/session/android_app_process.cpp
     src/session/audio_output_pump.cpp
     src/session/dex_activity_lifecycle.cpp
-    src/session/ui_compositor.cpp
     src/session/lifecycle.cpp
     src/session/profile_apk.cpp
     src/session/session.cpp

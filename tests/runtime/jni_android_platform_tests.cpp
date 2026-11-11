@@ -56,354 +56,13 @@
 
 using namespace ogplay::test::native_library;
 
-TEST_CASE("DVM-237 APS-11 real ARM Android asset surface and sensor boundaries share platform facts") {
-    using namespace ogplay;
-    using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        for (const bool compressed : {false, true}) {
-            runtime::VirtualFileSystem filesystem;
-            core::CapabilityLedger ledger;
-            core::Logger logger;
-            auto context = std::make_shared<runtime::DexVmAndroidContext>();
-
-            struct ObservedSensorDirectory final : runtime::AndroidSensorDirectory {
-                mutable std::size_t queries{};
-
-                std::size_t Count() const noexcept override {
-                    ++queries;
-                    return 0;
-                }
-            };
-
-            const auto directory_facts = std::make_shared<ObservedSensorDirectory>();
-            context->sensor_directory = directory_facts;
-            // Local ZIP fixture exercises the same metadata/CRC/range reader as a
-            // parsed sealed archive. The FD still exposes the complete ZIP backing.
-            const std::string entry = "assets/hello";
-            const std::vector<std::byte> payload{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
-            const std::vector<std::byte> deflate{std::byte{0x4b}, std::byte{0x4c}, std::byte{0x4a}, std::byte{0x06},
-                                                 std::byte{0x00}};
-            context->apk_bytes = test::file_vfs::MakeStoredZip(
-                entry, payload, compressed ? std::span<const std::byte>(deflate) : std::span<const std::byte>());
-            context->archive = loader::ParseApkArchive(context->apk_bytes);
-            test::BindBootDexArchive(*context);
-            std::vector<std::vector<std::byte>> contents;
-            std::vector<runtime::BionicModuleSource> libraries;
-            for (const auto name : runtime::SelectBionicProfile(19).guest_libraries) {
-                contents.push_back(ReadPayloadBytes(std::string("lib/") + std::string(name)));
-                libraries.push_back({std::string(name), contents.back()});
-            }
-            session::AndroidAppProcessRequest request;
-            request.manifest = AppManifest("fixture.DelayedContentActivity");
-            request.system_libraries = libraries;
-            request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-            request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
-            request.dex_bytes = ReadDexFixture("application.dex");
-            request.boot_dex_files = test::ReadBootDex();
-            request.context = context;
-            request.filesystem = &filesystem;
-            request.ledger = &ledger;
-            request.logger = &logger;
-            request.platform.android_id = "0123456789abcdef";
-            request.dexvm.interpreter.backend = backend;
-            auto app = session::AndroidAppProcess::Create(std::move(request));
-            app->RunOnMainThread([&] {
-                auto& process = app->NativeProcess();
-                auto& bridge = app->DexVm();
-                auto& vm = bridge.Vm();
-                auto& env = process.Environment();
-                const auto memory = process.GuestMemoryAccess();
-                const auto scratch = memory.allocate(256);
-                std::array<std::byte, 256> bytes{};
-                std::memcpy(bytes.data(), "hello", 6);
-                memory.write(scratch, bytes);
-                const auto symbols = runtime::detail::BuildAndroidBoundarySymbols();
-                const runtime::BionicHleSymbolProvider provider(symbols);
-                const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> args) {
-                    const auto target = provider.Lookup("libandroid.so", name);
-                    REQUIRE(target.has_value());
-                    return process.Invoke({*target, args, {}}).return_value;
-                };
-                const auto libc = [&](const char* name, std::array<std::uint32_t, 4> args) {
-                    const auto target = process.FindModuleExport(0, name);
-                    REQUIRE_FALSE(target.IsNull());
-                    return process.Invoke({target, args, {}}).return_value;
-                };
-                const auto word = [&](std::uint32_t offset) {
-                    std::array<std::byte, 4> out{};
-                    memory.read(scratch.Add(offset), out);
-                    std::uint32_t result{};
-                    for (std::size_t i = 0; i < out.size(); ++i)
-                        result |= std::to_integer<std::uint32_t>(out[i]) << (i * 8);
-                    return result;
-                };
-                const auto sensor_manager = invoke("ASensorManager_getInstance", {});
-                REQUIRE(sensor_manager != 0);
-                const auto native_queries = directory_facts->queries;
-                CHECK(invoke("ASensorManager_getSensorList", {sensor_manager, scratch.Add(32).Value(), 0, 0}) == 0);
-                CHECK(word(32) != 0);
-                CHECK(invoke("ASensorManager_getDefaultSensor", {sensor_manager, 1, 0, 0}) == 0);
-                CHECK(directory_facts->queries > native_queries);
-                const auto java_queries = directory_facts->queries;
-                const auto base = test::MakeRomAppContext(vm, context);
-                const auto base_root = vm.ProtectReferences(std::array{base});
-                auto& linker = vm.Linker();
-                const auto service = linker.FindVtableIndex(vm.Model().ObjectClass(base), "getSystemService",
-                                                            "(Ljava/lang/String;)Ljava/lang/Object;");
-                REQUIRE(service);
-                const auto java_manager =
-                    vm.Call(linker.Class(vm.Model().ObjectClass(base)).vtable[*service],
-                            std::array{VmValue::Ref(base), VmValue::Ref(vm.NewStringUtf8("sensor"))});
-                REQUIRE_FALSE(java_manager.exception.IsValid());
-                REQUIRE(java_manager.value.ref.IsValid());
-                CHECK(linker.Class(vm.Model().ObjectClass(java_manager.value.ref)).descriptor ==
-                      "Landroid/hardware/SystemSensorManager;");
-                CHECK(directory_facts->queries > java_queries);  // Both sides read this exact object.
-                const auto native_looper = invoke("ALooper_forThread", {});
-                REQUIRE(native_looper != 0);
-                const auto queue_target = provider.Lookup("libandroid.so", "ASensorManager_createEventQueue");
-                REQUIRE(queue_target.has_value());
-                const std::array<std::uint32_t, 2> queue_data{0, 0};
-                const auto sensor_queue =
-                    process.Invoke({*queue_target, {sensor_manager, native_looper, 2, 0x12345678}, queue_data})
-                        .return_value;
-                REQUIRE(sensor_queue != 0);
-                CHECK(static_cast<std::int32_t>(invoke("ASensorEventQueue_hasEvents", {sensor_queue, 0, 0, 0})) == -1);
-                CHECK(invoke("ASensorEventQueue_getEvents", {sensor_queue, scratch.Value(), 1, 0}) == 0);
-                CHECK(invoke("ASensorManager_destroyEventQueue", {sensor_manager, sensor_queue, 0, 0}) == 0);
-                using Value = runtime::dexvm::VmValue;
-                const auto managerClass = vm.Linker().ResolveDescriptor("Landroid/content/res/AssetManager;");
-                const auto ctor = vm.Linker().FindDirectMethod(managerClass, "<init>", "()V").value();
-                const auto newManager = [&] {
-                    const auto manager = vm.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
-                    const auto root = vm.ProtectReferences(std::array{manager});
-                    const auto result = vm.Call(ctor, std::array{Value::Ref(manager)});
-                    REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
-                    return manager;
-                };
-                const auto object = newManager();
-                const auto add =
-                    vm.Linker().FindVtableIndex(managerClass, "addAssetPath", "(Ljava/lang/String;)I").value();
-                CHECK(vm.Call(vm.Linker().Class(managerClass).vtable[add],
-                              std::array{Value::Ref(object),
-                                         Value::Ref(vm.NewStringUtf8(context->package_resource_path))})
-                          .value.AsInt() == 2);
-                auto reference = bridge.PublishLocal(object);
-                const auto convert = [&](runtime::JniReference ref) {
-                    return invoke("AAssetManager_fromJava", {process.GuestEnvironment().Value(), ref.Value(), 0, 0});
-                };
-                const auto manager = convert(reference);
-                REQUIRE(manager != 0);
-                CHECK(convert(reference) == manager);
-                const auto weak = env.NewWeakGlobalRef(1, reference);
-                CHECK(convert(weak) == manager);
-                const auto second_object = newManager();
-                const auto second_reference = bridge.PublishLocal(second_object);
-                CHECK(convert(second_reference) != manager);
-                env.DeleteLocalRef(1, second_reference);
-                CHECK(invoke("AAssetManager_fromJava", {scratch.Value(), reference.Value(), 0, 0}) == 0);
-                CHECK_FALSE(env.ExceptionCheck(1));
-                CHECK(convert(runtime::JniReference{}) == 0);
-                REQUIRE(env.ExceptionCheck(1));
-                env.ExceptionClear(1);
-                const auto system =
-                    vm.Linker()
-                        .FindDirectMethod(managerClass, "getSystem", "()Landroid/content/res/AssetManager;")
-                        .value();
-                const auto system_object = vm.Call(system, {}).value.ref;
-                const auto system_reference = bridge.PublishLocal(system_object);
-                CHECK(convert(system_reference) != 0);
-                CHECK(convert(system_reference) != manager);
-                env.DeleteLocalRef(1, system_reference);
-                const auto global = env.NewGlobalRef(1, reference);
-                CHECK(convert(global) == manager);
-                const auto localeSlot =
-                    vm.Linker().FindVtableIndex(managerClass, "setLocale", "(Ljava/lang/String;)V").value();
-                const auto locale = vm.Call(vm.Linker().Class(managerClass).vtable[localeSlot],
-                                            std::array{Value::Ref(object), Value::Ref(vm.NewStringUtf8("zh_CN"))});
-                REQUIRE_FALSE(locale.exception.IsValid());
-                const auto config = invoke("AConfiguration_new", {});
-                invoke("AConfiguration_fromAssetManager", {config, manager, 0, 0});
-                invoke("AConfiguration_getLanguage", {config, scratch.Add(128).Value(), 0, 0});
-                invoke("AConfiguration_getCountry", {config, scratch.Add(130).Value(), 0, 0});
-                std::array<std::byte, 4> localeBytes{};
-                memory.read(scratch.Add(128), localeBytes);
-                CHECK(localeBytes == std::array{std::byte{'z'}, std::byte{'h'}, std::byte{'C'}, std::byte{'N'}});
-                invoke("AConfiguration_delete", {config, 0, 0, 0});
-                const auto streamSlot =
-                    vm.Linker()
-                        .FindVtableIndex(managerClass, "open", "(Ljava/lang/String;)Ljava/io/InputStream;")
-                        .value();
-                const auto stream = vm.Call(vm.Linker().Class(managerClass).vtable[streamSlot],
-                                            std::array{Value::Ref(object), Value::Ref(vm.NewStringUtf8("hello"))});
-                REQUIRE_MESSAGE(!stream.exception.IsValid(), stream.exception_message);
-                const auto streamRoot = vm.ProtectReferences(std::array{stream.value.ref});
-                const auto streamType = vm.Model().ObjectClass(stream.value.ref);
-                const auto read = vm.Linker().FindVtableIndex(streamType, "read", "()I").value();
-                CHECK(vm.Call(vm.Linker().Class(streamType).vtable[read], std::array{stream.value}).value.AsInt() ==
-                      'a');
-                const auto close = vm.Linker().FindVtableIndex(streamType, "close", "()V").value();
-                REQUIRE_FALSE(
-                    vm.Call(vm.Linker().Class(streamType).vtable[close], std::array{stream.value}).exception.IsValid());
-                if (!compressed) {
-                    const auto on = [&](runtime::dexvm::VmObjectRef receiver, const char* name, const char* signature,
-                                        std::vector<Value> args = {}) {
-                        const auto type = vm.Model().ObjectClass(receiver);
-                        const auto slot = vm.Linker().FindVtableIndex(type, name, signature);
-                        const auto method = slot ? vm.Linker().Class(type).vtable[*slot]
-                                                 : vm.Linker().FindDirectMethod(type, name, signature).value();
-                        args.insert(args.begin(), Value::Ref(receiver));
-                        const auto result = vm.Call(method, args);
-                        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
-                        return result.value;
-                    };
-                    const auto afd =
-                        on(object, "openFd", "(Ljava/lang/String;)Landroid/content/res/AssetFileDescriptor;",
-                           {Value::Ref(vm.NewStringUtf8("hello"))})
-                            .ref;
-                    const auto afdRoot = vm.ProtectReferences(std::array{afd});
-                    const auto start = static_cast<std::uint32_t>(on(afd, "getStartOffset", "()J").AsLong());
-                    const auto fd = on(afd, "getFileDescriptor", "()Ljava/io/FileDescriptor;").ref;
-                    const auto descriptor = static_cast<std::uint32_t>(on(fd, "getInt$", "()I").AsInt());
-                    CHECK(libc("lseek", {descriptor, start, 0, 0}) == start);
-                    CHECK(libc("read", {descriptor, scratch.Add(96).Value(), 3, 0}) == 3);
-                    std::vector<std::byte> actual(3);
-                    memory.read(scratch.Add(96), actual);
-                    CHECK(actual == payload);
-                    on(afd, "close", "()V");
-                }
-                const auto open = [&](const char* path) {
-                    std::array<std::byte, 32> text{};
-                    std::memcpy(text.data(), path, std::strlen(path));
-                    memory.write(scratch, text);
-                    return invoke("AAssetManager_open", {manager, scratch.Value(), 2, 0});
-                };
-                CHECK(open("missing") == 0);
-                CHECK(open("../hello") == 0);
-                CHECK(open("/hello") == 0);
-                const auto asset = open("hello"), other = open("hello");
-                REQUIRE(asset != 0);
-                REQUIRE(other != 0);
-                CHECK(asset != other);
-                CHECK(invoke("AAsset_read", {asset, scratch.Add(32).Value(), 2, 0}) == 2);
-                CHECK(invoke("AAsset_getRemainingLength", {asset, 0, 0, 0}) == 1);
-                CHECK(invoke("AAsset_getRemainingLength", {other, 0, 0, 0}) == 3);
-                const memory::GuestAddress buffer{invoke("AAsset_getBuffer", {asset, 0, 0, 0})};
-                REQUIRE_FALSE(buffer.IsNull());
-                CHECK(invoke("AAsset_getBuffer", {asset, 0, 0, 0}) == buffer.Value());
-                std::vector<std::byte> buffered(3);
-                memory.read(buffer, buffered);
-                CHECK(buffered == payload);  // STORED and Deflate use the same entire contents.
-                CHECK(invoke("AAsset_getRemainingLength", {asset, 0, 0, 0}) == 1);
-                const auto directory = invoke("AAssetManager_openDir", {manager, scratch.Add(16).Value(), 0, 0});
-                REQUIRE(directory != 0);
-                const memory::GuestAddress filename{invoke("AAssetDir_getNextFileName", {directory, 0, 0, 0})};
-                REQUIRE_FALSE(filename.IsNull());
-                std::array<std::byte, 6> name_bytes{};
-                memory.read(filename, name_bytes);
-                CHECK(std::string(reinterpret_cast<const char*>(name_bytes.data())) == "hello");
-                CHECK(invoke("AAssetDir_getNextFileName", {directory, 0, 0, 0}) == 0);
-                invoke("AAssetDir_close", {directory, 0, 0, 0});
-                const auto fd =
-                    invoke("AAsset_openFileDescriptor", {asset, scratch.Add(64).Value(), scratch.Add(68).Value(), 0});
-                if (compressed) {
-                    CHECK(static_cast<std::int32_t>(fd) == -1);
-                    CHECK(word(64) == 0);
-                    CHECK(word(68) == 0);
-                } else {
-                    REQUIRE(static_cast<std::int32_t>(fd) >= 0);
-                    CHECK(word(64) == 30 + entry.size());
-                    CHECK(word(68) == 3);
-                    const auto second_fd = invoke("AAsset_openFileDescriptor",
-                                                  {asset, scratch.Add(72).Value(), scratch.Add(76).Value(), 0});
-                    REQUIRE(second_fd != fd);
-                    CHECK(libc("lseek", {fd, word(64), 0, 0}) == word(64));
-                    CHECK(libc("read", {fd, scratch.Add(96).Value(), 3, 0}) == 3);
-                    std::array<std::byte, 3> actual{};
-                    memory.read(scratch.Add(96), actual);
-                    CHECK(std::vector(actual.begin(), actual.end()) == payload);
-                    invoke("AAsset_close", {asset, 0, 0, 0});
-                    CHECK(libc("lseek", {second_fd, word(72), 0, 0}) == word(72));
-                    CHECK(libc("read", {second_fd, scratch.Add(96).Value(), 3, 0}) == 3);
-                    CHECK(libc("close", {fd, 0, 0, 0}) == 0);
-                    CHECK(libc("close", {second_fd, 0, 0, 0}) == 0);
-                }
-                if (compressed) invoke("AAsset_close", {asset, 0, 0, 0});
-                CHECK_THROWS(memory.read(buffer, buffered));
-                // Real ARM JNI Surface conversion uses the existing active holder facts.
-                const auto surface_object = vm.NewIntrinsicInstance("Landroid/view/Surface;");
-                const auto holder_object = vm.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;");
-                context->holder_surfaces.emplace(holder_object.Value(), surface_object);
-                context->active_surface_holders.insert(holder_object.Value());
-                runtime::InitializeManagedJavaSurface(vm, *context, surface_object, holder_object.Value());
-                context->managed_host_surface_open = true;
-                const auto surface_reference = bridge.PublishLocal(surface_object);
-                const auto from_surface = [&](runtime::JniReference ref) {
-                    return invoke("ANativeWindow_fromSurface", {process.GuestEnvironment().Value(), ref.Value(), 0, 0});
-                };
-                CHECK(from_surface(runtime::JniReference{}) == 0);
-                CHECK(from_surface(reference) == 0);
-                const auto surface_window = from_surface(surface_reference);
-                REQUIRE(surface_window != 0);
-                CHECK(from_surface(surface_reference) == surface_window);
-                CHECK(invoke("ANativeWindow_getWidth", {surface_window, 0, 0, 0}) == context->surface_width);
-                const auto release_method =
-                    vm.Linker().FindVtableIndex(vm.Model().ObjectClass(surface_object), "release", "()V");
-                REQUIRE(release_method);
-                const auto released_surface =
-                    vm.Call(vm.Linker().Class(vm.Model().ObjectClass(surface_object)).vtable[*release_method],
-                            std::array{runtime::dexvm::VmValue::Ref(surface_object)});
-                REQUIRE_FALSE(released_surface.exception.IsValid());
-                CHECK(from_surface(surface_reference) == 0);
-                CHECK(invoke("ANativeWindow_getWidth", {surface_window, 0, 0, 0}) == context->surface_width);
-                CHECK_FALSE(
-                    runtime::DispatchSurfaceHolderCallbacks(vm, *context, runtime::SurfaceHolderPhase::destroyed)
-                        .has_value());
-                CHECK(from_surface(surface_reference) == 0);
-                invoke("ANativeWindow_release", {surface_window, 0, 0, 0});
-                invoke("ANativeWindow_release", {surface_window, 0, 0, 0});
-                env.DeleteLocalRef(1, surface_reference);
-                context->holder_surfaces.clear();
-                // Conversion must preserve a pending throwable and never root a manager.
-                const auto throwable = vm.NewIntrinsicInstance("Ljava/lang/IllegalStateException;");
-                const auto throwable_reference = bridge.PublishLocal(throwable);
-                env.Throw(1, throwable_reference);
-                CHECK(convert(reference) == 0);
-                const auto pending = env.ExceptionOccurred(1);
-                env.ExceptionClear(1);
-                CHECK(bridge.FromReference(pending) == throwable);
-                env.DeleteLocalRef(1, pending);
-                env.DeleteLocalRef(1, throwable_reference);
-                const auto wrong = bridge.PublishLocal(vm.NewStringUtf8("not an asset manager"));
-                CHECK(convert(wrong) == 0);
-                REQUIRE(env.ExceptionCheck(1));
-                env.ExceptionClear(1);
-                env.DeleteLocalRef(1, wrong);
-                env.DeleteLocalRef(1, reference);
-                env.DeleteGlobalRef(1, global);
-                static_cast<void>(vm.CollectGarbage("ndk-asset-manager-lifetime"));
-                vm.RunFinalization();
-                static_cast<void>(vm.CollectGarbage("ndk-asset-manager-finalized"));
-                CHECK(convert(weak) == 0);
-                REQUIRE(env.ExceptionCheck(1));
-                env.ExceptionClear(1);
-                env.DeleteWeakGlobalRef(1, weak);
-                CHECK(invoke("AAsset_read", {other, scratch.Add(32).Value(), 3, 0}) == 3);
-                invoke("AAsset_close", {other, 0, 0, 0});
-                CHECK_THROWS(invoke("AAssetManager_open", {manager, scratch.Value(), 2, 0}));
-                memory.release(scratch, 256);
-            });
-            static_cast<void>(app->Stop());
-        }
-    }
-}
-
 TEST_CASE("DVM-239 ARM JNI Debug query observes virtual RAM growth and release") {
     using namespace ogplay;
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
-        f.app->RunOnMainThread([&] {
+        f.app->StartApplication();
+        f.RunOnMainThread([&] {
             auto& bridge = f.app->DexVm();
             auto& vm = bridge.Vm();
             auto& linker = vm.Linker();
@@ -474,7 +133,7 @@ TEST_CASE("DVM-240 ARM JNI installed applications expose the session APK and rej
         OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
         REQUIRE(f.context->package_inventory_known);
         static_cast<void>(f.app->StartApplication());
-        f.app->RunOnMainThread([&] {
+        f.RunOnMainThread([&] {
             auto& bridge = f.app->DexVm();
             auto& vm = bridge.Vm();
             auto& linker = vm.Linker();
@@ -570,77 +229,6 @@ TEST_CASE("DVM-240 ARM JNI installed applications expose the session APK and rej
     }
 }
 
-TEST_CASE("DVM-245 ARM JNI content append and lookup preserve the shared hierarchy") {
-    using namespace ogplay;
-    using namespace runtime;
-    using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ApplicationProcess f(backend);
-        auto& bridge = *f.bridge;
-        auto& vm = bridge.Vm();
-        auto& process = f.session->Process();
-        auto& env = f.session->Environment();
-        const auto memory = process.GuestMemoryAccess();
-        const auto scratch = memory.allocate(512);
-        env.PushLocalFrame(1, 32);
-        const auto activity = vm.NewIntrinsicInstance("Landroid/app/Activity;");
-        const auto activity_ref = bridge.PublishLocal(activity);
-        const auto klass = bridge.PublishLocal(vm.Model().ClassObject(vm.Model().ObjectClass(activity)));
-        const auto first = vm.NewIntrinsicInstance("Landroid/view/View;");
-        const auto first_ref = bridge.PublishLocal(first);
-        const auto second = vm.NewIntrinsicInstance("Landroid/view/View;");
-        const auto second_ref = bridge.PublishLocal(second);
-        const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> args) {
-            return process.Invoke({memory::GuestAddress{EnvironmentThunk(name)}, args, {}}).return_value;
-        };
-        const auto method = [&](const char* name, const char* descriptor) {
-            std::array<std::byte, 256> data{};
-            std::memcpy(data.data(), name, std::strlen(name) + 1);
-            std::memcpy(data.data() + 64, descriptor, std::strlen(descriptor) + 1);
-            memory.write(scratch, data);
-            const auto id = invoke("GetMethodID", {process.GuestEnvironment().Value(), klass.Value(), scratch.Value(),
-                                                   scratch.Add(64).Value()});
-            REQUIRE(id != 0);
-            REQUIRE_FALSE(env.ExceptionCheck(1));
-            return id;
-        };
-        const auto arguments = [&](std::uint32_t a, std::uint32_t b = 0) {
-            std::array<std::byte, 16> data{};
-            for (std::size_t i = 0; i < 4; ++i) {
-                data[i] = static_cast<std::byte>(a >> (8 * i));
-                data[8 + i] = static_cast<std::byte>(b >> (8 * i));
-            }
-            memory.write(scratch.Add(256), data);
-        };
-        const auto setter = method("setContentView", "(Landroid/view/View;)V");
-        arguments(first_ref.Value());
-        static_cast<void>(invoke("CallVoidMethodA", {process.GuestEnvironment().Value(), activity_ref.Value(), setter,
-                                                     scratch.Add(256).Value()}));
-        REQUIRE_FALSE(env.ExceptionCheck(1));
-        const auto append = method("addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V");
-        arguments(second_ref.Value());
-        static_cast<void>(invoke("CallVoidMethodA", {process.GuestEnvironment().Value(), activity_ref.Value(), append,
-                                                     scratch.Add(256).Value()}));
-        REQUIRE_FALSE(env.ExceptionCheck(1));
-        const auto find = method("findViewById", "(I)Landroid/view/View;");
-        arguments(0x01020002);
-        const auto result =
-            JniReference{invoke("CallObjectMethodA", {process.GuestEnvironment().Value(), activity_ref.Value(), find,
-                                                      scratch.Add(256).Value()})};
-        REQUIRE_FALSE(env.ExceptionCheck(1));
-        REQUIRE_FALSE(result.IsNull());
-        const auto parent = bridge.FromReference(result);
-        const auto node = *FindViewUiNode(*f.context, parent.Value());
-        static_cast<void>(vm.CollectGarbage("window-content-jni"));
-        CHECK(f.context->ui_tree.Get(node)->children.size() == 2);
-        CHECK(f.context->ui_tree.Get(*FindViewUiNode(*f.context, first.Value()))->parent == node);
-        CHECK(f.context->ui_tree.Get(*FindViewUiNode(*f.context, second.Value()))->parent == node);
-        CHECK(f.context->content_view == first);
-        static_cast<void>(env.PopLocalFrame(1));
-        memory.release(scratch, 512);
-    }
-}
-
 TEST_CASE("DVM-247 ARM JNI inherited inflater lookup Context and native resource failure") {
     using namespace ogplay;
     using namespace runtime;
@@ -664,6 +252,7 @@ TEST_CASE("DVM-247 ARM JNI inherited inflater lookup Context and native resource
         REQUIRE_FALSE(vm.Call(linker.Class(vm.Model().ObjectClass(activity)).vtable[attach],
                               std::array{VmValue::Ref(activity), VmValue::Ref(base)})
                           .exception.IsValid());
+        test::AttachViewTestContext(vm, activity, f.context);
         const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> args) {
             return process.Invoke({memory::GuestAddress{EnvironmentThunk(name)}, args, {}}).return_value;
         };
@@ -717,121 +306,6 @@ TEST_CASE("DVM-247 ARM JNI inherited inflater lookup Context and native resource
               "Landroid/content/res/Resources$NotFoundException;");
         static_cast<void>(env.PopLocalFrame(1));
         memory.release(scratch, 512);
-    }
-}
-
-TEST_CASE("DVM-244 ARM JNI resource bitmap decoding publishes shared pixel storage") {
-    using namespace ogplay;
-    using namespace runtime;
-    using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        RomValueProcess f(backend);
-        f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
-        f.context->archive = loader::ParseApkArchive(f.context->apk_bytes);
-        ogplay::test::ResourceFixture(*f.context).entries = {{.resource_id = 0x7f020001,
-                                                              .type_name = "drawable",
-                                                              .entry_name = "fixture",
-                                                              .string_value = "res/drawable/fixture.png",
-                                                              .value_type = 3,
-                                                              .density = 160}};
-        auto& bridge = *f.bridge;
-        auto& vm = bridge.Vm();
-        auto& linker = vm.Linker();
-        auto& process = f.session->Process();
-        auto& env = f.session->Environment();
-        const auto memory = process.GuestMemoryAccess();
-        const auto scratch = memory.allocate(256);
-        env.PushLocalFrame(1, 32);
-        const auto factory =
-            bridge.PublishLocal(vm.Model().ClassObject(linker.ResolveDescriptor("Landroid/graphics/BitmapFactory;")));
-        f.context->vfs = &f.filesystem;
-        test::MountResourceFixture(*f.context, vm);
-        const auto resourceOwner = test::MakeRomAppContext(vm, f.context);
-        const auto resources =
-            bridge.PublishLocal(runtime::android_intrinsics::CallAndroidMethod(vm, resourceOwner, "getResources",
-                                                                               "()Landroid/content/res/Resources;")
-                                    .ref);
-        std::array<std::byte, 256> data{};
-        constexpr char name[] = "decodeResource";
-        constexpr char descriptor[] = "(Landroid/content/res/Resources;I)Landroid/graphics/Bitmap;";
-        std::memcpy(data.data(), name, sizeof(name));
-        std::memcpy(data.data() + 64, descriptor, sizeof(descriptor));
-        for (std::size_t i = 0; i < 4; ++i) {
-            data[128 + i] = static_cast<std::byte>(resources.Value() >> (8 * i));
-            data[136 + i] = static_cast<std::byte>(0x7f020001U >> (8 * i));
-        }
-        memory.write(scratch, data);
-        const auto invoke = [&](const char* slot, std::array<std::uint32_t, 4> args) {
-            return process.Invoke({memory::GuestAddress{EnvironmentThunk(slot)}, args, {}}).return_value;
-        };
-        const auto method = invoke("GetStaticMethodID", {process.GuestEnvironment().Value(), factory.Value(),
-                                                         scratch.Value(), scratch.Add(64).Value()});
-        REQUIRE(method != 0);
-        REQUIRE_FALSE(env.ExceptionCheck(1));
-        const auto decode = [&] {
-            const auto ref =
-                JniReference{invoke("CallStaticObjectMethodA", {process.GuestEnvironment().Value(), factory.Value(),
-                                                                method, scratch.Add(128).Value()})};
-            REQUIRE_FALSE(env.ExceptionCheck(1));
-            REQUIRE_FALSE(ref.IsNull());
-            return ref;
-        };
-        const auto first_ref = decode();
-        const auto first = bridge.FromReference(first_ref);
-        const auto second_ref = decode();
-        const auto second = bridge.FromReference(second_ref);
-        CHECK(first != second);
-        CHECK(f.context->bitmaps.at(first.Value()).pixels != f.context->bitmaps.at(second.Value()).pixels);
-        CHECK(f.context->bitmaps.at(first.Value()).pixels->Get(0) == 0xffff0000);
-        CHECK(f.context->bitmaps.at(first.Value()).pixels->Get(1) == 0xff0000ff);
-        static_cast<void>(vm.CollectGarbage("bitmap-resource-jni"));
-        const auto width = linker.FindVtableIndex(vm.Model().ObjectClass(first), "getWidth", "()I");
-        REQUIRE(width.has_value());
-        const auto result =
-            vm.Call(linker.Class(vm.Model().ObjectClass(first)).vtable[*width], std::array{VmValue::Ref(first)});
-        REQUIRE_FALSE(result.exception.IsValid());
-        CHECK(result.value.AsInt() == 2);
-        // The decoded object also reaches the same ImageView binding through ARM JNI.
-        const auto owner = test::MakeRomAppContext(vm, f.context);
-        const auto owner_root = vm.ProtectReferences(std::array{owner});
-        const auto image = vm.NewIntrinsicInstance("Landroid/widget/ImageView;");
-        const auto image_ref = bridge.PublishLocal(image);
-        const auto image_type = vm.Model().ObjectClass(image);
-        const auto initialized = vm.EnsureClassInitialized(image_type);
-        REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
-        const auto constructor = linker.FindDirectMethod(image_type, "<init>", "(Landroid/content/Context;)V");
-        REQUIRE(constructor.has_value());
-        REQUIRE_FALSE(vm.Call(*constructor, std::array{VmValue::Ref(image), VmValue::Ref(owner)}).exception.IsValid());
-        const auto image_class = bridge.PublishLocal(vm.Model().ClassObject(image_type));
-        constexpr char setter_name[] = "setImageBitmap";
-        constexpr char setter_descriptor[] = "(Landroid/graphics/Bitmap;)V";
-        std::memcpy(data.data(), setter_name, sizeof(setter_name));
-        std::memcpy(data.data() + 64, setter_descriptor, sizeof(setter_descriptor));
-        for (std::size_t i = 0; i < 4; ++i)
-            data[128 + i] = static_cast<std::byte>(first_ref.Value() >> (8 * i));
-        memory.write(scratch, data);
-        const auto setter = invoke("GetMethodID", {process.GuestEnvironment().Value(), image_class.Value(),
-                                                   scratch.Value(), scratch.Add(64).Value()});
-        REQUIRE(setter != 0);
-        REQUIRE_FALSE(env.ExceptionCheck(1));
-        static_cast<void>(invoke("CallVoidMethodA", {process.GuestEnvironment().Value(), image_ref.Value(), setter,
-                                                     scratch.Add(128).Value()}));
-        REQUIRE_FALSE(env.ExceptionCheck(1));
-        static_cast<void>(vm.CollectGarbage("image-bitmap-jni"));
-        const auto drawable = f.context->ui_view_images.at(image.Value());
-        const auto bitmap_getter =
-            linker.FindVtableIndex(vm.Model().ObjectClass(drawable), "getBitmap", "()Landroid/graphics/Bitmap;");
-        REQUIRE(bitmap_getter);
-        const auto bitmap_result = vm.Call(linker.Class(vm.Model().ObjectClass(drawable)).vtable[*bitmap_getter],
-                                           std::array{VmValue::Ref(drawable)});
-        REQUIRE_FALSE(bitmap_result.exception.IsValid());
-        CHECK(bitmap_result.value.ref == first);
-        const auto node = *FindViewUiNode(*f.context, image.Value());
-        REQUIRE(f.context->ui_tree.Get(node)->image_bitmap);
-        CHECK(f.context->ui_tree.Get(node)->image_bitmap->rgba8[0] == 255);
-        CHECK(f.context->ui_tree.Get(node)->image_bitmap->rgba8[6] == 255);
-        static_cast<void>(env.PopLocalFrame(1));
-        memory.release(scratch, 256);
     }
 }
 
@@ -912,7 +386,8 @@ TEST_CASE("DVM-241 ARM JNI connectivity query returns the original disconnected 
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
         f.context->granted_permissions.insert("android.permission.ACCESS_NETWORK_STATE");
-        f.app->RunOnMainThread([&] {
+        f.app->StartApplication();
+        f.RunOnMainThread([&] {
             auto& bridge = f.app->DexVm();
             auto& vm = bridge.Vm();
             auto& linker = vm.Linker();
@@ -1007,7 +482,8 @@ TEST_CASE("DVM-221 real ARM NDK Bitmap shares Java pixels and survives GC and re
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
-        f.app->RunOnMainThread([&] {
+        f.app->StartApplication();
+        f.RunOnMainThread([&] {
             auto& bridge = f.app->DexVm();
             auto& vm = bridge.Vm();
             auto& linker = bridge.Linker();
@@ -1175,8 +651,10 @@ TEST_CASE("InputDevice production directory agrees with dispatched keyboard iden
     using namespace ogplay;
     namespace dx = runtime::dexvm;
     OrchestratedApp fixture("fixture.LauncherActivity", true, false);
+    fixture.app->ActivityLifecycle().SetRealtimeVideoClock(false);
     fixture.app->StartApplication();
     REQUIRE(fixture.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+    static_cast<void>(fixture.app->ActivityLifecycle().StepFrame());
     auto& vm = fixture.app->DexVm().Vm();
     auto& linker = vm.Linker();
     const auto type = linker.ResolveDescriptor("Landroid/view/InputDevice;");
@@ -1189,7 +667,7 @@ TEST_CASE("InputDevice production directory agrees with dispatched keyboard iden
     const auto root = vm.ProtectReferences(std::array{outcome.value.ref});
     const auto query_id = fixture.CallGuest(outcome.value.ref, "getId", "()I").AsInt();
     std::int32_t event_id = 1234;
-    const auto activity_type = vm.Model().ObjectClass(fixture.context->activity);
+    const auto activity_type = vm.Model().ObjectClass(fixture.context->foreground_activity);
     const auto slot = linker.FindVtableIndex(activity_type, "onKeyDown", "(ILandroid/view/KeyEvent;)Z");
     REQUIRE(slot.has_value());
     auto& handler = linker.MutableMethod(linker.Class(activity_type).vtable[*slot]);

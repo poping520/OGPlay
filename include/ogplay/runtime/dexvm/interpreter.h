@@ -158,8 +158,8 @@ public:
     void Release();
     // Drops every level held by the calling thread and reports the depth so
     // a blocking primitive can restore it; 0 when the caller held nothing.
-    [[nodiscard]] std::size_t ReleaseForBlocking();
-    void ReacquireAfterBlocking(std::size_t depth);
+    [[nodiscard]] std::size_t ReleaseForBlocking(bool notify_observer = true);
+    void ReacquireAfterBlocking(std::size_t depth, bool notify_observer = true);
     // Stable bytecode safe point: hand off to queued hosts without publishing
     // a guest blocking transition or releasing guest monitors.
     void YieldToWaiter();
@@ -351,6 +351,8 @@ public:
     void RunInExecutionContext(const InterpreterExecutionContext& context, const std::function<void()>& action);
     // Owner-thread scope; nested calls keep the earlier Clock wall deadline.
     void RunWithExecutionDeadline(std::uint64_t deadline_ns, const std::function<void()>& action);
+    // Bound work delivered asynchronously to the default execution context.
+    void SetDefaultExecutionDeadline(std::uint64_t deadline_ns) noexcept;
     [[nodiscard]] std::uint64_t ExecutionDeadlineNs(std::uint64_t context = 0) const;
     [[nodiscard]] bool ExecutionDeadlineExpired(std::uint64_t context = 0) const;
     [[nodiscard]] bool HasExecutionDeadline(std::uint64_t context = 0) const;

@@ -329,6 +329,7 @@
 
 .method public onCreate(Landroid/os/Bundle;)V
 .registers 3
+    invoke-super {v1, v2}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
     new-instance v0, Landroid/view/View;
     invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
     invoke-virtual {v1, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
@@ -346,6 +347,7 @@
 
 .method public onCreate(Landroid/os/Bundle;)V
 .registers 4
+    invoke-super {v2, v3}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
     const-string v0, "a"
     invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
     new-instance v0, Landroid/view/View;
@@ -1174,6 +1176,7 @@
 
 .method protected onCreate(Landroid/os/Bundle;)V
 .registers 5
+    invoke-super {v3, v4}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
     new-instance v0, Landroid/os/Handler;
     invoke-direct {v0}, Landroid/os/Handler;-><init>()V
     const-wide/16 v1, 32
@@ -1183,6 +1186,7 @@
 
 .method protected onResume()V
 .registers 2
+    invoke-super {v1}, Landroid/app/Activity;->onResume()V
     const/4 v0, 1
     sput v0, Lfixture/DelayedContentActivity;->resumed:I
     return-void
@@ -1396,6 +1400,7 @@
 .end method
 .method protected onCreate(Landroid/os/Bundle;)V
 .registers 3
+    invoke-super {v1, v2}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
     new-instance v0, Landroid/view/View;
     invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
     invoke-virtual {v1, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
@@ -1403,6 +1408,7 @@
 .end method
 .method protected onRestart()V
 .registers 2
+    invoke-super {v1}, Landroid/app/Activity;->onRestart()V
     sget v0, Lfixture/ResultCaller;->events:I
     mul-int/lit8 v0, v0, 10
     add-int/lit8 v0, v0, 1
@@ -1411,6 +1417,7 @@
 .end method
 .method protected onStart()V
 .registers 2
+    invoke-super {v1}, Landroid/app/Activity;->onStart()V
     sget v0, Lfixture/ResultCaller;->events:I
     mul-int/lit8 v0, v0, 10
     add-int/lit8 v0, v0, 2
@@ -1419,10 +1426,26 @@
 .end method
 .method protected onResume()V
 .registers 2
+    invoke-super {v1}, Landroid/app/Activity;->onResume()V
     sget v0, Lfixture/ResultCaller;->events:I
     mul-int/lit8 v0, v0, 10
     add-int/lit8 v0, v0, 4
     sput v0, Lfixture/ResultCaller;->events:I
+    return-void
+.end method
+.method protected onPause()V
+.registers 1
+    invoke-super {v0}, Landroid/app/Activity;->onPause()V
+    return-void
+.end method
+.method protected onStop()V
+.registers 1
+    invoke-super {v0}, Landroid/app/Activity;->onStop()V
+    return-void
+.end method
+.method protected onDestroy()V
+.registers 1
+    invoke-super {v0}, Landroid/app/Activity;->onDestroy()V
     return-void
 .end method
 .method protected onActivityResult(IILandroid/content/Intent;)V
@@ -1484,6 +1507,7 @@
 .end method
 .method protected onCreate(Landroid/os/Bundle;)V
 .registers 3
+    invoke-super {v1, v2}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
     new-instance v0, Landroid/view/View;
     invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
     invoke-virtual {v1, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
@@ -1850,6 +1874,7 @@
 .end method
 .method protected onCreate(Landroid/os/Bundle;)V
 .registers 3
+    invoke-super {v1, v2}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
     const/4 v0, 1
     invoke-static {v0}, Lfixture/WindowAttachmentActivity;->record(I)V
     return-void
@@ -2019,4 +2044,13 @@
     const v0, 101711872
     new-array v0, v0, [B
     return-object v0
+.end method
+
+.class public Lfixture/MainAction;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+
+.method public run()V
+.registers 1
+return-void
 .end method

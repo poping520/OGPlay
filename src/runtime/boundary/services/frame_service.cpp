@@ -1,3 +1,4 @@
+#include "ogplay/video/video_player.h"
 #include "runtime/boundary/services/frame_service.h"
 
 #include <algorithm>
@@ -69,6 +70,19 @@ void FrameService::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
     frame.sequence = ++frame_sequence_;
     blank_alpha_.reset();
     latest_frame_ = std::move(frame);
+}
+
+void FrameService::PublishSharedFrame(std::shared_ptr<const video::VideoFrame> pixels) {
+    if (!pixels || pixels->width != layout_.logical_width || pixels->height != layout_.logical_height ||
+        pixels->rgba8.size() != static_cast<std::size_t>(pixels->width) * pixels->height * 4U) {
+        throw std::invalid_argument("composed frame does not match the logical surface layout");
+    }
+    const auto* storage = &pixels->rgba8;
+    ResetReadback();
+    std::scoped_lock lock(mutex_);
+    blank_alpha_.reset();
+    latest_frame_ = AndroidBoundaryFrame{
+        layout_.logical_width, layout_.logical_height, ++frame_sequence_, {}, {std::move(pixels), storage}};
 }
 
 void FrameService::PublishBlankFrame(const std::uint8_t alpha) {
@@ -150,6 +164,7 @@ void FrameService::SetReadbackFilter(FrameReadbackFilter covered) {
 }
 
 void FrameService::RecycleFrame(AndroidBoundaryFrame&& frame) {
+    if (frame.shared_rgba8) return;
     const auto expected = static_cast<std::size_t>(layout_.logical_width) * layout_.logical_height * 4U;
     if (frame.width != layout_.logical_width || frame.height != layout_.logical_height ||
         frame.rgba8.size() != expected) {

@@ -23,7 +23,6 @@ void WakeQueue(const std::weak_ptr<DexVmAndroidContext>& weak, const std::shared
 }  // namespace
 
 void AddRomInputQueueNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
-    if (!context->rom_window_services_enabled) return;
     constexpr auto native = dx::kAccPrivate | dx::kAccStatic | dx::kAccNative;
     b.StaticMethod(
         "nativeInit", "(Ljava/lang/ref/WeakReference;Landroid/os/MessageQueue;)I",

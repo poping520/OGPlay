@@ -283,7 +283,6 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
 TEST_CASE("DVM-365 WebView complete constructor configuration and ROM super attachment") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ogplay::test::container_traversal::ContainerVm f(backend);
-        f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
         const auto view = f.New("Ltest/WebViewLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto roots = f.vm.ProtectReferences(std::array{owner, view});

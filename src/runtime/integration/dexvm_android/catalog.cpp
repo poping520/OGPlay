@@ -126,7 +126,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_view_InputQueue(context),
         Declare_android_view_Surface(context),
         Declare_android_graphics_SurfaceTexture(context),
-        Declare_android_app_Activity(context),
         Declare_local_ActivityService(context),
         Declare_dalvik_system_DexFile(context),
         Declare_local_PackageService(context),
@@ -134,12 +133,8 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_local_BackupService(context),
         Declare_local_NotificationService(context),
         Declare_local_WindowService(context),
-        Declare_android_app_AlertDialog_Builder(context),
-        Declare_android_app_AlertDialog(context),
-        Declare_android_app_Dialog(context),
         Declare_local_IntentSender(context),
         Declare_local_AlarmService(context),
-        Declare_android_app_ProgressDialog(context),
         Declare_local_ContentService(context),
         Declare_local_ClipboardService(context),
         Declare_local_UiModeService(context),
@@ -167,9 +162,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_view_GLES20Canvas(context),
         Declare_android_graphics_Typeface(context),
         Declare_android_graphics_drawable_Drawable(context),
-        Declare_android_graphics_drawable_AnimationDrawable(context),
         Declare_android_graphics_Camera(context),
-        Declare_android_graphics_drawable_BitmapDrawable(context),
         Declare_android_hardware_SystemSensorManager(context),
         Declare_local_UsbService(context),
         Declare_local_LocationService(context),
@@ -180,11 +173,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_media_SoundPoolImpl(context),
         Declare_local_ConnectivityService(context),
         Declare_local_WifiService(context),
-        Declare_android_opengl_GLSurfaceView_EGLConfigChooser(context),
-        Declare_android_opengl_GLSurfaceView_EGLContextFactory(context),
-        Declare_android_opengl_GLSurfaceView_Renderer(context),
-        Declare_android_opengl_GLSurfaceView(context),
-        Declare_android_opengl_GLSurfaceView_GLThread(context),
         Declare_android_opengl_GLES10(context),
         Declare_android_opengl_GLES10Ext(context),
         Declare_android_opengl_GLES11(context),
@@ -209,11 +197,8 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_local_PhoneSubscriberService(context),
         Declare_local_TelephonyService(context),
         Declare_local_TelephonyRegistry(context),
-        Declare_android_text_Editable(context),
-        Declare_android_text_EditableImpl(context),
-        Declare_android_text_TextPaint(context),
         Declare_android_text_AndroidBidi(context),
-        Declare_android_text_TextWatcher(context),
+        Declare_android_emoji_EmojiFactory(),
         Declare_android_text_format_Time(context),
         Declare_android_util_Log(context),
         Declare_android_util_EventLog(context),
@@ -223,32 +208,14 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_view_DisplayEventReceiver(context),
         Declare_android_view_HardwareRenderer(),
         Declare_local_DisplayService(context),
-        Declare_android_hardware_display_DisplayManager(context),
+        Declare_local_AccessibilityService(context),
+        Declare_local_TextServices(),
         Declare_android_view_ContextThemeWrapper(context),
-        Declare_android_view_LayoutInflater(context),
         Declare_android_view_KeyEvent(context),
         Declare_android_view_KeyCharacterMap(context),
         Declare_android_view_MotionEvent(context),
-        Declare_android_view_InputDevice(context),
-        Declare_android_view_SurfaceHolder_Callback(context),
-        Declare_android_view_SurfaceHolder_Impl(context),
-        Declare_android_view_SurfaceHolder(context),
-        Declare_android_view_SurfaceView(context),
-        Declare_android_view_View_OnClickListener(context),
-        Declare_android_view_View_OnFocusChangeListener(context),
-        Declare_android_view_View_OnSystemUiVisibilityChangeListener(context),
-        Declare_android_view_View_OnTouchListener(context),
-        Declare_android_view_ViewParent(context),
-        Declare_android_view_View(context),
-        Declare_android_view_ViewGroup(context),
         Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(context),
         Declare_android_view_ViewTreeObserver(context),
-        Declare_android_view_Window(context),
-        Declare_android_view_WindowManager_BadTokenException(context),
-        Declare_android_view_WindowManager_LayoutParams(context),
-        Declare_android_view_WindowManager(context),
-        Declare_android_view_WindowManagerImpl(context),
-        Declare_android_view_inputmethod_InputMethodManager(context),
         Declare_android_webkit_WebChromeClient(context),
         Declare_android_webkit_WebChromeClient_CustomViewCallback(context),
         Declare_android_webkit_ConsoleMessage(context),
@@ -259,66 +226,43 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_webkit_WebView_DisabledLoadCallback(context),
         Declare_android_webkit_WebViewClient(context),
         Declare_android_widget_Button(context),
-        Declare_android_widget_EditText(context),
         Declare_android_widget_FrameLayout(context),
         Declare_android_widget_ImageButton(context),
         Declare_android_widget_ImageView_ScaleType(context),
-        Declare_android_widget_ImageView(context),
         Declare_android_widget_LinearLayout(context),
         Declare_android_widget_ProgressBar(context),
         Declare_android_widget_RelativeLayout(context),
-        Declare_android_widget_ScrollView(context),
-        Declare_android_widget_TableLayout(context),
-        Declare_android_widget_TableRow(context),
-        Declare_android_widget_TextView(context),
-        Declare_android_widget_Spinner(context),
-        Declare_android_widget_Spinner_DropdownPopup(context),
-        Declare_android_widget_Spinner_ForwardingListener(context),
-        Declare_android_widget_Toast(context),
-        Declare_android_widget_VideoView(context),
         Declare_android_opengl_EGL14(context),
         Declare_android_opengl_EGLObjectHandle(context),
         Declare_android_opengl_EGLConfig(context),
         Declare_android_opengl_EGLContext(context),
         Declare_android_opengl_EGLDisplay(context),
         Declare_android_opengl_EGLSurface(context),
-        Declare_javax_microedition_khronos_egl_EGLConfig(context),
         // Historical compatibility tail. DVM-61 decouples Java identity hash
         // from linker ids and object handles, so future catalog insertion no
         // longer changes Object.hashCode/default toString identity.
-        Declare_javax_microedition_khronos_egl_EGL(context),
-        Declare_javax_microedition_khronos_egl_EGL10(context),
-        Declare_javax_microedition_khronos_egl_EGL10_Impl(context),
-        Declare_javax_microedition_khronos_egl_EGLContext(context),
-        Declare_javax_microedition_khronos_egl_EGLDisplay(context),
-        Declare_javax_microedition_khronos_egl_EGLSurface(context),
         Declare_com_google_android_gles_jni_GLImpl(context),
+        Declare_com_google_android_gles_jni_EGLImpl(context),
     };
     {
         result.push_back(Declare_android_graphics_drawable_StateListDrawable(context));
-        result.push_back(Declare_android_graphics_drawable_DrawableContainer(context));
-        result.push_back(Declare_android_graphics_drawable_NinePatchDrawable(context));
-        result.push_back(Declare_managed_WindowToken(context));
-        result.push_back(Declare_android_widget_EdgeEffect(context));
-        result.push_back(Declare_android_widget_HorizontalScrollView(context));
-        result.push_back(Declare_android_view_LayoutInflater_BlinkLayout(context));
         result.push_back(Declare_android_os_Trace(context));
         result.push_back(Declare_android_content_res_XmlBlock(context));
         result.push_back(Declare_android_content_res_StringBlock(context));
-        result.push_back(Declare_test_AccessibilityManager(context));
-        result.push_back(Declare_test_ListenerInfo(context));
     }
     for (auto& declaration : Declare_android_graphics_Effects(context))
         result.push_back(std::move(declaration));
     for (auto& declaration : Declare_android_graphics_StateObjects(context))
         result.push_back(std::move(declaration));
-    if (context->rom_window_services_enabled) {
+    {
         result.push_back(Declare_local_WindowSession(context));
         result.push_back(Declare_android_view_SurfaceControl(context));
         result.push_back(Declare_android_view_SurfaceSession(context));
         result.push_back(Declare_android_view_InputChannel(context));
         result.push_back(Declare_android_view_InputEventReceiver(context));
+        result.push_back(Declare_android_view_InputEventSender(context));
         result.push_back(Declare_local_InputMethodService(context));
+        result.push_back(Declare_local_InputMethodSession(context));
         result.push_back(Declare_local_InputService(context));
         result.push_back(Declare_android_view_VelocityTracker(context));
     }

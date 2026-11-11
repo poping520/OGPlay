@@ -2,16 +2,13 @@
 
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
 #include "ogplay/hal/clock.h"
-#include "ogplay/runtime/boundary/android_boundary_hle.h"
-#include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
-#include "ogplay/session/lifecycle.h"
 #include "ogplay/session/android_input_mapping.h"
+#include "ogplay/session/lifecycle.h"
 
 namespace ogplay::session {
 
@@ -21,80 +18,24 @@ enum class DexProcessStopReason : std::uint8_t {
     runtime_failure,
 };
 
-// Minimal API-19 Application startup. Repeated calls for the same descriptor
-// return the process root; a different descriptor or a failed startup is an
-// explicit error and never permits Activity startup to continue.
-[[nodiscard]] runtime::dexvm::VmObjectRef
-StartDexApplication(runtime::DexVmGuestBridge& bridge, const std::shared_ptr<runtime::DexVmAndroidContext>& context,
-                    const std::string& application_descriptor);
-
-// ROM binding spans two main Looper turns. ActivityThread.H handles the bind
-// message before the session publishes the Application and starts Activity.
 void AttachDexApplicationThread(runtime::dexvm::Interpreter& vm, runtime::DexVmAndroidContext& context);
 void PublishDexApplication(runtime::dexvm::Interpreter& vm, runtime::DexVmAndroidContext& context,
                            const std::string& application_descriptor);
 
-using runtime::DeepTouchDispatchResult;
-using runtime::DispatchDeepTouchEvent;
-
-[[nodiscard]] bool ShouldInterceptScrollGesture(std::int32_t scroll_range, float down_y, float current_y,
-                                                float density) noexcept;
-
-// Returns whether this frame should draw and consumes one WHEN_DIRTY request.
-[[nodiscard]] bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context);
-
-// Real-time video catch-up is bounded; guest time already advanced by a
-// blocking Java call counts towards the elapsed interval.
 [[nodiscard]] std::int64_t VideoClockAdvanceMillis(std::uint64_t elapsed_ms, std::int64_t advanced_ms) noexcept;
-
-// dex_activity lifecycle template (docs/design/dexvm/04-integration.md §2):
-// the real interpreted onCreate/onStart/onResume drive the title; the host
-// render loop calls the captured Renderer's onDrawFrame; input dispatches
-// through interpreted onTouchEvent/onKeyDown overrides. Manifest MAIN/LAUNCHER
-// selects the initial Activity.
-
-// Owner-scoped raster cache; only immutable complete projection identities are retained.
-struct AndroidPresentationCache final {
-    std::shared_ptr<const runtime::DexVmAndroidContext::PresentationSnapshot> snapshot;
-    std::vector<std::shared_ptr<const runtime::ui::UiOverlayFrame>> normal, modal;
-};
-
-// Read-only experimental compositor. Uses one acquired presentation for every UI plane.
-[[nodiscard]] runtime::AndroidBoundaryFrame ComposeAndroidPresentationFrame(runtime::DexVmAndroidContext& context,
-                                                                            runtime::AndroidBoundaryFrame frame,
-                                                                            AndroidPresentationCache* cache = nullptr);
 
 struct DexActivityLifecycleBindings final {
     runtime::DexVmGuestBridge* bridge{};
     std::shared_ptr<runtime::DexVmAndroidContext> context;
-    std::string launcher_descriptor;  // "Lcom/example/Game;"
+    std::string launcher_descriptor;
+    std::string launcher_component_name;
     std::function<void()> open_surface;
-    std::function<void()> present_surface;
-    // Receives letterboxed surface-sized RGBA frames from the video pump;
-    // unset drops the frames (video still advances and completes).
-    std::function<void(std::vector<std::uint8_t> rgba8)> publish_video_frame;
-    std::function<void()> interrupt_guest_waits;
-    std::function<void()> finalize_guest;
     std::function<void()> close_surface;
-    // Runs after guest onPause and again after Java threads stop during clean
-    // teardown. The frontend binds this to VFS FlushAll (ADR-0020).
+    std::function<void()> finalize_guest;
+    std::function<void()> check_main_thread;
     std::function<void()> flush_persistent_state;
-    // Release host-created ANGLE currency before either guest-owned or
-    // intrinsic GLSurfaceView transfers rendering to its GLThread.
-    std::function<void()> release_surface_currency;
-    // Manifest-selected process Application. Kept at the aggregate tail so
-    // existing lifecycle hosts retain source compatibility.
-    std::string application_descriptor{"Landroid/app/Application;"};
     std::shared_ptr<runtime::debug::DiagnosticState> diagnostics;
-    std::string launcher_component_name;  // Preserves manifest alias identity when present.
-    // Owner-thread OS message pump only; must not reenter the guest lifecycle.
-    std::function<void()> pump_host_events;
     core::Logger* logger{};
-    // Host consumers stop after cooperative callbacks, before guest thread retirement.
-    std::function<void()> before_guest_shutdown;
-    // Temporary ROM main-Looper channel, removed with the host Activity adapter.
-    std::function<bool()> is_main_thread;
-    std::function<void(std::string_view, const std::function<void()>&)> run_on_main;
 };
 
 class DexActivityLifecycleError final : public std::runtime_error {
@@ -115,7 +56,6 @@ public:
     [[nodiscard]] LifecycleFrameState Resume();
     [[nodiscard]] LifecycleFrameState StepFrame();
     void SetRealtimeVideoClock(bool enabled) noexcept;
-    [[nodiscard]] runtime::AndroidBoundaryFrame ComposePresentedFrame(runtime::AndroidBoundaryFrame frame);
     void QueueInput(const runtime::AndroidBoundaryInput& input);
     void CancelInput();
     [[nodiscard]] LifecycleFrameState Stop(DexProcessStopReason reason = DexProcessStopReason::host_shutdown);
@@ -123,111 +63,18 @@ public:
     [[nodiscard]] std::uint64_t TicksPerSecond() const noexcept;
 
 private:
-    void EnsureOwnerFrame(bool begin_tick, bool notify_global = true);
-    std::uint64_t submitted_presentation_epoch_{};
-    void CallActivity(const std::string& name, const std::string& descriptor,
-                      std::vector<runtime::dexvm::VmValue> arguments);
-    runtime::dexvm::VmValue CallOnView(runtime::dexvm::VmObjectRef receiver, const std::string& name,
-                                       const std::string& descriptor, std::vector<runtime::dexvm::VmValue> arguments);
-    void DispatchInput(bool publish_mutations = true);
-    void MarkFailed() noexcept;
-    // Managed surface lifecycle for guest-implemented SurfaceViews, which
-    // wait on these before they will touch EGL.
-    void DispatchSurfaceHolder(runtime::SurfaceHolderPhase phase);
-    // Replaces a teardown-shaped error with the uncaught Java thread death
-    // that actually caused it, when one was recorded.
-    void RethrowFatalThreadFailure();
-    // Cooperative Timer tasks + in-process startActivity, both serviced at
-    // frame boundaries, plus uncaught failures from real Java threads.
-    void PumpJavaThreads();
-    // Decoded VideoView playback advances with the same frame clock; frames
-    // publish through the binding and onCompletion fires on this thread.
-    void PumpVideo();
-    // AudioTrack position callbacks observe the mixer head and run on this
-    // same lifecycle/VM writer thread, never on the host audio callback.
-    void PumpAudioTracks();
-    // Before the first traversal, every Java worker that already exists must
-    // be observed parked once or terminal. The bounded fallback is fail-open.
-    void AwaitInitialThreadQuiescence();
-    void ServiceActivitySwitch();
-    void StartCurrentActivity();
-    void DeliverActivityResults();
-    void RestoreActivity(runtime::dexvm::VmObjectRef new_intent = runtime::dexvm::VmObjectRef{});
-    void CompleteWindowHandoffs();
-    void AttachActivityWindow();
-    void SetActivityWindowVisible(runtime::dexvm::VmObjectRef activity, bool visible);
-    void SynchronizeContentView();
-    void ReevaluateContentRenderer();
-    void DispatchViewWindowFocus(bool has_focus);
-    void EnsureRendererCallbacks();
-    using GlSurfaceRuntime = runtime::DexVmAndroidContext::GlSurfaceRuntime;
-    [[nodiscard]] std::shared_ptr<GlSurfaceRuntime> RendererState();
-    void InitializeRendererEgl(GlSurfaceRuntime& state);
-    void ReleaseRendererEgl(GlSurfaceRuntime& state, bool preserve_context = false);
-    void RunRendererEvents();
-    void EnsureRendererThread(const std::shared_ptr<GlSurfaceRuntime>& state);
-    void RunOnRenderer(std::function<void()> action);
-    void RunOnRenderer(const std::shared_ptr<GlSurfaceRuntime>& state, std::function<void()> action);
-    void StopRendererThread();
-    void StopRendererThread(runtime::dexvm::VmObjectRef view);
-    void StopAllRenderers();
-    void RendererThreadBody(runtime::dexvm::VmObjectRef thread);
-    struct RendererThread;
-    std::unordered_map<std::uint32_t, std::unique_ptr<RendererThread>> renderer_threads_;
-    // Publishes the sole window-focus fact before virtually notifying the
-    // Activity and every currently attached View. Repeated values are silent.
-    void SetWindowFocus(bool has_focus);
+    void AwaitIdle(std::uint64_t budget_ns);
+    void CheckGuest();
 
-    AndroidPresentationCache presentation_cache_;
     DexActivityLifecycleBindings bindings_;
     std::vector<runtime::AndroidBoundaryInput> pending_input_;
     AndroidInputTimeline input_timeline_;
     hal::FixedStepClock clock_;
-    LifecycleRunState state_{LifecycleRunState::ready};
-    std::uint64_t frame_{};
-    bool surface_open_{};
-    bool suspended_{};
-    bool requested_window_focus_{};
-    bool pointer_down_{};
-    float pointer_x_{};
-    float pointer_y_{};
-    std::uint64_t scroll_view_handle_{};
-    bool scroll_horizontal_{};
-    float scroll_start_x_{};
-    float scroll_last_x_{};
-    float scroll_start_y_{};
-    float scroll_last_y_{};
-    bool scroll_dragging_{};
-    // View that owns the current gesture. Click eligibility is captured
-    // separately from cumulative OnTouchListener consumption.
-    bool guest_finalized_{};
-    bool stop_completed_{};
-
-    struct WindowHandoff final {
-        runtime::dexvm::VmObjectRef source{}, target{};
-        bool source_started{};
-    };
-
-    std::vector<WindowHandoff> window_handoffs_;
-    // Android delivers onStart/onResume only when the activity does not
-    // finish inside onCreate; a never-started activity retires with just
-    // onDestroy (no onPause/onStop).
-    bool activity_started_{};
-    bool activity_resumed_{};
-    bool egl_pacer_attached_{};
-    // Initial focus is a post-traversal message, not part of Start(). Keeping
-    // it until the first frame also lets guest worker threads observe their
-    // completed Surface setup before native resume callbacks run.
-    bool initial_focus_pending_{};
-    // Identity only: the current content is rooted by the Android context.
-    runtime::dexvm::VmObjectRef sized_content_view_;
-    std::uint64_t sized_content_revision_{};
-    std::optional<runtime::ui::UiNodeId> sized_content_node_;
-    bool realtime_video_clock_{};
-    std::uint64_t previous_step_ns_{};
-    // Host frame-rate cap (context frame_period_ns): steps keep running Loopers, threads and the
-    // logical clock, but only steps that claim a slot are display frames (vsync, GL draw/release).
     hal::FramePacer display_pacer_;
+    LifecycleRunState state_{LifecycleRunState::ready};
+    std::uint64_t frame_{}, window_revision_{}, previous_step_ns_{};
+    bool surface_open_{}, suspended_{}, realtime_{true}, stop_completed_{};
+    bool posted_frame_{}, blank_frame_{}, reported_borrow_{};
 };
 
 }  // namespace ogplay::session

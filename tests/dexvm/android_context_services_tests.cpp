@@ -1,3 +1,4 @@
+#include "runtime/integration/dexvm_android/rom_activity.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
@@ -544,7 +545,9 @@ TEST_CASE("DVM228 ActivityManager reports fresh current process facts and lifecy
         f.context->application_process_name = "test.process:worker";
         // A newly pushed record during onCreate has not started/resumed, but is not stopped.
         const auto activity = f.New("Ltest/ProcessActivity;");
-        f.context->activity_stack.emplace_back().object = activity;
+        f.context->rom_activities = std::make_shared<RomActivityState>();
+        auto& stack = f.context->rom_activities->stack;
+        stack.emplace_back();
         during_create = [&] {
             const auto list = query();
             const auto root = f.vm.ProtectReferences(std::array{list});
@@ -564,14 +567,15 @@ TEST_CASE("DVM228 ActivityManager reports fresh current process facts and lifecy
         CHECK(field(created, "lru") == 0);
         static_cast<void>(f.vm.CollectGarbage("activity-process-facts"));
         CHECK(field(item(first), "importance") == 400);  // Detached value snapshot survives GC.
-        f.context->activity_stack.back().stopped = true;
+        stack.back().stopped = true;
+        stack.back().visible = false;
         const auto stopped = query();
         const auto stopped_root = f.vm.ProtectReferences(std::array{stopped});
         CHECK(field(item(stopped), "importance") == 400);
         CHECK(field(item(stopped), "lru") == 1);
         CHECK(field(item(stopped), "flags") == 4);
-        f.context->activity_stack.insert(f.context->activity_stack.begin(), DexVmAndroidContext::ActivityRecord{});
-        f.context->activity_stack.front().visible = true;
+        stack.insert(stack.begin(), RomActivityState::Record{});
+        stack.front().visible = true;
         const auto visible = query();
         const auto visible_root = f.vm.ProtectReferences(std::array{visible});
         CHECK(field(item(visible), "importance") == 200);
@@ -1270,7 +1274,7 @@ TEST_CASE("DVM-267 ROM Handler subclass receives a message through Looper") {
                                    {VmValue::Ref(listener), VmValue::Ref(base)});
         f.Static("Lfixture/RomHandlerProbe;", "send", "(Landroid/os/Handler;)V", {VmValue::Ref(handler)});
         CHECK(f.Static("Lfixture/RomHandlerProbe;", "result", "()I").AsInt() == 0);
-        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
         CHECK(f.Static("Lfixture/RomHandlerProbe;", "result", "()I").AsInt() == 73);
         CHECK(f.ledger.Unimplemented().empty());
     }
@@ -1355,7 +1359,7 @@ TEST_CASE("DVM-332 ContentObserver process tree dispatch and Settings changes") 
             f.On(resolver, "notifyChange", "(Landroid/net/Uri;Landroid/database/ContentObserver;Z)V",
                  {VmValue::Ref(u), VmValue::Ref(sender), VmValue::Int(0)});
             CHECK(events.empty());  // Both Handler and no-Handler observers are asynchronous.
-            CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+            CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
         };
         const auto count = [&](VmObjectRef o) {
             return std::count_if(events.begin(), events.end(), [&](const Event& e) { return e.observer == o; });
@@ -1416,7 +1420,7 @@ TEST_CASE("DVM-332 ContentObserver process tree dispatch and Settings changes") 
         f.On(other_resolver, "notifyChange", "(Landroid/net/Uri;Landroid/database/ContentObserver;)V",
              {VmValue::Ref(leaf_uri), VmValue::Ref(VmObjectRef{})});
         CHECK(events.empty());
-        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
         CHECK(count(retained) == 1);  // Only the Java static tree retained this observer across GC.
         f.On(other_resolver, "unregisterContentObserver", unreg_sig, {VmValue::Ref(retained)});
         notify(VmObjectRef{});
@@ -1435,7 +1439,7 @@ TEST_CASE("DVM-332 ContentObserver process tree dispatch and Settings changes") 
                          {VmValue::Ref(resolver), VmValue::Ref(f.vm.NewStringUtf8("accelerometer_rotation")),
                           VmValue::Ref(value ? f.vm.NewStringUtf8(value) : VmObjectRef{})});
             CHECK(events.empty());
-            CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+            CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
             return result.AsInt();
         };
         CHECK(put("Landroid/provider/Settings$System;", "1") == 1);

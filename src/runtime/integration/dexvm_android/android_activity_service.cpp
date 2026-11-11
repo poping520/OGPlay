@@ -1,5 +1,6 @@
 #include "rom_activity.h"
 #include "rom_window.h"
+#include "rom_input.h"
 
 #include <algorithm>
 #include <limits>
@@ -40,7 +41,6 @@ void Stop(dx::Interpreter& vm, const Context& context, RomActivityState& s, Reco
     r.stopping = true;
     r.visible = false;
     SetRomApplicationVisibility(vm, context, r.token, false);
-    Send(vm, s, "scheduleWindowVisibility", "(Landroid/os/IBinder;Z)V", {V::Ref(r.token), V::Int(0)});
     Send(vm, s, "scheduleStopActivity", "(Landroid/os/IBinder;ZI)V", {V::Ref(r.token), V::Int(0), V::Int(0)});
 }
 
@@ -70,6 +70,28 @@ void Destroy(dx::Interpreter& vm, RomActivityState& s, Record& r) {
     Result(vm, s, r);
     r.destroying = true;
     Send(vm, s, "scheduleDestroyActivity", "(Landroid/os/IBinder;ZI)V", {V::Ref(r.token), V::Int(1), V::Int(0)});
+}
+
+void UpdateForeground(dx::Interpreter& vm, const Context& context, const RomActivityState& s) {
+    if (s.stack.empty() || !s.application_thread.IsValid()) {
+        context->foreground_activity = Ref{};
+        return;
+    }
+    const auto type = vm.Linker().ResolveDescriptor("Landroid/app/ActivityThread;");
+    const auto current = vm.Linker().FindDirectMethod(type, "currentActivityThread", "()Landroid/app/ActivityThread;");
+    const auto result = vm.Call(*current, {});
+    if (result.exception.IsValid()) throw dx::VmJavaThrow{"", "", result.exception};
+    const auto thread = result.value.ref;
+    if (!thread.IsValid()) {
+        context->foreground_activity = Ref{};
+        return;
+    }
+    const auto activities = Ref{WindowField(vm, thread, "mActivities", "Landroid/util/ArrayMap;").bits};
+    const auto record = CallAndroidMethod(vm, activities, "get", "(Ljava/lang/Object;)Ljava/lang/Object;",
+                                          {V::Ref(s.stack.back().token)})
+                            .ref;
+    context->foreground_activity =
+        record.IsValid() ? Ref{WindowField(vm, record, "activity", "Landroid/app/Activity;").bits} : Ref{};
 }
 
 void Resume(dx::Interpreter& vm, RomActivityState& s) {
@@ -158,6 +180,7 @@ void Launch(dx::Interpreter& vm, const Context& context, const DexVmAndroidConte
     if (const auto* declared =
             loader::FindAndroidManifestActivityComponent(context->activity_components, cmd.component))
         r.orientation = declared->screen_orientation;
+    context->requested_activity_orientation.store(r.orientation);
     s.stack.push_back(std::move(r));
     const auto resources = [&] {
         dx::IntrinsicContext call{vm, token, {}};
@@ -195,7 +218,7 @@ void Drain(dx::Interpreter& vm, const Context& context) {
 }  // namespace
 
 void SetRomApplicationThread(const Context& context, Ref thread) {
-    if (context->rom_window_services_enabled) Activities(context).application_thread = thread;
+    Activities(context).application_thread = thread;
 }
 
 void VisitRomActivityRoots(const DexVmAndroidContext& context, const dx::VmRootVisitor& visit) {
@@ -212,6 +235,33 @@ void VisitRomActivityRoots(const DexVmAndroidContext& context, const dx::VmRootV
         root(cmd.owner);
         root(cmd.intent);
     }
+}
+
+void StartRomLauncher(dx::Interpreter& vm, const Context& context, const std::string& descriptor,
+                      const std::string& component) {
+    const auto action = vm.NewStringUtf8("android.intent.action.MAIN");
+    const auto action_root = vm.ProtectReferences(std::array{action});
+    const auto intent = NewPlatformObject(vm, "Landroid/content/Intent;", "(Ljava/lang/String;)V", {V::Ref(action)});
+    const auto intent_root = vm.ProtectReferences(std::array{intent});
+    const auto category = vm.NewStringUtf8("android.intent.category.LAUNCHER");
+    static_cast<void>(CallAndroidMethod(vm, intent, "addCategory", "(Ljava/lang/String;)Landroid/content/Intent;",
+                                        {V::Ref(category)}));
+    const auto package = vm.NewStringUtf8(context->package_name);
+    const auto package_root = vm.ProtectReferences(std::array{package});
+    const auto name = vm.NewStringUtf8(component);
+    const auto component_name = NewAndroidComponentName(vm, package, name);
+    const auto component_root = vm.ProtectReferences(std::array{component_name});
+    static_cast<void>(CallAndroidMethod(vm, intent, "setComponent",
+                                        "(Landroid/content/ComponentName;)Landroid/content/Intent;",
+                                        {V::Ref(component_name)}));
+    static_cast<void>(CallAndroidMethod(vm, intent, "addFlags", "(I)Landroid/content/Intent;", {V::Int(0x10000000)}));
+    DexVmAndroidContext::ActivityCommand launch;
+    launch.intent = intent;
+    launch.descriptor = descriptor;
+    launch.component = component;
+    if (const auto* declared = loader::FindAndroidManifestActivityComponent(context->activity_components, component))
+        launch.launch_mode = declared->launch_mode;
+    Launch(vm, context, launch);
 }
 
 void RequestRomActivitySuspend(dx::Interpreter& vm, const Context& context, bool suspend) {
@@ -250,6 +300,7 @@ void RequestRomActivityExit(dx::Interpreter& vm, const Context& context, std::in
         }
     }
     s.exit_requested = s.stack.empty();
+    context->activities_destroyed.store(s.exit_requested);
 }
 
 RomActivityExitStatus ReadRomActivityExitStatus(const Context& context) {
@@ -261,7 +312,6 @@ RomActivityExitStatus ReadRomActivityExitStatus(const Context& context) {
 }
 
 void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context) {
-    if (!context->rom_window_services_enabled) return;
     b.VirtualMethod(
         "startActivity",
         "(Landroid/app/IApplicationThread;Ljava/lang/String;Landroid/content/Intent;Ljava/lang/String;Landroid/os/IBinder;Ljava/lang/String;IILjava/lang/String;Landroid/os/ParcelFileDescriptor;Landroid/os/Bundle;)I",
@@ -327,6 +377,7 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
             (Find(s, c.arguments[0].ref) && s.background_tasks.contains(Find(s, c.arguments[0].ref)->task))) {
             if (auto* r = Find(s, c.arguments[0].ref)) Pause(c.vm, s, *r);
         }
+        UpdateForeground(c.vm, context, s);
         return V::Void();
     });
     b.VirtualMethod("activityPaused", "(Landroid/os/IBinder;)V", [context](dx::IntrinsicContext& c) {
@@ -380,16 +431,22 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
                             if (r.token != c.arguments[0].ref && r.paused && !r.stopped && !r.destroying)
                                 Stop(c.vm, context, s, r);
                         Drain(c.vm, context);
+                        UpdateForeground(c.vm, context, s);
                         return V::Void();
                     });
     b.VirtualMethod("activityDestroyed", "(Landroid/os/IBinder;)V", [context](dx::IntrinsicContext& c) {
         auto& s = Activities(context);
         std::erase_if(s.stack, [&](const auto& r) { return r.token == c.arguments[0].ref; });
-        if (s.stack.empty() && s.pending.empty())
+        if (s.stack.empty() && s.pending.empty()) {
             s.exit_requested = true;
-        else
+            context->activities_destroyed.store(true);
+            if (!s.exiting) context->exit_requested.store(true);
+        } else if (!s.stack.empty()) {
+            context->requested_activity_orientation.store(s.stack.back().orientation);
             Resume(c.vm, s);
+        }
         Drain(c.vm, context);
+        UpdateForeground(c.vm, context, s);
         return V::Void();
     });
     b.VirtualMethod("getTaskForActivity", "(Landroid/os/IBinder;Z)I", [context](dx::IntrinsicContext& c) {
@@ -412,8 +469,17 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
         const auto* r = Find(Activities(context), c.arguments[0].ref);
         return V::Int(r ? r->orientation : -1);
     });
+    b.VirtualMethod("willActivityBeVisible", "(Landroid/os/IBinder;)Z", [context](dx::IntrinsicContext& c) {
+        auto& s = Activities(context);
+        const auto* r = Find(s, c.arguments[0].ref);
+        return V::Int(r && !r->finishing && !r->destroying && !s.exiting && !s.background_tasks.contains(r->task));
+    });
     b.VirtualMethod("setRequestedOrientation", "(Landroid/os/IBinder;I)V", [context](dx::IntrinsicContext& c) {
-        if (auto* r = Find(Activities(context), c.arguments[0].ref)) r->orientation = c.arguments[1].AsInt();
+        auto& s = Activities(context);
+        if (auto* r = Find(s, c.arguments[0].ref)) {
+            r->orientation = c.arguments[1].AsInt();
+            if (r == &s.stack.back()) context->requested_activity_orientation.store(r->orientation);
+        }
         return V::Void();
     });
     b.VirtualMethod("overridePendingTransition", "(Landroid/os/IBinder;Ljava/lang/String;II)V",
@@ -466,4 +532,86 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
             return V::Ref(list);
         });
 }
+
+void PumpAndroidHostRequests(dx::Interpreter& vm, const Context& context) {
+    std::deque<DexVmAndroidContext::HostActivityRequest> activities;
+    std::deque<std::pair<std::string, bool>> text;
+    bool media{};
+    {
+        std::scoped_lock lock(context->scheduler_mutex);
+        activities.swap(context->host_activity_requests);
+        text.swap(context->host_text_events);
+        media = std::exchange(context->media_tick_pending, false);
+    }
+    using Kind = DexVmAndroidContext::HostActivityRequest::Kind;
+    for (const auto& request : activities) {
+        switch (request.kind) {
+        case Kind::launch: StartRomLauncher(vm, context, request.descriptor, request.component); break;
+        case Kind::suspend: RequestRomActivitySuspend(vm, context, true); break;
+        case Kind::resume: RequestRomActivitySuspend(vm, context, false); break;
+        case Kind::shutdown: RequestRomActivityExit(vm, context); break;
+        }
+    }
+    if (context->rom_activities && context->rom_activities->exiting && context->activities_destroyed.load() &&
+        !context->local_services_stopping)
+        ShutdownLocalServices(vm, *context);
+    for (const auto& [value, composing] : text)
+        CommitRomInputText(vm, context, vm.NewStringUtf8(value), composing);
+    if (media) {
+        DispatchAndroidSurfaceStreamEvents(vm, *context);
+        if (const auto error = PumpAndroidAudioTracks(vm, *context)) throw std::runtime_error(*error);
+        if (const auto error = PumpVideoViews(vm, *context)) throw std::runtime_error(*error);
+    }
+}
+
 }  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime {
+namespace {
+void WakeMainQueueLocked(DexVmAndroidContext& context) {
+    for (const auto& [_, queue] : context.message_queues)
+        if (queue->context_token == 1U) queue->wake = true;
+}
+}  // namespace
+
+void QueueAndroidActivityRequest(DexVmAndroidContext& context, DexVmAndroidContext::HostActivityRequest request) {
+    {
+        std::scoped_lock lock(context.scheduler_mutex);
+        context.host_activity_requests.push_back(std::move(request));
+        WakeMainQueueLocked(context);
+    }
+    NotifyAndroidScheduler(context);
+}
+
+void QueueAndroidTextEvent(DexVmAndroidContext& context, std::string text, bool composing) {
+    {
+        std::scoped_lock lock(context.scheduler_mutex);
+        if (context.host_text_events.size() >= 128U) throw std::length_error("host text input queue exhausted");
+        context.host_text_events.emplace_back(std::move(text), composing);
+        WakeMainQueueLocked(context);
+    }
+    NotifyAndroidScheduler(context);
+}
+
+void QueueAndroidMediaTick(DexVmAndroidContext& context) {
+    {
+        std::scoped_lock lock(context.scheduler_mutex);
+        context.media_tick_pending = true;
+        WakeMainQueueLocked(context);
+    }
+    NotifyAndroidScheduler(context);
+}
+
+bool AndroidMainQueueIdle(DexVmAndroidContext& context) {
+    std::scoped_lock lock(context.scheduler_mutex);
+    const auto now = context.uptime_millis.load();
+    const auto queue = std::ranges::find_if(context.message_queues,
+                                            [](const auto& entry) { return entry.second->context_token == 1U; });
+    if (queue == context.message_queues.end() || !queue->second->idling || queue->second->wake ||
+        now >= queue->second->poll_deadline_millis || now >= context.toast_deadline_millis.load())
+        return false;
+    return std::ranges::none_of(context.scheduled_work, [&](const auto& work) {
+        return work.looper == context.main_looper && work.deadline_millis <= now;
+    });
+}
+}  // namespace ogplay::runtime

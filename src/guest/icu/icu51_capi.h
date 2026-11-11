@@ -8,6 +8,8 @@
 typedef uint16_t UChar;
 extern int32_t u_tolower_51(int32_t code_point);
 extern int32_t u_toupper_51(int32_t code_point);
+extern int8_t u_charType_51(int32_t code_point);
+extern int32_t u_charDirection_51(int32_t code_point);
 typedef int8_t UBool;
 typedef double UDate;
 typedef int32_t UErrorCode;

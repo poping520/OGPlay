@@ -140,9 +140,11 @@ void PublishPresentedFrame(agent::FrameSnapshotStore* frames, runtime::AndroidBo
         guest.RecycleFrame(std::move(frame));
         return;
     }
-    auto previous = frames->Publish({frame.width, frame.height, frame.sequence, std::move(frame.rgba8)});
+    auto previous = frames->Publish(
+        {frame.width, frame.height, frame.sequence, std::move(frame.rgba8), std::move(frame.shared_rgba8)});
     if (previous.has_value()) {
-        guest.RecycleFrame({previous->width, previous->height, previous->sequence, std::move(previous->rgba8)});
+        guest.RecycleFrame({previous->width, previous->height, previous->sequence, std::move(previous->rgba8),
+                            std::move(previous->shared_rgba8)});
     }
 }
 
@@ -150,7 +152,8 @@ template <typename Guest>
 void ReleaseCapturedFrame(agent::FrameSnapshotStore* frames, Guest& guest) {
     if (frames == nullptr) return;
     if (auto frame = frames->Take(); frame.has_value()) {
-        guest.RecycleFrame({frame->width, frame->height, frame->sequence, std::move(frame->rgba8)});
+        guest.RecycleFrame(
+            {frame->width, frame->height, frame->sequence, std::move(frame->rgba8), std::move(frame->shared_rgba8)});
     }
 }
 
@@ -418,7 +421,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         std::shared_ptr<runtime::DexVmAndroidContext> dex_context;
         {
             dex_context = runtime::AssembleAndroidContext(
-                runtime::ReadBootClasspath(bundled_data.root / bionic.data_directory / "framework"), {true});
+                runtime::ReadBootClasspath(bundled_data.root / bionic.data_directory / "framework"));
             dex_context->native_output_sample_rate = kDesktopAudioOutputSpec.sample_rate;
             dex_context->framework_resource_apk =
                 bundled_data.root / bionic.data_directory / "framework/framework-res.apk";
@@ -533,10 +536,6 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.context = dex_context;
         dex_context->system_font_source = [fonts = bundled_data.root / bionic.data_directory /
                                                    "fonts"](std::string_view file) { return ReadBytes(fonts / file); };
-        app_request.ui_primary_font =
-            ReadBytes(bundled_data.root / bionic.data_directory / "fonts" / "Roboto-Regular.ttf");
-        app_request.ui_fallback_font =
-            ReadBytes(bundled_data.root / bionic.data_directory / "fonts" / "DroidSansFallback.ttf");
         app_request.api_level = api_level;
         app_request.surface_width = surface_width;
         app_request.surface_height = surface_height;
@@ -811,17 +810,16 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         const auto present_latest = [&] {
             bool did_present = false;
             if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
-                *frame = dex_lifecycle->ComposePresentedFrame(std::move(*frame));
                 guest_width = frame->width;
                 guest_height = frame->height;
                 control_mapper.SetSurface(guest_width, guest_height);
                 if (hints_visible) {
-                    hint_frame.assign(frame->rgba8.begin(), frame->rgba8.end());
+                    hint_frame.assign(frame->Pixels().begin(), frame->Pixels().end());
                     DrawControlHints(hint_frame, frame->width, frame->height, control_mapper.Hints(),
                                      control_mapper.Mode(), PointerHintLine(control_mapper));
                     window->PresentRgba8(hint_frame, frame->width, frame->height);
                 } else {
-                    window->PresentRgba8(frame->rgba8, frame->width, frame->height);
+                    window->PresentRgba8(frame->Pixels(), frame->width, frame->height);
                 }
                 ++presented;
                 did_present = true;
@@ -867,7 +865,37 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             return confirmed;
         };
         outcome.loop_entered = true;
+        bool host_text_input{};
+        int requested_orientation = -1;
         while (!quit && !guest->ExitRequested() && !(dex_context && runtime::SessionExitRequested(*dex_context))) {
+            const bool wants_text = !host_background && !failure &&
+                                    mcp_lifecycle == agent::McpLifecycleState::running &&
+                                    dex_context->host_ime_visible.load();
+            if (wants_text != host_text_input) {
+                host_text_input = wants_text;
+                if (!window->SetTextInput(wants_text))
+                    logger.Write(core::LogLevel::warn, "frontend.run_apk", "SDL text input request failed");
+            }
+            if (const auto orientation = dex_context->requested_activity_orientation.load();
+                orientation != requested_orientation) {
+                requested_orientation = orientation;
+                const auto target = [&] {
+                    using Orientation = hal::WindowOrientation;
+                    switch (orientation) {
+                    case 1:
+                    case 7:
+                    case 9:
+                    case 12: return Orientation::portrait;
+                    case 0:
+                    case 6:
+                    case 8:
+                    case 11: return Orientation::landscape;
+                    default: return Orientation::automatic;
+                    }
+                }();
+                if (!window->SetOrientation(target))
+                    logger.Write(core::LogLevel::warn, "frontend.run_apk", "SDL orientation request failed");
+            }
             bool close_answered = false;
             for (const auto& event : window->PollEvents()) {
                 using Type = hal::InputEventType;
@@ -907,6 +935,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                         host_suspended_session = false;
                         publish_session();
                     }
+                } else if (event.type == Type::text_input || event.type == Type::text_editing) {
+                    if (host_text_input && core::IsValidUtf8(event.text))
+                        runtime::QueueAndroidTextEvent(*dex_context, event.text, event.type == Type::text_editing);
                 } else if (const auto decision = host_keys.Filter(event); decision.consumed) {
                     if (decision.shortcut == HostShortcut::toggle_hints) {
                         hints_visible = !hints_visible;

@@ -31,15 +31,14 @@ std::vector<BootClasspathJar> ReadBootClasspath(const std::filesystem::path& fra
     return jars;
 }
 
-std::shared_ptr<DexVmAndroidContext> AssembleAndroidContext(std::vector<BootClasspathJar> boot_classpath,
-                                                            AndroidPlatformServices platform) {
+std::shared_ptr<DexVmAndroidContext> AssembleAndroidContext(std::vector<BootClasspathJar> boot_classpath) {
     if (boot_classpath.empty()) throw std::runtime_error("boot classpath is empty");
     for (auto& jar : boot_classpath) {
         jar.archive = loader::ParseApkArchive(jar.bytes);
         if (!HasEntry(jar.archive, "classes.dex"))
             throw std::runtime_error("boot classpath archive has no classes.dex: " + jar.guest_path);
     }
-    const auto context = std::make_shared<DexVmAndroidContext>(AndroidUiTraversalOwner::JavaTraversal, platform);
+    auto context = std::make_shared<DexVmAndroidContext>();
     context->boot_classpath = std::move(boot_classpath);
     return context;
 }

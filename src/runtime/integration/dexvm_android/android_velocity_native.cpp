@@ -8,7 +8,6 @@ Decl Declare_android_view_VelocityTracker(const Context& context) {
     using V = dx::VmValue;
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/view/VelocityTracker;");
     b.MergesBootClass();
-    if (!context->rom_window_services_enabled) return std::move(b).Build();
     constexpr auto native = dx::kAccPrivate | dx::kAccStatic | dx::kAccNative;
     const auto tracker = [context](int id) -> VelocityTracker& {
         const auto found = RomInput(context).velocities.find(id);

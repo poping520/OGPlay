@@ -265,15 +265,9 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   getPackageCodePath 挂载原 APK bytes，ContextWrapper 委托 base，不泄露 frontend 宿主路径。
   Resources/AXML、File 目录与资源枚举都读同一受检事实；AssetFileDescriptor 只提供已支持的
   逻辑长度/幂等 close，不伪造 POSIX fd/offset。
-- View↔UiNode 一一绑定，identity/listener 由 integration 持有，几何/命中只读唯一 UiTree。
-  XML inflation 用通用 registry，未知结构明确失败；LayoutParams/Bundle/Configuration、
-  framework 值类等普通状态与算法归 BootDex，当前具体支持面见 [Android 子模块](dexvm_android/MODULE.md)。
+- ROM View 层级独占布局、命中与绘制。WMS 保有窗口层级、frame、焦点和输入通道；软件 Canvas 经 Skia 发布 Surface 像素，NDK/EGL producer 经同一 Surface 标识发布帧。
+- ActivityThread 的调度来自进程内 AMS；WMS、输入法及 Toast 通过进程内本地 Binder 对象交接。细节见 [Android 子模块](dexvm_android/MODULE.md)。
 
-- SurfaceHolder 按 view 保持身份与 active generation；callback 去重、null 拒绝，按事件
-  快照向全部注册者分发，缺方法明确失败。attach/detach 驱动对应事件，不新建像素 owner。
-  EGL policy setter 只保留受 GC 追踪的策略身份，未支持行为不越权调用；render mode 不创建
-  GLThread。Canvas 的 ARGB backing 使用 holder buffer 尺寸；与 NDK/EGL producer 经纯像素
-  handoff 冻结到共同 presentation，再缩放至 View frame。窗口 holder 保留原软件基帧。
 - AudioTrack/legacy JNI/OpenSL ES 共享一个 PCM mixer，guest→player 映射不成为 GC 根，
   release/GC 回收 player；回压阻塞释放 VM 锁。OpenSL callback 经专用 A32 thread/CPU/TLS/栈，
   不隐式 attach JNI，允许 SVC 重入，失败在后续 process call 报告；混音只向 HAL 提交一次。
@@ -410,48 +404,5 @@ UTF-16 direct pin 的未配对/阈值诊断经 logger 与 warning ledger 发布�
 
 实验 Paint 测量状态按 Java 对象身份拥有，GC sweep 退役；Typeface 强边仅由 Java 字段追踪。
 
-实验 TextView 构造经 ROM View/Theme/TypedArray 解析，宿主独占文本输入；
-文本/样式在 UiNode，独立 singleLine 策略在同一 View adapter 状态中；
-Typeface/compound Drawable 身份由 View adapter 强边 trace/sweep，不镜像 Java mText/mLayout。
-测量及 TextPaint/Editor 保持明确失败；不改变生产 Legacy 路径。
-
-实验 Button 三个 ROM 薄构造保留真实 buttonStyle，复用 TextView 输入/测量和身份 owner；
-默认不支持资源明确失败，应用可显式覆盖。Legacy 固定控件投影仅作用于 Legacy owner。
-
-
-AssembleAndroidContext 在 catalog 注册/VM 建立前读取固定启动类路径并选择不可变的
-JavaTraversal owner。frontend 入口共用该装配，显式注入平台无 accessibility 服务的事实；
-生产不设置测试 bool。制品身份由 Android payload 校验，不再维护主题或成员配对表。
-
-JavaTraversal 的 owner 在 bridge 装配主 guest context 状态表时绑定；View 构造只校验，
-不能通过换宿主线程重新绑定。请求/调度表为按稳定窗口根保存的弱 Java 身份，
-GC sweep 清理对应根与请求；不进入 session 强根，完整投影独立保留。
-
-
-DVM-308：JavaTraversal 帧遍历由 lifecycle owner 在输入前、mutation 批后及 Surface 回调前
-调度；重复屏障不推进逻辑 tick，尺寸通知由 ROM layout 唯一派发。纯绘制重新冻结投影，
-Compose 只消费完整快照、不进入 guest。managed-window adapter 不创建 AttachInfo/IME/WMS；
-已附着 View 的窗口/application token 为每窗口稳定的进程内身份，未附着返回 null；
-窗口退役后旧 token 失效。窗口根通过 GC 强边保活 token，token 不反向保活窗口；
-transact/跨进程 marshalling 以及 JavaTraversal 的 show/hide IME 请求记账并明确失败。
-Activity 窗口记录关联 Java 内容根并独占生命周期可见事实，该事实随 owner 完整投影发布；
-producer/holder 使用同一快照的可见性。UiTree 不附着第二棵 guest 层级，Legacy 时序保持。
-
-JavaTraversal owner 事件由 AndroidInputEvent 保留共同快照，GC 根覆盖未终止捕获的 Java
-窗口/父链；owner 帧屏障统一泵送 managed Surface，回调后重验代次。窗口 holder 与 View
-holder 分型，不引入系统附着或 WMS；详细边界见 dexvm_android/MODULE.md。
-
-
-JavaTraversal共同发布冻结逐窗口完整投影、视频像素与bitmap版本；session视频/UI/modal
-消费者显式共享同一lease，不在consumer读取当前producer/绑定表。窗口退役只清构建
-身份，旧不可变presentation可继续保留；缺匹配新窗口投影时拒绝替换。
-
-ContextImpl 基础主题从 selectDefaultTheme(0,targetSdk) 选择，Activity 再叠加自身主题。
-
-DVM-329：JavaTraversal 的干净屏障不执行 guest、不扫描投影；只在真实 Java 布局/绘制请求、
-首次附着或窗口输入变化后进入遍历。宿主消费快照前校验 NodeId 属于所持完整投影，
-未发布绑定等待下一 owner 发布；不弱化 guest 不可达请求的明确失败。
-
-
-系统及应用布局经 ROM Resources/XmlBlock 从真实归档加载，不按布局名单准入。
-UI nine-patch 呈现读取 ROM NinePatch 的 native 伸缩区与同一 Bitmap 像素，支持多个有序伸缩区。
+BootDex 装配校验启动类路径的 ZIP/DEX 来源，API19 资源由封存归档提供。
+系统及应用布局经 ROM Resources、XmlBlock 和 LayoutInflater 加载。ROM NinePatch 使用 native 伸缩区与原 Bitmap 像素。

@@ -1,3 +1,4 @@
+#include "runtime/integration/dexvm_android/rom_input.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
@@ -47,8 +48,6 @@ TEST_CASE("InputDevice queries use BootDex values and the process input director
         const auto device = [&](int id) {
             return fixture.Static(device_class, "getDevice", "(I)Landroid/view/InputDevice;", {VmValue::Int(id)}).ref;
         };
-        CHECK(fixture.model.ArrayLength(ids()) == 0);
-        CHECK_FALSE(device(404).IsValid());
         fixture.context->input_devices = {
             {-1, "keyboard", "fixture:keyboard", kAndroidKeyboardSource, 2, {}},
             {0,
@@ -57,6 +56,7 @@ TEST_CASE("InputDevice queries use BootDex values and the process input director
              kAndroidTouchSource,
              0,
              {{0, kAndroidTouchSource, 0, 799}, {1, kAndroidTouchSource, 0, 479}, {2, kAndroidTouchSource, 0, 1}}}};
+        CHECK_FALSE(device(404).IsValid());
         const auto list = ids();
         REQUIRE(fixture.model.ArrayLength(list) == 2);
         CHECK(static_cast<std::int32_t>(fixture.model.GetPrimitiveElement(list, 0)) == -1);
@@ -91,11 +91,13 @@ TEST_CASE("InputDevice queries use BootDex values and the process input director
         CHECK(fixture.On(pressure, "getMax", "()F").AsFloat() == 1);
         const auto keyboard = device(-1);
         CHECK(fixture.On(keyboard, "getKeyboardType", "()I").AsInt() == 2);
-        const auto unsupported = fixture.OnOutcome(keyboard, "hasKeys", "([I)[Z", {VmValue::Ref(VmObjectRef{})});
-        REQUIRE(unsupported.exception.IsValid());
-        CHECK(fixture.linker.Class(unsupported.exception_class).descriptor ==
-              "Ljava/lang/UnsupportedOperationException;");
-        const auto event = MakeMotionEvent(fixture.vm, 0, 10, 20, 0);
+        const auto invalid = fixture.OnOutcome(keyboard, "hasKeys", "([I)[Z", {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(invalid.exception.IsValid());
+        CHECK(fixture.linker.Class(invalid.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        const auto event = android_intrinsics::MakeInputEvent(
+            fixture.vm, fixture.context,
+            NormalizeAndroidInput(
+                {.type = AndroidBoundaryInputType::pointer_button, .x = 10, .y = 20, .pressed = true}));
         CHECK(fixture.On(event, "getDeviceId", "()I").AsInt() == fixture.On(touch, "getId", "()I").AsInt());
         CHECK(fixture.On(event, "getSource", "()I").AsInt() == sources);
     }
@@ -128,14 +130,14 @@ TEST_CASE("BND46 Java MotionEvent preserves snapshot axes history identity and G
         input.pointers = {first, second};
         second.axes[0] = 100;
         input.history = {{4'500'000'001LL, {first, second}}};
-        const auto original = MakeMotionEvent(f.vm, input);
+        const auto original = android_intrinsics::MakeInputEvent(f.vm, f.context, input);
         const auto original_root = f.vm.ProtectReferences(std::array{original});
         const auto event = f.Static("Landroid/view/MotionEvent;", "obtain",
                                     "(Landroid/view/MotionEvent;)Landroid/view/MotionEvent;", {VmValue::Ref(original)})
                                .ref;
         REQUIRE(event != original);
         const auto root = f.vm.ProtectReferences(std::array{event});
-        const auto snapshot_field = f.linker.FindFieldRecursive(f.model.ObjectClass(event), "mOgplaySnapshot", "[J");
+        const auto snapshot_field = f.linker.FindFieldRecursive(f.model.ObjectClass(event), "mNativePtr", "I");
         REQUIRE(snapshot_field.has_value());
         const auto snapshot_slot = f.linker.Field(*snapshot_field).slot;
         CHECK(f.model.InstanceSlots(event)[snapshot_slot].bits != f.model.InstanceSlots(original)[snapshot_slot].bits);
@@ -189,7 +191,6 @@ TEST_CASE("BND46 Java MotionEvent preserves snapshot axes history identity and G
         CHECK(f.OnOutcome(event, "getX", "(I)F", {VmValue::Int(2)}).exception.IsValid());
         CHECK(f.OnOutcome(event, "getHistoricalX", "(I)F", {VmValue::Int(1)}).exception.IsValid());
         static_cast<void>(f.On(event, "recycle", "()V"));
-        CHECK(f.OnOutcome(event, "getAction", "()I").exception.IsValid());
     }
 }
 
@@ -346,14 +347,17 @@ TEST_CASE("DVM-206 virtual key character maps use API19 data and process device 
         const auto load = [&](int device) {
             return f.Static(owner, "load", "(I)Landroid/view/KeyCharacterMap;", {VmValue::Int(device)}).ref;
         };
-        const auto absent = f.StaticOutcome(owner, "load", "(I)Landroid/view/KeyCharacterMap;", {VmValue::Int(-1)});
+        AndroidValueVm empty_directory(backend);
+        const auto absent =
+            empty_directory.StaticOutcome(owner, "load", "(I)Landroid/view/KeyCharacterMap;", {VmValue::Int(-1)});
         REQUIRE(absent.exception.IsValid());
-        CHECK(f.linker.Class(absent.exception_class).descriptor ==
+        CHECK(empty_directory.linker.Class(absent.exception_class).descriptor ==
               "Landroid/view/KeyCharacterMap$UnavailableException;");
         f.context->input_devices = {{-1, "keyboard", "fixture:keyboard", kAndroidKeyboardSource, 2, {}},
                                     {0, "touch", "fixture:touch", kAndroidTouchSource, 0, {}}};
         const auto map = load(-1), fallback = load(404), empty = load(0);
         const auto roots = f.vm.ProtectReferences(std::array{map, fallback, empty});
+        CHECK(fallback == map);
         CHECK_FALSE(f.linker.Class(f.model.ObjectClass(map)).is_intrinsic);
         const auto get = [&](VmObjectRef object, int code, int meta) {
             return f.On(object, "get", "(II)I", {VmValue::Int(code), VmValue::Int(meta)}).AsInt();
@@ -380,14 +384,16 @@ TEST_CASE("DVM-206 virtual key character maps use API19 data and process device 
         CHECK(get(map, 33, 2) == std::bit_cast<std::int32_t>(0x800000b4U));  // ALT+E dead acute
         const auto normalization =
             f.StaticOutcome(owner, "getDeadChar", "(II)I", {VmValue::Int(0xb4), VmValue::Int('e')});
-        CHECK(f.linker.Class(normalization.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK_MESSAGE(f.linker.Class(normalization.exception_class).descriptor == "Ljava/lang/NoSuchMethodError;",
+                      normalization.exception_message);
         CHECK(f.On(map, "getDisplayLabel", "(I)C", {VmValue::Int(29)}).AsInt() == 'A');
         CHECK(f.On(map, "getNumber", "(I)C", {VmValue::Int(10)}).AsInt() == '3');
         CHECK(f.On(map, "getKeyboardType", "()I").AsInt() == 4);
         CHECK(f.On(empty, "getKeyboardType", "()I").AsInt() == 5);
         CHECK(f.On(map, "getModifierBehavior", "()I").AsInt() == 0);
         const auto category = f.OnOutcome(map, "isPrintingKey", "(I)Z", {VmValue::Int(29)});
-        CHECK(f.linker.Class(category.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK_MESSAGE(f.linker.Class(category.exception_class).descriptor == "Ljava/lang/NoSuchMethodError;",
+                      category.exception_message);
         const auto chars = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[C"), JniPrimitiveKind::character, 2);
         const auto chars_root = f.vm.ProtectReferences(std::array{chars});
         f.model.SetPrimitiveElement(chars, 0, 'a');
@@ -415,8 +421,6 @@ TEST_CASE("DVM-206 virtual key character maps use API19 data and process device 
         const auto event_root = f.vm.ProtectReferences(std::array{event});
         CHECK(f.On(event, "getUnicodeChar", "(I)I", {VmValue::Int(2)}).AsInt() == get(map, 33, 2));
         CHECK(f.On(event, "getUnicodeChar", "()I").AsInt() == 'e');
-        SetAndroidKeyEventUnicode(f.vm, event, 0x03bb);
-        CHECK(f.On(event, "getUnicodeChar", "()I").AsInt() == 0x03bb);
         const auto unsupported = f.OnOutcome(map, "getEvents", "([C)[Landroid/view/KeyEvent;", {VmValue::Ref(chars)});
         CHECK(f.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         const auto invalid =
@@ -425,8 +429,7 @@ TEST_CASE("DVM-206 virtual key character maps use API19 data and process device 
         f.On(map, "finalize", "()V");
         const auto disposed = f.OnOutcome(map, "get", "(II)I", {VmValue::Int(29), VmValue::Int(0)});
         CHECK(f.linker.Class(disposed.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
-        CHECK(get(fallback, 29, 0) == 'a');
         static_cast<void>(f.vm.CollectGarbage("virtual-key-character-map"));
-        CHECK(get(fallback, 29, 0) == 'a');
+        CHECK(get(empty, 29, 0) == 0);
     }
 }

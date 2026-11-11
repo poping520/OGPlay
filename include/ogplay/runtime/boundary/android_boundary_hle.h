@@ -86,6 +86,11 @@ struct AndroidBoundaryFrame final {
     std::uint32_t height{};
     std::uint64_t sequence{};
     std::vector<std::uint8_t> rgba8;
+    std::shared_ptr<const std::vector<std::uint8_t>> shared_rgba8{};
+
+    [[nodiscard]] std::span<const std::uint8_t> Pixels() const {
+        return shared_rgba8 ? std::span<const std::uint8_t>(*shared_rgba8) : std::span<const std::uint8_t>(rgba8);
+    }
 };
 
 struct BionicDynamicLinkHooks final {
@@ -221,12 +226,14 @@ public:
                         std::function<void(bool)> finish);
     void RegisterNativeActivity(NativeActivityBoundaryResources resources);
     void UnregisterNativeActivity(memory::GuestAddress activity);
-    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active);
+    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active,
+                                                 std::optional<AndroidSurfaceWindow> surface = std::nullopt);
     void SetNativeActivityInput(memory::GuestAddress activity, bool active);
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
     // Publishes a host-composed RGBA frame (logical surface size) into the
     // same frame store and sequence as GL presents.
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
+    void PublishSharedFrame(std::shared_ptr<const video::VideoFrame> pixels);
     void PublishBlankFrame(std::uint8_t alpha);
     void RecycleFrame(AndroidBoundaryFrame&& frame);
     // Explicit upper-layer coverage certificate; true suppresses only host

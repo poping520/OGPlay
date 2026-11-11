@@ -320,7 +320,7 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
             CHECK(std::get<JniLong>(fixture.runtime->session->Fields().GetInstance(*info_identity, info_class, *field,
                                                                                    1U)) == expected);
         }
-        fixture.context->activity = activity;
+        fixture.context->foreground_activity = activity;
         const auto legacy = classes.RegisterClass(
             {"fixture/CurrentActivity", {}, {{"get", "()Landroid/app/Activity;", "activity.current", true}}, {}});
         const auto current = *classes.GetMethodId(legacy, "get", "()Landroid/app/Activity;", true);
@@ -392,7 +392,7 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
         CHECK(bridge.FromReference(std::get<JniReference>(
                   call(activity, "getContentResolver", "()Landroid/content/ContentResolver;"))) ==
               bridge.FromReference(resolver));
-        fixture.context->activity = VmObjectRef{};
+        fixture.context->foreground_activity = VmObjectRef{};
         CHECK(std::get<JniReference>(invocations.InvokeStatic(1U, legacy, current, {}, JniArgumentSource::value_array))
                   .IsNull());
     }

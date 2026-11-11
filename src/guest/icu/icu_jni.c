@@ -1313,7 +1313,18 @@ static jint Character_toUpperCaseImpl(JNIEnv* env, jclass cls, jint code_point) 
     return ICU(u_toupper)(code_point);
 }
 
-static const JNINativeMethod character_methods[] = {{"toLowerCaseImpl", "(I)I", (void*)Character_toLowerCaseImpl},
+static jbyte Character_getDirectionality(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    // ICU 51 UCharDirection values mapped to API19 Character directionality.
+    static const jbyte directions[] = {0, 1, 3, 4, 5, 6, 7, 10, 11, 12, 13, 14, 15, 2, 16, 17, 18, 8, 9};
+    if (ICU(u_charType)(code_point) == 0) return -1;
+    const int32_t direction = ICU(u_charDirection)(code_point);
+    return direction >= 0 && direction < (int32_t)sizeof(directions) ? directions[direction] : -1;
+}
+
+static const JNINativeMethod character_methods[] = {{"getDirectionality", "(I)B", (void*)Character_getDirectionality},
+                                                    {"toLowerCaseImpl", "(I)I", (void*)Character_toLowerCaseImpl},
                                                     {"toUpperCaseImpl", "(I)I", (void*)Character_toUpperCaseImpl}};
 static const JNINativeMethod timezone_methods[] = {
     {"fillZoneStrings", "(Ljava/lang/String;[[Ljava/lang/String;)V", (void*)TimeZoneNames_fillZoneStrings}};

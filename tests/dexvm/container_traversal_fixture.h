@@ -19,8 +19,7 @@ struct ContainerVm {
     VirtualFileSystem filesystem;
     ogplay::core::CapabilityLedger ledger;
     ogplay::core::Logger logger;
-    std::shared_ptr<DexVmAndroidContext> context{
-        std::make_shared<DexVmAndroidContext>(AndroidUiTraversalOwner::JavaTraversal)};
+    std::shared_ptr<DexVmAndroidContext> context{std::make_shared<DexVmAndroidContext>()};
     std::unique_ptr<AndroidTestRuntime> runtime;
     Interpreter& vm;
     DexClassLinker& linker;

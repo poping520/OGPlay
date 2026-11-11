@@ -295,10 +295,11 @@ struct LocalService {
     const char* name;
     const char* descriptor;
     const char* stub;
-    bool needs_rom_windows{};
 };
 
 constexpr std::array kLocalServices{
+    LocalService{"accessibility", "Lorg/ogplay/framework/LocalAccessibilityService;",
+                 "Landroid/view/accessibility/IAccessibilityManager$Stub;"},
     LocalService{"activity", "Lorg/ogplay/framework/LocalActivityService;", "Landroid/app/ActivityManagerNative;"},
     LocalService{"alarm", "Lorg/ogplay/framework/LocalAlarmService;", "Landroid/app/IAlarmManager$Stub;"},
     LocalService{"audio", "Lorg/ogplay/framework/LocalAudioService;", "Landroid/media/IAudioService$Stub;"},
@@ -309,10 +310,9 @@ constexpr std::array kLocalServices{
     LocalService{"content", "Lorg/ogplay/framework/LocalContentService;", "Landroid/content/IContentService$Stub;"},
     LocalService{"display", "Lorg/ogplay/framework/LocalDisplayService;",
                  "Landroid/hardware/display/IDisplayManager$Stub;"},
-    LocalService{"input", "Lorg/ogplay/framework/LocalInputService;", "Landroid/hardware/input/IInputManager$Stub;",
-                 true},
+    LocalService{"input", "Lorg/ogplay/framework/LocalInputService;", "Landroid/hardware/input/IInputManager$Stub;"},
     LocalService{"input_method", "Lorg/ogplay/framework/LocalInputMethodService;",
-                 "Lcom/android/internal/view/IInputMethodManager$Stub;", true},
+                 "Lcom/android/internal/view/IInputMethodManager$Stub;"},
     LocalService{"iphonesubinfo", "Lorg/ogplay/framework/LocalPhoneSubscriberService;",
                  "Lcom/android/internal/telephony/IPhoneSubInfo$Stub;"},
     LocalService{"isms", "Lorg/ogplay/framework/LocalSmsService;", "Lcom/android/internal/telephony/ISms$Stub;"},
@@ -326,6 +326,8 @@ constexpr std::array kLocalServices{
     LocalService{"power", "Lorg/ogplay/framework/LocalPowerService;", "Landroid/os/IPowerManager$Stub;"},
     LocalService{"telephony.registry", "Lorg/ogplay/framework/LocalTelephonyRegistry;",
                  "Lcom/android/internal/telephony/ITelephonyRegistry$Stub;"},
+    LocalService{"textservices", "Lorg/ogplay/framework/LocalTextServices;",
+                 "Lcom/android/internal/textservice/ITextServicesManager$Stub;"},
     LocalService{"uimode", "Lorg/ogplay/framework/LocalUiModeService;", "Landroid/app/IUiModeManager$Stub;"},
     LocalService{"usb", "Lorg/ogplay/framework/LocalUsbService;", "Landroid/hardware/usb/IUsbManager$Stub;"},
     LocalService{"vibrator", "Lorg/ogplay/framework/LocalVibratorService;", "Landroid/os/IVibratorService$Stub;"},
@@ -392,16 +394,13 @@ void RejectUnsupportedServiceMethod(dx::IntrinsicClassBuilder& builder, std::str
 
 Decl Declare_local_ServiceManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(kLocalServiceManager, "Landroid/os/ServiceManagerNative;");
-    const auto available = [rom_windows = context->rom_window_services_enabled](const LocalService& service) {
-        return !service.needs_rom_windows || rom_windows;
-    };
-    const auto lookup = [context, available](dx::IntrinsicContext& call) {
+    const auto lookup = [context](dx::IntrinsicContext& call) {
         const auto name = call.arguments[0].ref.IsValid() ? call.vm.StringUtf8(call.arguments[0].ref) : "null";
         if (const auto cached = context->local_binder_services.find(name);
             cached != context->local_binder_services.end())
             return dx::VmValue::Ref(cached->second);
         for (const auto& service : kLocalServices) {
-            if (name != service.name || !available(service)) continue;
+            if (name != service.name) continue;
             const auto binder = ConstructLocalBinder(call.vm, service.descriptor, service.stub);
             return dx::VmValue::Ref(context->local_binder_services.try_emplace(name, binder).first->second);
         }
@@ -410,17 +409,16 @@ Decl Declare_local_ServiceManager(const Context& context) {
     };
     builder.VirtualMethod("getService", "(Ljava/lang/String;)Landroid/os/IBinder;", lookup);
     builder.VirtualMethod("checkService", "(Ljava/lang/String;)Landroid/os/IBinder;", lookup);
-    builder.VirtualMethod("listServices", "()[Ljava/lang/String;", [available](dx::IntrinsicContext& call) {
+    builder.VirtualMethod("listServices", "()[Ljava/lang/String;", [](dx::IntrinsicContext& call) {
         auto& linker = call.vm.Linker();
         const auto string_type = linker.ResolveDescriptor("Ljava/lang/String;");
         const auto array_type = linker.ResolveDescriptor("[Ljava/lang/String;");
-        const auto count = std::ranges::count_if(kLocalServices, available);
+        const auto count = std::size(kLocalServices);
         const auto result = call.vm.Model().NewObjectArray(array_type, string_type, static_cast<JniSize>(count));
         const auto root = call.vm.ProtectReferences(std::array{result});
         JniSize index = 0;
         for (const auto& service : kLocalServices)
-            if (available(service))
-                call.vm.Model().SetObjectElement(result, index++, call.vm.NewStringUtf8(service.name));
+            call.vm.Model().SetObjectElement(result, index++, call.vm.NewStringUtf8(service.name));
         return dx::VmValue::Ref(result);
     });
     RejectUnsupportedServiceMethod(builder, "android.os.IServiceManager", "addService",
@@ -776,12 +774,7 @@ Decl Declare_android_os_Parcel(const Context& context) {
         native_flags);
     builder.StaticMethod(
         "nativeWriteStrongBinder", "(ILandroid/os/IBinder;)V",
-        [context, require, write](dx::IntrinsicContext& call) {
-            if (context->managed_window_tokens.contains(call.arguments[1].ref.Value())) {
-                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.managed_window_token_ipc", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "managed window token cannot be marshalled"};
-            }
+        [require, write](dx::IntrinsicContext& call) {
             auto& p = require(call.arguments[0].AsInt());
             const auto offset = p.position;
             std::array<std::byte, 16> flat{};
@@ -1080,68 +1073,6 @@ void RegisterAndroidValueStateTables(dexvm::Interpreter& vm, const std::shared_p
     if (context == nullptr) return;
     android_intrinsics::RegisterGraphicsStateTables(vm, context);
     android_intrinsics::RegisterSkiaStateTables(vm, context);
-    const auto configuration = vm.Linker().ResolveDescriptor("Landroid/view/ViewConfiguration;");
-    const auto constructor = vm.Linker().FindDirectMethod(configuration, "<init>", "(Landroid/content/Context;)V");
-    if (!constructor) throw std::runtime_error("ROM ViewConfiguration constructor unavailable");
-    vm.Linker().MutableMethod(*constructor).constructor_inputs = [](dexvm::IntrinsicContext& call) {
-        using namespace android_intrinsics;
-        const auto resources =
-            CallAndroidMethod(call.vm, call.arguments[0].ref, "getResources", "()Landroid/content/res/Resources;").ref;
-        const auto mode =
-            CallAndroidMethod(call.vm, resources, "getInteger", "(I)I", {dexvm::VmValue::Int(0x010e0049)}).AsInt();
-        bool menu = mode == 1;
-        if (mode != 1 && mode != 2) {
-            bool navigation =
-                CallAndroidMethod(call.vm, resources, "getBoolean", "(I)Z", {dexvm::VmValue::Int(0x01110044)})
-                    .AsInt() != 0;
-            const auto key = call.vm.NewStringUtf8("qemu.hw.mainkeys");
-            const auto roots = call.vm.ProtectReferences(std::array{key, resources, call.receiver});
-            const auto owner = call.vm.Linker().ResolveDescriptor("Landroid/os/SystemProperties;");
-            const auto get = call.vm.Linker().FindDirectMethod(owner, "get", "(Ljava/lang/String;)Ljava/lang/String;");
-            if (!get) throw std::runtime_error("SystemProperties.get unavailable");
-            const auto value = call.vm.Call(*get, std::array{dexvm::VmValue::Ref(key)});
-            if (value.exception.IsValid())
-                throw dexvm::VmJavaThrow{call.vm.Linker().Class(value.exception_class).descriptor,
-                                         value.exception_message, value.exception};
-            const auto text = call.vm.StringUtf8(value.value.ref);
-            if (text == "1") navigation = false;
-            if (text == "0") navigation = true;
-            menu = !navigation;
-        }
-        const auto type = call.vm.Model().ObjectClass(call.receiver);
-        const auto menu_field = call.vm.Linker().FindFieldRecursive(type, "sHasPermanentMenuKey", "Z");
-        const auto set_field = call.vm.Linker().FindFieldRecursive(type, "sHasPermanentMenuKeySet", "Z");
-        if (!menu_field || !set_field) throw std::runtime_error("ViewConfiguration menu fields unavailable");
-        for (const auto [field, value] : {std::pair{*menu_field, menu}, {*set_field, true}}) {
-            call.vm.RequireImplementedField(field);
-            const auto& info = call.vm.Linker().Field(field);
-            if (info.is_static) throw std::runtime_error("ViewConfiguration input must be an instance field");
-            call.vm.Model().InstanceSlots(call.receiver)[info.slot] = {value ? 1U : 0U, dexvm::SlotTag::cat1};
-        }
-        return dexvm::VmValue::Void();
-    };
-    {
-        if (vm.CurrentContextToken() != 1U ||
-            (context->ui_java_owner_thread && context->ui_java_owner_thread != std::this_thread::get_id()))
-            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View owner binding requires main context"};
-        context->ui_java_owner_thread = std::this_thread::get_id();
-        vm.RegisterIntrinsicStateTable({"android.java-view-binding",
-                                        [](dexvm::VmObjectRef, const dexvm::VmRootVisitor&) {},
-                                        [context](dexvm::VmObjectRef object) {
-                                            context->scrollbar_fade_deadlines.erase(object.Value());
-                                            context->ui_window_schedules.erase(object);
-                                            context->ui_traversal_diagnostics.erase(object);
-                                            for (auto& [_, state] : context->ui_window_schedules)
-                                                state.requests.erase(object);
-                                            const auto found = context->object_to_ui_node.find(object.Value());
-                                            if (found == context->object_to_ui_node.end()) return;
-                                            const auto node = found->second;
-                                            context->ui_node_to_object.erase(node);
-                                            context->object_to_ui_node.erase(found);
-                                            context->ui_tree.RetireProjectedIdentity(node);
-                                        },
-                                        {}});
-    }
     vm.RegisterIntrinsicStateTable(
         {"android.value",
          [context](const dexvm::VmObjectRef owner, const dexvm::VmRootVisitor& visit) {
@@ -1251,8 +1182,15 @@ Decl Declare_android_os_MessageQueue(const Context& context) {
             const auto looper = RegisterCurrentRomLooper(call.vm, context);
             PumpNativeLooperEvents(call.vm, *context, looper);
             PumpRomInputEvents(call.vm, context);
-            if (call.vm.CurrentContextToken() == 1U && context->main_queue_poll) context->main_queue_poll(call.vm);
+            if (call.vm.CurrentContextToken() == 1U) {
+                PumpAndroidHostRequests(call.vm, context);
+                PumpRomToastQueue(call.vm, context);
+            }
             const auto timeout = call.arguments[1].AsInt();
+            if (timeout != 0 && call.vm.CurrentContextToken() == 1U && context->on_first_main_idle) {
+                auto publish = std::exchange(context->on_first_main_idle, {});
+                publish(call.vm);
+            }
             const auto now = context->uptime_millis.load();
             const auto duration = std::max(timeout, 0);
             const auto deadline = now > std::numeric_limits<std::int64_t>::max() - duration
@@ -1267,9 +1205,12 @@ Decl Declare_android_os_MessageQueue(const Context& context) {
                     throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "MessageQueue polled on another thread"};
             }
             auto& execution = call.vm.ExecutionLock();
-            const auto depth = execution.ReleaseForBlocking();
+            // A normally idle Looper does not need a graphics worker to break a wait.
+            const auto depth = execution.ReleaseForBlocking(false);
             const auto ready = [&] {
                 return queue->wake || queue->destroyed || context->scheduler_shutdown ||
+                       (queue->context_token == 1U &&
+                        context->uptime_millis.load() >= context->toast_deadline_millis.load()) ||
                        std::ranges::any_of(context->scheduled_work,
                                            [&](const auto& work) {
                                                return work.looper == looper &&
@@ -1280,7 +1221,9 @@ Decl Declare_android_os_MessageQueue(const Context& context) {
             {
                 std::scoped_lock lock(context->scheduler_mutex);
                 queue->idling = timeout != 0;
+                queue->poll_deadline_millis = timeout < 0 ? std::numeric_limits<std::int64_t>::max() : deadline;
             }
+            context->scheduler_changed.notify_all();
             if (context->poll_native_looper) {
                 context->poll_native_looper(call.vm.CurrentContextToken(), [&] {
                     std::scoped_lock lock(context->scheduler_mutex);
@@ -1297,11 +1240,14 @@ Decl Declare_android_os_MessageQueue(const Context& context) {
                 queue->wake = false;
                 stopped = context->scheduler_shutdown;
             }
-            execution.ReacquireAfterBlocking(depth);
+            execution.ReacquireAfterBlocking(depth, false);
             if (stopped) throw dx::DexVmError(dx::DexVmErrorReason::thread_stopped, "MessageQueue shutdown");
             PumpNativeLooperEvents(call.vm, *context, looper);
             PumpRomInputEvents(call.vm, context);
-            if (call.vm.CurrentContextToken() == 1U && context->main_queue_poll) context->main_queue_poll(call.vm);
+            if (call.vm.CurrentContextToken() == 1U) {
+                PumpAndroidHostRequests(call.vm, context);
+                PumpRomToastQueue(call.vm, context);
+            }
             return dx::VmValue::Void();
         },
         flags);

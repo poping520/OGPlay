@@ -93,18 +93,6 @@ void Bind(dx::IntrinsicContext& call, const android_intrinsics::Context& context
     state.binding = binding;
 }
 
-void ReleaseSurface(DexVmAndroidContext& context, const dx::VmObjectRef surface, const std::uint32_t token) {
-    const auto found = context.stream_surface_owners.find(surface.Value());
-    if (found == context.stream_surface_owners.end() || found->second != token)
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "invalid Surface endpoint"};
-    context.stream_surfaces.erase(token);
-    if (const auto managed = context.managed_surface_tokens.find(token);
-        managed != context.managed_surface_tokens.end()) {
-        android_intrinsics::ResetManagedCanvas(context, managed->second);
-        context.managed_surface_tokens.erase(managed);
-    }
-    context.stream_surface_owners.erase(found);
-}
 }  // namespace
 
 void RegisterAndroidSurfaceStreamStateTable(dx::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context) {
@@ -121,9 +109,6 @@ void RegisterAndroidSurfaceStreamStateTable(dx::Interpreter& vm, const std::shar
                                             found->second.stream->Abandon();
                                             context->surface_textures.erase(found);
                                         }
-                                        if (const auto found = context->stream_surface_owners.find(owner.Value());
-                                            found != context->stream_surface_owners.end())
-                                            ReleaseSurface(*context, owner, found->second);
                                     },
                                     {}});
 }
@@ -132,9 +117,6 @@ void ReleaseAndroidSurfaceStreams(DexVmAndroidContext& context) {
     for (auto& [_, state] : context.surface_textures)
         state.stream->Abandon();
     context.surface_textures.clear();
-    context.stream_surfaces.clear();
-    context.stream_surface_owners.clear();
-    context.managed_surface_tokens.clear();
 }
 
 void DispatchAndroidSurfaceStreamEvents(dx::Interpreter& vm, DexVmAndroidContext& context) {
@@ -154,38 +136,16 @@ void DispatchAndroidSurfaceStreamEvents(dx::Interpreter& vm, DexVmAndroidContext
     }
 }
 
-void InitializeManagedJavaSurface(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef surface,
-                                  std::uint32_t holder) {
-    if (context.stream_surface_owners.size() >= 256 || context.process_stopping.load())
-        throw dx::VmJavaThrow{"Landroid/view/Surface$OutOfResourcesException;", "Surface endpoint budget exhausted"};
-    const auto type = vm.Linker().ResolveDescriptor("Landroid/view/Surface;");
-    const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "()V");
-    if (!constructor) throw std::logic_error("Surface constructor missing");
-    const auto result = vm.Call(*constructor, std::array{dx::VmValue::Ref(surface)});
-    if (result.exception.IsValid())
-        throw dx::VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                              result.exception};
-    const auto token = Token(context);
-    context.managed_surface_tokens.emplace(token, holder);
-    context.stream_surface_owners.emplace(surface.Value(), token);
-    const auto setter = vm.Linker().FindDirectMethod(type, "setNativeObjectLocked", "(I)V");
-    if (!setter) throw std::logic_error("Surface ownership setter missing");
-    const auto attached =
-        vm.Call(*setter, std::array{dx::VmValue::Ref(surface), dx::VmValue::Int(static_cast<std::int32_t>(token))});
-    if (attached.exception.IsValid())
-        throw dx::VmJavaThrow{vm.Linker().Class(attached.exception_class).descriptor, attached.exception_message,
-                              attached.exception};
-}
-
 std::shared_ptr<SurfaceStream> ResolveAndroidSurfaceStream(dx::Interpreter& vm, DexVmAndroidContext& context,
                                                            dx::VmObjectRef surface) {
     if (!surface.IsValid()) return {};
     const auto token = Field(vm, surface, "mNativeObject").bits;
-    const auto owner = context.stream_surface_owners.find(surface.Value());
-    if (owner == context.stream_surface_owners.end() || owner->second != token) return {};
-    const auto found = context.stream_surfaces.find(token);
-    if (found == context.stream_surfaces.end() || !found->second->Live()) return {};
-    return found->second;
+    if (!context.rom_windows) return {};
+    const auto found = context.rom_windows->surfaces.find(static_cast<int>(token));
+    if (found == context.rom_windows->surfaces.end() || !found->second.valid || !found->second.stream ||
+        !found->second.stream->Live())
+        return {};
+    return found->second.stream;
 }
 
 namespace android_intrinsics {
@@ -357,50 +317,8 @@ Decl Declare_android_graphics_SurfaceTexture(const Context& context) {
 }
 
 Decl Declare_android_view_Surface(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/Surface;", "Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/Surface;");
     builder.MergesBootClass();
-    constexpr auto native_static = dx::kAccPrivate | dx::kAccStatic | dx::kAccNative;
-    builder.StaticMethod(
-        "nativeCreateFromSurfaceTexture", "(Landroid/view/Surface;Landroid/graphics/SurfaceTexture;)I",
-        [context](dx::IntrinsicContext& call) {
-            if (!call.arguments[0].ref.IsValid())
-                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "Surface owner is null"};
-            if (context->stream_surface_owners.contains(call.arguments[0].ref.Value()))
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Surface producer already initialized"};
-            const auto found = context->surface_textures.find(call.arguments[1].ref.Value());
-            if (found == context->surface_textures.end() || !found->second.stream->Live())
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "SurfaceTexture is not a live consumer"};
-            if (context->stream_surface_owners.size() >= 256)
-                throw dx::VmJavaThrow{"Landroid/view/Surface$OutOfResourcesException;",
-                                      "Surface endpoint budget exhausted"};
-            const auto token = Token(*context);
-            context->stream_surfaces.emplace(token, found->second.stream);
-            context->stream_surface_owners.emplace(call.arguments[0].ref.Value(), token);
-            return dx::VmValue::Int(static_cast<std::int32_t>(token));
-        },
-        native_static);
-    builder.StaticMethod(
-        "nativeRelease", "(Landroid/view/Surface;I)V",
-        [context](dx::IntrinsicContext& call) {
-            ReleaseSurface(*context, call.arguments[0].ref, static_cast<std::uint32_t>(call.arguments[1].AsInt()));
-            return dx::VmValue::Void();
-        },
-        native_static);
-    builder.StaticMethod(
-        "nativeIsValid", "(Landroid/view/Surface;I)Z",
-        [context](dx::IntrinsicContext& call) {
-            const auto owner = context->stream_surface_owners.find(call.arguments[0].ref.Value());
-            const auto token = static_cast<std::uint32_t>(call.arguments[1].AsInt());
-            if (owner == context->stream_surface_owners.end() || owner->second != token) return dx::VmValue::Int(0);
-            if (const auto stream = context->stream_surfaces.find(token); stream != context->stream_surfaces.end())
-                return dx::VmValue::Int(stream->second->Live());
-            const auto managed = context->managed_surface_tokens.find(token);
-            return dx::VmValue::Int(managed != context->managed_surface_tokens.end() &&
-                                    (context->active_surface_holders.contains(managed->second) ||
-                                     context->destroying_surface_holders.contains(managed->second)));
-        },
-        native_static);
-    AddManagedCanvasNatives(builder, context);
     AddRomSurfaceNatives(builder, context);
     return std::move(builder).Build();
 }

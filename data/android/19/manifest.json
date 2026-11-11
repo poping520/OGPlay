@@ -172,8 +172,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 152688,
-      "sha256": "55e0aecdb7c1b9acae7456bb96fc086e6269ef963958b8929a0b313aecc75b7a",
+      "size": 153244,
+      "sha256": "2a168a909a26be407e3befd68aa3a8235747d8da8b75934e3ac1a9ae912eeff3",
       "soname": "libogplay_jni.so",
       "needed": [
         "libssl.so",
@@ -204,7 +204,7 @@
           },
           {
             "path": "src/guest/icu/icu_jni.c",
-            "sha256": "bb76278be35716aaa98cc79cd14d0df97a1101b5dcf10b0ece22c4217a76b0e4"
+            "sha256": "fbec30efd34e0239d29636f73c1af22eacdb1731f0cd4f96f5107905e3e8e034"
           },
           {
             "path": "src/guest/icu/regex_jni.c",
@@ -224,7 +224,7 @@
           },
           {
             "path": "src/guest/icu/icu51_capi.h",
-            "sha256": "d8ec71bfdc61b1405607dc2de93a35668def4210b9a3333db40a844528403c52"
+            "sha256": "5cf6b43e4f67237227a61fb673b6708047589c2f63b438ecfc40ebbf47fb575a"
           }
         ],
         "inputs": [
@@ -341,8 +341,8 @@
       {
         "path": "framework/ogplay.jar",
         "source_project": "OGPlay",
-        "size": 105932,
-        "sha256": "99adbe005bbec3897ded826de1cfdadd2fcc4649d91d781235060b0b83903558",
+        "size": 82884,
+        "sha256": "96eaf3b169f3faa352cae071819841d1f05c112cfba3952f58048ced216457e0",
         "sources": {
           "roots": [
             "src/guest/crypto/java",
@@ -352,7 +352,7 @@
             "src/guest/xml/java",
             "src/guest/zip/java"
           ],
-          "sha256": "549f0992b05e6a2642d90398d62360f1b6791fca4d05fa7ee54ed3480ce0c3f4",
+          "sha256": "148aaa99065e8d1dc271415275a86f98d5e6fc169fae1535105ef1ca40913c71",
           "javac": "17.0.18",
           "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
           "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"

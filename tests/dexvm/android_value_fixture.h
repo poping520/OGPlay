@@ -3,6 +3,7 @@
 #include "container_traversal_fixture.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,9 @@ namespace ogplay::test::android_value {
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
+// Standalone VM fixtures have no host thread running Looper.loop().
+std::optional<std::string> DispatchFixtureMessages(Interpreter& vm, DexVmAndroidContext& context);
+
 struct AndroidValueVm final {
     ogplay::core::CapabilityLedger ledger;
     ogplay::core::Logger logger;
@@ -31,9 +35,7 @@ struct AndroidValueVm final {
 
     AndroidValueVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
                    const std::vector<IntrinsicClassDecl>& extras = {}, bool force_all_bridge = false,
-                   const char* dex_fixture = nullptr,
-                   AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::JavaTraversal,
-                   ogplay::gles::AngleBackend graphics = {}, bool rom_windows = false);
+                   const char* dex_fixture = nullptr, ogplay::gles::AngleBackend graphics = {});
 
     VmObjectRef New(const char* descriptor, const char* constructor = "()V", std::vector<VmValue> arguments = {});
 

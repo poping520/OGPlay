@@ -440,6 +440,23 @@ IntrinsicClassDecl TypedBuffer(const std::string& name, const std::string& array
     });
     if (name == "Char") {
         b.VirtualMethod(
+            "length", "()I",
+            [](IntrinsicContext& c) {
+                const auto state = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
+                return VmValue::Int(state.limit - state.position);
+            },
+            kAccPublic | kAccFinal);
+        b.VirtualMethod(
+            "charAt", "(I)C",
+            [](IntrinsicContext& c) {
+                const auto state = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
+                const auto index = c.arguments[0].AsInt();
+                if (index < 0 || index >= state.limit - state.position)
+                    throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "CharBuffer index"};
+                return detail::InvokeGuest(c.vm, c.receiver, "get", "(I)C", {VmValue::Int(state.position + index)});
+            },
+            kAccPublic | kAccFinal);
+        b.VirtualMethod(
             "put", "(Ljava/lang/String;)Ljava/nio/CharBuffer;",
             [](IntrinsicContext& c) {
                 const auto source = IntrinsicCall(c).NonNullRef(0, "src");

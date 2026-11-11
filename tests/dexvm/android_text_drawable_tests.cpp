@@ -40,155 +40,7 @@ using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
-TEST_CASE("DVM-120 Typeface Java cache and styles drive measured rendered text") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend);
-        const auto owner = f.linker.ResolveDescriptor("Landroid/graphics/Typeface;");
-        CHECK(f.linker.Class(owner).is_boot_dex);
-        std::array<VmObjectRef, 4> defaults;
-        for (int style = 0; style < 4; ++style) {
-            const auto slot = static_cast<std::size_t>(style);
-            defaults[slot] = f.Static("Landroid/graphics/Typeface;", "defaultFromStyle",
-                                      "(I)Landroid/graphics/Typeface;", {VmValue::Int(style)})
-                                 .ref;
-            CHECK(f.On(defaults[slot], "getStyle", "()I").AsInt() == style);
-            CHECK(f.On(defaults[slot], "isBold", "()Z").AsInt() == (style & 1));
-            CHECK(f.On(defaults[slot], "isItalic", "()Z").AsInt() == ((style >> 1) & 1));
-        }
-        const auto normal = defaults[0];
-        const auto create = [&](int style) {
-            return f
-                .Static("Landroid/graphics/Typeface;", "create",
-                        "(Landroid/graphics/Typeface;I)Landroid/graphics/Typeface;",
-                        {VmValue::Ref(normal), VmValue::Int(style)})
-                .ref;
-        };
-        CHECK(create(0) == normal);
-        const auto cached = create(3);
-        CHECK(create(3) == cached);
-        static_cast<void>(f.vm.CollectGarbage("dvm120-typeface-static-cache"));
-        CHECK(create(3) == cached);
-        // Cache reset was a CM extension, absent from the AOSP API19 shape.
-        CHECK_FALSE(f.linker.FindDirectMethod(owner, "recreateDefaults", "()V").has_value());
-        CHECK_FALSE(f.linker.FindDirectMethod(owner, "nativeFreeCaches", "()V").has_value());
-        CHECK(create(3) == cached);
-        CHECK(f.On(normal, "getStyle", "()I").AsInt() == 0);
-        const auto activity = f.New("Landroid/app/Activity;");
-        const auto text = f.New("Landroid/widget/TextView;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
-        const auto root = f.vm.ProtectReferences(std::array{text});
-        f.On(text, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.vm.NewStringUtf8("I"))});
-        const auto node = *FindViewUiNode(*f.context, text.Value());
-        f.context->ui_tree.Attach(f.context->ui_tree.Root(), node);
-        std::array<std::vector<std::uint8_t>, 4> pixels;
-        for (int style = 0; style < 4; ++style) {
-            f.On(text, "setTypeface", "(Landroid/graphics/Typeface;I)V", {VmValue::Ref(normal), VmValue::Int(style)});
-            const auto face = f.On(text, "getTypeface", "()Landroid/graphics/Typeface;").ref;
-            CHECK(f.On(face, "getStyle", "()I").AsInt() == style);
-            ui::LayoutUiTree(f.context->ui_tree, {32, 16});
-            const int extra = ((style & 1) ? 1 : 0) + ((style & 2) ? 2 : 0);
-            CHECK(f.context->ui_tree.Get(node)->measured.width == 5 + extra);
-            const auto slot = static_cast<std::size_t>(style);
-            pixels[slot] = ui::RasterizeUiOverlay(ui::BuildUiRenderList(f.context->ui_tree, {}), {32, 16}).rgba8;
-            if (style != 0) CHECK(pixels[slot] != pixels[0]);
-        }
-        f.On(text, "setTypeface", "(Landroid/graphics/Typeface;)V", {VmValue::Ref(VmObjectRef{})});
-        CHECK_FALSE(f.On(text, "getTypeface", "()Landroid/graphics/Typeface;").ref.IsValid());
-        CHECK(f.context->ui_tree.Get(node)->text_style == 0);
-        const auto factory =
-            *f.linker.FindDirectMethod(owner, "createFromFile", "(Ljava/lang/String;)Landroid/graphics/Typeface;");
-        const auto result = f.vm.Call(factory, std::array{VmValue::Ref(f.vm.NewStringUtf8("/font.ttf"))});
-        REQUIRE(result.exception.IsValid());
-        CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/RuntimeException;");
-        CHECK(result.exception_message == "native typeface cannot be made");
-    }
-}
-
-TEST_CASE("DVM-121 text appearance resolves theme bags and preserves Java color values") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend);
-        f.context->package_name = "org.example.fixture";
-        f.context->application_theme = 0x01030007U;
-        f.context->activity_themes["org.example.fixture.Light"] = 0x0103000cU;
-        const auto activity = f.New("Landroid/app/Activity;");
-        const auto activity_root = f.vm.ProtectReferences(std::array{activity});
-        AttachAndroidActivityIdentity(f.vm, f.context, activity, "org.example.fixture.Light");
-        CHECK(f.On(activity, "getThemeResId", "()I").AsInt() == 0x0103000c);
-        const auto text = f.New("Landroid/widget/TextView;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
-        const auto root = f.vm.ProtectReferences(std::array{text});
-        f.On(text, "setTextColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff123456U))});
-        f.On(text, "setTextSize", "(F)V", {VmValue::Float(16)});
-        const auto apply = [&](std::uint32_t id) {
-            return f.OnOutcome(text, "setTextAppearance", "(Landroid/content/Context;I)V",
-                               {VmValue::Ref(activity), VmValue::Int(static_cast<std::int32_t>(id))});
-        };
-        const auto buffer_type = f.vm.Linker().ResolveDescriptor("Landroid/widget/TextView$BufferType;");
-        const auto values =
-            f.vm.Linker().FindDirectMethod(buffer_type, "values", "()[Landroid/widget/TextView$BufferType;");
-        REQUIRE(values.has_value());
-        const auto buffers = f.vm.Call(*values, {});
-        REQUIRE_FALSE(buffers.exception.IsValid());
-        const auto buffer_root = f.vm.ProtectReferences(std::array{buffers.value.ref});
-        CHECK(f.vm.Model().ArrayLength(buffers.value.ref) == 3);
-        const auto normal = f.vm.Model().GetObjectElement(buffers.value.ref, 0);
-        f.On(text, "setText", "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
-             {VmValue::Ref(f.vm.NewStringUtf8("CG subtitle")), VmValue::Ref(normal)});
-        CHECK(f.vm.StringUtf8(f.On(text, "getText", "()Ljava/lang/CharSequence;").ref) == "CG subtitle");
-        // A public attr id is metadata, not a reference to TextAppearance.Small.
-        REQUIRE_FALSE(apply(0x01010042).exception.IsValid());
-        CHECK(f.On(text, "getTextSize", "()F").AsFloat() == 16);
-        CHECK(static_cast<std::uint32_t>(f.On(text, "getCurrentTextColor", "()I").AsInt()) == 0xff123456U);
-        CHECK(static_cast<std::uint32_t>(f.On(text, "getHighlightColor", "()I").AsInt()) == 0x9983cc39U);
-        const auto link = f.On(text, "getLinkTextColors", "()Landroid/content/res/ColorStateList;").ref;
-        CHECK(f.linker.Class(f.model.ObjectClass(link)).is_boot_dex);
-        CHECK(static_cast<std::uint32_t>(f.On(link, "getDefaultColor", "()I").AsInt()) == 0xff0000eeU);
-        CHECK(static_cast<std::uint32_t>(f.On(text, "getCurrentHintTextColor", "()I").AsInt()) == 0xff808080U);
-        const auto wrapper =
-            f.New("Landroid/content/ContextWrapper;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
-        f.On(text, "setTextAppearance", "(Landroid/content/Context;I)V", {VmValue::Ref(wrapper), VmValue::Int(0)});
-        const auto wrapped_link = f.On(text, "getLinkTextColors", "()Landroid/content/res/ColorStateList;").ref;
-        CHECK(static_cast<std::uint32_t>(f.On(wrapped_link, "getDefaultColor", "()I").AsInt()) == 0xff0000eeU);
-        ogplay::test::ResourceFixtureEntry parent;
-        parent.resource_id = 0x7f030001;
-        parent.type_name = "style";
-        parent.is_complex = true;
-        parent.bag = {{0x01010098, 0x1c, 0xff102030U, {}}, {0x01010097, 0x10, 1, {}}};
-        auto child = parent;
-        child.resource_id = 0x7f030002;
-        child.parent = parent.resource_id;
-        child.bag = {{0x01010095, 5, 0x00000e02, {}},  // 14sp
-                     {0x01010098, 1, 0x7f040001, {}},
-                     {0x0101009b, 2, 0x0101009b, {}}};
-        ogplay::test::ResourceFixtureEntry color;
-        color.resource_id = 0x7f040001;
-        color.type_name = "color";
-        color.value_type = 0x1c;
-        color.value_data = 0xffabcdefU;
-        ogplay::test::ResourceFixture(*f.context).entries = {parent, child, color};
-        f.context->ui_scaled_density = 2;
-        REQUIRE_FALSE(apply(child.resource_id).exception.IsValid());
-        CHECK(f.On(text, "getTextSize", "()F").AsFloat() == 28);
-        CHECK(static_cast<std::uint32_t>(f.On(text, "getCurrentTextColor", "()I").AsInt()) == color.value_data);
-        CHECK(f.context->ui_tree.Get(*FindViewUiNode(*f.context, text.Value()))->text_style == 1);
-        const auto colors = f.On(text, "getTextColors", "()Landroid/content/res/ColorStateList;").ref;
-        f.On(text, "getCurrentTextColor", "()I");  // retire the returned reference root
-        CHECK(f.vm.MarkReachable().IsMarked(colors));
-        static_cast<void>(f.vm.CollectGarbage("dvm121-text-colors"));
-        CHECK(f.On(text, "getTextColors", "()Landroid/content/res/ColorStateList;").ref == colors);
-        ogplay::test::ResourceFixture(*f.context).entries[0].parent = child.resource_id;
-        CHECK(apply(child.resource_id).exception.IsValid());
-        CHECK(f.On(text, "getTextSize", "()F").AsFloat() == 28);
-        ogplay::test::ResourceFixture(*f.context).entries[0].parent = 0;
-        ogplay::test::ResourceFixture(*f.context).entries[1].bag.push_back({0x01010161, 0x1c, 0xff000000, {}});
-        CHECK(apply(child.resource_id).exception.IsValid());
-        CHECK(static_cast<std::uint32_t>(f.On(text, "getCurrentTextColor", "()I").AsInt()) == color.value_data);
-        CHECK(apply(0x7f030099).exception.IsValid());
-        CHECK(f.OnOutcome(text, "setTextAppearance", "(Landroid/content/Context;I)V",
-                          {VmValue::Ref(VmObjectRef{}), VmValue::Int(0)})
-                  .exception.IsValid());
-    }
-}
-
-TEST_CASE("DVM-121 ColorStateList uses Java StateSet matching and rejects unsupported renderer state") {
+TEST_CASE("DVM-121 ColorStateList uses Java StateSet matching in ROM TextView") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);
         const auto int_array = [&](std::initializer_list<std::int32_t> items) {
@@ -219,9 +71,9 @@ TEST_CASE("DVM-121 ColorStateList uses Java StateSet matching and rejects unsupp
                       .AsInt()) == 0xffffffffU);
         const auto activity = f.New("Landroid/app/Activity;");
         const auto text = f.New("Landroid/widget/TextView;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
-        const auto rejected =
-            f.OnOutcome(text, "setTextColor", "(Landroid/content/res/ColorStateList;)V", {VmValue::Ref(list)});
-        REQUIRE(rejected.exception.IsValid());
-        CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        f.On(text, "setTextColor", "(Landroid/content/res/ColorStateList;)V", {VmValue::Ref(list)});
+        CHECK(static_cast<std::uint32_t>(f.On(text, "getCurrentTextColor", "()I").AsInt()) == 0xffffffffU);
+        f.On(text, "setEnabled", "(Z)V", {VmValue::Int(0)});
+        CHECK(static_cast<std::uint32_t>(f.On(text, "getCurrentTextColor", "()I").AsInt()) == 0xff808080U);
     }
 }

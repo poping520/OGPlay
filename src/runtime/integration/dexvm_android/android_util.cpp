@@ -38,6 +38,9 @@ Decl Declare_android_util_Log(const Context&) {
             const auto tag =
                 call.arguments[2].ref.IsValid() ? call.vm.StringUtf8(call.arguments[2].ref) : std::string{};
             const auto message = call.vm.StringUtf8(call.arguments[3].ref);
+            if (priority == 5 && tag == "TextureView" &&
+                message == "A TextureView or a subclass can only be used with hardware acceleration enabled.")
+                RecordUiDegraded(call.vm, "TextureView.hardwareAcceleration");
             GuestLog(call,
                      priority >= 6   ? core::LogLevel::error
                      : priority == 5 ? core::LogLevel::warn

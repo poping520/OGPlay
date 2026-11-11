@@ -26,6 +26,8 @@ struct RomActivityState {
 };
 
 namespace android_intrinsics {
+void StartRomLauncher(dx::Interpreter& vm, const Context& context, const std::string& descriptor,
+                      const std::string& component);
 void RequestRomActivitySuspend(dx::Interpreter& vm, const Context& context, bool suspend);
 void RequestRomActivityExit(dx::Interpreter& vm, const Context& context, std::int64_t budget_millis = 2000);
 enum class RomActivityExitStatus { waiting, complete, deadline_expired };

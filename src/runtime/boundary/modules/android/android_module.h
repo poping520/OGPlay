@@ -44,7 +44,8 @@ public:
                         std::function<void(bool)> finish);
     void RegisterNativeActivity(NativeActivityBoundaryResources resources);
     void UnregisterNativeActivity(memory::GuestAddress activity);
-    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active);
+    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active,
+                                                 std::optional<AndroidSurfaceWindow> surface = std::nullopt);
     void SetNativeActivityInput(memory::GuestAddress activity, bool active);
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
     memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);

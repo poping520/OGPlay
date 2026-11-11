@@ -78,6 +78,7 @@ bool WindowSystem::Visible(WindowId id) const {
 
 void WindowSystem::SetApplicationVisible(std::uint32_t token, bool visible) {
     std::scoped_lock lock(mutex_);
+    ++revision_;
     application_visibility_.insert_or_assign(token, visible);
 }
 
@@ -129,6 +130,7 @@ WindowRect WindowSystem::Layout(const WindowAttributes& a, int requested_width, 
 WindowId WindowSystem::Add(const WindowAttributes& a, bool visible, bool input_channel) {
     Validate(a);
     std::scoped_lock lock(mutex_);
+    ++revision_;
     if (a.parent.value && Require(a.parent).attrs.parent.value)
         throw std::invalid_argument("subwindow cannot parent another subwindow");
     if (windows_.size() >= 256 || next_window_ == std::numeric_limits<std::uint32_t>::max())
@@ -147,6 +149,7 @@ WindowRect WindowSystem::Relayout(WindowId id, const WindowAttributes& a, int rw
     Validate(a);
     if (rw < 0 || rh < 0 || rw > 4096 || rh > 4096) throw std::invalid_argument("invalid requested buffer size");
     std::scoped_lock lock(mutex_);
+    ++revision_;
     auto& window = Require(id);
     if (a.type != window.attrs.type || a.parent != window.attrs.parent)
         throw std::invalid_argument("window type and parent are immutable");
@@ -154,12 +157,14 @@ WindowRect WindowSystem::Relayout(WindowId id, const WindowAttributes& a, int rw
     window.attrs = a;
     window.frame = frame;
     window.visible = visible;
+    if (!visible) window.pixels.reset();
     // Existing posted buffers remain immutable and can be scaled until replaced.
     return frame;
 }
 
 void WindowSystem::Remove(WindowId id) {
     std::scoped_lock lock(mutex_);
+    ++revision_;
     Require(id);
     std::erase_if(windows_, [&](const auto& pair) { return pair.first == id || pair.second.attrs.parent == id; });
     if (touch_target_.value && !windows_.contains(touch_target_)) {
@@ -170,11 +175,13 @@ void WindowSystem::Remove(WindowId id) {
 
 void WindowSystem::SetTransparentRegion(WindowId id, std::vector<WindowRect> region) {
     std::scoped_lock lock(mutex_);
+    ++revision_;
     Require(id).transparent = std::move(region);
 }
 
 void WindowSystem::SetCrop(WindowId id, WindowRect crop) {
     std::scoped_lock lock(mutex_);
+    ++revision_;
     Require(id).crop = crop;
 }
 
@@ -190,16 +197,26 @@ void WindowSystem::SetInsets(WindowId id, int touchable, WindowRect content, Win
 }
 
 void WindowSystem::Post(WindowId id, std::shared_ptr<const video::VideoFrame> pixels, bool premultiplied,
-                        bool opaque_pixels, bool transparent_pixels) {
+                        bool opaque_pixels, bool transparent_pixels, bool egl) {
     if (!pixels || pixels->width == 0 || pixels->height == 0 || pixels->width > 4096 || pixels->height > 4096 ||
         pixels->rgba8.size() != static_cast<std::size_t>(pixels->width) * pixels->height * 4)
         throw std::invalid_argument("invalid posted buffer");
     std::scoped_lock lock(mutex_);
+    ++revision_;
     auto& window = Require(id);
     window.pixels = std::move(pixels);
     window.premultiplied = premultiplied;
     window.opaque_pixels = opaque_pixels;
     window.transparent_pixels = transparent_pixels;
+    window.egl = egl;
+}
+
+void WindowSystem::ClearFrame(WindowId id, const std::shared_ptr<const video::VideoFrame>& expected) {
+    std::scoped_lock lock(mutex_);
+    const auto window = windows_.find(id);
+    if (!expected || window == windows_.end() || window->second.pixels != expected) return;
+    window->second.pixels.reset();
+    ++revision_;
 }
 
 WindowRect WindowSystem::Frame(WindowId id) const {
@@ -210,6 +227,11 @@ WindowRect WindowSystem::Frame(WindowId id) const {
 bool WindowSystem::Exists(WindowId id) const {
     std::scoped_lock lock(mutex_);
     return windows_.contains(id);
+}
+
+bool WindowSystem::OpaqueFormat(WindowId id) const {
+    std::scoped_lock lock(mutex_);
+    return !HasAlpha(Require(id).attrs.format);
 }
 
 std::vector<WindowId> WindowSystem::Ordered() const {
@@ -230,6 +252,10 @@ std::vector<WindowId> WindowSystem::Ordered() const {
 
 std::vector<WindowLayer> WindowSystem::Layers() const {
     std::scoped_lock lock(mutex_);
+    return ReadLayers();
+}
+
+std::vector<WindowLayer> WindowSystem::ReadLayers() const {
     std::vector<WindowLayer> layers;
     for (const auto id : Ordered()) {
         const auto& w = Require(id);
@@ -240,13 +266,27 @@ std::vector<WindowLayer> WindowSystem::Layers() const {
         // SurfaceFlinger transparent hints are exclusions, even for opaque formats.
         if (std::ranges::any_of(w.transparent, [&](const auto& r) { return r.Covers(crop); })) continue;
         layers.push_back({id, w.frame, crop, w.transparent, w.attrs.format, w.attrs.alpha, w.premultiplied,
-                          w.opaque_pixels, w.pixels});
+                          w.opaque_pixels, w.egl, w.pixels});
     }
     return layers;
 }
 
 WindowComposition WindowSystem::Compose() const {
-    auto layers = Layers();
+    return Compose(Layers());
+}
+
+std::optional<WindowComposition> WindowSystem::ComposeIfChanged(std::uint64_t& revision) const {
+    std::vector<WindowLayer> layers;
+    {
+        std::scoped_lock lock(mutex_);
+        if (revision == revision_) return std::nullopt;
+        layers = ReadLayers();
+        revision = revision_;
+    }
+    return Compose(std::move(layers));
+}
+
+WindowComposition WindowSystem::Compose(std::vector<WindowLayer> layers) const {
     if (layers.empty()) return {};
     // Discard everything below the topmost certified covering opaque layer.
     for (std::size_t i = layers.size(); i-- > 0;) {
@@ -262,7 +302,7 @@ WindowComposition WindowSystem::Compose() const {
         if (l.frame == DisplayFrame() && l.crop == DisplayFrame() && l.transparent.empty() && l.alpha == 1 &&
             l.opaque_pixels && l.pixels->width == static_cast<unsigned>(width_) &&
             l.pixels->height == static_cast<unsigned>(height_))
-            return {l.pixels, false, true};
+            return {l.pixels, false, true, l.egl};
     }
     auto result = std::make_shared<video::VideoFrame>();
     result->width = static_cast<unsigned>(width_);
@@ -341,6 +381,7 @@ void WindowSystem::SetInTouchMode(bool value) {
 
 void WindowSystem::UpdateSurfaces(std::span<const SurfaceUpdate> updates) {
     std::scoped_lock lock(mutex_);
+    ++revision_;
     // Validate the whole batch before publishing any state. Shared posted pixels
     // are leased by both versions; this never copies a frame.
     auto candidate = windows_;

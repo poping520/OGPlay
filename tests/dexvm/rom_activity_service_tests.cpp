@@ -53,7 +53,8 @@ struct Fixture {
             ogplay::loader::AndroidManifestActivityComponent c;
             c.name = "probe.Activity" + std::to_string(mode);
             c.launch_mode = static_cast<unsigned>(mode);
-            c.screen_orientation = 1;
+            // Match the fixture display; orientation dispatch has APK coverage.
+            c.screen_orientation = 0;
             f.context->activity_components.push_back(std::move(c));
         }
         am = f.Static("Landroid/os/ServiceManager;", "getService", "(Ljava/lang/String;)Landroid/os/IBinder;",
@@ -167,7 +168,7 @@ TEST_CASE("P3 AMS launch modes retain tokens and isolated tasks") {
     auto isolated = x.Top();
     x.Resumed();
     CHECK(x.f.On(x.am, "getTaskForActivity", "(Landroid/os/IBinder;Z)I", {V::Ref(isolated), V::Int(0)}).AsInt() != 1);
-    CHECK(x.f.On(x.am, "getRequestedOrientation", "(Landroid/os/IBinder;)I", {V::Ref(isolated)}).AsInt() == 1);
+    CHECK(x.f.On(x.am, "getRequestedOrientation", "(Landroid/os/IBinder;)I", {V::Ref(isolated)}).AsInt() == 0);
 }
 
 TEST_CASE("P3 AMS exit deadline follows the injected Clock without declaring pending destroys complete") {

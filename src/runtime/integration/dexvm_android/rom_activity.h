@@ -5,7 +5,7 @@
 namespace ogplay::runtime {
 struct RomActivityState {
     struct Record {
-        dexvm::VmObjectRef token{}, intent{}, info{}, component{}, caller{}, result_data{};
+        dexvm::VmObjectRef token{}, intent{}, info{}, component{}, caller{}, result_data{}, configuration{};
         std::string descriptor, component_name;
         int task{1}, request{-1}, result{}, orientation{-1};
         unsigned mode{};
@@ -16,7 +16,8 @@ struct RomActivityState {
         bool suspend_stop_required{};
     };
 
-    dexvm::VmObjectRef application_thread{};
+    dexvm::VmObjectRef application_thread{}, configuration{};
+    int configuration_sequence{};
     std::vector<Record> stack;
     std::deque<DexVmAndroidContext::ActivityCommand> pending;
     int next_task{2};

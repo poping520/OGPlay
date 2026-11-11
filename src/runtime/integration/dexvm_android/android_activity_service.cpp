@@ -36,11 +36,16 @@ void Pause(dx::Interpreter& vm, RomActivityState& s, Record& r) {
          {V::Ref(r.token), V::Int(r.finishing), V::Int(0), V::Int(0)});
 }
 
+void Hide(dx::Interpreter& vm, const Context& context, Record& r) {
+    if (!r.visible) return;
+    r.visible = false;
+    SetRomApplicationVisibility(vm, context, r.token, false);
+}
+
 void Stop(dx::Interpreter& vm, const Context& context, RomActivityState& s, Record& r) {
     if (r.stopping || r.stopped) return;
     r.stopping = true;
-    r.visible = false;
-    SetRomApplicationVisibility(vm, context, r.token, false);
+    Hide(vm, context, r);
     Send(vm, s, "scheduleStopActivity", "(Landroid/os/IBinder;ZI)V", {V::Ref(r.token), V::Int(0), V::Int(0)});
 }
 
@@ -72,6 +77,16 @@ void Destroy(dx::Interpreter& vm, RomActivityState& s, Record& r) {
     Send(vm, s, "scheduleDestroyActivity", "(Landroid/os/IBinder;ZI)V", {V::Ref(r.token), V::Int(1), V::Int(0)});
 }
 
+void Finish(dx::Interpreter& vm, const Context& context, RomActivityState& s, Record& r) {
+    if (r.pausing) return;
+    if (r.resumed || r.launching) {
+        Pause(vm, s, r);
+    } else {
+        Stop(vm, context, s, r);
+        Destroy(vm, s, r);
+    }
+}
+
 void UpdateForeground(dx::Interpreter& vm, const Context& context, const RomActivityState& s) {
     if (s.stack.empty() || !s.application_thread.IsValid()) {
         context->foreground_activity = Ref{};
@@ -94,11 +109,35 @@ void UpdateForeground(dx::Interpreter& vm, const Context& context, const RomActi
         record.IsValid() ? Ref{WindowField(vm, record, "activity", "Landroid/app/Activity;").bits} : Ref{};
 }
 
-void Resume(dx::Interpreter& vm, RomActivityState& s) {
+void ApplyOrientation(dx::Interpreter& vm, const Context& context);
+
+void EnsureConfiguration(dx::Interpreter& vm, RomActivityState& s, Record& r) {
+    if (!s.configuration.IsValid() || r.finishing || r.destroying) return;
+    const auto changes = r.configuration.IsValid()
+                             ? CallAndroidMethod(vm, r.configuration, "diff", "(Landroid/content/res/Configuration;)I",
+                                                 {V::Ref(s.configuration)})
+                                   .AsInt()
+                             : 0;
+    r.configuration = s.configuration;
+    if (!changes) return;
+    const auto handled = CallAndroidMethod(vm, r.info, "getRealConfigChanged", "()I").AsInt();
+    if (changes & ~handled) {
+        Send(vm, s, "scheduleRelaunchActivity",
+             "(Landroid/os/IBinder;Ljava/util/List;Ljava/util/List;IZLandroid/content/res/Configuration;)V",
+             {V::Ref(r.token), null, null, V::Int(changes), V::Int(!r.resumed), V::Ref(s.configuration)});
+    } else {
+        Send(vm, s, "scheduleActivityConfigurationChanged", "(Landroid/os/IBinder;)V", {V::Ref(r.token)});
+    }
+}
+
+void Resume(dx::Interpreter& vm, const Context& context, RomActivityState& s) {
     if (s.suspended || s.exiting || s.stack.empty()) return;
     auto& top = s.stack.back();
     if (s.background_tasks.contains(top.task)) return;
     if (top.finishing || top.destroying || top.resumed || top.launching || top.pausing) return;
+    context->requested_activity_orientation.store(top.orientation);
+    ApplyOrientation(vm, context);
+    EnsureConfiguration(vm, s, top);
     top.launching = true;
     Send(vm, s, "scheduleResumeActivity", "(Landroid/os/IBinder;IZ)V", {V::Ref(top.token), V::Int(2), V::Int(1)});
 }
@@ -133,13 +172,18 @@ void Launch(dx::Interpreter& vm, const Context& context, const DexVmAndroidConte
         if (cmd.request_code >= 0)
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "results to a reused Activity"};
         const auto token = reuse->token;
-        if (cmd.launch_mode == 2)
+        if (cmd.launch_mode == 2) {
+            for (auto i = std::next(reuse); i != s.stack.end(); ++i) {
+                if (i->task != task) continue;
+                i->finishing = true;
+                Hide(vm, context, *i);
+            }
             for (auto i = std::next(reuse); i != s.stack.end(); ++i)
                 if (i->task == task) {
-                    i->finishing = true;
                     Stop(vm, context, s, *i);
                     Destroy(vm, s, *i);
                 }
+        }
         const auto list = List(vm);
         const auto root = vm.ProtectReferences(std::array{list});
         Append(vm, list, cmd.intent);
@@ -148,7 +192,7 @@ void Launch(dx::Interpreter& vm, const Context& context, const DexVmAndroidConte
         std::stable_partition(s.stack.begin(), s.stack.end(), [&](const auto& r) { return r.task != task; });
         const auto current = std::ranges::find_if(s.stack, [&](const auto& r) { return r.token == token; });
         std::rotate(current, std::next(current), s.stack.end());
-        Resume(vm, s);
+        Resume(vm, context, s);
         return;
     }
     const auto package = vm.NewStringUtf8(context->package_name);
@@ -186,8 +230,14 @@ void Launch(dx::Interpreter& vm, const Context& context, const DexVmAndroidConte
         dx::IntrinsicContext call{vm, token, {}};
         return ResourceObject(call, context, false);
     }();
-    const auto config =
-        CallAndroidMethod(vm, resources, "getConfiguration", "()Landroid/content/res/Configuration;").ref;
+    if (!s.configuration.IsValid()) {
+        const auto initial =
+            CallAndroidMethod(vm, resources, "getConfiguration", "()Landroid/content/res/Configuration;").ref;
+        s.configuration = NewPlatformObject(vm, "Landroid/content/res/Configuration;",
+                                            "(Landroid/content/res/Configuration;)V", {V::Ref(initial)});
+    }
+    const auto config = s.configuration;
+    s.stack.back().configuration = config;
     const auto config_root = vm.ProtectReferences(std::array{config});
     const auto compat_type = vm.Linker().ResolveDescriptor("Landroid/content/res/CompatibilityInfo;");
     const auto initialized = vm.EnsureClassInitialized(compat_type);
@@ -200,6 +250,35 @@ void Launch(dx::Interpreter& vm, const Context& context, const DexVmAndroidConte
         "(Landroid/content/Intent;Landroid/os/IBinder;ILandroid/content/pm/ActivityInfo;Landroid/content/res/Configuration;Landroid/content/res/CompatibilityInfo;ILandroid/os/Bundle;Ljava/util/List;Ljava/util/List;ZZLjava/lang/String;Landroid/os/ParcelFileDescriptor;Z)V",
         {V::Ref(cmd.intent), V::Ref(token), V::Int(task), V::Ref(info), V::Ref(config), V::Ref(compat), V::Int(2), null,
          null, null, V::Int(s.suspended), V::Int(1), null, null, V::Int(0)});
+}
+
+// Only Activity orientation requests change the running logical display. Density and
+// user-selected pixel dimensions have no live frontend editing entry point.
+void ApplyOrientation(dx::Interpreter& vm, const Context& context) {
+    auto& s = Activities(context);
+    if (s.stack.empty() || s.exiting || s.stack.back().launching || s.stack.back().pausing) return;
+    const auto orientation = s.stack.back().orientation;
+    const bool portrait = orientation == 1 || orientation == 7 || orientation == 9 || orientation == 12;
+    const bool landscape = orientation == 0 || orientation == 6 || orientation == 8 || orientation == 11;
+    if ((!portrait && !landscape) || context->surface_width == context->surface_height ||
+        portrait == (context->surface_width < context->surface_height))
+        return;
+    const auto old = s.configuration;
+    const auto config = NewPlatformObject(vm, "Landroid/content/res/Configuration;",
+                                          "(Landroid/content/res/Configuration;)V", {V::Ref(old)});
+    const auto root = vm.ProtectReferences(std::array{config});
+    std::swap(context->surface_width, context->surface_height);
+    std::swap(WindowField(vm, config, "screenWidthDp", "I"), WindowField(vm, config, "screenHeightDp", "I"));
+    WindowField(vm, config, "orientation", "I") = {portrait ? 1U : 2U, dx::SlotTag::cat1};
+    WindowField(vm, config, "seq", "I") = {static_cast<unsigned>(++s.configuration_sequence), dx::SlotTag::cat1};
+    s.configuration = config;
+    ResizeRomDisplay(vm, context);
+    // Invalidate DisplayManagerGlobal before ResourcesManager fetches new metrics.
+    if (const auto callback = context->singletons.find("display_callback"); callback != context->singletons.end())
+        static_cast<void>(CallAndroidMethod(vm, callback->second, "onDisplayEvent", "(II)V", {V::Int(0), V::Int(2)}));
+    Send(vm, s, "scheduleConfigurationChanged", "(Landroid/content/res/Configuration;)V", {V::Ref(config)});
+    for (auto& r : s.stack)
+        if (r.visible) EnsureConfiguration(vm, s, r);
 }
 
 void Drain(dx::Interpreter& vm, const Context& context) {
@@ -228,8 +307,9 @@ void VisitRomActivityRoots(const DexVmAndroidContext& context, const dx::VmRootV
     };
     const auto& s = *context.rom_activities;
     root(s.application_thread);
+    root(s.configuration);
     for (const auto& r : s.stack)
-        for (const auto ref : {r.token, r.intent, r.info, r.component, r.caller, r.result_data})
+        for (const auto ref : {r.token, r.intent, r.info, r.component, r.caller, r.result_data, r.configuration})
             root(ref);
     for (const auto& cmd : s.pending) {
         root(cmd.owner);
@@ -277,7 +357,7 @@ void RequestRomActivitySuspend(dx::Interpreter& vm, const Context& context, bool
         else
             Stop(vm, context, s, top);
     } else
-        Resume(vm, s);
+        Resume(vm, context, s);
 }
 
 void RequestRomActivityExit(dx::Interpreter& vm, const Context& context, std::int64_t budget_millis) {
@@ -290,15 +370,13 @@ void RequestRomActivityExit(dx::Interpreter& vm, const Context& context, std::in
     s.exit_deadline_millis = now > std::numeric_limits<std::int64_t>::max() - budget_millis
                                  ? std::numeric_limits<std::int64_t>::max()
                                  : now + budget_millis;
+    // Queue focus loss across the stack before any lifecycle message for this exit.
     for (auto& r : s.stack) {
         r.finishing = true;
-        if (r.resumed || r.launching)
-            Pause(vm, s, r);
-        else {
-            Stop(vm, context, s, r);
-            Destroy(vm, s, r);
-        }
+        Hide(vm, context, r);
     }
+    for (auto& r : s.stack)
+        Finish(vm, context, s, r);
     s.exit_requested = s.stack.empty();
     context->activities_destroyed.store(s.exit_requested);
 }
@@ -352,12 +430,8 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
                         r->finishing = true;
                         r->result = c.arguments[1].AsInt();
                         r->result_data = c.arguments[2].ref;
-                        if (r->resumed || r->launching)
-                            Pause(c.vm, s, *r);
-                        else {
-                            Stop(c.vm, context, s, *r);
-                            Destroy(c.vm, s, *r);
-                        }
+                        Hide(c.vm, context, *r);
+                        Finish(c.vm, context, s, *r);
                         return V::Int(1);
                     });
     b.VirtualMethod("activityResumed", "(Landroid/os/IBinder;)V", [context](dx::IntrinsicContext& c) {
@@ -368,15 +442,16 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
             r->stopped = false;
             r->stopping = false;
             r->launching = false;
-            r->visible = true;
-            SetRomApplicationVisibility(c.vm, context, r->token, true);
+            if (!r->finishing) {
+                r->visible = true;
+                SetRomApplicationVisibility(c.vm, context, r->token, true);
+            }
         }
         for (auto& r : s.stack)
             if (r.token != c.arguments[0].ref && r.paused && !r.stopped && !r.destroying) Stop(c.vm, context, s, r);
-        if (s.exiting || s.suspended || !s.pending.empty() ||
-            (Find(s, c.arguments[0].ref) && s.background_tasks.contains(Find(s, c.arguments[0].ref)->task))) {
-            if (auto* r = Find(s, c.arguments[0].ref)) Pause(c.vm, s, *r);
-        }
+        if (auto* r = Find(s, c.arguments[0].ref);
+            r && (r->finishing || s.suspended || !s.pending.empty() || s.background_tasks.contains(r->task)))
+            Pause(c.vm, s, *r);
         UpdateForeground(c.vm, context, s);
         return V::Void();
     });
@@ -395,7 +470,7 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
             }
         }
         Drain(c.vm, context);
-        if (s.pending.empty()) Resume(c.vm, s);
+        if (s.pending.empty()) Resume(c.vm, context, s);
         return V::Void();
     });
     b.VirtualMethod("activityStopped",
@@ -443,7 +518,7 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
             if (!s.exiting) context->exit_requested.store(true);
         } else if (!s.stack.empty()) {
             context->requested_activity_orientation.store(s.stack.back().orientation);
-            Resume(c.vm, s);
+            Resume(c.vm, context, s);
         }
         Drain(c.vm, context);
         UpdateForeground(c.vm, context, s);
@@ -499,7 +574,7 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
                 Stop(c.vm, context, s, s.stack.back());
         }
         std::stable_partition(s.stack.begin(), s.stack.end(), [task](const auto& item) { return item.task == task; });
-        if (!s.stack.empty() && s.stack.back().task != task) Resume(c.vm, s);
+        if (!s.stack.empty() && s.stack.back().task != task) Resume(c.vm, context, s);
         return V::Int(1);
     });
     b.VirtualMethod(
@@ -552,6 +627,7 @@ void PumpAndroidHostRequests(dx::Interpreter& vm, const Context& context) {
         case Kind::shutdown: RequestRomActivityExit(vm, context); break;
         }
     }
+    ApplyOrientation(vm, context);
     if (context->rom_activities && context->rom_activities->exiting && context->activities_destroyed.load() &&
         !context->local_services_stopping)
         ShutdownLocalServices(vm, *context);

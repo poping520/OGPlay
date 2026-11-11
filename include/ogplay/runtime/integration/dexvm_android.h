@@ -148,9 +148,6 @@ AssembleAndroidContext(std::vector<BootClasspathJar> boot_classpath);
 [[nodiscard]] std::vector<std::vector<std::uint8_t>> BootClasspathDexFiles(std::span<const BootClasspathJar> jars);
 
 // First boot jar, in classpath order, that contains the entry.
-[[nodiscard]] const BootClasspathJar* FindBootClasspathEntry(const struct DexVmAndroidContext& context,
-                                                             std::string_view entry);
-
 struct DexVmAndroidContext final {
     std::atomic_bool process_stopping{};
     // Set from the owning native process before linking/startup. No host query.
@@ -380,8 +377,6 @@ struct DexVmAndroidContext final {
     std::shared_ptr<RomWindowState> rom_windows;
     std::shared_ptr<RomActivityState> rom_activities;
     std::shared_ptr<RomInputState> rom_input;
-    // Assembly-only P3 staging gate; no CLI setting. The production session
-    // keeps its existing window path until the atomic ROM switch.
 
     std::int64_t last_vibration_millis{};
 
@@ -433,6 +428,16 @@ struct DexVmAndroidContext final {
         std::condition_variable pace_changed;
         std::optional<std::thread::id> pace_driver;
         std::uint64_t pace_generation{};
+
+        struct Producer {
+            bool waiting{}, blocked{};
+            std::uint64_t native_thread{}, context_token{};
+            std::uint32_t window_surface{};
+            bool wait_timed_out{};
+        };
+
+        std::unordered_set<std::uint32_t> window_surfaces;
+        std::map<std::thread::id, Producer> producers;
         bool pace_driver_blocked{};
         bool pace_shutdown{};
         std::atomic<bool> surface_retired{false};
@@ -592,7 +597,6 @@ struct DexVmAndroidContext final {
     // Host frame-rate cap period (0 = none). A SurfaceHolder canvas posted from a thread other
     // than the paced lifecycle driver waits per holder, like a real buffer queue.
     std::uint64_t frame_period_ns{};
-    std::unordered_map<std::uint32_t, hal::FramePacer> canvas_pacers;
 
     struct HostActivityRequest {
         enum class Kind { launch, suspend, resume, shutdown } kind;
@@ -686,6 +690,8 @@ void ReleaseAndroidDatabaseResources(const std::shared_ptr<DexVmAndroidContext>&
 void AttachAndroidClockObserver(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock);
 void AttachEglSwapPacer(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock);
 void DetachEglSwapPacer(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock);
+bool EglProducersSettled(DexVmAndroidContext& context, bool wait = true);
+void ReleaseOverdueEglProducers(DexVmAndroidContext& context, std::uint64_t waited_ns, core::Logger* logger);
 void AdvanceEglSwapPacer(DexVmAndroidContext& context);
 void ShutdownEglSwapPacer(DexVmAndroidContext& context);
 
@@ -701,7 +707,8 @@ struct EglSwapPacerSnapshot final {
 // Permanently invalidates the Java EGL facade and releases any guest swap
 // pacer wait. Used only when process teardown begins.
 void RetireGuestEglSurface(DexVmAndroidContext& context);
-void PaceEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock);
+void PaceEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock, std::uint64_t native_thread = 0,
+                 std::uint32_t window_surface = 0, std::uint64_t context_token = 0);
 
 // Owner-thread helpers; video state is shared with the existing video/PCM pump.
 [[nodiscard]] bool PrepareAndroidMediaVideo(DexVmAndroidContext& context, std::uint32_t owner);
@@ -773,9 +780,6 @@ void ApplyAudioStreamPolicy(DexVmAndroidContext& context, std::int32_t stream);
 [[nodiscard]] std::size_t MixVideoPcmIntoAccumulator(DexVmAndroidContext& context,
                                                      std::span<std::int64_t> interleaved_stereo,
                                                      std::uint32_t output_rate);
-[[nodiscard]] std::size_t MixVideoPcmIntoStereo(DexVmAndroidContext& context,
-                                                std::span<std::int16_t> interleaved_stereo, std::uint32_t output_rate);
-
 // Reads a bounded encoded-audio window from resid, APK stored/deflate, VFS, or
 // a captured FD lease. UINT64_MAX/0 length means the remainder of the source.
 [[nodiscard]] audio::JavaSoundPoolMixer::EncodedResource

@@ -386,15 +386,6 @@ std::size_t MixVideoPcmIntoAccumulator(DexVmAndroidContext& context, const std::
     return contributed;
 }
 
-std::size_t MixVideoPcmIntoStereo(DexVmAndroidContext& context, const std::span<std::int16_t> interleaved_stereo,
-                                  const std::uint32_t output_rate) {
-    std::vector<std::int64_t> accumulator(interleaved_stereo.size());
-    audio::CopyPcm16IntoAccumulator(interleaved_stereo, accumulator);
-    const auto contributed = MixVideoPcmIntoAccumulator(context, accumulator, output_rate);
-    audio::SaturateStereoPcm16(accumulator, interleaved_stereo);
-    return contributed;
-}
-
 std::optional<std::string> PumpAndroidAudioTracks(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
     const auto post = [&](const char* descriptor, const dexvm::VmObjectRef weak, const std::int32_t what,
                           const std::int32_t arg1 = 0, const std::int32_t arg2 = 0) -> std::optional<std::string> {

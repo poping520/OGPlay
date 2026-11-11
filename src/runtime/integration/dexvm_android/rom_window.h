@@ -53,6 +53,7 @@ std::optional<AndroidSurfaceWindow> ResolveRomSurfaceWindow(dx::Interpreter& vm,
                                                             dx::VmObjectRef surface);
 void AddRomSurfaceNatives(dx::IntrinsicClassBuilder& builder, const Context& context);
 void ReleaseRomSurfaceReference(const Context& context, int token);
+void ResizeRomDisplay(dx::Interpreter& vm, const Context& context);
 void SetRomApplicationVisibility(dx::Interpreter& vm, const Context& context, dx::VmObjectRef token, bool visible);
 }  // namespace android_intrinsics
 }  // namespace ogplay::runtime

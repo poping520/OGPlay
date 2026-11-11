@@ -55,7 +55,9 @@ public:
     [[nodiscard]] LifecycleFrameState Suspend();
     [[nodiscard]] LifecycleFrameState Resume();
     [[nodiscard]] LifecycleFrameState StepFrame();
+    [[nodiscard]] bool ReadyForFrame();
     void SetRealtimeVideoClock(bool enabled) noexcept;
+    void SetEglProducerWaitBudgetForTesting(std::uint64_t budget_ns) noexcept;
     void QueueInput(const runtime::AndroidBoundaryInput& input);
     void CancelInput();
     [[nodiscard]] LifecycleFrameState Stop(DexProcessStopReason reason = DexProcessStopReason::host_shutdown);
@@ -65,6 +67,8 @@ public:
 private:
     void AwaitIdle(std::uint64_t budget_ns);
     void CheckGuest();
+    void AwaitProducers();
+    bool ProducersReady(bool wait);
 
     DexActivityLifecycleBindings bindings_;
     std::vector<runtime::AndroidBoundaryInput> pending_input_;
@@ -72,7 +76,8 @@ private:
     hal::FixedStepClock clock_;
     hal::FramePacer display_pacer_;
     LifecycleRunState state_{LifecycleRunState::ready};
-    std::uint64_t frame_{}, window_revision_{}, previous_step_ns_{};
+    std::uint64_t frame_{}, window_revision_{}, previous_step_ns_{}, producer_wait_started_ns_{};
+    std::uint64_t producer_budget_ns_{30'000'000'000};
     bool surface_open_{}, suspended_{}, realtime_{true}, stop_completed_{};
     bool posted_frame_{}, blank_frame_{}, reported_borrow_{};
 };

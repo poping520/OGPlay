@@ -12,7 +12,8 @@ namespace ogplay::runtime {
 FrameService::FrameService(const gles::SupersampleLayout& layout,
                            const std::span<const detail::HleThunkDescriptor> descriptors,
                            const bool async_readback) noexcept
-    : layout_(layout), descriptors_(descriptors), async_enabled_(async_readback) {}
+    : layout_(layout), descriptors_(descriptors), composed_width_(layout.logical_width),
+      composed_height_(layout.logical_height), async_enabled_(async_readback) {}
 
 FrameService::~FrameService() {
     try {
@@ -73,7 +74,7 @@ void FrameService::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
 }
 
 void FrameService::PublishSharedFrame(std::shared_ptr<const video::VideoFrame> pixels) {
-    if (!pixels || pixels->width != layout_.logical_width || pixels->height != layout_.logical_height ||
+    if (!pixels || pixels->width == 0 || pixels->height == 0 || pixels->width > 4096 || pixels->height > 4096 ||
         pixels->rgba8.size() != static_cast<std::size_t>(pixels->width) * pixels->height * 4U) {
         throw std::invalid_argument("composed frame does not match the logical surface layout");
     }
@@ -81,14 +82,16 @@ void FrameService::PublishSharedFrame(std::shared_ptr<const video::VideoFrame> p
     ResetReadback();
     std::scoped_lock lock(mutex_);
     blank_alpha_.reset();
-    latest_frame_ = AndroidBoundaryFrame{
-        layout_.logical_width, layout_.logical_height, ++frame_sequence_, {}, {std::move(pixels), storage}};
+    composed_width_ = pixels->width;
+    composed_height_ = pixels->height;
+    latest_frame_ =
+        AndroidBoundaryFrame{pixels->width, pixels->height, ++frame_sequence_, {}, {std::move(pixels), storage}};
 }
 
 void FrameService::PublishBlankFrame(const std::uint8_t alpha) {
     ResetReadback();
     std::scoped_lock lock(mutex_);
-    latest_frame_ = AndroidBoundaryFrame{layout_.logical_width, layout_.logical_height, ++frame_sequence_, {}};
+    latest_frame_ = AndroidBoundaryFrame{composed_width_, composed_height_, ++frame_sequence_, {}};
     blank_alpha_ = alpha;
 }
 

@@ -123,6 +123,7 @@ struct AndroidManifestActivityComponent final {
     std::optional<std::string> task_affinity;
     // API19 ActivityInfo orientation; aliases inherit their preceding target.
     std::int32_t screen_orientation{-1};
+    std::uint32_t config_changes{};
 };
 
 [[nodiscard]] inline bool AndroidManifestActivityExported(const AndroidManifestActivityComponent& component) {

@@ -1,14 +1,16 @@
 # 当前状态
 
-更新：2026-11-10。
+更新：2026-11-11。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 修复过程、验证明细及证据写入任务单。能力见 [capabilities.toml](../../capabilities.toml)，
 契约见各模块 MODULE，任务见 [任务总览](../tasks/README.md)。
 
-JavaTraversal默认；九场景与Legacy持平（DVM-331，仅启动路径）。无返回值的显示设置忽略并记警告（DVM-372）。
+P3 的生产路径使用 ROM ActivityThread、主 Looper、ViewRootImpl 和进程内 AMS/WMS。
+运行期方向变化走 ROM 配置派发与 relaunch，Java EGL 窗口生产者和会话 Clock 双向同步。
+P3 实现已完成。Wild Blood 的退出焦点顺序已修复，剩余退出问题及历史验收证据缺口见 [P3-window](../tasks/dexvm/P3-window.md)。下一阶段是 P4 My Boy!。
 启动类路径改为 ogplay.jar + 原样 API19 ROM jar（core/conscrypt/ext/framework/framework2/android.policy），成员来源审计与配对制品已删除；未绑定 native 调用时抛 UnsatisfiedLinkError。
-P2 完成。API19 资源 native 使用裁剪版 framework-res.apk、游戏 APK 和唯一资源表核心，Java 与 NDK 共用 AssetManager。UI 读 ROM 对象，绘制投影留给 P3。见 [RES-1](../tasks/resources/RES-1.md)。
+P2 完成。API19 资源 native 使用裁剪版 framework-res.apk、游戏 APK 和唯一资源表核心，Java 与 NDK 共用 AssetManager。见 [RES-1](../tasks/resources/RES-1.md)。
 
 ## 游戏进度
 
@@ -63,7 +65,7 @@ P2 完成。API19 资源 native 使用裁剪版 framework-res.apk、游戏 APK �
   游戏退出后按运行时缺失路径提示挂载位置（[GUI-13](../tasks/gui/GUI-13.md)），App 内点击未实测。
   每次库启动记录运行结果（last-run.json），失败游戏归入“待排查”，CLI `library list --filter attention` 同源（[GUI-23](../tasks/gui/GUI-23.md)），App 内点击未实测。
   Windows 启动器单例与托盘/最小化恢复已通过 Debug / Release 专项实测（[GUI-21](../tasks/gui/GUI-21.md)），Release 已重建。
-- 图形：P1 范围内的 ROM 图形、软件 Canvas、效果、NinePatch 与 Camera 已接通 Skia。整形与双向重排仍降级；WebP 编码、Parcel blob、排除的图形能力及 P3 UI 投影清理仍有缺口。macOS arm64 已验证，x64 仅交叉链接，Windows/Android 未实跑。实际 context-loss、多窗口/透明 Activity 未验收；GLES1 vertex-array 首错未重达。
+- 图形：P1 范围内的 ROM 图形、软件 Canvas、效果、NinePatch 与 Camera 已接通 Skia。整形与双向重排仍降级；WebP 编码、Parcel blob、排除的图形能力仍有缺口。macOS arm64 已验证，x64 仅交叉链接，Windows/Android 未实跑。实际 context-loss、多窗口/透明 Activity 未验收；GLES1 vertex-array 首错未重达。
   SurfaceTexture 公共队列/Java 与 SwiftShader 合成帧外部采样闭环已验；Metal 无 external，
   MediaPlayer/NDK producer 与启动后端选择未接入（[APS-14](../tasks/apk-startup/APS-14.md)）。
 - 音视频（[DVM-189](../tasks/dexvm/DVM-189.md)）：视频改为链接裁剪版 ogplay_ffmpeg

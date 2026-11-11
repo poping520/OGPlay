@@ -489,8 +489,9 @@ Decl Declare_local_DisplayService(const Context& context) {
     // The one logical display has no hotplug events. ROM registers the callback
     // even for clients that only query its metrics.
     builder.VirtualMethod("registerCallback", "(Landroid/hardware/display/IDisplayManagerCallback;)V",
-                          [](dx::IntrinsicContext& call) {
-                              static_cast<void>(dx::IntrinsicCall(call).NonNullRef(0, "display callback"));
+                          [context](dx::IntrinsicContext& call) {
+                              context->singletons["display_callback"] =
+                                  dx::IntrinsicCall(call).NonNullRef(0, "display callback");
                               return dx::VmValue::Void();
                           });
     builder.VirtualMethod("getDisplayInfo", "(I)Landroid/view/DisplayInfo;", [context](dx::IntrinsicContext& call) {

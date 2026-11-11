@@ -42,14 +42,17 @@ void FocusChanged(dx::Interpreter& vm, const Context& context, RomWindowState& s
                      [](const auto& a, const auto& b) { return a.second < b.second; });
     const auto focused =
         std::ranges::find_if(state.clients, [&](const auto& item) { return item.second.window == current; });
-    SetRomInputWindowFocus(vm, context, focused == state.clients.end() ? dx::VmObjectRef{} : focused->second.binder);
     std::vector<dx::VmObjectRef> refs;
     for (const auto& [binder, _] : callbacks)
         refs.push_back(binder);
     const auto roots = vm.ProtectReferences(refs);
-    for (const auto& [binder, focused] : callbacks)
+    SetRomInputWindowFocus(vm, context, focused == state.clients.end() ? dx::VmObjectRef{} : focused->second.binder);
+    for (const auto& [binder, focused] : callbacks) {
+        const auto client = state.clients.find(binder.Value());
+        if (client == state.clients.end() || !state.system.Exists(client->second.window)) continue;
         static_cast<void>(CallAndroidMethod(vm, binder, "windowFocusChanged", "(ZZ)V",
                                             {V::Int(focused), V::Int(state.system.InTouchMode())}));
+    }
 }
 }  // namespace
 
@@ -61,6 +64,23 @@ RomWindowState& RomWindows(const Context& context) {
                 context->rom_windows->system.SetApplicationVisible(r.token.Value(), r.visible);
     }
     return *context->rom_windows;
+}
+
+void ResizeRomDisplay(dx::Interpreter& vm, const Context& context) {
+    auto& s = RomWindows(context);
+    QueueRomWindowInput(vm, context, s.system.CancelTouch());
+    s.system.ResizeDisplay(static_cast<int>(context->surface_width), static_cast<int>(context->surface_height));
+    const auto empty = NewPlatformObject(vm, "Landroid/graphics/Rect;", "()V", {});
+    const auto frame = NewPlatformObject(vm, "Landroid/graphics/Rect;", "()V", {});
+    const auto roots = vm.ProtectReferences(std::array{empty, frame});
+    for (auto& [_, client] : s.clients) {
+        const auto rect = s.system.Frame(client.window);
+        WriteWindowRect(vm, frame, rect);
+        static_cast<void>(CallAndroidMethod(
+            vm, client.binder, "resized",
+            "(Landroid/graphics/Rect;Landroid/graphics/Rect;Landroid/graphics/Rect;Landroid/graphics/Rect;ZLandroid/content/res/Configuration;)V",
+            {V::Ref(frame), V::Ref(empty), V::Ref(empty), V::Ref(empty), V::Int(1), V::Ref(dx::VmObjectRef{})}));
+    }
 }
 
 void SetRomApplicationVisibility(dx::Interpreter& vm, const Context& context, dx::VmObjectRef token, bool visible) {

@@ -1025,9 +1025,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                         }
                     }
                 }
-                const bool advance = !failure && !control_frozen &&
-                                     mcp_lifecycle == agent::McpLifecycleState::running &&
-                                     (!mcp_manual_step || permitted_steps != 0U);
+                const bool advance =
+                    !failure && !control_frozen && mcp_lifecycle == agent::McpLifecycleState::running &&
+                    (!mcp_manual_step || permitted_steps != 0U) && (mcp_manual_step || dex_lifecycle->ReadyForFrame());
                 if (!advance || quit) {
                     if (!quit && !failure && !mcp_manual_step) {
                         static_cast<void>(present_latest());

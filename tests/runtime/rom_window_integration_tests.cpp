@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include <optional>
 
 #include <doctest/doctest.h>
@@ -29,7 +30,7 @@ struct RomWindowApp {
     std::unique_ptr<session::AndroidAppProcess> app;
     std::optional<AndroidBoundaryFrame> image;
 
-    explicit RomWindowApp(std::string_view activity) {
+    explicit RomWindowApp(std::string_view activity, bool realtime = false) {
         const auto android = std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19";
         context = AssembleAndroidContext(ReadBootClasspath(android / "framework"));
         context->framework_resource_apk = android / "framework/framework-res.apk";
@@ -66,6 +67,7 @@ struct RomWindowApp {
         }
         session::AndroidAppProcessRequest request;
         request.context = context;
+        request.boundary_options.async_present_readback = realtime;
         request.manifest = std::move(manifest);
         request.system_libraries = modules;
         for (const auto byte : dex)
@@ -87,7 +89,7 @@ struct RomWindowApp {
         request.backend = {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
 #endif
         app = session::AndroidAppProcess::Create(std::move(request));
-        app->ActivityLifecycle().SetRealtimeVideoClock(false);
+        app->ActivityLifecycle().SetRealtimeVideoClock(realtime);
         app->StartApplication();
         REQUIRE(app->StartLauncherActivity().state == session::LifecycleRunState::running);
     }
@@ -152,7 +154,7 @@ TEST_CASE("P3 ROM ViewRootImpl posts a software frame and preserves pixels outsi
     CHECK(fixture.Pixel(12, 12) == std::array{248, 162, 42, 255});
     CHECK(fixture.Pixel(30, 30) == std::array{27, 57, 93, 255});
     fixture.Click(12, 12);
-    CHECK(fixture.context->requested_activity_orientation.load() == 0);
+    CHECK(fixture.context->requested_activity_orientation.load() == 9);
     CHECK(fixture.Pixel(12, 12) == std::array{112, 220, 114, 255});
     CHECK(fixture.Pixel(30, 30) == std::array{27, 57, 93, 255});
     CHECK(fixture.app->Stop().state == ogplay::session::LifecycleRunState::stopped);
@@ -247,6 +249,34 @@ TEST_CASE("P3 ROM ActivityThread delivers results and orders suspend and restart
     CHECK(fixture.Read("WidgetsActivity", "result") == 41);
 }
 
+TEST_CASE("P3 ROM Activity exit takes focus from the dialog before pause and destroy") {
+    for (const bool finish : {false, true}) {
+        INFO("finish=" << finish);
+        constexpr auto activity = "ExitFocusActivity";
+        RomWindowApp fixture(activity);
+        fixture.Step(2);
+        const auto decor_gained = fixture.Read(activity, "decorGained");
+        REQUIRE(decor_gained > 0);
+        fixture.Click(160, 200);
+        REQUIRE(fixture.Windows() == 2);
+        const auto dialog_gained = fixture.Read(activity, "dialogGained");
+        REQUIRE(dialog_gained > decor_gained);
+        if (finish) {
+            fixture.Key(4);
+            fixture.Step(2);
+            CHECK(SessionExitRequested(*fixture.context));
+        }
+        CHECK(fixture.app->Stop().state == session::LifecycleRunState::stopped);
+        const auto lost = fixture.Read(activity, "dialogLost");
+        const auto paused = fixture.Read(activity, "paused");
+        CHECK(lost > dialog_gained);
+        CHECK(lost < paused);
+        CHECK(paused < fixture.Read(activity, "destroyed"));
+        CHECK(fixture.Read(activity, "lateFocus") == 0);
+        CHECK(fixture.Windows() == 0);
+    }
+}
+
 TEST_CASE("P3 ROM GLSurfaceView publishes beneath software overlays and retains EGL context") {
     RomWindowApp fixture("GlActivity");
     for (unsigned i = 0; i < 30; ++i) {
@@ -296,4 +326,146 @@ TEST_CASE("P3 WebView retains disabled load callback while attached to a ROM win
     CHECK(std::ranges::any_of(warnings, [](const auto& warning) {
         return warning.id == std::string(core::kUiDegradedWarningPrefix) + "TextureView.hardwareAcceleration";
     }));
+}
+
+TEST_CASE("P3 orientation relaunch saves state and replaces the window at the new size") {
+    RomWindowApp fixture("ConfigActivity");
+    fixture.Step(2);
+    fixture.Click(100, 100);
+    fixture.Step(3);
+    CHECK(fixture.Read("ConfigActivity", "creates") == 2);
+    CHECK(fixture.Read("ConfigActivity", "changes") == 0);
+    CHECK(fixture.Read("ConfigActivity", "restored") == 73);
+    CHECK(fixture.Read("ConfigActivity", "order") == 45671283);
+    CHECK(fixture.Read("ConfigActivity", "width") == 400);
+    CHECK(fixture.Read("ConfigActivity", "height") == 320);
+    CHECK(fixture.Read("ConfigActivity", "metricWidth") == 400);
+    CHECK(fixture.Read("ConfigActivity", "orientation") == 2);
+    REQUIRE(fixture.image);
+    CHECK(fixture.image->width == 400);
+    CHECK(fixture.image->height == 320);
+    CHECK(fixture.Windows() == 1);
+    CHECK(fixture.Pixel(100, 100) == std::array{32, 160, 64, 255});
+    CHECK(fixture.Pixel(399, 319) == std::array{32, 160, 64, 255});
+}
+
+TEST_CASE("P3 handled orientation dispatches configuration and relayout without recreation") {
+    RomWindowApp fixture("HandledConfigActivity");
+    fixture.Step(2);
+    fixture.Click(100, 100);
+    fixture.Step(3);
+    CHECK(fixture.Read("ConfigActivity", "creates") == 1);
+    CHECK(fixture.Read("ConfigActivity", "changes") == 1);
+    CHECK(fixture.Read("ConfigActivity", "order") == 0);
+    CHECK(fixture.Read("ConfigActivity", "width") == 400);
+    CHECK(fixture.Read("ConfigActivity", "height") == 320);
+    CHECK(fixture.Read("ConfigActivity", "metricWidth") == 400);
+    CHECK(fixture.Read("ConfigActivity", "orientation") == 2);
+    REQUIRE(fixture.image);
+    CHECK(fixture.image->width == 400);
+    CHECK(fixture.Pixel(399, 319) == std::array{32, 160, 64, 255});
+    CHECK(fixture.Windows() == 1);
+}
+
+TEST_CASE("P3 continuous EGL producer completes one swap per Clock advance") {
+    for (const bool realtime : {false, true}) {
+        INFO("realtime=" << realtime);
+        RomWindowApp fixture("GlActivity", realtime);
+        for (unsigned i = 0; i < 30 && fixture.Read("GlActivity", "draws") < 3; ++i) {
+            fixture.Step();
+            hal::SleepPreciseNs(1'000'000);
+        }
+        REQUIRE(fixture.Read("GlActivity", "draws") >= 3);
+        const auto settle = [&] {
+            const auto deadline = hal::Clock::SteadyTimestampNs() + 2'000'000'000;
+            while (!EglProducersSettled(*fixture.context))
+                REQUIRE(hal::Clock::SteadyTimestampNs() < deadline);
+        };
+        settle();
+        for (unsigned i = 0; i < 5; ++i) {
+            const auto before = fixture.Read("GlActivity", "draws");
+            const auto time = fixture.context->uptime_millis.load();
+            if (realtime) CHECK(fixture.app->ActivityLifecycle().ReadyForFrame());
+            fixture.Step();
+            settle();
+            CHECK(fixture.Read("GlActivity", "draws") == before + 1);
+            CHECK(fixture.context->uptime_millis.load() == time + 16);
+        }
+    }
+}
+
+TEST_CASE("P3 dirty EGL producer without requestRender does not hold the Clock") {
+    for (const bool realtime : {false, true}) {
+        INFO("realtime=" << realtime);
+        RomWindowApp fixture("DirtyGlActivity", realtime);
+        for (unsigned i = 0; i < 30; ++i) {
+            fixture.Step();
+            hal::SleepPreciseNs(1'000'000);
+            if (fixture.image && fixture.Pixel(60, 60)[1] >= 150) break;
+        }
+        fixture.Step(5);
+        const auto before = fixture.Read("GlActivity", "draws");
+        const auto time = fixture.context->uptime_millis.load();
+        if (realtime) CHECK(fixture.app->ActivityLifecycle().ReadyForFrame());
+        fixture.Step(5);
+        CHECK(fixture.Read("GlActivity", "draws") == before);
+        CHECK(fixture.context->uptime_millis.load() == time + 80);
+    }
+}
+
+TEST_CASE("P3 slow EGL producer releases the Clock until it swaps again") {
+    for (const bool realtime : {false, true}) {
+        INFO("realtime=" << realtime);
+        RomWindowApp fixture("GlActivity", realtime);
+        auto& lifecycle = fixture.app->ActivityLifecycle();
+        const auto settle = [&] {
+            auto& egl = fixture.context->egl;
+            const auto swapped = [&] {
+                std::scoped_lock lock(egl.pace_mutex);
+                return std::ranges::any_of(egl.producers, [](const auto& item) { return item.second.waiting; });
+            };
+            const auto deadline = hal::Clock::SteadyTimestampNs() + 2'000'000'000;
+            while (!swapped()) {
+                REQUIRE(hal::Clock::SteadyTimestampNs() < deadline);
+                hal::SleepPreciseNs(1'000'000);
+            }
+        };
+        for (unsigned i = 0; i < 30 && fixture.Read("GlActivity", "draws") < 3; ++i) {
+            fixture.Step();
+            hal::SleepPreciseNs(1'000'000);
+        }
+        REQUIRE(fixture.Read("GlActivity", "draws") >= 3);
+        settle();
+        const auto hold_draw = [&](bool hold) {
+            auto& vm = fixture.app->DexVm().Vm();
+            const dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
+            vm.SetStaticFieldBits("Lorg/ogplay/fixture/window/GlActivity;", "holdDraw", "I", hold);
+        };
+        constexpr std::uint64_t budget_ns = 30'000'000;
+        lifecycle.SetEglProducerWaitBudgetForTesting(budget_ns);
+        hold_draw(true);
+        if (realtime) hal::SleepPreciseNs(fixture.context->frame_period_ns);
+        const auto ticks = fixture.context->uptime_millis.load();
+        fixture.Step();
+        const auto deadline = hal::Clock::SteadyTimestampNs() + 2'000'000'000;
+        while (!fixture.Read("GlActivity", "slowDraws"))
+            REQUIRE(hal::Clock::SteadyTimestampNs() < deadline);
+        if (realtime) {
+            CHECK_FALSE(lifecycle.ReadyForFrame());
+            hal::SleepPreciseNs(budget_ns);
+            CHECK(lifecycle.ReadyForFrame());
+        }
+        const auto draws = fixture.Read("GlActivity", "draws");
+        fixture.Step(2);
+        CHECK(fixture.context->uptime_millis.load() == ticks + 48);
+        CHECK(fixture.Read("GlActivity", "draws") == draws);
+        const auto warnings = fixture.logger.Snapshot(core::LogLevel::warn, "runtime.egl.pacing");
+        CHECK(warnings.size() == 1);
+        hold_draw(false);
+        settle();
+        if (realtime) hal::SleepPreciseNs(fixture.context->frame_period_ns);
+        fixture.Step();
+        settle();
+        CHECK(fixture.Read("GlActivity", "draws") == draws + 2);
+    }
 }

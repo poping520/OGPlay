@@ -71,7 +71,7 @@ TEST_CASE("DVM-98 Android platform enums share generated enum behavior") {
     AndroidValueVm fixture;
     const std::vector<std::pair<std::string, std::vector<std::string>>> specs{
         {"Landroid/graphics/Bitmap$Config;", {"ALPHA_8", "RGB_565", "ARGB_4444", "ARGB_8888"}},
-        {"Landroid/graphics/Region$Op;", {"REPLACE"}},
+        {"Landroid/graphics/Region$Op;", {"DIFFERENCE", "INTERSECT", "UNION", "XOR", "REVERSE_DIFFERENCE", "REPLACE"}},
         {"Landroid/graphics/Path$Direction;", {"CW", "CCW"}},
         {"Landroid/graphics/PorterDuff$Mode;",
          {"CLEAR", "SRC", "DST", "SRC_OVER", "DST_OVER", "SRC_IN", "DST_IN", "SRC_OUT", "DST_OUT", "SRC_ATOP",
@@ -79,7 +79,8 @@ TEST_CASE("DVM-98 Android platform enums share generated enum behavior") {
         {"Landroid/net/NetworkInfo$State;",
          {"CONNECTING", "CONNECTED", "SUSPENDED", "DISCONNECTING", "DISCONNECTED", "UNKNOWN"}},
         {"Landroid/os/AsyncTask$Status;", {"PENDING", "RUNNING", "FINISHED"}},
-        {"Landroid/widget/ImageView$ScaleType;", {"CENTER", "CENTER_INSIDE", "FIT_CENTER", "FIT_XY", "CENTER_CROP"}}};
+        {"Landroid/widget/ImageView$ScaleType;",
+         {"MATRIX", "FIT_XY", "FIT_START", "FIT_CENTER", "FIT_END", "CENTER", "CENTER_CROP", "CENTER_INSIDE"}}};
     const auto enum_class = fixture.linker.ResolveDescriptor("Ljava/lang/Enum;");
 
     for (const auto& [descriptor, constants] : specs) {

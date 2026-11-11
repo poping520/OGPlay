@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <numbers>
@@ -97,15 +98,15 @@ void LatchEglError(dx::IntrinsicContext& call, const Context& context, std::uint
     // The boundary swap uses resolved handles and has its own graphics lock.
     // Reacquire the VM only after the boundary has released that lock.
     auto& lock = call.vm.ExecutionLock();
-    const auto depth = lock.ReleaseForBlocking();
+    const auto depth = lock.ReleaseForBlocking(false);
     std::uint32_t result;
     try {
         result = context->session->InvokeManagedEgl(name, arguments, thread);
     } catch (...) {
-        lock.ReacquireAfterBlocking(depth);
+        lock.ReacquireAfterBlocking(depth, false);
         throw;
     }
-    lock.ReacquireAfterBlocking(depth);
+    lock.ReacquireAfterBlocking(depth, false);
     return result;
 }
 
@@ -1123,6 +1124,22 @@ dx::IntrinsicHandler Egl14ConfigsHandler(const Context& context, const bool choo
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime {
+namespace {
+
+bool EglProducerSettled(DexVmAndroidContext& context, const DexVmAndroidContext::EglFacadeState::Producer& producer,
+                        const std::optional<std::vector<dexvm::VmThreadSnapshot>>& threads) {
+    if (producer.waiting || producer.blocked) return true;
+    if (threads && std::ranges::any_of(*threads, [&](const auto& thread) {
+            return thread.context_token == producer.context_token &&
+                   (thread.status != dexvm::VmThreadStatus::running ||
+                    thread.wait_state != dexvm::VmThreadWaitState::none);
+        }))
+        return true;
+    return context.session && producer.native_thread &&
+           context.session->Process().IsNativeThreadWaiting(producer.native_thread);
+}
+
+}  // namespace
 
 void AttachEglSwapPacer(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock) {
     const auto driver = context.clock_driver;
@@ -1137,22 +1154,23 @@ void AttachEglSwapPacer(DexVmAndroidContext& context, dexvm::VmExecutionLock& ex
 }
 
 void AttachAndroidClockObserver(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock) {
-    execution_lock.SetBlockingObserver(&context,
-                                       [](void* opaque, const std::thread::id thread, const bool blocked) noexcept {
-                                           auto& context = *static_cast<DexVmAndroidContext*>(opaque);
-                                           if (thread != context.clock_driver) return;
-                                           if (context.clock_monitors)
-                                               context.clock_monitors->ObserveClockDriverBlocking(blocked);
-                                           auto& egl = context.egl;
-                                           // The swap worker can release the execution lock under pace_mutex.
-                                           if (!egl.pace_driver.has_value() || thread != *egl.pace_driver) return;
-                                           {
-                                               std::scoped_lock lock(egl.pace_mutex);
-                                               if (egl.pace_driver != thread) return;
-                                               egl.pace_driver_blocked = blocked;
-                                           }
-                                           egl.pace_changed.notify_all();
-                                       });
+    execution_lock.SetBlockingObserver(
+        &context, [](void* opaque, const std::thread::id thread, const bool blocked) noexcept {
+            auto& context = *static_cast<DexVmAndroidContext*>(opaque);
+            if (thread == context.clock_driver && context.clock_monitors)
+                context.clock_monitors->ObserveClockDriverBlocking(blocked);
+            auto& egl = context.egl;
+            // The swap worker can release the execution lock under pace_mutex.
+            {
+                std::scoped_lock lock(egl.pace_mutex);
+                if (egl.pace_driver == thread) egl.pace_driver_blocked = blocked;
+                if (const auto it = egl.producers.find(thread); it != egl.producers.end()) {
+                    it->second.blocked = blocked;
+                    if (blocked) it->second.wait_timed_out = false;
+                }
+            }
+            egl.pace_changed.notify_all();
+        });
 }
 
 void DetachEglSwapPacer(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock) {
@@ -1163,10 +1181,60 @@ void DetachEglSwapPacer(DexVmAndroidContext& context, dexvm::VmExecutionLock& ex
     context.egl.pace_driver_blocked = false;
 }
 
+bool EglProducersSettled(DexVmAndroidContext& context, bool wait) {
+    auto& egl = context.egl;
+    std::unique_lock lock(egl.pace_mutex);
+    const auto settled = [&] {
+        if (egl.pace_shutdown || egl.pace_driver_blocked || std::ranges::all_of(egl.producers, [](const auto& item) {
+                return item.second.waiting || item.second.blocked;
+            }))
+            return true;
+        // ReacquireAfterBlocking reports runnable before it competes for the VM
+        // lock. The runtime wait state remains set until that acquisition ends.
+        const auto threads = context.threads ? context.threads->TrySnapshot() : std::nullopt;
+        bool ready = true;
+        for (auto& [_, producer] : egl.producers) {
+            if (EglProducerSettled(context, producer, threads))
+                producer.wait_timed_out = false;
+            else if (!producer.wait_timed_out)
+                ready = false;
+        }
+        return ready;
+    };
+    // Native futex residency has no VM-lock transition. Poll only to recheck that
+    // exact wait state and the caller's Clock deadline; no elapsed-time heuristic.
+    return wait ? egl.pace_changed.wait_for(lock, std::chrono::milliseconds(1), settled) : settled();
+}
+
+void ReleaseOverdueEglProducers(DexVmAndroidContext& context, std::uint64_t waited_ns, core::Logger* logger) {
+    auto& egl = context.egl;
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> overdue;
+    {
+        std::scoped_lock lock(egl.pace_mutex);
+        if (egl.pace_shutdown || egl.pace_driver_blocked) return;
+        const auto threads = context.threads ? context.threads->TrySnapshot() : std::nullopt;
+        for (auto& [_, producer] : egl.producers) {
+            if (!producer.wait_timed_out && !EglProducerSettled(context, producer, threads)) {
+                // One warning for this stall. Swap or blocking re-arms the producer.
+                producer.wait_timed_out = true;
+                overdue.emplace_back(producer.native_thread, producer.context_token);
+            }
+        }
+    }
+    if (logger)
+        for (const auto& [thread, token] : overdue)
+            logger->Write(core::LogLevel::warn, "runtime.egl.pacing", "EGL producer wait budget exceeded",
+                          {.guest_thread = thread},
+                          {{"producer_thread", thread}, {"context_token", token}, {"waited_ns", waited_ns}},
+                          {.mode = core::RateLimitMode::none});
+}
+
 void AdvanceEglSwapPacer(DexVmAndroidContext& context) {
     {
         std::scoped_lock lock(context.egl.pace_mutex);
         ++context.egl.pace_generation;
+        for (auto& [_, producer] : context.egl.producers)
+            if (producer.waiting) producer.waiting = false;
     }
     context.egl.pace_changed.notify_all();
 }
@@ -1192,25 +1260,36 @@ void RetireGuestEglSurface(DexVmAndroidContext& context) {
     ShutdownEglSwapPacer(context);
 }
 
-void PaceEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock) {
+void PaceEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock, std::uint64_t native_thread,
+                 std::uint32_t window_surface, std::uint64_t context_token) {
     auto& egl = context.egl;
     std::unique_lock lock(egl.pace_mutex);
-    if (!egl.pace_driver.has_value() || *egl.pace_driver == std::this_thread::get_id() || egl.pace_driver_blocked ||
-        egl.pace_shutdown) {
+    const auto thread = std::this_thread::get_id();
+    if (const auto it = egl.producers.find(thread); it != egl.producers.end()) it->second.wait_timed_out = false;
+    if (!egl.pace_driver.has_value() || *egl.pace_driver == thread || egl.pace_driver_blocked || egl.pace_shutdown) {
         return;
     }
     const auto observed = egl.pace_generation;
-    const auto depth = execution_lock.ReleaseForBlocking();
+    if (native_thread) {
+        auto& producer = egl.producers[thread];
+        producer.native_thread = native_thread;
+        producer.context_token = context_token;
+        producer.window_surface = window_surface;
+        producer.waiting = true;
+        producer.blocked = false;
+    }
+    egl.pace_changed.notify_all();
+    const auto depth = execution_lock.ReleaseForBlocking(false);
     try {
         egl.pace_changed.wait(
             lock, [&] { return egl.pace_generation != observed || egl.pace_driver_blocked || egl.pace_shutdown; });
     } catch (...) {
         lock.unlock();
-        execution_lock.ReacquireAfterBlocking(depth);
+        execution_lock.ReacquireAfterBlocking(depth, false);
         throw;
     }
     lock.unlock();
-    execution_lock.ReacquireAfterBlocking(depth);
+    execution_lock.ReacquireAfterBlocking(depth, false);
 }
 
 }  // namespace ogplay::runtime
@@ -1883,7 +1962,38 @@ dx::IntrinsicHandler RomEglForward(const Context& context, std::string name, std
         for (std::size_t i = 0; i < fields.size(); ++i)
             args.push_back(fields[i] ? RomEglHandle(call, i, fields[i]) : call.arguments[i].cat1);
         const auto result = NativeEgl(call, context, name, args);
-        if (pace && result) PaceEglSwap(*context, call.vm.ExecutionLock());
+        if (result && name == "eglMakeCurrent") {
+            const auto token = call.vm.CurrentContextToken();
+            const bool native_owned = context->threads && context->threads->NativeContextDaemon(token).has_value();
+            const bool window = args.back() && context->egl.window_surfaces.contains(args[1]);
+            const auto thread = window && token != 1U && !native_owned ? EglThreadId(call, context) : 0U;
+            {
+                std::scoped_lock lock(context->egl.pace_mutex);
+                if (thread) {
+                    auto& producer = context->egl.producers[std::this_thread::get_id()];
+                    producer = {false, false, thread, token, args[1]};
+                } else {
+                    context->egl.producers.erase(std::this_thread::get_id());
+                }
+            }
+            context->egl.pace_changed.notify_all();
+        }
+        if (result && name == "eglDestroySurface") {
+            context->egl.window_surfaces.erase(args[1]);
+            std::scoped_lock lock(context->egl.pace_mutex);
+            std::erase_if(context->egl.producers,
+                          [&](const auto& item) { return item.second.window_surface == args[1]; });
+            context->egl.pace_changed.notify_all();
+        }
+        if (pace && result && context->egl.window_surfaces.contains(args[1])) {
+            // Native-owned threads may call EGL through JNI while running a
+            // process-lifetime loop. Keep their existing one-way pacing, but
+            // do not make their loop depend on a future Clock advance.
+            const bool native_owned =
+                context->threads && context->threads->NativeContextDaemon(call.vm.CurrentContextToken()).has_value();
+            PaceEglSwap(*context, call.vm.ExecutionLock(), native_owned ? 0U : EglThreadId(call, context), args[1],
+                        call.vm.CurrentContextToken());
+        }
         return EglValue::Int(static_cast<int>(result));
     };
 }
@@ -2029,9 +2139,10 @@ Decl Declare_com_google_android_gles_jni_EGLImpl(const Context& context) {
             }
             context->session->Process().UpdateSurfaceWindow(*surface);
             return WithIntArray(c, context, c.arguments[3].ref, false, [&](std::uint32_t address) {
-                return EglValue::Int(
-                    static_cast<int>(NativeEgl(c, context, "eglCreateWindowSurface",
-                                               std::array{display, config, surface->identity.Value(), address})));
+                const auto handle = NativeEgl(c, context, "eglCreateWindowSurface",
+                                              std::array{display, config, surface->identity.Value(), address});
+                if (handle) context->egl.window_surfaces.insert(handle);
+                return EglValue::Int(static_cast<int>(handle));
             });
         },
         kPrivateNative);

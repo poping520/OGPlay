@@ -57,4 +57,8 @@ portrait/sensorPortrait/reversePortrait/userPortrait 仅对继承全局或内置
 命令行任一 --surface-width/--surface-height 或游戏级任一尺寸显式设置均固定整组尺寸。
 GameRunOptions.surface_size_explicit 保存来源，--inherited-surface-width/height 用于跨进程参数往返，
 不将继承值升级为显式设置；窗口、DisplayMetrics、Surface 和触摸映射共用交换后的同一尺寸。
-不处理 setRequestedOrientation 的运行时旋转或后续 Activity 方向切换。
+运行中请求仍仅向 SDL 设置方向提示；逻辑显示宽高及后续 Activity 配置变化由本地 AMS/WMS 更新，前端从呈现帧取得新尺寸并同步输入映射。
+
+实时循环在开始计时和推进 step 前查询 session 的 ReadyForFrame；生产者未完成且未进入真实阻塞时，
+复用已有空闲分支处理窗口/MCP 事件。查询不放行 swap，也不推进 guest 时间；手动步进仍以完整
+step 为单位。帧时间的计算口径保持原样，空闲分支与原有 FPS 节流一样位于活跃帧计时之外。

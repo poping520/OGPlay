@@ -2233,6 +2233,14 @@ public:
 
     std::optional<core::GpuStats> TryStats() const { return boundary_.TryStats(); }
 
+    bool IsNativeThreadWaiting(std::uint64_t thread) const {
+        const auto snapshot = futex_table_.TrySnapshot();
+        for (const auto& address : snapshot.addresses)
+            for (const auto& waiter : address.waiters)
+                if (waiter.thread_id == thread) return true;
+        return false;
+    }
+
     std::optional<memory::MemoryStatistics> TryMemorySnapshot() const { return address_space_.TrySnapshot(); }
 
     std::optional<std::vector<cpu::DynarmicCacheSnapshot>> TryCpuSnapshot() const {
@@ -3211,6 +3219,10 @@ std::vector<core::GpuTraceEntry> AndroidGuestCallSession::Trace(std::string_view
 namespace ogplay::runtime {
 std::optional<core::GpuStats> AndroidGuestProcess::TryStats() const {
     return impl_->TryStats();
+}
+
+bool AndroidGuestProcess::IsNativeThreadWaiting(std::uint64_t thread) const {
+    return impl_->IsNativeThreadWaiting(thread);
 }
 
 std::optional<memory::MemoryStatistics> AndroidGuestProcess::TryMemorySnapshot() const {

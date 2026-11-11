@@ -78,6 +78,7 @@ struct SurfaceUpdate {
 class WindowSystem final {
 public:
     WindowSystem(int width, int height);
+    void ResizeDisplay(int width, int height);
     WindowId Add(const WindowAttributes& attrs, bool visible, bool input_channel = true);
     WindowRect Relayout(WindowId window, const WindowAttributes& attrs, int requested_width, int requested_height,
                         bool visible);
@@ -93,7 +94,7 @@ public:
     bool Exists(WindowId window) const;
     bool OpaqueFormat(WindowId window) const;
 
-    WindowRect DisplayFrame() const { return {0, 0, width_, height_}; }
+    WindowRect DisplayFrame() const;
 
     std::vector<WindowLayer> Layers() const;
     WindowComposition Compose() const;
@@ -122,7 +123,7 @@ private:
     };
 
     std::vector<WindowLayer> ReadLayers() const;
-    WindowComposition Compose(std::vector<WindowLayer> layers) const;
+    WindowComposition Compose(std::vector<WindowLayer> layers, WindowRect display) const;
     Window& Require(WindowId window);
     const Window& Require(WindowId window) const;
     bool Visible(WindowId window) const;

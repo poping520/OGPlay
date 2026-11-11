@@ -20,14 +20,4 @@ Decl Declare_android_hardware_SystemSensorManager(const Context& context) {
     return std::move(builder).Build();
 }
 
-dx::VmObjectRef SensorManagerForContext(dx::IntrinsicContext& call, const Context& context) {
-    constexpr auto key = "sensor";
-    if (const auto found = context->singletons.find(key); found != context->singletons.end()) return found->second;
-    const auto looper = CallAndroidMethod(call.vm, call.receiver, "getMainLooper", "()Landroid/os/Looper;").ref;
-    const auto instance = NewPlatformObject(call.vm, "Landroid/hardware/SystemSensorManager;",
-                                            "(Landroid/content/Context;Landroid/os/Looper;)V",
-                                            {dx::VmValue::Ref(call.receiver), dx::VmValue::Ref(looper)});
-    return context->singletons.try_emplace(key, instance).first->second;
-}
-
 }  // namespace ogplay::runtime::android_intrinsics

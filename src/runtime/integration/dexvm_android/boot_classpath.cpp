@@ -57,9 +57,4 @@ std::vector<std::vector<std::uint8_t>> BootClasspathDexFiles(const std::span<con
     return files;
 }
 
-const BootClasspathJar* FindBootClasspathEntry(const DexVmAndroidContext& context, const std::string_view entry) {
-    for (const auto& jar : context.boot_classpath)
-        if (HasEntry(jar.archive, entry)) return &jar;
-    return nullptr;
-}
 }  // namespace ogplay::runtime

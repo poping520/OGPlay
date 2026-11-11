@@ -1042,6 +1042,7 @@ void SetComponentMetaData(dx::IntrinsicContext& call, const Context& context, co
     SetInt(call, info, "theme", static_cast<std::int32_t>(component.theme.value_or(0U)));
     SetInt(call, info, "launchMode", static_cast<std::int32_t>(component.launch_mode));
     SetInt(call, info, "screenOrientation", component.screen_orientation);
+    SetInt(call, info, "configChanges", static_cast<int>(component.config_changes));
     const auto affinity = component.task_affinity.value_or(context->package_name);
     SetRef(call, info, "taskAffinity", "Ljava/lang/String;",
            affinity.empty() ? dx::VmObjectRef{} : String(call, affinity));

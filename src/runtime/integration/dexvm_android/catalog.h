@@ -48,9 +48,7 @@ ResolveAndroidActivity(dx::IntrinsicContext& call, const Context& context, std::
 [[nodiscard]] Decl Declare_local_PackageService(const Context& context);
 [[nodiscard]] Decl Declare_ddm_DdmServer();
 [[nodiscard]] Decl Declare_local_BackupService(const Context& context);
-[[nodiscard]] dx::VmObjectRef ActivityManagerForContext(dx::IntrinsicContext& call, const Context& context);
 [[nodiscard]] Decl Declare_local_NotificationService(const Context& context);
-[[nodiscard]] dx::VmObjectRef NotificationManagerForContext(dx::IntrinsicContext& call, const Context& context);
 [[nodiscard]] Decl Declare_local_WindowService(const Context& context);
 [[nodiscard]] Decl Declare_local_IntentSender(const Context& context);
 [[nodiscard]] Decl Declare_local_AlarmService(const Context& context);
@@ -88,7 +86,6 @@ void RegisterSkiaStateTables(dx::Interpreter& vm, const Context& context);
 [[nodiscard]] std::vector<Decl> Declare_android_graphics_Effects(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_Camera(const Context& context);
 [[nodiscard]] Decl Declare_local_LocationService(const Context& context);
-[[nodiscard]] dx::VmObjectRef LocationManagerForContext(dx::IntrinsicContext& call, const Context& context);
 [[nodiscard]] Decl Declare_android_media_AudioSystem(const Context& context);
 [[nodiscard]] Decl Declare_local_AudioService(const Context& context);
 [[nodiscard]] Decl Declare_android_media_AudioTrack(const Context& context);
@@ -96,7 +93,6 @@ void RegisterSkiaStateTables(dx::Interpreter& vm, const Context& context);
 [[nodiscard]] Decl Declare_android_media_SoundPoolImpl(const Context& context);
 [[nodiscard]] Decl Declare_local_WifiService(const Context& context);
 [[nodiscard]] Decl Declare_local_ConnectivityService(const Context& context);
-[[nodiscard]] dx::VmObjectRef ConnectivityManagerForContext(dx::IntrinsicContext& call, const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_GLES10(const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_GLES10Ext(const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_GLES11(const Context& context);
@@ -121,7 +117,6 @@ void RegisterSkiaStateTables(dx::Interpreter& vm, const Context& context);
 [[nodiscard]] Decl Declare_local_PhoneSubscriberService(const Context& context);
 [[nodiscard]] Decl Declare_local_TelephonyService(const Context& context);
 [[nodiscard]] Decl Declare_local_TelephonyRegistry(const Context& context);
-[[nodiscard]] dx::VmObjectRef TelephonyManagerForContext(dx::IntrinsicContext& call, const Context& context);
 [[nodiscard]] Decl Declare_android_text_AndroidBidi(const Context& context);
 [[nodiscard]] Decl Declare_android_text_format_Time(const Context& context);
 [[nodiscard]] Decl Declare_android_util_Log(const Context& context);
@@ -158,21 +153,14 @@ void RegisterSkiaStateTables(dx::Interpreter& vm, const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_EGLSurface(const Context& context);
 [[nodiscard]] Decl Declare_com_google_android_gles_jni_GLImpl(const Context& context);
 [[nodiscard]] Decl Declare_android_hardware_SystemSensorManager(const Context& context);
-[[nodiscard]] dx::VmObjectRef SensorManagerForContext(dx::IntrinsicContext& call, const Context& context);
 [[nodiscard]] Decl Declare_local_UsbService(const Context& context);
-[[nodiscard]] dx::VmObjectRef UsbManagerForContext(dx::IntrinsicContext& call, const Context& context);
-[[nodiscard]] dx::VmObjectRef NfcManagerForContext(dx::IntrinsicContext& call, const Context& context);
-
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_graphics_SurfaceTexture(const Context&);
 }
 
-namespace ogplay::runtime::android_intrinsics {
-bool ProjectBitmapDrawable(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef drawable);
-void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view);
-}  // namespace ogplay::runtime::android_intrinsics
+namespace ogplay::runtime::android_intrinsics {}  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_graphics_drawable_StateListDrawable(const Context&);

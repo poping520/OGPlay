@@ -61,6 +61,7 @@ private:
     mutable std::mutex mutex_;
     mutable std::mutex trace_mutex_;
     std::uint64_t frame_sequence_{};
+    std::uint32_t composed_width_, composed_height_;
     std::optional<AndroidBoundaryFrame> latest_frame_;
     std::optional<std::uint8_t> blank_alpha_;
     std::vector<std::uint8_t> recycled_rgba8_;

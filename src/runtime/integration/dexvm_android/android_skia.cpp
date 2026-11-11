@@ -125,13 +125,6 @@ std::optional<std::array<float, 9>> AndroidMatrixSnapshot(DexVmAndroidContext& c
     return values;
 }
 
-bool AndroidMatrixIsIdentity(dx::Interpreter& vm, const DexVmAndroidContext& context, dx::VmObjectRef matrix) {
-    if (!matrix.IsValid()) return false;
-    const auto bits = skia::IntField(vm, matrix, "native_instance");
-    const auto* native = context.skia_objects->matrices.Find(skia::NativeToken<SkMatrix>(bits));
-    return native && native->isIdentity();
-}
-
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime {

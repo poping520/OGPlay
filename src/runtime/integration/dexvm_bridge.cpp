@@ -1264,7 +1264,14 @@ public:
         auto& execution_lock = vm->ExecutionLock();
         const auto found = class_identities.find(method.owner.Value());
         const auto identity = found == class_identities.end() ? std::nullopt : std::optional{found->second};
-        const auto execution_depth = execution_lock.ReleaseForBlocking();
+        bool notify_blocking = true;
+        if (android_context) {
+            std::scoped_lock lock(android_context->egl.pace_mutex);
+            // A native renderer is still executing. Its futex waits are observed
+            // separately; releasing the single-writer VM lock is not a park.
+            notify_blocking = !android_context->egl.producers.contains(std::this_thread::get_id());
+        }
+        const auto execution_depth = execution_lock.ReleaseForBlocking(notify_blocking);
         try {
             bool invoked = false;
             if (identity) {
@@ -1289,17 +1296,17 @@ public:
                 result = session->Invoke(frame);
             }
         } catch (const A32GuestCallCancelled&) {
-            execution_lock.ReacquireAfterBlocking(execution_depth);
+            execution_lock.ReacquireAfterBlocking(execution_depth, notify_blocking);
             // Native-attached JNI contexts must unwind all the way to the
             // clone runner. Java-owned contexts use the VM stop protocol.
             if (native_attachments.contains(process_thread)) throw;
             throw dx::DexVmError(dx::DexVmErrorReason::thread_stopped, "guest native frame cancelled for teardown");
         } catch (const A32GuestCallExit&) {
-            execution_lock.ReacquireAfterBlocking(execution_depth);
+            execution_lock.ReacquireAfterBlocking(execution_depth, notify_blocking);
             if (const auto code = session->NativeExitCode()) vm->Exit(*code);
             throw;
         } catch (const AndroidGuestCallSessionError& error) {
-            execution_lock.ReacquireAfterBlocking(execution_depth);
+            execution_lock.ReacquireAfterBlocking(execution_depth, notify_blocking);
             std::string pending_details;
             if (const auto pending = environment.PendingExceptionMetadata(process_thread)) {
                 if (pending->throwable.domain == JniObjectDomain::dex_vm) {
@@ -1314,10 +1321,10 @@ public:
                                            "\n  context_token=" + std::to_string(frame.context_token) +
                                            pending_details + "\n  cause:\n" + IndentDiagnostic(error.what(), "    "));
         } catch (...) {
-            execution_lock.ReacquireAfterBlocking(execution_depth);
+            execution_lock.ReacquireAfterBlocking(execution_depth, notify_blocking);
             throw;
         }
-        execution_lock.ReacquireAfterBlocking(execution_depth);
+        execution_lock.ReacquireAfterBlocking(execution_depth, notify_blocking);
 
         // Pending exception propagates into the interpreter.
         if (const auto pending = session->Environment().PendingExceptionMetadata(process_thread)) {
@@ -2019,6 +2026,14 @@ void DexVmGuestBridge::AttachThread(const std::uint64_t guest_thread_id, const s
 
 void DexVmGuestBridge::DetachThread(const std::uint64_t guest_thread_id, const std::uint64_t execution_token) noexcept {
     static_cast<void>(guest_thread_id);
+    if (impl_->android_context) {
+        auto& egl = impl_->android_context->egl;
+        {
+            std::scoped_lock lock(egl.pace_mutex);
+            egl.producers.erase(std::this_thread::get_id());
+        }
+        egl.pace_changed.notify_all();
+    }
     // A monitor snapshot may prepare this context from another host. Finish
     // that preparation before retiring its token and native resources.
     const std::scoped_lock preparing(impl_->native_preparation_mutex);

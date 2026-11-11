@@ -289,13 +289,6 @@ dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call, const Context& c
     return info;
 }
 
-dx::IntrinsicHandler GraphicsNoopHandler() {
-    return dx::IntrinsicHandler([](dx::IntrinsicContext&) {
-        // Pure drawing state with no consuming canvas surface yet.
-        return dx::VmValue::Void();
-    });
-}
-
 namespace {}  // namespace
 
 dx::IntrinsicHandler WidgetNoopHandler() {
@@ -437,15 +430,6 @@ namespace android_intrinsics {
     return dx::VmValue::Ref(call.receiver);
 }
 
-[[nodiscard]] dx::VmObjectRef Singleton(dx::IntrinsicContext& call, const Context& context, const std::string& key,
-                                        const char* descriptor) {
-    const auto found = context->singletons.find(key);
-    if (found != context->singletons.end()) return found->second;
-    const auto instance = call.vm.NewIntrinsicInstance(descriptor);
-    context->singletons.emplace(key, instance);
-    return instance;
-}
-
 [[nodiscard]] dx::VmObjectRef ResourceObject(dx::IntrinsicContext& call, const Context& context, bool system) {
     if (system) {
         const auto type = call.vm.Linker().ResolveDescriptor("Landroid/content/res/Resources;");
@@ -462,12 +446,6 @@ namespace android_intrinsics {
     const auto resources = CreateApplicationResources(call, context);
     context->singletons.emplace("resources", resources);
     return resources;
-}
-
-[[nodiscard]] dx::VmObjectRef ResourceAssets(dx::IntrinsicContext& call, const Context& context, bool system) {
-    const auto resources = ResourceObject(call, context, system);
-    const auto root = call.vm.ProtectReferences(std::array{resources});
-    return CallAndroidMethod(call.vm, resources, "getAssets", "()Landroid/content/res/AssetManager;").ref;
 }
 
 [[nodiscard]] dx::VmValue MakeString(dx::IntrinsicContext& call, const std::string& value) {
@@ -494,10 +472,6 @@ dx::IntrinsicHandler NeutralHandler(const char shorty) {
     };
 }
 
-dx::IntrinsicHandler PlaceholderString(std::string value) {
-    return [value = std::move(value)](dx::IntrinsicContext& call) { return MakeString(call, value); };
-}
-
 void GuestLog(dx::IntrinsicContext& call, const core::LogLevel level, const std::string& line) {
     auto* logger = call.vm.Log();
     if (logger == nullptr) return;
@@ -506,26 +480,6 @@ void GuestLog(dx::IntrinsicContext& call, const core::LogLevel level, const std:
 
 void RecordUiDegraded(dx::Interpreter& vm, const std::string_view what) {
     vm.RecordUiDegraded(what);
-}
-
-dx::IntrinsicHandler IgnoredUiRequest(std::string what) {
-    return [what = std::move(what)](dx::IntrinsicContext& call) {
-        call.vm.RecordUiDegraded(what);
-        return dx::VmValue::Void();
-    };
-}
-
-std::string FilePathOf(dx::IntrinsicContext& call, const dx::VmObjectRef file) {
-    const auto slots = call.vm.Model().InstanceSlots(file);
-    return call.vm.StringUtf8(dx::VmObjectRef(slots[0].bits));
-}
-
-dx::VmThreadRuntime& ThreadRuntime(const Context& context) {
-    if (context->threads == nullptr) {
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "the android platform context has no DexVM thread runtime");
-    }
-    return *context->threads;
 }
 
 namespace {
@@ -907,25 +861,6 @@ dx::VmObjectRef NewAndroidComponentName(dx::Interpreter& vm, dx::VmObjectRef pac
     return object;
 }
 
-dx::VmObjectRef NewAndroidLayoutParams(dx::Interpreter& vm, const char* descriptor, const std::int32_t width,
-                                       const std::int32_t height) {
-    const auto type = vm.Linker().ResolveDescriptor(descriptor);
-    const auto initialized = vm.EnsureClassInitialized(type);
-    if (initialized.exception.IsValid())
-        throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor, initialized.exception_message,
-                              initialized.exception};
-    const auto object = vm.NewIntrinsicInstance(descriptor);
-    const auto roots = vm.ProtectReferences(std::array{object});
-    const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "(II)V");
-    if (!constructor)
-        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, std::string(descriptor) + "-><init>(II)V");
-    const auto outcome =
-        vm.Call(*constructor, std::array{dx::VmValue::Ref(object), dx::VmValue::Int(width), dx::VmValue::Int(height)});
-    if (outcome.exception.IsValid())
-        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                              outcome.exception};
-    return object;
-}
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime {

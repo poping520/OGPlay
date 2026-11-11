@@ -74,20 +74,6 @@ Decl Declare_local_ConnectivityService(const Context& context) {
     return std::move(builder).Build();
 }
 
-dx::VmObjectRef ConnectivityManagerForContext(dx::IntrinsicContext& call, const Context& context) {
-    constexpr auto key = "connectivity";
-    if (const auto found = context->singletons.find(key); found != context->singletons.end()) return found->second;
-    const auto service = GetLocalServiceInterface(call.vm, key, "Landroid/net/IConnectivityManager$Stub;",
-                                                  "Landroid/net/IConnectivityManager;");
-    const auto service_root = call.vm.ProtectReferences(std::array{service});
-    const auto name = CallAndroidMethod(call.vm, call.receiver, "getPackageName", "()Ljava/lang/String;").ref;
-    const auto manager = NewPlatformObject(call.vm, "Landroid/net/ConnectivityManager;",
-                                           "(Landroid/net/IConnectivityManager;Ljava/lang/String;)V",
-                                           {dx::VmValue::Ref(service), dx::VmValue::Ref(name)});
-    context->singletons.emplace(key, manager);
-    return manager;
-}
-
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {

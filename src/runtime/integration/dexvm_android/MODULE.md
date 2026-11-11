@@ -58,6 +58,13 @@ Activity、PhoneWindow、WindowManagerGlobal 和 ViewRootImpl 执行 ROM。AMS �
 token、Intent 与结果由 AMS 持有至对应确认。进程退出与宿主协作关闭使用独立状态，截止时间由统一
 Clock 驱动。跨包解析、跨进程 Binder 及系统任务管理超出支持范围。
 
+运行期固定方向请求在主队列安全点更新单显示的宽高与全局 Configuration。AMS 经
+IApplicationThread.scheduleConfigurationChanged 交付进程配置。AMS 保存全局及每个 Activity 上次交付的独立快照，恢复可见前核对自身快照，不能把 Resources 的可变 Configuration 当旧值；可见且未结束的 Activity 按
+Configuration.diff 与 ActivityInfo.getRealConfigChanged 判定 relaunch 或 activity configuration
+通知。保存状态、销毁、恢复和应用回调归 ROM ActivityThread；资源及 DisplayMetrics 归 ROM
+ResourcesManager.applyConfigurationToResourcesLocked，宿主只发布显示事实及新的配置值对象。
+密度和用户显示设置只有启动入口，不提供宿主旋转、缩放或运行期密度设置。
+
 | 内存查询 | 平台边界 |
 | --- | --- |
 | ActivityManager.MemoryInfo | ROM 值类，本地 AMS 写入注入快照；availMem=(free+cached)*1024，服务按 API19 阈值计算 lowMemory；缺内存事实 UOE，wrapper 共用 base |
@@ -179,8 +186,14 @@ calling identity 固定为进程 UID/PID，StrictMode mask 按执行上下文隔
 ## UI、Surface 与输入
 
 WMS 在单逻辑显示上管理应用窗口、子窗口及 Toast 的 frame、层级、焦点、可见性和输入通道。
+AMS 结束 Activity 时先隐藏其 app token，再调度 pause、stop 和 destroy。会话退出先隐藏栈中
+全部 token，再调度生命周期消息。WMS 仅向仍登记的窗口派发焦点变化。
 ROM 自己测量、定位和绘制 View。PopupWindow 的锚点与 gravity 是 WindowSession 的布局输入。
 系统 inset 为零，窗口动画缩放为零。多显示、系统装饰和非单位窗口矩阵超出支持范围。
+显示宽高变化先取消当前触摸捕获，再更新 WMS 几何并经 IWindow.resized 请求 ROM relayout。
+DisplayManager 的本地回调失效缓存后，资源管理器读取新尺寸；新帧尺寸更新前端触摸映射。
+重建窗口沿已有 remove/add 与 Surface 退役路径，EGL backing 随 ROM Surface 生命周期重建。
+合成器在同一锁内取得显示矩形及图层快照，像素处理期间不持有窗口锁。
 
 ROM Surface 和 SurfaceControl 的 native 使用分型句柄。Skia 软件 Canvas 保持 backing；首次锁定或尺寸变化
 请求全量重画，其余保留 dirty 外像素。每次 post 发布不可变图层，合成器使用 crop、透明区、format
@@ -210,6 +223,13 @@ SHADING_LANGUAGE_VERSION，GLUtils 按四种 Bitmap.Config 编码；GLU 用 API1
 GLSurfaceView 使用 ROM GLThread、EGLContext 和 EGLImpl。Surface 与 SurfaceHolder 解析出对应
 窗口端点，EGL window surface 使用现有 ANGLE Context、swap 节流和资源退役。
 SurfaceTexture 继续使用 SurfaceStream。底层保留独立的 EGL 错误和 context-loss 语义。
+会话每次放行显示帧后，在再次推进 Clock 前等已登记的 Java EGL 窗口生产者完成 swap，
+或进入执行锁观察到的真实阻塞、解绑、退役或退出。线程运行时等待状态补齐解除阻塞通知到重新取得 VM 锁之间的窗口，不能将排队取得锁误认为仍在渲染。JNI 渲染与 swap 的图形读回虽释放 VM 锁，仍算生产中；JNI 内的 futex waiter 为明确阻塞。Java 线程退出即退役其生产者；
+pacer 自身的等待也不作为普通 guest 阻塞。主线程进入 guest 等待时解除 swap 节流，避免
+生命周期等待 GLThread 的反向依赖；队列正常空闲不解除节流。WHEN_DIRTY 的 monitor.wait
+允许继续步进。原生 EGL 边界线程沿自身 FramePacer；原生拥有的 JNI 附着线程调用 EGL 时保留原有单向 pacer，均不纳入 Java 线程的双向同步，避免其进程级循环反向依赖 Clock。只有活的 EGL window surface 登记生产者，pbuffer 不参与帧等待。
+等待生产者时不持 VM 锁。到达等待预算后，按生产者记录一次等待时长并放行 Clock，
+该生产者在下一次 swap 或可观测阻塞后重新参与双向同步。
 
 Handler、Looper、MessageQueue 和 Choreographer 由 ROM 执行。主 Looper 持续派发；宿主推进 Clock，
 排队 vsync 和设备请求，并唤醒 MessageQueue native 等待。同步屏障、异步消息和 idle 回调由 ROM 排序。

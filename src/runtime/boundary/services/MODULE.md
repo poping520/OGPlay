@@ -3,7 +3,7 @@
 向 concrete module 提供显式依赖接口与共享状态，不依赖 facade 或上层 session。
 GraphicsBoundaryContext 使用显式 owner/callback 连接组合层；GuestGlContext 保存单个
 Context 的 GL shadow，可共享的对象元数据用独立共享所有权保存。FrameService 发布统一
-拥有型帧；graphics dispatch 搬运 guest 数组与输出，native 调用由底层 ANGLE 执行。
+拥有型帧；WMS 共享帧携带当前逻辑显示尺寸，允许配置变化后交换宽高，后续空白帧沿用已发布的合成尺寸；graphics dispatch 搬运 guest 数组与输出，native 调用由底层 ANGLE 执行。
 
 BufferMappingService 统一 GLES1/2 OES 与 GLES3 core 的映射记录及 32 MiB guest arena。
 注册以 EGL share group + current ANGLE buffer 名称为键，删除/最后 Context 退役释放记录，

@@ -1205,8 +1205,10 @@ Decl Declare_android_os_MessageQueue(const Context& context) {
                     throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "MessageQueue polled on another thread"};
             }
             auto& execution = call.vm.ExecutionLock();
-            // A normally idle Looper does not need a graphics worker to break a wait.
-            const auto depth = execution.ReleaseForBlocking(false);
+            // Main-queue idleness must not bypass pacing. Other Looper threads
+            // can own an EGL producer, and a real poll wait settles that frame.
+            const bool observe_blocking = call.vm.CurrentContextToken() != 1U && timeout != 0;
+            const auto depth = execution.ReleaseForBlocking(observe_blocking);
             const auto ready = [&] {
                 return queue->wake || queue->destroyed || context->scheduler_shutdown ||
                        (queue->context_token == 1U &&
@@ -1240,7 +1242,7 @@ Decl Declare_android_os_MessageQueue(const Context& context) {
                 queue->wake = false;
                 stopped = context->scheduler_shutdown;
             }
-            execution.ReacquireAfterBlocking(depth, false);
+            execution.ReacquireAfterBlocking(depth, observe_blocking);
             if (stopped) throw dx::DexVmError(dx::DexVmErrorReason::thread_stopped, "MessageQueue shutdown");
             PumpNativeLooperEvents(call.vm, *context, looper);
             PumpRomInputEvents(call.vm, context);

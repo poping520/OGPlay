@@ -57,6 +57,20 @@ WindowSystem::WindowSystem(int width, int height) : width_(width), height_(heigh
         throw std::invalid_argument("invalid logical display");
 }
 
+void WindowSystem::ResizeDisplay(int width, int height) {
+    std::scoped_lock lock(mutex_);
+    width_ = width;
+    height_ = height;
+    for (auto& [_, window] : windows_)
+        window.frame = Layout(window.attrs, window.frame.Width(), window.frame.Height());
+    ++revision_;
+}
+
+WindowRect WindowSystem::DisplayFrame() const {
+    std::scoped_lock lock(mutex_);
+    return {0, 0, width_, height_};
+}
+
 WindowSystem::Window& WindowSystem::Require(WindowId id) {
     const auto found = windows_.find(id);
     if (found == windows_.end()) throw std::invalid_argument("unknown window");
@@ -83,7 +97,7 @@ void WindowSystem::SetApplicationVisible(std::uint32_t token, bool visible) {
 }
 
 WindowRect WindowSystem::Layout(const WindowAttributes& a, int requested_width, int requested_height) const {
-    auto container = DisplayFrame();
+    WindowRect container{0, 0, width_, height_};
     if (a.parent.value && !(a.flags & kLayoutInScreen)) container = Require(a.parent).frame;
     const auto dimension = [](int value, int requested, int available) {
         return value == -1 ? available : value == -2 ? std::clamp(requested, 0, available) : value;
@@ -272,26 +286,32 @@ std::vector<WindowLayer> WindowSystem::ReadLayers() const {
 }
 
 WindowComposition WindowSystem::Compose() const {
-    return Compose(Layers());
+    std::unique_lock lock(mutex_);
+    auto layers = ReadLayers();
+    const WindowRect display{0, 0, width_, height_};
+    lock.unlock();
+    return Compose(std::move(layers), display);
 }
 
 std::optional<WindowComposition> WindowSystem::ComposeIfChanged(std::uint64_t& revision) const {
     std::vector<WindowLayer> layers;
+    WindowRect display;
     {
         std::scoped_lock lock(mutex_);
         if (revision == revision_) return std::nullopt;
         layers = ReadLayers();
+        display = {0, 0, width_, height_};
         revision = revision_;
     }
-    return Compose(std::move(layers));
+    return Compose(std::move(layers), display);
 }
 
-WindowComposition WindowSystem::Compose(std::vector<WindowLayer> layers) const {
+WindowComposition WindowSystem::Compose(std::vector<WindowLayer> layers, WindowRect display) const {
     if (layers.empty()) return {};
     // Discard everything below the topmost certified covering opaque layer.
     for (std::size_t i = layers.size(); i-- > 0;) {
         const auto& l = layers[i];
-        if (l.frame == DisplayFrame() && l.crop == DisplayFrame() && l.transparent.empty() && l.alpha == 1 &&
+        if (l.frame == display && l.crop == display && l.transparent.empty() && l.alpha == 1 &&
             (!HasAlpha(l.format) || l.opaque_pixels)) {
             layers.erase(layers.begin(), layers.begin() + static_cast<std::ptrdiff_t>(i));
             break;
@@ -299,21 +319,21 @@ WindowComposition WindowSystem::Compose(std::vector<WindowLayer> layers) const {
     }
     if (layers.size() == 1) {
         const auto& l = layers.front();
-        if (l.frame == DisplayFrame() && l.crop == DisplayFrame() && l.transparent.empty() && l.alpha == 1 &&
-            l.opaque_pixels && l.pixels->width == static_cast<unsigned>(width_) &&
-            l.pixels->height == static_cast<unsigned>(height_))
+        if (l.frame == display && l.crop == display && l.transparent.empty() && l.alpha == 1 && l.opaque_pixels &&
+            l.pixels->width == static_cast<unsigned>(display.Width()) &&
+            l.pixels->height == static_cast<unsigned>(display.Height()))
             return {l.pixels, false, true, l.egl};
     }
     auto result = std::make_shared<video::VideoFrame>();
-    result->width = static_cast<unsigned>(width_);
-    result->height = static_cast<unsigned>(height_);
-    result->rgba8.resize(static_cast<std::size_t>(width_) * static_cast<std::size_t>(height_) * 4);
+    result->width = static_cast<unsigned>(display.Width());
+    result->height = static_cast<unsigned>(display.Height());
+    result->rgba8.resize(static_cast<std::size_t>(display.Width()) * static_cast<std::size_t>(display.Height()) * 4);
     auto& out = result->rgba8;
     for (std::size_t i = 3; i < out.size(); i += 4)
         out[i] = 255;
     for (const auto& l : layers) {
-        const auto area = Intersect(DisplayFrame(), {l.frame.left + l.crop.left, l.frame.top + l.crop.top,
-                                                     l.frame.left + l.crop.right, l.frame.top + l.crop.bottom});
+        const auto area = Intersect(display, {l.frame.left + l.crop.left, l.frame.top + l.crop.top,
+                                              l.frame.left + l.crop.right, l.frame.top + l.crop.bottom});
         const bool opaque = !HasAlpha(l.format) || l.opaque_pixels;
         const auto wa = static_cast<unsigned>(std::lround(l.alpha * 255));
         for (int y = area.top; y < area.bottom; ++y) {
@@ -321,7 +341,7 @@ WindowComposition WindowSystem::Compose(std::vector<WindowLayer> layers) const {
                             static_cast<unsigned>(l.frame.Height());
             if (opaque && wa == 255 && l.transparent.empty() &&
                 l.pixels->width == static_cast<unsigned>(l.frame.Width())) {
-                auto* dst = out.data() + (static_cast<std::size_t>(y) * static_cast<unsigned>(width_) +
+                auto* dst = out.data() + (static_cast<std::size_t>(y) * static_cast<unsigned>(display.Width()) +
                                           static_cast<unsigned>(area.left)) *
                                              4;
                 const auto* src = l.pixels->rgba8.data() +
@@ -341,7 +361,8 @@ WindowComposition WindowSystem::Compose(std::vector<WindowLayer> layers) const {
                                 static_cast<unsigned>(l.frame.Width());
                 const auto si = static_cast<std::size_t>((sy * l.pixels->width + sx) * 4);
                 const auto di =
-                    (static_cast<std::size_t>(y) * static_cast<unsigned>(width_) + static_cast<unsigned>(x)) * 4;
+                    (static_cast<std::size_t>(y) * static_cast<unsigned>(display.Width()) + static_cast<unsigned>(x)) *
+                    4;
                 const auto a = opaque ? wa : (l.pixels->rgba8[si + 3] * wa + 127) / 255;
                 for (std::size_t c = 0; c < 3; ++c) {
                     const auto sc = l.pixels->rgba8[si + c];

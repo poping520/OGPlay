@@ -187,15 +187,6 @@ void ReconfigureBitmap(dx::Interpreter& vm, DexVmAndroidContext::BitmapState& st
 namespace ogplay::runtime::android_intrinsics {
 using namespace skia;
 
-dx::VmObjectRef CreateAndroidBitmap(dx::Interpreter& vm, DexVmAndroidContext& context, int width, int height,
-                                    std::span<const std::uint32_t> argb, bool mutable_pixels, int density) {
-    const bool alpha =
-        mutable_pixels || argb.empty() || std::ranges::any_of(argb, [](auto color) { return (color >> 24U) != 255; });
-    const auto object = CreateBitmap(vm, context, {width, height, 5, density, mutable_pixels, true, alpha});
-    if (!argb.empty()) context.bitmaps.at(object.Value()).pixels->Write(0, 0, width, height, argb);
-    return object;
-}
-
 Decl Declare_android_graphics_Bitmap(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Bitmap;");
     b.MergesBootClass();

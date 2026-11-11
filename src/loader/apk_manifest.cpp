@@ -267,7 +267,8 @@ bool ValidPackage(const std::string_view package) {
 
 std::uint32_t ManifestAttributeId(const std::string_view name) {
     // API19 core/res/res/values/public.xml; only fields projected by this parser.
-    constexpr std::pair<std::string_view, std::uint32_t> ids[]{{"description", 0x01010020U},
+    constexpr std::pair<std::string_view, std::uint32_t> ids[]{{"configChanges", 0x0101001fU},
+                                                               {"description", 0x01010020U},
                                                                {"enabled", 0x0101000eU},
                                                                {"exported", 0x01010010U},
                                                                {"icon", 0x01010002U},
@@ -855,6 +856,9 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                     if (const auto* mode = FindAttribute(attributes, "launchMode", kAndroidNamespace)) {
                         component.launch_mode = ReadIntegerAttribute(*mode, "activity launchMode", strings, true);
                     }
+                    if (const auto* changes = FindAttribute(attributes, "configChanges", kAndroidNamespace))
+                        component.config_changes =
+                            ReadIntegerAttribute(*changes, "activity configChanges", strings, true);
                     if (const auto* orientation = FindAttribute(attributes, "screenOrientation", kAndroidNamespace))
                         component.screen_orientation = static_cast<std::int32_t>(
                             ReadIntegerAttribute(*orientation, "activity screenOrientation", strings, true));
@@ -886,6 +890,7 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                     component.launch_mode = target_activity->launch_mode;
                     component.task_affinity = target_activity->task_affinity;
                     component.screen_orientation = target_activity->screen_orientation;
+                    component.config_changes = target_activity->config_changes;
                 }
                 facts.activity_components.push_back(std::move(component));
                 current_component = facts.activity_components.size() - 1U;

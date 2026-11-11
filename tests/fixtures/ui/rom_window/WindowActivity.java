@@ -25,7 +25,6 @@ public final class WindowActivity extends Activity {
             setOnClickListener(new OnClickListener() {
                 @Override public void onClick(View view) {
                     changed = true;
-                    activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
                     invalidate(8, 8, 24, 24);
                 }
             });

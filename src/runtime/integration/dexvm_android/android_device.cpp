@@ -7,27 +7,6 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
-dx::VmObjectRef NfcManagerForContext(dx::IntrinsicContext& call, const Context& context) {
-    const auto found = context->singletons.find("nfc");
-    if (found != context->singletons.end()) return found->second;
-    auto& vm = call.vm;
-    const auto type = vm.Linker().ResolveDescriptor("Landroid/nfc/NfcManager;");
-    const auto require = [&](const dx::VmCallOutcome& outcome) {
-        if (outcome.exception.IsValid())
-            throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                                  outcome.exception};
-    };
-    require(vm.EnsureClassInitialized(type));
-    const auto instance = vm.NewIntrinsicInstance("Landroid/nfc/NfcManager;");
-    const auto roots = vm.ProtectReferences(std::array{instance});
-    const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V");
-    if (!constructor)
-        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, "NfcManager constructor is missing");
-    require(vm.Call(*constructor, std::array{dx::VmValue::Ref(instance), dx::VmValue::Ref(call.receiver)}));
-    context->singletons.emplace("nfc", instance);
-    return instance;
-}
-
 Decl Declare_local_UsbService(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalUsbService;",
                                                     "Landroid/hardware/usb/IUsbManager$Stub;");
@@ -65,18 +44,6 @@ Decl Declare_local_UsbService(const Context&) {
     return std::move(builder).Build();
 }
 
-dx::VmObjectRef UsbManagerForContext(dx::IntrinsicContext& call, const Context& context) {
-    constexpr auto key = "usb";
-    if (const auto found = context->singletons.find(key); found != context->singletons.end()) return found->second;
-    const auto service = GetLocalServiceInterface(call.vm, key, "Landroid/hardware/usb/IUsbManager$Stub;",
-                                                  "Landroid/hardware/usb/IUsbManager;");
-    const auto instance = NewPlatformObject(call.vm, "Landroid/hardware/usb/UsbManager;",
-                                            "(Landroid/content/Context;Landroid/hardware/usb/IUsbManager;)V",
-                                            {dx::VmValue::Ref(call.receiver), dx::VmValue::Ref(service)});
-    context->singletons.emplace(key, instance);
-    return instance;
-}
-
 Decl Declare_local_LocationService(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalLocationService;",
                                                     "Landroid/location/ILocationManager$Stub;");
@@ -97,18 +64,6 @@ Decl Declare_local_LocationService(const Context&) {
         builder, "android.location.ILocationManager", "removeUpdates",
         "(Landroid/location/ILocationListener;Landroid/app/PendingIntent;Ljava/lang/String;)V");
     return std::move(builder).Build();
-}
-
-dx::VmObjectRef LocationManagerForContext(dx::IntrinsicContext& call, const Context& context) {
-    constexpr auto key = "location";
-    if (const auto found = context->singletons.find(key); found != context->singletons.end()) return found->second;
-    const auto service = GetLocalServiceInterface(call.vm, key, "Landroid/location/ILocationManager$Stub;",
-                                                  "Landroid/location/ILocationManager;");
-    const auto manager = NewPlatformObject(call.vm, "Landroid/location/LocationManager;",
-                                           "(Landroid/content/Context;Landroid/location/ILocationManager;)V",
-                                           {dx::VmValue::Ref(call.receiver), dx::VmValue::Ref(service)});
-    context->singletons.emplace(key, manager);
-    return manager;
 }
 
 Decl Declare_local_SettingsProvider(const Context& context) {
@@ -289,15 +244,6 @@ Decl Declare_local_TelephonyRegistry(const Context& context) {
                               return dx::VmValue::Void();
                           });
     return std::move(builder).Build();
-}
-
-dx::VmObjectRef TelephonyManagerForContext(dx::IntrinsicContext& call, const Context& context) {
-    constexpr auto key = "phone";
-    if (const auto found = context->singletons.find(key); found != context->singletons.end()) return found->second;
-    const auto manager = NewPlatformObject(call.vm, "Landroid/telephony/TelephonyManager;",
-                                           "(Landroid/content/Context;)V", {dx::VmValue::Ref(call.receiver)});
-    context->singletons.emplace(key, manager);
-    return manager;
 }
 
 }  // namespace ogplay::runtime::android_intrinsics

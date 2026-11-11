@@ -360,6 +360,7 @@ public:
     [[nodiscard]] std::shared_ptr<debug::DiagnosticState> Diagnostics() const;
 
     [[nodiscard]] std::optional<core::GpuStats> TryStats() const;
+    [[nodiscard]] bool IsNativeThreadWaiting(std::uint64_t thread) const;
     [[nodiscard]] std::optional<memory::MemoryStatistics> TryMemorySnapshot() const;
     [[nodiscard]] std::optional<std::vector<cpu::DynarmicCacheSnapshot>> TryCpuSnapshot() const;
     [[nodiscard]] core::GpuStats Stats() const override;

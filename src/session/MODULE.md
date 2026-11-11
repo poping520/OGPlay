@@ -37,7 +37,7 @@ guest 主线程在独立宿主线程持续执行 ROM Looper.loop。session 提�
 - `TitleProfileCatalog::LoadDirectory`：稳定加载目录，校验非法及交叠身份；已删除旧的
   单根库 exact adapter，前端只投影 profile id。
   `LoadOptionalDirectory` 在目录缺失时返回空 catalog，已有目录使用相同校验。
-- `DexActivityLifecycle` 启动或切换时等待主队列空闲。每步推进 Clock，提交输入和媒体 tick，并按帧率上限排队 vsync、放行 EGL swap。手动步进等待主队列处理到期工作和软件绘制后读取合成器。
+- `DexActivityLifecycle` 启动或切换时等待主队列空闲。每步推进 Clock，提交输入和媒体 tick，并按帧率上限排队 vsync、放行 EGL swap。手动步进等待主队列处理到期工作、软件绘制和已登记 EGL 生产者完成或阻塞后读取合成器。实时前端在 step 前用 ReadyForFrame 查询，等待时继续处理宿主事件，直接调用 step 也执行同一等待。等待不持有 VM 执行锁，主线程的 guest 阻塞允许 GL 继续完成生命周期握手。EGL 生产者等待超过 30 秒时放行步进并记录警告，生产者下一次 swap 或可观测阻塞后恢复双向同步。
 - `MapAndroidInput` 将通用 HID/SDL scancode 映射到 Android keycode，指针使用逻辑窗口坐标；WMS 拥有按键焦点、触摸目标和捕获。SDL 文本经本地 IMMS 的活跃输入连接交付。
 - `FrameService` 接收合成器的不可变 RGBA 帧。全屏不透明图层满足尺寸、裁剪和覆盖条件时复用像素 lease。空图层产生黑底，干净帧保留发布序列。
 - `Stop` 区分宿主关闭、guest exit 和运行故障。健康关闭在 Clock 预算内等 AMS 确认销毁，再停止音频、Java/native worker 和图形；保留原始故障与进程退出码。

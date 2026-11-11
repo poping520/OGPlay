@@ -239,16 +239,6 @@ Decl Declare_local_ActivityService(const Context& context) {
     return std::move(builder).Build();
 }
 
-dx::VmObjectRef ActivityManagerForContext(dx::IntrinsicContext& call, const Context& context) {
-    const auto found = context->singletons.find("activity");
-    if (found != context->singletons.end()) return found->second;
-    const auto owner = context->application_base_context.IsValid() ? context->application_base_context : call.receiver;
-    const auto object =
-        NewPlatformObject(call.vm, "Landroid/app/ActivityManager;", "(Landroid/content/Context;Landroid/os/Handler;)V",
-                          {dx::VmValue::Ref(owner), dx::VmValue::Ref(dx::VmObjectRef{})});
-    return context->singletons.try_emplace("activity", object).first->second;
-}
-
 Decl Declare_local_UiModeService(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalUiModeService;",
                                                     "Landroid/app/IUiModeManager$Stub;");
@@ -343,36 +333,6 @@ Decl Declare_local_NotificationService(const Context& context) {
             return dx::VmValue::Void();
         });
     return std::move(builder).Build();
-}
-
-dx::VmObjectRef NotificationManagerForContext(dx::IntrinsicContext& call, const Context& context) {
-    const auto package = CallAndroidMethod(call.vm, call.receiver, "getPackageName", "()Ljava/lang/String;").ref;
-    if (!package.IsValid() || call.vm.StringUtf8(package) != context->package_name) {
-        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.notification_cancel", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;",
-                              "notification manager requires the current application context"};
-    }
-    const auto found = context->singletons.find("notification");
-    if (found != context->singletons.end()) return found->second;
-    auto& vm = call.vm;
-    const auto type = vm.Linker().ResolveDescriptor("Landroid/app/NotificationManager;");
-    const auto require = [&](const dx::VmCallOutcome& outcome) {
-        if (outcome.exception.IsValid())
-            throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                                  outcome.exception};
-    };
-    require(vm.EnsureClassInitialized(type));
-    const auto object = vm.NewIntrinsicInstance("Landroid/app/NotificationManager;");
-    const auto owner = context->application_base_context.IsValid() ? context->application_base_context : call.receiver;
-    const auto roots = vm.ProtectReferences(std::array{object, owner});
-    const auto constructor =
-        vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;Landroid/os/Handler;)V");
-    if (!constructor)
-        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, "NotificationManager constructor is missing");
-    require(vm.Call(*constructor, std::array{dx::VmValue::Ref(object), dx::VmValue::Ref(owner),
-                                             dx::VmValue::Ref(dx::VmObjectRef{})}));
-    context->singletons.emplace("notification", object);
-    return object;
 }
 
 Decl Declare_local_WindowService(const Context& context) {

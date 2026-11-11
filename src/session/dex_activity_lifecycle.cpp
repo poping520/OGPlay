@@ -171,6 +171,7 @@ LifecycleFrameState DexActivityLifecycle::Resume() {
     AwaitIdle(kCallbackBudgetNs);
     suspended_ = false;
     previous_step_ns_ = 0;
+    producer_wait_started_ns_ = 0;
     return State();
 }
 
@@ -204,6 +205,39 @@ std::int64_t VideoClockAdvanceMillis(std::uint64_t elapsed_ms, std::int64_t adva
                                          std::max<std::int64_t>(0, advanced_ms));
 }
 
+void DexActivityLifecycle::SetEglProducerWaitBudgetForTesting(std::uint64_t budget_ns) noexcept {
+    producer_budget_ns_ = budget_ns;
+}
+
+bool DexActivityLifecycle::ProducersReady(bool wait) {
+    if (!producer_wait_started_ns_) producer_wait_started_ns_ = hal::Clock::SteadyTimestampNs();
+    if (!runtime::EglProducersSettled(*bindings_.context, wait)) {
+        const auto waited = hal::Clock::SteadyTimestampNs() - producer_wait_started_ns_;
+        if (waited < producer_budget_ns_) return false;
+        runtime::ReleaseOverdueEglProducers(*bindings_.context, waited, bindings_.logger);
+    }
+    producer_wait_started_ns_ = 0;
+    return true;
+}
+
+void DexActivityLifecycle::AwaitProducers() {
+    while (!ProducersReady(true))
+        CheckGuest();
+    CheckGuest();
+}
+
+bool DexActivityLifecycle::ReadyForFrame() {
+    if (state_ != LifecycleRunState::running || suspended_) return true;
+    try {
+        CheckGuest();
+        return ProducersReady(false);
+    } catch (...) {
+        if (bindings_.bridge->Vm().ExitCode()) return true;
+        state_ = LifecycleRunState::failed;
+        throw;
+    }
+}
+
 LifecycleFrameState DexActivityLifecycle::StepFrame() {
     if (state_ != LifecycleRunState::running) Fail("Activity lifecycle is not running");
     if (suspended_) return State();
@@ -211,6 +245,7 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
     auto& context = *bindings_.context;
     try {
         CheckGuest();
+        AwaitProducers();
         const auto now = hal::Clock::SteadyTimestampNs();
         const auto elapsed_ms = previous_step_ns_ ? (now - previous_step_ns_) / 1'000'000U : 16U;
         previous_step_ns_ = previous_step_ns_ ? previous_step_ns_ + elapsed_ms * 1'000'000U : now;
@@ -232,12 +267,13 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
         if (display_pacer_.PeriodNs() != context.frame_period_ns)
             display_pacer_ = hal::FramePacer{context.frame_period_ns};
         const bool display_frame = !realtime_ || display_pacer_.TryClaim(now);
-        if (display_frame) runtime::AdvanceEglSwapPacer(context);
+        if (display_frame && !realtime_) runtime::AdvanceEglSwapPacer(context);
         if (!realtime_) AwaitIdle(kCallbackBudgetNs);
         if (display_frame) {
             runtime::QueueAndroidDisplayFrame(vm.ExecutionLock(), context);
         }
         if (!realtime_) AwaitIdle(kCallbackBudgetNs);
+        if (!realtime_) AwaitProducers();
         clock_.AdvanceFrames(1);
         ++frame_;
         if (windows && context.session) {
@@ -257,6 +293,9 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
                 }
             }
         }
+        // Lease the completed frame before allowing the producer to replace it.
+        // SDL present can then overlap production of the next display frame.
+        if (display_frame && realtime_) runtime::AdvanceEglSwapPacer(context);
     } catch (...) {
         if (vm.ExitCode()) return Stop(DexProcessStopReason::guest_exit);
         state_ = LifecycleRunState::failed;

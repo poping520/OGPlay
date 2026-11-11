@@ -66,6 +66,14 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
 
 ## Java Surface 窗口
 
+进程内窗口服务可向指定的已注册 AInputQueue 投递事件，并登记每个事件的完成回调。
+该入口不改变现行单前台队列的 PushInput 行为；队列身份、事件预算、Looper 与 NDK getter
+仍由本模块持有。AInputQueue_finishEvent 先在锁内退役事件，再在锁外报告 handled，
+回调不得执行 Java；上层负责唤醒原 Java MessageQueue 并在队列所属线程完成 ROM InputQueue。
+失效队列明确失败，不能回落到其他 Activity 的队列。
+带 API19 PREDISPATCH 标志的按键仍交给 NDK 队列；AInputQueue_preDispatchEvent 对其完成为
+未处理并返回 1，使 ROM 输入阶段继续。普通事件返回 0，等待应用正常 finish；完成均在队列锁外通知。
+
 - fromSurface 经显式 hooks 在 VM 锁内解析真实 JNI 引用、校验 holder 有效（active 且 host
   surface 打开，或仍在 surfaceDestroyed 回调中，同 Surface.isValid），
   将既有 holder 身份交给同一 windows_ registry；不在 boundary 解析 JNI 或反向依赖 integration。

@@ -2,6 +2,7 @@
 
 // ---- migrated from android_view_Display.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 
 #include <bit>
@@ -251,6 +252,7 @@ Decl Declare_android_hardware_display_DisplayManager(const Context& context) {
 
 // ---- migrated from android_view_inputmethod_InputMethodManager.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -306,6 +308,7 @@ Decl Declare_android_view_inputmethod_InputMethodManager(const Context& context)
 
 // ---- migrated from android_view_KeyEvent.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -462,12 +465,32 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
         dx::IntrinsicCall fields(call);
         return dx::VmValue::Int(UnicodeForKeyCode(call.vm, fields.GetInt(key_code), call.arguments[0].AsInt()));
     });
-    const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
-        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_device_services", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "KeyEvent system-key policy is unsupported"};
-    };
-    builder.DirectMethod("native_isSystemKey", "(I)Z", unsupported);
-    builder.DirectMethod("native_hasDefaultAction", "(I)Z", unsupported);
+    if (context->rom_window_services_enabled) {
+        builder.DirectMethod(
+            "native_isSystemKey", "(I)Z",
+            [](dx::IntrinsicContext& call) {
+                constexpr std::array keys{82, 2,  3,  4,  5,  6,   24, 25, 164, 91, 26,  79,  126, 127,
+                                          85, 86, 87, 88, 89, 130, 90, 27, 80,  84, 220, 221, 222};
+                return dx::VmValue::Int(std::ranges::find(keys, call.arguments[0].AsInt()) != keys.end());
+            },
+            dx::kAccPrivate | dx::kAccNative);
+        builder.DirectMethod(
+            "native_hasDefaultAction", "(I)Z",
+            [](dx::IntrinsicContext& call) {
+                constexpr std::array keys{3,   4,   5,  6,  24, 25, 164, 26,  27, 79, 82,  83,  80, 84,
+                                          126, 127, 85, 86, 87, 88, 89,  130, 90, 91, 220, 221, 222};
+                return dx::VmValue::Int(std::ranges::find(keys, call.arguments[0].AsInt()) != keys.end());
+            },
+            dx::kAccPrivate | dx::kAccNative);
+    } else {
+        const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_device_services", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "KeyEvent system-key policy is unsupported"};
+        };
+        builder.DirectMethod("native_isSystemKey", "(I)Z", unsupported);
+        builder.DirectMethod("native_hasDefaultAction", "(I)Z", unsupported);
+    }
     return std::move(builder).Build();
 }
 
@@ -603,11 +626,53 @@ void SetAndroidKeyEventUnicode(dexvm::Interpreter& vm, const dexvm::VmObjectRef 
 // Motion events read their slots directly.
 
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
 // InputDevice value semantics stay in BootDex. Only process service queries
 // cross this boundary; no InputManager/Binder singleton is initialized.
+dx::VmValue MakeInputDevice(dx::IntrinsicContext& call, const Context& context) {
+    const auto id = call.arguments[0].AsInt();
+    const auto found = std::find_if(context->input_devices.begin(), context->input_devices.end(),
+                                    [id](const auto& device) { return device.id == id; });
+    if (found == context->input_devices.end()) return dx::VmValue::Ref(dx::VmObjectRef{});
+    const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/InputDevice;");
+    const auto check = [&](const dx::VmCallOutcome& outcome) {
+        if (outcome.exception.IsValid())
+            throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                                  outcome.exception};
+    };
+    check(call.vm.EnsureClassInitialized(type));
+    const auto object = call.vm.NewIntrinsicInstance("Landroid/view/InputDevice;");
+    const auto root = call.vm.ProtectReferences(std::array{object});
+    const auto name = call.vm.NewStringUtf8(found->name);
+    const auto name_root = call.vm.ProtectReferences(std::array{name});
+    const auto descriptor = call.vm.NewStringUtf8(found->descriptor);
+    const auto descriptor_root = call.vm.ProtectReferences(std::array{descriptor});
+    const auto key_map =
+        NewKeyCharacterMap(call.vm, (found->sources & kAndroidKeyboardSource) == kAndroidKeyboardSource);
+    const auto key_map_root = call.vm.ProtectReferences(std::array{key_map});
+    const auto constructor = call.vm.Linker().FindDirectMethod(
+        type, "<init>", "(IIILjava/lang/String;IILjava/lang/String;ZIILandroid/view/KeyCharacterMap;ZZ)V");
+    const auto add_range = call.vm.Linker().FindDirectMethod(type, "addMotionRange", "(IIFFFFF)V");
+    if (!constructor || !add_range)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "API19 InputDevice constructors are unavailable"};
+    check(call.vm.Call(
+        *constructor, std::vector<dx::VmValue>{dx::VmValue::Ref(object), dx::VmValue::Int(id), dx::VmValue::Int(0),
+                                               dx::VmValue::Int(0), dx::VmValue::Ref(name), dx::VmValue::Int(0),
+                                               dx::VmValue::Int(0), dx::VmValue::Ref(descriptor), dx::VmValue::Int(0),
+                                               dx::VmValue::Int(found->sources), dx::VmValue::Int(found->keyboard_type),
+                                               dx::VmValue::Ref(key_map), dx::VmValue::Int(0), dx::VmValue::Int(0)}));
+    for (const auto& range : found->ranges)
+        check(call.vm.Call(*add_range, std::vector<dx::VmValue>{
+                                           dx::VmValue::Ref(object), dx::VmValue::Int(range.axis),
+                                           dx::VmValue::Int(range.source), dx::VmValue::Float(range.minimum),
+                                           dx::VmValue::Float(range.maximum), dx::VmValue::Float(range.flat),
+                                           dx::VmValue::Float(range.fuzz), dx::VmValue::Float(range.resolution)}));
+    return dx::VmValue::Ref(object);
+}
+
 Decl Declare_android_view_InputDevice(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/InputDevice;", "Ljava/lang/Object;");
     builder.MergesBootClass();
@@ -620,47 +685,8 @@ Decl Declare_android_view_InputDevice(const Context& context) {
                                                 static_cast<std::uint32_t>(context->input_devices[i].id));
         return dx::VmValue::Ref(ids);
     });
-    builder.StaticMethod("getDevice", "(I)Landroid/view/InputDevice;", [context](dx::IntrinsicContext& call) {
-        const auto id = call.arguments[0].AsInt();
-        const auto found = std::find_if(context->input_devices.begin(), context->input_devices.end(),
-                                        [id](const auto& device) { return device.id == id; });
-        if (found == context->input_devices.end()) return dx::VmValue::Ref(dx::VmObjectRef{});
-        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/InputDevice;");
-        const auto check = [&](const dx::VmCallOutcome& outcome) {
-            if (outcome.exception.IsValid())
-                throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor,
-                                      outcome.exception_message, outcome.exception};
-        };
-        check(call.vm.EnsureClassInitialized(type));
-        const auto object = call.vm.NewIntrinsicInstance("Landroid/view/InputDevice;");
-        const auto root = call.vm.ProtectReferences(std::array{object});
-        const auto name = call.vm.NewStringUtf8(found->name);
-        const auto name_root = call.vm.ProtectReferences(std::array{name});
-        const auto descriptor = call.vm.NewStringUtf8(found->descriptor);
-        const auto descriptor_root = call.vm.ProtectReferences(std::array{descriptor});
-        const auto key_map =
-            NewKeyCharacterMap(call.vm, (found->sources & kAndroidKeyboardSource) == kAndroidKeyboardSource);
-        const auto key_map_root = call.vm.ProtectReferences(std::array{key_map});
-        const auto constructor = call.vm.Linker().FindDirectMethod(
-            type, "<init>", "(IIILjava/lang/String;IILjava/lang/String;ZIILandroid/view/KeyCharacterMap;ZZ)V");
-        const auto add_range = call.vm.Linker().FindDirectMethod(type, "addMotionRange", "(IIFFFFF)V");
-        if (!constructor || !add_range)
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                  "API19 InputDevice constructors are unavailable"};
-        check(call.vm.Call(*constructor, std::vector<dx::VmValue>{
-                                             dx::VmValue::Ref(object), dx::VmValue::Int(id), dx::VmValue::Int(0),
-                                             dx::VmValue::Int(0), dx::VmValue::Ref(name), dx::VmValue::Int(0),
-                                             dx::VmValue::Int(0), dx::VmValue::Ref(descriptor), dx::VmValue::Int(0),
-                                             dx::VmValue::Int(found->sources), dx::VmValue::Int(found->keyboard_type),
-                                             dx::VmValue::Ref(key_map), dx::VmValue::Int(0), dx::VmValue::Int(0)}));
-        for (const auto& range : found->ranges)
-            check(call.vm.Call(*add_range, std::vector<dx::VmValue>{
-                                               dx::VmValue::Ref(object), dx::VmValue::Int(range.axis),
-                                               dx::VmValue::Int(range.source), dx::VmValue::Float(range.minimum),
-                                               dx::VmValue::Float(range.maximum), dx::VmValue::Float(range.flat),
-                                               dx::VmValue::Float(range.fuzz), dx::VmValue::Float(range.resolution)}));
-        return dx::VmValue::Ref(object);
-    });
+    builder.StaticMethod("getDevice", "(I)Landroid/view/InputDevice;",
+                         [context](dx::IntrinsicContext& call) { return MakeInputDevice(call, context); });
     // These service contracts are not implied by device enumeration.
     const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_device_services", 0);
@@ -1108,6 +1134,7 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
         dx::IntrinsicCall(call).SetRef(data, dx::VmObjectRef{});
         return dx::VmValue::Void();
     });
+    AddRomMotionNatives(builder, context);
     return std::move(builder).Build();
 }
 
@@ -1115,6 +1142,7 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
 
 // ---- migrated from android_view_SurfaceHolder_Callback.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -1128,6 +1156,7 @@ Decl Declare_android_view_SurfaceHolder_Callback(const Context& context) {
 
 // ---- migrated from android_view_SurfaceHolder_Impl.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 #include <limits>
 
 namespace ogplay::runtime::android_intrinsics {
@@ -1328,6 +1357,7 @@ Decl Declare_android_view_SurfaceHolder_Impl(const Context& context) {
 
 // ---- migrated from android_view_SurfaceHolder.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -1357,6 +1387,7 @@ Decl Declare_android_view_SurfaceHolder(const Context& context) {
 
 // ---- migrated from android_view_SurfaceView.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -1530,6 +1561,7 @@ Decl Declare_android_view_SurfaceView(const Context& context) {
 
 // ---- migrated from android_view_View_OnClickListener.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -1543,6 +1575,7 @@ Decl Declare_android_view_View_OnClickListener(const Context& context) {
 
 // ---- android.view.View.OnFocusChangeListener (API 19) ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics::dvm89_android_view_View_OnFocusChangeListener {
 
@@ -1568,6 +1601,7 @@ Decl Declare_android_view_View_OnFocusChangeListener(const Context& context) {
 
 // ---- android.view.View.OnSystemUiVisibilityChangeListener (API 19) ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics::dvm_system_ui_listener {
 
@@ -1588,6 +1622,7 @@ Decl Declare_android_view_View_OnSystemUiVisibilityChangeListener(const Context&
 
 // ---- migrated from android_view_View_OnTouchListener.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -1601,6 +1636,7 @@ Decl Declare_android_view_View_OnTouchListener(const Context& context) {
 
 // ---- android.view.ViewParent (API 19 bounded type surface) ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -1627,6 +1663,7 @@ Decl Declare_android_view_ViewParent(const Context&) {
 
 // ---- migrated from android_view_View.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -2363,6 +2400,7 @@ Decl Declare_android_view_View(const Context& context) {
 
 // ---- migrated from android_view_ViewGroup.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 #include <optional>
 
@@ -2492,6 +2530,7 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
 
 // ---- migrated from android_view_ViewTreeObserver_OnGlobalLayoutListener.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -2506,6 +2545,7 @@ Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context&
 
 // ---- migrated from android_view_ViewTreeObserver.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -2519,6 +2559,7 @@ Decl Declare_android_view_ViewTreeObserver(const Context&) {
 
 // ---- migrated from android_view_Window.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 namespace {
@@ -2947,6 +2988,7 @@ Decl Declare_android_view_Window(const Context& context) {
 
 // ---- migrated from android_view_WindowManager_LayoutParams.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -2986,6 +3028,7 @@ Decl Declare_android_view_WindowManager_LayoutParams(const Context& context) {
 
 // ---- migrated from android_view_WindowManager.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -3000,6 +3043,7 @@ Decl Declare_android_view_WindowManager(const Context&) {
 
 // ---- migrated from android_view_WindowManagerImpl.cpp ----
 #include "catalog.h"
+#include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -3157,14 +3201,16 @@ Decl Declare_android_view_WindowManagerImpl(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_InputQueue(const Context&) {
+Decl Declare_android_view_InputQueue(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/InputQueue;", "Ljava/lang/Object;");
+    if (context->rom_window_services_enabled) builder.MergesBootClass();
     const auto pointer = builder.BoundInstanceField("mPtr", "I", dx::kAccPrivate);
     builder.FinalMethod("getNativePtr", "()I", [pointer](dx::IntrinsicContext& call) {
         const auto value = dx::IntrinsicCall(call).GetInt(pointer);
         if (value == 0) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "InputQueue is disposed"};
         return dx::VmValue::Int(value);
     });
+    AddRomInputQueueNatives(builder, context);
     return std::move(builder).Build();
 }
 

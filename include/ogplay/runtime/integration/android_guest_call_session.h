@@ -311,6 +311,8 @@ public:
     void PresentManagedSurface();
     void CloseManagedSurface();
     void PushInput(const AndroidBoundaryInput& input);
+    void PushQueueInput(memory::GuestAddress queue, const AndroidBoundaryInput& input,
+                        std::function<void(bool)> finish);
     void RegisterNativeActivity(NativeActivityBoundaryResources resources);
     void UnregisterNativeActivity(memory::GuestAddress activity);
     memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active);

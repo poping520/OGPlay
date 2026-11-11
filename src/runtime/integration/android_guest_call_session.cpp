@@ -1977,6 +1977,12 @@ public:
         boundary_.SetNativeActivityInput(activity, active);
     }
 
+    void PushQueueInput(memory::GuestAddress queue, const AndroidBoundaryInput& input,
+                        std::function<void(bool)> finish) {
+        if (!running_) throw std::logic_error("process is not running");
+        boundary_.PushQueueInput(queue, input, std::move(finish));
+    }
+
     void PushInput(const AndroidBoundaryInput& input) {
         if (!running_) {
             throw AndroidGuestProcessError("Android guest call session is stopped");
@@ -2711,6 +2717,11 @@ void AndroidGuestProcess::CloseManagedSurface() {
 
 void AndroidGuestProcess::PushInput(const AndroidBoundaryInput& input) {
     impl_->PushInput(input);
+}
+
+void AndroidGuestProcess::PushQueueInput(memory::GuestAddress queue, const AndroidBoundaryInput& input,
+                                         std::function<void(bool)> finish) {
+    impl_->PushQueueInput(queue, input, std::move(finish));
 }
 
 std::optional<AndroidBoundaryFrame> AndroidGuestProcess::TakeLatestFrame() {

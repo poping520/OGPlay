@@ -2,6 +2,7 @@
 // frameworks/native/libs/gui/GLConsumer.cpp, Android 4.4.4, Copyright 2010
 // The Android Open Source Project, licensed under Apache-2.0.
 #include "catalog.h"
+#include "rom_window.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/gles/angle_frame.h"
 
@@ -400,6 +401,7 @@ Decl Declare_android_view_Surface(const Context& context) {
         },
         native_static);
     AddManagedCanvasNatives(builder, context);
+    AddRomSurfaceNatives(builder, context);
     return std::move(builder).Build();
 }
 }  // namespace android_intrinsics

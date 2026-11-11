@@ -1399,7 +1399,6 @@ void RegisterAndroidSchedulerStateTable(dx::Interpreter& vm, const std::shared_p
                      visit_if(dx::VmObjectRef(looper_handle));
                  }
              }
-
          },
          [context](const dx::VmObjectRef owner) {
              std::scoped_lock lock(context->scheduler_mutex);
@@ -1571,13 +1570,9 @@ dx::VmObjectRef NewAndroidLayoutParams(dx::Interpreter& vm, const char* descript
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime {
-void DispatchAndroidDisplayFrame(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
-    const dexvm::VmExecutionLockScope execution(vm.ExecutionLock());
-    if (vm.CurrentContextToken() != 1U) throw std::logic_error("Display frame requires owner thread");
+void QueueAndroidDisplayFrame(dexvm::VmExecutionLock& execution_lock, DexVmAndroidContext& context) {
+    const dexvm::VmExecutionLockScope execution(execution_lock);
     if (context.process_stopping || context.scheduler_shutdown) return;
-    // Due messages may schedule this pulse; callbacks posting another request
-    // during dispatch can only consume a later host frame.
-    if (const auto error = PumpJavaThreads(vm, context)) throw std::runtime_error(*error);
     {
         std::scoped_lock lock(context.scheduler_mutex);
         if (context.display_vsync_frame == static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max()))
@@ -1603,8 +1598,18 @@ void DispatchAndroidDisplayFrame(dexvm::Interpreter& vm, DexVmAndroidContext& co
             context.scheduled_work.push_back(work);
         }
     }
-    // Choreographers on other Looper threads wait for this delivery themselves.
     NotifyAndroidScheduler(context);
+}
+
+void DispatchAndroidDisplayFrame(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    const dexvm::VmExecutionLockScope execution(vm.ExecutionLock());
+    if (vm.CurrentContextToken() != 1U) throw std::logic_error("Display frame requires owner thread");
+    if (context.process_stopping || context.scheduler_shutdown) return;
+    // Due messages may schedule this pulse; callbacks posting another request
+    // during dispatch can only consume a later host frame.
+    if (const auto error = PumpJavaThreads(vm, context)) throw std::runtime_error(*error);
+    QueueAndroidDisplayFrame(vm.ExecutionLock(), context);
+    // Choreographers on other Looper threads wait for this delivery themselves.
     if (const auto error = PumpJavaThreads(vm, context)) throw std::runtime_error(*error);
 }
 }  // namespace ogplay::runtime

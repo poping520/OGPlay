@@ -2,6 +2,11 @@
 
 ## 职责与依赖
 
+预备的进程内窗口服务与其 native 协议见 [dexvm_android](dexvm_android/MODULE.md#预备的进程内窗口服务)。
+生产 session 的显示/输入尚未切换。NativeActivity 桥接可将 ROM InputQueue 的进程内句柄绑定到
+当前实例的既有 NDK 队列；事件只投递该队列，完成后经唤醒返回原 Java Looper，不从 native
+消费线程进入 VM。原有队列指针路径保留到窗口切换，旧显示与 NativeActivity 行为不变。
+
 静态 native 导入审计与 NativeLibraryLoader 共用来源快照、APK basename/SONAME 别名和依赖
 选择；逐个所选 ABI APK 根构建 Bionic namespace，用现有 lookup/version 规则聚合强/弱缺口。
 未引用导入仍发布诊断及独立计数；只有非 NONE 重定位引用的强缺口计入预检失败。

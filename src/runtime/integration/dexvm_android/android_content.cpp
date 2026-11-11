@@ -95,7 +95,8 @@ void RequireAbsentService(dx::IntrinsicContext& call, const Context& context, dx
 }
 }  // namespace
 
-dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& context, const std::int32_t request_code) {
+std::optional<DexVmAndroidContext::ActivityCommand>
+ResolveAndroidActivity(dx::IntrinsicContext& call, const Context& context, const std::int32_t request_code) {
     if (context->process_stopping) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "process is stopping"};
     const auto intent = call.arguments[0].ref;
     if (!intent.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "intent is null"};
@@ -120,7 +121,7 @@ dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& cont
                                               "external Activity results are unavailable"};
                     }
                     LogDisabledWeb(call.vm, "external_browser", target);
-                    return dx::VmValue::Void();
+                    return std::nullopt;
                 }
             }
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
@@ -166,7 +167,7 @@ dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& cont
                                           "external Activity results are unavailable"};
                 }
                 LogDisabledWeb(call.vm, "external_browser", target);
-                return dx::VmValue::Void();
+                return std::nullopt;
             }
         }
         if (!context->activity_inventory_known) unsupported("activity inventory is unavailable");
@@ -272,13 +273,25 @@ dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& cont
         std::ranges::any_of(context->activity_stack, [&](const auto& record) { return record.object == call.receiver; })
             ? call.receiver
             : context->activity;
-    context->activity_commands.push_back({DexVmAndroidContext::ActivityCommand::Kind::launch, owner, copy,
-                                          "L" + activity_class + ";", component_name, request_code, 0, launch_mode,
-                                          package_affinity});
-    context->pending_activity_descriptor = context->activity_commands.back().descriptor;
-    context->pending_activity_component_name = context->activity_commands.back().component;
+    return DexVmAndroidContext::ActivityCommand{DexVmAndroidContext::ActivityCommand::Kind::launch,
+                                                owner,
+                                                copy,
+                                                "L" + activity_class + ";",
+                                                component_name,
+                                                request_code,
+                                                0,
+                                                launch_mode,
+                                                package_affinity};
+}
+
+dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& context, const std::int32_t request_code) {
+    const auto command = ResolveAndroidActivity(call, context, request_code);
+    if (!command) return dx::VmValue::Void();
+    context->activity_commands.push_back(*command);
+    context->pending_activity_descriptor = command->descriptor;
+    context->pending_activity_component_name = command->component;
     context->activity_switch_pending = true;
-    context->current_intent = copy;
+    context->current_intent = command->intent;
     return dx::VmValue::Void();
 }
 
@@ -1068,6 +1081,7 @@ void SetComponentMetaData(dx::IntrinsicContext& call, const Context& context, co
     const auto roots = call.vm.ProtectReferences(std::array{info});
     SetInt(call, info, "theme", static_cast<std::int32_t>(component.theme.value_or(0U)));
     SetInt(call, info, "launchMode", static_cast<std::int32_t>(component.launch_mode));
+    if (context->rom_window_services_enabled) SetInt(call, info, "screenOrientation", component.screen_orientation);
     const auto affinity = component.task_affinity.value_or(context->package_name);
     SetRef(call, info, "taskAffinity", "Ljava/lang/String;",
            affinity.empty() ? dx::VmObjectRef{} : String(call, affinity));

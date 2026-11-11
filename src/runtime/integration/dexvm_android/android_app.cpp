@@ -10,6 +10,7 @@
 #include "ogplay/runtime/integration/native_activity_runtime.h"
 
 #include "catalog.h"
+#include "rom_window.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -163,6 +164,7 @@ Decl Declare_local_ActivityService(const Context& context) {
         "attachApplication", "(Landroid/app/IApplicationThread;)V", [context](dx::IntrinsicContext& call) {
             auto& vm = call.vm;
             const auto thread = dx::IntrinsicCall(call).NonNullRef(0, "applicationThread");
+            SetRomApplicationThread(context, thread);
             const auto info = MakeApplicationInfo(call, context, true);
             const auto info_root = vm.ProtectReferences(std::array{info});
             const auto providers = ApplicationProviders(call, context, info);
@@ -234,6 +236,7 @@ Decl Declare_local_ActivityService(const Context& context) {
                                     : -1);
     });
     AddLocalActivityBindingMethods(builder, context);
+    AddRomActivityMethods(builder, context);
     AddLocalProviderMethods(builder, context);
     AddLocalIntentSenderMethods(builder, context);
     return std::move(builder).Build();
@@ -335,6 +338,7 @@ Decl Declare_local_WindowService(const Context& context) {
     // Managed display rotation is fixed. No orientation events can occur.
     builder.VirtualMethod("watchRotation", "(Landroid/view/IRotationWatcher;)I",
                           [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    AddWindowManagerMethods(builder, context);
     return std::move(builder).Build();
 }
 

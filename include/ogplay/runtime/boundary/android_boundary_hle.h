@@ -41,6 +41,8 @@ enum class AndroidBoundaryInputType : std::uint8_t {
     pointer_button,
 };
 
+inline constexpr std::int32_t kAndroidKeyPreDispatchFlag = 0x20000000;
+
 // Android API19 axis values, in guest surface coordinates. Missing axes read
 // as zero, as in AOSP PointerCoords; device capabilities are reported separately.
 struct AndroidInputPointer final {
@@ -215,6 +217,8 @@ public:
     void RetireThreadLooper(std::uint64_t thread_id);
     void ShutdownLoopers();
     void PushInput(const AndroidBoundaryInput& input);
+    void PushQueueInput(memory::GuestAddress queue, const AndroidBoundaryInput& input,
+                        std::function<void(bool)> finish);
     void RegisterNativeActivity(NativeActivityBoundaryResources resources);
     void UnregisterNativeActivity(memory::GuestAddress activity);
     memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active);

@@ -192,6 +192,48 @@ calling identity 固定为进程 UID/PID，StrictMode mask 按执行上下文隔
 
 ## UI、Surface 与输入
 
+### 预备的进程内窗口服务
+
+现行 session 显示和输入仍使用下述 JavaTraversal 协议。独立的本地 AMS、WMS、input 和
+input_method 接口供 ROM 窗口切换使用；它们不读取或修改投影树，不构造宿主 View 层级。
+AMS 保存进程内 Activity token、任务与结果，经 IApplicationThread 的 schedule 系列排队执行
+ROM ActivityThread；pause、stop、销毁确认与启动完成分开记录。退出 deadline 使用统一 uptime，
+待销毁的实例不能被计作退出完成。宿主挂起/恢复只提交状态请求，不直接调用 Activity 回调。
+目前生产 session 尚未接管到这条 Activity 路径。
+预备服务与 native 绑定在进程组装时显式启用。现行生产装配保留原 ServiceManager 目录、
+Activity 和 window 服务方法及 native 绑定；没有 CLI 选项或运行时显示模式切换。
+正式切换时这道阶段门随旧路径一起退役。
+
+WMS 的单显示不提供系统装饰，系统 inset 为零；应用窗口、媒体/媒体叠层子窗口、面板与 Toast
+按 API19 层级排列。ROM 已完成的 PopupWindow 锚点坐标和 gravity 是窗口布局输入。窗口 frame
+与 producer buffer 尺寸独立；同一 Activity token 控制其窗口组可见性。未知服务方法按完整签名
+记账并抛异常。窗口动画不执行，多显示、系统窗口及非单位 SurfaceControl 矩阵不支持。
+
+Surface native 使用分配的进程内句柄，引用不携带宿主地址。软件 Canvas 持续保存 backing，
+首次锁定或尺寸/格式变化要求完整重画，其余锁定裁剪 dirty 并保留外部像素。post 发布独立、
+不可变的完整 RGBA 帧，绘制中的 backing 不交给合成线程。SurfaceControl 事务整体发布属性；
+合成器只消费 WMS 顺序与共享像素，按 format、alpha、crop 和 transparent region 合成，
+不消费 Java View 或 UiTree。未 post 的窗口不提供图层；透明证书与全屏不透明借用路径不在每帧
+扫描像素。空输出由 FrameService 的黑底标记表达；生产 FrameService/GL/视频接线留待切换，
+现行呈现顺序不变。
+
+窗口输入按 frame、触摸区域、flags 和焦点选择目标，DOWN 捕获到 UP/CANCEL；隐藏和移除取消
+捕获。InputChannel 持有进程内队列，InputEventReceiver 在其 MessageQueue 所属线程的
+nativePollOnce 内执行 ROM 私有派发入口；MOVE 通过 Choreographer 的批处理请求消费，完成确认
+释放分发中的事件。InputQueue native 经显式 NDK 队列投递和完成回调桥接，宿主完成回调不进入 VM，
+而是唤醒 Java 队列后在原线程交付。MotionEvent native 保存独立快照，VelocityTracker 使用 API19
+默认 lsq2 的二次最小二乘、采样窗口和停止检测；其他速度策略明确失败。
+
+IMMS 保存 client 与 InputContext，show/hide 驱动注入的宿主文本输入开关，文本和编辑中文本分别
+调用 commitText 和 setComposingText；失焦关闭输入。没有宿主开关时 show 明确失败；不创建输入法
+应用、服务进程或软键盘界面。ROM InputMethodManager/EditText 与 SDL 的实际连接待窗口切换。
+宿主帧源可只排队统一 Clock 的 vsync，不泵送消息或执行 guest；现行驱动保留其原有安全点。
+
+宿主协议回归见 `rom_window_system_tests.cpp`、`rom_window_services_tests.cpp` 和
+`rom_activity_service_tests.cpp`。它们不能代替 ROM ViewRootImpl、真实 UI APK 和游戏显示的切换验收。
+
+### 现行 JavaTraversal 路径
+
 `EnsureAndroidUiTraversal` 是 integration/session 的唯一 guest 布局调度入口，调用方显式提供 VM、
 reason 与 phase。owner 在 context 构造时固定为 JavaTraversal，无用户配置、运行期切换或
 Legacy guest 遍历。生产启动类路径为 ogplay.jar 与原样 API19 ROM jars；制品由 payload 校验锁定。ROM 执行 hierarchy、参数、measure/RTL/缓存及

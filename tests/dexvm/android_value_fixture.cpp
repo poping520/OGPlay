@@ -39,8 +39,9 @@ namespace ogplay::test::android_value {
 
 AndroidValueVm::AndroidValueVm(InterpreterBackend backend, const std::vector<IntrinsicClassDecl>& extras,
                                bool force_all_bridge, const char* dex_fixture, AndroidUiTraversalOwner owner,
-                               ogplay::gles::AngleBackend graphics)
+                               ogplay::gles::AngleBackend graphics, bool rom_windows)
     : context(std::make_shared<DexVmAndroidContext>(owner)), runtime([&] {
+          context->rom_window_services_enabled = rom_windows;
           ogplay::test::BindBootDexArchive(*context);
           auto catalog = AndroidIntrinsicCatalog(context);
           catalog.insert(catalog.end(), extras.begin(), extras.end());

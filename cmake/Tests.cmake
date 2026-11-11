@@ -278,6 +278,9 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/android_preferences_tests.cpp
     tests/dexvm/android_webview_tests.cpp
     tests/dexvm/android_input_values_tests.cpp
+    tests/dexvm/rom_window_system_tests.cpp
+    tests/dexvm/rom_window_services_tests.cpp
+    tests/dexvm/rom_activity_service_tests.cpp
     tests/dexvm/android_wifi_locks_tests.cpp
     tests/dexvm/android_value_fixture.cpp
     tests/dexvm/gap_survey_tests.cpp

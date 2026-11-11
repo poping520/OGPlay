@@ -136,6 +136,8 @@ API19 桩库要求的 GLES ELF 入口始终可解析；缺后端能力时按 4.4
   create/bind/swap 拒绝失效窗口。只接受会话尺寸/RGBA8 geometry，其余 EINVAL。
   InputQueue 只接收当前 owner 的输入快照，支持所属 Looper ident poll/get/finish/detach；
   callback 明确失败，managed Activity 失效句柄不得回退 standalone 行为。
+  指定队列的宿主投递入口只接受已注册且活跃的 Activity 队列；事件完成 hook 在解锁后
+  通知上层，不执行 guest，不改变 NDK Looper callback 的支持边界。
 - libdl 只处理 ABI、逐线程消费式 dlerror 和有界只读返回区；ELF namespace、handle、sealed
   symbol/exidx 由 BionicDynamicLinkHooks 注入。查找失败按 null/-1 表达，不转为 trap。
 - liblog 使用固定 API19 surface 和 LogBoundaryContext；内存经 AddressSpace，event tag map

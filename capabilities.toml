@@ -65,8 +65,8 @@ note = "DVM-331：默认配对 ROM PhoneLayoutInflater 与 LayoutInflater；Fact
 
 [dexvm.window_content]
 status = "partial"
-test = "tests/runtime/application_subwindow_tests.cpp#DVM-335; tests/runtime/activity_window_lifecycle_tests.cpp#API19 Window background; tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/owner_traversal_tests.cpp#DVM-307; tests/dexvm/widget_window_dialog_tests.cpp#LUI18; tests/runtime/jni_android_platform_tests.cpp#DVM-245; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-245; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/guest_native_values_tests.cpp#DVM-219; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-219"
-note = "每 Activity 稳定 WindowManager/app token；全屏 type 1..99 附加窗口与主窗口独立 Java 根/投影、按 z 序合成，输入/焦点读共同快照。支持 flags 8/16/32/128/256/1024，其他布局参数按全屏显示并记 UI 降级，type 超范围仍失败；共享最多 8 个 Dialog/附加窗口。Window 背景/内容替换追加/焦点保持；View 本身作附加根且 mParent=null。已附着 token 稳定、退役失效；无 AttachInfo/WMS/Binder 服务、系统/面板子窗口、IME 或窗口/属性动画；GPU/跨平台未验。"
+test = "tests/runtime/application_subwindow_tests.cpp#DVM-335; tests/runtime/activity_window_lifecycle_tests.cpp#API19 Window background; tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/owner_traversal_tests.cpp#DVM-307; tests/dexvm/widget_window_dialog_tests.cpp#LUI18; tests/runtime/jni_android_platform_tests.cpp#DVM-245; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-245; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/guest_native_values_tests.cpp#DVM-219; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-219; tests/dexvm/rom_window_system_tests.cpp; tests/dexvm/rom_window_services_tests.cpp"
+note = "现行显示仍由 session/JavaTraversal 驱动。预备本地 WMS/WindowSession 提供单显示、应用/子窗口/Toast 层级、frame、零系统 inset、焦点和触摸捕获；Surface/SurfaceControl native 使用持久 Skia backing、dirty 重绘与完整帧发布。窗口变换矩阵、系统 UI 与多显示失败；ROM ViewRootImpl 切换及真实 UI/GL 验收尚未完成。"
 
 [runtime.ui_frame_layout]
 status = "complete"
@@ -1565,8 +1565,8 @@ note = "DVM-331/363：焦点执行 ROM View/ViewGroup 路径，Java flags/父链
 
 [dexvm.input_method_sessions]
 status = "partial"
-test = "tests/dexvm/edittext_traversal_tests.cpp#DVM-327"
-note = "DVM-331：InputMethodManager 进程单例经窗口 owner 与 Java findFocus 判断；无被服务候选返回 false/restart 返回，需要 InputConnection 按账本失败。不实现 EditorInfo/IME/Binder/软键盘显示。"
+test = "tests/dexvm/edittext_traversal_tests.cpp#DVM-327; tests/dexvm/rom_window_services_tests.cpp"
+note = "生产仍保留旧窗口输入适配。预备本地 IMMS 维护 client/InputContext、start/focus/show/hide，经显式宿主文本输入 hook 接收 commit/composing；失焦关闭，未接宿主时 show 明确失败。无输入法应用、软键盘界面。ROM InputMethodManager/EditText 与 SDL 实际连接待窗口路径切换。"
 
 [dexvm.webview_configuration_callbacks]
 status = "partial"
@@ -1640,8 +1640,8 @@ note = "DVM-348：保留ROM测量/固定尺寸，View父调用维护visibility/l
 
 [dexvm.surface_video_layers]
 status = "partial"
-test = "tests/dexvm/videoview_traversal_tests.cpp; tests/dexvm/owner_traversal_tests.cpp#DVM-310; tests/dexvm/surfaceview_traversal_tests.cpp#DVM-347"
-note = "DVM-347：holder 请求格式随 Surface 重建保留；软件锁定按 RGBA8888、RGBX8888、RGB565 或 RGBA4444 栅格化，RGB888/RGBA5551 软件锁明确失败。完整 dirty 初值透明0或不透明黑。非预乘 RGBA8 快照按格式混合，保留队列事实、View 层序和固定 buffer 缩放。GPU/EGL 与跨平台外验未完成。"
+test = "tests/dexvm/videoview_traversal_tests.cpp; tests/dexvm/owner_traversal_tests.cpp#DVM-310; tests/dexvm/surfaceview_traversal_tests.cpp#DVM-347; tests/dexvm/rom_window_system_tests.cpp; tests/dexvm/rom_window_services_tests.cpp"
+note = "现行 holder 投影合成保留。独立窗口合成器消费已 post 的不可变软件/GL/视频 RGBA 帧，支持不透明格式、transparent region、alpha/crop、子窗口层级与缩放；不透明全屏帧可借用，透明证书和黑底标记避免逐帧扫描。Surface native 保留 dirty 外像素。ROM 显示切换、现有生产端连接及性能/跨平台验收待阶段 B。"
 
 [dexvm.media_player_local_video]
 status = "partial"
@@ -1650,8 +1650,8 @@ note = "DVM-249/ADR-0127：普通 MediaPlayer 本地路径/FD 区间与 VideoVie
 
 [dexvm.input_device_services]
 status = "partial"
-test = "tests/dexvm/android_input_values_tests.cpp#InputDevice queries; tests/dexvm/android_input_values_tests.cpp#DVM-206; tests/runtime/jni_android_platform_tests.cpp#InputDevice production directory; tests/runtime/jni_bridge_framework_tests.cpp#DVM-206; tools/generate_virtual_keymap.py --check"
-note = "DVM-196/206：InputDevice/MotionRange/KeyCharacterMap/KeyEvent 来自 BootDex，投影进程逻辑键盘与映射触摸（坐标范围取逻辑窗口），无设备返回空快照；KeyCharacterMap 使用受检 Virtual.kcm，支持修饰键与组合重音。hasKeys、震动、事件合成与 system-key policy 记账失败；不运行 InputManager/Binder，热插拔与宿主摇杆未支持。"
+test = "tests/dexvm/android_input_values_tests.cpp#InputDevice queries; tests/dexvm/android_input_values_tests.cpp#DVM-206; tests/runtime/jni_android_platform_tests.cpp#InputDevice production directory; tests/runtime/jni_bridge_framework_tests.cpp#DVM-206; tools/generate_virtual_keymap.py --check; tests/dexvm/rom_window_services_tests.cpp; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp#P3"
+note = "逻辑键盘/触摸目录与 Virtual.kcm 不变，本地 IInputManager 复用 ROM InputDevice 工厂。KeyEvent 系统键 native、MotionEvent native 快照/轴/历史/复制/变换及 VelocityTracker 默认 API19 lsq2 已实现。新增 InputChannel/InputEventReceiver 队列所属线程回调、批处理和 InputQueue/NDK 完成协议；生产输入仍走旧路径。热插拔、摇杆及非默认速度策略不支持。"
 
 [dexvm.system_ui_visibility]
 status = "partial"
@@ -1680,7 +1680,7 @@ note = "DVM-230：root guest 线程按真实 UiTree frame 向附着子树派发 
 
 [dexvm.choreographer_frame_source]
 status = "partial"
-test = "tests/runtime/choreographer_frame_source_tests.cpp; tests/dexvm/scheduler_tests.cpp; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
+test = "tests/runtime/choreographer_frame_source_tests.cpp; tests/dexvm/scheduler_tests.cpp; tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/rom_window_services_tests.cpp#P3 host vsync"
 note = "ROM Choreographer 与 DisplayEventReceiver 使用统一 Clock；每个实际显示帧在 owner 遍历前交付一次 vsync，注册按所属 Looper 校验，停止撤销。刷新率由本地 IDisplayManager 注入。队列排序、异步消息与屏障归 ROM。无 hotplug，GPU/跨平台待验。"
 
 [dexvm.android_scheduler]
@@ -1945,7 +1945,7 @@ note = "Bundle/Intent/ResultReceiver 的普通 Parcel 协议执行 API19 Java；
 
 [dexvm.local_binder]
 status = "complete"
-test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp#ROM ServiceManager"
+test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp#ROM ServiceManager; tests/dexvm/rom_window_services_tests.cpp#P3 local WMS"
 note = "ROM Binder/ServiceManager/ServiceManagerNative 执行本地虚派，calling identity 固定为 guest UID/PID；进程内注册表返回本地 Stub，缺席按服务名记账返回 null。Parcel 由 ROM 初始化，native 提供字节与 Binder 记录。StrictMode 策略按线程隔离；远程 IPC、BinderProxy 和线程池不支持。"
 
 [dexvm.backup_service]
@@ -2140,8 +2140,8 @@ note = "DVM-376：原版 Application 回调注册、注销与快照派发，Acti
 
 [dexvm.activity_result]
 status = "partial"
-test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/runtime/activity_task_stack_tests.cpp#APS-14; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-197; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-334; tests/runtime/activity_task_stack_tests.cpp#DVM-250; tests/loader/apk_manifest_tests.cpp#DVM-223; tests/loader/apk_manifest_tests.cpp#DVM-250"
-note = "同包有界 task 保留实例/窗口/结果；默认 affinity 四种 launchMode，结果先于恢复，onNewIntent 不改 Intent。后台窗口隐藏，Surface/GL 保留。finishing/destroyed 取 Java 字段。Window.Callback 在 resume 后首次可见且未 finish 时附着一次，销毁后分离；进程关闭不合成分离。无 View 树/AttachInfo、Dialog Callback 附着。自定义 affinity、跨 task/包结果、复杂 flags 失败；多窗口/透明 Activity/context-loss 未验。"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/runtime/activity_task_stack_tests.cpp#APS-14; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-197; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-334; tests/runtime/activity_task_stack_tests.cpp#DVM-250; tests/loader/apk_manifest_tests.cpp#DVM-223; tests/loader/apk_manifest_tests.cpp#DVM-250; tests/dexvm/rom_activity_service_tests.cpp"
+note = "生产仍走原 session 栈。预备本地 AMS 经 IApplicationThread 调度启动、四种 launchMode、结果/新 Intent、pause/stop/resume/destroy、任务查询及方向事实；宿主退出以统一 Clock deadline 区分完成与超时。沿用同包解析/alias；跨包、跨 task 结果、自定义 affinity 等仍失败。实际 ROM Activity/ActivityThread 窗口生命周期接管待切换。"
 
 [dexvm.surface_buffer_geometry]
 status = "partial"

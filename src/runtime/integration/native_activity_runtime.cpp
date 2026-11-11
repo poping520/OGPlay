@@ -1,3 +1,4 @@
+#include "dexvm_android/rom_input.h"
 #include "ogplay/runtime/integration/native_activity_runtime.h"
 
 #include <array>
@@ -31,6 +32,7 @@ public:
         bool registered{};
         bool window_active{}, input_active{};
     };
+
     AndroidGuestCallSession& session;
     std::weak_ptr<DexVmAndroidContext> context;
     Publish publish;
@@ -42,71 +44,95 @@ public:
     std::map<std::uint32_t, Instance> instances;
     std::uint32_t next_handle{1};
 
-    Impl(AndroidGuestCallSession& s, std::weak_ptr<DexVmAndroidContext> c,
-         Publish p, Resolve r, Thread t, Assets a, core::Logger* l)
-        : session(s), context(std::move(c)), publish(std::move(p)), resolve(std::move(r)),
-          thread(std::move(t)), asset_manager(std::move(a)), logger(l), memory(s.Process().GuestMemoryAccess()) {}
+    Impl(AndroidGuestCallSession& s, std::weak_ptr<DexVmAndroidContext> c, Publish p, Resolve r, Thread t, Assets a,
+         core::Logger* l)
+        : session(s), context(std::move(c)), publish(std::move(p)), resolve(std::move(r)), thread(std::move(t)),
+          asset_manager(std::move(a)), logger(l), memory(s.Process().GuestMemoryAccess()) {}
 
     void Write(memory::GuestAddress address, std::uint32_t value) {
         std::array<std::byte, 4> bytes{};
-        for (std::size_t i=0; i<4; ++i) bytes[i] = static_cast<std::byte>((value >> (i*8)) & 255U);
+        for (std::size_t i = 0; i < 4; ++i)
+            bytes[i] = static_cast<std::byte>((value >> (i * 8)) & 255U);
         memory.write(address, bytes);
     }
+
     std::uint32_t Read(memory::GuestAddress address) {
         std::array<std::byte, 4> bytes{};
         memory.read(address, bytes);
         std::uint32_t value{};
-        for (std::size_t i=0; i<4; ++i) value |= std::to_integer<std::uint32_t>(bytes[i]) << (i*8);
+        for (std::size_t i = 0; i < 4; ++i)
+            value |= std::to_integer<std::uint32_t>(bytes[i]) << (i * 8);
         return value;
     }
-    A32GuestCallResult Invoke(dx::IntrinsicContext& call, const Instance& item,
-                              memory::GuestAddress target, std::span<const std::uint32_t> args) {
+
+    A32GuestCallResult Invoke(dx::IntrinsicContext& call, const Instance& item, memory::GuestAddress target,
+                              std::span<const std::uint32_t> args) {
         if (thread(call.vm.CurrentContextToken()) != item.thread)
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "NativeActivity callback requires its creating thread"};
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                  "NativeActivity callback requires its creating thread"};
         auto& environment = session.Environment();
         environment.PushLocalFrame(item.thread, 16);
+
         struct LocalFrameScope final {
             JniEnvironment& environment;
             std::uint64_t thread;
+
             ~LocalFrameScope() {
-                try { static_cast<void>(environment.PopLocalFrame(thread)); }
-                catch (const std::exception&) {} // the original guest failure wins
+                try {
+                    static_cast<void>(environment.PopLocalFrame(thread));
+                } catch (const std::exception&) {
+                }  // the original guest failure wins
             }
         } local_frame{environment, item.thread};
+
         A32GuestCallFrame frame;
         frame.target = target;
         frame.thread_id = item.thread;
         frame.context_token = call.vm.CurrentContextToken();
         frame.renewable_native_frame = true;
-        for (std::size_t i=0; i<args.size() && i<4; ++i) frame.registers[i] = args[i];
+        for (std::size_t i = 0; i < args.size() && i < 4; ++i)
+            frame.registers[i] = args[i];
         auto& lock = call.vm.ExecutionLock();
         const auto depth = lock.ReleaseForBlocking();
         A32GuestCallResult result;
-        try { result = session.Invoke(frame); }
-        catch (...) { lock.ReacquireAfterBlocking(depth); throw; }
+        try {
+            result = session.Invoke(frame);
+        } catch (...) {
+            lock.ReacquireAfterBlocking(depth);
+            throw;
+        }
         lock.ReacquireAfterBlocking(depth);
         auto& env = session.Environment();
         if (env.ExceptionCheck(item.thread)) {
             const auto reference = env.ExceptionOccurred(item.thread);
             const auto exception = resolve(reference, item.thread);
             env.ExceptionClear(item.thread);
-            throw dx::VmJavaThrow{call.vm.Linker().Class(call.vm.Model().ObjectClass(exception)).descriptor,
-                                  {}, exception};
+            throw dx::VmJavaThrow{
+                call.vm.Linker().Class(call.vm.Model().ObjectClass(exception)).descriptor, {}, exception};
         }
         return result;
     }
+
     A32GuestCallResult Callback(dx::IntrinsicContext& call, Instance& item, std::size_t index,
                                 std::initializer_list<std::uint32_t> extra = {}) {
         // The guest owns callbacks and may replace slots after onCreate.
         const auto callbacks = memory::GuestAddress{Read(item.address)};
         if (callbacks.IsNull()) return {};
-        const auto target = memory::GuestAddress{Read(callbacks.Add(index*4))};
+        const auto target = memory::GuestAddress{Read(callbacks.Add(index * 4))};
         if (target.IsNull()) return {};
         std::vector<std::uint32_t> args{item.address.Value()};
         args.insert(args.end(), extra.begin(), extra.end());
         return Invoke(call, item, target, args);
     }
+
     void Free(Instance& item) {
+        if (const auto c = context.lock(); c && c->rom_input && !item.address.IsNull()) {
+            for (auto& [_, q] : c->rom_input->native_queues)
+                if (q->native == item.address.Add(148)) {
+                    q->native = memory::GuestAddress{};
+                    q->post = {};
+                }
+        }
         if (item.registered) {
             session.Process().UnregisterNativeActivity(item.address);
             item.registered = false;
@@ -123,10 +149,12 @@ public:
         if (!item.address.IsNull()) memory.release(item.address, item.bytes);
         item = Instance();
     }
+
     dx::VmValue Load(dx::IntrinsicContext& call) {
         const auto ctx = context.lock();
         if (!ctx || !ctx->native_libraries)
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "NativeActivity has no current-process loader"};
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "NativeActivity has no current-process loader"};
         if (next_handle > 0x000fffffU)
             throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "NativeActivity identity budget exhausted"};
         dx::IntrinsicCall typed(call);
@@ -137,7 +165,8 @@ public:
         auto& execution_lock = call.vm.ExecutionLock();
         const auto depth = execution_lock.ReleaseForBlocking();
         try {
-            loaded = ctx->native_libraries->LoadPath(path, ctx->application_class_loader_token, NativeLibraryEntry::native_activity);
+            loaded = ctx->native_libraries->LoadPath(path, ctx->application_class_loader_token,
+                                                     NativeLibraryEntry::native_activity);
             entry = session.Process().FindModuleExport(loaded.module_index, function);
             if (entry.IsNull()) throw std::runtime_error("NativeActivity entry is missing: " + function);
         } catch (const std::exception& error) {
@@ -159,7 +188,8 @@ public:
             if (!ref.IsValid()) return std::uint32_t{};
             const auto value = call.vm.StringUtf8(ref);
             const auto offset = static_cast<std::uint32_t>(bytes.size());
-            for (auto c : value) bytes.push_back(static_cast<std::byte>(c));
+            for (auto c : value)
+                bytes.push_back(static_cast<std::byte>(c));
             bytes.push_back(std::byte{});
             return offset;
         };
@@ -171,7 +201,7 @@ public:
             saved_size = static_cast<std::uint32_t>(state.size());
             bytes.insert(bytes.end(), state.begin(), state.end());
         }
-        if (bytes.size() > 1024U*1024U)
+        if (bytes.size() > 1024U * 1024U)
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "NativeActivity state/path budget exceeded"};
         item.bytes = static_cast<std::uint32_t>(bytes.size());
         item.address = memory.allocate(item.bytes);
@@ -197,73 +227,124 @@ public:
             const auto manager = asset_manager(typed.NonNullRef(7, "assets"));
             Write(item.address.Add(32), manager.Value());
             Write(item.address.Add(36), obb ? item.address.Add(obb).Value() : 0);
-            session.Process().RegisterNativeActivity({item.address, manager,
-                item.address.Add(148), ctx->surface_width, ctx->surface_height});
+            session.Process().RegisterNativeActivity(
+                {item.address, manager, item.address.Add(148), ctx->surface_width, ctx->surface_height});
             item.registered = true;
-            const std::array args{item.address.Value(), saved_size ? item.address.Add(saved_offset).Value() : 0U, saved_size};
+            const std::array args{item.address.Value(), saved_size ? item.address.Add(saved_offset).Value() : 0U,
+                                  saved_size};
             static_cast<void>(Invoke(call, item, entry, args));
             const auto handle = next_handle++;
             instances.emplace(handle, item);
             return dx::VmValue::Int(static_cast<std::int32_t>(handle));
-        } catch (...) { Free(item); throw; }
+        } catch (...) {
+            Free(item);
+            throw;
+        }
     }
+
     dx::VmValue Call(dx::IntrinsicContext& call, std::string_view method) {
         if (method == "loadNativeCode") return Load(call);
         const auto handle = static_cast<std::uint32_t>(call.arguments[0].AsInt());
         auto found = instances.find(handle);
         if (found == instances.end() || found->second.owner != call.receiver)
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "NativeActivity handle is stale or belongs to another Activity"};
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                  "NativeActivity handle is stale or belongs to another Activity"};
         auto& item = found->second;
         if (method == "unloadNativeCode") {
-            try { static_cast<void>(Callback(call, item, 5)); }
-            catch (...) { Free(item); instances.erase(found); throw; }
-            Free(item); instances.erase(found);
-        } else if (method == "onStartNative") static_cast<void>(Callback(call, item, 0));
-        else if (method == "onResumeNative") static_cast<void>(Callback(call, item, 1));
-        else if (method == "onPauseNative") static_cast<void>(Callback(call, item, 3));
-        else if (method == "onStopNative") static_cast<void>(Callback(call, item, 4));
-        else if (method == "onConfigurationChangedNative") static_cast<void>(Callback(call, item, 14));
-        else if (method == "onLowMemoryNative") static_cast<void>(Callback(call, item, 15));
-        else if (method == "onWindowFocusChangedNative") static_cast<void>(Callback(call, item, 6, {call.arguments[1].cat1}));
+            try {
+                static_cast<void>(Callback(call, item, 5));
+            } catch (...) {
+                Free(item);
+                instances.erase(found);
+                throw;
+            }
+            Free(item);
+            instances.erase(found);
+        } else if (method == "onStartNative")
+            static_cast<void>(Callback(call, item, 0));
+        else if (method == "onResumeNative")
+            static_cast<void>(Callback(call, item, 1));
+        else if (method == "onPauseNative")
+            static_cast<void>(Callback(call, item, 3));
+        else if (method == "onStopNative")
+            static_cast<void>(Callback(call, item, 4));
+        else if (method == "onConfigurationChangedNative")
+            static_cast<void>(Callback(call, item, 14));
+        else if (method == "onLowMemoryNative")
+            static_cast<void>(Callback(call, item, 15));
+        else if (method == "onWindowFocusChangedNative")
+            static_cast<void>(Callback(call, item, 6, {call.arguments[1].cat1}));
         else if (method == "onSurfaceCreatedNative") {
-            if (item.window_active) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "NativeActivity surface already created"};
+            if (item.window_active)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "NativeActivity surface already created"};
             item.window = session.Process().SetNativeActivityWindow(item.address, true);
             item.window_active = true;
             static_cast<void>(Callback(call, item, 7, {item.window.Value()}));
-        }
-        else if (method == "onSurfaceChangedNative") static_cast<void>(Callback(call, item, 8, {item.window.Value()}));
-        else if (method == "onSurfaceRedrawNeededNative") static_cast<void>(Callback(call, item, 9, {item.window.Value()}));
+        } else if (method == "onSurfaceChangedNative")
+            static_cast<void>(Callback(call, item, 8, {item.window.Value()}));
+        else if (method == "onSurfaceRedrawNeededNative")
+            static_cast<void>(Callback(call, item, 9, {item.window.Value()}));
         else if (method == "onSurfaceDestroyedNative") {
             if (item.window_active) {
                 const auto retire = [&] {
                     session.Process().SetNativeActivityWindow(item.address, false);
                     item.window_active = false;
                 };
-                try { static_cast<void>(Callback(call, item, 10, {item.window.Value()})); }
-                catch (...) { retire(); throw; }
+                try {
+                    static_cast<void>(Callback(call, item, 10, {item.window.Value()}));
+                } catch (...) {
+                    retire();
+                    throw;
+                }
                 retire();
             }
-        }
-        else if (method == "onInputQueueCreatedNative" || method == "onInputQueueDestroyedNative") {
-            if (call.arguments[1].cat1 != item.address.Add(148).Value())
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "NativeActivity received another input queue"};
+        } else if (method == "onInputQueueCreatedNative" || method == "onInputQueueDestroyedNative") {
+            const auto native_queue = item.address.Add(148);
+            std::shared_ptr<RomInputState::NativeQueue> rom_queue;
+            if (const auto c = context.lock(); c && c->rom_input) {
+                const auto q = c->rom_input->native_queues.find(call.arguments[1].AsInt());
+                if (q != c->rom_input->native_queues.end()) rom_queue = q->second;
+            }
+            if (rom_queue) {
+                if (method == "onInputQueueCreatedNative") {
+                    if (!rom_queue->native.IsNull() && rom_queue->native != native_queue)
+                        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                              "NativeActivity queue owner mismatch"};
+                    rom_queue->native = native_queue;
+                    rom_queue->post = [process = &session.Process(), native_queue](const AndroidBoundaryInput& input,
+                                                                                   std::function<void(bool)> finish) {
+                        process->PushQueueInput(native_queue, input, std::move(finish));
+                    };
+                } else if (rom_queue->native != native_queue)
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "NativeActivity queue owner mismatch"};
+            } else if (call.arguments[1].cat1 != native_queue.Value())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                      "NativeActivity received another input queue"};
             if (method == "onInputQueueCreatedNative") {
                 session.Process().SetNativeActivityInput(item.address, true);
                 item.input_active = true;
-                static_cast<void>(Callback(call, item, 11, {call.arguments[1].cat1}));
+                static_cast<void>(Callback(call, item, 11, {native_queue.Value()}));
             } else if (item.input_active) {
                 const auto retire = [&] {
                     session.Process().SetNativeActivityInput(item.address, false);
                     item.input_active = false;
+                    if (rom_queue) {
+                        rom_queue->native = memory::GuestAddress{};
+                        rom_queue->post = {};
+                    }
                 };
-                try { static_cast<void>(Callback(call, item, 12, {call.arguments[1].cat1})); }
-                catch (...) { retire(); throw; }
+                try {
+                    static_cast<void>(Callback(call, item, 12, {native_queue.Value()}));
+                } catch (...) {
+                    retire();
+                    throw;
+                }
                 retire();
             }
-        }
-        else if (method == "onContentRectChangedNative") {
+        } else if (method == "onContentRectChangedNative") {
             const auto rect = item.address.Add(160);
-            Write(rect, call.arguments[1].cat1); Write(rect.Add(4), call.arguments[2].cat1);
+            Write(rect, call.arguments[1].cat1);
+            Write(rect.Add(4), call.arguments[2].cat1);
             Write(rect.Add(8), call.arguments[1].cat1 + call.arguments[3].cat1);
             Write(rect.Add(12), call.arguments[2].cat1 + call.arguments[4].cat1);
             static_cast<void>(Callback(call, item, 13, {rect.Value()}));
@@ -273,46 +354,55 @@ public:
             const auto state = memory::GuestAddress{Callback(call, item, 2, {size.Value()}).return_value};
             if (state.IsNull()) return dx::VmValue::Ref(dx::VmObjectRef{});
             const auto free = session.Process().FindModuleExport(item.module_index, "free");
-            const auto release_state = [&] {
-                static_cast<void>(Invoke(call, item, free, std::array{state.Value()}));
-            };
+            const auto release_state = [&] { static_cast<void>(Invoke(call, item, free, std::array{state.Value()})); };
             std::vector<std::byte> bytes;
             try {
                 const auto length = Read(size);
-                if (length > 1024U*1024U)
-                    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "NativeActivity saved state exceeds budget"};
+                if (length > 1024U * 1024U)
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                          "NativeActivity saved state exceeds budget"};
                 bytes.resize(length);
                 memory.read(state, bytes);
-            } catch (...) { release_state(); throw; }
+            } catch (...) {
+                release_state();
+                throw;
+            }
             release_state();
-            const auto array = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, static_cast<JniSize>(bytes.size()));
+            const auto array = call.vm.Model().NewPrimitiveArray(
+                call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, static_cast<JniSize>(bytes.size()));
             call.vm.Model().WriteByteRegion(array, 0, bytes);
             return dx::VmValue::Ref(array);
-        } else throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unknown NativeActivity native method"};
+        } else
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unknown NativeActivity native method"};
         return dx::VmValue::Void();
     }
 };
 
-NativeActivityRuntime::NativeActivityRuntime(AndroidGuestCallSession& s,
-        std::weak_ptr<DexVmAndroidContext> c, Publish p, Resolve r, Thread t, Assets a, core::Logger* logger)
+NativeActivityRuntime::NativeActivityRuntime(AndroidGuestCallSession& s, std::weak_ptr<DexVmAndroidContext> c,
+                                             Publish p, Resolve r, Thread t, Assets a, core::Logger* logger)
     : impl_(std::make_unique<Impl>(s, std::move(c), std::move(p), std::move(r), std::move(t), std::move(a), logger)) {}
+
 NativeActivityRuntime::~NativeActivityRuntime() {
-    try { Release(); }
-    catch (const std::exception& error) {
-        if (impl_->logger) impl_->logger->Write(core::LogLevel::error,
-            "runtime.native_activity.cleanup", error.what());
-    }
-    catch (...) {
-        if (impl_->logger) impl_->logger->Write(core::LogLevel::error,
-            "runtime.native_activity.cleanup", "unknown cleanup failure");
+    try {
+        Release();
+    } catch (const std::exception& error) {
+        if (impl_->logger) impl_->logger->Write(core::LogLevel::error, "runtime.native_activity.cleanup", error.what());
+    } catch (...) {
+        if (impl_->logger)
+            impl_->logger->Write(core::LogLevel::error, "runtime.native_activity.cleanup", "unknown cleanup failure");
     }
 }
-dexvm::VmValue NativeActivityRuntime::Call(dexvm::IntrinsicContext& call, std::string_view method) { return impl_->Call(call, method); }
+
+dexvm::VmValue NativeActivityRuntime::Call(dexvm::IntrinsicContext& call, std::string_view method) {
+    return impl_->Call(call, method);
+}
+
 memory::GuestAddress NativeActivityRuntime::InputQueuePointer(dexvm::VmObjectRef owner) const {
     for (const auto& [_, item] : impl_->instances)
         if (item.owner == owner) return item.address.Add(148);
     return memory::GuestAddress{};
 }
+
 void NativeActivityRuntime::Release() {
     std::exception_ptr failure;
     for (auto it = impl_->instances.begin(); it != impl_->instances.end();) {
@@ -326,4 +416,4 @@ void NativeActivityRuntime::Release() {
     }
     if (failure) std::rethrow_exception(failure);
 }
-} // namespace ogplay::runtime
+}  // namespace ogplay::runtime

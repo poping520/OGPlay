@@ -138,12 +138,12 @@ AndroidModule::InputQueueState& AndroidModule::InputQueue(std::uint32_t handle) 
 const AndroidBoundaryInput& AndroidModule::InputEvent(memory::GuestAddress handle) const {
     if (!managed_activity_seen_) {
         const auto found = standalone_input_.inflight.find(handle.Value());
-        if (found != standalone_input_.inflight.end()) return found->second;
+        if (found != standalone_input_.inflight.end()) return found->second.event;
     }
     for (const auto& [_, resource] : resources_) {
         if (!resource.input_active) continue;
         const auto found = resource.input.inflight.find(handle.Value());
-        if (found != resource.input.inflight.end()) return found->second;
+        if (found != resource.input.inflight.end()) return found->second.event;
     }
     throw std::invalid_argument("AInputEvent is stale or unregistered");
 }
@@ -164,7 +164,20 @@ void AndroidModule::PushInput(const AndroidBoundaryInput& input) {
         }
         if (target->pending.size() + target->inflight.size() >= 4096)
             throw std::runtime_error("input queue event budget exhausted");
-        target->pending.push_back(std::move(snapshot));
+        target->pending.push_back({std::move(snapshot), {}});
+    }
+    ready_.notify_all();
+}
+
+void AndroidModule::PushQueueInput(memory::GuestAddress queue, const AndroidBoundaryInput& input,
+                                   std::function<void(bool)> finish) {
+    auto snapshot = NormalizeAndroidInput(input);
+    {
+        std::scoped_lock lock(mutex_);
+        auto& target = Queue(queue.Value()).input;
+        if (target.pending.size() + target.inflight.size() >= 4096)
+            throw std::runtime_error("input queue event budget exhausted");
+        target.pending.push_back({std::move(snapshot), std::move(finish)});
     }
     ready_.notify_all();
 }
@@ -228,17 +241,31 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
         found->second = *config;
         return 0;
     }
-    if constexpr (FunctionId == 9U || FunctionId == 11U || FunctionId == 82U) {
+    if constexpr (FunctionId == 9U || FunctionId == 82U) {
         std::scoped_lock lock(mutex_);
         auto& queue = InputQueue(args[0]);
         if constexpr (FunctionId == 9U) {
             queue.looper = memory::GuestAddress{};
             if (managed_activity_seen_) Queue(args[0]).input_attached = false;
         }
-        if constexpr (FunctionId == 11U)
-            if (!queue.inflight.contains(args[1])) throw std::invalid_argument("invalid input event pre-dispatch");
         if constexpr (FunctionId == 82U) return queue.pending.empty() ? 0U : 1U;
         return 0;
+    }
+    if constexpr (FunctionId == 11U) {
+        std::function<void(bool)> finish;
+        {
+            std::scoped_lock lock(mutex_);
+            auto& queue = InputQueue(args[0]);
+            const auto event = queue.inflight.find(args[1]);
+            if (event == queue.inflight.end()) throw std::invalid_argument("invalid input event pre-dispatch");
+            if (event->second.event.type != AndroidBoundaryInputType::key ||
+                !(event->second.event.flags & kAndroidKeyPreDispatchFlag))
+                return 0;
+            finish = std::move(event->second.finish);
+            queue.inflight.erase(event);
+        }
+        if (finish) finish(false);
+        return 1;
     }
     if constexpr (FunctionId == 19U || (FunctionId >= 26U && FunctionId <= 30U)) {
         std::scoped_lock lock(mutex_);
@@ -454,9 +481,16 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
         return 0;
     }
     if constexpr (FunctionId == 12U) {
-        std::scoped_lock lock(mutex_);
-        auto& queue = InputQueue(args[0]);
-        if (queue.inflight.erase(args[1]) == 0) throw std::invalid_argument("invalid input event completion");
+        std::function<void(bool)> finish;
+        {
+            std::scoped_lock lock(mutex_);
+            auto& queue = InputQueue(args[0]);
+            const auto event = queue.inflight.find(args[1]);
+            if (event == queue.inflight.end()) throw std::invalid_argument("invalid input event completion");
+            finish = std::move(event->second.finish);
+            queue.inflight.erase(event);
+        }
+        if (finish) finish(args[2] != 0);
         return 0;
     }
     throw std::logic_error("unbound concrete libandroid export");

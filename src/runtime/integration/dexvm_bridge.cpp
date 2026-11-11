@@ -17,6 +17,8 @@
 #include <utility>
 
 #include "dexvm_android/shared.h"
+#include "dexvm_android/rom_activity.h"
+#include "dexvm_android/rom_input.h"
 #include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
@@ -230,6 +232,17 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
         root(surface);
     }
     root(context.current_intent);
+    android_intrinsics::VisitRomActivityRoots(context, root);
+    android_intrinsics::VisitRomInputRoots(context, root);
+    if (context.rom_windows) {
+        root(context.rom_windows->session);
+        for (const auto& [_, client] : context.rom_windows->clients) {
+            root(client.binder);
+            root(client.attrs);
+        }
+        for (const auto& [_, surface] : context.rom_windows->surfaces)
+            root(surface.locked_canvas);
+    }
     for (const auto& [_, service] : context.local_binder_services)
         root(service);
     for (const auto& [_, value] : context.singletons)

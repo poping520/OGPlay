@@ -53,34 +53,41 @@ public:
     std::uint64_t length{3};
     bool compressed{};
     mutable std::size_t largest_read{}, descriptor_opens{}, descriptor_closes{};
+
     std::uint64_t Length() const override { return length; }
+
     std::size_t ReadAt(std::uint64_t offset, std::span<std::byte> output) const override {
         const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(output.size(), length - offset));
         largest_read = std::max(largest_read, count);
         const std::array payload{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
-        for (std::size_t i = 0; i < count; ++i) output[i] = payload[(offset + i) % payload.size()];
+        for (std::size_t i = 0; i < count; ++i)
+            output[i] = payload[(offset + i) % payload.size()];
         return count;
     }
+
     ogplay::runtime::AssetFileDescriptor OpenFileDescriptor() const override {
         if (compressed) return {};
         ++descriptor_opens;
         return {42, 123, length};
     }
+
     void CloseFileDescriptor(std::int32_t) const override { ++descriptor_closes; }
 };
+
 class BoundaryAssetManager final : public ogplay::runtime::AndroidAssetManagerSource {
 public:
     std::vector<ogplay::runtime::AndroidAssetDirectoryEntry> ListDirectory(std::string_view) override {
         return {{"folder", false}, {"hello", true}, {"other", true}};
     }
+
     std::shared_ptr<BoundaryAssetSource> source = std::make_shared<BoundaryAssetSource>();
+
     std::shared_ptr<const ogplay::runtime::AndroidAssetSource> Open(std::string_view name) override {
         return name == "hello" ? source : nullptr;
     }
 };
 
-
-} // namespace
+}  // namespace
 
 TEST_CASE("DVM-195 registered NativeActivity assets window and input are bounded and retired") {
     using namespace ogplay;
@@ -96,7 +103,8 @@ TEST_CASE("DVM-195 registered NativeActivity assets window and input are bounded
     CHECK(f.Call("libandroid.so", "AAsset_getRemainingLength", {asset}) == 1);
     CHECK(f.Call("libandroid.so", "AAsset_seek", {asset, 0, 0}) == 0);
     CHECK(f.Call("libandroid.so", "AAsset_read", {asset, f.output.Add(32).Value(), 8}) == 3);
-    std::array<std::byte, 3> actual{}; f.memory.Read(f.output.Add(32), actual);
+    std::array<std::byte, 3> actual{};
+    f.memory.Read(f.output.Add(32), actual);
     CHECK(actual == std::array{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}});
     CHECK(f.Call("libandroid.so", "AAsset_read", {asset, f.output.Add(32).Value(), 8}) == 0);
     f.Call("libandroid.so", "AAsset_close", {asset});
@@ -105,7 +113,8 @@ TEST_CASE("DVM-195 registered NativeActivity assets window and input are bounded
     CHECK(f.Call("libandroid.so", "ANativeWindow_getWidth", {window.Value()}) == 4);
     CHECK(f.Call("libandroid.so", "ANativeWindow_getHeight", {window.Value()}) == 3);
     CHECK(f.Call("libandroid.so", "ANativeWindow_setBuffersGeometry", {window.Value(), 0, 0, 1}) == 0);
-    CHECK(static_cast<std::int32_t>(f.Call("libandroid.so", "ANativeWindow_setBuffersGeometry", {window.Value(), 8, 3, 1})) == -22);
+    CHECK(static_cast<std::int32_t>(
+              f.Call("libandroid.so", "ANativeWindow_setBuffersGeometry", {window.Value(), 8, 3, 1})) == -22);
     f.boundary.SetNativeActivityInput(activity, true);
     f.bus.Write32(f.stack, 0x1234);
     CHECK_THROWS(f.Call("libandroid.so", "AInputQueue_attachLooper", {queue.Value(), 1, 2, 1}));
@@ -136,6 +145,55 @@ TEST_CASE("DVM-195 registered NativeActivity assets window and input are bounded
     CHECK_THROWS(f.Call("libandroid.so", "AAssetManager_open", {assets.Value(), f.output.Value(), 2}));
     CHECK(f.Call("libandroid.so", "AAsset_read", {independent_asset, f.output.Add(32).Value(), 3}) == 3);
     f.Call("libandroid.so", "AAsset_close", {independent_asset});
+}
+
+TEST_CASE("P3 targeted NDK input completion retains the queue and runs outside its lock") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    const auto activity = f.output.Add(256), queue = activity.Add(148);
+    CHECK_THROWS(f.boundary.PushQueueInput(queue, {runtime::AndroidBoundaryInputType::key, 29, 0, 0, true}, {}));
+    f.boundary.RegisterNativeActivity({activity, activity.Add(128), queue, 4, 3});
+    f.boundary.SetNativeActivityInput(activity, true);
+    int completed = 0;
+    bool handled = false;
+    f.boundary.PushQueueInput(queue, {runtime::AndroidBoundaryInputType::key, 29, 0, 0, true}, [&](bool result) {
+        ++completed;
+        handled = result;
+        // Reentering the queue proves that the native completion released its lock.
+        f.boundary.PushQueueInput(queue, {runtime::AndroidBoundaryInputType::key, 30, 0, 0, true}, {});
+    });
+    CHECK(completed == 0);
+    REQUIRE(f.Call("libandroid.so", "AInputQueue_getEvent", {queue.Value(), f.output.Value()}) == 0);
+    const auto event = f.bus.Read32(f.output);
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getKeyCode", {event}) == 29);
+    f.Call("libandroid.so", "AInputQueue_finishEvent", {queue.Value(), event, 1});
+    CHECK(completed == 1);
+    CHECK(handled);
+    REQUIRE(f.Call("libandroid.so", "AInputQueue_getEvent", {queue.Value(), f.output.Value()}) == 0);
+    const auto next = f.bus.Read32(f.output);
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getKeyCode", {next}) == 30);
+    f.Call("libandroid.so", "AInputQueue_finishEvent", {queue.Value(), next, 0});
+    runtime::AndroidBoundaryInput pre{runtime::AndroidBoundaryInputType::key, 31, 0, 0, true};
+    pre.flags = runtime::kAndroidKeyPreDispatchFlag;
+    int pre_completed = 0;
+    f.boundary.PushQueueInput(queue, pre, [&](bool result) {
+        CHECK_FALSE(result);
+        ++pre_completed;
+        f.boundary.PushQueueInput(queue, {runtime::AndroidBoundaryInputType::key, 32, 0, 0, true}, {});
+    });
+    REQUIRE(f.Call("libandroid.so", "AInputQueue_getEvent", {queue.Value(), f.output.Value()}) == 0);
+    const auto pre_event = f.bus.Read32(f.output);
+    CHECK(f.Call("libandroid.so", "AKeyEvent_getFlags", {pre_event}) ==
+          static_cast<unsigned>(runtime::kAndroidKeyPreDispatchFlag));
+    CHECK(f.Call("libandroid.so", "AInputQueue_preDispatchEvent", {queue.Value(), pre_event}) == 1);
+    CHECK(pre_completed == 1);
+    CHECK_THROWS(f.Call("libandroid.so", "AKeyEvent_getFlags", {pre_event}));
+    REQUIRE(f.Call("libandroid.so", "AInputQueue_getEvent", {queue.Value(), f.output.Value()}) == 0);
+    const auto normal = f.bus.Read32(f.output);
+    CHECK(f.Call("libandroid.so", "AInputQueue_preDispatchEvent", {queue.Value(), normal}) == 0);
+    f.Call("libandroid.so", "AInputQueue_finishEvent", {queue.Value(), normal, 0});
+    f.boundary.SetNativeActivityInput(activity, false);
+    CHECK_THROWS(f.boundary.PushQueueInput(queue, {runtime::AndroidBoundaryInputType::key, 31, 0, 0, true}, {}));
 }
 
 TEST_CASE("DVM-195 NativeActivity window takeover retires old EGL surfaces") {
@@ -217,13 +275,14 @@ TEST_CASE("DVM-237 NDK Asset large sources and FD output preflight do not materi
     CHECK_THROWS(f.Call("libandroid.so", "AAsset_openFileDescriptor", {asset, f.output.Add(64).Value(), 1}));
     CHECK(f.bus.Read32(f.output.Add(64)) == 0x11223344);
     CHECK(manager_source->source->descriptor_opens == 0);
-    CHECK(f.Call("libandroid.so", "AAsset_openFileDescriptor", {asset, f.output.Add(64).Value(), f.output.Add(68).Value()}) == 42);
+    CHECK(f.Call("libandroid.so", "AAsset_openFileDescriptor",
+                 {asset, f.output.Add(64).Value(), f.output.Add(68).Value()}) == 42);
     CHECK(f.bus.Read32(f.output.Add(64)) == 123);
     CHECK(f.bus.Read32(f.output.Add(68)) == 495689473);
     manager_source->source->compressed = true;
     f.bus.Write32(f.output.Add(64), 0x11223344);
     CHECK(static_cast<std::int32_t>(f.Call("libandroid.so", "AAsset_openFileDescriptor",
-        {asset, f.output.Add(64).Value(), f.output.Add(68).Value()})) == -1);
+                                           {asset, f.output.Add(64).Value(), f.output.Add(68).Value()})) == -1);
     CHECK(f.bus.Read32(f.output.Add(64)) == 0x11223344);
     f.boundary.UnregisterAssetManager(manager);
     CHECK(f.Call("libandroid.so", "AAsset_read", {asset, f.output.Add(32).Value(), 3}) == 3);
@@ -256,19 +315,27 @@ TEST_CASE("BND46 input snapshots expose API19 axes history and wide time on both
     input.action = 5 | (1 << 8);
     input.source = 0x1002;
     input.device_id = 7;
-    input.flags = 8; input.meta_state = 3; input.button_state = 2; input.edge_flags = 4;
+    input.flags = 8;
+    input.meta_state = 3;
+    input.button_state = 2;
+    input.edge_flags = 4;
     input.down_time_ns = 0x123456789LL;
     input.event_time_ns = 0x23456789aLL;
-    input.x_offset = 11; input.y_offset = 13;
-    input.x_precision = 0.5F; input.y_precision = 0.25F;
+    input.x_offset = 11;
+    input.y_offset = 13;
+    input.x_precision = 0.5F;
+    input.y_precision = 0.25F;
     runtime::AndroidInputPointer first, second;
-    first.id = 9; second.id = 3; second.tool_type = 2;
+    first.id = 9;
+    second.id = 3;
+    second.tool_type = 2;
     for (std::size_t i = 0; i < 64; ++i) {
         first.axes[i] = static_cast<float>(i) + 0.5F;
         second.axes[i] = static_cast<float>(i) + 10.5F;
     }
     input.pointers = {first, second};
-    first.axes[0] = 90; second.axes[0] = 100;
+    first.axes[0] = 90;
+    second.axes[0] = 100;
     input.history = {{0x200000001LL, {first, second}}};
     f.boundary.PushInput(input);
     // Mutation after enqueue cannot change the event visible to guest.
@@ -292,8 +359,8 @@ TEST_CASE("BND46 input snapshots expose API19 axes history and wide time on both
     CHECK(std::bit_cast<float>(scalar("AMotionEvent_getYPrecision")) == 0.25F);
     CHECK(f.Call("libandroid.so", "AMotionEvent_getPointerId", {event, 1}) == 3);
     CHECK(f.Call("libandroid.so", "AMotionEvent_getToolType", {event, 1}) == 2);
-    const std::array names{"X", "Y", "Pressure", "Size", "TouchMajor", "TouchMinor",
-                           "ToolMajor", "ToolMinor", "Orientation"};
+    const std::array names{"X",          "Y",         "Pressure",  "Size",       "TouchMajor",
+                           "TouchMinor", "ToolMajor", "ToolMinor", "Orientation"};
     for (std::size_t axis = 0; axis < names.size(); ++axis) {
         const auto current = std::string("AMotionEvent_get") + names[axis];
         const auto historical = std::string("AMotionEvent_getHistorical") + names[axis];
@@ -309,7 +376,8 @@ TEST_CASE("BND46 input snapshots expose API19 axes history and wide time on both
     CHECK(std::bit_cast<float>(f.Call("libandroid.so", "AMotionEvent_getHistoricalRawX", {event, 1, 0})) == 100.0F);
     CHECK(std::bit_cast<float>(f.Call("libandroid.so", "AMotionEvent_getHistoricalRawY", {event, 1, 0})) == 11.5F);
     CHECK(std::bit_cast<float>(f.Call("libandroid.so", "AMotionEvent_getAxisValue", {event, 63, 1})) == 73.5F);
-    CHECK(std::bit_cast<float>(f.Call("libandroid.so", "AMotionEvent_getHistoricalAxisValue", {event, 63, 1, 0})) == 73.5F);
+    CHECK(std::bit_cast<float>(f.Call("libandroid.so", "AMotionEvent_getHistoricalAxisValue", {event, 63, 1, 0})) ==
+          73.5F);
     CHECK(f.Call("libandroid.so", "AMotionEvent_getAxisValue", {event, 64, 1}) == 0);
     const auto wide = [&](const char* name, std::uint64_t expected) {
         f.Call("libandroid.so", name, {event, 0});
@@ -318,7 +386,8 @@ TEST_CASE("BND46 input snapshots expose API19 axes history and wide time on both
         const auto address = f.boundary.Symbols().Lookup("libandroid.so", name);
         REQUIRE(address.has_value());
         std::array<std::uint32_t, 16> registers{};
-        registers[0] = event; registers[13] = f.stack.Value();
+        registers[0] = event;
+        registers[13] = f.stack.Value();
         cpu::A32HostCallContext context{registers, 1, memory::GuestAddress{address->Value() & ~1U}};
         const auto hook = f.boundary.FastHostCallHook();
         REQUIRE(hook.invoke(hook.userdata, 2, context) == cpu::HostCallResult::handled);
@@ -340,10 +409,16 @@ TEST_CASE("BND46 input queues preserve inflight events and failed reads") {
     BoundaryFixture f;
     runtime::AndroidBoundaryInput input;
     input.type = runtime::AndroidBoundaryInputType::key;
-    input.action = 0; input.source = 0x101; input.device_id = -1;
-    input.code = 29; input.scan_code = 4; input.flags = 8; input.meta_state = 3;
+    input.action = 0;
+    input.source = 0x101;
+    input.device_id = -1;
+    input.code = 29;
+    input.scan_code = 4;
+    input.flags = 8;
+    input.meta_state = 3;
     input.repeat_count = 2;
-    input.down_time_ns = 0x123456789LL; input.event_time_ns = 0x200000001LL;
+    input.down_time_ns = 0x123456789LL;
+    input.event_time_ns = 0x200000001LL;
     f.boundary.PushInput(input);
     CHECK(f.Call("libandroid.so", "AInputQueue_hasEvents", {2}) == 1);
     CHECK_THROWS(f.Call("libandroid.so", "AInputQueue_getEvent", {2, 0}));
@@ -409,7 +484,7 @@ TEST_CASE("BND46 malformed snapshots fail before publication") {
     input.action = 2;
     input.event_time_ns = 100;
     input.pointers = {{}, {}};
-    CHECK_THROWS(static_cast<void>(runtime::NormalizeAndroidInput(input))); // duplicate identities
+    CHECK_THROWS(static_cast<void>(runtime::NormalizeAndroidInput(input)));  // duplicate identities
     input.pointers[1].id = 1;
     CHECK_NOTHROW(static_cast<void>(runtime::NormalizeAndroidInput(input)));
     input.action = 5 | (2 << 8);
@@ -425,7 +500,8 @@ TEST_CASE("BND46 malformed snapshots fail before publication") {
     CHECK_THROWS(static_cast<void>(runtime::NormalizeAndroidInput(input)));
     input.down_time_ns = 0;
     input.pointers.resize(17);
-    for (std::size_t i = 0; i < input.pointers.size(); ++i) input.pointers[i].id = static_cast<std::int32_t>(i);
+    for (std::size_t i = 0; i < input.pointers.size(); ++i)
+        input.pointers[i].id = static_cast<std::int32_t>(i);
     CHECK_THROWS(static_cast<void>(runtime::NormalizeAndroidInput(input)));
 }
 
@@ -466,7 +542,9 @@ TEST_CASE("APS-11 NDK Asset getBuffer is lazy stable readonly bounded and releas
     const auto source = std::make_shared<BoundaryAssetManager>();
     const auto manager = f.boundary.RegisterAssetManager(source);
     WriteGuestString(f, f.output, "hello");
-    const auto open = [&] { return f.Call("libandroid.so", "AAssetManager_open", {manager.Value(), f.output.Value(), 2}); };
+    const auto open = [&] {
+        return f.Call("libandroid.so", "AAssetManager_open", {manager.Value(), f.output.Value(), 2});
+    };
     const auto asset = open();
     CHECK(source->source->largest_read == 0);
     const memory::GuestAddress buffer{f.Call("libandroid.so", "AAsset_getBuffer", {asset})};
@@ -486,7 +564,8 @@ TEST_CASE("APS-11 NDK Asset getBuffer is lazy stable readonly bounded and releas
     const auto largest_read = source->source->largest_read;
     CHECK_THROWS(f.Call("libandroid.so", "AAsset_getBuffer", {large}));
     CHECK(source->source->largest_read == largest_read);
-    CHECK(std::ranges::any_of(f.ledger.Unimplemented(), [](const auto& hit) { return hit.id == "runtime.asset_manager"; }));
+    CHECK(std::ranges::any_of(f.ledger.Unimplemented(),
+                              [](const auto& hit) { return hit.id == "runtime.asset_manager"; }));
     source->source->length = 0;
     const auto empty = open();
     CHECK(f.Call("libandroid.so", "AAsset_getBuffer", {empty}) != 0);
@@ -500,13 +579,18 @@ TEST_CASE("APS-11 NDK Asset getBuffer is lazy stable readonly bounded and releas
 TEST_CASE("APS-11 NDK fromSurface acquires the holder window and respects destroyed generations") {
     using namespace ogplay;
     BoundaryFixture f;
-    struct Source { BoundaryFixture* fixture; bool live{true}; } source{&f};
-    f.boundary.SetSurfaceHooks({&source,
-        +[](void* owner, std::uint64_t, memory::GuestAddress env, runtime::SurfaceJavaReference ref) {
-            auto& s = *static_cast<Source*>(owner);
-            if (!s.live || env.Value() != 123 || ref.token != 456) return memory::GuestAddress{};
-            return s.fixture->boundary.AcquireSurfaceWindow({memory::GuestAddress{789}, 4, 3});
-        }});
+
+    struct Source {
+        BoundaryFixture* fixture;
+        bool live{true};
+    } source{&f};
+
+    f.boundary.SetSurfaceHooks(
+        {&source, +[](void* owner, std::uint64_t, memory::GuestAddress env, runtime::SurfaceJavaReference ref) {
+             auto& s = *static_cast<Source*>(owner);
+             if (!s.live || env.Value() != 123 || ref.token != 456) return memory::GuestAddress{};
+             return s.fixture->boundary.AcquireSurfaceWindow({memory::GuestAddress{789}, 4, 3});
+         }});
     CHECK(f.Call("libandroid.so", "ANativeWindow_fromSurface", {123, 0}) == 0);
     CHECK(f.Call("libandroid.so", "ANativeWindow_fromSurface", {123, 1}) == 0);
     const auto window = f.Call("libandroid.so", "ANativeWindow_fromSurface", {123, 456});
@@ -546,8 +630,8 @@ TEST_CASE("APS-11 APK Asset directories enumerate root subdirectory and absent p
     using namespace ogplay;
     BoundaryFixture f;
     std::vector<std::pair<std::string, std::vector<std::byte>>> entries;
-    for (const auto* name : {"assets/z", "assets/a", "assets/sub/", "assets/sub/file",
-                             "assets/sub/deeper/item", "assets/sub/other", "res/raw/ignored"})
+    for (const auto* name : {"assets/z", "assets/a", "assets/sub/", "assets/sub/file", "assets/sub/deeper/item",
+                             "assets/sub/other", "res/raw/ignored"})
         entries.emplace_back(name, std::vector<std::byte>{std::byte{42}});
     auto source = std::make_shared<runtime::ResourceAssetManager>(test::resources::Framework(), nullptr);
     CHECK(source->core.addAssetPath(test::resources::OwnedSource(test::resources::Zip(entries))) == 2);
@@ -573,7 +657,8 @@ TEST_CASE("APS-11 APK Asset directories enumerate root subdirectory and absent p
     };
     CHECK(list("") == std::vector<std::string>{"a", "z"});
     CHECK(list("sub") == std::vector<std::string>{"file", "other"});
-    for (const auto* path : {"missing", "a", "../sub", "/sub", "sub/../sub", "sub//deeper"}) CHECK(list(path).empty());
+    for (const auto* path : {"missing", "a", "../sub", "/sub", "sub/../sub", "sub//deeper"})
+        CHECK(list(path).empty());
     std::atomic<bool> failed{};
     {
         std::vector<std::jthread> readers;

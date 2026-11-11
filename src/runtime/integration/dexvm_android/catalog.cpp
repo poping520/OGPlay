@@ -312,6 +312,16 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         result.push_back(std::move(declaration));
     for (auto& declaration : Declare_android_graphics_StateObjects(context))
         result.push_back(std::move(declaration));
+    if (context->rom_window_services_enabled) {
+        result.push_back(Declare_local_WindowSession(context));
+        result.push_back(Declare_android_view_SurfaceControl(context));
+        result.push_back(Declare_android_view_SurfaceSession(context));
+        result.push_back(Declare_android_view_InputChannel(context));
+        result.push_back(Declare_android_view_InputEventReceiver(context));
+        result.push_back(Declare_local_InputMethodService(context));
+        result.push_back(Declare_local_InputService(context));
+        result.push_back(Declare_android_view_VelocityTracker(context));
+    }
     return result;
 }
 

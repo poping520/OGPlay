@@ -40,6 +40,8 @@ public:
     bool PublishSurfacePixels(memory::GuestAddress window, const AndroidSurfaceWindow& expected,
                               std::shared_ptr<video::VideoFrame> pixels);
     void PushInput(const AndroidBoundaryInput& input);
+    void PushQueueInput(memory::GuestAddress queue, const AndroidBoundaryInput& input,
+                        std::function<void(bool)> finish);
     void RegisterNativeActivity(NativeActivityBoundaryResources resources);
     void UnregisterNativeActivity(memory::GuestAddress activity);
     memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active);
@@ -91,10 +93,15 @@ private:
     AndroidBoundaryServices& services_;
 
     struct InputQueueState {
+        struct Entry {
+            AndroidBoundaryInput event;
+            std::function<void(bool)> finish{};
+        };
+
         memory::GuestAddress looper{};
         std::uint32_t ident{}, data{};
-        std::deque<AndroidBoundaryInput> pending;
-        std::map<std::uint32_t, AndroidBoundaryInput> inflight;
+        std::deque<Entry> pending;
+        std::map<std::uint32_t, Entry> inflight;
     };
 
     InputQueueState& InputQueue(std::uint32_t handle);

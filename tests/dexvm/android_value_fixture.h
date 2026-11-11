@@ -33,7 +33,7 @@ struct AndroidValueVm final {
                    const std::vector<IntrinsicClassDecl>& extras = {}, bool force_all_bridge = false,
                    const char* dex_fixture = nullptr,
                    AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::JavaTraversal,
-                   ogplay::gles::AngleBackend graphics = {});
+                   ogplay::gles::AngleBackend graphics = {}, bool rom_windows = false);
 
     VmObjectRef New(const char* descriptor, const char* constructor = "()V", std::vector<VmValue> arguments = {});
 

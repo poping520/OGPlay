@@ -51,6 +51,9 @@ class EncodedAudioDataSource;
 
 namespace ogplay::runtime {
 struct GraphicsStateStore;
+struct RomWindowState;
+struct RomActivityState;
+struct RomInputState;
 
 namespace raster {
 struct GraphicsObjects;
@@ -659,6 +662,13 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint64_t, BinderThreadState> binder_threads;
     // Runtime-installed local Binder objects, protected by the VM execution lock.
     std::map<std::string, dexvm::VmObjectRef, std::less<>> local_binder_services;
+    // Staged ROM WMS; the projection path remains active until the P3 switch.
+    std::shared_ptr<RomWindowState> rom_windows;
+    std::shared_ptr<RomActivityState> rom_activities;
+    std::shared_ptr<RomInputState> rom_input;
+    // Assembly-only P3 staging gate; no CLI setting. The production session
+    // keeps its existing window path until the atomic ROM switch.
+    bool rom_window_services_enabled{};
 
     std::int64_t last_vibration_millis{};
 
@@ -1611,5 +1621,7 @@ void CloseAndroidApplicationWindows(dexvm::Interpreter&, DexVmAndroidContext&, d
 }  // namespace ogplay::runtime
 
 namespace ogplay::runtime {
+// Host frame source: queue the pulse without running guest code or nested dispatch.
+void QueueAndroidDisplayFrame(dexvm::VmExecutionLock& execution_lock, DexVmAndroidContext& context);
 void DispatchAndroidDisplayFrame(dexvm::Interpreter&, DexVmAndroidContext&);
-}
+}  // namespace ogplay::runtime

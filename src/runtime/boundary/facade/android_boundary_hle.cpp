@@ -486,6 +486,11 @@ public:
 
     void PushInput(const AndroidBoundaryInput& input) { android_module_.PushInput(input); }
 
+    void PushQueueInput(memory::GuestAddress queue, const AndroidBoundaryInput& input,
+                        std::function<void(bool)> finish) {
+        android_module_.PushQueueInput(queue, input, std::move(finish));
+    }
+
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame() { return frame_service_.TakeLatestFrame(); }
 
     // Host-decoded frames (e.g. video playback) enter the same store and
@@ -1155,6 +1160,11 @@ void AndroidBoundaryHle::NotifyFileWrite() {
 
 void AndroidBoundaryHle::PushInput(const AndroidBoundaryInput& input) {
     impl_->PushInput(input);
+}
+
+void AndroidBoundaryHle::PushQueueInput(memory::GuestAddress queue, const AndroidBoundaryInput& input,
+                                        std::function<void(bool)> finish) {
+    impl_->PushQueueInput(queue, input, std::move(finish));
 }
 
 std::optional<AndroidBoundaryFrame> AndroidBoundaryHle::TakeLatestFrame() {

@@ -75,7 +75,7 @@ def dynarmic_external(name: str, license_file: str = "LICENSE") -> list[tuple[st
 PROJECTS = [
     ("aosp", "Android Open Source Project", "4.4.4_r2.0.1", "https://source.android.com", None,
      [f"{NOTICES}/{name}.txt" for name in
-      ("boot-classpath", "libc.so", "libm.so", "libdl.so", "libstdc++.so", "libgabi++.so")]),
+      ("boot-classpath", "telephony-common.jar", "libc.so", "libm.so", "libdl.so", "libstdc++.so", "libgabi++.so")]),
     ("openssl", "OpenSSL", "", "https://www.openssl.org", "OpenSSL", [f"{NOTICES}/libcrypto.so.txt"]),
     ("stlport", "STLport", "", "https://sourceforge.net/projects/stlport", None, [f"{NOTICES}/libstlport.so.txt"]),
     ("zlib", "zlib", "", "https://zlib.net", "Zlib", [f"{NOTICES}/libz.so.txt"]),

@@ -55,8 +55,10 @@ IntrinsicClassDecl IcuBoundary() {
     b.GuestNativeStatic("getISO3CountryNative", "(Ljava/lang/String;)Ljava/lang/String;",
                         kAccPublic | kAccStatic | kAccNative);
     b.GuestNativeStatic("getAvailableLocalesNative", "()[Ljava/lang/String;", kAccPrivate | kAccStatic | kAccNative);
+    b.GuestNativeStatic("addLikelySubtags", "(Ljava/lang/String;)Ljava/lang/String;",
+                        kAccPublic | kAccStatic | kAccNative);
+    b.GuestNativeStatic("getScript", "(Ljava/lang/String;)Ljava/lang/String;", kAccPublic | kAccStatic | kAccNative);
     constexpr std::pair<const char*, const char*> failures[]{
-        {"addLikelySubtags", "(Ljava/lang/String;)Ljava/lang/String;"},
         {"getAvailableBreakIteratorLocalesNative", "()[Ljava/lang/String;"},
         {"getAvailableCalendarLocalesNative", "()[Ljava/lang/String;"},
         {"getAvailableCollatorLocalesNative", "()[Ljava/lang/String;"},
@@ -65,7 +67,6 @@ IntrinsicClassDecl IcuBoundary() {
         {"getAvailableNumberFormatLocalesNative", "()[Ljava/lang/String;"},
         {"getCldrVersion", "()Ljava/lang/String;"},
         {"getIcuVersion", "()Ljava/lang/String;"},
-        {"getScript", "(Ljava/lang/String;)Ljava/lang/String;"},
         {"getUnicodeVersion", "()Ljava/lang/String;"},
     };
     for (const auto& [name, descriptor] : failures)

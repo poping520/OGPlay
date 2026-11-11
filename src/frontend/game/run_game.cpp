@@ -247,7 +247,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         OpenSandbox({sandbox_directory, ephemeral_sandbox, installation_id}, manifest.package, manifest.version_code);
     // User key layout (ADR-0134): --input-config, else beside the persistent sandbox; an
     // ephemeral sandbox edits in memory only. A missing file is an empty layout.
-    if (!input_config_path.has_value() && sandbox.store != nullptr)
+    if (!input_config_path.has_value() && !sandbox.temporary_root)
         input_config_path = sandbox.root / (sandbox.installation_id + ".input.toml");
     auto user_controls = input_config_path.has_value() ? session::LoadControlOverrideIfPresent(*input_config_path)
                                                        : session::ControlLayer{};

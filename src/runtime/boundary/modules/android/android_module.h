@@ -31,6 +31,9 @@ public:
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept;
     void NotifyFileWrite();
     memory::GuestAddress PrepareThreadLooper(std::uint64_t thread_id, std::uint32_t opts = 0);
+    void PollThreadLooper(std::uint64_t thread_id, const std::function<bool()>& interrupted);
+    void WakeThreadLooper(std::uint64_t thread_id);
+    void NotifyLooperPollers();
     void RetireThreadLooper(std::uint64_t thread_id);
     void ShutdownLoopers();
     std::optional<AndroidSurfaceWindow> NativeWindowGeometry(memory::GuestAddress window);
@@ -51,7 +54,8 @@ public:
 #undef OGPLAY_DECLARE_ANDROID
 
 private:
-    std::uint32_t PollAll(const std::array<std::uint32_t, 4>& args, std::uint64_t thread_id);
+    std::uint32_t PollAll(const std::array<std::uint32_t, 4>& args, std::uint64_t thread_id,
+                          const std::function<bool()>& interrupted = {});
 
     struct Looper {
         std::uint64_t owner{};

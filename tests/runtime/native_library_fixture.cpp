@@ -1,5 +1,7 @@
+#include "runtime/integration/dexvm_android/shared.h"
 #include "resources_test_support.h"
 #include "native_library_fixture.h"
+#include "../dexvm/container_traversal_fixture.h"
 
 #include "ogplay/runtime/bionic/bionic_profile.h"
 
@@ -400,6 +402,17 @@ std::int32_t ApplicationProcess::CallStaticInt(const std::string& owner, const s
     return outcome.value.AsInt();
 }
 
+RomValueProcess::RomValueProcess(ogplay::runtime::dexvm::InterpreterBackend backend) {
+    ogplay::test::BindBootDexArchive(*context);
+    runtime = std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
+        context, ledger, logger, ogplay::runtime::AndroidIntrinsicCatalog(context), ReadDexFixture("application.dex"),
+        ogplay::runtime::dexvm::InterpreterConfig{.backend = backend}, &filesystem);
+    bridge = runtime->bridge.get();
+    session = runtime->session.get();
+}
+
+RomValueProcess::~RomValueProcess() = default;
+
 OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_launcher, const bool with_native,
                                  const std::string& launcher_alias,
                                  const std::vector<ogplay::loader::AndroidManifestServiceComponent>& services,
@@ -488,6 +501,47 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
     app = ogplay::session::AndroidAppProcess::Create(std::move(request));
 }
 
+ogplay::runtime::dexvm::VmCallOutcome
+OrchestratedApp::CallGuest(ogplay::runtime::dexvm::VmMethodId method,
+                           std::span<const ogplay::runtime::dexvm::VmValue> arguments) {
+    auto& vm = app->DexVm().Vm();
+    if (vm.ExecutionLock().HeldByCurrentThread()) return vm.Call(method, arguments);
+    ogplay::runtime::dexvm::VmCallOutcome result;
+    app->RunOnMainThread([&] { result = app->DexVm().Vm().Call(method, arguments); });
+    return result;
+}
+
+ogplay::runtime::dexvm::VmValue OrchestratedApp::CallGuest(ogplay::runtime::dexvm::VmObjectRef receiver,
+                                                           const char* name, const char* descriptor,
+                                                           std::vector<ogplay::runtime::dexvm::VmValue> arguments) {
+    auto& vm = app->DexVm().Vm();
+    if (vm.ExecutionLock().HeldByCurrentThread())
+        return ogplay::runtime::android_intrinsics::CallAndroidMethod(vm, receiver, name, descriptor,
+                                                                      std::move(arguments));
+    ogplay::runtime::dexvm::VmValue result;
+    app->RunOnMainThread([&] {
+        result = ogplay::runtime::android_intrinsics::CallAndroidMethod(app->DexVm().Vm(), receiver, name, descriptor,
+                                                                        std::move(arguments));
+    });
+    return result;
+}
+
+ogplay::runtime::dexvm::VmObjectRef OrchestratedApp::NewGuest(std::string_view descriptor) {
+    auto& vm = app->DexVm().Vm();
+    if (vm.ExecutionLock().HeldByCurrentThread()) return vm.NewIntrinsicInstance(std::string(descriptor));
+    ogplay::runtime::dexvm::VmObjectRef result;
+    app->RunOnMainThread([&] { result = app->DexVm().Vm().NewIntrinsicInstance(std::string(descriptor)); });
+    return result;
+}
+
+std::int32_t OrchestratedApp::ReadStaticInt(const std::string& owner, const std::string& name) {
+    auto& linker = app->DexVm().Linker();
+    const auto type = linker.ResolveDescriptor(owner);
+    const auto field = linker.FindFieldRecursive(type, name, "I");
+    if (!field) throw std::runtime_error("fixture static field is not linked");
+    return static_cast<std::int32_t>(linker.Class(type).static_storage[linker.Field(*field).slot]);
+}
+
 std::int32_t OrchestratedApp::CallStaticInt(const std::string& owner, const std::string& name) {
     auto& bridge = app->DexVm();
     const auto java_class = bridge.Linker().FindClass(owner);
@@ -498,7 +552,7 @@ std::int32_t OrchestratedApp::CallStaticInt(const std::string& owner, const std:
     if (!method.has_value()) {
         throw std::runtime_error("fixture method is not linked");
     }
-    const auto outcome = bridge.Vm().Call(*method, {});
+    const auto outcome = CallGuest(*method, {});
     if (outcome.exception.IsValid()) {
         throw std::runtime_error(outcome.exception_message);
     }

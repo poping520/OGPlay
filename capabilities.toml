@@ -555,8 +555,8 @@ note = "DVM-338/367：File/流/RAF/FileChannel、PFD 与 native 共用唯一 VFS
 
 [runtime.preferences_persistence]
 status = "complete"
-test = "tests/runtime/preferences_xml_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp"
-note = "SBX-6/10/11：SharedPreferences 以 Android 同构 XML 存于沙盒 shared_prefs，跨会话持久；BootDex 原版接口，支持五种标量、contains/getAll、Editor commit/apply（apply 同步落盘）与 float 精确往返；仅 ENOENT 视为首次运行。string-set 与 change listener 明确失败并记账。"
+test = "tests/dexvm/android_preferences_tests.cpp; tests/dexvm/file_application_storage_tests.cpp"
+note = "ROM SharedPreferencesImpl/EditorImpl 使用同一沙盒 VFS 存储 XML。标量、getAll、commit/apply 与变更监听由 ROM 实现。apply 先更新内存，磁盘写入由原版队列执行。"
 
 [runtime.syscall_anonymous_mapping]
 status = "partial"
@@ -829,9 +829,9 @@ test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_librar
 note = "Java load/native dlopen 共用 APK/系统源、进程 ELF 及构造器状态；所选 ABI 闭包按需装载，保留首次 guest 路径，不读宿主文件。装载可同线程重入、跨线程串行，依赖先初始化，失败禁止重跑构造器。native 不登记 ClassLoader/调用 JNI_OnLoad；Java 保持 loader 检查及一次 JNI 初始化。执行控制故障不降级 dlerror；保留进程生命周期模块及既有 dlsym 范围，不含真实 dlclose 卸载或动态 LD_LIBRARY_PATH。`/data/data/<包名>/lib` 别名先规范化，与 APK 库共用身份。"
 
 [runtime.application_startup]
-status = "complete"
-test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "APS-6 在 launcher Activity 前完成 default/custom Application 的 resolve、class init、默认构造、base Context attach 与虚派 onCreate；process root identity 稳定并由 Context/Activity 可见，clinit/onCreate 可触发真实 System.loadLibrary/JNI_OnLoad，任何异常均在 surface 与 Activity 构造前失败"
+status = "partial"
+test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/android_component_services_tests.cpp#ROM ActivityThread attaches"
+note = "封存 APK 经 ROM ActivityThread.attach 和 bindApplication 初始化 Application、ContextImpl、Instrumentation 和 ROM 应用 PathClassLoader，复用已登记 APK DEX。主 Looper 完成绑定才启动 launcher。独立无 APK 夹具保留直接启动。Provider 安装、全游戏矩阵待验。"
 
 [session.android_app_process]
 status = "complete"
@@ -951,7 +951,7 @@ note = "DVM-158 对齐 API 19 非 CheckJNI Dalvik：CallObjectMethod/CallObjectM
 [runtime.android_legacy_platform_identity]
 status = "complete"
 test = "tests/runtime/android_guest_framework_platform_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services use VM methods objects and state"
-note = "DVM-128/130：平台身份不再由 guest 会话 HLE 提供；Build/SystemProperties/Bundle 归 BootDex，Context/Activity、ContentResolver、TelephonyManager、Settings.Secure 经 JNI 进入 VM 并共用 singleton；ANDROID_ID 与 installation_id 分离，取自沙盒平台配置。不读宿主隐私，UUID 来自 OS CSPRNG。纯 native/HLE 会话需另行装配 DexVM。"
+note = "DVM-128/130：平台身份不再由 guest 会话 HLE 提供；Build/SystemProperties/Bundle 归 BootDex，Context/Activity、ContentResolver、Settings.Secure 经 JNI 进入 VM；ROM TelephonyManager 通过本地电话服务读取同源身份；ANDROID_ID 与 installation_id 分离，取自沙盒平台配置。不读宿主隐私，UUID 来自 OS CSPRNG。纯 native/HLE 会话需另行装配 DexVM。"
 
 [runtime.android_secure_settings]
 status = "complete"
@@ -1521,7 +1521,7 @@ note = "API 19 LocationListener、Criteria、Location 与稳定 LocationManager 
 [dexvm.keyguard_facade]
 status = "complete"
 test = "tests/dexvm/android_context_services_tests.cpp#DVM-166"
-note = "DVM-166 发布 API 19 非缓存 KeyguardManager facade，三项只读查询统一从进程级 AndroidKeyguardStateProvider 读取快照；当前未注入 provider 时明确表示无锁屏。后续宿主行为只能替换 provider，不引入 IWindowManager、Binder 或 system_server。"
+note = "ROM KeyguardManager 经本地 IWindowManager 读取进程级 AndroidKeyguardStateProvider。未注入时返回无锁屏。只提供三项只读查询，无系统锁屏或密钥管理。"
 
 [dexvm.animation_listener_type]
 status = "complete"
@@ -1590,12 +1590,12 @@ note = "DVM-180/195：当前包 getActivityInfo 支持 0/GET_META_DATA/GET_DISAB
 
 [dexvm.package_archive_info]
 status = "partial"
-test = "tests/dexvm/android_package_metadata_tests.cpp#PackageManager archive queries; tests/dexvm/android_package_metadata_tests.cpp#DVM-180 getPackageInfo"
-note = "DVM-213：只读当前封存 APK，guest VFS 规范路径及来源验证，复用启动时 Manifest；0/GET_ACTIVITIES/GET_DISABLED_COMPONENTS，保留声明顺序与 alias、禁用过滤。归档 ApplicationInfo 与安装视图分开，uid=-1、安装目录 null、安装时间 0；缺路径/非普通文件返回 null，未登记归档/缺 provider 或事实/未知 flags 明确失败。不实现任意归档解析、签名/权限/其他组件查询或安装数据库；完整游戏和跨平台未验收。"
+test = "tests/dexvm/android_package_metadata_tests.cpp#ROM PackageManager parses archive bytes"
+note = "ROM PackageManager 和 PackageParser 从 guest VFS APK 读取 Manifest。缺失或无效归档按 ROM 返回 null。单包安装清单仍由本地 IPackageManager 提供。"
 
 [dexvm.installed_applications]
 status = "partial"
-test = "tests/dexvm/android_package_metadata_tests.cpp#DVM-240; tests/runtime/jni_android_platform_tests.cpp#DVM-240; tests/dexvm/android_package_metadata_tests.cpp#PackageManager archive queries"
+test = "tests/dexvm/android_package_metadata_tests.cpp#DVM-240; tests/runtime/jni_android_platform_tests.cpp#DVM-240"
 note = "DVM-240/ADR-0119：session 封存单包安装清单；getInstalledApplications 支持 0/GET_META_DATA/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果），ApplicationInfo 与 Context 共用 Manifest、真实 guest APK 路径、UID 与元数据，补齐 FLAG_INSTALLED，禁用应用 enabled=false。缺清单或未知 flags 记账抛 UOE。无外部包、宿主应用扫描、共享库或 PMS/Binder。"
 
 [dexvm.context_file_stream_path]
@@ -1606,7 +1606,7 @@ note = "DVM-157 按 API 19 发布 Context.getFileStreamPath(String) 与 ContextW
 [dexvm.context_private_directory]
 status = "partial"
 test = "tests/dexvm/file_application_storage_tests.cpp#Context getDir private directories preserve API19 paths and VFS state; tests/dexvm/file_application_storage_tests.cpp#Context getDir private directories persist across sessions"
-note = "Context.getDir(String,int) 与 wrapper base 委托支持 MODE_PRIVATE：在已安装应用的数据根创建 app_<name>，每次构造普通 BootDex File，mkdir 失败仍返回路径。名称含 / 抛 IAE，null/空串分别拼接 app_null/app_；现有文件不替换。读写与持久化共用 VFS/sandbox，无宿主路径分支。非 PRIVATE 模式和无 VFS 明确失败并记账；不实现跨应用权限、宿主 chmod 或完整 POSIX 权限模型。"
+note = "ROM ContextImpl.getDir 在 LoadedApk 固定的应用数据根创建 app_<name>。文件路径和读写共用 VFS，mkdir 失败仍返回 File。宿主 chmod 和跨应用权限模型未接入。"
 
 [dexvm.intent_filter_matching]
 status = "partial"
@@ -1616,12 +1616,12 @@ note = "DVM-97/132：Intent 与 IntentFilter 的 action/type/data/scheme/authori
 [dexvm.content_observer_process_local]
 status = "complete"
 test = "tests/dexvm/android_context_services_tests.cpp#DVM-332"
-note = "DVM-332：API19 Java static URI 树强引用观察者，支持进程内注册、全部注销、显式通知及 System 有效写入通知；本节点/下级全收、上级按 descendants、自通知按 deliverSelfNotifications。锁内收集锁外 ROM dispatchChange，有 Handler 沿原版投递，无 Handler 改主 Looper。无 Transport/Binder、Provider 事件源、跨用户或 sync，syncToNetwork 接受无效果。"
+note = "DVM-332：ROM ContentResolver 经本地 IContentService 注册和分发；authority 与路径匹配、上级按 descendants、自通知按 deliverSelfNotifications。有 Handler 使用 ROM transport，无 Handler 投递主 Looper。Settings.System 有效值变更递增版本并通知；无跨用户、同步适配器或网络同步。"
 
 [dexvm.content_resolver_absent_provider]
 status = "complete"
-test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp"
-note = "DVM-133 按 API 19 闭合 ContentResolver 五参 query 的无 provider 分支：非空 Uri 仍虚派读取 scheme/authority，当前无 ContentProvider 注册表时返回 null；null Uri 抛 NPE。complete 仅指 provider acquisition 失败路径，不提供空 Cursor、当前/外部 APK provider、Binder、六参 cancellation overload 或真实查询。"
+test = "tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_component_services_tests.cpp#ROM ActivityThread attaches"
+note = "DVM-133：ROM ContentResolver 保留缺席 provider 的 null 返回和 Uri 参数检查。ROM ActivityThread 安装本包同进程清单 provider，AMS 发布 authority；Settings 通过专用本地 provider。外部 APK provider 和跨进程传输未支持。"
 
 [dexvm.media_data_sources]
 status = "complete"
@@ -1681,22 +1681,22 @@ note = "DVM-230：root guest 线程按真实 UiTree frame 向附着子树派发 
 [dexvm.choreographer_frame_source]
 status = "partial"
 test = "tests/runtime/choreographer_frame_source_tests.cpp; tests/dexvm/scheduler_tests.cpp; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
-note = "ROM API19 Choreographer 队列/单例/帧回调；DisplayEventReceiver 逐签名 native 以不复用 int token 连接所属 Looper。每实际 StepFrame 在 owner 遍历前一次 vsync，Clock nanoTime 同基；一次性请求合并，dispose/GC/停止撤销，无 hotplug。显示刷新率来自注入事实（默认 60）。Handler 队首 LIFO、普通 FIFO，异步标志只保存；无同步屏障。支持非主 Looper，跨线程队列失败；属性动画见 dexvm.property_animation，GPU/跨平台未验。"
+note = "ROM Choreographer 与 DisplayEventReceiver 使用统一 Clock；每个实际显示帧在 owner 遍历前交付一次 vsync，注册按所属 Looper 校验，停止撤销。刷新率由本地 IDisplayManager 注入。队列排序、异步消息与屏障归 ROM。无 hotplug，GPU/跨平台待验。"
 
 [dexvm.android_scheduler]
-status = "complete"
-test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/scheduler_tests.cpp#DVM-135; tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/session/lifecycle_tests.cpp"
-note = "DVM-357：Looper/Handler/Message/有界 AsyncTask 共用调度器与 Clock（60秒 boot-age）。CountDownTimer、Timer/TimerTask 状态归 Java。主队列在 lifecycle 安全点泵送。View.post/postDelayed 沿 Java 父链判附着，复用单一主 Handler；detached 按 guest 线程暂存、转入起算。Runnable 为 GC 根，shutdown 清空；runOnUiThread 共用主队列。无 suspend、Binder 队列、AsyncTask 并行策略。"
+status = "partial"
+test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/scheduler_tests.cpp#DVM-135; tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/session/lifecycle_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp#DVM-353; tests/runtime/application_startup_tests.cpp#AndroidAppProcess runs host requests"
+note = "ROM Looper、Handler、Message、HandlerThread、AsyncTask 和主线程 Looper.loop。MessageQueue native 与 NDK ALooper 共用线程 Looper 及唤醒，按统一 uptime 判断 Java 超时。帧内保留有界消息泵与 View.post 附着适配。"
 
 [dexvm.android_value_services]
 status = "complete"
 test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-86/107/117：Base64、SparseArray、TypedValue、TextUtils、Color/Rect/Path、Parcelable/Parcel/Bundle 与 PowerManager/WakeLock/Vibrator/Process；Pair、SparseArray、Bundle/ArrayMap 已在 BootDex，其余状态进入受检 side-table 并由 GC 追踪。power/vibrator 是进程内 facade，不实现 Binder、跨进程传输或宿主设备动作。"
+note = "DVM-86/107/117：Base64、SparseArray、TypedValue、TextUtils、Color/Rect/Path、Parcelable/Parcel/Bundle 与 PowerManager/WakeLock/Vibrator/Process；Pair、SparseArray、Bundle/ArrayMap 已在 BootDex。ROM PowerManager/WakeLock 和 SystemVibrator 经进程内 Binder 服务，无跨进程传输或宿主设备动作。"
 
 [dexvm.wifi_lock]
 status = "partial"
 test = "tests/dexvm/android_wifi_locks_tests.cpp#DVM-209; tools/bootdex/build_bootdex.py check"
-note = "DVM-209/ADR-0092/0093：WifiLock 与 MulticastLock 的 Java 计数/held 独立，native 仅登记离线租约；权限、模式、两类锁合计每 manager 50 个及逐 owner/GC/退出清理受检。WorkSource/组播传输/无线服务不支持；跨平台实跑未验收"
+note = "DVM-209：ROM WifiManager 管理两类锁的计数、held 与每 manager 50 锁上限，进程内 IWifiManager 验证权限和模式。无 WorkSource、组播传输或无线设备动作；跨平台实跑未验收。"
 
 [dexvm.java_util_algorithms]
 status = "complete"
@@ -1721,7 +1721,7 @@ note = "DVM-152/153/164/173：URI、InetAddress、URLConnection/HttpURLConnectio
 [dexvm.connectivity_offline]
 status = "partial"
 test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-241; tests/dexvm/android_value_tests.cpp#DVM-98; tests/dexvm/android_wifi_locks_tests.cpp#Offline WifiInfo; tests/runtime/jni_android_platform_tests.cpp#DVM-241; tests/dexvm/network_sqlite_tests.cpp#DVM-343"
-note = "DVM-241/343：原版 NetworkInfo 与有界 ConnectivityManager，断开逻辑 WiFi、活动网络 null，查询需 ACCESS_NETWORK_STATE。WifiManager.getConnectionInfo 需 ACCESS_WIFI_STATE，离线返回 WifiInfo（networkId=-1、UNINITIALIZED、MAC=null）。拓扑派生 lo、只读 sysfs/proc、IPv4 ioctl 与 ROM NetworkInterface。缺事实/在线策略记账 UOE；无宿主探测、通用 socket、netlink 或无线控制。"
+note = "ROM ConnectivityManager 经本地 IConnectivityManager 查询断开的逻辑 WiFi 和活动网络 null，需 ACCESS_NETWORK_STATE。WifiManager.getConnectionInfo 需 ACCESS_WIFI_STATE，离线返回 ROM WifiInfo。拓扑派生 lo、只读 sysfs/proc、IPv4 ioctl。缺事实/在线策略记账 UOE；无宿主探测、通用 socket、netlink 或无线控制。"
 
 [dexvm.apache_http_bootdex]
 status = "partial"
@@ -1730,8 +1730,8 @@ note = "DVM-149/164/173：从 API19 ext.jar 选入 Apache HTTP（含完整 org.a
 
 [dexvm.sqlite_vfs]
 status = "complete"
-test = "tests/dexvm/network_sqlite_tests.cpp#DVM-88; tests/dexvm/network_sqlite_tests.cpp#DVM-186; tests/dexvm/network_sqlite_tests.cpp#DVM-194; tests/dexvm/network_sqlite_tests.cpp#DVM-198; tools/bootdex/build_bootdex.py check"
-note = "DVM-186/198：固定 SQLite amalgamation 经 OGPlay VFS 读写主库、rollback journal 与临时文件；原版 API19 数据库栈、异常子类、CursorWindow、事务与 hot-journal 恢复，与 Android sqlite3 文件互通，损坏库按 EventLog→删除→重建处理；配置资源 ID 由 BootDex 构建自动提取。仅进程内 rollback-journal；WAL、跨进程共享与完整 ICU collation 不支持。"
+test = "tests/dexvm/network_sqlite_tests.cpp#DVM-88; tests/dexvm/network_sqlite_tests.cpp#DVM-186; tests/dexvm/network_sqlite_tests.cpp#DVM-194; tools/bootdex/build_bootdex.py check"
+note = "DVM-186/198：固定 SQLite amalgamation 经 OGPlay VFS 读写主库、rollback journal 与临时文件；原版 API19 数据库栈、异常子类、CursorWindow、事务与 hot-journal 恢复，与 Android sqlite3 文件互通，损坏库按 EventLog→删除→重建处理；原版 Java 从 framework-res 读取配置，默认 journal 为 PERSIST。仅进程内 rollback-journal；WAL、跨进程共享与完整 ICU collation 不支持。"
 
 [dexvm.api19_capability_stack]
 status = "complete"
@@ -1920,8 +1920,8 @@ note = "DVM-331/351：AbsoluteLayout/FrameLayout/RelativeLayout 的 LayoutParams
 
 [dexvm.display_values_bootdex]
 status = "complete"
-test = "tests/dexvm/android_context_services_tests.cpp#DVM-264; tests/dexvm/android_resources_bitmap_tests.cpp#DVM-118; tests/dexvm/android_resources_bitmap_tests.cpp#DVM118; tests/dexvm/network_sqlite_tests.cpp#DVM-198; tests/dexvm/network_sqlite_tests.cpp#DVM-194; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-118/264：DisplayMetrics/TypedValue 原版 Java；Resources 与 Display 指标同源于 managed surface 尺寸/density。display 服务 getDisplay/getDisplays 复用 WindowManager 同一 Display；未知服务返回 null，注册但不支持的服务记账抛 UOE。资源文本复用 TypedValue.coerceToString。不支持显示监听/虚拟显示、styled text、主题和 locale qualifier。"
+test = "tests/dexvm/android_context_services_tests.cpp#DVM-264; tests/dexvm/android_resources_bitmap_tests.cpp#DVM-118; tests/dexvm/android_resources_bitmap_tests.cpp#DVM118; tests/dexvm/network_sqlite_tests.cpp#DVM-194; tests/session/profile_entry_scope_tests.cpp"
+note = "ROM Display 和 DisplayManagerGlobal 经本地 IDisplayManager 读取单显示尺寸、密度和刷新率，未知 ID 返回 null。WindowManager 与过渡期 DisplayManager 共用默认 Display。不支持热插拔、无线和虚拟显示。"
 
 [dexvm.math_bootdex]
 status = "partial"
@@ -1941,21 +1941,21 @@ note = "DVM-140 Intent.putExtras(Bundle) 复用唯一 mExtras 并委托 BootDex 
 [dexvm.bundle_bootdex]
 status = "complete"
 test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp"
-note = "BootDex-first 本地 Binder WU：Bundle/Intent/ResultReceiver 的普通 Parcel 协议执行 API19 Java；唯一 C++ backend 保存对齐字节、游标与 Binder 对象记录。Bundle/Serializable 值按 wire 重建，ResultReceiver 经 IResultReceiver 本地 Binder 往返；FD、远程 Binder、系统服务仍明确不支持。"
+note = "Bundle/Intent/ResultReceiver 的普通 Parcel 协议执行 API19 Java；ROM Parcel 拥有 native token，C++ 保存对齐字节、游标与本地 Binder 记录，随 Java owner 回收。Bundle/Serializable 值按 wire 重建，ResultReceiver 经本地 Binder 往返。FD 与跨进程传输不支持。"
 
 [dexvm.local_binder]
 status = "complete"
-test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp"
-note = "DVM-144：IInterface/IBinder/Binder/Parcel/ResultReceiver 在 BootDex，transact/queryLocalInterface/onTransact 保持 Java 虚派，native 只保留身份、线程 StrictMode 与 Parcel 字节；StrictMode 仅提供禁用检测下的策略头，拒绝 violation 处理。无 Binder 驱动、跨进程 IPC、BinderProxy 与系统服务。"
+test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp#ROM ServiceManager"
+note = "ROM Binder/ServiceManager/ServiceManagerNative 执行本地虚派，calling identity 固定为 guest UID/PID；进程内注册表返回本地 Stub，缺席按服务名记账返回 null。Parcel 由 ROM 初始化，native 提供字节与 Binder 记录。StrictMode 策略按线程隔离；远程 IPC、BinderProxy 和线程池不支持。"
 
 [dexvm.backup_service]
 status = "partial"
 test = "tests/dexvm/android_context_services_tests.cpp#DVM-116; tests/dexvm/bootdex_collections_io_tests.cpp#DVM-103; tests/dexvm/bootdex_library_tests.cpp#DVM-103; tests/dexvm/bootdex_concurrency_tests.cpp#DVM-103"
-note = "DVM-116/ADR-0044：BackupManager/RestoreObserver 执行 pinned API 19 Java；仅私有 checkServiceBinder 覆盖不存在的 Android 备份服务查询并记账。dataChanged 不排队，requestRestore 返回 -1，beginRestoreSession 返回 null，无回调；非空服务注入明确抛 UOE。Java mContext 由 GC 追踪。远程备份/恢复、Binder、IBackupManager/RestoreSession/RestoreSet 服务及返回类型反射未实现。"
+note = "ROM BackupManager 经 ServiceManager 查询本地 IBackupManager。dataChanged 不排队，requestRestore 返回 -1，beginRestoreSession 返回 null，无回调、备份传输或恢复会话。"
 
 [dexvm.service_resolution]
 status = "partial"
-test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/android_component_services_tests.cpp#DVM-112; tests/loader/apk_manifest_tests.cpp#DVM-112; tests/runtime/jni_bridge_framework_tests.cpp#DVM-112; tests/runtime/application_startup_tests.cpp#DVM-112; tests/dexvm/android_component_services_tests.cpp#DVM-202; tests/dexvm/vm_thread_tests.cpp#DVM-202; tests/runtime/application_exit_tests.cpp#DVM-202"
+test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/android_component_services_tests.cpp#DVM-112; tests/loader/apk_manifest_tests.cpp#DVM-112; tests/runtime/jni_bridge_framework_tests.cpp#DVM-112; tests/runtime/application_startup_tests.cpp#DVM-112; tests/dexvm/android_component_services_tests.cpp#ROM ActivityThread attaches; tests/dexvm/vm_thread_tests.cpp#DVM-202; tests/runtime/application_exit_tests.cpp#DVM-202"
 note = "DVM-112/142/202/349：resolveService/queryIntentServices 仅当前 APK 非空 action、无 component/data/type/category、0/GET_RESOLVED_FILTER；无候选返回 null/独立空列表，其他形态记账 UOE。bind 支持主线程 BIND_AUTO_CREATE、component-only 同进程服务、异步绑定/本地 Binder/解绑/GC。独立进程/isolated start=null、bind=false，每次记账（ADR-0170）；无跨进程 IPC/支付。"
 
 [dexvm.receiver_query]
@@ -2060,8 +2060,8 @@ note = "DVM-219：API19 Bionic tzdata 2014a 原版归档经来源/哈希/TZif �
 
 [dexvm.sensor_absent_facade]
 status = "partial"
-test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-220; tests/dexvm/android_context_services_tests.cpp#DVM-136; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services; tests/runtime/boundary/integration/android_boundary_sensor_tests.cpp#APS-11"
-note = "Java Sensor/SensorManager 保留原版算法；LocalSensorManager 与 NDK ASensorManager 共用注入空目录。NDK 非空 manager/空 guest 数组，队列持 VFS pipe；无事件 getEvents=0/hasEvents=-1，失效句柄明确失败。无宿主设备/真实事件/动态目录/Looper callback 派发；viewport 为 ROTATION_0。"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-220; tests/dexvm/android_context_services_tests.cpp#DVM-136; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services; tests/runtime/boundary/integration/android_boundary_sensor_tests.cpp#APS-11; tests/runtime/jni_android_platform_tests.cpp#DVM-237"
+note = "ROM SystemSensorManager 与 NDK ASensorManager 共用注入空目录，LegacySensorManager 经本地 IWindowManager 读取固定 ROTATION_0。NDK 队列保留 VFS pipe 协议。无宿主设备、真实事件或动态设备/旋转回调。"
 
 [runtime.asset_manager]
 status = "partial"
@@ -2095,13 +2095,13 @@ note = "DVM-221：NDK lock 直接借用 ROM Bitmap.mBuffer 的 guest 地址。�
 
 [dexvm.usb_absent_facade]
 status = "partial"
-test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-341"
-note = "DVM-341：Context 构造并缓存 API19 UsbManager；无设备时列表为空、配件为 null，权限为 false，操作入口记账并明确拒绝。属性查询保留 ROM SystemProperties 算法。无宿主 USB 透传、UsbService、Binder 或 UsbDeviceConnection。"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-341; tests/dexvm/android_parcel_bundle_tests.cpp#ROM ServiceManager"
+note = "ROM UsbManager 经本地 IUsbManager 查询空设备目录、无配件、无权限。已知无设备时 openDevice 返回 null；属性查询走 ROM SystemProperties。无宿主 USB、设备传输或热插拔。"
 
 [dexvm.usb_transport]
 status = "unimplemented"
 test = "tests/dexvm/android_context_services_tests.cpp#DVM-341"
-note = "USB 权限查询及设备打开记账，权限请求、配件打开和功能设置抛 UnsupportedOperationException；不保存或派发 PendingIntent。不实现设备通信、宿主 USB 透传、UsbService、Binder 或 UsbDeviceConnection。"
+note = "本地 IUsbManager 的权限查询和设备打开记账并返回缺席；权限请求、配件打开、功能设置等按签名记账并抛 UnsupportedOperationException。无设备通信、宿主透传或 PendingIntent 回调。"
 
 [dexvm.nfc_absent_facade]
 status = "partial"
@@ -2116,17 +2116,17 @@ note = "不实现 NFC 通信、标签读写、Beam、扫描或卡模拟。已声
 [dexvm.activity_memory_query]
 status = "partial"
 test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM228; tests/runtime/android_guest_call_session_tests.cpp#proc memory; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services"
-note = "DVM-228/ADR-0111：有界 ActivityManager 客户端与原版 MemoryInfo，native 只提交受检进程快照（默认总量 1 GiB、空闲 512 MiB、缓存 256 MiB，可显式配置）；availMem=MemFree+Cached，阈值比较归 Java，不执行 LMK；Java/JNI/proc 共用事实。动态统计与其他 ActivityManager 服务未提供；macOS/Linux 未实跑。"
+note = "ROM ActivityManager 经本地 IActivityManager 获取受检进程内存快照。availMem=MemFree+Cached，服务按 API19 HOME/CACHED 阈值计算 lowMemory；Java/JNI/proc 同源。无宿主内存采样、动态 LMK 或完整 AMS。"
 
 [dexvm.debug_process_memory]
 status = "partial"
 test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-239; tests/runtime/jni_android_platform_tests.cpp#DVM-239"
-note = "DVM-239/ADR-0118：原版 Debug.MemoryInfo；getMemoryInfo 校验后提交 KiB 快照，缺事实 UOE、非法数据 IAE、空参数 NPE；默认模型以 VM 堆计 dalvik、已映射私有 guest RAM 计 other。无 swap/共享内存、smaps 或宿主 RSS；GPU/媒体缓存、真实 residency 与其他 Debug API 未提供。"
+note = "DVM-239/ADR-0118：Debug 与 MemoryInfo 整类运行 ROM；getMemoryInfo 校验后提交 KiB 快照，缺事实 UOE、非法数据 IAE、空参数 NPE；默认模型以 VM 堆计 dalvik、已映射私有 guest RAM 计 other。无 swap/共享内存、smaps 或宿主 RSS；GPU/媒体缓存、真实 residency 与其他 Debug API 未提供。"
 
 [dexvm.activity_process_query]
 status = "partial"
 test = "tests/dexvm/android_context_services_tests.cpp#DVM228"
-note = "ActivityManager.getRunningAppProcesses 每次返回仅本进程的新列表和值对象，身份来自会话事实，importance 按 Activity 栈推导；仅本进程、不枚举宿主。不实现 AMS/Binder、其他进程查询或任务管理。"
+note = "ROM ActivityManager 经本地 IActivityManager 返回仅本进程的新列表和值对象，身份来自会话，importance 按受管 Activity 栈计算。无其他进程枚举或任务管理。"
 
 [dexvm.android_time]
 status = "partial"
@@ -2148,30 +2148,30 @@ status = "partial"
 test = "tests/dexvm/surfaceview_traversal_tests.cpp#DVM-339; tests/dexvm/videoview_tests.cpp#DVM-339; tests/dexvm/egl_facade_tests.cpp#DVM-339"
 note = "DVM-339：View holder支持独立固定buffer及回到View frame，每轴≤4096；Canvas/MediaPlayer/EGL按buffer生产、最近邻缩放到frame。NDK getter同步，已有EGL在下一swap更新backing；window holder与NDK setBuffersGeometry边界不变。CPU双后端可验证，GPU resize/像素与原APK待外验；未知holder及超预算明确失败。"
 
+[dexvm.sms]
+status = "partial"
+test = "tests/dexvm/android_context_services_tests.cpp#ROM SmsManager; tests/dexvm/android_context_services_tests.cpp#ROM SmsMessage; tools/bootdex/build_bootdex.py check"
+note = "SmsManager 与 SmsMessage 整类执行 API19 telephony-common.jar。进程内 ISms 拒绝发送、ICC、cell broadcast、IMS 及 premium SMS 服务调用，逐签名记账。PDU 解析由 ROM 处理，无 Phone/RIL 实例或短信传输。"
+
 [dexvm.notification_values]
 status = "partial"
 test = "tests/dexvm/android_pending_notifications_tests.cpp#DVM227; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
-note = "DVM-227/ADR-0109：Notification 有界 Java 值对象保留 API19 常见字段/常量、Bundle、默认及 icon/ticker/when 构造，普通字段/GC/统一 Clock 受检。setLatestEventInfo 对缺席的系统模板记账抛可捕获 UOE，不改现有值或构造 contentView。Parcelable/CREATOR 形状存在，传输拒绝；完整 Builder/Style/Action/RemoteViews 执行和反射闭包、clone、跨平台/完整游戏未验收。"
-
-[dexvm.notification_template]
-status = "unimplemented"
-test = "tests/dexvm/android_pending_notifications_tests.cpp#DVM227"
-note = "无 Android 系统通知模板/主题事实，合法 setLatestEventInfo 请求明确拒绝并记账，客户端可捕获 UOE 回退；null Context 按 Java NPE。不伪造布局或发布通知。"
+note = "ROM Notification 持有值字段、构造和 extras，测试覆盖 Clock、GC 及基本本地 Parcel 往返。系统通知发布由本地服务拒绝。"
 
 [dexvm.notification_parcel]
-status = "unimplemented"
+status = "partial"
 test = "tests/dexvm/android_pending_notifications_tests.cpp#DVM227"
-note = "Notification Parcel 构造/写出拒绝并记账，不提供跨进程通知传输；Parcelable 标记及 CREATOR.newArray 仅类型/普通数组语义。"
+note = "ROM Notification 与 TextUtils 执行原版 Parcel 值编解码，测试覆盖 icon、时间和字符串 ticker。无跨进程传输。"
 
 [dexvm.notification_cancel]
 status = "partial"
 test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_pending_notifications_tests.cpp#DVM-224"
-note = "DVM-224/ADR-0105：Context 缓存 BootDex NotificationManager；cancel/cancelAll 作用于当前应用已知的空通知集合，支持 null/空 tag 与任意 id，不取消 PendingIntent；跨包工厂或取消记账拒绝。无通知发布与持久库存。"
+note = "DVM-224：ROM NotificationManager 经本地 INotificationManager 取消当前包的空库存。支持 null/空 tag 和任意 id，跨包请求拒绝；取消不使 PendingIntent 失效。"
 
 [dexvm.notification_post]
 status = "unimplemented"
 test = "tests/dexvm/android_pending_notifications_tests.cpp#DVM-224"
-note = "通知发布禁用：notify(null) NPE，非空请求走 private nativeRejectPost，记账并抛 UnsupportedOperationException，不存储对象或静默丢弃。Notification 有界值对象独立纳入 DVM-227，不包含 Builder/RemoteViews 模板执行、状态栏、系统弹窗、声振、点击/删除 PendingIntent 派发、跨用户或通知持久化。"
+note = "ROM NotificationManager 向本地 INotificationManager 提交非空通知，服务记账并抛 UnsupportedOperationException。notify(null) 沿 ROM 抛 NPE。无发布、持久库存或 PendingIntent 派发。"
 
 [diagnostics.title_preflight]
 status = "partial"

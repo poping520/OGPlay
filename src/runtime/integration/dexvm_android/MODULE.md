@@ -4,7 +4,7 @@
 
 为 dex_activity 提供有界 android/javax.microedition intrinsic，将 session 的 VFS、UiTree、
 ANGLE、媒体、线程及平台事实接入 DexVM。禁止 title/厂商分支；不实现完整 Android、
-Binder/system_server、外部包数据库、Play 或手机系统服务。移动宿主经 HAL 接入（ADR-0086）。
+跨进程 Binder/system_server、外部包数据库、Play 或手机系统服务。移动宿主经 HAL 接入（ADR-0086）。
 
 `catalog.cpp` 唯一注册；每类一个 `Declare_<类名>(context)`，shape/handler 在所属
 content/os/view/graphics/gl/media/database/device family TU 同址。`shared.*` 仅跨类 helper；
@@ -42,17 +42,17 @@ locale 每次取当前 Locale.getDefault；setDefault 不修改设备事实。�
 Bionic 属性区、旧 headless HLE 与资源 locale qualifier 不属于此边界。
 
 
-ActivityManager.getRunningAppProcesses 的 private native 仅读取会话身份与 activity_stack，
-Java 创建列表和值对象；PID 与 Process/Context 权限查询共享常量。栈顶未 stopped（含
-onCreate/onStart）为前台，否则任一可见为 visible，其余为 cached 后台；仅本进程，不枚举宿主。
-
-ActivityManager.getMemoryClass/staticGetMemoryClass 读取本 VM 的初始 growth limit（不随 largeHeap 改变），
-getLargeMemoryClass/staticGetLargeMemoryClass 读取 maximum，单位 MiB；与 Runtime 内存查询
-共用 JavaObjectModel 配置，不读取宿主内存，不使用固定档位。
+ROM ActivityManager 通过本地 IActivityManager 获取内存和当前进程快照。栈顶未 stopped
+（含 onCreate/onStart）为前台，否则任一可见为 visible，其余为 cached 后台。内存档位由
+SystemProperties 读取本 VM 的常规 growth limit 与 maximum，largeHeap 不改变常规档位。
 
 Context→ContextWrapper→Application/Service/ContextThemeWrapper→Activity 层级固定。
-Application/base Context/ClassLoader/descriptor 身份稳定，wrapper 虚派委托 base；getClassLoader
-返回关联应用 facade，不取 receiver defining loader/Thread context loader。Activity 仅顶层，isChild=false。
+Context、ContextWrapper、PackageManager 整类执行 ROM；ContextImpl 和 ApplicationPackageManager
+分别持有应用环境与本地 IPackageManager，构造、attach 校验和虚派委托由原版 Java 管理。
+封存 APK 经 ROM ActivityThread.H 处理 bindApplication，LoadedApk/Instrumentation 创建 Application
+及 ContextImpl。Application 和各 Activity 使用独立的 ROM ContextImpl，应用 loader 由 ROM
+ApplicationLoaders 缓存，与 VM 应用类的 loader 同一对象。DexFile 仅接入已注册的当前 APK DEX。
+Activity 仍由 session 驱动，仅顶层，isChild=false。兼容层窗口和输入法入口由保留的 Activity 适配。
 Window/attributes/decor 按实例持有，decor 焦点由 owner 判定；Intent/结果字段及默认回调归 Java。
 Application 生命周期监听注册和快照派发归原版 BootDex。Activity 的 base 回调从
 getApplication 取得本进程对象并派发，时机遵循 guest 的 super 调用。
@@ -70,12 +70,18 @@ getApplication 取得本进程对象并派发，时机遵循 guest 的 super 调
 返回栈/命令/待结果为 GC roots，退出线程仅读 atomic 深度；挂起实例查自身内容，UiTree reset
 只清前台、后台保持附着及独立可见性。关闭拒绝新 launch/finish；自进程 Process.killProcess/
 Runtime.nativeExit 共用不可返回 VM 退出协议，展开 Java 并终止 execution contexts，System.exit
-不得返回，外部进程拒绝。无 Binder/AMS/LMK、任务管理或宿主内存采样。
+不得返回，外部进程拒绝。本地 AMS 查询不执行 LMK、任务管理或宿主内存采样。
 
 | 内存查询 | 平台边界 |
 | --- | --- |
-| ActivityManager.MemoryInfo | Java 字段/算法，nativeRead 写注入快照；availMem=(free+cached)*1024，64 位字段/阈值完整提交，lowMemory 比较归 Java；缺内存事实 UOE，wrapper 共用 base |
-| Debug.MemoryInfo | 原版字段/构造/汇总/Parcel；仅当前进程，注入值优先 provider，全部校验后提交；缺事实/忙 UOE，非法数据 IAE，null NPE；无 PID 查询/trace/DDMS |
+| ActivityManager.MemoryInfo | ROM 值类，本地 AMS 写入注入快照；availMem=(free+cached)*1024，服务按 API19 阈值计算 lowMemory；缺内存事实 UOE，wrapper 共用 base |
+| Debug.MemoryInfo | Debug 与 MemoryInfo 整类执行 ROM；native 写入快照，原版字段/构造/汇总/Parcel；仅当前进程，注入值优先 provider，全部校验后提交；缺事实/忙 UOE，非法数据 IAE，null NPE；无 PID 查询/trace/DDMS |
+
+SystemClock 只绑定 native 时间源，sleep 执行 ROM；Process 的 myPid/myUid/myTid 经
+Libcore.os 的 Posix native 读取本进程事实，优先级不映射宿主调度。sendSignal 仅允许本 PID
+的 SIGKILL，沿不可返回退出协议；其他信号/外部 PID 按方法记账拒绝。Trace 的 native
+只启用 view 调试标签并写结构化日志，不探测宿主 tracing。Environment 整类执行 ROM，
+路径从 guest environ 读取，卷查询经本地 IMountService 提供唯一外置 VFS 卷。
 
 ## PackageManager、权限与路径
 
@@ -92,7 +98,7 @@ key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保
 | getInstalledApplications | 封存单包清单，0/GET_META_DATA/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）；原 ArrayList/独立 ApplicationInfo，含禁用应用；缺清单/身份/guest 路径或未知 flags UOE |
 | getInstallerPackageName(String) | 当前直接加载 APK 无安装器记录则 null；未知包（含空串/system/null）IAE，不推测商店 |
 | getResourcesForApplication(String) | 当前包共用应用 Resources/AssetManager；未知包（含空串/system）NameNotFoundException，null NPE；无跨包/其他重载 |
-| getPackageArchiveInfo | 当前封存只读 APK、VFS 规范路径，0/GET_ACTIVITIES/GET_DISABLED_COMPONENTS；UID=-1、安装目录=null/时间=0；缺路径/非普通文件 null，未登记归档/缺事实/未知 flags 失败 |
+| getPackageArchiveInfo | ROM PackageManager/PackageParser 从 guest VFS 中的 APK 解析 Manifest，不复用安装清单；缺路径或损坏归档沿 ROM 返回 null。无包安装或外部包数据库 |
 | getApplicationInfo | 当前包，0/GET_META_DATA/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）；外部包 NameNotFoundException |
 | getPackageInfo | GET_ACTIVITIES/META_DATA/PERMISSIONS/UNINSTALLED_PACKAGES 组合（单包清单下 GET_UNINSTALLED_PACKAGES 不改变结果）；activities 仅请求时按声明顺序发布、保留 alias，默认排除禁用项，否则 null |
 | getActivityInfo/getReceiverInfo/getServiceInfo | 当前包完整组件名，0/GET_META_DATA/GET_DISABLED_COMPONENTS/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）；按应用/组件启用状态过滤，缺失 NameNotFoundException，同名 Activity/receiver/service 取最后声明 |
@@ -107,7 +113,7 @@ permission/exported 不限制声明查询。外部包、selector/component/data/
 未知 flags/缺 inventory 不伪装零匹配。服务查询不启动进程；正匹配 resolver/同进程 started service
 未实现。独立进程/isolated 服务 start 返回 null、bind 返回 false，每次记账并限流 warn，
 PackageManager 保留清单事实（[ADR-0170](../../../../docs/adr/runtime.md#adr-0170)）。显式绑定在主 Looper 异步 construct/attach/onCreate/onBind 后交付原本地 Binder；
-同组件共享，末次解绑 onUnbind/onDestroy，排队后解绑取消回调，null onBind 无连接回调。
+同组件共享，创建、绑定、解绑和停止经 ROM ActivityThread.H 排队；回调及释放按 ROM 调度。
 连接早于 bind 结果登记、失败可解绑一次；Context 强边/session roots 保活连接/Intent/服务，退出清理；
 定向反射不解析无关签名。
 
@@ -117,20 +123,33 @@ null permission IAE。checkCallingPermission 无 Binder 时总 denied，CallingO
 code/resource 共用 `/data/app/<package>-1.apk`，files/cache 经 VFS；getFileStreamPath/openFileInput/
 openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆盖/APPEND 追加。getDir(name,PRIVATE)
 返回 `app_<name>`，mkdir 失败仍返回 File、实际 IO 由 VFS 判定；名称含 `/` IAE，null/空串沿 API19
-拼接，缺 VFS/其他模式失败。getObbDir(s) 经 overlay 建 primary external 的 `Android/obb/<package>`；
-无跨应用权限模式，wrapper 委托 base。
+拼接，路径由 LoadedApk 的安装信息固定，不随宿主元数据改写。文件流和目录操作使用 VM 已绑定的 VFS；
+getObbDir(s) 经 ROM Environment 与挂载服务取得 primary external 的 `Android/obb/<package>`。
+权限设置保留现有 VFS 的未实现记账，返回值按 ROM 处理。
 
 ## 服务、设备与网络边界
 
+ROM ServiceManager 经 BinderInternal 取得进程内服务目录。注册表和 Stub 归当前 VM，
+Stub.asInterface 返回 queryLocalInterface 的本地对象，缺席按服务名记账并返回 null。
+calling identity 固定为进程 UID/PID，StrictMode mask 按执行上下文隔离。无跨进程 Binder。
+
 | 能力 | 支持范围与所有权 |
 | --- | --- |
-| Settings/SystemProperties | 原 Java 协议/转换/moved-key，仅 overlay NameValueCache：Secure 读沙盒身份、System 进程隔离表且有效值变更通知进程内观察者（重复值不通知）、Secure/Global 特权写记账 false 且不通知；SystemProperties 仅受审 native；观察者树归 Java，无 Provider 事件/跨用户/sync/host 设置 |
-| Notification | base Context 缓存 manager（独立无 Application 时用当前 Context）；字段/构造/from/重载归 Java。仅当前包取消已知空集合，不建表/保活通知/改 PendingIntent；未知不视为空，新增发布须更新 backing。发布及跨包 factory/取消/发布拒绝记账；值构造/extras 支持，模板/Parcel 分别 UOE、不改对象/contentView，null Context NPE；Parcelable 标记无传输，无系统展示/声振/点击/外部生产者/持久库存 |
-| NFC | 正常构造/缓存原 NfcManager，构造器捕获 native 工厂 UOE 后保存 null，查询/参数错误沿 API19、无 NFC feature；越界记账失败，无监听/通信 |
-| PendingIntent/AlarmManager | 当前 APK service/broadcast 令牌，创建不解析/启动目标；原 Intent 复制/filterEquals/replaceExtras 快照，extras 不参与身份，种类/包/requestCode/ONE_SHOT/fill-in flags 参与，NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT 控制查找，CANCEL_CURRENT\|NO_CREATE 返回旧已取消令牌。仅普通 Intent/BootDex Uri；selector/content MIME provider/未知 flags/Parcel/克隆失败。VM 锁串行 registry、非永久根，live wrapper trace Intent、GC 删除记录、包装同对象；闹钟条目为 session roots。alarm 单例，cancel(null/无匹配) 正常，移除闹钟不取消令牌；令牌 cancel 后不匹配。退出停止创建/清理；注册/调度/send/started service UOE |
-| Connectivity/Wifi | core policy/transport 默认离线，仅注入事实，无 host 网络/DNS/代理/证书探测。默认断开的逻辑 WiFi，可声明类型缺席；独立原版 NetworkInfo=DISCONNECTED/不可用、活动网络 null/Wifi 禁用。NetworkInfo 查询需 ACCESS_NETWORK_STATE，缺事实/online policy UOE，不支持类型按 API19 null；NetworkInfo 值/枚举/Parcel/范围算法归 Java，native 校验并调用原构造/setter。getConnectionInfo 需 ACCESS_WIFI_STATE，离线返回独立 WifiInfo（networkId=-1、UNINITIALIZED、MAC=null）；无在线 provider/事件/无线控制；同一离线拓扑派生只读 lo 内核视图与本地地址 ioctl，不受 transport IO 授权限制 |
-| WifiLock/MulticastLock | Java 客户端/native 租约；校验 WAKE_LOCK、mode 1/2/3 或 CHANGE_WIFI_MULTICAST_STATE（获取/释放均受检），每 manager 合计≤50，owner/GC/退出释放；不改变连接/网卡/组播，无 WorkSource/无线服务（ADR-0092/0093） |
-| Sensor/Telephony/Location/Keyguard | Sensor 算法/缓存/Legacy 位掩码/监听映射归 Java，Context 执行原 LocalSensorManager 构造；native 读取与 NDK 共用的注入设备目录（当前仅空目录）、注册 false、无登记注销，Legacy 旋转为 managed viewport ROTATION_0，无 WMS/C++ 副本/伪回调。电话按 API 允许缺席，getSubscriberId 公开可覆盖、无订阅 null，Java/JNI 同源；listen(null) 沿 API19 捕获 NPE 返回。location 仅值/listener/facade，无 provider/历史，更新注册/移除失败。Keyguard 不缓存对象，三查询读进程 provider，未注入为桌面无锁屏；无 Sensor/SystemUI/WMS 事件源不伪造回调 |
+| Settings/SystemProperties | ROM NameValueCache 通过本地 Settings provider 读取沙盒 Secure 身份和进程内 System/Global 表。System 有效值变更递增版本并由 IContentService 通知观察者。Secure/Global 特权写记账 false。SystemProperties 从显示和 VM 配置读取密度、常规堆上限和最大堆；无跨用户、同步适配器或宿主设置。 |
+| Notification | ROM Notification/NotificationManager 持有字段、构造、extras 与本地 Parcel 值；本地 INotificationManager 只取消当前包空库存，发布和跨包访问记账拒绝。无系统展示、声音、点击或持久库存 |
+| SMS | SmsManager 和 SmsMessage 来自原样的 telephony-common.jar。PDU 由 ROM 解析。本地 ISms 的 14 个入口按签名记账拒绝，无 Phone/RIL、SIM 存储或短信传输 |
+| NFC | ROM NfcAdapter 经 IPackageManager 查询 NFC feature，缺席时 NfcManager 捕获 UOE，默认适配器为 null；无监听或通信 |
+| PendingIntent/AlarmManager | 当前 APK service/broadcast 令牌，创建不解析/启动目标；原 Intent 复制/filterEquals/replaceExtras 快照，extras 不参与身份，种类/包/requestCode/ONE_SHOT/fill-in flags 参与，NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT 控制查找，CANCEL_CURRENT\|NO_CREATE 返回旧已取消令牌。仅普通 Intent/BootDex Uri；selector/content MIME provider/未知 flags/Parcel/克隆失败。VM 锁串行 registry、非永久根，ROM 包装按本地 IIntentSender 的 Binder 身份比较，活令牌追踪 Intent，GC 删除记录；闹钟条目为 session roots。ROM AlarmManager 经本地 IAlarmManager，cancel(null/无匹配) 正常，移除闹钟不取消令牌；令牌 cancel 后不匹配。退出停止创建/清理；注册/调度/send/started service UOE |
+| Connectivity/Wifi | core policy/transport 默认离线，仅注入事实，无 host 网络/DNS/代理/证书探测。默认断开的逻辑 WiFi，可声明类型缺席；独立原版 NetworkInfo=DISCONNECTED/不可用、活动网络 null/Wifi 禁用。NetworkInfo 查询需 ACCESS_NETWORK_STATE，缺事实/online policy UOE，不支持类型按 API19 null；ROM ConnectivityManager 通过本地 IConnectivityManager 查询，服务调用原 NetworkInfo 构造/setter。getConnectionInfo 需 ACCESS_WIFI_STATE，离线返回独立 WifiInfo（networkId=-1、UNINITIALIZED、MAC=null）；无在线 provider/事件/无线控制；同一离线拓扑派生只读 lo 内核视图与本地地址 ioctl，不受 transport IO 授权限制 |
+| USB/备份 | ROM UsbManager 使用本地 IUsbManager，设备列表为空，配件缺席，打开设备返回 null，权限查询 false，其他操作按签名拒绝。ROM BackupManager 保留服务缺席语义，备份请求不排队，恢复请求返回 -1、无恢复会话。 |
+| WifiLock/MulticastLock | ROM WifiManager 计数、held 和每 manager 50 锁上限；本地 IWifiManager 校验锁模式及 WAKE_LOCK/CHANGE_WIFI_MULTICAST_STATE 权限，不改变连接、网卡或组播。 |
+| Sensor/Telephony/Location/Keyguard | ROM SystemSensorManager 从与 NDK 共用的空设备目录枚举。ROM LegacySensorManager 经 IWindowManager 查询固定 ROTATION_0。ROM KeyguardManager 的三项查询经本地 IWindowManager 读取进程 provider，缺席表示桌面无锁屏。ROM TelephonyManager 经本地 IPhoneSubInfo 读取注入的设备标识、软件版本和号码，无订阅时 subscriberId=null；ITelephony 报告 PHONE_TYPE_NONE。SIM/运营商查询由 ROM 读取进程 SystemProperties；ITelephonyRegistry 保存无事件的弱注册，PhoneStateListener 原版持有 callback，listen(null) 由 ROM 捕获 NPE。位置无 provider 或历史，更新注册/移除失败。 |
+| Vibrator | ROM SystemVibrator 经本地 IVibratorService 查询硬件缺席；单次请求及取消更新进程事实，模式请求按签名失败，不驱动宿主硬件。 |
+
+本包启用的同进程 provider 由 ROM ActivityThread 按 initOrder 安装，AMS 按 authority 登记。
+本地 IContentService 按 authority 与路径匹配观察者，使用 ROM ContentObserver transport 分发。
+同进程 Service 的创建、绑定、命令及销毁通过 IApplicationThread 投递；动态 Receiver 通过 ROM dispatcher
+处理进程内无序广播。受权限保护的 sticky 保留未定向的 action 快照；电池快照声明无电池。
 
 ## 资源、图像与存储
 
@@ -160,9 +179,9 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   空间采样，见 [ADR-0122](../../../../docs/adr/runtime.md#adr-0122)。SQLite 固定真实引擎，只经 VFS
   访问主库/journal/临时文件；Java 拥有事务/连接池/Cursor，native 仅 ABI/token/错误码/受审配置。
   损坏由引擎/原处理器判定，teardown 取消/关闭 host 资源；CursorWindow 有界且遵循
-  requiredPos/countAllRows，时间经 Clock，journal=DELETE、无 WAL。SharedPreferences 按 context/package
-  持久化 XML，editor/listener 遵循 owner/state-table 契约。
-- Parcel 协议归 Java，平台提供 VM 隔离 backing/游标/本地 Binder identity，记录为 GC 强边；长度
+  requiredPos/countAllRows，时间经 Clock，journal 模式取 ROM 资源配置、无 WAL。SharedPreferencesImpl/EditorImpl 整类执行 ROM，
+  应用数据根的 XML 经同一 VFS 持久化；缓存、监听和 apply 排队由原版 Java 管理，无宿主偏好表。
+- Parcel 由 ROM 初始化，native 提供 VM 隔离 backing/游标及本地 Binder 记录。GC 通过 Java token 追踪记录并回收 backing。长度
   先验、含对象拒绝 marshall、无 FD/远程 Binder。Binder 线程策略保存 mask/GATHER 但仅记录；
   StrictMode 只查询/清理无 violation 状态，无检测/violation 编解码，异常编码仍归 Java。
 - Parcel 的 open/dup/close/clearFileDescriptor 经 guest VFS；clear 只解除登记并置 -1，不关闭 fd。
@@ -449,16 +468,19 @@ JavaTraversal 在 owner 安全点接通未附着 producer 的排队初始化；n
 onPause/onResume 在所属线程确认、释放/恢复 EGLSurface，Context 按 preserve 保留/重建，
 backend context-loss 按验证范围记账。
 
-Handler/Looper/HandlerThread/AsyncTask 共用 scheduler，同 uptime deadline 按 sequence FIFO；
-主 Looper 在 lifecycle safe point 泵送、子 Looper 在对应 host 线程执行，不同步伪装 post。
+Handler、Looper、Message、MessageQueue、HandlerThread、AsyncTask 由 ROM 执行。
+MessageQueue native 等待按统一 uptime，Clock 推进唤醒等待。同步屏障、异步消息与 IdleHandler
+由 Java 队列排序。主 Looper 在 guest owner 线程连续执行；帧安全点保留有界到期消息泵用于现有遍历顺序。
 View.post/postDelayed 以 Java mParent 链到达存活受管窗口根（非零附着代次）判定附着，
 不读取 ui_tree 投影；附着时进入单一 ViewRoot Handler。detached 按 guest 线程暂存，
 存在该窗口后在相同线程 lifecycle safe point 转入，delay 从转入起算。负 delay 为零、
 null Runnable 抛 NPE、始终异步；pending/scheduled Runnable 为 session roots，shutdown 清空。
 不构造 AttachInfo/ViewRootImpl/RunQueue；其他 View posting API 仍按配方明确失败。
-Clock 默认确定性 60 秒 boot-age，无 suspend 时 uptime/elapsedRealtime 同源。
-prepare_native_looper 显式关联 Java/native 线程、主 Looper 仅首次关联，查询/消息泵不重 prepare；
-Java scheduler 持消息，quit 不清存活线程 native Looper。root Thread 稳定、空泵不重入 Java/VM 锁；
+ROM SystemClock.sleep 走 Java Thread.sleep；Clock 默认确定性 60 秒 boot-age，无 suspend 时 uptime/elapsedRealtime 同源。
+MessageQueue native 与 NDK ALooper 使用同一线程的 boundary Looper、wake 位和 poll 等待。
+Java 的延迟/屏障仍归 ROM MessageQueue，native 用统一 uptime 判断期限；Clock 推进、队列唤醒及退出
+通过显式接口唤醒同一个 native Looper。独立 VM 单测没有 native process 时复用条件变量等待。
+Java 队列持消息，quit 不清存活线程 native Looper。root Thread 稳定；
 排队工作只在队内是 session root，有到期工作时从出队到调用持 VM 锁，防止其他 Java 线程在此间回收；
 myQueue/getQueue 共享稳定队列身份；runOnUiThread 仅 root 同步虚派、worker 投主 Looper。worker join 后/root
 JNI detach 前释放 token；AsyncTask DexVmError 保留故障并终止，不转 null/继续 onPostExecute，Thread/JNI
@@ -509,7 +531,8 @@ onReceivedError(ERROR_UNSUPPORTED_SCHEME)，javascript 仅日志，stop/destroy 
 
 ## JNI、诊断与验证边界
 
-load/loadLibrary 经 process loader 携 application ClassLoader，失败为 Java 异常；soundpool/media_jni
+load/loadLibrary 经 process loader 携 application ClassLoader，应用调用 loadLibrary 先走 ROM
+PathClassLoader.findLibrary 的 VFS 搜索，失败为 Java 异常。soundpool/media_jni
 仅平台库身份、不加载 ELF，固定 Conscrypt javacrypto 映射 ogplay_jni、其他名称不改写。JNI 对象按
 真实 runtime class 原子幂等注册，数组元素不猜声明类型。Mac/MacSpi/HmacSHA1 SPI 归 BootDex/
 Conscrypt，经 AOSP NativeCrypto ABI 调 guest ARM libcrypto、token 共用 GC/teardown；无 BKS/KeyStore/
@@ -857,13 +880,11 @@ dispose 幂等，原 CloseGuard/finalize 与 GC sweep 同样退役，排队后�
 timestampNanos=统一 Clock uptime×1e6，与 System.nanoTime 同基，displayId=0，帧计数单调；
 停止即清登记/禁派发，无 hotplug、无 debug.choreographer 属性注入或 vsync=false 回退。
 Application 回调前已准备主 Looper。Message.obtain(Handler,Runnable) 保存原 callback，
-Handler 队首先入后出，普通同 deadline 先入先出；异步 flags 保存/复制但不改变排序，
-没有同步屏障。Handler.dispatchMessage 先 Runnable，再 Handler.Callback，最后虚派 handleMessage。
-DisplayManagerGlobal.getInstance/getDisplayInfo(0) 为注入显示事实的精确 overlay，
-refreshRate=display_refresh_rate_hz（逻辑显示默认 60，非法值 UOE），尺寸/density 与 context 同源；
-Display.getRefreshRate 读取同一显示事实；其他 display ID 返回 null，不接入 Binder/系统显示服务。
-工作线程 Looper 达单批消息预算后释放 VM 锁并继续，不因正常的立即重投消息终止线程；
-生命周期主 Looper 的单次泵预算与明确失败保留。属性动画通过 DVM-337 另行准入。
+Handler 队首先入后出、普通同 deadline 先入先出，Message.obtain(Message) 不复制异步标记。
+ROM DisplayManagerGlobal 经本地 IDisplayManager 查询唯一逻辑显示，ROM Display 使用同源尺寸、
+density 与刷新率（默认 60）；未知 ID 返回 null。服务接受 ROM 内部回调注册，固定显示无事件。
+WindowManagerImpl 与过渡期 DisplayManager 缓存共用默认 Display。Wi-Fi 与虚拟显示入口记账失败。
+属性动画通过 DVM-337 另行准入。
 
 DVM-337：ValueAnimator（AnimationHandler）/ObjectAnimator/PropertyValuesHolder 及原版数值
 Evaluator 沿 API19 ROM Java 算法执行；动画只消费上述主 Looper Choreographer CALLBACK_ANIMATION，

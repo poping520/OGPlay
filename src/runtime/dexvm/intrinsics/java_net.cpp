@@ -214,7 +214,14 @@ IntrinsicClassDecl DeclareProxySelector() {
         // route planner treats a null selector as a direct route.
         return VmValue::Ref(VmObjectRef{});
     });
-    builder.UnimplementedStatic("setDefault", "(Ljava/net/ProxySelector;)V");
+    builder.StaticMethod("setDefault", "(Ljava/net/ProxySelector;)V", [](IntrinsicContext& context) {
+        if (context.arguments[0].ref.IsValid()) {
+            if (auto* ledger = context.vm.Ledger())
+                ledger->RecordUnimplemented("java.net.ProxySelector.setDefault(Ljava/net/ProxySelector;)V", 0);
+            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "custom proxy selectors are unsupported"};
+        }
+        return VmValue::Void();
+    });
     builder.UnimplementedVirtual("select", "(Ljava/net/URI;)Ljava/util/List;");
     builder.UnimplementedVirtual("connectFailed", "(Ljava/net/URI;Ljava/net/SocketAddress;Ljava/io/IOException;)V");
     return std::move(builder).Build();
@@ -784,6 +791,20 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
                                               kAccPublic | kAccFinal);
     posix.MergesBootClass();
 #include "api19_posix_natives.inc"
+    if (services.process_id)
+        posix.VirtualMethod(
+            "getpid", "()I", [identity = services.process_id](IntrinsicContext&) { return VmValue::Int(identity()); },
+            kAccPublic | kAccNative);
+    if (services.process_uid)
+        posix.VirtualMethod(
+            "getuid", "()I", [identity = services.process_uid](IntrinsicContext&) { return VmValue::Int(identity()); },
+            kAccPublic | kAccNative);
+    if (services.current_thread_id)
+        posix.VirtualMethod(
+            "gettid", "()I",
+            [identity = services.current_thread_id](IntrinsicContext& call) { return VmValue::Int(identity(call.vm)); },
+            kAccPublic | kAccNative);
+
     posix.VirtualMethod("sysconf", "(I)J", [cores = services.cpu_cores](IntrinsicContext& call) {
         const auto selector = call.arguments[0].AsInt();
         if (selector == 96 || selector == 97) return VmValue::Long(cores);

@@ -1,5 +1,7 @@
+#include "runtime/integration/dexvm_android/shared.h"
 #include "dexvm/resource_fixture.h"
 #include "boot_dex.h"
+#include "ogplay/runtime/integration/apk_assets.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 
@@ -22,7 +24,92 @@ std::vector<std::byte> ReadTestSystemFont(std::string_view name) {
     return bytes;
 }
 
-void AttachViewTestContext(runtime::dexvm::Interpreter& vm, runtime::dexvm::VmObjectRef owner) {
+runtime::dexvm::VmObjectRef MakeRomAppContext(runtime::dexvm::Interpreter& vm,
+                                              const std::shared_ptr<runtime::DexVmAndroidContext>& context) {
+    using namespace runtime::dexvm;
+    using namespace runtime::android_intrinsics;
+    if (context->application_base_context.IsValid()) return context->application_base_context;
+    if (context->ApkBytes().empty()) {
+        const std::array entries{std::pair{std::string("fixture"), std::vector<std::byte>{}}};
+        context->apk_bytes = resources::Zip(entries);
+    }
+    MountResourceFixture(*context, vm);
+    if (context->vfs) {
+        for (const auto& path :
+             {std::string("/data"), std::string("/data/data"), "/data/data/" + context->package_name}) {
+            try {
+                context->vfs->CreateDirectory(path);
+            } catch (const runtime::VfsError& error) {
+                if (error.ErrorNumber() != 17) throw;
+            }
+        }
+    }
+    auto& loaded = context->singletons["fixture_loaded_apk"];
+    auto& thread = context->singletons["fixture_activity_thread"];
+    if (!loaded.IsValid()) {
+        thread = NewPlatformObject(vm, "Landroid/app/ActivityThread;", "()V", {});
+        const auto instrumentation = NewPlatformObject(vm, "Landroid/app/Instrumentation;", "()V", {});
+        const auto instrumentation_field = vm.Linker().FindFieldRecursive(
+            vm.Model().ObjectClass(thread), "mInstrumentation", "Landroid/app/Instrumentation;");
+        if (!instrumentation_field) throw std::runtime_error("fixture ActivityThread has no Instrumentation");
+        vm.Model().InstanceSlots(thread)[vm.Linker().Field(*instrumentation_field).slot] = {instrumentation.Value(),
+                                                                                            SlotTag::ref};
+        IntrinsicContext call{vm, VmObjectRef{}, {}};
+        const auto info = MakeApplicationInfo(call, context, false);
+        const auto info_root = vm.ProtectReferences(std::array{info});
+        const auto compat_type = vm.Linker().ResolveDescriptor("Landroid/content/res/CompatibilityInfo;");
+        const auto result = vm.EnsureClassInitialized(compat_type);
+        if (result.exception.IsValid()) throw std::runtime_error(result.exception_message);
+        const auto field = vm.Linker().FindFieldRecursive(compat_type, "DEFAULT_COMPATIBILITY_INFO",
+                                                          "Landroid/content/res/CompatibilityInfo;");
+        if (!field) throw std::runtime_error("fixture compatibility info is unavailable");
+        const auto compat = VmObjectRef{vm.Linker().Class(compat_type).static_storage[vm.Linker().Field(*field).slot]};
+        // Seed the ResourcesManager with the same configuration that the local
+        // activity service sends to handleBindApplication in a real process.
+        const auto resources = CreateApplicationResources(call, context);
+        const auto resources_root = vm.ProtectReferences(std::array{resources});
+        const auto config =
+            CallAndroidMethod(vm, resources, "getConfiguration", "()Landroid/content/res/Configuration;").ref;
+        const auto config_root = vm.ProtectReferences(std::array{config});
+        const auto manager_type = vm.Linker().ResolveDescriptor("Landroid/app/ResourcesManager;");
+        const auto get_manager =
+            vm.Linker().FindDirectMethod(manager_type, "getInstance", "()Landroid/app/ResourcesManager;");
+        if (!get_manager) throw std::runtime_error("fixture ResourcesManager is unavailable");
+        const auto manager = vm.Call(*get_manager, {});
+        if (manager.exception.IsValid()) throw std::runtime_error(manager.exception_message);
+        static_cast<void>(
+            CallAndroidMethod(vm, manager.value.ref, "applyConfigurationToResourcesLocked",
+                              "(Landroid/content/res/Configuration;Landroid/content/res/CompatibilityInfo;)Z",
+                              {VmValue::Ref(config), VmValue::Ref(compat)}));
+
+        loaded = NewPlatformObject(
+            vm, "Landroid/app/LoadedApk;",
+            "(Landroid/app/ActivityThread;Landroid/content/pm/ApplicationInfo;Landroid/content/res/CompatibilityInfo;Ljava/lang/ClassLoader;ZZ)V",
+            {VmValue::Ref(thread), VmValue::Ref(info), VmValue::Ref(compat), VmValue::Ref(VmObjectRef{}),
+             VmValue::Int(0), VmValue::Int(0)});
+        context->singletons["fixture_application"] =
+            CallAndroidMethod(vm, loaded, "makeApplication",
+                              "(ZLandroid/app/Instrumentation;)Landroid/app/Application;",
+                              {VmValue::Int(1), VmValue::Ref(VmObjectRef{})})
+                .ref;
+    }
+    const auto type = vm.Linker().ResolveDescriptor("Landroid/app/ContextImpl;");
+    const auto method = vm.Linker().FindDirectMethod(
+        type, "createAppContext", "(Landroid/app/ActivityThread;Landroid/app/LoadedApk;)Landroid/app/ContextImpl;");
+    if (!method) throw std::runtime_error("fixture app Context factory is unavailable");
+    const auto result = vm.Call(*method, std::array{VmValue::Ref(thread), VmValue::Ref(loaded)});
+    if (result.exception.IsValid()) throw std::runtime_error(result.exception_message);
+    context->singletons["resources"] =
+        CallAndroidMethod(vm, result.value.ref, "getResources", "()Landroid/content/res/Resources;").ref;
+    const auto assets =
+        CallAndroidMethod(vm, context->singletons.at("resources"), "getAssets", "()Landroid/content/res/AssetManager;")
+            .ref;
+    context->application_resource_manager = runtime::ResolveResourceAssetManager(vm, *context, assets);
+    return result.value.ref;
+}
+
+void AttachViewTestContext(runtime::dexvm::Interpreter& vm, runtime::dexvm::VmObjectRef owner,
+                           const std::shared_ptr<runtime::DexVmAndroidContext>& state) {
     using namespace runtime::dexvm;
     const auto roots = vm.ProtectReferences(std::array{owner});
     const auto wrapper = vm.Linker().ResolveDescriptor("Landroid/content/ContextWrapper;");
@@ -36,7 +123,7 @@ void AttachViewTestContext(runtime::dexvm::Interpreter& vm, runtime::dexvm::VmOb
             owner = base;
             continue;
         }
-        const auto context = vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto context = MakeRomAppContext(vm, state);
         const auto slot = vm.Linker().FindVtableIndex(type, "attachBaseContext", "(Landroid/content/Context;)V");
         if (!slot) throw std::runtime_error("fixture ContextWrapper has no attachBaseContext");
         const auto result =

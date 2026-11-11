@@ -69,7 +69,8 @@
   receiver 独立保存规范类名、enabled/exported、继承或覆盖的 process/permission 与自身
   `meta-data`；exported 缺省取决于 intent-filter 是否存在。receiver 不混入 Activity 列表。
   service/receiver 与 Activity 一样保留所有同名声明，不合并配置或过滤器；运行时按名取后项，
-  intent 查询保留逐声明匹配并按组件去重。provider 仍无清单投影，不新增 provider 子系统。
+  intent 查询保留逐声明匹配并按组件去重。provider 保存规范类名、authority、enabled/exported、
+  process、读写权限、URI 授权标志、initOrder 和自身 meta-data，供进程内 ActivityThread 安装。
   receiver 同样逐个保存 intent-filter，不合并 action/category；共用过滤器事实还保留
   signed priority、label/icon，供上层查询返回与排序。
   Manifest 顶层 supports-gl-texture 按 ADR-0128 保留 android:name 原始声明，按声明序去重，

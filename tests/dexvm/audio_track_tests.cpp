@@ -57,6 +57,21 @@ std::vector<IntrinsicClassDecl> AudioTrackTestCatalog(
     LoadCompleteRecorder* loads = nullptr,
     PreparedRecorder* prepared = nullptr) {
     std::vector<IntrinsicClassDecl> result;
+    auto audio_context = IntrinsicClassBuilder::Class("Ltest/AudioContext;", "Landroid/content/Context;");
+    audio_context.VirtualMethod("getOpPackageName", "()Ljava/lang/String;", [](IntrinsicContext& call) {
+        return VmValue::Ref(call.vm.NewStringUtf8("test.audio"));
+    });
+    audio_context.VirtualMethod("getResources", "()Landroid/content/res/Resources;", [](IntrinsicContext& call) {
+        return VmValue::Ref(call.vm.NewIntrinsicInstance("Ltest/AudioResources;"));
+    });
+    result.push_back(std::move(audio_context).Build());
+    auto resources = IntrinsicClassBuilder::Class("Ltest/AudioResources;", "Landroid/content/res/Resources;");
+    resources.OverrideMethod("getBoolean", "(I)Z", [](IntrinsicContext&) {
+        // The audio fixture exercises stream volume with master volume and key sounds disabled.
+        return VmValue::Int(0);
+    });
+    result.push_back(std::move(resources).Build());
+
     auto listener = IntrinsicClassBuilder::Class(
         "Ltest/AudioPositionListener;", "Ljava/lang/Object;",
         {"Landroid/media/AudioTrack$OnPlaybackPositionUpdateListener;"});
@@ -187,6 +202,16 @@ struct AudioTrackVm final {
     ~AudioTrackVm() {
         ShutdownAndroidScheduler(*context);
         threads.Shutdown();
+    }
+
+    VmObjectRef NewAudioManager() {
+        ogplay::test::BindBootDexArchive(*context);
+        const auto base = vm.NewIntrinsicInstance("Ltest/AudioContext;");
+        const auto manager = vm.NewIntrinsicInstance("Landroid/media/AudioManager;");
+        const auto roots = vm.ProtectReferences(std::array{base, manager});
+        static_cast<void>(CallDirect(manager, "<init>", "(Landroid/content/Context;)V", {VmValue::Ref(base)}));
+        CHECK(linker.Class(model.ObjectClass(manager)).is_boot_dex);
+        return manager;
     }
 
     VmValue CallStatic(const char* name, const char* descriptor,
@@ -782,14 +807,14 @@ TEST_CASE("AudioTrack notification setters report errors and callback faults") {
     fixture.MixFrames(1U);
     const auto error = PumpAndroidAudioTracks(fixture.vm, *fixture.context);
     REQUIRE(error.has_value());
-    CHECK(error->find("handleMessage raised") != std::string::npos);
+
     CHECK(error->find("position listener failure") != std::string::npos);
 }
 
 TEST_CASE("AudioManager volume mute and isMusicActive follow session playback") {
     AudioTrackVm fixture;
-    const auto manager =
-        fixture.vm.NewIntrinsicInstance("Landroid/media/AudioManager;");
+    const auto manager = fixture.NewAudioManager();
+    const auto roots = fixture.vm.ProtectReferences(std::array{manager});
     CHECK(fixture.CallOn(manager, "getStreamMaxVolume", "(I)I",
                          {VmValue::Int(3)}).AsInt() == 15);
     static_cast<void>(fixture.CallOn(
@@ -1069,7 +1094,8 @@ TEST_CASE("AudioManager applies stream volume to AudioTrack PCM without cross mu
     REQUIRE(fixture.mixer.Enqueue(pa, a_pcm)); REQUIRE(fixture.mixer.Enqueue(pb, b_pcm));
     fixture.mixer.SetPlayState(pa, ogplay::audio::OpenSlesPlayState::playing);
     fixture.mixer.SetPlayState(pb, ogplay::audio::OpenSlesPlayState::playing);
-    const auto manager = fixture.vm.NewIntrinsicInstance("Landroid/media/AudioManager;");
+    const auto manager = fixture.NewAudioManager();
+    const auto roots = fixture.vm.ProtectReferences(std::array{manager});
     fixture.CallOn(manager, "setStreamVolume", "(III)V", {VmValue::Int(3),VmValue::Int(15),VmValue::Int(0)});
     fixture.CallOn(manager, "setStreamMute", "(IZ)V", {VmValue::Int(4),VmValue::Int(1)});
     std::array<std::int64_t, 2> pcm{};

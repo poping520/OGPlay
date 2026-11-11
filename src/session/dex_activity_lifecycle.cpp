@@ -1,7 +1,9 @@
 #include "ogplay/session/dex_activity_lifecycle.h"
+#include "ogplay/runtime/integration/apk_assets.h"
 #include "ogplay/session/ui_compositor.h"
 
 #include "ogplay/runtime/dexvm/vm_monitors.h"
+#include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/debug/stall_diagnostics.h"
 
 #include <array>
@@ -128,7 +130,89 @@ void AttachBaseContext(dx::Interpreter& vm, dx::DexClassLinker& linker, const dx
                            std::vector<dx::VmValue>{dx::VmValue::Ref(object), dx::VmValue::Ref(base_context)}),
                    what + " attachBaseContext");
 }
+
+dx::VmValue CallDirect(dx::Interpreter& vm, const char* descriptor, const char* name, const char* signature,
+                       std::span<const dx::VmValue> args = {}) {
+    const auto owner = vm.Linker().ResolveDescriptor(descriptor);
+    const auto method = vm.Linker().FindDirectMethod(owner, name, signature);
+    const auto label = std::string(descriptor) + " " + name;
+    if (!method) Fail(label + " is not linked");
+    const auto result = vm.Call(*method, args);
+    RequireOutcome(vm, result, label);
+    return result.value;
+}
+
+dx::VmValue CallOn(dx::Interpreter& vm, dx::VmObjectRef object, const char* name, const char* signature,
+                   std::vector<dx::VmValue> args = {}) {
+    const auto type = vm.Model().ObjectClass(object);
+    const auto slot = vm.Linker().FindVtableIndex(type, name, signature);
+    if (!slot) Fail(std::string(name) + " is not linked");
+    args.insert(args.begin(), dx::VmValue::Ref(object));
+    const auto result = vm.Call(vm.Linker().Class(type).vtable[*slot], args);
+    RequireOutcome(vm, result, name);
+    return result.value;
+}
+
+dx::VmObjectRef ActivityBaseContext(dx::Interpreter& vm, runtime::DexVmAndroidContext& context,
+                                    runtime::DexVmAndroidContext::ActivityRecord& record) {
+    const auto base = context.application_base_context;
+    constexpr auto impl = "Landroid/app/ContextImpl;";
+    if (vm.Model().ObjectClass(base) != vm.Linker().ResolveDescriptor(impl)) return base;
+
+    constexpr auto owner = "Landroid/app/ActivityThread;";
+    const auto thread = CallDirect(vm, owner, "currentActivityThread", "()Landroid/app/ActivityThread;");
+    const auto package = vm.NewStringUtf8(context.package_name);
+    const auto loaded = CallOn(vm, thread.ref, "peekPackageInfo", "(Ljava/lang/String;Z)Landroid/app/LoadedApk;",
+                               {dx::VmValue::Ref(package), dx::VmValue::Int(1)});
+    const auto roots = vm.ProtectReferences(std::array{loaded.ref});
+    record.app_window_token = vm.NewIntrinsicInstance("Logplay/runtime/ManagedWindowToken;");
+    const auto activity_context =
+        CallDirect(vm, impl, "createActivityContext",
+                   "(Landroid/app/ActivityThread;Landroid/app/LoadedApk;Landroid/os/IBinder;)Landroid/app/ContextImpl;",
+                   std::array{thread, loaded, dx::VmValue::Ref(record.app_window_token)})
+            .ref;
+    const auto activity_context_root = vm.ProtectReferences(std::array{activity_context});
+    static_cast<void>(CallOn(vm, activity_context, "setOuterContext", "(Landroid/content/Context;)V",
+                             {dx::VmValue::Ref(record.object)}));
+    return activity_context;
+}
 }  // namespace
+
+void AttachDexApplicationThread(dx::Interpreter& vm, runtime::DexVmAndroidContext& context) {
+    runtime::PrepareAndroidInputMethodService(vm, context);
+    constexpr auto owner = "Landroid/app/ActivityThread;";
+    const auto type = vm.Linker().ResolveDescriptor(owner);
+    RequireOutcome(vm, vm.EnsureClassInitialized(type), "ActivityThread initialization");
+    const auto thread = vm.NewIntrinsicInstance(owner);
+    const auto root = vm.ProtectReferences(std::array{thread});
+    static_cast<void>(CallDirect(vm, owner, "<init>", "()V", std::array{dx::VmValue::Ref(thread)}));
+    static_cast<void>(
+        CallDirect(vm, owner, "attach", "(Z)V", std::array{dx::VmValue::Ref(thread), dx::VmValue::Int(0)}));
+    const auto handler = CallOn(vm, thread, "getHandler", "()Landroid/os/Handler;").ref;
+    vm.SetIntrinsicStaticRef(owner, "sMainThreadHandler", "Landroid/os/Handler;", handler);
+    static_cast<void>(CallDirect(vm, "Landroid/os/AsyncTask;", "init", "()V"));
+}
+
+void PublishDexApplication(dx::Interpreter& vm, runtime::DexVmAndroidContext& context,
+                           const std::string& application_descriptor) {
+    const auto app =
+        CallDirect(vm, "Landroid/app/ActivityThread;", "currentApplication", "()Landroid/app/Application;").ref;
+    if (!app.IsValid() || vm.Linker().Class(vm.Model().ObjectClass(app)).descriptor != application_descriptor)
+        Fail("ActivityThread did not bind the manifest Application");
+    const auto base = CallOn(vm, app, "getBaseContext", "()Landroid/content/Context;").ref;
+    if (!base.IsValid() || vm.Model().ObjectClass(base) != vm.Linker().ResolveDescriptor("Landroid/app/ContextImpl;"))
+        Fail("bound Application does not have a ContextImpl");
+    const auto loader = CallOn(vm, base, "getClassLoader", "()Ljava/lang/ClassLoader;").ref;
+    if (loader != vm.ClassLoaders().ApplicationLoader()) Fail("LoadedApk returned a different application ClassLoader");
+    context.application = app;
+    context.application_base_context = base;
+    context.application_descriptor = application_descriptor;
+    const auto resources = CallOn(vm, base, "getResources", "()Landroid/content/res/Resources;").ref;
+    const auto roots = vm.ProtectReferences(std::array{resources});
+    const auto assets = CallOn(vm, resources, "getAssets", "()Landroid/content/res/AssetManager;").ref;
+    context.singletons["resources"] = resources;
+    context.application_resource_manager = runtime::ResolveResourceAssetManager(vm, context, assets);
+}
 
 dx::VmObjectRef StartDexApplication(runtime::DexVmGuestBridge& bridge,
                                     const std::shared_ptr<runtime::DexVmAndroidContext>& context,
@@ -143,77 +227,16 @@ dx::VmObjectRef StartDexApplication(runtime::DexVmGuestBridge& bridge,
         return context->application;
     }
 
+    if (application_descriptor.size() < 3 || application_descriptor.front() != 'L' ||
+        application_descriptor.back() != ';')
+        Fail("invalid Application descriptor");
+    context->application_class_name = application_descriptor.substr(1, application_descriptor.size() - 2);
+    std::replace(context->application_class_name.begin(), context->application_class_name.end(), '/', '.');
     auto& vm = bridge.Vm();
-    auto& linker = bridge.Linker();
-    // ActivityThread prepares the main Looper before Application callbacks.
-    const auto looper_class = linker.ResolveDescriptor("Landroid/os/Looper;");
-    RequireOutcome(vm, vm.EnsureClassInitialized(looper_class), "main Looper <clinit>");
-    const auto main_looper = linker.FindDirectMethod(looper_class, "getMainLooper", "()Landroid/os/Looper;");
-    if (!main_looper) Fail("main Looper factory is not linked");
-    RequireOutcome(vm, vm.Call(*main_looper, {}), "main Looper setup");
-    // API19 ActivityThread.handleBindApplication clears the limit before makeApplication.
-    if (context->application_large_heap) {
-        const auto runtime_class = linker.ResolveDescriptor("Ldalvik/system/VMRuntime;");
-        const auto get = linker.FindDirectMethod(runtime_class, "getRuntime", "()Ldalvik/system/VMRuntime;");
-        if (!get) Fail("VMRuntime factory is not linked");
-        const auto runtime = vm.Call(*get, {});
-        RequireOutcome(vm, runtime, "VMRuntime.getRuntime");
-        const auto root = vm.ProtectReferences(std::array{runtime.value.ref});
-        const auto clear = linker.FindVtableIndex(runtime_class, "clearGrowthLimit", "()V");
-        if (!clear) Fail("VMRuntime.clearGrowthLimit is not linked");
-        RequireOutcome(vm, vm.Call(linker.Class(runtime_class).vtable[*clear], std::array{runtime.value}),
-                       "largeHeap clearGrowthLimit");
-    }
-    const auto java_class = linker.FindClass(application_descriptor);
-    if (!java_class.has_value()) {
-        Fail("Application class is not linked: " + application_descriptor);
-    }
-    const auto base_context = vm.NewIntrinsicInstance("Landroid/content/Context;");
-    const auto base_root = vm.ProtectReferences(std::array{base_context});
-    const auto context_class = vm.Model().ObjectClass(base_context);
-    const auto cache_method = linker.FindVtableIndex(context_class, "getCacheDir", "()Ljava/io/File;");
-    if (!cache_method) Fail("Context has no cache directory method");
-    const auto cache =
-        vm.Call(linker.Class(context_class).vtable[*cache_method], std::array{dx::VmValue::Ref(base_context)});
-    RequireOutcome(vm, cache, "application cache directory");
-    if (cache.value.ref.IsValid()) {
-        const auto cache_root = vm.ProtectReferences(std::array{cache.value.ref});
-        const auto file_class = vm.Model().ObjectClass(cache.value.ref);
-        const auto path_method = linker.FindVtableIndex(file_class, "getAbsolutePath", "()Ljava/lang/String;");
-        if (!path_method) Fail("File has no absolute path method");
-        const auto path =
-            vm.Call(linker.Class(file_class).vtable[*path_method], std::array{dx::VmValue::Ref(cache.value.ref)});
-        RequireOutcome(vm, path, "application cache path");
-        static_cast<void>(vm.SetSystemProperty("java.io.tmpdir", vm.StringUtf8(path.value.ref)));
-    }
-    RequireOutcome(vm, vm.EnsureClassInitialized(*java_class), "Application <clinit>");
-    const auto init = linker.FindDirectMethod(*java_class, "<init>", "()V");
-    if (!init.has_value()) {
-        Fail("Application has no default constructor: " + application_descriptor);
-    }
-    const auto application = vm.Model().NewInstance(*java_class, linker.Class(*java_class).instance_slots);
-    context->application = application;
-    context->application_base_context = base_context;
-    try {
-        RequireOutcome(vm, vm.Call(*init, std::vector<dx::VmValue>{dx::VmValue::Ref(application)}),
-                       "Application <init>");
-        AttachBaseContext(vm, linker, *java_class, application, base_context, "Application");
-        const auto on_create = linker.FindVtableIndex(*java_class, "onCreate", "()V");
-        if (!on_create.has_value()) {
-            Fail("Application has no onCreate method: " + application_descriptor);
-        }
-        RequireOutcome(vm,
-                       vm.Call(linker.Class(*java_class).vtable[*on_create],
-                               std::vector<dx::VmValue>{dx::VmValue::Ref(application)}),
-                       "Application onCreate");
-        context->application_descriptor = application_descriptor;
-        return application;
-    } catch (...) {
-        context->application = dx::VmObjectRef{};
-        context->application_base_context = dx::VmObjectRef{};
-        context->application_descriptor.clear();
-        throw;
-    }
+    AttachDexApplicationThread(vm, *context);
+    if (const auto error = runtime::PumpJavaThreads(vm, *context)) Fail(*error);
+    PublishDexApplication(vm, *context, application_descriptor);
+    return context->application;
 }
 
 bool ShouldInterceptScrollGesture(const std::int32_t scroll_range, const float down_y, const float current_y,
@@ -342,6 +365,11 @@ void DexActivityLifecycle::DispatchViewWindowFocus(const bool has_focus) {
 }
 
 LifecycleFrameState DexActivityLifecycle::Start() {
+    if (bindings_.run_on_main && !bindings_.is_main_thread()) {
+        LifecycleFrameState result;
+        bindings_.run_on_main("start", [&] { result = Start(); });
+        return result;
+    }
     if (state_ != LifecycleRunState::ready) {
         Fail("dex_activity lifecycle started twice");
     }
@@ -381,7 +409,8 @@ LifecycleFrameState DexActivityLifecycle::Start() {
         context.activity_stack_depth.store(context.activity_stack.size());
         context.window_focus_activity.store(activity.Value());
         RequireOutcome(vm, vm.Call(*init, std::vector<dx::VmValue>{dx::VmValue::Ref(activity)}), "activity <init>");
-        AttachBaseContext(vm, linker, *activity_class, activity, context.application_base_context, "Activity");
+        const auto base = ActivityBaseContext(vm, context, context.activity_stack.back());
+        AttachBaseContext(vm, linker, *activity_class, activity, base, "Activity");
         auto component_name = vm.Linker().Class(*activity_class).descriptor;
         component_name = component_name.substr(1, component_name.size() - 2);
         std::replace(component_name.begin(), component_name.end(), '/', '.');
@@ -451,6 +480,11 @@ LifecycleFrameState DexActivityLifecycle::Start() {
 }
 
 LifecycleFrameState DexActivityLifecycle::Suspend() {
+    if (bindings_.run_on_main && !bindings_.is_main_thread()) {
+        LifecycleFrameState result;
+        bindings_.run_on_main("suspend", [&] { result = Suspend(); });
+        return result;
+    }
     if (state_ != LifecycleRunState::running || suspended_) {
         Fail("dex_activity lifecycle cannot suspend in this state");
     }
@@ -491,6 +525,11 @@ LifecycleFrameState DexActivityLifecycle::Suspend() {
 }
 
 LifecycleFrameState DexActivityLifecycle::Resume() {
+    if (bindings_.run_on_main && !bindings_.is_main_thread()) {
+        LifecycleFrameState result;
+        bindings_.run_on_main("resume", [&] { result = Resume(); });
+        return result;
+    }
     if (state_ != LifecycleRunState::running || !suspended_) {
         Fail("dex_activity lifecycle cannot resume in this state");
     }
@@ -522,6 +561,10 @@ LifecycleFrameState DexActivityLifecycle::Resume() {
 }
 
 void DexActivityLifecycle::CancelInput() {
+    if (bindings_.run_on_main && !bindings_.is_main_thread()) {
+        bindings_.run_on_main("cancel_input", [&] { CancelInput(); });
+        return;
+    }
     if (state_ != LifecycleRunState::running) return;
     const auto cancelled = input_timeline_.Cancel(bindings_.context->uptime_millis.load() * 1000000);
     pending_input_.insert(pending_input_.end(), cancelled.begin(), cancelled.end());
@@ -529,6 +572,10 @@ void DexActivityLifecycle::CancelInput() {
 }
 
 void DexActivityLifecycle::QueueInput(const runtime::AndroidBoundaryInput& input) {
+    if (bindings_.run_on_main && !bindings_.is_main_thread()) {
+        bindings_.run_on_main("input", [&] { QueueInput(input); });
+        return;
+    }
     if (state_ != LifecycleRunState::running || suspended_ || bindings_.context->process_stopping) return;
     auto logical = input;
     // Both delivery paths expose the process input inventory, not SDL ids.
@@ -721,6 +768,11 @@ void DexActivityLifecycle::EnsureOwnerFrame(const bool begin_tick, const bool no
 }
 
 LifecycleFrameState DexActivityLifecycle::StepFrame() {
+    if (bindings_.run_on_main && !bindings_.is_main_thread()) {
+        LifecycleFrameState result;
+        bindings_.run_on_main("stepframe", [&] { result = StepFrame(); });
+        return result;
+    }
     if (state_ != LifecycleRunState::running) {
         Fail("dex_activity lifecycle is not running");
     }
@@ -962,9 +1014,15 @@ void DexActivityLifecycle::AwaitInitialThreadQuiescence() {
         return status == dx::VmThreadStatus::finished || status == dx::VmThreadStatus::stopped ||
                status == dx::VmThreadStatus::failed;
     };
+    const auto native_idle = [&](std::uint64_t token) {
+        const std::scoped_lock lock(bindings_.context->scheduler_mutex);
+        return std::ranges::any_of(bindings_.context->message_queues, [token](const auto& entry) {
+            return entry.second->context_token == token && entry.second->idling;
+        });
+    };
     for (const auto& thread : threads.Snapshot()) {
         if (thread.context_token == dx::kRootLifecycleToken || thread.wait_state != dx::VmThreadWaitState::none ||
-            terminal(thread.status)) {
+            terminal(thread.status) || native_idle(thread.context_token)) {
             continue;
         }
         pending.insert(thread.context_token);
@@ -974,13 +1032,22 @@ void DexActivityLifecycle::AwaitInitialThreadQuiescence() {
     const auto observe = [&] {
         for (const auto& thread : threads.Snapshot()) {
             if (!pending.contains(thread.context_token)) continue;
-            if (thread.wait_state != dx::VmThreadWaitState::none || terminal(thread.status)) {
+            if (thread.wait_state != dx::VmThreadWaitState::none || terminal(thread.status) ||
+                native_idle(thread.context_token)) {
                 pending.erase(thread.context_token);
             }
         }
     };
     for (std::size_t round = 0; round < kInitialThreadQuiescenceYieldLimit; ++round) {
-        static_cast<void>(threads.WaitForHostProgress(std::chrono::milliseconds(2)));
+        auto& execution = bindings_.bridge->Vm().ExecutionLock();
+        const auto depth = execution.ReleaseForBlocking();
+        try {
+            static_cast<void>(threads.WaitForHostProgress(std::chrono::milliseconds(2)));
+        } catch (...) {
+            execution.ReacquireAfterBlocking(depth);
+            throw;
+        }
+        execution.ReacquireAfterBlocking(depth);
         observe();
         if (pending.empty()) return;
     }
@@ -1395,7 +1462,8 @@ void DexActivityLifecycle::ServiceActivitySwitch() {
         refresh();
         context.window_focus_activity.store(activity.Value());
         RequireOutcome(vm, vm.Call(*init, std::array{dx::VmValue::Ref(activity)}), "activity <init>");
-        AttachBaseContext(vm, linker, *type, activity, context.application_base_context, "Activity");
+        const auto base = ActivityBaseContext(vm, context, context.activity_stack.back());
+        AttachBaseContext(vm, linker, *type, activity, base, "Activity");
         runtime::AttachAndroidActivityIdentity(vm, bindings_.context, activity, command.component);
         CallActivity("onCreate", "(Landroid/os/Bundle;)V", {dx::VmValue::Ref(dx::VmObjectRef{})});
         const bool own_transition = std::ranges::any_of(context.activity_commands, [&](const auto& item) {
@@ -2034,6 +2102,11 @@ void DexActivityLifecycle::EnsureRendererCallbacks() {
 }
 
 LifecycleFrameState DexActivityLifecycle::Stop(DexProcessStopReason reason) {
+    if (bindings_.run_on_main && !bindings_.is_main_thread()) {
+        LifecycleFrameState result;
+        bindings_.run_on_main("stop", [&] { result = Stop(reason); });
+        return result;
+    }
     if (state_ == LifecycleRunState::stopped || stop_completed_) return State();
     std::string_view current_phase;
     const auto phase = [this, &current_phase](const std::string_view name, const bool active = true) {

@@ -62,7 +62,6 @@ VmObjectRef Dialog(Vm& f, VmObjectRef owner, const char* message = "A real messa
 TEST_CASE("DVM-304 isolated host Dialog layout leaves guest geometry epoch and focus unchanged") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend, {}, false, "view_measure.dex", AndroidUiTraversalOwner::JavaTraversal);
-        f.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
         f.context->ui_test_accessibility_disabled = true;
         f.context->target_sdk_version = 19;
         f.context->surface_width = 800;
@@ -240,7 +239,6 @@ TEST_CASE("DVM-305 presentation snapshot composes modal pixels input and atomic 
             });
         AndroidValueVm f(backend, {std::move(observer).Build()}, false, "view_measure.dex",
                          AndroidUiTraversalOwner::JavaTraversal);
-        f.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
         f.context->ui_test_accessibility_disabled = true;
         f.context->surface_width = 800;
         f.context->surface_height = 480;
@@ -520,7 +518,6 @@ TEST_CASE("DVM-305 presentation snapshot composes modal pixels input and atomic 
 TEST_CASE("DVM-305 modal presentation preserves a live managed Surface generation without GPU") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ogplay::test::container_traversal::ContainerVm f(backend);
-        f.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
         f.context->ui_test_accessibility_disabled = true;
         f.context->surface_width = 800;
         f.context->surface_height = 480;
@@ -537,7 +534,7 @@ TEST_CASE("DVM-305 modal presentation preserves a live managed Surface generatio
         f.context->application_theme = theme.resource_id;
         const auto owner = f.New("Landroid/app/Activity;");
         f.context->activity = owner;
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(static_cast<int>(theme.resource_id))});
         const auto view = f.New("Landroid/view/SurfaceView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto holder = f.On(view, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
@@ -622,7 +619,6 @@ TEST_CASE("DVM-370 long AlertDialog messages scroll inside bounded chrome on bot
                                    [&](IntrinsicContext&) { return VmValue::Int(consume_key); });
             AndroidValueVm f(backend, {std::move(observer).Build()}, false, "view_measure.dex",
                              AndroidUiTraversalOwner::JavaTraversal);
-            f.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
             f.context->ui_test_accessibility_disabled = true;
             f.context->surface_width = static_cast<std::uint32_t>(viewport.width);
             f.context->surface_height = static_cast<std::uint32_t>(viewport.height);

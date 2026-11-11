@@ -17,6 +17,7 @@
 #include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/hal/host_environment.h"
 #include "ogplay/hal/fs.h"
+#include "ogplay/runtime/integration/dexvm_android.h"
 
 namespace ogplay::frontend {
 namespace {
@@ -71,17 +72,25 @@ constexpr core::RateLimitPolicy kUnrestrictedLog{.mode = core::RateLimitMode::no
 }  // namespace
 
 void MountFrameworkPayload(runtime::VirtualFileSystem& filesystem, const std::filesystem::path& directory) {
-    for (const auto name : {"ogplay.jar", "core.jar", "conscrypt.jar", "ext.jar", "framework.jar", "framework2.jar",
-                            "android.policy.jar", "framework-res.apk"}) {
+    const auto mount = [&](std::string_view name) {
         const auto file = hal::OpenHostReadFile(directory / name);
-        filesystem.PutReadOnlyFile(std::string("/system/framework/") + name, file->Info().size,
+        filesystem.PutReadOnlyFile(std::string("/system/framework/") + std::string(name), file->Info().size,
                                    [file](std::uint64_t offset, std::span<std::byte> destination,
                                           std::stop_token stop) { return file->ReadAt(offset, destination, stop); });
-    }
+    };
+    for (const auto name : runtime::kBootClasspathJars)
+        mount(name);
+    mount("framework-res.apk");
+}
+
+void SandboxSession::RemoveTemporaryRoot::operator()(std::filesystem::path* path) const noexcept {
+    const std::unique_ptr<std::filesystem::path> owned(path);
+    std::error_code error;
+    std::filesystem::remove_all(*owned, error);
 }
 
 std::string SandboxSession::Describe() const {
-    if (!store) return "ephemeral";
+    if (temporary_root) return "ephemeral";
     return PathUtf8(root) + " used=" + std::to_string(store->UsedBytes()) + "/" + std::to_string(store->QuotaBytes());
 }
 
@@ -245,8 +254,20 @@ SandboxSession OpenSandbox(const SandboxOptions& options, const std::string& pac
                            const std::uint32_t version_code) {
     SandboxSession session;
     if (options.ephemeral) {
-        session.android_id = core::EncodeHex(AndroidIdEntropy(), core::HexCase::lower);
-        session.installation_id = "ephemeral-" + session.android_id;
+        const auto entropy = AndroidIdEntropy();
+        std::uint64_t instance = 0;
+        for (const auto byte : entropy)
+            instance = (instance << 8U) | std::to_integer<std::uint64_t>(byte);
+        session.installation_id = package + "-2" + std::to_string(instance);
+        auto directory = std::make_unique<std::filesystem::path>(std::filesystem::temp_directory_path() /
+                                                                 ("ogplay-ephemeral-" + session.installation_id));
+        if (!std::filesystem::create_directory(*directory))
+            throw std::runtime_error("cannot reserve a temporary save sandbox");
+        session.temporary_root.reset(directory.release());
+        session.root = *session.temporary_root;
+        session.store = runtime::SandboxStore::Create(session.root, session.installation_id, package);
+        session.android_id = session.store->EnsureAndroidId(entropy);
+        session.store->RecordVersionCode(version_code);
         return session;
     }
     if (options.directory.has_value()) {
@@ -289,20 +310,9 @@ SandboxSession OpenSandbox(const SandboxOptions& options, const std::string& pac
 void AttachSandbox(const SandboxSession& sandbox, const std::string& package, runtime::VirtualFileSystem& filesystem,
                    core::Logger& logger) {
     const auto writable_roots = std::vector<std::string>{"/data/data/" + package, "/sdcard"};
-    if (!sandbox.store) {
-        // The writable roots are directories on the platform whether or not
-        // saves persist, so an ephemeral run behaves the same up to the
-        // persistence itself.
-        for (const auto& root : writable_roots) {
-            try {
-                filesystem.CreateDirectory(root);
-            } catch (const runtime::VfsError&) {
-                // Already present through a mounted base layer.
-            }
-        }
+    if (sandbox.temporary_root) {
         logger.Write(core::LogLevel::info, "frontend.run_apk", "ephemeral sandbox: saves are discarded at exit", {}, {},
                      kUnrestrictedLog);
-        return;
     }
     filesystem.AttachSandbox(*sandbox.store, writable_roots);
     // Host sandbox diagnostics stay at the storage boundary; the session

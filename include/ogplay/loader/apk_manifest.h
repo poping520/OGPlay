@@ -93,6 +93,19 @@ struct AndroidManifestReceiverComponent final {
     return component.exported.value_or(!component.intent_filters.empty());
 }
 
+struct AndroidManifestProviderComponent final {
+    std::string name;
+    std::string authority;
+    bool enabled{true};
+    std::optional<bool> exported;
+    std::string process_name;
+    std::optional<std::string> read_permission;
+    std::optional<std::string> write_permission;
+    std::vector<AndroidManifestMetaData> meta_data;
+    std::int32_t init_order{};
+    bool grant_uri_permissions{};
+};
+
 struct AndroidManifestActivityComponent final {
     AndroidManifestComponentKind kind{AndroidManifestComponentKind::activity};
     std::string name;
@@ -176,6 +189,7 @@ struct AndroidManifestFacts final {
     bool application_large_heap{false};
     std::vector<AndroidManifestServiceComponent> service_components;
     std::vector<AndroidManifestReceiverComponent> receiver_components;
+    std::vector<AndroidManifestProviderComponent> provider_components;
     // Top-level supports-gl-texture android:name, in first-declaration order.
     std::vector<std::string> supported_gl_textures;
     std::vector<std::string> diagnostics;

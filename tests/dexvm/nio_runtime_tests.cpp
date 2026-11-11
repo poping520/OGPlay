@@ -409,3 +409,54 @@ TEST_CASE("DVM-260 VMRuntime array allocation and addressOf follow Dalvik bounda
         CHECK(f.ClassOf(huge.exception) == "Ljava/lang/OutOfMemoryError;");
     }
 }
+
+TEST_CASE("UTF8 streaming encoder preserves sliced input and overflow cursors") {
+    for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
+        NioVm f(backend);
+        const auto invoke = [&](const char* owner, const char* name, const char* signature,
+                                std::vector<dx::VmValue> arguments) {
+            const auto method = f.linker.FindDirectMethod(f.linker.ResolveDescriptor(owner), name, signature);
+            REQUIRE(method);
+            const auto result = f.vm.Call(*method, arguments);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value.ref;
+        };
+        const auto charset =
+            invoke("Ljava/nio/charset/Charset;", "forName", "(Ljava/lang/String;)Ljava/nio/charset/Charset;",
+                   {dx::VmValue::Ref(f.vm.NewStringUtf8("UTF-8"))});
+        const auto encoder_result = f.Call(charset, "newEncoder", "()Ljava/nio/charset/CharsetEncoder;");
+        REQUIRE_FALSE(encoder_result.exception.IsValid());
+        const auto encoder = encoder_result.value.ref;
+        const auto encoder_root = f.vm.ProtectReferences(std::array{encoder});
+        const auto chars = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[C"),
+                                                     ogplay::runtime::JniPrimitiveKind::character, 6);
+        const auto chars_root = f.vm.ProtectReferences(std::array{chars});
+        const std::array<std::uint32_t, 6> units{'x', 'A', 0xe9, 0xd83d, 0xde00, 'y'};
+        for (std::size_t i = 0; i < units.size(); ++i)
+            f.model.SetPrimitiveElement(chars, static_cast<ogplay::runtime::JniSize>(i), units[i]);
+        const auto input = invoke("Ljava/nio/CharBuffer;", "wrap", "([CII)Ljava/nio/CharBuffer;",
+                                  {dx::VmValue::Ref(chars), dx::VmValue::Int(1), dx::VmValue::Int(4)});
+        const auto input_root = f.vm.ProtectReferences(std::array{input});
+        const auto first = f.Static("allocate", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(2)});
+        const auto first_root = f.vm.ProtectReferences(std::array{first});
+        const auto encode = [&](dx::VmObjectRef output) {
+            const auto result =
+                f.Call(encoder, "encode", "(Ljava/nio/CharBuffer;Ljava/nio/ByteBuffer;Z)Ljava/nio/charset/CoderResult;",
+                       {dx::VmValue::Ref(input), dx::VmValue::Ref(output), dx::VmValue::Int(1)});
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value.ref;
+        };
+        CHECK(f.Call(encode(first), "isOverflow", "()Z").value.AsInt() == 1);
+        CHECK(f.vm.NIO().Snapshot(f.model.ToIdentity(input)).position == 2);
+        CHECK(f.vm.NIO().Snapshot(f.model.ToIdentity(first)).position == 1);
+        CHECK(f.vm.NIO().Get(f.model.ToIdentity(first), 0) == 'A');
+        const auto second = f.Static("allocate", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(6)});
+        const auto second_root = f.vm.ProtectReferences(std::array{second});
+        CHECK(f.Call(encode(second), "isUnderflow", "()Z").value.AsInt() == 1);
+        CHECK(f.vm.NIO().Snapshot(f.model.ToIdentity(input)).position == 5);
+        CHECK(f.vm.NIO().Snapshot(f.model.ToIdentity(input)).limit == 5);
+        const std::array<std::uint8_t, 6> expected{0xc3, 0xa9, 0xf0, 0x9f, 0x98, 0x80};
+        for (std::size_t i = 0; i < expected.size(); ++i)
+            CHECK(f.vm.NIO().Get(f.model.ToIdentity(second), static_cast<std::int32_t>(i)) == expected[i]);
+    }
+}

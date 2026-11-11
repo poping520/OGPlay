@@ -2039,6 +2039,5 @@ inline constexpr NativeMethodSpec kGLImplNativeMethods[] = {
     {"glViewport", "(IIII)V", false, false},
     {"glWeightPointerOES", "(IIII)V", false, false},
     {"glWeightPointerOESBounds", "(IIILjava/nio/Buffer;I)V", false, true},
-    {"nativeAllowIndirectBuffers", "()Z", true, true},
 };
 }  // namespace generated_java_gles

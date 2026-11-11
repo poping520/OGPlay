@@ -73,6 +73,7 @@ public:
     VmThreadWaitState root_wait_state{VmThreadWaitState::none};
     std::uint64_t progress_generation{};
     bool shutting_down{};
+    std::function<void()> shutdown_observer;
     bool root_finished{};  // standalone main returned (dvmDetachCurrentThread)
     std::string failure;
 
@@ -721,16 +722,24 @@ bool VmThreadRuntime::ShuttingDown() const {
     return impl_->shutting_down;
 }
 
+void VmThreadRuntime::SetShutdownObserver(std::function<void()> observer) {
+    const std::lock_guard guard(impl_->mutex);
+    impl_->shutdown_observer = std::move(observer);
+}
+
 void VmThreadRuntime::RequestShutdown() {
+    std::function<void()> observer;
     {
         const std::lock_guard guard(impl_->mutex);
         impl_->shutting_down = true;
+        observer = impl_->shutdown_observer;
         for (const auto& [_, native] : impl_->native_contexts)
             impl_->vm->RequestStop(native.context);
         for (const auto& [_, record] : impl_->records) {
             if (record->host) impl_->vm->RequestStop(record->context);
         }
     }
+    if (observer) observer();
     impl_->vm->Monitors().Shutdown();
     impl_->changed.notify_all();
 }
@@ -742,9 +751,11 @@ bool VmThreadRuntime::RootIsJoining() const {
 
 void VmThreadRuntime::Shutdown() {
     std::vector<VmThreadRecord*> live;
+    std::function<void()> observer;
     {
         const std::lock_guard guard(impl_->mutex);
         impl_->shutting_down = true;
+        observer = impl_->shutdown_observer;
         for (const auto& [_, native] : impl_->native_contexts)
             impl_->vm->RequestStop(native.context);
         for (const auto& [_, record] : impl_->records) {
@@ -760,6 +771,7 @@ void VmThreadRuntime::Shutdown() {
     for (auto* record : live) {
         impl_->vm->RequestStop(record->context);
     }
+    if (observer) observer();
     impl_->vm->Monitors().Shutdown();
     impl_->changed.notify_all();
 

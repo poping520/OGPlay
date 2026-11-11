@@ -94,6 +94,8 @@ public:
     AndroidAppProcess& operator=(const AndroidAppProcess&) = delete;
 
     void StartApplication();
+    // Transitional host adapter: execute guest work through the ROM main Handler.
+    void RunOnMainThread(const std::function<void()>& action);
     [[nodiscard]] LifecycleFrameState StartLauncherActivity();
     [[nodiscard]] LifecycleFrameState Stop(DexProcessStopReason reason = DexProcessStopReason::host_shutdown);
 

@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include "apk_manifest_fixture.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -1851,3 +1852,9 @@ TEST_CASE("APK Manifest Activity screenOrientation preserves API19 values and al
     const auto facts = ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {activity}));
     CHECK(facts.activity_components[0].screen_orientation == -1);
 }
+
+namespace ogplay::test {
+std::vector<std::byte> PackageManifestFixture() {
+    return Manifest();
+}
+}  // namespace ogplay::test

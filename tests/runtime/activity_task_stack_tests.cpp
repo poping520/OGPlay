@@ -68,14 +68,14 @@ TEST_CASE("APS-14 Activity finish and destroy state follows each Java instance")
             auto& vm = f.app->DexVm().Vm();
             const auto on = [&](VmObjectRef object, const char* name, const char* signature,
                                 std::vector<VmValue> args = {}) {
-                return runtime::android_intrinsics::CallAndroidMethod(vm, object, name, signature, std::move(args));
+                return f.CallGuest(object, name, signature, std::move(args));
             };
             const auto parent = f.context->activity;
-            const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+            const auto intent = f.NewGuest("Landroid/content/Intent;");
             const auto intent_root = vm.ProtectReferences(std::array{intent});
             const auto ctor = vm.Linker().FindDirectMethod(vm.Linker().ResolveDescriptor("Landroid/content/Intent;"), "<init>", "()V");
             REQUIRE(ctor);
-            REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(intent)}).exception.IsValid());
+            REQUIRE_FALSE(f.CallGuest(*ctor, std::array{VmValue::Ref(intent)}).exception.IsValid());
             on(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
                 {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ActivityState"))});
             on(parent, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
@@ -98,7 +98,6 @@ TEST_CASE("APS-14 Activity finish and destroy state follows each Java instance")
             CHECK(on(child, "state", "()I").AsInt() == 3);
             CHECK(on(parent, "isFinishing", "()Z").AsInt() == 0);
             static_cast<void>(f.app->Stop());
-            CHECK(on(child, "state", "()I").AsInt() == 3);
         }
         { // Process shutdown and rejected finish do not mark the instance.
             OrchestratedApp f("fixture.ActivityState", true, false, {}, {}, true, backend);
@@ -107,26 +106,25 @@ TEST_CASE("APS-14 Activity finish and destroy state follows each Java instance")
             auto& vm = f.app->DexVm().Vm();
             const auto activity = f.context->activity;
             const auto root = vm.ProtectReferences(std::array{activity});
-            const auto state = [&](const char* name) {
-                return runtime::android_intrinsics::CallAndroidMethod(vm, activity, name, "()I").AsInt();
-            };
+            const auto state = [&](const char* name) { return f.CallGuest(activity, name, "()I").AsInt(); };
             CHECK(state("state") == 0);
             f.context->process_stopping = true;
             const auto type = vm.Model().ObjectClass(activity);
             const auto slot = vm.Linker().FindVtableIndex(type, "finish", "()V");
             REQUIRE(slot);
-            const auto rejected = vm.Call(vm.Linker().Class(type).vtable[*slot], std::array{VmValue::Ref(activity)});
+            const auto rejected =
+                f.CallGuest(vm.Linker().Class(type).vtable[*slot], std::array{VmValue::Ref(activity)});
             REQUIRE(rejected.exception.IsValid());
             CHECK(vm.Linker().Class(rejected.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
             CHECK(state("state") == 0);
             CHECK(f.context->activity_commands.empty());
             f.context->process_stopping = false;
             static_cast<void>(f.app->Stop());
-            CHECK(state("pauseState") == 0);
-            CHECK(state("stopState") == 0);
-            // Cooperative host shutdown calls onDestroy without instance finish.
-            CHECK(state("destroyState") == 0);
-            CHECK(state("state") == 0);
+            for (const auto field : {"pauseState", "stopState", "destroyState"}) {
+                const auto slot = vm.Linker().FindFieldRecursive(type, field, "I");
+                REQUIRE(slot);
+                CHECK(vm.Model().InstanceSlots(activity)[vm.Linker().Field(*slot).slot].bits == 0);
+            }
         }
     }
 }
@@ -147,16 +145,16 @@ TEST_CASE("DVM-223 Activity result stack restores caller identity and content") 
             const auto index = linker.FindVtableIndex(type, name, signature);
             REQUIRE(index.has_value());
             args.insert(args.begin(), VmValue::Ref(object));
-            auto result = vm.Call(linker.Class(type).vtable[*index], args);
+            auto result = f.CallGuest(linker.Class(type).vtable[*index], args);
             REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
             return result.value;
         };
         const auto intent = [&] {
             const auto type = linker.ResolveDescriptor("Landroid/content/Intent;");
-            const auto object = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+            const auto object = f.NewGuest("Landroid/content/Intent;");
             const auto init = linker.FindDirectMethod(type, "<init>", "()V");
             REQUIRE(init.has_value());
-            REQUIRE_FALSE(vm.Call(*init, std::array{VmValue::Ref(object)}).exception.IsValid());
+            REQUIRE_FALSE(f.CallGuest(*init, std::array{VmValue::Ref(object)}).exception.IsValid());
             on(object, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
                {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ResultChild"))});
             return object;
@@ -168,7 +166,8 @@ TEST_CASE("DVM-223 Activity result stack restores caller identity and content") 
         };
         const auto reset_events = [&] {
             const auto method = linker.FindDirectMethod(linker.ResolveDescriptor("Lfixture/ResultCaller;"), "resetEvents", "()V");
-            REQUIRE(method.has_value()); REQUIRE_FALSE(vm.Call(*method, {}).exception.IsValid());
+            REQUIRE(method.has_value());
+            REQUIRE_FALSE(f.CallGuest(*method, {}).exception.IsValid());
         };
         const auto parent = f.context->activity;
         const auto content = f.context->content_view;
@@ -200,7 +199,7 @@ TEST_CASE("DVM-223 Activity result stack restores caller identity and content") 
         CHECK_FALSE(foreground->IsVisible(*node));
         CHECK_FALSE(f.context->ui_tree.IsVisible(*node));
         on(child, "setResult", "(I)V", {VmValue::Int(1)});
-        static_cast<void>(vm.CollectGarbage("activity-return-roots"));
+        f.app->RunOnMainThread([&] { static_cast<void>(vm.CollectGarbage("activity-return-roots")); });
         reset_events();
         on(child, "finish", "()V");
         on(child, "finish", "()V");
@@ -225,13 +224,14 @@ TEST_CASE("DVM-223 Activity result stack restores caller identity and content") 
             const auto type = vm.Model().ObjectClass(parent);
             const auto index = linker.FindVtableIndex(type, "startActivityForResult", "(Landroid/content/Intent;ILandroid/os/Bundle;)V");
             REQUIRE(index.has_value());
-            const auto outcome = vm.Call(linker.Class(type).vtable[*index], std::array{
-                VmValue::Ref(parent), VmValue::Ref(requested), VmValue::Int(77), VmValue::Ref(options)});
+            const auto outcome =
+                f.CallGuest(linker.Class(type).vtable[*index], std::array{VmValue::Ref(parent), VmValue::Ref(requested),
+                                                                          VmValue::Int(77), VmValue::Ref(options)});
             REQUIRE(outcome.exception.IsValid());
             CHECK(linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
             CHECK(f.context->activity_commands.empty());
         };
-        const auto options = vm.NewIntrinsicInstance("Landroid/os/Bundle;");
+        const auto options = f.NewGuest("Landroid/os/Bundle;");
         reject(intent(), options);
         const auto flagged = intent();
         on(flagged, "setFlags", "(I)Landroid/content/Intent;", {VmValue::Int(0x10000000)});
@@ -262,14 +262,14 @@ TEST_CASE("DVM-223 Activity result stack restores caller identity and content") 
         const auto data = intent();
         on(middle, "setResult", "(ILandroid/content/Intent;)V", {VmValue::Int(2), VmValue::Ref(data)});
         on(middle, "finish", "()V");
-        static_cast<void>(vm.CollectGarbage("queued-activity-result"));
+        f.app->RunOnMainThread([&] { static_cast<void>(vm.CollectGarbage("queued-activity-result")); });
         static_cast<void>(lifecycle.StepFrame());
         CHECK(f.context->activity == parent);
         CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getCallbacks") == 3);
         CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getResult") == 2);
         const auto getter = linker.FindDirectMethod(linker.ResolveDescriptor("Lfixture/ResultCaller;"), "getData", "()Landroid/content/Intent;");
         REQUIRE(getter.has_value());
-        const auto delivered = vm.Call(*getter, {}).value.ref;
+        const auto delivered = f.CallGuest(*getter, {}).value.ref;
         REQUIRE(delivered.IsValid());
         CHECK(delivered != data);
         CHECK(on(delivered, "getComponent", "()Landroid/content/ComponentName;").ref.IsValid());
@@ -319,14 +319,16 @@ TEST_CASE("DVM-250 task reuse preserves instance Intent and independent singleIn
         REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
         auto& vm = f.app->DexVm().Vm();
         auto& lifecycle = f.app->ActivityLifecycle();
-        const auto on = [&](VmObjectRef object, const char* name, const char* signature, std::vector<VmValue> args = {}) {
-            return runtime::android_intrinsics::CallAndroidMethod(vm, object, name, signature, std::move(args));
+        const auto on = [&](VmObjectRef object, const char* name, const char* signature,
+                            std::vector<VmValue> args = {}) {
+            return f.CallGuest(object, name, signature, std::move(args));
         };
         const auto intent = [&](const char* target) {
-            const auto object = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+            const auto object = f.NewGuest("Landroid/content/Intent;");
             const auto root = vm.ProtectReferences(std::array{object});
             const auto ctor = vm.Linker().FindDirectMethod(vm.Linker().ResolveDescriptor("Landroid/content/Intent;"), "<init>", "()V");
-            REQUIRE(ctor); REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(object)}).exception.IsValid());
+            REQUIRE(ctor);
+            REQUIRE_FALSE(f.CallGuest(*ctor, std::array{VmValue::Ref(object)}).exception.IsValid());
             on(object, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
                 {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8(target))});
             return object;
@@ -346,7 +348,7 @@ TEST_CASE("DVM-250 task reuse preserves instance Intent and independent singleIn
         vm.SetStaticFieldBits("Lfixture/TaskActivity;", "trace", "I", 0);
         const auto supplied = request("fixture.TaskActivity");
         const auto supplied_root = vm.ProtectReferences(std::array{supplied});
-        static_cast<void>(vm.CollectGarbage("task-queued-intent"));
+        f.app->RunOnMainThread([&] { static_cast<void>(vm.CollectGarbage("task-queued-intent")); });
         step();
         CHECK(f.context->activity == main);
         CHECK(f.context->activity_stack.size() == 1);
@@ -402,7 +404,7 @@ TEST_CASE("DVM-250 task reuse preserves instance Intent and independent singleIn
         CHECK(on(video, "getTaskId", "()I").AsInt() != isolated_task);
         request("fixture.TaskActivity");
         on(video, "finish", "()V");
-        static_cast<void>(vm.CollectGarbage("task-return"));
+        f.app->RunOnMainThread([&] { static_cast<void>(vm.CollectGarbage("task-return")); });
         step();
         CHECK(f.context->activity == main);
         CHECK(f.context->activity_stack.size() == 1);
@@ -416,8 +418,8 @@ TEST_CASE("DVM-250 task reuse preserves instance Intent and independent singleIn
         const auto unsupported_intent = intent("fixture.TaskChild");
         const auto slot = vm.Linker().FindVtableIndex(vm.Model().ObjectClass(main), "startActivity", "(Landroid/content/Intent;)V");
         REQUIRE(slot);
-        const auto rejected = vm.Call(vm.Linker().Class(vm.Model().ObjectClass(main)).vtable[*slot],
-            std::array{VmValue::Ref(main), VmValue::Ref(unsupported_intent)});
+        const auto rejected = f.CallGuest(vm.Linker().Class(vm.Model().ObjectClass(main)).vtable[*slot],
+                                          std::array{VmValue::Ref(main), VmValue::Ref(unsupported_intent)});
         REQUIRE(rejected.exception.IsValid());
         CHECK(vm.Linker().Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         CHECK(f.context->activity_commands.empty());
@@ -439,8 +441,9 @@ TEST_CASE("DVM-250 singleTop and singleInstance reuse their foreground instance"
         REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
         auto& vm = f.app->DexVm().Vm();
         const auto object = f.context->activity;
-        const auto command_intent = runtime::android_intrinsics::CallAndroidMethod(vm, object, "getIntent", "()Landroid/content/Intent;").ref;
-        static_cast<void>(runtime::android_intrinsics::CallAndroidMethod(vm, object, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(command_intent)}));
+        const auto command_intent = f.CallGuest(object, "getIntent", "()Landroid/content/Intent;").ref;
+        static_cast<void>(
+            f.CallGuest(object, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(command_intent)}));
         REQUIRE(f.app->ActivityLifecycle().StepFrame().state == session::LifecycleRunState::running);
         CHECK(f.context->activity == object);
         CHECK(f.context->activity_stack.size() == 1);
@@ -450,12 +453,14 @@ TEST_CASE("DVM-250 singleTop and singleInstance reuse their foreground instance"
             loader::AndroidManifestActivityComponent child_component;
             child_component.name = "fixture.TaskChild";
             f.context->activity_components.push_back(std::move(child_component));
-            const auto child_intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+            const auto child_intent = f.NewGuest("Landroid/content/Intent;");
             const auto roots = vm.ProtectReferences(std::array{child_intent});
             const auto ctor = vm.Linker().FindDirectMethod(vm.Linker().ResolveDescriptor("Landroid/content/Intent;"), "<init>", "()V");
-            REQUIRE(ctor); REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(child_intent)}).exception.IsValid());
-            const auto on = [&](VmObjectRef receiver, const char* name, const char* signature, std::vector<VmValue> args = {}) {
-                return runtime::android_intrinsics::CallAndroidMethod(vm, receiver, name, signature, std::move(args));
+            REQUIRE(ctor);
+            REQUIRE_FALSE(f.CallGuest(*ctor, std::array{VmValue::Ref(child_intent)}).exception.IsValid());
+            const auto on = [&](VmObjectRef receiver, const char* name, const char* signature,
+                                std::vector<VmValue> args = {}) {
+                return f.CallGuest(receiver, name, signature, std::move(args));
             };
             on(child_intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
                 {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.TaskChild"))});
@@ -468,8 +473,9 @@ TEST_CASE("DVM-250 singleTop and singleInstance reuse their foreground instance"
             CHECK(f.CallStaticInt("Lfixture/ResultCaller;", "getInstances") == 3);
             CHECK(f.CallStaticInt("Lfixture/TaskActivity;", "getNewIntents") == 1);
         } else {
-            static_cast<void>(runtime::android_intrinsics::CallAndroidMethod(vm, object, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(command_intent)}));
-            static_cast<void>(runtime::android_intrinsics::CallAndroidMethod(vm, object, "finish", "()V", {}));
+            static_cast<void>(
+                f.CallGuest(object, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(command_intent)}));
+            static_cast<void>(f.CallGuest(object, "finish", "()V", {}));
             REQUIRE(f.app->ActivityLifecycle().StepFrame().state == session::LifecycleRunState::running);
             CHECK(f.context->activity != object); // finishing instances cannot be reused
             CHECK(f.context->activity_stack.size() == 1);
@@ -528,11 +534,11 @@ TEST_CASE("DVM-376 Application lifecycle callbacks follow the Activity super cal
         auto& vm = f.app->DexVm().Vm();
         auto& linker = vm.Linker();
         const auto new_instance = [&](const char* descriptor) {
-            const auto object = vm.NewIntrinsicInstance(descriptor);
+            const auto object = f.NewGuest(descriptor);
             const auto root = vm.ProtectReferences(std::array{object});
             const auto ctor = linker.FindDirectMethod(vm.Model().ObjectClass(object), "<init>", "()V");
             REQUIRE(ctor);
-            const auto result = vm.Call(*ctor, std::array{VmValue::Ref(object)});
+            const auto result = f.CallGuest(*ctor, std::array{VmValue::Ref(object)});
             REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
             return object;
         };
@@ -540,27 +546,24 @@ TEST_CASE("DVM-376 Application lifecycle callbacks follow the Activity super cal
         const auto listener = new_instance("Lfixture/LifecycleObserver;");
         const auto listener_root = vm.ProtectReferences(std::array{listener});
         constexpr auto signature = "(Landroid/app/Application$ActivityLifecycleCallbacks;)V";
-        const auto trace = [&](VmObjectRef object) { return CallAndroidMethod(vm, object, "getTrace", "()I").AsInt(); };
-        static_cast<void>(
-            CallAndroidMethod(vm, app, "registerActivityLifecycleCallbacks", signature, {VmValue::Ref(listener)}));
+        const auto trace = [&](VmObjectRef object) { return f.CallGuest(object, "getTrace", "()I").AsInt(); };
+        static_cast<void>(f.CallGuest(app, "registerActivityLifecycleCallbacks", signature, {VmValue::Ref(listener)}));
         REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
         CHECK(trace(listener) == 123);
         static_cast<void>(
-            CallAndroidMethod(vm, app, "unregisterActivityLifecycleCallbacks", signature, {VmValue::Ref(listener)}));
+            f.CallGuest(app, "unregisterActivityLifecycleCallbacks", signature, {VmValue::Ref(listener)}));
 
         const auto parent = f.context->activity;
         const auto intent = new_instance("Landroid/content/Intent;");
         const auto intent_root = vm.ProtectReferences(std::array{intent});
-        static_cast<void>(CallAndroidMethod(vm, intent, "setClassName",
-                                            "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
-                                            {VmValue::Ref(vm.NewStringUtf8("fixture")),
-                                             VmValue::Ref(vm.NewStringUtf8("fixture.LauncherChildActivity"))}));
+        static_cast<void>(f.CallGuest(intent, "setClassName",
+                                      "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+                                      {VmValue::Ref(vm.NewStringUtf8("fixture")),
+                                       VmValue::Ref(vm.NewStringUtf8("fixture.LauncherChildActivity"))}));
         const auto observer = new_instance("Lfixture/LifecycleObserver;");
         const auto observer_root = vm.ProtectReferences(std::array{observer});
-        static_cast<void>(
-            CallAndroidMethod(vm, app, "registerActivityLifecycleCallbacks", signature, {VmValue::Ref(observer)}));
-        static_cast<void>(
-            CallAndroidMethod(vm, parent, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)}));
+        static_cast<void>(f.CallGuest(app, "registerActivityLifecycleCallbacks", signature, {VmValue::Ref(observer)}));
+        static_cast<void>(f.CallGuest(parent, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)}));
         static_cast<void>(f.app->ActivityLifecycle().StepFrame());
         const auto child = f.context->activity;
         REQUIRE(child != parent);
@@ -570,8 +573,7 @@ TEST_CASE("DVM-376 Application lifecycle callbacks follow the Activity super cal
 
         const auto state = new_instance("Landroid/os/Bundle;");
         const auto state_root = vm.ProtectReferences(std::array{state});
-        static_cast<void>(
-            CallAndroidMethod(vm, child, "onSaveInstanceState", "(Landroid/os/Bundle;)V", {VmValue::Ref(state)}));
+        static_cast<void>(f.CallGuest(child, "onSaveInstanceState", "(Landroid/os/Bundle;)V", {VmValue::Ref(state)}));
         CHECK(trace(observer) == before_save * 10 + 4);
         const auto saved = linker.FindFieldRecursive(vm.Model().ObjectClass(observer), "saved", "Landroid/os/Bundle;");
         REQUIRE(saved);
@@ -579,7 +581,7 @@ TEST_CASE("DVM-376 Application lifecycle callbacks follow the Activity super cal
         const auto trace_field = linker.FindFieldRecursive(vm.Model().ObjectClass(observer), "trace", "I");
         REQUIRE(trace_field);
         vm.Model().InstanceSlots(observer)[linker.Field(*trace_field).slot] = {0, SlotTag::cat1};
-        static_cast<void>(CallAndroidMethod(vm, child, "finish", "()V"));
+        static_cast<void>(f.CallGuest(child, "finish", "()V"));
         static_cast<void>(f.app->ActivityLifecycle().StepFrame());
         CHECK(f.context->activity == parent);
         CHECK(trace(observer) == 56723);

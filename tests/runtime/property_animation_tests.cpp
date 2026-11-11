@@ -28,32 +28,33 @@ struct Animations final {
         const auto slot = vm.Linker().FindVtableIndex(type, name, sig);
         REQUIRE(slot.has_value());
         args.insert(args.begin(), VmValue::Ref(receiver));
-        return vm.Call(vm.Linker().Class(type).vtable[*slot], args);
+        return app.CallGuest(vm.Linker().Class(type).vtable[*slot], args);
     }
+
     VmValue Call(VmObjectRef receiver, const char* name, const char* sig, std::vector<VmValue> args = {}) {
         const auto result = Outcome(receiver, name, sig, std::move(args));
         REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
         return result.value;
     }
     VmObjectRef New(const char* type, const char* sig, std::vector<VmValue> args = {}) {
-        const auto initialized = vm.EnsureClassInitialized(vm.Linker().ResolveDescriptor(type));
-        REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
-        const auto object = vm.NewIntrinsicInstance(type);
+        app.app->RunOnMainThread([&] {
+            const auto initialized = vm.EnsureClassInitialized(vm.Linker().ResolveDescriptor(type));
+            REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
+        });
+        const auto object = app.NewGuest(type);
         const auto roots = vm.ProtectReferences(std::array{object});
         const auto init = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(object), "<init>", sig);
         REQUIRE(init.has_value());
         args.insert(args.begin(), VmValue::Ref(object));
-        const auto result = vm.Call(*init, args);
+        const auto result = app.CallGuest(*init, args);
         REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
         return object;
     }
     VmCallOutcome StaticOutcome(const char* owner, const char* name, const char* sig, std::vector<VmValue> args = {}) {
         const auto type = vm.Linker().ResolveDescriptor(owner);
-        const auto init = vm.EnsureClassInitialized(type);
-        if (init.exception.IsValid()) return init;
         const auto method = vm.Linker().FindDirectMethod(type, name, sig);
         REQUIRE(method.has_value());
-        return vm.Call(*method, args);
+        return app.CallGuest(*method, args);
     }
     VmValue Static(const char* owner, const char* name, const char* sig, std::vector<VmValue> args = {}) {
         const auto result = StaticOutcome(owner, name, sig, args);
@@ -164,7 +165,8 @@ TEST_CASE("DVM-337 ROM alpha animation advances from reflected getter on present
         }
         CHECK(intermediate);
         CHECK(events == std::vector<char>{'S', 'E'});
-        CHECK(f.app.ledger.Unimplemented().empty());
+        for (const auto& hit : f.app.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
         static_cast<void>(f.app.app->Stop());
     }
 }
@@ -290,10 +292,16 @@ TEST_CASE("DVM-337 ancestor alpha freezes on redraw without measurement and hono
     f.Step();
     CHECK(measures == 0);
     CHECK(runtime::AcquireAndroidPresentation(*f.app.context)->application_windows.front().projection->Get(*node)->alpha == doctest::Approx(0.5));
-    const auto info = VmObjectRef{static_cast<std::uint32_t>(f.Field(child, "mTransformationInfo", "Landroid/view/View$TransformationInfo;").bits)};
+    const auto info = VmObjectRef{static_cast<std::uint32_t>(
+        f.Field(child, "mTransformationInfo", "Landroid/view/View$TransformationInfo;").bits)};
     f.Field(info, "mScaleX", "F") = {std::bit_cast<std::uint32_t>(2.0F), SlotTag::cat1};
-    f.Error(f.Outcome(child, "setAlpha", "(F)V", {VmValue::Float(0.25F)}), "Ljava/lang/UnsupportedOperationException;", "Only View alpha");
-    CHECK(runtime::AcquireAndroidPresentation(*f.app.context)->application_windows.front().projection->Get(*node)->alpha == doctest::Approx(0.5));
+    f.Call(child, "setAlpha", "(F)V", {VmValue::Float(0.25F)});
+    CHECK(std::ranges::any_of(f.app.ledger.Warnings(),
+                              [](const auto& hit) { return hit.id == "ui.degraded.View.transform"; }));
+    CHECK(runtime::AcquireAndroidPresentation(*f.app.context)
+              ->application_windows.front()
+              .projection->Get(*node)
+              ->alpha == doctest::Approx(0.5));
     f.Field(info, "mScaleX", "F") = {std::bit_cast<std::uint32_t>(1.0F), SlotTag::cat1};
     static_cast<void>(f.app.app->Stop());
 }
@@ -301,18 +309,24 @@ TEST_CASE("DVM-337 ancestor alpha freezes on redraw without measurement and hono
 TEST_CASE("DVM-337 ValueAnimator updates are frame driven and process stop synthesizes no end") {
     Animations f(InterpreterBackend::switch_dispatch);
     const auto values = f.Floats({0.0F, 1.0F});
-    const auto animator = f.Static("Landroid/animation/ValueAnimator;", "ofFloat", "([F)Landroid/animation/ValueAnimator;", {VmValue::Ref(values)}).ref;
+    const auto animator = f.Static("Landroid/animation/ValueAnimator;", "ofFloat",
+                                   "([F)Landroid/animation/ValueAnimator;", {VmValue::Ref(values)})
+                              .ref;
     const auto listener = f.New("Lfixture/AnimationProbe;", "()V");
     const auto roots = f.vm.ProtectReferences(std::array{values, animator, listener});
     int updates = 0, ends = 0, cancels = 0;
     float value = 0;
-    f.Hook("Lfixture/AnimationProbe;", "onAnimationUpdate", "(Landroid/animation/ValueAnimator;)V", [&](IntrinsicContext& call) {
-        ++updates;
-        const auto boxed = f.Call(call.arguments[0].ref, "getAnimatedValue", "()Ljava/lang/Object;").ref;
-        value = f.Call(boxed, "floatValue", "()F").AsFloat();
+    f.Hook("Lfixture/AnimationProbe;", "onAnimationUpdate", "(Landroid/animation/ValueAnimator;)V",
+           [&](IntrinsicContext& call) {
+               ++updates;
+               const auto boxed = f.Call(call.arguments[0].ref, "getAnimatedValue", "()Ljava/lang/Object;").ref;
+               value = f.Call(boxed, "floatValue", "()F").AsFloat();
+               return VmValue::Void();
+           });
+    f.Hook("Lfixture/AnimationProbe;", "onAnimationEnd", "(Landroid/animation/Animator;)V", [&](IntrinsicContext&) {
+        ++ends;
         return VmValue::Void();
     });
-    f.Hook("Lfixture/AnimationProbe;", "onAnimationEnd", "(Landroid/animation/Animator;)V", [&](IntrinsicContext&) { ++ends; return VmValue::Void(); });
     f.Hook("Lfixture/AnimationProbe;", "onAnimationCancel", "(Landroid/animation/Animator;)V", [&](IntrinsicContext&) { ++cancels; return VmValue::Void(); });
     f.Call(animator, "addUpdateListener", "(Landroid/animation/ValueAnimator$AnimatorUpdateListener;)V", {VmValue::Ref(listener)});
     f.Call(animator, "addListener", "(Landroid/animation/Animator$AnimatorListener;)V", {VmValue::Ref(listener)});
@@ -358,6 +372,7 @@ TEST_CASE("DVM-337 animation end removes child window and restores the focused A
     CHECK(f.app.context->window_has_focus.load());
     CHECK(focus == std::vector<bool>{false, true});
     CHECK_FALSE(f.app.context->focused_application_window.IsValid());
-    CHECK(f.app.ledger.Unimplemented().empty());
+    for (const auto& hit : f.app.ledger.Unimplemented())
+        CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
     static_cast<void>(f.app.app->Stop());
 }

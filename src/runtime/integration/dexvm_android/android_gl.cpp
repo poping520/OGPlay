@@ -3172,8 +3172,6 @@ Decl Declare_com_google_android_gles_jni_GLImpl(const Context& context) {
             // The original initializer caches JNI IDs. Host adapters use the
             // linker/NIO APIs directly and need no process-global JNI cache.
             handler = [](dx::IntrinsicContext&) { return dx::VmValue::Void(); };
-        } else if (name == "nativeAllowIndirectBuffers") {
-            handler = [context](dx::IntrinsicContext&) { return dx::VmValue::Int(context->target_sdk_version <= 3U); };
         } else {
             if (name == "_glGetString") name = "glGetString";
             const bool bounds = name.ends_with("Bounds");

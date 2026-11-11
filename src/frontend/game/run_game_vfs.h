@@ -34,7 +34,13 @@ struct SandboxOptions final {
 };
 
 struct SandboxSession final {
-    // Null when running ephemeral. Must outlive the VirtualFileSystem.
+    struct RemoveTemporaryRoot {
+        void operator()(std::filesystem::path* path) const noexcept;
+    };
+
+    // Destroy the store before removing its temporary directory.
+    std::unique_ptr<std::filesystem::path, RemoveTemporaryRoot> temporary_root;
+    // Must outlive the VirtualFileSystem.
     std::unique_ptr<runtime::SandboxStore> store;
     std::filesystem::path root;
     // Exact instance identity propagated to both the sandbox and guest

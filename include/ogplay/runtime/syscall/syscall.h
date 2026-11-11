@@ -182,7 +182,8 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock
                              std::function<void(std::uint64_t, std::chrono::nanoseconds)> admit_sleep = {});
 void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space);
 void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher, cpu::FutexTable& futex_table,
-                               memory::MemoryBus& memory_bus);
+                               memory::MemoryBus& memory_bus,
+                               std::function<std::optional<std::chrono::nanoseconds>(std::uint64_t)> wait_limit = {});
 void BindAndroidSignalSyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space,
                                GuestThreadLifecycle* lifecycle = nullptr, UserUndefinedClassifier classifier = nullptr);
 void BindAndroidProcessSyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space,

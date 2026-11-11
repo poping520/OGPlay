@@ -1,3 +1,4 @@
+#include "runtime/integration/dexvm_android/shared.h"
 #include "dexvm/resource_fixture.h"
 #include "ogplay/runtime/raster/bitmap.h"
 #include "container_traversal_fixture.h"
@@ -221,7 +222,7 @@ TEST_CASE("API19 ContextImpl default theme underlies an activity theme with an i
         f.context->application_theme = 0x7f020020;
         const auto owner = f.New("Landroid/app/Activity;");
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(0)});
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020020)});
         const auto theme = f.On(owner, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
@@ -252,7 +253,7 @@ TEST_CASE("DVM-288 ROM Theme and TypedArray execute on both interpreter backends
                                       {0x7f010005, 5, 0x0a01, {}},
                                       {0x7f010006, 1, 0, {}}}));
         const auto owner = f.New("Landroid/content/Context;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
         const auto roots = f.vm.ProtectReferences(std::array{owner, resources});
         const auto theme = f.On(resources, "newTheme", "()Landroid/content/res/Resources$Theme;").ref;
@@ -418,7 +419,7 @@ TEST_CASE("DVM-289 ROM attribute constructor smoke") {
             .entries.push_back(Style(0x7f020020, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}}));
         f.context->application_theme = 0x7f020020;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(static_cast<std::int32_t>(f.context->application_theme))});
         for (const auto* type : {"Landroid/view/View;", "Ltest/HierarchyGroup;", "Landroid/widget/FrameLayout;",
                                  "Landroid/widget/LinearLayout;", "Landroid/widget/RelativeLayout;"}) {
@@ -534,7 +535,7 @@ TEST_CASE("DVM-351 DVM-289 XML attributes construct ROM containers and LayoutPar
             Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
         f.context->application_theme = 0x7f020004;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(static_cast<std::int32_t>(f.context->application_theme))});
         ogplay::test::ResourceFixtureEntry id;
         id.resource_id = 0x7f030001;
@@ -654,7 +655,7 @@ TEST_CASE("DVM-289 container priority follows XML style default and application 
             &table_bytes);
         f.context->application_theme = 0x7f020004;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(static_cast<std::int32_t>(f.context->application_theme))});
         ogplay::test::ResourceFixtureEntry id;
         id.resource_id = 0x7f030001;
@@ -713,7 +714,7 @@ TEST_CASE("DVM-289 Relative LayoutParams read all 23 attributes from Parser") {
             Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
         f.context->application_theme = 0x7f020004;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(static_cast<std::int32_t>(f.context->application_theme))});
         std::vector<XmlValue> attrs{{0x010100f4, 16, 0xfffffffe}, {0x010100f5, 16, 0xffffffff}, {0x01010192, 18, 1}};
         for (const auto& [id, verb] : rules) {
@@ -756,7 +757,7 @@ TEST_CASE("DVM-289 attributed trees match code trees through VD05 traversal") {
         f.context->application_theme = 0x7f020004;
         const auto owner = f.New("Landroid/app/Activity;");
         f.context->activity = owner;
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
         for (const auto* type : {"Ltest/HierarchyGroup;", "Landroid/widget/FrameLayout;",
                                  "Landroid/widget/LinearLayout;", "Landroid/widget/RelativeLayout;"}) {
@@ -828,7 +829,7 @@ TEST_CASE("DVM-289 missing dimensions and drawable resources use ROM failures") 
             Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
         f.context->application_theme = 0x7f020004;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
         const auto parser = OpenAttributeXml(f, owner,
                                              AttributeXml({{},
@@ -1092,7 +1093,7 @@ VmObjectRef InflaterActivity(ContainerVm& f) {
     f.context->application_theme = 0x7f020004;
     const auto owner = f.New("Landroid/app/Activity;");
     f.context->activity = owner;
-    ogplay::test::AttachViewTestContext(f.vm, owner);
+    ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
     f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
     return owner;
 }
@@ -1144,7 +1145,7 @@ TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve 
         // Publish the complete APK before Resources creates its immutable StringBlock pool.
         const auto owner = f.New("Landroid/app/Activity;");
         f.context->activity = owner;
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});
         const auto inflater = f.On(owner, "getLayoutInflater", "()Landroid/view/LayoutInflater;").ref;
@@ -1525,7 +1526,7 @@ TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both bac
         ogplay::test::ResourceFixture(*f.context)
             .entries.push_back(Style(0x7f020020, 0, {{a, 1, alias, {}}, {b, 1, color, {}}, {c, 1, 0, {}}}));
         const auto owner = f.New("Landroid/content/Context;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         auto res = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
         const auto theme = f.On(res, "newTheme", "()Landroid/content/res/Resources$Theme;").ref;
         const auto roots = f.vm.ProtectReferences(std::array{owner, res, theme});
@@ -1618,7 +1619,10 @@ TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both bac
         // Reinstall the fixture into a fresh manager; addAssetPath overlays retain
         // the older APK's density variants by design.
         f.context->singletons.erase("resources");
-        const auto nodpiResources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+        ogplay::test::MountResourceFixture(*f.context, f.vm);
+        IntrinsicContext resource_call{f.vm, VmObjectRef{}, {}};
+        const auto nodpiResources =
+            ogplay::runtime::android_intrinsics::ResourceObject(resource_call, f.context, false);
         const auto nodpiResourceRoot = f.vm.ProtectReferences(std::array{nodpiResources});
         res = nodpiResources;
         const auto nodpi =
@@ -1747,7 +1751,7 @@ VmObjectRef TextOwner(ContainerVm& f, const std::vector<std::byte>& pool = {}) {
         pool.empty() ? StringPool({"serif", "Plain text", "res/drawable/fixture.png"}, true) : pool;
     f.context->application_theme = text_theme;
     const auto owner = f.New("Landroid/app/Activity;");
-    ogplay::test::AttachViewTestContext(f.vm, owner);
+    ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
     f.On(owner, "setTheme", "(I)V", {VmValue::Int(text_theme)});
     return owner;
 }
@@ -2153,7 +2157,7 @@ TEST_CASE("DVM-325 scrollbar references project without loading and reject unreg
         ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         const auto plain_owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, plain_owner);
+        ogplay::test::AttachViewTestContext(f.vm, plain_owner, f.context);
         const auto plain = f.New("Landroid/view/View;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
                                  {VmValue::Ref(plain_owner), VmValue::Ref(VmObjectRef{})});
         const auto plain_roots = f.vm.ProtectReferences(std::array{plain_owner, plain});
@@ -2184,7 +2188,7 @@ TEST_CASE("DVM-325 scrollbar references project without loading and reject unreg
             {Style(0x7f020004, 0x01030005, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x010100d4, 1, 0, {}}}),
              Style(0x7f020005, 0, {{0x010100d4, 1, 0x01080004, {}}})});
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         // Only IDs proven by the fixed ROM are enabled. This is R.drawable.btn_default,
         // already demanded by the View background slot of the default Button style.
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
@@ -2212,7 +2216,7 @@ TEST_CASE("DVM-316 RelativeLayout inflation reports reflection target and constr
             Table({Style(0x7f020004, 0x01030007, {{0x010100d4, 1, 0x0108ffff, {}}})});
         const auto owner = f.New("Landroid/app/Activity;");
         f.context->activity = owner;
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
         // Root attributes from the observed movie overlay: horizontal, match_parent both axes.
         auto attrs = InflateSize(0xffffffffU, 0xffffffffU);
@@ -2260,7 +2264,7 @@ TEST_CASE("API19 app and system resources load framework scalar colors and XML s
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         const auto owner = f.New("Landroid/content/Context;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
         const auto roots = f.vm.ProtectReferences(std::array{owner, resources});
         const auto drawable =
@@ -2310,7 +2314,7 @@ TEST_CASE("DVM-334 Resources getIdentifier parses API19 names and routes package
         ogplay::test::ResourceFixture(*f.context)
             .entries.push_back({.resource_id = logo, .type_name = "drawable", .entry_name = "logo"});
         const auto owner = f.New("Landroid/content/Context;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
         const auto roots = f.vm.ProtectReferences(std::array{owner, resources});
         const auto lookup = [&](const char* name, const char* type, const char* package) {

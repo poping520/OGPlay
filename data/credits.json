@@ -13,6 +13,10 @@
      "path": "android/19/notices/boot-classpath.txt"
     },
     {
+     "title": "telephony-common.jar.txt",
+     "path": "android/19/notices/telephony-common.jar.txt"
+    },
+    {
      "title": "libc.so.txt",
      "path": "android/19/notices/libc.so.txt"
     },

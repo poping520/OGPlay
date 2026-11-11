@@ -6,6 +6,7 @@
 // presentation-only calls stay no-ops.
 
 #include "ogplay/loader/binary_xml.h"
+#include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/integration/native_activity_runtime.h"
 
 #include "catalog.h"
@@ -23,152 +24,268 @@ void RequireNotificationPackage(dx::IntrinsicContext& call, const Context& conte
 }
 }  // namespace
 
-Decl Declare_android_app_Notification(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Notification;");
-    builder.MergesBootClass();
-    builder.StaticMethod(
-        "nativeUnsupported", "(Ljava/lang/String;)V",
-        [](dx::IntrinsicContext& call) -> dx::VmValue {
-            const auto operation = dx::IntrinsicCall(call).NonNullRef(0, "operation");
-            const auto name = call.vm.StringUtf8(operation);
-            const bool template_request = name == "system_template";
-            if (!template_request && name != "parcel")
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unknown notification operation"};
-            if (auto* ledger = call.vm.Ledger())
-                ledger->RecordUnimplemented(
-                    template_request ? "dexvm.notification_template" : "dexvm.notification_parcel", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  template_request ? "Android system notification templates are not available"
-                                                   : "notification parcel transport is not supported"};
-        },
-        dx::kAccPrivate | dx::kAccNative);
+namespace {
+std::uint16_t ActivityFactSlot(dx::Interpreter& vm, dx::VmObjectRef object, const char* name, const char* type) {
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, type);
+    if (!field) throw std::logic_error("ROM activity fact field is unavailable: " + std::string(name));
+    return vm.Linker().Field(*field).slot;
+}
+
+dx::VmValue ActivityMemoryInfo(dx::IntrinsicContext& call, const Context& context) {
+    const auto info = dx::IntrinsicCall(call).NonNullRef(0, "outInfo");
+    if (!context->memory_snapshot) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_memory_query", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest memory facts are not installed"};
+    }
+    const auto& memory = *context->memory_snapshot;
+    const auto& policy = memory.pressure;
+    constexpr std::uint64_t kBytesPerKiB = 1024;
+    const auto available = memory.AvailableBytes();
+    const auto threshold = policy.home_kb * kBytesPerKiB;
+    const auto cached = policy.cached_kb * kBytesPerKiB;
+    const auto slots = call.vm.Model().InstanceSlots(info);
+    for (const auto& [name, value] : std::array{
+             std::pair{"availMem", available},
+             std::pair{"totalMem", memory.TotalBytes()},
+             std::pair{"threshold", threshold},
+             std::pair{"hiddenAppThreshold", cached},
+             std::pair{"secondaryServerThreshold", policy.service_kb * kBytesPerKiB},
+             std::pair{"visibleAppThreshold", policy.visible_kb * kBytesPerKiB},
+             std::pair{"foregroundAppThreshold", policy.foreground_kb * kBytesPerKiB},
+         }) {
+        const auto slot = ActivityFactSlot(call.vm, info, name, "J");
+        slots[slot] = {static_cast<std::uint32_t>(value), dx::SlotTag::wide_lo};
+        slots[slot + 1U] = {static_cast<std::uint32_t>(value >> 32U), dx::SlotTag::wide_hi};
+    }
+    slots[ActivityFactSlot(call.vm, info, "lowMemory", "Z")] = {
+        available < threshold + (cached - threshold) / 2U ? 1U : 0U, dx::SlotTag::cat1};
+    return dx::VmValue::Void();
+}
+
+dx::VmValue RunningAppProcesses(dx::IntrinsicContext& call, const Context& context) {
+    auto& vm = call.vm;
+    const auto package = vm.NewStringUtf8(context->package_name);
+    const auto package_root = vm.ProtectReferences(std::array{package});
+    const auto packages = vm.Model().NewObjectArray(vm.Linker().ResolveDescriptor("[Ljava/lang/String;"),
+                                                    vm.Linker().ResolveDescriptor("Ljava/lang/String;"), 1);
+    const auto packages_root = vm.ProtectReferences(std::array{packages});
+    vm.Model().SetObjectElement(packages, 0, package);
+    const auto name =
+        context->application_process_name.empty() ? package : vm.NewStringUtf8(context->application_process_name);
+    const auto info = NewPlatformObject(
+        vm, "Landroid/app/ActivityManager$RunningAppProcessInfo;", "(Ljava/lang/String;I[Ljava/lang/String;)V",
+        {dx::VmValue::Ref(name), dx::VmValue::Int(kGuestProcessId), dx::VmValue::Ref(packages)});
+    const auto info_root = vm.ProtectReferences(std::array{info});
+    const auto& stack = context->activity_stack;
+    const bool top = !stack.empty() && !stack.back().stopped;
+    const bool visible = std::ranges::any_of(stack, [](const auto& activity) { return activity.visible; });
+    const auto importance = top ? 100U : visible ? 200U : 400U;
+    const auto slots = vm.Model().InstanceSlots(info);
+    for (const auto& [field, value] : std::array{
+             std::pair{"uid", context->application_uid},
+             std::pair{"flags", stack.empty() ? 0U : 4U},
+             std::pair{"importance", importance},
+             std::pair{"lru", importance == 400U ? 1U : 0U},
+         })
+        slots[ActivityFactSlot(vm, info, field, "I")] = {value, dx::SlotTag::cat1};
+    const auto list = NewPlatformObject(vm, "Ljava/util/ArrayList;", "()V", {});
+    static_cast<void>(CallAndroidMethod(vm, list, "add", "(Ljava/lang/Object;)Z", {dx::VmValue::Ref(info)}));
+    return dx::VmValue::Ref(list);
+}
+}  // namespace
+
+Decl Declare_local_BackupService(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalBackupService;",
+                                                    "Landroid/app/backup/IBackupManager$Stub;");
+    // There is deliberately no backup transport, queue or restore session.
+    const auto disabled = [](dx::IntrinsicContext& call) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.backup_disabled", 0);
+    };
+    builder.VirtualMethod("dataChanged", "(Ljava/lang/String;)V", [disabled](dx::IntrinsicContext& call) {
+        disabled(call);
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("beginRestoreSession",
+                          "(Ljava/lang/String;Ljava/lang/String;)Landroid/app/backup/IRestoreSession;",
+                          [disabled](dx::IntrinsicContext& call) {
+                              disabled(call);
+                              return dx::VmValue::Ref(dx::VmObjectRef{});
+                          });
     return std::move(builder).Build();
 }
 
-Decl Declare_android_app_ActivityManager(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/ActivityManager;");
+Decl Declare_dalvik_system_DexFile(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Ldalvik/system/DexFile;", "Ljava/lang/Object;");
     builder.MergesBootClass();
-    builder.StaticMethod("staticGetMemoryClass", "()I", [](dx::IntrinsicContext& c) {
-        return dx::VmValue::Int(static_cast<std::int32_t>(c.vm.Model().NormalHeapGrowthLimitBytes() / (1024U * 1024U)));
-    });
-    builder.StaticMethod("staticGetLargeMemoryClass", "()I", [](dx::IntrinsicContext& c) {
-        return dx::VmValue::Int(static_cast<std::int32_t>(c.vm.Model().MaximumHeapBytes() / (1024U * 1024U)));
-    });
-    builder.VirtualMethod("getMemoryClass", "()I", [](dx::IntrinsicContext& c) {
-        return dx::VmValue::Int(static_cast<std::int32_t>(c.vm.Model().NormalHeapGrowthLimitBytes() / (1024U * 1024U)));
-    });
-    builder.VirtualMethod("getLargeMemoryClass", "()I", [](dx::IntrinsicContext& c) {
-        return dx::VmValue::Int(static_cast<std::int32_t>(c.vm.Model().MaximumHeapBytes() / (1024U * 1024U)));
-    });
+    constexpr auto native = dx::kAccPrivate | dx::kAccStatic | dx::kAccNative;
+    // One sealed application DEX is already registered with the linker.
+    constexpr int application_cookie = 1;
     builder.StaticMethod(
-        "nativeReadProcess", "([Ljava/lang/String;[I)V",
+        "openDexFileNative", "(Ljava/lang/String;Ljava/lang/String;I)I",
         [context](dx::IntrinsicContext& call) {
-            const auto identity = call.arguments[0].ref;
-            const auto facts = call.arguments[1].ref;
-            auto& model = call.vm.Model();
-            model.SetObjectElement(identity, 0,
-                                   call.vm.NewStringUtf8(context->application_process_name.empty()
-                                                             ? context->package_name
-                                                             : context->application_process_name));
-            model.SetObjectElement(identity, 1, call.vm.NewStringUtf8(context->package_name));
-            const auto& stack = context->activity_stack;
-            const bool top = !stack.empty() && !stack.back().stopped;
-            const bool visible =
-                std::any_of(stack.begin(), stack.end(), [](const auto& activity) { return activity.visible; });
-            const std::int32_t importance = top ? 100 : visible ? 200 : 400;
-            // API19 oomAdjToImportance: first (and only) cached process is MIN_ADJ + 0.
-            const std::array<std::int32_t, 5> values{kGuestProcessId,
-                                                     static_cast<std::int32_t>(context->application_uid),
-                                                     stack.empty() ? 0 : 4, importance, importance == 400 ? 1 : 0};
-            for (std::size_t i = 0; i < values.size(); ++i)
-                model.SetPrimitiveElement(facts, static_cast<JniSize>(i), static_cast<std::uint32_t>(values[i]));
-            return dx::VmValue::Void();
+            if (context->sealed_apk_bytes &&
+                call.vm.StringUtf8(call.arguments[0].ref) == context->package_resource_path &&
+                !call.arguments[1].ref.IsValid() && call.arguments[2].AsInt() == 0)
+                return dx::VmValue::Int(application_cookie);
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.dex_file.open", 0);
+            throw dx::VmJavaThrow{"Ljava/io/IOException;", "DexFile requires the sealed application APK"};
         },
-        dx::kAccPrivate | dx::kAccNative);
+        native);
+    builder.StaticMethod(
+        "closeDexFile", "(I)V",
+        [](dx::IntrinsicContext&) {
+            return dx::VmValue::Void();  // The linked DEX remains live until VM shutdown.
+        },
+        native);
+    builder.StaticMethod(
+        "defineClassNative", "(Ljava/lang/String;Ljava/lang/ClassLoader;I)Ljava/lang/Class;",
+        [](dx::IntrinsicContext& call) {
+            auto& vm = call.vm;
+            auto name = vm.StringUtf8(call.arguments[0].ref);
+            std::replace(name.begin(), name.end(), '.', '/');
+            const auto type = vm.Linker().FindClass("L" + name + ";");
+            if (call.arguments[2].AsInt() != application_cookie ||
+                !vm.ClassLoaders().IsRomApplicationLoader(call.arguments[1].ref) || !type ||
+                vm.Linker().ClassHeader(*type).defining_loader != dx::kApplicationLoader)
+                throw dx::VmJavaThrow{"Ljava/lang/ClassNotFoundException;", name};
+            vm.Linker().EnsureClassLinked(*type);
+            vm.Linker().MarkInitiatedBy(*type, dx::kApplicationLoader);
+            return dx::VmValue::Ref(vm.Model().ClassObject(*type));
+        },
+        native);
     return std::move(builder).Build();
 }
 
-Decl Declare_android_app_ActivityManager_MemoryInfo(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/ActivityManager$MemoryInfo;");
-    builder.MergesBootClass();
-    const std::array fields{builder.BoundInstanceField("availMem", "J", dx::kAccPublic),
-                            builder.BoundInstanceField("totalMem", "J", dx::kAccPublic),
-                            builder.BoundInstanceField("threshold", "J", dx::kAccPublic),
-                            builder.BoundInstanceField("hiddenAppThreshold", "J", dx::kAccPublic),
-                            builder.BoundInstanceField("secondaryServerThreshold", "J", dx::kAccPublic),
-                            builder.BoundInstanceField("visibleAppThreshold", "J", dx::kAccPublic),
-                            builder.BoundInstanceField("foregroundAppThreshold", "J", dx::kAccPublic)};
-    builder.DirectMethod(
-        "nativeRead", "()V",
-        [context, fields](dx::IntrinsicContext& call) {
-            if (!context->memory_snapshot) {
-                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_memory_query", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "guest memory facts are not installed"};
-            }
-            const auto& memory = *context->memory_snapshot;
-            const auto& policy = memory.pressure;
-            const std::array<std::uint64_t, 7> values{memory.AvailableBytes(),
-                                                      memory.TotalBytes(),
-                                                      static_cast<std::uint64_t>(policy.home_kb) * 1024U,
-                                                      static_cast<std::uint64_t>(policy.cached_kb) * 1024U,
-                                                      static_cast<std::uint64_t>(policy.service_kb) * 1024U,
-                                                      static_cast<std::uint64_t>(policy.visible_kb) * 1024U,
-                                                      static_cast<std::uint64_t>(policy.foreground_kb) * 1024U};
-            const dx::IntrinsicCall api(call);
-            for (std::size_t i = 0; i < fields.size(); ++i)
-                api.SetLong(fields[i], static_cast<std::int64_t>(values[i]));
-            return dx::VmValue::Void();
-        },
-        dx::kAccPrivate | dx::kAccNative);
+Decl Declare_local_ActivityService(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalActivityService;",
+                                                    "Landroid/app/ActivityManagerNative;");
+    builder.VirtualMethod(
+        "attachApplication", "(Landroid/app/IApplicationThread;)V", [context](dx::IntrinsicContext& call) {
+            auto& vm = call.vm;
+            const auto thread = dx::IntrinsicCall(call).NonNullRef(0, "applicationThread");
+            const auto info = MakeApplicationInfo(call, context, true);
+            const auto info_root = vm.ProtectReferences(std::array{info});
+            const auto providers = ApplicationProviders(call, context, info);
+            const auto providers_root = vm.ProtectReferences(std::array{providers});
+            const auto resources = ResourceObject(call, context, false);
+            const auto resources_root = vm.ProtectReferences(std::array{resources});
+            const auto config =
+                CallAndroidMethod(vm, resources, "getConfiguration", "()Landroid/content/res/Configuration;").ref;
+            const auto config_root = vm.ProtectReferences(std::array{config});
+            const auto compat_type = vm.Linker().ResolveDescriptor("Landroid/content/res/CompatibilityInfo;");
+            const auto initialized = vm.EnsureClassInitialized(compat_type);
+            if (initialized.exception.IsValid())
+                throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor,
+                                      initialized.exception_message, initialized.exception};
+            const auto field = vm.Linker().FindFieldRecursive(compat_type, "DEFAULT_COMPATIBILITY_INFO",
+                                                              "Landroid/content/res/CompatibilityInfo;");
+            if (!field) throw std::logic_error("CompatibilityInfo default is unavailable");
+            const auto compat =
+                dx::VmObjectRef{vm.Linker().Class(compat_type).static_storage[vm.Linker().Field(*field).slot]};
+            const auto process = vm.NewStringUtf8(
+                context->application_process_name.empty() ? context->package_name : context->application_process_name);
+            const auto null = dx::VmValue::Ref(dx::VmObjectRef{});
+            const auto zero = dx::VmValue::Int(0);
+            return CallAndroidMethod(
+                vm, thread, "bindApplication",
+                "(Ljava/lang/String;Landroid/content/pm/ApplicationInfo;Ljava/util/List;"
+                "Landroid/content/ComponentName;Ljava/lang/String;Landroid/os/ParcelFileDescriptor;ZLandroid/os/Bundle;"
+                "Landroid/app/IInstrumentationWatcher;Landroid/app/IUiAutomationConnection;IZZZ"
+                "Landroid/content/res/Configuration;Landroid/content/res/CompatibilityInfo;Ljava/util/Map;Landroid/os/Bundle;)V",
+                {dx::VmValue::Ref(process), dx::VmValue::Ref(info), dx::VmValue::Ref(providers), null, null, null, zero,
+                 null, null, null, zero, zero, zero, zero, dx::VmValue::Ref(config), dx::VmValue::Ref(compat), null,
+                 null});
+        });
+    builder.VirtualMethod("getMemoryInfo", "(Landroid/app/ActivityManager$MemoryInfo;)V",
+                          [context](dx::IntrinsicContext& call) { return ActivityMemoryInfo(call, context); });
+    builder.VirtualMethod("getRunningAppProcesses", "()Ljava/util/List;",
+                          [context](dx::IntrinsicContext& call) { return RunningAppProcesses(call, context); });
+    builder.VirtualMethod(
+        "getDeviceConfigurationInfo", "()Landroid/content/pm/ConfigurationInfo;",
+        [context](dx::IntrinsicContext& call) {
+            auto& vm = call.vm;
+            const auto resources = ResourceObject(call, context, false);
+            const auto config =
+                CallAndroidMethod(vm, resources, "getConfiguration", "()Landroid/content/res/Configuration;").ref;
+            const auto config_root = vm.ProtectReferences(std::array{config});
+            const auto info = NewPlatformObject(vm, "Landroid/content/pm/ConfigurationInfo;", "()V", {});
+            const auto root = vm.ProtectReferences(std::array{info});
+            const auto input = [&](const char* name) {
+                return vm.Model().InstanceSlots(config)[ActivityFactSlot(vm, config, name, "I")].bits;
+            };
+            const auto set = [&](const char* name, std::uint32_t value) {
+                vm.Model().InstanceSlots(info)[ActivityFactSlot(vm, info, name, "I")] = {value, dx::SlotTag::cat1};
+            };
+            const auto keyboard = input("keyboard"), navigation = input("navigation");
+            set("reqTouchScreen", input("touchscreen"));
+            set("reqKeyboardType", keyboard);
+            set("reqNavigation", navigation);
+            set("reqInputFeatures", (navigation == 2 || navigation == 3 ? 2U : 0U) | (keyboard > 1 ? 1U : 0U));
+            set("reqGlEsVersion", kManagedGlesVersion);
+            return dx::VmValue::Ref(info);
+        });
+    builder.VirtualMethod("checkPermission", "(Ljava/lang/String;II)I", [context](dx::IntrinsicContext& call) {
+        const auto permission = call.arguments[0].ref;
+        const auto same_process = call.arguments[1].AsInt() == kGuestProcessId &&
+                                  static_cast<std::uint32_t>(call.arguments[2].AsInt()) == context->application_uid;
+        return dx::VmValue::Int(permission.IsValid() && same_process &&
+                                        context->granted_permissions.contains(call.vm.StringUtf8(permission))
+                                    ? 0
+                                    : -1);
+    });
+    AddLocalActivityBindingMethods(builder, context);
+    AddLocalProviderMethods(builder, context);
+    AddLocalIntentSenderMethods(builder, context);
     return std::move(builder).Build();
 }
 
 dx::VmObjectRef ActivityManagerForContext(dx::IntrinsicContext& call, const Context& context) {
     const auto found = context->singletons.find("activity");
     if (found != context->singletons.end()) return found->second;
-    auto& vm = call.vm;
-    const auto type = vm.Linker().ResolveDescriptor("Landroid/app/ActivityManager;");
-    const auto require = [&](const dx::VmCallOutcome& outcome) {
-        if (outcome.exception.IsValid())
-            throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                                  outcome.exception};
-    };
-    require(vm.EnsureClassInitialized(type));
-    const auto object = vm.NewIntrinsicInstance("Landroid/app/ActivityManager;");
     const auto owner = context->application_base_context.IsValid() ? context->application_base_context : call.receiver;
-    const auto roots = vm.ProtectReferences(std::array{object, owner});
-    const auto constructor =
-        vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;Landroid/os/Handler;)V");
-    if (!constructor)
-        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, "ActivityManager constructor is missing");
-    require(vm.Call(*constructor, std::array{dx::VmValue::Ref(object), dx::VmValue::Ref(owner),
-                                             dx::VmValue::Ref(dx::VmObjectRef{})}));
-    context->singletons.emplace("activity", object);
-    return object;
+    const auto object =
+        NewPlatformObject(call.vm, "Landroid/app/ActivityManager;", "(Landroid/content/Context;Landroid/os/Handler;)V",
+                          {dx::VmValue::Ref(owner), dx::VmValue::Ref(dx::VmObjectRef{})});
+    return context->singletons.try_emplace("activity", object).first->second;
 }
 
-Decl Declare_android_app_NotificationManager(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/NotificationManager;");
-    builder.MergesBootClass();
-    builder.DirectMethod(
-        "nativeCancel", "(Ljava/lang/String;Ljava/lang/String;IZ)V",
-        [context](dx::IntrinsicContext& call) {
-            RequireNotificationPackage(call, context);
-            // Publication is rejected by the only post boundary. No other
-            // producer or persisted inventory exists, so the set is known empty.
-            // Cancellation must not invalidate an unrelated PendingIntent.
-            return dx::VmValue::Void();
-        },
-        dx::kAccPrivate | dx::kAccNative);
-    builder.DirectMethod(
-        "nativeRejectPost", "(Ljava/lang/String;)V",
-        [context](dx::IntrinsicContext& call) -> dx::VmValue {
-            RequireNotificationPackage(call, context);
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.notification_post", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "notification publication is disabled"};
-        },
-        dx::kAccPrivate | dx::kAccNative);
+Decl Declare_local_UiModeService(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalUiModeService;",
+                                                    "Landroid/app/IUiModeManager$Stub;");
+    for (const auto* method : {"enableCarMode", "disableCarMode", "setNightMode"})
+        RejectUnsupportedServiceMethod(builder, "android.app.IUiModeManager", method, "(I)V");
+    for (const auto* method : {"getCurrentModeType", "getNightMode"})
+        RejectUnsupportedServiceMethod(builder, "android.app.IUiModeManager", method, "()I");
+    return std::move(builder).Build();
+}
+
+Decl Declare_local_NotificationService(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalNotificationService;",
+                                                    "Landroid/app/INotificationManager$Stub;");
+    const auto require_owner = [context](dx::IntrinsicContext& call, std::size_t user) {
+        RequireNotificationPackage(call, context);
+        if (call.arguments[user].AsInt() != 0)
+            throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "notification access outside the current user"};
+    };
+    builder.VirtualMethod("cancelNotificationWithTag", "(Ljava/lang/String;Ljava/lang/String;II)V",
+                          [require_owner](dx::IntrinsicContext& call) {
+                              require_owner(call, 3);
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod("cancelAllNotifications", "(Ljava/lang/String;I)V",
+                          [require_owner](dx::IntrinsicContext& call) {
+                              require_owner(call, 1);
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod("enqueueNotificationWithTag",
+                          "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILandroid/app/Notification;[II)V",
+                          [require_owner](dx::IntrinsicContext& call) -> dx::VmValue {
+                              require_owner(call, 6);
+                              if (auto* ledger = call.vm.Ledger())
+                                  ledger->RecordUnimplemented("dexvm.notification_post", 0);
+                              throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                                    "notification publication is disabled"};
+                          });
     return std::move(builder).Build();
 }
 
@@ -202,8 +319,9 @@ dx::VmObjectRef NotificationManagerForContext(dx::IntrinsicContext& call, const 
     return object;
 }
 
-Decl Declare_android_app_KeyguardManager(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/KeyguardManager;", "Ljava/lang/Object;");
+Decl Declare_local_WindowService(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalWindowService;",
+                                                    "Landroid/view/IWindowManager$Stub;");
     const auto state = [context] {
         return context->keyguard_state_provider ? context->keyguard_state_provider() : AndroidKeyguardState{};
     };
@@ -214,25 +332,9 @@ Decl Declare_android_app_KeyguardManager(const Context& context) {
     builder.VirtualMethod("inKeyguardRestrictedInputMode", "()Z", [state](dx::IntrinsicContext&) {
         return dx::VmValue::Int(state().restricted_input ? 1 : 0);
     });
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_app_backup_BackupManager(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/backup/BackupManager;");
-    builder.MergesBootClass();
-    const auto service = builder.BoundStaticField("sService", "Landroid/app/backup/IBackupManager;", dx::kAccPrivate);
-    // This process has no Android backup service. API 19 Java owns the
-    // absent-service returns; no Binder lookup or backup job is simulated.
-    builder.StaticMethod(
-        "checkServiceBinder", "()V",
-        [service](dx::IntrinsicContext& call) {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.backup_service", 0);
-            if (dx::IntrinsicCall(call).GetRef(service).IsValid())
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "external backup service is unavailable"};
-            return dx::VmValue::Void();
-        },
-        dx::kAccPrivate);
+    // Managed display rotation is fixed. No orientation events can occur.
+    builder.VirtualMethod("watchRotation", "(Landroid/view/IRotationWatcher;)I",
+                          [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     return std::move(builder).Build();
 }
 
@@ -345,7 +447,7 @@ Decl Declare_android_app_Activity(const Context& context) {
         }
         if (call.vm.CurrentContextToken() != 1U) {
             const auto main = EnsureMainLooper(call, context);
-            if (!EnqueueHandlerWork(context, main, call.receiver, runnable, dx::VmObjectRef{}, 0, true,
+            if (!EnqueueHandlerWork(call.vm, context, main, call.receiver, runnable, dx::VmObjectRef{}, 0, true,
                                     context->uptime_millis.load())) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "main Looper is not accepting work"};
             }
@@ -408,7 +510,9 @@ Decl Declare_android_app_Activity(const Context& context) {
                 reject();
             if (!call.arguments[0].ref.IsValid())
                 throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "intent is null"};
-            if (CallAndroidMethod(call.vm, call.arguments[0].ref, "getFlags", "()I").AsInt() != 0) reject();
+            if (call.arguments[1].AsInt() >= 0 &&
+                CallAndroidMethod(call.vm, call.arguments[0].ref, "getFlags", "()I").AsInt() != 0)
+                reject();
             return StartAndroidActivity(call, context, call.arguments[1].AsInt());
         },
         dx::kAccPrivate | dx::kAccNative);
@@ -454,8 +558,14 @@ Decl Declare_android_app_Activity(const Context& context) {
     });
     builder.VirtualMethod(
         "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", [context](dx::IntrinsicContext& call) {
-            if (call.arguments[0].ref.IsValid() && call.vm.StringUtf8(call.arguments[0].ref) == "window")
-                return dx::VmValue::Ref(AndroidActivityWindowManager(call.vm, *context, call.receiver));
+            if (call.arguments[0].ref.IsValid()) {
+                const auto name = call.vm.StringUtf8(call.arguments[0].ref);
+                if (name == "window")
+                    return dx::VmValue::Ref(AndroidActivityWindowManager(call.vm, *context, call.receiver));
+                if (name == "input_method")
+                    return dx::VmValue::Ref(
+                        Singleton(call, context, "input_method", "Landroid/view/inputmethod/InputMethodManager;"));
+            }
             const auto base = call.vm.Linker().ResolveDescriptor("Landroid/view/ContextThemeWrapper;");
             const auto slot =
                 call.vm.Linker().FindVtableIndex(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;");
@@ -549,84 +659,6 @@ Decl Declare_android_app_Dialog(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-// ---- migrated from android_app_IntentService.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_app_IntentService(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/IntentService;", "Landroid/app/Service;", {},
-                                                    dx::kAccPublic | dx::kAccAbstract);
-    builder.Constructor("()V", NeutralHandler('V'));
-    builder.VirtualMethod(
-        "onHandleIntent", "(Landroid/content/Intent;)V",
-        [](dx::IntrinsicContext&) -> dx::VmValue {
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "IntentService.onHandleIntent must be overridden"};
-        },
-        dx::kAccProtected | dx::kAccAbstract);
-    const auto wu_name = builder.BoundInstanceField("mName", "Ljava/lang/String;", dx::kAccPrivate);
-    // AOSP 4.4 ROM line 76.
-    builder.Constructor(
-        "(Ljava/lang/String;)V",
-        [wu_name](dx::IntrinsicContext& c) {
-            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/app/Service;"),
-                                                               "<init>", "()V");
-            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
-            if (result.exception.IsValid())
-                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                                      result.exception};
-            dx::IntrinsicCall(c).SetRef(wu_name, c.arguments[0].ref);
-            return dx::VmValue::Void();
-        },
-        dx::kAccPublic);
-
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_app_Service(const Context& context) {
-    auto builder =
-        dx::IntrinsicClassBuilder::Class("Landroid/app/Service;", "Landroid/content/ContextWrapper;",
-                                         {"Landroid/content/ComponentCallbacks2;"}, dx::kAccPublic | dx::kAccAbstract);
-    builder.Constructor("()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.ConstantInt("START_CONTINUATION_MASK", "I", 0x0f)
-        .ConstantInt("START_STICKY_COMPATIBILITY", "I", 0)
-        .ConstantInt("START_STICKY", "I", 1)
-        .ConstantInt("START_NOT_STICKY", "I", 2)
-        .ConstantInt("START_REDELIVER_INTENT", "I", 3)
-        .ConstantInt("START_FLAG_REDELIVERY", "I", 1)
-        .ConstantInt("START_FLAG_RETRY", "I", 2);
-    const auto noop = dx::IntrinsicHandler([](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.FinalMethod("getApplication", "()Landroid/app/Application;",
-                        [context](dx::IntrinsicContext&) { return dx::VmValue::Ref(context->application); });
-    builder.VirtualMethod("onCreate", "()V", noop)
-        .VirtualMethod("onStart", "(Landroid/content/Intent;I)V", noop)
-        .VirtualMethod("onStartCommand", "(Landroid/content/Intent;II)I",
-                       [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); })
-        .VirtualMethod("onDestroy", "()V", noop)
-        .VirtualMethod("onConfigurationChanged", "(Landroid/content/res/Configuration;)V", noop)
-        .VirtualMethod("onLowMemory", "()V", noop)
-        .VirtualMethod("onTrimMemory", "(I)V", noop)
-        .VirtualMethod("onTaskRemoved", "(Landroid/content/Intent;)V", noop)
-        .VirtualMethod(
-            "onBind", "(Landroid/content/Intent;)Landroid/os/IBinder;",
-            [](dx::IntrinsicContext&) -> dx::VmValue {
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Service.onBind must be overridden"};
-            },
-            dx::kAccPublic | dx::kAccAbstract)
-        .VirtualMethod("onUnbind", "(Landroid/content/Intent;)Z",
-                       [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); })
-        .VirtualMethod("onRebind", "(Landroid/content/Intent;)V", noop);
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
 // ---- migrated from android_app_PendingIntent.cpp ----
 #include "catalog.h"
 
@@ -663,18 +695,23 @@ constexpr std::int32_t kIntentFillFlags = 0xff;  // API19 FILL_IN_*.
     return snapshot;
 }
 
-[[nodiscard]] dx::VmValue GetPendingIntent(dx::IntrinsicContext& call, const Context& context, int kind) {
+[[nodiscard]] dx::VmValue GetPendingIntent(dx::IntrinsicContext& call, const Context& context) {
     dx::IntrinsicCall args(call);
-    const auto owner = args.NonNullRef(0, "context");
-    const auto intent = args.NonNullRef(2, "intent");
-    const auto flags = args.Int(3);
+    const auto kind = args.Int(0);
+    const auto request_code = args.Int(4);
+    const auto flags = args.Int(7);
+    const auto intents = args.NonNullRef(5, "intents");
+    if ((kind != 1 && kind != 4) || args.Int(9) != 0 || args.Ref(2).IsValid() || args.Ref(3).IsValid() ||
+        args.Ref(8).IsValid() || call.vm.Model().ArrayLength(intents) != 1)
+        UnsupportedPending(call, "only current-user broadcast and service PendingIntent tokens are supported");
+    const auto intent = call.vm.Model().GetObjectElement(intents, JniSize{0});
+    if (!intent.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "intent == null"};
     if (call.vm.Model().ObjectClass(intent) != call.vm.Linker().ResolveDescriptor("Landroid/content/Intent;"))
         UnsupportedPending(call, "PendingIntent requires an ordinary API19 Intent");
     if (context->pending_intents_stopping) UnsupportedPending(call, "PendingIntent process is stopping");
     if ((flags & ~(kControlFlags | kOneShot | kIntentFillFlags)) != 0)
         UnsupportedPending(call, "unsupported API19 PendingIntent flags");
-    const auto package =
-        call.vm.StringUtf8(CallAndroidMethod(call.vm, owner, "getPackageName", "()Ljava/lang/String;").ref);
+    const auto package = call.vm.StringUtf8(args.NonNullRef(1, "packageName"));
     if (package.empty() || package != context->package_name)
         UnsupportedPending(call, "PendingIntent creator must be the current APK");
     // All ordinary Intent value semantics execute the original BootDex code.
@@ -700,7 +737,7 @@ constexpr std::int32_t kIntentFillFlags = 0xff;  // API19 FILL_IN_*.
         std::vector<dx::VmObjectRef> candidate_roots;
         for (const auto& [_, record] : context->pending_intents) {
             if (!record.canceled && record.creator_package == package && record.kind == kind &&
-                record.request_code == args.Int(1) && record.flags == (flags & ~kControlFlags)) {
+                record.request_code == request_code && record.flags == (flags & ~kControlFlags)) {
                 candidates.push_back(record);
                 candidate_roots.push_back(record.object);
             }
@@ -733,7 +770,7 @@ constexpr std::int32_t kIntentFillFlags = 0xff;  // API19 FILL_IN_*.
         if ((flags & kNoCreate) != 0) return dx::VmValue::Ref(existing);
         const auto snapshot = CopyPendingIntent(call.vm, intent);
         const auto snapshot_root = call.vm.ProtectReferences(std::array{snapshot});
-        const auto object = call.vm.NewIntrinsicInstance("Landroid/app/PendingIntent;");
+        const auto object = NewPlatformObject(call.vm, "Lorg/ogplay/framework/LocalIntentSender;", "()V", {});
         // Copying the ROM Intent or allocating the wrapper can park this caller.
         // Candidate roots prevent their collection; retry if another caller has
         // published a new eligible token while this snapshot was being built.
@@ -742,63 +779,76 @@ constexpr std::int32_t kIntentFillFlags = 0xff;  // API19 FILL_IN_*.
             std::any_of(context->pending_intents.begin(), context->pending_intents.end(), [&](const auto& entry) {
                 const auto& record = entry.second;
                 return !record.canceled && record.creator_package == package && record.kind == kind &&
-                       record.request_code == args.Int(1) && record.flags == (flags & ~kControlFlags) &&
+                       record.request_code == request_code && record.flags == (flags & ~kControlFlags) &&
                        std::none_of(candidates.begin(), candidates.end(),
                                     [&](const auto& old) { return old.object == record.object; });
             });
         if (published) continue;
         context->pending_intents.emplace(
-            object.Value(), DexVmAndroidContext::PendingIntentRecord{object, snapshot, package, kind, args.Int(1),
+            object.Value(), DexVmAndroidContext::PendingIntentRecord{object, snapshot, package, kind, request_code,
                                                                      flags & ~kControlFlags, false});
         return dx::VmValue::Ref(object);
     }
 }
 }  // namespace
 
-Decl Declare_android_app_PendingIntent(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/PendingIntent;", "Ljava/lang/Object;",
-                                                    {"Landroid/os/Parcelable;"});
-    constexpr auto signature = "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;";
-    builder.StaticMethod("getService", signature,
-                         [context](dx::IntrinsicContext& call) { return GetPendingIntent(call, context, 4); });
-    builder.StaticMethod("getBroadcast", signature,
-                         [context](dx::IntrinsicContext& call) { return GetPendingIntent(call, context, 1); });
-    builder.VirtualMethod("cancel", "()V", [context](dx::IntrinsicContext& call) {
-        const auto found = context->pending_intents.find(call.receiver.Value());
-        if (found == context->pending_intents.end()) UnsupportedPending(call, "PendingIntent has no process token");
-        found->second.canceled = true;
-        std::erase(context->alarm_operations, call.receiver);
+void AddLocalIntentSenderMethods(dx::IntrinsicClassBuilder& builder, const Context& context) {
+    builder.VirtualMethod("getIntentSender",
+                          "(ILjava/lang/String;Landroid/os/IBinder;Ljava/lang/String;I[Landroid/content/Intent;"
+                          "[Ljava/lang/String;ILandroid/os/Bundle;I)Landroid/content/IIntentSender;",
+                          [context](dx::IntrinsicContext& call) { return GetPendingIntent(call, context); });
+    builder.VirtualMethod("cancelIntentSender", "(Landroid/content/IIntentSender;)V",
+                          [context](dx::IntrinsicContext& call) {
+                              const auto token = call.arguments[0].ref;
+                              const auto found = context->pending_intents.find(token.Value());
+                              if (found == context->pending_intents.end())
+                                  UnsupportedPending(call, "PendingIntent has no process token");
+                              found->second.canceled = true;
+                              std::erase(context->alarm_operations, token);
+                              return dx::VmValue::Void();
+                          });
+}
+
+Decl Declare_local_IntentSender(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalIntentSender;",
+                                                    "Landroid/content/IIntentSender$Stub;");
+    builder.Constructor("()V", [](dx::IntrinsicContext& call) {
+        const auto parent = call.vm.Linker().ResolveDescriptor("Landroid/content/IIntentSender$Stub;");
+        const auto init = call.vm.Linker().FindDirectMethod(parent, "<init>", "()V");
+        if (!init) throw std::logic_error("IIntentSender Stub constructor is unavailable");
+        const auto result = call.vm.Call(*init, std::array{dx::VmValue::Ref(call.receiver)});
+        if (result.exception.IsValid()) call.vm.SetPendingException(result.exception);
         return dx::VmValue::Void();
     });
-    const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
-        UnsupportedPending(call, "PendingIntent delivery is unsupported");
-    };
-    builder.VirtualMethod("send", "()V", unsupported);
-    builder.VirtualMethod("send", "(I)V", unsupported);
-    builder.VirtualMethod("send", "(Landroid/content/Context;ILandroid/content/Intent;)V", unsupported);
+    builder.VirtualMethod(
+        "send", "(ILandroid/content/Intent;Ljava/lang/String;Landroid/content/IIntentReceiver;Ljava/lang/String;)I",
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
+            UnsupportedPending(call, "PendingIntent delivery is unsupported");
+        });
     return std::move(builder).Build();
 }
 
-Decl Declare_android_app_AlarmManager(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/AlarmManager;", "Ljava/lang/Object;");
-    builder.VirtualMethod("cancel", "(Landroid/app/PendingIntent;)V", [context](dx::IntrinsicContext& call) {
-        const auto operation = dx::IntrinsicCall(call).Ref(0);
-        // API19 AlarmManagerService.remove(null) returns without work.
+Decl Declare_local_AlarmService(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalAlarmService;",
+                                                    "Landroid/app/IAlarmManager$Stub;");
+    builder.VirtualMethod("remove", "(Landroid/app/PendingIntent;)V", [context](dx::IntrinsicContext& call) {
+        const auto operation = call.arguments[0].ref;
         if (!operation.IsValid()) return dx::VmValue::Void();
-        if (!context->pending_intents.contains(operation.Value()))
+        const auto token = CallAndroidMethod(call.vm, operation, "getTarget", "()Landroid/content/IIntentSender;").ref;
+        if (!context->pending_intents.contains(token.Value()))
             UnsupportedPending(call, "alarm operation has no process token");
-        // Unlike PendingIntent.cancel(), this leaves the sender valid.
-        std::erase(context->alarm_operations, operation);
+        std::erase(context->alarm_operations, token);
         return dx::VmValue::Void();
     });
-    const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
-        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.alarm_manager", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "alarm scheduling is unsupported"};
-    };
-    for (const auto* name : {"set", "setExact"})
-        builder.VirtualMethod(name, "(IJLandroid/app/PendingIntent;)V", unsupported);
-    for (const auto* name : {"setRepeating", "setInexactRepeating", "setWindow"})
-        builder.VirtualMethod(name, "(IJJLandroid/app/PendingIntent;)V", unsupported);
+    builder.VirtualMethod("set", "(IJJJLandroid/app/PendingIntent;Landroid/os/WorkSource;)V",
+                          [](dx::IntrinsicContext& call) -> dx::VmValue {
+                              if (auto* ledger = call.vm.Ledger())
+                                  ledger->RecordUnimplemented("dexvm.alarm_manager", 0);
+                              throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                                    "alarm scheduling is unsupported"};
+                          });
+    RejectUnsupportedServiceMethod(builder, "android.app.IAlarmManager", "setTime", "(J)V");
+    RejectUnsupportedServiceMethod(builder, "android.app.IAlarmManager", "setTimeZone", "(Ljava/lang/String;)V");
     return std::move(builder).Build();
 }
 

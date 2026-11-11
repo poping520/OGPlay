@@ -26,12 +26,7 @@ MODULE.md；能力状态见 [能力账本](../../capabilities.toml)。
 | [`src/guest/framework`](../../src/guest/framework/MODULE.md) | 有界 Android framework guest Java |
 | [`src/guest/framework/java`](../../src/guest/framework/java/MODULE.md) | framework Java 源码 |
 | [`src/guest/framework/java/android/app`](../../src/guest/framework/java/android/app/MODULE.md) | 有界 android.app Java 客户端 |
-| [`src/guest/framework/java/android/graphics`](../../src/guest/framework/java/android/graphics/MODULE.md) | 有界 BitmapFactory Java 客户端 |
-| [`src/guest/framework/java/android/hardware`](../../src/guest/framework/java/android/hardware/MODULE.md) | 有界传感器客户端 |
-| [`src/guest/framework/java/android/net`](../../src/guest/framework/java/android/net/MODULE.md) | 有界连接状态客户端 |
-| [`src/guest/framework/java/android/nfc`](../../src/guest/framework/java/android/nfc/MODULE.md) | 无 NFC 设备的 API19 Java 客户端 |
 | [`src/guest/framework/java/android/view`](../../src/guest/framework/java/android/view/MODULE.md) | 有界 android.view Java 客户端 |
-| [`src/guest/framework/java/com/google/android/gles_jni`](../../src/guest/framework/java/com/google/android/gles_jni/MODULE.md) | API19 GLImpl 客户端 |
 | [`src/guest/icu`](../../src/guest/icu/MODULE.md) | BootDex guest ICU JNI |
 | [`src/guest/io`](../../src/guest/io/MODULE.md) | BootDex IO 平台端点 |
 | [`src/guest/io/java/org/ogplay/io`](../../src/guest/io/java/org/ogplay/io/MODULE.md) | System 诊断输出流 |

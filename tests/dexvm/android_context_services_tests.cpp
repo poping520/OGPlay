@@ -129,12 +129,15 @@ TEST_CASE("Telephony subscriber identity is unavailable without a cellular subsc
         AndroidValueVm f(backend);
         const auto base = f.New("Landroid/content/Context;");
         const auto base_root = f.vm.ProtectReferences(std::array{base});
-        const auto phone = f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
-                                {VmValue::Ref(f.vm.NewStringUtf8("phone"))})
-                               .ref;
+        const auto phone_result = f.OnOutcome(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                                              {VmValue::Ref(f.vm.NewStringUtf8("phone"))});
+        REQUIRE_MESSAGE(!phone_result.exception.IsValid(), phone_result.exception_message,
+                        f.vm.DescribeThrowableCauses(phone_result.exception));
+        const auto phone = phone_result.value.ref;
         REQUIRE(phone.IsValid());
         const auto phone_root = f.vm.ProtectReferences(std::array{phone});
         const auto type = f.model.ObjectClass(phone);
+        CHECK(f.linker.Class(type).is_boot_dex);
         const auto index = f.linker.FindVtableIndex(type, "getSubscriberId", "()Ljava/lang/String;");
         REQUIRE(index.has_value());
         const auto flags = f.linker.Method(f.linker.Class(type).vtable[*index]).access_flags;
@@ -148,6 +151,13 @@ TEST_CASE("Telephony subscriber identity is unavailable without a cellular subsc
             CHECK(f.context->telephony_listeners.empty());
         }
         CHECK_FALSE(f.On(phone, "getSubscriberId", "()Ljava/lang/String;").ref.IsValid());
+        const auto listener = f.New("Landroid/telephony/PhoneStateListener;");
+        const auto listener_root = f.vm.ProtectReferences(std::array{listener});
+        CHECK(f.linker.Class(f.model.ObjectClass(listener)).is_boot_dex);
+        f.On(phone, "listen", "(Landroid/telephony/PhoneStateListener;I)V", {VmValue::Ref(listener), VmValue::Int(1)});
+        CHECK(f.context->telephony_listeners.size() == 1);
+        f.On(phone, "listen", "(Landroid/telephony/PhoneStateListener;I)V", {VmValue::Ref(listener), VmValue::Int(0)});
+        CHECK(f.context->telephony_listeners.empty());
         static_cast<void>(f.vm.CollectGarbage("telephony-subscriber-absence"));
         CHECK_FALSE(f.On(phone, "getSubscriberId", "()Ljava/lang/String;").ref.IsValid());
     }
@@ -157,7 +167,10 @@ TEST_CASE("DVM-128 Settings.Secure reads the injected API 19 identity") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm fixture(backend);
         fixture.context->secure_settings.insert_or_assign("android_id", "0123456789abcdef");
-        const auto resolver = fixture.vm.NewIntrinsicInstance("Landroid/content/ContentResolver;");
+        const auto resolver = fixture
+                                  .On(fixture.New("Landroid/content/Context;"), "getContentResolver",
+                                      "()Landroid/content/ContentResolver;")
+                                  .ref;
         const auto key = fixture.vm.NewStringUtf8("android_id");
         const auto roots = fixture.vm.ProtectReferences(std::array{resolver, key});
         const auto read = [&] {
@@ -180,10 +193,11 @@ TEST_CASE("DVM-128 Settings.Secure reads the injected API 19 identity") {
                                 {VmValue::Ref(resolver), VmValue::Ref(unknown)})
                         .ref.IsValid());
 
-        const auto outcome = fixture.StaticOutcome("Landroid/provider/Settings$Secure;", "getString",
-                                                   "(Landroid/content/ContentResolver;Ljava/lang/String;)"
-                                                   "Ljava/lang/String;",
-                                                   {VmValue::Ref(VmObjectRef{}), VmValue::Ref(key)});
+        const auto outcome =
+            fixture.StaticOutcome("Landroid/provider/Settings$Secure;", "getString",
+                                  "(Landroid/content/ContentResolver;Ljava/lang/String;)"
+                                  "Ljava/lang/String;",
+                                  {VmValue::Ref(VmObjectRef{}), VmValue::Ref(fixture.vm.NewStringUtf8("uncached"))});
         REQUIRE(outcome.exception.IsValid());
         CHECK(fixture.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/NullPointerException;");
 
@@ -200,7 +214,10 @@ TEST_CASE("Settings BootDex routes moved keys through the bounded store") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm fixture(backend);
         fixture.context->secure_settings.insert_or_assign("android_id", "0123456789abcdef");
-        const auto resolver = fixture.vm.NewIntrinsicInstance("Landroid/content/ContentResolver;");
+        const auto resolver = fixture
+                                  .On(fixture.New("Landroid/content/Context;"), "getContentResolver",
+                                      "()Landroid/content/ContentResolver;")
+                                  .ref;
         const auto android_id = fixture.vm.NewStringUtf8("android_id");
         const auto volume = fixture.vm.NewStringUtf8("volume_music");
         const auto text = fixture.vm.NewStringUtf8("17");
@@ -247,11 +264,11 @@ TEST_CASE("Settings BootDex routes moved keys through the bounded store") {
                                                               "Ljava/lang/String;");
         REQUIRE(store_get.has_value());
         CHECK(fixture.linker.Method(fixture.linker.Class(cache_class).vtable[*store_get]).kind ==
-              MethodKind::intrinsic);
+              MethodKind::interpreted);
     }
 }
 
-TEST_CASE("DVM-116 BackupManager Java reports absent backup service") {
+TEST_CASE("DVM-116 ROM BackupManager reports disabled local backup service") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         int callbacks{};
         auto observer = IntrinsicClassBuilder::Class("Ltest/BackupObserver;", "Landroid/app/backup/RestoreObserver;");
@@ -265,6 +282,8 @@ TEST_CASE("DVM-116 BackupManager Java reports absent backup service") {
         observer.VirtualMethod("restoreFinished", "(I)V", callback);
         AndroidValueVm f(backend, {std::move(observer).Build()});
         const auto activity = f.New("Landroid/app/Activity;");
+        const auto base = f.New("Landroid/content/Context;");
+        f.On(activity, "attachBaseContext", "(Landroid/content/Context;)V", {VmValue::Ref(base)});
         const auto manager =
             f.New("Landroid/app/backup/BackupManager;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
         const auto manager_root = f.vm.ProtectReferences(std::array{manager});
@@ -291,23 +310,17 @@ TEST_CASE("DVM-116 BackupManager Java reports absent backup service") {
         CHECK(callbacks == 0);
         const auto hits = f.ledger.Unimplemented();
         REQUIRE(hits.size() == 1);
-        CHECK(hits[0].id == "dexvm.backup_service");
+        CHECK(hits[0].id == "dexvm.backup_disabled");
         CHECK(hits[0].count == 6);
         const auto service = f.linker.FindFieldRecursive(owner, "sService", "Landroid/app/backup/IBackupManager;");
         REQUIRE(service.has_value());
         const auto slot = f.linker.Field(*service).slot;
-        CHECK(f.linker.Class(owner).static_storage[slot] == 0);
-        // Unexpected service injection must fail explicitly, never claim success.
-        f.linker.MutableClass(owner).static_storage[slot] = receiver.Value();
-        const auto unsupported = f.OnOutcome(manager, "dataChanged", "()V");
-        REQUIRE(unsupported.exception.IsValid());
-        CHECK(f.linker.Class(f.model.ObjectClass(unsupported.exception)).descriptor ==
-              "Ljava/lang/UnsupportedOperationException;");
-        CHECK(f.linker.Class(owner).static_storage[slot] == receiver.Value());
-        f.linker.MutableClass(owner).static_storage[slot] = 0;
+        CHECK(f.linker.Class(owner).static_storage[slot] != 0);
         const auto null_context =
             f.New("Landroid/app/backup/BackupManager;", "(Landroid/content/Context;)V", {VmValue::Ref(VmObjectRef{})});
-        f.On(null_context, "dataChanged", "()V");
+        const auto missing_context = f.OnOutcome(null_context, "dataChanged", "()V");
+        REQUIRE(missing_context.exception.IsValid());
+        CHECK(f.linker.Class(missing_context.exception_class).descriptor == "Ljava/lang/NullPointerException;");
     }
 }
 
@@ -327,7 +340,7 @@ TEST_CASE("DVM-220 BootDex sensor clients share an honest empty device boundary"
         listener.VirtualMethod("onSensorChanged", "(Landroid/hardware/SensorEvent;)V", callback);
         listener.VirtualMethod("onAccuracyChanged", "(Landroid/hardware/Sensor;I)V", callback);
         AndroidValueVm f(backend, {std::move(listener).Build()});
-        for (const auto* name : {"Sensor", "SensorEvent", "SensorManager", "LocalSensorManager", "LegacySensorManager",
+        for (const auto* name : {"Sensor", "SensorEvent", "SensorManager", "SystemSensorManager", "LegacySensorManager",
                                  "TriggerEvent", "TriggerEventListener"}) {
             const auto type = f.linker.ResolveDescriptor(std::string("Landroid/hardware/") + name + ";");
             CHECK(f.linker.Class(type).is_boot_dex);
@@ -569,6 +582,10 @@ TEST_CASE("DVM228 ActivityManager reports fresh current process facts and lifecy
 TEST_CASE("DVM-239 Debug MemoryInfo keeps original values Parcel and failure semantics") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);
+        const auto debug = f.linker.ResolveDescriptor("Landroid/os/Debug;");
+        CHECK(f.linker.Class(debug).is_boot_dex);
+        REQUIRE_FALSE(f.vm.EnsureClassInitialized(debug).exception.IsValid());
+        f.context->read_process_memory = []() -> std::optional<GuestProcessMemorySnapshot> { return std::nullopt; };
         const auto info = f.New("Landroid/os/Debug$MemoryInfo;");
         const auto root = f.vm.ProtectReferences(std::array{info});
         CHECK(f.linker.Class(f.model.ObjectClass(info)).is_boot_dex);
@@ -714,27 +731,7 @@ TEST_CASE("DVM-222 NFC discovery preserves API19 absence without transport") {
             f.StaticOutcome("Landroid/nfc/NfcAdapter;", "getDefaultAdapter", "()Landroid/nfc/NfcAdapter;");
         REQUIRE(legacy.exception.IsValid());
         CHECK(f.linker.Class(legacy.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        // Inject an otherwise unobtainable receiver to verify that registration
-        // never silently succeeds or retains a callback outside the device path.
-        const auto adapter = f.vm.NewIntrinsicInstance("Landroid/nfc/NfcAdapter;");
-        for (
-            const auto& [name, signature] : std::array{
-                std::pair{
-                    "setNdefPushMessageCallback",
-                    "(Landroid/nfc/NfcAdapter$CreateNdefMessageCallback;Landroid/app/Activity;[Landroid/app/Activity;)V"},
-                std::pair{
-                    "setOnNdefPushCompleteCallback",
-                    "(Landroid/nfc/NfcAdapter$OnNdefPushCompleteCallback;Landroid/app/Activity;[Landroid/app/Activity;)V"}}) {
-            const auto result =
-                f.OnOutcome(adapter, name, signature,
-                            {VmValue::Ref(client), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
-            REQUIRE(result.exception.IsValid());
-            CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        }
-        const auto hits = f.ledger.Unimplemented();
-        REQUIRE(hits.size() == 1);
-        CHECK(hits[0].id == "dexvm.nfc_transport");
-        CHECK(hits[0].count == 2);
+        CHECK(f.ledger.Unimplemented().empty());
         static_cast<void>(f.vm.CollectGarbage("nfc-no-device"));
         CHECK(service() == manager);
         CHECK_FALSE(f.On(manager, "getDefaultAdapter", "()Landroid/nfc/NfcAdapter;").ref.IsValid());
@@ -787,9 +784,16 @@ TEST_CASE("DVM-341 USB manager preserves API19 absence without transport") {
             CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         }
         const auto hits = f.ledger.Unimplemented();
-        REQUIRE(hits.size() == 1);
-        CHECK(hits[0].id == "dexvm.usb_transport");
-        CHECK(hits[0].count == 7);
+        const auto recorded = [&](const std::string_view prefix, std::uint64_t count) {
+            return std::ranges::any_of(
+                hits, [&](const auto& hit) { return hit.id.starts_with(prefix) && hit.count == count; });
+        };
+        REQUIRE(hits.size() == 6);
+        CHECK(recorded("dexvm.usb_transport", 2));
+        for (const auto method : {"requestDevicePermission", "requestAccessoryPermission", "setCurrentFunction",
+                                  "openAccessory", "setMassStorageBackingFile"}) {
+            CHECK(recorded(std::string("android.hardware.usb.IUsbManager.") + method + "(", 1));
+        }
         const auto property =
             f.Static("Landroid/os/SystemProperties;", "get", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
                      {VmValue::Ref(f.vm.NewStringUtf8("sys.usb.config")), VmValue::Ref(f.vm.NewStringUtf8(""))})
@@ -852,7 +856,7 @@ TEST_CASE("DVM-136 API 19 OrientationEventListener preserves absent sensor seman
     }
 }
 
-TEST_CASE("DVM-156 location facade links listeners and exposes no location source") {
+TEST_CASE("DVM-156 ROM LocationManager links listeners and exposes no location source") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         auto listener = IntrinsicClassBuilder::Class("Ltest/LocationListener;", "Ljava/lang/Object;",
                                                      {"Landroid/location/LocationListener;"});
@@ -881,6 +885,7 @@ TEST_CASE("DVM-156 location facade links listeners and exposes no location sourc
         CHECK(fixture.model.ObjectClass(manager) ==
               fixture.linker.ResolveDescriptor("Landroid/location/LocationManager;"));
 
+        CHECK(fixture.linker.Class(fixture.model.ObjectClass(manager)).is_boot_dex);
         const auto criteria = fixture.New("Landroid/location/Criteria;");
         CHECK_FALSE(fixture
                         .On(manager, "getBestProvider", "(Landroid/location/Criteria;Z)Ljava/lang/String;",
@@ -905,9 +910,11 @@ TEST_CASE("DVM-156 location facade links listeners and exposes no location sourc
         REQUIRE(remove.exception.IsValid());
         CHECK(fixture.linker.Class(remove.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         const auto hits = fixture.ledger.Unimplemented();
-        REQUIRE(hits.size() == 1);
-        CHECK(hits[0].id == "dexvm.location_updates");
-        CHECK(hits[0].count == 2);
+        REQUIRE(hits.size() == 2);
+        CHECK(hits[0].id.starts_with("android.location.ILocationManager."));
+        CHECK(hits[1].id.starts_with("android.location.ILocationManager."));
+        CHECK(hits[0].count == 1);
+        CHECK(hits[1].count == 1);
     }
 }
 
@@ -945,7 +952,10 @@ TEST_CASE("DVM-166 keyguard facade reads the replaceable platform snapshot") {
 TEST_CASE("DVM-133 ContentResolver query returns null when no provider exists") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm fixture(backend);
-        const auto resolver = fixture.vm.NewIntrinsicInstance("Landroid/content/ContentResolver;");
+        const auto resolver = fixture
+                                  .On(fixture.New("Landroid/content/Context;"), "getContentResolver",
+                                      "()Landroid/content/ContentResolver;")
+                                  .ref;
         const auto uri_text = fixture.vm.NewStringUtf8("content://com.facebook.katana.provider.AttributionIdProvider");
         const auto uri =
             fixture
@@ -1051,7 +1061,10 @@ TEST_CASE("DVM-241 offline connectivity distinguishes unsupported types and pres
         static_cast<void>(f.vm.CollectGarbage());
         CHECK(f.vm.MarkReachable().IsMarked(info));
         CHECK_FALSE(f.On(manager, "getActiveNetworkInfo", "()Landroid/net/NetworkInfo;").ref.IsValid());
-        const auto wifi = f.New("Landroid/net/wifi/WifiManager;");
+        const auto wifi = f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                               {VmValue::Ref(f.vm.NewStringUtf8("wifi"))})
+                              .ref;
+        REQUIRE(wifi.IsValid());
         const auto wifi_root = f.vm.ProtectReferences(std::array{wifi});
         CHECK_FALSE(f.On(wifi, "isWifiEnabled", "()Z").AsInt());
         CHECK(f.On(wifi, "getWifiState", "()I").AsInt() == 1);
@@ -1107,7 +1120,7 @@ TEST_CASE("WU7-4 ActivityManager memory classes share the VM heap limits in both
 TEST_CASE("DVM-264 DEX platform service registry preserves supported absent and unsupported results") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend, {}, false, "platform_tables.dex");
-        const auto context = f.vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto context = ogplay::test::MakeRomAppContext(f.vm, f.context);
         const auto roots = f.vm.ProtectReferences(std::array{context});
         const auto service = [&](const char* name) {
             return f.StaticOutcome("Lfixture/PlatformTables;", "service",
@@ -1126,6 +1139,7 @@ TEST_CASE("DVM-264 DEX platform service registry preserves supported absent and 
                                      {display.value, VmValue::Int(0)})
                                 .ref;
         REQUIRE(screen.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(screen)).is_boot_dex);
         CHECK(f.On(screen, "getDisplayId", "()I").AsInt() == 0);
         CHECK(f.On(screen, "getWidth", "()I").AsInt() == static_cast<int>(f.context->surface_width));
         const auto window = service("window");
@@ -1145,11 +1159,12 @@ TEST_CASE("DVM-264 DEX platform service registry preserves supported absent and 
         const auto absent = service("ogplay.nonexistent.service");
         REQUIRE_FALSE(absent.exception.IsValid());
         CHECK_FALSE(absent.value.ref.IsValid());
-        const auto unsupported = service("account");
-        REQUIRE(unsupported.exception.IsValid());
-        CHECK(f.linker.Class(f.model.ObjectClass(unsupported.exception)).descriptor ==
-              "Ljava/lang/UnsupportedOperationException;");
-        CHECK(unsupported.exception_message.find("account") != std::string::npos);
+        const auto account = service("account");
+        REQUIRE_FALSE(account.exception.IsValid());
+        CHECK(account.value.ref.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(account.value.ref)).is_boot_dex);
+        CHECK(std::ranges::any_of(f.ledger.Unimplemented(),
+                                  [](const auto& hit) { return hit.id.find("account") != std::string::npos; }));
     }
 }
 
@@ -1233,23 +1248,14 @@ TEST_CASE("DVM-264 DEX System properties include the frozen ROM keys and match g
     }
 }
 
-TEST_CASE("DVM-266 AppGlobals keeps the ROM ActivityThread dependency explicit") {
+TEST_CASE("DVM-266 ROM AppGlobals returns the default without an attached ActivityThread") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend, {}, false, "platform_tables.dex");
-        const auto app = f.linker.ResolveDescriptor("Landroid/app/AppGlobals;");
-        CHECK(f.linker.Class(app).is_boot_dex);
+        CHECK(f.linker.Class(f.linker.ResolveDescriptor("Landroid/app/AppGlobals;")).is_boot_dex);
         const auto result = f.StaticOutcome("Lfixture/PlatformTables;", "coreSetting", "(Ljava/lang/String;I)I",
                                             {VmValue::Ref(f.vm.NewStringUtf8("missing")), VmValue::Int(37)});
-        // AOSP returns the default only after currentActivityThread() returns null.
-        // That method is still unimplemented; do not invent an absent-thread result.
-        REQUIRE(result.exception.IsValid());
-        CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
-        const auto hits = f.ledger.Unimplemented();
-        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
-            return hit.id ==
-                       "dexvm.intrinsic.Landroid/app/ActivityThread;.currentActivityThread()Landroid/app/ActivityThread;" &&
-                   hit.count == 1;
-        }));
+        REQUIRE_FALSE(result.exception.IsValid());
+        CHECK(result.value.AsInt() == 37);
     }
 }
 
@@ -1312,7 +1318,8 @@ TEST_CASE("DVM-332 ContentObserver process tree dispatch and Settings changes") 
             return VmValue::Void();
         });
         AndroidValueVm f(backend, {std::move(probe).Build()});
-        const auto resolver = f.vm.NewIntrinsicInstance("Landroid/content/ContentResolver;");
+        const auto resolver =
+            f.On(f.New("Landroid/content/Context;"), "getContentResolver", "()Landroid/content/ContentResolver;").ref;
         const auto resolver_root = f.vm.ProtectReferences(std::array{resolver});
         const auto looper = f.Static("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;").ref;
         const auto handler = f.New("Landroid/os/Handler;", "(Landroid/os/Looper;)V", {VmValue::Ref(looper)});
@@ -1402,7 +1409,8 @@ TEST_CASE("DVM-332 ContentObserver process tree dispatch and Settings changes") 
         const auto retained = make_observer(VmObjectRef{});
         reg(leaf_uri, false, retained);
         static_cast<void>(f.vm.CollectGarbage("content-observer-static-registry"));
-        const auto other_resolver = f.vm.NewIntrinsicInstance("Landroid/content/ContentResolver;");
+        const auto other_resolver =
+            f.On(f.New("Landroid/content/Context;"), "getContentResolver", "()Landroid/content/ContentResolver;").ref;
         const auto other_root = f.vm.ProtectReferences(std::array{other_resolver});
         events.clear();
         f.On(other_resolver, "notifyChange", "(Landroid/net/Uri;Landroid/database/ContentObserver;)V",
@@ -1416,7 +1424,10 @@ TEST_CASE("DVM-332 ContentObserver process tree dispatch and Settings changes") 
         CHECK(count(exact) == 1);
         CHECK(count(child) == 1);
         CHECK(count(retained) == 0);
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CAPTURE(hit.id);
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE(false, hit.id);
         const auto put = [&](const char* table, const char* value) {
             events.clear();
             const auto result =
@@ -1450,5 +1461,67 @@ TEST_CASE("DVM-332 ContentObserver process tree dispatch and Settings changes") 
         unreg(child);
         notify(base_uri);
         CHECK(events.empty());
+    }
+}
+
+TEST_CASE("ROM SmsManager uses local ISms and rejects SMS delivery") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        constexpr auto type = "Landroid/telephony/SmsManager;";
+        const auto manager = f.Static(type, "getDefault", "()Landroid/telephony/SmsManager;").ref;
+        const auto root = f.vm.ProtectReferences(std::array{manager});
+        REQUIRE(manager.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(manager)).is_boot_dex);
+        CHECK(f.Static(type, "getDefault", "()Landroid/telephony/SmsManager;").ref == manager);
+        const auto binder =
+            f.Static("Landroid/os/ServiceManager;", "getService", "(Ljava/lang/String;)Landroid/os/IBinder;",
+                     {VmValue::Ref(f.vm.NewStringUtf8("isms"))})
+                .ref;
+        REQUIRE(binder.IsValid());
+        CHECK(f.Static("Lcom/android/internal/telephony/ISms$Stub;", "asInterface",
+                       "(Landroid/os/IBinder;)Lcom/android/internal/telephony/ISms;", {VmValue::Ref(binder)})
+                  .ref == binder);
+        const auto destination = f.vm.NewStringUtf8("+1234567890");
+        const auto destination_root = f.vm.ProtectReferences(std::array{destination});
+        const auto body = f.vm.NewStringUtf8("hello");
+        const auto failure = f.OnOutcome(
+            manager, "sendTextMessage",
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Landroid/app/PendingIntent;Landroid/app/PendingIntent;)V",
+            {VmValue::Ref(destination), VmValue::Ref(VmObjectRef{}), VmValue::Ref(body), VmValue::Ref(VmObjectRef{}),
+             VmValue::Ref(VmObjectRef{})});
+        REQUIRE_MESSAGE(failure.exception.IsValid(), failure.exception_message);
+        CHECK(f.linker.Class(failure.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        const auto icc = f.OnOutcome(binder, "getAllMessagesFromIccEf", "(Ljava/lang/String;)Ljava/util/List;",
+                                     {VmValue::Ref(f.vm.NewStringUtf8("fixture"))});
+        REQUIRE(icc.exception.IsValid());
+        CHECK(f.linker.Class(icc.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        const auto hits = f.ledger.Unimplemented();
+        for (const auto name : {"sendText(", "getAllMessagesFromIccEf("})
+            CHECK(std::ranges::any_of(hits, [&](const auto& hit) {
+                return hit.id.starts_with(std::string("com.android.internal.telephony.ISms.") + name) && hit.count == 1;
+            }));
+    }
+}
+
+TEST_CASE("ROM SmsMessage decodes a GSM deliver PDU without a phone process") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        // No SMSC, international originating address, GSM 7-bit DCS, five septets.
+        constexpr std::array<std::uint8_t, 24> bytes{0x00, 0x04, 0x0a, 0x91, 0x21, 0x43, 0x65, 0x87,
+                                                     0x09, 0x00, 0x00, 0x42, 0x10, 0x20, 0x30, 0x40,
+                                                     0x50, 0x00, 0x05, 0xe8, 0x32, 0x9b, 0xfd, 0x06};
+        const auto pdu =
+            f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[B"), ogplay::runtime::JniPrimitiveKind::byte, 24);
+        const auto pdu_root = f.vm.ProtectReferences(std::array{pdu});
+        f.model.WriteByteRegion(pdu, 0, std::as_bytes(std::span{bytes}));
+        constexpr auto type = "Landroid/telephony/SmsMessage;";
+        const auto parsed =
+            f.Static(type, "createFromPdu", "([B)Landroid/telephony/SmsMessage;", {VmValue::Ref(pdu)}).ref;
+        REQUIRE(parsed.IsValid());
+        const auto root = f.vm.ProtectReferences(std::array{parsed});
+        CHECK(f.linker.Class(f.model.ObjectClass(parsed)).is_boot_dex);
+        CHECK(f.vm.StringUtf8(f.On(parsed, "getOriginatingAddress", "()Ljava/lang/String;").ref) == "+1234567890");
+        CHECK(f.vm.StringUtf8(f.On(parsed, "getMessageBody", "()Ljava/lang/String;").ref) == "hello");
+        CHECK_FALSE(f.context->local_binder_services.contains("isms"));
     }
 }

@@ -109,7 +109,7 @@ void ProjectScrollbarState(dexvm::Interpreter& vm, DexVmAndroidContext& context,
         if (found == context.scrollbar_fade_deadlines.end() || found->second != deadline) {
             const auto shared = std::shared_ptr<DexVmAndroidContext>(&context, [](DexVmAndroidContext*) {});
             if (context.view_root_handler.IsValid())
-                android_intrinsics::RemoveHandlerWork(shared, context.view_root_handler, std::nullopt, cache, true,
+                android_intrinsics::RemoveHandlerWork(vm, shared, context.view_root_handler, std::nullopt, cache, true,
                                                       dexvm::VmObjectRef{}, false);
             dexvm::IntrinsicContext call{vm, view, {}};
             if (!android_intrinsics::PostViewRunnable(

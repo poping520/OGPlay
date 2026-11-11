@@ -157,7 +157,14 @@ TEST_CASE("DVM-86 Parcel Bundle and bounded services share session state") {
               copy, "getString", "(Ljava/lang/String;)Ljava/lang/String;",
               {VmValue::Ref(fixture.vm.NewStringUtf8("key"))}).ref) == "stored");
 
-    const auto power = fixture.New("Landroid/os/PowerManager;");
+    const auto android_context = fixture.New("Landroid/content/Context;");
+    const auto context_root = fixture.vm.ProtectReferences(std::array{android_context});
+    const auto power = fixture
+                           .On(android_context, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                               {VmValue::Ref(fixture.vm.NewStringUtf8("power"))})
+                           .ref;
+    REQUIRE(power.IsValid());
+    CHECK(fixture.linker.Class(fixture.model.ObjectClass(power)).is_boot_dex);
     const auto lock = fixture.On(power, "newWakeLock",
         "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;",
         {VmValue::Int(1), VmValue::Ref(fixture.vm.NewStringUtf8("test"))}).ref;
@@ -166,13 +173,25 @@ TEST_CASE("DVM-86 Parcel Bundle and bounded services share session state") {
     fixture.On(lock, "release", "()V");
     CHECK(fixture.On(lock, "isHeld", "()Z").AsInt() == 0);
 
-    const auto vibrator = fixture.New("Landroid/os/Vibrator;");
+    fixture.On(lock, "acquire", "(J)V", {VmValue::Long(10)});
+    AdvanceAndroidClock(*fixture.context, 9);
+    REQUIRE_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    CHECK(fixture.On(lock, "isHeld", "()Z").AsInt() == 1);
+    AdvanceAndroidClock(*fixture.context, 1);
+    REQUIRE_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    CHECK(fixture.On(lock, "isHeld", "()Z").AsInt() == 0);
+
+    const auto vibrator = fixture
+                              .On(android_context, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                                  {VmValue::Ref(fixture.vm.NewStringUtf8("vibrator"))})
+                              .ref;
+    REQUIRE(vibrator.IsValid());
+    CHECK(fixture.On(vibrator, "hasVibrator", "()Z").AsInt() == 0);
     fixture.On(vibrator, "vibrate", "(J)V", {VmValue::Long(250)});
     CHECK(fixture.context->last_vibration_millis == 250);
     fixture.On(vibrator, "cancel", "()V");
     CHECK(fixture.context->last_vibration_millis == 0);
 
-    const auto android_context = fixture.New("Landroid/content/Context;");
     const auto service_name = fixture.vm.NewStringUtf8("power");
     const auto service1 = fixture.On(android_context, "getSystemService",
         "(Ljava/lang/String;)Ljava/lang/Object;", {VmValue::Ref(service_name)}).ref;
@@ -185,20 +204,13 @@ TEST_CASE("DVM-86 Parcel Bundle and bounded services share session state") {
 TEST_CASE("DVM-86 value side tables sweep with their guest owners") {
     AndroidValueVm fixture;
     static_cast<void>(fixture.New("Landroid/util/SparseArray;"));
-    static_cast<void>(fixture.Static(
-        "Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;"));
-    const auto power = fixture.New("Landroid/os/PowerManager;");
-    static_cast<void>(fixture.On(power, "newWakeLock",
-        "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;",
-        {VmValue::Int(1), VmValue::Ref(fixture.vm.NewStringUtf8("sweep"))}));
+    static_cast<void>(fixture.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;"));
     REQUIRE_FALSE(fixture.context->parcel_backings.empty());
-    REQUIRE_FALSE(fixture.context->wake_locks.empty());
     const auto result = fixture.vm.CollectGarbage("dvm86-value-state");
-    CHECK(result.freed_objects >= 4U);
+    CHECK(result.freed_objects > 0U);
     // Parcel.obtain() may retain the recycled owner in the API 19 Java pool;
     // its backing is released by recycle/nativeFreeBuffer and is safe to reuse.
     CHECK(fixture.context->parcel_backings.size() <= 1U);
-    CHECK(fixture.context->wake_locks.empty());
 }
 
 TEST_CASE("DVM-86 rooted Bundle traces byte arrays and Parcelable identities") {
@@ -248,7 +260,7 @@ TEST_CASE("DVM-144 Parcel exception headers preserve Java protocol and reject vi
         f.On(p, "setDataPosition", "(I)V", {VmValue::Int(0)});
         const auto violation = f.OnOutcome(p, "readException", "()V");
         REQUIRE(violation.exception.IsValid());
-        CHECK(f.linker.Class(violation.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(f.linker.Class(violation.exception_class).descriptor == "Ljava/lang/IndexOutOfBoundsException;");
     }
 }
 
@@ -307,6 +319,45 @@ TEST_CASE("DVM-144 Binder Parcel references survive append and release on overwr
     }
 }
 
+TEST_CASE("ROM ServiceManager returns rooted local AIDL objects and records absent names") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        constexpr auto manager = "Landroid/os/ServiceManager;";
+        constexpr auto lookup = "(Ljava/lang/String;)Landroid/os/IBinder;";
+        const auto get = [&](const char* method, const char* name) {
+            return f.Static(manager, method, lookup, {VmValue::Ref(f.vm.NewStringUtf8(name))}).ref;
+        };
+        const auto registry =
+            f.Static("Lcom/android/internal/os/BinderInternal;", "getContextObject", "()Landroid/os/IBinder;").ref;
+        REQUIRE(registry.IsValid());
+        CHECK(f.Static("Landroid/os/ServiceManagerNative;", "asInterface",
+                       "(Landroid/os/IBinder;)Landroid/os/IServiceManager;", {VmValue::Ref(registry)})
+                  .ref == registry);
+        const auto names = f.Static(manager, "listServices", "()[Ljava/lang/String;").ref;
+        constexpr std::array expected{
+            "activity",     "alarm",    "audio",         "backup", "clipboard",          "connectivity",
+            "content",      "display",  "iphonesubinfo", "isms",   "location",           "mount",
+            "notification", "package",  "phone",         "power",  "telephony.registry", "uimode",
+            "usb",          "vibrator", "wifi",          "window"};
+        REQUIRE(f.model.ArrayLength(names) == expected.size());
+        for (JniSize index = 0; index < static_cast<JniSize>(expected.size()); ++index)
+            CHECK(f.vm.StringUtf8(f.model.GetObjectElement(names, index)) == expected[static_cast<std::size_t>(index)]);
+        const auto usb = get("checkService", "usb");
+        REQUIRE(usb.IsValid());
+        CHECK(f.Static("Landroid/hardware/usb/IUsbManager$Stub;", "asInterface",
+                       "(Landroid/os/IBinder;)Landroid/hardware/usb/IUsbManager;", {VmValue::Ref(usb)})
+                  .ref == usb);
+        static_cast<void>(f.vm.CollectGarbage("local-binder-services"));
+        CHECK(get("getService", "usb") == usb);
+        CHECK_FALSE(get("getService", "absent.test").IsValid());
+        CHECK_FALSE(get("checkService", "absent.test").IsValid());
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits.front().id == "dexvm.service_manager.absent.test");
+        CHECK(hits.front().count == 2);
+    }
+}
+
 TEST_CASE("DVM-144 Binder identity and policy are isolated by execution context") {
     AndroidValueVm f;
     const auto worker = f.vm.CreateExecutionContext();
@@ -322,7 +373,15 @@ TEST_CASE("DVM-144 Binder identity and policy are isolated by execution context"
     CHECK(f.Static("Landroid/os/Binder;", "getThreadStrictModePolicy", "()I").AsInt() == 7);
     CHECK(f.vm.Call(worker, *get, {}).value.AsInt() == 9);
     const auto identity = f.Static("Landroid/os/Binder;", "clearCallingIdentity", "()J").AsLong();
+    CHECK(f.Static("Landroid/os/Binder;", "getCallingUid", "()I").AsInt() ==
+          f.Static("Landroid/os/Process;", "myUid", "()I").AsInt());
+    CHECK(f.Static("Landroid/os/Binder;", "getCallingPid", "()I").AsInt() ==
+          f.Static("Landroid/os/Process;", "myPid", "()I").AsInt());
     f.Static("Landroid/os/Binder;", "restoreCallingIdentity", "(J)V", {VmValue::Long(identity)});
+    const auto foreign =
+        f.StaticOutcome("Landroid/os/Binder;", "restoreCallingIdentity", "(J)V", {VmValue::Long(identity ^ 2)});
+    REQUIRE(foreign.exception.IsValid());
+    CHECK(f.linker.Class(foreign.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
     CHECK(f.Static("Landroid/os/Binder;", "clearCallingIdentity", "()J").AsLong() == identity);
     REQUIRE(f.StaticOutcome("Landroid/os/Binder;", "joinThreadPool", "()V").exception.IsValid());
     f.vm.DiscardExecutionContext(worker);

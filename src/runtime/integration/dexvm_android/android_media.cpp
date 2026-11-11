@@ -34,25 +34,41 @@ private:
 };
 }  // namespace
 
-Decl Declare_android_media_AudioManager(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/AudioManager;", "Ljava/lang/Object;");
-    builder.VirtualMethod("getRingerMode", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(2); });
-    builder.VirtualMethod("isMusicActive", "()Z", [context](dx::IntrinsicContext&) {
-        if (context->encoded_music != nullptr && context->encoded_music->AnyPlaying()) {
-            return dx::VmValue::Int(1);
-        }
-        if (context->encoded_audio_playback != nullptr && context->encoded_audio_playback->ActiveVoiceCount() > 0U) {
-            return dx::VmValue::Int(1);
-        }
-        if (context->pcm_playback != nullptr) {
-            for (const auto& [_, track] : context->audio_tracks) {
-                if (context->pcm_playback->PlayState(track.player) == audio::OpenSlesPlayState::playing) {
-                    return dx::VmValue::Int(1);
+Decl Declare_android_media_AudioSystem(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/AudioSystem;");
+    builder.MergesBootClass();
+    builder.StaticMethod(
+        "isStreamActive", "(II)Z",
+        [context](dx::IntrinsicContext& call) {
+            if (call.arguments[0].AsInt() != 3 || call.arguments[1].AsInt() != 0) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.audio.stream_activity", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "only current music stream activity is available"};
+            }
+            if (context->encoded_music != nullptr && context->encoded_music->AnyPlaying()) {
+                return dx::VmValue::Int(1);
+            }
+            if (context->encoded_audio_playback != nullptr &&
+                context->encoded_audio_playback->ActiveVoiceCount() > 0U) {
+                return dx::VmValue::Int(1);
+            }
+            if (context->pcm_playback != nullptr) {
+                for (const auto& [_, track] : context->audio_tracks) {
+                    if (context->pcm_playback->PlayState(track.player) == audio::OpenSlesPlayState::playing) {
+                        return dx::VmValue::Int(1);
+                    }
                 }
             }
-        }
-        return dx::VmValue::Int(0);
-    });
+            return dx::VmValue::Int(0);
+        },
+        dx::kAccPublic | dx::kAccStatic | dx::kAccNative);
+    return std::move(builder).Build();
+}
+
+Decl Declare_local_AudioService(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalAudioService;",
+                                                    "Landroid/media/IAudioService$Stub;");
+    builder.VirtualMethod("getRingerMode", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(2); });
     builder.VirtualMethod("getStreamMaxVolume", "(I)I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(15); });
     builder.VirtualMethod("getStreamVolume", "(I)I", [context](dx::IntrinsicContext& call) {
         const auto stream = call.arguments[0].AsInt();
@@ -63,7 +79,7 @@ Decl Declare_android_media_AudioManager(const Context& context) {
         }
         return dx::VmValue::Int(context->stream_volume[static_cast<std::size_t>(stream)]);
     });
-    builder.VirtualMethod("setStreamVolume", "(III)V", [context](dx::IntrinsicContext& call) {
+    builder.VirtualMethod("setStreamVolume", "(IIILjava/lang/String;)V", [context](dx::IntrinsicContext& call) {
         const auto stream = call.arguments[0].AsInt();
         if (stream < 0 || stream >= 10) return dx::VmValue::Void();
         std::scoped_lock lock(context->audio_policy_mutex);
@@ -71,7 +87,7 @@ Decl Declare_android_media_AudioManager(const Context& context) {
         ApplyAudioStreamPolicy(*context, stream);
         return dx::VmValue::Void();
     });
-    builder.VirtualMethod("setStreamMute", "(IZ)V", [context](dx::IntrinsicContext& call) {
+    builder.VirtualMethod("setStreamMute", "(IZLandroid/os/IBinder;)V", [context](dx::IntrinsicContext& call) {
         const auto stream = call.arguments[0].AsInt();
         if (stream < 0 || stream >= 10) return dx::VmValue::Void();
         std::scoped_lock lock(context->audio_policy_mutex);

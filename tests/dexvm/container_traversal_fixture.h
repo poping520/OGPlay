@@ -13,21 +13,22 @@ using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 namespace ogplay::test::container_traversal {
+struct AndroidTestRuntime;
+
 struct ContainerVm {
     VirtualFileSystem filesystem;
     ogplay::core::CapabilityLedger ledger;
     ogplay::core::Logger logger;
     std::shared_ptr<DexVmAndroidContext> context{
         std::make_shared<DexVmAndroidContext>(AndroidUiTraversalOwner::JavaTraversal)};
-    std::unique_ptr<ogplay::session::AndroidAppProcess> app;
+    std::unique_ptr<AndroidTestRuntime> runtime;
     Interpreter& vm;
     DexClassLinker& linker;
     JavaObjectModel& model;
 
-    std::unique_ptr<ogplay::session::AndroidAppProcess> Create(InterpreterBackend backend);
-    std::unique_ptr<ogplay::session::AndroidAppProcess> Create(InterpreterBackend backend, bool native_activity);
+    std::unique_ptr<AndroidTestRuntime> Create(InterpreterBackend backend, bool native_activity, bool sealed_apk);
     explicit ContainerVm(InterpreterBackend backend);
-    ContainerVm(InterpreterBackend backend, bool native_activity);
+    ContainerVm(InterpreterBackend backend, bool native_activity, bool sealed_apk = false);
     VmValue Checked(const VmCallOutcome& result);
     VmCallOutcome OnOutcome(VmObjectRef object, const char* name, const char* descriptor,
                             std::vector<VmValue> args = {});
@@ -51,7 +52,9 @@ struct AndroidTestRuntime final {
     AndroidTestRuntime(const std::shared_ptr<DexVmAndroidContext>& context, ogplay::core::CapabilityLedger& ledger,
                        ogplay::core::Logger& logger, std::vector<IntrinsicClassDecl> catalog,
                        std::vector<std::uint8_t> dex, InterpreterConfig config = {},
-                       VirtualFileSystem* filesystem = nullptr);
+                       VirtualFileSystem* filesystem = nullptr,
+                       std::vector<ogplay::loader::ApkNativeLibrary> apk_libraries = {},
+                       ogplay::gles::AngleBackend graphics = {});
     ~AndroidTestRuntime();
 };
 }  // namespace ogplay::test::container_traversal

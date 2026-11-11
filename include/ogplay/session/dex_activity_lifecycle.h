@@ -28,6 +28,12 @@ enum class DexProcessStopReason : std::uint8_t {
 StartDexApplication(runtime::DexVmGuestBridge& bridge, const std::shared_ptr<runtime::DexVmAndroidContext>& context,
                     const std::string& application_descriptor);
 
+// ROM binding spans two main Looper turns. ActivityThread.H handles the bind
+// message before the session publishes the Application and starts Activity.
+void AttachDexApplicationThread(runtime::dexvm::Interpreter& vm, runtime::DexVmAndroidContext& context);
+void PublishDexApplication(runtime::dexvm::Interpreter& vm, runtime::DexVmAndroidContext& context,
+                           const std::string& application_descriptor);
+
 using runtime::DeepTouchDispatchResult;
 using runtime::DispatchDeepTouchEvent;
 
@@ -86,6 +92,9 @@ struct DexActivityLifecycleBindings final {
     core::Logger* logger{};
     // Host consumers stop after cooperative callbacks, before guest thread retirement.
     std::function<void()> before_guest_shutdown;
+    // Temporary ROM main-Looper channel, removed with the host Activity adapter.
+    std::function<bool()> is_main_thread;
+    std::function<void(std::string_view, const std::function<void()>&)> run_on_main;
 };
 
 class DexActivityLifecycleError final : public std::runtime_error {

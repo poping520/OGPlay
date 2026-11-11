@@ -179,14 +179,14 @@ void WriteMetric(dx::IntrinsicContext& call, const dx::VmObjectRef metrics, cons
     call.vm.Model().InstanceSlots(metrics)[call.vm.Linker().Field(*field).slot] = {bits, dx::SlotTag::cat1};
 }
 
+}  // namespace
+
 [[nodiscard]] std::int32_t DeviceDensityDpi(const Context& context) {
     const double dpi = static_cast<double>(context->ui_density) * 160.0;
     if (!std::isfinite(dpi) || dpi < 1.0 || dpi > std::numeric_limits<std::int32_t>::max())
         throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "display density is invalid");
     return static_cast<std::int32_t>(std::lround(dpi));
 }
-
-}  // namespace
 
 void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& context, const dx::VmObjectRef metrics) {
     if (!metrics.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "Display metrics output is null"};
@@ -218,15 +218,6 @@ void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& co
     write_float("noncompatYdpi", dpi_bits);
 }
 
-Decl Declare_android_util_DisplayMetrics(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/DisplayMetrics;");
-    builder.MergesBootClass();
-    builder.StaticMethod(
-        "getDeviceDensity", "()I",
-        [context](dx::IntrinsicContext&) { return dx::VmValue::Int(DeviceDensityDpi(context)); }, dx::kAccPrivate);
-    return std::move(builder).Build();
-}
-
 Decl Declare_android_hardware_display_DisplayManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/hardware/display/DisplayManager;", "Ljava/lang/Object;",
                                                     {}, dx::kAccPublic | dx::kAccFinal);
@@ -238,9 +229,8 @@ Decl Declare_android_hardware_display_DisplayManager(const Context& context) {
         return dx::VmValue::Void();
     });
     builder.VirtualMethod("getDisplay", "(I)Landroid/view/Display;", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Ref(call.arguments[0].AsInt() == 0
-                                    ? Singleton(call, context, "display", "Landroid/view/Display;")
-                                    : dx::VmObjectRef{});
+        return dx::VmValue::Ref(call.arguments[0].AsInt() == 0 ? DefaultAndroidDisplay(call, context)
+                                                               : dx::VmObjectRef{});
     });
     const auto displays = [context](dx::IntrinsicContext& call) {
         const bool all = call.arguments.empty() || !call.arguments[0].ref.IsValid();
@@ -248,54 +238,12 @@ Decl Declare_android_hardware_display_DisplayManager(const Context& context) {
         const auto array = call.vm.Model().NewObjectArray(call.vm.Linker().ResolveDescriptor("[Landroid/view/Display;"),
                                                           type, all ? 1 : 0);
         const auto roots = call.vm.ProtectReferences(std::array{array});
-        if (all)
-            call.vm.Model().SetObjectElement(array, 0, Singleton(call, context, "display", "Landroid/view/Display;"));
+        if (all) call.vm.Model().SetObjectElement(array, 0, DefaultAndroidDisplay(call, context));
         return dx::VmValue::Ref(array);
     };
     builder.VirtualMethod("getDisplays", "()[Landroid/view/Display;", displays);
     builder.VirtualMethod("getDisplays", "(Ljava/lang/String;)[Landroid/view/Display;", displays);
     // The sole managed display is not a presentation/external display.
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_view_Display(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/Display;", "Ljava/lang/Object;");
-    builder.FinalMethod("getRealSize", "(Landroid/graphics/Point;)V", [context](dx::IntrinsicContext& call) {
-        const auto point = call.arguments[0].ref;
-        if (!point.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "Display size output is null"};
-        const auto type = call.vm.Model().ObjectClass(point);
-        for (const auto [name, value] : {std::pair{"x", context->surface_width}, {"y", context->surface_height}}) {
-            const auto field = call.vm.Linker().FindFieldRecursive(type, name, "I");
-            if (!field) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Display point field missing"};
-            call.vm.RequireImplementedField(*field);
-            call.vm.Model().InstanceSlots(point)[call.vm.Linker().Field(*field).slot] = {value, dx::SlotTag::cat1};
-        }
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("getWidth", "()I", [context](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(static_cast<std::int32_t>(context->surface_width));
-    });
-    builder.FinalMethod("getHeight", "()I", [context](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(static_cast<std::int32_t>(context->surface_height));
-    });
-    builder.FinalMethod("getRefreshRate", "()F", [context](dx::IntrinsicContext& call) {
-        if (!std::isfinite(context->display_refresh_rate_hz) || context->display_refresh_rate_hz <= 0) {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.choreographer_frame_source", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "invalid logical display refresh rate"};
-        }
-        return dx::VmValue::Float(context->display_refresh_rate_hz);
-    });
-    // Managed surface coordinates never rotate independently from the host window.
-    const auto get_rotation = dx::IntrinsicHandler([](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
-    builder.FinalMethod("getRotation", "()I", get_rotation);
-    builder.FinalMethod("getOrientation", "()I", get_rotation);
-    builder.FinalMethod("getDisplayId", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
-    const auto get_metrics = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        PopulateAndroidDisplayMetrics(call, context, call.arguments[0].ref);
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("getMetrics", "(Landroid/util/DisplayMetrics;)V", get_metrics);
-    builder.FinalMethod("getRealMetrics", "(Landroid/util/DisplayMetrics;)V", get_metrics);
     return std::move(builder).Build();
 }
 
@@ -1786,8 +1734,8 @@ Decl Declare_android_view_View(const Context& context) {
         const auto runnable = call.arguments[0].ref;
         if (!runnable.IsValid()) return dx::VmValue::Int(1);
         if (context->view_root_handler.IsValid())
-            RemoveHandlerWork(context, context->view_root_handler, std::nullopt, runnable, true, dx::VmObjectRef{},
-                              false);
+            RemoveHandlerWork(call.vm, context, context->view_root_handler, std::nullopt, runnable, true,
+                              dx::VmObjectRef{}, false);
         std::scoped_lock lock(context->scheduler_mutex);
         const auto token = call.vm.CurrentContextToken();
         std::erase_if(context->pending_view_actions,
@@ -3058,8 +3006,17 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_view_WindowManagerImpl(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/WindowManagerImpl;", "Ljava/lang/Object;",
                                                     {"Landroid/view/WindowManager;"});
-    builder.FinalMethod("getDefaultDisplay", "()Landroid/view/Display;",
-                        WindowmanagerGetDefaultDisplayHandler(context));
+    const auto display_field = builder.BoundInstanceField("mDisplay", "Landroid/view/Display;", dx::kAccPrivate);
+    builder.Constructor("(Landroid/view/Display;)V", [display_field](dx::IntrinsicContext& call) {
+        dx::IntrinsicCall(call).SetRef(display_field, call.arguments[0].ref);
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod(
+        "getDefaultDisplay", "()Landroid/view/Display;",
+        [display_field, fallback = WindowmanagerGetDefaultDisplayHandler(context)](dx::IntrinsicContext& call) {
+            const auto display = dx::IntrinsicCall(call).GetRef(display_field);
+            return display.IsValid() ? dx::VmValue::Ref(display) : fallback(call);
+        });
     const auto owner_field = builder.BoundInstanceField("mOwnerActivity", "Landroid/app/Activity;", dx::kAccPrivate);
     context->window_manager_owner_field = owner_field;
     const auto mutate = [context, owner_field](dx::IntrinsicContext& call, const bool update) {
@@ -3724,6 +3681,29 @@ Decl Declare_managed_WindowToken(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime {
+void PrepareAndroidInputMethodService(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    namespace dx = dexvm;
+    auto& linker = vm.Linker();
+    const auto type = linker.ResolveDescriptor("Landroid/app/ContextImpl;");
+    const auto initialized = vm.EnsureClassInitialized(type);
+    if (initialized.exception.IsValid())
+        throw dx::VmJavaThrow{linker.Class(initialized.exception_class).descriptor, initialized.exception_message,
+                              initialized.exception};
+    const auto map_field = linker.FindFieldRecursive(type, "SYSTEM_SERVICE_MAP", "Ljava/util/HashMap;");
+    if (!map_field) throw std::logic_error("ContextImpl service registry is unavailable");
+    const auto& field = linker.Field(*map_field);
+    const auto map = dx::VmObjectRef{linker.Class(field.owner).static_storage[field.slot]};
+    const auto fetcher = android_intrinsics::CallAndroidMethod(vm, map, "get", "(Ljava/lang/Object;)Ljava/lang/Object;",
+                                                               {dx::VmValue::Ref(vm.NewStringUtf8("input_method"))})
+                             .ref;
+    const auto cached =
+        linker.FindFieldRecursive(vm.Model().ObjectClass(fetcher), "mCachedInstance", "Ljava/lang/Object;");
+    if (!cached) throw std::logic_error("ContextImpl input method cache is unavailable");
+    auto& service = context.singletons["input_method"];
+    if (!service.IsValid()) service = vm.NewIntrinsicInstance("Landroid/view/inputmethod/InputMethodManager;");
+    vm.Model().InstanceSlots(fetcher)[linker.Field(*cached).slot] = {service.Value(), dx::SlotTag::ref};
+}
+
 dexvm::VmObjectRef AndroidActivityWindowManager(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                                 dexvm::VmObjectRef owner) {
     const auto record = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
@@ -3735,8 +3715,9 @@ dexvm::VmObjectRef AndroidActivityWindowManager(dexvm::Interpreter& vm, DexVmAnd
         const auto roots = vm.ProtectReferences(std::array{manager});
         dexvm::IntrinsicContext call{vm, manager, {}};
         dexvm::IntrinsicCall(call).SetRef(*context.window_manager_owner_field, owner);
-        const auto token = vm.NewIntrinsicInstance("Logplay/runtime/ManagedWindowToken;");
-        record->app_window_token = token;
+        if (!record->app_window_token.IsValid())
+            record->app_window_token = vm.NewIntrinsicInstance("Logplay/runtime/ManagedWindowToken;");
+        const auto token = record->app_window_token;
         record->window_manager = manager;
         const auto window =
             android_intrinsics::CallAndroidMethod(vm, owner, "getWindow", "()Landroid/view/Window;").ref;
@@ -3838,6 +3819,7 @@ Decl Declare_android_view_DisplayEventReceiver(const Context& context) {
         "nativeInit", "(Landroid/view/DisplayEventReceiver;Landroid/os/MessageQueue;)I",
         [context](dx::IntrinsicContext& call) {
             const auto receiver = call.arguments[0].ref, queue = call.arguments[1].ref;
+            static_cast<void>(RegisterCurrentRomLooper(call.vm, context));
             std::scoped_lock lock(context->scheduler_mutex);
             const auto looper = std::find_if(context->loopers.begin(), context->loopers.end(), [&](const auto& item) {
                 return queue.IsValid() && item.second.queue == queue && !item.second.quitting;
@@ -3881,33 +3863,33 @@ Decl Declare_android_view_DisplayEventReceiver(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_hardware_display_DisplayManagerGlobal(const Context& context) {
-    auto builder =
-        dx::IntrinsicClassBuilder::Class("Landroid/hardware/display/DisplayManagerGlobal;", "Ljava/lang/Object;");
+Decl Declare_android_view_HardwareRenderer() {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/HardwareRenderer;", "Ljava/lang/Object;");
     builder.MergesBootClass();
-    const auto singleton =
-        builder.BoundStaticField("sInstance", "Landroid/hardware/display/DisplayManagerGlobal;", dx::kAccPrivate);
+    // ActivityThread configures a shader cache during binding. The software
+    // renderer has no hardware shader cache to configure.
     builder.StaticMethod(
-        "getInstance", "()Landroid/hardware/display/DisplayManagerGlobal;", [singleton](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            auto instance = fields.GetRef(singleton);
-            if (!instance.IsValid()) {
-                instance = call.vm.NewIntrinsicInstance("Landroid/hardware/display/DisplayManagerGlobal;");
-                const auto roots = call.vm.ProtectReferences(std::array{instance});
-                // Preserve Java-owned lock/cache/listener initialization; the
-                // supported display query uses injected facts instead of Binder.
-                const auto init = call.vm.Linker().FindDirectMethod(call.vm.Model().ObjectClass(instance), "<init>",
-                                                                    "(Landroid/hardware/display/IDisplayManager;)V");
-                if (!init) throw std::logic_error("DisplayManagerGlobal constructor is not linked");
-                const auto outcome =
-                    call.vm.Call(*init, std::array{dx::VmValue::Ref(instance), dx::VmValue::Ref(dx::VmObjectRef{})});
-                if (outcome.exception.IsValid())
-                    throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor,
-                                          outcome.exception_message, outcome.exception};
-                fields.SetRef(singleton, instance);
-            }
-            return dx::VmValue::Ref(instance);
-        });
+        "nSetupShadersDiskCache", "(Ljava/lang/String;)V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); },
+        dx::kAccPrivate | dx::kAccStatic | dx::kAccNative);
+    return std::move(builder).Build();
+}
+
+Decl Declare_local_DisplayService(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalDisplayService;",
+                                                    "Landroid/hardware/display/IDisplayManager$Stub;");
+    builder.VirtualMethod("getDisplayIds", "()[I", [](dx::IntrinsicContext& call) {
+        const auto ids =
+            call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[I"), JniPrimitiveKind::integer, 1);
+        call.vm.Model().SetPrimitiveElement(ids, 0, 0);
+        return dx::VmValue::Ref(ids);
+    });
+    // The one logical display has no hotplug events. ROM registers the callback
+    // even for clients that only query its metrics.
+    builder.VirtualMethod("registerCallback", "(Landroid/hardware/display/IDisplayManagerCallback;)V",
+                          [](dx::IntrinsicContext& call) {
+                              static_cast<void>(dx::IntrinsicCall(call).NonNullRef(0, "display callback"));
+                              return dx::VmValue::Void();
+                          });
     builder.VirtualMethod("getDisplayInfo", "(I)Landroid/view/DisplayInfo;", [context](dx::IntrinsicContext& call) {
         if (call.arguments[0].AsInt() != 0) return dx::VmValue::Ref(dx::VmObjectRef{});
         if (!std::isfinite(context->display_refresh_rate_hz) || context->display_refresh_rate_hz <= 0) {
@@ -3915,14 +3897,7 @@ Decl Declare_android_hardware_display_DisplayManagerGlobal(const Context& contex
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   "Logical display refresh rate is unavailable"};
         }
-        const auto info = call.vm.NewIntrinsicInstance("Landroid/view/DisplayInfo;");
-        const auto roots = call.vm.ProtectReferences(std::array{info});
-        const auto init = call.vm.Linker().FindDirectMethod(call.vm.Model().ObjectClass(info), "<init>", "()V");
-        if (!init) throw std::logic_error("DisplayInfo constructor is not linked");
-        const auto initialized = call.vm.Call(*init, std::array{dx::VmValue::Ref(info)});
-        if (initialized.exception.IsValid())
-            throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
-                                  initialized.exception_message, initialized.exception};
+        const auto info = NewPlatformObject(call.vm, "Landroid/view/DisplayInfo;", "()V", {});
         const auto write = [&](const char* name, const char* type, std::uint32_t bits) {
             const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(info), name, type);
             if (!field) throw std::logic_error("DisplayInfo field is unavailable");
@@ -3933,9 +3908,25 @@ Decl Declare_android_hardware_display_DisplayManagerGlobal(const Context& contex
         write("logicalHeight", "I", context->surface_height);
         write("appWidth", "I", context->surface_width);
         write("appHeight", "I", context->surface_height);
-        write("logicalDensityDpi", "I", static_cast<std::uint32_t>(DeviceDensityDpi(context)));
+        const auto density = DeviceDensityDpi(context);
+        write("logicalDensityDpi", "I", static_cast<std::uint32_t>(density));
+        write("physicalXDpi", "F", std::bit_cast<std::uint32_t>(static_cast<float>(density)));
+        write("physicalYDpi", "F", std::bit_cast<std::uint32_t>(static_cast<float>(density)));
         return dx::VmValue::Ref(info);
     });
+    constexpr auto owner = "android.hardware.display.IDisplayManager";
+    for (const auto* method : {"startWifiDisplayScan", "stopWifiDisplayScan", "disconnectWifiDisplay",
+                               "pauseWifiDisplay", "resumeWifiDisplay"})
+        RejectUnsupportedServiceMethod(builder, owner, method, "()V");
+    for (const auto* method : {"connectWifiDisplay", "forgetWifiDisplay"})
+        RejectUnsupportedServiceMethod(builder, owner, method, "(Ljava/lang/String;)V");
+    RejectUnsupportedServiceMethod(builder, owner, "renameWifiDisplay", "(Ljava/lang/String;Ljava/lang/String;)V");
+    RejectUnsupportedServiceMethod(builder, owner, "getWifiDisplayStatus",
+                                   "()Landroid/hardware/display/WifiDisplayStatus;");
+    RejectUnsupportedServiceMethod(
+        builder, owner, "createVirtualDisplay",
+        "(Landroid/os/IBinder;Ljava/lang/String;Ljava/lang/String;IIILandroid/view/Surface;I)I");
+    RejectUnsupportedServiceMethod(builder, owner, "releaseVirtualDisplay", "(Landroid/os/IBinder;)V");
     return std::move(builder).Build();
 }
 }  // namespace ogplay::runtime::android_intrinsics

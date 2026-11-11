@@ -75,11 +75,18 @@ TEST_CASE("DVM-118 Resources metrics share display facts and BootDex value seman
         f.On(other, "setToDefaults", "()V");
         CHECK(field(other, "densityDpi", "I") == 240);
         CHECK(std::bit_cast<float>(field(other, "scaledDensity", "F")) == 1.5F);
-        const auto display = f.vm.NewIntrinsicInstance("Landroid/view/Display;");
         f.context->display_refresh_rate_hz = 75;
+        const auto global = f.Static("Landroid/hardware/display/DisplayManagerGlobal;", "getInstance",
+                                     "()Landroid/hardware/display/DisplayManagerGlobal;")
+                                .ref;
+        const auto display = f.On(global, "getRealDisplay", "(I)Landroid/view/Display;", {VmValue::Int(0)}).ref;
+        const auto display_root = f.vm.ProtectReferences(std::array{display});
         CHECK(f.On(display, "getRefreshRate", "()F").AsFloat() == 75);
         f.On(display, "getMetrics", "(Landroid/util/DisplayMetrics;)V", {VmValue::Ref(other)});
-        CHECK(f.On(metrics, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(other)}).AsInt() == 1);
+        for (const auto* name : {"widthPixels", "heightPixels", "densityDpi"})
+            CHECK(field(metrics, name, "I") == field(other, name, "I"));
+        CHECK(std::bit_cast<float>(field(other, "scaledDensity", "F")) == 1.5F);
+        CHECK(f.On(metrics, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(other)}).AsInt() == 0);
         CHECK(f.On(metrics, "hashCode", "()I").AsInt() == f.On(other, "hashCode", "()I").AsInt());
         f.context->surface_width = 1280;
         CHECK(f.On(resources, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;").ref == metrics);
@@ -148,15 +155,11 @@ TEST_CASE("DVM-137 Configuration uses API19 Java shape and managed device facts"
         CHECK(f.Static("Landroid/text/TextUtils;", "getLayoutDirectionFromLocale", "(Ljava/util/Locale;)I",
                        {VmValue::Ref(default_locale)})
                   .AsInt() == 0);
-        const auto unsupported_locale =
+        const auto french =
             f.New("Ljava/util/Locale;", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("fr"))});
-        const auto unsupported_direction = f.StaticOutcome("Landroid/text/TextUtils;", "getLayoutDirectionFromLocale",
-                                                           "(Ljava/util/Locale;)I", {VmValue::Ref(unsupported_locale)});
-        REQUIRE(unsupported_direction.exception.IsValid());
-        CHECK(f.linker.Class(unsupported_direction.exception_class).descriptor ==
-              "Ljava/lang/UnsupportedOperationException;");
-        REQUIRE_FALSE(f.ledger.Unimplemented().empty());
-        CHECK(f.ledger.Unimplemented().back().id == "dexvm.locale_layout_direction");
+        CHECK(f.Static("Landroid/text/TextUtils;", "getLayoutDirectionFromLocale", "(Ljava/util/Locale;)I",
+                       {VmValue::Ref(french)})
+                  .AsInt() == 0);
         CHECK_MESSAGE(f.On(VmObjectRef(field(configuration, "locale", "Ljava/util/Locale;")), "equals",
                            "(Ljava/lang/Object;)Z", {VmValue::Ref(default_locale)})
                               .AsInt() == 1,
@@ -619,7 +622,7 @@ TEST_CASE("DVM118 resource text coerces simple values and preserves reference se
         add(0x7f010104, 1, 0);
         add(0x7f010105, 1, 0x7f010106);
         add(0x7f010106, 1, 0x7f010105);
-        const auto context = f.vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto context = ogplay::test::MakeRomAppContext(f.vm, f.context);
         const auto resources = f.On(context, "getResources", "()Landroid/content/res/Resources;").ref;
         const auto roots = f.vm.ProtectReferences(std::array{context, resources});
         for (std::size_t i = 0; i < values.size(); ++i) {

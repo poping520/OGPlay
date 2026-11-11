@@ -47,6 +47,16 @@ TEST_CASE("BND45 real ARM libdl resolves thread Looper and preserves missing-sym
     CHECK(process->Invoke({query, {}}).return_value == main.Value());
     CHECK(process->Invoke({prepare, {1}}).return_value == main.Value());
     CHECK(static_cast<std::int32_t>(process->Invoke({poll, {0, 0, 0, 0}}).return_value) == -3);
+    // Java's queue adapter and ARM NDK calls use one boundary Looper wake bit.
+    const auto wake = lookup("ALooper_wake");
+    static_cast<void>(process->Invoke({wake, {main.Value(), 0, 0, 0}}));
+    process->PollThreadLooper(1, [] { return false; });
+    CHECK(static_cast<std::int32_t>(process->Invoke({poll, {0, 0, 0, 0}}).return_value) == -3);
+    process->NotifyLooperPollers();
+    CHECK(static_cast<std::int32_t>(process->Invoke({poll, {0, 0, 0, 0}}).return_value) == -3);
+    process->WakeThreadLooper(1);
+    CHECK(static_cast<std::int32_t>(process->Invoke({poll, {0, 0, 0, 0}}).return_value) == -1);
+    CHECK(static_cast<std::int32_t>(process->Invoke({poll, {0, 0, 0, 0}}).return_value) == -3);
     process->PrepareDexVmThread(100, 0);
     runtime::A32GuestCallFrame child;
     child.target = query;

@@ -3,9 +3,9 @@ Copyright 2005-2008 The Android Open Source Project
 
 This product includes software developed as part of The Android Open Source
 Project (https://source.android.com/) and Apache Harmony. core.jar,
-conscrypt.jar, ext.jar, framework.jar, framework2.jar and android.policy.jar are
+conscrypt.jar, ext.jar, framework.jar, framework2.jar, telephony-common.jar and android.policy.jar are
 the unmodified API 19 boot classpath archives built from AOSP libcore,
-external/apache-http and frameworks/base at android-4.4.4_r2.0.1; their hashes
+external/apache-http, frameworks/base and frameworks/opt/telephony at android-4.4.4_r2.0.1; their hashes
 are recorded in manifest.json. ext.jar contains Apache HttpComponents-derived
 Android code plus Apache Commons Logging and Commons Codec classes. ogplay.jar
 holds OGPlay's guest Java; files derived from AOSP sources retain their

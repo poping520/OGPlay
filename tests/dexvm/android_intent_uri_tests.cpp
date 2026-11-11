@@ -326,11 +326,15 @@ TEST_CASE("DVM-97 dynamic content MIME and malformed filters fail explicitly") {
                                  .ref;
     const auto intent = fixture.New("Landroid/content/Intent;");
     fixture.On(intent, "setData", "(Landroid/net/Uri;)Landroid/content/Intent;", {VmValue::Ref(content_uri)});
-    const auto resolver = fixture.vm.NewIntrinsicInstance("Landroid/content/ContentResolver;");
+    const auto resolver =
+        fixture
+            .On(fixture.New("Landroid/content/Context;"), "getContentResolver", "()Landroid/content/ContentResolver;")
+            .ref;
     auto outcome = fixture.OnOutcome(intent, "resolveTypeIfNeeded",
                                      "(Landroid/content/ContentResolver;)Ljava/lang/String;", {VmValue::Ref(resolver)});
-    REQUIRE(outcome.exception.IsValid());
-    CHECK(fixture.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK_FALSE(outcome.value.ref.IsValid());  // ROM ContentResolver logs the rejected external lookup.
+    CHECK_FALSE(fixture.ledger.Unimplemented().empty());
 
     const auto explicit_intent = fixture.New("Landroid/content/Intent;");
     fixture.On(explicit_intent, "setData", "(Landroid/net/Uri;)Landroid/content/Intent;", {VmValue::Ref(content_uri)});
@@ -488,7 +492,9 @@ TEST_CASE("DVM-107 Activity queries honor overrides and Intent setters use Compo
         CHECK(f.vm.StringUtf8(local.value.ref) == "RealName");
         const auto prefs =
             f.On(activity, "getPreferences", "(I)Landroid/content/SharedPreferences;", {VmValue::Int(0)}).ref;
-        CHECK(f.context->preference_names.at(prefs.Value()) == "preferences-name");
+        CHECK(prefs == f.On(base, "getSharedPreferences", "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
+                            {VmValue::Ref(f.vm.NewStringUtf8("preferences-name")), VmValue::Int(0)})
+                           .ref);
         const auto clazz = f.model.ClassObject(f.linker.ResolveDescriptor("Ltest/NamedActivity;"));
         const auto intent = f.New("Landroid/content/Intent;", "(Landroid/content/Context;Ljava/lang/Class;)V",
                                   {VmValue::Ref(activity), VmValue::Ref(clazz)});
@@ -503,7 +509,7 @@ TEST_CASE("DVM-107 Activity queries honor overrides and Intent setters use Compo
         CHECK(f.vm.StringUtf8(f.On(component_name(), "getPackageName", "()Ljava/lang/String;").ref) == "fixture");
         f.On(intent, "setClassName", "(Landroid/content/Context;Ljava/lang/String;)Landroid/content/Intent;",
              {VmValue::Ref(base), VmValue::Ref(f.vm.NewStringUtf8("fixture.Next"))});
-        f.On(base, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+        f.On(activity, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
         CHECK(f.context->pending_activity_descriptor == "Lfixture/Next;");
         CHECK(f.context->pending_activity_component_name == "fixture.Next");
         f.context->pending_activity_descriptor.clear();
@@ -512,7 +518,8 @@ TEST_CASE("DVM-107 Activity queries honor overrides and Intent setters use Compo
         f.On(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
              {VmValue::Ref(f.vm.NewStringUtf8("external")), VmValue::Ref(f.vm.NewStringUtf8(".Literal"))});
         CHECK(f.vm.StringUtf8(f.On(component_name(), "getClassName", "()Ljava/lang/String;").ref) == ".Literal");
-        const auto rejected = f.OnOutcome(base, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+        const auto rejected =
+            f.OnOutcome(activity, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
         REQUIRE(rejected.exception.IsValid());
         CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         CHECK_FALSE(f.context->activity_switch_pending);
@@ -533,7 +540,7 @@ TEST_CASE("DVM-107 Activity queries honor overrides and Intent setters use Compo
                                            std::nullopt}};
         const auto implicit = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V",
                                     {VmValue::Ref(f.vm.NewStringUtf8("fixture.ALIAS"))});
-        f.On(base, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(implicit)});
+        f.On(activity, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(implicit)});
         CHECK(f.context->pending_activity_descriptor == "Lfixture/RealActivity;");
         CHECK(f.context->pending_activity_component_name == "fixture.OpenAlias");
         const auto resolved = f.On(implicit, "getComponent", "()Landroid/content/ComponentName;").ref;
@@ -545,7 +552,7 @@ TEST_CASE("DVM-107 Activity queries honor overrides and Intent setters use Compo
         const auto missing = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V",
                                    {VmValue::Ref(f.vm.NewStringUtf8("fixture.MISSING"))});
         const auto missing_outcome =
-            f.OnOutcome(base, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(missing)});
+            f.OnOutcome(activity, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(missing)});
         REQUIRE(missing_outcome.exception.IsValid());
         CHECK(f.linker.Class(missing_outcome.exception_class).descriptor ==
               "Landroid/content/ActivityNotFoundException;");
@@ -555,7 +562,7 @@ TEST_CASE("DVM-107 Activity queries honor overrides and Intent setters use Compo
         const auto no_default = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V",
                                       {VmValue::Ref(f.vm.NewStringUtf8("fixture.OPEN"))});
         const auto no_default_outcome =
-            f.OnOutcome(base, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(no_default)});
+            f.OnOutcome(activity, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(no_default)});
         REQUIRE(no_default_outcome.exception.IsValid());
         CHECK(f.linker.Class(no_default_outcome.exception_class).descriptor ==
               "Landroid/content/ActivityNotFoundException;");
@@ -570,7 +577,7 @@ TEST_CASE("DVM-107 Activity queries honor overrides and Intent setters use Compo
         const auto ambiguous = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V",
                                      {VmValue::Ref(f.vm.NewStringUtf8("fixture.ALIAS"))});
         const auto ambiguous_outcome =
-            f.OnOutcome(base, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(ambiguous)});
+            f.OnOutcome(activity, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(ambiguous)});
         REQUIRE(ambiguous_outcome.exception.IsValid());
         CHECK(f.linker.Class(ambiguous_outcome.exception_class).descriptor ==
               "Ljava/lang/UnsupportedOperationException;");
@@ -579,27 +586,37 @@ TEST_CASE("DVM-107 Activity queries honor overrides and Intent setters use Compo
         f.context->activity_components.back().intent_filters[0].has_data = true;
         const auto unique_again = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V",
                                         {VmValue::Ref(f.vm.NewStringUtf8("fixture.ALIAS"))});
-        f.On(base, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(unique_again)});
+        f.On(activity, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(unique_again)});
         CHECK(f.context->pending_activity_descriptor == "Lfixture/RealActivity;");
     }
 }
 
-TEST_CASE("IntentSender intrinsic shell publishes only its platform type") {
+TEST_CASE("ROM IntentSender carries the PendingIntent Binder identity") {
     AndroidValueVm f;
-    const auto type = f.linker.ResolveDescriptor("Landroid/content/IntentSender;");
-    const auto& klass = f.linker.Class(type);
-    CHECK_FALSE(klass.is_boot_dex);
-    CHECK(klass.super == f.linker.ResolveDescriptor("Ljava/lang/Object;"));
-    CHECK(f.linker.IsAssignable(f.linker.ResolveDescriptor("Landroid/os/Parcelable;"), type));
-    CHECK(klass.own_direct_methods.empty());
-    CHECK(klass.own_virtual_methods.empty());
-    CHECK(klass.own_instance_fields.empty());
+    f.context->package_name = "fixture";
+    const auto base = f.New("Landroid/content/Context;");
+    const auto base_root = f.vm.ProtectReferences(std::array{base});
+    const auto intent = f.New("Landroid/content/Intent;");
+    const auto intent_root = f.vm.ProtectReferences(std::array{intent});
+    const auto pending = f.Static("Landroid/app/PendingIntent;", "getBroadcast",
+                                  "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;",
+                                  {VmValue::Ref(base), VmValue::Int(0), VmValue::Ref(intent), VmValue::Int(0)})
+                             .ref;
+    const auto pending_root = f.vm.ProtectReferences(std::array{pending});
+    const auto sender = f.On(pending, "getIntentSender", "()Landroid/content/IntentSender;").ref;
+    REQUIRE(sender.IsValid());
+    const auto sender_root = f.vm.ProtectReferences(std::array{sender});
+    CHECK(f.linker.Class(f.model.ObjectClass(sender)).is_boot_dex);
+    const auto other = f.On(pending, "getIntentSender", "()Landroid/content/IntentSender;").ref;
+    CHECK(f.On(sender, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(other)}).AsInt() == 1);
 }
 
 TEST_CASE("disabled web policy intercepts only external HTTP ACTION_VIEW") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm fixture(backend);
-        const auto context = fixture.New("Landroid/content/Context;");
+        const auto base = fixture.New("Landroid/content/Context;");
+        const auto context = fixture.New("Landroid/app/Activity;");
+        fixture.On(context, "attachBaseContext", "(Landroid/content/Context;)V", {VmValue::Ref(base)});
         const auto action = fixture.vm.NewStringUtf8("android.intent.action.VIEW");
         const auto text = fixture.vm.NewStringUtf8("https://outside.example/open/item?auth=secret");
         const auto uri =

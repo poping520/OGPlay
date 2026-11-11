@@ -172,7 +172,7 @@ VmObjectRef Owner(ContainerVm& f, bool supported = true) {
         Style(horizontal, 0, {{0x0101017a, 18, 0, {}}})};  // fillViewport
     f.context->application_theme = theme;
     const auto owner = f.New("Landroid/app/Activity;");
-    ogplay::test::AttachViewTestContext(f.vm, owner);
+    ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
     f.On(owner, "setTheme", "(I)V", {VmValue::Int(theme)});
     return owner;
 }

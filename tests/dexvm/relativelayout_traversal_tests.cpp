@@ -13,7 +13,7 @@ struct RelativeWindow : ContainerVm {
         context->ui_test_accessibility_disabled = true;
         owner = New("Landroid/app/Activity;");
         context->activity = owner;
-        ogplay::test::AttachViewTestContext(vm, owner);
+        ogplay::test::AttachViewTestContext(vm, owner, context);
         root = On(owner, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(0x01020002)}).ref;
         auto info = On(owner, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;").ref;
         Field(info, "flags").bits |= 0x400000;

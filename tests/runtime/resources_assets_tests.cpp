@@ -111,8 +111,8 @@ TEST_CASE("resources core payload archives are visible through read only guest V
     ogplay::runtime::VirtualFileSystem vfs;
     ogplay::frontend::MountFrameworkPayload(vfs,
                                             std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework");
-    for (auto name : {"core.jar", "conscrypt.jar", "ext.jar", "framework.jar", "framework2.jar", "android.policy.jar",
-                      "framework-res.apk"}) {
+    for (auto name : {"core.jar", "conscrypt.jar", "ext.jar", "framework.jar", "framework2.jar", "telephony-common.jar",
+                      "android.policy.jar", "framework-res.apk"}) {
         auto path = std::string("/system/framework/") + name;
         auto info = vfs.Stat(path);
         CHECK_FALSE(info.writable);

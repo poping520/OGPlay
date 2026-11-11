@@ -21,6 +21,10 @@
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/session/android_app_process.h"
 
+namespace ogplay::test::container_traversal {
+struct AndroidTestRuntime;
+}
+
 namespace ogplay::test::native_library {
 
 struct AppElfOptions final {
@@ -84,6 +88,20 @@ struct ApplicationProcess final {
     [[nodiscard]] std::int32_t CallStaticInt(const std::string& owner, const std::string& name);
 };
 
+// Native-backed value fixture for ROM Context/Manager JNI tests.
+struct RomValueProcess final {
+    ogplay::core::CapabilityLedger ledger;
+    ogplay::core::Logger logger;
+    std::shared_ptr<ogplay::runtime::DexVmAndroidContext> context{
+        std::make_shared<ogplay::runtime::DexVmAndroidContext>()};
+    ogplay::runtime::VirtualFileSystem filesystem;
+    std::unique_ptr<ogplay::test::container_traversal::AndroidTestRuntime> runtime;
+    ogplay::runtime::DexVmGuestBridge* bridge{};
+    ogplay::runtime::AndroidGuestCallSession* session{};
+    explicit RomValueProcess(ogplay::runtime::dexvm::InterpreterBackend backend);
+    ~RomValueProcess();
+};
+
 struct OrchestratedApp final {
     std::vector<std::byte> libc{LibcElf()};
     std::vector<std::byte> native_a{AppElf({"liba.so", "libc.so", ogplay::runtime::kJniVersion1_6})};
@@ -105,6 +123,13 @@ struct OrchestratedApp final {
                              ogplay::runtime::ui::UiMetrics viewport = {64, 36},
                              std::vector<std::string> gl_textures = {}, bool large_heap = false);
 
+    ogplay::runtime::dexvm::VmCallOutcome CallGuest(ogplay::runtime::dexvm::VmMethodId method,
+                                                    std::span<const ogplay::runtime::dexvm::VmValue> arguments);
+    ogplay::runtime::dexvm::VmValue CallGuest(ogplay::runtime::dexvm::VmObjectRef receiver, const char* name,
+                                              const char* descriptor,
+                                              std::vector<ogplay::runtime::dexvm::VmValue> arguments = {});
+    ogplay::runtime::dexvm::VmObjectRef NewGuest(std::string_view descriptor);
+    [[nodiscard]] std::int32_t ReadStaticInt(const std::string& owner, const std::string& name);
     [[nodiscard]] std::int32_t CallStaticInt(const std::string& owner, const std::string& name);
 };
 

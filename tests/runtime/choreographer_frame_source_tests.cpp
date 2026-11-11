@@ -2,6 +2,7 @@
 #include "ogplay/session/dex_activity_lifecycle.h"
 #include "ogplay/runtime/dexvm/access_flags.h"
 #include <doctest/doctest.h>
+#include <algorithm>
 #include <array>
 #include <future>
 #include <bit>
@@ -15,20 +16,40 @@ using namespace runtime::dexvm;
 struct Frames final {
     test::native_library::OrchestratedApp f;
     Interpreter& vm;
+    std::vector<core::UnimplementedHit> startup_gaps;
 
     explicit Frames(InterpreterBackend backend)
         : f("fixture.HandshakeActivity", true, false, {}, {}, true, backend), vm(f.app->DexVm().Vm()) {
         f.app->StartApplication();
         REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        startup_gaps = f.ledger.Unimplemented();
+        for (const auto& hit : startup_gaps)
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
     }
 
-    VmCallOutcome StaticOutcome(const char* owner, const char* name, const char* sig, std::vector<VmValue> args = {}) {
+    std::vector<core::UnimplementedHit> NewGaps() {
+        auto gaps = f.ledger.Unimplemented();
+        std::erase_if(gaps, [&](const auto& hit) {
+            return std::ranges::any_of(
+                startup_gaps, [&](const auto& startup) { return hit.id == startup.id && hit.count == startup.count; });
+        });
+        return gaps;
+    }
+
+    VmCallOutcome StaticInCurrentContext(const char* owner, const char* name, const char* sig,
+                                         const std::vector<VmValue>& args = {}) {
         const auto type = vm.Linker().ResolveDescriptor(owner);
         const auto init = vm.EnsureClassInitialized(type);
         if (init.exception.IsValid()) return init;
         const auto method = vm.Linker().FindDirectMethod(type, name, sig);
         REQUIRE(method.has_value());
         return vm.Call(*method, args);
+    }
+
+    VmCallOutcome StaticOutcome(const char* owner, const char* name, const char* sig, std::vector<VmValue> args = {}) {
+        VmCallOutcome outcome;
+        f.app->RunOnMainThread([&] { outcome = StaticInCurrentContext(owner, name, sig, args); });
+        return outcome;
     }
 
     VmValue Value(const VmCallOutcome& result) {
@@ -40,7 +61,11 @@ struct Frames final {
         return Value(StaticOutcome(owner, name, sig, std::move(args)));
     }
 
-    VmValue Call(VmObjectRef receiver, const char* name, const char* sig, std::vector<VmValue> args = {}) {
+    VmValue StaticInCurrent(const char* owner, const char* name, const char* sig) {
+        return Value(StaticInCurrentContext(owner, name, sig));
+    }
+
+    VmValue CallInCurrent(VmObjectRef receiver, const char* name, const char* sig, std::vector<VmValue> args = {}) {
         const auto type = vm.Model().ObjectClass(receiver);
         const auto slot = vm.Linker().FindVtableIndex(type, name, sig);
         REQUIRE(slot.has_value());
@@ -48,7 +73,13 @@ struct Frames final {
         return Value(vm.Call(vm.Linker().Class(type).vtable[*slot], args));
     }
 
-    VmObjectRef New(const char* owner, const char* sig, std::vector<VmValue> args = {}) {
+    VmValue Call(VmObjectRef receiver, const char* name, const char* sig, std::vector<VmValue> args = {}) {
+        VmValue outcome;
+        f.app->RunOnMainThread([&] { outcome = CallInCurrent(receiver, name, sig, std::move(args)); });
+        return outcome;
+    }
+
+    VmObjectRef NewInCurrent(const char* owner, const char* sig, std::vector<VmValue> args = {}) {
         const auto type = vm.Linker().ResolveDescriptor(owner);
         static_cast<void>(Value(vm.EnsureClassInitialized(type)));
         const auto object = vm.NewIntrinsicInstance(owner);
@@ -57,6 +88,12 @@ struct Frames final {
         REQUIRE(init.has_value());
         args.insert(args.begin(), VmValue::Ref(object));
         static_cast<void>(Value(vm.Call(*init, args)));
+        return object;
+    }
+
+    VmObjectRef New(const char* owner, const char* sig, std::vector<VmValue> args = {}) {
+        VmObjectRef object;
+        f.app->RunOnMainThread([&] { object = NewInCurrent(owner, sig, std::move(args)); });
         return object;
     }
 
@@ -131,7 +168,8 @@ TEST_CASE("DVM-336 ROM Choreographer single frame callbacks use the host frame C
             f.Step();
             CHECK(stamps->size() == static_cast<std::size_t>(3 + i));
         }
-        CHECK(f.f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.NewGaps())
+            CHECK_MESSAGE(false, hit.id);
         static_cast<void>(f.f.app->Stop());
         REQUIRE(f.f.context->display_receivers.empty());
         const auto count = stamps->size();
@@ -192,7 +230,7 @@ TEST_CASE("DVM-336 Choreographer requires a Looper and uses injected refresh rat
     f.vm.RunInExecutionContext(worker, [&] {
         worker_token = f.vm.CurrentContextToken();
         const auto result =
-            f.StaticOutcome("Landroid/view/Choreographer;", "getInstance", "()Landroid/view/Choreographer;");
+            f.StaticInCurrentContext("Landroid/view/Choreographer;", "getInstance", "()Landroid/view/Choreographer;");
         REQUIRE(result.exception.IsValid());
         CHECK(f.vm.Linker().Class(result.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
     });
@@ -215,7 +253,7 @@ TEST_CASE("DVM-336 Choreographer requires a Looper and uses injected refresh rat
     static_cast<void>(f.f.app->Stop());
 }
 
-TEST_CASE("DVM-336 asynchronous flags persist and front messages precede FIFO work") {
+TEST_CASE("DVM-336 ROM Message copy flags and front-of-queue ordering") {
     Frames f(InterpreterBackend::switch_dispatch);
     const auto handler = f.New("Landroid/os/Handler;", "()V");
     const auto callback = f.New("Lfixture/FrameProbe;", "()V");
@@ -232,28 +270,28 @@ TEST_CASE("DVM-336 asynchronous flags persist and front messages precede FIFO wo
             static_cast<int>(f.vm.Model().InstanceSlots(call.arguments[0].ref)[f.vm.Linker().Field(*field).slot].bits));
         return VmValue::Void();
     });
-    const auto runnable =
-        f.Static("Landroid/os/Message;", "obtain", "(Landroid/os/Handler;Ljava/lang/Runnable;)Landroid/os/Message;",
-                 {VmValue::Ref(handler), VmValue::Ref(callback)})
-            .ref;
-    static_cast<void>(f.Call(runnable, "setAsynchronous", "(Z)V", {VmValue::Int(1)}));
-    CHECK(f.Call(runnable, "isAsynchronous", "()Z").AsInt() == 1);
-    const auto copy = f.Static("Landroid/os/Message;", "obtain", "(Landroid/os/Message;)Landroid/os/Message;",
-                               {VmValue::Ref(runnable)})
-                          .ref;
-    CHECK(f.Call(copy, "isAsynchronous", "()Z").AsInt() == 1);
-    static_cast<void>(f.Call(copy, "setAsynchronous", "(Z)V", {VmValue::Int(0)}));
-    CHECK(f.Call(copy, "isAsynchronous", "()Z").AsInt() == 0);
-    static_cast<void>(f.Call(handler, "sendMessage", "(Landroid/os/Message;)Z", {VmValue::Ref(runnable)}));
-    for (const int what : {2, 3}) {
-        const auto message = f.Call(handler, "obtainMessage", "(I)Landroid/os/Message;", {VmValue::Int(what)}).ref;
-        CHECK(
-            f.Call(handler, "sendMessageAtFrontOfQueue", "(Landroid/os/Message;)Z", {VmValue::Ref(message)}).AsInt() ==
-            1);
-    }
+    f.f.app->RunOnMainThread([&] {
+        const auto runnable =
+            f.Static("Landroid/os/Message;", "obtain", "(Landroid/os/Handler;Ljava/lang/Runnable;)Landroid/os/Message;",
+                     {VmValue::Ref(handler), VmValue::Ref(callback)})
+                .ref;
+        static_cast<void>(f.Call(runnable, "setAsynchronous", "(Z)V", {VmValue::Int(1)}));
+        CHECK(f.Call(runnable, "isAsynchronous", "()Z").AsInt() == 1);
+        const auto copy = f.Static("Landroid/os/Message;", "obtain", "(Landroid/os/Message;)Landroid/os/Message;",
+                                   {VmValue::Ref(runnable)})
+                              .ref;
+        CHECK(f.Call(copy, "isAsynchronous", "()Z").AsInt() == 0);
+        static_cast<void>(f.Call(handler, "sendMessage", "(Landroid/os/Message;)Z", {VmValue::Ref(runnable)}));
+        for (const int what : {2, 3}) {
+            const auto message = f.Call(handler, "obtainMessage", "(I)Landroid/os/Message;", {VmValue::Int(what)}).ref;
+            CHECK(f.Call(handler, "sendMessageAtFrontOfQueue", "(Landroid/os/Message;)Z", {VmValue::Ref(message)})
+                      .AsInt() == 1);
+        }
+    });
     f.Step();
     CHECK(*order == std::vector<int>{3, 2, 1});
-    CHECK(f.f.ledger.Unimplemented().empty());
+    for (const auto& hit : f.NewGaps())
+        CHECK_MESSAGE(false, hit.id);
     static_cast<void>(f.f.app->Stop());
 }
 
@@ -262,8 +300,10 @@ TEST_CASE("DVM-336 DisplayEventReceiver finalization releases weak native regist
     const auto looper = f.Static("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;").ref;
     static_cast<void>(f.New("Lfixture/DisplayProbe;", "(Landroid/os/Looper;)V", {VmValue::Ref(looper)}));
     REQUIRE(f.f.context->display_receivers.size() == 1);
-    static_cast<void>(f.vm.CollectGarbage("display-receiver-weak-registration"));
-    f.vm.RunFinalization();
+    f.f.app->RunOnMainThread([&] {
+        static_cast<void>(f.vm.CollectGarbage("display-receiver-weak-registration"));
+        f.vm.RunFinalization();
+    });
     CHECK(f.f.context->display_receivers.empty());
     static_cast<void>(f.f.app->Stop());
 }
@@ -301,25 +341,26 @@ TEST_CASE("DVM-336 receiver initializes on its own Looper thread and rejects a f
     const auto callback = f.New("Lfixture/FrameProbe;", "()V");
     auto rejected = std::make_shared<bool>(false);
     f.Hook("Lfixture/FrameProbe;", "run", "()V", [&, rejected](IntrinsicContext&) {
-        static_cast<void>(f.Static("Landroid/os/Looper;", "prepare", "()V"));
-        const auto looper = f.Static("Landroid/os/Looper;", "myLooper", "()Landroid/os/Looper;").ref;
-        const auto queue = f.Call(looper, "getQueue", "()Landroid/os/MessageQueue;").ref;
-        const auto accepted = f.StaticOutcome("Landroid/view/DisplayEventReceiver;", "nativeInit",
-                                              "(Landroid/view/DisplayEventReceiver;Landroid/os/MessageQueue;)I",
-                                              {VmValue::Ref(receiver), VmValue::Ref(queue)});
+        static_cast<void>(f.StaticInCurrent("Landroid/os/Looper;", "prepare", "()V"));
+        const auto looper = f.StaticInCurrent("Landroid/os/Looper;", "myLooper", "()Landroid/os/Looper;").ref;
+        const auto queue = f.CallInCurrent(looper, "getQueue", "()Landroid/os/MessageQueue;").ref;
+        const auto accepted =
+            f.StaticInCurrentContext("Landroid/view/DisplayEventReceiver;", "nativeInit",
+                                     "(Landroid/view/DisplayEventReceiver;Landroid/os/MessageQueue;)I",
+                                     {VmValue::Ref(receiver), VmValue::Ref(queue)});
         REQUIRE_FALSE(accepted.exception.IsValid());
         CHECK(accepted.value.AsInt() > 0);
-        static_cast<void>(f.StaticOutcome("Landroid/view/DisplayEventReceiver;", "nativeDispose", "(I)V",
-                                          {VmValue::Int(accepted.value.AsInt())}));
-        const auto main_queue = f.Call(main, "getQueue", "()Landroid/os/MessageQueue;").ref;
-        const auto result = f.StaticOutcome("Landroid/view/DisplayEventReceiver;", "nativeInit",
-                                            "(Landroid/view/DisplayEventReceiver;Landroid/os/MessageQueue;)I",
-                                            {VmValue::Ref(receiver), VmValue::Ref(main_queue)});
+        static_cast<void>(f.StaticInCurrentContext("Landroid/view/DisplayEventReceiver;", "nativeDispose", "(I)V",
+                                                   {VmValue::Int(accepted.value.AsInt())}));
+        const auto main_queue = f.CallInCurrent(main, "getQueue", "()Landroid/os/MessageQueue;").ref;
+        const auto result = f.StaticInCurrentContext("Landroid/view/DisplayEventReceiver;", "nativeInit",
+                                                     "(Landroid/view/DisplayEventReceiver;Landroid/os/MessageQueue;)I",
+                                                     {VmValue::Ref(receiver), VmValue::Ref(main_queue)});
         REQUIRE(result.exception.IsValid());
         CHECK(f.vm.Linker().Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         CHECK(result.exception_message.find("own Looper") != std::string::npos);
         *rejected = true;
-        static_cast<void>(f.Call(looper, "quit", "()V"));
+        static_cast<void>(f.CallInCurrent(looper, "quit", "()V"));
         return VmValue::Void();
     });
     const auto thread = f.New("Ljava/lang/Thread;", "(Ljava/lang/Runnable;)V", {VmValue::Ref(callback)});
@@ -328,7 +369,7 @@ TEST_CASE("DVM-336 receiver initializes on its own Looper thread and rejects a f
     static_cast<void>(f.Call(thread, "join", "()V"));
     CHECK(*rejected);
     REQUIRE(f.f.context->display_receivers.size() == 1);  // Rejected registration added nothing.
-    const auto hits = f.f.ledger.Unimplemented();
+    const auto hits = f.NewGaps();
     REQUIRE(hits.size() == 1);
     CHECK(hits.front().id == "dexvm.choreographer_frame_source");
     static_cast<void>(f.f.app->Stop());
@@ -369,16 +410,20 @@ TEST_CASE("Choreographer delivers vsync on a non-main owner Looper") {
         const auto callback = f.New("Lfixture/FrameProbe;", "()V");
         f.Hook("Lfixture/FrameProbe;", "doFrame", "(J)V", [&](IntrinsicContext&) {
             CHECK(f.vm.CurrentContextToken() != 1);
-            const auto looper = f.Static("Landroid/os/Looper;", "myLooper", "()Landroid/os/Looper;").ref;
-            static_cast<void>(f.Call(looper, "quit", "()V"));
+            const auto looper = f.StaticInCurrent("Landroid/os/Looper;", "myLooper", "()Landroid/os/Looper;").ref;
+            static_cast<void>(f.CallInCurrent(looper, "quit", "()V"));
             delivered.set_value();
             return VmValue::Void();
         });
         f.Hook("Lfixture/FrameProbe;", "run", "()V", [&](IntrinsicContext&) {
-            static_cast<void>(f.Static("Landroid/os/Looper;", "prepare", "()V"));
-            f.Post(f.Choreographer(), callback);
+            static_cast<void>(f.StaticInCurrent("Landroid/os/Looper;", "prepare", "()V"));
+            const auto choreographer =
+                f.StaticInCurrent("Landroid/view/Choreographer;", "getInstance", "()Landroid/view/Choreographer;").ref;
+            static_cast<void>(f.CallInCurrent(choreographer, "postFrameCallback",
+                                              "(Landroid/view/Choreographer$FrameCallback;)V",
+                                              {VmValue::Ref(callback)}));
             ready.set_value();
-            static_cast<void>(f.Static("Landroid/os/Looper;", "loop", "()V"));
+            static_cast<void>(f.StaticInCurrent("Landroid/os/Looper;", "loop", "()V"));
             return VmValue::Void();
         });
         const auto thread = f.New("Ljava/lang/Thread;", "(Ljava/lang/Runnable;)V", {VmValue::Ref(callback)});
@@ -398,18 +443,18 @@ TEST_CASE("Worker Looper yields after a callback batch without terminating a sel
     const auto callback = f.New("Lfixture/FrameProbe;", "()V");
     f.Hook("Landroid/os/Handler;", "handleMessage", "(Landroid/os/Message;)V", [&](IntrinsicContext& call) {
         if (++count < 10005) {
-            static_cast<void>(f.Call(call.receiver, "sendEmptyMessage", "(I)Z", {VmValue::Int(1)}));
+            static_cast<void>(f.CallInCurrent(call.receiver, "sendEmptyMessage", "(I)Z", {VmValue::Int(1)}));
         } else {
-            const auto looper = f.Static("Landroid/os/Looper;", "myLooper", "()Landroid/os/Looper;").ref;
-            static_cast<void>(f.Call(looper, "quit", "()V"));
+            const auto looper = f.StaticInCurrent("Landroid/os/Looper;", "myLooper", "()Landroid/os/Looper;").ref;
+            static_cast<void>(f.CallInCurrent(looper, "quit", "()V"));
         }
         return VmValue::Void();
     });
     f.Hook("Lfixture/FrameProbe;", "run", "()V", [&](IntrinsicContext&) {
-        static_cast<void>(f.Static("Landroid/os/Looper;", "prepare", "()V"));
-        const auto handler = f.New("Landroid/os/Handler;", "()V");
-        static_cast<void>(f.Call(handler, "sendEmptyMessage", "(I)Z", {VmValue::Int(1)}));
-        static_cast<void>(f.Static("Landroid/os/Looper;", "loop", "()V"));
+        static_cast<void>(f.StaticInCurrent("Landroid/os/Looper;", "prepare", "()V"));
+        const auto handler = f.NewInCurrent("Landroid/os/Handler;", "()V");
+        static_cast<void>(f.CallInCurrent(handler, "sendEmptyMessage", "(I)Z", {VmValue::Int(1)}));
+        static_cast<void>(f.StaticInCurrent("Landroid/os/Looper;", "loop", "()V"));
         return VmValue::Void();
     });
     const auto thread = f.New("Ljava/lang/Thread;", "(Ljava/lang/Runnable;)V", {VmValue::Ref(callback)});

@@ -28,14 +28,34 @@ VmObjectRef ClassLoaderFacade::BootstrapLoader() {
     return bootstrap_loader_;
 }
 
+VmObjectRef ClassLoaderFacade::SystemLoader() {
+    if (!application_loader_factory_ || application_loader_.IsValid()) return ApplicationLoader();
+    if (!system_loader_.IsValid()) {
+        static_cast<void>(BootstrapLoader());
+        system_loader_ = AllocateFacade("Ldalvik/system/PathClassLoader;");
+    }
+    return system_loader_;
+}
+
+void ClassLoaderFacade::SetApplicationLoaderFactory(std::function<VmObjectRef()> factory) {
+    if (application_loader_.IsValid() || application_loader_factory_)
+        throw DexVmError(DexVmErrorReason::internal_invariant, "application loader already configured");
+    application_loader_factory_ = std::move(factory);
+}
+
 VmObjectRef ClassLoaderFacade::ApplicationLoader() {
     // Keep the parent alive before publishing the child. This also fixes the
     // deterministic allocation order of the two process-lifetime facades.
     static_cast<void>(BootstrapLoader());
     if (!application_loader_.IsValid()) {
-        application_loader_ = AllocateFacade("Ldalvik/system/PathClassLoader;");
+        application_loader_ = application_loader_factory_ ? application_loader_factory_()
+                                                          : AllocateFacade("Ldalvik/system/PathClassLoader;");
     }
     return application_loader_;
+}
+
+bool ClassLoaderFacade::IsRomApplicationLoader(const VmObjectRef object) const {
+    return application_loader_factory_ && object.IsValid() && object == application_loader_;
 }
 
 VmObjectRef ClassLoaderFacade::LoaderForClass(const DexClassId java_class) {
@@ -48,7 +68,7 @@ VmObjectRef ClassLoaderFacade::LoaderForClass(const DexClassId java_class) {
 
 std::optional<VmClassLoaderId> ClassLoaderFacade::RoleOf(const VmObjectRef loader_object) {
     if (!loader_object.IsValid()) return std::nullopt;
-    if (loader_object == bootstrap_loader_) return kBootstrapLoader;
+    if (loader_object == bootstrap_loader_ || loader_object == system_loader_) return kBootstrapLoader;
     if (loader_object == application_loader_) return kApplicationLoader;
 
     const auto class_loader = linker_->FindClass("Ljava/lang/ClassLoader;");
@@ -61,7 +81,7 @@ std::optional<VmClassLoaderId> ClassLoaderFacade::RoleOf(const VmObjectRef loade
 }
 
 std::optional<VmObjectRef> ClassLoaderFacade::FacadeParent(const VmObjectRef loader_object) {
-    if (loader_object == application_loader_) return BootstrapLoader();
+    if (loader_object == application_loader_ || loader_object == system_loader_) return BootstrapLoader();
     if (loader_object == bootstrap_loader_) return VmObjectRef(0);
     return std::nullopt;
 }
@@ -129,6 +149,7 @@ DexClassId ClassLoaderFacade::LoadClass(const VmClassLoaderId loader, const std:
 void ClassLoaderFacade::VisitRoots(const std::function<void(VmObjectRef)>& visitor) const {
     if (!visitor) return;
     visitor(bootstrap_loader_);
+    visitor(system_loader_);
     visitor(application_loader_);
 }
 

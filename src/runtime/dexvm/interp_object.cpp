@@ -418,6 +418,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
                 return;
             }
             case MethodKind::abstract:
+                RecordUnimplementedAbstract(method, receiver);
                 throw JavaLinkageError(JavaLinkageKind::abstract_method, method.name);
         }
         return;

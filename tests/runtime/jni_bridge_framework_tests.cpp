@@ -50,6 +50,7 @@
 #include "ogplay/video/fake_video_player.h"
 
 #include "native_library_fixture.h"
+#include "../dexvm/android_value_fixture.h"
 
 using namespace ogplay::test::native_library;
 
@@ -246,12 +247,13 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
     using namespace runtime;
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ApplicationProcess fixture(backend);
-        auto& bridge = *fixture.bridge;
+        // ROM TelephonyManager initializes its modem hint with guest /proc and ICU regex.
+        ogplay::test::android_value::AndroidValueVm fixture(backend);
+        auto& bridge = *fixture.runtime->bridge;
         auto& vm = bridge.Vm();
         auto& linker = bridge.Linker();
-        auto& classes = fixture.session->Classes();
-        auto& invocations = fixture.session->Invocations();
+        auto& classes = fixture.runtime->session->Classes();
+        auto& invocations = fixture.runtime->session->Invocations();
         fixture.context->device_id = "fixture-device";
         fixture.context->secure_settings["android_id"] = "0123456789abcdef";
         for (const auto name :
@@ -289,7 +291,7 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
             REQUIRE(method.has_value());
             static_cast<void>(invocations.InvokeNonvirtual(1U, bridge.PublishLocal(object), identity, identity, *method,
                                                            args, JniArgumentSource::value_array));
-            REQUIRE_FALSE(fixture.session->Environment().ExceptionCheck(1U));
+            REQUIRE_FALSE(fixture.runtime->session->Environment().ExceptionCheck(1U));
             return object;
         };
         const auto text = [&](const char* value) { return bridge.PublishLocal(vm.NewStringUtf8(value)); };
@@ -297,26 +299,26 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
             return vm.StringUtf8(bridge.FromReference(std::get<JniReference>(value)));
         };
         const auto activity = construct("Landroid/app/Activity;", "()V");
-        const auto base = vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto base = ogplay::test::MakeRomAppContext(vm, fixture.context);
         static_cast<void>(
             call(activity, "attachBaseContext", "(Landroid/content/Context;)V", {bridge.PublishLocal(base)}));
-        REQUIRE_FALSE(fixture.session->Environment().ExceptionCheck(1U));
+        REQUIRE_FALSE(fixture.runtime->session->Environment().ExceptionCheck(1U));
         const auto manager_ref = std::get<JniReference>(
             call(activity, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {text("activity")}));
         const auto manager = bridge.FromReference(manager_ref);
         const auto memory_info = construct("Landroid/app/ActivityManager$MemoryInfo;", "()V");
         const auto memory_ref = bridge.PublishLocal(memory_info);
         static_cast<void>(call(manager, "getMemoryInfo", "(Landroid/app/ActivityManager$MemoryInfo;)V", {memory_ref}));
-        REQUIRE_FALSE(fixture.session->Environment().ExceptionCheck(1U));
+        REQUIRE_FALSE(fixture.runtime->session->Environment().ExceptionCheck(1U));
         const auto info_class = *bridge.RegisteredClassIdentity(vm.Model().ObjectClass(memory_info));
-        const auto info_identity = fixture.session->Environment().ResolveObjectForHle(1U, memory_ref);
+        const auto info_identity = fixture.runtime->session->Environment().ResolveObjectForHle(1U, memory_ref);
         REQUIRE(info_identity.has_value());
         for (const auto& [name, expected] : std::array<std::pair<const char*, std::int64_t>, 3>{
                  {{"totalMem", 1073741824}, {"availMem", 805306368}, {"threshold", 100663296}}}) {
             const auto field = classes.GetFieldId(info_class, name, "J", false);
             REQUIRE(field.has_value());
-            CHECK(std::get<JniLong>(fixture.session->Fields().GetInstance(*info_identity, info_class, *field, 1U)) ==
-                  expected);
+            CHECK(std::get<JniLong>(fixture.runtime->session->Fields().GetInstance(*info_identity, info_class, *field,
+                                                                                   1U)) == expected);
         }
         fixture.context->activity = activity;
         const auto legacy = classes.RegisterClass(
@@ -326,14 +328,23 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
                   invocations.InvokeStatic(1U, legacy, current, {}, JniArgumentSource::value_array))) == activity);
         const auto phone = std::get<JniReference>(
             call(activity, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {text("phone")}));
-        CHECK(bridge.FromReference(phone).Value() == fixture.context->singletons.at("phone").Value());
+        if (const auto pending = fixture.runtime->session->Environment().PendingExceptionMetadata(1U)) {
+            const auto throwable = bridge.Model().FromIdentity(pending->throwable);
+            FAIL_CHECK(linker.Class(bridge.Model().ObjectClass(throwable)).descriptor, pending->modified_utf8_message,
+                       vm.DescribeThrowableCauses(throwable));
+        }
+        REQUIRE(phone.Value() != 0);
+        CHECK(bridge.FromReference(phone) == fixture
+                                                 .On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                                                     {VmValue::Ref(vm.NewStringUtf8("phone"))})
+                                                 .ref);
         CHECK(string_value(call(bridge.FromReference(phone), "getDeviceId", "()Ljava/lang/String;")) ==
               "fixture-device");
         CHECK_FALSE(bridge
                         .FromReference(std::get<JniReference>(
                             call(bridge.FromReference(phone), "getSubscriberId", "()Ljava/lang/String;")))
                         .IsValid());
-        CHECK_FALSE(fixture.session->Environment().ExceptionCheck(1U));
+        CHECK_FALSE(fixture.runtime->session->Environment().ExceptionCheck(1U));
         const auto sensor = std::get<JniReference>(
             call(activity, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {text("sensor")}));
         CHECK(std::get<JniInt>(call(bridge.FromReference(sensor), "getSensors", "()I")) == 0);
@@ -344,10 +355,11 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
         CHECK(std::get<JniBoolean>(call(bridge.FromReference(sensor), "registerListener",
                                         "(Landroid/hardware/SensorListener;I)Z", {JniReference{}, JniInt{1}})) ==
               JniBoolean{false});
-        CHECK_FALSE(fixture.session->Environment().ExceptionCheck(1U));
+        CHECK_FALSE(fixture.runtime->session->Environment().ExceptionCheck(1U));
         const auto resolver =
             std::get<JniReference>(call(activity, "getContentResolver", "()Landroid/content/ContentResolver;"));
-        CHECK(bridge.FromReference(resolver).Value() == fixture.context->singletons.at("content_resolver").Value());
+        CHECK(bridge.FromReference(resolver) ==
+              fixture.On(base, "getContentResolver", "()Landroid/content/ContentResolver;").ref);
         const auto secure = *classes.FindClass("android/provider/Settings$Secure");
         const auto get = *classes.GetMethodId(
             secure, "getString", "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;", true);
@@ -370,7 +382,7 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
             CHECK(std::get<JniReference>(
                       invocations.InvokeStatic(1U, report, *receiver, report_args, JniArgumentSource::value_array))
                       .IsNull());
-            REQUIRE_FALSE(fixture.session->Environment().ExceptionCheck(1U));
+            REQUIRE_FALSE(fixture.runtime->session->Environment().ExceptionCheck(1U));
         }
         const auto bundle = construct("Landroid/os/Bundle;", "()V");
         CHECK(linker.Class(vm.Model().ObjectClass(bundle)).is_boot_dex);
@@ -611,7 +623,7 @@ TEST_CASE("DVM-358 JNI diagnostics expand reflection targets and initializer exc
 TEST_CASE("DVM-112 BootDex ServiceConnection links and the shared bridge takes the absent branch") {
     using namespace ogplay::runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ApplicationProcess f(backend);
+        RomValueProcess f(backend);
         f.context->service_inventory_known = true;
         auto& vm = f.bridge->Vm();
         auto& linker = f.bridge->Linker();
@@ -631,7 +643,7 @@ TEST_CASE("DVM-112 BootDex ServiceConnection links and the shared bridge takes t
             REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
             return result.value;
         };
-        const auto base = vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto base = ogplay::test::MakeRomAppContext(vm, f.context);
         const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
         const auto probe = vm.NewIntrinsicInstance("Lfixture/ServiceProbe;");
         const auto roots = vm.ProtectReferences(std::array{base, intent, probe});

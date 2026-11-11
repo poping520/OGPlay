@@ -125,6 +125,8 @@ extern int32_t ICU(uloc_getDisplayVariant)(const char*, const char*, UChar*, int
 extern const char* const* ICU(uloc_getISOLanguages)(void);
 extern const char* const* ICU(uloc_getISOCountries)(void);
 extern int32_t ICU(uloc_getCountry)(const char*, char*, int32_t, UErrorCode*);
+extern int32_t ICU(uloc_addLikelySubtags)(const char*, char*, int32_t, UErrorCode*);
+extern int32_t ICU(uloc_getScript)(const char*, char*, int32_t, UErrorCode*);
 extern int32_t ICU(uloc_getParent)(const char*, char*, int32_t, UErrorCode*);
 extern UDateTimePatternGenerator* ICU(udatpg_open)(const char*, UErrorCode*);
 extern void ICU(udatpg_close)(UDateTimePatternGenerator*);

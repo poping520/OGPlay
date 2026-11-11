@@ -50,6 +50,7 @@
 #include "ogplay/video/fake_video_player.h"
 
 #include "native_library_fixture.h"
+#include "resources_test_support.h"
 
 using namespace ogplay::test::native_library;
 
@@ -64,77 +65,56 @@ TEST_CASE("Android app process installs the default encoded audio loader") {
     CHECK(fixture.app->NativeProcess().SoundPoolMixer().Enabled());
 }
 
-TEST_CASE("minimal Application startup preserves order identity and native loads") {
+TEST_CASE("ROM Application startup preserves order identity and native loads") {
     using namespace ogplay;
-
     SUBCASE("framework default is a stable process root") {
-        ApplicationProcess fixture;
-        CHECK(fixture.session->Environment().GlobalReferenceCount() == fixture.globals_before_bridge);
-        const auto first = session::StartDexApplication(*fixture.bridge, fixture.context, "Landroid/app/Application;");
-        const auto repeated =
-            session::StartDexApplication(*fixture.bridge, fixture.context, "Landroid/app/Application;");
-        CHECK(first == repeated);
-        CHECK(fixture.context->application == first);
+        OrchestratedApp fixture("fixture.LauncherActivity", true, false);
+        fixture.app->StartApplication();
+        const auto first = fixture.context->application;
+        REQUIRE(first.IsValid());
+        fixture.app->RunOnMainThread([&] {
+            CHECK(session::StartDexApplication(fixture.app->DexVm(), fixture.context, "Landroid/app/Application;") ==
+                  first);
+        });
         CHECK(fixture.context->application_base_context.IsValid());
     }
-
     SUBCASE("custom startup observes clinit construct attach onCreate order") {
-        ApplicationProcess fixture;
-        const auto application =
-            session::StartDexApplication(*fixture.bridge, fixture.context, "Lfixture/CustomApplication;");
-        CHECK(application.IsValid());
+        OrchestratedApp fixture("fixture.LauncherActivity", true, false, {}, {}, true,
+                                runtime::dexvm::InterpreterBackend::switch_dispatch, "fixture.CustomApplication");
+        fixture.app->StartApplication();
+        REQUIRE(fixture.context->application.IsValid());
         CHECK(fixture.CallStaticInt("Lfixture/CustomApplication;", "getStage") == 4);
-        CHECK(session::StartDexApplication(*fixture.bridge, fixture.context, "Lfixture/CustomApplication;") ==
-              application);
-        CHECK_THROWS_AS(static_cast<void>(session::StartDexApplication(*fixture.bridge, fixture.context,
-                                                                       "Landroid/app/Application;")),
-                        session::DexActivityLifecycleError);
+        fixture.app->RunOnMainThread([&] {
+            CHECK(session::StartDexApplication(fixture.app->DexVm(), fixture.context, "Lfixture/CustomApplication;") ==
+                  fixture.context->application);
+            CHECK_THROWS_AS(static_cast<void>(session::StartDexApplication(fixture.app->DexVm(), fixture.context,
+                                                                           "Landroid/app/Application;")),
+                            session::DexActivityLifecycleError);
+        });
     }
-
-    SUBCASE("clinit may load the first native library") {
-        ApplicationProcess fixture;
-        static_cast<void>(
-            session::StartDexApplication(*fixture.bridge, fixture.context, "Lfixture/ClinitLoadingApplication;"));
-        const auto records = fixture.libraries->Records();
-        REQUIRE(records.size() == 1U);
-        CHECK(records[0].soname == "liba.so");
-        CHECK(records[0].jni_on_load_calls == 1U);
-    }
-
-    SUBCASE("onCreate may load the first native library") {
-        ApplicationProcess fixture;
-        static_cast<void>(
-            session::StartDexApplication(*fixture.bridge, fixture.context, "Lfixture/OnCreateLoadingApplication;"));
-        const auto records = fixture.libraries->Records();
-        REQUIRE(records.size() == 1U);
-        CHECK(records[0].soname == "liba.so");
-        CHECK(records[0].jni_on_load_calls == 1U);
+    SUBCASE("Application callbacks load the first native library") {
+        for (const auto application : {"fixture.ClinitLoadingApplication", "fixture.OnCreateLoadingApplication"}) {
+            CAPTURE(application);
+            OrchestratedApp fixture("fixture.LauncherActivity", true, true, {}, {}, true,
+                                    runtime::dexvm::InterpreterBackend::switch_dispatch, application);
+            fixture.app->StartApplication();
+            const auto records = fixture.context->native_libraries->Records();
+            const auto record = std::ranges::find(records, "liba.so", &runtime::NativeLibraryRecord::soname);
+            REQUIRE(record != records.end());
+            CHECK(record->jni_on_load_calls == 1U);
+        }
     }
 }
 
 TEST_CASE("Application failure prevents launcher construction and surface effects") {
     using namespace ogplay;
-    ApplicationProcess fixture;
-    bool opened{};
-    session::DexActivityLifecycleBindings bindings;
-    bindings.bridge = fixture.bridge.get();
-    bindings.context = fixture.context;
-    bindings.launcher_descriptor = "Lfixture/LauncherActivity;";
-    bindings.application_descriptor = "Lfixture/ThrowingApplication;";
-    bindings.open_surface = [&] { opened = true; };
-    session::DexActivityLifecycle lifecycle(std::move(bindings));
-
-    CHECK_THROWS_WITH_AS(static_cast<void>(lifecycle.Start()),
-                         doctest::Contains("Application onCreate failed: uncaught Java exception\n"
-                                           "  exception: Ljava/lang/RuntimeException;\n"
-                                           "  message: application failed\n"
-                                           "  stack trace:\n"
-                                           "    at Lfixture/ThrowingApplication;.onCreate (pc 7)"),
-                         session::DexActivityLifecycleError);
-    CHECK_FALSE(opened);
+    OrchestratedApp fixture("fixture.LauncherActivity", true, false, {}, {}, true,
+                            runtime::dexvm::InterpreterBackend::switch_dispatch, "fixture.ThrowingApplication");
+    CHECK_THROWS(fixture.app->StartApplication());
     CHECK_FALSE(fixture.context->application.IsValid());
     CHECK_FALSE(fixture.context->activity.IsValid());
-    CHECK(fixture.CallStaticInt("Lfixture/LauncherActivity;", "getInstances") == 0);
+    CHECK_FALSE(fixture.context->managed_host_surface_open);
+    CHECK(fixture.ReadStaticInt("Lfixture/LauncherActivity;", "instances") == 0);
 }
 
 TEST_CASE("AndroidAppProcess starts a manifest launcher without preloading app ELF") {
@@ -315,20 +295,23 @@ TEST_CASE("DVM-107 manifest launcher alias retains its component identity") {
     auto& bridge = fixture.app->DexVm();
     const auto activity = fixture.context->activity;
     CHECK(bridge.Linker().Class(bridge.Model().ObjectClass(activity)).descriptor == "Lfixture/LauncherActivity;");
-    const auto invoke = [&](VmObjectRef receiver, const char* name, const char* signature) {
-        const auto type = bridge.Model().ObjectClass(receiver);
-        const auto slot = bridge.Linker().FindVtableIndex(type, name, signature);
-        REQUIRE(slot.has_value());
-        const auto result =
-            bridge.Vm().Call(bridge.Linker().Class(type).vtable[*slot], std::array{VmValue::Ref(receiver)});
-        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
-        return result.value.ref;
-    };
-    CHECK(bridge.Vm().StringUtf8(invoke(activity, "getLocalClassName", "()Ljava/lang/String;")) == "StartAlias");
-    const auto component = invoke(activity, "getComponentName", "()Landroid/content/ComponentName;");
-    CHECK(bridge.Vm().StringUtf8(invoke(component, "getClassName", "()Ljava/lang/String;")) == "fixture.StartAlias");
-    const auto intent = invoke(activity, "getIntent", "()Landroid/content/Intent;");
-    CHECK(invoke(intent, "getComponent", "()Landroid/content/ComponentName;") == component);
+    fixture.app->RunOnMainThread([&] {
+        const auto invoke = [&](VmObjectRef receiver, const char* name, const char* signature) {
+            const auto type = bridge.Model().ObjectClass(receiver);
+            const auto slot = bridge.Linker().FindVtableIndex(type, name, signature);
+            REQUIRE(slot.has_value());
+            const auto result =
+                bridge.Vm().Call(bridge.Linker().Class(type).vtable[*slot], std::array{VmValue::Ref(receiver)});
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value.ref;
+        };
+        CHECK(bridge.Vm().StringUtf8(invoke(activity, "getLocalClassName", "()Ljava/lang/String;")) == "StartAlias");
+        const auto component = invoke(activity, "getComponentName", "()Landroid/content/ComponentName;");
+        CHECK(bridge.Vm().StringUtf8(invoke(component, "getClassName", "()Ljava/lang/String;")) ==
+              "fixture.StartAlias");
+        const auto intent = invoke(activity, "getIntent", "()Landroid/content/Intent;");
+        CHECK(invoke(intent, "getComponent", "()Landroid/content/ComponentName;") == component);
+    });
     CHECK(fixture.app->Stop().state == session::LifecycleRunState::stopped);
 }
 
@@ -404,24 +387,54 @@ TEST_CASE("VFS-09 session and native process share the finite guest call watchdo
     CHECK(app.maximum_ticks_per_call == UINT64_C(10000000000));
 }
 
-TEST_CASE("DVM-264 application binding publishes tmpdir before Application class initialization") {
+TEST_CASE("DVM-264 ROM application binding publishes tmpdir before Application class initialization") {
     using namespace ogplay;
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ApplicationProcess fixture(backend, "/data/game", "platform_tables.dex");
-        fixture.context->package_name = "fixture.platform";
-        auto& vm = fixture.bridge->Vm();
-        REQUIRE(vm.GetSystemProperty("java.io.tmpdir") == "/tmp");
-        static_cast<void>(
-            session::StartDexApplication(*fixture.bridge, fixture.context, "Lfixture/PlatformApplication;"));
-        const auto type = vm.Linker().ResolveDescriptor("Lfixture/PlatformApplication;");
-        const auto method = vm.Linker().FindDirectMethod(type, "initial", "()Ljava/lang/String;");
-        REQUIRE(method.has_value());
-        const auto outcome = vm.Call(*method, {});
-        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
-        CHECK(vm.StringUtf8(outcome.value.ref) == "/data/data/fixture.platform/cache");
-        CHECK(vm.GetSystemProperty("java.io.tmpdir") == "/data/data/fixture.platform/cache");
-        CHECK(vm.GetSystemProperty("user.dir") == "/data/game");
+        runtime::VirtualFileSystem filesystem;
+        filesystem.CreateDirectory("/data");
+        filesystem.CreateDirectory("/data/game");
+        filesystem.SetWorkingDirectory("/data/game");
+        core::CapabilityLedger ledger;
+        core::Logger logger;
+        std::vector<std::vector<std::byte>> library_bytes;
+        std::vector<runtime::BionicModuleSource> system;
+        for (const auto name : runtime::SelectBionicProfile(19).guest_libraries) {
+            library_bytes.push_back(ReadPayloadBytes("lib/" + std::string(name)));
+            system.push_back({std::string(name), library_bytes.back()});
+        }
+        session::AndroidAppProcessRequest request;
+        request.manifest = AppManifest("fixture.LauncherActivity", true);
+        request.manifest.package = "fixture.platform";
+        request.manifest.application_class = "fixture.PlatformApplication";
+        request.dex_bytes = ReadDexFixture("platform_tables.dex");
+        request.boot_dex_files = test::ReadBootDex();
+        request.system_libraries = system;
+        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
+        request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
+        request.context = std::make_shared<runtime::DexVmAndroidContext>();
+        test::BindBootDexArchive(*request.context);
+        const std::array entries{std::pair{std::string("fixture"), std::vector<std::byte>{}}};
+        request.context->apk_bytes = test::resources::Zip(entries);
+        request.platform.android_id = "0123456789abcdef";
+        request.filesystem = &filesystem;
+        request.ledger = &ledger;
+        request.logger = &logger;
+        request.dexvm.interpreter.backend = backend;
+        auto app = session::AndroidAppProcess::Create(std::move(request));
+        app->StartApplication();
+        app->RunOnMainThread([&] {
+            auto& vm = app->DexVm().Vm();
+            const auto type = vm.Linker().ResolveDescriptor("Lfixture/PlatformApplication;");
+            const auto method = vm.Linker().FindDirectMethod(type, "initial", "()Ljava/lang/String;");
+            REQUIRE(method);
+            const auto result = vm.Call(*method, {});
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            CHECK(vm.StringUtf8(result.value.ref) == "/data/data/fixture.platform/cache");
+            CHECK(vm.GetSystemProperty("java.io.tmpdir") == "/data/data/fixture.platform/cache");
+            CHECK(vm.GetSystemProperty("user.dir") == "/data/game");
+        });
+        static_cast<void>(app->Stop());
     }
 }
 
@@ -436,51 +449,106 @@ TEST_CASE("DVM-354 API19 heap classes and largeHeap are applied before Applicati
             fixture.app->StartApplication();
             auto& vm = fixture.app->DexVm().Vm();
             auto& linker = vm.Linker();
-            const auto call = [&](const char* owner, const char* name, const char* signature,
-                                  std::vector<VmValue> args = {}) {
-                const auto type = linker.ResolveDescriptor(owner);
-                const auto method = linker.FindDirectMethod(type, name, signature);
-                REQUIRE(method);
-                const auto result = vm.Call(*method, args);
-                REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
-                return result.value;
-            };
-            const auto on = [&](VmObjectRef object, const char* name, const char* signature) {
-                const auto type = vm.Model().ObjectClass(object);
-                const auto slot = linker.FindVtableIndex(type, name, signature);
-                REQUIRE(slot);
-                const auto result = vm.Call(linker.Class(type).vtable[*slot], std::array{VmValue::Ref(object)});
-                REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
-                return result.value;
-            };
-            CHECK(call("Landroid/app/ActivityManager;", "staticGetMemoryClass", "()I").AsInt() == 96);
-            CHECK(call("Landroid/app/ActivityManager;", "staticGetLargeMemoryClass", "()I").AsInt() == 256);
-            const auto runtime = call("Ljava/lang/Runtime;", "getRuntime", "()Ljava/lang/Runtime;").ref;
-            CHECK(on(runtime, "maxMemory", "()J").AsLong() == (large ? 256 : 96) * mib);
-            const auto application = fixture.app->Context()->application;
-            const auto info = on(application, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;").ref;
-            const auto flags = linker.FindFieldRecursive(vm.Model().ObjectClass(info), "flags", "I");
-            REQUIRE(flags);
-            CHECK(((vm.Model().InstanceSlots(info)[linker.Field(*flags).slot].bits & 0x00100000U) != 0) == large);
-            const auto app_type = linker.ResolveDescriptor("Lfixture/HeapApplication;");
-            const auto measured = linker.FindFieldRecursive(app_type, "constructorMax", "J");
-            REQUIRE(measured);
-            const auto& storage = linker.Class(app_type).static_storage;
-            const auto index = linker.Field(*measured).slot;
-            const auto bytes =
-                static_cast<std::uint64_t>(storage[index]) | (static_cast<std::uint64_t>(storage[index + 1]) << 32U);
-            CHECK(bytes == static_cast<std::uint64_t>((large ? 256 : 96) * mib));
-            const auto allocate = linker.FindDirectMethod(app_type, "allocateProbe", "()[B");
-            REQUIRE(allocate);
-            const auto allocation = vm.Call(*allocate, {});
-            if (large) {
-                REQUIRE_FALSE(allocation.exception.IsValid());
-                CHECK(vm.Model().IsValidRef(allocation.value.ref));
-            } else {
-                REQUIRE(allocation.exception.IsValid());
-                CHECK(linker.Class(allocation.exception_class).descriptor == "Ljava/lang/OutOfMemoryError;");
-            }
+            fixture.app->RunOnMainThread([&] {
+                const auto call = [&](const char* owner, const char* name, const char* signature,
+                                      std::vector<VmValue> args = {}) {
+                    const auto type = linker.ResolveDescriptor(owner);
+                    const auto method = linker.FindDirectMethod(type, name, signature);
+                    REQUIRE(method);
+                    const auto result = vm.Call(*method, args);
+                    REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+                    return result.value;
+                };
+                const auto on = [&](VmObjectRef object, const char* name, const char* signature) {
+                    const auto type = vm.Model().ObjectClass(object);
+                    const auto slot = linker.FindVtableIndex(type, name, signature);
+                    REQUIRE(slot);
+                    const auto result = vm.Call(linker.Class(type).vtable[*slot], std::array{VmValue::Ref(object)});
+                    REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+                    return result.value;
+                };
+                CHECK(call("Landroid/app/ActivityManager;", "staticGetMemoryClass", "()I").AsInt() == 96);
+                CHECK(call("Landroid/app/ActivityManager;", "staticGetLargeMemoryClass", "()I").AsInt() == 256);
+                const auto runtime = call("Ljava/lang/Runtime;", "getRuntime", "()Ljava/lang/Runtime;").ref;
+                CHECK(on(runtime, "maxMemory", "()J").AsLong() == (large ? 256 : 96) * mib);
+                const auto application = fixture.app->Context()->application;
+                const auto base = on(application, "getBaseContext", "()Landroid/content/Context;").ref;
+                REQUIRE(base.IsValid());
+                CHECK(linker.Class(vm.Model().ObjectClass(base)).descriptor == "Landroid/app/ContextImpl;");
+                const auto loader = on(base, "getClassLoader", "()Ljava/lang/ClassLoader;").ref;
+                REQUIRE(loader.IsValid());
+                CHECK(linker.Class(vm.Model().ObjectClass(loader)).is_boot_dex);
+                const auto class_object = vm.Model().ClassObject(vm.Model().ObjectClass(application));
+                CHECK(on(class_object, "getClassLoader", "()Ljava/lang/ClassLoader;").ref == loader);
+                const auto files = on(base, "getFilesDir", "()Ljava/io/File;").ref;
+                REQUIRE(files.IsValid());
+                CHECK(vm.StringUtf8(on(files, "getPath", "()Ljava/lang/String;").ref) == "/data/data/fixture/files");
+                const auto info = on(application, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;").ref;
+                const auto flags = linker.FindFieldRecursive(vm.Model().ObjectClass(info), "flags", "I");
+                REQUIRE(flags);
+                CHECK(((vm.Model().InstanceSlots(info)[linker.Field(*flags).slot].bits & 0x00100000U) != 0) == large);
+                const auto app_type = linker.ResolveDescriptor("Lfixture/HeapApplication;");
+                const auto measured = linker.FindFieldRecursive(app_type, "constructorMax", "J");
+                REQUIRE(measured);
+                const auto& storage = linker.Class(app_type).static_storage;
+                const auto index = linker.Field(*measured).slot;
+                const auto bytes = static_cast<std::uint64_t>(storage[index]) |
+                                   (static_cast<std::uint64_t>(storage[index + 1]) << 32U);
+                CHECK(bytes == static_cast<std::uint64_t>((large ? 256 : 96) * mib));
+                const auto allocate = linker.FindDirectMethod(app_type, "allocateProbe", "()[B");
+                REQUIRE(allocate);
+                const auto allocation = vm.Call(*allocate, {});
+                if (large) {
+                    REQUIRE_FALSE(allocation.exception.IsValid());
+                    CHECK(vm.Model().IsValidRef(allocation.value.ref));
+                } else {
+                    REQUIRE(allocation.exception.IsValid());
+                    CHECK(linker.Class(allocation.exception_class).descriptor == "Ljava/lang/OutOfMemoryError;");
+                }
+            });
             static_cast<void>(fixture.app->Stop());
         }
+    }
+}
+
+TEST_CASE("AndroidAppProcess runs host requests inside the ROM main Looper on one guest owner") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.LauncherActivity", true, false, {}, {}, true, backend);
+        const auto host_thread = std::this_thread::get_id();
+        std::thread::id main_thread;
+        auto& vm = f.app->DexVm().Vm();
+        const auto held = vm.NewStringUtf8("host-held-root");
+        {
+            const auto root = vm.ProtectReferences(std::array{held});
+            for (int request = 0; request < 2; ++request) {
+                f.app->RunOnMainThread([&] {
+                    if (request == 0) main_thread = std::this_thread::get_id();
+                    CHECK(std::this_thread::get_id() == main_thread);
+                    CHECK(main_thread != host_thread);
+                    CHECK(vm.CurrentContextToken() == 1U);
+                    bool loop = false, handler = false;
+                    for (const auto& stack : vm.StackSnapshot()) {
+                        if (stack.context_token != 1U) continue;
+                        for (const auto& frame : stack.frames) {
+                            loop |= frame.class_descriptor == "Landroid/os/Looper;" && frame.method_name == "loop";
+                            handler |= frame.class_descriptor == "Landroid/os/Handler;" &&
+                                       frame.method_name == "dispatchMessage";
+                        }
+                    }
+                    CHECK(loop);
+                    CHECK(handler);
+                    static_cast<void>(vm.CollectGarbage("main-channel-host-root"));
+                    CHECK(vm.Model().IsValidRef(held));
+                    CHECK(vm.StringUtf8(held) == "host-held-root");
+                });
+            }
+        }
+        f.app->RunOnMainThread([&] {
+            static_cast<void>(vm.CollectGarbage("main-channel-root-release"));
+            CHECK_FALSE(vm.Model().IsValidRef(held));
+        });
+        CHECK(f.app->Stop().state == session::LifecycleRunState::stopped);
     }
 }

@@ -1,6 +1,7 @@
 #include "android_value_fixture.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
+#include "container_traversal_fixture.h"
 #include <doctest/doctest.h>
 
 #include <algorithm>
@@ -20,7 +21,6 @@
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
-#include "ogplay/core/json.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/database/database_runtime.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
@@ -194,12 +194,6 @@ struct SqliteSandboxRoot final {
 };
 
 struct NetworkSqliteVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
-    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
-    JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model{strings, arrays};
-    DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
     ogplay::core::Logger logger;
     SqliteSandboxRoot sandbox_root;
@@ -207,8 +201,11 @@ struct NetworkSqliteVm final {
     VirtualFileSystem vfs;
     DexVmIoVfsAdapter io_file_system{vfs};
     std::shared_ptr<DexVmAndroidContext> context{std::make_shared<DexVmAndroidContext>()};
-    Interpreter vm;
-    VmThreadRuntime threads;
+    std::unique_ptr<ogplay::test::container_traversal::AndroidTestRuntime> runtime;
+    JavaObjectModel& model;
+    DexClassLinker& linker;
+    Interpreter& vm;
+    VmThreadRuntime& threads;
     std::int32_t helper_create_calls{};
     std::int32_t helper_upgrade_calls{};
     std::int32_t helper_old_version{};
@@ -221,15 +218,13 @@ struct NetworkSqliteVm final {
     explicit NetworkSqliteVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
                              std::vector<std::uint8_t> app_dex = {}, std::string package_name = "test.game",
                              const bool sealed_classpath = false)
-        : vm(
-              [this, &app_dex, &package_name, sealed_classpath]() -> DexClassLinker& {
+        : runtime(
+              [&] {
+                  static_cast<void>(sealed_classpath);
                   ogplay::test::BindBootDexArchive(*context);
                   context->package_name = package_name;
                   context->vfs = &vfs;
-                  auto services = sealed_classpath ? AndroidCoreIntrinsicServices(context) : CoreIntrinsicServices{};
-                  services.current_time_millis = [] { return std::int64_t{1000}; };
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
-                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
+                  auto catalog = AndroidIntrinsicCatalog(context);
                   auto helper = IntrinsicClassBuilder::Class("Ltest/SqliteOpenHelperFixture;",
                                                              "Landroid/database/sqlite/SQLiteOpenHelper;");
                   helper.OverrideMethod(
@@ -266,15 +261,14 @@ struct NetworkSqliteVm final {
                   std::vector<IntrinsicClassDecl> test_catalog;
                   test_catalog.push_back(std::move(helper).Build());
                   test_catalog.push_back(std::move(sqlite_worker).Build());
-                  linker.RegisterIntrinsics(test_catalog);
-                  ogplay::test::RegisterBootDex(linker);
-                  if (!app_dex.empty()) linker.RegisterDex(std::move(app_dex));
-                  linker.Link();
-                  return linker;
-              }(),
-              model, nullptr, ledger, InterpreterConfig{.backend = backend}),
-          threads(vm) {
-        RegisterAndroidDatabaseStateTables(vm, context);
+                  catalog.insert(catalog.end(), test_catalog.begin(), test_catalog.end());
+                  if (app_dex.empty()) app_dex = ogplay::test::native_library::ReadDexFixture("application.dex");
+                  return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
+                      context, ledger, logger, std::move(catalog), std::move(app_dex),
+                      InterpreterConfig{.backend = backend}, &vfs);
+              }()),
+          model(runtime->bridge->Model()), linker(runtime->bridge->Linker()), vm(runtime->bridge->Vm()),
+          threads(runtime->bridge->Threads()) {
         vm.IO().SetFileSystem(&io_file_system);
         vm.SetLogger(&logger);
         vm.Monitors().SetTimeSource([] { return std::int64_t{1000}; });
@@ -362,7 +356,7 @@ struct NetworkSqliteVm final {
                                     "(Landroid/content/Context;Ljava/lang/String;Landroid/database/sqlite/"
                                     "SQLiteDatabase$CursorFactory;I)V");
         REQUIRE(constructor.has_value());
-        const auto android_context = vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto android_context = ogplay::test::MakeRomAppContext(vm, context);
         const std::array arguments{VmValue::Ref(helper), VmValue::Ref(android_context),
                                    VmValue::Ref(vm.NewStringUtf8(name)), VmValue::Ref(VmObjectRef{}),
                                    VmValue::Int(version)};
@@ -902,51 +896,7 @@ TEST_CASE("DVM-186 close cancels active work and teardown is idempotent") {
     CHECK_NOTHROW(connection->Close());
 }
 
-TEST_CASE("DVM-198 system resource mapping follows each BootDex archive") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        for (const auto id : {0x0104011c, 0x01040029}) {
-            NetworkSqliteVm fixture(backend);
-            const std::string document = R"({"schema_version":1,"api_level":19,"resources":[{"id":)" +
-                                         std::to_string(id) +
-                                         R"(,"name":"journal","type":"string","value":"DELETE"}]})";
-            SingleBootJar(*fixture.context, MakeStoredZip("META-INF/ogplay/fixture-document.json",
-                                                          std::as_bytes(std::span(document.data(), document.size()))));
-            const auto resources =
-                fixture.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
-            CHECK(fixture.vm.StringUtf8(
-                      fixture.On(resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(id)}).ref) == "DELETE");
-            const auto missing = fixture.linker.ResolveDescriptor("Landroid/content/res/Resources$NotFoundException;");
-            CHECK(fixture.OnOutcome(resources, "getInteger", "(I)I", {VmValue::Int(id)}).exception_class == missing);
-            const auto other = id == 0x0104011c ? 0x01040029 : 0x0104011c;
-            CHECK(fixture.OnOutcome(resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(other)})
-                      .exception_class == missing);
-        }
-    }
-}
-
-TEST_CASE("DVM-198 missing or malformed BootDex resource maps fail without APK fallback") {
-    for (
-        const std::string document :
-        {"", "{", R"({"schema_version":2,"api_level":19,"resources":[]})",
-         R"({"schema_version":1,"api_level":19,"resources":[{"id":17039657,"name":"a","type":"integer","value":2147483648}]})",
-         R"({"schema_version":1,"api_level":19,"resources":[{"id":17039657,"name":"a","type":"string","value":"x"},{"id":17039657,"name":"b","type":"integer","value":1}]})"}) {
-        NetworkSqliteVm fixture;
-        fixture.context->apk_bytes = fixture.context->boot_classpath.front().bytes;
-        fixture.context->archive = fixture.context->boot_classpath.front().archive;
-        SingleBootJar(*fixture.context,
-                      MakeStoredZip(document.empty() ? "other.json" : "META-INF/ogplay/fixture-document.json",
-                                    std::as_bytes(std::span(document.data(), document.size()))));
-        const auto resources =
-            fixture.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
-        const auto invalid = fixture.linker.ResolveDescriptor("Ljava/lang/IllegalStateException;");
-        CHECK(fixture.OnOutcome(resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0x01040029)})
-                  .exception_class == invalid);
-        CHECK(fixture.OnOutcome(resources, "getInteger", "(I)I", {VmValue::Int(0x010e003b)}).exception_class ==
-              invalid);
-    }
-}
-
-TEST_CASE("DVM-194 SQLiteGlobal reads reviewed system resources through BootDex") {
+TEST_CASE("DVM-194 SQLiteGlobal reads framework-res configuration") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         NetworkSqliteVm fixture(backend);
         const auto owner = fixture.linker.ResolveDescriptor("Landroid/database/sqlite/SQLiteGlobal;");
@@ -957,7 +907,7 @@ TEST_CASE("DVM-194 SQLiteGlobal reads reviewed system resources through BootDex"
             REQUIRE(fixture.linker.Method(*id).code.has_value());
             return fixture.Static("Landroid/database/sqlite/SQLiteGlobal;", method, signature);
         };
-        CHECK(fixture.vm.StringUtf8(config("getDefaultJournalMode", "()Ljava/lang/String;").ref) == "DELETE");
+        CHECK(fixture.vm.StringUtf8(config("getDefaultJournalMode", "()Ljava/lang/String;").ref) == "PERSIST");
         CHECK(fixture.vm.StringUtf8(config("getDefaultSyncMode", "()Ljava/lang/String;").ref) == "FULL");
         CHECK(fixture.vm.StringUtf8(config("getWALSyncMode", "()Ljava/lang/String;").ref) == "FULL");
         CHECK(config("getWALConnectionPoolSize", "()I").AsInt() == 4);
@@ -967,33 +917,6 @@ TEST_CASE("DVM-194 SQLiteGlobal reads reviewed system resources through BootDex"
             fixture.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
         const auto resource_root = fixture.vm.ProtectReferences(std::array{resources});
 
-        const auto bytes = ogplay::loader::ReadStoredApkEntry(fixture.context->boot_classpath.front().bytes,
-                                                              fixture.context->boot_classpath.front().archive,
-                                                              "META-INF/ogplay/fixture-document.json");
-        ogplay::core::JsonParseError parse_error;
-        const auto document = ogplay::core::JsonDocument::ParseStrict(
-            std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()), parse_error);
-        REQUIRE(document.has_value());
-        const auto entries = *document->Root().Member("resources");
-        const auto not_found = fixture.linker.ResolveDescriptor("Landroid/content/res/Resources$NotFoundException;");
-        for (std::size_t i = 0; i < entries.Size(); ++i) {
-            const auto entry = *entries.Element(i);
-            const auto id = static_cast<std::int32_t>(*entry.Member("id")->Integer());
-            if (entry.Member("type")->String() == "integer") {
-                CHECK(fixture.On(resources, "getInteger", "(I)I", {VmValue::Int(id)}).AsInt() ==
-                      *entry.Member("value")->Integer());
-                const auto expected = std::to_string(*entry.Member("value")->Integer());
-                CHECK(fixture.vm.StringUtf8(
-                          fixture.On(resources, "getString", "(I)Ljava/lang/String;", {VmValue::Int(id)}).ref) ==
-                      expected);
-                CHECK(fixture.vm.StringUtf8(
-                          fixture.On(resources, "getText", "(I)Ljava/lang/CharSequence;", {VmValue::Int(id)}).ref) ==
-                      expected);
-            } else {
-                CHECK(fixture.OnOutcome(resources, "getInteger", "(I)I", {VmValue::Int(id)}).exception_class ==
-                      not_found);
-            }
-        }
         // The original CursorWindow clinit must consume the reviewed size too.
         const auto window = fixture.New("Landroid/database/CursorWindow;", "(Ljava/lang/String;)V",
                                         {VmValue::Ref(fixture.vm.NewStringUtf8("reviewed-size"))});
@@ -1038,7 +961,7 @@ TEST_CASE("DVM-186 original database path runs on both interpreters") {
                 .ref;
         REQUIRE(fixture.On(journal, "moveToFirst", "()Z").AsInt() == 1);
         CHECK(fixture.vm.StringUtf8(fixture.On(journal, "getString", "(I)Ljava/lang/String;", {VmValue::Int(0)}).ref) ==
-              "delete");
+              "persist");
         fixture.On(journal, "close", "()V");
         const auto cursor = fixture
                                 .On(database, "rawQuery",
@@ -1524,7 +1447,7 @@ TEST_CASE("DVM-186 real APK cookie storage handles empty expired and valid datab
             database->Execute("INSERT INTO cookie VALUES (?, ?, ?)", values);
             database->Close();
         }
-        const auto android_context = fixture.vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto android_context = ogplay::test::MakeRomAppContext(fixture.vm, fixture.context);
         const auto logger =
             fixture.Static("Lcom/burstly/lib/util/LoggerExt;", "getInstance", "()Lcom/burstly/lib/util/LoggerExt;").ref;
         fixture.On(logger, "setLogLevel", "(I)V", {VmValue::Int(7)});

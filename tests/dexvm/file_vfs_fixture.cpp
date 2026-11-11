@@ -1,3 +1,4 @@
+#include "runtime/integration/dexvm_android/shared.h"
 #include "file_vfs_fixture.h"
 
 #include "boot_dex.h"
@@ -137,30 +138,39 @@ TemporaryRoot::~TemporaryRoot() {
 
 FileVm::FileVm(SandboxStore* sandbox, const bool include_android_catalog, const InterpreterConfig config,
                const std::span<const IntrinsicClassDecl> extra_intrinsics, const bool include_boot_dex)
-    : model(strings, arrays), context(std::make_shared<DexVmAndroidContext>()), io_file_system(vfs),
-      interpreter(
-          [this, include_android_catalog, include_boot_dex, extra_intrinsics]() -> DexClassLinker& {
-              CoreIntrinsicServices services;
-              services.current_time_millis = [] { return INT64_C(1704067200000); };
-              linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
-              if (include_android_catalog) {
-                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
-              }
-              linker.RegisterIntrinsics(extra_intrinsics);
-              if (include_boot_dex) {
-                  ogplay::test::RegisterBootDex(linker);
-              }
-              linker.Link();
-              return linker;
-          }(),
-          model, nullptr, ledger, config) {
+    : standalone_model(strings, arrays), context(std::make_shared<DexVmAndroidContext>()), io_file_system(vfs),
+      runtime([&]() -> std::unique_ptr<container_traversal::AndroidTestRuntime> {
+          if (!include_android_catalog || !include_boot_dex) return {};
+          BindBootDexArchive(*context);
+          context->package_name = kPackage;
+          if (sandbox) vfs.AttachSandbox(*sandbox, kWritableRoots);
+          auto catalog = AndroidIntrinsicCatalog(context);
+          catalog.insert(catalog.end(), extra_intrinsics.begin(), extra_intrinsics.end());
+          return std::make_unique<container_traversal::AndroidTestRuntime>(
+              context, ledger, logger, std::move(catalog), native_library::ReadDexFixture("application.dex"), config,
+              &vfs);
+      }()),
+      standalone_interpreter([&]() -> std::unique_ptr<Interpreter> {
+          if (runtime) return {};
+          auto services = include_android_catalog ? AndroidCoreIntrinsicServices(context) : CoreIntrinsicServices{};
+          services.current_time_millis = [] { return INT64_C(1704067200000); };
+          standalone_linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
+          if (include_android_catalog) standalone_linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
+          standalone_linker.RegisterIntrinsics(extra_intrinsics);
+          if (include_boot_dex) RegisterBootDex(standalone_linker);
+          standalone_linker.Link();
+          return std::make_unique<Interpreter>(standalone_linker, standalone_model, nullptr, ledger, config);
+      }()),
+      model(runtime ? runtime->bridge->Model() : standalone_model),
+      linker(runtime ? runtime->bridge->Linker() : standalone_linker),
+      interpreter(runtime ? runtime->bridge->Vm() : *standalone_interpreter) {
     interpreter.Monitors().SetTimeSource([] { return std::int64_t{1}; });
     if (include_boot_dex) ogplay::test::BindBootDexArchive(*context);
     context->vfs = &vfs;
     interpreter.IO().SetFileSystem(&io_file_system);
     context->package_name = kPackage;
     interpreter.SetLogger(&logger);
-    if (sandbox != nullptr) vfs.AttachSandbox(*sandbox, kWritableRoots);
+    if (sandbox != nullptr && !runtime) vfs.AttachSandbox(*sandbox, kWritableRoots);
 }
 
 VmObjectRef FileVm::AppAssets() {
@@ -168,8 +178,9 @@ VmObjectRef FileVm::AppAssets() {
 }
 
 VmObjectRef FileVm::AppResources() {
-    const auto owner = interpreter.NewIntrinsicInstance("Landroid/content/Context;");
-    return CallOn(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+    MountResourceFixture(*context, interpreter);
+    IntrinsicContext call{interpreter, VmObjectRef{}, {}};
+    return android_intrinsics::ResourceObject(call, context, false);
 }
 
 VmObjectRef FileVm::NewFile(const std::string& path) {

@@ -172,8 +172,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 151984,
-      "sha256": "fa621e891487c55e8197108492028eefe3621034447ac14e06b5235c6dc2edaf",
+      "size": 152688,
+      "sha256": "55e0aecdb7c1b9acae7456bb96fc086e6269ef963958b8929a0b313aecc75b7a",
       "soname": "libogplay_jni.so",
       "needed": [
         "libssl.so",
@@ -185,7 +185,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "1511689ceb3e288937b779424e195dcb4fbbd859c1ca40b920554d0bcde29195",
+        "generator_sha256": "51d1c038b99aec840c26a9479f272826635ea5e7982839bf0bd8c02f01446003",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",
@@ -204,7 +204,7 @@
           },
           {
             "path": "src/guest/icu/icu_jni.c",
-            "sha256": "d2057ce79113aaa59847bb52147f234b8c3a031f5b2a856c2369b52e217c0513"
+            "sha256": "bb76278be35716aaa98cc79cd14d0df97a1101b5dcf10b0ece22c4217a76b0e4"
           },
           {
             "path": "src/guest/icu/regex_jni.c",
@@ -224,7 +224,7 @@
           },
           {
             "path": "src/guest/icu/icu51_capi.h",
-            "sha256": "f06691b18b4bf07b23d291fe50c644668ca13b4719c12e8172b85d668fc829b6"
+            "sha256": "d8ec71bfdc61b1405607dc2de93a35668def4210b9a3333db40a844528403c52"
           }
         ],
         "inputs": [
@@ -341,8 +341,8 @@
       {
         "path": "framework/ogplay.jar",
         "source_project": "OGPlay",
-        "size": 150396,
-        "sha256": "429267fa1f1cb1a4fff69f391aac38228160bd2fa58da4f0963291e8ef4a01a5",
+        "size": 105932,
+        "sha256": "99adbe005bbec3897ded826de1cfdadd2fcc4649d91d781235060b0b83903558",
         "sources": {
           "roots": [
             "src/guest/crypto/java",
@@ -352,7 +352,7 @@
             "src/guest/xml/java",
             "src/guest/zip/java"
           ],
-          "sha256": "4f2764b942160ad3742f459b3d2e12f4867cf6daa75c7d6b5370306fed833f65",
+          "sha256": "549f0992b05e6a2642d90398d62360f1b6791fca4d05fa7ee54ed3480ce0c3f4",
           "javac": "17.0.18",
           "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
           "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
@@ -389,6 +389,14 @@
         "sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
       },
       {
+        "path": "framework/telephony-common.jar",
+        "source_project": "platform/frameworks/opt/telephony",
+        "size": 487663,
+        "sha256": "b1e4f98857dd07d9fa7bc1d6c2d6cdb49d41adc2973533db3982ef0d5348a908",
+        "notice": "notices/telephony-common.jar.txt",
+        "notice_sha256": "9fb5a1858c46110c3cef29c7ab5bd9fdc6cf2c7966c7d50a2995dcb6bd739f71"
+      },
+      {
         "path": "framework/android.policy.jar",
         "source_project": "platform/frameworks/base",
         "size": 108252,
@@ -396,7 +404,7 @@
       }
     ],
     "notice": "notices/boot-classpath.txt",
-    "notice_sha256": "3e7cd7cb89b2bc4a4cc238caddd94662719081c99cee185908f0184fd97a7deb"
+    "notice_sha256": "19e41f351999050e4ce7eb00958bc068922fbc4ccc3b5cc5964cd723d4f4de57"
   },
   "system_fonts": [
     {

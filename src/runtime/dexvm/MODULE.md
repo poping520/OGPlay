@@ -50,8 +50,10 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   survey 沿用既有显式记账/替身策略，不为这些失败添加中性返回。
 - `PrecheckMethod` 懒校验 opcode、寄存器/wide pair、invoke 参数、branch/payload 与
   move-result；对照 API 19 `CodeVerify.cpp`，不做全量数据流。
-- 每 VM 只有稳定 application `PathClassLoader` 与 boot loader；application→boot→null。
-  `findLoadedClass` 不链接/初始化/合成，`loadClass` 校验 binary name；`Class.forName` 使用真实
+- 封存 APK 通过 ROM ApplicationLoaders 创建稳定的 application `PathClassLoader`，其父链为
+  boot→null。DexFile native 仅查 VM 已登记的单一应用 DEX，关闭不卸载该单元；独立 VM 仍可用
+  loader facade。`findLoadedClass` 不链接/初始化/合成，`loadClass` 校验 binary name；
+  `Class.forName` 使用真实
   caller loader。classpath URL/stream 经注入的 sealed bootstrap/APK 查找及按来源读取，
   application parent-first；jar:file URL 仅标识已登记 guest 归档，不开放宿主文件、动态
   归档/定义、多 namespace 或自定义加载权限。
@@ -71,6 +73,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   不按名称猜测。DVM-259 通用 Proxy 执行原版 Java 校验/loader 有序接口缓存，生成类继承 Proxy；
   intrinsic 方法通过真实 Method/boxing 转发 handler，异常按声明交集传播或包装。注解仍用受限合成类，
   私有 throws 字段只保留形状，完整统一迁移未完成。
+
+线程运行时通过显式 shutdown observer 唤醒上层注册的 native 阻塞点，随后 join 宿主线程。
+Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
 
 ### 对象、GC、执行
 

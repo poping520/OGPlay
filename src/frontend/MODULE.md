@@ -51,7 +51,7 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
 `run-apk` 默认使用持久沙盒（ADR-0020）；裸 APK 启动在没有实例时分配 package 首实例，
 唯一已有实例自动复用，多实例则要求 `--installation-id` 消歧。GUI 始终传递库中选定的实例。
 `--sandbox-dir` 与 `--ephemeral-sandbox` 互斥。打开失败必须终止，不降级为内存模式。持久/
-临时沙盒分别保存/重建 CSPRNG `ANDROID_ID`，且不读取宿主设备身份。pause 与 clean stop 均
+临时沙盒分别保存/重建 CSPRNG `ANDROID_ID`，且不读取宿主设备身份。临时沙盒使用独立配额卷，运行结束后移除其目录。pause 与 clean stop 均
 通过同一 VFS `FlushAll` 落盘。
 
 ## 不变量

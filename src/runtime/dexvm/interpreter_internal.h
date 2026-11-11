@@ -124,6 +124,9 @@ public:
     std::unordered_map<std::uint64_t, std::unique_ptr<InterpreterExecutionState>> executions;
     InterpreterExecutionState* default_execution{};
     std::uint64_t next_execution_token{2};
+    // Host-held scopes are independent of the running guest's native-frame stack.
+    std::unordered_map<std::size_t, std::vector<VmObjectRef>> external_roots;
+    std::size_t next_external_root{1};
 
     std::unordered_map<std::uint32_t, ThrowableState> throwables;
     std::unordered_map<std::uint32_t, VmObjectRef> enum_constant_arrays;
@@ -430,6 +433,7 @@ public:
     [[nodiscard]] VmValue InvokeIntrinsic(const LinkedMethod& method, VmObjectRef receiver,
                                           std::span<const VmValue> arguments,
                                           GapSurveyChannel channel = GapSurveyChannel::java);
+    void RecordUnimplementedAbstract(const LinkedMethod& method, VmObjectRef receiver);
     [[nodiscard]] VmMethodId SelectInvokeTarget(VmMethodId symbolic_method, InvokeKind kind,
                                                 std::optional<std::uint16_t> vtable_slot, VmObjectRef receiver,
                                                 DexClassId current_class);

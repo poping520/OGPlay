@@ -66,8 +66,7 @@ TEST_CASE("DVM-124 PreferenceManager default preferences share the Context store
                             {VmValue::Ref(f.vm.NewStringUtf8("fixture_preferences")),
                              VmValue::Int(0)})
                            .ref);
-        CHECK(f.context->preference_names.at(prefs.Value()) ==
-              "fixture_preferences");
+        CHECK(f.linker.Class(f.model.ObjectClass(prefs)).descriptor == "Landroid/app/SharedPreferencesImpl;");
 
         // The PvZ dobyear/dobmonth reads answer defaults before any write.
         CHECK(f.On(prefs, "getInt", "(Ljava/lang/String;I)I",
@@ -81,7 +80,11 @@ TEST_CASE("DVM-124 PreferenceManager default preferences share the Context store
             editor, "putInt",
             "(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;",
             {VmValue::Ref(f.vm.NewStringUtf8("dobyear")), VmValue::Int(2010)}));
-        CHECK(f.On(editor, "commit", "()Z").AsInt() == 1);
+        const auto committed = f.On(editor, "commit", "()Z").AsInt();
+        std::string persistence_log;
+        for (const auto& record : f.logger.Snapshot(ogplay::core::LogLevel::debug))
+            persistence_log += f.logger.RenderText(record) + "\n";
+        CHECK_MESSAGE(committed == 1, persistence_log);
         CHECK(f.On(prefs, "getInt", "(Ljava/lang/String;I)I",
                    {VmValue::Ref(f.vm.NewStringUtf8("dobyear")),
                     VmValue::Int(0)})
@@ -128,42 +131,16 @@ TEST_CASE("DVM-124 PreferenceManager default preferences share the Context store
                    "size", "()I")
                   .AsInt() == 0);
 
-        // Interface surface without checked storage or callback truth fails
-        // explicitly and is recorded.
-        const auto string_set = f.OnOutcome(
-            prefs, "getStringSet", "(Ljava/lang/String;Ljava/util/Set;)Ljava/util/Set;",
-            {VmValue::Ref(f.vm.NewStringUtf8("dobyear")),
-             VmValue::Ref(VmObjectRef{})});
-        REQUIRE(string_set.exception.IsValid());
-        CHECK(f.linker.Class(string_set.exception_class).descriptor ==
-              "Ljava/lang/UnsupportedOperationException;");
-        const auto put_set = f.OnOutcome(
-            editor, "putStringSet",
-            "(Ljava/lang/String;Ljava/util/Set;)Landroid/content/SharedPreferences$Editor;",
-            {VmValue::Ref(f.vm.NewStringUtf8("tags")),
-             VmValue::Ref(VmObjectRef{})});
-        REQUIRE(put_set.exception.IsValid());
+        // The original implementation owns StringSet and listener registration.
+        CHECK_FALSE(f.On(prefs, "getStringSet", "(Ljava/lang/String;Ljava/util/Set;)Ljava/util/Set;",
+                         {VmValue::Ref(f.vm.NewStringUtf8("missing")), VmValue::Ref(VmObjectRef{})})
+                        .ref.IsValid());
         const auto listener = f.New("Ltest/PreferenceObserver;");
-        const auto registered = f.OnOutcome(
-            prefs, "registerOnSharedPreferenceChangeListener",
-            "(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V",
-            {VmValue::Ref(listener)});
-        REQUIRE(registered.exception.IsValid());
-        CHECK(f.linker.Class(registered.exception_class).descriptor ==
-              "Ljava/lang/UnsupportedOperationException;");
-        const auto unregistered = f.OnOutcome(prefs, "unregisterOnSharedPreferenceChangeListener",
-            "(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V",
-            {VmValue::Ref(listener)});
-        REQUIRE(unregistered.exception.IsValid());
-        CHECK(f.linker.Class(unregistered.exception_class).descriptor ==
-              "Ljava/lang/UnsupportedOperationException;");
-        const auto hits = f.ledger.Unimplemented();
-        REQUIRE(hits.size() == 2);
-        for (const auto& hit : hits) {
-            CHECK((hit.id == "dexvm.shared_preferences.string_set" ||
-                   hit.id == "dexvm.shared_preferences.change_listeners"));
-            CHECK(hit.count == 2);
-        }
+        const auto listener_root = f.vm.ProtectReferences(std::array{listener});
+        f.On(prefs, "registerOnSharedPreferenceChangeListener",
+             "(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V", {VmValue::Ref(listener)});
+        f.On(prefs, "unregisterOnSharedPreferenceChangeListener",
+             "(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V", {VmValue::Ref(listener)});
 
         // A null Context surfaces the real NullPointerException from the
         // original PreferenceManager code path.
@@ -184,18 +161,16 @@ TEST_CASE("DVM-124 PreferenceManager default preferences share the Context store
 TEST_CASE("DVM-124 PreferenceManager honors Context overrides and delegation") {
     for (const auto backend :
          {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        auto named = IntrinsicClassBuilder::Class("Ltest/NamedContext;",
-                                                  "Landroid/content/Context;");
-        named.Constructor("()V",
-                          [](IntrinsicContext&) { return VmValue::Void(); });
+        auto named = IntrinsicClassBuilder::Class("Ltest/NamedContext;", "Landroid/content/ContextWrapper;");
+        named.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+
         named.OverrideMethod(
             "getPackageName", "()Ljava/lang/String;", [](IntrinsicContext& c) {
                 return VmValue::Ref(c.vm.NewStringUtf8("virtual"));
             });
         VmObjectRef expected_prefs;
         bool forwarded = false;
-        auto overridden = IntrinsicClassBuilder::Class("Ltest/PreferenceContext;",
-                                                       "Landroid/content/Context;");
+        auto overridden = IntrinsicClassBuilder::Class("Ltest/PreferenceContext;", "Landroid/content/ContextWrapper;");
         overridden.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
         overridden.OverrideMethod("getSharedPreferences",
             "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
@@ -210,18 +185,20 @@ TEST_CASE("DVM-124 PreferenceManager honors Context overrides and delegation") {
         extras.push_back(std::move(overridden).Build());
         AndroidValueVm f(backend, extras);
         f.context->package_name = "fixture";
+        const auto base = f.New("Landroid/content/Context;");
         const auto named_context = f.New("Ltest/NamedContext;");
+        f.On(named_context, "attachBaseContext", "(Landroid/content/Context;)V", {VmValue::Ref(base)});
         // The virtual getPackageName override picks the default file name.
         const auto prefs = f.Static(
             "Landroid/preference/PreferenceManager;",
             "getDefaultSharedPreferences",
             "(Landroid/content/Context;)Landroid/content/SharedPreferences;",
             {VmValue::Ref(named_context)}).ref;
-        CHECK(f.context->preference_names.at(prefs.Value()) ==
-              "virtual_preferences");
+        CHECK(prefs == f.On(base, "getSharedPreferences", "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
+                            {VmValue::Ref(f.vm.NewStringUtf8("virtual_preferences")), VmValue::Int(0)})
+                           .ref);
 
         // ContextWrapper delegation reaches the same base Context store.
-        const auto base = f.New("Landroid/content/Context;");
         const auto wrapper = f.New("Landroid/content/ContextWrapper;",
                                    "(Landroid/content/Context;)V",
                                    {VmValue::Ref(base)});
@@ -230,11 +207,13 @@ TEST_CASE("DVM-124 PreferenceManager honors Context overrides and delegation") {
             "getDefaultSharedPreferences",
             "(Landroid/content/Context;)Landroid/content/SharedPreferences;",
             {VmValue::Ref(wrapper)}).ref;
-        CHECK(f.context->preference_names.at(delegated.Value()) ==
-              "fixture_preferences");
-        CHECK(f.context->singletons.at("prefs:fixture_preferences") == delegated);
+        CHECK(delegated == f.On(base, "getSharedPreferences",
+                                "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
+                                {VmValue::Ref(f.vm.NewStringUtf8("fixture_preferences")), VmValue::Int(0)})
+                               .ref);
         expected_prefs = delegated;
         const auto custom = f.New("Ltest/PreferenceContext;");
+        f.On(custom, "attachBaseContext", "(Landroid/content/Context;)V", {VmValue::Ref(base)});
         CHECK(f.Static("Landroid/preference/PreferenceManager;", "getDefaultSharedPreferences",
             "(Landroid/content/Context;)Landroid/content/SharedPreferences;",
             {VmValue::Ref(custom)}).ref == expected_prefs);
@@ -316,7 +295,7 @@ TEST_CASE("DVM-121 SharedPreferences complete interfaces float snapshots and edi
                 const auto concrete = f.model.ObjectClass(object);
                 const auto slot = f.linker.FindVtableIndex(concrete, method.name, method.descriptor);
                 REQUIRE(slot.has_value());
-                CHECK(f.linker.Method(f.linker.Class(concrete).vtable[*slot]).kind == MethodKind::intrinsic);
+                CHECK(f.linker.Method(f.linker.Class(concrete).vtable[*slot]).kind == MethodKind::interpreted);
             }
         }
         const auto key = f.vm.NewStringUtf8("fraction");
@@ -343,9 +322,8 @@ TEST_CASE("DVM-121 SharedPreferences complete interfaces float snapshots and edi
              {VmValue::Ref(key), VmValue::Float(9)});
         f.On(prefs, "contains", "(Ljava/lang/String;)Z", {VmValue::Ref(key)});
         static_cast<void>(f.vm.CollectGarbage("abandoned preference editor"));
-        CHECK_FALSE(f.context->preference_editors.contains(abandoned.Value()));
-        CHECK_FALSE(f.context->preference_names.contains(abandoned.Value()));
-        CHECK(f.context->preference_editors.contains(editor.Value()));
+        CHECK_FALSE(f.model.IsValidRef(abandoned));
+        CHECK(f.model.IsValidRef(editor));
         CHECK(f.On(prefs, "getFloat", "(Ljava/lang/String;F)F",
                    {VmValue::Ref(key), VmValue::Float(0)}).AsFloat() == 1.25F);
     }

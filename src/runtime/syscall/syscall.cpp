@@ -664,7 +664,8 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
 }
 
 void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher, cpu::FutexTable& futex_table,
-                               memory::MemoryBus& memory_bus) {
+                               memory::MemoryBus& memory_bus,
+                               std::function<std::optional<std::chrono::nanoseconds>(std::uint64_t)> wait_limit) {
     dispatcher.signal_binding->waiters = &futex_table;
     constexpr std::int32_t kEagain = 11;
     constexpr std::int32_t kEintr = 4;
@@ -678,8 +679,8 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher, cpu::FutexTable
     constexpr std::uint32_t kFutexClockRealtime = 256;
     dispatcher.Implement(
         240,
-        [binding = dispatcher.signal_binding, &futex_table,
-         &memory_bus](const A32SyscallFrame& frame) -> A32SyscallOutcome {
+        [binding = dispatcher.signal_binding, &futex_table, &memory_bus,
+         wait_limit = std::move(wait_limit)](const A32SyscallFrame& frame) -> A32SyscallOutcome {
             const memory::GuestAddress address{frame.arguments[0]};
             if (!address.IsAligned(4)) return -kEinval;
             const auto operation = frame.arguments[1];
@@ -698,6 +699,10 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher, cpu::FutexTable
                             return -kEinval;
                         }
                         timeout = std::chrono::seconds(seconds) + std::chrono::nanoseconds(nanoseconds);
+                    }
+                    if (wait_limit) {
+                        const auto limit = wait_limit(frame.thread_id);
+                        if (limit && (!timeout || *limit < *timeout)) timeout = limit;
                     }
                     const auto result = futex_table.Wait(
                         memory_bus, address, frame.arguments[2], frame.thread_id, timeout,

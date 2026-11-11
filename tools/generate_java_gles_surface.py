@@ -87,9 +87,8 @@ def render(source_root: Path) -> str:
             lines.append("};")
         else:
             lines.append(f"inline constexpr std::array<ConstantSpec, 0> k{class_name}Constants{{}};")
-    # GLImpl keeps Java pointer wrappers/fields in BootDex. Publish only natives.
-    gl_impl = Path(__file__).resolve().parent.parent / (
-        "src/guest/framework/java/com/google/android/gles_jni/GLImpl.java")
+    # ROM GLImpl keeps the Java pointer wrappers. Publish only its natives.
+    gl_impl = source_root / "com" / "google" / "android" / "gles_jni" / "GLImpl.java"
     text = gl_impl.read_text(encoding="utf-8")
     shape = parse_java(re.sub(r"\bprivate\b", "public", text),
                        gl_impl.as_posix(), available)

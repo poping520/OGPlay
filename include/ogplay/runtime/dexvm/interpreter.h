@@ -344,6 +344,8 @@ public:
     void RequestStop(const InterpreterExecutionContext& context);
     // Production lifecycle binds its default guest thread to one actual host.
     void BindDefaultExecutionHost();
+    // A long-lived event loop grants one bounded budget to each dispatch.
+    void RestartExecutionBudget();
     // Includes host-side Java callbacks surrounding a Call(), such as a
     // thread's uncaught-exception dispatcher, in that thread's own context.
     void RunInExecutionContext(const InterpreterExecutionContext& context, const std::function<void()>& action);

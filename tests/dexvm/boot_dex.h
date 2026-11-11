@@ -40,7 +40,10 @@ void MountResourceFixture(runtime::DexVmAndroidContext& context, runtime::dexvm:
 void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker);
 // View constructors now call Context.getResources. UI fixtures must supply
 // attached wrappers, just as the production Activity driver does.
-void AttachViewTestContext(runtime::dexvm::Interpreter& vm, runtime::dexvm::VmObjectRef owner);
+runtime::dexvm::VmObjectRef MakeRomAppContext(runtime::dexvm::Interpreter& vm,
+                                              const std::shared_ptr<runtime::DexVmAndroidContext>& context);
+void AttachViewTestContext(runtime::dexvm::Interpreter& vm, runtime::dexvm::VmObjectRef owner,
+                           const std::shared_ptr<runtime::DexVmAndroidContext>& context);
 
 inline void RegisterBootDex(runtime::dexvm::DexClassLinker& linker) {
     BindBootDexPlatformNatives(linker);

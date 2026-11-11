@@ -154,7 +154,6 @@ TEST_CASE("DVM-263 ROM superclass and interface checks execute as DEX instructio
 TEST_CASE("DVM-263 corrected parents initialize inherited state through their real constructors") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ogplay::test::android_value::AndroidValueVm f(backend, {}, false, nullptr);
-        f.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
         std::array<int, 7> calls{};
         const std::array parents{std::pair{"Landroid/util/AndroidException;", "(Ljava/lang/String;)V"},
                                  std::pair{"Landroid/view/InputEvent;", "()V"},
@@ -187,7 +186,7 @@ TEST_CASE("DVM-263 corrected parents initialize inherited state through their re
         const auto second = MakeMotionEvent(f.vm, 0, 30, 40, 0);
         CHECK(f.On(first, "getSequenceNumber", "()I").AsInt() != f.On(second, "getSequenceNumber", "()I").AsInt());
         CHECK(f.On(first, "getX", "()F").AsFloat() == 10.0F);
-        const auto owner = f.vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto owner = ogplay::test::MakeRomAppContext(f.vm, f.context);
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});
         for (const auto descriptor : {"Landroid/widget/ScrollView;", "Landroid/webkit/WebView;",
                                       "Landroid/widget/TableLayout;", "Landroid/widget/TableRow;"}) {

@@ -68,27 +68,20 @@ TEST_CASE("DVM-150 Java exit unwinds Activity startup and stops the guest proces
 
 TEST_CASE("DVM-150 Java exit cannot be caught by Application onCreate") {
     using namespace ogplay;
-    ApplicationProcess fixture;
-    session::DexActivityLifecycleBindings bindings;
-    bindings.bridge = fixture.bridge.get();
-    bindings.context = fixture.context;
-    bindings.application_descriptor = "Lfixture/ExitApplication;";
-    bindings.launcher_descriptor = "Lfixture/LauncherActivity;";
-    bool opened = false;
-    bindings.open_surface = [&] { opened = true; };
-    session::DexActivityLifecycle lifecycle(std::move(bindings));
-    const auto state = lifecycle.Start();
-    CHECK(state.state == session::LifecycleRunState::stopped);
-    CHECK(fixture.bridge->Vm().ExitCode() == 31);
+    OrchestratedApp fixture("fixture.LauncherActivity", true, false, {}, {}, true,
+                            runtime::dexvm::InterpreterBackend::switch_dispatch, "fixture.ExitApplication");
+    fixture.app->StartApplication();
+    CHECK(fixture.app->State() == session::AndroidAppProcessState::stopped);
+    CHECK(fixture.app->DexVm().Vm().ExitCode() == 31);
     // Read the value captured by the hook before nativeExit; no Java calls after exit.
-    auto& vm = fixture.bridge->Vm();
+    auto& vm = fixture.app->DexVm().Vm();
     const auto hook = vm.Linker().ResolveDescriptor("Lfixture/ExitHook;");
     const auto field = vm.Linker().FindFieldRecursive(hook, "observed", "Ljava/lang/String;");
     REQUIRE(field);
     const runtime::dexvm::VmObjectRef observed(vm.Linker().Class(hook).static_storage[vm.Linker().Field(*field).slot]);
     CHECK(vm.StringUtf8(observed) == "done");
     CHECK(fixture.context->uptime_millis.load() >= 10);
-    CHECK_FALSE(opened);
+    CHECK_FALSE(fixture.context->managed_host_surface_open);
 }
 
 TEST_CASE("DVM-150 AndroidAppProcess does not launch after Application exits") {
@@ -157,12 +150,14 @@ TEST_CASE("DVM-202 teardown isolates pending JNI errors and still stops after cl
         auto& bridge = f.app->DexVm();
         auto& vm = bridge.Vm();
         auto& env = bridge.Session().Environment();
-        const auto original = vm.MakeThrowable("Ljava/lang/UnsupportedOperationException;", "original failure");
-        env.Throw(1, bridge.PublishLocal(original));
-        const auto type = vm.Linker().ResolveDescriptor("Lfixture/FailingNativeCleanup;");
-        const auto cleanup = vm.Linker().FindDirectMethod(type, "release", "(J)V");
-        REQUIRE(cleanup.has_value());
-        vm.TrackGuestNativeResource(original, *cleanup, 1);
+        f.app->RunOnMainThread([&] {
+            const auto original = vm.MakeThrowable("Ljava/lang/UnsupportedOperationException;", "original failure");
+            env.Throw(1, bridge.PublishLocal(original));
+            const auto type = vm.Linker().ResolveDescriptor("Lfixture/FailingNativeCleanup;");
+            const auto cleanup = vm.Linker().FindDirectMethod(type, "release", "(J)V");
+            REQUIRE(cleanup.has_value());
+            vm.TrackGuestNativeResource(original, *cleanup, 1);
+        });
         CHECK_THROWS_WITH_AS(static_cast<void>(f.app->Stop()),
                              doctest::Contains("native cleanup failed: Ljava/lang/UnsatisfiedLinkError;"),
                              runtime::AndroidGuestProcessError);
@@ -259,22 +254,24 @@ TEST_CASE("process close destroys the foreground before shutdown and finish stay
                 if (mode == 2) throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "shared owner already destroyed"};
                 return VmValue::Void();
             };
-            const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
-            const auto ctor = linker.FindDirectMethod(vm.Model().ObjectClass(intent), "<init>", "()V");
-            REQUIRE(ctor.has_value());
-            REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(intent)}).exception.IsValid());
             const auto on = [&](VmObjectRef object, const char* name, const char* signature,
                                 std::vector<VmValue> args = {}) {
                 return runtime::android_intrinsics::CallAndroidMethod(vm, object, name, signature, args);
             };
-            on(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
-               {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ResultCaller"))});
-            on(caller, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+            f.app->RunOnMainThread([&] {
+                const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+                const auto ctor = linker.FindDirectMethod(vm.Model().ObjectClass(intent), "<init>", "()V");
+                REQUIRE(ctor.has_value());
+                REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(intent)}).exception.IsValid());
+                on(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+                   {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ResultCaller"))});
+                on(caller, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+            });
             static_cast<void>(f.app->ActivityLifecycle().StepFrame());
             REQUIRE(f.context->activity_stack.size() == 2);
             REQUIRE(f.context->activity != caller);
             if (mode != 0) {
-                on(f.context->activity, "finish", "()V");
+                f.app->RunOnMainThread([&] { on(f.context->activity, "finish", "()V"); });
                 if (mode == 2) {
                     CHECK_THROWS_WITH(static_cast<void>(f.app->ActivityLifecycle().StepFrame()),
                                       doctest::Contains("shared owner already destroyed"));
@@ -335,7 +332,9 @@ TEST_CASE("DVM-236 guest process exit and runtime fault forbid Activity callback
                 const auto process = linker.ResolveDescriptor("Landroid/os/Process;");
                 const auto kill = linker.FindDirectMethod(process, "killProcess", "(I)V");
                 REQUIRE(kill.has_value());
-                CHECK_THROWS_AS(static_cast<void>(vm.Call(*kill, std::array{VmValue::Int(1)})), DexVmError);
+                CHECK_THROWS_AS(
+                    f.app->RunOnMainThread([&] { static_cast<void>(vm.Call(*kill, std::array{VmValue::Int(1)})); }),
+                    DexVmError);
                 CHECK(vm.ExitCode() == 0);
             }
             CHECK_NOTHROW(static_cast<void>(f.app->Stop(guest_exit ? session::DexProcessStopReason::host_shutdown

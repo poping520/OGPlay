@@ -1,0 +1,10 @@
+Android Open Source Project — telephony-common.jar
+Copyright The Android Open Source Project
+
+This is the unmodified API 19 boot classpath archive from the fixed
+android-4.4.4_r2.0.1 build. It contains AOSP frameworks/opt/telephony code and
+public telephony classes from frameworks/base. The payload manifest records its
+SHA-256 and boot classpath position.
+
+Licensed under the Apache License, Version 2.0.
+https://www.apache.org/licenses/LICENSE-2.0

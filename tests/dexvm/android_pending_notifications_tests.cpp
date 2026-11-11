@@ -41,7 +41,8 @@ using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-224 notification cancellation uses an explicit empty application inventory") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        auto foreign = IntrinsicClassBuilder::Class("Ltest/ForeignNotificationContext;", "Landroid/content/Context;");
+        auto foreign =
+            IntrinsicClassBuilder::Class("Ltest/ForeignNotificationContext;", "Landroid/content/ContextWrapper;");
         foreign.OverrideMethod("getPackageName", "()Ljava/lang/String;",
             [](IntrinsicContext& call) { return VmValue::Ref(call.vm.NewStringUtf8("other.application")); });
         AndroidValueVm f(backend, {std::move(foreign).Build()});
@@ -77,8 +78,9 @@ TEST_CASE("DVM-224 notification cancellation uses an explicit empty application 
             {VmValue::Ref(base), VmValue::Int(4), VmValue::Ref(intent), VmValue::Int(0)}).ref;
         const auto operation_root = f.vm.ProtectReferences(std::array{operation});
         f.On(manager, "cancelAll", "()V");
-        REQUIRE(f.context->pending_intents.contains(operation.Value()));
-        CHECK_FALSE(f.context->pending_intents.at(operation.Value()).canceled);
+        const auto sender = f.On(operation, "getTarget", "()Landroid/content/IIntentSender;").ref;
+        REQUIRE(f.context->pending_intents.contains(sender.Value()));
+        CHECK_FALSE(f.context->pending_intents.at(sender.Value()).canceled);
         static_cast<void>(f.vm.CollectGarbage("notification-empty-inventory"));
         CHECK(service() == manager);
         f.On(manager, "cancel", "(I)V", {VmValue::Int(123)});
@@ -86,10 +88,9 @@ TEST_CASE("DVM-224 notification cancellation uses an explicit empty application 
             {VmValue::Int(1), VmValue::Ref(VmObjectRef{})});
         REQUIRE(null_post.exception.IsValid());
         CHECK(f.linker.Class(null_post.exception_class).descriptor == "Ljava/lang/NullPointerException;");
-        // The private publication boundary must fail even before value/renderer support is added.
-        const auto post = f.linker.FindDirectMethod(f.model.ObjectClass(manager), "nativeRejectPost", "(Ljava/lang/String;)V");
-        REQUIRE(post.has_value());
-        const auto rejected = f.vm.Call(*post, std::array{VmValue::Ref(manager), VmValue::Ref(f.vm.NewStringUtf8("fixture"))});
+        const auto notification = f.New("Landroid/app/Notification;");
+        const auto rejected = f.OnOutcome(manager, "notify", "(ILandroid/app/Notification;)V",
+                                          {VmValue::Int(1), VmValue::Ref(notification)});
         REQUIRE(rejected.exception.IsValid());
         CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         const auto hits = f.ledger.Unimplemented();
@@ -97,14 +98,15 @@ TEST_CASE("DVM-224 notification cancellation uses an explicit empty application 
         CHECK(hits[0].id == "dexvm.notification_post");
         CHECK(hits[0].count == 1);
         const auto other = f.vm.NewIntrinsicInstance("Ltest/ForeignNotificationContext;");
-        const auto denied = f.OnOutcome(other, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
-            {VmValue::Ref(f.vm.NewStringUtf8("notification"))});
-        REQUIRE(denied.exception.IsValid());
-        CHECK(f.linker.Class(denied.exception_class).descriptor == "Ljava/lang/SecurityException;");
-        const auto cancel = f.linker.FindDirectMethod(f.model.ObjectClass(manager), "nativeCancel", "(Ljava/lang/String;Ljava/lang/String;IZ)V");
-        REQUIRE(cancel.has_value());
-        const auto foreign_cancel = f.vm.Call(*cancel, std::array{VmValue::Ref(manager),
-            VmValue::Ref(f.vm.NewStringUtf8("other.application")), VmValue::Ref(VmObjectRef{}), VmValue::Int(1), VmValue::Int(0)});
+        f.On(other, "attachBaseContext", "(Landroid/content/Context;)V", {VmValue::Ref(base)});
+        CHECK(f.On(other, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                   {VmValue::Ref(f.vm.NewStringUtf8("notification"))})
+                  .ref == manager);
+        const auto service_binder =
+            f.Static("Landroid/app/NotificationManager;", "getService", "()Landroid/app/INotificationManager;").ref;
+        const auto foreign_cancel =
+            f.OnOutcome(service_binder, "cancelAllNotifications", "(Ljava/lang/String;I)V",
+                        {VmValue::Ref(f.vm.NewStringUtf8("other.application")), VmValue::Int(0)});
         REQUIRE(foreign_cancel.exception.IsValid());
         CHECK(f.linker.Class(foreign_cancel.exception_class).descriptor == "Ljava/lang/SecurityException;");
     }
@@ -128,17 +130,22 @@ TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
             return f.Static(descriptor, kind, signature,
                 {VmValue::Ref(base), VmValue::Int(request), VmValue::Ref(intent), VmValue::Int(flags)}).ref;
         };
+        const auto target = [&](VmObjectRef wrapper) {
+            return wrapper.IsValid() ? f.On(wrapper, "getTarget", "()Landroid/content/IIntentSender;").ref
+                                     : VmObjectRef{};
+        };
+        const auto same = [&](VmObjectRef left, VmObjectRef right) { return target(left) == target(right); };
         CHECK_FALSE(token(no_create).IsValid());
         const auto first = token();
         const auto first_root = f.vm.ProtectReferences(std::array{first});
         REQUIRE(first.IsValid());
-        CHECK(token() == first);
-        CHECK(token(no_create) == first);
-        CHECK(token(0, 1) != first);
-        CHECK(token(0, 0, "getBroadcast") != first);
-        CHECK(token(one_shot) != first);
-        CHECK(token(1) != first); // fill-in flags form part of API19 identity
-        const auto snapshot = f.context->pending_intents.at(first.Value()).intent;
+        CHECK(same(token(), first));
+        CHECK(same(token(no_create), first));
+        CHECK(!same(token(0, 1), first));
+        CHECK(!same(token(0, 0, "getBroadcast"), first));
+        CHECK(!same(token(one_shot), first));
+        CHECK(!same(token(1), first));  // fill-in flags form part of API19 identity
+        const auto snapshot = f.context->pending_intents.at(target(first).Value()).intent;
         CHECK(snapshot != intent);
         CHECK(f.On(snapshot, "filterEquals", "(Landroid/content/Intent;)Z", {VmValue::Ref(intent)}).AsInt() == 1);
         const auto extra = f.vm.NewStringUtf8("extra");
@@ -146,61 +153,65 @@ TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
         const auto put = [&](int value) { f.On(intent, "putExtra", "(Ljava/lang/String;I)Landroid/content/Intent;", {VmValue::Ref(extra), VmValue::Int(value)}); };
         const auto read = [&] { return f.On(snapshot, "getIntExtra", "(Ljava/lang/String;I)I", {VmValue::Ref(extra), VmValue::Int(-1)}).AsInt(); };
         put(7);
-        CHECK(token() == first); // extras do not define token identity
+        CHECK(same(token(), first));  // extras do not define token identity
         CHECK(read() == -1); // snapshot cannot observe caller mutation
-        CHECK(token(update_current) == first);
+        CHECK(same(token(update_current), first));
         CHECK(read() == 7);
         put(9);
         CHECK(read() == 7);
         f.On(intent, "setFlags", "(I)Landroid/content/Intent;", {VmValue::Int(0x10000000)});
-        CHECK(token(update_current) == first);
+        CHECK(same(token(update_current), first));
         CHECK(f.On(snapshot, "getFlags", "()I").AsInt() == 0); // update replaces only extras
         CHECK(read() == 9);
         const auto change_action = [&](const char* value) { f.On(intent, "setAction", "(Ljava/lang/String;)Landroid/content/Intent;", {VmValue::Ref(f.vm.NewStringUtf8(value))}); };
         change_action("Sync");
-        CHECK(token() != first);
+        CHECK(!same(token(), first));
         change_action("Submit");
-        CHECK(token(no_create) == first);
+        CHECK(same(token(no_create), first));
         const auto category = f.vm.NewStringUtf8("category");
         const auto category_root = f.vm.ProtectReferences(std::array{category});
         f.On(intent, "addCategory", "(Ljava/lang/String;)Landroid/content/Intent;", {VmValue::Ref(category)});
-        CHECK(token() != first);
+        CHECK(!same(token(), first));
         f.On(intent, "removeCategory", "(Ljava/lang/String;)V", {VmValue::Ref(category)});
-        CHECK(token() == first);
+        CHECK(same(token(), first));
         const auto uri = f.Static("Landroid/net/Uri;", "parse", "(Ljava/lang/String;)Landroid/net/Uri;", {VmValue::Ref(f.vm.NewStringUtf8("file:///value"))}).ref;
         f.On(intent, "setData", "(Landroid/net/Uri;)Landroid/content/Intent;", {VmValue::Ref(uri)});
-        CHECK(token() != first);
+        CHECK(!same(token(), first));
         f.On(intent, "setData", "(Landroid/net/Uri;)Landroid/content/Intent;", {VmValue::Ref(VmObjectRef{})});
-        CHECK(token() == first);
+        CHECK(same(token(), first));
         const auto component = f.New("Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
             {VmValue::Ref(f.vm.NewStringUtf8("example")), VmValue::Ref(f.vm.NewStringUtf8("example.Worker"))});
         f.On(intent, "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;", {VmValue::Ref(component)});
-        CHECK(token() != first);
+        CHECK(!same(token(), first));
         f.On(intent, "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;", {VmValue::Ref(VmObjectRef{})});
-        CHECK(token() == first);
+        CHECK(same(token(), first));
         f.On(intent, "setType", "(Ljava/lang/String;)Landroid/content/Intent;", {VmValue::Ref(f.vm.NewStringUtf8("text/plain"))});
-        CHECK(token() != first);
+        CHECK(!same(token(), first));
         f.On(intent, "setType", "(Ljava/lang/String;)Landroid/content/Intent;", {VmValue::Ref(VmObjectRef{})});
         f.On(intent, "setPackage", "(Ljava/lang/String;)Landroid/content/Intent;", {VmValue::Ref(f.vm.NewStringUtf8("example"))});
-        CHECK(token() != first);
+        CHECK(!same(token(), first));
         f.On(intent, "setPackage", "(Ljava/lang/String;)Landroid/content/Intent;", {VmValue::Ref(VmObjectRef{})});
-        CHECK(token() == first);
+        CHECK(same(token(), first));
         const auto alarm_name = f.vm.NewStringUtf8("alarm");
         const auto alarm = f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {VmValue::Ref(alarm_name)}).ref;
         CHECK(f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {VmValue::Ref(alarm_name)}).ref == alarm);
         const auto cancel_alarm = [&](VmObjectRef operation) { f.On(alarm, "cancel", "(Landroid/app/PendingIntent;)V", {VmValue::Ref(operation)}); };
         const auto other = token(0, 2);
         // Seed backend entries to verify removal independently of unsupported scheduling.
-        f.context->alarm_operations = {first, other};
+        const auto other_root = f.vm.ProtectReferences(std::array{other});
+        const auto other_sender = target(other);
+        f.context->alarm_operations = {target(first), other_sender};
         cancel_alarm(first);
         REQUIRE(f.context->alarm_operations.size() == 1);
-        CHECK(f.context->alarm_operations.front() == other);
+        CHECK(f.context->alarm_operations.front() == other_sender);
         cancel_alarm(first); // canceling an absent alarm is valid
         cancel_alarm(VmObjectRef{}); // API19 null cancellation is also valid
-        CHECK(token(no_create) == first); // alarm cancel never invalidates sender
+        CHECK(same(token(no_create), first));  // alarm cancel never invalidates sender
         static_cast<void>(f.vm.CollectGarbage("pending-intent-owners"));
+        f.vm.RunFinalization();
+        static_cast<void>(f.vm.CollectGarbage("pending-intent-senders"));
         CHECK(f.vm.MarkReachable().IsMarked(snapshot));
-        CHECK(f.vm.MarkReachable().IsMarked(other)); // alarm keeps its wrapper alive
+        CHECK(f.vm.MarkReachable().IsMarked(other_sender));  // alarm keeps the sender alive
         CHECK(f.context->pending_intents.size() == 2); // other weak entries swept
         f.On(first, "cancel", "()V");
         f.On(first, "cancel", "()V");
@@ -208,13 +219,13 @@ TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
         const auto replacement = token();
         const auto replacement_root = f.vm.ProtectReferences(std::array{replacement});
         CHECK(replacement != first);
-        CHECK(token(cancel_current | no_create) == replacement);
-        CHECK(f.context->pending_intents.at(replacement.Value()).canceled);
+        CHECK(same(token(cancel_current | no_create), replacement));
+        CHECK(f.context->pending_intents.at(target(replacement).Value()).canceled);
         CHECK_FALSE(token(no_create).IsValid());
         const auto next = token();
         const auto next_root = f.vm.ProtectReferences(std::array{next});
-        CHECK(token(cancel_current) != next);
-        CHECK(f.context->pending_intents.at(next.Value()).canceled);
+        CHECK(!same(token(cancel_current), next));
+        CHECK(f.context->pending_intents.at(target(next).Value()).canceled);
         const auto fail = f.StaticOutcome(descriptor, "getService", signature,
             {VmValue::Ref(base), VmValue::Int(0), VmValue::Ref(intent), VmValue::Int(0x100)});
         REQUIRE(fail.exception.IsValid());
@@ -240,10 +251,19 @@ TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
         REQUIRE(f.OnOutcome(next, "send", "()V").exception.IsValid());
         REQUIRE(f.OnOutcome(alarm, "set", "(IJLandroid/app/PendingIntent;)V",
             {VmValue::Int(3), VmValue::Long(1), VmValue::Ref(other)}).exception.IsValid());
-        CHECK(f.ledger.Unimplemented().size() == 2);
+        std::vector<std::string> ids;
+        for (const auto& hit : f.ledger.Unimplemented())
+            ids.push_back(hit.id);
+        CHECK_MESSAGE(std::ranges::find(ids, "dexvm.alarm_manager") != ids.end(), ids.size());
+        CHECK_MESSAGE(std::ranges::find(ids, "dexvm.pending_intent") != ids.end(), ids.size());
         cancel_alarm(other);
+        CHECK(f.context->alarm_operations.empty());
+        const auto weak = target(token(0, 3));
+        CHECK_FALSE(token(no_create, 4).IsValid());
         static_cast<void>(f.vm.CollectGarbage("pending-intent-weak-registry"));
-        CHECK_FALSE(f.context->pending_intents.contains(other.Value()));
+        f.vm.RunFinalization();
+        static_cast<void>(f.vm.CollectGarbage("pending-intent-weak-sender"));
+        CHECK_FALSE(f.context->pending_intents.contains(weak.Value()));
         ShutdownPendingIntents(f.vm, *f.context);
         CHECK(f.context->pending_intents.empty());
         CHECK(f.context->alarm_operations.empty());
@@ -254,34 +274,61 @@ TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
 
 TEST_CASE("DVM-211 concurrent contexts share one PendingIntent token") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend);
-        f.context->package_name = "example";
-        const auto base = f.New("Landroid/content/Context;");
-        const auto intent = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("work"))});
-        const auto inputs = f.vm.ProtectReferences(std::array{base, intent});
-        const auto klass = f.linker.ResolveDescriptor("Landroid/app/PendingIntent;");
-        const auto method = f.linker.FindDirectMethod(klass, "getService",
-            "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;");
-        REQUIRE(method.has_value());
-        const auto first = f.vm.CreateExecutionContext(), second = f.vm.CreateExecutionContext();
         std::array<VmCallOutcome, 2> results;
-        const auto run = [&](std::size_t index, const InterpreterExecutionContext& context) {
-            for (int repeat=0; repeat<16; ++repeat)
-                results[index] = f.vm.Call(context, *method,
-                    std::array{VmValue::Ref(base), VmValue::Int(0), VmValue::Ref(intent), VmValue::Int(0)});
-        };
-        std::thread a([&] { run(0, first); }), b([&] { run(1, second); });
-        a.join(); b.join();
-        REQUIRE_FALSE(results[0].exception.IsValid());
-        REQUIRE_FALSE(results[1].exception.IsValid());
-        CHECK(results[0].value.ref.IsValid());
-        CHECK(results[0].value.ref == results[1].value.ref);
+        std::array<VmObjectRef, 2> workers;
+        VmObjectRef base, intent;
+        VmMethodId method;
+        auto thread = IntrinsicClassBuilder::Class("Ltest/PendingWorker;", "Ljava/lang/Thread;");
+        thread.Constructor("()V", [](IntrinsicContext& call) {
+            const auto owner = call.vm.Linker().ResolveDescriptor("Ljava/lang/Thread;");
+            const auto init = call.vm.Linker().FindDirectMethod(owner, "<init>", "()V");
+            REQUIRE(init);
+            const auto result = call.vm.Call(*init, std::array{VmValue::Ref(call.receiver)});
+            if (result.exception.IsValid()) call.vm.SetPendingException(result.exception);
+            return VmValue::Void();
+        });
+        thread.OverrideMethod("run", "()V", [&](IntrinsicContext& call) {
+            const auto index = call.receiver == workers[0] ? 0U : 1U;
+            for (int repeat = 0; repeat < 16; ++repeat)
+                results[index] = call.vm.Call(
+                    method, std::array{VmValue::Ref(base), VmValue::Int(0), VmValue::Ref(intent), VmValue::Int(0)});
+            return VmValue::Void();
+        });
+        AndroidValueVm f(backend, {std::move(thread).Build()});
+        f.context->package_name = "example";
+        base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        intent = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("work"))});
+        const auto intent_root = f.vm.ProtectReferences(std::array{intent});
+        const auto klass = f.linker.ResolveDescriptor("Landroid/app/PendingIntent;");
+        const auto linked = f.linker.FindDirectMethod(
+            klass, "getService", "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;");
+        REQUIRE(linked);
+        method = *linked;
+        const auto primed = f.vm.Call(
+            method, std::array{VmValue::Ref(base), VmValue::Int(0), VmValue::Ref(intent), VmValue::Int(1 << 29)});
+        REQUIRE_MESSAGE(!primed.exception.IsValid(), primed.exception_message);
+        REQUIRE_FALSE(primed.value.ref.IsValid());
+        workers[0] = f.New("Ltest/PendingWorker;");
+        const auto first_root = f.vm.ProtectReferences(std::array{workers[0]});
+        workers[1] = f.New("Ltest/PendingWorker;");
+        const auto second_root = f.vm.ProtectReferences(std::array{workers[1]});
+        for (const auto worker : workers)
+            f.On(worker, "start", "()V");
+        for (const auto worker : workers)
+            f.On(worker, "join", "()V");
+        for (const auto& result : results)
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message,
+                            f.vm.DescribeThrowableCauses(result.exception));
+        REQUIRE(results[0].value.ref.IsValid());
+        REQUIRE(results[1].value.ref.IsValid());
+        const auto result_roots = f.vm.ProtectReferences(std::array{results[0].value.ref, results[1].value.ref});
+        CHECK(f.On(results[0].value.ref, "equals", "(Ljava/lang/Object;)Z", {results[1].value}).AsInt() == 1);
         CHECK(f.context->pending_intents.size() == 1);
-        f.vm.DiscardExecutionContext(first); f.vm.DiscardExecutionContext(second);
     }
 }
 
-TEST_CASE("DVM227 notification values reject system templates with catchable recorded failure") {
+TEST_CASE("DVM227 ROM notification values preserve constructors and local Parcel contents") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend, {}, false, "notification_template.dex");
         f.context->package_name = "fixture";
@@ -319,39 +366,17 @@ TEST_CASE("DVM227 notification values reject system templates with catchable rec
         static_cast<void>(f.vm.CollectGarbage());
         CHECK(f.model.IsValidRef(extras));
         CHECK(f.On(notification, "describeContents", "()I").AsInt() == 0);
-        const auto signature = "(Landroid/content/Context;Ljava/lang/CharSequence;Ljava/lang/CharSequence;Landroid/app/PendingIntent;)V";
-        const auto result = f.OnOutcome(legacy, "setLatestEventInfo", signature,
-            {VmValue::Ref(base), VmValue::Ref(title), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
-        REQUIRE(result.exception.IsValid());
-        CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        CHECK(f.model.InstanceSlots(legacy)[field("icon", "I")].bits == 17);
-        CHECK(f.model.InstanceSlots(legacy)[field("tickerText", "Ljava/lang/CharSequence;")].bits == title.Value());
-        CHECK(f.model.InstanceSlots(legacy)[field("contentView", "Landroid/widget/RemoteViews;")].bits == 0);
-        CHECK(f.model.InstanceSlots(legacy)[field("contentIntent", "Landroid/app/PendingIntent;")].bits == 0);
-        CHECK(f.Static("Lfixture/NotificationTemplateProbe;", "fallback", "(Landroid/content/Context;)I", {VmValue::Ref(base)}).AsInt() == 1);
-        auto hits = f.ledger.Unimplemented();
-        REQUIRE(hits.size() == 1);
-        CHECK(hits[0].id == "dexvm.notification_template");
-        CHECK(hits[0].count == 2);
-        const auto null_context = f.OnOutcome(legacy, "setLatestEventInfo", signature,
-            {VmValue::Ref(VmObjectRef{}), VmValue::Ref(title), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
-        REQUIRE(null_context.exception.IsValid());
-        CHECK(f.linker.Class(null_context.exception_class).descriptor == "Ljava/lang/NullPointerException;");
-        CHECK(f.ledger.Unimplemented()[0].count == 2);
         const auto parcel = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
-        const auto rejected_parcel = f.OnOutcome(notification, "writeToParcel", "(Landroid/os/Parcel;I)V", {VmValue::Ref(parcel), VmValue::Int(0)});
-        REQUIRE(rejected_parcel.exception.IsValid());
-        CHECK(f.linker.Class(rejected_parcel.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        hits = f.ledger.Unimplemented();
-        CHECK(std::ranges::any_of(hits, [](const auto& hit) { return hit.id == "dexvm.notification_parcel" && hit.count == 1; }));
-        const auto parcel_ctor = f.linker.FindDirectMethod(type, "<init>", "(Landroid/os/Parcel;)V");
-        REQUIRE(parcel_ctor.has_value());
-        const auto from_parcel = f.vm.Call(*parcel_ctor, std::array{
-            VmValue::Ref(f.vm.NewIntrinsicInstance("Landroid/app/Notification;")), VmValue::Ref(parcel)});
-        REQUIRE(from_parcel.exception.IsValid());
-        CHECK(f.linker.Class(from_parcel.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        hits = f.ledger.Unimplemented();
-        CHECK(std::ranges::any_of(hits, [](const auto& hit) { return hit.id == "dexvm.notification_parcel" && hit.count == 2; }));
+        const auto parcel_root = f.vm.ProtectReferences(std::array{parcel});
+        f.On(legacy, "writeToParcel", "(Landroid/os/Parcel;I)V", {VmValue::Ref(parcel), VmValue::Int(0)});
+        f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        const auto restored = f.New("Landroid/app/Notification;", "(Landroid/os/Parcel;)V", {VmValue::Ref(parcel)});
+        const auto restored_root = f.vm.ProtectReferences(std::array{restored});
+        CHECK(f.model.InstanceSlots(restored)[field("icon", "I")].bits == 17);
+        CHECK(f.model.InstanceSlots(restored)[timestamp_slot].bits == 0x23456789U);
+        CHECK(f.model.InstanceSlots(restored)[timestamp_slot + 1].bits == 1U);
+        CHECK(f.vm.StringUtf8(VmObjectRef{
+                  f.model.InstanceSlots(restored)[field("tickerText", "Ljava/lang/CharSequence;")].bits}) == "title");
         const auto creator_field = f.linker.FindFieldRecursive(type, "CREATOR", "Landroid/os/Parcelable$Creator;");
         REQUIRE(creator_field.has_value());
         const auto creator = VmObjectRef{f.linker.Class(type).static_storage[f.linker.Field(*creator_field).slot]};
@@ -364,7 +389,8 @@ TEST_CASE("DVM227 notification values reject system templates with catchable rec
         REQUIRE(post.exception.IsValid());
         CHECK(f.linker.Class(post.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         f.On(manager, "cancelAll", "()V");
-        hits = f.ledger.Unimplemented();
-        CHECK(std::ranges::any_of(hits, [](const auto& hit) { return hit.id == "dexvm.notification_post" && hit.count == 1; }));
+        CHECK(std::ranges::any_of(f.ledger.Unimplemented(), [](const auto& hit) {
+            return hit.id == "dexvm.notification_post" && hit.count == 1;
+        }));
     }
 }

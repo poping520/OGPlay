@@ -636,7 +636,11 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     ogplay::memory::CheckedMemoryBus bus{memory};
     bus.Write32(ogplay::memory::GuestAddress{0x10000}, 7);
     ogplay::cpu::FutexTable futex;
-    ogplay::runtime::BindAndroidThreadSyscalls(dispatcher, futex, bus);
+    ogplay::runtime::BindAndroidThreadSyscalls(dispatcher, futex, bus,
+                                               [](std::uint64_t thread) -> std::optional<std::chrono::nanoseconds> {
+                                                   if (thread == 41) return std::chrono::nanoseconds{0};
+                                                   return std::nullopt;
+                                               });
 
     ogplay::runtime::A32SyscallFrame mismatch;
     mismatch.number = 240;
@@ -655,6 +659,11 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     CHECK(dispatcher.DispatchOutcome(timed).progress == ogplay::runtime::SupervisorCallProgress::handled_idle);
     bus.Write32(ogplay::memory::GuestAddress{0x10024}, 1U);
     CHECK(dispatcher.DispatchOutcome(timed).progress == ogplay::runtime::SupervisorCallProgress::handled_advanced);
+
+    auto bounded = mismatch;
+    bounded.arguments[2] = 7;
+    bounded.thread_id = 41;
+    CHECK(dispatcher.Dispatch(bounded) == -110);  // No guest timeout, but the cleanup budget expired.
 
     std::atomic<std::int32_t> wait_result{-999};
     std::thread waiter{[&] {

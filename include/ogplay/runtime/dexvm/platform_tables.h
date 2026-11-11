@@ -4,7 +4,25 @@
 #include <string_view>
 
 namespace ogplay::runtime::dexvm {
-enum class ServiceFactory { unsupported, singleton, inflater, activity, sensor, nfc, usb, notification, keyguard };
+enum class ServiceFactory {
+    unsupported,
+    singleton,
+    inflater,
+    activity,
+    alarm,
+    audio,
+    sensor,
+    nfc,
+    usb,
+    connectivity,
+    wifi,
+    power,
+    vibrator,
+    notification,
+    keyguard,
+    telephony,
+    location
+};
 
 struct PlatformService final {
     std::string_view name;
@@ -19,14 +37,14 @@ inline constexpr auto kSystemServices = std::to_array<PlatformService>({
     {"accessibility", ServiceFactory::unsupported, "", "accessibility"},
     {"account", ServiceFactory::unsupported, "", "account"},
     {"activity", ServiceFactory::activity, "", "activity"},
-    {"alarm", ServiceFactory::singleton, "Landroid/app/AlarmManager;", "alarm"},
+    {"alarm", ServiceFactory::alarm, {}, {}},
     {"appops", ServiceFactory::unsupported, "", "appops"},
-    {"audio", ServiceFactory::singleton, "Landroid/media/AudioManager;", "audio"},
+    {"audio", ServiceFactory::audio, "", "audio"},
     {"bluetooth", ServiceFactory::unsupported, "", "bluetooth"},
     {"camera", ServiceFactory::unsupported, "", "camera"},
     {"captioning", ServiceFactory::unsupported, "", "captioning"},
     {"clipboard", ServiceFactory::unsupported, "", "clipboard"},
-    {"connectivity", ServiceFactory::singleton, "Landroid/net/ConnectivityManager;", "connectivity"},
+    {"connectivity", ServiceFactory::connectivity, "Landroid/net/ConnectivityManager;", "connectivity"},
     {"consumer_ir", ServiceFactory::unsupported, "", "consumer_ir"},
     {"country_detector", ServiceFactory::unsupported, "", "country_detector"},
     {"device_policy", ServiceFactory::unsupported, "", "device_policy"},
@@ -37,13 +55,13 @@ inline constexpr auto kSystemServices = std::to_array<PlatformService>({
     {"input_method", ServiceFactory::singleton, "Landroid/view/inputmethod/InputMethodManager;", "input_method"},
     {"keyguard", ServiceFactory::keyguard, "", "keyguard"},
     {"layout_inflater", ServiceFactory::inflater, "", "layout_inflater"},
-    {"location", ServiceFactory::singleton, "Landroid/location/LocationManager;", "location"},
+    {"location", ServiceFactory::location, "Landroid/location/LocationManager;", "location"},
     {"media_router", ServiceFactory::unsupported, "", "media_router"},
     {"netpolicy", ServiceFactory::unsupported, "", "netpolicy"},
     {"nfc", ServiceFactory::nfc, "", "nfc"},
     {"notification", ServiceFactory::notification, "", "notification"},
-    {"phone", ServiceFactory::singleton, "Landroid/telephony/TelephonyManager;", "phone"},
-    {"power", ServiceFactory::singleton, "Landroid/os/PowerManager;", "power"},
+    {"phone", ServiceFactory::telephony, "Landroid/telephony/TelephonyManager;", "phone"},
+    {"power", ServiceFactory::power, "Landroid/os/PowerManager;", "power"},
     {"print", ServiceFactory::unsupported, "", "print"},
     {"search", ServiceFactory::unsupported, "", "search"},
     {"sensor", ServiceFactory::sensor, "", "sensor"},
@@ -55,9 +73,9 @@ inline constexpr auto kSystemServices = std::to_array<PlatformService>({
     {"uimode", ServiceFactory::unsupported, "", "uimode"},
     {"usb", ServiceFactory::usb, "", "usb"},
     {"user", ServiceFactory::unsupported, "", "user"},
-    {"vibrator", ServiceFactory::singleton, "Landroid/os/Vibrator;", "vibrator"},
+    {"vibrator", ServiceFactory::vibrator, "Landroid/os/SystemVibrator;", "vibrator"},
     {"wallpaper", ServiceFactory::unsupported, "", "wallpaper"},
-    {"wifi", ServiceFactory::singleton, "Landroid/net/wifi/WifiManager;", "wifi"},
+    {"wifi", ServiceFactory::wifi, "Landroid/net/wifi/WifiManager;", "wifi"},
     {"wifip2p", ServiceFactory::unsupported, "", "wifip2p"},
     {"window", ServiceFactory::singleton, "Landroid/view/WindowManagerImpl;", "window_manager"},
 });
@@ -79,7 +97,7 @@ inline constexpr auto kSystemProperties = std::to_array<PlatformProperty>({
     {"java.boot.class.path",
      "/system/framework/ogplay.jar:/system/framework/core.jar:/system/framework/conscrypt.jar:"
      "/system/framework/ext.jar:/system/framework/framework.jar:/system/framework/framework2.jar:"
-     "/system/framework/android.policy.jar",
+     "/system/framework/telephony-common.jar:/system/framework/android.policy.jar",
      "runtime.bootClassPath()"},
     {"java.class.path", ".", "runtime.classPath()"},
     {"java.class.version", "50.0", ""},

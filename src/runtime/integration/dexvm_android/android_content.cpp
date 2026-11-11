@@ -8,6 +8,7 @@
 #include "catalog.h"
 
 #include <algorithm>
+#include <ranges>
 #include <cctype>
 #include <cstdint>
 #include <limits>
@@ -58,93 +59,6 @@ void RecordSecondaryProcessService(dx::Interpreter& vm, const std::string_view a
                       {{"api", std::string(api)}, {"component", service.name}, {"process", service.process_name}},
                       {.mode = core::RateLimitMode::first_and_count});
     }
-}
-
-void UnbindLocalService(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef owner,
-                        dx::VmObjectRef connection) {
-    const auto binding = std::find_if(context.local_service_bindings.begin(), context.local_service_bindings.end(),
-                                      [&](const auto& b) { return b.owner == owner && b.connection == connection; });
-    if (binding == context.local_service_bindings.end()) return;
-    const auto name = binding->name;
-    context.local_service_bindings.erase(binding);
-    if (std::any_of(context.local_service_bindings.begin(), context.local_service_bindings.end(),
-                    [&](const auto& b) { return b.name == name; }))
-        return;
-    const auto found = context.local_services.find(name);
-    if (found == context.local_services.end()) return;
-    const auto service = found->second;
-    const auto roots = vm.ProtectReferences(std::array{service.instance, service.binder, service.intent});
-    context.local_services.erase(found);
-    std::exception_ptr failure;
-    try {
-        static_cast<void>(CallAndroidMethod(vm, service.instance, "onUnbind", "(Landroid/content/Intent;)Z",
-                                            {dx::VmValue::Ref(service.intent)}));
-    } catch (...) {
-        failure = std::current_exception();
-    }
-    try {
-        static_cast<void>(CallAndroidMethod(vm, service.instance, "onDestroy", "()V"));
-    } catch (...) {
-        if (!failure) failure = std::current_exception();
-    }
-    if (failure) std::rethrow_exception(failure);
-}
-
-std::optional<bool> BindLocalService(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef intent,
-                                     dx::VmObjectRef connection) {
-    auto& vm = call.vm;
-    const auto component = CallAndroidMethod(vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref;
-    if (!component.IsValid()) return std::nullopt;
-    if (context->local_services_stopping) UnsupportedLocalService(vm, "service bind during teardown");
-    if (!context->service_inventory_known) UnsupportedLocalService(vm, "service inventory is unavailable");
-    for (const auto& [name, signature] :
-         {std::pair{"getAction", "()Ljava/lang/String;"}, std::pair{"getData", "()Landroid/net/Uri;"},
-          std::pair{"getType", "()Ljava/lang/String;"}, std::pair{"getCategories", "()Ljava/util/Set;"},
-          std::pair{"getSelector", "()Landroid/content/Intent;"}})
-        if (CallAndroidMethod(vm, intent, name, signature).ref.IsValid())
-            UnsupportedLocalService(vm, "local bind requires a component-only Intent");
-    const auto package = vm.StringUtf8(CallAndroidMethod(vm, component, "getPackageName", "()Ljava/lang/String;").ref);
-    const auto name = vm.StringUtf8(CallAndroidMethod(vm, component, "getClassName", "()Ljava/lang/String;").ref);
-    if (package != context->package_name)
-        UnsupportedLocalService(vm, "external explicit service binding is unsupported");
-    const auto target = ResolveExplicitService(vm, context, intent);
-    if (!context->application_enabled || !target.declaration || !target.declaration->enabled) return false;
-    if (!target.hostable) {
-        RecordSecondaryProcessService(vm, "bindService", *target.declaration);
-        return false;
-    }
-    if (vm.CurrentContextToken() != 1 || call.arguments[2].AsInt() != 1)
-        UnsupportedLocalService(vm, "local bind requires main thread and BIND_AUTO_CREATE");
-    for (const auto& b : context->local_service_bindings) {
-        if (b.owner == call.receiver && b.connection == connection) {
-            if (b.name != name) UnsupportedLocalService(vm, "one connection cannot bind multiple components");
-            return true;
-        }
-    }
-    auto descriptor = name;
-    std::replace(descriptor.begin(), descriptor.end(), '.', '/');
-    const auto type = vm.Linker().ResolveDescriptor("L" + descriptor + ";");
-    if (!vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/app/Service;"), type))
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "component is not a Service"};
-    const auto looper = EnsureMainLooper(call, context);
-    const auto copy = vm.NewIntrinsicInstance("Landroid/content/Intent;");
-    const auto roots = vm.ProtectReferences(std::array{copy, component});
-    const auto ctor =
-        vm.Linker().FindDirectMethod(vm.Model().ObjectClass(copy), "<init>", "(Landroid/content/Intent;)V");
-    if (!ctor) UnsupportedLocalService(vm, "Intent copy constructor unavailable");
-    const auto copied = vm.Call(*ctor, std::array{dx::VmValue::Ref(copy), dx::VmValue::Ref(intent)});
-    if (copied.exception.IsValid())
-        throw dx::VmJavaThrow{vm.Linker().Class(copied.exception_class).descriptor, copied.exception_message,
-                              copied.exception};
-    const auto generation = context->next_service_generation++;
-    std::scoped_lock lock(context->scheduler_mutex);
-    if (context->scheduler_shutdown) UnsupportedLocalService(vm, "service bind during shutdown");
-    context->local_service_bindings.push_back({generation, call.receiver, connection, copy, component, name});
-    context->scheduled_work.push_back({context->uptime_millis.load(), context->next_scheduler_sequence++,
-                                       DexVmAndroidContext::ScheduledWorkKind::local_service_bind, looper,
-                                       call.receiver, connection, copy, component, 0, generation});
-    context->scheduler_changed.notify_all();
-    return true;
 }
 
 void RequireAbsentService(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef intent) {
@@ -368,161 +282,140 @@ dx::VmValue StartAndroidActivity(dx::IntrinsicContext& call, const Context& cont
     return dx::VmValue::Void();
 }
 
-Decl Declare_android_content_pm_PackageManager_NameNotFoundException(const Context& context);
-
-Decl Declare_android_content_IntentSender(const Context&) {
-    return std::move(dx::IntrinsicClassBuilder::Class("Landroid/content/IntentSender;", "Ljava/lang/Object;",
-                                                      {"Landroid/os/Parcelable;"}))
-        .Build();
-}
-
-Decl Declare_android_content_BroadcastReceiver(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/BroadcastReceiver;", "Ljava/lang/Object;");
-    builder.Constructor("()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.VirtualMethod("onReceive", "(Landroid/content/Context;Landroid/content/Intent;)V",
-                          [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    return std::move(builder).Build();
-}
-
 // android.content.SharedPreferences, $Editor and
 // $OnSharedPreferenceChangeListener keep their original AOSP interface shape
 // from BootDex; no intrinsic interface declarations remain here.
 
-Decl Declare_android_content_SharedPreferencesImpl(const Context& context) {
-    // The full BootDex SharedPreferences interface: typed getters, contains
-    // and a boxed getAll read the same store; change listeners are never
-    // invoked, so registration fails explicitly with accounting instead of
-    // accepting a silent no-op, and getStringSet has no checked storage
-    // representation.
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/SharedPreferencesImpl;", "Ljava/lang/Object;",
-                                                    {"Landroid/content/SharedPreferences;"});
-    builder.FinalMethod("getAll", "()Ljava/util/Map;", PrefsGetAllHandler(context));
-    builder.FinalMethod("getString", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-                        PrefsGetStringHandler(context));
-    builder.FinalMethod("getStringSet", "(Ljava/lang/String;Ljava/util/Set;)Ljava/util/Set;",
-                        PrefsUnsupportedHandler("dexvm.shared_preferences.string_set"));
-    builder.FinalMethod("getInt", "(Ljava/lang/String;I)I", PrefsGetIntHandler(context));
-    builder.FinalMethod("getLong", "(Ljava/lang/String;J)J", PrefsGetLongHandler(context));
-    builder.FinalMethod("getFloat", "(Ljava/lang/String;F)F", PrefsGetFloatHandler(context));
-    builder.FinalMethod("getBoolean", "(Ljava/lang/String;Z)Z", PrefsGetBooleanHandler(context));
-    builder.FinalMethod("contains", "(Ljava/lang/String;)Z", PrefsContainsHandler(context));
-    builder.FinalMethod("edit", "()Landroid/content/SharedPreferences$Editor;", PrefsEditHandler(context));
-    builder.FinalMethod("registerOnSharedPreferenceChangeListener",
-                        "(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V",
-                        PrefsUnsupportedHandler("dexvm.shared_preferences.change_listeners"));
-    builder.FinalMethod("unregisterOnSharedPreferenceChangeListener",
-                        "(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V",
-                        PrefsUnsupportedHandler("dexvm.shared_preferences.change_listeners"));
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_content_SharedPreferencesEditorImpl(const Context& context) {
-    // The full BootDex Editor interface: each editor stages independent
-    // changes; commit/apply publish and persist synchronously. putStringSet
-    // is not representable in the checked preference subset and fails
-    // explicitly with accounting.
-    auto builder =
-        dx::IntrinsicClassBuilder::Class("Landroid/content/SharedPreferencesEditorImpl;", "Ljava/lang/Object;",
-                                         {"Landroid/content/SharedPreferences$Editor;"});
-    builder.FinalMethod("putBoolean", "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;",
-                        PrefsEditorPutBooleanHandler(context));
-    builder.FinalMethod("putInt", "(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;",
-                        PrefsEditorPutIntHandler(context));
-    builder.FinalMethod("putLong", "(Ljava/lang/String;J)Landroid/content/SharedPreferences$Editor;",
-                        PrefsEditorPutLongHandler(context));
-    builder.FinalMethod("putFloat", "(Ljava/lang/String;F)Landroid/content/SharedPreferences$Editor;",
-                        PrefsEditorPutFloatHandler(context));
-    builder.FinalMethod("putString",
-                        "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/"
-                        "SharedPreferences$Editor;",
-                        PrefsEditorPutStringHandler(context));
-    builder.FinalMethod("putStringSet",
-                        "(Ljava/lang/String;Ljava/util/Set;)Landroid/content/"
-                        "SharedPreferences$Editor;",
-                        PrefsUnsupportedHandler("dexvm.shared_preferences.string_set"));
-    builder.FinalMethod("remove", "(Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;",
-                        PrefsEditorRemoveHandler(context));
-    builder.FinalMethod("clear", "()Landroid/content/SharedPreferences$Editor;", PrefsEditorClearHandler(context));
-    builder.FinalMethod("apply", "()V", PrefsEditorApplyHandler(context));
-    builder.FinalMethod("commit", "()Z", PrefsEditorCommitHandler(context));
-    return std::move(builder).Build();
-}
-
 namespace {
-[[nodiscard]] std::optional<dx::VmValue>
-InvokeAndroidVirtual(dx::IntrinsicContext& context, const dx::VmObjectRef receiver, const std::string_view name,
-                     const std::string_view descriptor, std::vector<dx::VmValue> arguments = {}) {
-    if (!receiver.IsValid()) {
-        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", std::string(name) + " receiver is null"};
-    }
-    auto& linker = context.vm.Linker();
-    const auto java_class = context.vm.Model().ObjectClass(receiver);
-    const auto index = linker.FindVtableIndex(java_class, std::string(name), std::string(descriptor));
-    if (!index.has_value()) {
-        throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;", std::string(name) + std::string(descriptor)};
-    }
-    arguments.insert(arguments.begin(), dx::VmValue::Ref(receiver));
-    const auto outcome = context.vm.Call(linker.Class(java_class).vtable[*index], arguments);
-    if (outcome.exception.IsValid()) {
-        context.vm.SetPendingException(outcome.exception);
-        return std::nullopt;
-    }
-    return outcome.value;
+std::vector<std::string> ContentUriPath(dx::Interpreter& vm, dx::VmObjectRef uri) {
+    if (!uri.IsValid()) return {};
+    const auto authority = CallAndroidMethod(vm, uri, "getAuthority", "()Ljava/lang/String;").ref;
+    if (!authority.IsValid())
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Invalid Uri used for observer"};
+    std::vector<std::string> result{vm.StringUtf8(authority)};
+    const auto parts = CallAndroidMethod(vm, uri, "getPathSegments", "()Ljava/util/List;").ref;
+    const auto root = vm.ProtectReferences(std::array{parts});
+    const auto count = CallAndroidMethod(vm, parts, "size", "()I").AsInt();
+    for (int i = 0; i < count; ++i)
+        result.push_back(
+            vm.StringUtf8(CallAndroidMethod(vm, parts, "get", "(I)Ljava/lang/Object;", {dx::VmValue::Int(i)}).ref));
+    return result;
 }
+
+constexpr auto kObserverCallback = "Lorg/ogplay/framework/LocalContentChange;";
+constexpr auto kObserver = "Landroid/database/IContentObserver;";
 }  // namespace
 
-Decl Declare_android_content_ContentResolver(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/ContentResolver;", "Ljava/lang/Object;");
-    builder.MergesBootClass();
-    builder.StaticMethod(
-        "hasHandler", "(Landroid/database/ContentObserver;)Z",
-        [](dx::IntrinsicContext& call) {
-            const auto observer = call.arguments[0].ref;
-            const auto type = call.vm.Linker().ResolveDescriptor("Landroid/database/ContentObserver;");
-            const auto field = call.vm.Linker().FindFieldRecursive(type, "mHandler", "Landroid/os/Handler;");
-            if (!field.has_value()) {
-                throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                                     "ROM ContentObserver.mHandler is not linked");
-            }
-            return dx::VmValue::Int(call.vm.Model().InstanceSlots(observer)[call.vm.Linker().Field(*field).slot].bits !=
-                                    0);
-        },
-        dx::kAccPrivate | dx::kAccStatic | dx::kAccNative);
-    builder.FinalMethod(
-        "query",
-        "(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;"
-        "[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;",
-        [](dx::IntrinsicContext& call) {
-            const auto uri = call.arguments[0].ref;
-            if (!uri.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "ContentResolver URI is null"};
-            }
-            const auto scheme = InvokeAndroidVirtual(call, uri, "getScheme", "()Ljava/lang/String;");
-            if (!scheme.has_value()) return dx::VmValue::Ref(dx::VmObjectRef{});
-            if (!scheme->ref.IsValid() || call.vm.StringUtf8(scheme->ref) != "content") {
-                return dx::VmValue::Ref(dx::VmObjectRef{});
-            }
-            const auto authority = InvokeAndroidVirtual(call, uri, "getAuthority", "()Ljava/lang/String;");
-            if (!authority.has_value()) return dx::VmValue::Ref(dx::VmObjectRef{});
-            // OGPlay has no registered ContentProvider process or Binder
-            // directory. API 19 returns null when provider acquisition fails.
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        });
-    builder.FinalMethod("getType", "(Landroid/net/Uri;)Ljava/lang/String;", [](dx::IntrinsicContext& call) {
-        const auto uri = call.arguments[0].ref;
-        if (!uri.IsValid()) {
-            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "ContentResolver URI is null"};
-        }
-        const auto scheme = InvokeAndroidVirtual(call, uri, "getScheme", "()Ljava/lang/String;");
-        if (!scheme.has_value() || !scheme->ref.IsValid() || call.vm.StringUtf8(scheme->ref) != "content") {
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        }
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                              "ContentProvider MIME resolution is outside OGPlay's "
-                              "single-process compatibility scope"};
+Decl Declare_local_ContentChange(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class(kObserverCallback, "Ljava/lang/Object;", {"Ljava/lang/Runnable;"});
+    const auto transport = builder.BoundInstanceField("transport", kObserver, dx::kAccPrivate);
+    const auto uri = builder.BoundInstanceField("uri", "Landroid/net/Uri;", dx::kAccPrivate);
+    const auto self = builder.BoundInstanceField("self", "Z", dx::kAccPrivate);
+    builder.Constructor("(Landroid/database/IContentObserver;Landroid/net/Uri;Z)V", [=](dx::IntrinsicContext& call) {
+        dx::IntrinsicCall fields(call);
+        fields.SetRef(transport, call.arguments[0].ref);
+        fields.SetRef(uri, call.arguments[1].ref);
+        fields.SetInt(self, call.arguments[2].AsInt());
+        return dx::VmValue::Void();
     });
+    builder.VirtualMethod("run", "()V", [=](dx::IntrinsicContext& call) {
+        dx::IntrinsicCall fields(call);
+        return CallAndroidMethod(call.vm, fields.GetRef(transport), "onChange", "(ZLandroid/net/Uri;)V",
+                                 {dx::VmValue::Int(fields.GetInt(self)), dx::VmValue::Ref(fields.GetRef(uri))});
+    });
+    return std::move(builder).Build();
+}
+
+void NotifyLocalContentChange(dx::Interpreter& vm, const Context& context, dx::VmObjectRef uri, dx::VmObjectRef sender,
+                              bool wants_self) {
+    const auto path = ContentUriPath(vm, uri);
+    std::vector<dx::VmObjectRef> targets;
+    for (const auto& item : context->local_content_observers) {
+        if (item.transport == sender && !wants_self) continue;
+        const auto common = std::min(path.size(), item.path.size());
+        if (!std::equal(path.begin(), path.begin() + static_cast<std::ptrdiff_t>(common), item.path.begin())) continue;
+        if (path.size() <= item.path.size() || item.descendants) targets.push_back(item.transport);
+    }
+    const auto roots = vm.ProtectReferences(targets);
+    for (const auto target : targets) {
+        const auto type = vm.Model().ObjectClass(target);
+        const auto backing =
+            vm.Linker().FindFieldRecursive(type, "mContentObserver", "Landroid/database/ContentObserver;");
+        if (backing) {
+            const auto observer =
+                dx::VmObjectRef{vm.Model().InstanceSlots(target)[vm.Linker().Field(*backing).slot].bits};
+            if (!observer.IsValid()) continue;
+            const auto handler =
+                vm.Linker().FindFieldRecursive(vm.Linker().ResolveDescriptor("Landroid/database/ContentObserver;"),
+                                               "mHandler", "Landroid/os/Handler;");
+            if (!handler) throw std::logic_error("ContentObserver handler is unavailable");
+            if (vm.Model().InstanceSlots(observer)[vm.Linker().Field(*handler).slot].bits != 0) {
+                static_cast<void>(CallAndroidMethod(vm, target, "onChange", "(ZLandroid/net/Uri;)V",
+                                                    {dx::VmValue::Int(target == sender), dx::VmValue::Ref(uri)}));
+                continue;
+            }
+        }
+        const auto callback =
+            NewPlatformObject(vm, kObserverCallback, "(Landroid/database/IContentObserver;Landroid/net/Uri;Z)V",
+                              {dx::VmValue::Ref(target), dx::VmValue::Ref(uri), dx::VmValue::Int(target == sender)});
+        const auto callback_root = vm.ProtectReferences(std::array{callback});
+        const auto looper = EnsureMainLooper(vm, context);
+        auto& handler = context->singletons["content_observer_handler"];
+        if (!handler.IsValid())
+            handler =
+                NewPlatformObject(vm, "Landroid/os/Handler;", "(Landroid/os/Looper;)V", {dx::VmValue::Ref(looper)});
+        static_cast<void>(
+            CallAndroidMethod(vm, handler, "post", "(Ljava/lang/Runnable;)Z", {dx::VmValue::Ref(callback)}));
+    }
+}
+
+Decl Declare_local_ClipboardService(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalClipboardService;",
+                                                    "Landroid/content/IClipboard$Stub;");
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"setPrimaryClip", "(Landroid/content/ClipData;Ljava/lang/String;)V"},
+             std::pair{"getPrimaryClip", "(Ljava/lang/String;)Landroid/content/ClipData;"},
+             std::pair{"getPrimaryClipDescription", "(Ljava/lang/String;)Landroid/content/ClipDescription;"},
+             std::pair{"hasPrimaryClip", "(Ljava/lang/String;)Z"},
+             std::pair{"hasClipboardText", "(Ljava/lang/String;)Z"},
+             std::pair{"addPrimaryClipChangedListener",
+                       "(Landroid/content/IOnPrimaryClipChangedListener;Ljava/lang/String;)V"},
+             std::pair{"removePrimaryClipChangedListener", "(Landroid/content/IOnPrimaryClipChangedListener;)V"},
+         })
+        RejectUnsupportedServiceMethod(builder, "android.content.IClipboard", name, descriptor);
+    return std::move(builder).Build();
+}
+
+Decl Declare_local_ContentService(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalContentService;",
+                                                    "Landroid/content/IContentService$Stub;");
+    builder.VirtualMethod(
+        "registerContentObserver", "(Landroid/net/Uri;ZLandroid/database/IContentObserver;I)V",
+        [context](dx::IntrinsicContext& call) {
+            if (call.arguments[3].AsInt() != 0)
+                throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "content observer outside the current user"};
+            if (!call.arguments[0].ref.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "uri == null"};
+            const auto observer = dx::IntrinsicCall(call).NonNullRef(2, "observer");
+            context->local_content_observers.push_back(
+                {observer, ContentUriPath(call.vm, call.arguments[0].ref), call.arguments[1].AsInt() != 0});
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("unregisterContentObserver", "(Landroid/database/IContentObserver;)V",
+                          [context](dx::IntrinsicContext& call) {
+                              std::erase_if(context->local_content_observers,
+                                            [&](const auto& item) { return item.transport == call.arguments[0].ref; });
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod("notifyChange", "(Landroid/net/Uri;Landroid/database/IContentObserver;ZZI)V",
+                          [context](dx::IntrinsicContext& call) {
+                              if (call.arguments[4].AsInt() != 0)
+                                  throw dx::VmJavaThrow{"Ljava/lang/SecurityException;",
+                                                        "content notification outside the current user"};
+                              NotifyLocalContentChange(call.vm, context, call.arguments[0].ref, call.arguments[1].ref,
+                                                       call.arguments[2].AsInt() != 0);
+                              return dx::VmValue::Void();
+                          });
     return std::move(builder).Build();
 }
 
@@ -998,710 +891,9 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
-[[nodiscard]] bool EnsureDirectory(const Context& context, const std::string& path) {
-    if (context->vfs == nullptr) return false;
-    for (std::size_t cursor = 1; cursor <= path.size(); ++cursor) {
-        if (cursor != path.size() && path[cursor] != '/') continue;
-        const auto prefix = path.substr(0, cursor);
-        try {
-            const auto info = context->vfs->Stat(prefix);
-            if (!info.is_directory) return false;
-            continue;
-        } catch (const VfsError&) {
-        }
-        try {
-            context->vfs->CreateDirectory(prefix);
-        } catch (const VfsError&) {
-            return false;
-        }
-    }
-    return true;
-}
-
-[[nodiscard]] std::string ContextFilesPath(const Context& context) {
-    return "/data/data/" + context->package_name + "/files";
-}
-
-[[nodiscard]] std::string ContextDatabasePath(dx::IntrinsicContext& call, const Context& context,
-                                              const dx::VmObjectRef name_ref) {
-    if (!name_ref.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "name == null"};
-    const auto name = call.vm.StringUtf8(name_ref);
-    if (name.find('/') != std::string::npos)
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "File " + name + " contains a path separator"};
-    const auto directory = "/data/data/" + context->package_name + "/databases";
-    if (!EnsureDirectory(context, directory))
-        throw dx::VmJavaThrow{"Landroid/database/SQLException;", "databases directory is unavailable: " + directory};
-    return directory + "/" + name;
-}
-
-[[nodiscard]] std::string ContextFilePath(dx::IntrinsicContext& call, const Context& context,
-                                          const dx::VmObjectRef name_ref) {
-    if (!name_ref.IsValid()) {
-        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "name == null"};
-    }
-    const auto name = call.vm.StringUtf8(name_ref);
-    if (name.find('/') != std::string::npos) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "File " + name + " contains a path separator"};
-    }
-    const auto directory = ContextFilesPath(context);
-    if (!EnsureDirectory(context, directory)) {
-        if (context->vfs == nullptr) {
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest filesystem is unavailable"};
-        }
-        throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;", "files directory is unavailable: " + directory};
-    }
-    return directory + "/" + name;
-}
-
-[[nodiscard]] dx::VmObjectRef NewContextFileStream(dx::IntrinsicContext& call, const std::string_view stream_descriptor,
-                                                   const std::string_view constructor_descriptor,
-                                                   std::vector<dx::VmValue> constructor_arguments,
-                                                   const dx::VmObjectRef path) {
-    const std::array path_references{path};
-    [[maybe_unused]] const auto path_roots = call.vm.ProtectReferences(path_references);
-    const auto stream = call.vm.NewIntrinsicInstance(stream_descriptor);
-    const std::array stream_references{stream};
-    [[maybe_unused]] const auto stream_roots = call.vm.ProtectReferences(stream_references);
-    const auto stream_class = call.vm.Model().ObjectClass(stream);
-    const auto constructor =
-        call.vm.Linker().FindDirectMethod(stream_class, "<init>", std::string(constructor_descriptor));
-    if (!constructor.has_value()) {
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             std::string(stream_descriptor) + " constructor is unavailable");
-    }
-    constructor_arguments.insert(constructor_arguments.begin(), dx::VmValue::Ref(stream));
-    const auto outcome = call.vm.Call(*constructor, constructor_arguments);
-    if (outcome.exception.IsValid()) {
-        call.vm.SetPendingException(outcome.exception);
-        return dx::VmObjectRef{};
-    }
-    return stream;
-}
-
-[[nodiscard]] dx::VmObjectRef NewContextFile(dx::IntrinsicContext& call, const std::string& path) {
-    const auto path_ref = call.vm.NewStringUtf8(path);
-    const std::array path_references{path_ref};
-    [[maybe_unused]] const auto path_roots = call.vm.ProtectReferences(path_references);
-    const auto file = call.vm.NewIntrinsicInstance("Ljava/io/File;");
-    const std::array file_references{file};
-    [[maybe_unused]] const auto file_roots = call.vm.ProtectReferences(file_references);
-    const auto file_class = call.vm.Model().ObjectClass(file);
-    const auto constructor = call.vm.Linker().FindDirectMethod(file_class, "<init>", "(Ljava/lang/String;)V");
-    if (!constructor.has_value()) {
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "java.io.File(String) constructor is unavailable");
-    }
-    const std::array constructor_arguments{dx::VmValue::Ref(file), dx::VmValue::Ref(path_ref)};
-    const auto outcome = call.vm.Call(*constructor, constructor_arguments);
-    if (outcome.exception.IsValid()) {
-        call.vm.SetPendingException(outcome.exception);
-        return dx::VmObjectRef{};
-    }
-    return file;
-}
-
-[[nodiscard]] dx::VmObjectRef ContextDirectory(dx::IntrinsicContext& call, const Context& context,
-                                               const std::string& path, const std::string& singleton_key) {
-    if (!EnsureDirectory(context, path)) return dx::VmObjectRef{};
-    const auto found = context->singletons.find(singleton_key);
-    if (found != context->singletons.end()) return found->second;
-    const auto file = call.vm.NewIntrinsicInstance("Ljava/io/File;");
-    const auto slots = call.vm.Model().InstanceSlots(file);
-    slots[0] = {call.vm.NewStringUtf8(path).Value(), dx::SlotTag::ref};
-    context->singletons.emplace(singleton_key, file);
-    return file;
-}
-
-[[nodiscard]] dx::VmObjectRef SingleFileArray(dx::IntrinsicContext& call, const dx::VmObjectRef file) {
-    const auto array_class = call.vm.Linker().ResolveDescriptor("[Ljava/io/File;");
-    const auto file_class = call.vm.Linker().ResolveDescriptor("Ljava/io/File;");
-    const auto array = call.vm.Model().NewObjectArray(array_class, file_class, 1);
-    call.vm.Model().SetObjectElement(array, 0, file);
-    return array;
-}
-
 // Reads a preferences file once per name. Damaged XML is a real failure.
-void LoadPreferencesOnce(const Context& context, const std::string& name) {
-    if (context->preferences_loaded[name]) return;
-    if (context->vfs == nullptr) {
-        context->preferences_loaded[name] = true;
-        return;
-    }
-    try {
-        context->preferences[name] = LoadPreferences(*context->vfs, PreferencesPathOf(context, name));
-        context->preferences_loaded[name] = true;
-    } catch (const PreferencesXmlError& error) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                              std::string("SharedPreferences file is not readable: ") + error.what()};
-    }
-}
 
 }  // namespace
-
-Decl Declare_android_content_Context(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Context;", "Ljava/lang/Object;");
-    builder.MergesBootClass();
-    const auto inflater = std::optional<dx::IntrinsicFieldHandle>{};
-    {
-        builder.VirtualMethod(
-            "getTheme", "()Landroid/content/res/Resources$Theme;", [context](dx::IntrinsicContext& call) {
-                constexpr auto key = "application_theme";
-                const auto cached = context->singletons.find(key);
-                if (cached != context->singletons.end()) return dx::VmValue::Ref(cached->second);
-                const auto resources = ResourceObject(call, context, false);
-                const auto roots = call.vm.ProtectReferences(std::array{resources});
-                const auto theme =
-                    CallAndroidMethod(call.vm, resources, "newTheme", "()Landroid/content/res/Resources$Theme;").ref;
-                const auto theme_root = call.vm.ProtectReferences(std::array{theme});
-                const auto type = call.vm.Linker().ResolveDescriptor("Landroid/content/res/Resources;");
-                const auto select = call.vm.Linker().FindDirectMethod(type, "selectDefaultTheme", "(II)I");
-                if (!select) throw std::logic_error("ROM selectDefaultTheme missing");
-                const auto info = CallAndroidMethod(call.vm, call.receiver, "getApplicationInfo",
-                                                    "()Landroid/content/pm/ApplicationInfo;")
-                                      .ref;
-                const auto sdk =
-                    call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(info), "targetSdkVersion", "I");
-                if (!sdk) throw std::logic_error("ApplicationInfo targetSdkVersion missing");
-                // ContextImpl.mThemeResource starts at 0 and is never given the manifest
-                // theme; activities layer their theme over this default via setTheme.
-                const auto selected = call.vm.Call(
-                    *select,
-                    std::array{dx::VmValue::Int(0),
-                               dx::VmValue::Int(static_cast<std::int32_t>(
-                                   call.vm.Model().InstanceSlots(info)[call.vm.Linker().Field(*sdk).slot].bits))});
-                if (selected.exception.IsValid())
-                    throw dx::VmJavaThrow{call.vm.Linker().Class(selected.exception_class).descriptor,
-                                          selected.exception_message, selected.exception};
-                static_cast<void>(
-                    CallAndroidMethod(call.vm, theme, "applyStyle", "(IZ)V", {selected.value, dx::VmValue::Int(1)}));
-                context->singletons.emplace(key, theme);
-                return dx::VmValue::Ref(theme);
-            });
-    }
-    constexpr std::int32_t kPermissionGranted = 0;
-    constexpr std::int32_t kPermissionDenied = -1;
-    const auto require_permission = [](dx::IntrinsicContext& call, const std::size_t index) {
-        const auto permission = call.arguments[index].ref;
-        if (!permission.IsValid()) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "permission is null"};
-        }
-        return call.vm.StringUtf8(permission);
-    };
-    const auto check_permission = [context, require_permission](dx::IntrinsicContext& call,
-                                                                const std::size_t permission_index,
-                                                                const std::int32_t pid, const std::int32_t uid) {
-        const auto permission = require_permission(call, permission_index);
-        const auto self = pid == kGuestProcessId && uid == static_cast<std::int32_t>(context->application_uid);
-        return self && context->granted_permissions.contains(permission) ? kPermissionGranted : kPermissionDenied;
-    };
-    builder.ConstantInt("MODE_PRIVATE", "I", 0, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-        .ConstantInt("MODE_APPEND", "I", 0x8000, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-        .ConstantString("POWER_SERVICE", "power", dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-        .ConstantString("VIBRATOR_SERVICE", "vibrator", dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
-    builder.Constructor("()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.VirtualMethod("getClassLoader", "()Ljava/lang/ClassLoader;", [](dx::IntrinsicContext& call) {
-        return dx::VmValue::Ref(call.vm.ClassLoaders().ApplicationLoader());
-    });
-    builder.VirtualMethod("getAssets", "()Landroid/content/res/AssetManager;", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Ref(ResourceAssets(call, context, false));
-    });
-    builder.VirtualMethod("getPackageName", "()Ljava/lang/String;",
-                          [context](dx::IntrinsicContext& call) { return MakeString(call, context->package_name); });
-    builder.VirtualMethod("getPackageResourcePath", "()Ljava/lang/String;", [context](dx::IntrinsicContext& call) {
-        return MakeString(call, context->package_resource_path);
-    });
-    // 返回当前应用 APK 的代码与资源文件路径。
-    builder.VirtualMethod("getPackageCodePath", "()Ljava/lang/String;", [context](dx::IntrinsicContext& call) {
-        return MakeString(call, context->package_resource_path);
-    });
-    // 返回描述当前应用包、进程和安装路径等信息的 ApplicationInfo。
-    builder.VirtualMethod("getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;",
-                          [context](dx::IntrinsicContext& call) {
-                              constexpr auto key = "context_application_info";
-                              const auto found = context->singletons.find(key);
-                              if (found != context->singletons.end()) {
-                                  return dx::VmValue::Ref(found->second);
-                              }
-                              const auto info = MakeApplicationInfo(call, context, false);
-                              context->singletons.emplace(key, info);
-                              return dx::VmValue::Ref(info);
-                          });
-    builder.VirtualMethod(
-        "getPackageManager", "()Landroid/content/pm/PackageManager;", [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(Singleton(call, context, "package_manager", "Landroid/content/pm/PackageManager;"));
-        });
-    builder.VirtualMethod("checkPermission", "(Ljava/lang/String;II)I", [check_permission](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(check_permission(call, 0U, call.arguments[1].AsInt(), call.arguments[2].AsInt()));
-    });
-    builder.VirtualMethod("checkCallingPermission", "(Ljava/lang/String;)I",
-                          [require_permission](dx::IntrinsicContext& call) {
-                              static_cast<void>(require_permission(call, 0U));
-                              return dx::VmValue::Int(kPermissionDenied);
-                          });
-    builder.VirtualMethod("checkCallingOrSelfPermission", "(Ljava/lang/String;)I",
-                          [context, check_permission](dx::IntrinsicContext& call) {
-                              return dx::VmValue::Int(check_permission(
-                                  call, 0U, kGuestProcessId, static_cast<std::int32_t>(context->application_uid)));
-                          });
-    const auto enforce = [](dx::IntrinsicContext& call, const std::string& permission, const std::int32_t result,
-                            const bool self_too, const std::int32_t uid, const std::size_t message_index) {
-        if (result == kPermissionGranted) return dx::VmValue::Void();
-        std::string message;
-        if (call.arguments[message_index].ref.IsValid()) {
-            message = call.vm.StringUtf8(call.arguments[message_index].ref) + ": ";
-        }
-        message += self_too ? "Neither user " : "uid ";
-        message += std::to_string(uid);
-        message += self_too ? " nor current process has " : " does not have ";
-        message += permission + ".";
-        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", message};
-    };
-    builder.VirtualMethod("enforcePermission", "(Ljava/lang/String;IILjava/lang/String;)V",
-                          [check_permission, require_permission, enforce](dx::IntrinsicContext& call) {
-                              const auto permission = require_permission(call, 0U);
-                              const auto uid = call.arguments[2].AsInt();
-                              return enforce(call, permission,
-                                             check_permission(call, 0U, call.arguments[1].AsInt(), uid), false, uid,
-                                             3U);
-                          });
-    builder.VirtualMethod("enforceCallingPermission", "(Ljava/lang/String;Ljava/lang/String;)V",
-                          [context, require_permission, enforce](dx::IntrinsicContext& call) {
-                              const auto permission = require_permission(call, 0U);
-                              return enforce(call, permission, kPermissionDenied, false,
-                                             static_cast<std::int32_t>(context->application_uid), 1U);
-                          });
-    builder.VirtualMethod("enforceCallingOrSelfPermission", "(Ljava/lang/String;Ljava/lang/String;)V",
-                          [context, check_permission, require_permission, enforce](dx::IntrinsicContext& call) {
-                              const auto permission = require_permission(call, 0U);
-                              const auto uid = static_cast<std::int32_t>(context->application_uid);
-                              return enforce(call, permission, check_permission(call, 0U, kGuestProcessId, uid), true,
-                                             uid, 1U);
-                          });
-    builder.VirtualMethod(
-        "getApplicationContext", "()Landroid/content/Context;", [context](dx::IntrinsicContext& call) {
-            // One guest process owns one application Context;
-            // Activity wrappers may come and go without changing
-            // this identity.
-            if (context->application.IsValid()) {
-                return dx::VmValue::Ref(context->application);
-            }
-            return dx::VmValue::Ref(Singleton(call, context, "application_context", "Landroid/content/Context;"));
-        });
-    builder.VirtualMethod("getFilesDir", "()Ljava/io/File;", [context](dx::IntrinsicContext& call) {
-        const auto path = ContextFilesPath(context);
-        return dx::VmValue::Ref(ContextDirectory(call, context, path, "context_files_directory"));
-    });
-    builder.VirtualMethod("getDir", "(Ljava/lang/String;I)Ljava/io/File;", [context](dx::IntrinsicContext& call) {
-        if (call.arguments[1].AsInt() != 0 || context->vfs == nullptr) {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.context_private_directory", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  context->vfs == nullptr ? "guest filesystem is unavailable"
-                                                          : "getDir: only MODE_PRIVATE is supported"};
-        }
-        // ContextImpl concatenates before validating: null becomes app_null.
-        const auto name = "app_" + (call.arguments[0].ref.IsValid() ? call.vm.StringUtf8(call.arguments[0].ref)
-                                                                    : std::string("null"));
-        if (name.find('/') != std::string::npos)
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                  "File " + name + " contains a path separator"};
-        const auto path = "/data/data/" + context->package_name + "/" + name;
-        bool exists = false;
-        try {
-            static_cast<void>(context->vfs->Stat(path));
-            exists = true;
-        } catch (const VfsError&) {
-        }
-        if (!exists) {
-            try {
-                context->vfs->CreateDirectory(path);
-            } catch (const VfsError&) {
-                // API 19 ignores mkdir failure and still returns the File path.
-                // Subsequent File/stream operations expose the actual VFS state.
-            }
-        }
-        return dx::VmValue::Ref(NewContextFile(call, path));
-    });
-    builder.VirtualMethod(
-        "getDatabasePath", "(Ljava/lang/String;)Ljava/io/File;", [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(NewContextFile(call, ContextDatabasePath(call, context, call.arguments[0].ref)));
-        });
-    const auto open_database = [context](dx::IntrinsicContext& call, const bool has_error_handler) {
-        const auto path = call.vm.NewStringUtf8(ContextDatabasePath(call, context, call.arguments[0].ref));
-        const std::array roots{path};
-        [[maybe_unused]] const auto protected_path = call.vm.ProtectReferences(roots);
-        const auto owner = call.vm.Linker().ResolveDescriptor("Landroid/database/sqlite/SQLiteDatabase;");
-        const auto method = call.vm.Linker().FindDirectMethod(
-            owner, "openOrCreateDatabase",
-            "(Ljava/lang/String;Landroid/database/sqlite/SQLiteDatabase$CursorFactory;"
-            "Landroid/database/DatabaseErrorHandler;)Landroid/database/sqlite/"
-            "SQLiteDatabase;");
-        if (!method.has_value())
-            throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                                 "SQLiteDatabase.openOrCreateDatabase is unavailable");
-        const std::array arguments{dx::VmValue::Ref(path), dx::VmValue::Ref(call.arguments[2].ref),
-                                   dx::VmValue::Ref(has_error_handler ? call.arguments[3].ref : dx::VmObjectRef{})};
-        const auto outcome = call.vm.Call(*method, arguments);
-        if (outcome.exception.IsValid()) {
-            call.vm.SetPendingException(outcome.exception);
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        }
-        return outcome.value;
-    };
-    builder.VirtualMethod("openOrCreateDatabase",
-                          "(Ljava/lang/String;ILandroid/database/sqlite/SQLiteDatabase$CursorFactory;)"
-                          "Landroid/database/sqlite/SQLiteDatabase;",
-                          [open_database](dx::IntrinsicContext& call) { return open_database(call, false); });
-    builder.VirtualMethod("openOrCreateDatabase",
-                          "(Ljava/lang/String;ILandroid/database/sqlite/SQLiteDatabase$CursorFactory;"
-                          "Landroid/database/DatabaseErrorHandler;)Landroid/database/sqlite/"
-                          "SQLiteDatabase;",
-                          [open_database](dx::IntrinsicContext& call) { return open_database(call, true); });
-    builder.VirtualMethod(
-        "getFileStreamPath", "(Ljava/lang/String;)Ljava/io/File;", [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(NewContextFile(call, ContextFilePath(call, context, call.arguments[0].ref)));
-        });
-    builder.VirtualMethod(
-        "openFileInput", "(Ljava/lang/String;)Ljava/io/FileInputStream;", [context](dx::IntrinsicContext& call) {
-            const auto path = call.vm.NewStringUtf8(ContextFilePath(call, context, call.arguments[0].ref));
-            return dx::VmValue::Ref(NewContextFileStream(call, "Ljava/io/FileInputStream;", "(Ljava/lang/String;)V",
-                                                         {dx::VmValue::Ref(path)}, path));
-        });
-    builder.VirtualMethod(
-        "openFileOutput", "(Ljava/lang/String;I)Ljava/io/FileOutputStream;", [context](dx::IntrinsicContext& call) {
-            constexpr std::int32_t kModeAppend = 0x8000;
-            const auto path = call.vm.NewStringUtf8(ContextFilePath(call, context, call.arguments[0].ref));
-            const auto append = (call.arguments[1].AsInt() & kModeAppend) != 0;
-            return dx::VmValue::Ref(NewContextFileStream(call, "Ljava/io/FileOutputStream;", "(Ljava/lang/String;Z)V",
-                                                         {dx::VmValue::Ref(path), dx::VmValue::Int(append ? 1 : 0)},
-                                                         path));
-        });
-    // 返回当前应用存放可清理缓存文件的内部目录。
-    builder.VirtualMethod("getCacheDir", "()Ljava/io/File;", [context](dx::IntrinsicContext& call) {
-        const auto path = "/data/data/" + context->package_name + "/cache";
-        return dx::VmValue::Ref(ContextDirectory(call, context, path, "context_cache_directory"));
-    });
-    builder.VirtualMethod("getResources", "()Landroid/content/res/Resources;", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Ref(ResourceObject(call, context, false));
-    });
-    // API 19 Context owns this final convenience method. It deliberately
-    // dispatches getResources() on the runtime receiver so wrappers keep the
-    // framework inheritance relationship without copying resource state.
-    builder.FinalMethod("getString", "(I)Ljava/lang/String;", [](dx::IntrinsicContext& call) -> dx::VmValue {
-        auto& linker = call.vm.Linker();
-        const auto receiver_class = call.vm.Model().ObjectClass(call.receiver);
-        const auto resources_index =
-            linker.FindVtableIndex(receiver_class, "getResources", "()Landroid/content/res/Resources;");
-        if (!resources_index.has_value()) {
-            throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;", "Context has no getResources()"};
-        }
-        const auto resources_outcome = call.vm.Call(linker.Class(receiver_class).vtable[*resources_index],
-                                                    std::vector{dx::VmValue::Ref(call.receiver)});
-        if (resources_outcome.exception.IsValid()) {
-            call.vm.SetPendingException(resources_outcome.exception);
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        }
-        const auto resources = resources_outcome.value.ref;
-        if (!resources.IsValid()) {
-            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "Context.getResources() returned null"};
-        }
-        const std::array resource_roots{resources};
-        const auto root_scope = call.vm.ProtectReferences(resource_roots);
-        const auto resources_class = call.vm.Model().ObjectClass(resources);
-        const auto string_index = linker.FindVtableIndex(resources_class, "getString", "(I)Ljava/lang/String;");
-        if (!string_index.has_value()) {
-            throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;", "Resources has no getString(I)"};
-        }
-        const auto outcome = call.vm.Call(linker.Class(resources_class).vtable[*string_index],
-                                          std::vector{dx::VmValue::Ref(resources), call.arguments[0]});
-        if (outcome.exception.IsValid()) {
-            call.vm.SetPendingException(outcome.exception);
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        }
-        return outcome.value;
-    });
-    builder.VirtualMethod(
-        "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", [context, inflater](dx::IntrinsicContext& call) {
-            const auto name = call.vm.StringUtf8(call.arguments[0].ref);
-            const auto service = std::ranges::find(dx::kSystemServices, name, &dx::PlatformService::name);
-            if (service == dx::kSystemServices.end()) return dx::VmValue::Ref(dx::VmObjectRef{});
-            switch (service->factory) {
-            case dx::ServiceFactory::singleton:
-                return dx::VmValue::Ref(
-                    Singleton(call, context, std::string(service->singleton_key), service->descriptor.data()));
-            case dx::ServiceFactory::inflater: {
-                if (!inflater) {
-                    constexpr auto key = "experimental_layout_inflater";
-                    const auto cached = context->singletons.find(key);
-                    if (cached != context->singletons.end()) return dx::VmValue::Ref(cached->second);
-                    const auto type =
-                        call.vm.Linker().ResolveDescriptor("Lcom/android/internal/policy/impl/PhoneLayoutInflater;");
-                    const auto initialized = call.vm.EnsureClassInitialized(type);
-                    if (initialized.exception.IsValid())
-                        throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
-                                              initialized.exception_message, initialized.exception};
-                    const auto value =
-                        call.vm.NewIntrinsicInstance("Lcom/android/internal/policy/impl/PhoneLayoutInflater;");
-                    const auto roots = call.vm.ProtectReferences(std::array{value});
-                    const auto init = call.vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V");
-                    const auto result =
-                        call.vm.Call(*init, std::array{dx::VmValue::Ref(value), dx::VmValue::Ref(call.receiver)});
-                    if (result.exception.IsValid())
-                        throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
-                                              result.exception_message, result.exception};
-                    context->singletons.emplace(key, value);
-                    return dx::VmValue::Ref(value);
-                }
-                dx::IntrinsicCall fields(call);
-                auto value = fields.GetRef(*inflater);
-                if (!value.IsValid()) {
-                    const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/LayoutInflater;");
-                    const auto factory = call.vm.Linker().FindDirectMethod(
-                        type, "createLocal", "(Landroid/content/Context;)Landroid/view/LayoutInflater;");
-                    if (!factory)
-                        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "LayoutInflater factory is missing"};
-                    const auto result = call.vm.Call(*factory, std::array{dx::VmValue::Ref(call.receiver)});
-                    if (result.exception.IsValid()) {
-                        call.vm.SetPendingException(result.exception);
-                        return dx::VmValue::Ref(dx::VmObjectRef{});
-                    }
-                    value = result.value.ref;
-                    fields.SetRef(*inflater, value);
-                }
-                return dx::VmValue::Ref(value);
-            }
-            case dx::ServiceFactory::activity: return dx::VmValue::Ref(ActivityManagerForContext(call, context));
-            case dx::ServiceFactory::sensor: return dx::VmValue::Ref(SensorManagerForContext(call, context));
-            case dx::ServiceFactory::usb: return dx::VmValue::Ref(UsbManagerForContext(call, context));
-            case dx::ServiceFactory::nfc: return dx::VmValue::Ref(NfcManagerForContext(call, context));
-            case dx::ServiceFactory::notification:
-                return dx::VmValue::Ref(NotificationManagerForContext(call, context));
-            case dx::ServiceFactory::keyguard:
-                return dx::VmValue::Ref(call.vm.NewIntrinsicInstance("Landroid/app/KeyguardManager;"));
-            case dx::ServiceFactory::unsupported: break;
-            }
-            if (call.vm.Ledger()) call.vm.Ledger()->RecordUnimplemented("dexvm.system_service." + name, 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "system service is not provided: " + name};
-        });
-    builder.VirtualMethod("registerReceiver",
-                          "(Landroid/content/BroadcastReceiver;Landroid/content/"
-                          "IntentFilter;)Landroid/content/Intent;",
-                          [context](dx::IntrinsicContext& call) {
-                              const auto receiver = call.arguments[0].ref;
-                              if (receiver.IsValid()) {
-                                  context->broadcast_receivers[call.receiver.Value()].insert(receiver.Value());
-                              }
-                              // Sticky broadcast lookup: nothing pending on this platform.
-                              return dx::VmValue::Ref(dx::VmObjectRef{});
-                          });
-    builder.VirtualMethod("bindService", "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z",
-                          [context](dx::IntrinsicContext& call) {
-                              dx::IntrinsicCall fields(call);
-                              const auto intent = fields.NonNullRef(0, "service");
-                              const auto connection = call.arguments[1].ref;
-                              if (!connection.IsValid())
-                                  throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "connection is null"};
-                              // API19 dispatcher registration precedes resolution/bind failure.
-                              auto& connections = context->service_connections[call.receiver.Value()];
-                              if (std::find(connections.begin(), connections.end(), connection) == connections.end())
-                                  connections.push_back(connection);
-                              if (const auto bound = BindLocalService(call, context, intent, connection))
-                                  return dx::VmValue::Int(*bound ? 1 : 0);
-                              RequireAbsentService(call, context, intent);
-                              return dx::VmValue::Int(0);
-                          });
-    builder.VirtualMethod(
-        "unbindService", "(Landroid/content/ServiceConnection;)V",
-        [context](dx::IntrinsicContext& call) -> dx::VmValue {
-            const auto connection = call.arguments[0].ref;
-            if (!connection.IsValid())
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "connection is null"};
-            if (call.vm.CurrentContextToken() != 1 &&
-                std::any_of(context->local_service_bindings.begin(), context->local_service_bindings.end(),
-                            [&](const auto& b) { return b.owner == call.receiver && b.connection == connection; }))
-                UnsupportedLocalService(call.vm, "local unbind requires the main thread");
-            const auto found = context->service_connections.find(call.receiver.Value());
-            if (found == context->service_connections.end() || std::erase(found->second, connection) == 0)
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "ServiceConnection was not registered"};
-            if (found->second.empty()) context->service_connections.erase(found);
-            UnbindLocalService(call.vm, *context, call.receiver, connection);
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod(
-        "unregisterReceiver", "(Landroid/content/BroadcastReceiver;)V", [context](dx::IntrinsicContext& call) {
-            const auto receiver = call.arguments[0].ref;
-            const auto owner = context->broadcast_receivers.find(call.receiver.Value());
-            if (!receiver.IsValid() || owner == context->broadcast_receivers.end() ||
-                owner->second.erase(receiver.Value()) == 0U) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Receiver not registered"};
-            }
-            if (owner->second.empty()) {
-                context->broadcast_receivers.erase(owner);
-            }
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod("startActivity", "(Landroid/content/Intent;)V",
-                          [context](dx::IntrinsicContext& call) { return StartAndroidActivity(call, context, -1); });
-    builder.VirtualMethod("getSharedPreferences", "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
-                          [context](dx::IntrinsicContext& call) {
-                              const auto name = call.vm.StringUtf8(call.arguments[0].ref);
-                              const auto instance =
-                                  Singleton(call, context, "prefs:" + name, "Landroid/content/SharedPreferencesImpl;");
-                              context->preference_names[instance.Value()] = name;
-                              LoadPreferencesOnce(context, name);
-                              return dx::VmValue::Ref(instance);
-                          });
-    builder.VirtualMethod(
-        "getContentResolver", "()Landroid/content/ContentResolver;", [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(Singleton(call, context, "content_resolver", "Landroid/content/ContentResolver;"));
-        });
-    builder.VirtualMethod("getMainLooper", "()Landroid/os/Looper;", [context](dx::IntrinsicContext& call) {
-        // API 19 requires this to be the same process
-        // singleton returned by Looper.getMainLooper().
-        return dx::VmValue::Ref(EnsureMainLooper(call, context));
-    });
-    builder.VirtualMethod("sendBroadcast", "(Landroid/content/Intent;)V", [](dx::IntrinsicContext& call) {
-        // No other process exists; the broadcast truthfully has no
-        // audience. Logged so silent drops stay visible.
-        GuestLog(call, core::LogLevel::debug, "sendBroadcast dropped: no receivers on this platform");
-        return dx::VmValue::Void();
-    });
-    builder.VirtualMethod(
-        "getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;", [context](dx::IntrinsicContext& call) {
-            // Platform layout under the external mount; a null type argument
-            // answers the package files root.
-            auto path = context->external_storage_root + "/Android/data/" + context->package_name + "/files";
-            const auto type = call.arguments[0].ref;
-            if (type.IsValid()) {
-                path += "/" + call.vm.StringUtf8(type);
-            }
-            const auto file = call.vm.NewIntrinsicInstance("Ljava/io/File;");
-            const auto slots = call.vm.Model().InstanceSlots(file);
-            slots[0] = {call.vm.NewStringUtf8(path).Value(), dx::SlotTag::ref};
-            return dx::VmValue::Ref(file);
-        });
-    builder.VirtualMethod("getObbDir", "()Ljava/io/File;", [context](dx::IntrinsicContext& call) {
-        const auto path = context->external_storage_root + "/Android/obb/" + context->package_name;
-        return dx::VmValue::Ref(ContextDirectory(call, context, path, "context_obb_directory"));
-    });
-    builder.VirtualMethod("getObbDirs", "()[Ljava/io/File;", [context](dx::IntrinsicContext& call) {
-        const auto path = context->external_storage_root + "/Android/obb/" + context->package_name;
-        return dx::VmValue::Ref(SingleFileArray(call, ContextDirectory(call, context, path, "context_obb_directory")));
-    });
-    builder.VirtualMethod("startService", "(Landroid/content/Intent;)Landroid/content/ComponentName;",
-                          [context](dx::IntrinsicContext& call) {
-                              const auto target = ResolveExplicitService(call.vm, context, call.arguments[0].ref);
-                              if (context->application_enabled && target.declaration && target.declaration->enabled &&
-                                  !target.hostable) {
-                                  RecordSecondaryProcessService(call.vm, "startService", *target.declaration);
-                                  return dx::VmValue::Ref(dx::VmObjectRef{});
-                              }
-                              GuestLog(call, core::LogLevel::debug,
-                                       "startService answered null: no services on this "
-                                       "platform");
-                              return dx::VmValue::Ref(dx::VmObjectRef{});
-                          });
-    return std::move(builder).Build();
-}
-
-namespace {
-
-dx::IntrinsicHandler DelegateContextMethod(const dx::IntrinsicFieldHandle base_field, std::string name,
-                                           std::string descriptor) {
-    const auto return_offset = descriptor.find(')') + 1U;
-    const auto return_shorty = descriptor[return_offset] == '[' ? 'L' : descriptor[return_offset];
-    auto neutral_return = NeutralHandler(return_shorty);
-    return [base_field, name = std::move(name), descriptor = std::move(descriptor),
-            neutral_return = std::move(neutral_return)](dx::IntrinsicContext& context) {
-        dx::IntrinsicCall call(context);
-        const auto base = call.GetRef(base_field);
-        if (!base.IsValid()) {
-            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "ContextWrapper base context is null"};
-        }
-        auto& vm = context.vm;
-        auto& linker = vm.Linker();
-        const auto base_class = vm.Model().ObjectClass(base);
-        const auto index = linker.FindVtableIndex(base_class, name, descriptor);
-        if (!index.has_value()) {
-            throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;", "base Context has no " + name + descriptor};
-        }
-        std::vector<dx::VmValue> arguments{dx::VmValue::Ref(base)};
-        arguments.insert(arguments.end(), context.arguments.begin(), context.arguments.end());
-        const auto outcome = vm.Call(linker.Class(base_class).vtable[*index], arguments);
-        if (outcome.exception.IsValid()) {
-            vm.SetPendingException(outcome.exception);
-            return neutral_return(context);
-        }
-        return outcome.value;
-    };
-}
-
-}  // namespace
-
-Decl Declare_android_content_ContextWrapper(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/ContextWrapper;", "Landroid/content/Context;");
-    const auto base = builder.BoundInstanceField("mBase", "Landroid/content/Context;", 0U);
-    builder.Constructor("(Landroid/content/Context;)V", [base](dx::IntrinsicContext& context) {
-        dx::IntrinsicCall(context).SetRef(base, context.arguments[0].ref);
-        return dx::VmValue::Void();
-    });
-    builder.VirtualMethod(
-        "attachBaseContext", "(Landroid/content/Context;)V",
-        [base](dx::IntrinsicContext& context) {
-            dx::IntrinsicCall call(context);
-            if (call.GetRef(base).IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Base context already set"};
-            }
-            call.SetRef(base, context.arguments[0].ref);
-            return dx::VmValue::Void();
-        },
-        dx::kAccProtected);
-    builder.VirtualMethod("getBaseContext", "()Landroid/content/Context;", [base](dx::IntrinsicContext& context) {
-        return dx::VmValue::Ref(dx::IntrinsicCall(context).GetRef(base));
-    });
-    const auto delegate = [&](const char* name, const char* descriptor) {
-        builder.OverrideMethod(name, descriptor, DelegateContextMethod(base, name, descriptor));
-    };
-    delegate("getClassLoader", "()Ljava/lang/ClassLoader;");
-    delegate("getAssets", "()Landroid/content/res/AssetManager;");
-    delegate("getPackageName", "()Ljava/lang/String;");
-    delegate("getPackageResourcePath", "()Ljava/lang/String;");
-    delegate("getPackageCodePath", "()Ljava/lang/String;");
-    delegate("getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;");
-    delegate("getPackageManager", "()Landroid/content/pm/PackageManager;");
-    delegate("checkPermission", "(Ljava/lang/String;II)I");
-    delegate("checkCallingPermission", "(Ljava/lang/String;)I");
-    delegate("checkCallingOrSelfPermission", "(Ljava/lang/String;)I");
-    delegate("enforcePermission", "(Ljava/lang/String;IILjava/lang/String;)V");
-    delegate("enforceCallingPermission", "(Ljava/lang/String;Ljava/lang/String;)V");
-    delegate("enforceCallingOrSelfPermission", "(Ljava/lang/String;Ljava/lang/String;)V");
-    delegate("getApplicationContext", "()Landroid/content/Context;");
-    delegate("getFilesDir", "()Ljava/io/File;");
-    delegate("getDir", "(Ljava/lang/String;I)Ljava/io/File;");
-    delegate("getFileStreamPath", "(Ljava/lang/String;)Ljava/io/File;");
-    delegate("openFileInput", "(Ljava/lang/String;)Ljava/io/FileInputStream;");
-    delegate("openFileOutput", "(Ljava/lang/String;I)Ljava/io/FileOutputStream;");
-    delegate("getCacheDir", "()Ljava/io/File;");
-    delegate("getResources", "()Landroid/content/res/Resources;");
-    delegate("getTheme", "()Landroid/content/res/Resources$Theme;");
-    delegate("getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;");
-    delegate("bindService", "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z");
-    delegate("unbindService", "(Landroid/content/ServiceConnection;)V");
-    delegate("registerReceiver", "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)"
-                                 "Landroid/content/Intent;");
-    delegate("unregisterReceiver", "(Landroid/content/BroadcastReceiver;)V");
-    delegate("startActivity", "(Landroid/content/Intent;)V");
-    delegate("getSharedPreferences", "(Ljava/lang/String;I)Landroid/content/SharedPreferences;");
-    delegate("getContentResolver", "()Landroid/content/ContentResolver;");
-    delegate("getMainLooper", "()Landroid/os/Looper;");
-    delegate("sendBroadcast", "(Landroid/content/Intent;)V");
-    delegate("getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;");
-    delegate("getObbDir", "()Ljava/io/File;");
-    delegate("getObbDirs", "()[Ljava/io/File;");
-    delegate("startService", "(Landroid/content/Intent;)Landroid/content/ComponentName;");
-    return std::move(builder).Build();
-}
 
 }  // namespace ogplay::runtime::android_intrinsics
 
@@ -1717,24 +909,6 @@ constexpr std::int32_t kMatchCategoryEmpty = 0x00100000;
 }
 
 }  // namespace
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_content_IntentFilter_MalformedMimeTypeException(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/IntentFilter$MalformedMimeTypeException;",
-                                                    "Landroid/util/AndroidException;", {}, dx::kAccPublic);
-    builder.Constructor("()V", [](dx::IntrinsicContext& c) {
-        c.vm.InitializeThrowable(c.receiver);
-        return dx::VmValue::Void();
-    });
-    builder.Constructor("(Ljava/lang/String;)V", [](dx::IntrinsicContext& call) {
-        call.vm.InitializeThrowable(call.receiver, call.arguments[0].ref);
-        return dx::VmValue::Void();
-    });
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_content_pm_PackageManager.cpp ----
 
@@ -1935,14 +1109,15 @@ void SetComponentMetaData(dx::IntrinsicContext& call, const Context& context, co
     return object;
 }
 
-[[nodiscard]] dx::VmObjectRef QueryBroadcastReceivers(dx::IntrinsicContext& call, const Context& context) {
+[[nodiscard]] dx::VmObjectRef QueryBroadcastReceivers(dx::IntrinsicContext& call, const Context& context,
+                                                      std::int32_t flags) {
     const auto intent = dx::IntrinsicCall(call).NonNullRef(0, "intent");
     const auto unsupported = [&call](const std::string& reason) -> void {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.receiver_query", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "queryBroadcastReceivers: " + reason};
     };
     if (!context->receiver_inventory_known) unsupported("receiver inventory is unavailable");
-    if (call.arguments[1].AsInt() != 0) unsupported("only flags=0 is supported");
+    if (flags != 0) unsupported("only flags=0 is supported");
     for (const auto& [name, signature] :
          {std::pair{"getComponent", "()Landroid/content/ComponentName;"},
           std::pair{"getSelector", "()Landroid/content/Intent;"}, std::pair{"getData", "()Landroid/net/Uri;"},
@@ -2104,399 +1279,727 @@ void SetComponentMetaData(dx::IntrinsicContext& call, const Context& context, co
     return info;
 }
 
-[[noreturn]] void UnsupportedPackageArchive(dx::IntrinsicContext& call, const char* reason) {
-    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.package_archive_info", 0);
-    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", std::string("getPackageArchiveInfo: ") + reason};
-}
-
-[[nodiscard]] dx::VmObjectRef PackageArchiveInfo(dx::IntrinsicContext& call, const Context& context) {
-    const auto path = RequiredString(call, 0U, "archiveFilePath");
-    if (!context->vfs) UnsupportedPackageArchive(call, "guest VFS is unavailable");
-    std::string canonical;
-    VfsFileInfo stat;
-    try {
-        canonical = context->vfs->CanonicalPath(path);
-        stat = context->vfs->Stat(path);
-    } catch (const VfsError&) {
-        // PackageParser first tests File.isFile(), which returns false on I/O failure.
-        return dx::VmObjectRef{};
+dx::VmValue InstalledApplications(dx::IntrinsicContext& call, const Context& context) {
+    const auto flags = call.arguments[0].AsInt();
+    if (!context->package_inventory_known || context->package_name.empty() || context->package_resource_path.empty() ||
+        context->package_resource_path.front() != '/' || (flags & ~(kGetMetaData | kGetUninstalledPackages)) != 0) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.installed_applications", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "getInstalledApplications requires the sealed single-APK "
+                              "installed inventory and flags 0, GET_META_DATA or GET_UNINSTALLED_PACKAGES"};
     }
-    if (stat.is_directory || stat.is_character_device) return dx::VmObjectRef{};
-    if (context->package_resource_path.empty() || context->package_name.empty())
-        UnsupportedPackageArchive(call, "sealed current-package facts are unavailable");
-    if (canonical != context->vfs->CanonicalPath(context->package_resource_path))
-        UnsupportedPackageArchive(call, "only the sealed current APK is supported");
-    if (stat.writable || context->ApkBytes().empty() || stat.size != context->ApkBytes().size())
-        UnsupportedPackageArchive(call, "current APK backing is not sealed");
-    const auto flags = call.arguments[1].AsInt();
-    if ((flags & ~(kGetActivities | kGetDisabledComponents)) != 0)
-        UnsupportedPackageArchive(call, "supported flags are GET_ACTIVITIES and GET_DISABLED_COMPONENTS");
-    if ((flags & kGetActivities) != 0 && !context->activity_inventory_known)
-        UnsupportedPackageArchive(call, "activity inventory is unavailable");
-    return MakePackageInfo(call, context, flags, PackageInfoKind::archive);
+    const auto list = NewQueryObject(call, "Ljava/util/ArrayList;");
+    const auto list_root = call.vm.ProtectReferences(std::array{list});
+    // AOSP lists installed applications even when enabled=false.
+    // Each query gets a fresh value; Context's stable object is separate.
+    const auto application = MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
+    const auto application_root = call.vm.ProtectReferences(std::array{application});
+    static_cast<void>(
+        CallAndroidMethod(call.vm, list, "add", "(Ljava/lang/Object;)Z", {dx::VmValue::Ref(application)}));
+    return dx::VmValue::Ref(list);
 }
 
-[[nodiscard]] std::string ApplicationPackageName(dx::IntrinsicContext& call, const dx::VmObjectRef info) {
-    const auto& field = Field(call, info, "packageName", "Ljava/lang/String;");
-    const auto slot = call.vm.Model().InstanceSlots(info)[field.slot];
-    if (slot.tag != dx::SlotTag::ref || slot.bits == 0U) return {};
-    return call.vm.StringUtf8(dx::VmObjectRef{static_cast<std::uint32_t>(slot.bits)});
+dx::VmValue PackageActivityInfo(dx::IntrinsicContext& call, const Context& context) {
+    const auto component = dx::IntrinsicCall(call).NonNullRef(0, "component");
+    const auto flags = call.arguments[1].AsInt();
+    RequireComponentInfoQuery(call, context->activity_inventory_known, flags, "dexvm.activity_info", "getActivityInfo");
+    const auto [package, name] = ReadComponentIdentity(call, context, component);
+    const auto* found = loader::FindAndroidManifestActivityComponent(context->activity_components, name);
+    if (found == nullptr || (!(flags & kGetDisabledComponents) && (!context->application_enabled || !found->enabled)))
+        throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;", package + "/" + name};
+    const auto application = MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
+    const auto root = call.vm.ProtectReferences(std::array{application});
+    const auto info = MakeActivityInfo(call, context, *found, application);
+    SetComponentMetaData(call, context, info, found->meta_data, (flags & kGetMetaData) != 0);
+    return dx::VmValue::Ref(info);
+}
+
+dx::VmValue InstallerPackageName(dx::IntrinsicContext& call, const Context& context) {
+    const auto ref = call.arguments[0].ref;
+    const auto package = ref.IsValid() ? call.vm.StringUtf8(ref) : "null";
+    if (!ref.IsValid() || package.empty() || package != context->package_name)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Unknown package: " + package};
+    return dx::VmValue::Ref(dx::VmObjectRef{});
+}
+
+dx::VmValue PackageCheckPermission(dx::IntrinsicContext& call, const Context& context) {
+    const auto permission = RequiredString(call, 0U, "permissionName");
+    const auto package = RequiredString(call, 1U, "packageName");
+    return dx::VmValue::Int(package == context->package_name && context->granted_permissions.contains(permission)
+                                ? kPermissionGranted
+                                : kPermissionDenied);
+}
+
+dx::VmValue PackageHasSystemFeature(dx::IntrinsicContext& call, const Context& context) {
+    return dx::VmValue::Int(context->system_features.contains(RequiredString(call, 0U, "name")));
+}
+
+dx::VmValue QueryReceiverInfo(dx::IntrinsicContext& call, const Context& context) {
+    const auto component = dx::IntrinsicCall(call).NonNullRef(0, "component");
+    const auto flags = call.arguments[1].AsInt();
+    RequireComponentInfoQuery(call, context->receiver_inventory_known, flags, "dexvm.receiver_info", "getReceiverInfo");
+    const auto [package_name, class_name] = ReadComponentIdentity(call, context, component);
+    const auto found = std::find_if(context->receiver_components.rbegin(), context->receiver_components.rend(),
+                                    [&](const auto& receiver) { return receiver.name == class_name; });
+    if (found == context->receiver_components.rend() ||
+        (!(flags & kGetDisabledComponents) && (!context->application_enabled || !found->enabled))) {
+        throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;",
+                              package_name + "/" + class_name};
+    }
+    const auto application = MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
+    const auto root = call.vm.ProtectReferences(std::array{application});
+    return dx::VmValue::Ref(MakeReceiverInfo(call, context, *found, (flags & kGetMetaData) != 0, application));
+}
+
+dx::VmValue QueryServiceInfo(dx::IntrinsicContext& call, const Context& context) {
+    const auto component = dx::IntrinsicCall(call).NonNullRef(0, "component");
+    const auto flags = call.arguments[1].AsInt();
+    RequireComponentInfoQuery(call, context->service_inventory_known, flags, "dexvm.service_info", "getServiceInfo");
+    const auto [package_name, class_name] = ReadComponentIdentity(call, context, component);
+    const auto found = std::find_if(context->service_components.rbegin(), context->service_components.rend(),
+                                    [&](const auto& service) { return service.name == class_name; });
+    if (found == context->service_components.rend() ||
+        (!(flags & kGetDisabledComponents) && (!context->application_enabled || !found->enabled))) {
+        throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;",
+                              package_name + "/" + class_name};
+    }
+    const auto application = MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
+    const auto root = call.vm.ProtectReferences(std::array{application});
+    return dx::VmValue::Ref(MakeServiceInfo(call, context, *found, (flags & kGetMetaData) != 0, application));
+}
+
+dx::VmValue QueryPermissionInfo(dx::IntrinsicContext& call, const Context& context) {
+    const auto name = RequiredString(call, 0U, "permissionName");
+    const auto flags = call.arguments[1].AsInt();
+    if (!context->permission_inventory_known || (flags & ~kGetMetaData) != 0) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.permission_info", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "getPermissionInfo requires current-package definitions and flags 0 or GET_META_DATA"};
+    }
+    const auto found =
+        std::find_if(context->defined_permissions.begin(), context->defined_permissions.end(),
+                     [&](const auto& definition) { return definition.registered && definition.name == name; });
+    if (found == context->defined_permissions.end())
+        throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;", name};
+    return dx::VmValue::Ref(MakePermissionInfo(call, context, *found, (flags & kGetMetaData) != 0));
+}
+
+dx::VmObjectRef MakeProviderInfo(dx::IntrinsicContext& call, const Context& context,
+                                 const loader::AndroidManifestProviderComponent& provider,
+                                 dx::VmObjectRef application_info, bool include_meta) {
+    const auto info = NewQueryObject(call, "Landroid/content/pm/ProviderInfo;");
+    const auto info_root = call.vm.ProtectReferences(std::array{info});
+    PopulateComponentInfo(call, context, info, provider.name, provider.enabled,
+                          provider.exported.value_or(context->target_sdk_version < 17), provider.process_name,
+                          application_info);
+    SetRef(call, info, "authority", "Ljava/lang/String;", String(call, provider.authority));
+    if (provider.read_permission)
+        SetRef(call, info, "readPermission", "Ljava/lang/String;", String(call, *provider.read_permission));
+    if (provider.write_permission)
+        SetRef(call, info, "writePermission", "Ljava/lang/String;", String(call, *provider.write_permission));
+    SetInt(call, info, "initOrder", provider.init_order);
+    SetBoolean(call, info, "grantUriPermissions", provider.grant_uri_permissions);
+    SetComponentMetaData(call, context, info, provider.meta_data, include_meta);
+    return info;
+}
+
+bool HasProviderAuthority(std::string_view names, std::string_view authority) {
+    for (const auto name : names | std::views::split(';'))
+        if (std::ranges::equal(name, authority)) return true;
+    return false;
 }
 
 }  // namespace
 
-Decl Declare_android_content_pm_PackageInfo(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/pm/PackageInfo;", "Ljava/lang/Object;",
-                                                    {"Landroid/os/Parcelable;"});
-    builder.Constructor("()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.InstanceField("packageName", "Ljava/lang/String;")
-        .InstanceField("versionCode", "I")
-        .InstanceField("versionName", "Ljava/lang/String;")
-        .InstanceField("firstInstallTime", "J")
-        .InstanceField("lastUpdateTime", "J")
-        .InstanceField("applicationInfo", "Landroid/content/pm/ApplicationInfo;")
-        .InstanceField("requestedPermissions", "[Ljava/lang/String;")
-        .InstanceField("activities", "[Landroid/content/pm/ActivityInfo;");
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_content_pm_PackageManager_NameNotFoundException(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/pm/PackageManager$NameNotFoundException;",
-                                                    "Landroid/util/AndroidException;");
-    builder.Constructor("()V", [](dx::IntrinsicContext& c) {
-        const auto target = c.vm.Linker().FindDirectMethod(
-            c.vm.Linker().ResolveDescriptor("Landroid/util/AndroidException;"), "<init>", "()V");
-        std::vector<dx::VmValue> arguments{dx::VmValue::Ref(c.receiver)};
-        const std::vector<dx::VmValue> parameters{};
-        arguments.insert(arguments.end(), parameters.begin(), parameters.end());
-        const auto result = c.vm.Call(*target, arguments);
-        if (result.exception.IsValid())
-            throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                                  result.exception};
-        return result.value;
-    });
-    builder.Constructor("(Ljava/lang/String;)V", [](dx::IntrinsicContext& c) {
-        const auto target = c.vm.Linker().FindDirectMethod(
-            c.vm.Linker().ResolveDescriptor("Landroid/util/AndroidException;"), "<init>", "(Ljava/lang/String;)V");
-        std::vector<dx::VmValue> arguments{dx::VmValue::Ref(c.receiver)};
-        const std::vector<dx::VmValue> parameters{c.arguments[0]};
-        arguments.insert(arguments.end(), parameters.begin(), parameters.end());
-        const auto result = c.vm.Call(*target, arguments);
-        if (result.exception.IsValid())
-            throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                                  result.exception};
-        return result.value;
-    });
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_content_pm_PackageManager(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/pm/PackageManager;", "Ljava/lang/Object;", {},
-                                                    dx::kAccPublic | dx::kAccAbstract);
-    builder.VirtualMethod("resolveService", "(Landroid/content/Intent;I)Landroid/content/pm/ResolveInfo;",
-                          [context](dx::IntrinsicContext& call) {
-                              const auto intent = dx::IntrinsicCall(call).NonNullRef(0, "intent");
-                              const auto unsupported = [&call](const std::string& reason) -> void {
-                                  if (auto* ledger = call.vm.Ledger()) {
-                                      ledger->RecordUnimplemented("dexvm.service_resolution", 0);
-                                  }
-                                  throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                                        "resolveService: " + reason};
-                              };
-                              if ((call.arguments[1].AsInt() & ~0x40) != 0)
-                                  unsupported("only GET_RESOLVED_FILTER is supported");
-                              RequireAbsentService(call, context, intent);
-                              // This process installs only its APK; there is no external service
-                              // catalog.
-                              return dx::VmValue::Ref(dx::VmObjectRef{});
-                          });
-    builder.VirtualMethod("queryIntentServices", "(Landroid/content/Intent;I)Ljava/util/List;",
-                          [context](dx::IntrinsicContext& call) {
-                              const auto intent = dx::IntrinsicCall(call).NonNullRef(0, "intent");
-                              if ((call.arguments[1].AsInt() & ~0x40) != 0) {
-                                  if (auto* ledger = call.vm.Ledger())
-                                      ledger->RecordUnimplemented("dexvm.service_resolution", 0);
-                                  throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                                        "queryIntentServices: only GET_RESOLVED_FILTER is supported"};
-                              }
-                              RequireAbsentService(call, context, intent);
-                              return dx::VmValue::Ref(NewQueryObject(call, "Ljava/util/ArrayList;"));
-                          });
-    builder.ConstantInt("GET_RESOLVED_FILTER", "I", 0x40, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
-    builder.ConstantInt("GET_ACTIVITIES", "I", kGetActivities, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-        .ConstantInt("GET_META_DATA", "I", kGetMetaData, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-        .ConstantInt("GET_DISABLED_COMPONENTS", "I", kGetDisabledComponents,
-                     dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-        .ConstantInt("GET_UNINSTALLED_PACKAGES", "I", kGetUninstalledPackages,
-                     dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-        .ConstantInt("GET_PERMISSIONS", "I", kGetPermissions, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-        .ConstantInt("PERMISSION_GRANTED", "I", kPermissionGranted, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-        .ConstantInt("PERMISSION_DENIED", "I", kPermissionDenied, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-        .ConstantString("FEATURE_TOUCHSCREEN", "android.hardware.touchscreen",
-                        dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-        .ConstantString("FEATURE_SCREEN_LANDSCAPE", "android.hardware.screen.landscape",
-                        dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-        .ConstantString("FEATURE_SCREEN_PORTRAIT", "android.hardware.screen.portrait",
-                        dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
+Decl Declare_local_PackageService(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalPackageService;",
+                                                    "Landroid/content/pm/IPackageManager$Stub;");
     builder.VirtualMethod(
-        "getInstallerPackageName", "(Ljava/lang/String;)Ljava/lang/String;", [context](dx::IntrinsicContext& call) {
-            // API19 Settings.getInstallerPackageNameLPr treats null as an unknown
-            // package, unlike the NameNotFoundException queries below.
-            const auto package_ref = call.arguments[0].ref;
-            if (!package_ref.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Unknown package: null"};
-            }
-            const auto package = call.vm.StringUtf8(package_ref);
-            if (package.empty() || package != context->package_name) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Unknown package: " + package};
-            }
-            // The current APK is loaded directly; no Android installer is recorded.
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        });
-    builder.VirtualMethod("getResourcesForApplication", "(Ljava/lang/String;)Landroid/content/res/Resources;",
-                          [context](dx::IntrinsicContext& call) {
-                              const auto package = RequiredString(call, 0U, "packageName");
-                              RequireCurrentPackage(context, package);
-                              return dx::VmValue::Ref(ResourceObject(call, context, false));
-                          });
-    builder.VirtualMethod("getInstalledApplications", "(I)Ljava/util/List;", [context](dx::IntrinsicContext& call) {
-        const auto flags = call.arguments[0].AsInt();
-        if (!context->package_inventory_known || context->package_name.empty() ||
-            context->package_resource_path.empty() || context->package_resource_path.front() != '/' ||
-            (flags & ~(kGetMetaData | kGetUninstalledPackages)) != 0) {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.installed_applications", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "getInstalledApplications requires the sealed single-APK "
-                                  "installed inventory and flags 0, GET_META_DATA or GET_UNINSTALLED_PACKAGES"};
-        }
-        const auto list = NewQueryObject(call, "Ljava/util/ArrayList;");
-        const auto list_root = call.vm.ProtectReferences(std::array{list});
-        // AOSP lists installed applications even when enabled=false.
-        // Each query gets a fresh value; Context's stable object is separate.
-        const auto application = MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
-        const auto application_root = call.vm.ProtectReferences(std::array{application});
-        static_cast<void>(
-            CallAndroidMethod(call.vm, list, "add", "(Ljava/lang/Object;)Z", {dx::VmValue::Ref(application)}));
-        return dx::VmValue::Ref(list);
-    });
-    builder.VirtualMethod("getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
-                          [context](dx::IntrinsicContext& call) {
-                              const auto package = RequiredString(call, 0U, "packageName");
-                              const auto flags = call.arguments[1].AsInt();
-                              RequireCurrentPackage(context, package);
-                              RequireFlags(call, flags, kGetMetaData | kGetUninstalledPackages, "getApplicationInfo",
-                                           "dexvm.installed_applications");
-                              return dx::VmValue::Ref(MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0));
-                          });
-    builder.VirtualMethod(
-        "queryBroadcastReceivers", "(Landroid/content/Intent;I)Ljava/util/List;",
-        [context](dx::IntrinsicContext& call) { return dx::VmValue::Ref(QueryBroadcastReceivers(call, context)); });
-    builder.VirtualMethod("getActivityInfo", "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;",
-                          [context](dx::IntrinsicContext& call) {
-                              const auto component = dx::IntrinsicCall(call).NonNullRef(0, "component");
-                              const auto flags = call.arguments[1].AsInt();
-                              RequireComponentInfoQuery(call, context->activity_inventory_known, flags,
-                                                        "dexvm.activity_info", "getActivityInfo");
-                              const auto [package, name] = ReadComponentIdentity(call, context, component);
-                              const auto* found =
-                                  loader::FindAndroidManifestActivityComponent(context->activity_components, name);
-                              if (found == nullptr || (!(flags & kGetDisabledComponents) &&
-                                                       (!context->application_enabled || !found->enabled)))
-                                  throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;",
-                                                        package + "/" + name};
-                              const auto application = MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
-                              const auto root = call.vm.ProtectReferences(std::array{application});
-                              const auto info = MakeActivityInfo(call, context, *found, application);
-                              SetComponentMetaData(call, context, info, found->meta_data, (flags & kGetMetaData) != 0);
-                              return dx::VmValue::Ref(info);
-                          });
-    builder.VirtualMethod(
-        "getReceiverInfo", "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;",
+        "getPackageInfo", "(Ljava/lang/String;II)Landroid/content/pm/PackageInfo;",
         [context](dx::IntrinsicContext& call) {
-            const auto component = dx::IntrinsicCall(call).NonNullRef(0, "component");
-            const auto flags = call.arguments[1].AsInt();
-            RequireComponentInfoQuery(call, context->receiver_inventory_known, flags, "dexvm.receiver_info",
-                                      "getReceiverInfo");
-            const auto [package_name, class_name] = ReadComponentIdentity(call, context, component);
-            const auto found = std::find_if(context->receiver_components.rbegin(), context->receiver_components.rend(),
-                                            [&](const auto& receiver) { return receiver.name == class_name; });
-            if (found == context->receiver_components.rend() ||
-                (!(flags & kGetDisabledComponents) && (!context->application_enabled || !found->enabled))) {
-                throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;",
-                                      package_name + "/" + class_name};
-            }
-            const auto application = MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
-            const auto root = call.vm.ProtectReferences(std::array{application});
-            return dx::VmValue::Ref(MakeReceiverInfo(call, context, *found, (flags & kGetMetaData) != 0, application));
-        });
-    builder.VirtualMethod(
-        "getServiceInfo", "(Landroid/content/ComponentName;I)Landroid/content/pm/ServiceInfo;",
-        [context](dx::IntrinsicContext& call) {
-            const auto component = dx::IntrinsicCall(call).NonNullRef(0, "component");
-            const auto flags = call.arguments[1].AsInt();
-            RequireComponentInfoQuery(call, context->service_inventory_known, flags, "dexvm.service_info",
-                                      "getServiceInfo");
-            const auto [package_name, class_name] = ReadComponentIdentity(call, context, component);
-            const auto found = std::find_if(context->service_components.rbegin(), context->service_components.rend(),
-                                            [&](const auto& service) { return service.name == class_name; });
-            if (found == context->service_components.rend() ||
-                (!(flags & kGetDisabledComponents) && (!context->application_enabled || !found->enabled))) {
-                throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;",
-                                      package_name + "/" + class_name};
-            }
-            const auto application = MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
-            const auto root = call.vm.ProtectReferences(std::array{application});
-            return dx::VmValue::Ref(MakeServiceInfo(call, context, *found, (flags & kGetMetaData) != 0, application));
-        });
-    builder.VirtualMethod(
-        "getPermissionInfo", "(Ljava/lang/String;I)Landroid/content/pm/PermissionInfo;",
-        [context](dx::IntrinsicContext& call) {
-            const auto name = RequiredString(call, 0U, "permissionName");
-            const auto flags = call.arguments[1].AsInt();
-            if (!context->permission_inventory_known || (flags & ~kGetMetaData) != 0) {
-                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.permission_info", 0);
-                throw dx::VmJavaThrow{
-                    "Ljava/lang/UnsupportedOperationException;",
-                    "getPermissionInfo requires current-package definitions and flags 0 or GET_META_DATA"};
-            }
-            const auto found =
-                std::find_if(context->defined_permissions.begin(), context->defined_permissions.end(),
-                             [&](const auto& definition) { return definition.registered && definition.name == name; });
-            if (found == context->defined_permissions.end())
-                throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;", name};
-            return dx::VmValue::Ref(MakePermissionInfo(call, context, *found, (flags & kGetMetaData) != 0));
-        });
-    builder.VirtualMethod(
-        "getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
-        [context](dx::IntrinsicContext& call) {
+            if (call.arguments[2].AsInt() != 0)
+                throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "package query outside the current user"};
             const auto package = RequiredString(call, 0U, "packageName");
+            if (package != context->package_name) return dx::VmValue::Ref(dx::VmObjectRef{});
             const auto flags = call.arguments[1].AsInt();
-            RequireCurrentPackage(context, package);
             RequireFlags(call, flags, kGetActivities | kGetMetaData | kGetPermissions | kGetUninstalledPackages,
                          "getPackageInfo", "dexvm.package_info_activities");
             return dx::VmValue::Ref(MakePackageInfo(call, context, flags, PackageInfoKind::installed));
         });
-    builder.VirtualMethod(
-        "getPackageArchiveInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
-        [context](dx::IntrinsicContext& call) { return dx::VmValue::Ref(PackageArchiveInfo(call, context)); });
-    builder.VirtualMethod("getApplicationLabel", "(Landroid/content/pm/ApplicationInfo;)Ljava/lang/CharSequence;",
-                          [context](dx::IntrinsicContext& call) {
-                              dx::IntrinsicCall typed(call);
-                              const auto info = typed.NonNullRef(0U, "info");
-                              RequireCurrentPackage(context, ApplicationPackageName(call, info));
-                              if (context->application_label.has_value()) {
-                                  if (const auto* literal = std::get_if<std::string>(&*context->application_label)) {
-                                      return MakeString(call, *literal);
-                                  }
-                                  const auto resources = ResourceObject(call, context, false);
-                                  return CallAndroidMethod(call.vm, resources, "getText", "(I)Ljava/lang/CharSequence;",
-                                                           {dx::VmValue::Int(static_cast<std::int32_t>(
-                                                               std::get<std::uint32_t>(*context->application_label)))});
-                              }
-                              return MakeString(call, context->package_name);
-                          });
-    builder.VirtualMethod("checkPermission", "(Ljava/lang/String;Ljava/lang/String;)I",
-                          [context](dx::IntrinsicContext& call) {
-                              const auto permission = RequiredString(call, 0U, "permissionName");
-                              const auto package = RequiredString(call, 1U, "packageName");
-                              return dx::VmValue::Int(package == context->package_name &&
-                                                              context->granted_permissions.contains(permission)
-                                                          ? kPermissionGranted
-                                                          : kPermissionDenied);
-                          });
-    builder.VirtualMethod("hasSystemFeature", "(Ljava/lang/String;)Z", [context](dx::IntrinsicContext& call) {
-        const auto feature = RequiredString(call, 0U, "name");
-        return dx::VmValue::Int(context->system_features.contains(feature) ? 1 : 0);
+    builder.VirtualMethod("getPackagesForUid", "(I)[Ljava/lang/String;", [context](dx::IntrinsicContext& call) {
+        if (static_cast<std::uint32_t>(call.arguments[0].AsInt()) != context->application_uid)
+            return dx::VmValue::Ref(dx::VmObjectRef{});
+        return dx::VmValue::Ref(MakeStringArray(call, {context->package_name}));
     });
-    // AOSP 4.4 ROM line 44.
-    builder.Constructor(
-        "()V",
-        [](dx::IntrinsicContext& c) {
-            const auto target =
-                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), "<init>", "()V");
-            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
-            if (result.exception.IsValid())
-                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                                      result.exception};
-            return result.value;
-        },
-        dx::kAccPublic);
-
+    builder.VirtualMethod("getApplicationInfo", "(Ljava/lang/String;II)Landroid/content/pm/ApplicationInfo;",
+                          [context](dx::IntrinsicContext& call) {
+                              if (call.arguments[2].AsInt() != 0)
+                                  throw dx::VmJavaThrow{"Ljava/lang/SecurityException;",
+                                                        "package query outside the current user"};
+                              if (RequiredString(call, 0U, "packageName") != context->package_name)
+                                  return dx::VmValue::Ref(dx::VmObjectRef{});
+                              const auto flags = call.arguments[1].AsInt();
+                              RequireFlags(call, flags, kGetMetaData | kGetUninstalledPackages, "getApplicationInfo",
+                                           "dexvm.installed_applications");
+                              return dx::VmValue::Ref(MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0));
+                          });
+    builder.VirtualMethod("getInstallerPackageName", "(Ljava/lang/String;)Ljava/lang/String;",
+                          [context](dx::IntrinsicContext& call) { return InstallerPackageName(call, context); });
+    builder.VirtualMethod("checkPermission", "(Ljava/lang/String;Ljava/lang/String;)I",
+                          [context](dx::IntrinsicContext& call) { return PackageCheckPermission(call, context); });
+    builder.VirtualMethod("hasSystemFeature", "(Ljava/lang/String;)Z",
+                          [context](dx::IntrinsicContext& call) { return PackageHasSystemFeature(call, context); });
+    builder.VirtualMethod(
+        "getInstalledApplications", "(II)Landroid/content/pm/ParceledListSlice;",
+        [context](dx::IntrinsicContext& call) {
+            if (call.arguments[1].AsInt() != 0)
+                throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "package query outside the current user"};
+            const auto applications = InstalledApplications(call, context);
+            return dx::VmValue::Ref(NewPlatformObject(call.vm, "Landroid/content/pm/ParceledListSlice;",
+                                                      "(Ljava/util/List;)V", {applications}));
+        });
+    builder.VirtualMethod("getActivityInfo", "(Landroid/content/ComponentName;II)Landroid/content/pm/ActivityInfo;",
+                          [context](dx::IntrinsicContext& call) {
+                              if (call.arguments[2].AsInt() != 0)
+                                  throw dx::VmJavaThrow{"Ljava/lang/SecurityException;",
+                                                        "package query outside the current user"};
+                              return PackageActivityInfo(call, context);
+                          });
+    builder.VirtualMethod("getReceiverInfo", "(Landroid/content/ComponentName;II)Landroid/content/pm/ActivityInfo;",
+                          [context](dx::IntrinsicContext& call) {
+                              if (call.arguments[2].AsInt() != 0)
+                                  throw dx::VmJavaThrow{"Ljava/lang/SecurityException;",
+                                                        "package query outside the current user"};
+                              return QueryReceiverInfo(call, context);
+                          });
+    builder.VirtualMethod("getServiceInfo", "(Landroid/content/ComponentName;II)Landroid/content/pm/ServiceInfo;",
+                          [context](dx::IntrinsicContext& call) {
+                              if (call.arguments[2].AsInt() != 0)
+                                  throw dx::VmJavaThrow{"Ljava/lang/SecurityException;",
+                                                        "package query outside the current user"};
+                              return QueryServiceInfo(call, context);
+                          });
+    builder.VirtualMethod("getPermissionInfo", "(Ljava/lang/String;I)Landroid/content/pm/PermissionInfo;",
+                          [context](dx::IntrinsicContext& call) { return QueryPermissionInfo(call, context); });
+    builder.VirtualMethod(
+        "queryIntentReceivers", "(Landroid/content/Intent;Ljava/lang/String;II)Ljava/util/List;",
+        [context](dx::IntrinsicContext& call) {
+            if (call.arguments[3].AsInt() != 0 || call.arguments[1].ref.IsValid())
+                UnsupportedLocalService(call.vm, "receiver query requires current user and no resolved type");
+            return dx::VmValue::Ref(QueryBroadcastReceivers(call, context, call.arguments[2].AsInt()));
+        });
+    builder.VirtualMethod(
+        "resolveContentProvider", "(Ljava/lang/String;II)Landroid/content/pm/ProviderInfo;",
+        [context](dx::IntrinsicContext& call) {
+            if (call.arguments[2].AsInt() != 0)
+                throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "provider query outside the current user"};
+            const auto authority = RequiredString(call, 0U, "authority");
+            const auto flags = call.arguments[1].AsInt();
+            RequireFlags(call, flags, kGetMetaData | kGetDisabledComponents, "resolveContentProvider",
+                         "dexvm.provider_info");
+            for (const auto& provider : context->provider_components) {
+                if (!HasProviderAuthority(provider.authority, authority)) continue;
+                if ((!context->application_enabled || !provider.enabled) && !(flags & kGetDisabledComponents)) continue;
+                const auto meta = (flags & kGetMetaData) != 0;
+                const auto application = MakeApplicationInfo(call, context, meta);
+                const auto root = call.vm.ProtectReferences(std::array{application});
+                return dx::VmValue::Ref(MakeProviderInfo(call, context, provider, application, meta));
+            }
+            return dx::VmValue::Ref(dx::VmObjectRef{});
+        });
+    const auto check_service_query = [context](dx::IntrinsicContext& call) {
+        const auto intent = dx::IntrinsicCall(call).NonNullRef(0, "intent");
+        if (call.arguments[3].AsInt() != 0 || call.arguments[1].ref.IsValid() ||
+            (call.arguments[2].AsInt() & ~0x40) != 0)
+            UnsupportedLocalService(call.vm,
+                                    "local service query requires current user, no resolved type and supported flags");
+        RequireAbsentService(call, context, intent);
+    };
+    builder.VirtualMethod("queryIntentServices", "(Landroid/content/Intent;Ljava/lang/String;II)Ljava/util/List;",
+                          [check_service_query](dx::IntrinsicContext& call) {
+                              check_service_query(call);
+                              return dx::VmValue::Ref(NewQueryObject(call, "Ljava/util/ArrayList;"));
+                          });
+    builder.VirtualMethod("resolveService",
+                          "(Landroid/content/Intent;Ljava/lang/String;II)Landroid/content/pm/ResolveInfo;",
+                          [check_service_query](dx::IntrinsicContext& call) {
+                              check_service_query(call);
+                              return dx::VmValue::Ref(dx::VmObjectRef{});
+                          });
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
-dx::VmCallOutcome DispatchLocalServiceBinding(dx::Interpreter& vm, DexVmAndroidContext& context,
-                                              const std::uint64_t generation) {
-    dx::VmCallOutcome outcome;
-    const auto found = std::find_if(context.local_service_bindings.begin(), context.local_service_bindings.end(),
-                                    [&](const auto& b) { return b.generation == generation; });
-    if (found == context.local_service_bindings.end() || found->delivered) return outcome;
-    const auto binding = *found;
-    try {
-        if (!context.local_services.contains(binding.name)) {
-            auto descriptor = binding.name;
-            std::replace(descriptor.begin(), descriptor.end(), '.', '/');
-            descriptor = "L" + descriptor + ";";
-            const auto type = vm.Linker().ResolveDescriptor(descriptor);
-            const auto initialized = vm.EnsureClassInitialized(type);
-            if (initialized.exception.IsValid()) return initialized;
-            const auto instance = vm.NewIntrinsicInstance(descriptor);
-            const auto roots =
-                vm.ProtectReferences(std::array{instance, binding.intent, binding.component, binding.connection});
-            context.local_services.emplace(
-                binding.name, DexVmAndroidContext::LocalService{instance, dx::VmObjectRef{}, binding.intent});
-            const auto ctor = vm.Linker().FindDirectMethod(type, "<init>", "()V");
-            if (!ctor) UnsupportedLocalService(vm, "Service requires a no-argument constructor");
-            const auto constructed = vm.Call(*ctor, std::array{dx::VmValue::Ref(instance)});
-            if (constructed.exception.IsValid()) return constructed;
-            static_cast<void>(CallAndroidMethod(
-                vm, instance, "attachBaseContext", "(Landroid/content/Context;)V",
-                {dx::VmValue::Ref(context.application_base_context.IsValid() ? context.application_base_context
-                                                                             : binding.owner)}));
-            static_cast<void>(CallAndroidMethod(vm, instance, "onCreate", "()V"));
-            if (!context.local_services.contains(binding.name)) return outcome;
-            const auto binder =
-                CallAndroidMethod(vm, instance, "onBind", "(Landroid/content/Intent;)Landroid/os/IBinder;",
-                                  {dx::VmValue::Ref(binding.intent)})
-                    .ref;
-            if (!context.local_services.contains(binding.name)) return outcome;
-            context.local_services.at(binding.name).binder = binder;
-        }
-        const auto service = context.local_services.at(binding.name);
-        // Guest lifecycle callbacks may unbind this connection reentrantly.
-        const auto current = std::find_if(context.local_service_bindings.begin(), context.local_service_bindings.end(),
-                                          [&](const auto& b) { return b.generation == generation; });
-        if (current == context.local_service_bindings.end()) return outcome;
-        current->delivered = true;
-        if (service.binder.IsValid())
-            static_cast<void>(CallAndroidMethod(
-                vm, binding.connection, "onServiceConnected", "(Landroid/content/ComponentName;Landroid/os/IBinder;)V",
-                {dx::VmValue::Ref(binding.component), dx::VmValue::Ref(service.binder)}));
-    } catch (const dx::VmJavaThrow& error) {
-        outcome.exception =
-            error.existing.IsValid() ? error.existing : vm.MakeThrowable(error.descriptor, error.message);
-        outcome.exception_class = vm.Model().ObjectClass(outcome.exception);
-        const auto message = vm.ThrowableMessage(outcome.exception);
-        if (message.IsValid()) outcome.exception_message = vm.StringUtf8(message);
-    }
-    return outcome;
+namespace {
+using RomService = DexVmAndroidContext::RomServiceRecord;
+
+dx::VmObjectRef ServiceIntentCopy(dx::Interpreter& vm, dx::VmObjectRef intent) {
+    return NewPlatformObject(vm, "Landroid/content/Intent;", "(Landroid/content/Intent;)V", {dx::VmValue::Ref(intent)});
 }
+
+RomService& EnsureRomService(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef thread,
+                             dx::VmObjectRef intent, const loader::AndroidManifestServiceComponent& declaration) {
+    if (const auto found = context->rom_services.find(declaration.name); found != context->rom_services.end())
+        return found->second;
+    auto& vm = call.vm;
+    const auto token = NewPlatformObject(vm, "Landroid/os/Binder;", "()V", {});
+    const auto token_root = vm.ProtectReferences(std::array{token});
+    const auto app = MakeApplicationInfo(call, context, true);
+    const auto app_root = vm.ProtectReferences(std::array{app});
+    const auto info = MakeServiceInfo(call, context, declaration, true, app);
+    const auto info_root = vm.ProtectReferences(std::array{info});
+    constexpr auto compat_type = "Landroid/content/res/CompatibilityInfo;";
+    const auto type = vm.Linker().ResolveDescriptor(compat_type);
+    const auto field = vm.Linker().FindFieldRecursive(type, "DEFAULT_COMPATIBILITY_INFO", compat_type);
+    if (!field) throw std::logic_error("CompatibilityInfo default is unavailable");
+    const auto compat = dx::VmObjectRef{vm.Linker().Class(type).static_storage[vm.Linker().Field(*field).slot]};
+    const auto component = CallAndroidMethod(vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref;
+    const auto [entry, inserted] =
+        context->rom_services.try_emplace(declaration.name, RomService{thread, token, component});
+    try {
+        static_cast<void>(CallAndroidMethod(
+            vm, thread, "scheduleCreateService",
+            "(Landroid/os/IBinder;Landroid/content/pm/ServiceInfo;Landroid/content/res/CompatibilityInfo;I)V",
+            {dx::VmValue::Ref(token), dx::VmValue::Ref(info), dx::VmValue::Ref(compat), dx::VmValue::Int(2)}));
+    } catch (...) {
+        if (inserted) context->rom_services.erase(entry);
+        throw;
+    }
+    return entry->second;
+}
+
+void RetireRomService(dx::Interpreter& vm, DexVmAndroidContext& context,
+                      std::map<std::string, RomService, std::less<>>::iterator service) {
+    if (service->second.started || !service->second.connections.empty()) return;
+    const auto& record = service->second;
+    static_cast<void>(CallAndroidMethod(vm, record.thread, "scheduleStopService", "(Landroid/os/IBinder;)V",
+                                        {dx::VmValue::Ref(record.token)}));
+    context.rom_services.erase(service);
+}
+
+void UnbindRomService(dx::Interpreter& vm, RomService& service) {
+    if (!service.bound) return;
+    static_cast<void>(CallAndroidMethod(vm, service.thread, "scheduleUnbindService",
+                                        "(Landroid/os/IBinder;Landroid/content/Intent;)V",
+                                        {dx::VmValue::Ref(service.token), dx::VmValue::Ref(service.bind_intent)}));
+    service.bound = false;
+}
+
+void PublishRomServiceConnection(dx::Interpreter& vm, const RomService& service, dx::VmObjectRef connection) {
+    if (!service.binder.IsValid()) return;
+    static_cast<void>(CallAndroidMethod(vm, connection, "connected",
+                                        "(Landroid/content/ComponentName;Landroid/os/IBinder;)V",
+                                        {dx::VmValue::Ref(service.component), dx::VmValue::Ref(service.binder)}));
+}
+
+void RequireRomServiceRequest(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef type,
+                              std::int32_t user) {
+    if (user != 0 || type.IsValid() || context->local_services_stopping)
+        UnsupportedLocalService(call.vm, "service request requires current user, no resolved type and a live process");
+}
+}  // namespace
+
+dx::VmObjectRef ApplicationProviders(dx::IntrinsicContext& call, const Context& context,
+                                     dx::VmObjectRef application_info) {
+    if (!context->application_enabled) return dx::VmObjectRef{};
+    const auto& process =
+        context->application_process_name.empty() ? context->package_name : context->application_process_name;
+    std::vector<const loader::AndroidManifestProviderComponent*> declarations;
+    for (const auto& provider : context->provider_components) {
+        if (!provider.enabled) continue;
+        if (!provider.process_name.empty() && provider.process_name != process) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.provider.secondary_process", 0);
+            continue;
+        }
+        declarations.push_back(&provider);
+    }
+    if (declarations.empty()) return dx::VmObjectRef{};
+    std::stable_sort(declarations.begin(), declarations.end(),
+                     [](const auto* a, const auto* b) { return a->init_order > b->init_order; });
+    auto& vm = call.vm;
+    const auto list = NewQueryObject(call, "Ljava/util/ArrayList;");
+    const auto roots = vm.ProtectReferences(std::array{list, application_info});
+    for (const auto* provider : declarations) {
+        const auto info = MakeProviderInfo(call, context, *provider, application_info, true);
+        static_cast<void>(CallAndroidMethod(vm, list, "add", "(Ljava/lang/Object;)Z", {dx::VmValue::Ref(info)}));
+    }
+    return list;
+}
+
+void AddLocalProviderMethods(dx::IntrinsicClassBuilder& builder, const Context& context) {
+    builder.VirtualMethod(
+        "getContentProvider",
+        "(Landroid/app/IApplicationThread;Ljava/lang/String;IZ)Landroid/app/IActivityManager$ContentProviderHolder;",
+        [context](dx::IntrinsicContext& call) {
+            if (call.arguments[2].AsInt() != 0)
+                throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "provider query outside the current user"};
+            const auto authority = RequiredString(call, 1U, "authority");
+            const auto found = context->local_provider_holders.find(authority);
+            if (found != context->local_provider_holders.end()) return dx::VmValue::Ref(found->second);
+            if (authority == "settings") {
+                auto& vm = call.vm;
+                const auto info = NewQueryObject(call, "Landroid/content/pm/ProviderInfo;");
+                const auto info_root = vm.ProtectReferences(std::array{info});
+                const auto app = NewQueryObject(call, "Landroid/content/pm/ApplicationInfo;");
+                SetInt(call, app, "uid", static_cast<std::int32_t>(context->application_uid));
+                SetRef(call, info, "applicationInfo", "Landroid/content/pm/ApplicationInfo;", app);
+                SetRef(call, info, "authority", "Ljava/lang/String;", call.arguments[1].ref);
+                SetRef(call, info, "name", "Ljava/lang/String;",
+                       String(call, "org.ogplay.framework.LocalSettingsProvider"));
+                const auto holder = NewPlatformObject(vm, "Landroid/app/IActivityManager$ContentProviderHolder;",
+                                                      "(Landroid/content/pm/ProviderInfo;)V", {dx::VmValue::Ref(info)});
+                const auto holder_root = vm.ProtectReferences(std::array{holder});
+                const auto provider = NewPlatformObject(vm, "Lorg/ogplay/framework/LocalSettingsProvider;", "()V", {});
+                SetRef(call, holder, "provider", "Landroid/content/IContentProvider;", provider);
+                SetBoolean(call, holder, "noReleaseNeeded", true);
+                return dx::VmValue::Ref(context->local_provider_holders.emplace(authority, holder).first->second);
+            }
+            return dx::VmValue::Ref(dx::VmObjectRef{});
+        });
+    builder.VirtualMethod(
+        "publishContentProviders", "(Landroid/app/IApplicationThread;Ljava/util/List;)V",
+        [context](dx::IntrinsicContext& call) {
+            auto& vm = call.vm;
+            const auto list = dx::IntrinsicCall(call).NonNullRef(1, "providers");
+            const auto count = CallAndroidMethod(vm, list, "size", "()I").AsInt();
+            for (int i = 0; i < count; ++i) {
+                const auto holder =
+                    CallAndroidMethod(vm, list, "get", "(I)Ljava/lang/Object;", {dx::VmValue::Int(i)}).ref;
+                const auto info = dx::VmObjectRef{
+                    vm.Model()
+                        .InstanceSlots(holder)[Field(call, holder, "info", "Landroid/content/pm/ProviderInfo;").slot]
+                        .bits};
+                const auto authority = dx::VmObjectRef{
+                    vm.Model().InstanceSlots(info)[Field(call, info, "authority", "Ljava/lang/String;").slot].bits};
+                const auto names = vm.StringUtf8(authority);
+                std::size_t start = 0;
+                for (;;) {
+                    const auto end = names.find(';', start);
+                    const auto name = names.substr(start, end == std::string::npos ? end : end - start);
+                    if (!name.empty()) context->local_provider_holders.try_emplace(name, holder);
+                    if (end == std::string::npos) break;
+                    start = end + 1;
+                }
+            }
+            return dx::VmValue::Void();
+        });
+    RejectUnsupportedServiceMethod(builder, "android.app.IActivityManager", "getProviderMimeType",
+                                   "(Landroid/net/Uri;I)Ljava/lang/String;");
+}
+
+namespace {
+constexpr auto kBatteryChanged = "android.intent.action.BATTERY_CHANGED";
+
+bool MatchesLocalBroadcast(dx::Interpreter& vm, dx::VmObjectRef filter, dx::VmObjectRef intent, dx::VmValue type) {
+    const auto action = CallAndroidMethod(vm, intent, "getAction", "()Ljava/lang/String;");
+    const auto scheme = CallAndroidMethod(vm, intent, "getScheme", "()Ljava/lang/String;");
+    const auto data = CallAndroidMethod(vm, intent, "getData", "()Landroid/net/Uri;");
+    const auto categories = CallAndroidMethod(vm, intent, "getCategories", "()Ljava/util/Set;");
+    const auto tag = vm.NewStringUtf8("ActivityManager");
+    const auto roots = vm.ProtectReferences(std::array{action.ref, scheme.ref, data.ref, categories.ref, tag});
+    return CallAndroidMethod(
+               vm, filter, "match",
+               "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Landroid/net/Uri;Ljava/util/Set;Ljava/lang/String;)I",
+               {action, type, scheme, data, categories, dx::VmValue::Ref(tag)})
+               .AsInt() >= 0;
+}
+
+void DispatchLocalBroadcast(dx::Interpreter& vm, dx::VmObjectRef receiver, dx::VmObjectRef intent, dx::VmValue code,
+                            dx::VmValue data, dx::VmValue extras, bool initial_sticky) {
+    const auto copy =
+        NewPlatformObject(vm, "Landroid/content/Intent;", "(Landroid/content/Intent;)V", {dx::VmValue::Ref(intent)});
+    static_cast<void>(CallAndroidMethod(vm, receiver, "performReceive",
+                                        "(Landroid/content/Intent;ILjava/lang/String;Landroid/os/Bundle;ZZI)V",
+                                        {dx::VmValue::Ref(copy), code, data, extras, dx::VmValue::Int(0),
+                                         dx::VmValue::Int(initial_sticky), dx::VmValue::Int(0)}));
+}
+
+std::string LocalStickyAction(dx::Interpreter& vm, const Context& context, dx::VmObjectRef intent) {
+    if (!context->granted_permissions.contains("android.permission.BROADCAST_STICKY"))
+        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "BROADCAST_STICKY permission is required"};
+    const auto action = CallAndroidMethod(vm, intent, "getAction", "()Ljava/lang/String;").ref;
+    if (!action.IsValid() || CallAndroidMethod(vm, intent, "getData", "()Landroid/net/Uri;").ref.IsValid() ||
+        CallAndroidMethod(vm, intent, "getType", "()Ljava/lang/String;").ref.IsValid() ||
+        CallAndroidMethod(vm, intent, "getCategories", "()Ljava/util/Set;").ref.IsValid() ||
+        CallAndroidMethod(vm, intent, "getPackage", "()Ljava/lang/String;").ref.IsValid() ||
+        CallAndroidMethod(vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref.IsValid())
+        UnsupportedLocalService(vm, "sticky broadcasts require an untargeted action");
+    const auto name = vm.StringUtf8(action);
+    if (name == kBatteryChanged)
+        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "battery broadcasts are platform-owned"};
+    return name;
+}
+
+void EnsureLocalBatteryBroadcast(dx::Interpreter& vm, const Context& context) {
+    if (context->local_sticky_broadcasts.contains(kBatteryChanged)) return;
+    const auto action = vm.NewStringUtf8(kBatteryChanged);
+    const auto battery =
+        NewPlatformObject(vm, "Landroid/content/Intent;", "(Ljava/lang/String;)V", {dx::VmValue::Ref(action)});
+    const auto root = vm.ProtectReferences(std::array{battery});
+    static_cast<void>(CallAndroidMethod(vm, battery, "putExtra", "(Ljava/lang/String;Z)Landroid/content/Intent;",
+                                        {dx::VmValue::Ref(vm.NewStringUtf8("present")), dx::VmValue::Int(0)}));
+    context->local_sticky_broadcasts.try_emplace(kBatteryChanged, battery);
+}
+}  // namespace
+
+void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Context& context) {
+    builder.VirtualMethod(
+        "registerReceiver",
+        "(Landroid/app/IApplicationThread;Ljava/lang/String;Landroid/content/IIntentReceiver;"
+        "Landroid/content/IntentFilter;Ljava/lang/String;I)Landroid/content/Intent;",
+        [context](dx::IntrinsicContext& call) {
+            if (call.arguments[5].AsInt() != 0 || call.arguments[4].ref.IsValid())
+                UnsupportedLocalService(call.vm, "receiver registration requires current user and no permission");
+            const auto receiver = call.arguments[2].ref;
+            const auto filter = dx::IntrinsicCall(call).NonNullRef(3, "filter");
+            if (receiver.IsValid()) {
+                const auto copy = NewPlatformObject(call.vm, "Landroid/content/IntentFilter;",
+                                                    "(Landroid/content/IntentFilter;)V", {dx::VmValue::Ref(filter)});
+                context->local_broadcast_filters.emplace_back(receiver, copy);
+            }
+            auto& vm = call.vm;
+            EnsureLocalBatteryBroadcast(vm, context);
+            std::vector<dx::VmObjectRef> sticky;
+            for (const auto& [_, intent] : context->local_sticky_broadcasts)
+                sticky.push_back(intent);
+            const auto roots = vm.ProtectReferences(sticky);
+            const auto null = dx::VmValue::Ref(dx::VmObjectRef{});
+            dx::VmObjectRef first;
+            for (const auto intent : sticky) {
+                if (!MatchesLocalBroadcast(vm, filter, intent, null)) continue;
+                if (!first.IsValid()) first = intent;
+                if (receiver.IsValid())
+                    DispatchLocalBroadcast(vm, receiver, intent, dx::VmValue::Int(0), null, null, true);
+            }
+            if (!first.IsValid()) return null;
+            return dx::VmValue::Ref(NewPlatformObject(vm, "Landroid/content/Intent;", "(Landroid/content/Intent;)V",
+                                                      {dx::VmValue::Ref(first)}));
+        });
+    builder.VirtualMethod("unregisterReceiver", "(Landroid/content/IIntentReceiver;)V",
+                          [context](dx::IntrinsicContext& call) {
+                              std::erase_if(context->local_broadcast_filters,
+                                            [&](const auto& item) { return item.first == call.arguments[0].ref; });
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod(
+        "broadcastIntent",
+        "(Landroid/app/IApplicationThread;Landroid/content/Intent;Ljava/lang/String;Landroid/content/IIntentReceiver;"
+        "ILjava/lang/String;Landroid/os/Bundle;Ljava/lang/String;IZZI)I",
+        [context](dx::IntrinsicContext& call) {
+            if (call.arguments[11].AsInt() != 0 || call.arguments[3].ref.IsValid() || call.arguments[7].ref.IsValid() ||
+                call.arguments[8].AsInt() != -1 || call.arguments[9].AsInt())
+                UnsupportedLocalService(call.vm,
+                                        "only unordered process-local broadcasts without a permission are supported");
+            auto& vm = call.vm;
+            const auto intent = dx::IntrinsicCall(call).NonNullRef(1, "intent");
+            const auto package = CallAndroidMethod(vm, intent, "getPackage", "()Ljava/lang/String;").ref;
+            if (package.IsValid() && vm.StringUtf8(package) != context->package_name) return dx::VmValue::Int(0);
+            if (CallAndroidMethod(vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref.IsValid())
+                UnsupportedLocalService(vm, "explicit broadcasts are unsupported");
+            if (call.arguments[10].AsInt()) {
+                const auto key = LocalStickyAction(vm, context, intent);
+                const auto copy = NewPlatformObject(vm, "Landroid/content/Intent;", "(Landroid/content/Intent;)V",
+                                                    {dx::VmValue::Ref(intent)});
+                context->local_sticky_broadcasts.insert_or_assign(key, copy);
+            }
+            std::vector<dx::VmObjectRef> targets;
+            const auto registrations = context->local_broadcast_filters;
+            std::vector<dx::VmObjectRef> refs;
+            for (const auto& [receiver, filter] : registrations) {
+                refs.push_back(receiver);
+                refs.push_back(filter);
+            }
+            const auto roots = vm.ProtectReferences(refs);
+            for (const auto& [receiver, filter] : registrations) {
+                if (std::ranges::find(targets, receiver) != targets.end()) continue;
+                if (MatchesLocalBroadcast(vm, filter, intent, call.arguments[2])) targets.push_back(receiver);
+            }
+            for (const auto receiver : targets)
+                DispatchLocalBroadcast(vm, receiver, intent, call.arguments[4], call.arguments[5], call.arguments[6],
+                                       false);
+            return dx::VmValue::Int(0);
+        });
+    builder.VirtualMethod("unbroadcastIntent", "(Landroid/app/IApplicationThread;Landroid/content/Intent;I)V",
+                          [context](dx::IntrinsicContext& call) {
+                              if (call.arguments[2].AsInt() != 0)
+                                  UnsupportedLocalService(call.vm, "sticky broadcast outside current user");
+                              const auto intent = dx::IntrinsicCall(call).NonNullRef(1, "intent");
+                              context->local_sticky_broadcasts.erase(LocalStickyAction(call.vm, context, intent));
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod(
+        "startService",
+        "(Landroid/app/IApplicationThread;Landroid/content/Intent;Ljava/lang/String;I)Landroid/content/ComponentName;",
+        [context](dx::IntrinsicContext& call) {
+            RequireRomServiceRequest(call, context, call.arguments[2].ref, call.arguments[3].AsInt());
+            const auto intent = dx::IntrinsicCall(call).NonNullRef(1, "service");
+            const auto target = ResolveExplicitService(call.vm, context, intent);
+            if (!context->application_enabled || !target.declaration || !target.declaration->enabled)
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            if (!target.hostable) {
+                RecordSecondaryProcessService(call.vm, "startService", *target.declaration);
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            }
+            const auto thread = dx::IntrinsicCall(call).NonNullRef(0, "application thread");
+            const auto copy = ServiceIntentCopy(call.vm, intent);
+            const auto roots = call.vm.ProtectReferences(std::array{copy});
+            auto& service = EnsureRomService(call, context, thread, copy, *target.declaration);
+            if (service.start_id == std::numeric_limits<std::int32_t>::max())
+                UnsupportedLocalService(call.vm, "service start ID exhausted");
+            const auto next_id = service.start_id + 1;
+            static_cast<void>(CallAndroidMethod(
+                call.vm, thread, "scheduleServiceArgs", "(Landroid/os/IBinder;ZIILandroid/content/Intent;)V",
+                {dx::VmValue::Ref(service.token), dx::VmValue::Int(0), dx::VmValue::Int(next_id), dx::VmValue::Int(0),
+                 dx::VmValue::Ref(copy)}));
+            service.start_id = next_id;
+            service.started = true;
+            return dx::VmValue::Ref(service.component);
+        });
+    builder.VirtualMethod(
+        "stopService", "(Landroid/app/IApplicationThread;Landroid/content/Intent;Ljava/lang/String;I)I",
+        [context](dx::IntrinsicContext& call) {
+            RequireRomServiceRequest(call, context, call.arguments[2].ref, call.arguments[3].AsInt());
+            const auto target =
+                ResolveExplicitService(call.vm, context, dx::IntrinsicCall(call).NonNullRef(1, "service"));
+            if (!target.declaration) return dx::VmValue::Int(0);
+            const auto found = context->rom_services.find(target.declaration->name);
+            if (found == context->rom_services.end() || !found->second.started) return dx::VmValue::Int(0);
+            found->second.started = false;
+            RetireRomService(call.vm, *context, found);
+            return dx::VmValue::Int(1);
+        });
+    builder.VirtualMethod("stopServiceToken", "(Landroid/content/ComponentName;Landroid/os/IBinder;I)Z",
+                          [context](dx::IntrinsicContext& call) {
+                              const auto found = std::ranges::find_if(context->rom_services, [&](const auto& entry) {
+                                  return entry.second.token == call.arguments[1].ref;
+                              });
+                              const auto id = call.arguments[2].AsInt();
+                              if (found == context->rom_services.end() || !found->second.started ||
+                                  (id != -1 && id != found->second.start_id))
+                                  return dx::VmValue::Int(0);
+                              found->second.started = false;
+                              RetireRomService(call.vm, *context, found);
+                              return dx::VmValue::Int(1);
+                          });
+    builder.VirtualMethod(
+        "bindService",
+        "(Landroid/app/IApplicationThread;Landroid/os/IBinder;Landroid/content/Intent;Ljava/lang/String;"
+        "Landroid/app/IServiceConnection;II)I",
+        [context](dx::IntrinsicContext& call) {
+            RequireRomServiceRequest(call, context, call.arguments[3].ref, call.arguments[6].AsInt());
+            auto& vm = call.vm;
+            const auto intent = dx::IntrinsicCall(call).NonNullRef(2, "service");
+            const auto component =
+                CallAndroidMethod(vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref;
+            if (!component.IsValid()) {
+                RequireAbsentService(call, context, intent);
+                return dx::VmValue::Int(0);
+            }
+            const auto target = ResolveExplicitService(vm, context, intent);
+            if (!context->application_enabled || !target.declaration || !target.declaration->enabled)
+                return dx::VmValue::Int(0);
+            if (!target.hostable) {
+                RecordSecondaryProcessService(vm, "bindService", *target.declaration);
+                return dx::VmValue::Int(0);
+            }
+            if (vm.CurrentContextToken() != 1 || call.arguments[5].AsInt() != 1)
+                UnsupportedLocalService(vm, "local bind requires main thread and BIND_AUTO_CREATE");
+            const auto thread = dx::IntrinsicCall(call).NonNullRef(0, "application thread");
+            const auto connection = dx::IntrinsicCall(call).NonNullRef(4, "connection");
+            for (const auto& [name, service] : context->rom_services) {
+                if (std::ranges::find(service.connections, connection) == service.connections.end()) continue;
+                if (name != target.declaration->name)
+                    UnsupportedLocalService(vm, "one connection cannot bind multiple components");
+                return dx::VmValue::Int(1);
+            }
+            const auto copy = ServiceIntentCopy(vm, intent);
+            const auto root = vm.ProtectReferences(std::array{copy});
+            auto& service = EnsureRomService(call, context, thread, copy, *target.declaration);
+            if (!service.bound) {
+                static_cast<void>(CallAndroidMethod(vm, thread, "scheduleBindService",
+                                                    "(Landroid/os/IBinder;Landroid/content/Intent;ZI)V",
+                                                    {dx::VmValue::Ref(service.token), dx::VmValue::Ref(copy),
+                                                     dx::VmValue::Int(service.rebind), dx::VmValue::Int(2)}));
+                service.bound = true;
+                service.bind_intent = copy;
+                if (!service.rebind) service.published = false;
+                service.rebind = false;
+            }
+            service.connections.push_back(connection);
+            if (service.published) PublishRomServiceConnection(vm, service, connection);
+            return dx::VmValue::Int(1);
+        });
+    builder.VirtualMethod("publishService", "(Landroid/os/IBinder;Landroid/content/Intent;Landroid/os/IBinder;)V",
+                          [context](dx::IntrinsicContext& call) {
+                              const auto found = std::ranges::find_if(context->rom_services, [&](const auto& entry) {
+                                  return entry.second.token == call.arguments[0].ref;
+                              });
+                              if (found == context->rom_services.end() || !found->second.bound)
+                                  return dx::VmValue::Void();
+                              auto& service = found->second;
+                              service.binder = call.arguments[2].ref;
+                              service.published = true;
+                              const auto connections = service.connections;
+                              const auto roots = call.vm.ProtectReferences(connections);
+                              for (const auto connection : connections)
+                                  PublishRomServiceConnection(call.vm, service, connection);
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod(
+        "unbindService", "(Landroid/app/IServiceConnection;)Z", [context](dx::IntrinsicContext& call) {
+            const auto connection = dx::IntrinsicCall(call).NonNullRef(0, "connection");
+            const auto found = std::ranges::find_if(context->rom_services, [&](const auto& entry) {
+                return std::ranges::find(entry.second.connections, connection) != entry.second.connections.end();
+            });
+            if (found == context->rom_services.end()) return dx::VmValue::Int(0);
+            if (call.vm.CurrentContextToken() != 1)
+                UnsupportedLocalService(call.vm, "local unbind requires the main thread");
+            auto& service = found->second;
+            std::erase(service.connections, connection);
+            if (service.connections.empty()) {
+                UnbindRomService(call.vm, service);
+                RetireRomService(call.vm, *context, found);
+            }
+            return dx::VmValue::Int(1);
+        });
+    builder.VirtualMethod("unbindFinished", "(Landroid/os/IBinder;Landroid/content/Intent;Z)V",
+                          [context](dx::IntrinsicContext& call) {
+                              const auto found = std::ranges::find_if(context->rom_services, [&](const auto& entry) {
+                                  return entry.second.token == call.arguments[0].ref;
+                              });
+                              if (found != context->rom_services.end() && !found->second.bound)
+                                  found->second.rebind = call.arguments[2].AsInt() != 0;
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod("serviceDoneExecuting", "(Landroid/os/IBinder;III)V",
+                          [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+}
+
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime {
 void ShutdownLocalServices(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
     context.local_services_stopping = true;
     std::exception_ptr failure;
-    while (!context.local_service_bindings.empty()) {
-        const auto binding = context.local_service_bindings.back();
+    while (!context.rom_services.empty()) {
+        const auto service = context.rom_services.begin();
+        auto& record = service->second;
         try {
-            android_intrinsics::UnbindLocalService(vm, context, binding.owner, binding.connection);
+            android_intrinsics::UnbindRomService(vm, record);
+            record.connections.clear();
+            record.started = false;
+            android_intrinsics::RetireRomService(vm, context, service);
         } catch (...) {
+            context.rom_services.erase(service);
             if (!failure) failure = std::current_exception();
         }
+    }
+    context.local_broadcast_filters.clear();
+    context.local_sticky_broadcasts.clear();
+    if (!failure) {
+        if (const auto error = PumpJavaThreads(vm, context); error.has_value()) throw std::runtime_error(*error);
     }
     if (failure) std::rethrow_exception(failure);
 }

@@ -51,7 +51,7 @@ TEST_CASE("Log debug throwable overload renders without changing control flow") 
         CHECK(fixture
                   .Static("Landroid/util/Log;", "d", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I",
                           {VmValue::Ref(tag), VmValue::Ref(text), VmValue::Ref(throwable)})
-                  .AsInt() == 0);
+                  .AsInt() > 0);
     }
 }
 

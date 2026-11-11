@@ -6,39 +6,30 @@
 
 图片资源、密度与流关闭协议由 API19 ROM BitmapFactory 执行，图形 native 经 Skia CPU 接入。
 
-连接状态的 [Java 客户端](java/android/net/MODULE.md) 只支持显式离线拓扑查询；
-类型范围算法在 Java，native 事实工厂调用原版 NetworkInfo 构造与状态 setter，
-不重写状态判断/枚举/复制/Parcel，不提供在线状态或系统网络服务。
+连接状态和 USB 查询由 ROM Manager 经进程内 AIDL 接口处理。离线网络与空 USB 目录的
+宿主事实归 [DexVM Android integration](../../runtime/integration/dexvm_android/MODULE.md)。
 
-WifiLock/MulticastLock 沿用 AOSP 引用计数与 held 独立状态、模式切换和过量释放语义；保留二进制类名。
-以普通 monitor 代替 Binder monitor，租约只记录应用持锁事实，不启用网络或宿主网卡。
-MulticastLock finalize 按 API19 切换非计数再释放；两类锁合计每 manager 最多 50 个租约。
-组播释放只作用于本对象，区别于原 WifiService 同 UID 清理；边界见 ADR-0092/0093。
-WorkSource、组播传输及无线服务不在当前支持范围。
-
-算法来源：[AOSP Android 4.4.4 WifiManager.java](https://android.googlesource.com/platform/frameworks/base/+/android-4.4.4_r2.0.1/wifi/java/android/net/wifi/WifiManager.java)，
-保留 Apache-2.0 头；改编与支持边界由 ADR-0092/0093 记录。
+WifiManager 和两类锁由 API19 ROM 提供，离线无线状态和权限检查走进程内 IWifiManager。
+引用计数、held 状态、finalize 与每 manager 的锁数量上限由 ROM 管理。
 
 本地 VideoView 适配器以 Java 字段保存监听器、播放目标和代际。回调传入初始化的
 MediaPlayer 子类，所需控制绑定同一视频实例；不支持系统媒体服务、字幕或网络源。
 
-传感器客户端见 [hardware](java/android/hardware/MODULE.md)：Sensor/SensorManager 保留
-固定 API19 原版源码；Legacy 的映射和转换在 Java，仅替换构造器 WMS 旋转查询。
-Context 选择 LocalSensorManager 空设备后端，不提供 SensorService 或真实事件队列。
+传感器客户端由 ROM 提供。SystemSensorManager 的 native 从同 NDK 的空设备目录枚举；
+LegacySensorManager 从进程内窗口服务读取固定旋转。
 
-NFC 的 [Java 客户端](java/android/nfc/MODULE.md) 只支持类型链接及无适配器发现；
-查询与 manager 状态在 BootDex，平台边界报告无设备，不提供 NFC 通信或回调。
+NFC 由 ROM NfcAdapter 和 NfcManager 查询本地 PackageManager；当前平台没有 NFC feature。
 
 Activity 的 [Java 客户端](java/android/app/MODULE.md) 保存每实例结果字段及普通转发；
 两个 native 只提交平台启动/结束，返回栈与结果交付由 session 编排。
 Dialog/AlertDialog 和 managed Dialog 的缓存/字段/回调也在此客户端；native 仅投影
 有界模态 UI 与输入，不接入完整 Android WindowManager。
 
-NotificationManager 的普通 Context 字段、构造/from 与重载在 android.app Java 客户端；
-平台事实为发布禁用、通知集合已知为空。取消正常完成，发布失败；无系统通知服务。
+ROM NotificationManager 经进程内 INotificationManager 取消当前应用通知。库存为空，
+发布入口明确拒绝。
 
-GLImpl 的 [Java 客户端](java/com/google/android/gles_jni/MODULE.md) 保留 API19 Buffer
-强引用与普通转发；仅将系统包管理查询改为当前 APK targetSdk 的 native 边界。
+ROM GLImpl 持有 API19 Buffer 强引用并转发 Java 方法；GLES native 经
+[DexVM Android integration](../../runtime/integration/dexvm_android/MODULE.md) 使用调用线程的 EGL current。
 
 [view 客户端](java/android/view/MODULE.md) 提供 LayoutInflater 的 Context、clone/from、
 同步/重载以及 ContextThemeWrapper 服务缓存；native 复用固定注册表的 XML 构建，

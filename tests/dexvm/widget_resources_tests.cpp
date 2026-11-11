@@ -113,7 +113,7 @@ TEST_CASE("EditText Editable preserves identity text and watcher registration") 
 TEST_CASE("DVM-123 Button.Small style attributes resolve from framework resources") {
     ClickVm vm(InterpreterBackend::switch_dispatch, false);
     vm.CallOn(vm.activity, "attachBaseContext", "(Landroid/content/Context;)V",
-              {VmValue::Ref(vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;"))});
+              {VmValue::Ref(ogplay::test::MakeRomAppContext(vm.interpreter, vm.context))});
     vm.CallOn(vm.activity, "setTheme", "(I)V", {VmValue::Int(0x0103006b)});
     const auto theme = vm.CallOn(vm.activity, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
     const auto value = vm.interpreter.NewIntrinsicInstance("Landroid/util/TypedValue;");

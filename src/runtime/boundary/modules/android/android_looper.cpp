@@ -67,6 +67,24 @@ memory::GuestAddress AndroidModule::PrepareThreadLooper(std::uint64_t tid, std::
     return handle;
 }
 
+void AndroidModule::PollThreadLooper(std::uint64_t tid, const std::function<bool()>& interrupted) {
+    static_cast<void>(PollAll({UINT32_MAX, 0, 0, 0}, tid, interrupted));
+}
+
+void AndroidModule::WakeThreadLooper(std::uint64_t tid) {
+    std::scoped_lock lock(mutex_);
+    if (const auto found = thread_loopers_.find(tid); found != thread_loopers_.end())
+        RequireLooper(found->second).wake = true;
+    ready_.notify_all();
+}
+
+void AndroidModule::NotifyLooperPollers() {
+    // The Java deadline predicate is checked while holding this mutex. Pair
+    // this notification with that check so a Clock step cannot be lost.
+    std::scoped_lock lock(mutex_);
+    ready_.notify_all();
+}
+
 void AndroidModule::RetireThreadLooper(std::uint64_t tid) {
     std::scoped_lock lock(mutex_);
     RetireThreadLooperLocked(tid);
@@ -80,8 +98,8 @@ void AndroidModule::ShutdownLoopers() {
     ready_.notify_all();
 }
 
-std::uint32_t AndroidModule::PollAll(const std::array<std::uint32_t, 4>& args,
-                                    std::uint64_t tid) {
+std::uint32_t AndroidModule::PollAll(const std::array<std::uint32_t, 4>& args, std::uint64_t tid,
+                                     const std::function<bool()>& interrupted) {
     const auto timeout = std::bit_cast<std::int32_t>(args[0]);
     for (std::size_t i = 1; i < args.size(); ++i)
         if (args[i] != 0) services_.address_space.Validate(
@@ -133,6 +151,7 @@ std::uint32_t AndroidModule::PollAll(const std::array<std::uint32_t, 4>& args,
             looper.wake = false;
             return negative_result(-1);
         }
+        if (interrupted && interrupted()) return negative_result(-1);
         const auto elapsed_ms = (looper_clock_.Ticks() - started) / 1000000U;
         if (timeout >= 0 && elapsed_ms >= static_cast<std::uint32_t>(timeout))
             return negative_result(-3);

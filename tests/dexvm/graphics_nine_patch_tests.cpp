@@ -193,7 +193,7 @@ TEST_CASE("ROM BitmapFactory preserves aapt chunk for NinePatchDrawable drawing"
     ogplay::test::ResourceFixture(*f.context).global_string_pool = std::move(pool);
     const auto owner = f.New("Landroid/app/Activity;");
     const auto owner_root = f.vm.ProtectReferences(std::array{owner});
-    ogplay::test::AttachViewTestContext(f.vm, owner);
+    ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
     const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
     const auto resources_root = f.vm.ProtectReferences(std::array{resources});
     const auto resource_drawable =

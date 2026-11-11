@@ -1,8 +1,10 @@
 #include "catalog.h"
 #include "runtime/integration/guest_network_environment.h"
+#include "ogplay/runtime/integration/guest_process_environment.h"
 #include "ogplay/runtime/boundary/device_locale.h"
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 
 #include "ogplay/hal/host_environment.h"
@@ -15,6 +17,15 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
     dexvm::CoreIntrinsicServices services;
     services.secure_random = hal::FillSecureRandom;
     if (context == nullptr) return services;
+    services.process_id = [] { return android_intrinsics::kGuestProcessId; };
+    services.process_uid = [context] { return static_cast<std::int32_t>(context->application_uid); };
+    services.current_thread_id = [context](dexvm::Interpreter& vm) {
+        const auto token = vm.CurrentContextToken();
+        const auto tid = context->native_thread_for_context ? context->native_thread_for_context(token) : token;
+        if (tid > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max()))
+            throw std::overflow_error("guest TID exceeds API19 integer range");
+        return static_cast<std::int32_t>(tid);
+    };
     if (context->offline_connectivity && !context->network_policy.enabled && !context->network_environment) {
         auto environment = std::make_shared<GuestNetworkEnvironment>(*context->offline_connectivity);
         if (context->vfs) environment->Publish(*context->vfs);
@@ -80,13 +91,19 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
     };
     services.environment_value = [context](const std::string_view name) {
         if (context->session == nullptr) {
-            throw std::runtime_error("guest process environment is not attached");
+            const auto environment = GuestProcessEnvironment::Api19(context->external_storage_root);
+            const auto value = environment.Find(name);
+            return value ? std::optional<std::string>{*value} : std::nullopt;
         }
         return context->session->Process().ProcessEnvironmentValue(name);
     };
     services.environment_entries = [context] {
         if (context->session == nullptr) {
-            throw std::runtime_error("guest process environment is not attached");
+            std::vector<std::pair<std::string, std::string>> result;
+            const auto environment = GuestProcessEnvironment::Api19(context->external_storage_root);
+            for (const auto& entry : environment.Entries())
+                result.emplace_back(entry.name, entry.value);
+            return result;
         }
         std::vector<std::pair<std::string, std::string>> result;
         for (const auto& entry : context->session->Process().ProcessEnvironmentEntries()) {
@@ -110,31 +127,23 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_view_Surface(context),
         Declare_android_graphics_SurfaceTexture(context),
         Declare_android_app_Activity(context),
-        Declare_android_app_Notification(context),
-        Declare_android_app_ActivityManager(context),
-        Declare_android_app_ActivityManager_MemoryInfo(context),
-        Declare_android_app_NotificationManager(context),
-        Declare_android_app_KeyguardManager(context),
-        Declare_android_app_backup_BackupManager(context),
+        Declare_local_ActivityService(context),
+        Declare_dalvik_system_DexFile(context),
+        Declare_local_PackageService(context),
+        Declare_ddm_DdmServer(),
+        Declare_local_BackupService(context),
+        Declare_local_NotificationService(context),
+        Declare_local_WindowService(context),
         Declare_android_app_AlertDialog_Builder(context),
         Declare_android_app_AlertDialog(context),
         Declare_android_app_Dialog(context),
-        Declare_android_app_IntentService(context),
-        Declare_android_app_Service(context),
-        Declare_android_app_PendingIntent(context),
-        Declare_android_app_AlarmManager(context),
+        Declare_local_IntentSender(context),
+        Declare_local_AlarmService(context),
         Declare_android_app_ProgressDialog(context),
-        Declare_android_content_BroadcastReceiver(context),
-        Declare_android_content_ContentResolver(context),
-        Declare_android_content_Context(context),
-        Declare_android_content_ContextWrapper(context),
-        Declare_android_content_IntentFilter_MalformedMimeTypeException(context),
-        Declare_android_content_IntentSender(context),
-        Declare_android_content_pm_PackageInfo(context),
-        Declare_android_content_pm_PackageManager_NameNotFoundException(context),
-        Declare_android_content_pm_PackageManager(context),
-        Declare_android_content_SharedPreferencesEditorImpl(context),
-        Declare_android_content_SharedPreferencesImpl(context),
+        Declare_local_ContentService(context),
+        Declare_local_ClipboardService(context),
+        Declare_local_UiModeService(context),
+        Declare_local_ContentChange(context),
         Declare_android_content_res_AssetManager(context),
         Declare_android_database_CursorWindow(context),
         Declare_android_database_sqlite_SQLiteConnection(context),
@@ -161,22 +170,16 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_graphics_drawable_AnimationDrawable(context),
         Declare_android_graphics_Camera(context),
         Declare_android_graphics_drawable_BitmapDrawable(context),
-        Declare_android_hardware_LocalSensorManager(context),
-        Declare_android_hardware_LegacySensorManager(context),
-        Declare_android_nfc_NfcAdapter(context),
-        Declare_android_hardware_usb_UsbManager(context),
-        Declare_android_location_LocationListener(context),
-        Declare_android_location_Criteria(context),
-        Declare_android_location_LocationManager(context),
-        Declare_android_media_AudioManager(context),
+        Declare_android_hardware_SystemSensorManager(context),
+        Declare_local_UsbService(context),
+        Declare_local_LocationService(context),
+        Declare_android_media_AudioSystem(context),
+        Declare_local_AudioService(context),
         Declare_android_media_AudioTrack(context),
         Declare_android_media_MediaPlayer(context),
         Declare_android_media_SoundPoolImpl(context),
-        Declare_android_net_ConnectivityManager(context),
-        Declare_android_net_wifi_WifiInfo(context),
-        Declare_android_net_wifi_WifiManager_WifiLock(context),
-        Declare_android_net_wifi_WifiManager_MulticastLock(context),
-        Declare_android_net_wifi_WifiManager(context),
+        Declare_local_ConnectivityService(context),
+        Declare_local_WifiService(context),
         Declare_android_opengl_GLSurfaceView_EGLConfigChooser(context),
         Declare_android_opengl_GLSurfaceView_EGLContextFactory(context),
         Declare_android_opengl_GLSurfaceView_Renderer(context),
@@ -190,47 +193,36 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_opengl_GLES30(context),
         Declare_android_opengl_GLUtils(context),
         Declare_android_opengl_GLU(context),
-        Declare_android_os_AsyncTask(context),
-        Declare_android_os_AsyncTask_Status(context),
-        Declare_android_os_AsyncTask_Worker(context),
         Declare_android_os_SystemProperties(context),
         Declare_android_os_Binder(context),
-        Declare_android_os_StrictMode(context),
-        Declare_android_os_Environment(context),
-        Declare_android_os_Handler(context),
-        Declare_android_os_Handler_Callback(context),
-        Declare_android_os_HandlerThread(context),
-        Declare_android_os_Looper(context),
+        Declare_com_android_internal_os_BinderInternal(context),
+        Declare_local_ServiceManager(context),
+        Declare_local_MountService(context),
         Declare_android_os_MessageQueue(context),
-        Declare_android_os_Message(context),
         Declare_android_os_SystemClock(context),
         Declare_android_os_Parcel(context),
-        Declare_android_os_PowerManager(context),
-        Declare_android_os_PowerManager_WakeLock(context),
-        Declare_android_os_Vibrator(context),
+        Declare_local_PowerService(context),
+        Declare_local_VibratorService(context),
         Declare_android_os_Process(context),
-        Declare_android_provider_Settings_NameValueCache(context),
-        Declare_android_telephony_PhoneStateListener(context),
-        Declare_android_telephony_SmsManager(context),
-        Declare_android_telephony_SmsMessage(context),
-        Declare_android_telephony_TelephonyManager(context),
+        Declare_local_SettingsProvider(context),
+        Declare_local_SmsService(context),
+        Declare_local_PhoneSubscriberService(context),
+        Declare_local_TelephonyService(context),
+        Declare_local_TelephonyRegistry(context),
         Declare_android_text_Editable(context),
         Declare_android_text_EditableImpl(context),
         Declare_android_text_TextPaint(context),
         Declare_android_text_AndroidBidi(context),
         Declare_android_text_TextWatcher(context),
-        Declare_android_text_TextUtils(context),
         Declare_android_text_format_Time(context),
         Declare_android_util_Log(context),
         Declare_android_util_EventLog(context),
         Declare_android_util_AttributeSet(context),
         Declare_android_util_FloatMath(context),
-        Declare_android_util_Base64(context),
-        Declare_android_util_DisplayMetrics(context),
-        Declare_android_view_Display(context),
         Declare_android_animation_PropertyValuesHolder(context),
         Declare_android_view_DisplayEventReceiver(context),
-        Declare_android_hardware_display_DisplayManagerGlobal(context),
+        Declare_android_view_HardwareRenderer(),
+        Declare_local_DisplayService(context),
         Declare_android_hardware_display_DisplayManager(context),
         Declare_android_view_ContextThemeWrapper(context),
         Declare_android_view_LayoutInflater(context),

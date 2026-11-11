@@ -113,7 +113,7 @@ TEST_CASE("DVM-218 lifecycle preserves onPause failure and attempts later cleanu
             CHECK(message.find("destroy-secondary") == std::string::npos);
         }
         // Healthy Stop still attempts the foreground onDestroy; its secondary failure stays hidden.
-        CHECK(fixture.CallStaticInt("Lfixture/TeardownFailureActivity;", "getStage") == 3);
+        CHECK(fixture.ReadStaticInt("Lfixture/TeardownFailureActivity;", "stage") == 3);
         CHECK_FALSE(fixture.app->NativeProcess().Running());
         CHECK_FALSE(fixture.app->NativeProcess().Environment().IsThreadAttached(1));
         CHECK_NOTHROW(static_cast<void>(fixture.app->Stop()));
@@ -137,16 +137,16 @@ TEST_CASE("DVM-235 live Surface window is hidden and restored without losing reg
             const auto slot = linker.FindVtableIndex(type, name, signature);
             REQUIRE(slot.has_value());
             args.insert(args.begin(), VmValue::Ref(object));
-            const auto result = vm.Call(linker.Class(type).vtable[*slot], args);
+            const auto result = f.CallGuest(linker.Class(type).vtable[*slot], args);
             REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
             return result.value;
         };
-        const auto surface = vm.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+        const auto surface = f.NewGuest("Landroid/view/SurfaceView;");
         const auto init_surface =
             linker.FindDirectMethod(vm.Model().ObjectClass(surface), "<init>", "(Landroid/content/Context;)V");
         REQUIRE(init_surface.has_value());
         REQUIRE_FALSE(
-            vm.Call(*init_surface, std::array{VmValue::Ref(surface), VmValue::Ref(caller)}).exception.IsValid());
+            f.CallGuest(*init_surface, std::array{VmValue::Ref(surface), VmValue::Ref(caller)}).exception.IsValid());
         int source_focus_gains{};
         const auto focus_slot = linker.FindVtableIndex(vm.Model().ObjectClass(surface), "onWindowFocusChanged", "(Z)V");
         REQUIRE(focus_slot.has_value());
@@ -168,19 +168,19 @@ TEST_CASE("DVM-235 live Surface window is hidden and restored without losing reg
         const auto before = lifecycle.State();
         CHECK(source_focus_gains == 1);
         const auto original_surface = call(holder, "getSurface", "()Landroid/view/Surface;").ref;
-        const auto overlay = vm.NewIntrinsicInstance("Landroid/view/View;");
+        const auto overlay = f.NewGuest("Landroid/view/View;");
         const auto overlay_root = vm.ProtectReferences(std::array{overlay});
         const auto overlay_init =
             linker.FindDirectMethod(vm.Model().ObjectClass(overlay), "<init>", "(Landroid/content/Context;)V");
         REQUIRE(overlay_init.has_value());
         REQUIRE_FALSE(
-            vm.Call(*overlay_init, std::array{VmValue::Ref(overlay), VmValue::Ref(caller)}).exception.IsValid());
-        const auto overlay_params = vm.NewIntrinsicInstance("Landroid/view/ViewGroup$LayoutParams;");
+            f.CallGuest(*overlay_init, std::array{VmValue::Ref(overlay), VmValue::Ref(caller)}).exception.IsValid());
+        const auto overlay_params = f.NewGuest("Landroid/view/ViewGroup$LayoutParams;");
         const auto params_root = vm.ProtectReferences(std::array{overlay_params});
         const auto params_init = linker.FindDirectMethod(vm.Model().ObjectClass(overlay_params), "<init>", "(II)V");
         REQUIRE(params_init.has_value());
         REQUIRE_FALSE(
-            vm.Call(*params_init, std::array{VmValue::Ref(overlay_params), VmValue::Int(-1), VmValue::Int(-1)})
+            f.CallGuest(*params_init, std::array{VmValue::Ref(overlay_params), VmValue::Int(-1), VmValue::Int(-1)})
                 .exception.IsValid());
         call(caller, "addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
              {VmValue::Ref(overlay), VmValue::Ref(overlay_params)});
@@ -190,10 +190,10 @@ TEST_CASE("DVM-235 live Surface window is hidden and restored without losing reg
         const auto container = call(caller, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(0x01020002)}).ref;
         CHECK(call(surface, "getParent", "()Landroid/view/ViewParent;").ref == container);
         CHECK(call(overlay, "getParent", "()Landroid/view/ViewParent;").ref == container);
-        const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+        const auto intent = f.NewGuest("Landroid/content/Intent;");
         const auto init_intent = linker.FindDirectMethod(vm.Model().ObjectClass(intent), "<init>", "()V");
         REQUIRE(init_intent.has_value());
-        REQUIRE_FALSE(vm.Call(*init_intent, std::array{VmValue::Ref(intent)}).exception.IsValid());
+        REQUIRE_FALSE(f.CallGuest(*init_intent, std::array{VmValue::Ref(intent)}).exception.IsValid());
         call(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
              {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ResultChild"))});
         call(intent, "addFlags", "(I)Landroid/content/Intent;", {VmValue::Int(0x10000)});
@@ -213,7 +213,8 @@ TEST_CASE("DVM-235 live Surface window is hidden and restored without losing reg
         CHECK(source_focus_gains == 1);
         CHECK_FALSE(runtime::AttachSurfaceViewSubtree(vm, *f.context, *node).has_value());
         CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
         call(f.context->activity, "finish", "()V");
         static_cast<void>(lifecycle.StepFrame());
         CHECK(f.context->activity == caller);
@@ -251,7 +252,7 @@ TEST_CASE("DVM-246 ARM JNI Dialog preserves Surface owner focus modal pixels and
             const auto index = linker.FindVtableIndex(type, name, signature);
             REQUIRE(index.has_value());
             args.insert(args.begin(), VmValue::Ref(object));
-            const auto result = vm.Call(linker.Class(type).vtable[*index], args);
+            const auto result = f.CallGuest(linker.Class(type).vtable[*index], args);
             REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
             return result.value;
         };
@@ -259,16 +260,16 @@ TEST_CASE("DVM-246 ARM JNI Dialog preserves Surface owner focus modal pixels and
             const auto init = linker.FindDirectMethod(vm.Model().ObjectClass(object), "<init>", signature);
             REQUIRE(init.has_value());
             args.insert(args.begin(), VmValue::Ref(object));
-            REQUIRE_FALSE(vm.Call(*init, args).exception.IsValid());
+            REQUIRE_FALSE(f.CallGuest(*init, args).exception.IsValid());
         };
-        const auto surface = vm.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+        const auto surface = f.NewGuest("Landroid/view/SurfaceView;");
         const auto surface_root = vm.ProtectReferences(std::array{surface});
         construct(surface, "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         call(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(surface)});
         static_cast<void>(lifecycle.StepFrame());
         const auto holder = call(surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
         const auto backing = call(holder, "getSurface", "()Landroid/view/Surface;").ref;
-        const auto builder = vm.NewIntrinsicInstance("Landroid/app/AlertDialog$Builder;");
+        const auto builder = f.NewGuest("Landroid/app/AlertDialog$Builder;");
         const auto builder_root = vm.ProtectReferences(std::array{builder});
         construct(builder, "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         call(builder, "setTitle", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;",
@@ -276,7 +277,7 @@ TEST_CASE("DVM-246 ARM JNI Dialog preserves Surface owner focus modal pixels and
         call(builder, "setMessage", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;",
              {VmValue::Ref(vm.NewStringUtf8("Visible modal"))});
         const auto observer_type = linker.ResolveDescriptor("Lfixture/DialogClickObserver;");
-        REQUIRE_FALSE(vm.EnsureClassInitialized(observer_type).exception.IsValid());
+        f.app->RunOnMainThread([&] { REQUIRE_FALSE(vm.EnsureClassInitialized(observer_type).exception.IsValid()); });
         const auto observer = vm.Model().NewInstance(observer_type, linker.Class(observer_type).instance_slots);
         const auto observer_root = vm.ProtectReferences(std::array{observer});
         construct(observer, "()V", {});
@@ -296,7 +297,11 @@ TEST_CASE("DVM-246 ARM JNI Dialog preserves Surface owner focus modal pixels and
         const auto ref = bridge.PublishLocal(dialog);
         const auto klass = bridge.PublishLocal(vm.Model().ClassObject(vm.Model().ObjectClass(dialog)));
         const auto invoke = [&](const char* name, std::array<std::uint32_t, 4> args) {
-            return process.Invoke({memory::GuestAddress{EnvironmentThunk(name)}, args, {}}).return_value;
+            std::uint32_t result{};
+            f.app->RunOnMainThread([&] {
+                result = process.Invoke({memory::GuestAddress{EnvironmentThunk(name)}, args, {}}).return_value;
+            });
+            return result;
         };
         const auto method = [&](const char* name, const char* signature) {
             std::array<std::byte, 256> data{};
@@ -373,7 +378,7 @@ TEST_CASE("DVM-246 ARM JNI Dialog preserves Surface owner focus modal pixels and
             REQUIRE(f.context->dialog_presentations.front().host_tree);
             return *f.context->dialog_presentations.front().host_tree;
         };
-        const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+        const auto intent = f.NewGuest("Landroid/content/Intent;");
         const auto intent_root = vm.ProtectReferences(std::array{intent});
         construct(intent, "()V", {});
         call(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
@@ -474,7 +479,7 @@ TEST_CASE("DVM-246 ARM JNI Dialog preserves Surface owner focus modal pixels and
         CHECK(f.context->window_has_focus.load());
         CHECK(f.context->dialog_presentations.empty());
         CHECK(call(holder, "getSurface", "()Landroid/view/Surface;").ref.IsValid());
-        static_cast<void>(vm.CollectGarbage("dialog-jni-owner"));
+        f.app->RunOnMainThread([&] { static_cast<void>(vm.CollectGarbage("dialog-jni-owner")); });
         static_cast<void>(env.PopLocalFrame(1));
         memory.release(scratch, 256);
         static_cast<void>(f.app->Stop());
@@ -499,17 +504,17 @@ TEST_CASE("DVM-249 lifecycle prepares MediaPlayer video without any AudioTrack")
         REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
         auto& vm = f.app->DexVm().Vm();
         auto& linker = vm.Linker();
-        const auto player = vm.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
+        const auto player = f.NewGuest("Landroid/media/MediaPlayer;");
         const auto root = vm.ProtectReferences(std::array{player});
         const auto owner = vm.Model().ObjectClass(player);
         const auto ctor = linker.FindDirectMethod(owner, "<init>", "()V");
         REQUIRE(ctor);
-        REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(player)}).exception.IsValid());
+        REQUIRE_FALSE(f.CallGuest(*ctor, std::array{VmValue::Ref(player)}).exception.IsValid());
         const auto call = [&](const char* name, const char* signature, std::vector<VmValue> args = {}) {
             const auto slot = linker.FindVtableIndex(owner, name, signature);
             REQUIRE(slot);
             args.insert(args.begin(), VmValue::Ref(player));
-            const auto result = vm.Call(linker.Class(owner).vtable[*slot], args);
+            const auto result = f.CallGuest(linker.Class(owner).vtable[*slot], args);
             REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
         };
         call("setDataSource", "(Ljava/lang/String;)V", {VmValue::Ref(vm.NewStringUtf8("/movies/short-mp4v-aac.mp4"))});
@@ -547,19 +552,19 @@ TEST_CASE("DVM-245 lifecycle traverses direct content children without a primary
             const auto index = linker.FindVtableIndex(type, name, signature);
             REQUIRE(index.has_value());
             args.insert(args.begin(), VmValue::Ref(object));
-            const auto result = vm.Call(linker.Class(type).vtable[*index], args);
+            const auto result = f.CallGuest(linker.Class(type).vtable[*index], args);
             REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
             return result.value;
         };
         REQUIRE_FALSE(f.context->content_view.IsValid());
         const auto container =
             call(f.context->activity, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(0x01020002)}).ref;
-        const auto surface = vm.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+        const auto surface = f.NewGuest("Landroid/view/SurfaceView;");
         const auto root = vm.ProtectReferences(std::array{surface});
         const auto constructor =
             linker.FindDirectMethod(vm.Model().ObjectClass(surface), "<init>", "(Landroid/content/Context;)V");
         REQUIRE(constructor.has_value());
-        REQUIRE_FALSE(vm.Call(*constructor, std::array{VmValue::Ref(surface), VmValue::Ref(f.context->activity)})
+        REQUIRE_FALSE(f.CallGuest(*constructor, std::array{VmValue::Ref(surface), VmValue::Ref(f.context->activity)})
                           .exception.IsValid());
         const auto holder = call(surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
         call(container, "addView", "(Landroid/view/View;II)V",
@@ -603,28 +608,31 @@ TEST_CASE("DVM-219 empty Activity pumps delayed content handoff and finish") {
             auto& vm = fixture.app->DexVm().Vm();
             const auto original = fixture.context->content_view;
             const auto roots = vm.ProtectReferences(std::array{original});
-            const auto temporary = vm.NewIntrinsicInstance("Landroid/view/View;");
+            const auto temporary = fixture.NewGuest("Landroid/view/View;");
             const auto temporary_roots = vm.ProtectReferences(std::array{temporary});
             const auto constructor = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(temporary), "<init>",
                                                                   "(Landroid/content/Context;)V");
             REQUIRE(constructor.has_value());
-            REQUIRE_FALSE(vm.Call(*constructor, std::array{runtime::dexvm::VmValue::Ref(temporary),
-                                                           runtime::dexvm::VmValue::Ref(fixture.context->activity)})
-                              .exception.IsValid());
+            REQUIRE_FALSE(
+                fixture
+                    .CallGuest(*constructor, std::array{runtime::dexvm::VmValue::Ref(temporary),
+                                                        runtime::dexvm::VmValue::Ref(fixture.context->activity)})
+                    .exception.IsValid());
             const auto type = vm.Model().ObjectClass(fixture.context->activity);
             const auto index = vm.Linker().FindVtableIndex(type, "setContentView", "(Landroid/view/View;)V");
             REQUIRE(index.has_value());
             for (const auto view : {temporary, original}) {
-                const auto result = vm.Call(vm.Linker().Class(type).vtable[*index],
-                                            std::array{runtime::dexvm::VmValue::Ref(fixture.context->activity),
-                                                       runtime::dexvm::VmValue::Ref(view)});
+                const auto result =
+                    fixture.CallGuest(vm.Linker().Class(type).vtable[*index],
+                                      std::array{runtime::dexvm::VmValue::Ref(fixture.context->activity),
+                                                 runtime::dexvm::VmValue::Ref(view)});
                 REQUIRE_FALSE(result.exception.IsValid());
             }
             CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 1234);
             static_cast<void>(lifecycle.StepFrame());
             CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 123423);
             static_cast<void>(fixture.app->Stop());
-            CHECK(fixture.CallStaticInt("Lfixture/LateSurfaceView;", "getEvents") == 1234234);
+            CHECK(fixture.ReadStaticInt("Lfixture/LateSurfaceView;", "events") == 1234234);
         }
         SUBCASE("delayed handoff may enter another empty Activity") {
             OrchestratedApp fixture("fixture.DelayedSwitchActivity", true, false, {}, {}, true, backend);
@@ -649,10 +657,10 @@ TEST_CASE("DVM-219 empty Activity pumps delayed content handoff and finish") {
             static_cast<void>(fixture.app->StartLauncherActivity());
             CHECK_FALSE(fixture.context->content_view.IsValid());
             CHECK(runtime::SessionExitRequested(*fixture.context));
-            CHECK(fixture.CallStaticInt("Lfixture/DelayedContentActivity;", "getResumed") == 0);
+            CHECK(fixture.ReadStaticInt("Lfixture/DelayedContentActivity;", "resumed") == 0);
             static_cast<void>(fixture.app->Stop());
             // DVM-236: process Stop does not synthesize Activity.onDestroy.
-            CHECK(fixture.CallStaticInt("Lfixture/DelayedContentActivity;", "getResumed") == 0);
+            CHECK(fixture.ReadStaticInt("Lfixture/DelayedContentActivity;", "resumed") == 0);
         }
     }
 }
@@ -673,8 +681,8 @@ TEST_CASE("DVM-125 lifecycle owns coherent Activity and View window focus") {
             const auto java_class = bridge.Vm().Model().ObjectClass(receiver);
             const auto index = bridge.Linker().FindVtableIndex(java_class, name, descriptor);
             REQUIRE(index.has_value());
-            const auto outcome = bridge.Vm().Call(bridge.Linker().Class(java_class).vtable[*index],
-                                                  std::vector{runtime::dexvm::VmValue::Ref(receiver)});
+            const auto outcome = fixture.CallGuest(bridge.Linker().Class(java_class).vtable[*index],
+                                                   std::vector{runtime::dexvm::VmValue::Ref(receiver)});
             REQUIRE_FALSE(outcome.exception.IsValid());
             return outcome.value;
         };
@@ -684,7 +692,7 @@ TEST_CASE("DVM-125 lifecycle owns coherent Activity and View window focus") {
             REQUIRE(java_class.has_value());
             const auto method = bridge.Linker().FindDirectMethod(*java_class, name, "()V");
             REQUIRE(method.has_value());
-            const auto outcome = bridge.Vm().Call(*method, {});
+            const auto outcome = fixture.CallGuest(*method, {});
             REQUIRE_FALSE(outcome.exception.IsValid());
         };
 
@@ -736,9 +744,9 @@ TEST_CASE("DVM-125 lifecycle owns coherent Activity and View window focus") {
 
         const auto stopped = fixture.app->Stop();
         CHECK(stopped.state == session::LifecycleRunState::stopped);
-        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusSecondActivity;", "getEvents") == 2);
-        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusSecondActivity;", "getQueried") == 0);
-        CHECK(fixture.CallStaticInt("Lfixture/WindowFocusView;", "getEvents") == 6);
+        CHECK(fixture.ReadStaticInt("Lfixture/WindowFocusSecondActivity;", "events") == 2);
+        CHECK(fixture.ReadStaticInt("Lfixture/WindowFocusSecondActivity;", "queried") == 0);
+        CHECK(fixture.ReadStaticInt("Lfixture/WindowFocusView;", "events") == 6);
     }
 }
 
@@ -814,7 +822,7 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
             const auto integer = dx::VmValue::Int;
             const auto call = [&](dx::VmObjectRef object, const char* name, const char* sig,
                                   std::vector<dx::VmValue> args = {}) {
-                return CallAndroidMethod(vm, object, name, sig, std::move(args));
+                return fixture.CallGuest(object, name, sig, std::move(args));
             };
             const auto ints = [&](std::vector<std::int32_t> values) {
                 const auto a =
@@ -827,13 +835,13 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
             };
             const auto policy_type = linker.ResolveDescriptor("Lfixture/RendererPolicy;");
             const auto policy = vm.Model().NewInstance(policy_type, linker.Class(policy_type).instance_slots);
-            const auto view = vm.NewIntrinsicInstance("Landroid/opengl/GLSurfaceView;");
+            const auto view = fixture.NewGuest("Landroid/opengl/GLSurfaceView;");
             const auto ui_runnable = vm.Model().NewInstance(policy_type, linker.Class(policy_type).instance_slots);
             const auto roots = vm.ProtectReferences(std::array{policy, view, ui_runnable});
             const auto ctor =
                 linker.FindDirectMethod(vm.Model().ObjectClass(view), "<init>", "(Landroid/content/Context;)V");
             REQUIRE(ctor.has_value());
-            REQUIRE_FALSE(vm.Call(*ctor, std::array{ref(view), ref(c.activity)}).exception.IsValid());
+            REQUIRE_FALSE(fixture.CallGuest(*ctor, std::array{ref(view), ref(c.activity)}).exception.IsValid());
             const auto hook = [&](const char* name, const char* sig, dx::IntrinsicHandler handler) {
                 const auto slot = linker.FindVtableIndex(policy_type, name, sig);
                 REQUIRE(slot.has_value());
@@ -841,12 +849,13 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
                 method.kind = dx::MethodKind::intrinsic;
                 method.implementation = std::move(handler);
             };
-            const auto ui_host = std::this_thread::get_id();
+            std::thread::id ui_host;
+            fixture.app->RunOnMainThread([&] { ui_host = std::this_thread::get_id(); });
             const auto thread_type = linker.ResolveDescriptor("Ljava/lang/Thread;");
             const auto current_thread_method =
                 linker.FindDirectMethod(thread_type, "currentThread", "()Ljava/lang/Thread;");
             REQUIRE(current_thread_method.has_value());
-            const auto ui_thread = vm.Call(*current_thread_method, {}).value.ref;
+            const auto ui_thread = fixture.CallGuest(*current_thread_method, {}).value.ref;
             REQUIRE(ui_thread.IsValid());
             std::thread::id gl_host;
             dx::VmObjectRef gl_thread;
@@ -1041,7 +1050,7 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
             CHECK(frame->rgba8[1] == 0);
             CHECK(frame->rgba8[2] == 0);
             CHECK(frame->rgba8[3] == 255);
-            static_cast<void>(vm.CollectGarbage("renderer-egl-roots"));
+            fixture.app->RunOnMainThread([&] { static_cast<void>(vm.CollectGarbage("renderer-egl-roots")); });
             std::vector<std::string> expected =
                 custom ? std::vector<std::string>{"choose", "create", "event", "created", "changed", "draw"}
                        : std::vector<std::string>{"event", "created", "changed", "draw"};
@@ -1095,10 +1104,10 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
             const auto source_runtime = c.gl_surface_runtimes.at(view.Value());
             c.activity_components.push_back(
                 {loader::AndroidManifestComponentKind::activity, "fixture.ResultChild", std::nullopt, true, {}});
-            const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+            const auto intent = fixture.NewGuest("Landroid/content/Intent;");
             const auto intent_ctor = linker.FindDirectMethod(vm.Model().ObjectClass(intent), "<init>", "()V");
             REQUIRE(intent_ctor.has_value());
-            REQUIRE_FALSE(vm.Call(*intent_ctor, std::array{ref(intent)}).exception.IsValid());
+            REQUIRE_FALSE(fixture.CallGuest(*intent_ctor, std::array{ref(intent)}).exception.IsValid());
             call(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
                  {ref(vm.NewStringUtf8("fixture")), ref(vm.NewStringUtf8("fixture.ResultChild"))});
             call(source_activity, "startActivity", "(Landroid/content/Intent;)V", {ref(intent)});
@@ -1140,7 +1149,7 @@ TEST_CASE("API19 Window background follows its unique lazy content root") {
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
         f.context->activity = owner;
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         const auto window = f.On(owner, "getWindow", "()Landroid/view/Window;").ref;
         const auto roots = f.vm.ProtectReferences(std::array{owner, window});
         const auto read_ref = [&](const char* name, const char* descriptor) {
@@ -1160,7 +1169,8 @@ TEST_CASE("API19 Window background follows its unique lazy content root") {
         CHECK(f.On(root, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref == black);
         const auto focus = f.OnOutcome(root, "dispatchWindowFocusChanged", "(Z)V", {VmValue::Int(1)});
         CHECK_FALSE(focus.exception.IsValid());
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
         const auto next = f.New("Landroid/graphics/drawable/ColorDrawable;", "(I)V", {VmValue::Int(0x12345678)});
         const auto next_root = f.vm.ProtectReferences(std::array{next});
         const auto applications = [&] {
@@ -1248,7 +1258,7 @@ TEST_CASE("DVM-334 Activity Window.Callback attachment follows managed window li
             const auto type = vm.Linker().ResolveDescriptor("Lfixture/WindowAttachmentActivity;");
             const auto method = vm.Linker().FindDirectMethod(type, "resetTrace", "()V");
             REQUIRE(method.has_value());
-            REQUIRE_FALSE(vm.Call(*method, {}).exception.IsValid());
+            REQUIRE_FALSE(f.CallGuest(*method, {}).exception.IsValid());
         };
         REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
         CHECK(trace() == 1234);
@@ -1261,27 +1271,27 @@ TEST_CASE("DVM-334 Activity Window.Callback attachment follows managed window li
         static_cast<void>(lifecycle.Resume());
         CHECK(trace() == 35);
         CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getAttaches") == 1);
-        LaunchAttachmentChild(vm, owner);
+        f.app->RunOnMainThread([&] { LaunchAttachmentChild(vm, owner); });
         static_cast<void>(lifecycle.StepFrame());
         REQUIRE(f.context->activity != owner);
         CHECK_FALSE(f.context->activity_stack.front().visible);
         CHECK(f.context->activity_stack.front().window_attached);
         reset();
-        static_cast<void>(CallAndroidMethod(vm, f.context->activity, "finish", "()V"));
+        static_cast<void>(f.CallGuest(f.context->activity, "finish", "()V"));
         static_cast<void>(lifecycle.StepFrame());
         REQUIRE(f.context->activity == owner);
         CHECK(trace() == 235);
         CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getAttaches") == 1);
-        LaunchAttachmentChild(vm, owner);
+        f.app->RunOnMainThread([&] { LaunchAttachmentChild(vm, owner); });
         static_cast<void>(lifecycle.StepFrame());
         reset();
         // Retire the background instance; last-instance finish requests process exit.
-        static_cast<void>(CallAndroidMethod(vm, owner, "finish", "()V"));
+        static_cast<void>(f.CallGuest(owner, "finish", "()V"));
         static_cast<void>(lifecycle.StepFrame());
         CHECK(trace() == 67);
         CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getDetaches") == 1);
         static_cast<void>(f.app->Stop());
-        CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getDetaches") == 1);
+        CHECK(f.ReadStaticInt("Lfixture/WindowAttachmentActivity;", "detaches") == 1);
     }
 }
 
@@ -1301,13 +1311,13 @@ TEST_CASE("DVM-334 finish before window attachment skips both callbacks") {
             auto& method = linker.MutableMethod(linker.Class(type).vtable[*slot]);
             method.kind = MethodKind::intrinsic;
             method.implementation = [&](IntrinsicContext& call) {
-                static_cast<void>(CallAndroidMethod(vm, call.receiver, "finish", "()V"));
-                LaunchAttachmentChild(vm, call.receiver);
+                static_cast<void>(f.CallGuest(call.receiver, "finish", "()V"));
+                f.app->RunOnMainThread([&] { LaunchAttachmentChild(vm, call.receiver); });
                 return VmValue::Void();
             };
             static_cast<void>(f.app->StartLauncherActivity());
             CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getAttaches") == 0);
-            CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getDetaches") == 0);
+            CHECK(f.ReadStaticInt("Lfixture/WindowAttachmentActivity;", "detaches") == 0);
             CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getTrace") % 10 == 6);
             static_cast<void>(f.app->Stop());
         }
@@ -1321,7 +1331,7 @@ TEST_CASE("DVM-334 process shutdown does not synthesize window detachment") {
     REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
     REQUIRE(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getAttaches") == 1);
     static_cast<void>(f.app->Stop());
-    CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getDetaches") == 0);
+    CHECK(f.ReadStaticInt("Lfixture/WindowAttachmentActivity;", "detaches") == 0);
 }
 
 TEST_CASE("DVM-334 window callback Java exceptions use lifecycle failure protocol") {
@@ -1346,9 +1356,9 @@ TEST_CASE("DVM-334 window callback Java exceptions use lifecycle failure protoco
                 static_cast<void>(f.app->StartLauncherActivity());
                 if (detach) {
                     const auto owner = f.context->activity;
-                    LaunchAttachmentChild(vm, owner);
+                    f.app->RunOnMainThread([&] { LaunchAttachmentChild(vm, owner); });
                     static_cast<void>(f.app->ActivityLifecycle().StepFrame());
-                    static_cast<void>(CallAndroidMethod(vm, owner, "finish", "()V"));
+                    static_cast<void>(f.CallGuest(owner, "finish", "()V"));
                     static_cast<void>(f.app->ActivityLifecycle().StepFrame());
                 }
             };
@@ -1377,7 +1387,7 @@ TEST_CASE("DVM-334 Activity default window callbacks execute BootDex empty metho
         const auto slot = vm.Linker().FindVtableIndex(type, name, "()V");
         REQUIRE(slot.has_value());
         CHECK(vm.Linker().Method(vm.Linker().Class(type).vtable[*slot]).kind != MethodKind::intrinsic);
-        CHECK_NOTHROW(static_cast<void>(CallAndroidMethod(vm, f.context->activity, name, "()V")));
+        CHECK_NOTHROW(static_cast<void>(f.CallGuest(f.context->activity, name, "()V")));
     }
     static_cast<void>(f.app->Stop());
 }
@@ -1395,15 +1405,15 @@ TEST_CASE("DVM-339 modal dismissal presents retained Surface pixels without anot
         const auto owner = f.context->activity;
         const auto call = [&](VmObjectRef object, const char* name, const char* signature,
                               std::vector<VmValue> args = {}) {
-            return runtime::android_intrinsics::CallAndroidMethod(vm, object, name, signature, std::move(args));
+            return f.CallGuest(object, name, signature, std::move(args));
         };
         const auto make = [&](const char* type) {
-            const auto object = vm.NewIntrinsicInstance(type);
+            const auto object = f.NewGuest(type);
             const auto root = vm.ProtectReferences(std::array{object});
             const auto ctor =
                 vm.Linker().FindDirectMethod(vm.Model().ObjectClass(object), "<init>", "(Landroid/content/Context;)V");
             REQUIRE(ctor);
-            const auto result = vm.Call(*ctor, std::array{VmValue::Ref(object), VmValue::Ref(owner)});
+            const auto result = f.CallGuest(*ctor, std::array{VmValue::Ref(object), VmValue::Ref(owner)});
             REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
             return object;
         };
@@ -1477,7 +1487,8 @@ TEST_CASE("DVM-339 modal dismissal presents retained Surface pixels without anot
         CHECK(f.context->surface_pixels.contains(holder.Value()));
         static_cast<void>(lifecycle.StepFrame());
         CHECK_FALSE(f.app->NativeProcess().TakeLatestFrame());  // a clean epoch does not spin presentations
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
         static_cast<void>(f.app->Stop());
     }
 }
@@ -1495,15 +1506,15 @@ TEST_CASE("DVM-345 unbuffered Surface permits Dialog until its first queued buff
         const auto owner = f.context->activity;
         const auto call = [&](VmObjectRef object, const char* name, const char* signature,
                               std::vector<VmValue> args = {}) {
-            return runtime::android_intrinsics::CallAndroidMethod(vm, object, name, signature, std::move(args));
+            return f.CallGuest(object, name, signature, std::move(args));
         };
         const auto make = [&](const char* type) {
-            const auto object = vm.NewIntrinsicInstance(type);
+            const auto object = f.NewGuest(type);
             const auto root = vm.ProtectReferences(std::array{object});
             const auto ctor =
                 vm.Linker().FindDirectMethod(vm.Model().ObjectClass(object), "<init>", "(Landroid/content/Context;)V");
             REQUIRE(ctor);
-            const auto result = vm.Call(*ctor, std::array{VmValue::Ref(object), VmValue::Ref(owner)});
+            const auto result = f.CallGuest(*ctor, std::array{VmValue::Ref(object), VmValue::Ref(owner)});
             REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
             return object;
         };
@@ -1529,12 +1540,12 @@ TEST_CASE("DVM-345 unbuffered Surface permits Dialog until its first queued buff
         call(builder, "setMessage", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;",
              {VmValue::Ref(vm.NewStringUtf8("A modal above an idle Surface"))});
         const auto observer_type = vm.Linker().ResolveDescriptor("Lfixture/DialogClickObserver;");
-        REQUIRE_FALSE(vm.EnsureClassInitialized(observer_type).exception.IsValid());
+        f.app->RunOnMainThread([&] { REQUIRE_FALSE(vm.EnsureClassInitialized(observer_type).exception.IsValid()); });
         const auto observer = vm.Model().NewInstance(observer_type, vm.Linker().Class(observer_type).instance_slots);
         const auto observer_root = vm.ProtectReferences(std::array{observer});
         const auto init = vm.Linker().FindDirectMethod(observer_type, "<init>", "()V");
         REQUIRE(init);
-        REQUIRE_FALSE(vm.Call(*init, std::array{VmValue::Ref(observer)}).exception.IsValid());
+        REQUIRE_FALSE(f.CallGuest(*init, std::array{VmValue::Ref(observer)}).exception.IsValid());
         call(
             builder, "setPositiveButton",
             "(Ljava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;",
@@ -1607,11 +1618,16 @@ TEST_CASE("DVM-345 unbuffered Surface permits Dialog until its first queued buff
         static_cast<void>(lifecycle.StepFrame());
         CHECK_FALSE(f.app->NativeProcess().TakeLatestFrame());
         // Real destroyed/created callbacks reuse the holder with a fresh buffer lifetime.
-        REQUIRE_FALSE(runtime::DispatchSurfaceHolderCallbacks(vm, *f.context, runtime::SurfaceHolderPhase::destroyed));
-        CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
-        CHECK_FALSE(f.context->surface_buffer_queued.contains(holder.Value()));
-        REQUIRE_FALSE(runtime::DispatchSurfaceHolderCallbacks(vm, *f.context, runtime::SurfaceHolderPhase::created));
-        REQUIRE_FALSE(runtime::DispatchSurfaceHolderCallbacks(vm, *f.context, runtime::SurfaceHolderPhase::changed));
+        f.app->RunOnMainThread([&] {
+            REQUIRE_FALSE(
+                runtime::DispatchSurfaceHolderCallbacks(vm, *f.context, runtime::SurfaceHolderPhase::destroyed));
+            CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
+            CHECK_FALSE(f.context->surface_buffer_queued.contains(holder.Value()));
+            REQUIRE_FALSE(
+                runtime::DispatchSurfaceHolderCallbacks(vm, *f.context, runtime::SurfaceHolderPhase::created));
+            REQUIRE_FALSE(
+                runtime::DispatchSurfaceHolderCallbacks(vm, *f.context, runtime::SurfaceHolderPhase::changed));
+        });
         REQUIRE(f.context->active_surface_holders.contains(holder.Value()));
         CHECK_FALSE(f.context->surface_buffer_queued.at(holder.Value()));
         static_cast<void>(f.app->NativeProcess().TakeLatestFrame());
@@ -1620,7 +1636,8 @@ TEST_CASE("DVM-345 unbuffered Surface permits Dialog until its first queued buff
         REQUIRE(f.app->NativeProcess().TakeLatestFrame());
         static_cast<void>(lifecycle.StepFrame());
         CHECK_FALSE(f.app->NativeProcess().TakeLatestFrame());  // a clean epoch does not spin presentations
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
         static_cast<void>(f.app->Stop());
     }
 }

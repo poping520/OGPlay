@@ -6,6 +6,7 @@
 #include "ogplay/core/text.h"
 #include "ogplay/runtime/jni/jni_utf.h"
 #include "ogplay/runtime/dexvm/reflection.h"
+#include "ogplay/runtime/dexvm/class_loader_facade.h"
 
 #include <algorithm>
 #include <cstring>
@@ -124,6 +125,13 @@ std::vector<dx::IntrinsicClassDecl> BoundCoreIntrinsicCatalog(const std::shared_
     services.cpu_cores = cpu_cores;
     auto catalog = dx::CoreIntrinsicCatalog(std::move(services));
     BindPlatformCoreHandlers(catalog, context);
+    if (context && context->sealed_apk_bytes)
+        for (auto& declaration : catalog)
+            if (declaration.descriptor == "Ldalvik/system/BaseDexClassLoader;")
+                std::erase_if(declaration.methods, [](const auto& method) {
+                    return method.name == "findLibrary" &&
+                           method.descriptor == "(Ljava/lang/String;)Ljava/lang/String;";
+                });
     return catalog;
 }
 
@@ -160,16 +168,21 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
     root(context.focused_application_window);
     root(context.application);
     root(context.application_base_context);
-    for (const auto& binding : context.local_service_bindings) {
-        root(binding.owner);
-        root(binding.connection);
-        root(binding.intent);
-        root(binding.component);
+    for (const auto& [receiver, filter] : context.local_broadcast_filters) {
+        root(receiver);
+        root(filter);
     }
-    for (const auto& [_, service] : context.local_services) {
-        root(service.instance);
-        root(service.binder);
-        root(service.intent);
+    for (const auto& [_, intent] : context.local_sticky_broadcasts)
+        root(intent);
+    for (const auto& [_, holder] : context.local_provider_holders)
+        root(holder);
+    for (const auto& observer : context.local_content_observers)
+        root(observer.transport);
+    for (const auto& [_, service] : context.rom_services) {
+        for (const auto ref : {service.thread, service.token, service.component, service.bind_intent, service.binder})
+            root(ref);
+        for (const auto connection : service.connections)
+            root(connection);
     }
     for (const auto operation : context.alarm_operations)
         root(operation);
@@ -217,6 +230,8 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
         root(surface);
     }
     root(context.current_intent);
+    for (const auto& [_, service] : context.local_binder_services)
+        root(service);
     for (const auto& [_, value] : context.singletons)
         root(value);
     for (const auto& [_, value] : context.bitmap_lock_roots)
@@ -332,7 +347,6 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
          },
          [context](const dx::VmObjectRef owner) {
              const auto key = owner.Value();
-             context->preference_names.erase(key);
              context->editable_owner.erase(key);
              context->telephony_listeners.erase(key);
              context->broadcast_receivers.erase(key);
@@ -1673,13 +1687,26 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
         android_context->prepare_native_looper = [bridge_state](std::uint64_t token) {
             static_cast<void>(bridge_state->session->PrepareThreadLooper(bridge_state->ProcessThreadForToken(token)));
         };
+        android_context->poll_native_looper = [bridge_state](std::uint64_t token,
+                                                             const std::function<bool()>& interrupted) {
+            bridge_state->session->PollThreadLooper(bridge_state->ProcessThreadForToken(token), interrupted);
+        };
+        android_context->wake_native_looper = [bridge_state](std::uint64_t token) {
+            std::optional<std::uint64_t> thread;
+            {
+                std::scoped_lock lock(bridge_state->thread_contexts_mutex);
+                const auto found = bridge_state->token_to_process_thread.find(token);
+                if (found != bridge_state->token_to_process_thread.end()) thread = found->second;
+            }
+            if (thread) bridge_state->session->WakeThreadLooper(*thread);
+        };
+        android_context->notify_native_loopers = [bridge_state] { bridge_state->session->NotifyLooperPollers(); };
         android_context->native_thread_for_context = [bridge_state](std::uint64_t token) {
             return bridge_state->ProcessThreadForToken(token);
         };
         // The Android main thread has a native Looper before Activity/JNI startup.
         static_cast<void>(session.PrepareThreadLooper(kRootThreadId));
     }
-    RegisterAndroidSchedulerStateTable(*impl_->vm, android_context);
     RegisterAndroidValueStateTables(*impl_->vm, android_context);
     RegisterAndroidDatabaseStateTables(*impl_->vm, android_context);
     RegisterAndroidOwnerAttachedStateTable(*impl_->vm, android_context);
@@ -1716,6 +1743,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
             return native_class;
         });
     impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);
+    RegisterAndroidSchedulerStateTable(*impl_->vm, android_context);
     session.Objects().ObjectArrays().SetAssignability(
         [bridge_state](JniObjectIdentity target, JniObjectIdentity source) -> std::optional<bool> {
             const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
@@ -2034,6 +2062,38 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
         const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
         return bridge_state->AllocJniObject(thread, java_class);
     });
+    if (android_context && std::ranges::any_of(platform_catalog, [](const auto& declaration) {
+            return declaration.descriptor == "Landroid/os/MessageQueue;";
+        })) {
+        auto& vm = *impl_->vm;
+        if (android_context->sealed_apk_bytes) {
+            vm.ClassLoaders().SetApplicationLoaderFactory([&vm, path = android_context->package_resource_path] {
+                auto& linker = vm.Linker();
+                const auto type = linker.ResolveDescriptor("Landroid/app/ApplicationLoaders;");
+                const auto get = linker.FindDirectMethod(type, "getDefault", "()Landroid/app/ApplicationLoaders;");
+                if (!get) throw DexVmBridgeError("ApplicationLoaders.getDefault is unavailable");
+                const auto owner = vm.Call(*get, {});
+                if (owner.exception.IsValid())
+                    throw dx::VmJavaThrow{linker.Class(owner.exception_class).descriptor, owner.exception_message,
+                                          owner.exception};
+                const auto apk = vm.NewStringUtf8(path);
+                const auto roots = vm.ProtectReferences(std::array{owner.value.ref, apk});
+                return android_intrinsics::CallAndroidMethod(
+                           vm, owner.value.ref, "getClassLoader",
+                           "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/ClassLoader;",
+                           {dx::VmValue::Ref(apk), dx::VmValue::Ref(vm.NewStringUtf8("/data/app-lib")),
+                            dx::VmValue::Ref(dx::VmObjectRef{})})
+                    .ref;
+            });
+        }
+        PrepareAndroidMainLooper(*impl_->vm, android_context);
+        if (android_context->sealed_apk_bytes) {
+            const auto loader = vm.ClassLoaders().ApplicationLoader();
+            const auto thread = vm.Threads().CurrentThreadObject();
+            static_cast<void>(android_intrinsics::CallAndroidMethod(
+                vm, thread, "setContextClassLoader", "(Ljava/lang/ClassLoader;)V", {dx::VmValue::Ref(loader)}));
+        }
+    }
 }
 
 std::unique_ptr<dx::NativeCleanupScope> DexVmGuestBridge::EnterResourceCleanup() {
@@ -2103,7 +2163,6 @@ DexVmGuestBridge::~DexVmGuestBridge() {
 
     if (impl_->android_context) {
         impl_->android_context->resource_natives.reset();
-        impl_->android_context->wifi_lock_leases.clear();
         if (impl_->vm) ShutdownPendingIntents(*impl_->vm, *impl_->android_context);
     }
     if (impl_->android_context) ReleaseAndroidSurfaceStreams(*impl_->android_context);
@@ -2125,6 +2184,9 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->android_context->native_activity.reset();
         impl_->android_context->threads = nullptr;
         impl_->android_context->prepare_native_looper = {};
+        impl_->android_context->poll_native_looper = {};
+        impl_->android_context->wake_native_looper = {};
+        impl_->android_context->notify_native_loopers = {};
         impl_->android_context->native_thread_for_context = {};
     }
     if (impl_->session) {

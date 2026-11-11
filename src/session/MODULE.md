@@ -17,7 +17,11 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   native inventory/ABI、rootless guest process、动态 loader、DexVM、Application root 与
   Activity lifecycle；Create 只准备 API 19 system ELF，不预载 APK `.so`。Manifest MAIN/LAUNCHER
   是唯一根入口；无 native inventory 保持 Java-capable
-  process mode。DVM-77 把同一 sealed Manifest 的 package/version/target SDK/application
+  process mode。guest 主线程在单独宿主线程运行 ROM Looper.loop。MainLooperChannel 把 session
+  请求送入 ROM Handler 并等待完成，SDL 操作反向交给宿主线程。ActivityThread.attach(false)
+  经本地 AMS 投递 bindApplication，后续 Looper 回合发布 ROM Application，才允许启动 launcher。
+  lifecycle 安全点按既有顺序处理到期消息、遍历与输入，宿主命令不在帧内嵌套执行。
+  DVM-77 把同一 sealed Manifest 的 package/version/target SDK/application
   label/icon/meta-data/requested permissions 注入 DexVM Android context；requested permissions
   是 bounded compatibility process 的显式 granted set，不宣称模拟 protection level。
   安装事实装配后显式封存单包清单，当前 guest 仅安装本次 APK；独立未装配 context
@@ -40,9 +44,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 - `TitleProfileCatalog::LoadDirectory`：稳定加载目录，校验非法及交叠身份；已删除旧的
   单根库 exact adapter，前端只投影 profile id。
   `LoadOptionalDirectory` 在目录缺失时返回空 catalog，已有目录使用相同校验。
-- `StartDexApplication` / `DexActivityLifecycle`：先按
-  largeHeap 时 VMRuntime.clearGrowthLimit→resolve→`<clinit>`→construct→attach base Context→虚派 `onCreate` 建立稳定的 process
-  Application root，再实例化入口 Activity 并解释执行 onCreate/onStart/onResume、
+- `StartDexApplication` / `DexActivityLifecycle`：先经 ROM ActivityThread 的 attach/bindApplication
+  建立 Application root；LoadedApk、Instrumentation、ContextImpl、largeHeap 和 onCreate 均沿 ROM 路径。
+  之后实例化入口 Activity 并解释执行 onCreate/onStart/onResume、
   renderer surface/frame、输入、suspend/resume 与 surfaceDestroyed/onStop；实例 finish 执行 onDestroy；
   空 Activity 可继续消息泵和 Clock，finish 后由既有退出协议收尾；onCreate 内 finish
   的实例不接收 onStart/onResume/onPause/onStop。内容按对象与 UiTree 节点身份在
@@ -307,8 +311,9 @@ Profile 和用户设置均不覆盖。
 
 已解包 BootDex 显式交给 bridge；session 不读取宿主类路径。
 
-Application 类初始化前从 Context.getCacheDir 取得缓存路径改写 java.io.tmpdir，
-对齐 API19 ActivityThread 绑定时机；没有缓存目录时保留绑定前默认值。
+ROM ActivityThread 在 Application 类初始化前以 ContextImpl.getCacheDir 设置 java.io.tmpdir，
+按清单的 largeHeap 调用 VMRuntime.clearGrowthLimit。手写 Activity 通过 ContextImpl.createActivityContext
+附着，托管窗口沿用同一 token。
 
 
 JavaTraversal窗口切换保留每窗口Java根及完整投影，Activity 主窗口、应用附加窗口与
@@ -360,8 +365,8 @@ MODULE：type 1..99、全屏 MATCH_PARENT 与明确 flags，最多 8 个 Dialog/
 DVM-336：Application 回调前准备主 Looper；每次实际 StepFrame 在 guest owner 遍历/投影
 前经 integration DispatchAndroidDisplayFrame 投递并泵一次挂起 vsync，时间取统一 Clock，
 回调中的新请求留到下一帧。Start/Resume/输入与呈现查询的重复屏障不发脉冲。
-停止开始即撤销 DisplayEventReceiver 登记，不在退出回调中合成脉冲；不改变 owner 遍历
-为 Choreographer 调度，也不实现系统同步屏障。平台接缝及主 Looper 限制见 integration MODULE。
+停止开始即撤销 DisplayEventReceiver 登记。owner 遍历仍由 session 驱动，Java 队列的同步屏障
+由 ROM 管理。平台接缝及主 Looper 限制见 integration MODULE。
 帧率上限（context `frame_period_ns` 非零）只把按 `hal::FramePacer::TryClaim` 抢到槽位的 step 当作显示帧：
 未到槽位的 step 不投递 vsync、不调用 GLSurfaceView onDrawFrame/swap、不放行受控 GL 线程的 swap，
 其余工作（Looper、Java 线程、输入、视频/音频、逻辑时钟按 step 推进）照常，step 本身不等待。

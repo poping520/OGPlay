@@ -16,7 +16,7 @@ namespace {
 VmObjectRef Owner(ContainerVm& f, bool managed_window = false) {
     f.context->ui_test_accessibility_disabled = true;
     const auto owner = f.New("Landroid/app/Activity;");
-    ogplay::test::AttachViewTestContext(f.vm, owner);
+    ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
     f.context->activity = owner;
     if (managed_window) {
         auto& record = f.context->activity_stack.emplace_back();
@@ -699,8 +699,12 @@ TEST_CASE("DVM-355 ViewConfiguration input seam honors ROM override and mainkeys
         REQUIRE(failed.exception.IsValid());
         CHECK_FALSE(failed.exception_message.empty());
         INFO(failed.exception_message);
-        CHECK((failed.exception_message.find("Landroid/os/ServiceManager;") != std::string::npos ||
-               failed.exception_message.find("Lcom/android/internal/os/BinderInternal;") != std::string::npos));
+        CHECK(f.linker.Class(failed.exception_class).descriptor == "Ljava/lang/AbstractMethodError;");
+        CHECK(failed.exception_message.find("hasNavigationBar") != std::string::npos);
+        const auto hits = f.ledger.Unimplemented();
+        CHECK(std::ranges::any_of(hits, [](const auto& hit) {
+            return hit.id == "dexvm.abstract.Landroid/view/IWindowManager;.hasNavigationBar()Z";
+        }));
     }
 }
 

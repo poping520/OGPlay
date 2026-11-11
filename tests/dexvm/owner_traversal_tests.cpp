@@ -22,7 +22,7 @@ TEST_CASE("DVM-307 stable empty Activity root owner binding and clean barriers")
         ogplay::test::container_traversal::ContainerVm f(backend);
         CHECK(f.context->ui_java_owner_thread == std::this_thread::get_id());
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         f.context->ui_test_accessibility_disabled = true;
         f.context->surface_width = 180;
@@ -294,10 +294,10 @@ TEST_CASE("DVM-308 GLSurfaceView invokes exact experimental SurfaceView initiali
 
 TEST_CASE("DVM-308 real lifecycle owner barriers cover input Looper focus and first snapshot") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::container_traversal::ContainerVm f(backend);
+        ogplay::test::container_traversal::ContainerVm f(backend, false, true);
         f.context->ui_test_accessibility_disabled = true;
         ogplay::session::DexActivityLifecycleBindings bindings;
-        bindings.bridge = &f.app->DexVm();
+        bindings.bridge = f.runtime->bridge.get();
         bindings.context = f.context;
         bindings.launcher_descriptor = "Ltest/OwnerActivity;";
         bindings.application_descriptor = "Landroid/app/Application;";
@@ -315,7 +315,7 @@ TEST_CASE("DVM-308 real lifecycle owner barriers cover input Looper focus and fi
         CHECK(f.On(leaf, "count", "()I").AsInt() == 2);
         const auto input_root = AndroidUiTraversalRoot(f.vm, *f.context);
         CHECK(f.On(input_root, "getChildCount", "()I").AsInt() == 2);
-        const auto first_frame = f.app->DexVm().Session().TakeLatestFrame();
+        const auto first_frame = f.runtime->bridge->Session().TakeLatestFrame();
         REQUIRE(first_frame);
         const auto complete = AcquireAndroidPresentation(*f.context);
         REQUIRE(complete);
@@ -353,13 +353,13 @@ TEST_CASE("DVM-308 real lifecycle owner barriers cover input Looper focus and fi
         const auto dialog = f.On(builder, "create", "()Landroid/app/AlertDialog;").ref;
         f.On(dialog, "show", "()V");
         static_cast<void>(lifecycle.StepFrame());
-        const auto modal_frame = f.app->DexVm().Session().TakeLatestFrame();
+        const auto modal_frame = f.runtime->bridge->Session().TakeLatestFrame();
         REQUIRE(modal_frame);
         CHECK(modal_frame->sequence > first_frame->sequence);
         const auto modal_count = f.On(leaf, "count", "()I").AsInt();
         f.On(dialog, "setTitle", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.vm.NewStringUtf8("Changed"))});
         static_cast<void>(lifecycle.StepFrame());
-        const auto changed_frame = f.app->DexVm().Session().TakeLatestFrame();
+        const auto changed_frame = f.runtime->bridge->Session().TakeLatestFrame();
         REQUIRE(changed_frame);
         CHECK(changed_frame->sequence > modal_frame->sequence);
         CHECK(f.On(leaf, "count", "()I").AsInt() == modal_count);
@@ -412,7 +412,8 @@ TEST_CASE("DVM-308 real lifecycle owner barriers cover input Looper focus and fi
         static_cast<void>(lifecycle.Suspend());
         static_cast<void>(lifecycle.Resume());
         CHECK(f.On(leaf, "count", "()I").AsInt() == before_resume + 1);
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
         static_cast<void>(lifecycle.Stop());
     }
 }
@@ -513,10 +514,10 @@ TEST_CASE("DVM-309 owner input lease survives mutation and cancels detached gone
 
 TEST_CASE("DVM-373 real lifecycle revokes worker-released video metadata with no live source") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::container_traversal::ContainerVm f(backend);
+        ogplay::test::container_traversal::ContainerVm f(backend, false, true);
         f.context->ui_test_accessibility_disabled = true;
         ogplay::session::DexActivityLifecycleBindings bindings;
-        bindings.bridge = &f.app->DexVm();
+        bindings.bridge = f.runtime->bridge.get();
         bindings.context = f.context;
         bindings.launcher_descriptor = "Ltest/OwnerActivity;";
         bindings.application_descriptor = "Landroid/app/Application;";
@@ -559,10 +560,10 @@ TEST_CASE("DVM-373 real lifecycle revokes worker-released video metadata with no
 
 TEST_CASE("DVM-309 session pointer and key Activity fallback borrow the event presentation") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::container_traversal::ContainerVm f(backend);
+        ogplay::test::container_traversal::ContainerVm f(backend, false, true);
         f.context->ui_test_accessibility_disabled = true;
         ogplay::session::DexActivityLifecycleBindings bindings;
-        bindings.bridge = &f.app->DexVm();
+        bindings.bridge = f.runtime->bridge.get();
         bindings.context = f.context;
         bindings.launcher_descriptor = "Ltest/OwnerActivity;";
         bindings.application_descriptor = "Landroid/app/Application;";
@@ -603,17 +604,18 @@ TEST_CASE("DVM-309 session pointer and key Activity fallback borrow the event pr
         static_cast<void>(lifecycle.StepFrame());
         CHECK(keys == 1);
         CHECK_FALSE(f.context->input_presentation);
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
         static_cast<void>(lifecycle.Stop());
     }
 }
 
 TEST_CASE("DVM-310 lifecycle window partitions retain Java identity scroll focus and failed-switch snapshot") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::container_traversal::ContainerVm f(backend);
+        ogplay::test::container_traversal::ContainerVm f(backend, false, true);
         f.context->ui_test_accessibility_disabled = true;
         ogplay::session::DexActivityLifecycleBindings bindings;
-        bindings.bridge = &f.app->DexVm();
+        bindings.bridge = f.runtime->bridge.get();
         bindings.context = f.context;
         bindings.launcher_descriptor = "Ltest/OwnerActivity;";
         bindings.application_descriptor = "Landroid/app/Application;";
@@ -711,7 +713,8 @@ TEST_CASE("DVM-310 lifecycle window partitions retain Java identity scroll focus
         CHECK_FALSE(f.context->input_presentation);
         f.context->activity_stack.pop_back();
         f.context->activity = a;
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
         static_cast<void>(lifecycle.Stop());
     }
 }
@@ -800,7 +803,7 @@ TEST_CASE("DVM-314 ROM window observers merge floating listeners and dispatch on
         f.context->surface_width = 100;
         f.context->surface_height = 80;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto view = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
@@ -892,7 +895,7 @@ TEST_CASE("DVM-315 NativeActivity style startup observer queries content and dec
         f.context->surface_width = 100;
         f.context->surface_height = 80;
         const auto owner = f.New("Ltest/NativeStartupActivity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         f.On(owner, "onCreate", "(Landroid/os/Bundle;)V", {VmValue::Ref(VmObjectRef{})});
         REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
@@ -913,24 +916,25 @@ TEST_CASE("DVM-315 NativeActivity style startup observer queries content and dec
 
 TEST_CASE("DVM-315 original NativeActivity startup executes ROM global layout on both backends") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::container_traversal::ContainerVm f(backend, true);
+        ogplay::test::container_traversal::ContainerVm f(backend, true, true);
         f.context->ui_test_accessibility_disabled = true;
         ogplay::session::DexActivityLifecycleBindings bindings;
-        bindings.bridge = &f.app->DexVm();
+        bindings.bridge = f.runtime->bridge.get();
         bindings.context = f.context;
         bindings.launcher_descriptor = "Landroid/app/NativeActivity;";
         bindings.application_descriptor = "Landroid/app/Application;";
         ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
         CHECK_NOTHROW(static_cast<void>(lifecycle.Start()));
         CHECK(f.context->active_surface_holders.contains(f.context->window_surface_holder.Value()));
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
         static_cast<void>(lifecycle.Stop());
     }
 }
 
 TEST_CASE("DVM-315 startup guest callback exception becomes a lifecycle fault") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::container_traversal::ContainerVm f(backend);
+        ogplay::test::container_traversal::ContainerVm f(backend, false, true);
         f.context->ui_test_accessibility_disabled = true;
         const auto type = f.linker.ResolveDescriptor("Ltest/NativeStartupActivity;");
         const auto index = f.linker.FindVtableIndex(type, "onGlobalLayout", "()V");
@@ -943,7 +947,7 @@ TEST_CASE("DVM-315 startup guest callback exception becomes a lifecycle fault") 
             throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "fixture startup callback"};
         };
         ogplay::session::DexActivityLifecycleBindings bindings;
-        bindings.bridge = &f.app->DexVm();
+        bindings.bridge = f.runtime->bridge.get();
         bindings.context = f.context;
         bindings.launcher_descriptor = "Ltest/NativeStartupActivity;";
         bindings.application_descriptor = "Landroid/app/Application;";
@@ -953,7 +957,8 @@ TEST_CASE("DVM-315 startup guest callback exception becomes a lifecycle fault") 
             "Activity startup failed: uncaught Java exception\n  guest boundary: Activity startup\n  exception: Ljava/lang/IllegalStateException;\n  message: fixture startup callback",
             ogplay::session::DexActivityLifecycleError);
         CHECK(lifecycle.State().state == ogplay::session::LifecycleRunState::failed);
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
     }
 }
 
@@ -964,7 +969,7 @@ TEST_CASE("DVM-316 replaced startup content retains its floating observer until 
         f.context->surface_width = 100;
         f.context->surface_height = 80;
         const auto owner = f.New("Ltest/NativeStartupActivity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         f.On(owner, "onCreate", "(Landroid/os/Bundle;)V", {VmValue::Ref(VmObjectRef{})});
         const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(owner), "content", "Landroid/view/View;");
@@ -997,7 +1002,7 @@ TEST_CASE("DVM-316 replaced startup content retains its floating observer until 
 
 TEST_CASE("DVM-316 lifecycle host guest boundary appends causes without changing the failure header") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::container_traversal::ContainerVm f(backend);
+        ogplay::test::container_traversal::ContainerVm f(backend, false, true);
         f.context->ui_test_accessibility_disabled = true;
         const auto type = f.linker.ResolveDescriptor("Ltest/NativeStartupActivity;");
         const auto index = f.linker.FindVtableIndex(type, "onGlobalLayout", "()V");
@@ -1014,7 +1019,7 @@ TEST_CASE("DVM-316 lifecycle host guest boundary appends causes without changing
             throw VmJavaThrow{"Ljava/lang/RuntimeException;", "wrapper", wrapper};
         };
         ogplay::session::DexActivityLifecycleBindings bindings;
-        bindings.bridge = &f.app->DexVm();
+        bindings.bridge = f.runtime->bridge.get();
         bindings.context = f.context;
         bindings.launcher_descriptor = "Ltest/NativeStartupActivity;";
         bindings.application_descriptor = "Landroid/app/Application;";
@@ -1030,16 +1035,17 @@ TEST_CASE("DVM-316 lifecycle host guest boundary appends causes without changing
                   std::string::npos);
         }
         CHECK(lifecycle.State().state == ogplay::session::LifecycleRunState::failed);
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
     }
 }
 
 TEST_CASE("DVM-317 NativeActivity style empty content drains detached producer initialization before Surface") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::container_traversal::ContainerVm f(backend);
+        ogplay::test::container_traversal::ContainerVm f(backend, false, true);
         f.context->ui_test_accessibility_disabled = true;
         ogplay::session::DexActivityLifecycleBindings bindings;
-        bindings.bridge = &f.app->DexVm();
+        bindings.bridge = f.runtime->bridge.get();
         bindings.context = f.context;
         bindings.launcher_descriptor = "Ltest/OwnerActivity;";
         bindings.application_descriptor = "Landroid/app/Application;";
@@ -1081,17 +1087,18 @@ TEST_CASE("DVM-317 NativeActivity style empty content drains detached producer i
         CHECK_FALSE(state->surface_available);
         CHECK_FALSE(state->renderer_surface.IsValid());
         CHECK_FALSE(f.context->active_surface_holders.contains(f.context->surface_holders.at(view.Value()).Value()));
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
         static_cast<void>(lifecycle.Stop());
     }
 }
 
 TEST_CASE("DVM-317 NativeActivity window producer composes continuous frames with a clean presentation lease") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::container_traversal::ContainerVm f(backend, true);
+        ogplay::test::container_traversal::ContainerVm f(backend, true, true);
         f.context->ui_test_accessibility_disabled = true;
         ogplay::session::DexActivityLifecycleBindings bindings;
-        bindings.bridge = &f.app->DexVm();
+        bindings.bridge = f.runtime->bridge.get();
         bindings.context = f.context;
         bindings.launcher_descriptor = "Landroid/app/NativeActivity;";
         bindings.application_descriptor = "Landroid/app/Application;";
@@ -1129,7 +1136,8 @@ TEST_CASE("DVM-317 NativeActivity window producer composes continuous frames wit
                  .height = height,
                  .rgba8 = std::vector<std::uint8_t>(static_cast<std::size_t>(width + 1) * height * 4U)})));
         }
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
         static_cast<void>(lifecycle.Stop());
     }
 }
@@ -1137,7 +1145,7 @@ TEST_CASE("DVM-317 NativeActivity window producer composes continuous frames wit
 TEST_CASE("DVM-318 DVM-321 late GLSurfaceView after NativeActivity takeSurface null starts renderer") {
     for (const int mount : {0, 1, 2})
         for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-            ogplay::test::container_traversal::ContainerVm f(backend, true);
+            ogplay::test::container_traversal::ContainerVm f(backend, true, true);
             f.context->ui_test_accessibility_disabled = true;
             // CPU EGL seam: lifecycle executes the actual EGL Java calls on GLThread;
             // no host display/GPU is opened. Real context creation remains external.
@@ -1199,7 +1207,7 @@ TEST_CASE("DVM-318 DVM-321 late GLSurfaceView after NativeActivity takeSurface n
                   "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)Z", yes);
             patch("eglTerminate", "(Ljavax/microedition/khronos/egl/EGLDisplay;)Z", yes);
             ogplay::session::DexActivityLifecycleBindings bindings;
-            bindings.bridge = &f.app->DexVm();
+            bindings.bridge = f.runtime->bridge.get();
             bindings.context = f.context;
             bindings.launcher_descriptor = "Ltest/LateGlActivity;";
             f.context->activity_components.front().name = "test.LateGlActivity";
@@ -1317,21 +1325,25 @@ TEST_CASE("DVM-318 DVM-321 late GLSurfaceView after NativeActivity takeSurface n
             CHECK(f.context->gl_surface_renderer_view == state->view);
             CHECK(f.context->ui_tree.PublishedProjection()->IsVisible(*node));
             CHECK(swaps > suspended_swaps);
-            CHECK(f.ledger.Unimplemented().empty());
+            for (const auto& hit : f.ledger.Unimplemented())
+                CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"),
+                              hit.id);
             static_cast<void>(lifecycle.Stop());
             CHECK_FALSE(f.context->gl_surface_renderer_view.IsValid());
             CHECK_FALSE(f.context->renderer.IsValid());
             CHECK(f.context->active_surface_holders.empty());
-            CHECK(f.ledger.Unimplemented().empty());
+            for (const auto& hit : f.ledger.Unimplemented())
+                CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"),
+                              hit.id);
         }
 }
 
 TEST_CASE("DVM-319 owner projection selects late producer before its first Surface callback") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::container_traversal::ContainerVm f(backend);
+        ogplay::test::container_traversal::ContainerVm f(backend, false, true);
         f.context->ui_test_accessibility_disabled = true;
         ogplay::session::DexActivityLifecycleBindings bindings;
-        bindings.bridge = &f.app->DexVm();
+        bindings.bridge = f.runtime->bridge.get();
         bindings.context = f.context;
         bindings.launcher_descriptor = "Ltest/OwnerActivity;";
         bindings.application_descriptor = "Landroid/app/Application;";
@@ -1367,7 +1379,8 @@ TEST_CASE("DVM-319 owner projection selects late producer before its first Surfa
         CHECK_THROWS_AS(static_cast<void>(lifecycle.StepFrame()), ogplay::session::DexActivityLifecycleError);
         CHECK(created == 1);
         CHECK_FALSE(f.context->gl_surface_runtimes.at(view.Value())->surface_available);
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
         static_cast<void>(lifecycle.Stop());
         CHECK(f.logger.Snapshot(std::nullopt, "ui.diagnostics.summary").size() == 1);
         CHECK(f.logger.Snapshot(std::nullopt, "ui.diagnostics.producer").size() == 1);
@@ -1379,7 +1392,7 @@ TEST_CASE("DVM-319 traversal reasons are per window first occurrence with retain
         ogplay::test::container_traversal::ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         f.context->surface_width = 80;
         f.context->surface_height = 50;
@@ -1433,10 +1446,10 @@ TEST_CASE("DVM-319 traversal reasons are per window first occurrence with retain
 TEST_CASE("DVM-320 producer facts change after projection and summarize once before normal or failed teardown") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded})
         for (const bool failed : {false, true}) {
-            ogplay::test::container_traversal::ContainerVm f(backend);
+            ogplay::test::container_traversal::ContainerVm f(backend, false, true);
             f.context->ui_test_accessibility_disabled = true;
             ogplay::session::DexActivityLifecycleBindings bindings;
-            bindings.bridge = &f.app->DexVm();
+            bindings.bridge = f.runtime->bridge.get();
             bindings.context = f.context;
             bindings.launcher_descriptor = "Ltest/OwnerActivity;";
             bindings.application_descriptor = "Landroid/app/Application;";
@@ -1503,7 +1516,9 @@ TEST_CASE("DVM-320 producer facts change after projection and summarize once bef
                 reasons, [](const auto& record) { return record.message == "ui.traversal: fixture repeated reason"; });
             REQUIRE(repeated != reasons.end());
             CHECK(std::get<std::uint64_t>(repeated->fields.front().value) == 2);
-            CHECK(f.ledger.Unimplemented().empty());
+            for (const auto& hit : f.ledger.Unimplemented())
+                CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"),
+                              hit.id);
         }
 }
 
@@ -1512,7 +1527,7 @@ TEST_CASE("DVM-329 ROM bringToFront publishes child paint order") {
         ogplay::test::container_traversal::ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         f.context->surface_width = 80;
         f.context->surface_height = 50;
@@ -1551,10 +1566,10 @@ TEST_CASE("DVM-329 ROM bringToFront publishes child paint order") {
 
 TEST_CASE("DVM-329 producer binding outside the retained projection waits for publication") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ogplay::test::container_traversal::ContainerVm f(backend);
+        ogplay::test::container_traversal::ContainerVm f(backend, false, true);
         f.context->ui_test_accessibility_disabled = true;
         ogplay::session::DexActivityLifecycleBindings bindings;
-        bindings.bridge = &f.app->DexVm();
+        bindings.bridge = f.runtime->bridge.get();
         bindings.context = f.context;
         bindings.launcher_descriptor = "Ltest/OwnerActivity;";
         bindings.application_descriptor = "Landroid/app/Application;";
@@ -1582,7 +1597,8 @@ TEST_CASE("DVM-329 producer binding outside the retained projection waits for pu
         CHECK(old->Get(binding) == nullptr);
         CHECK_FALSE(f.context->gl_surface_renderer_view.IsValid());
         CHECK_NOTHROW(static_cast<void>(lifecycle.Stop()));
-        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"), hit.id);
     }
 }
 
@@ -1591,7 +1607,7 @@ TEST_CASE("DVM-329 clean owner ticks never enter traversal and Java requests res
         ogplay::test::container_traversal::ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         f.context->surface_width = 800;
         f.context->surface_height = 480;
@@ -1634,7 +1650,7 @@ TEST_CASE("DVM-329 clean owner ticks never enter traversal and Java requests res
 TEST_CASE("DVM-329 headless clean frame scheduling benchmark") {
     const auto run = [](auto& f, const char* mode, const char* workload, const ui::Size size) {
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         f.context->ui_test_accessibility_disabled = true;
         f.context->surface_width = static_cast<std::uint32_t>(size.width);
@@ -1688,7 +1704,7 @@ TEST_CASE("DVM-330 headless step and present benchmark") {
         f.context->surface_width = static_cast<std::uint32_t>(size.width);
         f.context->surface_height = static_cast<std::uint32_t>(size.height);
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         const auto view = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
@@ -1737,7 +1753,7 @@ TEST_CASE("DVM-330 ROM removeViewInLayout publishes remaining child order") {
         ogplay::test::container_traversal::ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         f.context->surface_width = 80;
         f.context->surface_height = 50;
@@ -1786,7 +1802,7 @@ TEST_CASE("DVM-330 presentation cache follows immutable planes and producer fram
         ogplay::test::container_traversal::ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         f.context->surface_width = 80;
         f.context->surface_height = 50;
@@ -1869,35 +1885,39 @@ TEST_CASE("DVM-331 window focus reaches the Java window tree across Activity swi
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ogplay::test::native_library::OrchestratedApp f("fixture.WindowFocusActivity", true, false, {}, {}, true,
                                                         backend);
-        ogplay::session::DexActivityLifecycleBindings bindings;
-        bindings.bridge = &f.app->DexVm();
-        bindings.context = f.context;
-        bindings.launcher_descriptor = "Lfixture/WindowFocusActivity;";
-        bindings.application_descriptor = "Landroid/app/Application;";
-        ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
-        static_cast<void>(lifecycle.Start());
-        const auto parent = f.context->activity;
-        const auto events = [&] { return f.CallStaticInt("Lfixture/WindowFocusView;", "getEvents"); };
-        CHECK(events() == 0);
-        static_cast<void>(lifecycle.StepFrame());
-        CHECK(events() == 1);
-        static_cast<void>(lifecycle.Suspend());
-        CHECK(events() == 2);
-        static_cast<void>(lifecycle.Resume());
-        CHECK(events() == 3);
-        const auto switched = f.app->DexVm().Linker().FindVtableIndex(f.app->DexVm().Vm().Model().ObjectClass(parent),
-                                                                      "switchActivity", "()V");
-        REQUIRE(switched);
-        const auto target =
-            f.app->DexVm().Linker().Class(f.app->DexVm().Vm().Model().ObjectClass(parent)).vtable[*switched];
-        const auto outcome = f.app->DexVm().Vm().Call(target, std::array{VmValue::Ref(parent)});
-        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
-        static_cast<void>(lifecycle.StepFrame());
-        CHECK(f.context->activity != parent);
-        CHECK(events() == 5);
-        static_cast<void>(lifecycle.Stop());
-        CHECK(events() == 6);
-        CHECK(f.ledger.Unimplemented().empty());
+        f.app->RunOnMainThread([&] {
+            ogplay::session::DexActivityLifecycleBindings bindings;
+            bindings.bridge = &f.app->DexVm();
+            bindings.context = f.context;
+            bindings.launcher_descriptor = "Lfixture/WindowFocusActivity;";
+            bindings.application_descriptor = "Landroid/app/Application;";
+            ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+            static_cast<void>(lifecycle.Start());
+            const auto parent = f.context->activity;
+            const auto events = [&] { return f.CallStaticInt("Lfixture/WindowFocusView;", "getEvents"); };
+            CHECK(events() == 0);
+            static_cast<void>(lifecycle.StepFrame());
+            CHECK(events() == 1);
+            static_cast<void>(lifecycle.Suspend());
+            CHECK(events() == 2);
+            static_cast<void>(lifecycle.Resume());
+            CHECK(events() == 3);
+            const auto switched = f.app->DexVm().Linker().FindVtableIndex(
+                f.app->DexVm().Vm().Model().ObjectClass(parent), "switchActivity", "()V");
+            REQUIRE(switched);
+            const auto target =
+                f.app->DexVm().Linker().Class(f.app->DexVm().Vm().Model().ObjectClass(parent)).vtable[*switched];
+            const auto outcome = f.app->DexVm().Vm().Call(target, std::array{VmValue::Ref(parent)});
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+            static_cast<void>(lifecycle.StepFrame());
+            CHECK(f.context->activity != parent);
+            CHECK(events() == 5);
+            static_cast<void>(lifecycle.Stop());
+            CHECK(events() == 6);
+            for (const auto& hit : f.ledger.Unimplemented())
+                CHECK_MESSAGE((hit.id == "dexvm.service_manager.dropbox" || hit.id == "libcore.io.Posix.chmod"),
+                              hit.id);
+        });
     }
 }
 

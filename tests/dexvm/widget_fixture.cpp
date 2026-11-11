@@ -303,11 +303,6 @@ ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
     context->encoded_music = &music;
     threads = &runtime->bridge->Threads();
     context->threads = threads;
-    const auto looper = linker.ResolveDescriptor("Landroid/os/Looper;");
-    const auto prepare = linker.FindDirectMethod(looper, "prepareMainLooper", "()V");
-    REQUIRE(prepare.has_value());
-    const auto prepared = interpreter.Call(*prepare, {});
-    REQUIRE_MESSAGE(!prepared.exception.IsValid(), prepared.exception_message);
     context->video_source_player_factory =
         [factory = FakeFactory()](std::shared_ptr<const ogplay::video::VideoDataSource>) { return factory({}); };
     interpreter.SetLogger(&logger);
@@ -316,7 +311,7 @@ ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
 
     video_view = interpreter.NewIntrinsicInstance("Landroid/widget/VideoView;");
     activity = interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
-    if (attach_activity) ogplay::test::AttachViewTestContext(interpreter, activity);
+    if (attach_activity) ogplay::test::AttachViewTestContext(interpreter, activity, context);
     const auto bar = interpreter.NewIntrinsicInstance("Landroid/widget/LinearLayout;");
     skip_button = interpreter.NewIntrinsicInstance("Landroid/widget/ImageButton;");
     other_button = interpreter.NewIntrinsicInstance("Landroid/widget/ImageButton;");
@@ -379,7 +374,7 @@ VmValue ClickVm::CallOn(const VmObjectRef receiver, const std::string& name, con
         construct_view(arguments[0].ref);
     if (name == "getWindow" || name == "getDecorView" || name == "findViewById" || name == "setContentView" ||
         name == "addContentView")
-        ogplay::test::AttachViewTestContext(interpreter, receiver);
+        ogplay::test::AttachViewTestContext(interpreter, receiver, context);
     // Historical fixture assertions query geometry only after an explicit owner barrier.
     if (context->activity.IsValid() &&
         (name == "getWidth" || name == "getHeight" || name == "getLeft" || name == "getRight" || name == "getTop" ||
@@ -430,7 +425,7 @@ VmValue ClickVm::CallDirect(const VmObjectRef receiver, const std::string& class
                             const std::string& descriptor, std::vector<VmValue> arguments) {
     ogplay::test::MountResourceFixture(*context, interpreter);
     if (name == "<init>" && descriptor.starts_with("(Landroid/content/Context;") && !arguments.empty()) {
-        ogplay::test::AttachViewTestContext(interpreter, arguments.front().ref);
+        ogplay::test::AttachViewTestContext(interpreter, arguments.front().ref, context);
     }
     const auto java_class = linker.FindClass(class_descriptor);
     REQUIRE_MESSAGE(java_class.has_value(), class_descriptor);

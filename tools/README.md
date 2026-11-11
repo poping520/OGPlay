@@ -77,8 +77,8 @@ python3 tools/conformance/dalvik_tests.py --update-baseline # 无回归才更新
 
 ## API 19 启动类路径
 
-`bootdex/build_bootdex.py` 生成 `data/android/19/framework/`：六个 ROM jar（core、conscrypt、
-ext、framework、framework2、android.policy）从 `.local/aosp` 原样复制并校验固定 SHA-256；
+`bootdex/build_bootdex.py` 生成 `data/android/19/framework/`：七个 ROM jar（core、conscrypt、
+ext、framework、framework2、telephony-common、android.policy）从 `.local/aosp` 原样复制并校验固定 SHA-256；
 `src/guest/*/java` 下的 OGPlay Java 用 javac 17 + API 19 android.jar + d8 编成 `ogplay.jar`，
 排在启动类路径最前，同名类以它为准。manifest 记录每个 jar 的顺序、来源与哈希。
 

@@ -8,7 +8,7 @@ TEST_CASE("DVM-283 ROM FrameLayout Window bounds state RTL and match-parent reme
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
         f.context->activity = owner;
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         const auto root = f.On(owner, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(0x01020002)}).ref;
         REQUIRE(root.IsValid());
         CHECK(f.linker.Class(f.model.ObjectClass(root)).descriptor == "Landroid/widget/FrameLayout;");
@@ -241,7 +241,7 @@ TEST_CASE("DVM-283 experimental unsupported containers foreground and attribute 
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         // AbsoluteLayout is admitted by DVM-351 and covered by its positive traversal tests.
         for (const auto type :
              {"Landroid/widget/ScrollView;", "Landroid/widget/TableLayout;", "Landroid/widget/TableRow;"}) {

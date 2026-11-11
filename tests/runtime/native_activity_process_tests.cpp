@@ -86,16 +86,21 @@ TEST_CASE("DVM-195 original NativeActivity runs in the existing Java native proc
         CHECK(read(native.Add(24)) == 19);
         const runtime::JniReference actual_activity(read(native.Add(12)));
         CHECK(bridge.FromReference(actual_activity) == activity);
-        const auto asset_manager = runtime::android_intrinsics::CallAndroidMethod(vm, activity, "getAssets", "()Landroid/content/res/AssetManager;").ref;
-        const auto asset_reference = bridge.PublishLocal(asset_manager);
-        const auto native_symbols = runtime::detail::BuildAndroidBoundarySymbols();
-        const runtime::BionicHleSymbolProvider asset_provider(native_symbols);
-        const auto convert = asset_provider.Lookup("libandroid.so", "AAssetManager_fromJava");
-        REQUIRE(convert.has_value());
-        const auto native_manager = process.Invoke({*convert,
-            {process.GuestEnvironment().Value(), asset_reference.Value(), 0, 0}, {}}).return_value;
-        CHECK(read(native.Add(32)) == native_manager);
-        process.Environment().DeleteLocalRef(1, asset_reference);
+        fixture.app->RunOnMainThread([&] {
+            const auto asset_manager = runtime::android_intrinsics::CallAndroidMethod(
+                                           vm, activity, "getAssets", "()Landroid/content/res/AssetManager;")
+                                           .ref;
+            const auto asset_reference = bridge.PublishLocal(asset_manager);
+            const auto native_symbols = runtime::detail::BuildAndroidBoundarySymbols();
+            const runtime::BionicHleSymbolProvider asset_provider(native_symbols);
+            const auto convert = asset_provider.Lookup("libandroid.so", "AAssetManager_fromJava");
+            REQUIRE(convert.has_value());
+            const auto native_manager =
+                process.Invoke({*convert, {process.GuestEnvironment().Value(), asset_reference.Value(), 0, 0}, {}})
+                    .return_value;
+            CHECK(read(native.Add(32)) == native_manager);
+            process.Environment().DeleteLocalRef(1, asset_reference);
+        });
         CHECK(read(native.Add(160+8)) == 64); CHECK(read(native.Add(160+12)) == 36);
         CHECK(read(native.Add(108)) == 1); // actual guest JNI invocation
         CHECK(fixture.context->window_input_queue.IsValid());
@@ -104,9 +109,11 @@ TEST_CASE("DVM-195 original NativeActivity runs in the existing Java native proc
         write(trace, 0); write(trace.Add(4), 0); write(trace.Add(8), 0);
         write(native.Add(28), trace.Value());
         const auto call = [&](const char* name, const char* signature, std::vector<dx::VmValue> args = {}) {
-            return runtime::android_intrinsics::CallAndroidMethod(vm, activity, name, signature, std::move(args));
+            return fixture.CallGuest(activity, name, signature, std::move(args));
         };
-        const auto bundle = runtime::android_intrinsics::NewAndroidBundle(vm);
+        dx::VmObjectRef bundle;
+        fixture.app->RunOnMainThread([&] { bundle = runtime::android_intrinsics::NewAndroidBundle(vm); });
+        const auto bundle_root = vm.ProtectReferences(std::array{bundle});
         static_cast<void>(call("onSaveInstanceState", "(Landroid/os/Bundle;)V", {dx::VmValue::Ref(bundle)}));
         CHECK(read(trace) == 0); // unregistered save callback
         const auto state = memory.allocate(4);
@@ -116,8 +123,10 @@ TEST_CASE("DVM-195 original NativeActivity runs in the existing Java native proc
         const auto entry = process.FindModuleExport(fixture.app->NativeLibraries()->Records().front().module_index, "ANativeActivity_onCreate");
         write(memory::GuestAddress{read(native)}.Add(8), entry.Add(256).Value());
         static_cast<void>(call("onSaveInstanceState", "(Landroid/os/Bundle;)V", {dx::VmValue::Ref(bundle)}));
-        const auto saved = runtime::android_intrinsics::CallAndroidMethod(vm, bundle, "getByteArray", "(Ljava/lang/String;)[B",
-            {dx::VmValue::Ref(vm.NewStringUtf8("android:native_state"))}).ref;
+        const auto saved = fixture
+                               .CallGuest(bundle, "getByteArray", "(Ljava/lang/String;)[B",
+                                          {dx::VmValue::Ref(vm.NewStringUtf8("android:native_state"))})
+                               .ref;
         CHECK(vm.Model().ReadByteRegion(saved, 0, 3) == std::vector<std::byte>(state_bytes.begin(), state_bytes.begin()+3));
         CHECK(read(state) == 0); // fixture guest free ran after the copy
         write(trace.Add(16), 1024U*1024U+1U);
@@ -130,10 +139,14 @@ TEST_CASE("DVM-195 original NativeActivity runs in the existing Java native proc
         }
         write(memory::GuestAddress{read(native)}.Add(8), 0);
         memory.release(state, 4);
+        const auto before_suspend = read(trace);
         static_cast<void>(fixture.app->ActivityLifecycle().Suspend());
-        CHECK(read(trace.Add(4)) == 3);
+        CHECK(read(trace) == before_suspend + 2);  // pause and surface destruction before the first focus dispatch
+        CHECK(read(trace.Add(4)) == 10);
+        const auto before_resume = read(trace);
         static_cast<void>(fixture.app->ActivityLifecycle().Resume());
-        CHECK(read(trace.Add(4)) == 6); // resume then focus
+        CHECK(read(trace) == before_resume + 5);  // resume, focus, create, size, redraw
+        CHECK(read(trace.Add(4)) == 9);
         static_cast<void>(call("onLowMemory", "()V"));
         CHECK(read(trace.Add(4)) == 15);
         const auto configuration = vm.NewIntrinsicInstance("Landroid/content/res/Configuration;");
@@ -141,21 +154,31 @@ TEST_CASE("DVM-195 original NativeActivity runs in the existing Java native proc
         CHECK(read(trace.Add(4)) == 14);
         static_cast<void>(call("onWindowFocusChanged", "(Z)V", {dx::VmValue::Int(1)}));
         CHECK(read(trace.Add(4)) == 6); CHECK(read(trace.Add(8)) == 1);
-        // Releasing and reacquiring the Surface destroys the old ownership once.
-        runtime::SetWindowSurfaceCallback(vm, *fixture.context, dx::VmObjectRef{});
+        // Drive the owner safe point after each callback change.
+        const auto set_surface = [&](dx::VmObjectRef callback) {
+            fixture.app->RunOnMainThread([&] {
+                runtime::SetWindowSurfaceCallback(vm, *fixture.context, callback);
+                const auto error = runtime::PumpAndroidSurfaceEvents(vm, *fixture.context);
+                REQUIRE_MESSAGE(!error.has_value(), error.value_or(""));
+            });
+        };
+        set_surface(dx::VmObjectRef{});
         CHECK(read(trace.Add(4)) == 10);
         const auto old_window = read(trace.Add(8));
         const auto count = read(trace);
-        runtime::SetWindowSurfaceCallback(vm, *fixture.context, dx::VmObjectRef{});
+        set_surface(dx::VmObjectRef{});
         CHECK(read(trace) == count);
-        runtime::SetWindowSurfaceCallback(vm, *fixture.context, activity);
-        CHECK(read(trace) == count + 3); CHECK(read(trace.Add(4)) == 9);
+        set_surface(activity);
+        CHECK(read(trace) == count + 3);
+        CHECK(read(trace.Add(4)) == 9);
         CHECK(read(trace.Add(8)) != old_window);
-        runtime::SetWindowInputCallback(vm, *fixture.context, dx::VmObjectRef{});
-        CHECK(read(trace.Add(4)) == 12);
-        CHECK_FALSE(fixture.context->window_input_queue.IsValid());
-        runtime::SetWindowInputCallback(vm, *fixture.context, activity);
-        CHECK(read(trace.Add(4)) == 11);
+        fixture.app->RunOnMainThread([&] {
+            runtime::SetWindowInputCallback(vm, *fixture.context, dx::VmObjectRef{});
+            CHECK(read(trace.Add(4)) == 12);
+            CHECK_FALSE(fixture.context->window_input_queue.IsValid());
+            runtime::SetWindowInputCallback(vm, *fixture.context, activity);
+            CHECK(read(trace.Add(4)) == 11);
+        });
         static_cast<void>(fixture.app->Stop());
         CHECK(read(trace.Add(4)) == 5); // healthy Stop runs the foreground onDestroy (ADR-0115 rev. 2026-10-21)
         CHECK(fixture.context->native_activity->InputQueuePointer(activity).IsNull());

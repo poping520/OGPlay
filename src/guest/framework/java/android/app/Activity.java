@@ -41,6 +41,16 @@ public class Activity extends ContextThemeWrapper {
     public Window getWindow() { return mWindow; } // integration supplies lazy Window ownership
     public android.view.LayoutInflater getLayoutInflater() { return getWindow().getLayoutInflater(); }
 
+    @Override
+    public void startActivity(Intent intent) {
+        startActivity(intent, null);
+    }
+
+    @Override
+    public void startActivity(Intent intent, Bundle options) {
+        startActivityForResult(intent, -1, options);
+    }
+
     public void startActivityForResult(Intent intent, int requestCode) {
         startActivityForResult(intent, requestCode, null);
     }

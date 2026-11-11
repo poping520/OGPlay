@@ -10,7 +10,7 @@ TEST_CASE("DVM-365 ProgressBar ROM state measurement attachment and bounded reso
         ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         auto& record = f.context->activity_stack.emplace_back();
         record.object = owner;
@@ -199,7 +199,7 @@ TEST_CASE("DVM-367 horizontal ROM ProgressBar retains layer IDs levels and stati
         ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         auto& record = f.context->activity_stack.emplace_back();
         record.object = owner;

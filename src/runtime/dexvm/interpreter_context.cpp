@@ -39,6 +39,10 @@ Interpreter::RootScope::~RootScope() noexcept {
     if (interpreter_ == nullptr) return;
     try {
         VmExecutionLockScope lock_scope(interpreter_->impl_->execution_lock);
+        if (context_token_ == 0) {
+            interpreter_->impl_->external_roots.erase(base_);
+            return;
+        }
         auto& execution = interpreter_->impl_->Execution();
         if (execution.token != context_token_ || execution.intrinsic_roots.size() < base_) {
             std::terminate();
@@ -276,6 +280,11 @@ void Interpreter::BindDefaultExecutionHost() {
     execution.bound_host = host;
 }
 
+void Interpreter::RestartExecutionBudget() {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    impl_->Execution().ticks = 0;
+}
+
 void Interpreter::RunInExecutionContext(const InterpreterExecutionContext& context,
                                         const std::function<void()>& action) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
@@ -448,6 +457,9 @@ VmObjectRef Interpreter::SharedEnumConstants(const DexClassId java_class) {
 
 void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
     if (!visitor) return;
+    for (const auto& [_, roots] : impl_->external_roots)
+        for (const auto root : roots)
+            visitor(root);
     const std::lock_guard contexts_lock(impl_->executions_mutex);
     for (const auto& [_, execution] : impl_->executions) {
         for (const auto& frame : execution->frames) {
@@ -490,6 +502,11 @@ void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
 Interpreter::RootScope Interpreter::ProtectReferences(const std::span<const VmObjectRef> references) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();
+    if (execution.bound_host != std::thread::id{} && execution.bound_host != std::this_thread::get_id()) {
+        const auto token = impl_->next_external_root++;
+        impl_->external_roots.emplace(token, std::vector<VmObjectRef>(references.begin(), references.end()));
+        return RootScope(*this, 0, token);
+    }
     const auto base = execution.intrinsic_roots.size();
     for (const auto reference : references) {
         if (reference.IsValid()) execution.intrinsic_roots.push_back(reference);

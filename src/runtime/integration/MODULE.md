@@ -237,7 +237,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
     其前的 RunGracefulCleanup 保持线程/模块准入与图形存活供协作回调，
     只在 BeginTeardown 后关闭新线程/模块准入；
     创建 owner 的 live root 同步 scope 与 RunTeardownCleanup 共用上述累计预算。
-  nanosleep 在执行前校验剩余预算，返回/SVC/slice 边界检查超时；不会因真实睡眠续期。
+  nanosleep 在执行前校验剩余预算，根线程清理时 futex WAIT 同样受剩余时限约束；返回/SVC/slice 边界检查超时。
   未处理 CPU stop 以 typed fault 标记 native 状态不安全，拒绝后续 guest 调用/清理并跳过
   DSO fini；宿主线程回收、JNI detach 和 monitor shutdown 仍执行，原错由调用方保留。
 - Runtime 的 hook 与 exit/halt 普通协议归 BootDex；平台只绑定 nativeExit，发布 session

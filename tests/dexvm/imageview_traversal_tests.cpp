@@ -26,7 +26,7 @@ VmObjectRef Owner(ContainerVm& f) {
     ogplay::test::ResourceFixture(*f.context).entries = {theme, style};
     f.context->application_theme = theme.resource_id;
     const auto owner = f.New("Landroid/app/Activity;");
-    ogplay::test::AttachViewTestContext(f.vm, owner);
+    ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
     f.On(owner, "setTheme", "(I)V", {VmValue::Int(static_cast<int>(theme.resource_id))});
     return owner;
 }
@@ -288,7 +288,7 @@ TEST_CASE("DVM-296 unsupported image APIs fail and ImageButton uses real default
         // Use the real registered system default style, only masking unrelated scrollbar demands.
         ogplay::test::ResourceFixture(*f.context).entries.front().bag.pop_back();
         const auto default_owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, default_owner);
+        ogplay::test::AttachViewTestContext(f.vm, default_owner, f.context);
         f.On(default_owner, "setTheme", "(I)V", {VmValue::Int(0x7f020001)});
         const auto cls = f.linker.ResolveDescriptor("Landroid/widget/ImageButton;");
         const auto failed_button = f.vm.NewIntrinsicInstance("Landroid/widget/ImageButton;");

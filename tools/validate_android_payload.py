@@ -81,7 +81,7 @@ ICU_NOTICES = {
     "notices/icu4c-unicode-license.txt",
 }
 PAYLOAD_FILES = LIBRARIES | NOTICES | {
-    FRAMEWORK_RES, *BOOT_CLASSPATH, *SYSTEM_FONTS, BOOT_CLASSPATH_NOTICE, ICU_DATA, "manifest.json",
+    FRAMEWORK_RES, *BOOT_CLASSPATH, *SYSTEM_FONTS, BOOT_CLASSPATH_NOTICE, *bootdex.ROM_NOTICES.values(), ICU_DATA, "manifest.json",
     "source-manifest.xml", TZDATA, TZDATA_NOTICE, UI_PRIMARY_FONT, UI_FONT, UI_FONT_NOTICE, "fonts/README.md"} | ICU_NOTICES
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -203,6 +203,7 @@ def _validate_source_manifest(root: Path, source: dict[str, Any]) -> set[str]:
             "a5c7131da47c991585a6c6ac0c063b6d7d56e3fc",
         "platform/libcore": "d49420b1b7edf8b3f27dabd3e1b7512a5502595e",
         "platform/frameworks/base": "63ade05d76785975fc3292ca030abbaa1dda8891",
+        "platform/frameworks/opt/telephony": "refs/tags/android-4.4.4_r2.0.1",
         "platform/dalvik": "36e356c96640775f0a3f167bd2426ea0f0093b8b",
     }
     for name, revision in expected.items():
@@ -330,6 +331,10 @@ def validate(root: Path) -> None:
     for entry in entries:
         _validate_digest(root / entry["path"], entry.get("size"), entry.get("sha256"), entry["path"])
         name = Path(entry["path"]).name
+        if name in bootdex.ROM_NOTICES:
+            notice = bootdex.ROM_NOTICES[name]
+            if entry.get("notice") != notice or entry.get("notice_sha256") != _digest(root / notice):
+                raise PayloadError(f"ROM notice does not match: {name}")
         if name in bootdex.ROM_JARS:
             project, digest = bootdex.ROM_JARS[name]
             if entry.get("source_project") != project or entry.get("sha256") != digest or \

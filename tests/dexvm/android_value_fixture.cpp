@@ -38,7 +38,8 @@
 namespace ogplay::test::android_value {
 
 AndroidValueVm::AndroidValueVm(InterpreterBackend backend, const std::vector<IntrinsicClassDecl>& extras,
-                               bool force_all_bridge, const char* dex_fixture, AndroidUiTraversalOwner owner)
+                               bool force_all_bridge, const char* dex_fixture, AndroidUiTraversalOwner owner,
+                               ogplay::gles::AngleBackend graphics)
     : context(std::make_shared<DexVmAndroidContext>(owner)), runtime([&] {
           ogplay::test::BindBootDexArchive(*context);
           auto catalog = AndroidIntrinsicCatalog(context);
@@ -49,7 +50,8 @@ AndroidValueVm::AndroidValueVm(InterpreterBackend backend, const std::vector<Int
               .diagnostics = {.trace_capacity = 8192U, .event_mask = DexVmTraceBit(DexVmTraceKind::method_enter)}};
           return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
               context, ledger, logger, std::move(catalog),
-              ogplay::test::native_library::ReadDexFixture(dex_fixture ? dex_fixture : "application.dex"), config);
+              ogplay::test::native_library::ReadDexFixture(dex_fixture ? dex_fixture : "application.dex"), config,
+              nullptr, std::vector<ogplay::loader::ApkNativeLibrary>{}, graphics);
       }()),
       model(runtime->bridge->Model()), linker(runtime->bridge->Linker()), vm(runtime->bridge->Vm()),
       threads(runtime->bridge->Threads()) {}
@@ -57,7 +59,9 @@ AndroidValueVm::AndroidValueVm(InterpreterBackend backend, const std::vector<Int
 VmObjectRef AndroidValueVm::New(const char* descriptor, const char* constructor, std::vector<VmValue> arguments) {
     ogplay::test::MountResourceFixture(*context, vm);
     if (!arguments.empty() && std::string_view(constructor).starts_with("(Landroid/content/Context;"))
-        ogplay::test::AttachViewTestContext(vm, arguments.front().ref);
+        ogplay::test::AttachViewTestContext(vm, arguments.front().ref, context);
+    if (std::string_view(descriptor) == "Landroid/content/Context;")
+        return ogplay::test::MakeRomAppContext(vm, context);
     const auto klass = linker.ResolveDescriptor(descriptor);
     const auto initialized = vm.EnsureClassInitialized(klass);
     REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
@@ -65,7 +69,7 @@ VmObjectRef AndroidValueVm::New(const char* descriptor, const char* constructor,
     const auto roots = vm.ProtectReferences(std::array{object});
     if (std::string_view(constructor).starts_with("(Landroid/content/Context;") && !arguments.empty() &&
         linker.IsAssignable(linker.ResolveDescriptor("Landroid/view/View;"), klass)) {
-        ogplay::test::AttachViewTestContext(vm, arguments.front().ref);
+        ogplay::test::AttachViewTestContext(vm, arguments.front().ref, context);
     }
     const auto method = linker.FindDirectMethod(klass, "<init>", constructor);
     REQUIRE(method.has_value());

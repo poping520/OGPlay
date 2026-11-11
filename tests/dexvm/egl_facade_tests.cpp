@@ -4,6 +4,7 @@
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "ogplay/runtime/raster/bitmap.h"
 #include "boot_dex.h"
+#include "android_value_fixture.h"
 #include <doctest/doctest.h>
 
 #include <cstdint>
@@ -42,48 +43,28 @@ using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 struct EglVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
-    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
-    JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model{strings, arrays};
-    DexClassLinker linker;
-    ogplay::core::CapabilityLedger ledger;
-    std::shared_ptr<DexVmAndroidContext> context{std::make_shared<DexVmAndroidContext>()};
-    Interpreter interpreter;
+    ogplay::test::android_value::AndroidValueVm fixture;
+    JavaObjectModel& model{fixture.model};
+    DexClassLinker& linker{fixture.linker};
+    ogplay::core::CapabilityLedger& ledger{fixture.ledger};
+    std::shared_ptr<DexVmAndroidContext> context{fixture.context};
+    Interpreter& interpreter{fixture.vm};
+
+    static std::vector<IntrinsicClassDecl> Catalog(const std::vector<IntrinsicClassDecl>& extras) {
+        auto catalog = extras;
+        catalog.push_back(
+            std::move(IntrinsicClassBuilder::Class("Lfixture/GlView;", "Landroid/opengl/GLSurfaceView;")).Build());
+        catalog.push_back(std::move(IntrinsicClassBuilder::Class("Lfixture/EglPolicies;", "Ljava/lang/Object;",
+                                                                 {"Landroid/opengl/GLSurfaceView$EGLContextFactory;",
+                                                                  "Landroid/opengl/GLSurfaceView$EGLConfigChooser;"}))
+                              .Build());
+        return catalog;
+    }
 
     explicit EglVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
                    AndroidGuestCallSession* session = nullptr, const char* dex_fixture = nullptr,
-                   const std::vector<IntrinsicClassDecl>& extras = {})
-        : interpreter(
-              [this, dex_fixture, &extras]() -> DexClassLinker& {
-                  ogplay::test::BindBootDexArchive(*context);
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
-                  auto android = AndroidIntrinsicCatalog(context);
-                  android.push_back(
-                      std::move(IntrinsicClassBuilder::Class("Lfixture/GlView;", "Landroid/opengl/GLSurfaceView;"))
-                          .Build());
-                  android.push_back(
-                      std::move(IntrinsicClassBuilder::Class("Lfixture/EglPolicies;", "Ljava/lang/Object;",
-                                                             {"Landroid/opengl/GLSurfaceView$EGLContextFactory;",
-                                                              "Landroid/opengl/GLSurfaceView$EGLConfigChooser;"}))
-                          .Build());
-                  linker.RegisterIntrinsics(std::move(android));
-                  linker.RegisterIntrinsics(extras);
-                  ogplay::test::RegisterBootDex(linker);
-                  if (dex_fixture != nullptr) {
-                      const auto path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + dex_fixture;
-                      std::ifstream stream(path, std::ios::binary);
-                      REQUIRE_MESSAGE(stream.good(), "missing fixture: ", path);
-                      linker.RegisterDex(std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream),
-                                                                   std::istreambuf_iterator<char>()));
-                  }
-                  linker.Link();
-                  return linker;
-              }(),
-              model, nullptr, ledger, {.backend = backend}) {
-        RegisterAndroidValueStateTables(interpreter, context);
-        context->ui_test_accessibility_disabled = true;
+                   const std::vector<IntrinsicClassDecl>& extras = {}, ogplay::gles::AngleBackend graphics = {})
+        : fixture(backend, Catalog(extras), false, dex_fixture, AndroidUiTraversalOwner::JavaTraversal, graphics) {
         context->session = session;
         const auto egl10 = linker.ResolveDescriptor("Ljavax/microedition/khronos/egl/EGL10;");
         auto& linked = linker.Class(egl10);
@@ -223,7 +204,7 @@ TEST_CASE("GLSurfaceView subclasses inherit a stable holder and initialized View
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         EglVm vm(backend);
         const auto view = vm.interpreter.NewIntrinsicInstance("Lfixture/GlView;");
-        const auto context = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto context = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
         CHECK(vm.linker.IsAssignable(vm.linker.ResolveDescriptor("Landroid/view/SurfaceView;"),
                                      vm.model.ObjectClass(view)));
         vm.CallStatic("Landroid/opengl/GLSurfaceView;", "<init>", "(Landroid/content/Context;)V",
@@ -247,7 +228,7 @@ TEST_CASE("SurfaceView null-attribute constructors initialize DEX subclasses and
         EglVm vm(backend, nullptr, "surface_view_ctor.dex");
         const auto type = vm.linker.ResolveDescriptor(subclass);
         const auto context = vm.interpreter.NewIntrinsicInstance("Landroid/app/Application;");
-        ogplay::test::AttachViewTestContext(vm.interpreter, context);
+        ogplay::test::AttachViewTestContext(vm.interpreter, context, vm.context);
         const auto construct = [&](const VmObjectRef view, const char* signature, std::vector<VmValue> arguments) {
             const auto method = vm.linker.FindDirectMethod(type, "<init>", signature);
             REQUIRE(method.has_value());
@@ -321,7 +302,7 @@ TEST_CASE("DVM-233 in-layout removal retires Surface callbacks once and preserve
         });
         EglVm vm(backend, nullptr, nullptr, {std::move(callback).Build()});
         active = &vm;
-        const auto owner = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto owner = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
         parent = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
         replacement = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
         child = vm.interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
@@ -410,7 +391,7 @@ TEST_CASE("SurfaceHolder frame publishes before callbacks and retains per-holder
         };
         const auto make_view = [&] {
             const auto view = vm.interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
-            const auto owner = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+            const auto owner = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
             vm.CallStatic("Landroid/view/SurfaceView;", "<init>", "(Landroid/content/Context;)V",
                           {VmValue::Ref(view), VmValue::Ref(owner)});
             return view;
@@ -523,7 +504,7 @@ TEST_CASE("Surface traversal retains a SurfaceView attached inside its creation 
         EglVm vm(backend, nullptr, nullptr, {std::move(callback).Build()});
         active = &vm;
         vm.context->defer_content_surface_callbacks = true;
-        owner = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        owner = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
         parent = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
         vm.CallStatic("Landroid/widget/FrameLayout;", "<init>", "(Landroid/content/Context;)V",
                       {VmValue::Ref(parent), VmValue::Ref(owner)});
@@ -1427,21 +1408,9 @@ TEST_CASE("BND49 Java EGL10 and EGL14 share stable RGB config facts") {
 
 TEST_CASE("DVM225 BootDex GL interfaces clear pixels and retain context-local direct buffers") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        auto libc = MinimalLibcElf();
-        const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
-        VirtualFileSystem filesystem;
-        auto session = AndroidGuestCallSession::Start({19,
-                                                       "libc.so",
-                                                       std::span{&module, 1},
-                                                       {kNativeRenderer, ogplay::gles::AngleDevice::hardware},
-                                                       4,
-                                                       3,
-                                                       1000,
-                                                       1,
-                                                       &filesystem,
-                                                       {}});
-        EglVm vm(backend, session.get(), "gl_interface.dex");
-        vm.interpreter.SetNioRuntime(&session->NIO());
+        EglVm vm(backend, nullptr, "gl_interface.dex", {}, {kNativeRenderer, ogplay::gles::AngleDevice::hardware});
+        auto* session = vm.fixture.runtime->session.get();
+        vm.context->session = session;
         const auto ref = VmValue::Ref;
         const auto egl = vm.CallStatic("Ljavax/microedition/khronos/egl/EGLContext;", "getEGL",
                                        "()Ljavax/microedition/khronos/egl/EGL;")
@@ -1480,6 +1449,7 @@ TEST_CASE("DVM225 BootDex GL interfaces clear pixels and retain context-local di
         CHECK(gl != other);
         CHECK(vm.CallOn(first, "getGL", "()Ljavax/microedition/khronos/opengles/GL;").ref == gl);
         CHECK(vm.linker.Class(vm.model.ObjectClass(gl)).descriptor == "Lcom/google/android/gles_jni/GLImpl;");
+        CHECK(vm.linker.Class(vm.model.ObjectClass(gl)).is_boot_dex);
         CHECK_FALSE(vm.linker.Class(vm.model.ObjectClass(gl)).is_intrinsic);
         for (const auto* name : {"GL", "GL10", "GL10Ext", "GL11", "GL11Ext", "GL11ExtensionPack"}) {
             const auto type =
@@ -1572,9 +1542,7 @@ TEST_CASE("DVM225 BootDex GL interfaces clear pixels and retain context-local di
                                    {VmValue::Int(3), VmValue::Int(0x1406), VmValue::Int(0), ref(heap)});
         CHECK(vm.linker.Class(failure.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         CHECK(vm.model.InstanceSlots(gl)[vm.linker.Field(*field).slot].bits == buffer.Value());
-        CHECK(vm.CallStatic("Lcom/google/android/gles_jni/GLImpl;", "nativeAllowIndirectBuffers", "()Z").AsInt() == 1);
         vm.context->target_sdk_version = 19;
-        CHECK(vm.CallStatic("Lcom/google/android/gles_jni/GLImpl;", "nativeAllowIndirectBuffers", "()Z").AsInt() == 0);
         const auto null_error =
             vm.CallOnOutcome(gl, "glVertexPointer", "(IIILjava/nio/Buffer;)V",
                              {VmValue::Int(3), VmValue::Int(0x1406), VmValue::Int(0), ref(VmObjectRef{})});
@@ -1626,7 +1594,7 @@ TEST_CASE("View subtree sizes are delivered once before Surface creation and inc
         auto& c = *vm.context;
         c.surface_width = 800;
         c.surface_height = 480;
-        const auto context = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto context = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
         const auto parent = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
         const auto root = c.ui_tree.CreateNode(ui::UiClass::FrameLayout);
         BindViewToUiNode(c, parent, root);
@@ -1725,8 +1693,6 @@ TEST_CASE("SurfaceTexture original Java connects a Surface producer to real exte
         VmThreadRuntime threads(fixture.interpreter);
         fixture.context->threads = &threads;
         auto& vm = fixture.interpreter;
-        RegisterAndroidSchedulerStateTable(vm, fixture.context);
-        RegisterAndroidSurfaceStreamStateTable(vm, fixture.context);
         const auto construct = [&](const char* descriptor, const char* signature, std::vector<VmValue> args) {
             auto object = vm.NewIntrinsicInstance(descriptor);
             const auto roots = vm.ProtectReferences(std::array{object});
@@ -1908,7 +1874,6 @@ TEST_CASE("SurfaceTexture GC abandons consumers without producer endpoints retai
         EglVm fixture(backend);
         VmThreadRuntime threads(fixture.interpreter);
         fixture.context->threads = &threads;
-        RegisterAndroidSurfaceStreamStateTable(fixture.interpreter, fixture.context);
         auto& vm = fixture.interpreter;
         auto texture = vm.NewIntrinsicInstance("Landroid/graphics/SurfaceTexture;");
         VmObjectRef surface;

@@ -139,8 +139,9 @@ struct BootClasspathJar final {
 
 // Boot classpath order. OGPlay's own classes come first so that they replace
 // the ROM class of the same name; the ROM jars follow unmodified.
-inline constexpr std::array<std::string_view, 7> kBootClasspathJars{
-    "ogplay.jar", "core.jar", "conscrypt.jar", "ext.jar", "framework.jar", "framework2.jar", "android.policy.jar"};
+inline constexpr std::array<std::string_view, 8> kBootClasspathJars{
+    "ogplay.jar",    "core.jar",       "conscrypt.jar",        "ext.jar",
+    "framework.jar", "framework2.jar", "telephony-common.jar", "android.policy.jar"};
 inline constexpr std::string_view kBootClasspathDirectory = "/system/framework/";
 
 // Reads every kBootClasspathJars archive from a payload framework directory.
@@ -259,6 +260,7 @@ struct DexVmAndroidContext final {
     bool strict_webview_errors{};
     std::uint32_t application_uid{10000U};
     std::string application_class_name;
+    std::string guest_process_name;
     std::string application_process_name;
     std::optional<loader::AndroidManifestLabel> application_label;
     std::uint32_t application_icon{};
@@ -279,24 +281,28 @@ struct DexVmAndroidContext final {
     std::vector<loader::AndroidManifestActivityComponent> activity_components;
     std::vector<loader::AndroidManifestServiceComponent> service_components;
     std::vector<loader::AndroidManifestReceiverComponent> receiver_components;
-    // API19 registers a dispatcher before an absent bind returns false.
-    // Connections are strong edges of the Context, removed on unbind/sweep.
-    std::unordered_map<std::uint32_t, std::vector<dexvm::VmObjectRef>> service_connections;
+    std::vector<loader::AndroidManifestProviderComponent> provider_components;
+    std::map<std::string, dexvm::VmObjectRef, std::less<>> local_provider_holders;
 
-    struct LocalServiceBinding final {
-        std::uint64_t generation{};
-        dexvm::VmObjectRef owner{}, connection{}, intent{}, component{};
-        std::string name;
-        bool delivered{};
+    struct LocalContentObserver final {
+        dexvm::VmObjectRef transport{};
+        std::vector<std::string> path;
+        bool descendants{};
     };
 
-    struct LocalService final {
-        dexvm::VmObjectRef instance{}, binder{}, intent{};
+    std::vector<LocalContentObserver> local_content_observers;
+    std::uint64_t settings_system_version{};
+    std::vector<std::pair<dexvm::VmObjectRef, dexvm::VmObjectRef>> local_broadcast_filters;
+    std::map<std::string, dexvm::VmObjectRef, std::less<>> local_sticky_broadcasts;
+
+    struct RomServiceRecord final {
+        dexvm::VmObjectRef thread{}, token{}, component{}, bind_intent{}, binder{};
+        std::vector<dexvm::VmObjectRef> connections{};
+        std::int32_t start_id{};
+        bool started{}, bound{}, published{}, rebind{};
     };
 
-    std::vector<LocalServiceBinding> local_service_bindings;
-    std::unordered_map<std::string, LocalService> local_services;
-    std::uint64_t next_service_generation{1};
+    std::map<std::string, RomServiceRecord, std::less<>> rom_services;
     bool local_services_stopping{};
 
     // VM execution lock serializes token lookup, mutation and GC. Registry
@@ -604,26 +610,8 @@ struct DexVmAndroidContext final {
     std::optional<AndroidOfflineConnectivity> offline_connectivity{AndroidOfflineConnectivity{}};
     std::shared_ptr<GuestNetworkEnvironment> network_environment;
 
-    // SharedPreferences, keyed by prefs file name. Loaded from and written
-    // back to /data/data/<pkg>/shared_prefs/<name>.xml through the VFS, so
-    // they persist with the sandbox and a title that reads the file
-    // directly sees the same fact (ADR-0020). Values keep their Java type
-    // so mismatched getters can throw the real ClassCastException.
+    // Process-local Settings provider values; application preferences live in ROM objects and VFS XML.
     std::unordered_map<std::string, PreferenceMap> preferences;
-    // Names already loaded, so a reopen does not re-read the file and lose
-    // uncommitted edits.
-    std::unordered_map<std::string, bool> preferences_loaded;
-    // SharedPreferences/Editor instance handle -> preference file name.
-    std::unordered_map<std::uint32_t, std::string> preference_names;
-
-    // Per-Editor pending changes; nullopt removes a key. Only commit/apply
-    // publishes these into the unique committed preference map. No guest refs.
-    struct PreferenceEditorState final {
-        std::unordered_map<std::string, std::optional<PreferenceValue>> modified;
-        bool clear{};
-    };
-
-    std::unordered_map<std::uint32_t, PreferenceEditorState> preference_editors;
 
     using DatabaseValue = std::variant<std::monostate, std::int64_t, double, std::string, std::vector<std::byte>>;
 
@@ -663,25 +651,15 @@ struct DexVmAndroidContext final {
 
     std::uint32_t next_parcel_token{1U};
     std::unordered_map<std::uint32_t, ParcelBacking> parcel_backings;
-    std::unordered_map<std::uint32_t, std::uint32_t> parcel_owner_tokens;
 
     struct BinderThreadState final {
         std::int32_t strict_mode_policy{};
-        std::uint64_t identity_token{};
     };
 
     std::unordered_map<std::uint64_t, BinderThreadState> binder_threads;
+    // Runtime-installed local Binder objects, protected by the VM execution lock.
+    std::map<std::string, dexvm::VmObjectRef, std::less<>> local_binder_services;
 
-    struct WakeLockState final {
-        std::int32_t level_and_flags{};
-        std::string tag;
-        std::int32_t count{};
-        bool reference_counted{true};
-    };
-
-    std::unordered_map<std::uint32_t, WakeLockState> wake_locks;
-    // Shared WifiLock/MulticastLock offline leases; counters/held state live in Java.
-    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> wifi_lock_leases;
     std::int64_t last_vibration_millis{};
 
     // Editable instance handle -> owning EditText handle; the text itself
@@ -905,18 +883,13 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint64_t, std::shared_ptr<const audio::EncodedAudioDataSource>> encoded_audio_leases;
 
     enum class ScheduledWorkKind : std::uint8_t {
-        local_service_bind,
-        handler_message,
-        handler_runnable,
-        async_post,
-        async_progress,
         display_vsync,
     };
 
     struct ScheduledWork final {
         std::int64_t deadline_millis{};
         std::uint64_t sequence{};
-        ScheduledWorkKind kind{ScheduledWorkKind::handler_message};
+        ScheduledWorkKind kind{ScheduledWorkKind::display_vsync};
         dexvm::VmObjectRef looper{};
         dexvm::VmObjectRef owner{};
         dexvm::VmObjectRef target{};
@@ -934,6 +907,9 @@ struct DexVmAndroidContext final {
     };
 
     std::function<void(std::uint64_t)> prepare_native_looper;
+    std::function<void(std::uint64_t, const std::function<bool()>&)> poll_native_looper;
+    std::function<void(std::uint64_t)> wake_native_looper;
+    std::function<void()> notify_native_loopers;
     // Resolve the VM execution token to the same process TID used by JNI.
     std::function<std::uint64_t(std::uint64_t)> native_thread_for_context;
 
@@ -962,27 +938,24 @@ struct DexVmAndroidContext final {
     std::map<std::uint32_t, DisplayReceiverState> display_receivers;
     std::uint32_t next_display_receiver_token{1};
     std::uint32_t display_vsync_frame{};
+    bool trace_enabled{true};
     // Injected logical display fact; independent of host wall-clock pacing.
     float display_refresh_rate_hz{60.0F};
     // Host frame-rate cap period (0 = none). A SurfaceHolder canvas posted from a thread other
     // than the paced lifecycle driver waits per holder, like a real buffer queue.
     std::uint64_t frame_period_ns{};
     std::unordered_map<std::uint32_t, hal::FramePacer> canvas_pacers;
-    enum class AsyncStatus : std::uint8_t { pending, running, finished };
 
-    struct AsyncTaskState final {
-        AsyncStatus status{AsyncStatus::pending};
-        dexvm::VmObjectRef params{};
-        dexvm::VmObjectRef result{};
-        dexvm::VmObjectRef worker{};
-        dexvm::VmObjectRef thread{};
-        bool cancelled{};
+    struct MessageQueueState final {
+        std::uint64_t context_token{};
+        bool wake{}, idling{}, destroyed{};
     };
 
-    struct AsyncWorkerState final {
-        dexvm::VmObjectRef task{};
-        dexvm::VmObjectRef params{};
-    };
+    std::uint32_t next_message_queue_token{1};
+    std::map<std::uint32_t, std::shared_ptr<MessageQueueState>> message_queues;
+    // Temporary session adapter: enqueue host commands through the ROM Handler
+    // from the actual main thread when its native queue is polled.
+    std::function<void(dexvm::Interpreter&)> main_queue_poll;
 
     // One scheduler owns every Android/JRE delayed callback. Deadline
     // decisions use uptime_millis; the condition variable only wakes a
@@ -1003,11 +976,6 @@ struct DexVmAndroidContext final {
     std::vector<PendingViewAction> pending_view_actions;
     std::unordered_map<std::uint32_t, LooperState> loopers;
     std::unordered_map<std::uint64_t, dexvm::VmObjectRef> thread_loopers;
-    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> handler_loopers;
-    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> handler_callbacks;
-    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> handler_threads;
-    std::unordered_map<std::uint32_t, AsyncTaskState> async_tasks;
-    std::unordered_map<std::uint32_t, AsyncWorkerState> async_workers;
     // Owned by the DexVm bridge; set once the interpreter exists.
     dexvm::VmThreadRuntime* threads{};
 
@@ -1541,7 +1509,10 @@ DispatchSurfaceHolderCallbacks(dexvm::Interpreter& vm, DexVmAndroidContext& cont
 [[nodiscard]] std::optional<std::string> RetireSurfaceHolderGeneration(dexvm::Interpreter& vm,
                                                                        DexVmAndroidContext& context);
 
+void PrepareAndroidMainLooper(dexvm::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context);
+
 // Advances the only Android monotonic Clock and wakes scheduler waiters.
+void NotifyAndroidScheduler(DexVmAndroidContext& context);
 void AdvanceAndroidClock(DexVmAndroidContext& context, std::int64_t delta_millis);
 
 // Stops all loopers and wakes HandlerThread teardown. Idempotent.
@@ -1628,6 +1599,7 @@ private:
 }  // namespace ogplay::runtime
 
 namespace ogplay::runtime {
+void PrepareAndroidInputMethodService(dexvm::Interpreter&, DexVmAndroidContext&);
 [[nodiscard]] dexvm::VmObjectRef AndroidActivityWindowManager(dexvm::Interpreter&, DexVmAndroidContext&,
                                                               dexvm::VmObjectRef);
 [[nodiscard]] dexvm::VmObjectRef AndroidApplicationWindowRoot(dexvm::Interpreter&, DexVmAndroidContext&,

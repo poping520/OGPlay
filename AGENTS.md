@@ -12,12 +12,16 @@
 
 ## 范围边界
 
-OGPlay 是安卓老游戏兼容层，不是 Android 模拟器。只实现游戏进程会直接调用的能力。
-禁止引入完整 Android 系统、Binder/system_server/Zygote、完整 ART/Dalvik、Play 服务、
-现代支付/社交/反作弊能力。范围有争议时先写 ADR。
+OGPlay 是安卓老游戏兼容层，不是 Android 模拟器。只实现游戏进程（含其中运行的 ROM
+framework 代码）会直接调用的能力，进程外的系统组件不实现。
+允许进程内的本地 Binder 对象和 AIDL 服务实现（ServiceManager 返回本进程的服务对象，
+不经 Parcel 传输）；禁止 Binder 驱动、跨进程通信、system_server 进程、Zygote、完整
+ART/Dalvik、Play 服务、现代支付/社交/反作弊能力。范围有争议时先写 ADR。
 
 ## 架构规则
 
+- ROM 类整类原样运行，宿主只实现 native 和服务接口；不替换 ROM 类，也不用 intrinsic
+  覆盖 ROM 的非 native 方法。现存的替换和覆盖按阶段计划移除，新代码不得再引入。
 - 依赖方向只能由上层指向下层；回调必须通过显式接口。
 - `src/` 中禁止出现游戏名、厂商名、包名和游戏专属分支。
 - 每个生产代码目录必须有 `MODULE.md`；契约与代码冲突时以契约为准。

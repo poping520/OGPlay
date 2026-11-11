@@ -196,6 +196,30 @@ static jstring ICU_getISO3CountryNative(JNIEnv* env, jclass cls, jstring locale)
     return locale_iso3(env, locale, ICU(uloc_getISO3Country));
 }
 
+// libcore_icu_ICU.cpp: ICU51 owns likely-subtag and script data. Preserve the
+// API19 failure results rather than inventing a language whitelist.
+static jstring ICU_addLikelySubtags(JNIEnv* env, jclass cls, jstring value) {
+    (void)cls;
+    char* locale = string_utf8(env, value);
+    if (locale == NULL) return NULL;
+    char maximized[157];  // ULOC_FULLNAME_CAPACITY in ICU51.
+    UErrorCode status = U_ZERO_ERROR;
+    ICU(uloc_addLikelySubtags)(locale, maximized, (int32_t)sizeof(maximized), &status);
+    free(locale);
+    return status > U_ZERO_ERROR ? value : (*env)->NewStringUTF(env, maximized);
+}
+
+static jstring ICU_getScript(JNIEnv* env, jclass cls, jstring value) {
+    (void)cls;
+    char* locale = string_utf8(env, value);
+    if (locale == NULL) return NULL;
+    char script[6];  // ULOC_SCRIPT_CAPACITY in ICU51.
+    UErrorCode status = U_ZERO_ERROR;
+    ICU(uloc_getScript)(locale, script, (int32_t)sizeof(script), &status);
+    free(locale);
+    return status > U_ZERO_ERROR ? NULL : (*env)->NewStringUTF(env, script);
+}
+
 static jobjectArray ICU_getAvailableLocalesNative(JNIEnv* env, jclass cls) {
     (void)cls;
     jclass strings = (*env)->FindClass(env, "java/lang/String");
@@ -1227,6 +1251,8 @@ extern int ogplay_regex_on_load(JNIEnv*);
 extern void ogplay_regex_release(void);
 
 static const JNINativeMethod icu_methods[] = {
+    {"addLikelySubtags", "(Ljava/lang/String;)Ljava/lang/String;", (void*)ICU_addLikelySubtags},
+    {"getScript", "(Ljava/lang/String;)Ljava/lang/String;", (void*)ICU_getScript},
     {"getDisplayLanguageNative", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
      (void*)ICU_getDisplayLanguageNative},
     {"getDisplayCountryNative", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",

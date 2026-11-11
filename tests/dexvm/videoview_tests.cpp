@@ -193,11 +193,6 @@ struct VideoVm final {
         context->encoded_music = &music;
         threads = &runtime->bridge->Threads();
         context->threads = threads;
-        const auto looper = linker.ResolveDescriptor("Landroid/os/Looper;");
-        const auto prepare = linker.FindDirectMethod(looper, "prepareMainLooper", "()V");
-        REQUIRE(prepare.has_value());
-        const auto prepared = interpreter.Call(*prepare, {});
-        REQUIRE_MESSAGE(!prepared.exception.IsValid(), prepared.exception_message);
 
         if (factory) {
             context->video_source_player_factory =
@@ -234,7 +229,7 @@ struct VideoVm final {
         const auto owner = linker.ResolveDescriptor("Landroid/widget/VideoView;");
         const auto ctor = linker.FindDirectMethod(owner, "<init>", "(Landroid/content/Context;)V");
         REQUIRE(ctor.has_value());
-        const auto activity = interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto activity = ogplay::test::MakeRomAppContext(interpreter, context);
         const auto result = interpreter.Call(*ctor, std::array{VmValue::Ref(view), VmValue::Ref(activity)});
         REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
         const auto node = FindViewUiNode(*context, view.Value());
@@ -259,7 +254,7 @@ struct VideoVm final {
         const auto owner = linker.ResolveDescriptor("Landroid/view/SurfaceView;");
         const auto ctor = linker.FindDirectMethod(owner, "<init>", "(Landroid/content/Context;)V");
         REQUIRE(ctor);
-        const auto activity = interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto activity = ogplay::test::MakeRomAppContext(interpreter, context);
         const auto result = interpreter.Call(*ctor, std::array{VmValue::Ref(view), VmValue::Ref(activity)});
         REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
         const auto node = *FindViewUiNode(*context, view.Value());
@@ -679,7 +674,7 @@ TEST_CASE("WifiInfo without a connection does not invent a MAC address") {
 TEST_CASE("application Context identity survives Activity replacement") {
     VideoVm vm(FakeFactory());
     vm.context->package_name = "org.ogplay.inheritance";
-    const auto base = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    const auto base = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
     const auto application = vm.interpreter.NewIntrinsicInstance("Landroid/app/Application;");
     const auto first = vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
     const auto second = vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
@@ -695,10 +690,10 @@ TEST_CASE("application Context identity survives Activity replacement") {
     CHECK(vm.interpreter.StringUtf8(package) == "org.ogplay.inheritance");
 
     const auto application_class = vm.linker.ResolveDescriptor("Landroid/app/Application;");
-    const auto declared = vm.linker.MethodsOf(application_class);
-    REQUIRE(declared.size() == 2);
-    CHECK(vm.linker.Method(declared[0]).name == "<init>");
-    CHECK(vm.linker.Method(declared[1]).name == "onCreate");
+    CHECK(vm.linker.Class(application_class).is_boot_dex);
+    const auto create = vm.linker.FindVtableIndex(application_class, "onCreate", "()V");
+    REQUIRE(create);
+    CHECK(vm.linker.Method(vm.linker.Class(application_class).vtable[*create]).kind == MethodKind::interpreted);
 }
 
 TEST_CASE("Android 4.4 override callbacks preserve framework visibility") {
@@ -1091,7 +1086,7 @@ TEST_CASE("video APK media source retains immutable ranges across APK replacemen
     source.name = "res/raw/movie.mp4";
     source.offset = 2;
     source.length = 4;
-    const auto owner = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    const auto owner = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
     const auto resources = vm.CallOn(owner, "getResources", "()Landroid/content/res/Resources;").ref;
     const auto root = vm.interpreter.ProtectReferences(std::array{owner, resources});
     auto data = LoadEncodedAudioSource(*vm.context, source);

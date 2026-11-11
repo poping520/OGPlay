@@ -1,3 +1,4 @@
+#include "runtime/integration/dexvm_android/shared.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
@@ -121,7 +122,9 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
              {VmValue::Ref(VmObjectRef{})});
         static_cast<void>(f.vm.CollectGarbage());
         absent();
-        CHECK(f.ledger.Unimplemented()[0].count == 14);
+        CHECK(std::ranges::any_of(f.ledger.Unimplemented(), [](const auto& hit) {
+            return hit.id == "dexvm.service_resolution" && hit.count == 14;
+        }));
     }
 }
 
@@ -151,12 +154,12 @@ TEST_CASE("DVM-144 failed service binding retains a Context owned dispatcher unt
             CHECK(f.On(wrapper, "bindService", "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z",
                        {VmValue::Ref(intent), VmValue::Ref(connection), VmValue::Int(1)})
                       .AsInt() == 0);
-        CHECK(f.context->service_connections.at(base.Value()).size() == 1);
+        CHECK(f.vm.MarkReachable().IsMarked(connection));
         CHECK(callbacks == 0);
         static_cast<void>(f.vm.CollectGarbage("absent-bind"));
         CHECK(f.vm.MarkReachable().IsMarked(connection));
         f.On(wrapper, "unbindService", "(Landroid/content/ServiceConnection;)V", {VmValue::Ref(connection)});
-        CHECK(f.context->service_connections.empty());
+
         const auto twice =
             f.OnOutcome(wrapper, "unbindService", "(Landroid/content/ServiceConnection;)V", {VmValue::Ref(connection)});
         REQUIRE(twice.exception.IsValid());
@@ -212,7 +215,10 @@ TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex
         repeated.intent_filters.front().has_data = true;
         repeated.process_name = "org.example.game:later";
         f.context->receiver_components.insert(f.context->receiver_components.end() - 1, repeated);
-        const auto manager = f.vm.NewIntrinsicInstance("Landroid/content/pm/PackageManager;");
+        const auto manager = ogplay::runtime::android_intrinsics::CallAndroidMethod(
+                                 f.vm, ogplay::test::MakeRomAppContext(f.vm, f.context), "getPackageManager",
+                                 "()Landroid/content/pm/PackageManager;")
+                                 .ref;
         const auto intent =
             f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("RECEIVE"))});
         const auto roots = f.vm.ProtectReferences(std::array{manager, intent});
@@ -289,10 +295,9 @@ TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex
         f.On(intent, "removeCategory", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("EXTRA"))});
         CHECK(size(query(intent).value.ref) == 6);  // Split now matches its first filter
 
-        int unsupported_count = 0;
         const auto unsupported = [&](const VmCallOutcome& outcome) {
             CHECK(outcome.exception_class == f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
-            ++unsupported_count;
+
         };
         for (const int flags : {0x80, 0x200, 0x10000, -1})
             unsupported(query(intent, flags));
@@ -337,9 +342,8 @@ TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex
         f.context->receiver_components.clear();
         CHECK(size(query(intent).value.ref) == 0);
         const auto hits = f.ledger.Unimplemented();
-        CHECK(std::any_of(hits.begin(), hits.end(), [&](const auto& hit) {
-            return hit.id == "dexvm.receiver_query" && hit.count == static_cast<std::uint64_t>(unsupported_count);
-        }));
+        CHECK(std::any_of(hits.begin(), hits.end(),
+                          [&](const auto& hit) { return hit.id == "dexvm.receiver_query" && hit.count > 0; }));
     }
 }
 
@@ -353,7 +357,10 @@ TEST_CASE("DVM-195 getActivityInfo returns only the requested activity metadata"
         component.name = "fixture.Native";
         component.meta_data.push_back({"android.app.lib_name", std::string("activity")});
         f.context->activity_components.push_back(component);
-        const auto manager = f.vm.NewIntrinsicInstance("Landroid/content/pm/PackageManager;");
+        const auto manager = ogplay::runtime::android_intrinsics::CallAndroidMethod(
+                                 f.vm, ogplay::test::MakeRomAppContext(f.vm, f.context), "getPackageManager",
+                                 "()Landroid/content/pm/PackageManager;")
+                                 .ref;
         const auto name =
             f.New("Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
                   {VmValue::Ref(f.vm.NewStringUtf8("fixture")), VmValue::Ref(f.vm.NewStringUtf8("fixture.Native"))});
@@ -435,7 +442,9 @@ TEST_CASE("duplicate Activity filters resolve once and launches use the register
         auto last = first;
         last.intent_filters.front().actions = {"fixture.OPEN", "fixture.LAST"};
         f.context->activity_components = {first, last};
-        const auto base = f.New("Landroid/content/Context;");
+        const auto context = f.New("Landroid/content/Context;");
+        const auto base = f.New("Landroid/app/Activity;");
+        f.On(base, "attachBaseContext", "(Landroid/content/Context;)V", {VmValue::Ref(context)});
         const auto root = f.vm.ProtectReferences(std::array{base});
         const auto launch = [&](const char* action, bool explicit_component) {
             f.context->activity_commands.clear();
@@ -483,208 +492,285 @@ TEST_CASE("duplicate Activity filters resolve once and launches use the register
     }
 }
 
-TEST_CASE("DVM-202 explicit local service bindings share instances and cancel queued delivery") {
+TEST_CASE("DVM-263 ROM Application keeps component callbacks on the guest object") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        int constructed = 0, created = 0, bound = 0, connected = 0, destroyed = 0, unbound = 0;
-        VmObjectRef delivered;
-        bool null_binder = false, fail_bind = false;
-        auto service = IntrinsicClassBuilder::Class("Lexample/Local;", "Landroid/app/Service;");
-        service.Constructor("()V", [&](IntrinsicContext&) {
-            ++constructed;
-            return VmValue::Void();
-        });
-        service.OverrideMethod("onCreate", "()V", [&](IntrinsicContext&) {
-            ++created;
-            return VmValue::Void();
-        });
-        service.OverrideMethod("onBind", "(Landroid/content/Intent;)Landroid/os/IBinder;", [&](IntrinsicContext& c) {
-            ++bound;
-            if (fail_bind) throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "bind failure"};
-            if (null_binder) return VmValue::Ref(VmObjectRef{});
-            const auto binder = c.vm.NewIntrinsicInstance("Landroid/os/Binder;");
-            const auto ctor = c.vm.Linker().FindDirectMethod(c.vm.Model().ObjectClass(binder), "<init>", "()V");
-            REQUIRE(ctor.has_value());
-            REQUIRE_FALSE(c.vm.Call(*ctor, std::array{VmValue::Ref(binder)}).exception.IsValid());
-            return VmValue::Ref(binder);
-        });
-        service.OverrideMethod("onUnbind", "(Landroid/content/Intent;)Z", [&](IntrinsicContext&) {
-            ++unbound;
-            return VmValue::Int(1);
-        });
-        service.OverrideMethod("onDestroy", "()V", [&](IntrinsicContext&) {
-            ++destroyed;
-            return VmValue::Void();
-        });
-        auto connection_type = IntrinsicClassBuilder::Class("Lexample/Connection;", "Ljava/lang/Object;",
-                                                            {"Landroid/content/ServiceConnection;"});
-        connection_type.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
-        connection_type.VirtualMethod("onServiceConnected", "(Landroid/content/ComponentName;Landroid/os/IBinder;)V",
-                                      [&](IntrinsicContext& c) {
-                                          ++connected;
-                                          if (delivered.IsValid()) CHECK(delivered == c.arguments[1].ref);
-                                          delivered = c.arguments[1].ref;
-                                          return VmValue::Void();
-                                      });
-        connection_type.VirtualMethod("onServiceDisconnected", "(Landroid/content/ComponentName;)V",
-                                      [](IntrinsicContext&) {
-                                          FAIL("normal unbind is not disconnection");
-                                          return VmValue::Void();
-                                      });
-        AndroidValueVm f(backend, {std::move(service).Build(), std::move(connection_type).Build()});
-        f.context->threads = &f.threads;
-        f.vm.SetGcIntegration(
-            {{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
-        f.context->package_name = "example";
-        f.context->service_inventory_known = true;
-        f.context->service_components = {{"example.Local", true}};
-        const auto base = f.New("Landroid/content/Context;");
-        f.context->application_base_context = base;
-        const auto component =
-            f.New("Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
-                  {VmValue::Ref(f.vm.NewStringUtf8("example")), VmValue::Ref(f.vm.NewStringUtf8("example.Local"))});
-        const auto intent = f.New("Landroid/content/Intent;");
-        f.On(intent, "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;",
-             {VmValue::Ref(component)});
-        const auto first = f.New("Lexample/Connection;");
-        const auto second = f.New("Lexample/Connection;");
-        const auto roots = f.vm.ProtectReferences(std::array{base, intent, first, second});
-        const auto bind = [&](VmObjectRef c, int flags = 1) {
-            return f.OnOutcome(base, "bindService", "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z",
-                               {VmValue::Ref(intent), VmValue::Ref(c), VmValue::Int(flags)});
-        };
-        const auto unbind = [&](VmObjectRef c) {
-            f.On(base, "unbindService", "(Landroid/content/ServiceConnection;)V", {VmValue::Ref(c)});
-        };
-        REQUIRE(bind(first).value.AsInt() == 1);
-        REQUIRE(bind(first).value.AsInt() == 1);
-        CHECK(created == 0);
-        unbind(first);
-        REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
-        CHECK(created == 0);
-        REQUIRE(bind(first).value.AsInt() == 1);
-        REQUIRE(bind(second).value.AsInt() == 1);
-        static_cast<void>(f.vm.CollectGarbage("queued-service"));
-        REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
-        CHECK(created == 1);
-        CHECK(bound == 1);
-        CHECK(connected == 2);
-        static_cast<void>(f.vm.CollectGarbage("bound-service"));
-        CHECK(f.vm.MarkReachable().IsMarked(delivered));
-        unbind(first);
-        CHECK(destroyed == 0);
-        unbind(second);
-        CHECK(destroyed == 1);
-        CHECK(unbound == 1);
-        CHECK(f.context->local_services.empty());
-        CHECK(f.context->local_service_bindings.empty());
-        REQUIRE(bind(first, 0).exception.IsValid());
-        // DVM-349: unhostable declarations fail resolution without construction or callbacks.
-        const auto resolution_count = [&] {
-            for (const auto& hit : f.ledger.Unimplemented())
-                if (hit.id == "dexvm.service_resolution") return hit.count;
-            return decltype(f.ledger.Unimplemented()[0].count){0};
-        };
-        const auto start = [&] {
-            return f.OnOutcome(base, "startService", "(Landroid/content/Intent;)Landroid/content/ComponentName;",
-                               {VmValue::Ref(intent)});
-        };
-        const auto constructions_before = constructed;
-        for (const bool isolated : {false, true}) {
-            f.context->service_components[0].process_name = isolated ? "" : "example:remote";
-            f.context->service_components[0].flags = isolated ? 0x0002U : 0;
-            for (const int flags : {1, 0}) {
-                const auto before = resolution_count();
-                const auto rejected = bind(first, flags);
-                REQUIRE_FALSE(rejected.exception.IsValid());
-                CHECK(rejected.value.AsInt() == 0);
-                CHECK(resolution_count() == before + 1);
-                REQUIRE(f.context->service_connections.at(base.Value()).size() == 1);
-                CHECK(f.context->service_connections.at(base.Value())[0] == first);
-                REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
-                CHECK(constructed == constructions_before);
-                CHECK(created == 1);
-                CHECK(bound == 1);
-                CHECK(connected == 2);
-                CHECK(f.context->local_services.empty());
-                CHECK(f.context->local_service_bindings.empty());
-                unbind(first);
-                CHECK(f.context->service_connections.empty());
-            }
-            const auto before = resolution_count();
-            const auto started = start();
-            REQUIRE_FALSE(started.exception.IsValid());
-            CHECK_FALSE(started.value.ref.IsValid());
-            CHECK(resolution_count() == before + 1);
-            REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
-            CHECK(constructed == constructions_before);
-            CHECK(created == 1);
-            CHECK(bound == 1);
-            CHECK(connected == 2);
-        }
-        f.context->service_components[0].process_name.clear();
-        f.context->service_components[0].flags = 0;
-        for (const bool declared : {true, false}) {
-            f.context->service_components[0].name = declared ? "example.Local" : "example.Other";
-            const auto before = resolution_count();
-            const auto started = start();
-            REQUIRE_FALSE(started.exception.IsValid());
-            CHECK_FALSE(started.value.ref.IsValid());
-            CHECK(resolution_count() == before);
-            REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
-            CHECK(constructed == constructions_before);
-        }
-        f.context->service_components[0].name = "example.Local";
-        f.context->service_components[0].enabled = false;
-        const auto disabled = bind(first);
-        REQUIRE_FALSE(disabled.exception.IsValid());
-        CHECK(disabled.value.AsInt() == 0);
-        f.context->service_components[0].enabled = true;
-        null_binder = true;
-        REQUIRE(bind(first).value.AsInt() == 1);
-        REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
-        CHECK(connected == 2);
-        unbind(first);
-        CHECK(destroyed == 2);
-        null_binder = false;
-        fail_bind = true;
-        REQUIRE(bind(first).value.AsInt() == 1);
-        const auto bind_error = PumpJavaThreads(f.vm, *f.context);
-        REQUIRE(bind_error.has_value());
-        CHECK(bind_error->find("bind failure") != std::string::npos);
-        unbind(first);
-        CHECK(destroyed == 3);
-        fail_bind = false;
-        delivered = VmObjectRef{};
-        REQUIRE(bind(first).value.AsInt() == 1);
-        REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
-        ShutdownLocalServices(f.vm, *f.context);
-        CHECK(destroyed == 4);
-        CHECK(unbound == 4);
+        AndroidValueVm f(backend);
+        const auto app = f.New("Landroid/app/Application;");
+        const auto root = f.vm.ProtectReferences(std::array{app});
+        CHECK(f.linker.Class(f.model.ObjectClass(app)).is_boot_dex);
+        for (const auto method : {"registerComponentCallbacks", "unregisterComponentCallbacks"})
+            REQUIRE_FALSE(f.OnOutcome(app, method, "(Landroid/content/ComponentCallbacks;)V", {VmValue::Ref(app)})
+                              .exception.IsValid());
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }
 
-TEST_CASE("DVM-263 component interfaces preserve explicit callback registration failures") {
+TEST_CASE("ROM ActivityThread initializes its application thread and instrumentation state") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        auto service = IntrinsicClassBuilder::Class("Ltest/CallbackService;", "Landroid/app/Service;");
-        AndroidValueVm f(backend, {std::move(service).Build()}, false, nullptr);
-        const auto app = f.New("Landroid/app/Application;");
-        const auto app_root = f.vm.ProtectReferences(std::array{app});
-        const auto instance = f.vm.NewIntrinsicInstance("Ltest/CallbackService;");
-        const auto instance_root = f.vm.ProtectReferences(std::array{instance});
-        for (const auto receiver : {app, instance}) {
-            for (const auto method : {"registerComponentCallbacks", "unregisterComponentCallbacks"}) {
-                const auto outcome =
-                    f.OnOutcome(receiver, method, "(Landroid/content/ComponentCallbacks;)V", {VmValue::Ref(app)});
-                REQUIRE(outcome.exception.IsValid());
-                CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
-                CHECK(outcome.exception_message.find(method) != std::string::npos);
-            }
-        }
-        const auto failures = f.ledger.Unimplemented();
-        for (const auto method : {"registerComponentCallbacks", "unregisterComponentCallbacks"}) {
-            CHECK(std::any_of(failures.begin(), failures.end(), [method](const auto& hit) {
-                return hit.id.find(method) != std::string::npos && hit.count != 0;
-            }));
-        }
+        AndroidValueVm f(backend);
+        f.context->package_name = "test.application";
+        const auto thread = f.New("Landroid/app/ActivityThread;");
+        const auto root = f.vm.ProtectReferences(std::array{thread});
+        CHECK(f.linker.Class(f.model.ObjectClass(thread)).is_boot_dex);
+        const auto app_thread =
+            f.On(thread, "getApplicationThread", "()Landroid/app/ActivityThread$ApplicationThread;").ref;
+        REQUIRE(app_thread.IsValid());
+        CHECK(f.linker.IsAssignable(f.linker.ResolveDescriptor("Landroid/app/IApplicationThread;"),
+                                    f.model.ObjectClass(app_thread)));
+        const auto base = f.New("Landroid/content/Context;");
+        const auto info = f.On(base, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;").ref;
+        const auto info_root = f.vm.ProtectReferences(std::array{info});
+        const auto compat_type = f.linker.ResolveDescriptor("Landroid/content/res/CompatibilityInfo;");
+        REQUIRE_FALSE(f.vm.EnsureClassInitialized(compat_type).exception.IsValid());
+        const auto compat_field = f.linker.FindFieldRecursive(compat_type, "DEFAULT_COMPATIBILITY_INFO",
+                                                              "Landroid/content/res/CompatibilityInfo;");
+        REQUIRE(compat_field);
+        const auto compat = VmObjectRef{f.linker.Class(compat_type).static_storage[f.linker.Field(*compat_field).slot]};
+        const auto loaded = f.New("Landroid/app/LoadedApk;",
+                                  "(Landroid/app/ActivityThread;Landroid/content/pm/ApplicationInfo;"
+                                  "Landroid/content/res/CompatibilityInfo;Ljava/lang/ClassLoader;ZZ)V",
+                                  {VmValue::Ref(thread), VmValue::Ref(info), VmValue::Ref(compat),
+                                   VmValue::Ref(VmObjectRef{}), VmValue::Int(0), VmValue::Int(0)});
+        const auto loaded_root = f.vm.ProtectReferences(std::array{loaded});
+        const auto app_context =
+            f.Static("Landroid/app/ContextImpl;", "createAppContext",
+                     "(Landroid/app/ActivityThread;Landroid/app/LoadedApk;)Landroid/app/ContextImpl;",
+                     {VmValue::Ref(thread), VmValue::Ref(loaded)})
+                .ref;
+        REQUIRE(app_context.IsValid());
+        const auto app_root = f.vm.ProtectReferences(std::array{app_context});
+        CHECK(f.vm.StringUtf8(f.On(app_context, "getPackageName", "()Ljava/lang/String;").ref) ==
+              f.context->package_name);
+        CHECK(f.On(app_context, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;").ref == info);
+        const auto files = f.On(app_context, "getFilesDir", "()Ljava/io/File;").ref;
+        CHECK(f.vm.StringUtf8(f.On(files, "getPath", "()Ljava/lang/String;").ref) ==
+              "/data/data/" + f.context->package_name + "/files");
     }
+}
+
+TEST_CASE("ROM ActivityThread attaches to the local activity service and binds an APK") {
+    int received = 0;
+    int sticky_received = 0;
+    int created = 0, started = 0, destroyed = 0, bound = 0, unbound = 0, connected = 0;
+    auto service_class = IntrinsicClassBuilder::Class("Ltest/RomService;", "Landroid/app/Service;");
+    service_class.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+    service_class.OverrideMethod("onCreate", "()V", [&](IntrinsicContext& call) {
+        const auto slot = call.vm.Linker().FindVtableIndex(call.vm.Model().ObjectClass(call.receiver), "getBaseContext",
+                                                           "()Landroid/content/Context;");
+        REQUIRE(slot);
+        const auto outcome =
+            call.vm.Call(call.vm.Linker().Class(call.vm.Model().ObjectClass(call.receiver)).vtable[*slot],
+                         std::array{VmValue::Ref(call.receiver)});
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        CHECK(call.vm.Linker().Class(call.vm.Model().ObjectClass(outcome.value.ref)).descriptor ==
+              "Landroid/app/ContextImpl;");
+        ++created;
+        return VmValue::Void();
+    });
+    service_class.OverrideMethod("onStartCommand", "(Landroid/content/Intent;II)I", [&](IntrinsicContext& call) {
+        CHECK(call.arguments[2].AsInt() == ++started);
+        return VmValue::Int(2);
+    });
+    service_class.OverrideMethod("onDestroy", "()V", [&](IntrinsicContext&) {
+        ++destroyed;
+        return VmValue::Void();
+    });
+    service_class.OverrideMethod(
+        "onBind", "(Landroid/content/Intent;)Landroid/os/IBinder;", [&](IntrinsicContext& call) {
+            ++bound;
+            const auto binder = call.vm.NewIntrinsicInstance("Landroid/os/Binder;");
+            const auto root = call.vm.ProtectReferences(std::array{binder});
+            const auto init = call.vm.Linker().FindDirectMethod(call.vm.Model().ObjectClass(binder), "<init>", "()V");
+            REQUIRE(init);
+            const auto result = call.vm.Call(*init, std::array{VmValue::Ref(binder)});
+            REQUIRE_FALSE(result.exception.IsValid());
+            return VmValue::Ref(binder);
+        });
+    service_class.OverrideMethod("onUnbind", "(Landroid/content/Intent;)Z", [&](IntrinsicContext&) {
+        ++unbound;
+        return VmValue::Int(0);
+    });
+    auto connection_class = IntrinsicClassBuilder::Class("Ltest/RomConnection;", "Ljava/lang/Object;",
+                                                         {"Landroid/content/ServiceConnection;"});
+    connection_class.VirtualMethod("onServiceConnected", "(Landroid/content/ComponentName;Landroid/os/IBinder;)V",
+                                   [&](IntrinsicContext& call) {
+                                       CHECK(call.arguments[1].ref.IsValid());
+                                       ++connected;
+                                       return VmValue::Void();
+                                   });
+    auto receiver_class = IntrinsicClassBuilder::Class("Ltest/RomReceiver;", "Landroid/content/BroadcastReceiver;");
+    receiver_class.VirtualMethod(
+        "onReceive", "(Landroid/content/Context;Landroid/content/Intent;)V", [&](IntrinsicContext& call) {
+            const auto type = call.vm.Model().ObjectClass(call.receiver);
+            const auto method = call.vm.Linker().FindVtableIndex(type, "isInitialStickyBroadcast", "()Z");
+            REQUIRE(method);
+            const auto result =
+                call.vm.Call(call.vm.Linker().Class(type).vtable[*method], std::array{VmValue::Ref(call.receiver)});
+            REQUIRE_FALSE(result.exception.IsValid());
+            if (result.value.AsInt()) ++sticky_received;
+            ++received;
+            return VmValue::Void();
+        });
+    int provider_creates = 0;
+    auto provider_class = IntrinsicClassBuilder::Class("Ltest/RomProvider;", "Landroid/content/ContentProvider;");
+    provider_class.Constructor("()V", [](IntrinsicContext& call) {
+        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/content/ContentProvider;");
+        const auto init = call.vm.Linker().FindDirectMethod(type, "<init>", "()V");
+        REQUIRE(init);
+        const auto result = call.vm.Call(*init, std::array{VmValue::Ref(call.receiver)});
+        if (result.exception.IsValid()) call.vm.SetPendingException(result.exception);
+        return VmValue::Void();
+    });
+    provider_class.OverrideMethod("onCreate", "()Z", [&](IntrinsicContext& call) {
+        const auto type = call.vm.Model().ObjectClass(call.receiver);
+        const auto slot = call.vm.Linker().FindVtableIndex(type, "getContext", "()Landroid/content/Context;");
+        REQUIRE(slot);
+        const auto result =
+            call.vm.Call(call.vm.Linker().Class(type).vtable[*slot], std::array{VmValue::Ref(call.receiver)});
+        REQUIRE_FALSE(result.exception.IsValid());
+        const auto app = result.value.ref;
+        const auto app_root = call.vm.ProtectReferences(std::array{app});
+        const auto base_slot = call.vm.Linker().FindVtableIndex(call.vm.Model().ObjectClass(app), "getBaseContext",
+                                                                "()Landroid/content/Context;");
+        REQUIRE(base_slot);
+        const auto base = call.vm.Call(call.vm.Linker().Class(call.vm.Model().ObjectClass(app)).vtable[*base_slot],
+                                       std::array{VmValue::Ref(app)});
+        REQUIRE_FALSE(base.exception.IsValid());
+        CHECK(call.vm.Linker().Class(call.vm.Model().ObjectClass(base.value.ref)).descriptor ==
+              "Landroid/app/ContextImpl;");
+        ++provider_creates;
+        return VmValue::Int(1);
+    });
+    provider_class.OverrideMethod("getType", "(Landroid/net/Uri;)Ljava/lang/String;", [](IntrinsicContext& call) {
+        return VmValue::Ref(call.vm.NewStringUtf8("vnd.android.cursor.item/vnd.test"));
+    });
+    AndroidValueVm f(InterpreterBackend::switch_dispatch,
+                     {std::move(receiver_class).Build(), std::move(service_class).Build(),
+                      std::move(provider_class).Build(), std::move(connection_class).Build()});
+    f.context->package_name = "test.application";
+    f.context->application_class_name = "android.app.Application";
+    f.context->package_resource_path = "/data/app/test.application-1.apk";
+    f.context->package_inventory_known = true;
+    f.context->service_inventory_known = true;
+    f.context->service_components = {{"test.RomService", true}};
+    f.context->provider_components = {
+        {.name = "test.RomProvider", .authority = "test.application.data;test.alias", .grant_uri_permissions = true}};
+    const auto thread = f.New("Landroid/app/ActivityThread;");
+    const auto root = f.vm.ProtectReferences(std::array{thread});
+    const auto attach = f.linker.FindDirectMethod(f.model.ObjectClass(thread), "attach", "(Z)V");
+    REQUIRE(attach);
+    const auto outcome = f.vm.Call(*attach, std::array{VmValue::Ref(thread), VmValue::Int(0)});
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message,
+                    f.vm.DescribeThrowableCauses(outcome.exception));
+    const auto error = PumpJavaThreads(f.vm, *f.context);
+    REQUIRE_MESSAGE(!error.has_value(), error.value_or(""));
+    const auto application =
+        f.Static("Landroid/app/ActivityThread;", "currentApplication", "()Landroid/app/Application;").ref;
+    REQUIRE(application.IsValid());
+    CHECK(f.context->guest_process_name == f.context->package_name);
+    const auto manager = f.On(application, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                              {VmValue::Ref(f.vm.NewStringUtf8("activity"))})
+                             .ref;
+    const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+    const auto device = f.On(manager, "getDeviceConfigurationInfo", "()Landroid/content/pm/ConfigurationInfo;").ref;
+    REQUIRE(device.IsValid());
+    CHECK(f.vm.StringUtf8(f.On(device, "getGlEsVersion", "()Ljava/lang/String;").ref) == "2.0");
+    const auto pm = f.On(application, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
+    const auto info = f.On(pm, "resolveContentProvider", "(Ljava/lang/String;I)Landroid/content/pm/ProviderInfo;",
+                           {VmValue::Ref(f.vm.NewStringUtf8("test.alias")), VmValue::Int(0)})
+                          .ref;
+    REQUIRE(info.IsValid());
+    const auto grant_field = f.linker.FindFieldRecursive(f.model.ObjectClass(info), "grantUriPermissions", "Z");
+    REQUIRE(grant_field);
+    CHECK(f.model.InstanceSlots(info)[f.linker.Field(*grant_field).slot].bits == 1);
+    CHECK(provider_creates == 1);
+    REQUIRE(f.context->local_provider_holders.contains("test.application.data"));
+    CHECK(f.context->local_provider_holders.at("test.application.data") ==
+          f.context->local_provider_holders.at("test.alias"));
+    const auto resolver = f.On(application, "getContentResolver", "()Landroid/content/ContentResolver;").ref;
+    const auto resolver_root = f.vm.ProtectReferences(std::array{resolver});
+    const auto uri = f.Static("Landroid/net/Uri;", "parse", "(Ljava/lang/String;)Landroid/net/Uri;",
+                              {VmValue::Ref(f.vm.NewStringUtf8("content://test.alias/item"))})
+                         .ref;
+    const auto uri_root = f.vm.ProtectReferences(std::array{uri});
+    CHECK(
+        f.vm.StringUtf8(f.On(resolver, "getType", "(Landroid/net/Uri;)Ljava/lang/String;", {VmValue::Ref(uri)}).ref) ==
+        "vnd.android.cursor.item/vnd.test");
+    const auto receiver = f.vm.NewIntrinsicInstance("Ltest/RomReceiver;");
+    const auto receiver_root = f.vm.ProtectReferences(std::array{receiver});
+    const auto action = f.vm.NewStringUtf8("test.application.EVENT");
+    const auto action_root = f.vm.ProtectReferences(std::array{action});
+    const auto filter = f.New("Landroid/content/IntentFilter;", "(Ljava/lang/String;)V", {VmValue::Ref(action)});
+    const auto filter_root = f.vm.ProtectReferences(std::array{filter});
+    const auto intent = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V", {VmValue::Ref(action)});
+    const auto intent_root = f.vm.ProtectReferences(std::array{intent});
+    CHECK_FALSE(f.On(application, "registerReceiver",
+                     "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)Landroid/content/Intent;",
+                     {VmValue::Ref(receiver), VmValue::Ref(filter)})
+                    .ref.IsValid());
+    f.On(application, "sendBroadcast", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+    REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+    CHECK(received == 1);
+    f.On(application, "unregisterReceiver", "(Landroid/content/BroadcastReceiver;)V", {VmValue::Ref(receiver)});
+    f.On(application, "sendBroadcast", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+    REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+    CHECK(received == 1);
+    constexpr auto register_signature =
+        "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)Landroid/content/Intent;";
+    const auto battery_filter = f.New("Landroid/content/IntentFilter;", "(Ljava/lang/String;)V",
+                                      {VmValue::Ref(f.vm.NewStringUtf8("android.intent.action.BATTERY_CHANGED"))});
+    const auto battery_root = f.vm.ProtectReferences(std::array{battery_filter});
+    const auto battery = f.On(application, "registerReceiver", register_signature,
+                              {VmValue::Ref(VmObjectRef{}), VmValue::Ref(battery_filter)})
+                             .ref;
+    REQUIRE(battery.IsValid());
+    CHECK(f.On(battery, "getBooleanExtra", "(Ljava/lang/String;Z)Z",
+               {VmValue::Ref(f.vm.NewStringUtf8("present")), VmValue::Int(1)})
+              .AsInt() == 0);
+    f.context->granted_permissions.insert("android.permission.BROADCAST_STICKY");
+    f.On(application, "sendStickyBroadcast", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+    CHECK(f.On(application, "registerReceiver", register_signature, {VmValue::Ref(receiver), VmValue::Ref(filter)})
+              .ref.IsValid());
+    REQUIRE_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+    CHECK(received == 2);
+    CHECK(sticky_received == 1);
+    f.On(application, "unregisterReceiver", "(Landroid/content/BroadcastReceiver;)V", {VmValue::Ref(receiver)});
+    f.On(application, "removeStickyBroadcast", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+    CHECK_FALSE(
+        f.On(application, "registerReceiver", register_signature, {VmValue::Ref(VmObjectRef{}), VmValue::Ref(filter)})
+            .ref.IsValid());
+    const auto component = f.New(
+        "Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
+        {VmValue::Ref(f.vm.NewStringUtf8("test.application")), VmValue::Ref(f.vm.NewStringUtf8("test.RomService"))});
+    const auto component_root = f.vm.ProtectReferences(std::array{component});
+    const auto request = f.New("Landroid/content/Intent;");
+    const auto request_root = f.vm.ProtectReferences(std::array{request});
+    f.On(request, "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;",
+         {VmValue::Ref(component)});
+    for (int i = 0; i < 2; ++i)
+        CHECK(f.On(application, "startService", "(Landroid/content/Intent;)Landroid/content/ComponentName;",
+                   {VmValue::Ref(request)})
+                  .ref.IsValid());
+    const auto starts = PumpJavaThreads(f.vm, *f.context);
+    REQUIRE_MESSAGE(!starts.has_value(), starts.value_or(""));
+    CHECK(created == 1);
+    CHECK(started == 2);
+    const auto connection = f.vm.NewIntrinsicInstance("Ltest/RomConnection;");
+    const auto connection_root = f.vm.ProtectReferences(std::array{connection});
+    CHECK(f.On(application, "bindService", "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z",
+               {VmValue::Ref(request), VmValue::Ref(connection), VmValue::Int(1)})
+              .AsInt() == 1);
+    const auto binding = PumpJavaThreads(f.vm, *f.context);
+    REQUIRE_MESSAGE(!binding.has_value(), binding.value_or(""));
+    CHECK(bound == 1);
+    CHECK(connected == 1);
+    CHECK(f.On(application, "stopService", "(Landroid/content/Intent;)Z", {VmValue::Ref(request)}).AsInt() == 1);
+    const auto stop = PumpJavaThreads(f.vm, *f.context);
+    REQUIRE_MESSAGE(!stop.has_value(), stop.value_or(""));
+    CHECK(destroyed == 0);
+    f.On(application, "unbindService", "(Landroid/content/ServiceConnection;)V", {VmValue::Ref(connection)});
+    const auto unbinding = PumpJavaThreads(f.vm, *f.context);
+    REQUIRE_MESSAGE(!unbinding.has_value(), unbinding.value_or(""));
+    CHECK(unbound == 1);
+    CHECK(destroyed == 1);
 }

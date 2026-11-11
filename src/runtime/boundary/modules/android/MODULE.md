@@ -39,7 +39,8 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
 - 每个 guest 线程至多关联一个 Looper；forThread 不创建，prepare 幂等且沿用首次 options。
   句柄单调分配、不复用；线程持有一个内部引用，acquire/release 管理额外引用。
 - 线程退役移除关联和事件登记；持有额外引用的对象保留到 release。Java/native 线程身份
-  由 integration 关联。进程 shutdown 唤醒所有等待，后续 poll 返回 POLL_ERROR。
+  由 integration 关联，Java MessageQueue 使用同一个 Looper 的 poll 和 wake 位。Clock 步进只通知
+  poll 重新判断 Java deadline。进程 shutdown 唤醒所有等待，后续 poll 返回 POLL_ERROR。
 - fd 登记按 Looper 隔离；支持注入的真实 VFS pipe 就绪查询，轮询不消费 pipe 数据。
   add/removeFd 可替换/删除登记；错误、挂断、失效事件始终报告。未支持的 fd 或 callback
   登记返回 -1，不伪装成功。当前 pollOnce/pollAll 在无 callback 支持范围内行为相同。

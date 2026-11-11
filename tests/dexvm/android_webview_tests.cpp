@@ -194,7 +194,6 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
         CHECK(inherited.overridable);
         CHECK((inherited.access_flags & kAccFinal) == 0);
 
-        fixture.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
         const auto owner = fixture.New("Landroid/content/Context;");
         const auto first = fixture.New("Ltest/OwnedWebView;", kViewInit, {VmValue::Ref(owner)});
         const auto second = fixture.New("Landroid/webkit/WebView;", kViewInit, {VmValue::Ref(owner)});

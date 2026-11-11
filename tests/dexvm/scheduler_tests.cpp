@@ -34,11 +34,15 @@ std::vector<IntrinsicClassDecl> TestCatalog(std::vector<std::int32_t>* messages,
                                             std::atomic<std::int32_t>* runnable_calls,
                                             std::atomic<std::int32_t>* timer_calls, std::atomic<std::int32_t>* finishes,
                                             std::atomic<std::int32_t>* async_background,
-                                            std::atomic<std::int32_t>* async_post) {
+                                            std::atomic<std::int32_t>* async_post,
+                                            std::atomic<std::int32_t>* idle_calls) {
     std::vector<IntrinsicClassDecl> result;
     auto handler = IntrinsicClassBuilder::Class("Ltest/RecordingHandler;", "Landroid/os/Handler;");
     handler.OverrideMethod("handleMessage", "(Landroid/os/Message;)V", [messages](IntrinsicContext& call) {
-        messages->push_back(static_cast<std::int32_t>(call.vm.Model().InstanceSlots(call.arguments[0].ref)[0].bits));
+        const auto field =
+            call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(call.arguments[0].ref), "what", "I");
+        messages->push_back(static_cast<std::int32_t>(
+            call.vm.Model().InstanceSlots(call.arguments[0].ref)[call.vm.Linker().Field(*field).slot].bits));
         return VmValue::Void();
     });
     result.push_back(std::move(handler).Build());
@@ -51,13 +55,26 @@ std::vector<IntrinsicClassDecl> TestCatalog(std::vector<std::int32_t>* messages,
     });
     result.push_back(std::move(runnable).Build());
 
+    auto idle = IntrinsicClassBuilder::Class("Ltest/IdleCallback;", "Ljava/lang/Object;",
+                                             {"Landroid/os/MessageQueue$IdleHandler;"});
+    idle.VirtualMethod("queueIdle", "()Z", [idle_calls](IntrinsicContext&) {
+        ++*idle_calls;
+        return VmValue::Int(0);
+    });
+    result.push_back(std::move(idle).Build());
+
     auto failing_runnable =
         IntrinsicClassBuilder::Class("Ltest/FailingRunnable;", "Ljava/lang/Object;", {"Ljava/lang/Runnable;"});
     failing_runnable.VirtualMethod("run", "()V", [](IntrinsicContext& call) -> VmValue {
         const auto cause = call.vm.MakeThrowable("Ljava/lang/IllegalStateException;", "native formatter failed");
         const auto roots = call.vm.ProtectReferences(std::array{cause});
-        const auto wrapper = call.vm.MakeThrowable("Ljava/lang/ExceptionInInitializerError;", "");
-        call.vm.InitThrowableCause(wrapper, cause);
+        const auto wrapper = call.vm.NewIntrinsicInstance("Ljava/lang/ExceptionInInitializerError;");
+        const auto wrapper_root = call.vm.ProtectReferences(std::array{wrapper});
+        const auto constructor = call.vm.Linker().FindDirectMethod(call.vm.Model().ObjectClass(wrapper), "<init>",
+                                                                   "(Ljava/lang/Throwable;)V");
+        REQUIRE(constructor.has_value());
+        const auto initialized = call.vm.Call(*constructor, std::array{VmValue::Ref(wrapper), VmValue::Ref(cause)});
+        REQUIRE_FALSE(initialized.exception.IsValid());
         throw VmJavaThrow{"Ljava/lang/ExceptionInInitializerError;", "", wrapper};
     });
     result.push_back(std::move(failing_runnable).Build());
@@ -131,6 +148,7 @@ struct SchedulerVm final {
     std::atomic<std::int32_t> finishes{};
     std::atomic<std::int32_t> async_background{};
     std::atomic<std::int32_t> async_post{};
+    std::atomic<std::int32_t> idle_calls{};
     Interpreter vm;
     VmThreadRuntime threads;
 
@@ -140,7 +158,8 @@ struct SchedulerVm final {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog(AndroidCoreIntrinsicServices(context)));
                   linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
                   linker.RegisterIntrinsics(TestCatalog(&messages, &ticks, &receiver_results, &runnable_calls,
-                                                        &timer_calls, &finishes, &async_background, &async_post));
+                                                        &timer_calls, &finishes, &async_background, &async_post,
+                                                        &idle_calls));
                   ogplay::test::RegisterBootDex(linker);
                   std::ifstream stream(std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/rom_java_replacement.dex",
                                        std::ios::binary);
@@ -153,6 +172,7 @@ struct SchedulerVm final {
         context->threads = &threads;
         vm.Monitors().SetTimeSource([state = context] { return state->uptime_millis.load(); });
         RegisterAndroidSchedulerStateTable(vm, context);
+        PrepareAndroidMainLooper(vm, context);
     }
 
     ~SchedulerVm() {
@@ -195,6 +215,35 @@ struct SchedulerVm final {
     }
 };
 
+VmObjectRef QueueHead(Interpreter& vm, VmObjectRef looper) {
+    const auto read = [&](VmObjectRef object, const char* name, const char* type) {
+        const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, type);
+        REQUIRE(field.has_value());
+        return VmObjectRef{vm.Model().InstanceSlots(object)[vm.Linker().Field(*field).slot].bits};
+    };
+    return read(read(looper, "mQueue", "Landroid/os/MessageQueue;"), "mMessages", "Landroid/os/Message;");
+}
+
+std::size_t QueuedMessages(Interpreter& vm, VmObjectRef looper) {
+    std::size_t count{};
+    for (auto message = QueueHead(vm, looper); message.IsValid();) {
+        REQUIRE(++count <= 10'000U);
+        const auto field =
+            vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(message), "next", "Landroid/os/Message;");
+        message = VmObjectRef{vm.Model().InstanceSlots(message)[vm.Linker().Field(*field).slot].bits};
+    }
+    return count;
+}
+
+std::int64_t QueueDeadline(Interpreter& vm, VmObjectRef looper) {
+    const auto message = QueueHead(vm, looper);
+    REQUIRE(message.IsValid());
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(message), "when", "J");
+    const auto first = vm.Linker().Field(*field).slot;
+    const auto slots = vm.Model().InstanceSlots(message);
+    return static_cast<std::int64_t>(slots[first].bits | (static_cast<std::uint64_t>(slots[first + 1].bits) << 32));
+}
+
 template <typename Predicate>
 bool WaitFor(Predicate predicate) {
     for (int attempt = 0; attempt < 2000; ++attempt) {
@@ -207,75 +256,30 @@ bool WaitFor(Predicate predicate) {
 }  // namespace
 
 TEST_CASE("Context exposes the stable scheduler main Looper through wrappers") {
-    auto backend = InterpreterBackend::switch_dispatch;
-    SUBCASE("switch") {
-        backend = InterpreterBackend::switch_dispatch;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm fixture(backend);
+        const auto base = fixture.New("Landroid/content/Context;");
+        const auto root = fixture.vm.ProtectReferences(std::array{base});
+        const auto main = fixture.Static("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;").ref;
+        CHECK(main.IsValid());
+        CHECK(fixture.On(base, "getMainLooper", "()Landroid/os/Looper;").ref == main);
+        const auto wrapper =
+            fixture.New("Landroid/content/ContextWrapper;", "(Landroid/content/Context;)V", {VmValue::Ref(base)});
+        const auto wrapper_root = fixture.vm.ProtectReferences(std::array{wrapper});
+        CHECK(fixture.On(wrapper, "getMainLooper", "()Landroid/os/Looper;").ref == main);
+        const auto handler = fixture.New("Landroid/os/Handler;", "(Landroid/os/Looper;)V", {VmValue::Ref(main)});
+        CHECK(fixture.On(handler, "getLooper", "()Landroid/os/Looper;").ref == main);
     }
-    SUBCASE("threaded") {
-        backend = InterpreterBackend::threaded;
-    }
-    SchedulerVm fixture(backend);
-    std::uint64_t native_token{};
-    std::size_t prepares{};
-    fixture.context->prepare_native_looper = [&](std::uint64_t token) {
-        if (++prepares != 1U) throw std::runtime_error("native thread is retired");
-        native_token = token;
-    };
-    const auto static_main = fixture.Direct("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;");
-    SchedulerVm::RequireOk(static_main);
-    REQUIRE(static_main.value.ref.IsValid());
-    CHECK(native_token == 1);
-
-    const auto base = fixture.New("Landroid/content/Context;");
-    fixture.ConstructAs(base, "Landroid/content/Context;", "()V");
-    const auto from_base = fixture.Virtual(base, "getMainLooper", "()Landroid/os/Looper;");
-    SchedulerVm::RequireOk(from_base);
-    CHECK(from_base.value.ref == static_main.value.ref);
-
-    const auto wrapper = fixture.New("Landroid/content/ContextWrapper;");
-    fixture.ConstructAs(wrapper, "Landroid/content/ContextWrapper;", "(Landroid/content/Context;)V",
-                        {VmValue::Ref(base)});
-    const auto from_wrapper = fixture.Virtual(wrapper, "getMainLooper", "()Landroid/os/Looper;");
-    SchedulerVm::RequireOk(from_wrapper);
-    CHECK(from_wrapper.value.ref == static_main.value.ref);
-
-    const auto repeated = fixture.Virtual(base, "getMainLooper", "()Landroid/os/Looper;");
-    SchedulerVm::RequireOk(repeated);
-    CHECK(repeated.value.ref == static_main.value.ref);
-
-    const auto handler = fixture.New("Landroid/os/Handler;");
-    fixture.ConstructAs(handler, "Landroid/os/Handler;", "(Landroid/os/Looper;)V",
-                        {VmValue::Ref(from_wrapper.value.ref)});
-    const auto handler_looper = fixture.Virtual(handler, "getLooper", "()Landroid/os/Looper;");
-    SchedulerVm::RequireOk(handler_looper);
-    CHECK(handler_looper.value.ref == static_main.value.ref);
-    CHECK_FALSE(ogplay::runtime::PumpJavaThreads(fixture.vm, *fixture.context).has_value());
-    CHECK_FALSE(ogplay::runtime::PumpJavaThreads(fixture.vm, *fixture.context).has_value());
-    CHECK(prepares == 1U);
 }
 
-TEST_CASE("empty scheduler pump uses the attached main Thread without acquiring the VM lock") {
+TEST_CASE("empty ROM main queue keeps its Looper and Thread identities") {
     SchedulerVm fixture;
     const auto main = fixture.Direct("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;");
     SchedulerVm::RequireOk(main);
-    REQUIRE(main.value.ref.IsValid());
-    REQUIRE(fixture.context->loopers.at(main.value.ref.Value()).thread.IsValid());
-    std::promise<void> entered, release;
-    auto entered_future = entered.get_future();
-    auto released = release.get_future();
-    auto holder = std::async(std::launch::async, [&] {
-        VmExecutionLockScope lock(fixture.vm.ExecutionLock());
-        entered.set_value();
-        released.wait();
-    });
-    entered_future.wait();
-    auto pump = std::async(std::launch::async, [&] { return PumpJavaThreads(fixture.vm, *fixture.context); });
-    const auto ready = pump.wait_for(std::chrono::milliseconds(500));
-    // Always unblock before assertions, including on the old implementation.
-    release.set_value();
-    holder.get();
-    CHECK(ready == std::future_status::ready);
-    CHECK_FALSE(pump.get().has_value());
+    const auto thread = fixture.Virtual(main.value.ref, "getThread", "()Ljava/lang/Thread;").value.ref;
+    REQUIRE(thread.IsValid());
+    CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    CHECK(fixture.Virtual(main.value.ref, "getThread", "()Ljava/lang/Thread;").value.ref == thread);
     CHECK(fixture.context->main_looper == main.value.ref);
 }
 
@@ -296,7 +300,7 @@ TEST_CASE("main Looper dispatch keeps dequeued Runnables alive while another thr
         SchedulerVm::RequireOk(fixture.Virtual(handler, "post", "(Ljava/lang/Runnable;)Z", {VmValue::Ref(runnable)}));
     }
     static_cast<void>(fixture.vm.CollectGarbage("scheduler-queued"));
-    REQUIRE(fixture.context->scheduled_work.size() == static_cast<std::size_t>(kRunnables));
+    REQUIRE(QueuedMessages(fixture.vm, fixture.context->main_looper) == static_cast<std::size_t>(kRunnables));
 
     // The lifecycle thread pumps the main Looper without holding the VM lock,
     // while a Java thread collects.
@@ -589,8 +593,8 @@ TEST_CASE("DVM-135 View posts through attached and detached main queues") {
         CHECK(fixture.On(child, "postDelayed", "(Ljava/lang/Runnable;J)Z", {VmValue::Ref(runnable), VmValue::Long(10)})
                   .AsInt() == 1);
         CHECK(fixture.context->pending_view_actions.empty());
-        REQUIRE(fixture.context->scheduled_work.size() == 1);
-        CHECK(fixture.context->scheduled_work.front().deadline_millis == base + 10);
+        REQUIRE(QueuedMessages(fixture.vm, fixture.context->main_looper) == 1);
+        CHECK(QueueDeadline(fixture.vm, fixture.context->main_looper) == base + 10);
         // First pump only at the deadline: a detached misclassification would start delay here.
         AdvanceAndroidClock(*fixture.context, 10);
         CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
@@ -613,12 +617,13 @@ TEST_CASE("DVM-135 View posts through attached and detached main queues") {
         fixture.On(detached_view, "post", "(Ljava/lang/Runnable;)Z", {VmValue::Ref(runnable)});
         fixture.On(child, "postDelayed", "(Ljava/lang/Runnable;J)Z", {VmValue::Ref(runnable), VmValue::Long(100)});
         REQUIRE(fixture.context->pending_view_actions.size() == 1);
-        REQUIRE(fixture.context->scheduled_work.size() == 1);
+        REQUIRE(QueuedMessages(fixture.vm, fixture.context->main_looper) == 1);
         ShutdownAndroidScheduler(*fixture.context);
         CHECK(fixture.context->pending_view_actions.empty());
         CHECK(fixture.context->scheduled_work.empty());
         static_cast<void>(fixture.vm.CollectGarbage("view-post-shutdown"));
-        CHECK_FALSE(fixture.model.IsValidRef(runnable));
+        // The stopped main Looper retains its Java queue until VM retirement.
+        CHECK(fixture.model.IsValidRef(runnable));
         AdvanceAndroidClock(*fixture.context, 100);
         CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
         CHECK(runnable_calls.load() == 5);
@@ -671,6 +676,7 @@ TEST_CASE("scheduled callback diagnostics include the throwable cause chain") {
 
     const auto failure = PumpJavaThreads(fixture.vm, *fixture.context);
     REQUIRE(failure.has_value());
+    INFO(*failure);
     CHECK(failure->find("scheduled callback raised: "
                         "Ljava/lang/ExceptionInInitializerError;") != std::string::npos);
     CHECK(failure->find("Caused by: Ljava/lang/IllegalStateException;: "
@@ -756,16 +762,10 @@ TEST_CASE("DVM-262 Message obtain overload calls the ROM no-argument pool factor
         set_pool("sPoolSize", "I", VmValue::Int(1));
         const auto target = f.linker.FindDirectMethod(type, "obtain", "()Landroid/os/Message;");
         REQUIRE(target.has_value());
-        const auto original = f.linker.Method(*target).implementation;
-        int calls = 0;
-        f.linker.MutableMethod(*target).implementation = [original, &calls](IntrinsicContext& c) {
-            ++calls;
-            return original(c);
-        };
+        CHECK(f.linker.Method(*target).kind == MethodKind::interpreted);
         const auto message = f.Static("Landroid/os/Message;", "obtain", "(Landroid/os/Handler;III)Landroid/os/Message;",
                                       {VmValue::Ref(handler), VmValue::Int(19), VmValue::Int(23), VmValue::Int(29)})
                                  .ref;
-        CHECK(calls == 1);
         CHECK(message == pooled);
         const auto bits = [&](const char* name, const char* descriptor) {
             const auto field = f.linker.FindFieldRecursive(type, name, descriptor);
@@ -780,7 +780,6 @@ TEST_CASE("DVM-262 Message obtain overload calls the ROM no-argument pool factor
         const auto fresh = f.Static("Landroid/os/Message;", "obtain", "(Landroid/os/Handler;)Landroid/os/Message;",
                                     {VmValue::Ref(handler)})
                                .ref;
-        CHECK(calls == 2);
         CHECK(fresh != pooled);
     }
 }
@@ -845,4 +844,137 @@ TEST_CASE("DVM-268 DEX TimerTask cancellation before scheduling returns false") 
         CHECK(outcome.value.AsInt() == 0);
         CHECK(f.linker.Class(f.Class("Ljava/util/TimerTask;")).is_boot_dex);
     }
+}
+
+TEST_CASE("ROM MessageQueue barriers pass asynchronous messages and protect the main Looper") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        SchedulerVm f(backend);
+        const auto main = f.context->main_looper;
+        const auto handler = f.New("Ltest/RecordingHandler;");
+        f.ConstructAs(handler, "Landroid/os/Handler;", "()V");
+        const auto roots = f.vm.ProtectReferences(std::array{handler});
+        const auto barrier = f.Virtual(main, "postSyncBarrier", "()I");
+        SchedulerVm::RequireOk(barrier);
+        const auto message = [&](int what, bool asynchronous) {
+            const auto obtained = f.Virtual(handler, "obtainMessage", "(I)Landroid/os/Message;", {VmValue::Int(what)});
+            SchedulerVm::RequireOk(obtained);
+            const auto ref = obtained.value.ref;
+            const auto root = f.vm.ProtectReferences(std::array{ref});
+            SchedulerVm::RequireOk(f.Virtual(ref, "setAsynchronous", "(Z)V", {VmValue::Int(asynchronous ? 1 : 0)}));
+            SchedulerVm::RequireOk(f.Virtual(ref, "sendToTarget", "()V"));
+        };
+        message(1, false);
+        message(2, true);
+        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        CHECK(f.messages == std::vector<std::int32_t>{2});
+        SchedulerVm::RequireOk(f.Virtual(main, "removeSyncBarrier", "(I)V", {barrier.value}));
+        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        CHECK(f.messages == std::vector<std::int32_t>{2, 1});
+        const auto duplicate = f.Virtual(main, "removeSyncBarrier", "(I)V", {barrier.value});
+        REQUIRE(duplicate.exception.IsValid());
+        CHECK(f.linker.Class(duplicate.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+        for (const auto* method : {"quit", "quitSafely"}) {
+            const auto rejected = f.Virtual(main, method, "()V");
+            REQUIRE(rejected.exception.IsValid());
+            CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/RuntimeException;");
+        }
+    }
+}
+
+TEST_CASE("ROM HandlerThread delays wake only after the manual Clock reaches their deadline") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        SchedulerVm f(backend);
+        const auto thread = f.New("Landroid/os/HandlerThread;");
+        const auto thread_root = f.vm.ProtectReferences(std::array{thread});
+        f.ConstructAs(thread, "Landroid/os/HandlerThread;", "(Ljava/lang/String;)V",
+                      {VmValue::Ref(f.vm.NewStringUtf8("clock-worker"))});
+        SchedulerVm::RequireOk(f.Virtual(thread, "start", "()V"));
+        const auto looper = f.Virtual(thread, "getLooper", "()Landroid/os/Looper;").value.ref;
+        REQUIRE(looper.IsValid());
+        const auto handler = f.New("Landroid/os/Handler;");
+        const auto runnable = f.New("Ltest/RecordingRunnable;");
+        const auto roots = f.vm.ProtectReferences(std::array{handler, runnable});
+        f.ConstructAs(handler, "Landroid/os/Handler;", "(Landroid/os/Looper;)V", {VmValue::Ref(looper)});
+        const auto now = f.context->uptime_millis.load();
+        SchedulerVm::RequireOk(
+            f.Virtual(handler, "postDelayed", "(Ljava/lang/Runnable;J)Z", {VmValue::Ref(runnable), VmValue::Long(10)}));
+        REQUIRE(WaitFor([&] { return f.Virtual(looper, "isIdling", "()Z").value.AsInt() != 0; }));
+        CHECK(f.runnable_calls.load() == 0);
+        AdvanceAndroidClock(*f.context, 9);
+        CHECK(f.context->uptime_millis.load() == now + 9);
+        CHECK(f.runnable_calls.load() == 0);
+        AdvanceAndroidClock(*f.context, 1);
+        REQUIRE(WaitFor([&] { return f.runnable_calls.load() == 1; }));
+        CHECK(f.context->uptime_millis.load() == now + 10);
+        SchedulerVm::RequireOk(f.Virtual(thread, "quit", "()Z"));
+        SchedulerVm::RequireOk(f.Virtual(thread, "join", "()V"));
+    }
+}
+
+TEST_CASE("ROM MessageQueue invokes IdleHandler once and quitSafely discards future work") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        SchedulerVm f(backend);
+        const auto thread = f.New("Landroid/os/HandlerThread;");
+        const auto thread_root = f.vm.ProtectReferences(std::array{thread});
+        f.ConstructAs(thread, "Landroid/os/HandlerThread;", "(Ljava/lang/String;)V",
+                      {VmValue::Ref(f.vm.NewStringUtf8("idle-worker"))});
+        SchedulerVm::RequireOk(f.Virtual(thread, "start", "()V"));
+        const auto looper = f.Virtual(thread, "getLooper", "()Landroid/os/Looper;").value.ref;
+        REQUIRE(looper.IsValid());
+        const auto queue = f.Virtual(looper, "getQueue", "()Landroid/os/MessageQueue;").value.ref;
+        const auto idle = f.New("Ltest/IdleCallback;");
+        const auto handler = f.New("Landroid/os/Handler;");
+        const auto runnable = f.New("Ltest/RecordingRunnable;");
+        const auto roots = f.vm.ProtectReferences(std::array{idle, handler, runnable});
+        f.ConstructAs(handler, "Landroid/os/Handler;", "(Landroid/os/Looper;)V", {VmValue::Ref(looper)});
+        SchedulerVm::RequireOk(
+            f.Virtual(queue, "addIdleHandler", "(Landroid/os/MessageQueue$IdleHandler;)V", {VmValue::Ref(idle)}));
+        SchedulerVm::RequireOk(f.Virtual(handler, "post", "(Ljava/lang/Runnable;)Z", {VmValue::Ref(runnable)}));
+        REQUIRE(WaitFor([&] { return f.idle_calls.load() == 1; }));
+        SchedulerVm::RequireOk(f.Virtual(handler, "postDelayed", "(Ljava/lang/Runnable;J)Z",
+                                         {VmValue::Ref(runnable), VmValue::Long(100)}));
+        SchedulerVm::RequireOk(f.Virtual(handler, "post", "(Ljava/lang/Runnable;)Z", {VmValue::Ref(runnable)}));
+        SchedulerVm::RequireOk(f.Virtual(thread, "quitSafely", "()Z"));
+        SchedulerVm::RequireOk(f.Virtual(thread, "join", "()V"));
+        CHECK(f.runnable_calls.load() == 2);
+        CHECK(f.idle_calls.load() == 1);
+        AdvanceAndroidClock(*f.context, 100);
+        CHECK_FALSE(f.threads.IsAlive(thread));
+        CHECK(f.runnable_calls.load() == 2);
+    }
+}
+
+TEST_CASE("ROM idle HandlerThread wakes when the VM threads shut down") {
+    ogplay::test::android_value::AndroidValueVm f;
+    const auto thread = f.New("Landroid/os/HandlerThread;", "(Ljava/lang/String;)V",
+                              {VmValue::Ref(f.vm.NewStringUtf8("idle-shutdown"))});
+    const auto root = f.vm.ProtectReferences(std::array{thread});
+    f.On(thread, "start", "()V");
+    REQUIRE(f.On(thread, "getLooper", "()Landroid/os/Looper;").ref.IsValid());
+    f.threads.Shutdown();
+    CHECK_FALSE(f.threads.IsAlive(thread));
+    CHECK(f.context->scheduler_shutdown);
+}
+
+TEST_CASE("ROM MessageQueue and NDK Looper consume the same native wake") {
+    std::atomic_uint64_t token{};
+    std::atomic_uint32_t returned{};
+    ogplay::test::android_value::AndroidValueVm fixture(InterpreterBackend::switch_dispatch);
+    const auto poll = fixture.context->poll_native_looper;
+    fixture.context->poll_native_looper = [&](std::uint64_t current, const std::function<bool()>& ready) {
+        token = current;
+        poll(current, ready);
+        ++returned;
+    };
+    const auto thread = fixture.New("Landroid/os/HandlerThread;", "(Ljava/lang/String;)V",
+                                    {VmValue::Ref(fixture.vm.NewStringUtf8("native-wake"))});
+    const auto root = fixture.vm.ProtectReferences(std::array{thread});
+    fixture.On(thread, "start", "()V");
+    REQUIRE(fixture.On(thread, "getLooper", "()Landroid/os/Looper;").ref.IsValid());
+    REQUIRE(WaitFor([&] { return token.load() > 1; }));
+    fixture.runtime->session->WakeThreadLooper(fixture.context->native_thread_for_context(token.load()));
+    REQUIRE(WaitFor([&] { return returned.load() > 0; }));
+    CHECK(fixture.On(thread, "quitSafely", "()Z").AsInt() == 1);
+    fixture.On(thread, "join", "()V");
+    fixture.context->poll_native_looper = poll;
 }

@@ -16,6 +16,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_dalvik_system_BaseDexClassLoader() {
     auto builder = IntrinsicClassBuilder::Class("Ldalvik/system/BaseDexClassLoader;", "Ljava/lang/ClassLoader;");
+    builder.MergesBootClass();
     // The integration layer binds the selected-ABI native library resolver.
     builder.UnimplementedOverride("findLibrary", "(Ljava/lang/String;)Ljava/lang/String;");
     return std::move(builder).Build();
@@ -24,8 +25,7 @@ IntrinsicClassDecl Declare_dalvik_system_BaseDexClassLoader() {
 IntrinsicClassDecl Declare_dalvik_system_PathClassLoader() {
     auto builder =
         IntrinsicClassBuilder::Class("Ldalvik/system/PathClassLoader;", "Ldalvik/system/BaseDexClassLoader;");
-    builder.UnimplementedConstructor("(Ljava/lang/String;Ljava/lang/ClassLoader;)V");
-    builder.UnimplementedConstructor("(Ljava/lang/String;Ljava/lang/String;Ljava/lang/ClassLoader;)V");
+    builder.MergesBootClass();
     return std::move(builder).Build();
 }
 
@@ -82,6 +82,18 @@ struct ClassLoaderFields final {
     const auto name_ref = call.NonNullRef(0, "className");
     const auto name = context.vm.StringUtf8(name_ref);
     try {
+        if (!name.starts_with("[") && context.vm.ClassLoaders().IsRomApplicationLoader(context.receiver) &&
+            !context.vm.ClassLoaders().FindLoadedClass(role, name)) {
+            try {
+                const auto parent = context.vm.ClassLoaders().LoadClass(kBootstrapLoader, name);
+                context.vm.Linker().MarkInitiatedBy(parent, role);
+                return VmValue::Ref(context.vm.Model().ClassObject(parent));
+            } catch (const DexVmError& error) {
+                if (error.Reason() != DexVmErrorReason::unknown_class) throw;
+            }
+            return detail::InvokeGuest(context.vm, context.receiver, "findClass",
+                                       "(Ljava/lang/String;)Ljava/lang/Class;", {VmValue::Ref(name_ref)});
+        }
         const auto java_class = context.vm.ClassLoaders().LoadClass(role, name);
         return VmValue::Ref(context.vm.Model().ClassObject(java_class));
     } catch (const ClassNameCodecError&) {
@@ -222,7 +234,7 @@ IntrinsicClassDecl Declare_java_lang_ClassLoader(const CoreIntrinsicServices& se
     // Dalvik assertions are controlled by VM startup options, not this setter.
     builder.VirtualMethod("setDefaultAssertionStatus", "(Z)V", [](IntrinsicContext&) { return VmValue::Void(); });
     builder.StaticMethod("getSystemClassLoader", "()Ljava/lang/ClassLoader;", [](IntrinsicContext& context) {
-        return VmValue::Ref(context.vm.ClassLoaders().ApplicationLoader());
+        return VmValue::Ref(context.vm.ClassLoaders().SystemLoader());
     });
     builder.FinalMethod("getParent", "()Ljava/lang/ClassLoader;", [fields](IntrinsicContext& context) {
         const auto fixed = context.vm.ClassLoaders().FacadeParent(context.receiver);

@@ -55,8 +55,7 @@ struct PrefsDriver final {
     FileVm& vm;
 
     [[nodiscard]] VmObjectRef Open(const std::string& name) {
-        const auto context_object =
-            vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto context_object = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
         return vm.CallOn(context_object, "getSharedPreferences",
                          "(Ljava/lang/String;I)"
                          "Landroid/content/SharedPreferences;",
@@ -109,8 +108,7 @@ TEST_CASE("Environment data directory is one stable guest File") {
 
 TEST_CASE("Context files and cache directories are inherited stable and VFS backed") {
     FileVm vm;
-    const auto base =
-        vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    const auto base = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
     const auto activity =
         vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
     static_cast<void>(vm.CallOn(
@@ -151,8 +149,7 @@ TEST_CASE("Context OBB directories follow API 19 external package layout") {
         InterpreterConfig config;
         config.backend = backend;
         FileVm vm(nullptr, true, config);
-        const auto base =
-            vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto base = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
         const auto activity =
             vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
         static_cast<void>(vm.CallOn(
@@ -190,8 +187,7 @@ TEST_CASE("Context private file streams use the app files directory on both back
                              "I") == 0U);
         CHECK(vm.StaticField("Landroid/content/Context;", "MODE_APPEND",
                              "I") == 0x8000U);
-        const auto base =
-            vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto base = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
         const auto activity =
             vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
         static_cast<void>(vm.CallOn(
@@ -297,7 +293,7 @@ TEST_CASE("Context getDir private directories preserve API19 paths and VFS state
         InterpreterConfig config;
         config.backend = backend;
         FileVm vm(nullptr, true, config);
-        const auto base = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto base = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
         static_cast<void>(vm.CallOn(base, "getFilesDir", "()Ljava/io/File;"));
         const auto app = vm.interpreter.NewIntrinsicInstance("Landroid/app/Application;");
         const auto activity = vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
@@ -340,28 +336,17 @@ TEST_CASE("Context getDir private directories preserve API19 paths and VFS state
         vm.JavaWrite("/data/data/com.example.game/app_file", "existing");
         CHECK(vm.BoolOn(get_dir(base, "file"), "isFile"));
         CHECK(vm.NativeRead("/data/data/com.example.game/app_file") == "existing");
-        // An unavailable parent makes mkdir fail. AOSP still returns the File.
+        // LoadedApk captures the installed directory; later host metadata changes
+        // cannot move an already-created ROM Context into a different package.
         vm.context->package_name = "com.example.uninstalled";
-        const auto failed = get_dir(app, "sdk");
-        REQUIRE(failed.IsValid());
-        CHECK_FALSE(vm.BoolOn(failed, "exists"));
+        CHECK(vm.BoolOn(get_dir(app, "sdk"), "isDirectory"));
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(get_dir(app, "sdk"), "getPath", "()Ljava/lang/String;").ref) == path);
         for (const auto mode : {1, 2, 4, 0x8000, -1}) {
-            const auto unsupported = vm.CallOnOutcome(base, "getDir", signature,
-                {VmValue::Ref(vm.interpreter.NewStringUtf8("unsupported")), VmValue::Int(mode)});
-            REQUIRE(unsupported.exception.IsValid());
-            CHECK(vm.linker.Class(unsupported.exception_class).descriptor ==
-                  "Ljava/lang/UnsupportedOperationException;");
+            const auto file = vm.CallOn(base, "getDir", signature,
+                                        {VmValue::Ref(vm.interpreter.NewStringUtf8("mode")), VmValue::Int(mode)})
+                                  .ref;
+            CHECK(vm.BoolOn(file, "isDirectory"));
         }
-        vm.context->vfs = nullptr;
-        const auto unavailable = vm.CallOnOutcome(base, "getDir", signature,
-            {VmValue::Ref(vm.interpreter.NewStringUtf8("sdk")), VmValue::Int(0)});
-        REQUIRE(unavailable.exception.IsValid());
-        CHECK(vm.linker.Class(unavailable.exception_class).descriptor ==
-              "Ljava/lang/UnsupportedOperationException;");
-        const auto hits = vm.ledger.Unimplemented();
-        REQUIRE(hits.size() == 1);
-        CHECK(hits[0].id == "dexvm.context_private_directory");
-        CHECK(hits[0].count == 6);
     }
 }
 
@@ -375,7 +360,7 @@ TEST_CASE("Context getDir private directories persist across sessions") {
         for (const auto reload : {false, true}) {
             auto store = SandboxStore::Open(root.path, kPackage, kPackage);
             FileVm vm(store.get(), true, config);
-            const auto context = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+            const auto context = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
             const auto directory = vm.CallOn(context, "getDir",
                 "(Ljava/lang/String;I)Ljava/io/File;",
                 {VmValue::Ref(vm.interpreter.NewStringUtf8("sdk")), VmValue::Int(0)}).ref;
@@ -391,29 +376,18 @@ TEST_CASE("Context getDir private directories persist across sessions") {
     }
 }
 
-TEST_CASE("Context internal directories return null when VFS is unavailable") {
+TEST_CASE("ROM Context file access uses the VFS already bound to its VM") {
     FileVm vm;
+    const auto context = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
     vm.context->vfs = nullptr;
-    const auto context =
-        vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
-    CHECK_FALSE(vm.CallOn(context, "getFilesDir", "()Ljava/io/File;")
-                    .ref.IsValid());
-    CHECK_FALSE(vm.CallOn(context, "getCacheDir", "()Ljava/io/File;")
-                    .ref.IsValid());
-    CHECK_FALSE(vm.CallOn(context, "getObbDir", "()Ljava/io/File;")
-                    .ref.IsValid());
-    const auto obb_dirs =
-        vm.CallOn(context, "getObbDirs", "()[Ljava/io/File;").ref;
-    REQUIRE(obb_dirs.IsValid());
-    CHECK(vm.model.ArrayLength(obb_dirs) == 1);
-    CHECK_FALSE(vm.model.GetObjectElement(obb_dirs, 0).IsValid());
+    CHECK(vm.CallOn(context, "getFilesDir", "()Ljava/io/File;").ref.IsValid());
+    CHECK(vm.CallOn(context, "getCacheDir", "()Ljava/io/File;").ref.IsValid());
     const auto outcome = vm.CallOnOutcome(
         context, "openFileInput",
         "(Ljava/lang/String;)Ljava/io/FileInputStream;",
         {VmValue::Ref(vm.interpreter.NewStringUtf8("slot.dat"))});
     REQUIRE(outcome.exception.IsValid());
-    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-          "Ljava/lang/UnsupportedOperationException;");
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/io/FileNotFoundException;");
 }
 
 TEST_CASE("Java file writes survive into the next session") {
@@ -440,8 +414,7 @@ TEST_CASE("PreferenceManager default preferences persist across sessions") {
     const TemporaryRoot root("defaultprefs");
     const auto open_default = [](FileVm& vm) {
         vm.context->package_name = kPackage;
-        const auto context_object =
-            vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto context_object = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
         const auto manager = vm.linker.FindClass("Landroid/preference/PreferenceManager;");
         REQUIRE(manager.has_value());
         const auto method = vm.linker.FindDirectMethod(
@@ -489,33 +462,20 @@ TEST_CASE("PreferenceManager default preferences persist across sessions") {
     }
 }
 
-TEST_CASE("SharedPreferences failed load is retried without publishing an empty store") {
+TEST_CASE("ROM SharedPreferences caches an empty map after malformed XML") {
     const TemporaryRoot root("retry-prefs");
     auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     FileVm vm(store.get());
-    const auto base = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
-    const auto type = vm.model.ObjectClass(base);
-    const auto slot = vm.linker.FindVtableIndex(type, "getSharedPreferences",
-        "(Ljava/lang/String;I)Landroid/content/SharedPreferences;");
-    REQUIRE(slot.has_value());
-    const auto method = vm.linker.Class(type).vtable[*slot];
     const std::string path = "/data/data/com.example.game/shared_prefs/broken.xml";
     vm.vfs.CreateDirectory("/data/data/com.example.game/shared_prefs");
-    const auto write = [&](const std::string& xml) {
-        vm.interpreter.IO().WriteFile(path, std::as_bytes(std::span(xml.data(), xml.size())));
-    };
-    write("invalid XML");
-    for (int attempt = 0; attempt < 2; ++attempt) {
-        const auto outcome = vm.interpreter.Call(method, std::vector<VmValue>{VmValue::Ref(base),
-            VmValue::Ref(vm.interpreter.NewStringUtf8("broken")), VmValue::Int(0)});
-        REQUIRE(outcome.exception.IsValid());
-        CHECK_FALSE(vm.context->preferences_loaded["broken"]);
-    }
-    write("<?xml version=\"1.0\" encoding=\"utf-8\"?><map><int name=\"answer\" value=\"7\" /></map>");
+    const std::string xml = "invalid XML";
+    vm.interpreter.IO().WriteFile(path, std::as_bytes(std::span(xml.data(), xml.size())));
     PrefsDriver driver{vm};
     const auto prefs = driver.Open("broken");
     CHECK(vm.CallOn(prefs, "getInt", "(Ljava/lang/String;I)I",
-        {VmValue::Ref(vm.interpreter.NewStringUtf8("answer")), VmValue::Int(0)}).AsInt() == 7);
+                    {VmValue::Ref(vm.interpreter.NewStringUtf8("answer")), VmValue::Int(7)})
+              .AsInt() == 7);
+    CHECK(driver.Open("broken") == prefs);
 }
 
 TEST_CASE("SharedPreferences persist as platform XML across sessions") {

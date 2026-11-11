@@ -698,6 +698,7 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
     std::optional<std::size_t> current_component;
     std::optional<std::size_t> current_service;
     std::optional<std::size_t> current_receiver;
+    std::optional<std::size_t> current_provider;
     std::optional<std::size_t> current_permission;
     std::optional<AndroidManifestIntentFilter> current_intent_filter;
     while (cursor < document.size()) {
@@ -786,15 +787,18 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                          (elements[2] == "activity" || elements[2] == "activity-alias")) ||
                         (elements.size() == 3 && elements[2] == "receiver" && current_receiver.has_value()) ||
                         (elements.size() == 3 && elements[2] == "service" && current_service.has_value()) ||
+                        (elements.size() == 3 && elements[2] == "provider" && current_provider.has_value()) ||
                         (elements.size() == 2 && elements[1] == "permission" && current_permission.has_value()))) {
                 auto& meta_data = current_component    ? facts.activity_components[*current_component].meta_data
                                   : current_receiver   ? facts.receiver_components[*current_receiver].meta_data
                                   : current_service    ? facts.service_components[*current_service].meta_data
+                                  : current_provider   ? facts.provider_components[*current_provider].meta_data
                                   : current_permission ? facts.defined_permissions[*current_permission].meta_data
                                                        : facts.application_meta_data;
                 const auto owner = current_component    ? "activity"
                                    : current_receiver   ? "receiver"
                                    : current_service    ? "service"
+                                   : current_provider   ? "provider"
                                    : current_permission ? "permission"
                                                         : "application";
                 const auto* metadata_name = FindAttribute(attributes, "name", kAndroidNamespace);
@@ -955,6 +959,46 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 facts.receiver_components.push_back(std::move(receiver));
                 current_receiver = facts.receiver_components.size() - 1U;
                 current_intent_filter.reset();
+            } else if (name == "provider" && elements.size() == 2 && elements[1] == "application") {
+                const auto* class_name = FindAttribute(attributes, "name", kAndroidNamespace);
+                const auto* authority = FindAttribute(attributes, "authorities", kAndroidNamespace);
+                if (!class_name || !authority)
+                    throw std::runtime_error("binary AndroidManifest provider requires name and authorities");
+                AndroidManifestProviderComponent provider;
+                provider.name = NormalizeAndroidManifestClassName(
+                    facts.package, ReadStringAttribute(*class_name, strings, "provider name"));
+                provider.authority = ReadStringAttribute(*authority, strings, "provider authorities");
+                if (provider.authority.empty())
+                    throw std::runtime_error("binary AndroidManifest provider authorities are empty");
+                if (const auto* enabled = FindAttribute(attributes, "enabled", kAndroidNamespace))
+                    provider.enabled = ReadBooleanAttribute(*enabled, "provider enabled", strings, true);
+                if (const auto* exported = FindAttribute(attributes, "exported", kAndroidNamespace))
+                    if (ResolveAttribute(*exported, strings).type != 0U)
+                        provider.exported = ReadBooleanAttribute(*exported, "provider exported", strings);
+                provider.process_name = facts.application_process_name;
+                if (const auto* process = FindAttribute(attributes, "process", kAndroidNamespace))
+                    provider.process_name =
+                        ManifestProcessName(facts.package, ReadStringAttribute(*process, strings, "provider process"),
+                                            facts.application_process_name);
+                auto permission = facts.application_permission;
+                if (const auto* entry = FindAttribute(attributes, "permission", kAndroidNamespace))
+                    permission = ReadOptionalStringAttribute(*entry, strings);
+                provider.read_permission = provider.write_permission = permission;
+                if (const auto* entry = FindAttribute(attributes, "readPermission", kAndroidNamespace))
+                    provider.read_permission = ReadOptionalStringAttribute(*entry, strings);
+                if (const auto* entry = FindAttribute(attributes, "writePermission", kAndroidNamespace))
+                    provider.write_permission = ReadOptionalStringAttribute(*entry, strings);
+                if (const auto* grant = FindAttribute(attributes, "grantUriPermissions", kAndroidNamespace))
+                    provider.grant_uri_permissions =
+                        ReadBooleanAttribute(*grant, "provider grantUriPermissions", strings);
+                if (const auto* order = FindAttribute(attributes, "initOrder", kAndroidNamespace))
+                    provider.init_order =
+                        std::bit_cast<std::int32_t>(ReadIntegerAttribute(*order, "provider initOrder", strings, true));
+                facts.provider_components.push_back(std::move(provider));
+                current_provider = facts.provider_components.size() - 1U;
+            } else if (name == "grant-uri-permission" && current_provider && elements.size() == 3 &&
+                       elements.back() == "provider") {
+                facts.provider_components[*current_provider].grant_uri_permissions = true;
             } else if (name == "intent-filter" && (current_component || current_service || current_receiver) &&
                        elements.size() == 3 &&
                        (elements.back() == "activity" || elements.back() == "activity-alias" ||
@@ -1099,6 +1143,8 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 current_service.reset();
             } else if (name == "receiver" && elements.size() == 3) {
                 current_receiver.reset();
+            } else if (name == "provider" && elements.size() == 3) {
+                current_provider.reset();
             } else if (name == "permission" && elements.size() == 2) {
                 current_permission.reset();
             }

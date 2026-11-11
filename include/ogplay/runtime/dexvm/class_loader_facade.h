@@ -17,7 +17,10 @@ public:
     ClassLoaderFacade(DexClassLinker& linker, JavaObjectModel& model);
 
     [[nodiscard]] VmObjectRef BootstrapLoader();
+    [[nodiscard]] VmObjectRef SystemLoader();
+    void SetApplicationLoaderFactory(std::function<VmObjectRef()> factory);
     [[nodiscard]] VmObjectRef ApplicationLoader();
+    [[nodiscard]] bool IsRomApplicationLoader(VmObjectRef object) const;
     [[nodiscard]] VmObjectRef LoaderForClass(DexClassId java_class);
     [[nodiscard]] std::optional<VmClassLoaderId> RoleOf(
         VmObjectRef loader_object);
@@ -42,7 +45,9 @@ private:
     DexClassLinker* linker_{};
     JavaObjectModel* model_{};
     VmObjectRef bootstrap_loader_;
+    VmObjectRef system_loader_;
     VmObjectRef application_loader_;
+    std::function<VmObjectRef()> application_loader_factory_;
 };
 
 }  // namespace ogplay::runtime::dexvm

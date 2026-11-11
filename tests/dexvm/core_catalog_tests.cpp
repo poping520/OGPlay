@@ -210,10 +210,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/lang/Thread;.resume()V",
         "Ljava/lang/Thread;.destroy()V",
         "Ljava/lang/BootClassLoader;.<init>()V",
-        "Ldalvik/system/PathClassLoader;.<init>"
-        "(Ljava/lang/String;Ljava/lang/ClassLoader;)V",
-        "Ldalvik/system/PathClassLoader;.<init>"
-        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/ClassLoader;)V",
         "Ljava/lang/reflect/Method;.isAnnotationPresent(Ljava/lang/Class;)Z",
         "Ljava/lang/reflect/Method;.getAnnotation"
         "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
@@ -1162,6 +1158,14 @@ TEST_CASE("dexvm System properties are deterministic and mutable") {
     REQUIRE_FALSE(second_read.exception.IsValid());
     REQUIRE(second_read.value.ref.IsValid());
     CHECK(vm.interpreter.StringUtf8(second_read.value.ref) == "second");
+
+    const auto clear = vm.Static("Ljava/lang/System;", "clearProperty", "(Ljava/lang/String;)Ljava/lang/String;");
+    const auto removed = vm.interpreter.Call(clear, std::array{string("ogplay.test")});
+    REQUIRE_FALSE(removed.exception.IsValid());
+    REQUIRE(removed.value.ref.IsValid());
+    CHECK(vm.interpreter.StringUtf8(removed.value.ref) == "second");
+    CHECK_FALSE(get_property("ogplay.test").value.ref.IsValid());
+    CHECK_FALSE(vm.interpreter.Call(clear, std::array{string("ogplay.test")}).value.ref.IsValid());
 
     ExpectException(vm, vm.interpreter.Call(get, std::vector<VmValue>{VmValue::Ref(VmObjectRef{})}),
                     "Ljava/lang/NullPointerException;");

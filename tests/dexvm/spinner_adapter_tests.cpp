@@ -12,7 +12,7 @@ TEST_CASE("DVM-364 Spinner ROM adapter layout and asynchronous selection chain")
         ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         f.context->activity = owner;
         auto& record = f.context->activity_stack.emplace_back();
         record.object = owner;

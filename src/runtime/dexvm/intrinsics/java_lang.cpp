@@ -3618,6 +3618,16 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                              return previous.has_value() ? VmValue::Ref(context.vm.NewStringUtf8(*previous))
                                                          : VmValue::Ref(VmObjectRef{});
                          });
+    builder.StaticMethod("clearProperty", "(Ljava/lang/String;)Ljava/lang/String;", [](IntrinsicContext& context) {
+        const auto key = context.arguments[0];
+        static_cast<void>(PropertyKey(context, key.ref));
+        const auto removed = InvokeGuest(context.vm, context.vm.SystemProperties(), "remove",
+                                         "(Ljava/lang/Object;)Ljava/lang/Object;", {key});
+        if (removed.ref.IsValid() &&
+            context.vm.Model().ObjectClass(removed.ref) != context.vm.Linker().ResolveDescriptor("Ljava/lang/String;"))
+            throw VmJavaThrow{"Ljava/lang/ClassCastException;", "property value is not a String"};
+        return removed;
+    });
     builder.StaticMethod("mapLibraryName", "(Ljava/lang/String;)Ljava/lang/String;", [](IntrinsicContext& call) {
         const auto name = IntrinsicCall(call).NonNullRef(0, "libName");
         return VmValue::Ref(call.vm.NewStringUtf8("lib" + call.vm.StringUtf8(name) + ".so"));
@@ -3824,7 +3834,7 @@ void InitializeFields(const IntrinsicCall& call, const ThreadFields& fields, con
                      vm.NewStringUtf8(runtime.NativeContextName(token).value_or(
                          native_daemon.has_value() ? "Thread-" + std::to_string(id) : "main")),
                      static_cast<std::int64_t>(id), 5,
-                     native_daemon.has_value() ? VmObjectRef{} : vm.ClassLoaders().ApplicationLoader(), group);
+                     native_daemon.has_value() ? VmObjectRef{} : vm.ClassLoaders().SystemLoader(), group);
     call.SetInt(fields.has_been_started, object, 1);
     call.SetInt(fields.daemon, object, native_daemon.value_or(false) ? 1 : 0);
     return object;

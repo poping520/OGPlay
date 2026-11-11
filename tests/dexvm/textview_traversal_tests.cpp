@@ -32,7 +32,7 @@ VmObjectRef Owner(ContainerVm& f) {
     ogplay::test::ResourceFixture(*f.context).entries = {theme, style};
     f.context->application_theme = theme.resource_id;
     const auto owner = f.New("Landroid/app/Activity;");
-    ogplay::test::AttachViewTestContext(f.vm, owner);
+    ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
     f.On(owner, "setTheme", "(I)V", {VmValue::Int(static_cast<int>(theme.resource_id))});
     return owner;
 }

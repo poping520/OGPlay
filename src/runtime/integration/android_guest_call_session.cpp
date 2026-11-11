@@ -1005,6 +1005,14 @@ public:
 
     memory::GuestAddress PrepareThreadLooper(std::uint64_t tid) { return boundary_.PrepareThreadLooper(tid); }
 
+    void PollThreadLooper(std::uint64_t tid, const std::function<bool()>& interrupted) {
+        boundary_.PollThreadLooper(tid, interrupted);
+    }
+
+    void WakeThreadLooper(std::uint64_t tid) { boundary_.WakeThreadLooper(tid); }
+
+    void NotifyLooperPollers() { boundary_.NotifyLooperPollers(); }
+
     void ReleaseDexVmThread(const std::uint64_t thread_id) noexcept {
         boundary_.RetireThreadLooper(thread_id);
         std::shared_ptr<DexVmThreadContext> context;
@@ -1623,7 +1631,15 @@ public:
                     throw A32GuestCallError("teardown cleanup wall-time budget exhausted by nanosleep");
             });
         BindAndroidMemorySyscalls(dispatcher_, address_space_);
-        BindAndroidThreadSyscalls(dispatcher_, futex_table_, memory_bus_);
+        BindAndroidThreadSyscalls(dispatcher_, futex_table_, memory_bus_,
+                                  [this](std::uint64_t thread) -> std::optional<std::chrono::nanoseconds> {
+                                      if (thread != kRootThreadId || std::this_thread::get_id() != owner_thread_ ||
+                                          cleanup_depth_ == 0U)
+                                          return std::nullopt;
+                                      const auto now = hal::Clock::SteadyTimestampNs();
+                                      const auto deadline = *cleanup_deadline_ns_;
+                                      return std::chrono::nanoseconds(now < deadline ? deadline - now : 0U);
+                                  });
         BindAndroidSignalSyscalls(dispatcher_, address_space_, &lifecycle_, GuestCpuEnvironment::ClassifyUserUndefined);
         BindAndroidProcessSyscalls(dispatcher_, address_space_, [this](const GuestVmaAnnotation& annotation) {
             std::scoped_lock lock(vma_mutex_);
@@ -3244,4 +3260,31 @@ std::shared_ptr<const AndroidAssetSource> AndroidGuestProcess::ResolveAsset(memo
 void AndroidGuestProcess::UnregisterAssetManager(memory::GuestAddress manager) {
     impl_->UnregisterAssetManager(manager);
 }
+}  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+void AndroidGuestProcess::PollThreadLooper(std::uint64_t tid, const std::function<bool()>& interrupted) {
+    impl_->PollThreadLooper(tid, interrupted);
+}
+
+void AndroidGuestProcess::WakeThreadLooper(std::uint64_t tid) {
+    impl_->WakeThreadLooper(tid);
+}
+
+void AndroidGuestCallSession::PollThreadLooper(std::uint64_t tid, const std::function<bool()>& interrupted) {
+    process_->PollThreadLooper(tid, interrupted);
+}
+
+void AndroidGuestCallSession::WakeThreadLooper(std::uint64_t tid) {
+    process_->WakeThreadLooper(tid);
+}
+
+void AndroidGuestProcess::NotifyLooperPollers() {
+    impl_->NotifyLooperPollers();
+}
+
+void AndroidGuestCallSession::NotifyLooperPollers() {
+    process_->NotifyLooperPollers();
+}
+
 }  // namespace ogplay::runtime

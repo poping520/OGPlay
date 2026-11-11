@@ -253,6 +253,9 @@ public:
     void PrepareDexVmThread(std::uint64_t thread_id, std::uint32_t allocation_slot);
     void ReleaseDexVmThread(std::uint64_t thread_id) noexcept;
     memory::GuestAddress PrepareThreadLooper(std::uint64_t thread_id);
+    void PollThreadLooper(std::uint64_t thread_id, const std::function<bool()>& interrupted);
+    void WakeThreadLooper(std::uint64_t thread_id);
+    void NotifyLooperPollers();
     [[nodiscard]] dexvm::NioDirectMemoryAccess GuestMemoryAccess() const;
     void SetBitmapHooks(AndroidBitmapHooks hooks);
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
@@ -398,6 +401,9 @@ public:
     void PrepareDexVmThread(std::uint64_t thread_id, std::uint32_t allocation_slot);
     void ReleaseDexVmThread(std::uint64_t thread_id) noexcept;
     memory::GuestAddress PrepareThreadLooper(std::uint64_t thread_id);
+    void PollThreadLooper(std::uint64_t thread_id, const std::function<bool()>& interrupted);
+    void WakeThreadLooper(std::uint64_t thread_id);
+    void NotifyLooperPollers();
     [[nodiscard]] memory::GuestAddress GuestEnvironment() const noexcept;
     [[nodiscard]] memory::GuestAddress GuestJavaVm() const noexcept;
     [[nodiscard]] JniEnvironment& Environment() noexcept;

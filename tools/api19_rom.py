@@ -16,6 +16,7 @@ PINNED = {
     'core.jar': '60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee',
     'framework.jar': '422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b',
     'framework2.jar': '5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973',
+    'telephony-common.jar': 'b1e4f98857dd07d9fa7bc1d6c2d6cdb49d41adc2973533db3982ef0d5348a908',
     'ext.jar': 'e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2',
 }
 

@@ -38,6 +38,10 @@ using HostStateDestructor = std::function<void(std::uint64_t)>;
 struct CoreIntrinsicServices final {
     std::function<void(Interpreter&)> initialize_system_properties;
     std::uint32_t cpu_cores{1};
+    // Process identity comes from the embedding runtime, never the host OS.
+    std::function<std::int32_t()> process_id;
+    std::function<std::int32_t()> process_uid;
+    std::function<std::int32_t(Interpreter&)> current_thread_id;
     std::function<const std::vector<GuestNetworkInterface>&(Interpreter&)> network_interfaces;
     enum class ClasspathLoader : std::uint8_t { bootstrap, application };
 

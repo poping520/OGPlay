@@ -456,6 +456,14 @@ public:
 
     memory::GuestAddress PrepareThreadLooper(std::uint64_t tid) { return android_module_.PrepareThreadLooper(tid); }
 
+    void PollThreadLooper(std::uint64_t tid, const std::function<bool()>& interrupted) {
+        android_module_.PollThreadLooper(tid, interrupted);
+    }
+
+    void WakeThreadLooper(std::uint64_t tid) { android_module_.WakeThreadLooper(tid); }
+
+    void NotifyLooperPollers() { android_module_.NotifyLooperPollers(); }
+
     void RetireThreadLooper(std::uint64_t tid) { android_module_.RetireThreadLooper(tid); }
 
     void ShutdownLoopers() { android_module_.ShutdownLoopers(); }
@@ -1279,4 +1287,19 @@ std::shared_ptr<const AndroidAssetSource> AndroidBoundaryHle::ResolveAsset(memor
 void AndroidBoundaryHle::UnregisterAssetManager(memory::GuestAddress manager) {
     impl_->UnregisterAssetManager(manager);
 }
+}  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+void AndroidBoundaryHle::PollThreadLooper(std::uint64_t tid, const std::function<bool()>& interrupted) {
+    impl_->PollThreadLooper(tid, interrupted);
+}
+
+void AndroidBoundaryHle::WakeThreadLooper(std::uint64_t tid) {
+    impl_->WakeThreadLooper(tid);
+}
+
+void AndroidBoundaryHle::NotifyLooperPollers() {
+    impl_->NotifyLooperPollers();
+}
+
 }  // namespace ogplay::runtime

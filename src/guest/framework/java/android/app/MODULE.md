@@ -11,14 +11,9 @@ Activity base onCreate/start/resume/pause/stop/save/destroy 调用对应派发�
 不在 Java 重写。getLayoutInflater 在 Java 委托 getWindow；getWindow 的精确 overlay 惰性建立每实例
 Window，其他现有 Activity 平台方法仍使用精确 integration overlay。
 
-来源：固定 AOSP Android 4.4.4 Activity.java，保留 Apache-2.0 头；这是有界客户端，
-不引入原版 ActivityThread/Instrumentation/ActivityManager/Binder/Fragment 运行时。
-ActivityManager 为内存与本进程查询的有界客户端，不接入原版 AMS。MemoryInfo 保留 API19
-字段/构造与普通 Parcel 值算法；nativeRead 获取进程快照，lowMemory 使用原版 HOME/
-CACHED 分级比较。manager 正常构造并保留 Context/Handler；getRunningAppProcesses 每次新建列表及 ROM
-RunningAppProcessInfo，通过 private native 快照读取会话身份与 Activity 栈：栈顶未 stopped
-为 FOREGROUND，否则有 visible 为 VISIBLE，其余为 BACKGROUND（单一 cached 进程 lru=1）。
-仅返回本进程，不枚举宿主或合成其他进程；普通字段与组装归 Java，无进程影子状态。
+来源为固定 AOSP Android 4.4.4 Activity.java，保留 Apache-2.0 头。ROM ActivityManager 的
+内存与进程查询经本地 IActivityManager，支持边界见
+[DexVM Android integration](../../../../../runtime/integration/dexvm_android/MODULE.md)。
 结果与窗口字段归各实例，启动/销毁命令和待交付结果通过 session roots 保活。
 同包 standard 单窗口及支持限制见 runtime/session 契约，特殊 options/flags 明确失败。
 
@@ -34,13 +29,5 @@ setContentView(View) 通过 Activity 应用附加窗口显示居中内容，hide
 cached Dialog/Bundle/listener/Runnable；无 C++ shadow 管理表。来源：固定 API19
 Activity.java/Dialog.java/AlertDialog.java 的有界改编，保留 Apache-2.0 头。
 
-NotificationManager 保留 API19 Context 字段/构造/from 与普通重载转发；取消及
-拒绝发布进入两个 private native。backend 明确禁用发布且库存恒为空，只允许
-当前应用取消；notify(null) NPE，其他发布失败并记账。无 Binder、系统通知或
-PendingIntent 派发。Notification 有界值对象保存普通字段、两种原版值构造及 extras；
-系统模板与 Parcel 传输经 private native 记账抛 UOE，null 参数按 Java 校验。
-Builder/Style/Action/RemoteViews 执行未纳入；typed 字段声明不代表完整类型反射闭包。
-来源：固定 API19 AOSP NotificationManager.java，保留 Apache-2.0 头。
-
-Notification 客户端来源：固定 Android 4.4.4 Notification.java，保留 Apache-2.0 头；
-原版值构造和字段初始化保留，模板/Parcel 以明确不支持边界替代，无系统通知服务。
+Notification 与 NotificationManager 整类执行 ROM。进程内 INotificationManager 支持当前应用
+取消空库存中的通知，发布入口明确失败；此目录不提供通知类替换。

@@ -753,7 +753,6 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         return dx::VmValue::Void();
     };
     builder.DirectMethod("_setDataSource", "(Ljava/io/FileDescriptor;JJ)V", set_fd_source, kPrivNat);
-    builder.VirtualMethod("setDataSource", "(Ljava/io/FileDescriptor;JJ)V", set_fd_source);
     builder.DirectMethod(
         "_setDataSource", "(Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;)V",
         [context](dx::IntrinsicContext& call) {

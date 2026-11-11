@@ -614,6 +614,14 @@ VmValue Interpreter::Impl::InvokeIntrinsic(const LinkedMethod& method, const VmO
     return result;
 }
 
+void Interpreter::Impl::RecordUnimplementedAbstract(const LinkedMethod& method, VmObjectRef receiver) {
+    if (!ledger || !receiver.IsValid() || method.kind != MethodKind::abstract) return;
+    const auto receiver_class = model->ObjectClass(receiver);
+    if (receiver_class.IsValid() && linker->Class(receiver_class).is_intrinsic)
+        ledger->RecordUnimplemented(
+            "dexvm.abstract." + linker->Class(method.owner).descriptor + "." + method.name + method.descriptor, 0);
+}
+
 VmMethodId Interpreter::Impl::SelectInvokeTarget(const VmMethodId symbolic_method, const InvokeKind kind,
                                                  const std::optional<std::uint16_t> vtable_slot,
                                                  const VmObjectRef receiver, const DexClassId current_class) {
@@ -652,6 +660,7 @@ VmMethodId Interpreter::Impl::SelectInvokeTarget(const VmMethodId symbolic_metho
         const auto descriptor = named.descriptor;
         return linker->SynthesizeSurveyMethod(receiver_class, name, descriptor, kind);
     }
+    RecordUnimplementedAbstract(named, receiver);
     throw JavaLinkageError(JavaLinkageKind::abstract_method, "virtual dispatch failed for " + named.name + " on " +
                                                                  linker->Class(receiver_class).descriptor);
 }
@@ -1142,9 +1151,13 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id, const std::span<cons
             }
             return outcome;
         }
-        case MethodKind::abstract:
+        case MethodKind::abstract: {
+            const auto& method = impl_->linker->Method(method_id);
+            if (!arguments.empty() && arguments.front().kind == VmValue::Kind::ref)
+                impl_->RecordUnimplementedAbstract(method, arguments.front().ref);
             throw JavaLinkageError(JavaLinkageKind::abstract_method,
-                                   "abstract method invoked directly: " + impl_->linker->Method(method_id).name);
+                                   "abstract method invoked directly: " + method.name);
+        }
         }
         throw DexVmError(DexVmErrorReason::internal_invariant, "unreachable method kind");
     } catch (const JavaLinkageError& error) {

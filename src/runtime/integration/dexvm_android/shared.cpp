@@ -1,5 +1,6 @@
 #include "ogplay/loader/link_namespace.h"
 #include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 // DVM-80: API-family translation unit. Physical consolidation only.
 
@@ -164,39 +165,6 @@ namespace {
     return context->ui_tree.Get(OwnerTextNode(context, call))->text;
 }
 
-[[nodiscard]] PreferenceMap& PreferencesOf(dx::IntrinsicContext& call, const Context& context) {
-    const auto found = context->preference_names.find(call.receiver.Value());
-    if (found == context->preference_names.end()) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SharedPreferences instance has no backing "
-                                                                   "store"};
-    }
-    return context->preferences[found->second];
-}
-
-[[nodiscard]] DexVmAndroidContext::PreferenceEditorState& PreferenceEditsOf(dx::IntrinsicContext& call,
-                                                                            const Context& context) {
-    const auto found = context->preference_editors.find(call.receiver.Value());
-    if (found == context->preference_editors.end()) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Editor has no pending state"};
-    }
-    return found->second;
-}
-
-void CommitPreferenceChanges(dx::IntrinsicContext& call, const Context& context) {
-    auto& pending = PreferenceEditsOf(call, context);
-    auto& committed = PreferencesOf(call, context);
-    auto next = pending.clear ? PreferenceMap{} : committed;
-    for (const auto& [key, value] : pending.modified) {
-        if (value)
-            next[key] = *value;
-        else
-            next.erase(key);
-    }
-    committed.swap(next);
-    pending.modified.clear();
-    pending.clear = false;
-}
-
 [[nodiscard]] const dx::LinkedField& ApplicationInfoField(dx::IntrinsicContext& call, const dx::VmObjectRef object,
                                                           const std::string_view name,
                                                           const std::string_view descriptor) {
@@ -228,32 +196,9 @@ void SetApplicationInfoRef(dx::IntrinsicContext& call, const dx::VmObjectRef obj
 }
 
 // commit()/apply() is the flush point: the VFS close persists it.
-void SavePreferences(dx::IntrinsicContext& call, const Context& context) {
-    const auto found = context->preference_names.find(call.receiver.Value());
-    if (found == context->preference_names.end() || context->vfs == nullptr) {
-        return;
-    }
-    try {
-        StorePreferences(*context->vfs, PreferencesPathOf(context, found->second), context->preferences[found->second]);
-    } catch (const PreferencesXmlError& error) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", error.what()};
-    }
-}
 
 // Typed preference getter: absent keys answer the caller's default, a
 // type mismatch throws the real ClassCastException.
-template <typename ValueType>
-[[nodiscard]] std::optional<ValueType> PreferenceValueOf(dx::IntrinsicContext& call, const Context& context,
-                                                         const std::string& key) {
-    auto& store = PreferencesOf(call, context);
-    const auto found = store.find(key);
-    if (found == store.end()) return std::nullopt;
-    const auto* value = std::get_if<ValueType>(&found->second);
-    if (value == nullptr) {
-        throw dx::VmJavaThrow{"Ljava/lang/ClassCastException;", "preference has another type: " + key};
-    }
-    return *value;
-}
 
 }  // namespace
 
@@ -438,6 +383,7 @@ void PutAndroidMetaData(dx::IntrinsicContext& call, const Context& context, cons
 dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call, const Context& context, const bool include_meta_data,
                                     const PackageInfoKind kind) {
     const auto info = call.vm.NewIntrinsicInstance("Landroid/content/pm/ApplicationInfo;");
+    const auto info_root = call.vm.ProtectReferences(std::array{info});
     const auto string = [&call](const std::string& value) { return call.vm.NewStringUtf8(value); };
     const auto package = string(context->package_name);
     const auto application_name = string(context->application_class_name);
@@ -537,222 +483,7 @@ dx::IntrinsicHandler GraphicsNoopHandler() {
     });
 }
 
-dx::IntrinsicHandler PrefsEditHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto name = context->preference_names.at(call.receiver.Value());
-        const auto editor = call.vm.NewIntrinsicInstance("Landroid/content/SharedPreferencesEditorImpl;");
-        context->preference_names[editor.Value()] = name;
-        context->preference_editors.emplace(editor.Value(), DexVmAndroidContext::PreferenceEditorState{});
-        return dx::VmValue::Ref(editor);
-    });
-}
-
-dx::IntrinsicHandler PrefsEditorCommitHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        CommitPreferenceChanges(call, context);
-        SavePreferences(call, context);
-        return dx::VmValue::Int(1);
-    });
-}
-
-dx::IntrinsicHandler PrefsEditorPutBooleanHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        PreferenceEditsOf(call, context).modified[call.vm.StringUtf8(call.arguments[0].ref)] =
-            PreferenceValue{call.arguments[1].AsInt() != 0};
-        return Self(call);
-    });
-}
-
-dx::IntrinsicHandler PrefsEditorPutIntHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        PreferenceEditsOf(call, context).modified[call.vm.StringUtf8(call.arguments[0].ref)] =
-            PreferenceValue{call.arguments[1].AsInt()};
-        return Self(call);
-    });
-}
-
-dx::IntrinsicHandler PrefsEditorPutLongHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        PreferenceEditsOf(call, context).modified[call.vm.StringUtf8(call.arguments[0].ref)] =
-            PreferenceValue{call.arguments[1].AsLong()};
-        return Self(call);
-    });
-}
-
-dx::IntrinsicHandler PrefsEditorPutStringHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto value = call.arguments[1].ref;
-        PreferenceEditsOf(call, context).modified[call.vm.StringUtf8(call.arguments[0].ref)] =
-            value.IsValid() ? std::optional<PreferenceValue>{call.vm.StringUtf8(value)} : std::nullopt;
-        return Self(call);
-    });
-}
-
-dx::IntrinsicHandler PrefsEditorPutFloatHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        PreferenceEditsOf(call, context).modified[call.vm.StringUtf8(call.arguments[0].ref)] =
-            PreferenceValue{call.arguments[1].AsFloat()};
-        return Self(call);
-    });
-}
-
-dx::IntrinsicHandler PrefsGetFloatHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto value = PreferenceValueOf<float>(call, context, call.vm.StringUtf8(call.arguments[0].ref));
-        return dx::VmValue::Float(value.value_or(call.arguments[1].AsFloat()));
-    });
-}
-
-dx::IntrinsicHandler PrefsGetBooleanHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto key = call.vm.StringUtf8(call.arguments[0].ref);
-        const auto value = PreferenceValueOf<bool>(call, context, key);
-        return dx::VmValue::Int(value.value_or(call.arguments[1].AsInt() != 0) ? 1 : 0);
-    });
-}
-
-dx::IntrinsicHandler PrefsGetIntHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto key = call.vm.StringUtf8(call.arguments[0].ref);
-        const auto value = PreferenceValueOf<std::int32_t>(call, context, key);
-        return dx::VmValue::Int(value.value_or(call.arguments[1].AsInt()));
-    });
-}
-
-dx::IntrinsicHandler PrefsGetLongHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto key = call.vm.StringUtf8(call.arguments[0].ref);
-        const auto value = PreferenceValueOf<std::int64_t>(call, context, key);
-        return dx::VmValue::Long(value.value_or(call.arguments[1].AsLong()));
-    });
-}
-
-dx::IntrinsicHandler PrefsGetStringHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto key = call.vm.StringUtf8(call.arguments[0].ref);
-        const auto value = PreferenceValueOf<std::string>(call, context, key);
-        if (!value.has_value()) {
-            return dx::VmValue::Ref(call.arguments[1].ref);
-        }
-        return MakeString(call, *value);
-    });
-}
-
-dx::IntrinsicHandler PrefsContainsHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto key = call.vm.StringUtf8(call.arguments[0].ref);
-        auto& store = PreferencesOf(call, context);
-        return dx::VmValue::Int(store.contains(key) ? 1 : 0);
-    });
-}
-
-namespace {
-
-[[nodiscard]] dx::VmObjectRef BoxedPreferenceValue(dx::IntrinsicContext& call, const PreferenceValue& value) {
-    const auto box = [&call](const char* descriptor, const char* signature, std::vector<dx::VmValue> arguments) {
-        const auto type = call.vm.Linker().ResolveDescriptor(descriptor);
-        const auto method = call.vm.Linker().FindDirectMethod(type, "valueOf", signature);
-        if (!method) {
-            throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "preference boxing factory is missing");
-        }
-        const auto outcome = call.vm.Call(*method, arguments);
-        if (outcome.exception.IsValid()) {
-            throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                                  outcome.exception};
-        }
-        return outcome.value.ref;
-    };
-    return std::visit(
-        [&box, &call](auto&& item) -> dx::VmObjectRef {
-            using T = std::decay_t<decltype(item)>;
-            if constexpr (std::is_same_v<T, bool>) {
-                return box("Ljava/lang/Boolean;", "(Z)Ljava/lang/Boolean;", {dx::VmValue::Int(item ? 1 : 0)});
-            } else if constexpr (std::is_same_v<T, std::int32_t>) {
-                return box("Ljava/lang/Integer;", "(I)Ljava/lang/Integer;", {dx::VmValue::Int(item)});
-            } else if constexpr (std::is_same_v<T, std::int64_t>) {
-                return box("Ljava/lang/Long;", "(J)Ljava/lang/Long;", {dx::VmValue::Long(item)});
-            } else if constexpr (std::is_same_v<T, float>) {
-                return box("Ljava/lang/Float;", "(F)Ljava/lang/Float;", {dx::VmValue::Float(item)});
-            } else {
-                return call.vm.NewStringUtf8(item);
-            }
-        },
-        value);
-}
-
-}  // namespace
-
-dx::IntrinsicHandler PrefsGetAllHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto values = PreferencesOf(call, context);
-        const auto map = call.vm.NewIntrinsicInstance("Ljava/util/HashMap;");
-        const auto map_root = call.vm.ProtectReferences(std::array{map});
-        {
-            const auto type = call.vm.Linker().ResolveDescriptor("Ljava/util/HashMap;");
-            const auto initialized = call.vm.EnsureClassInitialized(type);
-            if (initialized.exception.IsValid()) {
-                throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
-                                      initialized.exception_message, initialized.exception};
-            }
-            const auto constructor = call.vm.Linker().FindDirectMethod(type, "<init>", "()V");
-            if (!constructor) {
-                throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "HashMap constructor is not linked");
-            }
-            const auto outcome = call.vm.Call(*constructor, std::vector<dx::VmValue>{dx::VmValue::Ref(map)});
-            if (outcome.exception.IsValid()) {
-                throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor,
-                                      outcome.exception_message, outcome.exception};
-            }
-        }
-        for (const auto& [key, value] : values) {
-            const auto name = call.vm.NewStringUtf8(key);
-            const auto name_root = call.vm.ProtectReferences(std::array{name});
-            const auto boxed = BoxedPreferenceValue(call, value);
-            const auto boxed_root = call.vm.ProtectReferences(std::array{boxed});
-            static_cast<void>(CallAndroidMethod(call.vm, map, "put",
-                                                "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
-                                                {dx::VmValue::Ref(name), dx::VmValue::Ref(boxed)}));
-        }
-        return dx::VmValue::Ref(map);
-    });
-}
-
-dx::IntrinsicHandler PrefsEditorRemoveHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        PreferenceEditsOf(call, context).modified[call.vm.StringUtf8(call.arguments[0].ref)] = std::nullopt;
-        return Self(call);
-    });
-}
-
-dx::IntrinsicHandler PrefsEditorClearHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        PreferenceEditsOf(call, context).clear = true;
-        return Self(call);
-    });
-}
-
-dx::IntrinsicHandler PrefsEditorApplyHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        // API19 SharedPreferences.Editor permits legacy implementations to
-        // delegate apply to commit. Keep the same publication/flush path;
-        // this bounded backend does not promise asynchronous disk writes.
-        CommitPreferenceChanges(call, context);
-        SavePreferences(call, context);
-        return dx::VmValue::Void();
-    });
-}
-
-dx::IntrinsicHandler PrefsUnsupportedHandler(const std::string category) {
-    return dx::IntrinsicHandler([category](dx::IntrinsicContext& call) -> dx::VmValue {
-        if (auto* ledger = call.vm.Ledger(); ledger != nullptr) {
-            ledger->RecordUnimplemented(category, 0);
-        }
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                              "SharedPreferences API is outside the checked preference "
-                              "surface: " +
-                                  category};
-    });
-}
+namespace {}  // namespace
 
 dx::IntrinsicHandler SurfaceHolderAddCallbackHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
@@ -805,17 +536,6 @@ dx::IntrinsicHandler SurfaceHolderSetTypeHandler() {
         // only a device hint and has no observable effect here.
         return dx::VmValue::Void();
     });
-}
-
-dx::IntrinsicHandler TelephonyEmptyStringHandler() {
-    return dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
-        // Absent-SIM answers are the empty string per the platform docs.
-        return MakeString(call, "");
-    });
-}
-
-dx::IntrinsicHandler TelephonyFalseHandler() {
-    return dx::IntrinsicHandler([](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
 }
 
 dx::IntrinsicHandler ViewInitHandler(const Context& context) {
@@ -903,10 +623,27 @@ dx::IntrinsicHandler WidgetNoopHandler() {
     return dx::IntrinsicHandler([](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
 }
 
+dx::VmObjectRef DefaultAndroidDisplay(dx::IntrinsicContext& call, const Context& context) {
+    constexpr auto key = "display";
+    if (const auto found = context->singletons.find(key); found != context->singletons.end()) return found->second;
+    auto& vm = call.vm;
+    const auto global = vm.Linker().ResolveDescriptor("Landroid/hardware/display/DisplayManagerGlobal;");
+    const auto get =
+        vm.Linker().FindDirectMethod(global, "getInstance", "()Landroid/hardware/display/DisplayManagerGlobal;");
+    if (!get) throw std::logic_error("DisplayManagerGlobal.getInstance is unavailable");
+    const auto result = vm.Call(*get, {});
+    if (result.exception.IsValid())
+        throw dx::VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                              result.exception};
+    const auto display =
+        CallAndroidMethod(vm, result.value.ref, "getRealDisplay", "(I)Landroid/view/Display;", {dx::VmValue::Int(0)})
+            .ref;
+    return context->singletons.emplace(key, display).first->second;
+}
+
 dx::IntrinsicHandler WindowmanagerGetDefaultDisplayHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Ref(Singleton(call, context, "display", "Landroid/view/Display;"));
-    });
+    return dx::IntrinsicHandler(
+        [context](dx::IntrinsicContext& call) { return dx::VmValue::Ref(DefaultAndroidDisplay(call, context)); });
 }
 
 dx::IntrinsicHandler PlatformSystemCurrentTimeMillisHandler(const Context& context) {
@@ -934,31 +671,51 @@ namespace {
 }
 
 template <typename Load>
-dx::IntrinsicHandler PlatformSystemLoadHandlerImpl(const Context& context, const char* argument_name, Load load) {
-    return dx::IntrinsicHandler([context, argument_name, load = std::move(load)](dx::IntrinsicContext& call) {
-        const auto argument = SystemLoadArgument(call, argument_name);
-        if (argument == "soundpool" || argument == "media_jni") {
+dx::IntrinsicHandler PlatformSystemLoadHandlerImpl(const Context& context, const char* argument_name, Load load,
+                                                   bool resolve_application_library = false) {
+    return dx::IntrinsicHandler(
+        [context, argument_name, load = std::move(load), resolve_application_library](dx::IntrinsicContext& call) {
+            const auto argument = SystemLoadArgument(call, argument_name);
+            if (argument == "soundpool" || argument == "media_jni") {
+                return dx::VmValue::Void();
+            }
+            if (context->native_libraries == nullptr || context->application_class_loader_token == 0U) {
+                throw dx::VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;", "APK native library loader is unavailable"};
+            }
+            std::optional<std::string> application_path;
+            if (resolve_application_library && context->sealed_apk_bytes && argument != "javacrypto") {
+                const auto caller = call.vm.CurrentCallerClass();
+                if (caller && call.vm.Linker().ClassHeader(*caller).defining_loader == dx::kApplicationLoader) {
+                    const auto loader = call.vm.ClassLoaders().ApplicationLoader();
+                    const auto result = CallAndroidMethod(call.vm, loader, "findLibrary",
+                                                          "(Ljava/lang/String;)Ljava/lang/String;", {call.arguments[0]})
+                                            .ref;
+                    if (!result.IsValid())
+                        throw dx::VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;",
+                                              "APK native logical library is unavailable: " + argument};
+                    application_path = call.vm.StringUtf8(result);
+                }
+            }
+            // Loading can wait on process call/load locks and invoke guest
+            // constructors/JNI_OnLoad. JNI reentry acquires the VM lock itself.
+            auto& execution_lock = call.vm.ExecutionLock();
+            const auto depth = execution_lock.ReleaseForBlocking();
+            try {
+                if (application_path)
+                    static_cast<void>(context->native_libraries->LoadPath(*application_path,
+                                                                          context->application_class_loader_token));
+                else
+                    load(*context->native_libraries, argument, context->application_class_loader_token);
+            } catch (const NativeLibraryLoadError& error) {
+                execution_lock.ReacquireAfterBlocking(depth);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;", error.what()};
+            } catch (...) {
+                execution_lock.ReacquireAfterBlocking(depth);
+                throw;
+            }
+            execution_lock.ReacquireAfterBlocking(depth);
             return dx::VmValue::Void();
-        }
-        if (context->native_libraries == nullptr || context->application_class_loader_token == 0U) {
-            throw dx::VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;", "APK native library loader is unavailable"};
-        }
-        // Loading can wait on process call/load locks and invoke guest
-        // constructors/JNI_OnLoad. JNI reentry acquires the VM lock itself.
-        auto& execution_lock = call.vm.ExecutionLock();
-        const auto depth = execution_lock.ReleaseForBlocking();
-        try {
-            load(*context->native_libraries, argument, context->application_class_loader_token);
-        } catch (const NativeLibraryLoadError& error) {
-            execution_lock.ReacquireAfterBlocking(depth);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;", error.what()};
-        } catch (...) {
-            execution_lock.ReacquireAfterBlocking(depth);
-            throw;
-        }
-        execution_lock.ReacquireAfterBlocking(depth);
-        return dx::VmValue::Void();
-    });
+        });
 }
 
 }  // namespace
@@ -977,7 +734,8 @@ dx::IntrinsicHandler PlatformSystemLoadLibraryHandler(const Context& context) {
         [](NativeLibraryLoader& libraries, const std::string_view name, const JavaClassLoaderToken class_loader) {
             const auto resolved = name == "javacrypto" ? std::string_view{"ogplay_jni"} : name;
             static_cast<void>(libraries.LoadLibrary(resolved, class_loader));
-        });
+        },
+        true);
 }
 
 dx::IntrinsicHandler PlatformClassLoaderFindLibraryHandler(const Context& context) {
@@ -1106,15 +864,6 @@ std::string FilePathOf(dx::IntrinsicContext& call, const dx::VmObjectRef file) {
     return call.vm.StringUtf8(dx::VmObjectRef(slots[0].bits));
 }
 
-dx::VmValue UnsupportedNetwork(dx::IntrinsicContext&) {
-    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                          "SMS/network actions are outside the compatibility scope"};
-}
-
-[[nodiscard]] std::string PreferencesPathOf(const Context& context, const std::string& name) {
-    return PreferencesGuestPath(context->package_name, name);
-}
-
 dx::VmThreadRuntime& ThreadRuntime(const Context& context) {
     if (context->threads == nullptr) {
         throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
@@ -1129,20 +878,6 @@ namespace {
     if (delay <= 0) return now;
     return delay > std::numeric_limits<std::int64_t>::max() - now ? std::numeric_limits<std::int64_t>::max()
                                                                   : now + delay;
-}
-
-[[nodiscard]] dx::VmObjectRef CurrentJavaThread(dx::Interpreter& vm) {
-    auto& linker = vm.Linker();
-    const auto owner = linker.FindClass("Ljava/lang/Thread;");
-    if (!owner.has_value()) return dx::VmObjectRef{};
-    const auto method = linker.FindDirectMethod(*owner, "currentThread", "()Ljava/lang/Thread;");
-    if (!method.has_value()) return dx::VmObjectRef{};
-    const auto outcome = vm.Call(*method, {});
-    if (outcome.exception.IsValid()) {
-        vm.SetPendingException(outcome.exception);
-        return dx::VmObjectRef{};
-    }
-    return outcome.value.ref;
 }
 
 [[nodiscard]] dx::VmCallOutcome CallVirtual(dx::Interpreter& vm, const dx::VmObjectRef receiver, const char* name,
@@ -1177,11 +912,6 @@ namespace {
     return rendered;
 }
 
-void EnqueueLocked(DexVmAndroidContext& context, DexVmAndroidContext::ScheduledWork work) {
-    work.sequence = context.next_scheduler_sequence++;
-    context.scheduled_work.push_back(work);
-}
-
 [[nodiscard]] bool HasDue(DexVmAndroidContext& context, const dx::VmObjectRef looper, const std::int64_t now) {
     std::scoped_lock lock(context.scheduler_mutex);
     return std::ranges::any_of(context.scheduled_work,
@@ -1207,11 +937,6 @@ TakeDue(DexVmAndroidContext& context, const dx::VmObjectRef looper, const std::i
     return work;
 }
 
-[[nodiscard]] bool LooperStopped(const DexVmAndroidContext& context, const dx::VmObjectRef looper) {
-    const auto found = context.loopers.find(looper.Value());
-    return context.scheduler_shutdown || found == context.loopers.end() || found->second.quitting;
-}
-
 [[nodiscard]] dx::VmCallOutcome DispatchScheduled(dx::Interpreter& vm, DexVmAndroidContext& context,
                                                   const DexVmAndroidContext::ScheduledWork& work) {
     using Kind = DexVmAndroidContext::ScheduledWorkKind;
@@ -1228,33 +953,6 @@ TakeDue(DexVmAndroidContext& context, const dx::VmObjectRef looper, const std::i
         if (!dispatch) throw std::logic_error("DisplayEventReceiver.dispatchVsync is not linked");
         return vm.Call(*dispatch, std::array{dx::VmValue::Ref(work.payload), dx::VmValue::Long(work.timestamp_nanos),
                                              dx::VmValue::Int(0), dx::VmValue::Int(work.what)});
-    }
-    if (work.kind == Kind::local_service_bind) return DispatchLocalServiceBinding(vm, context, work.generation);
-    if (work.kind == Kind::handler_message) {
-        return CallVirtual(vm, work.target, "dispatchMessage", "(Landroid/os/Message;)V",
-                           {dx::VmValue::Ref(work.payload)});
-    }
-    if (work.kind == Kind::handler_runnable) {
-        return CallVirtual(vm, work.payload, "run", "()V");
-    }
-    if (work.kind == Kind::async_progress) {
-        return CallVirtual(vm, work.owner, "onProgressUpdate", "([Ljava/lang/Object;)V",
-                           {dx::VmValue::Ref(work.payload)});
-    }
-    if (work.kind == Kind::async_post) {
-        bool cancelled{};
-        {
-            std::scoped_lock lock(context.scheduler_mutex);
-            const auto found = context.async_tasks.find(work.owner.Value());
-            if (found == context.async_tasks.end()) return NormalOutcome();
-            found->second.status = DexVmAndroidContext::AsyncStatus::finished;
-            cancelled = found->second.cancelled;
-        }
-        if (cancelled) {
-            return CallVirtual(vm, work.owner, "onCancelled", "(Ljava/lang/Object;)V",
-                               {dx::VmValue::Ref(work.payload)});
-        }
-        return CallVirtual(vm, work.owner, "onPostExecute", "(Ljava/lang/Object;)V", {dx::VmValue::Ref(work.payload)});
     }
     return NormalOutcome();
 }
@@ -1287,40 +985,59 @@ TakeDue(DexVmAndroidContext& context, const dx::VmObjectRef looper, const std::i
 
 }  // namespace
 
+namespace {
+dx::Slot& RomField(dx::Interpreter& vm, dx::VmObjectRef object, const char* name, const char* type) {
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, type);
+    if (!field) throw std::logic_error(std::string("ROM field missing: ") + name);
+    return vm.Model().InstanceSlots(object)[vm.Linker().Field(*field).slot];
+}
+
+dx::VmObjectRef RomLooperStatic(dx::Interpreter& vm, const char* name) {
+    const auto owner = vm.Linker().ResolveDescriptor("Landroid/os/Looper;");
+    const auto method = vm.Linker().FindDirectMethod(owner, name, "()Landroid/os/Looper;");
+    if (!method) throw std::logic_error("ROM Looper entry unavailable");
+    const auto outcome = vm.Call(*method, {});
+    if (outcome.exception.IsValid())
+        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                              outcome.exception};
+    return outcome.value.ref;
+}
+
+void RegisterRomLooper(dx::Interpreter& vm, const Context& context, dx::VmObjectRef looper, bool main) {
+    if (!looper.IsValid()) return;
+    const auto queue = dx::VmObjectRef{RomField(vm, looper, "mQueue", "Landroid/os/MessageQueue;").bits};
+    const auto thread = dx::VmObjectRef{RomField(vm, looper, "mThread", "Ljava/lang/Thread;").bits};
+    std::scoped_lock lock(context->scheduler_mutex);
+    const auto token = vm.CurrentContextToken();
+    context->thread_loopers[token] = looper;
+    context->loopers[looper.Value()] = {token, thread, main, false, queue};
+    if (main) context->main_looper = looper;
+}
+}  // namespace
+
+dx::VmObjectRef RegisterCurrentRomLooper(dx::Interpreter& vm, const Context& context) {
+    const auto looper = RomLooperStatic(vm, "myLooper");
+    RegisterRomLooper(vm, context, looper, looper.IsValid() && looper == context->main_looper);
+    return looper;
+}
+
 dx::VmObjectRef EnsureMainLooper(dx::Interpreter& vm, const Context& context) {
-    dx::VmObjectRef main{};
     {
         std::scoped_lock lock(context->scheduler_mutex);
-        main = context->main_looper;
+        if (context->main_looper.IsValid()) return context->main_looper;
     }
+    auto main = RomLooperStatic(vm, "getMainLooper");
     if (!main.IsValid()) {
-        if (context->prepare_native_looper) context->prepare_native_looper(1U);
-        const auto looper = vm.NewIntrinsicInstance("Landroid/os/Looper;");
-        {
-            std::scoped_lock lock(context->scheduler_mutex);
-            if (!context->main_looper.IsValid()) {
-                context->main_looper = looper;
-                context->loopers[looper.Value()] = {1U, dx::VmObjectRef{}, true, false};
-                context->thread_loopers[1U] = looper;
-            }
-            main = context->main_looper;
-        }
+        if (vm.CurrentContextToken() != 1U) throw std::logic_error("main Looper must be prepared by root thread");
+        const auto owner = vm.Linker().ResolveDescriptor("Landroid/os/Looper;");
+        const auto prepare = vm.Linker().FindDirectMethod(owner, "prepareMainLooper", "()V");
+        const auto result = vm.Call(*prepare, {});
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        main = RomLooperStatic(vm, "getMainLooper");
     }
-    if (vm.CurrentContextToken() == 1U) {
-        {
-            std::scoped_lock lock(context->scheduler_mutex);
-            const auto found = context->loopers.find(main.Value());
-            // Root Thread identity is stable after it is attached. Empty
-            // scheduler pumps must not enter Java merely to fetch it again.
-            if (found != context->loopers.end() && found->second.thread.IsValid()) return main;
-        }
-        const auto thread = CurrentJavaThread(vm);
-        std::scoped_lock lock(context->scheduler_mutex);
-        const auto found = context->loopers.find(main.Value());
-        if (found != context->loopers.end() && !found->second.thread.IsValid()) {
-            found->second.thread = thread;
-        }
-    }
+    RegisterRomLooper(vm, context, main, true);
     return main;
 }
 
@@ -1328,46 +1045,73 @@ dx::VmObjectRef EnsureMainLooper(dx::IntrinsicContext& call, const Context& cont
     return EnsureMainLooper(call.vm, context);
 }
 
-dx::VmObjectRef CurrentLooper(const Context& context, const std::uint64_t context_token) {
+dx::VmObjectRef CurrentLooper(const Context& context, std::uint64_t context_token) {
     std::scoped_lock lock(context->scheduler_mutex);
     const auto found = context->thread_loopers.find(context_token);
     return found == context->thread_loopers.end() ? dx::VmObjectRef{} : found->second;
 }
 
-dx::VmObjectRef PrepareLooper(dx::IntrinsicContext& call, const Context& context, const bool main) {
-    const auto token = call.vm.CurrentContextToken();
-    if (main && token != 1U) {
-        throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", "the main Looper belongs to the root thread"};
-    }
-    {
-        std::scoped_lock lock(context->scheduler_mutex);
-        if (context->thread_loopers.contains(token)) {
-            throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", "only one Looper may be created per thread"};
-        }
-    }
-    if (main) return EnsureMainLooper(call, context);
-    if (context->prepare_native_looper) context->prepare_native_looper(token);
-    const auto looper = call.vm.NewIntrinsicInstance("Landroid/os/Looper;");
-    const auto thread = CurrentJavaThread(call.vm);
-    std::scoped_lock lock(context->scheduler_mutex);
-    context->loopers[looper.Value()] = {token, thread, false, false};
-    context->thread_loopers[token] = looper;
-    context->scheduler_changed.notify_all();
-    return looper;
+bool EnqueueHandlerWork(dx::Interpreter& vm, const Context& context, dx::VmObjectRef looper, dx::VmObjectRef handler,
+                        dx::VmObjectRef payload, dx::VmObjectRef token, std::int32_t what, bool runnable,
+                        std::int64_t deadline_millis, bool front) {
+    static_cast<void>(context);
+    static_cast<void>(what);
+    if (!runnable) throw std::logic_error("only the temporary UI Runnable channel may post host work");
+    const auto roots = vm.ProtectReferences(std::array{looper, handler, payload, token});
+    const auto type = vm.Linker().ResolveDescriptor("Landroid/os/Handler;");
+    if (!handler.IsValid() || !vm.Linker().IsAssignable(type, vm.Model().ObjectClass(handler)))
+        handler = NewPlatformObject(vm, "Landroid/os/Handler;", "(Landroid/os/Looper;)V", {dx::VmValue::Ref(looper)});
+    const auto handler_root = vm.ProtectReferences(std::array{handler});
+    if (front)
+        return CallAndroidMethod(vm, handler, "postAtFrontOfQueue", "(Ljava/lang/Runnable;)Z",
+                                 {dx::VmValue::Ref(payload)})
+                   .AsInt() != 0;
+    return CallAndroidMethod(vm, handler, "postAtTime", "(Ljava/lang/Runnable;Ljava/lang/Object;J)Z",
+                             {dx::VmValue::Ref(payload), dx::VmValue::Ref(token), dx::VmValue::Long(deadline_millis)})
+               .AsInt() != 0;
 }
 
-bool EnqueueHandlerWork(const Context& context, const dx::VmObjectRef looper, const dx::VmObjectRef handler,
-                        const dx::VmObjectRef payload, const dx::VmObjectRef token, const std::int32_t what,
-                        const bool runnable, const std::int64_t deadline_millis, const bool front) {
-    std::scoped_lock lock(context->scheduler_mutex);
-    if (!looper.IsValid() || LooperStopped(*context, looper)) return false;
-    EnqueueLocked(*context, {front ? std::numeric_limits<std::int64_t>::min() : deadline_millis, 0,
-                             runnable ? DexVmAndroidContext::ScheduledWorkKind::handler_runnable
-                                      : DexVmAndroidContext::ScheduledWorkKind::handler_message,
-                             looper, handler, handler, payload, token, what, 0});
-    context->scheduler_changed.notify_all();
-    return true;
+void PumpNativeLooperEvents(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef looper) {
+    if (const auto error = PumpLooperDue(vm, context, looper)) throw std::runtime_error(*error);
 }
+
+namespace {
+bool RomMessageDue(dx::Interpreter& vm, dx::VmObjectRef queue, std::int64_t now) {
+    auto message = dx::VmObjectRef{RomField(vm, queue, "mMessages", "Landroid/os/Message;").bits};
+    if (message.IsValid() && RomField(vm, message, "target", "Landroid/os/Handler;").bits == 0) {
+        do {
+            message = dx::VmObjectRef{RomField(vm, message, "next", "Landroid/os/Message;").bits};
+        } while (message.IsValid() && !(RomField(vm, message, "flags", "I").bits & 2U));
+    }
+    if (!message.IsValid()) return false;
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(message), "when", "J");
+    const auto first = vm.Linker().Field(*field).slot;
+    const auto slots = vm.Model().InstanceSlots(message);
+    const auto when =
+        static_cast<std::int64_t>(slots[first].bits | (static_cast<std::uint64_t>(slots[first + 1].bits) << 32));
+    return when <= now;
+}
+
+std::optional<std::string> DrainRomMainMessages(dx::Interpreter& vm, DexVmAndroidContext& context,
+                                                dx::VmObjectRef main) {
+    const dx::VmExecutionLockScope execution(vm.ExecutionLock());
+    const auto queue = dx::VmObjectRef{RomField(vm, main, "mQueue", "Landroid/os/MessageQueue;").bits};
+    for (std::size_t count = 0; count < 10'000U; ++count) {
+        if (!RomMessageDue(vm, queue, context.uptime_millis.load())) return std::nullopt;
+        const auto take = CallVirtual(vm, queue, "next", "()Landroid/os/Message;");
+        if (take.exception.IsValid()) return RenderScheduledFailure(vm, take, "MessageQueue.next");
+        const auto message = take.value.ref;
+        const auto root = vm.ProtectReferences(std::array{message});
+        const auto handler = dx::VmObjectRef{RomField(vm, message, "target", "Landroid/os/Handler;").bits};
+        const auto result =
+            CallVirtual(vm, handler, "dispatchMessage", "(Landroid/os/Message;)V", {dx::VmValue::Ref(message)});
+        if (result.exception.IsValid()) return RenderScheduledFailure(vm, result, "scheduled callback");
+        const auto recycled = CallVirtual(vm, message, "recycle", "()V");
+        if (recycled.exception.IsValid()) return RenderScheduledFailure(vm, recycled, "Message.recycle");
+    }
+    return "Android scheduler exceeded the per-pump callback budget";
+}
+}  // namespace
 
 namespace {
 
@@ -1380,12 +1124,10 @@ namespace {
         }
     }
 
-    const auto candidate = vm.NewIntrinsicInstance("Landroid/os/Handler;");
+    const auto candidate =
+        NewPlatformObject(vm, "Landroid/os/Handler;", "(Landroid/os/Looper;)V", {dx::VmValue::Ref(looper)});
     std::scoped_lock lock(context->scheduler_mutex);
-    if (!context->view_root_handler.IsValid()) {
-        context->view_root_handler = candidate;
-        context->handler_loopers[candidate.Value()] = looper;
-    }
+    if (!context->view_root_handler.IsValid()) context->view_root_handler = candidate;
     return context->view_root_handler;
 }
 
@@ -1401,15 +1143,18 @@ void FlushPendingViewActions(dx::Interpreter& vm, DexVmAndroidContext& context) 
     const auto token = vm.CurrentContextToken();
     const auto now = context.uptime_millis.load();
 
-    std::scoped_lock lock(context.scheduler_mutex);
-    if (context.scheduler_shutdown) return;
-    for (const auto& action : context.pending_view_actions) {
-        if (action.context_token != token) continue;
-        EnqueueLocked(context, {SaturatingDeadline(now, action.delay_millis), 0,
-                                DexVmAndroidContext::ScheduledWorkKind::handler_runnable, looper, handler, handler,
-                                action.runnable, dx::VmObjectRef{}, 0, 0});
+    std::vector<DexVmAndroidContext::PendingViewAction> actions;
+    {
+        std::scoped_lock lock(context.scheduler_mutex);
+        if (context.scheduler_shutdown) return;
+        for (const auto& action : context.pending_view_actions)
+            if (action.context_token == token) actions.push_back(action);
+        std::erase_if(context.pending_view_actions,
+                      [token](const auto& action) { return action.context_token == token; });
     }
-    std::erase_if(context.pending_view_actions, [token](const auto& action) { return action.context_token == token; });
+    for (const auto& action : actions)
+        static_cast<void>(EnqueueHandlerWork(vm, shared, looper, handler, action.runnable, dx::VmObjectRef{}, 0, true,
+                                             SaturatingDeadline(now, action.delay_millis)));
 }
 
 }  // namespace
@@ -1422,7 +1167,7 @@ bool PostViewRunnable(dx::IntrinsicContext& call, const Context& context, const 
     if (ManagedViewWindowRoot(call.vm, *context, view).IsValid()) {
         const auto looper = EnsureMainLooper(call, context);
         const auto handler = EnsureViewRootHandler(call.vm, context);
-        return EnqueueHandlerWork(context, looper, handler, runnable, dx::VmObjectRef{}, 0, true,
+        return EnqueueHandlerWork(call.vm, context, looper, handler, runnable, dx::VmObjectRef{}, 0, true,
                                   SaturatingDeadline(context->uptime_millis.load(), delay_millis));
     }
 
@@ -1468,225 +1213,20 @@ void LogDisabledWeb(dx::Interpreter& vm, const std::string_view action, const Di
                   {.mode = core::RateLimitMode::first_and_count});
 }
 
-void RemoveHandlerWork(const Context& context, const dx::VmObjectRef handler, const std::optional<std::int32_t> what,
-                       const dx::VmObjectRef payload, const bool runnable, const dx::VmObjectRef token,
-                       const bool match_token) {
-    std::scoped_lock lock(context->scheduler_mutex);
-    std::erase_if(context->scheduled_work, [&](const auto& work) {
-        if (work.target != handler) return false;
-        if (runnable != (work.kind == DexVmAndroidContext::ScheduledWorkKind::handler_runnable)) {
-            return false;
-        }
-        if (what.has_value() && work.what != *what) return false;
-        if (payload.IsValid() && work.payload != payload) return false;
-        return !match_token || work.token == token;
-    });
-}
-
-bool HasHandlerWork(const Context& context, const dx::VmObjectRef handler, const std::int32_t what,
-                    const dx::VmObjectRef token, const bool match_token) {
-    std::scoped_lock lock(context->scheduler_mutex);
-    return std::ranges::any_of(context->scheduled_work, [&](const auto& work) {
-        return work.target == handler && work.kind == DexVmAndroidContext::ScheduledWorkKind::handler_message &&
-               work.what == what && (!match_token || work.token == token);
-    });
-}
-
-bool QuitLooper(const Context& context, const dx::VmObjectRef looper) {
-    std::scoped_lock lock(context->scheduler_mutex);
-    const auto found = context->loopers.find(looper.Value());
-    if (found == context->loopers.end()) return false;
-    if (found->second.main) {
-        throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", "the main Looper cannot quit"};
+void RemoveHandlerWork(dx::Interpreter& vm, const Context&, dx::VmObjectRef handler, std::optional<std::int32_t> what,
+                       dx::VmObjectRef payload, bool runnable, dx::VmObjectRef token, bool match_token) {
+    if (!handler.IsValid()) return;
+    if (runnable) {
+        static_cast<void>(
+            CallAndroidMethod(vm, handler, "removeCallbacks", "(Ljava/lang/Runnable;)V", {dx::VmValue::Ref(payload)}));
+    } else if (what) {
+        static_cast<void>(
+            CallAndroidMethod(vm, handler, "removeMessages", "(ILjava/lang/Object;)V",
+                              {dx::VmValue::Int(*what), dx::VmValue::Ref(match_token ? token : dx::VmObjectRef{})}));
+    } else {
+        static_cast<void>(CallAndroidMethod(vm, handler, "removeCallbacksAndMessages", "(Ljava/lang/Object;)V",
+                                            {dx::VmValue::Ref(match_token ? token : dx::VmObjectRef{})}));
     }
-    found->second.quitting = true;
-    std::erase_if(context->scheduled_work, [looper](const auto& work) { return work.looper == looper; });
-    context->scheduler_changed.notify_all();
-    return true;
-}
-
-void LoopLooper(dx::IntrinsicContext& call, const Context& context, const dx::VmObjectRef looper) {
-    if (!looper.IsValid()) {
-        throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", "no Looper for this thread"};
-    }
-    {
-        std::scoped_lock lock(context->scheduler_mutex);
-        const auto found = context->loopers.find(looper.Value());
-        if (found == context->loopers.end() || found->second.context_token != call.vm.CurrentContextToken()) {
-            throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", "Looper.loop called from the wrong thread"};
-        }
-        if (found->second.main) {
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "the main Looper is driven by the lifecycle safe point"};
-        }
-    }
-    for (;;) {
-        if (const auto error = PumpLooperDue(call.vm, *context, looper, true); error.has_value()) {
-            throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
-        }
-        {
-            std::scoped_lock lock(context->scheduler_mutex);
-            if (LooperStopped(*context, looper) || ThreadRuntime(context).ShuttingDown()) {
-                return;
-            }
-        }
-        auto& execution_lock = call.vm.ExecutionLock();
-        const auto depth = execution_lock.ReleaseForBlocking();
-        {
-            std::unique_lock lock(context->scheduler_mutex);
-            context->scheduler_changed.wait_for(lock, std::chrono::milliseconds(2));
-        }
-        execution_lock.ReacquireAfterBlocking(depth);
-    }
-}
-
-dx::VmObjectRef WaitForHandlerThreadLooper(dx::IntrinsicContext& call, const Context& context,
-                                           const dx::VmObjectRef thread) {
-    for (;;) {
-        {
-            std::scoped_lock lock(context->scheduler_mutex);
-            const auto found = context->handler_threads.find(thread.Value());
-            if (found != context->handler_threads.end() && found->second.IsValid()) {
-                return found->second;
-            }
-            if (context->scheduler_shutdown) return dx::VmObjectRef{};
-        }
-        if (!ThreadRuntime(context).IsAlive(thread)) return dx::VmObjectRef{};
-        auto& execution_lock = call.vm.ExecutionLock();
-        const auto depth = execution_lock.ReleaseForBlocking();
-        {
-            std::unique_lock lock(context->scheduler_mutex);
-            context->scheduler_changed.wait_for(lock, std::chrono::milliseconds(2));
-        }
-        execution_lock.ReacquireAfterBlocking(depth);
-    }
-}
-
-void PublishHandlerThreadLooper(const Context& context, const dx::VmObjectRef thread, const dx::VmObjectRef looper) {
-    std::scoped_lock lock(context->scheduler_mutex);
-    context->handler_threads[thread.Value()] = looper;
-    context->scheduler_changed.notify_all();
-}
-
-void StartAsyncTask(dx::IntrinsicContext& call, const Context& context, const dx::VmObjectRef task,
-                    const dx::VmObjectRef params) {
-    static_cast<void>(EnsureMainLooper(call, context));
-    {
-        std::scoped_lock lock(context->scheduler_mutex);
-        auto& state = context->async_tasks[task.Value()];
-        if (state.status != DexVmAndroidContext::AsyncStatus::pending) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "AsyncTask may only be executed once"};
-        }
-        state.status = DexVmAndroidContext::AsyncStatus::running;
-        state.params = params;
-    }
-    const auto pre = CallVirtual(call.vm, task, "onPreExecute", "()V");
-    if (pre.exception.IsValid()) {
-        call.vm.SetPendingException(pre.exception);
-        return;
-    }
-
-    const auto worker = call.vm.NewIntrinsicInstance("Landroid/os/AsyncTask$Worker;");
-    {
-        std::scoped_lock lock(context->scheduler_mutex);
-        auto& state = context->async_tasks[task.Value()];
-        state.worker = worker;
-        context->async_workers[worker.Value()] = {task, params};
-    }
-    const auto thread = call.vm.NewIntrinsicInstance("Ljava/lang/Thread;");
-    {
-        std::scoped_lock lock(context->scheduler_mutex);
-        context->async_tasks[task.Value()].thread = thread;
-    }
-    auto& linker = call.vm.Linker();
-    const auto thread_class = linker.FindClass("Ljava/lang/Thread;");
-    const auto constructor =
-        thread_class.has_value()
-            ? linker.FindDirectMethod(*thread_class, "<init>", "(Ljava/lang/Runnable;Ljava/lang/String;)V")
-            : std::nullopt;
-    if (!constructor.has_value()) {
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "java.lang.Thread constructor is unavailable");
-    }
-    const auto name = call.vm.NewStringUtf8("AsyncTask-" + std::to_string(task.Value()));
-    auto outcome =
-        call.vm.Call(*constructor, std::vector<dx::VmValue>{dx::VmValue::Ref(thread), dx::VmValue::Ref(worker),
-                                                            dx::VmValue::Ref(name)});
-    if (outcome.exception.IsValid()) {
-        call.vm.SetPendingException(outcome.exception);
-        return;
-    }
-    outcome = CallVirtual(call.vm, thread, "start", "()V");
-    if (outcome.exception.IsValid()) {
-        call.vm.SetPendingException(outcome.exception);
-    }
-}
-
-void ScheduleAsyncProgress(const Context& context, const dx::VmObjectRef task, const dx::VmObjectRef values) {
-    std::scoped_lock lock(context->scheduler_mutex);
-    const auto found = context->async_tasks.find(task.Value());
-    if (found == context->async_tasks.end() || found->second.cancelled ||
-        found->second.status != DexVmAndroidContext::AsyncStatus::running) {
-        return;
-    }
-    EnqueueLocked(*context, {context->uptime_millis.load(), 0, DexVmAndroidContext::ScheduledWorkKind::async_progress,
-                             context->main_looper, task, dx::VmObjectRef{}, values, dx::VmObjectRef{}, 0, 0});
-    context->scheduler_changed.notify_all();
-}
-
-void RunAsyncWorker(dx::IntrinsicContext& call, const Context& context, const dx::VmObjectRef worker) {
-    dx::VmObjectRef task{};
-    dx::VmObjectRef params{};
-    {
-        std::scoped_lock lock(context->scheduler_mutex);
-        const auto found = context->async_workers.find(worker.Value());
-        if (found == context->async_workers.end()) return;
-        task = found->second.task;
-        params = found->second.params;
-    }
-    const auto outcome = CallVirtual(call.vm, task, "doInBackground", "([Ljava/lang/Object;)Ljava/lang/Object;",
-                                     {dx::VmValue::Ref(params)});
-    if (outcome.exception.IsValid()) {
-        call.vm.SetPendingException(outcome.exception);
-        return;
-    }
-    {
-        std::scoped_lock lock(context->scheduler_mutex);
-        const auto found = context->async_tasks.find(task.Value());
-        if (found == context->async_tasks.end()) return;
-        found->second.result = outcome.value.ref;
-        EnqueueLocked(*context,
-                      {context->uptime_millis.load(), 0, DexVmAndroidContext::ScheduledWorkKind::async_post,
-                       context->main_looper, task, dx::VmObjectRef{}, outcome.value.ref, dx::VmObjectRef{}, 0, 0});
-        context->scheduler_changed.notify_all();
-    }
-}
-
-void DeliverMessage(dx::IntrinsicContext& call, const dx::VmObjectRef handler, const dx::VmObjectRef message) {
-    auto& vm = call.vm;
-    auto& linker = vm.Linker();
-    if (!handler.IsValid()) {
-        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "message has no delivery target"};
-    }
-    const auto handler_class = vm.Model().ObjectClass(handler);
-    const auto index = linker.FindVtableIndex(handler_class, "handleMessage", "(Landroid/os/Message;)V");
-    if (!index.has_value()) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "handler has no handleMessage"};
-    }
-    const auto outcome = vm.Call(linker.Class(handler_class).vtable[*index],
-                                 std::vector<dx::VmValue>{dx::VmValue::Ref(handler), dx::VmValue::Ref(message)});
-    if (outcome.exception.IsValid()) {
-        throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", "handleMessage raised: " + outcome.exception_message};
-    }
-}
-
-dx::VmObjectRef MakeMessage(dx::IntrinsicContext& call, const std::int32_t what, const dx::VmObjectRef object,
-                            const dx::VmObjectRef target) {
-    const auto message = call.vm.NewIntrinsicInstance("Landroid/os/Message;");
-    const auto slots = call.vm.Model().InstanceSlots(message);
-    slots[0] = {static_cast<std::uint32_t>(what), dx::SlotTag::cat1};
-    slots[3] = {object.Value(), dx::SlotTag::ref};
-    slots[4] = {target.Value(), dx::SlotTag::ref};
-    return message;
 }
 
 DexVmAndroidContext::VideoViewState* VideoStateOf(const Context& context, const std::uint64_t handle) {
@@ -1782,23 +1322,42 @@ std::optional<std::string> InvokeVideoEvent(dx::Interpreter& vm, DexVmAndroidCon
 
 }  // namespace android_intrinsics
 
-void AdvanceAndroidClock(DexVmAndroidContext& context, const std::int64_t delta_millis) {
-    if (delta_millis > 0) context.uptime_millis.fetch_add(delta_millis);
+void PrepareAndroidMainLooper(dx::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context) {
+    static_cast<void>(android_intrinsics::EnsureMainLooper(vm, context));
+}
+
+void NotifyAndroidScheduler(DexVmAndroidContext& context) {
     context.scheduler_changed.notify_all();
+    if (context.notify_native_loopers) context.notify_native_loopers();
+}
+
+void AdvanceAndroidClock(DexVmAndroidContext& context, const std::int64_t delta_millis) {
+    if (delta_millis <= 0) return;
+    {
+        std::scoped_lock lock(context.scheduler_mutex);
+        context.uptime_millis.fetch_add(delta_millis);
+    }
+    NotifyAndroidScheduler(context);
 }
 
 void ShutdownAndroidScheduler(DexVmAndroidContext& context) {
-    std::scoped_lock lock(context.scheduler_mutex);
-    context.scheduler_shutdown = true;
-    context.display_receivers.clear();
-    for (auto& [_, looper] : context.loopers)
-        looper.quitting = true;
-    context.scheduled_work.clear();
-    context.pending_view_actions.clear();
-    context.scheduler_changed.notify_all();
+    {
+        std::scoped_lock lock(context.scheduler_mutex);
+        context.scheduler_shutdown = true;
+        context.display_receivers.clear();
+        for (auto& [_, looper] : context.loopers)
+            looper.quitting = true;
+        context.scheduled_work.clear();
+        context.pending_view_actions.clear();
+    }
+    NotifyAndroidScheduler(context);
 }
 
 std::optional<std::string> PumpJavaThreads(dx::Interpreter& vm, DexVmAndroidContext& context) {
+    {
+        std::scoped_lock lock(context.scheduler_mutex);
+        if (context.scheduler_shutdown) return std::nullopt;
+    }
     const auto main = android_intrinsics::EnsureMainLooper(
         vm, std::shared_ptr<DexVmAndroidContext>(&context, [](DexVmAndroidContext*) {}));
     DispatchAndroidSurfaceStreamEvents(vm, context);
@@ -1806,6 +1365,7 @@ std::optional<std::string> PumpJavaThreads(dx::Interpreter& vm, DexVmAndroidCont
     if (const auto error = android_intrinsics::PumpLooperDue(vm, context, main); error.has_value()) {
         return error;
     }
+    if (const auto error = android_intrinsics::DrainRomMainMessages(vm, context, main)) return error;
     // A real Java thread that died with an uncaught exception is fatal to
     // the process on device; surface it at the frame boundary rather than
     // at whoever happens to call join().
@@ -1815,6 +1375,9 @@ std::optional<std::string> PumpJavaThreads(dx::Interpreter& vm, DexVmAndroidCont
 
 void RegisterAndroidSchedulerStateTable(dx::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context) {
     if (context == nullptr) return;
+    vm.Threads().SetShutdownObserver([weak = std::weak_ptr<DexVmAndroidContext>(context)] {
+        if (const auto current = weak.lock()) ShutdownAndroidScheduler(*current);
+    });
     vm.RegisterIntrinsicStateTable(
         {"android.scheduler",
          [context](const dx::VmObjectRef owner, const dx::VmRootVisitor& visit) {
@@ -1836,39 +1399,13 @@ void RegisterAndroidSchedulerStateTable(dx::Interpreter& vm, const std::shared_p
                      visit_if(dx::VmObjectRef(looper_handle));
                  }
              }
-             if (const auto found = context->handler_loopers.find(owner.Value());
-                 found != context->handler_loopers.end()) {
-                 visit_if(found->second);
-             }
-             if (const auto found = context->handler_callbacks.find(owner.Value());
-                 found != context->handler_callbacks.end()) {
-                 visit_if(found->second);
-             }
-             if (const auto found = context->handler_threads.find(owner.Value());
-                 found != context->handler_threads.end()) {
-                 visit_if(found->second);
-             }
-             if (const auto found = context->async_tasks.find(owner.Value()); found != context->async_tasks.end()) {
-                 visit_if(found->second.params);
-                 visit_if(found->second.result);
-                 visit_if(found->second.worker);
-                 visit_if(found->second.thread);
-             }
-             if (const auto found = context->async_workers.find(owner.Value()); found != context->async_workers.end()) {
-                 visit_if(found->second.task);
-                 visit_if(found->second.params);
-             }
+
          },
          [context](const dx::VmObjectRef owner) {
              std::scoped_lock lock(context->scheduler_mutex);
              std::erase_if(context->display_receivers,
                            [owner](const auto& item) { return item.second.receiver == owner; });
              context->loopers.erase(owner.Value());
-             context->handler_loopers.erase(owner.Value());
-             context->handler_callbacks.erase(owner.Value());
-             context->handler_threads.erase(owner.Value());
-             context->async_tasks.erase(owner.Value());
-             context->async_workers.erase(owner.Value());
              std::erase_if(context->thread_loopers, [owner](const auto& entry) { return entry.second == owner; });
              std::erase_if(context->scheduled_work, [owner](const auto& work) {
                  return work.looper == owner || work.owner == owner || work.target == owner || work.payload == owner ||
@@ -2067,7 +1604,7 @@ void DispatchAndroidDisplayFrame(dexvm::Interpreter& vm, DexVmAndroidContext& co
         }
     }
     // Choreographers on other Looper threads wait for this delivery themselves.
-    context.scheduler_changed.notify_all();
+    NotifyAndroidScheduler(context);
     if (const auto error = PumpJavaThreads(vm, context)) throw std::runtime_error(*error);
 }
 }  // namespace ogplay::runtime

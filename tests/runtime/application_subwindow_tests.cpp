@@ -29,7 +29,7 @@ struct Windows final {
         const auto slot = vm.Linker().FindVtableIndex(type, name, sig);
         REQUIRE(slot.has_value());
         args.insert(args.begin(), VmValue::Ref(receiver));
-        return vm.Call(vm.Linker().Class(type).vtable[*slot], args);
+        return app.CallGuest(vm.Linker().Class(type).vtable[*slot], args);
     }
 
     VmValue Call(VmObjectRef receiver, const char* name, const char* sig, std::vector<VmValue> args = {}) {
@@ -39,14 +39,16 @@ struct Windows final {
     }
 
     VmObjectRef New(const char* type, const char* sig, std::vector<VmValue> args = {}) {
-        const auto initialized = vm.EnsureClassInitialized(vm.Linker().ResolveDescriptor(type));
-        REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
-        const auto object = vm.NewIntrinsicInstance(type);
+        app.app->RunOnMainThread([&] {
+            const auto initialized = vm.EnsureClassInitialized(vm.Linker().ResolveDescriptor(type));
+            REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
+        });
+        const auto object = app.NewGuest(type);
         const auto roots = vm.ProtectReferences(std::array{object});
         const auto init = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(object), "<init>", sig);
         REQUIRE(init.has_value());
         args.insert(args.begin(), VmValue::Ref(object));
-        const auto result = vm.Call(*init, args);
+        const auto result = app.CallGuest(*init, args);
         REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
         return object;
     }
@@ -153,7 +155,7 @@ TEST_CASE("DVM-335 application WindowManager identity validation and bounded lay
             CHECK(f.app.context->application_windows.empty());
         }
         REQUIRE_FALSE(f.app.ledger.Unimplemented().empty());
-        const auto context = f.New("Landroid/content/Context;", "()V");
+        const auto context = f.app.context->application_base_context;
         const auto global = f.Call(context, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
                                    {VmValue::Ref(f.vm.NewStringUtf8("window"))})
                                 .ref;
@@ -338,7 +340,7 @@ TEST_CASE("DVM-335 application windows follow owner visibility and retire leaked
         const auto reset = f.vm.Linker().FindDirectMethod(
             f.vm.Linker().ResolveDescriptor("Lfixture/WindowAttachmentActivity;"), "resetTrace", "()V");
         REQUIRE(reset.has_value());
-        REQUIRE_FALSE(f.vm.Call(*reset, {}).exception.IsValid());
+        REQUIRE_FALSE(f.app.CallGuest(*reset, {}).exception.IsValid());
         static_cast<void>(f.Call(owner, "finish", "()V"));
         f.Step();
         CHECK(f.app.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getTrace") % 100 == 67);
@@ -435,7 +437,7 @@ TEST_CASE("Dialog custom content uses application window visibility dismissal an
         CHECK(f.Call(dialog, "isShowing", "()Z").AsInt() == 0);
         f.Step();
         CHECK(f.app.context->application_windows.empty());
-        const auto base = f.New("Landroid/content/Context;", "()V");
+        const auto base = f.app.context->application_base_context;
         const auto invalid = f.New("Landroid/app/Dialog;", "(Landroid/content/Context;)V", {VmValue::Ref(base)});
         const auto invalid_roots = f.vm.ProtectReferences(std::array{base, invalid});
         const auto orphan = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(base)});

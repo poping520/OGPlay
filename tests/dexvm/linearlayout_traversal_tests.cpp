@@ -9,7 +9,7 @@ TEST_CASE("DVM-284 ROM LinearLayout weights baseline RTL cache and one Window pr
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
         f.context->activity = owner;
-        ogplay::test::AttachViewTestContext(f.vm, owner);
+        ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
         const auto root = f.On(owner, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(0x01020002)}).ref;
         const auto slot = [&](auto object, const char* name, const char* type = "I") -> Slot& {
             const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, type);

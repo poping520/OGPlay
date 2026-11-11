@@ -1,6 +1,6 @@
 # 模块：guest ICU JNI
 
-本目录实现 core.jar 中 ICU 相关 native 所需的 ICU（含 Locale 显示名、ISO3 与可用区域枚举）、NativeDecimalFormat、
+本目录实现 core.jar 中 ICU 相关 native 所需的 ICU（含 Locale 显示名、ISO3、likely-subtag、script 与可用区域枚举）、NativeDecimalFormat、
 NativeNormalizer、Pattern/Matcher、字符集名称枚举与 TimeZoneNames native。源码只调用 ICU 51 C ABI；禁止包含 ICU C++ API、链接 NDK
 libc++，或跨越 API 19 STLport C++ ABI。
 

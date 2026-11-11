@@ -209,6 +209,9 @@ public:
     [[nodiscard]] bool Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped);
     void NotifyFileWrite();
     memory::GuestAddress PrepareThreadLooper(std::uint64_t thread_id);
+    void PollThreadLooper(std::uint64_t thread_id, const std::function<bool()>& interrupted);
+    void WakeThreadLooper(std::uint64_t thread_id);
+    void NotifyLooperPollers();
     void RetireThreadLooper(std::uint64_t thread_id);
     void ShutdownLoopers();
     void PushInput(const AndroidBoundaryInput& input);

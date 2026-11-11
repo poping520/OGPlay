@@ -30,6 +30,7 @@ FRAMEWORK = ROOT / "data/android/19/framework"
 OGPLAY_JAR = FRAMEWORK / "ogplay.jar"
 MANIFEST = ROOT / "data/android/19/manifest.json"
 NOTICE = ROOT / "data/android/19/notices/boot-classpath.txt"
+ROM_NOTICES = {"telephony-common.jar": "notices/telephony-common.jar.txt"}
 GUEST_JAVA_ROOTS = tuple(ROOT / "src/guest" / name / "java"
                          for name in ("crypto", "framework", "io", "math", "xml", "zip"))
 
@@ -45,6 +46,8 @@ ROM_JARS = {
                       "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"),
     "framework2.jar": ("platform/frameworks/base",
                        "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"),
+    "telephony-common.jar": ("platform/frameworks/opt/telephony",
+                             "b1e4f98857dd07d9fa7bc1d6c2d6cdb49d41adc2973533db3982ef0d5348a908"),
     "android.policy.jar": ("platform/frameworks/base",
                            "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1"),
 }
@@ -52,8 +55,6 @@ ROM_JARS = {
 # Hidden API 19 types are absent from the public SDK android.jar. These
 # declarations only satisfy javac; the ROM jars supply the real classes.
 COMPILE_ONLY_SOURCES = {
-    "android/hardware/usb/IUsbManager.java":
-        "package android.hardware.usb; public interface IUsbManager {}",
     "android/os/SystemProperties.java":
         "package android.os; public class SystemProperties {"
         " public static String get(String key, String def) { throw new AssertionError(); } }",
@@ -89,23 +90,7 @@ public abstract class ZoneInfo extends java.util.TimeZone {
     }
 }""",
 }
-# The SDK hides ActivityManager.RunningAppProcessInfo from javac; the overlay
-# ActivityManager compiles against this nested shape and the ROM supplies it.
-ACTIVITY_MANAGER_NESTED = """
-    public static class RunningAppProcessInfo {
-        public static final int REASON_UNKNOWN = 0;
-        public int uid, flags, importance, lru, lastTrimLevel;
-        public int importanceReasonCode, importanceReasonPid;
-        public android.content.ComponentName importanceReasonComponent;
-        public RunningAppProcessInfo(String name, int pid, String[] packages) {
-            throw new AssertionError();
-        }
-    }
-}
-"""
-COMPILE_ONLY_CLASSES = tuple(sorted(
-    [name[:-len(".java")] + ".class" for name in COMPILE_ONLY_SOURCES]
-    + ["android/app/ActivityManager$RunningAppProcessInfo.class"]))
+COMPILE_ONLY_CLASSES = tuple(sorted(name[:-len(".java")] + ".class" for name in COMPILE_ONLY_SOURCES))
 
 WINDOWS_JAVAC = Path(r"D:\01_software\jdk-17.0.2\bin\javac.exe")
 WINDOWS_ANDROID_JAR = Path(
@@ -239,12 +224,6 @@ def compile_guest_java(work: Path) -> bytes:
         path = compile_only / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
-    manager = ROOT / "src/guest/framework/java/android/app/ActivityManager.java"
-    manager_compile = work / "activity-manager/android/app/ActivityManager.java"
-    manager_compile.parent.mkdir(parents=True, exist_ok=True)
-    text = manager.read_text(encoding="utf-8")
-    manager_compile.write_text(text[:text.rfind("}")] + ACTIVITY_MANAGER_NESTED, encoding="utf-8")
-    sources = tuple(manager_compile if source == manager else source for source in sources)
     classes = work / "classes"
     classes.mkdir()
     run([
@@ -297,6 +276,14 @@ def rom_jar(name: str) -> bytes:
 
 
 def boot_metadata(jar: bytes) -> dict:
+    def rom_metadata(name: str, project: str, digest: str) -> dict:
+        entry = {"path": f"framework/{name}", "source_project": project,
+                 "size": (AOSP / name).stat().st_size, "sha256": digest}
+        if name in ROM_NOTICES:
+            notice = ROM_NOTICES[name]
+            entry.update(notice=notice, notice_sha256=file_sha256(MANIFEST.parent / notice))
+        return entry
+
     return {
         "directory": "framework",
         "generator": "tools/bootdex/build_bootdex.py",
@@ -308,8 +295,7 @@ def boot_metadata(jar: bytes) -> dict:
                                            + path.read_bytes() for path in guest_java_sources())),
                  "javac": javac_release(), "android_jar_sha256": ANDROID_JAR_SHA256,
                  "d8_sha256": D8_JAR_SHA256}},
-            *({"path": f"framework/{name}", "source_project": project, "size": (AOSP / name).stat().st_size,
-               "sha256": digest} for name, (project, digest) in ROM_JARS.items()),
+            *(rom_metadata(name, project, digest) for name, (project, digest) in ROM_JARS.items()),
         ],
         "notice": NOTICE.relative_to(MANIFEST.parent).as_posix(),
         "notice_sha256": file_sha256(NOTICE),

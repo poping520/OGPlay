@@ -231,6 +231,7 @@
             break;
         }
         case MethodKind::abstract:
+            RecordUnimplementedAbstract(linker->Method(target_id), receiver);
             throw JavaLinkageError(JavaLinkageKind::abstract_method, linker->Method(target_id).name);
     }
     }

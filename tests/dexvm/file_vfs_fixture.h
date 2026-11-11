@@ -2,6 +2,7 @@
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 
 #include "boot_dex.h"
+#include "container_traversal_fixture.h"
 // java.io.File through the shared VFS (SBX-5, ADR-0020). Two things matter
 // here: a Java save and a native read see one filesystem, and File.mkdirs
 // reports the truth. The old handler returned true unconditionally without
@@ -72,14 +73,18 @@ struct FileVm final {
     JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model;
-    DexClassLinker linker;
+    JavaObjectModel standalone_model;
+    DexClassLinker standalone_linker;
     ogplay::core::CapabilityLedger ledger;
     ogplay::core::Logger logger;
     std::shared_ptr<DexVmAndroidContext> context;
     VirtualFileSystem vfs;
     DexVmIoVfsAdapter io_file_system;
-    Interpreter interpreter;
+    std::unique_ptr<container_traversal::AndroidTestRuntime> runtime;
+    std::unique_ptr<Interpreter> standalone_interpreter;
+    JavaObjectModel& model;
+    DexClassLinker& linker;
+    Interpreter& interpreter;
 
     explicit FileVm(SandboxStore* sandbox = nullptr, const bool include_android_catalog = true,
                     const InterpreterConfig config = {},

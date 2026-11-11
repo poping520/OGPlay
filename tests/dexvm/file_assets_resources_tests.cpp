@@ -227,11 +227,11 @@ TEST_CASE("AssetManager opens ROM AssetInputStream for STORED and DEFLATED entri
 TEST_CASE("Resources Context and PackageManager share application assets and isolate system assets") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         FileVm vm(nullptr, true, {.backend = backend});
-        RegisterAndroidValueStateTables(vm.interpreter, vm.context);
+        vm.context->package_inventory_known = true;
         const std::vector<std::byte> payload{std::byte{0x41}};
         vm.context->apk_bytes = MakeStoredZip("assets/gamecfg.bar", payload);
         vm.context->archive = ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
-        const auto context = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto context = ogplay::test::MakeRomAppContext(vm.interpreter, vm.context);
         const auto context_root = vm.interpreter.ProtectReferences(std::array{context});
         const auto manager = vm.CallOn(context, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
         const auto manager_root = vm.interpreter.ProtectReferences(std::array{manager});

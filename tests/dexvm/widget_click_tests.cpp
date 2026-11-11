@@ -322,7 +322,7 @@ TEST_CASE("LUI18 guest View calls enabled listener before virtual onTouchEvent")
 TEST_CASE("DVM-261 DEX framework overrides dispatch and super retains native behavior") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ogplay::test::android_value::AndroidValueVm fixture(backend, {}, false, "framework_override.dex");
-        const auto owner = fixture.vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto owner = ogplay::test::MakeRomAppContext(fixture.vm, fixture.context);
         const auto hits = [&](const VmObjectRef object) {
             const auto field = fixture.linker.FindFieldRecursive(fixture.model.ObjectClass(object), "calls", "I");
             REQUIRE(field.has_value());

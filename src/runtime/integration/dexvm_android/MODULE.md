@@ -132,7 +132,7 @@ calling identity 固定为进程 UID/PID，StrictMode mask 按执行上下文隔
 | Notification | ROM Notification/NotificationManager 持有字段、构造、extras 与本地 Parcel 值；本地 INotificationManager 只取消当前包空库存，发布和跨包访问记账拒绝。无系统展示、声音、点击或持久库存 |
 | SMS | SmsManager 和 SmsMessage 来自原样的 telephony-common.jar。PDU 由 ROM 解析。本地 ISms 的 14 个入口按签名记账拒绝，无 Phone/RIL、SIM 存储或短信传输 |
 | NFC | ROM NfcAdapter 经 IPackageManager 查询 NFC feature，缺席时 NfcManager 捕获 UOE，默认适配器为 null；无监听或通信 |
-| PendingIntent/AlarmManager | 当前 APK service/broadcast 令牌，创建不解析/启动目标；原 Intent 复制/filterEquals/replaceExtras 快照，extras 不参与身份，种类/包/requestCode/ONE_SHOT/fill-in flags 参与，NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT 控制查找，CANCEL_CURRENT\|NO_CREATE 返回旧已取消令牌。仅普通 Intent/BootDex Uri；selector/content MIME provider/未知 flags/Parcel/克隆失败。VM 锁串行 registry、非永久根，ROM 包装按本地 IIntentSender 的 Binder 身份比较，活令牌追踪 Intent，GC 删除记录；闹钟条目为 session roots。ROM AlarmManager 经本地 IAlarmManager，cancel(null/无匹配) 正常，移除闹钟不取消令牌；令牌 cancel 后不匹配。退出停止创建/清理；注册/调度/send/started service UOE |
+| PendingIntent/AlarmManager | 当前 APK 单 Activity/service/broadcast 令牌，创建不解析/启动目标；原 Intent 复制/filterEquals/replaceExtras 快照，extras 不参与身份，种类/包/requestCode/ONE_SHOT/fill-in flags 参与，NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT 控制查找，CANCEL_CURRENT\|NO_CREATE 返回旧已取消令牌。仅普通 Intent/BootDex Uri；selector/content MIME provider/未知 flags/Parcel/克隆失败。VM 锁串行 registry、非永久根，ROM 包装按本地 IIntentSender 的 Binder 身份比较，活令牌追踪 Intent，GC 删除记录；闹钟条目为 session roots。ROM AlarmManager 经本地 IAlarmManager，cancel(null/无匹配) 正常，移除闹钟不取消令牌；令牌 cancel 后不匹配。退出停止创建/清理；注册/调度/send UOE |
 | Connectivity/Wifi | core policy/transport 默认离线，仅注入事实，无 host 网络/DNS/代理/证书探测。默认断开的逻辑 WiFi，可声明类型缺席；独立原版 NetworkInfo=DISCONNECTED/不可用、活动网络 null/Wifi 禁用。NetworkInfo 查询需 ACCESS_NETWORK_STATE，缺事实/online policy UOE，不支持类型按 API19 null；ROM ConnectivityManager 通过本地 IConnectivityManager 查询，服务调用原 NetworkInfo 构造/setter。getConnectionInfo 需 ACCESS_WIFI_STATE，离线返回独立 WifiInfo（networkId=-1、UNINITIALIZED、MAC=null）；无在线 provider/事件/无线控制；同一离线拓扑派生只读 lo 内核视图与本地地址 ioctl，不受 transport IO 授权限制 |
 | USB/备份 | ROM UsbManager 使用本地 IUsbManager，设备列表为空，配件缺席，打开设备返回 null，权限查询 false，其他操作按签名拒绝。ROM BackupManager 保留服务缺席语义，备份请求不排队，恢复请求返回 -1、无恢复会话。 |
 | WifiLock/MulticastLock | ROM WifiManager 计数、held 和每 manager 50 锁上限；本地 IWifiManager 校验锁模式及 WAKE_LOCK/CHANGE_WIFI_MULTICAST_STATE 权限，不改变连接、网卡或组播。 |
@@ -186,6 +186,8 @@ calling identity 固定为进程 UID/PID，StrictMode mask 按执行上下文隔
 ## UI、Surface 与输入
 
 WMS 在单逻辑显示上管理应用窗口、子窗口及 Toast 的 frame、层级、焦点、可见性和输入通道。
+同 app token 的 base application 放在既有 Dialog 之下，子窗口沿所属根窗口排序。
+本地服务前台通知按 token 和 ComponentName 验证，非零 id 配 null 通知抛 IAE；通知展示调用 RecordUiDegraded。
 AMS 结束 Activity 时先隐藏其 app token，再调度 pause、stop 和 destroy。会话退出先隐藏栈中
 全部 token，再调度生命周期消息。WMS 仅向仍登记的窗口派发焦点变化。
 ROM 自己测量、定位和绘制 View。PopupWindow 的锚点与 gravity 是 WindowSession 的布局输入。
@@ -193,6 +195,8 @@ ROM 自己测量、定位和绘制 View。PopupWindow 的锚点与 gravity 是 W
 显示宽高变化先取消当前触摸捕获，再更新 WMS 几何并经 IWindow.resized 请求 ROM relayout。
 DisplayManager 的本地回调失效缓存后，资源管理器读取新尺寸；新帧尺寸更新前端触摸映射。
 重建窗口沿已有 remove/add 与 Surface 退役路径，EGL backing 随 ROM Surface 生命周期重建。
+带 RELAYOUT_DEFER_SURFACE_DESTROY 的隐藏保留旧 Surface 有效性，ROM 完成 surfaceDestroyed
+和 transferFrom 后，由 performDeferredDestroy 退役；窗口移除同时清理延迟持有的引用。
 合成器在同一锁内取得显示矩形及图层快照，像素处理期间不持有窗口锁。
 
 ROM Surface 和 SurfaceControl 的 native 使用分型句柄。Skia 软件 Canvas 保持 backing；首次锁定或尺寸变化

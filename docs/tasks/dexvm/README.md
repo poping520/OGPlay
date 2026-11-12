@@ -351,3 +351,4 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-375 · SAX 文本流解析](DVM-375.md)
 - [DVM-376 · Android Time](DVM-376.md)
 - [P3 · ROM 窗口与生命周期](P3-window.md)
+- [P4 · My Boy! 通用能力与验收边界](P4-myboy.md)

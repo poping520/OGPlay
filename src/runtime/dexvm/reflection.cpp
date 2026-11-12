@@ -335,51 +335,25 @@ public:
                RuntimePackage(left_class.descriptor) == RuntimePackage(right_class.descriptor);
     }
 
-    [[nodiscard]] bool CanAccessMethod(const ReflectMethodMeta& meta, const std::optional<DexClassId> caller,
-                                       const VmObjectRef receiver) const {
-        const auto& declaring = linker->Class(meta.declaring_class);
-        if (!caller.has_value()) {
-            return (meta.access_flags & kAccPublic) != 0U && (declaring.access_flags & kAccPublic) != 0U;
-        }
-        if ((declaring.access_flags & kAccPublic) == 0U && !SameRuntimePackage(*caller, meta.declaring_class)) {
-            return false;
-        }
-        if ((meta.access_flags & kAccPublic) != 0U || *caller == meta.declaring_class) {
-            return true;
-        }
-        if ((meta.access_flags & kAccPrivate) != 0U) return false;
-        if (SameRuntimePackage(*caller, meta.declaring_class)) return true;
-        if ((meta.access_flags & kAccProtected) == 0U || !linker->IsAssignable(meta.declaring_class, *caller)) {
-            return false;
-        }
-        const auto& method = linker->Method(meta.method);
-        return method.is_static || (receiver.IsValid() && linker->IsAssignable(*caller, model->ObjectClass(receiver)));
+    [[nodiscard]] bool CanAccessClass(const DexClassId declaring_class, const std::optional<DexClassId> caller) const {
+        return (linker->Class(declaring_class).access_flags & kAccPublic) != 0U ||
+               (caller && SameRuntimePackage(*caller, declaring_class));
     }
 
+    // Dalvik's dvmCheckMethodAccess and dvmCheckFieldAccess check member flags.
     [[nodiscard]] bool CanAccessMember(const DexClassId declaring_class, const std::uint32_t access_flags,
-                                       const std::optional<DexClassId> caller,
-                                       const VmObjectRef protected_receiver = VmObjectRef{}) const {
-        const auto& declaring = linker->Class(declaring_class);
-        if (!caller.has_value()) {
-            return (access_flags & kAccPublic) != 0U && (declaring.access_flags & kAccPublic) != 0U;
-        }
-        if ((declaring.access_flags & kAccPublic) == 0U && !SameRuntimePackage(*caller, declaring_class)) {
-            return false;
-        }
-        if ((access_flags & kAccPublic) != 0U || *caller == declaring_class) {
-            return true;
-        }
+                                       const std::optional<DexClassId> caller) const {
+        if ((access_flags & kAccPublic) != 0U) return true;
+        if (!caller) return false;
+        if (*caller == declaring_class) return true;
         if ((access_flags & kAccPrivate) != 0U) return false;
         if (SameRuntimePackage(*caller, declaring_class)) return true;
-        if ((access_flags & kAccProtected) == 0U || !linker->IsAssignable(declaring_class, *caller)) {
-            return false;
-        }
-        return !protected_receiver.IsValid() || linker->IsAssignable(*caller, model->ObjectClass(protected_receiver));
+        return (access_flags & kAccProtected) != 0U && linker->IsAssignable(declaring_class, *caller);
     }
 
     [[nodiscard]] bool CanAccessField(const ReflectFieldMeta& meta, const VmObjectRef receiver,
                                       const std::optional<DexClassId> caller) const {
-        if (!CanAccessMember(meta.declaring_class, meta.access_flags, caller, receiver)) return false;
+        if (!CanAccessMember(meta.declaring_class, meta.access_flags, caller)) return false;
         // Dalvik java_lang_reflect_Field.cpp validateFieldAccess checks this
         // before validating a null receiver, including protected static fields.
         return (meta.access_flags & kAccProtected) == 0U ||
@@ -700,7 +674,8 @@ VmObjectRef ReflectionRuntime::InvokeMethod(const VmObjectRef wrapper, const VmO
                                                                       std::to_string(meta.parameter_types.size()) +
                                                                       ", got " + std::to_string(argument_count)};
     }
-    if (!IsAccessible(wrapper) && !impl_->CanAccessMethod(meta, caller, receiver)) {
+    const auto& target_method = impl_->linker->Method(target);
+    if (!IsAccessible(wrapper) && !impl_->CanAccessMember(target_method.owner, target_method.access_flags, caller)) {
         throw VmJavaThrow{"Ljava/lang/IllegalAccessException;", "access to method denied"};
     }
 
@@ -809,6 +784,9 @@ VmObjectRef ReflectionRuntime::NewInstance(const DexClassId java_class, const st
     const auto constructor = FindConstructor(java_class, {}, false);
     if (!constructor.has_value()) {
         throw VmJavaThrow{"Ljava/lang/InstantiationException;", "no empty constructor"};
+    }
+    if (!impl_->CanAccessClass(java_class, caller)) {
+        throw VmJavaThrow{"Ljava/lang/IllegalAccessException;", "access to class denied"};
     }
     if (!impl_->CanAccessMember(java_class, constructor->access_flags, caller)) {
         throw VmJavaThrow{"Ljava/lang/IllegalAccessException;", "access to constructor denied"};

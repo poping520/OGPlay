@@ -686,7 +686,13 @@ TEST_CASE("Method invoke honors caller access and preserves target throwable ide
                     "Ljava/lang/IllegalAccessException;");
 
     const auto protected_method = MethodWrapper(vm, "Lreflect/Derived;", "protectedDerived");
-    ExpectException(vm, InvokeFrom(vm, "Lother/Sub;", protected_method, derived), "Ljava/lang/IllegalAccessException;");
+    ExpectException(vm, InvokeFrom(vm, "Lother/Outsider;", protected_method, derived),
+                    "Ljava/lang/IllegalAccessException;");
+    CHECK(vm.interpreter.Reflection()
+              .Codec()
+              .ConvertArgument(Ref(InvokeFrom(vm, "Lother/Sub;", protected_method, derived)),
+                               vm.linker.ResolveDescriptor("I"))
+              .AsInt() == 6);
     const auto sub_class = vm.linker.ResolveDescriptor("Lother/Sub;");
     const auto sub = vm.model.NewInstance(sub_class, vm.linker.Class(sub_class).instance_slots);
     CHECK(vm.interpreter.Reflection()
@@ -704,8 +710,11 @@ TEST_CASE("Method invoke honors caller access and preserves target throwable ide
               .ConvertArgument(Ref(InvokeFrom(vm, "Lreflect/Peer;", package_owner_method, package_owner)),
                                vm.linker.ResolveDescriptor("I"))
               .AsInt() == 23);
-    ExpectException(vm, InvokeFrom(vm, "Lother/Outsider;", package_owner_method, package_owner),
-                    "Ljava/lang/IllegalAccessException;");
+    CHECK(vm.interpreter.Reflection()
+              .Codec()
+              .ConvertArgument(Ref(InvokeFrom(vm, "Lother/Outsider;", package_owner_method, package_owner)),
+                               vm.linker.ResolveDescriptor("I"))
+              .AsInt() == 23);
 
     const auto hidden = MethodWrapper(vm, "Lreflect/Derived;", "hiddenDerived");
     ExpectException(vm, Invoke(vm, hidden, derived), "Ljava/lang/IllegalAccessException;");
@@ -721,6 +730,28 @@ TEST_CASE("Method invoke honors caller access and preserves target throwable ide
     ExpectException(vm, outcome, "Ljava/lang/reflect/InvocationTargetException;");
     CHECK(Ref(vm.Virtual(outcome.exception, "getTargetException", "()Ljava/lang/Throwable;")) == target);
     CHECK(Ref(vm.Virtual(outcome.exception, "getCause", "()Ljava/lang/Throwable;")) == target);
+}
+
+TEST_CASE("Reflective members use member access while Class newInstance also checks class access") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ReflectionVm vm("reflection.dex", backend);
+        const auto owner = vm.linker.ResolveDescriptor("Lreflect/PackageOwner;");
+        REQUIRE((vm.linker.Class(owner).access_flags & kAccPublic) == 0);
+
+        const auto constructor = ConstructorWrapper(vm, "Lreflect/PackageOwner;");
+        const auto instance =
+            Ref(vm.Static("Lother/Outsider;", "constructNoArgs", "(Ljava/lang/reflect/Constructor;)Ljava/lang/Object;",
+                          {VmValue::Ref(constructor)}));
+        CHECK(vm.model.ObjectClass(instance) == owner);
+        ExpectException(vm,
+                        vm.Static("Lother/Outsider;", "instantiate", "(Ljava/lang/Class;)Ljava/lang/Object;",
+                                  {VmValue::Ref(vm.model.ClassObject(owner))}),
+                        "Ljava/lang/IllegalAccessException;");
+
+        const auto field = FieldWrapper(vm, "Lreflect/PackageOwner;", "number");
+        CHECK(Int(vm.Static("Lother/Outsider;", "readStaticInt", "(Ljava/lang/reflect/Field;)I",
+                            {VmValue::Ref(field)})) == 31);
+    }
 }
 
 TEST_CASE("Constructor newInstance initializes converts and wraps target exceptions") {

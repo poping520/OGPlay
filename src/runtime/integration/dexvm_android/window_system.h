@@ -113,6 +113,7 @@ private:
     struct Window {
         WindowAttributes attrs;
         WindowRect frame, crop;
+        std::uint32_t order{};
         bool visible{}, input_channel{}, premultiplied{}, opaque_pixels{};
         bool transparent_pixels{}, egl{};
         int touchable{};

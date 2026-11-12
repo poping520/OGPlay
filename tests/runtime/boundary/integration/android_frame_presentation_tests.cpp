@@ -30,6 +30,7 @@
 #include "ogplay/memory/bus.h"
 #include "ogplay/loader/link_namespace.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
+#include "ogplay/video/video_player.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 #include "runtime/boundary/modules/gles1/gles1_dispatch.h"
 #include "runtime/boundary/modules/gles1/gles1_draw.h"
@@ -42,6 +43,38 @@
 #include "android_boundary_fixture.h"
 
 using namespace ogplay::test::android_boundary;
+
+TEST_CASE("composed frame recycling survives display rotation and late returns") {
+    BoundaryFixture fixture;
+    auto pixels = std::make_shared<ogplay::video::VideoFrame>();
+    pixels->width = 3U;
+    pixels->height = 4U;
+    pixels->rgba8.assign(48U, 17U);
+    fixture.boundary.PublishSharedFrame(pixels);
+    REQUIRE(fixture.boundary.TakeLatestFrame());
+    fixture.boundary.PublishBlankFrame(255U);
+    auto portrait = fixture.boundary.TakeLatestFrame();
+    REQUIRE(portrait);
+    CHECK(portrait->width == 3U);
+    CHECK(portrait->height == 4U);
+    const auto* storage = portrait->rgba8.data();
+    // A prior orientation can be returned after a new frame has been published.
+    pixels = std::make_shared<ogplay::video::VideoFrame>();
+    pixels->width = 4U;
+    pixels->height = 3U;
+    pixels->rgba8.assign(48U, 31U);
+    fixture.boundary.PublishSharedFrame(pixels);
+    CHECK_NOTHROW(fixture.boundary.RecycleFrame(std::move(*portrait)));
+    fixture.boundary.PublishBlankFrame(0U);
+    auto landscape = fixture.boundary.TakeLatestFrame();
+    REQUIRE(landscape);
+    CHECK(landscape->width == 4U);
+    CHECK(landscape->height == 3U);
+    CHECK(landscape->rgba8.data() == storage);
+    CHECK(landscape->rgba8 == std::vector<std::uint8_t>(48U, 0U));
+    landscape->rgba8.pop_back();
+    CHECK_THROWS_AS(fixture.boundary.RecycleFrame(std::move(*landscape)), std::invalid_argument);
+}
 
 TEST_CASE("Android boundary supersamples without changing guest surface size") {
     CHECK_THROWS_AS(BoundaryFixture(0), std::invalid_argument);

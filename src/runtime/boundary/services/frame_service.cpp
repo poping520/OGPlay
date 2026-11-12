@@ -168,8 +168,11 @@ void FrameService::SetReadbackFilter(FrameReadbackFilter covered) {
 
 void FrameService::RecycleFrame(AndroidBoundaryFrame&& frame) {
     if (frame.shared_rgba8) return;
-    const auto expected = static_cast<std::size_t>(layout_.logical_width) * layout_.logical_height * 4U;
-    if (frame.width != layout_.logical_width || frame.height != layout_.logical_height ||
+    // Returned frames may predate a configuration change. Storage is untyped
+    // bytes and is resized by its next producer; validate the returned frame,
+    // rather than requiring the initial display orientation.
+    const auto expected = static_cast<std::size_t>(frame.width) * frame.height * 4U;
+    if (frame.width == 0U || frame.height == 0U || frame.width > 4096U || frame.height > 4096U ||
         frame.rgba8.size() != expected) {
         throw std::invalid_argument("recycled Android boundary frame layout does not match");
     }

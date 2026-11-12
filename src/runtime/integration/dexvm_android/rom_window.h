@@ -18,6 +18,7 @@ struct RomWindowState {
         std::int32_t surface{}, channel{};
         bool drawn{};
         android_intrinsics::WindowAttributes attributes{};
+        std::int32_t deferred_surface{};
     };
 
     struct Surface {

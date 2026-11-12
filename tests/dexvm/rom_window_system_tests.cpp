@@ -88,6 +88,23 @@ TEST_CASE("P3 WMS dialog gravity popup offsets and zero system insets") {
     CHECK_THROWS_AS(w.Add(WindowAttributes{.type = 2000}, true), std::invalid_argument);
 }
 
+TEST_CASE("WMS adds a late activity decor below an existing dialog of the same token") {
+    WindowSystem w(800, 480);
+    const auto older = w.Add(WindowAttributes{.type = 1, .application_token = 1}, true);
+    const auto dialog = w.Add(WindowAttributes{.application_token = 2}, true);
+    const auto decor = w.Add(WindowAttributes{.type = 1, .application_token = 2}, true);
+    for (const auto id : {older, dialog, decor})
+        w.Post(id, Solid(1, 1, {0, 0, 0, 255}), false);
+    const auto layers = w.Layers();
+    REQUIRE(layers.size() == 3);
+    CHECK(layers[0].window == older);
+    CHECK(layers[1].window == decor);
+    CHECK(layers[2].window == dialog);
+    CHECK(w.Focus() == dialog);
+    w.Remove(dialog);
+    CHECK(w.Focus() == decor);
+}
+
 TEST_CASE("P3 compositor ignores alpha for opaque formats and honors translucent alpha") {
     WindowSystem w(2, 1);
     const auto base = w.Add({}, true);

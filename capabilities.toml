@@ -1331,12 +1331,12 @@ note = "DVM-65/143/181/182、WU7-5：API19 Class 名称、loader、forName、分
 [dexvm.reflection_invoke]
 status = "complete"
 test = "tests/dexvm/reflection_tests.cpp"
-note = "DVM-66：共用 ReflectionCodec 处理引用赋值、八种 primitive 的 API19 widening、boxing 与 void→null；Method.invoke 使用真实调用者与 loader/package 访问身份、protected receiver 限制和 accessible 绕过，覆盖 direct/static/virtual/interface 分派与类初始化；InvocationTargetException 保留原 throwable 身份。"
+note = "DVM-66：共用 ReflectionCodec 处理引用赋值、八种 primitive 的 API19 widening、boxing 与 void→null；Method.invoke 按 Dalvik 对虚派目标的成员标志核对真实 caller/loader/package，不额外检查声明类或 protected receiver；accessible 绕过，覆盖 direct/static/virtual/interface 分派与类初始化；InvocationTargetException 保留原 throwable 身份。"
 
 [dexvm.reflection_instantiation]
 status = "complete"
 test = "tests/dexvm/reflection_tests.cpp"
-note = "DVM-67 闭合 Constructor.newInstance 与 Class.newInstance：不可实例化类型、真实 caller/access、clinit、ReflectionCodec 参数、instance allocation 与精确 direct <init>；Constructor target 以 InvocationTargetException 保持原 identity，Class.newInstance 的默认构造器 target 原样传播且无 ()V 明确 InstantiationException"
+note = "DVM-67 闭合 Constructor.newInstance 按 Dalvik 只检查成员访问，Class.newInstance 另检查声明类；两者处理不可实例化类型、真实 caller/access、clinit、ReflectionCodec 参数、instance allocation 与精确 direct <init>；Constructor target 以 InvocationTargetException 保持原 identity，Class.newInstance 的默认构造器 target 原样传播且无 ()V 明确 InstantiationException"
 
 [dexvm.reflection_field_array]
 status = "complete"
@@ -1570,13 +1570,13 @@ note = "ROM VideoView 用 MediaPlayer.setDisplay 绑定窗口 Surface。本地 V
 
 [dexvm.surface_view_lifecycle]
 status = "partial"
-test = "tests/runtime/rom_window_integration_tests.cpp#ROM GLSurfaceView; tests/runtime/native_activity_process_tests.cpp"
-note = "ROM SurfaceView 与 SurfaceHolder 归 ViewRootImpl 和 WMS，GLSurfaceView 与 NativeActivity 沿 ROM surface 回调连接 ANGLE。"
+test = "tests/runtime/rom_window_integration_tests.cpp#ROM GLSurfaceView; tests/runtime/native_activity_process_tests.cpp; tests/dexvm/rom_window_services_tests.cpp#P3 local WMS add relayout"
+note = "ROM SurfaceView 与 SurfaceHolder 归 ViewRootImpl 和 WMS，GLSurfaceView 与 NativeActivity 沿 ROM surface 回调连接 ANGLE。RELAYOUT_DEFER_SURFACE_DESTROY 保留旧 Surface 有效性至 performDeferredDestroy，保证隐藏/恢复时先清理旧生产者。"
 
 [dexvm.surface_video_layers]
 status = "partial"
 test = "tests/dexvm/rom_window_system_tests.cpp; tests/runtime/rom_window_integration_tests.cpp#ROM GLSurfaceView; tests/runtime/rom_window_integration_tests.cpp#ROM VideoView"
-note = "EGL 和视频经 ROM Surface 按 WMS 层级交付。应用主窗口和媒体子窗口共享同一合成器。"
+note = "EGL 和视频经 ROM Surface 按 WMS 层级交付。应用主窗口和媒体子窗口共享同一合成器，同 token 的 base application 位于先创建的 Dialog 下方。"
 
 [dexvm.media_player_local_video]
 status = "partial"
@@ -1891,7 +1891,7 @@ note = "ROM BackupManager 经 ServiceManager 查询本地 IBackupManager。dataC
 [dexvm.service_resolution]
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/android_component_services_tests.cpp#DVM-112; tests/loader/apk_manifest_tests.cpp#DVM-112; tests/runtime/jni_bridge_framework_tests.cpp#DVM-112; tests/runtime/application_startup_tests.cpp#DVM-112; tests/dexvm/android_component_services_tests.cpp#ROM ActivityThread attaches; tests/dexvm/vm_thread_tests.cpp#DVM-202; tests/runtime/application_exit_tests.cpp#DVM-202"
-note = "DVM-112/142/202/349：resolveService/queryIntentServices 仅当前 APK 非空 action、无 component/data/type/category、0/GET_RESOLVED_FILTER；无候选返回 null/独立空列表，其他形态记账 UOE。bind 支持主线程 BIND_AUTO_CREATE、component-only 同进程服务、异步绑定/本地 Binder/解绑/GC。独立进程/isolated start=null、bind=false，每次记账（ADR-0170）；无跨进程 IPC/支付。"
+note = "当前 APK 主进程的显式 Service 支持 ROM ActivityThread 创建、start/stop、BIND_AUTO_CREATE、异步本地 Binder 绑定/解绑及 GC。查询只支持既有 action-only 形态；独立/isolated 进程拒绝并记账。前台通知验证 token/ComponentName 后降级展示，非零 id 的 null 通知抛 IAE。"
 
 [dexvm.receiver_query]
 status = "partial"
@@ -1981,7 +1981,7 @@ note = "BND-43/ADR-0081：默认关闭的 A32/T32 并发名额与进程总 tick 
 [dexvm.pending_intent]
 status = "partial"
 test = "tests/dexvm/android_pending_notifications_tests.cpp#DVM-211"
-note = "DVM-211：当前 APK 的 service/broadcast 令牌创建、规范化身份、NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT、取消、Intent 快照、VM 锁并发、弱 registry GC 与退出清理。原版 Intent 执行匹配/复制/更新；ONE_SHOT 与 fill-in flags 只参与身份。selector、自定义 Intent/Uri、content MIME provider 推断、未知 flags、投递与 Parcel 明确失败或不提供；不启动 Service。"
+note = "DVM-211：当前 APK 的单 Activity/service/broadcast 令牌创建、规范化身份、NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT、取消、Intent 快照、VM 锁并发、弱 registry GC 与退出清理。原版 Intent 执行匹配/复制/更新；ONE_SHOT 与 fill-in flags 只参与身份。selector、自定义 Intent/Uri、content MIME provider 推断、未知 flags、投递与 Parcel 明确失败或不提供；不启动 Service。"
 
 [dexvm.alarm_manager]
 status = "partial"
@@ -2075,8 +2075,8 @@ note = "ROM Application 保存生命周期监听器；ROM Activity 的 base 回�
 
 [dexvm.activity_result]
 status = "partial"
-test = "tests/dexvm/rom_activity_service_tests.cpp; tests/runtime/rom_window_integration_tests.cpp#ROM ActivityThread; tests/runtime/rom_window_integration_tests.cpp#P3 orientation; tests/runtime/rom_window_integration_tests.cpp#P3 handled orientation"
-note = "当前 APK Activity 经本地 AMS 启动。ROM ActivityThread 派发结果与生命周期；每个可见 Activity 按自身配置快照的 diff/configChanges 走保存状态的 relaunch 或 onConfigurationChanged，恢复前核对配置。AMS 处理实例退出、四种 launchMode 和任务查询。"
+test = "tests/dexvm/rom_activity_service_tests.cpp; tests/runtime/rom_window_integration_tests.cpp#ROM ActivityThread; tests/runtime/rom_window_integration_tests.cpp#P3 orientation; tests/runtime/rom_window_integration_tests.cpp#P3 handled orientation; tests/runtime/boundary/integration/android_frame_presentation_tests.cpp#composed frame recycling"
+note = "当前 APK Activity 经本地 AMS 启动。ROM ActivityThread 派发结果与生命周期；每个可见 Activity 按自身配置快照的 diff/configChanges 走保存状态的 relaunch 或 onConfigurationChanged，恢复前核对配置。帧回收允许横竖屏及在途旧帧。AMS 处理实例退出、四种 launchMode 和任务查询。"
 
 [dexvm.surface_buffer_geometry]
 status = "partial"

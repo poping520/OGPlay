@@ -11,6 +11,7 @@ namespace ogplay::runtime::android_intrinsics {
 namespace {
 constexpr int kNotFocusable = 0x8, kNotTouchable = 0x10, kNotTouchModal = 0x20;
 constexpr int kWatchOutside = 0x40000, kLayoutInScreen = 0x100, kLayoutNoLimits = 0x200;
+constexpr int kBaseApplication = 1;
 
 bool HasAlpha(int format) {
     return format == -3 || format == -2 || format == 1 || format == 6 || format == 7 || format == 8 || format == 10;
@@ -155,6 +156,18 @@ WindowId WindowSystem::Add(const WindowAttributes& a, bool visible, bool input_c
     window.visible = visible;
     window.input_channel = input_channel;
     const WindowId id{next_window_++};
+    window.order = id.value;
+    if (a.type == kBaseApplication && a.application_token != 0) {
+        // ActivityThread can add the decor after a dialog was shown in onResume.
+        // API19 WMS places the base beneath existing windows of the same token.
+        for (const auto& [_, existing] : windows_) {
+            if (!existing.attrs.parent.value && existing.attrs.application_token == a.application_token)
+                window.order = std::min(window.order, existing.order);
+        }
+        for (auto& [_, existing] : windows_) {
+            if (!existing.attrs.parent.value && existing.order >= window.order) ++existing.order;
+        }
+    }
     windows_.emplace(id, std::move(window));
     return id;
 }
@@ -255,10 +268,10 @@ std::vector<WindowId> WindowSystem::Ordered() const {
     const auto key = [&](WindowId id) {
         const auto& a = Require(id).attrs;
         const auto root = a.parent.value ? a.parent : id;
-        const auto& ra = Require(root).attrs;
+        const auto& root_window = Require(root);
         const auto base = Require(id).layer ? static_cast<std::int64_t>(*Require(id).layer)
-                                            : static_cast<std::int64_t>(root.value) * 10 + SubLayer(a.type);
-        return std::tuple{ra.type == 2005 ? 6 : 2, base, id.value};
+                                            : static_cast<std::int64_t>(root_window.order) * 10 + SubLayer(a.type);
+        return std::tuple{root_window.attrs.type == 2005 ? 6 : 2, base, id.value};
     };
     std::ranges::sort(ordered, [&](WindowId a, WindowId b) { return key(a) < key(b); });
     return ordered;

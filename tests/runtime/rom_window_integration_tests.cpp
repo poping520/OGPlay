@@ -287,10 +287,14 @@ TEST_CASE("P3 ROM GLSurfaceView publishes beneath software overlays and retains 
     CHECK(fixture.Pixel(12, 12) == std::array{255, 0, 0, 255});
     CHECK(fixture.Pixel(60, 60)[1] >= 150);
     REQUIRE(fixture.Read("GlActivity", "contexts") == 1);
+    CHECK(fixture.Read("GlActivity", "surfaceCreates") == 1);
     static_cast<void>(fixture.app->ActivityLifecycle().Suspend());
+    CHECK(fixture.Read("GlActivity", "surfaceDestroys") == 1);
+    CHECK(fixture.Read("GlActivity", "validOnDestroy") == 1);
     static_cast<void>(fixture.app->ActivityLifecycle().Resume());
     fixture.Step(10);
     CHECK(fixture.Read("GlActivity", "contexts") == 1);
+    CHECK(fixture.Read("GlActivity", "surfaceCreates") == 2);
 }
 
 TEST_CASE("P3 ROM VideoView delivers a decoded frame to its ROM Surface") {

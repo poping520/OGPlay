@@ -1720,6 +1720,21 @@ void EnsureLocalBatteryBroadcast(dx::Interpreter& vm, const Context& context) {
 
 void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Context& context) {
     builder.VirtualMethod(
+        "setServiceForeground", "(Landroid/content/ComponentName;Landroid/os/IBinder;ILandroid/app/Notification;Z)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto found = std::ranges::find_if(
+                context->rom_services, [&](const auto& entry) { return entry.second.token == call.arguments[1].ref; });
+            if (found == context->rom_services.end()) return dx::VmValue::Void();
+            const auto component = found->second.component;
+            if (CallAndroidMethod(call.vm, component, "equals", "(Ljava/lang/Object;)Z", {call.arguments[0]}).AsInt() ==
+                0)
+                return dx::VmValue::Void();
+            if (call.arguments[2].AsInt() != 0 && !call.arguments[3].ref.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "null notification"};
+            RecordUiDegraded(call.vm, "Service foreground notification display");
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod(
         "registerReceiver",
         "(Landroid/app/IApplicationThread;Ljava/lang/String;Landroid/content/IIntentReceiver;"
         "Landroid/content/IntentFilter;Ljava/lang/String;I)Landroid/content/Intent;",

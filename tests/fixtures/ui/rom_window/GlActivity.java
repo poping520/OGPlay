@@ -6,6 +6,7 @@ import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.view.View;
+import android.view.SurfaceHolder;
 import android.widget.FrameLayout;
 
 import javax.microedition.khronos.egl.EGLConfig;
@@ -14,6 +15,7 @@ import javax.microedition.khronos.opengles.GL10;
 public class GlActivity extends Activity {
     public static volatile int contexts, draws;
     public static volatile int holdDraw, slowDraws;
+    public static volatile int surfaceCreates, surfaceDestroys, validOnDestroy;
     private GLSurfaceView gl;
 
     @Override public void onCreate(Bundle saved) {
@@ -21,6 +23,14 @@ public class GlActivity extends Activity {
         FrameLayout content = new FrameLayout(this);
         gl = new GLSurfaceView(this);
         gl.setEGLContextClientVersion(2);
+        gl.getHolder().addCallback(new SurfaceHolder.Callback() {
+            public void surfaceCreated(SurfaceHolder holder) { ++surfaceCreates; }
+            public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {}
+            public void surfaceDestroyed(SurfaceHolder holder) {
+                ++surfaceDestroys;
+                if (holder.getSurface().isValid()) ++validOnDestroy;
+            }
+        });
         gl.setPreserveEGLContextOnPause(true);
         gl.setRenderer(new GLSurfaceView.Renderer() {
             public void onSurfaceCreated(GL10 gl, EGLConfig config) { ++contexts; }

@@ -8,16 +8,17 @@
 
 P3 的生产路径使用 ROM ActivityThread、主 Looper、ViewRootImpl 和进程内 AMS/WMS。
 运行期方向变化走 ROM 配置派发与 relaunch，Java EGL 窗口生产者和会话 Clock 双向同步。
-P3 实现已完成。Wild Blood 的退出焦点顺序已修复，剩余退出问题及历史验收证据缺口见 [P3-window](../tasks/dexvm/P3-window.md)。下一阶段是 P4 My Boy!。
+P3 实现已完成。Wild Blood 的退出焦点顺序已修复，剩余退出问题及历史验收证据缺口见 [P3-window](../tasks/dexvm/P3-window.md)。P4 My Boy! 完成：浏览器、GLES/输入/短音、设置/文本/存档/旋转路径均已实测；ARM test 225 与同 APK 真机一致，按应用缺陷处理，见 [P4-myboy](../tasks/dexvm/P4-myboy.md)。下一阶段是 P5 文档。
 启动类路径改为 ogplay.jar + 原样 API19 ROM jar（core/conscrypt/ext/framework/framework2/android.policy），成员来源审计与配对制品已删除；未绑定 native 调用时抛 UnsatisfiedLinkError。
 P2 完成。API19 资源 native 使用裁剪版 framework-res.apk、游戏 APK 和唯一资源表核心，Java 与 NDK 共用 AssetManager。见 [RES-1](../tasks/resources/RES-1.md)。
 
 ## 游戏进度
 
-“到达点”指最近一次原 APK 实测；以下游戏均未通过正式 title gate、全关卡或跨平台验收。
+“到达点”指最近一次原 APK 实测；My Boy! basic 场景已连续三轮通过，剩余缺口见下表。其他游戏未通过正式 title gate，均不代表全关卡或跨平台验收。
 
 | 游戏 | 平台 | 到达点 | 阻塞 / 待办 | 任务 |
 | --- | --- | --- | --- | --- |
+| My Boy! 1.8.0 | macOS | 浏览器、240p 菜单/短音、hello、设置/文本/存档/横竖屏；basic 场景三轮通过 | ARM 自动核心 test 225、SRAM test 004 与同 APK API25 真机一致；并发下偶发半帧；长时音频未验 | [P4-myboy](../tasks/dexvm/P4-myboy.md) |
 | Island Castaway 1.3 | macOS | CG 带字幕，PLAY 进入第一关；菜单/第一关及按钮音效已验证非零 PCM 提交 SDL | OpenSL 必需 AndroidConfiguration 缺失致无声已修；SurfaceView 默认格式误用 alpha 致黑块闪烁已修，连续 48 帧检查通过；原生磁盘空间弹窗、退出 `runFinalizersOnExit` 仍在 | [BND-56](../tasks/boundary/BND-56.md)、[SBX-16](../tasks/sandbox/SBX-16.md) |
 | TML 1.0 | macOS | 标题；三点击 survey 零命中；基础场景退出 0 | 正式交互/稳定性待验 | [LUI-18](../tasks/layoutui/LUI-18.md)、[DVM-257](../tasks/dexvm/DVM-257.md) |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | [DVM-247](../tasks/dexvm/DVM-247.md)..249、[BND-54](../tasks/boundary/BND-54.md) |

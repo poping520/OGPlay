@@ -104,16 +104,33 @@ TEST_CASE("P3 local WMS add relayout and remove use one Surface and InputChannel
     const auto frame = f.New("Landroid/graphics/Rect;"), config = f.New("Landroid/content/res/Configuration;"),
                output = f.New(surface);
     const auto out_roots = f.vm.ProtectReferences(std::array{frame, config, output});
-    const auto relayout =
-        f.On(session, "relayout",
-             "(Landroid/view/IWindow;ILandroid/view/WindowManager$LayoutParams;IIIILandroid/graphics/Rect;Landroid/graphics/Rect;Landroid/graphics/Rect;Landroid/graphics/Rect;Landroid/content/res/Configuration;Landroid/view/Surface;)I",
-             {V::Ref(window), V::Int(0), V::Ref(attrs), V::Int(100), V::Int(80), V::Int(0), V::Int(0), V::Ref(frame),
-              V::Ref(inset), V::Ref(inset), V::Ref(inset), V::Ref(config), V::Ref(output)})
+    const auto relayout = [&](int visibility, int flags) {
+        return f
+            .On(session, "relayout",
+                "(Landroid/view/IWindow;ILandroid/view/WindowManager$LayoutParams;IIIILandroid/graphics/Rect;Landroid/graphics/Rect;Landroid/graphics/Rect;Landroid/graphics/Rect;Landroid/content/res/Configuration;Landroid/view/Surface;)I",
+                {V::Ref(window), V::Int(0), V::Ref(attrs), V::Int(100), V::Int(80), V::Int(visibility), V::Int(flags),
+                 V::Ref(frame), V::Ref(inset), V::Ref(inset), V::Ref(inset), V::Ref(config), V::Ref(output)})
             .AsInt();
-    CHECK((relayout & 2) == 2);
+    };
+    CHECK((relayout(0, 0) & 2) == 2);
     CHECK(f.context->rom_windows->system.Focus().value != 0);
     const auto token = static_cast<int>(WindowField(f.vm, output, "mNativeObject", "I").bits);
     CHECK(f.Static(surface, "nativeIsValid", "(I)Z", {V::Int(token)}).AsInt() == 1);
+    const auto retained = f.New(surface);
+    const auto retained_root = f.vm.ProtectReferences(std::array{retained});
+    f.On(retained, "transferFrom", "(Landroid/view/Surface;)V", {V::Ref(output)});
+    CHECK((relayout(8, 2) & 4) == 4);
+    CHECK(f.On(retained, "isValid", "()Z").AsInt() == 1);
+    CHECK(f.On(output, "isValid", "()Z").AsInt() == 0);
+    f.On(session, "performDeferredDestroy", "(Landroid/view/IWindow;)V", {V::Ref(window)});
+    CHECK(f.On(retained, "isValid", "()Z").AsInt() == 0);
+    CHECK((relayout(0, 0) & 4) == 4);
+    const auto replacement = static_cast<int>(WindowField(f.vm, output, "mNativeObject", "I").bits);
+    CHECK(replacement != token);
+    f.On(retained, "transferFrom", "(Landroid/view/Surface;)V", {V::Ref(output)});
+    CHECK((relayout(8, 0) & 4) == 4);
+    CHECK(f.On(retained, "isValid", "()Z").AsInt() == 0);
+    CHECK((relayout(0, 0) & 4) == 4);
     f.On(session, "finishDrawing", "(Landroid/view/IWindow;)V", {V::Ref(window)});
     f.On(session, "remove", "(Landroid/view/IWindow;)V", {V::Ref(window)});
     CHECK(f.Static(surface, "nativeIsValid", "(I)Z", {V::Int(token)}).AsInt() == 0);

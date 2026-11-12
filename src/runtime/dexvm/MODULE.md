@@ -61,7 +61,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   guest ref，wrapper 可回收。DVM-143：`getMethod/getDeclaredMethod` 按名称和参数沿本类、父类、
   接口定向查找，只解析同名候选，命中后才解析返回/异常类型；`getMethods` 等枚举接口才建立
   完整 metadata。JNI ID 转 Method 通过完整 descriptor（含返回类型）定向查找，不解析
-  无关方法的类型。访问检查按 loader/package/member/receiver；invoke 统一处理可赋值、unbox/
+  无关方法的类型。反射方法和构造器按 Dalvik 的成员标志检查 caller/loader/package，方法检查虚派目标；
+  Class.newInstance 另查声明类，protected 字段另查 receiver。invoke 统一处理可赋值、unbox/
   widen、虚派、boxing 与原异常身份包装。
 
 - 运行时注解的 class/field/method/parameter 与默认值均来自本成员所属 DEX unit，统一由

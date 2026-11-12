@@ -356,6 +356,9 @@ Decl Declare_local_WindowService(const Context& context) {
 }
 
 namespace {
+constexpr std::int32_t kIntentSenderBroadcast = 1;
+constexpr std::int32_t kIntentSenderActivity = 2;
+constexpr std::int32_t kIntentSenderService = 4;
 constexpr std::int32_t kOneShot = 1 << 30;
 constexpr std::int32_t kNoCreate = 1 << 29;
 constexpr std::int32_t kCancelCurrent = 1 << 28;
@@ -392,9 +395,11 @@ constexpr std::int32_t kIntentFillFlags = 0xff;  // API19 FILL_IN_*.
     const auto request_code = args.Int(4);
     const auto flags = args.Int(7);
     const auto intents = args.NonNullRef(5, "intents");
-    if ((kind != 1 && kind != 4) || args.Int(9) != 0 || args.Ref(2).IsValid() || args.Ref(3).IsValid() ||
-        args.Ref(8).IsValid() || call.vm.Model().ArrayLength(intents) != 1)
-        UnsupportedPending(call, "only current-user broadcast and service PendingIntent tokens are supported");
+    if ((kind != kIntentSenderBroadcast && kind != kIntentSenderActivity && kind != kIntentSenderService) ||
+        args.Int(9) != 0 || args.Ref(2).IsValid() || args.Ref(3).IsValid() || args.Ref(8).IsValid() ||
+        call.vm.Model().ArrayLength(intents) != 1)
+        UnsupportedPending(
+            call, "only current-user PendingIntent tokens for one activity, broadcast or service are supported");
     const auto intent = call.vm.Model().GetObjectElement(intents, JniSize{0});
     if (!intent.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "intent == null"};
     if (call.vm.Model().ObjectClass(intent) != call.vm.Linker().ResolveDescriptor("Landroid/content/Intent;"))

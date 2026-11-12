@@ -368,6 +368,7 @@ Decl Declare_local_WindowSession(const Context& context) {
                             if (!s.system.Exists(it->second.window)) {
                                 CloseWindowInputChannel(context, it->second.channel);
                                 ReleaseRomSurfaceReference(context, it->second.surface);
+                                ReleaseRomSurfaceReference(context, it->second.deferred_surface);
                                 it = s.clients.erase(it);
                             } else
                                 ++it;
@@ -392,9 +393,20 @@ Decl Declare_local_WindowSession(const Context& context) {
             const memory::GuestAddress identity{client.window.value};
             const bool retired = !visible && client.surface != 0;
             if (retired) {
-                if (context->session) context->session->Process().RetireSurfaceWindow(identity);
-                s.surfaces.at(client.surface).valid = false;
-                ReleaseRomSurfaceReference(context, std::exchange(client.surface, 0));
+                const auto old = std::exchange(client.surface, 0);
+                if ((c.arguments[6].AsInt() & 2) != 0) {
+                    // SurfaceView checks the old Surface before surfaceDestroyed.
+                    // Keep it valid until its performDeferredDestroy call.
+                    if (client.deferred_surface) {
+                        s.surfaces.at(client.deferred_surface).valid = false;
+                        ReleaseRomSurfaceReference(context, client.deferred_surface);
+                    }
+                    client.deferred_surface = old;
+                } else {
+                    if (context->session) context->session->Process().RetireSurfaceWindow(identity);
+                    s.surfaces.at(old).valid = false;
+                    ReleaseRomSurfaceReference(context, old);
+                }
             }
             const auto frame =
                 s.system.Relayout(client.window, attributes, c.arguments[3].AsInt(), c.arguments[4].AsInt(), visible);
@@ -405,6 +417,11 @@ Decl Declare_local_WindowSession(const Context& context) {
                 WriteWindowRect(c.vm, c.arguments[i].ref, {});
             const bool first = visible && client.surface == 0;
             if (first) {
+                if (client.deferred_surface) {
+                    s.surfaces.at(client.deferred_surface).valid = false;
+                    ReleaseRomSurfaceReference(context, std::exchange(client.deferred_surface, 0));
+                    if (context->session) context->session->Process().RetireSurfaceWindow(identity);
+                }
                 client.surface = s.next_handle++;
                 s.surfaces.emplace(client.surface, RomWindowState::Surface{client.window});
             }
@@ -483,7 +500,14 @@ Decl Declare_local_WindowSession(const Context& context) {
                     [](dx::IntrinsicContext&) { return V::Void(); });
     RejectUnsupportedServiceMethod(b, "android.view.IWindowSession", "outOfMemory", "(Landroid/view/IWindow;)Z");
     b.VirtualMethod("performDeferredDestroy", "(Landroid/view/IWindow;)V", [context](dx::IntrinsicContext& c) {
-        Client(RomWindows(context), c.arguments[0].ref);
+        auto& state = RomWindows(context);
+        auto& client = Client(state, c.arguments[0].ref);
+        if (client.deferred_surface) {
+            state.surfaces.at(client.deferred_surface).valid = false;
+            if (!client.surface && context->session)
+                context->session->Process().RetireSurfaceWindow(memory::GuestAddress{client.window.value});
+            ReleaseRomSurfaceReference(context, std::exchange(client.deferred_surface, 0));
+        }
         return V::Void();
     });
     RejectUnsupportedServiceMethod(b, "android.view.IWindowSession", "performDrag",

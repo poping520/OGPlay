@@ -1,159 +1,227 @@
 # DexVM 与 ROM Java 执行
 
-DexVM 解释应用 DEX 和 API19 ROM Java，提供统一对象模型、异常与线程语义。
-它位于 Loader/JNI 之上，平台服务由 integration 注入。
-目标是让进程依赖的字节码真实运行，不提供完整 Dalvik/ART 或 Java JIT。
+DexVM 让应用 DEX 和 API19 ROM Java 在同一个对象模型中解释执行。
+它提供类链接、调用、异常、线程和 GC，平台服务通过 integration 注入。
+这里 ROM Java 指随附 jar 中的原版实现，BootDex 是启动类路径及其构建加载机制的惯称。
+目标是执行游戏进程依赖的字节码，范围不包括完整 Dalvik/ART、DEX JIT 或 AOT。
+
+保留 Java 算法的意义在于副作用也能自然发生。
+例如一次 ROM 布局构造会读取资源、创建子对象、注册监听器并排队工作，
+这些都不适合用宿主按游戏手工重放。
+[有界解释器决定](../adr/dexvm.md#adr-0017)因此选择复用字节码，
+代价是 VM 和 native 边界需要提供被调用的真实语义。
 
 ## 装配与启动类路径
 
 ```text
-core / Android intrinsic catalog
-  → 启动类路径 DEX（归档顺序）
-  → 应用 DEX
-  → 惰性链接、成员物化
-  → 解释 / intrinsic / native bridge
+core / Android catalog → 启动类路径 DEX → 应用 DEX
+                                ↓
+                      惰性链接与成员物化
+                                ↓
+                解释执行 / intrinsic / native bridge
+                                ↓
+                    同一对象图、异常与 GC
 ```
 
-启动类路径由自有 ogplay.jar 和原样 ROM jar 构成。
-ReadBootClasspath 读取固定归档，BootClasspathDexFiles 提取其中 DEX。
-每个 DEX unit 保留自己的常量池与解析缓存。
-解析以方法所属 unit 为准，不能用另一个 DEX 的同值索引。
+catalog 是平台类型和绑定的目录，intrinsic 是宿主实现的方法处理器。
+装配先登记目录，再按 manifest 归档顺序读取 ogplay.jar 和原样 ROM jar，最后登记应用 DEX。
+ReadBootClasspath 读取受检归档，BootClasspathDexFiles 提取 DEX，
+每个 unit 保留自己的常量池和解析缓存。
 
-类身份遵守 bootstrap parent-first。
-同一描述符先登记者胜出，应用副本不能混入父类的字段或注解。
-ROM 类身份先登记，层级、字段布局与方法表在触达时物化。
-因此未使用的可选类型不会因为依赖不完整阻止整个 VM 装配。
-真正触达的链接错误仍按 Java 语义失败。
+常量池索引只在所属 DEX 内有意义。因此解析跟随方法所属 unit，
+不能把另一个 DEX 中数值相同的索引当作同一成员。
+DEX 来源使用拥有型存储保活，避免解析缓存引用调用方已经销毁的临时字节。
+这种组织多了来源与缓存管理，却让多 DEX 与 ROM/应用混合调用有明确归属。
 
-## 类链接与初始化
+类加载采用 bootstrap parent-first，同一描述符先登记的定义胜出。
+同一类描述符可能同时出现在 boot 与 application 中，选择之后只保留一个权威定义，
+应用副本不会向父定义混入字段或注解。若把应用同名字段合并进 ROM 类，即使方法看似能调用，
+实例布局、反射枚举和 JNI 字段 ID 也可能相互矛盾。
+因此类注册、成员解析与 Class 镜像都围绕确定的 loader 和定义来源，
+调用缓存也保留 caller 和所属 unit，不把一个名字或索引当成全 VM 通用成员键。
 
-DexClassLinker 构建父类、接口、实例布局、vtable 和 iftable。
-方法匹配使用名称与完整 descriptor，包含返回类型。
-private、final、static/virtual 与访问权限都在各自阶段校验。
-数组类型按需合成，并保持引用协变和标准接口关系。
+ROM 身份先登记，层级与成员在触达时物化，
+使未使用的可选类不因依赖不完整阻断 VM 装配。
+惰性处理只延后有成本的链接，实际触达时仍检查缺类、缺成员及访问规则。
 
-类初始化不是普通方法调用的同义词。
-同 context 可以重入初始化，其他线程释放执行锁等待结果。
-首次失败保存错误；后续使用按失败类状态传播。
-常量池缓存不能绕过 caller 访问检查或已失败类状态。
-GC 扫描静态引用时只看已分配槽，不为扫描主动物化类。
+## 一次对象方法调用怎样完成
 
-Method 结构预检校验 opcode、寄存器、wide pair、分支与 payload。
-它是有界结构校验，不等同于完整 Dalvik 数据流 verifier。
-缺类、缺成员和种类错误使用明确 Java linkage error。
-内部句柄损坏和受限执行器故障继续是 VM 控制错误。
-不能根据一段错误消息猜测要抛哪种 Java 异常。
+以 DEX 调用一个对象方法为例，解析器先按 caller 所属 unit 找到类与完整 descriptor。
+DexClassLinker 建立父类、接口、实例字段布局、vtable 与 iftable；
+vtable 是虚方法分派表，iftable 保存接口调用关系。
+方法身份包含名称、参数和返回类型，访问及 static/virtual 种类在对应阶段核对。
 
-## 解释内核
+若调用要求类初始化，VM 先进入独立初始化状态机。
+同 context 可重入，其他线程释放执行锁等待；首次失败保存错误，后续使用按失败类状态传播。
+因此缓存命中也不能绕过 caller 权限或失败状态。
+类链接与初始化分开，使“知道这个类有哪些方法”不会无条件执行它的 clinit。
 
-默认 switch 内核直接解释 DEX 指令。
-threaded 内核从通过预检的字节码建立 FastCode 派生缓存。
-GCC/Clang 使用 computed goto，MSVC 使用稠密 switch。
-缓存不改原 DEX 字节，不生成机器码，也不保存 guest 对象引用。
+调用目标最终进入解释、intrinsic 或 native bridge。
+缺失实现记录能力命中并失败；缺类、缺成员和种类错误则按 Java linkage error 表达。
+内部坏句柄或执行控制错误保持 VM 故障身份，
+以便区分应用能 catch 的异常和需要中止兼容层执行的故障。
 
-两种内核共享调用、异常、类初始化、对象与安全点逻辑。
-FastCode 保存回到 DEX PC 的映射，诊断和 catch 范围仍以原 PC 表示。
-不适合快路径的操作通过共享 bridge 执行。
-force_all_bridge 可用于比较语义，不是另一套对象模型。
+方法结构预检检查 opcode、寄存器、wide pair、分支和 payload。
+wide pair 是占用两个 DEX 寄存器的 64 位值，payload 在这里指 switch/数组等指令附属数据。
+这是一项有界结构检查，不是完整 Dalvik 数据流 verifier。
+当前装配和加载支持边界见 [DexVM 契约](../../src/runtime/dexvm/MODULE.md)。
 
-每个执行 frame 保存方法、寄存器及类别 tag。
-wide 值与引用不能仅按数值位型互换。
-invoke 只有解释、intrinsic 和 native bridge 三条实现路径。
-缺失实现记录能力命中并明确失败。
-返回结果与未捕获异常由 Interpreter::Call 显式交给调用者。
+## 两种解释内核为什么共用语义
 
-## 对象与稳定 payload
+默认 switch 内核逐条解释 DEX。threaded 内核从已预检字节码建立 FastCode，
+即用于快速分派的派生指令缓存；GCC/Clang 使用 computed goto，MSVC 使用稠密 switch。
+原 DEX 不改写，FastCode 不生成机器码，也不保存 guest 对象引用。
+
+两种内核共用调用、异常、类初始化、对象和安全点逻辑，FastCode 保留回到 DEX PC 的映射。
+这样加速的是分派，不需要维护第二套对象语义，catch 范围和诊断位置仍能指向原字节码。
+派生缓存与 bridge 路径需要保留，不适合快径的操作继续进入共享实现。
+
+执行 frame 保存方法、寄存器与类别 tag，避免把引用和同位型整数互换；
+Interpreter::Call 将返回值或未捕获异常显式交给调用者，
+而不是依赖外层猜测寄存器含义。
+
+## 对象图与 native peer
 
 JavaObjectModel 使用非移动逻辑句柄，零表示 null。
-实例字段和静态字段是普通 Java 状态的唯一权威。
-对象数组由共享 store 保持身份，Java 与 JNI 不维护第二份元素。
-clone 创建新身份并浅拷贝，host-backed 对象需显式清理策略。
+实例和静态字段保存普通 Java 状态的唯一权威，对象数组由共享 store 保存元素身份。
+JNI 字段访问、Java 字节码和反射因此能够看到同一个对象，而不需要同步 C++ 影子字段。
+数组协变由元素实际类型判断，对象数组不会仅按声明 component type 生成错误对象身份。
+clone 创建新身份并浅拷贝引用，host-backed 对象另有显式清理策略。
 
-String 与 primitive array 使用 JavaPayloadProvider 分配稳定 backing。
-生产 provider 在 guest 地址空间中拥有受保护 block。
-长期 typed view 与数组 record 共用同一字节，不在每次 aget/aput 复制。
-Java、JNI 和 NIO 因而可以观察到同一 payload 的修改。
+native peer 指 Java 对象关联的下层资源，例如文件、Canvas 或媒体播放器。
+owner 是负责该资源寿命的对象；state table 是登记这类关联状态并参与 trace/sweep 的表。
+[所有权决定](../adr/dexvm.md#adr-0029)选择“owner 存活才追踪 child”，
+避免仅因为 C++ 表以对象为 key，就反过来永久保活 owner。
+为此每个持有 guest 引用的附属状态都要有 trace，owner 表都要有 sweep；
+trace 枚举可达引用，sweep 在回收时释放附属状态。
 
-JNI pin 是 GC 强根，borrow 则保活 backing 与 owner。
-零长对象也可以有有效地址，不能用 null 假装空数组的合法借用。
-UTF-16 String backing 不可变；公开构造与 substring 使用独立快照。
-Modified UTF-8 编码保留独立副本和配对释放规则。
-共享 backing 不为无同步的 guest 数据竞争增加保证。
+回收与关闭不是同一个动作。GC 判断 Java 可达性，显式 close 表达应用释放资源，
+进程 teardown 则终止剩余使用者并收尾所有资源。
+这三条路径（以及 finalizer）可能先后到达同一个 native peer，
+所以它们共享关闭事实而各自保留触发条件，同一资源也不会被重复释放。
 
-## 堆与 GC
+## 稳定 payload 为什么不复制写回
 
-GC 是分配驱动的精确 STW mark-sweep。
-roots 来自执行 frame、静态字段、JNI、线程、类镜像、intern 和 integration。
-持有引用的 intrinsic state table 参与 trace/sweep。
-嵌套调用使用 RootScope，不能把临时宿主变量当作自动 GC root。
+String 与 primitive array 的 payload 指对象实际内容字节。
+JavaPayloadProvider 在 guest 地址空间分配稳定 backing，
+数组记录、长期 typed view、Java/JNI 和 NIO 共同使用这份存储。
+对象头、逻辑句柄和 GC 仍由 VM 管理，并不引入完整 Dalvik heap ABI。
 
-VM 的 Reserve 是 Java 堆唯一收费入口。
-initial target、growth limit 与 maximum 分开，先回收再决定增长。
-JNI 创建立即收费，首次导入只补尚未收费部分。
-payload provider 管后备提交，不建立第二份 Java 逻辑堆配额。
+如果每次 JNI Get 都复制，native 长期借用与 Java/NIO 访问就可能观察到不同内容。
+[稳定 backing 决定](../adr/dexvm.md#adr-0152)因此选择直接共享字节，
+代价是需要保护映射寿命并正确处理 pin，而不是依靠 Release 时的覆盖写回。
+共享字节没有额外承诺无同步数据竞争的顺序。
 
-Weak/Soft/Phantom 与 finalizer 按既定顺序处理。
-普通回收保留软引用，压力回收可清理。
-FinalizerReference 的 Java 字段维护登记状态，原版 Daemons 在真实线程执行终结。
-runFinalization 等待进入时的批次，不无限等待后来新增任务。
-异常构造与 native 资源回收具有明确的应急和失败边界。
+pin 是将对象作为 GC 强根的借用登记，borrow 则保活 backing 和其 owner。
+设想应用建立一个 primitive array，传给 native，随后再用 Java 读取：
+数组对象身份保存在 VM，native 得到的是 JNI 引用；
+GetByteArrayElements 才借用实际 payload 并登记 pin，
+Java 数组指令与 native 指针最终访问同一份字节。
 
-native peer 回收通过登记的 token/cleanup 入口执行。
-显式 close、Java finalizer、GC 与 teardown 共用关闭事实。
-清理期间保存原结果与异常身份，失败资源可回队列。
-不能重复释放，也不能把坏 token 当作已经关闭。
+```text
+Java array handle ─→ 数组记录 ─→ stable payload ←─ JNI Elements 地址
+          ↑                          ↑
+       GC 强根 / pin             Java / NIO 访问
+```
 
-## Java 线程、monitor 与执行锁
+图中的数组引用、借用地址和保活关系各不相同。
+GetByteArrayElements/GetStringChars 返回相同内容地址，重复借用分别计数；
+Release 解除一次 pin，既不把字节复制回第二个数组，也不恢复借用前内容。
+Modified UTF-8 是另一种编码表示，需要编码副本与配对释放，
+可见“共享对象”并不等于所有表示都能零转换。
+零长对象也可以有合法借用地址，空长度与 null 身份分别表达。
 
-一个 guest Thread 对应一个宿主线程和 execution context。
-Java 字节码在可重入 VmExecutionLock 内串行执行。
-阻塞时按完整递归深度释放，恢复时重建原深度。
-这允许其他线程回调 Java，而不是用伪线程轮询模拟并发。
+如果 native 忘记 Release，GC 仍将对象视为强可达，真实内存会一直保留；
+不能为了让内存数字下降就回收仍被 native 使用的 backing。
+诊断把逻辑堆、后备提交、地址空间和 pin 分开计量，以便区分压力来源。
 
-monitor owner 使用 context token，wait 释放并恢复全部重入层数。
-notify、interrupt、shutdown 与 timeout 是不同唤醒原因。
-非 owner 操作抛 IllegalMonitorStateException。
-期限只由注入 Clock 决定；关闭 budget 不能被重复等待续期。
+String backing 不可变，可变输入和 substring 使用独立快照。
+allocateDirect 与 NIO view 共用真实数组 backing；外部 direct 地址则是非拥有借用。
+这些路径的精确 Release、映射保护与收费规则留在
+[JNI 契约](../../src/runtime/jni/MODULE.md)和[装配契约](../../src/runtime/integration/MODULE.md)。
 
-JNI 附加线程登记已有宿主，不为 attach 再创建一条线程。
-活动 context 验证宿主归属，释放 VM 锁不等于解除归属。
-类初始化等待、native 阻塞与 monitor 等待都必须遵守锁顺序。
-停止先发布 stop/wake，再 join，最后展开和销毁 context。
+## GC 怎样找到仍在使用的对象
 
-## 异常与反射
+GC 使用分配驱动的精确 STW mark-sweep。
+STW 表示收集时暂停相关 Java 执行，mark 沿强根标记对象，sweep 回收不可达对象及附属资源。
+根包括执行 frame、静态字段、JNI、线程、类镜像、intern 和 integration 明确登记的活动对象。
+嵌套调用用 RootScope 保护临时引用，普通宿主局部变量不会自动成为根。
 
-throwable 保留对象身份、类、消息和 DEX 栈位置。
-Java catch 按目标类型匹配，跨帧展开与 JNI pending 交接共用身份。
-Method.invoke 的目标异常按 Java 规则包装，不把宿主控制故障包装为 Java 异常。
-Throwable 诊断读取 cause 时不执行 guest 代码。
+静态引用扫描只读取已分配槽，不为 GC 主动物化类。
+这避免回收意外触发链接和初始化副作用，也使惰性装配与 GC 边界一致。
+精确扫描要求 frame 中引用 tag 和各 state table 的 trace 完整，
+新增附属对象状态时需要同时明确其可达关系。
 
-ReflectionRuntime 是成员元数据和 wrapper 的唯一工厂。
-定向查询只解析同名候选，枚举时才物化完整成员集合。
-访问检查考虑 caller、loader、package 和 receiver。
-参数赋值、装箱、拆箱与数值 widening 通过共享调用路径完成。
+VM Reserve 是 Java 堆的唯一收费入口。initial target、growth limit 与 maximum 分别表示
+初始目标、通常增长上限与最大上限；先尝试回收，再按策略增长。
+JNI 创建与导入复用这份账本，payload provider 只管理后备提交，
+避免逻辑对象和实际存储各自重复收取一份堆额度。
 
-运行时注解从成员所属 DEX unit 解码。
-泛型 Signature 交给原版 Java parser；缺失签名回退原始类型。
-Proxy 通过原版 Java 校验与有序接口缓存生成实现类。
-AnnotationRuntime 仍有受限合成类路径，统一迁移缺口见已知问题。
+[堆档位决定](../adr/dexvm.md#adr-0172)让默认限制与虚拟 API19 设备事实一致，
+Manifest largeHeap 按 ROM 绑定应用顺序放开活动上限。
+这避免按某个游戏临时扩堆；应用真实 OOM 则需要保留分配证据，不能回退更大旧档位。
 
-## 类加载与存量 intrinsic
+Weak、Soft、Phantom 与 finalizer 按既定顺序处理。
+FinalizerReference 的登记和队列留在 Java，对应 Daemons 在真实线程执行；
+runFinalization 等待进入时的批次，不无限追逐后来新增任务。
+finalizer 需要真实线程执行并可能调用其他对象，不能在 sweep 中同步重放 Java 回调。
+把 finalizer 图留在 ROM、把 native sweep 留在资源层，多了一个交接协议，
+但收集器不必反向依赖任意 guest 执行；native sweep 也独立承担资源安全回收，
+不寄望 Java finalizer。
+
+## Java 线程与执行锁
+
+一个 guest Thread 对应一个宿主线程和 execution context，即该线程的 VM 执行身份与栈状态。
+Java 字节码由可重入 VmExecutionLock 串行解释，阻塞时释放全部递归深度，恢复后重建。
+这允许其他线程在当前线程等待 I/O 或 native 时进入 Java 回调，
+同时控制对象图并发修改的复杂度，理由见[真实线程决定](../adr/runtime.md#adr-0004)。
+
+monitor 用 context token 标识持有者，wait 释放并恢复全部重入层数。
+notify、interrupt、shutdown 与 timeout 保留不同唤醒原因，
+非持有者操作按 Java 规则抛 IllegalMonitorStateException。
+期限来自统一 Clock，关闭预算不会因重复等待被续期。
+
+JNI attach 登记已有宿主线程，不再新建线程。
+释放执行锁不改变 context 的宿主归属，类初始化等待、monitor 和 native 阻塞都遵守同一锁协议。
+停止先发布 stop/wake，再 join，最后销毁 context，
+以免仍在等待的线程观察到已释放的 VM 状态。
+
+## 异常、反射与加载边界
+
+throwable 保存对象身份、类、消息和 DEX 栈位置。
+catch 按类型匹配，跨帧展开与 JNI pending 交接使用同一异常对象。
+Method.invoke 对目标 Java 异常进行标准包装，宿主控制故障继续沿控制路径传播。
+诊断读取 cause 不执行 guest，避免观察异常本身又引发新副作用。
+
+ReflectionRuntime 是成员 metadata 与 wrapper 的唯一工厂，
+反射 Method 只是成员身份的一种 Java wrapper。
+反射、JNI 和字节码共享元数据工厂与调用逻辑，访问检查、参数适配与目标异常的差异
+限制在各入口协议中，而不是为每个入口再实现一次方法体。
+定向查询只解析候选，枚举时再物化完整集合；调用复用访问检查、装箱、拆箱与数值 widening。
+注解从成员所属 DEX 解码，泛型 Signature 由原版 Java parser 处理。
+Proxy 使用 ROM 校验和有序接口缓存，AnnotationRuntime 仍有受限合成路径，
+其统一类身份缺口见[已知问题](../state/KNOWN-ISSUES.md#执行与平台)。
 
 应用 PathClassLoader 标识封存 APK，父链为 boot→null。
-DexFile native 查询已登记单元，不提供动态定义或任意宿主 classpath。
-classpath stream 只读取显式封存归档。
-loadLibrary 经平台 loader 解析，不自行打开宿主库。
+DexFile native 查询已登记单元，classpath stream 只读取显式归档，
+loadLibrary 交给平台 loader。这保留稳定的 application/boot 边界，
+动态 classpath、自定义加载权限等完整 VM 能力则不在当前范围内。
 
-普通 ROM Java 应原样执行，宿主只实现 native 与进程内服务。
-当前 catalog 仍有整类定义和带 handler 的普通方法覆盖。
-链接器的先登记规则及 merge 路径决定这些定义如何生效。
-它们是待移除存量，不是新增替换的许可。
+## 存量 intrinsic 与支持边界
 
-核查时用 CLI 的 dexvm dump-surface 导出实际绑定，
-对照 ROM class_def、own method flags 与 catalog 声明。
-CLI 参数与输出说明见 [工具入口](../../tools/README.md)。
-需要区分 native、abstract 声明与真正覆盖原版方法体。
-表面 implemented 只表示有实现路径，不能证明语义或游戏兼容。
+ROM 普通方法应执行原样 Java，宿主实现 native 和进程内服务。
+当前 catalog 仍存在整类定义和普通方法 handler 覆盖，
+链接器的先登记及 merge 路径决定它们如何生效。
+这些是待移除的存量，不能据此增加新的 ROM 替换。
+
+核查入口是 CLI 的 `dexvm dump-surface`，导出实际绑定后对照 ROM class_def、
+own method flags 与 catalog，区分 native、abstract 声明和真正覆盖的方法体。
+类可链接、表面 implemented 与实际行为是三个不同事实，
+[未实现成员决定](../adr/dexvm.md#adr-0147)要求在实际执行边界明确暴露缺口。
+
+精确命令见[工具入口](../../tools/README.md)，未闭合替换与验证范围见
+[ROM 替换问题](../state/KNOWN-ISSUES.md#rom-replacements)。
+本文解释的是当前执行机制，不是完整 API19 或游戏兼容验收声明。
 
 ## 契约、决定与操作
 

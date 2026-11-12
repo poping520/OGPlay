@@ -3,24 +3,14 @@
 本文件记录跨会话仍然有效、但不一定阻塞当前工作的事项。已解决项由 Git 历史保留，
 不在这里累积；`CURRENT.md` 只列当前阻塞。
 
-| ID | 状态 | 目标阶段 | 说明 |
-| --- | --- | --- | --- |
-| KI-0001 | active | 持续 | `cpu.interpreter` 是确定性参考/诊断后端，未覆盖完整 A32/Thumb-2、VFP/NEON、原子访问和异常模型；主执行后端为 Dynarmic，缺失指令必须明确失败。 |
-| KI-0003 | planned | 待定 | Linux 无显示环境可使用 SDL Unix-console；可见窗口构建仍需要 X11 或 Wayland 开发依赖。 |
-| KI-0006 | active | 持续 | hosted CI（`.github/workflows/ci.yml`）已在 GitHub Actions 运行；最近 3 次 main 推送（2026-10-11、10-12）均在约 1–2 分钟内失败，原因未诊断。本地与测试机结果不替代 hosted CI 状态。 |
-| KI-0007 | upstream | 持续 | doctest 2.4.11 在 CMake 4.x 配置期产生上游旧 policy deprecation warning，不影响 warnings-as-errors 编译与测试。 |
-
-## 开发验证约束
-
-- Windows 本机只使用 MSVC 预设，不再使用 Cygwin。
-- 测试机连接信息、凭据和外部绝对路径不得写入仓库文档。
-
 ## 执行与平台
+
+- **解释器覆盖**（状态：active；目标阶段：持续）：`cpu.interpreter` 是确定性参考/诊断后端，未覆盖完整 A32/Thumb-2、VFP/NEON、原子访问和异常模型；主执行后端为 Dynarmic，缺失指令必须明确失败。
 
 <a id="rom-replacements"></a>
 
 - **ROM 替换与覆盖**：catalog 仍有整类替换及非 native 方法覆盖，需分阶段移除，新代码不得增加。
-  查询：`ogplay-cli dexvm dump-surface`，对照 ROM class_def、own method flags 和 catalog；方法见 [DexVM](../design/dexvm.md#类加载与存量-intrinsic)，不在文档维护清单。
+  查询：`ogplay-cli dexvm dump-surface`，对照 ROM class_def、own method flags 和 catalog；方法见 [DexVM](../design/dexvm.md#存量-intrinsic-与支持边界)，不在文档维护清单。
 - **动态代理与注解**：Proxy 已用 ROM 校验/缓存，但注解仍走受限合成类，私有 throws 字段仅保留形状；统一实现类身份与语义尚未完成。
   复核入口：`tests/dexvm/reflection_tests.cpp` 的代理/注解主题及 `tools/conformance/dalvik_tests.py` 的 004、044 用例。
 - **线程与内存**：GC 全周期、直接写 ABA、直接访存卸载 quiescence 和 MCP shutdown 稳定性尚未完整验收；不宣称完整 ARM reservation 模型。
@@ -67,3 +57,9 @@
   复核入口：GUI 游戏库与 CLI `library list`；不把暂缓方案的数据格式当现行契约。
 - **外部停滞取证**：协调器和快照已实现，可杀死真实停滞子进程的跨进程 OS 触发限时落盘仍缺验收。
   复核入口：按排障手册构造受控停滞并从独立进程触发，不能用普通 diag.snapshot 替代。
+
+## 构建与依赖
+
+- **Linux 窗口依赖**（状态：planned；目标阶段：待定）：Linux 无显示环境可使用 SDL Unix-console；可见窗口构建仍需要 X11 或 Wayland 开发依赖。
+- **hosted CI**（状态：active；目标阶段：持续）：hosted CI（`.github/workflows/ci.yml`）已在 GitHub Actions 运行；最近 3 次 main 推送（2026-10-11、10-12）均在约 1–2 分钟内失败，原因未诊断。本地与测试机结果不替代 hosted CI 状态。
+- **doctest 配置警告**（状态：upstream；目标阶段：持续）：doctest 2.4.11 在 CMake 4.x 配置期产生上游旧 policy deprecation warning，不影响 warnings-as-errors 编译与测试。

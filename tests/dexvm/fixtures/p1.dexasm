@@ -508,6 +508,20 @@
     return-void
 .end method
 
+# Compiler-generated enum entry point required by ROM Enum's reflective cache.
+.method public static values()[LP1Enum;
+.registers 4
+    const/4 v0, 2
+    new-array v1, v0, [LP1Enum;
+    const/4 v2, 0
+    sget-object v3, LP1Enum;->SMALL:LP1Enum;
+    aput-object v3, v1, v2
+    const/4 v2, 1
+    sget-object v3, LP1Enum;->LARGE:LP1Enum;
+    aput-object v3, v1, v2
+    return-object v1
+.end method
+
 .method static public smallConstant()Ljava/lang/Enum;
 .registers 1
     sget-object v0, LP1Enum;->SMALL:LP1Enum;

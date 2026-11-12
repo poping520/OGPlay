@@ -398,6 +398,7 @@ def build_guest_jni() -> int:
              str(MANIFEST.parent / "lib/libicui18n.so"),
              str(MANIFEST.parent / "lib/libicuuc.so"),
              str(MANIFEST.parent / "lib/libz.so"),
+             str(MANIFEST.parent / "lib/libm.so"),
              str(MANIFEST.parent / "lib/libc.so"), "-o", str(library)])
         dynamic = subprocess.run([str(readelf), "-h", "-d", str(library)], check=True,
                                  text=True, stdout=subprocess.PIPE).stdout
@@ -406,7 +407,7 @@ def build_guest_jni() -> int:
         if any(value not in dynamic for value in required):
             raise BuildError("guest JNI ELF ABI or SONAME check failed")
         needed = re.findall(r"Shared library: \[([^]]+)\]", dynamic)
-        if needed != ["libssl.so", "libcrypto.so", "libicui18n.so", "libicuuc.so", "libz.so", "libc.so"]:
+        if needed != ["libssl.so", "libcrypto.so", "libicui18n.so", "libicuuc.so", "libz.so", "libm.so", "libc.so"]:
             raise BuildError(f"unexpected guest JNI DT_NEEDED: {needed}")
         return library.read_bytes(), needed
     with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:

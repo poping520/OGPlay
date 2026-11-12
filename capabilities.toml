@@ -1321,7 +1321,7 @@ note = "封存 BootDex/APK 的只读 jar:file URL；路径与 entry 百分号编
 [dexvm.reflection_wrappers]
 status = "complete"
 test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/android_value_tests.cpp#DVM-143"
-note = "不可变 ReflectionMetadata 与唯一 wrapper 工厂；Method/Constructor/Field 按 API19 每次新建身份，语义 equals/hashCode、声明式 toString、防御性数组拷贝与 per-wrapper accessible；Method 以 VM 内部 id 回查元数据，定向查询无需整类元数据。缓存不持 guest 引用或宿主指针。"
+note = "不可变 ReflectionMetadata 与唯一 wrapper 工厂；Method/Constructor/Field 按 API19 每次新建身份，语义 equals/hashCode、声明式 toString、防御性数组拷贝与 per-wrapper accessible；Method/Constructor/Field 由 ROM Java 与 Dalvik 原版 native 提供，按 declaringClass+slot 回查元数据，定向方法查询无需整类元数据。缓存不持 guest 引用或宿主指针。"
 
 [dexvm.class_reflection_core]
 status = "complete"
@@ -1415,8 +1415,8 @@ note = "per-class 状态机、静态初始值、super 顺序与失败粘滞； �
 
 [dexvm.intrinsics_java_core]
 status = "partial"
-test = "tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/session/profile_entry_scope_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105"
-note = "Object/String/Class、wrapper、Enum、Thread 保留 intrinsic；StringBuilder、Throwable、日期与集合归 BootDex。浮点输出用原版 RealToString；regionMatches 按 UTF16/ICU51 折叠；Object valueOf 虚派；引用 arraycopy 检查类型并保留失败前缀。IO/NIO 保持既有范围； 从 guest ICU 枚举六种标准 Charset。完整 ThreadGroup、可选 charset codec 与网络长尾未实现。"
+test = "tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/session/profile_entry_scope_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tests/runtime/guest_icu_tests.cpp#core ROM Character"
+note = "Object/String/Class、Thread 保留 intrinsic；包装类、Number、Enum、Thread.State、接口与 Character 普通方法归 BootDex，Character native 经 guest ICU51。Class 提供原版成员查找 native，StringToReal 两个 native 在宿主忠实移植 API19 AOSP 算法。浮点输出用 RealToString；regionMatches 用 ICU51。IO/NIO 维持既有范围；完整 ThreadGroup、可选 codec 与网络长尾未实现。"
 
 [dexvm.system_line_separator]
 status = "complete"

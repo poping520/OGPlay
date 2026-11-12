@@ -42,7 +42,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | 水果忍者 1.8.8 | macOS | 第 110 帧越过原版 `View.isInEditMode` 调用 | 地图手势初始化：ROM `VelocityTracker` 已加载，`nativeInitialize` 未实现 | — |
 | 割绳子 2.3.8（广告版） | macOS | ACRA 构造与 Application 生命周期回调注册通过，进入首个 Activity 的 onCreate，未呈现 | FragmentActivity 调用 `getLastNonConfigurationInstance()` 缺失 | DVM-376 |
 | 保卫萝卜 1.1.0 | macOS | Cocos2d 文字位图越过 `Paint.getFontMetricsInt()`，呈现 2 帧 | `nativeRender` 的 JNI `CallStaticObjectMethodV` 返回类型与描述符不符 | DVM-376 |
-| 鳄鱼小顽皮 1.13.1 | macOS | 越过 `ThreadGroup(String)` 和离线 `WifiInfo` 查询，到达 `onResume`，未呈现 | `AlarmManager.setRepeating` 调度未实现 | DVM-211 |
+| 鳄鱼小顽皮 1.13.1 | macOS | Character 执行原版 ROM，已越过 `isJavaIdentifierPart(C)` 缺方法错误，未呈现 | Configurator 后台线程调用 `java.lang.reflect.Method.isBridge()` 缺失；Alarm 调度仍未实现 | DVM-211 |
 
 ## 未闭合问题
 

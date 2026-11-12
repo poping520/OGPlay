@@ -491,23 +491,6 @@ IntrinsicClassDecl Plain(const std::string& descriptor, const std::string& paren
     return std::move(IntrinsicClassBuilder::Class(descriptor, parent, {}, kAccNone)).Build();
 }
 
-IntrinsicClassDecl Exception(const std::string& descriptor, const std::string& parent) {
-    auto b = IntrinsicClassBuilder::Class(descriptor, parent);
-    b.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
-    if (descriptor == "Ljava/nio/InvalidMarkException;") {
-        b.Constructor("(Ljava/lang/String;)V", [parent](IntrinsicContext& c) {
-            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor(parent), "<init>",
-                                                               "(Ljava/lang/String;)V");
-            const auto result = c.vm.Call(*target, std::array{VmValue::Ref(c.receiver), c.arguments[0]});
-            if (result.exception.IsValid())
-                throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                                  result.exception};
-            return result.value;
-        });
-    }
-    return std::move(b).Build();
-}
-
 VmValue CharsetCallResult(Interpreter& vm, const VmCallOutcome& result) {
     if (result.exception.IsValid())
         throw VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
@@ -871,10 +854,6 @@ IntrinsicClassDecl DeclareMemoryArray() {
 }
 
 void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog) {
-    catalog.push_back(Exception("Ljava/nio/BufferOverflowException;", "Ljava/lang/RuntimeException;"));
-    catalog.push_back(Exception("Ljava/nio/BufferUnderflowException;", "Ljava/lang/RuntimeException;"));
-    catalog.push_back(Exception("Ljava/nio/InvalidMarkException;", "Ljava/lang/IllegalStateException;"));
-    catalog.push_back(Exception("Ljava/nio/ReadOnlyBufferException;", "Ljava/lang/UnsupportedOperationException;"));
     catalog.push_back(DeclareBuffer());
     catalog.push_back(DeclareByteOrder());
     catalog.push_back(DeclareByteBuffer());

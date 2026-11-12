@@ -1615,33 +1615,6 @@ IntrinsicClassDecl DeclareSocketFactory(const CoreIntrinsicServices& services) {
 
 using namespace detail;
 
-IntrinsicClassDecl DeclareMalformedURLException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/net/MalformedURLException;", "Ljava/io/IOException;");
-    builder.Constructor("()V", [](IntrinsicContext& c) {
-        c.vm.InitializeThrowable(c.receiver);
-        return VmValue::Void();
-    });
-    builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext& c) {
-        c.vm.InitializeThrowable(c.receiver, c.arguments[0].ref);
-        return VmValue::Void();
-    });
-    // AOSP 4.4 ROM line 50.
-    builder.Constructor(
-        "(Ljava/lang/String;Ljava/lang/Throwable;)V",
-        [](IntrinsicContext& c) {
-            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/io/IOException;"),
-                                                               "<init>", "(Ljava/lang/String;Ljava/lang/Throwable;)V");
-            const auto result =
-                c.vm.Call(*target, std::vector<VmValue>{VmValue::Ref(c.receiver), c.arguments[0], c.arguments[1]});
-            if (result.exception.IsValid())
-                throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                                  result.exception};
-            return result.value;
-        },
-        kAccPublic);
-
-    return std::move(builder).Build();
-}
 }  // namespace
 
 void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services) {
@@ -1659,7 +1632,5 @@ void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog, const CoreI
     catalog.push_back(DeclareSocket());
     catalog.push_back(DeclareDatagramSocket());
     catalog.push_back(DeclareSocketFactory(services));
-
-    catalog.push_back(DeclareMalformedURLException());
 }
 }  // namespace ogplay::runtime::dexvm::intrinsics

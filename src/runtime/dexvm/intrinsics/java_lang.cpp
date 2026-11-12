@@ -1,221 +1,5 @@
 // DVM-80: API-family translation unit. Physical consolidation only.
 
-// ---- migrated from java_lang_Enum.cpp ----
-// java.lang.Enum intrinsic. Semantics follow the pinned AOSP libcore
-// libart Enum.java: constants carry a final name/ordinal slot pair written
-// by the protected constructor, the query methods are final, toString stays
-// overridable, and static valueOf resolves constants from the enum's own
-// static fields (the class library's reflective values() cache is not in
-// scope; see docs/design/dexvm.md).
-
-#include "catalog.h"
-#include "shared.h"
-#include "ogplay/runtime/dexvm/intrinsic_builder.h"
-
-namespace ogplay::runtime::dexvm::intrinsics {
-using namespace detail;
-
-namespace {
-
-// Enum's declared slots resolved through the receiver's own class, so
-// interpreted enum subclasses and constant-body subclasses share the
-// super layout (same pattern as the Throwable message field).
-[[nodiscard]] const LinkedField& EnumField(Interpreter& vm, const VmObjectRef object, const std::string_view name,
-                                           const std::string_view descriptor) {
-    const auto java_class = vm.Model().ObjectClass(object);
-    const auto field = vm.Linker().FindFieldRecursive(java_class, std::string(name), std::string(descriptor));
-    if (!field.has_value()) {
-        throw DexVmError(DexVmErrorReason::internal_invariant, "Enum field is missing: " + std::string(name));
-    }
-    return vm.Linker().Field(*field);
-}
-
-[[nodiscard]] VmObjectRef NameOf(Interpreter& vm, const VmObjectRef object) {
-    const auto& linked = EnumField(vm, object, "name", "Ljava/lang/String;");
-    const auto slots = vm.Model().InstanceSlots(object);
-    if (linked.slot >= slots.size() || !linked.is_ref) {
-        throw DexVmError(DexVmErrorReason::internal_invariant, "Enum name slot is invalid");
-    }
-    return VmObjectRef(slots[linked.slot].bits);
-}
-
-[[nodiscard]] std::int32_t OrdinalOf(Interpreter& vm, const VmObjectRef object) {
-    const auto& linked = EnumField(vm, object, "ordinal", "I");
-    const auto slots = vm.Model().InstanceSlots(object);
-    if (linked.slot >= slots.size() || linked.is_ref) {
-        throw DexVmError(DexVmErrorReason::internal_invariant, "Enum ordinal slot is invalid");
-    }
-    return static_cast<std::int32_t>(slots[linked.slot].bits);
-}
-
-[[nodiscard]] bool IsEnumClass(const DexClassLinker& linker, const DexClassId java_class) {
-    const auto& linked = linker.Class(java_class);
-    return linked.super.has_value() && linker.Class(*linked.super).descriptor == "Ljava/lang/Enum;";
-}
-
-// "class fixture.Size" — the Class.toString form AOSP composes into the
-// IllegalArgumentException messages.
-[[nodiscard]] std::string ClassDisplay(const DexClassLinker& linker, const DexClassId java_class) {
-    return "class " + DottedName(linker.Class(java_class).descriptor);
-}
-
-// Enum.compareTo(Enum): ordinal difference. A null other reaches the
-// field read on the platform too and surfaces as an NPE.
-[[nodiscard]] std::int32_t CompareOrdinals(Interpreter& vm, const VmObjectRef receiver, const VmObjectRef other) {
-    if (!other.IsValid()) {
-        throw VmJavaThrow{"Ljava/lang/NullPointerException;", "ordinal of null enum constant"};
-    }
-    return OrdinalOf(vm, receiver) - OrdinalOf(vm, other);
-}
-
-// Enum.valueOf(Class, String) without the reflective shared-constants
-// cache: run <clinit>, then match the requested name against the live
-// values of the enum's own constant fields.
-[[nodiscard]] VmValue ValueOfConstant(IntrinsicContext& context) {
-    auto& vm = context.vm;
-    const auto enum_type = context.arguments[0].ref;
-    const auto name = context.arguments[1].ref;
-    if (!enum_type.IsValid()) {
-        throw VmJavaThrow{"Ljava/lang/NullPointerException;", "enumType == null"};
-    }
-    if (!name.IsValid()) {
-        throw VmJavaThrow{"Ljava/lang/NullPointerException;", "name == null"};
-    }
-    const auto java_class = vm.Model().ClassOfClassObject(enum_type);
-    auto& linker = vm.Linker();
-    if (!IsEnumClass(linker, java_class)) {
-        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                          ClassDisplay(linker, java_class) + " is not an enum type"};
-    }
-    const auto initialized = vm.EnsureClassInitialized(java_class);
-    if (initialized.exception.IsValid()) {
-        throw VmJavaThrow{linker.Class(initialized.exception_class).descriptor, initialized.exception_message};
-    }
-    const auto wanted = vm.Model().StringValue(name);
-    const auto& linked = linker.Class(java_class);
-    for (const auto field_id : linked.own_static_fields) {
-        const auto& field = linker.Field(field_id);
-        if (!field.is_static || !field.is_ref || field.descriptor != linked.descriptor) {
-            continue;
-        }
-        const auto constant = VmObjectRef(linked.static_storage[field.slot]);
-        if (!constant.IsValid()) continue;
-        const auto constant_name = NameOf(vm, constant);
-        if (constant_name.IsValid() && vm.Model().StringValue(constant_name) == wanted) {
-            return VmValue::Ref(constant);
-        }
-    }
-    std::string rendered;
-    for (const auto unit : wanted) {
-        if (unit >= 0x80U) {
-            rendered += '?';
-        } else {
-            rendered += static_cast<char>(unit);
-        }
-    }
-    throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                      rendered + " is not a constant in " + DottedName(linked.descriptor)};
-}
-
-}  // namespace
-
-IntrinsicClassDecl Declare_java_lang_Enum() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Enum;", "Ljava/lang/Object;",
-                                                {"Ljava/lang/Comparable;", "Ljava/io/Serializable;"});
-    builder.InstanceField("name", "Ljava/lang/String;");
-    builder.InstanceField("ordinal", "I");
-    builder.Constructor("(Ljava/lang/String;I)V", [](IntrinsicContext& context) {
-        const auto& name_field = EnumField(context.vm, context.receiver, "name", "Ljava/lang/String;");
-        const auto& ordinal_field = EnumField(context.vm, context.receiver, "ordinal", "I");
-        auto slots = context.vm.Model().InstanceSlots(context.receiver);
-        if (name_field.slot >= slots.size() || ordinal_field.slot >= slots.size()) {
-            throw DexVmError(DexVmErrorReason::internal_invariant, "Enum constant slots are invalid");
-        }
-        slots[name_field.slot] = {context.arguments[0].ref.Value(), SlotTag::ref};
-        slots[ordinal_field.slot] = {static_cast<std::uint32_t>(context.arguments[1].AsInt()), SlotTag::cat1};
-        return VmValue::Void();
-    });
-    builder.FinalMethod("name", "()Ljava/lang/String;",
-                        [](IntrinsicContext& context) { return VmValue::Ref(NameOf(context.vm, context.receiver)); });
-    builder.FinalMethod("ordinal", "()I", [](IntrinsicContext& context) {
-        return VmValue::Int(OrdinalOf(context.vm, context.receiver));
-    });
-    // Not final on the platform: enum types may override toString.
-    builder.OverrideMethod("toString", "()Ljava/lang/String;", [](IntrinsicContext& context) {
-        return VmValue::Ref(NameOf(context.vm, context.receiver));
-    });
-    builder.OverrideMethod(
-        "equals", "(Ljava/lang/Object;)Z",
-        [](IntrinsicContext& context) {
-            const auto other = context.arguments[0].ref;
-            return VmValue::Int(context.receiver == other ? 1 : 0);
-        },
-        kAccPublic | kAccFinal);
-    builder.OverrideMethod(
-        "hashCode", "()I",
-        [](IntrinsicContext& context) {
-            const auto name = NameOf(context.vm, context.receiver);
-            return VmValue::Int(OrdinalOf(context.vm, context.receiver) +
-                                (name.IsValid() ? JavaStringHash(context.vm.Model().StringValue(name)) : 0));
-        },
-        kAccPublic | kAccFinal);
-    builder.OverrideMethod(
-        "clone", "()Ljava/lang/Object;",
-        [](IntrinsicContext&) -> VmValue {
-            throw VmJavaThrow{"Ljava/lang/CloneNotSupportedException;", "Enums may not be cloned"};
-        },
-        kAccProtected | kAccFinal);
-    builder.FinalMethod("compareTo", "(Ljava/lang/Enum;)I", [](IntrinsicContext& context) {
-        return VmValue::Int(CompareOrdinals(context.vm, context.receiver, context.arguments[0].ref));
-    });
-    // Erased Comparable bridge. The per-enum cast to E is approximated by
-    // the Enum-kind check; non-enum arguments fail like the platform's
-    // checkcast bridge does.
-    builder.VirtualMethod("compareTo", "(Ljava/lang/Object;)I", [](IntrinsicContext& context) {
-        const auto other = context.arguments[0].ref;
-        if (other.IsValid()) {
-            auto& linker = context.vm.Linker();
-            auto current = context.vm.Model().ObjectClass(other);
-            while (current.IsValid()) {
-                if (linker.Class(current).descriptor == "Ljava/lang/Enum;") {
-                    break;
-                }
-                current = linker.Class(current).super.value_or(DexClassId{});
-            }
-            if (!current.IsValid()) {
-                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "argument is not an enum constant"};
-            }
-        }
-        return VmValue::Int(CompareOrdinals(context.vm, context.receiver, other));
-    });
-    builder.FinalMethod("getDeclaringClass", "()Ljava/lang/Class;", [](IntrinsicContext& context) {
-        auto& vm = context.vm;
-        const auto java_class = vm.Model().ObjectClass(context.receiver);
-        const auto& linked = vm.Linker().Class(java_class);
-        // Constant-body subclasses answer the declaring enum type,
-        // which is the superclass that directly extends Enum.
-        if (!linked.super.has_value() || vm.Linker().Class(*linked.super).descriptor == "Ljava/lang/Enum;") {
-            return VmValue::Ref(vm.Model().ClassObject(java_class));
-        }
-        return VmValue::Ref(vm.Model().ClassObject(*linked.super));
-    });
-    builder.StaticMethod("valueOf", "(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;", ValueOfConstant);
-    builder.StaticMethod("getSharedConstants", "(Ljava/lang/Class;)[Ljava/lang/Enum;", [](IntrinsicContext& context) {
-        const auto class_object = context.arguments[0].ref;
-        if (!class_object.IsValid()) {
-            throw VmJavaThrow{"Ljava/lang/NullPointerException;", "enumType == null"};
-        }
-        return VmValue::Ref(context.vm.SharedEnumConstants(context.vm.Model().ClassOfClassObject(class_object)));
-    });
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
-namespace ogplay::runtime::dexvm::intrinsics {
-void AppendJavaLangPrimitiveWrappers(std::vector<IntrinsicClassDecl>& catalog);
-}
-
 // ---- migrated from java_lang_interfaces.cpp ----
 #include "catalog.h"
 #include "shared.h"
@@ -224,45 +8,6 @@ void AppendJavaLangPrimitiveWrappers(std::vector<IntrinsicClassDecl>& catalog);
 
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
-
-namespace {
-// Top-level `java.lang` interfaces from pinned libcore
-// luni/src/main/java/java/lang (android-4.4.4_r2.0.1). Nested types such as
-// Nested types and java.lang.annotation.* are declared by their owning
-// families rather than this top-level interface catalog.
-
-IntrinsicClassDecl Declare_java_lang_CharSequence() {
-    auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/CharSequence;");
-    builder.UnimplementedVirtual("length", "()I", kAccPublic | kAccAbstract);
-    builder.UnimplementedVirtual("charAt", "(I)C");
-    builder.UnimplementedVirtual("subSequence", "(II)Ljava/lang/CharSequence;");
-    builder.UnimplementedVirtual("toString", "()Ljava/lang/String;");
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Declare_java_lang_Cloneable() {
-    auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/Cloneable;");
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Declare_java_lang_Comparable() {
-    auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/Comparable;");
-    builder.UnimplementedVirtual("compareTo", "(Ljava/lang/Object;)I");
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Declare_java_lang_Readable() {
-    auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/Readable;");
-    builder.UnimplementedVirtual("read", "(Ljava/nio/CharBuffer;)I");
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Declare_java_lang_Runnable() {
-    auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/Runnable;");
-    builder.UnimplementedVirtual("run", "()V");
-    return std::move(builder).Build();
-}
-}  // namespace
 
 void AppendJavaLangInterfaces(std::vector<IntrinsicClassDecl>& catalog) {
     {
@@ -348,11 +93,6 @@ void AppendJavaLangInterfaces(std::vector<IntrinsicClassDecl>& catalog) {
             kAccPublic | kAccNative);
         catalog.push_back(std::move(b).Build());
     }
-    catalog.push_back(Declare_java_lang_CharSequence());
-    catalog.push_back(Declare_java_lang_Cloneable());
-    catalog.push_back(Declare_java_lang_Comparable());
-    catalog.push_back(Declare_java_lang_Readable());
-    catalog.push_back(Declare_java_lang_Runnable());
 }
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
@@ -636,7 +376,6 @@ IntrinsicClassDecl Declare_java_lang_Object() {
 #include <string>
 #include <system_error>
 
-#include "ogplay/hal/from_chars.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
 namespace ogplay::runtime::dexvm::intrinsics {
@@ -644,168 +383,8 @@ using namespace detail;
 
 namespace {
 
-constexpr std::string_view kDigits = "0123456789abcdefghijklmnopqrstuvwxyz";
-
-[[noreturn]] void NumberFormat(std::string_view text) {
-    throw VmJavaThrow{"Ljava/lang/NumberFormatException;", "invalid number: " + std::string(text)};
-}
-
-[[nodiscard]] std::string GuestText(IntrinsicContext& context, VmObjectRef reference) {
-    if (!reference.IsValid()) NumberFormat("null");
-    return Narrow(context.vm.Model().StringValue(reference));
-}
-
-[[nodiscard]] std::string GuestFloatingText(IntrinsicContext& context, VmObjectRef reference) {
-    if (!reference.IsValid()) {
-        throw VmJavaThrow{"Ljava/lang/NullPointerException;", "null floating string"};
-    }
-    return Narrow(context.vm.Model().StringValue(reference));
-}
-
-[[nodiscard]] int DigitValue(char unit) {
-    if (unit >= '0' && unit <= '9') return unit - '0';
-    if (unit >= 'a' && unit <= 'z') return unit - 'a' + 10;
-    if (unit >= 'A' && unit <= 'Z') return unit - 'A' + 10;
-    return -1;
-}
-
-[[nodiscard]] std::int64_t ParseSignedRadix(std::string_view text, int radix, std::int64_t minimum,
-                                            std::int64_t maximum) {
-    if (radix < 2 || radix > 36 || text.empty()) NumberFormat(text);
-    std::size_t index = 0;
-    bool negative = false;
-    if (text[index] == '-' || text[index] == '+') {
-        negative = text[index] == '-';
-        if (++index == text.size()) NumberFormat(text);
-    }
-    const auto limit = negative ? minimum : -maximum;
-    const auto multiply_limit = limit / radix;
-    std::int64_t result = 0;
-    for (; index < text.size(); ++index) {
-        const auto digit = DigitValue(text[index]);
-        if (digit < 0 || digit >= radix || result < multiply_limit) {
-            NumberFormat(text);
-        }
-        result *= radix;
-        if (result < limit + digit) NumberFormat(text);
-        result -= digit;
-    }
-    return negative ? result : -result;
-}
-
-[[nodiscard]] std::int64_t DecodeIntegral(std::string_view text, std::int64_t minimum, std::int64_t maximum) {
-    if (text.empty()) NumberFormat(text);
-    bool negative = false;
-    std::size_t index = 0;
-    if (text[index] == '-' || text[index] == '+') {
-        negative = text[index] == '-';
-        if (++index == text.size()) NumberFormat(text);
-    }
-    int radix = 10;
-    if (text[index] == '0') {
-        if (index + 1 == text.size()) return 0;
-        if (text[index + 1] == 'x' || text[index + 1] == 'X') {
-            radix = 16;
-            index += 2;
-        } else {
-            radix = 8;
-            ++index;
-        }
-    } else if (text[index] == '#') {
-        radix = 16;
-        ++index;
-    }
-    if (index == text.size() || text[index] == '-' || text[index] == '+') {
-        NumberFormat(text);
-    }
-    std::string normalized;
-    if (negative) normalized.push_back('-');
-    normalized.append(text.substr(index));
-    return ParseSignedRadix(normalized, radix, minimum, maximum);
-}
-
-[[nodiscard]] std::string FormatUnsigned(std::uint64_t value, int radix) {
-    std::array<char, 65> buffer{};
-    auto cursor = buffer.end();
-    do {
-        *--cursor = kDigits[value % static_cast<unsigned>(radix)];
-        value /= static_cast<unsigned>(radix);
-    } while (value != 0);
-    return {cursor, buffer.end()};
-}
-
-[[nodiscard]] std::string FormatSigned(std::int64_t value, int radix) {
-    if (radix < 2 || radix > 36) radix = 10;
-    const bool negative = value < 0;
-    const auto magnitude =
-        negative ? std::uint64_t{0} - static_cast<std::uint64_t>(value) : static_cast<std::uint64_t>(value);
-    auto result = FormatUnsigned(magnitude, radix);
-    if (negative) result.insert(result.begin(), '-');
-    return result;
-}
-
-template <typename U>
-[[nodiscard]] U ByteSwap(U value) {
-    if constexpr (sizeof(U) == 2) {
-        return static_cast<U>((value << 8U) | (value >> 8U));
-    } else if constexpr (sizeof(U) == 4) {
-        return static_cast<U>((value << 24U) | ((value << 8U) & 0x00ff0000U) | ((value >> 8U) & 0x0000ff00U) |
-                              (value >> 24U));
-    } else {
-        return static_cast<U>((value << 56U) | ((value << 40U) & 0x00ff000000000000ULL) |
-                              ((value << 24U) & 0x0000ff0000000000ULL) | ((value << 8U) & 0x000000ff00000000ULL) |
-                              ((value >> 8U) & 0x00000000ff000000ULL) | ((value >> 24U) & 0x0000000000ff0000ULL) |
-                              ((value >> 40U) & 0x000000000000ff00ULL) | (value >> 56U));
-    }
-}
-
-[[nodiscard]] std::uint64_t ReadBoxed(IntrinsicContext& context, VmObjectRef object, bool wide) {
-    if (!object.IsValid()) {
-        throw VmJavaThrow{"Ljava/lang/NullPointerException;", "null wrapper"};
-    }
-    const auto slots = context.vm.Model().InstanceSlots(object);
-    if (slots.size() < (wide ? 2U : 1U)) {
-        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "object is not a compatible wrapper"};
-    }
-    auto bits = static_cast<std::uint64_t>(slots[0].bits);
-    if (wide) bits |= static_cast<std::uint64_t>(slots[1].bits) << 32U;
-    return bits;
-}
-
-[[nodiscard]] bool IsExactClass(IntrinsicContext& context, VmObjectRef object, std::string_view descriptor) {
-    return object.IsValid() &&
-           context.vm.Linker().Class(context.vm.Model().ObjectClass(object)).descriptor == descriptor;
-}
-
-[[nodiscard]] VmObjectRef StaticReference(IntrinsicContext& context, std::string_view owner, std::string_view name,
-                                          std::string_view descriptor) {
-    const auto java_class = context.vm.Linker().FindClass(owner);
-    if (!java_class.has_value()) return VmObjectRef{0};
-    const auto field = context.vm.Linker().FindFieldRecursive(*java_class, std::string(name), std::string(descriptor));
-    if (!field.has_value()) return VmObjectRef{0};
-    const auto& linked = context.vm.Linker().Field(*field);
-    return VmObjectRef{context.vm.Linker().Class(linked.owner).static_storage[linked.slot]};
-}
-
-void InitializeType(IntrinsicContext& context, std::string_view owner, std::string_view primitive) {
-    context.vm.SetIntrinsicStaticRef(owner, "TYPE", "Ljava/lang/Class;",
-                                     context.vm.Model().ClassObject(context.vm.Linker().ResolveDescriptor(primitive)));
-}
-
 [[nodiscard]] VmValue Bool(bool value) {
     return VmValue::Int(value ? 1 : 0);
-}
-
-template <typename Float, typename Int>
-[[nodiscard]] Int FloatToJavaInteger(Float value) {
-    if (std::isnan(value)) return 0;
-    if (value >= static_cast<Float>(std::numeric_limits<Int>::max())) {
-        return std::numeric_limits<Int>::max();
-    }
-    if (value <= static_cast<Float>(std::numeric_limits<Int>::min())) {
-        return std::numeric_limits<Int>::min();
-    }
-    return static_cast<Int>(value);
 }
 
 // Ordinary decimal rendering uses the pinned libcore algorithm, shared with builders.
@@ -822,181 +401,6 @@ template <typename Float, typename Int>
                        wide ? "(D)Ljava/lang/String;" : "(F)Ljava/lang/String;", {value});
 }
 
-[[nodiscard]] bool FloatingMagnitudeBelowOne(std::string_view text, bool hex) {
-    const auto start = text.starts_with('-') ? 1U : 0U;
-    const auto marker = text.find_first_of(hex ? "pP" : "eE", start);
-    const auto significand_end = marker == std::string_view::npos ? text.size() : marker;
-
-    std::int64_t explicit_exponent = 0;
-    if (marker != std::string_view::npos) {
-        auto cursor = marker + 1U;
-        bool negative = false;
-        if (cursor < text.size() && (text[cursor] == '+' || text[cursor] == '-')) {
-            negative = text[cursor] == '-';
-            ++cursor;
-        }
-        if (cursor == text.size()) NumberFormat(text);
-
-        std::int64_t magnitude = 0;
-        for (; cursor < text.size(); ++cursor) {
-            if (text[cursor] < '0' || text[cursor] > '9') NumberFormat(text);
-            if (magnitude < 1'000'000'000LL) {
-                const auto next = magnitude * 10 + (text[cursor] - '0');
-                magnitude = next > 1'000'000'000LL ? 1'000'000'000LL : next;
-            }
-        }
-        explicit_exponent = negative ? -magnitude : magnitude;
-    }
-
-    bool seen_point = false;
-    std::int64_t digits_before_point = 0;
-    std::int64_t digit_index = 0;
-    std::int64_t first_nonzero = -1;
-    int leading_digit = 0;
-    for (auto cursor = start; cursor < significand_end; ++cursor) {
-        const auto unit = text[cursor];
-        if (unit == '.') {
-            if (seen_point) NumberFormat(text);
-            seen_point = true;
-            continue;
-        }
-        const auto digit = DigitValue(unit);
-        if (digit < 0 || digit >= (hex ? 16 : 10)) NumberFormat(text);
-        if (!seen_point) ++digits_before_point;
-        if (first_nonzero < 0 && digit != 0) {
-            first_nonzero = digit_index;
-            leading_digit = digit;
-        }
-        ++digit_index;
-    }
-    if (digit_index == 0) NumberFormat(text);
-    if (first_nonzero < 0) return true;
-
-    if (!hex) {
-        return explicit_exponent + digits_before_point - first_nonzero - 1 < 0;
-    }
-
-    const auto leading_bit = leading_digit >= 8 ? 3 : leading_digit >= 4 ? 2 : leading_digit >= 2 ? 1 : 0;
-    return explicit_exponent + 4 * (digits_before_point - first_nonzero - 1) + leading_bit < 0;
-}
-
-template <typename Float>
-[[nodiscard]] Float ParseFloating(std::string text) {
-    const auto whitespace = [](char unit) { return static_cast<unsigned char>(unit) <= 0x20; };
-    while (!text.empty() && whitespace(text.front()))
-        text.erase(text.begin());
-    while (!text.empty() && whitespace(text.back()))
-        text.pop_back();
-    if (text == "NaN" || text == "+NaN" || text == "-NaN") {
-        return std::numeric_limits<Float>::quiet_NaN();
-    }
-    if (text == "Infinity" || text == "+Infinity") {
-        return std::numeric_limits<Float>::infinity();
-    }
-    if (text == "-Infinity") return -std::numeric_limits<Float>::infinity();
-    if (!text.empty() && (text.back() == 'f' || text.back() == 'F' || text.back() == 'd' || text.back() == 'D')) {
-        text.pop_back();
-    }
-    if (text.empty()) NumberFormat(text);
-    if (text.front() == '+') text.erase(text.begin());
-    if (text.empty()) NumberFormat(text);
-    Float result{};
-    const char* begin = text.data();
-    auto format = std::chars_format::general;
-    bool hex = false;
-    if (text.size() > 2 &&
-        (text.starts_with("0x") || text.starts_with("0X") || text.starts_with("-0x") || text.starts_with("-0X"))) {
-        const std::size_t prefix = text[0] == '-' ? 1U : 0U;
-        if (text.find_first_of("pP", prefix + 2U) == std::string::npos) {
-            NumberFormat(text);
-        }
-        text.erase(prefix, 2);
-        begin = text.data();
-        format = std::chars_format::hex;
-        hex = true;
-    }
-    const auto parsed = ogplay::hal::FromChars(begin, text.data() + text.size(), result, format);
-    if (parsed.ec == std::errc::result_out_of_range) {
-        const bool underflow = FloatingMagnitudeBelowOne(text, hex);
-        const auto sign = text.starts_with('-') ? Float{-1} : Float{1};
-        return underflow ? std::copysign(Float{0}, sign) : std::copysign(std::numeric_limits<Float>::infinity(), sign);
-    }
-    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size()) {
-        NumberFormat(text);
-    }
-    return result;
-}
-
-template <typename Float>
-[[nodiscard]] std::string FormatHexFloating(Float value) {
-    if (std::isnan(value)) return "NaN";
-    if (std::isinf(value)) return std::signbit(value) ? "-Infinity" : "Infinity";
-
-    if constexpr (sizeof(Float) == sizeof(float)) {
-        const auto bits = std::bit_cast<std::uint32_t>(static_cast<float>(value));
-        const bool negative = (bits & 0x80000000U) != 0;
-        const auto exponent = (bits & 0x7f800000U) >> 23U;
-        auto significand = (bits & 0x007fffffU) << 1U;
-        if (exponent == 0 && significand == 0) {
-            return negative ? "-0x0.0p0" : "0x0.0p0";
-        }
-
-        std::string text = negative ? "-0x" : "0x";
-        const bool subnormal = exponent == 0;
-        text += subnormal ? "0." : "1.";
-
-        std::size_t fraction_digits = 6;
-        while (significand != 0 && (significand & 0xfU) == 0) {
-            significand >>= 4U;
-            --fraction_digits;
-        }
-        const auto fraction = FormatUnsigned(significand, 16);
-        if (significand != 0 && fraction_digits > fraction.size()) {
-            text.append(fraction_digits - fraction.size(), '0');
-        }
-        text += fraction;
-
-        if (subnormal) {
-            text += "p-126";
-        } else {
-            text += 'p';
-            text += FormatSigned(static_cast<std::int64_t>(exponent) - 127, 10);
-        }
-        return text;
-    } else {
-        const auto bits = std::bit_cast<std::uint64_t>(static_cast<double>(value));
-        const bool negative = (bits & 0x8000000000000000ULL) != 0;
-        const auto exponent = (bits & 0x7ff0000000000000ULL) >> 52U;
-        auto significand = bits & 0x000fffffffffffffULL;
-        if (exponent == 0 && significand == 0) {
-            return negative ? "-0x0.0p0" : "0x0.0p0";
-        }
-
-        std::string text = negative ? "-0x" : "0x";
-        const bool subnormal = exponent == 0;
-        text += subnormal ? "0." : "1.";
-
-        std::size_t fraction_digits = 13;
-        while (significand != 0 && (significand & 0xfULL) == 0) {
-            significand >>= 4U;
-            --fraction_digits;
-        }
-        const auto fraction = FormatUnsigned(significand, 16);
-        if (significand != 0 && fraction_digits > fraction.size()) {
-            text.append(fraction_digits - fraction.size(), '0');
-        }
-        text += fraction;
-
-        if (subnormal) {
-            text += "p-1022";
-        } else {
-            text += 'p';
-            text += FormatSigned(static_cast<std::int64_t>(exponent) - 1023, 10);
-        }
-        return text;
-    }
-}
-
 [[nodiscard]] std::uint32_t CanonicalFloatBits(float value) {
     return std::isnan(value) ? 0x7fc00000U : std::bit_cast<std::uint32_t>(value);
 }
@@ -1005,580 +409,17 @@ template <typename Float>
     return std::isnan(value) ? 0x7ff8000000000000ULL : std::bit_cast<std::uint64_t>(value);
 }
 
-[[nodiscard]] int JavaFloatCompare(float left, float right) {
-    if (left < right) return -1;
-    if (left > right) return 1;
-    const auto l = static_cast<std::int32_t>(CanonicalFloatBits(left));
-    const auto r = static_cast<std::int32_t>(CanonicalFloatBits(right));
-    return l == r ? 0 : (l < r ? -1 : 1);
-}
-
-[[nodiscard]] int JavaDoubleCompare(double left, double right) {
-    if (left < right) return -1;
-    if (left > right) return 1;
-    const auto l = static_cast<std::int64_t>(CanonicalDoubleBits(left));
-    const auto r = static_cast<std::int64_t>(CanonicalDoubleBits(right));
-    return l == r ? 0 : (l < r ? -1 : 1);
-}
-
-[[nodiscard]] bool CharacterIsWhitespace(std::int32_t code_point) {
-    if ((code_point >= 0x1c && code_point <= 0x20) || (code_point >= 0x09 && code_point <= 0x0d)) return true;
-    if (code_point == 0x1680 || code_point == 0x180e) return true;
-    if (code_point == 0x2007 || code_point == 0x202f) return false;
-    return (code_point >= 0x2000 && code_point <= 0x200a) || code_point == 0x2028 || code_point == 0x2029 ||
-           code_point == 0x205f || code_point == 0x3000;
-}
-
-[[nodiscard]] bool CharacterIsSpace(std::int32_t code_point) {
-    return code_point == 0x20 || code_point == 0xa0 || code_point == 0x1680 || code_point == 0x180e ||
-           (code_point >= 0x2000 && code_point <= 0x200a) || code_point == 0x2028 || code_point == 0x2029 ||
-           code_point == 0x202f || code_point == 0x205f || code_point == 0x3000;
-}
-
-void AddTypeField(IntrinsicClassBuilder& builder) {
-    builder.StaticField("TYPE", "Ljava/lang/Class;");
-}
-
-void AddNumberConversions(IntrinsicClassBuilder& builder, bool wide, char kind) {
-    const auto numeric = [wide, kind](IntrinsicContext& context) {
-        const auto bits = ReadBoxed(context, context.receiver, wide);
-        if (kind == 'F') return static_cast<long double>(std::bit_cast<float>(static_cast<std::uint32_t>(bits)));
-        if (kind == 'D') return static_cast<long double>(std::bit_cast<double>(bits));
-        if (wide) return static_cast<long double>(static_cast<std::int64_t>(bits));
-        return static_cast<long double>(static_cast<std::int32_t>(bits));
-    };
-    builder.OverrideMethod(
-        "byteValue", "()B",
-        [numeric, kind](IntrinsicContext& c) {
-            const auto value = numeric(c);
-            const auto integer = (kind == 'F' || kind == 'D') ? FloatToJavaInteger<long double, std::int32_t>(value)
-                                                              : static_cast<std::int32_t>(value);
-            return VmValue::Int(static_cast<std::int8_t>(integer));
-        },
-        kAccPublic | kAccFinal);
-    builder.OverrideMethod(
-        "shortValue", "()S",
-        [numeric, kind](IntrinsicContext& c) {
-            const auto value = numeric(c);
-            const auto integer = (kind == 'F' || kind == 'D') ? FloatToJavaInteger<long double, std::int32_t>(value)
-                                                              : static_cast<std::int32_t>(value);
-            return VmValue::Int(static_cast<std::int16_t>(integer));
-        },
-        kAccPublic | kAccFinal);
-    builder.OverrideMethod(
-        "intValue", "()I",
-        [numeric, kind](IntrinsicContext& c) {
-            const auto v = numeric(c);
-            return VmValue::Int((kind == 'F' || kind == 'D') ? FloatToJavaInteger<long double, std::int32_t>(v)
-                                                             : static_cast<std::int32_t>(v));
-        },
-        kAccPublic | kAccFinal);
-    builder.OverrideMethod(
-        "longValue", "()J",
-        [numeric, kind](IntrinsicContext& c) {
-            const auto v = numeric(c);
-            return VmValue::Long((kind == 'F' || kind == 'D') ? FloatToJavaInteger<long double, std::int64_t>(v)
-                                                              : static_cast<std::int64_t>(v));
-        },
-        kAccPublic | kAccFinal);
-    builder.OverrideMethod(
-        "floatValue", "()F", [numeric](IntrinsicContext& c) { return VmValue::Float(static_cast<float>(numeric(c))); },
-        kAccPublic | kAccFinal);
-    builder.OverrideMethod(
-        "doubleValue", "()D",
-        [numeric](IntrinsicContext& c) { return VmValue::Double(static_cast<double>(numeric(c))); },
-        kAccPublic | kAccFinal);
-}
-
-IntrinsicClassDecl Declare_java_lang_Number() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Number;", "Ljava/lang/Object;", {"Ljava/io/Serializable;"});
-    builder.ConstantInt("serialVersionUID", "J", INT64_C(-8742448824652078965), kAccPrivate);
-    builder.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
-    const auto abstract = [](IntrinsicContext&) -> VmValue {
-        throw VmJavaThrow{"Ljava/lang/AbstractMethodError;", "abstract Number conversion"};
-    };
-    builder.VirtualMethod("byteValue", "()B", abstract);
-    builder.VirtualMethod("shortValue", "()S", abstract);
-    builder.VirtualMethod("intValue", "()I", abstract);
-    builder.VirtualMethod("longValue", "()J", abstract);
-    builder.VirtualMethod("floatValue", "()F", abstract);
-    builder.VirtualMethod("doubleValue", "()D", abstract);
-    return std::move(builder).Build();
-}
-
-template <typename T>
-void AddSmallIntegralCommon(IntrinsicClassBuilder& builder, const char* descriptor, const char* primitive,
-                            const char* parse_name, const char* value_of_desc, std::int64_t minimum,
-                            std::int64_t maximum) {
-    const auto set = [](IntrinsicContext& context, std::int64_t value) {
-        SetBoxedBits(context, context.receiver, static_cast<std::uint32_t>(static_cast<std::int32_t>(value)), false);
-        return VmValue::Void();
-    };
-    builder.Constructor(std::string("(") + primitive + ")V",
-                        [set](IntrinsicContext& c) { return set(c, c.arguments[0].AsInt()); });
-    builder.Constructor("(Ljava/lang/String;)V", [set, minimum, maximum](IntrinsicContext& c) {
-        return set(c, ParseSignedRadix(GuestText(c, c.arguments[0].ref), 10, minimum, maximum));
-    });
-    AddNumberConversions(builder, false, 'I');
-    builder.StaticMethod(
-        parse_name, std::string("(Ljava/lang/String;)") + primitive, [minimum, maximum](IntrinsicContext& c) {
-            return VmValue::Int(
-                static_cast<std::int32_t>(ParseSignedRadix(GuestText(c, c.arguments[0].ref), 10, minimum, maximum)));
-        });
-    builder.StaticMethod(
-        parse_name, std::string("(Ljava/lang/String;I)") + primitive, [minimum, maximum](IntrinsicContext& c) {
-            return VmValue::Int(static_cast<std::int32_t>(
-                ParseSignedRadix(GuestText(c, c.arguments[0].ref), c.arguments[1].AsInt(), minimum, maximum)));
-        });
-    builder.StaticMethod("decode", std::string("(Ljava/lang/String;)") + descriptor,
-                         [descriptor, minimum, maximum](IntrinsicContext& c) {
-                             const auto value = DecodeIntegral(GuestText(c, c.arguments[0].ref), minimum, maximum);
-                             return MakeBoxed(c, descriptor, static_cast<std::uint32_t>(value), false);
-                         });
-    builder.StaticMethod("valueOf", value_of_desc, [descriptor](IntrinsicContext& c) {
-        return MakeBoxed(c, descriptor, static_cast<std::uint32_t>(c.arguments[0].AsInt()), false);
-    });
-    builder.StaticMethod("valueOf", std::string("(Ljava/lang/String;)") + descriptor,
-                         [descriptor, minimum, maximum](IntrinsicContext& c) {
-                             const auto value =
-                                 ParseSignedRadix(GuestText(c, c.arguments[0].ref), 10, minimum, maximum);
-                             return MakeBoxed(c, descriptor, static_cast<std::uint32_t>(value), false);
-                         });
-    builder.StaticMethod("valueOf", std::string("(Ljava/lang/String;I)") + descriptor,
-                         [descriptor, minimum, maximum](IntrinsicContext& c) {
-                             const auto value = ParseSignedRadix(GuestText(c, c.arguments[0].ref),
-                                                                 c.arguments[1].AsInt(), minimum, maximum);
-                             return MakeBoxed(c, descriptor, static_cast<std::uint32_t>(value), false);
-                         });
-    builder.FinalMethod("compareTo", std::string("(") + descriptor + ")I", [](IntrinsicContext& c) {
-        const auto left = static_cast<T>(ReadBoxed(c, c.receiver, false));
-        const auto right = static_cast<T>(ReadBoxed(c, c.arguments[0].ref, false));
-        return VmValue::Int(left < right ? -1 : (left > right ? 1 : 0));
-    });
-    builder.StaticMethod("compare", std::string("(") + primitive + primitive + ")I", [](IntrinsicContext& c) {
-        const auto left = static_cast<T>(c.arguments[0].AsInt());
-        const auto right = static_cast<T>(c.arguments[1].AsInt());
-        return VmValue::Int(left < right ? -1 : (left > right ? 1 : 0));
-    });
-    builder.FinalOverrideMethod("equals", "(Ljava/lang/Object;)Z", [descriptor](IntrinsicContext& c) {
-        return Bool(IsExactClass(c, c.arguments[0].ref, descriptor) &&
-                    static_cast<T>(ReadBoxed(c, c.receiver, false)) ==
-                        static_cast<T>(ReadBoxed(c, c.arguments[0].ref, false)));
-    });
-    builder.FinalOverrideMethod("hashCode", "()I", [](IntrinsicContext& c) {
-        return VmValue::Int(static_cast<T>(ReadBoxed(c, c.receiver, false)));
-    });
-    builder.FinalOverrideMethod("toString", "()Ljava/lang/String;", [](IntrinsicContext& c) {
-        return Make(c, Widen(FormatSigned(static_cast<T>(ReadBoxed(c, c.receiver, false)), 10)));
-    });
-    builder.StaticMethod("toString", std::string("(") + primitive + ")Ljava/lang/String;", [](IntrinsicContext& c) {
-        return Make(c, Widen(FormatSigned(static_cast<T>(c.arguments[0].AsInt()), 10)));
-    });
-}
-
-IntrinsicClassDecl Declare_java_lang_Byte() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Byte;", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"});
-    builder.InstanceField("value", "B");
-    builder.ConstantInt("MAX_VALUE", "B", 127).ConstantInt("MIN_VALUE", "B", -128).ConstantInt("SIZE", "I", 8);
-    AddTypeField(builder);
-    AddSmallIntegralCommon<std::int8_t>(builder, "Ljava/lang/Byte;", "B", "parseByte", "(B)Ljava/lang/Byte;", -128,
-                                        127);
-    builder.StaticMethod("toHexString", "(BZ)Ljava/lang/String;", [](IntrinsicContext& c) {
-        auto text = FormatUnsigned(static_cast<std::uint8_t>(c.arguments[0].AsInt()), 16);
-        if (text.size() < 2) text.insert(text.begin(), '0');
-        if (c.arguments[1].AsInt() != 0) {
-            for (auto& unit : text)
-                if (unit >= 'a') unit -= 32;
-        }
-        return Make(c, Widen(text));
-    });
-    builder.ClassInitializer([](IntrinsicContext& c) {
-        InitializeType(c, "Ljava/lang/Byte;", "B");
-        return VmValue::Void();
-    });
-    // AOSP 4.4 ROM line 25.
-    builder.VirtualMethod(
-        "compareTo", "(Ljava/lang/Object;)I",
-        [](IntrinsicContext& c) {
-            const auto other = c.arguments[0].ref;
-            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Byte;"),
-                                                               c.vm.Model().ObjectClass(other)))
-                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
-            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Byte;)I", {c.arguments[0]});
-        },
-        kAccPublic | kAccBridge | kAccSynthetic);
-
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Declare_java_lang_Short() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Short;", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"});
-    builder.InstanceField("value", "S");
-    builder.ConstantInt("MAX_VALUE", "S", 32767).ConstantInt("MIN_VALUE", "S", -32768).ConstantInt("SIZE", "I", 16);
-    AddTypeField(builder);
-    AddSmallIntegralCommon<std::int16_t>(builder, "Ljava/lang/Short;", "S", "parseShort", "(S)Ljava/lang/Short;",
-                                         -32768, 32767);
-    builder.StaticMethod("reverseBytes", "(S)S", [](IntrinsicContext& c) {
-        const auto v = static_cast<std::uint16_t>(c.arguments[0].AsInt());
-        return VmValue::Int(static_cast<std::int16_t>(ByteSwap(v)));
-    });
-    builder.ClassInitializer([](IntrinsicContext& c) {
-        InitializeType(c, "Ljava/lang/Short;", "S");
-        return VmValue::Void();
-    });
-    // AOSP 4.4 ROM line 26.
-    builder.VirtualMethod(
-        "compareTo", "(Ljava/lang/Object;)I",
-        [](IntrinsicContext& c) {
-            const auto other = c.arguments[0].ref;
-            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Short;"),
-                                                               c.vm.Model().ObjectClass(other)))
-                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
-            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Short;)I", {c.arguments[0]});
-        },
-        kAccPublic | kAccBridge | kAccSynthetic);
-
-    return std::move(builder).Build();
-}
-
-template <typename T, typename U>
-void AddWideIntegralCommon(IntrinsicClassBuilder& builder, const char* descriptor, const char* primitive,
-                           const char* parse_name, const char* property_name, int width) {
-    constexpr bool wide = sizeof(T) == 8;
-    const auto argument = [](const VmValue& value) -> T {
-        if constexpr (wide) {
-            return static_cast<T>(value.AsLong());
-        } else {
-            return static_cast<T>(value.AsInt());
-        }
-    };
-    const auto answer = [](T value) -> VmValue {
-        if constexpr (wide) {
-            return VmValue::Long(value);
-        } else {
-            return VmValue::Int(value);
-        }
-    };
-    static constexpr auto minimum = std::numeric_limits<T>::min();
-    static constexpr auto maximum = std::numeric_limits<T>::max();
-    builder.Constructor(std::string("(") + primitive + ")V", [argument](IntrinsicContext& c) {
-        const auto value = argument(c.arguments[0]);
-        SetBoxedBits(c, c.receiver, static_cast<U>(value), wide);
-        return VmValue::Void();
-    });
-    builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext& c) {
-        const auto value = static_cast<T>(ParseSignedRadix(GuestText(c, c.arguments[0].ref), 10, minimum, maximum));
-        SetBoxedBits(c, c.receiver, static_cast<U>(value), wide);
-        return VmValue::Void();
-    });
-    AddNumberConversions(builder, wide, wide ? 'J' : 'I');
-    builder.StaticMethod(parse_name, std::string("(Ljava/lang/String;)") + primitive, [answer](IntrinsicContext& c) {
-        return answer(static_cast<T>(ParseSignedRadix(GuestText(c, c.arguments[0].ref), 10, minimum, maximum)));
-    });
-    builder.StaticMethod(parse_name, std::string("(Ljava/lang/String;I)") + primitive, [answer](IntrinsicContext& c) {
-        return answer(static_cast<T>(
-            ParseSignedRadix(GuestText(c, c.arguments[0].ref), c.arguments[1].AsInt(), minimum, maximum)));
-    });
-    builder.StaticMethod("decode", std::string("(Ljava/lang/String;)") + descriptor, [descriptor](IntrinsicContext& c) {
-        const auto value = static_cast<T>(DecodeIntegral(GuestText(c, c.arguments[0].ref), minimum, maximum));
-        return MakeBoxed(c, descriptor, static_cast<U>(value), wide);
-    });
-    builder.StaticMethod("valueOf", std::string("(") + primitive + ")" + descriptor,
-                         [descriptor, argument](IntrinsicContext& c) {
-                             return MakeBoxed(c, descriptor, static_cast<U>(argument(c.arguments[0])), wide);
-                         });
-    builder.StaticMethod(
-        "valueOf", std::string("(Ljava/lang/String;)") + descriptor, [descriptor](IntrinsicContext& c) {
-            const auto value = static_cast<T>(ParseSignedRadix(GuestText(c, c.arguments[0].ref), 10, minimum, maximum));
-            return MakeBoxed(c, descriptor, static_cast<U>(value), wide);
-        });
-    builder.StaticMethod(
-        "valueOf", std::string("(Ljava/lang/String;I)") + descriptor, [descriptor](IntrinsicContext& c) {
-            const auto value = static_cast<T>(
-                ParseSignedRadix(GuestText(c, c.arguments[0].ref), c.arguments[1].AsInt(), minimum, maximum));
-            return MakeBoxed(c, descriptor, static_cast<U>(value), wide);
-        });
-    builder.FinalMethod("compareTo", std::string("(") + descriptor + ")I", [](IntrinsicContext& c) {
-        const auto left = static_cast<T>(ReadBoxed(c, c.receiver, wide));
-        const auto right = static_cast<T>(ReadBoxed(c, c.arguments[0].ref, wide));
-        return VmValue::Int(left < right ? -1 : (left > right ? 1 : 0));
-    });
-    builder.StaticMethod("compare", std::string("(") + primitive + primitive + ")I", [argument](IntrinsicContext& c) {
-        const auto left = argument(c.arguments[0]);
-        const auto right = argument(c.arguments[1]);
-        return VmValue::Int(left < right ? -1 : (left > right ? 1 : 0));
-    });
-    builder.FinalOverrideMethod("equals", "(Ljava/lang/Object;)Z", [descriptor](IntrinsicContext& c) {
-        return Bool(IsExactClass(c, c.arguments[0].ref, descriptor) &&
-                    ReadBoxed(c, c.receiver, wide) == ReadBoxed(c, c.arguments[0].ref, wide));
-    });
-    builder.FinalOverrideMethod("hashCode", "()I", [](IntrinsicContext& c) {
-        const auto bits = ReadBoxed(c, c.receiver, wide);
-        return VmValue::Int(wide ? static_cast<std::int32_t>(bits ^ (bits >> 32U)) : static_cast<std::int32_t>(bits));
-    });
-    builder.FinalOverrideMethod("toString", "()Ljava/lang/String;", [](IntrinsicContext& c) {
-        return Make(c, Widen(FormatSigned(static_cast<T>(ReadBoxed(c, c.receiver, wide)), 10)));
-    });
-    builder.StaticMethod(
-        "toString", std::string("(") + primitive + ")Ljava/lang/String;",
-        [argument](IntrinsicContext& c) { return Make(c, Widen(FormatSigned(argument(c.arguments[0]), 10))); });
-    builder.StaticMethod("toString", std::string("(") + primitive + "I)Ljava/lang/String;",
-                         [argument](IntrinsicContext& c) {
-                             return Make(c, Widen(FormatSigned(argument(c.arguments[0]), c.arguments[1].AsInt())));
-                         });
-    for (const auto& [name, radix] : std::array<std::pair<const char*, int>, 3>{
-             {{"toBinaryString", 2}, {"toHexString", 16}, {"toOctalString", 8}}}) {
-        builder.StaticMethod(name, std::string("(") + primitive + ")Ljava/lang/String;",
-                             [argument, radix](IntrinsicContext& c) {
-                                 return Make(c, Widen(FormatUnsigned(static_cast<U>(argument(c.arguments[0])), radix)));
-                             });
-    }
-    builder.StaticMethod(property_name, std::string("(Ljava/lang/String;)") + descriptor,
-                         [descriptor](IntrinsicContext& c) {
-                             if (!c.arguments[0].ref.IsValid()) return VmValue::Ref(VmObjectRef{0});
-                             const auto key = GuestText(c, c.arguments[0].ref);
-                             if (key.empty()) return VmValue::Ref(VmObjectRef{0});
-                             const auto property = c.vm.GetSystemProperty(key);
-                             if (!property.has_value()) return VmValue::Ref(VmObjectRef{});
-                             try {
-                                 const auto value = DecodeIntegral(*property, minimum, maximum);
-                                 return MakeBoxed(c, descriptor, static_cast<U>(static_cast<T>(value)), wide);
-                             } catch (const VmJavaThrow&) {
-                                 return VmValue::Ref(VmObjectRef{});
-                             }
-                         });
-    builder.StaticMethod(property_name, std::string("(Ljava/lang/String;") + primitive + ")" + descriptor,
-                         [descriptor, argument](IntrinsicContext& c) {
-                             if (!c.arguments[0].ref.IsValid()) {
-                                 return MakeBoxed(c, descriptor, static_cast<U>(argument(c.arguments[1])), wide);
-                             }
-                             const auto key = GuestText(c, c.arguments[0].ref);
-                             if (key.empty())
-                                 return MakeBoxed(c, descriptor, static_cast<U>(argument(c.arguments[1])), wide);
-                             const auto property = c.vm.GetSystemProperty(key);
-                             T value = argument(c.arguments[1]);
-                             if (property.has_value()) {
-                                 try {
-                                     value = static_cast<T>(DecodeIntegral(*property, minimum, maximum));
-                                 } catch (const VmJavaThrow&) {
-                                 }
-                             }
-                             return MakeBoxed(c, descriptor, static_cast<U>(value), wide);
-                         });
-    builder.StaticMethod(property_name, std::string("(Ljava/lang/String;") + descriptor + ")" + descriptor,
-                         [descriptor](IntrinsicContext& c) {
-                             if (!c.arguments[0].ref.IsValid()) return VmValue::Ref(c.arguments[1].ref);
-                             const auto key = GuestText(c, c.arguments[0].ref);
-                             if (key.empty()) return VmValue::Ref(c.arguments[1].ref);
-                             const auto property = c.vm.GetSystemProperty(key);
-                             if (property.has_value()) {
-                                 try {
-                                     const auto value = static_cast<T>(DecodeIntegral(*property, minimum, maximum));
-                                     return MakeBoxed(c, descriptor, static_cast<U>(value), wide);
-                                 } catch (const VmJavaThrow&) {
-                                 }
-                             }
-                             return VmValue::Ref(c.arguments[1].ref);
-                         });
-    builder.StaticMethod("highestOneBit", std::string("(") + primitive + ")" + primitive,
-                         [argument, answer, width](IntrinsicContext& c) {
-                             const U value = static_cast<U>(argument(c.arguments[0]));
-                             return answer(
-                                 static_cast<T>(value == 0 ? 0 : U{1} << (width - 1 - std::countl_zero(value))));
-                         });
-    builder.StaticMethod("lowestOneBit", std::string("(") + primitive + ")" + primitive,
-                         [argument, answer](IntrinsicContext& c) {
-                             const U value = static_cast<U>(argument(c.arguments[0]));
-                             return answer(static_cast<T>(value & (U{0} - value)));
-                         });
-    builder.StaticMethod("numberOfLeadingZeros", std::string("(") + primitive + ")I", [argument](IntrinsicContext& c) {
-        return VmValue::Int(std::countl_zero(static_cast<U>(argument(c.arguments[0]))));
-    });
-    builder.StaticMethod("numberOfTrailingZeros", std::string("(") + primitive + ")I", [argument](IntrinsicContext& c) {
-        return VmValue::Int(std::countr_zero(static_cast<U>(argument(c.arguments[0]))));
-    });
-    builder.StaticMethod("bitCount", std::string("(") + primitive + ")I", [argument](IntrinsicContext& c) {
-        return VmValue::Int(std::popcount(static_cast<U>(argument(c.arguments[0]))));
-    });
-    builder.StaticMethod(
-        "rotateLeft", std::string("(") + primitive + "I)" + primitive, [argument, answer](IntrinsicContext& c) {
-            return answer(static_cast<T>(std::rotl(static_cast<U>(argument(c.arguments[0])), c.arguments[1].AsInt())));
-        });
-    builder.StaticMethod(
-        "rotateRight", std::string("(") + primitive + "I)" + primitive, [argument, answer](IntrinsicContext& c) {
-            return answer(static_cast<T>(std::rotr(static_cast<U>(argument(c.arguments[0])), c.arguments[1].AsInt())));
-        });
-    builder.StaticMethod("reverseBytes", std::string("(") + primitive + ")" + primitive,
-                         [argument, answer](IntrinsicContext& c) {
-                             return answer(static_cast<T>(ByteSwap(static_cast<U>(argument(c.arguments[0])))));
-                         });
-    builder.StaticMethod("reverse", std::string("(") + primitive + ")" + primitive,
-                         [argument, answer, width](IntrinsicContext& c) {
-                             U value = static_cast<U>(argument(c.arguments[0]));
-                             U reversed = 0;
-                             for (int i = 0; i < width; ++i) {
-                                 reversed = static_cast<U>((reversed << 1U) | (value & 1U));
-                                 value >>= 1U;
-                             }
-                             return answer(static_cast<T>(reversed));
-                         });
-    builder.StaticMethod("signum", std::string("(") + primitive + ")I", [argument](IntrinsicContext& c) {
-        const auto v = argument(c.arguments[0]);
-        return VmValue::Int(v < 0 ? -1 : (v > 0 ? 1 : 0));
-    });
-}
-
-IntrinsicClassDecl Declare_java_lang_Integer() {
-    auto builder =
-        IntrinsicClassBuilder::Class("Ljava/lang/Integer;", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"});
-    builder.InstanceField("value", "I")
-        .ConstantInt("MAX_VALUE", "I", 0x7fffffff)
-        .ConstantInt("MIN_VALUE", "I", std::numeric_limits<std::int32_t>::min())
-        .ConstantInt("SIZE", "I", 32);
-    AddTypeField(builder);
-    AddWideIntegralCommon<std::int32_t, std::uint32_t>(builder, "Ljava/lang/Integer;", "I", "parseInt", "getInteger",
-                                                       32);
-    builder.ClassInitializer([](IntrinsicContext& c) {
-        InitializeType(c, "Ljava/lang/Integer;", "I");
-        return VmValue::Void();
-    });
-    // AOSP 4.4 ROM line 32.
-    builder.VirtualMethod(
-        "compareTo", "(Ljava/lang/Object;)I",
-        [](IntrinsicContext& c) {
-            const auto other = c.arguments[0].ref;
-            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Integer;"),
-                                                               c.vm.Model().ObjectClass(other)))
-                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
-            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Integer;)I", {c.arguments[0]});
-        },
-        kAccPublic | kAccBridge | kAccSynthetic);
-
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Declare_java_lang_Long() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Long;", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"});
-    builder.InstanceField("value", "J")
-        .ConstantInt("MAX_VALUE", "J", std::numeric_limits<std::int64_t>::max())
-        .ConstantInt("MIN_VALUE", "J", std::numeric_limits<std::int64_t>::min())
-        .ConstantInt("SIZE", "I", 64);
-    AddTypeField(builder);
-    AddWideIntegralCommon<std::int64_t, std::uint64_t>(builder, "Ljava/lang/Long;", "J", "parseLong", "getLong", 64);
-    builder.ClassInitializer([](IntrinsicContext& c) {
-        InitializeType(c, "Ljava/lang/Long;", "J");
-        return VmValue::Void();
-    });
-    // AOSP 4.4 ROM line 32.
-    builder.VirtualMethod(
-        "compareTo", "(Ljava/lang/Object;)I",
-        [](IntrinsicContext& c) {
-            const auto other = c.arguments[0].ref;
-            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Long;"),
-                                                               c.vm.Model().ObjectClass(other)))
-                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
-            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Long;)I", {c.arguments[0]});
-        },
-        kAccPublic | kAccBridge | kAccSynthetic);
-
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Declare_java_lang_Boolean() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Boolean;", "Ljava/lang/Object;",
-                                                {"Ljava/io/Serializable;", "Ljava/lang/Comparable;"});
-    builder.InstanceField("value", "Z")
-        .StaticField("TRUE", "Ljava/lang/Boolean;")
-        .StaticField("FALSE", "Ljava/lang/Boolean;");
-    AddTypeField(builder);
-    const auto parsed = [](IntrinsicContext& c, VmObjectRef text) {
-        const auto value = Value(c, text);
-        if (value.size() != 4) return false;
-        return AsciiLower(value[0]) == u't' && AsciiLower(value[1]) == u'r' && AsciiLower(value[2]) == u'u' &&
-               AsciiLower(value[3]) == u'e';
-    };
-    builder.Constructor("(Z)V", [](IntrinsicContext& c) {
-        SetBoxedBits(c, c.receiver, c.arguments[0].AsInt() != 0, false);
-        return VmValue::Void();
-    });
-    builder.Constructor("(Ljava/lang/String;)V", [parsed](IntrinsicContext& c) {
-        SetBoxedBits(c, c.receiver, c.arguments[0].ref.IsValid() && parsed(c, c.arguments[0].ref), false);
-        return VmValue::Void();
-    });
-    builder.FinalMethod("booleanValue", "()Z",
-                        [](IntrinsicContext& c) { return Bool(ReadBoxed(c, c.receiver, false) != 0); });
-    builder.StaticMethod("parseBoolean", "(Ljava/lang/String;)Z", [parsed](IntrinsicContext& c) {
-        return Bool(c.arguments[0].ref.IsValid() && parsed(c, c.arguments[0].ref));
-    });
-    const auto canonical = [](IntrinsicContext& c, bool value) {
-        return VmValue::Ref(StaticReference(c, "Ljava/lang/Boolean;", value ? "TRUE" : "FALSE", "Ljava/lang/Boolean;"));
-    };
-    builder.StaticMethod("valueOf", "(Z)Ljava/lang/Boolean;",
-                         [canonical](IntrinsicContext& c) { return canonical(c, c.arguments[0].AsInt() != 0); });
-    builder.StaticMethod("valueOf", "(Ljava/lang/String;)Ljava/lang/Boolean;",
-                         [canonical, parsed](IntrinsicContext& c) {
-                             return canonical(c, c.arguments[0].ref.IsValid() && parsed(c, c.arguments[0].ref));
-                         });
-    builder.StaticMethod("compare", "(ZZ)I", [](IntrinsicContext& c) {
-        return VmValue::Int((c.arguments[0].AsInt() != 0) - (c.arguments[1].AsInt() != 0));
-    });
-    builder.FinalMethod("compareTo", "(Ljava/lang/Boolean;)I", [](IntrinsicContext& c) {
-        return VmValue::Int((ReadBoxed(c, c.receiver, false) != 0) - (ReadBoxed(c, c.arguments[0].ref, false) != 0));
-    });
-    builder.FinalOverrideMethod("equals", "(Ljava/lang/Object;)Z", [](IntrinsicContext& c) {
-        return Bool(IsExactClass(c, c.arguments[0].ref, "Ljava/lang/Boolean;") &&
-                    ReadBoxed(c, c.receiver, false) == ReadBoxed(c, c.arguments[0].ref, false));
-    });
-    builder.FinalOverrideMethod("hashCode", "()I", [](IntrinsicContext& c) {
-        return VmValue::Int(ReadBoxed(c, c.receiver, false) != 0 ? 1231 : 1237);
-    });
-    builder.FinalOverrideMethod("toString", "()Ljava/lang/String;", [](IntrinsicContext& c) {
-        return Make(c, ReadBoxed(c, c.receiver, false) != 0 ? u"true" : u"false");
-    });
-    builder.StaticMethod("toString", "(Z)Ljava/lang/String;",
-                         [](IntrinsicContext& c) { return Make(c, c.arguments[0].AsInt() != 0 ? u"true" : u"false"); });
-    builder.StaticMethod("getBoolean", "(Ljava/lang/String;)Z", [](IntrinsicContext& c) {
-        if (!c.arguments[0].ref.IsValid()) return Bool(false);
-        const auto property = c.vm.GetSystemProperty(GuestText(c, c.arguments[0].ref));
-        if (!property.has_value()) return Bool(false);
-        std::string value = *property;
-        for (auto& unit : value)
-            if (unit >= 'A' && unit <= 'Z') unit += 32;
-        return Bool(value == "true");
-    });
-    builder.ClassInitializer([](IntrinsicContext& c) {
-        InitializeType(c, "Ljava/lang/Boolean;", "Z");
-        c.vm.SetIntrinsicStaticRef("Ljava/lang/Boolean;", "TRUE", "Ljava/lang/Boolean;",
-                                   MakeBoxed(c, "Ljava/lang/Boolean;", 1, false).ref);
-        c.vm.SetIntrinsicStaticRef("Ljava/lang/Boolean;", "FALSE", "Ljava/lang/Boolean;",
-                                   MakeBoxed(c, "Ljava/lang/Boolean;", 0, false).ref);
-        return VmValue::Void();
-    });
-    // AOSP 4.4 ROM line 27.
-    builder.VirtualMethod(
-        "compareTo", "(Ljava/lang/Object;)I",
-        [](IntrinsicContext& c) {
-            const auto other = c.arguments[0].ref;
-            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Boolean;"),
-                                                               c.vm.Model().ObjectClass(other)))
-                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
-            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Boolean;)I", {c.arguments[0]});
-        },
-        kAccPublic | kAccBridge | kAccSynthetic);
-
-    return std::move(builder).Build();
-}
-
 template <typename Float, typename Bits>
-void AddFloatingCommon(IntrinsicClassBuilder& builder, const char* descriptor, const char* primitive,
-                       const char* parse_name, const char* bits_to_name, const char* raw_bits_name,
-                       const char* from_bits_name) {
+IntrinsicClassDecl DeclareFloatingNatives(const char* descriptor, const char* primitive, const char* bits_to_name,
+                                          const char* raw_bits_name, const char* from_bits_name) {
+    auto builder = IntrinsicClassBuilder::Class(descriptor);
+    builder.MergesBootClass();
     constexpr bool wide = sizeof(Float) == 8;
     const auto argument = [](const VmValue& value) -> Float {
         if constexpr (wide)
-            return static_cast<Float>(value.AsDouble());
+            return value.AsDouble();
         else
-            return static_cast<Float>(value.AsFloat());
+            return value.AsFloat();
     };
     const auto answer = [](Float value) -> VmValue {
         if constexpr (wide)
@@ -1587,652 +428,54 @@ void AddFloatingCommon(IntrinsicClassBuilder& builder, const char* descriptor, c
             return VmValue::Float(value);
     };
     const auto bits = [](Float value) -> Bits { return std::bit_cast<Bits>(value); };
-    builder.Constructor(std::string("(") + primitive + ")V", [argument, bits](IntrinsicContext& c) {
-        SetBoxedBits(c, c.receiver, bits(argument(c.arguments[0])), wide);
-        return VmValue::Void();
-    });
-    if constexpr (!wide)
-        builder.Constructor("(D)V", [](IntrinsicContext& c) {
-            SetBoxedBits(c, c.receiver, std::bit_cast<std::uint32_t>(static_cast<float>(c.arguments[0].AsDouble())),
-                         false);
-            return VmValue::Void();
-        });
-    builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext& c) {
-        const auto v = ParseFloating<Float>(GuestFloatingText(c, c.arguments[0].ref));
-        SetBoxedBits(c, c.receiver, std::bit_cast<Bits>(v), wide);
-        return VmValue::Void();
-    });
-    AddNumberConversions(builder, wide, wide ? 'D' : 'F');
-    builder.StaticMethod(parse_name, std::string("(Ljava/lang/String;)") + primitive, [answer](IntrinsicContext& c) {
-        return answer(ParseFloating<Float>(GuestFloatingText(c, c.arguments[0].ref)));
-    });
-    builder.StaticMethod("valueOf", std::string("(") + primitive + ")" + descriptor,
-                         [descriptor, argument, bits](IntrinsicContext& c) {
-                             return MakeBoxed(c, descriptor, bits(argument(c.arguments[0])), wide);
-                         });
-    builder.StaticMethod("valueOf", std::string("(Ljava/lang/String;)") + descriptor,
-                         [descriptor](IntrinsicContext& c) {
-                             const auto v = ParseFloating<Float>(GuestFloatingText(c, c.arguments[0].ref));
-                             return MakeBoxed(c, descriptor, std::bit_cast<Bits>(v), wide);
-                         });
-    builder.StaticMethod("isNaN", std::string("(") + primitive + ")Z",
-                         [argument](IntrinsicContext& c) { return Bool(std::isnan(argument(c.arguments[0]))); });
-    builder.FinalMethod("isNaN", "()Z", [](IntrinsicContext& c) {
-        return Bool(std::isnan(std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.receiver, wide)))));
-    });
-    builder.StaticMethod("isInfinite", std::string("(") + primitive + ")Z",
-                         [argument](IntrinsicContext& c) { return Bool(std::isinf(argument(c.arguments[0]))); });
-    builder.FinalMethod("isInfinite", "()Z", [](IntrinsicContext& c) {
-        return Bool(std::isinf(std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.receiver, wide)))));
-    });
-    builder.StaticMethod("compare", std::string("(") + primitive + primitive + ")I", [argument](IntrinsicContext& c) {
-        if constexpr (wide)
-            return VmValue::Int(JavaDoubleCompare(argument(c.arguments[0]), argument(c.arguments[1])));
-        else
-            return VmValue::Int(JavaFloatCompare(argument(c.arguments[0]), argument(c.arguments[1])));
-    });
-    builder.FinalMethod("compareTo", std::string("(") + descriptor + ")I", [](IntrinsicContext& c) {
-        const auto left = std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.receiver, wide)));
-        const auto right = std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.arguments[0].ref, wide)));
-        if constexpr (wide)
-            return VmValue::Int(JavaDoubleCompare(left, right));
-        else
-            return VmValue::Int(JavaFloatCompare(left, right));
-    });
-    builder.FinalOverrideMethod("equals", "(Ljava/lang/Object;)Z", [descriptor](IntrinsicContext& c) {
-        if (!IsExactClass(c, c.arguments[0].ref, descriptor)) return Bool(false);
-        const auto left = std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.receiver, wide)));
-        const auto right = std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.arguments[0].ref, wide)));
-        if constexpr (wide)
-            return Bool(CanonicalDoubleBits(left) == CanonicalDoubleBits(right));
-        else
-            return Bool(CanonicalFloatBits(left) == CanonicalFloatBits(right));
-    });
-    builder.FinalOverrideMethod("hashCode", "()I", [](IntrinsicContext& c) {
-        const auto value = std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.receiver, wide)));
-        if constexpr (wide) {
-            const auto canonical = CanonicalDoubleBits(value);
-            return VmValue::Int(static_cast<std::int32_t>(canonical ^ (canonical >> 32U)));
-        } else
-            return VmValue::Int(static_cast<std::int32_t>(CanonicalFloatBits(value)));
-    });
-    builder.FinalOverrideMethod("toString", "()Ljava/lang/String;", [answer](IntrinsicContext& c) {
-        return FormatFloating(c.vm, answer(std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.receiver, wide)))),
-                              wide);
-    });
-    builder.StaticMethod("toString", std::string("(") + primitive + ")Ljava/lang/String;",
-                         [](IntrinsicContext& c) { return FormatFloating(c.vm, c.arguments[0], wide); });
     builder.StaticMethod(
-        "toHexString", std::string("(") + primitive + ")Ljava/lang/String;",
-        [argument](IntrinsicContext& c) { return Make(c, Widen(FormatHexFloating(argument(c.arguments[0])))); });
-    builder.StaticMethod(
-        bits_to_name, std::string("(") + primitive + ")" + (wide ? "J" : "I"), [argument](IntrinsicContext& c) {
+        bits_to_name, std::string("(") + primitive + ")" + (wide ? "J" : "I"),
+        [argument](IntrinsicContext& c) {
             if constexpr (wide)
                 return VmValue::Long(static_cast<std::int64_t>(CanonicalDoubleBits(argument(c.arguments[0]))));
             else
                 return VmValue::Int(static_cast<std::int32_t>(CanonicalFloatBits(argument(c.arguments[0]))));
-        });
-    builder.StaticMethod(raw_bits_name, std::string("(") + primitive + ")" + (wide ? "J" : "I"),
-                         [argument, bits](IntrinsicContext& c) {
-                             if constexpr (wide)
-                                 return VmValue::Long(static_cast<std::int64_t>(bits(argument(c.arguments[0]))));
-                             else
-                                 return VmValue::Int(static_cast<std::int32_t>(bits(argument(c.arguments[0]))));
-                         });
-    builder.StaticMethod(from_bits_name, std::string("(") + (wide ? "J" : "I") + ")" + primitive,
-                         [answer](IntrinsicContext& c) {
-                             Bits raw;
-                             if constexpr (wide)
-                                 raw = static_cast<Bits>(c.arguments[0].AsLong());
-                             else
-                                 raw = static_cast<Bits>(c.arguments[0].AsInt());
-                             return answer(std::bit_cast<Float>(raw));
-                         });
+        },
+        kAccPublic | kAccNative);
+    builder.StaticMethod(
+        raw_bits_name, std::string("(") + primitive + ")" + (wide ? "J" : "I"),
+        [argument, bits](IntrinsicContext& c) {
+            if constexpr (wide)
+                return VmValue::Long(static_cast<std::int64_t>(bits(argument(c.arguments[0]))));
+            else
+                return VmValue::Int(static_cast<std::int32_t>(bits(argument(c.arguments[0]))));
+        },
+        kAccPublic | kAccNative);
+    builder.StaticMethod(
+        from_bits_name, std::string("(") + (wide ? "J" : "I") + ")" + primitive,
+        [answer](IntrinsicContext& c) {
+            Bits raw;
+            if constexpr (wide)
+                raw = static_cast<Bits>(c.arguments[0].AsLong());
+            else
+                raw = static_cast<Bits>(c.arguments[0].AsInt());
+            return answer(std::bit_cast<Float>(raw));
+        },
+        kAccPublic | kAccNative);
+    return std::move(builder).Build();
 }
 
 IntrinsicClassDecl Declare_java_lang_Float() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Float;", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"});
-    builder.InstanceField("value", "F");
-    AddTypeField(builder);
-    builder.ConstantInt("MAX_VALUE", "F", std::bit_cast<std::int32_t>(std::numeric_limits<float>::max()))
-        .ConstantInt("MIN_VALUE", "F", std::bit_cast<std::int32_t>(std::numeric_limits<float>::denorm_min()))
-        .ConstantInt("NaN", "F", 0x7fc00000)
-        .ConstantInt("POSITIVE_INFINITY", "F", 0x7f800000)
-        .ConstantInt("NEGATIVE_INFINITY", "F", static_cast<std::int32_t>(0xff800000U))
-        .ConstantInt("MIN_NORMAL", "F", std::bit_cast<std::int32_t>(std::numeric_limits<float>::min()))
-        .ConstantInt("MAX_EXPONENT", "I", 127)
-        .ConstantInt("MIN_EXPONENT", "I", -126)
-        .ConstantInt("SIZE", "I", 32);
-    AddFloatingCommon<float, std::uint32_t>(builder, "Ljava/lang/Float;", "F", "parseFloat", "floatToIntBits",
-                                            "floatToRawIntBits", "intBitsToFloat");
-    builder.ClassInitializer([](IntrinsicContext& c) {
-        InitializeType(c, "Ljava/lang/Float;", "F");
-        return VmValue::Void();
-    });
-    // AOSP 4.4 ROM line 26.
-    builder.VirtualMethod(
-        "compareTo", "(Ljava/lang/Object;)I",
-        [](IntrinsicContext& c) {
-            const auto other = c.arguments[0].ref;
-            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Float;"),
-                                                               c.vm.Model().ObjectClass(other)))
-                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
-            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Float;)I", {c.arguments[0]});
-        },
-        kAccPublic | kAccBridge | kAccSynthetic);
-
-    return std::move(builder).Build();
+    return DeclareFloatingNatives<float, std::uint32_t>("Ljava/lang/Float;", "F", "floatToIntBits", "floatToRawIntBits",
+                                                        "intBitsToFloat");
 }
 
 IntrinsicClassDecl Declare_java_lang_Double() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Double;", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"});
-    builder.InstanceField("value", "D");
-    AddTypeField(builder);
-    builder.ConstantInt("MAX_VALUE", "D", std::bit_cast<std::int64_t>(std::numeric_limits<double>::max()))
-        .ConstantInt("MIN_VALUE", "D", std::bit_cast<std::int64_t>(std::numeric_limits<double>::denorm_min()))
-        .ConstantInt("NaN", "D", std::bit_cast<std::int64_t>(std::numeric_limits<double>::quiet_NaN()))
-        .ConstantInt("POSITIVE_INFINITY", "D", std::bit_cast<std::int64_t>(std::numeric_limits<double>::infinity()))
-        .ConstantInt("NEGATIVE_INFINITY", "D", std::bit_cast<std::int64_t>(-std::numeric_limits<double>::infinity()))
-        .ConstantInt("MIN_NORMAL", "D", std::bit_cast<std::int64_t>(std::numeric_limits<double>::min()))
-        .ConstantInt("MAX_EXPONENT", "I", 1023)
-        .ConstantInt("MIN_EXPONENT", "I", -1022)
-        .ConstantInt("SIZE", "I", 64);
-    AddFloatingCommon<double, std::uint64_t>(builder, "Ljava/lang/Double;", "D", "parseDouble", "doubleToLongBits",
-                                             "doubleToRawLongBits", "longBitsToDouble");
-    builder.ClassInitializer([](IntrinsicContext& c) {
-        InitializeType(c, "Ljava/lang/Double;", "D");
-        return VmValue::Void();
-    });
-    // AOSP 4.4 ROM line 26.
-    builder.VirtualMethod(
-        "compareTo", "(Ljava/lang/Object;)I",
-        [](IntrinsicContext& c) {
-            const auto other = c.arguments[0].ref;
-            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Double;"),
-                                                               c.vm.Model().ObjectClass(other)))
-                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
-            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Double;)I", {c.arguments[0]});
-        },
-        kAccPublic | kAccBridge | kAccSynthetic);
-
-    return std::move(builder).Build();
+    return DeclareFloatingNatives<double, std::uint64_t>("Ljava/lang/Double;", "D", "doubleToLongBits",
+                                                         "doubleToRawLongBits", "longBitsToDouble");
 }
 
 IntrinsicClassDecl Declare_java_lang_Character() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Character;", "Ljava/lang/Object;",
-                                                {"Ljava/io/Serializable;", "Ljava/lang/Comparable;"});
-    builder.InstanceField("value", "C");
-    AddTypeField(builder);
-    for (const auto& [name, descriptor, value] : std::array<std::tuple<const char*, const char*, int>, 58>{
-             {{"MIN_VALUE", "C", 0},
-              {"MAX_VALUE", "C", 0xffff},
-              {"MIN_RADIX", "I", 2},
-              {"MAX_RADIX", "I", 36},
-              {"UNASSIGNED", "B", 0},
-              {"UPPERCASE_LETTER", "B", 1},
-              {"LOWERCASE_LETTER", "B", 2},
-              {"TITLECASE_LETTER", "B", 3},
-              {"MODIFIER_LETTER", "B", 4},
-              {"OTHER_LETTER", "B", 5},
-              {"NON_SPACING_MARK", "B", 6},
-              {"ENCLOSING_MARK", "B", 7},
-              {"COMBINING_SPACING_MARK", "B", 8},
-              {"DECIMAL_DIGIT_NUMBER", "B", 9},
-              {"LETTER_NUMBER", "B", 10},
-              {"OTHER_NUMBER", "B", 11},
-              {"SPACE_SEPARATOR", "B", 12},
-              {"LINE_SEPARATOR", "B", 13},
-              {"PARAGRAPH_SEPARATOR", "B", 14},
-              {"CONTROL", "B", 15},
-              {"FORMAT", "B", 16},
-              {"PRIVATE_USE", "B", 18},
-              {"SURROGATE", "B", 19},
-              {"DASH_PUNCTUATION", "B", 20},
-              {"START_PUNCTUATION", "B", 21},
-              {"END_PUNCTUATION", "B", 22},
-              {"CONNECTOR_PUNCTUATION", "B", 23},
-              {"OTHER_PUNCTUATION", "B", 24},
-              {"MATH_SYMBOL", "B", 25},
-              {"CURRENCY_SYMBOL", "B", 26},
-              {"MODIFIER_SYMBOL", "B", 27},
-              {"OTHER_SYMBOL", "B", 28},
-              {"INITIAL_QUOTE_PUNCTUATION", "B", 29},
-              {"FINAL_QUOTE_PUNCTUATION", "B", 30},
-              {"DIRECTIONALITY_UNDEFINED", "B", -1},
-              {"DIRECTIONALITY_LEFT_TO_RIGHT", "B", 0},
-              {"DIRECTIONALITY_RIGHT_TO_LEFT", "B", 1},
-              {"DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC", "B", 2},
-              {"DIRECTIONALITY_EUROPEAN_NUMBER", "B", 3},
-              {"DIRECTIONALITY_EUROPEAN_NUMBER_SEPARATOR", "B", 4},
-              {"DIRECTIONALITY_EUROPEAN_NUMBER_TERMINATOR", "B", 5},
-              {"DIRECTIONALITY_ARABIC_NUMBER", "B", 6},
-              {"DIRECTIONALITY_COMMON_NUMBER_SEPARATOR", "B", 7},
-              {"DIRECTIONALITY_NONSPACING_MARK", "B", 8},
-              {"DIRECTIONALITY_BOUNDARY_NEUTRAL", "B", 9},
-              {"DIRECTIONALITY_PARAGRAPH_SEPARATOR", "B", 10},
-              {"DIRECTIONALITY_SEGMENT_SEPARATOR", "B", 11},
-              {"DIRECTIONALITY_WHITESPACE", "B", 12},
-              {"DIRECTIONALITY_OTHER_NEUTRALS", "B", 13},
-              {"DIRECTIONALITY_LEFT_TO_RIGHT_EMBEDDING", "B", 14},
-              {"DIRECTIONALITY_LEFT_TO_RIGHT_OVERRIDE", "B", 15},
-              {"DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING", "B", 16},
-              {"DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE", "B", 17},
-              {"DIRECTIONALITY_POP_DIRECTIONAL_FORMAT", "B", 18},
-              {"MIN_HIGH_SURROGATE", "C", 0xd800},
-              {"MAX_HIGH_SURROGATE", "C", 0xdbff},
-              {"MIN_LOW_SURROGATE", "C", 0xdc00},
-              {"MAX_LOW_SURROGATE", "C", 0xdfff}}})
-        builder.ConstantInt(name, descriptor, value);
-    builder.ConstantInt("MIN_SURROGATE", "C", 0xd800)
-        .ConstantInt("MAX_SURROGATE", "C", 0xdfff)
-        .ConstantInt("MIN_SUPPLEMENTARY_CODE_POINT", "I", 0x10000)
-        .ConstantInt("MIN_CODE_POINT", "I", 0)
-        .ConstantInt("MAX_CODE_POINT", "I", 0x10ffff)
-        .ConstantInt("SIZE", "I", 16);
-    builder.Constructor("(C)V", [](IntrinsicContext& c) {
-        SetBoxedBits(c, c.receiver, static_cast<std::uint16_t>(c.arguments[0].AsInt()), false);
-        return VmValue::Void();
-    });
-    builder.FinalMethod("charValue", "()C", [](IntrinsicContext& c) {
-        return VmValue::Int(static_cast<std::uint16_t>(ReadBoxed(c, c.receiver, false)));
-    });
-    builder.StaticMethod("valueOf", "(C)Ljava/lang/Character;", [](IntrinsicContext& c) {
-        return MakeBoxed(c, "Ljava/lang/Character;", static_cast<std::uint16_t>(c.arguments[0].AsInt()), false);
-    });
-    builder.FinalMethod("compareTo", "(Ljava/lang/Character;)I", [](IntrinsicContext& c) {
-        return VmValue::Int(static_cast<int>(static_cast<std::uint16_t>(ReadBoxed(c, c.receiver, false))) -
-                            static_cast<int>(static_cast<std::uint16_t>(ReadBoxed(c, c.arguments[0].ref, false))));
-    });
-    builder.StaticMethod("compare", "(CC)I", [](IntrinsicContext& c) {
-        return VmValue::Int(static_cast<std::uint16_t>(c.arguments[0].AsInt()) -
-                            static_cast<std::uint16_t>(c.arguments[1].AsInt()));
-    });
-    builder.FinalOverrideMethod("equals", "(Ljava/lang/Object;)Z", [](IntrinsicContext& c) {
-        return Bool(IsExactClass(c, c.arguments[0].ref, "Ljava/lang/Character;") &&
-                    ReadBoxed(c, c.receiver, false) == ReadBoxed(c, c.arguments[0].ref, false));
-    });
-    builder.FinalOverrideMethod("hashCode", "()I", [](IntrinsicContext& c) {
-        return VmValue::Int(static_cast<std::uint16_t>(ReadBoxed(c, c.receiver, false)));
-    });
-    builder.FinalOverrideMethod("toString", "()Ljava/lang/String;", [](IntrinsicContext& c) {
-        return Make(c, std::u16string(1, static_cast<char16_t>(ReadBoxed(c, c.receiver, false))));
-    });
-    builder.StaticMethod("toString", "(C)Ljava/lang/String;", [](IntrinsicContext& c) {
-        return Make(c, std::u16string(1, static_cast<char16_t>(c.arguments[0].AsInt())));
-    });
-    const auto digit = [](std::int32_t cp, std::int32_t radix) {
-        const auto value = cp < 128 ? DigitValue(static_cast<char>(cp)) : -1;
-        return radix >= 2 && radix <= 36 && value < radix ? value : -1;
-    };
-    builder.StaticMethod("digit", "(CI)I", [digit](IntrinsicContext& c) {
-        return VmValue::Int(digit(static_cast<std::uint16_t>(c.arguments[0].AsInt()), c.arguments[1].AsInt()));
-    });
-    builder.StaticMethod("digit", "(II)I", [digit](IntrinsicContext& c) {
-        return VmValue::Int(digit(c.arguments[0].AsInt(), c.arguments[1].AsInt()));
-    });
-    builder.StaticMethod("forDigit", "(II)C", [](IntrinsicContext& c) {
-        const auto d = c.arguments[0].AsInt(), r = c.arguments[1].AsInt();
-        return VmValue::Int(r >= 2 && r <= 36 && d >= 0 && d < r ? kDigits[static_cast<std::size_t>(d)] : 0);
-    });
-    const auto add_predicate = [&builder](const char* name, auto predicate) {
-        builder.StaticMethod(name, "(C)Z", [predicate](IntrinsicContext& c) {
-            return Bool(predicate(static_cast<std::uint16_t>(c.arguments[0].AsInt())));
-        });
-        builder.StaticMethod(name, "(I)Z",
-                             [predicate](IntrinsicContext& c) { return Bool(predicate(c.arguments[0].AsInt())); });
-    };
-    add_predicate("isDigit", [](int cp) { return cp >= '0' && cp <= '9'; });
-    add_predicate("isLetter", [](int cp) { return (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z'); });
-    add_predicate("isLetterOrDigit", [](int cp) {
-        return (cp >= '0' && cp <= '9') || (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z');
-    });
-    add_predicate("isLowerCase", [](int cp) { return cp >= 'a' && cp <= 'z'; });
-    add_predicate("isUpperCase", [](int cp) { return cp >= 'A' && cp <= 'Z'; });
-    add_predicate("isWhitespace", [](int cp) { return CharacterIsWhitespace(cp); });
-    add_predicate("isSpaceChar", [](int cp) { return CharacterIsSpace(cp); });
-    add_predicate("isISOControl", [](int cp) { return (cp >= 0 && cp <= 0x1f) || (cp >= 0x7f && cp <= 0x9f); });
-    builder.StaticMethod("isSpace", "(C)Z", [](IntrinsicContext& c) {
-        const auto cp = static_cast<std::uint16_t>(c.arguments[0].AsInt());
-        return Bool(cp == '\n' || cp == '\t' || cp == '\f' || cp == '\r' || cp == ' ');
-    });
-    builder.GuestNativeStatic("toLowerCaseImpl", "(I)I", kAccPrivate | kAccStatic | kAccNative);
-    builder.GuestNativeStatic("toUpperCaseImpl", "(I)I", kAccPrivate | kAccStatic | kAccNative);
-    builder.GuestNativeStatic("getDirectionality", "(I)B", kAccPublic | kAccStatic | kAccNative);
-    builder.StaticMethod("getDirectionality", "(C)B", [](IntrinsicContext& c) {
-        const auto owner = c.vm.Linker().ResolveDescriptor("Ljava/lang/Character;");
-        const auto method = c.vm.Linker().FindDirectMethod(owner, "getDirectionality", "(I)B");
-        const auto outcome =
-            c.vm.Call(*method, std::array{VmValue::Int(static_cast<std::uint16_t>(c.arguments[0].AsInt()))});
-        if (outcome.exception.IsValid())
-            throw VmJavaThrow{c.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                              outcome.exception};
-        return outcome.value;
-    });
-    const auto map_case = [](IntrinsicContext& c, bool upper, bool as_char) {
-        const auto cp = as_char ? static_cast<std::uint16_t>(c.arguments[0].AsInt()) : c.arguments[0].AsInt();
-        std::int32_t result = cp;
-        if (upper && cp >= 'a' && cp <= 'z')
-            result -= 32;
-        else if (!upper && cp >= 'A' && cp <= 'Z')
-            result += 32;
-        else if (cp >= (upper ? 181 : 192)) {
-            const auto owner = c.vm.Linker().ResolveDescriptor("Ljava/lang/Character;");
-            const auto method =
-                c.vm.Linker().FindDirectMethod(owner, upper ? "toUpperCaseImpl" : "toLowerCaseImpl", "(I)I");
-            if (!method) throw DexVmError(DexVmErrorReason::unresolved_reference, "Character case native missing");
-            const auto outcome = c.vm.Call(*method, std::array{VmValue::Int(cp)});
-            if (outcome.exception.IsValid())
-                throw VmJavaThrow{c.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                                  outcome.exception};
-            result = outcome.value.AsInt();
-        }
-        return VmValue::Int(as_char ? static_cast<std::uint16_t>(result) : result);
-    };
-    builder.StaticMethod("toLowerCase", "(C)C", [map_case](IntrinsicContext& c) { return map_case(c, false, true); });
-    builder.StaticMethod("toLowerCase", "(I)I", [map_case](IntrinsicContext& c) { return map_case(c, false, false); });
-    builder.StaticMethod("toUpperCase", "(C)C", [map_case](IntrinsicContext& c) { return map_case(c, true, true); });
-    builder.StaticMethod("toUpperCase", "(I)I", [map_case](IntrinsicContext& c) { return map_case(c, true, false); });
-    builder.StaticMethod("isHighSurrogate", "(C)Z", [](IntrinsicContext& c) {
-        const auto cp = static_cast<std::uint16_t>(c.arguments[0].AsInt());
-        return Bool(cp >= 0xd800 && cp <= 0xdbff);
-    });
-    builder.StaticMethod("isLowSurrogate", "(C)Z", [](IntrinsicContext& c) {
-        const auto cp = static_cast<std::uint16_t>(c.arguments[0].AsInt());
-        return Bool(cp >= 0xdc00 && cp <= 0xdfff);
-    });
-    builder.StaticMethod("isSurrogatePair", "(CC)Z", [](IntrinsicContext& c) {
-        const auto h = static_cast<std::uint16_t>(c.arguments[0].AsInt()),
-                   l = static_cast<std::uint16_t>(c.arguments[1].AsInt());
-        return Bool(h >= 0xd800 && h <= 0xdbff && l >= 0xdc00 && l <= 0xdfff);
-    });
-    builder.StaticMethod("isValidCodePoint", "(I)Z", [](IntrinsicContext& c) {
-        const auto cp = c.arguments[0].AsInt();
-        return Bool(cp >= 0 && cp <= 0x10ffff);
-    });
-    builder.StaticMethod("isBmpCodePoint", "(I)Z", [](IntrinsicContext& c) {
-        const auto cp = c.arguments[0].AsInt();
-        return Bool(cp >= 0 && cp <= 0xffff);
-    });
-    builder.StaticMethod("isSupplementaryCodePoint", "(I)Z", [](IntrinsicContext& c) {
-        const auto cp = c.arguments[0].AsInt();
-        return Bool(cp >= 0x10000 && cp <= 0x10ffff);
-    });
-    builder.StaticMethod("charCount", "(I)I",
-                         [](IntrinsicContext& c) { return VmValue::Int(c.arguments[0].AsInt() >= 0x10000 ? 2 : 1); });
-    builder.StaticMethod("toCodePoint", "(CC)I", [](IntrinsicContext& c) {
-        const auto h = static_cast<std::uint16_t>(c.arguments[0].AsInt()),
-                   l = static_cast<std::uint16_t>(c.arguments[1].AsInt());
-        return VmValue::Int(((h - 0xd800) << 10) + (l - 0xdc00) + 0x10000);
-    });
-    builder.StaticMethod("highSurrogate", "(I)C", [](IntrinsicContext& c) {
-        return VmValue::Int(static_cast<std::uint16_t>(((c.arguments[0].AsInt() - 0x10000) >> 10) + 0xd800));
-    });
-    builder.StaticMethod("lowSurrogate", "(I)C", [](IntrinsicContext& c) {
-        return VmValue::Int(static_cast<std::uint16_t>(((c.arguments[0].AsInt() - 0x10000) & 0x3ff) + 0xdc00));
-    });
-    builder.StaticMethod("reverseBytes", "(C)C", [](IntrinsicContext& c) {
-        return VmValue::Int(ByteSwap(static_cast<std::uint16_t>(c.arguments[0].AsInt())));
-    });
-    // UTF-16 array primitives for the pinned builder bytecode. No builder state.
-    builder.StaticMethod("toChars", "(I)[C", [](IntrinsicContext& c) {
-        const auto cp = c.arguments[0].AsInt();
-        if (cp < 0 || cp > 0x10ffff) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid code point"};
-        const std::u16string text = cp < 0x10000
-                                        ? std::u16string(1, static_cast<char16_t>(cp))
-                                        : std::u16string{static_cast<char16_t>(0xd800 + ((cp - 0x10000) >> 10)),
-                                                         static_cast<char16_t>(0xdc00 + ((cp - 0x10000) & 0x3ff))};
-        const auto array = c.vm.Model().NewPrimitiveArray(
-            c.vm.Linker().ResolveDescriptor("[C"), JniPrimitiveKind::character, static_cast<JniSize>(text.size()));
-        for (std::size_t i = 0; i < text.size(); ++i)
-            c.vm.Model().SetPrimitiveElement(array, static_cast<JniSize>(i), text[i]);
-        return VmValue::Ref(array);
-    });
-    const auto pair = [](char16_t h, char16_t l) { return h >= 0xd800 && h <= 0xdbff && l >= 0xdc00 && l <= 0xdfff; };
-    builder.StaticMethod("codePointAt", "([CII)I", [pair](IntrinsicContext& c) {
-        const auto array = RequireArray(c.arguments[0].ref);
-        const auto i = c.arguments[1].AsInt(), limit = c.arguments[2].AsInt();
-        if (i < 0 || i >= limit || limit > c.vm.Model().ArrayLength(array))
-            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "invalid code point range"};
-        const auto text = CharsValue(c, array, i, std::min(2, limit - i));
-        return VmValue::Int(text.size() == 2 && pair(text[0], text[1])
-                                ? 0x10000 + ((text[0] - 0xd800) << 10) + text[1] - 0xdc00
-                                : text[0]);
-    });
-    builder.StaticMethod("codePointBefore", "([CI)I", [pair](IntrinsicContext& c) {
-        const auto array = RequireArray(c.arguments[0].ref);
-        const auto i = c.arguments[1].AsInt();
-        if (i < 1 || i > c.vm.Model().ArrayLength(array))
-            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "invalid code point index"};
-        const auto n = std::min(2, i);
-        const auto text = CharsValue(c, array, i - n, n);
-        return VmValue::Int(n == 2 && pair(text[0], text[1]) ? 0x10000 + ((text[0] - 0xd800) << 10) + text[1] - 0xdc00
-                                                             : text.back());
-    });
-    builder.StaticMethod("codePointCount", "([CII)I", [pair](IntrinsicContext& c) {
-        const auto array = RequireArray(c.arguments[0].ref);
-        const auto offset = c.arguments[1].AsInt(), count = c.arguments[2].AsInt();
-        const auto length = c.vm.Model().ArrayLength(array);
-        if (offset < 0 || count < 0 || offset > length || count > length - offset)
-            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "invalid code point range"};
-        const auto text = CharsValue(c, array, offset, count);
-        int result = 0;
-        for (std::size_t i = 0; i < text.size(); ++i, ++result)
-            if (i + 1 < text.size() && pair(text[i], text[i + 1])) ++i;
-        return VmValue::Int(result);
-    });
-    builder.StaticMethod("offsetByCodePoints", "([CIIII)I", [pair](IntrinsicContext& c) {
-        const auto array = RequireArray(c.arguments[0].ref);
-        const auto start = c.arguments[1].AsInt(), count = c.arguments[2].AsInt();
-        auto index = c.arguments[3].AsInt();
-        auto offset = c.arguments[4].AsInt();
-        const auto length = c.vm.Model().ArrayLength(array);
-        if (start < 0 || count < 0 || start > length || count > length - start || index < start ||
-            index > start + count)
-            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "invalid code point range"};
-        const auto text = CharsValue(c, array, start, count);
-        index -= start;
-        while (offset > 0 && index < count) {
-            if (index + 1 < count &&
-                pair(text[static_cast<std::size_t>(index)], text[static_cast<std::size_t>(index + 1)]))
-                ++index;
-            ++index;
-            --offset;
-        }
-        while (offset < 0 && index > 0) {
-            --index;
-            if (index > 0 && pair(text[static_cast<std::size_t>(index - 1)], text[static_cast<std::size_t>(index)]))
-                --index;
-            ++offset;
-        }
-        if (offset != 0) throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point offset out of range"};
-        return VmValue::Int(start + index);
-    });
-    builder.ClassInitializer([](IntrinsicContext& c) {
-        InitializeType(c, "Ljava/lang/Character;", "C");
-        return VmValue::Void();
-    });
-    // AOSP 4.4 ROM line 99.
-    builder.VirtualMethod(
-        "compareTo", "(Ljava/lang/Object;)I",
-        [](IntrinsicContext& c) {
-            const auto other = c.arguments[0].ref;
-            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Character;"),
-                                                               c.vm.Model().ObjectClass(other)))
-                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
-            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Character;)I", {c.arguments[0]});
-        },
-        kAccPublic | kAccBridge | kAccSynthetic);
-
-    // AOSP 4.4 ROM line 1758.
-    builder.StaticMethod(
-        "codePointAt", "(Ljava/lang/CharSequence;I)I",
-        [pair](IntrinsicContext& c) {
-            const auto seq = IntrinsicCall(c).NonNullRef(0, "seq");
-            const auto length = InvokeGuest(c.vm, seq, "length", "()I").AsInt();
-            auto index = c.arguments[1].AsInt();
-            if (index < 0 || index >= length)
-                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point index"};
-            const auto at = [&](int n) {
-                return static_cast<char16_t>(InvokeGuest(c.vm, seq, "charAt", "(I)C", {VmValue::Int(n)}).AsInt());
-            };
-            const auto high = at(index++);
-            if (index < length) {
-                const auto low = at(index);
-                if (pair(high, low)) return VmValue::Int(0x10000 + ((high - 0xd800) << 10) + low - 0xdc00);
-            }
-            return VmValue::Int(high);
-        },
-        kAccPublic);
-
-    // AOSP 4.4 ROM line 1800.
-    builder.StaticMethod(
-        "codePointAt", "([CI)I",
-        [pair](IntrinsicContext& c) {
-            const auto seq = IntrinsicCall(c).NonNullRef(0, "seq");
-            const auto length = c.vm.Model().ArrayLength(seq);
-            auto index = c.arguments[1].AsInt();
-            if (index < 0 || index >= length)
-                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point index"};
-            const auto at = [&](int n) { return static_cast<char16_t>(c.vm.Model().GetPrimitiveElement(seq, n)); };
-            const auto high = at(index++);
-            if (index < length) {
-                const auto low = at(index);
-                if (pair(high, low)) return VmValue::Int(0x10000 + ((high - 0xd800) << 10) + low - 0xdc00);
-            }
-            return VmValue::Int(high);
-        },
-        kAccPublic);
-
-    // AOSP 4.4 ROM line 1883.
-    builder.StaticMethod(
-        "codePointBefore", "(Ljava/lang/CharSequence;I)I",
-        [pair](IntrinsicContext& c) {
-            const auto seq = IntrinsicCall(c).NonNullRef(0, "seq");
-            const auto length = InvokeGuest(c.vm, seq, "length", "()I").AsInt();
-            auto index = c.arguments[1].AsInt();
-            const auto start = 0;
-            if (index <= start || index > length || start < 0 || start >= length)
-                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point index"};
-            const auto at = [&](int n) {
-                return static_cast<char16_t>(InvokeGuest(c.vm, seq, "charAt", "(I)C", {VmValue::Int(n)}).AsInt());
-            };
-            const auto low = at(--index);
-            if (--index >= start) {
-                const auto high = at(index);
-                if (pair(high, low)) return VmValue::Int(0x10000 + ((high - 0xd800) << 10) + low - 0xdc00);
-            }
-            return VmValue::Int(low);
-        },
-        kAccPublic);
-
-    // AOSP 4.4 ROM line 1972.
-    builder.StaticMethod(
-        "codePointBefore", "([CII)I",
-        [pair](IntrinsicContext& c) {
-            const auto seq = IntrinsicCall(c).NonNullRef(0, "seq");
-            const auto length = c.vm.Model().ArrayLength(seq);
-            auto index = c.arguments[1].AsInt();
-            const auto start = c.arguments[2].AsInt();
-            if (index <= start || index > length || start < 0 || start >= length)
-                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point index"};
-            const auto at = [&](int n) { return static_cast<char16_t>(c.vm.Model().GetPrimitiveElement(seq, n)); };
-            const auto low = at(--index);
-            if (--index >= start) {
-                const auto high = at(index);
-                if (pair(high, low)) return VmValue::Int(0x10000 + ((high - 0xd800) << 10) + low - 0xdc00);
-            }
-            return VmValue::Int(low);
-        },
-        kAccPublic);
-
-    // AOSP 4.4 ROM line 2086.
-    builder.StaticMethod(
-        "codePointCount", "(Ljava/lang/CharSequence;II)I",
-        [](IntrinsicContext& c) {
-            const auto seq = IntrinsicCall(c).NonNullRef(0, "seq");
-            const auto length = InvokeGuest(c.vm, seq, "length", "()I").AsInt();
-            auto index = c.arguments[1].AsInt();
-            const auto end = c.arguments[2].AsInt();
-            if (index < 0 || end > length || index > end)
-                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point range"};
-            const auto at = [&](int n) {
-                return static_cast<char16_t>(InvokeGuest(c.vm, seq, "charAt", "(I)C", {VmValue::Int(n)}).AsInt());
-            };
-            int count = 0;
-            while (index < end) {
-                const auto high = at(index++);
-                if (high >= 0xd800 && high <= 0xdbff && index < end) {
-                    const auto low = at(index);
-                    if (low >= 0xdc00 && low <= 0xdfff) ++index;
-                }
-                ++count;
-            }
-            return VmValue::Int(count);
-        },
-        kAccPublic);
-
-    // AOSP 4.4 ROM line 2175.
-    builder.StaticMethod(
-        "offsetByCodePoints", "(Ljava/lang/CharSequence;II)I",
-        [](IntrinsicContext& c) {
-            const auto seq = IntrinsicCall(c).NonNullRef(0, "seq");
-            const auto length = InvokeGuest(c.vm, seq, "length", "()I").AsInt();
-            auto index = c.arguments[1].AsInt();
-            auto offset = c.arguments[2].AsInt();
-            if (index < 0 || index > length)
-                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point index"};
-            const auto at = [&](int n) {
-                return static_cast<char16_t>(InvokeGuest(c.vm, seq, "charAt", "(I)C", {VmValue::Int(n)}).AsInt());
-            };
-            while (offset > 0 && index < length) {
-                const auto high = at(index++);
-                if (high >= 0xd800 && high <= 0xdbff && index < length) {
-                    const auto low = at(index);
-                    if (low >= 0xdc00 && low <= 0xdfff) ++index;
-                }
-                --offset;
-            }
-            while (offset < 0 && index > 0) {
-                const auto low = at(--index);
-                if (low >= 0xdc00 && low <= 0xdfff && index > 0) {
-                    const auto high = at(index - 1);
-                    if (high >= 0xd800 && high <= 0xdbff) --index;
-                }
-                ++offset;
-            }
-            if (offset != 0) throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point offset"};
-            return VmValue::Int(index);
-        },
-        kAccPublic);
-
-    // AOSP 4.4 ROM line 2014.
-    builder.StaticMethod(
-        "toChars", "(I[CI)I",
-        [](IntrinsicContext& c) {
-            const auto cp = c.arguments[0].AsInt();
-            if (cp < 0 || cp > 0x10ffff)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid code point"};
-            const auto dst = IntrinsicCall(c).NonNullRef(1, "dst");
-            const auto offset = c.arguments[2].AsInt();
-            const auto length = c.vm.Model().ArrayLength(dst);
-            const auto count = cp < 0x10000 ? 1 : 2;
-            if (offset < 0 || offset >= length || count > length - offset)
-                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point output"};
-            c.vm.Model().SetPrimitiveElement(
-                dst, offset, static_cast<std::uint16_t>(count == 1 ? cp : 0xd800 | ((cp - 0x10000) >> 10)));
-            if (count == 2)
-                c.vm.Model().SetPrimitiveElement(dst, offset + 1,
-                                                 static_cast<std::uint16_t>(0xdc00 | ((cp - 0x10000) & 0x3ff)));
-            return VmValue::Int(count);
-        },
-        kAccPublic);
-
-    return std::move(builder).Build();
+    auto b = IntrinsicClassBuilder::Class("Ljava/lang/Character;");
+    b.AdmitBootNativeMethods();
+    return std::move(b).Build();
 }
 
-}  // namespace
-
-namespace {
 // Host tokens remain owned by BigIntRuntime. Guest arithmetic sees only value snapshots.
 VmValue NativeBnArithmetic(IntrinsicContext& c, const char* method, bool division, bool unary, bool in_place = false) {
     auto& vm = c.vm;
@@ -2501,14 +744,8 @@ void AppendJavaLangPrimitiveWrappers(std::vector<IntrinsicClassDecl>& catalog) {
     arithmetic.AdmitBootNativeMethods();
     catalog.push_back(std::move(arithmetic).Build());
     catalog.push_back(Declare_java_math_NativeBN());
-    catalog.push_back(Declare_java_lang_Number());
-    catalog.push_back(Declare_java_lang_Byte());
-    catalog.push_back(Declare_java_lang_Short());
-    catalog.push_back(Declare_java_lang_Integer());
-    catalog.push_back(Declare_java_lang_Long());
     catalog.push_back(Declare_java_lang_Float());
     catalog.push_back(Declare_java_lang_Double());
-    catalog.push_back(Declare_java_lang_Boolean());
     catalog.push_back(Declare_java_lang_Character());
 }
 
@@ -3263,16 +1500,62 @@ IntrinsicClassDecl Declare_java_lang_String() {
 namespace ogplay::runtime::dexvm::intrinsics {
 
 namespace {
-// Fixed scratch magnitude for the API19 native decimal generator (maximum
-// double exponent needs fewer than 1408 bits, as in AOSP cbigint's 22 limbs).
+// Checked scratch for the API19 decimal natives. 5120 bits also cover the
+// parser's ROM exponent range (-1024..1024) and binary subnormal alignment.
 // Never stored on a Java object or exposed as a general big-number facility.
 class DecimalMagnitude final {
-    std::array<std::uint32_t, 44> words_{};
+    std::array<std::uint32_t, 160> words_{};
 
 public:
     DecimalMagnitude(std::uint64_t value = 0) {
         words_[0] = static_cast<std::uint32_t>(value);
         words_[1] = static_cast<std::uint32_t>(value >> 32);
+    }
+
+    int BitLength() const {
+        for (std::size_t i = words_.size(); i-- > 0;)
+            if (words_[i]) return static_cast<int>(32 * static_cast<int>(i) + 32 - std::countl_zero(words_[i]));
+        return 0;
+    }
+
+    int TrailingZeros() const {
+        for (std::size_t i = 0; i < words_.size(); ++i)
+            if (words_[i]) return static_cast<int>(32 * static_cast<int>(i) + std::countr_zero(words_[i]));
+        return 0;
+    }
+
+    bool Bit(int index) const { return (words_.at(static_cast<std::size_t>(index / 32)) >> (index % 32)) & 1U; }
+
+    void MultiplyWide(std::uint64_t factor) {
+        auto high = *this;
+        high.Multiply(static_cast<std::uint32_t>(factor >> 32));
+        Multiply(static_cast<std::uint32_t>(factor));
+        *this = Plus(high.Shift(32));
+    }
+
+    void TimesTen(int exponent) {
+        for (int i = 0; i < exponent; ++i)
+            Multiply(10);
+    }
+
+    // cbigint toDoubleHighPrecision: integer conversion, ties to even.
+    double ToDouble() const {
+        const int width = BitLength();
+        if (width == 0) return 0.0;
+        if (width > 1024) return std::numeric_limits<double>::infinity();
+        const int shift = std::max(0, width - 53);
+        std::uint64_t mantissa = 0;
+        for (int i = width; i-- > shift;)
+            mantissa = (mantissa << 1) | Bit(i);
+        if (shift == 0) return static_cast<double>(mantissa);
+        auto bits = (std::uint64_t(width - 1 + 1023) << 52) | (mantissa & 0xfffffffffffffULL);
+        if (Bit(shift - 1)) {
+            bool sticky = false;
+            for (int i = 0; i < shift - 1; ++i)
+                sticky |= Bit(i);
+            if (sticky || (mantissa & 1)) ++bits;
+        }
+        return std::bit_cast<double>(bits);
     }
 
     void Multiply(unsigned factor) {
@@ -3320,7 +1603,192 @@ public:
         if (borrow) throw DexVmError(DexVmErrorReason::internal_invariant, "decimal scratch underflow");
     }
 };
+
+// Apache-2.0 AOSP libcore java_lang_StringToReal.cpp, API 19.
+// createDouble/createDouble1/doubleAlgorithm and their float counterparts:
+// preserve the prefix limits, initial approximation, Clinger integer correction,
+// ties and oscillation rule. Checked value scratch replaces cbigint buffers.
+constexpr std::array double_tens = {1.0,  1e1,  1e2,  1e3,  1e4,  1e5,  1e6,  1e7,  1e8,  1e9,  1e10, 1e11,
+                                    1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22};
+constexpr std::array<std::uint32_t, 11> float_tens = {0x3f800000, 0x41200000, 0x42c80000, 0x447a0000,
+                                                      0x461c4000, 0x47c35000, 0x49742400, 0x4b189680,
+                                                      0x4cbebc20, 0x4e6e6b28, 0x501502f9};
+
+template <typename Float>
+using RealBits = std::conditional_t<sizeof(Float) == 8, std::uint64_t, std::uint32_t>;
+
+template <typename Float>
+Float CorrectReal(const DecimalMagnitude& f, int e, Float z) {
+    using Bits = RealBits<Float>;
+    constexpr int precision = sizeof(Float) == 8 ? 52 : 23;
+    constexpr int offset = sizeof(Float) == 8 ? 1075 : 150;
+    constexpr Bits normal = Bits{1} << precision;
+    constexpr Bits infinity = sizeof(Float) == 8 ? Bits(0x7ff0000000000000ULL) : Bits(0x7f800000);
+    int decrements = 0, increments = 0;
+    auto bits = std::bit_cast<Bits>(z);
+    for (;;) {
+        const auto exponent = static_cast<int>(bits >> precision);
+        const std::uint64_t m = (bits & (normal - 1)) | (exponent ? normal : Bits{0});
+        const int k = (exponent ? exponent : 1) - offset;
+        auto x = f;
+        DecimalMagnitude y(m);
+        if (e >= 0)
+            x.TimesTen(e);
+        else
+            y.TimesTen(-e);
+        if (k >= 0)
+            y = y.Shift(k);
+        else
+            x = x.Shift(-k);
+        const int comparison = x.Compare(y);
+        auto delta = comparison > 0 ? x : y;
+        delta.Subtract(comparison > 0 ? y : x);
+        delta.MultiplyWide(2 * m);
+        const int comparison2 = delta.Compare(y);
+        bool decrement = comparison < 0;
+        bool last = false;
+        if (comparison2 < 0) {
+            if (!decrement || m != normal) break;
+            if (delta.Shift(1).Compare(y) <= 0) break;
+        } else if (comparison2 == 0) {
+            if ((m & 1) == 0) {
+                if (!decrement || m != normal) break;
+            } else {
+                last = true;
+            }
+        } else if (!decrement && bits == infinity) {
+            break;
+        }
+        if (decrement) {
+            --bits;
+            ++decrements;
+        } else {
+            ++bits;
+            ++increments;
+        }
+        if (increments > 2 && decrements > 2) {
+            if (decrements > increments)
+                bits += static_cast<Bits>(decrements - increments);
+            else if (increments > decrements)
+                bits -= static_cast<Bits>(increments - decrements);
+            break;
+        }
+        if (last) break;
+    }
+    return std::bit_cast<Float>(bits);
+}
+
+double CreateDouble1(const DecimalMagnitude& f, int e) {
+    const int num_bits = f.BitLength() - f.TrailingZeros();
+    const auto value = f.ToDouble();
+    if (num_bits < 54 && e >= 0 && e < 23) return value * double_tens[static_cast<std::size_t>(e)];
+    if (num_bits < 54 && e < 0 && e > -23) return value / double_tens[static_cast<std::size_t>(-e)];
+    double result;
+    if (e >= 0 && e < 309)
+        result = value * std::pow(10.0, e);
+    else if (e >= 309) {
+        if (value != 0.0) return std::numeric_limits<double>::infinity();
+        result = std::bit_cast<double>(std::uint64_t{1});
+    } else if (e > -309)
+        result = value / std::pow(10.0, -e);
+    else {
+        result = value * std::pow(10.0, e + 52);
+        result = result * std::pow(10.0, -52);
+    }
+    if (result == 0.0) result = std::bit_cast<double>(std::uint64_t{1});
+    return CorrectReal(f, e, result);
+}
+
+float CreateFloat1(const DecimalMagnitude& f, int e) {
+    const int num_bits = f.BitLength() + 1;
+    const auto value = f.ToDouble();
+    if (num_bits < 25 && e >= 0 && e < 11)
+        return static_cast<float>(value) * std::bit_cast<float>(float_tens[static_cast<std::size_t>(e)]);
+    if (num_bits < 25 && e < 0 && e > -11)
+        return static_cast<float>(value) / std::bit_cast<float>(float_tens[static_cast<std::size_t>(-e)]);
+    float result = 0.0F;
+    if (e >= 0 && e < 39)
+        result = static_cast<float>(value * std::pow(10.0, e));
+    else if (e >= 39) {
+        result = static_cast<float>(value);
+        result = result == 0.0F ? std::bit_cast<float>(std::uint32_t{1}) : std::numeric_limits<float>::infinity();
+    } else if (e > -309) {
+        const double approximation = value / std::pow(10.0, -e);
+        const auto bits = std::bit_cast<std::uint64_t>(approximation);
+        const auto exponent = static_cast<int>(bits >> 52);
+        if (exponent == 0) return 0.0F;
+        int dexp = exponent - 1075 + 51;
+        const auto dmant = (bits & 0xfffffffffffffULL) | 0x10000000000000ULL;
+        if (dexp <= -155) return 0.0F;
+        if (dexp <= -127) {
+            auto fmant = static_cast<std::uint32_t>(dmant >> 29);
+            auto fovfl = static_cast<std::uint32_t>(dmant & 0x1fffffff) << 3;
+            while (dexp < -127 && (fmant | fovfl) != 0) {
+                if (fmant & 1) fovfl |= 0x80000000;
+                fovfl >>= 1;
+                fmant >>= 1;
+                ++dexp;
+            }
+            if (fovfl & 0x80000000) {
+                if ((fovfl & 0x7ffffffc) != 0 || (fmant & 1)) ++fmant;
+            } else if ((fovfl & 0x40000000) && (fovfl & 0x3ffffffc))
+                ++fmant;
+            result = std::bit_cast<float>(fmant);
+        } else
+            result = static_cast<float>(approximation);
+    }
+    if (e <= -309 || std::bit_cast<std::uint32_t>(result) == 0) result = std::bit_cast<float>(std::uint32_t{1});
+    return CorrectReal(f, e, result);
+}
+
+template <typename Float>
+Float CreateReal(IntrinsicContext& context) {
+    using Bits = RealBits<Float>;
+    const auto string = context.arguments[0].ref;
+    if (!string.IsValid()) return Float{0};
+    const auto text = context.vm.StringUtf8(string);
+    // ScopedUtfChars uses modified UTF-8: an embedded Java NUL is a
+    // non-digit, not a C terminator. Validate the full host string likewise.
+    const std::string_view digits(text);
+    int e = context.arguments[1].AsInt();
+    DecimalMagnitude f;
+    constexpr int limit = sizeof(Float) == 8 ? 1024 : 448;
+    std::size_t cursor = 0;
+    for (; cursor < digits.size(); ++cursor) {
+        const char digit = digits[cursor];
+        if (digit < '0' || digit > '9') return std::bit_cast<Float>(~Bits{0});
+        auto next = f;
+        next.Multiply(10);
+        next = next.Plus(DecimalMagnitude(static_cast<unsigned>(digit - '0')));
+        if (next.BitLength() > limit) break;
+        f = next;
+    }
+    if (digits.empty()) return std::bit_cast<Float>(~Bits{0});
+    const auto remaining = digits.size() - cursor;
+    e = std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(e) + static_cast<std::uint32_t>(remaining));
+    if (remaining && e > 0) return std::numeric_limits<Float>::infinity();
+    if constexpr (sizeof(Float) == 8) {
+        if (e == 0) return f.ToDouble();
+        return CreateDouble1(f, e);
+    } else
+        return CreateFloat1(f, e);
+}
+
 }  // namespace
+
+IntrinsicClassDecl Declare_java_lang_StringToReal() {
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/StringToReal;");
+    builder.MergesBootClass();
+    builder.StaticMethod(
+        "parseFltImpl", "(Ljava/lang/String;I)F",
+        [](IntrinsicContext& context) { return VmValue::Float(CreateReal<float>(context)); },
+        kAccPrivate | kAccStatic | kAccNative);
+    builder.StaticMethod(
+        "parseDblImpl", "(Ljava/lang/String;I)D",
+        [](IntrinsicContext& context) { return VmValue::Double(CreateReal<double>(context)); },
+        kAccPrivate | kAccStatic | kAccNative);
+    return std::move(builder).Build();
+}
 
 IntrinsicClassDecl Declare_java_lang_RealToString() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/RealToString;", "Ljava/lang/Object;", {}, kAccFinal);
@@ -4437,13 +2905,6 @@ IntrinsicClassDecl Declare_java_lang_Thread() {
 
 namespace ogplay::runtime::dexvm::intrinsics {
 
-IntrinsicClassDecl Declare_java_lang_Thread_UncaughtExceptionHandler() {
-    auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/Thread$UncaughtExceptionHandler;");
-    builder.UnimplementedVirtual("uncaughtException", "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
-                                 kAccPublic | kAccAbstract);
-    return std::move(builder).Build();
-}
-
 namespace {
 bool GroupContains(const IntrinsicCall& call, IntrinsicFieldHandle parent, VmObjectRef group) {
     for (; group.IsValid(); group = call.GetRef(parent, group)) {
@@ -4590,11 +3051,6 @@ IntrinsicClassDecl Declare_java_lang_ThreadGroup() {
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl Declare_java_lang_Thread_State() {
-    return IntrinsicEnumBuilder("Ljava/lang/Thread$State;",
-                                {"NEW", "RUNNABLE", "BLOCKED", "WAITING", "TIMED_WAITING", "TERMINATED"})
-        .Build();
-}
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
 // Throwable Java behavior and fields come from BootDex; only VM stack primitives remain.

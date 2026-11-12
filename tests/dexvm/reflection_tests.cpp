@@ -202,9 +202,9 @@ TEST_CASE("reflection metadata uses declared order and opaque local slots") {
     CHECK(vm.linker.Method(methods[0].method).name == "describe");
     CHECK(vm.linker.Method(methods[1].method).name == "get");
     CHECK(vm.linker.Method(methods[2].method).name == "increment");
-    CHECK(methods[0].slot == 0);
-    CHECK(methods[1].slot == 1);
-    CHECK(methods[2].slot == 2);
+    CHECK(methods[0].slot == vm.linker.Class(*counter).own_direct_methods.size());
+    CHECK(methods[1].slot == vm.linker.Class(*counter).own_direct_methods.size() + 1);
+    CHECK(methods[2].slot == vm.linker.Class(*counter).own_direct_methods.size() + 2);
     CHECK(methods[0].parameter_types.empty());
     CHECK(vm.linker.Class(methods[1].return_type).descriptor == "I");
     CHECK(methods[0].slot != methods[0].method.Value());
@@ -1322,7 +1322,7 @@ TEST_CASE("WU7-5 executable annotations share annotation runtime and defensive p
             CHECK(f.model.GetObjectElement(f.model.GetObjectElement(again, 0), 0).IsValid());
             if (wrapper == method) CHECK(f.model.ArrayLength(f.model.GetObjectElement(again, 1)) == 0);
         }
-        // Dalvik preserves an explicit item length, including zero and arity mismatches.
+        // Dalvik native preserves explicit item length; ROM Java expands a zero-length result to the method arity.
         const auto method_id = vm.Reflection().MethodMetadata(method).method;
         auto& item = f.linker.MutableMethod(method_id);
         for (const auto count : {0U, 1U, 3U}) {
@@ -1332,7 +1332,7 @@ TEST_CASE("WU7-5 executable annotations share annotation runtime and defensive p
             if (count) item.parameter_annotations.back() = annotations;
             const auto matrix =
                 Ref(f.Virtual(method, "getParameterAnnotations", "()[[Ljava/lang/annotation/Annotation;"));
-            REQUIRE(f.model.ArrayLength(matrix) == count);
+            REQUIRE(f.model.ArrayLength(matrix) == (count ? count : 2U));
             if (count)
                 CHECK(f.model.ArrayLength(f.model.GetObjectElement(matrix, static_cast<JniSize>(count - 1))) == 1);
         }

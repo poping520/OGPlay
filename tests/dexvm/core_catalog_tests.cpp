@@ -1,5 +1,6 @@
 #include "android_value_fixture.h"
 #include "boot_dex.h"
+#include "container_traversal_fixture.h"
 // DexVM stage-1 interpreter conformance over dexasm fixtures.
 // Expected values are recorded with their semantic source: AOSP
 // vm/mterp/c/OP_*.cpp at the pinned baseline (07 §2 mode B) or the Dalvik
@@ -210,21 +211,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/lang/Thread;.resume()V",
         "Ljava/lang/Thread;.destroy()V",
         "Ljava/lang/BootClassLoader;.<init>()V",
-        "Ljava/lang/reflect/Method;.isAnnotationPresent(Ljava/lang/Class;)Z",
-        "Ljava/lang/reflect/Method;.getAnnotation"
-        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
-        "Ljava/lang/reflect/Method;.getAnnotations"
-        "()[Ljava/lang/annotation/Annotation;",
-        "Ljava/lang/reflect/Method;.getDeclaredAnnotations"
-        "()[Ljava/lang/annotation/Annotation;",
-        "Ljava/lang/reflect/Constructor;.isAnnotationPresent"
-        "(Ljava/lang/Class;)Z",
-        "Ljava/lang/reflect/Constructor;.getAnnotation"
-        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
-        "Ljava/lang/reflect/Constructor;.getAnnotations"
-        "()[Ljava/lang/annotation/Annotation;",
-        "Ljava/lang/reflect/Constructor;.getDeclaredAnnotations"
-        "()[Ljava/lang/annotation/Annotation;",
         "Ljava/math/NativeBN;.BN_add(JJJ)V",
         "Ljava/math/NativeBN;.BN_add_word(JI)V",
         "Ljava/math/NativeBN;.BN_bin2bn([BIZJ)V",
@@ -293,9 +279,11 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     ogplay::test::RegisterBootDex(boot_linker);
     boot_linker.Link();
     CHECK(boot_linker.Class(boot_linker.ResolveDescriptor("Ljavax/net/ssl/SSLSocketFactory;")).is_boot_dex);
-    for (const auto* name : {"Ljava/lang/AutoCloseable;", "Ljava/lang/Appendable;", "Ljava/lang/Iterable;",
-                             "Ljava/io/DataInput;", "Ljava/io/DataOutput;", "Ljava/io/ObjectInput;",
-                             "Ljava/io/ObjectOutput;", "Ljava/io/ObjectStreamConstants;"}) {
+    for (const auto* name :
+         {"Ljava/lang/CharSequence;", "Ljava/lang/Cloneable;", "Ljava/lang/Comparable;", "Ljava/lang/Readable;",
+          "Ljava/lang/Runnable;", "Ljava/lang/AutoCloseable;", "Ljava/lang/Appendable;", "Ljava/lang/Iterable;",
+          "Ljava/io/DataInput;", "Ljava/io/DataOutput;", "Ljava/io/ObjectInput;", "Ljava/io/ObjectOutput;",
+          "Ljava/io/ObjectStreamConstants;"}) {
         CHECK_FALSE(descriptors.contains(name));
         const auto type = boot_linker.ResolveDescriptor(name);
         const auto& linked = boot_linker.Class(type);
@@ -389,7 +377,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     CHECK(string_signatures.contains({"regionMatches", "(ZILjava/lang/String;II)Z"}));
     CHECK(string_signatures.contains({"intern", "()Ljava/lang/String;"}));
     CHECK(string_signatures.contains({"toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;"}));
-    CHECK(signatures("Ljava/lang/Integer;").size() == 38U);
+
     CHECK(signatures("Ljava/io/InputStreamReader;") ==
           std::set<std::pair<std::string, std::string>>{
               {"<init>", "(Ljava/io/InputStream;)V"},
@@ -460,312 +448,76 @@ TEST_CASE("APK Android Support classes remain application-owned") {
     CHECK(vm.linker.Class(*activity).is_boot_dex);
 }
 
-TEST_CASE("dexvm API 19 primitive wrapper family inventory is complete") {
+TEST_CASE("dexvm core ROM classes own Java methods and fields") {
+    Vm vm;
     const auto catalog = CoreIntrinsicCatalog();
-    const auto declaration = [&catalog](const std::string& descriptor) -> const IntrinsicClassDecl& {
-        const auto found = std::find_if(catalog.begin(), catalog.end(),
-                                        [&](const auto& candidate) { return candidate.descriptor == descriptor; });
-        REQUIRE(found != catalog.end());
-        CHECK(std::count_if(catalog.begin(), catalog.end(),
-                            [&](const auto& candidate) { return candidate.descriptor == descriptor; }) == 1);
-        return *found;
-    };
-    const auto signatures = [](const IntrinsicClassDecl& java_class) {
-        std::set<std::string> result;
-        for (const auto& method : java_class.methods) {
-            result.insert(method.name + method.descriptor);
-            CHECK((static_cast<bool>(method.implementation) || method.guest_native));
+    for (const auto* owner : {"Ljava/lang/Number;",
+                              "Ljava/lang/Boolean;",
+                              "Ljava/lang/Byte;",
+                              "Ljava/lang/Short;",
+                              "Ljava/lang/Integer;",
+                              "Ljava/lang/Long;",
+                              "Ljava/lang/Character;",
+                              "Ljava/lang/Thread$State;",
+                              "Ljava/lang/Thread$UncaughtExceptionHandler;",
+                              "Ljava/lang/reflect/Type;",
+                              "Ljava/io/EOFException;",
+                              "Ljava/io/UnsupportedEncodingException;",
+                              "Ljava/net/MalformedURLException;",
+                              "Ljava/nio/BufferOverflowException;",
+                              "Ljava/nio/BufferUnderflowException;",
+                              "Ljava/nio/InvalidMarkException;",
+                              "Ljava/nio/ReadOnlyBufferException;",
+                              "Ljava/lang/reflect/Method;",
+                              "Ljava/lang/reflect/Field;",
+                              "Ljava/lang/reflect/Constructor;",
+                              "Ljava/lang/reflect/AccessibleObject;",
+                              "Ljava/lang/reflect/Array;"}) {
+        CAPTURE(owner);
+        const auto type = vm.linker.ResolveDescriptor(owner);
+        const auto& linked = vm.linker.Class(type);
+        CHECK(linked.is_boot_dex);
+        std::size_t natives = 0;
+        const auto check_method = [&](VmMethodId id) {
+            const auto& method = vm.linker.Method(id);
+            if ((method.access_flags & kAccNative) != 0) {
+                ++natives;
+                CHECK((std::string_view(owner) == "Ljava/lang/Character;" ||
+                       std::string_view(owner).starts_with("Ljava/lang/reflect/")));
+            } else {
+                CHECK(method.kind != MethodKind::intrinsic);
+            }
+        };
+        for (auto id : linked.own_direct_methods)
+            check_method(id);
+        for (auto id : linked.own_virtual_methods)
+            check_method(id);
+        const std::string_view name(owner);
+        const auto expected =
+            name == "Ljava/lang/Character;"                                                                 ? 25U
+            : name == "Ljava/lang/reflect/Method;"                                                          ? 8U
+            : name == "Ljava/lang/reflect/Field;"                                                           ? 23U
+            : name == "Ljava/lang/reflect/Array;"                                                           ? 2U
+            : (name == "Ljava/lang/reflect/Constructor;" || name == "Ljava/lang/reflect/AccessibleObject;") ? 1U
+                                                                                                            : 0U;
+        CHECK(natives == expected);
+        for (const auto& declaration : catalog) {
+            if (declaration.descriptor != owner) continue;
+            CHECK(declaration.fields.empty());
+            for (const auto& method : declaration.methods)
+                CHECK((method.access_flags & kAccNative) != 0);
         }
-        return result;
-    };
-    const auto fields = [](const IntrinsicClassDecl& java_class) {
-        std::set<std::string> result;
-        for (const auto& field : java_class.fields) {
-            result.insert(field.name + ":" + field.descriptor);
-        }
-        return result;
-    };
-    const auto expect = [&](const char* name, const char* superclass, std::initializer_list<const char*> interfaces,
-                            std::initializer_list<const char*> methods) {
-        const auto& java_class = declaration("Ljava/lang/" + std::string(name) + ";");
-        REQUIRE(java_class.superclass.has_value());
-        CHECK(*java_class.superclass == superclass);
-        CHECK(std::set<std::string>(java_class.interfaces.begin(), java_class.interfaces.end()) ==
-              std::set<std::string>(interfaces.begin(), interfaces.end()));
-        CHECK(signatures(java_class) == std::set<std::string>(methods.begin(), methods.end()));
-    };
-
-    expect("Number", "Ljava/lang/Object;", {"Ljava/io/Serializable;"},
-           {"<init>()V", "byteValue()B", "shortValue()S", "intValue()I", "longValue()J", "floatValue()F",
-            "doubleValue()D"});
-    expect("Byte", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"},
-           {"<init>(B)V",
-            "<init>(Ljava/lang/String;)V",
-            "byteValue()B",
-            "shortValue()S",
-            "intValue()I",
-            "longValue()J",
-            "floatValue()F",
-            "doubleValue()D",
-            "compareTo(Ljava/lang/Byte;)I",
-            "compareTo(Ljava/lang/Object;)I",
-            "compare(BB)I",
-            "decode(Ljava/lang/String;)Ljava/lang/Byte;",
-            "equals(Ljava/lang/Object;)Z",
-            "hashCode()I",
-            "parseByte(Ljava/lang/String;)B",
-            "parseByte(Ljava/lang/String;I)B",
-            "toString()Ljava/lang/String;",
-            "toString(B)Ljava/lang/String;",
-            "toHexString(BZ)Ljava/lang/String;",
-            "valueOf(B)Ljava/lang/Byte;",
-            "valueOf(Ljava/lang/String;)Ljava/lang/Byte;",
-            "valueOf(Ljava/lang/String;I)Ljava/lang/Byte;"});
-    expect("Short", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"},
-           {"<init>(S)V",
-            "<init>(Ljava/lang/String;)V",
-            "byteValue()B",
-            "shortValue()S",
-            "intValue()I",
-            "longValue()J",
-            "floatValue()F",
-            "doubleValue()D",
-            "compareTo(Ljava/lang/Short;)I",
-            "compareTo(Ljava/lang/Object;)I",
-            "compare(SS)I",
-            "decode(Ljava/lang/String;)Ljava/lang/Short;",
-            "equals(Ljava/lang/Object;)Z",
-            "hashCode()I",
-            "parseShort(Ljava/lang/String;)S",
-            "parseShort(Ljava/lang/String;I)S",
-            "toString()Ljava/lang/String;",
-            "toString(S)Ljava/lang/String;",
-            "reverseBytes(S)S",
-            "valueOf(S)Ljava/lang/Short;",
-            "valueOf(Ljava/lang/String;)Ljava/lang/Short;",
-            "valueOf(Ljava/lang/String;I)Ljava/lang/Short;"});
-    const auto integral_methods = [](const char* wrapper, const char* primitive, const char* parse,
-                                     const char* property) {
-        std::set<std::string> out{
-            std::string("<init>(") + primitive + ")V",
-            "<init>(Ljava/lang/String;)V",
-            "byteValue()B",
-            "shortValue()S",
-            "intValue()I",
-            "longValue()J",
-            "floatValue()F",
-            "doubleValue()D",
-            std::string("compareTo(Ljava/lang/") + wrapper + ";)I",
-            "compareTo(Ljava/lang/Object;)I",
-            std::string("compare(") + primitive + primitive + ")I",
-            std::string("decode(Ljava/lang/String;)Ljava/lang/") + wrapper + ";",
-            "equals(Ljava/lang/Object;)Z",
-            "hashCode()I",
-            std::string(parse) + "(Ljava/lang/String;)" + primitive,
-            std::string(parse) + "(Ljava/lang/String;I)" + primitive,
-            "toString()Ljava/lang/String;",
-            std::string("toString(") + primitive + ")Ljava/lang/String;",
-            std::string("toString(") + primitive + "I)Ljava/lang/String;",
-            std::string("toBinaryString(") + primitive + ")Ljava/lang/String;",
-            std::string("toHexString(") + primitive + ")Ljava/lang/String;",
-            std::string("toOctalString(") + primitive + ")Ljava/lang/String;",
-            std::string("valueOf(") + primitive + ")Ljava/lang/" + wrapper + ";",
-            std::string("valueOf(Ljava/lang/String;)Ljava/lang/") + wrapper + ";",
-            std::string("valueOf(Ljava/lang/String;I)Ljava/lang/") + wrapper + ";",
-            std::string(property) + "(Ljava/lang/String;)Ljava/lang/" + wrapper + ";",
-            std::string(property) + "(Ljava/lang/String;" + primitive + ")Ljava/lang/" + wrapper + ";",
-            std::string(property) + "(Ljava/lang/String;Ljava/lang/" + wrapper + ";)Ljava/lang/" + wrapper + ";",
-            std::string("highestOneBit(") + primitive + ")" + primitive,
-            std::string("lowestOneBit(") + primitive + ")" + primitive,
-            std::string("numberOfLeadingZeros(") + primitive + ")I",
-            std::string("numberOfTrailingZeros(") + primitive + ")I",
-            std::string("bitCount(") + primitive + ")I",
-            std::string("rotateLeft(") + primitive + "I)" + primitive,
-            std::string("rotateRight(") + primitive + "I)" + primitive,
-            std::string("reverseBytes(") + primitive + ")" + primitive,
-            std::string("reverse(") + primitive + ")" + primitive,
-            std::string("signum(") + primitive + ")I"};
-        return out;
-    };
-    const auto check_integral = [&](const char* wrapper, const char* primitive, const char* parse,
-                                    const char* property) {
-        const auto actual = signatures(declaration("Ljava/lang/" + std::string(wrapper) + ";"));
-        const auto expected = integral_methods(wrapper, primitive, parse, property);
-        std::vector<std::string> missing;
-        std::vector<std::string> extra;
-        std::set_difference(expected.begin(), expected.end(), actual.begin(), actual.end(),
-                            std::back_inserter(missing));
-        std::set_difference(actual.begin(), actual.end(), expected.begin(), expected.end(), std::back_inserter(extra));
-        std::string missing_text;
-        std::string extra_text;
-        for (const auto& value : missing)
-            missing_text += value + " | ";
-        for (const auto& value : extra)
-            extra_text += value + " | ";
-        CAPTURE(std::string(wrapper));
-        CAPTURE(missing_text);
-        CAPTURE(extra_text);
-        CHECK(actual == expected);
-    };
-    check_integral("Integer", "I", "parseInt", "getInteger");
-    check_integral("Long", "J", "parseLong", "getLong");
-    expect("Boolean", "Ljava/lang/Object;", {"Ljava/io/Serializable;", "Ljava/lang/Comparable;"},
-           {"<init>(Z)V", "<init>(Ljava/lang/String;)V", "booleanValue()Z", "compare(ZZ)I",
-            "compareTo(Ljava/lang/Boolean;)I", "compareTo(Ljava/lang/Object;)I", "equals(Ljava/lang/Object;)Z",
-            "hashCode()I", "getBoolean(Ljava/lang/String;)Z", "parseBoolean(Ljava/lang/String;)Z",
-            "toString()Ljava/lang/String;", "toString(Z)Ljava/lang/String;", "valueOf(Z)Ljava/lang/Boolean;",
-            "valueOf(Ljava/lang/String;)Ljava/lang/Boolean;"});
-    expect("Float", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"},
-           {"<init>(F)V",
-            "<init>(D)V",
-            "<init>(Ljava/lang/String;)V",
-            "byteValue()B",
-            "shortValue()S",
-            "intValue()I",
-            "longValue()J",
-            "floatValue()F",
-            "doubleValue()D",
-            "compare(FF)I",
-            "compareTo(Ljava/lang/Float;)I",
-            "compareTo(Ljava/lang/Object;)I",
-            "equals(Ljava/lang/Object;)Z",
-            "hashCode()I",
-            "isInfinite()Z",
-            "isInfinite(F)Z",
-            "isNaN()Z",
-            "isNaN(F)Z",
-            "parseFloat(Ljava/lang/String;)F",
-            "toString()Ljava/lang/String;",
-            "toString(F)Ljava/lang/String;",
-            "toHexString(F)Ljava/lang/String;",
-            "valueOf(F)Ljava/lang/Float;",
-            "valueOf(Ljava/lang/String;)Ljava/lang/Float;",
-            "floatToIntBits(F)I",
-            "floatToRawIntBits(F)I",
-            "intBitsToFloat(I)F"});
-    expect("Double", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"},
-           {"<init>(D)V",
-            "<init>(Ljava/lang/String;)V",
-            "byteValue()B",
-            "shortValue()S",
-            "intValue()I",
-            "longValue()J",
-            "floatValue()F",
-            "doubleValue()D",
-            "compare(DD)I",
-            "compareTo(Ljava/lang/Double;)I",
-            "compareTo(Ljava/lang/Object;)I",
-            "equals(Ljava/lang/Object;)Z",
-            "hashCode()I",
-            "isInfinite()Z",
-            "isInfinite(D)Z",
-            "isNaN()Z",
-            "isNaN(D)Z",
-            "parseDouble(Ljava/lang/String;)D",
-            "toString()Ljava/lang/String;",
-            "toString(D)Ljava/lang/String;",
-            "toHexString(D)Ljava/lang/String;",
-            "valueOf(D)Ljava/lang/Double;",
-            "valueOf(Ljava/lang/String;)Ljava/lang/Double;",
-            "doubleToLongBits(D)J",
-            "doubleToRawLongBits(D)J",
-            "longBitsToDouble(J)D"});
-
-    CHECK(fields(declaration("Ljava/lang/Number;")) == std::set<std::string>{"serialVersionUID:J"});
-    CHECK(fields(declaration("Ljava/lang/Byte;")) ==
-          std::set<std::string>{"MAX_VALUE:B", "MIN_VALUE:B", "SIZE:I", "TYPE:Ljava/lang/Class;", "value:B"});
-    CHECK(fields(declaration("Ljava/lang/Short;")) ==
-          std::set<std::string>{"MAX_VALUE:S", "MIN_VALUE:S", "SIZE:I", "TYPE:Ljava/lang/Class;", "value:S"});
-    CHECK(fields(declaration("Ljava/lang/Integer;")) ==
-          std::set<std::string>{"MAX_VALUE:I", "MIN_VALUE:I", "SIZE:I", "TYPE:Ljava/lang/Class;", "value:I"});
-    CHECK(fields(declaration("Ljava/lang/Long;")) ==
-          std::set<std::string>{"MAX_VALUE:J", "MIN_VALUE:J", "SIZE:I", "TYPE:Ljava/lang/Class;", "value:J"});
-    const std::set<std::string> floating_fields{"MAX_EXPONENT:I", "MAX_VALUE:X",
-                                                "MIN_EXPONENT:I", "MIN_NORMAL:X",
-                                                "MIN_VALUE:X",    "NEGATIVE_INFINITY:X",
-                                                "NaN:X",          "POSITIVE_INFINITY:X",
-                                                "SIZE:I",         "TYPE:Ljava/lang/Class;",
-                                                "value:X"};
-    const auto specialize_floating_fields = [&](const char primitive) {
-        auto result = floating_fields;
-        std::set<std::string> specialized;
-        for (auto field : result) {
-            if (field.ends_with(":X")) field.back() = primitive;
-            specialized.insert(std::move(field));
-        }
-        return specialized;
-    };
-    CHECK(fields(declaration("Ljava/lang/Float;")) == specialize_floating_fields('F'));
-    CHECK(fields(declaration("Ljava/lang/Double;")) == specialize_floating_fields('D'));
-    CHECK(fields(declaration("Ljava/lang/Boolean;")) == std::set<std::string>{"FALSE:Ljava/lang/Boolean;",
-                                                                              "TRUE:Ljava/lang/Boolean;",
-                                                                              "TYPE:Ljava/lang/Class;", "value:Z"});
-
-    const auto& character = declaration("Ljava/lang/Character;");
-    CHECK(*character.superclass == "Ljava/lang/Object;");
-    CHECK(character.interfaces.size() == 2U);
-    CHECK(signatures(character) == std::set<std::string>{"<init>(C)V",
-                                                         "getDirectionality(C)B",
-                                                         "getDirectionality(I)B",
-                                                         "charValue()C",
-                                                         "valueOf(C)Ljava/lang/Character;",
-                                                         "compareTo(Ljava/lang/Character;)I",
-                                                         "compareTo(Ljava/lang/Object;)I",
-                                                         "compare(CC)I",
-                                                         "equals(Ljava/lang/Object;)Z",
-                                                         "hashCode()I",
-                                                         "toString()Ljava/lang/String;",
-                                                         "toString(C)Ljava/lang/String;",
-                                                         "digit(CI)I",
-                                                         "digit(II)I",
-                                                         "forDigit(II)C",
-                                                         "isDigit(C)Z",
-                                                         "isDigit(I)Z",
-                                                         "isLetter(C)Z",
-                                                         "isLetter(I)Z",
-                                                         "isLetterOrDigit(C)Z",
-                                                         "isLetterOrDigit(I)Z",
-                                                         "isLowerCase(C)Z",
-                                                         "isLowerCase(I)Z",
-                                                         "isUpperCase(C)Z",
-                                                         "isUpperCase(I)Z",
-                                                         "isWhitespace(C)Z",
-                                                         "isWhitespace(I)Z",
-                                                         "isSpaceChar(C)Z",
-                                                         "isSpaceChar(I)Z",
-                                                         "isSpace(C)Z",
-                                                         "isISOControl(C)Z",
-                                                         "isISOControl(I)Z",
-                                                         "toLowerCase(C)C",
-                                                         "toLowerCase(I)I",
-                                                         "toUpperCase(C)C",
-                                                         "toUpperCase(I)I",
-                                                         "toLowerCaseImpl(I)I",
-                                                         "toUpperCaseImpl(I)I",
-                                                         "isHighSurrogate(C)Z",
-                                                         "isLowSurrogate(C)Z",
-                                                         "isSurrogatePair(CC)Z",
-                                                         "isValidCodePoint(I)Z",
-                                                         "isBmpCodePoint(I)Z",
-                                                         "isSupplementaryCodePoint(I)Z",
-                                                         "charCount(I)I",
-                                                         "toCodePoint(CC)I",
-                                                         "highSurrogate(I)C",
-                                                         "lowSurrogate(I)C",
-                                                         "reverseBytes(C)C",
-                                                         "toChars(I)[C",
-                                                         "codePointAt([CII)I",
-                                                         "codePointBefore([CI)I",
-                                                         "codePointCount([CII)I",
-                                                         "offsetByCodePoints([CIIII)I",
-                                                         "codePointAt(Ljava/lang/CharSequence;I)I",
-                                                         "codePointAt([CI)I",
-                                                         "codePointBefore(Ljava/lang/CharSequence;I)I",
-                                                         "codePointBefore([CII)I",
-                                                         "codePointCount(Ljava/lang/CharSequence;II)I",
-                                                         "offsetByCodePoints(Ljava/lang/CharSequence;II)I",
-                                                         "toChars(I[CI)I"});
-    CHECK(fields(character).size() == 66U);
+    }
+    // ROM owns constructor signatures (InvalidMarkException also has a String ctor).
+    // VmJavaThrow initializes Throwable directly rather than inventing a subclass ctor.
+    for (const auto* owner : {"Ljava/nio/BufferOverflowException;", "Ljava/nio/BufferUnderflowException;",
+                              "Ljava/nio/InvalidMarkException;", "Ljava/nio/ReadOnlyBufferException;"}) {
+        const auto type = vm.linker.ResolveDescriptor(owner);
+        const auto ctor = vm.linker.FindDirectMethod(type, "<init>", "(Ljava/lang/String;)V");
+        CHECK((ctor && vm.linker.Method(*ctor).owner == type) ==
+              (std::string_view(owner) == "Ljava/nio/InvalidMarkException;"));
+        CHECK(vm.interpreter.MakeThrowable(owner, "VM boundary").IsValid());
+    }
 }
 
 TEST_CASE("dexvm primitive wrapper parsing bits and Character boundaries") {
@@ -812,8 +564,21 @@ TEST_CASE("dexvm primitive wrapper parsing bits and Character boundaries") {
         if (linked.is_wide) bits |= static_cast<std::uint64_t>(storage[linked.slot + 1]) << 32U;
         return bits;
     };
+    for (const auto* owner : {"Ljava/lang/Integer;", "Ljava/lang/Long;"}) {
+        const bool wide = std::string_view(owner) == "Ljava/lang/Long;";
+        const auto signature = wide ? "(J)Ljava/lang/Long;" : "(I)Ljava/lang/Integer;";
+        for (const int value : {-129, -128, 127, 128}) {
+            const auto argument = wide ? VmValue::Long(value) : VmValue::Int(value);
+            const auto first = vm.CallStatic(owner, "valueOf", signature, {argument});
+            REQUIRE_FALSE(first.exception.IsValid());
+            const auto root = vm.interpreter.ProtectReferences(std::array{first.value.ref});
+            const auto second = vm.CallStatic(owner, "valueOf", signature, {argument});
+            REQUIRE_FALSE(second.exception.IsValid());
+            CHECK((first.value.ref == second.value.ref) == (value >= -128 && value <= 127));
+        }
+    }
     const auto parse_radix = vm.Static("Ljava/lang/Integer;", "parseInt", "(Ljava/lang/String;I)I");
-    REQUIRE(parse_radix.Value() < 10000U);
+    CHECK(vm.linker.Method(parse_radix).kind == MethodKind::interpreted);
     ExpectInt(vm.interpreter.Call(parse_radix, std::vector<VmValue>{string("7fffffff"), VmValue::Int(16)}),
               std::numeric_limits<std::int32_t>::max());
     ExpectException(vm,
@@ -858,19 +623,35 @@ TEST_CASE("dexvm primitive wrapper parsing bits and Character boundaries") {
     CHECK(tiny_double.value.AsDouble() == 0.0);
     CHECK(std::signbit(tiny_double.value.AsDouble()));
 
-    ExpectException(vm, vm.CallStatic("Ljava/lang/Float;", "parseFloat", "(Ljava/lang/String;)F", {string("0x1.0")}),
-                    "Ljava/lang/NumberFormatException;");
-    ExpectException(vm, vm.CallStatic("Ljava/lang/Double;", "parseDouble", "(Ljava/lang/String;)D", {string("-0X1.0")}),
-                    "Ljava/lang/NumberFormatException;");
+    {
+        // ROM HexStringParser initializes a Pattern; exercise these existing
+        // assertions with the real JNI/ICU fixture rather than a host-only VM.
+        ogplay::test::container_traversal::ContainerVm hex_vm(InterpreterBackend::switch_dispatch);
+        const VmExecutionLockScope lock(hex_vm.vm.ExecutionLock());
+        const auto hex_string = [&](std::string_view value) { return VmValue::Ref(hex_vm.vm.NewStringUtf8(value)); };
+        const auto parse_hex = [&](const char* owner, const char* name, const char* descriptor,
+                                   std::vector<VmValue> arguments) {
+            const auto method =
+                hex_vm.linker.FindDirectMethod(hex_vm.linker.ResolveDescriptor(owner), name, descriptor);
+            REQUIRE(method.has_value());
+            return hex_vm.vm.Call(*method, arguments);
+        };
+        ExpectException(hex_vm,
+                        parse_hex("Ljava/lang/Float;", "parseFloat", "(Ljava/lang/String;)F", {hex_string("0x1.0")}),
+                        "Ljava/lang/NumberFormatException;");
+        ExpectException(hex_vm,
+                        parse_hex("Ljava/lang/Double;", "parseDouble", "(Ljava/lang/String;)D", {hex_string("-0X1.0")}),
+                        "Ljava/lang/NumberFormatException;");
 
-    const auto hex_float =
-        vm.CallStatic("Ljava/lang/Float;", "parseFloat", "(Ljava/lang/String;)F", {string("0x1.0p0")});
-    REQUIRE_FALSE(hex_float.exception.IsValid());
-    CHECK(hex_float.value.AsFloat() == 1.0F);
-    const auto hex_double =
-        vm.CallStatic("Ljava/lang/Double;", "parseDouble", "(Ljava/lang/String;)D", {string("-0x1.8p1")});
-    REQUIRE_FALSE(hex_double.exception.IsValid());
-    CHECK(hex_double.value.AsDouble() == -3.0);
+        const auto hex_float =
+            parse_hex("Ljava/lang/Float;", "parseFloat", "(Ljava/lang/String;)F", {hex_string("0x1.0p0")});
+        REQUIRE_FALSE(hex_float.exception.IsValid());
+        CHECK(hex_float.value.AsFloat() == 1.0F);
+        const auto hex_double =
+            parse_hex("Ljava/lang/Double;", "parseDouble", "(Ljava/lang/String;)D", {hex_string("-0x1.8p1")});
+        REQUIRE_FALSE(hex_double.exception.IsValid());
+        CHECK(hex_double.value.AsDouble() == -3.0);
+    }
 
     const std::string huge_negative_exponent = std::string(400, '9') + "e-1";
     const auto still_overflow =
@@ -1070,19 +851,10 @@ TEST_CASE("dexvm API 19 java.lang interface inventory is complete") {
     for (const auto& name : inventory) {
         const auto descriptor = "Ljava/lang/" + name + ";";
         CAPTURE(descriptor);
-        if (name == "Iterable" || name == "Appendable" || name == "AutoCloseable") {
-            CHECK(descriptor_counts[descriptor] == 0U);
-            const auto type = linker.ResolveDescriptor(descriptor);
-            CHECK(linker.Class(type).is_boot_dex);
-            CHECK(linker.Class(type).is_interface);
-            continue;
-        }
-        CHECK(descriptor_counts[descriptor] == 1U);
-        const auto declaration = std::find_if(
-            catalog.begin(), catalog.end(), [&](const auto& candidate) { return candidate.descriptor == descriptor; });
-        REQUIRE(declaration != catalog.end());
-        CHECK(declaration->is_interface);
-        CHECK_FALSE(declaration->superclass.has_value());
+        CHECK(descriptor_counts[descriptor] == 0U);
+        const auto type = linker.ResolveDescriptor(descriptor);
+        CHECK(linker.Class(type).is_boot_dex);
+        CHECK(linker.Class(type).is_interface);
     }
 }
 

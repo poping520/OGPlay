@@ -834,3 +834,84 @@ TEST_CASE("ROM TextUtils layout direction uses pinned guest ICU likely subtags a
         });
     }
 }
+
+TEST_CASE("core ROM Character executes every native through guest ICU51") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp fixture("fixture.ResultCaller", true, false, {}, {}, true, backend);
+        fixture.app->StartApplication();
+        fixture.RunOnMainThread([&] {
+            auto& vm = fixture.app->DexVm().Vm();
+            const auto invoke = [&](const char* owner, const char* name, const char* signature,
+                                    std::vector<VmValue> args) {
+                const auto id = vm.Linker().FindDirectMethod(vm.Linker().ResolveDescriptor(owner), name, signature);
+                REQUIRE_MESSAGE(id, name);
+                const auto result = vm.Call(*id, args);
+                REQUIRE_MESSAGE(!result.exception.IsValid(), name, ": ", result.exception_message);
+                return result.value;
+            };
+            const auto character = [&](const char* name, const char* signature, std::vector<VmValue> args) {
+                return invoke("Ljava/lang/Character;", name, signature, std::move(args));
+            };
+            // ICU51/AOSP java_lang_Character.cpp semantics, including non-ASCII paths.
+            for (const auto& [name, signature, input, expected] :
+                 std::vector<std::tuple<const char*, const char*, int, int>>{
+                     {"getDirectionalityImpl", "(I)B", 0x0627, 13},
+                     {"getTypeImpl", "(I)I", 0x216b, 10},
+                     {"getNumericValueImpl", "(I)I", 0x216b, 12},
+                     {"getNumericValueImpl", "(I)I", 0x00bd, -2},
+                     {"getNumericValueImpl", "(I)I", 0x2603, -1},
+                     {"isAlphabetic", "(I)Z", 0x03b1, 1},
+                     {"isDefinedImpl", "(I)Z", 0x0378, 0},
+                     {"isDigitImpl", "(I)Z", 0x0665, 1},
+                     {"isIdentifierIgnorableImpl", "(I)Z", 0, 1},
+                     {"isIdeographic", "(I)Z", 0x4e00, 1},
+                     {"isLetterImpl", "(I)Z", 0x03b1, 1},
+                     {"isLetterOrDigitImpl", "(I)Z", 0x0665, 1},
+                     {"isLowerCaseImpl", "(I)Z", 0x03b1, 1},
+                     {"isMirroredImpl", "(I)Z", '(', 1},
+                     {"isSpaceCharImpl", "(I)Z", 0x00a0, 1},
+                     {"isTitleCaseImpl", "(I)Z", 0x01c5, 1},
+                     {"isUnicodeIdentifierPartImpl", "(I)Z", 0x0665, 1},
+                     {"isUnicodeIdentifierStartImpl", "(I)Z", 0x03b1, 1},
+                     {"isUpperCaseImpl", "(I)Z", 0x0391, 1},
+                     {"isWhitespaceImpl", "(I)Z", 0x00a0, 0},
+                     {"ofImpl", "(I)I", 'A', 1},
+                     {"toLowerCaseImpl", "(I)I", 0x0391, 0x03b1},
+                     {"toTitleCaseImpl", "(I)I", 0x01c6, 0x01c5},
+                     {"toUpperCaseImpl", "(I)I", 0x03b1, 0x0391},
+                     // ROM performs the directionality mapping and numeric letter adjustment.
+                     {"getDirectionality", "(I)B", 0x0627, 2},
+                     {"getNumericValue", "(I)I", 'A', 10},
+                     {"getType", "(C)I", 0x03b1, 2},
+                     {"getType", "(I)I", 0x03b1, 2},
+                     {"isDefined", "(C)Z", 0x03b1, 1},
+                     {"isDefined", "(I)Z", 0x03b1, 1},
+                     {"isTitleCase", "(C)Z", 0x01c5, 1},
+                     {"toTitleCase", "(C)C", 0x01c6, 0x01c5},
+                     {"isIdentifierIgnorable", "(C)Z", 0, 1},
+                     {"isJavaIdentifierStart", "(C)Z", 0x03b1, 1},
+                     {"isJavaIdentifierPart", "(C)Z", 0x0665, 1}}) {
+                CAPTURE(name);
+                CHECK(character(name, signature, {VmValue::Int(input)}).AsInt() == expected);
+            }
+            CHECK(character("digitImpl", "(II)I", {VmValue::Int(0x0665), VmValue::Int(10)}).AsInt() == 5);
+            CHECK(vm.StringUtf8(character("getNameImpl", "(I)Ljava/lang/String;", {VmValue::Int('A')}).ref) ==
+                  "LATIN CAPITAL LETTER A");
+            CHECK_FALSE(character("getNameImpl", "(I)Ljava/lang/String;", {VmValue::Int(0x0378)}).ref.IsValid());
+            const auto alias = vm.NewStringUtf8("BASIC_LATIN");
+            const auto root = vm.ProtectReferences(std::array{alias});
+            CHECK(character("forNameImpl", "(Ljava/lang/String;)I", {VmValue::Ref(alias)}).AsInt() == 1);
+            const auto for_name = vm.Linker().FindDirectMethod(vm.Linker().ResolveDescriptor("Ljava/lang/Character;"),
+                                                               "forNameImpl", "(Ljava/lang/String;)I");
+            REQUIRE(for_name);
+            const auto null_name = vm.Call(*for_name, std::array{VmValue::Ref(VmObjectRef{})});
+            REQUIRE(null_name.exception.IsValid());
+            CHECK(vm.Linker().Class(null_name.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+            const auto block = invoke("Ljava/lang/Character$UnicodeBlock;", "forName",
+                                      "(Ljava/lang/String;)Ljava/lang/Character$UnicodeBlock;", {VmValue::Ref(alias)});
+            CHECK(block.ref == invoke("Ljava/lang/Character$UnicodeBlock;", "of",
+                                      "(I)Ljava/lang/Character$UnicodeBlock;", {VmValue::Int('A')})
+                                   .ref);
+        });
+    }
+}

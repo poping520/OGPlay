@@ -9,9 +9,6 @@
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
-IntrinsicClassDecl Declare_java_io_EOFException() {
-    return DeclareSimpleThrowable("Ljava/io/EOFException;", "Ljava/io/IOException;");
-}
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_io_FileNotFoundException.cpp ----
@@ -446,7 +443,4 @@ void AppendJavaIoStreams(std::vector<IntrinsicClassDecl>& catalog) {
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
-IntrinsicClassDecl Declare_java_io_UnsupportedEncodingException() {
-    return DeclareSimpleThrowable("Ljava/io/UnsupportedEncodingException;", "Ljava/io/IOException;");
-}
 }  // namespace ogplay::runtime::dexvm::intrinsics

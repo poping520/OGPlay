@@ -16,27 +16,21 @@ std::vector<std::byte> EncodeCharset(std::u16string_view text, const std::string
 
 void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services);
 void AppendJavaLangThrowables(std::vector<IntrinsicClassDecl>& catalog);
-void AppendJavaLangPrimitiveWrappers(
-    std::vector<IntrinsicClassDecl>& catalog);
+void AppendJavaLangPrimitiveWrappers(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaLangInterfaces(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaIoStreams(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaUtilZip(std::vector<IntrinsicClassDecl>& catalog);
-void AppendJavaUtilPlatform(std::vector<IntrinsicClassDecl>& catalog,
-                            const CoreIntrinsicServices& services);
-void AppendJavaIcu(std::vector<IntrinsicClassDecl>& catalog,
-                   const CoreIntrinsicServices& services);
+void AppendJavaUtilPlatform(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services);
+void AppendJavaIcu(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services);
 void AppendJavaRegex(std::vector<IntrinsicClassDecl>& catalog);
-void AppendJavaConcurrent(std::vector<IntrinsicClassDecl>& catalog,
-                          const CoreIntrinsicServices& services);
+void AppendJavaConcurrent(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services);
 void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog);
-void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog,
-                           const CoreIntrinsicServices& services);
+void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services);
 void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog);
 
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Object();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_ClassLoader(
-    const CoreIntrinsicServices& services);
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_ClassLoader(const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Proxy();
 [[nodiscard]] IntrinsicClassDecl Declare_libcore_reflect_AnnotationAccess();
 [[nodiscard]] IntrinsicClassDecl Declare_dalvik_system_VMStack();
@@ -44,29 +38,21 @@ void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog);
 [[nodiscard]] IntrinsicClassDecl Declare_dalvik_system_BaseDexClassLoader();
 [[nodiscard]] IntrinsicClassDecl Declare_dalvik_system_PathClassLoader();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Thread();
-[[nodiscard]] IntrinsicClassDecl
-Declare_java_lang_Thread_UncaughtExceptionHandler();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_ThreadGroup();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Thread_State();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Enum();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_String();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_RealToString();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_System(
-    const CoreIntrinsicServices& services);
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_StringToReal();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_org_ogplay_io_LogOutputStream();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Math();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Runtime(const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_libcore_io_IoUtils();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Class(
-    const CoreIntrinsicServices& services);
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Type();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Class(const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Method();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Constructor();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Field();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Array();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_FileNotFoundException();
-[[nodiscard]] IntrinsicClassDecl Declare_java_io_UnsupportedEncodingException();
-[[nodiscard]] IntrinsicClassDecl Declare_java_io_EOFException();
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

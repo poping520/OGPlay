@@ -3,8 +3,7 @@
 
 namespace ogplay::runtime::dexvm {
 
-std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
-    CoreIntrinsicServices services) {
+std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(CoreIntrinsicServices services) {
     using namespace intrinsics;
     if (services.cpu_cores < 1 || services.cpu_cores > 32)
         throw std::invalid_argument("guest CPU requires 1..32 cores");
@@ -18,19 +17,16 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_dalvik_system_BaseDexClassLoader(),
         Declare_dalvik_system_PathClassLoader(),
         Declare_java_lang_Thread(),
-        Declare_java_lang_Thread_UncaughtExceptionHandler(),
         Declare_java_lang_ThreadGroup(),
-        Declare_java_lang_Thread_State(),
-        Declare_java_lang_Enum(),
         Declare_java_lang_String(),
         Declare_java_lang_RealToString(),
+        Declare_java_lang_StringToReal(),
         Declare_java_lang_System(services),
         Declare_org_ogplay_io_LogOutputStream(),
         Declare_java_lang_Math(),
         Declare_java_lang_Runtime(services),
         Declare_libcore_io_IoUtils(),
         Declare_java_lang_Class(services),
-        Declare_java_lang_reflect_Type(),
         Declare_java_lang_reflect_AccessibleObject(),
         Declare_java_lang_reflect_Method(),
         Declare_java_lang_reflect_Constructor(),
@@ -45,11 +41,6 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
     AppendJavaUtilZip(catalog);
 
     AppendJavaLangThrowables(catalog);
-
-    catalog.insert(catalog.end(), {
-        Declare_java_io_UnsupportedEncodingException(),
-        Declare_java_io_EOFException(),
-    });
 
     AppendJavaNetPlatform(catalog, services);
     AppendJavaNio(catalog);

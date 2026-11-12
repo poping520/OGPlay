@@ -93,22 +93,12 @@ template <typename Meta, typename Materialize>
     return array;
 }
 
-template <typename Meta>
-[[nodiscard]] const Meta& MetadataBySlot(DexClassLinker& linker, JavaObjectModel& model, const VmObjectRef wrapper,
-                                         const std::span<const Meta> members, const std::string_view kind) {
-    const auto slot = ReadIntField(linker, model, wrapper, "slot");
-    if (slot >= members.size()) {
-        throw DexVmError(DexVmErrorReason::internal_invariant, "reflection " + std::string(kind) + " slot is invalid");
-    }
-    return members[slot];
-}
-
 }  // namespace
 
 class ReflectionRuntime::Impl final {
 public:
     std::vector<VmMethodId> serialization_constructors;
-    std::unordered_map<std::uint32_t, ReflectMethodMeta> method_metadata;
+    std::unordered_map<std::uint64_t, ReflectMethodMeta> method_metadata;
 
     Impl(Interpreter& interpreter, DexClassLinker& linker, JavaObjectModel& model)
         : interpreter(&interpreter), linker(&linker), model(&model),
@@ -161,7 +151,8 @@ public:
             if (method.name != "<init>") continue;
             const auto parsed = ClassNameCodec::ParseMethod(method.descriptor);
             ReflectConstructorMeta item;
-            item.slot = static_cast<std::uint32_t>(pending.size());
+            item.slot = static_cast<std::uint32_t>(std::find(direct_methods.begin(), direct_methods.end(), method_id) -
+                                                   direct_methods.begin());
             item.method = method_id;
             item.declaring_class = declaring_class;
             item.access_flags = method.access_flags;
@@ -198,7 +189,14 @@ public:
         const auto& method = linker->Method(method_id);
         const auto parsed = ClassNameCodec::ParseMethod(method.descriptor);
         ReflectMethodMeta item;
-        item.slot = static_cast<std::uint32_t>(target.methods.size());
+        const auto& owner = linker->Class(declaring_class);
+        const auto direct = std::find(owner.own_direct_methods.begin(), owner.own_direct_methods.end(), method_id);
+        item.slot = direct != owner.own_direct_methods.end()
+                        ? static_cast<std::uint32_t>(direct - owner.own_direct_methods.begin())
+                        : static_cast<std::uint32_t>(static_cast<std::ptrdiff_t>(owner.own_direct_methods.size()) +
+                                                     (std::find(owner.own_virtual_methods.begin(),
+                                                                owner.own_virtual_methods.end(), method_id) -
+                                                      owner.own_virtual_methods.begin()));
         item.method = method_id;
         item.declaring_class = declaring_class;
         item.access_flags = method.access_flags;
@@ -241,14 +239,14 @@ public:
         linker->EnsureClassLinked(declaring_class);
         const auto direct = linker->Class(declaring_class).own_direct_methods;
         const auto virtuals = linker->Class(declaring_class).own_virtual_methods;
-        std::uint32_t slot{};
+
         const auto search = [&](const auto& methods) -> std::optional<ReflectMethodMeta> {
             for (const auto method_id : methods) {
                 const auto& method = linker->Method(method_id);
                 if (method.name == "<init>" || method.name == "<clinit>") {
                     continue;
                 }
-                const auto method_slot = slot++;
+
                 if (method.name != name || (public_only && (method.access_flags & kAccPublic) == 0U) ||
                     (exact_descriptor.empty() ? !MethodParametersMatch(method_id, parameter_types)
                                               : method.descriptor != exact_descriptor)) {
@@ -256,7 +254,7 @@ public:
                 }
                 ClassReflectionMetadata selected;
                 AddMethodChecked(selected, declaring_class, method_id);
-                selected.methods.front().slot = method_slot;
+
                 return selected.methods.front();
             }
             return std::nullopt;
@@ -519,11 +517,10 @@ VmObjectRef ReflectionRuntime::MaterializeMethod(const ReflectMethodMeta& meta) 
     std::string_view stage = "allocate";
     try {
         const auto wrapper = impl_->Allocate("Ljava/lang/reflect/Method;");
-        impl_->method_metadata.insert_or_assign(meta.method.Value(), meta);
         stage = "common fields";
         impl_->CommonMemberFields(wrapper, meta.declaring_class, meta.slot);
         const auto& method = impl_->linker->Method(meta.method);
-        WriteIntField(*impl_->linker, *impl_->model, wrapper, "methodDexIndex", meta.method.Value());
+        WriteIntField(*impl_->linker, *impl_->model, wrapper, "methodDexIndex", 0xffffffffU);
         stage = "name";
         WriteRefField(*impl_->linker, *impl_->model, wrapper, "name", "Ljava/lang/String;",
                       impl_->interpreter->NewStringUtf8(method.name));
@@ -592,26 +589,50 @@ VmObjectRef ReflectionRuntime::MaterializeTypeArray(const std::span<const DexCla
 }
 
 const ReflectMethodMeta& ReflectionRuntime::MethodMetadata(const VmObjectRef wrapper) {
-    const auto method = ReadIntField(*impl_->linker, *impl_->model, wrapper, "methodDexIndex");
-    const auto found = impl_->method_metadata.find(method);
-    if (found == impl_->method_metadata.end()) {
-        throw DexVmError(DexVmErrorReason::internal_invariant, "reflection Method metadata is missing");
-    }
-    return found->second;
+    const auto declaring = impl_->model->ClassOfClassObject(
+        ReadRefField(*impl_->linker, *impl_->model, wrapper, "declaringClass", "Ljava/lang/Class;"));
+    return MethodMetadata(declaring, ReadIntField(*impl_->linker, *impl_->model, wrapper, "slot"));
+}
+
+const ReflectMethodMeta& ReflectionRuntime::MethodMetadata(DexClassId declaring, std::uint32_t slot) {
+    const auto key = (static_cast<std::uint64_t>(declaring.Value()) << 32U) | slot;
+    if (const auto found = impl_->method_metadata.find(key); found != impl_->method_metadata.end())
+        return found->second;
+    impl_->EnsureLinked(declaring);
+    const auto& owner = impl_->linker->Class(declaring);
+    const auto direct_count = owner.own_direct_methods.size();
+    if (slot >= direct_count + owner.own_virtual_methods.size())
+        throw DexVmError(DexVmErrorReason::internal_invariant, "reflection method slot is invalid");
+    const auto method =
+        slot < direct_count ? owner.own_direct_methods[slot] : owner.own_virtual_methods[slot - direct_count];
+    ClassReflectionMetadata selected;
+    impl_->AddMethodChecked(selected, declaring, method);
+    return impl_->method_metadata.emplace(key, std::move(selected.methods.front())).first->second;
 }
 
 const ReflectConstructorMeta& ReflectionRuntime::ConstructorMetadata(const VmObjectRef wrapper) {
     const auto declaring = impl_->model->ClassOfClassObject(
         ReadRefField(*impl_->linker, *impl_->model, wrapper, "declaringClass", "Ljava/lang/Class;"));
-    const auto constructors = DeclaredConstructors(declaring);
-    return MetadataBySlot(*impl_->linker, *impl_->model, wrapper, constructors, "Constructor");
+    return ConstructorMetadata(declaring, ReadIntField(*impl_->linker, *impl_->model, wrapper, "slot"));
+}
+
+const ReflectConstructorMeta& ReflectionRuntime::ConstructorMetadata(DexClassId declaring, std::uint32_t slot) {
+    for (const auto& meta : DeclaredConstructors(declaring))
+        if (meta.slot == slot) return meta;
+    throw DexVmError(DexVmErrorReason::internal_invariant, "reflection constructor slot is invalid");
 }
 
 const ReflectFieldMeta& ReflectionRuntime::FieldMetadata(const VmObjectRef wrapper) {
     const auto declaring = impl_->model->ClassOfClassObject(
         ReadRefField(*impl_->linker, *impl_->model, wrapper, "declaringClass", "Ljava/lang/Class;"));
+    return FieldMetadata(declaring, ReadIntField(*impl_->linker, *impl_->model, wrapper, "slot"));
+}
+
+const ReflectFieldMeta& ReflectionRuntime::FieldMetadata(DexClassId declaring, std::uint32_t slot) {
     const auto fields = DeclaredFields(declaring);
-    return MetadataBySlot(*impl_->linker, *impl_->model, wrapper, fields, "Field");
+    if (slot >= fields.size())
+        throw DexVmError(DexVmErrorReason::internal_invariant, "reflection field slot is invalid");
+    return fields[slot];
 }
 
 bool ReflectionRuntime::SemanticallyEqual(const VmObjectRef left, const VmObjectRef right) {
@@ -643,9 +664,9 @@ ReflectionCodec& ReflectionRuntime::Codec() noexcept {
     return *impl_->codec;
 }
 
-VmObjectRef ReflectionRuntime::InvokeMethod(const VmObjectRef wrapper, const VmObjectRef receiver,
-                                            const VmObjectRef arguments, const std::optional<DexClassId> caller) {
-    const auto& meta = MethodMetadata(wrapper);
+VmObjectRef ReflectionRuntime::InvokeMethod(const ReflectMethodMeta& meta, const VmObjectRef receiver,
+                                            const VmObjectRef arguments, const std::optional<DexClassId> caller,
+                                            bool no_access_check) {
     const auto& declared = impl_->linker->Method(meta.method);
 
     VmMethodId target = meta.method;
@@ -675,7 +696,7 @@ VmObjectRef ReflectionRuntime::InvokeMethod(const VmObjectRef wrapper, const VmO
                                                                       ", got " + std::to_string(argument_count)};
     }
     const auto& target_method = impl_->linker->Method(target);
-    if (!IsAccessible(wrapper) && !impl_->CanAccessMember(target_method.owner, target_method.access_flags, caller)) {
+    if (!no_access_check && !impl_->CanAccessMember(target_method.owner, target_method.access_flags, caller)) {
         throw VmJavaThrow{"Ljava/lang/IllegalAccessException;", "access to method denied"};
     }
 
@@ -700,11 +721,10 @@ VmObjectRef ReflectionRuntime::InvokeMethod(const VmObjectRef wrapper, const VmO
     return impl_->codec->BoxReturn(meta.return_type, outcome.value);
 }
 
-VmObjectRef ReflectionRuntime::InvokeConstructor(const VmObjectRef wrapper, const VmObjectRef arguments,
-                                                 const std::optional<DexClassId> caller) {
-    const auto& meta = ConstructorMetadata(wrapper);
+VmObjectRef ReflectionRuntime::InvokeConstructor(const ReflectConstructorMeta& meta, const VmObjectRef arguments,
+                                                 const std::optional<DexClassId> caller, bool no_access_check) {
     impl_->RequireInstantiable(meta.declaring_class);
-    if (!IsAccessible(wrapper) && !impl_->CanAccessMember(meta.declaring_class, meta.access_flags, caller)) {
+    if (!no_access_check && !impl_->CanAccessMember(meta.declaring_class, meta.access_flags, caller)) {
         throw VmJavaThrow{"Ljava/lang/IllegalAccessException;", "access to constructor denied"};
     }
     auto call_arguments = impl_->codec->ConvertArguments(arguments, meta.parameter_types);
@@ -806,9 +826,14 @@ VmObjectRef ReflectionRuntime::NewInstance(const DexClassId java_class, const st
 VmValue ReflectionRuntime::GetField(const VmObjectRef wrapper, const VmObjectRef receiver,
                                     const std::optional<DexClassId> requested_type,
                                     const std::optional<DexClassId> caller) {
-    const auto& meta = FieldMetadata(wrapper);
+    return GetField(FieldMetadata(wrapper), receiver, requested_type, caller, IsAccessible(wrapper));
+}
+
+VmValue ReflectionRuntime::GetField(const ReflectFieldMeta& meta, const VmObjectRef receiver,
+                                    const std::optional<DexClassId> requested_type,
+                                    const std::optional<DexClassId> caller, bool no_access_check) {
     const auto& field = impl_->linker->Field(meta.field);
-    if (!IsAccessible(wrapper) && !impl_->CanAccessField(meta, receiver, caller)) {
+    if (!no_access_check && !impl_->CanAccessField(meta, receiver, caller)) {
         throw VmJavaThrow{"Ljava/lang/IllegalAccessException;", "access to field denied"};
     }
     if (field.is_static) {
@@ -838,11 +863,11 @@ VmValue ReflectionRuntime::GetField(const VmObjectRef wrapper, const VmObjectRef
     return impl_->codec->ConvertArgument(boxed, *requested_type);
 }
 
-void ReflectionRuntime::SetField(const VmObjectRef wrapper, const VmObjectRef receiver, const VmValue value,
-                                 const std::optional<DexClassId> source_type, const std::optional<DexClassId> caller) {
-    const auto& meta = FieldMetadata(wrapper);
+void ReflectionRuntime::SetField(const ReflectFieldMeta& meta, const VmObjectRef receiver, const VmValue value,
+                                 const std::optional<DexClassId> source_type, const std::optional<DexClassId> caller,
+                                 bool no_access_check) {
     const auto& field = impl_->linker->Field(meta.field);
-    if (!IsAccessible(wrapper)) {
+    if (!no_access_check) {
         if ((meta.access_flags & kAccFinal) != 0U) {
             throw VmJavaThrow{"Ljava/lang/IllegalAccessException;", "field is marked final"};
         }

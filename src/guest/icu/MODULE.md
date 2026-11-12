@@ -17,8 +17,10 @@ guest mutex 保护；同一 Matcher 由原版 Java monitor 串行，DecimalForma
 整数、double 与十进制 digit-list 格式通过逐字段 C ABI 与 grouping symbol 扫描恢复完整
 FieldPositionIterator；parse 按 ICU 结果返回 Long/Double 并保持 ParsePosition。区域数据使用 ICU 的区域回退，不限语言白名单。LocaleData 的日期字段、
 相对日与货币来自 ICU resource；Unicode 大小写由 `u_strToLower/Upper` 承担。只注册审计清单内
-required backend；另注册 Character 的 toLowerCaseImpl/toUpperCaseImpl，按 libcore 用 ICU51
-u_tolower/u_toupper 做单 code point 简单映射，供 String.regionMatches 的逐 char 折叠使用。
+required backend；Character 及嵌套类执行原版 Java，原版 Character native 全部按
+libcore java_lang_Character.cpp 注册：分类、标识符、数值、名称、方向性、镜像、简单大小写
+与 UnicodeBlock 查询均调用 ICU51 C ABI。getDirectionalityImpl 返回 ICU 原值，方向性映射
+及数值字母修正归 Java；不注册普通 getDirectionality 方法。数值的整数性检查复用随附 guest libm。
 其余未绑定 ROM native 调用记账并抛 UnsatisfiedLinkError。
 Pattern/Matcher 普通协议来自 API19 BootDex，regex_jni.c 只调用 uregex C ABI；matcher 持有
 独立 UTF-16 native 副本，覆盖 input/region、UTF-16 group offsets、bounds、find/matches 与

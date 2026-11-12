@@ -27,8 +27,11 @@
 - String 的 UTF-16 由 VM/JNI 唯一拥有；内部 char[] 构造复制不可变快照，_getChars 只复制区间。
   三个 builder 与 IntegralToString 普通方法归 BootDex，value/count/shared 是唯一可变事实源，
   无 builder map、clone/sweep 或普通方法 overlay。RealToString 仅保留受检 native digit generator；
-  scratch 为有界局部值，digits/digitCount/firstK 用绑定字段。Character 现有 wrapper 边界补齐
-  五个 UTF-16 array 原语，无 builder 状态；详见  ADR-0057。
+  scratch 为有界局部值，digits/digitCount/firstK 用绑定字段。Character 及嵌套类的字段、常量、
+  UTF-16 与分类算法全部归 BootDex；原版 native 只经 guest ICU51，不保留普通方法 handler。
+  Number、Boolean、Byte、Short、Integer、Long 的状态、缓存与普通方法均归 BootDex。
+  Float/Double 已归 BootDex，仅绑定原版位转换 native；StringToReal 两个解析 native
+  在宿主用受检多精度值忠实移植 API19 AOSP 算法，普通方法执行 ROM 字节码。
 - String.valueOf(float/double) 与 Float/Double.toString（含实例方法）统一执行 BootDex
   RealToString，复用原版 ThreadLocal 实例与 digit generator；不再用宿主定点格式化。
   String.valueOf(Object) 对非 null 对象虚派 toString，保留返回值与异常。
@@ -71,8 +74,10 @@
   注入的 guest Bionic environ，无参版本返回原版不可修改快照。getSecurityManager 固定 null，
   不安装宿主权限系统；nanoTime 只用统一 Clock。Class.desiredAssertionStatus 默认 false，仅独立 run-dex 的 `--enable-assertions` 全局开启（无逐类规则）；ClassLoader.setDefaultAssertionStatus 按 API19 原版为空操作。
 - 平台 enum 用 IntrinsicEnumBuilder 在链接前生成字段、$VALUES、clinit、values/valueOf；
-  BootDex enum 复用 Enum.getSharedConstants，禁止 EnumSet 的 C++ 副本。顶层接口只声明
-  已登记 shape，Thread.UncaughtExceptionHandler 归 Thread family。
+  Thread.State 与顶层接口、reflect.Type、Thread.UncaughtExceptionHandler 归 BootDex。
+  Enum 已归 BootDex，ROM shared-constants 缓存使用 Class 提供的
+  getDeclaredConstructorOrMethod native；Class.getEnumConstants/SharedEnumConstants
+  仍按真实静态字段与 ordinal 提供数组，禁止 EnumSet 的 C++ 副本。
 
 Posix 的 getpid/getuid/gettid 仅消费 CoreIntrinsicServices 显式注入的进程/当前线程身份，
 不读取宿主进程号或 UID；没有 provider 时保持未实现。平台 Process 的原版 Java 经同一
@@ -91,13 +96,15 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
   stream 使用真实 ByteArrayInputStream；缺失返回 null，未注入 provider 明确失败。
   jar:file 连接仅访问已封存归档，url/connected/input 均为 guest GC 字段，无宿主侧表。
   完整约束见 [DexVM](../MODULE.md)。
-- Class/Method/Constructor/Field/reflect.Array 只委托 linker、ReflectionRuntime、ReflectionCodec
-  和 typed array store；不读写 raw member id。public 聚合按 class→superclass→direct interface；
+- Method/Field/Constructor/AccessibleObject/reflect.Array 的字段与普通方法执行 ROM Java，
+  宿主仅实现 Dalvik 原版 native，委托 linker、ReflectionRuntime、ReflectionCodec 和 typed array store。
+  成员按 (declaringClass, slot) 定位；方法与构造器共用 own direct 后接 own virtual 的稳定序号，
+  字段按 own static 后接 own instance 的序号；不读写 raw member id。Class 保持既有入口。public 聚合按 class→superclass→direct interface；
   nested/enclosing/Throws 只读 Dalvik metadata，禁止名称拆分猜测。Class.getEnumConstants 复用
   `isEnum` 与 `SharedEnumConstants`，返回具体枚举数组类型的浅克隆。Class/Field/Method/Constructor 与参数运行时注解查询
   委托 `AnnotationRuntime`，不继承方法注解，数组每次新建；Method.getDefaultValue 读取声明默认值。
   泛型读取 DEX Signature，执行原版 GenericSignatureParser/Type 实现，无签名回退原始类型；
-  不缓存 guest Type 引用。通用 Proxy 合成仍明确未实现。invoke/实例化/字段读写保留类型转换和原异常引用；Modifier 与对象流普通协议归 BootDex。
+  宿主不缓存 guest Type 引用；成员泛型缓存由 ROM 字段持有。通用 Proxy 合成仍明确未实现。invoke/实例化/字段读写保留类型转换和原异常引用；Modifier 与对象流普通协议归 BootDex。
 - 加载器与反射透传 typed guest linkage failure；Class.forName 保留原异常作为 CNFE cause，
   注解中缺失类型仍按既有 TypeNotPresentException 协议。DexVmError 内部故障不转换为 Java 错误。
 - 集合、迭代器、Arrays/Collections、Random、ThreadLocal、普通 atomic/同步器和

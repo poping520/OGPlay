@@ -509,9 +509,9 @@ TEST_CASE("dexvm P1 Enum compareTo follows ordinals") {
     ExpectInt(vm.CallStatic("compare", "()I", {}, "LP1Enum;"), -1);
     ExpectInt(vm.CallStatic("compareBridge", "()I", {}, "LP1Enum;"), -1);
     ExpectThrow(vm, vm.CallStatic("compareBridgeMismatch", "()I", {}, "LP1Enum;"), "Ljava/lang/ClassCastException;",
-                "argument is not an enum constant");
+                "java.lang.String cannot be cast to java.lang.Enum");
     ExpectThrow(vm, vm.CallStatic("compareNull", "()I", {}, "LP1Enum;"), "Ljava/lang/NullPointerException;",
-                "ordinal of null enum constant");
+                "field access on null: ordinal");
 }
 
 TEST_CASE("dexvm P1 Enum getDeclaringClass and valueOf") {

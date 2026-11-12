@@ -172,8 +172,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 153244,
-      "sha256": "2a168a909a26be407e3befd68aa3a8235747d8da8b75934e3ac1a9ae912eeff3",
+      "size": 158896,
+      "sha256": "6b83a57cfefd42c997745e680cbacce4203a7d41018243e3755677e7709f6a13",
       "soname": "libogplay_jni.so",
       "needed": [
         "libssl.so",
@@ -181,11 +181,12 @@
         "libicui18n.so",
         "libicuuc.so",
         "libz.so",
+        "libm.so",
         "libc.so"
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "51d1c038b99aec840c26a9479f272826635ea5e7982839bf0bd8c02f01446003",
+        "generator_sha256": "36b21ad0c4e53776525433abf396b6ca3485c8d37e5700cfa06678243e31f5e0",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",
@@ -204,7 +205,7 @@
           },
           {
             "path": "src/guest/icu/icu_jni.c",
-            "sha256": "fbec30efd34e0239d29636f73c1af22eacdb1731f0cd4f96f5107905e3e8e034"
+            "sha256": "91b4a7a35494e1ddb5d62090bba1109bb443cb54b0f46163dd39c1ad9daa3160"
           },
           {
             "path": "src/guest/icu/regex_jni.c",
@@ -224,7 +225,7 @@
           },
           {
             "path": "src/guest/icu/icu51_capi.h",
-            "sha256": "5cf6b43e4f67237227a61fb673b6708047589c2f63b438ecfc40ebbf47fb575a"
+            "sha256": "d76373a8e936cf9ba529a76b8475a725e18d2bbf57a63376a27dd464545bb5fd"
           }
         ],
         "inputs": [

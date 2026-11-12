@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <math.h>
 #include <stdint.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -1301,10 +1302,101 @@ static const JNINativeMethod decimal_methods[] = {
     {"setTextAttribute", "(JILjava/lang/String;)V", (void*)NativeDecimalFormat_setTextAttribute},
     {"toPatternImpl", "(JZ)Ljava/lang/String;", (void*)NativeDecimalFormat_toPatternImpl}};
 
+/* API19 libcore Character native boundary. Java owns validation and mappings. */
+static jint Character_digitImpl(JNIEnv* env, jclass cls, jint code_point, jint radix) {
+    (void)env;
+    (void)cls;
+    return ICU(u_digit)(code_point, (int8_t)radix);
+}
+
+static jint Character_getTypeImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_charType)(code_point);
+}
+
+static jbyte Character_getDirectionalityImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_charDirection)(code_point);
+}
+
+static jboolean Character_isMirroredImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_isMirrored)(code_point);
+}
+
+static jboolean Character_isDefinedImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_isdefined)(code_point);
+}
+
+static jboolean Character_isDigitImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_isdigit)(code_point);
+}
+
+static jboolean Character_isIdentifierIgnorableImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_isIDIgnorable)(code_point);
+}
+
+static jboolean Character_isLetterImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_isalpha)(code_point);
+}
+
+static jboolean Character_isLetterOrDigitImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_isalnum)(code_point);
+}
+
+static jboolean Character_isSpaceCharImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_isJavaSpaceChar)(code_point);
+}
+
+static jboolean Character_isTitleCaseImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_istitle)(code_point);
+}
+
+static jboolean Character_isUnicodeIdentifierPartImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_isIDPart)(code_point);
+}
+
+static jboolean Character_isUnicodeIdentifierStartImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_isIDStart)(code_point);
+}
+
+static jboolean Character_isWhitespaceImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_isWhitespace)(code_point);
+}
+
 static jint Character_toLowerCaseImpl(JNIEnv* env, jclass cls, jint code_point) {
     (void)env;
     (void)cls;
     return ICU(u_tolower)(code_point);
+}
+
+static jint Character_toTitleCaseImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_totitle)(code_point);
 }
 
 static jint Character_toUpperCaseImpl(JNIEnv* env, jclass cls, jint code_point) {
@@ -1313,19 +1405,96 @@ static jint Character_toUpperCaseImpl(JNIEnv* env, jclass cls, jint code_point) 
     return ICU(u_toupper)(code_point);
 }
 
-static jbyte Character_getDirectionality(JNIEnv* env, jclass cls, jint code_point) {
+static jboolean Character_isUpperCaseImpl(JNIEnv* env, jclass cls, jint code_point) {
     (void)env;
     (void)cls;
-    // ICU 51 UCharDirection values mapped to API19 Character directionality.
-    static const jbyte directions[] = {0, 1, 3, 4, 5, 6, 7, 10, 11, 12, 13, 14, 15, 2, 16, 17, 18, 8, 9};
-    if (ICU(u_charType)(code_point) == 0) return -1;
-    const int32_t direction = ICU(u_charDirection)(code_point);
-    return direction >= 0 && direction < (int32_t)sizeof(directions) ? directions[direction] : -1;
+    return ICU(u_isupper)(code_point);
 }
 
-static const JNINativeMethod character_methods[] = {{"getDirectionality", "(I)B", (void*)Character_getDirectionality},
-                                                    {"toLowerCaseImpl", "(I)I", (void*)Character_toLowerCaseImpl},
-                                                    {"toUpperCaseImpl", "(I)I", (void*)Character_toUpperCaseImpl}};
+static jboolean Character_isLowerCaseImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_islower)(code_point);
+}
+
+static jint Character_ofImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(ublock_getCode)(code_point);
+}
+
+static jboolean Character_isAlphabetic(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_hasBinaryProperty)(code_point, UCHAR_ALPHABETIC);
+}
+
+static jboolean Character_isIdeographic(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    return ICU(u_hasBinaryProperty)(code_point, UCHAR_IDEOGRAPHIC);
+}
+
+static jstring Character_getNameImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)cls;
+    const int is_control = code_point <= 0x1f || (code_point >= 0x7f && code_point <= 0x9f);
+    UErrorCode status = U_ZERO_ERROR;
+    char buffer[BUFSIZ];
+    const int32_t count = ICU(u_charName)(code_point, is_control ? U_EXTENDED_CHAR_NAME : U_UNICODE_CHAR_NAME, buffer,
+                                          sizeof(buffer), &status);
+    return status > U_ZERO_ERROR || count == 0 ? NULL : (*env)->NewStringUTF(env, buffer);
+}
+
+static jint Character_getNumericValueImpl(JNIEnv* env, jclass cls, jint code_point) {
+    (void)env;
+    (void)cls;
+    const double value = ICU(u_getNumericValue)(code_point);
+    if (value == U_NO_NUMERIC_VALUE) return -1;
+    if (value < 0 || floor(value + 0.5) != value) return -2;
+    return (jint)value;
+}
+
+static jint Character_forNameImpl(JNIEnv* env, jclass cls, jstring name) {
+    (void)cls;
+    if (name == NULL) {
+        throw_new(env, "java/lang/NullPointerException", "");
+        return 0;
+    }
+    const char* alias = (*env)->GetStringUTFChars(env, name, NULL);
+    if (alias == NULL) return 0;
+    const jint block = ICU(u_getPropertyValueEnum)(UCHAR_BLOCK, alias);
+    (*env)->ReleaseStringUTFChars(env, name, alias);
+    return block;
+}
+
+static const JNINativeMethod character_methods[] = {
+    {"digitImpl", "(II)I", (void*)Character_digitImpl},
+    {"forNameImpl", "(Ljava/lang/String;)I", (void*)Character_forNameImpl},
+    {"getDirectionalityImpl", "(I)B", (void*)Character_getDirectionalityImpl},
+    {"getNameImpl", "(I)Ljava/lang/String;", (void*)Character_getNameImpl},
+    {"getNumericValueImpl", "(I)I", (void*)Character_getNumericValueImpl},
+    {"getTypeImpl", "(I)I", (void*)Character_getTypeImpl},
+    {"isAlphabetic", "(I)Z", (void*)Character_isAlphabetic},
+    {"isDefinedImpl", "(I)Z", (void*)Character_isDefinedImpl},
+    {"isDigitImpl", "(I)Z", (void*)Character_isDigitImpl},
+    {"isIdentifierIgnorableImpl", "(I)Z", (void*)Character_isIdentifierIgnorableImpl},
+    {"isIdeographic", "(I)Z", (void*)Character_isIdeographic},
+    {"isLetterImpl", "(I)Z", (void*)Character_isLetterImpl},
+    {"isLetterOrDigitImpl", "(I)Z", (void*)Character_isLetterOrDigitImpl},
+    {"isLowerCaseImpl", "(I)Z", (void*)Character_isLowerCaseImpl},
+    {"isMirroredImpl", "(I)Z", (void*)Character_isMirroredImpl},
+    {"isSpaceCharImpl", "(I)Z", (void*)Character_isSpaceCharImpl},
+    {"isTitleCaseImpl", "(I)Z", (void*)Character_isTitleCaseImpl},
+    {"isUnicodeIdentifierPartImpl", "(I)Z", (void*)Character_isUnicodeIdentifierPartImpl},
+    {"isUnicodeIdentifierStartImpl", "(I)Z", (void*)Character_isUnicodeIdentifierStartImpl},
+    {"isUpperCaseImpl", "(I)Z", (void*)Character_isUpperCaseImpl},
+    {"isWhitespaceImpl", "(I)Z", (void*)Character_isWhitespaceImpl},
+    {"ofImpl", "(I)I", (void*)Character_ofImpl},
+    {"toLowerCaseImpl", "(I)I", (void*)Character_toLowerCaseImpl},
+    {"toTitleCaseImpl", "(I)I", (void*)Character_toTitleCaseImpl},
+    {"toUpperCaseImpl", "(I)I", (void*)Character_toUpperCaseImpl},
+};
+
 static const JNINativeMethod timezone_methods[] = {
     {"fillZoneStrings", "(Ljava/lang/String;[[Ljava/lang/String;)V", (void*)TimeZoneNames_fillZoneStrings}};
 

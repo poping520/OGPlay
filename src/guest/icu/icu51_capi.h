@@ -13,6 +13,38 @@ extern int32_t u_charDirection_51(int32_t code_point);
 typedef int8_t UBool;
 typedef double UDate;
 typedef int32_t UErrorCode;
+/* Character natives, matching ICU 51 uchar.h (UChar32/enums are int32_t). */
+extern int32_t u_digit_51(int32_t code_point, int8_t radix);
+extern int32_t u_totitle_51(int32_t code_point);
+extern UBool u_isMirrored_51(int32_t code_point);
+extern int32_t u_charName_51(int32_t code_point, int32_t choice, char* buffer, int32_t capacity, UErrorCode* status);
+extern double u_getNumericValue_51(int32_t code_point);
+extern UBool u_isdefined_51(int32_t code_point);
+extern UBool u_isdigit_51(int32_t code_point);
+extern UBool u_isIDIgnorable_51(int32_t code_point);
+extern UBool u_isalpha_51(int32_t code_point);
+extern UBool u_isalnum_51(int32_t code_point);
+extern UBool u_isJavaSpaceChar_51(int32_t code_point);
+extern UBool u_istitle_51(int32_t code_point);
+extern UBool u_isIDPart_51(int32_t code_point);
+extern UBool u_isIDStart_51(int32_t code_point);
+extern UBool u_isWhitespace_51(int32_t code_point);
+extern UBool u_isupper_51(int32_t code_point);
+extern UBool u_islower_51(int32_t code_point);
+extern int32_t u_getPropertyValueEnum_51(int32_t property, const char* alias);
+extern int32_t ublock_getCode_51(int32_t code_point);
+extern UBool u_hasBinaryProperty_51(int32_t code_point, int32_t property);
+
+enum {
+    U_UNICODE_CHAR_NAME = 0,
+    U_EXTENDED_CHAR_NAME = 2,
+    UCHAR_ALPHABETIC = 0,
+    UCHAR_IDEOGRAPHIC = 17,
+    UCHAR_BLOCK = 0x1001
+};
+
+#define U_NO_NUMERIC_VALUE (-123456789.0)
+
 typedef struct UNumberFormat UNumberFormat;
 typedef struct UDateFormat UDateFormat;
 typedef struct UDateTimePatternGenerator UDateTimePatternGenerator;

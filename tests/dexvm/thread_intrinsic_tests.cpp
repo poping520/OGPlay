@@ -222,14 +222,12 @@ TEST_CASE("dexvm Thread uncaught handler declarations match API19 shape") {
     const auto interface = std::ranges::find_if(catalog, [](const auto& candidate) {
         return candidate.descriptor == "Ljava/lang/Thread$UncaughtExceptionHandler;";
     });
-    REQUIRE(interface != catalog.end());
-    CHECK(interface->is_interface);
-    const auto callback = std::ranges::find_if(interface->methods, [](const auto& candidate) {
-        return candidate.name == "uncaughtException" &&
-               candidate.descriptor == "(Ljava/lang/Thread;Ljava/lang/Throwable;)V";
-    });
-    REQUIRE(callback != interface->methods.end());
-    CHECK(callback->access_flags == 0x0401U);
+    CHECK(interface == catalog.end());
+    ThreadVm vm;
+    const auto type = vm.Class("Ljava/lang/Thread$UncaughtExceptionHandler;");
+    CHECK(vm.linker.Class(type).is_boot_dex);
+    CHECK(vm.linker.Class(type).is_interface);
+    CHECK(vm.linker.FindVtableIndex(type, "uncaughtException", "(Ljava/lang/Thread;Ljava/lang/Throwable;)V"));
 }
 
 TEST_CASE("dexvm Thread second priority declarations match API19 shape") {
@@ -301,18 +299,16 @@ TEST_CASE("dexvm Thread third priority declarations match API19 shape") {
               }) != thread->methods.end());
     }
 
-    const auto state = find_class("Ljava/lang/Thread$State;");
-    REQUIRE(state != catalog.end());
-    REQUIRE(state->superclass.has_value());
-    CHECK(*state->superclass == "Ljava/lang/Enum;");
-    for (const auto name : {"NEW", "RUNNABLE", "BLOCKED", "WAITING", "TIMED_WAITING", "TERMINATED"}) {
-        CHECK(std::ranges::find_if(state->fields, [&](const auto& field) {
-                  return field.name == name && field.descriptor == "Ljava/lang/Thread$State;" && field.is_static;
-              }) != state->fields.end());
-    }
+    CHECK(find_class("Ljava/lang/Thread$State;") == catalog.end());
+    ThreadVm vm;
+    const auto type = vm.linker.ResolveDescriptor("Ljava/lang/Thread$State;");
+    CHECK(vm.linker.Class(type).is_boot_dex);
+    CHECK(vm.linker.Class(*vm.linker.Class(type).super).descriptor == "Ljava/lang/Enum;");
+    for (const auto name : {"NEW", "RUNNABLE", "BLOCKED", "WAITING", "TIMED_WAITING", "TERMINATED"})
+        CHECK(vm.linker.FindFieldRecursive(type, name, "Ljava/lang/Thread$State;"));
 }
 
-TEST_CASE("DVM-98 Thread State uses generated enum methods") {
+TEST_CASE("DVM-98 Thread State uses ROM enum methods") {
     ThreadVm vm;
     constexpr auto descriptor = "Ljava/lang/Thread$State;";
     const auto first = vm.Static(descriptor, "values", "()[Ljava/lang/Thread$State;");
@@ -833,13 +829,18 @@ TEST_CASE("dexvm root timed join catches up without an external pump") {
     ThreadVm vm;
     std::vector<std::int64_t> advances;
     bool observed_joining{};
+    // With the driver marked blocked, the sleeper's own timed park also
+    // advances the clock and keeps doing so after this scope ends, until the
+    // VM shuts it down. Only the root host thread may touch the locals.
+    const auto root_thread = std::this_thread::get_id();
     vm.interpreter.Monitors().SetRealtimeSource([&] { return vm.fake_real.fetch_add(2); });
     vm.interpreter.Monitors().ObserveClockDriverBlocking(true);
-    vm.interpreter.Monitors().SetClockAdvance([&](const std::int64_t delta_millis) {
+    vm.interpreter.Monitors().SetClockAdvance([&, root_thread](const std::int64_t delta_millis) {
+        vm.clock_millis += delta_millis;
+        if (std::this_thread::get_id() != root_thread) return;
         observed_joining = std::ranges::any_of(vm.threads.Snapshot(), [](const auto& thread) {
             return thread.context_token == kRootLifecycleToken && thread.wait_state == VmThreadWaitState::joining;
         });
-        vm.clock_millis += delta_millis;
         advances.push_back(delta_millis);
     });
     const auto sleeper = vm.New("LThreadSleeper;");
@@ -850,8 +851,8 @@ TEST_CASE("dexvm root timed join catches up without an external pump") {
     CHECK_FALSE(advances.empty());
     CHECK(advances.front() <= 2);
     CHECK(observed_joining);
-    // ThreadSleeper parks in sleep(100) on its own context; only the root
-    // park fast-forwarded, so the target outlives its 30 ms join.
+    // ThreadSleeper parks in sleep(100) on its own context, so the target
+    // outlives its 30 ms join.
     CHECK(vm.threads.IsAlive(sleeper));
 }
 

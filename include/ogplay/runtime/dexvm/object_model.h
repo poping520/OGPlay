@@ -114,7 +114,7 @@ public:
 
     // Core class ids used for objects created without explicit class
     // context (strings flowing in from JNI, class objects).
-    void SetCoreClasses(DexClassId string_class, DexClassId class_class);
+    void SetCoreClasses(DexClassId string_class, DexClassId class_class, std::uint16_t class_slots = 0);
     // Class handles and linker ids depend on catalog assembly order. Supplying
     // the descriptor resolver lets class-object identity remain stable when
     // platform shapes are inserted or reordered.

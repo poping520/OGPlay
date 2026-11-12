@@ -374,9 +374,11 @@ VmObjectRef AnnotationRuntime::GetClassAnnotation(
     return VmObjectRef{};
 }
 
-bool AnnotationRuntime::IsClassAnnotationPresent(
+bool AnnotationRuntime::IsDeclaredClassAnnotationPresent(
     const DexClassId java_class, const VmObjectRef annotation_class) {
-    return GetClassAnnotation(java_class, annotation_class, true).IsValid();
+    const auto requested = RequireAnnotationClass(annotation_class);
+    auto& linker = interpreter_->Linker();
+    return FindDeclared(linker.Class(java_class).runtime_annotations, linker.Class(requested).descriptor) != nullptr;
 }
 
 VmObjectRef AnnotationRuntime::GetClassAnnotations(const DexClassId java_class,

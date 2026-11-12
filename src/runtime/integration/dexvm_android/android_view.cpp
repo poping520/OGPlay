@@ -15,7 +15,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {}  // namespace
 
-Decl Declare_android_view_ContextThemeWrapper(const Context&) {
+Decl Declare_android_view_ContextThemeWrapper_Shell(const Context&) {
     return std::move(dx::IntrinsicClassBuilder::Class("Landroid/view/ContextThemeWrapper;",
                                                       "Landroid/content/ContextWrapper;")
                          .MergesBootClass())
@@ -140,7 +140,7 @@ dx::VmObjectRef NewKeyCharacterMap(dx::Interpreter& vm, bool keyboard) {
 
 }  // namespace
 
-Decl Declare_android_view_KeyEvent(const Context& context) {
+Decl Declare_android_view_KeyEvent_Natives(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/KeyEvent;");
     builder.MergesBootClass();
@@ -165,7 +165,7 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_view_KeyCharacterMap(const Context&) {
+Decl Declare_android_view_KeyCharacterMap_Natives(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/KeyCharacterMap;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     const auto full_map = [](dx::IntrinsicContext& call) {
@@ -307,7 +307,7 @@ dx::VmValue MakeInputDevice(dx::IntrinsicContext& call, const Context& context) 
     return dx::VmValue::Ref(object);
 }
 
-Decl Declare_android_view_MotionEvent(const Context& context) {
+Decl Declare_android_view_MotionEvent_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/MotionEvent;");
     builder.MergesBootClass();
     AddRomMotionNatives(builder, context);
@@ -317,7 +317,7 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context& context) {
+Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener_Shell(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;");
     builder.MergesBootClass();
@@ -332,7 +332,7 @@ Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context&
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_view_ViewTreeObserver(const Context&) {
+Decl Declare_android_view_ViewTreeObserver_Shell(const Context&) {
     return std::move(dx::IntrinsicClassBuilder::Class("Landroid/view/ViewTreeObserver;", "Ljava/lang/Object;")
                          .MergesBootClass())
         .Build();
@@ -341,7 +341,7 @@ Decl Declare_android_view_ViewTreeObserver(const Context&) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_InputQueue(const Context& context) {
+Decl Declare_android_view_InputQueue_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/InputQueue;");
     builder.MergesBootClass();
     AddRomInputQueueNatives(builder, context);
@@ -351,7 +351,7 @@ Decl Declare_android_view_InputQueue(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_animation_PropertyValuesHolder(const Context& context) {
+Decl Declare_android_animation_PropertyValuesHolder_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/animation/PropertyValuesHolder;");
     builder.MergesBootClass();
     for (const bool floating : {false, true}) {
@@ -415,7 +415,7 @@ Decl Declare_android_animation_PropertyValuesHolder(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_view_DisplayEventReceiver(const Context& context) {
+Decl Declare_android_view_DisplayEventReceiver_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/DisplayEventReceiver;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     builder.StaticMethod(
@@ -466,7 +466,7 @@ Decl Declare_android_view_DisplayEventReceiver(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_view_HardwareRenderer() {
+Decl Declare_android_view_HardwareRenderer_Natives() {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/HardwareRenderer;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     // ActivityThread configures a shader cache during binding. The software
@@ -477,7 +477,7 @@ Decl Declare_android_view_HardwareRenderer() {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_DisplayService(const Context& context) {
+Decl Declare_local_DisplayService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalDisplayService;",
                                                     "Landroid/hardware/display/IDisplayManager$Stub;");
     builder.VirtualMethod("getDisplayIds", "()[I", [](dx::IntrinsicContext& call) {

@@ -486,7 +486,6 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/dexvm/zip_runtime.cpp
     src/runtime/dexvm/reflection.cpp
     src/runtime/dexvm/reflection_codec.cpp
-    src/runtime/dexvm/reflection_generics.cpp
     src/runtime/dexvm/annotation_runtime.cpp
     src/runtime/dexvm/class_linker.cpp
     src/runtime/dexvm/class_linker_resolve.cpp

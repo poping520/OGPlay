@@ -4,7 +4,7 @@
 #include <bit>
 
 namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_VelocityTracker(const Context& context) {
+Decl Declare_android_view_VelocityTracker_Natives(const Context& context) {
     using V = dx::VmValue;
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/view/VelocityTracker;");
     b.MergesBootClass();

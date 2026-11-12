@@ -55,7 +55,7 @@ dx::VmObjectRef NewOfflineWifiNetworkInfo(dx::IntrinsicContext& call) {
 }
 }  // namespace
 
-Decl Declare_local_ConnectivityService(const Context& context) {
+Decl Declare_local_ConnectivityService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalConnectivityService;",
                                                     "Landroid/net/IConnectivityManager$Stub;");
     builder.VirtualMethod("getProxy", "()Landroid/net/ProxyProperties;", [context](dx::IntrinsicContext& call) {
@@ -78,7 +78,7 @@ Decl Declare_local_ConnectivityService(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_local_WifiService(const Context& context) {
+Decl Declare_local_WifiService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalWifiService;",
                                                     "Landroid/net/wifi/IWifiManager$Stub;");
     builder.VirtualMethod("getWifiServiceMessenger", "()Landroid/os/Messenger;",

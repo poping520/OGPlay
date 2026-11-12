@@ -10,6 +10,8 @@
 #include "ogplay/hal/host_environment.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
+#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "shared.h"
 
 namespace ogplay::runtime {
 
@@ -17,6 +19,29 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
     dexvm::CoreIntrinsicServices services;
     services.secure_random = hal::FillSecureRandom;
     if (context == nullptr) return services;
+    services.create_dex_buffer = [context](dexvm::Interpreter& vm, std::span<const std::uint8_t> bytes) {
+        if (!context->session || bytes.size() > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max()))
+            throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                     "DEX guest memory provider is unavailable"};
+        auto& process = context->session->Process();
+        const auto memory = process.GuestMemoryAccess();
+        const auto size = static_cast<std::uint32_t>(bytes.size());
+        const auto address = memory.allocate(size);
+        try {
+            memory.write(address, std::as_bytes(bytes));
+            const auto buffer = vm.NewIntrinsicInstance("Ljava/nio/DirectByteBuffer;");
+            const auto root = vm.ProtectReferences(std::array{buffer});
+            // Exactly the external-memory path used by JNI NewDirectByteBuffer.
+            vm.NIO().WrapDirect(vm.Model().ToIdentity(buffer), address, static_cast<std::int32_t>(size));
+            const auto read_only =
+                android_intrinsics::CallAndroidMethod(vm, buffer, "asReadOnlyBuffer", "()Ljava/nio/ByteBuffer;").ref;
+            process.ProtectGuestReadOnly(address, size);
+            return read_only;
+        } catch (...) {
+            memory.release(address, size);
+            throw;
+        }
+    };
     services.process_id = [] { return android_intrinsics::kGuestProcessId; };
     services.process_uid = [context] { return static_cast<std::int32_t>(context->application_uid); };
     services.current_thread_id = [context](dexvm::Interpreter& vm) {
@@ -43,21 +68,16 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
     services.initialize_system_properties = [context](dexvm::Interpreter& vm) {
         android_intrinsics::InitializeAndroidSystemProperties(vm, context);
     };
-    services.find_classpath_resource =
-        [context](const dexvm::CoreIntrinsicServices::ClasspathLoader role,
-                  const std::string_view name) -> std::optional<dexvm::CoreIntrinsicServices::ClasspathResource> {
-        const auto find = [name](const std::string_view path, const loader::ApkArchive& archive)
-            -> std::optional<dexvm::CoreIntrinsicServices::ClasspathResource> {
-            const auto found = std::find_if(archive.entries.begin(), archive.entries.end(),
-                                            [name](const loader::ApkEntry& entry) { return entry.name == name; });
-            if (found == archive.entries.end()) return std::nullopt;
-            return dexvm::CoreIntrinsicServices::ClasspathResource{std::string(path), std::string(name)};
-        };
-        for (const auto& jar : context->boot_classpath) {
-            if (const auto boot = find(jar.guest_path, jar.archive)) return boot;
-        }
-        if (role == dexvm::CoreIntrinsicServices::ClasspathLoader::bootstrap) return std::nullopt;
-        return find(context->package_resource_path, context->archive);
+    services.boot_classpath_size = [context] { return static_cast<std::int32_t>(context->boot_classpath.size()); };
+    services.find_boot_classpath_resource =
+        [context](std::string_view name,
+                  std::int32_t index) -> std::optional<dexvm::CoreIntrinsicServices::ClasspathResource> {
+        if (index < 0 || static_cast<std::size_t>(index) >= context->boot_classpath.size()) return std::nullopt;
+        const auto& jar = context->boot_classpath[static_cast<std::size_t>(index)];
+        if (std::none_of(jar.archive.entries.begin(), jar.archive.entries.end(),
+                         [name](const auto& entry) { return entry.name == name; }))
+            return std::nullopt;
+        return dexvm::CoreIntrinsicServices::ClasspathResource{jar.guest_path, std::string(name)};
     };
     services.read_classpath_resource =
         [context](
@@ -117,154 +137,154 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
 std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext>& context) {
     using namespace android_intrinsics;
     DebugMemoryInfoFields memory_fields;
-    auto debug_memory_info = Declare_android_os_Debug_MemoryInfo(context, memory_fields);
-    auto debug = Declare_android_os_Debug(context, memory_fields);
+    auto debug_memory_info = Declare_android_os_Debug_MemoryInfo_Fields(context, memory_fields);
+    auto debug = Declare_android_os_Debug_Natives(context, memory_fields);
     std::vector<dexvm::IntrinsicClassDecl> result{
         std::move(debug_memory_info),
         std::move(debug),
-        Declare_android_app_NativeActivity(context),
-        Declare_android_view_InputQueue(context),
-        Declare_android_view_Surface(context),
-        Declare_android_graphics_SurfaceTexture(context),
-        Declare_local_ActivityService(context),
-        Declare_dalvik_system_DexFile(context),
-        Declare_local_PackageService(context),
-        Declare_ddm_DdmServer(),
-        Declare_local_BackupService(context),
-        Declare_local_NotificationService(context),
-        Declare_local_WindowService(context),
-        Declare_local_IntentSender(context),
-        Declare_local_AlarmService(context),
-        Declare_local_ContentService(context),
-        Declare_local_ClipboardService(context),
-        Declare_local_UiModeService(context),
-        Declare_local_ContentChange(context),
-        Declare_android_content_res_AssetManager(context),
-        Declare_android_database_CursorWindow(context),
-        Declare_android_database_sqlite_SQLiteConnection(context),
-        Declare_android_database_sqlite_SQLiteConnection_Operation(context),
-        Declare_android_database_sqlite_SQLiteDebug(context),
-        Declare_android_database_sqlite_SQLiteGlobal(context),
-        Declare_android_graphics_Bitmap(context),
-        Declare_android_graphics_BitmapFactory_Options(context),
-        Declare_android_graphics_BitmapFactory(context),
-        Declare_android_graphics_NinePatch(context),
-        Declare_android_graphics_Canvas(context),
-        Declare_android_graphics_DrawFilter(context),
-        Declare_android_graphics_PaintFlagsDrawFilter(context),
-        Declare_android_graphics_Matrix(context),
-        Declare_android_graphics_Paint(context),
-        Declare_android_graphics_Path(context),
-        Declare_android_graphics_Color(context),
-        Declare_android_graphics_Region(context),
-        Declare_android_graphics_RegionIterator(context),
-        Declare_android_graphics_PathMeasure(context),
-        Declare_android_view_GLES20Canvas(context),
-        Declare_android_graphics_Typeface(context),
-        Declare_android_graphics_drawable_Drawable(context),
-        Declare_android_graphics_Camera(context),
-        Declare_android_hardware_SystemSensorManager(context),
-        Declare_local_UsbService(context),
-        Declare_local_LocationService(context),
-        Declare_android_media_AudioSystem(context),
-        Declare_local_AudioService(context),
-        Declare_android_media_AudioTrack(context),
-        Declare_android_media_MediaPlayer(context),
-        Declare_android_media_SoundPoolImpl(context),
-        Declare_local_ConnectivityService(context),
-        Declare_local_WifiService(context),
-        Declare_android_opengl_GLES10(context),
-        Declare_android_opengl_GLES10Ext(context),
-        Declare_android_opengl_GLES11(context),
-        Declare_android_opengl_GLES11Ext(context),
-        Declare_android_opengl_GLES20(context),
-        Declare_android_opengl_GLES30(context),
-        Declare_android_opengl_GLUtils(context),
-        Declare_android_opengl_GLU(context),
-        Declare_android_os_SystemProperties(context),
-        Declare_android_os_Binder(context),
-        Declare_com_android_internal_os_BinderInternal(context),
-        Declare_local_ServiceManager(context),
-        Declare_local_MountService(context),
-        Declare_android_os_MessageQueue(context),
-        Declare_android_os_SystemClock(context),
-        Declare_android_os_Parcel(context),
-        Declare_local_PowerService(context),
-        Declare_local_VibratorService(context),
-        Declare_android_os_Process(context),
-        Declare_local_SettingsProvider(context),
-        Declare_local_SmsService(context),
-        Declare_local_PhoneSubscriberService(context),
-        Declare_local_TelephonyService(context),
-        Declare_local_TelephonyRegistry(context),
-        Declare_android_text_AndroidBidi(context),
-        Declare_android_emoji_EmojiFactory(),
-        Declare_android_text_format_Time(context),
-        Declare_android_util_Log(context),
-        Declare_android_util_EventLog(context),
-        Declare_android_util_AttributeSet(context),
-        Declare_android_util_FloatMath(context),
-        Declare_android_animation_PropertyValuesHolder(context),
-        Declare_android_view_DisplayEventReceiver(context),
-        Declare_android_view_HardwareRenderer(),
-        Declare_local_DisplayService(context),
-        Declare_local_AccessibilityService(context),
-        Declare_local_TextServices(),
-        Declare_android_view_ContextThemeWrapper(context),
-        Declare_android_view_KeyEvent(context),
-        Declare_android_view_KeyCharacterMap(context),
-        Declare_android_view_MotionEvent(context),
-        Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(context),
-        Declare_android_view_ViewTreeObserver(context),
-        Declare_android_webkit_WebChromeClient(context),
-        Declare_android_webkit_WebChromeClient_CustomViewCallback(context),
-        Declare_android_webkit_ConsoleMessage(context),
-        Declare_android_webkit_HttpAuthHandler(context),
-        Declare_android_webkit_WebSettings(context),
-        Declare_android_webkit_WebSettings_RenderPriority(context),
-        Declare_android_webkit_WebView(context),
-        Declare_android_webkit_WebView_DisabledLoadCallback(context),
-        Declare_android_webkit_WebViewClient(context),
-        Declare_android_widget_Button(context),
-        Declare_android_widget_FrameLayout(context),
-        Declare_android_widget_ImageButton(context),
-        Declare_android_widget_ImageView_ScaleType(context),
-        Declare_android_widget_LinearLayout(context),
-        Declare_android_widget_ProgressBar(context),
-        Declare_android_widget_RelativeLayout(context),
-        Declare_android_opengl_EGL14(context),
-        Declare_android_opengl_EGLObjectHandle(context),
-        Declare_android_opengl_EGLConfig(context),
-        Declare_android_opengl_EGLContext(context),
-        Declare_android_opengl_EGLDisplay(context),
-        Declare_android_opengl_EGLSurface(context),
+        Declare_android_app_NativeActivity_Natives(context),
+        Declare_android_view_InputQueue_Natives(context),
+        Declare_android_view_Surface_Natives(context),
+        Declare_android_graphics_SurfaceTexture_Natives(context),
+        Declare_local_ActivityService_Class(context),
+        Declare_dalvik_system_DexFile_Natives(context),
+        Declare_local_PackageService_Class(context),
+        Declare_org_apache_harmony_dalvik_ddmc_DdmServer_Natives(),
+        Declare_local_BackupService_Class(context),
+        Declare_local_NotificationService_Class(context),
+        Declare_local_WindowService_Class(context),
+        Declare_local_IntentSender_Class(context),
+        Declare_local_AlarmService_Class(context),
+        Declare_local_ContentService_Class(context),
+        Declare_local_ClipboardService_Class(context),
+        Declare_local_UiModeService_Class(context),
+        Declare_local_ContentChange_Class(context),
+        Declare_android_content_res_AssetManager_Natives(context),
+        Declare_android_database_CursorWindow_Natives(context),
+        Declare_android_database_sqlite_SQLiteConnection_Natives(context),
+        Declare_android_database_sqlite_SQLiteConnection_Operation_Overrides(context),
+        Declare_android_database_sqlite_SQLiteDebug_Natives(context),
+        Declare_android_database_sqlite_SQLiteGlobal_Natives(context),
+        Declare_android_graphics_Bitmap_Natives(context),
+        Declare_android_graphics_BitmapFactory_Options_Natives(context),
+        Declare_android_graphics_BitmapFactory_Natives(context),
+        Declare_android_graphics_NinePatch_Natives(context),
+        Declare_android_graphics_Canvas_Natives(context),
+        Declare_android_graphics_DrawFilter_Natives(context),
+        Declare_android_graphics_PaintFlagsDrawFilter_Natives(context),
+        Declare_android_graphics_Matrix_Natives(context),
+        Declare_android_graphics_Paint_Natives(context),
+        Declare_android_graphics_Path_Natives(context),
+        Declare_android_graphics_Color_Natives(context),
+        Declare_android_graphics_Region_Natives(context),
+        Declare_android_graphics_RegionIterator_Natives(context),
+        Declare_android_graphics_PathMeasure_Natives(context),
+        Declare_android_view_GLES20Canvas_Natives(context),
+        Declare_android_graphics_Typeface_Natives(context),
+        Declare_android_graphics_drawable_Drawable_Shell(context),
+        Declare_android_graphics_Camera_Natives(context),
+        Declare_android_hardware_SystemSensorManager_Natives(context),
+        Declare_local_UsbService_Class(context),
+        Declare_local_LocationService_Class(context),
+        Declare_android_media_AudioSystem_Natives(context),
+        Declare_local_AudioService_Class(context),
+        Declare_android_media_AudioTrack_Natives(context),
+        Declare_android_media_MediaPlayer_Natives(context),
+        Declare_android_media_SoundPool_SoundPoolImpl_Natives(context),
+        Declare_local_ConnectivityService_Class(context),
+        Declare_local_WifiService_Class(context),
+        Declare_android_opengl_GLES10_Class(context),
+        Declare_android_opengl_GLES10Ext_Class(context),
+        Declare_android_opengl_GLES11_Class(context),
+        Declare_android_opengl_GLES11Ext_Class(context),
+        Declare_android_opengl_GLES20_Class(context),
+        Declare_android_opengl_GLES30_Class(context),
+        Declare_android_opengl_GLUtils_Class(context),
+        Declare_android_opengl_GLU_Class(context),
+        Declare_android_os_SystemProperties_Natives(context),
+        Declare_android_os_Binder_Natives(context),
+        Declare_com_android_internal_os_BinderInternal_Natives(context),
+        Declare_local_ServiceManager_Class(context),
+        Declare_local_MountService_Class(context),
+        Declare_android_os_MessageQueue_Natives(context),
+        Declare_android_os_SystemClock_Natives(context),
+        Declare_android_os_Parcel_Natives(context),
+        Declare_local_PowerService_Class(context),
+        Declare_local_VibratorService_Class(context),
+        Declare_android_os_Process_Natives(context),
+        Declare_local_SettingsProvider_Class(context),
+        Declare_local_SmsService_Class(context),
+        Declare_local_PhoneSubscriberService_Class(context),
+        Declare_local_TelephonyService_Class(context),
+        Declare_local_TelephonyRegistry_Class(context),
+        Declare_android_text_AndroidBidi_Natives(context),
+        Declare_android_emoji_EmojiFactory_Natives(),
+        Declare_android_text_format_Time_Natives(context),
+        Declare_android_util_Log_Natives(context),
+        Declare_android_util_EventLog_Natives(context),
+        Declare_android_util_AttributeSet_Shell(context),
+        Declare_android_util_FloatMath_Natives(context),
+        Declare_android_animation_PropertyValuesHolder_Natives(context),
+        Declare_android_view_DisplayEventReceiver_Natives(context),
+        Declare_android_view_HardwareRenderer_Natives(),
+        Declare_local_DisplayService_Class(context),
+        Declare_local_AccessibilityService_Class(context),
+        Declare_local_TextServices_Class(),
+        Declare_android_view_ContextThemeWrapper_Shell(context),
+        Declare_android_view_KeyEvent_Natives(context),
+        Declare_android_view_KeyCharacterMap_Natives(context),
+        Declare_android_view_MotionEvent_Natives(context),
+        Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener_Shell(context),
+        Declare_android_view_ViewTreeObserver_Shell(context),
+        Declare_android_webkit_WebChromeClient_Class(context),
+        Declare_android_webkit_WebChromeClient_CustomViewCallback_Class(context),
+        Declare_android_webkit_ConsoleMessage_Class(context),
+        Declare_android_webkit_HttpAuthHandler_Class(context),
+        Declare_android_webkit_WebSettings_Class(context),
+        Declare_android_webkit_WebSettings_RenderPriority_Class(context),
+        Declare_android_webkit_WebView_Class(context),
+        Declare_android_webkit_WebView_DisabledLoadCallback_Class(context),
+        Declare_android_webkit_WebViewClient_Class(context),
+        Declare_android_widget_Button_Shell(context),
+        Declare_android_widget_FrameLayout_Shell(context),
+        Declare_android_widget_ImageButton_Shell(context),
+        Declare_android_widget_ImageView_ScaleType_Shell(context),
+        Declare_android_widget_LinearLayout_Shell(context),
+        Declare_android_widget_ProgressBar_Shell(context),
+        Declare_android_widget_RelativeLayout_Shell(context),
+        Declare_android_opengl_EGL14_Class(context),
+        Declare_android_opengl_EGLObjectHandle_Class(context),
+        Declare_android_opengl_EGLConfig_Class(context),
+        Declare_android_opengl_EGLContext_Class(context),
+        Declare_android_opengl_EGLDisplay_Class(context),
+        Declare_android_opengl_EGLSurface_Class(context),
         // Historical compatibility tail. DVM-61 decouples Java identity hash
         // from linker ids and object handles, so future catalog insertion no
         // longer changes Object.hashCode/default toString identity.
-        Declare_com_google_android_gles_jni_GLImpl(context),
-        Declare_com_google_android_gles_jni_EGLImpl(context),
+        Declare_com_google_android_gles_jni_GLImpl_Natives(context),
+        Declare_com_google_android_gles_jni_EGLImpl_Natives(context),
     };
     {
-        result.push_back(Declare_android_graphics_drawable_StateListDrawable(context));
-        result.push_back(Declare_android_os_Trace(context));
-        result.push_back(Declare_android_content_res_XmlBlock(context));
-        result.push_back(Declare_android_content_res_StringBlock(context));
+        result.push_back(Declare_android_graphics_drawable_StateListDrawable_Shell(context));
+        result.push_back(Declare_android_os_Trace_Natives(context));
+        result.push_back(Declare_android_content_res_XmlBlock_Natives(context));
+        result.push_back(Declare_android_content_res_StringBlock_Natives(context));
     }
-    for (auto& declaration : Declare_android_graphics_Effects(context))
+    for (auto& declaration : Declare_android_graphics_Effects_Natives(context))
         result.push_back(std::move(declaration));
-    for (auto& declaration : Declare_android_graphics_StateObjects(context))
+    for (auto& declaration : Declare_android_graphics_StateObjects_Natives(context))
         result.push_back(std::move(declaration));
     {
-        result.push_back(Declare_local_WindowSession(context));
-        result.push_back(Declare_android_view_SurfaceControl(context));
-        result.push_back(Declare_android_view_SurfaceSession(context));
-        result.push_back(Declare_android_view_InputChannel(context));
-        result.push_back(Declare_android_view_InputEventReceiver(context));
-        result.push_back(Declare_android_view_InputEventSender(context));
-        result.push_back(Declare_local_InputMethodService(context));
-        result.push_back(Declare_local_InputMethodSession(context));
-        result.push_back(Declare_local_InputService(context));
-        result.push_back(Declare_android_view_VelocityTracker(context));
+        result.push_back(Declare_local_WindowSession_Class(context));
+        result.push_back(Declare_android_view_SurfaceControl_Natives(context));
+        result.push_back(Declare_android_view_SurfaceSession_Natives(context));
+        result.push_back(Declare_android_view_InputChannel_Natives(context));
+        result.push_back(Declare_android_view_InputEventReceiver_Natives(context));
+        result.push_back(Declare_android_view_InputEventSender_Natives(context));
+        result.push_back(Declare_local_InputMethodService_Class(context));
+        result.push_back(Declare_local_InputMethodSession_Class(context));
+        result.push_back(Declare_local_InputService_Class(context));
+        result.push_back(Declare_android_view_VelocityTracker_Natives(context));
     }
     return result;
 }

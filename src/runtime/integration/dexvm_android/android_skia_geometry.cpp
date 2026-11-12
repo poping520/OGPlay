@@ -24,7 +24,7 @@ std::vector<SkPoint> ReadPoints(dx::Interpreter& vm, dx::VmObjectRef array, int 
 }
 }  // namespace
 
-Decl Declare_android_graphics_Matrix(const Context& context) {
+Decl Declare_android_graphics_Matrix_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Matrix;");
     b.MergesBootClass();
     auto* store = &context->skia_objects->matrices;
@@ -379,7 +379,7 @@ Decl Declare_android_graphics_Matrix(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_android_graphics_Path(const Context& context) {
+Decl Declare_android_graphics_Path_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Path;");
     b.MergesBootClass();
     auto* store = &context->skia_objects->paths;
@@ -706,7 +706,7 @@ Decl Declare_android_graphics_Path(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_android_graphics_PathMeasure(const Context& context) {
+Decl Declare_android_graphics_PathMeasure_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/PathMeasure;");
     b.MergesBootClass();
     auto* store = &context->skia_objects->measures;
@@ -786,7 +786,7 @@ Decl Declare_android_graphics_PathMeasure(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_android_graphics_Color(const Context&) {
+Decl Declare_android_graphics_Color_Natives(const Context&) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Color;");
     b.MergesBootClass();
     b.StaticMethod(

@@ -21,7 +21,7 @@ void RetireAndroidNinePatch(dx::Interpreter& vm, DexVmAndroidContext& context, i
         context.skia_objects->nine_patches.Retire(skia::NativeToken<std::shared_ptr<const raster::NinePatch>>(bits));
 }
 
-Decl Declare_android_graphics_NinePatch(const Context& context) {
+Decl Declare_android_graphics_NinePatch_Natives(const Context& context) {
     using namespace skia;
     using V = dx::VmValue;
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/NinePatch;");

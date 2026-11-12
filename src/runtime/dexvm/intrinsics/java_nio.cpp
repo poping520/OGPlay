@@ -31,7 +31,7 @@ IntrinsicHandler Cursor(void (NioRuntime::*fn)(JniObjectIdentity)) {
     };
 }
 
-IntrinsicClassDecl DeclareBuffer() {
+IntrinsicClassDecl Declare_java_nio_Buffer_Class() {
     auto b = IntrinsicClassBuilder::Class("Ljava/nio/Buffer;", "Ljava/lang/Object;", {}, kAccPublic | kAccAbstract);
     b.FinalMethod("capacity", "()I",
                   [](IntrinsicContext& c) { return VmValue::Int(c.vm.NIO().Snapshot(Id(c.vm, c.receiver)).capacity); });
@@ -91,7 +91,7 @@ VmObjectRef FileChannelDescriptor(IntrinsicContext& c, VmObjectRef channel) {
     return VmObjectRef(c.vm.Model().InstanceSlots(channel)[c.vm.Linker().Field(*field).slot].bits);
 }
 
-IntrinsicClassDecl DeclareFileChannelTransferBoundary() {
+IntrinsicClassDecl Declare_java_nio_FileChannelImpl_Overrides() {
     auto b = IntrinsicClassBuilder::Class("Ljava/nio/FileChannelImpl;");
     b.MergesBootClass();
     b.VirtualMethod(
@@ -282,7 +282,7 @@ void Views(IntrinsicClassBuilder& b, const std::string& type, NioElementKind kin
     });
 }
 
-IntrinsicClassDecl DeclareByteOrder() {
+IntrinsicClassDecl Declare_java_nio_ByteOrder_Class() {
     auto b = IntrinsicClassBuilder::Class("Ljava/nio/ByteOrder;", "Ljava/lang/Object;", {}, kAccPublic | kAccFinal);
     b.StaticField("BIG_ENDIAN", "Ljava/nio/ByteOrder;", kAccPublic | kAccStatic | kAccFinal);
     b.StaticField("LITTLE_ENDIAN", "Ljava/nio/ByteOrder;", kAccPublic | kAccStatic | kAccFinal);
@@ -315,7 +315,7 @@ VmObjectRef OrderObject(IntrinsicContext& c, bool little) {
     return VmObjectRef(0);
 }
 
-IntrinsicClassDecl DeclareByteBuffer() {
+IntrinsicClassDecl Declare_java_nio_ByteBuffer_Class() {
     auto b = IntrinsicClassBuilder::Class("Ljava/nio/ByteBuffer;", "Ljava/nio/Buffer;", {"Ljava/lang/Comparable;"},
                                           kAccPublic | kAccAbstract);
     b.StaticMethod("allocate", "(I)Ljava/nio/ByteBuffer;", Allocate("Ljava/nio/HeapByteBuffer;", NioElementKind::byte));
@@ -403,8 +403,8 @@ IntrinsicClassDecl DeclareByteBuffer() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl TypedBuffer(const std::string& name, const std::string& array, const std::string& value,
-                               NioElementKind kind) {
+IntrinsicClassDecl DeclareTypedBufferClass(const std::string& name, const std::string& array, const std::string& value,
+                                           NioElementKind kind) {
     const auto type = "Ljava/nio/" + name + "Buffer;";
     const auto concrete = "Ljava/nio/" + name + "ArrayBuffer;";
     auto b = IntrinsicClassBuilder::Class(
@@ -487,7 +487,7 @@ IntrinsicClassDecl TypedBuffer(const std::string& name, const std::string& array
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl Plain(const std::string& descriptor, const std::string& parent) {
+IntrinsicClassDecl DeclarePlainBufferClass(const std::string& descriptor, const std::string& parent) {
     return std::move(IntrinsicClassBuilder::Class(descriptor, parent, {}, kAccNone)).Build();
 }
 
@@ -517,7 +517,7 @@ VmValue CoderResultConstant(Interpreter& vm, const char* name) {
     return VmValue::Ref(VmObjectRef{vm.Linker().Class(type).static_storage[vm.Linker().Field(*field).slot]});
 }
 
-IntrinsicClassDecl Utf8Encoder() {
+IntrinsicClassDecl Declare_org_ogplay_runtime_Utf8Encoder_Class() {
     auto builder = IntrinsicClassBuilder::Class(kUtf8Encoder, "Ljava/nio/charset/CharsetEncoder;");
     builder.OverrideMethod("isLegalReplacement", "([B)Z", [](IntrinsicContext& call) {
         const auto array = IntrinsicCall(call).NonNullRef(0, "replacement");
@@ -586,7 +586,7 @@ IntrinsicClassDecl Utf8Encoder() {
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl Charset() {
+IntrinsicClassDecl Declare_java_nio_charset_Charset_Class() {
     auto b =
         IntrinsicClassBuilder::Class("Ljava/nio/charset/Charset;", "Ljava/lang/Object;", {"Ljava/lang/Comparable;"});
     const auto name = b.BoundInstanceField("canonicalName", "Ljava/lang/String;", kAccPrivate | kAccFinal);
@@ -809,7 +809,7 @@ std::vector<std::byte> EncodeCharset(std::u16string_view text, const std::string
     return result;
 }
 
-IntrinsicClassDecl DeclareMemoryArray() {
+IntrinsicClassDecl Declare_libcore_io_Memory_Class() {
     auto b = IntrinsicClassBuilder::Class("Llibcore/io/Memory;");
     for (const auto& [name, type, width] :
          std::vector<std::tuple<std::string, std::string, int>>{{"Short", "S", 2}, {"Int", "I", 4}, {"Long", "J", 8}}) {
@@ -854,11 +854,11 @@ IntrinsicClassDecl DeclareMemoryArray() {
 }
 
 void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog) {
-    catalog.push_back(DeclareBuffer());
-    catalog.push_back(DeclareByteOrder());
-    catalog.push_back(DeclareByteBuffer());
-    catalog.push_back(Plain("Ljava/nio/MappedByteBuffer;", "Ljava/nio/ByteBuffer;"));
-    catalog.push_back(Plain("Ljava/nio/HeapByteBuffer;", "Ljava/nio/ByteBuffer;"));
+    catalog.push_back(Declare_java_nio_Buffer_Class());
+    catalog.push_back(Declare_java_nio_ByteOrder_Class());
+    catalog.push_back(Declare_java_nio_ByteBuffer_Class());
+    catalog.push_back(DeclarePlainBufferClass("Ljava/nio/MappedByteBuffer;", "Ljava/nio/ByteBuffer;"));
+    catalog.push_back(DeclarePlainBufferClass("Ljava/nio/HeapByteBuffer;", "Ljava/nio/ByteBuffer;"));
     auto direct =
         IntrinsicClassBuilder::Class("Ljava/nio/DirectByteBuffer;", "Ljava/nio/MappedByteBuffer;", {}, kAccNone);
     direct.Constructor("(JI)V", [](IntrinsicContext& c) {
@@ -880,16 +880,16 @@ void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog) {
         {"Long", "[J", "J", NioElementKind::long_value},   {"Double", "[D", "D", NioElementKind::double_value}};
 
     for (const auto& t : types) {
-        catalog.push_back(TypedBuffer(t.name, t.array, t.value, t.kind));
-        catalog.push_back(
-            Plain(std::string("Ljava/nio/") + t.name + "ArrayBuffer;", std::string("Ljava/nio/") + t.name + "Buffer;"));
-        catalog.push_back(Plain(std::string("Ljava/nio/ByteBufferAs") + t.name + "Buffer;",
-                                std::string("Ljava/nio/") + t.name + "Buffer;"));
+        catalog.push_back(DeclareTypedBufferClass(t.name, t.array, t.value, t.kind));
+        catalog.push_back(DeclarePlainBufferClass(std::string("Ljava/nio/") + t.name + "ArrayBuffer;",
+                                                  std::string("Ljava/nio/") + t.name + "Buffer;"));
+        catalog.push_back(DeclarePlainBufferClass(std::string("Ljava/nio/ByteBufferAs") + t.name + "Buffer;",
+                                                  std::string("Ljava/nio/") + t.name + "Buffer;"));
     }
-    catalog.push_back(Charset());
-    catalog.push_back(Utf8Encoder());
-    catalog.push_back(DeclareMemoryArray());
-    catalog.push_back(DeclareFileChannelTransferBoundary());
+    catalog.push_back(Declare_java_nio_charset_Charset_Class());
+    catalog.push_back(Declare_org_ogplay_runtime_Utf8Encoder_Class());
+    catalog.push_back(Declare_libcore_io_Memory_Class());
+    catalog.push_back(Declare_java_nio_FileChannelImpl_Overrides());
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

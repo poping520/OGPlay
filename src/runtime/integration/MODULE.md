@@ -166,10 +166,10 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - System.load/loadLibrary 使用同一个 loader 和 application ClassLoader token。Java 边界
   为 NPE/UnsatisfiedLinkError，宿主保留 typed cause；legacy InitializeJniLibrary 只能在
   运行中、constructors 和类登记完成后调用一次，成功或无 OnLoad 才发布 ready。
-- BaseDexClassLoader.findLibrary 经平台绑定调用 NativeLibraryLoader.FindLibraryPath，
-  与 LoadLibrary 共用 selected-ABI APK 优先、bundled system 回退的逻辑名解析；返回
-  `/data/app-lib/<soname>` 或 `/system/lib/<soname>`，可供 System.load/native dlopen 使用。
-  查询不装载、不运行 constructor/JNI、不登记 registry；非法或缺失名称返回 null，未注入 loader 明确失败。
+- BaseDexClassLoader.findLibrary 执行 ROM DexPathList，在 nativeLibraryDirectories 中通过
+  VFS 查找 System.mapLibraryName 结果；封存所选 ABI 库位于 `/data/app-lib`，系统库位于
+  `/system/lib`，所得路径由 Runtime.nativeLoad 交统一 NativeLibraryLoader 装载。
+  integration 不覆盖 findLibrary 普通方法。
 
 ## DexVM / JNI 唯一身份与执行
 
@@ -309,7 +309,7 @@ runner。JNI 保留 runner 分派以先发布当前 CPU，支持 Java→native �
 锁，不伪造扩展/FBO/限制。debug 层不得反向依赖 integration。
 
 生产装配入口为 AndroidIntrinsicCatalog / AndroidCoreIntrinsicServices；catalog 只聚合，
-family Declare_* 同址绑定，shared 只放跨 family helper，support 承担派发；不恢复 Populate、
+family 声明函数同址绑定，shared 只放跨 family helper，support 承担派发；不恢复 Populate、
 集中 handler 容器或字符串分发。设计背景见 [DexVM](../../../docs/design/dexvm.md)。
 定向测试位于 [tests/runtime](../../../tests/runtime/) 的 native loader、guest call、JNI、preflight、
 headless/NativeActivity，以及 [tests/dexvm](../../../tests/dexvm/) 的 Android/线程/布局/scheduler。
@@ -409,3 +409,7 @@ UTF-16 direct pin 的未配对/阈值诊断经 logger 与 warning ledger 发布�
 
 BootDex 装配校验启动类路径的 ZIP/DEX 来源，API19 资源由封存归档提供。
 系统及应用布局经 ROM Resources、XmlBlock 和 LayoutInflater 加载。ROM NinePatch 使用 native 伸缩区与原 Bitmap 像素。
+
+Class.getDex 的 buffer 工厂复用 process GuestMemoryAccess 的 direct arena：拷贝一次完整 DEX，
+按 JNI WrapDirect 建立 ByteBuffer 后设只读视图，再经 AddressSpace.Protect 保护页；地址不移动，
+映像随 process/VM teardown 退役，缓存与 GC 根归 ReflectionRuntime。不另设 DEX 内存分配器。

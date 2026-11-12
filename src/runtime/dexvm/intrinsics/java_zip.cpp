@@ -17,7 +17,7 @@
 namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
 
-IntrinsicClassDecl DeclareZipNative(const char* owner) {
+IntrinsicClassDecl DeclareZipNatives(const char* owner) {
     auto builder = IntrinsicClassBuilder::Class(owner);
     builder.AdmitBootNativeMethods();
     return std::move(builder).Build();
@@ -27,7 +27,7 @@ IntrinsicClassDecl DeclareZipNative(const char* owner) {
 
 void AppendJavaUtilZip(std::vector<IntrinsicClassDecl>& catalog) {
     for (const auto owner : {"Ljava/util/zip/CRC32;", "Ljava/util/zip/Deflater;", "Lorg/ogplay/zip/NativeZip;"})
-        catalog.push_back(DeclareZipNative(owner));
+        catalog.push_back(DeclareZipNatives(owner));
     auto inflater = IntrinsicClassBuilder::Class("Ljava/util/zip/Inflater;");
     inflater.AdmitBootNativeMethods();
     inflater.DirectMethod(

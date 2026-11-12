@@ -15,7 +15,7 @@
 #include "rom_input.h"
 
 namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_Debug_MemoryInfo(const Context&, DebugMemoryInfoFields& fields) {
+Decl Declare_android_os_Debug_MemoryInfo_Fields(const Context&, DebugMemoryInfoFields& fields) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Debug$MemoryInfo;");
     builder.MergesBootClass();
     constexpr std::array names{"dalvikPss",          "dalvikSwappablePss", "dalvikPrivateDirty", "dalvikSharedDirty",
@@ -31,7 +31,7 @@ Decl Declare_android_os_Debug_MemoryInfo(const Context&, DebugMemoryInfoFields& 
     return std::move(builder).Build();
 }
 
-Decl Declare_android_os_Debug(const Context& context, const DebugMemoryInfoFields& fields) {
+Decl Declare_android_os_Debug_Natives(const Context& context, const DebugMemoryInfoFields& fields) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Debug;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     builder.StaticMethod(
@@ -110,7 +110,7 @@ template <typename Integer>
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_os_SystemProperties(const Context& context) {
+Decl Declare_android_os_SystemProperties_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/SystemProperties;");
     builder.MergesBootClass();
     constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
@@ -188,7 +188,7 @@ namespace ogplay::runtime::android_intrinsics {}  // namespace ogplay::runtime::
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_local_MountService(const Context& context) {
+Decl Declare_local_MountService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalMountService;",
                                                     "Landroid/os/storage/IMountService$Stub;");
     builder.VirtualMethod(
@@ -230,7 +230,7 @@ Decl Declare_local_MountService(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_os_Binder(const Context& context) {
+Decl Declare_android_os_Binder_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Binder;");
     builder.MergesBootClass();
     constexpr auto public_native = dx::kAccPublic | dx::kAccStatic | dx::kAccFinal | dx::kAccNative;
@@ -392,7 +392,7 @@ void RejectUnsupportedServiceMethod(dx::IntrinsicClassBuilder& builder, std::str
     });
 }
 
-Decl Declare_local_ServiceManager(const Context& context) {
+Decl Declare_local_ServiceManager_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(kLocalServiceManager, "Landroid/os/ServiceManagerNative;");
     const auto lookup = [context](dx::IntrinsicContext& call) {
         const auto name = call.arguments[0].ref.IsValid() ? call.vm.StringUtf8(call.arguments[0].ref) : "null";
@@ -428,7 +428,7 @@ Decl Declare_local_ServiceManager(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_com_android_internal_os_BinderInternal(const Context& context) {
+Decl Declare_com_android_internal_os_BinderInternal_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lcom/android/internal/os/BinderInternal;");
     builder.MergesBootClass();
     builder.StaticMethod(
@@ -451,7 +451,7 @@ Decl Declare_com_android_internal_os_BinderInternal(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_SystemClock(const Context& context) {
+Decl Declare_android_os_SystemClock_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/SystemClock;");
     builder.MergesBootClass();
     constexpr auto native_flags = dx::kAccPublic | dx::kAccStatic | dx::kAccNative;
@@ -471,7 +471,7 @@ Decl Declare_android_os_SystemClock(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_os_Parcel(const Context& context) {
+Decl Declare_android_os_Parcel_Natives(const Context& context) {
     using Backing = DexVmAndroidContext::ParcelBacking;
     constexpr std::size_t kMaxParcelBytes = 16U * 1024U * 1024U;
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Parcel;");
@@ -978,7 +978,7 @@ Decl Declare_android_os_Parcel(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_PowerService(const Context&) {
+Decl Declare_local_PowerService_Class(const Context&) {
     auto builder =
         dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalPowerService;", "Landroid/os/IPowerManager$Stub;");
     builder.VirtualMethod("isScreenOn", "()Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });
@@ -1000,7 +1000,7 @@ Decl Declare_local_PowerService(const Context&) {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_VibratorService(const Context& context) {
+Decl Declare_local_VibratorService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalVibratorService;",
                                                     "Landroid/os/IVibratorService$Stub;");
     builder.VirtualMethod("hasVibrator", "()Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
@@ -1024,7 +1024,7 @@ Decl Declare_local_VibratorService(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_ddm_DdmServer() {
+Decl Declare_org_apache_harmony_dalvik_ddmc_DdmServer_Natives() {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/apache/harmony/dalvik/ddmc/DdmServer;");
     builder.MergesBootClass();
     // Dalvik has no connected DDMS transport. The Java process name is still retained by DdmHandleAppName.
@@ -1034,7 +1034,7 @@ Decl Declare_ddm_DdmServer() {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_os_Process(const Context& context) {
+Decl Declare_android_os_Process_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Process;");
     builder.MergesBootClass();
     constexpr auto flags = dx::kAccPublic | dx::kAccStatic | dx::kAccFinal | dx::kAccNative;
@@ -1115,7 +1115,7 @@ void RegisterAndroidValueStateTables(dexvm::Interpreter& vm, const std::shared_p
 }  // namespace ogplay::runtime
 
 namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_MessageQueue(const Context& context) {
+Decl Declare_android_os_MessageQueue_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/MessageQueue;");
     builder.MergesBootClass();
     constexpr auto flags = dx::kAccPrivate | dx::kAccStatic | dx::kAccNative;
@@ -1259,7 +1259,7 @@ Decl Declare_android_os_MessageQueue(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_os_Trace(const Context& context) {
+Decl Declare_android_os_Trace_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Trace;");
     builder.MergesBootClass();
     constexpr auto flags = dx::kAccPrivate | dx::kAccStatic | dx::kAccNative;

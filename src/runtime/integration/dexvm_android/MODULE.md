@@ -6,7 +6,7 @@
 ANGLE、媒体、线程及平台事实接入 DexVM。禁止 title/厂商分支；不实现完整 Android、
 跨进程 Binder/system_server、外部包数据库、Play 或手机系统服务。移动宿主经 HAL 接入（ADR-0086）。
 
-`catalog.cpp` 唯一注册；每类一个 `Declare_<类名>(context)`，shape/handler 在所属
+`catalog.cpp` 唯一注册；每类一个声明函数，命名规则同 [intrinsics](../../dexvm/intrinsics/MODULE.md)，shape/handler 在所属
 content/os/view/graphics/gl/media/database/device family TU 同址。`shared.*` 仅跨类 helper；
 禁止静态自注册、转发命名空间、字符串 handler id、单类 TU/misc 聚合。非 Android family
 归 core，平台事实由 `DexVmAndroidContext` / `AndroidCoreIntrinsicServices` 显式注入。

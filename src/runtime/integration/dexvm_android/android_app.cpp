@@ -1,3 +1,5 @@
+#include "ogplay/loader/dex.h"
+#include "ogplay/runtime/dexvm/class_name_codec.h"
 #include "ogplay/loader/binary_xml.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/integration/native_activity_runtime.h"
@@ -92,7 +94,7 @@ dx::VmValue RunningAppProcesses(dx::IntrinsicContext& call, const Context& conte
 }
 }  // namespace
 
-Decl Declare_local_BackupService(const Context&) {
+Decl Declare_local_BackupService_Class(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalBackupService;",
                                                     "Landroid/app/backup/IBackupManager$Stub;");
     // There is deliberately no backup transport, queue or restore session.
@@ -112,7 +114,7 @@ Decl Declare_local_BackupService(const Context&) {
     return std::move(builder).Build();
 }
 
-Decl Declare_dalvik_system_DexFile(const Context& context) {
+Decl Declare_dalvik_system_DexFile_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Ldalvik/system/DexFile;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     constexpr auto native = dx::kAccPrivate | dx::kAccStatic | dx::kAccNative;
@@ -151,10 +153,33 @@ Decl Declare_dalvik_system_DexFile(const Context& context) {
             return dx::VmValue::Ref(vm.Model().ClassObject(*type));
         },
         native);
+    builder.StaticMethod(
+        "getClassNameList", "(I)[Ljava/lang/String;",
+        [context](dx::IntrinsicContext& call) {
+            if (!context->sealed_apk_bytes || call.arguments[0].AsInt() != application_cookie) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.dex_file.class_names", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid sealed APK cookie"};
+            }
+            const auto bytes = loader::ReadApkEntry(context->ApkBytes(), context->archive, "classes.dex");
+            const auto image = loader::ParseDex(
+                std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()));
+            const auto array_type = call.vm.Linker().ResolveDescriptor("[Ljava/lang/String;");
+            const auto string_type = call.vm.Linker().ResolveDescriptor("Ljava/lang/String;");
+            const auto array =
+                call.vm.Model().NewObjectArray(array_type, string_type, static_cast<JniSize>(image.classes.size()));
+            const auto roots = call.vm.ProtectReferences(std::array{array});
+            for (std::size_t i = 0; i < image.classes.size(); ++i) {
+                const auto& descriptor = image.types[image.classes[i].class_type_index].descriptor;
+                call.vm.Model().SetObjectElement(array, static_cast<JniSize>(i),
+                                                 call.vm.NewStringUtf8(dx::ClassNameCodec::ClassGetName(descriptor)));
+            }
+            return dx::VmValue::Ref(array);
+        },
+        native);
     return std::move(builder).Build();
 }
 
-Decl Declare_local_ActivityService(const Context& context) {
+Decl Declare_local_ActivityService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalActivityService;",
                                                     "Landroid/app/ActivityManagerNative;");
     builder.VirtualMethod(
@@ -239,7 +264,7 @@ Decl Declare_local_ActivityService(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_UiModeService(const Context&) {
+Decl Declare_local_UiModeService_Class(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalUiModeService;",
                                                     "Landroid/app/IUiModeManager$Stub;");
     for (const auto* method : {"enableCarMode", "disableCarMode", "setNightMode"})
@@ -278,7 +303,7 @@ void PumpRomToastQueue(dx::Interpreter& vm, const Context& context) {
         CancelToast(vm, context, context->toasts.begin());
 }
 
-Decl Declare_local_NotificationService(const Context& context) {
+Decl Declare_local_NotificationService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalNotificationService;",
                                                     "Landroid/app/INotificationManager$Stub;");
     const auto require_owner = [context](dx::IntrinsicContext& call, std::size_t user) {
@@ -335,7 +360,7 @@ Decl Declare_local_NotificationService(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_WindowService(const Context& context) {
+Decl Declare_local_WindowService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalWindowService;",
                                                     "Landroid/view/IWindowManager$Stub;");
     const auto state = [context] {
@@ -505,7 +530,7 @@ void AddLocalIntentSenderMethods(dx::IntrinsicClassBuilder& builder, const Conte
                           });
 }
 
-Decl Declare_local_IntentSender(const Context&) {
+Decl Declare_local_IntentSender_Class(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalIntentSender;",
                                                     "Landroid/content/IIntentSender$Stub;");
     builder.Constructor("()V", [](dx::IntrinsicContext& call) {
@@ -524,7 +549,7 @@ Decl Declare_local_IntentSender(const Context&) {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_AlarmService(const Context& context) {
+Decl Declare_local_AlarmService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalAlarmService;",
                                                     "Landroid/app/IAlarmManager$Stub;");
     builder.VirtualMethod("remove", "(Landroid/app/PendingIntent;)V", [context](dx::IntrinsicContext& call) {
@@ -552,7 +577,7 @@ Decl Declare_local_AlarmService(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_app_NativeActivity(const Context& context) {
+Decl Declare_android_app_NativeActivity_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/NativeActivity;", "Landroid/app/Activity;");
     builder.MergesBootClass();
     const auto bind = [&](const char* name, const char* signature) {

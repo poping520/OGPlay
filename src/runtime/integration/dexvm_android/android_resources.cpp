@@ -426,7 +426,7 @@ constexpr auto kPublic = dx::kAccPublic;
 constexpr auto kStatic = dx::kAccStatic;
 }  // namespace
 
-Decl Declare_android_content_res_AssetManager(const Context& context) {
+Decl Declare_android_content_res_AssetManager_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/content/res/AssetManager;");
     b.MergesBootClass();
     const auto bind = [&](const char* name, const char* signature, std::uint32_t flags, auto operation) {
@@ -749,7 +749,7 @@ Decl Declare_android_content_res_AssetManager(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_android_content_res_XmlBlock(const Context& context) {
+Decl Declare_android_content_res_XmlBlock_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/content/res/XmlBlock;", "Ljava/lang/Object;", {}, kFinal);
     b.MergesBootClass();
     const auto bind = [&](const char* name, const char* signature, bool isPrivate, auto operation) {
@@ -823,7 +823,7 @@ Decl Declare_android_content_res_XmlBlock(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_android_content_res_StringBlock(const Context& context) {
+Decl Declare_android_content_res_StringBlock_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/content/res/StringBlock;");
     b.MergesBootClass();
     const auto bind = [&](const char* name, const char* signature, auto operation) {

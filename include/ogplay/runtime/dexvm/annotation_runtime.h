@@ -23,7 +23,7 @@ public:
 
     [[nodiscard]] VmObjectRef GetClassAnnotation(
         DexClassId java_class, VmObjectRef annotation_class, bool inherited);
-    [[nodiscard]] bool IsClassAnnotationPresent(
+    [[nodiscard]] bool IsDeclaredClassAnnotationPresent(
         DexClassId java_class, VmObjectRef annotation_class);
     [[nodiscard]] VmObjectRef GetClassAnnotations(
         DexClassId java_class, bool inherited);

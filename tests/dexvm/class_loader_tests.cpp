@@ -1,5 +1,7 @@
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
+#include "container_traversal_fixture.h"
+#include "../runtime/resources_test_support.h"
 #include <cstddef>
 #include <algorithm>
 #include <array>
@@ -25,62 +27,73 @@ using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 std::vector<std::uint8_t> ReadFixture(const std::string& name) {
-    const std::string path =
-        std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
+    const std::string path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
     std::ifstream stream(path, std::ios::binary);
     REQUIRE_MESSAGE(stream.good(), "missing fixture: ", path);
-    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream),
-                                     std::istreambuf_iterator<char>());
+    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 }
 
 struct LoaderVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
-    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
-    JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model{strings, arrays};
-    DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
-    Interpreter interpreter;
+    ogplay::core::Logger logger;
+    VirtualFileSystem filesystem;
+    std::shared_ptr<DexVmAndroidContext> context{std::make_shared<DexVmAndroidContext>()};
+    std::unique_ptr<ogplay::test::container_traversal::AndroidTestRuntime> runtime;
+    JavaObjectModel& model;
+    DexClassLinker& linker;
+    Interpreter& interpreter;
 
-    explicit LoaderVm(
-        const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
-        CoreIntrinsicServices services = {})
-        : interpreter([this, &services]() -> DexClassLinker& {
-              const auto catalog = CoreIntrinsicCatalog(std::move(services));
-              linker.RegisterIntrinsics(catalog);
-              // Bind the real platform natives required by the full BootDex artifact.
-              linker.RegisterIntrinsics(AndroidIntrinsicCatalog(
-                  std::make_shared<DexVmAndroidContext>()));
-              ogplay::test::RegisterBootDex(linker);
-              linker.RegisterDex(ReadFixture("interp.dex"));
-              linker.Link();
-              return linker;
-          }(), model, nullptr, ledger, InterpreterConfig{.backend = backend}) {}
+    explicit LoaderVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+                      CoreIntrinsicServices services = {})
+        : runtime([&] {
+              ogplay::test::BindBootDexArchive(*context);
+              context->package_name = "test";
+              context->package_resource_path = "/data/app/test-1.apk";
+              auto dex = ReadFixture("interp.dex");
+              const auto bytes = std::as_bytes(std::span{dex});
+              std::vector<std::pair<std::string, std::vector<std::byte>>> entries{
+                  {"classes.dex", std::vector(bytes.begin(), bytes.end())}};
+              if (services.read_classpath_resource) {
+                  for (const auto* name : {"app.txt", "root %.txt"}) {
+                      const auto data = services.read_classpath_resource({context->package_resource_path, name});
+                      if (data) entries.emplace_back(name, *data);
+                  }
+                  const auto data =
+                      services.read_classpath_resource({"/system/framework/bootdex.jar", "java/lang/boot.txt"});
+                  if (data) {
+                      const std::array boot_entries{std::pair{std::string("java/lang/boot.txt"), *data}};
+                      BootClasspathJar jar;
+                      jar.guest_path = "/system/framework/bootdex.jar";
+                      jar.bytes = ogplay::test::resources::Zip(boot_entries);
+                      jar.archive = ogplay::loader::ParseApkArchive(jar.bytes);
+                      context->boot_classpath.push_back(std::move(jar));
+                  }
+              }
+              context->sealed_apk_bytes =
+                  std::make_shared<const std::vector<std::byte>>(ogplay::test::resources::Zip(entries));
+              context->archive = ogplay::loader::ParseApkArchive(*context->sealed_apk_bytes);
+              filesystem.PutFile(context->package_resource_path, *context->sealed_apk_bytes, false);
+              return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
+                  context, ledger, logger, AndroidIntrinsicCatalog(context), std::move(dex),
+                  InterpreterConfig{.backend = backend}, &filesystem);
+          }()),
+          model(runtime->bridge->Model()), linker(runtime->bridge->Linker()), interpreter(runtime->bridge->Vm()) {}
 
-    [[nodiscard]] VmObjectRef String(const std::string_view value) {
-        return interpreter.NewStringUtf8(value);
-    }
+    [[nodiscard]] VmObjectRef String(const std::string_view value) { return interpreter.NewStringUtf8(value); }
 
-    [[nodiscard]] VmCallOutcome Static(
-        const std::string_view owner, const std::string_view name,
-        const std::string_view descriptor,
-        std::vector<VmValue> arguments = {}) {
+    [[nodiscard]] VmCallOutcome Static(const std::string_view owner, const std::string_view name,
+                                       const std::string_view descriptor, std::vector<VmValue> arguments = {}) {
         const auto java_class = linker.FindClass(owner);
         REQUIRE(java_class.has_value());
-        const auto method = linker.FindDirectMethod(
-            *java_class, std::string(name), std::string(descriptor));
+        const auto method = linker.FindDirectMethod(*java_class, std::string(name), std::string(descriptor));
         REQUIRE(method.has_value());
         return interpreter.Call(*method, arguments);
     }
 
-    [[nodiscard]] VmCallOutcome Virtual(
-        const VmObjectRef receiver, const std::string_view name,
-        const std::string_view descriptor,
-        std::vector<VmValue> arguments = {}) {
+    [[nodiscard]] VmCallOutcome Virtual(const VmObjectRef receiver, const std::string_view name,
+                                        const std::string_view descriptor, std::vector<VmValue> arguments = {}) {
         const auto actual = model.ObjectClass(receiver);
-        const auto index = linker.FindVtableIndex(
-            actual, std::string(name), std::string(descriptor));
+        const auto index = linker.FindVtableIndex(actual, std::string(name), std::string(descriptor));
         REQUIRE(index.has_value());
         const auto& linked = linker.Class(actual);
         REQUIRE(*index < linked.vtable.size());
@@ -88,13 +101,10 @@ struct LoaderVm final {
         return interpreter.Call(linked.vtable[*index], arguments);
     }
 
-    [[nodiscard]] VmCallOutcome Direct(
-        const VmObjectRef receiver, const std::string_view name,
-        const std::string_view descriptor,
-        std::vector<VmValue> arguments = {}) {
+    [[nodiscard]] VmCallOutcome Direct(const VmObjectRef receiver, const std::string_view name,
+                                       const std::string_view descriptor, std::vector<VmValue> arguments = {}) {
         const auto actual = model.ObjectClass(receiver);
-        const auto method = linker.FindDirectMethod(
-            actual, std::string(name), std::string(descriptor));
+        const auto method = linker.FindDirectMethod(actual, std::string(name), std::string(descriptor));
         REQUIRE(method.has_value());
         arguments.insert(arguments.begin(), VmValue::Ref(receiver));
         return interpreter.Call(*method, arguments);
@@ -102,13 +112,13 @@ struct LoaderVm final {
 };
 
 VmObjectRef Ref(const VmCallOutcome& outcome) {
+    INFO(outcome.exception_message);
     REQUIRE_FALSE(outcome.exception.IsValid());
     REQUIRE(outcome.value.kind == VmValue::Kind::ref);
     return outcome.value.ref;
 }
 
-void ExpectException(LoaderVm& vm, const VmCallOutcome& outcome,
-                     const std::string_view descriptor) {
+void ExpectException(LoaderVm& vm, const VmCallOutcome& outcome, const std::string_view descriptor) {
     REQUIRE(outcome.exception.IsValid());
     CHECK(outcome.exception_class.IsValid());
     CHECK(vm.linker.Class(outcome.exception_class).descriptor == descriptor);
@@ -128,32 +138,21 @@ TEST_CASE("ClassLoader findLibrary declares the API19 hierarchy and boot null re
     const auto path = vm.linker.ResolveDescriptor("Ldalvik/system/PathClassLoader;");
     CHECK(vm.linker.Class(dex).super == base);
     CHECK(vm.linker.Class(path).super == dex);
-    const auto index = vm.linker.FindVtableIndex(
-        base, "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;");
+    const auto index = vm.linker.FindVtableIndex(base, "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;");
     REQUIRE(index.has_value());
-    CHECK((vm.linker.Method(vm.linker.Class(base).vtable[*index]).access_flags &
-           kAccProtected) != 0U);
-    CHECK((vm.linker.Method(vm.linker.Class(dex).vtable[*index]).access_flags &
-           kAccPublic) != 0U);
+    CHECK((vm.linker.Method(vm.linker.Class(base).vtable[*index]).access_flags & kAccProtected) != 0U);
+    CHECK((vm.linker.Method(vm.linker.Class(dex).vtable[*index]).access_flags & kAccPublic) != 0U);
     const auto boot = vm.interpreter.ClassLoaders().BootstrapLoader();
     for (const auto name : {vm.String("a"), VmObjectRef{}}) {
-        CHECK_FALSE(Ref(vm.Virtual(boot, "findLibrary",
-            "(Ljava/lang/String;)Ljava/lang/String;", {VmValue::Ref(name)})).IsValid());
+        CHECK_FALSE(Ref(vm.Virtual(boot, "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;", {VmValue::Ref(name)}))
+                        .IsValid());
     }
 }
 
 TEST_CASE("Class and ClassLoader resource streams preserve loader and package semantics") {
     CoreIntrinsicServices services;
-    services.find_classpath_resource = [](
-        const CoreIntrinsicServices::ClasspathLoader loader, const std::string_view name)
-        -> std::optional<CoreIntrinsicServices::ClasspathResource> {
-        if (name == "java/lang/boot.txt") return {{"/system/framework/bootdex.jar", std::string(name)}};
-        if (loader == CoreIntrinsicServices::ClasspathLoader::application && name == "app.txt")
-            return {{"/data/app/test-1.apk", std::string(name)}};
-        return std::nullopt;
-    };
-    services.read_classpath_resource = [](const CoreIntrinsicServices::ClasspathResource& resource)
-        -> std::optional<std::vector<std::byte>> {
+    services.read_classpath_resource =
+        [](const CoreIntrinsicServices::ClasspathResource& resource) -> std::optional<std::vector<std::byte>> {
         return std::vector<std::byte>{resource.entry_name == "app.txt" ? std::byte{'a'} : std::byte{'b'}};
     };
     LoaderVm vm(InterpreterBackend::switch_dispatch, std::move(services));
@@ -162,51 +161,36 @@ TEST_CASE("Class and ClassLoader resource streams preserve loader and package se
         return vm.Virtual(stream, "read", "()I").value.AsInt();
     };
 
-    const auto string_class = vm.model.ClassObject(
-        vm.linker.ResolveDescriptor("Ljava/lang/String;"));
-    const auto boot_stream = Ref(vm.Virtual(
-        string_class, "getResourceAsStream",
-        "(Ljava/lang/String;)Ljava/io/InputStream;",
-        {VmValue::Ref(vm.String("boot.txt"))}));
+    const auto string_class = vm.model.ClassObject(vm.linker.ResolveDescriptor("Ljava/lang/String;"));
+    const auto boot_stream =
+        Ref(vm.Virtual(string_class, "getResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;",
+                       {VmValue::Ref(vm.String("boot.txt"))}));
     CHECK(read(boot_stream) == 'b');
     CHECK(read(boot_stream) == -1);
 
-    const auto counter_class = vm.model.ClassObject(
-        vm.linker.ResolveDescriptor("LCounter;"));
-    const auto app_stream = Ref(vm.Virtual(
-        counter_class, "getResourceAsStream",
-        "(Ljava/lang/String;)Ljava/io/InputStream;",
-        {VmValue::Ref(vm.String("/app.txt"))}));
+    const auto counter_class = vm.model.ClassObject(vm.linker.ResolveDescriptor("LCounter;"));
+    const auto app_stream =
+        Ref(vm.Virtual(counter_class, "getResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;",
+                       {VmValue::Ref(vm.String("/app.txt"))}));
     CHECK(read(app_stream) == 'a');
 
     const auto boot_loader = vm.interpreter.ClassLoaders().BootstrapLoader();
-    CHECK_FALSE(Ref(vm.Virtual(
-        boot_loader, "getResourceAsStream",
-        "(Ljava/lang/String;)Ljava/io/InputStream;",
-        {VmValue::Ref(vm.String("app.txt"))})).IsValid());
+    CHECK_FALSE(Ref(vm.Virtual(boot_loader, "getResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;",
+                               {VmValue::Ref(vm.String("app.txt"))}))
+                    .IsValid());
 }
 
 TEST_CASE("Class resource URLs preserve API19 names and open actual streams") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        using Role = CoreIntrinsicServices::ClasspathLoader;
         using Resource = CoreIntrinsicServices::ClasspathResource;
         CoreIntrinsicServices services;
-        services.find_classpath_resource = [](Role role, std::string_view name)
-            -> std::optional<Resource> {
-            if (name == "java/lang/boot.txt") return {{"/system/framework/bootdex.jar", std::string(name)}};
-            if (role == Role::application && name == "root %.txt")
-                return {{"/data/app/test-1.apk", std::string(name)}};
-            return std::nullopt;
-        };
-        services.read_classpath_resource = [](const Resource& resource)
-            -> std::optional<std::vector<std::byte>> {
+        services.read_classpath_resource = [](const Resource& resource) -> std::optional<std::vector<std::byte>> {
             if (resource.archive_path != "/system/framework/bootdex.jar" &&
                 resource.archive_path != "/data/app/test-1.apk") {
                 throw std::invalid_argument("unregistered archive");
             }
             if (resource.entry_name == "corrupt") throw std::runtime_error("CRC mismatch");
-            if (resource.entry_name != "root %.txt" && resource.entry_name != "java/lang/boot.txt")
-                return std::nullopt;
+            if (resource.entry_name != "root %.txt" && resource.entry_name != "java/lang/boot.txt") return std::nullopt;
             return std::vector<std::byte>{std::byte{'x'}, std::byte{'y'}};
         };
         LoaderVm vm(backend, services);
@@ -221,7 +205,9 @@ TEST_CASE("Class resource URLs preserve API19 names and open actual streams") {
         };
         const auto url = lookup(app, "root %.txt");
         REQUIRE(url.IsValid());
-        CHECK(text(url, "toExternalForm") == "jar:file:/data/app/test-1.apk!/root%20%25.txt");
+        // ROM DexPathList.Element.findResource concatenates the raw ZIP entry;
+        // JarHandler.parseURL and JarURLConnection do not percent-decode it.
+        CHECK(text(url, "toExternalForm") == "jar:file:/data/app/test-1.apk!/root %.txt");
         CHECK(text(url, "getProtocol") == "jar");
         const auto connection = Ref(vm.Virtual(url, "openConnection", "()Ljava/net/URLConnection;"));
         CHECK(Ref(vm.Virtual(connection, "getURL", "()Ljava/net/URL;")) == url);
@@ -242,39 +228,46 @@ TEST_CASE("Class resource URLs preserve API19 names and open actual streams") {
         CHECK_FALSE(lookup(string, "/root %.txt").IsValid());
         const auto counter = vm.model.ClassObject(vm.linker.ResolveDescriptor("LCounter;"));
         CHECK(lookup(counter, "/root %.txt").IsValid());
-        CHECK_FALSE(lookup(counter, "root %.txt").IsValid()); // API19 default package prepends '/'.
-        CHECK_FALSE(lookup(counter, "//root %.txt").IsValid()); // strip exactly one slash.
+        CHECK_FALSE(lookup(counter, "root %.txt").IsValid());    // API19 default package prepends '/'.
+        CHECK_FALSE(lookup(counter, "//root %.txt").IsValid());  // strip exactly one slash.
         const auto primitive = vm.model.ClassObject(vm.linker.ResolveDescriptor("I"));
-        CHECK(lookup(primitive, "/root %.txt").IsValid()); // null loader -> system loader.
-        CHECK(Ref(vm.Static("Ljava/lang/ClassLoader;", "getSystemResource",
-                           "(Ljava/lang/String;)Ljava/net/URL;",
-                           {VmValue::Ref(vm.String("root %.txt"))})).IsValid());
+        CHECK(lookup(primitive, "/root %.txt").IsValid());  // null loader -> system loader.
+        CHECK(Ref(vm.Static("Ljava/lang/ClassLoader;", "getSystemResource", "(Ljava/lang/String;)Ljava/net/URL;",
+                            {VmValue::Ref(vm.String("root %.txt"))}))
+                  .IsValid());
         for (const auto owner : {app, string}) {
-            ExpectException(vm, vm.Virtual(owner, "getResource", "(Ljava/lang/String;)Ljava/net/URL;",
-                                          {VmValue::Ref(VmObjectRef{})}), "Ljava/lang/NullPointerException;");
+            ExpectException(
+                vm,
+                vm.Virtual(owner, "getResource", "(Ljava/lang/String;)Ljava/net/URL;", {VmValue::Ref(VmObjectRef{})}),
+                "Ljava/lang/NullPointerException;");
         }
         const auto from_spec = [&](std::string_view spec) {
             const auto result = vm.interpreter.NewIntrinsicInstance("Ljava/net/URL;");
-            REQUIRE_FALSE(vm.Direct(result, "<init>", "(Ljava/lang/String;)V",
-                                    {VmValue::Ref(vm.String(spec))}).exception.IsValid());
+            REQUIRE_FALSE(vm.Direct(result, "<init>", "(Ljava/lang/String;)V", {VmValue::Ref(vm.String(spec))})
+                              .exception.IsValid());
             return result;
         };
         const auto restored = from_spec(text(url, "toExternalForm"));
-        CHECK(vm.Virtual(Ref(vm.Virtual(restored, "openStream", "()Ljava/io/InputStream;")),
-                         "read", "()I").value.AsInt() == 'x');
-        for (const auto spec : {"jar:file:/tmp/host.zip!/root%20%25.txt",
-                                "jar:https://example.com/a.jar!/x",
-                                "jar:file:/data/app/test-1.apk!/corrupt"}) {
+        CHECK(vm.Virtual(Ref(vm.Virtual(restored, "openStream", "()Ljava/io/InputStream;")), "read", "()I")
+                  .value.AsInt() == 'x');
+        for (const auto spec : {"jar:file:/tmp/host.zip!/root%20%25.txt", "jar:https://example.com/a.jar!/x"}) {
             ExpectException(vm, vm.Virtual(from_spec(spec), "openStream", "()Ljava/io/InputStream;"),
                             "Ljava/io/IOException;");
         }
-        ExpectException(vm, vm.Virtual(from_spec("jar:file:/data/app/test-1.apk!/missing"),
-                                      "openStream", "()Ljava/io/InputStream;"),
-                        "Ljava/io/FileNotFoundException;");
-        const auto rejected = vm.interpreter.NewIntrinsicInstance("Ljava/net/URL;");
-        ExpectException(vm, vm.Direct(rejected, "<init>", "(Ljava/lang/String;)V",
-            {VmValue::Ref(vm.String("jar:file:/data/app/test-1.apk!/bad%zz"))}),
-            "Ljava/net/MalformedURLException;");
+        // JarURLConnectionImpl.findJarEntry: missing raw names fail at open,
+        // not at URL construction, even if a name contains invalid URI escapes.
+        for (const auto name : {"missing", "corrupt", "bad%zz", "root%20%25.txt"}) {
+            ExpectException(vm,
+                            vm.Virtual(from_spec(std::string("jar:file:/data/app/test-1.apk!/") + name), "openStream",
+                                       "()Ljava/io/InputStream;"),
+                            "Ljava/io/FileNotFoundException;");
+        }
+        // ROM Class.getResource now delegates to the same ClassLoader path;
+        // it no longer percent-encodes a raw entry through the former C++ helper.
+        const auto class_url = lookup(counter, "/root %.txt");
+        CHECK(text(class_url, "toExternalForm") == "jar:file:/data/app/test-1.apk!/root %.txt");
+        const auto class_stream = Ref(vm.Virtual(class_url, "openStream", "()Ljava/io/InputStream;"));
+        CHECK(vm.Virtual(class_stream, "read", "()I").value.AsInt() == 'x');
         const auto no_input = Ref(vm.Virtual(url, "openConnection", "()Ljava/net/URLConnection;"));
         REQUIRE_FALSE(vm.Virtual(no_input, "setDoInput", "(Z)V", {VmValue::Int(0)}).exception.IsValid());
         ExpectException(vm, vm.Virtual(no_input, "getInputStream", "()Ljava/io/InputStream;"),
@@ -292,47 +285,38 @@ TEST_CASE("Class resource URLs preserve API19 names and open actual streams") {
         CHECK(vm.Virtual(gc_stream, "read", "()I").value.AsInt() == 'y');
     }
     LoaderVm no_provider;
-    ExpectException(no_provider, no_provider.Virtual(
-        no_provider.interpreter.ClassLoaders().ApplicationLoader(), "getResource",
-        "(Ljava/lang/String;)Ljava/net/URL;", {VmValue::Ref(no_provider.String("x"))}),
-        "Ljava/lang/UnsupportedOperationException;");
+    // ROM ClassLoader.getResource: an absent entry returns null; this fixture
+    // now has a real sealed APK/provider rather than the former empty facade.
+    CHECK_FALSE(Ref(no_provider.Virtual(no_provider.interpreter.ClassLoaders().ApplicationLoader(), "getResource",
+                                        "(Ljava/lang/String;)Ljava/net/URL;", {VmValue::Ref(no_provider.String("x"))}))
+                    .IsValid());
 }
 
 TEST_CASE("ClassLoader system and bootstrap facades have stable API19 identity") {
     LoaderVm vm;
 
     // AOSP API19: libcore ClassLoader.java :: createSystemClassLoader/getParent
-    const auto system_one = Ref(vm.Static(
-        "Ljava/lang/ClassLoader;", "getSystemClassLoader",
-        "()Ljava/lang/ClassLoader;"));
-    const auto system_two = Ref(vm.Static(
-        "Ljava/lang/ClassLoader;", "getSystemClassLoader",
-        "()Ljava/lang/ClassLoader;"));
+    const auto system_one =
+        Ref(vm.Static("Ljava/lang/ClassLoader;", "getSystemClassLoader", "()Ljava/lang/ClassLoader;"));
+    const auto system_two =
+        Ref(vm.Static("Ljava/lang/ClassLoader;", "getSystemClassLoader", "()Ljava/lang/ClassLoader;"));
     CHECK(system_one == system_two);
-    CHECK(vm.linker.Class(vm.model.ObjectClass(system_one)).descriptor ==
-          "Ldalvik/system/PathClassLoader;");
+    CHECK(vm.linker.Class(vm.model.ObjectClass(system_one)).descriptor == "Ldalvik/system/PathClassLoader;");
 
-    const auto boot = Ref(vm.Virtual(
-        system_one, "getParent", "()Ljava/lang/ClassLoader;"));
-    CHECK(vm.linker.Class(vm.model.ObjectClass(boot)).descriptor ==
-          "Ljava/lang/BootClassLoader;");
-    CHECK_FALSE(Ref(vm.Virtual(
-        boot, "getParent", "()Ljava/lang/ClassLoader;")).IsValid());
+    const auto boot = Ref(vm.Virtual(system_one, "getParent", "()Ljava/lang/ClassLoader;"));
+    CHECK(vm.linker.Class(vm.model.ObjectClass(boot)).descriptor == "Ljava/lang/BootClassLoader;");
+    CHECK_FALSE(Ref(vm.Virtual(boot, "getParent", "()Ljava/lang/ClassLoader;")).IsValid());
 
     static_cast<void>(vm.interpreter.CollectGarbage("class_loader_roots"));
-    CHECK(Ref(vm.Static("Ljava/lang/ClassLoader;", "getSystemClassLoader",
-                        "()Ljava/lang/ClassLoader;")) == system_one);
-    CHECK(Ref(vm.Virtual(system_one, "getParent",
-                         "()Ljava/lang/ClassLoader;")) == boot);
+    CHECK(Ref(vm.Static("Ljava/lang/ClassLoader;", "getSystemClassLoader", "()Ljava/lang/ClassLoader;")) == system_one);
+    CHECK(Ref(vm.Virtual(system_one, "getParent", "()Ljava/lang/ClassLoader;")) == boot);
 }
 
 TEST_CASE("Class getClassLoader follows defining loader and primitive rules") {
     LoaderVm vm;
     const auto class_loader = [&](const std::string_view descriptor) {
         const auto represented = vm.linker.ResolveDescriptor(descriptor);
-        return Ref(vm.Virtual(vm.model.ClassObject(represented),
-                              "getClassLoader",
-                              "()Ljava/lang/ClassLoader;"));
+        return Ref(vm.Virtual(vm.model.ClassObject(represented), "getClassLoader", "()Ljava/lang/ClassLoader;"));
     };
 
     // AOSP API19: libcore Class.java :: getClassLoader/getClassLoaderImpl
@@ -354,20 +338,16 @@ TEST_CASE("ClassLoader separates known classes from initiating loader state") {
     REQUIRE(counter.has_value());
     CHECK_FALSE(vm.linker.IsInitiatedBy(*counter, kApplicationLoader));
 
-    const auto find_loaded = [&](const VmObjectRef loader,
-                                 const std::string_view name) {
-        return Ref(vm.Virtual(
-            loader, "findLoadedClass",
-            "(Ljava/lang/String;)Ljava/lang/Class;",
-            {VmValue::Ref(vm.String(name))}));
+    const auto find_loaded = [&](const VmObjectRef loader, const std::string_view name) {
+        return Ref(vm.Virtual(loader, "findLoadedClass", "(Ljava/lang/String;)Ljava/lang/Class;",
+                              {VmValue::Ref(vm.String(name))}));
     };
     CHECK_FALSE(find_loaded(system, "Counter").IsValid());
     CHECK(find_loaded(boot, "java.lang.String").IsValid());
     CHECK_FALSE(find_loaded(system, "[broken").IsValid());
 
-    const auto loaded = Ref(vm.Virtual(
-        system, "loadClass", "(Ljava/lang/String;Z)Ljava/lang/Class;",
-        {VmValue::Ref(vm.String("Counter")), VmValue::Int(1)}));
+    const auto loaded = Ref(vm.Virtual(system, "loadClass", "(Ljava/lang/String;Z)Ljava/lang/Class;",
+                                       {VmValue::Ref(vm.String("Counter")), VmValue::Int(1)}));
     CHECK(loaded == vm.model.ClassObject(*counter));
     CHECK(vm.linker.IsInitiatedBy(*counter, kApplicationLoader));
     CHECK(find_loaded(system, "Counter") == loaded);
@@ -375,28 +355,24 @@ TEST_CASE("ClassLoader separates known classes from initiating loader state") {
     const auto string_class = vm.linker.FindClass("Ljava/lang/String;");
     REQUIRE(string_class.has_value());
     CHECK_FALSE(vm.linker.IsInitiatedBy(*string_class, kApplicationLoader));
-    const auto delegated = Ref(vm.Virtual(
-        system, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
-        {VmValue::Ref(vm.String("java.lang.String"))}));
+    const auto delegated = Ref(vm.Virtual(system, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
+                                          {VmValue::Ref(vm.String("java.lang.String"))}));
     CHECK(delegated == vm.model.ClassObject(*string_class));
-    CHECK(vm.linker.IsInitiatedBy(*string_class, kApplicationLoader));
+    // ROM Java parent delegation alone does not enter an application VM resolution.
+    CHECK_FALSE(vm.linker.IsInitiatedBy(*string_class, kApplicationLoader));
     CHECK(vm.linker.Class(*string_class).defining_loader == kBootstrapLoader);
 
-    const auto app_array = Ref(vm.Virtual(
-        system, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
-        {VmValue::Ref(vm.String("[LCounter;"))}));
-    CHECK(vm.interpreter.ClassLoaders().LoaderForClass(
-              vm.model.ClassOfClassObject(app_array)) == system);
+    const auto app_array =
+        Ref(vm.Static("Ljava/lang/Class;", "forName", "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;",
+                      {VmValue::Ref(vm.String("[LCounter;")), VmValue::Int(0), VmValue::Ref(system)}));
+    CHECK(vm.interpreter.ClassLoaders().LoaderForClass(vm.model.ClassOfClassObject(app_array)) == system);
 
     const auto clinit_user = vm.linker.FindClass("LClinitUser;");
     REQUIRE(clinit_user.has_value());
-    CHECK(vm.linker.Class(*clinit_user).clinit_state ==
-          ClinitState::uninitialized);
-    static_cast<void>(Ref(vm.Virtual(
-        system, "loadClass", "(Ljava/lang/String;Z)Ljava/lang/Class;",
-        {VmValue::Ref(vm.String("ClinitUser")), VmValue::Int(1)})));
-    CHECK(vm.linker.Class(*clinit_user).clinit_state ==
-          ClinitState::uninitialized);
+    CHECK(vm.linker.Class(*clinit_user).clinit_state == ClinitState::uninitialized);
+    static_cast<void>(Ref(vm.Virtual(system, "loadClass", "(Ljava/lang/String;Z)Ljava/lang/Class;",
+                                     {VmValue::Ref(vm.String("ClinitUser")), VmValue::Int(1)})));
+    CHECK(vm.linker.Class(*clinit_user).clinit_state == ClinitState::uninitialized);
 }
 
 TEST_CASE("ClassLoader refuses dynamic namespaces and bootstrap app lookup") {
@@ -404,141 +380,100 @@ TEST_CASE("ClassLoader refuses dynamic namespaces and bootstrap app lookup") {
     const auto system = vm.interpreter.ClassLoaders().ApplicationLoader();
     const auto boot = vm.interpreter.ClassLoaders().BootstrapLoader();
 
-    ExpectClassNotFound(vm, vm.Virtual(
-        boot, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
-        {VmValue::Ref(vm.String("Counter"))}));
-    ExpectClassNotFound(vm, vm.Virtual(
-        system, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
-        {VmValue::Ref(vm.String("missing.Type"))}));
-    ExpectClassNotFound(vm, vm.Virtual(
-        system, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
-        {VmValue::Ref(vm.String("int"))}));
-    ExpectException(vm, vm.Virtual(
-        system, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
-        {VmValue::Ref(VmObjectRef(0))}), "Ljava/lang/NullPointerException;");
-    ExpectException(vm, vm.Virtual(
-        system, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
-        {VmValue::Ref(vm.String("DormantOptional"))}),
-        "Ljava/lang/NoClassDefFoundError;");
+    ExpectClassNotFound(vm, vm.Virtual(boot, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
+                                       {VmValue::Ref(vm.String("Counter"))}));
+    ExpectClassNotFound(vm, vm.Virtual(system, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
+                                       {VmValue::Ref(vm.String("missing.Type"))}));
+    ExpectClassNotFound(
+        vm, vm.Virtual(system, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", {VmValue::Ref(vm.String("int"))}));
+    ExpectException(
+        vm, vm.Virtual(system, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", {VmValue::Ref(VmObjectRef(0))}),
+        "Ljava/lang/NullPointerException;");
+    ExpectException(vm,
+                    vm.Virtual(system, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
+                               {VmValue::Ref(vm.String("DormantOptional"))}),
+                    "Ljava/lang/ClassNotFoundException;");
 
-    const auto custom =
-        vm.interpreter.NewIntrinsicInstance("Ljava/lang/ClassLoader;");
+    const auto custom = vm.interpreter.NewIntrinsicInstance("Ljava/lang/ClassLoader;");
     const auto constructed = vm.Direct(custom, "<init>", "()V");
     CHECK_FALSE(constructed.exception.IsValid());
-    CHECK(Ref(vm.Virtual(custom, "getParent",
-                         "()Ljava/lang/ClassLoader;")) == system);
-    const auto loaded = Ref(vm.Virtual(
-        custom, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
-        {VmValue::Ref(vm.String("Counter"))}));
-    CHECK(loaded.IsValid());
+    CHECK(Ref(vm.Virtual(custom, "getParent", "()Ljava/lang/ClassLoader;")) ==
+          vm.interpreter.ClassLoaders().SystemLoader());
+    ExpectClassNotFound(vm, vm.Virtual(custom, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
+                                       {VmValue::Ref(vm.String("Counter"))}));
 
-    ExpectClassNotFound(vm, vm.Virtual(
-        custom, "findClass", "(Ljava/lang/String;)Ljava/lang/Class;",
-        {VmValue::Ref(vm.String("dynamic.Type"))}));
+    ExpectClassNotFound(vm, vm.Virtual(custom, "findClass", "(Ljava/lang/String;)Ljava/lang/Class;",
+                                       {VmValue::Ref(vm.String("dynamic.Type"))}));
 }
 
 TEST_CASE("Class forName follows API19 caller loader initialization and errors") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
-        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
-                                                         "switch");
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         LoaderVm vm(backend);
         const auto find = [&](const std::string_view name) {
-            return vm.Static(
-                "LForNameCaller;", "find",
-                "(Ljava/lang/String;)Ljava/lang/Class;",
-                {VmValue::Ref(vm.String(name))});
+            return vm.Static("LForNameCaller;", "find", "(Ljava/lang/String;)Ljava/lang/Class;",
+                             {VmValue::Ref(vm.String(name))});
         };
-        const auto find_with_loader =
-            [&](const std::string_view name, const bool initialize,
-                const VmObjectRef loader) {
-                return vm.Static(
-                    "LForNameCaller;", "findWithLoader",
-                    "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;",
-                    {VmValue::Ref(vm.String(name)),
-                     VmValue::Int(initialize ? 1 : 0), VmValue::Ref(loader)});
-            };
+        const auto find_with_loader = [&](const std::string_view name, const bool initialize,
+                                          const VmObjectRef loader) {
+            return vm.Static("LForNameCaller;", "findWithLoader",
+                             "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;",
+                             {VmValue::Ref(vm.String(name)), VmValue::Int(initialize ? 1 : 0), VmValue::Ref(loader)});
+        };
 
         // AOSP API19: libcore Class.java :: forName and Dalvik
         // java_lang_Class.cpp :: Dalvik_java_lang_Class_classForName.
-        CHECK(Ref(find("Counter")) == vm.model.ClassObject(
-                  vm.linker.ResolveDescriptor("LCounter;")));
-        CHECK(Ref(find("java.lang.String")) == vm.model.ClassObject(
-                  vm.linker.ResolveDescriptor("Ljava/lang/String;")));
-        CHECK(Ref(find("[LCounter;")) == vm.model.ClassObject(
-                  vm.linker.ResolveDescriptor("[LCounter;")));
+        CHECK(Ref(find("Counter")) == vm.model.ClassObject(vm.linker.ResolveDescriptor("LCounter;")));
+        CHECK(Ref(find("java.lang.String")) == vm.model.ClassObject(vm.linker.ResolveDescriptor("Ljava/lang/String;")));
+        CHECK(Ref(find("[LCounter;")) == vm.model.ClassObject(vm.linker.ResolveDescriptor("[LCounter;")));
         ExpectClassNotFound(vm, find("int"));
         ExpectClassNotFound(vm, find("missing.Type"));
         const auto linkage = find("DormantOptional");
         ExpectClassNotFound(vm, linkage);
-        const auto linkage_cause = Ref(vm.Virtual(
-            linkage.exception, "getCause", "()Ljava/lang/Throwable;"));
-        CHECK(vm.linker.Class(vm.model.ObjectClass(linkage_cause)).descriptor ==
-              "Ljava/lang/NoClassDefFoundError;");
-        CHECK(Ref(vm.Virtual(linkage.exception, "getException",
-                             "()Ljava/lang/Throwable;")) == linkage_cause);
-        CHECK(Ref(find("[I")) == vm.model.ClassObject(
-                  vm.linker.ResolveDescriptor("[I")));
+        const auto linkage_cause = Ref(vm.Virtual(linkage.exception, "getCause", "()Ljava/lang/Throwable;"));
+        CHECK(vm.linker.Class(vm.model.ObjectClass(linkage_cause)).descriptor == "Ljava/lang/NoClassDefFoundError;");
+        CHECK(Ref(vm.Virtual(linkage.exception, "getException", "()Ljava/lang/Throwable;")) == linkage_cause);
+        CHECK(Ref(find("[I")) == vm.model.ClassObject(vm.linker.ResolveDescriptor("[I")));
 
         const auto system = vm.interpreter.ClassLoaders().ApplicationLoader();
         const auto boot = vm.interpreter.ClassLoaders().BootstrapLoader();
-        CHECK(Ref(find_with_loader("Counter", false, VmObjectRef{})) ==
-              vm.model.ClassObject(vm.linker.ResolveDescriptor("LCounter;")));
+        // Pinned ROM Class.forName normalizes null to the distinct system
+        // loader; it cannot define sealed APK classes.
+        ExpectClassNotFound(vm, find_with_loader("Counter", false, VmObjectRef{}));
         CHECK(Ref(find_with_loader("java.lang.String", false, boot)) ==
-              vm.model.ClassObject(
-                  vm.linker.ResolveDescriptor("Ljava/lang/String;")));
-        ExpectClassNotFound(vm,
-                            find_with_loader("Counter", false, boot));
+              vm.model.ClassObject(vm.linker.ResolveDescriptor("Ljava/lang/String;")));
+        ExpectClassNotFound(vm, find_with_loader("Counter", false, boot));
 
-        const auto custom =
-            vm.interpreter.NewIntrinsicInstance("Ljava/lang/ClassLoader;");
+        const auto custom = vm.interpreter.NewIntrinsicInstance("Ljava/lang/ClassLoader;");
         REQUIRE_FALSE(vm.Direct(custom, "<init>", "()V").exception.IsValid());
         CHECK(Ref(find_with_loader("Counter", false, custom)) ==
               vm.model.ClassObject(vm.linker.ResolveDescriptor("LCounter;")));
 
         const auto clinit = vm.linker.ResolveDescriptor("LClinitUser;");
-        CHECK(vm.linker.Class(clinit).clinit_state ==
-              ClinitState::uninitialized);
-        CHECK(Ref(find_with_loader("ClinitUser", false, system)) ==
-              vm.model.ClassObject(clinit));
-        CHECK(vm.linker.Class(clinit).clinit_state ==
-              ClinitState::uninitialized);
-        CHECK(Ref(find_with_loader("ClinitUser", true, system)) ==
-              vm.model.ClassObject(clinit));
+        CHECK(vm.linker.Class(clinit).clinit_state == ClinitState::uninitialized);
+        CHECK(Ref(find_with_loader("ClinitUser", false, system)) == vm.model.ClassObject(clinit));
+        CHECK(vm.linker.Class(clinit).clinit_state == ClinitState::uninitialized);
+        CHECK(Ref(find_with_loader("ClinitUser", true, system)) == vm.model.ClassObject(clinit));
         CHECK(vm.linker.Class(clinit).clinit_state == ClinitState::initialized);
 
-        const auto null_name = vm.Static(
-            "LForNameCaller;", "find",
-            "(Ljava/lang/String;)Ljava/lang/Class;",
-            {VmValue::Ref(VmObjectRef{})});
+        const auto null_name = vm.Static("LForNameCaller;", "find", "(Ljava/lang/String;)Ljava/lang/Class;",
+                                         {VmValue::Ref(VmObjectRef{})});
         ExpectException(vm, null_name, "Ljava/lang/NullPointerException;");
 
-        const auto failing =
-            vm.linker.ResolveDescriptor("LForNameInitFailure;");
+        const auto failing = vm.linker.ResolveDescriptor("LForNameInitFailure;");
         const auto failed = find_with_loader("ForNameInitFailure", true, system);
         REQUIRE(failed.exception.IsValid());
-        CHECK(vm.linker.Class(failed.exception_class).descriptor ==
-              "Ljava/lang/ExceptionInInitializerError;");
-        const auto target_field = vm.linker.FindFieldRecursive(
-            failing, "target", "Ljava/lang/Throwable;");
+        CHECK(vm.linker.Class(failed.exception_class).descriptor == "Ljava/lang/ExceptionInInitializerError;");
+        const auto target_field = vm.linker.FindFieldRecursive(failing, "target", "Ljava/lang/Throwable;");
         REQUIRE(target_field.has_value());
         const auto& field = vm.linker.Field(*target_field);
-        CHECK(failed.exception == VmObjectRef(
-                  vm.linker.Class(failing).static_storage[field.slot]));
+        CHECK(failed.exception == VmObjectRef(vm.linker.Class(failing).static_storage[field.slot]));
     }
 }
-
 
 namespace {
 std::vector<IntrinsicClassDecl> ParentFirstCatalog() {
     auto catalog = CoreIntrinsicCatalog();
-    std::erase_if(catalog, [](const auto& declaration) {
-        const auto& name = declaration.descriptor;
-        return name != "Ljava/lang/Object;" && name != "Ljava/lang/Class;" &&
-               name != "Ljava/lang/ClassLoader;" && name != "Ljava/lang/BootClassLoader;" &&
-               name != "Ldalvik/system/BaseDexClassLoader;" &&
-               name != "Ldalvik/system/PathClassLoader;";
-    });
     return catalog;
 }
 }  // namespace
@@ -551,6 +486,7 @@ TEST_CASE("ClassLoader parent-first registration preserves bootstrap identity an
         intrinsic.StaticMethod("answer", "()I", [](IntrinsicContext&) { return VmValue::Int(71); });
         catalog.push_back(std::move(intrinsic).Build());
         linker.RegisterIntrinsics(catalog);
+        ogplay::test::RegisterBootDex(linker);
         const auto boot = linker.RegisterBootDex(ReadFixture("parent_first_boot.dex"));
         const auto original = linker.FindClass("Lshared/ParentOwned;");
         REQUIRE(original.has_value());
@@ -580,7 +516,8 @@ TEST_CASE("ClassLoader parent-first registration preserves bootstrap identity an
                 const auto call = linker.ResolveMethodIndex(app, i, InvokeKind::static_call);
                 CHECK(linker.Method(call.method).dex_unit == boot);
             } else if (name == u"appOnly") {
-                CHECK_THROWS_AS(static_cast<void>(linker.ResolveMethodIndex(app, i, InvokeKind::static_call)), JavaLinkageError);
+                CHECK_THROWS_AS(static_cast<void>(linker.ResolveMethodIndex(app, i, InvokeKind::static_call)),
+                                JavaLinkageError);
             }
         }
         ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
@@ -599,9 +536,11 @@ TEST_CASE("ClassLoader parent-first registration preserves bootstrap identity an
         CHECK(loaders.LoaderForClass(child) == loaders.ApplicationLoader());
         CHECK(model.ClassObject(linker.ResolveDescriptor("Lshared/ParentOwned;")) == model.ClassObject(*original));
         CHECK(linker.Class(*original).clinit_state == ClinitState::uninitialized);
-        for (const auto& [name, expected] : std::array<std::pair<const char*, int>, 5>{{
-            {"readParent", 42}, {"readField", 42}, {"readObserver", 0},
-            {"readIntrinsic", 71}, {"useInterface", 7}}}) {
+        for (const auto& [name, expected] : std::array<std::pair<const char*, int>, 5>{{{"readParent", 42},
+                                                                                        {"readField", 42},
+                                                                                        {"readObserver", 0},
+                                                                                        {"readIntrinsic", 71},
+                                                                                        {"useInterface", 7}}}) {
             const auto method = linker.FindDirectMethod(linker.ResolveDescriptor("Lshared/Caller;"), name, "()I");
             REQUIRE(method.has_value());
             const auto result = vm.Call(*method, {});
@@ -621,6 +560,7 @@ TEST_CASE("ClassLoader parent-first registration preserves bootstrap identity an
 TEST_CASE("ClassLoader parent-first registration also accepts identical boot and app definitions") {
     DexClassLinker linker;
     linker.RegisterIntrinsics(ParentFirstCatalog());
+    ogplay::test::RegisterBootDex(linker);
     const auto bytes = ReadFixture("parent_first_boot.dex");
     const auto boot = linker.RegisterBootDex(bytes);
     const auto original = linker.FindClass("Lshared/ParentOwned;");
@@ -644,8 +584,10 @@ TEST_CASE("ClassLoader parent-first registration still rejects malformed duplica
         linker.RegisterIntrinsics(ParentFirstCatalog());
         if (!boot) linker.RegisterBootDex(bytes);
         try {
-            if (boot) linker.RegisterBootDex(invalid);
-            else linker.RegisterDex(invalid);
+            if (boot)
+                linker.RegisterBootDex(invalid);
+            else
+                linker.RegisterDex(invalid);
             FAIL("duplicate class_def must fail even if a parent definition exists");
         } catch (const ogplay::loader::DexError& error) {
             CHECK(error.Reason() == ogplay::loader::DexErrorReason::invalid_class_def);
@@ -657,10 +599,10 @@ TEST_CASE("ClassLoader parent-first registration still rejects malformed duplica
 TEST_CASE("WU7-3 ClassLoader default assertion setter is an API19 no-op") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         LoaderVm vm(backend);
-        const auto loader = Ref(vm.Static("Ljava/lang/ClassLoader;", "getSystemClassLoader",
-                                          "()Ljava/lang/ClassLoader;"));
-        const auto type = Ref(vm.Static("Ljava/lang/Class;", "forName",
-            "(Ljava/lang/String;)Ljava/lang/Class;", {VmValue::Ref(vm.String("java.lang.String"))}));
+        const auto loader =
+            Ref(vm.Static("Ljava/lang/ClassLoader;", "getSystemClassLoader", "()Ljava/lang/ClassLoader;"));
+        const auto type = Ref(vm.Static("Ljava/lang/Class;", "forName", "(Ljava/lang/String;)Ljava/lang/Class;",
+                                        {VmValue::Ref(vm.String("java.lang.String"))}));
         for (const auto enabled : {1, 0}) {
             const auto result = vm.Virtual(loader, "setDefaultAssertionStatus", "(Z)V", {VmValue::Int(enabled)});
             REQUIRE_FALSE(result.exception.IsValid());

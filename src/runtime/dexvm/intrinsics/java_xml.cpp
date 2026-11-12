@@ -8,7 +8,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
 
 namespace {
 
-IntrinsicClassDecl DeclareSaxParser() {
+IntrinsicClassDecl Declare_javax_xml_parsers_SAXParser_Class() {
     auto builder = IntrinsicClassBuilder::Class("Ljavax/xml/parsers/SAXParser;", "Ljava/lang/Object;");
     const auto reader_field = builder.BoundInstanceField("ogplayReader", "Lorg/xml/sax/XMLReader;", kAccPrivate);
     builder.VirtualMethod("getXMLReader", "()Lorg/xml/sax/XMLReader;", [reader_field](IntrinsicContext& call) {
@@ -40,7 +40,7 @@ IntrinsicClassDecl DeclareSaxParser() {
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl DeclareSaxParserFactory() {
+IntrinsicClassDecl Declare_javax_xml_parsers_SAXParserFactory_Class() {
     auto builder = IntrinsicClassBuilder::Class("Ljavax/xml/parsers/SAXParserFactory;", "Ljava/lang/Object;");
     builder.StaticMethod("newInstance", "()Ljavax/xml/parsers/SAXParserFactory;", [](IntrinsicContext& call) {
         return VmValue::Ref(call.vm.NewIntrinsicInstance("Ljavax/xml/parsers/SAXParserFactory;"));
@@ -67,8 +67,8 @@ IntrinsicClassDecl DeclareSaxParserFactory() {
 }  // namespace
 
 void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog) {
-    catalog.push_back(DeclareSaxParser());
-    catalog.push_back(DeclareSaxParserFactory());
+    catalog.push_back(Declare_javax_xml_parsers_SAXParser_Class());
+    catalog.push_back(Declare_javax_xml_parsers_SAXParserFactory_Class());
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

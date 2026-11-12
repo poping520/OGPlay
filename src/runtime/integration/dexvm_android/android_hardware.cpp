@@ -2,7 +2,7 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_hardware_SystemSensorManager(const Context& context) {
+Decl Declare_android_hardware_SystemSensorManager_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/hardware/SystemSensorManager;");
     builder.MergesBootClass();
     constexpr auto flags = dx::kAccPrivate | dx::kAccStatic | dx::kAccNative;

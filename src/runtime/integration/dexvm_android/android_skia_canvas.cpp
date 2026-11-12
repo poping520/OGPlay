@@ -155,7 +155,7 @@ void DrawWireframe(SkCanvas& canvas, int mode, std::span<const SkPoint> points, 
 
 }  // namespace
 
-Decl Declare_android_graphics_Canvas(const Context& context) {
+Decl Declare_android_graphics_Canvas_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Canvas;");
     b.MergesBootClass();
     const auto instance = [context](dx::IntrinsicContext& c) -> Canvas& {

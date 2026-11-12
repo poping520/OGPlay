@@ -261,7 +261,7 @@ void skia::AddPaintTextMethods(dx::IntrinsicClassBuilder& b, const Context& cont
         kStaticNative);
 }
 
-Decl Declare_android_emoji_EmojiFactory() {
+Decl Declare_android_emoji_EmojiFactory_Natives() {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/emoji/EmojiFactory;");
     builder.MergesBootClass();
     // This device provides Unicode fonts and no vendor PUA emoji factory.
@@ -273,7 +273,7 @@ Decl Declare_android_emoji_EmojiFactory() {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_text_AndroidBidi(const Context&) {
+Decl Declare_android_text_AndroidBidi_Natives(const Context&) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/text/AndroidBidi;");
     b.MergesBootClass();
     b.StaticMethod(

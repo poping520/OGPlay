@@ -281,7 +281,7 @@ void AddWindowManagerMethods(dx::IntrinsicClassBuilder& builder, const Context& 
                                    "(Landroid/os/IBinder;Landroid/os/IRemoteCallback;)Z");
 }
 
-Decl Declare_local_AccessibilityService(const Context&) {
+Decl Declare_local_AccessibilityService_Class(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalAccessibilityService;",
                                                     "Landroid/view/accessibility/IAccessibilityManager$Stub;");
     builder.VirtualMethod("addClient", "(Landroid/view/accessibility/IAccessibilityManagerClient;I)I",
@@ -294,7 +294,7 @@ Decl Declare_local_AccessibilityService(const Context&) {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_TextServices() {
+Decl Declare_local_TextServices_Class() {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalTextServices;",
                                                     "Lcom/android/internal/textservice/ITextServicesManager$Stub;");
     builder.VirtualMethod("isSpellCheckerEnabled", "()Z", [](dx::IntrinsicContext&) { return V::Int(0); });
@@ -313,7 +313,7 @@ Decl Declare_local_TextServices() {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_WindowSession(const Context& context) {
+Decl Declare_local_WindowSession_Class(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalWindowSession;",
                                               "Landroid/view/IWindowSession$Stub;");
     b.Constructor("()V", [](dx::IntrinsicContext& c) {

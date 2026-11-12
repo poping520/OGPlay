@@ -132,7 +132,7 @@ int Sample(const Store::Interpolation& state, std::uint32_t time, std::vector<fl
 }
 }  // namespace
 
-std::vector<Decl> Declare_android_graphics_StateObjects(const Context& context) {
+std::vector<Decl> Declare_android_graphics_StateObjects_Natives(const Context& context) {
     auto store = std::make_shared<Store>();
     context->graphics_state_store = store;
     std::vector<Decl> result;

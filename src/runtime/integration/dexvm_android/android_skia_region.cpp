@@ -50,7 +50,7 @@ std::string RegionString(const SkRegion& region) {
 
 }  // namespace
 
-Decl Declare_android_graphics_Region(const Context& context) {
+Decl Declare_android_graphics_Region_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Region;");
     b.MergesBootClass();
     auto* store = &context->skia_objects->regions;
@@ -235,7 +235,7 @@ Decl Declare_android_graphics_Region(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_android_graphics_RegionIterator(const Context& context) {
+Decl Declare_android_graphics_RegionIterator_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/RegionIterator;");
     b.MergesBootClass();
     auto* store = &context->skia_objects->region_iterators;
@@ -267,7 +267,7 @@ Decl Declare_android_graphics_RegionIterator(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_android_view_GLES20Canvas(const Context&) {
+Decl Declare_android_view_GLES20Canvas_Natives(const Context&) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/view/GLES20Canvas;", "Landroid/view/HardwareCanvas;");
     b.MergesBootClass();
     b.StaticMethod("nIsAvailable", "()Z", [](dx::IntrinsicContext&) { return V::Int(false); }, kStaticNative);

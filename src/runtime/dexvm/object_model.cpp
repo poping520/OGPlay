@@ -86,6 +86,7 @@ public:
 
     DexClassId string_class;
     DexClassId class_class;
+    std::uint16_t class_slots{};
     std::uint64_t allocated_bytes{};
     std::uint64_t object_count{};
     std::uint64_t next_vm_identity{1};
@@ -254,9 +255,11 @@ void JavaObjectModel::SetPrimitiveAllocationMutex(VmExecutionLock& mutex) {
     impl_->allocation_mutex = &mutex;
 }
 
-void JavaObjectModel::SetCoreClasses(const DexClassId string_class, const DexClassId class_class) {
+void JavaObjectModel::SetCoreClasses(const DexClassId string_class, const DexClassId class_class,
+                                     const std::uint16_t class_slots) {
     impl_->string_class = string_class;
     impl_->class_class = class_class;
+    impl_->class_slots = class_slots;
 }
 
 void JavaObjectModel::SetClassDescriptorResolver(std::function<std::string(DexClassId)> resolver) {
@@ -447,6 +450,7 @@ JavaObjectModel::MarkReachable(const std::vector<VmObjectRef>& roots,
         }
         switch (record.kind) {
         case VmObjectKind::vm_instance:
+        case VmObjectKind::class_object:
             for (std::size_t index = 0; index < impl_->instance_storage[record.storage].size(); ++index) {
                 const auto& slot = impl_->instance_storage[record.storage][index];
                 if (slot.tag == SlotTag::ref && (!is_weak_slot || !is_weak_slot(record.java_class, index)))
@@ -470,7 +474,6 @@ JavaObjectModel::MarkReachable(const std::vector<VmObjectRef>& roots,
         case VmObjectKind::host_backed: break;
         case VmObjectKind::string:
         case VmObjectKind::primitive_array:
-        case VmObjectKind::class_object:
         case VmObjectKind::external: break;
         }
         // Registered side tables are logical instance fields. The current
@@ -518,6 +521,7 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark, const GcSweepHook
             }
             break;
         case VmObjectKind::vm_instance:
+        case VmObjectKind::class_object:
             impl_->instance_storage[record.storage].clear();
             impl_->free_instance_storage.push_back(record.storage);
             break;
@@ -532,7 +536,6 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark, const GcSweepHook
             }
             break;
         case VmObjectKind::host_backed:
-        case VmObjectKind::class_object:
         case VmObjectKind::external: break;
         }
         if (hooks.release_external_state) {
@@ -578,7 +581,7 @@ VmObjectRef JavaObjectModel::NewInstance(const DexClassId java_class, const std:
 
 std::span<Slot> JavaObjectModel::InstanceSlots(const VmObjectRef ref) {
     auto& record = impl_->At(ref);
-    if (record.kind != VmObjectKind::vm_instance) {
+    if (record.kind != VmObjectKind::vm_instance && record.kind != VmObjectKind::class_object) {
         const auto descriptor = impl_->class_descriptor_resolver && record.java_class.IsValid()
                                     ? impl_->class_descriptor_resolver(record.java_class)
                                     : std::string{};
@@ -994,13 +997,22 @@ std::vector<std::byte> JavaObjectModel::ReadByteRegion(const VmObjectRef ref, co
 VmObjectRef JavaObjectModel::ClassObject(const DexClassId java_class) {
     const auto found = impl_->class_objects.find(java_class.Value());
     if (found != impl_->class_objects.end()) return found->second;
-    impl_->Reserve(48ULL);
+    const auto bytes = 48ULL + static_cast<std::uint64_t>(impl_->class_slots) * sizeof(Slot);
+    impl_->Reserve(bytes);
     Impl::Record record;
     record.kind = VmObjectKind::class_object;
     record.identity = impl_->NextVmIdentity();
     record.java_class = impl_->class_class;
     record.host_state = java_class.Value();
-    record.reserved_bytes = 48ULL;
+    record.reserved_bytes = bytes;
+    if (impl_->free_instance_storage.empty()) {
+        record.storage = static_cast<std::uint32_t>(impl_->instance_storage.size());
+        impl_->instance_storage.emplace_back(impl_->class_slots, Slot{});
+    } else {
+        record.storage = impl_->free_instance_storage.back();
+        impl_->free_instance_storage.pop_back();
+        impl_->instance_storage[record.storage].assign(impl_->class_slots, Slot{});
+    }
     if (!impl_->class_descriptor_resolver) {
         Fail(DexVmErrorReason::object_model_failure, "class descriptor resolver is not installed");
     }

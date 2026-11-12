@@ -63,7 +63,7 @@ void AddEnum(dx::IntrinsicClassBuilder& builder, const Context& context, const c
 }
 }  // namespace
 
-Decl Declare_android_graphics_Paint(const Context& context) {
+Decl Declare_android_graphics_Paint_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Paint;");
     b.MergesBootClass();
     const auto peer = [context](dx::IntrinsicContext& c) -> Paint& {

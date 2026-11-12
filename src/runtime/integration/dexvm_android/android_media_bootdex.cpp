@@ -191,7 +191,7 @@ void SetNativeContext(dx::IntrinsicContext& call, const std::int32_t token) {
 
 }  // namespace
 
-Decl Declare_android_media_AudioTrack(const Context& context) {
+Decl Declare_android_media_AudioTrack_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/AudioTrack;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     builder.StaticMethod(
@@ -499,7 +499,7 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_media_SoundPoolImpl(const Context& context) {
+Decl Declare_android_media_SoundPool_SoundPoolImpl_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/SoundPool$SoundPoolImpl;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     builder.DirectMethod(
@@ -693,7 +693,7 @@ Decl Declare_android_media_SoundPoolImpl(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_media_MediaPlayer(const Context& context) {
+Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
     using Phase = DexVmAndroidContext::MediaPlayerState::Phase;
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/MediaPlayer;", "Ljava/lang/Object;");
     builder.MergesBootClass();

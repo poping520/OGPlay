@@ -51,7 +51,7 @@ void Put(Interpreter& vm, VmObjectRef object, const std::string& key, const std:
                 {VmValue::Ref(k), VmValue::Ref(vm.NewStringUtf8(value))});
 }
 
-IntrinsicClassDecl SecurityConfiguration() {
+IntrinsicClassDecl Declare_java_security_Security_Overrides() {
     auto b = IntrinsicClassBuilder::Class("Ljava/security/Security;");
     b.MergesBootClass();
     b.ClassInitializer([](IntrinsicContext& c) {
@@ -78,7 +78,7 @@ IntrinsicClassDecl SecurityConfiguration() {
 // API19's legacy provider is a configuration boundary. Its PRNG algorithm and
 // all instance state remain in the original BootDex SPI; do not advertise the
 // original provider's unsupported DSA services or change the default provider.
-IntrinsicClassDecl HarmonyCryptoProvider() {
+IntrinsicClassDecl Declare_org_apache_harmony_security_provider_crypto_CryptoProvider_Class() {
     auto b = IntrinsicClassBuilder::Class("Lorg/apache/harmony/security/provider/crypto/CryptoProvider;",
                                           "Ljava/security/Provider;", {}, kAccPublic | kAccFinal);
     b.Constructor("()V", [](IntrinsicContext& c) {
@@ -96,7 +96,7 @@ IntrinsicClassDecl HarmonyCryptoProvider() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl CryptoProvider() {
+IntrinsicClassDecl Declare_com_android_org_conscrypt_OpenSSLProvider_Overrides() {
     auto b = IntrinsicClassBuilder::Class(kProvider, "Ljava/security/Provider;");
     b.MergesBootClass();
     b.Constructor("()V", [](IntrinsicContext& c) {
@@ -150,7 +150,7 @@ IntrinsicClassDecl CryptoProvider() {
 
 // The bare AES service must not let JCA's fallback silently widen the
 // configured transformation set via engineSetMode on the generic AES SPI.
-IntrinsicClassDecl DefaultAes() {
+IntrinsicClassDecl Declare_org_ogplay_security_DefaultAes_Class() {
     constexpr auto parent = "Lcom/android/org/conscrypt/OpenSSLCipher$AES$ECB$PKCS5Padding;";
     auto b = IntrinsicClassBuilder::Class("Lorg/ogplay/security/DefaultAes;", parent);
     b.Constructor("()V", [](IntrinsicContext& c) {
@@ -169,7 +169,7 @@ IntrinsicClassDecl DefaultAes() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl OsRandom(const CoreIntrinsicServices& services) {
+IntrinsicClassDecl Declare_org_ogplay_security_OsRandom_Class(const CoreIntrinsicServices& services) {
     auto b = IntrinsicClassBuilder::Class("Lorg/ogplay/security/OsRandom;", "Ljava/security/SecureRandomSpi;");
     b.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
     const auto fill = [random = services.secure_random](Interpreter& vm, VmObjectRef array) {
@@ -206,7 +206,7 @@ IntrinsicClassDecl OsRandom(const CoreIntrinsicServices& services) {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl OpenSslRandom(const CoreIntrinsicServices& services) {
+IntrinsicClassDecl Declare_com_android_org_conscrypt_OpenSSLRandom_Class(const CoreIntrinsicServices& services) {
     auto b = IntrinsicClassBuilder::Class("Lcom/android/org/conscrypt/OpenSSLRandom;",
                                           "Ljava/security/SecureRandomSpi;", {"Ljava/io/Serializable;"});
     const auto seeded = b.BoundInstanceField("seeded", "Z", kAccPrivate);
@@ -262,7 +262,7 @@ IntrinsicClassDecl OpenSslRandom(const CoreIntrinsicServices& services) {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl AesKeyGenerator() {
+IntrinsicClassDecl Declare_org_ogplay_security_AesKeyGenerator_Class() {
     auto b = IntrinsicClassBuilder::Class("Lorg/ogplay/security/AesKeyGenerator;", "Ljavax/crypto/KeyGeneratorSpi;");
     const auto bits = b.BoundInstanceField("keySize", "I", kAccPrivate);
     const auto random = b.BoundInstanceField("random", "Ljava/security/SecureRandom;", kAccPrivate);
@@ -330,7 +330,7 @@ IntrinsicClassDecl AesKeyGenerator() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl CipherContext() {
+IntrinsicClassDecl Declare_com_android_org_conscrypt_OpenSSLCipherContext_Overrides() {
     auto b = IntrinsicClassBuilder::Class("Lcom/android/org/conscrypt/OpenSSLCipherContext;");
     b.MergesBootClass();
     const auto field = b.BoundInstanceField("context", "J", kAccPrivate | kAccFinal);
@@ -350,13 +350,13 @@ IntrinsicClassDecl CipherContext() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl NativeVerificationBoundary() {
+IntrinsicClassDecl Declare_org_ogplay_security_NativeVerification_Class() {
     auto b = IntrinsicClassBuilder::Class(kVerificationNative);
     b.GuestNativeStatic("verify", "([B[B[BLjava/lang/String;)Z");
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl NativeKeyStoreBoundary() {
+IntrinsicClassDecl Declare_org_ogplay_security_NativeKeyStoreCrypto_Natives() {
     auto b = IntrinsicClassBuilder::Class(kKeyStoreNative);
     b.MergesBootClass();
     b.GuestNativeStatic("desEdeCbc", "(Z[B[B[B)[B");
@@ -430,7 +430,7 @@ bool SetInstanceRefField(Interpreter& vm, VmObjectRef object, const char* name, 
     return copy;
 }
 
-IntrinsicClassDecl NativeTrustBoundary() {
+IntrinsicClassDecl Declare_org_ogplay_security_NativeTrust_Overrides() {
     auto b = IntrinsicClassBuilder::Class(kTrustNative);
     b.MergesBootClass();
     b.GuestNativeStatic("subjectHashOld", "([B)I");
@@ -441,7 +441,7 @@ IntrinsicClassDecl NativeTrustBoundary() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl NativeTlsBoundary() {
+IntrinsicClassDecl Declare_org_ogplay_security_NativeTls_Overrides() {
     auto b = IntrinsicClassBuilder::Class(kTlsNative);
     b.MergesBootClass();
     b.StaticMethod("markTls", "(Ljava/net/Socket;)V", [](IntrinsicContext& c) {
@@ -542,13 +542,13 @@ IntrinsicClassDecl NativeTlsBoundary() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl NativeCryptoGuestAdmission() {
+IntrinsicClassDecl Declare_com_android_org_conscrypt_NativeCrypto_Natives() {
     auto b = IntrinsicClassBuilder::Class(kNative);
     b.AdmitBootNativeMethods();
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl VerificationSpi(const std::string& algorithm) {
+IntrinsicClassDecl DeclareVerificationSpiClass(const std::string& algorithm) {
     auto b =
         IntrinsicClassBuilder::Class("Lorg/ogplay/security/Verify" + algorithm + ";", "Ljava/security/SignatureSpi;");
     const auto key = b.BoundInstanceField("encodedKey", "[B", kAccPrivate);
@@ -611,20 +611,20 @@ IntrinsicClassDecl VerificationSpi(const std::string& algorithm) {
 }  // namespace
 
 void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services) {
-    catalog.push_back(SecurityConfiguration());
-    catalog.push_back(CryptoProvider());
-    catalog.push_back(HarmonyCryptoProvider());
-    catalog.push_back(DefaultAes());
-    catalog.push_back(OsRandom(services));
-    catalog.push_back(OpenSslRandom(services));
-    catalog.push_back(AesKeyGenerator());
-    catalog.push_back(NativeCryptoGuestAdmission());
-    catalog.push_back(NativeVerificationBoundary());
-    catalog.push_back(NativeKeyStoreBoundary());
-    catalog.push_back(NativeTrustBoundary());
-    catalog.push_back(NativeTlsBoundary());
-    catalog.push_back(CipherContext());
+    catalog.push_back(Declare_java_security_Security_Overrides());
+    catalog.push_back(Declare_com_android_org_conscrypt_OpenSSLProvider_Overrides());
+    catalog.push_back(Declare_org_apache_harmony_security_provider_crypto_CryptoProvider_Class());
+    catalog.push_back(Declare_org_ogplay_security_DefaultAes_Class());
+    catalog.push_back(Declare_org_ogplay_security_OsRandom_Class(services));
+    catalog.push_back(Declare_com_android_org_conscrypt_OpenSSLRandom_Class(services));
+    catalog.push_back(Declare_org_ogplay_security_AesKeyGenerator_Class());
+    catalog.push_back(Declare_com_android_org_conscrypt_NativeCrypto_Natives());
+    catalog.push_back(Declare_org_ogplay_security_NativeVerification_Class());
+    catalog.push_back(Declare_org_ogplay_security_NativeKeyStoreCrypto_Natives());
+    catalog.push_back(Declare_org_ogplay_security_NativeTrust_Overrides());
+    catalog.push_back(Declare_org_ogplay_security_NativeTls_Overrides());
+    catalog.push_back(Declare_com_android_org_conscrypt_OpenSSLCipherContext_Overrides());
     for (const auto& entry : kSignatures)
-        catalog.push_back(VerificationSpi(entry.algorithm));
+        catalog.push_back(DeclareVerificationSpiClass(entry.algorithm));
 }
 }  // namespace ogplay::runtime::dexvm::intrinsics

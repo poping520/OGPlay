@@ -50,7 +50,7 @@ void RetireAndroidTypeface(DexVmAndroidContext& context, int bits) {
     if (const auto* face = objects.Find(token); face && (*face)->family < 0) objects.Retire(token);
 }
 
-Decl Declare_android_graphics_Typeface(const Context& context) {
+Decl Declare_android_graphics_Typeface_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Typeface;");
     b.MergesBootClass();
     b.StaticMethod(

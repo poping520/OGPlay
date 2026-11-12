@@ -149,7 +149,7 @@ std::shared_ptr<SurfaceStream> ResolveAndroidSurfaceStream(dx::Interpreter& vm, 
 }
 
 namespace android_intrinsics {
-Decl Declare_android_graphics_SurfaceTexture(const Context& context) {
+Decl Declare_android_graphics_SurfaceTexture_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/SurfaceTexture;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     builder.StaticMethod(
@@ -316,7 +316,7 @@ Decl Declare_android_graphics_SurfaceTexture(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_view_Surface(const Context& context) {
+Decl Declare_android_view_Surface_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/Surface;");
     builder.MergesBootClass();
     AddRomSurfaceNatives(builder, context);

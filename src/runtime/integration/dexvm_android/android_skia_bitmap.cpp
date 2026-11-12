@@ -187,7 +187,7 @@ void ReconfigureBitmap(dx::Interpreter& vm, DexVmAndroidContext::BitmapState& st
 namespace ogplay::runtime::android_intrinsics {
 using namespace skia;
 
-Decl Declare_android_graphics_Bitmap(const Context& context) {
+Decl Declare_android_graphics_Bitmap_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Bitmap;");
     b.MergesBootClass();
     const auto get = [context](const dx::IntrinsicCall& a, unsigned index = 0) -> raster::Bitmap& {

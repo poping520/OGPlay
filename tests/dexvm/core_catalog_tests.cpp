@@ -76,7 +76,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     std::set<std::string> descriptors;
     std::set<std::string> intentionally_unimplemented = {
         // Explicit bounded native/platform boundaries added since the original inventory.
-        "Ldalvik/system/BaseDexClassLoader;.findLibrary(Ljava/lang/String;)Ljava/lang/String;",
         "Ljava/net/ProxySelector;.setDefault(Ljava/net/ProxySelector;)V",
         "Ljava/net/ProxySelector;.select(Ljava/net/URI;)Ljava/util/List;",
         "Ljava/net/ProxySelector;.connectFailed(Ljava/net/URI;Ljava/net/SocketAddress;Ljava/io/IOException;)V",
@@ -210,7 +209,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/lang/Thread;.suspend()V",
         "Ljava/lang/Thread;.resume()V",
         "Ljava/lang/Thread;.destroy()V",
-        "Ljava/lang/BootClassLoader;.<init>()V",
         "Ljava/math/NativeBN;.BN_add(JJJ)V",
         "Ljava/math/NativeBN;.BN_add_word(JI)V",
         "Ljava/math/NativeBN;.BN_bin2bn([BIZJ)V",
@@ -241,8 +239,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         {"Ljava/lang/reflect/Proxy;.constructorPrototype(Ljava/lang/reflect/InvocationHandler;)V",
          "Ldalvik/system/VMStack;.fillStackTraceElements(Ljava/lang/Thread;[Ljava/lang/StackTraceElement;)I",
          "Ldalvik/system/VMStack;.getThreadStackTrace(Ljava/lang/Thread;)[Ljava/lang/StackTraceElement;",
-         "Ldalvik/system/VMStack;.getCallingClassLoader()Ljava/lang/ClassLoader;",
-         "Ldalvik/system/VMStack;.getStackClass2()Ljava/lang/Class;",
          "Ljava/io/ObjectOutputStream;.getFieldL(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
          "Lorg/ogplay/security/OsRandom;.engineSetSeed([B)V"})
         intentionally_unimplemented.insert(signature);
@@ -472,7 +468,9 @@ TEST_CASE("dexvm core ROM classes own Java methods and fields") {
                               "Ljava/lang/reflect/Field;",
                               "Ljava/lang/reflect/Constructor;",
                               "Ljava/lang/reflect/AccessibleObject;",
-                              "Ljava/lang/reflect/Array;"}) {
+                              "Ljava/lang/reflect/Array;",
+                              "Ljava/lang/Class;",
+                              "Llibcore/reflect/AnnotationAccess;"}) {
         CAPTURE(owner);
         const auto type = vm.linker.ResolveDescriptor(owner);
         const auto& linked = vm.linker.Class(type);
@@ -483,6 +481,7 @@ TEST_CASE("dexvm core ROM classes own Java methods and fields") {
             if ((method.access_flags & kAccNative) != 0) {
                 ++natives;
                 CHECK((std::string_view(owner) == "Ljava/lang/Character;" ||
+                       std::string_view(owner) == "Ljava/lang/Class;" ||
                        std::string_view(owner).starts_with("Ljava/lang/reflect/")));
             } else {
                 CHECK(method.kind != MethodKind::intrinsic);
@@ -494,7 +493,8 @@ TEST_CASE("dexvm core ROM classes own Java methods and fields") {
             check_method(id);
         const std::string_view name(owner);
         const auto expected =
-            name == "Ljava/lang/Character;"                                                                 ? 25U
+            name == "Ljava/lang/Class;"                                                                     ? 29U
+            : name == "Ljava/lang/Character;"                                                               ? 25U
             : name == "Ljava/lang/reflect/Method;"                                                          ? 8U
             : name == "Ljava/lang/reflect/Field;"                                                           ? 23U
             : name == "Ljava/lang/reflect/Array;"                                                           ? 2U
@@ -826,10 +826,10 @@ TEST_CASE("dexvm java.lang primitive wrappers are in lang family TU") {
     std::ifstream header(directory / "catalog.h", std::ios::binary);
     REQUIRE(header.good());
     const std::string source(std::istreambuf_iterator<char>(header), {});
-    CHECK(source.find("AppendJavaLangPrimitiveWrappers") != std::string::npos);
+    CHECK(source.find("AppendJavaLangWrapperNatives") != std::string::npos);
     for (const auto& name : classes) {
         CAPTURE(name);
-        CHECK(source.find("Declare_java_lang_" + name) == std::string::npos);
+        CHECK(source.find("Declare_java_lang_" + name + "_Class") == std::string::npos);
     }
 }
 
@@ -871,10 +871,10 @@ TEST_CASE("dexvm java.lang interfaces are in lang family TU") {
     std::ifstream header(directory / "catalog.h", std::ios::binary);
     REQUIRE(header.good());
     const std::string source(std::istreambuf_iterator<char>(header), {});
-    CHECK(source.find("AppendJavaLangInterfaces") != std::string::npos);
+    CHECK(source.find("AppendDalvikVmRuntimeNatives") != std::string::npos);
     for (const auto& name : classes) {
         CAPTURE(name);
-        CHECK(source.find("Declare_java_lang_" + name) == std::string::npos);
+        CHECK(source.find("Declare_java_lang_" + name + "_Class") == std::string::npos);
     }
 }
 

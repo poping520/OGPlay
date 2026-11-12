@@ -198,7 +198,9 @@ ReflectionRuntime 是成员 metadata 与 wrapper 的唯一工厂，
 反射、JNI 和字节码共享元数据工厂与调用逻辑，访问检查、参数适配与目标异常的差异
 限制在各入口协议中，而不是为每个入口再实现一次方法体。
 定向查询只解析候选，枚举时再物化完整集合；调用复用访问检查、装箱、拆箱与数值 widening。
-注解从成员所属 DEX 解码，泛型 Signature 由原版 Java parser 处理。
+Class 镜像保留代表类型的 VM 身份，实例槽存储 ROM 字段并参加 GC 扫描。
+Class 与 AnnotationAccess 的普通方法执行 ROM。Class.getDex 首次访问时将所属 DEX 映射到
+只读 guest 页，交给 ROM Dex.create，并按 DEX 单元保活结果。泛型 Signature 由原版 Java parser 处理。
 Proxy 使用 ROM 校验和有序接口缓存，AnnotationRuntime 仍有受限合成路径，
 其统一类身份缺口见[已知问题](../state/KNOWN-ISSUES.md#执行与平台)。
 

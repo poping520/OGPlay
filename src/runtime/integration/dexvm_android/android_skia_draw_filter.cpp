@@ -4,7 +4,7 @@ namespace ogplay::runtime::android_intrinsics {
 using namespace skia;
 using V = dx::VmValue;
 
-Decl Declare_android_graphics_DrawFilter(const Context& context) {
+Decl Declare_android_graphics_DrawFilter_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/DrawFilter;");
     b.MergesBootClass();
     b.StaticMethod(
@@ -18,7 +18,7 @@ Decl Declare_android_graphics_DrawFilter(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_android_graphics_PaintFlagsDrawFilter(const Context& context) {
+Decl Declare_android_graphics_PaintFlagsDrawFilter_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/PaintFlagsDrawFilter;");
     b.MergesBootClass();
     b.StaticMethod(

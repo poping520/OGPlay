@@ -97,6 +97,12 @@ template <typename Meta, typename Materialize>
 
 class ReflectionRuntime::Impl final {
 public:
+    struct DexObjects {
+        VmObjectRef buffer;
+        VmObjectRef dex;
+    };
+
+    std::unordered_map<std::uint32_t, DexObjects> dex_objects;
     std::vector<VmMethodId> serialization_constructors;
     std::unordered_map<std::uint64_t, ReflectMethodMeta> method_metadata;
 
@@ -520,7 +526,8 @@ VmObjectRef ReflectionRuntime::MaterializeMethod(const ReflectMethodMeta& meta) 
         stage = "common fields";
         impl_->CommonMemberFields(wrapper, meta.declaring_class, meta.slot);
         const auto& method = impl_->linker->Method(meta.method);
-        WriteIntField(*impl_->linker, *impl_->model, wrapper, "methodDexIndex", 0xffffffffU);
+        WriteIntField(*impl_->linker, *impl_->model, wrapper, "methodDexIndex",
+                      impl_->linker->Method(meta.method).dex_method_index.value_or(0xffffffffU));
         stage = "name";
         WriteRefField(*impl_->linker, *impl_->model, wrapper, "name", "Ljava/lang/String;",
                       impl_->interpreter->NewStringUtf8(method.name));
@@ -542,7 +549,8 @@ VmObjectRef ReflectionRuntime::MaterializeMethod(const ReflectMethodMeta& meta) 
 VmObjectRef ReflectionRuntime::MaterializeConstructor(const ReflectConstructorMeta& meta) {
     const auto wrapper = impl_->Allocate("Ljava/lang/reflect/Constructor;");
     impl_->CommonMemberFields(wrapper, meta.declaring_class, meta.slot);
-    WriteIntField(*impl_->linker, *impl_->model, wrapper, "methodDexIndex", 0xffffffffU);
+    WriteIntField(*impl_->linker, *impl_->model, wrapper, "methodDexIndex",
+                  impl_->linker->Method(meta.method).dex_method_index.value_or(0xffffffffU));
     WriteRefField(*impl_->linker, *impl_->model, wrapper, "parameterTypes", "[Ljava/lang/Class;",
                   impl_->TypeArray(meta.parameter_types));
     WriteRefField(*impl_->linker, *impl_->model, wrapper, "exceptionTypes", "[Ljava/lang/Class;",
@@ -554,7 +562,7 @@ VmObjectRef ReflectionRuntime::MaterializeField(const ReflectFieldMeta& meta) {
     const auto wrapper = impl_->Allocate("Ljava/lang/reflect/Field;");
     impl_->CommonMemberFields(wrapper, meta.declaring_class, meta.slot);
     const auto& field = impl_->linker->Field(meta.field);
-    WriteIntField(*impl_->linker, *impl_->model, wrapper, "fieldDexIndex", 0xffffffffU);
+    WriteIntField(*impl_->linker, *impl_->model, wrapper, "fieldDexIndex", field.dex_field_index.value_or(0xffffffffU));
     WriteRefField(*impl_->linker, *impl_->model, wrapper, "name", "Ljava/lang/String;",
                   impl_->interpreter->NewStringUtf8(field.name));
     WriteRefField(*impl_->linker, *impl_->model, wrapper, "type", "Ljava/lang/Class;",
@@ -662,6 +670,36 @@ void ReflectionRuntime::SetAccessible(const VmObjectRef wrapper, const bool acce
 
 ReflectionCodec& ReflectionRuntime::Codec() noexcept {
     return *impl_->codec;
+}
+
+void ReflectionRuntime::VisitRoots(const std::function<void(VmObjectRef)>& visit) const {
+    for (const auto& [_, objects] : impl_->dex_objects) {
+        visit(objects.buffer);
+        visit(objects.dex);
+    }
+}
+
+VmObjectRef ReflectionRuntime::DexObject(
+    DexClassId type, const std::function<VmObjectRef(Interpreter&, std::span<const std::uint8_t>)>& create_buffer) {
+    const auto& linked = impl_->linker->ClassHeader(type);
+    if (!linked.dex_unit || linked.is_proxy || linked.is_annotation_implementation) return VmObjectRef{};
+    const auto unit = *linked.dex_unit;
+    auto& objects = impl_->dex_objects[unit.value];
+    if (objects.dex.IsValid()) return objects.dex;
+    if (!create_buffer)
+        throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "DEX direct memory provider is unavailable"};
+    if (!objects.buffer.IsValid()) objects.buffer = create_buffer(*impl_->interpreter, impl_->linker->DexBytes(unit));
+    const auto dex_class = impl_->linker->ResolveDescriptor("Lcom/android/dex/Dex;");
+    const auto create =
+        impl_->linker->FindDirectMethod(dex_class, "create", "(Ljava/nio/ByteBuffer;)Lcom/android/dex/Dex;");
+    if (!create) throw DexVmError(DexVmErrorReason::internal_invariant, "ROM Dex.create is missing");
+    const auto outcome = impl_->interpreter->Call(*create, std::array{VmValue::Ref(objects.buffer)});
+    if (outcome.exception.IsValid()) {
+        impl_->interpreter->SetPendingException(outcome.exception);
+        return VmObjectRef{};
+    }
+    if (!objects.dex.IsValid()) objects.dex = outcome.value.ref;
+    return objects.dex;
 }
 
 VmObjectRef ReflectionRuntime::InvokeMethod(const ReflectMethodMeta& meta, const VmObjectRef receiver,

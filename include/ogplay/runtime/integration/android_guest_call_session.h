@@ -257,6 +257,7 @@ public:
     void WakeThreadLooper(std::uint64_t thread_id);
     void NotifyLooperPollers();
     [[nodiscard]] dexvm::NioDirectMemoryAccess GuestMemoryAccess() const;
+    void ProtectGuestReadOnly(memory::GuestAddress address, std::uint32_t size);
     void SetBitmapHooks(AndroidBitmapHooks hooks);
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
     void SetSurfaceHooks(AndroidSurfaceHooks hooks);

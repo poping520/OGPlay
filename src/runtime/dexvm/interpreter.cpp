@@ -934,9 +934,10 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model, NativeM
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
     if (string_class.has_value() && class_class.has_value()) {
-        model.SetCoreClasses(*string_class, *class_class);
+        linker.EnsureClassLinked(*class_class);
+        model.SetCoreClasses(*string_class, *class_class, linker.Class(*class_class).instance_slots);
     }
-    impl_->class_loaders = std::make_unique<ClassLoaderFacade>(linker, model);
+    impl_->class_loaders = std::make_unique<ClassLoaderFacade>(*this, linker, model);
     impl_->reflection = std::make_unique<ReflectionRuntime>(*this, linker, model);
     impl_->unsafe = std::make_unique<UnsafeRuntime>(*this);
     impl_->annotations = std::make_unique<AnnotationRuntime>(*this);

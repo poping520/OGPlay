@@ -2,7 +2,7 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_graphics_Camera(const Context& context) {
+Decl Declare_android_graphics_Camera_Natives(const Context& context) {
     using namespace skia;
     using V = dx::VmValue;
     using Camera = raster::Camera;

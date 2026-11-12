@@ -46,8 +46,8 @@ V NewShader(DexVmAndroidContext& context, raster::Shader::Source source) {
 
 enum class Gradient { linear, radial, sweep };
 
-Decl GradientClass(const Context& context, const char* name, Gradient kind, const char* array_signature,
-                   const char* pair_signature) {
+Decl DeclareGradientNatives(const Context& context, const char* name, Gradient kind, const char* array_signature,
+                            const char* pair_signature) {
     auto b = dx::IntrinsicClassBuilder::Class(name);
     b.MergesBootClass();
     for (const bool array : {true, false}) {
@@ -107,7 +107,7 @@ Decl GradientClass(const Context& context, const char* name, Gradient kind, cons
 }
 
 template <class Create>
-Decl PathEffectClass(const Context& context, const char* type, const char* signature, Create create) {
+Decl DeclarePathEffectNatives(const Context& context, const char* type, const char* signature, Create create) {
     auto b = dx::IntrinsicClassBuilder::Class(type);
     b.MergesBootClass();
     b.StaticMethod(
@@ -122,7 +122,7 @@ Decl PathEffectClass(const Context& context, const char* type, const char* signa
 
 }  // namespace
 
-std::vector<Decl> Declare_android_graphics_Effects(const Context& context) {
+std::vector<Decl> Declare_android_graphics_Effects_Natives(const Context& context) {
     std::vector<Decl> result;
     auto shader = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Shader;");
     shader.MergesBootClass();
@@ -168,12 +168,12 @@ std::vector<Decl> Declare_android_graphics_Effects(const Context& context) {
         kStaticNative);
     bitmap.StaticMethod("nativePostCreate", "(IIII)I", SoftwareOnly(), kStaticNative);
     result.push_back(std::move(bitmap).Build());
+    result.push_back(DeclareGradientNatives(context, "Landroid/graphics/LinearGradient;", Gradient::linear,
+                                            "(FFFF[I[FI)I", "(FFFFIII)I"));
+    result.push_back(DeclareGradientNatives(context, "Landroid/graphics/RadialGradient;", Gradient::radial,
+                                            "(FFF[I[FI)I", "(FFFIII)I"));
     result.push_back(
-        GradientClass(context, "Landroid/graphics/LinearGradient;", Gradient::linear, "(FFFF[I[FI)I", "(FFFFIII)I"));
-    result.push_back(
-        GradientClass(context, "Landroid/graphics/RadialGradient;", Gradient::radial, "(FFF[I[FI)I", "(FFFIII)I"));
-    result.push_back(
-        GradientClass(context, "Landroid/graphics/SweepGradient;", Gradient::sweep, "(FF[I[F)I", "(FFII)I"));
+        DeclareGradientNatives(context, "Landroid/graphics/SweepGradient;", Gradient::sweep, "(FF[I[F)I", "(FFII)I"));
 
     auto compose = dx::IntrinsicClassBuilder::Class("Landroid/graphics/ComposeShader;");
     compose.MergesBootClass();
@@ -276,14 +276,15 @@ std::vector<Decl> Declare_android_graphics_Effects(const Context& context) {
                       kStaticNative);
     result.push_back(std::move(path).Build());
     result.push_back(
-        PathEffectClass(context, "Landroid/graphics/CornerPathEffect;", "(F)I",
-                        [](dx::IntrinsicContext& c) { return SkCornerPathEffect::Make(c.arguments[0].AsFloat()); }));
-    result.push_back(
-        PathEffectClass(context, "Landroid/graphics/DiscretePathEffect;", "(FF)I", [](dx::IntrinsicContext& c) {
+        DeclarePathEffectNatives(context, "Landroid/graphics/CornerPathEffect;", "(F)I", [](dx::IntrinsicContext& c) {
+            return SkCornerPathEffect::Make(c.arguments[0].AsFloat());
+        }));
+    result.push_back(DeclarePathEffectNatives(
+        context, "Landroid/graphics/DiscretePathEffect;", "(FF)I", [](dx::IntrinsicContext& c) {
             return SkDiscretePathEffect::Make(c.arguments[0].AsFloat(), c.arguments[1].AsFloat());
         }));
     result.push_back(
-        PathEffectClass(context, "Landroid/graphics/DashPathEffect;", "([FF)I", [](dx::IntrinsicContext& c) {
+        DeclarePathEffectNatives(context, "Landroid/graphics/DashPathEffect;", "([FF)I", [](dx::IntrinsicContext& c) {
             const auto array = c.arguments[0].ref;
             if (!array.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "intervals"};
             const int count = c.vm.Model().ArrayLength(array) & ~1;
@@ -292,7 +293,7 @@ std::vector<Decl> Declare_android_graphics_Effects(const Context& context) {
                 intervals.push_back(ReadFloat(c.vm, array, i));
             return SkDashPathEffect::Make({intervals.data(), intervals.size()}, c.arguments[1].AsFloat());
         }));
-    result.push_back(PathEffectClass(
+    result.push_back(DeclarePathEffectNatives(
         context, "Landroid/graphics/PathDashPathEffect;", "(IFFI)I", [context](dx::IntrinsicContext& c) {
             const dx::IntrinsicCall a(c);
             if (a.Int(3) < 0 || a.Int(3) > 2) Invalid("invalid PathDashPathEffect.Style");
@@ -301,7 +302,7 @@ std::vector<Decl> Declare_android_graphics_Effects(const Context& context) {
                                             static_cast<SkPath1DPathEffect::Style>(a.Int(3)));
         }));
     for (const bool compose_effect : {false, true}) {
-        result.push_back(PathEffectClass(
+        result.push_back(DeclarePathEffectNatives(
             context, compose_effect ? "Landroid/graphics/ComposePathEffect;" : "Landroid/graphics/SumPathEffect;",
             "(II)I", [context, compose_effect](dx::IntrinsicContext& c) {
                 auto& paths = context->skia_objects->path_effects;

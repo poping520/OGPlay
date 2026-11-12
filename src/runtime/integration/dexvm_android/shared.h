@@ -93,7 +93,6 @@ void LogDisabledWeb(dx::Interpreter& vm, std::string_view action, const Disabled
 [[nodiscard]] dx::IntrinsicHandler PlatformRuntimeNativeExitHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemLoadHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemLoadLibraryHandler(const Context& context);
-[[nodiscard]] dx::IntrinsicHandler PlatformClassLoaderFindLibraryHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemNanoTimeHandler(const Context& context);
 
 }  // namespace ogplay::runtime::android_intrinsics

@@ -14,15 +14,13 @@
 
 namespace ogplay::runtime::dexvm::intrinsics {
 
-IntrinsicClassDecl Declare_dalvik_system_BaseDexClassLoader() {
+IntrinsicClassDecl Declare_dalvik_system_BaseDexClassLoader_Shell() {
     auto builder = IntrinsicClassBuilder::Class("Ldalvik/system/BaseDexClassLoader;", "Ljava/lang/ClassLoader;");
     builder.MergesBootClass();
-    // The integration layer binds the selected-ABI native library resolver.
-    builder.UnimplementedOverride("findLibrary", "(Ljava/lang/String;)Ljava/lang/String;");
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl Declare_dalvik_system_PathClassLoader() {
+IntrinsicClassDecl Declare_dalvik_system_PathClassLoader_Shell() {
     auto builder =
         IntrinsicClassBuilder::Class("Ldalvik/system/PathClassLoader;", "Ldalvik/system/BaseDexClassLoader;");
     builder.MergesBootClass();
@@ -31,83 +29,12 @@ IntrinsicClassDecl Declare_dalvik_system_PathClassLoader() {
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-// ---- migrated from java_lang_BootClassLoader.cpp ----
-#include "catalog.h"
-
-#include <utility>
-
-#include "ogplay/runtime/dexvm/intrinsic_builder.h"
-
-namespace ogplay::runtime::dexvm::intrinsics {
-
-IntrinsicClassDecl Declare_java_lang_BootClassLoader() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/BootClassLoader;", "Ljava/lang/ClassLoader;", {}, kAccNone);
-    builder.UnimplementedConstructor("()V");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
-// ---- migrated from java_lang_ClassLoader.cpp ----
-#include "catalog.h"
-
-#include <optional>
-#include <string>
-#include <string_view>
-#include <utility>
-
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/class_name_codec.h"
-#include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "shared.h"
 
 namespace ogplay::runtime::dexvm::intrinsics {
-namespace {
-
-struct ClassLoaderFields final {
-    IntrinsicFieldHandle parent;
-};
-
-[[nodiscard]] VmClassLoaderId ReceiverRole(IntrinsicContext& context) {
-    const auto role = context.vm.ClassLoaders().RoleOf(context.receiver);
-    if (!role.has_value()) {
-        throw DexVmError(DexVmErrorReason::internal_invariant, "ClassLoader receiver has no loader role");
-    }
-    return *role;
-}
-
-[[nodiscard]] VmValue Load(IntrinsicContext& context, const VmClassLoaderId role) {
-    IntrinsicCall call(context);
-    const auto name_ref = call.NonNullRef(0, "className");
-    const auto name = context.vm.StringUtf8(name_ref);
-    try {
-        if (!name.starts_with("[") && context.vm.ClassLoaders().IsRomApplicationLoader(context.receiver) &&
-            !context.vm.ClassLoaders().FindLoadedClass(role, name)) {
-            try {
-                const auto parent = context.vm.ClassLoaders().LoadClass(kBootstrapLoader, name);
-                context.vm.Linker().MarkInitiatedBy(parent, role);
-                return VmValue::Ref(context.vm.Model().ClassObject(parent));
-            } catch (const DexVmError& error) {
-                if (error.Reason() != DexVmErrorReason::unknown_class) throw;
-            }
-            return detail::InvokeGuest(context.vm, context.receiver, "findClass",
-                                       "(Ljava/lang/String;)Ljava/lang/Class;", {VmValue::Ref(name_ref)});
-        }
-        const auto java_class = context.vm.ClassLoaders().LoadClass(role, name);
-        return VmValue::Ref(context.vm.Model().ClassObject(java_class));
-    } catch (const ClassNameCodecError&) {
-        throw VmJavaThrow{"Ljava/lang/ClassNotFoundException;", name};
-    } catch (const DexVmError& error) {
-        if (error.Reason() == DexVmErrorReason::unknown_class) {
-            throw VmJavaThrow{"Ljava/lang/ClassNotFoundException;", name};
-        }
-        throw;
-    }
-}
-
-}  // namespace
-
 namespace detail {
 namespace {
 
@@ -116,14 +43,6 @@ namespace {
         ledger->RecordUnimplemented("dexvm.classloader.resource_url", 0);
     }
     throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "sealed classpath resource provider is unavailable"};
-}
-
-std::optional<CoreIntrinsicServices::ClasspathResource> FindResource(IntrinsicContext& context,
-                                                                     const CoreIntrinsicServices& services,
-                                                                     CoreIntrinsicServices::ClasspathLoader loader,
-                                                                     std::string_view name) {
-    if (!services.find_classpath_resource) MissingResourceBackend(context);
-    return services.find_classpath_resource(loader, name);
 }
 
 }  // namespace
@@ -167,185 +86,83 @@ VmObjectRef OpenClasspathResource(IntrinsicContext& context, const CoreIntrinsic
     return stream;
 }
 
-VmObjectRef ClasspathResourceUrl(IntrinsicContext& context, const CoreIntrinsicServices& services,
-                                 CoreIntrinsicServices::ClasspathLoader loader, std::string_view name) {
-    const auto resource = FindResource(context, services, loader, name);
-    if (!resource) return VmObjectRef{};
-    constexpr boost::urls::grammar::lut_chars safe{
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/"};
-    const auto spec = context.vm.NewStringUtf8("jar:file:" + boost::urls::encode(resource->archive_path, safe) + "!/" +
-                                               boost::urls::encode(resource->entry_name, safe));
-    const auto roots = context.vm.ProtectReferences(std::array{spec});
-    const auto url = context.vm.NewIntrinsicInstance("Ljava/net/URL;");
-    const auto url_roots = context.vm.ProtectReferences(std::array{url});
-    const auto constructor = context.vm.Linker().FindDirectMethod(
-        context.vm.Linker().ResolveDescriptor("Ljava/net/URL;"), "<init>", "(Ljava/lang/String;)V");
-    if (!constructor) throw DexVmError(DexVmErrorReason::internal_invariant, "URL constructor is not linked");
-    const auto outcome = context.vm.Call(*constructor, std::array{VmValue::Ref(url), VmValue::Ref(spec)});
-    if (outcome.exception.IsValid())
-        throw VmJavaThrow{context.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                          outcome.exception};
-    return url;
-}
-
-VmObjectRef ClasspathResourceStream(IntrinsicContext& context, const CoreIntrinsicServices& services,
-                                    CoreIntrinsicServices::ClasspathLoader loader, std::string_view name) {
-    const auto resource = FindResource(context, services, loader, name);
-    if (!resource) return VmObjectRef{};
-    try {
-        return OpenClasspathResource(context, services, *resource);
-    } catch (const VmJavaThrow& error) {
-        // API19 ClassLoader.getResourceAsStream catches IOException only.
-        const auto type = context.vm.Linker().ResolveDescriptor(error.descriptor);
-        const auto io = context.vm.Linker().ResolveDescriptor("Ljava/io/IOException;");
-        if (context.vm.Linker().IsAssignable(io, type)) return VmObjectRef{};
-        throw;
-    }
-}
-
 }  // namespace detail
 
-IntrinsicClassDecl Declare_java_lang_ClassLoader(const CoreIntrinsicServices& services) {
-    auto builder =
-        IntrinsicClassBuilder::Class("Ljava/lang/ClassLoader;", "Ljava/lang/Object;", {}, kAccPublic | kAccAbstract);
-    const ClassLoaderFields fields{
-        builder.BoundInstanceField("parent", "Ljava/lang/ClassLoader;", kAccPrivate),
-    };
-
-    // AOSP API19: libcore ClassLoader.java :: ClassLoader()/ClassLoader(parent)
-    builder.Constructor(
-        "()V",
-        [fields](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            call.SetRef(fields.parent, context.vm.ClassLoaders().ApplicationLoader());
-            return VmValue::Void();
-        },
-        kAccProtected);
-    builder.Constructor(
-        "(Ljava/lang/ClassLoader;)V",
-        [fields](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            call.SetRef(fields.parent, call.NonNullRef(0, "parentLoader"));
-            return VmValue::Void();
-        },
-        kAccProtected);
-
-    // libdvm ClassLoader.java:692 explicitly specifies an empty body.
-    // Dalvik assertions are controlled by VM startup options, not this setter.
-    builder.VirtualMethod("setDefaultAssertionStatus", "(Z)V", [](IntrinsicContext&) { return VmValue::Void(); });
-    builder.StaticMethod("getSystemClassLoader", "()Ljava/lang/ClassLoader;", [](IntrinsicContext& context) {
-        return VmValue::Ref(context.vm.ClassLoaders().SystemLoader());
-    });
-    builder.FinalMethod("getParent", "()Ljava/lang/ClassLoader;", [fields](IntrinsicContext& context) {
-        const auto fixed = context.vm.ClassLoaders().FacadeParent(context.receiver);
-        if (fixed.has_value()) return VmValue::Ref(*fixed);
-        return VmValue::Ref(IntrinsicCall(context).GetRef(fields.parent));
-    });
-    builder.FinalMethod(
-        "findLoadedClass", "(Ljava/lang/String;)Ljava/lang/Class;",
-        [](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            const auto name_ref = call.NonNullRef(0, "className");
+IntrinsicClassDecl Declare_java_lang_VMClassLoader_Natives(const CoreIntrinsicServices& services) {
+    auto b = IntrinsicClassBuilder::Class("Ljava/lang/VMClassLoader;");
+    b.MergesBootClass();
+    b.StaticMethod(
+        "findLoadedClass", "(Ljava/lang/ClassLoader;Ljava/lang/String;)Ljava/lang/Class;",
+        [](IntrinsicContext& c) {
+            const auto name = c.vm.StringUtf8(IntrinsicCall(c).NonNullRef(1, "name"));
+            auto& loaders = c.vm.ClassLoaders();
+            const auto loader = c.arguments[0].ref;
+            const auto role = !loader.IsValid() || loader == loaders.BootstrapLoader()
+                                  ? std::optional<VmClassLoaderId>(kBootstrapLoader)
+                              : loaders.IsRomApplicationLoader(loader)
+                                  ? std::optional<VmClassLoaderId>(kApplicationLoader)
+                                  : std::nullopt;
+            if (!role) return VmValue::Ref(VmObjectRef{});
             try {
-                const auto found =
-                    context.vm.ClassLoaders().FindLoadedClass(ReceiverRole(context), context.vm.StringUtf8(name_ref));
-                return VmValue::Ref(found.has_value() ? context.vm.Model().ClassObject(*found) : VmObjectRef{});
+                const auto type = loaders.FindLoadedClass(*role, name);
+                return VmValue::Ref(type ? c.vm.Model().ClassObject(*type) : VmObjectRef{});
             } catch (const ClassNameCodecError&) {
-                return VmValue::Ref(VmObjectRef(0));
+                return VmValue::Ref(VmObjectRef{});
             }
         },
-        kAccProtected);
-    builder.FinalMethod(
-        "findSystemClass", "(Ljava/lang/String;)Ljava/lang/Class;",
-        [](IntrinsicContext& context) { return Load(context, kApplicationLoader); }, kAccProtected);
-    builder.VirtualMethod("loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
-                          [](IntrinsicContext& context) { return Load(context, ReceiverRole(context)); });
-    builder.VirtualMethod(
+        kAccStatic | kAccNative);
+    b.StaticMethod(
         "loadClass", "(Ljava/lang/String;Z)Ljava/lang/Class;",
-        [](IntrinsicContext& context) {
-            // API-19 Dalvik ignores resolve for ClassLoader.loadClass.
-            return Load(context, ReceiverRole(context));
+        [](IntrinsicContext& c) {
+            const auto name = c.vm.StringUtf8(IntrinsicCall(c).NonNullRef(0, "name"));
+            try {
+                return VmValue::Ref(c.vm.Model().ClassObject(c.vm.ClassLoaders().LoadClass(kBootstrapLoader, name)));
+            } catch (const ClassNameCodecError&) {
+                // dvmFindClassByName returns null with a pending ClassNotFoundException.
+                c.vm.SetPendingException(c.vm.MakeThrowable("Ljava/lang/ClassNotFoundException;", name));
+                return VmValue::Ref(VmObjectRef{});
+            } catch (const DexVmError& error) {
+                if (error.Reason() != DexVmErrorReason::unknown_class) throw;
+                // dvmFindClassByName returns null with a pending ClassNotFoundException.
+                c.vm.SetPendingException(c.vm.MakeThrowable("Ljava/lang/ClassNotFoundException;", name));
+                return VmValue::Ref(VmObjectRef{});
+            }
         },
-        kAccProtected);
-    builder.VirtualMethod(
-        "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;",
-        [](IntrinsicContext&) {
-            // AOSP API19 ClassLoader.findLibrary has no native search path.
-            return VmValue::Ref(VmObjectRef{});
+        kAccStatic | kAccNative);
+    b.StaticMethod(
+        "getPrimitiveClass", "(C)Ljava/lang/Class;",
+        [](IntrinsicContext& c) {
+            const std::string descriptor(1, static_cast<char>(c.arguments[0].AsInt()));
+            if (descriptor.find_first_not_of("ZBCSIJFDV") != std::string::npos)
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid primitive type"};
+            return VmValue::Ref(c.vm.Model().ClassObject(c.vm.Linker().ResolveDescriptor(descriptor)));
         },
-        kAccProtected);
-    builder.VirtualMethod(
-        "findClass", "(Ljava/lang/String;)Ljava/lang/Class;",
-        [](IntrinsicContext& context) -> VmValue {
-            IntrinsicCall call(context);
-            const auto name = context.vm.StringUtf8(call.NonNullRef(0, "className"));
-            throw VmJavaThrow{"Ljava/lang/ClassNotFoundException;", name};
+        kAccStatic | kAccNative);
+    b.StaticMethod(
+        "getBootClassPathSize", "()I",
+        [services](IntrinsicContext&) {
+            return VmValue::Int(services.boot_classpath_size ? services.boot_classpath_size() : 0);
         },
-        kAccProtected);
-    builder.VirtualMethod(
-        "getResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;", [services](IntrinsicContext& context) {
-            const auto name = context.vm.StringUtf8(IntrinsicCall(context).NonNullRef(0, "resourceName"));
-            const auto role = ReceiverRole(context) == kBootstrapLoader
-                                  ? CoreIntrinsicServices::ClasspathLoader::bootstrap
-                                  : CoreIntrinsicServices::ClasspathLoader::application;
-            return VmValue::Ref(detail::ClasspathResourceStream(context, services, role, name));
-        });
-    builder.VirtualMethod("getResources", "(Ljava/lang/String;)Ljava/util/Enumeration;", [](IntrinsicContext& context) {
-        static_cast<void>(IntrinsicCall(context).NonNullRef(0, "resourceName"));
-        if (auto* ledger = context.vm.Ledger()) {
-            ledger->RecordUnimplemented("dexvm.classloader.resource_enumeration", 0);
-        }
-        const auto vector_class = context.vm.Linker().ResolveDescriptor("Ljava/util/Vector;");
-        auto outcome = context.vm.EnsureClassInitialized(vector_class);
-        if (outcome.exception.IsValid()) {
-            throw VmJavaThrow{context.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                              outcome.exception};
-        }
-        const auto vector = context.vm.NewIntrinsicInstance("Ljava/util/Vector;");
-        const auto root = context.vm.ProtectReferences(std::array{vector});
-        const auto constructor = context.vm.Linker().FindDirectMethod(vector_class, "<init>", "()V");
-        if (!constructor) {
-            throw DexVmError(DexVmErrorReason::internal_invariant, "Vector constructor is not linked");
-        }
-        outcome = context.vm.Call(*constructor, std::array{VmValue::Ref(vector)});
-        if (outcome.exception.IsValid()) {
-            throw VmJavaThrow{context.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                              outcome.exception};
-        }
-        return detail::InvokeGuest(context.vm, vector, "elements", "()Ljava/util/Enumeration;");
-    });
-    builder.VirtualMethod("getResource", "(Ljava/lang/String;)Ljava/net/URL;", [services](IntrinsicContext& context) {
-        const auto name = context.vm.StringUtf8(IntrinsicCall(context).NonNullRef(0, "resourceName"));
-        const auto role = ReceiverRole(context) == kBootstrapLoader
-                              ? CoreIntrinsicServices::ClasspathLoader::bootstrap
-                              : CoreIntrinsicServices::ClasspathLoader::application;
-        return VmValue::Ref(detail::ClasspathResourceUrl(context, services, role, name));
-    });
-    builder.StaticMethod(
-        "getSystemResource", "(Ljava/lang/String;)Ljava/net/URL;", [services](IntrinsicContext& context) {
-            const auto name = context.vm.StringUtf8(IntrinsicCall(context).NonNullRef(0, "resourceName"));
-            return VmValue::Ref(detail::ClasspathResourceUrl(
-                context, services, CoreIntrinsicServices::ClasspathLoader::application, name));
-        });
-    builder.StaticMethod("getSystemResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;",
-                         [services](IntrinsicContext& context) {
-                             const auto name =
-                                 context.vm.StringUtf8(IntrinsicCall(context).NonNullRef(0, "resourceName"));
-                             return VmValue::Ref(detail::ClasspathResourceStream(
-                                 context, services, CoreIntrinsicServices::ClasspathLoader::application, name));
-                         });
-    builder.FinalMethod(
-        "resolveClass", "(Ljava/lang/Class;)V",
-        [](IntrinsicContext& context) {
-            static_cast<void>(IntrinsicCall(context).NonNullRef(0, "clazz"));
-            return VmValue::Void();
+        kAccPrivate | kAccStatic | kAccNative);
+    b.StaticMethod(
+        "getBootClassPathResource", "(Ljava/lang/String;I)Ljava/lang/String;",
+        [services](IntrinsicContext& c) {
+            const auto name = c.vm.StringUtf8(IntrinsicCall(c).NonNullRef(0, "name"));
+            const auto resource = services.find_boot_classpath_resource
+                                      ? services.find_boot_classpath_resource(name, c.arguments[1].AsInt())
+                                      : std::nullopt;
+            if (!resource) return VmValue::Ref(VmObjectRef{});
+            // Dalvik Class.cpp::dvmGetBootPathResource concatenates the raw entry name.
+            constexpr boost::urls::grammar::lut_chars safe{
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/"};
+            return VmValue::Ref(c.vm.NewStringUtf8("jar:file:" + boost::urls::encode(resource->archive_path, safe) +
+                                                   "!/" + resource->entry_name));
         },
-        kAccProtected);
-
-    return std::move(builder).Build();
+        kAccPrivate | kAccStatic | kAccNative);
+    return std::move(b).Build();
 }
 
-IntrinsicClassDecl Declare_dalvik_system_VMStack() {
+IntrinsicClassDecl Declare_dalvik_system_VMStack_Natives() {
     auto b = IntrinsicClassBuilder::Class("Ldalvik/system/VMStack;");
     b.MergesBootClass();
     b.StaticMethod(
@@ -359,8 +176,24 @@ IntrinsicClassDecl Declare_dalvik_system_VMStack() {
                           kAccPublic | kAccNative);
     b.UnimplementedStatic("getThreadStackTrace", "(Ljava/lang/Thread;)[Ljava/lang/StackTraceElement;",
                           kAccPublic | kAccNative);
-    b.UnimplementedStatic("getCallingClassLoader", "()Ljava/lang/ClassLoader;", kAccPublic | kAccNative);
-    b.UnimplementedStatic("getStackClass2", "()Ljava/lang/Class;", kAccPublic | kAccNative);
+    b.StaticMethod(
+        "getCallingClassLoader", "()Ljava/lang/ClassLoader;",
+        [](IntrinsicContext& c) {
+            // Dalvik dvmGetCaller2Class: native frame (absent here), Java caller, caller's caller.
+            const auto stack = c.vm.CallingStackClasses(1, 1);
+            if (stack.empty() || c.vm.Linker().ClassHeader(stack.front()).defining_loader == kBootstrapLoader)
+                return VmValue::Ref(VmObjectRef{});
+            return VmValue::Ref(c.vm.ClassLoaders().LoaderForClass(stack.front()));
+        },
+        kAccPublic | kAccNative);
+    b.StaticMethod(
+        "getStackClass2", "()Ljava/lang/Class;",
+        [](IntrinsicContext& c) {
+            // Despite the Java name, Dalvik uses dvmGetCaller3Class: skip native + two Java frames.
+            const auto stack = c.vm.CallingStackClasses(2, 1);
+            return VmValue::Ref(stack.empty() ? VmObjectRef{} : c.vm.Model().ClassObject(stack.front()));
+        },
+        kAccPublic | kAccNative);
     return std::move(b).Build();
 }
 }  // namespace ogplay::runtime::dexvm::intrinsics

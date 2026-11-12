@@ -280,7 +280,7 @@ void SetRomInputWindowFocus(dx::Interpreter& vm, const Context& context, Ref win
     }
 }
 
-Decl Declare_android_view_InputChannel(const Context& context) {
+Decl Declare_android_view_InputChannel_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/view/InputChannel;");
     b.MergesBootClass();
     b.StaticMethod(
@@ -341,7 +341,7 @@ Decl Declare_android_view_InputChannel(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_android_view_InputEventReceiver(const Context& context) {
+Decl Declare_android_view_InputEventReceiver_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/view/InputEventReceiver;");
     b.MergesBootClass();
     b.StaticMethod(
@@ -439,7 +439,7 @@ Decl Declare_android_view_InputEventReceiver(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_android_view_InputEventSender(const Context& context) {
+Decl Declare_android_view_InputEventSender_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/view/InputEventSender;");
     b.MergesBootClass();
     b.StaticMethod(
@@ -479,7 +479,7 @@ Decl Declare_android_view_InputEventSender(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_local_InputMethodSession(const Context& context) {
+Decl Declare_local_InputMethodSession_Class(const Context& context) {
     constexpr auto stub = "Lcom/android/internal/view/IInputMethodSession$Stub;";
     auto b = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalInputMethodSession;", stub);
     b.Constructor("()V", [](dx::IntrinsicContext& c) {
@@ -503,7 +503,7 @@ Decl Declare_local_InputMethodSession(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_local_InputMethodService(const Context& context) {
+Decl Declare_local_InputMethodService_Class(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalInputMethodService;",
                                               "Lcom/android/internal/view/IInputMethodManager$Stub;");
     b.VirtualMethod("addClient",
@@ -614,7 +614,7 @@ Decl Declare_local_InputMethodService(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_local_InputService(const Context& context) {
+Decl Declare_local_InputService_Class(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalInputService;",
                                               "Landroid/hardware/input/IInputManager$Stub;");
     // The existing device factory already constructs genuine ROM InputDevice values.

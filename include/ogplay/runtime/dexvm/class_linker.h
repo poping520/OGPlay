@@ -37,13 +37,15 @@ using HostStateDestructor = std::function<void(std::uint64_t)>;
 // in dexvm_android. Callbacks keep core independent from DexVmAndroidContext.
 struct CoreIntrinsicServices final {
     std::function<void(Interpreter&)> initialize_system_properties;
+    // Uses the embedding process's existing guest allocator and direct-buffer
+    // path; the mapping remains read-only and live until process/VM teardown.
+    std::function<VmObjectRef(Interpreter&, std::span<const std::uint8_t>)> create_dex_buffer;
     std::uint32_t cpu_cores{1};
     // Process identity comes from the embedding runtime, never the host OS.
     std::function<std::int32_t()> process_id;
     std::function<std::int32_t()> process_uid;
     std::function<std::int32_t(Interpreter&)> current_thread_id;
     std::function<const std::vector<GuestNetworkInterface>&(Interpreter&)> network_interfaces;
-    enum class ClasspathLoader : std::uint8_t { bootstrap, application };
 
     // Location names a sealed guest archive, never a host filesystem path.
     struct ClasspathResource final {
@@ -51,7 +53,8 @@ struct CoreIntrinsicServices final {
         std::string entry_name;
     };
 
-    std::function<std::optional<ClasspathResource>(ClasspathLoader, std::string_view)> find_classpath_resource;
+    std::function<std::int32_t()> boot_classpath_size;
+    std::function<std::optional<ClasspathResource>(std::string_view, std::int32_t)> find_boot_classpath_resource;
     // Unknown origins fail explicitly; nullopt means a missing entry only.
     std::function<std::optional<std::vector<std::byte>>(const ClasspathResource&)> read_classpath_resource;
     std::function<void(std::span<std::byte>)> secure_random;
@@ -210,6 +213,7 @@ struct LinkedAnnotation final {
 };
 
 struct LinkedField final {
+    std::optional<std::uint32_t> dex_field_index;
     VmFieldId id;
     DexClassId owner;
     std::string name;

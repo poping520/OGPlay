@@ -366,7 +366,8 @@
                       "field access on null: " + field.name);
             goto yield;
         }
-        if (model->Kind(receiver) != VmObjectKind::vm_instance) {
+        const auto kind = model->Kind(receiver);
+        if (kind != VmObjectKind::vm_instance && kind != VmObjectKind::class_object) {
             FailCode("field access on non-VM instance: " + field.name);
         }
         auto slots = model->InstanceSlots(receiver);

@@ -132,7 +132,7 @@ std::vector<std::byte> ReadBounded(Read&& read) {
 }
 }  // namespace
 
-Decl Declare_android_graphics_BitmapFactory_Options(const Context&) {
+Decl Declare_android_graphics_BitmapFactory_Options_Natives(const Context&) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/BitmapFactory$Options;");
     b.MergesBootClass();
     // ROM sets mCancel before this call. There is no independently running decode job.
@@ -141,7 +141,7 @@ Decl Declare_android_graphics_BitmapFactory_Options(const Context&) {
     return std::move(b).Build();
 }
 
-Decl Declare_android_graphics_BitmapFactory(const Context& context) {
+Decl Declare_android_graphics_BitmapFactory_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/BitmapFactory;");
     b.MergesBootClass();
     b.StaticMethod(

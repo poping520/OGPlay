@@ -96,8 +96,6 @@ void BindPlatformCoreHandlers(std::vector<dx::IntrinsicClassDecl>& catalog,
          android_intrinsics::PlatformSystemLoadHandler(android_context)},
         {"Ljava/lang/System;", "loadLibrary", "(Ljava/lang/String;)V",
          android_intrinsics::PlatformSystemLoadLibraryHandler(android_context)},
-        {"Ldalvik/system/BaseDexClassLoader;", "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;",
-         android_intrinsics::PlatformClassLoaderFindLibraryHandler(android_context)},
         {"Ljava/lang/Runtime;", "nativeExit", "(I)V",
          android_intrinsics::PlatformRuntimeNativeExitHandler(android_context)},
     };
@@ -128,13 +126,6 @@ std::vector<dx::IntrinsicClassDecl> BoundCoreIntrinsicCatalog(const std::shared_
     services.cpu_cores = cpu_cores;
     auto catalog = dx::CoreIntrinsicCatalog(std::move(services));
     BindPlatformCoreHandlers(catalog, context);
-    if (context && context->sealed_apk_bytes)
-        for (auto& declaration : catalog)
-            if (declaration.descriptor == "Ldalvik/system/BaseDexClassLoader;")
-                std::erase_if(declaration.methods, [](const auto& method) {
-                    return method.name == "findLibrary" &&
-                           method.descriptor == "(Ljava/lang/String;)Ljava/lang/String;";
-                });
     return catalog;
 }
 

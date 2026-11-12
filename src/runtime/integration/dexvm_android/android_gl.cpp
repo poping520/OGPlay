@@ -744,9 +744,9 @@ dx::IntrinsicHandler GlUtilsTextureHandler(const Context& context, const bool su
     };
 }
 
-Decl DeclareJavaGlesClass(const Context& context, const char* class_descriptor, const char* superclass,
-                          const gles::GlesApi api, const std::span<const generated_java_gles::MethodSpec> methods,
-                          const std::span<const generated_java_gles::ConstantSpec> constants) {
+Decl DeclareGlesClass(const Context& context, const char* class_descriptor, const char* superclass,
+                      const gles::GlesApi api, const std::span<const generated_java_gles::MethodSpec> methods,
+                      const std::span<const generated_java_gles::ConstantSpec> constants) {
     auto builder = dx::IntrinsicClassBuilder::Class(class_descriptor, superclass);
     builder.Constructor("()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     for (const auto& constant : constants) {
@@ -1296,34 +1296,34 @@ void PaceEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_opengl_GLES10(const Context& context) {
-    return DeclareJavaGlesClass(context, "Landroid/opengl/GLES10;", "Ljava/lang/Object;", gles::GlesApi::gles1,
-                                generated_java_gles::kGLES10Methods, generated_java_gles::kGLES10Constants);
+Decl Declare_android_opengl_GLES10_Class(const Context& context) {
+    return DeclareGlesClass(context, "Landroid/opengl/GLES10;", "Ljava/lang/Object;", gles::GlesApi::gles1,
+                            generated_java_gles::kGLES10Methods, generated_java_gles::kGLES10Constants);
 }
 
-Decl Declare_android_opengl_GLES10Ext(const Context& context) {
-    return DeclareJavaGlesClass(context, "Landroid/opengl/GLES10Ext;", "Ljava/lang/Object;",
-                                gles::GlesApi::gles1_extensions, generated_java_gles::kGLES10ExtMethods,
-                                generated_java_gles::kGLES10ExtConstants);
+Decl Declare_android_opengl_GLES10Ext_Class(const Context& context) {
+    return DeclareGlesClass(context, "Landroid/opengl/GLES10Ext;", "Ljava/lang/Object;",
+                            gles::GlesApi::gles1_extensions, generated_java_gles::kGLES10ExtMethods,
+                            generated_java_gles::kGLES10ExtConstants);
 }
 
-Decl Declare_android_opengl_GLES11(const Context& context) {
-    return DeclareJavaGlesClass(context, "Landroid/opengl/GLES11;", "Landroid/opengl/GLES10;", gles::GlesApi::gles1,
-                                generated_java_gles::kGLES11Methods, generated_java_gles::kGLES11Constants);
+Decl Declare_android_opengl_GLES11_Class(const Context& context) {
+    return DeclareGlesClass(context, "Landroid/opengl/GLES11;", "Landroid/opengl/GLES10;", gles::GlesApi::gles1,
+                            generated_java_gles::kGLES11Methods, generated_java_gles::kGLES11Constants);
 }
 
-Decl Declare_android_opengl_GLES11Ext(const Context& context) {
-    return DeclareJavaGlesClass(context, "Landroid/opengl/GLES11Ext;", "Ljava/lang/Object;",
-                                gles::GlesApi::gles1_extensions, generated_java_gles::kGLES11ExtMethods,
-                                generated_java_gles::kGLES11ExtConstants);
+Decl Declare_android_opengl_GLES11Ext_Class(const Context& context) {
+    return DeclareGlesClass(context, "Landroid/opengl/GLES11Ext;", "Ljava/lang/Object;",
+                            gles::GlesApi::gles1_extensions, generated_java_gles::kGLES11ExtMethods,
+                            generated_java_gles::kGLES11ExtConstants);
 }
 
-Decl Declare_android_opengl_GLES20(const Context& context) {
-    return DeclareJavaGlesClass(context, "Landroid/opengl/GLES20;", "Ljava/lang/Object;", gles::GlesApi::gles2,
-                                generated_java_gles::kGLES20Methods, generated_java_gles::kGLES20Constants);
+Decl Declare_android_opengl_GLES20_Class(const Context& context) {
+    return DeclareGlesClass(context, "Landroid/opengl/GLES20;", "Ljava/lang/Object;", gles::GlesApi::gles2,
+                            generated_java_gles::kGLES20Methods, generated_java_gles::kGLES20Constants);
 }
 
-Decl Declare_android_opengl_GLUtils(const Context& context) {
+Decl Declare_android_opengl_GLUtils_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/GLUtils;", "Ljava/lang/Object;");
     for (const auto& method : generated_java_gles::kGLUtilsMethods) {
         const std::string_view name = method.name;
@@ -1510,7 +1510,7 @@ void GluWriteVector(dx::IntrinsicContext& call, const dx::VmObjectRef array, con
 
 }  // namespace
 
-Decl Declare_android_opengl_GLU(const Context& context) {
+Decl Declare_android_opengl_GLU_Class(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/GLU;", "Ljava/lang/Object;");
     builder.StaticMethod("gluErrorString", "(I)Ljava/lang/String;",
@@ -1619,7 +1619,7 @@ Decl Declare_android_opengl_GLU(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_opengl_EGL14(const Context& context) {
+Decl Declare_android_opengl_EGL14_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/EGL14;", "Ljava/lang/Object;");
     constexpr std::array constants{std::pair{"EGL_DEFAULT_DISPLAY", 0},
                                    std::pair{"EGL_FALSE", 0},
@@ -1874,9 +1874,9 @@ Decl Declare_android_opengl_EGL14(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_opengl_GLES30(const Context& context) {
-    return DeclareJavaGlesClass(context, "Landroid/opengl/GLES30;", "Landroid/opengl/GLES20;", gles::GlesApi::gles3,
-                                generated_java_gles::kGLES30Methods, generated_java_gles::kGLES30Constants);
+Decl Declare_android_opengl_GLES30_Class(const Context& context) {
+    return DeclareGlesClass(context, "Landroid/opengl/GLES30;", "Landroid/opengl/GLES20;", gles::GlesApi::gles3,
+                            generated_java_gles::kGLES30Methods, generated_java_gles::kGLES30Constants);
 }
 
 [[nodiscard]] std::uint32_t Egl14WrapperHandle(const DexVmAndroidContext::EglFacadeState& egl,
@@ -1892,7 +1892,7 @@ Decl Declare_android_opengl_GLES30(const Context& context) {
     return 0U;
 }
 
-Decl Declare_android_opengl_EGLObjectHandle(const Context& context) {
+Decl Declare_android_opengl_EGLObjectHandle_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/EGLObjectHandle;", "Ljava/lang/Object;");
     builder.VirtualMethod("getHandle", "()I", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(static_cast<std::int32_t>(Egl14WrapperHandle(context->egl, call.receiver)));
@@ -1924,25 +1924,25 @@ dx::IntrinsicHandler Egl14EqualsHandler(const Context& context) {
     };
 }
 
-Decl Declare_android_opengl_EGLConfig(const Context& context) {
+Decl Declare_android_opengl_EGLConfig_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/EGLConfig;", "Landroid/opengl/EGLObjectHandle;");
     builder.OverrideMethod("equals", "(Ljava/lang/Object;)Z", Egl14EqualsHandler(context));
     return std::move(builder).Build();
 }
 
-Decl Declare_android_opengl_EGLContext(const Context& context) {
+Decl Declare_android_opengl_EGLContext_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/EGLContext;", "Landroid/opengl/EGLObjectHandle;");
     builder.OverrideMethod("equals", "(Ljava/lang/Object;)Z", Egl14EqualsHandler(context));
     return std::move(builder).Build();
 }
 
-Decl Declare_android_opengl_EGLDisplay(const Context& context) {
+Decl Declare_android_opengl_EGLDisplay_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/EGLDisplay;", "Landroid/opengl/EGLObjectHandle;");
     builder.OverrideMethod("equals", "(Ljava/lang/Object;)Z", Egl14EqualsHandler(context));
     return std::move(builder).Build();
 }
 
-Decl Declare_android_opengl_EGLSurface(const Context& context) {
+Decl Declare_android_opengl_EGLSurface_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/EGLSurface;", "Landroid/opengl/EGLObjectHandle;");
     builder.OverrideMethod("equals", "(Ljava/lang/Object;)Z", Egl14EqualsHandler(context));
     return std::move(builder).Build();
@@ -2044,7 +2044,7 @@ dx::IntrinsicHandler RomEglConfigs(const Context& context, bool choose) {
 }
 }  // namespace
 
-Decl Declare_com_google_android_gles_jni_EGLImpl(const Context& context) {
+Decl Declare_com_google_android_gles_jni_EGLImpl_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lcom/google/android/gles_jni/EGLImpl;");
     builder.MergesBootClass();
     constexpr auto kPublicNative = dx::kAccPublic | dx::kAccNative;
@@ -2203,7 +2203,7 @@ Decl Declare_com_google_android_gles_jni_EGLImpl(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_com_google_android_gles_jni_GLImpl(const Context& context) {
+Decl Declare_com_google_android_gles_jni_GLImpl_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lcom/google/android/gles_jni/GLImpl;");
     builder.MergesBootClass();
     for (const auto& method : generated_java_gles::kGLImplNativeMethods) {

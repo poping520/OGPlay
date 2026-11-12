@@ -14,7 +14,7 @@ namespace ogplay::runtime::dexvm {
 // authority.
 class ClassLoaderFacade final {
 public:
-    ClassLoaderFacade(DexClassLinker& linker, JavaObjectModel& model);
+    ClassLoaderFacade(Interpreter& interpreter, DexClassLinker& linker, JavaObjectModel& model);
 
     [[nodiscard]] VmObjectRef BootstrapLoader();
     [[nodiscard]] VmObjectRef SystemLoader();
@@ -22,24 +22,21 @@ public:
     [[nodiscard]] VmObjectRef ApplicationLoader();
     [[nodiscard]] bool IsRomApplicationLoader(VmObjectRef object) const;
     [[nodiscard]] VmObjectRef LoaderForClass(DexClassId java_class);
-    [[nodiscard]] std::optional<VmClassLoaderId> RoleOf(
-        VmObjectRef loader_object);
-    [[nodiscard]] std::optional<VmObjectRef> FacadeParent(
-        VmObjectRef loader_object);
+    [[nodiscard]] std::optional<VmClassLoaderId> RoleOf(VmObjectRef loader_object);
 
     // findLoadedClass is intentionally side-effect free: no synthesis,
     // linking, initialization, or initiating-state mutation.
-    [[nodiscard]] std::optional<DexClassId> FindLoadedClass(
-        VmClassLoaderId loader, std::string_view binary_name) const;
+    [[nodiscard]] std::optional<DexClassId> FindLoadedClass(VmClassLoaderId loader, std::string_view binary_name) const;
     // loadClass searches the sealed linker namespace, including indexed API19
     // shapes. Arrays/shapes materialize lazily; no dynamic dex/jar is read.
-    [[nodiscard]] DexClassId LoadClass(VmClassLoaderId loader,
-                                       std::string_view binary_name);
+    [[nodiscard]] DexClassId LoadClass(VmClassLoaderId loader, std::string_view binary_name);
 
     void VisitRoots(const std::function<void(VmObjectRef)>& visitor) const;
 
 private:
-    [[nodiscard]] VmObjectRef AllocateFacade(std::string_view descriptor);
+    [[nodiscard]] VmObjectRef CallLoaderSingleton(std::string_view descriptor, std::string_view method,
+                                                  std::string_view signature);
+    Interpreter* interpreter_{};
     [[nodiscard]] bool BootstrapCanLoad(std::string_view descriptor) const;
 
     DexClassLinker* linker_{};
@@ -47,6 +44,7 @@ private:
     VmObjectRef bootstrap_loader_;
     VmObjectRef system_loader_;
     VmObjectRef application_loader_;
+    bool building_application_loader_{};
     std::function<VmObjectRef()> application_loader_factory_;
 };
 

@@ -12,7 +12,7 @@
 namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
 
-IntrinsicClassDecl DeclareAtomicLongNative() {
+IntrinsicClassDecl Declare_java_util_concurrent_atomic_AtomicLong_Natives() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/util/concurrent/atomic/AtomicLong;");
     builder.MergesBootClass();
     builder.StaticMethod(
@@ -28,7 +28,7 @@ IntrinsicClassDecl DeclareAtomicLongNative() {
 }  // namespace
 
 // API 19 libdvm sun.misc.Unsafe: VM primitives serving libcore concurrency.
-IntrinsicClassDecl Declare_sun_misc_Unsafe(const CoreIntrinsicServices& services) {
+IntrinsicClassDecl Declare_sun_misc_Unsafe_Class(const CoreIntrinsicServices& services) {
     auto builder = IntrinsicClassBuilder::Class("Lsun/misc/Unsafe;", "Ljava/lang/Object;", {}, kAccPublic | kAccFinal);
     const auto singleton = builder.BoundStaticField("THE_ONE", "Lsun/misc/Unsafe;", kAccPrivate | kAccFinal);
     const auto alias = builder.BoundStaticField("theUnsafe", "Lsun/misc/Unsafe;", kAccPrivate | kAccFinal);
@@ -157,8 +157,8 @@ IntrinsicClassDecl Declare_sun_misc_Unsafe(const CoreIntrinsicServices& services
 }
 
 void AppendJavaConcurrent(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services) {
-    catalog.push_back(Declare_sun_misc_Unsafe(services));
-    catalog.push_back(DeclareAtomicLongNative());
+    catalog.push_back(Declare_sun_misc_Unsafe_Class(services));
+    catalog.push_back(Declare_java_util_concurrent_atomic_AtomicLong_Natives());
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

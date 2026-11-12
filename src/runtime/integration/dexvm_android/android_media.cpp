@@ -34,7 +34,7 @@ private:
 };
 }  // namespace
 
-Decl Declare_android_media_AudioSystem(const Context& context) {
+Decl Declare_android_media_AudioSystem_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/AudioSystem;");
     builder.MergesBootClass();
     builder.StaticMethod(
@@ -65,7 +65,7 @@ Decl Declare_android_media_AudioSystem(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_AudioService(const Context& context) {
+Decl Declare_local_AudioService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalAudioService;",
                                                     "Landroid/media/IAudioService$Stub;");
     builder.VirtualMethod("getRingerMode", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(2); });

@@ -1771,6 +1771,12 @@ public:
 
     dexvm::NioDirectMemoryAccess GuestMemoryAccess() const { return direct_memory_access_; }
 
+    void ProtectGuestReadOnly(memory::GuestAddress address, std::uint32_t size) {
+        const auto page = address_space_.PageSize();
+        const auto mapped = (static_cast<std::uint64_t>(size) + page - 1U) & ~(page - 1U);
+        address_space_.Protect({address, mapped}, memory::PageProtection::read);
+    }
+
     void SetBitmapHooks(AndroidBitmapHooks hooks) { boundary_.SetBitmapHooks(hooks); }
 
     void SetDeviceLocaleProvider(std::function<DeviceLocale()> provider) {
@@ -2561,6 +2567,10 @@ void AndroidGuestProcess::ReleaseDexVmThread(const std::uint64_t thread_id) noex
 
 dexvm::NioDirectMemoryAccess AndroidGuestProcess::GuestMemoryAccess() const {
     return impl_->GuestMemoryAccess();
+}
+
+void AndroidGuestProcess::ProtectGuestReadOnly(memory::GuestAddress address, std::uint32_t size) {
+    impl_->ProtectGuestReadOnly(address, size);
 }
 
 memory::GuestAddress AndroidGuestProcess::FindModuleExport(const std::size_t index, const std::string_view name) const {

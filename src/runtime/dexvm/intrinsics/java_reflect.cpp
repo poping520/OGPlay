@@ -21,7 +21,6 @@
 
 namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
-
 [[nodiscard]] DexClassId Represented(IntrinsicContext& context) {
     return context.vm.Model().ClassOfClassObject(context.receiver);
 }
@@ -69,7 +68,8 @@ namespace {
     return linked.direct_interfaces;
 }
 
-[[nodiscard]] std::uint32_t ClassModifiers(IntrinsicContext& context, const DexClassId represented) {
+[[nodiscard]] std::uint32_t ClassModifiers(IntrinsicContext& context, const DexClassId represented,
+                                           const bool ignore_inner = false) {
     auto& linker = context.vm.Linker();
     const auto& linked = linker.Class(represented);
     if (IsPrimitiveDescriptor(linked.descriptor)) {
@@ -77,50 +77,16 @@ namespace {
     }
     if (!linked.is_array) {
         const auto system = linker.ReflectionSystemMetadata(represented);
-        return (system.has_inner_class ? system.inner_access_flags : linked.access_flags) & kAccJavaFlagsMask;
+        return (!ignore_inner && system.has_inner_class ? system.inner_access_flags : linked.access_flags) &
+               kAccJavaFlagsMask;
     }
 
     std::string_view leaf = linked.descriptor;
     while (leaf.starts_with("["))
         leaf.remove_prefix(1);
     const auto leaf_class = linker.ResolveDescriptor(leaf);
-    return ((ClassModifiers(context, leaf_class) & kAccJavaFlagsMask) & ~kAccInterface) | kAccFinal | kAccAbstract;
-}
-
-[[nodiscard]] bool IsEnumClass(IntrinsicContext& context, const DexClassId represented) {
-    const auto& linked = context.vm.Linker().Class(represented);
-    const auto enum_class = context.vm.Linker().ResolveDescriptor("Ljava/lang/Enum;");
-    return linked.super == enum_class && (ClassModifiers(context, represented) & kAccEnum) != 0U;
-}
-
-[[nodiscard]] std::string SimpleName(IntrinsicContext& context, const DexClassId represented) {
-    if (const auto component = ComponentType(context, represented); component.has_value()) {
-        return SimpleName(context, *component) + "[]";
-    }
-    const auto system = context.vm.Linker().ReflectionSystemMetadata(represented);
-    if (system.has_inner_class) return system.inner_name.value_or("");
-    const auto name = ClassNameCodec::ClassGetName(context.vm.Linker().Class(represented).descriptor);
-    const auto separator = name.rfind('.');
-    return separator == std::string::npos ? name : name.substr(separator + 1);
-}
-
-[[nodiscard]] std::optional<std::string> CanonicalName(IntrinsicContext& context, const DexClassId represented) {
-    if (const auto component = ComponentType(context, represented); component.has_value()) {
-        const auto component_name = CanonicalName(context, *component);
-        return component_name.has_value() ? std::optional<std::string>(*component_name + "[]") : std::nullopt;
-    }
-    const auto system = context.vm.Linker().ReflectionSystemMetadata(represented);
-    if (system.enclosing_method.has_value() || (system.has_inner_class && !system.inner_name.has_value())) {
-        return std::nullopt;
-    }
-    if (system.enclosing_class.has_value()) {
-        const auto enclosing = CanonicalName(context, *system.enclosing_class);
-        if (!enclosing.has_value() || !system.inner_name.has_value()) {
-            return std::nullopt;
-        }
-        return *enclosing + "." + *system.inner_name;
-    }
-    return ClassNameCodec::ClassGetName(context.vm.Linker().Class(represented).descriptor);
+    return ((ClassModifiers(context, leaf_class, ignore_inner) & kAccJavaFlagsMask) & ~kAccInterface) | kAccFinal |
+           kAccAbstract;
 }
 
 [[nodiscard]] VmObjectRef EnclosingExecutable(IntrinsicContext& context, const bool constructor) {
@@ -143,14 +109,6 @@ namespace {
         }
     }
     throw DexVmError(DexVmErrorReason::internal_invariant, "enclosing executable is not reflectable");
-}
-
-[[noreturn]] void ThrowNoSuchMethod(const std::string_view name) {
-    throw VmJavaThrow{"Ljava/lang/NoSuchMethodException;", std::string(name)};
-}
-
-[[noreturn]] void ThrowNoSuchField(const std::string_view name) {
-    throw VmJavaThrow{"Ljava/lang/NoSuchFieldException;", std::string(name)};
 }
 
 [[nodiscard]] VmValue SetClassNotFound(IntrinsicContext& context, const std::string_view name,
@@ -195,255 +153,9 @@ namespace {
 
 }  // namespace
 
-IntrinsicClassDecl Declare_java_lang_Class(const CoreIntrinsicServices& services) {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Class;", "Ljava/lang/Object;",
-                                                {"Ljava/io/Serializable;", "Ljava/lang/reflect/AnnotatedElement;",
-                                                 "Ljava/lang/reflect/GenericDeclaration;", "Ljava/lang/reflect/Type;"},
-                                                kAccPublic | kAccFinal);
-
-    builder.StaticMethod("forName", "(Ljava/lang/String;)Ljava/lang/Class;", [](IntrinsicContext& context) {
-        IntrinsicCall call(context);
-        const auto name = context.vm.StringUtf8(call.NonNullRef(0, "className"));
-        // API19 Class.forName(String) obtains the raw defining loader of
-        // the real caller. A bootstrap caller yields null, which the Java
-        // three-argument overload normalizes to the system loader.
-        auto role = kApplicationLoader;
-        if (const auto caller = context.vm.CurrentCallerClass();
-            caller.has_value() && context.vm.Linker().Class(*caller).defining_loader != kBootstrapLoader) {
-            role = context.vm.Linker().Class(*caller).defining_loader;
-        }
-        return ForName(context, name, true, role);
-    });
-    builder.StaticMethod("forName", "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;",
-                         [](IntrinsicContext& context) {
-                             IntrinsicCall call(context);
-                             const auto name = context.vm.StringUtf8(call.NonNullRef(0, "className"));
-                             const auto loader_object = context.arguments[2].ref;
-                             auto role = kApplicationLoader;
-                             if (loader_object.IsValid()) {
-                                 const auto resolved = context.vm.ClassLoaders().RoleOf(loader_object);
-                                 if (!resolved.has_value()) {
-                                     throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unknown class loader"};
-                                 }
-                                 role = *resolved;
-                             }
-                             return ForName(context, name, context.arguments[1].AsInt() != 0, role);
-                         });
-
-    builder.VirtualMethod("getName", "()Ljava/lang/String;", [](IntrinsicContext& context) {
-        return VmValue::Ref(context.vm.NewStringUtf8(
-            ClassNameCodec::ClassGetName(context.vm.Linker().Class(Represented(context)).descriptor)));
-    });
-    // AOSP libdvm Class.java: strip one slash, or prepend the binary package.
-    const auto resource = [services](IntrinsicContext& context, const bool stream) {
-        auto name = context.vm.StringUtf8(IntrinsicCall(context).NonNullRef(0, "resourceName"));
-        const auto& represented = context.vm.Linker().Class(Represented(context));
-        if (name.starts_with('/')) {
-            name.erase(name.begin());
-        } else {
-            const auto binary = ClassNameCodec::ClassGetName(represented.descriptor);
-            const auto dot = binary.rfind('.');
-            auto prefix = dot == std::string::npos ? std::string{} : binary.substr(0, dot);
-            std::replace(prefix.begin(), prefix.end(), '.', '/');
-            name = prefix + "/" + name;
-        }
-        // Primitive Class.getClassLoader() is null: API19 uses the system loader.
-        const auto role = represented.descriptor.size() != 1 && represented.defining_loader == kBootstrapLoader
-                              ? CoreIntrinsicServices::ClasspathLoader::bootstrap
-                              : CoreIntrinsicServices::ClasspathLoader::application;
-        return VmValue::Ref(stream ? detail::ClasspathResourceStream(context, services, role, name)
-                                   : detail::ClasspathResourceUrl(context, services, role, name));
-    };
-    builder.VirtualMethod("getResource", "(Ljava/lang/String;)Ljava/net/URL;",
-                          [resource](IntrinsicContext& context) { return resource(context, false); });
-    builder.VirtualMethod("getResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;",
-                          [resource](IntrinsicContext& context) { return resource(context, true); });
-    builder.VirtualMethod("getPackage", "()Ljava/lang/Package;", [](IntrinsicContext& context) {
-        const auto descriptor = context.vm.Linker().Class(Represented(context)).descriptor;
-        if (!descriptor.starts_with('L')) return VmValue::Ref(VmObjectRef{});
-        const auto binary = ClassNameCodec::ClassGetName(descriptor);
-        const auto dot = binary.rfind('.');
-        if (dot == std::string::npos) return VmValue::Ref(VmObjectRef{});
-        const auto type = context.vm.Linker().ResolveDescriptor("Ljava/lang/Package;");
-        const auto package = context.vm.Model().NewInstance(type, context.vm.Linker().Class(type).instance_slots);
-        const auto name = context.vm.NewStringUtf8(binary.substr(0, dot));
-        const auto roots = context.vm.ProtectReferences(std::array{package, name});
-        const auto constructor = context.vm.Linker().FindDirectMethod(
-            type, "<init>",
-            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
-            "Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/net/URL;)V");
-        if (!constructor) throw DexVmError(DexVmErrorReason::unresolved_reference, "Package constructor");
-        const auto null = VmValue::Ref(VmObjectRef{});
-        const auto outcome = context.vm.Call(*constructor, std::array{VmValue::Ref(package), VmValue::Ref(name), null,
-                                                                      null, null, null, null, null, null});
-        if (outcome.exception.IsValid())
-            throw VmJavaThrow{context.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                              outcome.exception};
-        return VmValue::Ref(package);
-    });
-    builder.VirtualMethod("desiredAssertionStatus", "()Z", [](IntrinsicContext& context) {
-        // API 19 defaults assertions to disabled when no rule matches; only
-        // the global -ea switch of standalone runs is modelled, not per-class rules.
-        return VmValue::Int(context.vm.Config().enable_assertions ? 1 : 0);
-    });
-    builder.VirtualMethod("getSimpleName", "()Ljava/lang/String;", [](IntrinsicContext& context) {
-        return VmValue::Ref(context.vm.NewStringUtf8(SimpleName(context, Represented(context))));
-    });
-    builder.VirtualMethod("getCanonicalName", "()Ljava/lang/String;", [](IntrinsicContext& context) {
-        const auto name = CanonicalName(context, Represented(context));
-        return VmValue::Ref(name.has_value() ? context.vm.NewStringUtf8(*name) : VmObjectRef{});
-    });
-    builder.VirtualMethod("getDeclaringClass", "()Ljava/lang/Class;", [](IntrinsicContext& context) {
-        const auto system = context.vm.Linker().ReflectionSystemMetadata(Represented(context));
-        return VmValue::Ref(system.enclosing_class.has_value() && !system.enclosing_method.has_value()
-                                ? context.vm.Model().ClassObject(*system.enclosing_class)
-                                : VmObjectRef{});
-    });
-    builder.VirtualMethod("getEnclosingClass", "()Ljava/lang/Class;", [](IntrinsicContext& context) {
-        const auto system = context.vm.Linker().ReflectionSystemMetadata(Represented(context));
-        return VmValue::Ref(system.enclosing_class.has_value() ? context.vm.Model().ClassObject(*system.enclosing_class)
-                                                               : VmObjectRef{});
-    });
-    builder.VirtualMethod("getEnclosingMethod", "()Ljava/lang/reflect/Method;",
-                          [](IntrinsicContext& context) { return VmValue::Ref(EnclosingExecutable(context, false)); });
-    builder.VirtualMethod("getEnclosingConstructor", "()Ljava/lang/reflect/Constructor;",
-                          [](IntrinsicContext& context) { return VmValue::Ref(EnclosingExecutable(context, true)); });
-    builder.VirtualMethod("isAnonymousClass", "()Z", [](IntrinsicContext& context) {
-        const auto system = context.vm.Linker().ReflectionSystemMetadata(Represented(context));
-        return VmValue::Int(system.has_inner_class && !system.inner_name.has_value() ? 1 : 0);
-    });
-    builder.VirtualMethod("isLocalClass", "()Z", [](IntrinsicContext& context) {
-        const auto system = context.vm.Linker().ReflectionSystemMetadata(Represented(context));
-        return VmValue::Int(system.enclosing_method.has_value() && system.inner_name.has_value() ? 1 : 0);
-    });
-    builder.VirtualMethod("isMemberClass", "()Z", [](IntrinsicContext& context) {
-        const auto system = context.vm.Linker().ReflectionSystemMetadata(Represented(context));
-        return VmValue::Int(system.enclosing_class.has_value() && !system.enclosing_method.has_value() ? 1 : 0);
-    });
-    builder.VirtualMethod("getDeclaredClasses", "()[Ljava/lang/Class;", [](IntrinsicContext& context) {
-        const auto system = context.vm.Linker().ReflectionSystemMetadata(Represented(context));
-        return VmValue::Ref(context.vm.Reflection().MaterializeTypeArray(system.member_classes));
-    });
-    builder.VirtualMethod("getClasses", "()[Ljava/lang/Class;", [](IntrinsicContext& c) {
-        std::vector<DexClassId> members;
-        auto type = std::optional{Represented(c)};
-        while (type) {
-            for (const auto member : c.vm.Linker().ReflectionSystemMetadata(*type).member_classes) {
-                if ((c.vm.Linker().Class(member).access_flags & kAccPublic) != 0) members.push_back(member);
-            }
-            type = c.vm.Linker().Class(*type).super;
-        }
-        return VmValue::Ref(c.vm.Reflection().MaterializeTypeArray(members));
-    });
-    builder.VirtualMethod("getClassLoader", "()Ljava/lang/ClassLoader;", [](IntrinsicContext& context) {
-        return VmValue::Ref(context.vm.ClassLoaders().LoaderForClass(Represented(context)));
-    });
-    builder.VirtualMethod("getComponentType", "()Ljava/lang/Class;", [](IntrinsicContext& context) {
-        const auto component = ComponentType(context, Represented(context));
-        return VmValue::Ref(component.has_value() ? context.vm.Model().ClassObject(*component) : VmObjectRef{});
-    });
-    builder.VirtualMethod("getSuperclass", "()Ljava/lang/Class;", [](IntrinsicContext& context) {
-        const auto represented = Represented(context);
-        const auto& linked = context.vm.Linker().Class(represented);
-        if (IsPrimitiveDescriptor(linked.descriptor) || linked.is_interface || !linked.super.has_value()) {
-            return VmValue::Ref(VmObjectRef{});
-        }
-        return VmValue::Ref(context.vm.Model().ClassObject(*linked.super));
-    });
-    builder.VirtualMethod("getInterfaces", "()[Ljava/lang/Class;", [](IntrinsicContext& context) {
-        const auto interfaces = DirectInterfaces(context, Represented(context));
-        return VmValue::Ref(context.vm.Reflection().MaterializeTypeArray(interfaces));
-    });
-    builder.VirtualMethod("getModifiers", "()I", [](IntrinsicContext& context) {
-        return VmValue::Int(static_cast<std::int32_t>(ClassModifiers(context, Represented(context))));
-    });
-    builder.VirtualMethod("isArray", "()Z", [](IntrinsicContext& context) {
-        return VmValue::Int(context.vm.Linker().Class(Represented(context)).is_array ? 1 : 0);
-    });
-    builder.VirtualMethod("isInterface", "()Z", [](IntrinsicContext& context) {
-        return VmValue::Int(context.vm.Linker().Class(Represented(context)).is_interface ? 1 : 0);
-    });
-    builder.VirtualMethod("isPrimitive", "()Z", [](IntrinsicContext& context) {
-        return VmValue::Int(IsPrimitiveDescriptor(context.vm.Linker().Class(Represented(context)).descriptor) ? 1 : 0);
-    });
-    builder.VirtualMethod("isAnnotation", "()Z", [](IntrinsicContext& c) {
-        return VmValue::Int((c.vm.Linker().Class(Represented(c)).access_flags & kAccAnnotation) != 0);
-    });
-    builder.VirtualMethod("isEnum", "()Z", [](IntrinsicContext& context) {
-        return VmValue::Int(IsEnumClass(context, Represented(context)) ? 1 : 0);
-    });
-    builder.VirtualMethod("getEnumConstants", "()[Ljava/lang/Object;", [](IntrinsicContext& context) {
-        const auto represented = Represented(context);
-        if (!IsEnumClass(context, represented)) {
-            return VmValue::Ref(VmObjectRef{});
-        }
-        const auto shared = context.vm.SharedEnumConstants(represented);
-        const auto roots = context.vm.ProtectReferences(std::array{shared});
-        const auto clone = context.vm.Model().CloneObject(shared);
-        static_cast<void>(roots);
-        return VmValue::Ref(clone);
-    });
-    builder.VirtualMethod("isSynthetic", "()Z", [](IntrinsicContext& context) {
-        return VmValue::Int((ClassModifiers(context, Represented(context)) & kAccSynthetic) != 0U ? 1 : 0);
-    });
-    builder.VirtualMethod("isInstance", "(Ljava/lang/Object;)Z", [](IntrinsicContext& context) {
-        const auto object = context.arguments[0].ref;
-        return VmValue::Int(object.IsValid() && context.vm.Linker().IsAssignable(Represented(context),
-                                                                                 context.vm.Model().ObjectClass(object))
-                                ? 1
-                                : 0);
-    });
-    builder.VirtualMethod("isAssignableFrom", "(Ljava/lang/Class;)Z", [](IntrinsicContext& context) {
-        const auto candidate = context.arguments[0].ref;
-        if (!candidate.IsValid()) {
-            throw VmJavaThrow{"Ljava/lang/NullPointerException;", "cls == null"};
-        }
-        return VmValue::Int(
-            context.vm.Linker().IsAssignable(Represented(context), context.vm.Model().ClassOfClassObject(candidate))
-                ? 1
-                : 0);
-    });
-    builder.VirtualMethod("cast", "(Ljava/lang/Object;)Ljava/lang/Object;", [](IntrinsicContext& context) {
-        const auto object = context.arguments[0].ref;
-        if (!object.IsValid()) return VmValue::Ref(VmObjectRef{});
-        const auto desired = Represented(context);
-        const auto actual = context.vm.Model().ObjectClass(object);
-        if (context.vm.Linker().IsAssignable(desired, actual)) {
-            return VmValue::Ref(object);
-        }
-        throw VmJavaThrow{"Ljava/lang/ClassCastException;",
-                          ClassNameCodec::ClassGetName(context.vm.Linker().Class(actual).descriptor) +
-                              " cannot be cast to " +
-                              ClassNameCodec::ClassGetName(context.vm.Linker().Class(desired).descriptor)};
-    });
-    builder.VirtualMethod("asSubclass", "(Ljava/lang/Class;)Ljava/lang/Class;", [](IntrinsicContext& context) {
-        const auto desired_object = context.arguments[0].ref;
-        if (!desired_object.IsValid()) {
-            throw VmJavaThrow{"Ljava/lang/NullPointerException;", "clazz == null"};
-        }
-        const auto represented = Represented(context);
-        const auto desired = context.vm.Model().ClassOfClassObject(desired_object);
-        if (context.vm.Linker().IsAssignable(desired, represented)) {
-            return VmValue::Ref(context.receiver);
-        }
-        throw VmJavaThrow{"Ljava/lang/ClassCastException;",
-                          ClassNameCodec::ClassGetName(context.vm.Linker().Class(represented).descriptor) +
-                              " cannot be cast to " +
-                              ClassNameCodec::ClassGetName(context.vm.Linker().Class(desired).descriptor)};
-    });
-    builder.OverrideMethod("toString", "()Ljava/lang/String;", [](IntrinsicContext& context) {
-        const auto represented = Represented(context);
-        const auto& linked = context.vm.Linker().Class(represented);
-        const auto text = IsPrimitiveDescriptor(linked.descriptor)
-                              ? SimpleName(context, represented)
-                              : std::string(linked.is_interface ? "interface " : "class ") +
-                                    ClassNameCodec::ClassGetName(linked.descriptor);
-        return VmValue::Ref(context.vm.NewStringUtf8(text));
-    });
-    builder.VirtualMethod("newInstance", "()Ljava/lang/Object;", [](IntrinsicContext& context) {
-        return VmValue::Ref(context.vm.Reflection().NewInstance(Represented(context), context.vm.CurrentCallerClass()));
-    });
-
+IntrinsicClassDecl Declare_java_lang_Class_Natives(const CoreIntrinsicServices& services) {
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Class;");
+    builder.MergesBootClass();
     // Dalvik API19 java_lang_Class.cpp / dvmGetDeclaredConstructorOrMethod.
     builder.StaticMethod(
         "getDeclaredConstructorOrMethod",
@@ -468,108 +180,211 @@ IntrinsicClassDecl Declare_java_lang_Class(const CoreIntrinsicServices& services
         },
         kAccStatic | kAccNative);
 
-    builder.VirtualMethod("getDeclaredMethods", "()[Ljava/lang/reflect/Method;", [](IntrinsicContext& context) {
-        return VmValue::Ref(context.vm.Reflection().MaterializeDeclaredMethods(Represented(context)));
-    });
-    builder.VirtualMethod("getMethods", "()[Ljava/lang/reflect/Method;", [](IntrinsicContext& context) {
-        const auto methods = context.vm.Reflection().PublicMethods(Represented(context));
-        return VmValue::Ref(context.vm.Reflection().MaterializeMethods(methods));
-    });
-    builder.VirtualMethod("getDeclaredMethod", "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;",
-                          [](IntrinsicContext& context) {
-                              const auto name = RequireName(context, context.arguments[0].ref);
-                              const auto parameters = ParameterTypes(context, context.arguments[1].ref);
-                              const auto method =
-                                  context.vm.Reflection().FindDeclaredMethod(Represented(context), name, parameters);
-                              if (!method.has_value()) ThrowNoSuchMethod(name);
-                              return VmValue::Ref(context.vm.Reflection().MaterializeMethod(*method));
-                          });
-    builder.VirtualMethod(
-        "getMethod", "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;", [](IntrinsicContext& context) {
-            const auto name = RequireName(context, context.arguments[0].ref);
-            const auto parameters = ParameterTypes(context, context.arguments[1].ref);
-            const auto method = context.vm.Reflection().FindPublicMethod(Represented(context), name, parameters);
-            if (!method.has_value()) ThrowNoSuchMethod(name);
-            return VmValue::Ref(context.vm.Reflection().MaterializeMethod(*method));
-        });
-
-    builder.VirtualMethod("getDeclaredConstructors", "()[Ljava/lang/reflect/Constructor;",
-                          [](IntrinsicContext& context) {
-                              return VmValue::Ref(context.vm.Reflection().MaterializeConstructors(
-                                  context.vm.Reflection().DeclaredConstructors(Represented(context))));
-                          });
-    builder.VirtualMethod("getConstructors", "()[Ljava/lang/reflect/Constructor;", [](IntrinsicContext& context) {
-        std::vector<ReflectConstructorMeta> constructors;
-        for (const auto& constructor : context.vm.Reflection().DeclaredConstructors(Represented(context))) {
-            if ((constructor.access_flags & kAccPublic) != 0U) {
-                constructors.push_back(constructor);
-            }
-        }
-        return VmValue::Ref(context.vm.Reflection().MaterializeConstructors(constructors));
-    });
-    const auto add_constructor_lookup = [&](const std::string& name, const bool public_only) {
-        builder.VirtualMethod(
-            name, "([Ljava/lang/Class;)Ljava/lang/reflect/Constructor;", [public_only](IntrinsicContext& context) {
-                const auto parameters = ParameterTypes(context, context.arguments[0].ref);
-                const auto constructor =
-                    context.vm.Reflection().FindConstructor(Represented(context), parameters, public_only);
-                if (!constructor.has_value()) ThrowNoSuchMethod("<init>");
-                return VmValue::Ref(context.vm.Reflection().MaterializeConstructor(*constructor));
-            });
-    };
-    add_constructor_lookup("getDeclaredConstructor", false);
-    add_constructor_lookup("getConstructor", true);
-
-    builder.VirtualMethod("getDeclaredFields", "()[Ljava/lang/reflect/Field;", [](IntrinsicContext& context) {
-        return VmValue::Ref(
-            context.vm.Reflection().MaterializeFields(context.vm.Reflection().DeclaredFields(Represented(context))));
-    });
-    builder.VirtualMethod("getFields", "()[Ljava/lang/reflect/Field;", [](IntrinsicContext& context) {
-        const auto fields = context.vm.Reflection().PublicFields(Represented(context));
-        return VmValue::Ref(context.vm.Reflection().MaterializeFields(fields));
-    });
-    const auto add_field_lookup = [&](const std::string& method_name, const bool public_only) {
-        builder.VirtualMethod(
-            method_name, "(Ljava/lang/String;)Ljava/lang/reflect/Field;", [public_only](IntrinsicContext& context) {
-                const auto name = RequireName(context, context.arguments[0].ref);
-                const auto field = public_only ? context.vm.Reflection().FindPublicField(Represented(context), name)
-                                               : context.vm.Reflection().FindDeclaredField(Represented(context), name);
-                if (!field.has_value()) ThrowNoSuchField(name);
-                return VmValue::Ref(context.vm.Reflection().MaterializeField(*field));
-            });
-    };
-    add_field_lookup("getDeclaredField", false);
-    add_field_lookup("getField", true);
-
-    builder.VirtualMethod("isAnnotationPresent", "(Ljava/lang/Class;)Z", [](IntrinsicContext& context) {
-        return VmValue::Int(
-            context.vm.Annotations().IsClassAnnotationPresent(Represented(context), context.arguments[0].ref) ? 1 : 0);
-    });
-    builder.VirtualMethod(
-        "getAnnotation", "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;", [](IntrinsicContext& context) {
+    builder.StaticMethod(
+        "classForName", "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;",
+        [](IntrinsicContext& c) {
+            const auto name = RequireName(c, c.arguments[0].ref);
+            const auto loader = c.arguments[2].ref;
+            const auto role = loader.IsValid() ? c.vm.ClassLoaders().RoleOf(loader)
+                                               : std::optional<VmClassLoaderId>(kBootstrapLoader);
+            if (!role) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unknown class loader"};
+            return ForName(c, name, c.arguments[1].AsInt() != 0, *role);
+        },
+        kAccPrivate | kAccStatic | kAccNative);
+    builder.StaticMethod(
+        "getClassLoader", "(Ljava/lang/Class;)Ljava/lang/ClassLoader;",
+        [](IntrinsicContext& c) {
+            const auto type = c.vm.Model().ClassOfClassObject(c.arguments[0].ref);
+            return VmValue::Ref(c.vm.Linker().ClassHeader(type).defining_loader == kBootstrapLoader
+                                    ? VmObjectRef{}
+                                    : c.vm.ClassLoaders().LoaderForClass(type));
+        },
+        kAccPrivate | kAccStatic | kAccNative);
+    builder.DirectMethod(
+        "getDeclaredAnnotation", "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+        [](IntrinsicContext& c) {
+            return VmValue::Ref(c.vm.Annotations().GetClassAnnotation(Represented(c), c.arguments[0].ref, false));
+        },
+        kAccPrivate | kAccNative);
+    builder.StaticMethod(
+        "getDeclaredClasses", "(Ljava/lang/Class;Z)[Ljava/lang/Class;",
+        [](IntrinsicContext& c) {
+            const auto type = c.vm.Model().ClassOfClassObject(c.arguments[0].ref);
+            std::vector<DexClassId> selected;
+            for (const auto member : c.vm.Linker().ReflectionSystemMetadata(type).member_classes)
+                if (!c.arguments[1].AsInt() || (c.vm.Linker().ClassHeader(member).access_flags & kAccPublic) != 0U)
+                    selected.push_back(member);
+            return VmValue::Ref(c.vm.Reflection().MaterializeTypeArray(selected));
+        },
+        kAccPrivate | kAccStatic | kAccNative);
+    builder.StaticMethod(
+        "getDeclaredConstructors", "(Ljava/lang/Class;Z)[Ljava/lang/reflect/Constructor;",
+        [](IntrinsicContext& c) {
+            const auto type = c.vm.Model().ClassOfClassObject(c.arguments[0].ref);
+            std::vector<ReflectConstructorMeta> selected;
+            for (const auto& item : c.vm.Reflection().DeclaredConstructors(type))
+                if (!c.arguments[1].AsInt() || (item.access_flags & kAccPublic) != 0U) selected.push_back(item);
+            return VmValue::Ref(c.vm.Reflection().MaterializeConstructors(selected));
+        },
+        kAccPrivate | kAccStatic | kAccNative);
+    builder.StaticMethod(
+        "getDeclaredField", "(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/reflect/Field;",
+        [](IntrinsicContext& c) {
+            const auto type = c.vm.Model().ClassOfClassObject(c.arguments[0].ref);
+            const auto field = c.vm.Reflection().FindDeclaredField(type, RequireName(c, c.arguments[1].ref));
+            return VmValue::Ref(field ? c.vm.Reflection().MaterializeField(*field) : VmObjectRef{});
+        },
+        kAccStatic | kAccNative);
+    builder.StaticMethod(
+        "getDeclaredFields", "(Ljava/lang/Class;Z)[Ljava/lang/reflect/Field;",
+        [](IntrinsicContext& c) {
+            const auto type = c.vm.Model().ClassOfClassObject(c.arguments[0].ref);
+            std::vector<ReflectFieldMeta> selected;
+            for (const auto& item : c.vm.Reflection().DeclaredFields(type))
+                if (!c.arguments[1].AsInt() || (item.access_flags & kAccPublic) != 0U) selected.push_back(item);
+            return VmValue::Ref(c.vm.Reflection().MaterializeFields(selected));
+        },
+        kAccStatic | kAccNative);
+    builder.StaticMethod(
+        "getDeclaredMethods", "(Ljava/lang/Class;Z)[Ljava/lang/reflect/Method;",
+        [](IntrinsicContext& c) {
+            const auto type = c.vm.Model().ClassOfClassObject(c.arguments[0].ref);
+            std::vector<ReflectMethodMeta> selected;
+            for (const auto& item : c.vm.Reflection().DeclaredMethods(type))
+                if (!c.arguments[1].AsInt() || (item.access_flags & kAccPublic) != 0U) selected.push_back(item);
+            return VmValue::Ref(c.vm.Reflection().MaterializeMethods(selected));
+        },
+        kAccStatic | kAccNative);
+    builder.DirectMethod(
+        "getInnerClassName", "()Ljava/lang/String;",
+        [](IntrinsicContext& c) {
+            const auto system = c.vm.Linker().ReflectionSystemMetadata(Represented(c));
+            return VmValue::Ref(system.has_inner_class && system.inner_name ? c.vm.NewStringUtf8(*system.inner_name)
+                                                                            : VmObjectRef{});
+        },
+        kAccPrivate | kAccNative);
+    builder.StaticMethod(
+        "getModifiers", "(Ljava/lang/Class;Z)I",
+        [](IntrinsicContext& c) {
+            const auto type = c.vm.Model().ClassOfClassObject(c.arguments[0].ref);
+            return VmValue::Int(static_cast<std::int32_t>(ClassModifiers(c, type, c.arguments[1].AsInt() != 0)));
+        },
+        kAccPrivate | kAccStatic | kAccNative);
+    builder.DirectMethod(
+        "getNameNative", "()Ljava/lang/String;",
+        [](IntrinsicContext& c) {
             return VmValue::Ref(
-                context.vm.Annotations().GetClassAnnotation(Represented(context), context.arguments[0].ref, true));
-        });
-    builder.VirtualMethod("getAnnotations", "()[Ljava/lang/annotation/Annotation;", [](IntrinsicContext& context) {
-        return VmValue::Ref(context.vm.Annotations().GetClassAnnotations(Represented(context), true));
-    });
+                c.vm.NewStringUtf8(ClassNameCodec::ClassGetName(c.vm.Linker().ClassHeader(Represented(c)).descriptor)));
+        },
+        kAccPrivate | kAccNative);
+    builder.DirectMethod(
+        "isDeclaredAnnotationPresent", "(Ljava/lang/Class;)Z",
+        [](IntrinsicContext& c) {
+            return VmValue::Int(
+                c.vm.Annotations().IsDeclaredClassAnnotationPresent(Represented(c), c.arguments[0].ref));
+        },
+        kAccPrivate | kAccNative);
+    builder.DirectMethod(
+        "newInstanceImpl", "()Ljava/lang/Object;",
+        [](IntrinsicContext& c) {
+            // Dalvik dvmGetCaller2Class: native has no Java frame here; skip Class.newInstance.
+            const auto caller = c.vm.CallingStackClasses(1, 1);
+            return VmValue::Ref(c.vm.Reflection().NewInstance(
+                Represented(c), caller.empty() ? std::nullopt : std::optional<DexClassId>(caller.front())));
+        },
+        kAccPrivate | kAccNative);
     builder.VirtualMethod(
-        "getDeclaredAnnotations", "()[Ljava/lang/annotation/Annotation;", [](IntrinsicContext& context) {
-            return VmValue::Ref(context.vm.Annotations().GetClassAnnotations(Represented(context), false));
-        });
-
-    builder.VirtualMethod("getGenericSuperclass", "()Ljava/lang/reflect/Type;", [](IntrinsicContext& c) {
-        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getGenericSuperclass"));
-    });
-    builder.VirtualMethod("getGenericInterfaces", "()[Ljava/lang/reflect/Type;", [](IntrinsicContext& c) {
-        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getGenericInterfaces"));
-    });
-    builder.VirtualMethod("getTypeParameters", "()[Ljava/lang/reflect/TypeVariable;", [](IntrinsicContext& c) {
-        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getTypeParameters"));
-    });
+        "desiredAssertionStatus", "()Z",
+        [](IntrinsicContext& c) { return VmValue::Int(c.vm.Config().enable_assertions); }, kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "getComponentType", "()Ljava/lang/Class;",
+        [](IntrinsicContext& c) {
+            const auto type = ComponentType(c, Represented(c));
+            return VmValue::Ref(type ? c.vm.Model().ClassObject(*type) : VmObjectRef{});
+        },
+        kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "getDeclaredAnnotations", "()[Ljava/lang/annotation/Annotation;",
+        [](IntrinsicContext& c) { return VmValue::Ref(c.vm.Annotations().GetClassAnnotations(Represented(c), false)); },
+        kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "getDeclaringClass", "()Ljava/lang/Class;",
+        [](IntrinsicContext& c) {
+            const auto system = c.vm.Linker().ReflectionSystemMetadata(Represented(c));
+            return VmValue::Ref(system.enclosing_class && !system.enclosing_method
+                                    ? c.vm.Model().ClassObject(*system.enclosing_class)
+                                    : VmObjectRef{});
+        },
+        kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "getDex", "()Lcom/android/dex/Dex;",
+        [services](IntrinsicContext& c) {
+            return VmValue::Ref(c.vm.Reflection().DexObject(Represented(c), services.create_dex_buffer));
+        },
+        kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "getEnclosingClass", "()Ljava/lang/Class;",
+        [](IntrinsicContext& c) {
+            const auto system = c.vm.Linker().ReflectionSystemMetadata(Represented(c));
+            return VmValue::Ref(system.enclosing_class ? c.vm.Model().ClassObject(*system.enclosing_class)
+                                                       : VmObjectRef{});
+        },
+        kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "getEnclosingConstructor", "()Ljava/lang/reflect/Constructor;",
+        [](IntrinsicContext& c) { return VmValue::Ref(EnclosingExecutable(c, true)); }, kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "getEnclosingMethod", "()Ljava/lang/reflect/Method;",
+        [](IntrinsicContext& c) { return VmValue::Ref(EnclosingExecutable(c, false)); }, kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "getInterfaces", "()[Ljava/lang/Class;",
+        [](IntrinsicContext& c) {
+            return VmValue::Ref(c.vm.Reflection().MaterializeTypeArray(DirectInterfaces(c, Represented(c))));
+        },
+        kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "getSuperclass", "()Ljava/lang/Class;",
+        [](IntrinsicContext& c) {
+            const auto& type = c.vm.Linker().Class(Represented(c));
+            return VmValue::Ref(!IsPrimitiveDescriptor(type.descriptor) && !type.is_interface && type.super
+                                    ? c.vm.Model().ClassObject(*type.super)
+                                    : VmObjectRef{});
+        },
+        kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "isAnonymousClass", "()Z",
+        [](IntrinsicContext& c) {
+            const auto system = c.vm.Linker().ReflectionSystemMetadata(Represented(c));
+            return VmValue::Int(system.has_inner_class && !system.inner_name);
+        },
+        kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "isAssignableFrom", "(Ljava/lang/Class;)Z",
+        [](IntrinsicContext& c) {
+            const auto type = IntrinsicCall(c).NonNullRef(0, "cls");
+            return VmValue::Int(c.vm.Linker().IsAssignable(Represented(c), c.vm.Model().ClassOfClassObject(type)));
+        },
+        kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "isInstance", "(Ljava/lang/Object;)Z",
+        [](IntrinsicContext& c) {
+            const auto object = c.arguments[0].ref;
+            return VmValue::Int(object.IsValid() &&
+                                c.vm.Linker().IsAssignable(Represented(c), c.vm.Model().ObjectClass(object)));
+        },
+        kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "isInterface", "()Z",
+        [](IntrinsicContext& c) { return VmValue::Int(c.vm.Linker().ClassHeader(Represented(c)).is_interface); },
+        kAccPublic | kAccNative);
+    builder.VirtualMethod(
+        "isPrimitive", "()Z",
+        [](IntrinsicContext& c) {
+            return VmValue::Int(IsPrimitiveDescriptor(c.vm.Linker().ClassHeader(Represented(c)).descriptor));
+        },
+        kAccPublic | kAccNative);
     return std::move(builder).Build();
 }
-
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_Type.cpp ----
@@ -581,30 +396,7 @@ IntrinsicClassDecl Declare_java_lang_Class(const CoreIntrinsicServices& services
 
 namespace ogplay::runtime::dexvm::intrinsics {
 
-IntrinsicClassDecl Declare_libcore_reflect_AnnotationAccess() {
-    auto b = IntrinsicClassBuilder::Class("Llibcore/reflect/AnnotationAccess;");
-    b.StaticMethod("getEnclosingMethodOrConstructor", "(Ljava/lang/Class;)Ljava/lang/reflect/AccessibleObject;",
-                   [](IntrinsicContext& c) {
-                       const auto type = c.vm.Model().ClassOfClassObject(c.arguments[0].ref);
-                       const auto metadata = c.vm.Linker().ReflectionSystemMetadata(type);
-                       if (!metadata.enclosing_method) return VmValue::Ref(VmObjectRef{});
-                       const auto method = *metadata.enclosing_method;
-                       const auto& linked = c.vm.Linker().Method(method);
-                       if (linked.name == "<init>") {
-                           for (const auto& candidate : c.vm.Reflection().DeclaredConstructors(linked.owner))
-                               if (candidate.method == method)
-                                   return VmValue::Ref(c.vm.Reflection().MaterializeConstructor(candidate));
-                       } else {
-                           const auto candidate = c.vm.Reflection().FindDeclaredMethodByDescriptor(
-                               linked.owner, linked.name, linked.descriptor);
-                           if (candidate) return VmValue::Ref(c.vm.Reflection().MaterializeMethod(*candidate));
-                       }
-                       throw DexVmError(DexVmErrorReason::unresolved_reference, "enclosing generic declaration");
-                   });
-    return std::move(b).Build();
-}
-
-IntrinsicClassDecl Declare_java_lang_reflect_Proxy() {
+IntrinsicClassDecl Declare_java_lang_reflect_Proxy_Natives() {
     auto b = IntrinsicClassBuilder::Class("Ljava/lang/reflect/Proxy;");
     b.MergesBootClass();
     b.StaticMethod(
@@ -651,7 +443,7 @@ VmObjectRef NewReflectionArray(IntrinsicContext& c, const std::vector<std::int32
 }
 }  // namespace
 
-IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject() {
+IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject_Natives() {
     auto b = IntrinsicClassBuilder::Class("Ljava/lang/reflect/AccessibleObject;");
     b.MergesBootClass();
     b.StaticMethod(
@@ -663,7 +455,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl Declare_java_lang_reflect_Array() {
+IntrinsicClassDecl Declare_java_lang_reflect_Array_Natives() {
     auto b = IntrinsicClassBuilder::Class("Ljava/lang/reflect/Array;");
     b.MergesBootClass();
     b.StaticMethod(
@@ -683,7 +475,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_Array() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
+IntrinsicClassDecl Declare_java_lang_reflect_Constructor_Natives() {
     auto b = IntrinsicClassBuilder::Class("Ljava/lang/reflect/Constructor;");
     b.MergesBootClass();
     b.DirectMethod(
@@ -698,9 +490,41 @@ IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl Declare_java_lang_reflect_Field() {
+IntrinsicClassDecl Declare_java_lang_reflect_Field_Natives() {
     auto b = IntrinsicClassBuilder::Class("Ljava/lang/reflect/Field;");
     b.MergesBootClass();
+    for (const char type : std::string_view("ZBCSIJFD")) {
+        const std::string suffix(1, type);
+        const std::string prefix = "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZC";
+        b.DirectMethod(
+            "get" + suffix + "Field", prefix + ")" + suffix,
+            [](IntrinsicContext& c) {
+                const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
+                                                                   static_cast<std::uint32_t>(c.arguments[3].AsInt()));
+                const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
+                const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
+                if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
+                    throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
+                return c.vm.Reflection().GetField(meta, c.arguments[0].ref, primitive, ReflectionCaller(c.vm),
+                                                  c.arguments[4].AsInt() != 0);
+            },
+            kAccPrivate | kAccNative);
+        b.DirectMethod(
+            "set" + suffix + "Field", prefix + suffix + ")V",
+            [](IntrinsicContext& c) {
+                const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
+                                                                   static_cast<std::uint32_t>(c.arguments[3].AsInt()));
+                const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
+                const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
+                if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
+                    throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
+                c.vm.Reflection().SetField(meta, c.arguments[0].ref, c.arguments[6], primitive, ReflectionCaller(c.vm),
+                                           c.arguments[4].AsInt() != 0);
+                return VmValue::Void();
+            },
+            kAccPrivate | kAccNative);
+    }
+
     b.StaticMethod(
         "getAnnotation", "(Ljava/lang/Class;ILjava/lang/Class;)Ljava/lang/annotation/Annotation;",
         [](IntrinsicContext& c) {
@@ -709,64 +533,12 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
             return VmValue::Ref(c.vm.Annotations().GetFieldAnnotation(meta.field, c.arguments[2].ref));
         },
         kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "getBField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZC)B",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            return c.vm.Reflection().GetField(meta, c.arguments[0].ref, std::optional<DexClassId>(primitive),
-                                              ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "getCField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZC)C",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            return c.vm.Reflection().GetField(meta, c.arguments[0].ref, std::optional<DexClassId>(primitive),
-                                              ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "getDField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZC)D",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            return c.vm.Reflection().GetField(meta, c.arguments[0].ref, std::optional<DexClassId>(primitive),
-                                              ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-        },
-        kAccPrivate | kAccNative);
     b.StaticMethod(
         "getDeclaredAnnotations", "(Ljava/lang/Class;I)[Ljava/lang/annotation/Annotation;",
         [](IntrinsicContext& c) {
             const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 0),
                                                                static_cast<std::uint32_t>(c.arguments[1].AsInt()));
             return VmValue::Ref(c.vm.Annotations().GetFieldAnnotations(meta.field));
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "getFField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZC)F",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            return c.vm.Reflection().GetField(meta, c.arguments[0].ref, std::optional<DexClassId>(primitive),
-                                              ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
         },
         kAccPrivate | kAccNative);
     b.DirectMethod(
@@ -787,63 +559,11 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
         },
         kAccPrivate | kAccNative);
     b.DirectMethod(
-        "getIField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZC)I",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            return c.vm.Reflection().GetField(meta, c.arguments[0].ref, std::optional<DexClassId>(primitive),
-                                              ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "getJField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZC)J",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            return c.vm.Reflection().GetField(meta, c.arguments[0].ref, std::optional<DexClassId>(primitive),
-                                              ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "getSField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZC)S",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            return c.vm.Reflection().GetField(meta, c.arguments[0].ref, std::optional<DexClassId>(primitive),
-                                              ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
         "getSignatureAnnotation", "(Ljava/lang/Class;I)[Ljava/lang/Object;",
         [](IntrinsicContext& c) {
             const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 0),
                                                                static_cast<std::uint32_t>(c.arguments[1].AsInt()));
             return SignatureFragments(c.vm, c.vm.Linker().Field(meta.field).generic_signature);
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "getZField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZC)Z",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            return c.vm.Reflection().GetField(meta, c.arguments[0].ref, std::optional<DexClassId>(primitive),
-                                              ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
         },
         kAccPrivate | kAccNative);
     b.StaticMethod(
@@ -852,62 +572,6 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
             const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 0),
                                                                static_cast<std::uint32_t>(c.arguments[1].AsInt()));
             return VmValue::Int(c.vm.Annotations().IsFieldAnnotationPresent(meta.field, c.arguments[2].ref));
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "setBField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZCB)V",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            c.vm.Reflection().SetField(meta, c.arguments[0].ref, c.arguments[6], std::optional<DexClassId>(primitive),
-                                       ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-            return VmValue::Void();
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "setCField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZCC)V",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            c.vm.Reflection().SetField(meta, c.arguments[0].ref, c.arguments[6], std::optional<DexClassId>(primitive),
-                                       ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-            return VmValue::Void();
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "setDField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZCD)V",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            c.vm.Reflection().SetField(meta, c.arguments[0].ref, c.arguments[6], std::optional<DexClassId>(primitive),
-                                       ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-            return VmValue::Void();
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "setFField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZCF)V",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            c.vm.Reflection().SetField(meta, c.arguments[0].ref, c.arguments[6], std::optional<DexClassId>(primitive),
-                                       ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-            return VmValue::Void();
         },
         kAccPrivate | kAccNative);
     b.DirectMethod(
@@ -920,66 +584,10 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
             return VmValue::Void();
         },
         kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "setIField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZCI)V",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            c.vm.Reflection().SetField(meta, c.arguments[0].ref, c.arguments[6], std::optional<DexClassId>(primitive),
-                                       ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-            return VmValue::Void();
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "setJField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZCJ)V",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            c.vm.Reflection().SetField(meta, c.arguments[0].ref, c.arguments[6], std::optional<DexClassId>(primitive),
-                                       ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-            return VmValue::Void();
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "setSField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZCS)V",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            c.vm.Reflection().SetField(meta, c.arguments[0].ref, c.arguments[6], std::optional<DexClassId>(primitive),
-                                       ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-            return VmValue::Void();
-        },
-        kAccPrivate | kAccNative);
-    b.DirectMethod(
-        "setZField", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;IZCZ)V",
-        [](IntrinsicContext& c) {
-            const auto& meta = c.vm.Reflection().FieldMetadata(ReflectionClass(c, 1),
-                                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()));
-            const std::string descriptor(1, static_cast<char>(c.arguments[5].AsInt()));
-            const auto primitive = c.vm.Linker().ResolveDescriptor(descriptor);
-            if (c.vm.Linker().Class(meta.type).descriptor.size() != 1U)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "not a primitive field"};
-            c.vm.Reflection().SetField(meta, c.arguments[0].ref, c.arguments[6], std::optional<DexClassId>(primitive),
-                                       ReflectionCaller(c.vm), c.arguments[4].AsInt() != 0);
-            return VmValue::Void();
-        },
-        kAccPrivate | kAccNative);
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl Declare_java_lang_reflect_Method() {
+IntrinsicClassDecl Declare_java_lang_reflect_Method_Natives() {
     auto b = IntrinsicClassBuilder::Class("Ljava/lang/reflect/Method;");
     b.MergesBootClass();
     b.StaticMethod(

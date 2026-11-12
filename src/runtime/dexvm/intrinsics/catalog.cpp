@@ -8,43 +8,40 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(CoreIntrinsicServices servi
     if (services.cpu_cores < 1 || services.cpu_cores > 32)
         throw std::invalid_argument("guest CPU requires 1..32 cores");
     std::vector<IntrinsicClassDecl> catalog{
-        Declare_java_lang_Object(),
-        Declare_java_lang_ClassLoader(services),
-        Declare_java_lang_reflect_Proxy(),
-        Declare_libcore_reflect_AnnotationAccess(),
-        Declare_dalvik_system_VMStack(),
-        Declare_java_lang_BootClassLoader(),
-        Declare_dalvik_system_BaseDexClassLoader(),
-        Declare_dalvik_system_PathClassLoader(),
-        Declare_java_lang_Thread(),
-        Declare_java_lang_ThreadGroup(),
-        Declare_java_lang_String(),
-        Declare_java_lang_RealToString(),
-        Declare_java_lang_StringToReal(),
-        Declare_java_lang_System(services),
-        Declare_org_ogplay_io_LogOutputStream(),
-        Declare_java_lang_Math(),
-        Declare_java_lang_Runtime(services),
-        Declare_libcore_io_IoUtils(),
-        Declare_java_lang_Class(services),
-        Declare_java_lang_reflect_AccessibleObject(),
-        Declare_java_lang_reflect_Method(),
-        Declare_java_lang_reflect_Constructor(),
-        Declare_java_lang_reflect_Field(),
-        Declare_java_lang_reflect_Array(),
+        Declare_java_lang_Object_Class(),
+        Declare_java_lang_VMClassLoader_Natives(services),
+        Declare_java_lang_reflect_Proxy_Natives(),
+        Declare_dalvik_system_VMStack_Natives(),
+        Declare_dalvik_system_BaseDexClassLoader_Shell(),
+        Declare_dalvik_system_PathClassLoader_Shell(),
+        Declare_java_lang_Thread_Class(),
+        Declare_java_lang_ThreadGroup_Class(),
+        Declare_java_lang_String_Class(),
+        Declare_java_lang_RealToString_Natives(),
+        Declare_java_lang_StringToReal_Natives(),
+        Declare_java_lang_System_Class(services),
+        Declare_org_ogplay_io_LogOutputStream_Natives(),
+        Declare_java_lang_Math_Natives(),
+        Declare_java_lang_Runtime_Overrides(services),
+        Declare_libcore_io_IoUtils_Overrides(),
+        Declare_java_lang_Class_Natives(services),
+        Declare_java_lang_reflect_AccessibleObject_Natives(),
+        Declare_java_lang_reflect_Method_Natives(),
+        Declare_java_lang_reflect_Constructor_Natives(),
+        Declare_java_lang_reflect_Field_Natives(),
+        Declare_java_lang_reflect_Array_Natives(),
     };
 
-    AppendJavaLangInterfaces(catalog);
-    AppendJavaLangPrimitiveWrappers(catalog);
+    AppendDalvikVmRuntimeNatives(catalog);
+    AppendJavaLangWrapperNatives(catalog);
     AppendJavaIoStreams(catalog);
     AppendJavaIoFiles(catalog);
     AppendJavaUtilZip(catalog);
 
-    AppendJavaLangThrowables(catalog);
+    AppendJavaLangThrowableNatives(catalog);
 
     AppendJavaNetPlatform(catalog, services);
     AppendJavaNio(catalog);
-    AppendJavaUtilPlatform(catalog, services);
     AppendJavaIcu(catalog, services);
     AppendJavaCrypto(catalog, services);
     AppendJavaRegex(catalog);

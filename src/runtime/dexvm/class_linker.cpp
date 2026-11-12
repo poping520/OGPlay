@@ -479,6 +479,7 @@ void DexClassLinker::Impl::LoadDexMembers(const DexClassId id, const bool merge_
         for (const auto& encoded : *field_list) {
             const auto& field_id_entry = image_ref.fields[encoded.field_index];
             LinkedField field;
+            field.dex_field_index = encoded.field_index;
             field.owner = id;
             field.name = Ascii(image_ref.strings[field_id_entry.name_string_index]);
             field.descriptor = image_ref.types[field_id_entry.type_index].descriptor;

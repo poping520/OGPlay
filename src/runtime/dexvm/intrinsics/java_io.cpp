@@ -20,8 +20,8 @@ using namespace detail;
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
-IntrinsicClassDecl Declare_java_io_FileNotFoundException() {
-    return DeclareSimpleThrowable("Ljava/io/FileNotFoundException;", "Ljava/io/IOException;");
+IntrinsicClassDecl Declare_java_io_FileNotFoundException_Class() {
+    return DeclareSimpleThrowableClass("Ljava/io/FileNotFoundException;", "Ljava/io/IOException;");
 }
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
@@ -103,7 +103,7 @@ using namespace detail;
 #include "shared.h"
 
 namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_org_ogplay_io_LogOutputStream() {
+IntrinsicClassDecl Declare_org_ogplay_io_LogOutputStream_Natives() {
     auto builder = IntrinsicClassBuilder::Class("Lorg/ogplay/io/LogOutputStream;");
     builder.MergesBootClass();
     builder.StaticMethod(
@@ -174,7 +174,7 @@ private:
     std::uint64_t token_;
 };
 
-IntrinsicClassDecl DeclareInputStreamReader() {
+IntrinsicClassDecl Declare_java_io_InputStreamReader_Class() {
     auto b = IntrinsicClassBuilder::Class("Ljava/io/InputStreamReader;", "Ljava/io/Reader;");
     const auto source = b.BoundInstanceField("source", "Ljava/io/InputStream;", kAccPrivate);
     const auto encoding = b.BoundInstanceField("encoding", "Ljava/lang/String;", kAccPrivate);
@@ -286,7 +286,7 @@ IntrinsicClassDecl DeclareInputStreamReader() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl DeclareOutputStreamWriter() {
+IntrinsicClassDecl Declare_java_io_OutputStreamWriter_Class() {
     auto b = IntrinsicClassBuilder::Class("Ljava/io/OutputStreamWriter;", "Ljava/io/Writer;");
     const auto target = b.BoundInstanceField("target", "Ljava/io/OutputStream;", kAccPrivate);
     const auto encoding = b.BoundInstanceField("encoding", "Ljava/lang/String;", kAccPrivate);
@@ -373,7 +373,7 @@ IntrinsicClassDecl DeclareOutputStreamWriter() {
 
 }  // namespace
 
-IntrinsicClassDecl Declare_java_io_ObjectStreamClass() {
+IntrinsicClassDecl Declare_java_io_ObjectStreamClass_Natives() {
     auto b = IntrinsicClassBuilder::Class("Ljava/io/ObjectStreamClass;");
     b.MergesBootClass();
     b.StaticMethod(
@@ -417,7 +417,7 @@ IntrinsicClassDecl Declare_java_io_ObjectStreamClass() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl Declare_java_io_ObjectOutputStream() {
+IntrinsicClassDecl Declare_java_io_ObjectOutputStream_Natives() {
     auto b = IntrinsicClassBuilder::Class("Ljava/io/ObjectOutputStream;");
     b.MergesBootClass();
     b.UnimplementedStatic("getFieldL",
@@ -427,10 +427,10 @@ IntrinsicClassDecl Declare_java_io_ObjectOutputStream() {
 }
 
 void AppendJavaIoStreams(std::vector<IntrinsicClassDecl>& catalog) {
-    catalog.push_back(DeclareInputStreamReader());
-    catalog.push_back(DeclareOutputStreamWriter());
-    catalog.push_back(Declare_java_io_ObjectOutputStream());
-    catalog.push_back(Declare_java_io_ObjectStreamClass());
+    catalog.push_back(Declare_java_io_InputStreamReader_Class());
+    catalog.push_back(Declare_java_io_OutputStreamWriter_Class());
+    catalog.push_back(Declare_java_io_ObjectOutputStream_Natives());
+    catalog.push_back(Declare_java_io_ObjectStreamClass_Natives());
 }
 }  // namespace ogplay::runtime::dexvm::intrinsics
 

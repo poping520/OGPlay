@@ -31,31 +31,28 @@ std::vector<std::uint8_t> ReadFixture(const std::string& name) {
 }
 
 struct ReflectionVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
-    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
-    JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model{strings, arrays};
-    DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
-    Interpreter interpreter;
+    ogplay::core::Logger logger;
+    std::shared_ptr<DexVmAndroidContext> context{std::make_shared<DexVmAndroidContext>()};
+    std::unique_ptr<ogplay::test::container_traversal::AndroidTestRuntime> runtime;
+    JavaObjectModel& model;
+    DexClassLinker& linker;
+    Interpreter& interpreter;
 
     explicit ReflectionVm(const std::string& fixture = "interp.dex",
                           const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
                           const bool platform = false)
-        : interpreter(
-              [this, &fixture, platform]() -> DexClassLinker& {
-                  const auto catalog = CoreIntrinsicCatalog();
-                  linker.RegisterIntrinsics(catalog);
-                  if (platform)
-                      linker.RegisterIntrinsics(ogplay::runtime::AndroidIntrinsicCatalog(
-                          std::make_shared<ogplay::runtime::DexVmAndroidContext>()));
-                  ogplay::test::RegisterBootDex(linker);
-                  linker.RegisterDex(ReadFixture(fixture));
-                  linker.Link();
-                  return linker;
-              }(),
-              model, nullptr, ledger, InterpreterConfig{.backend = backend}) {}
+        : runtime([&] {
+              static_cast<void>(platform);
+              ogplay::test::BindBootDexArchive(*context);
+              context->package_name = "fixture";
+              // ROM AnnotationAccess reads the DEX through the same read-only
+              // guest direct-memory provider as production, rather than a host array.
+              return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
+                  context, ledger, logger, AndroidIntrinsicCatalog(context), ReadFixture(fixture),
+                  InterpreterConfig{.backend = backend});
+          }()),
+          model(runtime->bridge->Model()), linker(runtime->bridge->Linker()), interpreter(runtime->bridge->Vm()) {}
 
     [[nodiscard]] VmCallOutcome Virtual(const VmObjectRef receiver, const std::string_view name,
                                         const std::string_view descriptor, std::vector<VmValue> arguments = {}) {
@@ -98,6 +95,7 @@ struct ReflectionVm final {
 };
 
 VmObjectRef Ref(const VmCallOutcome& outcome) {
+    INFO(outcome.exception_message);
     REQUIRE_FALSE(outcome.exception.IsValid());
     REQUIRE(outcome.value.kind == VmValue::Kind::ref);
     return outcome.value.ref;
@@ -452,9 +450,9 @@ TEST_CASE("Class member queries separate declared and deterministic public aggre
                                    "finalField", "floatField", "hiddenDerived", "longField", "refField", "shortField",
                                    "volatileField"});
     CHECK(MemberNames(vm, Ref(query("getFields", "()[Ljava/lang/reflect/Field;"))) ==
-          std::vector<std::string>{"booleanField", "byteField", "charField", "derivedField", "doubleField",
-                                   "finalField", "floatField", "longField", "refField", "shortField", "volatileField",
-                                   "baseField", "contractField"});
+          std::vector<std::string>{"baseField", "booleanField", "byteField", "charField", "contractField",
+                                   "derivedField", "doubleField", "finalField", "floatField", "longField", "refField",
+                                   "shortField", "volatileField"});
 
     const auto hidden_method =
         Ref(query("getDeclaredMethod", "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;",
@@ -1242,7 +1240,8 @@ TEST_CASE("DVM-182 Class getEnumConstants clones shared enum identity") {
         const auto class_object = vm.model.ClassObject(enum_class);
         const auto first = Ref(vm.Virtual(class_object, "getEnumConstants", "()[Ljava/lang/Object;"));
         const auto second = Ref(vm.Virtual(class_object, "getEnumConstants", "()[Ljava/lang/Object;"));
-        const auto shared = vm.interpreter.SharedEnumConstants(enum_class);
+        const auto shared = Ref(vm.Static("Ljava/lang/Enum;", "getSharedConstants",
+                                          "(Ljava/lang/Class;)[Ljava/lang/Enum;", {VmValue::Ref(class_object)}));
         REQUIRE(first.IsValid());
         REQUIRE(second.IsValid());
         CHECK(vm.linker.Class(vm.model.ObjectClass(first)).descriptor == "[LP1Enum;");

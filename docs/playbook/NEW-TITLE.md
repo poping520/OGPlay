@@ -102,7 +102,8 @@ survey 模式下层级、常量、声明与正常运行一致：被调用的未�
 
 热点优先。每批遵守既有约定：
 - ROM 普通 Java 继续原样执行；只在对应 core/Android family TU 绑定 native 或进程内服务，
-  `Declare_*` 与实现同址，catalog 显式聚合；禁止整类替换、非 native 覆盖和游戏分支。
+  `Declare_*_Natives`（native）或 `Declare_local_*_Class`（进程内服务）与实现同址，catalog 显式聚合；
+  禁止整类替换、非 native 覆盖和游戏分支。
 - 能诚实回答的才回答（真实状态、真实资源、真实文件）；无法诚实回答的返回值保持
   记账 + 明确失败，不要静默返回零。无返回值的纯显示设置在 C++ 声明中调用
   `RecordUiDegraded`，忽略并记录警告，规则见 ADR-0147 修订。

@@ -9,7 +9,7 @@
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
-void AppendJavaLangInterfaces(std::vector<IntrinsicClassDecl>& catalog) {
+void AppendDalvikVmRuntimeNatives(std::vector<IntrinsicClassDecl>& catalog) {
     {
         auto b = IntrinsicClassBuilder::Class("Ldalvik/system/VMRuntime;");
         b.MergesBootClass();
@@ -105,7 +105,7 @@ void AppendJavaLangInterfaces(std::vector<IntrinsicClassDecl>& catalog) {
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
-IntrinsicClassDecl Declare_java_lang_Runtime(const CoreIntrinsicServices& services) {
+IntrinsicClassDecl Declare_java_lang_Runtime_Overrides(const CoreIntrinsicServices& services) {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Runtime;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     // Runtime state and shutdown-hook protocol belong to pinned API 19 DEX.
@@ -163,7 +163,7 @@ IntrinsicClassDecl Declare_java_lang_Runtime(const CoreIntrinsicServices& servic
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl Declare_libcore_io_IoUtils() {
+IntrinsicClassDecl Declare_libcore_io_IoUtils_Overrides() {
     auto builder = IntrinsicClassBuilder::Class("Llibcore/io/IoUtils;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     builder.StaticMethod("closeQuietly", "(Ljava/lang/AutoCloseable;)V", [](IntrinsicContext& context) {
@@ -175,7 +175,7 @@ IntrinsicClassDecl Declare_libcore_io_IoUtils() {
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl Declare_java_lang_Math() {
+IntrinsicClassDecl Declare_java_lang_Math_Natives() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Math;");
     builder.MergesBootClass();
     // API 19 java_lang_Math.cpp delegates these native primitives to libm.
@@ -249,7 +249,7 @@ namespace {
 
 }  // namespace
 
-IntrinsicClassDecl Declare_java_lang_Object() {
+IntrinsicClassDecl Declare_java_lang_Object_Class() {
     auto builder = IntrinsicClassBuilder::RootClass("Ljava/lang/Object;");
 
     builder.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
@@ -410,8 +410,8 @@ namespace {
 }
 
 template <typename Float, typename Bits>
-IntrinsicClassDecl DeclareFloatingNatives(const char* descriptor, const char* primitive, const char* bits_to_name,
-                                          const char* raw_bits_name, const char* from_bits_name) {
+IntrinsicClassDecl DeclareFloatingPointNatives(const char* descriptor, const char* primitive, const char* bits_to_name,
+                                               const char* raw_bits_name, const char* from_bits_name) {
     auto builder = IntrinsicClassBuilder::Class(descriptor);
     builder.MergesBootClass();
     constexpr bool wide = sizeof(Float) == 8;
@@ -460,17 +460,17 @@ IntrinsicClassDecl DeclareFloatingNatives(const char* descriptor, const char* pr
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl Declare_java_lang_Float() {
-    return DeclareFloatingNatives<float, std::uint32_t>("Ljava/lang/Float;", "F", "floatToIntBits", "floatToRawIntBits",
-                                                        "intBitsToFloat");
+IntrinsicClassDecl Declare_java_lang_Float_Natives() {
+    return DeclareFloatingPointNatives<float, std::uint32_t>("Ljava/lang/Float;", "F", "floatToIntBits",
+                                                             "floatToRawIntBits", "intBitsToFloat");
 }
 
-IntrinsicClassDecl Declare_java_lang_Double() {
-    return DeclareFloatingNatives<double, std::uint64_t>("Ljava/lang/Double;", "D", "doubleToLongBits",
-                                                         "doubleToRawLongBits", "longBitsToDouble");
+IntrinsicClassDecl Declare_java_lang_Double_Natives() {
+    return DeclareFloatingPointNatives<double, std::uint64_t>("Ljava/lang/Double;", "D", "doubleToLongBits",
+                                                              "doubleToRawLongBits", "longBitsToDouble");
 }
 
-IntrinsicClassDecl Declare_java_lang_Character() {
+IntrinsicClassDecl Declare_java_lang_Character_Natives() {
     auto b = IntrinsicClassBuilder::Class("Ljava/lang/Character;");
     b.AdmitBootNativeMethods();
     return std::move(b).Build();
@@ -554,7 +554,7 @@ VmValue NativeBnArithmetic(IntrinsicContext& c, const char* method, bool divisio
 }
 }  // namespace
 
-IntrinsicClassDecl Declare_java_math_NativeBN() {
+IntrinsicClassDecl Declare_java_math_NativeBN_Natives() {
     auto b = IntrinsicClassBuilder::Class("Ljava/math/NativeBN;");
     b.MergesBootClass();
     b.StaticMethod(
@@ -739,14 +739,14 @@ IntrinsicClassDecl Declare_java_math_NativeBN() {
     return std::move(b).Build();
 }
 
-void AppendJavaLangPrimitiveWrappers(std::vector<IntrinsicClassDecl>& catalog) {
+void AppendJavaLangWrapperNatives(std::vector<IntrinsicClassDecl>& catalog) {
     auto arithmetic = IntrinsicClassBuilder::Class("Lorg/ogplay/math/NativeBigInteger;");
     arithmetic.AdmitBootNativeMethods();
     catalog.push_back(std::move(arithmetic).Build());
-    catalog.push_back(Declare_java_math_NativeBN());
-    catalog.push_back(Declare_java_lang_Float());
-    catalog.push_back(Declare_java_lang_Double());
-    catalog.push_back(Declare_java_lang_Character());
+    catalog.push_back(Declare_java_math_NativeBN_Natives());
+    catalog.push_back(Declare_java_lang_Float_Natives());
+    catalog.push_back(Declare_java_lang_Double_Natives());
+    catalog.push_back(Declare_java_lang_Character_Natives());
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
@@ -846,7 +846,7 @@ VmValue MapCase(IntrinsicContext& context, bool upper, VmObjectRef locale) {
 
 }  // namespace
 
-IntrinsicClassDecl Declare_java_lang_String() {
+IntrinsicClassDecl Declare_java_lang_String_Class() {
     auto builder =
         IntrinsicClassBuilder::Class("Ljava/lang/String;", "Ljava/lang/Object;",
                                      {"Ljava/lang/CharSequence;", "Ljava/lang/Comparable;", "Ljava/io/Serializable;"});
@@ -1776,7 +1776,7 @@ Float CreateReal(IntrinsicContext& context) {
 
 }  // namespace
 
-IntrinsicClassDecl Declare_java_lang_StringToReal() {
+IntrinsicClassDecl Declare_java_lang_StringToReal_Natives() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/StringToReal;");
     builder.MergesBootClass();
     builder.StaticMethod(
@@ -1790,7 +1790,7 @@ IntrinsicClassDecl Declare_java_lang_StringToReal() {
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl Declare_java_lang_RealToString() {
+IntrinsicClassDecl Declare_java_lang_RealToString_Natives() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/RealToString;", "Ljava/lang/Object;", {}, kAccFinal);
     builder.MergesBootClass();
     const auto digits = builder.BoundInstanceField("digits", "[I", kAccPrivate | kAccFinal);
@@ -1960,7 +1960,7 @@ void PropagateEnvironmentCall(Interpreter& vm, const VmCallOutcome& outcome) {
 
 }  // namespace
 
-IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& services) {
+IntrinsicClassDecl Declare_java_lang_System_Class(const CoreIntrinsicServices& services) {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/System;", "Ljava/lang/Object;");
     builder.StaticField("out", "Ljava/io/PrintStream;");
     builder.StaticField("err", "Ljava/io/PrintStream;");
@@ -2313,7 +2313,7 @@ void InitializeFields(const IntrinsicCall& call, const ThreadFields& fields, con
                      vm.NewStringUtf8(runtime.NativeContextName(token).value_or(
                          native_daemon.has_value() ? "Thread-" + std::to_string(id) : "main")),
                      static_cast<std::int64_t>(id), 5,
-                     native_daemon.has_value() ? VmObjectRef{} : vm.ClassLoaders().SystemLoader(), group);
+                     native_daemon.has_value() ? VmObjectRef{} : vm.ClassLoaders().ApplicationLoader(), group);
     call.SetInt(fields.has_been_started, object, 1);
     call.SetInt(fields.daemon, object, native_daemon.value_or(false) ? 1 : 0);
     return object;
@@ -2356,7 +2356,7 @@ void ValidateTimeout(const std::int64_t millis, const std::int32_t nanos) {
 }
 }  // namespace
 
-IntrinsicClassDecl Declare_java_lang_Thread() {
+IntrinsicClassDecl Declare_java_lang_Thread_Class() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Thread;", "Ljava/lang/Object;", {"Ljava/lang/Runnable;"});
     builder.InstanceField("localValues", "Ljava/lang/ThreadLocal$Values;", kAccNone);
     builder.InstanceField("parkBlocker", "Ljava/lang/Object;", kAccPrivate);
@@ -2929,7 +2929,7 @@ std::vector<VmObjectRef> LiveGroupThreads(IntrinsicContext& context, IntrinsicFi
 }
 }  // namespace
 
-IntrinsicClassDecl Declare_java_lang_ThreadGroup() {
+IntrinsicClassDecl Declare_java_lang_ThreadGroup_Class() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/ThreadGroup;", "Ljava/lang/Object;",
                                                 {"Ljava/lang/Thread$UncaughtExceptionHandler;"});
     const auto name = builder.BoundInstanceField("name", "Ljava/lang/String;", kAccPrivate);
@@ -3055,7 +3055,7 @@ IntrinsicClassDecl Declare_java_lang_ThreadGroup() {
 
 // Throwable Java behavior and fields come from BootDex; only VM stack primitives remain.
 namespace ogplay::runtime::dexvm::intrinsics {
-void AppendJavaLangThrowables(std::vector<IntrinsicClassDecl>& catalog) {
+void AppendJavaLangThrowableNatives(std::vector<IntrinsicClassDecl>& catalog) {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Throwable;");
     builder.MergesBootClass();
     builder.StaticMethod(

@@ -279,7 +279,7 @@ constexpr auto kObserverCallback = "Lorg/ogplay/framework/LocalContentChange;";
 constexpr auto kObserver = "Landroid/database/IContentObserver;";
 }  // namespace
 
-Decl Declare_local_ContentChange(const Context&) {
+Decl Declare_local_ContentChange_Class(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class(kObserverCallback, "Ljava/lang/Object;", {"Ljava/lang/Runnable;"});
     const auto transport = builder.BoundInstanceField("transport", kObserver, dx::kAccPrivate);
     const auto uri = builder.BoundInstanceField("uri", "Landroid/net/Uri;", dx::kAccPrivate);
@@ -342,7 +342,7 @@ void NotifyLocalContentChange(dx::Interpreter& vm, const Context& context, dx::V
     }
 }
 
-Decl Declare_local_ClipboardService(const Context&) {
+Decl Declare_local_ClipboardService_Class(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalClipboardService;",
                                                     "Landroid/content/IClipboard$Stub;");
     for (const auto& [name, descriptor] : std::array{
@@ -359,7 +359,7 @@ Decl Declare_local_ClipboardService(const Context&) {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_ContentService(const Context& context) {
+Decl Declare_local_ContentService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalContentService;",
                                                     "Landroid/content/IContentService$Stub;");
     builder.VirtualMethod(
@@ -461,7 +461,7 @@ std::string ValueString(const DbValue& value) {
 
 }  // namespace
 
-Decl Declare_android_database_CursorWindow(const Context& context) {
+Decl Declare_android_database_CursorWindow_Natives(const Context& context) {
     const auto require = [context](const std::int32_t token) -> DexVmAndroidContext::CursorWindowState& {
         const auto found = context->cursor_windows.find(static_cast<std::uint32_t>(token));
         if (found == context->cursor_windows.end()) DbThrow("CursorWindow token is stale");
@@ -647,7 +647,7 @@ Decl Declare_android_database_CursorWindow(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_database_sqlite_SQLiteConnection(const Context& context) {
+Decl Declare_android_database_sqlite_SQLiteConnection_Natives(const Context& context) {
     const auto connection = [context](std::int32_t token) {
         const auto found = context->sqlite_connections.find(static_cast<std::uint32_t>(token));
         if (found == context->sqlite_connections.end() || !found->second->IsOpen())
@@ -804,7 +804,7 @@ Decl Declare_android_database_sqlite_SQLiteConnection(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_database_sqlite_SQLiteDebug(const Context&) {
+Decl Declare_android_database_sqlite_SQLiteDebug_Natives(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/database/sqlite/SQLiteDebug;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     builder.StaticMethod("nativeGetPagerStats", "(Landroid/database/sqlite/SQLiteDebug$PagerStats;)V",
@@ -812,7 +812,7 @@ Decl Declare_android_database_sqlite_SQLiteDebug(const Context&) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_database_sqlite_SQLiteConnection_Operation(const Context&) {
+Decl Declare_android_database_sqlite_SQLiteConnection_Operation_Overrides(const Context&) {
     auto builder =
         dx::IntrinsicClassBuilder::Class("Landroid/database/sqlite/SQLiteConnection$Operation;", "Ljava/lang/Object;");
     builder.MergesBootClass();
@@ -822,7 +822,7 @@ Decl Declare_android_database_sqlite_SQLiteConnection_Operation(const Context&) 
     return std::move(builder).Build();
 }
 
-Decl Declare_android_database_sqlite_SQLiteGlobal(const Context&) {
+Decl Declare_android_database_sqlite_SQLiteGlobal_Natives(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/database/sqlite/SQLiteGlobal;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     builder.StaticMethod("nativeReleaseMemory", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
@@ -1386,7 +1386,7 @@ bool HasProviderAuthority(std::string_view names, std::string_view authority) {
 
 }  // namespace
 
-Decl Declare_local_PackageService(const Context& context) {
+Decl Declare_local_PackageService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalPackageService;",
                                                     "Landroid/content/pm/IPackageManager$Stub;");
     builder.VirtualMethod(

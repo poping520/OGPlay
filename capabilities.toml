@@ -1311,22 +1311,22 @@ note = "交付受检 ClassNameCodec 与 linker metadata v2； 保持 declared me
 [dexvm.class_loader_facade]
 status = "complete"
 test = "tests/dexvm/class_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp#ClassLoader; tests/runtime/native_library_loader_tests.cpp; tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/android_context_services_tests.cpp#Context class loader"
-note = "应用/boot facade 共享类目录，parent-first、定义/发起分离。支持 findLoadedClass、loadClass、Class.forName、封存 BootDex/APK 资源；PathClassLoader 继承 BaseDexClassLoader，findLibrary 查询所选 ABI APK/内置系统库路径，ClassLoader/boot 返回 null。APK android.support.* 归应用，android.* 副本丢弃。不支持 URL 枚举、动态 classpath、多 namespace、自定义 defineClass。"
+note = "ClassLoader/BootClassLoader 与 PathClassLoader 执行 ROM，Facade 绑定 boot/system/封存 APK application 身份并实现 VMClassLoader、DexFile、VMStack native。资源与 Enumeration 查询执行 ROM，APK 资源经封存 ZIP/URL 连接读取；findLibrary 经 ROM VFS 查询。常量池仍直接解析，不支持动态 classpath、MultiDex、多 namespace、自定义 defineClass。"
 
 [dexvm.classloader.resource_url]
 status = "partial"
 test = "tests/dexvm/class_loader_tests.cpp#Class resource URLs; tests/dexvm/network_sqlite_tests.cpp#Sealed classpath URLs"
-note = "封存 BootDex/APK 的只读 jar:file URL；路径与 entry 百分号编码，按已登记来源读取，ZIP/CRC 复用 loader，流与 Properties 使用原版 Java。URL.openStream 返回真实 InputStream；不支持任意归档、网络 JAR、完整 JarURLConnection/JarFile 或 URL 枚举，越界记账并明确失败。"
+note = "封存 BootDex/APK 的只读 jar:file URL；仅解码归档路径，entry 原样查找，Class/ROM 加载器均保留原始条目。按已登记来源读取，ZIP/CRC 复用 loader，流与 Properties 使用原版 Java。URL.openStream 返回真实 InputStream；不支持任意归档、网络 JAR、完整 JarURLConnection/JarFile，越界记账并明确失败。"
 
 [dexvm.reflection_wrappers]
 status = "complete"
 test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/android_value_tests.cpp#DVM-143"
-note = "不可变 ReflectionMetadata 与唯一 wrapper 工厂；Method/Constructor/Field 按 API19 每次新建身份，语义 equals/hashCode、声明式 toString、防御性数组拷贝与 per-wrapper accessible；Method/Constructor/Field 由 ROM Java 与 Dalvik 原版 native 提供，按 declaringClass+slot 回查元数据，定向方法查询无需整类元数据。缓存不持 guest 引用或宿主指针。"
+note = "Method/Constructor/Field 执行 ROM Java，native 共用 ReflectionRuntime；wrapper 每次新建，按 declaringClass+slot 回查，定向方法查询无需整类元数据。真实 DEX 成员索引只供 ROM AnnotationAccess 使用，无 DEX 为 -1；缓存不持 wrapper 引用或宿主指针。"
 
 [dexvm.class_reflection_core]
 status = "complete"
 test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/android_value_tests.cpp#DVM-143; tests/dexvm/reflection_tests.cpp#DVM-182"
-note = "API19 Class 名称、loader、forName、分类、层级/公共成员类、枚举和惰性成员查询。Class/Field/Method/Constructor 泛型由 DEX Signature 驱动原版 GenericSignatureParser，支持变量、通配符、泛型数组及无签名原始类型回退；不缓存 guest Type。 通用 Proxy 已接入原版 Java 校验/loader 有序接口缓存及真实 Method/handler 转发；注解统一迁移未闭合。"
+note = "Class/AnnotationAccess 执行 ROM，Class 原版 native 共用 linker；Class 镜像含 ROM 字段槽并由 GC 扫描。getDex 惰性映射 guest 只读 DEX，按 unit 缓存为 GC 根，无 DEX 返回 null；泛型由 ROM AnnotationAccess/GenericSignatureParser 解析。Proxy 执行 ROM 校验和缓存，注解实现类身份迁移未闭合。"
 
 [dexvm.reflection_invoke]
 status = "complete"

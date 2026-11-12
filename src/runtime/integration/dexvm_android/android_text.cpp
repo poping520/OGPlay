@@ -2,7 +2,7 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_text_format_Time(const Context&) {
+Decl Declare_android_text_format_Time_Natives(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/text/format/Time;");
     builder.MergesBootClass();
     const auto delegate = [](const char* name, const char* signature, bool instance) {

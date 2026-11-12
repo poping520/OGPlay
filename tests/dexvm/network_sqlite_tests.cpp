@@ -218,55 +218,53 @@ struct NetworkSqliteVm final {
     explicit NetworkSqliteVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
                              std::vector<std::uint8_t> app_dex = {}, std::string package_name = "test.game",
                              const bool sealed_classpath = false)
-        : runtime(
-              [&] {
-                  static_cast<void>(sealed_classpath);
-                  ogplay::test::BindBootDexArchive(*context);
-                  context->package_name = package_name;
-                  context->vfs = &vfs;
-                  auto catalog = AndroidIntrinsicCatalog(context);
-                  auto helper = IntrinsicClassBuilder::Class("Ltest/SqliteOpenHelperFixture;",
-                                                             "Landroid/database/sqlite/SQLiteOpenHelper;");
-                  helper.OverrideMethod(
-                      "onCreate", "(Landroid/database/sqlite/SQLiteDatabase;)V", [this](IntrinsicContext&) {
-                          ++helper_create_calls;
-                          if (helper_create_throws) {
-                              REQUIRE(context->sqlite_connections.size() == 1);
-                              const auto database = context->sqlite_connections.begin()->second;
-                              database->Execute("CREATE TABLE callback_partial(value INTEGER)");
-                              throw VmJavaThrow{"Ljava/lang/RuntimeException;", "injected onCreate failure"};
-                          }
-                          return VmValue::Void();
-                      });
-                  helper.OverrideMethod("onUpgrade", "(Landroid/database/sqlite/SQLiteDatabase;II)V",
-                                        [this](IntrinsicContext& call) {
-                                            ++helper_upgrade_calls;
-                                            helper_old_version = call.arguments[1].AsInt();
-                                            helper_new_version = call.arguments[2].AsInt();
-                                            return VmValue::Void();
-                                        });
-                  auto sqlite_worker = IntrinsicClassBuilder::Class("Ltest/SqliteWorker;", "Ljava/lang/Thread;");
-                  sqlite_worker.OverrideMethod("run", "()V", [this](IntrinsicContext&) {
-                      thread_query_entered = true;
-                      std::this_thread::yield();
-                      try {
-                          static_cast<void>(
-                              thread_connection->Query("WITH RECURSIVE n(x) AS (VALUES(0) UNION ALL SELECT "
-                                                       "x+1 FROM n WHERE x<100000000) SELECT sum(x) FROM n"));
-                      } catch (const std::runtime_error&) {
-                          thread_query_interrupted = true;
+        : runtime([&] {
+              static_cast<void>(sealed_classpath);
+              ogplay::test::BindBootDexArchive(*context);
+              context->package_name = package_name;
+              context->vfs = &vfs;
+              auto catalog = AndroidIntrinsicCatalog(context);
+              auto helper = IntrinsicClassBuilder::Class("Ltest/SqliteOpenHelperFixture;",
+                                                         "Landroid/database/sqlite/SQLiteOpenHelper;");
+              helper.OverrideMethod(
+                  "onCreate", "(Landroid/database/sqlite/SQLiteDatabase;)V", [this](IntrinsicContext&) {
+                      ++helper_create_calls;
+                      if (helper_create_throws) {
+                          REQUIRE(context->sqlite_connections.size() == 1);
+                          const auto database = context->sqlite_connections.begin()->second;
+                          database->Execute("CREATE TABLE callback_partial(value INTEGER)");
+                          throw VmJavaThrow{"Ljava/lang/RuntimeException;", "injected onCreate failure"};
                       }
                       return VmValue::Void();
                   });
-                  std::vector<IntrinsicClassDecl> test_catalog;
-                  test_catalog.push_back(std::move(helper).Build());
-                  test_catalog.push_back(std::move(sqlite_worker).Build());
-                  catalog.insert(catalog.end(), test_catalog.begin(), test_catalog.end());
-                  if (app_dex.empty()) app_dex = ogplay::test::native_library::ReadDexFixture("application.dex");
-                  return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
-                      context, ledger, logger, std::move(catalog), std::move(app_dex),
-                      InterpreterConfig{.backend = backend}, &vfs);
-              }()),
+              helper.OverrideMethod("onUpgrade", "(Landroid/database/sqlite/SQLiteDatabase;II)V",
+                                    [this](IntrinsicContext& call) {
+                                        ++helper_upgrade_calls;
+                                        helper_old_version = call.arguments[1].AsInt();
+                                        helper_new_version = call.arguments[2].AsInt();
+                                        return VmValue::Void();
+                                    });
+              auto sqlite_worker = IntrinsicClassBuilder::Class("Ltest/SqliteWorker;", "Ljava/lang/Thread;");
+              sqlite_worker.OverrideMethod("run", "()V", [this](IntrinsicContext&) {
+                  thread_query_entered = true;
+                  std::this_thread::yield();
+                  try {
+                      static_cast<void>(thread_connection->Query("WITH RECURSIVE n(x) AS (VALUES(0) UNION ALL SELECT "
+                                                                 "x+1 FROM n WHERE x<100000000) SELECT sum(x) FROM n"));
+                  } catch (const std::runtime_error&) {
+                      thread_query_interrupted = true;
+                  }
+                  return VmValue::Void();
+              });
+              std::vector<IntrinsicClassDecl> test_catalog;
+              test_catalog.push_back(std::move(helper).Build());
+              test_catalog.push_back(std::move(sqlite_worker).Build());
+              catalog.insert(catalog.end(), test_catalog.begin(), test_catalog.end());
+              if (app_dex.empty()) app_dex = ogplay::test::native_library::ReadDexFixture("application.dex");
+              return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
+                  context, ledger, logger, std::move(catalog), std::move(app_dex),
+                  InterpreterConfig{.backend = backend}, &vfs);
+          }()),
           model(runtime->bridge->Model()), linker(runtime->bridge->Linker()), vm(runtime->bridge->Vm()),
           threads(runtime->bridge->Threads()) {
         vm.IO().SetFileSystem(&io_file_system);
@@ -1244,6 +1242,54 @@ TEST_CASE("DVM-88 URL parsing is value-only and offline failure starts at I/O") 
         REQUIRE(file_io.exception.IsValid());
         CHECK(fixture.linker.Class(file_io.exception_class).descriptor == "Ljava/io/IOException;");
 
+        // URL.java component constructors delegate to the five-argument form;
+        // fixURL(false) preserves protocol/host, brackets IPv6 and splits #/?.
+        constexpr auto five = "(Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/net/URLStreamHandler;)V";
+        for (const auto count : {3, 4, 5}) {
+            std::vector<VmValue> arguments{VmValue::Ref(fixture.vm.NewStringUtf8("http")),
+                                           VmValue::Ref(fixture.vm.NewStringUtf8("::1"))};
+            if (count != 3) arguments.push_back(VmValue::Int(8080));
+            arguments.push_back(VmValue::Ref(fixture.vm.NewStringUtf8("relative?q=1#frag")));
+            if (count == 5) arguments.push_back(VmValue::Ref(VmObjectRef{}));
+            const auto signature = count == 3   ? "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V"
+                                   : count == 4 ? "(Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;)V"
+                                                : five;
+            const auto component = fixture.New("Ljava/net/URL;", signature, arguments);
+            const auto component_text = [&](const char* name) {
+                return fixture.vm.StringUtf8(fixture.On(component, name, "()Ljava/lang/String;").ref);
+            };
+            CHECK(component_text("getHost") == "[::1]");
+            CHECK(component_text("getFile") == "/relative?q=1");
+            CHECK(component_text("getPath") == "/relative");
+            CHECK(component_text("getQuery") == "q=1");
+            CHECK(component_text("getRef") == "frag");
+            CHECK(fixture.On(component, "getPort", "()I").AsInt() == (count == 3 ? -1 : 8080));
+            CHECK(component_text("toExternalForm") ==
+                  (count == 3 ? "http://[::1]/relative?q=1#frag" : "http://[::1]:8080/relative?q=1#frag"));
+        }
+        const auto component_ctor =
+            fixture.linker.FindDirectMethod(fixture.linker.ResolveDescriptor("Ljava/net/URL;"), "<init>", five);
+        REQUIRE(component_ctor);
+        const auto construct_component = [&](VmObjectRef protocol, int port, VmObjectRef handler) {
+            const auto object = fixture.vm.NewIntrinsicInstance("Ljava/net/URL;");
+            return fixture.vm.Call(*component_ctor, std::array{VmValue::Ref(object), VmValue::Ref(protocol),
+                                                               VmValue::Ref(VmObjectRef{}), VmValue::Int(port),
+                                                               VmValue::Ref(fixture.vm.NewStringUtf8("/file#fragment")),
+                                                               VmValue::Ref(handler)});
+        };
+        const auto assert_exception = [&](const VmCallOutcome& result, const char* expected) {
+            REQUIRE(result.exception.IsValid());
+            CHECK(fixture.linker.Class(result.exception_class).descriptor == expected);
+        };
+        assert_exception(construct_component(VmObjectRef{}, -2, VmObjectRef{}), "Ljava/net/MalformedURLException;");
+        assert_exception(construct_component(VmObjectRef{}, -1, VmObjectRef{}), "Ljava/lang/NullPointerException;");
+        const auto handler = fixture.vm.NewIntrinsicInstance("Ljava/net/URLStreamHandler;");
+        assert_exception(construct_component(fixture.vm.NewStringUtf8("http"), -1, handler),
+                         "Ljava/net/MalformedURLException;");
+        const auto ledger = fixture.ledger.Unimplemented();
+        CHECK(std::any_of(ledger.begin(), ledger.end(),
+                          [](const auto& hit) { return hit.id == "dexvm.url.custom_handler"; }));
+
         const auto offline = fixture.OnOutcome(url, "openConnection", "()Ljava/net/URLConnection;");
         REQUIRE_FALSE(offline.exception.IsValid());
         REQUIRE(offline.value.ref.IsValid());
@@ -1582,7 +1628,7 @@ TEST_CASE("DVM-88 stage catalog keeps NIO GLES AudioTrack and data paths linkabl
     }
 }
 
-TEST_CASE("Sealed classpath URLs read registered ZIP entries with parent first and CRC checks") {
+TEST_CASE("Sealed classpath URLs read registered ZIP entries with parent first and API19 ZIP semantics") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         for (const auto boot_present : {false, true}) {
             NetworkSqliteVm fixture(backend, {}, "test.game", true);
@@ -1595,7 +1641,15 @@ TEST_CASE("Sealed classpath URLs read registered ZIP entries with parent first a
             context.archive = ogplay::loader::ParseApkArchive(context.apk_bytes);
             context.boot_classpath.clear();
             if (boot_present) SingleBootJar(context, MakeStoredZip(name, std::as_bytes(std::span(boot_contents))));
-            const auto loader = fixture.vm.ClassLoaders().ApplicationLoader();
+            // ROM DexPathList reads the actual ZIP in VFS; merely changing the
+            // old facade's resource callback no longer supplies a Java zip element.
+            auto sealed = std::make_shared<std::vector<std::byte>>(context.apk_bytes);
+            context.sealed_apk_bytes = sealed;
+            fixture.vfs.PutFile(context.package_resource_path, *sealed, false);
+            const auto loader =
+                fixture.New("Ldalvik/system/PathClassLoader;", "(Ljava/lang/String;Ljava/lang/ClassLoader;)V",
+                            {VmValue::Ref(fixture.vm.NewStringUtf8(context.package_resource_path)),
+                             VmValue::Ref(fixture.vm.ClassLoaders().BootstrapLoader())});
             const auto url = fixture
                                  .On(loader, "getResource", "(Ljava/lang/String;)Ljava/net/URL;",
                                      {VmValue::Ref(fixture.vm.NewStringUtf8(name))})
@@ -1604,7 +1658,8 @@ TEST_CASE("Sealed classpath URLs read registered ZIP entries with parent first a
             const auto form = fixture.vm.StringUtf8(fixture.On(url, "toExternalForm", "()Ljava/lang/String;").ref);
             CHECK(form == std::string("jar:file:") +
                               (boot_present ? "/system/framework/ogplay.jar" : "/data/app/test.game-1.apk") +
-                              "!/java/lang/config%20%25%21%3F%23%20%2B.properties");
+                              // ROM DexPathList.Element/JarHandler keep all entry characters raw.
+                              "!/java/lang/config %!?# +.properties");
             const auto boot = fixture.vm.ClassLoaders().BootstrapLoader();
             CHECK(fixture
                       .On(boot, "getResource", "(Ljava/lang/String;)Ljava/net/URL;",
@@ -1618,17 +1673,35 @@ TEST_CASE("Sealed classpath URLs read registered ZIP entries with parent first a
                                                 {VmValue::Ref(fixture.vm.NewStringUtf8("version"))})
                                             .ref) == (boot_present ? "boot" : "2.0.5"));
             fixture.On(stream, "close", "()V");
-            // Simulate sealed backing corruption without changing directory metadata.
-            auto& bytes = boot_present ? context.boot_classpath.front().bytes : context.apk_bytes;
+            // ROM ZipFile.getInputStream (STORED) returns RAFStream without a
+            // CRC comparison; loader/MODULE.md has the same contract. Preserve
+            // corruption coverage by checking the exact changed payload, rather
+            // than demanding a non-ROM CRC exception from URL.openStream.
+            auto& bytes = boot_present ? context.boot_classpath.front().bytes : *sealed;
             bytes[30 + name.size()] ^= std::byte{1};
-            const auto broken = fixture.OnOutcome(url, "openStream", "()Ljava/io/InputStream;");
-            REQUIRE(broken.exception.IsValid());
-            CHECK(fixture.linker.Class(broken.exception_class).descriptor == "Ljava/io/IOException;");
-            CHECK(broken.exception_message.find("CRC32") != std::string::npos);
-            CHECK_FALSE(fixture
-                            .On(loader, "getResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;",
-                                {VmValue::Ref(fixture.vm.NewStringUtf8(name))})
-                            .ref.IsValid());
+            auto expected_changed = boot_present ? boot_contents : contents;
+            expected_changed[0] = static_cast<char>(expected_changed[0] ^ 1);
+            const auto read_text = [&](VmObjectRef input) {
+                std::string value;
+                for (;;) {
+                    const auto next = fixture.On(input, "read", "()I").AsInt();
+                    if (next == -1) break;
+                    value.push_back(static_cast<char>(next));
+                }
+                fixture.On(input, "close", "()V");
+                return value;
+            };
+            const auto changed = fixture.OnOutcome(url, "openStream", "()Ljava/io/InputStream;");
+            REQUIRE_FALSE(changed.exception.IsValid());
+            REQUIRE(changed.value.ref.IsValid());
+            CHECK(read_text(changed.value.ref) == expected_changed);
+            const auto changed_again =
+                fixture
+                    .On(loader, "getResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;",
+                        {VmValue::Ref(fixture.vm.NewStringUtf8(name))})
+                    .ref;
+            REQUIRE(changed_again.IsValid());
+            CHECK(read_text(changed_again) == expected_changed);
         }
     }
 }

@@ -22,7 +22,7 @@ VmObjectRef StringArray(Interpreter& vm, const std::vector<std::u16string>& valu
     return result;
 }
 
-IntrinsicClassDecl IcuBoundary() {
+IntrinsicClassDecl Declare_libcore_icu_ICU_Natives() {
     auto b = IntrinsicClassBuilder::Class("Llibcore/icu/ICU;");
     b.MergesBootClass();
     for (const auto& [name, descriptor, flags] : std::array{
@@ -76,7 +76,7 @@ IntrinsicClassDecl IcuBoundary() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl DecimalBoundary() {
+IntrinsicClassDecl Declare_libcore_icu_NativeDecimalFormat_Natives() {
     auto b = IntrinsicClassBuilder::Class("Llibcore/icu/NativeDecimalFormat;");
     b.MergesBootClass();
     constexpr std::pair<const char*, const char*> methods[]{
@@ -107,7 +107,7 @@ IntrinsicClassDecl DecimalBoundary() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl TimeZoneNamesBoundary() {
+IntrinsicClassDecl Declare_libcore_icu_TimeZoneNames_Natives() {
     auto b = IntrinsicClassBuilder::Class("Llibcore/icu/TimeZoneNames;");
     b.MergesBootClass();
     b.GuestNativeStatic("fillZoneStrings", "(Ljava/lang/String;[[Ljava/lang/String;)V",
@@ -115,7 +115,7 @@ IntrinsicClassDecl TimeZoneNamesBoundary() {
     return std::move(b).Build();
 }
 
-IntrinsicClassDecl TimeZoneBoundary(const CoreIntrinsicServices& services) {
+IntrinsicClassDecl Declare_java_util_TimeZone_Overrides(const CoreIntrinsicServices& services) {
     auto b = IntrinsicClassBuilder::Class("Ljava/util/TimeZone;");
     b.MergesBootClass();
     const auto gmt = b.BoundStaticField("GMT", "Ljava/util/TimeZone;", kAccPrivate | kAccStatic | kAccFinal);
@@ -204,10 +204,10 @@ void AppendJavaIcu(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsic
         b.GuestNativeStatic("getAvailableCharsetNames", "()[Ljava/lang/String;", kAccPublic | kAccStatic | kAccNative);
         catalog.push_back(std::move(b).Build());
     }
-    catalog.push_back(IcuBoundary());
-    catalog.push_back(DecimalBoundary());
-    catalog.push_back(TimeZoneNamesBoundary());
-    catalog.push_back(TimeZoneBoundary(services));
+    catalog.push_back(Declare_libcore_icu_ICU_Natives());
+    catalog.push_back(Declare_libcore_icu_NativeDecimalFormat_Natives());
+    catalog.push_back(Declare_libcore_icu_TimeZoneNames_Natives());
+    catalog.push_back(Declare_java_util_TimeZone_Overrides(services));
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

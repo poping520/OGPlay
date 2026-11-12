@@ -495,6 +495,7 @@ void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
         visitor(array);
     impl_->model->VisitPermanentRoots(visitor);
     impl_->class_loaders->VisitRoots(visitor);
+    impl_->reflection->VisitRoots(visitor);
     if (impl_->gc_integration.visit_jni_roots) {
         impl_->gc_integration.visit_jni_roots(
             [&](const JniObjectIdentity identity) { visitor(impl_->model->FindIdentity(identity)); });

@@ -465,9 +465,12 @@ TEST_CASE("BootDex speech callbacks link and JNI diagnostics retain nested cause
         auto& env = f.session->Environment();
         auto& classes = f.session->Classes();
         const auto cls = *classes.FindClass("java/lang/Class");
-        const auto for_name = *classes.GetMethodId(cls, "forName", "(Ljava/lang/String;)Ljava/lang/Class;", true);
+        const auto for_name =
+            *classes.GetMethodId(cls, "forName", "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;", true);
+        // A JNI call has no Java caller from which ROM forName can infer the app loader.
+        const auto loader = f.bridge->PublishLocal(vm.ClassLoaders().ApplicationLoader());
         const auto lookup = [&](const char* name) {
-            const std::array<JniValue, 1> args{f.bridge->PublishLocal(vm.NewStringUtf8(name))};
+            const std::array<JniValue, 3> args{f.bridge->PublishLocal(vm.NewStringUtf8(name)), JniBoolean{1}, loader};
             return std::get<JniReference>(
                 f.session->Invocations().InvokeStatic(1, cls, for_name, args, JniArgumentSource::value_array));
         };

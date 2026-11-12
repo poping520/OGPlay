@@ -5,7 +5,7 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_webkit_WebChromeClient(const Context& context) {
+Decl Declare_android_webkit_WebChromeClient_Class(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/webkit/WebChromeClient;", "Ljava/lang/Object;");
     builder.Constructor("()V", NeutralHandler('V'));
@@ -25,19 +25,19 @@ Decl Declare_android_webkit_WebChromeClient(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_webkit_WebChromeClient_CustomViewCallback(const Context& context) {
+Decl Declare_android_webkit_WebChromeClient_CustomViewCallback_Class(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/webkit/WebChromeClient$CustomViewCallback;");
     builder.UnimplementedVirtual("onCustomViewHidden", "()V", dx::kAccPublic | dx::kAccAbstract);
     return std::move(builder).Build();
 }
 
-Decl Declare_android_webkit_ConsoleMessage(const Context& context) {
+Decl Declare_android_webkit_ConsoleMessage_Class(const Context& context) {
     static_cast<void>(context);
     return dx::IntrinsicClassBuilder::Class("Landroid/webkit/ConsoleMessage;", "Ljava/lang/Object;").Build();
 }
 
-Decl Declare_android_webkit_HttpAuthHandler(const Context& context) {
+Decl Declare_android_webkit_HttpAuthHandler_Class(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/webkit/HttpAuthHandler;", "Landroid/os/Handler;");
     builder.Constructor(
@@ -68,7 +68,7 @@ Decl Declare_android_webkit_HttpAuthHandler(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_webkit_WebSettings(const Context& context) {
+Decl Declare_android_webkit_WebSettings_Class(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/webkit/WebSettings;", "Ljava/lang/Object;");
     const auto wide_viewport = builder.BoundInstanceField("mUseWideViewPort", "Z", dx::kAccPrivate);
@@ -152,7 +152,7 @@ Decl Declare_android_webkit_WebSettings(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_webkit_WebSettings_RenderPriority(const Context& context) {
+Decl Declare_android_webkit_WebSettings_RenderPriority_Class(const Context& context) {
     static_cast<void>(context);
     return dx::IntrinsicEnumBuilder("Landroid/webkit/WebSettings$RenderPriority;", {"NORMAL", "HIGH", "LOW"}).Build();
 }
@@ -164,7 +164,7 @@ Decl Declare_android_webkit_WebSettings_RenderPriority(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_webkit_WebView_DisabledLoadCallback(const Context& context) {
+Decl Declare_android_webkit_WebView_DisabledLoadCallback_Class(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/webkit/WebView$DisabledLoadCallback;",
                                                     "Ljava/lang/Object;", {"Ljava/lang/Runnable;"});
@@ -204,7 +204,7 @@ Decl Declare_android_webkit_WebView_DisabledLoadCallback(const Context& context)
     return std::move(builder).Build();
 }
 
-Decl Declare_android_webkit_WebView(const Context& context) {
+Decl Declare_android_webkit_WebView_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/webkit/WebView;", "Landroid/widget/AbsoluteLayout;",
                                                     {"Landroid/view/ViewTreeObserver$OnGlobalFocusChangeListener;",
                                                      "Landroid/view/ViewGroup$OnHierarchyChangeListener;",
@@ -446,7 +446,7 @@ Decl Declare_android_webkit_WebView(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_webkit_WebViewClient(const Context& context) {
+Decl Declare_android_webkit_WebViewClient_Class(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/webkit/WebViewClient;", "Ljava/lang/Object;");
     builder.Constructor("()V", NeutralHandler('V'));

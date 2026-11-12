@@ -239,7 +239,7 @@ void AddRomSurfaceNatives(dx::IntrinsicClassBuilder& b, const Context& context) 
         kStaticNative);
 }
 
-Decl Declare_android_view_SurfaceSession(const Context& context) {
+Decl Declare_android_view_SurfaceSession_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceSession;");
     b.MergesBootClass();
     b.StaticMethod("nativeCreate", "()I", SurfaceNative([context](dx::IntrinsicContext&) {
@@ -271,7 +271,7 @@ Decl Declare_android_view_SurfaceSession(const Context& context) {
     return std::move(b).Build();
 }
 
-Decl Declare_android_view_SurfaceControl(const Context& context) {
+Decl Declare_android_view_SurfaceControl_Natives(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceControl;");
     b.MergesBootClass();
     b.StaticMethod("nativeCreate", "(Landroid/view/SurfaceSession;Ljava/lang/String;IIII)I",

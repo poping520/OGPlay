@@ -6,9 +6,17 @@
 依赖、对象/GC 与线程总契约见 [DexVM](../MODULE.md)，平台装配见
 [integration](../../integration/MODULE.md)，能力范围见 [capabilities](../../../../capabilities.toml)。
 
-- 每个 Java class 只有一个正式命名空间内的 `Declare_*()`，声明与 handler 同址。
-  物理文件固定为 catalog 加 lang/classloading/reflect/io/util/icu/regex/zip/nio/net/xml/
-  concurrent/crypto 13 个 family TU；family 只向 catalog.h 暴露 Append*，catalog 不含行为。
+- 每个 Java class 只有一个正式命名空间内的声明函数，声明与 handler 同址。函数名统一为
+  `Declare_<Java 全限定名>_<绑定方式>`（`/`、`$` 换成 `_`），绑定方式改变时同步改后缀：
+  - `_Class`：intrinsic 定义整个类，BootDex 中的同名副本不使用。
+  - `_Natives`：类来自 BootDex，只绑定原版 native 或准入 guest JNI。
+  - `_Fields`：类来自 BootDex，只绑定字段，供其他 handler 使用。
+  - `_Overrides`：类来自 BootDex，但仍替换 ROM 非 native 方法（含 `<clinit>`），按阶段移除。
+  - `_Shell`：只声明合并类壳、不声明成员，BootDex 加载后全部成员来自 ROM。
+  - 进程内服务类为 `Declare_local_<服务名>_Class`；多类共用的生成函数为
+    `Declare<主题>Class`/`Declare<主题>Natives`。
+  物理文件固定为 catalog 加 lang/classloading/reflect/io/icu/regex/zip/nio/net/xml/
+  concurrent/crypto 12 个 family TU；family 只向 catalog.h 暴露 Append*，catalog 不含行为。
 - 禁止迁移转发层、misc/common/all TU、字符串 handler id、静态自注册和 android.* 行为。
   flags 只用 access_flags.h 的 kAcc*；反射 modifier mask 使用对应命名常量。
 - java.*、javax.net/xml 与 org.xml.sax 归 core；平台事实只经 CoreIntrinsicServices 注入，
@@ -85,25 +93,24 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
 
 ## 类加载、反射、集合与并发
 
-- ClassLoader/BootClassLoader/PathClassLoader 身份、parent、lookup/initiate 只用
-  ClassLoaderFacade；自定义 loader 仍映射唯一 application namespace，动态 classpath 拒绝。
-  PathClassLoader 继承 BaseDexClassLoader，再继承 ClassLoader；ClassLoader 的 protected
-  findLibrary 默认 null，BaseDexClassLoader 的 public 覆盖由 integration 绑定原生库路径查询，
-  core 未绑定时明确失败；BootClassLoader 继承默认 null 行为。
-  Class.forName 使用真实 caller；三参 null 映射 API19 system loader。CNFE 保留 cause，
-  clinit EIIE 保留原 throwable。Class 相对/绝对资源名与 ClassLoader 根资源名经注入的
-  bootstrap/APK sealed archive 查询：URL 保留归档 guest 路径/entry 并按来源读取，
-  stream 使用真实 ByteArrayInputStream；缺失返回 null，未注入 provider 明确失败。
-  jar:file 连接仅访问已封存归档，url/connected/input 均为 guest GC 字段，无宿主侧表。
-  完整约束见 [DexVM](../MODULE.md)。
-- Method/Field/Constructor/AccessibleObject/reflect.Array 的字段与普通方法执行 ROM Java，
+- ClassLoader/BootClassLoader/BaseDexClassLoader/PathClassLoader 的字段和普通方法归 ROM。
+  boot、system、application 分别绑定 ROM boot 单例、系统 PathClassLoader 与封存 APK 的应用
+  PathClassLoader；ClassLoaderFacade 仅为 native 提供身份与封存目录后端，常量池解析仍直接查 linker。
+  VMClassLoader 提供五个原版 native（boot load/findLoaded/primitive 与按 jar 索引的资源查询），
+  DexFile 仅接受封存 APK cookie，支持定义已登记应用类与原版类名枚举；动态 classpath/MultiDex 拒绝。
+  findLibrary 执行 ROM DexPathList 的 VFS 查找，无 integration 普通方法覆盖。
+  Class.forName 的调用方 loader 与 null 归一化由 ROM Java/VMStack 决定；资源名处理归 ROM。
+  ROM ClassLoader 资源查询与 Enumeration 经过 VMClassLoader 或 DexPathList/ZipFile；jar:file URL
+  只读已登记归档，url/connected/input 为 guest GC 字段，无宿主侧表。完整约束见 [DexVM](../MODULE.md)。
+- Class/Method/Field/Constructor/AccessibleObject/reflect.Array 的字段与普通方法执行 ROM Java，
   宿主仅实现 Dalvik 原版 native，委托 linker、ReflectionRuntime、ReflectionCodec 和 typed array store。
   成员按 (declaringClass, slot) 定位；方法与构造器共用 own direct 后接 own virtual 的稳定序号，
-  字段按 own static 后接 own instance 的序号；不读写 raw member id。Class 保持既有入口。public 聚合按 class→superclass→direct interface；
+  字段按 own static 后接 own instance 的序号；不读写 raw member id。public 聚合按 class→superclass→direct interface；
   nested/enclosing/Throws 只读 Dalvik metadata，禁止名称拆分猜测。Class.getEnumConstants 复用
   `isEnum` 与 `SharedEnumConstants`，返回具体枚举数组类型的浅克隆。Class/Field/Method/Constructor 与参数运行时注解查询
   委托 `AnnotationRuntime`，不继承方法注解，数组每次新建；Method.getDefaultValue 读取声明默认值。
-  泛型读取 DEX Signature，执行原版 GenericSignatureParser/Type 实现，无签名回退原始类型；
+  AnnotationAccess 无 intrinsic，按 Class.getDex 的只读 DEX 映像与真实 methodDexIndex/fieldDexIndex
+  读取 Signature/enclosing metadata；泛型执行原版 GenericSignatureParser/Type，无签名回退原始类型；
   宿主不缓存 guest Type 引用；成员泛型缓存由 ROM 字段持有。通用 Proxy 合成仍明确未实现。invoke/实例化/字段读写保留类型转换和原异常引用；Modifier 与对象流普通协议归 BootDex。
 - 加载器与反射透传 typed guest linkage failure；Class.forName 保留原异常作为 CNFE cause，
   注解中缺失类型仍按既有 TypeNotPresentException 协议。DexVmError 内部故障不转换为 Java 错误。
@@ -144,7 +151,8 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
   String 的命名字符集范围构造复用既有 codec/范围检查；日志端点不暴露宿主 FD。基类 bulk
   read/write 必须虚派子类，不能要求任意 guest 流存在宿主资源状态。
   ObjectStreamClass 仅保留六个受检反射原语；ObjectOutputStream.getFieldL、Proxy 生成和
-  VMStack 除 getClasses 外的四个 native 明确失败。宿主资源不因迁入对象流自动可序列化。
+  VMStack 提供 getClasses、getCallingClassLoader（caller2）和 getStackClass2（caller3）；
+  其余两个线程栈 native 明确失败。宿主资源不因迁入对象流自动可序列化。
 - ZIP32 的 ZipFile/ZipEntry/ZipInputStream 及流算法、条目状态和关闭协议归 API19 BootDex。
   ZipFile 只访问 guest VFS 普通文件；Inflater 文件输入复用 Posix 的 IoRuntime 描述符与共享
   offset，循环读取到请求长度或 EOF，通过 VM 调用 setInputImpl 将实际字节交给 guest zlib。
@@ -160,6 +168,11 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
   非法百分号和未支持 charset 抛异常。客户端 TLS 由 OGPlayJSSE 经 raw transport 与 guest
   libssl 内存 BIO 执行；loopback 握手与 HTTPS GET 已受检，默认离线，不能静默把未播种 RNG
   或公开 CA 缺失当成成功。SAX 保留构造/handler 身份，未支持 parse 明确失败。
+- URL 整类 intrinsic 临时补齐 ROM 的三参、四参、五参 component 构造器，短版本委托五参；
+  保留 port、protocol、IPv6、fragment 与 query 规则，非 null 自定义 URLStreamHandler 记账并抛
+  MalformedURLException。jar 条目名按 JarURLConnection 原样查找，不校验/解码条目中的百分号，
+  仅归档文件路径按 UriCodec.decode 语义解码；Class/ROM 加载器共用原始条目规则。
+  这三个构造器和 jar 条目规则是临时补充，随 java.net 批次中 URL 改回 ROM 时删除。
 - InetAddress/Inet4Address/Inet6Address、地址缓存、InetSocketAddress 与 NetworkInterface 普通
   行为归 API 19 BootDex；IP 字节、hostName、scope 与 endpoint 字段是唯一状态。Posix 仅保留
   地址解析、受策略 DNS/反向查询、确定性 guest uname 及本地接口查询边界。

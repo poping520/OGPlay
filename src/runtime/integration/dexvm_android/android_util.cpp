@@ -16,7 +16,7 @@
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_util_Log(const Context&) {
+Decl Declare_android_util_Log_Natives(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/Log;");
     builder.MergesBootClass();
     builder.StaticMethod(
@@ -92,7 +92,7 @@ void TruncateEventString(std::string& value) {
 
 }  // namespace
 
-Decl Declare_android_util_EventLog(const Context& context) {
+Decl Declare_android_util_EventLog_Natives(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/EventLog;", "Ljava/lang/Object;");
     builder.MergesBootClass();
@@ -180,7 +180,7 @@ Decl Declare_android_util_EventLog(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 // FloatMath natives are float wrappers over libm, exactly as the API 19 JNI does.
-Decl Declare_android_util_FloatMath(const Context& context) {
+Decl Declare_android_util_FloatMath_Natives(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/FloatMath;", "Ljava/lang/Object;");
     builder.MergesBootClass();
@@ -205,7 +205,7 @@ Decl Declare_android_util_FloatMath(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_util_AttributeSet(const Context& context) {
+Decl Declare_android_util_AttributeSet_Shell(const Context& context) {
     static_cast<void>(context);
     return std::move(dx::IntrinsicClassBuilder::Interface("Landroid/util/AttributeSet;").MergesBootClass()).Build();
 }

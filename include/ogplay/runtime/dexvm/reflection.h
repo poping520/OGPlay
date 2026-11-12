@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -14,8 +15,6 @@ namespace ogplay::runtime::dexvm {
 
 class Interpreter;
 class ReflectionCodec;
-
-[[nodiscard]] VmObjectRef ReflectGenericType(Interpreter& vm, VmObjectRef declaration, std::string_view query);
 
 struct ReflectMethodMeta final {
     std::uint32_t slot{};
@@ -103,6 +102,10 @@ public:
     [[nodiscard]] bool IsAccessible(VmObjectRef wrapper) const;
     void SetAccessible(VmObjectRef wrapper, bool accessible);
     [[nodiscard]] ReflectionCodec& Codec() noexcept;
+    [[nodiscard]] VmObjectRef
+    DexObject(DexClassId type,
+              const std::function<VmObjectRef(Interpreter&, std::span<const std::uint8_t>)>& create_buffer);
+    void VisitRoots(const std::function<void(VmObjectRef)>& visit) const;
     [[nodiscard]] VmObjectRef NewInstance(DexClassId java_class, std::optional<DexClassId> caller);
 
     // API19 serialization VM primitives; tokens are local opaque ordinals.

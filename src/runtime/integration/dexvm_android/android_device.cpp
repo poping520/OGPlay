@@ -7,7 +7,7 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_local_UsbService(const Context&) {
+Decl Declare_local_UsbService_Class(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalUsbService;",
                                                     "Landroid/hardware/usb/IUsbManager$Stub;");
     const auto no_transport = [](dx::IntrinsicContext& call) {
@@ -44,7 +44,7 @@ Decl Declare_local_UsbService(const Context&) {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_LocationService(const Context&) {
+Decl Declare_local_LocationService_Class(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalLocationService;",
                                                     "Landroid/location/ILocationManager$Stub;");
     const auto no_providers = [](dx::IntrinsicContext& call) {
@@ -66,7 +66,7 @@ Decl Declare_local_LocationService(const Context&) {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_SettingsProvider(const Context& context) {
+Decl Declare_local_SettingsProvider_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalSettingsProvider;",
                                                     "Landroid/os/Binder;", {"Landroid/content/IContentProvider;"});
     builder.Constructor("()V", [](dx::IntrinsicContext& call) {
@@ -169,7 +169,7 @@ Decl Declare_local_SettingsProvider(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_local_SmsService(const Context&) {
+Decl Declare_local_SmsService_Class(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalSmsService;",
                                                     "Lcom/android/internal/telephony/ISms$Stub;");
     for (
@@ -206,7 +206,7 @@ Decl Declare_local_SmsService(const Context&) {
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_local_PhoneSubscriberService(const Context& context) {
+Decl Declare_local_PhoneSubscriberService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalPhoneSubscriberService;",
                                                     "Lcom/android/internal/telephony/IPhoneSubInfo$Stub;");
     builder.VirtualMethod("getDeviceId", "()Ljava/lang/String;",
@@ -221,14 +221,14 @@ Decl Declare_local_PhoneSubscriberService(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_TelephonyService(const Context&) {
+Decl Declare_local_TelephonyService_Class(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalTelephonyService;",
                                                     "Lcom/android/internal/telephony/ITelephony$Stub;");
     builder.VirtualMethod("getActivePhoneType", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     return std::move(builder).Build();
 }
 
-Decl Declare_local_TelephonyRegistry(const Context& context) {
+Decl Declare_local_TelephonyRegistry_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalTelephonyRegistry;",
                                                     "Lcom/android/internal/telephony/ITelephonyRegistry$Stub;");
     builder.VirtualMethod("listen", "(Ljava/lang/String;Lcom/android/internal/telephony/IPhoneStateListener;IZ)V",

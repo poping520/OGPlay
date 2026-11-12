@@ -47,13 +47,25 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   survey 沿用既有显式记账/替身策略，不为这些失败添加中性返回。
 - `PrecheckMethod` 懒校验 opcode、寄存器/wide pair、invoke 参数、branch/payload 与
   move-result；对照 API 19 `CodeVerify.cpp`，不做全量数据流。
-- 封存 APK 通过 ROM ApplicationLoaders 创建稳定的 application `PathClassLoader`，其父链为
-  boot→null。DexFile native 仅查 VM 已登记的单一应用 DEX，关闭不卸载该单元；独立 VM 仍可用
-  loader facade。`findLoadedClass` 不链接/初始化/合成，`loadClass` 校验 binary name；
-  `Class.forName` 使用真实
-  caller loader。classpath URL/stream 经注入的 sealed bootstrap/APK 查找及按来源读取，
-  application parent-first；jar:file URL 仅标识已登记 guest 归档，不开放宿主文件、动态
-  归档/定义、多 namespace 或自定义加载权限。
+- 类加载器身份与字段来自 ROM：BootClassLoader.getInstance 单例、ClassLoader.getSystemClassLoader
+  返回的系统 PathClassLoader、LoadedApk/ApplicationLoaders 创建且打开封存 APK cookie 的应用
+  PathClassLoader 分别绑定并保活；基本类型 Class loader 为 null，其他启动类为 ROM boot 单例。
+  ClassLoaderFacade 为 VMClassLoader/DexFile/VMStack native 提供已登记类目录与身份查询，不拦截
+  Java loadClass/getResource 等普通方法。独立 run-dex 无 APK 时以 ROM 空路径 PathClassLoader 表示
+  已登记应用命名空间，仅 VM Class.forName 可直接查询它；不授予动态定义权限。
+  链接器仍从 DEX 常量池直接解析已登记类，不回调 Java loadClass。findLoadedClass 不链接或初始化；
+  动态 classpath、自定义 defineClass、MultiDex 和多 namespace 仍拒绝，不登记 classes2.dex。
+  VMClassLoader 按启动类路径顺序查询资源，ROM ClassLoader/ZipFile 提供 APK 资源与 Enumeration；
+  jar:file URL 只读取封存 guest 归档，不开放宿主文件或网络归档；条目名保留原文，
+  只解码归档路径；Class 的资源查询执行 ROM Java，与 ClassLoader 使用相同的原始条目名。
+- Class 与 AnnotationAccess 的字段和普通方法归 ROM；Class 仅绑定 pinned core.jar 的原版 native。
+  Class.forName 的 Java 层决定 null loader 的归一化（当前 pinned libdvm ROM 为 system loader），
+  classForName 只消费传入的 loader 身份；Class.newInstanceImpl 跳过 ROM newInstance 帧检查 caller。
+  Class.getDex 按所属 DEX unit 惰性缓存 ROM Dex.create(ByteBuffer) 的结果。完整映像经既有
+  guest direct-memory 分配器放入 guest 地址空间，先用 JNI 相同的 WrapDirect 路径建立 buffer，
+  再发布只读视图并用 AddressSpace.Protect 将页设为只读；不复制到 Java byte[]。
+  cache 的 ByteBuffer/Dex 是 GC 根，映像由 VM 所属 process 持有至 teardown；无 DEX 的合成类、
+  intrinsic-only 类、数组和 primitive 返回 null。未注入 guest 内存接口的独立 VM 明确失败。
 - `ReflectionRuntime` 是 Method/Constructor/Field metadata 与 wrapper 的唯一工厂；cache 不持
   guest ref，wrapper 可回收。`getMethod/getDeclaredMethod` 按名称和参数沿本类、父类、
   接口定向查找，只解析同名候选，命中后才解析返回/异常类型；`getMethods` 等枚举接口才建立
@@ -91,6 +103,10 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   先验证范围，再重叠安全地批量移动既有引用；跨数组仍逐元素校验并保留失败前缀。
   JNI primitive array 导入时通过显式 interop callback 取得 kind 对应的真实数组类，
   不将数组声明成 Object 或按元素宽度合并类型；无 VM interop 的独立 store 不推造类 ID。
+  Class 镜像保留原 class_object 身份与 represented-class 缓存，但同时按链接后的 java.lang.Class
+  布局分配实例槽；ROM name/dexTypeIndex/dexClassDefIndex/dexIndicesInitialized 只有这一份状态。
+  GC 与普通实例一样扫描 tagged 引用槽（包括 name），回收时退役槽板；不改变 ClassOfClassObject。
+
 - primitive Record 缓存与 store 共持的长期 typed view；aget/aput 只做 Record/边界检查和
   下标读写，无 store map/锁、accessor 构造、AddressSpace Read/Write 或单元素 vector。
   Java 多线程对同一数组允许普通数据竞争，store 不再串行化元素访问；long/double backing
@@ -261,7 +277,7 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
 - interpreter：`interpreter.cpp` 主循环，`interp_threaded_*.inc` threaded，
   `interpreter_context.cpp` context/锁，`diagnostics.cpp` 诊断，`vm_threads.cpp` 线程。
   `annotation_runtime.cpp` 物化受限注解实例与成员取值。
-- intrinsic：`intrinsics/catalog.cpp` 显式聚合固定 family TU；每类唯一 `Declare_*` 与实现同址。
+- intrinsic：`intrinsics/catalog.cpp` 显式聚合固定 family TU；每类唯一声明函数与实现同址（命名规则见 intrinsics MODULE）。
   禁止静态自注册、misc 巨石、空 handler、平台事实反向依赖。
 - 依赖仅指向 core/loader/runtime-jni；平台 provider 经注入获得。guest 输入全部受检，未实现必须
   记账并失败。缓存不得跨可能扩容操作保存 class/member 引用或 host pointer。

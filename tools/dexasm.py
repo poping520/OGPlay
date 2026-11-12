@@ -8,7 +8,7 @@ the pinned AOSP baseline; opcode values and formats
 come from data/dexvm/dalvik_opcodes.json, never a second hand-written table.
 
 It is a test tool, not a general assembler: anything outside the supported
-subset fails loudly. See docs/design/dexvm/05-verification.md §1.
+subset fails loudly. See docs/playbook/DEV-REFERENCE.md.
 """
 
 from __future__ import annotations

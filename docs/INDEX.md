@@ -1,39 +1,37 @@
-# OGPlay 文档索引
+# OGPlay 文档入口
 
-新会话先读 [AGENTS.md](../AGENTS.md) 与 [当前状态](state/CURRENT.md)。本页只列入口，不记录状态；
-状态以 CURRENT、[能力账本](../capabilities.toml)（用 `tools/capabilities.py` 查询）和任务单为准。
+开发先读 [AGENTS.md](../AGENTS.md)、[当前状态](state/CURRENT.md)、
+[已知问题](state/KNOWN-ISSUES.md) 和相关模块契约；有在办任务时再读任务单。
+设计文档面向人类开发者，只在需要子系统背景时阅读。
 
-## 状态与能力
+## 当前事实与规则
 
-- 当前状态：[state/CURRENT.md](state/CURRENT.md)
-- 长期已知问题：[state/KNOWN-ISSUES.md](state/KNOWN-ISSUES.md)
-- 里程碑验收：[M0](state/M0-ACCEPTANCE.md)、[M1](state/M1-ACCEPTANCE.md)、
-  [M2](state/M2-ACCEPTANCE.md)、[M3](state/M3-ACCEPTANCE.md)、[M4](state/M4-ACCEPTANCE.md)
-- 工作单：[tasks/README.md](tasks/README.md)
+- [当前运行路径与游戏进度](state/CURRENT.md)
+- [尚未关闭的缺口与限制](state/KNOWN-ISSUES.md)
+- [模块契约索引](modules/INDEX.md)
+- [能力账本](../capabilities.toml)：通过 `python3 tools/capabilities.py show|find|list` 查询
+- [现行架构决定](adr/README.md)
+- [操作手册](playbook/README.md)
+- [在办任务规则与模板](tasks/README.md)
 
-## 架构与契约
+## 模块设计
 
-- 规划：[roadmap/README.md](roadmap/README.md)
-- 架构决策：[adr/README.md](adr/README.md)
-- 模块契约：[modules/INDEX.md](modules/INDEX.md)
+- [总体架构与端到端流程](design/README.md)
+- [guest 执行环境](design/guest-execution.md)
+- [native 边界与 JNI 互通](design/native-boundary.md)
+- [DexVM 与 ROM Java](design/dexvm.md)
+- [Android 平台层](design/android-framework.md)
+- [图形、EGL 与帧生产](design/graphics.md)
+- [音频与视频](design/audio-video.md)
+- [存储、数据库与安全](design/storage-security.md)
+- [输入映射](design/input.md)
+- [前端、游戏库与会话](design/frontend.md)
+- [可观测性与测试](design/diagnostics-testing.md)
 
-## 专项设计
+## 用户与工具说明
 
-- [APK Startup · Manifest 驱动的应用进程启动（历史方案）](design/apk-startup/README.md)
-- [DexVM · 有界 DEX 解释器与 ROM 平台边界（含历史阶段设计）](design/dexvm/README.md)
-- [Diagnostics · 通用停滞诊断能力设计](design/diagnostics/README.md)
-- [Input · 通用 PC 操控映射方案设计](design/input/README.md)
-- [历史方案：Profile 驱动的启动作用域裁剪](design/entry-scope/README.md)
-- [OGPlay 主界面 + 设置页 设计（GUI v2）](design/gui/README.md)
-- [Launcher · 主面板（游戏启动器）方案设计](design/launcher/README.md)
-- [Layout UI · 有界 Android XML UI 历史方案](design/layout-ui/README.md)
-- [Sandbox · 每游戏持久沙盒（历史方案）](design/sandbox/README.md)
-- [VFS · 资源读取、寿命与安装实例沙盒规划](design/vfs/README.md)
+- [项目说明](../README.zh-CN.md)、[兼容性边界](COMPATIBILITY.md)
+- [第三方声明](../THIRD_PARTY_NOTICES.md)
+- [工具入口](../tools/README.md)、[场景说明](../tests/scenarios/README.md)
 
-## 操作手册
-
-适配新游戏、MCP 测试、场景 runner、Dashboard 与排查流程见
-[playbook/README.md](playbook/README.md)。
-
-`demo/` 是本地 DEMO 基线，只用于提取已经验证的知识；正式版不从中继承游戏特判、
-协作式线程、手写 GLES 转译或静默桩。
+本次清理前的完整文档见清理前提交 `0accb6022`。

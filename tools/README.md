@@ -122,7 +122,7 @@ python tools/dexvm_stub_gen.py \
 
 该生成器保留作历史诊断工具，不作为新平台类实现的起点。原样 ROM jar 已提供声明和普通方法，
 新代码只能扩展 native/进程内服务，不得用生成结果替换 ROM 类或覆盖非 native 方法。
-实际替换与覆盖的查询方法见 [ROM 平台边界](../docs/design/dexvm/03-platform-intrinsics.md#3-存量替换与覆盖的查询)。
+实际替换与覆盖的查询方法见 [ROM 平台边界](../docs/design/dexvm.md)。
 
 ## M4 本机出口测试
 
@@ -193,7 +193,7 @@ CMake 会按宿主选择平台/CPU，并逐文件验证清单。普通 Debug 构
 格式与支持边界见 [data/devices/README.md](../data/devices/README.md)。
 定向测试：`python tests/tools/test_validate_devices.py`；CTest：`tools.device_presets_current` / `tools.device_presets_validator`。
 
-### 静态体检（DIAG-4 / WU1）
+### 静态体检
 
 `ogplay-cli dexvm dump-surface [--framework <dir>]` 导出真实 linked catalog/启动类路径表面，
 保留链接错误、来源、常量和动态 guest JNI 未核实状态。`dexvm_api19_surface.py --jar ...`

@@ -42,7 +42,7 @@ needs_data（示例与最深共同目录只取扩展文件），否则缺失 ≥
 `data_mount_hint` 关闭、报告缺失/损坏/旧 schema 或与当前挂载不符时为 none；用户新选目录单独评估。
 CLI `library data-hint` 同源。
 
-运行结果（GUI-23）：ResolveLaunch 在非 preflight 时同时传条目 `last-run.json`（`--run-report`）。报告由游戏进程写，
+运行结果：ResolveLaunch 在非 preflight 时同时传条目 `last-run.json`（`--run-report`）。报告由游戏进程写，
 格式、失败判定与列表 JSON（`LastRunJson`）只在 `app/run_report.h` 定义：未完成且无运行锁为 interrupted；
 startup_failed/fault/crashed/no_frame、interrupted 或带 exit_error 为失败。读不出的报告视为无运行信息，不改变条目状态。
 导入前 GuessDataMount 只看宿主路径：最内层 `Android/data|obb|media`、`sdcard`、`emulated/0`
@@ -60,7 +60,7 @@ external_dir 与库内路径不同时即按 link 解析。
 图标：入库与导入分析从 application icon 的全部密度配置中选面积最大且可解码的 PNG（跳过 XML、.9.png），
 存方形 RGBA PNG，不放大、超过 kLauncherIconMaxSize（256）才缩小。`RefreshIcons`/CLI `library refresh-icons`
 在库锁内按当前规则从各条目 game.apk 重提 icon.png，原子替换，读不出的条目保留原图标。
-运行中游戏图标（GUI-17）：`ComposeRunningIcon` 把条目图标与随包 OGPlay 卡带合成为方形 RGBA，`badge`（默认，圆形角标）或
+运行中游戏图标：`ComposeRunningIcon` 把条目图标与随包 OGPlay 卡带合成为方形 RGBA，`badge`（默认，圆形角标）或
 `cradle`（卡带插槽）；游戏图标不加底，裁透明边/软投影后放大至多 20% 直到 macOS 圆角内无透明像素。全局 `running_icon`
 选择样式；ResolveLaunch 仅在条目有 icon.png 时传 window_icon 与样式。
 Windows 合成使用更紧凑的留白（底板占边长约 91%、卡槽宽度占 98%），与裁透明边后的应用 ICO 保持接近的视觉尺寸，角标保持在画布内；macOS 沿用原有 Dock 网格。设置预览与运行图标使用相同的平台参数。

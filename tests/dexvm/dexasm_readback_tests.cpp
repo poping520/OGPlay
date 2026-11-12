@@ -1,5 +1,5 @@
 // dexasm output cross-checked by the independent C++ L1 parser
-// (docs/design/dexvm/05-verification.md §1: golden locks bytes, readback
+// (docs/playbook/DEV-REFERENCE.md: golden locks bytes, readback
 // locks structure). Fixtures are assembled at build time by tools/dexasm.py.
 
 #include <doctest/doctest.h>

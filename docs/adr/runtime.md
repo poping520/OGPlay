@@ -211,7 +211,7 @@ TPIDRURW、CP14、VFP/NEON 等后端缺口继续明确失败，避免伪装成�
   本地查询不执行网络 IO，不受 transport NetworkPolicy 限制；缺拓扑/在线状态
   仍记账并明确失败。地址对象由既有 ROM InetAddress 构造路径建立。
 - 后果：ROM NetworkInterface 可枚举离线回环，普通算法仍归 Java；不增加通用 socket、
-  netlink/getifaddrs/if_indextoname 或在线 provider。验证见 [DVM-343](../tasks/dexvm/DVM-343.md)。
+  netlink/getifaddrs/if_indextoname 或在线 provider。接口范围见 [DexVM 契约](../../src/runtime/dexvm/MODULE.md)。
 
 <a id="adr-0169"></a>
 
@@ -242,7 +242,7 @@ ROM 控件与软件 Canvas 使用同一字体事实；完整整形与双向排�
 
 ## ADR-0080 · 进程统一拥有虚拟 CPU 查询事实
 
-日期：2026-09-29。状态：接受。任务：[BND-42](../tasks/boundary/BND-42.md)。
+日期：2026-09-29。状态：接受。
 
 ### 决策
 
@@ -323,7 +323,7 @@ PackageManager 能查到、AMS 不可托管的视图差异是有意为之。依�
 
 ### 决定
 
-取代 WU-0017 及 dexvm_bridge 中“root/驱动阻塞时限时等待快进到截止时间”的规则。
+取代 dexvm_bridge 中“root/驱动阻塞时限时等待快进到截止时间”的规则。
 生命周期驱动的 execution lock blocking observer 统一记录释放与重新竞争锁的事件，
 并转发 EGL pacer 原有阻塞逻辑；无 EGL 的会话同样跟踪。
 停摆起点记录真实时间与 uptime，root/worker 的 sleep、wait、join、park 每次轮询仅补至

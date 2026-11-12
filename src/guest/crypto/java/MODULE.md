@@ -24,7 +24,7 @@ UTF-16 单元、盐最多 65536 bytes、迭代 1..1000000，超限明确失败�
 缺失或损坏时 TrustManagerFactory.init(null) 失败，不读取宿主证书库。AndroidCAStore 保持
 API19 只读；写/删/store 抛 UnsupportedOperationException。
 
-DVM-172 已完成 KeyStore/BKS 发布条件并注册默认 BKS。DVM-173 增加 OGPlayJSSE：PKIX
+已完成 KeyStore/BKS 发布条件并注册默认 BKS。提供 OGPlayJSSE：PKIX
 TrustManagerFactory、真实 libcrypto 路径验证与只读 AndroidCAStore；客户端 SSLSocket/
 HTTPS 经 raw NetworkRuntime 完成 loopback TLS 1.2 握手与 GET。校验时间走统一 Clock；
 `SSLContext.init` 与 `DefaultContext` 都不覆盖调用方已设置的全局 HTTPS 工厂；协议/SNI

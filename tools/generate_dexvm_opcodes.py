@@ -13,7 +13,7 @@ pinned AOSP baseline's opcode-gen/bytecode.txt, never hand-copied. This tool:
   --check        with --output, compare instead of write
   --self-test    internal consistency (count, holes, formats, widths)
 
-See docs/design/dexvm/02-architecture.md §4 and 07-aosp-reference.md §2.
+See docs/design/dexvm.md and docs/playbook/DEV-REFERENCE.md.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from pathlib import Path
 CATALOG_SCHEMA = "dexvm-opcodes-v1"
 EXPECTED_STANDARD_COUNT = 218
 
-# dex 035 standard instruction formats (docs/design/dexvm/02-architecture.md §4).
+# dex 035 standard instruction formats (docs/design/dexvm.md).
 STANDARD_FORMATS = (
     "10x", "12x", "22x", "32x", "11n", "21s", "21h", "31i", "51l", "11x",
     "10t", "20t", "30t", "21t", "22t", "21c", "22c", "31c", "23x", "22b",
@@ -195,8 +195,8 @@ def generate_cpp(catalog: dict) -> str:
                  "do not edit.")
     lines.append("// Source of truth: data/dexvm/dalvik_opcodes.json "
                  "(machine-compared with the")
-    lines.append("// pinned AOSP baseline; see docs/design/dexvm/"
-                 "07-aosp-reference.md).")
+    lines.append("// pinned AOSP baseline; see docs/playbook/"
+                 "DEV-REFERENCE.md).")
     lines.append("#pragma once")
     lines.append("")
     lines.append("#include <array>")

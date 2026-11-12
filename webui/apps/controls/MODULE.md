@@ -1,7 +1,7 @@
 # 按键编辑器 Web 前端
 
 ADR-0134 的 Web 按键编辑器，由 run-apk 的 loopback 服务以 `/controls/` 提供，只调用同源
-`/controls/rpc` 的 `control.*`（INP-5）。
+`/controls/rpc` 的 `control.*`。
 
 - 令牌：启动方打开 `/controls/#token=<令牌>`；页面把令牌移入本标签页的 sessionStorage 并
   从地址栏与历史中移除，片段不发往服务器。无令牌或 401 时要求粘贴令牌。

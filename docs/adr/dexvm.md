@@ -27,7 +27,7 @@
 应用与 API19 ROM Java 方法在同一 DexVM 中解释执行，启动类路径为 ogplay.jar 与原样 ROM jar。
 ROM ActivityThread、主 Looper、ViewRootImpl 执行应用启动、生命周期与软件绘制；宿主提供 native
 和进程内服务接口，不启动 system_server、Zygote 或 Binder IPC。新代码不得替换 ROM 类或覆盖
-ROM 非 native 方法；现存替换和覆盖按阶段移除，查询方法见 [平台边界](../design/dexvm/03-platform-intrinsics.md)。
+ROM 非 native 方法；现存替换和覆盖按阶段移除，查询方法见 [平台边界](../design/dexvm.md)。
 只提供稳定 application/boot loader 与封存类路径，不开放动态 classpath、自定义加载权限、
 完整 verifier、DEX JIT/AOT、odex/quickened、JDWP 或 instrumentation。
 JNI 与 Java 共用对象身份、字段、数组/String payload 及 GC；不能复制一套宿主 Java 状态。
@@ -217,7 +217,7 @@ boundary 的 AConfiguration 经显式 provider 读取同源投影。Locale.setDe
 ### 后果
 
 Java 算法与缓存没有宿主副本；设备语言地区与应用可修改的 Java 默认 Locale 各有明确归属。
-验证入口及范围见 [DVM-342](../tasks/dexvm/DVM-342.md)。
+验证入口及范围见 [Android 平台契约](../../src/runtime/integration/dexvm_android/MODULE.md)。
 
 <a id="adr-0172"></a>
 
@@ -228,7 +228,7 @@ Java 算法与缓存没有宿主副本；设备语言地区与应用可修改的
 
 ### 背景
 
-虚拟设备内存快照为 1 GiB（DVM-228），旧 Dalvik 64/512/1024 MiB 默认堆不匹配。
+虚拟设备内存快照为 1 GiB，旧 Dalvik 64/512/1024 MiB 默认堆不匹配。
 Runtime.maxMemory 会影响应用按比例预分配；Manifest 的 largeHeap 必须与实际活动堆上限一致。
 
 ### 决定

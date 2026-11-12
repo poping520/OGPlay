@@ -17,4 +17,4 @@
 
 ## 测试
 
-构建与打包见 `android/MODULE.md`；运行行为需要真机，见 AND-1。
+构建与打包见 `android/MODULE.md`；运行行为需要真机。

@@ -33,7 +33,7 @@
   各自保存独立 `meta-data`，不与 application 或兄弟组件合并；
   保留 `android:exported`：显式布尔写入事实，缺省时按 API 19 在有 intent-filter 时为
   true。`application` icon 保留
-  resource id，label 严格区分 resource id 与字面量；DVM-77 继续按声明序提取去重的
+  resource id，label 严格区分 resource id 与字面量；继续按声明序提取去重的
   `uses-permission` 与 application `meta-data`。metadata 按 API19 Bundle 保存 string、float、
   boolean、全部 INT 范围（含 color）；dimension/fraction 等非 RIGID 类型记录 diagnostics 后忽略。
   空 key 合法，同 owner 的最后有效写入覆盖；resource 非零优先，否则回退 value。
@@ -60,7 +60,7 @@
   和后续同名定义不注册。protectionLevel 仅按 API19 fixProtectionLevel/-1/flags-base 校验，
   permissionFlags 不另限位，非资源 description 忽略。
   uses-permission 缺失/非字符串名称忽略、空串合法，按声明去重并处理整数 maxSdkVersion。
-  DVM-112 保留 application enabled、独立的 service 名称/enabled/过滤器事实；过滤器
+  保留 application enabled、独立的 service 名称/enabled/过滤器事实；过滤器
   保存 action/category 与 data 条件存在标记，不能将未解析的 data 条件当作没有条件。
   service 名称沿用 API19 buildClassName，缺名/空名/非法名明确失败；
   service 还保存 exported、继承或覆盖的 process/permission、自身 `meta-data` 和
@@ -109,7 +109,7 @@
   永久限制在已选 process ABI。
 - `ParseDex(bytes, annotation_limits={})`：从不可信字节解析 DEX 035..040 header、固定 ID 表范围和有序
   `map_list`，并严格解码字符串、类型 descriptor、prototype type_list/shorty；交叉验证
-  field/method ID、class_def、接口列表及所有索引与 UTF-16 长度；DVM-69 投影
+  field/method ID、class_def、接口列表及所有索引与 UTF-16 长度；投影
   InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws system annotations；
   另外保留 class/field/method/parameter runtime-visible 递归 encoded value、
   `AnnotationDefault` 与 class/field/method 的 Signature 字符串片段拼接；Signature 保持 system
@@ -237,10 +237,10 @@
 `tests/loader/` 的单元与畸形输入契约测试；三平台 warnings-as-errors 构建同时约束
 小端字段、encoded-value 宽度与 UTF-16 host projection 不依赖实现相关的隐式整型转换。
 
-DVM-105：空 APK inventory 可建立空 ApkSelectedNativeLibraries 视图，以加载系统 JNI。
+空 APK inventory 可建立空 ApkSelectedNativeLibraries 视图，以加载系统 JNI。
 非空 inventory 缺少指定 ABI 仍拒绝；ResolveApkProcessAbi 对空 inventory 的报错保持。
 
-DVM-121：Manifest application/Activity 的 theme 保留 resource id；activity-alias 不覆盖
+Manifest application/Activity 的 theme 保留 resource id；activity-alias 不覆盖
 目标 Activity 的 theme。loader 不应用主题或展开资源继承，0/缺省回退由 session 处理。
 
 loader 提供受检 ZIP/DEX 事实；integration 在 catalog/VM 创建前校验 BootDex 归档及 DEX 条目。

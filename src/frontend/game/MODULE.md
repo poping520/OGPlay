@@ -29,14 +29,14 @@ teardown 之前判定，用户关闭后 onDestroy 等退出错误不改变它：
 无呈现帧为 no_frame、否则 exited；其余运行故障为 fault，无呈现帧为 no_frame，用户/宿主关闭为 closed；
 未写即析构为 startup_failed。
 
-`--run-report <file>`（GUI-23）：非 preflight 时 RunGame 开局原子写未完成报告（started_at），结束写 finished、
+`--run-report <file>`：非 preflight 时 RunGame 开局原子写未完成报告（started_at），结束写 finished、
 同一 end（会话未到判定点即失败时，进入运行循环或已有 guest 退出按 ClassifyRunEnd，否则 startup_failed）、退出码
 （异常退出为 null）、呈现帧、首个故障/启动失败文本与 closed/exited 后的 teardown 错误（exit_error）。
 文本截断至 4 KiB 并保证 UTF-8；写失败只记 warn，不改变运行结果。
 
 `--window-title <name>`：窗口标题为 `OGPlay · <name> · FPS`，缺省用 APK 文件名；限 1～256 字节可打印 UTF-8。
 库启动由 ResolveLaunch 传入游戏库显示名称。
-`--window-icon <png> [--window-icon-style badge|cradle]`（GUI-17）：建窗前以 `ComposeRunningIcons` 合成
+`--window-icon <png> [--window-icon-style badge|cradle]`：建窗前以 `ComposeRunningIcons` 合成
 512/256/64/48/40/32/24/20/16 px 一组图标（小尺寸覆盖 Windows 100%～200% DPI 的图标度量），然后隐藏建窗并 `SetIcon`；读图、合成或设置失败只记 warn，保留默认图标；设置成功或失败后再显示，手动步进模式保持隐藏。样式缺省 badge，单独给样式参数明确失败。
 库启动（有 installation id 与图标）在建窗前设置 `OGPlay.Game.<id>` 任务栏身份，失败只记 warn。
 

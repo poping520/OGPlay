@@ -258,7 +258,7 @@ BouncyCastle/TLS 承诺。
 
 Dashboard 的音频、视频和窗口快照使用 try-lock，繁忙时返回空值。
 窗口快照提供窗口数和焦点标识；读取诊断不执行绘制或解码。
-能力和验收记录由 [capabilities](../../../../capabilities.toml) 与任务单维护。
+能力范围与验证入口由 [capabilities](../../../../capabilities.toml) 维护；未关闭项见 KNOWN-ISSUES，过程留在提交说明中。
 
 ## SurfaceTexture 与进程内生产端
 

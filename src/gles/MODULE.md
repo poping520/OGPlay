@@ -207,7 +207,7 @@
 `tests/gles/` 契约测试及软件后端黄金帧。
 
 
-## BND-34 对象和搬运契约
+## 对象和搬运契约
 
 - guest registry 保留有界 RGBA/RGB888/RGB565 配置，选择条件不能改写实际属性。RGB 优先用原生
   config；Metal 经 HAL 客户端存储及 ANGLE GL_RGB 表面导入，alpha 位数/读回由 ANGLE 保证。

@@ -250,7 +250,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   DSO fini；宿主线程回收、JNI detach 和 monitor shutdown 仍执行，原错由调用方保留。
 - Runtime 的 hook 与 exit/halt 普通协议归 BootDex；平台只绑定 nativeExit，发布 session
   退出标记并调用 VM.Exit，保留退出码、非 Java 展开，不从 worker 同步 Stop/join。
-  宿主 Stop 仍为取消，不自动运行 hook；详见 [DVM-150](../../../docs/tasks/dexvm/DVM-150.md)。
+  宿主 Stop 仍为取消，不自动运行 hook；详见 [相关说明](../../../docs/design/dexvm.md)。
 - wait/sleep/timed join 共用注入 monotonic Clock，currentTimeMillis 使用会话时间事实。
   ADR-0171：blocking observer 统一跟踪生命周期驱动停摆并转发 EGL pacer；无 EGL 亦适用。
   root/worker 限时等待仅补至停摆起点 uptime 加注入 RealtimeClock 的真实流逝时间，
@@ -310,7 +310,7 @@ runner。JNI 保留 runner 分派以先发布当前 CPU，支持 Java→native �
 
 生产装配入口为 AndroidIntrinsicCatalog / AndroidCoreIntrinsicServices；catalog 只聚合，
 family Declare_* 同址绑定，shared 只放跨 family helper，support 承担派发；不恢复 Populate、
-集中 handler 容器或字符串分发。迁移历史见 [DexVM 工作单](../../../docs/tasks/dexvm/README.md)。
+集中 handler 容器或字符串分发。设计背景见 [DexVM](../../../docs/design/dexvm.md)。
 定向测试位于 [tests/runtime](../../../tests/runtime/) 的 native loader、guest call、JNI、preflight、
 headless/NativeActivity，以及 [tests/dexvm](../../../tests/dexvm/) 的 Android/线程/布局/scheduler。
 只构建受影响目标；文档修改只做 UTF-8/链接/diff 检查，人工探索不能代替 Scenario gate。

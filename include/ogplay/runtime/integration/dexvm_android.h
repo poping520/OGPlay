@@ -119,7 +119,7 @@ struct AndroidInputDevice final {
 };
 
 // android.* intrinsic surface for the dex_activity lifecycle
-// (docs/design/dexvm/03-platform-intrinsics.md §4). The catalog is a
+// (docs/design/dexvm.md). The catalog is a
 // code-defined immutable list; handlers bind to the running guest session
 // (sound mixer, VFS, platform identity) through this shared context.
 

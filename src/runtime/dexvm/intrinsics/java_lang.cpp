@@ -6,7 +6,7 @@
 // by the protected constructor, the query methods are final, toString stays
 // overridable, and static valueOf resolves constants from the enum's own
 // static fields (the class library's reflective values() cache is not in
-// scope; see docs/design/dexvm/03-platform-intrinsics.md §5).
+// scope; see docs/design/dexvm.md).
 
 #include "catalog.h"
 #include "shared.h"

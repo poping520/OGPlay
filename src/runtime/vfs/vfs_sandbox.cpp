@@ -1,5 +1,5 @@
 // Directory/metadata operations and the per-title sandbox overlay
-// (ADR-0020, docs/design/sandbox/ 02 §1 and 03 §2). Resolution order is
+// (ADR-0020, docs/design/storage-security.md). Resolution order is
 // overlay file, then overlay tombstone (absent), then the read-only base
 // layer; writes inside the writable namespace land in the overlay and reach
 // the host at the enumerated flush points.

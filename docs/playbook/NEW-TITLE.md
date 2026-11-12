@@ -5,9 +5,9 @@
 并给出用现有工具**一次收割一批**的流程。目标不是少写代码，而是把
 「发现下一个缺口」的成本从一轮运行降到一条命令。
 
-前置阅读：`AGENTS.md`、`docs/state/CURRENT.md`、`docs/design/dexvm/README.md`、
-`src/runtime/dexvm/MODULE.md`、`src/runtime/integration/MODULE.md`；在办的 title
-阻塞点见 `docs/tasks/dexvm/README.md`。范围红线以 `AGENTS.md` 为准。
+前置阅读：`AGENTS.md`、`docs/state/CURRENT.md`、`docs/state/KNOWN-ISSUES.md`、
+`src/runtime/dexvm/MODULE.md`、`src/runtime/integration/MODULE.md`；有在办任务时再读任务单。
+需要背景时参考 [DexVM 设计](../design/dexvm.md)，范围红线以 `AGENTS.md` 为准。
 
 ---
 
@@ -50,14 +50,14 @@ ELF 导入另标 `native-import-missing`，强弱与版本分开。JNI 字符串
 动态 guest JNI 标记 unverified；静态依赖不代表可达，仍须步骤 3/5 确认真实命中。
 题库可用 `--games-dir .local/games --output-dir .local/analysis/preflight/library` 汇总。
 表面、参考及 APK 派生产物一律留 `.local/`；旧 gap report 输出可继续供步骤 2 的旧生成器使用，
-新体检不生成桩，也不直接作为旧生成器输入。完整边界见 [DIAG-4](../tasks/diagnostics/DIAG-4.md)。
+新体检不生成桩，也不直接作为旧生成器输入。完整边界见 [静态体检与诊断](../design/diagnostics-testing.md)。
 
 ### 步 2 · 核对 ROM 来源与真实接缝
 
 先确认缺口位于 ROM native、进程内服务、VM 语义还是 APK 自身。
 原样 ROM jar 已在启动类路径，不再生成平台占位类、补普通 Java handler 或逐类准入。
 使用 `dump-surface` 与实际 ROM 签名核对来源，查询方法见
-[平台边界](../design/dexvm/03-platform-intrinsics.md#3-存量替换与覆盖的查询)。
+[平台边界](../design/dexvm.md)。
 `dexvm_stub_gen.py` 只保留为历史诊断工具，生成结果不能作为替换 ROM 类或覆盖普通方法的实现入口。
 缺 native 时对照固定 AOSP JNI，缺服务时对照 ROM 接口及本地 Stub；超出范围明确失败。
 

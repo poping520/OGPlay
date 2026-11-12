@@ -8,4 +8,4 @@ run-apk 选项），经 `app::ParseGameRunArgs` 进入 `app::RunGame`，与桌�
 退出即结束进程，不做进程内重启。失败经 logcat 上报。`<android/*>` 与 `<jni.h>` 只能出现在
 本目录及 `hal/android`。
 
-验证：`android/` 的 `assembleDebug` 与 APK 内容检查；运行行为需要真机，见 AND-1。
+验证：`android/` 的 `assembleDebug` 与 APK 内容检查；运行行为需要真机。

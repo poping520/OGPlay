@@ -115,7 +115,7 @@ $guestProcessId = 12345 # 替换为该会话的 process_id
 
 FFmpeg 不可用原因在视频面板显示；解码未装配不是播放器没有请求。
 GLES trace 没有线程/帧键时不强行归属；VFS FD 可以复用，node_id 缺失时不能跨时间认定同一文件。
-更多支持边界见 [DASH-02](../tasks/gui/DASH-02.md) / [DASH-04](../tasks/gui/DASH-04.md)。
+更多支持边界见 [Agent 契约](../../src/agent/MODULE.md) 与 [前端设计](../design/frontend.md)。
 
 ## 5. 记录、回归与收尾
 

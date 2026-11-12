@@ -16,7 +16,7 @@
 map-buffer 使用 services 的统一 guest arena，与 OES 入口共用 map/query/flush/unmap。
 
 
-## BND-34 安全与状态修复
+## 安全与状态修复
 
 UBO ACTIVE_UNIFORM_INDICES 先查询真实元素数；sampler/vertex/64 位 state query 精确分配。
 Uniform 查询从 native program 刷新宽度。二维与三维 PBO 地址是 buffer offset，普通 guest

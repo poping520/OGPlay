@@ -111,9 +111,9 @@ AndroidKeyStore 若确有需求，可另做应用隔离的软件密钥底座，�
 
 但 AndroidCAStore/AndroidKeyStore 类型本身可被应用访问：查询、异常、隔离与密钥导出等
 语义仍必须兑现。不能用返回成功、跳过验证或伪造硬件保护代替实现。具体方案见
-[信任验证与 TLS](../design/dexvm/14-tls-trust.md)及 [ADR-0066](../adr/dexvm.md#adr-0066)。
+[信任验证与 TLS](../design/storage-security.md)及 [ADR-0066](../adr/dexvm.md#adr-0066)。
 
-JNI 一致性：`python3 tools/conformance/jni_tests.py --coverage --check-baseline`（自测 `--self-test`；见 [DIAG-8](../tasks/diagnostics/DIAG-8.md)）。
+JNI 一致性：`python3 tools/conformance/jni_tests.py --coverage --check-baseline`（自测 `--self-test`；原理见 [诊断与测试](../design/diagnostics-testing.md)）。
 
 ## BootDex 与 dexvm 链接定向回归
 
@@ -126,3 +126,34 @@ JNI 一致性：`python3 tools/conformance/jni_tests.py --coverage --check-basel
 ```sh
 build/release/ogplay_tests -tc="*survey*,*DVM-103*,*DVM-254*,*BootDex*,*boot dex*,*PointerCoords*"
 ```
+
+## dexasm 夹具与 AOSP 源码对照
+
+`tools/dexasm.py` 接受受限文本 IR，输出确定性的 DEX 035；不承诺 smali 兼容。
+按改动选用已有夹具；确需新增边界时再写最小输入，不引入 Android SDK 作为夹具生成前置。
+
+```sh
+python3 tools/dexasm.py --input /tmp/fixture.dexasm --output /tmp/fixture.dex
+```
+
+需要校验汇编器本身时运行 `python3 tools/dexasm.py --self-test`：golden 锁定字节，
+`tests/dexvm/dexasm_readback_tests.cpp` 用生产解析器回读结构，两者验证的问题不同。
+指令预期值在用例注释记录对应 AOSP 文件/函数或规范章节；反例应保留 class/method/DEX PC。
+
+本地 `.local/aosp/dalvik/` 的 KitKat 资料仅作参考，不默认编译或链接进运行时。
+opcode 修改可用 `tools/generate_dexvm_opcodes.py --verify-aosp <资料根目录>` 核对固定来源，
+以脚本要求的 `opcode-gen/bytecode.txt`、`libdex/DexOpcodes.h` 等锚点为准。
+
+| 问题 | AOSP 对照入口 |
+| --- | --- |
+| 指令、NaN、溢出与检查顺序 | `vm/mterp/c/OP_*.cpp`、`docs/dalvik-bytecode` |
+| DEX 布局与结构反例 | `libdex/DexFile.h`、`DexSwapVerify.cpp`、`docs/dex-format` |
+| 链接预检、类初始化和解析 | `vm/analysis/CodeVerify.cpp`、`vm/oo/Class.cpp`、`Resolve.cpp` |
+| 赋值关系、异常与 monitor | `vm/oo/TypeCheck.cpp`、`vm/Exception.cpp`、`vm/Sync.cpp` |
+| 根枚举、JNI 和线程附着 | `vm/alloc/MarkSweep.cpp`、`vm/Jni.cpp`、`vm/Thread.cpp` |
+
+先对规范和同代实现，再用精确夹具/设备行为裁决差异并记录在测试注释。
+规范与实现冲突时，以目标时代真实实现行为为兼容依据；不凭现代 JDK 行为改 oracle。
+只参考语义，不整体搬入 dvm、mterp 汇编/JIT、odex/quickened 或其宿主布局假设。
+原版 Java 随 ROM 执行，不根据参考资料重写普通集合等算法。
+可选 dexdump 交叉解析不属于默认依赖，也不能以工具缺席替代已有解析回读。

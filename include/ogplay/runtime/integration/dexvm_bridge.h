@@ -17,7 +17,7 @@ namespace ogplay::runtime {
 struct DexVmAndroidContext;
 
 // Assembles the dexvm interpreter on top of a running Android guest call
-// session and bridges both JNI directions (docs/design/dexvm/04-integration.md
+// session and bridges both JNI directions (docs/design/dexvm.md
 // §1):
 //   outbound  interpreter -> native: descriptor-driven A32 marshaling into
 //             the existing guest call executor (RegisterNatives mappings

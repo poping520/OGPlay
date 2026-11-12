@@ -36,7 +36,7 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   mmap2 接受本模型无可观察差异的提示位 DENYWRITE/EXECUTABLE/LOCKED/NORESERVE/POPULATE/
   NONBLOCK/STACK（bionic pthread 栈带 NORESERVE）；GROWSDOWN、HUGETLB 与未知位 ENOSYS 记账。
   私有文件映射复制期间临时冻结节点，并发写入得到 EBUSY 并记账。
-  madvise 保留 WU-0088：advice 0–4、12–15 校验区间，DONTNEED 清零匿名可写页；与文件映射
+  madvise 保留既有语义：advice 0–4、12–15 校验区间，DONTNEED 清零匿名可写页；与文件映射
   区间重叠的 DONTNEED 返回 ENOSYS 记账（Linux 从文件重填，快照无来源），其余 advice 如实成功。
 - memory 登记的 provider 保护范围：munmap/mprotect 和 MAP_FIXED 任意部分重叠均返回
   `-EPERM` 并由 owner ledger 记账，整次操作不改映射。mremap 检查原区与 FIXED 目标，

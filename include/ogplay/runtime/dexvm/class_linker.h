@@ -63,8 +63,7 @@ struct CoreIntrinsicServices final {
 };
 
 // Class linking: registration, hierarchy resolution, field layout, vtable
-// construction and lazy method precheck (docs/design/dexvm/02-architecture.md
-// §5). Algorithm shape follows AOSP vm/oo/Class.cpp (vtable build) and
+// construction and lazy method precheck (docs/design/dexvm.md). Algorithm shape follows AOSP vm/oo/Class.cpp (vtable build) and
 // vm/analysis/CodeVerify.cpp (structural precheck subset) at the pinned
 // baseline; full dataflow verification is intentionally out of scope.
 

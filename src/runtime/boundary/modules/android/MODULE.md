@@ -49,7 +49,7 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
 - NativeActivity InputQueue 绑定具体 Looper，仅所属线程可 poll 到对应输入；callback
   模式明确失败。命令通知只唤醒查询，不把任意 write 转换为输入/命令事件。
 
-验证：BND45 定向边界、真实 libdl/ARM 调用与原 APK 路径；见 BND-45。
+验证：BND45 定向边界、真实 libdl/ARM 调用与原 APK 路径。
 
 ## 空传感器目录
 

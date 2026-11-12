@@ -7,7 +7,7 @@
 
 namespace ogplay::runtime::dexvm {
 
-// Strong fixed-width handles (docs/design/dexvm/02-architecture.md §5).
+// Strong fixed-width handles (docs/design/dexvm.md).
 // They never expose host pointers and stay stable for the session lifetime.
 template <typename Tag>
 class DexVmHandle final {

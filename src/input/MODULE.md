@@ -13,13 +13,13 @@
   接触期间 pointerId 稳定，UP 快照包含离开的触点，后续快照才删除；Android action
   编码归 session；压力与中性修饰键状态随快照保留。窗口重置、后台及 finger cancel
   终止整个捕获手势。
-- `ControlMapper`（[Input 设计](../../docs/design/input/README.md)、ADR-0133）：一块逻辑触屏，
+- `ControlMapper`（[Input 设计](../../docs/design/input.md)、ADR-0133）：一块逻辑触屏，
   宿主触摸、鼠标主键、绑定按键与外部（MCP）触点共用最多 16 个触点，pointerId 取最小
   空闲值且存续期间稳定，溢出拒绝并计数。`Accept` 记录 HAL 事件，`Flush` 每 guest 帧
   调用一次，按“按键输出 → MOVE → UP → DOWN”顺序返回本帧输出；同帧多次移动合并为一次
   MOVE。原语为 `direct`、`button`（tap/hold/repeat）、`stick`（四键组、固定原点、8 向）、
   `key`（Android keycode）、`mode`（toggle/hold）、`look`（准星：`mouse:motion` 拖动视角）与
-  `lock`（键盘键切换指针锁定）（INP-10）。
+  `lock`（键盘键切换指针锁定）。
   输入源另有 `mouse:motion`（仅 look）与 `wheel:up|down`（每满一格按下并抬起一次，可用于
   button/key/mode，不可用于 stick）。`ControlConfig` 为已解析的数据；
   `DefaultControlConfig` 为内置默认（鼠标/触摸直通、Esc→`KEYCODE_BACK` 且放开锁定的指针）；
@@ -27,13 +27,13 @@
   `AnchorName` 为其逆。`Reconfigure` 先以新配置构造并按当前 surface 校验，成功后才取消旧
   布局并返回其 CANCEL 与按键释放；`Layout` 返回按当前 surface 解析的区域（ADR-0134）；
   `Hints` 返回当前基础模式、`*` 与按住叠加模式中有效绑定所用区域及其源，供 F1 提示。
-- 滚轮捏合（INP-9，内置、不经配置）：HAL `pointer_wheel` 在内容区内合成水平双指；
+- 滚轮捏合（内置、不经配置）：HAL `pointer_wheel` 在内容区内合成水平双指；
   +delta_y（向上滚）张开即放大，每格间距 ×1.2。主指（ACTION_DOWN）落在光标处且全程不动，
   只有副指移动；副指在右侧放得下起手间距时放右侧，否则放空间较大的一侧。几何按 surface
   宽度比例：起手间距 0.30、范围 0.08..0.60（且不超出所在侧）、副指每帧至多 0.02。
-- 触控板捏合（INP-9）：HAL `pinch_begin` 在光标处起手（几何同滚轮），每个 `pinch_update`
+- 触控板捏合：HAL `pinch_begin` 在光标处起手（几何同滚轮），每个 `pinch_update`
   按其 scale 乘间距，`pinch_end` 后按静止规则抬起；手势进行中停顿不抬指，期间忽略滚轮。
-- `look`（准星，INP-10）：区域中心即按下点。指针锁定后，鼠标相对位移 × 各轴灵敏度（可反转 Y）
+- `look`（准星）：区域中心即按下点。指针锁定后，鼠标相对位移 × 各轴灵敏度（可反转 Y）
   累计为 guest 像素；有位移时在准星按下，静置 settle 帧（默认 0）后每帧一次 MOVE 跟随，每帧
   至多移动短边 35%，待走位移至多两步（超出丢弃，鼠标停下后视角一两帧内停住），可划过整个
   surface，距边缘保留短边 3%；`max_offset_x/y`

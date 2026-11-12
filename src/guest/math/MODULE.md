@@ -16,4 +16,4 @@ limb 乘积工作量。左移和幂提前校验结果预算；超限抛 UOE 并�
 符号、零归一化、截断除法遵循 API19；指数符号按原版 BN_exp 忽略，word 按 uint32 解释。
 未覆盖的 NativeBN 方法仍明确失败，不声明完整大整数或密码学能力。
 
-验证入口：DVM-215 实际 guest JNI 双解释器用例、BootDex native ABI 审计、payload 校验。
+验证入口：实际 guest JNI 双解释器用例、BootDex native ABI 审计、payload 校验。

@@ -1,6 +1,6 @@
 #pragma once
 
-// Per-title persistent sandbox storage (ADR-0020, docs/design/sandbox/).
+// Per-title persistent sandbox storage (ADR-0020, docs/design/storage-security.md).
 // The only code that touches a sandbox directory: everything above it sees
 // the VirtualFileSystem. Depends on the standard library alone.
 

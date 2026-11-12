@@ -1,4 +1,4 @@
-// Per-title persistent sandbox storage (ADR-0020, docs/design/sandbox/ 02-03).
+// Per-title persistent sandbox storage (ADR-0020, docs/design/storage-security.md).
 // fs/ mirrors guest absolute paths 1:1 so a user can read, back up and
 // delete individual saves by hand; names are percent-escaped only where a
 // host would refuse them, and the escape is byte-exact in both directions.

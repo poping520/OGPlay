@@ -38,8 +38,7 @@ python tools/run_scenario.py \
 - `--fixture` 按 logical id 逐个映射宿主路径，可重复；场景里所有 `required`
   fixture 都必须映射，恰好一个 `apk`，最多一个 `external`（映射为
   `--external-dir`）和一个 `obb`（映射为 `--obb`）。无匹配 Profile 时，external
-  挂到 `/sdcard`，OBB 原文件挂到 `/sdcard/Android/obb/<package>/`；Profile 可另行
-  声明特殊挂载和必需资源。
+  挂到 `/sdcard`，OBB 原文件挂到 `/sdcard/Android/obb/<package>/`；特殊挂载由显式启动设置提供，Profile 仅声明身份。
 - `--evidence-dir` 必须是新目录；`--fresh` 才允许覆盖已有目录。
 - 默认沙盒为新证据目录下的 `sandbox/`，使用 run-apk 的磁盘沙盒初始化，不继承既有存档。
   `--sandbox-dir <dir>` 可显式复用状态，报告必须注明来源；watch 每代默认各有独立沙盒。

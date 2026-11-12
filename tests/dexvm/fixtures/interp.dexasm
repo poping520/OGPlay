@@ -1,6 +1,6 @@
 # Interpreter conformance fixture. Expected values per family are recorded
 # in tests/dexvm/interpreter_tests.cpp with their AOSP mterp source
-# (docs/design/dexvm/05-verification.md §2).
+# (docs/playbook/DEV-REFERENCE.md).
 
 # An optional packaged class whose framework parent is deliberately absent.
 # Whole-DEX linking must not make it a startup dependency; resolving it later

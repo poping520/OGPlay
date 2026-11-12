@@ -6,7 +6,7 @@ as loader dex_analysis), the histogram of platform classes referenced by the
 method/field constant pools, and declared native methods. Optionally folds in
 the existing title profile `[[java.class]]` impl-id corpus which is the
 design's calibration input for method-level takeover
-(docs/design/dexvm/03-platform-intrinsics.md §3).
+(docs/design/dexvm.md).
 
 Output is a deterministic JSON report; APK-derived reports must stay local
 (game data is never committed).

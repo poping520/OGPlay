@@ -28,7 +28,7 @@
   三个 builder 与 IntegralToString 普通方法归 BootDex，value/count/shared 是唯一可变事实源，
   无 builder map、clone/sweep 或普通方法 overlay。RealToString 仅保留受检 native digit generator；
   scratch 为有界局部值，digits/digitCount/firstK 用绑定字段。Character 现有 wrapper 边界补齐
-  五个 UTF-16 array 原语，无 builder 状态；详见 DVM-151 / ADR-0057。
+  五个 UTF-16 array 原语，无 builder 状态；详见  ADR-0057。
 - String.valueOf(float/double) 与 Float/Double.toString（含实例方法）统一执行 BootDex
   RealToString，复用原版 ThreadLocal 实例与 digit generator；不再用宿主定点格式化。
   String.valueOf(Object) 对非 null 对象虚派 toString，保留返回值与异常。
@@ -59,7 +59,7 @@
   宿主 Stop 保持取消语义；availableProcessors 保留单执行通道事实 1。
   Runtime gc/内存统计/runFinalization 接入真实 GC/堆及原版 finalizer；nativeLoad 保留生产
   loader 边界。runFinalizersOnExit(true) 立即
-  记账抛 UnsupportedOperationException，false 保持未启用。见 [DVM-150](../../../../docs/tasks/dexvm/DVM-150.md)。
+  记账抛 UnsupportedOperationException，false 保持未启用。见 [相关说明](../../../../docs/design/dexvm.md)。
 - System.gc 显式请求普通 STW；runFinalization 等待当前 finalizer 批次。VMRuntime 普通单例、
   参数校验与已退役 external-allocation 协议执行原版 Java；利用率与 native allocation/free
   更新 JavaObjectModel 的真实配置/计数。无 JIT 的 start/disable 与 4.4 无 JIT 构建相同。
@@ -208,13 +208,13 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
 - KeyStore/KeyStoreSpi 及公开嵌套类已进入 BootDex；自有 `OGPlayKeyStore` 已注册 BKS 并设为
   默认类型，BKS v0/v1/v2、标准/历史 key PBE、AES RAW、RSA/EC PKCS#8 与 API19 双向互操作
   已受检。CallbackHandler 实际取密码、同 store 双线程、磁盘跨 session 重载及应用沙盒隔离
-  已受检；complete 仅指 DVM-172 约定的软件 KeyStore/BKS 与算法集合。DVM-173 增加
+  已受检；complete 仅指  约定的软件 KeyStore/BKS 与算法集合。提供
   OGPlayJSSE：PKIX TrustManagerFactory、真实路径验证与只读 AndroidCAStore；`SSLContext`
   归 BootDex；loopback 客户端 TLS/HTTPS 已闭合，公开互联网 CA 与 OpenSSL 1.0.1 维护仍阻塞，
   TLS-03 未完成。
 
 ## 验证入口
 
-[DexVM 工作单](../../../../docs/tasks/dexvm/README.md)保存迁移和验收历史；定向测试见
+设计背景见 [DexVM](../../../../docs/design/dexvm.md)；定向测试见
 [tests/dexvm](../../../../tests/dexvm/)。
 行为改动覆盖 switch/threaded；只构建受影响目标，不因文档调整运行构建或测试。

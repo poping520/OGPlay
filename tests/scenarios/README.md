@@ -88,7 +88,8 @@ python tools/run_scenario.py \
 
 九款基础场景的 exact identity 来自原 APK（所选 ARM `.so` 的解压字节 SHA-256）；当前
 九款均无 Title Profile，不新增游戏 Profile。场景不等于正式 title gate，未实测通过的
-场景仍须按任务报告处理缺口。[WU5](../../docs/tasks/diagnostics/DIAG-6.md) 记录实际结果。
+场景的当前结果与缺口见 [CURRENT](../../docs/state/CURRENT.md) 和
+[KNOWN-ISSUES](../../docs/state/KNOWN-ISSUES.md)。
 
 | 场景 | 目标 / 必需设置 |
 | --- | --- |

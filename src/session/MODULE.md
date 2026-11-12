@@ -14,7 +14,7 @@ guest 主线程在独立宿主线程持续执行 ROM Looper.loop。session 提�
   process mode。ActivityThread.attach(false) 通过本地 AMS 投递 bindApplication。
   主队列首次空闲后发布 ROM Application，再允许启动 launcher。SDL 操作归宿主前端。
 
-  DVM-77 把同一 sealed Manifest 的 package/version/target SDK/application
+   把同一 sealed Manifest 的 package/version/target SDK/application
   label/icon/meta-data/requested permissions 注入 DexVM Android context；requested permissions
   是 bounded compatibility process 的显式 granted set，不宣称模拟 protection level。
   安装事实装配后显式封存单包清单，当前 guest 仅安装本次 APK；独立未装配 context
@@ -46,7 +46,7 @@ guest 主线程在独立宿主线程持续执行 ROM Looper.loop。session 提�
   用户层只读取 zone/binding；schema 1、UTF-8、不超过 200 行，input.toml 中未知键跳过，
   按键编辑器 JSON 请求中的未知键明确失败。look 绑定字段为 zone、sensitivity、
   sensitivity_y、invert_y（布尔）、settle_frames、max_offset_x、max_offset_y、regrip
-  （single/handoff）；button/key 可选布尔 release_pointer；lock 绑定只有 source/action/mode（INP-10）。
+  （single/handoff）；button/key 可选布尔 release_pointer；lock 绑定只有 source/action/mode。
   后层绑定替换同模式（或 `*`）共享输入源的默认绑定，none 解绑，区域按名称替换；
   未放置区域明确失败。`FormatControlLayer`/`SaveControlLayer` 保留 TOML 往返与原子替换，
   `DecodeControlLayerJson`/`WriteControlLayerJson` 共用同一 zone/binding 校验。
@@ -97,28 +97,28 @@ guest 主线程在独立宿主线程持续执行 ROM Looper.loop。session 提�
 
 `tools/validate_title_profiles.py` 提供独立目录门禁。
 
-DVM-105：纯 Java APK 也建立 NativeLibraryLoader，用于平台 Java 类加载 bundled JNI。
+纯 Java APK 也建立 NativeLibraryLoader，用于平台 Java 类加载 bundled JNI。
 APK selected ABI 仍为空，application ELF 数仍为零。内部空 ARMv7 库视图只用于 API 19
 系统进程，不表示 APK 自带 native 库。
 
-DVM-107：根启动向 lifecycle 分别传实际 launcher descriptor 与 manifest component name，
+根启动向 lifecycle 分别传实际 launcher descriptor 与 manifest component name，
 alias 只影响实例化目标，Activity 的组件身份保留 alias。根启动和切换均在 attach base 后、onCreate 前附加 ComponentName/Intent；
 旧实例保留自己的引用，不从进程 current_intent 动态读取。当前 APK 内受限隐式解析与显式
 非根 alias 切换同样分别携带 Manifest 组件名和实际 target Activity descriptor。
 
-DVM-112/128：AndroidAppProcess 把 sealed Manifest 的 application enabled、service 过滤器
+AndroidAppProcess 把 sealed Manifest 的 application enabled、service 过滤器
 及独立 `AndroidGuestPlatformConfig.android_id` 复制到同一 DexVmAndroidContext，并显式标记
 inventory 已就绪；独立 VM 未装配时保持
 未知，不能把缺少信息当作服务不存在。服务信息不参与 Activity 启动或产生绑定状态。
 同一平台配置的 `strict_webview_errors` 只控制 Web facade 的开发诊断策略；默认关闭，
 session 不据此创建浏览器、网络或 Activity 能力。
 
-DVM-121：从 sealed Manifest 发布 application theme 与逐 Activity theme；alias 继承
+从 sealed Manifest 发布 application theme 与逐 Activity theme；alias 继承
 目标 Activity，0 回退 application。integration 在 Activity.onCreate 前应用对应资源 id，
 session 不解析 style/颜色或创建完整 Android Theme。
 
 
-DVM-150：显式 guest Runtime/System.exit 先完成 BootDex hook 协议，halt 跳过 hook；VM 退出码
+显式 guest Runtime/System.exit 先完成 BootDex hook 协议，halt 跳过 hook；VM 退出码
 已发布的生命周期调用展开进入 Stop，不计为 guest fault。Application 内退出后不再启动
 launcher；已退出 VM 的 Stop 不再调用 Java 生命周期回调。宿主 Stop 仍是已有取消/回收路径，
 不隐式运行 hook；没有最后 non-daemon 线程结束自动退出或 hook 超时成功语义。挂起的原版
@@ -131,7 +131,7 @@ native 清理失败仍继续关闭进程和 surface；前端保留运行首错�
 
 本地视频与软件 Canvas/EGL 通过各自的 ROM Surface 进入窗口合成器。
 
-DVM-218/236、ADR-0095/0115：进程 Stop 显式区分 host shutdown、guest exit 与运行 fault，
+、ADR-0095/0115：进程 Stop 显式区分 host shutdown、guest exit 与运行 fault，
 退出事实优先。健康宿主关闭在既有预算内经 AMS 请求 pause、stop 与 destroy 并等待 ROM 确认；期间 VM 仍可创建 Java/native 线程，音频消费保持推进。回调后先调用显式
 `before_guest_shutdown` 停止并回收音频消费者，再 BeginTeardown、VM shutdown/join；
 超时传播原错并记 `session.lifecycle.cleanup_timeout`，到期后不继续 guest 回调。

@@ -4,7 +4,7 @@
 
 桌面系统 WebView 启动器（Windows WebView2、macOS WKWebView）的呈现、RPC、导入向导与子进程管理，编入 ogplay_desktop_app。
 游戏库领域经 ogplay::app 外观共享，GUI 装配当前 EXE 的
-`--run-game` 子进程，不拥有 guest/runtime。GUI v2 第一阶段已替换 ImGui；macOS 宿主见 GUI-11，Linux 暂缓。
+`--run-game` 子进程，不拥有 guest/runtime。GUI v2 第一阶段已替换 ImGui；macOS 使用 WKWebView，Linux 暂缓。
 
 ## 公共 API
 
@@ -40,7 +40,7 @@
   每个字段带 `hidden`：`rpc_settings.cpp` 的 `kHiddenSettings` 列出暂不展示的设置（全局与游戏设置页共用），任何构建都不显示，
   值、校验与启动解析不变。
 - `settings.icon_preview`（无参数）：以随包占位图标与同一合成器返回 `{cradle, badge}` 两张 192px PNG data URL，
-  素材缺失明确报错（GUI-17）。
+  素材缺失明确报错。
 - `game_settings.get/set {installation_id, values?, revision?}`：只查找已枚举实例，set 的 values
   是完整覆盖集合，删除键恢复继承；读取版本绑定实例、覆盖集合及继承值。未知键、无效目录、
   损坏配置及过期版本明确失败。运行中可保存下次启动设置，不修改运行中的进程。

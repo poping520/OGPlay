@@ -15,7 +15,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 
 ## 不变量
 
-- DVM-141 `EnsureRegistered` 在注册表锁内幂等登记真实 runtime class；冲突明确失败，
+- `EnsureRegistered` 在注册表锁内幂等登记真实 runtime class；冲突明确失败，
   不修改已有类型。GetObjectArrayElement 发布引用前使用元素携带的 java_class 登记，
   不使用声明 component type 猜测；该表不是 GC root，VM sweep 仍负责 Forget。
 - ClassOf 可显式注入共享 semantic store 的真实类型解析器；查表/jclass 未命中时在
@@ -39,7 +39,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 - production 只通过 `BindJniGuestSlots` 的统一 context 显式组合 Core、Class/Instance、
   Static Call、Static/Instance Field、String、Array 与 JavaVM family,随后封口 dispatcher;
   aggregate contract 以精确 slot 集合等价(基础 226 个 JNIEnv、注入 NIO 后 229 个，及
-  4 个 JavaVM)机器验证，数量本身只是辅助诊断；DVM-82 的 DirectByteBuffer 三槽仅在
+  4 个 JavaVM)机器验证，数量本身只是辅助诊断；DirectByteBuffer 三槽仅在
   显式注入共享 `NioRuntime` 时绑定；
   DestroyJavaVM 是唯一 expected-unbound 槽,不得为提高覆盖率注册假 handler。Core
   binder 不得再隐式注册其他 family。引用、异常和线程状态复用同一环境,guest 输出指针在
@@ -59,7 +59,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 - From/ToReflectedMethod/Field 四槽只解码 A32 引用、成员 ID 与 static 标志，委托
   JniEnvironment 的显式反射 hooks；Method 同时支持 Constructor。无 VM 后端时明确失败，
   不创建假 ID 或空 wrapper。返回 local reference 的发布由 VM owner 在执行锁内完成。
-- `NewDirectByteBuffer`（DVM-82）先验证 capacity 与完整 guest read/write range，再登记
+- `NewDirectByteBuffer` 先验证 capacity 与完整 guest read/write range，再登记
   `DirectByteBuffer` identity；地址/容量查询只消费同一 NIO side state，heap buffer 的地址返回 null、容量按 Dalvik 4.4 返回 Buffer.capacity（ADR-0153）。
   非 Buffer 的容量仍明确返回 -1。非法地址、未知引用或发布失败不得留下 object/state 半提交。
 - `GetMethodID`/`GetStaticMethodID` 共用精确 registry 查找与 owner 类初始化；`NewStringUTF` 使用受检 guest C
@@ -106,7 +106,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   普通 instance Call/CallV/CallA 统一查询该 registry,并复用 invocation engine 的
   assignability、argument/return 校验；伪 receiver 或返回类型
   不匹配必须明确失败。成员查找异常消息保留 class name、member name 与 descriptor。
-  DVM-158 按 API 19 非 CheckJNI Dalvik 通用兼容语义，允许 CallObjectMethod/ V / A
+  按 API 19 非 CheckJNI Dalvik 通用兼容语义，允许 CallObjectMethod/ V / A
   调用 void 实例方法：方法照常执行、结果丢弃并返回 null；不依赖 Profile，其他返回族
   错配继续明确失败。
 - modified UTF-8 访问族解析同一 `JniStringStore`，编码从 UTF-16 backing 读取；经 AddressSpace
@@ -151,7 +151,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 `jni_guest_instance_calls_tests.cpp`、`jni_guest_library_lifecycle_tests.cpp` 与
 `jni_native_registry_tests.cpp`。
 
-WU8-2b：primitive Region、对象元素与 string Region 越界在 buffer 访问前经 ThrowableFactory
+primitive Region、对象元素与 string Region 越界在 buffer 访问前经 ThrowableFactory
 发布 Dalvik 类型/消息并返回 void/NULL；非法 handle、类型或内存故障不做笼统转换。
 MonitorExit 仅将 non-owner 映射为 JNI_ERR + IllegalMonitorStateException，失败不改变锁状态；
 Ensure/Push 请求容量失败映射为 JNI_ERR + OOME，Push 与失败 MonitorExit 按 Dalvik 替换 pending。

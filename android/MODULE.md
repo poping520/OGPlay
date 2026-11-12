@@ -30,4 +30,4 @@ Android 宿主工程（Gradle 根），只含 Java 外壳和打包配置。C++ �
 ## 验证
 
 `./gradlew assembleDebug` 产出 APK，再用 `zipalign -c -P 16` 检查 16 KB 对齐。运行行为需要
-真机，见 [AND-1](../docs/tasks/android/AND-1.md)。
+真机，见 [当前限制](../docs/state/KNOWN-ISSUES.md#title-validation)。

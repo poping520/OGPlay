@@ -12,7 +12,7 @@
 
 namespace ogplay::runtime::dexvm {
 
-// Guest Java threads on real host threads (docs/design/dexvm/04-integration.md
+// Guest Java threads on real host threads (docs/design/dexvm.md
 // §3). One guest Java thread is one hal host thread with its own interpreter
 // execution context; the linker, object model and JNI identities stay shared,
 // so a child thread sees exactly the same object world as the root thread.

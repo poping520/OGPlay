@@ -16,7 +16,7 @@ namespace ogplay::frontend {
 // <user data>/sandbox: per-title save sandboxes (ADR-0020).
 [[nodiscard]] std::optional<std::filesystem::path> DefaultSandboxRoot();
 
-// <user data>/library: the launcher game library (docs/design/launcher/).
+// <user data>/library: the launcher game library (docs/design/frontend.md).
 [[nodiscard]] std::optional<std::filesystem::path> DefaultLibraryRoot();
 
 }  // namespace ogplay::frontend

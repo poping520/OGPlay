@@ -13,7 +13,7 @@ namespace ogplay::runtime::dexvm {
 // hit position/time/stack, ordered hottest first, plus the same members in
 // first-hit order. The document says out loud that a survey run substituted
 // neutral answers and is therefore not a compatibility result — see
-// docs/playbook/NEW-TITLE.md and docs/tasks/diagnostics/DIAG-5.md.
+// docs/playbook/NEW-TITLE.md and docs/design/diagnostics-testing.md.
 [[nodiscard]] std::string RenderGapSurveyJson(std::span<const GapSurveyHit> hits,
                                              std::string_view title);
 

@@ -2,7 +2,7 @@
 
 ## 职责与边界
 
-有界 Dalvik 解释器（ADR-0017、`docs/design/dexvm/`）：负责类链接、Java 对象模型、
+有界 Dalvik 解释器（ADR-0017、`docs/design/dexvm.md`）：负责类链接、Java 对象模型、
 switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intrinsic。只加载应用 DEX
 与 API 19 启动类路径；不提供完整 Dalvik/ART、动态 classpath、JIT 或 Android 服务。
 
@@ -20,9 +20,6 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   IntrinsicMethodDecl.adapter_review 是可选的诊断来源引用，随绑定保留至 LinkedMethod；
   dump-surface 同时标 implementation_source=adapter 与 review 引用，origin/binding 仍为
   handwritten/intrinsic。DEX 字节码接管该方法时清除。
-  ADR-0173 的 constructor_inputs 是实例构造器进入 ROM 帧前的受审输入接缝；参数受 GC 保护、
-  异常透传、必须返回 void，不替换方法体或改变字段 flags。Android 只绑定 ViewConfiguration
-  Context 构造器的两个原有 private 实例输入字段，原 ROM 构造器仍完整执行。
 
   DEX 解析失败保留 loader 的 reason/offset，并标识 boot/application 来源及输入字节数。
 - APK class_def 经同源重复校验；已登记 bootstrap 身份按 parent-first 胜出，不登记或混合
@@ -58,7 +55,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   application parent-first；jar:file URL 仅标识已登记 guest 归档，不开放宿主文件、动态
   归档/定义、多 namespace 或自定义加载权限。
 - `ReflectionRuntime` 是 Method/Constructor/Field metadata 与 wrapper 的唯一工厂；cache 不持
-  guest ref，wrapper 可回收。DVM-143：`getMethod/getDeclaredMethod` 按名称和参数沿本类、父类、
+  guest ref，wrapper 可回收。`getMethod/getDeclaredMethod` 按名称和参数沿本类、父类、
   接口定向查找，只解析同名候选，命中后才解析返回/异常类型；`getMethods` 等枚举接口才建立
   完整 metadata。JNI ID 转 Method 通过完整 descriptor（含返回类型）定向查找，不解析
   无关方法的类型。反射方法和构造器按 Dalvik 的成员标志检查 caller/loader/package，方法检查虚派目标；
@@ -71,7 +68,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   Signature 为 system 元数据，由原版 libcore GenericSignatureParser 与 Type 实现解析，
   支持 class/field/method/constructor 泛型、type variable、wildcard 和 generic array；无签名
   回退原始类型，畸形/缺失类型保留原版 Java 异常。enclosing declaration 从受检元数据取得，
-  不按名称猜测。DVM-259 通用 Proxy 执行原版 Java 校验/loader 有序接口缓存，生成类继承 Proxy；
+  不按名称猜测。通用 Proxy 执行原版 Java 校验/loader 有序接口缓存，生成类继承 Proxy；
   intrinsic 方法通过真实 Method/boxing 转发 handler，异常按声明交集传播或包装。注解仍用受限合成类，
   私有 throws 字段只保留形状，完整统一迁移未完成。
 
@@ -241,7 +238,7 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   `BigIntRuntime` 保持受检逻辑令牌、编码值和 owner/GC 生命周期；有界加/乘/word 乘/
   移位/幂/商余数通过值快照调用 guest libcrypto 临时 BIGNUM，成功后原子提交。
   不传令牌作地址，不新增持久 registry，不提供完整大数密码算术。
-- DVM-142 的 PM 值类闭包归 BootDex；DVM-143 后 PackageManager 方法查询不依赖无关签名。
+- PM 值类闭包归 BootDex；PackageManager 方法查询不依赖无关签名。
 - 本地 Binder、IBinder/IInterface、Parcel、ResultReceiver/IResultReceiver 的普通 Java 协议归
   BootDex；integration 只覆盖 Binder 身份/线程策略 native 与 Parcel 字节/引用 native 边界。
 - ArraySet/LruCache/Pools/Property、Point/Rect、MathUtils/Patterns 与 framework exception
@@ -279,16 +276,17 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
 
 Field 与 Class 共享运行时注解查询：runtime-visible 递归 encoded value、AnnotationDefault、
 `@Inherited` 超类继承与受限实现类成员分派。Method.getDefaultValue 读取声明默认值。
-Method/Constructor/参数注解查询仍明确未实现。未实现 generic reflection、完整 annotation
-proxy、defineClass/DexClassLoader、多 classpath
+Method/Constructor/参数注解与泛型查询由运行时元数据及原版 Java parser 提供；
+注解合成类尚未统一到 Proxy，私有 throws 字段仅保留形状。
 反射字段、方法、构造器元数据按成员类别独立按需构建；字段查询不得解析无关方法签名。
-namespace、完整 Charset/PKIX/TLS/BigInt 及完整 Java/Android 平台。
+未实现 defineClass/DexClassLoader、多 classpath namespace、完整 Charset/PKIX/TLS/BigInt
+及完整 Java/Android 平台。
 
 定向测试位于 `tests/dexvm/`：interpreter/fast-code/linker、reflection、GC、thread/monitor、IO/
 network/NIO/Unsafe、BootDex 双后端与 dexasm readback。只构建受影响目标并运行相关用例；完整
 验收与 title gate 按顶层约定执行。
 
-### DVM-150 Runtime shutdown
+### Runtime shutdown
 
 Runtime singleton、hook List、shuttingDown 与 add/remove/exit/halt 普通方法由 pinned BootDex
 拥有；不得建立 C++ hook 注册表。nativeExit 保存 per-VM 有符号退出码，停止所有已有 execution
@@ -296,7 +294,7 @@ context，通过 thread_stopped 展开而非 Java Throwable；退出后 Call 明
 只发布停止和唤醒，不 join；进程所有者在 guest 栈退出后负责 Shutdown/join。Thread 未捕获
 异常仍走现有 handler/进程失败策略，不为 hook 吞异常。宿主取消不等于 Runtime.exit。
 
-### DVM-151 Builder
+### Builder
 
 AbstractStringBuilder/StringBuilder/StringBuffer、IntegralToString 与 RealToString 的普通 Java
 逻辑执行固定 API19 BootDex；前三者及 IntegralToString 无 intrinsic overlay。builder 的
@@ -342,7 +340,7 @@ Chars/Critical 按 String 身份跨线程计数并忽略 release 指针/kind；�
 VM 持有 GC 根，get/setProperty 与 getProperties 共用对象。CoreIntrinsicServices 提供
 显式来源初始化回调；guest uname、passwd、ICU 与随附元数据为默认属性来源。
 
-DVM-316/358：DiagnosticThrowableCause 只读固定 ROM InvocationTargetException.target、
+DiagnosticThrowableCause 只读固定 ROM InvocationTargetException.target、
 ExceptionInInitializerError.exception、ClassNotFoundException.ex，否则读取 Throwable.cause；
 DescribeThrowableCauses 与 JNI bridge 共用，不执行 guest、不改异常身份或 pending。
 DescribeThrowableCauses 附带 ROM 保存的首栈，最多16层，循环与截断明确标注；无 cause 返回空串。

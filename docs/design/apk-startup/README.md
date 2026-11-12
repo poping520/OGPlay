@@ -1,5 +1,7 @@
 # APK Startup · Manifest 驱动的应用进程启动
 
+此目录记录已退役的启动与平台接缝设计；当前实现见 [ROM 运行路径](../../state/CURRENT.md) 和 [integration 契约](../../../src/runtime/integration/MODULE.md)。
+
 本目录定义 OGPlay 从“Title Profile / root `.so` 驱动启动”迁移到
 “APK 自描述驱动启动”的完整设计。文档写给两类读者：**架构评审者**和
 **逐 WU 执行实现的 AI**。

@@ -120,8 +120,9 @@ python tools/dexvm_stub_gen.py \
   --class Ljava/lang/Integer;
 ```
 
-生成结果是开发起点，不是行为实现；常量值、private 运行时字段、handler 语义及
-编译器 synthetic bridge 仍须按该类的 pinned 源码人工审阅。
+该生成器保留作历史诊断工具，不作为新平台类实现的起点。原样 ROM jar 已提供声明和普通方法，
+新代码只能扩展 native/进程内服务，不得用生成结果替换 ROM 类或覆盖非 native 方法。
+实际替换与覆盖的查询方法见 [ROM 平台边界](../docs/design/dexvm/03-platform-intrinsics.md#3-存量替换与覆盖的查询)。
 
 ## M4 本机出口测试
 

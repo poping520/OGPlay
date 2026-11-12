@@ -1,5 +1,7 @@
 # 方案：Profile 驱动的启动作用域裁剪
 
+此目录记录已退役的启动与平台接缝设计；当前实现见 [ROM 运行路径](../../state/CURRENT.md) 和 [integration 契约](../../../src/runtime/integration/MODULE.md)。
+
 > **启动架构已被取代：** 本文保留 entry/preset 的历史设计与验收事实，但其中
 > “Profile 决定启动资格、入口或 root native module”的规则已由
 > [APK Startup 设计](../apk-startup/README.md)取代。当前默认入口来自 Manifest，Profile

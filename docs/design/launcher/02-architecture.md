@@ -1,7 +1,7 @@
 # 02 · 核心架构
 
 > 安装身份补充：本文早期的 package 唯一键/拒绝同包重复导入条款已被
-> [ADR-0071](../../adr/session.md#adr-0071) 取代。当前按安装 id 允许同包多实例，
+> [ADR-0071](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/session.md#adr-0071) 取代。当前按安装 id 允许同包多实例，
 > GUI 启动通过 `--installation-id` 原样传递选中目录名。
 
 ## 1. 进程模型：主面板与游戏分进程

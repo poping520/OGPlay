@@ -1,5 +1,7 @@
 # 06 · 迁移、阶段划分与冲突裁决
 
+此篇记录已退役的阶段设计；当前实现见 [DexVM 契约](../../../src/runtime/dexvm/MODULE.md)、[integration 契约](../../../src/runtime/integration/MODULE.md) 和 [ROM 平台边界](03-platform-intrinsics.md)。
+
 ## 1. 阶段划分
 
 里程碑编号在启动时按 roadmap 顺序分配（下文以 M-DEX 指代），任务单遵循

@@ -21,7 +21,7 @@
 | 层 | 模块 | 职责（一句话） | Dashboard 关心的事实 | 来源 |
 | --- | --- | --- | --- | --- |
 | 编排 | `frontend` | CLI/GUI 入口，装配 session，提供 loopback MCP/JSON-RPC | 连接、Profile/instance/API、`--dexvm-interpreter`、supersample | √ 启动参数 |
-| 编排 | `session` | Activity 生命周期、每帧泵 Looper、Clock 推进、pacer、输入分发、VFS flush | lifecycle phase/generation、frame/ticks/presented、Clock 类型与倍率、pause/flush 事件、touch capture | √ `McpSessionControl` 原子快照；△ capture/flush |
+| 编排 | `session` | 排队 AMS 生命周期请求、Clock 推进、pacer、输入注入、VFS flush | lifecycle phase/generation、frame/ticks/presented、Clock 类型与倍率、pause/flush 事件、touch capture | √ `McpSessionControl` 原子快照；△ capture/flush |
 | 编排 | `agent` | 传输无关 Control Service + MCP 适配 | 命令队列深度、gesture 队列 | √ |
 | VM | `runtime/dexvm` | 有界 Dalvik 解释器：链接、对象模型、GC、线程/monitor、intrinsic | 堆 used/target/growth/max、GC 次数/STW、类注册/链接计数、invoke 三路计数、Java 线程表、monitor owner/waiters、confirmed cycle、execution lock 持有者、DexVM 事件环 | √ `DiagnosticDexVmSnapshot`/monitor provider；△ 堆/GC/类计数/invoke 计数 |
 | VM | `runtime/jni` + `jni_guest` | JNI/JavaVM 语义与 32 位 guest ABI 表 | slot 绑定覆盖（217/233）、local/global/weak 引用数、pending exception、在途 native 调用、未绑定槽命中 | √ native call 环；△ 引用表计数 |

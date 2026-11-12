@@ -16,7 +16,7 @@
   将工作区摘要差异判为源码改动。发布证据以子模块 README/上游记录为准。
 - 子模块由 OGPlay CMake 静态构建；数据库、rollback journal 与临时文件通过 OGPlay VFS。
 - production catalog 已切换到 API 19 原版数据库 Java 栈；host 仅保留 SQLiteConnection、
-  CursorWindow、SQLiteGlobal/Debug 等固定 native ABI 和受审平台 overlay。
+  CursorWindow、SQLiteGlobal/Debug 等固定 native ABI；普通 Java 方法执行 ROM。
 - `dexvm.sqlite_vfs` 已由 DVM-186 的真实 SQLite/VFS 范围取代 DVM-88 有界旧实现。
 
 当前症状来自 Cookie 初始化线程；源码还触达参数查询、Cursor 关闭、64 位过期时间、
@@ -46,7 +46,7 @@ guest 应用
 BootDex：SQLiteDatabase / SQLiteOpenHelper / SQLiteProgram / Statement / Query
          SQLiteSession / SQLiteConnectionPool / SQLiteConnection
          ContentValues / Cursor 家族 / CursorWindow Java 层
-  ↓ 固定 API 19 native 签名及少量受审平台 overlay
+  ↓ 固定 API19 native 签名与进程内平台服务
 Android integration：类型转换、Java 异常、回调、句柄准入
   ↓ 显式接口
 host DatabaseRuntime：connection / statement / window 资源及生命周期
@@ -74,7 +74,7 @@ android.database 类族直接来自原样加载的 API 19 framework.jar，源码
 | SQLiteDatabase/OpenHelper、Program/Statement/Query、Cursor/driver | 原版控制流程和数据状态 |
 | SQLiteSession/ConnectionPool/Connection、configuration/cancellation | 保留线程会话、嵌套事务、等待、取消及连接管理 |
 | AbstractCursor/AbstractWindowedCursor、CursorWindow | Java 层原版；窗口 native 使用有容量上限的进程内存 |
-| SQLiteGlobal、系统资源/配置、诊断与 BlockGuard 依赖 | 逐项审计；平台事实经窄 overlay 注入，不机械引入系统服务 |
+| SQLiteGlobal、系统资源/配置、诊断与 BlockGuard 依赖 | 逐项核对；平台事实经 native/本地服务注入，不增加非 native 覆盖或进程外系统服务 |
 
 先产出依赖/native/overlay 清单，再迁移。必须覆盖默认 open 路径：SQLiteGlobal 配置、
 locale/collation 注册、android_metadata、原版调用的 PRAGMA 与框架 SQL 函数。

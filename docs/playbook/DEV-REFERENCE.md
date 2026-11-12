@@ -46,10 +46,9 @@ OGPlay 不追求完整 AOSP。游戏启动时触达 framework API，不等于持
 
 ### 实现路线与扩展条件
 
-BootDex、intrinsics 和自有 facade 都是手段，以兑现必要契约的长期总成本选择路线。
-原版 Java 自洽且依赖可控时优先纳入 BootDex；依赖庞大系统服务而需求有限时，评估通用
-轻量 facade，也可组合原版类型、Java 逻辑与平台边界。不能为遵循某一路线机械补齐整个生态，
-也不能为短期少写代码而重复建立算法、状态或资源所有权。
+应用与 ROM Java 原样执行，宿主扩展 native 和进程内服务接口；现存整类替换及非 native
+覆盖按阶段移除，新代码不得增加。以实际依赖决定接缝范围，不为有限需求补齐进程外系统。
+服务可以是本进程 Binder/Stub 对象，但不能另建普通 Java 算法、状态或资源所有权。
 
 扩展范围的依据是新的真实依赖：区分类型可链接、实际调用以及影响后续流程的返回值或回调；
 先判断合法不可用路径是否足够，再比较原版依赖闭包与轻量实现的成本。
@@ -118,8 +117,8 @@ JNI 一致性：`python3 tools/conformance/jni_tests.py --coverage --check-basel
 
 ## BootDex 与 dexvm 链接定向回归
 
-改 DexVM/BootDex/intrinsic 语义后，跑全量
-`python3 tools/conformance/dalvik_tests.py --check-baseline`；目标用例转 pass 后用
+改 DexVM/ROM native 语义后，按 AGENTS.md 选择直接相关的一致性用例；
+`python3 tools/conformance/dalvik_tests.py --check-baseline` 是完整套件入口，未经明确要求不跑全量。目标用例转 pass 后用
 `--update-baseline` 提交新基线（有回归时拒绝更新）。
 
 涉及 BootDex 或 dexvm 链接的改动，按影响范围仅构建 `ogplay_tests`，使用：

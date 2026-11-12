@@ -57,7 +57,7 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 - guest `mmap/mprotect` 可表达解释执行所需的逻辑 RWX；AddressSpace 的宿主 backing 不授予
   execute。`ARM_cacheflush(start,end,0)` 验证范围已映射；SVC bridge 对成功的非空范围
   调用 `Cpu::InvalidateCodeRange`，发布到同进程所有代码缓存后才恢复 guest。非法请求
-  和空范围不失效缓存；解释器直接取指。见 [ADR-0088](../../../docs/adr/runtime.md#adr-0088)。
+  和空范围不失效缓存；解释器直接取指。见 [ADR-0088](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/runtime.md#adr-0088)。
 - ARM kuser v5 提供真实 DMB 屏障、32/64 位 compare-exchange 及 TLS；compare-exchange
   包含前后屏障，失去 reservation 时重试，r0 为零且 C=1 当且仅当交换成功。
   64 位入口使用自然对齐目标和 guest 栈，保存非 clobbered 寄存器；访存错误保留 CPU fault。

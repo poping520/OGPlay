@@ -2,7 +2,7 @@
 
 ## 职责与依赖
 
-生产 session 使用 [进程内窗口服务](dexvm_android/MODULE.md#ui-surface-与输入)。NativeActivity 的
+生产 session 使用 [进程内窗口服务](dexvm_android/MODULE.md#uisurface-与输入)。NativeActivity 的
 ROM InputQueue 绑定到当前实例的 NDK 队列；事件完成后经唤醒返回所属 Java Looper。
 JNI 渲染调用释放 VM 锁时仍算已登记 EGL 生产者正在运行，其 native futex 阻塞由进程的
 现有等待表查询。Java 线程退出时在 native 上下文退役前删除生产者；将 EGL 交给原生线程的
@@ -57,11 +57,12 @@ headless/NativeActivity runner 与出口报告。可依赖 jni_guest/boundary/fr
 syscall/execution/vfs 及下层；下层不得反向依赖 integration。不直接持有窗口、消费输入或
 实现游戏专属逻辑；executor、Clock、VFS、Profile 必须显式注入或由确定性 fixture 建立。
 
-内容树触摸分发、reverse-Z hit-test、intercept/CANCEL 与非 split 捕获归 integration，
-session 宿主输入和 guest Window 入口共用相同状态与算法；integration 不消费宿主设备。
+内容树触摸分发、intercept/CANCEL 与非 split 捕获归 ROM ViewRootImpl/ViewGroup；
+integration 的 WMS/WindowSystem 管理窗口命中、焦点与输入通道，session 注入事件，不消费宿主设备。
 
 ROM 资源 native 通过 [资源核心](../resources/MODULE.md) 解析 framework 与应用资源。
-UI 投影只读 View 当前持有的 ROM Drawable、颜色和文字属性；Bitmap/NinePatch/Paint 的 native backing 为权威。绘制边界保留到 P3，发布时只生成既有呈现快照，不保留另一套资源或皮肤身份。
+ROM ViewRootImpl 驱动 View/Drawable 的软件绘制；Bitmap/NinePatch/Paint 的 native backing 为权威，
+软件 Canvas 经 Skia 写入 Surface，WindowSystem 按 WMS 图层发布不可变 RGBA 帧。
 
 Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 [DexVM](../dexvm/MODULE.md)拥有解释/GC/线程，[session](../../session/MODULE.md)编排生命周期，
@@ -82,7 +83,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - AndroidGuestProcess 注册 `/dev/urandom` (1:9) 与 `/dev/random` (1:8)，通过 VFS reader
   注入 `hal::FillSecureRandom`；每次读取生成新的完整随机字节，失败由 VFS 映射 EIO。
   两者均使用宿主 OS CSPRNG，不模拟 Linux 熵池；O_NONBLOCK 不引入 EAGAIN/熵量等待。
-  支持边界与生命周期见 [ADR-0129](../../../docs/adr/runtime.md#adr-0129)。
+  支持边界与生命周期见 [ADR-0129](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/runtime.md#adr-0129)。
   `--diag` 下设备 open/read/close 只记录路径、flags、字节数及返回值，不记录随机内容。
 
 - PreflightAndroidGuestLink 只用生产 Bionic namespace、API-sealed Virtual SO 元数据和 loader
@@ -107,7 +108,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   reference 解析与 pending throwable 归 bridge，boundary 仅处理 ABI。活跃像素锁是
   VM 强根，recycle 延后退役 guest view，bridge 停止线程后解除 hooks 并清理 lease。
   Bitmap 的 Java byte[] 经宿主跨度借用成为 Skia CPU 后备。NDK、Java、GLUtils 与 Canvas
-  共用像素，活跃锁期间不能仅按版本复用投影。解码与密度缩放由
+  共用像素，活跃锁期间拒绝 Canvas 访问该 Bitmap。解码与密度缩放由
   [raster](../raster/MODULE.md) 执行，资源选择、流关闭与密度发布由 ROM 执行。
   低位格式/预乘 alpha 的量化及调用者无同步并发写不等于完整 Skia 验收。
 - /proc/meminfo 是进程创建时的只读 GuestMemorySnapshot，来自受检 GuestProcFacts：默认
@@ -126,7 +127,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   DEFAULT 先 sealed catalog 再 global namespace。dlclose 只减引用，不卸载；未知库/符号/
   handle/flags 进入逐线程 dlerror，不返回假地址或访问宿主文件。
 - 普通 libdl handle 为 API19 ARM32 `soinfo` guest 视图地址，支持范围见
-  [ADR-0076](../../../docs/adr/runtime.md#adr-0076)。表从现有 namespace 的未版本化导出和
+  [ADR-0076](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/runtime.md#adr-0076)。表从现有 namespace 的未版本化导出和
   sealed provider 投影；真实 ELF 优先于部分截获目录，st_value/load_bias 合成同一已解析地址。
   视图只暴露所属库导出，dlsym 的 dependency/sealed fallback 保持原契约。
   重复打开共享活跃记录及引用，引用归零解除 backing；退役地址不复用，失效 handle 明确失败。
@@ -138,7 +139,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   registry：同 loader 幂等、同线程递归返回现有 handle、跨 loader 拒绝、Failed 重试稳定失败。
   app resolver 只用 selected-ABI inventory，basename 为身份，DT_SONAME 为受检别名；
   DT_NEEDED 可用二者，别名歧义、ET_DYN、依赖/重定位、constructor/JNI version 均受检。
-- [ADR-0135](../../../docs/adr/runtime.md#adr-0135)：共享来源快照拥有 APK/系统库字节，process
+- [ADR-0135](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/runtime.md#adr-0135)：共享来源快照拥有 APK/系统库字节，process
   经显式 native callback 持有；Java registry 退役不悬空其来源。Java/native 共用 namespace
   与构造器状态，native dlopen 不登记 ClassLoader 或执行 JNI_OnLoad，后续 Java load 复用映射。
   process 装载门禁可同宿主线程重入、跨线程串行；root CPU admission 在门禁前，元数据锁不跨
@@ -176,8 +177,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   Java 失败以真实 pending throwable/null 返回。成功对象使用既有 local 发布/字段桥；
   发布失败移除 registry 映射，未发布实例无永久根，由普通 GC 回收。guest worker 与
   资源清理结束后撤销回调，不能跨 session 保存捕获的 VM 指针。
-- DexVmGuestBridge 按 core+android intrinsic → curated BootDex → app DEX 装配；同签名
-  intrinsic 是精确 overlay，其余解释执行。已迁移平台类由 VM 发布 JNI，禁止同名 HLE 遮蔽；
+- DexVmGuestBridge 按 core+android catalog → 原样启动类路径 DEX → app DEX 装配；
+  native/服务显式绑定，ROM 普通 Java 原样执行；存量替换/覆盖按阶段移除，新代码不得增加。已迁移平台类由 VM 发布 JNI，禁止同名 HLE 遮蔽；
   无 VM 的 native/HLE 会话不保留旧替身，独立 headless 契约和应用兼容回调除外。
 - String/primitive/object array 复用会话 store；jclass 双向规范化为同一 ClassObject。
   PublishLocal 用 EnsureRegistered 原子幂等发布真实类，GC 同步清扫 registry；不为所有
@@ -224,7 +225,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   兼容触发输出结构化 warn，不得由 Profile/title 分支启用。
 - renewable native frame 只在真实 futex park、正字节 IO、present、audio enqueue、JNI 重入
   等可观测进展时续 watchdog；查询/EOF/wake/yield/内存管理和空转不续期。
-  JNI 重入进展判别的有界限制见 [ADR-0023](../../../docs/adr/diagnostics.md#adr-0023)。
+  JNI 重入进展判别的有界限制见 [ADR-0023](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/diagnostics.md#adr-0023)。
 - process-owned NioRuntime 与 JNI 共用 direct backing；AddressSpace 有界 arena 使用强类型
   guest address，不保存宿主指针。Java GLES 编组后进入唯一 sealed managed GLES/ANGLE。
 
@@ -254,8 +255,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   ADR-0171：blocking observer 统一跟踪生命周期驱动停摆并转发 EGL pacer；无 EGL 亦适用。
   root/worker 限时等待仅补至停摆起点 uptime 加注入 RealtimeClock 的真实流逝时间，
   不超过自身 deadline；root join/退出 hook 同规则，恢复后按帧推进且不回拨。
-- 主 Looper/scheduler 由 lifecycle safe point 泵送；View.post 的 detached 与 scheduled 引用
-  均为 GC 根。后台任务必须保留真实异常，不能以 null 结果伪造正常完成。
+- ROM 主 Looper 在独立 guest/宿主线程执行；MessageQueue native 负责 poll/wake 与 Clock 等待，
+  lifecycle safe point 排入服务请求并等待进展，消息和 detached View.post 引用由 ROM 对象图保活。后台任务必须保留真实异常，不能以 null 结果伪造正常完成。
 
 ## VFS、Android 与媒体边界
 
@@ -292,7 +293,7 @@ Debug 当前进程查询的默认 provider 在 bridge 装配后安装，析构�
 外部 provider 保留。VM 执行锁内读取托管堆账本和 guest 已映射页（含 PROT_NONE），
 采用显式虚拟私有提交模型：托管 charge 计 dalvik，未分类 ARM RAM 计 other，KiB
 向上取整。无宿主 RSS、GPU/媒体缓存或未映射预留；映射快照忙则明确缺事实。
-模型边界见 [ADR-0118](../../../docs/adr/runtime.md#adr-0118)。
+模型边界见 [ADR-0118](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/runtime.md#adr-0118)。
 
 ## Runner、诊断与验证
 

@@ -1,5 +1,7 @@
 # 11 · Class、ClassLoader facade 与有界反射基础栈
 
+此篇记录已退役的阶段设计；当前实现见 [DexVM 契约](../../../src/runtime/dexvm/MODULE.md)、[integration 契约](../../../src/runtime/integration/MODULE.md) 和 [ROM 平台边界](03-platform-intrinsics.md)。
+
 本章定义 DexVM 在 Android 4.4.4 / API 19 / Dalvik 语义下的 `java.lang.Class`、
 `java.lang.ClassLoader` 可观察语义与 `java.lang.reflect.*` 基础能力。目标不是实现
 完整 Java Reflection 或真正的多加载器，而是建立可持续扩展的 **类型/成员查询、

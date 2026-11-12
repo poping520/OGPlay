@@ -1,5 +1,7 @@
 # 08 · 解释执行的 EGL/GL façade（通用形态）
 
+此篇记录已退役的阶段设计；当前实现见 [DexVM 契约](../../../src/runtime/dexvm/MODULE.md)、[integration 契约](../../../src/runtime/integration/MODULE.md) 和 [ROM 平台边界](03-platform-intrinsics.md)。
+
 本篇把 [DVM-31](../../tasks/dexvm/DVM-31.md) 展开为可分批执行的设计：自带
 `GLSurfaceView` 的 title 用解释执行的 javax EGL 面驱动宿主已拥有的 ANGLE
 surface，而不是第二套 EGL。动手前先读 `docs/state/CURRENT.md`、

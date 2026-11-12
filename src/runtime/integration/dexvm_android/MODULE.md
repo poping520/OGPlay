@@ -2,7 +2,7 @@
 
 ## 职责与装配
 
-为 dex_activity 提供有界 android/javax.microedition intrinsic，将 session 的 VFS、窗口服务、
+为 dex_activity 提供 Android native 与进程内服务绑定，将 session 的 VFS、窗口服务、
 ANGLE、媒体、线程及平台事实接入 DexVM。禁止 title/厂商分支；不实现完整 Android、
 跨进程 Binder/system_server、外部包数据库、Play 或手机系统服务。移动宿主经 HAL 接入（ADR-0086）。
 
@@ -158,18 +158,18 @@ calling identity 固定为进程 UID/PID，StrictMode mask 按执行上下文隔
   媒体在调用时捕获同一 VFS 区间，调用者随后可关闭描述符。
 - 编译 XML 使用核心 parser，Java inflation 负责构造对象。软件位图经 ROM BitmapFactory
   选择源、密度和关闭协议，Skia 解码直接借用 STORED 字节并处理采样、缩放和 NinePatch。
-  UI 投影读取 View 当前 Drawable 的 Java 状态及 P1 Bitmap/NinePatch/Paint backing。普通 BitmapDrawable（含 ROM 缓存的副本）
-  从其 Java Bitmap 发布既有 UI 位图快照，投影键为内部身份，不对外充当资源 ID。布局和绘制支持仍由 UI 层决定。
+  ROM View/Drawable 执行布局与软件绘制，Bitmap/NinePatch/Paint native backing 提供像素与图形状态。
+  ViewRootImpl 的软件 Surface 经 WindowSystem 合成，不保留宿主 UI 树或逐 View 位图快照。
 
 - ROM Bitmap 的 mBuffer 是计入 Java 堆的 byte[]。Skia 直接在借用的宿主跨度读写像素，
-  NDK lock 返回同一数组的 guest 地址。Java、Canvas 与 GLUtils 共用这一存储，UI 发布不可变快照。
+  NDK lock 返回同一数组的 guest 地址。Java、Canvas 与 GLUtils 共用这一存储，合成器发布不可变帧。
   RGBA 默认预乘。Canvas 的 Java mBitmap 与 Bitmap.mBuffer 形成强边，native 像素借用随句柄退役。
   VM 锁串行化 Canvas 绘制和 NDK lock/unlock。NDK 持锁期间可能在 VM 锁外写像素，Canvas 拒绝
   读写该 Bitmap（包括图层合成），抛 IllegalStateException。回收后已有 NDK 锁可正常归还。
   最后一次 NDK unlock、Canvas 绘制及图层合成推进像素版本；Canvas 绘制到回收目标抛 RuntimeException。
   不支持 WebP 编码和共享内存 Parcel blob。
 - StatFs 字段/构造/restat/getter 归 Java，Posix.statvfs 只查 VFS 沙盒配额卷，其他卷失败、无 host
-  空间采样，见 [ADR-0122](../../../../docs/adr/runtime.md#adr-0122)。SQLite 固定真实引擎，只经 VFS
+  空间采样，见 [ADR-0122](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/runtime.md#adr-0122)。SQLite 固定真实引擎，只经 VFS
   访问主库/journal/临时文件；Java 拥有事务/连接池/Cursor，native 仅 ABI/token/错误码/受审配置。
   损坏由引擎/原处理器判定，teardown 取消/关闭 host 资源；CursorWindow 有界且遵循
   requiredPos/countAllRows，时间经 Clock，journal 模式取 ROM 资源配置、无 WAL。SharedPreferencesImpl/EditorImpl 整类执行 ROM，

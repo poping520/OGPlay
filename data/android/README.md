@@ -14,7 +14,8 @@ NOTICE 映射，以及启动类路径各 jar 的来源与哈希；`19/source-man
 
 `19/framework/` 是 API 19 启动类路径：`core.jar`、`conscrypt.jar`、`ext.jar`、
 `framework.jar`、`framework2.jar`、`telephony-common.jar`、`android.policy.jar` 原样取自 AOSP 构建，`ogplay.jar`
-放 OGPlay 自己的 guest Java、系统资源表和主题投影，并排在最前。生成命令为
+放 OGPlay 自己的 guest Java 与进程内服务实现，并排在最前；资源 native 读取本地
+`framework-res.apk` 与应用 APK，共用唯一资源核心。生成命令为
 `python3 tools/bootdex/build_bootdex.py build`，运行时按顺序加载全部 jar；该目录不入库。
 构建要求见 [工具说明](../../tools/README.md)。
 

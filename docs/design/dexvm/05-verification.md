@@ -117,8 +117,8 @@ Scenario runner：
 | `dexvm.exceptions` | throw/展开/JNI 双向映射/未捕获诊断 |
 | `dexvm.clinit` | 类初始化状态机 |
 | `dexvm.jni_bridge` | 出向编组 + 入向第三路由 |
-| `dexvm.intrinsics_java_core` | java.* P1–P3 批次（可再分条目） |
-| `dexvm.intrinsics_android_core` | android.* 目录挂接与新增 |
+| `dexvm.intrinsics_java_core` | VM/libcore native 接缝与待移除存量 |
+| `dexvm.intrinsics_android_core` | Android native 与进程内服务绑定 |
 | `dexvm.threads` | Thread intrinsic + attach 对等 |
 | `dexvm.wait_notify` | monitor wait-set 扩展 |
 | `dexvm.gc` | A 期 arena → B 期精确标记清除（状态按期推进） |

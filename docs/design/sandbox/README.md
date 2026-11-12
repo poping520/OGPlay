@@ -1,5 +1,7 @@
 # Sandbox · 每游戏持久沙盒方案设计
 
+此目录记录已退役的启动与平台接缝设计；当前实现见 [ROM 运行路径](../../state/CURRENT.md) 和 [integration 契约](../../../src/runtime/integration/MODULE.md)。
+
 本目录是"每个游戏一个持久宿主沙盒目录，guest 可写命名空间跨会话持久化"方案的
 完整设计，写给两类读者：**决策者**（评审 [ADR-0020](../../adr/session.md#adr-0020)）
 和**实施阶段的 AI**（作为该能力开发的长期上下文根节点）。
@@ -9,7 +11,7 @@
 ## 效力声明
 
 - 本方案保留 ADR-0020 的 overlay、tombstone、配额、原子替换与 flush 设计溯源；
-  package 键、`fs/` 布局和迁移条款已由 [ADR-0071](../../adr/session.md#adr-0071)
+  package 键、`fs/` 布局和迁移条款已由 [ADR-0071](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/session.md#adr-0071)
   及 [VFS 专项](../vfs/README.md)取代。冲突时以 `src/runtime/vfs/MODULE.md` 为准。
 - 本方案**不改变**项目元规范：AGENTS.md 的工作流约束（WU 有界、机器可判定
   测试、能力记账、明确失败、结构化日志、`src/` 零游戏名分支）

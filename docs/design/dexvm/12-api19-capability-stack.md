@@ -1,5 +1,7 @@
 # 12 · API 19 能力栈与 intrinsic 布局收敛
 
+此篇记录已退役的阶段设计；当前实现见 [DexVM 契约](../../../src/runtime/dexvm/MODULE.md)、[integration 契约](../../../src/runtime/integration/MODULE.md) 和 [ROM 平台边界](03-platform-intrinsics.md)。
+
 ## 1. 目标
 
 下一阶段不按 AOSP package 铺全 API，而是补齐老游戏启动、渲染、音频和存档路径共用的

@@ -1,8 +1,10 @@
 # 音频专项审计与开发规划
 
+此篇记录已退役的音频阶段设计；当前实现见 [音频契约](../../../src/audio/MODULE.md)、[Android 契约](../../../src/runtime/integration/dexvm_android/MODULE.md) 和 [P4 有界音频证据](../../tasks/dexvm/P4-myboy.md)。
+
 日期：2026-09-20。状态：验收修复中；AUD-03 未关闭。不宣称 title 兼容或听测。
 任务入口：[DVM-189](../../tasks/dexvm/DVM-189.md)；架构提案：
-[ADR-0069](../../adr/media.md#adr-0069)。
+[ADR-0069](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/media.md#adr-0069)。
 
 本轮按用户确认只做源码审计与开发规划。下文是目标设计，不覆盖当前 MODULE 契约，
 不将已识别问题标为已修复，不以旧测试通过证明完整 Android 音频兼容。
@@ -37,7 +39,7 @@ MediaCodec/Extractor、JetPlayer 等保留明确能力边界，有真实需求�
 | E3 | [java_sound_pool_mixer.cpp](../../../src/audio/java_sound_pool_mixer.cpp)：Load、Unload、Play、RenderStereoPcm16 |
 | E4 | [opensles_module.cpp](../../../src/runtime/boundary/modules/opensles/opensles_module.cpp)：Mix、Allocate、ObjectDestroy、EngineCreateAudioPlayer、PlaySetMask、BufferQueueEnqueue |
 | E5 | [android_guest_call_session.cpp](../../../src/runtime/integration/android_guest_call_session.cpp)：RenderStereoAudio、EnqueueOpenSlesCallback、StopOpenSlesCallbackThread、BeginTeardown |
-| E6 | [run_apk.cpp](../../../src/frontend/cli/run_apk.cpp)：sound_loader、PumpAudio、driver.step 后补音频、视频 wall-time pacing |
+| E6 | [run_apk.cpp](https://github.com/poping520/OGPlay/blob/dc685c685a3a123d222d838150cf74a71ab52a0a/src/frontend/cli/run_apk.cpp)：sound_loader、PumpAudio、driver.step 后补音频、视频 wall-time pacing |
 | E7 | [dexvm_bridge.cpp](../../../src/runtime/integration/dexvm_bridge.cpp)：RegisterAndroidOwnerAttachedStateTable；[dexvm_android.h](../../../include/ogplay/runtime/integration/dexvm_android.h)：播放器侧表 |
 | E8 | [sdl_audio_output.cpp](../../../src/hal/sdl_audio_output.cpp)：QueuedFrames、Stop、Submit；[video/MODULE.md](../../../src/video/MODULE.md)：拉模型、共享 demux 与背压 |
 | E9 | [ogg_vorbis.cpp](../../../src/audio/ogg_vorbis.cpp)、[mp3.cpp](../../../src/audio/mp3.cpp)：解码与输入/输出限制 |

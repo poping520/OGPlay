@@ -6,11 +6,14 @@
 修复过程、验证明细及证据写入任务单。能力见 [capabilities.toml](../../capabilities.toml)，
 契约见各模块 MODULE，任务见 [任务总览](../tasks/README.md)。
 
-P3 的生产路径使用 ROM ActivityThread、主 Looper、ViewRootImpl 和进程内 AMS/WMS。
-运行期方向变化走 ROM 配置派发与 relaunch，Java EGL 窗口生产者和会话 Clock 双向同步。
-P3 实现已完成。Wild Blood 的退出焦点顺序已修复，剩余退出问题及历史验收证据缺口见 [P3-window](../tasks/dexvm/P3-window.md)。P4 My Boy! 完成：浏览器、GLES/输入/短音、设置/文本/存档/旋转路径均已实测；ARM test 225 与同 APK 真机一致，按应用缺陷处理，见 [P4-myboy](../tasks/dexvm/P4-myboy.md)。下一阶段是 P5 文档。
-启动类路径改为 ogplay.jar + 原样 API19 ROM jar（core/conscrypt/ext/framework/framework2/android.policy），成员来源审计与配对制品已删除；未绑定 native 调用时抛 UnsatisfiedLinkError。
-P2 完成。API19 资源 native 使用裁剪版 framework-res.apk、游戏 APK 和唯一资源表核心，Java 与 NDK 共用 AssetManager。见 [RES-1](../tasks/resources/RES-1.md)。
+当前启动类路径为 ogplay.jar + 原样 API19 ROM jar，应用与 ROM 共用 DexVM/JNI 对象模型；
+ROM ActivityThread、主 Looper 和 ViewRootImpl 驱动启动、生命周期、配置派发/relaunch 与软件绘制。
+宿主提供进程内 AMS/WMS/IMMS/通知等服务及 native：资源基于本地 framework-res.apk 和唯一资源表核心，
+Java/NDK 共用 AssetManager；软件 Canvas 使用 Skia，EGL/视频 Surface 经 WindowSystem 合成后交付宿主。
+Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输入/短音、设置/文本/存档/旋转路径
+已实测。退出、原生 EGL Clock、历史画面及跨平台验收缺口见 [P3-window](../tasks/dexvm/P3-window.md#剩余缺口与-p4)，
+应用核心差异、并发画面和长时音频边界见 [P4-myboy](../tasks/dexvm/P4-myboy.md#剩余边界)；
+跨会话问题见 [KNOWN-ISSUES](KNOWN-ISSUES.md)。
 
 ## 游戏进度
 

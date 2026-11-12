@@ -1,5 +1,7 @@
 # 04 · 运行时集成
 
+此篇记录已退役的阶段设计；当前实现见 [DexVM 契约](../../../src/runtime/dexvm/MODULE.md)、[integration 契约](../../../src/runtime/integration/MODULE.md) 和 [ROM 平台边界](03-platform-intrinsics.md)。
+
 > **启动规则已被取代：** 本文的 DexVM 内核、intrinsic 与生命周期验收事实继续有效；
 > §1/§7 中 v1/v2 exact Profile 作为启动安全边界、Profile/native-call 驱动入口的假设，
 > 已由 [APK Startup 设计](../apk-startup/README.md)取代。当前启动由 Manifest 与

@@ -195,8 +195,8 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   默认被调 handler 保留原有 C++ 行为，应用覆写与 super 调用分别进入覆写和原 handler。
 - 集合、并发、IO/对象流、日期、framework 值类、Throwable、Uri、UUID/JCA、Cipher/证书等普通
   Java 逻辑归 BootDex；字段/数组是唯一状态。native 仅保留受审边界，不得恢复重复 C++ 算法。
-- ADR-0154 允许显式撤换已有 intrinsic：ROM Java 整体拥有字段和普通方法，只保留已有受审
-  native overlay；宿主不得访问私有字段或保留替代状态。Thread/Handler 等生命周期耦合另行设计。
+- ROM Java 拥有字段和普通方法，宿主只扩展 native 与进程内服务；现存整类替换和非 native
+  覆盖按阶段移除，新代码不得增加。ROM Looper/Handler 管理消息协议，宿主只提供 native poll/wake。
   DatagramPacket 状态归 Java；DatagramSocket 经 VM 虚派 getter/setter 读取 payload 区间、
   地址和端口、提交接收长度及来源，NetworkRuntime 只消费一次性的 Endpoint/payload 快照，
   不保存 packet 侧表。InputSource 的值状态和 Appendable 接口归 ROM；SAX 使用 [BootDex 文本流适配器](../../guest/xml/MODULE.md)。
@@ -246,8 +246,8 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   BootDex；integration 只覆盖 Binder 身份/线程策略 native 与 Parcel 字节/引用 native 边界。
 - ArraySet/LruCache/Pools/Property、Point/Rect、MathUtils/Patterns 与 framework exception
   归 BootDex；Point、Rect、AndroidException 不保留普通方法 overlay。
-- API 19 Settings 公开 Java API 归 BootDex，包括 moved-key 路由、数值转换与异常；只有私有
-  NameValueCache 的有界存储访问由 Android integration overlay，不引入 provider/Binder。
+- API19 Settings 与 NameValueCache 执行 ROM，包括 moved-key 路由、数值转换与异常；
+  有界存储经进程内 Settings provider 与 IContentService，不使用非 native overlay 或 Binder IPC。
 - API 19 ext.jar 的 Terms/Restlet Apache HTTP 闭包归 BootDex；Commons Logging 的反射实现类
   显式列入配方，`org.apache.http.entity` 的 12 个类完整入集。HTTP socket 仍只经
   NetworkRuntime，Apache 客户端 TLS 走同一 OGPlayJSSE 与 raw transport；SSLEngine 与

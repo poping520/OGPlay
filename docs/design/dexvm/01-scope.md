@@ -1,5 +1,7 @@
 # 01 · 目标、非目标与有界性
 
+此篇记录已退役的阶段设计；当前实现见 [DexVM 契约](../../../src/runtime/dexvm/MODULE.md)、[integration 契约](../../../src/runtime/integration/MODULE.md) 和 [ROM 平台边界](03-platform-intrinsics.md)。
+
 ## 1. 要解决的两个结构性问题
 
 **问题 A：生命周期副作用漏抄（正确性）。** profile 用人工逆向的 `native_call`

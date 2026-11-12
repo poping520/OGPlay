@@ -12,8 +12,8 @@
 | --- | --- |
 | Bionic libc/libm/libdl（三个 API 版本） | ART/Dalvik 完整虚拟机（见第 7 节的分级方案） |
 | 游戏用到的 Linux syscall（约 120 个） | binder / IPC / system_server / Zygote |
-| 完整 JNI（JNIEnv + JavaVM 全表） | Android 框架的完整 Java 实现 |
-| 游戏会碰的框架类（Activity/AssetManager/AudioTrack/…）的 HLE | PackageManager / ActivityManager / 四大组件生命周期全套 |
+| JNI（JNIEnv + JavaVM）的进程内契约 | 完整 ART/Dalvik、Zygote |
+| 原样 ROM Java、native 与进程内 AMS/WMS 等服务 | system_server、Binder IPC、跨进程组件管理 |
 | EGL / GLES 1.1 / GLES 2.0 / GLES 3.x | Vulkan on Android、RenderScript |
 | OpenSL ES、AudioTrack、MediaPlayer | AudioFlinger、MediaCodec 全格式 |
 | NativeActivity / ALooper / AInputQueue / AAssetManager | Wi-Fi/蓝牙/电话/通知/权限系统 |
@@ -266,29 +266,20 @@ DEMO 自建的 231 槽数组不是正式 ABI，不能迁移为正式版契约。
 
 ---
 
-## 6. Java 框架层：声明式 HLE
+## 6. Java 框架层：ROM 原样运行与进程内服务
 
-DEMO 阶段的做法是为每个游戏手写假 Java 类（`Java_com_gameloft_..._nativeRender` 之类），
-这是硬编码的主要来源。正式版改成**声明式绑定表**：
+应用 Java 和 API19 ROM jar 在同一 DexVM 中原样执行，不再把平台类或游戏胶水写成
+声明式宿主替身。Title Profile 只提供 identity，不再包含 Java handler 映射。
 
-```toml
-[[class]]
-name = "android/media/AudioTrack"
-impl = "audio.track"                    # 宿主实现 id
+ROM ActivityThread/LoadedApk/Instrumentation 处理组件创建与生命周期，主 Looper
+执行 Handler/MessageQueue；ROM PhoneWindow/ViewRootImpl 负责窗口、输入与软件遍历。
+宿主提供进程内 AMS/WMS/IMMS 等本地服务对象以及 native，不实现 Binder IPC 或系统进程。
+Resources/AssetManager 的 native 共用资源核心，Canvas/Paint 等 native 使用 Skia，
+WindowSystem 按 WMS 层级合成软件、EGL 和视频 Surface。
 
-  [[class.method]]
-  name = "<init>"; sig = "(IIIIII)V"; impl = "audio.track.ctor"
-  [[class.method]]
-  name = "write";  sig = "([BII)I";   impl = "audio.track.write"
-```
-
-- 框架类（`android.*` / `java.*`）的绑定表内置，**所有游戏共用**
-- 游戏自有类（`com.gameloft.*`）的绑定进各自的 Title Profile（见 [05](05-title-profiles.md)）
-- 找不到类/方法时：记账 + 明确报错，可通过 `hle.unimplemented()` 查询
-
-框架侧优先级最高的几类：`Activity` / `AssetManager` / `AudioTrack` / `MediaPlayer` /
-`SoundPool` / `SharedPreferences` / `Display` / `Vibrator` / `Sensor` /
-`ConnectivityManager` / `Locale` / `PackageManager`（仅 versionName/versionCode）。
+缺类/缺成员按实际解析错误处理；未绑定 native 抛 UnsatisfiedLinkError 并记账。
+纯展示请求的安全降级边界以 AGENTS.md 为准，逻辑返回值与底层能力不伪成功。
+现存替换与覆盖按阶段移除，查询见 [ROM 平台边界](../design/dexvm/03-platform-intrinsics.md)。
 
 ---
 
@@ -344,19 +335,21 @@ Gameloft 这类"极薄"title 的 Java 胶水层（生命周期、license/billing
 | --- | --- | --- | --- |
 | **L0 · 无 DEX** | 完全靠 HLE Java 类 | 已有 | 薄 Java 层的 NDK 游戏 |
 | **L1 · DEX 只读** | 解析 DEX，读常量/资源/类结构，不执行 | 小 | 提升识别与自动绑定质量 |
-| **L2 · DEX 解释执行** | 解释游戏自有类；`android.*` / `java.*` 仍走宿主实现 | 大 | Java 厚层游戏 |
+| **L2 · DEX 解释执行** | 解释应用及原样 ROM 类；宿主提供 native 和进程内服务 | 大 | Java 厚层游戏 |
 
 **L2 的关键架构**（这是重点）：
 
-> 执行游戏的 DEX，但把 `android.*` 和 `java.*` 当作**内建类（intrinsic）**由宿主实现，
-> 而不是去跑真实的 AOSP framework.jar。
+> 应用 DEX 与原样 API19 ROM jar 在同一有界 DexVM 中执行；宿主只扩展 native 和进程内服务接口。
 
-这样 VM 只需要跑游戏自己那几百个类，规模可控；框架的复杂度仍然被 HLE 边界挡在外面。
-反之，如果去加载真实 framework.jar，就等于在做 ART + Android 系统，项目会失控。
+ROM ActivityThread、主 Looper、ViewRootImpl 负责启动、生命周期、配置重建与软件绘制。
+资源 native 使用 framework-res.apk 和唯一资源核心；Canvas 使用 Skia，GLES 使用 ANGLE，
+WindowSystem 按 WMS 层级合成 Surface。进程内 Binder/Stub 返回本地对象，不启动 Android
+系统进程或 Binder IPC。现存整类替换和非 native 覆盖按阶段移除，新代码不得增加。
 
-L2 需要的组件：DEX 解析器、字节码解释器（约 220 条指令）、对象模型与 GC、
-异常表、`invoke-*` 分派、与 JNI 的双向互通、内建类库（`String`/`StringBuilder`/
-集合/`Math`/`Thread`/IO 等最小集）。**没有 JIT，纯解释器即可**——Java 层不是这类游戏的热点。
+L2 需要 DEX 解析器、字节码解释器、对象模型与 GC、异常及 `invoke-*` 分派、JNI 双向互通，
+并提供 ROM 实际调用的 native/服务接缝。运行 ROM 不等于实现完整 ART/Dalvik；
+不提供 DEX JIT/AOT、Zygote、system_server。当前边界和存量查询见
+[平台边界](../design/dexvm/03-platform-intrinsics.md)。
 
 ### 7.4 建议节奏（已被 ADR-0017 取代，保留溯源）
 
@@ -364,10 +357,9 @@ L2 需要的组件：DEX 解析器、字节码解释器（约 220 条指令）�
 - ~~M4 之后用 7.2 的数据复盘：如果需要 DEX 的题目占比 < 10%，L2 延后甚至不做；
   如果 > 25%，把 L2 提到一个独立里程碑。~~
   **已取代**：投入 L2 已决定（ADR-0017）；7.2 的测量继续做，但只用于校准
-  批次顺序与 intrinsic 最小集。阶段划分见 design/dexvm 06。
+  native/服务缺口优先级。当前运行路径见 [CURRENT](../state/CURRENT.md)。
 
-**不要在架构上把 L2 堵死**：JNI 层与对象模型从一开始就要设计成"对象引用可以是宿主对象
-也可以是 VM 对象"的双实现形态，这样 L2 是加法而不是重写。
+JNI 与 DexVM 共用唯一对象身份、字段、数组/String backing 与 GC，不保留第二套宿主 Java 对象状态。
 
 ---
 

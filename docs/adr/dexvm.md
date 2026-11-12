@@ -7,15 +7,9 @@
 - [ADR-0066 · 密码、KeyStore 与 TLS 的 guest 依赖边界](#adr-0066)
 - [ADR-0068 · SQLite Java 栈与唯一 VFS 上的宿主引擎](#adr-0068)
 - [ADR-0147 · 未实现平台成员明确失败](#adr-0147)
-- [ADR-0148 · 固定 ROM Java 类的规则准入与显式撤换](#adr-0148)
 - [ADR-0152 · Java primitive/String 的稳定 guest backing](#adr-0152)
-- [ADR-0157 · Java View 遍历、宿主投影与配对制品](#adr-0157)
-- [ADR-0158 · 固定 ROM 成员组合与开放世界虚派准入](#adr-0158)
 - [ADR-0167 · Locale 的 ROM Java 归属与单一设备语言地区](#adr-0167)
-
 - [ADR-0172 · Dalvik 堆默认值对齐 API19 1 GB 设备档位](#adr-0172)
-- [ADR-0173 · View scrollbar 初始化闭包与状态型图形对象准入](#adr-0173)
-- [ADR-0174 · 同 ROM Spinner 系统布局内容封存](#adr-0174)
 
 <a id="adr-0017"></a>
 
@@ -30,8 +24,10 @@
 
 ### 决定
 
-应用 Java 方法真实解释执行，平台行为由受审 API19 BootDex、VM 原语与窄宿主接缝提供。
-不加载完整 core/framework 运行系统服务。
+应用与 API19 ROM Java 方法在同一 DexVM 中解释执行，启动类路径为 ogplay.jar 与原样 ROM jar。
+ROM ActivityThread、主 Looper、ViewRootImpl 执行应用启动、生命周期与软件绘制；宿主提供 native
+和进程内服务接口，不启动 system_server、Zygote 或 Binder IPC。新代码不得替换 ROM 类或覆盖
+ROM 非 native 方法；现存替换和覆盖按阶段移除，查询方法见 [平台边界](../design/dexvm/03-platform-intrinsics.md)。
 只提供稳定 application/boot loader 与封存类路径，不开放动态 classpath、自定义加载权限、
 完整 verifier、DEX JIT/AOT、odex/quickened、JDWP 或 instrumentation。
 JNI 与 Java 共用对象身份、字段、数组/String payload 及 GC；不能复制一套宿主 Java 状态。
@@ -60,7 +56,7 @@ Dalvik 4.4 固定源码作为语义参考，不编译链接其完整对象模型
 1. session/process root，由 owner 明确枚举 Application、活动组件、scheduler work 等根；
 2. owner-attached state，以 VmObjectRef 为 owner，经具名 state table 注册 trace/sweep；
    仅 owner 存活时 trace child，回收 handle 前 sweep，禁止反向强根保活 owner；clone 默认关闭；
-3. thread token、UiNodeId、resource id、路径及 process singleton 等非对象 identity，按自身寿命管理。
+3. thread token、window ID、resource id、路径及 process singleton 等非对象 identity，按自身寿命管理。
 声明含 guest 引用的 state 必须有 trace，所有 owner 表必须有 sweep，不能用兼容 root 绕过。
 Java 字段中的 native 逻辑 token 按显式字段/cleanup 登记，别名共同持有资源，最后 owner 才释放。
 GC、Java 显式 close、finalizer 与 teardown 共用关闭事实，不能重复释放或伪造非法 token 成功。
@@ -140,58 +136,23 @@ Java native 字段保存受检逻辑 token；Clock、线程、取消、GC 与释
 
 ### 决定
 
-受审 BootDex、手写 intrinsic 与平台 handler 提供平台类和行为；BootDex 取自固定 ROM
-core/framework/framework2/ext JAR 的实际 class_def，输入哈希由配方校验，显式成员组合按 ADR-0158 审计。
-BootDex 内每个 class_def 都注册，不在运行时再筛类；方法和常量池按 DexUnit 隔离。
-声明为未实现的方法/构造器调用记账失败；未实现的非常量字段访问同样失败，不能返回默认 null/0。
-真实常量保留原值；不生成伪 clinit、空成功构造或替代对象状态。
+启动类路径按固定顺序加载 ogplay.jar 和原样 API19 ROM jar；归档哈希与 DEX 条目由装配校验。
+ROM 类的方法、字段及初始化执行原版字节码，native 和本地服务边界由宿主绑定。
+类可链接不代表全部行为已实现；未绑定 native 调用记账并抛 UnsatisfiedLinkError。
+未实现的存量 intrinsic 方法/构造器及非常量字段访问明确失败，不返回默认 null/0。
+真实常量保留原值，不生成伪 clinit、空成功构造或替代对象状态。
+
 JNI/反射区分“成员缺失”与“存在但未实现”：合法查找可成功，执行/字段访问才暴露行为缺口；
 缺成员或缺类按 Dalvik 发布对应 NoSuch*/NoClassDefFound 错误，不能把未实现伪装成不存在。
 未绑定 native 明确失败，诊断 surface 必须报告真实来源。
 
-### 修订（2026-11-05）
-
-本决定只约束会影响游戏逻辑的能力。无返回值的纯显示设置按 AGENTS.md 忽略并记录警告，不抛异常：
-配方来源 `ui-degraded`（名单 `tools/bootdex/ui-degraded.json`）由运行时统一处理，手写 handler 调用
-`RecordUiDegraded`。选择顺序：能执行 ROM 的优先 ROM；否则显示设置降级，对应 getter 继续失败或保持 ROM，
-不报告未应用的状态。监听器注册、层级变更、输出参数、密码掩码和所有返回值不降级，继续明确失败。
+无返回值的纯显示设置按 AGENTS.md 忽略并调用 `RecordUiDegraded` 记录警告，不抛异常。
+ROM 方法照常执行；native/服务入口只对符合降级边界的展示请求使用该规则。
+监听器注册、层级变更、输出参数、密码掩码和所有返回值不降级，继续遵循真实状态或明确失败。
 
 ### 后果
 
-未纳入 BootDex 的类在首次使用时明确失败；不因此引入完整 framework 或系统服务。
-
-<a id="adr-0148"></a>
-
-## ADR-0148 · 固定 ROM Java 类的规则准入与显式撤换
-
-- 状态：已取代（2026-11-09：启动类路径改为原样加载整份 ROM jar，不再逐类准入或撤换）
-- 日期：2026-10-20
-
-### 背景
-
-原版纯 Java 算法可以复用，但准入必须守住 native、初始化、父成员与单 DEX 容量边界。
-
-### 决定
-
-默认由 select_rom_java.py 判定固定 ROM 中尚未纳入运行时的类；本类无 native、无 intrinsic/
-overlay 占用、不在已选 BootDex 或日期冻结的排除分类，双向 intrinsic 交互单独排除。
-clinit 的传递初始化/调用闭包须已实现，虚派目标无法唯一确定、反射/动态加载/线程启动入口拒绝。
-初始化闭包触及 Binder/IBinder/IInterface/ServiceManager/Parcel 及子类型时拒绝。
-父链可含 intrinsic 或 overlay，但不能覆写不可覆盖成员；全部 own 方法不得触及父链中
-未实现构造器、方法或字段。父类被拒绝则级联拒绝，不按类名豁免。
-普通方法的其他未实现依赖仍在真实执行时明确失败；组合类仅审计活动 ROM 方法体，见 ADR-0158。
-收录范围为现有 BootDex 与 intrinsic 声明起点沿方法体类型/成员引用的不动点闭包，
-补齐父链及初始化依赖；被拒绝类停止遍历，样本库不再决定生产收录范围。
-实际装载 surface 中可达且规则可准入的缺口须为零，--check-closure 非零阻止验收。
-仍为单 classes.dex，实际 method_ids、field_ids 均严格小于 60000，不以配方类数替代制品检查。
-已有 intrinsic 的撤换须显式受审：满足其余规则，只保留既有同签名 native，清除普通 handler/
-声明和替代状态；宿主经 Java 方法访问，VM 约定字段须逐项列账，生命周期耦合另行设计。
-选择器默认只报告，--apply 才修改配方，--only 不能绕过规则；失败修通用规则或退回原实现。
-每批保住契约/一致性与冻结场景基线，端到端冷启动/首帧/RSS 退化超过 10% 停止报告。
-
-### 后果
-
-类被准入不等于所有路径实现或游戏兼容；build/check、重新导出 surface 与闭包检查须基于真实制品。
+缺类与未实现行为分别诊断；运行完整 ROM jar 不表示提供完整 Android 系统服务。
 
 <a id="adr-0152"></a>
 
@@ -228,78 +189,6 @@ allocateDirect 创建真实 byte[] 并与所有 NIO view 共享地址/GC；JNI �
 
 借用避免 O(N) 复制，但漏释放会形成真实 pinned live set；不承诺额外内存序、stale write/ABA
 检测或完整 VM save-state，单独页快照不能当作游戏存档。Windows 生产路径仍待验证。
-
-<a id="adr-0157"></a>
-
-## ADR-0157 · Java View 遍历、宿主投影与配对制品
-
-- 状态：Accepted（2026-11-09 修订：配对制品与五项身份校验已删除，其余遍历/投影决定不变）
-- 日期：2026-10-24
-
-### 背景
-
-guest 与宿主各自布局会产生两份几何权威，输入、Surface 和呈现也可能消费不同代际。
-
-### 决定
-
-生产唯一 JavaTraversal v1：配对 BootDex、DEX/成员表/主题/video review/recipe 身份在 VM/catalog
-建立前校验，默认、候选与诊断入口共用装配；缺失、未知版本或错配明确失败，无运行期 Legacy 回落。
-owner guest token 与宿主线程固定；Java 唯一拥有 hierarchy、ID、visibility、listener、focus、
-measured/bounds、scroll 与布局 flags。integration 只经受审绑定字段/adapter 生成只读投影。
-ROM 执行 measure/layout、缓存及同步 onSizeChanged；C++ 不回写几何，ui 不持 VM/Java 引用。
-仅真实 requestLayout/invalidate、首次附着、窗口/metrics 改变触发工作；clean 帧复用完整快照。
-一个逻辑 tick 至多两 pass，第二轮请求留下一 tick；跨 tick 不收敛有界失败，不跳帧或降频。
-投影携窗口/root/内容/generation、metrics revision 与 epoch，完整验证才原子发布；
-guest 异常不回滚已发生 Java，失败保留旧完整发布。回调内只读临时投影，不重入遍历。
-输入整次事件、render、Surface 和媒体共用完整 presentation lease；捕获校验挂载代次，
-失效取消且尾事件不穿透新 owner。Surface 逐回调重验身份，size→created→changed，新代不复活旧端点。
-每窗口稳定 Java FrameLayout 同供 content/decor 与 observer；有界 managed-window adapter
-提供真实可见/焦点/坐标/token，不伪造 AttachInfo、ViewRootImpl、WMS 或 Binder 服务。
-叶测量/文本/图像只用受审值服务，Java 真实 setMeasuredDimension；未迁移 ROM 算法不获实现信用。
-Dialog 每 modal 使用独立 HostLayout 树，和 guest 投影共同发布；不重排 guest 树或切换几何 owner。
-主题/属性取固定源码与同 ROM framework-res 的有界投影，真实 ID、format、配置与消费闭包受检；
-引用身份与内容加载分开，未知不可当缺席。颜色 selector 和 edit_text 皮肤仅在已封存范围支持。
-PhoneLayoutInflater 只取同 ROM 受审闭包，不拉入 Policy/PhoneWindow 全包；实际未支持资源、
-动画、scrollbar 构造/绘制、Editor/InputConnection/IME 请求明确失败，不造空对象或默认皮肤。
-只读 Compose 共享冻结几何/位图/视频，未变化 UI 平面可缓存，新 producer 底图仍按顺序合成。
-准入仍按成员/父链/clinit 审计，支持路径动态未实现命中须为零；冻结场景差分与 ≤10% 性能门槛保留。
-
-### 后果
-
-统一几何和呈现权威，纯宿主布局继续存在；有界软件窗口不是完整 Android UI，Windows 尚未验收。
-
-<a id="adr-0158"></a>
-
-## ADR-0158 · 固定 ROM 成员组合与开放世界虚派准入
-
-- 状态：已取代（2026-11-09：成员来源审计与 member-sources 删除，ROM 方法体照常执行，intrinsic 仅以 MergesBootClass 覆盖带 handler 的方法）
-- 日期：2026-10-24
-
-### 背景
-
-整类撤换无法隔离平台接缝，而把普通虚方法按 clinit 唯一目标规则处理会拒绝正常覆写。
-
-### 决定
-
-固定 ROM 每类仅一个 class_def、完整字段布局与原版 clinit owner；普通状态不复制子集或双写。
-封存 manifest 按完整签名记录 ROM flags、方法体 hash、字段值/初始化与来源：ROM、受审 adapter/
-既有 overlay、明确 failure。ROM 清旧 handler，failure 禁字节码和 handler，额外手写成员拒绝。
-普通 overlay 与新 native 只按精确签名/理由/输入输出/owner/失败边界受审，不能整类自动准入。
-构造 adapter 写字段须逐项列账；不写空 clinit，不改原 DEX 方法体成代理桩。
-构建/check 审计来源冲突、native/overlay 授权、依赖与制品身份，确定性封存；运行时无成员开关。
-活动 ROM 普通方法的 direct/static/super、同方法 new-instance 精确接收者指向 failure、
-本类 failure 字段及动态入口严格拒绝；clinit 及其传递闭包保持严格唯一且已实现规则。
-其余 virtual/interface 调用无论目标是否唯一，均按开放世界分派封存全部目标及 implemented/failure
-来源 ledger；应用覆写属应用代码，未实现目标真实命中时仍记账失败，不能因列账获得实现信用。
-字段接收者的 null-writer/不可分配/unproven 只作封存信心分类，不作为准入门槛；
-宿主分配扫描和证据哈希仍重算，不能忽略 JNI AllocObject/Unsafe 绕过构造器。
-组合父成员引用只审 ROM/clinit 活动体，全部成员形状仍检不可覆盖；默认整类 selector 仍全 own-body。
-BootDex closure 零缺口与实际单 DEX 索引预算保持；每批有界支持路径须动态未实现零命中，
-真实父链不能以缩小测试路径回避，静态 ledger 不等于运行覆盖。
-
-### 后果
-
-可逐成员迁移真实 Java，保留诚实失败；不改变默认准入规则，不承诺全部 ROM 虚派目标可运行。
 
 <a id="adr-0167"></a>
 
@@ -340,7 +229,7 @@ Java 算法与缓存没有宿主副本；设备语言地区与应用可修改的
 ### 背景
 
 虚拟设备内存快照为 1 GiB（DVM-228），旧 Dalvik 64/512/1024 MiB 默认堆不匹配。
-Runtime.maxMemory 会影响应用按比例预分配；Manifest 的 largeHeap 尚未投影。
+Runtime.maxMemory 会影响应用按比例预分配；Manifest 的 largeHeap 必须与实际活动堆上限一致。
 
 ### 决定
 
@@ -358,95 +247,3 @@ VMRuntime.getRuntime().clearGrowthLimit()，将活动上限放开至 maximum。
 普通应用 maxMemory=96 MiB，largeHeap 为 256 MiB；getMemoryClass 始终 96，
 getLargeMemoryClass 为 256。Native guest 内存不纳入 Java 堆上限。
 跨游戏 OOM 需保留分配栈与所需大小并停止，不能静默回退旧档位；不改变 1 GiB 设备事实。
-
-<a id="adr-0173"></a>
-
-## ADR-0173 · View scrollbar 初始化闭包与状态型图形对象准入
-
-- 状态：Implemented（初始化闭包实施完成，见 [DVM-355](../tasks/dexvm/DVM-355.md)）
-- 日期：2026-10-30
-
-### 背景
-
-非零默认 scrollbars 使 View 属性构造进入此前排除的初始化闭包。
-Java 初始化需要状态型图形对象与设备配置，但不应借此引入 WMS/Binder 或完整绘制栈。
-
-### 决定
-
-1. View.initializeScrollbars/initScrollCache/resolvePadding 及 mScrollCache、完整
-   ScrollabilityCache（含 run/setFadeColor）、ScrollBarDrawable 构造/setter/getSize/
-   setParameters、ViewConfiguration.get/构造与所需 getter 使用固定 ROM。
-   进入现有主题配方并按 ADR-0158 组合审计；父成员无 native、无未准入依赖时补 ROM，
-   新 native、overlay 冲突或审计放宽需求停止报告。initializeFadingEdge 保持 failure。
-2. ViewConfiguration 每实例原构造器执行前注入 sHasPermanentMenuKey 与
-   sHasPermanentMenuKeySet=true，保留原 ROM 构造器本体。固定 ROM 两字段是 private
-   实例字段，clinit 后静态写入不可行；不改字段 flags，不创建 IWindowManager/Binder 代理。
-   先经 Resources/ARSC 读同 ROM config_overrideHasPermanentMenuKey：1 为 true，
-   2 为 false，其余值按同 ROM PhoneWindowManager 规则读 config_showNavigationBar，
-   再读现有 SystemProperties 的 qemu.hw.mainkeys；"1" 强制无导航栏、"0" 强制有导航栏，
-   其他值不覆盖，菜单键取导航栏值的反值。任一读取失败必须明确失败。
-   接缝只写这两个实例字段；不新增设备快照字段，ADR-0111 不变。
-   Display.getRealSize 取已有显示尺寸配置；撤掉接缝必须进入 WMS 分支并明确失败，
-   覆盖 config=1/2 与 mainkeys 覆盖。固定 APK 的 ARSC 0x01110044 为 true，
-   override=0、mainkeys 为空，默认菜单键为 false；源码 config.xml 基础值不覆盖 ROM 设备资源。
-3. Interpolator 的 nativeConstructor/nativeReset/nativeSetKeyFrame/nativeSetRepeatMirror/
-   nativeTimeToValues/nativeDestructor 按固定 AOSP JNI 与 SkInterpolator 完整实现关键帧、
-   repeat/mirror 与 Result；时间只取调用方参数，不读宿主时钟。
-   LinearGradient/Shader、PorterDuffXfermode/Xfermode 仅拥有强类型句柄及真实构造参数；
-   Paint 保存并追踪 shader/xfermode 引用，set/get 不得丢状态。
-   含这些状态的 Paint 实际参与 Canvas 绘制，沿既有 Canvas 路径记账并明确失败。
-   每个 native/adapter 必须封存精确签名、输入输出、状态 owner 和失败边界；
-   本决定不代替实现审查、配方 review 或动态验证。
-4. 同 ROM 皮肤封存起点为 edit_text 加四个经名称/ID 双重校验的 thumb：
-   scrollbar_handle_horizontal=0x0108052a、vertical=0x0108052b、
-   holo_dark=0x01080528、holo_light=0x01080529（后三者共用 scrollbar_handle_ 前缀）。
-   配置过滤和失败规则保持；不收录 accelerated_anim2 或其他新皮肤，不从 APK 兜底。
-   thumb/track 经 ROM TypedArray.getDrawable→既有 Resources.loadDrawable/MakeRomSkin/
-   NinePatchDrawable，复用 npTc 与源密度缩放，track 的真实 @null 保持 null。
-   缺纯 Java 成员按第1项补 ROM；需要额外 native、overlay 冲突或审计放宽则停止报告。
-   引用已投影不等于加载已准入，封存加载亦不等于 scrollbar 构造或绘制已实现。
-5. UiTree 不绘制滚动条；投影对存在 mScrollCache 且滚动条可见的节点记账
-   dexvm.view_scrollbar_draw，不抛异常，复用未审查背景的处理方式。
-   awakenScrollBars 与 cache.run 使用 ROM，经 Handler/postDelayed 和统一 Clock
-   推进淡出；不新增宿主计时，闭包引出新 native 则停止报告。
-6. ScrollView/HorizontalScrollView 的现有 init、touch、fling overlay 保持现状，
-   init 是否迁 ROM 作为后续任务；不修越过本单后的下一独立首错。
-7. 决定 C：View.internalSetPadding 与 setPadding 改为 ROM，包含真实 flags/RTL/scrollbar inset、
-   user padding 与变化时 requestLayout；getLayoutDirection 使用真实 mPrivateFlags2 和
-   ApplicationInfo.targetSdkVersion，不硬编码 LTR。原 padding overlay 与拒绝记账退役。
-
-### 后果
-
-状态对象可独立于像素绘制获得准入；Paint 显示状态未实现时按 ADR-0147 修订忽略并记录警告，不声称已绘制。
-每项实施仍须完成双解释器、关闭即失败及真实首错路径的判据；决定本身不授予运行信用。
-
-<a id="adr-0174"></a>
-## ADR-0174 · 同 ROM Spinner 系统布局内容封存
-
-- 日期：2026-10-30
-
-### 背景
-
-ArrayAdapter 的原版 getView 需要系统布局内容；已有主题资源身份不能授予布局加载信用。
-
-### 决定
-
-仅封存固定 framework-res.apk 的 simple_spinner_item 与 simple_spinner_dropdown_item。
-生成时核对名称/ID、默认配置、原始二进制 XML、属性与 style/attr/color/id 引用身份；
-内容随既有主题投影和五项 pairing SHA 封存。Resources.getLayout 仅对封存 ID 返回
-由原始 XML 解析的真实 XmlResourceParser，继续执行 ROM LayoutInflater/ArrayAdapter；
-其他系统布局抛 NotFoundException，APK 布局既有边界保持。
-Spinner/AbsSpinner/AdapterView 的字段与布局、选择、观察者算法优先执行严格审计的 ROM。
-默认 btn_dropdown 仅扩充既有 selector/ninepatch 闭包；不开放弹窗、触摸选择、guest 绘制。
-必要平台接缝必须逐签名 review、记账并保持关闭即失败，不放宽父成员审计。
-
-DVM-365 补充：同一内容封存协议仅扩充 API19 `linear_interpolator`（0x010a000b）。
-生成与运行时分别校验 anim 名称/ID、默认配置、原始 binary XML、单一无属性
-`linearInterpolator` 元素、空引用集合与内容 SHA；随原 pairing 封存。
-Resources.getAnimation 对该 ID 返回真实 XmlBlock.Parser，其他系统 anim 仍 NotFoundException。
-AnimationUtils.loadInterpolator 与 LinearInterpolator(Context, AttributeSet) 保持原 ROM；
-这只授予插值器构造，不授予 guest onDraw 或动画帧运行信用。
-
-### 后果
-
-布局身份与内容准入分离，未封存布局保持明确失败；两个布局不授予任意系统布局或弹窗信用。

@@ -206,7 +206,7 @@ expect.draw_fbos_min = 2          # 渲染到纹理必须生效
 expect.gl_errors = 0
 expect.null_pointer_calls = 0     # 不允许有被吞掉的失败
 expect.unimplemented_hle = 0
-golden = "goldens/asphalt6/main_menu.png"
+golden = "tests/golden/main_menu.png"
 ```
 
 > 本次 A6 菜单缺失的 bug，`draw_fbos_min = 2` 这一条就能自动挡住。

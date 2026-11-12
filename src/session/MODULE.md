@@ -23,13 +23,12 @@ guest 主线程在独立宿主线程持续执行 ROM Looper.loop。session 提�
   在 `GET_ACTIVITIES` 下发布当前包 Activity 元数据；Activity 主题注册按组件名以后声明覆盖，
   alias 直接使用 loader 封存的继承主题。receiver 声明独立注入，供当前包
   `getReceiverInfo/queryBroadcastReceivers` 使用，逐过滤器事实不合并。`AndroidAppProcessRequest` 同时把显式 `GuestProcFacts` 原样传给 native process；session
-  还接收前端已解包的 curated API 19 Boot DEX，并与应用 DEX 一起交给 bridge；session
-  可接收受审 API19 Roboto-Regular 与 DroidSansFallback bytes，交给 UI 按固定顺序校验为
-  不可变链并绑定主树；独立宿主树经 context 工厂同源注入，不读取宿主/应用字体。
+  接收按 manifest 顺序解包的原样 ROM 启动类路径 DEX，与应用 DEX 一起交给 bridge；
+  系统字体通过 payload 显式注入 ROM Typeface/Paint 的 Skia native，按 family/样式共享
+  不可变字体；应用字体只经 APK assets 或 guest VFS，不读取宿主字体。
   不选择 Boot 类、不读取宿主内存，也不从 Profile 隐式覆盖虚拟设备 `/proc` 事实。
-  外部 guest slice observer 及其可选宿主线程限定原样传给 native process。呈现帧的 UI
-  overlay 在自有 RGBA8 buffer 上合成；经 renderer 认证的全透明 overlay 省略扫描，
-  仍先校验尺寸，混色算法与视频叠放顺序保持一致。
+  外部 guest slice observer 及其可选宿主线程限定原样传给 native process。呈现帧来自
+  WindowSystem 对软件/EGL/视频 Surface 的合成，FrameService 发布和回收不可变 RGBA 帧。
 - `LoadTitleProfileText` / `LoadTitleProfile`：仅接受 v4 的 identity，
   旧 schema 和未知字段明确失败；Profile 是“仅 identity 的精确身份覆盖层”。
 - `SelectApkCompatibilityProfile`：按 package 与可选 version/hash 约束选择覆盖；
@@ -127,7 +126,7 @@ hook 可阻塞正常 exit，强制取消不能宣称正常 hook 完成。详见 
 
 DexActivityLifecycle 成功启动与恢复后向已连接 DiagnosticState 发布 running 阶段；无需启动写盘 coordinator，阶段 generation 仍由 DiagnosticState 维护。
 
-退出前记录并退役已失败调用的 root JNI 异常；本地服务在 scheduler 关闭前解绑。
+退出前记录并退役已失败调用的 root JNI 异常；本地服务在 ROM 主队列关闭前解绑。
 native 清理失败仍继续关闭进程和 surface；前端保留运行首错，独立报告清理错误。
 
 本地视频与软件 Canvas/EGL 通过各自的 ROM Surface 进入窗口合成器。
@@ -137,7 +136,7 @@ DVM-218/236、ADR-0095/0115：进程 Stop 显式区分 host shutdown、guest exi
 `before_guest_shutdown` 停止并回收音频消费者，再 BeginTeardown、VM shutdown/join；
 超时传播原错并记 `session.lifecycle.cleanup_timeout`，到期后不继续 guest 回调。
 进程资源在销毁确认后退役；普通 Activity.finish 仍按实例执行 destroy 并传播异常。
-进程关闭拒绝新转换/输入，关闭 scheduler、join native/Java worker 后由 owner 退役媒体/图形
+进程关闭拒绝新转换/输入，关闭 ROM Looper/native 队列、join native/Java worker 后由 owner 退役媒体/图形
 资源，再执行仍允许的 native cleanup。退出预算覆盖重入且不续期，首错保持、重复 Stop 幂等。
 进程 Stop 不执行模块卸载式 DSO fini；底层显式 permitted 卸载/停机的执行与失败传播保持。
 Java/native 进程退出事实发布后不再调用 guest 生命周期或 JNI 清理；原生

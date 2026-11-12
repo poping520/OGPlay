@@ -49,7 +49,7 @@
 替代旧设计相关条款。保留“唯一权威 owner/registry”，改成每个 Context 独立状态，不能
 让 Java、Native、GLES1、GLES2 各建一套互不关联的对象表。
 
-继续使用 ANGLE 和 SDL3；不引入 Binder、system_server、完整 Android 窗口系统或手写
+继续使用 ANGLE 和 SDL3；不引入 Binder IPC、system_server、完整 Android 窗口系统或手写
 GLES→桌面 GL。guest 指针保持强类型，Clock 保持唯一，guest/host 线程保持 1:1。
 本报告是修复交接，不是要求另写 Android 模拟器，也不直接替代正式 ADR。
 

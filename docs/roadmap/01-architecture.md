@@ -12,7 +12,7 @@
 > 我们不模拟 Android，我们**扮演** Android。
 
 这就是 HLE（高层模拟）与 LLE（低层模拟）的区别：BlueStacks 那类产品是在虚拟机里跑
-一整个 Android 系统；我们只翻译 CPU 指令，其余全部换成 Windows/Linux/macOS 的原生等价物。
+一整个 Android 系统；我们执行应用 ARM 代码与原样 ROM Java，在 native、syscall 与进程内服务边界接入宿主。
 代价是兼容性要一个一个 API 攒出来，收益是启动快、开销小、可深度调试、可跨平台。
 
 ---
@@ -29,8 +29,8 @@
 ├────────────────────────────────────────────────────────────────┤
 │  Android 运行时（HLE）                                           │
 │  ┌──────────────┬──────────────┬──────────────┬──────────────┐ │
-│  │ 包/加载器     │ 运行时桥      │ 框架 HLE      │ 内核 HLE      │ │
-│  │ APK/OBB/ELF  │ JNI · DEX(可选)│ Activity      │ syscall       │ │
+│  │ 包/加载器     │ 运行时桥      │ ROM / 服务    │ 内核 HLE      │ │
+│  │ APK/OBB/ELF  │ JNI · DexVM   │ Activity      │ syscall       │ │
 │  │ linker/reloc │              │ AssetManager  │ futex/mmap    │ │
 │  │              │              │ Audio*/Sensor │ fd/VFS        │ │
 │  └──────────────┴──────────────┴──────────────┴──────────────┘ │
@@ -56,34 +56,30 @@
 
 ```
  1. 识别
-    APK/XAPK → 解析 AndroidManifest → package/versionCode/minSdk/ABI
-    → .so 指纹 → 匹配 Title Profile（题库）→ 决定 API 版本
+    APK/XAPK → Manifest/package/ABI → 可选 identity Profile；通用启动使用 API19
 
  2. 装配数据
-    APK assets + OBB + 外置目录 → 组装成该游戏的虚拟 sdcard（只读挂载，不复制）
+    APK assets + OBB + 外置目录 → 唯一 VFS 与安装实例沙盒
 
  3. 建立 guest 地址空间
-    预留 4 GiB 宿主区域作为 32 位 guest 的线性地址空间
-    → 栈 / 堆 / TLS / HLE 桩区
+    预留 4 GiB，装配真实 Bionic、syscall、native boundary、JNI 与进程 ELF namespace
 
- 4. 加载与链接
-    加载对应版本的 Bionic（libc/libm/libdl）
-    → 加载游戏 .so 及其 DT_NEEDED 依赖
-    → 应用重定位；遇到 HLE 边界库的符号则绑定到宿主桩
-    → 建立 exidx / init_array / TLS
+ 4. Java 类路径与链接
+    ogplay.jar + 原样 API19 ROM jar + 应用 DEX → 统一 DexVM/JNI 对象模型
 
  5. 启动运行时
-    跑 init_array（C++ 全局构造）→ JNI_OnLoad
-    → 建立 JNIEnv/JavaVM 与 Java 框架绑定表
+    ROM ActivityThread 主 Looper 处理 bindApplication；LoadedApk/Instrumentation 创建 Application
+    → 应用调用 System.load/loadLibrary 时装入 .so/依赖，执行 constructors 与 JNI_OnLoad
 
  6. 生命周期
-    onCreate → surfaceCreated → onResume → 首次 EGL 上下文创建
+    本地 AMS 经 IApplicationThread 排队；ROM ActivityThread 启动/恢复/停止/销毁 Activity
+    → ROM PhoneWindow/ViewRootImpl 经本地 WMS 管理窗口、配置与焦点
 
  7. 主循环（每帧）
-    输入映射 → 注入触摸/传感器事件
-    → 调用 guest 渲染回调（NativeActivity 或 GLSurfaceView.Renderer）
-    → guest 发出 GLES 调用 → 翻译到 ANGLE → 宿主 GPU
-    → present（统一时钟控制节奏）
+    SDL3/MCP 输入 → 窗口输入通道 → ROM ViewRootImpl/View 或 NDK 输入
+    → ROM 软件 Canvas/Skia 与应用 EGL/ANGLE/视频 Surface
+    → WindowSystem 合成 → FrameService → 宿主 present；统一 Clock 控制节奏
+
 
  8. 并行
     guest 的音频线程 / 加载线程 = 宿主真实线程，各自持有独立 JIT 上下文
@@ -328,8 +324,11 @@ src/
     bionic/      真实 Bionic 装载与选择性拦截
     syscall/     内核 HLE，按组分文件
     jni/         JNIEnv 全表、引用表、签名解析
-    dex/         DEX 解析（L1）/ 解释器（L2，可选）
-    framework/   Java 框架类 HLE，按包分文件
+    dexvm/       应用与 ROM DEX 解释器、对象模型、GC、JNI 接缝
+    integration/ native/进程内服务装配与 WindowSystem
+    resources/   Java/NDK 共用的资源核心
+    raster/      Skia CPU 图形
+    framework/   存量声明式 HLE 边界（非 ROM 类替代入口）
   gles/          GLES 边界库（IDL 生成）+ ANGLE 接入
   audio/         OpenSL ES / AudioTrack / MediaPlayer
   input/         设备抽象 + 映射引擎
@@ -340,7 +339,6 @@ src/
 data/
   android/{19,22,23}/    预置 guest 系统库
   profiles/              题库（每游戏一个 toml）
-  goldens/               黄金帧基线
 tests/
   unit/ contract/ golden/ titles/
 ```

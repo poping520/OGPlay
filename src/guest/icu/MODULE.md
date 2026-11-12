@@ -19,7 +19,7 @@ FieldPositionIterator；parse 按 ICU 结果返回 Long/Double 并保持 ParsePo
 相对日与货币来自 ICU resource；Unicode 大小写由 `u_strToLower/Upper` 承担。只注册审计清单内
 required backend；另注册 Character 的 toLowerCaseImpl/toUpperCaseImpl，按 libcore 用 ICU51
 u_tolower/u_toupper 做单 code point 简单映射，供 String.regionMatches 的逐 char 折叠使用。
-其余 BootDex native 继续由 intrinsic catalog 的显式未实现声明拒绝。
+其余未绑定 ROM native 调用记账并抛 UnsatisfiedLinkError。
 Pattern/Matcher 普通协议来自 API19 BootDex，regex_jni.c 只调用 uregex C ABI；matcher 持有
 独立 UTF-16 native 副本，覆盖 input/region、UTF-16 group offsets、bounds、find/matches 与
 关闭，不长期保存 Java 字符指针。Normalizer 使用 unorm；字符集名称读取 ICU provider 表，

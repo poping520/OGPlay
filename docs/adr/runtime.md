@@ -8,12 +8,11 @@
 - [ADR-0010 · pthread 保留 Bionic ABI，在 syscall 边界映射宿主线程](#adr-0010)
 - [ADR-0011 · 固定 4 KiB guest 页并分离宿主后备粒度](#adr-0011)
 - [ADR-0013 · Runtime 子模块边界与显式装配](#adr-0013)
-- [ADR-0080 · 进程统一拥有虚拟 CPU 查询事实](#adr-0080)
 - [ADR-0079 · 进程内 ARM guest 信号投递](#adr-0079)
-- [ADR-0169 · API19 两级 UI 字体链与会话同源注入](#adr-0169)
 - [ADR-0168 · 从连接拓扑发布本地接口查询视图](#adr-0168)
+- [ADR-0169 · API19 ROM 字体与会话同源注入](#adr-0169)
+- [ADR-0080 · 进程统一拥有虚拟 CPU 查询事实](#adr-0080)
 - [ADR-0170 · 仅托管默认进程，独立进程服务按不可解析回答](#adr-0170)
-
 - [ADR-0171 · 生命周期停摆期间统一时钟按真实流速推进](#adr-0171)
 
 <a id="adr-0001"></a>
@@ -153,14 +152,14 @@ JNI、CPU 执行、Android native 与 Java 平台服务需要独立所有权，�
 
 ### 决定
 
-runtime 按 common、jni、dexvm、framework、bionic、syscall、execution、vfs、database、ui、
+runtime 按 common、jni、dexvm、framework、bionic、syscall、execution、vfs、database、resources、raster、
 jni_guest、boundary、debug 与 integration 分工，每个生产目录维护 MODULE。
 jni 拥有 JNI 语义；dexvm 拥有解释执行与 Java 对象模型；jni_guest 只物化 guest JNI ABI。
 bionic 拥有真实库 profile；execution 单向依赖 bionic/syscall，syscall 单向使用 VFS 与下层。
 boundary 拥有 Android native/GLES ABI，依赖 gles 与显式窄服务，不依赖 JNI、VM 或 integration。
 jni_guest 与 boundary 互不依赖；framework 的声明式 HLE 只通过 JNI 及受限资源接口工作。
 integration 装配进程、桥与平台接缝；Android family 归其 dexvm_android 子模块，不在低层复制。
-上层向下依赖，回调通过显式接口；ui 不执行 guest 或保存 Java 引用，VFS 不识别媒体消费者。
+上层向下依赖，回调通过显式接口；resources/raster 不执行 guest 或保存 Java 引用，VFS 不识别媒体消费者。
 
 ### 后果
 
@@ -216,28 +215,32 @@ TPIDRURW、CP14、VFP/NEON 等后端缺口继续明确失败，避免伪装成�
 
 <a id="adr-0169"></a>
 
-## ADR-0169 · API19 两级 UI 字体链与会话同源注入
+## ADR-0169 · API19 ROM 字体与会话同源注入
 
 - 状态：Accepted
 - 日期：2026-10-28
 
-ADR-0114（历史记录见 Git）单独注入 DroidSansFallback，无法覆盖 © 等默认 sans-serif
-字形，另建宿主 Dialog 树也可漏注入。改为 AOSP android-4.4.4_r2.0.1
-frameworks/base/data/fonts/system_fonts.xml 默认 sans-serif Regular 的 Roboto-Regular，
-再取 fallback_fonts.xml 中的 DroidSansFallback，组成受审两级子集；不引入其他字体。
+### 背景
 
-两文件原样随 payload 发布并各自固定 SHA-256，整链不可变，按顺序取首个覆盖字体。
-会话主树提供唯一字体来源，独立宿主分区经统一工厂创建，复制保持同一资源身份；
-UiTree 构造显式接受字体。ASCII 继续原 5x7 像素与度量，粗斜体继续合成。
-Paint、TextView 和文本输入共享 UI 覆盖判定，失败携带码点并保留原记账及 Java 转换。
+ROM Typeface、Paint 和 View 软件绘制需要同源的 API19 字体，不能读取宿主字体或另建 UI 字体状态。
 
-只支持独立 BMP，保留 shaping/combining/bidi、补充平面失败及整链128项缓存上限。
-不读取宿主或应用字体，不实现完整 Android 字体匹配、系统服务与排版。
-范围与验证见 [DVM-344](../tasks/dexvm/DVM-344.md)。
+### 决定
+
+系统字体原样取自 AOSP android-4.4.4_r2.0.1 的 frameworks/base/data/fonts，
+family、样式和别名使用 system_fonts.xml，缺字回落到 DroidSansFallback。
+字节由运行时 payload 显式注入，来源和哈希以 manifest 为准；进程内按需共享不可变 SkTypeface。
+ROM Typeface 和 Paint 管理 Java 状态与 native token，应用字体只经 APK assets 或 guest VFS 读取。
+文字度量与软件绘制共用 Skia backing；不保留宿主 Dialog 树或另一套 UI 字体链。
+文字按 UTF-16 码点和逻辑顺序处理，需要 shaping/combining/bidi 的输入按现有降级边界记录。
+
+### 后果
+
+ROM 控件与软件 Canvas 使用同一字体事实；完整整形与双向排版仍有缺口，范围见
+[raster 契约](../../src/runtime/raster/MODULE.md)。
 
 <a id="adr-0080"></a>
 
-## ADR-0080：进程统一拥有虚拟 CPU 查询事实
+## ADR-0080 · 进程统一拥有虚拟 CPU 查询事实
 
 日期：2026-09-29。状态：接受。任务：[BND-42](../tasks/boundary/BND-42.md)。
 

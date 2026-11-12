@@ -64,7 +64,7 @@ Dalvik VM 完全开源（Apache-2.0），且 KitKat（android-4.4，API 19）恰
 | odex/dexopt/quickened 路径 | 非目标 |
 | 薄锁/偏向锁等同步优化 | 我方 monitor table 语义已验收；只参考 wait/notify 语义面 |
 | `dx`/`dexmerger`（Java 工具链） | 离线不可用 Java 工具链；夹具走 dexasm（05 §1） |
-| libcore（java.* 的 Java 侧实现，独立 repo） | 不 vendor；集合等 intrinsic 语义以 JLS/类库文档 + 夹具断言为准，`vm/native/*` 覆盖 native 半边 |
+| libcore（java.* 的 Java 侧实现，独立 repo） | 原版 Java 随 ROM jar 执行；native 以固定 libcore/Dalvik 源码为语义参考，不另写集合等普通算法 |
 
 借用的判定准则：**只取语义，不取结构**。AOSP 代码里的平台耦合（bionic、
 liblog、信号处理、内存布局假设）一概不进入 OGPlay。

@@ -62,9 +62,17 @@ MODULE.md；能力状态见 [能力账本](../../capabilities.toml)。
 | [`src/runtime/framework`](../../src/runtime/framework/MODULE.md) | runtime/framework |
 | [`src/runtime/integration`](../../src/runtime/integration/MODULE.md) | runtime/integration |
 | [`src/runtime/integration/dexvm_android`](../../src/runtime/integration/dexvm_android/MODULE.md) | runtime/integration/dexvm_android |
+| [`src/runtime/resources`](../../src/runtime/resources/MODULE.md) | API19 资源核心 |
+| [`src/runtime/raster`](../../src/runtime/raster/MODULE.md) | Skia CPU 光栅 |
 | [`src/runtime/jni`](../../src/runtime/jni/MODULE.md) | runtime/jni |
 | [`src/runtime/jni_guest`](../../src/runtime/jni_guest/MODULE.md) | runtime/jni_guest |
 | [`src/runtime/syscall`](../../src/runtime/syscall/MODULE.md) | runtime/syscall |
 | [`src/runtime/vfs`](../../src/runtime/vfs/MODULE.md) | runtime/vfs |
 | [`src/session`](../../src/session/MODULE.md) | session |
 | [`src/video`](../../src/video/MODULE.md) | video |
+| [`src/frontend/desktop`](../../src/frontend/desktop/MODULE.md) | 子模块：frontend/desktop |
+| [`src/frontend/library`](../../src/frontend/library/MODULE.md) | 子模块：frontend/library |
+| [`src/guest/framework/java/android/text/format`](../../src/guest/framework/java/android/text/format/MODULE.md) | 模块：Android Time 的 guest 实现 |
+| [`src/guest/framework/java/libcore/util`](../../src/guest/framework/java/libcore/util/MODULE.md) | 模块：guest 时区数据 |
+| [`src/guest/xml`](../../src/guest/xml/MODULE.md) | 模块：BootDex SAX 适配器 |
+| [`src/loader/resources`](../../src/loader/resources/MODULE.md) | 子模块：loader/resources |

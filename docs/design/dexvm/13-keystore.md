@@ -1,7 +1,7 @@
 # API 19 KeyStore 通用能力开发规划
 
 日期：2026-09-16。状态：约定范围内验收完成；KS-01..09 统一归档于 DVM-172。
-架构决定：[ADR-0064](../../adr/dexvm.md#adr-0064)。
+架构决定：[ADR-0064](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/dexvm.md#adr-0064)。
 
 前置依赖：[DVM-171](../../tasks/dexvm/DVM-171.md) 已将固定 API 19 原版 `NativeCrypto`
 迁入 BootDex，并保留统一 guest JNI/资源生命周期边界。该迁移只稳定 Conscrypt ABI，未实现

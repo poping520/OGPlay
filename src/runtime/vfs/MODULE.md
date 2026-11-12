@@ -81,7 +81,7 @@ stat/fstat 发布字符设备类型、size=0、只读权限和 rdev；目录条�
 write/create/truncate/unlink/rename/替换拒绝；seek/pread 返回 ESPIPE，lease 返回 ENOTSUP，
 fsync 返回 EINVAL。O_NONBLOCK 仅放行字符设备，reader 自身负责就绪策略；本层不创建
 熵池或等待队列，也不扩展 PipePollEvents 的非 pipe 轮询范围。回调不得递归读/撤销自身。
-随机设备的 HAL 装配与具体策略见 [ADR-0129](../../../docs/adr/runtime.md#adr-0129)。
+随机设备的 HAL 装配与具体策略见 [ADR-0129](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/runtime.md#adr-0129)。
 
 ## 安装实例沙盒
 

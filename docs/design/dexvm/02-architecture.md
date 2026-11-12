@@ -1,5 +1,7 @@
 # 02 · 核心架构
 
+此篇记录已退役的阶段设计；当前实现见 [DexVM 契约](../../../src/runtime/dexvm/MODULE.md)、[integration 契约](../../../src/runtime/integration/MODULE.md) 和 [ROM 平台边界](03-platform-intrinsics.md)。
+
 ## 1. 模块位置与依赖方向
 
 dexvm 是 runtime 层新子模块，遵守 ADR-0013 的 runtime 子模块边界模式：

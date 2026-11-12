@@ -28,12 +28,17 @@
 
 - 宏、脚本、连招序列和定时自动操作；自动瞄准；读取游戏内存或画面来识别 UI。
 - 宿主全局键盘钩子、修改宿主系统输入设置。
-- 不改变已有的 Android 输入投影：MotionEvent/KeyEvent/AInputQueue 契约以
-  [ADR-0086](../../adr/session.md#adr-0086) 与 session MODULE 为准。
+- 不改变已有的 Android 事件转换：MotionEvent/KeyEvent/AInputQueue 契约以
+  [ADR-0086](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/session.md#adr-0086) 与 session MODULE 为准。
 - 手柄震动等输出能力；倾斜（加速度计）与文本输入法本方案只定义接口位置，
   能力本身另行立项（见第 9 节）。
 
-## 2. 现状（2026-10-13）
+## 2. 设计起点（2026-10-13）
+
+下表保留输入映射开发前的事实，不代表当前缺口。当前 ControlMapper 使用内置默认和用户
+input.toml；ROM ViewRootImpl 分发 MotionEvent/KeyEvent，文本经本地 IMMS/InputConnection，
+不再依赖宿主 View 投影。现行边界见 [输入契约](../../../src/input/MODULE.md) 和
+[Android 契约](../../../src/runtime/integration/dexvm_android/MODULE.md)。
 
 | 层 | 已有 | 缺口 |
 | --- | --- | --- |
@@ -64,7 +69,7 @@ input::ControlMapper ───────────────────�
 | --- | --- |
 | hal | 补充滚轮事件与相对鼠标模式开关；继续不暴露 SDL 类型。手柄沿用 SDL GameController 映射库 |
 | input | 原语、绑定解析、模式、触点分配与合成；纯逻辑、可确定测试；只依赖 hal 类型，不依赖 session/runtime |
-| session | 装载并合并操控配置（数据→`ControlConfig`），提供 guest surface 尺寸、Activity 切换与失焦信号；Android 投影保持不变 |
+| session | 装载并合并操控配置（数据→`ControlConfig`），提供 guest surface 尺寸、Activity 切换与失焦信号；事件转换后经 WMS 输入通道交付 ROM ViewRootImpl，NDK 使用 AInputQueue |
 | frontend | 驱动事件泵与帧节拍，绘制提示叠加层，GUI 编辑器读写用户覆盖；MCP 手势作为一个输入源进入 `ControlMapper` |
 | agent | MCP 继续提供 click/swipe；后续可增加按“绑定名”触发的工具，便于 AI 测试 |
 
@@ -172,7 +177,7 @@ schema 与 `tools/validate_title_profiles.py` 同步更新。
 
 ## 10. 提示叠加层与按键编辑器
 
-决策见 [ADR-0134](../../adr/session.md#adr-0134)。
+决策见 [ADR-0134](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/session.md#adr-0134)。
 
 - **提示叠加层**：F1 切换。frontend 在 guest 画面合成之后绘制半透明的区域与键名，不进入
   guest 帧，也不进入 MCP `frame_capture` 的默认截图。

@@ -176,7 +176,7 @@ fixture、未实现查询、超时或断言失败均 fail closed。
 - **> 25%** → 立项，作为独立里程碑
 
 内容见 [04 · 7.3](04-android-runtime.md)：DEX 解析、字节码解释器、对象模型与 GC、
-内建类库、与 JNI 双向互通。**不做 JIT。**
+ROM 类库与 native/本地服务接缝、与 JNI 双向互通。**不做 JIT。**
 
 ---
 

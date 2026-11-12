@@ -20,8 +20,8 @@
 | 缺 handler | `intrinsic handler is not implemented` | 同上 | 同上 |
 | 虚分派落空 | `virtual dispatch failed for m` | 同上 | 同上 |
 | 空接收者连锁 | `invoke on null receiver: setVisibility` | 报错不含类名/调用点，需要反复加日志定位 | 诊断已带声明类、寄存器与调用者 pc |
-| 样板量 | 占位类与中性方法骨架要手写 | 纯打字 | `tools/dexvm_stub_gen.py` 生成逐类 `Declare_*()` 骨架 |
-| 误报 | 报告把已声明的类算成缺口，白补一轮 | 目录解析漏了 builder/循环/工厂式声明 | 报告读取当前 `IntrinsicClassBuilder` 目录并收集裸 descriptor 字面量；self-test 锁定发现路径 |
+| 历史样板量 | 旧路径手写平台占位类 | 平台声明未执行 ROM | 现行路径直接加载原样 ROM jar，native/服务缺口按真实签名核对 |
+| 误报 | 报告把已声明的类算成缺口 | 旧工具靠 C++ 正则猜目录 | 以实际 linked catalog/启动类路径的 dump-surface 为准 |
 
 判断标准：**任何需要「再跑一次才知道下一个缺什么」的步骤都是要消掉的。**
 
@@ -52,30 +52,14 @@ ELF 导入另标 `native-import-missing`，强弱与版本分开。JNI 字符串
 表面、参考及 APK 派生产物一律留 `.local/`；旧 gap report 输出可继续供步骤 2 的旧生成器使用，
 新体检不生成桩，也不直接作为旧生成器输入。完整边界见 [DIAG-4](../tasks/diagnostics/DIAG-4.md)。
 
-### 步 2 · 生成占位与中性行
+### 步 2 · 核对 ROM 来源与真实接缝
 
-```bash
-python tools/dexvm_stub_gen.py --gaps .local/<title>_gap.json
-```
-
-输出是可编译的逐类 `Declare_*()` builder 骨架：void/基元返回使用
-`NeutralHandler(shorty)`，String 占位使用 `PlaceholderString()`；引用返回值进入
-**需要人工决策**清单。将骨架审阅后保存为
-`src/runtime/integration/dexvm_android/<类名>.cpp`，并把声明加入 `catalog.h` 与
-`catalog.cpp`。人工决策项不许随手桩掉——要么实现真实行为，要么保留记账失败。
-
-若缺口属于 Luni `java.lang`，先从仓库固定的 API-19 surface 生成 class shape，避免
-手抄字段和方法 descriptor：
-
-```bash
-python tools/dexvm_stub_gen.py \
-  --surface data/dexvm/api19-java-lang-surface.json \
-  --class Ljava/lang/Integer;
-```
-
-该模式使用当前 `IntrinsicClassBuilder` API，字段直接生成
-`BoundInstanceField/BoundStaticField` handle，方法默认显式未实现，待逐项绑定真实
-handler。固定清单的来源与复验命令见 `tools/README.md`。
+先确认缺口位于 ROM native、进程内服务、VM 语义还是 APK 自身。
+原样 ROM jar 已在启动类路径，不再生成平台占位类、补普通 Java handler 或逐类准入。
+使用 `dump-surface` 与实际 ROM 签名核对来源，查询方法见
+[平台边界](../design/dexvm/03-platform-intrinsics.md#3-存量替换与覆盖的查询)。
+`dexvm_stub_gen.py` 只保留为历史诊断工具，生成结果不能作为替换 ROM 类或覆盖普通方法的实现入口。
+缺 native 时对照固定 AOSP JNI，缺服务时对照 ROM 接口及本地 Stub；超出范围明确失败。
 
 ### 步 3 · 固化输入场景，再成对运行 survey
 
@@ -117,8 +101,8 @@ survey 模式下层级、常量、声明与正常运行一致：被调用的未�
 ### 步 4 · 按命中批次实现
 
 热点优先。每批遵守既有约定：
-- 每个平台类进入 `dexvm_android/<类名>.cpp`，用 `Declare_<类名>(context)` 同址
-  声明并直接绑定 handler；聚合点只更新 `catalog.h/cpp`，禁止恢复 misc 或分面批次。
+- ROM 普通 Java 继续原样执行；只在对应 core/Android family TU 绑定 native 或进程内服务，
+  `Declare_*` 与实现同址，catalog 显式聚合；禁止整类替换、非 native 覆盖和游戏分支。
 - 能诚实回答的才回答（真实状态、真实资源、真实文件）；无法诚实回答的返回值保持
   记账 + 明确失败，不要静默返回零。无返回值的纯显示设置在 C++ 声明中调用
   `RecordUiDegraded`，忽略并记录警告，规则见 ADR-0147 修订。
@@ -140,8 +124,8 @@ ogplay-cli run-apk … --exit-after-frames 600      # 不带 --survey-gaps
 
 | 信息 | 含义 | 处置 |
 | --- | --- | --- |
-| `class is not available: L…;` | 平台类未声明 | 步 1/2 批量补；确认是平台前缀而非游戏类 |
-| `method cannot be resolved: …` | 类已声明、方法未声明；其后 stack 标题给出 context/thread，`fault instruction` 与 `#0` 是 APK 直接调用点 | 先按 opcode/method index、完整 method descriptor + `dex_pc` 定位；栈超过 64 帧会报告省略数。再补方法行，引用返回值先想清楚给什么对象 |
+| `class is not available: L…;` | 类未能解析 | 核对实际 APK/ROM 归档与类路径，不生成同名宿主类 |
+| `method cannot be resolved: …` | 类已声明、方法未声明；其后 stack 标题给出 context/thread，`fault instruction` 与 `#0` 是 APK 直接调用点 | 先按 opcode/method index、完整 method descriptor + `dex_pc` 定位；栈超过 64 帧会报告省略数。核对实际 ROM/API 签名和解析路径，不补普通方法 intrinsic |
 | `intrinsic handler is not implemented (id)` | 方法声明了 handler，未注册 | 在对应分面注册 |
 | `virtual dispatch failed for m on L…;` | 接收者的类没有该虚方法 | 声明在**接收者**类或其父类上 |
 | `invoke on null receiver: C.m() from vN called by D.f pc P` | 上游查询返回了 null | 顺着 `called by` 找那次查询（findViewById/getSystemService 之类），补的是**它** |
@@ -193,7 +177,7 @@ cd build/dev
 | 工具 | 用途 | 注意 |
 | --- | --- | --- |
 | `tools/dexvm_gap_report.py` | 静态缺口分层报告（§2 步 1） | 只看平台前缀；`runtime` 段是优先级清单不是必做项 |
-| `tools/dexvm_stub_gen.py` | 生成逐类 builder 骨架（§2 步 2） | 引用返回值/字段必须人工决策；输出不含 handler id |
+| `tools/dexvm_stub_gen.py` | 历史诊断骨架生成器（§2 步 2） | 引用返回值/字段必须人工决策；输出不含 handler id |
 | `tools/dex_dependency_survey.py` | 题库静态测量 | 产物留 `.local/` |
 | `tools/dexdis.py` | 反汇编辅助 | pc/宽度显示有已知瑕疵，**不可作为权威**；权威事实用 C++ 侧 dump 或 `tools/dex_survey_lib.py` 直读字节 |
 

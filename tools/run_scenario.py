@@ -810,7 +810,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--result-schema", type=Path,
-                        default=Path(__file__).parent.parent / "data/scenarios/scenario-result-v1.schema.json")
+                        default=Path(__file__).parent.parent / "tests/scenarios/scenario-result-v1.schema.json")
     parser.add_argument("--scenario", type=Path)
     parser.add_argument("--profiles", type=Path)
     parser.add_argument("--ogplay-cli", type=Path)

@@ -60,8 +60,8 @@ minimum_sequence = 1
 提交场景前运行：
 
 ```text
-python tools/validate_scenarios.py --schema data/scenarios/scenario-v1.schema.json \
-  --scenarios data/scenarios --profiles data/profiles
+python tools/validate_scenarios.py --schema tests/scenarios/scenario-v1.schema.json \
+  --scenarios tests/scenarios --profiles data/profiles
 ```
 
 `tools/scenario_model.py` 是 AI/CI runner 共用的强类型 action/assertion/result 模型；工具
@@ -74,7 +74,7 @@ shutdown，超时才清理自己启动的子进程。
 
 ```text
 python tools/run_scenario.py \
-  --scenario data/scenarios/<id>.scenario.toml \
+  --scenario tests/scenarios/<id>.scenario.toml \
   --profiles data/profiles --ogplay-cli build/dev/ogplay-cli \
   --fixture <logical-id>=<host-path> \
   --evidence-dir <new-output-directory>

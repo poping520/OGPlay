@@ -6,7 +6,7 @@
 
 分工：手工探索用 [MCP-TESTING.md](MCP-TESTING.md)（自由截图、点击）；固化与回归用
 本篇。场景文件的字段语义与写法约束见
-[`data/scenarios/README.md`](../../data/scenarios/README.md)，schema 是唯一权威。
+[`tests/scenarios/README.md`](../../tests/scenarios/README.md)，schema 是唯一权威。
 
 ## 前置
 
@@ -14,8 +14,8 @@
 2. 场景已通过校验：
 
 ```text
-python tools/validate_scenarios.py --schema data/scenarios/scenario-v1.schema.json \
-  --scenarios data/scenarios --profiles data/profiles
+python tools/validate_scenarios.py --schema tests/scenarios/scenario-v1.schema.json \
+  --scenarios tests/scenarios --profiles data/profiles
 ```
 
 3. 场景的 `[profile]` 标识 exact APK（package + 单一 version code + `.so` SHA-256 + ABI）。
@@ -28,7 +28,7 @@ ANGLE 动态库与 `ogplay-cli` 同目录，经 `@rpath`/可执行文件目录�
 
 ```text
 python tools/run_scenario.py \
-  --scenario data/scenarios/<id>.scenario.toml \
+  --scenario tests/scenarios/<id>.scenario.toml \
   --profiles data/profiles \
   --ogplay-cli build/windows-msvc/Release/ogplay-cli.exe \
   --fixture <logical-id>=<host-apk> \

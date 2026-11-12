@@ -41,7 +41,7 @@ AI 与 CI 共用的、确定性、有界、可机器判定的兼容性测试执�
 
 ## 3. 场景数据
 
-建议在 `data/scenarios/` 保存不含受版权保护内容的场景 TOML。场景只引用精确 Profile
+建议在 `tests/scenarios/` 保存不含受版权保护内容的场景 TOML。场景只引用精确 Profile
 identity、外部 fixture logical id、动作和断言；APK、OBB、存档及机器绝对路径不得入库。
 
 每个场景至少包含：

@@ -482,17 +482,17 @@ ogplay_add_tool_test(tools.title_profiles_current "tools;profiles"
     ${_src}/tools/validate_title_profiles.py --schema
     ${_src}/data/profiles/title-profile-v4.schema.json --profiles ${_src}/data/profiles)
 ogplay_add_tool_test(tools.scenario_validator_self_test "tools;automation;scenarios"
-    ${_src}/tools/validate_scenarios.py --schema ${_src}/data/scenarios/scenario-v1.schema.json
+    ${_src}/tools/validate_scenarios.py --schema ${_src}/tests/scenarios/scenario-v1.schema.json
     --self-test)
 ogplay_add_tool_test(tools.scenarios_current "tools;automation;scenarios"
-    ${_src}/tools/validate_scenarios.py --schema ${_src}/data/scenarios/scenario-v1.schema.json
-    --scenarios ${_src}/data/scenarios --profiles ${_src}/data/profiles)
+    ${_src}/tools/validate_scenarios.py --schema ${_src}/tests/scenarios/scenario-v1.schema.json
+    --scenarios ${_src}/tests/scenarios --profiles ${_src}/data/profiles)
 ogplay_add_tool_test(tools.scenario_model_self_test "tools;automation;scenarios"
     ${_src}/tools/scenario_model.py --result-schema
-    ${_src}/data/scenarios/scenario-result-v1.schema.json --self-test)
+    ${_src}/tests/scenarios/scenario-result-v1.schema.json --self-test)
 ogplay_add_tool_test(tools.scenario_runner_self_test "tools;automation;scenarios"
     ${_src}/tools/run_scenario.py --result-schema
-    ${_src}/data/scenarios/scenario-result-v1.schema.json --self-test)
+    ${_src}/tests/scenarios/scenario-result-v1.schema.json --self-test)
 ogplay_add_tool_test(tools.device_presets_current "tools;devices" ${_src}/tools/validate_devices.py
     --devices ${_src}/data/devices)
 ogplay_add_tool_test(tools.device_presets_validator "tools;devices"

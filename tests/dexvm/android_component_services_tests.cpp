@@ -40,6 +40,55 @@ using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
+namespace {
+
+constexpr int kMatchDefaultOnly = 0x10000;
+constexpr int kGetDisabledComponents = 0x200;
+
+void SetIntentComponent(AndroidValueVm& f, const VmObjectRef intent, const char* package, const char* name) {
+    f.On(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+         {VmValue::Ref(f.vm.NewStringUtf8(package)), VmValue::Ref(f.vm.NewStringUtf8(name))});
+}
+
+int QueryListSize(AndroidValueVm& f, const VmCallOutcome& outcome) {
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+    return f.On(outcome.value.ref, "size", "()I").AsInt();
+}
+
+VmObjectRef OnlyQueryResult(AndroidValueVm& f, const VmCallOutcome& outcome) {
+    const auto root = f.vm.ProtectReferences(std::array{outcome.value.ref});
+    REQUIRE(QueryListSize(f, outcome) == 1);
+    return f.On(outcome.value.ref, "get", "(I)Ljava/lang/Object;", {VmValue::Int(0)}).ref;
+}
+
+void CheckExplicitResolveInfo(AndroidValueVm& f, const VmObjectRef result, const char* expected_name,
+                              const bool service = false) {
+    REQUIRE(result.IsValid());
+    const auto root = f.vm.ProtectReferences(std::array{result});
+    const auto type = f.model.ObjectClass(result);
+    CHECK(f.linker.Class(type).descriptor == "Landroid/content/pm/ResolveInfo;");
+    const auto field =
+        f.linker.FindFieldRecursive(type, service ? "serviceInfo" : "activityInfo",
+                                    service ? "Landroid/content/pm/ServiceInfo;" : "Landroid/content/pm/ActivityInfo;");
+    REQUIRE(field.has_value());
+    const auto info_slot = f.linker.Field(*field).slot;
+    const auto defaults = f.New("Landroid/content/pm/ResolveInfo;");
+    const auto actual = f.model.InstanceSlots(result);
+    const auto expected = f.model.InstanceSlots(defaults);
+    REQUIRE(actual.size() == expected.size());
+    for (std::size_t i = 0; i < actual.size(); ++i) {
+        if (i != info_slot) CHECK(actual[i].bits == expected[i].bits);
+    }
+    const auto info = VmObjectRef{static_cast<std::uint32_t>(actual[info_slot].bits)};
+    REQUIRE(info.IsValid());
+    const auto name = f.linker.FindFieldRecursive(f.model.ObjectClass(info), "name", "Ljava/lang/String;");
+    REQUIRE(name.has_value());
+    CHECK(f.vm.StringUtf8(VmObjectRef{static_cast<std::uint32_t>(
+              f.model.InstanceSlots(info)[f.linker.Field(*name).slot].bits)}) == expected_name);
+}
+
+}  // namespace
+
 TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupported queries") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);
@@ -125,6 +174,30 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
         CHECK(std::ranges::any_of(f.ledger.Unimplemented(), [](const auto& hit) {
             return hit.id == "dexvm.service_resolution" && hit.count == 14;
         }));
+
+        f.context->package_name = "example";
+        f.context->service_components = {{"example.Local", true, {}}, {"example.Disabled", false, {}}};
+        SetIntentComponent(f, intent, "example", "example.Local");
+        CheckExplicitResolveInfo(f, OnlyQueryResult(f, query_all(intent, kMatchDefaultOnly)), "example.Local", true);
+        const auto resolved = query(intent, kMatchDefaultOnly);
+        REQUIRE_MESSAGE(!resolved.exception.IsValid(), resolved.exception_message);
+        CheckExplicitResolveInfo(f, resolved.value.ref, "example.Local", true);
+        fail(query(intent, kMatchDefaultOnly | 0x40));
+        SetIntentComponent(f, intent, "example", "example.Absent");
+        CHECK(QueryListSize(f, query_all(intent, kMatchDefaultOnly)) == 0);
+        absent();
+        SetIntentComponent(f, intent, "example", "example.Disabled");
+        CHECK(QueryListSize(f, query_all(intent, kMatchDefaultOnly)) == 0);
+        absent();
+        CheckExplicitResolveInfo(f, OnlyQueryResult(f, query_all(intent, kMatchDefaultOnly | kGetDisabledComponents)),
+                                 "example.Disabled", true);
+        f.context->service_inventory_known = false;
+        fail(query_all(intent, kMatchDefaultOnly));
+        f.context->service_inventory_known = true;
+        SetIntentComponent(f, intent, "external", "external.Service");
+        const auto external = query_all(intent, kMatchDefaultOnly);
+        fail(external);
+        CHECK(external.exception_message == "external package inventory is unavailable");
     }
 }
 
@@ -278,6 +351,10 @@ TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex
               "org.example.game:receiver");
         CHECK(field(first_info, "exported", "Z") == 1U);
         CHECK(field(ref_field(item(1), "activityInfo", "Landroid/content/pm/ActivityInfo;"), "exported", "Z") == 0U);
+        const auto default_only = OnlyQueryResult(f, query(intent, kMatchDefaultOnly));
+        const auto default_info = ref_field(default_only, "activityInfo", "Landroid/content/pm/ActivityInfo;");
+        CHECK(f.vm.StringUtf8(ref_field(default_info, "name", "Ljava/lang/String;")) == "org.example.game.Default");
+        CHECK(field(default_only, "isDefault", "Z") == 1U);
         static_cast<void>(f.vm.CollectGarbage("receiver-query-results"));
         CHECK(size(list) == 5);
         CHECK(field(item(2), "priority", "I") == 5U);
@@ -298,7 +375,7 @@ TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex
         const auto unsupported = [&](const VmCallOutcome& outcome) {
             CHECK(outcome.exception_class == f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
         };
-        for (const int flags : {0x80, 0x200, 0x10000, -1})
+        for (const int flags : {0x80, 0x200, kMatchDefaultOnly | 0x80, -1})
             unsupported(query(intent, flags));
         f.context->receiver_inventory_known = false;
         unsupported(query(intent));
@@ -317,17 +394,32 @@ TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex
               std::tuple{"setData", "(Landroid/net/Uri;)Landroid/content/Intent;",
                          f.Static("Landroid/net/Uri;", "parse", "(Ljava/lang/String;)Landroid/net/Uri;",
                                   {VmValue::Ref(f.vm.NewStringUtf8("content://example/item"))})
-                             .ref},
-              std::tuple{"setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;",
-                         f.New("Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
-                               {VmValue::Ref(f.vm.NewStringUtf8("org.example.game")),
-                                VmValue::Ref(f.vm.NewStringUtf8("org.example.game.First"))})}}) {
+                             .ref}}) {
             f.On(intent, setter, signature, {VmValue::Ref(value)});
             unsupported(query(intent));
             f.On(intent, setter, signature, {VmValue::Ref(VmObjectRef{})});
         }
         f.On(intent, "setSelector", "(Landroid/content/Intent;)V", {VmValue::Ref(empty_intent)});
         unsupported(query(intent));
+        SetIntentComponent(f, empty_intent, "org.example.game", "org.example.game.Default");
+        CheckExplicitResolveInfo(f, OnlyQueryResult(f, query(intent, kMatchDefaultOnly)), "org.example.game.Default");
+        SetIntentComponent(f, intent, "org.example.game", "org.example.game.First");
+        CheckExplicitResolveInfo(f, OnlyQueryResult(f, query(intent, kMatchDefaultOnly)), "org.example.game.First");
+        SetIntentComponent(f, intent, "org.example.game", "org.example.game.Missing");
+        CHECK(QueryListSize(f, query(intent, kMatchDefaultOnly)) == 0);  // Outer component wins over selector.
+        SetIntentComponent(f, intent, "org.example.game", "org.example.game.Disabled");
+        CHECK(QueryListSize(f, query(intent, kMatchDefaultOnly)) == 0);
+        CheckExplicitResolveInfo(f, OnlyQueryResult(f, query(intent, kMatchDefaultOnly | kGetDisabledComponents)),
+                                 "org.example.game.Disabled");
+        f.context->receiver_inventory_known = false;
+        unsupported(query(intent, kMatchDefaultOnly));
+        f.context->receiver_inventory_known = true;
+        SetIntentComponent(f, intent, "external", "external.Receiver");
+        const auto external = query(intent, kMatchDefaultOnly);
+        unsupported(external);
+        CHECK(external.exception_message == "external package inventory is unavailable");
+        f.On(intent, "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;",
+             {VmValue::Ref(VmObjectRef{})});
         f.On(intent, "setSelector", "(Landroid/content/Intent;)V", {VmValue::Ref(VmObjectRef{})});
         f.On(intent, "setPackage", "(Ljava/lang/String;)Landroid/content/Intent;",
              {VmValue::Ref(f.vm.NewStringUtf8("org.example.game"))});
@@ -343,6 +435,53 @@ TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex
         const auto hits = f.ledger.Unimplemented();
         CHECK(std::any_of(hits.begin(), hits.end(),
                           [&](const auto& hit) { return hit.id == "dexvm.receiver_query" && hit.count > 0; }));
+    }
+}
+
+TEST_CASE("PackageManager queryIntentActivities resolves explicit local components") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->package_name = "fixture";
+        f.context->activity_inventory_known = true;
+        f.context->activity_components = {{.name = "fixture.Local"}, {.name = "fixture.Disabled", .enabled = false}};
+        const auto manager = ogplay::runtime::android_intrinsics::CallAndroidMethod(
+                                 f.vm, ogplay::test::MakeRomAppContext(f.vm, f.context), "getPackageManager",
+                                 "()Landroid/content/pm/PackageManager;")
+                                 .ref;
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+        const auto intent = f.New("Landroid/content/Intent;");
+        const auto intent_root = f.vm.ProtectReferences(std::array{intent});
+        const auto query = [&](int flags = kMatchDefaultOnly) {
+            return f.OnOutcome(manager, "queryIntentActivities", "(Landroid/content/Intent;I)Ljava/util/List;",
+                               {VmValue::Ref(intent), VmValue::Int(flags)});
+        };
+        const auto unsupported = [&](const VmCallOutcome& outcome) {
+            CHECK(outcome.exception_class == f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
+        };
+        const auto implicit = query();
+        unsupported(implicit);
+        CHECK(implicit.exception_message == "queryIntentActivities requires an explicit component");
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].id == "dexvm.activity_query");
+        CHECK(hits[0].count == 1);
+
+        SetIntentComponent(f, intent, "fixture", "fixture.Local");
+        CheckExplicitResolveInfo(f, OnlyQueryResult(f, query()), "fixture.Local");
+        unsupported(query(kMatchDefaultOnly | 1));
+        f.context->activity_inventory_known = false;
+        unsupported(query());
+        f.context->activity_inventory_known = true;
+        SetIntentComponent(f, intent, "fixture", "fixture.Missing");
+        CHECK(QueryListSize(f, query()) == 0);
+        SetIntentComponent(f, intent, "fixture", "fixture.Disabled");
+        CHECK(QueryListSize(f, query()) == 0);
+        CheckExplicitResolveInfo(f, OnlyQueryResult(f, query(kMatchDefaultOnly | kGetDisabledComponents)),
+                                 "fixture.Disabled");
+        SetIntentComponent(f, intent, "external", "external.Activity");
+        const auto external = query();
+        unsupported(external);
+        CHECK(external.exception_message == "external package inventory is unavailable");
     }
 }
 

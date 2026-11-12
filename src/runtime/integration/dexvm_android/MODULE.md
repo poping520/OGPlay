@@ -96,15 +96,19 @@ key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保
 | getPackageInfo | GET_ACTIVITIES/META_DATA/PERMISSIONS/UNINSTALLED_PACKAGES 组合（单包清单下 GET_UNINSTALLED_PACKAGES 不改变结果）；activities 仅请求时按声明顺序发布、保留 alias，默认排除禁用项，否则 null |
 | getActivityInfo/getReceiverInfo/getServiceInfo | 当前包完整组件名，0/GET_META_DATA/GET_DISABLED_COMPONENTS/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）；按应用/组件启用状态过滤，缺失 NameNotFoundException，同名 Activity/receiver/service 取最后声明 |
 | getPermissionInfo | 仅 Manifest 中 registered 的 `<permission>` 首个有效定义，0/GET_META_DATA；未知 group/重复后项不注册，仅请求/授予但未定义仍 NameNotFoundException |
-| queryBroadcastReceivers | flags=0、非空 action、同一 filter category 子集，无需 DEFAULT；排除禁用项，同组件首匹配、API19 稳定排序 |
-| resolveService | 非空 action，无 component/data/type/categories，0/GET_RESOLVED_FILTER；仅确定无候选时 null，投影不改匹配；潜在匹配/未知条件失败 |
+| queryIntentActivities | 当前 APK 显式组件查询；隐式查询记账并失败 |
+| queryBroadcastReceivers | 支持显式组件；隐式查询要求非空 action、同一 filter category 子集、无 selector/data/type。flags 为 0 或 MATCH_DEFAULT_ONLY，后者仅保留有 DEFAULT category 的 filter。排除禁用项，同组件首匹配、API19 稳定排序 |
+| queryIntentServices/resolveService | 支持显式组件；隐式查询沿用非空 action、无 data/type/categories、0/GET_RESOLVED_FILTER。仅确定无候选时返回空列表或 null；潜在匹配/未知条件失败 |
 | bindService/unbindService | 缺席查询沿原规则；主线程 BIND_AUTO_CREATE、component-only、当前 APK 启用的同进程服务；独立进程/isolated 返回 false，仍登记连接且可解绑，无回调（[ADR-0170](../../../../docs/adr/runtime.md#adr-0170)） |
 
-广播查询保留真实 ArrayList/ResolveInfo/ActivityInfo 及 priority/match/isDefault/filter label/icon；
+显式查询优先使用 Intent 的 component，其次取 selector 的 component。移除 MATCH_DEFAULT_ONLY 后按对应
+getXxxInfo 的 flags 和启用状态查询。命中时返回仅设置 activityInfo 或 serviceInfo 的 ResolveInfo，
+缺失时返回空列表（resolveService 返回 null）。外部包、缺 inventory 和未知 flags 记账并失败。
+隐式广播查询保留真实 ArrayList/ResolveInfo/ActivityInfo 及 priority/match/isDefault/filter label/icon；
 同名声明各自的过滤器与配置独立，跨声明按组件去重，首个匹配提供结果，不与按名查询的后项配置合并。
-permission/exported 不限制声明查询。外部包、selector/component/data/type、未解析潜在 data、
-未知 flags/缺 inventory 不伪装零匹配。服务查询不启动进程；正匹配 resolver/同进程 started service
-未实现。独立进程/isolated 服务 start 返回 null、bind 返回 false，每次记账并限流 warn，
+permission/exported 不限制声明查询。隐式广播查询遇外部包、未解析的候选 data 条件、未知 flags 或
+缺 inventory 明确失败。服务查询只读取声明，启动与绑定另按各自的进程边界处理。
+独立进程/isolated 服务 start 返回 null、bind 返回 false，每次记账并限流 warn，
 PackageManager 保留清单事实（[ADR-0170](../../../../docs/adr/runtime.md#adr-0170)）。显式绑定在主 Looper 异步 construct/attach/onCreate/onBind 后交付原本地 Binder；
 同组件共享，创建、绑定、解绑和停止经 ROM ActivityThread.H 排队；回调及释放按 ROM 调度。
 连接早于 bind 结果登记、失败可解绑一次；Context 强边/session roots 保活连接/Intent/服务，退出清理；

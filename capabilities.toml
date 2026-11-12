@@ -881,7 +881,7 @@ note = "ADR-0121：AllocObject 委托 VM 在调用线程检查、初始化类并
 [runtime.jni_guest_object_call_void_compat]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp#guest JNI object-call void follows API 19 Dalvik behavior"
-note = "对齐 API 19 非 CheckJNI Dalvik：CallObjectMethod/CallObjectMethodV/CallObjectMethodA 可执行 descriptor 为 void 的实例方法、丢弃结果并返回 null。该行为是通用 JNI 兼容语义，不依赖 Title Profile；其他返回族错配仍明确失败。"
+note = "API 19 非 CheckJNI Dalvik：实例、static 和 nonvirtual Object 调用（普通、V、A）执行返回 void 或基本类型的方法。void、pending 异常或 JValue 低字为零时返回 NULL。低字非零仅在 JNIEnv 旧版兼容模式（targetSdk 1..13）下直接返回且不登记引用；其他情况下无法安全模拟非法对象指针入表，记账并失败。其他返回族错配在调用前失败。"
 
 [runtime.android_legacy_platform_identity]
 status = "complete"
@@ -1890,13 +1890,18 @@ note = "ROM BackupManager 经 ServiceManager 查询本地 IBackupManager。dataC
 
 [dexvm.service_resolution]
 status = "partial"
-test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/android_component_services_tests.cpp#DVM-112; tests/loader/apk_manifest_tests.cpp#DVM-112; tests/runtime/jni_bridge_framework_tests.cpp#DVM-112; tests/runtime/application_startup_tests.cpp#DVM-112; tests/dexvm/android_component_services_tests.cpp#ROM ActivityThread attaches; tests/dexvm/vm_thread_tests.cpp#DVM-202; tests/runtime/application_exit_tests.cpp#DVM-202"
-note = "当前 APK 主进程的显式 Service 支持 ROM ActivityThread 创建、start/stop、BIND_AUTO_CREATE、异步本地 Binder 绑定/解绑及 GC。查询只支持既有 action-only 形态；独立/isolated 进程拒绝并记账。前台通知验证 token/ComponentName 后降级展示，非零 id 的 null 通知抛 IAE。"
+test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/android_component_services_tests.cpp#DVM-112 resolveService distinguishes absent candidates from unsupported queries; tests/loader/apk_manifest_tests.cpp#DVM-112; tests/runtime/jni_bridge_framework_tests.cpp#DVM-112; tests/runtime/application_startup_tests.cpp#DVM-112; tests/dexvm/android_component_services_tests.cpp#ROM ActivityThread attaches; tests/dexvm/vm_thread_tests.cpp#DVM-202; tests/runtime/application_exit_tests.cpp#DVM-202"
+note = "queryIntentServices/resolveService 支持当前 APK 显式组件（含 selector），按 getServiceInfo 的 flags 和启用状态返回单个结果、空列表或 null。隐式仅支持 action-only 且可确定无候选；其他包和未知条件记账失败。当前 APK 主进程支持 ROM ActivityThread start/stop 和异步本地 Binder 绑定/解绑；独立/isolated 进程的启动与绑定受限。前台通知验证后降级展示。"
 
 [dexvm.receiver_query]
 status = "partial"
-test = "tests/loader/apk_manifest_tests.cpp#receiver facts; tests/dexvm/android_component_services_tests.cpp#DVM-193"
-note = "queryBroadcastReceivers 仅查当前 APK，支持非空 action、同一 filter category 子集、无 component/selector/data/type、flags=0；过滤禁用组件，按 API19 跨同名声明首次匹配去重并稳定排序，返回原版 BootDex ArrayList/ResolveInfo/ActivityInfo。无 inventory、未知 flags、外部包与不能判断的 data 条件记账失败；permission 不是声明查询授权门槛。不含广播投递或系统包服务。"
+test = "tests/loader/apk_manifest_tests.cpp#receiver facts; tests/dexvm/android_component_services_tests.cpp#DVM-193 receiver queries match independent filters and return BootDex results"
+note = "queryBroadcastReceivers 支持当前 APK 显式组件（含 selector），按 getReceiverInfo 返回单个结果或空列表。隐式支持非空 action、同一 filter category 子集，MATCH_DEFAULT_ONLY 只保留含 DEFAULT 的 filter；排除禁用组件并按 API19 去重排序。外部包、缺清单、未知 flags 或待解析的 data 候选记账失败。广播投递由独立能力提供。"
+
+[dexvm.activity_query]
+status = "partial"
+test = "tests/dexvm/android_component_services_tests.cpp#PackageManager queryIntentActivities resolves explicit local components"
+note = "queryIntentActivities 仅支持当前 APK 显式组件（含 selector），忽略 MATCH_DEFAULT_ONLY，其余 flags 和启用状态沿用 getActivityInfo。命中返回单个 ResolveInfo，缺失返回空列表。隐式查询、外部包、未知 inventory 或 flags 明确失败。"
 
 [dexvm.receiver_info]
 status = "partial"

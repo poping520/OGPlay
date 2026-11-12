@@ -181,6 +181,7 @@ public:
     [[nodiscard]] bool IsDaemonThread(std::uint64_t thread_id) const;
     void ConfigureLegacyLocalReferenceCompatibility(
         bool enabled, LegacyReferenceWarning warning = {});
+    [[nodiscard]] bool LegacyLocalReferenceCompatibility() const;
 
     void EnsureLocalCapacity(std::uint64_t thread_id,
                              std::size_t additional_capacity);

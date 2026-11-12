@@ -143,38 +143,108 @@ public:
 TEST_CASE("guest JNI object-call void follows API 19 Dalvik behavior") {
     using namespace ogplay::runtime;
 
-    const auto prepare = [](InstanceFixture& fixture, JniInt& calls) {
-        const auto java_class = fixture.classes.RegisterClass(
-            {"fixture/AudioOutput", {},
-             {{"startOutput", "()V", "audio.start", false}}, {}});
-        fixture.invocations.RegisterHandler(
-            "audio.start", [&calls](const JniInvocation&) {
-                ++calls;
-                return JniValue{std::monostate{}};
-            });
-        fixture.environment.AttachThread(InstanceFixture::thread_id);
-        const auto object = fixture.objects.Allocate(java_class);
-        const auto reference = fixture.environment.PublishLocalObject(
-            InstanceFixture::thread_id, object);
-        fixture.WriteString(0x100U, "startOutput");
-        fixture.WriteString(0x140U, "()V");
-        const auto class_reference = fixture.environment.PublishLocalObject(
-            InstanceFixture::thread_id, java_class);
-        fixture.dispatcher.Seal();
-        const auto method = fixture.Call(
-            "GetMethodID", class_reference.Value(),
-            fixture.output.Add(0x100U).Value(),
-            fixture.output.Add(0x140U).Value());
-        return std::pair{reference, method};
-    };
-
-    JniInt calls{};
     InstanceFixture fixture;
-    const auto [object, method] = prepare(fixture, calls);
-    CHECK(fixture.Call("CallObjectMethod", object.Value(), method) == 0U);
-    CHECK(fixture.Call("CallObjectMethodV", object.Value(), method, 0U) == 0U);
-    CHECK(fixture.Call("CallObjectMethodA", object.Value(), method, 0U) == 0U);
-    CHECK(calls == 3);
+    constexpr auto thread = InstanceFixture::thread_id;
+    const auto java_class = fixture.classes.RegisterClass({"fixture/AudioOutput",
+                                                           {},
+                                                           {{"startOutput", "()V", "audio.start", false},
+                                                            {"stopOutput", "()V", "audio.stop", true},
+                                                            {"isReady", "()Z", "audio.ready", true},
+                                                            {"volume", "()I", "audio.volume", false},
+                                                            {"position", "()J", "audio.position", true}},
+                                                           {}});
+    const auto exception_class = fixture.classes.RegisterClass({"fixture/Failure", {}, {}, {}});
+
+    JniInt void_calls{};
+    JniInt ready_calls{};
+    bool ready = true;
+    bool raise = false;
+    fixture.invocations.RegisterHandler("audio.start", [&](const JniInvocation&) {
+        ++void_calls;
+        return JniValue{};
+    });
+    fixture.invocations.RegisterHandler("audio.stop", [&](const JniInvocation&) {
+        ++void_calls;
+        return JniValue{};
+    });
+    fixture.invocations.RegisterHandler("audio.ready", [&](const JniInvocation&) {
+        ++ready_calls;
+        if (raise) fixture.environment.ThrowNew(thread, exception_class, "audio failed");
+        return JniValue{static_cast<JniBoolean>(ready)};
+    });
+    fixture.invocations.RegisterHandler("audio.volume", [](const JniInvocation&) { return JniValue{JniInt{-1}}; });
+    JniLong position = 0x1234567800000000LL;
+    fixture.invocations.RegisterHandler("audio.position", [&](const JniInvocation&) { return JniValue{position}; });
+
+    fixture.environment.AttachThread(thread);
+    fixture.dispatcher.Seal();
+    const auto object = fixture.environment.PublishLocalObject(thread, fixture.objects.Allocate(java_class)).Value();
+    const auto cls = fixture.environment.PublishLocalObject(thread, java_class).Value();
+    const auto method = [&](const std::string_view name, const std::string_view descriptor, const bool is_static) {
+        fixture.WriteString(0x100U, name);
+        fixture.WriteString(0x140U, descriptor);
+        const auto id = fixture.Call(is_static ? "GetStaticMethodID" : "GetMethodID", cls,
+                                     fixture.output.Add(0x100U).Value(), fixture.output.Add(0x140U).Value());
+        REQUIRE(id != 0U);
+        return id;
+    };
+    const auto start = method("startOutput", "()V", false);
+    const auto stop = method("stopOutput", "()V", true);
+    const auto is_ready = method("isReady", "()Z", true);
+    const auto volume = method("volume", "()I", false);
+    const auto get_position = method("position", "()J", true);
+
+    CHECK(fixture.Call("CallObjectMethod", object, start) == 0U);
+    CHECK(fixture.Call("CallObjectMethodV", object, start) == 0U);
+    CHECK(fixture.Call("CallObjectMethodA", object, start) == 0U);
+    CHECK(fixture.Call("CallStaticObjectMethodA", cls, stop) == 0U);
+    CHECK(fixture.Call("CallNonvirtualObjectMethod", object, cls, start) == 0U);
+    CHECK(void_calls == 5);
+    CHECK_THROWS_WITH_AS(static_cast<void>(fixture.Call("CallStaticIntMethodV", cls, is_ready)),
+                         "CallStaticIntMethodV return type does not match method descriptor: isReady()Z",
+                         JniGuestBindingError);
+    CHECK(ready_calls == 0);
+
+    CHECK_THROWS_WITH_AS(static_cast<void>(fixture.Call("CallStaticObjectMethodV", cls, is_ready)),
+                         "CallStaticObjectMethodV return type does not match method descriptor: isReady()Z",
+                         JniGuestBindingError);
+    CHECK(ready_calls == 1);
+    const auto failures = fixture.ledger.Unimplemented();
+    REQUIRE(failures.size() == 1U);
+    CHECK(failures[0].id == "runtime.jni.slot.CallStaticObjectMethodV.primitive_return");
+    CHECK(failures[0].count == 1U);
+    CHECK(failures[0].last_lr == 0x12345679U);
+    ready = false;
+    CHECK(fixture.Call("CallStaticObjectMethodV", cls, is_ready) == 0U);
+    CHECK(fixture.Call("CallStaticObjectMethod", cls, get_position) == 0U);
+
+    ready = true;
+    raise = true;
+    CHECK(fixture.Call("CallStaticObjectMethodV", cls, is_ready) == 0U);
+    const auto pending = fixture.environment.PendingExceptionMetadata(thread);
+    REQUIRE(pending.has_value());
+    CHECK(pending->exception_class == exception_class);
+    CHECK(pending->modified_utf8_message == "audio failed");
+    fixture.environment.ExceptionClear(thread);
+    raise = false;
+
+    fixture.environment.ConfigureLegacyLocalReferenceCompatibility(true);
+    const auto before = fixture.environment.TrySnapshot();
+    REQUIRE(before.has_value());
+    CHECK(fixture.Call("CallStaticObjectMethodV", cls, is_ready) == 1U);
+    ready = false;
+    CHECK(fixture.Call("CallStaticObjectMethodV", cls, is_ready) == 0U);
+    CHECK(fixture.Call("CallObjectMethodA", object, volume) == 0xffffffffU);
+    fixture.Write64(0U);
+    CHECK(fixture.Call("CallNonvirtualObjectMethodV", object, cls, volume) == 0xffffffffU);
+    position = 0x1234567887654321LL;
+    const auto words = fixture.CallPair("CallStaticObjectMethod", cls, get_position);
+    CHECK(words[0] == 0x87654321U);
+    CHECK(words[1] == cls);
+    const auto after = fixture.environment.TrySnapshot();
+    REQUIRE(after.has_value());
+    CHECK(after->local == before->local);
+    CHECK(fixture.ledger.Unimplemented()[0].count == 1U);
 }
 
 TEST_CASE("guest JNI class object and instance call family dispatches exact methods") {

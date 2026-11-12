@@ -892,12 +892,10 @@ TEST_CASE("guest JNI static int call preserves signed variadic result") {
               "CallStaticIntMethod", 407U, java_class.Value(),
               method->Value(), argument.Value()) ==
           std::bit_cast<std::uint32_t>(ogplay::runtime::JniInt{-17}));
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(fixture.CallEnvironment(
-            "CallStaticIntMethod", 407U, java_class.Value(),
-            object_method->Value())),
-        "CallStaticIntMethod return type does not match method descriptor",
-        ogplay::runtime::JniGuestBindingError);
+    CHECK_THROWS_WITH_AS(static_cast<void>(fixture.CallEnvironment("CallStaticIntMethod", 407U, java_class.Value(),
+                                                                   object_method->Value())),
+                         "CallStaticIntMethod return type does not match method descriptor: load()[B",
+                         ogplay::runtime::JniGuestBindingError);
 }
 
 TEST_CASE("guest JNI static call family encodes every return ABI") {

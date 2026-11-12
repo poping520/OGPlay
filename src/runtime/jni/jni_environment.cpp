@@ -289,6 +289,10 @@ void JniEnvironment::ConfigureLegacyLocalReferenceCompatibility(const bool enabl
     references_.ConfigureLegacyLocalReferenceCompatibility(enabled, std::move(warning));
 }
 
+bool JniEnvironment::LegacyLocalReferenceCompatibility() const {
+    return references_.LegacyLocalReferenceCompatibility();
+}
+
 void JniEnvironment::EnsureLocalCapacity(const std::uint64_t thread_id, const std::size_t additional_capacity) {
     RequireAllowed(thread_id, "EnsureLocalCapacity");
     // Dalvik Jni.cpp:409-412 / Thread.h:74: request guarantee is bounded by 512.

@@ -71,7 +71,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 - 10 种 `CallStatic*Method` 返回类型的普通、`V`、`A` 共 30 个槽按 method descriptor
   分别解码 A32 variadic、对齐 `va_list` 与 8 字节步长 `jvalue[]`,再进入统一 invocation
   engine;小整数符号/零扩展、float/double/long 双字返回及 void 均遵循 A32 guest ABI,
-  调用名与 descriptor 返回类型不符、错误 return kind、class、method、handler、array
+  除下述 Object 调用兼容规则外，调用名与 descriptor 返回类型不符、错误 return kind、class、method、handler、array
   reference/type/region 或输出缓冲明确失败,成功查询只发布统一 Guest JNI ABI 地址。
   static call 与 static field 的 primitive/reference 返回编码共用同一 value codec；void
   是否允许由调用方策略显式决定，原 family 错误文案保持稳定。
@@ -104,11 +104,14 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   预注册的 host object 共享精确 class identity；`FindClass` 返回的 `jclass` 同时是
   `java.lang.Class` 的合法 instance receiver。GetObjectClass/IsInstanceOf 与 30 个
   普通 instance Call/CallV/CallA 统一查询该 registry,并复用 invocation engine 的
-  assignability、argument/return 校验；伪 receiver 或返回类型
-  不匹配必须明确失败。成员查找异常消息保留 class name、member name 与 descriptor。
-  按 API 19 非 CheckJNI Dalvik 通用兼容语义，允许 CallObjectMethod/ V / A
-  调用 void 实例方法：方法照常执行、结果丢弃并返回 null；不依赖 Profile，其他返回族
-  错配继续明确失败。
+  assignability、argument/return 校验；伪 receiver 明确失败。成员查找异常消息保留
+  class name、member name 与 descriptor。
+  按 API 19 非 CheckJNI Dalvik 通用兼容语义，实例、static 和 nonvirtual 的 Object
+  调用族（普通、V、A）照常执行返回 void 或基本类型的方法。void 或有 pending 异常时
+  返回 NULL，保留异常。基本类型取 JValue 低 32 位：Z/C 零扩展，B/S/I 符号扩展，
+  F 取位模式，J/D 取低字。低字为零时两种模式均返回 NULL；非零时沿用 JNIEnv 的旧版
+  local reference 兼容开关（targetSdk 1..13），开启时直接返回低字且不登记引用，
+  关闭时记账并明确失败，错误包含方法名及 descriptor。其他返回族错配继续在调用前失败。
 - modified UTF-8 访问族解析同一 `JniStringStore`，编码从 UTF-16 backing 读取；经 AddressSpace
   按需映射 copy buffer，默认 16 MiB 页对齐预算仅用于 MUTF-8，Release 解除映射并归还预算。
   isCopy=TRUE，lease 仍以 string identity/pointer/token 配对；owner 析构不得反向访问已销毁 store。

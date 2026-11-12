@@ -113,6 +113,7 @@ public:
     [[nodiscard]] bool IsDaemonThread(std::uint64_t thread_id) const;
     void ConfigureLegacyLocalReferenceCompatibility(
         bool enabled, JniReferenceTable::LegacyReferenceWarning warning = {});
+    [[nodiscard]] bool LegacyLocalReferenceCompatibility() const;
 
     [[nodiscard]] JniInt GetVersion(std::uint64_t thread_id) const;
     void EnsureLocalCapacity(std::uint64_t thread_id,

@@ -344,6 +344,11 @@ public:
         }
     }
 
+    [[nodiscard]] bool LegacyLocalReferenceCompatibility() const {
+        std::scoped_lock lock(mutex_);
+        return legacy_local_compatibility_;
+    }
+
     void EnsureLocalCapacity(const std::uint64_t thread_id,
                              const std::size_t additional) {
         std::scoped_lock lock(mutex_);
@@ -748,6 +753,10 @@ void JniReferenceTable::ConfigureLegacyLocalReferenceCompatibility(
     const bool enabled, LegacyReferenceWarning warning) {
     impl_->ConfigureLegacyLocalReferenceCompatibility(enabled,
                                                        std::move(warning));
+}
+
+bool JniReferenceTable::LegacyLocalReferenceCompatibility() const {
+    return impl_->LegacyLocalReferenceCompatibility();
 }
 
 void JniReferenceTable::EnsureLocalCapacity(

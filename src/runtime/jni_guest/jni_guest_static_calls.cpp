@@ -329,25 +329,53 @@ ReadValueArrayArguments(memory::AddressSpace& address_space, const JniGuestCallF
                                                "JNI guest static return type is invalid");
 }
 
-[[nodiscard]] bool ResultMatches(const JniTypeKind actual, const JniTypeKind requested) {
-    return requested == JniTypeKind::object ? actual == JniTypeKind::object || actual == JniTypeKind::array
-                                            : actual == requested;
+[[noreturn]] void ThrowResultMismatch(const std::string& name, const JniResolvedMethod& method) {
+    throw JniGuestBindingError(name + " return type does not match method descriptor: " + method.declaration.name +
+                               method.declaration.descriptor);
+}
+
+void ValidateCallResultType(const JniTypeKind requested, const JniResolvedMethod& method, const std::string& name) {
+    if (requested != JniTypeKind::object && requested != method.layout.result.kind) {
+        ThrowResultMismatch(name, method);
+    }
+}
+
+[[nodiscard]] JniGuestCallResult EncodeCallResult(const JniValue& result, const JniTypeKind requested,
+                                                  const JniResolvedMethod& method, const JniEnvironment& environment,
+                                                  const JniGuestCallDispatcher& dispatcher,
+                                                  const JniGuestCallFrame& frame, const std::string& name) {
+    const auto actual = method.layout.result.kind;
+    if (requested != JniTypeKind::object || actual == JniTypeKind::object || actual == JniTypeKind::array) {
+        return EncodeResult(result, actual);
+    }
+
+    // Dalvik's Object call macros read the low word of JValue as a pointer.
+    // Legacy app compatibility returns that word directly, without adding a local reference.
+    if (actual == JniTypeKind::void_value || environment.ExceptionCheck(frame.thread_id)) {
+        return {JniGuestReturnWidth::word, {0U, 0U}};
+    }
+    const auto low_word = EncodeResult(result, actual).words[0];
+    if (low_word != 0U && !environment.LegacyLocalReferenceCompatibility()) {
+        dispatcher.RecordUnimplemented(JniCapabilityId(JniSlot{frame.thunk.slot}) + ".primitive_return",
+                                       frame.link_register);
+        ThrowResultMismatch(name, method);
+    }
+    return {JniGuestReturnWidth::word, {low_word, 0U}};
 }
 
 void BindOne(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment, JniClassRegistry& classes,
              JniInvocationEngine& invocations, memory::AddressSpace& address_space, const StaticCallType type,
              const std::string_view variant, const JniArgumentSource source) {
     const auto name = std::string("CallStatic") + std::string(type.suffix) + "Method" + std::string(variant);
-    dispatcher.BindEnvironment(EnvironmentSlot(name), [&environment, &classes, &invocations, &address_space, type,
-                                                       source, name](const JniGuestCallFrame& frame) {
+    dispatcher.BindEnvironment(EnvironmentSlot(name), [&dispatcher, &environment, &classes, &invocations,
+                                                       &address_space, type, source,
+                                                       name](const JniGuestCallFrame& frame) {
         const auto dispatch_class = environment.ResolveObjectForHle(frame.thread_id, JniReference{frame.registers[1]});
         if (!dispatch_class.has_value()) {
             throw JniGuestBindingError(name + " requires a valid class reference");
         }
         const auto method = classes.ResolveMethod(JniMethodId{frame.registers[2]});
-        if (!ResultMatches(method.layout.result.kind, type.result)) {
-            throw JniGuestBindingError(name + " return type does not match method descriptor");
-        }
+        ValidateCallResultType(type.result, method, name);
         std::vector<JniValue> arguments;
         switch (source) {
         case JniArgumentSource::variadic: arguments = ReadVariadicArguments(address_space, frame, method.layout); break;
@@ -357,7 +385,7 @@ void BindOne(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment, Jn
             break;
         }
         const auto result = invocations.InvokeStatic(frame.thread_id, *dispatch_class, method.id, arguments, source);
-        return EncodeResult(result, method.layout.result.kind);
+        return EncodeCallResult(result, type.result, method, environment, dispatcher, frame, name);
     });
 }
 
@@ -386,8 +414,9 @@ void BindNonvirtualCall(JniGuestCallDispatcher& dispatcher, JniEnvironment& envi
                         const std::shared_ptr<JniGuestObjectRegistry>& objects, const StaticCallType type,
                         const std::string_view variant, const JniArgumentSource source) {
     const auto name = std::string("CallNonvirtual") + std::string(type.suffix) + "Method" + std::string(variant);
-    dispatcher.BindEnvironment(EnvironmentSlot(name), [&environment, &classes, &invocations, &address_space, objects,
-                                                       type, source, name](const JniGuestCallFrame& frame) {
+    dispatcher.BindEnvironment(EnvironmentSlot(name), [&dispatcher, &environment, &classes, &invocations,
+                                                       &address_space, objects, type, source,
+                                                       name](const JniGuestCallFrame& frame) {
         const auto receiver = JniReference{frame.registers[1]};
         const auto object = environment.ResolveObjectForHle(frame.thread_id, receiver);
         const auto dispatch_class = environment.ResolveObjectForHle(frame.thread_id, JniReference{frame.registers[2]});
@@ -398,13 +427,11 @@ void BindNonvirtualCall(JniGuestCallDispatcher& dispatcher, JniEnvironment& envi
             throw JniGuestBindingError(name + " requires a valid class reference");
         }
         const auto method = classes.ResolveMethod(JniMethodId{frame.registers[3]});
-        if (!ResultMatches(method.layout.result.kind, type.result)) {
-            throw JniGuestBindingError(name + " return type does not match method descriptor");
-        }
+        ValidateCallResultType(type.result, method, name);
         const auto arguments = ReadArguments(address_space, frame, method.layout, source, true);
-        return EncodeResult(invocations.InvokeNonvirtual(frame.thread_id, receiver, objects->ClassOf(*object),
-                                                         *dispatch_class, method.id, arguments, source),
-                            method.layout.result.kind);
+        const auto result = invocations.InvokeNonvirtual(frame.thread_id, receiver, objects->ClassOf(*object),
+                                                         *dispatch_class, method.id, arguments, source);
+        return EncodeCallResult(result, type.result, method, environment, dispatcher, frame, name);
     });
 }
 
@@ -413,8 +440,9 @@ void BindInstanceCall(JniGuestCallDispatcher& dispatcher, JniEnvironment& enviro
                       const std::shared_ptr<JniGuestObjectRegistry>& objects, const StaticCallType type,
                       const std::string_view variant, const JniArgumentSource source) {
     const auto name = std::string("Call") + std::string(type.suffix) + "Method" + std::string(variant);
-    dispatcher.BindEnvironment(EnvironmentSlot(name), [&environment, &classes, &invocations, &address_space, objects,
-                                                       type, source, name](const JniGuestCallFrame& frame) {
+    dispatcher.BindEnvironment(EnvironmentSlot(name), [&dispatcher, &environment, &classes, &invocations,
+                                                       &address_space, objects, type, source,
+                                                       name](const JniGuestCallFrame& frame) {
         const auto receiver = JniReference{frame.registers[1]};
         const auto identity = environment.ResolveObjectForHle(frame.thread_id, receiver);
         if (!identity.has_value()) {
@@ -422,18 +450,11 @@ void BindInstanceCall(JniGuestCallDispatcher& dispatcher, JniEnvironment& enviro
         }
         const auto receiver_class = objects->ClassOf(*identity);
         const auto method = classes.ResolveMethod(JniMethodId{frame.registers[2]});
-        const auto object_call_void =
-            type.result == JniTypeKind::object && method.layout.result.kind == JniTypeKind::void_value;
-        if (!ResultMatches(method.layout.result.kind, type.result) && !object_call_void) {
-            throw JniGuestBindingError(name + " return type does not match method descriptor");
-        }
+        ValidateCallResultType(type.result, method, name);
         const auto arguments = ReadArguments(address_space, frame, method.layout, source);
         const auto result =
             invocations.InvokeVirtual(frame.thread_id, receiver, receiver_class, method.id, arguments, source);
-        if (object_call_void) {
-            return EncodeResult(JniValue{JniReference{}}, JniTypeKind::object);
-        }
-        return EncodeResult(result, method.layout.result.kind);
+        return EncodeCallResult(result, type.result, method, environment, dispatcher, frame, name);
     });
 }
 

@@ -32,7 +32,7 @@ describe('library presentation', () => {
     expect(visibleItems([failed, fine, item('never')], '', 'attention', 'name')).toEqual([failed]);
     expect(visibleItems([failed, fine], '', 'launchable', 'name')).toHaveLength(2);
     expect(lastRunText(fine)).toBeNull();
-    expect(lastRunText(failed)?.label).toMatch(/^上次运行运行出错 · /);
+    expect(lastRunText(failed)?.label).toMatch(/^上次运行出错 · /);
     expect(lastRunText(failed)?.error).toBe('java/lang/NullPointerException: x\nmore');
     expect(lastRunText(item('exit', { last_run: run({ failed: true, exit_error: 'onDestroy' }) }))?.label).toMatch(/^上次运行退出时出错/);
   });

@@ -54,19 +54,20 @@ export function statusDetail(item: LibraryItem): string {
   }
 }
 const runOutcomes: Record<string, string> = {
-  startup_failed: '启动失败', fault: '运行出错', crashed: '异常退出', no_frame: '没有画面', interrupted: '进程意外终止',
+  startup_failed: '上次运行启动失败', fault: '上次运行出错', crashed: '上次运行异常退出',
+  no_frame: '上次运行没有画面', interrupted: '上次运行进程意外终止',
 };
 /** The failed last run in the launcher language: what happened and when; the host's error text is only the tooltip.
  *  Null when the last run went well. */
 export function lastRunText(item: LibraryItem): { label: string; error: string } | null {
   const run = item.last_run;
   if (!run?.failed) return null;
-  const outcome = runOutcomes[run.outcome] ?? '退出时出错';
+  const outcome = t(runOutcomes[run.outcome] ?? '上次运行退出时出错');
   const time = Date.parse(run.ended_at ?? run.started_at);
   const when = Number.isFinite(time)
     ? new Date(time).toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
   return {
-    label: when ? t('上次运行{outcome} · {when}', { outcome: t(outcome), when }) : t('上次运行{outcome}', { outcome: t(outcome) }),
+    label: when ? `${outcome} · ${when}` : outcome,
     error: run.error ?? run.exit_error ?? '',
   };
 }

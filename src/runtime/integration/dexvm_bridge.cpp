@@ -156,6 +156,55 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
         for (const auto connection : service.connections)
             root(connection);
     }
+    for (const auto& [key, receiver] : context.location_registrations.receivers) {
+        root(key.second);
+        root(receiver.target);
+        for (const auto& [_, request] : receiver.requests)
+            root(request);
+    }
+    for (const auto& [binder, listener] : context.location_registrations.gps_listeners) {
+        root(binder);
+        root(listener);
+    }
+    for (const auto& fence : context.location_registrations.geofences) {
+        root(fence.fence);
+        root(fence.intent);
+        root(fence.sender);
+    }
+    const auto& state = context.device_state;
+    for (const auto& [callback, _] : context.telephony_listeners)
+        root(callback);
+    for (const auto listener : state.telephony.call_listeners)
+        root(listener);
+    for (const auto& entry : state.audio.focus) {
+        root(entry.token);
+        root(entry.dispatcher);
+    }
+    for (const auto observer : state.audio.route_observers)
+        root(observer);
+    for (const auto token : state.power.wake_locks)
+        root(token);
+    for (const auto token : state.network.wifi_locks)
+        root(token);
+    for (const auto token : state.network.multicast_locks)
+        root(token);
+    for (const auto client : state.accessibility.clients)
+        root(client);
+    for (const auto& [window, connection] : state.accessibility.connections) {
+        root(window);
+        root(connection);
+    }
+    for (const auto& [observer, _] : state.sync_observers)
+        root(observer);
+    for (const auto listener : state.mount_listeners)
+        root(listener);
+    for (const auto token : state.uri_permission_owners)
+        root(token);
+    root(state.primary_clip);
+    for (const auto listener : state.clipboard_listeners)
+        root(listener);
+    for (const auto& [_, notification] : state.notifications)
+        root(notification);
     for (const auto operation : context.alarm_operations)
         root(operation);
     for (const auto& toast : context.toasts)
@@ -204,7 +253,6 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
                                     },
                                     [context](dx::VmObjectRef owner) {
                                         const auto key = owner.Value();
-                                        context->telephony_listeners.erase(key);
                                         context->broadcast_receivers.erase(key);
                                         context->bitmaps.erase(key);
                                     },

@@ -11,6 +11,7 @@
 
 - [framework](framework/MODULE.md)：有界 Android 客户端 Java，普通算法编入 BootDex，
   平台租约经 runtime intrinsic，不进入 guest JNI 共享库。
+- [webview](webview/MODULE.md)：API 19 ROM WebView 的进程内 Java provider 与无渲染引擎。
 - [xml](xml/MODULE.md)：BootDex 的 KXml 到 SAX 回调适配。
 
 上述 C 源码模块统一链接为 `data/android/19/lib/libogplay_jni.so`，不产生模块私有共享库。

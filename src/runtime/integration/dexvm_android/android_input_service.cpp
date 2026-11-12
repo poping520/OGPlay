@@ -495,6 +495,10 @@ Decl Declare_local_InputMethodSession_Class(const Context& context) {
                     std::pair{"updateCursor", "(Landroid/graphics/Rect;)V"},
                     std::pair{"displayCompletions", "([Landroid/view/inputmethod/CompletionInfo;)V"}})
         b.VirtualMethod(name, signature, [](dx::IntrinsicContext&) { return V::Void(); });
+    b.VirtualMethod("appPrivateCommand", "(Ljava/lang/String;Landroid/os/Bundle;)V", [](dx::IntrinsicContext& call) {
+        RecordUiDegraded(call.vm, "Input method private command");
+        return V::Void();
+    });
     b.VirtualMethod("toggleSoftInput", "(II)V", [context](dx::IntrinsicContext&) {
         auto& s = RomInput(context);
         if (s.active_context.IsValid()) ImeVisible(s, !s.ime_visible);

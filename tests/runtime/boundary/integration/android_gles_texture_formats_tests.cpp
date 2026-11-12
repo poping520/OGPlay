@@ -503,14 +503,24 @@ TEST_CASE("BND54 texture family queries uploads and context lifetimes agree") {
                 const auto entry = f.boundary.Symbols().Lookup(library, name); REQUIRE(entry);
                 return BoundaryCallAddress(f, entry->Value(), {arguments.begin(), arguments.size()});
             };
+            std::string gles1_entry_extensions;
             for (const auto library : {"libGLESv1_CM.so", "libGLESv2.so"}) {
                 CAPTURE(version); CAPTURE(library);
                 const auto extensions = read_string(gl(library, "glGetString", {0x1F03}));
                 CHECK((extensions.find("GL_AMD_compressed_ATC_texture") != extensions.npos) == (family == CompressedTextureFamily::atc));
                 CHECK((extensions.find("GL_IMG_texture_compression_pvrtc") != extensions.npos) == (family == CompressedTextureFamily::pvrtc));
                 CHECK(extensions.find("GL_OES_compressed_ETC1_RGB8_texture") != extensions.npos);
-                if (std::string_view(library) == "libGLESv2.so")
-                    CHECK(f.boundary.ManagedGlString(0x1F03) == extensions);
+                // Both ELF glGetString entries follow the current guest EGL client version.
+                // ManagedGlString exposes the programmable API's extension set.
+                if (std::string_view(library) == "libGLESv1_CM.so") {
+                    gles1_entry_extensions = extensions;
+                } else {
+                    CHECK(extensions == gles1_entry_extensions);
+                    if (version == 1U)
+                        CHECK(extensions.find("GL_OES_matrix_palette") != extensions.npos);
+                    else
+                        CHECK(f.boundary.ManagedGlString(0x1F03) == extensions);
+                }
                 gl(library, "glGetIntegerv", {0x86A2, f.output.Value()});
                 const auto count = f.bus.Read32(f.output, 1); REQUIRE(count > 0U); REQUIRE(count < 128U);
                 const auto output = f.output.Add(64), sentinel = output.Add(count * 4U);

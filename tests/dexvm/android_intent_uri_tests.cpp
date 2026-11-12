@@ -318,7 +318,7 @@ TEST_CASE("DVM-132 API 19 Uri executes from BootDex on both interpreters") {
     }
 }
 
-TEST_CASE("DVM-97 dynamic content MIME and malformed filters fail explicitly") {
+TEST_CASE("DVM-97 missing content providers return no MIME and malformed filters throw") {
     AndroidValueVm fixture;
     const auto content_uri = fixture
                                  .Static("Landroid/net/Uri;", "parse", "(Ljava/lang/String;)Landroid/net/Uri;",
@@ -332,9 +332,24 @@ TEST_CASE("DVM-97 dynamic content MIME and malformed filters fail explicitly") {
             .ref;
     auto outcome = fixture.OnOutcome(intent, "resolveTypeIfNeeded",
                                      "(Landroid/content/ContentResolver;)Ljava/lang/String;", {VmValue::Ref(resolver)});
+    // API 19 ContentResolver falls back to AMS, which returns null when no provider resolves.
     REQUIRE_FALSE(outcome.exception.IsValid());
-    CHECK_FALSE(outcome.value.ref.IsValid());  // ROM ContentResolver logs the rejected external lookup.
-    CHECK_FALSE(fixture.ledger.Unimplemented().empty());
+    CHECK_FALSE(outcome.value.ref.IsValid());
+    CHECK(fixture.ledger.Unimplemented().empty());
+
+    const auto no_authority = fixture
+                                  .Static("Landroid/net/Uri;", "parse", "(Ljava/lang/String;)Landroid/net/Uri;",
+                                          {VmValue::Ref(fixture.vm.NewStringUtf8("content:/plants/1"))})
+                                  .ref;
+    const auto activity_manager =
+        fixture.Static("Landroid/app/ActivityManagerNative;", "getDefault", "()Landroid/app/IActivityManager;").ref;
+    CHECK_FALSE(fixture
+                    .On(activity_manager, "getProviderMimeType", "(Landroid/net/Uri;I)Ljava/lang/String;",
+                        {VmValue::Ref(no_authority), VmValue::Int(0)})
+                    .ref.IsValid());
+    CHECK_FALSE(fixture.On(resolver, "getType", "(Landroid/net/Uri;)Ljava/lang/String;", {VmValue::Ref(no_authority)})
+                    .ref.IsValid());
+    CHECK(fixture.ledger.Unimplemented().empty());
 
     const auto explicit_intent = fixture.New("Landroid/content/Intent;");
     fixture.On(explicit_intent, "setData", "(Landroid/net/Uri;)Landroid/content/Intent;", {VmValue::Ref(content_uri)});

@@ -438,7 +438,7 @@ TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex
     }
 }
 
-TEST_CASE("PackageManager queryIntentActivities resolves explicit local components") {
+TEST_CASE("PackageManager resolves explicit components and matches local activity filters") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);
         f.context->package_name = "fixture";
@@ -458,13 +458,28 @@ TEST_CASE("PackageManager queryIntentActivities resolves explicit local componen
         const auto unsupported = [&](const VmCallOutcome& outcome) {
             CHECK(outcome.exception_class == f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
         };
-        const auto implicit = query();
-        unsupported(implicit);
-        CHECK(implicit.exception_message == "queryIntentActivities requires an explicit component");
-        const auto hits = f.ledger.Unimplemented();
-        REQUIRE(hits.size() == 1);
-        CHECK(hits[0].id == "dexvm.activity_query");
-        CHECK(hits[0].count == 1);
+        CHECK(QueryListSize(f, query()) == 0);
+        f.context->activity_components[0].intent_filters = {
+            {.actions = {"fixture.OPEN"},
+             .categories = {"android.intent.category.DEFAULT"},
+             .has_data = true,
+             .data = {{.mime_type = "image/*", .scheme = "content", .host = "fixture", .path_prefix = "/photos/"}}}};
+        const auto text = [&](const char* value) { return VmValue::Ref(f.vm.NewStringUtf8(value)); };
+        f.On(intent, "setAction", "(Ljava/lang/String;)Landroid/content/Intent;", {text("fixture.OPEN")});
+        const auto uri = f.Static("Landroid/net/Uri;", "parse", "(Ljava/lang/String;)Landroid/net/Uri;",
+                                  {text("content://fixture/photos/1")})
+                             .ref;
+        const auto uri_root = f.vm.ProtectReferences(std::array{uri});
+        f.On(intent, "setDataAndType", "(Landroid/net/Uri;Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(uri), text("image/png")});
+        REQUIRE(QueryListSize(f, query()) == 1);
+        const auto resolved =
+            f.On(manager, "resolveActivity", "(Landroid/content/Intent;I)Landroid/content/pm/ResolveInfo;",
+                 {VmValue::Ref(intent), VmValue::Int(kMatchDefaultOnly)})
+                .ref;
+        REQUIRE(resolved.IsValid());
+        f.On(intent, "addCategory", "(Ljava/lang/String;)Landroid/content/Intent;", {text("fixture.MISSING")});
+        CHECK(QueryListSize(f, query()) == 0);
 
         SetIntentComponent(f, intent, "fixture", "fixture.Local");
         CheckExplicitResolveInfo(f, OnlyQueryResult(f, query()), "fixture.Local");

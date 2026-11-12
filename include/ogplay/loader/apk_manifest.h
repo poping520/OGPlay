@@ -57,11 +57,18 @@ enum class AndroidManifestComponentKind : std::uint8_t {
 struct AndroidManifestIntentFilter final {
     std::vector<std::string> actions;
     std::vector<std::string> categories;
-    // Preserve the presence of constraints not parsed by the bounded resolver.
     bool has_data{};
     std::int32_t priority{};
     std::optional<AndroidManifestLabel> label{};
     std::uint32_t icon{};
+
+    struct Data final {
+        std::optional<std::string> mime_type, scheme, host, port;
+        std::optional<std::string> path, path_prefix, path_pattern;
+        std::optional<std::string> ssp, ssp_prefix, ssp_pattern;
+    };
+
+    std::vector<Data> data{};
 };
 
 struct AndroidManifestServiceComponent final {

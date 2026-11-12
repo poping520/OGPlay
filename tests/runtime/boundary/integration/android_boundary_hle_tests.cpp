@@ -231,12 +231,18 @@ TEST_CASE("Virtual SO end-to-end host call benchmark records ABI shapes") {
                                   {}, 500U);
     fixture.boundary.CloseManagedSurface();
 
+    std::array<std::uint32_t, host_iterations> configs{};
     const auto slow_begin = std::chrono::steady_clock::now();
-    for (std::size_t iteration = 0; iteration < host_iterations; ++iteration) {
-        CHECK(fixture.Call("libandroid.so", "AConfiguration_new") == 0x6e003000U);
-    }
+    for (auto& config : configs)
+        config = fixture.Call("libandroid.so", "AConfiguration_new");
     const auto slow_us =
         std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - slow_begin).count();
+    // API 19 AConfiguration_new allocates an independent object on each call.
+    std::ranges::sort(configs);
+    REQUIRE(configs.front() != 0U);
+    REQUIRE(std::ranges::adjacent_find(configs) == configs.end());
+    for (const auto config : configs)
+        fixture.Call("libandroid.so", "AConfiguration_delete", {config});
     INFO("host_call_benchmark_us iterations=" << host_iterations << " zero=" << zero_us << " four_word=" << four_us
                                               << " stack_6word=" << stack_us << " gles_500=" << gles_us
                                               << " forced_slow=" << slow_us);

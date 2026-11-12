@@ -50,7 +50,40 @@ TEST_CASE("View focus and WebView configuration keep real per-instance state") {
                                          focus_events.push_back(call.arguments[1].AsInt());
                                          return VmValue::Void();
                                      });
-        AndroidValueVm fixture(backend, {std::move(listener_class).Build()});
+        std::vector<std::string> web_events;
+        auto client_class = IntrinsicClassBuilder::Class("Ltest/WebClient;", "Landroid/webkit/WebViewClient;");
+        client_class.VirtualMethod("onPageStarted",
+                                   "(Landroid/webkit/WebView;Ljava/lang/String;Landroid/graphics/Bitmap;)V",
+                                   [&](IntrinsicContext&) {
+                                       web_events.emplace_back("started");
+                                       return VmValue::Void();
+                                   });
+        client_class.VirtualMethod("onReceivedError",
+                                   "(Landroid/webkit/WebView;ILjava/lang/String;Ljava/lang/String;)V",
+                                   [&](IntrinsicContext& call) {
+                                       web_events.push_back("error:" + std::to_string(call.arguments[1].AsInt()));
+                                       return VmValue::Void();
+                                   });
+        client_class.VirtualMethod("onPageFinished", "(Landroid/webkit/WebView;Ljava/lang/String;)V",
+                                   [&](IntrinsicContext&) {
+                                       web_events.emplace_back("finished");
+                                       return VmValue::Void();
+                                   });
+        auto chrome_class = IntrinsicClassBuilder::Class("Ltest/WebChrome;", "Landroid/webkit/WebChromeClient;");
+        chrome_class.VirtualMethod("onProgressChanged", "(Landroid/webkit/WebView;I)V", [&](IntrinsicContext& call) {
+            web_events.push_back("progress:" + std::to_string(call.arguments[1].AsInt()));
+            return VmValue::Void();
+        });
+        auto js_callback =
+            IntrinsicClassBuilder::Class("Ltest/WebResult;", "Ljava/lang/Object;", {"Landroid/webkit/ValueCallback;"});
+        js_callback.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        js_callback.VirtualMethod("onReceiveValue", "(Ljava/lang/Object;)V", [&](IntrinsicContext&) {
+            web_events.emplace_back("javascript");
+            return VmValue::Void();
+        });
+        AndroidValueVm fixture(backend, {std::move(listener_class).Build(), std::move(client_class).Build(),
+                                         std::move(chrome_class).Build(), std::move(js_callback).Build()});
+        PrepareAndroidMainLooper(fixture.vm, fixture.context);
         const auto activity = fixture.New("Landroid/app/Activity;");
         const auto parent =
             fixture.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
@@ -132,6 +165,95 @@ TEST_CASE("View focus and WebView configuration keep real per-instance state") {
                   .AsInt() == 0);
         fixture.On(client, "onPageFinished", "(Landroid/webkit/WebView;Ljava/lang/String;)V",
                    {VmValue::Ref(first), VmValue::Ref(js_name)});
+
+        // The ROM client methods above are real defaults. Record the provider's queued events.
+        const auto recording_client = fixture.vm.NewIntrinsicInstance("Ltest/WebClient;");
+        const auto chrome = fixture.vm.NewIntrinsicInstance("Ltest/WebChrome;");
+        fixture.On(first, "setWebViewClient", "(Landroid/webkit/WebViewClient;)V", {VmValue::Ref(recording_client)});
+        fixture.On(first, "setWebChromeClient", "(Landroid/webkit/WebChromeClient;)V", {VmValue::Ref(chrome)});
+        const auto str = [&](const char* value) { return VmValue::Ref(fixture.vm.NewStringUtf8(value)); };
+        const auto dispatch = [&] {
+            const auto error = DispatchFixtureMessages(fixture.vm, *fixture.context);
+            REQUIRE_MESSAGE(!error, error.value_or(""));
+        };
+        const auto load = [&](const char* url) { fixture.On(first, "loadUrl", "(Ljava/lang/String;)V", {str(url)}); };
+        const auto string_result = [&](const char* method) {
+            return fixture.vm.StringUtf8(fixture.On(first, method, "()Ljava/lang/String;").ref);
+        };
+
+        // Offline Chromium reports DNS failure, while inline data completes with no error.
+        load("https://example.invalid/");
+        CHECK(web_events.empty());
+        dispatch();
+        CHECK(web_events == std::vector<std::string>{"started", "error:-2", "progress:100", "finished"});
+        web_events.clear();
+
+        fixture.On(first, "loadData", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+                   {str("<title>Local</title>"), str("text/html"), str("UTF-8")});
+        CHECK(web_events.empty());
+        dispatch();
+        CHECK(web_events == std::vector<std::string>{"started", "progress:100", "finished"});
+        CHECK(string_result("getTitle") == "Local");
+        const auto warnings = fixture.ledger.Warnings();
+        const auto warning_id = std::string(ogplay::core::kUiDegradedWarningPrefix) + "WebView.pageRendering";
+        CHECK(std::ranges::any_of(warnings,
+                                  [&](const auto& warning) { return warning.id == warning_id && warning.count == 1; }));
+
+        const auto data_url = string_result("getUrl");
+        CHECK(data_url.starts_with("data:text/html,"));
+        CHECK(fixture.On(first, "canGoBack", "()Z").AsInt() == 1);
+        fixture.On(first, "goBack", "()V");
+        dispatch();
+        CHECK(string_result("getUrl") == "https://example.invalid/");
+        CHECK(fixture.On(first, "canGoForward", "()Z").AsInt() == 1);
+        fixture.On(first, "goForward", "()V");
+        dispatch();
+        CHECK(string_result("getUrl") == data_url);
+        const auto history = fixture.On(first, "copyBackForwardList", "()Landroid/webkit/WebBackForwardList;").ref;
+        CHECK(fixture.On(history, "getCurrentIndex", "()I").AsInt() == 1);
+        CHECK(fixture.On(history, "getSize", "()I").AsInt() == 2);
+
+        web_events.clear();
+        load("file:///android_asset/missing-webview-test.html");
+        dispatch();
+        CHECK(web_events == std::vector<std::string>{"started", "error:-14", "progress:100", "finished"});
+
+        web_events.clear();
+        fixture.On(first, "loadDataWithBaseURL",
+                   "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+                   {str("https://example.invalid/base/"), str("<title>Inline</title>"), str("text/html"), str("UTF-8"),
+                    str("https://example.invalid/history")});
+        dispatch();
+        CHECK(web_events == std::vector<std::string>{"started", "progress:100", "finished"});
+        CHECK(string_result("getUrl") == "https://example.invalid/history");
+        CHECK(string_result("getTitle") == "Inline");
+
+        web_events.clear();
+        const auto callback = fixture.New("Ltest/WebResult;");
+        fixture.On(first, "evaluateJavascript", "(Ljava/lang/String;Landroid/webkit/ValueCallback;)V",
+                   {str("42"), VmValue::Ref(callback)});
+        load("javascript:42");
+        dispatch();
+        CHECK(web_events.empty());
+        CHECK(std::ranges::any_of(fixture.ledger.Unimplemented(), [](const auto& hit) {
+            return hit.id == "dexvm.webview_javascript" && hit.count == 2;
+        }));
+
+        const auto cookies =
+            fixture.Static("Landroid/webkit/CookieManager;", "getInstance", "()Landroid/webkit/CookieManager;").ref;
+        CHECK(fixture.On(cookies, "acceptCookie", "()Z").AsInt() == 1);
+        fixture.On(cookies, "setCookie", "(Ljava/lang/String;Ljava/lang/String;)V",
+                   {str("https://example.invalid/app/index"), str("session=one; Secure; Path=/app")});
+        const auto read_cookie = [&](const char* url) {
+            return fixture.On(cookies, "getCookie", "(Ljava/lang/String;)Ljava/lang/String;", {str(url)}).ref;
+        };
+        CHECK(fixture.vm.StringUtf8(read_cookie("https://example.invalid/app/play")) == "session=one");
+        CHECK_FALSE(read_cookie("http://example.invalid/app/play").IsValid());
+        CHECK_FALSE(read_cookie("https://example.invalid/other").IsValid());
+        fixture.On(cookies, "setAcceptCookie", "(Z)V", {VmValue::Int(0)});
+        CHECK(fixture.On(cookies, "acceptCookie", "()Z").AsInt() == 0);
+        fixture.On(cookies, "removeSessionCookie", "()V");
+        CHECK(fixture.On(cookies, "hasCookies", "()Z").AsInt() == 0);
     }
 }
 
@@ -181,6 +303,8 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
             });
         AndroidValueVm fixture(backend, {std::move(subclass).Build(), std::move(destroyer).Build()});
         fixture.context->threads = &fixture.threads;
+        fixture.context->target_sdk_version = 19;
+        PrepareAndroidMainLooper(fixture.vm, fixture.context);
 
         const auto web_type = fixture.linker.ResolveDescriptor("Landroid/webkit/WebView;");
         const auto subclass_type = fixture.linker.ResolveDescriptor("Ltest/OwnedWebView;");
@@ -206,19 +330,14 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
         CHECK(first_settings != second_settings);
 
         const auto url = fixture.vm.NewStringUtf8("https://example.invalid");
-        fixture.context->strict_webview_errors = true;
-        auto load = fixture.OnOutcome(first, "loadUrl", kLoadUrl, {VmValue::Ref(url)});
-        REQUIRE(load.exception.IsValid());
-        CHECK(fixture.linker.Class(load.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-
+        fixture.On(first, "loadUrl", kLoadUrl, {VmValue::Ref(url)});
         fixture.On(first, kDestroy, kVoid);
         fixture.On(first, kDestroy, kVoid);
-        auto after = fixture.OnOutcome(first, "getSettings", kGetSettings);
-        REQUIRE(after.exception.IsValid());
-        CHECK(fixture.linker.Class(after.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
-        load = fixture.OnOutcome(first, "loadUrl", kLoadUrl, {VmValue::Ref(url)});
-        REQUIRE(load.exception.IsValid());
-        CHECK(fixture.linker.Class(load.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+        // AwContents.destroy cancels pending work and leaves its WebSettings adapter accessible.
+        fixture.On(first, "loadUrl", kLoadUrl, {VmValue::Ref(url)});
+        CHECK_FALSE(DispatchFixtureMessages(fixture.vm, *fixture.context));
+        CHECK_FALSE(fixture.On(first, "getUrl", "()Ljava/lang/String;").ref.IsValid());
+        CHECK(fixture.On(first, "getSettings", kGetSettings).ref == first_settings);
         CHECK(fixture.On(second, "getSettings", kGetSettings).ref == second_settings);
 
         const auto wait_for = [](const auto& predicate) {
@@ -256,23 +375,30 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
             fixture.On(thread, "join", "()V");
         };
 
-        fixture.context->target_sdk_version = 19;
         post_destroy(second);
         CHECK(worker_exception == "Ljava/lang/RuntimeException;");
         CHECK(fixture.On(second, "getSettings", kGetSettings).ref == second_settings);
 
-        for (const auto name : {"setInitialScale", "canGoForward", "goForward", "onAttachedToWindow"}) {
+        for (const auto name : {"setInitialScale", "canGoForward", "goForward"}) {
             worker_method = name;
             post_destroy(second);
             CHECK(worker_exception == "Ljava/lang/RuntimeException;");
         }
-        worker_method = "destroy";
-        fixture.context->target_sdk_version = 13;
+        // The ROM View attachment override delegates without calling WebView.checkThread().
+        worker_method = "onAttachedToWindow";
         post_destroy(second);
         CHECK(worker_exception.empty());
-        after = fixture.OnOutcome(second, "getSettings", kGetSettings);
-        REQUIRE(after.exception.IsValid());
-        CHECK(fixture.linker.Class(after.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+
+        // ROM caches the enforcement flag when constructing a WebView from ApplicationInfo.
+        const auto info = fixture.On(owner, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;").ref;
+        const auto sdk = fixture.linker.FindFieldRecursive(fixture.model.ObjectClass(info), "targetSdkVersion", "I");
+        REQUIRE(sdk);
+        fixture.model.InstanceSlots(info)[fixture.linker.Field(*sdk).slot].bits = 13;
+        const auto legacy = fixture.New("Landroid/webkit/WebView;", kViewInit, {VmValue::Ref(owner)});
+        worker_method = "destroy";
+        post_destroy(legacy);
+        CHECK(worker_exception.empty());
+        CHECK(fixture.On(legacy, "canGoForward", "()Z").AsInt() == 0);
 
         ShutdownAndroidScheduler(*fixture.context);
     }
@@ -283,6 +409,7 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
 TEST_CASE("DVM-365 WebView complete constructor configuration and ROM super attachment") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ogplay::test::container_traversal::ContainerVm f(backend);
+        PrepareAndroidMainLooper(f.vm, f.context);
         const auto owner = f.New("Landroid/app/Activity;");
         const auto view = f.New("Ltest/WebViewLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto roots = f.vm.ProtectReferences(std::array{owner, view});
@@ -300,12 +427,10 @@ TEST_CASE("DVM-365 WebView complete constructor configuration and ROM super atta
         CHECK(f.On(settings, "getBuiltInZoomControls", "()Z").AsInt() == 1);
         CHECK(f.On(settings, "supportZoom", "()Z").AsInt() == 1);
         CHECK(f.On(settings, "getUseWideViewPort", "()Z").AsInt() == 1);
-        const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(view), "mInitialScale", "I");
-        REQUIRE(field);
-        CHECK(f.model.InstanceSlots(view)[f.linker.Field(*field).slot].bits == 80);
-        for (int scale : {0, -1, 100, INT32_MAX}) {
+        CHECK(f.On(view, "getScale", "()F").AsFloat() == doctest::Approx(0.8f));
+        for (int scale : {0, -1, 100}) {
             f.On(view, "setInitialScale", "(I)V", {VmValue::Int(scale)});
-            CHECK(f.model.InstanceSlots(view)[f.linker.Field(*field).slot].bits == static_cast<std::uint32_t>(scale));
+            CHECK(f.On(view, "getScale", "()F").AsFloat() == 1.0f);
         }
         f.On(settings, "setUseWideViewPort", "(Z)V", {VmValue::Int(0)});
         CHECK(f.On(settings, "getUseWideViewPort", "()Z").AsInt() == 0);
@@ -315,15 +440,9 @@ TEST_CASE("DVM-365 WebView complete constructor configuration and ROM super atta
         f.On(view, "onAttachedToWindow", "()V");
         CHECK(f.On(view, "attachments", "()I").AsInt() == 1);
         f.On(view, "destroy", "()V");
-        for (const auto name : {"canGoForward", "goForward", "setInitialScale"}) {
-            const bool scale = std::string_view(name) == "setInitialScale";
-            const auto out = f.OnOutcome(view, name,
-                                         scale                                      ? "(I)V"
-                                         : std::string_view(name) == "canGoForward" ? "()Z"
-                                                                                    : "()V",
-                                         scale ? std::vector{VmValue::Int(80)} : std::vector<VmValue>{});
-            REQUIRE(out.exception.IsValid());
-            CHECK(f.linker.Class(out.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
-        }
+        CHECK(f.On(view, "canGoForward", "()Z").AsInt() == 0);
+        f.On(view, "goForward", "()V");
+        f.On(view, "setInitialScale", "(I)V", {VmValue::Int(80)});
+        CHECK(f.On(view, "getScale", "()F").AsFloat() == 1.0f);
     }
 }

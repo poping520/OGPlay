@@ -13,8 +13,10 @@
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -41,7 +43,7 @@ using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
-TEST_CASE("Context class loader preserves application identity and virtual base delegation") {
+TEST_CASE("Context without package code uses the system class loader and delegates virtually") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         auto custom = IntrinsicClassBuilder::Class("Ltest/LoaderContext;", "Landroid/content/Context;");
         custom.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
@@ -52,7 +54,11 @@ TEST_CASE("Context class loader preserves application identity and virtual base 
         const auto base = f.New("Landroid/content/Context;");
         const auto base_root = f.vm.ProtectReferences(std::array{base});
         const auto loader = f.On(base, "getClassLoader", "()Ljava/lang/ClassLoader;").ref;
-        CHECK(loader == f.vm.ClassLoaders().ApplicationLoader());
+        // MakeRomAppContext builds a LoadedApk with includeCode=false and a null base loader.
+        // API 19 LoadedApk.getClassLoader uses the ROM system singleton for that combination.
+        CHECK(loader == f.Static("Ljava/lang/ClassLoader;", "getSystemClassLoader", "()Ljava/lang/ClassLoader;").ref);
+        CHECK(loader == f.vm.ClassLoaders().SystemLoader());
+        CHECK(loader != f.vm.ClassLoaders().ApplicationLoader());
         CHECK(f.On(loader, "getParent", "()Ljava/lang/ClassLoader;").ref == f.vm.ClassLoaders().BootstrapLoader());
         for (const auto* type : {"Landroid/app/Application;", "Landroid/app/Activity;", "Landroid/app/Service;"}) {
             const auto object = f.New(type);
@@ -127,7 +133,17 @@ TEST_CASE("Context class loader reflects BootDex system properties with API19 de
 
 TEST_CASE("Telephony subscriber identity is unavailable without a cellular subscription") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend);
+        std::vector<int> states;
+        auto listener_type =
+            IntrinsicClassBuilder::Class("Ltest/DevicePhoneListener;", "Landroid/telephony/PhoneStateListener;");
+        listener_type.OverrideMethod("onServiceStateChanged", "(Landroid/telephony/ServiceState;)V",
+                                     [&](IntrinsicContext& call) {
+                                         states.push_back(ogplay::runtime::android_intrinsics::CallAndroidMethod(
+                                                              call.vm, call.arguments[0].ref, "getState", "()I")
+                                                              .AsInt());
+                                         return VmValue::Void();
+                                     });
+        AndroidValueVm f(backend, {std::move(listener_type).Build()});
         const auto base = f.New("Landroid/content/Context;");
         const auto base_root = f.vm.ProtectReferences(std::array{base});
         const auto phone_result = f.OnOutcome(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
@@ -151,14 +167,25 @@ TEST_CASE("Telephony subscriber identity is unavailable without a cellular subsc
                                {VmValue::Ref(VmObjectRef{}), VmValue::Int(events)}));
             CHECK(f.context->telephony_listeners.empty());
         }
+        const auto denied = f.OnOutcome(phone, "getSubscriberId", "()Ljava/lang/String;");
+        REQUIRE(denied.exception.IsValid());
+        CHECK(f.linker.Class(denied.exception_class).descriptor == "Ljava/lang/SecurityException;");
+        f.context->requested_permissions.emplace_back("android.permission.READ_PHONE_STATE");
         CHECK_FALSE(f.On(phone, "getSubscriberId", "()Ljava/lang/String;").ref.IsValid());
-        const auto listener = f.New("Landroid/telephony/PhoneStateListener;");
+        const auto listener = f.vm.NewIntrinsicInstance("Ltest/DevicePhoneListener;");
         const auto listener_root = f.vm.ProtectReferences(std::array{listener});
-        CHECK(f.linker.Class(f.model.ObjectClass(listener)).is_boot_dex);
+        const auto constructor = f.linker.FindDirectMethod(
+            f.linker.ResolveDescriptor("Landroid/telephony/PhoneStateListener;"), "<init>", "()V");
+        REQUIRE(constructor.has_value());
+        REQUIRE_FALSE(f.vm.Call(*constructor, std::array{VmValue::Ref(listener)}).exception.IsValid());
         f.On(phone, "listen", "(Landroid/telephony/PhoneStateListener;I)V", {VmValue::Ref(listener), VmValue::Int(1)});
         CHECK(f.context->telephony_listeners.size() == 1);
+        REQUIRE_FALSE(DispatchFixtureMessages(f.vm, *f.context).has_value());
+        CHECK(states == std::vector{1});  // STATE_OUT_OF_SERVICE.
         f.On(phone, "listen", "(Landroid/telephony/PhoneStateListener;I)V", {VmValue::Ref(listener), VmValue::Int(0)});
         CHECK(f.context->telephony_listeners.empty());
+        REQUIRE_FALSE(DispatchFixtureMessages(f.vm, *f.context).has_value());
+        CHECK(states.size() == 1);
         static_cast<void>(f.vm.CollectGarbage("telephony-subscriber-absence"));
         CHECK_FALSE(f.On(phone, "getSubscriberId", "()Ljava/lang/String;").ref.IsValid());
     }
@@ -231,12 +258,13 @@ TEST_CASE("Settings BootDex routes moved keys through the bounded store") {
                                        {VmValue::Ref(resolver), VmValue::Ref(android_id)})
                                .ref;
         CHECK(fixture.vm.StringUtf8(moved) == "0123456789abcdef");
-        CHECK(fixture
-                  .Static("Landroid/provider/Settings$Secure;", "putString",
-                          "(Landroid/content/ContentResolver;Ljava/lang/String;"
-                          "Ljava/lang/String;)Z",
-                          {VmValue::Ref(resolver), VmValue::Ref(android_id), VmValue::Ref(text)})
-                  .AsInt() == 0);
+        const auto denied =
+            fixture.StaticOutcome("Landroid/provider/Settings$Secure;", "putString",
+                                  "(Landroid/content/ContentResolver;Ljava/lang/String;Ljava/lang/String;)Z",
+                                  {VmValue::Ref(resolver), VmValue::Ref(android_id), VmValue::Ref(text)});
+        REQUIRE(denied.exception.IsValid());
+        CHECK(fixture.linker.Class(denied.exception_class).descriptor == "Ljava/lang/SecurityException;");
+        fixture.context->requested_permissions.emplace_back("android.permission.WRITE_SETTINGS");
 
         CHECK(fixture
                   .Static("Landroid/provider/Settings$System;", "putString",
@@ -770,34 +798,25 @@ TEST_CASE("DVM-341 USB manager preserves API19 absence without transport") {
             const auto argument = std::string("(Landroid/hardware/usb/") + type + ";";
             CHECK(f.On(manager, "hasPermission", (argument + ")Z").c_str(), {VmValue::Ref(VmObjectRef{})}).AsInt() ==
                   0);
-            const auto denied =
+            const auto invalid =
                 f.OnOutcome(manager, "requestPermission", (argument + "Landroid/app/PendingIntent;)V").c_str(),
                             {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
-            REQUIRE(denied.exception.IsValid());
-            CHECK(f.linker.Class(denied.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+            REQUIRE(invalid.exception.IsValid());
+            CHECK(f.linker.Class(invalid.exception_class).descriptor == "Ljava/lang/NullPointerException;");
         }
         const auto denied = f.OnOutcome(manager, "setCurrentFunction", "(Ljava/lang/String;Z)V",
                                         {VmValue::Ref(f.vm.NewStringUtf8("mtp")), VmValue::Int(1)});
         REQUIRE(denied.exception.IsValid());
-        CHECK(f.linker.Class(denied.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        for (const auto& [method, signature] : std::array{
-                 std::pair{"openAccessory", "(Landroid/hardware/usb/UsbAccessory;)Landroid/os/ParcelFileDescriptor;"},
-                 std::pair{"setMassStorageBackingFile", "(Ljava/lang/String;)V"}}) {
-            const auto result = f.OnOutcome(manager, method, signature, {VmValue::Ref(VmObjectRef{})});
-            REQUIRE(result.exception.IsValid());
-            CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        }
-        const auto hits = f.ledger.Unimplemented();
-        const auto recorded = [&](const std::string_view prefix, std::uint64_t count) {
-            return std::ranges::any_of(
-                hits, [&](const auto& hit) { return hit.id.starts_with(prefix) && hit.count == count; });
-        };
-        REQUIRE(hits.size() == 6);
-        CHECK(recorded("dexvm.usb_transport", 2));
-        for (const auto method : {"requestDevicePermission", "requestAccessoryPermission", "setCurrentFunction",
-                                  "openAccessory", "setMassStorageBackingFile"}) {
-            CHECK(recorded(std::string("android.hardware.usb.IUsbManager.") + method + "(", 1));
-        }
+        CHECK(f.linker.Class(denied.exception_class).descriptor == "Ljava/lang/SecurityException;");
+        CHECK_FALSE(f.On(manager, "openAccessory",
+                         "(Landroid/hardware/usb/UsbAccessory;)Landroid/os/ParcelFileDescriptor;",
+                         {VmValue::Ref(VmObjectRef{})})
+                        .ref.IsValid());
+        const auto file =
+            f.OnOutcome(manager, "setMassStorageBackingFile", "(Ljava/lang/String;)V", {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(file.exception.IsValid());
+        CHECK(f.linker.Class(file.exception_class).descriptor == "Ljava/lang/SecurityException;");
+        CHECK(f.ledger.Unimplemented().empty());
         const auto property =
             f.Static("Landroid/os/SystemProperties;", "get", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
                      {VmValue::Ref(f.vm.NewStringUtf8("sys.usb.config")), VmValue::Ref(f.vm.NewStringUtf8(""))})
@@ -860,66 +879,341 @@ TEST_CASE("DVM-136 API 19 OrientationEventListener preserves absent sensor seman
     }
 }
 
-TEST_CASE("DVM-156 ROM LocationManager links listeners and exposes no location source") {
+TEST_CASE("DVM-156 ROM LocationManager queries and registers on a device with location off") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        std::vector<std::string> disabled;
+        int location_callbacks = 0;
         auto listener = IntrinsicClassBuilder::Class("Ltest/LocationListener;", "Ljava/lang/Object;",
                                                      {"Landroid/location/LocationListener;"});
         listener.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
-        listener.VirtualMethod("onLocationChanged", "(Landroid/location/Location;)V",
-                               [](IntrinsicContext&) { return VmValue::Void(); });
+        listener.VirtualMethod("onLocationChanged", "(Landroid/location/Location;)V", [&](IntrinsicContext&) {
+            ++location_callbacks;
+            return VmValue::Void();
+        });
         listener.VirtualMethod("onStatusChanged", "(Ljava/lang/String;ILandroid/os/Bundle;)V",
                                [](IntrinsicContext&) { return VmValue::Void(); });
         listener.VirtualMethod("onProviderEnabled", "(Ljava/lang/String;)V",
                                [](IntrinsicContext&) { return VmValue::Void(); });
-        listener.VirtualMethod("onProviderDisabled", "(Ljava/lang/String;)V",
-                               [](IntrinsicContext&) { return VmValue::Void(); });
+        listener.VirtualMethod("onProviderDisabled", "(Ljava/lang/String;)V", [&](IntrinsicContext& call) {
+            disabled.push_back(call.vm.StringUtf8(call.arguments[0].ref));
+            return VmValue::Void();
+        });
 
-        AndroidValueVm fixture(backend, {std::move(listener).Build()});
-        const auto context = fixture.New("Landroid/content/Context;");
-        const auto service_name = fixture.vm.NewStringUtf8("location");
+        AndroidValueVm f(backend, {std::move(listener).Build()});
+        f.context->package_name = "fixture";
+        f.vm.SetGcIntegration(
+            {{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
+        const auto str = [&](std::string_view s) { return VmValue::Ref(f.vm.NewStringUtf8(s)); };
+        const auto null = VmValue::Ref(VmObjectRef{});
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
         const auto manager =
-            fixture
-                .On(context, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {VmValue::Ref(service_name)})
-                .ref;
+            f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {str("location")}).ref;
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
         REQUIRE(manager.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(manager)).is_boot_dex);
+        CHECK(f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {str("location")}).ref ==
+              manager);
+        const auto service = f.Static("Landroid/os/ServiceManager;", "getService",
+                                      "(Ljava/lang/String;)Landroid/os/IBinder;", {str("location")})
+                                 .ref;
+        const auto service_root = f.vm.ProtectReferences(std::array{service});
+        const auto criteria = f.New("Landroid/location/Criteria;");
+        const auto criteria_root = f.vm.ProtectReferences(std::array{criteria});
+        const auto list = [&](VmObjectRef items) {
+            const auto root = f.vm.ProtectReferences(std::array{items});
+            std::vector<std::string> names;
+            const auto count = f.On(items, "size", "()I").AsInt();
+            for (int i = 0; i < count; ++i)
+                names.push_back(f.vm.StringUtf8(f.On(items, "get", "(I)Ljava/lang/Object;", {VmValue::Int(i)}).ref));
+            return names;
+        };
+        const auto providers = [&](bool enabled) {
+            return list(f.On(manager, "getProviders", "(Z)Ljava/util/List;", {VmValue::Int(enabled)}).ref);
+        };
+        const auto best = [&](bool enabled) {
+            return f
+                .On(manager, "getBestProvider", "(Landroid/location/Criteria;Z)Ljava/lang/String;",
+                    {VmValue::Ref(criteria), VmValue::Int(enabled)})
+                .ref;
+        };
+        const auto fail = [&](const VmCallOutcome& outcome, std::string_view type) {
+            REQUIRE_MESSAGE(outcome.exception.IsValid(), outcome.exception_message);
+            CHECK(f.linker.Class(outcome.exception_class).descriptor == type);
+        };
+        constexpr auto kSecurity = "Ljava/lang/SecurityException;";
+        constexpr auto kBadArgument = "Ljava/lang/IllegalArgumentException;";
+        constexpr auto kProviderBool = "(Ljava/lang/String;)Z";
+        const auto callback = f.New("Ltest/LocationListener;");
+        const auto callback_root = f.vm.ProtectReferences(std::array{callback});
+        const auto subscribe = [&](std::string_view name, int interval) {
+            return f.OnOutcome(
+                manager, "requestLocationUpdates",
+                "(Ljava/lang/String;JFLandroid/location/LocationListener;Landroid/os/Looper;)V",
+                {str(name), VmValue::Long(interval), VmValue::Float(0.0F), VmValue::Ref(callback), null});
+        };
+
+        CHECK(list(f.On(manager, "getAllProviders", "()Ljava/util/List;").ref) ==
+              std::vector<std::string>{"passive", "gps", "network"});
+        CHECK(providers(false).empty());
+        fail(subscribe("network", 0), kSecurity);
+        fail(f.OnOutcome(manager, "isProviderEnabled", kProviderBool, {str("gps")}), kSecurity);
+
+        f.context->requested_permissions = {"android.permission.ACCESS_COARSE_LOCATION"};
+        CHECK(providers(false) == std::vector<std::string>{"network"});
+        CHECK(providers(true).empty());
+        CHECK_FALSE(best(true).IsValid());
+        CHECK(f.vm.StringUtf8(best(false)) == "network");
+        fail(subscribe("gps", 0), kSecurity);
+
+        f.context->requested_permissions = {"android.permission.ACCESS_FINE_LOCATION"};
+        CHECK(providers(true) == std::vector<std::string>{"passive"});
+        CHECK(f.vm.StringUtf8(best(true)) == "passive");
+        CHECK(f.vm.StringUtf8(best(false)) == "gps");
+        for (const auto& [name, enabled] :
+             std::array{std::pair{"gps", false}, std::pair{"network", false}, std::pair{"passive", true}}) {
+            CHECK(f.On(manager, "isProviderEnabled", kProviderBool, {str(name)}).AsInt() == enabled);
+            CHECK(f.On(service, "providerMeetsCriteria", "(Ljava/lang/String;Landroid/location/Criteria;)Z",
+                       {str(name), VmValue::Ref(criteria)})
+                      .AsInt() == (std::string_view(name) != "passive"));
+        }
+        const auto properties =
+            f.On(service, "getProviderProperties",
+                 "(Ljava/lang/String;)Lcom/android/internal/location/ProviderProperties;", {str("network")})
+                .ref;
+        REQUIRE(properties.IsValid());
+        for (const auto& [field, expected] : std::array{
+                 std::pair{"mRequiresNetwork", true},
+                 std::pair{"mRequiresSatellite", false},
+                 std::pair{"mRequiresCell", true},
+                 std::pair{"mHasMonetaryCost", false},
+                 std::pair{"mSupportsAltitude", false},
+                 std::pair{"mSupportsSpeed", false},
+                 std::pair{"mSupportsBearing", false},
+             }) {
+            const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(properties), field, "Z");
+            REQUIRE(id.has_value());
+            CHECK(f.model.InstanceSlots(properties)[f.linker.Field(*id).slot].bits == static_cast<unsigned>(expected));
+        }
+        f.On(criteria, "setAccuracy", "(I)V", {VmValue::Int(1)});
+        CHECK(f.On(service, "providerMeetsCriteria", "(Ljava/lang/String;Landroid/location/Criteria;)Z",
+                   {str("network"), VmValue::Ref(criteria)})
+                  .AsInt() == 0);
+        CHECK_FALSE(
+            f.On(manager, "getLastKnownLocation", "(Ljava/lang/String;)Landroid/location/Location;", {str("gps")})
+                .ref.IsValid());
+        fail(subscribe("unknown", 0), kBadArgument);
+
+        auto& registrations = f.context->location_registrations;
+        for (const auto interval : {1000, 2000}) {
+            const auto result = subscribe("network", interval);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            REQUIRE(registrations.receivers.size() == 1);
+            const auto& requests = registrations.receivers.begin()->second.requests;
+            REQUIRE(requests.size() == 1);
+            static_cast<void>(f.vm.CollectGarbage("dvm156-retained-request"));
+            CHECK(f.On(requests.at("network"), "getInterval", "()J").AsLong() == interval);
+            REQUIRE_FALSE(DispatchFixtureMessages(f.vm, *f.context).has_value());
+        }
+        REQUIRE_FALSE(subscribe("gps", 3000).exception.IsValid());
+        REQUIRE(registrations.receivers.size() == 1);
+        CHECK(registrations.receivers.begin()->second.requests.size() == 2);
+        for (int i = 0; i < 2; ++i)
+            f.On(manager, "removeUpdates", "(Landroid/location/LocationListener;)V", {VmValue::Ref(callback)});
+        CHECK(registrations.receivers.empty());
+        REQUIRE_FALSE(DispatchFixtureMessages(f.vm, *f.context).has_value());
+        CHECK(disabled == std::vector<std::string>{"network", "network", "gps"});
+        CHECK(location_callbacks == 0);
+
+        fail(f.OnOutcome(service, "removeTestProvider", "(Ljava/lang/String;)V", {str("gps")}), kSecurity);
+        fail(f.OnOutcome(service, "reportLocation", "(Landroid/location/Location;Z)V", {null, VmValue::Int(0)}),
+             kSecurity);
+        fail(f.OnOutcome(service, "sendNiResponse", "(II)Z", {VmValue::Int(0), VmValue::Int(0)}), kSecurity);
+        constexpr auto kExtraCommand = "(Ljava/lang/String;Ljava/lang/String;Landroid/os/Bundle;)Z";
+        fail(f.OnOutcome(service, "sendExtraCommand", kExtraCommand, {str("gps"), str("force_time_injection"), null}),
+             kSecurity);
+        f.context->requested_permissions.emplace_back("android.permission.ACCESS_LOCATION_EXTRA_COMMANDS");
         CHECK(
-            fixture
-                .On(context, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {VmValue::Ref(service_name)})
-                .ref == manager);
-        CHECK(fixture.model.ObjectClass(manager) ==
-              fixture.linker.ResolveDescriptor("Landroid/location/LocationManager;"));
+            f.On(service, "sendExtraCommand", kExtraCommand, {str("gps"), str("force_time_injection"), null}).AsInt() ==
+            1);
+        CHECK(
+            f.On(service, "sendExtraCommand", kExtraCommand, {str("gps"), str("force_xtra_injection"), null}).AsInt() ==
+            0);
 
-        CHECK(fixture.linker.Class(fixture.model.ObjectClass(manager)).is_boot_dex);
-        const auto criteria = fixture.New("Landroid/location/Criteria;");
-        CHECK_FALSE(fixture
-                        .On(manager, "getBestProvider", "(Landroid/location/Criteria;Z)Ljava/lang/String;",
-                            {VmValue::Ref(criteria), VmValue::Int(1)})
-                        .ref.IsValid());
-        const auto provider = fixture.vm.NewStringUtf8("gps");
-        CHECK_FALSE(fixture
-                        .On(manager, "getLastKnownLocation", "(Ljava/lang/String;)Landroid/location/Location;",
-                            {VmValue::Ref(provider)})
-                        .ref.IsValid());
+        const auto resolver = f.On(base, "getContentResolver", "()Landroid/content/ContentResolver;").ref;
+        const auto resolver_root = f.vm.ProtectReferences(std::array{resolver});
+        for (const auto& [key, value] :
+             std::array{std::pair{"location_providers_allowed", ""}, std::pair{"location_mode", "0"},
+                        std::pair{"allow_mock_location", "0"}}) {
+            const auto result = f.Static("Landroid/provider/Settings$Secure;", "getString",
+                                         "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;",
+                                         {VmValue::Ref(resolver), str(key)})
+                                    .ref;
+            CHECK(f.vm.StringUtf8(result) == value);
+        }
+        for (const auto* name : {"gps", "network", "passive"}) {
+            // Secure checks the allow-list; LMS separately force-enables passive.
+            CHECK(f.Static("Landroid/provider/Settings$Secure;", "isLocationProviderEnabled",
+                           "(Landroid/content/ContentResolver;Ljava/lang/String;)Z",
+                           {VmValue::Ref(resolver), str(name)})
+                      .AsInt() == 0);
+        }
 
-        const auto callback = fixture.New("Ltest/LocationListener;");
-        const auto request = fixture.OnOutcome(manager, "requestLocationUpdates",
-                                               "(Ljava/lang/String;JFLandroid/location/LocationListener;"
-                                               "Landroid/os/Looper;)V",
-                                               {VmValue::Ref(provider), VmValue::Long(0), VmValue::Float(0.0F),
-                                                VmValue::Ref(callback), VmValue::Ref(VmObjectRef{})});
-        REQUIRE(request.exception.IsValid());
-        CHECK(fixture.linker.Class(request.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        const auto remove = fixture.OnOutcome(manager, "removeUpdates", "(Landroid/location/LocationListener;)V",
-                                              {VmValue::Ref(callback)});
-        REQUIRE(remove.exception.IsValid());
-        CHECK(fixture.linker.Class(remove.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        const auto hits = fixture.ledger.Unimplemented();
-        REQUIRE(hits.size() == 2);
-        CHECK(hits[0].id.starts_with("android.location.ILocationManager."));
-        CHECK(hits[1].id.starts_with("android.location.ILocationManager."));
-        CHECK(hits[0].count == 1);
-        CHECK(hits[1].count == 1);
+        const auto intent = f.New("Landroid/content/Intent;");
+        const auto operation =
+            f.Static("Landroid/app/PendingIntent;", "getBroadcast",
+                     "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;",
+                     {VmValue::Ref(base), VmValue::Int(4), VmValue::Ref(intent), VmValue::Int(0)})
+                .ref;
+        const auto operation_root = f.vm.ProtectReferences(std::array{operation});
+        const auto request = f.New("Landroid/location/LocationRequest;");
+        const auto request_root = f.vm.ProtectReferences(std::array{request});
+        f.On(request, "setProvider", "(Ljava/lang/String;)Landroid/location/LocationRequest;", {str("network")});
+        constexpr auto kRequest = "(Landroid/location/LocationRequest;Landroid/location/ILocationListener;"
+                                  "Landroid/app/PendingIntent;Ljava/lang/String;)V";
+        fail(f.OnOutcome(service, "requestLocationUpdates", kRequest,
+                         {null, null, VmValue::Ref(operation), str("fixture")}),
+             kBadArgument);  // DEFAULT_LOCATION_REQUEST names fused, which this device omits.
+        fail(f.OnOutcome(service, "requestLocationUpdates", kRequest,
+                         {VmValue::Ref(request), null, VmValue::Ref(operation), str("fixture")}),
+             "Ljava/lang/UnsupportedOperationException;");
+        CHECK(registrations.receivers.empty());
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits.front().id == "dexvm.location_pending_intent_delivery");
+
+        constexpr auto kGeofence = "(Landroid/location/LocationRequest;Landroid/location/Geofence;"
+                                   "Landroid/app/PendingIntent;Ljava/lang/String;)V";
+        for (int i = 0; i < 2; ++i) {
+            const auto fence =
+                f.Static("Landroid/location/Geofence;", "createCircle", "(DDF)Landroid/location/Geofence;",
+                         {VmValue::Double(0), VmValue::Double(0), VmValue::Float(10)})
+                    .ref;
+            const auto fence_root = f.vm.ProtectReferences(std::array{fence});
+            f.On(service, "requestGeofence", kGeofence,
+                 {null, VmValue::Ref(fence), VmValue::Ref(operation), str("fixture")});
+        }
+        CHECK(registrations.geofences.size() == 1);
+        f.On(service, "removeGeofence", "(Landroid/location/Geofence;Landroid/app/PendingIntent;Ljava/lang/String;)V",
+             {null, VmValue::Ref(operation), str("fixture")});
+        CHECK(registrations.geofences.empty());
     }
+}
+
+TEST_CASE("Local device services enforce permissions and retain session changes") {
+    AndroidValueVm f;
+    const auto string = [&](const char* value) { return VmValue::Ref(f.vm.NewStringUtf8(value)); };
+    const auto service = [&](const char* name) {
+        return f
+            .Static("Landroid/os/ServiceManager;", "getService", "(Ljava/lang/String;)Landroid/os/IBinder;",
+                    {string(name)})
+            .ref;
+    };
+    const auto denied = [&](const VmCallOutcome& outcome) {
+        REQUIRE_MESSAGE(outcome.exception.IsValid(), outcome.exception_message);
+        CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/SecurityException;");
+    };
+    const auto null = VmValue::Ref(VmObjectRef{});
+    const auto zero = VmValue::Int(0);
+    const auto one = VmValue::Int(1);
+    const auto power = service("power");
+    CHECK(f.On(power, "isScreenOn", "()Z").AsInt() == f.context->device_state.power.screen_on);
+    denied(f.OnOutcome(power, "reboot", "(ZLjava/lang/String;Z)V", {zero, null, zero}));
+    const auto token = f.New("Landroid/os/Binder;");
+    const auto token_root = f.vm.ProtectReferences(std::array{token});
+    constexpr auto acquire = "(Landroid/os/IBinder;ILjava/lang/String;Ljava/lang/String;Landroid/os/WorkSource;)V";
+    denied(f.OnOutcome(power, "acquireWakeLock", acquire, {VmValue::Ref(token), one, string("fixture"), null, null}));
+    f.context->requested_permissions.emplace_back("android.permission.WAKE_LOCK");
+    f.On(power, "acquireWakeLock", acquire, {VmValue::Ref(token), one, string("fixture"), null, null});
+    CHECK(f.context->device_state.power.wake_locks.contains(token));
+    f.On(power, "releaseWakeLock", "(Landroid/os/IBinder;I)V", {VmValue::Ref(token), zero});
+    CHECK(f.context->device_state.power.wake_locks.empty());
+
+    const auto audio = service("audio");
+    const auto stream = VmValue::Int(3);
+    CHECK(f.On(audio, "getStreamVolume", "(I)I", {stream}).AsInt() == 11);
+    CHECK(f.On(audio, "getStreamMaxVolume", "(I)I", {stream}).AsInt() == 15);
+    f.On(audio, "setStreamVolume", "(IIILjava/lang/String;)V", {stream, one, zero, null});
+    CHECK(f.On(audio, "getStreamVolume", "(I)I", {stream}).AsInt() == 1);
+    f.On(audio, "setRingerMode", "(I)V", {zero});
+    CHECK(f.On(audio, "getRingerMode", "()I").AsInt() == 0);
+    denied(f.OnOutcome(audio, "setRingtonePlayer", "(Landroid/media/IRingtonePlayer;)V", {null}));
+
+    const auto content = service("content");
+    denied(f.OnOutcome(content, "setMasterSyncAutomatically", "(Z)V", {one}));
+    f.context->requested_permissions.emplace_back("android.permission.READ_SYNC_SETTINGS");
+    CHECK_FALSE(f.On(content, "getMasterSyncAutomatically", "()Z").AsInt());
+    f.context->requested_permissions.emplace_back("android.permission.WRITE_SYNC_SETTINGS");
+    f.On(content, "setMasterSyncAutomatically", "(Z)V", {one});
+    CHECK(f.On(content, "getMasterSyncAutomatically", "()Z").AsInt());
+
+    const auto mount = service("mount");
+    CHECK_FALSE(f.On(mount, "isObbMounted", "(Ljava/lang/String;)Z", {string("/sdcard/test.obb")}).AsInt());
+    denied(f.OnOutcome(mount, "formatVolume", "(Ljava/lang/String;)I", {string("/sdcard")}));
+    const auto obb =
+        f.OnOutcome(mount, "mountObb",
+                    "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Landroid/os/storage/IObbActionListener;I)V",
+                    {null, null, null, null, zero});
+    REQUIRE(obb.exception.IsValid());
+    CHECK(f.linker.Class(obb.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+    const auto hits = f.ledger.Unimplemented();
+    CHECK(std::ranges::any_of(
+        hits, [](const auto& hit) { return hit.id.starts_with("android.os.storage.IMountService.mountObb"); }));
+
+    const auto usb = service("usb");
+    CHECK_FALSE(f.On(usb, "getCurrentAccessory", "()Landroid/hardware/usb/UsbAccessory;").ref.IsValid());
+    denied(f.OnOutcome(usb, "denyUsbDebugging", "()V"));
+    const auto accessibility = service("accessibility");
+    const auto enabled =
+        f.On(accessibility, "getEnabledAccessibilityServiceList", "(II)Ljava/util/List;", {one, zero}).ref;
+    CHECK(f.On(enabled, "size", "()I").AsInt() == 0);
+    denied(f.OnOutcome(accessibility, "temporaryEnableAccessibilityStateUntilKeyguardRemoved",
+                       "(Landroid/content/ComponentName;Z)V", {null, zero}));
+    const auto text = service("textservices");
+    CHECK_FALSE(f.On(text, "isSpellCheckerEnabled", "()Z").AsInt());
+    denied(f.OnOutcome(text, "setSpellCheckerEnabled", "(Z)V", {one}));
+    denied(f.OnOutcome(service("backup"), "isBackupEnabled", "()Z"));
+    denied(f.OnOutcome(service("activity"), "forceStopPackage", "(Ljava/lang/String;I)V", {null, zero}));
+    denied(f.OnOutcome(service("package"), "enterSafeMode", "()V"));
+    denied(f.OnOutcome(service("phone"), "setRadioPower", "(Z)Z", {one}));
+    CHECK(f.On(service("phone"), "getDataState", "()I").AsInt() == f.context->device_state.telephony.data_state);
+    denied(f.OnOutcome(service("iphonesubinfo"), "getCompleteVoiceMailNumber", "()Ljava/lang/String;"));
+}
+
+TEST_CASE("Local AIDL coverage tracks unbound abstract methods") {
+    AndroidValueVm f;
+    constexpr std::string_view prefix = "Lorg/ogplay/framework/";
+    bool checked_location = false;
+    for (const auto id : f.linker.AllClasses()) {
+        const auto descriptor = f.linker.Class(id).descriptor;
+        if (!std::string_view(descriptor).starts_with("Lorg/ogplay/framework/Local")) continue;
+        const auto type = f.linker.ResolveDescriptor(descriptor);
+        const auto& linked = f.linker.Class(type);
+        const auto name = std::string_view(descriptor).substr(prefix.size(), descriptor.size() - prefix.size() - 1);
+        checked_location |= name == "LocalLocationService";
+        std::set<std::string> gaps;
+        const auto check_contract = [&](DexClassId owner) {
+            for (const auto method_id : f.linker.Class(owner).own_virtual_methods) {
+                const auto& method = f.linker.Method(method_id);
+                if (!(method.access_flags & kAccAbstract)) continue;
+                const auto slot = f.linker.FindVtableIndex(type, method.name, method.descriptor);
+                if (!slot || (f.linker.Method(linked.vtable[*slot]).access_flags & kAccAbstract))
+                    gaps.insert(method.name + method.descriptor);
+            }
+        };
+        for (const auto interface : linked.interfaces)
+            check_contract(interface);
+        for (auto parent = linked.super; parent; parent = f.linker.Class(*parent).super)
+            check_contract(*parent);
+
+        if (!gaps.empty()) {
+            std::string missing;
+            for (const auto& gap : gaps)
+                missing += "\n" + descriptor + "->" + gap;
+            CHECK_MESSAGE(gaps.empty(), missing);
+        }
+    }
+    CHECK(checked_location);
 }
 
 TEST_CASE("DVM-166 keyguard facade reads the replaceable platform snapshot") {
@@ -1030,6 +1324,13 @@ TEST_CASE("DVM-241 offline connectivity distinguishes unsupported types and pres
         const auto state = f.On(info, "getState", "()Landroid/net/NetworkInfo$State;").ref;
         CHECK(f.vm.StringUtf8(f.On(state, "name", "()Ljava/lang/String;").ref) == "DISCONNECTED");
         CHECK(f.On(info, "getReason", "()Ljava/lang/String;").ref == VmObjectRef{});
+        const auto all = f.On(manager, "getAllNetworkInfo", "()[Landroid/net/NetworkInfo;").ref;
+        const auto all_root = f.vm.ProtectReferences(std::array{all});
+        REQUIRE(all.IsValid());
+        REQUIRE(f.model.ArrayLength(all) == 1);
+        const auto listed = f.model.GetObjectElement(all, 0);
+        CHECK(f.On(listed, "getType", "()I").AsInt() == 1);
+        CHECK(f.On(listed, "getState", "()Landroid/net/NetworkInfo$State;").ref == state);
         const auto copy = f.New("Landroid/net/NetworkInfo;", "(Landroid/net/NetworkInfo;)V", {VmValue::Ref(info)});
         const auto copy_root = f.vm.ProtectReferences(std::array{copy});
         CHECK(copy != info);
@@ -1070,9 +1371,17 @@ TEST_CASE("DVM-241 offline connectivity distinguishes unsupported types and pres
                               .ref;
         REQUIRE(wifi.IsValid());
         const auto wifi_root = f.vm.ProtectReferences(std::array{wifi});
-        CHECK_FALSE(f.On(wifi, "isWifiEnabled", "()Z").AsInt());
-        CHECK(f.On(wifi, "getWifiState", "()I").AsInt() == 1);
         fail(f.OnOutcome(wifi, "getConnectionInfo", "()Landroid/net/wifi/WifiInfo;"), "Ljava/lang/SecurityException;");
+        fail(f.OnOutcome(wifi, "getWifiState", "()I"), "Ljava/lang/SecurityException;");
+        f.context->requested_permissions.emplace_back("android.permission.ACCESS_WIFI_STATE");
+        CHECK(f.On(wifi, "isWifiEnabled", "()Z").AsInt());
+        CHECK(f.On(wifi, "getWifiState", "()I").AsInt() == 3);
+        fail(f.OnOutcome(wifi, "setWifiEnabled", "(Z)Z", {VmValue::Int(0)}), "Ljava/lang/SecurityException;");
+        f.context->requested_permissions.emplace_back("android.permission.CHANGE_WIFI_STATE");
+        CHECK(f.On(wifi, "setWifiEnabled", "(Z)Z", {VmValue::Int(0)}).AsInt());
+        CHECK_FALSE(f.On(wifi, "isWifiEnabled", "()Z").AsInt());
+        CHECK(f.On(wifi, "setWifiEnabled", "(Z)Z", {VmValue::Int(1)}).AsInt());
+
         CHECK_THROWS_AS(static_cast<void>(f.vm.Network().Resolve("offline.test")), NetworkRuntimeError);
         f.context->offline_connectivity->wifi_type_supported = false;
         const auto unsupported = query(1);
@@ -1432,33 +1741,34 @@ TEST_CASE("DVM-332 ContentObserver process tree dispatch and Settings changes") 
             CAPTURE(hit.id);
         for (const auto& hit : f.ledger.Unimplemented())
             CHECK_MESSAGE(false, hit.id);
+        f.context->requested_permissions.emplace_back("android.permission.WRITE_SETTINGS");
         const auto put = [&](const char* table, const char* value) {
             events.clear();
-            const auto result =
-                f.Static(table, "putString", "(Landroid/content/ContentResolver;Ljava/lang/String;Ljava/lang/String;)Z",
-                         {VmValue::Ref(resolver), VmValue::Ref(f.vm.NewStringUtf8("accelerometer_rotation")),
-                          VmValue::Ref(value ? f.vm.NewStringUtf8(value) : VmObjectRef{})});
+            const auto result = f.StaticOutcome(
+                table, "putString", "(Landroid/content/ContentResolver;Ljava/lang/String;Ljava/lang/String;)Z",
+                {VmValue::Ref(resolver), VmValue::Ref(f.vm.NewStringUtf8("accelerometer_rotation")),
+                 VmValue::Ref(value ? f.vm.NewStringUtf8(value) : VmObjectRef{})});
             CHECK(events.empty());
             CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
-            return result.AsInt();
+            return result;
         };
-        CHECK(put("Landroid/provider/Settings$System;", "1") == 1);
+        CHECK(put("Landroid/provider/Settings$System;", "1").value.AsInt() == 1);
         CHECK(count(exact) == 1);
         REQUIRE_FALSE(events.empty());
         CHECK(f.On(events[0].uri, "toString", "()Ljava/lang/String;").ref.IsValid());
         CHECK(f.vm.StringUtf8(f.On(events[0].uri, "toString", "()Ljava/lang/String;").ref) ==
               "content://settings/system/accelerometer_rotation");
-        CHECK(put("Landroid/provider/Settings$System;", "1") == 1);
+        CHECK(put("Landroid/provider/Settings$System;", "1").value.AsInt() == 1);
         CHECK(events.empty());
-        CHECK(put("Landroid/provider/Settings$System;", "0") == 1);
+        CHECK(put("Landroid/provider/Settings$System;", "0").value.AsInt() == 1);
         CHECK(count(exact) == 1);
-        CHECK(put("Landroid/provider/Settings$System;", nullptr) == 1);
+        CHECK(put("Landroid/provider/Settings$System;", nullptr).value.AsInt() == 1);
         CHECK(count(exact) == 1);
-        CHECK(put("Landroid/provider/Settings$System;", nullptr) == 1);
+        CHECK(put("Landroid/provider/Settings$System;", nullptr).value.AsInt() == 1);
         CHECK(events.empty());
-        CHECK(put("Landroid/provider/Settings$Secure;", "1") == 0);
+        fail(put("Landroid/provider/Settings$Secure;", "1"), "Ljava/lang/SecurityException;");
         CHECK(events.empty());
-        CHECK(put("Landroid/provider/Settings$Global;", "1") == 0);
+        fail(put("Landroid/provider/Settings$Global;", "1"), "Ljava/lang/SecurityException;");
         CHECK(events.empty());
         unreg(parent);
         unreg(exact);
@@ -1488,22 +1798,34 @@ TEST_CASE("ROM SmsManager uses local ISms and rejects SMS delivery") {
         const auto destination = f.vm.NewStringUtf8("+1234567890");
         const auto destination_root = f.vm.ProtectReferences(std::array{destination});
         const auto body = f.vm.NewStringUtf8("hello");
-        const auto failure = f.OnOutcome(
-            manager, "sendTextMessage",
-            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Landroid/app/PendingIntent;Landroid/app/PendingIntent;)V",
-            {VmValue::Ref(destination), VmValue::Ref(VmObjectRef{}), VmValue::Ref(body), VmValue::Ref(VmObjectRef{}),
-             VmValue::Ref(VmObjectRef{})});
-        REQUIRE_MESSAGE(failure.exception.IsValid(), failure.exception_message);
+        const auto body_root = f.vm.ProtectReferences(std::array{body});
+        const auto send = [&] {
+            return f.OnOutcome(
+                manager, "sendTextMessage",
+                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Landroid/app/PendingIntent;Landroid/app/PendingIntent;)V",
+                {VmValue::Ref(destination), VmValue::Ref(VmObjectRef{}), VmValue::Ref(body),
+                 VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        };
+        const auto denied = send();
+        REQUIRE(denied.exception.IsValid());
+        CHECK(f.linker.Class(denied.exception_class).descriptor == "Ljava/lang/SecurityException;");
+        f.context->requested_permissions.emplace_back("android.permission.SEND_SMS");
+        const auto failure = send();
+        REQUIRE(failure.exception.IsValid());
         CHECK(f.linker.Class(failure.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         const auto icc = f.OnOutcome(binder, "getAllMessagesFromIccEf", "(Ljava/lang/String;)Ljava/util/List;",
                                      {VmValue::Ref(f.vm.NewStringUtf8("fixture"))});
         REQUIRE(icc.exception.IsValid());
-        CHECK(f.linker.Class(icc.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(f.linker.Class(icc.exception_class).descriptor == "Ljava/lang/SecurityException;");
+        f.context->requested_permissions.emplace_back("android.permission.RECEIVE_SMS");
+        const auto messages = f.On(binder, "getAllMessagesFromIccEf", "(Ljava/lang/String;)Ljava/util/List;",
+                                   {VmValue::Ref(f.vm.NewStringUtf8("fixture"))})
+                                  .ref;
+        CHECK(f.On(messages, "size", "()I").AsInt() == 0);
         const auto hits = f.ledger.Unimplemented();
-        for (const auto name : {"sendText(", "getAllMessagesFromIccEf("})
-            CHECK(std::ranges::any_of(hits, [&](const auto& hit) {
-                return hit.id.starts_with(std::string("com.android.internal.telephony.ISms.") + name) && hit.count == 1;
-            }));
+        CHECK(std::ranges::any_of(hits, [](const auto& hit) {
+            return hit.id.starts_with("com.android.internal.telephony.ISms.sendText(") && hit.count == 1;
+        }));
     }
 }
 

@@ -18,10 +18,17 @@ using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
 dx::VmObjectRef CreateApplicationResources(dx::IntrinsicContext& call, const Context& context);
 void InitializeAndroidSystemProperties(dx::Interpreter& vm, const Context& context);
+void EnsureLocalConnectivityBroadcast(dx::IntrinsicContext& call, const Context& context);
 
 // Normal guest dispatch; preserve Java exception identity across the boundary.
 void RejectUnsupportedServiceMethod(dx::IntrinsicClassBuilder& builder, std::string_view owner, const char* name,
                                     const char* descriptor);
+// The caller is always the current APK. Platform-only permissions are denied
+// by the declaration even if the APK requested them.
+void RequireServicePermission(const Context& context, const char* permission);
+void DenyServiceMethod(dx::IntrinsicClassBuilder& builder, const char* name, const char* descriptor,
+                       const char* permission);
+[[nodiscard]] dx::VmObjectRef NewServiceArray(dx::Interpreter& vm, const char* descriptor, JniSize size = 0);
 [[nodiscard]] dx::VmObjectRef NewPlatformObject(dx::Interpreter& vm, const char* type, const char* signature,
                                                 std::vector<dx::VmValue> arguments);
 [[nodiscard]] dx::VmObjectRef GetLocalServiceInterface(dx::Interpreter& vm, const char* name, const char* stub,

@@ -342,6 +342,11 @@ TEST_CASE("DVM-240 installed applications use sealed facts independent values an
         };
         unsupported(query(0));  // Populated fields alone do not seal the inventory.
         context.package_inventory_known = true;
+        const auto packages = f.On(manager, "getInstalledPackages", "(I)Ljava/util/List;", {VmValue::Int(0)}).ref;
+        const auto packages_root = f.vm.ProtectReferences(std::array{packages});
+        REQUIRE(f.On(packages, "size", "()I").AsInt() == 1);
+        const auto entry = f.On(packages, "get", "(I)Ljava/lang/Object;", {VmValue::Int(0)}).ref;
+        CHECK(f.vm.StringUtf8(ref(entry, "packageName")) == context.package_name);
         const auto plain = query(0);
         REQUIRE_FALSE(plain.exception.IsValid());
         const auto list = plain.value.ref;

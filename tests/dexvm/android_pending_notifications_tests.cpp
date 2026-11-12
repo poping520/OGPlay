@@ -39,7 +39,7 @@ using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
-TEST_CASE("DVM-224 notification cancellation uses an explicit empty application inventory") {
+TEST_CASE("DVM-224 notification posting and cancellation use the session inventory") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         auto foreign =
             IntrinsicClassBuilder::Class("Ltest/ForeignNotificationContext;", "Landroid/content/ContextWrapper;");
@@ -94,14 +94,16 @@ TEST_CASE("DVM-224 notification cancellation uses an explicit empty application 
         REQUIRE(null_post.exception.IsValid());
         CHECK(f.linker.Class(null_post.exception_class).descriptor == "Ljava/lang/NullPointerException;");
         const auto notification = f.New("Landroid/app/Notification;");
-        const auto rejected = f.OnOutcome(manager, "notify", "(ILandroid/app/Notification;)V",
-                                          {VmValue::Int(1), VmValue::Ref(notification)});
-        REQUIRE(rejected.exception.IsValid());
-        CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        const auto hits = f.ledger.Unimplemented();
-        REQUIRE(hits.size() == 1);
-        CHECK(hits[0].id == "dexvm.notification_post");
-        CHECK(hits[0].count == 1);
+        const auto post = f.OnOutcome(manager, "notify", "(ILandroid/app/Notification;)V",
+                                      {VmValue::Int(1), VmValue::Ref(notification)});
+        REQUIRE_MESSAGE(!post.exception.IsValid(), post.exception_message);
+        REQUIRE(f.context->device_state.notifications.size() == 1);
+        const auto stored = f.context->device_state.notifications.begin()->second;
+        static_cast<void>(f.vm.CollectGarbage("notification-inventory"));
+        CHECK(f.model.IsValidRef(stored));
+        f.On(manager, "cancel", "(I)V", {VmValue::Int(1)});
+        CHECK(f.context->device_state.notifications.empty());
+        CHECK(f.ledger.Unimplemented().empty());
         const auto other = f.vm.NewIntrinsicInstance("Ltest/ForeignNotificationContext;");
         f.On(other, "attachBaseContext", "(Landroid/content/Context;)V", {VmValue::Ref(base)});
         CHECK(f.On(other, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
@@ -456,11 +458,9 @@ TEST_CASE("DVM227 ROM notification values preserve constructors and local Parcel
                                  .ref;
         const auto post = f.OnOutcome(manager, "notify", "(ILandroid/app/Notification;)V",
                                       {VmValue::Int(1), VmValue::Ref(notification)});
-        REQUIRE(post.exception.IsValid());
-        CHECK(f.linker.Class(post.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        REQUIRE_MESSAGE(!post.exception.IsValid(), post.exception_message);
+        CHECK(f.context->device_state.notifications.size() == 1);
         f.On(manager, "cancelAll", "()V");
-        CHECK(std::ranges::any_of(f.ledger.Unimplemented(), [](const auto& hit) {
-            return hit.id == "dexvm.notification_post" && hit.count == 1;
-        }));
+        CHECK(f.context->device_state.notifications.empty());
     }
 }

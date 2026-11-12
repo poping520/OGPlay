@@ -65,36 +65,284 @@ Decl Declare_android_media_AudioSystem_Natives(const Context& context) {
     return std::move(builder).Build();
 }
 
+namespace {
+std::size_t ServiceStream(dx::IntrinsicContext& call, std::size_t argument = 0) {
+    const auto stream = call.arguments[argument].AsInt();
+    if (stream < 0 || stream >= static_cast<int>(SimulatedDeviceState::Audio::max_volume.size()))
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Invalid audio stream"};
+    return static_cast<std::size_t>(stream);
+}
+
+void DispatchAudioFocus(dx::Interpreter& vm, const SimulatedDeviceState::Audio::Focus& entry, int change) {
+    if (!entry.dispatcher.IsValid()) return;
+    const auto roots = vm.ProtectReferences(std::array{entry.dispatcher, entry.token});
+    static_cast<void>(CallAndroidMethod(vm, entry.dispatcher, "dispatchAudioFocusChange", "(ILjava/lang/String;)V",
+                                        {dx::VmValue::Int(change), dx::VmValue::Ref(vm.NewStringUtf8(entry.client))}));
+}
+
+void RemoveAudioFocus(dx::IntrinsicContext& call, const Context& context, std::size_t index, bool notify) {
+    auto& stack = context->device_state.audio.focus;
+    const auto id = call.vm.StringUtf8(dx::IntrinsicCall(call).NonNullRef(index, "clientId"));
+    const auto entry = std::ranges::find(stack, id, &SimulatedDeviceState::Audio::Focus::client);
+    if (entry == stack.end()) return;
+    const auto was_top = std::next(entry) == stack.end();
+    stack.erase(entry);
+    if (notify && was_top && !stack.empty()) {
+        stack.back().loss = 0;
+        DispatchAudioFocus(call.vm, stack.back(), 1);
+    }
+}
+}  // namespace
+
 Decl Declare_local_AudioService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalAudioService;",
                                                     "Landroid/media/IAudioService$Stub;");
-    builder.VirtualMethod("getRingerMode", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(2); });
-    builder.VirtualMethod("getStreamMaxVolume", "(I)I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(15); });
+    using Audio = SimulatedDeviceState::Audio;
+    builder.VirtualMethod("getRingerMode", "()I", [context](dx::IntrinsicContext&) {
+        return dx::VmValue::Int(context->device_state.audio.ringer_mode);
+    });
+    builder.VirtualMethod("setRingerMode", "(I)V", [context](dx::IntrinsicContext& call) {
+        const auto mode = call.arguments[0].AsInt();
+        if (mode < 0 || mode > 2) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Invalid ringer mode"};
+        context->device_state.audio.ringer_mode = mode == 1 ? 0 : mode;  // No vibrator.
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("getStreamMaxVolume", "(I)I", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(Audio::max_volume[ServiceStream(call)]);
+    });
     builder.VirtualMethod("getStreamVolume", "(I)I", [context](dx::IntrinsicContext& call) {
-        const auto stream = call.arguments[0].AsInt();
-        if (stream < 0 || stream >= 10) return dx::VmValue::Int(0);
-        std::scoped_lock lock(context->audio_policy_mutex);
-        if (context->stream_mute[static_cast<std::size_t>(stream)]) {
-            return dx::VmValue::Int(0);
-        }
-        return dx::VmValue::Int(context->stream_volume[static_cast<std::size_t>(stream)]);
+        const auto stream = ServiceStream(call);
+        const auto& audio = context->device_state.audio;
+        return dx::VmValue::Int(audio.mute[stream] ? 0 : audio.volume[stream]);
+    });
+    builder.VirtualMethod("getLastAudibleStreamVolume", "(I)I", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(context->device_state.audio.volume[ServiceStream(call)]);
+    });
+    builder.VirtualMethod("isStreamMute", "(I)Z", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(context->device_state.audio.mute[ServiceStream(call)]);
     });
     builder.VirtualMethod("setStreamVolume", "(IIILjava/lang/String;)V", [context](dx::IntrinsicContext& call) {
-        const auto stream = call.arguments[0].AsInt();
-        if (stream < 0 || stream >= 10) return dx::VmValue::Void();
+        const auto stream = ServiceStream(call);
+        context->device_state.audio.volume[stream] =
+            std::clamp(call.arguments[1].AsInt(), 0, Audio::max_volume[stream]);
+        // Preserve the existing AudioTrack volume control path.
         std::scoped_lock lock(context->audio_policy_mutex);
-        context->stream_volume[static_cast<std::size_t>(stream)] = std::clamp(call.arguments[1].AsInt(), 0, 15);
-        ApplyAudioStreamPolicy(*context, stream);
+        context->stream_volume[stream] = std::clamp(call.arguments[1].AsInt(), 0, 15);
+        ApplyAudioStreamPolicy(*context, static_cast<int>(stream));
         return dx::VmValue::Void();
     });
     builder.VirtualMethod("setStreamMute", "(IZLandroid/os/IBinder;)V", [context](dx::IntrinsicContext& call) {
-        const auto stream = call.arguments[0].AsInt();
-        if (stream < 0 || stream >= 10) return dx::VmValue::Void();
+        const auto stream = ServiceStream(call);
+        const auto mute = call.arguments[1].AsInt() != 0;
+        context->device_state.audio.mute[stream] = mute;
         std::scoped_lock lock(context->audio_policy_mutex);
-        context->stream_mute[static_cast<std::size_t>(stream)] = call.arguments[1].AsInt() != 0;
-        ApplyAudioStreamPolicy(*context, stream);
+        context->stream_mute[stream] = mute;
+        ApplyAudioStreamPolicy(*context, static_cast<int>(stream));
         return dx::VmValue::Void();
     });
+    const auto adjust = [context](std::size_t stream, int direction) {
+        if (direction < -1 || direction > 1)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Invalid volume direction"};
+        auto& volume = context->device_state.audio.volume[stream];
+        volume = std::clamp(volume + direction, 0, Audio::max_volume[stream]);
+        return dx::VmValue::Void();
+    };
+    builder.VirtualMethod("adjustStreamVolume", "(IIILjava/lang/String;)V", [adjust](dx::IntrinsicContext& call) {
+        return adjust(ServiceStream(call), call.arguments[1].AsInt());
+    });
+    builder.VirtualMethod("adjustSuggestedStreamVolume", "(IIILjava/lang/String;)V",
+                          [adjust](dx::IntrinsicContext& call) {
+                              const auto stream = call.arguments[1].AsInt();
+                              return adjust(stream == std::numeric_limits<int>::min() ? 2U : ServiceStream(call, 1),
+                                            call.arguments[0].AsInt());
+                          });
+    builder.VirtualMethod("adjustVolume", "(IILjava/lang/String;)V",
+                          [adjust](dx::IntrinsicContext& call) { return adjust(2U, call.arguments[0].AsInt()); });
+    builder.VirtualMethod("getCurrentAudioFocus", "()I", [context](dx::IntrinsicContext&) {
+        const auto& stack = context->device_state.audio.focus;
+        return dx::VmValue::Int(stack.empty() ? 0 : stack.back().gain);
+    });
+    builder.VirtualMethod(
+        "requestAudioFocus",
+        "(IILandroid/os/IBinder;Landroid/media/IAudioFocusDispatcher;Ljava/lang/String;Ljava/lang/String;)I",
+        [context](dx::IntrinsicContext& call) {
+            const auto gain = call.arguments[1].AsInt();
+            if (gain < 1 || gain > 4 || !call.arguments[2].ref.IsValid()) return dx::VmValue::Int(0);
+            const auto client = call.vm.StringUtf8(dx::IntrinsicCall(call).NonNullRef(4, "clientId"));
+            auto& stack = context->device_state.audio.focus;
+            if (!stack.empty() && stack.back().client == client && stack.back().gain == gain)
+                return dx::VmValue::Int(1);
+            std::erase_if(stack, [&](const auto& entry) { return entry.client == client; });
+            std::vector<Audio::Focus> changed;
+            std::vector<dx::VmObjectRef> roots;
+            const auto loss = gain == 1 ? -1 : gain == 3 ? -3 : -2;
+            for (auto& entry : stack) {
+                if (entry.loss && entry.loss >= loss) continue;
+                entry.loss = loss;
+                changed.push_back(entry);
+                roots.push_back(entry.dispatcher);
+            }
+            stack.push_back({client, call.arguments[2].ref, call.arguments[3].ref, gain, 0});
+            const auto retained = call.vm.ProtectReferences(roots);
+            for (const auto& entry : changed) {
+                const auto current = std::ranges::find(stack, entry.client, &Audio::Focus::client);
+                if (current != stack.end() && current->loss == entry.loss)
+                    DispatchAudioFocus(call.vm, entry, entry.loss);
+            }
+            return dx::VmValue::Int(1);
+        });
+    builder.VirtualMethod("abandonAudioFocus", "(Landroid/media/IAudioFocusDispatcher;Ljava/lang/String;)I",
+                          [context](dx::IntrinsicContext& call) {
+                              RemoveAudioFocus(call, context, 1, true);
+                              return dx::VmValue::Int(1);
+                          });
+    builder.VirtualMethod("unregisterAudioFocusClient", "(Ljava/lang/String;)V", [context](dx::IntrinsicContext& call) {
+        RemoveAudioFocus(call, context, 0, false);
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod(
+        "startWatchingRoutes", "(Landroid/media/IAudioRoutesObserver;)Landroid/media/AudioRoutesInfo;",
+        [context](dx::IntrinsicContext& call) {
+            context->device_state.audio.route_observers.insert(dx::IntrinsicCall(call).NonNullRef(0, "observer"));
+            return dx::VmValue::Ref(NewPlatformObject(call.vm, "Landroid/media/AudioRoutesInfo;", "()V", {}));
+        });
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"setRingtonePlayer", "(Landroid/media/IRingtonePlayer;)V"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "REMOTE_AUDIO_PLAYBACK");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"registerMediaButtonEventReceiverForCalls", "(Landroid/content/ComponentName;)V"},
+             std::pair{"unregisterMediaButtonEventReceiverForCalls", "()V"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "MODIFY_PHONE_STATE");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"getMasterMaxVolume", "()I"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Int(100); });
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"getMasterStreamType", "()I"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Int(2); });
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"getMasterVolume", "()I"},
+             std::pair{"getLastAudibleMasterVolume", "()I"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Int(100); });
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"getMode", "()I"},
+             std::pair{"getRemoteStreamMaxVolume", "()I"},
+             std::pair{"getRemoteStreamVolume", "()I"},
+             std::pair{"getVibrateSetting", "(I)I"},
+             std::pair{"isBluetoothScoOn", "()Z"},
+             std::pair{"isCameraSoundForced", "()Z"},
+             std::pair{"isMasterMute", "()Z"},
+             std::pair{"shouldVibrate", "(I)Z"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"isBluetoothA2dpOn", "()Z"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"getRingtonePlayer", "()Landroid/media/IRingtonePlayer;"},
+         }) {
+        builder.VirtualMethod(name, descriptor,
+                              [](dx::IntrinsicContext&) { return dx::VmValue::Ref(dx::VmObjectRef{}); });
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"registerRemoteController",
+                       "(Landroid/media/IRemoteControlDisplay;IILandroid/content/ComponentName;)Z"},
+             std::pair{"loadSoundEffects", "()Z"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"unloadSoundEffects", "()V"},
+             std::pair{"setMasterMute", "(ZILandroid/os/IBinder;)V"},
+             std::pair{"setMasterVolume", "(IILjava/lang/String;)V"},
+             std::pair{"adjustMasterVolume", "(IILjava/lang/String;)V"},
+             std::pair{"setRemoteStreamVolume", "(I)V"},
+             std::pair{"startBluetoothSco", "(Landroid/os/IBinder;I)V"},
+             std::pair{"stopBluetoothSco", "(Landroid/os/IBinder;)V"},
+             std::pair{"setVibrateSetting", "(II)V"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"setBluetoothA2dpDeviceConnectionState", "(Landroid/bluetooth/BluetoothDevice;I)I"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"setBluetoothA2dpOn", "(Z)V"},
+             std::pair{"setBluetoothScoOn", "(Z)V"},
+             std::pair{"avrcpSupportsAbsoluteVolume", "(Ljava/lang/String;Z)V"},
+             std::pair{"setWiredDeviceConnectionState", "(IILjava/lang/String;)V"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"verifyX509CertChain", "(I[BLjava/lang/String;Ljava/lang/String;)I"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Int(5); });
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"playSoundEffect", "(I)V"},
+             std::pair{"playSoundEffectVolume", "(IF)V"},
+             std::pair{"dispatchMediaKeyEvent", "(Landroid/view/KeyEvent;)V"},
+             std::pair{"dispatchMediaKeyEventUnderWakelock", "(Landroid/view/KeyEvent;)V"},
+         }) {
+        RejectUnsupportedServiceMethod(builder, "android.media.IAudioService", name, descriptor);
+    }
+
+    builder.VirtualMethod("isLocalOrRemoteMusicActive", "()Z", [](dx::IntrinsicContext& call) {
+        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/media/AudioSystem;");
+        const auto method = call.vm.Linker().FindDirectMethod(type, "isStreamActive", "(II)Z");
+        const auto outcome = call.vm.Call(*method, std::array{dx::VmValue::Int(3), dx::VmValue::Int(0)});
+        if (outcome.exception.IsValid()) throw dx::VmJavaThrow{"", "", outcome.exception};
+        return outcome.value;
+    });
+    builder.VirtualMethod("isSpeakerphoneOn", "()Z", [context](dx::IntrinsicContext&) {
+        return dx::VmValue::Int(context->device_state.audio.speakerphone);
+    });
+    builder.VirtualMethod("setSpeakerphoneOn", "(Z)V", [context](dx::IntrinsicContext& call) {
+        const auto& permissions = context->granted_permissions;
+        if (permissions.contains("android.permission.MODIFY_AUDIO_SETTINGS"))
+            context->device_state.audio.speakerphone = call.arguments[0].AsInt() != 0;
+        return dx::VmValue::Void();
+    });
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"adjustLocalOrRemoteStreamVolume", "(IILjava/lang/String;)V"},
+             std::pair{"forceVolumeControlStream", "(ILandroid/os/IBinder;)V"},
+             std::pair{"registerMediaButtonIntent",
+                       "(Landroid/app/PendingIntent;Landroid/content/ComponentName;Landroid/os/IBinder;)V"},
+             std::pair{"registerRemoteControlClient",
+                       "(Landroid/app/PendingIntent;Landroid/media/IRemoteControlClient;Ljava/lang/String;)I"},
+             std::pair{"registerRemoteControlDisplay", "(Landroid/media/IRemoteControlDisplay;II)Z"},
+             std::pair{"registerRemoteVolumeObserverForRcc", "(ILandroid/media/IRemoteVolumeObserver;)V"},
+             std::pair{"reloadAudioSettings", "()V"},
+             std::pair{"remoteControlDisplayUsesBitmapSize", "(Landroid/media/IRemoteControlDisplay;II)V"},
+             std::pair{"remoteControlDisplayWantsPlaybackPositionSync", "(Landroid/media/IRemoteControlDisplay;Z)V"},
+             std::pair{"setMode", "(ILandroid/os/IBinder;)V"},
+             std::pair{"setPlaybackInfoForRcc", "(III)V"},
+             std::pair{"setPlaybackStateForRcc", "(IIJF)V"},
+             std::pair{"setRemoteControlClientPlaybackPosition", "(IJ)V"},
+             std::pair{"setStreamSolo", "(IZLandroid/os/IBinder;)V"},
+             std::pair{"unregisterMediaButtonIntent", "(Landroid/app/PendingIntent;)V"},
+             std::pair{"unregisterRemoteControlClient",
+                       "(Landroid/app/PendingIntent;Landroid/media/IRemoteControlClient;)V"},
+             std::pair{"unregisterRemoteControlDisplay", "(Landroid/media/IRemoteControlDisplay;)V"},
+             std::pair{"updateRemoteControlClientMetadata", "(IILandroid/media/Rating;)V"},
+         }) {
+        RejectUnsupportedServiceMethod(builder, "android.media.IAudioService", name, descriptor);
+    }
     return std::move(builder).Build();
 }
 

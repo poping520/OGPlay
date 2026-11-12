@@ -220,6 +220,113 @@ Decl Declare_local_MountService_Class(const Context& context) {
             return MakeString(call,
                               actual == canonical || actual == context->external_storage_root ? "mounted" : "unknown");
         });
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"changeEncryptionPassword", "(Ljava/lang/String;)I"},
+             std::pair{"decryptStorage", "(Ljava/lang/String;)I"},
+             std::pair{"encryptStorage", "(Ljava/lang/String;)I"},
+             std::pair{"getEncryptionState", "()I"},
+             std::pair{"verifyEncryptionPassword", "(Ljava/lang/String;)I"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "CRYPT_KEEPER");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"createSecureContainer", "(Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;IZ)I"},
+             std::pair{"finalizeSecureContainer", "(Ljava/lang/String;)I"},
+             std::pair{"fixPermissionsSecureContainer", "(Ljava/lang/String;ILjava/lang/String;)I"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "ASEC_CREATE");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"destroySecureContainer", "(Ljava/lang/String;Z)I"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "ASEC_DESTROY");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"getSecureContainerFilesystemPath", "(Ljava/lang/String;)Ljava/lang/String;"},
+             std::pair{"getSecureContainerList", "()[Ljava/lang/String;"},
+             std::pair{"getSecureContainerPath", "(Ljava/lang/String;)Ljava/lang/String;"},
+             std::pair{"isSecureContainerMounted", "(Ljava/lang/String;)Z"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "ASEC_ACCESS");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"renameSecureContainer", "(Ljava/lang/String;Ljava/lang/String;)I"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "ASEC_RENAME");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"mountSecureContainer", "(Ljava/lang/String;Ljava/lang/String;I)I"},
+             std::pair{"unmountSecureContainer", "(Ljava/lang/String;Z)I"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "ASEC_MOUNT_UNMOUNT");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"formatVolume", "(Ljava/lang/String;)I"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "MOUNT_FORMAT_FILESYSTEMS");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"getStorageUsers", "(Ljava/lang/String;)[I"},
+             std::pair{"mountVolume", "(Ljava/lang/String;)I"},
+             std::pair{"unmountVolume", "(Ljava/lang/String;ZZ)V"},
+             std::pair{"setUsbMassStorageEnabled", "(Z)V"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "MOUNT_UNMOUNT_FILESYSTEMS");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"shutdown", "(Landroid/os/storage/IMountShutdownObserver;)V"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "SHUTDOWN");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"finishMediaUpdate", "()V"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "WRITE_MEDIA_STORAGE");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"getMountedObbPath", "(Ljava/lang/String;)Ljava/lang/String;"},
+         }) {
+        builder.VirtualMethod(name, descriptor,
+                              [](dx::IntrinsicContext&) { return dx::VmValue::Ref(dx::VmObjectRef{}); });
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"isExternalStorageEmulated", "()Z"},
+             std::pair{"isObbMounted", "(Ljava/lang/String;)Z"},
+             std::pair{"isUsbMassStorageConnected", "()Z"},
+             std::pair{"isUsbMassStorageEnabled", "()Z"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{
+                 "mountObb",
+                 "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Landroid/os/storage/IObbActionListener;I)V"},
+         }) {
+        RejectUnsupportedServiceMethod(builder, "android.os.storage.IMountService", name, descriptor);
+    }
+
+    builder.VirtualMethod(
+        "unmountObb", "(Ljava/lang/String;ZLandroid/os/storage/IObbActionListener;I)V", [](dx::IntrinsicContext& call) {
+            const auto path = dx::IntrinsicCall(call).NonNullRef(0, "rawPath");
+            const auto callback = dx::IntrinsicCall(call).NonNullRef(2, "token");
+            return CallAndroidMethod(call.vm, callback, "onObbResult", "(Ljava/lang/String;II)V",
+                                     {dx::VmValue::Ref(path), call.arguments[3], dx::VmValue::Int(23)});
+        });
+    builder.VirtualMethod(
+        "registerListener", "(Landroid/os/storage/IMountServiceListener;)V", [context](dx::IntrinsicContext& call) {
+            context->device_state.mount_listeners.insert(dx::IntrinsicCall(call).NonNullRef(0, "listener"));
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("unregisterListener", "(Landroid/os/storage/IMountServiceListener;)V",
+                          [context](dx::IntrinsicContext& call) {
+                              context->device_state.mount_listeners.erase(call.arguments[0].ref);
+                              return dx::VmValue::Void();
+                          });
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"mkdirs", "(Ljava/lang/String;Ljava/lang/String;)I"},
+         }) {
+        RejectUnsupportedServiceMethod(builder, "android.os.storage.IMountService", name, descriptor);
+    }
     return std::move(builder).Build();
 }
 
@@ -421,10 +528,9 @@ Decl Declare_local_ServiceManager_Class(const Context& context) {
             call.vm.Model().SetObjectElement(result, index++, call.vm.NewStringUtf8(service.name));
         return dx::VmValue::Ref(result);
     });
-    RejectUnsupportedServiceMethod(builder, "android.os.IServiceManager", "addService",
-                                   "(Ljava/lang/String;Landroid/os/IBinder;Z)V");
-    RejectUnsupportedServiceMethod(builder, "android.os.IServiceManager", "setPermissionController",
-                                   "(Landroid/os/IPermissionController;)V");
+    DenyServiceMethod(builder, "addService", "(Ljava/lang/String;Landroid/os/IBinder;Z)V", "ADD_SERVICE");
+    DenyServiceMethod(builder, "setPermissionController", "(Landroid/os/IPermissionController;)V",
+                      "SET_PERMISSION_CONTROLLER");
     return std::move(builder).Build();
 }
 
@@ -978,25 +1084,99 @@ Decl Declare_android_os_Parcel_Natives(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_local_PowerService_Class(const Context&) {
+Decl Declare_local_PowerService_Class(const Context& context) {
     auto builder =
         dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalPowerService;", "Landroid/os/IPowerManager$Stub;");
-    builder.VirtualMethod("isScreenOn", "()Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });
+    builder.VirtualMethod("isScreenOn", "()Z", [context](dx::IntrinsicContext&) {
+        return dx::VmValue::Int(context->device_state.power.screen_on);
+    });
     builder.VirtualMethod(
         "acquireWakeLock", "(Landroid/os/IBinder;ILjava/lang/String;Ljava/lang/String;Landroid/os/WorkSource;)V",
-        [](dx::IntrinsicContext& call) {
+        [context](dx::IntrinsicContext& call) {
+            RequireServicePermission(context, "WAKE_LOCK");
+            const auto lock = dx::IntrinsicCall(call).NonNullRef(0, "lock");
             const auto level = call.arguments[1].AsInt() & 0xffff;
-            if ((level != 1 && level != 6 && level != 10 && level != 26) || call.arguments[4].ref.IsValid()) {
-                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.power.acquire_wake_lock", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "unsupported wake lock level or work source"};
-            }
-            // WakeLock owns held state, reference count and timeout in ROM. The
-            // process-local service does not need a host power resource.
+            if (level != 1 && level != 6 && level != 10 && level != 26 && level != 32)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Invalid wake lock level"};
+            static_cast<void>(dx::IntrinsicCall(call).NonNullRef(2, "tag"));
+            if (call.arguments[4].ref.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "UPDATE_DEVICE_STATS is required"};
+            context->device_state.power.wake_locks.insert(lock);
             return dx::VmValue::Void();
         });
-    builder.VirtualMethod("releaseWakeLock", "(Landroid/os/IBinder;I)V",
-                          [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.VirtualMethod("releaseWakeLock", "(Landroid/os/IBinder;I)V", [context](dx::IntrinsicContext& call) {
+        RequireServicePermission(context, "WAKE_LOCK");
+        context->device_state.power.wake_locks.erase(call.arguments[0].ref);
+        return dx::VmValue::Void();
+    });
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"setAttentionLight", "(ZI)V"},
+             std::pair{"setTemporaryScreenAutoBrightnessAdjustmentSettingOverride", "(F)V"},
+             std::pair{"setTemporaryScreenBrightnessSettingOverride", "(I)V"},
+             std::pair{"setMaximumScreenOffTimeoutFromDeviceAdmin", "(I)V"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "DEVICE_POWER");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"reboot", "(ZLjava/lang/String;Z)V"},
+             std::pair{"shutdown", "(ZZ)V"},
+             std::pair{"crash", "(Ljava/lang/String;)V"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "REBOOT");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"acquireWakeLockWithUid", "(Landroid/os/IBinder;ILjava/lang/String;Ljava/lang/String;I)V"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "UPDATE_DEVICE_STATS");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"userActivity", "(JII)V"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    }
+
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"wakeUp", "(J)V"},
+             std::pair{"goToSleep", "(JI)V"},
+             std::pair{"nap", "(J)V"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [context](dx::IntrinsicContext& call) -> dx::VmValue {
+            if (call.arguments[0].AsLong() > context->uptime_millis.load())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "event time must not be in the future"};
+            throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "DEVICE_POWER is required"};
+        });
+    }
+    builder.VirtualMethod("isWakeLockLevelSupported", "(I)Z", [](dx::IntrinsicContext& call) {
+        const auto level = call.arguments[0].AsInt();
+        return dx::VmValue::Int(level == 1 || level == 6 || level == 10 || level == 26);
+    });
+    builder.VirtualMethod("updateWakeLockWorkSource", "(Landroid/os/IBinder;Landroid/os/WorkSource;)V",
+                          [context](dx::IntrinsicContext& call) {
+                              RequireServicePermission(context, "WAKE_LOCK");
+                              const auto lock = dx::IntrinsicCall(call).NonNullRef(0, "lock");
+                              if (call.arguments[1].ref.IsValid())
+                                  throw dx::VmJavaThrow{"Ljava/lang/SecurityException;",
+                                                        "UPDATE_DEVICE_STATS is required"};
+                              if (!context->device_state.power.wake_locks.contains(lock))
+                                  throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Wake lock not active"};
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod("updateWakeLockUids", "(Landroid/os/IBinder;[I)V", [context](dx::IntrinsicContext& call) {
+        RequireServicePermission(context, "WAKE_LOCK");
+        const auto lock = dx::IntrinsicCall(call).NonNullRef(0, "lock");
+        const auto uids = call.arguments[1].ref;
+        if (uids.IsValid() && call.vm.Model().ArrayLength(uids))
+            throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "UPDATE_DEVICE_STATS is required"};
+        if (!context->device_state.power.wake_locks.contains(lock))
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Wake lock not active"};
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("setStayOnSetting", "(I)V", [context](dx::IntrinsicContext& call) {
+        RequireServicePermission(context, "WRITE_SETTINGS");
+        context->preferences["__android.settings.global"].insert_or_assign("stay_on_while_plugged_in",
+                                                                           call.arguments[0].AsInt());
+        return dx::VmValue::Void();
+    });
     return std::move(builder).Build();
 }
 
@@ -1015,8 +1195,13 @@ Decl Declare_local_VibratorService_Class(const Context& context) {
                               context->last_vibration_millis = milliseconds;
                               return dx::VmValue::Void();
                           });
-    RejectUnsupportedServiceMethod(builder, "android.os.IVibratorService", "vibratePattern",
-                                   "(ILjava/lang/String;[JILandroid/os/IBinder;)V");
+    builder.VirtualMethod("vibratePattern", "(ILjava/lang/String;[JILandroid/os/IBinder;)V",
+                          [context](dx::IntrinsicContext& call) {
+                              RequireServicePermission(context, "VIBRATE");
+                              if (static_cast<std::uint32_t>(call.arguments[0].AsInt()) != context->application_uid)
+                                  throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "Vibration UID mismatch"};
+                              return dx::VmValue::Void();  // No actuator.
+                          });
     builder.VirtualMethod("cancelVibrate", "(Landroid/os/IBinder;)V", [context](dx::IntrinsicContext&) {
         context->last_vibration_millis = 0;
         return dx::VmValue::Void();

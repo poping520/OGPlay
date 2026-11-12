@@ -324,12 +324,13 @@ TEST_CASE("P3 ROM VideoView delivers a decoded frame to its ROM Surface") {
     CHECK(video_frame);
 }
 
-TEST_CASE("P3 WebView retains disabled load callback while attached to a ROM window") {
+TEST_CASE("P3 WebView reports a network load error while attached to a ROM window") {
     RomWindowApp fixture("WebActivity");
     fixture.Step(2);
-    CHECK(fixture.Read("WebActivity", "disabledLoads") == 1);
+    CHECK(fixture.Read("WebActivity", "networkErrors") == 1);
     CHECK(fixture.Windows() == 1);
     REQUIRE(fixture.image);
+    CHECK(fixture.Pixel(100, 100) == std::array{48, 64, 80, 255});
     const auto warnings = fixture.ledger.Warnings();
     CHECK(std::ranges::any_of(warnings, [](const auto& warning) {
         return warning.id == std::string(core::kUiDegradedWarningPrefix) + "TextureView.hardwareAcceleration";

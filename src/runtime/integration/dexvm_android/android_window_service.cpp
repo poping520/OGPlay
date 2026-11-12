@@ -176,21 +176,31 @@ void AddWindowManagerMethods(dx::IntrinsicClassBuilder& builder, const Context& 
         RomWindows(context).system.SetInTouchMode(c.arguments[0].AsInt() != 0);
         return V::Void();
     });
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "addAppToken",
-                                   "(ILandroid/view/IApplicationToken;IIIZZII)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "addWindowToken",
-                                   "(Landroid/os/IBinder;I)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "clearForcedDisplayDensity", "(I)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "clearForcedDisplaySize", "(I)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "closeSystemDialogs",
-                                   "(Ljava/lang/String;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "disableKeyguard",
-                                   "(Landroid/os/IBinder;Ljava/lang/String;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "dismissKeyguard", "()V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "executeAppTransition", "()V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "exitKeyguardSecurely",
-                                   "(Landroid/view/IOnKeyguardExitResult;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "freezeRotation", "(I)V");
+    DenyServiceMethod(builder, "addAppToken", "(ILandroid/view/IApplicationToken;IIIZZII)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "addWindowToken", "(Landroid/os/IBinder;I)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "clearForcedDisplayDensity", "(I)V", "WRITE_SECURE_SETTINGS");
+    DenyServiceMethod(builder, "clearForcedDisplaySize", "(I)V", "WRITE_SECURE_SETTINGS");
+    builder.VirtualMethod("closeSystemDialogs", "(Ljava/lang/String;)V",
+                          [](dx::IntrinsicContext&) { return V::Void(); });
+    builder.VirtualMethod("disableKeyguard", "(Landroid/os/IBinder;Ljava/lang/String;)V",
+                          [context](dx::IntrinsicContext&) {
+                              RequireServicePermission(context, "DISABLE_KEYGUARD");
+                              return V::Void();
+                          });
+    builder.VirtualMethod("dismissKeyguard", "()V", [context](dx::IntrinsicContext&) {
+        RequireServicePermission(context, "DISABLE_KEYGUARD");
+        return V::Void();
+    });
+    DenyServiceMethod(builder, "executeAppTransition", "()V", "MANAGE_APP_TOKENS");
+    builder.VirtualMethod(
+        "exitKeyguardSecurely", "(Landroid/view/IOnKeyguardExitResult;)V", [context](dx::IntrinsicContext& c) {
+            RequireServicePermission(context, "DISABLE_KEYGUARD");
+            const auto callback = c.arguments[0].ref;
+            if (callback.IsValid())
+                static_cast<void>(CallAndroidMethod(c.vm, callback, "onKeyguardExitResult", "(Z)V", {V::Int(1)}));
+            return V::Void();
+        });
+    DenyServiceMethod(builder, "freezeRotation", "(I)V", "SET_ORIENTATION");
     // Window transitions are disabled. App ValueAnimator duration keeps its default scale.
     builder.VirtualMethod("getAnimationScale", "(I)F",
                           [](dx::IntrinsicContext& c) { return V::Float(c.arguments[0].AsInt() == 2 ? 1.0F : 0.0F); });
@@ -200,97 +210,153 @@ void AddWindowManagerMethods(dx::IntrinsicClassBuilder& builder, const Context& 
         c.vm.Model().SetPrimitiveElement(scales, 2, std::bit_cast<std::uint32_t>(1.0F));
         return V::Ref(scales);
     });
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "getAppOrientation",
-                                   "(Landroid/view/IApplicationToken;)I");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "getCompatibleMagnificationSpecForWindow",
-                                   "(Landroid/os/IBinder;)Landroid/view/MagnificationSpec;");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "getFocusedWindowToken",
-                                   "()Landroid/os/IBinder;");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "getPendingAppTransition", "()I");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "getPreferredOptionsPanelGravity", "()I");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "getWindowFrame",
-                                   "(Landroid/os/IBinder;Landroid/graphics/Rect;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "inputMethodClientHasFocus",
-                                   "(Lcom/android/internal/view/IInputMethodClient;)Z");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "isRotationFrozen", "()Z");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "isSafeModeEnabled", "()Z");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "isViewServerRunning", "()Z");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "lockNow", "(Landroid/os/Bundle;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "overridePendingAppTransition",
-                                   "(Ljava/lang/String;IILandroid/os/IRemoteCallback;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "overridePendingAppTransitionScaleUp",
-                                   "(IIII)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "overridePendingAppTransitionThumb",
-                                   "(Landroid/graphics/Bitmap;IILandroid/os/IRemoteCallback;Z)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "pauseKeyDispatching",
-                                   "(Landroid/os/IBinder;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "prepareAppTransition", "(IZ)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "reenableKeyguard",
-                                   "(Landroid/os/IBinder;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "removeAppToken", "(Landroid/os/IBinder;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "removeWindowToken",
-                                   "(Landroid/os/IBinder;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "resumeKeyDispatching",
-                                   "(Landroid/os/IBinder;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "screenshotApplications",
-                                   "(Landroid/os/IBinder;IIIZ)Landroid/graphics/Bitmap;");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setAnimationScale", "(IF)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setAnimationScales", "([F)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setAppGroupId", "(Landroid/os/IBinder;I)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setAppOrientation",
-                                   "(Landroid/view/IApplicationToken;I)V");
-    RejectUnsupportedServiceMethod(
-        builder, "android.view.IWindowManager", "setAppStartingWindow",
-        "(Landroid/os/IBinder;Ljava/lang/String;ILandroid/content/res/CompatibilityInfo;Ljava/lang/CharSequence;IIIILandroid/os/IBinder;Z)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setAppVisibility",
-                                   "(Landroid/os/IBinder;Z)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setAppWillBeHidden",
-                                   "(Landroid/os/IBinder;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setEventDispatching", "(Z)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setFocusedApp", "(Landroid/os/IBinder;Z)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setForcedDisplayDensity", "(II)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setForcedDisplaySize", "(III)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setInputFilter",
-                                   "(Landroid/view/IInputFilter;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setMagnificationCallbacks",
-                                   "(Landroid/view/IMagnificationCallbacks;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setMagnificationSpec",
-                                   "(Landroid/view/MagnificationSpec;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setNewConfiguration",
-                                   "(Landroid/content/res/Configuration;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setOverscan", "(IIIII)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setStrictModeVisualIndicatorPreference",
-                                   "(Ljava/lang/String;)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "setTouchExplorationEnabled", "(Z)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "showStrictModeViolation", "(Z)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "startAppFreezingScreen",
-                                   "(Landroid/os/IBinder;I)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "startFreezingScreen", "(II)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "startViewServer", "(I)Z");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "statusBarVisibilityChanged", "(I)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "stopAppFreezingScreen",
-                                   "(Landroid/os/IBinder;Z)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "stopFreezingScreen", "()V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "stopViewServer", "()Z");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "thawRotation", "()V");
-    RejectUnsupportedServiceMethod(
-        builder, "android.view.IWindowManager", "updateOrientationFromAppTokens",
-        "(Landroid/content/res/Configuration;Landroid/os/IBinder;)Landroid/content/res/Configuration;");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "updateRotation", "(ZZ)V");
-    RejectUnsupportedServiceMethod(builder, "android.view.IWindowManager", "waitForWindowDrawn",
-                                   "(Landroid/os/IBinder;Landroid/os/IRemoteCallback;)Z");
+    builder.VirtualMethod("getAppOrientation", "(Landroid/view/IApplicationToken;)I",
+                          [](dx::IntrinsicContext&) { return V::Int(-1); });
+    DenyServiceMethod(builder, "getCompatibleMagnificationSpecForWindow",
+                      "(Landroid/os/IBinder;)Landroid/view/MagnificationSpec;", "MAGNIFY_DISPLAY");
+    DenyServiceMethod(builder, "getFocusedWindowToken", "()Landroid/os/IBinder;", "RETRIEVE_WINDOW_INFO");
+    builder.VirtualMethod("getPendingAppTransition", "()I", [](dx::IntrinsicContext&) { return V::Int(-1); });
+    builder.VirtualMethod("getPreferredOptionsPanelGravity", "()I", [context](dx::IntrinsicContext&) {
+        return V::Int(context->surface_width < context->surface_height ? 81 : 85);
+    });
+    DenyServiceMethod(builder, "getWindowFrame", "(Landroid/os/IBinder;Landroid/graphics/Rect;)V",
+                      "RETRIEVE_WINDOW_INFO");
+    builder.VirtualMethod("inputMethodClientHasFocus", "(Lcom/android/internal/view/IInputMethodClient;)Z",
+                          [](dx::IntrinsicContext&) { return V::Int(0); });
+    builder.VirtualMethod("isRotationFrozen", "()Z", [](dx::IntrinsicContext&) { return V::Int(0); });
+    builder.VirtualMethod("isSafeModeEnabled", "()Z", [](dx::IntrinsicContext&) { return V::Int(0); });
+    builder.VirtualMethod("isViewServerRunning", "()Z", [](dx::IntrinsicContext&) { return V::Int(0); });
+    DenyServiceMethod(builder, "lockNow", "(Landroid/os/Bundle;)V", "DEVICE_POWER");
+    builder.VirtualMethod("overridePendingAppTransition", "(Ljava/lang/String;IILandroid/os/IRemoteCallback;)V",
+                          [](dx::IntrinsicContext&) { return V::Void(); });
+    builder.VirtualMethod("overridePendingAppTransitionScaleUp", "(IIII)V",
+                          [](dx::IntrinsicContext&) { return V::Void(); });
+    builder.VirtualMethod("overridePendingAppTransitionThumb",
+                          "(Landroid/graphics/Bitmap;IILandroid/os/IRemoteCallback;Z)V",
+                          [](dx::IntrinsicContext&) { return V::Void(); });
+    DenyServiceMethod(builder, "pauseKeyDispatching", "(Landroid/os/IBinder;)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "prepareAppTransition", "(IZ)V", "MANAGE_APP_TOKENS");
+    builder.VirtualMethod("reenableKeyguard", "(Landroid/os/IBinder;)V", [context](dx::IntrinsicContext&) {
+        RequireServicePermission(context, "DISABLE_KEYGUARD");
+        return V::Void();
+    });
+    DenyServiceMethod(builder, "removeAppToken", "(Landroid/os/IBinder;)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "removeWindowToken", "(Landroid/os/IBinder;)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "resumeKeyDispatching", "(Landroid/os/IBinder;)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "screenshotApplications", "(Landroid/os/IBinder;IIIZ)Landroid/graphics/Bitmap;",
+                      "READ_FRAME_BUFFER");
+    DenyServiceMethod(builder, "setAnimationScale", "(IF)V", "SET_ANIMATION_SCALE");
+    DenyServiceMethod(builder, "setAnimationScales", "([F)V", "SET_ANIMATION_SCALE");
+    DenyServiceMethod(builder, "setAppGroupId", "(Landroid/os/IBinder;I)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "setAppOrientation", "(Landroid/view/IApplicationToken;I)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(
+        builder, "setAppStartingWindow",
+        "(Landroid/os/IBinder;Ljava/lang/String;ILandroid/content/res/CompatibilityInfo;Ljava/lang/CharSequence;IIIILandroid/os/IBinder;Z)V",
+        "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "setAppVisibility", "(Landroid/os/IBinder;Z)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "setAppWillBeHidden", "(Landroid/os/IBinder;)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "setEventDispatching", "(Z)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "setFocusedApp", "(Landroid/os/IBinder;Z)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "setForcedDisplayDensity", "(II)V", "WRITE_SECURE_SETTINGS");
+    DenyServiceMethod(builder, "setForcedDisplaySize", "(III)V", "WRITE_SECURE_SETTINGS");
+    DenyServiceMethod(builder, "setInputFilter", "(Landroid/view/IInputFilter;)V", "FILTER_EVENTS");
+    DenyServiceMethod(builder, "setMagnificationCallbacks", "(Landroid/view/IMagnificationCallbacks;)V",
+                      "MAGNIFY_DISPLAY");
+    DenyServiceMethod(builder, "setMagnificationSpec", "(Landroid/view/MagnificationSpec;)V", "MAGNIFY_DISPLAY");
+    DenyServiceMethod(builder, "setNewConfiguration", "(Landroid/content/res/Configuration;)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "setOverscan", "(IIIII)V", "WRITE_SECURE_SETTINGS");
+    builder.VirtualMethod("setStrictModeVisualIndicatorPreference", "(Ljava/lang/String;)V",
+                          [](dx::IntrinsicContext& c) {
+                              RecordUiDegraded(c.vm, "StrictMode visual indicator");
+                              return V::Void();
+                          });
+    builder.VirtualMethod("setTouchExplorationEnabled", "(Z)V", [](dx::IntrinsicContext&) { return V::Void(); });
+    builder.VirtualMethod("showStrictModeViolation", "(Z)V", [](dx::IntrinsicContext& c) {
+        RecordUiDegraded(c.vm, "StrictMode visual indicator");
+        return V::Void();
+    });
+    DenyServiceMethod(builder, "startAppFreezingScreen", "(Landroid/os/IBinder;I)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "startFreezingScreen", "(II)V", "FREEZE_SCREEN");
+    builder.VirtualMethod("startViewServer", "(I)Z", [](dx::IntrinsicContext&) { return V::Int(0); });
+    DenyServiceMethod(builder, "statusBarVisibilityChanged", "(I)V", "STATUS_BAR");
+    DenyServiceMethod(builder, "stopAppFreezingScreen", "(Landroid/os/IBinder;Z)V", "MANAGE_APP_TOKENS");
+    DenyServiceMethod(builder, "stopFreezingScreen", "()V", "FREEZE_SCREEN");
+    builder.VirtualMethod("stopViewServer", "()Z", [](dx::IntrinsicContext&) { return V::Int(0); });
+    DenyServiceMethod(builder, "thawRotation", "()V", "SET_ORIENTATION");
+    DenyServiceMethod(builder, "updateOrientationFromAppTokens",
+                      "(Landroid/content/res/Configuration;Landroid/os/IBinder;)Landroid/content/res/Configuration;",
+                      "MANAGE_APP_TOKENS");
+    builder.VirtualMethod("updateRotation", "(ZZ)V", [](dx::IntrinsicContext&) { return V::Void(); });
+    builder.VirtualMethod("waitForWindowDrawn", "(Landroid/os/IBinder;Landroid/os/IRemoteCallback;)Z",
+                          [](dx::IntrinsicContext&) { return V::Int(0); });
 }
 
-Decl Declare_local_AccessibilityService_Class(const Context&) {
+namespace {
+void RequireAccessibilityUser(int user) {
+    if (user != 0 && user != -2 && user != -3)
+        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "Accessibility request outside the current user"};
+}
+}  // namespace
+
+Decl Declare_local_AccessibilityService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalAccessibilityService;",
                                                     "Landroid/view/accessibility/IAccessibilityManager$Stub;");
     builder.VirtualMethod("addClient", "(Landroid/view/accessibility/IAccessibilityManagerClient;I)I",
-                          [](dx::IntrinsicContext&) { return V::Int(0); });
+                          [context](dx::IntrinsicContext& call) {
+                              RequireAccessibilityUser(call.arguments[1].AsInt());
+                              context->device_state.accessibility.clients.insert(
+                                  dx::IntrinsicCall(call).NonNullRef(0, "client"));
+                              return V::Int(0);
+                          });
     const auto empty_list = [](dx::IntrinsicContext& c) {
+        RequireAccessibilityUser(c.arguments.back().AsInt());
         return V::Ref(NewPlatformObject(c.vm, "Ljava/util/ArrayList;", "()V", {}));
     };
     builder.VirtualMethod("getInstalledAccessibilityServiceList", "(I)Ljava/util/List;", empty_list);
     builder.VirtualMethod("getEnabledAccessibilityServiceList", "(II)Ljava/util/List;", empty_list);
+    for (
+        const auto& [name, descriptor] : std::array{
+            std::pair{
+                "registerUiTestAutomationService",
+                "(Landroid/os/IBinder;Landroid/accessibilityservice/IAccessibilityServiceClient;Landroid/accessibilityservice/AccessibilityServiceInfo;)V"},
+        }) {
+        DenyServiceMethod(builder, name, descriptor, "RETRIEVE_WINDOW_CONTENT");
+    }
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"temporaryEnableAccessibilityStateUntilKeyguardRemoved", "(Landroid/content/ComponentName;Z)V"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "TEMPORARY_ENABLE_ACCESSIBILITY");
+    }
+
+    builder.VirtualMethod(
+        "unregisterUiTestAutomationService", "(Landroid/accessibilityservice/IAccessibilityServiceClient;)V",
+        [](dx::IntrinsicContext&) -> dx::VmValue {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "No automation service registered"};
+        });
+    builder.VirtualMethod("interrupt", "(I)V", [](dx::IntrinsicContext& call) {
+        RequireAccessibilityUser(call.arguments[0].AsInt());
+        return V::Void();
+    });
+    builder.VirtualMethod("sendAccessibilityEvent", "(Landroid/view/accessibility/AccessibilityEvent;I)Z",
+                          [](dx::IntrinsicContext& call) {
+                              RequireAccessibilityUser(call.arguments[1].AsInt());
+                              return V::Int(1);  // Disabled, so the caller can recycle the event.
+                          });
+    builder.VirtualMethod("addAccessibilityInteractionConnection",
+                          "(Landroid/view/IWindow;Landroid/view/accessibility/IAccessibilityInteractionConnection;I)I",
+                          [context](dx::IntrinsicContext& call) {
+                              RequireAccessibilityUser(call.arguments[2].AsInt());
+                              const auto token = dx::IntrinsicCall(call).NonNullRef(0, "window");
+                              const auto connection = dx::IntrinsicCall(call).NonNullRef(1, "connection");
+                              const auto id = context->device_state.accessibility.next_window_id++;
+                              context->device_state.accessibility.connections.insert_or_assign(token, connection);
+                              return V::Int(id);
+                          });
+    builder.VirtualMethod("removeAccessibilityInteractionConnection", "(Landroid/view/IWindow;)V",
+                          [context](dx::IntrinsicContext& call) {
+                              context->device_state.accessibility.connections.erase(call.arguments[0].ref);
+                              return V::Void();
+                          });
     return std::move(builder).Build();
 }
 
@@ -310,6 +376,23 @@ Decl Declare_local_TextServices_Class() {
                                   linker.ResolveDescriptor("[Landroid/view/textservice/SpellCheckerInfo;"),
                                   linker.ResolveDescriptor("Landroid/view/textservice/SpellCheckerInfo;"), 0));
                           });
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"setCurrentSpellChecker", "(Ljava/lang/String;Ljava/lang/String;)V"},
+             std::pair{"setCurrentSpellCheckerSubtype", "(Ljava/lang/String;I)V"},
+             std::pair{"setSpellCheckerEnabled", "(Z)V"},
+         }) {
+        DenyServiceMethod(builder, name, descriptor, "WRITE_SECURE_SETTINGS");
+    }
+    for (
+        const auto& [name, descriptor] : std::array{
+            std::pair{"finishSpellCheckerService",
+                      "(Lcom/android/internal/textservice/ISpellCheckerSessionListener;)V"},
+            std::pair{
+                "getSpellCheckerService",
+                "(Ljava/lang/String;Ljava/lang/String;Lcom/android/internal/textservice/ITextServicesSessionListener;Lcom/android/internal/textservice/ISpellCheckerSessionListener;Landroid/os/Bundle;)V"},
+        }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    }
     return std::move(builder).Build();
 }
 

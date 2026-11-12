@@ -128,8 +128,9 @@ TEST_CASE("DVM-209 WifiLock Java state supports counted and uncounted ownership"
         f.On(uncounted, "release", "()V");
         f.On(uncounted, "release", "()V");
         CHECK_FALSE(f.On(uncounted, "isHeld", "()Z").AsInt());
-        CHECK_FALSE(f.On(manager, "isWifiEnabled", "()Z").AsInt());
-        CHECK(f.On(manager, "getWifiState", "()I").AsInt() == 1);
+        f.context->requested_permissions.emplace_back("android.permission.ACCESS_WIFI_STATE");
+        CHECK(f.On(manager, "isWifiEnabled", "()Z").AsInt());
+        CHECK(f.On(manager, "getWifiState", "()I").AsInt() == 3);
     }
 }
 
@@ -252,7 +253,8 @@ TEST_CASE("DVM-209 MulticastLock Java state and finalization preserve API19 sema
         f.On(abandoned, "finalize", "()V");
         CHECK_FALSE(f.On(abandoned, "isHeld", "()Z").AsInt());
         CHECK(f.vm.StringUtf8(f.On(abandoned, "toString", "()Ljava/lang/String;").ref).find("not refcounted") != std::string::npos);
-        CHECK_FALSE(f.On(manager, "isWifiEnabled", "()Z").AsInt());
+        f.context->requested_permissions.emplace_back("android.permission.ACCESS_WIFI_STATE");
+        CHECK(f.On(manager, "isWifiEnabled", "()Z").AsInt());
     }
 }
 

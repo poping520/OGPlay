@@ -325,7 +325,7 @@ public:
         }
 
         auto canonical_path = CanonicalGuestLibraryPath(guest_path);
-        auto* filesystem = process_->Filesystem();
+        auto* filesystem = process_ ? process_->Filesystem() : nullptr;
         if (filesystem != nullptr) {
             try {
                 canonical_path = filesystem->CanonicalPath(canonical_path);

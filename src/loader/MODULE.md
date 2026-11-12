@@ -24,7 +24,7 @@
   Application 类与 largeHeap 布尔事实，以及按声明顺序保留 enabled、逐 intent-filter、alias target 的 Activity
   组件事实；Activity 另保留原始整数 launchMode（缺省 standard）及继承 application/package
   默认值的 taskAffinity（保留显式空值）、原始 screenOrientation 整数（缺省 -1）和 configChanges 位集（缺省 0），上层决定支持边界。
-  同名 Activity/alias 不拒绝或合并，按 API19 保留各声明及过滤器；
+  同名 Activity/alias 按 API19 保留各声明及过滤器；Activity 过滤器保留 MIME、scheme、authority、路径及 SSP 数据约束，供上层 ROM IntentFilter 匹配。
   `FindAndroidManifestActivityComponent` 按组件名取最后声明。alias 的受支持 theme/launchMode/taskAffinity/screenOrientation/configChanges
   在解析时继承首个先前声明的目标，不随后续同名目标改变。
   `NormalizeAndroidManifestClassName` 对齐 API 19 `buildClassName`，

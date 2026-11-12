@@ -1038,6 +1038,17 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
             } else if (name == "data" && current_intent_filter && elements.size() == 4 &&
                        elements.back() == "intent-filter") {
                 current_intent_filter->has_data = true;
+                if (current_component) {
+                    const auto read = [&](std::string_view key) -> std::optional<std::string> {
+                        if (const auto* attribute = FindAttribute(attributes, key, kAndroidNamespace)) {
+                            return ReadStringAttribute(*attribute, strings, key);
+                        }
+                        return std::nullopt;
+                    };
+                    current_intent_filter->data.push_back({read("mimeType"), read("scheme"), read("host"), read("port"),
+                                                           read("path"), read("pathPrefix"), read("pathPattern"),
+                                                           read("ssp"), read("sspPrefix"), read("sspPattern")});
+                }
             } else if (elements.size() == 1 && name == "uses-sdk") {
                 const auto read_sdk = [&](const Attribute& attribute) {
                     const auto value = ResolveAttribute(attribute, strings);

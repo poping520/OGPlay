@@ -606,6 +606,150 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
             }
             return V::Ref(list);
         });
+    b.VirtualMethod("getRecentTasks", "(III)Ljava/util/List;", [context](dx::IntrinsicContext& call) {
+        RequireServicePermission(context, "GET_TASKS");
+        if (call.arguments[2].AsInt() != 0)
+            throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "Recent tasks outside current user"};
+        auto& vm = call.vm;
+        auto& state = Activities(context);
+        const auto list = List(vm);
+        const auto root = vm.ProtectReferences(std::array{list});
+        std::set<int> seen;
+        for (auto it = state.stack.rbegin();
+             it != state.stack.rend() && static_cast<int>(seen.size()) < call.arguments[0].AsInt(); ++it) {
+            if (it->destroying || !seen.insert(it->task).second) continue;
+            const auto base = std::ranges::find_if(
+                state.stack, [&](const auto& record) { return record.task == it->task && !record.destroying; });
+            const auto info = NewPlatformObject(vm, "Landroid/app/ActivityManager$RecentTaskInfo;", "()V", {});
+            const auto info_root = vm.ProtectReferences(std::array{info});
+            const auto id = static_cast<unsigned>(it->task);
+            WindowField(vm, info, "id", "I") = {id, dx::SlotTag::cat1};
+            WindowField(vm, info, "persistentId", "I") = {id, dx::SlotTag::cat1};
+            const auto intent = NewPlatformObject(vm, "Landroid/content/Intent;", "(Landroid/content/Intent;)V",
+                                                  {V::Ref(base->intent)});
+            WindowField(vm, info, "baseIntent", "Landroid/content/Intent;") = {intent.Value(), dx::SlotTag::ref};
+            Append(vm, list, info);
+        }
+        return V::Ref(list);
+    });
+    b.VirtualMethod("getActivityClassForToken", "(Landroid/os/IBinder;)Landroid/content/ComponentName;",
+                    [context](dx::IntrinsicContext& call) {
+                        const auto* record = Find(Activities(context), call.arguments[0].ref);
+                        return V::Ref(record ? record->component : dx::VmObjectRef{});
+                    });
+    b.VirtualMethod("getCallingActivity", "(Landroid/os/IBinder;)Landroid/content/ComponentName;",
+                    [context](dx::IntrinsicContext& call) {
+                        auto& state = Activities(context);
+                        const auto* record = Find(state, call.arguments[0].ref);
+                        const auto* caller = record && record->request >= 0 ? Find(state, record->caller) : nullptr;
+                        return V::Ref(caller ? caller->component : dx::VmObjectRef{});
+                    });
+    b.VirtualMethod("getCallingPackage", "(Landroid/os/IBinder;)Ljava/lang/String;",
+                    [context](dx::IntrinsicContext& call) {
+                        auto& state = Activities(context);
+                        const auto* record = Find(state, call.arguments[0].ref);
+                        return record && record->request >= 0 && Find(state, record->caller)
+                                   ? MakeString(call, context->package_name)
+                                   : V::Ref(dx::VmObjectRef{});
+                    });
+    for (const auto* name : {"getPackageForToken", "getLaunchedFromPackage"})
+        b.VirtualMethod(name, "(Landroid/os/IBinder;)Ljava/lang/String;", [context](dx::IntrinsicContext& call) {
+            return Find(Activities(context), call.arguments[0].ref) ? MakeString(call, context->package_name)
+                                                                    : V::Ref(dx::VmObjectRef{});
+        });
+    b.VirtualMethod("getLaunchedFromUid", "(Landroid/os/IBinder;)I", [context](dx::IntrinsicContext& call) {
+        return V::Int(Find(Activities(context), call.arguments[0].ref) ? static_cast<int>(context->application_uid)
+                                                                       : -1);
+    });
+    b.VirtualMethod("setImmersive", "(Landroid/os/IBinder;Z)V", [context](dx::IntrinsicContext& call) {
+        auto* record = Find(Activities(context), call.arguments[0].ref);
+        if (!record) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Unknown activity token"};
+        record->immersive = call.arguments[1].AsInt() != 0;
+        return V::Void();
+    });
+    b.VirtualMethod("isImmersive", "(Landroid/os/IBinder;)Z", [context](dx::IntrinsicContext& call) {
+        const auto* record = Find(Activities(context), call.arguments[0].ref);
+        if (!record) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Unknown activity token"};
+        return V::Int(record->immersive);
+    });
+    b.VirtualMethod("isTopActivityImmersive", "()Z", [context](dx::IntrinsicContext&) {
+        const auto& stack = Activities(context).stack;
+        return V::Int(!stack.empty() && stack.back().immersive);
+    });
+    b.VirtualMethod("targetTaskAffinityMatchesActivity", "(Landroid/os/IBinder;Ljava/lang/String;)Z",
+                    [context](dx::IntrinsicContext& call) {
+                        const auto* record = Find(Activities(context), call.arguments[0].ref);
+                        if (!record || !call.arguments[1].ref.IsValid()) return V::Int(0);
+                        const auto affinity = WindowField(call.vm, record->info, "taskAffinity", "Ljava/lang/String;");
+                        const auto value = dx::VmObjectRef{affinity.bits};
+                        return V::Int(value.IsValid() &&
+                                      call.vm.StringUtf8(value) == call.vm.StringUtf8(call.arguments[1].ref));
+                    });
+    b.VirtualMethod("finishActivityAffinity", "(Landroid/os/IBinder;)Z", [context](dx::IntrinsicContext& call) {
+        auto& state = Activities(context);
+        const auto* target = Find(state, call.arguments[0].ref);
+        if (!target || target->finishing) return V::Int(0);
+        const auto affinity_of = [&](const auto& activity) {
+            const auto value =
+                dx::VmObjectRef{WindowField(call.vm, activity.info, "taskAffinity", "Ljava/lang/String;").bits};
+            return value.IsValid() ? std::optional{call.vm.StringUtf8(value)} : std::nullopt;
+        };
+        const auto affinity = affinity_of(*target);
+        std::vector<dx::VmObjectRef> tokens;
+        auto index = static_cast<std::size_t>(target - state.stack.data());
+        while (true) {
+            const auto& record = state.stack[index];
+            if (record.task != target->task || affinity_of(record) != affinity) break;
+            tokens.push_back(record.token);
+            if (index-- == 0) break;
+        }
+        const auto root = call.vm.ProtectReferences(tokens);
+        for (const auto token : tokens)
+            static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "finishActivity",
+                                                "(Landroid/os/IBinder;ILandroid/content/Intent;)Z",
+                                                {V::Ref(token), V::Int(0), V::Ref(dx::VmObjectRef{})}));
+        return V::Int(1);
+    });
+    b.VirtualMethod("finishSubActivity", "(Landroid/os/IBinder;Ljava/lang/String;I)V",
+                    [context](dx::IntrinsicContext& call) {
+                        if (call.arguments[1].ref.IsValid()) return V::Void();  // No nested Activity identities.
+                        std::vector<dx::VmObjectRef> tokens;
+                        for (const auto& record : Activities(context).stack)
+                            if (record.caller == call.arguments[0].ref && record.request == call.arguments[2].AsInt())
+                                tokens.push_back(record.token);
+                        const auto root = call.vm.ProtectReferences(tokens);
+                        for (const auto token : tokens)
+                            static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "finishActivity",
+                                                                "(Landroid/os/IBinder;ILandroid/content/Intent;)Z",
+                                                                {V::Ref(token), V::Int(0), V::Ref(dx::VmObjectRef{})}));
+                        return V::Void();
+                    });
+    for (const auto* name : {"moveTaskBackwards", "moveTaskToBack"}) {
+        b.VirtualMethod(name, "(I)V", [context](dx::IntrinsicContext& call) {
+            RequireServicePermission(context, "REORDER_TASKS");
+            auto& state = Activities(context);
+            const auto task = call.arguments[0].AsInt();
+            const auto record =
+                std::ranges::find_if(state.stack, [task](const auto& entry) { return entry.task == task; });
+            if (record != state.stack.end())
+                static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "moveActivityTaskToBack",
+                                                    "(Landroid/os/IBinder;Z)Z", {V::Ref(record->token), V::Int(1)}));
+            return V::Void();
+        });
+    }
+    b.VirtualMethod("moveTaskToFront", "(IILandroid/os/Bundle;)V", [context](dx::IntrinsicContext& call) {
+        RequireServicePermission(context, "REORDER_TASKS");
+        auto& state = Activities(context);
+        const auto task = call.arguments[0].AsInt();
+        if (std::ranges::none_of(state.stack, [task](const auto& record) { return record.task == task; }))
+            return V::Void();
+        if (state.stack.back().task != task && state.stack.back().resumed) Pause(call.vm, state, state.stack.back());
+        state.background_tasks.erase(task);
+        std::stable_partition(state.stack.begin(), state.stack.end(),
+                              [task](const auto& record) { return record.task != task; });
+        Resume(call.vm, context, state);
+        return V::Void();
+    });
 }
 
 void PumpAndroidHostRequests(dx::Interpreter& vm, const Context& context) {

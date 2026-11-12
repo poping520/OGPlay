@@ -8,16 +8,17 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 
 public final class WebActivity extends Activity {
-    public static int disabledLoads;
+    public static int networkErrors;
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         FrameLayout content = new FrameLayout(this);
         WebView web = new WebView(this);
         web.setWebViewClient(new WebViewClient() {
             @Override public void onReceivedError(WebView view, int code, String text, String url) {
-                ++disabledLoads;
+                if (code == WebViewClient.ERROR_HOST_LOOKUP) ++networkErrors;
             }
         });
+        web.setBackgroundColor(0xff304050);
         web.setScrollBarStyle(WebView.SCROLLBARS_INSIDE_OVERLAY);
         content.addView(web, new FrameLayout.LayoutParams(-1, -1));
         content.addView(new TextureView(this), new FrameLayout.LayoutParams(32, 32));

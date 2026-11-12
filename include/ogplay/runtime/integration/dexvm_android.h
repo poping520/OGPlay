@@ -148,6 +148,85 @@ AssembleAndroidContext(std::vector<BootClasspathJar> boot_classpath);
 [[nodiscard]] std::vector<std::vector<std::uint8_t>> BootClasspathDexFiles(std::span<const BootClasspathJar> jars);
 
 // First boot jar, in classpath order, that contains the entry.
+struct SimulatedDeviceState final {
+    struct Location final {
+        struct Provider final {
+            std::string_view name;
+            bool always_enabled{};
+            // ROM ProviderProperties constructor order.
+            std::array<bool, 7> capabilities{};
+            int power_requirement{}, accuracy{};
+        };
+
+        static constexpr int kPowerLow = 1, kPowerHigh = 3;
+        static constexpr int kAccuracyFine = 1, kAccuracyCoarse = 2;
+        std::array<Provider, 3> providers{{
+            {"passive", true, {}, kPowerLow, kAccuracyCoarse},
+            {"gps", false, {true, true, false, false, true, true, true}, kPowerHigh, kAccuracyFine},
+            {"network", false, {true, false, true, false, false, false, false}, kPowerLow, kAccuracyCoarse},
+        }};
+        std::string_view allowed_providers;
+        bool allow_mock_location{};
+        bool geocoder_present{};
+        // The fixed device never generates a location or acquires a GPS/XTRA session.
+    } location;
+
+    struct Network final {
+        bool wifi_enabled{true};
+        bool mobile_data_enabled{};
+        int preference{1};  // TYPE_WIFI
+        std::set<dexvm::VmObjectRef> wifi_locks;
+        std::vector<dexvm::VmObjectRef> multicast_locks;
+    } network;
+
+    struct Power final {
+        bool screen_on{true};
+        std::set<dexvm::VmObjectRef> wake_locks;
+    } power;
+
+    struct Audio final {
+        static constexpr std::array<int, 10> max_volume{5, 7, 7, 15, 7, 7, 15, 7, 15, 15};
+        std::array<int, 10> volume{4, 7, 5, 11, 6, 5, 7, 7, 11, 11};
+        std::array<bool, 10> mute{};
+        int ringer_mode{2};
+        bool speakerphone{true};
+
+        struct Focus {
+            std::string client;
+            dexvm::VmObjectRef token, dispatcher;
+            int gain{}, loss{};
+        };
+
+        std::vector<Focus> focus;
+        std::set<dexvm::VmObjectRef> route_observers;
+    } audio;
+
+    struct Telephony final {
+        int phone_type{};  // PHONE_TYPE_NONE
+        int call_state{};  // CALL_STATE_IDLE
+        int data_state{};  // DATA_DISCONNECTED
+        std::set<dexvm::VmObjectRef> call_listeners;
+    } telephony;
+
+    struct Accessibility final {
+        std::set<dexvm::VmObjectRef> clients;
+        std::map<dexvm::VmObjectRef, dexvm::VmObjectRef> connections;
+        int next_window_id{};
+    } accessibility;
+
+    std::map<std::pair<std::optional<std::string>, int>, dexvm::VmObjectRef> notifications;
+    int application_enabled_setting{};
+    bool user_is_monkey{};
+    bool car_mode{};
+    int night_mode{};
+    dexvm::VmObjectRef primary_clip{};
+    std::set<dexvm::VmObjectRef> clipboard_listeners;
+    std::set<dexvm::VmObjectRef> uri_permission_owners;
+    bool master_sync_automatically{};
+    std::map<dexvm::VmObjectRef, int> sync_observers;
+    std::set<dexvm::VmObjectRef> mount_listeners;
+};
+
 struct DexVmAndroidContext final {
     std::atomic_bool process_stopping{};
     // Set from the owning native process before linking/startup. No host query.
@@ -280,6 +359,29 @@ struct DexVmAndroidContext final {
     // replace this process-lifetime provider with a host-backed snapshot
     // without changing the Android facade or introducing Binder/system_server.
     AndroidKeyguardStateProvider keyguard_state_provider;
+    // Accessed by local Binder handlers under the VM execution lock.
+    SimulatedDeviceState device_state{};
+
+    struct LocationRegistrations {
+        struct Receiver {
+            dexvm::VmObjectRef target;
+            std::map<std::string_view, dexvm::VmObjectRef> requests;
+        };
+
+        struct Geofence {
+            dexvm::VmObjectRef fence{}, intent{}, sender{};
+            double latitude{}, longitude{};
+            float radius{};
+            int type{};
+            std::int64_t expires_at{};
+        };
+
+        // The bool distinguishes listener Binder keys from PendingIntent sender keys.
+        std::map<std::pair<bool, dexvm::VmObjectRef>, Receiver> receivers;
+        std::map<dexvm::VmObjectRef, dexvm::VmObjectRef> gps_listeners;
+        std::vector<Geofence> geofences;
+    } location_registrations;
+
     // Read-only subset of the API 19 secure settings table. This is distinct
     // from app SharedPreferences and from telephony/serial identities.
     std::map<std::string, std::string, std::less<>> secure_settings;
@@ -386,7 +488,7 @@ struct DexVmAndroidContext final {
     // Offline telephony listener registrations. A non-zero mask records the
     // requested observation; LISTEN_NONE removes it. No host radio means no
     // callbacks are generated.
-    std::unordered_map<std::uint32_t, std::int32_t> telephony_listeners;
+    std::map<dexvm::VmObjectRef, std::int32_t> telephony_listeners;
 
     // Dynamic receiver registrations are owned by the Context instance that
     // performed registerReceiver(), matching LoadedApk's per-context

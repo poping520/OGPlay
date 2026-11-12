@@ -382,18 +382,22 @@ TEST_CASE("DVM-206 virtual key character maps use API19 data and process device 
             CHECK(get(empty, code, meta) == 0);
         }
         CHECK(get(map, 33, 2) == std::bit_cast<std::int32_t>(0x800000b4U));  // ALT+E dead acute
+        // API 19 returns the spacing acute directly when the next character is a space.
+        CHECK(f.Static(owner, "getDeadChar", "(II)I", {VmValue::Int(0xb4), VmValue::Int(' ')}).AsInt() == 0xb4);
+        // ROM NFC composes e + U+0301 to U+00E9. Checking that result requires the
+        // ROM String code-point methods, which the existing String replacement lacks.
         const auto normalization =
             f.StaticOutcome(owner, "getDeadChar", "(II)I", {VmValue::Int(0xb4), VmValue::Int('e')});
-        CHECK_MESSAGE(f.linker.Class(normalization.exception_class).descriptor == "Ljava/lang/NoSuchMethodError;",
-                      normalization.exception_message);
+        REQUIRE(normalization.exception.IsValid());
+        CHECK(f.linker.Class(normalization.exception_class).descriptor == "Ljava/lang/NoSuchMethodError;");
+        CHECK(normalization.exception_message == "method cannot be resolved: Ljava/lang/String;->codePointCount(II)I");
         CHECK(f.On(map, "getDisplayLabel", "(I)C", {VmValue::Int(29)}).AsInt() == 'A');
         CHECK(f.On(map, "getNumber", "(I)C", {VmValue::Int(10)}).AsInt() == '3');
         CHECK(f.On(map, "getKeyboardType", "()I").AsInt() == 4);
         CHECK(f.On(empty, "getKeyboardType", "()I").AsInt() == 5);
         CHECK(f.On(map, "getModifierBehavior", "()I").AsInt() == 0);
-        const auto category = f.OnOutcome(map, "isPrintingKey", "(I)Z", {VmValue::Int(29)});
-        CHECK_MESSAGE(f.linker.Class(category.exception_class).descriptor == "Ljava/lang/NoSuchMethodError;",
-                      category.exception_message);
+        // Virtual.kcm labels KEYCODE_A with 'A', a Unicode uppercase letter.
+        CHECK(f.On(map, "isPrintingKey", "(I)Z", {VmValue::Int(29)}).AsInt() == 1);
         const auto chars = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[C"), JniPrimitiveKind::character, 2);
         const auto chars_root = f.vm.ProtectReferences(std::array{chars});
         f.model.SetPrimitiveElement(chars, 0, 'a');

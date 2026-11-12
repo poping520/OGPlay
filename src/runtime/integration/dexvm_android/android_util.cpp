@@ -41,6 +41,14 @@ Decl Declare_android_util_Log_Natives(const Context&) {
             if (priority == 5 && tag == "TextureView" &&
                 message == "A TextureView or a subclass can only be used with hardware acceleration enabled.")
                 RecordUiDegraded(call.vm, "TextureView.hardwareAcceleration");
+            if (priority == 5 && tag == "OGPlayWebView") {
+                if (message == "WebView.pageRendering") {
+                    RecordUiDegraded(call.vm, message);
+                } else if (message == "dexvm.webview_javascript" || message == "dexvm.webview_engine_unavailable" ||
+                           message == "dexvm.webview_print_document" || message == "dexvm.webview_save_archive") {
+                    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented(message, 0);
+                }
+            }
             GuestLog(call,
                      priority >= 6   ? core::LogLevel::error
                      : priority == 5 ? core::LogLevel::warn

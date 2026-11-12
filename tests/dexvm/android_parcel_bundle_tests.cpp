@@ -146,10 +146,23 @@ TEST_CASE("DVM-86 Parcel Bundle and bounded services share session state") {
                            .ref;
     REQUIRE(power.IsValid());
     CHECK(fixture.linker.Class(fixture.model.ObjectClass(power)).is_boot_dex);
-    const auto lock = fixture
-                          .On(power, "newWakeLock", "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;",
-                              {VmValue::Int(1), VmValue::Ref(fixture.vm.NewStringUtf8("test"))})
-                          .ref;
+    const auto new_wake_lock = [&] {
+        return fixture
+            .On(power, "newWakeLock", "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;",
+                {VmValue::Int(1), VmValue::Ref(fixture.vm.NewStringUtf8("test"))})
+            .ref;
+    };
+    // API 19 PowerManagerService checks WAKE_LOCK on acquire, not on construction.
+    const auto denied_lock = new_wake_lock();
+    const auto denied_root = fixture.vm.ProtectReferences(std::array{denied_lock});
+    const auto denied = fixture.OnOutcome(denied_lock, "acquire", "()V");
+    REQUIRE(denied.exception.IsValid());
+    CHECK(fixture.linker.Class(denied.exception_class).descriptor == "Ljava/lang/SecurityException;");
+    CHECK(fixture.On(denied_lock, "isHeld", "()Z").AsInt() == 0);
+
+    fixture.context->requested_permissions.emplace_back("android.permission.WAKE_LOCK");
+    const auto lock = new_wake_lock();
+    const auto lock_root = fixture.vm.ProtectReferences(std::array{lock});
     fixture.On(lock, "acquire", "()V");
     CHECK(fixture.On(lock, "isHeld", "()Z").AsInt() == 1);
     fixture.On(lock, "release", "()V");

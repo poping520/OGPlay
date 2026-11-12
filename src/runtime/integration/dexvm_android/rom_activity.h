@@ -11,7 +11,7 @@ struct RomActivityState {
         unsigned mode{};
         bool resumed{}, paused{}, stopped{}, idle{}, finishing{}, destroying{};
         bool launching{true}, pausing{};
-        bool visible{true};
+        bool visible{true}, immersive{};
         bool stopping{};
         bool suspend_stop_required{};
     };

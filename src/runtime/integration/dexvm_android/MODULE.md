@@ -88,7 +88,7 @@ key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保
 
 | 查询 | 支持与失败边界 |
 | --- | --- |
-| getInstalledApplications | 封存单包清单，0/GET_META_DATA/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）；原 ArrayList/独立 ApplicationInfo，含禁用应用；缺清单/身份/guest 路径或未知 flags UOE |
+| getInstalledPackages/getInstalledApplications | 封存当前 APK 安装清单，PackageInfo 与 getPackageInfo 同源，ApplicationInfo 与 getApplicationInfo 同源。通过 ROM ParceledListSlice 返回独立列表。缺清单/身份/guest 路径或未知 flags UOE |
 | getInstallerPackageName(String) | 当前直接加载 APK 无安装器记录则 null；未知包（含空串/system/null）IAE，不推测商店 |
 | getResourcesForApplication(String) | 当前包共用应用 Resources/AssetManager；未知包（含空串/system）NameNotFoundException，null NPE；无跨包/其他重载 |
 | getPackageArchiveInfo | ROM PackageManager/PackageParser 从 guest VFS 中的 APK 解析 Manifest，不复用安装清单；缺路径或损坏归档沿 ROM 返回 null。无包安装或外部包数据库 |
@@ -96,7 +96,7 @@ key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保
 | getPackageInfo | GET_ACTIVITIES/META_DATA/PERMISSIONS/UNINSTALLED_PACKAGES 组合（单包清单下 GET_UNINSTALLED_PACKAGES 不改变结果）；activities 仅请求时按声明顺序发布、保留 alias，默认排除禁用项，否则 null |
 | getActivityInfo/getReceiverInfo/getServiceInfo | 当前包完整组件名，0/GET_META_DATA/GET_DISABLED_COMPONENTS/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）；按应用/组件启用状态过滤，缺失 NameNotFoundException，同名 Activity/receiver/service 取最后声明 |
 | getPermissionInfo | 仅 Manifest 中 registered 的 `<permission>` 首个有效定义，0/GET_META_DATA；未知 group/重复后项不注册，仅请求/授予但未定义仍 NameNotFoundException |
-| queryIntentActivities | 当前 APK 显式组件查询；隐式查询记账并失败 |
+| queryIntentActivities/resolveIntent | 当前 APK 显式组件及隐式过滤器。ROM IntentFilter 匹配 action/category、MIME、scheme、authority 与路径模式，按优先级、DEFAULT 与匹配分排序；resolveIntent 取首项 |
 | queryBroadcastReceivers | 支持显式组件；隐式查询要求非空 action、同一 filter category 子集、无 selector/data/type。flags 为 0 或 MATCH_DEFAULT_ONLY，后者仅保留有 DEFAULT category 的 filter。排除禁用项，同组件首匹配、API19 稳定排序 |
 | queryIntentServices/resolveService | 支持显式组件；隐式查询沿用非空 action、无 data/type/categories、0/GET_RESOLVED_FILTER。仅确定无候选时返回空列表或 null；潜在匹配/未知条件失败 |
 | bindService/unbindService | 缺席查询沿原规则；主线程 BIND_AUTO_CREATE、component-only、当前 APK 启用的同进程服务；独立进程/isolated 返回 false，仍登记连接且可解绑，无回调（[ADR-0170](../../../../docs/adr/runtime.md#adr-0170)） |
@@ -132,16 +132,36 @@ calling identity 固定为进程 UID/PID，StrictMode mask 按执行上下文隔
 
 | 能力 | 支持范围与所有权 |
 | --- | --- |
-| Settings/SystemProperties | ROM NameValueCache 通过本地 Settings provider 读取沙盒 Secure 身份和进程内 System/Global 表。System 有效值变更递增版本并由 IContentService 通知观察者。Secure/Global 特权写记账 false。SystemProperties 从显示和 VM 配置读取密度、常规堆上限和最大堆；无跨用户、同步适配器或宿主设置。 |
-| Notification | ROM Notification/NotificationManager 持有字段、构造、extras 与本地 Parcel 值；本地 INotificationManager 只取消当前包空库存，发布和跨包访问记账拒绝。无系统展示、声音、点击或持久库存 |
-| SMS | SmsManager 和 SmsMessage 来自原样的 telephony-common.jar。PDU 由 ROM 解析。本地 ISms 的 14 个入口按签名记账拒绝，无 Phone/RIL、SIM 存储或短信传输 |
+| Settings/SystemProperties | ROM NameValueCache 通过本地 Settings provider 读取沙盒 Secure 身份和进程内 System/Global 表。System 有效值变更递增版本并由 IContentService 通知观察者。System 写需 WRITE_SETTINGS，Secure/Global 写抛 SecurityException。URI 查询返回已建模表的游标；按表或名称读取，支持投影与简单名称筛选。SystemProperties 从显示和 VM 配置读取密度、常规堆上限和最大堆；无跨用户、同步适配器或宿主设置。 |
+| Notification | ROM Notification/NotificationManager 持有字段、构造、extras 与本地 Parcel 值；本地 INotificationManager 按当前包 tag/id 保存通知并支持取消。展示记 UI 降级，跨包访问检查 UID；无系统展示、声音、点击或持久库存 |
+| SMS | SmsManager 和 SmsMessage 来自原样的 telephony-common.jar。PDU 由 ROM 解析。本地 ISms 对获准查询返回无 SIM、无 IMS 状态，获准发送请求记账拒绝。无 Phone/RIL、SIM 存储或短信传输 |
 | NFC | ROM NfcAdapter 经 IPackageManager 查询 NFC feature，缺席时 NfcManager 捕获 UOE，默认适配器为 null；无监听或通信 |
 | PendingIntent/AlarmManager | 当前 APK 单 Activity/service/broadcast 令牌，创建不解析/启动目标；原 Intent 复制/filterEquals/replaceExtras 快照，extras 不参与身份，种类/包/requestCode/ONE_SHOT/fill-in flags 参与，NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT 控制查找，CANCEL_CURRENT\|NO_CREATE 返回旧已取消令牌。仅普通 Intent/BootDex Uri；selector/content MIME provider/未知 flags/Parcel/克隆失败。VM 锁串行 registry、非永久根，ROM 包装按本地 IIntentSender 的 Binder 身份比较，活令牌追踪 Intent，GC 删除记录；闹钟条目为 session roots。ROM AlarmManager 经本地 IAlarmManager，cancel(null/无匹配) 正常，移除闹钟不取消令牌；令牌 cancel 后不匹配。退出停止创建/清理；注册/调度/send UOE |
-| Connectivity/Wifi | core policy/transport 默认离线，仅注入事实，无 host 网络/DNS/代理/证书探测。默认断开的逻辑 WiFi，可声明类型缺席；独立原版 NetworkInfo=DISCONNECTED/不可用、活动网络 null/Wifi 禁用。NetworkInfo 查询需 ACCESS_NETWORK_STATE，缺事实/online policy UOE，不支持类型按 API19 null；ROM ConnectivityManager 通过本地 IConnectivityManager 查询，服务调用原 NetworkInfo 构造/setter。getConnectionInfo 需 ACCESS_WIFI_STATE，离线返回独立 WifiInfo（networkId=-1、UNINITIALIZED、MAC=null）；无在线 provider/事件/无线控制；同一离线拓扑派生只读 lo 内核视图与本地地址 ioctl，不受 transport IO 授权限制 |
-| USB/备份 | ROM UsbManager 使用本地 IUsbManager，设备列表为空，配件缺席，打开设备返回 null，权限查询 false，其他操作按签名拒绝。ROM BackupManager 保留服务缺席语义，备份请求不排队，恢复请求返回 -1、无恢复会话。 |
+| Connectivity/Wifi | core policy/transport 默认离线，仅注入事实，无 host 网络/DNS/代理/证书探测。默认断开的逻辑 WiFi，可声明类型缺席；独立原版 NetworkInfo=DISCONNECTED/不可用、活动网络 null，Wifi 默认开启。NetworkInfo 查询需 ACCESS_NETWORK_STATE，缺事实/online policy UOE，不支持类型按 API19 null；ROM ConnectivityManager 通过本地 IConnectivityManager 查询，服务调用原 NetworkInfo 构造/setter。getConnectionInfo 需 ACCESS_WIFI_STATE，离线返回独立 WifiInfo（networkId=-1、UNINITIALIZED、MAC=null）；初次登记可收到断开状态的粘性广播。Wifi 开关写入会话状态；无在线 provider 或真实无线控制；同一离线拓扑派生只读 lo 内核视图与本地地址 ioctl，不受 transport IO 授权限制 |
+| USB/备份 | ROM UsbManager 使用本地 IUsbManager，设备列表为空，配件缺席，打开设备或配件返回 null，权限查询 false。USB 管理权限不授予普通 APK，设备权限 PendingIntent 投递显式失败。ROM BackupManager 保留服务缺席语义，备份请求不排队，恢复请求返回 -1、无恢复会话。 |
 | WifiLock/MulticastLock | ROM WifiManager 计数、held 和每 manager 50 锁上限；本地 IWifiManager 校验锁模式及 WAKE_LOCK/CHANGE_WIFI_MULTICAST_STATE 权限，不改变连接、网卡或组播。 |
-| Sensor/Telephony/Location/Keyguard | ROM SystemSensorManager 从与 NDK 共用的空设备目录枚举。ROM LegacySensorManager 经 IWindowManager 查询固定 ROTATION_0。ROM KeyguardManager 的三项查询经本地 IWindowManager 读取进程 provider，缺席表示桌面无锁屏。ROM TelephonyManager 经本地 IPhoneSubInfo 读取注入的设备标识、软件版本和号码，无订阅时 subscriberId=null；ITelephony 报告 PHONE_TYPE_NONE。SIM/运营商查询由 ROM 读取进程 SystemProperties；ITelephonyRegistry 保存无事件的弱注册，PhoneStateListener 原版持有 callback，listen(null) 由 ROM 捕获 NPE。位置无 provider 或历史，更新注册/移除失败。 |
-| Vibrator | ROM SystemVibrator 经本地 IVibratorService 查询硬件缺席；单次请求及取消更新进程事实，模式请求按签名失败，不驱动宿主硬件。 |
+| Sensor/Telephony/Keyguard | ROM SystemSensorManager 从与 NDK 共用的空设备目录枚举。ROM LegacySensorManager 经 IWindowManager 查询固定 ROTATION_0。ROM KeyguardManager 的三项查询经本地 IWindowManager 读取进程 provider，缺席表示桌面无锁屏。ROM TelephonyManager 经本地 IPhoneSubInfo 读取注入的设备标识、软件版本和号码，无订阅时 subscriberId=null；ITelephony 报告 PHONE_TYPE_NONE。SIM/运营商查询由 ROM 读取进程 SystemProperties；ITelephonyRegistry 强持有已登记回调，按事件掩码推送一次当前状态，注销后移除，listen(null) 由 ROM 捕获 NPE。 |
+| Vibrator | ROM SystemVibrator 经本地 IVibratorService 查询硬件缺席；单次请求及取消更新进程事实，模式请求检查权限和 UID，不驱动宿主硬件。 |
+
+### 模拟设备状态
+
+`DexVmAndroidContext::device_state` 保存会话级模拟设备事实，读写由 VM 执行锁串行。本地服务、
+`LocalSettingsProvider` 和系统属性从同一状态投影已纳入模型的字段，不另存副本，
+也不访问宿主的真实设备服务。API19 的定位设置通过 Secure 读取。
+
+定位设备具有 gps、network 和 passive。Secure 的 provider 允许列表为空，定位模式由 gps/network
+的设置推导为 OFF，mock 关闭。LMS 的始终启用规则使 passive 可用，Secure 的允许列表查询仍返回
+false。权限和定位精度从当前 APK 的清单权限推导。服务按 Binder 或 PendingIntent 身份登记，每个
+provider 保留最新请求；已登记的回调和请求由会话强持有。禁用通知沿 ROM listener transport 派发，
+需要通过 PendingIntent 投递的禁用通知显式失败并记账。网络 provider 按 4.4 时期 NLP 建模，依赖网络和基站，无卫星、费用、海拔、速度或方位，功耗低且精度粗略。设备无历史位置、无 geocoder，
+不会产生位置、GPS 状态或围栏事件。
+
+电话初始无 SIM、无服务、无可用信号、空闲且数据断开。网络保持离线，Wifi 和移动数据开关
+是会话状态。电源记录活跃 WakeLock Binder token，屏幕常亮。音频策略维护 API19 流音量、
+铃声模式、焦点栈和路由观察者，实际播放沿已有 AudioTrack/混音链。无障碍与拼写检查关闭，
+外部存储沿 VFS 事实，无 OBB，备份与 USB 无可用后端。同步初始关闭，无账户或适配器。
+可变的剪贴板、通知库存、回调注册和设备开关均归会话；回调及有效 Binder token 由
+会话根保活。进程与任务查询沿 ROM Activity 栈及注入的内存事实。
 
 本包启用的同进程 provider 由 ROM ActivityThread 按 initOrder 安装，AMS 按 authority 登记。
 本地 IContentService 按 authority 与路径匹配观察者，使用 ROM ContentObserver transport 分发。
@@ -213,8 +233,7 @@ WMS 分发触摸 DOWN 并锁定手势目标，按窗口 flags 交付 OUTSIDE，�
 提交 SDL 文本与 composing，通知前端开启和关闭文本输入。Toast 经本地 INotificationManager 排队，
 调用 ROM ITransientNotification.show/hide，LENGTH_SHORT 为 2000 ms，LENGTH_LONG 为 3500 ms。
 
-硬件加速不可用。依赖硬件的显示功能经 `RecordUiDegraded` 记录；WebView 沿用禁用网页引擎的客户端行为，
-作为普通 View 参与 ROM 布局。
+硬件加速不可用。依赖硬件的显示功能经 `RecordUiDegraded` 记录。
 
 ## GLES/EGL 与消息调度
 
@@ -248,8 +267,12 @@ Java 与 NDK ALooper 共用同一线程的 boundary Looper 与 wake。独立 VM 
 ROM VideoView 经 MediaPlayer.setDisplay 把有效 Surface 绑定到解码器。MediaPlayer.setSurface 同样
 使用 ROM Surface 句柄，播放由统一 Clock 驱动；本地文件经 VFS 打开，发布的视频帧成为窗口图层。
 音频通过既有 PCM mixer；字幕、网络源与完整系统媒体服务超出支持范围。
-Dialog/AlertDialog/Toast 的内容及回调由原版 ROM 管理。WebView 仍提供离线的降级行为，
-原版 View 层级拥有其位置、可见性和绘制。
+Dialog/AlertDialog/Toast 的内容及回调由原版 ROM 管理。原版 ROM WebView 通过固定工厂接入
+[OGPlay guest Java provider](../../../guest/webview/MODULE.md)，由 ROM View 层级测量和布局。
+provider 经 `WebEngine` 发起操作，`NoWebEngine` 在 WebView 的 Looper 异步交付页面事件。
+网络请求回调 `ERROR_HOST_LOOKUP`，本地内容成功时记录一次 UI 降级并绘制背景。JS 请求只记账。
+现有 ROM Log native 接收 provider 的固定诊断事件，转入 `RecordUiDegraded` 或未实现账本。
+WebView 状态和进程内 WebKit 服务由 guest Java 持有。
 
 ## JNI、诊断与验证边界
 

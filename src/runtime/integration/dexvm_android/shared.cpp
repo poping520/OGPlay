@@ -22,6 +22,28 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
+void RequireServicePermission(const Context& context, const char* permission) {
+    const auto name = std::string("android.permission.") + permission;
+    if (!context->granted_permissions.contains(name) &&
+        std::ranges::find(context->requested_permissions, name) == context->requested_permissions.end())
+        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "Permission required: " + name};
+}
+
+void DenyServiceMethod(dx::IntrinsicClassBuilder& builder, const char* name, const char* descriptor,
+                       const char* permission) {
+    builder.VirtualMethod(name, descriptor,
+                          [message = std::string("Permission required: android.permission.") +
+                                     permission](dx::IntrinsicContext&) -> dx::VmValue {
+                              throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", message};
+                          });
+}
+
+dx::VmObjectRef NewServiceArray(dx::Interpreter& vm, const char* descriptor, JniSize size) {
+    auto& linker = vm.Linker();
+    return vm.Model().NewObjectArray(linker.ResolveDescriptor(descriptor), linker.ResolveDescriptor(descriptor + 1),
+                                     size);
+}
+
 void InitializeAndroidSystemProperties(dx::Interpreter& vm, const Context& context) {
     static_cast<void>(vm.SetSystemProperty("user.language", context->locale_language));
     static_cast<void>(vm.SetSystemProperty("user.region", context->locale_region));

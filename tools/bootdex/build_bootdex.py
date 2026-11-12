@@ -32,7 +32,7 @@ MANIFEST = ROOT / "data/android/19/manifest.json"
 NOTICE = ROOT / "data/android/19/notices/boot-classpath.txt"
 ROM_NOTICES = {"telephony-common.jar": "notices/telephony-common.jar.txt"}
 GUEST_JAVA_ROOTS = tuple(ROOT / "src/guest" / name / "java"
-                         for name in ("crypto", "framework", "io", "math", "xml", "zip"))
+                         for name in ("crypto", "framework", "io", "math", "webview", "xml", "zip"))
 
 # API 19 ROM jars in boot classpath order, after ogplay.jar.
 ROM_JARS = {
@@ -90,6 +90,12 @@ public abstract class ZoneInfo extends java.util.TimeZone {
     }
 }""",
 }
+WEBVIEW_COMPILE_ONLY = Path(__file__).resolve().parent / "compile-only" / "webview"
+COMPILE_ONLY_SOURCES.update({
+    path.relative_to(WEBVIEW_COMPILE_ONLY).as_posix(): path.read_text(encoding="utf-8")
+    for path in sorted(WEBVIEW_COMPILE_ONLY.rglob("*.java"))
+})
+
 COMPILE_ONLY_CLASSES = tuple(sorted(name[:-len(".java")] + ".class" for name in COMPILE_ONLY_SOURCES))
 
 WINDOWS_JAVAC = Path(r"D:\01_software\jdk-17.0.2\bin\javac.exe")
@@ -233,7 +239,10 @@ def compile_guest_java(work: Path) -> bytes:
         *(str(compile_only / name) for name in COMPILE_ONLY_SOURCES),
     ])
     for name in COMPILE_ONLY_CLASSES:
-        (classes / name).unlink()
+        path = classes / name
+        path.unlink()
+        for nested in path.parent.glob(f"{path.stem}$*.class"):
+            nested.unlink()
     class_files = sorted(classes.rglob("*.class"))
     if not class_files:
         raise BuildError("guest Java compilation produced no classes")

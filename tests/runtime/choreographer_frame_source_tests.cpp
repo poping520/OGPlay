@@ -365,6 +365,8 @@ TEST_CASE("DVM-336 receiver initializes on its own Looper thread and rejects a f
 TEST_CASE("frame-rate cap gates display frames while lifecycle steps keep the logical clock") {
     Frames f(InterpreterBackend::switch_dispatch);
     f.f.app->ActivityLifecycle().SetRealtimeVideoClock(true);
+    f.f.app->ActivityLifecycle().SetRealtimeTimeSourceForTesting(
+        [now = std::uint64_t{1'000'000'000}]() mutable { return now += 16'000'000; });
     const auto choreographer = f.Choreographer();
     const auto callback = f.New("Lfixture/FrameProbe;", "()V");
     const auto roots = f.vm.ProtectReferences(std::array{choreographer, callback});

@@ -91,7 +91,7 @@ const std::vector<SettingDefinition>& SettingDefinitions() {
         {"max_fps",
          "graphics",
          "默认帧率上限",
-         std::string("unlimited"),
+         std::string("120"),
          {"30", "60", "90", "120", "144", "unlimited"},
          0,
          0,

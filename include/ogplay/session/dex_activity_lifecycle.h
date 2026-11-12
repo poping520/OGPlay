@@ -22,8 +22,6 @@ void AttachDexApplicationThread(runtime::dexvm::Interpreter& vm, runtime::DexVmA
 void PublishDexApplication(runtime::dexvm::Interpreter& vm, runtime::DexVmAndroidContext& context,
                            const std::string& application_descriptor);
 
-[[nodiscard]] std::int64_t VideoClockAdvanceMillis(std::uint64_t elapsed_ms, std::int64_t advanced_ms) noexcept;
-
 struct DexActivityLifecycleBindings final {
     runtime::DexVmGuestBridge* bridge{};
     std::shared_ptr<runtime::DexVmAndroidContext> context;
@@ -58,6 +56,8 @@ public:
     [[nodiscard]] bool ReadyForFrame();
     void SetRealtimeVideoClock(bool enabled) noexcept;
     void SetEglProducerWaitBudgetForTesting(std::uint64_t budget_ns) noexcept;
+    // Replaces the host steady time read by realtime steps.
+    void SetRealtimeTimeSourceForTesting(std::function<std::uint64_t()> now_ns);
     void QueueInput(const runtime::AndroidBoundaryInput& input);
     void CancelInput();
     [[nodiscard]] LifecycleFrameState Stop(DexProcessStopReason reason = DexProcessStopReason::host_shutdown);
@@ -75,6 +75,7 @@ private:
     AndroidInputTimeline input_timeline_;
     hal::FixedStepClock clock_;
     hal::FramePacer display_pacer_;
+    std::function<std::uint64_t()> realtime_now_ns_;
     LifecycleRunState state_{LifecycleRunState::ready};
     std::uint64_t frame_{}, window_revision_{}, previous_step_ns_{}, producer_wait_started_ns_{};
     std::uint64_t producer_budget_ns_{30'000'000'000};

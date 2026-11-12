@@ -16,6 +16,7 @@ namespace dx = runtime::dexvm;
 using ActivityRequest = runtime::DexVmAndroidContext::HostActivityRequest;
 
 constexpr std::int64_t kMillisPerFrame = 16;
+constexpr std::uint64_t kMaxCatchUpMillis = 100;
 constexpr std::uint64_t kCallbackBudgetNs = 2'000'000'000;
 constexpr std::uint64_t kStartupBudgetNs = 10'000'000'000;
 
@@ -200,9 +201,8 @@ void DexActivityLifecycle::CancelInput() {
                                                          context.rom_windows->system.CancelTouch());
 }
 
-std::int64_t VideoClockAdvanceMillis(std::uint64_t elapsed_ms, std::int64_t advanced_ms) noexcept {
-    return std::max<std::int64_t>(0, static_cast<std::int64_t>(std::clamp<std::uint64_t>(elapsed_ms, 16, 100)) -
-                                         std::max<std::int64_t>(0, advanced_ms));
+void DexActivityLifecycle::SetRealtimeTimeSourceForTesting(std::function<std::uint64_t()> now_ns) {
+    realtime_now_ns_ = std::move(now_ns);
 }
 
 void DexActivityLifecycle::SetEglProducerWaitBudgetForTesting(std::uint64_t budget_ns) noexcept {
@@ -246,11 +246,18 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
     try {
         CheckGuest();
         AwaitProducers();
-        const auto now = hal::Clock::SteadyTimestampNs();
-        const auto elapsed_ms = previous_step_ns_ ? (now - previous_step_ns_) / 1'000'000U : 16U;
-        previous_step_ns_ = previous_step_ns_ ? previous_step_ns_ + elapsed_ms * 1'000'000U : now;
-        const auto delta =
-            realtime_ && runtime::AnyVideoPlaying(context) ? VideoClockAdvanceMillis(elapsed_ms, 0) : kMillisPerFrame;
+        const auto now = realtime_now_ns_ ? realtime_now_ns_() : hal::Clock::SteadyTimestampNs();
+        // Realtime uptime follows host time, independent of the step rate; the frame-rate cap only
+        // paces steps. Sub-millisecond remainders carry over, and a stalled step catches up at most
+        // kMaxCatchUpMillis. Manual stepping keeps one fixed frame period per step.
+        auto delta = kMillisPerFrame;
+        if (realtime_ && previous_step_ns_ != 0U) {
+            const auto elapsed_ms = now > previous_step_ns_ ? (now - previous_step_ns_) / 1'000'000U : 0U;
+            previous_step_ns_ += elapsed_ms * 1'000'000U;
+            delta = static_cast<std::int64_t>(std::min<std::uint64_t>(elapsed_ms, kMaxCatchUpMillis));
+        } else if (realtime_) {
+            previous_step_ns_ = now;
+        }
         runtime::AdvanceAndroidClock(context, delta);
         std::shared_ptr<runtime::RomWindowState> windows;
         bool media_tick{};

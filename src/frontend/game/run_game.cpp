@@ -457,12 +457,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         audio_output = hal::CreateSdlAudioOutput(kDesktopAudioOutputSpec);
         audio_output->Start();
         std::uint64_t active_frame{};
-        // Pace fast video steps; the lifecycle catches up slow steps using
-        // the same unified host Clock. Manual stepping remains deterministic.
-        std::uint64_t video_pace_deadline_ns{};
-        // Host frame-rate cap (off for deterministic manual stepping). Lifecycle steps stay unpaced, since
-        // they also drive Loopers and the logical uptime; the lifecycle gates display frames (vsync, GL
-        // draws) itself, while native render threads and SurfaceHolder canvases wait at their posts.
+        // Realtime guest uptime follows host time inside the lifecycle, so the host frame-rate cap
+        // (off for deterministic manual stepping, 0 = unlimited) only paces steps and display frames;
+        // native render threads and SurfaceHolder canvases wait at their posts.
+        std::uint64_t step_deadline_ns{};
         const auto frame_period_ns = mcp_manual_step ? 0 : hal::FramePeriodNs(max_fps);
         dex_context->frame_period_ns = frame_period_ns;
         RunApkGuestCallProgress call_progress{logger};
@@ -1036,6 +1034,15 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
                 }
+                if (frame_period_ns != 0U) {
+                    // The frame-rate cap paces steps; after a stall resume without a burst.
+                    const auto now = hal::Clock::SteadyTimestampNs();
+                    if (step_deadline_ns > now)
+                        hal::SleepPreciseNs(step_deadline_ns - now);
+                    else if (step_deadline_ns + frame_period_ns < now)
+                        step_deadline_ns = now;
+                    step_deadline_ns += frame_period_ns;
+                }
                 mcp_pointer.Pump(mcp_inputs.get(), control_mapper);
                 for (const auto& output : control_mapper.Flush()) {
                     if (const auto input = session::MapControlOutput(output)) driver.queue_input(*input);
@@ -1066,18 +1073,6 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                     last_audio_ticks = stepped.clock_ticks;
                 }
                 if (mcp_manual_step) --permitted_steps;
-                if (!mcp_manual_step && dex_context && runtime::AnyVideoPlaying(*dex_context)) {
-                    constexpr std::uint64_t kVideoFramePeriodNs = 16'000'000U;
-                    const auto now = hal::Clock::SteadyTimestampNs();
-                    if (video_pace_deadline_ns + kVideoFramePeriodNs < now) {
-                        video_pace_deadline_ns = now;
-                    }
-                    video_pace_deadline_ns += kVideoFramePeriodNs;
-                    if (video_pace_deadline_ns > now)
-                        std::this_thread::sleep_for(std::chrono::nanoseconds(video_pace_deadline_ns - now));
-                } else {
-                    video_pace_deadline_ns = 0;
-                }
                 const auto present_started_ns = measure_frames ? hal::Clock::SteadyTimestampNs() : 0;
                 frame_presented = present_latest();
                 if (measure_frames) {

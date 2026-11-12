@@ -22,7 +22,7 @@ APK label 为资源时，默认配置值为 `display_name`，各语言资源（`
 为开时，把库中尚无同包名条目的 Demo 按普通导入（无数据包、/sdcard，沿用残留存档 id）放入库，关时不动游戏库。
 
 screen_width/screen_height（屏幕宽高）默认 1280/720，范围 1..4096；density_dpi 默认 320，范围 72..1280；
-supersample 范围 1..4；max_fps（帧率上限）取 30/60/90/120/144/unlimited，默认 unlimited，转为 GameRunOptions.max_fps
+supersample 范围 1..4；max_fps（帧率上限）取 30/60/90/120/144/unlimited，默认 120，转为 GameRunOptions.max_fps
 （unlimited 为 0）。五者均经 EffectiveGameSetting 解析游戏 > 全局 > 默认，GUI 编辑同一 schema；不读取 Profile。
 类型模板及 input_template 设置已删除，未知旧设置明确失败。
 

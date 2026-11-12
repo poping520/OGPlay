@@ -10,6 +10,8 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
 
 - 实时 run-apk 启用能力受检的异步窗口读回；手动步进不启用。实时暂停/空闲时仍
   可呈现已完成末帧，不执行 guest step 或推进 Clock，FPS 只累积实际成功 present。
+  实时 guest uptime 跟随宿主时间，与 step 频率无关；帧率上限只决定 step 和显示帧的节拍
+  （unlimited 不限速），停顿后不补发积压的 step。
 - `run-apk`：选择 compatibility Profile，挂载数据，创建 SDL3/ANGLE surface，装配 Android
   guest、DexVM 与 Activity lifecycle；VFS 的 guest cwd 固定为 `/`。
   guest 自行结束返回 Java/native exit(n) 的 n、信号的 128+n 或 Activity.finish 的 0；

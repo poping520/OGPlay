@@ -90,6 +90,10 @@ struct RomWindowApp {
 #endif
         app = session::AndroidAppProcess::Create(std::move(request));
         app->ActivityLifecycle().SetRealtimeVideoClock(realtime);
+        // Realtime uptime follows host time; a 16 ms step clock keeps frame assertions exact.
+        if (realtime)
+            app->ActivityLifecycle().SetRealtimeTimeSourceForTesting(
+                [now = std::uint64_t{1'000'000'000}]() mutable { return now += 16'000'000; });
         app->StartApplication();
         REQUIRE(app->StartLauncherActivity().state == session::LifecycleRunState::running);
     }

@@ -40,7 +40,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   Static Call、Static/Instance Field、String、Array 与 JavaVM family,随后封口 dispatcher;
   aggregate contract 以精确 slot 集合等价(基础 226 个 JNIEnv、注入 NIO 后 229 个，及
   4 个 JavaVM)机器验证，数量本身只是辅助诊断；DirectByteBuffer 三槽仅在
-  显式注入共享 `NioRuntime` 时绑定；
+  显式注入 `JniDirectBufferHooks` 时绑定；创建、地址和容量由 integration 提供，不依赖 dexvm；
   DestroyJavaVM 是唯一 expected-unbound 槽,不得为提高覆盖率注册假 handler。Core
   binder 不得再隐式注册其他 family。引用、异常和线程状态复用同一环境,guest 输出指针在
   VM 状态变更前预检。attach 解码 version/name/group，Modified UTF-8 name 传给线程 owner；
@@ -57,9 +57,10 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 - From/ToReflectedMethod/Field 四槽只解码 A32 引用、成员 ID 与 static 标志，委托
   JniEnvironment 的显式反射 hooks；Method 同时支持 Constructor。无 VM 后端时明确失败，
   不创建假 ID 或空 wrapper。返回 local reference 的发布由 VM owner 在执行锁内完成。
-- `NewDirectByteBuffer` 先验证 capacity 与完整 guest read/write range，再登记
-  `DirectByteBuffer` identity；地址/容量查询只消费同一 NIO side state，heap buffer 的地址返回 null、容量按 Dalvik 4.4 返回 Buffer.capacity（ADR-0153）。
-  非 Buffer 的容量仍明确返回 -1。非法地址、未知引用或发布失败不得留下 object/state 半提交。
+- `NewDirectByteBuffer` 校验容量与空地址组合，再调用 VM owner 的创建接口。owner 执行
+  ROM `DirectByteBuffer(long,int)`，在 VM 锁内发布 local reference。外部地址不转移所有权，
+  实际内存访问时检查映射权限。地址及容量查询只读 ROM Buffer 字段。heap buffer 的地址为 null，
+  容量按 Dalvik 4.4 返回 Buffer.capacity（ADR-0153）。非 Buffer 的容量返回 -1。
 - `GetMethodID`/`GetStaticMethodID` 共用精确 registry 查找与 owner 类初始化；`NewStringUTF` 使用受检 guest C
   string、Modified UTF-8 解码，经 VM 的 JniStringBackend 分配后发布 local reference；遵循 API 19
   Dalvik，null C 指针直接返回 null `jstring`。非空输入读取失败必须按层级排版保留 slot、

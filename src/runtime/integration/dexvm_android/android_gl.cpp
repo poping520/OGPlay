@@ -23,7 +23,9 @@
 #include <utility>
 #include <vector>
 
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
+#include "ogplay/runtime/dexvm/nio_buffer_access.h"
+#include <cstring>
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "generated/java_gles_surface.inc"
 
@@ -123,35 +125,9 @@ auto WithIntArray(dx::IntrinsicContext& call, const Context& context, const dx::
                   Function&& function) {
     using Result = std::invoke_result_t<Function, std::uint32_t>;
     if (!array.IsValid()) return static_cast<Result>(function(0U));
-    const auto length = call.vm.Model().ArrayLength(array);
-    std::vector<std::byte> bytes(static_cast<std::size_t>(length) * 4U);
-    for (std::int32_t index = 0; index < length; ++index) {
-        const auto value = static_cast<std::uint32_t>(call.vm.Model().GetPrimitiveElement(array, index));
-        for (std::size_t byte = 0; byte < 4U; ++byte) {
-            bytes[static_cast<std::size_t>(index) * 4U + byte] = static_cast<std::byte>(value >> (byte * 8U));
-        }
-    }
-    std::vector<std::byte> output;
-    std::optional<Result> result;
-    static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
-        bytes, copy_back,
-        [&](const memory::GuestAddress address) {
-            result.emplace(function(address.Value()));
-            return 0U;
-        },
-        &output));
-    if (copy_back) {
-        for (std::int32_t index = 0; index < length; ++index) {
-            std::uint32_t value{};
-            for (std::size_t byte = 0; byte < 4U; ++byte) {
-                value |= static_cast<std::uint32_t>(
-                             std::to_integer<std::uint8_t>(output[static_cast<std::size_t>(index) * 4U + byte]))
-                         << (byte * 8U);
-            }
-            call.vm.Model().SetPrimitiveElement(array, index, value);
-        }
-    }
-    return std::move(*result);
+    static_cast<void>(context);
+    static_cast<void>(copy_back);
+    return static_cast<Result>(function(call.vm.Model().PrimitiveArrayAddress(array).Value()));
 }
 
 template <typename Function>
@@ -168,26 +144,10 @@ auto WithIntArrayOffset(dx::IntrinsicContext& call, const Context& context, cons
     if (offset < 0 || offset > length) {
         throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "EGL array offset is outside the array"};
     }
-    std::vector<std::int32_t> values;
-    values.reserve(static_cast<std::size_t>(length - offset));
-    for (auto index = offset; index < length; ++index) {
-        values.push_back(static_cast<std::int32_t>(call.vm.Model().GetPrimitiveElement(array, index)));
-    }
-    const auto temporary = call.vm.Model().NewPrimitiveArray(
-        call.vm.Model().ObjectClass(array), JniPrimitiveKind::integer, static_cast<JniSize>(values.size()));
-    for (std::size_t index = 0; index < values.size(); ++index) {
-        call.vm.Model().SetPrimitiveElement(temporary, static_cast<JniSize>(index),
-                                            static_cast<std::uint32_t>(values[index]));
-    }
-    const auto result = WithIntArray(call, context, temporary, copy_back, std::forward<Function>(function));
-    if (copy_back) {
-        for (std::size_t index = 0; index < values.size(); ++index) {
-            call.vm.Model().SetPrimitiveElement(
-                array, offset + static_cast<std::int32_t>(index),
-                call.vm.Model().GetPrimitiveElement(temporary, static_cast<JniSize>(index)));
-        }
-    }
-    return result;
+    static_cast<void>(context);
+    static_cast<void>(copy_back);
+    return static_cast<Result>(
+        function(call.vm.Model().PrimitiveArrayAddress(array).Add(static_cast<std::uint32_t>(offset) * 4U).Value()));
 }
 
 [[nodiscard]] dx::VmObjectRef FindWrapper(const std::unordered_map<std::uint32_t, std::uint32_t>& wrappers,
@@ -265,7 +225,7 @@ dx::IntrinsicHandler GlGetStringHandler(const Context& context) {
     static_cast<void>(call);
     std::array<std::byte, 4> bytes{};
     std::vector<std::byte> output;
-    static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+    static_cast<void>(context->session->GuestMemory().WithTemporaryGuestMemory(
         bytes, true,
         [&](const memory::GuestAddress address) {
             const std::array args{object, parameter, address.Value()};
@@ -279,28 +239,22 @@ dx::IntrinsicHandler GlGetStringHandler(const Context& context) {
     return static_cast<std::int32_t>(value);
 }
 
-void SetJavaIntOutput(dx::IntrinsicContext& call, const dx::VmObjectRef output, const std::int32_t offset,
-                      const std::int32_t value) {
-    if (!output.IsValid()) {
-        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "GLES integer output is null"};
-    }
-    const auto identity = call.vm.Model().ToIdentity(output);
-    if (call.vm.NIO().Contains(identity)) {
-        const auto snapshot = call.vm.NIO().Snapshot(identity);
-        if (snapshot.element != dx::NioElementKind::int_value || offset < 0 ||
-            snapshot.position + offset >= snapshot.limit) {
+memory::GuestAddress JavaIntOutputAddress(dx::IntrinsicContext& call, dx::VmObjectRef output, std::int32_t offset) {
+    if (!output.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "GLES integer output is null"};
+    if (call.vm.Buffers().IsBuffer(output)) {
+        const auto view = call.vm.Buffers().Read(output);
+        if (view.element != dx::NioElementKind::int_value || offset < 0 || offset >= view.limit - view.position ||
+            !view.current_address)
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "GLES IntBuffer has no remaining element"};
-        }
-        call.vm.NIO().PutScalar(identity, dx::NioElementKind::int_value, (snapshot.position + offset) * 4,
-                                static_cast<std::uint64_t>(value));
-        return;
+        if (view.read_only)
+            throw dx::VmJavaThrow{"Ljava/nio/ReadOnlyBufferException;", "GLES integer output is read-only"};
+        return view.current_address->Add(static_cast<std::uint32_t>(offset) * 4U);
     }
     const auto length = call.vm.Model().ArrayLength(output);
-    if (offset < 0 || offset >= length) {
+    if (offset < 0 || offset >= length)
         throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
                               "GLES integer output offset is outside the array"};
-    }
-    call.vm.Model().SetPrimitiveElement(output, offset, static_cast<std::uint32_t>(value));
+    return call.vm.Model().PrimitiveArrayAddress(output).Add(static_cast<std::uint32_t>(offset) * 4U);
 }
 
 [[nodiscard]] std::string ManagedGlObjectString(dx::IntrinsicContext& call, const Context& context,
@@ -310,7 +264,7 @@ void SetJavaIntOutput(dx::IntrinsicContext& call, const dx::VmObjectRef output, 
     const auto maximum = std::max(1, ManagedGlQueryInt(call, context, api, query_name, object, length_parameter));
     std::vector<std::byte> bytes(static_cast<std::size_t>(maximum));
     std::vector<std::byte> output;
-    static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+    static_cast<void>(context->session->GuestMemory().WithTemporaryGuestMemory(
         bytes, true,
         [&](const memory::GuestAddress address) {
             const std::array args{object, static_cast<std::uint32_t>(maximum), 0U, address.Value()};
@@ -349,8 +303,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context, const gles::GlesApi
                                   call.arguments[3].cat1};
             const auto address = NativeGles(call, context, api, name, args);
             if (address == 0U) return dx::VmValue::Ref(dx::VmObjectRef{});
-            const auto buffer = call.vm.NewIntrinsicInstance("Ljava/nio/DirectByteBuffer;");
-            call.vm.NIO().WrapDirect(call.vm.Model().ToIdentity(buffer), memory::GuestAddress{address}, length);
+            const auto buffer = call.vm.Buffers().NewDirect(memory::GuestAddress{address}, length);
             return dx::VmValue::Ref(buffer);
         }
         if (descriptor == "(I)Ljava/lang/String;" &&
@@ -373,40 +326,22 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context, const gles::GlesApi
                                                                       : 0x8C76U;
             const auto maximum = std::max(
                 1, ManagedGlQueryInt(call, context, api, "glGetProgramiv", call.arguments[0].cat1, max_parameter));
-            std::array<std::byte, 4> zeros{};
-            std::vector<std::byte> size_bytes, type_bytes, name_bytes;
-            std::vector<std::byte> name_input(static_cast<std::size_t>(maximum));
-            static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
-                zeros, true,
-                [&](const memory::GuestAddress size_address) {
-                    return context->session->NIO().WithTemporaryGuestMemory(
-                        zeros, true,
-                        [&](const memory::GuestAddress type_address) {
-                            return context->session->NIO().WithTemporaryGuestMemory(
-                                name_input, true,
-                                [&](const memory::GuestAddress name_address) {
-                                    const std::array args{call.arguments[0].cat1,
-                                                          call.arguments[1].cat1,
-                                                          static_cast<std::uint32_t>(maximum),
-                                                          0U,
-                                                          size_address.Value(),
-                                                          type_address.Value(),
-                                                          name_address.Value()};
-                                    return NativeGles(call, context, api, name, args);
-                                },
-                                &name_bytes);
-                        },
-                        &type_bytes);
+            const auto size_address = JavaIntOutputAddress(call, size_ref, size_offset);
+            const auto type_address = JavaIntOutputAddress(call, type_ref, type_offset);
+            std::vector<std::byte> name_bytes, name_input(static_cast<std::size_t>(maximum));
+            static_cast<void>(context->session->GuestMemory().WithTemporaryGuestMemory(
+                name_input, true,
+                [&](memory::GuestAddress name_address) {
+                    const std::array args{call.arguments[0].cat1,
+                                          call.arguments[1].cat1,
+                                          static_cast<std::uint32_t>(maximum),
+                                          0U,
+                                          size_address.Value(),
+                                          type_address.Value(),
+                                          name_address.Value()};
+                    return NativeGles(call, context, api, name, args);
                 },
-                &size_bytes));
-            const auto decode = [](const std::vector<std::byte>& bytes) {
-                std::uint32_t value{};
-                for (std::size_t i = 0; i < 4U; ++i)
-                    value |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[i])) << (i * 8U);
-                return static_cast<std::int32_t>(value);
-            };
-            SetJavaIntOutput(call, size_ref, size_offset, decode(size_bytes));
-            SetJavaIntOutput(call, type_ref, type_offset, decode(type_bytes));
+                &name_bytes));
             const auto end = std::ranges::find(name_bytes, std::byte{});
             return MakeString(call, std::string(reinterpret_cast<const char*>(name_bytes.data()),
                                                 static_cast<std::size_t>(end - name_bytes.begin())));
@@ -414,7 +349,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context, const gles::GlesApi
         if (name == "glGetActiveUniformBlockName" && descriptor == "(II)Ljava/lang/String;") {
             std::array<std::byte, 4> length_input{};
             std::vector<std::byte> length_output;
-            static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+            static_cast<void>(context->session->GuestMemory().WithTemporaryGuestMemory(
                 length_input, true,
                 [&](const memory::GuestAddress address) {
                     const std::array args{call.arguments[0].cat1, call.arguments[1].cat1, 0x8A41U, address.Value()};
@@ -427,7 +362,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context, const gles::GlesApi
                            << (byte * 8U);
             maximum = std::max(1U, maximum);
             std::vector<std::byte> name_input(maximum), name_output;
-            static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+            static_cast<void>(context->session->GuestMemory().WithTemporaryGuestMemory(
                 name_input, true,
                 [&](const memory::GuestAddress address) {
                     const std::array args{call.arguments[0].cat1, call.arguments[1].cat1, maximum, 0U, address.Value()};
@@ -443,7 +378,13 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context, const gles::GlesApi
             if (!names.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "uniform names are null"};
             const auto count = call.vm.Model().ArrayLength(names);
             std::vector<std::uint32_t> pointers(static_cast<std::size_t>(count));
-            std::vector<std::int32_t> indices(static_cast<std::size_t>(count));
+            const auto output = call.arguments[2].ref;
+            const auto offset = descriptor.ends_with("[II)V") ? call.arguments[3].AsInt() : 0;
+            if (count < 0 || offset < 0 || (count != 0 && offset > INT32_MAX - (count - 1)))
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid GLES uniform output range"};
+            const auto output_address =
+                count == 0 ? memory::GuestAddress{} : JavaIntOutputAddress(call, output, offset);
+            if (count != 0) static_cast<void>(JavaIntOutputAddress(call, output, offset + count - 1));
             std::function<void(std::int32_t)> marshal_names;
             marshal_names = [&](const std::int32_t index) {
                 if (index < count) {
@@ -453,7 +394,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context, const gles::GlesApi
                     const auto text = call.vm.StringUtf8(string);
                     std::vector<std::byte> bytes(text.size() + 1U);
                     std::ranges::transform(text, bytes.begin(), [](const char c) { return static_cast<std::byte>(c); });
-                    static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+                    static_cast<void>(context->session->GuestMemory().WithTemporaryGuestMemory(
                         bytes, false, [&](const memory::GuestAddress address) {
                             pointers[static_cast<std::size_t>(index)] = address.Value();
                             marshal_names(index + 1);
@@ -465,29 +406,12 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context, const gles::GlesApi
                 for (std::size_t i = 0; i < pointers.size(); ++i)
                     for (std::size_t byte = 0; byte < 4U; ++byte)
                         pointer_bytes[i * 4U + byte] = static_cast<std::byte>(pointers[i] >> (byte * 8U));
-                std::vector<std::byte> output_bytes(indices.size() * 4U);
-                std::vector<std::byte> copied;
-                static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+                static_cast<void>(context->session->GuestMemory().WithTemporaryGuestMemory(
                     pointer_bytes, false, [&](const memory::GuestAddress pointer_address) {
-                        return context->session->NIO().WithTemporaryGuestMemory(
-                            output_bytes, true,
-                            [&](const memory::GuestAddress output_address) {
-                                const std::array args{call.arguments[0].cat1, static_cast<std::uint32_t>(count),
-                                                      pointer_address.Value(), output_address.Value()};
-                                return NativeGles(call, context, api, name, args);
-                            },
-                            &copied);
+                        const std::array args{call.arguments[0].cat1, static_cast<std::uint32_t>(count),
+                                              pointer_address.Value(), output_address.Value()};
+                        return NativeGles(call, context, api, name, args);
                     }));
-                for (std::int32_t i = 0; i < count; ++i) {
-                    std::uint32_t value{};
-                    for (std::size_t byte = 0; byte < 4U; ++byte)
-                        value |= static_cast<std::uint32_t>(
-                                     std::to_integer<std::uint8_t>(copied[static_cast<std::size_t>(i) * 4U + byte]))
-                                 << (byte * 8U);
-                    SetJavaIntOutput(call, call.arguments[2].ref,
-                                     descriptor.ends_with("[II)V") ? call.arguments[3].AsInt() + i : i,
-                                     static_cast<std::int32_t>(value));
-                }
             };
             marshal_names(0);
             return dx::VmValue::Void();
@@ -505,7 +429,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context, const gles::GlesApi
                     for (std::size_t i = 0; i < pointers.size(); ++i)
                         for (std::size_t byte = 0; byte < 4U; ++byte)
                             bytes[i * 4U + byte] = static_cast<std::byte>(pointers[i] >> (byte * 8U));
-                    return context->session->NIO().WithTemporaryGuestMemory(
+                    return context->session->GuestMemory().WithTemporaryGuestMemory(
                         bytes, false, [&](const memory::GuestAddress address) {
                             const std::array args{call.arguments[0].cat1, static_cast<std::uint32_t>(count),
                                                   address.Value(), call.arguments[2].cat1};
@@ -519,7 +443,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context, const gles::GlesApi
                 std::vector<std::byte> bytes(text.size() + 1U);
                 for (std::size_t i = 0; i < text.size(); ++i)
                     bytes[i] = static_cast<std::byte>(text[i]);
-                return context->session->NIO().WithTemporaryGuestMemory(
+                return context->session->GuestMemory().WithTemporaryGuestMemory(
                     bytes, false, [&](const memory::GuestAddress address) {
                         pointers[static_cast<std::size_t>(index)] = address.Value();
                         return marshal_names(index + 1);
@@ -534,12 +458,12 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context, const gles::GlesApi
             for (const auto character : text)
                 bytes.push_back(static_cast<std::byte>(character));
             bytes.push_back(std::byte{});
-            static_cast<void>(
-                context->session->NIO().WithTemporaryGuestMemory(bytes, false, [&](const memory::GuestAddress source) {
+            static_cast<void>(context->session->GuestMemory().WithTemporaryGuestMemory(
+                bytes, false, [&](const memory::GuestAddress source) {
                     const std::array pointer_bytes{
                         static_cast<std::byte>(source.Value()), static_cast<std::byte>(source.Value() >> 8U),
                         static_cast<std::byte>(source.Value() >> 16U), static_cast<std::byte>(source.Value() >> 24U)};
-                    return context->session->NIO().WithTemporaryGuestMemory(
+                    return context->session->GuestMemory().WithTemporaryGuestMemory(
                         pointer_bytes, false, [&](const memory::GuestAddress pointers) {
                             const std::array args{call.arguments[0].cat1, 1U, pointers.Value(), 0U};
                             return NativeGles(call, context, api, name, args);
@@ -594,23 +518,24 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context, const gles::GlesApi
                     bytes.push_back(static_cast<std::byte>(character));
                 }
                 bytes.push_back(std::byte{});
-                return context->session->NIO().WithTemporaryGuestMemory(bytes, false,
-                                                                        [&](const memory::GuestAddress address) {
-                                                                            arguments.push_back(address.Value());
-                                                                            const auto result = marshal(index + 1U);
-                                                                            arguments.pop_back();
-                                                                            return result;
-                                                                        });
+                return context->session->GuestMemory().WithTemporaryGuestMemory(
+                    bytes, false, [&](const memory::GuestAddress address) {
+                        arguments.push_back(address.Value());
+                        const auto result = marshal(index + 1U);
+                        arguments.pop_back();
+                        return result;
+                    });
             }
-            const auto identity = call.vm.Model().ToIdentity(value.ref);
-            if (context->session->NIO().Contains(identity)) {
-                return context->session->NIO().WithBufferGuestMemory(identity, copy_back,
-                                                                     [&](const memory::GuestAddress address) {
-                                                                         arguments.push_back(address.Value());
-                                                                         const auto result = marshal(index + 1U);
-                                                                         arguments.pop_back();
-                                                                         return result;
-                                                                     });
+            if (call.vm.Buffers().IsBuffer(value.ref)) {
+                const auto view = call.vm.Buffers().Read(value.ref);
+                if (copy_back && view.read_only)
+                    throw dx::VmJavaThrow{"Ljava/nio/ReadOnlyBufferException;", "read-only GLES output"};
+                if (!view.current_address)
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "GLES Buffer has no payload"};
+                arguments.push_back(view.current_address->Value());
+                const auto result = marshal(index + 1U);
+                arguments.pop_back();
+                return result;
             }
             if (type.front() == '[' && type.size() == 2U) {
                 const auto size = ArrayElementSize(type[1]);
@@ -625,35 +550,11 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context, const gles::GlesApi
                     throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
                                           "Java GLES array offset is outside the array"};
                 }
-                std::vector<std::byte> bytes(static_cast<std::size_t>(length - offset) * size);
-                for (std::int32_t element = offset; element < length; ++element) {
-                    const auto bits = call.vm.Model().GetPrimitiveElement(value.ref, element);
-                    for (std::uint32_t byte = 0; byte < size; ++byte) {
-                        bytes[static_cast<std::size_t>(element - offset) * size + byte] =
-                            static_cast<std::byte>(bits >> (byte * 8U));
-                    }
-                }
-                std::vector<std::byte> output;
-                const auto result = context->session->NIO().WithTemporaryGuestMemory(
-                    bytes, copy_back,
-                    [&](const memory::GuestAddress address) {
-                        arguments.push_back(address.Value());
-                        const auto nested = marshal(next);
-                        arguments.pop_back();
-                        return nested;
-                    },
-                    &output);
-                if (copy_back) {
-                    for (std::int32_t element = offset; element < length; ++element) {
-                        std::uint64_t bits{};
-                        for (std::uint32_t byte = 0; byte < size; ++byte) {
-                            bits |= static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(
-                                        output[static_cast<std::size_t>(element - offset) * size + byte]))
-                                    << (byte * 8U);
-                        }
-                        call.vm.Model().SetPrimitiveElement(value.ref, element, bits);
-                    }
-                }
+                const auto address =
+                    call.vm.Model().PrimitiveArrayAddress(value.ref).Add(static_cast<std::uint32_t>(offset) * size);
+                arguments.push_back(address.Value());
+                const auto result = marshal(next);
+                arguments.pop_back();
                 return result;
             }
             Record(call, "dexvm.java_gles.argument." + type);
@@ -714,8 +615,8 @@ dx::IntrinsicHandler GlUtilsTextureHandler(const Context& context, const bool su
                                   "GLUtils format/type is incompatible with Bitmap.Config"};
         }
         const auto pixels = bitmap.pixels->RawPixels();
-        static_cast<void>(
-            context->session->NIO().WithTemporaryGuestMemory(pixels, false, [&](const memory::GuestAddress address) {
+        static_cast<void>(context->session->GuestMemory().WithTemporaryGuestMemory(
+            pixels, false, [&](const memory::GuestAddress address) {
                 if (sub_image) {
                     const std::array args{call.arguments[0].cat1,
                                           call.arguments[1].cat1,
@@ -1085,7 +986,7 @@ dx::IntrinsicHandler Egl14ConfigsHandler(const Context& context, const bool choo
                     const auto capacity = configs.IsValid() && size > 0 ? std::min<std::int32_t>(size, available) : 0;
                     std::vector<std::byte> config_bytes(static_cast<std::size_t>(capacity) * 4U);
                     std::vector<std::byte> output;
-                    const auto result = context->session->NIO().WithTemporaryGuestMemory(
+                    const auto result = context->session->GuestMemory().WithTemporaryGuestMemory(
                         config_bytes, true,
                         [&](const memory::GuestAddress config_address) {
                             if (choose) {
@@ -2013,7 +1914,7 @@ dx::IntrinsicHandler RomEglConfigs(const Context& context, bool choose) {
         return WithIntArray(call, context, count, true, [&](std::uint32_t count_addr) {
             const auto execute = [&](std::uint32_t attributes) {
                 std::vector<std::byte> storage(length * sizeof(std::uint32_t)), output;
-                const auto result = context->session->NIO().WithTemporaryGuestMemory(
+                const auto result = context->session->GuestMemory().WithTemporaryGuestMemory(
                     storage, true,
                     [&](memory::GuestAddress config_addr) {
                         const auto data = length == 0 ? 0U : config_addr.Value();
@@ -2231,8 +2132,7 @@ Decl Declare_com_google_android_gles_jni_GLImpl_Natives(const Context& context) 
                 if (client_pointer && descriptor.find("Ljava/nio/Buffer;") != std::string::npos) {
                     const auto pointer = call.arguments[call.arguments.size() - (bounds ? 2U : 1U)].ref;
                     if (!pointer.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "pointer"};
-                    const auto identity = call.vm.Model().ToIdentity(pointer);
-                    const auto snapshot = call.vm.NIO().Snapshot(identity);
+                    const auto snapshot = call.vm.Buffers().Read(pointer);
                     if (!snapshot.direct) {
                         if (context->target_sdk_version > 3U)
                             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",

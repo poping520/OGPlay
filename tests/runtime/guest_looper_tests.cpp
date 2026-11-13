@@ -4,7 +4,7 @@
 #include <fstream>
 #include <iterator>
 
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 
 TEST_CASE("BND45 real ARM libdl resolves thread Looper and preserves missing-symbol errors") {
@@ -16,8 +16,11 @@ TEST_CASE("BND45 real ARM libdl resolves thread Looper and preserves missing-sym
         REQUIRE(input.good());
         const std::vector<char> bytes{std::istreambuf_iterator<char>(input), {}};
         auto& image = images.emplace_back(bytes.size());
-        std::transform(bytes.begin(), bytes.end(), image.begin(), [](char value) { return static_cast<std::byte>(value); });
-        modules.push_back({name, image, memory::GuestAddress{0x10000000U + static_cast<std::uint32_t>(modules.size()) * 0x10000000U}});
+        std::transform(bytes.begin(), bytes.end(), image.begin(),
+                       [](char value) { return static_cast<std::byte>(value); });
+        modules.push_back(
+            {name, image,
+             memory::GuestAddress{0x10000000U + static_cast<std::uint32_t>(modules.size()) * 0x10000000U}});
     }
     runtime::VirtualFileSystem fs;
     auto process = runtime::AndroidGuestProcess::Start({19, modules, {}, 64, 36, 1000000, 1, &fs, {}});
@@ -72,7 +75,8 @@ TEST_CASE("BND45 real ARM libdl resolves thread Looper and preserves missing-sym
     child.target = prepare;
     CHECK(process->Invoke(child).return_value != child_looper);
     process->ReleaseDexVmThread(100);
-    for (const auto* name : {"ALooper_acquire", "ALooper_release", "ALooper_wake", "ALooper_removeFd", "ALooper_addFd", "ALooper_pollAll"})
+    for (const auto* name :
+         {"ALooper_acquire", "ALooper_release", "ALooper_wake", "ALooper_removeFd", "ALooper_addFd", "ALooper_pollAll"})
         static_cast<void>(lookup(name));
     CHECK(process->Invoke({dlsym, {library, string("unsupported_test_symbol")}}).return_value == 0);
     CHECK(process->Invoke({dlerror, {}}).return_value != 0);

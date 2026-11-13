@@ -68,7 +68,7 @@ wide pair 是占用两个 DEX 寄存器的 64 位值，payload 在这里指 swit
 
 ## 两种解释内核为什么共用语义
 
-默认 switch 内核逐条解释 DEX。threaded 内核从已预检字节码建立 FastCode，
+switch 内核逐条解释 DEX。默认的 threaded 内核从已预检字节码建立 FastCode，
 即用于快速分派的派生指令缓存；GCC/Clang 使用 computed goto，MSVC 使用稠密 switch。
 原 DEX 不改写，FastCode 不生成机器码，也不保存 guest 对象引用。
 
@@ -79,7 +79,7 @@ wide pair 是占用两个 DEX 寄存器的 64 位值，payload 在这里指 swit
 两个内核的定位不同。threaded 是生产内核，执行层的性能特化（如 String 快路径、调用点缓存）只做在这里。
 switch 是参考内核，保持逐条解释原始 DEX，用作语义基准、差分对照和排障时的切换后端，因此不接任何性能特化。
 对象模型、运行时这类与分派无关的改进放在共享层，两个内核都受益。
-目前默认仍是 switch，计划切换为 threaded。
+默认使用 threaded，switch 需显式选择。
 
 执行 frame 保存方法、寄存器与类别 tag，避免把引用和同位型整数互换；
 Interpreter::Call 将返回值或未捕获异常显式交给调用者，
@@ -144,7 +144,11 @@ Modified UTF-8 是另一种编码表示，需要编码副本与配对释放，
 String 执行 API19 ROM 布局，value、offset、count 表示 char[] 中的有效区间，hashCode 缓存 Java 哈希。
 公开 char[] 构造复制输入，包内构造和 substring 共享 value，builder 按原版规则共享并在后续修改时复制。
 String 到 value 是普通 GC 强边，JNI 的 UTF-16 借用 pin 住 value 数组。
-allocateDirect 与 NIO view 共用真实数组 backing；外部 direct 地址则是非拥有借用。
+NIO 缓冲区家族原样执行 API19 ROM，cursor、字节序、只读状态及视图关系均在 Java 字段中。
+MemoryBlock.allocate 与 NIO view 共用真实数组 backing；外部 DirectByteBuffer(long,int) 地址是非拥有借用。
+NioBufferAccess 缓存链接后的字段槽，向 GL、Bitmap、JNI 和 Posix 提供共享 payload 的受检访问；
+宿主没有 Buffer 状态侧表。Memory 原版 native 负责整块复制与字节交换，threaded 的调用点
+只加速确定成功的标量和游标操作，其他路径执行原方法。Charset 自身继续使用既有 intrinsic。
 这些路径的精确 Release、映射保护与收费规则留在
 [JNI 契约](../../src/runtime/jni/MODULE.md)和[装配契约](../../src/runtime/integration/MODULE.md)。
 

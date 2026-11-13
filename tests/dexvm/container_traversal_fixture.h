@@ -48,12 +48,12 @@ struct AndroidTestRuntime final {
     std::unique_ptr<NativeLibraryLoader> libraries;
     std::unique_ptr<DexVmGuestBridge> bridge;
 
-    AndroidTestRuntime(const std::shared_ptr<DexVmAndroidContext>& context, ogplay::core::CapabilityLedger& ledger,
-                       ogplay::core::Logger& logger, std::vector<IntrinsicClassDecl> catalog,
-                       std::vector<std::uint8_t> dex, InterpreterConfig config = {},
-                       VirtualFileSystem* filesystem = nullptr,
-                       std::vector<ogplay::loader::ApkNativeLibrary> apk_libraries = {},
-                       ogplay::gles::AngleBackend graphics = {});
+    AndroidTestRuntime(
+        const std::shared_ptr<DexVmAndroidContext>& context, ogplay::core::CapabilityLedger& ledger,
+        ogplay::core::Logger& logger, std::vector<IntrinsicClassDecl> catalog, std::vector<std::uint8_t> dex,
+        InterpreterConfig config = {}, VirtualFileSystem* filesystem = nullptr,
+        std::vector<ogplay::loader::ApkNativeLibrary> apk_libraries = {}, ogplay::gles::AngleBackend graphics = {},
+        ogplay::gles::CompressedTextureFamily texture_family = ogplay::gles::CompressedTextureFamily::all);
     ~AndroidTestRuntime();
 };
 }  // namespace ogplay::test::container_traversal

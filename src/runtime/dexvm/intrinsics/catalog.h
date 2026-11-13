@@ -15,13 +15,11 @@ std::u16string DecodeCharset(std::span<const std::byte> bytes, const std::string
 std::vector<std::byte> EncodeCharset(std::u16string_view text, const std::string& charset);
 
 void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services);
-void AppendJavaLangThrowableNatives(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaLangWrapperNatives(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaIoStreams(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaUtilZip(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaIcu(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services);
-void AppendJavaRegex(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaConcurrent(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services);
 void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services);
@@ -40,6 +38,7 @@ void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog);
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_RealToString_Natives();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_StringToReal_Natives();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_System_Natives(const CoreIntrinsicServices& services);
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Throwable_Natives();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Math_Natives();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Runtime_Overrides(const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_libcore_io_IoUtils_Overrides();
@@ -49,5 +48,7 @@ void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog);
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Constructor_Natives();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Field_Natives();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Array_Natives();
+[[nodiscard]] IntrinsicClassDecl Declare_java_util_regex_Pattern_Natives();
+[[nodiscard]] IntrinsicClassDecl Declare_java_util_regex_Matcher_Natives();
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

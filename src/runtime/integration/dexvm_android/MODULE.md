@@ -246,7 +246,11 @@ WMS 分发触摸 DOWN 并锁定手势目标，按窗口 flags 交付 OUTSIDE，�
 Java GLES/EGL 经 session managed 冷入口共享 [native boundary](../../boundary/MODULE.md) 的 binding/
 registry/current/error；参数错误 guest 锁存、host 契约故障硬失败。javax GL 接口归 Java，GLImpl
 native 用生成 ABI/既有 GLES 编组，每 EGLContext 字段持独立 GLImpl/Buffer、正常初始化/构造；
-目标以线程 current 为准，direct Buffer 用稳定 NIO 地址、heap 不存临时地址，按 targetSdk 报错/拒绝。
+目标以线程 current 为准，Buffer 经 dexvm 的 ROM 字段访问器取当前位置地址，
+heap/direct 和 primitive array 参数共享稳定 payload，不复制到临时 guest 内存；
+持久 client pointer 仍只允许 direct Buffer，间接 Buffer 按 targetSdk 报错/拒绝。
+GL 映射返回值经 ROM DirectByteBuffer(long,int) 构造。Bitmap native 的 copyPixels 只搬运
+当前位置之后的原始 payload，Java 按元素宽度推进 position。
 EGL10/EGL14 wrapper 对应真实 display/config/context/surface；config 可投影请求颜色位数但不换
 native handle，current/延迟销毁/pbuffer/share/扩展/error 归 registry，offset 受检、只写指定切片，
 未支持入口保留精确 EGL error。GLES30 类/常量/重载按 delta catalog，缺 handler 记账；String/sync long/

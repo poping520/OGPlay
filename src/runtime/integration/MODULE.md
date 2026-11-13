@@ -227,8 +227,11 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - renewable native frame 只在真实 futex park、正字节 IO、present、audio enqueue、JNI 重入
   等可观测进展时续 watchdog；查询/EOF/wake/yield/内存管理和空转不续期。
   JNI 重入进展判别的有界限制见 [ADR-0023](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/diagnostics.md#adr-0023)。
-- process-owned NioRuntime 与 JNI 共用 direct backing；AddressSpace 有界 arena 使用强类型
-  guest address，不保存宿主指针。Java GLES 编组后进入唯一 sealed managed GLES/ANGLE。
+- JNI direct-buffer hooks 在桥中按调用线程执行 ROM DirectByteBuffer(long,int) 构造器，
+  地址/容量直接读 ROM 字段，退出时撤销 hooks；session 只持通用临时 guest 映射工具。
+  Java GLES 的 Buffer 与 primitive array 参数直接取稳定 payload 地址，Bitmap native 只复制
+  当前位置之后的原始字节，position 的推进由 ROM Bitmap Java 完成。同步 host span 不跨 GC
+  或映射退役保存；GL 编组后进入唯一 sealed managed GLES/ANGLE。
 
 ## 退出、阻塞与 Clock
 
@@ -253,8 +256,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   退出标记并调用 VM.Exit，保留退出码、非 Java 展开，不从 worker 同步 Stop/join。
   宿主 Stop 仍为取消，不自动运行 hook；详见 [相关说明](../../../docs/design/dexvm.md)。
 - wait/sleep/timed join 共用注入 monotonic Clock。Java 与 syscall 共用会话纳秒 uptime，
-  currentTimeMillis 与原生墙钟查询共用固定纪元。时钟驱动线程上的原生 nanosleep 经
-  `native_sleep_observer` 推进 uptime，下一次帧推进扣除该额度。
+  currentTimeMillis 与原生墙钟查询共用固定纪元。时钟驱动线程上的原生 nanosleep 与到期的
+  futex 限时等待经 `native_sleep_observer` 推进 uptime，下一次帧推进扣除该额度。
   ADR-0171：blocking observer 统一跟踪生命周期驱动停摆并转发 EGL pacer；无 EGL 亦适用。
   root/worker 限时等待仅补至停摆起点 uptime 加注入 RealtimeClock 的真实流逝时间，
   不超过自身 deadline；root join/退出 hook 同规则，恢复后按帧推进且不回拨。
@@ -412,5 +415,5 @@ BootDex 装配校验启动类路径的 ZIP/DEX 来源，API19 资源由封存归
 系统及应用布局经 ROM Resources、XmlBlock 和 LayoutInflater 加载。ROM NinePatch 使用 native 伸缩区与原 Bitmap 像素。
 
 Class.getDex 的 buffer 工厂复用 process GuestMemoryAccess 的 direct arena：拷贝一次完整 DEX，
-按 JNI WrapDirect 建立 ByteBuffer 后设只读视图，再经 AddressSpace.Protect 保护页；地址不移动，
+经 JNI 同用的 ROM DirectByteBuffer(long,int) 构造器建立 ByteBuffer 后设只读视图，再经 AddressSpace.Protect 保护页；地址不移动，
 映像随 process/VM teardown 退役，缓存与 GC 根归 ReflectionRuntime。不另设 DEX 内存分配器。

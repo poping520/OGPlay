@@ -1,5 +1,5 @@
 #include "ogplay/runtime/integration/android_guest_call_session.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "runtime/integration/dexvm_android/rom_activity.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
@@ -36,7 +36,7 @@
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "ogplay/runtime/vfs/vfs.h"
 #include "../fixtures/bitmap_decode_data.h"
 

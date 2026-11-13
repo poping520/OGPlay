@@ -9,7 +9,7 @@
 
 #include "ogplay/cpu/dynarmic.h"
 #include "ogplay/memory/bus.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "runtime/integration/guest_cpu_environment.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 

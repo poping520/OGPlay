@@ -168,6 +168,9 @@ public:
     void Unmap(const GuestRange& range);
     void ValidateMapped(const GuestRange& range, std::uint64_t thread_id = 0) const;
     void Validate(const GuestRange& range, AccessType access, std::uint64_t thread_id = 0) const;
+    // Synchronous native access. Caller excludes unmap/protect/restore and keeps the
+    // owning process (and any Java payload owner) alive until the native returns.
+    [[nodiscard]] std::byte* ResolveNativeRange(const GuestRange& range, AccessType access);
     void Read(GuestAddress address, std::span<std::byte> destination, std::uint64_t thread_id = 0) const;
     void Fetch(GuestAddress address, std::span<std::byte> destination, std::uint64_t thread_id = 0) const;
     void Write(GuestAddress address, std::span<const std::byte> source, std::uint64_t thread_id = 0);

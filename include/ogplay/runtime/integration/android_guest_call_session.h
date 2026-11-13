@@ -46,10 +46,11 @@ class DiagnosticState;
 }
 
 namespace dexvm {
-class NioRuntime;
-struct NioDirectMemoryAccess;
+class GuestMemoryRuntime;
+struct GuestMemoryAccess;
 }  // namespace dexvm
 
+struct JniDirectBufferHooks;
 class JniInvocationEngine;
 class JniNativeRegistry;
 class JniStringBackend;
@@ -220,7 +221,8 @@ struct AndroidGuestProcessRequest final {
     std::shared_ptr<const GuestProcessEnvironment> initial_environment;
     std::optional<std::thread::id> guest_call_slice_observer_thread;
     std::function<std::uint64_t()> monotonic_nanos{};
-    // Called on the sleeping host thread after a native nanosleep with the time slept.
+    // Called on the waiting host thread after a native nanosleep (time slept) or a futex
+    // wait that reached its timeout (the timeout).
     std::function<void(std::chrono::nanoseconds)> native_sleep_observer{};
 };
 
@@ -260,7 +262,7 @@ public:
     void PollThreadLooper(std::uint64_t thread_id, const std::function<bool()>& interrupted);
     void WakeThreadLooper(std::uint64_t thread_id);
     void NotifyLooperPollers();
-    [[nodiscard]] dexvm::NioDirectMemoryAccess GuestMemoryAccess() const;
+    [[nodiscard]] dexvm::GuestMemoryAccess GuestMemoryAccess() const;
     void ProtectGuestReadOnly(memory::GuestAddress address, std::uint32_t size);
     void SetBitmapHooks(AndroidBitmapHooks hooks);
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
@@ -288,7 +290,8 @@ public:
     [[nodiscard]] JniStringBackend& Strings() noexcept;
     void SetStringBackend(JniStringBackend* backend) noexcept;
     [[nodiscard]] JniPrimitiveArrayStore& Arrays() noexcept;
-    [[nodiscard]] dexvm::NioRuntime& NIO() noexcept;
+    [[nodiscard]] dexvm::GuestMemoryRuntime& GuestMemory() noexcept;
+    [[nodiscard]] JniDirectBufferHooks& DirectBuffers() noexcept;
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
     [[nodiscard]] audio::EncodedMusicMixer& EncodedMusic() noexcept;
@@ -426,7 +429,8 @@ public:
     [[nodiscard]] JniGuestObjectRegistry& Objects() noexcept;
     [[nodiscard]] JniStringBackend& Strings() noexcept;
     [[nodiscard]] JniPrimitiveArrayStore& Arrays() noexcept;
-    [[nodiscard]] dexvm::NioRuntime& NIO() noexcept;
+    [[nodiscard]] dexvm::GuestMemoryRuntime& GuestMemory() noexcept;
+    [[nodiscard]] JniDirectBufferHooks& DirectBuffers() noexcept;
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
     [[nodiscard]] audio::EncodedMusicMixer& EncodedMusic() noexcept;

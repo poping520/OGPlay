@@ -59,6 +59,10 @@ if (instruction.handler == FastHandler::invoke_checked) {
     invoke.is_static = named.is_static;
     if (invoke_kind == InvokeKind::virtual_call || invoke_kind == InvokeKind::private_direct)
         invoke.fast_op = named.fast_op;
+    if (invoke_kind == InvokeKind::private_direct ||
+        (invoke_kind == InvokeKind::virtual_call &&
+         (!named.overridable || (linker->Class(named.owner).access_flags & kAccFinal))))
+        invoke.nio_fast_op = named.nio_fast_op;
     invoke.vtable_index = named.vtable_index;
     instruction.handler = FastHandler::invoke_fast;
 }
@@ -69,6 +73,11 @@ if (invoke.fast_op != StringFastOp::none && trace_ring.empty() &&
     OGPLAY_DISPATCH_NEXT();
 }
 
+if (invoke.nio_fast_op != 0 && !config.disable_nio_fast_ops && trace_ring.empty() &&
+    TryNioFastOp(*owner, invoke.nio_fast_op, invoke, regs, frame.last_result)) {
+    execution.exit_result = VmValue::Void();
+    OGPLAY_DISPATCH_NEXT();
+}
 bool continue_same_frame = false;
 {
     // A new invoke invalidates the previous result before any nested GC.
@@ -105,6 +114,20 @@ bool continue_same_frame = false;
     if (invoke.fast_op == StringFastOp::none && target_fast_op != StringFastOp::none && trace_ring.empty() &&
         TryStringFastOp(target_fast_op, *model, invoke, regs, frame.last_result)) {
         OGPLAY_DISPATCH_NEXT();
+    }
+    const auto nio_op = linker->Method(target_id).nio_fast_op;
+    if (invoke.nio_fast_op == 0 && nio_op != 0 && !invoke.is_static && !config.disable_nio_fast_ops &&
+        trace_ring.empty() && TryNioFastOp(*owner, nio_op, invoke, regs, frame.last_result)) {
+        OGPLAY_DISPATCH_NEXT();
+    }
+    if (nio_op != 0 && invoke.is_static && !config.disable_nio_fast_ops && trace_ring.empty()) {
+        OGPLAY_SYNC_EXECUTION();
+        EnsureInitialized(execution, linker->Method(target_id).owner);
+        ticks = execution.ticks;
+        if (pending_exception.IsValid()) goto yield;
+        if (TryNioFastOp(*owner, nio_op, invoke, regs, frame.last_result)) {
+            OGPLAY_DISPATCH_NEXT();
+        }
     }
     VmValue small_storage[8];
     std::vector<VmValue> large_storage;

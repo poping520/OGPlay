@@ -94,7 +94,8 @@ AndroidTestRuntime::AndroidTestRuntime(const std::shared_ptr<DexVmAndroidContext
                                        std::vector<IntrinsicClassDecl> catalog, std::vector<std::uint8_t> dex,
                                        InterpreterConfig config, VirtualFileSystem* filesystem,
                                        std::vector<ogplay::loader::ApkNativeLibrary> apk_libraries,
-                                       ogplay::gles::AngleBackend graphics)
+                                       ogplay::gles::AngleBackend graphics,
+                                       ogplay::gles::CompressedTextureFamily texture_family)
     : inventory(std::move(apk_libraries)), selected(inventory, ogplay::loader::AndroidArmAbi::armeabi_v7a) {
     using namespace ogplay::test::native_library;
     auto& fs = filesystem ? *filesystem : owned_filesystem;
@@ -117,14 +118,15 @@ AndroidTestRuntime::AndroidTestRuntime(const std::shared_ptr<DexVmAndroidContext
         if (source.name != "libc.so") dependencies.push_back(source);
     auto modules = BuildBionicModuleSet(SelectBionicProfile(19), "libc.so", libc->image, dependencies);
     const auto inputs = modules.Inputs();
-    auto process = AndroidGuestProcess::Start({.system_modules = inputs,
-                                               .backend = graphics,
-                                               .width = context->surface_width ? context->surface_width : 800,
-                                               .height = context->surface_height ? context->surface_height : 480,
-                                               .maximum_ticks_per_call = UINT64_C(100000000),
-                                               .filesystem = &fs,
-                                               .boundary_options = {.logger = &logger},
-                                               .monotonic_nanos = [context] { return context->uptime_nanos.load(); }});
+    auto process = AndroidGuestProcess::Start(
+        {.system_modules = inputs,
+         .backend = graphics,
+         .width = context->surface_width ? context->surface_width : 800,
+         .height = context->surface_height ? context->surface_height : 480,
+         .maximum_ticks_per_call = UINT64_C(100000000),
+         .filesystem = &fs,
+         .boundary_options = {.logger = &logger, .compressed_texture_family = texture_family},
+         .monotonic_nanos = [context] { return context->uptime_nanos.load(); }});
     session = AndroidGuestCallSession::AdoptProcess(std::move(process));
     libraries =
         std::make_unique<NativeLibraryLoader>(session->Process(), selected, SelectBionicProfile(19), sources, &logger);

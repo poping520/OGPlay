@@ -1,9 +1,4 @@
 // Generated from fixed API 19 core.jar Posix native shape.
-posix.UnimplementedDirect("preadBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIJ)I");
-posix.UnimplementedDirect("pwriteBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIJ)I");
-posix.UnimplementedDirect("recvfromBytes",
-                          "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetSocketAddress;)I");
-posix.UnimplementedDirect("sendtoBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetAddress;I)I");
 posix.UnimplementedDirect("umaskImpl", "(I)I");
 posix.UnimplementedVirtual("accept", "(Ljava/io/FileDescriptor;Ljava/net/InetSocketAddress;)Ljava/io/FileDescriptor;");
 posix.UnimplementedVirtual("bind", "(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V");

@@ -36,6 +36,8 @@ enum class StringFastOp : std::uint8_t {
     equals_ignore_case,
 };
 
+[[nodiscard]] std::uint32_t ResolveNioFastOp(std::string_view owner, std::string_view name,
+                                             std::string_view descriptor);
 [[nodiscard]] StringFastOp ResolveStringFastOp(std::string_view name, std::string_view descriptor);
 [[nodiscard]] std::int32_t CompareStringChars(std::u16string_view left, std::u16string_view right);
 [[nodiscard]] std::int32_t FastIndexOfStringChar(std::u16string_view text, std::int32_t ch, std::int32_t start);
@@ -78,6 +80,7 @@ struct FastInvoke final {
     mutable std::uint32_t resolved_method{kInvalidFastIndex};
     mutable bool is_static{};
     mutable StringFastOp fast_op{};
+    mutable std::uint32_t nio_fast_op{};
     mutable std::int32_t vtable_index{-1};
     // One entry per Java argument value, excluding receiver. References and
     // arrays are normalized to 'L'; J/D consume two register words.

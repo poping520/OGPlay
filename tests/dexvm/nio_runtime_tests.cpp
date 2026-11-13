@@ -5,13 +5,18 @@
 #include <bit>
 #include <cstddef>
 #include <vector>
+#include <fstream>
+#include <iterator>
+#include <tuple>
+#include <cstring>
 
 #include <doctest/doctest.h>
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
+#include "ogplay/runtime/dexvm/nio_buffer_access.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 
 namespace dx = ogplay::runtime::dexvm;
@@ -20,10 +25,6 @@ using ogplay::runtime::JniObjectDomain;
 using ogplay::runtime::JniObjectIdentity;
 
 namespace {
-JniObjectIdentity Object(std::uint64_t value) {
-    return {JniObjectDomain::dex_vm, value};
-}
-
 struct NioVm final {
     memory::AddressSpace memory;
     ogplay::core::CapabilityLedger payload_ledger;
@@ -34,22 +35,29 @@ struct NioVm final {
     ogplay::core::CapabilityLedger ledger;
     dx::Interpreter vm;
 
-    explicit NioVm(dx::InterpreterBackend backend = dx::InterpreterBackend::switch_dispatch)
+    explicit NioVm(dx::InterpreterBackend backend = dx::InterpreterBackend::switch_dispatch, bool disable_fast = false)
         : vm(
               [this]() -> dx::DexClassLinker& {
-                  linker.RegisterIntrinsics(dx::CoreIntrinsicCatalog());
+                  linker.RegisterIntrinsics(dx::CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices()));
                   ogplay::test::RegisterBootDex(linker);
+                  std::ifstream fixture(std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/nio_buffers.dex", std::ios::binary);
+                  REQUIRE(fixture.good());
+                  linker.RegisterDex(std::vector<std::uint8_t>(std::istreambuf_iterator<char>(fixture), {}));
                   linker.Link();
                   return linker;
               }(),
-              model, nullptr, ledger, {.backend = backend}) {
-        vm.NIO().SetDirectMemoryAccess(
+              model, nullptr, ledger, {.backend = backend, .disable_nio_fast_ops = disable_fast}) {
+        vm.SetGuestMemoryAccess(
             {[](std::uint32_t) { return memory::GuestAddress(0x1000U); }, [](memory::GuestAddress, std::uint32_t) {},
              [](memory::GuestAddress address, std::uint32_t size) {
                  return address.Value() >= 0x1000U && address.Value() + size <= 0x1040U;
              },
              [this](memory::GuestAddress address, std::span<std::byte> out) { memory.Read(address, out); },
-             [this](memory::GuestAddress address, std::span<const std::byte> in) { memory.Write(address, in); }});
+             [this](memory::GuestAddress address, std::span<const std::byte> in) { memory.Write(address, in); },
+             [this](memory::GuestAddress address, std::uint32_t size, bool write) {
+                 return memory.ResolveNativeRange({address, size},
+                                                  write ? memory::AccessType::write : memory::AccessType::read);
+             }});
     }
 
     dx::VmObjectRef Static(const char* name, const char* descriptor, std::vector<dx::VmValue> arguments) {
@@ -80,6 +88,25 @@ struct NioVm final {
         return vm.Call(linker.Class(owner).vtable[*slot], arguments);
     }
 
+    dx::VmValue Success(dx::VmObjectRef buffer, const char* name, const char* descriptor,
+                        std::vector<dx::VmValue> args = {}) {
+        const auto result = Call(buffer, name, descriptor, std::move(args));
+        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+        return result.value;
+    }
+
+    void Position(dx::VmObjectRef buffer, int value) {
+        Success(buffer, "position", "(I)Ljava/nio/Buffer;", {dx::VmValue::Int(value)});
+    }
+
+    void Put(dx::VmObjectRef buffer, int index, int value) {
+        Success(buffer, "put", "(IB)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(index), dx::VmValue::Int(value)});
+    }
+
+    int Byte(dx::VmObjectRef buffer, int index) {
+        return static_cast<std::uint8_t>(Success(buffer, "get", "(I)B", {dx::VmValue::Int(index)}).AsInt());
+    }
+
     std::string_view ClassOf(dx::VmObjectRef object) const {
         return linker.Class(model.ObjectClass(object)).descriptor;
     }
@@ -87,134 +114,115 @@ struct NioVm final {
 }  // namespace
 
 TEST_CASE("DVM-82 NIO cursor and marks follow API 19 invariants") {
-    dx::NioRuntime nio;
-    nio.CreateHeap(Object(1), dx::VmObjectRef(0), 0, 8, dx::NioElementKind::byte);
-    nio.SetPosition(Object(1), 4);
-    nio.Mark(Object(1));
-    nio.SetPosition(Object(1), 6);
-    nio.Reset(Object(1));
-    CHECK(nio.Snapshot(Object(1)).position == 4);
-    nio.SetLimit(Object(1), 3);
-    CHECK(nio.Snapshot(Object(1)).position == 3);
-    CHECK_FALSE(nio.Snapshot(Object(1)).mark.has_value());
-    CHECK_THROWS_AS(nio.Reset(Object(1)), dx::VmJavaThrow);
-    nio.Flip(Object(1));
-    CHECK(nio.Snapshot(Object(1)).limit == 3);
-    CHECK(nio.Snapshot(Object(1)).position == 0);
+    NioVm f;
+    const auto buffer = f.Static("allocate", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(8)});
+    f.Position(buffer, 4);
+    f.Success(buffer, "mark", "()Ljava/nio/Buffer;");
+    f.Position(buffer, 6);
+    f.Success(buffer, "reset", "()Ljava/nio/Buffer;");
+    CHECK(f.vm.Buffers().Read(buffer).position == 4);
+    f.Success(buffer, "limit", "(I)Ljava/nio/Buffer;", {dx::VmValue::Int(3)});
+    CHECK(f.vm.Buffers().Read(buffer).position == 3);
+    CHECK_FALSE(f.vm.Buffers().Read(buffer).mark);
+    const auto reset = f.Call(buffer, "reset", "()Ljava/nio/Buffer;");
+    REQUIRE(reset.exception.IsValid());
+    CHECK(f.ClassOf(reset.exception) == "Ljava/nio/InvalidMarkException;");
+    f.Success(buffer, "flip", "()Ljava/nio/Buffer;");
+    CHECK(f.vm.Buffers().Read(buffer).limit == 3);
+    CHECK(f.vm.Buffers().Read(buffer).position == 0);
 }
 
 TEST_CASE("DVM-82 NIO views share storage and keep independent cursors") {
-    dx::NioRuntime nio;
-    nio.CreateHeap(Object(1), dx::VmObjectRef(0), 0, 8, dx::NioElementKind::byte);
-    nio.Put(Object(1), 2, 0x7a);
-    nio.CreateView(Object(2), Object(1), dx::NioElementKind::byte, 2, 4, false);
-    CHECK(nio.Get(Object(2), 0) == 0x7a);
-    nio.Put(Object(2), 1, 0x55);
-    CHECK(nio.Get(Object(1), 3) == 0x55);
-    nio.Duplicate(Object(3), Object(2), true);
-    CHECK(nio.Snapshot(Object(3)).read_only);
-    CHECK_THROWS_AS(nio.Put(Object(3), 0, 1), dx::VmJavaThrow);
-    nio.CreateView(Object(4), Object(1), dx::NioElementKind::int_value, 0, 2, false);
-    CHECK_FALSE(nio.Snapshot(Object(4)).array.IsValid());
+    NioVm f;
+    const auto buffer = f.Static("allocate", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(8)});
+    f.Put(buffer, 2, 0x7a);
+    f.Position(buffer, 2);
+    const auto view = f.On(buffer, "slice");
+    CHECK(f.Byte(view, 0) == 0x7a);
+    f.Put(view, 1, 0x55);
+    CHECK(f.Byte(buffer, 3) == 0x55);
+    const auto readonly = f.On(view, "asReadOnlyBuffer");
+    CHECK(f.vm.Buffers().Read(readonly).read_only);
+    const auto put = f.Call(readonly, "put", "(IB)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(0), dx::VmValue::Int(1)});
+    REQUIRE(put.exception.IsValid());
+    CHECK(f.ClassOf(put.exception) == "Ljava/nio/ReadOnlyBufferException;");
+    const auto ints = f.Success(buffer, "asIntBuffer", "()Ljava/nio/IntBuffer;").ref;
+    CHECK_FALSE(f.Success(ints, "hasArray", "()Z").AsInt());
 }
 
 TEST_CASE("DVM-82 ByteBuffer views preserve heap and direct concrete classes") {
-    NioVm fixture;
-    const auto heap = fixture.Static("allocate", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(8)});
-    const auto direct = fixture.Static("allocateDirect", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(8)});
-
-    CHECK(fixture.ClassOf(fixture.On(heap, "slice")) == "Ljava/nio/HeapByteBuffer;");
-    for (const auto method : {"slice", "duplicate", "asReadOnlyBuffer"}) {
-        const auto view = fixture.On(direct, method);
-        CHECK(fixture.ClassOf(view) == "Ljava/nio/DirectByteBuffer;");
-        CHECK(fixture.vm.NIO().Snapshot(fixture.model.ToIdentity(view)).direct);
+    NioVm f;
+    for (const auto allocation : {"allocate", "allocateDirect"}) {
+        const auto buffer = f.Static(allocation, "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(8)});
+        const bool direct = std::string_view(allocation) == "allocateDirect";
+        for (const auto method : {"slice", "duplicate", "asReadOnlyBuffer"}) {
+            const auto view = f.On(buffer, method);
+            CHECK(f.ClassOf(view) == (direct ? "Ljava/nio/DirectByteBuffer;" : "Ljava/nio/ByteArrayBuffer;"));
+            CHECK(f.vm.Buffers().Read(view).direct == direct);
+        }
     }
 }
 
 TEST_CASE("DVM-82 ByteBuffer scalar access honors selected byte order") {
-    dx::NioRuntime nio;
-    nio.CreateHeap(Object(1), dx::VmObjectRef(0), 0, 8, dx::NioElementKind::byte);
-    nio.PutScalar(Object(1), dx::NioElementKind::int_value, 0, 0x11223344U);
-    CHECK(nio.Get(Object(1), 0) == 0x11);
-    nio.SetOrder(Object(1), dx::NioByteOrder::little_endian);
-    CHECK(nio.GetScalar(Object(1), dx::NioElementKind::int_value, 0) == 0x44332211U);
+    NioVm f;
+    const auto buffer = f.Static("allocate", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(8)});
+    f.Success(buffer, "putInt", "(II)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(0), dx::VmValue::Int(0x11223344)});
+    CHECK(f.Byte(buffer, 0) == 0x11);
+    const auto type = f.linker.ResolveDescriptor("Ljava/nio/ByteOrder;");
+    const auto field = f.linker.FindFieldRecursive(type, "LITTLE_ENDIAN", "Ljava/nio/ByteOrder;");
+    REQUIRE(field);
+    const auto order = dx::VmObjectRef(f.linker.Class(type).static_storage[f.linker.Field(*field).slot]);
+    f.Success(buffer, "order", "(Ljava/nio/ByteOrder;)Ljava/nio/ByteBuffer;", {dx::VmValue::Ref(order)});
+    CHECK(f.Success(buffer, "getInt", "(I)I", {dx::VmValue::Int(0)}).AsInt() == 0x44332211);
 }
 
-TEST_CASE("DVM-82 NIO side table traces heap backing and sweeps owners") {
-    dx::NioRuntime nio;
-    nio.CreateHeap(Object(1), dx::VmObjectRef(9), 0, 4, dx::NioElementKind::byte);
-    dx::VmObjectRef traced(0);
-    nio.Trace(Object(1), [&traced](const dx::VmObjectRef ref) { traced = ref; });
-    CHECK(traced == dx::VmObjectRef(9));
-    nio.Sweep(Object(1));
-    CHECK_FALSE(nio.Contains(Object(1)));
+TEST_CASE("DVM-82 NIO ROM fields trace heap backing and collect owners") {
+    NioVm f;
+    const auto buffer = f.Static("allocate", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(4)});
+    const auto array = f.vm.Buffers().Read(buffer).array;
+    f.Success(buffer, "capacity", "()I");
+    {
+        const auto roots = f.vm.ProtectReferences(std::array{buffer});
+        static_cast<void>(f.vm.CollectGarbage());
+        CHECK(f.model.IsValidRef(array));
+    }
+    static_cast<void>(f.vm.CollectGarbage());
+    CHECK_FALSE(f.model.IsValidRef(buffer));
+    CHECK_FALSE(f.model.IsValidRef(array));
 }
 
 TEST_CASE("DVM-82 direct buffers expose validated guest memory and GLES marshalling") {
-    dx::NioRuntime nio;
-    std::array<std::byte, 16> bytes{};
-    bool released{};
-    nio.SetDirectMemoryAccess({[](std::uint32_t) { return memory::GuestAddress(0x1000U); },
-                               [&released](memory::GuestAddress, std::uint32_t) { released = true; },
-                               [](memory::GuestAddress address, std::uint32_t size) {
-                                   return address.Value() >= 0x1000U && address.Value() + size <= 0x1010U;
-                               },
-                               [&bytes](memory::GuestAddress address, std::span<std::byte> out) {
-                                   std::copy_n(bytes.begin() + (address.Value() - 0x1000U), out.size(), out.begin());
-                               },
-                               [&bytes](memory::GuestAddress address, std::span<const std::byte> in) {
-                                   std::copy(in.begin(), in.end(), bytes.begin() + (address.Value() - 0x1000U));
-                               }});
-    nio.WrapDirect(Object(1), memory::GuestAddress(0x1000U), 16);
-    nio.Put(Object(1), 4, 0x66);
-    nio.CreateView(Object(2), Object(1), dx::NioElementKind::byte, 4, 8, false);
-    CHECK(nio.Snapshot(Object(2)).direct_address->Value() == 0x1004U);
-    CHECK(nio.Get(Object(2), 0) == 0x66);
-    const auto marshalled = nio.ReadRemainingBytes(Object(2));
-    REQUIRE(marshalled.size() == 8U);
-    CHECK(marshalled[0] == std::byte{0x66});
-    CHECK_THROWS_AS(nio.WrapDirect(Object(3), memory::GuestAddress(0x2000U), 4), dx::VmJavaThrow);
-    nio.Sweep(Object(1));
-    CHECK_FALSE(released);
-    nio.Sweep(Object(2));
-    CHECK_FALSE(released);
+    NioVm f;
+    f.memory.Map({memory::GuestAddress(0x40000000), 4096},
+                 memory::PageProtection::read | memory::PageProtection::write);
+    const auto buffer = f.vm.Buffers().NewDirect(memory::GuestAddress(0x40000000), 16);
+    f.Put(buffer, 4, 0x66);
+    f.Position(buffer, 4);
+    const auto slice = f.On(buffer, "slice");
+    const auto view = f.vm.Buffers().Read(slice);
+    CHECK(view.direct_address == memory::GuestAddress(0x40000004));
+    CHECK(f.Byte(slice, 0) == 0x66);
+    CHECK(f.vm.Buffers().Bytes(view, 0, 1, false)[0] == std::byte{0x66});
+    // Dalvik JNI wrapping does not prevalidate the external address; access does.
+    const auto invalid = f.vm.Buffers().NewDirect(memory::GuestAddress(0x40010000), 4);
+    CHECK_THROWS(static_cast<void>(f.vm.Buffers().Bytes(f.vm.Buffers().Read(invalid), 0, 4, false)));
 }
 
 TEST_CASE("DVM-83 NIO marshals heap and direct buffers without moving cursors") {
-    dx::NioRuntime nio;
-    std::array<std::byte, 32> guest{};
-    nio.SetDirectMemoryAccess({[](std::uint32_t) { return memory::GuestAddress(0x1000U); },
-                               [](memory::GuestAddress, std::uint32_t) {},
-                               [](memory::GuestAddress address, std::uint32_t size) {
-                                   return address.Value() >= 0x1000U && address.Value() + size <= 0x1020U;
-                               },
-                               [&guest](memory::GuestAddress address, std::span<std::byte> out) {
-                                   std::copy_n(guest.begin() + (address.Value() - 0x1000U), out.size(), out.begin());
-                               },
-                               [&guest](memory::GuestAddress address, std::span<const std::byte> in) {
-                                   std::copy(in.begin(), in.end(), guest.begin() + (address.Value() - 0x1000U));
-                               }});
-    nio.CreateHeap(Object(1), dx::VmObjectRef{}, 0, 8, dx::NioElementKind::byte);
-    nio.SetPosition(Object(1), 2);
-    nio.SetLimit(Object(1), 6);
-    nio.Put(Object(1), 2, 0x11U);
-    CHECK(nio.WithBufferGuestMemory(Object(1), true, [&guest](memory::GuestAddress address) {
-        CHECK(address.Value() == 0x1000U);
-        CHECK(guest[0] == std::byte{0x11});
-        guest[1] = std::byte{0x7a};
-        return 9U;
-    }) == 9U);
-    CHECK(nio.Get(Object(1), 3) == 0x7aU);
-    CHECK(nio.Snapshot(Object(1)).position == 2);
-    CHECK(nio.Snapshot(Object(1)).limit == 6);
-
-    nio.WrapDirect(Object(2), memory::GuestAddress(0x1010U), 8);
-    nio.SetPosition(Object(2), 3);
-    CHECK(nio.WithBufferGuestMemory(Object(2), false, [](memory::GuestAddress address) {
-        CHECK(address.Value() == 0x1013U);
-        return 0U;
-    }) == 0U);
-    CHECK(nio.Snapshot(Object(2)).position == 3);
+    NioVm f;
+    for (const auto allocation : {"allocate", "allocateDirect"}) {
+        const auto buffer = f.Static(allocation, "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(8)});
+        f.Position(buffer, 2);
+        f.Success(buffer, "limit", "(I)Ljava/nio/Buffer;", {dx::VmValue::Int(6)});
+        f.Put(buffer, 2, 0x11);
+        const auto view = f.vm.Buffers().Read(buffer);
+        REQUIRE(view.current_address);
+        CHECK(f.memory.Read8(*view.current_address) == 0x11);
+        f.memory.Write8(view.current_address->Add(1), 0x7a);
+        CHECK(f.Byte(buffer, 3) == 0x7a);
+        CHECK(f.vm.Buffers().Read(buffer).position == 2);
+        CHECK(f.vm.Buffers().Read(buffer).limit == 6);
+    }
 }
 
 TEST_CASE("WU7-6 NIO byte and short reads sign extend on both backends") {
@@ -249,8 +257,7 @@ TEST_CASE("DVM-260 direct buffers share managed byte payload across views and GC
     for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
         NioVm f(backend);
         const auto buffer = f.Static("allocateDirect", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(16)});
-        const auto id = f.model.ToIdentity(buffer);
-        const auto state = f.vm.NIO().Snapshot(id);
+        const auto state = f.vm.Buffers().Read(buffer);
         REQUIRE(state.array.IsValid());
         REQUIRE(state.direct_address);
         const auto array = state.array;
@@ -261,22 +268,21 @@ TEST_CASE("DVM-260 direct buffers share managed byte payload across views and GC
         CHECK(f.arrays.PinCount(f.model.ToIdentity(array)) == 0);
         CHECK(f.model.PrimitiveArrayAddress(array) == address);
         f.model.SetPrimitiveElement(array, 2, 0xfe);
-        CHECK(f.vm.NIO().Get(id, 2) == 0xfe);
+        CHECK(f.Byte(buffer, 2) == 0xfe);
         CHECK(f.memory.Read8(address.Add(2)) == 0xfe);
-        f.vm.NIO().Put(id, 3, 0x7a);
+        f.Put(buffer, 3, 0x7a);
         CHECK(f.model.GetPrimitiveElement(array, 3) == 0x7a);
         CHECK(f.memory.Read8(address.Add(3)) == 0x7a);
         f.memory.Write8(address.Add(4), 0xab);
-        CHECK(f.vm.NIO().Get(id, 4) == 0xab);
+        CHECK(f.Byte(buffer, 4) == 0xab);
         CHECK(f.model.GetPrimitiveElement(array, 4) == 0xab);
-        f.vm.NIO().SetPosition(id, 4);
+        f.Position(buffer, 4);
         const auto slice = f.On(buffer, "slice");
-        const auto slice_id = f.model.ToIdentity(slice);
         CHECK(f.Call(slice, "arrayOffset", "()I").value.AsInt() == 4);
-        CHECK(f.vm.NIO().Snapshot(slice_id).direct_address == address.Add(4));
+        CHECK(f.vm.Buffers().Read(slice).direct_address == address.Add(4));
         const auto duplicate = f.On(slice, "duplicate");
-        CHECK(f.vm.NIO().Snapshot(f.model.ToIdentity(duplicate)).array_offset == 4);
-        CHECK(f.vm.NIO().Snapshot(f.model.ToIdentity(duplicate)).direct_address == address.Add(4));
+        CHECK(f.vm.Buffers().Read(duplicate).array_byte_offset == 4);
+        CHECK(f.vm.Buffers().Read(duplicate).direct_address == address.Add(4));
         const auto read_only = f.On(slice, "asReadOnlyBuffer");
         CHECK(f.Call(read_only, "hasArray", "()Z").value.AsInt() == 0);
         for (const auto [name, signature] :
@@ -288,20 +294,22 @@ TEST_CASE("DVM-260 direct buffers share managed byte payload across views and GC
         const auto ints_result = f.Call(slice, "asIntBuffer", "()Ljava/nio/IntBuffer;");
         REQUIRE_FALSE(ints_result.exception.IsValid());
         const auto ints = ints_result.value.ref;
-        const auto ints_id = f.model.ToIdentity(ints);
-        CHECK(f.vm.NIO().Snapshot(ints_id).direct_address == address.Add(4));
+        CHECK(f.vm.Buffers().Read(ints).direct_address == address.Add(4));
         CHECK(f.Call(ints, "hasArray", "()Z").value.AsInt() == 0);
-        f.vm.NIO().Put(ints_id, 1, 0x11223344);
+        f.Success(ints, "put", "(II)Ljava/nio/IntBuffer;", {dx::VmValue::Int(1), dx::VmValue::Int(0x11223344)});
         CHECK(f.model.GetPrimitiveElement(array, 8) == 0x11);
         CHECK(f.memory.Read8(address.Add(11)) == 0x44);
         const auto readonly_ints = f.Call(read_only, "asIntBuffer", "()Ljava/nio/IntBuffer;").value.ref;
-        CHECK_THROWS_AS(f.vm.NIO().Put(f.model.ToIdentity(readonly_ints), 0, 1), dx::VmJavaThrow);
+        const auto denied =
+            f.Call(readonly_ints, "put", "(II)Ljava/nio/IntBuffer;", {dx::VmValue::Int(0), dx::VmValue::Int(1)});
+        REQUIRE(denied.exception.IsValid());
+        CHECK(f.ClassOf(denied.exception) == "Ljava/nio/ReadOnlyBufferException;");
         {
             const auto roots = f.vm.ProtectReferences(std::array{readonly_ints});
             static_cast<void>(f.vm.CollectGarbage());
             CHECK(f.model.IsValidRef(array));
-            CHECK_FALSE(f.vm.NIO().Contains(id));
-            CHECK(f.vm.NIO().Get(f.model.ToIdentity(readonly_ints), 1) == 0x11223344);
+            CHECK_FALSE(f.model.IsValidRef(buffer));
+            CHECK(f.Success(readonly_ints, "get", "(I)I", {dx::VmValue::Int(1)}).AsInt() == 0x11223344);
         }
         {
             const auto roots = f.vm.ProtectReferences(std::array{array});
@@ -424,16 +432,212 @@ TEST_CASE("UTF8 streaming encoder preserves sliced input and overflow cursors") 
             return result.value.ref;
         };
         CHECK(f.Call(encode(first), "isOverflow", "()Z").value.AsInt() == 1);
-        CHECK(f.vm.NIO().Snapshot(f.model.ToIdentity(input)).position == 2);
-        CHECK(f.vm.NIO().Snapshot(f.model.ToIdentity(first)).position == 1);
-        CHECK(f.vm.NIO().Get(f.model.ToIdentity(first), 0) == 'A');
+        CHECK(f.vm.Buffers().Read(input).position == 2);
+        CHECK(f.vm.Buffers().Read(first).position == 1);
+        CHECK(f.Byte(first, 0) == 'A');
         const auto second = f.Static("allocate", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(6)});
         const auto second_root = f.vm.ProtectReferences(std::array{second});
         CHECK(f.Call(encode(second), "isUnderflow", "()Z").value.AsInt() == 1);
-        CHECK(f.vm.NIO().Snapshot(f.model.ToIdentity(input)).position == 5);
-        CHECK(f.vm.NIO().Snapshot(f.model.ToIdentity(input)).limit == 5);
+        CHECK(f.vm.Buffers().Read(input).position == 5);
+        CHECK(f.vm.Buffers().Read(input).limit == 5);
         const std::array<std::uint8_t, 6> expected{0xc3, 0xa9, 0xf0, 0x9f, 0x98, 0x80};
         for (std::size_t i = 0; i < expected.size(); ++i)
-            CHECK(f.vm.NIO().Get(f.model.ToIdentity(second), static_cast<std::int32_t>(i)) == expected[i]);
+            CHECK(f.Byte(second, static_cast<std::int32_t>(i)) == expected[i]);
+    }
+}
+
+TEST_CASE("NIO ROM Memory bulk bindings preserve swap, bounds and overlapping bytes") {
+    for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
+        using V = dx::VmValue;
+        NioVm f(backend);
+        const auto memory_class = f.linker.ResolveDescriptor("Llibcore/io/Memory;");
+        const auto call = [&](const char* name, const char* descriptor, std::initializer_list<V> args) {
+            const auto method = f.linker.FindDirectMethod(memory_class, name, descriptor);
+            REQUIRE(method);
+            return f.vm.Call(*method, args);
+        };
+        const auto direct = f.Static("allocateDirect", "(I)Ljava/nio/ByteBuffer;", {V::Int(16)});
+        const auto bytes = f.vm.Buffers().Read(direct);
+        REQUIRE(bytes.direct_address);
+        const auto array = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[S"),
+                                                     ogplay::runtime::JniPrimitiveKind::short_integer, 2);
+        const auto roots = f.vm.ProtectReferences(std::array{direct, array});
+        f.model.SetPrimitiveElement(array, 0, 0x1234);
+        f.model.SetPrimitiveElement(array, 1, 0xabcd);
+        const auto address = V::Long(bytes.direct_address->Value());
+        CHECK_FALSE(call("pokeShortArray", "(J[SIIZ)V", {address, V::Ref(array), V::Int(0), V::Int(2), V::Int(1)})
+                        .exception.IsValid());
+        CHECK(f.memory.Read8(*bytes.direct_address) == 0x12);
+        CHECK(f.memory.Read8(bytes.direct_address->Add(3)) == 0xcd);
+        CHECK_FALSE(call("peekShortArray", "(J[SIIZ)V", {address, V::Ref(array), V::Int(0), V::Int(2), V::Int(0)})
+                        .exception.IsValid());
+        CHECK(f.model.GetPrimitiveElement(array, 0) == 0x3412);
+        const auto invalid =
+            call("pokeShortArray", "(J[SIIZ)V", {address, V::Ref(array), V::Int(1), V::Int(2), V::Int(0)});
+        REQUIRE(invalid.exception.IsValid());
+        CHECK(f.ClassOf(invalid.exception) == "Ljava/lang/ArrayIndexOutOfBoundsException;");
+        const auto null_array =
+            call("peekByteArray", "(J[BII)V", {address, V::Ref(dx::VmObjectRef{}), V::Int(0), V::Int(1)});
+        REQUIRE(null_array.exception.IsValid());
+        CHECK(f.ClassOf(null_array.exception) == "Ljava/lang/NullPointerException;");
+        CHECK_FALSE(call("memmove", "(Ljava/lang/Object;ILjava/lang/Object;IJ)V",
+                         {V::Ref(direct), V::Int(1), V::Ref(direct), V::Int(0), V::Long(4)})
+                        .exception.IsValid());
+        const std::array expected{0x12U, 0x12U, 0x34U, 0xabU, 0xcdU};
+        for (std::uint32_t offset = 0; offset < expected.size(); ++offset)
+            CHECK(f.memory.Read8(bytes.direct_address->Add(offset)) == expected[offset]);
+    }
+}
+
+TEST_CASE("NIO ROM scalar calls and exceptions are bit exact with fast calls disabled and switch") {
+    using V = dx::VmValue;
+    std::vector<std::uint64_t> expected;
+    for (const auto [backend, disabled] :
+         {std::pair{dx::InterpreterBackend::threaded, false}, std::pair{dx::InterpreterBackend::threaded, true},
+          std::pair{dx::InterpreterBackend::switch_dispatch, false}}) {
+        CAPTURE(backend);
+        CAPTURE(disabled);
+        NioVm f(backend, disabled);
+        std::vector<std::uint64_t> actual;
+        const auto invoke = [&](const std::string& owner, const std::string& name, const std::string& signature,
+                                std::vector<V> args) {
+            const auto method = f.linker.FindDirectMethod(f.linker.ResolveDescriptor(owner), name, signature);
+            REQUIRE(method);
+            return f.vm.Call(*method, args);
+        };
+        const auto record = [&](const dx::VmCallOutcome& result, dx::VmObjectRef buffer) {
+            actual.push_back(result.exception.IsValid() ? 1U : 0U);
+            if (result.exception.IsValid()) {
+                const auto descriptor = f.ClassOf(result.exception);
+                for (const char ch : descriptor)
+                    actual.push_back(static_cast<unsigned char>(ch));
+                actual.push_back(0);
+                for (const char ch : result.exception_message)
+                    actual.push_back(static_cast<unsigned char>(ch));
+                actual.push_back(0);
+            } else if (result.value.kind != V::Kind::ref)
+                actual.push_back(result.value.kind == V::Kind::wide ? result.value.wide : result.value.cat1);
+            const auto view = f.vm.Buffers().Read(buffer);
+            actual.push_back(static_cast<std::uint32_t>(view.position));
+            actual.push_back(static_cast<std::uint32_t>(view.limit));
+            actual.push_back(static_cast<std::uint32_t>(view.mark.value_or(-1)));
+            const auto bytes = f.vm.Buffers().Bytes(
+                view, 0, static_cast<std::uint32_t>(view.capacity) << static_cast<unsigned>(view.element_size_shift),
+                false);
+            for (auto byte : bytes)
+                actual.push_back(std::to_integer<unsigned>(byte));
+        };
+        for (const auto [label, type] :
+             {std::pair{"Byte", 'B'}, std::pair{"Char", 'C'}, std::pair{"Short", 'S'}, std::pair{"Int", 'I'},
+              std::pair{"Float", 'F'}, std::pair{"Long", 'J'}, std::pair{"Double", 'D'}}) {
+            const std::string typed = "Ljava/nio/" + std::string(label) + "Buffer;";
+            for (int storage = 0; storage < 3; ++storage) {
+                dx::VmObjectRef buffer;
+                if (storage == 0) {
+                    const auto allocated = invoke(typed, "allocate", "(I)" + typed, {V::Int(4)});
+                    REQUIRE_FALSE(allocated.exception.IsValid());
+                    buffer = allocated.value.ref;
+                } else {
+                    const auto bb = f.Static(storage == 1 ? "allocate" : "allocateDirect", "(I)Ljava/nio/ByteBuffer;",
+                                             {V::Int(32)});
+                    buffer =
+                        type == 'B'
+                            ? bb
+                            : f.Success(bb, ("as" + std::string(label) + "Buffer").c_str(), ("()" + typed).c_str()).ref;
+                }
+                for (const auto bits :
+                     {UINT64_C(0x8000000080000000), UINT64_C(0x7ff800017fc00001), UINT64_C(0xfedcba9876543210)}) {
+                    const auto value = type == 'J' || type == 'D'
+                                           ? V::Long(std::bit_cast<std::int64_t>(bits))
+                                           : V::Int(std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(bits)));
+                    for (const int index : {0, 1, -1, 99}) {
+                        record(invoke("LNioCalls;", std::string(label) + "PutAbs",
+                                      "(" + typed + "I" + type + ")" + typed, {V::Ref(buffer), V::Int(index), value}),
+                               buffer);
+                        record(invoke("LNioCalls;", std::string(label) + "GetAbs", "(" + typed + "I)" + type,
+                                      {V::Ref(buffer), V::Int(index)}),
+                               buffer);
+                    }
+                    f.Position(buffer, 0);
+                    record(invoke("LNioCalls;", std::string(label) + "Put", "(" + typed + type + ")" + typed,
+                                  {V::Ref(buffer), value}),
+                           buffer);
+                    f.Position(buffer, 0);
+                    record(invoke("LNioCalls;", std::string(label) + "Get", "(" + typed + ")" + type, {V::Ref(buffer)}),
+                           buffer);
+                    const auto readonly = f.Success(buffer, "asReadOnlyBuffer", ("()" + typed).c_str()).ref;
+                    record(invoke("LNioCalls;", std::string(label) + "Put", "(" + typed + type + ")" + typed,
+                                  {V::Ref(readonly), value}),
+                           readonly);
+                }
+                for (const int index : {0, 2, 99, -1})
+                    record(invoke("LNioCalls;", "cursorposition", "(Ljava/nio/Buffer;I)Ljava/nio/Buffer;",
+                                  {V::Ref(buffer), V::Int(index)}),
+                           buffer);
+                record(invoke("LNioCalls;", "cursorflip", "(Ljava/nio/Buffer;)Ljava/nio/Buffer;", {V::Ref(buffer)}),
+                       buffer);
+                record(invoke("LNioCalls;", "cursorremaining", "(Ljava/nio/Buffer;)I", {V::Ref(buffer)}), buffer);
+                record(invoke("LNioCalls;", "cursorreset", "(Ljava/nio/Buffer;)Ljava/nio/Buffer;", {V::Ref(buffer)}),
+                       buffer);
+            }
+        }
+        // Exercise every ByteBuffer scalar width, relative/absolute, both byte orders.
+        for (const auto allocation : {"allocate", "allocateDirect"}) {
+            const auto bb = f.Static(allocation, "(I)Ljava/nio/ByteBuffer;", {V::Int(32)});
+            for (const auto order_name : {"BIG_ENDIAN", "LITTLE_ENDIAN"}) {
+                const auto order_type = f.linker.ResolveDescriptor("Ljava/nio/ByteOrder;");
+                const auto field = f.linker.FindFieldRecursive(order_type, order_name, "Ljava/nio/ByteOrder;");
+                REQUIRE(field);
+                const auto order =
+                    dx::VmObjectRef(f.linker.Class(order_type).static_storage[f.linker.Field(*field).slot]);
+                f.Success(bb, "order", "(Ljava/nio/ByteOrder;)Ljava/nio/ByteBuffer;", {V::Ref(order)});
+                for (const auto [label, type] :
+                     {std::pair{"Char", 'C'}, std::pair{"Short", 'S'}, std::pair{"Int", 'I'}, std::pair{"Float", 'F'},
+                      std::pair{"Long", 'J'}, std::pair{"Double", 'D'}}) {
+                    const auto value = type == 'J' || type == 'D'
+                                           ? V::Long(std::bit_cast<std::int64_t>(UINT64_C(0xfff800017fc00001)))
+                                           : V::Int(std::bit_cast<std::int32_t>(0x7fc00001U));
+                    for (const bool absolute : {false, true}) {
+                        f.Position(bb, 0);
+                        std::vector<V> args{V::Ref(bb)};
+                        if (absolute) args.push_back(V::Int(1));
+                        args.push_back(value);
+                        record(invoke("LNioCalls;", "byte" + std::string(label) + "Put" + (absolute ? "Abs" : ""),
+                                      std::string("(Ljava/nio/ByteBuffer;") + (absolute ? "I" : "") + type +
+                                          ")Ljava/nio/ByteBuffer;",
+                                      args),
+                               bb);
+                        f.Position(bb, 0);
+                        args = {V::Ref(bb)};
+                        if (absolute) args.push_back(V::Int(1));
+                        record(invoke("LNioCalls;", "byte" + std::string(label) + "Get" + (absolute ? "Abs" : ""),
+                                      std::string("(Ljava/nio/ByteBuffer;") + (absolute ? "I" : "") + ")" + type, args),
+                               bb);
+                    }
+                }
+            }
+            const auto address = f.vm.Buffers().Read(bb).current_address;
+            REQUIRE(address);
+            for (const auto [label, type] :
+                 {std::pair{"Byte", 'B'}, std::pair{"Short", 'S'}, std::pair{"Int", 'I'}, std::pair{"Long", 'J'}})
+                for (int swap = 0; swap < 2; ++swap) {
+                    const auto value = type == 'J' ? V::Long(std::bit_cast<std::int64_t>(UINT64_C(0xfedcba9876543210)))
+                                                   : V::Int(std::bit_cast<std::int32_t>(0x87654321U));
+                    std::vector<V> args{V::Long(address->Value()), value};
+                    if (type != 'B') args.push_back(V::Int(swap));
+                    record(invoke("LNioCalls;", std::string("poke") + label,
+                                  std::string("(J") + type + (type == 'B' ? "" : "Z") + ")V", args),
+                           bb);
+                    args = {V::Long(address->Value())};
+                    if (type != 'B') args.push_back(V::Int(swap));
+                    record(invoke("LNioCalls;", std::string("peek") + label,
+                                  std::string("(J") + (type == 'B' ? "" : "Z") + ")" + type, args),
+                           bb);
+                }
+        }
+        if (expected.empty())
+            expected = actual;
+        else
+            CHECK(actual == expected);
     }
 }

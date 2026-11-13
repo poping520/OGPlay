@@ -900,6 +900,16 @@ VmObjectRef JavaObjectModel::NewPrimitiveArray(const DexClassId array_class, con
     }
 }
 
+std::span<std::byte> JavaObjectModel::PrimitiveArrayBytes(VmObjectRef ref) const {
+    static_cast<void>(PrimitiveArrayKind(ref));
+    return std::visit(
+        [](const auto& view) {
+            const auto bytes = std::as_bytes(view.ReadOnlySpan());
+            return std::span<std::byte>{const_cast<std::byte*>(bytes.data()), bytes.size()};
+        },
+        *impl_->At(ref).primitive_view);
+}
+
 memory::GuestAddress JavaObjectModel::PrimitiveArrayAddress(const VmObjectRef ref) const {
     static_cast<void>(PrimitiveArrayKind(ref));
     return impl_->arrays->Address(impl_->At(ref).identity);

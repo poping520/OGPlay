@@ -1,0 +1,453 @@
+.class public LNioCalls;
+.super Ljava/lang/Object;
+
+.method static public ByteGet(Ljava/nio/ByteBuffer;)B
+.registers 1
+    invoke-virtual {v0}, Ljava/nio/ByteBuffer;->get()B
+    move-result v0
+    return v0
+.end method
+
+.method static public ByteGetAbs(Ljava/nio/ByteBuffer;I)B
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ByteBuffer;->get(I)B
+    move-result v0
+    return v0
+.end method
+
+.method static public BytePut(Ljava/nio/ByteBuffer;B)Ljava/nio/ByteBuffer;
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ByteBuffer;->put(B)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public BytePutAbs(Ljava/nio/ByteBuffer;IB)Ljava/nio/ByteBuffer;
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/nio/ByteBuffer;->put(IB)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public CharGet(Ljava/nio/CharBuffer;)C
+.registers 1
+    invoke-virtual {v0}, Ljava/nio/CharBuffer;->get()C
+    move-result v0
+    return v0
+.end method
+
+.method static public CharGetAbs(Ljava/nio/CharBuffer;I)C
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/CharBuffer;->get(I)C
+    move-result v0
+    return v0
+.end method
+
+.method static public CharPut(Ljava/nio/CharBuffer;C)Ljava/nio/CharBuffer;
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/CharBuffer;->put(C)Ljava/nio/CharBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public CharPutAbs(Ljava/nio/CharBuffer;IC)Ljava/nio/CharBuffer;
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/nio/CharBuffer;->put(IC)Ljava/nio/CharBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public byteCharGet(Ljava/nio/ByteBuffer;)C
+.registers 1
+    invoke-virtual {v0}, Ljava/nio/ByteBuffer;->getChar()C
+    move-result v0
+    return v0
+.end method
+
+.method static public byteCharGetAbs(Ljava/nio/ByteBuffer;I)C
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ByteBuffer;->getChar(I)C
+    move-result v0
+    return v0
+.end method
+
+.method static public byteCharPut(Ljava/nio/ByteBuffer;C)Ljava/nio/ByteBuffer;
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ByteBuffer;->putChar(C)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public byteCharPutAbs(Ljava/nio/ByteBuffer;IC)Ljava/nio/ByteBuffer;
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/nio/ByteBuffer;->putChar(IC)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public ShortGet(Ljava/nio/ShortBuffer;)S
+.registers 1
+    invoke-virtual {v0}, Ljava/nio/ShortBuffer;->get()S
+    move-result v0
+    return v0
+.end method
+
+.method static public ShortGetAbs(Ljava/nio/ShortBuffer;I)S
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ShortBuffer;->get(I)S
+    move-result v0
+    return v0
+.end method
+
+.method static public ShortPut(Ljava/nio/ShortBuffer;S)Ljava/nio/ShortBuffer;
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ShortBuffer;->put(S)Ljava/nio/ShortBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public ShortPutAbs(Ljava/nio/ShortBuffer;IS)Ljava/nio/ShortBuffer;
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/nio/ShortBuffer;->put(IS)Ljava/nio/ShortBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public byteShortGet(Ljava/nio/ByteBuffer;)S
+.registers 1
+    invoke-virtual {v0}, Ljava/nio/ByteBuffer;->getShort()S
+    move-result v0
+    return v0
+.end method
+
+.method static public byteShortGetAbs(Ljava/nio/ByteBuffer;I)S
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ByteBuffer;->getShort(I)S
+    move-result v0
+    return v0
+.end method
+
+.method static public byteShortPut(Ljava/nio/ByteBuffer;S)Ljava/nio/ByteBuffer;
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ByteBuffer;->putShort(S)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public byteShortPutAbs(Ljava/nio/ByteBuffer;IS)Ljava/nio/ByteBuffer;
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/nio/ByteBuffer;->putShort(IS)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public IntGet(Ljava/nio/IntBuffer;)I
+.registers 1
+    invoke-virtual {v0}, Ljava/nio/IntBuffer;->get()I
+    move-result v0
+    return v0
+.end method
+
+.method static public IntGetAbs(Ljava/nio/IntBuffer;I)I
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/IntBuffer;->get(I)I
+    move-result v0
+    return v0
+.end method
+
+.method static public IntPut(Ljava/nio/IntBuffer;I)Ljava/nio/IntBuffer;
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/IntBuffer;->put(I)Ljava/nio/IntBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public IntPutAbs(Ljava/nio/IntBuffer;II)Ljava/nio/IntBuffer;
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/nio/IntBuffer;->put(II)Ljava/nio/IntBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public byteIntGet(Ljava/nio/ByteBuffer;)I
+.registers 1
+    invoke-virtual {v0}, Ljava/nio/ByteBuffer;->getInt()I
+    move-result v0
+    return v0
+.end method
+
+.method static public byteIntGetAbs(Ljava/nio/ByteBuffer;I)I
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ByteBuffer;->getInt(I)I
+    move-result v0
+    return v0
+.end method
+
+.method static public byteIntPut(Ljava/nio/ByteBuffer;I)Ljava/nio/ByteBuffer;
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ByteBuffer;->putInt(I)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public byteIntPutAbs(Ljava/nio/ByteBuffer;II)Ljava/nio/ByteBuffer;
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/nio/ByteBuffer;->putInt(II)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public FloatGet(Ljava/nio/FloatBuffer;)F
+.registers 1
+    invoke-virtual {v0}, Ljava/nio/FloatBuffer;->get()F
+    move-result v0
+    return v0
+.end method
+
+.method static public FloatGetAbs(Ljava/nio/FloatBuffer;I)F
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/FloatBuffer;->get(I)F
+    move-result v0
+    return v0
+.end method
+
+.method static public FloatPut(Ljava/nio/FloatBuffer;F)Ljava/nio/FloatBuffer;
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/FloatBuffer;->put(F)Ljava/nio/FloatBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public FloatPutAbs(Ljava/nio/FloatBuffer;IF)Ljava/nio/FloatBuffer;
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/nio/FloatBuffer;->put(IF)Ljava/nio/FloatBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public byteFloatGet(Ljava/nio/ByteBuffer;)F
+.registers 1
+    invoke-virtual {v0}, Ljava/nio/ByteBuffer;->getFloat()F
+    move-result v0
+    return v0
+.end method
+
+.method static public byteFloatGetAbs(Ljava/nio/ByteBuffer;I)F
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ByteBuffer;->getFloat(I)F
+    move-result v0
+    return v0
+.end method
+
+.method static public byteFloatPut(Ljava/nio/ByteBuffer;F)Ljava/nio/ByteBuffer;
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ByteBuffer;->putFloat(F)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public byteFloatPutAbs(Ljava/nio/ByteBuffer;IF)Ljava/nio/ByteBuffer;
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/nio/ByteBuffer;->putFloat(IF)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public LongGet(Ljava/nio/LongBuffer;)J
+.registers 2
+    invoke-virtual {v1}, Ljava/nio/LongBuffer;->get()J
+    move-result-wide v0
+    return-wide v0
+.end method
+
+.method static public LongGetAbs(Ljava/nio/LongBuffer;I)J
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/LongBuffer;->get(I)J
+    move-result-wide v0
+    return-wide v0
+.end method
+
+.method static public LongPut(Ljava/nio/LongBuffer;J)Ljava/nio/LongBuffer;
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/nio/LongBuffer;->put(J)Ljava/nio/LongBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public LongPutAbs(Ljava/nio/LongBuffer;IJ)Ljava/nio/LongBuffer;
+.registers 4
+    invoke-virtual {v0, v1, v2, v3}, Ljava/nio/LongBuffer;->put(IJ)Ljava/nio/LongBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public byteLongGet(Ljava/nio/ByteBuffer;)J
+.registers 2
+    invoke-virtual {v1}, Ljava/nio/ByteBuffer;->getLong()J
+    move-result-wide v0
+    return-wide v0
+.end method
+
+.method static public byteLongGetAbs(Ljava/nio/ByteBuffer;I)J
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ByteBuffer;->getLong(I)J
+    move-result-wide v0
+    return-wide v0
+.end method
+
+.method static public byteLongPut(Ljava/nio/ByteBuffer;J)Ljava/nio/ByteBuffer;
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/nio/ByteBuffer;->putLong(J)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public byteLongPutAbs(Ljava/nio/ByteBuffer;IJ)Ljava/nio/ByteBuffer;
+.registers 4
+    invoke-virtual {v0, v1, v2, v3}, Ljava/nio/ByteBuffer;->putLong(IJ)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public DoubleGet(Ljava/nio/DoubleBuffer;)D
+.registers 2
+    invoke-virtual {v1}, Ljava/nio/DoubleBuffer;->get()D
+    move-result-wide v0
+    return-wide v0
+.end method
+
+.method static public DoubleGetAbs(Ljava/nio/DoubleBuffer;I)D
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/DoubleBuffer;->get(I)D
+    move-result-wide v0
+    return-wide v0
+.end method
+
+.method static public DoublePut(Ljava/nio/DoubleBuffer;D)Ljava/nio/DoubleBuffer;
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/nio/DoubleBuffer;->put(D)Ljava/nio/DoubleBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public DoublePutAbs(Ljava/nio/DoubleBuffer;ID)Ljava/nio/DoubleBuffer;
+.registers 4
+    invoke-virtual {v0, v1, v2, v3}, Ljava/nio/DoubleBuffer;->put(ID)Ljava/nio/DoubleBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public byteDoubleGet(Ljava/nio/ByteBuffer;)D
+.registers 2
+    invoke-virtual {v1}, Ljava/nio/ByteBuffer;->getDouble()D
+    move-result-wide v0
+    return-wide v0
+.end method
+
+.method static public byteDoubleGetAbs(Ljava/nio/ByteBuffer;I)D
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/ByteBuffer;->getDouble(I)D
+    move-result-wide v0
+    return-wide v0
+.end method
+
+.method static public byteDoublePut(Ljava/nio/ByteBuffer;D)Ljava/nio/ByteBuffer;
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/nio/ByteBuffer;->putDouble(D)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public byteDoublePutAbs(Ljava/nio/ByteBuffer;ID)Ljava/nio/ByteBuffer;
+.registers 4
+    invoke-virtual {v0, v1, v2, v3}, Ljava/nio/ByteBuffer;->putDouble(ID)Ljava/nio/ByteBuffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public cursorposition(Ljava/nio/Buffer;I)Ljava/nio/Buffer;
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/Buffer;->position(I)Ljava/nio/Buffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public cursorlimit(Ljava/nio/Buffer;I)Ljava/nio/Buffer;
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/nio/Buffer;->limit(I)Ljava/nio/Buffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public cursorflip(Ljava/nio/Buffer;)Ljava/nio/Buffer;
+.registers 1
+    invoke-virtual {v0}, Ljava/nio/Buffer;->flip()Ljava/nio/Buffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public cursorremaining(Ljava/nio/Buffer;)I
+.registers 1
+    invoke-virtual {v0}, Ljava/nio/Buffer;->remaining()I
+    move-result v0
+    return v0
+.end method
+
+.method static public cursorreset(Ljava/nio/Buffer;)Ljava/nio/Buffer;
+.registers 1
+    invoke-virtual {v0}, Ljava/nio/Buffer;->reset()Ljava/nio/Buffer;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public peekByte(J)B
+.registers 2
+    invoke-static {v0, v1}, Llibcore/io/Memory;->peekByte(J)B
+    move-result v0
+    return v0
+.end method
+
+.method static public pokeByte(JB)V
+.registers 3
+    invoke-static {v0, v1, v2}, Llibcore/io/Memory;->pokeByte(JB)V
+    return-void
+.end method
+
+.method static public peekShort(JZ)S
+.registers 3
+    invoke-static {v0, v1, v2}, Llibcore/io/Memory;->peekShort(JZ)S
+    move-result v0
+    return v0
+.end method
+
+.method static public pokeShort(JSZ)V
+.registers 4
+    invoke-static {v0, v1, v2, v3}, Llibcore/io/Memory;->pokeShort(JSZ)V
+    return-void
+.end method
+
+.method static public peekInt(JZ)I
+.registers 3
+    invoke-static {v0, v1, v2}, Llibcore/io/Memory;->peekInt(JZ)I
+    move-result v0
+    return v0
+.end method
+
+.method static public pokeInt(JIZ)V
+.registers 4
+    invoke-static {v0, v1, v2, v3}, Llibcore/io/Memory;->pokeInt(JIZ)V
+    return-void
+.end method
+
+.method static public peekLong(JZ)J
+.registers 3
+    invoke-static {v0, v1, v2}, Llibcore/io/Memory;->peekLong(JZ)J
+    move-result-wide v0
+    return-wide v0
+.end method
+
+.method static public pokeLong(JJZ)V
+.registers 5
+    invoke-static {v0, v1, v2, v3, v4}, Llibcore/io/Memory;->pokeLong(JJZ)V
+    return-void
+.end method

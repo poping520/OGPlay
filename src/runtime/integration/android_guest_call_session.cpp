@@ -32,7 +32,7 @@
 #include "ogplay/runtime/debug/stall_diagnostics.h"
 #include "ogplay/runtime/execution/guest_clone_thread_runtime.h"
 #include "ogplay/runtime/execution/guest_lifecycle.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "ogplay/runtime/integration/api19_guest_process.h"
 #include "ogplay/runtime/jni_guest/jni_guest_abi.h"
 #include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
@@ -66,8 +66,8 @@ constexpr std::uint32_t kDexVmStackSize = 1024U * 1024U;
 constexpr std::uint32_t kOpenSlesCallbackTls = 0x71a00000U;
 constexpr std::uint32_t kOpenSlesCallbackThreadInfo = 0x71a01000U;
 constexpr std::uint32_t kOpenSlesCallbackStack = 0x71b00000U;
-constexpr std::uint32_t kNioDirectArenaBegin = 0x74000000U;
-constexpr std::uint32_t kNioDirectArenaEnd = 0x78000000U;
+constexpr std::uint32_t kTemporaryArenaBegin = 0x74000000U;
+constexpr std::uint32_t kTemporaryArenaEnd = 0x78000000U;
 
 [[nodiscard]] std::string IndentDiagnostic(const std::string_view text, const std::string_view indent) {
     std::string result{indent};
@@ -701,36 +701,36 @@ public:
                 if (size == 0U) return memory::GuestAddress{};
                 const auto page = address_space_.PageSize();
                 const auto mapped = (static_cast<std::uint64_t>(size) + page - 1U) & ~(page - 1U);
-                std::scoped_lock lock(nio_direct_mutex_);
+                std::scoped_lock lock(temporary_mutex_);
                 const auto reusable = std::ranges::find_if(
-                    nio_direct_free_, [mapped](const memory::GuestRange& range) { return range.Size() >= mapped; });
-                if (reusable != nio_direct_free_.end()) {
+                    temporary_free_, [mapped](const memory::GuestRange& range) { return range.Size() >= mapped; });
+                if (reusable != temporary_free_.end()) {
                     const auto address = reusable->Start();
                     const auto remaining = reusable->Size() - mapped;
-                    nio_direct_free_.erase(reusable);
+                    temporary_free_.erase(reusable);
                     if (remaining != 0U) {
-                        nio_direct_free_.emplace_back(address.Add(mapped), remaining);
+                        temporary_free_.emplace_back(address.Add(mapped), remaining);
                     }
                     address_space_.Map({address, mapped}, memory::PageProtection::read | memory::PageProtection::write);
                     return address;
                 }
-                if (nio_direct_cursor_ + mapped > kNioDirectArenaEnd) throw std::bad_alloc{};
-                const auto address = memory::GuestAddress(nio_direct_cursor_);
+                if (temporary_cursor_ + mapped > kTemporaryArenaEnd) throw std::bad_alloc{};
+                const auto address = memory::GuestAddress(temporary_cursor_);
                 address_space_.Map({address, mapped}, memory::PageProtection::read | memory::PageProtection::write);
-                nio_direct_cursor_ += static_cast<std::uint32_t>(mapped);
+                temporary_cursor_ += static_cast<std::uint32_t>(mapped);
                 return address;
             },
             [this](const memory::GuestAddress address, const std::uint32_t size) {
                 if (size == 0U) return;
                 const auto page = address_space_.PageSize();
                 const auto mapped = (static_cast<std::uint64_t>(size) + page - 1U) & ~(page - 1U);
-                std::scoped_lock lock(nio_direct_mutex_);
+                std::scoped_lock lock(temporary_mutex_);
                 address_space_.Unmap({address, mapped});
-                nio_direct_free_.emplace_back(address, mapped);
-                std::ranges::sort(nio_direct_free_, {},
+                temporary_free_.emplace_back(address, mapped);
+                std::ranges::sort(temporary_free_, {},
                                   [](const memory::GuestRange& range) { return range.Start().Value(); });
                 std::vector<memory::GuestRange> merged;
-                for (const auto& range : nio_direct_free_) {
+                for (const auto& range : temporary_free_) {
                     if (!merged.empty() && merged.back().EndExclusive() == range.Start().Value()) {
                         const auto start = merged.back().Start();
                         const auto combined = merged.back().Size() + range.Size();
@@ -740,7 +740,7 @@ public:
                         merged.push_back(range);
                     }
                 }
-                nio_direct_free_ = std::move(merged);
+                temporary_free_ = std::move(merged);
             },
             [this](const memory::GuestAddress address, const std::uint32_t size) {
                 if (size == 0U) return address.IsNull();
@@ -758,14 +758,18 @@ public:
             },
             [this](const memory::GuestAddress address, const std::span<const std::byte> in) {
                 address_space_.Write(address, in);
+            },
+            [this](memory::GuestAddress address, std::uint32_t size, bool write) {
+                return address_space_.ResolveNativeRange({address, size},
+                                                         write ? memory::AccessType::write : memory::AccessType::read);
             }};
-        nio_.SetDirectMemoryAccess(direct_memory_access_);
+        guest_memory_.SetAccess(direct_memory_access_);
         BindSyscalls();
         if (diagnostics_) {
             diagnostics_->SetFutexProvider([this] { return futex_table_.TrySnapshot(); });
         }
-        JniGuestBindingContext jni_bindings{environment_, classes_, invocations_,   fields_,   strings_, arrays_,
-                                            java_vm_,     objects_, address_space_, &natives_, &nio_};
+        JniGuestBindingContext jni_bindings{environment_, classes_, invocations_,   fields_,   strings_,        arrays_,
+                                            java_vm_,     objects_, address_space_, &natives_, &direct_buffers_};
         jni_bindings.string_observer = [this](const JniGuestCallFrame& frame, const std::size_t bytes,
                                               const std::size_t units) {
             if (!logger_ || bytes < 1024U) return;
@@ -1705,15 +1709,18 @@ public:
                 if (native_sleep_observer_) native_sleep_observer_(slept);
             });
         BindAndroidMemorySyscalls(dispatcher_, address_space_);
-        BindAndroidThreadSyscalls(dispatcher_, futex_table_, memory_bus_,
-                                  [this](std::uint64_t thread) -> std::optional<std::chrono::nanoseconds> {
-                                      if (thread != kRootThreadId || std::this_thread::get_id() != owner_thread_ ||
-                                          cleanup_depth_ == 0U)
-                                          return std::nullopt;
-                                      const auto now = hal::Clock::SteadyTimestampNs();
-                                      const auto deadline = *cleanup_deadline_ns_;
-                                      return std::chrono::nanoseconds(now < deadline ? deadline - now : 0U);
-                                  });
+        BindAndroidThreadSyscalls(
+            dispatcher_, futex_table_, memory_bus_,
+            [this](std::uint64_t thread) -> std::optional<std::chrono::nanoseconds> {
+                if (thread != kRootThreadId || std::this_thread::get_id() != owner_thread_ || cleanup_depth_ == 0U)
+                    return std::nullopt;
+                const auto now = hal::Clock::SteadyTimestampNs();
+                const auto deadline = *cleanup_deadline_ns_;
+                return std::chrono::nanoseconds(now < deadline ? deadline - now : 0U);
+            },
+            [this](std::uint64_t, std::chrono::nanoseconds waited) {
+                if (native_sleep_observer_) native_sleep_observer_(waited);
+            });
         BindAndroidSignalSyscalls(dispatcher_, address_space_, &lifecycle_, GuestCpuEnvironment::ClassifyUserUndefined);
         BindAndroidProcessSyscalls(dispatcher_, address_space_, [this](const GuestVmaAnnotation& annotation) {
             std::scoped_lock lock(vma_mutex_);
@@ -1808,7 +1815,7 @@ public:
         if (progress_) progress_(stage);
     }
 
-    dexvm::NioDirectMemoryAccess GuestMemoryAccess() const { return direct_memory_access_; }
+    dexvm::GuestMemoryAccess GuestMemoryAccess() const { return direct_memory_access_; }
 
     void ProtectGuestReadOnly(memory::GuestAddress address, std::uint32_t size) {
         const auto page = address_space_.PageSize();
@@ -1896,7 +1903,9 @@ public:
 
     JniPrimitiveArrayStore& Arrays() noexcept { return arrays_; }
 
-    dexvm::NioRuntime& NIO() noexcept { return nio_; }
+    dexvm::GuestMemoryRuntime& GuestMemory() noexcept { return guest_memory_; }
+
+    JniDirectBufferHooks& DirectBuffers() noexcept { return direct_buffers_; }
 
     audio::JavaSoundPoolState& SoundPoolState() noexcept { return sound_pool_; }
 
@@ -2407,11 +2416,12 @@ private:
     AndroidGuestLegacyMediaState media_state_;
     JniPrimitiveArrayStore arrays_{array_payload_};
     JniNativeRegistry natives_;
-    dexvm::NioDirectMemoryAccess direct_memory_access_;
-    std::mutex nio_direct_mutex_;
-    std::vector<memory::GuestRange> nio_direct_free_;
-    std::uint32_t nio_direct_cursor_{kNioDirectArenaBegin};
-    dexvm::NioRuntime nio_;
+    dexvm::GuestMemoryAccess direct_memory_access_;
+    std::mutex temporary_mutex_;
+    std::vector<memory::GuestRange> temporary_free_;
+    std::uint32_t temporary_cursor_{kTemporaryArenaBegin};
+    dexvm::GuestMemoryRuntime guest_memory_;
+    JniDirectBufferHooks direct_buffers_;
     JniJavaVm java_vm_;
     hal::RealtimeClock clock_;
     cpu::FutexTable futex_table_;
@@ -2608,7 +2618,7 @@ void AndroidGuestProcess::ReleaseDexVmThread(const std::uint64_t thread_id) noex
     impl_->ReleaseDexVmThread(thread_id);
 }
 
-dexvm::NioDirectMemoryAccess AndroidGuestProcess::GuestMemoryAccess() const {
+dexvm::GuestMemoryAccess AndroidGuestProcess::GuestMemoryAccess() const {
     return impl_->GuestMemoryAccess();
 }
 
@@ -2669,8 +2679,8 @@ JniPrimitiveArrayStore& AndroidGuestProcess::Arrays() noexcept {
     return impl_->Arrays();
 }
 
-dexvm::NioRuntime& AndroidGuestProcess::NIO() noexcept {
-    return impl_->NIO();
+dexvm::GuestMemoryRuntime& AndroidGuestProcess::GuestMemory() noexcept {
+    return impl_->GuestMemory();
 }
 
 audio::JavaSoundPoolState& AndroidGuestProcess::SoundPoolState() noexcept {
@@ -3075,8 +3085,8 @@ JniPrimitiveArrayStore& AndroidGuestCallSession::Arrays() noexcept {
     return process_->Arrays();
 }
 
-dexvm::NioRuntime& AndroidGuestCallSession::NIO() noexcept {
-    return process_->NIO();
+dexvm::GuestMemoryRuntime& AndroidGuestCallSession::GuestMemory() noexcept {
+    return process_->GuestMemory();
 }
 
 audio::JavaSoundPoolState& AndroidGuestCallSession::SoundPoolState() noexcept {
@@ -3389,4 +3399,14 @@ void AndroidGuestCallSession::NotifyLooperPollers() {
     process_->NotifyLooperPollers();
 }
 
+}  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+JniDirectBufferHooks& AndroidGuestProcess::DirectBuffers() noexcept {
+    return impl_->DirectBuffers();
+}
+
+JniDirectBufferHooks& AndroidGuestCallSession::DirectBuffers() noexcept {
+    return process_->DirectBuffers();
+}
 }  // namespace ogplay::runtime

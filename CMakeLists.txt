@@ -482,7 +482,8 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/dexvm/network_runtime.cpp
     src/runtime/dexvm/proxy_runtime.cpp
     src/runtime/dexvm/unsafe_runtime.cpp
-    src/runtime/dexvm/nio_runtime.cpp
+    src/runtime/dexvm/guest_memory.cpp
+    src/runtime/dexvm/nio_buffer_access.cpp
     src/runtime/dexvm/zip_runtime.cpp
     src/runtime/dexvm/reflection.cpp
     src/runtime/dexvm/reflection_codec.cpp

@@ -2,6 +2,9 @@
 #include "shared.h"
 #include <array>
 #include <bit>
+#include <cstring>
+#include <limits>
+#include "ogplay/runtime/dexvm/nio_buffer_access.h"
 #include <optional>
 #include <string>
 #include <string_view>
@@ -11,78 +14,10 @@
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 
 namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
-
-JniObjectIdentity Id(Interpreter& vm, VmObjectRef ref) {
-    return vm.Model().ToIdentity(ref);
-}
-
-VmValue Self(IntrinsicContext& call) {
-    return VmValue::Ref(call.receiver);
-}
-
-IntrinsicHandler Cursor(void (NioRuntime::*fn)(JniObjectIdentity)) {
-    return [fn](IntrinsicContext& call) {
-        (call.vm.NIO().*fn)(Id(call.vm, call.receiver));
-        return Self(call);
-    };
-}
-
-IntrinsicClassDecl Declare_java_nio_Buffer_Class() {
-    auto b = IntrinsicClassBuilder::Class("Ljava/nio/Buffer;", "Ljava/lang/Object;", {}, kAccPublic | kAccAbstract);
-    b.FinalMethod("capacity", "()I",
-                  [](IntrinsicContext& c) { return VmValue::Int(c.vm.NIO().Snapshot(Id(c.vm, c.receiver)).capacity); });
-    b.FinalMethod("position", "()I",
-                  [](IntrinsicContext& c) { return VmValue::Int(c.vm.NIO().Snapshot(Id(c.vm, c.receiver)).position); });
-    b.FinalMethod("position", "(I)Ljava/nio/Buffer;", [](IntrinsicContext& c) {
-        c.vm.NIO().SetPosition(Id(c.vm, c.receiver), c.arguments[0].AsInt());
-        return Self(c);
-    });
-    b.FinalMethod("limit", "()I",
-                  [](IntrinsicContext& c) { return VmValue::Int(c.vm.NIO().Snapshot(Id(c.vm, c.receiver)).limit); });
-    b.FinalMethod("limit", "(I)Ljava/nio/Buffer;", [](IntrinsicContext& c) {
-        c.vm.NIO().SetLimit(Id(c.vm, c.receiver), c.arguments[0].AsInt());
-        return Self(c);
-    });
-    b.FinalMethod("mark", "()Ljava/nio/Buffer;", Cursor(&NioRuntime::Mark));
-    b.FinalMethod("reset", "()Ljava/nio/Buffer;", Cursor(&NioRuntime::Reset));
-    b.FinalMethod("clear", "()Ljava/nio/Buffer;", Cursor(&NioRuntime::Clear));
-    b.FinalMethod("flip", "()Ljava/nio/Buffer;", Cursor(&NioRuntime::Flip));
-    b.FinalMethod("rewind", "()Ljava/nio/Buffer;", Cursor(&NioRuntime::Rewind));
-    b.FinalMethod("remaining", "()I", [](IntrinsicContext& c) {
-        const auto s = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
-        return VmValue::Int(s.limit - s.position);
-    });
-    b.FinalMethod("hasRemaining", "()Z", [](IntrinsicContext& c) {
-        const auto s = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
-        return VmValue::Int(s.position < s.limit);
-    });
-    b.VirtualMethod("isReadOnly", "()Z", [](IntrinsicContext& c) {
-        return VmValue::Int(c.vm.NIO().Snapshot(Id(c.vm, c.receiver)).read_only);
-    });
-    b.VirtualMethod("isDirect", "()Z",
-                    [](IntrinsicContext& c) { return VmValue::Int(c.vm.NIO().Snapshot(Id(c.vm, c.receiver)).direct); });
-    b.VirtualMethod("hasArray", "()Z", [](IntrinsicContext& c) {
-        const auto s = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
-        return VmValue::Int(s.array.IsValid() && !s.read_only);
-    });
-    b.VirtualMethod("array", "()Ljava/lang/Object;", [](IntrinsicContext& c) {
-        const auto s = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
-        if (s.read_only) throw VmJavaThrow{"Ljava/nio/ReadOnlyBufferException;", "read-only buffer"};
-        if (!s.array.IsValid()) throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "buffer has no array"};
-        return VmValue::Ref(s.array);
-    });
-    b.VirtualMethod("arrayOffset", "()I", [](IntrinsicContext& c) {
-        const auto s = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
-        if (s.read_only) throw VmJavaThrow{"Ljava/nio/ReadOnlyBufferException;", "read-only buffer"};
-        if (!s.array.IsValid()) throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "buffer has no array"};
-        return VmValue::Int(s.array_offset);
-    });
-    return std::move(b).Build();
-}
 
 VmObjectRef FileChannelDescriptor(IntrinsicContext& c, VmObjectRef channel) {
     const auto field =
@@ -148,348 +83,23 @@ VmObjectRef PrimitiveArray(Interpreter& vm, NioElementKind kind, int capacity) {
     return vm.Model().NewPrimitiveArray(vm.Linker().ResolveDescriptor(desc), primitive, capacity);
 }
 
-VmObjectRef HeapBuffer(Interpreter& vm, const std::string& descriptor, NioElementKind kind, VmObjectRef array,
-                       int capacity) {
-    const auto object = vm.NewIntrinsicInstance(descriptor);
-    vm.NIO().CreateHeap(Id(vm, object), array, 0, capacity, kind);
-    return object;
+std::uint64_t CharsetGet(Interpreter& vm, VmObjectRef buffer, int index) {
+    const auto chars = vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Ljava/nio/CharBuffer;"),
+                                                vm.Model().ObjectClass(buffer));
+    const auto result = detail::InvokeGuest(vm, buffer, "get", chars ? "(I)C" : "(I)B", {VmValue::Int(index)}).AsInt();
+    return chars ? static_cast<std::uint16_t>(result) : static_cast<std::uint8_t>(result);
 }
 
-IntrinsicHandler Allocate(std::string concrete, NioElementKind kind) {
-    return [concrete = std::move(concrete), kind](IntrinsicContext& c) {
-        const auto capacity = c.arguments[0].AsInt();
-        return VmValue::Ref(HeapBuffer(c.vm, concrete, kind, PrimitiveArray(c.vm, kind, capacity), capacity));
-    };
+void CharsetPut(Interpreter& vm, VmObjectRef buffer, std::uint64_t bits) {
+    const auto chars = vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Ljava/nio/CharBuffer;"),
+                                                vm.Model().ObjectClass(buffer));
+    static_cast<void>(detail::InvokeGuest(vm, buffer, "put",
+                                          chars ? "(C)Ljava/nio/CharBuffer;" : "(B)Ljava/nio/ByteBuffer;",
+                                          {VmValue::Int(static_cast<std::int32_t>(bits))}));
 }
 
-IntrinsicHandler Wrap(std::string concrete, NioElementKind kind, bool range) {
-    return [concrete = std::move(concrete), kind, range](IntrinsicContext& c) {
-        const auto array = c.arguments[0].ref;
-        const auto length = c.vm.Model().ArrayLength(array);
-        const auto offset = range ? c.arguments[1].AsInt() : 0;
-        const auto count = range ? c.arguments[2].AsInt() : length;
-        if (offset < 0 || count < 0 || offset > length - count)
-            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "invalid wrap range"};
-        const auto object = HeapBuffer(c.vm, concrete, kind, array, length);
-        c.vm.NIO().SetPosition(Id(c.vm, object), offset);
-        c.vm.NIO().SetLimit(Id(c.vm, object), offset + count);
-        return VmValue::Ref(object);
-    };
-}
-
-VmValue BitsValue(std::uint64_t bits, NioElementKind kind) {
-    if (kind == NioElementKind::byte) return VmValue::Int(static_cast<std::int8_t>(bits));
-    if (kind == NioElementKind::short_value) return VmValue::Int(static_cast<std::int16_t>(bits));
-    if (kind == NioElementKind::long_value) return VmValue::Long(static_cast<std::int64_t>(bits));
-    if (kind == NioElementKind::double_value) return VmValue::Double(std::bit_cast<double>(bits));
-    if (kind == NioElementKind::float_value)
-        return VmValue::Float(std::bit_cast<float>(static_cast<std::uint32_t>(bits)));
-    return VmValue::Int(static_cast<std::int32_t>(bits));
-}
-
-std::uint64_t ValueBits(const VmValue& value, NioElementKind kind) {
-    return kind == NioElementKind::long_value || kind == NioElementKind::double_value ? value.wide : value.cat1;
-}
-
-IntrinsicHandler Get(NioElementKind kind, bool absolute) {
-    return [kind, absolute](IntrinsicContext& c) {
-        return BitsValue(
-            c.vm.NIO().Get(Id(c.vm, c.receiver), absolute ? std::optional(c.arguments[0].AsInt()) : std::nullopt),
-            kind);
-    };
-}
-
-IntrinsicHandler Put(NioElementKind kind, bool absolute) {
-    return [kind, absolute](IntrinsicContext& c) {
-        const auto value = absolute ? 1U : 0U;
-        c.vm.NIO().Put(Id(c.vm, c.receiver), absolute ? std::optional(c.arguments[0].AsInt()) : std::nullopt,
-                       ValueBits(c.arguments[value], kind));
-        return Self(c);
-    };
-}
-
-struct BulkTransfer final {
-    VmObjectRef array;
-    std::int32_t offset{};
-    std::int32_t count{};
-};
-
-BulkTransfer PrepareBulkTransfer(IntrinsicContext& c, const bool range, const std::string_view remaining_exception) {
-    const auto array = c.arguments[0].ref;
-    const auto array_length = c.vm.Model().ArrayLength(array);
-    const auto offset = range ? c.arguments[1].AsInt() : 0;
-    const auto count = range ? c.arguments[2].AsInt() : array_length;
-    const auto state = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
-    if (offset < 0 || count < 0 || offset > array_length - count) {
-        throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "invalid bulk range"};
-    }
-    if (count > state.limit - state.position) {
-        throw VmJavaThrow{std::string(remaining_exception), "insufficient remaining"};
-    }
-    return {array, offset, count};
-}
-
-IntrinsicHandler BulkGet(NioElementKind kind, bool range) {
-    return [kind, range](IntrinsicContext& c) {
-        static_cast<void>(kind);
-        const auto transfer = PrepareBulkTransfer(c, range, "Ljava/nio/BufferUnderflowException;");
-        for (int index = 0; index < transfer.count; ++index)
-            c.vm.Model().SetPrimitiveElement(transfer.array, transfer.offset + index,
-                                             c.vm.NIO().Get(Id(c.vm, c.receiver), {}));
-        return Self(c);
-    };
-}
-
-IntrinsicHandler BulkPut(NioElementKind kind, bool range) {
-    return [kind, range](IntrinsicContext& c) {
-        static_cast<void>(kind);
-        const auto transfer = PrepareBulkTransfer(c, range, "Ljava/nio/BufferOverflowException;");
-        for (int index = 0; index < transfer.count; ++index)
-            c.vm.NIO().Put(Id(c.vm, c.receiver), {},
-                           c.vm.Model().GetPrimitiveElement(transfer.array, transfer.offset + index));
-        return Self(c);
-    };
-}
-
-IntrinsicHandler View(std::string concrete, NioElementKind kind, bool slice, bool read_only) {
-    return [concrete = std::move(concrete), kind, slice, read_only](IntrinsicContext& c) {
-        const auto source = Id(c.vm, c.receiver);
-        const auto state = c.vm.NIO().Snapshot(source);
-        const auto target =
-            concrete.empty() ? c.vm.Linker().Class(c.vm.Model().ObjectClass(c.receiver)).descriptor : concrete;
-        const auto object = c.vm.NewIntrinsicInstance(target);
-        if (slice) {
-            const auto source_size = NioRuntime::ElementSize(state.element);
-            const auto target_size = NioRuntime::ElementSize(kind);
-            c.vm.NIO().CreateView(Id(c.vm, object), source, kind, state.position * static_cast<int>(source_size),
-                                  (state.limit - state.position) * static_cast<int>(source_size) /
-                                      static_cast<int>(target_size),
-                                  read_only);
-        } else {
-            c.vm.NIO().Duplicate(Id(c.vm, object), source, read_only);
-        }
-        return VmValue::Ref(object);
-    };
-}
-
-void Views(IntrinsicClassBuilder& b, const std::string& type, NioElementKind kind) {
-    b.VirtualMethod("slice", "()" + type, View({}, kind, true, false));
-    b.VirtualMethod("duplicate", "()" + type, View({}, kind, false, false));
-    b.VirtualMethod("asReadOnlyBuffer", "()" + type, View({}, kind, false, true));
-    b.VirtualMethod("compact", "()" + type, [](IntrinsicContext& c) {
-        c.vm.NIO().Compact(Id(c.vm, c.receiver));
-        return Self(c);
-    });
-}
-
-IntrinsicClassDecl Declare_java_nio_ByteOrder_Class() {
-    auto b = IntrinsicClassBuilder::Class("Ljava/nio/ByteOrder;", "Ljava/lang/Object;", {}, kAccPublic | kAccFinal);
-    b.StaticField("BIG_ENDIAN", "Ljava/nio/ByteOrder;", kAccPublic | kAccStatic | kAccFinal);
-    b.StaticField("LITTLE_ENDIAN", "Ljava/nio/ByteOrder;", kAccPublic | kAccStatic | kAccFinal);
-    b.ClassInitializer([](IntrinsicContext& c) {
-        c.vm.SetIntrinsicStaticRef("Ljava/nio/ByteOrder;", "BIG_ENDIAN", "Ljava/nio/ByteOrder;",
-                                   c.vm.NewIntrinsicInstance("Ljava/nio/ByteOrder;"));
-        c.vm.SetIntrinsicStaticRef("Ljava/nio/ByteOrder;", "LITTLE_ENDIAN", "Ljava/nio/ByteOrder;",
-                                   c.vm.NewIntrinsicInstance("Ljava/nio/ByteOrder;"));
-        return VmValue::Void();
-    });
-    b.StaticMethod("nativeOrder", "()Ljava/nio/ByteOrder;", [](IntrinsicContext& c) {
-        const auto& cls = c.vm.Linker().Class(c.vm.Linker().ResolveDescriptor("Ljava/nio/ByteOrder;"));
-        const auto name = std::endian::native == std::endian::little ? "LITTLE_ENDIAN" : "BIG_ENDIAN";
-        for (const auto id : cls.own_static_fields) {
-            const auto& field = c.vm.Linker().Field(id);
-            if (field.name == name) return VmValue::Ref(VmObjectRef(cls.static_storage[field.slot]));
-        }
-        return VmValue::Ref(VmObjectRef(0));
-    });
-    return std::move(b).Build();
-}
-
-VmObjectRef OrderObject(IntrinsicContext& c, bool little) {
-    const auto& cls = c.vm.Linker().Class(c.vm.Linker().ResolveDescriptor("Ljava/nio/ByteOrder;"));
-    const auto name = little ? "LITTLE_ENDIAN" : "BIG_ENDIAN";
-    for (const auto id : cls.own_static_fields) {
-        const auto& f = c.vm.Linker().Field(id);
-        if (f.name == name) return VmObjectRef(cls.static_storage[f.slot]);
-    }
-    return VmObjectRef(0);
-}
-
-IntrinsicClassDecl Declare_java_nio_ByteBuffer_Class() {
-    auto b = IntrinsicClassBuilder::Class("Ljava/nio/ByteBuffer;", "Ljava/nio/Buffer;", {"Ljava/lang/Comparable;"},
-                                          kAccPublic | kAccAbstract);
-    b.StaticMethod("allocate", "(I)Ljava/nio/ByteBuffer;", Allocate("Ljava/nio/HeapByteBuffer;", NioElementKind::byte));
-    b.StaticMethod("allocateDirect", "(I)Ljava/nio/ByteBuffer;", [](IntrinsicContext& c) {
-        const auto object = c.vm.NewIntrinsicInstance("Ljava/nio/DirectByteBuffer;");
-        const auto roots = c.vm.ProtectReferences(std::array{object});
-        c.vm.NIO().CreateDirect(Id(c.vm, object), c.arguments[0].AsInt(), c.vm.Linker().ResolveDescriptor("[B"));
-        return VmValue::Ref(object);
-    });
-    b.StaticMethod("wrap", "([B)Ljava/nio/ByteBuffer;", Wrap("Ljava/nio/HeapByteBuffer;", NioElementKind::byte, false));
-    b.StaticMethod("wrap", "([BII)Ljava/nio/ByteBuffer;",
-                   Wrap("Ljava/nio/HeapByteBuffer;", NioElementKind::byte, true));
-    b.VirtualMethod("get", "()B", Get(NioElementKind::byte, false));
-    b.VirtualMethod("get", "(I)B", Get(NioElementKind::byte, true));
-    b.VirtualMethod("put", "(B)Ljava/nio/ByteBuffer;", Put(NioElementKind::byte, false));
-    b.VirtualMethod("put", "(IB)Ljava/nio/ByteBuffer;", Put(NioElementKind::byte, true));
-    b.VirtualMethod("get", "([B)Ljava/nio/ByteBuffer;", BulkGet(NioElementKind::byte, false));
-    b.VirtualMethod("get", "([BII)Ljava/nio/ByteBuffer;", BulkGet(NioElementKind::byte, true));
-    b.VirtualMethod("put", "([B)Ljava/nio/ByteBuffer;", BulkPut(NioElementKind::byte, false));
-    b.VirtualMethod("put", "([BII)Ljava/nio/ByteBuffer;", BulkPut(NioElementKind::byte, true));
-    b.VirtualMethod("array", "()[B", [](IntrinsicContext& c) {
-        const auto s = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
-        if (s.read_only) throw VmJavaThrow{"Ljava/nio/ReadOnlyBufferException;", "read-only buffer"};
-        if (!s.array.IsValid()) throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "buffer has no array"};
-        return VmValue::Ref(s.array);
-    });
-    b.VirtualMethod("put", "(Ljava/nio/ByteBuffer;)Ljava/nio/ByteBuffer;", [](IntrinsicContext& c) {
-        c.vm.NIO().Copy(Id(c.vm, c.receiver), Id(c.vm, c.arguments[0].ref));
-        return Self(c);
-    });
-    b.VirtualMethod("order", "()Ljava/nio/ByteOrder;", [](IntrinsicContext& c) {
-        return VmValue::Ref(
-            OrderObject(c, c.vm.NIO().Snapshot(Id(c.vm, c.receiver)).order == NioByteOrder::little_endian));
-    });
-    b.VirtualMethod("order", "(Ljava/nio/ByteOrder;)Ljava/nio/ByteBuffer;", [](IntrinsicContext& c) {
-        c.vm.NIO().SetOrder(Id(c.vm, c.receiver), c.arguments[0].ref == OrderObject(c, true)
-                                                      ? NioByteOrder::little_endian
-                                                      : NioByteOrder::big_endian);
-        return Self(c);
-    });
-    Views(b, "Ljava/nio/ByteBuffer;", NioElementKind::byte);
-
-    struct Scalar {
-        const char* name;
-        const char* sig;
-        NioElementKind kind;
-    };
-
-    constexpr std::array scalars{
-        Scalar{"Char", "C", NioElementKind::character},    Scalar{"Short", "S", NioElementKind::short_value},
-        Scalar{"Int", "I", NioElementKind::int_value},     Scalar{"Long", "J", NioElementKind::long_value},
-        Scalar{"Float", "F", NioElementKind::float_value}, Scalar{"Double", "D", NioElementKind::double_value}};
-    for (const auto& s : scalars) {
-        b.VirtualMethod(std::string("get") + s.name, std::string("()") + s.sig, [kind = s.kind](IntrinsicContext& c) {
-            return BitsValue(c.vm.NIO().GetScalar(Id(c.vm, c.receiver), kind, {}), kind);
-        });
-        b.VirtualMethod(std::string("get") + s.name, std::string("(I)") + s.sig, [kind = s.kind](IntrinsicContext& c) {
-            return BitsValue(c.vm.NIO().GetScalar(Id(c.vm, c.receiver), kind, c.arguments[0].AsInt()), kind);
-        });
-        b.VirtualMethod(std::string("put") + s.name, std::string("(") + s.sig + ")Ljava/nio/ByteBuffer;",
-                        [kind = s.kind](IntrinsicContext& c) {
-                            c.vm.NIO().PutScalar(Id(c.vm, c.receiver), kind, {}, ValueBits(c.arguments[0], kind));
-                            return Self(c);
-                        });
-        b.VirtualMethod(std::string("put") + s.name, std::string("(I") + s.sig + ")Ljava/nio/ByteBuffer;",
-                        [kind = s.kind](IntrinsicContext& c) {
-                            c.vm.NIO().PutScalar(Id(c.vm, c.receiver), kind, c.arguments[0].AsInt(),
-                                                 ValueBits(c.arguments[1], kind));
-                            return Self(c);
-                        });
-    }
-
-    struct TV {
-        const char* name;
-        NioElementKind kind;
-    };
-
-    constexpr std::array views{TV{"Short", NioElementKind::short_value}, TV{"Int", NioElementKind::int_value},
-                               TV{"Float", NioElementKind::float_value}, TV{"Char", NioElementKind::character},
-                               TV{"Long", NioElementKind::long_value},   TV{"Double", NioElementKind::double_value}};
-    for (const auto& v : views) {
-        b.VirtualMethod(std::string("as") + v.name + "Buffer", std::string("()Ljava/nio/") + v.name + "Buffer;",
-                        View(std::string("Ljava/nio/ByteBufferAs") + v.name + "Buffer;", v.kind, true, false));
-    }
-    return std::move(b).Build();
-}
-
-IntrinsicClassDecl DeclareTypedBufferClass(const std::string& name, const std::string& array, const std::string& value,
-                                           NioElementKind kind) {
-    const auto type = "Ljava/nio/" + name + "Buffer;";
-    const auto concrete = "Ljava/nio/" + name + "ArrayBuffer;";
-    auto b = IntrinsicClassBuilder::Class(
-        type, "Ljava/nio/Buffer;",
-        name == "Char" ? std::vector<std::string>{"Ljava/lang/Comparable;", "Ljava/lang/CharSequence;",
-                                                  "Ljava/lang/Appendable;", "Ljava/lang/Readable;"}
-                       : std::vector<std::string>{"Ljava/lang/Comparable;"},
-        kAccPublic | kAccAbstract);
-    b.StaticMethod("allocate", "(I)" + type, Allocate(concrete, kind));
-    b.StaticMethod("wrap", "(" + array + ")" + type, Wrap(concrete, kind, false));
-    b.StaticMethod("wrap", "(" + array + "II)" + type, Wrap(concrete, kind, true));
-    b.VirtualMethod("get", "()" + value, Get(kind, false));
-    b.VirtualMethod("get", "(I)" + value, Get(kind, true));
-    b.VirtualMethod("put", "(" + value + ")" + type, Put(kind, false));
-    b.VirtualMethod("put", "(I" + value + ")" + type, Put(kind, true));
-    b.VirtualMethod("get", "(" + array + ")" + type, BulkGet(kind, false));
-    b.VirtualMethod("get", "(" + array + "II)" + type, BulkGet(kind, true));
-    b.VirtualMethod("put", "(" + array + ")" + type, BulkPut(kind, false));
-    b.VirtualMethod("put", "(" + array + "II)" + type, BulkPut(kind, true));
-    b.VirtualMethod("array", "()" + array, [](IntrinsicContext& c) {
-        const auto s = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
-        if (s.read_only) throw VmJavaThrow{"Ljava/nio/ReadOnlyBufferException;", "read-only buffer"};
-        if (!s.array.IsValid()) throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "buffer has no array"};
-        return VmValue::Ref(s.array);
-    });
-    b.VirtualMethod("order", "()Ljava/nio/ByteOrder;", [](IntrinsicContext& c) {
-        return VmValue::Ref(
-            OrderObject(c, c.vm.NIO().Snapshot(Id(c.vm, c.receiver)).order == NioByteOrder::little_endian));
-    });
-    b.VirtualMethod("put", "(" + type + ")" + type, [](IntrinsicContext& c) {
-        c.vm.NIO().Copy(Id(c.vm, c.receiver), Id(c.vm, c.arguments[0].ref));
-        return Self(c);
-    });
-    if (name == "Char") {
-        b.VirtualMethod(
-            "length", "()I",
-            [](IntrinsicContext& c) {
-                const auto state = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
-                return VmValue::Int(state.limit - state.position);
-            },
-            kAccPublic | kAccFinal);
-        b.VirtualMethod(
-            "charAt", "(I)C",
-            [](IntrinsicContext& c) {
-                const auto state = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
-                const auto index = c.arguments[0].AsInt();
-                if (index < 0 || index >= state.limit - state.position)
-                    throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "CharBuffer index"};
-                return detail::InvokeGuest(c.vm, c.receiver, "get", "(I)C", {VmValue::Int(state.position + index)});
-            },
-            kAccPublic | kAccFinal);
-        b.VirtualMethod(
-            "put", "(Ljava/lang/String;)Ljava/nio/CharBuffer;",
-            [](IntrinsicContext& c) {
-                const auto source = IntrinsicCall(c).NonNullRef(0, "src");
-                const auto length = c.vm.Model().StringLength(source);
-                return detail::InvokeGuest(c.vm, c.receiver, "put", "(Ljava/lang/String;II)Ljava/nio/CharBuffer;",
-                                           {c.arguments[0], VmValue::Int(0), VmValue::Int(length)});
-            },
-            kAccPublic | kAccFinal);
-        b.VirtualMethod("put", "(Ljava/lang/String;II)Ljava/nio/CharBuffer;", [](IntrinsicContext& c) {
-            if (detail::InvokeGuest(c.vm, c.receiver, "isReadOnly", "()Z").AsInt())
-                throw VmJavaThrow{"Ljava/nio/ReadOnlyBufferException;", "read-only buffer"};
-            const auto source = IntrinsicCall(c).NonNullRef(0, "src");
-            const auto length = c.vm.Model().StringLength(source);
-            const auto start = c.arguments[1].AsInt(), end = c.arguments[2].AsInt();
-            if (start < 0 || end < start || end > length)
-                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "string range"};
-            if (end - start > detail::InvokeGuest(c.vm, c.receiver, "remaining", "()I").AsInt())
-                throw VmJavaThrow{"Ljava/nio/BufferOverflowException;", "string does not fit"};
-            const auto chars = c.vm.Model().StringChars(source);
-            for (int i = start; i < end; ++i) {
-                const auto unit = chars[static_cast<std::size_t>(i)];
-                static_cast<void>(
-                    detail::InvokeGuest(c.vm, c.receiver, "put", "(C)Ljava/nio/CharBuffer;", {VmValue::Int(unit)}));
-            }
-            return VmValue::Ref(c.receiver);
-        });
-    }
-    Views(b, type, kind);
-    return std::move(b).Build();
-}
-
-IntrinsicClassDecl DeclarePlainBufferClass(const std::string& descriptor, const std::string& parent) {
-    return std::move(IntrinsicClassBuilder::Class(descriptor, parent, {}, kAccNone)).Build();
+void CharsetPosition(Interpreter& vm, VmObjectRef buffer, int position) {
+    static_cast<void>(detail::InvokeGuest(vm, buffer, "position", "(I)Ljava/nio/Buffer;", {VmValue::Int(position)}));
 }
 
 VmValue CharsetCallResult(Interpreter& vm, const VmCallOutcome& result) {
@@ -565,18 +175,17 @@ IntrinsicClassDecl DeclareBuiltinCharsetEncoder() {
         "encodeLoop", "(Ljava/nio/CharBuffer;Ljava/nio/ByteBuffer;)Ljava/nio/charset/CoderResult;",
         [encoding, bom_written](IntrinsicContext& c) {
             auto& vm = c.vm;
-            auto& nio = vm.NIO();
-            const auto input = Id(vm, c.arguments[0].ref);
-            const auto output = Id(vm, c.arguments[1].ref);
+            const auto input = c.arguments[0].ref;
+            const auto output = c.arguments[1].ref;
             const auto name = vm.StringUtf8(IntrinsicCall(c).GetRef(encoding));
-            const auto in = nio.Snapshot(input);
-            const auto out = nio.Snapshot(output);
+            const auto in = vm.Buffers().Read(input, false);
+            const auto out = vm.Buffers().Read(output, false);
             const bool utf16 = name.starts_with("UTF-16");
             auto available = out.limit - out.position;
             if (name == "UTF-16" && in.position < in.limit && !IntrinsicCall(c).GetInt(bom_written)) {
                 if (available < 2) return CoderResultConstant(vm, "OVERFLOW");
-                nio.Put(output, {}, 0xfe);
-                nio.Put(output, {}, 0xff);
+                CharsetPut(vm, output, 0xfe);
+                CharsetPut(vm, output, 0xff);
                 available -= 2;
                 IntrinsicCall(c).SetInt(bom_written, 1);
             }
@@ -585,12 +194,12 @@ IntrinsicClassDecl DeclareBuiltinCharsetEncoder() {
                                           {VmValue::Int(1)});
             };
             for (auto position = in.position; position < in.limit;) {
-                const auto lead = static_cast<char16_t>(nio.Get(input, position));
+                const auto lead = static_cast<char16_t>(CharsetGet(vm, input, position));
                 char16_t units[]{lead, 0};
                 auto width = 1;
                 if (lead >= 0xd800 && lead <= 0xdbff) {
                     if (position + 1 == in.limit) break;
-                    units[1] = static_cast<char16_t>(nio.Get(input, position + 1));
+                    units[1] = static_cast<char16_t>(CharsetGet(vm, input, position + 1));
                     if (units[1] < 0xdc00 || units[1] > 0xdfff) return malformed();
                     width = 2;
                 } else if (lead >= 0xdc00 && lead <= 0xdfff) {
@@ -618,10 +227,10 @@ IntrinsicClassDecl DeclareBuiltinCharsetEncoder() {
                 }
                 if (static_cast<JniSize>(bytes.size()) > available) return CoderResultConstant(vm, "OVERFLOW");
                 for (const auto byte : bytes)
-                    nio.Put(output, {}, static_cast<std::uint8_t>(byte));
+                    CharsetPut(vm, output, static_cast<std::uint8_t>(byte));
                 available -= static_cast<JniSize>(bytes.size());
                 position += width;
-                nio.SetPosition(input, position);
+                CharsetPosition(vm, input, position);
             }
             return CoderResultConstant(vm, "UNDERFLOW");
         },
@@ -650,17 +259,16 @@ IntrinsicClassDecl DeclareUtf16Decoder() {
         "decodeLoop", "(Ljava/nio/ByteBuffer;Ljava/nio/CharBuffer;)Ljava/nio/charset/CoderResult;",
         [encoding, byte_order](IntrinsicContext& c) {
             auto& vm = c.vm;
-            auto& nio = vm.NIO();
-            const auto input = Id(vm, c.arguments[0].ref);
-            const auto output = Id(vm, c.arguments[1].ref);
-            const auto in = nio.Snapshot(input);
-            const auto out = nio.Snapshot(output);
+            const auto input = c.arguments[0].ref;
+            const auto output = c.arguments[1].ref;
+            const auto in = vm.Buffers().Read(input, false);
+            const auto out = vm.Buffers().Read(output, false);
             auto position = in.position;
             auto available = out.limit - out.position;
             if (in.limit - position < 2) return CoderResultConstant(vm, "UNDERFLOW");
             const auto unit = [&](JniSize index, bool little) {
-                const auto first = nio.Get(input, index);
-                const auto second = nio.Get(input, index + 1);
+                const auto first = CharsetGet(vm, input, index);
+                const auto second = CharsetGet(vm, input, index + 1);
                 return static_cast<char16_t>(little ? first | (second << 8U) : (first << 8U) | second);
             };
             auto order = IntrinsicCall(c).GetInt(byte_order);
@@ -672,7 +280,7 @@ IntrinsicClassDecl DeclareUtf16Decoder() {
                     if (mark == 0xfeff || mark == 0xfffe) {
                         order = mark == 0xfffe ? 2 : 1;
                         position += 2;
-                        nio.SetPosition(input, position);
+                        CharsetPosition(vm, input, position);
                     }
                 }
                 IntrinsicCall(c).SetInt(byte_order, order);
@@ -694,11 +302,11 @@ IntrinsicClassDecl DeclareUtf16Decoder() {
                     return malformed();
                 }
                 if (width > available) return CoderResultConstant(vm, "OVERFLOW");
-                nio.Put(output, {}, lead);
-                if (width == 2) nio.Put(output, {}, tail);
+                CharsetPut(vm, output, lead);
+                if (width == 2) CharsetPut(vm, output, tail);
                 available -= width;
                 position += width * 2;
-                nio.SetPosition(input, position);
+                CharsetPosition(vm, input, position);
             }
             return CoderResultConstant(vm, "UNDERFLOW");
         },
@@ -999,90 +607,162 @@ std::vector<std::byte> EncodeCharset(std::u16string_view text, const std::string
     return result;
 }
 
-IntrinsicClassDecl Declare_libcore_io_Memory_Class() {
+namespace {
+std::uint64_t MemorySwap(std::uint64_t value, unsigned width) {
+    std::uint64_t result{};
+    for (unsigned i = 0; i < width; ++i) {
+        result = (result << 8U) | (value & 255U);
+        value >>= 8U;
+    }
+    return result;
+}
+
+std::span<std::byte> MemoryArray(Interpreter& vm, VmObjectRef array, std::int64_t offset, std::int64_t count) {
+    if (!array.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "array == null"};
+    auto bytes = vm.Model().PrimitiveArrayBytes(array);
+    if (offset < 0 || count < 0 || static_cast<std::uint64_t>(offset) > bytes.size() ||
+        static_cast<std::uint64_t>(count) > bytes.size() - static_cast<std::uint64_t>(offset))
+        throw VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "memory array range"};
+    return bytes.subspan(static_cast<std::size_t>(offset), static_cast<std::size_t>(count));
+}
+
+std::span<std::byte> MemoryAddress(Interpreter& vm, std::int64_t address, std::int64_t count, bool write) {
+    if (address < 0 || address > UINT32_MAX || count < 0 || count > UINT32_MAX ||
+        static_cast<std::uint64_t>(count) > UINT64_C(0x100000000) - static_cast<std::uint64_t>(address))
+        throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "guest memory range"};
+    if (count == 0) return {};
+    return {vm.GuestMemory().Resolve(memory::GuestAddress(static_cast<std::uint32_t>(address)),
+                                     static_cast<std::uint32_t>(count), write),
+            static_cast<std::size_t>(count)};
+}
+
+void MemoryCopy(std::span<std::byte> destination, std::span<const std::byte> source, unsigned width, bool swap) {
+    if (!swap || width == 1) {
+        if (!source.empty()) std::memmove(destination.data(), source.data(), source.size());
+        return;
+    }
+    for (std::size_t offset = 0; offset + width <= source.size(); offset += width) {
+        std::array<std::byte, 8> scalar{};
+        std::memcpy(scalar.data(), source.data() + offset, width);
+        for (unsigned i = 0; i < width; ++i)
+            destination[offset + i] = scalar[width - i - 1];
+    }
+}
+
+std::span<std::byte> MemoryObject(Interpreter& vm, VmObjectRef object, int offset, std::int64_t count, bool write) {
+    if (!object.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "memory object == null"};
+    if (vm.Buffers().IsBuffer(object)) {
+        const auto address = vm.Buffers().DirectAddress(object);
+        return MemoryAddress(vm, static_cast<std::int64_t>(address.Value()) + offset, count, write);
+    }
+    return MemoryArray(vm, object, offset, count);
+}
+}  // namespace
+
+IntrinsicClassDecl Declare_libcore_io_Memory_Natives() {
     auto b = IntrinsicClassBuilder::Class("Llibcore/io/Memory;");
+    b.MergesBootClass();
+    for (const auto& [name, type, width] : std::vector<std::tuple<std::string, std::string, unsigned>>{
+             {"Byte", "B", 1}, {"Short", "S", 2}, {"Int", "I", 4}, {"Long", "J", 8}}) {
+        b.StaticMethod(
+            "peek" + name, "(J" + std::string(width == 1 ? "" : "Z") + ")" + type,
+            [width](IntrinsicContext& c) {
+                const auto bytes = MemoryAddress(c.vm, c.arguments[0].AsLong(), width, false);
+                std::uint64_t bits{};
+                std::memcpy(&bits, bytes.data(), width);
+                if (width > 1 && c.arguments[1].AsInt()) {
+                    bits = MemorySwap(bits, width);
+                }
+                if (width == 8) return VmValue::Long(std::bit_cast<std::int64_t>(bits));
+                if (width == 1) return VmValue::Int(std::bit_cast<std::int8_t>(static_cast<std::uint8_t>(bits)));
+                if (width == 2) return VmValue::Int(std::bit_cast<std::int16_t>(static_cast<std::uint16_t>(bits)));
+                return VmValue::Int(std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(bits)));
+            },
+            kAccPublic | kAccNative);
+        b.StaticMethod(
+            "poke" + name, "(J" + type + (width == 1 ? "" : "Z") + ")V",
+            [width](IntrinsicContext& c) {
+                auto bytes = MemoryAddress(c.vm, c.arguments[0].AsLong(), width, true);
+                auto bits = width == 8 ? static_cast<std::uint64_t>(c.arguments[1].AsLong())
+                                       : static_cast<std::uint64_t>(static_cast<std::uint32_t>(c.arguments[1].AsInt()));
+                if (width > 1 && c.arguments[2].AsInt()) {
+                    bits = MemorySwap(bits, width);
+                }
+                std::memcpy(bytes.data(), &bits, width);
+                return VmValue::Void();
+            },
+            kAccPublic | kAccNative);
+    }
     for (const auto& [name, type, width] :
-         std::vector<std::tuple<std::string, std::string, int>>{{"Short", "S", 2}, {"Int", "I", 4}, {"Long", "J", 8}}) {
-        const auto range = [](IntrinsicContext& c, int count) {
-            if (!c.arguments[0].ref.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "array == null"};
-            const auto offset = c.arguments[1].AsInt();
-            if (offset < 0 || static_cast<std::int64_t>(offset) + count > c.vm.Model().ArrayLength(c.arguments[0].ref))
-                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "memory range"};
-            return offset;
-        };
-        b.StaticMethod("poke" + name, "([BI" + type + "Ljava/nio/ByteOrder;)V", [range, width](IntrinsicContext& c) {
-            const auto offset = range(c, width);
-            if (!c.arguments[3].ref.IsValid())
-                throw VmJavaThrow{"Ljava/lang/NullPointerException;", "byte order == null"};
-            const bool big = c.arguments[3].ref == OrderObject(c, false);
-            const auto bits = width == 8
-                                  ? static_cast<std::uint64_t>(c.arguments[2].AsLong())
-                                  : static_cast<std::uint64_t>(static_cast<std::uint32_t>(c.arguments[2].AsInt()));
-            std::vector<std::byte> bytes(static_cast<std::size_t>(width));
-            for (int i = 0; i < width; ++i)
-                bytes[static_cast<std::size_t>(i)] =
-                    static_cast<std::byte>(bits >> (static_cast<unsigned>(big ? width - i - 1 : i) * 8U));
-            c.vm.Model().WriteByteRegion(c.arguments[0].ref, offset, bytes);
+         std::vector<std::tuple<std::string, std::string, unsigned>>{{"Byte", "B", 1},
+                                                                     {"Char", "C", 2},
+                                                                     {"Short", "S", 2},
+                                                                     {"Int", "I", 4},
+                                                                     {"Float", "F", 4},
+                                                                     {"Long", "J", 8},
+                                                                     {"Double", "D", 8}}) {
+        for (const bool poke : {false, true}) {
+            b.StaticMethod(
+                std::string(poke ? "poke" : "peek") + name + "Array",
+                "(J[" + type + "II" + (width == 1 ? "" : "Z") + ")V",
+                [width, poke](IntrinsicContext& c) {
+                    const auto offset = static_cast<std::int64_t>(c.arguments[2].AsInt()) * width;
+                    const auto count = static_cast<std::int64_t>(c.arguments[3].AsInt()) * width;
+                    auto array = MemoryArray(c.vm, c.arguments[1].ref, offset, count);
+                    auto memory = MemoryAddress(c.vm, c.arguments[0].AsLong(), count, !poke ? false : true);
+                    const bool swap = width > 1 && c.arguments[4].AsInt();
+                    if (poke)
+                        MemoryCopy(memory, array, width, swap);
+                    else
+                        MemoryCopy(array, memory, width, swap);
+                    return VmValue::Void();
+                },
+                kAccPublic | kAccNative);
+        }
+    }
+    b.StaticMethod(
+        "memmove", "(Ljava/lang/Object;ILjava/lang/Object;IJ)V",
+        [](IntrinsicContext& c) {
+            const auto count = c.arguments[4].AsLong();
+            auto dst = MemoryObject(c.vm, c.arguments[0].ref, c.arguments[1].AsInt(), count, true);
+            auto src = MemoryObject(c.vm, c.arguments[2].ref, c.arguments[3].AsInt(), count, false);
+            MemoryCopy(dst, src, 1, false);
             return VmValue::Void();
-        });
-        b.StaticMethod("peek" + name, "([BILjava/nio/ByteOrder;)" + type, [range, width](IntrinsicContext& c) {
-            const auto offset = range(c, width);
-            if (!c.arguments[2].ref.IsValid())
-                throw VmJavaThrow{"Ljava/lang/NullPointerException;", "byte order == null"};
-            const bool big = c.arguments[2].ref == OrderObject(c, false);
-            const auto bytes = c.vm.Model().ReadByteRegion(c.arguments[0].ref, offset, width);
-            std::uint64_t bits{};
-            for (int i = 0; i < width; ++i)
-                bits |= static_cast<std::uint64_t>(bytes[static_cast<std::size_t>(i)])
-                        << (static_cast<unsigned>(big ? width - i - 1 : i) * 8U);
-            if (width == 8) return VmValue::Long(std::bit_cast<std::int64_t>(bits));
-            if (width == 2) return VmValue::Int(std::bit_cast<std::int16_t>(static_cast<std::uint16_t>(bits)));
-            return VmValue::Int(std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(bits)));
-        });
+        },
+        kAccPublic | kAccNative);
+    for (const bool put : {false, true}) {
+        b.StaticMethod(
+            put ? "unsafeBulkPut" : "unsafeBulkGet",
+            put ? "([BIILjava/lang/Object;IIZ)V" : "(Ljava/lang/Object;II[BIIZ)V",
+            [put](IntrinsicContext& c) {
+                const auto width = c.arguments[5].AsInt();
+                const auto count = c.arguments[2].AsInt();
+                const bool swap = c.arguments[6].AsInt() != 0;
+                auto dst = MemoryArray(c.vm, c.arguments[0].ref,
+                                       static_cast<std::int64_t>(c.arguments[1].AsInt()) * (put ? 1 : width), count);
+                auto src = MemoryArray(c.vm, c.arguments[3].ref,
+                                       static_cast<std::int64_t>(c.arguments[4].AsInt()) * (put ? width : 1), count);
+                if (!swap || width == 2 || width == 4 || width == 8)
+                    MemoryCopy(dst, src, static_cast<unsigned>(width), swap);
+                return VmValue::Void();
+            },
+            kAccPublic | kAccNative);
     }
     return std::move(b).Build();
 }
 
 void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog) {
-    catalog.push_back(Declare_java_nio_Buffer_Class());
-    catalog.push_back(Declare_java_nio_ByteOrder_Class());
-    catalog.push_back(Declare_java_nio_ByteBuffer_Class());
-    catalog.push_back(DeclarePlainBufferClass("Ljava/nio/MappedByteBuffer;", "Ljava/nio/ByteBuffer;"));
-    catalog.push_back(DeclarePlainBufferClass("Ljava/nio/HeapByteBuffer;", "Ljava/nio/ByteBuffer;"));
-    auto direct =
-        IntrinsicClassBuilder::Class("Ljava/nio/DirectByteBuffer;", "Ljava/nio/MappedByteBuffer;", {}, kAccNone);
-    direct.Constructor("(JI)V", [](IntrinsicContext& c) {
-        c.vm.NIO().WrapDirect(Id(c.vm, c.receiver),
-                              memory::GuestAddress(static_cast<std::uint32_t>(c.arguments[0].AsLong())),
-                              c.arguments[1].AsInt());
-        return VmValue::Void();
-    });
-    catalog.push_back(std::move(direct).Build());
-
-    const struct T {
-        const char* name;
-        const char* array;
-        const char* value;
-        NioElementKind kind;
-    } types[] = {
-        {"Short", "[S", "S", NioElementKind::short_value}, {"Int", "[I", "I", NioElementKind::int_value},
-        {"Float", "[F", "F", NioElementKind::float_value}, {"Char", "[C", "C", NioElementKind::character},
-        {"Long", "[J", "J", NioElementKind::long_value},   {"Double", "[D", "D", NioElementKind::double_value}};
-
-    for (const auto& t : types) {
-        catalog.push_back(DeclareTypedBufferClass(t.name, t.array, t.value, t.kind));
-        catalog.push_back(DeclarePlainBufferClass(std::string("Ljava/nio/") + t.name + "ArrayBuffer;",
-                                                  std::string("Ljava/nio/") + t.name + "Buffer;"));
-        catalog.push_back(DeclarePlainBufferClass(std::string("Ljava/nio/ByteBufferAs") + t.name + "Buffer;",
-                                                  std::string("Ljava/nio/") + t.name + "Buffer;"));
-    }
+    auto order = IntrinsicClassBuilder::Class("Ljava/nio/ByteOrder;");
+    order.MergesBootClass();
+    order.StaticMethod(
+        "isLittleEndian", "()Z", [](IntrinsicContext&) { return VmValue::Int(1); }, kAccPrivate | kAccNative);
+    catalog.push_back(std::move(order).Build());
     catalog.push_back(Declare_java_nio_charset_Charset_Class());
     catalog.push_back(Declare_java_nio_charset_Charsets_Natives());
     catalog.push_back(DeclareBuiltinCharset());
     catalog.push_back(DeclareBuiltinCharsetEncoder());
     catalog.push_back(DeclareUtf16Decoder());
-    catalog.push_back(Declare_libcore_io_Memory_Class());
+    catalog.push_back(Declare_libcore_io_Memory_Natives());
     catalog.push_back(Declare_java_nio_FileChannelImpl_Overrides());
 }
-
 }  // namespace ogplay::runtime::dexvm::intrinsics

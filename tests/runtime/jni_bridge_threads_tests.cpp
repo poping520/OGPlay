@@ -2,7 +2,7 @@
 #include "ogplay/runtime/dexvm/big_int_runtime.h"
 #include <set>
 #include "ogplay/runtime/integration/native_activity_runtime.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "runtime/integration/dexvm_android/shared.h"
 #include "../fixtures/bitmap_decode_data.h"
 #include <chrono>
@@ -123,14 +123,15 @@ TEST_CASE("JNI native attachments isolate Java execution identity and detach cle
         const auto long_class = session.Classes().FindClass("java/lang/Long");
         REQUIRE(thread_class.has_value());
         REQUIRE(long_class.has_value());
-        const auto current = session.Classes().GetMethodId(*thread_class, "currentThread", "()Ljava/lang/Thread;", true);
+        const auto current =
+            session.Classes().GetMethodId(*thread_class, "currentThread", "()Ljava/lang/Thread;", true);
         const auto parse = session.Classes().GetMethodId(*long_class, "parseLong", "(Ljava/lang/String;)J", true);
         const auto is_daemon = session.Classes().GetMethodId(*thread_class, "isDaemon", "()Z", false);
         REQUIRE(current.has_value());
         REQUIRE(parse.has_value());
         REQUIRE(is_daemon.has_value());
-        const auto root = std::get<JniReference>(session.Invocations().InvokeStatic(
-            1, *thread_class, *current, {}, JniArgumentSource::value_array));
+        const auto root = std::get<JniReference>(
+            session.Invocations().InvokeStatic(1, *thread_class, *current, {}, JniArgumentSource::value_array));
         const auto root_identity = env.ResolveObjectForHle(1, root);
         const auto baseline = vm.StackSnapshot().size();
         std::uint64_t previous_token = 1;
@@ -138,28 +139,30 @@ TEST_CASE("JNI native attachments isolate Java execution identity and detach cle
             const auto attached = daemon ? java_vm.AttachCurrentThreadAsDaemon(5, kJniVersion1_6)
                                          : java_vm.AttachCurrentThread(5, kJniVersion1_6);
             REQUIRE(attached.status == JniStatus::ok);
-            const auto result = std::async(std::launch::async, [&] {
-                const auto ref = std::get<JniReference>(session.Invocations().InvokeStatic(
-                    5, *thread_class, *current, {}, JniArgumentSource::value_array));
-                const auto identity = env.ResolveObjectForHle(5, ref);
-                REQUIRE(identity.has_value());
-                CHECK(identity != root_identity);
-                const auto object = model.FromIdentity(*identity);
-                CHECK(f.bridge->Threads().IsAlive(object));
-                CHECK(std::get<JniBoolean>(session.Invocations().InvokeVirtual(
-                    5, ref, *thread_class, *is_daemon, {}, JniArgumentSource::value_array)) == (daemon ? 1 : 0));
-                const auto text = vm.NewStringUtf8("4886718345");
-                const auto text_ref = env.PublishLocalObject(5, model.ToIdentity(text));
-                const std::array<JniValue, 1> args{text_ref};
-                CHECK(std::get<JniLong>(session.Invocations().InvokeStatic(
-                    5, *long_class, *parse, args, JniArgumentSource::value_array)) == INT64_C(4886718345));
-                const auto repeated = std::get<JniReference>(session.Invocations().InvokeStatic(
-                    5, *thread_class, *current, {}, JniArgumentSource::value_array));
-                CHECK(env.IsSameObject(5, ref, repeated));
-                env.MonitorEnter(5, ref);
-                env.MonitorEnter(5, ref);
-                return object;
-            }).get();
+            const auto result =
+                std::async(std::launch::async, [&] {
+                    const auto ref = std::get<JniReference>(session.Invocations().InvokeStatic(
+                        5, *thread_class, *current, {}, JniArgumentSource::value_array));
+                    const auto identity = env.ResolveObjectForHle(5, ref);
+                    REQUIRE(identity.has_value());
+                    CHECK(identity != root_identity);
+                    const auto object = model.FromIdentity(*identity);
+                    CHECK(f.bridge->Threads().IsAlive(object));
+                    CHECK(std::get<JniBoolean>(session.Invocations().InvokeVirtual(
+                              5, ref, *thread_class, *is_daemon, {}, JniArgumentSource::value_array)) ==
+                          (daemon ? 1 : 0));
+                    const auto text = vm.NewStringUtf8("4886718345");
+                    const auto text_ref = env.PublishLocalObject(5, model.ToIdentity(text));
+                    const std::array<JniValue, 1> args{text_ref};
+                    CHECK(std::get<JniLong>(session.Invocations().InvokeStatic(
+                              5, *long_class, *parse, args, JniArgumentSource::value_array)) == INT64_C(4886718345));
+                    const auto repeated = std::get<JniReference>(session.Invocations().InvokeStatic(
+                        5, *thread_class, *current, {}, JniArgumentSource::value_array));
+                    CHECK(env.IsSameObject(5, ref, repeated));
+                    env.MonitorEnter(5, ref);
+                    env.MonitorEnter(5, ref);
+                    return object;
+                }).get();
             const auto stacks = vm.StackSnapshot();
             CHECK(stacks.size() == baseline + 1);
             const auto token = stacks.back().context_token;
@@ -176,14 +179,14 @@ TEST_CASE("JNI native attachments isolate Java execution identity and detach cle
         // The limit applies to live attachments; released slots are reusable.
         for (std::uint64_t id = 200; id < 264; ++id) {
             REQUIRE(java_vm.AttachCurrentThread(id, kJniVersion1_6).status == JniStatus::ok);
-            const auto ref = std::get<JniReference>(session.Invocations().InvokeStatic(
-                id, *thread_class, *current, {}, JniArgumentSource::value_array));
+            const auto ref = std::get<JniReference>(
+                session.Invocations().InvokeStatic(id, *thread_class, *current, {}, JniArgumentSource::value_array));
             CHECK_FALSE(ref.IsNull());
         }
         REQUIRE(java_vm.AttachCurrentThread(264, kJniVersion1_6).status == JniStatus::ok);
-        CHECK_THROWS_WITH(static_cast<void>(session.Invocations().InvokeStatic(
-            264, *thread_class, *current, {}, JniArgumentSource::value_array)),
-            doctest::Contains("native JNI execution context limit exceeded"));
+        CHECK_THROWS_WITH(static_cast<void>(session.Invocations().InvokeStatic(264, *thread_class, *current, {},
+                                                                               JniArgumentSource::value_array)),
+                          doctest::Contains("native JNI execution context limit exceeded"));
         for (std::uint64_t id = 200; id <= 264; ++id)
             CHECK(java_vm.DetachCurrentThread(id) == JniStatus::ok);
         CHECK(vm.StackSnapshot().size() == baseline);
@@ -199,18 +202,20 @@ TEST_CASE("DVM-111 scheduled tasks use VM interface assignability in shared JNI 
         auto& linker = fixture.bridge->Linker();
         auto& model = vm.Model();
         std::vector<Interpreter::RootScope> roots;
+
         struct StopWorkers final {
             VmThreadRuntime& threads;
+
             ~StopWorkers() { threads.Shutdown(); }
         } stop_workers{fixture.bridge->Threads()};
+
         {
             VmExecutionLockScope lock(vm.ExecutionLock());
             auto keep = [&](VmObjectRef ref) {
                 roots.push_back(vm.ProtectReferences(std::array{ref}));
                 return ref;
             };
-            auto direct = [&](const char* owner, const char* name, const char* signature,
-                              std::vector<VmValue> args) {
+            auto direct = [&](const char* owner, const char* name, const char* signature, std::vector<VmValue> args) {
                 const auto method = linker.FindDirectMethod(linker.ResolveDescriptor(owner), name, signature);
                 REQUIRE(method);
                 const auto result = vm.Call(*method, args);
@@ -233,20 +238,24 @@ TEST_CASE("DVM-111 scheduled tasks use VM interface assignability in shared JNI 
             const auto runnable = keep(vm.NewIntrinsicInstance("Ljava/lang/Thread;"));
             direct("Ljava/lang/Thread;", "<init>", "()V", {VmValue::Ref(runnable)});
             const auto unit = keep(direct("Ljava/util/concurrent/TimeUnit;", "valueOf",
-                "(Ljava/lang/String;)Ljava/util/concurrent/TimeUnit;",
-                {VmValue::Ref(vm.NewStringUtf8("DAYS"))}).ref);
+                                          "(Ljava/lang/String;)Ljava/util/concurrent/TimeUnit;",
+                                          {VmValue::Ref(vm.NewStringUtf8("DAYS"))})
+                                       .ref);
             // The real BootDex queue stores ScheduledFutureTask into RunnableScheduledFuture[].
-            const auto future = keep(call(pool, "schedule",
-                "(Ljava/lang/Runnable;JLjava/util/concurrent/TimeUnit;)Ljava/util/concurrent/ScheduledFuture;",
-                {VmValue::Ref(runnable), VmValue::Long(1), VmValue::Ref(unit)}).ref);
+            const auto future = keep(
+                call(pool, "schedule",
+                     "(Ljava/lang/Runnable;JLjava/util/concurrent/TimeUnit;)Ljava/util/concurrent/ScheduledFuture;",
+                     {VmValue::Ref(runnable), VmValue::Long(1), VmValue::Ref(unit)})
+                    .ref);
             const auto task_type = model.ObjectClass(future);
-            for (const auto* descriptor : {"Ljava/util/concurrent/RunnableScheduledFuture;",
-                    "Ljava/util/concurrent/RunnableFuture;", "Ljava/util/concurrent/Future;",
-                    "Ljava/util/concurrent/Delayed;", "Ljava/lang/Comparable;", "Ljava/lang/Runnable;"}) {
+            for (const auto* descriptor :
+                 {"Ljava/util/concurrent/RunnableScheduledFuture;", "Ljava/util/concurrent/RunnableFuture;",
+                  "Ljava/util/concurrent/Future;", "Ljava/util/concurrent/Delayed;", "Ljava/lang/Comparable;",
+                  "Ljava/lang/Runnable;"}) {
                 const auto element = linker.ResolveDescriptor(descriptor);
                 CHECK(linker.IsAssignable(element, task_type));
-                const auto array = keep(model.NewObjectArray(
-                    linker.ResolveDescriptor(std::string("[") + descriptor), element, 1));
+                const auto array =
+                    keep(model.NewObjectArray(linker.ResolveDescriptor(std::string("[") + descriptor), element, 1));
                 model.SetObjectElement(array, 0, future);
                 CHECK(model.GetObjectElement(array, 0) == future);
             }
@@ -254,8 +263,8 @@ TEST_CASE("DVM-111 scheduled tasks use VM interface assignability in shared JNI 
             const auto typed = keep(model.NewObjectArray(
                 linker.ResolveDescriptor("[Ljava/util/concurrent/RunnableScheduledFuture;"), element, 1));
             auto& arrays = fixture.session->Objects().ObjectArrays();
-            const auto host_only = fixture.session->Classes().RegisterClass(
-                {"fixture/HostOnly", "java/lang/Object", {}, {}});
+            const auto host_only =
+                fixture.session->Classes().RegisterClass({"fixture/HostOnly", "java/lang/Object", {}, {}});
             const runtime::JniObjectValue host_value{runtime::AllocateJniHostObjectIdentity(), host_only};
             const auto host_array = arrays.New(host_only, 1, host_value);
             CHECK(arrays.Get(host_array, 0) == host_value);
@@ -270,7 +279,8 @@ TEST_CASE("DVM-111 scheduled tasks use VM interface assignability in shared JNI 
             const auto native_array = arrays.New(arrays.ElementClass(model.ToIdentity(typed)), 1, value);
             arrays.Set(model.ToIdentity(typed), 0, value);
             CHECK_THROWS_AS(arrays.Set(model.ToIdentity(typed), 0,
-                runtime::JniObjectValue{model.ToIdentity(runnable), *thread_identity}), runtime::JniObjectArrayError);
+                                       runtime::JniObjectValue{model.ToIdentity(runnable), *thread_identity}),
+                            runtime::JniObjectArrayError);
             CHECK(arrays.Get(model.ToIdentity(typed), 0) == value);
             arrays.Delete(native_array);
             static_cast<void>(vm.CollectGarbage());

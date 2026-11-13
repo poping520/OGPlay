@@ -19,7 +19,8 @@
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/big_int_runtime.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
+#include "ogplay/runtime/dexvm/nio_buffer_access.h"
 #include "ogplay/runtime/dexvm/unsafe_runtime.h"
 #include "ogplay/runtime/dexvm/annotation_runtime.h"
 #include "ogplay/runtime/dexvm/network_runtime.h"
@@ -151,8 +152,8 @@ public:
 
     IoRuntime io;
     NetworkRuntime network;
-    NioRuntime nio;
-    NioRuntime* nio_runtime{&nio};
+    GuestMemoryRuntime guest_memory;
+    std::unique_ptr<NioBufferAccess> buffers;
     ZipRuntime zip;
     std::unique_ptr<UnsafeRuntime> unsafe;
     std::unique_ptr<AnnotationRuntime> annotations;

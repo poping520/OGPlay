@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cstring>
+#include "ogplay/memory/address_space.h"
 #include <optional>
 #include <span>
 #include <vector>
@@ -129,6 +131,167 @@ bool TryStringFastOp(StringFastOp op, JavaObjectModel& model, const FastInvoke& 
     if (!std::ranges::all_of(left, ascii) || !std::ranges::all_of(right, ascii)) return false;
     const auto fold = [](char16_t ch) { return ch >= u'A' && ch <= u'Z' ? ch + 32 : ch; };
     return write(ignore_case ? std::ranges::equal(left, right, {}, fold, fold) : left == right);
+}
+
+bool TryNioFastOp(Interpreter& vm, std::uint32_t encoded, const FastInvoke& invoke, const Slot* regs, VmValue& result) {
+    unsigned cursor = invoke.is_static ? 0U : 1U;
+    if (!invoke.is_static && (regs[invoke.registers[0]].tag != SlotTag::ref || regs[invoke.registers[0]].bits == 0))
+        return false;
+    for (const auto kind : invoke.argument_shorty) {
+        const auto& low = regs[invoke.registers[cursor]];
+        if (kind == 'J' || kind == 'D') {
+            if (low.tag != SlotTag::wide_lo || regs[invoke.registers[cursor + 1]].tag != SlotTag::wide_hi) return false;
+            cursor += 2;
+        } else {
+            if (kind == 'L' ? (low.tag != SlotTag::ref && !(low.tag == SlotTag::cat1 && low.bits == 0))
+                            : low.tag != SlotTag::cat1)
+                return false;
+            ++cursor;
+        }
+    }
+    const auto op = encoded & 255U;
+    const auto type = static_cast<char>((encoded >> 8U) & 255U);
+    const auto slot = [&](unsigned i) -> const Slot& { return regs[invoke.registers[i]]; };
+    const auto num = [&](unsigned i) { return std::bit_cast<std::int32_t>(slot(i).bits); };
+    const auto wide = [&](unsigned i) { return slot(i).bits | (static_cast<std::uint64_t>(slot(i + 1).bits) << 32U); };
+    const auto width = type == 'J' || type == 'D' ? 8U : (type == 'I' || type == 'F' ? 4U : (type == 'B' ? 1U : 2U));
+    const auto value = [&](std::uint64_t bits) {
+        if (width == 8)
+            result = VmValue::Long(std::bit_cast<std::int64_t>(bits));
+        else if (type == 'B')
+            result = VmValue::Int(std::bit_cast<std::int8_t>(static_cast<std::uint8_t>(bits)));
+        else if (type == 'S')
+            result = VmValue::Int(std::bit_cast<std::int16_t>(static_cast<std::uint16_t>(bits)));
+        else
+            result = VmValue::Int(std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(bits)));
+    };
+    if (op == 3 || op == 4) {
+        const auto address = wide(0);
+        if (address > UINT32_MAX || address + width > UINT64_C(0x100000000)) return false;
+        std::byte* data;
+        // Invalid addresses execute the original native and retain its fault/Java boundary.
+        try {
+            data = vm.GuestMemory().Resolve(memory::GuestAddress(static_cast<std::uint32_t>(address)), width, op == 4);
+        } catch (const memory::MemoryFault&) {
+            return false;
+        }
+        std::uint64_t bits = op == 4 ? (width == 8 ? wide(2) : slot(2).bits) : 0;
+        if (op == 3) std::memcpy(&bits, data, width);
+        const auto swap_index = op == 3 ? 2U : (width == 8 ? 4U : 3U);
+        if (width > 1 && num(swap_index) != 0) {
+            std::uint64_t swapped{};
+            for (unsigned i = 0; i < width; ++i) {
+                swapped = (swapped << 8U) | (bits & 255U);
+                bits >>= 8U;
+            }
+            bits = swapped;
+        }
+        if (op == 4) {
+            std::memcpy(data, &bits, width);
+            result = VmValue::Void();
+        } else
+            value(bits);
+        return true;
+    }
+    const auto self = VmObjectRef(slot(0).bits);
+    if (!self.IsValid()) return false;
+    auto& buffers = vm.Buffers();
+    if (op == 22) {
+        if (num(2) < 0) return false;
+        buffers.InitializeBase(self, num(1), num(2), VmObjectRef(slot(3).bits));
+        result = VmValue::Void();
+        return true;
+    }
+    if (op == 23) {
+        if (!buffers.InitializeDirect(self, VmObjectRef(slot(1).bits), num(2), num(3), num(4) != 0,
+                                      VmObjectRef(slot(5).bits)))
+            return false;
+        result = VmValue::Void();
+        return true;
+    }
+    const auto view = buffers.Read(self, false);
+    if (op >= 10) {
+        const auto integer = [&](int n) {
+            result = VmValue::Int(n);
+            return true;
+        };
+        if (op == 10) return integer(view.capacity);
+        if (op == 11) return integer(view.position);
+        if (op == 12) return integer(view.limit);
+        if (op == 13) return integer(view.limit - view.position);
+        if (op == 14) return integer(view.position < view.limit);
+        auto position = view.position, limit = view.limit, mark = view.mark.value_or(-1);
+        switch (op) {
+        case 15:
+            position = num(1);
+            if (position < 0 || position > limit) return false;
+            if (mark > position) mark = -1;
+            break;
+        case 16:
+            limit = num(1);
+            if (limit < 0 || limit > view.capacity) return false;
+            position = std::min(position, limit);
+            if (mark > limit) mark = -1;
+            break;
+        case 17:
+            position = 0;
+            limit = view.capacity;
+            mark = -1;
+            break;
+        case 18:
+            limit = position;
+            position = 0;
+            mark = -1;
+            break;
+        case 19:
+            position = 0;
+            mark = -1;
+            break;
+        case 20: mark = position; break;
+        case 21:
+            if (mark < 0) return false;
+            position = mark;
+            break;
+        default: return false;
+        }
+        buffers.StoreCursor(self, position, limit, mark);
+        result = VmValue::Ref(self);
+        return true;
+    }
+    const bool absolute = (encoded & (1U << 16U)) != 0;
+    const auto index = absolute ? num(1) : view.position;
+    const auto shift = static_cast<unsigned>(view.element_size_shift);
+    const auto step = width >> shift;
+    if (index < 0 || index > view.limit || step > static_cast<std::uint32_t>(view.limit - index) ||
+        (op == 2 && view.read_only))
+        return false;
+    if (!view.scalar_accessible || (!view.array.IsValid() && !view.direct_address)) return false;
+    std::span<std::byte> bytes;
+    try {
+        bytes = buffers.Bytes(view, static_cast<std::uint32_t>(index) << shift, width, op == 2);
+    } catch (const memory::MemoryFault&) {
+        return false;
+    } catch (const VmJavaThrow&) {
+        return false;
+    }
+    const auto arg = absolute ? 2U : 1U;
+    std::uint64_t bits = op == 2 ? (width == 8 ? wide(arg) : slot(arg).bits) : 0;
+    if (op == 1) std::memcpy(&bits, bytes.data(), width);
+    if (view.order == NioByteOrder::big_endian && width > 1) {
+        std::uint64_t swapped{};
+        for (unsigned i = 0; i < width; ++i) {
+            swapped = (swapped << 8U) | (bits & 255U);
+            bits >>= 8U;
+        }
+        bits = swapped;
+    }
+    if (op == 2) {
+        std::memcpy(bytes.data(), &bits, width);
+        result = VmValue::Ref(self);
+    } else
+        value(bits);
+    if (!absolute) buffers.StorePosition(self, index + static_cast<std::int32_t>(step));
+    return true;
 }
 
 }  // namespace

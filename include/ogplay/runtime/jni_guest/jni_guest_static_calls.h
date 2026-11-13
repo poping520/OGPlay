@@ -32,11 +32,12 @@ public:
     // Idempotent publication; a conflicting runtime class is an error.
     void EnsureRegistered(JniObjectIdentity object, JniObjectIdentity java_class);
     void Forget(JniObjectIdentity object);
+    // Most Java objects have no JNI class entry when collected.
+    void ForgetIfRegistered(JniObjectIdentity object);
     // Authoritative fallback for objects owned by shared semantic stores.
     // Called outside the registry lock; unknown identities must return nullopt.
     // Install before use; clear only after guest threads have stopped.
-    using RuntimeClassResolver =
-        std::function<std::optional<JniObjectIdentity>(JniObjectIdentity)>;
+    using RuntimeClassResolver = std::function<std::optional<JniObjectIdentity>(JniObjectIdentity)>;
     void SetRuntimeClassResolver(RuntimeClassResolver resolver);
     [[nodiscard]] JniObjectIdentity ClassOf(JniObjectIdentity object) const;
     [[nodiscard]] JniObjectArrayStore& ObjectArrays() noexcept;
@@ -47,17 +48,13 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-void BindJniGuestStaticCallSlots(JniGuestCallDispatcher& dispatcher,
-                                 JniEnvironment& environment,
-                                 JniClassRegistry& classes,
-                                 JniInvocationEngine& invocations,
+void BindJniGuestStaticCallSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
+                                 JniClassRegistry& classes, JniInvocationEngine& invocations,
                                  memory::AddressSpace& address_space);
 
-void BindJniGuestClassAndInstanceSlots(
-    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
-    JniClassRegistry& classes, JniInvocationEngine& invocations,
-    memory::AddressSpace& address_space,
-    JniGuestObjectRegistry* objects = nullptr,
-    JniFieldStore* fields = nullptr);
+void BindJniGuestClassAndInstanceSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
+                                       JniClassRegistry& classes, JniInvocationEngine& invocations,
+                                       memory::AddressSpace& address_space, JniGuestObjectRegistry* objects = nullptr,
+                                       JniFieldStore* fields = nullptr);
 
 }  // namespace ogplay::runtime

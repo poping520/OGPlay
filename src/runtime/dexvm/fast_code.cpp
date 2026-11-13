@@ -10,6 +10,61 @@
 
 namespace ogplay::runtime::dexvm {
 
+std::uint32_t ResolveNioFastOp(std::string_view owner, std::string_view name, std::string_view descriptor) {
+    // Low byte: operation; next byte: primitive descriptor; bit 16: absolute.
+    if (owner == "Ljava/nio/Buffer;") {
+        if (name == "<init>" && descriptor == "(IILjava/nio/MemoryBlock;)V") return 22;
+        constexpr std::string_view names[]{"capacity", "position", "limit", "remaining", "hasRemaining", "position",
+                                           "limit",    "clear",    "flip",  "rewind",    "mark",         "reset"};
+        constexpr std::string_view descriptors[]{"()I",
+                                                 "()I",
+                                                 "()I",
+                                                 "()I",
+                                                 "()Z",
+                                                 "(I)Ljava/nio/Buffer;",
+                                                 "(I)Ljava/nio/Buffer;",
+                                                 "()Ljava/nio/Buffer;",
+                                                 "()Ljava/nio/Buffer;",
+                                                 "()Ljava/nio/Buffer;",
+                                                 "()Ljava/nio/Buffer;",
+                                                 "()Ljava/nio/Buffer;"};
+        for (std::uint32_t i = 0; i < std::size(names); ++i)
+            if (name == names[i] && descriptor == descriptors[i]) return 10U + i;
+        return 0;
+    }
+    if (owner == "Ljava/nio/DirectByteBuffer;" && name == "<init>" &&
+        descriptor == "(Ljava/nio/MemoryBlock;IIZLjava/nio/channels/FileChannel$MapMode;)V")
+        return 23;
+    const bool memory = owner == "Llibcore/io/Memory;";
+    const bool concrete = owner == "Ljava/nio/DirectByteBuffer;" ||
+                          (owner.starts_with("Ljava/nio/") &&
+                           (owner.ends_with("ArrayBuffer;") || owner.starts_with("Ljava/nio/ByteBufferAs")));
+    if (!memory && !concrete) return 0;
+    const bool put = name.starts_with(memory ? "poke" : "put");
+    const bool get = name.starts_with(memory ? "peek" : "get");
+    if (!put && !get) return 0;
+    const auto close = descriptor.find(')');
+    const auto args = descriptor.substr(1, close - 1);
+    const auto returns = descriptor.substr(close + 1);
+    const bool absolute = !memory && (get ? args == "I" : args.size() == 2 && args[0] == 'I');
+    char type{};
+    if (get) {
+        if (returns.size() != 1) return 0;
+        type = returns[0];
+    } else {
+        if (args.empty()) return 0;
+        type = memory ? (args.size() > 1 ? args[1] : char{}) : args.back();
+    }
+    if (std::string_view("BCSIFJD").find(type) == std::string_view::npos) return 0;
+    if (memory) {
+        if (get ? args != (type == 'B' ? "J" : "JZ") : args != std::string("J") + type + (type == 'B' ? "" : "Z"))
+            return 0;
+    } else if (get ? (!args.empty() && args != "I") : (args.size() != (absolute ? 2U : 1U)))
+        return 0;
+    return (memory ? (put ? 4U : 3U) : (put ? 2U : 1U)) | (static_cast<std::uint32_t>(type) << 8U) |
+           (absolute ? 1U << 16U : 0U);
+}
+
 StringFastOp ResolveStringFastOp(std::string_view name, std::string_view descriptor) {
     using Op = StringFastOp;
 

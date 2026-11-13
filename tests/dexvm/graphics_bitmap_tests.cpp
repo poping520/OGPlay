@@ -190,3 +190,37 @@ TEST_CASE("Skia ROM BitmapFactory scales PNG nine-patch metadata and output padd
     }
 }
 }  // namespace
+
+TEST_CASE("NIO ROM Bitmap pixel copies use payload offsets and Java advances position once") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto config = f.Static("Landroid/graphics/Bitmap$Config;", "valueOf",
+                                     "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;",
+                                     {VmValue::Ref(f.vm.NewStringUtf8("ARGB_8888"))});
+        const auto bitmap = f.Static("Landroid/graphics/Bitmap;", "createBitmap",
+                                     "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+                                     {VmValue::Int(1), VmValue::Int(1), config})
+                                .ref;
+        const auto root = f.vm.ProtectReferences(std::array{bitmap});
+        constexpr auto color = 0xff804020U;
+        for (const auto allocation : {"allocate", "allocateDirect"})
+            for (const bool typed : {false, true}) {
+                const auto bytes =
+                    f.Static("Ljava/nio/ByteBuffer;", allocation, "(I)Ljava/nio/ByteBuffer;", {VmValue::Int(16)}).ref;
+                const auto buffer = typed ? f.On(bytes, "asIntBuffer", "()Ljava/nio/IntBuffer;").ref : bytes;
+                const auto roots = f.vm.ProtectReferences(std::array{bytes, buffer});
+                const auto position = typed ? 1 : 4;
+                f.On(buffer, "position", "(I)Ljava/nio/Buffer;", {VmValue::Int(position)});
+                f.On(bitmap, "eraseColor", "(I)V", {VmValue::Int(std::bit_cast<int>(color))});
+                f.On(bitmap, "copyPixelsToBuffer", "(Ljava/nio/Buffer;)V", {VmValue::Ref(buffer)});
+                CHECK(f.On(buffer, "position", "()I").AsInt() == position + (typed ? 1 : 4));
+                CHECK(static_cast<std::uint8_t>(f.On(bytes, "get", "(I)B", {VmValue::Int(4)}).AsInt()) == 0x80);
+                f.On(bitmap, "eraseColor", "(I)V", {VmValue::Int(0)});
+                f.On(buffer, "position", "(I)Ljava/nio/Buffer;", {VmValue::Int(position)});
+                f.On(bitmap, "copyPixelsFromBuffer", "(Ljava/nio/Buffer;)V", {VmValue::Ref(buffer)});
+                CHECK(f.On(buffer, "position", "()I").AsInt() == position + (typed ? 1 : 4));
+                CHECK(f.On(bitmap, "getPixel", "(II)I", {VmValue::Int(0), VmValue::Int(0)}).AsInt() ==
+                      std::bit_cast<int>(color));
+            }
+    }
+}

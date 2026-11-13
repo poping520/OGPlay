@@ -15,7 +15,7 @@ namespace ogplay::app {
 struct DexRunOptions final {
     std::filesystem::path input;           // classes.dex or a jar/zip holding it
     std::string main_class{"Main"};        // binary name, '.' or '/' separated
-    std::string backend{"switch"};         // switch | threaded
+    std::string backend{"threaded"};       // switch | threaded
     std::filesystem::path ledger_json;     // optional unimplemented-hit report
     std::filesystem::path native_lib_dir;  // optional ARM application lib*.so directory
     bool merge_console{false};             // AOSP run-test merges Java stdout/stderr, excluding host diagnostics.

@@ -18,7 +18,7 @@
 
 #include "ogplay/audio/java_sound_pool.h"
 #include "ogplay/core/byte_order.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/framework/framework_lifecycle.h"
 #include "ogplay/runtime/framework/framework_locale.h"

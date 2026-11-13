@@ -52,7 +52,8 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   可中断 host 等待，返回 EINTR，按需写回剩余 timespec；信号留给目标 CPU 安全边界投递，
   SA_RESTART 不重启睡眠。成功时不访问 remainder。只有实际等待后报告 advanced，
   零时长、等待前中断及参数错误为 idle；宿主等待计时使用统一 Clock，不推进 guest ticks。
-  可选睡眠记账回调在等待结束后收到实际睡眠时长（中断时为已睡部分）。
+  可选睡眠记账回调在等待结束后收到实际睡眠时长（中断时为已睡部分）。futex WAIT 的可选
+  超时记账回调只在非零超时到期时收到该超时；被唤醒、值不符与零超时不上报。
   可由进程 owner 注入非零睡眠准入回调，在实际 sleep 前拒绝超出退出预算的请求；
   控制失败原样展开，不伪造睡眠成功，默认无回调时语义保持。
 - API 19 futex wait 的 timeout 是 guest 32-bit 相对 timespec，清理 scope 可施加更短的时限；超时返回 `-ETIMEDOUT`，

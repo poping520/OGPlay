@@ -318,6 +318,12 @@ public:
         }
     }
 
+    std::byte* ResolveNativeRange(const GuestRange& range, AccessType access) {
+        std::scoped_lock lock(mutex_);
+        if (range.Size() != 0) ValidateLocked(range, access, 0);
+        return reservation_->Base() + range.Start().Value();
+    }
+
     void Read(const GuestAddress address, const std::span<std::byte> destination, const std::uint64_t thread_id) const {
         if (destination.empty()) return;
         const GuestRange range(address, destination.size());
@@ -762,6 +768,10 @@ void AddressSpace::UnmapProtected(const ProtectedMappingOwner& owner, const Gues
     if (owner.space_ != impl_.get() || !owner.lifetime_) throw std::invalid_argument("foreign protected owner");
     impl_->UnmapProtected(owner.id_, range);
     impl_->PublishMappingChange(range);
+}
+
+std::byte* AddressSpace::ResolveNativeRange(const GuestRange& range, AccessType access) {
+    return impl_->ResolveNativeRange(range, access);
 }
 
 std::byte* AddressSpace::ResolveProtected(const ProtectedMappingOwner& owner, const GuestRange& range) {

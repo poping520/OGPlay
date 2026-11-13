@@ -13,9 +13,12 @@ class AddressSpace;
 
 namespace ogplay::runtime {
 
-namespace dexvm {
-class NioRuntime;
-}
+struct JniDirectBufferHooks final {
+    // The VM owner publishes the local reference before releasing its GC lock.
+    std::function<JniReference(std::uint64_t, memory::GuestAddress, std::int32_t)> create;
+    std::function<memory::GuestAddress(std::uint64_t, JniObjectIdentity)> address;
+    std::function<std::int64_t(std::uint64_t, JniObjectIdentity)> capacity;
+};
 
 class JniEnvironment;
 class JniClassRegistry;
@@ -48,7 +51,7 @@ struct JniGuestBindingContext final {
     JniGuestObjectRegistry& objects;
     memory::AddressSpace& address_space;
     JniNativeRegistry* natives{};
-    dexvm::NioRuntime* nio{};
+    JniDirectBufferHooks* direct_buffers{};
     JniGuestStringLimits string_limits{};
     JniGuestStringObserver string_observer{};
     core::Logger* logger{};

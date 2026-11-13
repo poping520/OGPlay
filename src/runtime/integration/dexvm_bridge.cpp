@@ -7,6 +7,8 @@
 #include "ogplay/core/text.h"
 #include "ogplay/runtime/jni/jni_utf.h"
 #include "ogplay/runtime/dexvm/reflection.h"
+#include "ogplay/runtime/dexvm/nio_buffer_access.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 
 #include <algorithm>
@@ -1496,7 +1498,32 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
     impl_->vm = std::make_unique<dx::Interpreter>(impl_->linker, *impl_->model, this, ledger, config.interpreter);
     impl_->model->SetPrimitiveAllocationMutex(impl_->vm->ExecutionLock());
     impl_->vm->BindDefaultExecutionHost();
-    impl_->vm->SetNioRuntime(&session.NIO());
+    impl_->vm->SetGuestMemoryAccess(session.Process().GuestMemoryAccess());
+    session.DirectBuffers() = {
+        [bridge_state](std::uint64_t thread, memory::GuestAddress address, std::int32_t capacity) {
+            JniReference result;
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            bridge_state->vm->RunInExecutionContext(bridge_state->ContextForJniThread(thread), [&] {
+                try {
+                    const auto buffer = bridge_state->vm->Buffers().NewDirect(address, capacity);
+                    result = bridge_state->session->Environment().PublishLocalObject(
+                        thread, bridge_state->vm->Model().ToIdentity(buffer));
+                } catch (const dx::VmJavaThrow& error) {
+                    if (!error.existing.IsValid()) throw;
+                    bridge_state->session->Environment().Throw(thread,
+                                                               bridge_state->PublishLocal(error.existing, thread));
+                }
+            });
+            return result;
+        },
+        [bridge_state](std::uint64_t, JniObjectIdentity object) {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            return bridge_state->vm->Buffers().DirectAddress(bridge_state->vm->Model().FindIdentity(object));
+        },
+        [bridge_state](std::uint64_t, JniObjectIdentity object) {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            return bridge_state->vm->Buffers().Capacity(bridge_state->vm->Model().FindIdentity(object));
+        }};
     impl_->vm->SetClassInitializationPendingSource([bridge_state]() -> dx::VmObjectRef {
         std::optional<std::uint64_t> thread;
         {
@@ -1728,12 +1755,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
                                              bridge_state->asset_managers.erase(found);
                                          }
                                          session.Environment().ClearWeakReferencesTo(identity);
-                                         try {
-                                             session.Objects().Forget(identity);
-                                         } catch (const JniGuestBindingError&) {
-                                             // Untyped semantic objects may be swept before their first
-                                             // JNI class query and therefore have no registry entry yet.
-                                         }
+                                         session.Objects().ForgetIfRegistered(identity);
                                      },
                                      [android_context](const dx::VmRootVisitor& visit) {
                                          if (android_context) VisitAndroidSessionRoots(*android_context, visit);
@@ -1917,6 +1939,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
             session.Environment().SetThreadDetachGuard({});
             session.Environment().SetMonitorHooks({});
             session.Environment().SetReflectionHooks({});
+            session.DirectBuffers() = {};
             session.Environment().SetObjectAllocationHook({});
             session.Environment().SetExceptionDescriber({});
             session.Environment().SetThrowableFactory({});
@@ -2027,6 +2050,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->session->Environment().SetThreadDetachGuard({});
         impl_->session->Environment().SetMonitorHooks({});
         impl_->session->Environment().SetReflectionHooks({});
+        impl_->session->DirectBuffers() = {};
         impl_->session->Environment().SetObjectAllocationHook({});
         impl_->session->Classes().SetClassResolver({});
         impl_->session->Classes().SetMemberLoader({});

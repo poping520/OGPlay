@@ -2253,7 +2253,7 @@ IntrinsicClassDecl Declare_java_lang_ThreadGroup_Class() {
 
 // Throwable Java behavior and fields come from BootDex; only VM stack primitives remain.
 namespace ogplay::runtime::dexvm::intrinsics {
-void AppendJavaLangThrowableNatives(std::vector<IntrinsicClassDecl>& catalog) {
+IntrinsicClassDecl Declare_java_lang_Throwable_Natives() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Throwable;");
     builder.MergesBootClass();
     builder.StaticMethod(
@@ -2263,6 +2263,6 @@ void AppendJavaLangThrowableNatives(std::vector<IntrinsicClassDecl>& catalog) {
         "nativeGetStackTrace", "(Ljava/lang/Object;)[Ljava/lang/StackTraceElement;",
         [](IntrinsicContext& c) { return VmValue::Ref(c.vm.MaterializeThrowableStack(c.arguments[0].ref)); },
         kAccPrivate | kAccNative);
-    catalog.push_back(std::move(builder).Build());
+    return std::move(builder).Build();
 }
 }  // namespace ogplay::runtime::dexvm::intrinsics

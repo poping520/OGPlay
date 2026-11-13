@@ -25,6 +25,9 @@
 - `PreflightWrite` 返回绑定地址、大小、线程与映射世代的不可伪造票据；
   `WritePrevalidated` 只在世代未变化时省略重复权限验证，映射或权限变化后必须在写入前
   重新验证。
+- `ResolveNativeRange` 在一次权限/边界校验后向同步 native 返回连续 backing 地址；
+  调用者必须保活 process/Java owner，并排除使用期间的映射、保护和 restore 变化。
+  不允许跨调用保存地址；protected payload 继续沿所属 owner 的稳定寿命。
 - `MemoryFault`：携带 guest 地址、访问类型、失败原因和 guest 线程 ID。
 - `MemoryBus`：CPU 只依赖的 8/16/32/64 位小端数据访存及 16/32 位取指接口。
 - `AddressSpace/MemoryBus::ObserveMappingChanges`：显式范围通知；Map、Protect、Unmap、

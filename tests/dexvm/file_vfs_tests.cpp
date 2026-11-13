@@ -731,3 +731,54 @@ TEST_CASE("DVM-338 Posix lazily adopts guest descriptors and preserves errno") {
                                    {VmValue::Ref(fd), VmValue::Ref(buffer), VmValue::Int(0), VmValue::Int(1)}));
     }
 }
+
+TEST_CASE("NIO ROM Posix bytes natives share direct payload and preserve positioned IO offsets") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        FileVm f(nullptr, true, {.backend = backend});
+        const std::array initial{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}, std::byte{'d'}};
+        f.vfs.PutFile("/nio-io", initial, true);
+        const auto handle = f.vfs.Open("/nio-io", {.read = true, .write = true});
+        const auto fd = f.interpreter.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+        f.CallOn(fd, "<init>", "()V");
+        f.CallOn(fd, "setInt$", "(I)V", {VmValue::Int(handle)});
+        const auto posix = f.interpreter.NewIntrinsicInstance("Llibcore/io/Posix;");
+        const auto type = f.linker.ResolveDescriptor("Ljava/nio/ByteBuffer;");
+        const auto allocate = f.linker.FindDirectMethod(type, "allocateDirect", "(I)Ljava/nio/ByteBuffer;");
+        REQUIRE(allocate);
+        const auto created = f.interpreter.Call(*allocate, std::array{VmValue::Int(8)});
+        REQUIRE_FALSE(created.exception.IsValid());
+        const auto buffer = created.value.ref;
+        const auto roots = f.interpreter.ProtectReferences(std::array{fd, posix, buffer});
+        f.CallOn(buffer, "position", "(I)Ljava/nio/Buffer;", {VmValue::Int(2)});
+        CHECK(f.CallOn(posix, "read", "(Ljava/io/FileDescriptor;Ljava/nio/ByteBuffer;)I",
+                       {VmValue::Ref(fd), VmValue::Ref(buffer)})
+                  .AsInt() == 4);
+        CHECK(f.CallOn(buffer, "get", "(I)B", {VmValue::Int(2)}).AsInt() == 'a');
+        CHECK(f.CallOn(buffer, "position", "()I").AsInt() == 2);
+        CHECK(f.vfs.Seek(handle, 0, VfsSeekWhence::current) == 4);
+        CHECK(f.CallOn(posix, "pread", "(Ljava/io/FileDescriptor;Ljava/nio/ByteBuffer;J)I",
+                       {VmValue::Ref(fd), VmValue::Ref(buffer), VmValue::Long(1)})
+                  .AsInt() == 3);
+        CHECK(f.CallOn(buffer, "get", "(I)B", {VmValue::Int(2)}).AsInt() == 'b');
+        CHECK(f.vfs.Seek(handle, 0, VfsSeekWhence::current) == 4);
+        f.CallOn(buffer, "limit", "(I)Ljava/nio/Buffer;", {VmValue::Int(3)});
+        CHECK(f.CallOn(posix, "pwrite", "(Ljava/io/FileDescriptor;Ljava/nio/ByteBuffer;J)I",
+                       {VmValue::Ref(fd), VmValue::Ref(buffer), VmValue::Long(0)})
+                  .AsInt() == 1);
+        CHECK(f.vfs.Seek(handle, 0, VfsSeekWhence::current) == 4);
+        f.CallOn(posix, "lseek", "(Ljava/io/FileDescriptor;JI)J",
+                 {VmValue::Ref(fd), VmValue::Long(1), VmValue::Int(0)});
+        CHECK(f.CallOn(posix, "write", "(Ljava/io/FileDescriptor;Ljava/nio/ByteBuffer;)I",
+                       {VmValue::Ref(fd), VmValue::Ref(buffer)})
+                  .AsInt() == 1);
+        std::array<std::byte, 4> file{};
+        CHECK(f.vfs.ReadAt(handle, 0, file) == 4);
+        CHECK(file[0] == std::byte{'b'});
+        CHECK(file[1] == std::byte{'b'});
+        const auto bad = f.CallOnOutcome(posix, "pread", "(Ljava/io/FileDescriptor;Ljava/nio/ByteBuffer;J)I",
+                                         {VmValue::Ref(fd), VmValue::Ref(buffer), VmValue::Long(-1)});
+        REQUIRE(bad.exception.IsValid());
+        CHECK(f.linker.Class(bad.exception_class).descriptor == "Llibcore/io/ErrnoException;");
+        f.CallOn(posix, "close", "(Ljava/io/FileDescriptor;)V", {VmValue::Ref(fd)});
+    }
+}

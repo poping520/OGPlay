@@ -52,9 +52,11 @@ void ReportThreadedMicrobenchmark(const char* tag,
                                   const char* descriptor,
                                   const std::int32_t input,
                                   const std::int32_t expected) {
+    InterpreterConfig switch_config;
+    switch_config.backend = InterpreterBackend::switch_dispatch;
     InterpreterConfig threaded_config;
     threaded_config.backend = InterpreterBackend::threaded;
-    Vm switch_vm;
+    Vm switch_vm(switch_config);
     Vm threaded_vm(threaded_config);
     const std::vector<VmValue> arguments{VmValue::Int(input)};
     ExpectInt(switch_vm.CallStatic(owner, name, descriptor, arguments),
@@ -198,6 +200,7 @@ std::string CaptureInvokeWideError(const InterpreterBackend backend,
 
 TEST_CASE("dexvm threaded all-bridge backend matches switch semantics") {
     InterpreterConfig switch_config;
+    switch_config.backend = InterpreterBackend::switch_dispatch;
     switch_config.diagnostics.trace_capacity = 512;
     InterpreterConfig threaded_config = switch_config;
     threaded_config.backend = InterpreterBackend::threaded;
@@ -270,6 +273,7 @@ TEST_CASE("dexvm threaded all-bridge backend matches switch semantics") {
 
 TEST_CASE("dexvm threaded direct handlers match switch ticks") {
     InterpreterConfig switch_config;
+    switch_config.backend = InterpreterBackend::switch_dispatch;
     switch_config.diagnostics.trace_capacity = 512;
     InterpreterConfig threaded_config = switch_config;
     threaded_config.backend = InterpreterBackend::threaded;

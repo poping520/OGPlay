@@ -836,7 +836,7 @@ note = "MonitorEnter/Exit 进入环境拥有的真实 monitor 表，按对象身
 [runtime.jni_guest_binding_manifest]
 status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp"
-note = "aggregate contract 逐名核对实际绑定集合与 expected manifest；FatalError 绑定致命消息诊断，DirectByteBuffer 三槽仅注入 NIO 后绑定。DestroyJavaVM 保持 expected-unbound；reserved 槽拒绝绑定且 ABI 表项为 0，重复绑定与 Seal 后绑定均明确失败。"
+note = "aggregate contract 逐名核对实际绑定集合与 expected manifest；FatalError 绑定致命消息诊断，DirectByteBuffer 三槽经 integration 显式注入创建/地址/容量接口后绑定，jni_guest 不依赖 dexvm。DestroyJavaVM 保持 expected-unbound；reserved 槽拒绝绑定且 ABI 表项为 0，重复绑定与 Seal 后绑定均明确失败。"
 
 [runtime.jni_guest_static_method_lookup]
 status = "complete"
@@ -1371,7 +1371,7 @@ note = "tagged 帧、全部 dex 035 家族、invoke 三路由、tick 与帧深�
 [dexvm.interpreter_threaded]
 status = "partial"
 test = "tests/dexvm/fast_code_tests.cpp; tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/session/title_profile_tests.cpp"
-note = "已交付只读 FastCode、computed-goto/MSVC 稠密 switch、局部 ticks/executed、k35c/k3rc wide-pair、force_all_bridge 与双后端夹具； 将 symbolic-to-runtime invoke target 与 intrinsic shape 校验下沉为共享 helper，≤8 槽栈缓冲和 sync/reload glue 保留。未改 profile/default，title 三 gate 未重跑，能力保持 partial"
+note = "已交付只读 FastCode、computed-goto/MSVC 稠密 switch、force_all_bridge、String/NIO 快路径与双后端夹具。threaded 为默认生产内核，switch 需显式选择；My Boy! 在 threaded 下通过，其余 title gate 未重跑，能力保持 partial"
 
 [dexvm.execution_contexts]
 status = "complete"
@@ -1411,7 +1411,7 @@ note = "per-class 状态机、静态初始值、super 顺序与失败粘滞； �
 [dexvm.intrinsics_java_core]
 status = "partial"
 test = "tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/session/profile_entry_scope_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tests/runtime/guest_icu_tests.cpp#core ROM Character"
-note = "Object 与 Thread 保留 intrinsic；String、Class、包装类、Enum 与 Character 普通方法归 BootDex。String 绑定四个 ROM native，Charsets 绑定五个；threaded 在无 trace 时加速 String 成功调用。Unicode 映射经 guest ICU51。完整 ThreadGroup、可选 codec 与网络长尾未实现。"
+note = "Object 与 Thread 保留 intrinsic；String、Class、包装类、Enum 与 Character 普通方法归 BootDex。String 绑定四个 ROM native，Charsets 绑定五个；NIO Buffer 家族原样运行 ROM，只绑定 ByteOrder/Memory native；宿主按缓存字段槽共享 payload。threaded 在无 trace 时加速 String/NIO 成功调用。Unicode 映射经 guest ICU51。完整 ThreadGroup、可选 codec 与网络长尾未实现。"
 
 [dexvm.system_line_separator]
 status = "complete"

@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <atomic>
+#include <mutex>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -779,6 +780,59 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     mismatch.arguments[0] = 0x10000;
     mismatch.arguments[3] = 0x20000;
     CHECK(dispatcher.Dispatch(mismatch) == -14);
+}
+
+TEST_CASE("Android futex reports only elapsed timeouts to the clock owner") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestRange page{ogplay::memory::GuestAddress{0x10000}, memory.PageSize()};
+    memory.Map(page, ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+    ogplay::memory::CheckedMemoryBus bus{memory};
+    bus.Write32(ogplay::memory::GuestAddress{0x10000}, 7);
+    ogplay::cpu::FutexTable futex;
+    std::mutex reports_mutex;
+    std::vector<std::pair<std::uint64_t, std::chrono::nanoseconds>> reports;
+    ogplay::runtime::BindAndroidThreadSyscalls(dispatcher, futex, bus, {},
+                                               [&](std::uint64_t thread, std::chrono::nanoseconds waited) {
+                                                   const std::scoped_lock lock(reports_mutex);
+                                                   reports.emplace_back(thread, waited);
+                                               });
+
+    ogplay::runtime::A32SyscallFrame wait;
+    wait.number = 240;
+    wait.thread_id = 1;
+    wait.arguments[0] = 0x10000;
+    wait.arguments[2] = 7;
+    wait.arguments[3] = 0x10020;
+    // A timed wait loop on the clock driver must see its timeout pass.
+    bus.Write32(ogplay::memory::GuestAddress{0x10020}, 0U);
+    bus.Write32(ogplay::memory::GuestAddress{0x10024}, 3'000'000U);
+    CHECK(dispatcher.Dispatch(wait) == -110);
+    REQUIRE(reports.size() == 1);
+    CHECK(reports[0].first == 1U);
+    CHECK(reports[0].second == std::chrono::milliseconds(3));
+
+    // Zero timeouts, value mismatches and woken waits do not advance the clock.
+    bus.Write32(ogplay::memory::GuestAddress{0x10024}, 0U);
+    CHECK(dispatcher.Dispatch(wait) == -110);
+    auto mismatch = wait;
+    mismatch.arguments[2] = 8;
+    CHECK(dispatcher.Dispatch(mismatch) == -11);
+    bus.Write32(ogplay::memory::GuestAddress{0x10020}, 10U);
+    std::atomic<std::int32_t> woken{-999};
+    std::thread waiter{[&] { woken = dispatcher.Dispatch(wait); }};
+    for (std::size_t attempt = 0; attempt < 100000 && futex.WaiterCount(ogplay::memory::GuestAddress{0x10000}) == 0;
+         ++attempt)
+        std::this_thread::yield();
+    REQUIRE(futex.WaiterCount(ogplay::memory::GuestAddress{0x10000}) == 1);
+    auto wake = wait;
+    wake.arguments[1] = 1;
+    wake.arguments[2] = 1;
+    CHECK(dispatcher.Dispatch(wake) == 1);
+    waiter.join();
+    CHECK(woken == 0);
+    CHECK(reports.size() == 1);
 }
 
 TEST_CASE("Android file syscalls transfer checked guest bytes through VFS") {

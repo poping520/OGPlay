@@ -22,7 +22,9 @@
 #include "ogplay/runtime/jni_guest/jni_guest_abi.h"
 #include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
+#include "ogplay/runtime/dexvm/nio_buffer_access.h"
+#include "../dexvm/boot_dex.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
@@ -46,22 +48,31 @@ struct GuestBindingsFixture final {
                    ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
         if (direct_buffers) {
             static_cast<void>(classes.RegisterClass({"java/nio/DirectByteBuffer", std::nullopt, {}, {}}));
-            nio.SetDirectMemoryAccess({{},
-                                       {},
-                                       [this](const ogplay::memory::GuestAddress address, const std::uint32_t size) {
-                                           if (size == 0U) return address.IsNull();
-                                           try {
-                                               memory.Validate({address, size}, ogplay::memory::AccessType::read);
-                                               memory.Validate({address, size}, ogplay::memory::AccessType::write);
-                                               return true;
-                                           } catch (const std::exception&) {
-                                               return false;
-                                           }
-                                       },
-                                       [this](const ogplay::memory::GuestAddress address,
-                                              const std::span<std::byte> out) { memory.Read(address, out); },
-                                       [this](const ogplay::memory::GuestAddress address,
-                                              const std::span<const std::byte> in) { memory.Write(address, in); }});
+            linker = std::make_unique<ogplay::runtime::dexvm::DexClassLinker>();
+            linker->RegisterIntrinsics(ogplay::runtime::dexvm::CoreIntrinsicCatalog());
+            ogplay::test::RegisterBootDex(*linker);
+            linker->Link();
+            model = std::make_unique<ogplay::runtime::dexvm::JavaObjectModel>(arrays);
+            vm = std::make_unique<ogplay::runtime::dexvm::Interpreter>(*linker, *model, nullptr, ledger);
+            vm->SetGuestMemoryAccess({{},
+                                      {},
+                                      {},
+                                      [this](auto address, auto out) { memory.Read(address, out); },
+                                      [this](auto address, auto in) { memory.Write(address, in); },
+                                      [this](auto address, auto size, bool write) {
+                                          return memory.ResolveNativeRange({address, size},
+                                                                           write ? ogplay::memory::AccessType::write
+                                                                                 : ogplay::memory::AccessType::read);
+                                      }});
+            direct_hooks = {
+                [this](std::uint64_t thread, auto address, auto capacity) {
+                    return environment.PublishLocalObject(
+                        thread, model->ToIdentity(vm->Buffers().NewDirect(address, capacity)));
+                },
+                [this](std::uint64_t, auto identity) {
+                    return vm->Buffers().DirectAddress(model->FromIdentity(identity));
+                },
+                [this](std::uint64_t, auto identity) { return vm->Buffers().Capacity(model->FromIdentity(identity)); }};
         }
         ogplay::runtime::JniGuestBindingContext context{environment,
                                                         classes,
@@ -73,7 +84,7 @@ struct GuestBindingsFixture final {
                                                         objects,
                                                         memory,
                                                         &natives,
-                                                        direct_buffers ? &nio : nullptr};
+                                                        direct_buffers ? &direct_hooks : nullptr};
         context.string_limits = limits;
         context.string_observer = std::move(observer);
         ogplay::runtime::BindJniGuestSlots(dispatcher, context);
@@ -125,7 +136,10 @@ struct GuestBindingsFixture final {
     ogplay::runtime::GuestJavaPayloadProvider arrays_payload{memory, ledger};
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::JniNativeRegistry natives;
-    ogplay::runtime::dexvm::NioRuntime nio;
+    std::unique_ptr<ogplay::runtime::dexvm::DexClassLinker> linker;
+    std::unique_ptr<ogplay::runtime::dexvm::JavaObjectModel> model;
+    std::unique_ptr<ogplay::runtime::dexvm::Interpreter> vm;
+    ogplay::runtime::JniDirectBufferHooks direct_hooks;
     ogplay::runtime::JniJavaVm java_vm;
     const ogplay::memory::GuestAddress output{0x72000000U};
 
@@ -388,7 +402,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
         "JNI guest dispatcher is sealed", std::logic_error);
 }
 
-TEST_CASE("DVM-82 guest JNI direct buffer slots share validated NIO state") {
+TEST_CASE("DVM-82 guest JNI direct buffer slots read ROM fields") {
     GuestBindingsFixture fixture(true);
     const auto attached = fixture.java_vm.AttachCurrentThread(82U, ogplay::runtime::kJniVersion1_6);
     REQUIRE(attached.status == ogplay::runtime::JniStatus::ok);
@@ -399,8 +413,9 @@ TEST_CASE("DVM-82 guest JNI direct buffer slots share validated NIO state") {
     CHECK(fixture.CallEnvironment("GetDirectBufferAddress", 82U, buffer) == address.Value());
     CHECK(fixture.CallEnvironment("GetDirectBufferCapacity", 82U, buffer) == 32U);
     CHECK(fixture.ReturnHighWord() == 0U);
-    CHECK_THROWS_AS(static_cast<void>(fixture.CallEnvironment("NewDirectByteBuffer", 82U, 0x12345000U, 32U, 0U)),
-                    ogplay::runtime::dexvm::VmJavaThrow);
+    const auto external = fixture.CallEnvironment("NewDirectByteBuffer", 82U, 0x12345000U, 32U, 0U);
+    REQUIRE(external != 0);
+    CHECK(fixture.CallEnvironment("GetDirectBufferAddress", 82U, external) == 0x12345000U);
 }
 
 TEST_CASE("guest JNI NewStringUTF publishes a decoded local string") {
@@ -1347,32 +1362,30 @@ TEST_CASE("DVM-260 guest JNI provider failure publishes OOME and rolls back") {
 TEST_CASE("DVM-260 guest JNI direct address aliases the managed array payload") {
     using namespace ogplay::runtime;
     GuestBindingsFixture fixture(true);
-    dexvm::JavaObjectModel model(fixture.arrays);
-    fixture.nio.SetObjectModel(&model);
+    auto& model = *fixture.model;
+    const auto array = model.NewPrimitiveArray(fixture.linker->ResolveDescriptor("[B"), JniPrimitiveKind::byte, 16);
+    const auto roots = fixture.vm->ProtectReferences(std::array{array});
     REQUIRE(fixture.java_vm.AttachCurrentThread(260U, kJniVersion1_6).status == JniStatus::ok);
     fixture.Seal();
-    const auto reference = fixture.CallEnvironment("NewDirectByteBuffer", 260U, fixture.output.Value(), 16U, 0U);
+    const auto payload = model.PrimitiveArrayAddress(array);
+    const auto reference = fixture.CallEnvironment("NewDirectByteBuffer", 260U, payload.Value(), 16U, 0U);
     REQUIRE(reference != 0);
     const auto owner = fixture.environment.ResolveObjectForHle(260U, JniReference{reference});
     REQUIRE(owner);
-    CHECK_FALSE(fixture.nio.Snapshot(*owner).array.IsValid());
-    fixture.nio.CreateDirect(*owner, 16, dexvm::DexClassId(0));
-    const auto state = fixture.nio.Snapshot(*owner);
-    REQUIRE(state.array.IsValid());
+    const auto buffer = model.FromIdentity(*owner);
+    CHECK_FALSE(fixture.vm->Buffers().Read(buffer).array.IsValid());
     const auto address =
         ogplay::memory::GuestAddress(fixture.CallEnvironment("GetDirectBufferAddress", 260U, reference));
-    CHECK(address == model.PrimitiveArrayAddress(state.array));
+    CHECK(address == payload);
     CHECK(fixture.CallEnvironment("GetDirectBufferCapacity", 260U, reference) == 16);
-    model.SetPrimitiveElement(state.array, 0, 0xab);
+    model.SetPrimitiveElement(array, 0, 0xab);
     CHECK(fixture.memory.Read8(address) == 0xab);
-    CHECK(fixture.nio.Get(*owner, 0) == 0xab);
-    fixture.nio.Put(*owner, 1, 0xcd);
-    CHECK(fixture.memory.Read8(address.Add(1)) == 0xcd);
-    CHECK(model.GetPrimitiveElement(state.array, 1) == 0xcd);
+    auto view = fixture.vm->Buffers().Read(buffer);
+    auto bytes = fixture.vm->Buffers().Bytes(view, 0, 16, true);
+    CHECK(bytes[0] == std::byte{0xab});
+    bytes[1] = std::byte{0xcd};
+    CHECK(model.GetPrimitiveElement(array, 1) == 0xcd);
     fixture.memory.Write8(address.Add(2), 0xef);
-    CHECK(model.GetPrimitiveElement(state.array, 2) == 0xef);
-    CHECK(fixture.nio.Get(*owner, 2) == 0xef);
-    fixture.nio.Sweep(*owner);
-    CHECK(model.GetPrimitiveElement(state.array, 2) == 0xef);
-    fixture.nio.SetObjectModel(nullptr);
+    CHECK(bytes[2] == std::byte{0xef});
+    CHECK(model.GetPrimitiveElement(array, 2) == 0xef);
 }

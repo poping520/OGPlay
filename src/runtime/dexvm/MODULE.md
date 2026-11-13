@@ -62,7 +62,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   Class.forName 的 Java 层决定 null loader 的归一化（当前 pinned libdvm ROM 为 system loader），
   classForName 只消费传入的 loader 身份；Class.newInstanceImpl 跳过 ROM newInstance 帧检查 caller。
   Class.getDex 按所属 DEX unit 惰性缓存 ROM Dex.create(ByteBuffer) 的结果。完整映像经既有
-  guest direct-memory 分配器放入 guest 地址空间，先用 JNI 相同的 WrapDirect 路径建立 buffer，
+  guest direct-memory 分配器放入 guest 地址空间，先经 JNI 同用的 ROM DirectByteBuffer(long,int) 构造器建立 buffer，
   再发布只读视图并用 AddressSpace.Protect 将页设为只读；不复制到 Java byte[]。
   cache 的 ByteBuffer/Dex 是 GC 根，映像由 VM 所属 process 持有至 teardown；无 DEX 的合成类、
   intrinsic-only 类、数组和 primitive 返回 null。未注入 guest 内存接口的独立 VM 明确失败。
@@ -150,15 +150,15 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
 - `Interpreter::Call` 返回值或未捕获 Java 异常；寄存器带类别 tag，默认 512 帧。invoke 只有
   interpreted/intrinsic/native bridge 三路；缺实现记账失败。致命故障附有界 guest stack、指令、
   target/参数诊断，不依赖 trace，也不输出 host 地址。
-- `FastCode` 只从已预检字节码派生，不改 DEX、不持 guest ref。默认 switch；threaded 在
+- `FastCode` 只从已预检字节码派生，不改 DEX、不持 guest ref。默认 threaded；threaded 在
   GCC/Clang 用 computed goto、MSVC 用稠密 switch；两者共用 target/shape/异常/clinit 语义，
-  `force_all_bridge` 是永久等价门禁。String 方法在链接时按方法身份记录 fast_op，
+  `force_all_bridge` 是永久等价门禁。String 与 NIO 方法在链接时按方法身份记录 fast_op，
   threaded 在唯一目标调用点缓存该标记，多态调用点在选中目标后读取。仅加速确定的成功路径，
   需抛异常或无法判定时执行原版方法，启用 trace 时关闭快路径。
 - 内核定位：threaded 是生产内核，依赖分派或调用点的性能特化只做在 threaded，游戏场景与性能门禁以它为准；
   switch 是参考内核，作为纯字节码语义基准、差分对照和排障后端，只接受语义修复，不接任何性能特化。
   与分派无关的语义和性能改动放在共享层；opcode 层的语义修复两个内核同步修改。一致性套件两个内核都要跑。
-  默认值切到 threaded 之前，生产仍使用 switch。
+  默认后端为 threaded，switch 需显式选择（run-apk `--dexvm-interpreter switch`、run-dex `--backend switch`）。
 - `VmExecutionLock` 是可重入全 VM 单写/STW 边界；阻塞按原深度释放/恢复。锁序固定为
   execution→thread runtime→context table；安全分配点外不得触发 GC。
   锁竞争按 FIFO 准入；普通字节码每 1024 tick 的稳定安全点可向等待宿主让出，保留
@@ -247,10 +247,17 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   SSLEngine、server TLS 和公开互联网 CA 不在当前 complete 范围。
 - `System.lineSeparator` 在 ROM 类初始化时冻结。Java Properties 由 System 持有，宿主读取
   属性经 ROM getProperty。specialProperties 从已注入的 guest VFS 取得 `user.dir`。
-- `NioRuntime` 以对象 identity 保存 Buffer backing/cursor；heap/direct/view 共用 storage，backing
-  array 是 GC 强边。allocateDirect 创建真实 byte[]，容量计入 Java 堆；direct 地址与数组 payload
-  相同，GC 是唯一回收方，任一视图或单独数组引用都可保活。JNI WrapDirect 仍非拥有、无数组。
-  direct memory 只经强类型 guest-address 接口，临时映射始终释放。
+- NIO Buffer、类型化数组/字节视图、MemoryBlock、ByteOrder、NIOAccess/NioUtils 与 Memory
+  的字段、普通方法和构造器原样运行 API19 ROM。只绑定 ByteOrder 与 Memory 原版 native；
+  不再有 NioRuntime 或 Buffer 状态侧表。MemoryBlock.allocate 的 byte[] 是普通 GC 强边，
+  外部 DirectByteBuffer(long,int) 是非拥有借用。FileChannel.map 所需 mmap/munmap/msync 仍明确失败。
+- NioBufferAccess 只缓存链接后的字段槽，按 ROM 字段取得 cursor、字节序、只读性、backing 与
+  当前 guest 地址。宿主同步借用数组 payload，调用者保证 reachability 和 VM/映射寿命；
+  primitive array 的 Bytes 不复制、不 pin，不允许跨 VM 解锁或 GC 保存跨度。
+  GuestMemoryRuntime 仅提供受检同步地址解析和必定释放的临时映射，不持 Buffer 引用。
+- threaded 的 NIO 成功调用快路径覆盖 Buffer 游标/基础构造、具体 Buffer 标量与 Memory
+  标量 native；类型/越界/只读/mark 等无法证明成功时执行原方法。测试可单独关闭 NIO 快路径；
+  trace 时关闭，switch 不接入。状态只写回 ROM 字段，浮点保留原始位型。
 - `UnsafeRuntime` 使用逻辑字段令牌；访问校验类型/对齐/边界，CAS 要求执行锁，引用写入保留
   GC tag/assignability。令牌不是地址或 GC root。
 - guest ICU 固定为 ICU4C 51 与 `/system/usr/icu/icudt51l.dat`；令牌在 guest SO，teardown 关闭。

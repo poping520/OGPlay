@@ -97,7 +97,8 @@ std::optional<std::string> DispatchFixtureMessages(Interpreter& vm, DexVmAndroid
 }
 
 AndroidValueVm::AndroidValueVm(InterpreterBackend backend, const std::vector<IntrinsicClassDecl>& extras,
-                               bool force_all_bridge, const char* dex_fixture, ogplay::gles::AngleBackend graphics)
+                               bool force_all_bridge, const char* dex_fixture, ogplay::gles::AngleBackend graphics,
+                               ogplay::gles::CompressedTextureFamily texture_family)
     : context(std::make_shared<DexVmAndroidContext>()), runtime([&] {
           context->surface_width = 800;
           context->surface_height = 480;
@@ -111,7 +112,7 @@ AndroidValueVm::AndroidValueVm(InterpreterBackend backend, const std::vector<Int
           return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
               context, ledger, logger, std::move(catalog),
               ogplay::test::native_library::ReadDexFixture(dex_fixture ? dex_fixture : "application.dex"), config,
-              nullptr, std::vector<ogplay::loader::ApkNativeLibrary>{}, graphics);
+              nullptr, std::vector<ogplay::loader::ApkNativeLibrary>{}, graphics, texture_family);
       }()),
       model(runtime->bridge->Model()), linker(runtime->bridge->Linker()), vm(runtime->bridge->Vm()),
       threads(runtime->bridge->Threads()) {}

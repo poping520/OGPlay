@@ -10,7 +10,7 @@
 #include <exception>
 #include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/native_library_loader.h"
@@ -40,7 +40,7 @@ public:
     Thread thread;
     Assets asset_manager;
     core::Logger* logger;
-    dx::NioDirectMemoryAccess memory;
+    dx::GuestMemoryAccess memory;
     std::map<std::uint32_t, Instance> instances;
     std::uint32_t next_handle{1};
 

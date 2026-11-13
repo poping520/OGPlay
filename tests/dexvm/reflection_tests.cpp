@@ -236,7 +236,7 @@ TEST_CASE("reflection metadata uses declared order and opaque local slots") {
     CHECK(get_name->access_flags == 0x0001U);
 }
 
-TEST_CASE("System and SystemEnvironment reflection match API19 core.jar declarations") {
+TEST_CASE("System and NIO reflection match API19 core.jar declarations") {
     const auto& jars = ogplay::test::BootClasspathJars();
     const auto jar = std::ranges::find(jars, "/system/framework/core.jar", &BootClasspathJar::guest_path);
     REQUIRE(jar != jars.end());
@@ -248,7 +248,15 @@ TEST_CASE("System and SystemEnvironment reflection match API19 core.jar declarat
     };
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ReflectionVm vm("interp.dex", backend);
-        for (const auto* owner : {"Ljava/lang/System;", "Ljava/lang/System$SystemEnvironment;"}) {
+        std::vector<std::string> owners{"Ljava/lang/System;", "Ljava/lang/System$SystemEnvironment;",
+                                        "Llibcore/io/Memory;"};
+        for (const auto& type : image.classes) {
+            const auto& desc = image.types[type.class_type_index].descriptor;
+            if (desc.starts_with("Ljava/nio/") && desc.find('/', 10) == std::string::npos &&
+                desc != "Ljava/nio/FileChannelImpl;" && desc != "Ljava/nio/ReadWriteDirectByteBuffer;")
+                owners.push_back(desc);
+        }
+        for (const auto& owner : owners) {
             CAPTURE(owner);
             const auto definition = std::ranges::find_if(image.classes, [&](const auto& type) {
                 return image.types[type.class_type_index].descriptor == owner;
@@ -301,15 +309,19 @@ TEST_CASE("System and SystemEnvironment reflection match API19 core.jar declarat
                           ++native_count;
                           CHECK(method.kind == MethodKind::intrinsic);
                       } else {
-                          CHECK(method.kind == MethodKind::interpreted);
+                          CHECK(method.kind ==
+                                ((meta.access_flags & kAccAbstract) ? MethodKind::abstract : MethodKind::interpreted));
                       }
                       return std::tuple{method.name, method.descriptor, meta.access_flags};
                   }) == methods);
-            CHECK(native_count == (std::string_view(owner) == "Ljava/lang/System;" ? 8U : 0U));
+            CHECK(native_count == static_cast<std::size_t>(std::ranges::count_if(methods, [](const auto& entry) {
+                      return (std::get<2>(entry) & kAccNative) != 0;
+                  })));
             CHECK(enumerate("getDeclaredConstructors", "()[Ljava/lang/reflect/Constructor;", [&](VmObjectRef ref) {
                       const auto& meta = reflect.ConstructorMetadata(ref);
                       const auto& method = vm.linker.Method(meta.method);
-                      CHECK(method.kind == MethodKind::interpreted);
+                      CHECK(method.kind ==
+                            ((meta.access_flags & kAccAbstract) ? MethodKind::abstract : MethodKind::interpreted));
                       return std::tuple{method.name, method.descriptor, meta.access_flags};
                   }) == constructors);
         }

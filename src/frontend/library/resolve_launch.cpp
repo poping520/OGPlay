@@ -64,7 +64,7 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     const auto interpreter = std::get<std::string>(Setting(config, "interpreter"));
     if (interpreter != "default")
         o.dexvm_interpreter =
-            interpreter == "threaded" ? InterpreterBackend::threaded : InterpreterBackend::switch_dispatch;
+            interpreter == "switch" ? InterpreterBackend::switch_dispatch : InterpreterBackend::threaded;
     const bool mcp = std::get<bool>(Setting(config, "mcp_enabled"));
     const bool manual = std::get<bool>(EffectiveGameSetting(settings, global, entry, "mcp_manual_step"));
     if (mode != LaunchMode::preflight) {

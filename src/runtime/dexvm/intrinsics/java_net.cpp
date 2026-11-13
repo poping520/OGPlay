@@ -2,6 +2,8 @@
 
 // ---- migrated from java_net_MalformedURLException.cpp ----
 #include "catalog.h"
+#include "ogplay/runtime/dexvm/nio_buffer_access.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "shared.h"
 #include "api19_os_constants.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
@@ -13,6 +15,7 @@
 #include <charconv>
 #include <cctype>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <optional>
 #include <span>
@@ -71,6 +74,26 @@ void SetShortField(Interpreter& vm, const VmObjectRef object, const std::string&
                  {VmValue::Ref(exception), VmValue::Ref(function_ref), VmValue::Int(error_number)});
     throw VmJavaThrow{"Llibcore/io/ErrnoException;",
                       detail.empty() ? std::string(function) + " failed" : std::string(detail), exception};
+}
+
+std::span<std::byte> PosixBytes(IntrinsicContext& call, VmObjectRef object, int offset, int count, bool write) {
+    if (!object.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
+    if (call.vm.Buffers().IsBuffer(object)) {
+        const auto view = call.vm.Buffers().Read(object, false);
+        if (!view.direct_address)
+            throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "expected direct ByteBuffer"};
+        if (offset < 0 || count < 0 || offset > view.capacity - count)
+            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "bytes range exceeds buffer"};
+        if (count == 0) return {};
+        return {call.vm.GuestMemory().Resolve(view.direct_address->Add(static_cast<std::uint32_t>(offset)),
+                                              static_cast<std::uint32_t>(count), write),
+                static_cast<std::size_t>(count)};
+    }
+    const auto bytes = call.vm.Model().PrimitiveArrayBytes(object);
+    if (offset < 0 || count < 0 ||
+        static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(count) > bytes.size())
+        throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "bytes range exceeds array"};
+    return bytes.subspan(static_cast<std::size_t>(offset), static_cast<std::size_t>(count));
 }
 
 std::int32_t FileDescriptorHandle(IntrinsicContext& call, const VmObjectRef descriptor) {
@@ -1089,15 +1112,11 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
         const auto buffer = call.arguments[1].ref;
         const auto offset = call.arguments[2].AsInt();
         const auto count = call.arguments[3].AsInt();
-        if (!buffer.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
-        if (offset < 0 || count < 0 || static_cast<std::int64_t>(offset) + count > call.vm.Model().ArrayLength(buffer))
-            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "read range exceeds array"};
+        auto bytes = PosixBytes(call, buffer, offset, count, true);
         try {
             if (handle == 0) return VmValue::Int(0);
-            std::vector<std::byte> bytes(static_cast<std::size_t>(count));
             const auto amount = call.vm.IO().ReadFileStream(fd, bytes);
             if (amount == 0) return VmValue::Int(-1);
-            call.vm.Model().WriteByteRegion(buffer, offset, std::span(bytes).first(amount));
             return VmValue::Int(static_cast<std::int32_t>(amount));
         } catch (const IoRuntimeError& error) {
             ThrowErrno(call.vm, "read", error.ErrorNumber(), error.what());
@@ -1116,12 +1135,8 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
             const auto buffer = call.arguments[1].ref;
             const auto offset = call.arguments[2].AsInt();
             const auto count = call.arguments[3].AsInt();
-            if (!buffer.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
-            if (offset < 0 || count < 0 ||
-                static_cast<std::int64_t>(offset) + count > call.vm.Model().ArrayLength(buffer))
-                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "write range exceeds array"};
+            const auto bytes = PosixBytes(call, buffer, offset, count, false);
             try {
-                const auto bytes = call.vm.Model().ReadByteRegion(buffer, offset, count);
                 if (!standard) {
                     call.vm.IO().WriteFileStream(fd, bytes);
                 } else if (!bytes.empty()) {
@@ -1306,6 +1321,80 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
             return VmValue::Void();
         },
         kAccPublic | kAccNative);
+    for (const bool write : {false, true}) {
+        posix.DirectMethod(
+            write ? "pwriteBytes" : "preadBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIJ)I",
+            [write](IntrinsicContext& call) {
+                const auto fd = call.arguments[0].ref;
+                const auto function = write ? "pwrite" : "pread";
+                static_cast<void>(PosixDescriptor(call, fd, function));
+                const auto offset = call.arguments[4].AsLong();
+                if (offset < 0) ThrowErrno(call.vm, function, 22);
+                auto bytes = PosixBytes(call, call.arguments[1].ref, call.arguments[2].AsInt(),
+                                        call.arguments[3].AsInt(), !write);
+                try {
+                    const auto amount = write ? call.vm.IO().WriteFileAt(fd, static_cast<std::uint64_t>(offset), bytes)
+                                              : call.vm.IO().ReadFileAt(fd, static_cast<std::uint64_t>(offset), bytes);
+                    return VmValue::Int(static_cast<std::int32_t>(amount));
+                } catch (const IoRuntimeError& error) {
+                    ThrowErrno(call.vm, function, error.ErrorNumber(), error.what());
+                }
+            },
+            kAccPrivate | kAccNative);
+    }
+    // Datagram transport remains explicitly injected and subject to the existing network policy.
+    // No host sockets or new channel implementation is introduced.
+    for (const bool send : {false, true}) {
+        posix.DirectMethod(
+            send ? "sendtoBytes" : "recvfromBytes",
+            send ? "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetAddress;I)I"
+                 : "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetSocketAddress;)I",
+            [send](IntrinsicContext& call) {
+                const auto function = send ? "sendto" : "recvfrom";
+                const auto fd = call.arguments[0].ref;
+                if (FileDescriptorHandle(call, fd) < 0) ThrowErrno(call.vm, function, 9);
+                try {
+                    if (call.vm.Network().GetSocket(fd).closed) ThrowErrno(call.vm, function, 9);
+                } catch (const NetworkRuntimeError&) {
+                    ThrowErrno(call.vm, function, 9);
+                }
+                const auto flags = call.arguments[4].AsInt();
+                if (flags != 0) {
+                    if (auto* ledger = call.vm.Ledger())
+                        ledger->RecordUnimplemented(std::string("dexvm.posix.") + function + ".flags", 0);
+                    ThrowErrno(call.vm, function, 38);
+                }
+                auto bytes = PosixBytes(call, call.arguments[1].ref, call.arguments[2].AsInt(),
+                                        call.arguments[3].AsInt(), !send);
+                try {
+                    if (send) {
+                        const auto destination = call.arguments[5].ref;
+                        const auto endpoint = destination.IsValid()
+                                                  ? EndpointFrom(call, destination, call.arguments[6].AsInt())
+                                                  : call.vm.Network().GetSocket(fd).endpoint;
+                        call.vm.Network().SendPacket(endpoint, bytes);
+                        return VmValue::Int(static_cast<std::int32_t>(bytes.size()));
+                    }
+                    const auto packet = call.vm.Network().ReceivePacket(bytes.size());
+                    const auto amount = std::min(bytes.size(), packet.payload.size());
+                    if (amount) std::memcpy(bytes.data(), packet.payload.data(), amount);
+                    const auto source = call.arguments[5].ref;
+                    if (source.IsValid()) {
+                        const auto address_bytes = ParseAddress(packet.host);
+                        if (!address_bytes) throw NetworkRuntimeError("transport returned non-numeric datagram peer");
+                        const auto address = NewAddress(call.vm, *address_bytes, VmObjectRef{});
+                        const auto& field = ObjectField(call.vm, source, "addr", "Ljava/net/InetAddress;");
+                        call.vm.Model().InstanceSlots(source)[field.slot] = {address.Value(), SlotTag::ref};
+                        SetIntField(call.vm, source, "port", packet.port);
+                    }
+                    return VmValue::Int(static_cast<std::int32_t>(amount));
+                } catch (const NetworkRuntimeError& error) {
+                    ThrowNetwork(error);
+                }
+            },
+            kAccPrivate | kAccNative);
+    }
+
     posix.VirtualMethod(
         "ioctlInt", "(Ljava/io/FileDescriptor;ILlibcore/util/MutableInt;)I",
         [](IntrinsicContext& call) {

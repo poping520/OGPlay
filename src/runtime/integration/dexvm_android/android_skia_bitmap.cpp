@@ -5,7 +5,7 @@
 #include "include/core/SkStream.h"
 #include "include/encode/SkJpegEncoder.h"
 #include "include/encode/SkPngEncoder.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/nio_buffer_access.h"
 
 #include <algorithm>
 #include <array>
@@ -97,28 +97,18 @@ private:
 };
 
 void TransferBuffer(dx::Interpreter& vm, raster::Bitmap& bitmap, dx::VmObjectRef buffer, bool write) {
-    auto& nio = vm.NIO();
-    const auto id = vm.Model().ToIdentity(buffer);
-    const auto state = nio.Snapshot(id);
-    const auto elem = dx::NioRuntime::ElementSize(state.element);
+    auto& buffers = vm.Buffers();
+    const auto state = buffers.Read(buffer, false);
     auto pixels = bitmap.RawPixels();
-    if (static_cast<std::uint64_t>(state.limit - state.position) * elem < pixels.size())
+    const auto shift = static_cast<unsigned>(state.element_size_shift);
+    if ((static_cast<std::uint64_t>(state.limit - state.position) << shift) < pixels.size())
         throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", "Buffer not large enough for pixels"};
-    auto index = state.position;
-    while (!pixels.empty()) {
-        const auto count = std::min<std::size_t>(elem, pixels.size());
-        std::uint64_t bits = count < elem || write ? nio.Get(id, index) : 0;
-        for (std::size_t i = 0; i < count; ++i) {
-            const auto shift = 8U * (state.order == dx::NioByteOrder::little_endian ? i : elem - 1U - i);
-            if (write)
-                pixels[i] = static_cast<std::byte>((bits >> shift) & 255U);
-            else
-                bits = (bits & ~(UINT64_C(255) << shift)) | (std::to_integer<std::uint64_t>(pixels[i]) << shift);
-        }
-        if (!write) nio.Put(id, index, bits);
-        ++index;
-        pixels = pixels.subspan(count);
-    }
+    auto bytes = buffers.Bytes(state, static_cast<std::uint32_t>(state.position) << shift,
+                               static_cast<std::uint32_t>(pixels.size()), !write);
+    if (write)
+        std::memcpy(pixels.data(), bytes.data(), pixels.size());
+    else
+        std::memcpy(bytes.data(), pixels.data(), pixels.size());
     if (write) bitmap.SkiaBitmap().notifyPixelsChanged();
 }
 

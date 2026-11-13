@@ -53,12 +53,12 @@ public:
         }
     }
 
-    void Forget(const JniObjectIdentity object) {
+    void Forget(const JniObjectIdentity object, bool require_registered) {
         if (object.value == 0U) {
             throw JniGuestBindingError("JNI guest object identity is invalid");
         }
         std::scoped_lock lock(mutex_);
-        if (objects_.erase(Key(object)) == 0U) {
+        if (objects_.erase(Key(object)) == 0U && require_registered) {
             throw JniGuestBindingError("JNI guest object is not registered");
         }
     }
@@ -148,7 +148,11 @@ void JniGuestObjectRegistry::Register(const JniObjectIdentity object, const JniO
 }
 
 void JniGuestObjectRegistry::Forget(const JniObjectIdentity object) {
-    impl_->Forget(object);
+    impl_->Forget(object, true);
+}
+
+void JniGuestObjectRegistry::ForgetIfRegistered(const JniObjectIdentity object) {
+    impl_->Forget(object, false);
 }
 
 void JniGuestObjectRegistry::EnsureRegistered(const JniObjectIdentity object, const JniObjectIdentity java_class) {

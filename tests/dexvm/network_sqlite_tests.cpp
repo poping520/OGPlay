@@ -1784,6 +1784,49 @@ TEST_CASE("DVM-265 DEX DatagramPacket setData owns length") {
     }
 }
 
+TEST_CASE("Posix datagram bytes accept direct ByteBuffer slices in the existing transport") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        FakeNetwork transport;
+        ogplay::test::android_value::AndroidValueVm f(backend);
+        f.vm.Network().Configure({.enabled = true, .allow_datagram = true, .allowed_hosts = {"203.0.113.7"}},
+                                 &transport);
+        const auto posix = f.New("Llibcore/io/Posix;");
+        const auto fd = f.New("Ljava/io/FileDescriptor;");
+        const auto io = f.vm.ProtectReferences(std::array{posix, fd});
+        // Bind the fixture descriptor to the existing injected datagram transport.
+        const auto handle = f.linker.FindFieldRecursive(f.model.ObjectClass(fd), "descriptor", "I");
+        REQUIRE(handle);
+        f.model.InstanceSlots(fd)[f.linker.Field(*handle).slot] = {3U, SlotTag::cat1};
+        f.vm.Network().CreateSocket(fd);
+        const auto direct =
+            f.Static("Ljava/nio/ByteBuffer;", "allocateDirect", "(I)Ljava/nio/ByteBuffer;", {VmValue::Int(6)}).ref;
+        const auto root = f.vm.ProtectReferences(std::array{direct});
+        const auto host = f.vm.NewStringUtf8("203.0.113.7");
+        const auto address = f.Static("Ljava/net/InetAddress;", "getByName",
+                                      "(Ljava/lang/String;)Ljava/net/InetAddress;", {VmValue::Ref(host)})
+                                 .ref;
+        const auto address_root = f.vm.ProtectReferences(std::array{address});
+        f.On(direct, "put", "(IB)Ljava/nio/ByteBuffer;", {VmValue::Int(2), VmValue::Int('a')});
+        f.On(direct, "put", "(IB)Ljava/nio/ByteBuffer;", {VmValue::Int(3), VmValue::Int('b')});
+        f.On(direct, "position", "(I)Ljava/nio/Buffer;", {VmValue::Int(2)});
+        f.On(direct, "limit", "(I)Ljava/nio/Buffer;", {VmValue::Int(4)});
+        CHECK(f.On(posix, "sendto", "(Ljava/io/FileDescriptor;Ljava/nio/ByteBuffer;ILjava/net/InetAddress;I)I",
+                   {VmValue::Ref(fd), VmValue::Ref(direct), VmValue::Int(0), VmValue::Ref(address), VmValue::Int(9000)})
+                  .AsInt() == 2);
+        CHECK(transport.last_datagram.payload == std::vector<std::byte>{std::byte{'a'}, std::byte{'b'}});
+        const auto source = f.New("Ljava/net/InetSocketAddress;");
+        const auto source_root = f.vm.ProtectReferences(std::array{source});
+        CHECK(f.On(posix, "recvfrom", "(Ljava/io/FileDescriptor;Ljava/nio/ByteBuffer;ILjava/net/InetSocketAddress;)I",
+                   {VmValue::Ref(fd), VmValue::Ref(direct), VmValue::Int(0), VmValue::Ref(source)})
+                  .AsInt() == 2);
+        CHECK(f.On(direct, "position", "()I").AsInt() == 2);
+        CHECK(f.On(direct, "get", "(I)B", {VmValue::Int(2)}).AsInt() == 'o');
+        CHECK(f.On(direct, "get", "(I)B", {VmValue::Int(3)}).AsInt() == 'k');
+        CHECK(f.On(source, "getPort", "()I").AsInt() == 9000);
+        f.vm.Network().Shutdown();
+    }
+}
+
 TEST_CASE("DVM-343 ROM network interfaces enumerate the offline kernel view") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         NetworkSqliteVm f(backend, {}, "test.game", true);

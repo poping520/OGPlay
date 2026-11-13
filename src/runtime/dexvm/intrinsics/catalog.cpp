@@ -37,13 +37,14 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(CoreIntrinsicServices servi
     AppendJavaIoFiles(catalog);
     AppendJavaUtilZip(catalog);
 
-    AppendJavaLangThrowableNatives(catalog);
+    catalog.push_back(Declare_java_lang_Throwable_Natives());
 
     AppendJavaNetPlatform(catalog, services);
     AppendJavaNio(catalog);
     AppendJavaIcu(catalog, services);
     AppendJavaCrypto(catalog, services);
-    AppendJavaRegex(catalog);
+    catalog.push_back(Declare_java_util_regex_Pattern_Natives());
+    catalog.push_back(Declare_java_util_regex_Matcher_Natives());
     AppendJavaConcurrent(catalog, services);
     AppendJavaXml(catalog);
 

@@ -2,7 +2,7 @@
 #include "ogplay/runtime/dexvm/big_int_runtime.h"
 #include <set>
 #include "ogplay/runtime/integration/native_activity_runtime.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "runtime/integration/dexvm_android/shared.h"
 #include "../fixtures/bitmap_decode_data.h"
 #include <chrono>
@@ -57,16 +57,15 @@ namespace {
 
 // Real ARM constructors record their order in guest memory and optionally
 // reopen a library through the production libdl thunk.
-std::vector<std::byte> NativeDlopenElf(const AppElfOptions& options,
-    const ogplay::memory::GuestAddress sequence, const std::string_view reopen = {}) {
+std::vector<std::byte> NativeDlopenElf(const AppElfOptions& options, const ogplay::memory::GuestAddress sequence,
+                                       const std::string_view reopen = {}) {
     auto bytes = AppElf(options);
     const std::array code{
-        0xe92d4010U, 0xe59f4030U, 0xe08f4004U, 0xe59f302cU,
-        0xe5932000U, 0xe2822001U, 0xe5832000U, 0xe5842000U,
-        0xe28f0068U, 0xe3a01001U, 0xe59f3014U, 0xe12fff33U,
-        0xe5840004U, 0xe8bd8010U,
+        0xe92d4010U, 0xe59f4030U, 0xe08f4004U, 0xe59f302cU, 0xe5932000U, 0xe2822001U, 0xe5832000U,
+        0xe5842000U, 0xe28f0068U, 0xe3a01001U, 0xe59f3014U, 0xe12fff33U, 0xe5840004U, 0xe8bd8010U,
     };
-    for (std::size_t i = 0; i < code.size(); ++i) Put32(bytes, 0x1010U + i * 4U, code[i]);
+    for (std::size_t i = 0; i < code.size(); ++i)
+        Put32(bytes, 0x1010U + i * 4U, code[i]);
     if (reopen.empty()) Put32(bytes, 0x1030U, 0xe8bd8010U);
     Put32(bytes, 0x104cU, 0x10250U - 0x20020U);
     Put32(bytes, 0x1050U, sequence.Value());
@@ -74,21 +73,22 @@ std::vector<std::byte> NativeDlopenElf(const AppElfOptions& options,
     const ogplay::runtime::BionicHleSymbolProvider provider(symbols);
     Put32(bytes, 0x1054U, provider.Lookup("libdl.so", "dlopen")->Value());
     REQUIRE(reopen.size() < 0x60U);
-    for (std::size_t i = 0; i < reopen.size(); ++i) bytes[0x10a0U + i] = static_cast<std::byte>(reopen[i]);
+    for (std::size_t i = 0; i < reopen.size(); ++i)
+        bytes[0x10a0U + i] = static_cast<std::byte>(reopen[i]);
     if (options.jni_version) {
-        Put32(bytes, 0x1000U, 0xea000016U); // OnLoad branches to its counter body.
-        const std::array on_load{0xe59f3014U, 0xe08f3003U, 0xe5932000U,
-            0xe2822001U, 0xe5832000U, 0xe59f0004U, 0xe12fff1eU};
-        for (std::size_t i = 0; i < on_load.size(); ++i) Put32(bytes, 0x1060U + i * 4U, on_load[i]);
+        Put32(bytes, 0x1000U, 0xea000016U);  // OnLoad branches to its counter body.
+        const std::array on_load{0xe59f3014U, 0xe08f3003U, 0xe5932000U, 0xe2822001U,
+                                 0xe5832000U, 0xe59f0004U, 0xe12fff1eU};
+        for (std::size_t i = 0; i < on_load.size(); ++i)
+            Put32(bytes, 0x1060U + i * 4U, on_load[i]);
         Put32(bytes, 0x107cU, 0x10258U - 0x2006cU);
         Put32(bytes, 0x1080U, *options.jni_version);
     }
     return bytes;
 }
 
-std::uint32_t NativeDlCall(ogplay::runtime::AndroidGuestProcess& process,
-    const char* operation, const std::array<std::uint32_t, 4> arguments,
-    const std::uint64_t thread = 1U) {
+std::uint32_t NativeDlCall(ogplay::runtime::AndroidGuestProcess& process, const char* operation,
+                           const std::array<std::uint32_t, 4> arguments, const std::uint64_t thread = 1U) {
     const auto symbols = ogplay::runtime::detail::BuildAndroidBoundarySymbols();
     const ogplay::runtime::BionicHleSymbolProvider provider(symbols);
     ogplay::runtime::A32GuestCallFrame frame{*provider.Lookup("libdl.so", operation), arguments, {}};
@@ -96,12 +96,13 @@ std::uint32_t NativeDlCall(ogplay::runtime::AndroidGuestProcess& process,
     return process.Invoke(frame).return_value;
 }
 
-std::uint32_t NativeOpen(ogplay::runtime::AndroidGuestProcess& process,
-    const std::string_view path, const std::uint64_t thread = 1U) {
+std::uint32_t NativeOpen(ogplay::runtime::AndroidGuestProcess& process, const std::string_view path,
+                         const std::uint64_t thread = 1U) {
     const auto access = process.GuestMemoryAccess();
     const auto scratch = access.allocate(static_cast<std::uint32_t>(path.size() + 1U));
     std::vector<std::byte> bytes(path.size() + 1U);
-    for (std::size_t i = 0; i < path.size(); ++i) bytes[i] = static_cast<std::byte>(path[i]);
+    for (std::size_t i = 0; i < path.size(); ++i)
+        bytes[i] = static_cast<std::byte>(path[i]);
     access.write(scratch, bytes);
     try {
         const auto handle = NativeDlCall(process, "dlopen", {scratch.Value(), 1U, 0U, 0U}, thread);
@@ -114,22 +115,22 @@ std::uint32_t NativeOpen(ogplay::runtime::AndroidGuestProcess& process,
 }
 
 std::uint32_t ReadNativeWord(ogplay::runtime::AndroidGuestProcess& process,
-    const ogplay::memory::GuestAddress address) {
+                             const ogplay::memory::GuestAddress address) {
     std::array<std::byte, 4> bytes{};
     process.GuestMemoryAccess().read(address, bytes);
     std::uint32_t result{};
-    for (std::size_t i = 0; i < 4; ++i) result |= std::to_integer<std::uint32_t>(bytes[i]) << (i * 8U);
+    for (std::size_t i = 0; i < 4; ++i)
+        result |= std::to_integer<std::uint32_t>(bytes[i]) << (i * 8U);
     return result;
 }
 
 ogplay::memory::GuestAddress NativeState(ogplay::runtime::AndroidGuestProcess& process,
-    const std::string_view library) {
+                                         const std::string_view library) {
     const auto load = process.LoadApplicationModules(library, {});
     return process.FindModuleExport(load.root_module_index, "JNI_OnLoad").Subtract(0x20000U).Add(0x10250U);
 }
 
-} // namespace
-
+}  // namespace
 
 TEST_CASE("APS-10 native dlopen shares mappings constructors and Java initialization") {
     using namespace ogplay;
@@ -137,7 +138,8 @@ TEST_CASE("APS-10 native dlopen shares mappings constructors and Java initializa
     const auto sequence = fixture.process->GuestMemoryAccess().allocate(4U);
     loader::ApkNativeLibraryInventory inventory{{
         Library("liba.so", NativeDlopenElf({"liba.so", "libb.so", runtime::kJniVersion1_6}, sequence)),
-        Library("libb.so", NativeDlopenElf({"libb.so", "", runtime::kJniVersion1_4}, sequence, "/data/app-lib/liba.so")),
+        Library("libb.so",
+                NativeDlopenElf({"libb.so", "", runtime::kJniVersion1_4}, sequence, "/data/app-lib/liba.so")),
     }};
     const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
     runtime::NativeLibraryLoader java(*fixture.process, selected);
@@ -207,7 +209,7 @@ TEST_CASE("APS-10 native constructor guest exit propagates past dlerror") {
     using namespace ogplay;
     FixtureProcess fixture;
     auto image = AppElf({"libexit.so", "", std::nullopt});
-    Put32(image, 0x1010U, 0xe3a07001U); // SYS_exit
+    Put32(image, 0x1010U, 0xe3a07001U);  // SYS_exit
     Put32(image, 0x1014U, 0xe3a00011U);
     Put32(image, 0x1018U, 0xef000000U);
     loader::ApkNativeLibraryInventory inventory{{Library("libexit.so", std::move(image))}};
@@ -229,19 +231,23 @@ TEST_CASE("APS-10 linker waits for another thread constructor completion") {
     std::atomic<bool> block{false};
     runtime::AndroidGuestProcessRequest request;
     request.system_modules = std::span{&input, 1U};
-    request.width = 64U; request.height = 36U;
+    request.width = 64U;
+    request.height = 36U;
     request.maximum_ticks_per_call = 100000U;
     request.filesystem = &filesystem;
     request.guest_call_slice_observer = [&](const std::uint64_t) {
-        if (block.exchange(false)) { constructor_entered.set_value(); release.wait(); }
+        if (block.exchange(false)) {
+            constructor_entered.set_value();
+            release.wait();
+        }
     };
     auto process = runtime::AndroidGuestProcess::Start(request);
     process->PrepareDexVmThread(2U, 0U);
     auto image = AppElf({"liba.so", "", runtime::kJniVersion1_6});
-    Put32(image, 0x1010U, 0xe92d4080U); // push {r7, lr}
-    Put32(image, 0x1014U, 0xe3a070e0U); // SYS_gettid
+    Put32(image, 0x1010U, 0xe92d4080U);  // push {r7, lr}
+    Put32(image, 0x1014U, 0xe3a070e0U);  // SYS_gettid
     Put32(image, 0x1018U, 0xef000000U);
-    Put32(image, 0x101cU, 0xe8bd8080U); // pop {r7, pc}
+    Put32(image, 0x101cU, 0xe8bd8080U);  // pop {r7, pc}
     loader::ApkNativeLibraryInventory inventory{{Library("liba.so", std::move(image))}};
     const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
     runtime::NativeLibraryLoader java(*process, selected);
@@ -272,7 +278,7 @@ TEST_CASE("APS-10 native sources stay in selected ABI and retain constructor fau
     foreign.abi = loader::AndroidArmAbi::armeabi;
     foreign.entry_name = "lib/armeabi/libforeign.so";
     auto bad_ctor = AppElf({"libfault.so", "", std::nullopt});
-    Put32(bad_ctor, 0x1010U, 0xe7f000f0U); // Undefined instruction.
+    Put32(bad_ctor, 0x1010U, 0xe7f000f0U);  // Undefined instruction.
     loader::ApkNativeLibraryInventory inventory{{std::move(foreign), Library("libfault.so", std::move(bad_ctor))}};
     const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
     runtime::NativeLibraryLoader java(*fixture.process, selected);

@@ -296,7 +296,7 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     runtime::DexVmBridgeConfig config;
     config.interpreter.enable_assertions = options.enable_assertions;
     config.interpreter.backend =
-        options.backend == "threaded" ? dx::InterpreterBackend::threaded : dx::InterpreterBackend::switch_dispatch;
+        options.backend == "switch" ? dx::InterpreterBackend::switch_dispatch : dx::InterpreterBackend::threaded;
     static_cast<void>(native_libraries.LoadPath("/system/lib/libogplay_jni.so", context->application_class_loader_token,
                                                 runtime::NativeLibraryEntry::native_activity));
     runtime::DexVmGuestBridge bridge(*session, std::move(app_dex), catalog, context, ledger, &logger, config,

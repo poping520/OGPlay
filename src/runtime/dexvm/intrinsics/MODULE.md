@@ -16,7 +16,7 @@
   - 进程内服务类为 `Declare_local_<服务名>_Class`；多类共用的生成函数为
     `Declare<主题>Class`/`Declare<主题>Natives`。
   物理文件固定为 catalog 加 lang/classloading/reflect/io/icu/regex/zip/nio/net/xml/
-  concurrent/crypto 12 个 family TU；family 只向 catalog.h 暴露 Append*，catalog 不含行为。
+  concurrent/crypto 12 个 family TU；family 向 catalog.h 暴露单类 Declare_* 或多类 Append*，catalog 不含行为。
 - 禁止迁移转发层、misc/common/all TU、字符串 handler id、静态自注册和 android.* 行为。
   flags 只用 access_flags.h 的 kAcc*；反射 modifier mask 使用对应命名常量。
 - java.*、javax.net/xml 与 org.xml.sax 归 core；平台事实只经 CoreIntrinsicServices 注入，
@@ -162,9 +162,12 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
   不支持 ZIP64、OPEN_DELETE、宿主路径或 JarFile 签名校验。
   独立 Checksum/CRC32 公开行为与状态归原版 BootDex；CRC32 两个私有实例 native
   按原声明准入统一 guest JNI，计算使用 guest libz，不新增宿主校验算法或状态。
-- Buffer/Charset 的 handler 只做类型/异常边界；cursor/backing/view/字节序交 NioRuntime。
-  typed view 共享 backing 并隐藏不匹配 array，保持 concrete class；direct buffer 只用强类型
-  guest-memory 接口，不退化为 heap 或保存宿主指针。Memory 仅提供受检 byte[] 整数 codec。
+- NIO 缓冲区家族与 MemoryBlock/NIOAccess/NioUtils 原样运行 ROM；ByteOrder 只绑定
+  isLittleEndian，Memory 只绑定原版 native，按 ARM 小端及 swap 参数访问稳定 payload。
+  批量传输单次预检后整块复制/交换，memmove 保留重叠语义；没有 HeapByteBuffer 合成类。
+  Charset 自身仍保留既有 intrinsic，其编解码循环通过 ROM Buffer 方法及字段访问器读写。
+  Posix bytes 接口接受 byte[] 或 direct ByteBuffer；定位 IO 使用 VFS ReadAt/WriteAt，
+  不移动共享文件位置。datagram 仍要求既有显式 socket/transport 和离线策略，未支持 flags 记账失败。
 - socket/stream/datagram 交 NetworkRuntime；默认离线，只有注入 policy/allowlist/transport
   才能连接，SSL factory 不扩大权限。form URL codec 用固定 Boost.URL、UTF-8、空格/+ 规则，
   非法百分号和未支持 charset 抛异常。客户端 TLS 由 OGPlayJSSE 经 raw transport 与 guest

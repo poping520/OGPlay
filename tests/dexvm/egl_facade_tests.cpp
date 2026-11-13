@@ -26,7 +26,7 @@
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
 
@@ -62,11 +62,10 @@ struct EglVm final {
     }
 
     explicit EglVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
-                   AndroidGuestCallSession* session = nullptr, const char* dex_fixture = nullptr,
-                   const std::vector<IntrinsicClassDecl>& extras = {}, ogplay::gles::AngleBackend graphics = {})
-        : fixture(backend, Catalog(extras), false, dex_fixture, graphics) {
-        context->session = session;
-    }
+                   const char* dex_fixture = nullptr, const std::vector<IntrinsicClassDecl>& extras = {},
+                   ogplay::gles::AngleBackend graphics = {},
+                   ogplay::gles::CompressedTextureFamily texture_family = ogplay::gles::CompressedTextureFamily::all)
+        : fixture(backend, Catalog(extras), false, dex_fixture, graphics, texture_family) {}
 
     VmValue CallStatic(const char* owner, const char* name, const char* descriptor,
                        std::vector<VmValue> arguments = {}) {
@@ -197,6 +196,7 @@ std::vector<std::byte> MinimalLibcElf() {
 
 TEST_CASE("BND38 GLU project and unproject follow API19 matrix and offset semantics") {
     EglVm vm;
+    vm.context->session = nullptr;
     const auto error =
         vm.CallStatic("Landroid/opengl/GLU;", "gluErrorString", "(I)Ljava/lang/String;", {VmValue::Int(0x0502)}).ref;
     CHECK(vm.interpreter.StringUtf8(error) == "invalid operation");
@@ -240,6 +240,7 @@ TEST_CASE("BND38 GLU project and unproject follow API19 matrix and offset semant
 
 TEST_CASE("WU-3 publishes API 19 EGL14 classes and core signatures") {
     EglVm vm;
+    vm.context->session = nullptr;
     for (const auto descriptor :
          {"Landroid/opengl/EGL14;", "Landroid/opengl/EGLConfig;", "Landroid/opengl/EGLContext;",
           "Landroid/opengl/EGLDisplay;", "Landroid/opengl/EGLSurface;", "Landroid/opengl/EGLObjectHandle;"}) {
@@ -304,22 +305,10 @@ TEST_CASE("WU-3 publishes API 19 EGL14 classes and core signatures") {
 }
 
 TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
-    auto libc = MinimalLibcElf();
-    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
-    VirtualFileSystem filesystem;
-    AndroidGuestCallSessionRequest request{19,
-                                           "libc.so",
-                                           std::span{&module, 1},
-                                           {kNativeRenderer, ogplay::gles::AngleDevice::hardware},
-                                           4,
-                                           3,
-                                           1000,
-                                           1,
-                                           &filesystem,
-                                           {}};
-    request.boundary_options.compressed_texture_family = ogplay::gles::CompressedTextureFamily::atc;
-    auto session = AndroidGuestCallSession::Start(request);
-    EglVm vm(InterpreterBackend::switch_dispatch, session.get());
+    EglVm vm(InterpreterBackend::switch_dispatch, nullptr, {}, {kNativeRenderer, ogplay::gles::AngleDevice::hardware},
+             ogplay::gles::CompressedTextureFamily::atc);
+    auto* session = vm.context->session;
+    REQUIRE(session != nullptr);
     const auto display =
         vm.CallStatic("Landroid/opengl/EGL14;", "eglGetDisplay", "(I)Landroid/opengl/EGLDisplay;", {VmValue::Int(0)})
             .ref;
@@ -437,7 +426,7 @@ TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
         CHECK_FALSE((format >= 0x8c00U && format <= 0x8c03U));
     }
     CHECK(vm.CallStatic("Landroid/opengl/GLES20;", "glGetError", "()I").AsInt() == 0);
-    const auto thread_id = static_cast<std::uint64_t>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    const auto thread_id = vm.context->native_thread_for_context(vm.interpreter.CurrentContextToken());
     CHECK(
         session->InvokeManagedGles(ogplay::gles::GlesApi::gles2, "glClearColor",
                                    std::array{std::bit_cast<std::uint32_t>(0.25F), std::bit_cast<std::uint32_t>(0.5F),
@@ -496,7 +485,7 @@ TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
           0U);
     std::array<std::byte, 4> pixel_staging{};
     std::vector<std::byte> pixel_output;
-    const auto read_result = session->NIO().WithTemporaryGuestMemory(
+    const auto read_result = session->GuestMemory().WithTemporaryGuestMemory(
         pixel_staging, true,
         [&](const ogplay::memory::GuestAddress address) {
             return session->InvokeManagedGles(ogplay::gles::GlesApi::gles2, "glReadPixels",
@@ -533,7 +522,7 @@ TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
     REQUIRE(
         vm.CallStatic("Landroid/opengl/GLES20;", "glCheckFramebufferStatus", "(I)I", {VmValue::Int(0x8D40)}).AsInt() ==
         0x8CD5);
-    static_cast<void>(session->NIO().WithTemporaryGuestMemory(
+    static_cast<void>(session->GuestMemory().WithTemporaryGuestMemory(
         pixel_staging, true,
         [&](const ogplay::memory::GuestAddress address) {
             return session->InvokeManagedGles(ogplay::gles::GlesApi::gles2, "glReadPixels",
@@ -665,6 +654,7 @@ TEST_CASE("WU-3 EGL14 arrays pbuffer and shared context use native registry") {
 
 TEST_CASE("DVM-83 publishes the API 19 Java GLES link surface") {
     EglVm vm;
+    vm.context->session = nullptr;
     const std::array classes{"Landroid/opengl/GLES10;",    "Landroid/opengl/GLES10Ext;", "Landroid/opengl/GLES11;",
                              "Landroid/opengl/GLES11Ext;", "Landroid/opengl/GLES20;",    "Landroid/opengl/GLES30;",
                              "Landroid/opengl/GLUtils;",   "Landroid/opengl/GLU;"};
@@ -731,7 +721,8 @@ TEST_CASE("SurfaceTexture original Java connects a Surface producer to real exte
                                              return VmValue::Void();
                                          }))
                 .Build();
-        EglVm fixture(backend, nullptr, nullptr, {listener});
+        EglVm fixture(backend, nullptr, {listener});
+        fixture.context->session = nullptr;
         VmThreadRuntime threads(fixture.interpreter);
         fixture.context->threads = &threads;
         auto& vm = fixture.interpreter;
@@ -905,6 +896,7 @@ TEST_CASE("SurfaceTexture original Java connects a Surface producer to real exte
 TEST_CASE("SurfaceTexture GC abandons consumers without producer endpoints retaining Java owners") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         EglVm fixture(backend);
+        fixture.context->session = nullptr;
         VmThreadRuntime threads(fixture.interpreter);
         fixture.context->threads = &threads;
         auto& vm = fixture.interpreter;
@@ -964,7 +956,7 @@ TEST_CASE("SurfaceTexture production cold graphics uses current context and shar
     session->OpenManagedSurface();
     std::array<std::byte, 4> bytes{};
     std::vector<std::byte> output;
-    static_cast<void>(session->NIO().WithTemporaryGuestMemory(
+    static_cast<void>(session->GuestMemory().WithTemporaryGuestMemory(
         bytes, true,
         [&](ogplay::memory::GuestAddress address) {
             return session->InvokeManagedGles(GlesApi::gles2, "glGenTextures", std::array{1U, address.Value()}, 1);
@@ -982,7 +974,7 @@ TEST_CASE("SurfaceTexture production cold graphics uses current context and shar
     const auto binding =
         session->Process().UseExternalTexture({ExternalTextureCall::Operation::upload, {}, texture, 1, 1, rgba});
     const auto query = [&] {
-        static_cast<void>(session->NIO().WithTemporaryGuestMemory(
+        static_cast<void>(session->GuestMemory().WithTemporaryGuestMemory(
             bytes, true,
             [&](ogplay::memory::GuestAddress address) {
                 return session->InvokeManagedGles(GlesApi::gles2, "glGetIntegerv", std::array{0x8D67U, address.Value()},

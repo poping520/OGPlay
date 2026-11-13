@@ -5,7 +5,7 @@
 #include "ogplay/runtime/dexvm/big_int_runtime.h"
 #include <set>
 #include "ogplay/runtime/integration/native_activity_runtime.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "runtime/integration/dexvm_android/shared.h"
 #include "../fixtures/bitmap_decode_data.h"
 #include <chrono>

@@ -20,7 +20,9 @@ namespace ogplay::runtime::dexvm {
 
 class BigIntRuntime;
 class IoRuntime;
-class NioRuntime;
+class NioBufferAccess;
+class GuestMemoryRuntime;
+struct GuestMemoryAccess;
 class NetworkRuntime;
 class ZipRuntime;
 class UnsafeRuntime;
@@ -231,11 +233,13 @@ enum class InterpreterBackend : std::uint8_t {
 struct InterpreterConfig final {
     std::uint32_t max_frames{512};
     std::uint64_t tick_budget{200'000'000ULL};
-    InterpreterBackend backend{InterpreterBackend::switch_dispatch};
+    // threaded is the production kernel; switch stays the reference kernel.
+    InterpreterBackend backend{InterpreterBackend::threaded};
     // Test-only: dispatch every FastCode entry through the switch kernel
     // Step() so the bridge path stays a regression anchor after families
     // migrate to direct handlers.
     bool force_all_bridge{false};
+    bool disable_nio_fast_ops{false};
     // dalvikvm -ea: Class.desiredAssertionStatus answers true for every class.
     // API 19 apps run without it; only standalone conformance runs enable it.
     bool enable_assertions{false};
@@ -243,7 +247,7 @@ struct InterpreterConfig final {
 };
 
 struct InterpreterStats final {
-    InterpreterBackend backend{InterpreterBackend::switch_dispatch};
+    InterpreterBackend backend{InterpreterBackend::threaded};
     std::uint64_t executed_instructions{};
     std::uint64_t fast_code_builds{};
     std::uint64_t fast_code_bytes{};
@@ -483,9 +487,9 @@ public:
     [[nodiscard]] VmObjectRef CloneObject(VmObjectRef source);
 
     [[nodiscard]] BigIntRuntime& BigInts();
-    [[nodiscard]] NioRuntime& NIO();
-    [[nodiscard]] const NioRuntime& NIO() const;
-    void SetNioRuntime(NioRuntime* runtime) noexcept;
+    [[nodiscard]] NioBufferAccess& Buffers();
+    [[nodiscard]] GuestMemoryRuntime& GuestMemory();
+    void SetGuestMemoryAccess(GuestMemoryAccess access);
     [[nodiscard]] IoRuntime& IO();
     [[nodiscard]] const IoRuntime& IO() const;
     [[nodiscard]] NetworkRuntime& Network();

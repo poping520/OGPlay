@@ -10,7 +10,8 @@
 #include "ogplay/hal/host_environment.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
+#include "ogplay/runtime/dexvm/nio_buffer_access.h"
 #include "shared.h"
 
 namespace ogplay::runtime {
@@ -29,10 +30,8 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
         const auto address = memory.allocate(size);
         try {
             memory.write(address, std::as_bytes(bytes));
-            const auto buffer = vm.NewIntrinsicInstance("Ljava/nio/DirectByteBuffer;");
+            const auto buffer = vm.Buffers().NewDirect(address, static_cast<std::int32_t>(size));
             const auto root = vm.ProtectReferences(std::array{buffer});
-            // Exactly the external-memory path used by JNI NewDirectByteBuffer.
-            vm.NIO().WrapDirect(vm.Model().ToIdentity(buffer), address, static_cast<std::int32_t>(size));
             const auto read_only =
                 android_intrinsics::CallAndroidMethod(vm, buffer, "asReadOnlyBuffer", "()Ljava/nio/ByteBuffer;").ref;
             process.ProtectGuestReadOnly(address, size);

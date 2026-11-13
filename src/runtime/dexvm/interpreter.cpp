@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "interpreter_internal.h"
+#include "ogplay/runtime/dexvm/nio_buffer_access.h"
 
 #include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/core/encoding.h"
@@ -809,7 +810,6 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model, NativeM
     model.SetClassDescriptorResolver(
         [&linker](const DexClassId java_class) { return linker.Class(java_class).descriptor; });
 
-    impl_->nio.SetObjectModel(&model);
     RegisterIntrinsicStateTable(
         {"throwable",
          {},
@@ -829,18 +829,6 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model, NativeM
                                  {},
                                  [state = impl_.get()](const VmObjectRef owner) { state->zip.Sweep(owner); },
                                  [](const VmObjectRef, const VmObjectRef) {}});
-    RegisterIntrinsicStateTable(
-        {"nio",
-         [state = impl_.get(), &model](const VmObjectRef owner, const VmRootVisitor& visit) {
-             state->nio_runtime->Trace(model.ToIdentity(owner), visit);
-         },
-         [state = impl_.get(), &model](const VmObjectRef owner) { state->nio_runtime->Sweep(model.ToIdentity(owner)); },
-         [state = impl_.get(), &model](const VmObjectRef source, const VmObjectRef clone) {
-             const auto source_id = model.ToIdentity(source);
-             if (state->nio_runtime->Contains(source_id)) {
-                 state->nio_runtime->Duplicate(model.ToIdentity(clone), source_id, false);
-             }
-         }});
     RegisterIntrinsicStateTable({"native-bignums",
                                  {},
                                  [state = impl_.get(), &model](VmObjectRef owner) {
@@ -964,17 +952,17 @@ const NetworkRuntime& Interpreter::Network() const {
     return impl_->network;
 }
 
-NioRuntime& Interpreter::NIO() {
-    return *impl_->nio_runtime;
+NioBufferAccess& Interpreter::Buffers() {
+    if (!impl_->buffers) impl_->buffers = std::make_unique<NioBufferAccess>(*this);
+    return *impl_->buffers;
 }
 
-const NioRuntime& Interpreter::NIO() const {
-    return *impl_->nio_runtime;
+GuestMemoryRuntime& Interpreter::GuestMemory() {
+    return impl_->guest_memory;
 }
 
-void Interpreter::SetNioRuntime(NioRuntime* const runtime) noexcept {
-    impl_->nio_runtime = runtime == nullptr ? &impl_->nio : runtime;
-    impl_->nio_runtime->SetObjectModel(impl_->model);
+void Interpreter::SetGuestMemoryAccess(GuestMemoryAccess access) {
+    impl_->guest_memory.SetAccess(std::move(access));
 }
 
 ZipRuntime& Interpreter::ZIP() {
@@ -987,10 +975,6 @@ const ZipRuntime& Interpreter::ZIP() const {
 
 Interpreter::~Interpreter() {
     impl_->model->SetInstanceAllocationObserver({});
-    if (impl_->nio_runtime != &impl_->nio) {
-        impl_->nio_runtime->SweepDomain(JniObjectDomain::dex_vm);
-        impl_->nio_runtime->SetObjectModel(nullptr);
-    }
 }
 
 ClassLoaderFacade& Interpreter::ClassLoaders() noexcept {

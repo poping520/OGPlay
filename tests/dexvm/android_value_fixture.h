@@ -35,7 +35,8 @@ struct AndroidValueVm final {
 
     AndroidValueVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
                    const std::vector<IntrinsicClassDecl>& extras = {}, bool force_all_bridge = false,
-                   const char* dex_fixture = nullptr, ogplay::gles::AngleBackend graphics = {});
+                   const char* dex_fixture = nullptr, ogplay::gles::AngleBackend graphics = {},
+                   ogplay::gles::CompressedTextureFamily texture_family = ogplay::gles::CompressedTextureFamily::all);
 
     VmObjectRef New(const char* descriptor, const char* constructor = "()V", std::vector<VmValue> arguments = {});
 

@@ -271,6 +271,7 @@ struct LinkedMethod final {
     IntrinsicHandler constructor_inputs;
     bool prechecked{};
     StringFastOp fast_op{};
+    std::uint32_t nio_fast_op{};
     std::shared_ptr<FastCode> fast_code;
     std::optional<std::uint32_t> dex_method_index;
     std::optional<DexUnitId> dex_unit;

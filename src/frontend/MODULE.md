@@ -38,7 +38,7 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   同一周期下发 boundary 原生 window swap 与 DexVM SurfaceHolder 画布提交。截止时间节拍不叠加游戏自带的限帧，
   实际帧率取两者较低者；
   不改变 guest eglSwapInterval 与 Display refreshRate 事实；`--dexvm-interpreter` 显式选择解释器，
-  默认 `switch`。
+  默认 `threaded`。
 - `--mcp`/`--mcp-port` 同时提供 `/dash/` 页面与 `/dash/rpc` 只读 Dashboard，复用端口。
   静态产物来自 bundled `data/webui/dashboard`；启动前只加载固定文件白名单，每文件最多
   2 MiB，worker 不解析宿主路径。缺失制品明确失败，路径变体、非 loopback Host/Origin

@@ -1,5 +1,5 @@
 #include "ogplay/loader/link_namespace.h"
-#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 // DVM-80: API-family translation unit. Physical consolidation only.
@@ -65,7 +65,7 @@ std::uint32_t InvokePropertySource(dx::Interpreter& vm, const Context& context, 
     }
 }
 
-std::uint32_t ReadPropertyWord(const dx::NioDirectMemoryAccess& memory, memory::GuestAddress address) {
+std::uint32_t ReadPropertyWord(const dx::GuestMemoryAccess& memory, memory::GuestAddress address) {
     std::array<std::byte, 4> bytes{};
     memory.read(address, bytes);
     std::uint32_t value{};
@@ -74,7 +74,7 @@ std::uint32_t ReadPropertyWord(const dx::NioDirectMemoryAccess& memory, memory::
     return value;
 }
 
-std::string ReadPropertyString(const dx::NioDirectMemoryAccess& memory, memory::GuestAddress address) {
+std::string ReadPropertyString(const dx::GuestMemoryAccess& memory, memory::GuestAddress address) {
     if (address.IsNull()) throw std::runtime_error("null guest property source");
     std::string result;
     for (std::uint32_t i = 0; i < 4096; ++i) {
@@ -127,7 +127,7 @@ std::string ReadGuestIcuVersion(dx::Interpreter& vm, const Context& context,
     const auto storage = memory.allocate(8);
 
     struct Release final {
-        const dx::NioDirectMemoryAccess& memory;
+        const dx::GuestMemoryAccess& memory;
         memory::GuestAddress address;
 
         ~Release() { memory.release(address, 8); }

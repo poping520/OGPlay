@@ -167,21 +167,21 @@ JNI 长期借用、Java 访问和 NIO 必须看到同一 payload；复制写回�
 
 ### 决定
 
-生产 primitive array 与 immutable String 自创建起使用进程 AddressSpace 内稳定 typed block/view，
-Java/JNI/NIO 共用唯一字节；对象头、句柄、GC 与布局仍归 VM，不引入 Dalvik heap ABI。
-integration 拥有 allocator 并显式注入 JNI store；下层只定义强类型 provider/borrow/accessor，
-不反向依赖内存实现或通过全局/TLS 猜 owner。host-copy 仅显式夹具，无生产复制回落。
+生产 primitive array 使用进程 AddressSpace 内稳定 typed block/view，Java/JNI/NIO 共用字节。
+String 是原样 API19 ROM 实例，字段为 value、offset、count、hashCode。value 指向普通 char[]；
+内部构造、substring 与 builder 按原版规则共享 value。对象与数组各自计费和接受 GC，
+宿主按 offset/count 读取稳定的 UTF-16 视图。
+integration 拥有 allocator 并注入 JNI 数组 store，注入 VM 提供的 JniStringBackend。
 固定长度、ARM 小端、至少 8-byte 对齐，零长有有效地址；页内池与大块分配不预占整堆。
 provider 范围受映射账本保护，部分重叠的 unmap/protect/replace/mremap 先拒绝并记账；
 活跃 provider 拒绝独立 restore，AddressSpace base 稳定且晚于 owner/view 析构。
-页照常进入受保护 JIT 数据表；typed accessor 保活 block，单次验证后仅做视图边界检查。
-Java/JNI New 与 import 共用唯一 VM 收费/失败回滚；逻辑堆、实际提交、VAS、pin 分别计量。
-Elements/Critical、Chars/StringCritical 返回同一 backing、isCopy=FALSE；pin 按数组或 String
-身份跨线程计数，重复 Get 同址但各自加 pin，detach 不解除。Release 忽略 pointer/kind；
-数组 COMMIT 无操作，其余 mode（含 ABORT）仅减一次 pin，不写回或恢复；String 同样按身份 unpin。
-无配对释放只 warn/ledger，首次 pin>10 告警一次；pin 在 mark/weak 前作强根。
-String pin 同时保活 String 与 block，较 Dalvik 仅 pin char[] 更保守；MUTF-8 仍复制、TRUE 并配对释放。
-String 的可变输入和 builder 保持独立快照，不新增影子 value/offset/count 或完整私有字段 ABI。
+页照常进入受保护 JIT 数据表；typed accessor 保活 block，单次验证后只做边界检查。
+Java/JNI New 与 import 共用唯一 VM 收费与失败回滚；逻辑堆、实际提交、VAS、pin 分别计量。
+Elements/Critical 借用数组 backing。String Chars/Critical 返回 value payload 加 offset 个码元。
+两者均为 isCopy=FALSE，重复获取同址并按数组身份各加一次跨线程 pin，detach 不解除。
+Release 忽略 pointer/kind，String 重新读取 value 后 unpin。数组 COMMIT 无操作，其余 mode
+各减一次 pin。无配对只 warn/ledger，首次 pin>10 告警一次。pin 在 mark/weak 前保活数组。
+MUTF-8 复制并返回 TRUE，复制区独立配对释放。
 allocateDirect 创建真实 byte[] 并与所有 NIO view 共享地址/GC；JNI 外部 direct 地址非拥有、无数组。
 先停止/join guest 线程与 CPU，再退役 pin/backing；长期未 Release 不得偷偷回收。
 

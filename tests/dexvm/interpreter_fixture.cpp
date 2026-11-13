@@ -42,20 +42,15 @@
 
 namespace ogplay::test::interpreter {
 
-
-
 std::vector<std::uint8_t> ReadFixture(const std::string& name) {
-    const std::string path =
-        std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
+    const std::string path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
     std::ifstream stream(path, std::ios::binary);
     REQUIRE_MESSAGE(stream.good(), "missing fixture: ", path);
-    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream),
-                                     std::istreambuf_iterator<char>());
+    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 }
 
 void ExpectInt(const VmCallOutcome& outcome, const std::int32_t expected) {
-    REQUIRE_MESSAGE(!outcome.exception.IsValid(),
-                    "unexpected exception: ", outcome.exception_message);
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), "unexpected exception: ", outcome.exception_message);
     REQUIRE(outcome.value.kind == VmValue::Kind::cat1);
     CHECK(outcome.value.AsInt() == expected);
 }
@@ -63,14 +58,12 @@ void ExpectInt(const VmCallOutcome& outcome, const std::int32_t expected) {
 Vm::Vm(const InterpreterConfig config, const JavaObjectModelConfig model_config,
        std::vector<IntrinsicClassDecl> extra_catalog, const std::string& extra_fixture,
        JavaPayloadProvider* payload_provider)
-    : arrays(payload_provider ? *payload_provider : arrays_payload), model(strings, arrays, model_config), linker(),
+    : arrays(payload_provider ? *payload_provider : arrays_payload), model(arrays, model_config), linker(),
       interpreter(
           [this, &extra_catalog, &extra_fixture]() -> DexClassLinker& {
               auto catalog = CoreIntrinsicCatalog();
-              catalog.insert(
-                  catalog.end(),
-                  std::make_move_iterator(extra_catalog.begin()),
-                  std::make_move_iterator(extra_catalog.end()));
+              catalog.insert(catalog.end(), std::make_move_iterator(extra_catalog.begin()),
+                             std::make_move_iterator(extra_catalog.end()));
               linker.RegisterIntrinsics(catalog);
               ogplay::test::RegisterBootDex(linker);
               linker.RegisterDex(ReadFixture(extra_fixture.empty() ? "interp.dex" : extra_fixture));
@@ -79,33 +72,25 @@ Vm::Vm(const InterpreterConfig config, const JavaObjectModelConfig model_config,
           }(),
           model, nullptr, ledger, config) {}
 
-VmMethodId Vm::Static(const std::string& class_descriptor,
-                                const std::string& name,
-                                const std::string& descriptor) {
+VmMethodId Vm::Static(const std::string& class_descriptor, const std::string& name, const std::string& descriptor) {
     const auto java_class = linker.FindClass(class_descriptor);
     REQUIRE_MESSAGE(java_class.has_value(), class_descriptor);
-    const auto method =
-        linker.FindDirectMethod(*java_class, name, descriptor);
+    const auto method = linker.FindDirectMethod(*java_class, name, descriptor);
     REQUIRE_MESSAGE(method.has_value(), name);
     return *method;
 }
 
-VmCallOutcome Vm::CallStatic(
-    const std::string& class_descriptor, const std::string& name,
-    const std::string& descriptor, std::vector<VmValue> arguments) {
-    return interpreter.Call(Static(class_descriptor, name, descriptor),
-                            arguments);
+VmCallOutcome Vm::CallStatic(const std::string& class_descriptor, const std::string& name,
+                             const std::string& descriptor, std::vector<VmValue> arguments) {
+    return interpreter.Call(Static(class_descriptor, name, descriptor), arguments);
 }
 
 IntrinsicVm::IntrinsicVm(std::vector<IntrinsicClassDecl> catalog)
-    : model(strings, arrays),
-      linker(),
+    : model(arrays), linker(),
       interpreter(
           [this, &catalog]() -> DexClassLinker& {
               auto core = CoreIntrinsicCatalog();
-              core.insert(core.end(),
-                          std::make_move_iterator(catalog.begin()),
-                          std::make_move_iterator(catalog.end()));
+              core.insert(core.end(), std::make_move_iterator(catalog.begin()), std::make_move_iterator(catalog.end()));
               linker.RegisterIntrinsics(core);
               ogplay::test::RegisterBootDex(linker);
               linker.Link();
@@ -113,20 +98,17 @@ IntrinsicVm::IntrinsicVm(std::vector<IntrinsicClassDecl> catalog)
           }(),
           model, nullptr, ledger) {}
 
-VmMethodId IntrinsicVm::Static(const std::string& class_descriptor,
-                                const std::string& name,
-                                const std::string& descriptor) {
+VmMethodId IntrinsicVm::Static(const std::string& class_descriptor, const std::string& name,
+                               const std::string& descriptor) {
     const auto java_class = linker.FindClass(class_descriptor);
     REQUIRE(java_class.has_value());
-    const auto method =
-        linker.FindDirectMethod(*java_class, name, descriptor);
+    const auto method = linker.FindDirectMethod(*java_class, name, descriptor);
     REQUIRE(method.has_value());
     return *method;
 }
 
-VmMethodId IntrinsicVm::Virtual(const std::string& class_descriptor,
-                                 const std::string& name,
-                                 const std::string& descriptor) {
+VmMethodId IntrinsicVm::Virtual(const std::string& class_descriptor, const std::string& name,
+                                const std::string& descriptor) {
     const auto java_class = linker.FindClass(class_descriptor);
     REQUIRE(java_class.has_value());
     for (const auto method : linker.Class(*java_class).vtable) {
@@ -135,9 +117,8 @@ VmMethodId IntrinsicVm::Virtual(const std::string& class_descriptor,
             return method;
         }
     }
-    FAIL("virtual method is missing: ", class_descriptor, ".", name,
-         descriptor);
+    FAIL("virtual method is missing: ", class_descriptor, ".", name, descriptor);
     return VmMethodId{};
 }
 
-} // namespace ogplay::test::interpreter
+}  // namespace ogplay::test::interpreter

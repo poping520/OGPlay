@@ -135,16 +135,8 @@ DeclareSimpleThrowableClass(const std::string_view descriptor, const std::string
     return array;
 }
 
-[[nodiscard]] inline std::int32_t JavaStringHash(const std::u16string& value) {
-    std::int32_t hash = 0;
-    for (const auto unit : value) {
-        hash = static_cast<std::int32_t>(static_cast<std::uint32_t>(hash) * 31U + unit);
-    }
-    return hash;
-}
-
 [[nodiscard]] inline std::int32_t JavaUtf8Hash(IntrinsicContext& context, const std::string_view value) {
-    return JavaStringHash(context.vm.Model().StringValue(context.vm.NewStringUtf8(value)));
+    return context.vm.Model().StringHashCode(context.vm.NewStringUtf8(value));
 }
 
 [[nodiscard]] inline std::string ModifierString(const std::uint32_t modifiers) {
@@ -233,49 +225,6 @@ inline void GuestLine(IntrinsicContext& context, const std::string& line) {
     logger->Write(core::LogLevel::info, "runtime.dexvm.guest", line);
 }
 
-[[nodiscard]] inline std::u16string Value(IntrinsicContext& context, const VmObjectRef ref) {
-    if (!ref.IsValid()) {
-        throw VmJavaThrow{"Ljava/lang/NullPointerException;", "null string argument"};
-    }
-    return context.vm.Model().StringValue(ref);
-}
-
-[[nodiscard]] inline VmValue Make(IntrinsicContext& context, const std::u16string& value) {
-    return VmValue::Ref(context.vm.Model().NewString(value));
-}
-
-[[nodiscard]] inline std::u16string Widen(const std::string& value) {
-    return std::u16string(value.begin(), value.end());
-}
-
-[[nodiscard]] inline char16_t AsciiLower(const char16_t unit) {
-    return unit >= u'A' && unit <= u'Z' ? static_cast<char16_t>(unit + 32) : unit;
-}
-
-[[nodiscard]] inline char16_t AsciiUpper(const char16_t unit) {
-    return unit >= u'a' && unit <= u'z' ? static_cast<char16_t>(unit - 32) : unit;
-}
-
-[[nodiscard]] inline std::int32_t CompareStrings(const std::u16string& lhs, const std::u16string& rhs,
-                                                 const bool ignore_case) {
-    const auto size = std::min(lhs.size(), rhs.size());
-    for (std::size_t index = 0; index < size; ++index) {
-        auto left = lhs[index];
-        auto right = rhs[index];
-        if (ignore_case) {
-            left = AsciiLower(left);
-            right = AsciiLower(right);
-        }
-        if (left != right) {
-            return static_cast<std::int32_t>(left) - static_cast<std::int32_t>(right);
-        }
-    }
-    return static_cast<std::int32_t>(lhs.size()) - static_cast<std::int32_t>(rhs.size());
-}
-
-// Platform default charset decode (UTF-8, CodingErrorAction.REPLACE):
-// malformed sequences become U+FFFD instead of failing, matching what
-// `new String(byte[])` does on device.
 [[nodiscard]] inline std::u16string Utf8DecodeReplace(const std::span<const std::byte> bytes) {
     std::u16string units;
     units.reserve(bytes.size());
@@ -319,22 +268,12 @@ inline void GuestLine(IntrinsicContext& context, const std::string& line) {
     return units;
 }
 
-[[nodiscard]] inline std::vector<std::byte> Utf8Encode(const std::u16string& value) {
+[[nodiscard]] inline std::vector<std::byte> Utf8Encode(std::u16string_view value) {
     const auto encoded = *core::Utf16ToUtf8(std::span{value}, core::InvalidUtf16Policy::replace, '?');
     std::vector<std::byte> out(encoded.size());
     std::transform(encoded.begin(), encoded.end(), out.begin(),
                    [](const char byte) { return static_cast<std::byte>(byte); });
     return out;
-}
-
-// UTF-8 conversion for byte-oriented boundaries.
-[[nodiscard]] inline std::string ToUtf8(const std::u16string& value) {
-    const auto bytes = Utf8Encode(value);
-    return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
-}
-
-[[nodiscard]] inline std::u16string FromUtf8(const std::string& value) {
-    return Utf8DecodeReplace(std::as_bytes(std::span(value)));
 }
 
 // Shared range check for String(byte[]/char[], offset, count) forms.
@@ -344,53 +283,6 @@ inline void CheckRegion(const JniSize array_length, const std::int32_t offset, c
                           "offset " + std::to_string(offset) + ", count " + std::to_string(count) + ", length " +
                               std::to_string(array_length)};
     }
-}
-
-[[nodiscard]] inline VmObjectRef RequireArray(const VmObjectRef ref) {
-    if (!ref.IsValid()) {
-        throw VmJavaThrow{"Ljava/lang/NullPointerException;", "null array argument"};
-    }
-    return ref;
-}
-
-inline void CheckListIndex(const std::vector<VmObjectRef>& elements, const std::int32_t index) {
-    if (index < 0 || static_cast<std::size_t>(index) >= elements.size()) {
-        throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
-                          "index " + std::to_string(index) + ", size " + std::to_string(elements.size())};
-    }
-}
-
-[[nodiscard]] inline std::u16string CharsValue(IntrinsicContext& context, const VmObjectRef array,
-                                               const std::int32_t offset, const std::int32_t count) {
-    auto& model = context.vm.Model();
-    std::u16string units;
-    units.reserve(static_cast<std::size_t>(count));
-    for (std::int32_t index = 0; index < count; ++index) {
-        units.push_back(static_cast<char16_t>(model.GetPrimitiveElement(array, offset + index)));
-    }
-    return units;
-}
-
-[[nodiscard]] inline VmValue Substring(IntrinsicContext& context, const std::int32_t begin, const std::int32_t end) {
-    const auto value = Value(context, context.receiver);
-    if (begin < 0 || end < begin || static_cast<std::size_t>(end) > value.size()) {
-        throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;", "begin " + std::to_string(begin) + ", end " +
-                                                                             std::to_string(end) + ", length " +
-                                                                             std::to_string(value.size())};
-    }
-    if (begin == 0 && static_cast<std::size_t>(end) == value.size()) return VmValue::Ref(context.receiver);
-    return Make(context, value.substr(static_cast<std::size_t>(begin), static_cast<std::size_t>(end - begin)));
-}
-
-inline void CheckBuilderIndex(const std::u16string& buffer, const std::int32_t index) {
-    if (index < 0 || static_cast<std::size_t>(index) >= buffer.size()) {
-        throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;",
-                          "builder index " + std::to_string(index) + ", length " + std::to_string(buffer.size())};
-    }
-}
-
-[[nodiscard]] inline VmValue BuilderSelf(IntrinsicContext& context) {
-    return VmValue::Ref(context.receiver);
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics::detail

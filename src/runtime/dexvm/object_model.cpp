@@ -5,6 +5,8 @@
 #include <limits>
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include <unordered_map>
+#include <unordered_set>
+#include "ogplay/runtime/jni/jni_utf.h"
 #include <variant>
 #include <vector>
 
@@ -39,6 +41,39 @@ struct IdentityHash final {
 
 class JavaObjectModel::Impl final {
 public:
+    struct StringLayout final {
+        DexClassId type;
+        DexClassId array_type;
+        std::uint16_t slots{};
+        std::uint16_t value{}, offset{}, count{}, hash_code{};
+    };
+
+    struct InternHash final {
+        using is_transparent = void;
+        const JavaObjectModel* model;
+
+        std::size_t operator()(std::u16string_view text) const { return std::hash<std::u16string_view>{}(text); }
+
+        std::size_t operator()(VmObjectRef ref) const { return (*this)(model->StringChars(ref)); }
+    };
+
+    struct InternEqual final {
+        using is_transparent = void;
+        const JavaObjectModel* model;
+
+        bool operator()(VmObjectRef left, VmObjectRef right) const {
+            return left == right || (*this)(model->StringChars(left), right);
+        }
+
+        bool operator()(std::u16string_view left, VmObjectRef right) const { return left == model->StringChars(right); }
+
+        bool operator()(VmObjectRef left, std::u16string_view right) const { return (*this)(right, left); }
+    };
+
+    explicit Impl(const JavaObjectModel* model)
+        : intern_table(0, InternHash{model}, InternEqual{model}),
+          weak_intern_table(0, InternHash{model}, InternEqual{model}) {}
+
     struct Record final {
         bool occupied{true};
         VmObjectKind kind{VmObjectKind::external};
@@ -57,7 +92,6 @@ public:
         std::vector<VmObjectRef> elements;
     };
 
-    JniStringStore* strings{};
     JniPrimitiveArrayStore* arrays{};
     VmExecutionLock* allocation_mutex{};
     JavaObjectInterop interop;
@@ -78,13 +112,15 @@ public:
     // the injected JniObjectArrayStore and never populate this fallback.
     std::vector<ObjectArray> fallback_object_arrays;
     std::vector<std::uint32_t> free_fallback_object_arrays;
-    std::unordered_map<std::u16string, VmObjectRef> intern_table;
-    std::unordered_map<std::u16string, VmObjectRef> weak_intern_table;
+    std::unordered_set<VmObjectRef, InternHash, InternEqual> intern_table;
+    std::unordered_set<VmObjectRef, InternHash, InternEqual> weak_intern_table;
+    std::unordered_map<std::uint64_t, JniObjectIdentity> utf_leases;
+    std::uint64_t next_utf_lease{1};
     std::unordered_map<std::uint32_t, std::weak_ptr<JavaPayloadHostBytes>> borrowed_byte_arrays;
     std::unordered_map<std::uint32_t, VmObjectRef> class_objects;
     std::function<std::string(DexClassId)> class_descriptor_resolver;
 
-    DexClassId string_class;
+    StringLayout string_layout;
     DexClassId class_class;
     std::uint16_t class_slots{};
     std::uint64_t allocated_bytes{};
@@ -200,10 +236,9 @@ public:
     }
 };
 
-JavaObjectModel::JavaObjectModel(JniStringStore& strings, JniPrimitiveArrayStore& arrays, JavaObjectModelConfig config,
+JavaObjectModel::JavaObjectModel(JniPrimitiveArrayStore& arrays, JavaObjectModelConfig config,
                                  JavaObjectInterop interop)
-    : impl_(std::make_unique<Impl>()) {
-    impl_->strings = &strings;
+    : impl_(std::make_unique<Impl>(this)) {
     impl_->arrays = &arrays;
     impl_->config = config;
     impl_->normal_growth_limit_bytes = config.heap_growth_limit_bytes;
@@ -241,25 +276,37 @@ JavaObjectModel::JavaObjectModel(JniStringStore& strings, JniPrimitiveArrayStore
         },
         [state = impl_.get()](std::uint64_t bytes) { state->allocated_bytes -= bytes; },
         [state = impl_.get()] { return state->emergency_reserve; }};
-    strings.ConfigurePayloadHeap(config.maximum_heap_bytes, config.heap_growth_limit_bytes);
-    arrays.SetAllocationContext(allocation_context);
-    strings.SetAllocationContext(std::move(allocation_context));
+    arrays.SetAllocationContext(std::move(allocation_context));
 }
 
 JavaObjectModel::~JavaObjectModel() {
     impl_->arrays->SetAllocationContext({});
-    impl_->strings->SetAllocationContext({});
 }
 
 void JavaObjectModel::SetPrimitiveAllocationMutex(VmExecutionLock& mutex) {
     impl_->allocation_mutex = &mutex;
 }
 
-void JavaObjectModel::SetCoreClasses(const DexClassId string_class, const DexClassId class_class,
-                                     const std::uint16_t class_slots) {
-    impl_->string_class = string_class;
+void JavaObjectModel::SetCoreClasses(DexClassLinker& linker, DexClassId string_class, DexClassId class_class) {
+    linker.EnsureClassLinked(string_class);
+    linker.EnsureClassLinked(class_class);
+    const auto array_class = linker.ResolveDescriptor("[C");
+    linker.EnsureClassLinked(array_class);
+    const auto& string = linker.Class(string_class);
+    if (!string.is_boot_dex || string.own_instance_fields.size() != 4 || string.instance_slots != 4) {
+        Fail(DexVmErrorReason::invalid_member, "unexpected API19 String instance layout");
+    }
+    const auto slot = [&](std::string_view name, std::string_view descriptor) {
+        for (const auto field_id : string.own_instance_fields) {
+            const auto& field = linker.Field(field_id);
+            if (field.name == name && field.descriptor == descriptor) return field.slot;
+        }
+        Fail(DexVmErrorReason::invalid_member, "missing API19 String instance field");
+    };
+    impl_->string_layout = {string_class,        array_class,        string.instance_slots, slot("value", "[C"),
+                            slot("offset", "I"), slot("count", "I"), slot("hashCode", "I")};
     impl_->class_class = class_class;
-    impl_->class_slots = class_slots;
+    impl_->class_slots = linker.Class(class_class).instance_slots;
 }
 
 void JavaObjectModel::SetClassDescriptorResolver(std::function<std::string(DexClassId)> resolver) {
@@ -284,65 +331,49 @@ VmObjectRef JavaObjectModel::FromIdentity(const JniObjectIdentity identity) {
     }
     Impl::Record record;
     record.identity = identity;
-    // Objects created on the JNI side (NewStringUTF, NewByteArray, ...)
-    // flow in with host identities; classify them against the shared
-    // stores so the interpreter sees the same object with its real form.
-    record.kind = VmObjectKind::external;
     try {
-        static_cast<void>(impl_->strings->Length(identity));
-        record.kind = VmObjectKind::string;
-        record.java_class = impl_->string_class;
+        record.primitive_kind = impl_->arrays->Kind(identity);
+        record.kind = VmObjectKind::primitive_array;
         try {
-            impl_->strings->EnsureCharged(identity);
+            impl_->arrays->EnsureCharged(identity);
         } catch (const std::bad_alloc&) {
-            Fail(DexVmErrorReason::heap_budget_exhausted, "JNI string import exceeded heap budget");
+            Fail(DexVmErrorReason::heap_budget_exhausted, "JNI array import exceeded heap budget");
         }
-        record.reserved_bytes = EstimateStringBytes(static_cast<std::size_t>(impl_->strings->Length(identity)));
-    } catch (const JniStringError&) {
-        try {
-            record.primitive_kind = impl_->arrays->Kind(identity);
-            record.kind = VmObjectKind::primitive_array;
-            try {
-                impl_->arrays->EnsureCharged(identity);
-            } catch (const std::bad_alloc&) {
-                Fail(DexVmErrorReason::heap_budget_exhausted, "JNI array import exceeded heap budget");
+        record.reserved_bytes = EstimatePrimitiveArrayBytes(record.primitive_kind, impl_->arrays->Length(identity));
+        record.primitive_view = impl_->arrays->View(identity);
+        if (impl_->interop.resolve_primitive_array_class) {
+            record.java_class = impl_->interop.resolve_primitive_array_class(record.primitive_kind);
+        }
+    } catch (const JniArrayError&) {
+        if (impl_->interop.object_arrays != nullptr && impl_->interop.object_arrays->Contains(identity)) {
+            if (!impl_->interop.resolve_object_array_class) {
+                Fail(DexVmErrorReason::object_model_failure, "JNI object array class resolver is not installed");
             }
-            record.reserved_bytes = EstimatePrimitiveArrayBytes(record.primitive_kind, impl_->arrays->Length(identity));
-            record.primitive_view = impl_->arrays->View(identity);
-            if (impl_->interop.resolve_primitive_array_class) {
-                record.java_class = impl_->interop.resolve_primitive_array_class(record.primitive_kind);
+            const auto [array_class, element_class] =
+                impl_->interop.resolve_object_array_class(impl_->interop.object_arrays->ElementClass(identity));
+            static_cast<void>(element_class);
+            record.kind = VmObjectKind::object_array;
+            record.java_class = array_class;
+            record.reserved_bytes = EstimateObjectArrayBytes(impl_->interop.object_arrays->Length(identity));
+            impl_->Reserve(record.reserved_bytes);
+        } else {
+            record.kind = VmObjectKind::external;
+            if (impl_->interop.resolve_object_class) {
+                record.java_class = impl_->interop.resolve_object_class(identity);
             }
-        } catch (const JniArrayError&) {
-            if (impl_->interop.object_arrays != nullptr && impl_->interop.object_arrays->Contains(identity)) {
-                if (!impl_->interop.resolve_object_array_class) {
-                    Fail(DexVmErrorReason::object_model_failure, "JNI object array class resolver is not installed");
-                }
-                const auto [array_class, element_class] =
-                    impl_->interop.resolve_object_array_class(impl_->interop.object_arrays->ElementClass(identity));
-                static_cast<void>(element_class);
-                record.kind = VmObjectKind::object_array;
-                record.java_class = array_class;
-                record.reserved_bytes = EstimateObjectArrayBytes(impl_->interop.object_arrays->Length(identity));
-                impl_->Reserve(record.reserved_bytes);
-            } else {
-                record.kind = VmObjectKind::external;
-                if (impl_->interop.resolve_object_class) {
-                    record.java_class = impl_->interop.resolve_object_class(identity);
-                }
-                if (record.java_class.IsValid() && impl_->interop.resolve_instance_slots) {
-                    const auto slots = impl_->interop.resolve_instance_slots(record.java_class);
-                    if (slots.has_value()) {
-                        record.kind = VmObjectKind::vm_instance;
-                        record.reserved_bytes = 32ULL + static_cast<std::uint64_t>(*slots) * 8ULL;
-                        impl_->Reserve(record.reserved_bytes);
-                        if (impl_->free_instance_storage.empty()) {
-                            record.storage = static_cast<std::uint32_t>(impl_->instance_storage.size());
-                            impl_->instance_storage.emplace_back(*slots, Slot{});
-                        } else {
-                            record.storage = impl_->free_instance_storage.back();
-                            impl_->free_instance_storage.pop_back();
-                            impl_->instance_storage[record.storage].assign(*slots, Slot{});
-                        }
+            if (record.java_class.IsValid() && impl_->interop.resolve_instance_slots) {
+                const auto slots = impl_->interop.resolve_instance_slots(record.java_class);
+                if (slots.has_value()) {
+                    record.kind = VmObjectKind::vm_instance;
+                    record.reserved_bytes = 32ULL + static_cast<std::uint64_t>(*slots) * 8ULL;
+                    impl_->Reserve(record.reserved_bytes);
+                    if (impl_->free_instance_storage.empty()) {
+                        record.storage = static_cast<std::uint32_t>(impl_->instance_storage.size());
+                        impl_->instance_storage.emplace_back(*slots, Slot{});
+                    } else {
+                        record.storage = impl_->free_instance_storage.back();
+                        impl_->free_instance_storage.pop_back();
+                        impl_->instance_storage[record.storage].assign(*slots, Slot{});
                     }
                 }
             }
@@ -362,9 +393,6 @@ VmObjectKind JavaObjectModel::Kind(const VmObjectRef ref) const {
 
 DexClassId JavaObjectModel::ObjectClass(const VmObjectRef ref) const {
     const auto& record = impl_->At(ref);
-    if (record.kind == VmObjectKind::string && !record.java_class.IsValid()) {
-        return impl_->string_class;
-    }
     return record.java_class;
 }
 
@@ -390,10 +418,12 @@ void JavaObjectModel::VisitLiveObjects(const RootVisitor& visitor) const {
 
 void JavaObjectModel::VisitPermanentRoots(const RootVisitor& visitor) const {
     if (!visitor) return;
-    for (const auto& [_, ref] : impl_->intern_table)
+    for (const auto ref : impl_->intern_table)
         visitor(ref);
     for (const auto& [_, ref] : impl_->class_objects)
         visitor(ref);
+    for (const auto& [_, identity] : impl_->utf_leases)
+        visitor(FindIdentity(identity));
     std::erase_if(impl_->borrowed_byte_arrays, [&](const auto& entry) {
         if (entry.second.expired()) return true;
         visitor(VmObjectRef{entry.first});
@@ -438,6 +468,7 @@ JavaObjectModel::MarkReachable(const std::vector<VmObjectRef>& roots,
     };
     for (const auto root : roots)
         mark(root);
+    impl_->arrays->VisitAccessRoots([&](JniObjectIdentity id) { mark(FindIdentity(id)); });
     while (!gray.empty()) {
         const auto ref = gray.back();
         gray.pop_back();
@@ -472,7 +503,6 @@ JavaObjectModel::MarkReachable(const std::vector<VmObjectRef>& roots,
             }
             break;
         case VmObjectKind::host_backed: break;
-        case VmObjectKind::string:
         case VmObjectKind::primitive_array:
         case VmObjectKind::external: break;
         }
@@ -499,6 +529,7 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark, const GcSweepHook
     if (mark.marked.size() != impl_->records.size()) {
         Fail(DexVmErrorReason::internal_invariant, "GC mark bitmap does not match the object record table");
     }
+    std::erase_if(impl_->weak_intern_table, [&](VmObjectRef ref) { return !mark.IsMarked(ref); });
     GcSweepResult result;
     for (std::size_t index = 0; index < impl_->records.size(); ++index) {
         auto& record = impl_->records[index];
@@ -508,9 +539,6 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark, const GcSweepHook
             ++result.host_destructors_run;
         }
         switch (record.kind) {
-        case VmObjectKind::string:
-            impl_->allocated_bytes -= record.reserved_bytes - impl_->strings->Delete(record.identity);
-            break;
         case VmObjectKind::primitive_array:
             record.primitive_view.reset();
             try {
@@ -544,13 +572,11 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark, const GcSweepHook
         impl_->by_identity.erase(record.identity);
         result.freed_bytes += record.reserved_bytes;
         ++result.freed_objects;
-        if (record.kind != VmObjectKind::primitive_array && record.kind != VmObjectKind::string)
-            impl_->allocated_bytes -= record.reserved_bytes;
+        if (record.kind != VmObjectKind::primitive_array) impl_->allocated_bytes -= record.reserved_bytes;
         --impl_->object_count;
         record.occupied = false;
         impl_->free_records.push_back(static_cast<std::uint32_t>(index));
     }
-    std::erase_if(impl_->weak_intern_table, [&](const auto& entry) { return !mark.IsMarked(entry.second); });
     return result;
 }
 
@@ -620,89 +646,231 @@ void JavaObjectModel::SetHostState(const VmObjectRef ref, const std::uint64_t ho
     record.host_state = host_state;
 }
 
-VmObjectRef JavaObjectModel::NewString(const std::u16string_view value) {
-    const auto bytes = 32ULL + value.size() * 2ULL;
-    std::vector<JniChar> units(value.begin(), value.end());
-    JniObjectIdentity identity;
+VmObjectRef JavaObjectModel::NewString(std::u16string_view value) {
+    const auto& layout = impl_->string_layout;
+    if (!layout.type.IsValid()) Fail(DexVmErrorReason::object_model_failure, "String class has not linked");
+    if (value.size() > static_cast<std::size_t>(std::numeric_limits<JniSize>::max()))
+        throw std::length_error("Java String exceeds jsize range");
+    const auto count = static_cast<JniSize>(value.size());
+    const auto target = impl_->heap_target_bytes;
+    const auto emergency = impl_->emergency_remaining;
+    const auto array = NewPrimitiveArray(layout.array_type, JniPrimitiveKind::character, count);
+    WriteCharArray(array, {value.data(), value.size()});
+    VmObjectRef ref;
     try {
-        identity = impl_->strings->Create(units);
-    } catch (const std::bad_alloc&) {
-        Fail(DexVmErrorReason::heap_budget_exhausted, "string payload allocation failed");
-    }
-    try {
-        Impl::Record record;
-        record.kind = VmObjectKind::string;
-        record.identity = identity;
-        record.java_class = impl_->string_class;
-        record.reserved_bytes = bytes;
-        return impl_->Register(std::move(record));
+        ref = NewInstance(layout.type, layout.slots);
     } catch (...) {
-        impl_->strings->Delete(identity);
+        auto& record = impl_->At(array);
+        record.primitive_view.reset();
+        impl_->arrays->Delete(record.identity);
+        impl_->by_identity.erase(record.identity);
+        record.occupied = false;
+        --impl_->object_count;
+        impl_->free_records.push_back(array.Value() - 1);
+        impl_->heap_target_bytes = target;
+        impl_->emergency_remaining = emergency;
+        throw;
+    }
+    auto fields = InstanceSlots(ref);
+    fields[layout.value] = {array.Value(), SlotTag::ref};
+    fields[layout.offset] = {0, SlotTag::cat1};
+    fields[layout.count] = {static_cast<std::uint32_t>(count), SlotTag::cat1};
+    fields[layout.hash_code] = {0, SlotTag::cat1};
+    return ref;
+}
+
+VmObjectRef JavaObjectModel::InternString(std::u16string_view value) {
+    const auto found = impl_->intern_table.find(value);
+    if (found != impl_->intern_table.end()) return *found;
+    const auto weak = impl_->weak_intern_table.find(value);
+    const auto ref = weak == impl_->weak_intern_table.end() ? NewString(value) : *weak;
+    impl_->intern_table.insert(ref);
+    if (weak != impl_->weak_intern_table.end()) impl_->weak_intern_table.erase(weak);
+    return ref;
+}
+
+VmObjectRef JavaObjectModel::InternString(VmObjectRef value) {
+    const auto strong = impl_->intern_table.find(value);
+    if (strong != impl_->intern_table.end()) return *strong;
+    return *impl_->weak_intern_table.insert(value).first;
+}
+
+bool JavaObjectModel::IsString(VmObjectRef ref) const noexcept {
+    return IsValidRef(ref) && impl_->string_layout.type.IsValid() &&
+           impl_->records[ref.Value() - 1].java_class == impl_->string_layout.type;
+}
+
+JniSize JavaObjectModel::StringLength(VmObjectRef ref) const {
+    if (!IsString(ref)) {
+        if (!ref.IsValid()) static_cast<void>(impl_->At(ref));
+        Fail(DexVmErrorReason::object_model_failure, "object is not a String");
+    }
+    const auto& record = impl_->At(ref);
+    return static_cast<JniSize>(impl_->instance_storage[record.storage][impl_->string_layout.count].bits);
+}
+
+std::u16string_view JavaObjectModel::CharArrayChars(VmObjectRef ref) const {
+    const auto& array = impl_->At(ref);
+    if (!array.primitive_view || array.primitive_kind != JniPrimitiveKind::character)
+        Fail(DexVmErrorReason::object_model_failure, "object is not a char array");
+    const auto span = std::get<JavaPayloadAccessor<JniChar>>(*array.primitive_view).ReadOnlySpan();
+    return {span.data(), span.size()};
+}
+
+void JavaObjectModel::WriteCharArray(VmObjectRef ref, std::span<const JniChar> chars) {
+    auto& array = impl_->At(ref);
+    if (!array.primitive_view || array.primitive_kind != JniPrimitiveKind::character)
+        Fail(DexVmErrorReason::object_model_failure, "object is not a char array");
+    std::get<JavaPayloadAccessor<JniChar>>(*array.primitive_view).WriteRegion(0, chars.data(), chars.size());
+}
+
+std::u16string_view JavaObjectModel::StringChars(VmObjectRef ref) const {
+    if (!IsString(ref)) {
+        if (!ref.IsValid()) static_cast<void>(impl_->At(ref));
+        Fail(DexVmErrorReason::object_model_failure, "object is not a String");
+    }
+    const auto& layout = impl_->string_layout;
+    const auto& fields = impl_->instance_storage[impl_->At(ref).storage];
+    const auto value = CharArrayChars(VmObjectRef{fields[layout.value].bits});
+    const auto offset = fields[layout.offset].bits;
+    const auto count = fields[layout.count].bits;
+    if (offset > value.size() || count > value.size() - offset)
+        Fail(DexVmErrorReason::object_model_failure, "String fields exceed value array");
+    return value.substr(offset, count);
+}
+
+std::u16string JavaObjectModel::StringValue(VmObjectRef ref) const {
+    return std::u16string(StringChars(ref));
+}
+
+std::u16string JavaObjectModel::StringRegion(VmObjectRef ref, JniSize start, JniSize length) const {
+    const auto chars = StringChars(ref);
+    if (start < 0 || length < 0 || static_cast<std::size_t>(start) > chars.size() ||
+        static_cast<std::size_t>(length) > chars.size() - static_cast<std::size_t>(start))
+        throw JniStringError(JniStringErrorReason::invalid_region, "JNI string region is outside the object");
+    return std::u16string(chars.substr(static_cast<std::size_t>(start), static_cast<std::size_t>(length)));
+}
+
+std::int32_t JavaObjectModel::StringHashCode(VmObjectRef ref) {
+    if (!IsString(ref)) Fail(DexVmErrorReason::object_model_failure, "object is not a String");
+    auto& field = impl_->instance_storage[impl_->At(ref).storage][impl_->string_layout.hash_code];
+    if (field.bits != 0) return static_cast<std::int32_t>(field.bits);
+    const auto chars = StringChars(ref);
+    if (chars.empty()) return 0;
+    std::uint32_t hash = 0;
+    for (const auto unit : chars)
+        hash = hash * 31U + unit;
+    field = {hash, SlotTag::cat1};
+    return static_cast<std::int32_t>(hash);
+}
+
+bool JavaObjectModel::StringEquals(VmObjectRef left, VmObjectRef right) const {
+    if (left == right) return true;
+    if (!IsString(left) || !IsString(right) || StringLength(left) != StringLength(right)) return false;
+    const auto slot = impl_->string_layout.hash_code;
+    const auto lhs = impl_->instance_storage[impl_->At(left).storage][slot].bits;
+    const auto rhs = impl_->instance_storage[impl_->At(right).storage][slot].bits;
+    return (lhs == 0 || rhs == 0 || lhs == rhs) && StringChars(left) == StringChars(right);
+}
+
+std::shared_ptr<void> JavaObjectModel::Lock() const {
+    return impl_->allocation_mutex ? std::make_shared<VmExecutionLockScope>(*impl_->allocation_mutex) : nullptr;
+}
+
+JniObjectIdentity JavaObjectModel::Create(std::span<const JniChar> chars) {
+    const auto lock = Lock();
+    try {
+        return ToIdentity(NewString({chars.data(), chars.size()}));
+    } catch (const DexVmError& error) {
+        if (error.Reason() == DexVmErrorReason::heap_budget_exhausted) throw std::bad_alloc();
         throw;
     }
 }
 
-VmObjectRef JavaObjectModel::InternString(const std::u16string_view value) {
-    const std::u16string key(value);
-    const auto found = impl_->intern_table.find(key);
-    if (found != impl_->intern_table.end()) return found->second;
-    const auto weak = impl_->weak_intern_table.find(key);
-    const auto created = weak == impl_->weak_intern_table.end() ? NewString(value) : weak->second;
-    impl_->weak_intern_table.erase(key);
-    impl_->intern_table.emplace(key, created);
-    return created;
+bool JavaObjectModel::Contains(JniObjectIdentity string) const {
+    const auto lock = Lock();
+    return IsString(FindIdentity(string));
 }
 
-VmObjectRef JavaObjectModel::InternString(const VmObjectRef value) {
-    const auto key = StringValue(value);
-    const auto strong = impl_->intern_table.find(key);
-    if (strong != impl_->intern_table.end()) return strong->second;
-    return impl_->weak_intern_table.emplace(key, value).first->second;
+VmObjectRef JavaObjectModel::RequireJniString(JniObjectIdentity string) const {
+    const auto ref = FindIdentity(string);
+    if (!IsString(ref)) throw JniStringError(JniStringErrorReason::unknown_object, "JNI object is not a String");
+    return ref;
 }
 
-void JavaObjectModel::BindString(const VmObjectRef ref, const std::u16string_view value) {
-    auto& record = impl_->At(ref);
-    if (record.kind != VmObjectKind::vm_instance || record.java_class != impl_->string_class) {
-        Fail(DexVmErrorReason::object_model_failure, "string constructor receiver is not an unbound string "
-                                                     "instance");
+JniSize JavaObjectModel::Length(JniObjectIdentity string) const {
+    const auto lock = Lock();
+    return StringLength(RequireJniString(string));
+}
+
+JniSize JavaObjectModel::ModifiedUtf8Length(JniObjectIdentity string) const {
+    const auto lock = Lock();
+    const auto chars = StringChars(RequireJniString(string));
+    const auto length = JniModifiedUtf8Length({chars.data(), chars.size()});
+    if (length > static_cast<std::size_t>(std::numeric_limits<JniSize>::max()))
+        throw std::length_error("JNI string exceeds jsize range");
+    return static_cast<JniSize>(length);
+}
+
+void JavaObjectModel::ReadRegion(JniObjectIdentity string, JniSize start, JniSize length,
+                                 const RegionReader& read) const {
+    const auto lock = Lock();
+    const auto chars = StringChars(RequireJniString(string));
+    if (start < 0 || length < 0 || static_cast<std::size_t>(start) > chars.size() ||
+        static_cast<std::size_t>(length) > chars.size() - static_cast<std::size_t>(start))
+        throw JniStringError(JniStringErrorReason::invalid_region, "JNI string region is outside the object");
+    const auto region = chars.substr(static_cast<std::size_t>(start), static_cast<std::size_t>(length));
+    read({region.data(), region.size()});
+}
+
+std::vector<std::uint8_t> JavaObjectModel::ModifiedUtf8Region(JniObjectIdentity string, JniSize start,
+                                                              JniSize length) const {
+    const auto lock = Lock();
+    const auto chars = StringChars(RequireJniString(string));
+    if (start < 0 || length < 0 || static_cast<std::size_t>(start) > chars.size() ||
+        static_cast<std::size_t>(length) > chars.size() - static_cast<std::size_t>(start))
+        throw JniStringError(JniStringErrorReason::invalid_region, "JNI string region is outside the object");
+    return EncodeJniModifiedUtf8({chars.data() + start, static_cast<std::size_t>(length)});
+}
+
+JniStringAccess JavaObjectModel::Acquire(JniObjectIdentity string, JniStringAccessKind kind) {
+    const auto lock = Lock();
+    const auto ref = RequireJniString(string);
+    JniStringAccess result;
+    result.kind = kind;
+    if (kind == JniStringAccessKind::modified_utf8) {
+        const auto chars = StringChars(ref);
+        result.modified_utf8 = EncodeJniModifiedUtf8({chars.data(), chars.size()});
+        if (!impl_->next_utf_lease) throw std::length_error("JNI string lease space exhausted");
+        result.token = impl_->next_utf_lease++;
+        impl_->utf_leases.emplace(result.token, string);
+        return result;
     }
-    std::vector<JniChar> units(value.begin(), value.end());
-    JniObjectIdentity identity;
-    try {
-        identity = impl_->strings->Create(units, false);
-    } catch (const std::bad_alloc&) {
-        Fail(DexVmErrorReason::heap_budget_exhausted, "string constructor payload allocation failed");
-    }
-    impl_->by_identity.erase(record.identity);
-    impl_->by_identity.emplace(identity, static_cast<std::uint32_t>(ref.Value() - 1));
-    impl_->instance_storage[record.storage].clear();
-    impl_->free_instance_storage.push_back(record.storage);
-    record.storage = 0;
-    record.kind = VmObjectKind::string;
-    record.identity = identity;
-    record.reserved_bytes += value.size() * 2ULL;
+    const auto& layout = impl_->string_layout;
+    const auto fields = InstanceSlots(ref);
+    const auto array = ToIdentity(VmObjectRef{fields[layout.value].bits});
+    const auto offset = static_cast<std::uint64_t>(fields[layout.offset].bits) * sizeof(JniChar);
+    static_cast<void>(StringChars(ref));  // Validate the slice before pinning.
+    const auto pin = impl_->arrays->Acquire(array, JniArrayAccessKind::critical);
+    result.address = pin.address.Add(offset);
+    result.is_copy = false;
+    result.pin_count = pin.pin_count;
+    result.warn_threshold = pin.warn_threshold;
+    return result;
 }
 
-std::u16string JavaObjectModel::StringValue(const VmObjectRef ref) const {
-    const auto length = StringLength(ref);
-    return StringRegion(ref, 0, length);
-}
-
-JniSize JavaObjectModel::StringLength(const VmObjectRef ref) const {
-    const auto& record = impl_->At(ref);
-    if (record.kind != VmObjectKind::string && record.kind != VmObjectKind::external) {
-        Fail(DexVmErrorReason::object_model_failure, "object is not a string");
+bool JavaObjectModel::Release(JniObjectIdentity string, std::uint64_t token, JniStringAccessKind kind) {
+    const auto lock = Lock();
+    if (kind == JniStringAccessKind::modified_utf8) {
+        const auto lease = impl_->utf_leases.find(token);
+        if (lease == impl_->utf_leases.end() || lease->second != string)
+            throw JniStringError(JniStringErrorReason::invalid_access, "JNI string lease is invalid");
+        impl_->utf_leases.erase(lease);
+        return true;
     }
-    return impl_->strings->Length(record.identity);
-}
-
-std::u16string JavaObjectModel::StringRegion(const VmObjectRef ref, const JniSize start, const JniSize length) const {
-    const auto& record = impl_->At(ref);
-    if (record.kind != VmObjectKind::string && record.kind != VmObjectKind::external) {
-        Fail(DexVmErrorReason::object_model_failure, "object is not a string");
-    }
-    const auto units = impl_->strings->Region(record.identity, start, length);
-    return std::u16string(units.begin(), units.end());
+    const auto fields = InstanceSlots(RequireJniString(string));
+    const auto array = ToIdentity(VmObjectRef{fields[impl_->string_layout.value].bits});
+    return impl_->arrays->Release(array, JniArrayReleaseMode::abort);
 }
 
 VmObjectRef JavaObjectModel::NewPrimitiveArray(const DexClassId array_class, const JniPrimitiveKind kind,
@@ -963,7 +1131,6 @@ VmObjectRef JavaObjectModel::CloneObject(const VmObjectRef source) {
         return clone;
     }
     case VmObjectKind::host_backed:
-    case VmObjectKind::string:
     case VmObjectKind::class_object:
     case VmObjectKind::external: break;
     }
@@ -1098,7 +1265,7 @@ std::uint64_t JavaObjectModel::EstimateInstanceBytes(const std::uint16_t slot_co
 }
 
 std::uint64_t JavaObjectModel::EstimateStringBytes(const std::size_t code_units) noexcept {
-    return 32ULL + static_cast<std::uint64_t>(code_units) * 2ULL;
+    return EstimateInstanceBytes(4) + 32ULL + static_cast<std::uint64_t>(code_units) * sizeof(JniChar);
 }
 
 std::uint64_t JavaObjectModel::EstimatePrimitiveArrayBytes(const JniPrimitiveKind kind, const JniSize length) {

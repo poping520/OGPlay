@@ -95,7 +95,7 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
 - AllocateJniObject 使用当前调用线程 context，按 API19 拒绝不可实例化类，运行类初始化
   与分配安全点后创建真实继承布局的零值实例，不执行实例构造器或自动创建 native peer。
   clinit/堆预算/宿主分配错误返回 Java throwable；成功和异常均交给 owner 发布引用。
-- `JavaObjectModel` 提供 session 级非移动句柄（0=null）；VM 实例/Object[] 自有存储，String/
+- `JavaObjectModel` 提供 session 级非移动句柄（0=null）；VM 实例/Object[] 自有存储，
   primitive array 复用 JNI store。JavaObjectInterop.resolve_class_mirror 由 bridge 注入；FromIdentity 在普通
   对象导入前恢复已有 ClassObject，因此原生 Class[] 元素与直接 jclass 保持同一类镜像。
   clone 生成新 identity 并浅拷贝；host-backed 对象必须显式声明
@@ -112,14 +112,14 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   Java 多线程对同一数组允许普通数据竞争，store 不再串行化元素访问；long/double backing
   至少 8-byte 对齐，发布仍依赖 monitor/volatile/pthread/futex，不承诺多元素一致快照。
   sweep 先退役 Record view，再由 store 退役 entry view/释放 backing。VM Reserve 是唯一
-  堆账本；native New 创建即收费，import 不重复收费，JNI 导入 String 补计既有 payload。
+  堆账本；native New 创建即收费，import 不重复收费。
 - BorrowByteArray 在 VM 锁内为宿主消费者借用稳定 byte[]。最后一份借用释放前，数组是
   GC 强根且 backing 不移动。消费者释放借用时丢弃所有指针和跨度，借用必须早于 VM teardown 退役。
 - GC 是分配驱动的精确 STW mark-sweep；roots 包括 frame、结果/异常、static、JNI、Thread、
   intern/Class 与 integration roots。持 guest ref 的 intrinsic 状态用具名 state table trace/sweep；
   嵌套调用的新引用用 `RootScope`。Weak/SoftReference、JNI weak、intern 与 identity hash 遵循
   API 19；异常构造有 64 KiB 应急区。allocation context 在 VM 执行锁内显式查询 emergency
-  状态，primitive/String store 将该事实传给 provider，允许使用预提交 backing 应急池；不靠
+  状态，primitive store 将该事实传给 provider，允许使用预提交 backing 应急池；不靠
   全局/TLS 推断 owner。provider 应急池耗尽明确失败，不再次构造 OOME。
 - guest native 资源字段回收规则显式指定无效 token（默认 0，API19 ZIP streamHandle 为 -1）；
   未初始化的 0 不登记资源，GC/teardown 清字段时写回对应关闭标记并调用静态释放入口。
@@ -152,7 +152,9 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   target/参数诊断，不依赖 trace，也不输出 host 地址。
 - `FastCode` 只从已预检字节码派生，不改 DEX、不持 guest ref。默认 switch；threaded 在
   GCC/Clang 用 computed goto、MSVC 用稠密 switch；两者共用 target/shape/异常/clinit 语义，
-  `force_all_bridge` 是永久等价门禁。
+  `force_all_bridge` 是永久等价门禁。String 方法在链接时按方法身份记录 fast_op，
+  threaded 在唯一目标调用点缓存该标记，多态调用点在选中目标后读取。仅加速确定的成功路径，
+  需抛异常或无法判定时执行原版方法，启用 trace 时关闭快路径。
 - `VmExecutionLock` 是可重入全 VM 单写/STW 边界；阻塞按原深度释放/恢复。锁序固定为
   execution→thread runtime→context table；安全分配点外不得触发 GC。
   锁竞争按 FIFO 准入；普通字节码每 1024 tick 的稳定安全点可向等待宿主让出，保留
@@ -314,8 +316,8 @@ context，通过 thread_stopped 展开而非 Java Throwable；退出后 Call 明
 
 AbstractStringBuilder/StringBuilder/StringBuffer、IntegralToString 与 RealToString 的普通 Java
 逻辑执行固定 API19 BootDex；前三者及 IntegralToString 无 intrinsic overlay。builder 的
-value/count/shared 是唯一状态，无宿主 builder map。String 内部构造按既有 immutable
-store 契约复制快照；GC 追踪 builder.value，Java 自行维护 shared/COW 与序列化 hooks。
+value/count/shared 是唯一状态。String 内部构造按 ROM 规则共享 char[]；GC 追踪 builder.value，
+Java 自行维护 shared/COW 与序列化 hooks。
 RealToString 只保留 bigIntDigitGenerator native，字段经绑定 handle，临时数值不跨调用保存。
 
 `Interpreter::TrySnapshot` 只尝试 VM 执行锁，复制堆边界、对象/登记类/已链接类与已有调用计数；忙时立即返回 nullopt。method_calls 是解释调用，不是三路总数；GC 暂停使用统一 Clock 累计实际 mark/sweep/资源回收区间，不含等待执行锁的时间。
@@ -345,12 +347,11 @@ throwable，按 Dalvik Class.cpp:4485–4497 将类标 failed，非 Error 包装
 保留身份；已初始化类不消费外部 pending。回调只在检查点调用，停止执行后撤销，不引入
 JNI 环境反向依赖。普通 Call/NewObject 不预先清除 JNI pending。
 
-ADR-0152 阶段 4：String 内容自创建起由显式 provider 的不可变 UTF-16 block/view 唯一持有，
-Region/MUTF-8/hash/equals/intern 键从同一内容读取；无影子 value/offset/count 字段。公开 char[]、
-builder 与 substring 保持独立复制快照。StringStore 共享 VM allocation context：NewString/JNI
-创建统一收费一次，导入补未收费项，已有实例 BindString 只增收 payload；失败回滚，sweep
-由 store 退还自身费用并扣除实例剩余费用。String pin 与 UTF8 lease 均为 mark/weak 前强根；
-Chars/Critical 按 String 身份跨线程计数并忽略 release 指针/kind；不增加内存序承诺。
+String 使用 API19 BootDex 普通实例布局。启动链接 String 与 [C 后校验四个实例字段槽。
+宿主直接构造 String 与 char[]，<clinit> 仍按 Java 语义运行。两对象分别计费并由普通 GC 追踪，
+StringChars 视图在 String 可达时有效；hashCode 缓存与 ROM 字段共用。强/弱 intern 集合
+按 VmObjectRef 保存、按 payload 内容查询，weak 在回收引用前移除。JNI Chars/Critical
+借用 value+offset 并按 value 数组计 pin，UTF8 复制 lease 独立配对。
 
 平台默认属性由 platform_tables.h 定义；物化后以单一 live BootDex Properties 为权威，
 VM 持有 GC 根，get/setProperty 与 getProperties 共用对象。CoreIntrinsicServices 提供

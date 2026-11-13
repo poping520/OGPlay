@@ -1,3 +1,4 @@
+#include "../runtime/jni_string_fixture.h"
 #include "runtime/integration/dexvm_android/shared.h"
 #include "dexvm/resource_fixture.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
@@ -778,10 +779,10 @@ TEST_CASE("Configuration derives API19 screen layout from injected metrics") {
 
 TEST_CASE("AudioManager reports the deterministic external music fact") {
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
+    TestJniStrings strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model(strings, arrays);
+    JavaObjectModel model(arrays);
     DexClassLinker linker;
     auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
@@ -805,10 +806,10 @@ TEST_CASE("AudioManager reports the deterministic external music fact") {
 
 TEST_CASE("Thread priority validates and records the guest fact") {
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
+    TestJniStrings strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model(strings, arrays);
+    JavaObjectModel model(arrays);
     DexClassLinker linker;
     auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
@@ -868,10 +869,10 @@ TEST_CASE("Thread priority validates and records the guest fact") {
 
 TEST_CASE("URLEncoder applies UTF-8 form encoding") {
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
+    TestJniStrings strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model(strings, arrays);
+    JavaObjectModel model(arrays);
     DexClassLinker linker;
     auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();

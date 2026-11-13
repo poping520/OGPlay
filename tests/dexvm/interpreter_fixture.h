@@ -50,8 +50,6 @@ std::vector<std::uint8_t> ReadFixture(const std::string& name);
 void ExpectInt(const VmCallOutcome& outcome, const std::int32_t expected);
 
 struct Vm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
@@ -63,18 +61,14 @@ struct Vm final {
                 std::vector<IntrinsicClassDecl> extra_catalog = {}, const std::string& extra_fixture = {},
                 JavaPayloadProvider* payload_provider = nullptr);
 
-    [[nodiscard]] VmMethodId Static(const std::string& class_descriptor,
-                                    const std::string& name,
+    [[nodiscard]] VmMethodId Static(const std::string& class_descriptor, const std::string& name,
                                     const std::string& descriptor);
 
-    [[nodiscard]] VmCallOutcome CallStatic(
-        const std::string& class_descriptor, const std::string& name,
-        const std::string& descriptor, std::vector<VmValue> arguments = {});
+    [[nodiscard]] VmCallOutcome CallStatic(const std::string& class_descriptor, const std::string& name,
+                                           const std::string& descriptor, std::vector<VmValue> arguments = {});
 };
 
 struct IntrinsicVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
@@ -84,21 +78,17 @@ struct IntrinsicVm final {
 
     explicit IntrinsicVm(std::vector<IntrinsicClassDecl> catalog);
 
-    [[nodiscard]] VmMethodId Static(const std::string& class_descriptor,
-                                    const std::string& name,
+    [[nodiscard]] VmMethodId Static(const std::string& class_descriptor, const std::string& name,
                                     const std::string& descriptor);
 
-    [[nodiscard]] VmMethodId Virtual(const std::string& class_descriptor,
-                                     const std::string& name,
+    [[nodiscard]] VmMethodId Virtual(const std::string& class_descriptor, const std::string& name,
                                      const std::string& descriptor);
 };
 
 template <typename Fn>
 void WithEachBackend(Fn&& fn) {
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
-        INFO("backend=",
-             backend == InterpreterBackend::threaded ? "threaded" : "switch");
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        INFO("backend=", backend == InterpreterBackend::threaded ? "threaded" : "switch");
         InterpreterConfig config;
         config.backend = backend;
         fn(config);
@@ -106,11 +96,9 @@ void WithEachBackend(Fn&& fn) {
 }
 
 template <typename VmType>
-void ExpectException(const VmType& vm, const VmCallOutcome& outcome,
-                     const std::string& descriptor) {
+void ExpectException(const VmType& vm, const VmCallOutcome& outcome, const std::string& descriptor) {
     REQUIRE(outcome.exception.IsValid());
     CHECK(vm.linker.Class(outcome.exception_class).descriptor == descriptor);
 }
 
-
-} // namespace ogplay::test::interpreter
+}  // namespace ogplay::test::interpreter

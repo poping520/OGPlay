@@ -1456,7 +1456,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
 
     auto* const bridge_state = impl_.get();
     impl_->model = std::make_unique<dx::JavaObjectModel>(
-        session.Strings(), session.Arrays(), config.heap,
+        session.Arrays(), config.heap,
         dx::JavaObjectInterop{
             &session.Objects().ObjectArrays(),
             [bridge_state](const dx::DexClassId java_class) { return bridge_state->JniClassIdentity(java_class); },
@@ -1555,7 +1555,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
     session.Objects().SetRuntimeClassResolver(
         [bridge_state](const JniObjectIdentity identity) -> std::optional<JniObjectIdentity> {
             const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
-            bool known = bridge_state->session->Strings().Contains(identity) ||
+            bool known = bridge_state->model->Contains(identity) ||
                          bridge_state->session->Objects().ObjectArrays().Contains(identity);
             if (!known) {
                 try {
@@ -1721,8 +1721,6 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
     impl_->vm->SetGcIntegration(
         dx::InterpreterGcIntegration{[&session](const std::function<void(JniObjectIdentity)>& visit) {
                                          session.Environment().VisitReferenceRoots(visit);
-                                         session.Strings().VisitAccessRoots(visit);
-                                         session.Arrays().VisitAccessRoots(visit);
                                      },
                                      [&session, bridge_state](const JniObjectIdentity identity) {
                                          if (const auto found = bridge_state->asset_managers.find(identity.value);
@@ -1908,6 +1906,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
                 vm, thread, "setContextClassLoader", "(Ljava/lang/ClassLoader;)V", {dx::VmValue::Ref(loader)}));
         }
     }
+    session.Process().SetStringBackend(impl_->model.get());
 }
 
 std::unique_ptr<dx::NativeCleanupScope> DexVmGuestBridge::EnterResourceCleanup() {
@@ -2002,6 +2001,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->android_context->native_thread_for_context = {};
     }
     if (impl_->session) {
+        impl_->session->Process().SetStringBackend(nullptr);
         impl_->session->Environment().SetThreadDetachGuard({});
         impl_->session->Environment().SetMonitorHooks({});
         impl_->session->Environment().SetReflectionHooks({});

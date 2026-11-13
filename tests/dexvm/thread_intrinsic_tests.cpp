@@ -40,8 +40,6 @@ std::vector<std::uint8_t> ReadFixture(const std::string& name) {
 }
 
 struct ThreadVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
@@ -56,7 +54,7 @@ struct ThreadVm final {
     std::atomic<std::int32_t> throwing_uncaught_calls{};
 
     explicit ThreadVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
-        : model(strings, arrays), linker(),
+        : model(arrays), linker(),
           interpreter(
               [this]() -> DexClassLinker& {
                   auto catalog = CoreIntrinsicCatalog();

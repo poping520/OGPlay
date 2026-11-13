@@ -386,7 +386,7 @@ note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿�
 [runtime.java_payload_backing]
 status = "partial"
 test = "tests/runtime/java_payload_provider_tests.cpp; tests/runtime/jni_array_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/dexvm/gc_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/memory/address_space_tests.cpp"
-note = "ADR-0152 / ：primitive/不可变 String 共用稳定 guest payload，Elements/Critical 与 Chars/Critical 直接借用 FALSE、身份 pin 为 GC 强根。VM 唯一收费及应急预留；allocateDirect 真实 byte[] 计入 Java 堆，与 direct 地址共用 payload，视图/数组引用保活、GC 单次回收；外部 JNI direct 非拥有。宿主 byte[] 借用保活至最后一份 lease 释放。MUTF8 仍复制；对象数组 addressOf 明确失败，Windows 未实跑。"
+note = "ADR-0152：primitive array 与 ROM String 的 char[] value 使用稳定 guest payload。Chars/Critical 借用 value+offset、按数组身份 pin；MUTF-8 复制。VM 分别收费并追踪 String 和数组。NIO allocateDirect 真实 byte[] 共用 payload，外部 JNI direct 非拥有；宿主 byte[] lease 保活至最后释放。对象数组 addressOf 明确失败，Windows 未实跑。"
 
 [dexvm.runtime.address_of_object_array]
 status = "unimplemented"
@@ -811,7 +811,7 @@ note = "From/ToReflectedMethod/Field 四槽复用 ReflectionRuntime 与既有成
 [runtime.jni_guest_utf16_strings]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
-note = "ADR-0152 / 阶段 4 已验收：NewString/Length/Region 保留码元和输入预检；Chars/Critical 返回不可变 guest payload、FALSE，零长有效；按 String 身份计数 pin，Release 忽略 pointer/kind，无配对仅 warn/ledger。UTF16 不占 copy arena；MUTF8 仍复制/TRUE/独立 lease 和预算。JNI 双后端 399/399，实景 String unpin warn 为零；const 指针写入不支持。"
+note = "NewString/Length/Region 保留码元和输入预检；Chars/Critical 返回 ROM value+offset、FALSE，按 char[] 身份 pin。Release 忽略 pointer/kind，未配对 warn/ledger。UTF16 不占 copy arena，MUTF8 独立复制和配对释放。"
 
 [runtime.jni_guest_arrays]
 status = "complete"
@@ -836,7 +836,7 @@ note = "MonitorEnter/Exit 进入环境拥有的真实 monitor 表，按对象身
 [runtime.jni_guest_binding_manifest]
 status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp"
-note = "aggregate contract 逐名核对实际绑定集合与 expected manifest；FatalError 绑定致命消息诊断，DirectByteBuffer 三槽仅注入 NIO 后绑定。Critical string 与 DestroyJavaVM 保持 expected-unbound；reserved 槽拒绝绑定且 ABI 表项为 0，重复绑定与 Seal 后绑定均明确失败。"
+note = "aggregate contract 逐名核对实际绑定集合与 expected manifest；FatalError 绑定致命消息诊断，DirectByteBuffer 三槽仅注入 NIO 后绑定。DestroyJavaVM 保持 expected-unbound；reserved 槽拒绝绑定且 ABI 表项为 0，重复绑定与 Seal 后绑定均明确失败。"
 
 [runtime.jni_guest_static_method_lookup]
 status = "complete"
@@ -1246,7 +1246,7 @@ note = "启动类路径为 ogplay.jar + 原样 API19 ROM jar（顺序与身份�
 [dexvm.string_format_api19]
 status = "partial"
 test = "tests/runtime/guest_native_values_tests.cpp#DVM-126; tests/dexvm/bootdex_library_tests.cpp#intrinsic handlers win over boot DEX bodies; tools.android_payload_current"
-note = "Formatter 及格式异常族来自 pinned core.jar，格式解析、宽度/flag、Locale 与日期转换执行 API19 Java；String.format 仅实现 AOSP 包装链，StringBuilder 等已在 BootDex。double/BigDecimal formatter 与具名时区长尾明确失败。"
+note = "String.format、Formatter 及格式异常来自 pinned API19 core.jar；格式解析、Locale 与日期转换执行原版 Java。double/BigDecimal formatter 与具名时区长尾明确失败。"
 
 [dexvm.date_format_bootdex_audit]
 status = "complete"
@@ -1411,7 +1411,7 @@ note = "per-class 状态机、静态初始值、super 顺序与失败粘滞； �
 [dexvm.intrinsics_java_core]
 status = "partial"
 test = "tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/session/profile_entry_scope_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tests/runtime/guest_icu_tests.cpp#core ROM Character"
-note = "Object/String/Class、Thread 保留 intrinsic；包装类、Number、Enum、Thread.State、接口与 Character 普通方法归 BootDex，Character native 经 guest ICU51。Class 提供原版成员查找 native，StringToReal 两个 native 在宿主忠实移植 API19 AOSP 算法。浮点输出用 RealToString；regionMatches 用 ICU51。IO/NIO 维持既有范围；完整 ThreadGroup、可选 codec 与网络长尾未实现。"
+note = "Object 与 Thread 保留 intrinsic；String、Class、包装类、Enum 与 Character 普通方法归 BootDex。String 绑定四个 ROM native，Charsets 绑定五个；threaded 在无 trace 时加速 String 成功调用。Unicode 映射经 guest ICU51。完整 ThreadGroup、可选 codec 与网络长尾未实现。"
 
 [dexvm.system_line_separator]
 status = "complete"
@@ -1871,7 +1871,7 @@ note = "Math 普通方法/常量/Random 状态来自 BootDex；24 个 native 按
 [dexvm.jni_array_element_publication]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp#DVM-141; tests/runtime/jni_bridge_objects_tests.cpp#DVM-141; tests/runtime/jni_bridge_objects_tests.cpp#DVM-231"
-note = "对象数组元素发布 JNI 引用前按真实 java_class 原子幂等注册；ClassOf 未命中时仅识别存活的共享 String/primitive/object array 并登记实际类，primitive 数组保持精确 descriptor。未知身份严格失败，不按方法 owner 猜类型；不扩展 synthetic array 的 FindClass 与成员解析。"
+note = "对象数组元素发布 JNI 引用前按真实类登记；ClassOf 未命中识别存活的 VM String 与共享数组，并登记精确运行时类。未知身份严格失败，不按方法 owner 猜类型。"
 
 [dexvm.intent_put_extras_bundle]
 status = "complete"

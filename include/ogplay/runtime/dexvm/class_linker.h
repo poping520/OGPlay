@@ -255,6 +255,7 @@ struct LinkedMethod final {
     // Reviewed instance input seam; the ROM constructor body remains authoritative.
     IntrinsicHandler constructor_inputs;
     bool prechecked{};
+    StringFastOp fast_op{};
     std::shared_ptr<FastCode> fast_code;
     std::optional<std::uint32_t> dex_method_index;
     std::optional<DexUnitId> dex_unit;

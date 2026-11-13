@@ -112,8 +112,8 @@ TEST_CASE("dexvm API 19 java.lang throwable inventory is complete") {
         for (const auto& group : {cls.own_direct_methods, cls.own_virtual_methods}) {
             for (const auto id : group) {
                 const auto& method = vm.linker.Method(id);
-                const bool stack_native = name == "Throwable" &&
-                    (method.name == "nativeFillInStackTrace" || method.name == "nativeGetStackTrace");
+                const bool stack_native = name == "Throwable" && (method.name == "nativeFillInStackTrace" ||
+                                                                  method.name == "nativeGetStackTrace");
                 CHECK(method.kind == (stack_native ? MethodKind::intrinsic : MethodKind::interpreted));
             }
         }
@@ -149,8 +149,7 @@ TEST_CASE("dexvm API 19 throwable representative shapes are source-faithful") {
     CHECK(methods(declaration("Ljava/lang/AssertionError;")) ==
           std::set<std::pair<std::string, std::string>>{
               {"<init>", "()V"},
-              {"<init>",
-               "(Ljava/lang/String;Ljava/lang/Throwable;)V"},
+              {"<init>", "(Ljava/lang/String;Ljava/lang/Throwable;)V"},
               {"<init>", "(Ljava/lang/Object;)V"},
               {"<init>", "(Z)V"},
               {"<init>", "(C)V"},
@@ -160,112 +159,118 @@ TEST_CASE("dexvm API 19 throwable representative shapes are source-faithful") {
               {"<init>", "(D)V"},
           });
 
-    const auto& class_not_found =
-        declaration("Ljava/lang/ClassNotFoundException;");
-    CHECK(fields(class_not_found) ==
-          std::set<std::pair<std::string, std::string>>{
-              {"ex", "Ljava/lang/Throwable;"}});
-    CHECK(methods(class_not_found) ==
-          std::set<std::pair<std::string, std::string>>{
-              {"<init>", "()V"},
-              {"<init>", "(Ljava/lang/String;)V"},
-              {"<init>",
-               "(Ljava/lang/String;Ljava/lang/Throwable;)V"},
-              {"getCause", "()Ljava/lang/Throwable;"},
-              {"getException", "()Ljava/lang/Throwable;"},
-          });
+    const auto& class_not_found = declaration("Ljava/lang/ClassNotFoundException;");
+    CHECK(fields(class_not_found) == std::set<std::pair<std::string, std::string>>{{"ex", "Ljava/lang/Throwable;"}});
+    CHECK(methods(class_not_found) == std::set<std::pair<std::string, std::string>>{
+                                          {"<init>", "()V"},
+                                          {"<init>", "(Ljava/lang/String;)V"},
+                                          {"<init>", "(Ljava/lang/String;Ljava/lang/Throwable;)V"},
+                                          {"getCause", "()Ljava/lang/Throwable;"},
+                                          {"getException", "()Ljava/lang/Throwable;"},
+                                      });
 
-    const auto& enum_missing =
-        declaration("Ljava/lang/EnumConstantNotPresentException;");
-    CHECK(fields(enum_missing) ==
-          std::set<std::pair<std::string, std::string>>{
-              {"constantName", "Ljava/lang/String;"},
-              {"enumType", "Ljava/lang/Class;"},
-          });
-    CHECK(methods(enum_missing) ==
-          std::set<std::pair<std::string, std::string>>{
-              {"<init>", "(Ljava/lang/Class;Ljava/lang/String;)V"},
-              {"constantName", "()Ljava/lang/String;"},
-              {"enumType", "()Ljava/lang/Class;"},
-          });
+    const auto& enum_missing = declaration("Ljava/lang/EnumConstantNotPresentException;");
+    CHECK(fields(enum_missing) == std::set<std::pair<std::string, std::string>>{
+                                      {"constantName", "Ljava/lang/String;"},
+                                      {"enumType", "Ljava/lang/Class;"},
+                                  });
+    CHECK(methods(enum_missing) == std::set<std::pair<std::string, std::string>>{
+                                       {"<init>", "(Ljava/lang/Class;Ljava/lang/String;)V"},
+                                       {"constantName", "()Ljava/lang/String;"},
+                                       {"enumType", "()Ljava/lang/Class;"},
+                                   });
 
-    const auto& initializer =
-        declaration("Ljava/lang/ExceptionInInitializerError;");
-    CHECK(fields(initializer) ==
-          std::set<std::pair<std::string, std::string>>{
-              {"exception", "Ljava/lang/Throwable;"}});
-    CHECK(methods(initializer).contains(
-        {"<init>", "(Ljava/lang/Throwable;)V"}));
-    CHECK(methods(initializer).contains(
-        {"getException", "()Ljava/lang/Throwable;"}));
-    CHECK(methods(initializer).contains(
-        {"getCause", "()Ljava/lang/Throwable;"}));
+    const auto& initializer = declaration("Ljava/lang/ExceptionInInitializerError;");
+    CHECK(fields(initializer) == std::set<std::pair<std::string, std::string>>{{"exception", "Ljava/lang/Throwable;"}});
+    CHECK(methods(initializer).contains({"<init>", "(Ljava/lang/Throwable;)V"}));
+    CHECK(methods(initializer).contains({"getException", "()Ljava/lang/Throwable;"}));
+    CHECK(methods(initializer).contains({"getCause", "()Ljava/lang/Throwable;"}));
 
-    const auto& type_missing =
-        declaration("Ljava/lang/TypeNotPresentException;");
-    CHECK(fields(type_missing) ==
-          std::set<std::pair<std::string, std::string>>{
-              {"typeName", "Ljava/lang/String;"}});
-    CHECK(methods(type_missing) ==
-          std::set<std::pair<std::string, std::string>>{
-              {"<init>",
-               "(Ljava/lang/String;Ljava/lang/Throwable;)V"},
-              {"typeName", "()Ljava/lang/String;"},
-          });
+    const auto& type_missing = declaration("Ljava/lang/TypeNotPresentException;");
+    CHECK(fields(type_missing) == std::set<std::pair<std::string, std::string>>{{"typeName", "Ljava/lang/String;"}});
+    CHECK(methods(type_missing) == std::set<std::pair<std::string, std::string>>{
+                                       {"<init>", "(Ljava/lang/String;Ljava/lang/Throwable;)V"},
+                                       {"typeName", "()Ljava/lang/String;"},
+                                   });
 }
 
 TEST_CASE("dexvm Throwable native boundary stays in lang family TU") {
     const std::vector<std::string> classes = {
-        "AbstractMethodError", "ArithmeticException",
-        "ArrayIndexOutOfBoundsException", "ArrayStoreException",
-        "AssertionError", "ClassCastException", "ClassCircularityError",
-        "ClassFormatError", "ClassNotFoundException",
-        "CloneNotSupportedException", "EnumConstantNotPresentException",
-        "Error", "Exception", "ExceptionInInitializerError",
-        "IllegalAccessError", "IllegalAccessException",
-        "IllegalArgumentException", "IllegalMonitorStateException",
-        "IllegalStateException", "IllegalThreadStateException",
-        "IncompatibleClassChangeError", "IndexOutOfBoundsException",
-        "InstantiationError", "InstantiationException", "InternalError",
-        "InterruptedException", "LinkageError", "NegativeArraySizeException",
-        "NoClassDefFoundError", "NoSuchFieldError", "NoSuchFieldException",
-        "NoSuchMethodError", "NoSuchMethodException", "NullPointerException",
-        "NumberFormatException", "OutOfMemoryError",
-        "ReflectiveOperationException", "RuntimeException",
-        "SecurityException", "StackOverflowError",
-        "StringIndexOutOfBoundsException", "ThreadDeath", "Throwable",
-        "TypeNotPresentException", "UnknownError", "UnsatisfiedLinkError",
-        "UnsupportedClassVersionError", "UnsupportedOperationException",
-        "VerifyError", "VirtualMachineError",
+        "AbstractMethodError",
+        "ArithmeticException",
+        "ArrayIndexOutOfBoundsException",
+        "ArrayStoreException",
+        "AssertionError",
+        "ClassCastException",
+        "ClassCircularityError",
+        "ClassFormatError",
+        "ClassNotFoundException",
+        "CloneNotSupportedException",
+        "EnumConstantNotPresentException",
+        "Error",
+        "Exception",
+        "ExceptionInInitializerError",
+        "IllegalAccessError",
+        "IllegalAccessException",
+        "IllegalArgumentException",
+        "IllegalMonitorStateException",
+        "IllegalStateException",
+        "IllegalThreadStateException",
+        "IncompatibleClassChangeError",
+        "IndexOutOfBoundsException",
+        "InstantiationError",
+        "InstantiationException",
+        "InternalError",
+        "InterruptedException",
+        "LinkageError",
+        "NegativeArraySizeException",
+        "NoClassDefFoundError",
+        "NoSuchFieldError",
+        "NoSuchFieldException",
+        "NoSuchMethodError",
+        "NoSuchMethodException",
+        "NullPointerException",
+        "NumberFormatException",
+        "OutOfMemoryError",
+        "ReflectiveOperationException",
+        "RuntimeException",
+        "SecurityException",
+        "StackOverflowError",
+        "StringIndexOutOfBoundsException",
+        "ThreadDeath",
+        "Throwable",
+        "TypeNotPresentException",
+        "UnknownError",
+        "UnsatisfiedLinkError",
+        "UnsupportedClassVersionError",
+        "UnsupportedOperationException",
+        "VerifyError",
+        "VirtualMachineError",
     };
-    const auto directory = std::filesystem::path(OGPLAY_SOURCE_DIR) / "src" /
-                           "runtime" / "dexvm" / "intrinsics";
+    const auto directory = std::filesystem::path(OGPLAY_SOURCE_DIR) / "src" / "runtime" / "dexvm" / "intrinsics";
     CHECK(std::filesystem::is_regular_file(directory / "java_lang.cpp"));
     for (const auto& name : classes) {
         CAPTURE(name);
-        CHECK_FALSE(std::filesystem::exists(
-            directory / ("java_lang_" + name + ".cpp")));
+        CHECK_FALSE(std::filesystem::exists(directory / ("java_lang_" + name + ".cpp")));
     }
 }
 
 TEST_CASE("DVM-115 VM exception construction has bounded emergency heap and stack space") {
     WithEachBackend([](InterpreterConfig config) {
-        Vm f(config, JavaObjectModelConfig{
-                         .initial_heap_target_bytes = 128,
-                         .heap_growth_limit_bytes = 128,
-                         .maximum_heap_bytes = 128,
-                         .min_free_bytes = 0,
-                         .max_free_bytes = 0});
-        ExpectInt(f.CallStatic("LArith;", "divideCaught", "(II)I",
-                              {VmValue::Int(1), VmValue::Int(0)}), -99);
+        Vm f(config, JavaObjectModelConfig{.initial_heap_target_bytes = 128,
+                                           .heap_growth_limit_bytes = 128,
+                                           .maximum_heap_bytes = 128,
+                                           .min_free_bytes = 0,
+                                           .max_free_bytes = 0});
+        ExpectInt(f.CallStatic("LArith;", "divideCaught", "(II)I", {VmValue::Int(1), VmValue::Int(0)}), -99);
         const auto byte_array = f.linker.ResolveDescriptor("[B");
-        CHECK_FALSE(f.model.SetEmergencyReserve(true)); // Construction restored the normal heap limit.
-        CHECK(f.model.SetEmergencyReserve(true)); // Nesting must not replenish the reserve.
-        CHECK_THROWS_AS(static_cast<void>(f.model.NewPrimitiveArray(
-            byte_array, JniPrimitiveKind::byte, 70000)), DexVmError);
+        CHECK_FALSE(f.model.SetEmergencyReserve(true));  // Construction restored the normal heap limit.
+        CHECK(f.model.SetEmergencyReserve(true));        // Nesting must not replenish the reserve.
+        CHECK_THROWS_AS(static_cast<void>(f.model.NewPrimitiveArray(byte_array, JniPrimitiveKind::byte, 70000)),
+                        DexVmError);
         f.model.SetEmergencyReserve(false);
-        CHECK_THROWS_AS(static_cast<void>(f.model.NewPrimitiveArray(
-            byte_array, JniPrimitiveKind::byte, 1024)), DexVmError);
+        CHECK_THROWS_AS(static_cast<void>(f.model.NewPrimitiveArray(byte_array, JniPrimitiveKind::byte, 1024)),
+                        DexVmError);
     });
 }
 
@@ -294,19 +299,26 @@ TEST_CASE("DVM-115 BootDex Throwable owns stack printing copies causes and suppr
         };
         const auto make = [&](const char* message) {
             return ok(f.CallStatic("LThrowableMessageProbe;", "createOuter",
-                "(Ljava/lang/String;)Ljava/lang/Throwable;", {VmValue::Ref(vm.NewStringUtf8(message))})).ref;
+                                   "(Ljava/lang/String;)Ljava/lang/Throwable;",
+                                   {VmValue::Ref(vm.NewStringUtf8(message))}))
+                .ref;
         };
         const auto print = [&](VmObjectRef object) {
             return vm.StringUtf8(ok(f.CallStatic("LThrowableMessageProbe;", "print",
-                "(Ljava/lang/Throwable;)Ljava/lang/String;", {VmValue::Ref(object)})).ref);
+                                                 "(Ljava/lang/Throwable;)Ljava/lang/String;", {VmValue::Ref(object)}))
+                                     .ref);
         };
         const auto top = make("top");
         const auto cause = make("cause");
         const auto suppressed = make("suppressed");
         auto trace = ok(call(top, "getStackTrace", "()[Ljava/lang/StackTraceElement;")).ref;
         REQUIRE(f.model.ArrayLength(trace) == 2);
-        CHECK(vm.StringUtf8(ok(call(f.model.GetObjectElement(trace, 0), "getMethodName", "()Ljava/lang/String;")).ref) == "create");
-        CHECK(vm.StringUtf8(ok(call(f.model.GetObjectElement(trace, 1), "getMethodName", "()Ljava/lang/String;")).ref) == "createOuter");
+        CHECK(
+            vm.StringUtf8(ok(call(f.model.GetObjectElement(trace, 0), "getMethodName", "()Ljava/lang/String;")).ref) ==
+            "create");
+        CHECK(
+            vm.StringUtf8(ok(call(f.model.GetObjectElement(trace, 1), "getMethodName", "()Ljava/lang/String;")).ref) ==
+            "createOuter");
         const auto again = ok(call(top, "getStackTrace", "()[Ljava/lang/StackTraceElement;")).ref;
         CHECK(again != trace);
         f.model.SetObjectElement(trace, 0, VmObjectRef{});
@@ -317,48 +329,54 @@ TEST_CASE("DVM-115 BootDex Throwable owns stack printing copies causes and suppr
         REQUIRE(f.model.ArrayLength(list) == 1);
         CHECK(f.model.GetObjectElement(list, 0) == suppressed);
         f.model.SetObjectElement(list, 0, VmObjectRef{});
-        while (roots.size() > 1) roots.pop_back(); // Only the outer exception is rooted.
+        while (roots.size() > 1)
+            roots.pop_back();  // Only the outer exception is rooted.
         static_cast<void>(vm.CollectGarbage("throwable-java-state"));
         CHECK(ok(call(top, "getCause", "()Ljava/lang/Throwable;")).ref == cause);
         const auto expected = std::string("java.lang.Exception: top\n") +
-            "\tat ThrowableMessageProbe.create(Unknown Source)\n" +
-            "\tat ThrowableMessageProbe.createOuter(Unknown Source)\n" +
-            "\tSuppressed: java.lang.Exception: suppressed\n\t\t... 2 more\n" +
-            "Caused by: java.lang.Exception: cause\n\t... 2 more\n";
+                              "\tat ThrowableMessageProbe.create(Unknown Source)\n" +
+                              "\tat ThrowableMessageProbe.createOuter(Unknown Source)\n" +
+                              "\tSuppressed: java.lang.Exception: suppressed\n\t\t... 2 more\n" +
+                              "Caused by: java.lang.Exception: cause\n\t... 2 more\n";
         CHECK(print(top) == expected);
-        const auto rethrow = f.CallStatic("LThrowableMessageProbe;", "rethrow",
-            "(Ljava/lang/Throwable;)V", {VmValue::Ref(top)});
+        const auto rethrow =
+            f.CallStatic("LThrowableMessageProbe;", "rethrow", "(Ljava/lang/Throwable;)V", {VmValue::Ref(top)});
         CHECK(rethrow.exception == top);
         CHECK(print(top) == expected);
         trace = ok(call(top, "getStackTrace", "()[Ljava/lang/StackTraceElement;")).ref;
         f.model.SetObjectElement(trace, 0, VmObjectRef{});
-        const auto empty = keep(f.model.NewObjectArray(
-            f.linker.ResolveDescriptor("[Ljava/lang/StackTraceElement;"),
-            f.linker.ResolveDescriptor("Ljava/lang/StackTraceElement;"), 0));
+        const auto empty = keep(f.model.NewObjectArray(f.linker.ResolveDescriptor("[Ljava/lang/StackTraceElement;"),
+                                                       f.linker.ResolveDescriptor("Ljava/lang/StackTraceElement;"), 0));
         ok(call(top, "setStackTrace", "([Ljava/lang/StackTraceElement;)V", {VmValue::Ref(empty)}));
         CHECK(f.model.ArrayLength(ok(call(top, "getStackTrace", "()[Ljava/lang/StackTraceElement;")).ref) == 0);
-        const auto invalid_trace = call(top, "setStackTrace", "([Ljava/lang/StackTraceElement;)V", {VmValue::Ref(trace)});
+        const auto invalid_trace =
+            call(top, "setStackTrace", "([Ljava/lang/StackTraceElement;)V", {VmValue::Ref(trace)});
         CHECK(f.linker.Class(invalid_trace.exception_class).descriptor == "Ljava/lang/NullPointerException;");
-        const auto null_writer = call(top, "printStackTrace", "(Ljava/io/PrintWriter;)V", {VmValue::Ref(VmObjectRef{})});
+        const auto null_writer =
+            call(top, "printStackTrace", "(Ljava/io/PrintWriter;)V", {VmValue::Ref(VmObjectRef{})});
         CHECK(f.linker.Class(null_writer.exception_class).descriptor == "Ljava/lang/NullPointerException;");
         const auto self = call(top, "addSuppressed", "(Ljava/lang/Throwable;)V", {VmValue::Ref(top)});
         CHECK(f.linker.Class(self.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
-        const auto null_suppressed = call(top, "addSuppressed", "(Ljava/lang/Throwable;)V", {VmValue::Ref(VmObjectRef{})});
+        const auto null_suppressed =
+            call(top, "addSuppressed", "(Ljava/lang/Throwable;)V", {VmValue::Ref(VmObjectRef{})});
         CHECK(f.linker.Class(null_suppressed.exception_class).descriptor == "Ljava/lang/NullPointerException;");
         const auto frozen = keep(vm.NewIntrinsicInstance("Ljava/lang/Throwable;"));
         const auto ctor = f.Static("Ljava/lang/Throwable;", "<init>", "(Ljava/lang/String;Ljava/lang/Throwable;ZZ)V");
-        ok(vm.Call(ctor, std::array{VmValue::Ref(frozen), VmValue::Ref(VmObjectRef{}),
-            VmValue::Ref(VmObjectRef{}), VmValue::Int(0), VmValue::Int(0)}));
+        ok(vm.Call(ctor, std::array{VmValue::Ref(frozen), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}),
+                                    VmValue::Int(0), VmValue::Int(0)}));
         ok(call(frozen, "addSuppressed", "(Ljava/lang/Throwable;)V", {VmValue::Ref(cause)}));
         CHECK(f.model.ArrayLength(ok(call(frozen, "getSuppressed", "()[Ljava/lang/Throwable;")).ref) == 0);
         ok(call(frozen, "fillInStackTrace", "()Ljava/lang/Throwable;"));
         CHECK(f.model.ArrayLength(ok(call(frozen, "getStackTrace", "()[Ljava/lang/StackTraceElement;")).ref) == 0);
         CHECK(print(frozen) == "java.lang.Throwable\n");
         const auto text = keep(vm.Model().NewString(u"A\U0001f600B"));
-        CHECK(ok(call(text, "subSequence", "(II)Ljava/lang/CharSequence;", {VmValue::Int(0), VmValue::Int(4)})).ref == text);
-        const auto slice = ok(call(text, "subSequence", "(II)Ljava/lang/CharSequence;", {VmValue::Int(1), VmValue::Int(3)})).ref;
+        CHECK(ok(call(text, "subSequence", "(II)Ljava/lang/CharSequence;", {VmValue::Int(0), VmValue::Int(4)})).ref ==
+              text);
+        const auto slice =
+            ok(call(text, "subSequence", "(II)Ljava/lang/CharSequence;", {VmValue::Int(1), VmValue::Int(3)})).ref;
         CHECK(vm.Model().StringValue(slice) == u"\U0001f600");
-        const auto bad_range = call(text, "subSequence", "(II)Ljava/lang/CharSequence;", {VmValue::Int(-1), VmValue::Int(2)});
+        const auto bad_range =
+            call(text, "subSequence", "(II)Ljava/lang/CharSequence;", {VmValue::Int(-1), VmValue::Int(2)});
         CHECK(f.linker.Class(bad_range.exception_class).descriptor == "Ljava/lang/StringIndexOutOfBoundsException;");
     });
 }
@@ -374,9 +392,9 @@ TEST_CASE("DVM-114 Throwable localized messages honor DEX overrides and preserve
         auto& vm = f.interpreter;
         const auto call = [&](const VmObjectRef receiver, const std::string& name) {
             return f.CallStatic("LThrowableMessageProbe;", name,
-                name == "inherited" ? "(LMessageException;)Ljava/lang/String;"
-                                    : "(Ljava/lang/Throwable;)Ljava/lang/String;",
-                {VmValue::Ref(receiver)});
+                                name == "inherited" ? "(LMessageException;)Ljava/lang/String;"
+                                                    : "(Ljava/lang/Throwable;)Ljava/lang/String;",
+                                {VmValue::Ref(receiver)});
         };
         const auto text = [&](const VmCallOutcome& outcome) {
             REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
@@ -404,8 +422,7 @@ TEST_CASE("DVM-114 Throwable localized messages honor DEX overrides and preserve
         vm.SetThrowableMessage(object, vm.NewStringUtf8("stored message must not bypass override"));
         for (const auto* message : std::array<const char*, 3>{nullptr, "", "overridden 中文"}) {
             const auto ref = message ? vm.NewStringUtf8(message) : VmObjectRef{};
-            f.model.InstanceSlots(object)[f.linker.Field(*message_field).slot] =
-                Slot{ref.Value(), SlotTag::ref};
+            f.model.InstanceSlots(object)[f.linker.Field(*message_field).slot] = Slot{ref.Value(), SlotTag::ref};
             const auto localized = call(object, "inherited");
             REQUIRE_FALSE(localized.exception.IsValid());
             CHECK(localized.value.ref == ref);
@@ -420,8 +437,7 @@ TEST_CASE("DVM-114 Throwable localized messages honor DEX overrides and preserve
         CHECK(text(call(child, "render")) == "LocalizedException: localized");
 
         const auto failure = vm.MakeThrowable("Ljava/lang/IllegalArgumentException;", "callback failure");
-        f.model.InstanceSlots(object)[f.linker.Field(*failure_field).slot] =
-            Slot{failure.Value(), SlotTag::ref};
+        f.model.InstanceSlots(object)[f.linker.Field(*failure_field).slot] = Slot{failure.Value(), SlotTag::ref};
         for (const auto* method : {"localized", "inherited", "render"}) {
             const auto outcome = call(object, method);
             CHECK(outcome.exception == failure);
@@ -442,7 +458,8 @@ TEST_CASE("DVM-105 Throwable cause retains identity across GC and rejects overwr
     vm.InitThrowableCause(outer, inner);
     CHECK(vm.ThrowableCause(outer) == inner);
     static_cast<void>(vm.CollectGarbage("cause-test"));
-    CHECK(vm.Model().ObjectClass(vm.ThrowableCause(outer)) == *fixture.linker.FindClass("Ljava/lang/IllegalArgumentException;"));
+    CHECK(vm.Model().ObjectClass(vm.ThrowableCause(outer)) ==
+          *fixture.linker.FindClass("Ljava/lang/IllegalArgumentException;"));
     CHECK_THROWS_AS(vm.InitThrowableCause(outer, VmObjectRef{}), VmJavaThrow);
     const auto self = vm.NewIntrinsicInstance("Ljava/lang/Exception;");
     vm.InitializeThrowable(self);
@@ -457,10 +474,11 @@ TEST_CASE("WU7-3 Throwable uses DEX source and the last debug position at the sa
         const auto image = ogplay::loader::ParseDex(bytes);
         const auto classes = ogplay::loader::ReadDexClassData(bytes, image);
         const auto put32 = [&](std::size_t at, std::uint32_t value) {
-            for (unsigned i = 0; i < 4; ++i) bytes.at(at + i) = static_cast<std::uint8_t>(value >> (i * 8));
+            for (unsigned i = 0; i < 4; ++i)
+                bytes.at(at + i) = static_cast<std::uint8_t>(value >> (i * 8));
         };
         const auto file = std::find_if(image.strings.begin(), image.strings.end(),
-            [](const auto& text) { return text.value == u"hello"; });
+                                       [](const auto& text) { return text.value == u"hello"; });
         REQUIRE(file != image.strings.end());
         bool patched = false;
         for (const auto& data : classes) {
@@ -469,7 +487,8 @@ TEST_CASE("WU7-3 Throwable uses DEX source and the last debug position at the sa
             put32(image.header.class_defs_offset + data.class_def_index * 32 + 16,
                   static_cast<std::uint32_t>(file - image.strings.begin()));
             for (const auto& method : data.direct_methods) {
-                if (image.strings.at(image.methods.at(method.method_index).name_string_index).value != u"create") continue;
+                if (image.strings.at(image.methods.at(method.method_index).name_string_index).value != u"create")
+                    continue;
                 REQUIRE(method.code.has_value());
                 put32(method.code->offset + 8, static_cast<std::uint32_t>(bytes.size()));
                 // line_start=100, no parameters, emit (0,100), advance to
@@ -487,11 +506,9 @@ TEST_CASE("WU7-3 Throwable uses DEX source and the last debug position at the sa
         ogplay::test::RegisterBootDex(linker);
         linker.RegisterDex(std::move(bytes));
         linker.Link();
-        ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-        JniStringStore strings{strings_payload};
         ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
         JniPrimitiveArrayStore arrays{arrays_payload};
-        JavaObjectModel model(strings, arrays);
+        JavaObjectModel model(arrays);
         ogplay::core::CapabilityLedger ledger;
         Interpreter vm(linker, model, nullptr, ledger, config);
         const auto type = linker.ResolveDescriptor("LThrowableMessageProbe;");
@@ -502,7 +519,8 @@ TEST_CASE("WU7-3 Throwable uses DEX source and the last debug position at the sa
         const std::array pcs{0, 2, 3};
         for (int i = 0; i < 3; ++i) {
             model.SetPrimitiveElement(snapshot, i * 2, method->Value());
-            model.SetPrimitiveElement(snapshot, i * 2 + 1, static_cast<std::uint64_t>(pcs.at(static_cast<std::size_t>(i))));
+            model.SetPrimitiveElement(snapshot, i * 2 + 1,
+                                      static_cast<std::uint64_t>(pcs.at(static_cast<std::size_t>(i))));
         }
         const auto trace = vm.MaterializeThrowableStack(snapshot);
         const auto trace_root = vm.ProtectReferences(std::array{trace});
@@ -515,9 +533,11 @@ TEST_CASE("WU7-3 Throwable uses DEX source and the last debug position at the sa
             const auto element = model.GetObjectElement(trace, i);
             const std::array args{VmValue::Ref(element)};
             CHECK(vm.Call(linker.Class(element_type).vtable[*line], args).value.AsInt() == (i == 2 ? 95 : 100));
-            const auto expected_file = i == 2 ? *ogplay::core::Utf16ToUtf8(
-                image.strings.front().value, ogplay::core::InvalidUtf16Policy::replace) : "hello";
-            CHECK(vm.StringUtf8(vm.Call(linker.Class(element_type).vtable[*file_name], args).value.ref) == expected_file);
+            const auto expected_file = i == 2 ? *ogplay::core::Utf16ToUtf8(image.strings.front().value,
+                                                                           ogplay::core::InvalidUtf16Policy::replace)
+                                              : "hello";
+            CHECK(vm.StringUtf8(vm.Call(linker.Class(element_type).vtable[*file_name], args).value.ref) ==
+                  expected_file);
         }
     });
 }

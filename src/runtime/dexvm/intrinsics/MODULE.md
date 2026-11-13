@@ -32,7 +32,9 @@
 
 - 根类 Object 保留 API19 protected finalize 空实现；覆盖者经 FinalizerReference/Daemons
   自动调度，引用清理、复活与 native 资源收尾遵循 DexVM 的 GC 契约。
-- String 的 UTF-16 由 VM/JNI 唯一拥有；内部 char[] 构造复制不可变快照，_getChars 只复制区间。
+- String 与嵌套比较器来自 API19 BootDex，宿主绑定 compareTo、equals、fastIndexOf、intern。
+  Charsets 的五个 native 在宿主使用 UTF-16 数组。String 字段和内容经对象模型访问。
+  threaded 的 fast_op 仅加速成功调用，异常沿原版方法传播，启用方法 trace 时关闭。
   三个 builder 与 IntegralToString 普通方法归 BootDex，value/count/shared 是唯一可变事实源，
   无 builder map、clone/sweep 或普通方法 overlay。RealToString 仅保留受检 native digit generator；
   scratch 为有界局部值，digits/digitCount/firstK 用绑定字段。Character 及嵌套类的字段、常量、
@@ -148,7 +150,7 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
 - InputStreamReader 用 Reader.lock 保护固定 ICU 六标准编码的增量转换，close/GC/teardown
   回收。OutputStreamWriter 使用同一编码集合写入真实 OutputStream，并传播 write/flush/close
   异常；PrintStream 保留原版 FilterOutputStream 继承和目标路由，不覆盖普通方法。
-  String 的命名字符集范围构造复用既有 codec/范围检查；日志端点不暴露宿主 FD。基类 bulk
+  String 的命名字符集范围构造执行 ROM 字节码；日志端点不暴露宿主 FD。基类 bulk
   read/write 必须虚派子类，不能要求任意 guest 流存在宿主资源状态。
   ObjectStreamClass 仅保留六个受检反射原语；ObjectOutputStream.getFieldL、Proxy 生成和
   VMStack 提供 getClasses、getCallingClassLoader（caller2）和 getStackClass2（caller3）；
@@ -200,7 +202,7 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
   Pattern/Matcher/PatternSyntaxException、Splitter 与 Normalizer 普通协议归 API19 BootDex；
   native 经 guest ICU51，String 正则委托同一路径。
   Charset.availableCharsets 读取 guest ICU 名称表，仅公布既有六种真实 codec，返回不区分大小写
-  的不可变 SortedMap；未支持的转换器不会作为可用编码发布。
+  的不可变 SortedMap。UTF-16 家族经现有 NIO buffer 实现编解码循环，供 String 的通用 Charset 路径使用。
 - crypto family 只管 provider、熵、JNI 和资源 owner。AES ECB/CBC 的 NoPadding/PKCS5Padding、
   CBC/ZeroBytePadding 及 CTR/NoPadding、128/192/256 KeyGenerator 已登记；ZeroBytePadding
   由 guest Java 适配到 CBC/NoPadding，Cipher 普通方法无 overlay。

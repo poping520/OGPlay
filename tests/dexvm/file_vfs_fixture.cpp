@@ -138,7 +138,7 @@ TemporaryRoot::~TemporaryRoot() {
 
 FileVm::FileVm(SandboxStore* sandbox, const bool include_android_catalog, const InterpreterConfig config,
                const std::span<const IntrinsicClassDecl> extra_intrinsics, const bool include_boot_dex)
-    : standalone_model(strings, arrays), context(std::make_shared<DexVmAndroidContext>()), io_file_system(vfs),
+    : standalone_model(arrays), context(std::make_shared<DexVmAndroidContext>()), io_file_system(vfs),
       runtime([&]() -> std::unique_ptr<container_traversal::AndroidTestRuntime> {
           if (!include_android_catalog || !include_boot_dex) return {};
           BindBootDexArchive(*context);

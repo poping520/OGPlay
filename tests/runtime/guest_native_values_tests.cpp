@@ -10,6 +10,7 @@
 #include <atomic>
 #include "ogplay/runtime/vfs/sandbox_store.h"
 #include "../dexvm/boot_dex.h"
+#include "../dexvm/container_traversal_fixture.h"
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -126,45 +127,14 @@ TEST_CASE("DVM-126 String.format delegates Locale formatting to API19 Formatter"
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;
         core::Logger logger;
-        std::vector<std::vector<std::byte>> contents;
-        std::vector<runtime::BionicModuleSource> libraries;
-        for (const auto name :
-             {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so", "libcrypto.so", "libssl.so", "libgabi++.so",
-              "libicui18n.so", "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
-            std::ifstream stream(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name, std::ios::binary);
-            REQUIRE_MESSAGE(stream.good(), name);
-            std::vector<char> data{std::istreambuf_iterator<char>(stream), {}};
-            contents.emplace_back(data.size());
-            std::transform(data.begin(), data.end(), contents.back().begin(),
-                           [](const char value) { return static_cast<std::byte>(value); });
-            libraries.push_back({name, contents.back()});
-        }
         auto context = std::make_shared<runtime::DexVmAndroidContext>();
         test::BindBootDexArchive(*context);
-        context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
-        session::AndroidAppProcessRequest request;
-        request.manifest = AppManifest("fixture.MainActivity");
-        request.system_libraries = libraries;
-        request.dex_bytes = ReadDexFixture("cipher.dex");
-        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_files = test::ReadBootDex();
-        request.context = context;
-        request.dexvm.interpreter.backend = backend;
-        request.surface_width = 64;
-        request.surface_height = 36;
-        request.maximum_ticks_per_call = UINT64_C(100000000);
-#if defined(_WIN32)
-        request.backend = {gles::AngleRenderer::d3d11, gles::AngleDevice::hardware};
-#elif defined(__APPLE__)
-        request.backend = {gles::AngleRenderer::metal, gles::AngleDevice::hardware};
-#else
-        request.backend = {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
-#endif
-        request.filesystem = &filesystem;
-        request.ledger = &ledger;
-        request.logger = &logger;
-        auto app = session::AndroidAppProcess::Create(std::move(request));
-        auto& vm = app->DexVm().Vm();
+        context->surface_width = 64;
+        context->surface_height = 36;
+        test::container_traversal::AndroidTestRuntime guest(
+            context, ledger, logger, runtime::AndroidIntrinsicCatalog(context), ReadDexFixture("cipher.dex"),
+            InterpreterConfig{.backend = backend}, &filesystem);
+        auto& vm = guest.bridge->Vm();
         auto& linker = vm.Linker();
         const auto direct = [&](const char* owner, const char* name, const char* descriptor,
                                 std::vector<VmValue> arguments) {
@@ -193,7 +163,7 @@ TEST_CASE("DVM-126 String.format delegates Locale formatting to API19 Formatter"
         const auto locale_overload = linker.FindDirectMethod(
             string_class, "format", "(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;");
         REQUIRE(locale_overload.has_value());
-        CHECK(linker.Method(*locale_overload).kind == MethodKind::intrinsic);
+        CHECK(linker.Method(*locale_overload).kind == MethodKind::interpreted);
 
         const auto locale_class = linker.ResolveDescriptor("Ljava/util/Locale;");
         const auto initialized = vm.EnsureClassInitialized(locale_class);

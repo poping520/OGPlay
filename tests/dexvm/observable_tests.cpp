@@ -37,110 +37,86 @@ struct ObserverControl final {
 };
 
 struct ObservableVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model{strings, arrays};
+    JavaObjectModel model{arrays};
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
-    std::shared_ptr<ObserverControl> control =
-        std::make_shared<ObserverControl>();
+    std::shared_ptr<ObserverControl> control = std::make_shared<ObserverControl>();
     Interpreter vm;
 
     ObservableVm()
-        : vm([this]() -> DexClassLinker& {
-              linker.RegisterIntrinsics(CoreIntrinsicCatalog());
-              auto observer = IntrinsicClassBuilder::Class(
-                  "Ltest/RecordingObserver;", "Ljava/lang/Object;",
-                  {"Ljava/util/Observer;"});
-              observer.VirtualMethod(
-                  "update",
-                  "(Ljava/util/Observable;Ljava/lang/Object;)V",
-                  [control = control](IntrinsicContext& context) {
-                      const auto observable = context.arguments[0].ref;
-                      control->events.push_back(
-                          {context.receiver, observable,
-                           context.arguments[1].ref,
-                           context.vm.Monitors().IsOwner(
-                               observable,
-                               context.vm.CurrentContextToken())});
-                      if (control->delete_all_and_collect.contains(
-                              context.receiver.Value())) {
-                          const auto owner =
-                              context.vm.Model().ObjectClass(observable);
-                          const auto index = context.vm.Linker().FindVtableIndex(
-                              owner, "deleteObservers", "()V");
-                          if (!index.has_value()) {
-                              throw DexVmError(
-                                  DexVmErrorReason::internal_invariant,
-                                  "Observable.deleteObservers is missing");
+        : vm(
+              [this]() -> DexClassLinker& {
+                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  auto observer = IntrinsicClassBuilder::Class("Ltest/RecordingObserver;", "Ljava/lang/Object;",
+                                                               {"Ljava/util/Observer;"});
+                  observer.VirtualMethod(
+                      "update", "(Ljava/util/Observable;Ljava/lang/Object;)V",
+                      [control = control](IntrinsicContext& context) {
+                          const auto observable = context.arguments[0].ref;
+                          control->events.push_back(
+                              {context.receiver, observable, context.arguments[1].ref,
+                               context.vm.Monitors().IsOwner(observable, context.vm.CurrentContextToken())});
+                          if (control->delete_all_and_collect.contains(context.receiver.Value())) {
+                              const auto owner = context.vm.Model().ObjectClass(observable);
+                              const auto index = context.vm.Linker().FindVtableIndex(owner, "deleteObservers", "()V");
+                              if (!index.has_value()) {
+                                  throw DexVmError(DexVmErrorReason::internal_invariant,
+                                                   "Observable.deleteObservers is missing");
+                              }
+                              const std::vector<VmValue> arguments{VmValue::Ref(observable)};
+                              const auto outcome =
+                                  context.vm.Call(context.vm.Linker().Class(owner).vtable[*index], arguments);
+                              if (outcome.exception.IsValid()) {
+                                  context.vm.SetPendingException(outcome.exception);
+                                  return VmValue::Void();
+                              }
+                              static_cast<void>(context.vm.CollectGarbage("observable_snapshot_test"));
                           }
-                          const std::vector<VmValue> arguments{
-                              VmValue::Ref(observable)};
-                          const auto outcome = context.vm.Call(
-                              context.vm.Linker().Class(owner).vtable[*index],
-                              arguments);
-                          if (outcome.exception.IsValid()) {
-                              context.vm.SetPendingException(outcome.exception);
-                              return VmValue::Void();
+                          if (control->throw_on_update.contains(context.receiver.Value())) {
+                              throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "observer update failed"};
                           }
-                          static_cast<void>(context.vm.CollectGarbage(
-                              "observable_snapshot_test"));
-                      }
-                      if (control->throw_on_update.contains(
-                              context.receiver.Value())) {
-                          throw VmJavaThrow{
-                              "Ljava/lang/IllegalStateException;",
-                              "observer update failed"};
-                      }
-                      return VmValue::Void();
-                  });
-              std::vector<IntrinsicClassDecl> test_catalog;
-              test_catalog.push_back(std::move(observer).Build());
-              linker.RegisterIntrinsics(test_catalog);
-              ogplay::test::RegisterBootDex(linker);
-              linker.Link();
-              return linker;
-          }(), model, nullptr, ledger, {}) {}
+                          return VmValue::Void();
+                      });
+                  std::vector<IntrinsicClassDecl> test_catalog;
+                  test_catalog.push_back(std::move(observer).Build());
+                  linker.RegisterIntrinsics(test_catalog);
+                  ogplay::test::RegisterBootDex(linker);
+                  linker.Link();
+                  return linker;
+              }(),
+              model, nullptr, ledger, {}) {}
 
-    [[nodiscard]] VmCallOutcome Virtual(
-        const VmObjectRef receiver, const std::string_view name,
-        const std::string_view descriptor,
-        std::vector<VmValue> arguments = {}) {
+    [[nodiscard]] VmCallOutcome Virtual(const VmObjectRef receiver, const std::string_view name,
+                                        const std::string_view descriptor, std::vector<VmValue> arguments = {}) {
         const auto owner = model.ObjectClass(receiver);
-        const auto index = linker.FindVtableIndex(
-            owner, std::string(name), std::string(descriptor));
+        const auto index = linker.FindVtableIndex(owner, std::string(name), std::string(descriptor));
         REQUIRE(index.has_value());
         arguments.insert(arguments.begin(), VmValue::Ref(receiver));
         return vm.Call(linker.Class(owner).vtable[*index], arguments);
     }
 
     void Construct(const VmObjectRef object, const std::string_view owner) {
-        const auto method = linker.FindDirectMethod(
-            linker.ResolveDescriptor(owner), "<init>", "()V");
+        const auto method = linker.FindDirectMethod(linker.ResolveDescriptor(owner), "<init>", "()V");
         REQUIRE(method.has_value());
         const std::array arguments{VmValue::Ref(object)};
         RequireOk(vm.Call(*method, arguments));
     }
 
     [[nodiscard]] VmObjectRef NewObservable() {
-        const auto result =
-            vm.NewIntrinsicInstance("Ljava/util/Observable;");
+        const auto result = vm.NewIntrinsicInstance("Ljava/util/Observable;");
         Construct(result, "Ljava/util/Observable;");
         return result;
     }
 
-    [[nodiscard]] VmObjectRef NewObserver() {
-        return vm.NewIntrinsicInstance("Ltest/RecordingObserver;");
-    }
+    [[nodiscard]] VmObjectRef NewObserver() { return vm.NewIntrinsicInstance("Ltest/RecordingObserver;"); }
 
     static void RequireOk(const VmCallOutcome& outcome) {
         REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
     }
 
-    void RequireException(const VmCallOutcome& outcome,
-                          const std::string_view descriptor) const {
+    void RequireException(const VmCallOutcome& outcome, const std::string_view descriptor) const {
         REQUIRE(outcome.exception.IsValid());
         CHECK(linker.Class(outcome.exception_class).descriptor == descriptor);
     }
@@ -150,43 +126,33 @@ struct ObservableVm final {
 
 TEST_CASE("java.util Observer and Observable expose the API 19 hierarchy") {
     ObservableVm fixture;
-    const auto observer =
-        fixture.linker.ResolveDescriptor("Ljava/util/Observer;");
-    const auto observable =
-        fixture.linker.ResolveDescriptor("Ljava/util/Observable;");
+    const auto observer = fixture.linker.ResolveDescriptor("Ljava/util/Observer;");
+    const auto observable = fixture.linker.ResolveDescriptor("Ljava/util/Observable;");
 
     const auto& observer_class = fixture.linker.Class(observer);
     CHECK(observer_class.is_interface);
     CHECK(observer_class.access_flags == 0x0601U);
     REQUIRE(observer_class.own_virtual_methods.size() == 1U);
-    const auto& update =
-        fixture.linker.Method(observer_class.own_virtual_methods.front());
+    const auto& update = fixture.linker.Method(observer_class.own_virtual_methods.front());
     CHECK(update.name == "update");
-    CHECK(update.descriptor ==
-          "(Ljava/util/Observable;Ljava/lang/Object;)V");
+    CHECK(update.descriptor == "(Ljava/util/Observable;Ljava/lang/Object;)V");
     CHECK(update.access_flags == 0x0401U);
 
     const auto& observable_class = fixture.linker.Class(observable);
     CHECK_FALSE(observable_class.is_interface);
     REQUIRE(observable_class.super.has_value());
-    CHECK(*observable_class.super ==
-          fixture.linker.ResolveDescriptor("Ljava/lang/Object;"));
+    CHECK(*observable_class.super == fixture.linker.ResolveDescriptor("Ljava/lang/Object;"));
     CHECK(observable_class.own_instance_fields.size() == 2U);
     CHECK(observable_class.own_direct_methods.size() == 1U);
     CHECK(observable_class.own_virtual_methods.size() == 9U);
 
-    const auto delete_observer = fixture.linker.FindVtableIndex(
-        observable, "deleteObserver", "(Ljava/util/Observer;)V");
-    const auto delete_observers = fixture.linker.FindVtableIndex(
-        observable, "deleteObservers", "()V");
+    const auto delete_observer =
+        fixture.linker.FindVtableIndex(observable, "deleteObserver", "(Ljava/util/Observer;)V");
+    const auto delete_observers = fixture.linker.FindVtableIndex(observable, "deleteObservers", "()V");
     REQUIRE(delete_observer.has_value());
     REQUIRE(delete_observers.has_value());
-    CHECK((fixture.linker.Method(
-               observable_class.vtable[*delete_observer]).access_flags &
-           0x20000U) != 0U);
-    CHECK((fixture.linker.Method(
-               observable_class.vtable[*delete_observers]).access_flags &
-           0x20000U) != 0U);
+    CHECK((fixture.linker.Method(observable_class.vtable[*delete_observer]).access_flags & 0x20000U) != 0U);
+    CHECK((fixture.linker.Method(observable_class.vtable[*delete_observers]).access_flags & 0x20000U) != 0U);
 }
 
 TEST_CASE("java.util Observable gates notifications and manages registration") {
@@ -195,65 +161,46 @@ TEST_CASE("java.util Observable gates notifications and manages registration") {
     const auto observer = fixture.NewObserver();
     const auto data = fixture.vm.NewStringUtf8("event");
 
-    CHECK(fixture.Virtual(observable, "countObservers", "()I")
-              .value.AsInt() == 0);
-    CHECK(fixture.Virtual(observable, "hasChanged", "()Z").value.AsInt() ==
-          0);
+    CHECK(fixture.Virtual(observable, "countObservers", "()I").value.AsInt() == 0);
+    CHECK(fixture.Virtual(observable, "hasChanged", "()Z").value.AsInt() == 0);
     fixture.RequireException(
-        fixture.Virtual(observable, "addObserver",
-                        "(Ljava/util/Observer;)V",
-                        {VmValue::Ref(VmObjectRef{})}),
+        fixture.Virtual(observable, "addObserver", "(Ljava/util/Observer;)V", {VmValue::Ref(VmObjectRef{})}),
         "Ljava/lang/NullPointerException;");
 
-    ObservableVm::RequireOk(fixture.Virtual(
-        observable, "addObserver", "(Ljava/util/Observer;)V",
-        {VmValue::Ref(observer)}));
-    ObservableVm::RequireOk(fixture.Virtual(
-        observable, "addObserver", "(Ljava/util/Observer;)V",
-        {VmValue::Ref(observer)}));
-    CHECK(fixture.Virtual(observable, "countObservers", "()I")
-              .value.AsInt() == 1);
-    ObservableVm::RequireOk(fixture.Virtual(
-        observable, "deleteObserver", "(Ljava/util/Observer;)V",
-        {VmValue::Ref(VmObjectRef{})}));
+    ObservableVm::RequireOk(
+        fixture.Virtual(observable, "addObserver", "(Ljava/util/Observer;)V", {VmValue::Ref(observer)}));
+    ObservableVm::RequireOk(
+        fixture.Virtual(observable, "addObserver", "(Ljava/util/Observer;)V", {VmValue::Ref(observer)}));
+    CHECK(fixture.Virtual(observable, "countObservers", "()I").value.AsInt() == 1);
+    ObservableVm::RequireOk(
+        fixture.Virtual(observable, "deleteObserver", "(Ljava/util/Observer;)V", {VmValue::Ref(VmObjectRef{})}));
 
     ObservableVm::RequireOk(
-        fixture.Virtual(observable, "notifyObservers",
-                        "(Ljava/lang/Object;)V", {VmValue::Ref(data)}));
+        fixture.Virtual(observable, "notifyObservers", "(Ljava/lang/Object;)V", {VmValue::Ref(data)}));
     CHECK(fixture.control->events.empty());
+    ObservableVm::RequireOk(fixture.Virtual(observable, "setChanged", "()V"));
     ObservableVm::RequireOk(
-        fixture.Virtual(observable, "setChanged", "()V"));
-    ObservableVm::RequireOk(
-        fixture.Virtual(observable, "notifyObservers",
-                        "(Ljava/lang/Object;)V", {VmValue::Ref(data)}));
+        fixture.Virtual(observable, "notifyObservers", "(Ljava/lang/Object;)V", {VmValue::Ref(data)}));
     REQUIRE(fixture.control->events.size() == 1U);
     CHECK(fixture.control->events[0].observer == observer);
     CHECK(fixture.control->events[0].observable == observable);
     CHECK(fixture.control->events[0].data == data);
     CHECK_FALSE(fixture.control->events[0].observable_monitor_held);
-    CHECK(fixture.Virtual(observable, "hasChanged", "()Z").value.AsInt() ==
-          0);
+    CHECK(fixture.Virtual(observable, "hasChanged", "()Z").value.AsInt() == 0);
 
-    ObservableVm::RequireOk(
-        fixture.Virtual(observable, "setChanged", "()V"));
-    ObservableVm::RequireOk(
-        fixture.Virtual(observable, "clearChanged", "()V"));
-    ObservableVm::RequireOk(
-        fixture.Virtual(observable, "notifyObservers", "()V"));
+    ObservableVm::RequireOk(fixture.Virtual(observable, "setChanged", "()V"));
+    ObservableVm::RequireOk(fixture.Virtual(observable, "clearChanged", "()V"));
+    ObservableVm::RequireOk(fixture.Virtual(observable, "notifyObservers", "()V"));
     CHECK(fixture.control->events.size() == 1U);
 
-    ObservableVm::RequireOk(
-        fixture.Virtual(observable, "setChanged", "()V"));
-    ObservableVm::RequireOk(
-        fixture.Virtual(observable, "notifyObservers", "()V"));
+    ObservableVm::RequireOk(fixture.Virtual(observable, "setChanged", "()V"));
+    ObservableVm::RequireOk(fixture.Virtual(observable, "notifyObservers", "()V"));
     REQUIRE(fixture.control->events.size() == 2U);
     CHECK_FALSE(fixture.control->events[1].data.IsValid());
 
-    ObservableVm::RequireOk(fixture.Virtual(
-        observable, "deleteObserver", "(Ljava/util/Observer;)V",
-        {VmValue::Ref(observer)}));
-    CHECK(fixture.Virtual(observable, "countObservers", "()I")
-              .value.AsInt() == 0);
+    ObservableVm::RequireOk(
+        fixture.Virtual(observable, "deleteObserver", "(Ljava/util/Observer;)V", {VmValue::Ref(observer)}));
+    CHECK(fixture.Virtual(observable, "countObservers", "()I").value.AsInt() == 0);
 }
 
 TEST_CASE("java.util Observable uses a rooted callback snapshot") {
@@ -264,20 +211,16 @@ TEST_CASE("java.util Observable uses a rooted callback snapshot") {
     fixture.control->delete_all_and_collect.insert(first.Value());
 
     for (const auto observer : {first, second}) {
-        ObservableVm::RequireOk(fixture.Virtual(
-            observable, "addObserver", "(Ljava/util/Observer;)V",
-            {VmValue::Ref(observer)}));
+        ObservableVm::RequireOk(
+            fixture.Virtual(observable, "addObserver", "(Ljava/util/Observer;)V", {VmValue::Ref(observer)}));
     }
-    ObservableVm::RequireOk(
-        fixture.Virtual(observable, "setChanged", "()V"));
-    ObservableVm::RequireOk(
-        fixture.Virtual(observable, "notifyObservers", "()V"));
+    ObservableVm::RequireOk(fixture.Virtual(observable, "setChanged", "()V"));
+    ObservableVm::RequireOk(fixture.Virtual(observable, "notifyObservers", "()V"));
 
     REQUIRE(fixture.control->events.size() == 2U);
     CHECK(fixture.control->events[0].observer == first);
     CHECK(fixture.control->events[1].observer == second);
-    CHECK(fixture.Virtual(observable, "countObservers", "()I")
-              .value.AsInt() == 0);
+    CHECK(fixture.Virtual(observable, "countObservers", "()I").value.AsInt() == 0);
 }
 
 TEST_CASE("java.util Observable propagates observer failures") {
@@ -288,17 +231,13 @@ TEST_CASE("java.util Observable propagates observer failures") {
     fixture.control->throw_on_update.insert(failing.Value());
 
     for (const auto observer : {failing, skipped}) {
-        ObservableVm::RequireOk(fixture.Virtual(
-            observable, "addObserver", "(Ljava/util/Observer;)V",
-            {VmValue::Ref(observer)}));
+        ObservableVm::RequireOk(
+            fixture.Virtual(observable, "addObserver", "(Ljava/util/Observer;)V", {VmValue::Ref(observer)}));
     }
-    ObservableVm::RequireOk(
-        fixture.Virtual(observable, "setChanged", "()V"));
-    fixture.RequireException(
-        fixture.Virtual(observable, "notifyObservers", "()V"),
-        "Ljava/lang/IllegalStateException;");
+    ObservableVm::RequireOk(fixture.Virtual(observable, "setChanged", "()V"));
+    fixture.RequireException(fixture.Virtual(observable, "notifyObservers", "()V"),
+                             "Ljava/lang/IllegalStateException;");
     REQUIRE(fixture.control->events.size() == 1U);
     CHECK(fixture.control->events[0].observer == failing);
-    CHECK(fixture.Virtual(observable, "hasChanged", "()Z").value.AsInt() ==
-          0);
+    CHECK(fixture.Virtual(observable, "hasChanged", "()Z").value.AsInt() == 0);
 }

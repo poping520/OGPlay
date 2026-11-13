@@ -140,11 +140,9 @@ std::vector<IntrinsicClassDecl> AudioTrackTestCatalog(PositionListenerRecorder* 
 }
 
 struct AudioTrackVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model{strings, arrays};
+    JavaObjectModel model{arrays};
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
     ogplay::audio::OpenSlesPcmMixer mixer;

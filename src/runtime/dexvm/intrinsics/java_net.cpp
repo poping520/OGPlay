@@ -645,7 +645,7 @@ void RequireUtf8Charset(IntrinsicCall& call, const std::size_t argument) {
 }
 
 [[nodiscard]] VmObjectRef FormEncode(IntrinsicCall& call, const VmObjectRef input) {
-    const auto units = call.Vm().Model().StringValue(input);
+    const auto units = call.Vm().Model().StringChars(input);
     const auto utf8 = core::Utf16ToUtf8(std::span{units}, core::InvalidUtf16Policy::replace, '?');
     if (!utf8.has_value()) {
         throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid UTF-16 input"};
@@ -656,7 +656,7 @@ void RequireUtf8Charset(IntrinsicCall& call, const std::size_t argument) {
 }
 
 [[nodiscard]] VmObjectRef FormDecode(IntrinsicCall& call, const VmObjectRef input) {
-    const auto units = call.Vm().Model().StringValue(input);
+    const auto units = call.Vm().Model().StringChars(input);
     if (std::find(units.begin(), units.end(), u'%') == units.end() &&
         std::find(units.begin(), units.end(), u'+') == units.end()) {
         return input;

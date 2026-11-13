@@ -367,12 +367,14 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
                                   boot_linker.ResolveDescriptor("Ljava/lang/CharSequence;"),
                                   boot_linker.ResolveDescriptor("Ljava/io/Serializable;")});
     const auto string_signatures = signatures("Ljava/lang/String;");
-    // Boundaries and overloads matter; a class gaining a supported method
-    // must not invalidate an unrelated frozen method count.
-    CHECK(string_signatures.contains({"regionMatches", "(ILjava/lang/String;II)Z"}));
-    CHECK(string_signatures.contains({"regionMatches", "(ZILjava/lang/String;II)Z"}));
-    CHECK(string_signatures.contains({"intern", "()Ljava/lang/String;"}));
-    CHECK(string_signatures.contains({"toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;"}));
+    CHECK(string_signatures == std::set<std::pair<std::string, std::string>>{{"compareTo", "(Ljava/lang/String;)I"},
+                                                                             {"equals", "(Ljava/lang/Object;)Z"},
+                                                                             {"fastIndexOf", "(II)I"},
+                                                                             {"intern", "()Ljava/lang/String;"}});
+    const auto string_type = boot_linker.ResolveDescriptor("Ljava/lang/String;");
+    CHECK(boot_linker.FindVtableIndex(string_type, "regionMatches", "(ILjava/lang/String;II)Z"));
+    CHECK(boot_linker.FindVtableIndex(string_type, "regionMatches", "(ZILjava/lang/String;II)Z"));
+    CHECK(boot_linker.FindVtableIndex(string_type, "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;"));
 
     CHECK(signatures("Ljava/io/InputStreamReader;") ==
           std::set<std::pair<std::string, std::string>>{

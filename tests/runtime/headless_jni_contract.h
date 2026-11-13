@@ -13,9 +13,7 @@
 
 namespace ogplay::runtime {
 
-using GuestNativeExecutor =
-    std::function<JniValue(memory::GuestAddress,
-                           std::span<const JniValue>)>;
+using GuestNativeExecutor = std::function<JniValue(memory::GuestAddress, std::span<const JniValue>)>;
 
 struct HeadlessJniContractReport final {
     bool java_to_native{};
@@ -42,15 +40,13 @@ enum class HeadlessJniContractErrorReason : std::uint8_t {
 
 class HeadlessJniContractError final : public std::runtime_error {
 public:
-    HeadlessJniContractError(HeadlessJniContractErrorReason reason,
-                             const char* message);
+    HeadlessJniContractError(HeadlessJniContractErrorReason reason, const char* message);
     [[nodiscard]] HeadlessJniContractErrorReason Reason() const noexcept;
 
 private:
     HeadlessJniContractErrorReason reason_;
 };
 
-[[nodiscard]] HeadlessJniContractReport RunHeadlessJniContract(
-    const GuestNativeExecutor& execute_native);
+[[nodiscard]] HeadlessJniContractReport RunHeadlessJniContract(const GuestNativeExecutor& execute_native);
 
 }  // namespace ogplay::runtime

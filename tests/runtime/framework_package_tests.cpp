@@ -1,3 +1,4 @@
+#include "jni_string_fixture.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <array>
 #include <cstdint>
@@ -12,9 +13,8 @@ namespace {
 
 using namespace ogplay::runtime;
 
-[[nodiscard]] JniMethodId Method(const JniClassRegistry& classes,
-                                 const JniObjectIdentity type,
-                                 const char* name, const char* descriptor) {
+[[nodiscard]] JniMethodId Method(const JniClassRegistry& classes, const JniObjectIdentity type, const char* name,
+                                 const char* descriptor) {
     return *classes.GetMethodId(type, name, descriptor, false);
 }
 
@@ -30,7 +30,7 @@ TEST_CASE("framework PackageManager returns current package version fields") {
         JniInvocationEngine invocations(classes);
         JniEnvironment environment;
         ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-        JniStringStore strings{strings_payload};
+        TestJniStrings strings{strings_payload};
         JniFieldStore fields(classes);
         FrameworkLifecycleHle lifecycle(classes, invocations);
         const auto framework = lifecycle.Install();
@@ -80,61 +80,47 @@ TEST_CASE("framework PackageManager rejects unsupported queries and config") {
     JniInvocationEngine invalid_invocations(invalid_classes);
     JniEnvironment invalid_environment;
     ogplay::runtime::HostCopyJavaPayloadProvider invalid_strings_payload;
-    JniStringStore invalid_strings{invalid_strings_payload};
+    TestJniStrings invalid_strings{invalid_strings_payload};
     JniFieldStore invalid_fields(invalid_classes);
-    FrameworkLifecycleHle invalid_lifecycle(invalid_classes,
-                                            invalid_invocations);
+    FrameworkLifecycleHle invalid_lifecycle(invalid_classes, invalid_invocations);
     static_cast<void>(invalid_lifecycle.Install());
-    FrameworkPackageHle invalid(
-        invalid_classes, invalid_invocations, invalid_environment,
-        invalid_strings, invalid_fields, {"bad..name", u"1", JniInt{1}});
-    CHECK_THROWS_AS(static_cast<void>(invalid.Install()),
-                    FrameworkPackageError);
+    FrameworkPackageHle invalid(invalid_classes, invalid_invocations, invalid_environment, invalid_strings,
+                                invalid_fields, {"bad..name", u"1", JniInt{1}});
+    CHECK_THROWS_AS(static_cast<void>(invalid.Install()), FrameworkPackageError);
 
     JniClassRegistry classes;
     JniInvocationEngine invocations(classes);
     JniEnvironment environment;
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
+    TestJniStrings strings{strings_payload};
     JniFieldStore fields(classes);
     FrameworkLifecycleHle lifecycle(classes, invocations);
     const auto framework = lifecycle.Install();
-    FrameworkPackageHle packages(classes, invocations, environment, strings,
-                                 fields,
-                                 {"org.example", u"2", JniInt{2}});
+    FrameworkPackageHle packages(classes, invocations, environment, strings, fields, {"org.example", u"2", JniInt{2}});
     const auto package_classes = packages.Install();
-    CHECK_THROWS_AS(static_cast<void>(packages.Install()),
-                    FrameworkPackageError);
+    CHECK_THROWS_AS(static_cast<void>(packages.Install()), FrameworkPackageError);
     environment.AttachThread(73, 12);
-    const auto activity = environment.PublishLocalObject(
-        73, AllocateJniHostObjectIdentity());
+    const auto activity = environment.PublishLocalObject(73, AllocateJniHostObjectIdentity());
     const auto manager = ReferenceResult(invocations.InvokeVirtual(
         73, activity, framework.activity_class,
-        Method(classes, framework.activity_class, "getPackageManager",
-               "()Landroid/content/pm/PackageManager;"),
-        {}, JniArgumentSource::value_array));
+        Method(classes, framework.activity_class, "getPackageManager", "()Landroid/content/pm/PackageManager;"), {},
+        JniArgumentSource::value_array));
     const std::vector<JniChar> other_text{'o', 't', 'h', 'e', 'r'};
     const auto other_identity = strings.Create(other_text);
     const auto other = environment.PublishLocalObject(73, other_identity);
-    const auto get_info = Method(
-        classes, package_classes.package_manager_class, "getPackageInfo",
-        "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;");
+    const auto get_info = Method(classes, package_classes.package_manager_class, "getPackageInfo",
+                                 "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;");
     const std::array<JniValue, 2> unknown{other, JniInt{0}};
-    CHECK_THROWS_AS(
-        static_cast<void>(invocations.InvokeVirtual(
-            73, manager, package_classes.package_manager_class, get_info,
-            unknown, JniArgumentSource::value_array)),
-        FrameworkPackageError);
+    CHECK_THROWS_AS(static_cast<void>(invocations.InvokeVirtual(73, manager, package_classes.package_manager_class,
+                                                                get_info, unknown, JniArgumentSource::value_array)),
+                    FrameworkPackageError);
     const std::array<JniValue, 2> flags{other, JniInt{1}};
+    CHECK_THROWS_AS(static_cast<void>(invocations.InvokeVirtual(73, manager, package_classes.package_manager_class,
+                                                                get_info, flags, JniArgumentSource::value_array)),
+                    FrameworkPackageError);
     CHECK_THROWS_AS(
-        static_cast<void>(invocations.InvokeVirtual(
-            73, manager, package_classes.package_manager_class, get_info,
-            flags, JniArgumentSource::value_array)),
-        FrameworkPackageError);
-    CHECK_THROWS_AS(
-        static_cast<void>(invocations.InvokeVirtual(
-            73, JniReference{999}, package_classes.package_manager_class,
-            get_info, unknown, JniArgumentSource::value_array)),
+        static_cast<void>(invocations.InvokeVirtual(73, JniReference{999}, package_classes.package_manager_class,
+                                                    get_info, unknown, JniArgumentSource::value_array)),
         JniReferenceError);
     environment.DetachThread(73);
     strings.Delete(other_identity);

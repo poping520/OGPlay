@@ -406,6 +406,41 @@ TEST_CASE("DVM-231 JNI-created strings and arrays expose their actual runtime cl
             CHECK(call("IsInstanceOf", receiver, class_ref.Value()) == 1);
             CHECK(call("IsInstanceOf", receiver, object_ref.Value()) == 1);
         }
+        const auto substring =
+            *f.session->Classes().GetMethodId(string_class, "substring", "(II)Ljava/lang/String;", false);
+        write32(0x100U, 1);
+        write32(0x108U, 2);
+        const auto slice = call("CallObjectMethodA", unicode, substring.Value(), data.Add(0x100U).Value());
+        REQUIRE_FALSE(env.ExceptionCheck(1));
+        REQUIRE(slice != 0);
+        const auto original = f.bridge->FromReference(JniReference{unicode});
+        CHECK(model.StringChars(f.bridge->FromReference(JniReference{slice})) == u"é");
+        const auto value_field = linker.FindFieldRecursive(model.ObjectClass(original), "value", "[C");
+        REQUIRE(value_field);
+        const auto backing = VmObjectRef{model.InstanceSlots(original)[linker.Field(*value_field).slot].bits};
+        const auto identity = model.ToIdentity(backing);
+        const auto pointer = model.PrimitiveArrayAddress(backing).Add(sizeof(JniChar)).Value();
+        const auto is_copy = data.Add(0x70U);
+        write32(0x70U, 1);
+        CHECK(call("GetStringChars", slice, is_copy.Value()) == pointer);
+        CHECK(bus.Read8(is_copy) == 0);
+        write32(0x70U, 1);
+        CHECK(call("GetStringCritical", slice, is_copy.Value()) == pointer);
+        CHECK(bus.Read8(is_copy) == 0);
+        CHECK(f.session->Arrays().PinCount(identity) == 2);
+        call("ReleaseStringChars", slice, pointer);
+        CHECK(f.session->Arrays().PinCount(identity) == 1);
+        call("ReleaseStringCritical", slice, pointer);
+        CHECK(f.session->Arrays().PinCount(identity) == 0);
+        const auto encoded = memory::GuestAddress{call("GetStringUTFChars", slice, is_copy.Value())};
+        REQUIRE_FALSE(encoded.IsNull());
+        CHECK(encoded.Value() != pointer);
+        CHECK(bus.Read8(is_copy) == 1);
+        CHECK(bus.Read8(encoded) == 0xc3);
+        CHECK(bus.Read8(encoded.Add(1)) == 0xa9);
+        CHECK(bus.Read8(encoded.Add(2)) == 0);
+        call("ReleaseStringUTFChars", slice, encoded.Value());
+
         // Querying a newly created string must also work before any Java call.
         const auto fresh = call("NewStringUTF", data.Value());
         CHECK(*env.ResolveObjectForHle(1, JniReference{call("GetObjectClass", fresh)}) == string_class);
@@ -777,11 +812,7 @@ TEST_CASE("DVM-333 JNI NewObject variants allocate VM slots and preserve Java fa
                                         std::array{VmValue::Ref(object)});
             REQUIRE_FALSE(result.exception.IsValid());
             CHECK(vm.StringUtf8(result.value.ref) == "http");
-            CHECK_THROWS_WITH_AS(static_cast<void>(vm.Model().InstanceSlots(bridge.FromReference(text))),
-                                 ("object has no field slot board: class=Ljava/lang/String; kind=2 class_id=" +
-                                  std::to_string(linker.ResolveDescriptor("Ljava/lang/String;").Value()))
-                                     .c_str(),
-                                 DexVmError);
+            CHECK(vm.Model().InstanceSlots(bridge.FromReference(text)).size() == 4);
 
             const auto child = linker.ResolveDescriptor("Lfixture/AllocChild;");
             const auto child_class = clazz("Lfixture/AllocChild;");
@@ -848,11 +879,19 @@ TEST_CASE("DVM-242 JNI allocation translates exhausted VM heap to a pending Java
         const auto klass = f.bridge->PublishLocal(vm.Model().ClassObject(type));
         REQUIRE_FALSE(vm.EnsureClassInitialized(type).exception.IsValid());
         const auto array_type = linker.ResolveDescriptor("[B");
+        const VmExecutionLockScope lock(vm.ExecutionLock());
+        static_cast<void>(vm.CollectGarbage("allocation-limit-setup", true));
+        // Stop accounting for unrooted startup allocations in the pressure input.
+        // Root every live record across AllocObject's two allocation GC passes.
+        std::vector<VmObjectRef> live;
+        vm.Model().VisitLiveObjects([&](VmObjectRef object) { live.push_back(object); });
+        const auto roots = vm.ProtectReferences(live);
         const auto occupied = vm.Model().AllocatedBytes();
         REQUIRE(occupied + 32 < limit);
+        REQUIRE(vm.Model().GrowFor(limit - occupied));
         const auto padding = vm.Model().NewPrimitiveArray(array_type, JniPrimitiveKind::byte,
                                                           static_cast<JniSize>(limit - occupied - 32));
-        const auto roots = vm.ProtectReferences(std::array{padding});
+        const auto padding_root = vm.ProtectReferences(std::array{padding});
         CHECK(env.AllocObject(1, klass).IsNull());
         REQUIRE(env.ExceptionCheck(1));
         const auto error = env.ExceptionOccurred(1);

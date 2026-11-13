@@ -1,3 +1,4 @@
+#include "jni_string_fixture.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <array>
 #include <cstddef>
@@ -11,15 +12,13 @@
 
 namespace {
 
-[[nodiscard]] ogplay::runtime::JniMethodId Method(
-    const ogplay::runtime::JniClassRegistry& classes,
-    const ogplay::runtime::JniObjectIdentity type, const char* name,
-    const char* descriptor) {
+[[nodiscard]] ogplay::runtime::JniMethodId Method(const ogplay::runtime::JniClassRegistry& classes,
+                                                  const ogplay::runtime::JniObjectIdentity type, const char* name,
+                                                  const char* descriptor) {
     return *classes.GetMethodId(type, name, descriptor, false);
 }
 
-[[nodiscard]] ogplay::runtime::JniReference ReferenceResult(
-    const ogplay::runtime::JniValue& value) {
+[[nodiscard]] ogplay::runtime::JniReference ReferenceResult(const ogplay::runtime::JniValue& value) {
     return std::get<ogplay::runtime::JniReference>(value);
 }
 
@@ -29,8 +28,7 @@ TEST_CASE("framework AssetManager streams APK assets through JNI arrays") {
     ogplay::runtime::VirtualFileSystem vfs;
     const std::vector<ogplay::runtime::VfsMountEntry> apk{{
         "assets/data.bin",
-        {std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4},
-         std::byte{5}},
+        {std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}, std::byte{5}},
     }};
     vfs.Mount(ogplay::runtime::VfsSource::apk, "/apk", apk);
 
@@ -38,118 +36,92 @@ TEST_CASE("framework AssetManager streams APK assets through JNI arrays") {
     ogplay::runtime::JniInvocationEngine invocations(classes);
     ogplay::runtime::JniEnvironment environment;
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    ogplay::runtime::JniStringStore strings{strings_payload};
+    ogplay::runtime::TestJniStrings strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::FrameworkLifecycleHle lifecycle(classes, invocations);
     const auto framework = lifecycle.Install();
-    ogplay::runtime::FrameworkAssetHle assets(
-        classes, invocations, environment, strings, arrays, vfs);
+    ogplay::runtime::FrameworkAssetHle assets(classes, invocations, environment, strings, arrays, vfs);
     const auto asset_classes = assets.Install();
 
     constexpr std::uint64_t thread = 41;
     environment.AttachThread(thread, 16);
-    const auto activity = environment.PublishLocalObject(
-        thread, ogplay::runtime::AllocateJniHostObjectIdentity());
-    const std::vector<ogplay::runtime::JniChar> asset_name{
-        'd', 'a', 't', 'a', '.', 'b', 'i', 'n'};
+    const auto activity = environment.PublishLocalObject(thread, ogplay::runtime::AllocateJniHostObjectIdentity());
+    const std::vector<ogplay::runtime::JniChar> asset_name{'d', 'a', 't', 'a', '.', 'b', 'i', 'n'};
     const auto name_object = strings.Create(asset_name);
     const auto name = environment.PublishLocalObject(thread, name_object);
-    const auto bytes_object =
-        arrays.New(ogplay::runtime::JniPrimitiveKind::byte, 4);
+    const auto bytes_object = arrays.New(ogplay::runtime::JniPrimitiveKind::byte, 4);
     const auto bytes = environment.PublishLocalObject(thread, bytes_object);
 
     const auto manager = ReferenceResult(invocations.InvokeVirtual(
         thread, activity, framework.activity_class,
-        Method(classes, framework.activity_class, "getAssets",
-               "()Landroid/content/res/AssetManager;"),
-        {}, ogplay::runtime::JniArgumentSource::value_array));
+        Method(classes, framework.activity_class, "getAssets", "()Landroid/content/res/AssetManager;"), {},
+        ogplay::runtime::JniArgumentSource::value_array));
     const std::array<ogplay::runtime::JniValue, 1> open_arguments{name};
     const auto stream = ReferenceResult(invocations.InvokeVirtual(
         thread, manager, asset_classes.asset_manager_class,
-        Method(classes, asset_classes.asset_manager_class, "open",
-               "(Ljava/lang/String;)Ljava/io/InputStream;"),
+        Method(classes, asset_classes.asset_manager_class, "open", "(Ljava/lang/String;)Ljava/io/InputStream;"),
         open_arguments, ogplay::runtime::JniArgumentSource::value_array));
 
-    const auto available = Method(classes, asset_classes.input_stream_class,
-                                  "available", "()I");
-    const auto read_one = Method(classes, asset_classes.input_stream_class,
-                                 "read", "()I");
-    const auto read = Method(classes, asset_classes.input_stream_class, "read",
-                             "([B)I");
-    const auto read_range = Method(classes, asset_classes.input_stream_class,
-                                   "read", "([BII)I");
-    const auto close = Method(classes, asset_classes.input_stream_class,
-                              "close", "()V");
-    CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
-              thread, stream, asset_classes.input_stream_class, available, {},
-              ogplay::runtime::JniArgumentSource::value_array)) == 5);
-    CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
-              thread, stream, asset_classes.input_stream_class, read_one, {},
-              ogplay::runtime::JniArgumentSource::value_array)) == 1);
-    const auto skip = Method(classes, asset_classes.input_stream_class, "skip",
-                             "(J)J");
-    const std::array<ogplay::runtime::JniValue, 1> negative_skip{
-        ogplay::runtime::JniLong{-1}};
-    CHECK(std::get<ogplay::runtime::JniLong>(invocations.InvokeVirtual(
-              thread, stream, asset_classes.input_stream_class, skip,
-              negative_skip,
-              ogplay::runtime::JniArgumentSource::value_array)) == 0);
-    const std::array<ogplay::runtime::JniValue, 1> skip_one{
-        ogplay::runtime::JniLong{1}};
-    CHECK(std::get<ogplay::runtime::JniLong>(invocations.InvokeVirtual(
-              thread, stream, asset_classes.input_stream_class, skip, skip_one,
-              ogplay::runtime::JniArgumentSource::value_array)) == 1);
+    const auto available = Method(classes, asset_classes.input_stream_class, "available", "()I");
+    const auto read_one = Method(classes, asset_classes.input_stream_class, "read", "()I");
+    const auto read = Method(classes, asset_classes.input_stream_class, "read", "([B)I");
+    const auto read_range = Method(classes, asset_classes.input_stream_class, "read", "([BII)I");
+    const auto close = Method(classes, asset_classes.input_stream_class, "close", "()V");
+    CHECK(std::get<ogplay::runtime::JniInt>(
+              invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, available, {},
+                                        ogplay::runtime::JniArgumentSource::value_array)) == 5);
+    CHECK(std::get<ogplay::runtime::JniInt>(
+              invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, read_one, {},
+                                        ogplay::runtime::JniArgumentSource::value_array)) == 1);
+    const auto skip = Method(classes, asset_classes.input_stream_class, "skip", "(J)J");
+    const std::array<ogplay::runtime::JniValue, 1> negative_skip{ogplay::runtime::JniLong{-1}};
+    CHECK(std::get<ogplay::runtime::JniLong>(
+              invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, skip, negative_skip,
+                                        ogplay::runtime::JniArgumentSource::value_array)) == 0);
+    const std::array<ogplay::runtime::JniValue, 1> skip_one{ogplay::runtime::JniLong{1}};
+    CHECK(std::get<ogplay::runtime::JniLong>(
+              invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, skip, skip_one,
+                                        ogplay::runtime::JniArgumentSource::value_array)) == 1);
     const std::array<ogplay::runtime::JniValue, 1> read_arguments{bytes};
-    const std::array<ogplay::runtime::JniValue, 3> range_arguments{
-        bytes, ogplay::runtime::JniInt{1}, ogplay::runtime::JniInt{2}};
-    CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
-              thread, stream, asset_classes.input_stream_class, read_range,
-              range_arguments,
-              ogplay::runtime::JniArgumentSource::value_array)) == 2);
+    const std::array<ogplay::runtime::JniValue, 3> range_arguments{bytes, ogplay::runtime::JniInt{1},
+                                                                   ogplay::runtime::JniInt{2}};
+    CHECK(std::get<ogplay::runtime::JniInt>(
+              invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, read_range, range_arguments,
+                                        ogplay::runtime::JniArgumentSource::value_array)) == 2);
     const std::vector<ogplay::runtime::JniByte> first{0, 3, 4, 0};
-    CHECK(std::get<std::vector<ogplay::runtime::JniByte>>(
-              arrays.Region(bytes_object, 0, 4)) == first);
-    CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
-              thread, stream, asset_classes.input_stream_class, available, {},
-              ogplay::runtime::JniArgumentSource::value_array)) == 1);
-    const std::array<ogplay::runtime::JniValue, 3> invalid_range{
-        bytes, ogplay::runtime::JniInt{3}, ogplay::runtime::JniInt{2}};
+    CHECK(std::get<std::vector<ogplay::runtime::JniByte>>(arrays.Region(bytes_object, 0, 4)) == first);
+    CHECK(std::get<ogplay::runtime::JniInt>(
+              invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, available, {},
+                                        ogplay::runtime::JniArgumentSource::value_array)) == 1);
+    const std::array<ogplay::runtime::JniValue, 3> invalid_range{bytes, ogplay::runtime::JniInt{3},
+                                                                 ogplay::runtime::JniInt{2}};
     CHECK_THROWS_AS(
-        static_cast<void>(invocations.InvokeVirtual(
-            thread, stream, asset_classes.input_stream_class, read_range,
-            invalid_range,
-            ogplay::runtime::JniArgumentSource::value_array)),
+        static_cast<void>(invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, read_range,
+                                                    invalid_range, ogplay::runtime::JniArgumentSource::value_array)),
         ogplay::runtime::FrameworkAssetError);
-    CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
-              thread, stream, asset_classes.input_stream_class, available, {},
-              ogplay::runtime::JniArgumentSource::value_array)) == 1);
-    CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
-              thread, stream, asset_classes.input_stream_class, read,
-              read_arguments,
-              ogplay::runtime::JniArgumentSource::value_array)) == 1);
-    CHECK(std::get<std::vector<ogplay::runtime::JniByte>>(
-              arrays.Region(bytes_object, 0, 1)) ==
+    CHECK(std::get<ogplay::runtime::JniInt>(
+              invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, available, {},
+                                        ogplay::runtime::JniArgumentSource::value_array)) == 1);
+    CHECK(std::get<ogplay::runtime::JniInt>(
+              invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, read, read_arguments,
+                                        ogplay::runtime::JniArgumentSource::value_array)) == 1);
+    CHECK(std::get<std::vector<ogplay::runtime::JniByte>>(arrays.Region(bytes_object, 0, 1)) ==
           std::vector<ogplay::runtime::JniByte>{5});
-    CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
-              thread, stream, asset_classes.input_stream_class, read,
-              read_arguments,
-              ogplay::runtime::JniArgumentSource::value_array)) == -1);
-    CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
-              thread, stream, asset_classes.input_stream_class, read_one, {},
-              ogplay::runtime::JniArgumentSource::value_array)) == -1);
+    CHECK(std::get<ogplay::runtime::JniInt>(
+              invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, read, read_arguments,
+                                        ogplay::runtime::JniArgumentSource::value_array)) == -1);
+    CHECK(std::get<ogplay::runtime::JniInt>(
+              invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, read_one, {},
+                                        ogplay::runtime::JniArgumentSource::value_array)) == -1);
 
-    static_cast<void>(invocations.InvokeVirtual(
-        thread, stream, asset_classes.input_stream_class, close, {},
-        ogplay::runtime::JniArgumentSource::value_array));
-    static_cast<void>(invocations.InvokeVirtual(
-        thread, stream, asset_classes.input_stream_class, close, {},
-        ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, close, {},
+                                                ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, close, {},
+                                                ogplay::runtime::JniArgumentSource::value_array));
     CHECK_THROWS_AS(
-        static_cast<void>(invocations.InvokeVirtual(
-            thread, stream, asset_classes.input_stream_class, read,
-            read_arguments,
-            ogplay::runtime::JniArgumentSource::value_array)),
+        static_cast<void>(invocations.InvokeVirtual(thread, stream, asset_classes.input_stream_class, read,
+                                                    read_arguments, ogplay::runtime::JniArgumentSource::value_array)),
         ogplay::runtime::FrameworkAssetError);
 
     environment.DetachThread(thread);
@@ -162,63 +134,49 @@ TEST_CASE("framework AssetManager rejects unsafe paths and missing setup") {
     ogplay::runtime::JniInvocationEngine missing_invocations(missing_classes);
     ogplay::runtime::JniEnvironment environment;
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    ogplay::runtime::JniStringStore strings{strings_payload};
+    ogplay::runtime::TestJniStrings strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::VirtualFileSystem vfs;
     const std::array runtime_asset{std::byte{9}};
     vfs.PutFile("/apk/assets/runtime.bin", runtime_asset, false);
-    ogplay::runtime::FrameworkAssetHle missing(
-        missing_classes, missing_invocations, environment, strings, arrays,
-        vfs);
-    CHECK_THROWS_AS(static_cast<void>(missing.Install()),
-                    ogplay::runtime::FrameworkAssetError);
+    ogplay::runtime::FrameworkAssetHle missing(missing_classes, missing_invocations, environment, strings, arrays, vfs);
+    CHECK_THROWS_AS(static_cast<void>(missing.Install()), ogplay::runtime::FrameworkAssetError);
 
     ogplay::runtime::JniClassRegistry classes;
     ogplay::runtime::JniInvocationEngine invocations(classes);
     ogplay::runtime::FrameworkLifecycleHle lifecycle(classes, invocations);
     const auto framework = lifecycle.Install();
-    ogplay::runtime::FrameworkAssetHle assets(
-        classes, invocations, environment, strings, arrays, vfs);
+    ogplay::runtime::FrameworkAssetHle assets(classes, invocations, environment, strings, arrays, vfs);
     const auto installed = assets.Install();
-    CHECK_THROWS_AS(static_cast<void>(assets.Install()),
-                    ogplay::runtime::FrameworkAssetError);
+    CHECK_THROWS_AS(static_cast<void>(assets.Install()), ogplay::runtime::FrameworkAssetError);
 
     constexpr std::uint64_t thread = 42;
     environment.AttachThread(thread, 4);
-    const auto activity = environment.PublishLocalObject(
-        thread, ogplay::runtime::AllocateJniHostObjectIdentity());
+    const auto activity = environment.PublishLocalObject(thread, ogplay::runtime::AllocateJniHostObjectIdentity());
     const auto manager = ReferenceResult(invocations.InvokeVirtual(
         thread, activity, framework.activity_class,
-        Method(classes, framework.activity_class, "getAssets",
-               "()Landroid/content/res/AssetManager;"),
-        {}, ogplay::runtime::JniArgumentSource::value_array));
-    const std::vector<ogplay::runtime::JniChar> unsafe_name{
-        '.', '.', '/', 'e', 's', 'c', 'a', 'p', 'e'};
+        Method(classes, framework.activity_class, "getAssets", "()Landroid/content/res/AssetManager;"), {},
+        ogplay::runtime::JniArgumentSource::value_array));
+    const std::vector<ogplay::runtime::JniChar> unsafe_name{'.', '.', '/', 'e', 's', 'c', 'a', 'p', 'e'};
     const auto name_object = strings.Create(unsafe_name);
     const auto name = environment.PublishLocalObject(thread, name_object);
     const std::array<ogplay::runtime::JniValue, 1> arguments{name};
     CHECK_THROWS_AS(
         static_cast<void>(invocations.InvokeVirtual(
             thread, manager, installed.asset_manager_class,
-            Method(classes, installed.asset_manager_class, "open",
-                   "(Ljava/lang/String;)Ljava/io/InputStream;"),
+            Method(classes, installed.asset_manager_class, "open", "(Ljava/lang/String;)Ljava/io/InputStream;"),
             arguments, ogplay::runtime::JniArgumentSource::value_array)),
         ogplay::runtime::FrameworkAssetError);
-    const std::vector<ogplay::runtime::JniChar> runtime_name{
-        'r', 'u', 'n', 't', 'i', 'm', 'e', '.', 'b', 'i', 'n'};
+    const std::vector<ogplay::runtime::JniChar> runtime_name{'r', 'u', 'n', 't', 'i', 'm', 'e', '.', 'b', 'i', 'n'};
     const auto runtime_name_object = strings.Create(runtime_name);
-    const auto runtime_name_reference =
-        environment.PublishLocalObject(thread, runtime_name_object);
-    const std::array<ogplay::runtime::JniValue, 1> runtime_arguments{
-        runtime_name_reference};
+    const auto runtime_name_reference = environment.PublishLocalObject(thread, runtime_name_object);
+    const std::array<ogplay::runtime::JniValue, 1> runtime_arguments{runtime_name_reference};
     CHECK_THROWS_AS(
         static_cast<void>(invocations.InvokeVirtual(
             thread, manager, installed.asset_manager_class,
-            Method(classes, installed.asset_manager_class, "open",
-                   "(Ljava/lang/String;)Ljava/io/InputStream;"),
-            runtime_arguments,
-            ogplay::runtime::JniArgumentSource::value_array)),
+            Method(classes, installed.asset_manager_class, "open", "(Ljava/lang/String;)Ljava/io/InputStream;"),
+            runtime_arguments, ogplay::runtime::JniArgumentSource::value_array)),
         ogplay::runtime::FrameworkAssetError);
     environment.DetachThread(thread);
     strings.Delete(runtime_name_object);
@@ -233,61 +191,46 @@ TEST_CASE("framework direct asset implementations return bounded JNI bytes") {
     }};
     vfs.Mount(ogplay::runtime::VfsSource::apk, "/apk", apk);
     ogplay::runtime::JniClassRegistry classes;
-    const auto loader = classes.RegisterClass(
-        {"fixture/Loader",
-         {},
-         {{"full", "(Ljava/lang/String;)[B", "fixture.asset.full", true},
-          {"range", "(Ljava/lang/String;II)[B", "fixture.asset.range", true},
-          {"length", "(Ljava/lang/String;)I", "fixture.asset.length", true}},
-         {}});
+    const auto loader = classes.RegisterClass({"fixture/Loader",
+                                               {},
+                                               {{"full", "(Ljava/lang/String;)[B", "fixture.asset.full", true},
+                                                {"range", "(Ljava/lang/String;II)[B", "fixture.asset.range", true},
+                                                {"length", "(Ljava/lang/String;)I", "fixture.asset.length", true}},
+                                               {}});
     ogplay::runtime::JniInvocationEngine invocations(classes);
     ogplay::runtime::JniEnvironment environment;
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    ogplay::runtime::JniStringStore strings{strings_payload};
+    ogplay::runtime::TestJniStrings strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
-    ogplay::runtime::FrameworkDirectAssetHle direct(
-        invocations, environment, strings, arrays, vfs);
-    direct.Install(
-        {"fixture.asset.full", "fixture.asset.range", "fixture.asset.length"});
+    ogplay::runtime::FrameworkDirectAssetHle direct(invocations, environment, strings, arrays, vfs);
+    direct.Install({"fixture.asset.full", "fixture.asset.range", "fixture.asset.length"});
 
     constexpr std::uint64_t thread = 43;
     environment.AttachThread(thread, 8);
-    const std::vector<ogplay::runtime::JniChar> path_value{
-        '.', '/', '/', 'd', 'a', 't', 'a', '.', 'b', 'i', 'n', ' '};
+    const std::vector<ogplay::runtime::JniChar> path_value{'.', '/', '/', 'd', 'a', 't', 'a', '.', 'b', 'i', 'n', ' '};
     const auto path_identity = strings.Create(path_value);
     const auto path = environment.PublishLocalObject(thread, path_identity);
     const std::array<ogplay::runtime::JniValue, 1> full_arguments{path};
-    const auto full = ReferenceResult(invocations.InvokeStatic(
-        thread, loader,
-        *classes.GetMethodId(
-            loader, "full", "(Ljava/lang/String;)[B", true),
-        full_arguments, ogplay::runtime::JniArgumentSource::value_array));
-    const auto full_identity =
-        environment.ResolveObjectForHle(thread, full);
+    const auto full = ReferenceResult(
+        invocations.InvokeStatic(thread, loader, *classes.GetMethodId(loader, "full", "(Ljava/lang/String;)[B", true),
+                                 full_arguments, ogplay::runtime::JniArgumentSource::value_array));
+    const auto full_identity = environment.ResolveObjectForHle(thread, full);
     REQUIRE(full_identity.has_value());
-    CHECK(std::get<std::vector<ogplay::runtime::JniByte>>(
-              arrays.Region(*full_identity, 0, 4)) ==
+    CHECK(std::get<std::vector<ogplay::runtime::JniByte>>(arrays.Region(*full_identity, 0, 4)) ==
           std::vector<ogplay::runtime::JniByte>{1, 2, 3, 4});
     CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeStatic(
-              thread, loader,
-              *classes.GetMethodId(
-                  loader, "length", "(Ljava/lang/String;)I", true),
-              full_arguments,
+              thread, loader, *classes.GetMethodId(loader, "length", "(Ljava/lang/String;)I", true), full_arguments,
               ogplay::runtime::JniArgumentSource::value_array)) == 4);
 
-    const std::array<ogplay::runtime::JniValue, 3> range_arguments{
-        path, ogplay::runtime::JniInt{1}, ogplay::runtime::JniInt{2}};
+    const std::array<ogplay::runtime::JniValue, 3> range_arguments{path, ogplay::runtime::JniInt{1},
+                                                                   ogplay::runtime::JniInt{2}};
     const auto range = ReferenceResult(invocations.InvokeStatic(
-        thread, loader,
-        *classes.GetMethodId(
-            loader, "range", "(Ljava/lang/String;II)[B", true),
-        range_arguments, ogplay::runtime::JniArgumentSource::value_array));
-    const auto range_identity =
-        environment.ResolveObjectForHle(thread, range);
+        thread, loader, *classes.GetMethodId(loader, "range", "(Ljava/lang/String;II)[B", true), range_arguments,
+        ogplay::runtime::JniArgumentSource::value_array));
+    const auto range_identity = environment.ResolveObjectForHle(thread, range);
     REQUIRE(range_identity.has_value());
-    CHECK(std::get<std::vector<ogplay::runtime::JniByte>>(
-              arrays.Region(*range_identity, 0, 2)) ==
+    CHECK(std::get<std::vector<ogplay::runtime::JniByte>>(arrays.Region(*range_identity, 0, 2)) ==
           std::vector<ogplay::runtime::JniByte>{2, 3});
     environment.DetachThread(thread);
 }
@@ -295,46 +238,35 @@ TEST_CASE("framework direct asset implementations return bounded JNI bytes") {
 TEST_CASE("framework direct assets reject unsafe ranges and duplicate install") {
     ogplay::runtime::VirtualFileSystem vfs;
     const std::vector<ogplay::runtime::VfsMountEntry> apk{{
-        "assets/data.bin", {std::byte{1}},
+        "assets/data.bin",
+        {std::byte{1}},
     }};
     vfs.Mount(ogplay::runtime::VfsSource::apk, "/apk", apk);
     ogplay::runtime::JniClassRegistry classes;
     const auto loader = classes.RegisterClass(
-        {"fixture/Loader",
-         {},
-         {{"range", "(Ljava/lang/String;II)[B", "fixture.range", true}},
-         {}});
+        {"fixture/Loader", {}, {{"range", "(Ljava/lang/String;II)[B", "fixture.range", true}}, {}});
     ogplay::runtime::JniInvocationEngine invocations(classes);
     ogplay::runtime::JniEnvironment environment;
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    ogplay::runtime::JniStringStore strings{strings_payload};
+    ogplay::runtime::TestJniStrings strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
-    ogplay::runtime::FrameworkDirectAssetHle direct(
-        invocations, environment, strings, arrays, vfs);
-    CHECK_THROWS_AS(
-        direct.Install({"same", "same", "other"}),
-        ogplay::runtime::FrameworkAssetError);
+    ogplay::runtime::FrameworkDirectAssetHle direct(invocations, environment, strings, arrays, vfs);
+    CHECK_THROWS_AS(direct.Install({"same", "same", "other"}), ogplay::runtime::FrameworkAssetError);
     direct.Install({"fixture.full", "fixture.range", "fixture.length"});
-    CHECK_THROWS_AS(
-        direct.Install({"again.full", "again.range", "again.length"}),
-        ogplay::runtime::FrameworkAssetError);
+    CHECK_THROWS_AS(direct.Install({"again.full", "again.range", "again.length"}),
+                    ogplay::runtime::FrameworkAssetError);
 
     constexpr std::uint64_t thread = 44;
     environment.AttachThread(thread, 4);
-    const std::vector<ogplay::runtime::JniChar> path_value{
-        'd', 'a', 't', 'a', '.', 'b', 'i', 'n'};
+    const std::vector<ogplay::runtime::JniChar> path_value{'d', 'a', 't', 'a', '.', 'b', 'i', 'n'};
     const auto path_identity = strings.Create(path_value);
     const auto path = environment.PublishLocalObject(thread, path_identity);
-    const std::array<ogplay::runtime::JniValue, 3> invalid_range{
-        path, ogplay::runtime::JniInt{1}, ogplay::runtime::JniInt{1}};
-    CHECK_THROWS_AS(
-        static_cast<void>(invocations.InvokeStatic(
-            thread, loader,
-            *classes.GetMethodId(
-                loader, "range", "(Ljava/lang/String;II)[B", true),
-            invalid_range,
-            ogplay::runtime::JniArgumentSource::value_array)),
-        ogplay::runtime::FrameworkAssetError);
+    const std::array<ogplay::runtime::JniValue, 3> invalid_range{path, ogplay::runtime::JniInt{1},
+                                                                 ogplay::runtime::JniInt{1}};
+    CHECK_THROWS_AS(static_cast<void>(invocations.InvokeStatic(
+                        thread, loader, *classes.GetMethodId(loader, "range", "(Ljava/lang/String;II)[B", true),
+                        invalid_range, ogplay::runtime::JniArgumentSource::value_array)),
+                    ogplay::runtime::FrameworkAssetError);
     environment.DetachThread(thread);
 }

@@ -102,7 +102,7 @@ trace 枚举可达引用，sweep 在回收时释放附属状态。
 
 ## 稳定 payload 为什么不复制写回
 
-String 与 primitive array 的 payload 指对象实际内容字节。
+primitive array 的 payload 指数组元素实际占用的字节。
 JavaPayloadProvider 在 guest 地址空间分配稳定 backing，
 数组记录、长期 typed view、Java/JNI 和 NIO 共同使用这份存储。
 对象头、逻辑句柄和 GC 仍由 VM 管理，并不引入完整 Dalvik heap ABI。
@@ -125,7 +125,8 @@ Java array handle ─→ 数组记录 ─→ stable payload ←─ JNI Elements 
 ```
 
 图中的数组引用、借用地址和保活关系各不相同。
-GetByteArrayElements/GetStringChars 返回相同内容地址，重复借用分别计数；
+GetByteArrayElements 返回数组 payload 地址。GetStringChars 返回 value payload 加 offset 个码元。
+同一数组重复借用分别计数；
 Release 解除一次 pin，既不把字节复制回第二个数组，也不恢复借用前内容。
 Modified UTF-8 是另一种编码表示，需要编码副本与配对释放，
 可见“共享对象”并不等于所有表示都能零转换。
@@ -135,7 +136,9 @@ Modified UTF-8 是另一种编码表示，需要编码副本与配对释放，
 不能为了让内存数字下降就回收仍被 native 使用的 backing。
 诊断把逻辑堆、后备提交、地址空间和 pin 分开计量，以便区分压力来源。
 
-String backing 不可变，可变输入和 substring 使用独立快照。
+String 执行 API19 ROM 布局，value、offset、count 表示 char[] 中的有效区间，hashCode 缓存 Java 哈希。
+公开 char[] 构造复制输入，包内构造和 substring 共享 value，builder 按原版规则共享并在后续修改时复制。
+String 到 value 是普通 GC 强边，JNI 的 UTF-16 借用 pin 住 value 数组。
 allocateDirect 与 NIO view 共用真实数组 backing；外部 direct 地址则是非拥有借用。
 这些路径的精确 Release、映射保护与收费规则留在
 [JNI 契约](../../src/runtime/jni/MODULE.md)和[装配契约](../../src/runtime/integration/MODULE.md)。

@@ -78,10 +78,6 @@
   提交给当前 CPU，其他 trap 和未处理 SVC 原样返回。
 - `RunHeadlessBionicEntry`：事务装载无界面 NDK 依赖闭包，建立 root TLS/stack、运行 guest
   init/普通 C 入口/fini，并把真实 pthread child、syscall 账本及 VFS 输出汇总为出口报告。
-- `RunHeadlessJniContract`：运行无图形累计契约样本，以注入的 guest native executor 闭合
-  HLE→native 与 native→Activity HLE，并在同一环境核验 VM、字段、字符串、数组、引用、
-  异常以及 Asset、SharedPreferences、Locale、PackageInfo 的装配和资源闭环；两个真实宿主
-  工作线程分别执行 daemon attach、Locale HLE 回调和 detach，覆盖 Unity/Mono 类线程路径。
 - `MapArmKernelHelpers`：映射 Linux ARM 最后一页兼容 ABI，提供 memory barrier、32 位
   cmpxchg、TPIDRURO 与版本字；其他 helper 地址预填显式 trap，不执行零指令。
 - `VirtualFileSystem`：以规范化 Android 绝对路径建立 ASCII 大小写不敏感索引，提供
@@ -107,8 +103,7 @@
   与 void 返回，输出参数槽数，拒绝非法类名、尾随内容和超过 255 参数槽的方法。
 - `EncodeJniModifiedUtf8/DecodeJniModifiedUtf8`：按 UTF-16 code unit 严格编解码 JNI
   Modified UTF-8；NUL 使用 `C0 80`，代理项保持六字节形式，拒绝四字节 UTF-8 与过长编码。
-- `JniStringStore`：以统一 host 对象身份保存 UTF-16 字符串，提供 UTF/UTF-16 长度、
-  region、chars/UTF/critical 租约及配对 release，供常用字符串槽共享。
+- `JniStringBackend`：以真实 VM String 身份提供 UTF-16/MUTF-8 长度、region 和租约。
 - `JniPrimitiveArrayStore`：统一管理八种零初始化 primitive array，提供类型化 region、
   elements/critical 副本及 copy-back、commit、abort 释放模式。
 - `JniObjectArrayStore`：保存对象身份及其声明类，按 Java 父类关系约束初值和逐元素写入，

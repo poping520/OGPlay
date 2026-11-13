@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "ogplay/runtime/dexvm/fast_code.h"
 
 #include <limits>
@@ -8,38 +9,81 @@
 #include "ogplay/runtime/dexvm/generated/opcode_table.h"
 
 namespace ogplay::runtime::dexvm {
+
+StringFastOp ResolveStringFastOp(std::string_view name, std::string_view descriptor) {
+    using Op = StringFastOp;
+
+    struct Entry {
+        std::string_view name, descriptor;
+        Op op;
+    };
+
+    constexpr Entry entries[]{
+        {"length", "()I", Op::length},
+        {"isEmpty", "()Z", Op::is_empty},
+        {"charAt", "(I)C", Op::char_at},
+        {"equals", "(Ljava/lang/Object;)Z", Op::equals},
+        {"compareTo", "(Ljava/lang/String;)I", Op::compare_to},
+        {"fastIndexOf", "(II)I", Op::fast_index_of},
+        {"hashCode", "()I", Op::hash_code},
+        {"indexOf", "(I)I", Op::index_char},
+        {"indexOf", "(II)I", Op::index_char_from},
+        {"indexOf", "(Ljava/lang/String;)I", Op::index_string},
+        {"indexOf", "(Ljava/lang/String;I)I", Op::index_string_from},
+        {"lastIndexOf", "(I)I", Op::last_char},
+        {"lastIndexOf", "(II)I", Op::last_char_from},
+        {"lastIndexOf", "(Ljava/lang/String;)I", Op::last_string},
+        {"lastIndexOf", "(Ljava/lang/String;I)I", Op::last_string_from},
+        {"startsWith", "(Ljava/lang/String;)Z", Op::starts_with},
+        {"startsWith", "(Ljava/lang/String;I)Z", Op::starts_with_from},
+        {"endsWith", "(Ljava/lang/String;)Z", Op::ends_with},
+        {"regionMatches", "(ILjava/lang/String;II)Z", Op::region_matches},
+        {"contentEquals", "(Ljava/lang/CharSequence;)Z", Op::content_equals},
+        {"regionMatches", "(ZILjava/lang/String;II)Z", Op::region_matches_case},
+        {"equalsIgnoreCase", "(Ljava/lang/String;)Z", Op::equals_ignore_case},
+    };
+    for (const auto& entry : entries)
+        if (entry.name == name && entry.descriptor == descriptor) return entry.op;
+    return Op::none;
+}
+
+std::int32_t CompareStringChars(std::u16string_view left, std::u16string_view right) {
+    const auto [lhs, rhs] = std::mismatch(left.begin(), left.end(), right.begin(), right.end());
+    if (lhs != left.end() && rhs != right.end()) return static_cast<std::int32_t>(*lhs) - *rhs;
+    return static_cast<std::int32_t>(left.size()) - static_cast<std::int32_t>(right.size());
+}
+
+std::int32_t FastIndexOfStringChar(std::u16string_view text, std::int32_t ch, std::int32_t start) {
+    if (ch < 0 || ch > 0xffff) return -1;
+    const auto pos = text.find(static_cast<char16_t>(ch), static_cast<std::size_t>(std::max(start, 0)));
+    return pos == text.npos ? -1 : static_cast<std::int32_t>(pos);
+}
+
 namespace {
 
 namespace gen = ogplay::runtime::dexvm::generated;
 
-[[noreturn]] void Invalid(
-    const std::string_view where, const std::string& detail,
-    const DexVmErrorReason reason = DexVmErrorReason::invalid_code) {
+[[noreturn]] void Invalid(const std::string_view where, const std::string& detail,
+                          const DexVmErrorReason reason = DexVmErrorReason::invalid_code) {
     throw DexVmError(reason, std::string(where) + ": " + detail);
 }
 
-[[nodiscard]] std::uint32_t U32(const std::vector<std::uint16_t>& units,
-                                const std::uint32_t offset) {
-    return static_cast<std::uint32_t>(units[offset]) |
-           (static_cast<std::uint32_t>(units[offset + 1]) << 16U);
+[[nodiscard]] std::uint32_t U32(const std::vector<std::uint16_t>& units, const std::uint32_t offset) {
+    return static_cast<std::uint32_t>(units[offset]) | (static_cast<std::uint32_t>(units[offset + 1]) << 16U);
 }
 
-[[nodiscard]] std::int32_t S32(const std::vector<std::uint16_t>& units,
-                               const std::uint32_t offset) {
+[[nodiscard]] std::int32_t S32(const std::vector<std::uint16_t>& units, const std::uint32_t offset) {
     return static_cast<std::int32_t>(U32(units, offset));
 }
 
-[[nodiscard]] std::uint64_t U64(const std::vector<std::uint16_t>& units,
-                                const std::uint32_t offset) {
-    return static_cast<std::uint64_t>(units[offset]) |
-           (static_cast<std::uint64_t>(units[offset + 1]) << 16U) |
+[[nodiscard]] std::uint64_t U64(const std::vector<std::uint16_t>& units, const std::uint32_t offset) {
+    return static_cast<std::uint64_t>(units[offset]) | (static_cast<std::uint64_t>(units[offset + 1]) << 16U) |
            (static_cast<std::uint64_t>(units[offset + 2]) << 32U) |
            (static_cast<std::uint64_t>(units[offset + 3]) << 48U);
 }
 
-[[nodiscard]] std::uint32_t PayloadWidth(
-    const std::vector<std::uint16_t>& units, const std::uint32_t pc,
-    const std::string_view where) {
+[[nodiscard]] std::uint32_t PayloadWidth(const std::vector<std::uint16_t>& units, const std::uint32_t pc,
+                                         const std::string_view where) {
     if (pc >= units.size()) Invalid(where, "payload pc is out of range");
     const auto ident = units[pc];
     std::uint64_t width{};
@@ -52,165 +96,135 @@ namespace gen = ogplay::runtime::dexvm::generated;
     } else if (ident == 0x0300U) {
         if (units.size() - pc < 4U) Invalid(where, "array payload truncated");
         const auto count = U32(units, pc + 2);
-        width = 4ULL +
-                (static_cast<std::uint64_t>(units[pc + 1]) * count + 1U) /
-                    2U;
+        width = 4ULL + (static_cast<std::uint64_t>(units[pc + 1]) * count + 1U) / 2U;
     } else {
-        Invalid(where, "unknown payload ident",
-                DexVmErrorReason::invalid_opcode);
+        Invalid(where, "unknown payload ident", DexVmErrorReason::invalid_opcode);
     }
-    if (width > units.size() - pc ||
-        width > std::numeric_limits<std::uint32_t>::max()) {
+    if (width > units.size() - pc || width > std::numeric_limits<std::uint32_t>::max()) {
         Invalid(where, "payload exceeds method end");
     }
     return static_cast<std::uint32_t>(width);
 }
 
-void DecodeOperands(const std::vector<std::uint16_t>& units,
-                    FastInstruction& out) {
+void DecodeOperands(const std::vector<std::uint16_t>& units, FastInstruction& out) {
     const auto unit = units[out.dex_pc];
-    const auto next = [&](const std::uint32_t n) {
-        return units[out.dex_pc + n];
-    };
+    const auto next = [&](const std::uint32_t n) { return units[out.dex_pc + n]; };
     using gen::DexInstructionFormat;
     const auto format = gen::kDexOpcodeTable[out.opcode].format;
     switch (format) {
-        case DexInstructionFormat::k12x:
-            out.a = (unit >> 8U) & 0xfU;
-            out.b = (unit >> 12U) & 0xfU;
-            break;
-        case DexInstructionFormat::k22x:
-            out.a = (unit >> 8U) & 0xffU;
-            out.b = next(1);
-            break;
-        case DexInstructionFormat::k32x:
-            out.a = next(1);
-            out.b = next(2);
-            break;
-        case DexInstructionFormat::k11n:
-            out.a = (unit >> 8U) & 0xfU;
-            out.extra = static_cast<std::uint64_t>(static_cast<std::int64_t>(
-                static_cast<std::int32_t>(
-                    static_cast<std::uint32_t>((unit >> 12U) & 0xfU) << 28U) >>
-                28U));
-            break;
-        case DexInstructionFormat::k11x:
-            out.a = (unit >> 8U) & 0xffU;
-            break;
-        case DexInstructionFormat::k21s:
-            out.a = (unit >> 8U) & 0xffU;
-            out.extra = static_cast<std::uint64_t>(static_cast<std::int64_t>(
-                static_cast<std::int16_t>(next(1))));
-            break;
-        case DexInstructionFormat::k21h:
-            out.a = (unit >> 8U) & 0xffU;
-            out.extra = next(1);
-            break;
-        case DexInstructionFormat::k31i:
-        case DexInstructionFormat::k31c:
-            out.a = (unit >> 8U) & 0xffU;
-            out.extra = U32(units, out.dex_pc + 1);
-            break;
-        case DexInstructionFormat::k51l:
-            out.a = (unit >> 8U) & 0xffU;
-            out.extra = U64(units, out.dex_pc + 1);
-            break;
-        case DexInstructionFormat::k21c:
-        case DexInstructionFormat::k21t:
-            out.a = (unit >> 8U) & 0xffU;
-            if (format == DexInstructionFormat::k21c) out.extra = next(1);
-            break;
-        case DexInstructionFormat::k23x:
-            out.a = (unit >> 8U) & 0xffU;
-            out.b = next(1) & 0xffU;
-            out.c = (next(1) >> 8U) & 0xffU;
-            break;
-        case DexInstructionFormat::k22b:
-            out.a = (unit >> 8U) & 0xffU;
-            out.b = next(1) & 0xffU;
-            out.extra = static_cast<std::uint64_t>(static_cast<std::int64_t>(
-                static_cast<std::int8_t>(next(1) >> 8U)));
-            break;
-        case DexInstructionFormat::k22s:
-        case DexInstructionFormat::k22c:
-        case DexInstructionFormat::k22t:
-            out.a = (unit >> 8U) & 0xfU;
-            out.b = (unit >> 12U) & 0xfU;
-            out.extra = format == DexInstructionFormat::k22s
-                            ? static_cast<std::uint64_t>(
-                                  static_cast<std::int64_t>(
-                                      static_cast<std::int16_t>(next(1))))
-                            : next(1);
-            break;
-        case DexInstructionFormat::k31t:
-            out.a = (unit >> 8U) & 0xffU;
-            break;
-        case DexInstructionFormat::k35c:
-            out.a = (unit >> 12U) & 0xfU;
-            out.b = (unit >> 8U) & 0xfU;
-            out.extra = next(1);
-            out.c = next(2);
-            break;
-        case DexInstructionFormat::k3rc:
-            out.a = (unit >> 8U) & 0xffU;
-            out.b = next(2);
-            out.extra = next(1);
-            break;
-        default:
-            break;
+    case DexInstructionFormat::k12x:
+        out.a = (unit >> 8U) & 0xfU;
+        out.b = (unit >> 12U) & 0xfU;
+        break;
+    case DexInstructionFormat::k22x:
+        out.a = (unit >> 8U) & 0xffU;
+        out.b = next(1);
+        break;
+    case DexInstructionFormat::k32x:
+        out.a = next(1);
+        out.b = next(2);
+        break;
+    case DexInstructionFormat::k11n:
+        out.a = (unit >> 8U) & 0xfU;
+        out.extra = static_cast<std::uint64_t>(static_cast<std::int64_t>(
+            static_cast<std::int32_t>(static_cast<std::uint32_t>((unit >> 12U) & 0xfU) << 28U) >> 28U));
+        break;
+    case DexInstructionFormat::k11x: out.a = (unit >> 8U) & 0xffU; break;
+    case DexInstructionFormat::k21s:
+        out.a = (unit >> 8U) & 0xffU;
+        out.extra = static_cast<std::uint64_t>(static_cast<std::int64_t>(static_cast<std::int16_t>(next(1))));
+        break;
+    case DexInstructionFormat::k21h:
+        out.a = (unit >> 8U) & 0xffU;
+        out.extra = next(1);
+        break;
+    case DexInstructionFormat::k31i:
+    case DexInstructionFormat::k31c:
+        out.a = (unit >> 8U) & 0xffU;
+        out.extra = U32(units, out.dex_pc + 1);
+        break;
+    case DexInstructionFormat::k51l:
+        out.a = (unit >> 8U) & 0xffU;
+        out.extra = U64(units, out.dex_pc + 1);
+        break;
+    case DexInstructionFormat::k21c:
+    case DexInstructionFormat::k21t:
+        out.a = (unit >> 8U) & 0xffU;
+        if (format == DexInstructionFormat::k21c) out.extra = next(1);
+        break;
+    case DexInstructionFormat::k23x:
+        out.a = (unit >> 8U) & 0xffU;
+        out.b = next(1) & 0xffU;
+        out.c = (next(1) >> 8U) & 0xffU;
+        break;
+    case DexInstructionFormat::k22b:
+        out.a = (unit >> 8U) & 0xffU;
+        out.b = next(1) & 0xffU;
+        out.extra = static_cast<std::uint64_t>(static_cast<std::int64_t>(static_cast<std::int8_t>(next(1) >> 8U)));
+        break;
+    case DexInstructionFormat::k22s:
+    case DexInstructionFormat::k22c:
+    case DexInstructionFormat::k22t:
+        out.a = (unit >> 8U) & 0xfU;
+        out.b = (unit >> 12U) & 0xfU;
+        out.extra = format == DexInstructionFormat::k22s
+                        ? static_cast<std::uint64_t>(static_cast<std::int64_t>(static_cast<std::int16_t>(next(1))))
+                        : next(1);
+        break;
+    case DexInstructionFormat::k31t: out.a = (unit >> 8U) & 0xffU; break;
+    case DexInstructionFormat::k35c:
+        out.a = (unit >> 12U) & 0xfU;
+        out.b = (unit >> 8U) & 0xfU;
+        out.extra = next(1);
+        out.c = next(2);
+        break;
+    case DexInstructionFormat::k3rc:
+        out.a = (unit >> 8U) & 0xffU;
+        out.b = next(2);
+        out.extra = next(1);
+        break;
+    default: break;
     }
 }
 
-[[nodiscard]] std::int32_t BranchOffset(
-    const FastInstruction& instruction,
-    const std::vector<std::uint16_t>& units) {
+[[nodiscard]] std::int32_t BranchOffset(const FastInstruction& instruction, const std::vector<std::uint16_t>& units) {
     const auto unit = units[instruction.dex_pc];
     using gen::DexInstructionFormat;
     switch (gen::kDexOpcodeTable[instruction.opcode].format) {
-        case DexInstructionFormat::k10t:
-            return static_cast<std::int8_t>(unit >> 8U);
-        case DexInstructionFormat::k20t:
-        case DexInstructionFormat::k21t:
-        case DexInstructionFormat::k22t:
-            return static_cast<std::int16_t>(units[instruction.dex_pc + 1]);
-        case DexInstructionFormat::k30t:
-        case DexInstructionFormat::k31t:
-            return S32(units, instruction.dex_pc + 1);
-        default:
-            return 0;
+    case DexInstructionFormat::k10t: return static_cast<std::int8_t>(unit >> 8U);
+    case DexInstructionFormat::k20t:
+    case DexInstructionFormat::k21t:
+    case DexInstructionFormat::k22t: return static_cast<std::int16_t>(units[instruction.dex_pc + 1]);
+    case DexInstructionFormat::k30t:
+    case DexInstructionFormat::k31t: return S32(units, instruction.dex_pc + 1);
+    default: return 0;
     }
 }
 
 [[nodiscard]] bool IsStraightOpcode(const std::uint8_t opcode) {
-    return opcode <= 0x1cU ||
-           (opcode >= 0x28U && opcode <= 0x2aU) ||
-           (opcode >= 0x2dU && opcode <= 0x3dU) ||
+    return opcode <= 0x1cU || (opcode >= 0x28U && opcode <= 0x2aU) || (opcode >= 0x2dU && opcode <= 0x3dU) ||
            (opcode >= 0x7bU && opcode <= 0xe2U);
 }
 
 [[nodiscard]] bool IsObjectOpcode(const std::uint8_t opcode) {
-    return (opcode >= 0x1dU && opcode <= 0x27U) ||
-           opcode == 0x2bU || opcode == 0x2cU ||
+    return (opcode >= 0x1dU && opcode <= 0x27U) || opcode == 0x2bU || opcode == 0x2cU ||
            (opcode >= 0x44U && opcode <= 0x6dU);
 }
 
 [[nodiscard]] bool ObjectOpcodeNeedsResolution(const std::uint8_t opcode) {
-    return (opcode >= 0x1fU && opcode <= 0x25U) ||
-           (opcode >= 0x52U && opcode <= 0x6dU);
+    return (opcode >= 0x1fU && opcode <= 0x25U) || (opcode >= 0x52U && opcode <= 0x6dU);
 }
 
 }  // namespace
 
 std::uint32_t FastCode::IndexForDexPc(const std::uint32_t dex_pc) const {
-    if (dex_pc >= dex_pc_to_index.size() ||
-        dex_pc_to_index[dex_pc] == kInvalidFastIndex) {
+    if (dex_pc >= dex_pc_to_index.size() || dex_pc_to_index[dex_pc] == kInvalidFastIndex) {
         throw std::out_of_range("dex pc is not an executable instruction");
     }
     return dex_pc_to_index[dex_pc];
 }
 
-FastCode BuildFastCode(const loader::DexMethodCode& code,
-                       const std::string_view where) {
+FastCode BuildFastCode(const loader::DexMethodCode& code, const std::string_view where) {
     const auto& units = code.instructions;
     if (units.empty()) Invalid(where, "empty instruction stream");
 
@@ -229,8 +243,7 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
         }
         const auto& info = gen::kDexOpcodeTable[opcode];
         if (!info.defined) {
-            Invalid(where, "rejected opcode " + std::to_string(opcode),
-                    DexVmErrorReason::invalid_opcode);
+            Invalid(where, "rejected opcode " + std::to_string(opcode), DexVmErrorReason::invalid_opcode);
         }
         if (info.width == 0 || info.width > units.size() - pc) {
             Invalid(where, "instruction exceeds method end");
@@ -240,50 +253,39 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
         instruction.width = info.width;
         instruction.dex_pc = pc;
         DecodeOperands(units, instruction);
-        if (info.format == gen::DexInstructionFormat::k35c &&
-            instruction.a > 5U) {
-            Invalid(where, "35c register count exceeds 5 at pc " +
-                               std::to_string(pc));
+        if (info.format == gen::DexInstructionFormat::k35c && instruction.a > 5U) {
+            Invalid(where, "35c register count exceeds 5 at pc " + std::to_string(pc));
         }
         if (IsStraightOpcode(opcode)) {
             instruction.handler = FastHandler::straight;
         } else if (IsObjectOpcode(opcode)) {
-            instruction.handler = ObjectOpcodeNeedsResolution(opcode)
-                                      ? FastHandler::object_checked
-                                      : FastHandler::object_fast;
-        } else if ((opcode >= 0x6eU && opcode <= 0x72U) ||
-                   (opcode >= 0x74U && opcode <= 0x78U)) {
+            instruction.handler =
+                ObjectOpcodeNeedsResolution(opcode) ? FastHandler::object_checked : FastHandler::object_fast;
+        } else if ((opcode >= 0x6eU && opcode <= 0x72U) || (opcode >= 0x74U && opcode <= 0x78U)) {
             instruction.handler = FastHandler::invoke_checked;
             FastInvoke invoke;
             const bool is_range = opcode >= 0x74U;
             invoke.is_range = is_range;
-            invoke.base_opcode = static_cast<std::uint8_t>(
-                is_range ? opcode - 0x74U + 0x6eU : opcode);
+            invoke.base_opcode = static_cast<std::uint8_t>(is_range ? opcode - 0x74U + 0x6eU : opcode);
             if (is_range) {
-                for (std::uint32_t index = 0; index < instruction.a;
-                     ++index) {
-                    invoke.registers.push_back(
-                        static_cast<std::uint16_t>(instruction.b + index));
+                for (std::uint32_t index = 0; index < instruction.a; ++index) {
+                    invoke.registers.push_back(static_cast<std::uint16_t>(instruction.b + index));
                 }
             } else {
-                const std::uint16_t candidates[5] = {
-                    static_cast<std::uint16_t>((instruction.c >> 0U) & 0xfU),
-                    static_cast<std::uint16_t>((instruction.c >> 4U) & 0xfU),
-                    static_cast<std::uint16_t>((instruction.c >> 8U) & 0xfU),
-                    static_cast<std::uint16_t>((instruction.c >> 12U) & 0xfU),
-                    instruction.b};
-                for (std::uint32_t index = 0; index < instruction.a;
-                     ++index) {
+                const std::uint16_t candidates[5] = {static_cast<std::uint16_t>((instruction.c >> 0U) & 0xfU),
+                                                     static_cast<std::uint16_t>((instruction.c >> 4U) & 0xfU),
+                                                     static_cast<std::uint16_t>((instruction.c >> 8U) & 0xfU),
+                                                     static_cast<std::uint16_t>((instruction.c >> 12U) & 0xfU),
+                                                     instruction.b};
+                for (std::uint32_t index = 0; index < instruction.a; ++index) {
                     invoke.registers.push_back(candidates[index]);
                 }
             }
             invoke.argument_shorty.reserve(invoke.registers.size());
-            instruction.invoke =
-                static_cast<std::uint32_t>(result.invokes.size());
+            instruction.invoke = static_cast<std::uint32_t>(result.invokes.size());
             result.invokes.push_back(std::move(invoke));
         }
-        result.dex_pc_to_index[pc] =
-            static_cast<std::uint32_t>(result.instructions.size());
+        result.dex_pc_to_index[pc] = static_cast<std::uint32_t>(result.instructions.size());
         result.instructions.push_back(instruction);
         pc += info.width;
     }
@@ -294,13 +296,11 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
     for (auto& instruction : result.instructions) {
         const auto& info = gen::kDexOpcodeTable[instruction.opcode];
         const auto format = info.format;
-        const bool payload_reference =
-            format == gen::DexInstructionFormat::k31t;
+        const bool payload_reference = format == gen::DexInstructionFormat::k31t;
         const bool branch = (info.flags & gen::kFlagBranch) != 0;
         if (!branch && !payload_reference) continue;
         const auto offset = BranchOffset(instruction, units);
-        const auto target64 = static_cast<std::int64_t>(instruction.dex_pc) +
-                              static_cast<std::int64_t>(offset);
+        const auto target64 = static_cast<std::int64_t>(instruction.dex_pc) + static_cast<std::int64_t>(offset);
         if (target64 < 0 || target64 >= static_cast<std::int64_t>(units.size())) {
             Invalid(where, "branch target out of method");
         }
@@ -357,8 +357,7 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
             payload.element_width = units[target + 1];
             payload.element_count = U32(units, target + 2);
             payload.tick_weight = payload.element_count;
-            payload.data_units.assign(units.begin() + target + 4,
-                                      units.begin() + target + payload_width->second);
+            payload.data_units.assign(units.begin() + target + 4, units.begin() + target + payload_width->second);
         } else {
             Invalid(where, "payload ident mismatch");
         }
@@ -366,21 +365,16 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
         result.payloads.push_back(std::move(payload));
     }
 
-    result.storage_bytes = sizeof(FastCode) +
-                           result.instructions.capacity() * sizeof(FastInstruction) +
+    result.storage_bytes = sizeof(FastCode) + result.instructions.capacity() * sizeof(FastInstruction) +
                            result.dex_pc_to_index.capacity() * sizeof(std::uint32_t);
     for (const auto& payload : result.payloads) {
-        result.storage_bytes += sizeof(FastPayload) +
-                                payload.keys.capacity() * sizeof(std::int32_t) +
+        result.storage_bytes += sizeof(FastPayload) + payload.keys.capacity() * sizeof(std::int32_t) +
                                 payload.targets.capacity() * sizeof(std::uint32_t) +
                                 payload.data_units.capacity() * sizeof(std::uint16_t);
     }
     for (const auto& invoke : result.invokes) {
-        result.storage_bytes += sizeof(FastInvoke) +
-                                invoke.registers.capacity() *
-                                    sizeof(std::uint16_t) +
-                                invoke.argument_shorty.capacity() *
-                                    sizeof(char);
+        result.storage_bytes += sizeof(FastInvoke) + invoke.registers.capacity() * sizeof(std::uint16_t) +
+                                invoke.argument_shorty.capacity() * sizeof(char);
     }
     return result;
 }

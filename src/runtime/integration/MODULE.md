@@ -28,8 +28,8 @@ JNI FindClass 的显式 resolver 在 VM 执行锁内按需链接并发布 own �
 不因未使用的非法类使进程装配失败；失败发布不保留递归标记。
 值传输复用稳定的双向类身份缓存，成员解析仍经发布入口补齐按需物化的成员。异常 factory 发布真实 local Throwable。
 JNI 字段访问经解释器共享守卫：未实现非常量字段记账、挂起 UnsatisfiedLinkError，禁止侧表回落。
-GC roots 同时包含 JNI 引用与字符串 store 的活动 chars/UTF8 lease；Release 前不得扫除
-相应字符串。进程 quiesce 只 join clone runtime 实际拥有的 child；Java-only 线程交由 Java
+GC 强根包含 JNI 引用、数组 pin 和活动 MUTF-8 lease。UTF-16 pin 保活 String 的 value 数组。
+进程 quiesce 只 join clone runtime 实际拥有的 child；Java-only 线程交由 Java
 thread owner join，不能依赖惰性 native context 是否存在来区分。
 这些 owner hooks 在调用静止后统一撤销，不使下层反向依赖 DexVM。
 
@@ -180,11 +180,11 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - DexVmGuestBridge 按 core+android catalog → 原样启动类路径 DEX → app DEX 装配；
   native/服务显式绑定，ROM 普通 Java 原样执行；存量替换/覆盖按阶段移除，新代码不得增加。已迁移平台类由 VM 发布 JNI，禁止同名 HLE 遮蔽；
   无 VM 的 native/HLE 会话不保留旧替身，独立 headless 契约和应用兼容回调除外。
-- String/primitive/object array 复用会话 store；jclass 双向规范化为同一 ClassObject。
+- String 复用 VM 对象身份，primitive/object array 复用会话 store；jclass 双向规范化为同一 ClassObject。
   PublishLocal 用 EnsureRegistered 原子幂等发布真实类，GC 同步清扫 registry；不为所有
   APK 类预占 global ref，只有 static native 出向的 jclass 按需缓存，发布使用调用线程身份。
-  原生创建的 String/primitive/object array 首次 JNI 类型查询时，仅在共享 store 确认存活后，
-  于 VM 执行锁内导入并登记真实类；primitive kind 对应精确数组 descriptor。该按需登记
+  JNI 创建的 String 和数组首次类型查询在执行锁内登记真实类，数组按需导入。
+  primitive kind 对应精确数组 descriptor。该按需登记
   与 GC 同锁，不增加引用根，未知 external identity 不递归导入，teardown 撤销解析器。
   native 资源清理 scope 以当前 JNI 线程 local ref 保活并暂清 pending，所有出口恢复原
   throwable；清理错误独立传给调用方，普通 JNI pending gate 保持严格。
@@ -349,7 +349,7 @@ JNI ExceptionDescribe owner hook 在调用线程 context 内虚派 Throwable.pri
 ## Java payload provider（ADR-0152，阶段 2）
 
 `GuestJavaPayloadProvider` 归 AndroidGuestProcess，显式接收 AddressSpace/ledger/limits 并注入
-primitive/String store；NIO 尚未迁移。小块 8-byte 对齐按尺寸分级，每个 slab 只服务一个
+primitive array store。小块 8-byte 对齐按尺寸分级，每个 slab 只服务一个
 级别；默认 16 KiB slab / 8 KiB 小块阈值共 64 级（至 128 每 8 字节一级，其后每翻倍
 区间 8 级）。直接 class lookup、各级有空位 slab 的侵入链表及空闲槽栈均为 O(1)，
 不遍历全部 slab 或逐位查找；generation 元数据用散列表，插入/删除摊还 O(1)。创建 slab
@@ -377,7 +377,7 @@ VM Reserve 仍是唯一账本。预留也耗尽时抛明确 JavaPayloadEmergency
 持 VM 执行锁完成收费事务；New/import 单次收费，失败完整回滚，provider 提交/地址不足
 映射 OOME，沿既有异常 emergency reserve 构造 throwable。
 
-GC 集成同时枚举 environment references、String lease 与数组身份 pin roots，在 mark/
+GC 集成枚举 environment references、MUTF-8 lease 与数组身份 pin roots，在 mark/
 weak 处理前生效。停止/join Java workers、native workers 和 CPU 后才退役 Record/store view，
 再释放 provider；成员顺序保证 store 早于 provider、provider 早于 ledger/AddressSpace 析构。
 独立 headless 契约显式选择 host-copy provider，不作为生产 guest backing 的回退。
@@ -399,11 +399,9 @@ guest payload；GC 在 mark/weak 前枚举非零 pin，长期 view 与不可移�
 process 停止并 join 全部 Java/native 线程及 CPU 后才销毁 store，残留 pin 统一退役并诊断；
 Stop 采样另记 store 的 pin_count/pinned_arrays/pinned_bytes，不与 provider 的独立底层 pin 重复计量。
 
-阶段 4：同一 process-owned provider 同时为 primitive 和不可变 UTF-16 String 分配，
-成员顺序保证 String/array store 均先于 provider 退役。Stop 增加 String 独立 live/peak/fail/pin
-统计与 kind=8 的长度分桶（沿用 0、1..16、17..64、65..256、257..1024、1025..8192、>8192）；
-committed/slab_free/应急池与尺寸级别属于共享 provider，不按 String/array 重复归属。
-UTF-16 direct pin 的未配对/阈值诊断经 logger 与 warning ledger 发布；MUTF-8 复制协议不变。
+JNI String 槽经进程注入 JniStringBackend。启动类路径链接后由 DexVmGuestBridge 装配
+VM 实现，guest 执行结束后解除。UTF-16 借用计入 char[] 的数组 pin 账本，未配对释放及阈值
+诊断经 logger 与 warning ledger 发布。MUTF-8 仍受独立复制预算约束。
 
 实验 Paint 测量状态按 Java 对象身份拥有，GC sweep 退役；Typeface 强边仅由 Java 字段追踪。
 

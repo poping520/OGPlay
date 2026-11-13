@@ -934,8 +934,7 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model, NativeM
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
     if (string_class.has_value() && class_class.has_value()) {
-        linker.EnsureClassLinked(*class_class);
-        model.SetCoreClasses(*string_class, *class_class, linker.Class(*class_class).instance_slots);
+        model.SetCoreClasses(linker, *string_class, *class_class);
     }
     impl_->class_loaders = std::make_unique<ClassLoaderFacade>(*this, linker, model);
     impl_->reflection = std::make_unique<ReflectionRuntime>(*this, linker, model);
@@ -1269,7 +1268,7 @@ VmObjectRef Interpreter::NewStringUtf8(const std::string_view utf8) {
 }
 
 std::string Interpreter::StringUtf8(const VmObjectRef string_ref) const {
-    const auto value = impl_->model->StringValue(string_ref);
+    const auto value = impl_->model->StringChars(string_ref);
     std::string out;
     out.reserve(value.size());
     for (const auto unit : value) {
@@ -1799,21 +1798,7 @@ VmObjectRef Interpreter::NewIntrinsicInstance(const std::string_view class_descr
 
 bool Interpreter::JavaEquals(const VmObjectRef left, const VmObjectRef right) const {
     if (left == right) return true;
-    if (!left.IsValid() || !right.IsValid()) return false;
-    const auto left_kind = impl_->model->Kind(left);
-    const auto right_kind = impl_->model->Kind(right);
-    const auto is_string = [](const VmObjectKind kind) {
-        return kind == VmObjectKind::string || kind == VmObjectKind::external;
-    };
-    if (is_string(left_kind) && is_string(right_kind)) {
-        try {
-            return impl_->model->StringValue(left) == impl_->model->StringValue(right);
-        } catch (const JniStringError&) {
-            // External identities that are not strings compare by identity.
-            return false;
-        }
-    }
-    return false;
+    return impl_->model->StringEquals(left, right);
 }
 
 }  // namespace ogplay::runtime::dexvm

@@ -15,63 +15,52 @@
 namespace ogplay::runtime {
 namespace {
 
-[[noreturn]] void Fail(const FrameworkAssetErrorReason reason,
-                       std::string message) {
+[[noreturn]] void Fail(const FrameworkAssetErrorReason reason, std::string message) {
     throw FrameworkAssetError(reason, std::move(message));
 }
 
 [[nodiscard]] std::string AssetPath(const std::vector<JniChar>& value) {
     if (value.empty()) {
-        Fail(FrameworkAssetErrorReason::invalid_asset_path,
-             "asset path cannot be empty");
+        Fail(FrameworkAssetErrorReason::invalid_asset_path, "asset path cannot be empty");
     }
     std::size_t begin{};
-    if (value.size() >= 3 && value[0] == '.' && value[1] == '/' &&
-        value[2] == '/') {
+    if (value.size() >= 3 && value[0] == '.' && value[1] == '/' && value[2] == '/') {
         begin = 3;
     } else if (value.size() >= 2 && value[0] == '.' && value[1] == '/') {
         begin = 2;
     }
     auto end = value.size();
-    while (begin < end && value[begin] <= 0x20U) ++begin;
-    while (end > begin && value[end - 1] <= 0x20U) --end;
+    while (begin < end && value[begin] <= 0x20U)
+        ++begin;
+    while (end > begin && value[end - 1] <= 0x20U)
+        --end;
     if (begin == end) {
-        Fail(FrameworkAssetErrorReason::invalid_asset_path,
-             "asset path cannot be empty");
+        Fail(FrameworkAssetErrorReason::invalid_asset_path, "asset path cannot be empty");
     }
     std::vector<std::uint16_t> units;
     units.reserve(end - begin);
     for (std::size_t index = begin; index < end; ++index) {
         const auto unit = value[index];
         if (unit == 0 || unit == '\\') {
-            Fail(FrameworkAssetErrorReason::invalid_asset_path,
-                 "asset path contains an invalid character");
+            Fail(FrameworkAssetErrorReason::invalid_asset_path, "asset path contains an invalid character");
         }
         units.push_back(unit);
     }
-    auto converted = core::Utf16ToUtf8(
-        std::span{units}, core::InvalidUtf16Policy::reject);
+    auto converted = core::Utf16ToUtf8(std::span{units}, core::InvalidUtf16Policy::reject);
     if (!converted.has_value()) {
-        Fail(FrameworkAssetErrorReason::invalid_asset_path,
-             "asset path contains an invalid UTF-16 surrogate");
+        Fail(FrameworkAssetErrorReason::invalid_asset_path, "asset path contains an invalid UTF-16 surrogate");
     }
     auto relative = std::move(*converted);
     if (relative.front() == '/' || relative.front() == '\\') {
-        Fail(FrameworkAssetErrorReason::invalid_asset_path,
-             "asset path must be relative");
+        Fail(FrameworkAssetErrorReason::invalid_asset_path, "asset path must be relative");
     }
     std::size_t cursor = 0;
     while (cursor <= relative.size()) {
         const auto component_end = relative.find('/', cursor);
-        const auto component = relative.substr(
-            cursor,
-            (component_end == std::string::npos
-                 ? relative.size()
-                 : component_end) -
-                cursor);
+        const auto component =
+            relative.substr(cursor, (component_end == std::string::npos ? relative.size() : component_end) - cursor);
         if (component.empty() || component == "." || component == "..") {
-            Fail(FrameworkAssetErrorReason::invalid_asset_path,
-                 "asset path contains an unsafe component");
+            Fail(FrameworkAssetErrorReason::invalid_asset_path, "asset path contains an unsafe component");
         }
         if (component_end == std::string::npos) break;
         cursor = component_end + 1;
@@ -79,34 +68,26 @@ namespace {
     return "/apk/assets/" + relative;
 }
 
-[[nodiscard]] std::vector<std::byte> ReadAsset(
-    VirtualFileSystem& vfs, const std::string_view path) {
+[[nodiscard]] std::vector<std::byte> ReadAsset(VirtualFileSystem& vfs, const std::string_view path) {
     VfsFileInfo info;
     std::int32_t descriptor{};
     try {
         info = vfs.Stat(path);
         if (info.source != VfsSource::apk ||
-            info.size >
-                static_cast<std::uint64_t>(
-                    std::numeric_limits<JniSize>::max())) {
-            Fail(FrameworkAssetErrorReason::io_failure,
-                 "direct asset path is not a bounded APK file");
+            info.size > static_cast<std::uint64_t>(std::numeric_limits<JniSize>::max())) {
+            Fail(FrameworkAssetErrorReason::io_failure, "direct asset path is not a bounded APK file");
         }
         descriptor = vfs.Open(path, {.read = true});
     } catch (const VfsError& error) {
-        Fail(FrameworkAssetErrorReason::io_failure,
-             std::string("cannot open direct APK asset: ") + error.what());
+        Fail(FrameworkAssetErrorReason::io_failure, std::string("cannot open direct APK asset: ") + error.what());
     }
     std::vector<std::byte> contents(static_cast<std::size_t>(info.size));
     std::size_t offset{};
     try {
         while (offset < contents.size()) {
-            const auto count = vfs.Read(
-                descriptor,
-                std::span<std::byte>{contents}.subspan(offset));
+            const auto count = vfs.Read(descriptor, std::span<std::byte>{contents}.subspan(offset));
             if (count == 0) {
-                Fail(FrameworkAssetErrorReason::io_failure,
-                     "direct APK asset ended before its declared size");
+                Fail(FrameworkAssetErrorReason::io_failure, "direct APK asset ended before its declared size");
             }
             offset += count;
         }
@@ -121,12 +102,13 @@ namespace {
     return contents;
 }
 
-[[nodiscard]] JniValue VoidResult() { return JniValue{std::monostate{}}; }
+[[nodiscard]] JniValue VoidResult() {
+    return JniValue{std::monostate{}};
+}
 
 }  // namespace
 
-FrameworkAssetError::FrameworkAssetError(
-    const FrameworkAssetErrorReason reason, std::string message)
+FrameworkAssetError::FrameworkAssetError(const FrameworkAssetErrorReason reason, std::string message)
     : std::runtime_error(std::move(message)), reason_(reason) {}
 
 FrameworkAssetErrorReason FrameworkAssetError::Reason() const noexcept {
@@ -135,16 +117,10 @@ FrameworkAssetErrorReason FrameworkAssetError::Reason() const noexcept {
 
 class FrameworkAssetHle::Impl final {
 public:
-    Impl(JniClassRegistry& classes, JniInvocationEngine& invocations,
-         JniEnvironment& environment, JniStringStore& strings,
-         JniPrimitiveArrayStore& arrays, VirtualFileSystem& vfs)
-        : classes_(&classes),
-          invocations_(&invocations),
-          environment_(&environment),
-          strings_(&strings),
-          arrays_(&arrays),
-          vfs_(&vfs),
-          asset_manager_(AllocateJniHostObjectIdentity()) {}
+    Impl(JniClassRegistry& classes, JniInvocationEngine& invocations, JniEnvironment& environment,
+         JniStringBackend& strings, JniPrimitiveArrayStore& arrays, VirtualFileSystem& vfs)
+        : classes_(&classes), invocations_(&invocations), environment_(&environment), strings_(&strings),
+          arrays_(&arrays), vfs_(&vfs), asset_manager_(AllocateJniHostObjectIdentity()) {}
 
     ~Impl() {
         std::scoped_lock lock(mutex_);
@@ -161,66 +137,46 @@ public:
 
     [[nodiscard]] FrameworkAssetClassSet Install() {
         if (installed_) {
-            Fail(FrameworkAssetErrorReason::duplicate_install,
-                 "framework asset HLE is already installed");
+            Fail(FrameworkAssetErrorReason::duplicate_install, "framework asset HLE is already installed");
         }
         const auto object = classes_->FindClass("java/lang/Object");
         const auto context = classes_->FindClass("android/content/Context");
         if (!object.has_value() || !context.has_value()) {
-            Fail(FrameworkAssetErrorReason::missing_framework,
-                 "framework lifecycle classes must be installed first");
+            Fail(FrameworkAssetErrorReason::missing_framework, "framework lifecycle classes must be installed first");
         }
-        const auto input_stream = classes_->RegisterClass(
-            {"java/io/InputStream",
-             "java/lang/Object",
-             {{"read", "()I", "framework.input_stream.read_one", false},
-              {"read", "([B)I", "framework.input_stream.read", false},
-              {"read", "([BII)I", "framework.input_stream.read_range", false},
-              {"skip", "(J)J", "framework.input_stream.skip", false},
-              {"available", "()I", "framework.input_stream.available", false},
-              {"close", "()V", "framework.input_stream.close", false}},
-             {}});
+        const auto input_stream =
+            classes_->RegisterClass({"java/io/InputStream",
+                                     "java/lang/Object",
+                                     {{"read", "()I", "framework.input_stream.read_one", false},
+                                      {"read", "([B)I", "framework.input_stream.read", false},
+                                      {"read", "([BII)I", "framework.input_stream.read_range", false},
+                                      {"skip", "(J)J", "framework.input_stream.skip", false},
+                                      {"available", "()I", "framework.input_stream.available", false},
+                                      {"close", "()V", "framework.input_stream.close", false}},
+                                     {}});
         const auto asset_manager = classes_->RegisterClass(
             {"android/content/res/AssetManager",
              "java/lang/Object",
-             {{"open", "(Ljava/lang/String;)Ljava/io/InputStream;",
-               "framework.asset_manager.open", false}},
+             {{"open", "(Ljava/lang/String;)Ljava/io/InputStream;", "framework.asset_manager.open", false}},
              {}});
-        invocations_->RegisterHandler(
-            "framework.context.get_assets",
-            [this](const JniInvocation& invocation) {
-                static_cast<void>(Resolve(invocation.thread_id,
-                                          invocation.receiver));
-                return JniValue{environment_->PublishLocalObject(
-                    invocation.thread_id, asset_manager_)};
-            });
-        invocations_->RegisterHandler(
-            "framework.asset_manager.open",
-            [this](const JniInvocation& invocation) { return Open(invocation); });
-        invocations_->RegisterHandler(
-            "framework.input_stream.read_one",
-            [this](const JniInvocation& invocation) {
-                return ReadOne(invocation);
-            });
-        invocations_->RegisterHandler(
-            "framework.input_stream.read",
-            [this](const JniInvocation& invocation) { return Read(invocation); });
-        invocations_->RegisterHandler(
-            "framework.input_stream.read_range",
-            [this](const JniInvocation& invocation) {
-                return ReadRange(invocation);
-            });
-        invocations_->RegisterHandler(
-            "framework.input_stream.skip",
-            [this](const JniInvocation& invocation) { return Skip(invocation); });
-        invocations_->RegisterHandler(
-            "framework.input_stream.available",
-            [this](const JniInvocation& invocation) {
-                return Available(invocation);
-            });
-        invocations_->RegisterHandler(
-            "framework.input_stream.close",
-            [this](const JniInvocation& invocation) { return Close(invocation); });
+        invocations_->RegisterHandler("framework.context.get_assets", [this](const JniInvocation& invocation) {
+            static_cast<void>(Resolve(invocation.thread_id, invocation.receiver));
+            return JniValue{environment_->PublishLocalObject(invocation.thread_id, asset_manager_)};
+        });
+        invocations_->RegisterHandler("framework.asset_manager.open",
+                                      [this](const JniInvocation& invocation) { return Open(invocation); });
+        invocations_->RegisterHandler("framework.input_stream.read_one",
+                                      [this](const JniInvocation& invocation) { return ReadOne(invocation); });
+        invocations_->RegisterHandler("framework.input_stream.read",
+                                      [this](const JniInvocation& invocation) { return Read(invocation); });
+        invocations_->RegisterHandler("framework.input_stream.read_range",
+                                      [this](const JniInvocation& invocation) { return ReadRange(invocation); });
+        invocations_->RegisterHandler("framework.input_stream.skip",
+                                      [this](const JniInvocation& invocation) { return Skip(invocation); });
+        invocations_->RegisterHandler("framework.input_stream.available",
+                                      [this](const JniInvocation& invocation) { return Available(invocation); });
+        invocations_->RegisterHandler("framework.input_stream.close",
+                                      [this](const JniInvocation& invocation) { return Close(invocation); });
         installed_ = true;
         classes_set_ = {asset_manager, input_stream};
         return classes_set_;
@@ -234,50 +190,38 @@ private:
         bool closed{};
     };
 
-    [[nodiscard]] JniObjectIdentity Resolve(
-        const std::uint64_t thread_id, const JniReference reference) const {
-        const auto object =
-            environment_->ResolveObjectForHle(thread_id, reference);
+    [[nodiscard]] JniObjectIdentity Resolve(const std::uint64_t thread_id, const JniReference reference) const {
+        const auto object = environment_->ResolveObjectForHle(thread_id, reference);
         if (!object.has_value()) {
-            Fail(FrameworkAssetErrorReason::invalid_argument,
-                 "framework HLE object argument cannot be null");
+            Fail(FrameworkAssetErrorReason::invalid_argument, "framework HLE object argument cannot be null");
         }
         return *object;
     }
 
     [[nodiscard]] JniValue Open(const JniInvocation& invocation) {
-        if (Resolve(invocation.thread_id, invocation.receiver) !=
-            asset_manager_) {
-            Fail(FrameworkAssetErrorReason::invalid_argument,
-                 "AssetManager receiver has an unknown identity");
+        if (Resolve(invocation.thread_id, invocation.receiver) != asset_manager_) {
+            Fail(FrameworkAssetErrorReason::invalid_argument, "AssetManager receiver has an unknown identity");
         }
-        const auto string = Resolve(
-            invocation.thread_id,
-            std::get<JniReference>(invocation.arguments.front()));
-        const auto path = AssetPath(
-            strings_->Region(string, 0, strings_->Length(string)));
+        const auto string = Resolve(invocation.thread_id, std::get<JniReference>(invocation.arguments.front()));
+        const auto path = AssetPath(strings_->Region(string, 0, strings_->Length(string)));
         std::int32_t descriptor{};
         VfsFileInfo info;
         try {
             info = vfs_->Stat(path);
             if (info.source != VfsSource::apk) {
-                Fail(FrameworkAssetErrorReason::io_failure,
-                     "AssetManager path is not backed by the APK mount");
+                Fail(FrameworkAssetErrorReason::io_failure, "AssetManager path is not backed by the APK mount");
             }
             descriptor = vfs_->Open(path, {.read = true});
         } catch (const VfsError& error) {
-            Fail(FrameworkAssetErrorReason::io_failure,
-                 std::string("cannot open APK asset: ") + error.what());
+            Fail(FrameworkAssetErrorReason::io_failure, std::string("cannot open APK asset: ") + error.what());
         }
         const auto stream = AllocateJniHostObjectIdentity();
         {
             std::scoped_lock lock(mutex_);
-            streams_.emplace(stream.value,
-                             Stream{descriptor, info.size, 0, false});
+            streams_.emplace(stream.value, Stream{descriptor, info.size, 0, false});
         }
         try {
-            return JniValue{environment_->PublishLocalObject(
-                invocation.thread_id, stream)};
+            return JniValue{environment_->PublishLocalObject(invocation.thread_id, stream)};
         } catch (...) {
             std::scoped_lock lock(mutex_);
             streams_.erase(stream.value);
@@ -288,38 +232,28 @@ private:
 
     [[nodiscard]] Stream& RequireStream(const JniObjectIdentity identity) {
         if (identity.domain != JniObjectDomain::host) {
-            Fail(FrameworkAssetErrorReason::unknown_stream,
-                 "InputStream receiver is not a host HLE object");
+            Fail(FrameworkAssetErrorReason::unknown_stream, "InputStream receiver is not a host HLE object");
         }
         const auto found = streams_.find(identity.value);
         if (found == streams_.end()) {
-            Fail(FrameworkAssetErrorReason::unknown_stream,
-                 "InputStream receiver is unknown");
+            Fail(FrameworkAssetErrorReason::unknown_stream, "InputStream receiver is unknown");
         }
         if (found->second.closed) {
-            Fail(FrameworkAssetErrorReason::closed_stream,
-                 "InputStream is closed");
+            Fail(FrameworkAssetErrorReason::closed_stream, "InputStream is closed");
         }
         return found->second;
     }
 
-    [[nodiscard]] JniValue ReadInto(const std::uint64_t thread_id,
-                                    const JniReference stream_reference,
-                                    const JniReference array_reference,
-                                    const JniInt offset,
-                                    const JniInt length) {
-        const auto stream_identity =
-            Resolve(thread_id, stream_reference);
+    [[nodiscard]] JniValue ReadInto(const std::uint64_t thread_id, const JniReference stream_reference,
+                                    const JniReference array_reference, const JniInt offset, const JniInt length) {
+        const auto stream_identity = Resolve(thread_id, stream_reference);
         const auto array = Resolve(thread_id, array_reference);
         if (arrays_->Kind(array) != JniPrimitiveKind::byte) {
-            Fail(FrameworkAssetErrorReason::invalid_argument,
-                 "InputStream.read requires a byte array");
+            Fail(FrameworkAssetErrorReason::invalid_argument, "InputStream.read requires a byte array");
         }
         const auto array_length = arrays_->Length(array);
-        if (offset < 0 || length < 0 || offset > array_length ||
-            length > array_length - offset) {
-            Fail(FrameworkAssetErrorReason::invalid_argument,
-                 "InputStream.read byte array range is invalid");
+        if (offset < 0 || length < 0 || offset > array_length || length > array_length - offset) {
+            Fail(FrameworkAssetErrorReason::invalid_argument, "InputStream.read byte array range is invalid");
         }
         if (length == 0) return JniValue{JniInt{0}};
         std::vector<std::byte> bytes(static_cast<std::size_t>(length));
@@ -331,36 +265,28 @@ private:
             try {
                 count = vfs_->Read(stream.descriptor, bytes);
             } catch (const VfsError& error) {
-                Fail(FrameworkAssetErrorReason::io_failure,
-                     std::string("cannot read APK asset: ") + error.what());
+                Fail(FrameworkAssetErrorReason::io_failure, std::string("cannot read APK asset: ") + error.what());
             }
             stream.offset += count;
         }
         std::vector<JniByte> output;
         output.reserve(count);
         for (std::size_t index = 0; index < count; ++index) {
-            output.push_back(static_cast<JniByte>(
-                std::to_integer<std::uint8_t>(bytes[index])));
+            output.push_back(static_cast<JniByte>(std::to_integer<std::uint8_t>(bytes[index])));
         }
-        arrays_->SetRegion(array, offset,
-                           JniPrimitiveArrayData{std::move(output)});
+        arrays_->SetRegion(array, offset, JniPrimitiveArrayData{std::move(output)});
         return JniValue{static_cast<JniInt>(count)};
     }
 
     [[nodiscard]] JniValue Read(const JniInvocation& invocation) {
-        const auto array_reference =
-            std::get<JniReference>(invocation.arguments.front());
+        const auto array_reference = std::get<JniReference>(invocation.arguments.front());
         const auto array = Resolve(invocation.thread_id, array_reference);
-        return ReadInto(invocation.thread_id, invocation.receiver,
-                        array_reference, 0, arrays_->Length(array));
+        return ReadInto(invocation.thread_id, invocation.receiver, array_reference, 0, arrays_->Length(array));
     }
 
     [[nodiscard]] JniValue ReadRange(const JniInvocation& invocation) {
-        return ReadInto(
-            invocation.thread_id, invocation.receiver,
-            std::get<JniReference>(invocation.arguments[0]),
-            std::get<JniInt>(invocation.arguments[1]),
-            std::get<JniInt>(invocation.arguments[2]));
+        return ReadInto(invocation.thread_id, invocation.receiver, std::get<JniReference>(invocation.arguments[0]),
+                        std::get<JniInt>(invocation.arguments[1]), std::get<JniInt>(invocation.arguments[2]));
     }
 
     [[nodiscard]] JniValue ReadOne(const JniInvocation& invocation) {
@@ -371,16 +297,13 @@ private:
         if (stream.offset == stream.size) return JniValue{JniInt{-1}};
         try {
             if (vfs_->Read(stream.descriptor, byte) != 1) {
-                Fail(FrameworkAssetErrorReason::io_failure,
-                     "APK asset ended before its declared size");
+                Fail(FrameworkAssetErrorReason::io_failure, "APK asset ended before its declared size");
             }
         } catch (const VfsError& error) {
-            Fail(FrameworkAssetErrorReason::io_failure,
-                 std::string("cannot read APK asset: ") + error.what());
+            Fail(FrameworkAssetErrorReason::io_failure, std::string("cannot read APK asset: ") + error.what());
         }
         ++stream.offset;
-        return JniValue{static_cast<JniInt>(
-            std::to_integer<std::uint8_t>(byte.front()))};
+        return JniValue{static_cast<JniInt>(std::to_integer<std::uint8_t>(byte.front()))};
     }
 
     [[nodiscard]] JniValue Skip(const JniInvocation& invocation) {
@@ -390,15 +313,11 @@ private:
         std::scoped_lock lock(mutex_);
         auto& stream = RequireStream(identity);
         const auto remaining = stream.size - stream.offset;
-        const auto skipped = std::min(
-            static_cast<std::uint64_t>(requested), remaining);
+        const auto skipped = std::min(static_cast<std::uint64_t>(requested), remaining);
         try {
-            stream.offset = vfs_->Seek(
-                stream.descriptor, static_cast<std::int64_t>(skipped),
-                VfsSeekWhence::current);
+            stream.offset = vfs_->Seek(stream.descriptor, static_cast<std::int64_t>(skipped), VfsSeekWhence::current);
         } catch (const VfsError& error) {
-            Fail(FrameworkAssetErrorReason::io_failure,
-                 std::string("cannot skip APK asset: ") + error.what());
+            Fail(FrameworkAssetErrorReason::io_failure, std::string("cannot skip APK asset: ") + error.what());
         }
         return JniValue{static_cast<JniLong>(skipped)};
     }
@@ -408,29 +327,25 @@ private:
         std::scoped_lock lock(mutex_);
         const auto& stream = RequireStream(identity);
         const auto remaining = stream.size - stream.offset;
-        const auto maximum =
-            static_cast<std::uint64_t>(std::numeric_limits<JniInt>::max());
+        const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<JniInt>::max());
         return JniValue{static_cast<JniInt>(std::min(remaining, maximum))};
     }
 
     [[nodiscard]] JniValue Close(const JniInvocation& invocation) {
         const auto identity = Resolve(invocation.thread_id, invocation.receiver);
         if (identity.domain != JniObjectDomain::host) {
-            Fail(FrameworkAssetErrorReason::unknown_stream,
-                 "InputStream receiver is not a host HLE object");
+            Fail(FrameworkAssetErrorReason::unknown_stream, "InputStream receiver is not a host HLE object");
         }
         std::scoped_lock lock(mutex_);
         const auto found = streams_.find(identity.value);
         if (found == streams_.end()) {
-            Fail(FrameworkAssetErrorReason::unknown_stream,
-                 "InputStream receiver is unknown");
+            Fail(FrameworkAssetErrorReason::unknown_stream, "InputStream receiver is unknown");
         }
         if (!found->second.closed) {
             try {
                 vfs_->Close(found->second.descriptor);
             } catch (const VfsError& error) {
-                Fail(FrameworkAssetErrorReason::io_failure,
-                     std::string("cannot close APK asset: ") + error.what());
+                Fail(FrameworkAssetErrorReason::io_failure, std::string("cannot close APK asset: ") + error.what());
             }
             found->second.closed = true;
         }
@@ -440,7 +355,7 @@ private:
     JniClassRegistry* classes_{};
     JniInvocationEngine* invocations_{};
     JniEnvironment* environment_{};
-    JniStringStore* strings_{};
+    JniStringBackend* strings_{};
     JniPrimitiveArrayStore* arrays_{};
     VirtualFileSystem* vfs_{};
     JniObjectIdentity asset_manager_;
@@ -450,35 +365,28 @@ private:
     std::map<std::uint64_t, Stream> streams_;
 };
 
-FrameworkAssetHle::FrameworkAssetHle(
-    JniClassRegistry& classes, JniInvocationEngine& invocations,
-    JniEnvironment& environment, JniStringStore& strings,
-    JniPrimitiveArrayStore& arrays, VirtualFileSystem& vfs)
-    : impl_(std::make_unique<Impl>(classes, invocations, environment, strings,
-                                   arrays, vfs)) {}
+FrameworkAssetHle::FrameworkAssetHle(JniClassRegistry& classes, JniInvocationEngine& invocations,
+                                     JniEnvironment& environment, JniStringBackend& strings,
+                                     JniPrimitiveArrayStore& arrays, VirtualFileSystem& vfs)
+    : impl_(std::make_unique<Impl>(classes, invocations, environment, strings, arrays, vfs)) {}
+
 FrameworkAssetHle::~FrameworkAssetHle() = default;
 FrameworkAssetHle::FrameworkAssetHle(FrameworkAssetHle&&) noexcept = default;
-FrameworkAssetHle& FrameworkAssetHle::operator=(
-    FrameworkAssetHle&&) noexcept = default;
+FrameworkAssetHle& FrameworkAssetHle::operator=(FrameworkAssetHle&&) noexcept = default;
+
 FrameworkAssetClassSet FrameworkAssetHle::Install() {
     return impl_->Install();
 }
 
 class FrameworkDirectAssetHle::Impl final {
 public:
-    Impl(JniInvocationEngine& invocations, JniEnvironment& environment,
-         JniStringStore& strings, JniPrimitiveArrayStore& arrays,
-         VirtualFileSystem& vfs)
-        : invocations_(&invocations),
-          environment_(&environment),
-          strings_(&strings),
-          arrays_(&arrays),
-          vfs_(&vfs) {}
+    Impl(JniInvocationEngine& invocations, JniEnvironment& environment, JniStringBackend& strings,
+         JniPrimitiveArrayStore& arrays, VirtualFileSystem& vfs)
+        : invocations_(&invocations), environment_(&environment), strings_(&strings), arrays_(&arrays), vfs_(&vfs) {}
 
     void Install(FrameworkDirectAssetImplementations implementations) {
         if (installed_) {
-            Fail(FrameworkAssetErrorReason::duplicate_install,
-                 "direct asset HLE is already installed");
+            Fail(FrameworkAssetErrorReason::duplicate_install, "direct asset HLE is already installed");
         }
         const std::set<std::string, std::less<>> ids{
             implementations.load_full,
@@ -489,66 +397,41 @@ public:
             Fail(FrameworkAssetErrorReason::invalid_argument,
                  "direct asset implementation IDs must be non-empty and unique");
         }
-        invocations_->RegisterHandler(
-            std::move(implementations.load_full),
-            [this](const JniInvocation& invocation) {
-                return LoadFull(invocation);
-            });
-        invocations_->RegisterHandler(
-            std::move(implementations.load_range),
-            [this](const JniInvocation& invocation) {
-                return LoadRange(invocation);
-            });
-        invocations_->RegisterHandler(
-            std::move(implementations.length),
-            [this](const JniInvocation& invocation) {
-                return Length(invocation);
-            });
+        invocations_->RegisterHandler(std::move(implementations.load_full),
+                                      [this](const JniInvocation& invocation) { return LoadFull(invocation); });
+        invocations_->RegisterHandler(std::move(implementations.load_range),
+                                      [this](const JniInvocation& invocation) { return LoadRange(invocation); });
+        invocations_->RegisterHandler(std::move(implementations.length),
+                                      [this](const JniInvocation& invocation) { return Length(invocation); });
         installed_ = true;
     }
 
 private:
-    [[nodiscard]] std::vector<std::byte> Contents(
-        const JniInvocation& invocation) const {
+    [[nodiscard]] std::vector<std::byte> Contents(const JniInvocation& invocation) const {
         if (invocation.arguments.empty()) {
-            Fail(FrameworkAssetErrorReason::invalid_argument,
-                 "direct asset call requires a string argument");
+            Fail(FrameworkAssetErrorReason::invalid_argument, "direct asset call requires a string argument");
         }
-        const auto reference =
-            std::get_if<JniReference>(&invocation.arguments.front());
+        const auto reference = std::get_if<JniReference>(&invocation.arguments.front());
         if (reference == nullptr) {
-            Fail(FrameworkAssetErrorReason::invalid_argument,
-                 "direct asset path argument is not a reference");
+            Fail(FrameworkAssetErrorReason::invalid_argument, "direct asset path argument is not a reference");
         }
-        const auto identity =
-            environment_->ResolveObjectForHle(invocation.thread_id, *reference);
+        const auto identity = environment_->ResolveObjectForHle(invocation.thread_id, *reference);
         if (!identity.has_value()) {
-            Fail(FrameworkAssetErrorReason::invalid_argument,
-                 "direct asset path reference cannot be null");
+            Fail(FrameworkAssetErrorReason::invalid_argument, "direct asset path reference cannot be null");
         }
-        return ReadAsset(
-            *vfs_, AssetPath(
-                       strings_->Region(
-                           *identity, 0, strings_->Length(*identity))));
+        return ReadAsset(*vfs_, AssetPath(strings_->Region(*identity, 0, strings_->Length(*identity))));
     }
 
-    [[nodiscard]] JniValue Publish(
-        const std::uint64_t thread_id,
-        const std::span<const std::byte> contents) {
-        const auto identity = arrays_->New(
-            JniPrimitiveKind::byte,
-            static_cast<JniSize>(contents.size()));
+    [[nodiscard]] JniValue Publish(const std::uint64_t thread_id, const std::span<const std::byte> contents) {
+        const auto identity = arrays_->New(JniPrimitiveKind::byte, static_cast<JniSize>(contents.size()));
         try {
             std::vector<JniByte> bytes;
             bytes.reserve(contents.size());
             for (const auto byte : contents) {
-                bytes.push_back(static_cast<JniByte>(
-                    std::to_integer<std::uint8_t>(byte)));
+                bytes.push_back(static_cast<JniByte>(std::to_integer<std::uint8_t>(byte)));
             }
-            arrays_->SetRegion(
-                identity, 0, JniPrimitiveArrayData{std::move(bytes)});
-            return JniValue{
-                environment_->PublishLocalObject(thread_id, identity)};
+            arrays_->SetRegion(identity, 0, JniPrimitiveArrayData{std::move(bytes)});
+            return JniValue{environment_->PublishLocalObject(thread_id, identity)};
         } catch (...) {
             arrays_->Delete(identity);
             throw;
@@ -557,8 +440,7 @@ private:
 
     [[nodiscard]] JniValue LoadFull(const JniInvocation& invocation) {
         if (invocation.arguments.size() != 1) {
-            Fail(FrameworkAssetErrorReason::invalid_argument,
-                 "direct full asset call requires one argument");
+            Fail(FrameworkAssetErrorReason::invalid_argument, "direct full asset call requires one argument");
         }
         const auto contents = Contents(invocation);
         return Publish(invocation.thread_id, contents);
@@ -566,59 +448,47 @@ private:
 
     [[nodiscard]] JniValue LoadRange(const JniInvocation& invocation) {
         if (invocation.arguments.size() != 3) {
-            Fail(FrameworkAssetErrorReason::invalid_argument,
-                 "direct ranged asset call requires three arguments");
+            Fail(FrameworkAssetErrorReason::invalid_argument, "direct ranged asset call requires three arguments");
         }
         const auto offset = std::get_if<JniInt>(&invocation.arguments[1]);
         const auto length = std::get_if<JniInt>(&invocation.arguments[2]);
-        if (offset == nullptr || length == nullptr ||
-            *offset < 0 || *length < 0) {
-            Fail(FrameworkAssetErrorReason::invalid_argument,
-                 "direct asset range is invalid");
+        if (offset == nullptr || length == nullptr || *offset < 0 || *length < 0) {
+            Fail(FrameworkAssetErrorReason::invalid_argument, "direct asset range is invalid");
         }
         const auto contents = Contents(invocation);
         const auto start = static_cast<std::size_t>(*offset);
         const auto count = static_cast<std::size_t>(*length);
-        if (start > contents.size() ||
-            count > contents.size() - start) {
-            Fail(FrameworkAssetErrorReason::invalid_argument,
-                 "direct asset range exceeds the file");
+        if (start > contents.size() || count > contents.size() - start) {
+            Fail(FrameworkAssetErrorReason::invalid_argument, "direct asset range exceeds the file");
         }
-        return Publish(
-            invocation.thread_id,
-            std::span<const std::byte>{contents}.subspan(start, count));
+        return Publish(invocation.thread_id, std::span<const std::byte>{contents}.subspan(start, count));
     }
 
     [[nodiscard]] JniValue Length(const JniInvocation& invocation) const {
         if (invocation.arguments.size() != 1) {
-            Fail(FrameworkAssetErrorReason::invalid_argument,
-                 "direct asset length call requires one argument");
+            Fail(FrameworkAssetErrorReason::invalid_argument, "direct asset length call requires one argument");
         }
-        return JniValue{
-            static_cast<JniInt>(Contents(invocation).size())};
+        return JniValue{static_cast<JniInt>(Contents(invocation).size())};
     }
 
     JniInvocationEngine* invocations_{};
     JniEnvironment* environment_{};
-    JniStringStore* strings_{};
+    JniStringBackend* strings_{};
     JniPrimitiveArrayStore* arrays_{};
     VirtualFileSystem* vfs_{};
     bool installed_{};
 };
 
-FrameworkDirectAssetHle::FrameworkDirectAssetHle(
-    JniInvocationEngine& invocations, JniEnvironment& environment,
-    JniStringStore& strings, JniPrimitiveArrayStore& arrays,
-    VirtualFileSystem& vfs)
-    : impl_(std::make_unique<Impl>(
-          invocations, environment, strings, arrays, vfs)) {}
+FrameworkDirectAssetHle::FrameworkDirectAssetHle(JniInvocationEngine& invocations, JniEnvironment& environment,
+                                                 JniStringBackend& strings, JniPrimitiveArrayStore& arrays,
+                                                 VirtualFileSystem& vfs)
+    : impl_(std::make_unique<Impl>(invocations, environment, strings, arrays, vfs)) {}
+
 FrameworkDirectAssetHle::~FrameworkDirectAssetHle() = default;
-FrameworkDirectAssetHle::FrameworkDirectAssetHle(
-    FrameworkDirectAssetHle&&) noexcept = default;
-FrameworkDirectAssetHle& FrameworkDirectAssetHle::operator=(
-    FrameworkDirectAssetHle&&) noexcept = default;
-void FrameworkDirectAssetHle::Install(
-    FrameworkDirectAssetImplementations implementations) {
+FrameworkDirectAssetHle::FrameworkDirectAssetHle(FrameworkDirectAssetHle&&) noexcept = default;
+FrameworkDirectAssetHle& FrameworkDirectAssetHle::operator=(FrameworkDirectAssetHle&&) noexcept = default;
+
+void FrameworkDirectAssetHle::Install(FrameworkDirectAssetImplementations implementations) {
     impl_->Install(std::move(implementations));
 }
 

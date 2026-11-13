@@ -1,3 +1,4 @@
+#include "jni_string_fixture.h"
 #include "ogplay/runtime/integration/java_payload_provider.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <array>
@@ -38,46 +39,38 @@ namespace {
 class InstanceFixture final {
 public:
     InstanceFixture()
-        : bus(memory), cpu(bus), abi(memory), dispatcher(ledger),
-          invocations(classes), fields(classes), objects(classes),
-          java_vm(environment) {
+        : bus(memory), cpu(bus), abi(memory), dispatcher(ledger), invocations(classes), fields(classes),
+          objects(classes), java_vm(environment) {
         memory.Map({output, memory.PageSize()},
-                   ogplay::memory::PageProtection::read |
-                       ogplay::memory::PageProtection::write);
-        ogplay::runtime::JniGuestBindingContext context{
-            environment, classes, invocations, fields, strings, arrays,
-            java_vm, objects, memory};
+                   ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+        ogplay::runtime::JniGuestBindingContext context{environment, classes, invocations, fields, strings,
+                                                        arrays,      java_vm, objects,     memory};
         ogplay::runtime::BindJniGuestSlots(dispatcher, context);
     }
 
     void Write64(const std::uint64_t value) {
         std::array<std::byte, 8> bytes{};
         for (std::size_t index = 0; index < bytes.size(); ++index) {
-            bytes[index] = static_cast<std::byte>(
-                (value >> static_cast<unsigned>(index * 8U)) & 0xffU);
+            bytes[index] = static_cast<std::byte>((value >> static_cast<unsigned>(index * 8U)) & 0xffU);
         }
         memory.Write(output.Add(0x800U), bytes);
     }
 
-    [[nodiscard]] std::array<std::uint32_t, 2> CallPair(
-        const std::string_view name, const std::uint32_t r1 = 0,
-        const std::uint32_t r2 = 0, const std::uint32_t r3 = 0) {
+    [[nodiscard]] std::array<std::uint32_t, 2> CallPair(const std::string_view name, const std::uint32_t r1 = 0,
+                                                        const std::uint32_t r2 = 0, const std::uint32_t r3 = 0) {
         const auto slot = ogplay::runtime::FindJniSlot(name);
         REQUIRE(slot.has_value());
-        const auto target = bus.Read32(
-            ogplay::runtime::kJniGuestEnvironmentTable.Add(
-                slot->Value() * sizeof(std::uint32_t)));
+        const auto target =
+            bus.Read32(ogplay::runtime::kJniGuestEnvironmentTable.Add(slot->Value() * sizeof(std::uint32_t)));
         ogplay::cpu::A32State state;
         state.SetState(ogplay::cpu::ExecutionState::thumb);
         state.SetThreadId(thread_id);
         state.SetRegister(ogplay::cpu::CoreRegister::pc, target & ~1U);
-        state.SetRegister(ogplay::cpu::CoreRegister::r0,
-                          abi.Environment().Value());
+        state.SetRegister(ogplay::cpu::CoreRegister::r0, abi.Environment().Value());
         state.SetRegister(ogplay::cpu::CoreRegister::r1, r1);
         state.SetRegister(ogplay::cpu::CoreRegister::r2, r2);
         state.SetRegister(ogplay::cpu::CoreRegister::r3, r3);
-        state.SetRegister(ogplay::cpu::CoreRegister::sp,
-                          output.Add(0x800U).Value());
+        state.SetRegister(ogplay::cpu::CoreRegister::sp, output.Add(0x800U).Value());
         state.SetRegister(ogplay::cpu::CoreRegister::lr, 0x12345679U);
         cpu.SetState(state);
         const auto stopped = cpu.Run(1);
@@ -85,36 +78,29 @@ public:
             throw std::runtime_error("guest JNI dispatcher rejected thunk");
         }
         const auto result = cpu.GetState();
-        return {result.Register(ogplay::cpu::CoreRegister::r0),
-                result.Register(ogplay::cpu::CoreRegister::r1)};
+        return {result.Register(ogplay::cpu::CoreRegister::r0), result.Register(ogplay::cpu::CoreRegister::r1)};
     }
 
-    void WriteString(const std::uint32_t offset,
-                     const std::string_view value) {
+    void WriteString(const std::uint32_t offset, const std::string_view value) {
         std::vector<std::byte> bytes;
         for (const auto character : value) {
-            bytes.push_back(static_cast<std::byte>(
-                static_cast<unsigned char>(character)));
+            bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
         }
         bytes.push_back(std::byte{});
         memory.Write(output.Add(offset), bytes);
     }
 
-    void WriteUtf16(const std::uint32_t offset,
-                    const std::span<const ogplay::runtime::JniChar> value) {
+    void WriteUtf16(const std::uint32_t offset, const std::span<const ogplay::runtime::JniChar> value) {
         std::vector<std::byte> bytes(value.size() * 2U);
         for (std::size_t index = 0; index < value.size(); ++index) {
-            bytes[index * 2U] =
-                static_cast<std::byte>(value[index] & 0xffU);
-            bytes[index * 2U + 1U] =
-                static_cast<std::byte>(value[index] >> 8U);
+            bytes[index * 2U] = static_cast<std::byte>(value[index] & 0xffU);
+            bytes[index * 2U + 1U] = static_cast<std::byte>(value[index] >> 8U);
         }
         memory.Write(output.Add(offset), bytes);
     }
 
-    [[nodiscard]] std::uint32_t Call(
-        const std::string_view name, const std::uint32_t r1 = 0,
-        const std::uint32_t r2 = 0, const std::uint32_t r3 = 0) {
+    [[nodiscard]] std::uint32_t Call(const std::string_view name, const std::uint32_t r1 = 0,
+                                     const std::uint32_t r2 = 0, const std::uint32_t r3 = 0) {
         return CallPair(name, r1, r2, r3)[0];
     }
 
@@ -131,7 +117,7 @@ public:
     ogplay::runtime::JniFieldStore fields;
     ogplay::runtime::JniGuestObjectRegistry objects;
     ogplay::runtime::GuestJavaPayloadProvider strings_payload{memory, ledger};
-    ogplay::runtime::JniStringStore strings{strings_payload};
+    ogplay::runtime::TestJniStrings strings{strings_payload};
     ogplay::runtime::GuestJavaPayloadProvider arrays_payload{memory, ledger};
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::JniJavaVm java_vm;
@@ -251,21 +237,17 @@ TEST_CASE("guest JNI class object and instance call family dispatches exact meth
     using namespace ogplay::runtime;
     InstanceFixture fixture;
     const auto java_class = fixture.classes.RegisterClass(
-        {"fixture/Counter", {},
-         {{"<init>", "(I)V", "counter.construct", false},
-          {"value", "()I", "counter.value", false}}, {}});
+        {"fixture/Counter",
+         {},
+         {{"<init>", "(I)V", "counter.construct", false}, {"value", "()I", "counter.value", false}},
+         {}});
     JniInt constructed{};
-    fixture.invocations.RegisterHandler(
-        "counter.construct",
-        [&constructed](const JniInvocation& invocation) {
-            constructed = std::get<JniInt>(invocation.arguments[0]);
-            return JniValue{std::monostate{}};
-        });
-    fixture.invocations.RegisterHandler(
-        "counter.value",
-        [&constructed](const JniInvocation&) {
-            return JniValue{constructed + 35};
-        });
+    fixture.invocations.RegisterHandler("counter.construct", [&constructed](const JniInvocation& invocation) {
+        constructed = std::get<JniInt>(invocation.arguments[0]);
+        return JniValue{std::monostate{}};
+    });
+    fixture.invocations.RegisterHandler("counter.value",
+                                        [&constructed](const JniInvocation&) { return JniValue{constructed + 35}; });
     fixture.environment.AttachThread(InstanceFixture::thread_id);
     fixture.WriteString(0x100U, "fixture/Counter");
     fixture.WriteString(0x140U, "<init>");
@@ -276,88 +258,66 @@ TEST_CASE("guest JNI class object and instance call family dispatches exact meth
     fixture.WriteString(0x1e0U, "()V");
     fixture.dispatcher.Seal();
 
-    const auto class_reference = JniReference{fixture.Call(
-        "FindClass", fixture.output.Add(0x100U).Value())};
+    const auto class_reference = JniReference{fixture.Call("FindClass", fixture.output.Add(0x100U).Value())};
     REQUIRE_FALSE(class_reference.IsNull());
-    const auto constructor = fixture.Call(
-        "GetMethodID", class_reference.Value(),
-        fixture.output.Add(0x140U).Value(),
-        fixture.output.Add(0x160U).Value());
-    const auto value = fixture.Call(
-        "GetMethodID", class_reference.Value(),
-        fixture.output.Add(0x180U).Value(),
-        fixture.output.Add(0x1a0U).Value());
-    const auto object = JniReference{fixture.Call(
-        "NewObject", class_reference.Value(), constructor, 7U)};
+    const auto constructor = fixture.Call("GetMethodID", class_reference.Value(), fixture.output.Add(0x140U).Value(),
+                                          fixture.output.Add(0x160U).Value());
+    const auto value = fixture.Call("GetMethodID", class_reference.Value(), fixture.output.Add(0x180U).Value(),
+                                    fixture.output.Add(0x1a0U).Value());
+    const auto object = JniReference{fixture.Call("NewObject", class_reference.Value(), constructor, 7U)};
     REQUIRE_FALSE(object.IsNull());
     CHECK(constructed == 7);
     CHECK(fixture.Call("CallIntMethod", object.Value(), value) == 42U);
     CHECK(fixture.Call("GetObjectClass", object.Value()) != 0U);
-    CHECK(fixture.Call(
-              "IsInstanceOf", object.Value(), class_reference.Value()) == 1U);
+    CHECK(fixture.Call("IsInstanceOf", object.Value(), class_reference.Value()) == 1U);
     CHECK(fixture.classes.FindClass("fixture/Counter") == java_class);
-    CHECK(fixture.Call("GetMethodID", class_reference.Value(),
-        fixture.output.Add(0x1c0U).Value(), fixture.output.Add(0x1e0U).Value()) == 0U);
+    CHECK(fixture.Call("GetMethodID", class_reference.Value(), fixture.output.Add(0x1c0U).Value(),
+                       fixture.output.Add(0x1e0U).Value()) == 0U);
     CHECK(fixture.environment.ExceptionCheck(InstanceFixture::thread_id));
-    CHECK(fixture.classes.ClassName(fixture.environment.PendingExceptionMetadata(
-        InstanceFixture::thread_id)->exception_class) == "java/lang/NoSuchMethodError");
+    CHECK(fixture.classes.ClassName(
+              fixture.environment.PendingExceptionMetadata(InstanceFixture::thread_id)->exception_class) ==
+          "java/lang/NoSuchMethodError");
 }
 
 TEST_CASE("guest JNI jclass is a java.lang.Class instance receiver") {
     using namespace ogplay::runtime;
     InstanceFixture fixture;
-    const auto object_class = fixture.classes.RegisterClass(
-        {"java/lang/Object", {}, {}, {}});
-    const auto class_class = fixture.classes.RegisterClass(
-        {"java/lang/Class", "java/lang/Object",
-         {{"getClassLoader", "()Ljava/lang/ClassLoader;",
-           "class.getClassLoader", false}}, {}});
-    const auto loader_class = fixture.classes.RegisterClass(
-        {"java/lang/ClassLoader", "java/lang/Object", {}, {}});
-    const auto target_class = fixture.classes.RegisterClass(
-        {"fixture/NativeCallback", "java/lang/Object", {}, {}});
+    const auto object_class = fixture.classes.RegisterClass({"java/lang/Object", {}, {}, {}});
+    const auto class_class =
+        fixture.classes.RegisterClass({"java/lang/Class",
+                                       "java/lang/Object",
+                                       {{"getClassLoader", "()Ljava/lang/ClassLoader;", "class.getClassLoader", false}},
+                                       {}});
+    const auto loader_class = fixture.classes.RegisterClass({"java/lang/ClassLoader", "java/lang/Object", {}, {}});
+    const auto target_class = fixture.classes.RegisterClass({"fixture/NativeCallback", "java/lang/Object", {}, {}});
     static_cast<void>(object_class);
 
     fixture.environment.AttachThread(InstanceFixture::thread_id);
     const auto loader = fixture.objects.Allocate(loader_class);
-    const auto loader_reference = fixture.environment.PublishLocalObject(
-        InstanceFixture::thread_id, loader);
-    fixture.invocations.RegisterHandler(
-        "class.getClassLoader",
-        [&](const JniInvocation& invocation) {
-            CHECK(fixture.environment.ResolveObjectForHle(
-                      InstanceFixture::thread_id, invocation.receiver) ==
-                  target_class);
-            return JniValue{loader_reference};
-        });
+    const auto loader_reference = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, loader);
+    fixture.invocations.RegisterHandler("class.getClassLoader", [&](const JniInvocation& invocation) {
+        CHECK(fixture.environment.ResolveObjectForHle(InstanceFixture::thread_id, invocation.receiver) == target_class);
+        return JniValue{loader_reference};
+    });
     fixture.WriteString(0x100U, "fixture/NativeCallback");
     fixture.WriteString(0x140U, "java/lang/Class");
     fixture.WriteString(0x180U, "getClassLoader");
     fixture.WriteString(0x1c0U, "()Ljava/lang/ClassLoader;");
     fixture.dispatcher.Seal();
 
-    const auto target_reference = JniReference{fixture.Call(
-        "FindClass", fixture.output.Add(0x100U).Value())};
-    const auto class_reference = JniReference{fixture.Call(
-        "FindClass", fixture.output.Add(0x140U).Value())};
+    const auto target_reference = JniReference{fixture.Call("FindClass", fixture.output.Add(0x100U).Value())};
+    const auto class_reference = JniReference{fixture.Call("FindClass", fixture.output.Add(0x140U).Value())};
     REQUIRE_FALSE(target_reference.IsNull());
     REQUIRE_FALSE(class_reference.IsNull());
-    const auto method = fixture.Call(
-        "GetMethodID", class_reference.Value(),
-        fixture.output.Add(0x180U).Value(),
-        fixture.output.Add(0x1c0U).Value());
+    const auto method = fixture.Call("GetMethodID", class_reference.Value(), fixture.output.Add(0x180U).Value(),
+                                     fixture.output.Add(0x1c0U).Value());
     REQUIRE(method != 0U);
 
-    const auto result = JniReference{fixture.Call(
-        "CallObjectMethod", target_reference.Value(), method)};
-    CHECK(fixture.environment.ResolveObjectForHle(
-              InstanceFixture::thread_id, result) == loader);
-    const auto runtime_class = JniReference{fixture.Call(
-        "GetObjectClass", target_reference.Value())};
-    CHECK(fixture.environment.ResolveObjectForHle(
-              InstanceFixture::thread_id, runtime_class) == class_class);
-    CHECK(fixture.Call("IsInstanceOf", target_reference.Value(),
-                       class_reference.Value()) == 1U);
+    const auto result = JniReference{fixture.Call("CallObjectMethod", target_reference.Value(), method)};
+    CHECK(fixture.environment.ResolveObjectForHle(InstanceFixture::thread_id, result) == loader);
+    const auto runtime_class = JniReference{fixture.Call("GetObjectClass", target_reference.Value())};
+    CHECK(fixture.environment.ResolveObjectForHle(InstanceFixture::thread_id, runtime_class) == class_class);
+    CHECK(fixture.Call("IsInstanceOf", target_reference.Value(), class_reference.Value()) == 1U);
 }
 
 TEST_CASE("guest JNI primitive arrays preserve region and lease semantics") {
@@ -374,52 +334,40 @@ TEST_CASE("guest JNI primitive arrays preserve region and lease semantics") {
     fixture.bus.Write32(fixture.output.Add(0x204U), 20U);
     fixture.bus.Write32(fixture.output.Add(0x208U), 30U);
     fixture.Write64(fixture.output.Add(0x200U).Value());
-    static_cast<void>(
-        fixture.Call("SetIntArrayRegion", array.Value(), 0U, 3U));
+    static_cast<void>(fixture.Call("SetIntArrayRegion", array.Value(), 0U, 3U));
 
     fixture.Write64(fixture.output.Add(0x300U).Value());
-    static_cast<void>(
-        fixture.Call("GetIntArrayRegion", array.Value(), 0U, 3U));
+    static_cast<void>(fixture.Call("GetIntArrayRegion", array.Value(), 0U, 3U));
     CHECK(fixture.bus.Read32(fixture.output.Add(0x300U)) == 10U);
     CHECK(fixture.bus.Read32(fixture.output.Add(0x304U)) == 20U);
     CHECK(fixture.bus.Read32(fixture.output.Add(0x308U)) == 30U);
 
-    const auto elements = fixture.Call(
-        "GetIntArrayElements", array.Value(),
-        fixture.output.Add(0x20U).Value());
+    const auto elements = fixture.Call("GetIntArrayElements", array.Value(), fixture.output.Add(0x20U).Value());
     REQUIRE(elements != 0U);
     CHECK(fixture.bus.Read8(fixture.output.Add(0x20U)) == 0U);
     fixture.bus.Write32(ogplay::memory::GuestAddress{elements}.Add(4U), 99U);
-    static_cast<void>(fixture.Call(
-        "ReleaseIntArrayElements", array.Value(), elements, 1U));
+    static_cast<void>(fixture.Call("ReleaseIntArrayElements", array.Value(), elements, 1U));
     fixture.bus.Write32(ogplay::memory::GuestAddress{elements}.Add(8U), 77U);
-    static_cast<void>(fixture.Call(
-        "ReleaseIntArrayElements", array.Value(), elements, 2U));
+    static_cast<void>(fixture.Call("ReleaseIntArrayElements", array.Value(), elements, 2U));
 
     fixture.Write64(fixture.output.Add(0x300U).Value());
-    static_cast<void>(
-        fixture.Call("GetIntArrayRegion", array.Value(), 0U, 3U));
+    static_cast<void>(fixture.Call("GetIntArrayRegion", array.Value(), 0U, 3U));
     CHECK(fixture.bus.Read32(fixture.output.Add(0x304U)) == 99U);
     CHECK(fixture.bus.Read32(fixture.output.Add(0x308U)) == 77U);
     CHECK_NOTHROW(static_cast<void>(fixture.Call("ReleaseIntArrayElements", array.Value(), elements, 0U)));
 
-    const auto second_lease = fixture.Call(
-        "GetIntArrayElements", array.Value(), 0U);
+    const auto second_lease = fixture.Call("GetIntArrayElements", array.Value(), 0U);
     CHECK_NOTHROW(static_cast<void>(fixture.Call("ReleaseIntArrayElements", array.Value(), second_lease, 3U)));
-    static_cast<void>(fixture.Call(
-        "ReleaseIntArrayElements", array.Value(), second_lease, 2U));
+    static_cast<void>(fixture.Call("ReleaseIntArrayElements", array.Value(), second_lease, 2U));
 
-    const auto critical = fixture.Call(
-        "GetPrimitiveArrayCritical", array.Value(),
-        fixture.output.Add(0x20U).Value());
+    const auto critical = fixture.Call("GetPrimitiveArrayCritical", array.Value(), fixture.output.Add(0x20U).Value());
     REQUIRE(critical != 0U);
     CHECK(critical == elements);
     CHECK(fixture.bus.Read8(fixture.output.Add(0x20U)) == 0U);
     fixture.bus.Write32(ogplay::memory::GuestAddress{critical}, 44U);
     static_cast<void>(fixture.Call("ReleaseIntArrayElements", array.Value(), 0xdeadbeefU, 0U));
     fixture.Write64(fixture.output.Add(0x300U).Value());
-    static_cast<void>(
-        fixture.Call("GetIntArrayRegion", array.Value(), 0U, 3U));
+    static_cast<void>(fixture.Call("GetIntArrayRegion", array.Value(), 0U, 3U));
     CHECK(fixture.bus.Read32(fixture.output.Add(0x300U)) == 44U);
     CHECK_NOTHROW(static_cast<void>(fixture.Call("ReleasePrimitiveArrayCritical", array.Value(), critical, 0U)));
     const auto warnings = fixture.ledger.Warnings();
@@ -434,38 +382,26 @@ TEST_CASE("guest JNI object arrays enforce assignability and null semantics") {
     using namespace ogplay::runtime;
     InstanceFixture fixture;
     const auto base = fixture.classes.RegisterClass({"fixture/Base", {}, {}, {}});
-    const auto child = fixture.classes.RegisterClass(
-        {"fixture/Child", "fixture/Base", {}, {}});
-    const auto other = fixture.classes.RegisterClass(
-        {"fixture/Other", {}, {}, {}});
+    const auto child = fixture.classes.RegisterClass({"fixture/Child", "fixture/Base", {}, {}});
+    const auto other = fixture.classes.RegisterClass({"fixture/Other", {}, {}, {}});
     const auto child_object = fixture.objects.Allocate(child);
     const auto other_object = fixture.objects.Allocate(other);
     fixture.environment.AttachThread(InstanceFixture::thread_id);
-    const auto base_ref = fixture.environment.PublishLocalObject(
-        InstanceFixture::thread_id, base);
-    const auto child_ref = fixture.environment.PublishLocalObject(
-        InstanceFixture::thread_id, child_object);
-    const auto other_ref = fixture.environment.PublishLocalObject(
-        InstanceFixture::thread_id, other_object);
+    const auto base_ref = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, base);
+    const auto child_ref = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, child_object);
+    const auto other_ref = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, other_object);
     fixture.dispatcher.Seal();
 
-    const auto array = JniReference{fixture.Call(
-        "NewObjectArray", 2U, base_ref.Value(), child_ref.Value())};
+    const auto array = JniReference{fixture.Call("NewObjectArray", 2U, base_ref.Value(), child_ref.Value())};
     REQUIRE_FALSE(array.IsNull());
     CHECK(fixture.Call("GetArrayLength", array.Value()) == 2U);
-    const auto element = JniReference{fixture.Call(
-        "GetObjectArrayElement", array.Value(), 0U)};
-    CHECK(fixture.environment.IsSameObject(
-        InstanceFixture::thread_id, element, child_ref));
+    const auto element = JniReference{fixture.Call("GetObjectArrayElement", array.Value(), 0U)};
+    CHECK(fixture.environment.IsSameObject(InstanceFixture::thread_id, element, child_ref));
 
-    static_cast<void>(fixture.Call(
-        "SetObjectArrayElement", array.Value(), 1U, 0U));
+    static_cast<void>(fixture.Call("SetObjectArrayElement", array.Value(), 1U, 0U));
     CHECK(fixture.Call("GetObjectArrayElement", array.Value(), 1U) == 0U);
-    CHECK_THROWS_AS(
-        static_cast<void>(fixture.Call(
-            "SetObjectArrayElement", array.Value(), 0U,
-            other_ref.Value())),
-        JniObjectArrayError);
+    CHECK_THROWS_AS(static_cast<void>(fixture.Call("SetObjectArrayElement", array.Value(), 0U, other_ref.Value())),
+                    JniObjectArrayError);
 }
 
 TEST_CASE("DVM-141 JNI array publication registers actual types idempotently") {
@@ -474,9 +410,7 @@ TEST_CASE("DVM-141 JNI array publication registers actual types idempotently") {
     const auto base = fixture.classes.RegisterClass({"fixture/Base", {}, {}, {}});
     const auto child = fixture.classes.RegisterClass(
         {"fixture/Child", "fixture/Base", {{"value", "()I", "publication.value", false}}, {}});
-    fixture.invocations.RegisterHandler("publication.value", [](const JniInvocation&) {
-        return JniValue{JniInt{42}};
-    });
+    fixture.invocations.RegisterHandler("publication.value", [](const JniInvocation&) { return JniValue{JniInt{42}}; });
     const auto method = fixture.classes.GetMethodId(child, "value", "()I", false);
     REQUIRE(method.has_value());
     const JniObjectIdentity object{JniObjectDomain::dex_vm, 4508};
@@ -505,64 +439,47 @@ TEST_CASE("guest JNI nonvirtual calls decode stacked normal V and A arguments") 
     using namespace ogplay::runtime;
     InstanceFixture fixture;
     const auto base = fixture.classes.RegisterClass(
-        {"fixture/NonvirtualBase", {},
-         {{"value", "(I)I", "nonvirtual.base", false}}, {}});
+        {"fixture/NonvirtualBase", {}, {{"value", "(I)I", "nonvirtual.base", false}}, {}});
     const auto child = fixture.classes.RegisterClass(
-        {"fixture/NonvirtualChild", "fixture/NonvirtualBase",
-         {{"value", "(I)I", "nonvirtual.child", false}}, {}});
-    const auto method = fixture.classes.GetMethodId(
-        base, "value", "(I)I", false);
+        {"fixture/NonvirtualChild", "fixture/NonvirtualBase", {{"value", "(I)I", "nonvirtual.child", false}}, {}});
+    const auto method = fixture.classes.GetMethodId(base, "value", "(I)I", false);
     REQUIRE(method.has_value());
     std::vector<JniArgumentSource> sources;
-    fixture.invocations.RegisterHandler(
-        "nonvirtual.base",
-        [&sources, base](const JniInvocation& invocation) {
-            CHECK(invocation.kind == JniInvocationKind::nonvirtual_instance);
-            CHECK(invocation.dispatch_class == base);
-            sources.push_back(invocation.argument_source);
-            return JniValue{std::get<JniInt>(invocation.arguments[0]) + 1};
-        });
-    fixture.invocations.RegisterHandler(
-        "nonvirtual.child", [](const JniInvocation&) {
-            return JniValue{JniInt{-1}};
-        });
+    fixture.invocations.RegisterHandler("nonvirtual.base", [&sources, base](const JniInvocation& invocation) {
+        CHECK(invocation.kind == JniInvocationKind::nonvirtual_instance);
+        CHECK(invocation.dispatch_class == base);
+        sources.push_back(invocation.argument_source);
+        return JniValue{std::get<JniInt>(invocation.arguments[0]) + 1};
+    });
+    fixture.invocations.RegisterHandler("nonvirtual.child", [](const JniInvocation&) { return JniValue{JniInt{-1}}; });
     const auto object = fixture.objects.Allocate(child);
     fixture.environment.AttachThread(InstanceFixture::thread_id);
-    const auto object_ref = fixture.environment.PublishLocalObject(
-        InstanceFixture::thread_id, object);
-    const auto class_ref = fixture.environment.PublishLocalObject(
-        InstanceFixture::thread_id, base);
+    const auto object_ref = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, object);
+    const auto class_ref = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, base);
     fixture.dispatcher.Seal();
 
     fixture.Write64(41U);
-    CHECK(fixture.Call("CallNonvirtualIntMethod", object_ref.Value(),
-                       class_ref.Value(), method->Value()) == 42U);
+    CHECK(fixture.Call("CallNonvirtualIntMethod", object_ref.Value(), class_ref.Value(), method->Value()) == 42U);
     fixture.bus.Write32(fixture.output.Add(0x300U), 41U);
     fixture.Write64(fixture.output.Add(0x300U).Value());
-    CHECK(fixture.Call("CallNonvirtualIntMethodV", object_ref.Value(),
-                       class_ref.Value(), method->Value()) == 42U);
+    CHECK(fixture.Call("CallNonvirtualIntMethodV", object_ref.Value(), class_ref.Value(), method->Value()) == 42U);
     fixture.bus.Write32(fixture.output.Add(0x340U), 41U);
     fixture.Write64(fixture.output.Add(0x340U).Value());
-    CHECK(fixture.Call("CallNonvirtualIntMethodA", object_ref.Value(),
-                       class_ref.Value(), method->Value()) == 42U);
-    CHECK(sources == std::vector{JniArgumentSource::variadic,
-                                 JniArgumentSource::va_list,
-                                 JniArgumentSource::value_array});
+    CHECK(fixture.Call("CallNonvirtualIntMethodA", object_ref.Value(), class_ref.Value(), method->Value()) == 42U);
+    CHECK(sources ==
+          std::vector{JniArgumentSource::variadic, JniArgumentSource::va_list, JniArgumentSource::value_array});
 }
 
 TEST_CASE("guest JNI ThrowNew describes one stable pending throwable") {
     using namespace ogplay::runtime;
     InstanceFixture fixture;
-    const auto exception_class = fixture.classes.RegisterClass(
-        {"fixture/Failure", {}, {}, {}});
+    const auto exception_class = fixture.classes.RegisterClass({"fixture/Failure", {}, {}, {}});
     fixture.environment.AttachThread(InstanceFixture::thread_id);
-    const auto class_ref = fixture.environment.PublishLocalObject(
-        InstanceFixture::thread_id, exception_class);
+    const auto class_ref = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, exception_class);
     fixture.WriteString(0x200U, "broken input");
     fixture.dispatcher.Seal();
 
-    CHECK(fixture.Call("ThrowNew", class_ref.Value(),
-                       fixture.output.Add(0x200U).Value()) == 0U);
+    CHECK(fixture.Call("ThrowNew", class_ref.Value(), fixture.output.Add(0x200U).Value()) == 0U);
     CHECK(fixture.Call("ExceptionCheck") == 1U);
     const auto first = JniReference{fixture.Call("ExceptionOccurred")};
     REQUIRE_FALSE(first.IsNull());
@@ -572,24 +489,22 @@ TEST_CASE("guest JNI ThrowNew describes one stable pending throwable") {
     const auto diagnostics = fixture.environment.ExceptionDiagnostics();
     REQUIRE(diagnostics.size() == 1U);
     CHECK(diagnostics[0].guest_thread == InstanceFixture::thread_id);
-    CHECK(std::get<std::uint64_t>(diagnostics[0].fields[1].value) ==
-          exception_class.value);
-    CHECK(std::get<std::string>(diagnostics[0].fields[2].value) ==
-          "broken input");
+    CHECK(std::get<std::uint64_t>(diagnostics[0].fields[1].value) == exception_class.value);
+    CHECK(std::get<std::string>(diagnostics[0].fields[2].value) == "broken input");
     static_cast<void>(fixture.Call("ExceptionClear"));
-    CHECK(fixture.environment.IsSameObject(
-        InstanceFixture::thread_id, first, second));
+    CHECK(fixture.environment.IsSameObject(InstanceFixture::thread_id, first, second));
 }
 
 TEST_CASE("guest JNI static field family uses exact descriptors and A32 ABI") {
     using namespace ogplay::runtime;
     InstanceFixture fixture;
-    static_cast<void>(fixture.classes.RegisterClass(
-        {"fixture/Statics", {}, {},
-         {{"count", "I", "statics.count", true},
-          {"wide", "J", "statics.wide", true},
-          {"ratio", "D", "statics.ratio", true},
-          {"object", "Ljava/lang/Object;", "statics.object", true}}}));
+    static_cast<void>(fixture.classes.RegisterClass({"fixture/Statics",
+                                                     {},
+                                                     {},
+                                                     {{"count", "I", "statics.count", true},
+                                                      {"wide", "J", "statics.wide", true},
+                                                      {"ratio", "D", "statics.ratio", true},
+                                                      {"object", "Ljava/lang/Object;", "statics.object", true}}}));
     fixture.environment.AttachThread(InstanceFixture::thread_id);
     fixture.WriteString(0x100U, "fixture/Statics");
     fixture.WriteString(0x140U, "count");
@@ -600,137 +515,99 @@ TEST_CASE("guest JNI static field family uses exact descriptors and A32 ABI") {
     fixture.WriteString(0x1e0U, "D");
     fixture.WriteString(0x200U, "object");
     fixture.WriteString(0x220U, "Ljava/lang/Object;");
-    CHECK(fixture.dispatcher.IsEnvironmentBound(
-        *FindJniSlot("GetStaticFieldID")));
-    constexpr std::string_view field_types[]{
-        "Object", "Boolean", "Byte", "Char", "Short",
-        "Int", "Long", "Float", "Double"};
+    CHECK(fixture.dispatcher.IsEnvironmentBound(*FindJniSlot("GetStaticFieldID")));
+    constexpr std::string_view field_types[]{"Object", "Boolean", "Byte",  "Char",  "Short",
+                                             "Int",    "Long",    "Float", "Double"};
     for (const auto type : field_types) {
         CHECK(fixture.dispatcher.IsEnvironmentBound(
-            *FindJniSlot(std::string("GetStatic") + std::string(type) +
-                         "Field")));
+            *FindJniSlot(std::string("GetStatic") + std::string(type) + "Field")));
         CHECK(fixture.dispatcher.IsEnvironmentBound(
-            *FindJniSlot(std::string("SetStatic") + std::string(type) +
-                         "Field")));
+            *FindJniSlot(std::string("SetStatic") + std::string(type) + "Field")));
     }
     fixture.dispatcher.Seal();
 
-    const auto java_class = fixture.Call(
-        "FindClass", fixture.output.Add(0x100U).Value());
-    const auto count = fixture.Call(
-        "GetStaticFieldID", java_class, fixture.output.Add(0x140U).Value(),
-        fixture.output.Add(0x160U).Value());
-    const auto wide = fixture.Call(
-        "GetStaticFieldID", java_class, fixture.output.Add(0x180U).Value(),
-        fixture.output.Add(0x1a0U).Value());
-    const auto ratio = fixture.Call(
-        "GetStaticFieldID", java_class, fixture.output.Add(0x1c0U).Value(),
-        fixture.output.Add(0x1e0U).Value());
-    const auto object = fixture.Call(
-        "GetStaticFieldID", java_class, fixture.output.Add(0x200U).Value(),
-        fixture.output.Add(0x220U).Value());
+    const auto java_class = fixture.Call("FindClass", fixture.output.Add(0x100U).Value());
+    const auto count = fixture.Call("GetStaticFieldID", java_class, fixture.output.Add(0x140U).Value(),
+                                    fixture.output.Add(0x160U).Value());
+    const auto wide = fixture.Call("GetStaticFieldID", java_class, fixture.output.Add(0x180U).Value(),
+                                   fixture.output.Add(0x1a0U).Value());
+    const auto ratio = fixture.Call("GetStaticFieldID", java_class, fixture.output.Add(0x1c0U).Value(),
+                                    fixture.output.Add(0x1e0U).Value());
+    const auto object = fixture.Call("GetStaticFieldID", java_class, fixture.output.Add(0x200U).Value(),
+                                     fixture.output.Add(0x220U).Value());
 
-    static_cast<void>(fixture.Call(
-        "SetStaticIntField", java_class, count, 0xfffffff9U));
-    CHECK(fixture.Call("GetStaticIntField", java_class, count) ==
-          0xfffffff9U);
+    static_cast<void>(fixture.Call("SetStaticIntField", java_class, count, 0xfffffff9U));
+    CHECK(fixture.Call("GetStaticIntField", java_class, count) == 0xfffffff9U);
 
     constexpr JniLong wide_value = INT64_C(-0x102030405060708);
     fixture.Write64(std::bit_cast<std::uint64_t>(wide_value));
-    static_cast<void>(fixture.Call(
-        "SetStaticLongField", java_class, wide));
-    const auto wide_result = fixture.CallPair(
-        "GetStaticLongField", java_class, wide);
-    CHECK((static_cast<std::uint64_t>(wide_result[1]) << 32U |
-           wide_result[0]) == std::bit_cast<std::uint64_t>(wide_value));
+    static_cast<void>(fixture.Call("SetStaticLongField", java_class, wide));
+    const auto wide_result = fixture.CallPair("GetStaticLongField", java_class, wide);
+    CHECK((static_cast<std::uint64_t>(wide_result[1]) << 32U | wide_result[0]) ==
+          std::bit_cast<std::uint64_t>(wide_value));
 
     constexpr JniDouble ratio_value = -19.25;
     fixture.Write64(std::bit_cast<std::uint64_t>(ratio_value));
-    static_cast<void>(fixture.Call(
-        "SetStaticDoubleField", java_class, ratio));
-    const auto ratio_result = fixture.CallPair(
-        "GetStaticDoubleField", java_class, ratio);
-    CHECK((static_cast<std::uint64_t>(ratio_result[1]) << 32U |
-           ratio_result[0]) == std::bit_cast<std::uint64_t>(ratio_value));
+    static_cast<void>(fixture.Call("SetStaticDoubleField", java_class, ratio));
+    const auto ratio_result = fixture.CallPair("GetStaticDoubleField", java_class, ratio);
+    CHECK((static_cast<std::uint64_t>(ratio_result[1]) << 32U | ratio_result[0]) ==
+          std::bit_cast<std::uint64_t>(ratio_value));
 
     const auto object_identity = AllocateJniHostObjectIdentity();
-    const auto object_reference = fixture.environment.PublishLocalObject(
-        InstanceFixture::thread_id, object_identity);
-    static_cast<void>(fixture.Call(
-        "SetStaticObjectField", java_class, object,
-        object_reference.Value()));
-    CHECK(fixture.Call("GetStaticObjectField", java_class, object) ==
-          object_reference.Value());
+    const auto object_reference = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, object_identity);
+    static_cast<void>(fixture.Call("SetStaticObjectField", java_class, object, object_reference.Value()));
+    CHECK(fixture.Call("GetStaticObjectField", java_class, object) == object_reference.Value());
 
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(fixture.Call(
-            "GetStaticFloatField", java_class, count)),
-        "GetStaticFloatField type does not match field descriptor",
-        JniGuestBindingError);
+    CHECK_THROWS_WITH_AS(static_cast<void>(fixture.Call("GetStaticFloatField", java_class, count)),
+                         "GetStaticFloatField type does not match field descriptor", JniGuestBindingError);
 }
 
 TEST_CASE("guest JNI instance calls accept framework registered host objects") {
     using namespace ogplay::runtime;
     InstanceFixture fixture;
-    const auto service_class = fixture.classes.RegisterClass(
-        {"fixture/Service", {},
-         {{"value", "()I", "service.value", false}}, {}});
-    fixture.invocations.RegisterHandler(
-        "service.value", [](const JniInvocation&) {
-            return JniValue{JniInt{73}};
-        });
+    const auto service_class =
+        fixture.classes.RegisterClass({"fixture/Service", {}, {{"value", "()I", "service.value", false}}, {}});
+    fixture.invocations.RegisterHandler("service.value", [](const JniInvocation&) { return JniValue{JniInt{73}}; });
     fixture.environment.AttachThread(InstanceFixture::thread_id);
     const auto service = AllocateJniHostObjectIdentity();
     fixture.objects.Register(service, service_class);
-    const auto reference = fixture.environment.PublishLocalObject(
-        InstanceFixture::thread_id, service);
+    const auto reference = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, service);
     fixture.WriteString(0x100U, "fixture/Service");
     fixture.WriteString(0x140U, "value");
     fixture.WriteString(0x160U, "()I");
     fixture.dispatcher.Seal();
 
-    const auto class_reference = fixture.Call(
-        "FindClass", fixture.output.Add(0x100U).Value());
-    const auto method = fixture.Call(
-        "GetMethodID", class_reference, fixture.output.Add(0x140U).Value(),
-        fixture.output.Add(0x160U).Value());
+    const auto class_reference = fixture.Call("FindClass", fixture.output.Add(0x100U).Value());
+    const auto method = fixture.Call("GetMethodID", class_reference, fixture.output.Add(0x140U).Value(),
+                                     fixture.output.Add(0x160U).Value());
     CHECK(fixture.Call("CallIntMethod", reference.Value(), method) == 73U);
     CHECK(fixture.Call("GetObjectClass", reference.Value()) != 0U);
-    CHECK(fixture.Call(
-              "IsInstanceOf", reference.Value(), class_reference) == 1U);
-    CHECK_THROWS_WITH_AS(
-        fixture.objects.Register(service, service_class),
-        "JNI guest object is already registered", JniGuestBindingError);
-    CHECK_THROWS_WITH_AS(
-        fixture.objects.Register(AllocateJniHostObjectIdentity(), {}),
-        "JNI guest object registration is invalid", JniGuestBindingError);
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(fixture.objects.ClassOf(
-            AllocateJniHostObjectIdentity())),
-        "JNI guest receiver is not a registered instance",
-        JniGuestBindingError);
+    CHECK(fixture.Call("IsInstanceOf", reference.Value(), class_reference) == 1U);
+    CHECK_THROWS_WITH_AS(fixture.objects.Register(service, service_class), "JNI guest object is already registered",
+                         JniGuestBindingError);
+    CHECK_THROWS_WITH_AS(fixture.objects.Register(AllocateJniHostObjectIdentity(), {}),
+                         "JNI guest object registration is invalid", JniGuestBindingError);
+    CHECK_THROWS_WITH_AS(static_cast<void>(fixture.objects.ClassOf(AllocateJniHostObjectIdentity())),
+                         "JNI guest receiver is not a registered instance", JniGuestBindingError);
 }
 
 TEST_CASE("guest JNI instance fields resolve receivers and preserve A32 values") {
     using namespace ogplay::runtime;
     InstanceFixture fixture;
-    static_cast<void>(fixture.classes.RegisterClass(
-        {"java/lang/Object", {}, {}, {}}));
-    const auto holder_class = fixture.classes.RegisterClass(
-        {"fixture/Holder", "java/lang/Object", {},
-         {{"count", "I", "holder.count", false},
-          {"wide", "J", "holder.wide", false},
-          {"ratio", "D", "holder.ratio", false},
-          {"token", "Ljava/lang/Object;", "holder.token", false},
-          {"shared", "I", "holder.shared", true}}});
+    static_cast<void>(fixture.classes.RegisterClass({"java/lang/Object", {}, {}, {}}));
+    const auto holder_class = fixture.classes.RegisterClass({"fixture/Holder",
+                                                             "java/lang/Object",
+                                                             {},
+                                                             {{"count", "I", "holder.count", false},
+                                                              {"wide", "J", "holder.wide", false},
+                                                              {"ratio", "D", "holder.ratio", false},
+                                                              {"token", "Ljava/lang/Object;", "holder.token", false},
+                                                              {"shared", "I", "holder.shared", true}}});
     fixture.environment.AttachThread(InstanceFixture::thread_id);
     const auto holder = fixture.objects.Allocate(holder_class);
-    const auto holder_ref = fixture.environment.PublishLocalObject(
-        InstanceFixture::thread_id, holder);
-    const auto token = fixture.objects.Allocate(
-        *fixture.classes.FindClass("java/lang/Object"));
-    const auto token_ref = fixture.environment.PublishLocalObject(
-        InstanceFixture::thread_id, token);
+    const auto holder_ref = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, holder);
+    const auto token = fixture.objects.Allocate(*fixture.classes.FindClass("java/lang/Object"));
+    const auto token_ref = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, token);
     fixture.WriteString(0x100U, "fixture/Holder");
     fixture.WriteString(0x140U, "count");
     fixture.WriteString(0x160U, "I");
@@ -743,67 +620,39 @@ TEST_CASE("guest JNI instance fields resolve receivers and preserve A32 values")
     fixture.WriteString(0x240U, "shared");
     fixture.dispatcher.Seal();
 
-    const auto java_class = fixture.Call(
-        "FindClass", fixture.output.Add(0x100U).Value());
-    const auto count = fixture.Call(
-        "GetFieldID", java_class, fixture.output.Add(0x140U).Value(),
-        fixture.output.Add(0x160U).Value());
-    const auto wide = fixture.Call(
-        "GetFieldID", java_class, fixture.output.Add(0x180U).Value(),
-        fixture.output.Add(0x1a0U).Value());
-    const auto ratio = fixture.Call(
-        "GetFieldID", java_class, fixture.output.Add(0x1c0U).Value(),
-        fixture.output.Add(0x1e0U).Value());
-    const auto token_field = fixture.Call(
-        "GetFieldID", java_class, fixture.output.Add(0x200U).Value(),
-        fixture.output.Add(0x220U).Value());
-    const auto shared = fixture.Call(
-        "GetStaticFieldID", java_class,
-        fixture.output.Add(0x240U).Value(),
-        fixture.output.Add(0x160U).Value());
+    const auto java_class = fixture.Call("FindClass", fixture.output.Add(0x100U).Value());
+    const auto count =
+        fixture.Call("GetFieldID", java_class, fixture.output.Add(0x140U).Value(), fixture.output.Add(0x160U).Value());
+    const auto wide =
+        fixture.Call("GetFieldID", java_class, fixture.output.Add(0x180U).Value(), fixture.output.Add(0x1a0U).Value());
+    const auto ratio =
+        fixture.Call("GetFieldID", java_class, fixture.output.Add(0x1c0U).Value(), fixture.output.Add(0x1e0U).Value());
+    const auto token_field =
+        fixture.Call("GetFieldID", java_class, fixture.output.Add(0x200U).Value(), fixture.output.Add(0x220U).Value());
+    const auto shared = fixture.Call("GetStaticFieldID", java_class, fixture.output.Add(0x240U).Value(),
+                                     fixture.output.Add(0x160U).Value());
 
-    static_cast<void>(fixture.Call(
-        "SetIntField", holder_ref.Value(), count, 0xfffffff9U));
-    CHECK(fixture.Call("GetIntField", holder_ref.Value(), count) ==
-          0xfffffff9U);
+    static_cast<void>(fixture.Call("SetIntField", holder_ref.Value(), count, 0xfffffff9U));
+    CHECK(fixture.Call("GetIntField", holder_ref.Value(), count) == 0xfffffff9U);
     constexpr JniLong wide_value = INT64_C(-0x11223344556677);
     fixture.Write64(std::bit_cast<std::uint64_t>(wide_value));
-    static_cast<void>(fixture.Call(
-        "SetLongField", holder_ref.Value(), wide));
-    const auto wide_result = fixture.CallPair(
-        "GetLongField", holder_ref.Value(), wide);
-    CHECK((static_cast<std::uint64_t>(wide_result[1]) << 32U |
-           wide_result[0]) == std::bit_cast<std::uint64_t>(wide_value));
+    static_cast<void>(fixture.Call("SetLongField", holder_ref.Value(), wide));
+    const auto wide_result = fixture.CallPair("GetLongField", holder_ref.Value(), wide);
+    CHECK((static_cast<std::uint64_t>(wide_result[1]) << 32U | wide_result[0]) ==
+          std::bit_cast<std::uint64_t>(wide_value));
     constexpr JniDouble ratio_value = 41.5;
     fixture.Write64(std::bit_cast<std::uint64_t>(ratio_value));
-    static_cast<void>(fixture.Call(
-        "SetDoubleField", holder_ref.Value(), ratio));
-    const auto ratio_result = fixture.CallPair(
-        "GetDoubleField", holder_ref.Value(), ratio);
-    CHECK((static_cast<std::uint64_t>(ratio_result[1]) << 32U |
-           ratio_result[0]) == std::bit_cast<std::uint64_t>(ratio_value));
-    static_cast<void>(fixture.Call(
-        "SetObjectField", holder_ref.Value(), token_field,
-        token_ref.Value()));
-    CHECK(fixture.Call(
-              "GetObjectField", holder_ref.Value(), token_field) ==
-          token_ref.Value());
+    static_cast<void>(fixture.Call("SetDoubleField", holder_ref.Value(), ratio));
+    const auto ratio_result = fixture.CallPair("GetDoubleField", holder_ref.Value(), ratio);
+    CHECK((static_cast<std::uint64_t>(ratio_result[1]) << 32U | ratio_result[0]) ==
+          std::bit_cast<std::uint64_t>(ratio_value));
+    static_cast<void>(fixture.Call("SetObjectField", holder_ref.Value(), token_field, token_ref.Value()));
+    CHECK(fixture.Call("GetObjectField", holder_ref.Value(), token_field) == token_ref.Value());
 
-    CHECK_THROWS_AS(
-        static_cast<void>(fixture.Call(
-            "GetFloatField", holder_ref.Value(), count)),
-        JniGuestBindingError);
-    CHECK_THROWS_AS(
-        static_cast<void>(fixture.Call(
-            "GetIntField", holder_ref.Value(), shared)),
-        JniFieldStoreError);
-    CHECK_THROWS_AS(
-        static_cast<void>(fixture.Call(
-            "GetStaticIntField", java_class, count)),
-        JniFieldStoreError);
-    CHECK_THROWS_AS(
-        static_cast<void>(fixture.Call("GetIntField", 0x1234U, count)),
-        std::exception);
+    CHECK_THROWS_AS(static_cast<void>(fixture.Call("GetFloatField", holder_ref.Value(), count)), JniGuestBindingError);
+    CHECK_THROWS_AS(static_cast<void>(fixture.Call("GetIntField", holder_ref.Value(), shared)), JniFieldStoreError);
+    CHECK_THROWS_AS(static_cast<void>(fixture.Call("GetStaticIntField", java_class, count)), JniFieldStoreError);
+    CHECK_THROWS_AS(static_cast<void>(fixture.Call("GetIntField", 0x1234U, count)), std::exception);
 }
 
 TEST_CASE("guest JNI UTF-16 strings own checked code-unit leases") {
@@ -814,38 +663,27 @@ TEST_CASE("guest JNI UTF-16 strings own checked code-unit leases") {
     fixture.WriteUtf16(0x100U, text);
     fixture.dispatcher.Seal();
 
-    const auto string = JniReference{fixture.Call(
-        "NewString", fixture.output.Add(0x100U).Value(),
-        static_cast<std::uint32_t>(text.size()))};
+    const auto string = JniReference{
+        fixture.Call("NewString", fixture.output.Add(0x100U).Value(), static_cast<std::uint32_t>(text.size()))};
     REQUIRE_FALSE(string.IsNull());
     CHECK(fixture.Call("GetStringLength", string.Value()) == 4U);
-    const auto pointer = fixture.Call(
-        "GetStringChars", string.Value(), fixture.output.Add(0x300U).Value());
+    const auto pointer = fixture.Call("GetStringChars", string.Value(), fixture.output.Add(0x300U).Value());
     REQUIRE(pointer != 0U);
     CHECK(fixture.bus.Read8(fixture.output.Add(0x300U)) == 0U);
     for (std::size_t index = 0; index < text.size(); ++index) {
-        CHECK(fixture.bus.Read16(
-                  ogplay::memory::GuestAddress{pointer}.Add(index * 2U)) ==
-              text[index]);
+        CHECK(fixture.bus.Read16(ogplay::memory::GuestAddress{pointer}.Add(index * 2U)) == text[index]);
     }
-    fixture.bus.Write32(fixture.output.Add(0x800U),
-                        fixture.output.Add(0x400U).Value());
-    static_cast<void>(fixture.Call(
-        "GetStringRegion", string.Value(), 1U, 2U));
+    fixture.bus.Write32(fixture.output.Add(0x800U), fixture.output.Add(0x400U).Value());
+    static_cast<void>(fixture.Call("GetStringRegion", string.Value(), 1U, 2U));
     CHECK(fixture.bus.Read16(fixture.output.Add(0x400U)) == 0xd83dU);
     CHECK(fixture.bus.Read16(fixture.output.Add(0x402U)) == 0xde00U);
 
-    const auto other = JniReference{fixture.Call(
-        "NewString", fixture.output.Add(0x100U).Value(),
-        static_cast<std::uint32_t>(text.size()))};
+    const auto other = JniReference{
+        fixture.Call("NewString", fixture.output.Add(0x100U).Value(), static_cast<std::uint32_t>(text.size()))};
     CHECK_NOTHROW(static_cast<void>(fixture.Call("ReleaseStringChars", other.Value(), pointer)));
-    static_cast<void>(fixture.Call(
-        "ReleaseStringChars", string.Value(), pointer));
+    static_cast<void>(fixture.Call("ReleaseStringChars", string.Value(), pointer));
     CHECK_NOTHROW(static_cast<void>(fixture.Call("ReleaseStringChars", string.Value(), pointer)));
-    CHECK_THROWS_AS(
-        static_cast<void>(fixture.Call(
-            "NewString", 0xfffffff0U, 16U)),
-        std::exception);
+    CHECK_THROWS_AS(static_cast<void>(fixture.Call("NewString", 0xfffffff0U, 16U)), std::exception);
     static_cast<void>(fixture.Call("GetStringRegion", string.Value(), 3U, 2U));
     const auto region_error = fixture.environment.PendingExceptionMetadata(InstanceFixture::thread_id);
     REQUIRE(region_error.has_value());
@@ -856,10 +694,8 @@ TEST_CASE("guest JNI UTF-16 strings own checked code-unit leases") {
 namespace {
 
 template <typename Snapshot>
-[[nodiscard]] bool WaitForWaiters(const Snapshot snapshot,
-                                  const std::size_t expected) {
-    const auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+[[nodiscard]] bool WaitForWaiters(const Snapshot snapshot, const std::size_t expected) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
     while (snapshot().waiting_threads != expected) {
         if (std::chrono::steady_clock::now() >= deadline) return false;
         std::this_thread::yield();
@@ -868,18 +704,15 @@ template <typename Snapshot>
 }
 
 template <typename Enter>
-[[nodiscard]] std::future<std::optional<ogplay::runtime::JniMonitorErrorReason>>
-BlockingEnter(const Enter enter) {
-    return std::async(
-        std::launch::async,
-        [enter]() -> std::optional<ogplay::runtime::JniMonitorErrorReason> {
-            try {
-                enter();
-            } catch (const ogplay::runtime::JniMonitorError& error) {
-                return error.Reason();
-            }
-            return std::nullopt;
-        });
+[[nodiscard]] std::future<std::optional<ogplay::runtime::JniMonitorErrorReason>> BlockingEnter(const Enter enter) {
+    return std::async(std::launch::async, [enter]() -> std::optional<ogplay::runtime::JniMonitorErrorReason> {
+        try {
+            enter();
+        } catch (const ogplay::runtime::JniMonitorError& error) {
+            return error.Reason();
+        }
+        return std::nullopt;
+    });
 }
 
 }  // namespace
@@ -895,10 +728,8 @@ TEST_CASE("JNI monitor is reentrant and rejects a non-owner exit") {
     CHECK(monitors.Snapshot(object).recursion == 2U);
     monitors.Exit(object, 1U);
     CHECK(monitors.Snapshot(object).recursion == 1U);
-    CHECK_THROWS_WITH_AS(
-        monitors.Exit(object, 2U),
-        "JNI monitor exit requires the owning guest thread",
-        JniMonitorError);
+    CHECK_THROWS_WITH_AS(monitors.Exit(object, 2U), "JNI monitor exit requires the owning guest thread",
+                         JniMonitorError);
     monitors.Exit(object, 1U);
     CHECK(monitors.Snapshot(object).owner_thread == 0U);
 }
@@ -924,14 +755,12 @@ TEST_CASE("JNI monitor contention transfers ownership after detach release") {
            std::chrono::steady_clock::now() < wait_deadline) {
         std::this_thread::yield();
     }
-    const auto blocked =
-        environment.MonitorSnapshot(object).waiting_threads == 1U;
+    const auto blocked = environment.MonitorSnapshot(object).waiting_threads == 1U;
     if (!blocked) environment.DetachThread(11U);
     REQUIRE(blocked);
     CHECK_FALSE(acquired.load());
     environment.DetachThread(11U);
-    const auto transferred =
-        waiter.wait_for(2s) == std::future_status::ready;
+    const auto transferred = waiter.wait_for(2s) == std::future_status::ready;
     if (!transferred) {
         static_cast<void>(environment.InterruptMonitorWaiters());
     }
@@ -986,8 +815,7 @@ TEST_CASE("JNI monitor shutdown wakes waiters and rejects later entry") {
     CHECK(monitors.Snapshot(object).shut_down);
     CHECK(monitors.Shutdown() == 0U);
     monitors.Exit(object, 31U);
-    CHECK_THROWS_WITH_AS(monitors.Enter(object, 33U),
-                         "JNI monitor table is shut down", JniMonitorError);
+    CHECK_THROWS_WITH_AS(monitors.Enter(object, 33U), "JNI monitor table is shut down", JniMonitorError);
 }
 
 TEST_CASE("JNI monitor teardown order keeps finalizer locking available") {
@@ -1002,10 +830,8 @@ TEST_CASE("JNI monitor teardown order keeps finalizer locking available") {
     const auto root_reference = environment.PublishLocalObject(root, object);
     const auto child_reference = environment.PublishLocalObject(child, object);
     environment.MonitorEnter(root, root_reference);
-    auto guest_child = BlockingEnter(
-        [&] { environment.MonitorEnter(child, child_reference); });
-    REQUIRE(WaitForWaiters(
-        [&] { return environment.MonitorSnapshot(object); }, 1U));
+    auto guest_child = BlockingEnter([&] { environment.MonitorEnter(child, child_reference); });
+    REQUIRE(WaitForWaiters([&] { return environment.MonitorSnapshot(object); }, 1U));
 
     // Session Stop interrupts temporary waits before joining guest children.
     CHECK(environment.InterruptMonitorWaiters() == 1U);
@@ -1025,19 +851,16 @@ TEST_CASE("JNI monitor teardown order keeps finalizer locking available") {
     CHECK(environment.ShutdownMonitors() == 0U);
     environment.AttachThread(root);
     const auto reopened = environment.PublishLocalObject(root, object);
-    CHECK_THROWS_WITH_AS(environment.MonitorEnter(root, reopened),
-                         "JNI monitor table is shut down", JniMonitorError);
+    CHECK_THROWS_WITH_AS(environment.MonitorEnter(root, reopened), "JNI monitor table is shut down", JniMonitorError);
 }
 
 TEST_CASE("guest JNI monitor bindings expose real recursion state") {
     using namespace ogplay::runtime;
     InstanceFixture fixture;
-    const auto java_class = fixture.classes.RegisterClass(
-        {"fixture/Lock", {}, {}, {}});
+    const auto java_class = fixture.classes.RegisterClass({"fixture/Lock", {}, {}, {}});
     const auto object = fixture.objects.Allocate(java_class);
     fixture.environment.AttachThread(InstanceFixture::thread_id);
-    const auto reference = fixture.environment.PublishLocalObject(
-        InstanceFixture::thread_id, object);
+    const auto reference = fixture.environment.PublishLocalObject(InstanceFixture::thread_id, object);
     fixture.dispatcher.Seal();
 
     CHECK(fixture.Call("MonitorEnter", reference.Value()) == 0U);
@@ -1059,10 +882,13 @@ TEST_CASE("DVM-254 JNI lookup misses pend Java errors and allow pending with dia
     using namespace ogplay::runtime;
     InstanceFixture f;
     f.environment.AttachThread(InstanceFixture::thread_id);
-    const auto owner = f.classes.RegisterClass({"fixture/Surface", {},
-        {{"method", "()V", "instance", false}, {"staticMethod", "()V", "static", true},
-         {"<init>", "()V", "ctor", false}},
-        {{"field", "I", "instance.field", false}, {"staticField", "I", "static.field", true}}});
+    const auto owner = f.classes.RegisterClass(
+        {"fixture/Surface",
+         {},
+         {{"method", "()V", "instance", false},
+          {"staticMethod", "()V", "static", true},
+          {"<init>", "()V", "ctor", false}},
+         {{"field", "I", "instance.field", false}, {"staticField", "I", "static.field", true}}});
     bool resolved = false;
     f.classes.SetClassResolver([&resolved](const std::string&) -> std::optional<JniObjectIdentity> {
         resolved = true;
@@ -1071,7 +897,8 @@ TEST_CASE("DVM-254 JNI lookup misses pend Java errors and allow pending with dia
     const auto ref = f.environment.PublishLocalObject(InstanceFixture::thread_id, owner);
     f.dispatcher.Seal();
     const auto lookup = [&](const char* slot, const char* name, const char* desc) {
-        f.WriteString(0x100, name); f.WriteString(0x180, desc);
+        f.WriteString(0x100, name);
+        f.WriteString(0x180, desc);
         return f.Call(slot, ref.Value(), f.output.Add(0x100).Value(), f.output.Add(0x180).Value());
     };
     for (const auto* slot : {"GetMethodID", "GetStaticMethodID", "GetFieldID", "GetStaticFieldID"}) {
@@ -1079,12 +906,13 @@ TEST_CASE("DVM-254 JNI lookup misses pend Java errors and allow pending with dia
         const bool stat = std::string_view(slot).find("Static") != std::string_view::npos;
         const char* good = field ? (stat ? "staticField" : "field") : (stat ? "staticMethod" : "method");
         CHECK(lookup(slot, good, field ? "I" : "()V") != 0U);
-        for (const auto* bad : {"absent", field ? (stat ? "field" : "staticField") : (stat ? "method" : "staticMethod")}) {
+        for (const auto* bad :
+             {"absent", field ? (stat ? "field" : "staticField") : (stat ? "method" : "staticMethod")}) {
             CHECK(lookup(slot, bad, field ? "I" : "()V") == 0U);
             const auto pending = f.environment.PendingExceptionMetadata(InstanceFixture::thread_id);
             REQUIRE(pending);
             CHECK(f.classes.ClassName(pending->exception_class) ==
-                (field ? "java/lang/NoSuchFieldError" : "java/lang/NoSuchMethodError"));
+                  (field ? "java/lang/NoSuchFieldError" : "java/lang/NoSuchMethodError"));
             resolved = false;
             f.WriteString(0x200, "fixture/NotLoaded");
             CHECK(f.Call("FindClass", f.output.Add(0x200).Value()) == 0U);
@@ -1110,8 +938,8 @@ TEST_CASE("DVM-254 JNI lookup misses pend Java errors and allow pending with dia
     static_cast<void>(f.Call("ExceptionClear"));
     f.WriteString(0x100, "fixture/Absent");
     CHECK(f.Call("FindClass", f.output.Add(0x100).Value()) == 0U);
-    CHECK(f.classes.ClassName(f.environment.PendingExceptionMetadata(
-        InstanceFixture::thread_id)->exception_class) == "java/lang/NoClassDefFoundError");
+    CHECK(f.classes.ClassName(f.environment.PendingExceptionMetadata(InstanceFixture::thread_id)->exception_class) ==
+          "java/lang/NoClassDefFoundError");
     static_cast<void>(f.Call("ExceptionClear"));
     CHECK_THROWS_AS(static_cast<void>(f.Call("GetMethodID", 0U)), JniGuestBindingError);
 }

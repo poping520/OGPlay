@@ -32,8 +32,7 @@ enum class FrameworkAssetErrorReason : std::uint8_t {
 
 class FrameworkAssetError final : public std::runtime_error {
 public:
-    FrameworkAssetError(FrameworkAssetErrorReason reason,
-                        std::string message);
+    FrameworkAssetError(FrameworkAssetErrorReason reason, std::string message);
     [[nodiscard]] FrameworkAssetErrorReason Reason() const noexcept;
 
 private:
@@ -42,11 +41,8 @@ private:
 
 class FrameworkAssetHle final {
 public:
-    FrameworkAssetHle(JniClassRegistry& classes,
-                      JniInvocationEngine& invocations,
-                      JniEnvironment& environment, JniStringStore& strings,
-                      JniPrimitiveArrayStore& arrays,
-                      VirtualFileSystem& vfs);
+    FrameworkAssetHle(JniClassRegistry& classes, JniInvocationEngine& invocations, JniEnvironment& environment,
+                      JniStringBackend& strings, JniPrimitiveArrayStore& arrays, VirtualFileSystem& vfs);
     ~FrameworkAssetHle();
     FrameworkAssetHle(const FrameworkAssetHle&) = delete;
     FrameworkAssetHle& operator=(const FrameworkAssetHle&) = delete;
@@ -68,11 +64,8 @@ struct FrameworkDirectAssetImplementations final {
 
 class FrameworkDirectAssetHle final {
 public:
-    FrameworkDirectAssetHle(JniInvocationEngine& invocations,
-                            JniEnvironment& environment,
-                            JniStringStore& strings,
-                            JniPrimitiveArrayStore& arrays,
-                            VirtualFileSystem& vfs);
+    FrameworkDirectAssetHle(JniInvocationEngine& invocations, JniEnvironment& environment, JniStringBackend& strings,
+                            JniPrimitiveArrayStore& arrays, VirtualFileSystem& vfs);
     ~FrameworkDirectAssetHle();
     FrameworkDirectAssetHle(const FrameworkDirectAssetHle&) = delete;
     FrameworkDirectAssetHle& operator=(const FrameworkDirectAssetHle&) = delete;

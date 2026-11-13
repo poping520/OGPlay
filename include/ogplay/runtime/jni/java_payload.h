@@ -53,7 +53,7 @@ private:
     friend class JavaPayloadProvider;
 };
 
-// No public host pointer/span. Release/teardown must be exclusive with access;
+// Release/teardown must be exclusive with access;
 // guest/host publication follows the ordinary guest memory happens-before rules.
 template <typename T>
 class JavaPayloadAccessor final {
@@ -65,6 +65,11 @@ public:
     JavaPayloadAccessor& operator=(const JavaPayloadAccessor&) = default;
 
     [[nodiscard]] std::size_t Size() const noexcept { return count_; }
+
+    // Valid only while the caller keeps this accessor alive.
+    [[nodiscard]] std::span<const T> ReadOnlySpan() const noexcept {
+        return {reinterpret_cast<const T*>(base_), count_};
+    }
 
     [[nodiscard]] T Read(std::size_t index) const {
         Check(index);
@@ -183,6 +188,7 @@ public:
         static_cast<void>(maximum);
         static_cast<void>(growth);
     }
+
     virtual void Release(const JavaPayloadHandle& handle) = 0;
     [[nodiscard]] virtual JavaPayloadBorrow Pin(const JavaPayloadHandle& handle) = 0;
     virtual void Unpin(const JavaPayloadBorrow& borrow) = 0;

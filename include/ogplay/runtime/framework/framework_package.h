@@ -34,8 +34,7 @@ enum class FrameworkPackageErrorReason : std::uint8_t {
 
 class FrameworkPackageError final : public std::runtime_error {
 public:
-    FrameworkPackageError(FrameworkPackageErrorReason reason,
-                          std::string message);
+    FrameworkPackageError(FrameworkPackageErrorReason reason, std::string message);
     [[nodiscard]] FrameworkPackageErrorReason Reason() const noexcept;
 
 private:
@@ -44,11 +43,8 @@ private:
 
 class FrameworkPackageHle final {
 public:
-    FrameworkPackageHle(JniClassRegistry& classes,
-                        JniInvocationEngine& invocations,
-                        JniEnvironment& environment, JniStringStore& strings,
-                        JniFieldStore& fields,
-                        FrameworkPackageConfig config);
+    FrameworkPackageHle(JniClassRegistry& classes, JniInvocationEngine& invocations, JniEnvironment& environment,
+                        JniStringBackend& strings, JniFieldStore& fields, FrameworkPackageConfig config);
     ~FrameworkPackageHle();
     FrameworkPackageHle(const FrameworkPackageHle&) = delete;
     FrameworkPackageHle& operator=(const FrameworkPackageHle&) = delete;

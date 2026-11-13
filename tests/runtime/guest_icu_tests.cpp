@@ -292,10 +292,13 @@ TEST_CASE("WU7-6 JNI chars leases keep strings alive across guest cleanup GC") {
             const auto text = f.Text("leased");
             const auto identity = vm.Model().ToIdentity(text);
             const auto access = strings.Acquire(identity, runtime::JniStringAccessKind::chars);
-            static_cast<void>(vm.CollectGarbage("active-string-lease"));
-            CHECK(strings.Contains(identity));
-            CHECK(vm.StringUtf8(text) == "leased");
-            strings.Release(identity, access.token, access.kind);
+            {
+                const auto root = vm.ProtectReferences(std::array{text});
+                static_cast<void>(vm.CollectGarbage("active-string-lease"));
+                CHECK(strings.Contains(identity));
+                CHECK(vm.StringUtf8(text) == "leased");
+                strings.Release(identity, access.token, access.kind);
+            }
             static_cast<void>(vm.CollectGarbage("released-string-lease"));
             CHECK_FALSE(strings.Contains(identity));
         });
@@ -428,7 +431,7 @@ TEST_CASE("DVM-260 guest String backing preserves char array builder substring a
                 model.SetPrimitiveElement(array, i, static_cast<std::uint64_t>('A' + i));
             const auto text = f.New("Ljava/lang/String;", "([C)V", {VmValue::Ref(array)});
             const auto text_root = vm.ProtectReferences(std::array{text});
-            const auto sub = f.On(text, "substring", "(II)Ljava/lang/String;", {VmValue::Int(0), VmValue::Int(2)}).ref;
+            const auto sub = f.On(text, "substring", "(II)Ljava/lang/String;", {VmValue::Int(1), VmValue::Int(3)}).ref;
             const auto sub_root = vm.ProtectReferences(std::array{sub});
             const auto builder = f.New("Ljava/lang/StringBuilder;", "()V");
             const auto builder_root = vm.ProtectReferences(std::array{builder});
@@ -438,7 +441,7 @@ TEST_CASE("DVM-260 guest String backing preserves char array builder substring a
             model.SetPrimitiveElement(array, 0, 'X');
             f.On(builder, "setCharAt", "(IC)V", {VmValue::Int(0), VmValue::Int('Y')});
             CHECK(vm.StringUtf8(text) == "ABC");
-            CHECK(vm.StringUtf8(sub) == "AB");
+            CHECK(vm.StringUtf8(sub) == "BC");
             CHECK(vm.StringUtf8(snapshot) == "ABC");
             CHECK(f.On(text, "hashCode", "()I").AsInt() == 64578);
             CHECK(f.On(text, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(snapshot)}).AsInt() == 1);
@@ -448,12 +451,29 @@ TEST_CASE("DVM-260 guest String backing preserves char array builder substring a
             const auto a = strings.Acquire(model.ToIdentity(text), runtime::JniStringAccessKind::chars);
             const auto b = strings.Acquire(model.ToIdentity(sub), runtime::JniStringAccessKind::critical);
             const auto c = strings.Acquire(model.ToIdentity(snapshot), runtime::JniStringAccessKind::chars);
-            CHECK(a.address != b.address);
+            CHECK(a.address.Add(sizeof(runtime::JniChar)) == b.address);
+            CHECK_FALSE(a.is_copy);
+            CHECK_FALSE(b.is_copy);
+            CHECK_FALSE(c.is_copy);
+            const auto value_field = vm.Linker().FindFieldRecursive(model.ObjectClass(text), "value", "[C");
+            REQUIRE(value_field);
+            const auto value = VmObjectRef{model.InstanceSlots(text)[vm.Linker().Field(*value_field).slot].bits};
+            CHECK(a.address == model.PrimitiveArrayAddress(value));
             CHECK(a.address != c.address);
             CHECK(b.address != c.address);
             strings.Release(model.ToIdentity(text), 0, runtime::JniStringAccessKind::chars);
             strings.Release(model.ToIdentity(sub), 0, runtime::JniStringAccessKind::chars);
             strings.Release(model.ToIdentity(snapshot), 0, runtime::JniStringAccessKind::critical);
+            const auto accent = model.NewString(u"\u00e9");
+            const auto caps = model.NewString(u"\u00c9");
+            CHECK(f.On(accent, "equalsIgnoreCase", "(Ljava/lang/String;)Z", {VmValue::Ref(caps)}).AsInt() == 1);
+            CHECK(model.StringChars(f.On(accent, "toUpperCase", "()Ljava/lang/String;").ref) == u"\u00c9");
+            const auto parts = f.On(f.Text("one,two,"), "split", "(Ljava/lang/String;)[Ljava/lang/String;",
+                                    {VmValue::Ref(f.Text(","))})
+                                   .ref;
+            CHECK(model.ArrayLength(parts) == 2);
+            CHECK(vm.StringUtf8(model.GetObjectElement(parts, 0)) == "one");
+            CHECK(vm.StringUtf8(model.GetObjectElement(parts, 1)) == "two");
         });
     }
 }

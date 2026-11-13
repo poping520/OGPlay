@@ -38,8 +38,6 @@ std::vector<std::uint8_t> ReadFixture(const std::string& name) {
 }
 
 struct MonitorVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
@@ -54,7 +52,7 @@ struct MonitorVm final {
 
     explicit MonitorVm(const bool platform_bindings = false,
                        const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
-        : model(strings, arrays, {}), linker(),
+        : model(arrays, {}), linker(),
           interpreter(
               [this, platform_bindings]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());

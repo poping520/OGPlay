@@ -34,11 +34,9 @@ using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-214 native ZIP admission placeholders do not require BootDex metadata") {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model{strings, arrays};
+    JavaObjectModel model{arrays};
     DexClassLinker linker;
     std::vector<IntrinsicClassDecl> catalog;
     catalog.push_back(std::move(IntrinsicClassBuilder::RootClass("Ljava/lang/Object;")).Build());
@@ -58,9 +56,8 @@ struct GcVm final {
     ogplay::memory::AddressSpace memory;
     ogplay::core::CapabilityLedger payload_ledger;
     GuestJavaPayloadProvider arrays_payload{memory, payload_ledger};
-    JniStringStore strings{arrays_payload};
     JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model{strings, arrays};
+    JavaObjectModel model{arrays};
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
     std::shared_ptr<std::uint32_t> destructor_calls = std::make_shared<std::uint32_t>(0);
@@ -246,8 +243,6 @@ TEST_CASE("OwnedStateTable traces children sweeps owners and refuses stale reuse
 }
 
 TEST_CASE("DexVM and JNI share one object array identity and element store") {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider primitives_payload;
     JniPrimitiveArrayStore primitives{primitives_payload};
     JniClassRegistry jni_classes;
@@ -275,10 +270,9 @@ TEST_CASE("DexVM and JNI share one object array identity and element store") {
         return java_class == jni_box ? *dex_box : *dex_object;
     };
     JavaObjectModel model(
-        strings, primitives, {},
-        {&object_arrays, publish_class, resolve_class, {}, [&](const JniObjectIdentity element_class) {
-             return std::pair{dex_array, resolve_class(element_class)};
-         }});
+        primitives, {}, {&object_arrays, publish_class, resolve_class, {}, [&](const JniObjectIdentity element_class) {
+                             return std::pair{dex_array, resolve_class(element_class)};
+                         }});
 
     const auto element = model.NewInstance(*dex_box, 0);
     objects.Register(model.ToIdentity(element), jni_box);
@@ -313,12 +307,13 @@ TEST_CASE("DexVM sweeper releases stores reuses handles and is idempotent") {
                                  [survivor](const VmRootVisitor& visit) { visit(survivor); }});
 
     const auto first = fixture.vm.CollectGarbage();
-    CHECK(first.freed_objects == 2);
-    CHECK(first.freed_bytes == 80);
-    CHECK(fixture.model.AllocatedBytes() == before - 80);
+    const auto released = JavaObjectModel::EstimateInstanceBytes(1) + JavaObjectModel::EstimateStringBytes(4);
+    CHECK(first.freed_objects == 3);
+    CHECK(first.freed_bytes == released);
+    CHECK(fixture.model.AllocatedBytes() == before - released);
     CHECK_FALSE(fixture.model.IsValidRef(dead));
     CHECK_THROWS_AS(static_cast<void>(fixture.model.Kind(dead)), DexVmError);
-    CHECK_THROWS_AS(static_cast<void>(fixture.strings.Length(string_identity)), JniStringError);
+    CHECK_THROWS_AS(static_cast<void>(fixture.model.Length(string_identity)), JniStringError);
     CHECK(std::ranges::find(weak_clears, string_identity) != weak_clears.end());
 
     const auto reused = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
@@ -734,13 +729,11 @@ TEST_CASE("DVM-260 primitive aget aput Release microbenchmark") {
     if (!std::getenv("OGPLAY_RUN_ARRAY_BENCHMARK")) return;
     using namespace ogplay::runtime;
     using namespace ogplay::runtime::dexvm;
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
     ogplay::memory::AddressSpace memory;
     ogplay::core::CapabilityLedger ledger;
     GuestJavaPayloadProvider arrays_payload{memory, ledger};
     JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model{strings, arrays};
+    JavaObjectModel model{arrays};
     const auto array = model.NewPrimitiveArray(DexClassId{1}, JniPrimitiveKind::integer, 65536);
     std::vector<std::uint64_t> times;
     std::uint64_t checksum{};
@@ -820,22 +813,30 @@ TEST_CASE("DexVM byte-array host lease shares the protected guest mapping and ro
 
 TEST_CASE("DVM-260 direct String pins survive GC until final cross-kind release") {
     GcVm f;
-    const auto text = f.model.NewString(u"A\0\U0001f600");
+    const auto text = f.model.NewString(std::u16string_view(u"A\0\U0001f600", 4));
     const auto id = f.model.ToIdentity(text);
-    const auto pin = f.strings.Acquire(id, JniStringAccessKind::chars);
-    f.vm.SetGcIntegration({[&](const auto& visit) { f.strings.VisitAccessRoots(visit); }, {}, {}});
-    for (int round = 0; round < 3; ++round) {
-        static_cast<void>(f.vm.CollectGarbage());
-        REQUIRE(f.strings.Contains(id));
-        auto second = f.strings.Acquire(id, JniStringAccessKind::critical);
-        CHECK(second.address == pin.address);
-        CHECK(f.strings.PinCount(id) == 2);
-        f.strings.Release(id, 0, JniStringAccessKind::chars);
+    const auto string_class = f.model.ObjectClass(text);
+    const auto field = f.linker.FindFieldRecursive(string_class, "value", "[C");
+    REQUIRE(field);
+    const auto value = VmObjectRef{f.model.InstanceSlots(text)[f.linker.Field(*field).slot].bits};
+    const auto array = f.model.ToIdentity(value);
+    {
+        const auto root = f.vm.ProtectReferences(std::array{text});
+        const auto pin = f.model.Acquire(id, JniStringAccessKind::chars);
+        for (int round = 0; round < 3; ++round) {
+            static_cast<void>(f.vm.CollectGarbage());
+            REQUIRE(f.model.Contains(id));
+            auto second = f.model.Acquire(id, JniStringAccessKind::critical);
+            CHECK(second.address == pin.address);
+            CHECK(f.arrays.PinCount(array) == 2);
+            f.model.Release(id, 0, JniStringAccessKind::chars);
+        }
+        CHECK_FALSE(pin.is_copy);
+        f.model.Release(id, 0, JniStringAccessKind::critical);
     }
-    CHECK_FALSE(pin.is_copy);
-    f.strings.Release(id, 0, JniStringAccessKind::critical);
     static_cast<void>(f.vm.CollectGarbage());
-    CHECK_FALSE(f.strings.Contains(id));
+    CHECK_FALSE(f.model.Contains(id));
+    CHECK_THROWS_AS(static_cast<void>(f.arrays.Length(array)), JniArrayError);
 }
 
 TEST_CASE("DVM-353 ROM finalizer watchdog measures injected real time during a driver stall") {

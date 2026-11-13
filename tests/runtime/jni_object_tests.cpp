@@ -1,3 +1,4 @@
+#include "jni_string_fixture.h"
 #include "ogplay/runtime/integration/java_payload_provider.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <cstdint>
@@ -10,9 +11,8 @@
 
 TEST_CASE("JNI string objects preserve UTF-16 and modified UTF-8 regions") {
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    ogplay::runtime::JniStringStore strings{strings_payload};
-    const std::vector<ogplay::runtime::JniChar> value{'A', 0, 0x4E2D,
-                                                       0xD83D, 0xDE00};
+    ogplay::runtime::TestJniStrings strings{strings_payload};
+    const std::vector<ogplay::runtime::JniChar> value{'A', 0, 0x4E2D, 0xD83D, 0xDE00};
     const auto string = strings.Create(value);
     const std::vector<ogplay::runtime::JniChar> expected_region{0, 0x4E2D};
     const std::vector<std::uint8_t> expected_utf_region{0x41, 0xC0, 0x80};
@@ -21,8 +21,7 @@ TEST_CASE("JNI string objects preserve UTF-16 and modified UTF-8 regions") {
     CHECK(strings.Region(string, 1, 2) == expected_region);
     CHECK(strings.ModifiedUtf8Region(string, 0, 2) == expected_utf_region);
 
-    const auto encoded = strings.Acquire(
-        string, ogplay::runtime::JniStringAccessKind::modified_utf8);
+    const auto encoded = strings.Acquire(string, ogplay::runtime::JniStringAccessKind::modified_utf8);
     const auto decoded = strings.CreateModifiedUtf8(encoded.modified_utf8);
     CHECK(strings.Region(decoded, 0, strings.Length(decoded)) == value);
     strings.Release(string, encoded.token, encoded.kind);
@@ -35,7 +34,7 @@ TEST_CASE("DVM-260 String direct pins and UTF8 copies have independent lifetimes
     ogplay::memory::AddressSpace memory;
     ogplay::core::CapabilityLedger ledger;
     GuestJavaPayloadProvider provider{memory, ledger};
-    JniStringStore strings{provider};
+    TestJniStrings strings{provider};
     std::vector<JniChar> text{'A', 0, 0xd83d, 0xde00};
     const auto first = strings.Create(text);
     text[0] = 'X';
@@ -74,17 +73,15 @@ TEST_CASE("DVM-260 String direct pins and UTF8 copies have independent lifetimes
 
 TEST_CASE("JNI string identities publish into the common environment") {
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    ogplay::runtime::JniStringStore strings{strings_payload};
+    ogplay::runtime::TestJniStrings strings{strings_payload};
     ogplay::runtime::JniEnvironment environment;
     environment.AttachThread(3);
     const std::vector<ogplay::runtime::JniChar> text{'J', 'N', 'I'};
     const auto identity = strings.Create(text);
     const auto local = environment.PublishLocalObject(3, identity);
     CHECK_FALSE(local.IsNull());
-    CHECK_THROWS_AS(static_cast<void>(strings.Region(identity, -1, 1)),
-                    ogplay::runtime::JniStringError);
-    CHECK_THROWS_AS(static_cast<void>(strings.Region(identity, 2, 2)),
-                    ogplay::runtime::JniStringError);
+    CHECK_THROWS_AS(static_cast<void>(strings.Region(identity, -1, 1)), ogplay::runtime::JniStringError);
+    CHECK_THROWS_AS(static_cast<void>(strings.Region(identity, 2, 2)), ogplay::runtime::JniStringError);
     environment.DeleteLocalRef(3, local);
     environment.DetachThread(3);
     strings.Delete(identity);

@@ -560,6 +560,47 @@ struct AndroidGuestProcessStartup final {
             request.guest_call_slice_observer_thread};
 }
 
+// The native substrate binds slots before the VM has linked the boot classes.
+class ProcessStringBackend final : public JniStringBackend {
+public:
+    void Bind(JniStringBackend* backend) noexcept { backend_ = backend; }
+
+    std::shared_ptr<void> Lock() const override { return Backend().Lock(); }
+
+    JniObjectIdentity Create(std::span<const JniChar> chars) override { return Backend().Create(chars); }
+
+    bool Contains(JniObjectIdentity string) const override { return backend_ && backend_->Contains(string); }
+
+    JniSize Length(JniObjectIdentity string) const override { return Backend().Length(string); }
+
+    JniSize ModifiedUtf8Length(JniObjectIdentity string) const override { return Backend().ModifiedUtf8Length(string); }
+
+    void ReadRegion(JniObjectIdentity string, JniSize start, JniSize length, const RegionReader& read) const override {
+        Backend().ReadRegion(string, start, length, read);
+    }
+
+    std::vector<std::uint8_t> ModifiedUtf8Region(JniObjectIdentity string, JniSize start,
+                                                 JniSize length) const override {
+        return Backend().ModifiedUtf8Region(string, start, length);
+    }
+
+    JniStringAccess Acquire(JniObjectIdentity string, JniStringAccessKind kind) override {
+        return Backend().Acquire(string, kind);
+    }
+
+    bool Release(JniObjectIdentity string, std::uint64_t token, JniStringAccessKind kind) override {
+        return Backend().Release(string, token, kind);
+    }
+
+private:
+    JniStringBackend& Backend() const {
+        if (!backend_) throw JniGuestBindingError("JNI String backend is unavailable before VM startup");
+        return *backend_;
+    }
+
+    JniStringBackend* backend_{};
+};
+
 }  // namespace
 
 class AndroidGuestProcess::Impl final {
@@ -1579,21 +1620,6 @@ public:
                             {"emergency_uses", backing.emergency_uses},
                             {"emergency_live_bytes", backing.emergency_live_bytes},
                             {"emergency_peak_bytes", backing.emergency_peak_bytes}});
-            const auto string_allocations = strings_.AllocationStatistics();
-            logger_->Write(core::LogLevel::info, "runtime.java_payload", "string allocation summary", {},
-                           {{"live_bytes", string_allocations.live_bytes},
-                            {"peak_live_bytes", string_allocations.peak_live_bytes},
-                            {"allocation_failures", string_allocations.allocation_failures},
-                            {"pin_count", string_allocations.pin_count},
-                            {"pinned_strings", string_allocations.pinned_strings},
-                            {"pinned_bytes", string_allocations.pinned_bytes}});
-            for (std::size_t bucket = 0; bucket < string_allocations.allocations.size(); ++bucket)
-                if (const auto count = string_allocations.allocations[bucket])
-                    logger_->Write(core::LogLevel::info, "runtime.java_payload", "primitive allocation histogram", {},
-                                   {{"kind", std::uint64_t{8}},
-                                    {"length_bucket", static_cast<std::uint64_t>(bucket)},
-                                    {"count", count}},
-                                   {.mode = core::RateLimitMode::none});
             for (const auto& size_class : array_payload_.SizeClassStatistics())
                 if (size_class.allocation_count)
                     logger_->Write(core::LogLevel::info, "runtime.java_payload", "primitive size class utilization", {},
@@ -1851,7 +1877,9 @@ public:
 
     JniGuestObjectRegistry& Objects() noexcept { return objects_; }
 
-    JniStringStore& Strings() noexcept { return strings_; }
+    JniStringBackend& Strings() noexcept { return strings_; }
+
+    void SetStringBackend(JniStringBackend* backend) noexcept { strings_.Bind(backend); }
 
     JniPrimitiveArrayStore& Arrays() noexcept { return arrays_; }
 
@@ -2361,7 +2389,7 @@ private:
     AndroidGuestProcessState process_state_;
     AndroidGuestPlatformState platform_state_;
     GuestJavaPayloadProvider array_payload_{address_space_, ledger_};
-    JniStringStore strings_{array_payload_};
+    ProcessStringBackend strings_;
     AndroidGuestMovieState movie_state_;
     AndroidGuestLegacyMediaState media_state_;
     JniPrimitiveArrayStore arrays_{array_payload_};
@@ -2614,7 +2642,11 @@ JniGuestObjectRegistry& AndroidGuestProcess::Objects() noexcept {
     return impl_->Objects();
 }
 
-JniStringStore& AndroidGuestProcess::Strings() noexcept {
+void AndroidGuestProcess::SetStringBackend(JniStringBackend* backend) noexcept {
+    impl_->SetStringBackend(backend);
+}
+
+JniStringBackend& AndroidGuestProcess::Strings() noexcept {
     return impl_->Strings();
 }
 
@@ -3012,7 +3044,7 @@ JniGuestObjectRegistry& AndroidGuestCallSession::Objects() noexcept {
     return process_->Objects();
 }
 
-JniStringStore& AndroidGuestCallSession::Strings() noexcept {
+JniStringBackend& AndroidGuestCallSession::Strings() noexcept {
     return process_->Strings();
 }
 

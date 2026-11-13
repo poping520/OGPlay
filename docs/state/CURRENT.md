@@ -46,7 +46,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 
 ## 未闭合问题
 
-- [DVM-260](KNOWN-ISSUES.md) 五阶段 macOS 已验收；数组/String/NIO 共用稳定 guest payload，JNI 双后端 399/399、dalvik 85/91、九场景 6/9，耗时/帧时间门禁通过；Windows 未验证。
+- [DVM-260](KNOWN-ISSUES.md) 五阶段 macOS 已验收；数组/ROM String 的 value/NIO 共用稳定 guest payload，JNI 双后端 399/399、dalvik 85/91、九场景 6/9，耗时/帧时间门禁通过；Windows 未验证。
 
 - 退出顺序：除上表外，GC 全周期、直接写入 ABA、直接访存卸载 quiescence 未验收；
   Java-only 线程误交 clone join 已修，MCP shutdown 稳定性待验。

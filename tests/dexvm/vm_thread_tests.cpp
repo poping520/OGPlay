@@ -31,12 +31,10 @@ using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 std::vector<std::uint8_t> ReadFixture(const std::string& name) {
-    const std::string path =
-        std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
+    const std::string path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
     std::ifstream stream(path, std::ios::binary);
     REQUIRE_MESSAGE(stream.good(), "missing fixture: ", path);
-    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream),
-                                     std::istreambuf_iterator<char>());
+    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 }
 
 // Stands in for the A32 guest call executor: the interpreter counts a live
@@ -44,16 +42,13 @@ std::vector<std::uint8_t> ReadFixture(const std::string& name) {
 struct StubNativeBridge final : NativeMethodBridge {
     std::function<void()> action;
 
-    [[nodiscard]] VmValue Invoke(const LinkedMethod&, VmObjectRef,
-                                 std::span<const VmValue>) override {
+    [[nodiscard]] VmValue Invoke(const LinkedMethod&, VmObjectRef, std::span<const VmValue>) override {
         if (action) action();
         return VmValue::Void();
     }
 };
 
 struct ThreadedVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
@@ -62,13 +57,14 @@ struct ThreadedVm final {
     Interpreter interpreter;
     VmThreadRuntime threads;
 
-    explicit ThreadedVm(NativeMethodBridge* bridge = nullptr, InterpreterBackend backend = InterpreterBackend::switch_dispatch, bool platform = false)
-        : model(strings, arrays, {}),
-          linker(),
+    explicit ThreadedVm(NativeMethodBridge* bridge = nullptr,
+                        InterpreterBackend backend = InterpreterBackend::switch_dispatch, bool platform = false)
+        : model(arrays, {}), linker(),
           interpreter(
               [this, platform]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
-                  if (platform) linker.RegisterIntrinsics(AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>()));
+                  if (platform)
+                      linker.RegisterIntrinsics(AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>()));
                   ogplay::test::RegisterBootDex(linker);
                   linker.RegisterDex(ReadFixture("interp.dex"));
                   linker.Link();
@@ -77,45 +73,35 @@ struct ThreadedVm final {
               model, bridge, ledger, {.backend = backend}),
           threads(interpreter) {}
 
-    [[nodiscard]] VmMethodId Static(const std::string& class_descriptor,
-                                    const std::string& name,
+    [[nodiscard]] VmMethodId Static(const std::string& class_descriptor, const std::string& name,
                                     const std::string& descriptor) {
         const auto java_class = linker.FindClass(class_descriptor);
         REQUIRE_MESSAGE(java_class.has_value(), class_descriptor);
-        const auto method =
-            linker.FindDirectMethod(*java_class, name, descriptor);
+        const auto method = linker.FindDirectMethod(*java_class, name, descriptor);
         REQUIRE_MESSAGE(method.has_value(), name);
         return *method;
     }
 
-    [[nodiscard]] VmCallOutcome CallStatic(const std::string& class_descriptor,
-                                           const std::string& name,
+    [[nodiscard]] VmCallOutcome CallStatic(const std::string& class_descriptor, const std::string& name,
                                            const std::string& descriptor) {
-        return interpreter.Call(Static(class_descriptor, name, descriptor),
-                                {});
+        return interpreter.Call(Static(class_descriptor, name, descriptor), {});
     }
 
     // Builds the run() target declared by the fixture class.
-    [[nodiscard]] VmObjectRef Make(const std::string& class_descriptor,
-                                   const std::string& descriptor) {
+    [[nodiscard]] VmObjectRef Make(const std::string& class_descriptor, const std::string& descriptor) {
         const auto outcome = CallStatic(class_descriptor, "make", descriptor);
-        REQUIRE_MESSAGE(!outcome.exception.IsValid(),
-                        outcome.exception_message);
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
         REQUIRE(outcome.value.kind == VmValue::Kind::ref);
         return outcome.value.ref;
     }
 
     // A distinct java.lang.Thread stand-in, so the tests exercise the
     // Runnable form where the thread object is not the run() target.
-    [[nodiscard]] VmObjectRef NewThreadObject() {
-        return interpreter.NewIntrinsicInstance("Ljava/lang/Object;");
-    }
+    [[nodiscard]] VmObjectRef NewThreadObject() { return interpreter.NewIntrinsicInstance("Ljava/lang/Object;"); }
 
-    [[nodiscard]] std::int32_t ReadInt(const std::string& class_descriptor,
-                                       const std::string& name) {
+    [[nodiscard]] std::int32_t ReadInt(const std::string& class_descriptor, const std::string& name) {
         const auto outcome = CallStatic(class_descriptor, name, "()I");
-        REQUIRE_MESSAGE(!outcome.exception.IsValid(),
-                        outcome.exception_message);
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
         return outcome.value.AsInt();
     }
 
@@ -165,8 +151,7 @@ TEST_CASE("dexvm child threads share one object world with the root") {
     vm.threads.Start(thread_object, "probe", vm.threads.AllocateThreadId());
     vm.threads.Join(thread_object);
 
-    const auto product =
-        vm.CallStatic("LThreadProbe;", "product", "()Ljava/lang/Object;");
+    const auto product = vm.CallStatic("LThreadProbe;", "product", "()Ljava/lang/Object;");
     REQUIRE(!product.exception.IsValid());
     REQUIRE(product.value.ref.IsValid());
     // The object the child allocated resolves in the same JavaObjectModel
@@ -182,19 +167,13 @@ TEST_CASE("dexvm Thread.start is refused twice and without a run() target") {
     const auto thread_object = target;
     const auto id = vm.threads.AllocateThreadId();
     vm.threads.Start(thread_object, "probe", id);
-    CHECK_THROWS_AS(vm.threads.Start(thread_object, "probe", id),
-                    VmJavaThrow);
+    CHECK_THROWS_AS(vm.threads.Start(thread_object, "probe", id), VmJavaThrow);
     vm.threads.Join(thread_object);
     // A finished thread is still a started thread.
-    CHECK_THROWS_AS(vm.threads.Start(thread_object, "probe", id),
-                    VmJavaThrow);
+    CHECK_THROWS_AS(vm.threads.Start(thread_object, "probe", id), VmJavaThrow);
 
-    const auto without_run =
-        vm.Make("LThreadNoRun;", "()Ljava/lang/Object;");
-    CHECK_THROWS_AS(
-        vm.threads.Start(without_run, "no-run",
-                         vm.threads.AllocateThreadId()),
-        VmJavaThrow);
+    const auto without_run = vm.Make("LThreadNoRun;", "()Ljava/lang/Object;");
+    CHECK_THROWS_AS(vm.threads.Start(without_run, "no-run", vm.threads.AllocateThreadId()), VmJavaThrow);
 }
 
 TEST_CASE("dexvm isAlive tracks a running thread until teardown stops it") {
@@ -203,8 +182,7 @@ TEST_CASE("dexvm isAlive tracks a running thread until teardown stops it") {
     const auto thread_object = target;
     vm.threads.Start(thread_object, "spin", vm.threads.AllocateThreadId());
 
-    REQUIRE(WaitFor(
-        [&] { return vm.StatusOf(thread_object) == VmThreadStatus::running; }));
+    REQUIRE(WaitFor([&] { return vm.StatusOf(thread_object) == VmThreadStatus::running; }));
     CHECK(vm.threads.IsAlive(thread_object));
 
     // The body never returns: only the teardown stop request unwinds it.
@@ -226,13 +204,11 @@ TEST_CASE("dexvm host progress wait is bounded by its wall-time budget") {
     ThreadedVm vm;
     const auto target = vm.Make("LThreadSpin;", "()Ljava/lang/Runnable;");
     vm.threads.Start(target, "spin", vm.threads.AllocateThreadId());
-    REQUIRE(WaitFor(
-        [&] { return vm.StatusOf(target) == VmThreadStatus::running; }));
+    REQUIRE(WaitFor([&] { return vm.StatusOf(target) == VmThreadStatus::running; }));
 
     const auto started = std::chrono::steady_clock::now();
     CHECK_FALSE(vm.threads.WaitForHostProgress(std::chrono::milliseconds(5)));
-    CHECK(std::chrono::steady_clock::now() - started <
-          std::chrono::seconds(1));
+    CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(1));
 
     vm.threads.Shutdown();
 }
@@ -240,8 +216,7 @@ TEST_CASE("dexvm host progress wait is bounded by its wall-time budget") {
 TEST_CASE("dexvm stopped-context unwind requires the teardown handshake") {
     ThreadedVm vm;
     const auto context = vm.interpreter.CreateExecutionContext();
-    CHECK_THROWS_AS(vm.interpreter.UnwindStoppedExecutionContext(context),
-                    DexVmError);
+    CHECK_THROWS_AS(vm.interpreter.UnwindStoppedExecutionContext(context), DexVmError);
     vm.interpreter.RequestStop(context);
     CHECK_NOTHROW(vm.interpreter.UnwindStoppedExecutionContext(context));
     CHECK(vm.interpreter.ExecutionSnapshot(context).frame_depth == 0U);
@@ -255,13 +230,11 @@ TEST_CASE("dexvm teardown joins every live thread deterministically") {
     // afterwards would have to wait for teardown.
     std::vector<VmObjectRef> targets;
     for (int index = 0; index < 4; ++index) {
-        targets.push_back(
-            vm.Make("LThreadSpin;", "()Ljava/lang/Runnable;"));
+        targets.push_back(vm.Make("LThreadSpin;", "()Ljava/lang/Runnable;"));
     }
     std::vector<VmObjectRef> started;
     for (const auto thread_object : targets) {
-        vm.threads.Start(thread_object, "spin",
-                         vm.threads.AllocateThreadId());
+        vm.threads.Start(thread_object, "spin", vm.threads.AllocateThreadId());
         started.push_back(thread_object);
     }
     REQUIRE(WaitFor([&] { return vm.threads.LiveCount() == 4U; }));
@@ -278,8 +251,7 @@ TEST_CASE("dexvm uncaught thread exceptions are recorded, not thrown at join") {
     ThreadedVm vm;
     const auto target = vm.Make("LThreadThrower;", "()Ljava/lang/Runnable;");
     const auto thread_object = target;
-    vm.threads.Start(thread_object, "thrower",
-                     vm.threads.AllocateThreadId());
+    vm.threads.Start(thread_object, "thrower", vm.threads.AllocateThreadId());
     vm.threads.Join(thread_object);  // join itself stays quiet
 
     CHECK(vm.StatusOf(thread_object) == VmThreadStatus::failed);
@@ -301,15 +273,16 @@ TEST_CASE("DVM-234 uncaught dispatcher retains its child context and throwable r
         const auto method = fixture.Static("LFlow;", "loopSum", "(I)I");
         std::uint64_t observed{};
         fixture.threads.Start(target, "dispatch-context", fixture.threads.AllocateThreadId(),
-            [&](Interpreter& callback_vm, VmObjectRef thread, VmObjectRef exception) {
-                observed = callback_vm.CurrentContextToken();
-                CHECK(observed != 1);
-                CHECK(callback_vm.Threads().CurrentThreadObject() == thread);
-                static_cast<void>(callback_vm.CollectGarbage("uncaught-dispatch"));
-                CHECK(fixture.linker.Class(fixture.model.ObjectClass(exception)).descriptor == "LMyError;");
-                CHECK(callback_vm.Call(method, std::array{VmValue::Int(10)}).value.AsInt() == 45);
-                return true;
-            });
+                              [&](Interpreter& callback_vm, VmObjectRef thread, VmObjectRef exception) {
+                                  observed = callback_vm.CurrentContextToken();
+                                  CHECK(observed != 1);
+                                  CHECK(callback_vm.Threads().CurrentThreadObject() == thread);
+                                  static_cast<void>(callback_vm.CollectGarbage("uncaught-dispatch"));
+                                  CHECK(fixture.linker.Class(fixture.model.ObjectClass(exception)).descriptor ==
+                                        "LMyError;");
+                                  CHECK(callback_vm.Call(method, std::array{VmValue::Int(10)}).value.AsInt() == 45);
+                                  return true;
+                              });
         fixture.threads.Join(target);
         CHECK(observed != 0);
         CHECK_FALSE(fixture.threads.TakeFailure().has_value());
@@ -371,37 +344,29 @@ TEST_CASE("dexvm synchronized native methods use class and receiver monitors") {
     VmObjectRef expected(0);
     std::size_t observed{};
     bridge.action = [&] {
-        CHECK(vm.interpreter.Monitors().IsOwner(
-            expected, vm.interpreter.CurrentContextToken()));
+        CHECK(vm.interpreter.Monitors().IsOwner(expected, vm.interpreter.CurrentContextToken()));
         ++observed;
     };
 
     expected = vm.model.ClassObject(*java_class);
-    const auto static_outcome =
-        vm.CallStatic("LSyncNative;", "classLocked", "()V");
+    const auto static_outcome = vm.CallStatic("LSyncNative;", "classLocked", "()V");
     CHECK_FALSE(static_outcome.exception.IsValid());
     CHECK(vm.interpreter.Monitors().HeldCount(1) == 0U);
 
-    const auto created =
-        vm.CallStatic("LSyncNative;", "make", "()LSyncNative;");
+    const auto created = vm.CallStatic("LSyncNative;", "make", "()LSyncNative;");
     REQUIRE(created.value.kind == VmValue::Kind::ref);
     expected = created.value.ref;
-    const auto index = vm.linker.FindVtableIndex(
-        *java_class, "instanceLocked", "()V");
+    const auto index = vm.linker.FindVtableIndex(*java_class, "instanceLocked", "()V");
     REQUIRE(index.has_value());
-    const auto instance_outcome = vm.interpreter.Call(
-        vm.linker.Class(*java_class).vtable[*index],
-        std::vector<VmValue>{VmValue::Ref(expected)});
+    const auto instance_outcome =
+        vm.interpreter.Call(vm.linker.Class(*java_class).vtable[*index], std::vector<VmValue>{VmValue::Ref(expected)});
     CHECK_FALSE(instance_outcome.exception.IsValid());
     CHECK(observed == 2U);
     CHECK(vm.interpreter.Monitors().HeldCount(1) == 0U);
 
-    bridge.action = [] {
-        throw VmJavaThrow{"Ljava/lang/RuntimeException;", "native failure"};
-    };
-    const auto failure = vm.interpreter.Call(
-        vm.linker.Class(*java_class).vtable[*index],
-        std::vector<VmValue>{VmValue::Ref(expected)});
+    bridge.action = [] { throw VmJavaThrow{"Ljava/lang/RuntimeException;", "native failure"}; };
+    const auto failure =
+        vm.interpreter.Call(vm.linker.Class(*java_class).vtable[*index], std::vector<VmValue>{VmValue::Ref(expected)});
     REQUIRE(failure.exception.IsValid());
     CHECK(failure.exception_message == "native failure");
     CHECK(vm.interpreter.Monitors().HeldCount(1) == 0U);

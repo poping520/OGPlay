@@ -546,6 +546,8 @@ void DexClassLinker::Impl::LoadDexMembers(const DexClassId id, const bool merge_
                         annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
                 }
             }
+            if (boot && stored.descriptor == "Ljava/lang/String;" && (stored.access_flags & kAccFinal))
+                method.fast_op = ResolveStringFastOp(method.name, method.descriptor);
             method.is_static = (encoded.access_flags & kAccStatic) != 0;
             method.overridable = (encoded.access_flags & (kAccStatic | kAccPrivate | kAccFinal)) == 0;
             method.declared_invoke_kind =
@@ -596,6 +598,7 @@ void DexClassLinker::Impl::LoadDexMembers(const DexClassId id, const bool merge_
                     current.adapter_review.clear();
                 }
                 current.access_flags = method.access_flags;
+                current.fast_op = method.fast_op;
                 // The DEX flags decide overriding, as for any boot class.
                 current.overridable = (method.access_flags & (kAccStatic | kAccPrivate | kAccFinal)) == 0;
                 current.must_override = false;

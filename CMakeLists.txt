@@ -475,7 +475,6 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/jni_guest/jni_guest_static_fields.cpp
     src/runtime/jni_guest/jni_guest_string_bindings.cpp
     src/runtime/integration/native_activity_runner.cpp
-    src/runtime/integration/headless_jni_contract.cpp
     src/runtime/dexvm/class_name_codec.cpp
     src/runtime/dexvm/class_loader_facade.cpp
     src/runtime/dexvm/big_int_runtime.cpp

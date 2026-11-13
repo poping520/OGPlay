@@ -36,7 +36,7 @@ void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog);
 [[nodiscard]] IntrinsicClassDecl Declare_dalvik_system_PathClassLoader_Shell();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Thread_Class();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_ThreadGroup_Class();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_String_Class();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_String_Natives();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_RealToString_Natives();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_StringToReal_Natives();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_System_Class(const CoreIntrinsicServices& services);

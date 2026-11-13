@@ -107,6 +107,8 @@ set(OGPLAY_TEST_SOURCES
     tests/runtime/framework_preferences_tests.cpp
     tests/runtime/guest_lifecycle_tests.cpp
     tests/runtime/headless_bionic_runner_tests.cpp
+    tests/runtime/headless_jni_contract.cpp
+    tests/runtime/jni_string_fixture.cpp
     tests/runtime/headless_jni_contract_tests.cpp
     tests/runtime/jni_tests.cpp
     tests/runtime/jni_exception_tests.cpp
@@ -287,6 +289,7 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/boot_dex.cpp
     tests/dexvm/observable_tests.cpp
     tests/dexvm/network_sqlite_tests.cpp
+    tests/dexvm/string_rom_tests.cpp
     tests/dexvm/intrinsics_p1_tests.cpp
     tests/dexvm/thread_intrinsic_tests.cpp
     tests/dexvm/vm_monitor_tests.cpp

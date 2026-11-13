@@ -16,7 +16,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(CoreIntrinsicServices servi
         Declare_dalvik_system_PathClassLoader_Shell(),
         Declare_java_lang_Thread_Class(),
         Declare_java_lang_ThreadGroup_Class(),
-        Declare_java_lang_String_Class(),
+        Declare_java_lang_String_Natives(),
         Declare_java_lang_RealToString_Natives(),
         Declare_java_lang_StringToReal_Natives(),
         Declare_java_lang_System_Class(services),

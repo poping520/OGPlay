@@ -1,0 +1,169 @@
+.class public LStringRom;
+.super Ljava/lang/Object;
+
+.method static public length(Ljava/lang/String;)I
+.registers 1
+    invoke-virtual {v0}, Ljava/lang/String;->length()I
+    move-result v0
+    return v0
+.end method
+
+.method static public isEmpty(Ljava/lang/String;)Z
+.registers 1
+    invoke-virtual {v0}, Ljava/lang/String;->isEmpty()Z
+    move-result v0
+    return v0
+.end method
+
+.method static public charAt(Ljava/lang/String;I)C
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/lang/String;->charAt(I)C
+    move-result v0
+    return v0
+.end method
+
+.method static public equals(Ljava/lang/String;Ljava/lang/Object;)Z
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+    move-result v0
+    return v0
+.end method
+
+.method static public compareTo(Ljava/lang/String;Ljava/lang/String;)I
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/lang/String;->compareTo(Ljava/lang/String;)I
+    move-result v0
+    return v0
+.end method
+
+.method static public hashCode(Ljava/lang/String;)I
+.registers 1
+    invoke-virtual {v0}, Ljava/lang/String;->hashCode()I
+    move-result v0
+    return v0
+.end method
+
+.method static public indexOf(Ljava/lang/String;I)I
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/lang/String;->indexOf(I)I
+    move-result v0
+    return v0
+.end method
+
+.method static public indexOf(Ljava/lang/String;II)I
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/lang/String;->indexOf(II)I
+    move-result v0
+    return v0
+.end method
+
+.method static public indexOf(Ljava/lang/String;Ljava/lang/String;)I
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/lang/String;->indexOf(Ljava/lang/String;)I
+    move-result v0
+    return v0
+.end method
+
+.method static public indexOf(Ljava/lang/String;Ljava/lang/String;I)I
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/lang/String;->indexOf(Ljava/lang/String;I)I
+    move-result v0
+    return v0
+.end method
+
+.method static public lastIndexOf(Ljava/lang/String;I)I
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/lang/String;->lastIndexOf(I)I
+    move-result v0
+    return v0
+.end method
+
+.method static public lastIndexOf(Ljava/lang/String;II)I
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/lang/String;->lastIndexOf(II)I
+    move-result v0
+    return v0
+.end method
+
+.method static public lastIndexOf(Ljava/lang/String;Ljava/lang/String;)I
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/lang/String;->lastIndexOf(Ljava/lang/String;)I
+    move-result v0
+    return v0
+.end method
+
+.method static public lastIndexOf(Ljava/lang/String;Ljava/lang/String;I)I
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/lang/String;->lastIndexOf(Ljava/lang/String;I)I
+    move-result v0
+    return v0
+.end method
+
+.method static public startsWith(Ljava/lang/String;Ljava/lang/String;)Z
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/lang/String;->startsWith(Ljava/lang/String;)Z
+    move-result v0
+    return v0
+.end method
+
+.method static public startsWith(Ljava/lang/String;Ljava/lang/String;I)Z
+.registers 3
+    invoke-virtual {v0, v1, v2}, Ljava/lang/String;->startsWith(Ljava/lang/String;I)Z
+    move-result v0
+    return v0
+.end method
+
+.method static public endsWith(Ljava/lang/String;Ljava/lang/String;)Z
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/lang/String;->endsWith(Ljava/lang/String;)Z
+    move-result v0
+    return v0
+.end method
+
+.method static public regionMatches(Ljava/lang/String;ILjava/lang/String;II)Z
+.registers 5
+    invoke-virtual {v0, v1, v2, v3, v4}, Ljava/lang/String;->regionMatches(ILjava/lang/String;II)Z
+    move-result v0
+    return v0
+.end method
+
+.method static public contentEquals(Ljava/lang/String;Ljava/lang/CharSequence;)Z
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/lang/String;->contentEquals(Ljava/lang/CharSequence;)Z
+    move-result v0
+    return v0
+.end method
+
+.method static public regionMatches(Ljava/lang/String;ZILjava/lang/String;II)Z
+.registers 6
+    invoke-virtual/range {v0 .. v5}, Ljava/lang/String;->regionMatches(ZILjava/lang/String;II)Z
+    move-result v0
+    return v0
+.end method
+
+.method static public equalsIgnoreCase(Ljava/lang/String;Ljava/lang/String;)Z
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/lang/String;->equalsIgnoreCase(Ljava/lang/String;)Z
+    move-result v0
+    return v0
+.end method
+
+.method static public hashCodeVirtual(Ljava/lang/Object;)I
+.registers 1
+    invoke-virtual {v0}, Ljava/lang/Object;->hashCode()I
+    move-result v0
+    return v0
+.end method
+
+.method static public equalsVirtual(Ljava/lang/Object;Ljava/lang/Object;)Z
+.registers 2
+    invoke-virtual {v0, v1}, Ljava/lang/Object;->equals(Ljava/lang/Object;)Z
+    move-result v0
+    return v0
+.end method
+
+.method static public literal()Ljava/lang/String;
+.registers 1
+    const-string v0, "string-rom-intern"
+    return-object v0
+.end method

@@ -25,24 +25,24 @@ JniObjectIdentity Object(std::uint64_t value) {
 }
 
 struct NioVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    ogplay::runtime::JniStringStore strings{strings_payload};
     memory::AddressSpace memory;
     ogplay::core::CapabilityLedger payload_ledger;
     ogplay::runtime::GuestJavaPayloadProvider arrays_payload{memory, payload_ledger};
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
-    dx::JavaObjectModel model{strings, arrays};
+    dx::JavaObjectModel model{arrays};
     dx::DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
     dx::Interpreter vm;
 
     explicit NioVm(dx::InterpreterBackend backend = dx::InterpreterBackend::switch_dispatch)
-        : vm([this]() -> dx::DexClassLinker& {
-              linker.RegisterIntrinsics(dx::CoreIntrinsicCatalog());
-              ogplay::test::RegisterBootDex(linker);
-              linker.Link();
-              return linker;
-          }(), model, nullptr, ledger, {.backend = backend}) {
+        : vm(
+              [this]() -> dx::DexClassLinker& {
+                  linker.RegisterIntrinsics(dx::CoreIntrinsicCatalog());
+                  ogplay::test::RegisterBootDex(linker);
+                  linker.Link();
+                  return linker;
+              }(),
+              model, nullptr, ledger, {.backend = backend}) {
         vm.NIO().SetDirectMemoryAccess(
             {[](std::uint32_t) { return memory::GuestAddress(0x1000U); }, [](memory::GuestAddress, std::uint32_t) {},
              [](memory::GuestAddress address, std::uint32_t size) {
@@ -52,11 +52,9 @@ struct NioVm final {
              [this](memory::GuestAddress address, std::span<const std::byte> in) { memory.Write(address, in); }});
     }
 
-    dx::VmObjectRef Static(const char* name, const char* descriptor,
-                           std::vector<dx::VmValue> arguments) {
-        const auto method = linker.FindDirectMethod(
-            linker.ResolveDescriptor("Ljava/nio/ByteBuffer;"), name,
-            descriptor);
+    dx::VmObjectRef Static(const char* name, const char* descriptor, std::vector<dx::VmValue> arguments) {
+        const auto method =
+            linker.FindDirectMethod(linker.ResolveDescriptor("Ljava/nio/ByteBuffer;"), name, descriptor);
         REQUIRE(method.has_value());
         const auto outcome = vm.Call(*method, arguments);
         REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
@@ -65,8 +63,7 @@ struct NioVm final {
 
     dx::VmObjectRef On(dx::VmObjectRef receiver, const char* name) {
         const auto owner = model.ObjectClass(receiver);
-        const auto index = linker.FindVtableIndex(
-            owner, name, "()Ljava/nio/ByteBuffer;");
+        const auto index = linker.FindVtableIndex(owner, name, "()Ljava/nio/ByteBuffer;");
         REQUIRE(index.has_value());
         const std::array arguments{dx::VmValue::Ref(receiver)};
         const auto outcome = vm.Call(linker.Class(owner).vtable[*index], arguments);
@@ -87,12 +84,11 @@ struct NioVm final {
         return linker.Class(model.ObjectClass(object)).descriptor;
     }
 };
-}
+}  // namespace
 
 TEST_CASE("DVM-82 NIO cursor and marks follow API 19 invariants") {
     dx::NioRuntime nio;
-    nio.CreateHeap(Object(1), dx::VmObjectRef(0), 0, 8,
-                   dx::NioElementKind::byte);
+    nio.CreateHeap(Object(1), dx::VmObjectRef(0), 0, 8, dx::NioElementKind::byte);
     nio.SetPosition(Object(1), 4);
     nio.Mark(Object(1));
     nio.SetPosition(Object(1), 6);
@@ -109,31 +105,25 @@ TEST_CASE("DVM-82 NIO cursor and marks follow API 19 invariants") {
 
 TEST_CASE("DVM-82 NIO views share storage and keep independent cursors") {
     dx::NioRuntime nio;
-    nio.CreateHeap(Object(1), dx::VmObjectRef(0), 0, 8,
-                   dx::NioElementKind::byte);
+    nio.CreateHeap(Object(1), dx::VmObjectRef(0), 0, 8, dx::NioElementKind::byte);
     nio.Put(Object(1), 2, 0x7a);
-    nio.CreateView(Object(2), Object(1), dx::NioElementKind::byte, 2, 4,
-                   false);
+    nio.CreateView(Object(2), Object(1), dx::NioElementKind::byte, 2, 4, false);
     CHECK(nio.Get(Object(2), 0) == 0x7a);
     nio.Put(Object(2), 1, 0x55);
     CHECK(nio.Get(Object(1), 3) == 0x55);
     nio.Duplicate(Object(3), Object(2), true);
     CHECK(nio.Snapshot(Object(3)).read_only);
     CHECK_THROWS_AS(nio.Put(Object(3), 0, 1), dx::VmJavaThrow);
-    nio.CreateView(Object(4), Object(1), dx::NioElementKind::int_value, 0, 2,
-                   false);
+    nio.CreateView(Object(4), Object(1), dx::NioElementKind::int_value, 0, 2, false);
     CHECK_FALSE(nio.Snapshot(Object(4)).array.IsValid());
 }
 
 TEST_CASE("DVM-82 ByteBuffer views preserve heap and direct concrete classes") {
     NioVm fixture;
-    const auto heap = fixture.Static("allocate", "(I)Ljava/nio/ByteBuffer;",
-                                     {dx::VmValue::Int(8)});
-    const auto direct = fixture.Static(
-        "allocateDirect", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(8)});
+    const auto heap = fixture.Static("allocate", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(8)});
+    const auto direct = fixture.Static("allocateDirect", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(8)});
 
-    CHECK(fixture.ClassOf(fixture.On(heap, "slice")) ==
-          "Ljava/nio/HeapByteBuffer;");
+    CHECK(fixture.ClassOf(fixture.On(heap, "slice")) == "Ljava/nio/HeapByteBuffer;");
     for (const auto method : {"slice", "duplicate", "asReadOnlyBuffer"}) {
         const auto view = fixture.On(direct, method);
         CHECK(fixture.ClassOf(view) == "Ljava/nio/DirectByteBuffer;");
@@ -143,19 +133,16 @@ TEST_CASE("DVM-82 ByteBuffer views preserve heap and direct concrete classes") {
 
 TEST_CASE("DVM-82 ByteBuffer scalar access honors selected byte order") {
     dx::NioRuntime nio;
-    nio.CreateHeap(Object(1), dx::VmObjectRef(0), 0, 8,
-                   dx::NioElementKind::byte);
+    nio.CreateHeap(Object(1), dx::VmObjectRef(0), 0, 8, dx::NioElementKind::byte);
     nio.PutScalar(Object(1), dx::NioElementKind::int_value, 0, 0x11223344U);
     CHECK(nio.Get(Object(1), 0) == 0x11);
     nio.SetOrder(Object(1), dx::NioByteOrder::little_endian);
-    CHECK(nio.GetScalar(Object(1), dx::NioElementKind::int_value, 0) ==
-          0x44332211U);
+    CHECK(nio.GetScalar(Object(1), dx::NioElementKind::int_value, 0) == 0x44332211U);
 }
 
 TEST_CASE("DVM-82 NIO side table traces heap backing and sweeps owners") {
     dx::NioRuntime nio;
-    nio.CreateHeap(Object(1), dx::VmObjectRef(9), 0, 4,
-                   dx::NioElementKind::byte);
+    nio.CreateHeap(Object(1), dx::VmObjectRef(9), 0, 4, dx::NioElementKind::byte);
     dx::VmObjectRef traced(0);
     nio.Trace(Object(1), [&traced](const dx::VmObjectRef ref) { traced = ref; });
     CHECK(traced == dx::VmObjectRef(9));
@@ -167,32 +154,26 @@ TEST_CASE("DVM-82 direct buffers expose validated guest memory and GLES marshall
     dx::NioRuntime nio;
     std::array<std::byte, 16> bytes{};
     bool released{};
-    nio.SetDirectMemoryAccess({
-        [](std::uint32_t) { return memory::GuestAddress(0x1000U); },
-        [&released](memory::GuestAddress, std::uint32_t) { released = true; },
-        [](memory::GuestAddress address, std::uint32_t size) {
-            return address.Value() >= 0x1000U &&
-                   address.Value() + size <= 0x1010U;
-        },
-        [&bytes](memory::GuestAddress address, std::span<std::byte> out) {
-            std::copy_n(bytes.begin() + (address.Value() - 0x1000U), out.size(),
-                        out.begin());
-        },
-        [&bytes](memory::GuestAddress address, std::span<const std::byte> in) {
-            std::copy(in.begin(), in.end(),
-                      bytes.begin() + (address.Value() - 0x1000U));
-        }});
+    nio.SetDirectMemoryAccess({[](std::uint32_t) { return memory::GuestAddress(0x1000U); },
+                               [&released](memory::GuestAddress, std::uint32_t) { released = true; },
+                               [](memory::GuestAddress address, std::uint32_t size) {
+                                   return address.Value() >= 0x1000U && address.Value() + size <= 0x1010U;
+                               },
+                               [&bytes](memory::GuestAddress address, std::span<std::byte> out) {
+                                   std::copy_n(bytes.begin() + (address.Value() - 0x1000U), out.size(), out.begin());
+                               },
+                               [&bytes](memory::GuestAddress address, std::span<const std::byte> in) {
+                                   std::copy(in.begin(), in.end(), bytes.begin() + (address.Value() - 0x1000U));
+                               }});
     nio.WrapDirect(Object(1), memory::GuestAddress(0x1000U), 16);
     nio.Put(Object(1), 4, 0x66);
-    nio.CreateView(Object(2), Object(1), dx::NioElementKind::byte, 4, 8,
-                   false);
+    nio.CreateView(Object(2), Object(1), dx::NioElementKind::byte, 4, 8, false);
     CHECK(nio.Snapshot(Object(2)).direct_address->Value() == 0x1004U);
     CHECK(nio.Get(Object(2), 0) == 0x66);
     const auto marshalled = nio.ReadRemainingBytes(Object(2));
     REQUIRE(marshalled.size() == 8U);
     CHECK(marshalled[0] == std::byte{0x66});
-    CHECK_THROWS_AS(nio.WrapDirect(Object(3), memory::GuestAddress(0x2000U), 4),
-                    dx::VmJavaThrow);
+    CHECK_THROWS_AS(nio.WrapDirect(Object(3), memory::GuestAddress(0x2000U), 4), dx::VmJavaThrow);
     nio.Sweep(Object(1));
     CHECK_FALSE(released);
     nio.Sweep(Object(2));
@@ -202,41 +183,37 @@ TEST_CASE("DVM-82 direct buffers expose validated guest memory and GLES marshall
 TEST_CASE("DVM-83 NIO marshals heap and direct buffers without moving cursors") {
     dx::NioRuntime nio;
     std::array<std::byte, 32> guest{};
-    nio.SetDirectMemoryAccess({
-        [](std::uint32_t) { return memory::GuestAddress(0x1000U); },
-        [](memory::GuestAddress, std::uint32_t) {},
-        [](memory::GuestAddress address, std::uint32_t size) {
-            return address.Value() >= 0x1000U &&
-                   address.Value() + size <= 0x1020U;
-        },
-        [&guest](memory::GuestAddress address, std::span<std::byte> out) {
-            std::copy_n(guest.begin() + (address.Value() - 0x1000U), out.size(), out.begin());
-        },
-        [&guest](memory::GuestAddress address, std::span<const std::byte> in) {
-            std::copy(in.begin(), in.end(), guest.begin() + (address.Value() - 0x1000U));
-        }});
+    nio.SetDirectMemoryAccess({[](std::uint32_t) { return memory::GuestAddress(0x1000U); },
+                               [](memory::GuestAddress, std::uint32_t) {},
+                               [](memory::GuestAddress address, std::uint32_t size) {
+                                   return address.Value() >= 0x1000U && address.Value() + size <= 0x1020U;
+                               },
+                               [&guest](memory::GuestAddress address, std::span<std::byte> out) {
+                                   std::copy_n(guest.begin() + (address.Value() - 0x1000U), out.size(), out.begin());
+                               },
+                               [&guest](memory::GuestAddress address, std::span<const std::byte> in) {
+                                   std::copy(in.begin(), in.end(), guest.begin() + (address.Value() - 0x1000U));
+                               }});
     nio.CreateHeap(Object(1), dx::VmObjectRef{}, 0, 8, dx::NioElementKind::byte);
     nio.SetPosition(Object(1), 2);
     nio.SetLimit(Object(1), 6);
     nio.Put(Object(1), 2, 0x11U);
-    CHECK(nio.WithBufferGuestMemory(Object(1), true,
-        [&guest](memory::GuestAddress address) {
-            CHECK(address.Value() == 0x1000U);
-            CHECK(guest[0] == std::byte{0x11});
-            guest[1] = std::byte{0x7a};
-            return 9U;
-        }) == 9U);
+    CHECK(nio.WithBufferGuestMemory(Object(1), true, [&guest](memory::GuestAddress address) {
+        CHECK(address.Value() == 0x1000U);
+        CHECK(guest[0] == std::byte{0x11});
+        guest[1] = std::byte{0x7a};
+        return 9U;
+    }) == 9U);
     CHECK(nio.Get(Object(1), 3) == 0x7aU);
     CHECK(nio.Snapshot(Object(1)).position == 2);
     CHECK(nio.Snapshot(Object(1)).limit == 6);
 
     nio.WrapDirect(Object(2), memory::GuestAddress(0x1010U), 8);
     nio.SetPosition(Object(2), 3);
-    CHECK(nio.WithBufferGuestMemory(Object(2), false,
-        [](memory::GuestAddress address) {
-            CHECK(address.Value() == 0x1013U);
-            return 0U;
-        }) == 0U);
+    CHECK(nio.WithBufferGuestMemory(Object(2), false, [](memory::GuestAddress address) {
+        CHECK(address.Value() == 0x1013U);
+        return 0U;
+    }) == 0U);
     CHECK(nio.Snapshot(Object(2)).position == 3);
 }
 
@@ -256,14 +233,14 @@ TEST_CASE("WU7-6 NIO byte and short reads sign extend on both backends") {
         for (const char* allocation : {"allocate", "allocateDirect"}) {
             const auto b = f.Static(allocation, "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(8)});
             const auto root = f.vm.ProtectReferences(std::array{b});
-            on(b,"put","(IB)Ljava/nio/ByteBuffer;",{dx::VmValue::Int(1),dx::VmValue::Int(-5)});
-            CHECK(on(b,"get","(I)B",{dx::VmValue::Int(1)}).AsInt() == -5);
-            on(b,"putShort","(IS)Ljava/nio/ByteBuffer;",{dx::VmValue::Int(2),dx::VmValue::Int(-1234)});
-            CHECK(on(b,"getShort","(I)S",{dx::VmValue::Int(2)}).AsInt() == -1234);
-            on(b,"putChar","(IC)Ljava/nio/ByteBuffer;",{dx::VmValue::Int(4),dx::VmValue::Int(49200)});
-            CHECK(on(b,"getChar","(I)C",{dx::VmValue::Int(4)}).AsInt() == 49200);
-            const auto view = on(b,"asShortBuffer","()Ljava/nio/ShortBuffer;",{}).ref;
-            CHECK(on(view,"get","(I)S",{dx::VmValue::Int(1)}).AsInt() == -1234);
+            on(b, "put", "(IB)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(1), dx::VmValue::Int(-5)});
+            CHECK(on(b, "get", "(I)B", {dx::VmValue::Int(1)}).AsInt() == -5);
+            on(b, "putShort", "(IS)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(2), dx::VmValue::Int(-1234)});
+            CHECK(on(b, "getShort", "(I)S", {dx::VmValue::Int(2)}).AsInt() == -1234);
+            on(b, "putChar", "(IC)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(4), dx::VmValue::Int(49200)});
+            CHECK(on(b, "getChar", "(I)C", {dx::VmValue::Int(4)}).AsInt() == 49200);
+            const auto view = on(b, "asShortBuffer", "()Ljava/nio/ShortBuffer;", {}).ref;
+            CHECK(on(view, "get", "(I)S", {dx::VmValue::Int(1)}).AsInt() == -1234);
         }
     }
 }

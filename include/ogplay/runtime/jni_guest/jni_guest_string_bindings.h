@@ -10,10 +10,10 @@ namespace ogplay::runtime {
 
 class JniEnvironment;
 class JniGuestCallDispatcher;
-class JniStringStore;
+class JniStringBackend;
 
 void BindJniGuestStringSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment, JniClassRegistry& classes,
-                             JniStringStore& strings, memory::AddressSpace& address_space,
+                             JniStringBackend& strings, memory::AddressSpace& address_space,
                              JniGuestStringLimits limits = {}, core::Logger* logger = nullptr);
 
 }  // namespace ogplay::runtime

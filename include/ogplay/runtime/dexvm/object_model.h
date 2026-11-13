@@ -18,13 +18,13 @@
 namespace ogplay::runtime::dexvm {
 
 class VmExecutionLock;
+class DexClassLinker;
 
 // Session-level unified Java object model (02 §6). Four identity forms share
 // one register-width handle space (VmObjectRef; 0 = null):
 //   - VM instances: interpreter-owned field slot boards
 //   - host-backed instances: intrinsic classes with an opaque host state
-//   - strings / primitive arrays: delegated to the session's existing JNI
-//     stores so native and interpreted code observe the same object
+//   - primitive arrays: stable payloads shared by JNI and the interpreter
 //   - object arrays and class objects: interpreter-owned
 // Objects never move while live. GC may reuse an internal handle after the
 // object dies, so guest-visible identity is carried separately from handles.
@@ -45,7 +45,6 @@ struct Slot final {
 enum class VmObjectKind : std::uint8_t {
     vm_instance,
     host_backed,
-    string,
     primitive_array,
     object_array,
     class_object,
@@ -100,12 +99,11 @@ struct GcSweepResult final {
     std::uint64_t host_destructors_run{};
 };
 
-class JavaObjectModel final {
+class JavaObjectModel final : public JniStringBackend {
 public:
     using RootVisitor = std::function<void(VmObjectRef)>;
-    JavaObjectModel(JniStringStore& strings, JniPrimitiveArrayStore& arrays, JavaObjectModelConfig config = {},
-                    JavaObjectInterop interop = {});
-    ~JavaObjectModel();
+    JavaObjectModel(JniPrimitiveArrayStore& arrays, JavaObjectModelConfig config = {}, JavaObjectInterop interop = {});
+    ~JavaObjectModel() override;
     void SetPrimitiveAllocationMutex(VmExecutionLock& mutex);
     void CopyPrimitiveElements(VmObjectRef source, JniSize from, VmObjectRef target, JniSize to, JniSize length);
     void FillPrimitiveData(VmObjectRef array, std::span<const std::byte> bytes);
@@ -114,7 +112,7 @@ public:
 
     // Core class ids used for objects created without explicit class
     // context (strings flowing in from JNI, class objects).
-    void SetCoreClasses(DexClassId string_class, DexClassId class_class, std::uint16_t class_slots = 0);
+    void SetCoreClasses(DexClassLinker& linker, DexClassId string_class, DexClassId class_class);
     // Class handles and linker ids depend on catalog assembly order. Supplying
     // the descriptor resolver lets class-object identity remain stable when
     // platform shapes are inserted or reordered.
@@ -152,11 +150,25 @@ public:
     [[nodiscard]] JniSize StringLength(VmObjectRef ref) const;
     [[nodiscard]] std::u16string StringRegion(VmObjectRef ref, JniSize start, JniSize length) const;
     [[nodiscard]] std::u16string StringValue(VmObjectRef ref) const;
-    // Converts a freshly allocated vm_instance of the string class into a
-    // real string record in place (same handle, new store-backed identity).
-    // This is how interpreted `new-instance String` + `String.<init>`
-    // constructors publish their value without moving the object.
-    void BindString(VmObjectRef ref, std::u16string_view value);
+    [[nodiscard]] bool IsString(VmObjectRef ref) const noexcept;
+    // The String must remain reachable while the view is in use.
+    [[nodiscard]] std::u16string_view StringChars(VmObjectRef ref) const;
+    [[nodiscard]] std::int32_t StringHashCode(VmObjectRef ref);
+    [[nodiscard]] bool StringEquals(VmObjectRef left, VmObjectRef right) const;
+
+    [[nodiscard]] std::shared_ptr<void> Lock() const override;
+    [[nodiscard]] JniObjectIdentity Create(std::span<const JniChar> utf16) override;
+    [[nodiscard]] bool Contains(JniObjectIdentity string) const override;
+    [[nodiscard]] JniSize Length(JniObjectIdentity string) const override;
+    [[nodiscard]] JniSize ModifiedUtf8Length(JniObjectIdentity string) const override;
+    void ReadRegion(JniObjectIdentity string, JniSize start, JniSize length, const RegionReader& read) const override;
+    [[nodiscard]] std::vector<std::uint8_t> ModifiedUtf8Region(JniObjectIdentity string, JniSize start,
+                                                               JniSize length) const override;
+    [[nodiscard]] JniStringAccess Acquire(JniObjectIdentity string, JniStringAccessKind kind) override;
+    bool Release(JniObjectIdentity string, std::uint64_t token, JniStringAccessKind kind) override;
+
+    [[nodiscard]] std::u16string_view CharArrayChars(VmObjectRef ref) const;
+    void WriteCharArray(VmObjectRef ref, std::span<const JniChar> chars);
 
     [[nodiscard]] VmObjectRef NewPrimitiveArray(DexClassId array_class, JniPrimitiveKind kind, JniSize length);
     [[nodiscard]] JniPrimitiveKind PrimitiveArrayKind(VmObjectRef ref) const;
@@ -216,6 +228,7 @@ public:
     [[nodiscard]] static std::uint64_t EstimateObjectArrayBytes(JniSize length);
 
 private:
+    [[nodiscard]] VmObjectRef RequireJniString(JniObjectIdentity identity) const;
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

@@ -17,8 +17,7 @@ struct FrameworkLocaleConfig final {
     std::string country{"US"};
 };
 
-[[nodiscard]] std::int32_t LegacyPhoneLanguageIndex(
-    const FrameworkLocaleConfig& config);
+[[nodiscard]] std::int32_t LegacyPhoneLanguageIndex(const FrameworkLocaleConfig& config);
 
 enum class FrameworkLocaleErrorReason : std::uint8_t {
     duplicate_install,
@@ -29,8 +28,7 @@ enum class FrameworkLocaleErrorReason : std::uint8_t {
 
 class FrameworkLocaleError final : public std::runtime_error {
 public:
-    FrameworkLocaleError(FrameworkLocaleErrorReason reason,
-                         std::string message);
+    FrameworkLocaleError(FrameworkLocaleErrorReason reason, std::string message);
     [[nodiscard]] FrameworkLocaleErrorReason Reason() const noexcept;
 
 private:
@@ -39,10 +37,8 @@ private:
 
 class FrameworkLocaleHle final {
 public:
-    FrameworkLocaleHle(JniClassRegistry& classes,
-                       JniInvocationEngine& invocations,
-                       JniEnvironment& environment, JniStringStore& strings,
-                       FrameworkLocaleConfig config = {});
+    FrameworkLocaleHle(JniClassRegistry& classes, JniInvocationEngine& invocations, JniEnvironment& environment,
+                       JniStringBackend& strings, FrameworkLocaleConfig config = {});
     ~FrameworkLocaleHle();
     FrameworkLocaleHle(const FrameworkLocaleHle&) = delete;
     FrameworkLocaleHle& operator=(const FrameworkLocaleHle&) = delete;

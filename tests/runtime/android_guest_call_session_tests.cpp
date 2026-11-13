@@ -1,3 +1,4 @@
+#include "jni_string_fixture.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <algorithm>
 #include <array>
@@ -33,17 +34,14 @@
 
 namespace {
 
-void Put16(std::vector<std::byte>& bytes, const std::size_t offset,
-           const std::uint16_t value) {
+void Put16(std::vector<std::byte>& bytes, const std::size_t offset, const std::uint16_t value) {
     bytes[offset] = static_cast<std::byte>(value & 0xffU);
     bytes[offset + 1] = static_cast<std::byte>(value >> 8U);
 }
 
-void Put32(std::vector<std::byte>& bytes, const std::size_t offset,
-           const std::uint32_t value) {
+void Put32(std::vector<std::byte>& bytes, const std::size_t offset, const std::uint32_t value) {
     for (std::size_t index = 0; index < 4; ++index) {
-        bytes[offset + index] = static_cast<std::byte>(
-            (value >> static_cast<unsigned>(index * 8U)) & 0xffU);
+        bytes[offset + index] = static_cast<std::byte>((value >> static_cast<unsigned>(index * 8U)) & 0xffU);
     }
 }
 
@@ -122,24 +120,19 @@ constexpr std::uint32_t kOpenSlesSecondPcmOffset = 0x590U;
 constexpr std::uint32_t kOpenSlesCallbackMarkerOffset = 0x5a0U;
 constexpr std::uint32_t kOpenSlesCallbackTlsOffset = 0x5a4U;
 
-[[nodiscard]] std::uint32_t OpenSlesFixtureAddress(
-    const std::uint32_t offset) {
+[[nodiscard]] std::uint32_t OpenSlesFixtureAddress(const std::uint32_t offset) {
     return kOpenSlesFixtureBase + offset;
 }
 
 [[nodiscard]] std::uint32_t OpenSlesThunk(const std::string_view name) {
-    const auto* module = ogplay::runtime::AndroidBoundaryCatalog(
-                             ogplay::runtime::AndroidApi::api19)
-                             .FindModule("libOpenSLES.so");
+    const auto* module =
+        ogplay::runtime::AndroidBoundaryCatalog(ogplay::runtime::AndroidApi::api19).FindModule("libOpenSLES.so");
     if (module == nullptr) {
         throw std::runtime_error("OpenSL fixture cannot find module catalog");
     }
-    const auto found = std::ranges::find(module->exports, name,
-                                         &ogplay::runtime::BoundaryExportDescriptor::name);
-    if (found == module->exports.end() ||
-        found->kind == ogplay::runtime::BoundaryExportKind::public_data) {
-        throw std::runtime_error("OpenSL fixture cannot find callable " +
-                                 std::string(name));
+    const auto found = std::ranges::find(module->exports, name, &ogplay::runtime::BoundaryExportDescriptor::name);
+    if (found == module->exports.end() || found->kind == ogplay::runtime::BoundaryExportKind::public_data) {
+        throw std::runtime_error("OpenSL fixture cannot find callable " + std::string(name));
     }
     return found->address.Value();
 }
@@ -154,8 +147,7 @@ constexpr std::uint32_t kLibdlMissingOffset = 0x7c0U;
 constexpr std::uint32_t kLibdlGles1Offset = 0x7e0U;
 constexpr std::uint32_t kLibdlGlVertexPointerOffset = 0x810U;
 
-[[nodiscard]] std::uint32_t LibdlFixtureAddress(
-    const std::uint32_t offset) {
+[[nodiscard]] std::uint32_t LibdlFixtureAddress(const std::uint32_t offset) {
     return kLibdlFixtureBase + offset;
 }
 
@@ -182,11 +174,9 @@ constexpr std::uint32_t kLibdlGlVertexPointerOffset = 0x810U;
     Put32(bytes, 168U, 16U);
     Put32(bytes, 172U, 4U);
     Put32(bytes, 176U, 4U);
-    const auto put_string = [&](const std::uint32_t offset,
-                                const std::string_view text) {
+    const auto put_string = [&](const std::uint32_t offset, const std::string_view text) {
         for (std::size_t index = 0; index < text.size(); ++index) {
-            bytes[0x1000U + offset + index] =
-                static_cast<std::byte>(static_cast<unsigned char>(text[index]));
+            bytes[0x1000U + offset + index] = static_cast<std::byte>(static_cast<unsigned char>(text[index]));
         }
     };
     put_string(kLibdlLibhglOffset, "libhgl.so");
@@ -229,24 +219,19 @@ constexpr std::uint32_t kLibdlGlVertexPointerOffset = 0x810U;
     Put32(bytes, callback + 36U, 0xe59f1010U);  // ldr r1, [pc, #16]
     Put32(bytes, callback + 40U, 0xe5812000U);  // str r2, [r1]
     Put32(bytes, callback + 44U, 0xe8bd8000U);  // pop {pc}
-    Put32(bytes, callback + 48U,
-          OpenSlesFixtureAddress(kOpenSlesSecondPcmOffset));
+    Put32(bytes, callback + 48U, OpenSlesFixtureAddress(kOpenSlesSecondPcmOffset));
     Put32(bytes, callback + 52U, OpenSlesThunk("$BufferQueue.Enqueue"));
-    Put32(bytes, callback + 56U,
-          OpenSlesFixtureAddress(kOpenSlesCallbackMarkerOffset));
-    Put32(bytes, callback + 60U,
-          OpenSlesFixtureAddress(kOpenSlesCallbackTlsOffset));
+    Put32(bytes, callback + 56U, OpenSlesFixtureAddress(kOpenSlesCallbackMarkerOffset));
+    Put32(bytes, callback + 60U, OpenSlesFixtureAddress(kOpenSlesCallbackTlsOffset));
 
-    Put32(bytes, kOpenSlesRead32Offset + 0U, 0xe5900000U);  // ldr r0, [r0]
-    Put32(bytes, kOpenSlesRead32Offset + 4U, 0xe12fff1eU);  // bx lr
-    Put32(bytes, kOpenSlesWrite32Offset + 0U, 0xe5801000U); // str r1, [r0]
-    Put32(bytes, kOpenSlesWrite32Offset + 4U, 0xe3a00000U); // mov r0, #0
-    Put32(bytes, kOpenSlesWrite32Offset + 8U, 0xe12fff1eU); // bx lr
+    Put32(bytes, kOpenSlesRead32Offset + 0U, 0xe5900000U);   // ldr r0, [r0]
+    Put32(bytes, kOpenSlesRead32Offset + 4U, 0xe12fff1eU);   // bx lr
+    Put32(bytes, kOpenSlesWrite32Offset + 0U, 0xe5801000U);  // str r1, [r0]
+    Put32(bytes, kOpenSlesWrite32Offset + 4U, 0xe3a00000U);  // mov r0, #0
+    Put32(bytes, kOpenSlesWrite32Offset + 8U, 0xe12fff1eU);  // bx lr
 
-    Put32(bytes, kOpenSlesSourceOffset,
-          OpenSlesFixtureAddress(kOpenSlesBufferQueueLocatorOffset));
-    Put32(bytes, kOpenSlesSourceOffset + 4U,
-          OpenSlesFixtureAddress(kOpenSlesPcmFormatOffset));
+    Put32(bytes, kOpenSlesSourceOffset, OpenSlesFixtureAddress(kOpenSlesBufferQueueLocatorOffset));
+    Put32(bytes, kOpenSlesSourceOffset + 4U, OpenSlesFixtureAddress(kOpenSlesPcmFormatOffset));
     Put32(bytes, kOpenSlesBufferQueueLocatorOffset, 0x800007bdU);
     Put32(bytes, kOpenSlesBufferQueueLocatorOffset + 4U, 1U);
     Put32(bytes, kOpenSlesPcmFormatOffset, 2U);
@@ -256,8 +241,7 @@ constexpr std::uint32_t kLibdlGlVertexPointerOffset = 0x810U;
     Put32(bytes, kOpenSlesPcmFormatOffset + 16U, 16U);
     Put32(bytes, kOpenSlesPcmFormatOffset + 20U, 4U);
     Put32(bytes, kOpenSlesPcmFormatOffset + 24U, 2U);
-    Put32(bytes, kOpenSlesSinkOffset,
-          OpenSlesFixtureAddress(kOpenSlesOutputMixLocatorOffset));
+    Put32(bytes, kOpenSlesSinkOffset, OpenSlesFixtureAddress(kOpenSlesOutputMixLocatorOffset));
     Put32(bytes, kOpenSlesSinkOffset + 4U, 0U);
     Put32(bytes, kOpenSlesOutputMixLocatorOffset, 4U);
     Put32(bytes, kOpenSlesOutputMixLocatorOffset + 4U, 0U);
@@ -269,23 +253,19 @@ constexpr std::uint32_t kLibdlGlVertexPointerOffset = 0x810U;
 }
 
 [[nodiscard]] std::vector<std::byte> ReadAudioFixture() {
-    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
-                      "tests/fixtures/audio/short-vorbis.ogg";
+    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/audio/short-vorbis.ogg";
     std::ifstream input(path, std::ios::binary);
     if (!input) throw std::runtime_error("cannot open audio fixture");
     const std::vector<char> bytes{std::istreambuf_iterator<char>{input}, {}};
     std::vector<std::byte> result;
     result.reserve(bytes.size());
     for (const auto value : bytes) {
-        result.push_back(static_cast<std::byte>(
-            static_cast<unsigned char>(value)));
+        result.push_back(static_cast<std::byte>(static_cast<unsigned char>(value)));
     }
     return result;
 }
 
-[[nodiscard]] std::string ReadVfsText(
-    ogplay::runtime::VirtualFileSystem& filesystem,
-    const std::string_view path) {
+[[nodiscard]] std::string ReadVfsText(ogplay::runtime::VirtualFileSystem& filesystem, const std::string_view path) {
     const auto descriptor = filesystem.Open(path, {.read = true});
     const auto size = filesystem.DescriptorInfo(descriptor).size;
     std::vector<std::byte> bytes(static_cast<std::size_t>(size));
@@ -294,18 +274,16 @@ constexpr std::uint32_t kLibdlGlVertexPointerOffset = 0x810U;
     return {reinterpret_cast<const char*>(bytes.data()), read};
 }
 
-[[nodiscard]] std::uint32_t ProcMemoryValue(
-    const std::string_view meminfo, const std::string_view prefix) {
+[[nodiscard]] std::uint32_t ProcMemoryValue(const std::string_view meminfo, const std::string_view prefix) {
     auto position = meminfo.find(prefix);
-    if (position == std::string_view::npos ||
-        (position != 0U && meminfo[position - 1U] != '\n')) {
+    if (position == std::string_view::npos || (position != 0U && meminfo[position - 1U] != '\n')) {
         throw std::runtime_error("proc memory line is missing");
     }
     position += prefix.size();
-    while (position < meminfo.size() && meminfo[position] == ' ') ++position;
+    while (position < meminfo.size() && meminfo[position] == ' ')
+        ++position;
     const auto end = meminfo.find(' ', position);
-    return static_cast<std::uint32_t>(std::stoul(
-        std::string{meminfo.substr(position, end - position)}));
+    return static_cast<std::uint32_t>(std::stoul(std::string{meminfo.substr(position, end - position)}));
 }
 
 }  // namespace
@@ -313,23 +291,19 @@ constexpr std::uint32_t kLibdlGlVertexPointerOffset = 0x810U;
 TEST_CASE("nested guest CPU pool reuses JITs by thread and depth") {
     ogplay::memory::AddressSpace memory;
     ogplay::memory::CheckedMemoryBus bus(memory);
-    auto context =
-        std::make_shared<ogplay::cpu::DynarmicExecutionContext>(4U);
+    auto context = std::make_shared<ogplay::cpu::DynarmicExecutionContext>(4U);
     std::size_t configured{};
-    ogplay::runtime::detail::NestedGuestCpuPool pool(
-        bus, context, [&](ogplay::cpu::DynarmicCpu&) { ++configured; });
+    ogplay::runtime::detail::NestedGuestCpuPool pool(bus, context, [&](ogplay::cpu::DynarmicCpu&) { ++configured; });
 
     ogplay::cpu::A32State first_state;
     first_state.SetThreadId(17U);
-    first_state.SetThreadPointer(
-        ogplay::memory::GuestAddress{0x12340000U});
+    first_state.SetThreadPointer(ogplay::memory::GuestAddress{0x12340000U});
     first_state.SetRegister(ogplay::cpu::CoreRegister::r0, 1U);
     auto* const first = &pool.Acquire(17U, 0U, first_state);
 
     ogplay::cpu::A32State second_state;
     second_state.SetThreadId(17U);
-    second_state.SetThreadPointer(
-        ogplay::memory::GuestAddress{0x12340000U});
+    second_state.SetThreadPointer(ogplay::memory::GuestAddress{0x12340000U});
     second_state.SetRegister(ogplay::cpu::CoreRegister::r0, 2U);
     auto* const reused = &pool.Acquire(17U, 0U, second_state);
     CHECK(reused == first);
@@ -347,12 +321,10 @@ TEST_CASE("nested guest CPU pool reuses JITs by thread and depth") {
 
 TEST_CASE("Android guest process starts and stops without an application ELF") {
     auto libc = MinimalLibcElf();
-    const ogplay::loader::Elf32ModuleInput module{
-        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
-    auto process = ogplay::runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36,
-         1000, 1, &filesystem, {}});
+    auto process =
+        ogplay::runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
 
     CHECK(process->Running());
     CHECK(process->ApplicationModuleCount() == 0);
@@ -360,27 +332,21 @@ TEST_CASE("Android guest process starts and stops without an application ELF") {
     CHECK(process->GuestEnvironment().Value() != 0);
     CHECK(process->GuestJavaVm().Value() != 0);
     CHECK(process->AttachedJniThreadCount() == 1);
-    constexpr std::string_view expected_meminfo =
-        "MemTotal:        1048576 kB\n"
-        "MemFree:          524288 kB\n"
-        "Buffers:               0 kB\n"
-        "Cached:           262144 kB\n"
-        "SwapCached:            0 kB\n"
-        "SwapTotal:             0 kB\n"
-        "SwapFree:              0 kB\n";
+    constexpr std::string_view expected_meminfo = "MemTotal:        1048576 kB\n"
+                                                  "MemFree:          524288 kB\n"
+                                                  "Buffers:               0 kB\n"
+                                                  "Cached:           262144 kB\n"
+                                                  "SwapCached:            0 kB\n"
+                                                  "SwapTotal:             0 kB\n"
+                                                  "SwapFree:              0 kB\n";
     CHECK(ReadVfsText(filesystem, "/proc/meminfo") == expected_meminfo);
-    CHECK_THROWS_AS(
-        static_cast<void>(filesystem.Open("/proc/meminfo", {.write = true})),
-        ogplay::runtime::VfsError);
+    CHECK_THROWS_AS(static_cast<void>(filesystem.Open("/proc/meminfo", {.write = true})), ogplay::runtime::VfsError);
     std::array<std::int16_t, 16> silent{};
     CHECK(process->RenderStereoAudio(silent, 48000U) == 8U);
-    CHECK(std::ranges::all_of(silent, [](const auto sample) {
-        return sample == 0;
-    }));
-    process->SetAuxiliaryAudioMix(
-        [](const std::span<std::int64_t> accumulator, const std::uint32_t) {
-            if (!accumulator.empty()) accumulator[0] = 1234;
-        });
+    CHECK(std::ranges::all_of(silent, [](const auto sample) { return sample == 0; }));
+    process->SetAuxiliaryAudioMix([](const std::span<std::int64_t> accumulator, const std::uint32_t) {
+        if (!accumulator.empty()) accumulator[0] = 1234;
+    });
     CHECK(process->RenderStereoAudio(silent, 48000U) == 8U);
     CHECK(silent[0] == 1234);
 
@@ -393,11 +359,10 @@ TEST_CASE("Android guest process starts and stops without an application ELF") {
 
 TEST_CASE("VFS-05 guest proc maps exposes actual address space and retires with process") {
     auto libc = MinimalLibcElf();
-    const ogplay::loader::Elf32ModuleInput module{
-        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
-    auto process = ogplay::runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
+    auto process =
+        ogplay::runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
     CHECK(filesystem.Stat("/proc/self/maps").size == 0);
     const auto fd = filesystem.Open("/proc/self/maps", {.read = true});
     std::string maps;
@@ -421,25 +386,20 @@ TEST_CASE("VFS-05 guest proc maps exposes actual address space and retires with 
 
 TEST_CASE("Android guest proc memory values come from injected facts") {
     auto libc = MinimalLibcElf();
-    const ogplay::loader::Elf32ModuleInput module{
-        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
-    ogplay::runtime::AndroidGuestProcessRequest request{
-        19, std::span{&module, 1}, {}, 64, 36,
-        1000, 1, &filesystem, {}};
+    ogplay::runtime::AndroidGuestProcessRequest request{19, std::span{&module, 1}, {}, 64, 36, 1000,
+                                                        1,  &filesystem,           {}};
     request.proc_facts = {1998156U, 966564U};
     request.proc_facts.memory_cached_kb = 586872U;
     request.proc_facts.memory_buffers_kb = 42304U;
     auto process = ogplay::runtime::AndroidGuestProcess::Start(request);
 
     const auto meminfo = ReadVfsText(filesystem, "/proc/meminfo");
-    CHECK(ProcMemoryValue(meminfo, "MemTotal:") ==
-          request.proc_facts.memory_total_kb);
-    CHECK(ProcMemoryValue(meminfo, "MemFree:") ==
-          request.proc_facts.memory_free_kb);
+    CHECK(ProcMemoryValue(meminfo, "MemTotal:") == request.proc_facts.memory_total_kb);
+    CHECK(ProcMemoryValue(meminfo, "MemFree:") == request.proc_facts.memory_free_kb);
     CHECK(ProcMemoryValue(meminfo, "Buffers:") == 42304U);
-    CHECK(ProcMemoryValue(meminfo, "Cached:") ==
-          586872U);
+    CHECK(ProcMemoryValue(meminfo, "Cached:") == 586872U);
     CHECK(process->MemorySnapshot().TotalBytes() == UINT64_C(1998156) * 1024U);
     CHECK(process->MemorySnapshot().AvailableBytes() == UINT64_C(1553436) * 1024U);
     CHECK(ProcMemoryValue(meminfo, "SwapCached:") == 0U);
@@ -450,16 +410,12 @@ TEST_CASE("Android guest proc memory values come from injected facts") {
 
 TEST_CASE("Android guest proc installation preserves a matching snapshot and rejects conflicts") {
     auto libc = MinimalLibcElf();
-    const ogplay::loader::Elf32ModuleInput module{
-        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
     const auto existing = ogplay::runtime::MakeGuestMemorySnapshot({}).ProcText();
-    filesystem.PutFile(
-        "/proc/meminfo",
-        std::as_bytes(std::span{existing.data(), existing.size()}), false);
-    auto process = ogplay::runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36,
-         1000, 1, &filesystem, {}});
+    filesystem.PutFile("/proc/meminfo", std::as_bytes(std::span{existing.data(), existing.size()}), false);
+    auto process =
+        ogplay::runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
     CHECK(ReadVfsText(filesystem, "/proc/meminfo") == existing);
     CHECK(ReadVfsText(filesystem, "/proc/cpuinfo").find("processor\t: 0") != std::string::npos);
     process->Stop();
@@ -467,67 +423,67 @@ TEST_CASE("Android guest proc installation preserves a matching snapshot and rej
     constexpr std::string_view stale = "explicit conflicting snapshot\n";
     conflict.PutFile("/proc/meminfo", std::as_bytes(std::span{stale.data(), stale.size()}), false);
     CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &conflict, {}})),
-        "guest proc memory snapshot conflicts with configured facts", ogplay::runtime::AndroidGuestProcessError);
+                             {19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &conflict, {}})),
+                         "guest proc memory snapshot conflicts with configured facts",
+                         ogplay::runtime::AndroidGuestProcessError);
 }
 
 TEST_CASE("Android guest process rejects invalid proc facts") {
     auto libc = MinimalLibcElf();
-    const ogplay::loader::Elf32ModuleInput module{
-        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem zero_total_filesystem;
-    ogplay::runtime::AndroidGuestProcessRequest zero_total{
-        19, std::span{&module, 1}, {}, 64, 36,
-        1000, 1, &zero_total_filesystem, {}};
+    ogplay::runtime::AndroidGuestProcessRequest zero_total{19, std::span{&module, 1},  {}, 64, 36, 1000,
+                                                           1,  &zero_total_filesystem, {}};
     zero_total.proc_facts = {0U, 0U};
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(
-            ogplay::runtime::AndroidGuestProcess::Start(zero_total)),
-        "Android guest proc facts are invalid",
-        ogplay::runtime::AndroidGuestProcessError);
+    CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::runtime::AndroidGuestProcess::Start(zero_total)),
+                         "Android guest proc facts are invalid", ogplay::runtime::AndroidGuestProcessError);
 
     ogplay::runtime::VirtualFileSystem excess_free_filesystem;
     auto excess_free = zero_total;
     excess_free.filesystem = &excess_free_filesystem;
     excess_free.proc_facts = {1024U, 1025U};
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(
-            ogplay::runtime::AndroidGuestProcess::Start(excess_free)),
-        "Android guest proc facts are invalid",
-        ogplay::runtime::AndroidGuestProcessError);
+    CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::runtime::AndroidGuestProcess::Start(excess_free)),
+                         "Android guest proc facts are invalid", ogplay::runtime::AndroidGuestProcessError);
     auto excess_cached = excess_free;
     excess_cached.proc_facts.memory_free_kb = 512;
     excess_cached.proc_facts.memory_cached_kb = 513;
     CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::runtime::AndroidGuestProcess::Start(excess_cached)),
-        "Android guest proc facts are invalid", ogplay::runtime::AndroidGuestProcessError);
+                         "Android guest proc facts are invalid", ogplay::runtime::AndroidGuestProcessError);
     auto invalid_pressure = excess_free;
     invalid_pressure.proc_facts = {};
     invalid_pressure.proc_facts.memory_pressure.home_kb = 1;
     CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::runtime::AndroidGuestProcess::Start(invalid_pressure)),
-        "Android guest proc facts are invalid", ogplay::runtime::AndroidGuestProcessError);
+                         "Android guest proc facts are invalid", ogplay::runtime::AndroidGuestProcessError);
 }
 
 TEST_CASE("Android process observes native clone failure without another guest invocation") {
     auto libc = LibdlDefaultLibcElf();
-    const auto* android = ogplay::runtime::AndroidBoundaryCatalog(
-        ogplay::runtime::AndroidApi::api19).FindModule("libandroid.so");
+    const auto* android =
+        ogplay::runtime::AndroidBoundaryCatalog(ogplay::runtime::AndroidApi::api19).FindModule("libandroid.so");
     REQUIRE(android != nullptr);
-    const auto wake = std::ranges::find(android->exports, "ALooper_wake",
-        &ogplay::runtime::BoundaryExportDescriptor::name);
+    const auto wake =
+        std::ranges::find(android->exports, "ALooper_wake", &ogplay::runtime::BoundaryExportDescriptor::name);
     REQUIRE(wake != android->exports.end());
     // Only the real clone child calls ALooper_wake with an invalid null identity.
-    const std::array code{
-        0xe3000f00U, 0xe3400005U, 0xe59f1018U, 0xe3a02000U,
-        0xe3a03000U, 0xe3a07078U, 0xef000000U, 0xe3500000U,
-        0x0a000001U, 0xe12fff1eU, 0x10010800U, 0xe51ff004U,
-        wake->address.Value() | 1U};
+    const std::array code{0xe3000f00U,
+                          0xe3400005U,
+                          0xe59f1018U,
+                          0xe3a02000U,
+                          0xe3a03000U,
+                          0xe3a07078U,
+                          0xef000000U,
+                          0xe3500000U,
+                          0x0a000001U,
+                          0xe12fff1eU,
+                          0x10010800U,
+                          0xe51ff004U,
+                          wake->address.Value() | 1U};
     for (std::size_t index = 0; index < code.size(); ++index)
         Put32(libc, 0x1000U + index * 4U, code[index]);
-    const ogplay::loader::Elf32ModuleInput module{
-        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
-    ogplay::runtime::AndroidGuestProcessRequest request{
-        19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}};
+    ogplay::runtime::AndroidGuestProcessRequest request{19, std::span{&module, 1}, {}, 64, 36, 100000,
+                                                        1,  &filesystem,           {}};
     SUBCASE("fast boundary") {}
     SUBCASE("slow boundary") {
         request.guest_call_slice_observer = [](std::uint64_t) {};
@@ -554,8 +510,11 @@ TEST_CASE("Android process observes native clone failure without another guest i
     std::string failure;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
     while (failure.empty() && std::chrono::steady_clock::now() < deadline) {
-        try { process->RethrowAsyncFailure(); }
-        catch (const std::exception& error) { failure = error.what(); }
+        try {
+            process->RethrowAsyncFailure();
+        } catch (const std::exception& error) {
+            failure = error.what();
+        }
         std::this_thread::yield();
     }
     INFO(invocation_failure);
@@ -569,93 +528,64 @@ TEST_CASE("Android process observes native clone failure without another guest i
 
 TEST_CASE("OpenSL buffer callback runs on its guest thread and re-enqueues") {
     auto libc = OpenSlesCallbackLibcElf();
-    const ogplay::loader::Elf32ModuleInput module{
-        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
     auto process = ogplay::runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36,
-         100000, 1, &filesystem, {}});
+        {19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}});
 
-    const auto invoke = [&](const std::uint32_t target,
-                            const std::array<std::uint32_t, 4> registers,
+    const auto invoke = [&](const std::uint32_t target, const std::array<std::uint32_t, 4> registers,
                             const std::span<const std::uint32_t> stack) {
-        return process
-            ->Invoke({ogplay::memory::GuestAddress{target}, registers, stack})
-            .return_value;
+        return process->Invoke({ogplay::memory::GuestAddress{target}, registers, stack}).return_value;
     };
     const auto read_guest = [&](const std::uint32_t address) {
-        return invoke(OpenSlesFixtureAddress(kOpenSlesRead32Offset),
-                      {address, 0U, 0U, 0U}, {});
+        return invoke(OpenSlesFixtureAddress(kOpenSlesRead32Offset), {address, 0U, 0U, 0U}, {});
     };
-    const auto write_guest = [&](const std::uint32_t address,
-                                 const std::uint32_t value) {
-        CHECK(invoke(OpenSlesFixtureAddress(kOpenSlesWrite32Offset),
-                     {address, value, 0U, 0U}, {}) == 0U);
+    const auto write_guest = [&](const std::uint32_t address, const std::uint32_t value) {
+        CHECK(invoke(OpenSlesFixtureAddress(kOpenSlesWrite32Offset), {address, value, 0U, 0U}, {}) == 0U);
     };
 
     const std::array<std::uint32_t, 2> create_engine_stack{};
-    CHECK(invoke(OpenSlesThunk("slCreateEngine"),
-                 {OpenSlesFixtureAddress(kOpenSlesEngineResultOffset),
-                  0U, 0U, 0U},
+    CHECK(invoke(OpenSlesThunk("slCreateEngine"), {OpenSlesFixtureAddress(kOpenSlesEngineResultOffset), 0U, 0U, 0U},
                  create_engine_stack) == 0U);
-    const auto engine =
-        read_guest(OpenSlesFixtureAddress(kOpenSlesEngineResultOffset));
+    const auto engine = read_guest(OpenSlesFixtureAddress(kOpenSlesEngineResultOffset));
     REQUIRE(engine != 0U);
-    CHECK(invoke(OpenSlesThunk("$Object.Realize"),
-                 {engine, 0U, 0U, 0U}, {}) == 0U);
+    CHECK(invoke(OpenSlesThunk("$Object.Realize"), {engine, 0U, 0U, 0U}, {}) == 0U);
 
     const std::array<std::uint32_t, 2> create_mix_stack{};
     CHECK(invoke(OpenSlesThunk("$Engine.CreateOutputMix"),
-                 {engine + 4U,
-                  OpenSlesFixtureAddress(kOpenSlesMixResultOffset),
-                  0U, 0U},
-                 create_mix_stack) == 0U);
-    const auto mix =
-        read_guest(OpenSlesFixtureAddress(kOpenSlesMixResultOffset));
+                 {engine + 4U, OpenSlesFixtureAddress(kOpenSlesMixResultOffset), 0U, 0U}, create_mix_stack) == 0U);
+    const auto mix = read_guest(OpenSlesFixtureAddress(kOpenSlesMixResultOffset));
     REQUIRE(mix != 0U);
-    CHECK(invoke(OpenSlesThunk("$Object.Realize"),
-                 {mix, 0U, 0U, 0U}, {}) == 0U);
-    write_guest(OpenSlesFixtureAddress(kOpenSlesOutputMixLocatorOffset) + 4U,
-                mix);
+    CHECK(invoke(OpenSlesThunk("$Object.Realize"), {mix, 0U, 0U, 0U}, {}) == 0U);
+    write_guest(OpenSlesFixtureAddress(kOpenSlesOutputMixLocatorOffset) + 4U, mix);
 
     const std::array<std::uint32_t, 4> create_player_stack{};
     CHECK(invoke(OpenSlesThunk("$Engine.CreateAudioPlayer"),
-                 {engine + 4U,
-                  OpenSlesFixtureAddress(kOpenSlesPlayerResultOffset),
-                  OpenSlesFixtureAddress(kOpenSlesSourceOffset),
-                  OpenSlesFixtureAddress(kOpenSlesSinkOffset)},
+                 {engine + 4U, OpenSlesFixtureAddress(kOpenSlesPlayerResultOffset),
+                  OpenSlesFixtureAddress(kOpenSlesSourceOffset), OpenSlesFixtureAddress(kOpenSlesSinkOffset)},
                  create_player_stack) == 0U);
-    const auto player =
-        read_guest(OpenSlesFixtureAddress(kOpenSlesPlayerResultOffset));
+    const auto player = read_guest(OpenSlesFixtureAddress(kOpenSlesPlayerResultOffset));
     REQUIRE(player != 0U);
-    CHECK(invoke(OpenSlesThunk("$Object.Realize"),
-                 {player, 0U, 0U, 0U}, {}) == 0U);
+    CHECK(invoke(OpenSlesThunk("$Object.Realize"), {player, 0U, 0U, 0U}, {}) == 0U);
 
     const auto queue = player + 8U;
     CHECK(invoke(OpenSlesThunk("$BufferQueue.RegisterCallback"),
-                 {queue, OpenSlesFixtureAddress(kOpenSlesCallbackOffset),
-                  0x51e5U, 0U}, {}) == 0U);
+                 {queue, OpenSlesFixtureAddress(kOpenSlesCallbackOffset), 0x51e5U, 0U}, {}) == 0U);
     CHECK(invoke(OpenSlesThunk("$BufferQueue.Enqueue"),
-                 {queue, OpenSlesFixtureAddress(kOpenSlesFirstPcmOffset),
-                  4U, 0U}, {}) == 0U);
-    CHECK(invoke(OpenSlesThunk("$Play.SetPlayState"),
-                 {player + 4U, 3U, 0U, 0U}, {}) == 0U);
+                 {queue, OpenSlesFixtureAddress(kOpenSlesFirstPcmOffset), 4U, 0U}, {}) == 0U);
+    CHECK(invoke(OpenSlesThunk("$Play.SetPlayState"), {player + 4U, 3U, 0U, 0U}, {}) == 0U);
 
     std::array<std::int16_t, 4> first{};
     CHECK(process->RenderStereoAudio(first, 48000U) == 2U);
     CHECK(first == std::array<std::int16_t, 4>{1000, 1000, 2000, 2000});
 
-    const auto deadline = std::chrono::steady_clock::now() +
-                          std::chrono::seconds(2);
-    while (read_guest(OpenSlesFixtureAddress(kOpenSlesCallbackMarkerOffset)) ==
-               0U &&
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (read_guest(OpenSlesFixtureAddress(kOpenSlesCallbackMarkerOffset)) == 0U &&
            std::chrono::steady_clock::now() < deadline) {
         std::this_thread::yield();
     }
-    REQUIRE(read_guest(OpenSlesFixtureAddress(kOpenSlesCallbackMarkerOffset)) ==
-            1U);
-    CHECK(read_guest(OpenSlesFixtureAddress(kOpenSlesCallbackTlsOffset)) ==
-          0x71a00000U);
+    REQUIRE(read_guest(OpenSlesFixtureAddress(kOpenSlesCallbackMarkerOffset)) == 1U);
+    CHECK(read_guest(OpenSlesFixtureAddress(kOpenSlesCallbackTlsOffset)) == 0x71a00000U);
     CHECK(process->AttachedJniThreadCount() == 1U);
 
     std::array<std::int16_t, 4> second{};
@@ -666,30 +596,21 @@ TEST_CASE("OpenSL buffer callback runs on its guest thread and re-enqueues") {
 
 TEST_CASE("libdl process service exposes RTLD_DEFAULT and the host GL alias") {
     auto libc = LibdlDefaultLibcElf();
-    const ogplay::loader::Elf32ModuleInput module{
-        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
-    auto process = ogplay::runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
+    auto process =
+        ogplay::runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
 
-    const auto hle_symbols =
-        ogplay::runtime::detail::BuildAndroidBoundarySymbols(
-            ogplay::runtime::AndroidApi::api19);
-    const auto hle_address = [&](const std::string_view library,
-                                 const std::string_view symbol) {
-        const auto found = std::ranges::find_if(
-            hle_symbols, [&](const ogplay::runtime::BionicHleSymbol& entry) {
-                return entry.library == library && entry.symbol == symbol;
-            });
+    const auto hle_symbols = ogplay::runtime::detail::BuildAndroidBoundarySymbols(ogplay::runtime::AndroidApi::api19);
+    const auto hle_address = [&](const std::string_view library, const std::string_view symbol) {
+        const auto found = std::ranges::find_if(hle_symbols, [&](const ogplay::runtime::BionicHleSymbol& entry) {
+            return entry.library == library && entry.symbol == symbol;
+        });
         REQUIRE(found != hle_symbols.end());
         return found->address.Value();
     };
-    const auto invoke = [&](const std::string_view entry,
-                            const std::array<std::uint32_t, 4> registers) {
-        return process
-            ->Invoke({ogplay::memory::GuestAddress{
-                          hle_address("libdl.so", entry)},
-                      registers, {}})
+    const auto invoke = [&](const std::string_view entry, const std::array<std::uint32_t, 4> registers) {
+        return process->Invoke({ogplay::memory::GuestAddress{hle_address("libdl.so", entry)}, registers, {}})
             .return_value;
     };
 
@@ -697,34 +618,21 @@ TEST_CASE("libdl process service exposes RTLD_DEFAULT and the host GL alias") {
     // the root module.
     CHECK(invoke("dlopen", {0U, 2U, 0U, 0U}) == 0xffffffffU);
     // RTLD_DEFAULT resolves sealed HLE exports across module boundaries.
-    CHECK(invoke("dlsym", {0xffffffffU,
-                          LibdlFixtureAddress(kLibdlGlCreateShaderOffset),
-                          0U, 0U}) ==
+    CHECK(invoke("dlsym", {0xffffffffU, LibdlFixtureAddress(kLibdlGlCreateShaderOffset), 0U, 0U}) ==
           hle_address("libGLESv2.so", "glCreateShader"));
-    CHECK(invoke("dlsym", {0xffffffffU,
-                          LibdlFixtureAddress(kLibdlEglGetProcAddressOffset),
-                          0U, 0U}) ==
+    CHECK(invoke("dlsym", {0xffffffffU, LibdlFixtureAddress(kLibdlEglGetProcAddressOffset), 0U, 0U}) ==
           hle_address("libEGL.so", "eglGetProcAddress"));
-    CHECK(invoke("dlsym", {0xffffffffU,
-                          LibdlFixtureAddress(kLibdlMemcpyOffset), 0U, 0U}) ==
+    CHECK(invoke("dlsym", {0xffffffffU, LibdlFixtureAddress(kLibdlMemcpyOffset), 0U, 0U}) ==
           hle_address("libc.so", "memcpy"));
     // Names outside the HLE surface fall back to the guest ELF namespace.
-    CHECK(invoke("dlsym", {0xffffffffU,
-                          LibdlFixtureAddress(kLibdlPropertyAreaOffset),
-                          0U, 0U}) == 0x10010200U);
+    CHECK(invoke("dlsym", {0xffffffffU, LibdlFixtureAddress(kLibdlPropertyAreaOffset), 0U, 0U}) == 0x10010200U);
     // Unknown names keep failing explicitly.
-    CHECK(invoke("dlsym", {0xffffffffU,
-                          LibdlFixtureAddress(kLibdlMissingOffset), 0U,
-                          0U}) == 0U);
+    CHECK(invoke("dlsym", {0xffffffffU, LibdlFixtureAddress(kLibdlMissingOffset), 0U, 0U}) == 0U);
     // The host GL wrapper library opens the sealed GLES2 boundary.
-    const auto hgl = invoke("dlopen",
-                            {LibdlFixtureAddress(kLibdlLibhglOffset), 2U, 0U,
-                             0U});
+    const auto hgl = invoke("dlopen", {LibdlFixtureAddress(kLibdlLibhglOffset), 2U, 0U, 0U});
     REQUIRE(hgl != 0U);
     REQUIRE(hgl != 0xffffffffU);
-    CHECK(invoke("dlsym", {hgl,
-                          LibdlFixtureAddress(kLibdlGlCreateShaderOffset),
-                          0U, 0U}) ==
+    CHECK(invoke("dlsym", {hgl, LibdlFixtureAddress(kLibdlGlCreateShaderOffset), 0U, 0U}) ==
           hle_address("libGLESv2.so", "glCreateShader"));
     // dlclose treats the pseudo-handle as a no-op and the alias as a normal
     // counted reference.
@@ -732,60 +640,42 @@ TEST_CASE("libdl process service exposes RTLD_DEFAULT and the host GL alias") {
     CHECK(invoke("dlclose", {hgl, 0U, 0U, 0U}) == 0U);
 
     constexpr std::uint32_t kCountAddress = 0x10010280U;
-    CHECK(invoke("dl_unwind_find_exidx",
-                 {0x10010200U, kCountAddress, 0U, 0U}) == 0x10010900U);
-    CHECK(invoke("dl_unwind_find_exidx",
-                 {0x50000000U, kCountAddress, 0U, 0U}) == 0U);
+    CHECK(invoke("dl_unwind_find_exidx", {0x10010200U, kCountAddress, 0U, 0U}) == 0x10010900U);
+    CHECK(invoke("dl_unwind_find_exidx", {0x50000000U, kCountAddress, 0U, 0U}) == 0U);
     process->Stop();
 }
 
 TEST_CASE("libdl boundary handle lookups fall back to the sealed surface") {
     auto libc = LibdlDefaultLibcElf();
-    const ogplay::loader::Elf32ModuleInput module{
-        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
-    auto process = ogplay::runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
+    auto process =
+        ogplay::runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
 
-    const auto hle_symbols =
-        ogplay::runtime::detail::BuildAndroidBoundarySymbols(
-            ogplay::runtime::AndroidApi::api19);
-    const auto hle_address = [&](const std::string_view library,
-                                 const std::string_view symbol) {
-        const auto found = std::ranges::find_if(
-            hle_symbols, [&](const ogplay::runtime::BionicHleSymbol& entry) {
-                return entry.library == library && entry.symbol == symbol;
-            });
+    const auto hle_symbols = ogplay::runtime::detail::BuildAndroidBoundarySymbols(ogplay::runtime::AndroidApi::api19);
+    const auto hle_address = [&](const std::string_view library, const std::string_view symbol) {
+        const auto found = std::ranges::find_if(hle_symbols, [&](const ogplay::runtime::BionicHleSymbol& entry) {
+            return entry.library == library && entry.symbol == symbol;
+        });
         REQUIRE(found != hle_symbols.end());
         return found->address.Value();
     };
-    const auto invoke = [&](const std::string_view entry,
-                            const std::array<std::uint32_t, 4> registers) {
-        return process
-            ->Invoke({ogplay::memory::GuestAddress{
-                          hle_address("libdl.so", entry)},
-                      registers, {}})
+    const auto invoke = [&](const std::string_view entry, const std::array<std::uint32_t, 4> registers) {
+        return process->Invoke({ogplay::memory::GuestAddress{hle_address("libdl.so", entry)}, registers, {}})
             .return_value;
     };
 
     // Engines of the KitKat era query GLES2 entry points through the GLES1
     // handle; its own exports keep precedence and misses cross the sealed
     // surface instead of failing.
-    const auto gles1 = invoke("dlopen",
-                              {LibdlFixtureAddress(kLibdlGles1Offset), 2U, 0U,
-                               0U});
+    const auto gles1 = invoke("dlopen", {LibdlFixtureAddress(kLibdlGles1Offset), 2U, 0U, 0U});
     REQUIRE(gles1 != 0U);
     REQUIRE(gles1 != 0xffffffffU);
-    CHECK(invoke("dlsym",
-                 {gles1,
-                  LibdlFixtureAddress(kLibdlGlVertexPointerOffset), 0U, 0U}) ==
+    CHECK(invoke("dlsym", {gles1, LibdlFixtureAddress(kLibdlGlVertexPointerOffset), 0U, 0U}) ==
           hle_address("libGLESv1_CM.so", "glVertexPointer"));
-    CHECK(invoke("dlsym",
-                 {gles1, LibdlFixtureAddress(kLibdlGlCreateShaderOffset), 0U,
-                  0U}) == hle_address("libGLESv2.so", "glCreateShader"));
-    CHECK(invoke("dlsym", {gles1,
-                          LibdlFixtureAddress(kLibdlMissingOffset), 0U,
-                          0U}) == 0U);
+    CHECK(invoke("dlsym", {gles1, LibdlFixtureAddress(kLibdlGlCreateShaderOffset), 0U, 0U}) ==
+          hle_address("libGLESv2.so", "glCreateShader"));
+    CHECK(invoke("dlsym", {gles1, LibdlFixtureAddress(kLibdlMissingOffset), 0U, 0U}) == 0U);
     CHECK(invoke("dlclose", {gles1, 0U, 0U, 0U}) == 0U);
     process->Stop();
 }
@@ -798,7 +688,8 @@ TEST_CASE("BND-40 guest soinfo lookup calls ELF and boundary exports and retires
     Put32(libc, 0x130, 1U);  // DT_NEEDED
     Put32(libc, 0x134, 34U);
     const char extra_strings[] = "libt.so\0strlen";
-    for (std::size_t i = 0; i < sizeof(extra_strings); ++i) libc[0x182 + i] = static_cast<std::byte>(extra_strings[i]);
+    for (std::size_t i = 0; i < sizeof(extra_strings); ++i)
+        libc[0x182 + i] = static_cast<std::byte>(extra_strings[i]);
     Put32(libc, 0x10c, 49U);
     Put32(libc, 0x11c, 0x10240U);
     Put32(libc, 0x240, 1U);
@@ -812,7 +703,8 @@ TEST_CASE("BND-40 guest soinfo lookup calls ELF and boundary exports and retires
     libc[0x1dc] = std::byte{0x12};
     Put16(libc, 0x1de, 1U);
     const auto put_string = [&](const std::uint32_t offset, const std::string_view name) {
-        for (std::size_t i = 0; i < name.size(); ++i) libc[0x1000U + offset + i] = static_cast<std::byte>(name[i]);
+        for (std::size_t i = 0; i < name.size(); ++i)
+            libc[0x1000U + offset + i] = static_cast<std::byte>(name[i]);
     };
     constexpr std::uint32_t kRealName = 0x900, kFunctionName = 0x910, kLogName = 0x930;
     constexpr std::uint32_t kLogWrite = 0x940, kLibcName = 0x980, kStrlenName = 0x990, kNoLibrary = 0x9a0;
@@ -826,11 +718,13 @@ TEST_CASE("BND-40 guest soinfo lookup calls ELF and boundary exports and retires
     const std::uint32_t lookup_words[]{
 #include "../fixtures/api19_soinfo_lookup.inc"
     };
-    for (std::size_t i = 0; i < std::size(lookup_words); ++i) Put32(libc, 0x1100U + 4U * i, lookup_words[i]);
+    for (std::size_t i = 0; i < std::size(lookup_words); ++i)
+        Put32(libc, 0x1100U + 4U * i, lookup_words[i]);
     auto real = LibdlDefaultLibcElf();
     const char real_strings[] = "\0libt.so\0fixture_add\0";
     std::fill(real.begin() + 0x160, real.begin() + 0x182, std::byte{});
-    for (std::size_t i = 0; i < sizeof(real_strings); ++i) real[0x160 + i] = static_cast<std::byte>(real_strings[i]);
+    for (std::size_t i = 0; i < sizeof(real_strings); ++i)
+        real[0x160 + i] = static_cast<std::byte>(real_strings[i]);
     Put32(real, 0x1c4, 0x11010U);
     real[0x1cc] = std::byte{0x12};
     Put32(real, 0x1010, 0xe0800001U);  // add r0, r0, r1
@@ -839,13 +733,11 @@ TEST_CASE("BND-40 guest soinfo lookup calls ELF and boundary exports and retires
         ogplay::loader::Elf32ModuleInput{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000}},
         ogplay::loader::Elf32ModuleInput{"libt.so", real, ogplay::memory::GuestAddress{0x20000000}}};
     ogplay::runtime::VirtualFileSystem filesystem;
-    auto process = ogplay::runtime::AndroidGuestProcess::Start(
-        {19, modules, {}, 64, 36, 100000, 1, &filesystem, {}});
+    auto process = ogplay::runtime::AndroidGuestProcess::Start({19, modules, {}, 64, 36, 100000, 1, &filesystem, {}});
     const auto symbols = ogplay::runtime::detail::BuildAndroidBoundarySymbols(ogplay::runtime::AndroidApi::api19);
     const auto hle = [&](const std::string_view library, const std::string_view name) {
-        const auto found = std::ranges::find_if(symbols, [&](const auto& symbol) {
-            return symbol.library == library && symbol.symbol == name;
-        });
+        const auto found = std::ranges::find_if(
+            symbols, [&](const auto& symbol) { return symbol.library == library && symbol.symbol == name; });
         REQUIRE(found != symbols.end());
         return found->address;
     };
@@ -907,14 +799,16 @@ TEST_CASE("BND-40 guest soinfo lookup calls ELF and boundary exports and retires
     const auto log_write = lookup(log, LibdlFixtureAddress(kLogWrite));
     CHECK(log_write == hle("liblog.so", "__android_log_write").Value());
     CHECK(log_write == libdl("dlsym", {log, LibdlFixtureAddress(kLogWrite), 0, 0}));
-    CHECK_NOTHROW(static_cast<void>(invoke(ogplay::memory::GuestAddress{log_write},
-        {4, LibdlFixtureAddress(kFunctionName), LibdlFixtureAddress(kFunctionName), 0})));
+    CHECK_NOTHROW(
+        static_cast<void>(invoke(ogplay::memory::GuestAddress{log_write},
+                                 {4, LibdlFixtureAddress(kFunctionName), LibdlFixtureAddress(kFunctionName), 0})));
     // Visit every liblog export, exercising non-empty hash collision chains.
     const auto scratch = access.allocate(256);
     for (const auto& symbol : symbols) {
         if (symbol.library != "liblog.so") continue;
         std::vector<std::byte> name;
-        for (const char character : symbol.symbol) name.push_back(static_cast<std::byte>(character));
+        for (const char character : symbol.symbol)
+            name.push_back(static_cast<std::byte>(character));
         name.push_back(std::byte{});
         access.write(scratch, name);
         CHECK(lookup(log, scratch.Value()) == symbol.address.Value());
@@ -940,27 +834,31 @@ TEST_CASE("BND-40 linker metadata rejects invalid projections before mapping") {
     const GuestRange arena{GuestAddress{0x78000000}, 4096};
     const std::array symbols{Api19LinkerSymbol{"fixture", GuestAddress{0x1234}, 4, 1, 2}};
     const auto before = memory.TrySnapshot()->generation;
-    CHECK_THROWS_AS(static_cast<void>(CreateApi19LinkerView(memory, arena, std::string(128, 'a'), GuestAddress{}, GuestAddress{}, 0, symbols)), ogplay::loader::LinkError);
+    CHECK_THROWS_AS(static_cast<void>(CreateApi19LinkerView(memory, arena, std::string(128, 'a'), GuestAddress{},
+                                                            GuestAddress{}, 0, symbols)),
+                    ogplay::loader::LinkError);
     auto invalid = symbols;
     invalid[0].name.clear();
-    CHECK_THROWS_AS(static_cast<void>(CreateApi19LinkerView(memory, arena, "libt.so", GuestAddress{}, GuestAddress{}, 0, invalid)), ogplay::loader::LinkError);
+    CHECK_THROWS_AS(
+        static_cast<void>(CreateApi19LinkerView(memory, arena, "libt.so", GuestAddress{}, GuestAddress{}, 0, invalid)),
+        ogplay::loader::LinkError);
     CHECK(memory.TrySnapshot()->generation == before);
     const auto view = CreateApi19LinkerView(memory, arena, "libt.so", GuestAddress{}, GuestAddress{}, 0, symbols);
     CHECK(memory.Read32(view.Handle().Add(0xb4)) == 2U);
     CHECK(memory.Read32(view.Handle().Add(0xb8)) == 2U);
     CHECK_THROWS_AS(memory.Write32(view.Handle(), 0), MemoryFault);
-    CHECK_THROWS_AS(static_cast<void>(CreateApi19LinkerView(memory, arena, "libt.so", GuestAddress{}, GuestAddress{}, 0, symbols)), std::bad_alloc);
+    CHECK_THROWS_AS(
+        static_cast<void>(CreateApi19LinkerView(memory, arena, "libt.so", GuestAddress{}, GuestAddress{}, 0, symbols)),
+        std::bad_alloc);
     CHECK(memory.Read32(view.Handle().Add(0x100)) == 1U);
 }
 
 TEST_CASE("Android guest process owns reusable DexVM native thread contexts") {
     auto libc = MinimalLibcElf();
-    const ogplay::loader::Elf32ModuleInput module{
-        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
-    auto process = ogplay::runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36,
-         1000, 1, &filesystem, {}});
+    auto process =
+        ogplay::runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
 
     CHECK_THROWS(process->PrepareDexVmThread(UINT64_C(0x40000004), 0U));
     CHECK_THROWS(process->PrepareDexVmThread(UINT64_C(0x4004), 31U));
@@ -980,12 +878,10 @@ TEST_CASE("Android guest process owns reusable DexVM native thread contexts") {
 
 TEST_CASE("legacy Android guest call session delegates process ownership") {
     auto libc = MinimalLibcElf();
-    const ogplay::loader::Elf32ModuleInput module{
-        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
-    ogplay::runtime::AndroidGuestCallSessionRequest request{
-        19, "libc.so", std::span{&module, 1}, {}, 64, 36,
-        1000, 1, &filesystem, {}};
+    ogplay::runtime::AndroidGuestCallSessionRequest request{19,   "libc.so", std::span{&module, 1}, {}, 64, 36,
+                                                            1000, 1,         &filesystem,           {}};
     request.proc_facts = {8192U, 4096U};
     request.proc_facts.cpu = {4, 1500};
     auto session = ogplay::runtime::AndroidGuestCallSession::Start(request);
@@ -1002,23 +898,17 @@ TEST_CASE("legacy Android guest call session delegates process ownership") {
 
 TEST_CASE("Android guest process teardown interrupts blocked AudioTrack write") {
     auto libc = MinimalLibcElf();
-    const ogplay::loader::Elf32ModuleInput module{
-        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
-    auto process = ogplay::runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36,
-         1000, 1, &filesystem, {}});
+    auto process =
+        ogplay::runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
     auto& mixer = process->PcmPlayback();
     const auto player = mixer.CreatePlayer({48000U, 1U, 16U}, 255U);
-    const std::array pcm{
-        std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}};
-    REQUIRE(mixer.EnqueueBlocking(player, pcm, pcm.size()) ==
-            ogplay::audio::OpenSlesEnqueueResult::enqueued);
+    const std::array pcm{std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}};
+    REQUIRE(mixer.EnqueueBlocking(player, pcm, pcm.size()) == ogplay::audio::OpenSlesEnqueueResult::enqueued);
 
     std::atomic result{ogplay::audio::OpenSlesEnqueueResult::enqueued};
-    std::jthread writer([&] {
-        result = mixer.EnqueueBlocking(player, pcm, pcm.size());
-    });
+    std::jthread writer([&] { result = mixer.EnqueueBlocking(player, pcm, pcm.size()); });
     bool parked{};
     for (std::size_t attempt = 0; attempt < 100000U; ++attempt) {
         if (mixer.BlockingWriterCount() == 1U) {
@@ -1039,16 +929,14 @@ TEST_CASE("Android guest process teardown interrupts blocked AudioTrack write") 
 TEST_CASE("DVM-234 graceful cleanup retains native execution until retirement") {
     using namespace ogplay;
     auto libc = LibdlDefaultLibcElf();
-    Put32(libc, 0x1000, 0xe3a07014U); // getpid; svc; bx lr
+    Put32(libc, 0x1000, 0xe3a07014U);  // getpid; svc; bx lr
     Put32(libc, 0x1004, 0xef000000U);
     Put32(libc, 0x1008, 0xe12fff1eU);
-    const loader::Elf32ModuleInput module{
-        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    const loader::Elf32ModuleInput module{"libc.so", libc, memory::GuestAddress{0x10000000U}};
     runtime::VirtualFileSystem filesystem;
-    auto process = runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36, 100, 1, &filesystem, {}});
-    const runtime::A32GuestCallFrame frame{
-        memory::GuestAddress{0x10011000U}, {}, {}, 1, true};
+    auto process =
+        runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 100, 1, &filesystem, {}});
+    const runtime::A32GuestCallFrame frame{memory::GuestAddress{0x10011000U}, {}, {}, 1, true};
     CHECK(process->Invoke(frame).return_value != 0U);
     process->RunGracefulCleanup([&] {
         CHECK(process->CleanupDeadlineNs() != 0);
@@ -1058,8 +946,7 @@ TEST_CASE("DVM-234 graceful cleanup retains native execution until retirement") 
     CHECK(process->Invoke(frame).return_value != 0U);
     CHECK_NOTHROW(process->PrepareDexVmThread(16385, 0));
     process->BeginTeardown();
-    CHECK_THROWS_WITH(process->PrepareDexVmThread(16386, 1),
-                      "new guest thread rejected during teardown");
+    CHECK_THROWS_WITH(process->PrepareDexVmThread(16386, 1), "new guest thread rejected during teardown");
     CHECK_THROWS_AS(static_cast<void>(process->Invoke(frame)), runtime::A32GuestCallCancelled);
     CHECK_THROWS_WITH(process->RunGracefulCleanup([] {}), "teardown cleanup admission rejected");
     process->RunTeardownCleanup([&] {
@@ -1078,31 +965,28 @@ TEST_CASE("DVM-218 teardown cleanup is owner scoped and cumulatively bounded") {
     Put32(libc, 0x138, 0U);
     Put32(libc, 100, 64U);
     Put32(libc, 104, 64U);
-    Put32(libc, 0x1000, 0xe3a07014U); // getpid; svc; bx lr
+    Put32(libc, 0x1000, 0xe3a07014U);  // getpid; svc; bx lr
     Put32(libc, 0x1004, 0xef000000U);
     Put32(libc, 0x1008, 0xe12fff1eU);
-    Put32(libc, 0x1040, 0xe5900000U); // fini reads null if attempted
-    const loader::Elf32ModuleInput module{
-        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    Put32(libc, 0x1040, 0xe5900000U);  // fini reads null if attempted
+    const loader::Elf32ModuleInput module{"libc.so", libc, memory::GuestAddress{0x10000000U}};
     runtime::VirtualFileSystem filesystem;
-    auto process = runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36, 40, 1, &filesystem, {}});
-    const runtime::A32GuestCallFrame frame{
-        memory::GuestAddress{0x10011000U}, {}, {}, 1, true};
-    CHECK_THROWS_WITH(process->RunTeardownCleanup([] {}),
-                      "teardown cleanup admission rejected");
+    auto process = runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 40, 1, &filesystem, {}});
+    const runtime::A32GuestCallFrame frame{memory::GuestAddress{0x10011000U}, {}, {}, 1, true};
+    CHECK_THROWS_WITH(process->RunTeardownCleanup([] {}), "teardown cleanup admission rejected");
     process->BeginTeardown();
-    CHECK_THROWS_AS(static_cast<void>(process->Invoke(frame)),
-                    runtime::A32GuestCallCancelled);
+    CHECK_THROWS_AS(static_cast<void>(process->Invoke(frame)), runtime::A32GuestCallCancelled);
     std::atomic<bool> rejected{};
     std::jthread other([&] {
-        try { process->RunTeardownCleanup([] {}); }
-        catch (const runtime::AndroidGuestProcessError&) { rejected = true; }
+        try {
+            process->RunTeardownCleanup([] {});
+        } catch (const runtime::AndroidGuestProcessError&) {
+            rejected = true;
+        }
     });
     other.join();
     CHECK(rejected.load());
-    CHECK_THROWS_WITH(process->PrepareDexVmThread(16385, 0),
-                      "new guest thread rejected during teardown");
+    CHECK_THROWS_WITH(process->PrepareDexVmThread(16385, 0), "new guest thread rejected during teardown");
     std::size_t returned{};
     CHECK_THROWS(process->RunTeardownCleanup([&] {
         // Nested scopes cannot reset the process cleanup budget.
@@ -1121,10 +1005,8 @@ TEST_CASE("DVM-218 teardown cleanup is owner scoped and cumulatively bounded") {
     CHECK_FALSE(process->Running());
     CHECK(process->AttachedJniThreadCount() == 0U);
     CHECK_NOTHROW(process->Stop());
-    CHECK_THROWS_WITH(process->RunTeardownCleanup([] {}),
-                      "teardown cleanup admission rejected");
+    CHECK_THROWS_WITH(process->RunTeardownCleanup([] {}), "teardown cleanup admission rejected");
 }
-
 
 TEST_CASE("DVM-232 DSO fini has a shared wall deadline and rejects oversized sleeps") {
     using namespace ogplay;
@@ -1135,26 +1017,28 @@ TEST_CASE("DVM-232 DSO fini has a shared wall deadline and rejects oversized sle
         Put32(libc, 0x138, 0U);
         Put32(libc, 100, 64U);
         Put32(libc, 104, 64U);
-        Put32(libc, 0x1040, 0xe92d4080U); // push r7,lr
-        Put32(libc, 0x1044, 0xe24dd008U); // reserve timespec
+        Put32(libc, 0x1040, 0xe92d4080U);  // push r7,lr
+        Put32(libc, 0x1044, 0xe24dd008U);  // reserve timespec
         Put32(libc, 0x1048, long_sleep ? 0xe3a0201eU : 0xe3a02000U);
-        Put32(libc, 0x104c, 0xe58d2000U); // seconds
-        Put32(libc, 0x1050, 0xe59f2018U); // nanoseconds literal
+        Put32(libc, 0x104c, 0xe58d2000U);  // seconds
+        Put32(libc, 0x1050, 0xe59f2018U);  // nanoseconds literal
         Put32(libc, 0x1054, 0xe58d2004U);
-        Put32(libc, 0x1058, 0xe1a0000dU); // request = sp
-        Put32(libc, 0x105c, 0xe3a070a2U); // nanosleep
+        Put32(libc, 0x1058, 0xe1a0000dU);  // request = sp
+        Put32(libc, 0x105c, 0xe3a070a2U);  // nanosleep
         Put32(libc, 0x1060, 0xef000000U);
-        Put32(libc, 0x1064, 0xeafffffbU); // repeat
+        Put32(libc, 0x1064, 0xeafffffbU);  // repeat
         Put32(libc, 0x1070, long_sleep ? 0U : 10000000U);
-        const loader::Elf32ModuleInput module{
-            "libc.so", libc, memory::GuestAddress{0x10000000U}};
+        const loader::Elf32ModuleInput module{"libc.so", libc, memory::GuestAddress{0x10000000U}};
         runtime::VirtualFileSystem filesystem;
-        auto process = runtime::AndroidGuestProcess::Start(
-            {19, std::span{&module, 1}, {}, 64, 36, 10000000, 1, &filesystem, {}});
+        auto process =
+            runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 10000000, 1, &filesystem, {}});
         const auto start = hal::Clock::SteadyTimestampNs();
         std::string failure;
-        try { process->Stop(); }
-        catch (const std::exception& error) { failure = error.what(); }
+        try {
+            process->Stop();
+        } catch (const std::exception& error) {
+            failure = error.what();
+        }
         REQUIRE(failure.find("teardown cleanup wall-time budget exhausted") != std::string::npos);
         const auto elapsed = hal::Clock::SteadyTimestampNs() - start;
         CHECK(elapsed < UINT64_C(4000000000));
@@ -1164,7 +1048,6 @@ TEST_CASE("DVM-232 DSO fini has a shared wall deadline and rejects oversized sle
         CHECK_NOTHROW(process->Stop());
     }
 }
-
 
 TEST_CASE("DVM-232/DVM-236 healthy DSO fini honors termination policy and runs at most once") {
     using namespace ogplay;
@@ -1181,17 +1064,16 @@ TEST_CASE("DVM-232/DVM-236 healthy DSO fini honors termination policy and runs a
     Put32(libc, 0x138, 0U);
     Put32(libc, 100, 64U);
     Put32(libc, 104, 64U);
-    Put32(libc, 0x1040, 0xe59f0010U); // load marker address
+    Put32(libc, 0x1040, 0xe59f0010U);  // load marker address
     Put32(libc, 0x1044, 0xe5901000U);
     Put32(libc, 0x1048, 0xe2811001U);
-    Put32(libc, 0x104c, 0xe5801000U); // increment once
+    Put32(libc, 0x104c, 0xe5801000U);  // increment once
     Put32(libc, 0x1050, 0xe12fff1eU);
     Put32(libc, 0x1058, 0x10010300U);
-    const loader::Elf32ModuleInput module{
-        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    const loader::Elf32ModuleInput module{"libc.so", libc, memory::GuestAddress{0x10000000U}};
     runtime::VirtualFileSystem filesystem;
-    auto process = runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}});
+    auto process =
+        runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}});
     const auto read_marker = [&] {
         std::array<std::byte, 4> bytes{};
         process->GuestMemoryAccess().read(memory::GuestAddress{0x10010300U}, bytes);
@@ -1213,19 +1095,21 @@ TEST_CASE("DVM-232 fatal native CPU faults quarantine guest calls and skip fini"
     Put32(libc, 0x138, 0U);
     Put32(libc, 100, 64U);
     Put32(libc, 104, 64U);
-    Put32(libc, 0x1000, 0xe5901000U); // native entry reads null
-    Put32(libc, 0x1040, 0xe5902000U); // fini also faults if attempted
-    const loader::Elf32ModuleInput module{
-        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    Put32(libc, 0x1000, 0xe5901000U);  // native entry reads null
+    Put32(libc, 0x1040, 0xe5902000U);  // fini also faults if attempted
+    const loader::Elf32ModuleInput module{"libc.so", libc, memory::GuestAddress{0x10000000U}};
     runtime::VirtualFileSystem filesystem;
-    auto process = runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}});
+    auto process =
+        runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}});
     std::string failure;
-    try { static_cast<void>(process->Invoke({memory::GuestAddress{0x10011000U}})); }
-    catch (const std::exception& error) { failure = error.what(); }
+    try {
+        static_cast<void>(process->Invoke({memory::GuestAddress{0x10011000U}}));
+    } catch (const std::exception& error) {
+        failure = error.what();
+    }
     CHECK(failure.find("reason=memory_fault(4)") != std::string::npos);
     CHECK_THROWS_WITH(static_cast<void>(process->Invoke({memory::GuestAddress{0x10011040U}})),
-        "guest native state is unsafe after a CPU fault");
+                      "guest native state is unsafe after a CPU fault");
     process->BeginTeardown();
     CHECK_THROWS_WITH(process->RunTeardownCleanup([] {}), "guest cleanup unavailable after a CPU fault");
     CHECK_NOTHROW(process->Stop());
@@ -1242,12 +1126,11 @@ TEST_CASE("DVM-218 native process exit skips a second fini and keeps its code") 
     Put32(libc, 0x138, 0U);
     Put32(libc, 100, 64U);
     Put32(libc, 104, 64U);
-    Put32(libc, 0x1000, 0xe3a00017U); // exit_group(23)
+    Put32(libc, 0x1000, 0xe3a00017U);  // exit_group(23)
     Put32(libc, 0x1004, 0xe3a070f8U);
     Put32(libc, 0x1008, 0xef000000U);
-    Put32(libc, 0x1040, 0xe5900000U); // fini would read null
-    const loader::Elf32ModuleInput module{
-        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    Put32(libc, 0x1040, 0xe5900000U);  // fini would read null
+    const loader::Elf32ModuleInput module{"libc.so", libc, memory::GuestAddress{0x10000000U}};
     runtime::VirtualFileSystem filesystem;
     auto session = runtime::AndroidGuestCallSession::Start(
         {19, "libc.so", std::span{&module, 1}, {}, 64, 36, 100, 1, &filesystem, {}});
@@ -1272,7 +1155,7 @@ TEST_CASE("DVM-218 native process exit skips a second fini and keeps its code") 
 TEST_CASE("APS-14 native termination signal query preserves native exit admission") {
     using namespace ogplay;
     auto libc = LibdlDefaultLibcElf();
-    Put32(libc, 0x1000, 0xe3a00001U); // tkill(root tid=1, SIGABRT=6)
+    Put32(libc, 0x1000, 0xe3a00001U);  // tkill(root tid=1, SIGABRT=6)
     Put32(libc, 0x1004, 0xe3a01006U);
     Put32(libc, 0x1008, 0xe3a070eeU);
     Put32(libc, 0x100c, 0xef000000U);
@@ -1281,7 +1164,8 @@ TEST_CASE("APS-14 native termination signal query preserves native exit admissio
     auto session = runtime::AndroidGuestCallSession::Start(
         {19, "libc.so", std::span{&module, 1}, {}, 64, 36, 100, 1, &filesystem, {}});
     CHECK_FALSE(session->Process().NativeTerminationSignal().has_value());
-    CHECK_THROWS_AS(static_cast<void>(session->Invoke({memory::GuestAddress{0x10011000U}})), runtime::AndroidGuestCallSessionError);
+    CHECK_THROWS_AS(static_cast<void>(session->Invoke({memory::GuestAddress{0x10011000U}})),
+                    runtime::AndroidGuestCallSessionError);
     CHECK(session->Process().NativeTerminationSignal() == 6);
     CHECK_FALSE(session->NativeExitCode().has_value());
     CHECK_NOTHROW(session->Stop());
@@ -1295,30 +1179,26 @@ TEST_CASE("DVM-218 native worker quiescence preserves root cleanup and closes cl
     Put32(libc, 0x138, 0U);
     Put32(libc, 100, 64U);
     Put32(libc, 104, 64U);
-    const std::array code{0xe3a07078U, 0xef000000U, 0xe3500000U, 0x1a000003U,
-                          0xe3a07014U, 0xef000000U, 0xeafffffcU, 0xe1a00000U, 0xe12fff1eU};
+    const std::array code{0xe3a07078U, 0xef000000U, 0xe3500000U, 0x1a000003U, 0xe3a07014U,
+                          0xef000000U, 0xeafffffcU, 0xe1a00000U, 0xe12fff1eU};
     for (std::size_t index = 0; index < code.size(); ++index)
         Put32(libc, 0x1000U + index * 4U, code[index]);
     Put32(libc, 0x1040, 0xe5900000U);
-    const loader::Elf32ModuleInput module{
-        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    const loader::Elf32ModuleInput module{"libc.so", libc, memory::GuestAddress{0x10000000U}};
     runtime::VirtualFileSystem filesystem;
-    auto process = runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36, 100, 1, &filesystem, {}});
-    const auto flags = runtime::kLinuxCloneVm | runtime::kLinuxCloneFs |
-        runtime::kLinuxCloneFiles | runtime::kLinuxCloneSighand |
-        runtime::kLinuxCloneThread | runtime::kLinuxCloneSysvsem;
-    const runtime::A32GuestCallFrame frame{memory::GuestAddress{0x10011000U},
-        {flags, 0x10010ff0U, 0U, 0U}, {}, 1, true};
+    auto process =
+        runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 100, 1, &filesystem, {}});
+    const auto flags = runtime::kLinuxCloneVm | runtime::kLinuxCloneFs | runtime::kLinuxCloneFiles |
+                       runtime::kLinuxCloneSighand | runtime::kLinuxCloneThread | runtime::kLinuxCloneSysvsem;
+    const runtime::A32GuestCallFrame frame{
+        memory::GuestAddress{0x10011000U}, {flags, 0x10010ff0U, 0U, 0U}, {}, 1, true};
     CHECK(process->Invoke(frame).return_value == 2U);
     CHECK_NOTHROW(process->QuiesceNativeWorkers());
     CHECK(process->Running());
     CHECK(process->Environment().IsThreadAttached(1));
     CHECK_NOTHROW(process->QuiesceNativeWorkers());
-    process->RunTeardownCleanup([&] {
-        CHECK(static_cast<std::int32_t>(process->Invoke(frame).return_value) == -11);
-    });
-    CHECK_THROWS(process->Stop()); // quiescence did not prematurely execute fini
+    process->RunTeardownCleanup([&] { CHECK(static_cast<std::int32_t>(process->Invoke(frame).return_value) == -11); });
+    CHECK_THROWS(process->Stop());  // quiescence did not prematurely execute fini
     CHECK_FALSE(process->Running());
     CHECK(process->AttachedJniThreadCount() == 0U);
     CHECK_NOTHROW(process->Stop());
@@ -1333,11 +1213,10 @@ TEST_CASE("DVM-218 failed fini is reported after host detach and is not retried"
     Put32(libc, 100, 64U);
     Put32(libc, 104, 64U);
     Put32(libc, 0x1040, 0xe5900000U);
-    const loader::Elf32ModuleInput module{
-        "libc.so", libc, memory::GuestAddress{0x10000000U}};
+    const loader::Elf32ModuleInput module{"libc.so", libc, memory::GuestAddress{0x10000000U}};
     runtime::VirtualFileSystem filesystem;
-    auto process = runtime::AndroidGuestProcess::Start(
-        {19, std::span{&module, 1}, {}, 64, 36, 100, 1, &filesystem, {}});
+    auto process =
+        runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 100, 1, &filesystem, {}});
     CHECK_THROWS(process->Stop());
     CHECK_FALSE(process->Running());
     CHECK(process->AttachedJniThreadCount() == 0U);
@@ -1347,82 +1226,70 @@ TEST_CASE("DVM-218 failed fini is reported after host detach and is not retried"
 TEST_CASE("Android guest call session validates its complete launch request") {
     ogplay::runtime::VirtualFileSystem filesystem;
     const std::array<std::byte, 4> bytes{};
-    const ogplay::loader::Elf32ModuleInput module{
-        "root.so", bytes, ogplay::memory::GuestAddress{0x10000000U}};
+    const ogplay::loader::Elf32ModuleInput module{"root.so", bytes, ogplay::memory::GuestAddress{0x10000000U}};
 
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(ogplay::runtime::AndroidGuestCallSession::Start(
-            {19, "", std::span{&module, 1}, {}, 64, 36,
-             1000, 1, &filesystem, {}})),
-        "Android guest call session request is incomplete",
-        ogplay::runtime::AndroidGuestCallSessionError);
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(ogplay::runtime::AndroidGuestCallSession::Start(
-            {19, "root.so", std::span{&module, 1}, {}, 64, 36,
-             1000, 1, nullptr, {}})),
-        "Android guest call session request is incomplete",
-        ogplay::runtime::AndroidGuestCallSessionError);
+    CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::runtime::AndroidGuestCallSession::Start(
+                             {19, "", std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}})),
+                         "Android guest call session request is incomplete",
+                         ogplay::runtime::AndroidGuestCallSessionError);
+    CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::runtime::AndroidGuestCallSession::Start(
+                             {19, "root.so", std::span{&module, 1}, {}, 64, 36, 1000, 1, nullptr, {}})),
+                         "Android guest call session request is incomplete",
+                         ogplay::runtime::AndroidGuestCallSessionError);
 }
 
 TEST_CASE("Android guest platform handlers publish facts state and explicit failures") {
     using namespace ogplay::runtime;
     JniClassRegistry classes;
-    const auto device = classes.RegisterClass(
-        {"fixture/Device", {},
-         {{"a", "()[B", "device.identifier_bytes", true},
-          {"d", "()[B", "application.version_bytes", true},
-          {"IsWifiEnable", "()Z", "network.wifi_enabled", true},
-          {"e", "(I)V", "device.set_unique_code", true}}, {}});
-    const auto game = classes.RegisterClass(
-        {"fixture/Game", {},
-         {{"sendAppToBackground", "()V", "activity.send_to_background", true},
-          {"setFullyLoaded", "()V", "activity.set_fully_loaded", true},
-          {"IsInternetAvaliable", "()I", "network.internet_available", true},
-          {"showIAPDialog", "(I)V", "platform.unavailable", true}}, {}});
-    const auto renderer = classes.RegisterClass(
-        {"fixture/Renderer", {},
-         {{"getKeyboardText", "()[B", "keyboard.text_bytes", true},
-          {"setKeyboard", "(ILjava/lang/String;I)V", "keyboard.set", true},
-          {"isKeyboardVisible", "()I", "keyboard.visible", true},
-          {"swapEGLBuffers", "()V", "display.swap_managed_surface", true}}, {}});
+    const auto device = classes.RegisterClass({"fixture/Device",
+                                               {},
+                                               {{"a", "()[B", "device.identifier_bytes", true},
+                                                {"d", "()[B", "application.version_bytes", true},
+                                                {"IsWifiEnable", "()Z", "network.wifi_enabled", true},
+                                                {"e", "(I)V", "device.set_unique_code", true}},
+                                               {}});
+    const auto game = classes.RegisterClass({"fixture/Game",
+                                             {},
+                                             {{"sendAppToBackground", "()V", "activity.send_to_background", true},
+                                              {"setFullyLoaded", "()V", "activity.set_fully_loaded", true},
+                                              {"IsInternetAvaliable", "()I", "network.internet_available", true},
+                                              {"showIAPDialog", "(I)V", "platform.unavailable", true}},
+                                             {}});
+    const auto renderer = classes.RegisterClass({"fixture/Renderer",
+                                                 {},
+                                                 {{"getKeyboardText", "()[B", "keyboard.text_bytes", true},
+                                                  {"setKeyboard", "(ILjava/lang/String;I)V", "keyboard.set", true},
+                                                  {"isKeyboardVisible", "()I", "keyboard.visible", true},
+                                                  {"swapEGLBuffers", "()V", "display.swap_managed_surface", true}},
+                                                 {}});
     JniInvocationEngine invocations{classes};
     JniEnvironment environment;
     environment.AttachThread(7U);
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
+    TestJniStrings strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     AndroidGuestPlatformState state;
-    BindAndroidGuestJavaPlatformHandlers(
-        invocations, environment, strings, arrays, state,
-        {.installation_id = "fixture-id", .version_name = "1.2.3"});
+    BindAndroidGuestJavaPlatformHandlers(invocations, environment, strings, arrays, state,
+                                         {.installation_id = "fixture-id", .version_name = "1.2.3"});
 
-    const auto invoke = [&](const JniObjectIdentity java_class,
-                            const char* name, const char* signature,
+    const auto invoke = [&](const JniObjectIdentity java_class, const char* name, const char* signature,
                             const std::span<const JniValue> arguments = {}) {
-        const auto method = classes.GetMethodId(
-            java_class, name, signature, true);
+        const auto method = classes.GetMethodId(java_class, name, signature, true);
         REQUIRE(method.has_value());
-        return invocations.InvokeStatic(
-            7U, java_class, *method, arguments,
-            JniArgumentSource::value_array);
+        return invocations.InvokeStatic(7U, java_class, *method, arguments, JniArgumentSource::value_array);
     };
-    const auto identifier = std::get<JniReference>(
-        invoke(device, "a", "()[B"));
-    const auto identifier_object = environment.ResolveObjectForHle(
-        7U, identifier);
+    const auto identifier = std::get<JniReference>(invoke(device, "a", "()[B"));
+    const auto identifier_object = environment.ResolveObjectForHle(7U, identifier);
     REQUIRE(identifier_object.has_value());
-    CHECK(std::get<std::vector<JniByte>>(arrays.Region(
-              *identifier_object, 0, arrays.Length(*identifier_object))) ==
+    CHECK(std::get<std::vector<JniByte>>(arrays.Region(*identifier_object, 0, arrays.Length(*identifier_object))) ==
           std::vector<JniByte>{'f', 'i', 'x', 't', 'u', 'r', 'e', '-', 'i', 'd'});
-    CHECK(std::get<JniBoolean>(
-              invoke(device, "IsWifiEnable", "()Z")) == 0U);
+    CHECK(std::get<JniBoolean>(invoke(device, "IsWifiEnable", "()Z")) == 0U);
     const std::array<JniValue, 1> unique{JniInt{53412}};
     static_cast<void>(invoke(device, "e", "(I)V", unique));
     REQUIRE(state.UniqueCode().has_value());
     CHECK(*state.UniqueCode() == 53412);
-    CHECK(std::get<JniInt>(invoke(
-              game, "IsInternetAvaliable", "()I")) == 0);
+    CHECK(std::get<JniInt>(invoke(game, "IsInternetAvaliable", "()I")) == 0);
     static_cast<void>(invoke(game, "sendAppToBackground", "()V"));
     static_cast<void>(invoke(game, "setFullyLoaded", "()V"));
     CHECK(state.BackgroundRequested());
@@ -1431,51 +1298,39 @@ TEST_CASE("Android guest platform handlers publish facts state and explicit fail
     const std::array<std::uint8_t, 4> keyboard_utf8{'t', 'e', 's', 't'};
     const auto keyboard_object = strings.CreateModifiedUtf8(keyboard_utf8);
     const auto keyboard = environment.PublishLocalObject(7U, keyboard_object);
-    const std::array<JniValue, 3> set_keyboard{
-        JniInt{1}, keyboard, JniInt{32}};
-    static_cast<void>(invoke(
-        renderer, "setKeyboard", "(ILjava/lang/String;I)V", set_keyboard));
-    CHECK(std::get<JniInt>(invoke(
-              renderer, "isKeyboardVisible", "()I")) == 1);
+    const std::array<JniValue, 3> set_keyboard{JniInt{1}, keyboard, JniInt{32}};
+    static_cast<void>(invoke(renderer, "setKeyboard", "(ILjava/lang/String;I)V", set_keyboard));
+    CHECK(std::get<JniInt>(invoke(renderer, "isKeyboardVisible", "()I")) == 1);
     CHECK(state.KeyboardText() == std::vector<JniChar>{'t', 'e', 's', 't'});
     static_cast<void>(invoke(renderer, "swapEGLBuffers", "()V"));
     CHECK(state.ManagedSwapRequests() == 1U);
 
     const std::array<JniValue, 1> dialog{JniInt{1}};
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(invoke(
-            game, "showIAPDialog", "(I)V", dialog)),
-        "Android guest platform callback is unavailable: showIAPDialog(I)V",
-        AndroidGuestCallSessionError);
+    CHECK_THROWS_WITH_AS(static_cast<void>(invoke(game, "showIAPDialog", "(I)V", dialog)),
+                         "Android guest platform callback is unavailable: showIAPDialog(I)V",
+                         AndroidGuestCallSessionError);
     environment.DetachThread(7U);
 }
 
 TEST_CASE("Android guest Java display handler records screen sleep policy") {
     ogplay::runtime::JniClassRegistry classes;
     const auto java_class = classes.RegisterClass(
-        {"fixture/JavaDisplay", {},
-         {{"changeDisplayMode", "(I)V", "display.change_mode", true}}, {}});
-    const auto method = classes.GetMethodId(
-        java_class, "changeDisplayMode", "(I)V", true);
+        {"fixture/JavaDisplay", {}, {{"changeDisplayMode", "(I)V", "display.change_mode", true}}, {}});
+    const auto method = classes.GetMethodId(java_class, "changeDisplayMode", "(I)V", true);
     REQUIRE(method.has_value());
     ogplay::runtime::JniInvocationEngine invocations{classes};
     ogplay::runtime::FrameworkScreenPolicyState screen_policy;
-    ogplay::runtime::BindAndroidGuestJavaDisplayHandlers(
-        invocations, screen_policy);
+    ogplay::runtime::BindAndroidGuestJavaDisplayHandlers(invocations, screen_policy);
 
-    const std::array<ogplay::runtime::JniValue, 1> allow_sleep{
-        ogplay::runtime::JniInt{1}};
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *method, allow_sleep,
-        ogplay::runtime::JniArgumentSource::variadic));
+    const std::array<ogplay::runtime::JniValue, 1> allow_sleep{ogplay::runtime::JniInt{1}};
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *method, allow_sleep, ogplay::runtime::JniArgumentSource::variadic));
     REQUIRE(screen_policy.SleepAllowed().has_value());
     CHECK(*screen_policy.SleepAllowed());
 
-    const std::array<ogplay::runtime::JniValue, 1> keep_awake{
-        ogplay::runtime::JniInt{0}};
-    static_cast<void>(invocations.InvokeStatic(
-        2U, java_class, *method, keep_awake,
-        ogplay::runtime::JniArgumentSource::value_array));
+    const std::array<ogplay::runtime::JniValue, 1> keep_awake{ogplay::runtime::JniInt{0}};
+    static_cast<void>(
+        invocations.InvokeStatic(2U, java_class, *method, keep_awake, ogplay::runtime::JniArgumentSource::value_array));
     REQUIRE(screen_policy.SleepAllowed().has_value());
     CHECK_FALSE(*screen_policy.SleepAllowed());
     CHECK(screen_policy.RequestCount() == 2U);
@@ -1483,21 +1338,18 @@ TEST_CASE("Android guest Java display handler records screen sleep policy") {
 
 TEST_CASE("Android guest Java process exit requests session shutdown") {
     ogplay::runtime::JniClassRegistry classes;
-    const auto java_class = classes.RegisterClass(
-        {"fixture/JavaProcess", {},
-         {{"Exit", "()V", "process.exit", true}}, {}});
+    const auto java_class =
+        classes.RegisterClass({"fixture/JavaProcess", {}, {{"Exit", "()V", "process.exit", true}}, {}});
     const auto method = classes.GetMethodId(java_class, "Exit", "()V", true);
     REQUIRE(method.has_value());
     ogplay::runtime::JniInvocationEngine invocations{classes};
     ogplay::runtime::AndroidGuestProcessState process_state;
-    ogplay::runtime::BindAndroidGuestJavaProcessHandlers(
-        invocations, process_state);
+    ogplay::runtime::BindAndroidGuestJavaProcessHandlers(invocations, process_state);
 
     CHECK_FALSE(process_state.ExitRequested());
     CHECK(process_state.ExitRequestCount() == 0U);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *method, {},
-        ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *method, {}, ogplay::runtime::JniArgumentSource::variadic));
     CHECK(process_state.ExitRequested());
     CHECK(process_state.ExitRequestCount() == 1U);
 }
@@ -1505,19 +1357,14 @@ TEST_CASE("Android guest Java process exit requests session shutdown") {
 TEST_CASE("Android guest Java locale handler returns legacy language index") {
     ogplay::runtime::JniClassRegistry classes;
     const auto java_class = classes.RegisterClass(
-        {"fixture/JavaLocale", {},
-         {{"detectPhoneLang", "()I", "locale.detect_phone_language", true}},
-         {}});
-    const auto method = classes.GetMethodId(
-        java_class, "detectPhoneLang", "()I", true);
+        {"fixture/JavaLocale", {}, {{"detectPhoneLang", "()I", "locale.detect_phone_language", true}}, {}});
+    const auto method = classes.GetMethodId(java_class, "detectPhoneLang", "()I", true);
     REQUIRE(method.has_value());
     ogplay::runtime::JniInvocationEngine invocations{classes};
-    ogplay::runtime::BindAndroidGuestJavaLocaleHandlers(
-        invocations, {"fra", "FR"});
+    ogplay::runtime::BindAndroidGuestJavaLocaleHandlers(invocations, {"fra", "FR"});
 
-    const auto result = invocations.InvokeStatic(
-        1U, java_class, *method, {},
-        ogplay::runtime::JniArgumentSource::value_array);
+    const auto result =
+        invocations.InvokeStatic(1U, java_class, *method, {}, ogplay::runtime::JniArgumentSource::value_array);
     CHECK(std::get<ogplay::runtime::JniInt>(result) == 0);
     CHECK(ogplay::runtime::LegacyPhoneLanguageIndex({"de", "DE"}) == 1);
     CHECK(ogplay::runtime::LegacyPhoneLanguageIndex({"ita", "IT"}) == 2);
@@ -1526,163 +1373,117 @@ TEST_CASE("Android guest Java locale handler returns legacy language index") {
     CHECK(ogplay::runtime::LegacyPhoneLanguageIndex({"eng", "US"}) == 5);
     CHECK(ogplay::runtime::LegacyPhoneLanguageIndex({"pt", "BR"}) == 6);
     CHECK(ogplay::runtime::LegacyPhoneLanguageIndex({"zh", "CN"}) == 5);
-    CHECK_THROWS_AS(
-        static_cast<void>(
-            ogplay::runtime::LegacyPhoneLanguageIndex({"EN", "US"})),
-        ogplay::runtime::FrameworkLocaleError);
+    CHECK_THROWS_AS(static_cast<void>(ogplay::runtime::LegacyPhoneLanguageIndex({"EN", "US"})),
+                    ogplay::runtime::FrameworkLocaleError);
 }
 
 TEST_CASE("Android guest Java movie handler publishes the exact request") {
     ogplay::runtime::JniClassRegistry classes;
     const auto java_class = classes.RegisterClass(
-        {"fixture/JavaMovie", {},
-         {{"loadMovie", "(Ljava/lang/String;)V", "audio.load_movie", true}},
-         {}});
-    const auto method = classes.GetMethodId(
-        java_class, "loadMovie", "(Ljava/lang/String;)V", true);
+        {"fixture/JavaMovie", {}, {{"loadMovie", "(Ljava/lang/String;)V", "audio.load_movie", true}}, {}});
+    const auto method = classes.GetMethodId(java_class, "loadMovie", "(Ljava/lang/String;)V", true);
     REQUIRE(method.has_value());
 
     ogplay::runtime::JniEnvironment environment;
     environment.AttachThread(7U);
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    ogplay::runtime::JniStringStore strings{strings_payload};
-    const std::array<ogplay::runtime::JniChar, 9> name{
-        'i', 'n', 't', 'r', 'o', '.', 'm', 'p', '4'};
+    ogplay::runtime::TestJniStrings strings{strings_payload};
+    const std::array<ogplay::runtime::JniChar, 9> name{'i', 'n', 't', 'r', 'o', '.', 'm', 'p', '4'};
     const auto identity = strings.Create(name);
     const auto reference = environment.PublishLocalObject(7U, identity);
     ogplay::runtime::JniInvocationEngine invocations{classes};
     ogplay::runtime::AndroidGuestMovieState movie_state;
-    ogplay::runtime::BindAndroidGuestJavaMovieHandlers(
-        invocations, environment, strings, movie_state);
+    ogplay::runtime::BindAndroidGuestJavaMovieHandlers(invocations, environment, strings, movie_state);
 
     const std::array<ogplay::runtime::JniValue, 1> arguments{reference};
-    static_cast<void>(invocations.InvokeStatic(
-        7U, java_class, *method, arguments,
-        ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(
+        invocations.InvokeStatic(7U, java_class, *method, arguments, ogplay::runtime::JniArgumentSource::variadic));
     const auto latest = movie_state.Latest();
     REQUIRE(latest.has_value());
     CHECK(latest->sequence == 1U);
     CHECK(latest->thread_id == 7U);
-    CHECK(latest->name == std::vector<ogplay::runtime::JniChar>{
-                              name.begin(), name.end()});
+    CHECK(latest->name == std::vector<ogplay::runtime::JniChar>{name.begin(), name.end()});
     CHECK(movie_state.RequestCount() == 1U);
 
-    const std::array<ogplay::runtime::JniValue, 1> null_arguments{
-        ogplay::runtime::JniReference{}};
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(invocations.InvokeStatic(
-            7U, java_class, *method, null_arguments,
-            ogplay::runtime::JniArgumentSource::value_array)),
-        "Android guest movie name cannot be null",
-        ogplay::runtime::AndroidGuestCallSessionError);
+    const std::array<ogplay::runtime::JniValue, 1> null_arguments{ogplay::runtime::JniReference{}};
+    CHECK_THROWS_WITH_AS(static_cast<void>(invocations.InvokeStatic(7U, java_class, *method, null_arguments,
+                                                                    ogplay::runtime::JniArgumentSource::value_array)),
+                         "Android guest movie name cannot be null", ogplay::runtime::AndroidGuestCallSessionError);
     CHECK(movie_state.RequestCount() == 1U);
 
-    const auto non_string = environment.PublishLocalObject(
-        7U, ogplay::runtime::AllocateJniHostObjectIdentity());
-    const std::array<ogplay::runtime::JniValue, 1> non_string_arguments{
-        non_string};
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(invocations.InvokeStatic(
-            7U, java_class, *method, non_string_arguments,
-            ogplay::runtime::JniArgumentSource::value_array)),
-        "JNI object is not a string in this store",
-        ogplay::runtime::JniStringError);
+    const auto non_string = environment.PublishLocalObject(7U, ogplay::runtime::AllocateJniHostObjectIdentity());
+    const std::array<ogplay::runtime::JniValue, 1> non_string_arguments{non_string};
+    CHECK_THROWS_WITH_AS(static_cast<void>(invocations.InvokeStatic(7U, java_class, *method, non_string_arguments,
+                                                                    ogplay::runtime::JniArgumentSource::value_array)),
+                         "JNI object is not a String", ogplay::runtime::JniStringError);
     CHECK(movie_state.RequestCount() == 1U);
 
     const std::vector<ogplay::runtime::JniChar> oversized(4097U, 'x');
-    CHECK_THROWS_WITH_AS(
-        movie_state.Request(7U, oversized),
-        "Android guest movie request is invalid",
-        ogplay::runtime::AndroidGuestCallSessionError);
+    CHECK_THROWS_WITH_AS(movie_state.Request(7U, oversized), "Android guest movie request is invalid",
+                         ogplay::runtime::AndroidGuestCallSessionError);
     CHECK(movie_state.RequestCount() == 1U);
 }
 
 TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {
     ogplay::runtime::JniClassRegistry classes;
-    const auto java_class = classes.RegisterClass(
-        {"fixture/JavaAudio", {},
-         {{"destroySoundPool", "()V", "audio.destroy_sound_pool", true},
-          {"initSoundPoolArray", "()V", "audio.init_sound_pool_array", true},
-          {"stopAllSounds", "()V", "audio.stop_all_sounds", true},
-          {"stopAllPool", "(I)V", "audio.stop_all_pool", true},
-          {"stopAllBig", "(I)V", "audio.stop_all_big", true},
-          {"isSoundLoaded", "(II)I", "audio.is_sound_loaded", true},
-          {"isSoundLoadedBig", "(I)I", "audio.is_sound_loaded_big", true},
-          {"unloadSound", "(II)V", "audio.unload_sound", true},
-          {"unloadSoundBig", "(I)V", "audio.unload_sound_big", true},
-          {"playSound", "(IIF)V", "audio.play_sound", true},
-          {"playSoundBig", "(IF)V", "audio.play_sound_big", true},
-          {"playSoundBigLooping", "(IFZ)V",
-           "audio.play_sound_big_looping", true},
-          {"loadSound", "(II)V", "audio.load_sound", true},
-          {"loadSoundBig", "(I)V", "audio.load_sound_big", true},
-          {"pauseSound", "(II)V", "audio.pause_sound", true},
-          {"pauseSoundBig", "(I)V", "audio.pause_sound_big", true},
-          {"pauseAllSoundBig", "()V", "audio.pause_all_big", true},
-          {"resumeSound", "(II)V", "audio.resume_sound", true},
-          {"resumeSoundBig", "(I)V", "audio.resume_sound_big", true},
-          {"resumeAllSoundBig", "()V", "audio.resume_all_big", true},
-          {"stopSound", "(II)V", "audio.stop_sound", true},
-          {"stopSoundBig", "(I)V", "audio.stop_sound_big", true},
-          {"setVolume", "(IIF)V", "audio.set_volume", true},
-          {"setVolumeBig", "(IF)V", "audio.set_volume_big", true},
-          {"setPitch", "(IIF)V", "audio.set_pitch", true},
-          {"resetSound", "(I)V", "audio.reset_sound", true}},
-         {}});
-    const auto method = classes.GetMethodId(
-        java_class, "destroySoundPool", "()V", true);
+    const auto java_class =
+        classes.RegisterClass({"fixture/JavaAudio",
+                               {},
+                               {{"destroySoundPool", "()V", "audio.destroy_sound_pool", true},
+                                {"initSoundPoolArray", "()V", "audio.init_sound_pool_array", true},
+                                {"stopAllSounds", "()V", "audio.stop_all_sounds", true},
+                                {"stopAllPool", "(I)V", "audio.stop_all_pool", true},
+                                {"stopAllBig", "(I)V", "audio.stop_all_big", true},
+                                {"isSoundLoaded", "(II)I", "audio.is_sound_loaded", true},
+                                {"isSoundLoadedBig", "(I)I", "audio.is_sound_loaded_big", true},
+                                {"unloadSound", "(II)V", "audio.unload_sound", true},
+                                {"unloadSoundBig", "(I)V", "audio.unload_sound_big", true},
+                                {"playSound", "(IIF)V", "audio.play_sound", true},
+                                {"playSoundBig", "(IF)V", "audio.play_sound_big", true},
+                                {"playSoundBigLooping", "(IFZ)V", "audio.play_sound_big_looping", true},
+                                {"loadSound", "(II)V", "audio.load_sound", true},
+                                {"loadSoundBig", "(I)V", "audio.load_sound_big", true},
+                                {"pauseSound", "(II)V", "audio.pause_sound", true},
+                                {"pauseSoundBig", "(I)V", "audio.pause_sound_big", true},
+                                {"pauseAllSoundBig", "()V", "audio.pause_all_big", true},
+                                {"resumeSound", "(II)V", "audio.resume_sound", true},
+                                {"resumeSoundBig", "(I)V", "audio.resume_sound_big", true},
+                                {"resumeAllSoundBig", "()V", "audio.resume_all_big", true},
+                                {"stopSound", "(II)V", "audio.stop_sound", true},
+                                {"stopSoundBig", "(I)V", "audio.stop_sound_big", true},
+                                {"setVolume", "(IIF)V", "audio.set_volume", true},
+                                {"setVolumeBig", "(IF)V", "audio.set_volume_big", true},
+                                {"setPitch", "(IIF)V", "audio.set_pitch", true},
+                                {"resetSound", "(I)V", "audio.reset_sound", true}},
+                               {}});
+    const auto method = classes.GetMethodId(java_class, "destroySoundPool", "()V", true);
     REQUIRE(method.has_value());
-    const auto initialize = classes.GetMethodId(
-        java_class, "initSoundPoolArray", "()V", true);
+    const auto initialize = classes.GetMethodId(java_class, "initSoundPoolArray", "()V", true);
     REQUIRE(initialize.has_value());
-    const auto stop_all = classes.GetMethodId(
-        java_class, "stopAllSounds", "()V", true);
-    const auto stop_pool = classes.GetMethodId(
-        java_class, "stopAllPool", "(I)V", true);
-    const auto stop_big = classes.GetMethodId(
-        java_class, "stopAllBig", "(I)V", true);
-    const auto is_loaded = classes.GetMethodId(
-        java_class, "isSoundLoaded", "(II)I", true);
-    const auto is_loaded_big = classes.GetMethodId(
-        java_class, "isSoundLoadedBig", "(I)I", true);
-    const auto unload = classes.GetMethodId(
-        java_class, "unloadSound", "(II)V", true);
-    const auto unload_big = classes.GetMethodId(
-        java_class, "unloadSoundBig", "(I)V", true);
-    const auto play = classes.GetMethodId(
-        java_class, "playSound", "(IIF)V", true);
-    const auto play_big = classes.GetMethodId(
-        java_class, "playSoundBig", "(IF)V", true);
-    const auto play_big_looping = classes.GetMethodId(
-        java_class, "playSoundBigLooping", "(IFZ)V", true);
-    const auto load = classes.GetMethodId(
-        java_class, "loadSound", "(II)V", true);
-    const auto load_big = classes.GetMethodId(
-        java_class, "loadSoundBig", "(I)V", true);
-    const auto pause = classes.GetMethodId(
-        java_class, "pauseSound", "(II)V", true);
-    const auto pause_big = classes.GetMethodId(
-        java_class, "pauseSoundBig", "(I)V", true);
-    const auto pause_all_big = classes.GetMethodId(
-        java_class, "pauseAllSoundBig", "()V", true);
-    const auto resume = classes.GetMethodId(
-        java_class, "resumeSound", "(II)V", true);
-    const auto resume_big = classes.GetMethodId(
-        java_class, "resumeSoundBig", "(I)V", true);
-    const auto resume_all_big = classes.GetMethodId(
-        java_class, "resumeAllSoundBig", "()V", true);
-    const auto stop = classes.GetMethodId(
-        java_class, "stopSound", "(II)V", true);
-    const auto stop_big_voice = classes.GetMethodId(
-        java_class, "stopSoundBig", "(I)V", true);
-    const auto set_volume = classes.GetMethodId(
-        java_class, "setVolume", "(IIF)V", true);
-    const auto set_volume_big = classes.GetMethodId(
-        java_class, "setVolumeBig", "(IF)V", true);
-    const auto set_pitch = classes.GetMethodId(
-        java_class, "setPitch", "(IIF)V", true);
-    const auto reset = classes.GetMethodId(
-        java_class, "resetSound", "(I)V", true);
+    const auto stop_all = classes.GetMethodId(java_class, "stopAllSounds", "()V", true);
+    const auto stop_pool = classes.GetMethodId(java_class, "stopAllPool", "(I)V", true);
+    const auto stop_big = classes.GetMethodId(java_class, "stopAllBig", "(I)V", true);
+    const auto is_loaded = classes.GetMethodId(java_class, "isSoundLoaded", "(II)I", true);
+    const auto is_loaded_big = classes.GetMethodId(java_class, "isSoundLoadedBig", "(I)I", true);
+    const auto unload = classes.GetMethodId(java_class, "unloadSound", "(II)V", true);
+    const auto unload_big = classes.GetMethodId(java_class, "unloadSoundBig", "(I)V", true);
+    const auto play = classes.GetMethodId(java_class, "playSound", "(IIF)V", true);
+    const auto play_big = classes.GetMethodId(java_class, "playSoundBig", "(IF)V", true);
+    const auto play_big_looping = classes.GetMethodId(java_class, "playSoundBigLooping", "(IFZ)V", true);
+    const auto load = classes.GetMethodId(java_class, "loadSound", "(II)V", true);
+    const auto load_big = classes.GetMethodId(java_class, "loadSoundBig", "(I)V", true);
+    const auto pause = classes.GetMethodId(java_class, "pauseSound", "(II)V", true);
+    const auto pause_big = classes.GetMethodId(java_class, "pauseSoundBig", "(I)V", true);
+    const auto pause_all_big = classes.GetMethodId(java_class, "pauseAllSoundBig", "()V", true);
+    const auto resume = classes.GetMethodId(java_class, "resumeSound", "(II)V", true);
+    const auto resume_big = classes.GetMethodId(java_class, "resumeSoundBig", "(I)V", true);
+    const auto resume_all_big = classes.GetMethodId(java_class, "resumeAllSoundBig", "()V", true);
+    const auto stop = classes.GetMethodId(java_class, "stopSound", "(II)V", true);
+    const auto stop_big_voice = classes.GetMethodId(java_class, "stopSoundBig", "(I)V", true);
+    const auto set_volume = classes.GetMethodId(java_class, "setVolume", "(IIF)V", true);
+    const auto set_volume_big = classes.GetMethodId(java_class, "setVolumeBig", "(IF)V", true);
+    const auto set_pitch = classes.GetMethodId(java_class, "setPitch", "(IIF)V", true);
+    const auto reset = classes.GetMethodId(java_class, "resetSound", "(I)V", true);
     REQUIRE(stop_all.has_value());
     REQUIRE(stop_pool.has_value());
     REQUIRE(stop_big.has_value());
@@ -1708,283 +1509,202 @@ TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {
     REQUIRE(set_pitch.has_value());
     REQUIRE(reset.has_value());
     ogplay::runtime::JniInvocationEngine invocations{classes};
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(invocations.InvokeStatic(
-            1U, java_class, *method, {},
-            ogplay::runtime::JniArgumentSource::variadic)),
-        "JNI method implementation has no registered handler: "
-        "audio.destroy_sound_pool",
-        ogplay::runtime::JniInvocationError);
+    CHECK_THROWS_WITH_AS(static_cast<void>(invocations.InvokeStatic(1U, java_class, *method, {},
+                                                                    ogplay::runtime::JniArgumentSource::variadic)),
+                         "JNI method implementation has no registered handler: "
+                         "audio.destroy_sound_pool",
+                         ogplay::runtime::JniInvocationError);
 
     ogplay::audio::JavaSoundPoolState sound_pool;
-    ogplay::runtime::BindAndroidGuestJavaAudioHandlers(
-        invocations, sound_pool);
+    ogplay::runtime::BindAndroidGuestJavaAudioHandlers(invocations, sound_pool);
     CHECK(sound_pool.Active());
     CHECK(std::holds_alternative<std::monostate>(
-        invocations.InvokeStatic(
-            1U, java_class, *method, {},
-            ogplay::runtime::JniArgumentSource::variadic)));
+        invocations.InvokeStatic(1U, java_class, *method, {}, ogplay::runtime::JniArgumentSource::variadic)));
     CHECK_FALSE(sound_pool.Active());
     CHECK(sound_pool.DestructionCount() == 1U);
-    CHECK_FALSE(sound_pool.MarkLoaded(
-        ogplay::audio::JavaSoundPoolKind::pool, 2));
+    CHECK_FALSE(sound_pool.MarkLoaded(ogplay::audio::JavaSoundPoolKind::pool, 2));
     CHECK(sound_pool.LoadedResourceCount() == 0U);
 
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *method, {},
-        ogplay::runtime::JniArgumentSource::va_list));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *method, {}, ogplay::runtime::JniArgumentSource::va_list));
     CHECK(sound_pool.DestructionCount() == 1U);
 
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *initialize, {},
-        ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *initialize, {}, ogplay::runtime::JniArgumentSource::variadic));
     CHECK(sound_pool.Active());
     CHECK(sound_pool.InitializationCount() == 1U);
 
-    const std::array<ogplay::runtime::JniValue, 2> pool_resource{
-        ogplay::runtime::JniInt{2}, ogplay::runtime::JniInt{7}};
-    const std::array<ogplay::runtime::JniValue, 1> big_resource{
-        ogplay::runtime::JniInt{7}};
-    const std::array<ogplay::runtime::JniValue, 3> pool_play{
-        ogplay::runtime::JniInt{2}, ogplay::runtime::JniInt{7},
-        ogplay::runtime::JniFloat{0.5F}};
-    const std::array<ogplay::runtime::JniValue, 2> big_play{
-        ogplay::runtime::JniInt{7}, ogplay::runtime::JniFloat{0.75F}};
+    const std::array<ogplay::runtime::JniValue, 2> pool_resource{ogplay::runtime::JniInt{2},
+                                                                 ogplay::runtime::JniInt{7}};
+    const std::array<ogplay::runtime::JniValue, 1> big_resource{ogplay::runtime::JniInt{7}};
+    const std::array<ogplay::runtime::JniValue, 3> pool_play{ogplay::runtime::JniInt{2}, ogplay::runtime::JniInt{7},
+                                                             ogplay::runtime::JniFloat{0.5F}};
+    const std::array<ogplay::runtime::JniValue, 2> big_play{ogplay::runtime::JniInt{7},
+                                                            ogplay::runtime::JniFloat{0.75F}};
     const std::array<ogplay::runtime::JniValue, 3> big_looping_play{
-        ogplay::runtime::JniInt{7}, ogplay::runtime::JniFloat{0.75F},
-        ogplay::runtime::JniBoolean{1U}};
+        ogplay::runtime::JniInt{7}, ogplay::runtime::JniFloat{0.75F}, ogplay::runtime::JniBoolean{1U}};
     CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeStatic(
-              1U, java_class, *is_loaded, pool_resource,
-              ogplay::runtime::JniArgumentSource::value_array)) == -1);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *play, pool_play,
-        ogplay::runtime::JniArgumentSource::variadic));
+              1U, java_class, *is_loaded, pool_resource, ogplay::runtime::JniArgumentSource::value_array)) == -1);
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *play, pool_play, ogplay::runtime::JniArgumentSource::variadic));
     CHECK(sound_pool.ActiveVoiceCount() == 0U);
     CHECK(sound_pool.PendingLoadCount() == 1U);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *load, pool_resource,
-        ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *load, pool_resource,
+                                               ogplay::runtime::JniArgumentSource::value_array));
     CHECK(sound_pool.PendingLoadCount() == 1U);
-    CHECK(sound_pool.RequestLoad(
-        ogplay::audio::JavaSoundPoolKind::pool, 99));
+    CHECK(sound_pool.RequestLoad(ogplay::audio::JavaSoundPoolKind::pool, 99));
     CHECK(sound_pool.PendingLoadCount() == 2U);
-    CHECK(sound_pool.Unload(
-        ogplay::audio::JavaSoundPoolKind::pool, 99));
+    CHECK(sound_pool.Unload(ogplay::audio::JavaSoundPoolKind::pool, 99));
     CHECK(sound_pool.PendingLoadCount() == 1U);
-    CHECK(sound_pool.MarkLoaded(
-        ogplay::audio::JavaSoundPoolKind::pool, 2));
+    CHECK(sound_pool.MarkLoaded(ogplay::audio::JavaSoundPoolKind::pool, 2));
     CHECK(sound_pool.PendingLoadCount() == 0U);
     CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeStatic(
-              1U, java_class, *is_loaded, pool_resource,
-              ogplay::runtime::JniArgumentSource::variadic)) == 0);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *play, pool_play,
-        ogplay::runtime::JniArgumentSource::va_list));
+              1U, java_class, *is_loaded, pool_resource, ogplay::runtime::JniArgumentSource::variadic)) == 0);
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *play, pool_play, ogplay::runtime::JniArgumentSource::va_list));
     CHECK(sound_pool.ActiveVoiceCount() == 1U);
     CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeStatic(
-              1U, java_class, *is_loaded_big, big_resource,
-              ogplay::runtime::JniArgumentSource::va_list)) == -1);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *load_big, big_resource,
-        ogplay::runtime::JniArgumentSource::variadic));
+              1U, java_class, *is_loaded_big, big_resource, ogplay::runtime::JniArgumentSource::va_list)) == -1);
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *load_big, big_resource,
+                                               ogplay::runtime::JniArgumentSource::variadic));
     CHECK(sound_pool.PendingLoadCount() == 1U);
-    CHECK(sound_pool.MarkLoaded(
-        ogplay::audio::JavaSoundPoolKind::big, 7));
+    CHECK(sound_pool.MarkLoaded(ogplay::audio::JavaSoundPoolKind::big, 7));
     CHECK(sound_pool.PendingLoadCount() == 0U);
     CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeStatic(
-              1U, java_class, *is_loaded_big, big_resource,
-              ogplay::runtime::JniArgumentSource::value_array)) == 0);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *play_big, big_play,
-        ogplay::runtime::JniArgumentSource::value_array));
-    CHECK_FALSE(sound_pool.Snapshot(
-                    ogplay::audio::JavaSoundPoolKind::big, 7, 0)->looping);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *play_big_looping, big_looping_play,
-        ogplay::runtime::JniArgumentSource::variadic));
-    CHECK(sound_pool.Snapshot(
-              ogplay::audio::JavaSoundPoolKind::big, 7, 0)->looping);
+              1U, java_class, *is_loaded_big, big_resource, ogplay::runtime::JniArgumentSource::value_array)) == 0);
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *play_big, big_play, ogplay::runtime::JniArgumentSource::value_array));
+    CHECK_FALSE(sound_pool.Snapshot(ogplay::audio::JavaSoundPoolKind::big, 7, 0)->looping);
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *play_big_looping, big_looping_play,
+                                               ogplay::runtime::JniArgumentSource::variadic));
+    CHECK(sound_pool.Snapshot(ogplay::audio::JavaSoundPoolKind::big, 7, 0)->looping);
     CHECK(sound_pool.ActiveVoiceCount() == 2U);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *pause, pool_resource,
-        ogplay::runtime::JniArgumentSource::variadic));
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *pause_big, big_resource,
-        ogplay::runtime::JniArgumentSource::va_list));
-    const auto paused_pool = sound_pool.Snapshot(
-        ogplay::audio::JavaSoundPoolKind::pool, 2, 7);
-    const auto paused_big = sound_pool.Snapshot(
-        ogplay::audio::JavaSoundPoolKind::big, 7, 0);
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *pause, pool_resource, ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *pause_big, big_resource,
+                                               ogplay::runtime::JniArgumentSource::va_list));
+    const auto paused_pool = sound_pool.Snapshot(ogplay::audio::JavaSoundPoolKind::pool, 2, 7);
+    const auto paused_big = sound_pool.Snapshot(ogplay::audio::JavaSoundPoolKind::big, 7, 0);
     REQUIRE(paused_pool.has_value());
     REQUIRE(paused_big.has_value());
-    CHECK(paused_pool->status ==
+    CHECK(paused_pool->status == ogplay::audio::JavaSoundPoolVoiceStatus::paused);
+    CHECK(paused_big->status == ogplay::audio::JavaSoundPoolVoiceStatus::paused);
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *resume_all_big, {}, ogplay::runtime::JniArgumentSource::value_array));
+    CHECK(sound_pool.Snapshot(ogplay::audio::JavaSoundPoolKind::pool, 2, 7)->status ==
           ogplay::audio::JavaSoundPoolVoiceStatus::paused);
-    CHECK(paused_big->status ==
-          ogplay::audio::JavaSoundPoolVoiceStatus::paused);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *resume_all_big, {},
-        ogplay::runtime::JniArgumentSource::value_array));
-    CHECK(sound_pool.Snapshot(
-              ogplay::audio::JavaSoundPoolKind::pool, 2, 7)->status ==
-          ogplay::audio::JavaSoundPoolVoiceStatus::paused);
-    CHECK(sound_pool.Snapshot(
-              ogplay::audio::JavaSoundPoolKind::big, 7, 0)->status ==
+    CHECK(sound_pool.Snapshot(ogplay::audio::JavaSoundPoolKind::big, 7, 0)->status ==
           ogplay::audio::JavaSoundPoolVoiceStatus::playing);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *pause_all_big, {},
-        ogplay::runtime::JniArgumentSource::variadic));
-    CHECK(sound_pool.Snapshot(
-              ogplay::audio::JavaSoundPoolKind::big, 7, 0)->status ==
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *pause_all_big, {}, ogplay::runtime::JniArgumentSource::variadic));
+    CHECK(sound_pool.Snapshot(ogplay::audio::JavaSoundPoolKind::big, 7, 0)->status ==
           ogplay::audio::JavaSoundPoolVoiceStatus::paused);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *resume, pool_resource,
-        ogplay::runtime::JniArgumentSource::value_array));
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *resume_big, big_resource,
-        ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *resume, pool_resource,
+                                               ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *resume_big, big_resource,
+                                               ogplay::runtime::JniArgumentSource::variadic));
     const std::array<ogplay::runtime::JniValue, 3> pool_properties{
-        ogplay::runtime::JniInt{2}, ogplay::runtime::JniInt{7},
-        ogplay::runtime::JniFloat{1.5F}};
-    const std::array<ogplay::runtime::JniValue, 2> big_volume{
-        ogplay::runtime::JniInt{7}, ogplay::runtime::JniFloat{0.5F}};
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *set_volume, pool_play,
-        ogplay::runtime::JniArgumentSource::va_list));
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *set_volume_big, big_volume,
-        ogplay::runtime::JniArgumentSource::value_array));
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *set_pitch, pool_properties,
-        ogplay::runtime::JniArgumentSource::variadic));
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *reset, big_resource,
-        ogplay::runtime::JniArgumentSource::va_list));
-    const auto pool_snapshot = sound_pool.Snapshot(
-        ogplay::audio::JavaSoundPoolKind::pool, 2, 7);
-    const auto big_snapshot = sound_pool.Snapshot(
-        ogplay::audio::JavaSoundPoolKind::big, 7, 0);
+        ogplay::runtime::JniInt{2}, ogplay::runtime::JniInt{7}, ogplay::runtime::JniFloat{1.5F}};
+    const std::array<ogplay::runtime::JniValue, 2> big_volume{ogplay::runtime::JniInt{7},
+                                                              ogplay::runtime::JniFloat{0.5F}};
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *set_volume, pool_play, ogplay::runtime::JniArgumentSource::va_list));
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *set_volume_big, big_volume,
+                                               ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *set_pitch, pool_properties,
+                                               ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *reset, big_resource, ogplay::runtime::JniArgumentSource::va_list));
+    const auto pool_snapshot = sound_pool.Snapshot(ogplay::audio::JavaSoundPoolKind::pool, 2, 7);
+    const auto big_snapshot = sound_pool.Snapshot(ogplay::audio::JavaSoundPoolKind::big, 7, 0);
     REQUIRE(pool_snapshot.has_value());
     REQUIRE(big_snapshot.has_value());
-    CHECK(pool_snapshot->status ==
-          ogplay::audio::JavaSoundPoolVoiceStatus::playing);
+    CHECK(pool_snapshot->status == ogplay::audio::JavaSoundPoolVoiceStatus::playing);
     CHECK(pool_snapshot->volume == 0.5F);
     CHECK(pool_snapshot->pitch == 1.5F);
-    CHECK(big_snapshot->status ==
-          ogplay::audio::JavaSoundPoolVoiceStatus::playing);
+    CHECK(big_snapshot->status == ogplay::audio::JavaSoundPoolVoiceStatus::playing);
     CHECK(big_snapshot->volume == 0.5F);
     CHECK(big_snapshot->reset_count == 1U);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *stop, pool_resource,
-        ogplay::runtime::JniArgumentSource::value_array));
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *stop_big_voice, big_resource,
-        ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *stop, pool_resource,
+                                               ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *stop_big_voice, big_resource,
+                                               ogplay::runtime::JniArgumentSource::variadic));
     CHECK(sound_pool.ActiveVoiceCount() == 0U);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *play_big, big_play,
-        ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *play_big, big_play, ogplay::runtime::JniArgumentSource::value_array));
     CHECK(sound_pool.ActiveVoiceCount() == 1U);
     CHECK(sound_pool.LoadedResourceCount() == 2U);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *unload, pool_resource,
-        ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *unload, pool_resource, ogplay::runtime::JniArgumentSource::variadic));
     CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeStatic(
-              1U, java_class, *is_loaded, pool_resource,
-              ogplay::runtime::JniArgumentSource::va_list)) == -1);
+              1U, java_class, *is_loaded, pool_resource, ogplay::runtime::JniArgumentSource::va_list)) == -1);
     CHECK(sound_pool.ActiveVoiceCount() == 1U);
     CHECK(sound_pool.LoadedResourceCount() == 1U);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *unload_big, big_resource,
-        ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *unload_big, big_resource,
+                                               ogplay::runtime::JniArgumentSource::value_array));
     CHECK(sound_pool.LoadedResourceCount() == 0U);
     CHECK(sound_pool.ActiveVoiceCount() == 0U);
-    CHECK(sound_pool.MarkLoaded(
-        ogplay::audio::JavaSoundPoolKind::big, 7));
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *initialize, {},
-        ogplay::runtime::JniArgumentSource::value_array));
+    CHECK(sound_pool.MarkLoaded(ogplay::audio::JavaSoundPoolKind::big, 7));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *initialize, {}, ogplay::runtime::JniArgumentSource::value_array));
     CHECK(sound_pool.InitializationCount() == 1U);
 
-    CHECK(sound_pool.MarkLoaded(
-        ogplay::audio::JavaSoundPoolKind::pool, 7));
-    CHECK(sound_pool.MarkLoaded(
-        ogplay::audio::JavaSoundPoolKind::pool, 8));
-    CHECK(sound_pool.MarkLoaded(
-        ogplay::audio::JavaSoundPoolKind::big, 9));
-    CHECK(sound_pool.Play(
-        ogplay::audio::JavaSoundPoolKind::pool, 7, 1, 1.0F));
-    CHECK(sound_pool.Play(
-        ogplay::audio::JavaSoundPoolKind::pool, 8, 2, 0.5F));
-    CHECK(sound_pool.Play(
-        ogplay::audio::JavaSoundPoolKind::big, 9, 0, 0.25F));
-    CHECK(sound_pool.Play(
-        ogplay::audio::JavaSoundPoolKind::pool, 7, 1, 0.25F));
-    CHECK_FALSE(sound_pool.Play(
-        ogplay::audio::JavaSoundPoolKind::pool, 7, 3, 1.25F));
+    CHECK(sound_pool.MarkLoaded(ogplay::audio::JavaSoundPoolKind::pool, 7));
+    CHECK(sound_pool.MarkLoaded(ogplay::audio::JavaSoundPoolKind::pool, 8));
+    CHECK(sound_pool.MarkLoaded(ogplay::audio::JavaSoundPoolKind::big, 9));
+    CHECK(sound_pool.Play(ogplay::audio::JavaSoundPoolKind::pool, 7, 1, 1.0F));
+    CHECK(sound_pool.Play(ogplay::audio::JavaSoundPoolKind::pool, 8, 2, 0.5F));
+    CHECK(sound_pool.Play(ogplay::audio::JavaSoundPoolKind::big, 9, 0, 0.25F));
+    CHECK(sound_pool.Play(ogplay::audio::JavaSoundPoolKind::pool, 7, 1, 0.25F));
+    CHECK_FALSE(sound_pool.Play(ogplay::audio::JavaSoundPoolKind::pool, 7, 3, 1.25F));
     CHECK(sound_pool.ActiveVoiceCount() == 3U);
-    const std::array<ogplay::runtime::JniValue, 1> keep_seven{
-        ogplay::runtime::JniInt{7}};
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *stop_pool, keep_seven,
-        ogplay::runtime::JniArgumentSource::variadic));
+    const std::array<ogplay::runtime::JniValue, 1> keep_seven{ogplay::runtime::JniInt{7}};
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *stop_pool, keep_seven, ogplay::runtime::JniArgumentSource::variadic));
     CHECK(sound_pool.ActiveVoiceCount() == 2U);
 
-    const std::array<ogplay::runtime::JniValue, 1> stop_every_big{
-        ogplay::runtime::JniInt{-1}};
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *stop_big, stop_every_big,
-        ogplay::runtime::JniArgumentSource::va_list));
+    const std::array<ogplay::runtime::JniValue, 1> stop_every_big{ogplay::runtime::JniInt{-1}};
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *stop_big, stop_every_big,
+                                               ogplay::runtime::JniArgumentSource::va_list));
     CHECK(sound_pool.ActiveVoiceCount() == 1U);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *stop_all, {},
-        ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *stop_all, {}, ogplay::runtime::JniArgumentSource::value_array));
     CHECK(sound_pool.ActiveVoiceCount() == 0U);
     CHECK(sound_pool.LoadedResourceCount() == 4U);
     sound_pool.Destroy();
     CHECK(sound_pool.LoadedResourceCount() == 0U);
     CHECK(sound_pool.PendingLoadCount() == 0U);
     CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeStatic(
-              1U, java_class, *is_loaded_big, big_resource,
-              ogplay::runtime::JniArgumentSource::variadic)) == -1);
+              1U, java_class, *is_loaded_big, big_resource, ogplay::runtime::JniArgumentSource::variadic)) == -1);
 }
 
 TEST_CASE("Android guest SoundPool handlers commit decoded mixer voices") {
     ogplay::runtime::JniClassRegistry classes;
-    const auto java_class = classes.RegisterClass(
-        {"fixture/DecodedAudio", {},
-         {{"loadSound", "(II)V", "audio.load_sound", true},
-          {"loadSoundBig", "(I)V", "audio.load_sound_big", true},
-          {"playSound", "(IIF)V", "audio.play_sound", true},
-          {"playSoundBig", "(IF)V", "audio.play_sound_big", true},
-          {"playSoundBigLooping", "(IFZ)V",
-           "audio.play_sound_big_looping", true},
-          {"pauseSound", "(II)V", "audio.pause_sound", true},
-          {"pauseAllSoundBig", "()V", "audio.pause_all_big", true},
-          {"resumeSound", "(II)V", "audio.resume_sound", true},
-          {"resumeAllSoundBig", "()V", "audio.resume_all_big", true},
-          {"stopSound", "(II)V", "audio.stop_sound", true},
-          {"unloadSound", "(II)V", "audio.unload_sound", true}},
-         {}});
-    const auto load = classes.GetMethodId(
-        java_class, "loadSound", "(II)V", true);
-    const auto play = classes.GetMethodId(
-        java_class, "playSound", "(IIF)V", true);
-    const auto load_big = classes.GetMethodId(
-        java_class, "loadSoundBig", "(I)V", true);
-    const auto play_big_looping = classes.GetMethodId(
-        java_class, "playSoundBigLooping", "(IFZ)V", true);
-    const auto pause_all_big = classes.GetMethodId(
-        java_class, "pauseAllSoundBig", "()V", true);
-    const auto resume_all_big = classes.GetMethodId(
-        java_class, "resumeAllSoundBig", "()V", true);
-    const auto pause = classes.GetMethodId(
-        java_class, "pauseSound", "(II)V", true);
-    const auto resume = classes.GetMethodId(
-        java_class, "resumeSound", "(II)V", true);
-    const auto stop = classes.GetMethodId(
-        java_class, "stopSound", "(II)V", true);
-    const auto unload = classes.GetMethodId(
-        java_class, "unloadSound", "(II)V", true);
+    const auto java_class =
+        classes.RegisterClass({"fixture/DecodedAudio",
+                               {},
+                               {{"loadSound", "(II)V", "audio.load_sound", true},
+                                {"loadSoundBig", "(I)V", "audio.load_sound_big", true},
+                                {"playSound", "(IIF)V", "audio.play_sound", true},
+                                {"playSoundBig", "(IF)V", "audio.play_sound_big", true},
+                                {"playSoundBigLooping", "(IFZ)V", "audio.play_sound_big_looping", true},
+                                {"pauseSound", "(II)V", "audio.pause_sound", true},
+                                {"pauseAllSoundBig", "()V", "audio.pause_all_big", true},
+                                {"resumeSound", "(II)V", "audio.resume_sound", true},
+                                {"resumeAllSoundBig", "()V", "audio.resume_all_big", true},
+                                {"stopSound", "(II)V", "audio.stop_sound", true},
+                                {"unloadSound", "(II)V", "audio.unload_sound", true}},
+                               {}});
+    const auto load = classes.GetMethodId(java_class, "loadSound", "(II)V", true);
+    const auto play = classes.GetMethodId(java_class, "playSound", "(IIF)V", true);
+    const auto load_big = classes.GetMethodId(java_class, "loadSoundBig", "(I)V", true);
+    const auto play_big_looping = classes.GetMethodId(java_class, "playSoundBigLooping", "(IFZ)V", true);
+    const auto pause_all_big = classes.GetMethodId(java_class, "pauseAllSoundBig", "()V", true);
+    const auto resume_all_big = classes.GetMethodId(java_class, "resumeAllSoundBig", "()V", true);
+    const auto pause = classes.GetMethodId(java_class, "pauseSound", "(II)V", true);
+    const auto resume = classes.GetMethodId(java_class, "resumeSound", "(II)V", true);
+    const auto stop = classes.GetMethodId(java_class, "stopSound", "(II)V", true);
+    const auto unload = classes.GetMethodId(java_class, "unloadSound", "(II)V", true);
     REQUIRE(load.has_value());
     REQUIRE(play.has_value());
     REQUIRE(load_big.has_value());
@@ -1997,94 +1717,67 @@ TEST_CASE("Android guest SoundPool handlers commit decoded mixer voices") {
     REQUIRE(unload.has_value());
 
     const auto encoded = ReadAudioFixture();
-    ogplay::audio::JavaSoundPoolMixer mixer{
-        [&encoded](const ogplay::audio::EncodedAudioSource& source) {
-            return source.resource == 7 ? encoded : std::vector<std::byte>{};
-        }};
+    ogplay::audio::JavaSoundPoolMixer mixer{[&encoded](const ogplay::audio::EncodedAudioSource& source) {
+        return source.resource == 7 ? encoded : std::vector<std::byte>{};
+    }};
     ogplay::audio::JavaSoundPoolState state;
     ogplay::runtime::JniInvocationEngine invocations{classes};
-    ogplay::runtime::BindAndroidGuestJavaAudioHandlers(
-        invocations, state, &mixer);
-    const std::array<ogplay::runtime::JniValue, 2> voice{
-        ogplay::runtime::JniInt{7}, ogplay::runtime::JniInt{2}};
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *load, voice,
-        ogplay::runtime::JniArgumentSource::variadic));
+    ogplay::runtime::BindAndroidGuestJavaAudioHandlers(invocations, state, &mixer);
+    const std::array<ogplay::runtime::JniValue, 2> voice{ogplay::runtime::JniInt{7}, ogplay::runtime::JniInt{2}};
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *load, voice, ogplay::runtime::JniArgumentSource::variadic));
     CHECK(state.IsLoaded(ogplay::audio::JavaSoundPoolKind::pool, 7));
     CHECK(mixer.LoadedResourceCount() == 1U);
 
-    const std::array<ogplay::runtime::JniValue, 3> play_voice{
-        ogplay::runtime::JniInt{7}, ogplay::runtime::JniInt{2},
-        ogplay::runtime::JniFloat{0.5F}};
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *play, play_voice,
-        ogplay::runtime::JniArgumentSource::value_array));
+    const std::array<ogplay::runtime::JniValue, 3> play_voice{ogplay::runtime::JniInt{7}, ogplay::runtime::JniInt{2},
+                                                              ogplay::runtime::JniFloat{0.5F}};
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *play, play_voice, ogplay::runtime::JniArgumentSource::value_array));
     CHECK(state.ActiveVoiceCount() == 1U);
     CHECK(mixer.ActiveVoiceCount() == 1U);
     std::vector<std::int16_t> output(1024U * 2U);
     CHECK(mixer.RenderStereoPcm16(output, 48000U) == 1024U);
-    CHECK(std::ranges::any_of(output, [](const auto sample) {
-        return sample != 0;
-    }));
+    CHECK(std::ranges::any_of(output, [](const auto sample) { return sample != 0; }));
 
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *pause, voice,
-        ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *pause, voice, ogplay::runtime::JniArgumentSource::variadic));
     CHECK(mixer.RenderStereoPcm16(output, 48000U) == 1024U);
-    CHECK(std::ranges::all_of(output, [](const auto sample) {
-        return sample == 0;
-    }));
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *resume, voice,
-        ogplay::runtime::JniArgumentSource::variadic));
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *stop, voice,
-        ogplay::runtime::JniArgumentSource::variadic));
+    CHECK(std::ranges::all_of(output, [](const auto sample) { return sample == 0; }));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *resume, voice, ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *stop, voice, ogplay::runtime::JniArgumentSource::variadic));
     CHECK(state.ActiveVoiceCount() == 0U);
     CHECK(mixer.ActiveVoiceCount() == 0U);
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *unload, voice,
-        ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *unload, voice, ogplay::runtime::JniArgumentSource::variadic));
     CHECK(state.LoadedResourceCount() == 0U);
     CHECK(mixer.LoadedResourceCount() == 0U);
 
-    const std::array<ogplay::runtime::JniValue, 1> big_resource{
-        ogplay::runtime::JniInt{7}};
+    const std::array<ogplay::runtime::JniValue, 1> big_resource{ogplay::runtime::JniInt{7}};
     const std::array<ogplay::runtime::JniValue, 3> big_looping_play{
-        ogplay::runtime::JniInt{7}, ogplay::runtime::JniFloat{0.5F},
-        ogplay::runtime::JniBoolean{1U}};
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *load_big, big_resource,
-        ogplay::runtime::JniArgumentSource::variadic));
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *play_big_looping, big_looping_play,
-        ogplay::runtime::JniArgumentSource::value_array));
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *pause_all_big, {},
-        ogplay::runtime::JniArgumentSource::variadic));
+        ogplay::runtime::JniInt{7}, ogplay::runtime::JniFloat{0.5F}, ogplay::runtime::JniBoolean{1U}};
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *load_big, big_resource,
+                                               ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(invocations.InvokeStatic(1U, java_class, *play_big_looping, big_looping_play,
+                                               ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *pause_all_big, {}, ogplay::runtime::JniArgumentSource::variadic));
     CHECK(mixer.RenderStereoPcm16(output, 48000U) == 1024U);
-    CHECK(std::ranges::all_of(output, [](const auto sample) {
-        return sample == 0;
-    }));
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *resume_all_big, {},
-        ogplay::runtime::JniArgumentSource::value_array));
+    CHECK(std::ranges::all_of(output, [](const auto sample) { return sample == 0; }));
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *resume_all_big, {}, ogplay::runtime::JniArgumentSource::value_array));
     CHECK(mixer.RenderStereoPcm16(output, 48000U) == 1024U);
-    CHECK(std::ranges::any_of(output, [](const auto sample) {
-        return sample != 0;
-    }));
+    CHECK(std::ranges::any_of(output, [](const auto sample) { return sample != 0; }));
     for (std::size_t chunk = 0; chunk < 256U; ++chunk) {
         static_cast<void>(mixer.RenderStereoPcm16(output, 48000U));
     }
     CHECK(mixer.ActiveVoiceCount() == 1U);
-    CHECK(state.Snapshot(
-              ogplay::audio::JavaSoundPoolKind::big, 7, 0)->looping);
+    CHECK(state.Snapshot(ogplay::audio::JavaSoundPoolKind::big, 7, 0)->looping);
 
-    const std::array<ogplay::runtime::JniValue, 2> missing{
-        ogplay::runtime::JniInt{99}, ogplay::runtime::JniInt{0}};
-    static_cast<void>(invocations.InvokeStatic(
-        1U, java_class, *load, missing,
-        ogplay::runtime::JniArgumentSource::variadic));
+    const std::array<ogplay::runtime::JniValue, 2> missing{ogplay::runtime::JniInt{99}, ogplay::runtime::JniInt{0}};
+    static_cast<void>(
+        invocations.InvokeStatic(1U, java_class, *load, missing, ogplay::runtime::JniArgumentSource::variadic));
     CHECK(state.PendingLoadCount() == 1U);
     REQUIRE(mixer.LoadFailure(99).has_value());
 }

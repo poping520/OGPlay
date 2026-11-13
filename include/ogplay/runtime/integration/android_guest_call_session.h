@@ -52,7 +52,8 @@ struct NioDirectMemoryAccess;
 
 class JniInvocationEngine;
 class JniNativeRegistry;
-class JniStringStore;
+class JniStringBackend;
+class JavaPayloadProvider;
 class JniFieldStore;
 class JniGuestObjectRegistry;
 class FrameworkScreenPolicyState;
@@ -153,12 +154,12 @@ void BindAndroidGuestJavaAudioHandlers(JniInvocationEngine& invocations, audio::
                                        audio::JavaSoundPoolMixer* mixer = nullptr);
 
 void BindAndroidGuestJavaMediaHandlers(JniInvocationEngine& invocations, JniEnvironment& environment,
-                                       JniStringStore& strings, JniPrimitiveArrayStore& arrays,
+                                       JniStringBackend& strings, JniPrimitiveArrayStore& arrays,
                                        AndroidGuestMovieState& movie_state, AndroidGuestLegacyMediaState& media_state,
                                        const audio::JavaSoundPoolMixer::EncodedResourceLoader& resource_loader);
 
 void BindAndroidGuestJavaMovieHandlers(JniInvocationEngine& invocations, JniEnvironment& environment,
-                                       JniStringStore& strings, AndroidGuestMovieState& movie_state);
+                                       JniStringBackend& strings, AndroidGuestMovieState& movie_state);
 
 void BindAndroidGuestJavaDisplayHandlers(JniInvocationEngine& invocations, FrameworkScreenPolicyState& screen_policy);
 
@@ -167,7 +168,7 @@ void BindAndroidGuestJavaProcessHandlers(JniInvocationEngine& invocations, Andro
 void BindAndroidGuestJavaLocaleHandlers(JniInvocationEngine& invocations, const FrameworkLocaleConfig& locale);
 
 void BindAndroidGuestJavaPlatformHandlers(JniInvocationEngine& invocations, JniEnvironment& environment,
-                                          JniStringStore& strings, JniPrimitiveArrayStore& arrays,
+                                          JniStringBackend& strings, JniPrimitiveArrayStore& arrays,
                                           AndroidGuestPlatformState& state, const AndroidGuestPlatformConfig& config);
 
 void InstallAndroidGuestFrameworkPlatform(JniClassRegistry& classes);
@@ -281,7 +282,8 @@ public:
     [[nodiscard]] JniFieldStore& Fields() noexcept;
     [[nodiscard]] JniNativeRegistry& Natives() noexcept;
     [[nodiscard]] JniGuestObjectRegistry& Objects() noexcept;
-    [[nodiscard]] JniStringStore& Strings() noexcept;
+    [[nodiscard]] JniStringBackend& Strings() noexcept;
+    void SetStringBackend(JniStringBackend* backend) noexcept;
     [[nodiscard]] JniPrimitiveArrayStore& Arrays() noexcept;
     [[nodiscard]] dexvm::NioRuntime& NIO() noexcept;
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
@@ -418,7 +420,7 @@ public:
     [[nodiscard]] JniFieldStore& Fields() noexcept;
     [[nodiscard]] JniNativeRegistry& Natives() noexcept;
     [[nodiscard]] JniGuestObjectRegistry& Objects() noexcept;
-    [[nodiscard]] JniStringStore& Strings() noexcept;
+    [[nodiscard]] JniStringBackend& Strings() noexcept;
     [[nodiscard]] JniPrimitiveArrayStore& Arrays() noexcept;
     [[nodiscard]] dexvm::NioRuntime& NIO() noexcept;
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;

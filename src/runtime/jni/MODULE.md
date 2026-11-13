@@ -41,8 +41,7 @@ Bionic、syscall、execution 或 integration。
   GetObjectRefType 不解引用 handle，严格模式下已删除 local 按 Dalvik ReportJniError 致命失败。
 - byte[] 可通过宿主借用取得与受保护 guest payload 共址的跨度。对象模型负责 GC 保活，
   消费者须在退役前释放借用，且按既有 guest 内存同步规则协调读写。
-- JniStringStore.VisitAccessRoots 在锁外枚举仍有 chars/UTF8/critical lease 的字符串身份；
-  VM owner 将其纳入 GC roots，直至对应 Release，不因局部引用或线程退役提前删除。
+- Chars/Critical 的 GC 强根由 primitive array pin 表提供；MUTF-8 lease 由 VM 管理。
 - 默认严格执行 local reference 生命周期。仅由上层根据 Manifest `targetSdkVersion` 1..13
   显式启用 Dalvik app-bug 兼容：同一对象复用稳定 direct-style handle，失效 handle 可解析但
   不属于 GC roots；首次跨 frame 重发必须通过回调警告，不能静默兼容或取消 frame 清理。
@@ -95,8 +94,8 @@ CopyWithin 只移动同一 typed array 的现有元素：在数组锁内检查�
 `JavaPayloadProvider` 只定义强类型 block/borrow、typed accessor 与统计接口，不依赖
 AddressSpace 实现、DexVM 或 OS。integration 显式注入 owner；句柄含 generation 和 owner
 身份，typed view 一次验证所有权/字节范围/对齐，每个元素只检查视图边界并访问稳定 backing。
-view 保活 block/provider，活跃 view 或 pin 阻止 Release/reuse；不公开裸宿主指针或 span，
-owner 串行化 view 构造和释放。copy/move view 不撤销保活，pin 计量唯一字节和借用次数。
+view 保活 block/provider，活跃 view 或 pin 阻止 Release/reuse。只读 span 的寿命受持有它的
+accessor 约束。owner 串行化 view 构造和释放，pin 计量唯一字节和借用次数。
 跨线程遵循普通 guest 内存同步，未承诺额外内存序。
 
 primitive store 必须显式注入 provider：生产使用 integration 的 guest provider，独立夹具和
@@ -116,19 +115,12 @@ VisitAccessRoots 在锁外枚举非零 pin 的数组身份，owner 在 mark/weak
 导入只补未收费的 entry。失败撤销费用、目标增长和 emergency 消耗，再退役 block；删除
 归还同一费用。provider 本身只管理 backing 提交/VAS，不持第二逻辑堆目标。上下文只在
 调用静止时装配/撤销。分配时统计 kind/长度桶、峰值 live 和失败次数；诊断只返回聚合快照。
-StringStore 同样显式注入 provider，entry 只持 UTF-16 handle/长期 typed view，所有读取从同一
-不可变 backing 生成值；无长期 vector 或影子 String.value。公共 char[]、builder 与 substring
-构造继续复制为新 block。通过 const JNI 指针写入 String 是非法使用，不提供写保护或别名验收。
-Chars/Critical 同址直接借用、FALSE，以 String 身份共用跨线程 pin；空串有独立有效地址。
-Release 忽略指针与 Chars/Critical kind，只解除一次 pin；无配对由 guest owner warn/ledger，
-首次 pin>10 告警一次。pin 和 UTF8 lease 分开计数，任一非零时保活 String 及 backing，
-比 Dalvik 仅 pin char[] 更保守；detach 不释放，quiesce/join 后统一退役并诊断残留 pin。
-MUTF-8 编码仍复制、TRUE，token/指针配对与预算不变，UTF-16 不占用 copy arena/预算。
-
-String 创建沿用共享 JavaPayloadAllocationContext；默认收对象头 32 B + payload，绑定已收费
-实例时 Create(include_header=false) 只收 payload。JNI 导入只补尚未收费项；Delete 返回实际
-退还费用，VM sweep 仅扣除仍归实例的原对象头/字段费用，避免重复扣账。provider 失败回滚
-同一 VM 费用/target/emergency，所有读取、hash/equals/intern 键都来自同一 UTF-16 内容。
+integration 注入 JniStringBackend，VM 在执行锁内按真实 String 对象身份提供 UTF-16 长度、
+区间及 MUTF-8 编码。GetStringRegion 在执行锁内从 payload 写入 guest 输出区。
+Chars/Critical 借用 ROM value 数组的 payload，从 offset 起返回 FALSE。
+重复获取同址并按数组身份计数。Release 重读 value 后解除一次 pin，忽略指针及访问种类。
+未配对只 warn/ledger，首次 pin>10 告警一次。数组 pin 是 GC 强根并沿数组 store 退役。
+MUTF-8 独立复制并返回 TRUE，以 token/指针配对并受 copy arena 预算限制。
 
 VM 装配通过 ConfigurePayloadHeap 传 maximum/growth 到 provider 的 backing 策略，
 allocation context 另提供显式 emergency 状态查询；New 在已进入上下文/收费后传给

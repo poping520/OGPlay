@@ -29,8 +29,7 @@ enum class FrameworkPreferencesErrorReason : std::uint8_t {
 
 class FrameworkPreferencesError final : public std::runtime_error {
 public:
-    FrameworkPreferencesError(FrameworkPreferencesErrorReason reason,
-                              std::string message);
+    FrameworkPreferencesError(FrameworkPreferencesErrorReason reason, std::string message);
     [[nodiscard]] FrameworkPreferencesErrorReason Reason() const noexcept;
 
 private:
@@ -39,14 +38,11 @@ private:
 
 class FrameworkPreferencesHle final {
 public:
-    FrameworkPreferencesHle(JniClassRegistry& classes,
-                            JniInvocationEngine& invocations,
-                            JniEnvironment& environment,
-                            JniStringStore& strings);
+    FrameworkPreferencesHle(JniClassRegistry& classes, JniInvocationEngine& invocations, JniEnvironment& environment,
+                            JniStringBackend& strings);
     ~FrameworkPreferencesHle();
     FrameworkPreferencesHle(const FrameworkPreferencesHle&) = delete;
-    FrameworkPreferencesHle& operator=(const FrameworkPreferencesHle&) =
-        delete;
+    FrameworkPreferencesHle& operator=(const FrameworkPreferencesHle&) = delete;
     FrameworkPreferencesHle(FrameworkPreferencesHle&&) noexcept;
     FrameworkPreferencesHle& operator=(FrameworkPreferencesHle&&) noexcept;
 

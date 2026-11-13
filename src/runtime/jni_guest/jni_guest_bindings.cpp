@@ -33,7 +33,7 @@
 namespace ogplay::runtime {
 
 void BindJniGuestArraySlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment, JniClassRegistry& classes,
-                            JniStringStore& strings, JniPrimitiveArrayStore& arrays, JniGuestObjectRegistry& objects,
+                            JniStringBackend& strings, JniPrimitiveArrayStore& arrays, JniGuestObjectRegistry& objects,
                             memory::AddressSpace& address_space, core::Logger* logger);
 
 namespace {
@@ -72,28 +72,42 @@ namespace {
     return stream.str();
 }
 
-[[nodiscard]] std::string JniCallFailure(
-    const std::string_view slot, const JniGuestCallFrame& frame,
-    const std::string_view cause) {
+[[nodiscard]] std::string JniCallFailure(const std::string_view slot, const JniGuestCallFrame& frame,
+                                         const std::string_view cause) {
     return "JNI guest call failed:\n"
            "  slot=" +
-           std::string(slot) + "\n"
-           "  guest_thread=" + std::to_string(frame.thread_id) + "\n"
+           std::string(slot) +
+           "\n"
+           "  guest_thread=" +
+           std::to_string(frame.thread_id) +
+           "\n"
            "  call_site:\n"
-           "    lr=" + Hex32(frame.link_register) + "\n"
-           "    sp=" + Hex32(frame.stack_pointer.Value()) + "\n"
+           "    lr=" +
+           Hex32(frame.link_register) +
+           "\n"
+           "    sp=" +
+           Hex32(frame.stack_pointer.Value()) +
+           "\n"
            "  registers:\n"
-           "    r0=" + Hex32(frame.registers[0]) + "\n"
-           "    r1=" + Hex32(frame.registers[1]) + "\n"
-           "    r2=" + Hex32(frame.registers[2]) + "\n"
-           "    r3=" + Hex32(frame.registers[3]) + "\n"
-           "  cause:\n    " + std::string(cause);
+           "    r0=" +
+           Hex32(frame.registers[0]) +
+           "\n"
+           "    r1=" +
+           Hex32(frame.registers[1]) +
+           "\n"
+           "    r2=" +
+           Hex32(frame.registers[2]) +
+           "\n"
+           "    r3=" +
+           Hex32(frame.registers[3]) +
+           "\n"
+           "  cause:\n    " +
+           std::string(cause);
 }
 
 // FatalError is already terminal: retain every readable byte without letting a
 // bad pointer or encoding replace the original fatal diagnostic.
-[[nodiscard]] std::string FatalErrorDiagnostic(
-    memory::AddressSpace& space, const JniGuestCallFrame& frame) {
+[[nodiscard]] std::string FatalErrorDiagnostic(memory::AddressSpace& space, const JniGuestCallFrame& frame) {
     constexpr std::size_t kScanLimit = 4096U;
     constexpr std::string_view kHex = "0123456789abcdef";
     const memory::GuestAddress pointer{frame.registers[1]};
@@ -123,41 +137,36 @@ namespace {
             }
         } catch (const memory::MemoryFault& error) {
             status = "memory_fault";
-            read_error = "\n    read_error=" + std::string(memory::ToString(error.Reason())) +
-                         " at " + Hex32(error.Address().Value());
+            read_error = "\n    read_error=" + std::string(memory::ToString(error.Reason())) + " at " +
+                         Hex32(error.Address().Value());
         } catch (const std::overflow_error&) {
             status = "address_overflow";
         }
     }
     return JniCallFailure("FatalError", frame,
-        "JNI FatalError:\n    message=\"" + message + "\"\n    message_pointer=" +
-        Hex32(pointer.Value()) + "\n    message_status=" + status +
-        "\n    scanned_bytes=" + std::to_string(scanned) + read_error);
+                          "JNI FatalError:\n    message=\"" + message +
+                              "\"\n    message_pointer=" + Hex32(pointer.Value()) + "\n    message_status=" + status +
+                              "\n    scanned_bytes=" + std::to_string(scanned) + read_error);
 }
 
-void BindDirectBufferSlots(JniGuestCallDispatcher& dispatcher,
-                           JniGuestBindingContext& context) {
+void BindDirectBufferSlots(JniGuestCallDispatcher& dispatcher, JniGuestBindingContext& context) {
     auto& nio = *context.nio;
     auto& environment = context.environment;
     auto& classes = context.classes;
     auto& objects = context.objects;
     dispatcher.BindEnvironment(
         EnvironmentSlot("NewDirectByteBuffer"),
-        [&environment, &classes, &objects, &nio](
-            const JniGuestCallFrame& frame) -> JniGuestCallResult {
-            const auto capacity = static_cast<std::int64_t>(
-                static_cast<std::uint64_t>(frame.registers[3]) << 32U |
-                frame.registers[2]);
+        [&environment, &classes, &objects, &nio](const JniGuestCallFrame& frame) -> JniGuestCallResult {
+            const auto capacity =
+                static_cast<std::int64_t>(static_cast<std::uint64_t>(frame.registers[3]) << 32U | frame.registers[2]);
             if (capacity < 0 || capacity > std::numeric_limits<std::int32_t>::max())
                 throw JniGuestBindingError("NewDirectByteBuffer capacity is invalid");
             const auto java_class = classes.FindClass("java/nio/DirectByteBuffer");
-            if (!java_class.has_value())
-                throw JniGuestBindingError("java/nio/DirectByteBuffer is not declared");
+            if (!java_class.has_value()) throw JniGuestBindingError("java/nio/DirectByteBuffer is not declared");
             const auto object = objects.Allocate(*java_class);
             JniReference reference;
             try {
-                nio.WrapDirect(object, memory::GuestAddress(frame.registers[1]),
-                               static_cast<std::int32_t>(capacity));
+                nio.WrapDirect(object, memory::GuestAddress(frame.registers[1]), static_cast<std::int32_t>(capacity));
                 reference = environment.PublishLocalObject(frame.thread_id, object);
                 return Reference(reference);
             } catch (...) {
@@ -167,76 +176,56 @@ void BindDirectBufferSlots(JniGuestCallDispatcher& dispatcher,
             }
         });
     dispatcher.BindEnvironment(
-        EnvironmentSlot("GetDirectBufferAddress"),
-        [&environment, &nio](const JniGuestCallFrame& frame) {
-            const auto object = environment.ResolveObjectForHle(
-                frame.thread_id, JniReference{frame.registers[1]});
+        EnvironmentSlot("GetDirectBufferAddress"), [&environment, &nio](const JniGuestCallFrame& frame) {
+            const auto object = environment.ResolveObjectForHle(frame.thread_id, JniReference{frame.registers[1]});
             if (!object.has_value() || !nio.Contains(*object)) return Word(0U);
             const auto state = nio.Snapshot(*object);
-            return Word(state.direct_address.has_value()
-                            ? state.direct_address->Value() : 0U);
+            return Word(state.direct_address.has_value() ? state.direct_address->Value() : 0U);
         });
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetDirectBufferCapacity"),
         [&environment, &nio](const JniGuestCallFrame& frame) -> JniGuestCallResult {
-            const auto object = environment.ResolveObjectForHle(
-                frame.thread_id, JniReference{frame.registers[1]});
+            const auto object = environment.ResolveObjectForHle(frame.thread_id, JniReference{frame.registers[1]});
             if (!object.has_value() || !nio.Contains(*object)) {
-                return {JniGuestReturnWidth::double_word,
-                        {UINT32_MAX, UINT32_MAX}};
+                return {JniGuestReturnWidth::double_word, {UINT32_MAX, UINT32_MAX}};
             }
             // Dalvik Jni.cpp:2758-2759 reads Buffer.capacity even for heap buffers.
-            const auto capacity = static_cast<std::uint64_t>(
-                nio.Snapshot(*object).capacity);
+            const auto capacity = static_cast<std::uint64_t>(nio.Snapshot(*object).capacity);
             return {JniGuestReturnWidth::double_word,
-                    {static_cast<std::uint32_t>(capacity),
-                     static_cast<std::uint32_t>(capacity >> 32U)}};
+                    {static_cast<std::uint32_t>(capacity), static_cast<std::uint32_t>(capacity >> 32U)}};
         });
 }
 
-[[nodiscard]] std::size_t Capacity(const std::uint32_t value,
-                                   const char* slot) {
+[[nodiscard]] std::size_t Capacity(const std::uint32_t value, const char* slot) {
     const auto signed_value = std::bit_cast<JniInt>(value);
     if (signed_value < 0) {
-        throw JniGuestBindingError(
-            std::string(slot) + " capacity cannot be negative");
+        throw JniGuestBindingError(std::string(slot) + " capacity cannot be negative");
     }
     return static_cast<std::size_t>(signed_value);
 }
 
-void ValidateOutput(memory::AddressSpace& address_space,
-                    const memory::GuestAddress address,
+void ValidateOutput(memory::AddressSpace& address_space, const memory::GuestAddress address,
                     const std::uint64_t thread_id) {
     if (address.IsNull() || (address.Value() & 3U) != 0U) {
-        throw JniGuestBindingError(
-            "JNI guest output pointer must be word aligned");
+        throw JniGuestBindingError("JNI guest output pointer must be word aligned");
     }
-    address_space.Validate(
-        {address, sizeof(std::uint32_t)},
-        memory::AccessType::write, thread_id);
+    address_space.Validate({address, sizeof(std::uint32_t)}, memory::AccessType::write, thread_id);
 }
 
-void Write32(memory::AddressSpace& address_space,
-             const memory::GuestAddress address, const std::uint32_t value,
+void Write32(memory::AddressSpace& address_space, const memory::GuestAddress address, const std::uint32_t value,
              const std::uint64_t thread_id) {
     ValidateOutput(address_space, address, thread_id);
     std::array<std::byte, 4> bytes{};
     for (std::size_t index = 0; index < bytes.size(); ++index) {
-        bytes[index] = static_cast<std::byte>(
-            (value >> static_cast<unsigned>(index * 8U)) & 0xffU);
+        bytes[index] = static_cast<std::byte>((value >> static_cast<unsigned>(index * 8U)) & 0xffU);
     }
     address_space.Write(address, bytes, thread_id);
 }
 
-void WriteEnvironmentResult(memory::AddressSpace& address_space,
-                            const JniGuestCallFrame& frame,
+void WriteEnvironmentResult(memory::AddressSpace& address_space, const JniGuestCallFrame& frame,
                             const JniJavaVmResult& result) {
-    Write32(address_space,
-            memory::GuestAddress{frame.registers[1]},
-            result.status == JniStatus::ok
-                ? kJniGuestEnvironment.Value()
-                : 0U,
-            frame.thread_id);
+    Write32(address_space, memory::GuestAddress{frame.registers[1]},
+            result.status == JniStatus::ok ? kJniGuestEnvironment.Value() : 0U, frame.thread_id);
 }
 
 JniJavaVmResult AttachGuestThread(JniGuestCallDispatcher& dispatcher, JniJavaVm& vm, memory::AddressSpace& space,
@@ -276,14 +265,9 @@ JniJavaVmResult AttachGuestThread(JniGuestCallDispatcher& dispatcher, JniJavaVm&
 
 }  // namespace
 
-void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
-                           JniEnvironment& environment,
-                           JniClassRegistry& classes,
-                           JniStringStore& strings,
-                           JniPrimitiveArrayStore&,
-                           memory::AddressSpace& address_space,
-                           const JniGuestStringLimits limits,
-                           JniGuestStringObserver observer, JniFieldStore* fields) {
+void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment, JniClassRegistry& classes,
+                           JniStringBackend& strings, JniPrimitiveArrayStore&, memory::AddressSpace& address_space,
+                           const JniGuestStringLimits limits, JniGuestStringObserver observer, JniFieldStore* fields) {
     ValidateJniGuestStringLimits(limits);
     dispatcher.BindEnvironment(
         EnvironmentSlot("DefineClass"), [&environment, &dispatcher](const JniGuestCallFrame& frame) {
@@ -312,62 +296,42 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
         // Dalvik Jni.cpp:662-679, 2683-2685 validates reference-table membership without dereferencing handles.
         return Int(environment.GetObjectRefType(frame.thread_id, JniReference{frame.registers[1]}));
     });
+    dispatcher.BindEnvironment(EnvironmentSlot("GetVersion"), [&environment](const JniGuestCallFrame& frame) {
+        return Int(environment.GetVersion(frame.thread_id));
+    });
+    dispatcher.BindEnvironment(EnvironmentSlot("Throw"), [&environment](const JniGuestCallFrame& frame) {
+        environment.Throw(frame.thread_id, JniReference{frame.registers[1]});
+        return Int(static_cast<JniInt>(JniStatus::ok));
+    });
     dispatcher.BindEnvironment(
-        EnvironmentSlot("GetVersion"),
-        [&environment](const JniGuestCallFrame& frame) {
-            return Int(environment.GetVersion(frame.thread_id));
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("Throw"),
-        [&environment](const JniGuestCallFrame& frame) {
-            environment.Throw(frame.thread_id,
-                              JniReference{frame.registers[1]});
-            return Int(static_cast<JniInt>(JniStatus::ok));
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("ThrowNew"),
-        [&environment, &classes,
-         &address_space](const JniGuestCallFrame& frame) {
-            const auto java_class = environment.ResolveObjectForHle(
-                frame.thread_id, JniReference{frame.registers[1]});
+        EnvironmentSlot("ThrowNew"), [&environment, &classes, &address_space](const JniGuestCallFrame& frame) {
+            const auto java_class = environment.ResolveObjectForHle(frame.thread_id, JniReference{frame.registers[1]});
             if (!java_class.has_value()) {
-                throw JniGuestBindingError(
-                    "ThrowNew requires a valid exception class reference");
+                throw JniGuestBindingError("ThrowNew requires a valid exception class reference");
             }
-            static_cast<void>(
-                classes.IsAssignableFrom(*java_class, *java_class));
-            const auto message = ReadGuestCString(
-                address_space, memory::GuestAddress{frame.registers[2]},
-                frame.thread_id, "exception message");
-            const std::vector<std::uint8_t> encoded(
-                message.begin(), message.end());
+            static_cast<void>(classes.IsAssignableFrom(*java_class, *java_class));
+            const auto message = ReadGuestCString(address_space, memory::GuestAddress{frame.registers[2]},
+                                                  frame.thread_id, "exception message");
+            const std::vector<std::uint8_t> encoded(message.begin(), message.end());
             static_cast<void>(DecodeJniModifiedUtf8(encoded));
             environment.ThrowNew(frame.thread_id, *java_class, message);
             return Int(static_cast<JniInt>(JniStatus::ok));
         });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("ExceptionOccurred"),
-        [&environment](const JniGuestCallFrame& frame) {
-            return Reference(
-                environment.ExceptionOccurred(frame.thread_id));
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("ExceptionClear"),
-        [&environment](const JniGuestCallFrame& frame) {
-            environment.ExceptionClear(frame.thread_id);
-            return JniGuestCallResult{};
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("ExceptionDescribe"),
-        [&environment](const JniGuestCallFrame& frame) {
-            environment.ExceptionDescribe(frame.thread_id);
-            return JniGuestCallResult{};
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("FatalError"),
-        [&address_space](const JniGuestCallFrame& frame) -> JniGuestCallResult {
-            throw JniGuestBindingError(FatalErrorDiagnostic(address_space, frame));
-        });
+    dispatcher.BindEnvironment(EnvironmentSlot("ExceptionOccurred"), [&environment](const JniGuestCallFrame& frame) {
+        return Reference(environment.ExceptionOccurred(frame.thread_id));
+    });
+    dispatcher.BindEnvironment(EnvironmentSlot("ExceptionClear"), [&environment](const JniGuestCallFrame& frame) {
+        environment.ExceptionClear(frame.thread_id);
+        return JniGuestCallResult{};
+    });
+    dispatcher.BindEnvironment(EnvironmentSlot("ExceptionDescribe"), [&environment](const JniGuestCallFrame& frame) {
+        environment.ExceptionDescribe(frame.thread_id);
+        return JniGuestCallResult{};
+    });
+    dispatcher.BindEnvironment(EnvironmentSlot("FatalError"),
+                               [&address_space](const JniGuestCallFrame& frame) -> JniGuestCallResult {
+                                   throw JniGuestBindingError(FatalErrorDiagnostic(address_space, frame));
+                               });
     dispatcher.BindEnvironment(
         EnvironmentSlot("PushLocalFrame"), [&environment, &classes](const JniGuestCallFrame& frame) {
             try {
@@ -397,46 +361,26 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                 return Reference(result ? environment.PublishLocalObject(frame.thread_id, *result) : JniReference{});
             }
         });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("NewGlobalRef"),
-        [&environment](const JniGuestCallFrame& frame) {
-            return Reference(environment.NewGlobalRef(
-                frame.thread_id,
-                JniReference{frame.registers[1]}));
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("DeleteGlobalRef"),
-        [&environment](const JniGuestCallFrame& frame) {
-            environment.DeleteGlobalRef(
-                frame.thread_id,
-                JniReference{frame.registers[1]});
-            return JniGuestCallResult{};
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("DeleteLocalRef"),
-        [&environment](const JniGuestCallFrame& frame) {
-            environment.DeleteLocalRef(
-                frame.thread_id,
-                JniReference{frame.registers[1]});
-            return JniGuestCallResult{};
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("IsSameObject"),
-        [&environment](const JniGuestCallFrame& frame) {
-            return Word(environment.IsSameObject(
-                            frame.thread_id,
-                            JniReference{frame.registers[1]},
-                            JniReference{frame.registers[2]})
-                            ? 1U
-                            : 0U);
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("NewLocalRef"),
-        [&environment](const JniGuestCallFrame& frame) {
-            return Reference(environment.NewLocalRef(
-                frame.thread_id,
-                JniReference{frame.registers[1]}));
-        });
+    dispatcher.BindEnvironment(EnvironmentSlot("NewGlobalRef"), [&environment](const JniGuestCallFrame& frame) {
+        return Reference(environment.NewGlobalRef(frame.thread_id, JniReference{frame.registers[1]}));
+    });
+    dispatcher.BindEnvironment(EnvironmentSlot("DeleteGlobalRef"), [&environment](const JniGuestCallFrame& frame) {
+        environment.DeleteGlobalRef(frame.thread_id, JniReference{frame.registers[1]});
+        return JniGuestCallResult{};
+    });
+    dispatcher.BindEnvironment(EnvironmentSlot("DeleteLocalRef"), [&environment](const JniGuestCallFrame& frame) {
+        environment.DeleteLocalRef(frame.thread_id, JniReference{frame.registers[1]});
+        return JniGuestCallResult{};
+    });
+    dispatcher.BindEnvironment(EnvironmentSlot("IsSameObject"), [&environment](const JniGuestCallFrame& frame) {
+        return Word(environment.IsSameObject(frame.thread_id, JniReference{frame.registers[1]},
+                                             JniReference{frame.registers[2]})
+                        ? 1U
+                        : 0U);
+    });
+    dispatcher.BindEnvironment(EnvironmentSlot("NewLocalRef"), [&environment](const JniGuestCallFrame& frame) {
+        return Reference(environment.NewLocalRef(frame.thread_id, JniReference{frame.registers[1]}));
+    });
     dispatcher.BindEnvironment(
         EnvironmentSlot("EnsureLocalCapacity"), [&environment, &classes](const JniGuestCallFrame& frame) {
             try {
@@ -450,43 +394,24 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
             }
             return Int(static_cast<JniInt>(JniStatus::ok));
         });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("GetJavaVM"),
-        [&address_space](const JniGuestCallFrame& frame) {
-            Write32(address_space,
-                    memory::GuestAddress{frame.registers[1]},
-                    kJniGuestJavaVm.Value(), frame.thread_id);
-            return Int(static_cast<JniInt>(JniStatus::ok));
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("NewWeakGlobalRef"),
-        [&environment](const JniGuestCallFrame& frame) {
-            return Reference(environment.NewWeakGlobalRef(
-                frame.thread_id,
-                JniReference{frame.registers[1]}));
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("DeleteWeakGlobalRef"),
-        [&environment](const JniGuestCallFrame& frame) {
-            environment.DeleteWeakGlobalRef(
-                frame.thread_id,
-                JniReference{frame.registers[1]});
-            return JniGuestCallResult{};
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("ExceptionCheck"),
-        [&environment](const JniGuestCallFrame& frame) {
-            return Word(environment.ExceptionCheck(frame.thread_id)
-                            ? 1U
-                            : 0U);
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("MonitorEnter"),
-        [&environment](const JniGuestCallFrame& frame) {
-            environment.MonitorEnter(
-                frame.thread_id, JniReference{frame.registers[1]});
-            return Int(static_cast<JniInt>(JniStatus::ok));
-        });
+    dispatcher.BindEnvironment(EnvironmentSlot("GetJavaVM"), [&address_space](const JniGuestCallFrame& frame) {
+        Write32(address_space, memory::GuestAddress{frame.registers[1]}, kJniGuestJavaVm.Value(), frame.thread_id);
+        return Int(static_cast<JniInt>(JniStatus::ok));
+    });
+    dispatcher.BindEnvironment(EnvironmentSlot("NewWeakGlobalRef"), [&environment](const JniGuestCallFrame& frame) {
+        return Reference(environment.NewWeakGlobalRef(frame.thread_id, JniReference{frame.registers[1]}));
+    });
+    dispatcher.BindEnvironment(EnvironmentSlot("DeleteWeakGlobalRef"), [&environment](const JniGuestCallFrame& frame) {
+        environment.DeleteWeakGlobalRef(frame.thread_id, JniReference{frame.registers[1]});
+        return JniGuestCallResult{};
+    });
+    dispatcher.BindEnvironment(EnvironmentSlot("ExceptionCheck"), [&environment](const JniGuestCallFrame& frame) {
+        return Word(environment.ExceptionCheck(frame.thread_id) ? 1U : 0U);
+    });
+    dispatcher.BindEnvironment(EnvironmentSlot("MonitorEnter"), [&environment](const JniGuestCallFrame& frame) {
+        environment.MonitorEnter(frame.thread_id, JniReference{frame.registers[1]});
+        return Int(static_cast<JniInt>(JniStatus::ok));
+    });
     dispatcher.BindEnvironment(
         EnvironmentSlot("MonitorExit"), [&environment, &classes](const JniGuestCallFrame& frame) {
             try {
@@ -501,30 +426,26 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
             }
             return Int(static_cast<JniInt>(JniStatus::ok));
         });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("GetStaticMethodID"),
-        [&environment, &classes, fields,
-         &address_space](const JniGuestCallFrame& frame) {
-            return jni_guest_detail::LookupMethod(environment, classes, address_space, frame, true, fields);
-        });
+    dispatcher.BindEnvironment(EnvironmentSlot("GetStaticMethodID"), [&environment, &classes, fields,
+                                                                      &address_space](const JniGuestCallFrame& frame) {
+        return jni_guest_detail::LookupMethod(environment, classes, address_space, frame, true, fields);
+    });
     dispatcher.BindEnvironment(
         EnvironmentSlot("NewStringUTF"), [&environment, &classes, &strings, &address_space, limits,
                                           observer = std::move(observer)](const JniGuestCallFrame& frame) {
             if (frame.registers[1] == 0U) {
                 return Reference(JniReference{});
             }
-            JniObjectIdentity identity{};
-            bool created{};
+            const auto lock = strings.Lock();
             try {
-                const auto encoded = ReadGuestModifiedUtf8(address_space,
-                    memory::GuestAddress{frame.registers[1]}, frame.thread_id,
-                    limits.maximum_modified_utf8_bytes);
+                const auto encoded = ReadGuestModifiedUtf8(address_space, memory::GuestAddress{frame.registers[1]},
+                                                           frame.thread_id, limits.maximum_modified_utf8_bytes);
                 const auto chars = DecodeJniModifiedUtf8(encoded);
                 if (chars.size() > limits.maximum_utf16_code_units)
-                    throw JniGuestBindingError("JNI string UTF-16 resource budget exceeded: code_units=" +
-                        std::to_string(chars.size()) + " budget=" + std::to_string(limits.maximum_utf16_code_units));
-                identity = strings.Create(chars);
-                created = true;
+                    throw JniGuestBindingError(
+                        "JNI string UTF-16 resource budget exceeded: code_units=" + std::to_string(chars.size()) +
+                        " budget=" + std::to_string(limits.maximum_utf16_code_units));
+                const auto identity = strings.Create(chars);
                 const auto reference = environment.PublishLocalObject(frame.thread_id, identity);
                 if (observer) {
                     try {
@@ -534,29 +455,28 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                 }
                 return Reference(reference);
             } catch (const std::bad_alloc&) {
-                if (created) strings.Delete(identity);
                 jni_guest_detail::ThrowJavaError(environment, classes, frame.thread_id, "java/lang/OutOfMemoryError",
                                                  "string payload allocation failed");
                 return Reference(JniReference{});
             } catch (const JniModifiedUtf8Error& error) {
-                throw JniGuestBindingError(JniCallFailure("NewStringUTF", frame,
+                throw JniGuestBindingError(JniCallFailure(
+                    "NewStringUTF", frame,
                     "invalid Modified UTF-8 at byte=" + std::to_string(error.Offset()) + ": " + error.what()));
             } catch (const memory::MemoryFault& error) {
-                throw JniGuestBindingError(JniCallFailure("NewStringUTF", frame,
-                    "JNI string input memory fault: " + std::string(memory::ToString(error.Reason())) + ": " + error.what()));
-            } catch (const std::overflow_error& error) {
-                throw JniGuestBindingError(JniCallFailure("NewStringUTF", frame,
-                    "JNI string guest address overflow: " + std::string(error.what())));
-            } catch (const std::exception& error) {
-                if (created) strings.Delete(identity);
                 throw JniGuestBindingError(
-                    JniCallFailure("NewStringUTF", frame, error.what()));
+                    JniCallFailure("NewStringUTF", frame,
+                                   "JNI string input memory fault: " + std::string(memory::ToString(error.Reason())) +
+                                       ": " + error.what()));
+            } catch (const std::overflow_error& error) {
+                throw JniGuestBindingError(JniCallFailure(
+                    "NewStringUTF", frame, "JNI string guest address overflow: " + std::string(error.what())));
+            } catch (const std::exception& error) {
+                throw JniGuestBindingError(JniCallFailure("NewStringUTF", frame, error.what()));
             }
         });
 }
 
-void BindJniGuestJavaVmSlots(JniGuestCallDispatcher& dispatcher,
-                             JniJavaVm& java_vm,
+void BindJniGuestJavaVmSlots(JniGuestCallDispatcher& dispatcher, JniJavaVm& java_vm,
                              memory::AddressSpace& address_space) {
     dispatcher.BindJavaVm(JavaVmSlot("AttachCurrentThread"),
                           [&dispatcher, &java_vm, &address_space](const JniGuestCallFrame& frame) {
@@ -564,25 +484,15 @@ void BindJniGuestJavaVmSlots(JniGuestCallDispatcher& dispatcher,
                               WriteEnvironmentResult(address_space, frame, result);
                               return Int(static_cast<JniInt>(result.status));
                           });
-    dispatcher.BindJavaVm(
-        JavaVmSlot("DetachCurrentThread"),
-        [&java_vm](const JniGuestCallFrame& frame) {
-            return Int(static_cast<JniInt>(
-                java_vm.DetachCurrentThread(frame.thread_id)));
-        });
-    dispatcher.BindJavaVm(
-        JavaVmSlot("GetEnv"),
-        [&java_vm, &address_space](const JniGuestCallFrame& frame) {
-            ValidateOutput(
-                address_space,
-                memory::GuestAddress{frame.registers[1]},
-                frame.thread_id);
-            const auto result = java_vm.GetEnv(
-                frame.thread_id,
-                std::bit_cast<JniInt>(frame.registers[2]));
-            WriteEnvironmentResult(address_space, frame, result);
-            return Int(static_cast<JniInt>(result.status));
-        });
+    dispatcher.BindJavaVm(JavaVmSlot("DetachCurrentThread"), [&java_vm](const JniGuestCallFrame& frame) {
+        return Int(static_cast<JniInt>(java_vm.DetachCurrentThread(frame.thread_id)));
+    });
+    dispatcher.BindJavaVm(JavaVmSlot("GetEnv"), [&java_vm, &address_space](const JniGuestCallFrame& frame) {
+        ValidateOutput(address_space, memory::GuestAddress{frame.registers[1]}, frame.thread_id);
+        const auto result = java_vm.GetEnv(frame.thread_id, std::bit_cast<JniInt>(frame.registers[2]));
+        WriteEnvironmentResult(address_space, frame, result);
+        return Int(static_cast<JniInt>(result.status));
+    });
     dispatcher.BindJavaVm(JavaVmSlot("AttachCurrentThreadAsDaemon"),
                           [&dispatcher, &java_vm, &address_space](const JniGuestCallFrame& frame) {
                               const auto result = AttachGuestThread(dispatcher, java_vm, address_space, frame, true);
@@ -591,146 +501,105 @@ void BindJniGuestJavaVmSlots(JniGuestCallDispatcher& dispatcher,
                           });
 }
 
-void BindJniGuestNativeRegistrationSlots(
-    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
-    JniClassRegistry& classes, JniNativeRegistry& natives,
-    memory::AddressSpace& address_space) {
+void BindJniGuestNativeRegistrationSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
+                                         JniClassRegistry& classes, JniNativeRegistry& natives,
+                                         memory::AddressSpace& address_space) {
+    dispatcher.BindEnvironment(EnvironmentSlot("RegisterNatives"), [&environment, &classes, &natives,
+                                                                    &address_space](const JniGuestCallFrame& frame) {
+        const auto java_class = environment.ResolveObjectForHle(frame.thread_id, JniReference{frame.registers[1]});
+        if (!java_class.has_value()) {
+            throw JniGuestBindingError("RegisterNatives requires a valid class reference");
+        }
+        try {
+            static_cast<void>(classes.IsAssignableFrom(*java_class, *java_class));
+        } catch (const JniClassRegistryError&) {
+            throw JniGuestBindingError("RegisterNatives requires a declared class");
+        }
+
+        const auto signed_count = std::bit_cast<JniInt>(frame.registers[3]);
+        if (signed_count < 0) {
+            throw JniGuestBindingError("RegisterNatives method count cannot be negative");
+        }
+        constexpr std::uint64_t kNativeMethodSize = 12U;
+        constexpr std::uint64_t kMaximumNativeMethods = 65536U;
+        const auto count = static_cast<std::uint64_t>(signed_count);
+        if (count > kMaximumNativeMethods || count > std::numeric_limits<std::uint32_t>::max() / kNativeMethodSize) {
+            throw JniGuestBindingError("RegisterNatives method array size is invalid");
+        }
+        const auto byte_size = count * kNativeMethodSize;
+        std::vector<std::byte> encoded(static_cast<std::size_t>(byte_size));
+        const auto methods_address = memory::GuestAddress{frame.registers[2]};
+        if (!encoded.empty()) {
+            if (methods_address.IsNull()) {
+                throw JniGuestBindingError("RegisterNatives requires a non-null method array");
+            }
+            address_space.Validate({methods_address, byte_size}, memory::AccessType::read, frame.thread_id);
+            address_space.Read(methods_address, encoded, frame.thread_id);
+        }
+
+        const auto word = [&encoded](const std::size_t offset) {
+            std::uint32_t value{};
+            for (std::size_t index = 0; index < 4U; ++index) {
+                value |= std::to_integer<std::uint32_t>(encoded[offset + index]) << static_cast<unsigned>(index * 8U);
+            }
+            return value;
+        };
+        std::vector<JniNativeMethod> methods;
+        methods.reserve(static_cast<std::size_t>(count));
+        for (std::size_t index = 0; index < count; ++index) {
+            const auto offset = index * static_cast<std::size_t>(kNativeMethodSize);
+            const auto name = ReadGuestCString(address_space, memory::GuestAddress{word(offset)}, frame.thread_id,
+                                               "native method name");
+            const auto descriptor = ReadGuestCString(address_space, memory::GuestAddress{word(offset + 4U)},
+                                                     frame.thread_id, "native method descriptor");
+            const auto target = memory::GuestAddress{word(offset + 8U)};
+            if (target.IsNull()) {
+                throw JniGuestBindingError("RegisterNatives target cannot be null");
+            }
+            bool declared{};
+            try {
+                declared = classes.GetMethodId(*java_class, name, descriptor, false).has_value() ||
+                           classes.GetMethodId(*java_class, name, descriptor, true).has_value();
+            } catch (const std::exception& error) {
+                throw JniGuestBindingError("RegisterNatives method is invalid: " + std::string(error.what()));
+            }
+            if (!declared) {
+                throw JniGuestBindingError("RegisterNatives method is not declared: " + name + descriptor);
+            }
+            methods.push_back({name, descriptor, target});
+        }
+        natives.RegisterNatives(*java_class, methods);
+        return Int(static_cast<JniInt>(JniStatus::ok));
+    });
     dispatcher.BindEnvironment(
-        EnvironmentSlot("RegisterNatives"),
-        [&environment, &classes, &natives,
-         &address_space](const JniGuestCallFrame& frame) {
-            const auto java_class = environment.ResolveObjectForHle(
-                frame.thread_id, JniReference{frame.registers[1]});
+        EnvironmentSlot("UnregisterNatives"), [&environment, &classes, &natives](const JniGuestCallFrame& frame) {
+            const auto java_class = environment.ResolveObjectForHle(frame.thread_id, JniReference{frame.registers[1]});
             if (!java_class.has_value()) {
-                throw JniGuestBindingError(
-                    "RegisterNatives requires a valid class reference");
+                throw JniGuestBindingError("UnregisterNatives requires a valid class reference");
             }
             try {
-                static_cast<void>(
-                    classes.IsAssignableFrom(*java_class, *java_class));
+                static_cast<void>(classes.IsAssignableFrom(*java_class, *java_class));
             } catch (const JniClassRegistryError&) {
-                throw JniGuestBindingError(
-                    "RegisterNatives requires a declared class");
-            }
-
-            const auto signed_count =
-                std::bit_cast<JniInt>(frame.registers[3]);
-            if (signed_count < 0) {
-                throw JniGuestBindingError(
-                    "RegisterNatives method count cannot be negative");
-            }
-            constexpr std::uint64_t kNativeMethodSize = 12U;
-            constexpr std::uint64_t kMaximumNativeMethods = 65536U;
-            const auto count = static_cast<std::uint64_t>(signed_count);
-            if (count > kMaximumNativeMethods ||
-                count > std::numeric_limits<std::uint32_t>::max() /
-                            kNativeMethodSize) {
-                throw JniGuestBindingError(
-                    "RegisterNatives method array size is invalid");
-            }
-            const auto byte_size = count * kNativeMethodSize;
-            std::vector<std::byte> encoded(static_cast<std::size_t>(byte_size));
-            const auto methods_address =
-                memory::GuestAddress{frame.registers[2]};
-            if (!encoded.empty()) {
-                if (methods_address.IsNull()) {
-                    throw JniGuestBindingError(
-                        "RegisterNatives requires a non-null method array");
-                }
-                address_space.Validate(
-                    {methods_address, byte_size}, memory::AccessType::read,
-                    frame.thread_id);
-                address_space.Read(methods_address, encoded,
-                                   frame.thread_id);
-            }
-
-            const auto word = [&encoded](const std::size_t offset) {
-                std::uint32_t value{};
-                for (std::size_t index = 0; index < 4U; ++index) {
-                    value |= std::to_integer<std::uint32_t>(
-                                 encoded[offset + index])
-                             << static_cast<unsigned>(index * 8U);
-                }
-                return value;
-            };
-            std::vector<JniNativeMethod> methods;
-            methods.reserve(static_cast<std::size_t>(count));
-            for (std::size_t index = 0; index < count; ++index) {
-                const auto offset = index *
-                                    static_cast<std::size_t>(kNativeMethodSize);
-                const auto name = ReadGuestCString(
-                    address_space, memory::GuestAddress{word(offset)},
-                    frame.thread_id, "native method name");
-                const auto descriptor = ReadGuestCString(
-                    address_space, memory::GuestAddress{word(offset + 4U)},
-                    frame.thread_id, "native method descriptor");
-                const auto target = memory::GuestAddress{word(offset + 8U)};
-                if (target.IsNull()) {
-                    throw JniGuestBindingError(
-                        "RegisterNatives target cannot be null");
-                }
-                bool declared{};
-                try {
-                    declared = classes.GetMethodId(
-                                   *java_class, name, descriptor, false)
-                                   .has_value() ||
-                               classes.GetMethodId(
-                                   *java_class, name, descriptor, true)
-                                   .has_value();
-                } catch (const std::exception& error) {
-                    throw JniGuestBindingError(
-                        "RegisterNatives method is invalid: " +
-                        std::string(error.what()));
-                }
-                if (!declared) {
-                    throw JniGuestBindingError(
-                        "RegisterNatives method is not declared: " + name +
-                        descriptor);
-                }
-                methods.push_back({name, descriptor, target});
-            }
-            natives.RegisterNatives(*java_class, methods);
-            return Int(static_cast<JniInt>(JniStatus::ok));
-        });
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("UnregisterNatives"),
-        [&environment, &classes,
-         &natives](const JniGuestCallFrame& frame) {
-            const auto java_class = environment.ResolveObjectForHle(
-                frame.thread_id, JniReference{frame.registers[1]});
-            if (!java_class.has_value()) {
-                throw JniGuestBindingError(
-                    "UnregisterNatives requires a valid class reference");
-            }
-            try {
-                static_cast<void>(
-                    classes.IsAssignableFrom(*java_class, *java_class));
-            } catch (const JniClassRegistryError&) {
-                throw JniGuestBindingError(
-                    "UnregisterNatives requires a declared class");
+                throw JniGuestBindingError("UnregisterNatives requires a declared class");
             }
             static_cast<void>(natives.UnregisterNatives(*java_class));
             return Int(static_cast<JniInt>(JniStatus::ok));
         });
 }
 
-A32GuestCallFrame ResolveJniRegisteredNativeCall(
-    const JniNativeRegistry& natives, const JniObjectIdentity java_class,
-    const std::string_view name, const std::string_view descriptor,
-    A32GuestCallFrame frame) {
-    const auto target = natives.Resolve(
-        java_class, std::string(name), std::string(descriptor));
+A32GuestCallFrame ResolveJniRegisteredNativeCall(const JniNativeRegistry& natives, const JniObjectIdentity java_class,
+                                                 const std::string_view name, const std::string_view descriptor,
+                                                 A32GuestCallFrame frame) {
+    const auto target = natives.Resolve(java_class, std::string(name), std::string(descriptor));
     if (!target.has_value()) {
-        throw JniGuestBindingError(
-            "registered JNI native method is unresolved: " +
-            std::string(name) + std::string(descriptor));
+        throw JniGuestBindingError("registered JNI native method is unresolved: " + std::string(name) +
+                                   std::string(descriptor));
     }
     frame.target = *target;
     return frame;
 }
 
-void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
-                       JniGuestBindingContext& context) {
+void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher, JniGuestBindingContext& context) {
     ValidateJniGuestStringLimits(context.string_limits);
     context.environment.SetPendingCallDiagnostics(
         [&classes = context.classes, &objects = context.objects](const JniThrowableMetadata& pending) {
@@ -759,51 +628,44 @@ void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
             env.EnterGuestCall(f.thread_id, JniSlot{f.thunk.slot}, f.link_register);
         },
         [&env = context.environment](const JniGuestCallFrame& f) { env.LeaveGuestCall(f.thread_id); });
-    dispatcher.BindEnvironment(EnvironmentSlot("FromReflectedMethod"),
-        [&env = context.environment](const JniGuestCallFrame& frame) {
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("FromReflectedMethod"), [&env = context.environment](const JniGuestCallFrame& frame) {
             return Word(env.FromReflectedMethod(frame.thread_id, JniReference{frame.registers[1]}).Value());
         });
-    dispatcher.BindEnvironment(EnvironmentSlot("ToReflectedMethod"),
-        [&env = context.environment](const JniGuestCallFrame& frame) {
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("ToReflectedMethod"), [&env = context.environment](const JniGuestCallFrame& frame) {
             return Reference(env.ToReflectedMethod(frame.thread_id, JniReference{frame.registers[1]},
-                JniMethodId{frame.registers[2]}, frame.registers[3] != 0U));
+                                                   JniMethodId{frame.registers[2]}, frame.registers[3] != 0U));
         });
-    dispatcher.BindEnvironment(EnvironmentSlot("FromReflectedField"),
-        [&env = context.environment](const JniGuestCallFrame& frame) {
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("FromReflectedField"), [&env = context.environment](const JniGuestCallFrame& frame) {
             return Word(env.FromReflectedField(frame.thread_id, JniReference{frame.registers[1]}).Value());
         });
-    dispatcher.BindEnvironment(EnvironmentSlot("ToReflectedField"),
-        [&env = context.environment](const JniGuestCallFrame& frame) {
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("ToReflectedField"), [&env = context.environment](const JniGuestCallFrame& frame) {
             return Reference(env.ToReflectedField(frame.thread_id, JniReference{frame.registers[1]},
-                JniFieldId{frame.registers[2]}, frame.registers[3] != 0U));
+                                                  JniFieldId{frame.registers[2]}, frame.registers[3] != 0U));
         });
-    BindJniGuestCoreSlots(dispatcher, context.environment, context.classes,
-                         context.strings, context.arrays,
-                         context.address_space, context.string_limits, context.string_observer, &context.fields);
-    BindJniGuestClassAndInstanceSlots(
-        dispatcher, context.environment, context.classes,
-        context.invocations, context.address_space, &context.objects, &context.fields);
-    BindJniGuestStaticCallSlots(
-        dispatcher, context.environment, context.classes,
-        context.invocations, context.address_space);
-    BindJniGuestStaticFieldSlots(
-        dispatcher, context.environment, context.classes, context.fields,
-        context.address_space);
-    BindJniGuestInstanceFieldSlots(
-        dispatcher, context.environment, context.classes, context.fields,
-        context.objects, context.address_space);
+    BindJniGuestCoreSlots(dispatcher, context.environment, context.classes, context.strings, context.arrays,
+                          context.address_space, context.string_limits, context.string_observer, &context.fields);
+    BindJniGuestClassAndInstanceSlots(dispatcher, context.environment, context.classes, context.invocations,
+                                      context.address_space, &context.objects, &context.fields);
+    BindJniGuestStaticCallSlots(dispatcher, context.environment, context.classes, context.invocations,
+                                context.address_space);
+    BindJniGuestStaticFieldSlots(dispatcher, context.environment, context.classes, context.fields,
+                                 context.address_space);
+    BindJniGuestInstanceFieldSlots(dispatcher, context.environment, context.classes, context.fields, context.objects,
+                                   context.address_space);
     BindJniGuestArraySlots(dispatcher, context.environment, context.classes, context.strings, context.arrays,
                            context.objects, context.address_space, context.logger);
     BindJniGuestStringSlots(dispatcher, context.environment, context.classes, context.strings, context.address_space,
                             context.string_limits, context.logger);
     if (context.natives != nullptr) {
-        BindJniGuestNativeRegistrationSlots(
-            dispatcher, context.environment, context.classes,
-            *context.natives, context.address_space);
+        BindJniGuestNativeRegistrationSlots(dispatcher, context.environment, context.classes, *context.natives,
+                                            context.address_space);
     }
     if (context.nio != nullptr) BindDirectBufferSlots(dispatcher, context);
-    BindJniGuestJavaVmSlots(dispatcher, context.java_vm,
-                            context.address_space);
+    BindJniGuestJavaVmSlots(dispatcher, context.java_vm, context.address_space);
 }
 
 }  // namespace ogplay::runtime

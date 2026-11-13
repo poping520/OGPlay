@@ -10,6 +10,36 @@ namespace ogplay::runtime::dexvm {
 
 inline constexpr std::uint32_t kInvalidFastIndex = 0xffffffffU;
 
+enum class StringFastOp : std::uint8_t {
+    none,
+    length,
+    is_empty,
+    char_at,
+    equals,
+    compare_to,
+    fast_index_of,
+    hash_code,
+    index_char,
+    index_char_from,
+    index_string,
+    index_string_from,
+    last_char,
+    last_char_from,
+    last_string,
+    last_string_from,
+    starts_with,
+    starts_with_from,
+    ends_with,
+    region_matches,
+    content_equals,
+    region_matches_case,
+    equals_ignore_case,
+};
+
+[[nodiscard]] StringFastOp ResolveStringFastOp(std::string_view name, std::string_view descriptor);
+[[nodiscard]] std::int32_t CompareStringChars(std::u16string_view left, std::u16string_view right);
+[[nodiscard]] std::int32_t FastIndexOfStringChar(std::u16string_view text, std::int32_t ch, std::int32_t start);
+
 enum class FastHandler : std::uint16_t {
     bridge,
     straight,
@@ -47,6 +77,7 @@ struct FastInvoke final {
     std::vector<std::uint16_t> registers;
     mutable std::uint32_t resolved_method{kInvalidFastIndex};
     mutable bool is_static{};
+    mutable StringFastOp fast_op{};
     mutable std::int32_t vtable_index{-1};
     // One entry per Java argument value, excluding receiver. References and
     // arrays are normalized to 'L'; J/D consume two register words.
@@ -79,7 +110,6 @@ struct FastCode final {
 // The caller must run DexClassLinker::PrecheckMethod first. The builder still
 // validates every boundary it consumes so it cannot turn malformed code into
 // an executable cache.
-[[nodiscard]] FastCode BuildFastCode(const loader::DexMethodCode& code,
-                                     std::string_view where);
+[[nodiscard]] FastCode BuildFastCode(const loader::DexMethodCode& code, std::string_view where);
 
 }  // namespace ogplay::runtime::dexvm

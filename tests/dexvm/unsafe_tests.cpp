@@ -34,11 +34,9 @@ std::vector<std::uint8_t> ReadBytes(const std::filesystem::path& path) {
 }
 
 struct UnsafeVm {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model{strings, arrays};
+    JavaObjectModel model{arrays};
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
     std::atomic<std::int64_t> millis{};

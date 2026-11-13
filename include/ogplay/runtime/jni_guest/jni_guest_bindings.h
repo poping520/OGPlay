@@ -13,7 +13,9 @@ class AddressSpace;
 
 namespace ogplay::runtime {
 
-namespace dexvm { class NioRuntime; }
+namespace dexvm {
+class NioRuntime;
+}
 
 class JniEnvironment;
 class JniClassRegistry;
@@ -23,7 +25,7 @@ class JniJavaVm;
 class JniGuestObjectRegistry;
 class JniNativeRegistry;
 class JniPrimitiveArrayStore;
-class JniStringStore;
+class JniStringBackend;
 
 struct JniGuestStringLimits final {
     std::size_t maximum_modified_utf8_bytes{3U * 1024U * 1024U};
@@ -31,15 +33,16 @@ struct JniGuestStringLimits final {
     // Aggregate page-rounded guest copies, shared by both encodings.
     std::size_t maximum_copy_bytes{16U * 1024U * 1024U};
 };
-using JniGuestStringObserver = std::function<void(
-    const JniGuestCallFrame&, std::size_t encoded_bytes, std::size_t utf16_units)>;
+
+using JniGuestStringObserver =
+    std::function<void(const JniGuestCallFrame&, std::size_t encoded_bytes, std::size_t utf16_units)>;
 
 struct JniGuestBindingContext final {
     JniEnvironment& environment;
     JniClassRegistry& classes;
     JniInvocationEngine& invocations;
     JniFieldStore& fields;
-    JniStringStore& strings;
+    JniStringBackend& strings;
     JniPrimitiveArrayStore& arrays;
     JniJavaVm& java_vm;
     JniGuestObjectRegistry& objects;
@@ -56,31 +59,22 @@ public:
     using std::runtime_error::runtime_error;
 };
 
-void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
-                           JniEnvironment& environment,
-                           JniClassRegistry& classes,
-                           JniStringStore& strings,
-                           JniPrimitiveArrayStore& arrays,
-                           memory::AddressSpace& address_space,
-                           JniGuestStringLimits limits = {},
-                           JniGuestStringObserver observer = {},
-                           JniFieldStore* fields = nullptr);
+void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment, JniClassRegistry& classes,
+                           JniStringBackend& strings, JniPrimitiveArrayStore& arrays,
+                           memory::AddressSpace& address_space, JniGuestStringLimits limits = {},
+                           JniGuestStringObserver observer = {}, JniFieldStore* fields = nullptr);
 
-void BindJniGuestJavaVmSlots(JniGuestCallDispatcher& dispatcher,
-                             JniJavaVm& java_vm,
+void BindJniGuestJavaVmSlots(JniGuestCallDispatcher& dispatcher, JniJavaVm& java_vm,
                              memory::AddressSpace& address_space);
 
-void BindJniGuestNativeRegistrationSlots(
-    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
-    JniClassRegistry& classes, JniNativeRegistry& natives,
-    memory::AddressSpace& address_space);
+void BindJniGuestNativeRegistrationSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
+                                         JniClassRegistry& classes, JniNativeRegistry& natives,
+                                         memory::AddressSpace& address_space);
 
-[[nodiscard]] A32GuestCallFrame ResolveJniRegisteredNativeCall(
-    const JniNativeRegistry& natives, JniObjectIdentity java_class,
-    std::string_view name, std::string_view descriptor,
-    A32GuestCallFrame frame);
+[[nodiscard]] A32GuestCallFrame ResolveJniRegisteredNativeCall(const JniNativeRegistry& natives,
+                                                               JniObjectIdentity java_class, std::string_view name,
+                                                               std::string_view descriptor, A32GuestCallFrame frame);
 
-void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
-                       JniGuestBindingContext& context);
+void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher, JniGuestBindingContext& context);
 
 }  // namespace ogplay::runtime

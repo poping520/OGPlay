@@ -475,8 +475,9 @@ IntrinsicClassDecl DeclareTypedBufferClass(const std::string& name, const std::s
                 throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "string range"};
             if (end - start > detail::InvokeGuest(c.vm, c.receiver, "remaining", "()I").AsInt())
                 throw VmJavaThrow{"Ljava/nio/BufferOverflowException;", "string does not fit"};
+            const auto chars = c.vm.Model().StringChars(source);
             for (int i = start; i < end; ++i) {
-                const auto unit = c.vm.Model().StringRegion(source, i, 1)[0];
+                const auto unit = chars[static_cast<std::size_t>(i)];
                 static_cast<void>(
                     detail::InvokeGuest(c.vm, c.receiver, "put", "(C)Ljava/nio/CharBuffer;", {VmValue::Int(unit)}));
             }
@@ -506,7 +507,9 @@ VmValue CharsetLibraryCall(Interpreter& vm, const char* owner, const char* name,
     return CharsetCallResult(vm, vm.Call(*method, arguments));
 }
 
-constexpr auto kUtf8Encoder = "Lorg/ogplay/runtime/Utf8Encoder;";
+constexpr auto kBuiltinCharset = "Lorg/ogplay/runtime/BuiltinCharset;";
+constexpr auto kCharsetEncoder = "Lorg/ogplay/runtime/BuiltinCharsetEncoder;";
+constexpr auto kUtf16Decoder = "Lorg/ogplay/runtime/Utf16Decoder;";
 constexpr auto kCoderResult = "Ljava/nio/charset/CoderResult;";
 
 VmValue CoderResultConstant(Interpreter& vm, const char* name) {
@@ -517,85 +520,299 @@ VmValue CoderResultConstant(Interpreter& vm, const char* name) {
     return VmValue::Ref(VmObjectRef{vm.Linker().Class(type).static_storage[vm.Linker().Field(*field).slot]});
 }
 
-IntrinsicClassDecl Declare_org_ogplay_runtime_Utf8Encoder_Class() {
-    auto builder = IntrinsicClassBuilder::Class(kUtf8Encoder, "Ljava/nio/charset/CharsetEncoder;");
-    builder.OverrideMethod("isLegalReplacement", "([B)Z", [](IntrinsicContext& call) {
-        const auto array = IntrinsicCall(call).NonNullRef(0, "replacement");
-        const auto bytes = call.vm.Model().ReadByteRegion(array, 0, call.vm.Model().ArrayLength(array));
-        const std::string_view replacement(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-        return VmValue::Int(core::IsValidUtf8(replacement));
+IntrinsicClassDecl DeclareBuiltinCharsetEncoder() {
+    auto builder = IntrinsicClassBuilder::Class(kCharsetEncoder, "Ljava/nio/charset/CharsetEncoder;");
+    const auto encoding = builder.BoundInstanceField("encoding", "Ljava/lang/String;");
+    const auto bom_written = builder.BoundInstanceField("bomWritten", "Z");
+    builder.Constructor("(Ljava/nio/charset/Charset;Ljava/lang/String;)V", [encoding](IntrinsicContext& c) {
+        const auto name = c.vm.StringUtf8(c.arguments[1].ref);
+        const bool utf16 = name.starts_with("UTF-16");
+        const auto replacement = EncodeCharset(utf16 ? u"\ufffd" : u"?", name == "UTF-16" ? "UTF-16BE" : name);
+        const auto array = PrimitiveArray(c.vm, NioElementKind::byte, static_cast<JniSize>(replacement.size()));
+        const auto roots = c.vm.ProtectReferences(std::array{array});
+        c.vm.Model().WriteByteRegion(array, 0, replacement);
+        IntrinsicCall(c).SetRef(encoding, c.arguments[1].ref);
+        return CharsetLibraryCall(c.vm, "Ljava/nio/charset/CharsetEncoder;", "<init>",
+                                  "(Ljava/nio/charset/Charset;FF[BZ)V",
+                                  {VmValue::Ref(c.receiver), c.arguments[0], VmValue::Float(utf16 ? 2 : 1),
+                                   VmValue::Float(utf16             ? 4
+                                                  : name == "UTF-8" ? 3
+                                                                    : 1),
+                                   VmValue::Ref(array), VmValue::Int(1)});
     });
-    builder.VirtualMethod(
-        "encodeLoop", "(Ljava/nio/CharBuffer;Ljava/nio/ByteBuffer;)Ljava/nio/charset/CoderResult;",
-        [](IntrinsicContext& call) {
-            auto& vm = call.vm;
-            const auto input = call.arguments[0].ref;
-            const auto output = call.arguments[1].ref;
-            const auto input_id = Id(vm, input);
-            const auto state = vm.NIO().Snapshot(input_id);
-            const auto position = state.position;
-            const auto capacity = detail::InvokeGuest(vm, output, "remaining", "()I").AsInt();
-            const auto remaining = static_cast<std::size_t>(state.limit - position);
-            const auto unit = [&](std::size_t index) {
-                return static_cast<std::uint32_t>(vm.NIO().Get(input_id, position + static_cast<std::int32_t>(index)));
-            };
-            const char* result = "UNDERFLOW";
-            bool malformed = false;
-            std::string bytes;
-            std::size_t consumed = 0;
-            while (consumed < remaining) {
-                std::uint32_t code_point = unit(consumed);
-                std::size_t width = 1;
-                if (code_point >= 0xd800 && code_point <= 0xdbff) {
-                    if (consumed + 1 == remaining) break;
-                    const auto tail = unit(consumed + 1);
-                    if (tail < 0xdc00 || tail > 0xdfff) {
-                        malformed = true;
-                        break;
-                    }
-                    code_point = 0x10000 + ((code_point - 0xd800) << 10) + (tail - 0xdc00);
-                    width = 2;
-                } else if (code_point >= 0xdc00 && code_point <= 0xdfff) {
-                    malformed = true;
-                    break;
-                }
-                const auto byte_count = code_point <= 0x7f ? 1U : code_point <= 0x7ff ? 2U : width == 2 ? 4U : 3U;
-                if (bytes.size() + byte_count > static_cast<std::size_t>(capacity)) {
-                    result = "OVERFLOW";
-                    break;
-                }
-                static_cast<void>(core::AppendUtf8(bytes, code_point));
-                consumed += width;
-            }
-            if (consumed != 0) {
-                const auto buffer = vm.Model().NewPrimitiveArray(
-                    vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, static_cast<JniSize>(bytes.size()));
-                const auto root = vm.ProtectReferences(std::array{buffer});
-                vm.Model().WriteByteRegion(buffer, 0, std::as_bytes(std::span{bytes}));
-                static_cast<void>(
-                    detail::InvokeGuest(vm, output, "put", "([B)Ljava/nio/ByteBuffer;", {VmValue::Ref(buffer)}));
-                static_cast<void>(detail::InvokeGuest(vm, input, "position", "(I)Ljava/nio/Buffer;",
-                                                      {VmValue::Int(position + static_cast<std::int32_t>(consumed))}));
-            }
-            if (malformed)
-                return CharsetLibraryCall(vm, kCoderResult, "malformedForLength", "(I)Ljava/nio/charset/CoderResult;",
-                                          {VmValue::Int(1)});
-            return CoderResultConstant(vm, result);
+    builder.OverrideMethod(
+        "implReset", "()V",
+        [bom_written](IntrinsicContext& c) {
+            IntrinsicCall(c).SetInt(bom_written, 0);
+            return VmValue::Void();
         },
         kAccProtected);
+    builder.OverrideMethod("isLegalReplacement", "([B)Z", [encoding](IntrinsicContext& call) {
+        const auto array = IntrinsicCall(call).NonNullRef(0, "replacement");
+        const auto bytes = call.vm.Model().ReadByteRegion(array, 0, call.vm.Model().ArrayLength(array));
+        const auto name = call.vm.StringUtf8(IntrinsicCall(call).GetRef(encoding));
+        if (name.starts_with("UTF-16")) {
+            if ((bytes.size() & 1U) != 0U) return VmValue::Int(0);
+            const auto decoded = DecodeCharset(bytes, name);
+            return VmValue::Int(core::Utf16ToUtf8(decoded, core::InvalidUtf16Policy::reject).has_value());
+        }
+        if (name == "US-ASCII")
+            return VmValue::Int(std::ranges::all_of(bytes, [](std::byte byte) { return byte <= std::byte{0x7f}; }));
+        const std::string_view replacement(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+        return VmValue::Int(name == "ISO-8859-1" || core::IsValidUtf8(replacement));
+    });
+    builder.OverrideMethod(
+        "encodeLoop", "(Ljava/nio/CharBuffer;Ljava/nio/ByteBuffer;)Ljava/nio/charset/CoderResult;",
+        [encoding, bom_written](IntrinsicContext& c) {
+            auto& vm = c.vm;
+            auto& nio = vm.NIO();
+            const auto input = Id(vm, c.arguments[0].ref);
+            const auto output = Id(vm, c.arguments[1].ref);
+            const auto name = vm.StringUtf8(IntrinsicCall(c).GetRef(encoding));
+            const auto in = nio.Snapshot(input);
+            const auto out = nio.Snapshot(output);
+            const bool utf16 = name.starts_with("UTF-16");
+            auto available = out.limit - out.position;
+            if (name == "UTF-16" && in.position < in.limit && !IntrinsicCall(c).GetInt(bom_written)) {
+                if (available < 2) return CoderResultConstant(vm, "OVERFLOW");
+                nio.Put(output, {}, 0xfe);
+                nio.Put(output, {}, 0xff);
+                available -= 2;
+                IntrinsicCall(c).SetInt(bom_written, 1);
+            }
+            const auto malformed = [&] {
+                return CharsetLibraryCall(vm, kCoderResult, "malformedForLength", "(I)Ljava/nio/charset/CoderResult;",
+                                          {VmValue::Int(1)});
+            };
+            for (auto position = in.position; position < in.limit;) {
+                const auto lead = static_cast<char16_t>(nio.Get(input, position));
+                char16_t units[]{lead, 0};
+                auto width = 1;
+                if (lead >= 0xd800 && lead <= 0xdbff) {
+                    if (position + 1 == in.limit) break;
+                    units[1] = static_cast<char16_t>(nio.Get(input, position + 1));
+                    if (units[1] < 0xdc00 || units[1] > 0xdfff) return malformed();
+                    width = 2;
+                } else if (lead >= 0xdc00 && lead <= 0xdfff) {
+                    return malformed();
+                }
+                if ((name == "US-ASCII" && lead > 0x7f) || (name == "ISO-8859-1" && lead > 0xff))
+                    return CharsetLibraryCall(vm, kCoderResult, "unmappableForLength",
+                                              "(I)Ljava/nio/charset/CoderResult;", {VmValue::Int(width)});
+                std::string bytes;
+                if (utf16) {
+                    const bool little = name == "UTF-16LE";
+                    for (int i = 0; i < width; ++i) {
+                        const auto unit = units[i];
+                        bytes.push_back(static_cast<char>(little ? unit & 0xff : unit >> 8));
+                        bytes.push_back(static_cast<char>(little ? unit >> 8 : unit & 0xff));
+                    }
+                } else if (name == "UTF-8") {
+                    const auto code_point =
+                        width == 1
+                            ? static_cast<std::uint32_t>(lead)
+                            : 0x10000U + ((static_cast<std::uint32_t>(lead) - 0xd800U) << 10U) + units[1] - 0xdc00U;
+                    static_cast<void>(core::AppendUtf8(bytes, code_point));
+                } else {
+                    bytes.push_back(static_cast<char>(lead));
+                }
+                if (static_cast<JniSize>(bytes.size()) > available) return CoderResultConstant(vm, "OVERFLOW");
+                for (const auto byte : bytes)
+                    nio.Put(output, {}, static_cast<std::uint8_t>(byte));
+                available -= static_cast<JniSize>(bytes.size());
+                position += width;
+                nio.SetPosition(input, position);
+            }
+            return CoderResultConstant(vm, "UNDERFLOW");
+        },
+        kAccProtected);
+    return std::move(builder).Build();
+}
+
+IntrinsicClassDecl DeclareUtf16Decoder() {
+    auto builder = IntrinsicClassBuilder::Class(kUtf16Decoder, "Ljava/nio/charset/CharsetDecoder;");
+    const auto encoding = builder.BoundInstanceField("encoding", "Ljava/lang/String;");
+    const auto byte_order = builder.BoundInstanceField("byteOrder", "I");
+    builder.Constructor("(Ljava/nio/charset/Charset;Ljava/lang/String;)V", [encoding](IntrinsicContext& c) {
+        IntrinsicCall(c).SetRef(encoding, c.arguments[1].ref);
+        return CharsetLibraryCall(c.vm, "Ljava/nio/charset/CharsetDecoder;", "<init>",
+                                  "(Ljava/nio/charset/Charset;FF)V",
+                                  {VmValue::Ref(c.receiver), c.arguments[0], VmValue::Float(0.5F), VmValue::Float(1)});
+    });
+    builder.OverrideMethod(
+        "implReset", "()V",
+        [byte_order](IntrinsicContext& c) {
+            IntrinsicCall(c).SetInt(byte_order, 0);
+            return VmValue::Void();
+        },
+        kAccProtected);
+    builder.OverrideMethod(
+        "decodeLoop", "(Ljava/nio/ByteBuffer;Ljava/nio/CharBuffer;)Ljava/nio/charset/CoderResult;",
+        [encoding, byte_order](IntrinsicContext& c) {
+            auto& vm = c.vm;
+            auto& nio = vm.NIO();
+            const auto input = Id(vm, c.arguments[0].ref);
+            const auto output = Id(vm, c.arguments[1].ref);
+            const auto in = nio.Snapshot(input);
+            const auto out = nio.Snapshot(output);
+            auto position = in.position;
+            auto available = out.limit - out.position;
+            if (in.limit - position < 2) return CoderResultConstant(vm, "UNDERFLOW");
+            const auto unit = [&](JniSize index, bool little) {
+                const auto first = nio.Get(input, index);
+                const auto second = nio.Get(input, index + 1);
+                return static_cast<char16_t>(little ? first | (second << 8U) : (first << 8U) | second);
+            };
+            auto order = IntrinsicCall(c).GetInt(byte_order);
+            if (order == 0) {
+                const auto name = vm.StringUtf8(IntrinsicCall(c).GetRef(encoding));
+                order = name == "UTF-16LE" ? 2 : 1;
+                if (name == "UTF-16") {
+                    const auto mark = unit(position, false);
+                    if (mark == 0xfeff || mark == 0xfffe) {
+                        order = mark == 0xfffe ? 2 : 1;
+                        position += 2;
+                        nio.SetPosition(input, position);
+                    }
+                }
+                IntrinsicCall(c).SetInt(byte_order, order);
+            }
+            const auto malformed = [&] {
+                return CharsetLibraryCall(vm, kCoderResult, "malformedForLength", "(I)Ljava/nio/charset/CoderResult;",
+                                          {VmValue::Int(2)});
+            };
+            while (in.limit - position >= 2) {
+                const auto lead = unit(position, order == 2);
+                char16_t tail = 0;
+                auto width = 1;
+                if (lead >= 0xd800 && lead <= 0xdbff) {
+                    if (in.limit - position < 4) break;
+                    tail = unit(position + 2, order == 2);
+                    if (tail < 0xdc00 || tail > 0xdfff) return malformed();
+                    width = 2;
+                } else if (lead >= 0xdc00 && lead <= 0xdfff) {
+                    return malformed();
+                }
+                if (width > available) return CoderResultConstant(vm, "OVERFLOW");
+                nio.Put(output, {}, lead);
+                if (width == 2) nio.Put(output, {}, tail);
+                available -= width;
+                position += width * 2;
+                nio.SetPosition(input, position);
+            }
+            return CoderResultConstant(vm, "UNDERFLOW");
+        },
+        kAccProtected);
+    return std::move(builder).Build();
+}
+
+IntrinsicClassDecl DeclareBuiltinCharset() {
+    constexpr auto charset = "Ljava/nio/charset/Charset;";
+    auto builder = IntrinsicClassBuilder::Class(kBuiltinCharset, charset);
+    builder.VirtualMethod("newEncoder", "()Ljava/nio/charset/CharsetEncoder;", [](IntrinsicContext& c) {
+        auto& vm = c.vm;
+        const auto encoding = detail::InvokeGuest(vm, c.receiver, "name", "()Ljava/lang/String;").ref;
+        const auto encoder = vm.NewIntrinsicInstance(kCharsetEncoder);
+        const auto roots = vm.ProtectReferences(std::array{encoder, encoding});
+        static_cast<void>(
+            CharsetLibraryCall(vm, kCharsetEncoder, "<init>", "(Ljava/nio/charset/Charset;Ljava/lang/String;)V",
+                               {VmValue::Ref(encoder), VmValue::Ref(c.receiver), VmValue::Ref(encoding)}));
+        return VmValue::Ref(encoder);
+    });
+    builder.VirtualMethod("newDecoder", "()Ljava/nio/charset/CharsetDecoder;", [](IntrinsicContext& c) {
+        auto& vm = c.vm;
+        const auto encoding = detail::InvokeGuest(vm, c.receiver, "name", "()Ljava/lang/String;").ref;
+        if (!vm.StringUtf8(encoding).starts_with("UTF-16")) {
+            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.charset.new_decoder", 0);
+            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "streaming decoder is unavailable"};
+        }
+        const auto decoder = vm.NewIntrinsicInstance(kUtf16Decoder);
+        const auto roots = vm.ProtectReferences(std::array{decoder, encoding});
+        static_cast<void>(
+            CharsetLibraryCall(vm, kUtf16Decoder, "<init>", "(Ljava/nio/charset/Charset;Ljava/lang/String;)V",
+                               {VmValue::Ref(decoder), VmValue::Ref(c.receiver), VmValue::Ref(encoding)}));
+        return VmValue::Ref(decoder);
+    });
+    builder.VirtualMethod("contains", "(Ljava/nio/charset/Charset;)Z", [](IntrinsicContext& c) {
+        if (!c.arguments[0].ref.IsValid()) return VmValue::Int(0);
+        const auto self = CharsetName(c.vm, c.receiver);
+        const auto other =
+            c.vm.StringUtf8(detail::InvokeGuest(c.vm, c.arguments[0].ref, "name", "()Ljava/lang/String;").ref);
+        if (self == other || other == "US-ASCII") return VmValue::Int(1);
+        if (self == "US-ASCII" || self == "ISO-8859-1") return VmValue::Int(0);
+        return VmValue::Int(other == "ISO-8859-1" || other == "UTF-8" || other.starts_with("UTF-16"));
+    });
+    return std::move(builder).Build();
+}
+
+IntrinsicClassDecl Declare_java_nio_charset_Charsets_Natives() {
+    auto builder = IntrinsicClassBuilder::Class("Ljava/nio/charset/Charsets;");
+    builder.MergesBootClass();
+    const auto bounds = [](JavaObjectModel& model, VmObjectRef array, JniSize offset, JniSize length) {
+        if (!array.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "array == null"};
+        if (offset < 0 || length < 0 || offset > model.ArrayLength(array) - length)
+            throw VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "charset array range"};
+    };
+    // API19 libcore native java_nio_charset_Charsets.cpp. ASCII decoding
+    // substitutes U+FFFD, while single-byte encoders substitute per code unit.
+    for (const bool ascii : {false, true}) {
+        builder.StaticMethod(
+            ascii ? "asciiBytesToChars" : "isoLatin1BytesToChars", "([BII[C)V",
+            [bounds, ascii](IntrinsicContext& c) {
+                auto& model = c.vm.Model();
+                const auto source = c.arguments[0].ref;
+                const auto offset = c.arguments[1].AsInt();
+                const auto length = c.arguments[2].AsInt();
+                const auto target = c.arguments[3].ref;
+                bounds(model, source, offset, length);
+                bounds(model, target, 0, length);
+                for (JniSize i = 0; i < length; ++i) {
+                    const auto unit = model.GetPrimitiveElement(source, offset + i);
+                    model.SetPrimitiveElement(target, i, ascii && unit > 0x7fU ? 0xfffdU : unit);
+                }
+                return VmValue::Void();
+            },
+            kAccPublic | kAccNative);
+    }
+    for (const auto& [name, encoding] :
+         {std::pair{"toAsciiBytes", "US-ASCII"}, std::pair{"toIsoLatin1Bytes", "ISO-8859-1"},
+          std::pair{"toUtf8Bytes", "UTF-8"}}) {
+        builder.StaticMethod(
+            name, "([CII)[B",
+            [bounds, encoding](IntrinsicContext& c) {
+                auto& model = c.vm.Model();
+                const auto source = c.arguments[0].ref;
+                const auto offset = c.arguments[1].AsInt();
+                const auto length = c.arguments[2].AsInt();
+                bounds(model, source, offset, length);
+                const auto chars = model.CharArrayChars(source).substr(static_cast<std::size_t>(offset),
+                                                                       static_cast<std::size_t>(length));
+                const auto bytes = EncodeCharset(chars, encoding);
+                if (bytes.size() > static_cast<std::size_t>(std::numeric_limits<JniSize>::max()))
+                    throw VmJavaThrow{"Ljava/lang/OutOfMemoryError;", ""};
+                const auto target = model.NewPrimitiveArray(c.vm.Linker().ResolveDescriptor("[B"),
+                                                            JniPrimitiveKind::byte, static_cast<JniSize>(bytes.size()));
+                model.WriteByteRegion(target, 0, bytes);
+                return VmValue::Ref(target);
+            },
+            kAccPublic | kAccNative);
+    }
     return std::move(builder).Build();
 }
 
 IntrinsicClassDecl Declare_java_nio_charset_Charset_Class() {
     auto b =
         IntrinsicClassBuilder::Class("Ljava/nio/charset/Charset;", "Ljava/lang/Object;", {"Ljava/lang/Comparable;"});
+    b.MergesBootClass();
     const auto name = b.BoundInstanceField("canonicalName", "Ljava/lang/String;", kAccPrivate | kAccFinal);
-    const auto make = [name](IntrinsicContext& c, std::string text) {
+    const auto make = [](IntrinsicContext& c, std::string text) {
         text = CanonicalCharset(std::move(text));
-        const auto object = c.vm.NewIntrinsicInstance("Ljava/nio/charset/Charset;");
-        const std::array refs{object};
-        const auto roots = c.vm.ProtectReferences(refs);
-        IntrinsicCall(c).SetRef(name, object, c.vm.NewStringUtf8(text));
+        const auto object = c.vm.NewIntrinsicInstance(kBuiltinCharset);
+        const auto roots = c.vm.ProtectReferences(std::array{object});
+        const auto canonical = c.vm.NewStringUtf8(text);
+        static_cast<void>(
+            CharsetLibraryCall(c.vm, "Ljava/nio/charset/Charset;", "<init>", "(Ljava/lang/String;[Ljava/lang/String;)V",
+                               {VmValue::Ref(object), VmValue::Ref(canonical), VmValue::Ref(VmObjectRef{})}));
         return VmValue::Ref(object);
     };
     b.StaticMethod("forName", "(Ljava/lang/String;)Ljava/nio/charset/Charset;", [make](IntrinsicContext& c) {
@@ -609,13 +826,13 @@ IntrinsicClassDecl Declare_java_nio_charset_Charset_Class() {
             CharsetLibraryCall(vm, "Llibcore/icu/NativeConverter;", "getAvailableCharsetNames", "()[Ljava/lang/String;")
                 .ref;
         const auto names_root = vm.ProtectReferences(std::array{names});
-        const auto comparator = vm.NewIntrinsicInstance("Ljava/lang/String$CaseInsensitiveComparator;");
-        const auto comparator_root = vm.ProtectReferences(std::array{comparator});
-        const auto comparator_type = vm.Model().ObjectClass(comparator);
-        const auto ctor = vm.Linker().FindDirectMethod(comparator_type, "<init>", "()V");
-        if (!ctor) throw DexVmError(DexVmErrorReason::unresolved_reference, "charset comparator constructor");
-        auto initialized = vm.Call(*ctor, std::array{VmValue::Ref(comparator)});
-        CharsetCallResult(vm, initialized);
+        const auto string_type = vm.Linker().ResolveDescriptor("Ljava/lang/String;");
+        static_cast<void>(CharsetCallResult(vm, vm.EnsureClassInitialized(string_type)));
+        const auto comparator_field =
+            vm.Linker().FindFieldRecursive(string_type, "CASE_INSENSITIVE_ORDER", "Ljava/util/Comparator;");
+        if (!comparator_field) throw DexVmError(DexVmErrorReason::unresolved_reference, "String comparator field");
+        const auto comparator =
+            VmObjectRef{vm.Linker().Class(string_type).static_storage[vm.Linker().Field(*comparator_field).slot]};
         const auto map = vm.NewIntrinsicInstance("Ljava/util/TreeMap;");
         const auto map_root = vm.ProtectReferences(std::array{map});
         const auto map_ctor =
@@ -671,21 +888,6 @@ IntrinsicClassDecl Declare_java_nio_charset_Charset_Class() {
     b.VirtualMethod("compareTo", "(Ljava/lang/Object;)I", compare, kAccPublic | kAccBridge | kAccSynthetic);
     b.FinalMethod("name", "()Ljava/lang/String;",
                   [name](IntrinsicContext& c) { return VmValue::Ref(IntrinsicCall(c).GetRef(name)); });
-    b.VirtualMethod("newEncoder", "()Ljava/nio/charset/CharsetEncoder;", [name](IntrinsicContext& call) {
-        auto& vm = call.vm;
-        const auto charset = vm.StringUtf8(IntrinsicCall(call).GetRef(name));
-        if (charset != "UTF-8") {
-            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.charset.new_encoder", 0);
-            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                              "streaming encoder is unavailable: " + charset};
-        }
-        const auto encoder = vm.NewIntrinsicInstance(kUtf8Encoder);
-        const auto root = vm.ProtectReferences(std::array{encoder});
-        static_cast<void>(CharsetLibraryCall(
-            vm, "Ljava/nio/charset/CharsetEncoder;", "<init>", "(Ljava/nio/charset/Charset;FF)V",
-            {VmValue::Ref(encoder), VmValue::Ref(call.receiver), VmValue::Float(1), VmValue::Float(3)}));
-        return VmValue::Ref(encoder);
-    });
     b.VirtualMethod("displayName", "()Ljava/lang/String;",
                     [name](IntrinsicContext& c) { return VmValue::Ref(IntrinsicCall(c).GetRef(name)); });
     b.OverrideMethod("toString", "()Ljava/lang/String;",
@@ -767,19 +969,7 @@ std::u16string DecodeCharset(std::span<const std::byte> bytes, const std::string
 }
 
 std::vector<std::byte> EncodeCharset(std::u16string_view text, const std::string& charset) {
-    if (charset == "UTF-8") {
-        std::u16string sanitized(text);
-        for (std::size_t i = 0; i < sanitized.size(); ++i) {
-            const auto unit = sanitized[i];
-            if (unit >= 0xd800U && unit <= 0xdbffU && i + 1U < sanitized.size() && sanitized[i + 1U] >= 0xdc00U &&
-                sanitized[i + 1U] <= 0xdfffU) {
-                ++i;
-            } else if (unit >= 0xd800U && unit <= 0xdfffU) {
-                sanitized[i] = u'?';
-            }
-        }
-        return detail::Utf8Encode(sanitized);
-    }
+    if (charset == "UTF-8") return detail::Utf8Encode(text);
     std::vector<std::byte> result;
     if (charset == "US-ASCII" || charset == "ISO-8859-1") {
         result.reserve(text.size());
@@ -887,7 +1077,10 @@ void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog) {
                                                   std::string("Ljava/nio/") + t.name + "Buffer;"));
     }
     catalog.push_back(Declare_java_nio_charset_Charset_Class());
-    catalog.push_back(Declare_org_ogplay_runtime_Utf8Encoder_Class());
+    catalog.push_back(Declare_java_nio_charset_Charsets_Natives());
+    catalog.push_back(DeclareBuiltinCharset());
+    catalog.push_back(DeclareBuiltinCharsetEncoder());
+    catalog.push_back(DeclareUtf16Decoder());
     catalog.push_back(Declare_libcore_io_Memory_Class());
     catalog.push_back(Declare_java_nio_FileChannelImpl_Overrides());
 }

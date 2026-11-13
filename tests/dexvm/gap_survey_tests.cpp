@@ -23,8 +23,6 @@ using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 struct Linked final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
@@ -33,7 +31,7 @@ struct Linked final {
     Interpreter interpreter;
 
     Linked()
-        : model(strings, arrays, {}),
+        : model(arrays, {}),
           interpreter(
               [this]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());

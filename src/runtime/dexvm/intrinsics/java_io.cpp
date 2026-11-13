@@ -344,7 +344,7 @@ IntrinsicClassDecl Declare_java_io_OutputStreamWriter_Class() {
     });
     b.OverrideMethod("write", "(Ljava/lang/String;II)V", [write](IntrinsicContext& c) {
         if (!c.arguments[0].ref.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "string == null"};
-        const auto& text = Value(c, c.arguments[0].ref);
+        const auto text = c.vm.Model().StringChars(c.arguments[0].ref);
         const auto offset = c.arguments[1].AsInt();
         const auto count = c.arguments[2].AsInt();
         if (offset < 0 || count < 0 ||

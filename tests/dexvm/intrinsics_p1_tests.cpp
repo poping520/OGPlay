@@ -45,8 +45,6 @@ std::vector<std::uint8_t> ReadFixture(const std::string& name) {
 }
 
 struct Vm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
@@ -58,7 +56,7 @@ struct Vm final {
 
     explicit Vm(const InterpreterConfig config = {}, const bool load_boot_dex = true,
                 const CoreIntrinsicServices& services = {}, const bool full_platform = false)
-        : model(strings, arrays), linker(),
+        : model(arrays), linker(),
           interpreter(
               [this, load_boot_dex, &services, full_platform]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
@@ -250,7 +248,11 @@ TEST_CASE("dexvm String.toLowerCase fast path preserves API19 value and identity
     REQUIRE_FALSE(unchanged.exception.IsValid());
     CHECK(unchanged.value.ref == stable);
 
-    ExpectThrow(vm, call(mixed, VmObjectRef{}), "Ljava/lang/NullPointerException;", "locale == null");
+    const auto null_locale = call(mixed, VmObjectRef{});
+    REQUIRE(null_locale.exception.IsValid());
+    CHECK(vm.linker.Class(null_locale.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+    // API19 CaseMapper.toLowerCase dereferences the locale via Locale.getLanguage().
+    CHECK(null_locale.exception_message.find("Ljava/util/Locale;.getLanguage()") != std::string::npos);
     // Unicode conversion is exercised with the real guest ICU backend in DVM-342.
 }
 

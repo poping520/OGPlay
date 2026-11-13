@@ -260,6 +260,7 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     request.boundary_options.logger = &logger;
     request.initial_environment = std::make_shared<const runtime::GuestProcessEnvironment>(
         runtime::GuestProcessEnvironment::Api19(context->external_storage_root));
+    request.monotonic_nanos = [context] { return context->uptime_nanos.load(); };
     auto session = runtime::AndroidGuestCallSession::AdoptProcess(runtime::AndroidGuestProcess::Start(request));
     std::vector<loader::ApkNativeLibrary> application_libraries;
     if (!options.native_lib_dir.empty()) {
@@ -296,6 +297,8 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     config.interpreter.enable_assertions = options.enable_assertions;
     config.interpreter.backend =
         options.backend == "threaded" ? dx::InterpreterBackend::threaded : dx::InterpreterBackend::switch_dispatch;
+    static_cast<void>(native_libraries.LoadPath("/system/lib/libogplay_jni.so", context->application_class_loader_token,
+                                                runtime::NativeLibraryEntry::native_activity));
     runtime::DexVmGuestBridge bridge(*session, std::move(app_dex), catalog, context, ledger, &logger, config,
                                      std::move(boot_dex));
     static_cast<void>(native_libraries.LoadLibrary("ogplay_jni", context->application_class_loader_token));
@@ -315,7 +318,7 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     vm.Monitors().SetClockAdvance({});
     vm.Monitors().SetRealtimeSource({});
     std::jthread clock_driver([context](const std::stop_token stop) {
-        hal::RealtimeClock clock(1000);
+        hal::RealtimeClock clock;
         auto last = clock.Ticks();
         while (!stop.stop_requested()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));

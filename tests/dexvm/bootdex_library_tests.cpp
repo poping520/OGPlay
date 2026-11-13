@@ -128,7 +128,7 @@ TEST_CASE("API19 Build family executes from BootDex without class intrinsics") {
 
 TEST_CASE("DVM-103 intrinsic handlers win over boot DEX bodies and collections stay ordinary DEX") {
     Dvm87Vm f;
-    auto catalog = CoreIntrinsicCatalog();
+    auto catalog = CoreIntrinsicCatalog(AndroidCoreIntrinsicServices(f.context));
     const auto android = AndroidIntrinsicCatalog(f.context);
     catalog.insert(catalog.end(), android.begin(), android.end());
     std::map<std::string, bool> handled;  // "owner->name(descriptor)" -> has a handler

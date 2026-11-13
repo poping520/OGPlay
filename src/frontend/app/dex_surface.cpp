@@ -38,12 +38,11 @@ std::string DumpDexSurface(const std::filesystem::path& framework_directory) {
         writer.AddString(services, entry.name, entry.Provided() ? "provided" : "unsupported");
     }
     writer.Add(tables, "system_services", services);
-    const auto properties = writer.Object();
-    for (const auto& entry : runtime::dexvm::kSystemProperties) {
-        writer.AddString(properties, entry.key,
-                         entry.source.empty() ? std::string(entry.value) : "source: " + std::string(entry.source));
-    }
-    writer.Add(tables, "system_properties", properties);
+    const auto system = linker.ResolveDescriptor("Ljava/lang/System;");
+    const auto initialize = linker.FindDirectMethod(system, "initSystemProperties", "()V");
+    if (linker.Class(system).is_boot_dex && initialize &&
+        linker.Method(*initialize).kind == runtime::dexvm::MethodKind::interpreted)
+        writer.AddString(tables, "system_properties_owner", "rom");
     writer.Add(root, "platform_tables", tables);
     return writer.Serialize(root);
 }

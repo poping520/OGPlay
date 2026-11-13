@@ -1,7 +1,8 @@
 // Generated from fixed API 19 core.jar Posix native shape.
 posix.UnimplementedDirect("preadBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIJ)I");
 posix.UnimplementedDirect("pwriteBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIJ)I");
-posix.UnimplementedDirect("recvfromBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetSocketAddress;)I");
+posix.UnimplementedDirect("recvfromBytes",
+                          "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetSocketAddress;)I");
 posix.UnimplementedDirect("sendtoBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetAddress;I)I");
 posix.UnimplementedDirect("umaskImpl", "(I)I");
 posix.UnimplementedVirtual("accept", "(Ljava/io/FileDescriptor;Ljava/net/InetSocketAddress;)Ljava/io/FileDescriptor;");
@@ -9,21 +10,18 @@ posix.UnimplementedVirtual("bind", "(Ljava/io/FileDescriptor;Ljava/net/InetAddre
 posix.UnimplementedVirtual("chown", "(Ljava/lang/String;II)V");
 posix.UnimplementedVirtual("connect", "(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V");
 posix.UnimplementedVirtual("dup2", "(Ljava/io/FileDescriptor;I)Ljava/io/FileDescriptor;");
-posix.UnimplementedVirtual("environ", "()[Ljava/lang/String;");
 posix.UnimplementedVirtual("execv", "(Ljava/lang/String;[Ljava/lang/String;)V");
 posix.UnimplementedVirtual("execve", "(Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;)V");
 posix.UnimplementedVirtual("fchmod", "(Ljava/io/FileDescriptor;I)V");
 posix.UnimplementedVirtual("fchown", "(Ljava/io/FileDescriptor;II)V");
 posix.UnimplementedVirtual("fstatvfs", "(Ljava/io/FileDescriptor;)Llibcore/io/StructStatVfs;");
 posix.UnimplementedVirtual("getegid", "()I");
-posix.UnimplementedVirtual("getenv", "(Ljava/lang/String;)Ljava/lang/String;");
 posix.UnimplementedVirtual("geteuid", "()I");
 posix.UnimplementedVirtual("getgid", "()I");
 posix.UnimplementedVirtual("getpeername", "(Ljava/io/FileDescriptor;)Ljava/net/SocketAddress;");
 if (!services.process_id) posix.UnimplementedVirtual("getpid", "()I");
 posix.UnimplementedVirtual("getppid", "()I");
 posix.UnimplementedVirtual("getpwnam", "(Ljava/lang/String;)Llibcore/io/StructPasswd;");
-posix.UnimplementedVirtual("getpwuid", "(I)Llibcore/io/StructPasswd;");
 posix.UnimplementedVirtual("getsockname", "(Ljava/io/FileDescriptor;)Ljava/net/SocketAddress;");
 posix.UnimplementedVirtual("getsockoptByte", "(Ljava/io/FileDescriptor;II)I");
 posix.UnimplementedVirtual("getsockoptInAddr", "(Ljava/io/FileDescriptor;II)Ljava/net/InetAddress;");
@@ -46,7 +44,8 @@ posix.UnimplementedVirtual("munmap", "(JJ)V");
 posix.UnimplementedVirtual("pipe", "()[Ljava/io/FileDescriptor;");
 posix.UnimplementedVirtual("poll", "([Llibcore/io/StructPollfd;I)I");
 posix.UnimplementedVirtual("readv", "(Ljava/io/FileDescriptor;[Ljava/lang/Object;[I[I)I");
-posix.UnimplementedVirtual("sendfile", "(Ljava/io/FileDescriptor;Ljava/io/FileDescriptor;Llibcore/util/MutableLong;J)J");
+posix.UnimplementedVirtual("sendfile",
+                           "(Ljava/io/FileDescriptor;Ljava/io/FileDescriptor;Llibcore/util/MutableLong;J)J");
 posix.UnimplementedVirtual("setegid", "(I)V");
 posix.UnimplementedVirtual("setenv", "(Ljava/lang/String;Ljava/lang/String;Z)V");
 posix.UnimplementedVirtual("seteuid", "(I)V");

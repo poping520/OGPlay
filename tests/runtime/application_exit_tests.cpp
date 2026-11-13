@@ -80,7 +80,7 @@ TEST_CASE("DVM-150 Java exit cannot be caught by Application onCreate") {
     REQUIRE(field);
     const runtime::dexvm::VmObjectRef observed(vm.Linker().Class(hook).static_storage[vm.Linker().Field(*field).slot]);
     CHECK(vm.StringUtf8(observed) == "done");
-    CHECK(fixture.context->uptime_millis.load() >= 10);
+    CHECK(fixture.context->UptimeMillis() >= 10);
     CHECK_FALSE(fixture.app->NativeProcess().ManagedSurfaceIsOpen());
 }
 
@@ -116,9 +116,10 @@ TEST_CASE("DVM-150 Runtime exit propagates through guest JNI OnLoad reentry") {
     ogplay::test::BindBootDexArchive(*context);
     core::CapabilityLedger ledger;
     auto catalog = runtime::AndroidIntrinsicCatalog(context);
-    auto bridge =
-        std::make_unique<runtime::DexVmGuestBridge>(*session, ReadDexFixture("aps5.dex"), catalog, context, ledger,
-                                                    nullptr, runtime::DexVmBridgeConfig{}, ogplay::test::ReadBootDex());
+    auto bridge = std::make_unique<runtime::DexVmGuestBridge>(
+        *session, ReadDexFixture("aps5.dex"), catalog, context, ledger, nullptr,
+        runtime::DexVmBridgeConfig{.configure_core_services = ogplay::test::BindCoreBootFixtureFacts},
+        ogplay::test::ReadBootDex());
     const auto type = bridge->Linker().ResolveDescriptor("Lfixture/Aps5;");
     const auto initialized = bridge->Vm().EnsureClassInitialized(type);
     REQUIRE_FALSE(initialized.exception.IsValid());

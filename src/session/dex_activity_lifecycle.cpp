@@ -15,7 +15,7 @@ namespace {
 namespace dx = runtime::dexvm;
 using ActivityRequest = runtime::DexVmAndroidContext::HostActivityRequest;
 
-constexpr std::int64_t kMillisPerFrame = 16;
+constexpr std::int64_t kNanosPerFrame = 16'000'000;
 constexpr std::uint64_t kMaxCatchUpMillis = 100;
 constexpr std::uint64_t kCallbackBudgetNs = 2'000'000'000;
 constexpr std::uint64_t kStartupBudgetNs = 10'000'000'000;
@@ -139,6 +139,7 @@ LifecycleFrameState DexActivityLifecycle::Start() {
             *bindings_.context,
             {ActivityRequest::Kind::launch, bindings_.launcher_descriptor, bindings_.launcher_component_name});
         AwaitIdle(kStartupBudgetNs);
+        previous_step_ns_ = realtime_now_ns_ ? realtime_now_ns_() : hal::Clock::SteadyTimestampNs();
         state_ = LifecycleRunState::running;
         if (bindings_.diagnostics) bindings_.diagnostics->SetLifecyclePhase("running", false);
     } catch (...) {
@@ -171,7 +172,7 @@ LifecycleFrameState DexActivityLifecycle::Resume() {
     runtime::AdvanceEglSwapPacer(*bindings_.context);
     AwaitIdle(kCallbackBudgetNs);
     suspended_ = false;
-    previous_step_ns_ = 0;
+    previous_step_ns_ = realtime_now_ns_ ? realtime_now_ns_() : hal::Clock::SteadyTimestampNs();
     producer_wait_started_ns_ = 0;
     return State();
 }
@@ -185,7 +186,7 @@ void DexActivityLifecycle::QueueInput(const runtime::AndroidBoundaryInput& input
     auto event = input;
     event.device_id = event.type == runtime::AndroidBoundaryInputType::key ? runtime::kAndroidKeyboardDeviceId
                                                                            : runtime::kAndroidTouchDeviceId;
-    const auto now = bindings_.context->uptime_millis.load() * 1'000'000;
+    const auto now = bindings_.context->uptime_nanos.load();
     if (auto stamped = input_timeline_.Stamp(std::move(event), now)) pending_input_.push_back(std::move(*stamped));
 }
 
@@ -193,7 +194,7 @@ void DexActivityLifecycle::CancelInput() {
     if (state_ != LifecycleRunState::running) return;
     pending_input_.clear();
     auto& context = *bindings_.context;
-    static_cast<void>(input_timeline_.Cancel(context.uptime_millis.load() * 1'000'000));
+    static_cast<void>(input_timeline_.Cancel(context.uptime_nanos.load()));
     auto& vm = bindings_.bridge->Vm();
     const dx::VmExecutionLockScope execution(vm.ExecutionLock());
     if (context.rom_windows)
@@ -203,6 +204,8 @@ void DexActivityLifecycle::CancelInput() {
 
 void DexActivityLifecycle::SetRealtimeTimeSourceForTesting(std::function<std::uint64_t()> now_ns) {
     realtime_now_ns_ = std::move(now_ns);
+    if (state_ == LifecycleRunState::running)
+        previous_step_ns_ = realtime_now_ns_ ? realtime_now_ns_() : hal::Clock::SteadyTimestampNs();
 }
 
 void DexActivityLifecycle::SetEglProducerWaitBudgetForTesting(std::uint64_t budget_ns) noexcept {
@@ -248,17 +251,16 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
         AwaitProducers();
         const auto now = realtime_now_ns_ ? realtime_now_ns_() : hal::Clock::SteadyTimestampNs();
         // Realtime uptime follows host time, independent of the step rate; the frame-rate cap only
-        // paces steps. Sub-millisecond remainders carry over, and a stalled step catches up at most
-        // kMaxCatchUpMillis. Manual stepping keeps one fixed frame period per step.
-        auto delta = kMillisPerFrame;
-        if (realtime_ && previous_step_ns_ != 0U) {
-            const auto elapsed_ms = now > previous_step_ns_ ? (now - previous_step_ns_) / 1'000'000U : 0U;
-            previous_step_ns_ += elapsed_ms * 1'000'000U;
-            delta = static_cast<std::int64_t>(std::min<std::uint64_t>(elapsed_ms, kMaxCatchUpMillis));
-        } else if (realtime_) {
-            previous_step_ns_ = now;
+        // paces steps. A stalled step catches up at most
+        // kMaxCatchUpMillis. Manual stepping keeps one fixed frame period per step. Native sleeps
+        // of the driver inside the previous step already advanced uptime and are netted out.
+        auto delta = kNanosPerFrame;
+        if (realtime_) {
+            const auto elapsed_ns = now > previous_step_ns_ ? now - previous_step_ns_ : 0U;
+            previous_step_ns_ = std::max(previous_step_ns_, now);
+            delta = static_cast<std::int64_t>(std::min(elapsed_ns, kMaxCatchUpMillis * 1'000'000U));
         }
-        runtime::AdvanceAndroidClock(context, delta);
+        runtime::AdvanceAndroidFrameClock(context, delta);
         std::shared_ptr<runtime::RomWindowState> windows;
         bool media_tick{};
         {
@@ -333,7 +335,7 @@ LifecycleFrameState DexActivityLifecycle::Stop(DexProcessStopReason reason) {
             const auto deadline = hal::Clock::SteadyTimestampNs() + kCallbackBudgetNs;
             vm.SetDefaultExecutionDeadline(deadline);
             runtime::QueueAndroidActivityRequest(context, {ActivityRequest::Kind::shutdown, {}, {}});
-            auto last_ms = hal::Clock::SteadyTimestampNs() / 1'000'000;
+            auto last_ns = hal::Clock::SteadyTimestampNs();
             while (!context.activities_destroyed.load() || !runtime::AndroidMainQueueIdle(context)) {
                 if (vm.ExitCode() || session.NativeExitCode()) break;
                 const auto now = hal::Clock::SteadyTimestampNs();
@@ -347,9 +349,8 @@ LifecycleFrameState DexActivityLifecycle::Stop(DexProcessStopReason reason) {
                     if (vm.ExitCode() || session.NativeExitCode()) break;
                     throw;
                 }
-                const auto ms = now / 1'000'000;
-                runtime::AdvanceAndroidClock(context, static_cast<std::int64_t>(ms - last_ms));
-                last_ms = ms;
+                runtime::AdvanceAndroidFrameClock(context, static_cast<std::int64_t>(now - last_ns));
+                last_ns = now;
                 runtime::QueueAndroidDisplayFrame(vm.ExecutionLock(), context);
                 hal::SleepPreciseNs(1'000'000);
             }

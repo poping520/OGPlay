@@ -178,8 +178,12 @@ private:
 
 [[nodiscard]] A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(core::CapabilityLedger& ledger,
                                                                      AndroidProcessIdentity identity = {});
+inline constexpr std::int64_t kAndroidWallEpochMillis = 1'400'000'000'000LL;
+
 void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock, memory::AddressSpace& address_space,
-                             std::function<void(std::uint64_t, std::chrono::nanoseconds)> admit_sleep = {});
+                             std::function<void(std::uint64_t, std::chrono::nanoseconds)> admit_sleep = {},
+                             std::function<std::uint64_t()> monotonic_nanos = {},
+                             std::function<void(std::uint64_t, std::chrono::nanoseconds)> account_sleep = {});
 void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space);
 void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher, cpu::FutexTable& futex_table,
                                memory::MemoryBus& memory_bus,

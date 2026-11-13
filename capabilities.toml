@@ -331,7 +331,7 @@ note = "M4 黄金帧按宿主硬件 backend 逐像素匹配 SoftwareSurface；Wi
 [hal.clock]
 status = "complete"
 test = "tests/hal/clock_tests.cpp"
-note = "M1 统一实时时钟与固定步长时钟，支持精确倍率、暂停及可注入单调时间源"
+note = "统一实时时钟与固定步长时钟，支持倍率、暂停及注入单调时间源。Android 纳秒 uptime 同时供 Java 与原生时间系统调用读取。"
 
 [hal.scoped_environment]
 status = "partial"
@@ -1026,7 +1026,7 @@ note = "M5  事务映射通用 API 19 root TLS/thread-info/preinit、栈、SVC �
 [runtime.api19_guest_environment]
 status = "complete"
 test = "tests/runtime/api19_guest_process_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp"
-note = "以每进程 OGPlay 配置初始化 PATH、ANDROID_ROOT、ANDROID_DATA、EXTERNAL_STORAGE，不继承宿主环境；Bionic environ 是运行时唯一权威，System.getenv(String)/getenv 经 CoreIntrinsicServices 受检读取当前值，无参返回 BootDex SystemEnvironment 不可修改快照；条目、单项与总字节有界，畸形 environ 明确失败"
+note = "以每进程 OGPlay 配置初始化 PATH、ANDROID_ROOT、ANDROID_DATA、EXTERNAL_STORAGE，不继承宿主环境；Bionic environ 是运行时唯一权威，ROM System.getenv 经 Posix 从同一进程环境快照受检读取当前值，无参返回 BootDex SystemEnvironment 不可修改快照；条目、单项与总字节有界，畸形 environ 明确失败"
 
 [runtime.android_guest_call_session]
 status = "complete"
@@ -1256,7 +1256,7 @@ note = "日期 Java 原样执行 pinned API19 core.jar，区域 native 使用 gu
 [dexvm.print_stream_bootdex]
 status = "partial"
 test = "tests/dexvm/android_logging_tests.cpp#DVM226; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
-note = "原版 PrintStream 在 BootDex 中执行，目标流、编码、刷新、错误与 Throwable 输出归 Java；System.out/err 经独立 LogOutputStream 的 native emit 写结构化日志。printf/format 受 Formatter/ICU 长尾限制；任意编码、二进制终端与跨平台未验收。"
+note = "System 与 PrintStream 执行原版 API19 Java。System 初始流接入 fd 0/1/2，应用启动经 RuntimeInit 产生 System.out/System.err 日志，run-dex 可接收原始输出字节。printf/format 受 Formatter/ICU 长尾限制；任意编码、二进制终端与跨平台未验收。"
 
 [dexvm.throwable_bootdex]
 status = "complete"
@@ -1361,7 +1361,7 @@ note = "统一 VmObjectRef 句柄空间；session 拥有的 JniGuestObjectRegist
 [dexvm.gc]
 status = "partial"
 test = "tests/dexvm/gc_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/dexvm/audio_track_tests.cpp; tools.title_profiles_current; tools.scenarios_current; tests/runtime/application_startup_tests.cpp#DVM-354; tests/loader/apk_manifest_tests.cpp#DVM-354"
-note = "精确 STW、三层堆；API19 1 GiB 档位 8/96/256 MiB，largeHeap 在 Application 前放开至 256；普通 memory class 保持 96。Weak/Soft/Phantom 清理入队；原版 FinalizerReference/Daemons 执行、一次复活、吞异常，runFinalization 等当前批次；10 秒 watchdog 按停摆真实流速判定并请求 exit(2)。finalizersOnExit、长时 gate 未验收。"
+note = "精确 STW、三层堆；API19 1 GiB 档位 8/96/256 MiB，largeHeap 在 Application 前放开至 256；普通 memory class 保持 96。Weak/Soft/Phantom 清理入队；原版 FinalizerReference/Daemons 执行、一次复活、吞异常，runFinalization 按原版 LIFO sentinel 协议；10 秒 watchdog 按停摆真实流速判定并请求 exit(2)。finalizersOnExit 执行 ROM 顺序；长时 gate 未验收。"
 
 [dexvm.interpreter_core]
 status = "complete"
@@ -1421,7 +1421,7 @@ note = "API 19 System.<clinit> 经既有 getProperty(line.separator) 冻结 priv
 [dexvm.system_properties]
 status = "partial"
 test = "tests/dexvm/core_catalog_tests.cpp#dexvm System properties are deterministic and mutable; tests/dexvm/android_context_services_tests.cpp#DVM-264; tests/runtime/guest_native_values_tests.cpp#DVM-264; tests/dexvm/file_vfs_tests.cpp#File first-batch path and object semantics match on both backends; tests/runtime/application_startup_tests.cpp#DexVM bridge publishes the guest VFS working directory"
-note = "默认键覆盖 API19 initSystemProperties，getProperties/getProperty/setProperty 共用 live BootDex Properties。os.* 与 guest uname 同源，真实 Bionic 提供 passwd；ICU 可用时查询 guest 导出，否则用随附 manifest 元数据。绑定 Application 前以 cacheDir 改写 tmpdir，VFS 提供 user.dir。不支持完整 VM 参数/属性重置；纯 VM 的 passwd 和无环境 library.path 默认值独立出处尚待审计。"
+note = "ROM initSystemProperties 持有唯一 Properties，可经 setProperties(null) 重建。Posix 读取 Bionic 环境与 passwd，ICU 版本查询随附 ICU51。VFS 提供 user.dir，应用绑定由 ROM 设置 cacheDir；不支持完整 VM 启动参数。"
 
 [dexvm.observable]
 status = "complete"
@@ -1651,7 +1651,7 @@ note = "Pattern/Matcher 普通协议及异常使用 API19 BootDex，native 经 g
 [dexvm.java_concurrent_core]
 status = "complete"
 test = "tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp"
-note = "atomic、CountDownLatch/Semaphore/CyclicBarrier、concurrent 容器、ThreadLocal、FutureTask 与 Executors/定时执行器均执行 API19 BootDex，线程阻塞、中断与取消真实生效；nanoTime 读统一 Clock，availableProcessors 为 1。高争用容器性能、privileged 工厂与安全上下文未纳入。"
+note = "atomic、CountDownLatch/Semaphore/CyclicBarrier、concurrent 容器、ThreadLocal、FutureTask 与 Executors/定时执行器均执行 API19 BootDex，线程阻塞、中断与取消真实生效；nanoTime 读统一纳秒 Clock，availableProcessors 为进程配置核数。高争用容器性能、privileged 工厂与安全上下文未纳入。"
 
 [dexvm.java_network]
 status = "complete"
@@ -1936,7 +1936,7 @@ note = "ROM TextView、ColorStateList、StateSet 和主题协议读取应用与�
 [dexvm.runtime_shutdown_hooks]
 status = "complete"
 test = "tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp#DVM-150; tests/runtime/application_exit_tests.cpp#DVM-150"
-note = "Runtime add/removeShutdownHook/exit/halt 执行原版 Java，hook 列表为 GC 强根；System.exit 保存每 VM 退出码，Java catch 无法吞掉退出。宿主 Stop 仍为取消；finalizer/堆查询见 dexvm.gc。run-dex 等待非 daemon；hook 超时及 finalizersOnExit 未支持。"
+note = "Runtime add/removeShutdownHook/exit/halt 与 finalization 执行 API19 ROM Java。System.exit 保留退出码，hook 完成后按原版协议运行 finalization，随后由 nativeExit 停止 VM。宿主 Stop 保持取消语义。"
 
 [runtime.egl_khr_object_boundary]
 status = "partial"

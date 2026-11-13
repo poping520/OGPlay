@@ -801,7 +801,7 @@ void ShowFrontToast(dx::Interpreter& vm, const Context& context) {
     const auto record = context->toasts.front();
     static_cast<void>(CallAndroidMethod(vm, record.callback, "show", "()V", {}));
     const auto delay = record.duration == 1 ? 3500 : 2000;
-    const auto now = context->uptime_millis.load();
+    const auto now = context->UptimeMillis();
     context->toast_deadline_millis = std::min(now, std::numeric_limits<std::int64_t>::max() - delay) + delay;
     NotifyAndroidScheduler(*context);
 }
@@ -817,7 +817,7 @@ void CancelToast(dx::Interpreter& vm, const Context& context,
 }  // namespace
 
 void PumpRomToastQueue(dx::Interpreter& vm, const Context& context) {
-    if (!context->toasts.empty() && context->uptime_millis.load() >= context->toast_deadline_millis.load())
+    if (!context->toasts.empty() && context->UptimeMillis() >= context->toast_deadline_millis.load())
         CancelToast(vm, context, context->toasts.begin());
 }
 

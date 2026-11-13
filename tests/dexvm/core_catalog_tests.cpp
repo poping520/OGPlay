@@ -89,21 +89,18 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Llibcore/io/Posix;.chown(Ljava/lang/String;II)V",
         "Llibcore/io/Posix;.connect(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V",
         "Llibcore/io/Posix;.dup2(Ljava/io/FileDescriptor;I)Ljava/io/FileDescriptor;",
-        "Llibcore/io/Posix;.environ()[Ljava/lang/String;",
         "Llibcore/io/Posix;.execv(Ljava/lang/String;[Ljava/lang/String;)V",
         "Llibcore/io/Posix;.execve(Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;)V",
         "Llibcore/io/Posix;.fchmod(Ljava/io/FileDescriptor;I)V",
         "Llibcore/io/Posix;.fchown(Ljava/io/FileDescriptor;II)V",
         "Llibcore/io/Posix;.fstatvfs(Ljava/io/FileDescriptor;)Llibcore/io/StructStatVfs;",
         "Llibcore/io/Posix;.getegid()I",
-        "Llibcore/io/Posix;.getenv(Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/io/Posix;.geteuid()I",
         "Llibcore/io/Posix;.getgid()I",
         "Llibcore/io/Posix;.getpeername(Ljava/io/FileDescriptor;)Ljava/net/SocketAddress;",
         "Llibcore/io/Posix;.getpid()I",
         "Llibcore/io/Posix;.getppid()I",
         "Llibcore/io/Posix;.getpwnam(Ljava/lang/String;)Llibcore/io/StructPasswd;",
-        "Llibcore/io/Posix;.getpwuid(I)Llibcore/io/StructPasswd;",
         "Llibcore/io/Posix;.getsockname(Ljava/io/FileDescriptor;)Ljava/net/SocketAddress;",
         "Llibcore/io/Posix;.getsockoptByte(Ljava/io/FileDescriptor;II)I",
         "Llibcore/io/Posix;.getsockoptInAddr(Ljava/io/FileDescriptor;II)Ljava/net/InetAddress;",
@@ -160,23 +157,13 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Llibcore/icu/ICU;.getAvailableCurrencyCodes()[Ljava/lang/String;",
         "Llibcore/icu/ICU;.getAvailableDateFormatLocalesNative()[Ljava/lang/String;",
         "Llibcore/icu/ICU;.getAvailableNumberFormatLocalesNative()[Ljava/lang/String;",
-        "Llibcore/icu/ICU;.getCldrVersion()Ljava/lang/String;",
-        "Llibcore/icu/ICU;.getIcuVersion()Ljava/lang/String;",
         "Llibcore/icu/ICU;.getScript(Ljava/lang/String;)Ljava/lang/String;",
-        "Llibcore/icu/ICU;.getUnicodeVersion()Ljava/lang/String;",
         "Llibcore/icu/NativeDecimalFormat;.formatDigitList(JLjava/lang/String;Llibcore/icu/NativeDecimalFormat$FieldPositionIterator;)[C",
         "Llibcore/icu/NativeDecimalFormat;.formatDouble(JDLlibcore/icu/NativeDecimalFormat$FieldPositionIterator;)[C",
 
-        "Ljava/lang/System;.currentTimeMillis()J",
-        "Ljava/lang/System;.nanoTime()J",
-        "Ljava/lang/System;.load(Ljava/lang/String;)V",
-        "Ldalvik/system/VMRuntime;.bootClassPath()Ljava/lang/String;",
-        "Ldalvik/system/VMRuntime;.classPath()Ljava/lang/String;",
         "Ldalvik/system/VMRuntime;.preloadDexCaches()V",
-        "Ldalvik/system/VMRuntime;.properties()[Ljava/lang/String;",
         "Ldalvik/system/VMRuntime;.setTargetSdkVersion(I)V",
         "Ldalvik/system/VMRuntime;.vmLibrary()Ljava/lang/String;",
-        "Ldalvik/system/VMRuntime;.vmVersion()Ljava/lang/String;",
         "Ljava/lang/Runtime;.nativeLoad(Ljava/lang/String;Ljava/lang/ClassLoader;Ljava/lang/String;)Ljava/lang/String;",
         "Ljava/lang/AssertionError;.<init>"
         "(Ljava/lang/String;Ljava/lang/Throwable;)V",
@@ -787,7 +774,10 @@ TEST_CASE("dexvm primitive wrapper parsing bits and Character boundaries") {
     ExpectInt(
         vm.CallStatic("Ljava/lang/Character;", "toCodePoint", "(CC)I", {VmValue::Int(0xdbff), VmValue::Int(0xdfff)}),
         0x10ffff);
-    static_cast<void>(vm.interpreter.SetSystemProperty("feature.enabled", "TrUe"));
+    REQUIRE_FALSE(vm.CallStatic("Ljava/lang/System;", "setProperty",
+                                "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+                                {string("feature.enabled"), string("TrUe")})
+                      .exception.IsValid());
     ExpectInt(vm.CallStatic("Ljava/lang/Boolean;", "getBoolean", "(Ljava/lang/String;)Z", {string("feature.enabled")}),
               1);
     CHECK(static_bits("Ljava/lang/Byte;", "MAX_VALUE", "B") == 127U);
@@ -873,7 +863,7 @@ TEST_CASE("dexvm java.lang interfaces are in lang family TU") {
     std::ifstream header(directory / "catalog.h", std::ios::binary);
     REQUIRE(header.good());
     const std::string source(std::istreambuf_iterator<char>(header), {});
-    CHECK(source.find("AppendDalvikVmRuntimeNatives") != std::string::npos);
+    CHECK(source.find("Declare_dalvik_system_VMRuntime_Natives") != std::string::npos);
     for (const auto& name : classes) {
         CAPTURE(name);
         CHECK(source.find("Declare_java_lang_" + name + "_Class") == std::string::npos);
@@ -942,6 +932,21 @@ TEST_CASE("dexvm System properties are deterministic and mutable") {
     CHECK(vm.interpreter.StringUtf8(removed.value.ref) == "second");
     CHECK_FALSE(get_property("ogplay.test").value.ref.IsValid());
     CHECK_FALSE(vm.interpreter.Call(clear, std::array{string("ogplay.test")}).value.ref.IsValid());
+
+    for (const auto method : {get, set, clear}) {
+        for (const bool empty : {false, true}) {
+            std::vector args{empty ? string("") : VmValue::Ref(VmObjectRef{})};
+            if (method == set) args.push_back(string("value"));
+            const auto result = vm.interpreter.Call(method, args);
+            ExpectException(vm, result,
+                            empty ? "Ljava/lang/IllegalArgumentException;" : "Ljava/lang/NullPointerException;");
+            CHECK(result.exception_message == (empty ? "name is empty" : "name == null"));
+        }
+    }
+    const auto reset = vm.CallStatic("Ljava/lang/System;", "setProperties", "(Ljava/util/Properties;)V",
+                                     {VmValue::Ref(VmObjectRef{})});
+    REQUIRE_FALSE(reset.exception.IsValid());
+    CHECK(vm.interpreter.StringUtf8(get_property("line.separator").value.ref) == "\n");
 
     ExpectException(vm, vm.interpreter.Call(get, std::vector<VmValue>{VmValue::Ref(VmObjectRef{})}),
                     "Ljava/lang/NullPointerException;");

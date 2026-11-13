@@ -277,12 +277,29 @@ public:
                     if (request.guest_call_slice_observer_thread)
                         request.guest_call_slice_observer_thread = std::this_thread::get_id();
                     auto native_process = runtime::AndroidGuestProcess::Start(
-                        {request.api_level, system.inputs, request.backend, request.surface_width,
-                         request.surface_height, request.maximum_ticks_per_call, request.supersample_factor,
-                         request.filesystem, std::move(request.progress), std::nullopt, request.boundary_options,
-                         std::move(request.sound_resource_loader), std::move(request.guest_call_slice_observer),
-                         std::move(request.platform), request.proc_facts, request.diagnostics,
-                         std::move(guest_environment), request.guest_call_slice_observer_thread});
+                        {request.api_level,
+                         system.inputs,
+                         request.backend,
+                         request.surface_width,
+                         request.surface_height,
+                         request.maximum_ticks_per_call,
+                         request.supersample_factor,
+                         request.filesystem,
+                         std::move(request.progress),
+                         std::nullopt,
+                         request.boundary_options,
+                         std::move(request.sound_resource_loader),
+                         std::move(request.guest_call_slice_observer),
+                         std::move(request.platform),
+                         request.proc_facts,
+                         request.diagnostics,
+                         std::move(guest_environment),
+                         request.guest_call_slice_observer_thread,
+                         [context = context] { return context->uptime_nanos.load(); },
+                         [context = context](const std::chrono::nanoseconds slept) {
+                             if (std::this_thread::get_id() == context->clock_driver)
+                                 runtime::AdvanceAndroidClockForDriverSleep(*context, slept.count());
+                         }});
                     session = runtime::AndroidGuestCallSession::AdoptProcess(std::move(native_process));
                     state = AndroidAppProcessState::native_process_ready;
 
@@ -395,6 +412,11 @@ public:
                     context->api_level = static_cast<std::int32_t>(request.api_level);
                     context->vfs = request.filesystem;
 
+                    if (guest_jni != request.system_libraries.end())
+                        static_cast<void>(native_libraries->LoadPath("/system/lib/libogplay_jni.so",
+                                                                     context->application_class_loader_token,
+                                                                     runtime::NativeLibraryEntry::native_activity));
+
                     auto catalog = runtime::AndroidIntrinsicCatalog(context);
                     bridge = std::make_unique<runtime::DexVmGuestBridge>(
                         *session, std::move(request.dex_bytes), catalog, context, *request.ledger, request.logger,
@@ -407,6 +429,15 @@ public:
                             Fail("API 19 guest JNI initialization failed: " + std::string(error.what()));
                         }
                     }
+                    auto& vm = bridge->Vm();
+                    auto& linker = bridge->Linker();
+                    const auto runtime_init = linker.ResolveDescriptor("Lcom/android/internal/os/RuntimeInit;");
+                    const auto redirect = linker.FindDirectMethod(runtime_init, "redirectLogStreams", "()V");
+                    if (!redirect) Fail("RuntimeInit.redirectLogStreams is unavailable");
+                    const auto streams = vm.Call(*redirect, {});
+                    if (streams.exception.IsValid())
+                        Fail("RuntimeInit.redirectLogStreams failed: " + streams.exception_message +
+                             vm.DescribeThrowableCauses(streams.exception));
                     context->threads = &bridge->Threads();
                     if (request.configure_dex_vm) {
                         request.configure_dex_vm(bridge->Vm());

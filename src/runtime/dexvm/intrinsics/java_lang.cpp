@@ -9,90 +9,108 @@
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
-void AppendDalvikVmRuntimeNatives(std::vector<IntrinsicClassDecl>& catalog) {
-    {
-        auto b = IntrinsicClassBuilder::Class("Ldalvik/system/VMRuntime;");
-        b.MergesBootClass();
-        for (const auto& [name, signature] :
-             std::array{std::pair{"bootClassPath", "()Ljava/lang/String;"},
-                        std::pair{"classPath", "()Ljava/lang/String;"}, std::pair{"preloadDexCaches", "()V"},
-                        std::pair{"properties", "()[Ljava/lang/String;"}, std::pair{"setTargetSdkVersion", "(I)V"},
-                        std::pair{"vmLibrary", "()Ljava/lang/String;"}, std::pair{"vmVersion", "()Ljava/lang/String;"}})
-            b.UnimplementedVirtual(name, signature, kAccPublic | kAccNative);
-        b.VirtualMethod(
-            "newNonMovableArray", "(Ljava/lang/Class;I)Ljava/lang/Object;",
-            [](IntrinsicContext& c) {
-                const auto element = c.arguments[0].ref;
-                const auto length = c.arguments[1].AsInt();
-                if (!element.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "elementClass == null"};
-                if (length < 0) throw VmJavaThrow{"Ljava/lang/NegativeArraySizeException;", "negative array length"};
-                const auto element_class = c.vm.Model().ClassOfClassObject(element);
-                const auto descriptor = c.vm.Linker().Class(element_class).descriptor;
-                return VmValue::Ref(BuildReflectArray(c.vm, descriptor, std::array{length}));
-            },
-            kAccPublic | kAccNative);
-        b.VirtualMethod(
-            "addressOf", "(Ljava/lang/Object;)J",
-            [](IntrinsicContext& c) {
-                const auto array = c.arguments[0].ref;
-                if (!array.IsValid() || (c.vm.Model().Kind(array) != VmObjectKind::primitive_array &&
-                                         c.vm.Model().Kind(array) != VmObjectKind::object_array))
-                    throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "object is not an array"};
-                if (c.vm.Model().Kind(array) == VmObjectKind::object_array) {
-                    if (auto* ledger = c.vm.Ledger())
-                        ledger->RecordUnimplemented("dexvm.runtime.address_of_object_array", 0);
-                    throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "object arrays have no guest payload"};
-                }
-                return VmValue::Long(static_cast<std::int64_t>(c.vm.Model().PrimitiveArrayAddress(array).Value()));
-            },
-            kAccPublic | kAccNative);
-        b.VirtualMethod(
-            "getTargetHeapUtilization", "()F",
-            [](IntrinsicContext& c) { return VmValue::Float(c.vm.Model().TargetHeapUtilization()); },
-            kAccPublic | kAccNative);
-        b.DirectMethod(
-            "nativeSetTargetHeapUtilization", "(F)V",
-            [](IntrinsicContext& c) {
-                c.vm.Model().SetTargetHeapUtilization(c.arguments[0].AsFloat());
-                return VmValue::Void();
-            },
-            kAccPrivate | kAccNative);
-        b.VirtualMethod(
-            "clearGrowthLimit", "()V",
-            [](IntrinsicContext& c) {
-                c.vm.Model().ClearGrowthLimit();
-                return VmValue::Void();
-            },
-            kAccPublic | kAccNative);
-        b.VirtualMethod(
-            "isDebuggerActive", "()Z", [](IntrinsicContext&) { return VmValue::Int(0); }, kAccPublic | kAccNative);
-        for (const auto* name : {"startJitCompilation", "disableJitCompilation"})
-            b.VirtualMethod(name, "()V", [](IntrinsicContext&) { return VmValue::Void(); }, kAccPublic | kAccNative);
-        b.VirtualMethod(
-            "registerNativeAllocation", "(I)V",
-            [](IntrinsicContext& c) {
-                const auto bytes = c.arguments[0].AsInt();
-                if (bytes < 0) throw VmJavaThrow{"Ljava/lang/RuntimeException;", "allocation size negative"};
-                if (c.vm.Model().RegisterNativeAllocation(static_cast<std::uint64_t>(bytes))) {
-                    static_cast<void>(c.vm.CollectGarbage("native-allocation"));
-                    c.vm.RunFinalization();
-                    c.vm.Model().UpdateNativeWatermark();
-                }
-                return VmValue::Void();
-            },
-            kAccPublic | kAccNative);
-        b.VirtualMethod(
-            "registerNativeFree", "(I)V",
-            [](IntrinsicContext& c) {
-                const auto bytes = c.arguments[0].AsInt();
-                if (bytes < 0) throw VmJavaThrow{"Ljava/lang/RuntimeException;", "allocation size negative"};
-                c.vm.Model().RegisterNativeFree(static_cast<std::uint64_t>(bytes));
-                return VmValue::Void();
-            },
-            kAccPublic | kAccNative);
-        catalog.push_back(std::move(b).Build());
-    }
+IntrinsicClassDecl Declare_dalvik_system_VMRuntime_Natives(const CoreIntrinsicServices& services) {
+    auto b = IntrinsicClassBuilder::Class("Ldalvik/system/VMRuntime;");
+    b.MergesBootClass();
+    b.UnimplementedVirtual("preloadDexCaches", "()V", kAccPublic | kAccNative);
+    b.UnimplementedVirtual("setTargetSdkVersion", "(I)V", kAccPublic | kAccNative);
+    b.UnimplementedVirtual("vmLibrary", "()Ljava/lang/String;", kAccPublic | kAccNative);
+    b.VirtualMethod(
+        "bootClassPath", "()Ljava/lang/String;",
+        [](IntrinsicContext& c) {
+            return VmValue::Ref(c.vm.NewStringUtf8(
+                "/system/framework/ogplay.jar:/system/framework/core.jar:/system/framework/conscrypt.jar:"
+                "/system/framework/ext.jar:/system/framework/framework.jar:/system/framework/framework2.jar:"
+                "/system/framework/telephony-common.jar:/system/framework/android.policy.jar"));
+        },
+        kAccPublic | kAccNative);
+    b.VirtualMethod(
+        "classPath", "()Ljava/lang/String;",
+        [classpath = services.application_classpath](IntrinsicContext& c) {
+            return VmValue::Ref(c.vm.NewStringUtf8(classpath ? classpath() : "."));
+        },
+        kAccPublic | kAccNative);
+    b.VirtualMethod(
+        "vmVersion", "()Ljava/lang/String;",
+        [](IntrinsicContext& c) { return VmValue::Ref(c.vm.NewStringUtf8("1.6.0")); }, kAccPublic | kAccNative);
+    b.VirtualMethod(
+        "properties", "()[Ljava/lang/String;",
+        [properties = services.vm_property_assignments](IntrinsicContext& c) {
+            return VmValue::Ref(NewStringArray(c.vm, properties ? properties() : std::vector<std::string>{}));
+        },
+        kAccPublic | kAccNative);
+    b.VirtualMethod(
+        "newNonMovableArray", "(Ljava/lang/Class;I)Ljava/lang/Object;",
+        [](IntrinsicContext& c) {
+            const auto element = c.arguments[0].ref;
+            const auto length = c.arguments[1].AsInt();
+            if (!element.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "elementClass == null"};
+            if (length < 0) throw VmJavaThrow{"Ljava/lang/NegativeArraySizeException;", "negative array length"};
+            const auto element_class = c.vm.Model().ClassOfClassObject(element);
+            const auto descriptor = c.vm.Linker().Class(element_class).descriptor;
+            return VmValue::Ref(BuildReflectArray(c.vm, descriptor, std::array{length}));
+        },
+        kAccPublic | kAccNative);
+    b.VirtualMethod(
+        "addressOf", "(Ljava/lang/Object;)J",
+        [](IntrinsicContext& c) {
+            const auto array = c.arguments[0].ref;
+            if (!array.IsValid() || (c.vm.Model().Kind(array) != VmObjectKind::primitive_array &&
+                                     c.vm.Model().Kind(array) != VmObjectKind::object_array))
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "object is not an array"};
+            if (c.vm.Model().Kind(array) == VmObjectKind::object_array) {
+                if (auto* ledger = c.vm.Ledger())
+                    ledger->RecordUnimplemented("dexvm.runtime.address_of_object_array", 0);
+                throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "object arrays have no guest payload"};
+            }
+            return VmValue::Long(static_cast<std::int64_t>(c.vm.Model().PrimitiveArrayAddress(array).Value()));
+        },
+        kAccPublic | kAccNative);
+    b.VirtualMethod(
+        "getTargetHeapUtilization", "()F",
+        [](IntrinsicContext& c) { return VmValue::Float(c.vm.Model().TargetHeapUtilization()); },
+        kAccPublic | kAccNative);
+    b.DirectMethod(
+        "nativeSetTargetHeapUtilization", "(F)V",
+        [](IntrinsicContext& c) {
+            c.vm.Model().SetTargetHeapUtilization(c.arguments[0].AsFloat());
+            return VmValue::Void();
+        },
+        kAccPrivate | kAccNative);
+    b.VirtualMethod(
+        "clearGrowthLimit", "()V",
+        [](IntrinsicContext& c) {
+            c.vm.Model().ClearGrowthLimit();
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    b.VirtualMethod(
+        "isDebuggerActive", "()Z", [](IntrinsicContext&) { return VmValue::Int(0); }, kAccPublic | kAccNative);
+    for (const auto* name : {"startJitCompilation", "disableJitCompilation"})
+        b.VirtualMethod(name, "()V", [](IntrinsicContext&) { return VmValue::Void(); }, kAccPublic | kAccNative);
+    b.VirtualMethod(
+        "registerNativeAllocation", "(I)V",
+        [](IntrinsicContext& c) {
+            const auto bytes = c.arguments[0].AsInt();
+            if (bytes < 0) throw VmJavaThrow{"Ljava/lang/RuntimeException;", "allocation size negative"};
+            if (c.vm.Model().RegisterNativeAllocation(static_cast<std::uint64_t>(bytes))) {
+                static_cast<void>(c.vm.CollectGarbage("native-allocation"));
+                c.vm.RunFinalization();
+                c.vm.Model().UpdateNativeWatermark();
+            }
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    b.VirtualMethod(
+        "registerNativeFree", "(I)V",
+        [](IntrinsicContext& c) {
+            const auto bytes = c.arguments[0].AsInt();
+            if (bytes < 0) throw VmJavaThrow{"Ljava/lang/RuntimeException;", "allocation size negative"};
+            c.vm.Model().RegisterNativeFree(static_cast<std::uint64_t>(bytes));
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    return std::move(b).Build();
 }
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
@@ -109,14 +127,16 @@ IntrinsicClassDecl Declare_java_lang_Runtime_Overrides(const CoreIntrinsicServic
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Runtime;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     // Runtime state and shutdown-hook protocol belong to pinned API 19 DEX.
-    builder.VirtualMethod("availableProcessors", "()I", [cores = services.cpu_cores](IntrinsicContext&) {
-        return VmValue::Int(static_cast<std::int32_t>(cores));
-    });
     builder.StaticMethod(
         "nativeExit", "(I)V",
         [](IntrinsicContext& context) -> VmValue { context.vm.Exit(context.arguments[0].AsInt()); },
         kAccPrivate | kAccNative);
-    // These unrelated native boundaries remain explicitly unsupported.
+    if (services.runtime_load)
+        builder.VirtualMethod("load", "(Ljava/lang/String;Ljava/lang/ClassLoader;)V", services.runtime_load, 0);
+    if (services.runtime_load_library)
+        builder.VirtualMethod("loadLibrary", "(Ljava/lang/String;Ljava/lang/ClassLoader;)V",
+                              services.runtime_load_library, 0);
+    // Native library loading is provided at the Runtime package-method boundary.
     builder.UnimplementedStatic("nativeLoad",
                                 "(Ljava/lang/String;Ljava/lang/ClassLoader;Ljava/lang/String;)Ljava/lang/String;",
                                 kAccPrivate | kAccNative);
@@ -148,18 +168,6 @@ IntrinsicClassDecl Declare_java_lang_Runtime_Overrides(const CoreIntrinsicServic
             return VmValue::Void();
         },
         kAccPublic | kAccNative);
-    builder.VirtualMethod("runFinalization", "()V", [](IntrinsicContext& c) {
-        c.vm.RunFinalization();
-        return VmValue::Void();
-    });
-    builder.StaticMethod("runFinalizersOnExit", "(Z)V", [](IntrinsicContext& context) {
-        if (context.arguments[0].AsInt() != 0) {
-            if (auto* ledger = context.vm.Ledger()) ledger->RecordUnimplemented("dexvm.runtime.finalizers_on_exit", 0);
-            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                              "Java finalization on exit is not implemented"};
-        }
-        return VmValue::Void();
-    });
     return std::move(builder).Build();
 }
 
@@ -1189,275 +1197,174 @@ IntrinsicClassDecl Declare_java_lang_RealToString_Natives() {
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
-namespace {
-
-[[nodiscard]] std::string PropertyKey(IntrinsicContext& context, const VmObjectRef reference) {
-    if (!reference.IsValid()) {
-        throw VmJavaThrow{"Ljava/lang/NullPointerException;", "system property key is null"};
-    }
-    auto key = context.vm.StringUtf8(reference);
-    if (key.empty()) {
-        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "system property key is empty"};
-    }
-    return key;
-}
-
-[[nodiscard]] std::string PropertyValue(IntrinsicContext& context, const VmObjectRef reference) {
-    if (!reference.IsValid()) {
-        throw VmJavaThrow{"Ljava/lang/NullPointerException;", "system property value is null"};
-    }
-    return context.vm.StringUtf8(reference);
-}
-
-void PropagateEnvironmentCall(Interpreter& vm, const VmCallOutcome& outcome) {
-    if (!outcome.exception.IsValid()) return;
-    throw VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
-                      outcome.exception};
-}
-
-[[nodiscard]] VmObjectRef NewEnvironmentMap(Interpreter& vm,
-                                            const std::vector<std::pair<std::string, std::string>>& entries) {
-    const auto map_class = vm.Linker().ResolveDescriptor("Ljava/util/HashMap;");
-    PropagateEnvironmentCall(vm, vm.EnsureClassInitialized(map_class));
-    const auto map = vm.NewIntrinsicInstance("Ljava/util/HashMap;");
-    const auto map_root = vm.ProtectReferences(std::array{map});
-    const auto constructor = vm.Linker().FindDirectMethod(map_class, "<init>", "()V");
-    if (!constructor) {
-        throw DexVmError(DexVmErrorReason::internal_invariant, "HashMap constructor is not linked");
-    }
-    const std::vector<VmValue> map_constructor_arguments{VmValue::Ref(map)};
-    PropagateEnvironmentCall(vm, vm.Call(*constructor, map_constructor_arguments));
-    for (const auto& [name, value] : entries) {
-        const auto key = vm.NewStringUtf8(name);
-        const auto value_ref = vm.NewStringUtf8(value);
-        const auto item_roots = vm.ProtectReferences(std::array{map, key, value_ref});
-        static_cast<void>(InvokeGuest(vm, map, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
-                                      {VmValue::Ref(key), VmValue::Ref(value_ref)}));
-    }
-
-    const auto environment_class = vm.Linker().ResolveDescriptor("Ljava/lang/System$SystemEnvironment;");
-    PropagateEnvironmentCall(vm, vm.EnsureClassInitialized(environment_class));
-    const auto environment = vm.NewIntrinsicInstance("Ljava/lang/System$SystemEnvironment;");
-    const auto environment_roots = vm.ProtectReferences(std::array{map, environment});
-    const auto environment_constructor =
-        vm.Linker().FindDirectMethod(environment_class, "<init>", "(Ljava/util/Map;)V");
-    if (!environment_constructor) {
-        throw DexVmError(DexVmErrorReason::internal_invariant, "SystemEnvironment constructor is not linked");
-    }
-    const std::vector<VmValue> environment_constructor_arguments{VmValue::Ref(environment), VmValue::Ref(map)};
-    PropagateEnvironmentCall(vm, vm.Call(*environment_constructor, environment_constructor_arguments));
-    return environment;
-}
-
-}  // namespace
-
-IntrinsicClassDecl Declare_java_lang_System_Class(const CoreIntrinsicServices& services) {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/System;", "Ljava/lang/Object;");
-    builder.StaticField("out", "Ljava/io/PrintStream;");
-    builder.StaticField("err", "Ljava/io/PrintStream;");
-    const auto line_separator =
-        builder.BoundStaticField("lineSeparator", "Ljava/lang/String;", kAccPrivate | kAccStatic | kAccFinal);
-    builder.StaticMethod("arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", [](IntrinsicContext& context) {
-        auto& model = context.vm.Model();
-        const auto source = context.arguments[0].ref;
-        const auto source_pos = context.arguments[1].AsInt();
-        const auto target = context.arguments[2].ref;
-        const auto target_pos = context.arguments[3].AsInt();
-        const auto length = context.arguments[4].AsInt();
-        if (!source.IsValid() || !target.IsValid()) {
-            throw VmJavaThrow{"Ljava/lang/NullPointerException;", "arraycopy on null array"};
-        }
-        const auto source_kind = model.Kind(source);
-        const auto target_kind = model.Kind(target);
-        const auto is_array = [](VmObjectKind kind) {
-            return kind == VmObjectKind::object_array || kind == VmObjectKind::primitive_array;
-        };
-        if (!is_array(source_kind) || !is_array(target_kind)) {
-            throw VmJavaThrow{"Ljava/lang/ArrayStoreException;", "arraycopy requires arrays"};
-        }
-        if (length < 0 || source_pos < 0 || target_pos < 0 || source_pos > model.ArrayLength(source) - length ||
-            target_pos > model.ArrayLength(target) - length) {
-            throw VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "arraycopy range is out of bounds"};
-        }
-        if (source_kind == VmObjectKind::object_array && target_kind == VmObjectKind::object_array) {
-            if (source == target) {
-                model.CopyObjectElementsWithin(source, source_pos, target_pos, length);
+IntrinsicClassDecl Declare_java_lang_System_Natives(const CoreIntrinsicServices& services) {
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/System;");
+    builder.MergesBootClass();
+    constexpr auto public_native = kAccPublic | kAccStatic | kAccNative;
+    constexpr auto private_native = kAccPrivate | kAccStatic | kAccNative;
+    builder.StaticMethod(
+        "arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V",
+        [](IntrinsicContext& context) {
+            auto& model = context.vm.Model();
+            const auto source = context.arguments[0].ref;
+            const auto source_pos = context.arguments[1].AsInt();
+            const auto target = context.arguments[2].ref;
+            const auto target_pos = context.arguments[3].AsInt();
+            const auto length = context.arguments[4].AsInt();
+            if (!source.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "src == null"};
+            if (!target.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "dst == null"};
+            const auto type_name = [&](const VmObjectRef ref) {
+                return ClassNameCodec::HumanReadableDescriptor(
+                    context.vm.Linker().Class(model.ObjectClass(ref)).descriptor);
+            };
+            const auto source_kind = model.Kind(source);
+            const auto target_kind = model.Kind(target);
+            const auto is_array = [](VmObjectKind kind) {
+                return kind == VmObjectKind::object_array || kind == VmObjectKind::primitive_array;
+            };
+            if (!is_array(source_kind))
+                throw VmJavaThrow{"Ljava/lang/ArrayStoreException;",
+                                  "source of type " + type_name(source) + " is not an array"};
+            if (!is_array(target_kind))
+                throw VmJavaThrow{"Ljava/lang/ArrayStoreException;",
+                                  "destination of type " + type_name(target) + " is not an array"};
+            if (length < 0 || source_pos < 0 || target_pos < 0 || source_pos > model.ArrayLength(source) - length ||
+                target_pos > model.ArrayLength(target) - length) {
+                throw VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;",
+                                  "src.length=" + std::to_string(model.ArrayLength(source)) +
+                                      " srcPos=" + std::to_string(source_pos) +
+                                      " dst.length=" + std::to_string(model.ArrayLength(target)) +
+                                      " dstPos=" + std::to_string(target_pos) + " length=" + std::to_string(length)};
+            }
+            if (source_kind == VmObjectKind::object_array && target_kind == VmObjectKind::object_array) {
+                if (source == target) {
+                    model.CopyObjectElementsWithin(source, source_pos, target_pos, length);
+                    return VmValue::Void();
+                }
+                // Overlap-safe copy: buffer the source range first.
+                std::vector<VmObjectRef> staged;
+                staged.reserve(static_cast<std::size_t>(length));
+                for (std::int32_t index = 0; index < length; ++index) {
+                    staged.push_back(model.GetObjectElement(source, source_pos + index));
+                }
+                const auto element_class = model.ObjectArrayElementClass(target);
+                for (std::int32_t index = 0; index < length; ++index) {
+                    const auto value = staged[static_cast<std::size_t>(index)];
+                    if (value.IsValid() && !context.vm.Linker().IsAssignable(element_class, model.ObjectClass(value))) {
+                        throw VmJavaThrow{"Ljava/lang/ArrayStoreException;",
+                                          "source[" + std::to_string(source_pos + index) + "] of type " +
+                                              type_name(value) + " cannot be stored in destination array of type " +
+                                              type_name(target)};
+                    }
+                    model.SetObjectElement(target, target_pos + index, value);
+                }
                 return VmValue::Void();
             }
-            // Overlap-safe copy: buffer the source range first.
-            std::vector<VmObjectRef> staged;
-            staged.reserve(static_cast<std::size_t>(length));
-            for (std::int32_t index = 0; index < length; ++index) {
-                staged.push_back(model.GetObjectElement(source, source_pos + index));
+            if (source_kind == VmObjectKind::primitive_array && target_kind == VmObjectKind::primitive_array &&
+                model.PrimitiveArrayKind(source) == model.PrimitiveArrayKind(target)) {
+                model.CopyPrimitiveElements(source, source_pos, target, target_pos, length);
+                return VmValue::Void();
             }
-            const auto element_class = model.ObjectArrayElementClass(target);
-            for (std::int32_t index = 0; index < length; ++index) {
-                const auto value = staged[static_cast<std::size_t>(index)];
-                if (value.IsValid() && !context.vm.Linker().IsAssignable(element_class, model.ObjectClass(value))) {
-                    throw VmJavaThrow{"Ljava/lang/ArrayStoreException;", "arraycopy element is incompatible"};
-                }
-                model.SetObjectElement(target, target_pos + index, value);
-            }
-            return VmValue::Void();
-        }
-        if (source_kind == VmObjectKind::primitive_array && target_kind == VmObjectKind::primitive_array &&
-            model.PrimitiveArrayKind(source) == model.PrimitiveArrayKind(target)) {
-            model.CopyPrimitiveElements(source, source_pos, target, target_pos, length);
-            return VmValue::Void();
-        }
-        throw VmJavaThrow{"Ljava/lang/ArrayStoreException;", "arraycopy element types are incompatible"};
-    });
-    builder.StaticMethod("runFinalization", "()V", [](IntrinsicContext& c) {
-        c.vm.RunFinalization();
-        return VmValue::Void();
-    });
-    builder.StaticMethod("gc", "()V", [](IntrinsicContext& context) {
-        // Dalvik Runtime.gc requests an ordinary collection, preserving
-        // soft references; reuse the VM's existing STW collector.
-        static_cast<void>(context.vm.CollectGarbage("System.gc"));
-        return VmValue::Void();
-    });
-    builder.StaticMethod("identityHashCode", "(Ljava/lang/Object;)I", [](IntrinsicContext& context) {
-        return VmValue::Int(context.vm.Model().IdentityHashCode(context.arguments[0].ref));
-    });
-    const auto system_log = [](const core::LogLevel level) {
-        return [level](IntrinsicContext& context) {
-            IntrinsicCall call(context);
-            const auto message = call.Vm().StringUtf8(call.NonNullRef(0, "message"));
-            if (auto* logger = call.Vm().Log(); logger != nullptr) {
-                logger->Write(level, "guest.java.lang.System", message);
-            }
-            return VmValue::Void();
-        };
-    };
-    for (const auto descriptor : {"(Ljava/lang/String;)V", "(Ljava/lang/String;Ljava/lang/Throwable;)V"}) {
-        builder.StaticMethod("logI", descriptor, system_log(core::LogLevel::info));
-        builder.StaticMethod("logW", descriptor, system_log(core::LogLevel::warn));
-        builder.StaticMethod("logE", descriptor, system_log(core::LogLevel::error));
-    }
-    // API 19 libcore has no installed SecurityManager. This is a source-
-    // compatibility query, not a permission facade or host security hook.
-    builder.StaticMethod("getSecurityManager", "()Ljava/lang/SecurityManager;",
-                         [](IntrinsicContext&) { return VmValue::Ref(VmObjectRef{}); });
-    builder.StaticMethod("getProperties", "()Ljava/util/Properties;",
-                         [](IntrinsicContext& call) { return VmValue::Ref(call.vm.SystemProperties()); });
-    builder.StaticMethod("getProperty", "(Ljava/lang/String;)Ljava/lang/String;", [](IntrinsicContext& context) {
-        const auto key = PropertyKey(context, context.arguments[0].ref);
-        const auto value = context.vm.GetSystemProperty(key);
-        if (!value.has_value()) {
-            return VmValue::Ref(VmObjectRef{});
-        }
-        return VmValue::Ref(context.vm.NewStringUtf8(*value));
-    });
+            throw VmJavaThrow{"Ljava/lang/ArrayStoreException;",
+                              type_name(source) + " and " + type_name(target) + " are incompatible array types"};
+        },
+        public_native);
     builder.StaticMethod(
-        "getProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", [](IntrinsicContext& context) {
-            const auto key = PropertyKey(context, context.arguments[0].ref);
-            const auto value = context.vm.GetSystemProperty(key);
-            return VmValue::Ref(value.has_value() ? context.vm.NewStringUtf8(*value) : context.arguments[1].ref);
-        });
-    builder.StaticMethod("lineSeparator", "()Ljava/lang/String;", [line_separator](IntrinsicContext& context) {
-        return VmValue::Ref(IntrinsicCall(context).GetRef(line_separator));
-    });
-    builder.StaticMethod("getenv", "(Ljava/lang/String;)Ljava/lang/String;",
-                         [lookup = services.environment_value](IntrinsicContext& context) {
-                             const auto name_ref = context.arguments[0].ref;
-                             if (!name_ref.IsValid()) {
-                                 throw VmJavaThrow{"Ljava/lang/NullPointerException;", "name == null"};
-                             }
-                             if (!lookup) {
-                                 throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                                   "System.getenv needs an attached guest process environment"};
-                             }
-                             const auto value = lookup(context.vm.StringUtf8(name_ref));
-                             return value.has_value() ? VmValue::Ref(context.vm.NewStringUtf8(*value))
-                                                      : VmValue::Ref(VmObjectRef{});
-                         });
-    builder.StaticMethod("getenv", "()Ljava/util/Map;",
-                         [snapshot = services.environment_entries](IntrinsicContext& context) {
-                             if (!snapshot) {
-                                 throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                                   "System.getenv needs an attached guest process environment"};
-                             }
-                             return VmValue::Ref(NewEnvironmentMap(context.vm, snapshot()));
-                         });
-    builder.StaticMethod("setProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-                         [](IntrinsicContext& context) {
-                             const auto key = PropertyKey(context, context.arguments[0].ref);
-                             const auto value = PropertyValue(context, context.arguments[1].ref);
-                             const auto previous = context.vm.SetSystemProperty(key, value);
-                             return previous.has_value() ? VmValue::Ref(context.vm.NewStringUtf8(*previous))
-                                                         : VmValue::Ref(VmObjectRef{});
-                         });
-    builder.StaticMethod("clearProperty", "(Ljava/lang/String;)Ljava/lang/String;", [](IntrinsicContext& context) {
-        const auto key = context.arguments[0];
-        static_cast<void>(PropertyKey(context, key.ref));
-        const auto removed = InvokeGuest(context.vm, context.vm.SystemProperties(), "remove",
-                                         "(Ljava/lang/Object;)Ljava/lang/Object;", {key});
-        if (removed.ref.IsValid() &&
-            context.vm.Model().ObjectClass(removed.ref) != context.vm.Linker().ResolveDescriptor("Ljava/lang/String;"))
-            throw VmJavaThrow{"Ljava/lang/ClassCastException;", "property value is not a String"};
-        return removed;
-    });
-    builder.StaticMethod("mapLibraryName", "(Ljava/lang/String;)Ljava/lang/String;", [](IntrinsicContext& call) {
-        const auto name = IntrinsicCall(call).NonNullRef(0, "libName");
-        return VmValue::Ref(call.vm.NewStringUtf8("lib" + call.vm.StringUtf8(name) + ".so"));
-    });
-    builder.StaticMethod("currentTimeMillis", "()J", [now = services.current_time_millis](IntrinsicContext&) {
-        if (!now) {
-            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                              "System.currentTimeMillis needs an injected Clock"};
-        }
-        return VmValue::Long(now());
-    });
-    builder.StaticMethod("nanoTime", "()J", [](IntrinsicContext& context) {
-        const auto now = context.vm.Monitors().TimeSource();
-        if (!now)
-            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                              "System.nanoTime requires the unified Clock"};
-        return VmValue::Long(std::bit_cast<std::int64_t>(static_cast<std::uint64_t>(now()) * 1000000ULL));
-    });
-    builder.UnimplementedStatic("load", "(Ljava/lang/String;)V");
-    builder.StaticMethod("loadLibrary", "(Ljava/lang/String;)V", [](IntrinsicContext& call) {
-        const auto reference = call.arguments[0].ref;
-        if (!reference.IsValid()) {
-            throw VmJavaThrow{"Ljava/lang/NullPointerException;", "libraryName == null"};
-        }
-        const auto name = call.vm.StringUtf8(reference);
-        if (name == "soundpool" || name == "media_jni") {
+        "identityHashCode", "(Ljava/lang/Object;)I",
+        [](IntrinsicContext& c) { return VmValue::Int(c.vm.Model().IdentityHashCode(c.arguments[0].ref)); },
+        public_native);
+    builder.StaticMethod(
+        "currentTimeMillis", "()J",
+        [now = services.current_time_millis](IntrinsicContext&) {
+            if (!now) throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "VM has no wall Clock"};
+            return VmValue::Long(now());
+        },
+        public_native);
+    builder.StaticMethod(
+        "nanoTime", "()J",
+        [](IntrinsicContext& c) {
+            const auto now = c.vm.Monitors().NanoTimeSource();
+            if (!now) throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "VM has no monotonic Clock"};
+            return VmValue::Long(now());
+        },
+        public_native);
+    builder.StaticMethod(
+        "log", "(CLjava/lang/String;Ljava/lang/Throwable;)V",
+        [](IntrinsicContext& c) {
+            using enum core::LogLevel;
+            auto* logger = c.vm.Log();
+            if (!logger) return VmValue::Void();
+            const auto type = c.arguments[0].AsInt();
+            const auto message = c.arguments[1].ref;
+            if (!message.IsValid()) {
+                logger->Write(error, "guest.java.lang.System", "message.c_str() == NULL");
+                return VmValue::Void();
+            }
+            auto level = info;
+            switch (type) {
+            case 'D':
+            case 'd': level = debug; break;
+            case 'E':
+            case 'e': level = error; break;
+            case 'F':
+            case 'f': level = fatal; break;
+            case 'S':
+            case 's': return VmValue::Void();
+            case 'V':
+            case 'v': level = trace; break;
+            case 'W':
+            case 'w': level = warn; break;
+            }
+            const auto text = c.vm.StringUtf8(message);
+            if (!text.empty()) logger->Write(level, "guest.java.lang.System", text);
+            if (const auto throwable = c.arguments[2].ref; throwable.IsValid()) {
+                const auto writer = c.vm.NewIntrinsicInstance("Ljava/io/StringWriter;");
+                const auto writer_root = c.vm.ProtectReferences(std::array{writer});
+                InvokeGuestDirect(c.vm, "Ljava/io/StringWriter;", "<init>", "()V", {VmValue::Ref(writer)});
+                const auto printer = c.vm.NewIntrinsicInstance("Ljava/io/PrintWriter;");
+                const auto printer_root = c.vm.ProtectReferences(std::array{printer});
+                InvokeGuestDirect(c.vm, "Ljava/io/PrintWriter;", "<init>", "(Ljava/io/Writer;)V",
+                                  {VmValue::Ref(printer), VmValue::Ref(writer)});
+                InvokeGuest(c.vm, throwable, "printStackTrace", "(Ljava/io/PrintWriter;)V", {VmValue::Ref(printer)});
+                const auto stack = InvokeGuest(c.vm, writer, "toString", "()Ljava/lang/String;").ref;
+                const auto trace_text = c.vm.StringUtf8(stack);
+                if (!trace_text.empty()) logger->Write(level, "guest.java.lang.System", trace_text);
+            }
             return VmValue::Void();
-        }
-        throw VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;", "APK native library loader is unavailable"};
-    });
-    builder.StaticMethod("exit", "(I)V", [](IntrinsicContext& context) {
-        const auto runtime =
-            InvokeGuestDirect(context.vm, "Ljava/lang/Runtime;", "getRuntime", "()Ljava/lang/Runtime;", {}).ref;
-        return InvokeGuest(context.vm, runtime, "exit", "(I)V", {context.arguments[0]});
-    });
-    builder.ClassInitializer(
-        [line_separator, initialize = services.initialize_system_properties](IntrinsicContext& context) {
-            auto& vm = context.vm;
-            if (initialize) initialize(vm);
-            static_cast<void>(vm.SystemProperties());
-            vm.SetIntrinsicStaticRef("Ljava/lang/System;", "out", "Ljava/io/PrintStream;",
-                                     InvokeGuestDirect(vm, "Lorg/ogplay/io/LogOutputStream;", "createPrintStream",
-                                                       "()Ljava/io/PrintStream;", {})
-                                         .ref);
-            vm.SetIntrinsicStaticRef("Ljava/lang/System;", "err", "Ljava/io/PrintStream;",
-                                     InvokeGuestDirect(vm, "Lorg/ogplay/io/LogOutputStream;", "createErrorPrintStream",
-                                                       "()Ljava/io/PrintStream;", {})
-                                         .ref);
-            const auto key = vm.NewStringUtf8("line.separator");
-            const auto roots = vm.ProtectReferences(std::array{key});
-            const auto value = InvokeGuestDirect(vm, "Ljava/lang/System;", "getProperty",
-                                                 "(Ljava/lang/String;)Ljava/lang/String;", {VmValue::Ref(key)})
-                                   .ref;
-            IntrinsicCall(context).SetRef(line_separator, value);
+        },
+        private_native);
+    builder.StaticMethod(
+        "mapLibraryName", "(Ljava/lang/String;)Ljava/lang/String;",
+        [](IntrinsicContext& c) {
+            const auto name = IntrinsicCall(c).NonNullRef(0, "name");
+            return VmValue::Ref(c.vm.NewStringUtf8("lib" + c.vm.StringUtf8(name) + ".so"));
+        },
+        public_native);
+    builder.StaticMethod(
+        "setFieldImpl", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)V",
+        [](IntrinsicContext& c) {
+            const IntrinsicCall call(c);
+            const auto name = c.vm.StringUtf8(call.NonNullRef(0, "fieldName"));
+            const auto signature = c.vm.StringUtf8(call.NonNullRef(1, "signature"));
+            if (!((name == "in" && signature == "Ljava/io/InputStream;") ||
+                  ((name == "out" || name == "err") && signature == "Ljava/io/PrintStream;")))
+                throw VmJavaThrow{"Ljava/lang/NoSuchFieldError;", name + " " + signature};
+            c.vm.SetIntrinsicStaticRef("Ljava/lang/System;", name, signature, c.arguments[2].ref);
             return VmValue::Void();
-        });
-    auto result = std::move(builder).Build();
-    return result;
+        },
+        private_native);
+    builder.StaticMethod(
+        "specialProperties", "()[Ljava/lang/String;",
+        [](IntrinsicContext& c) {
+            return VmValue::Ref(NewStringArray(c.vm, {
+                                                         "user.dir=" + c.vm.IO().WorkingDirectory().value_or("/"),
+                                                         "android.zlib.version=1.2.8",
+                                                         "android.openssl.version=OpenSSL 1.0.1e 11 Feb 2013",
+                                                     }));
+        },
+        private_native);
+    return std::move(builder).Build();
 }
-
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_Thread.cpp ----

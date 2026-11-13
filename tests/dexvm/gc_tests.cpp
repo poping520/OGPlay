@@ -68,7 +68,7 @@ struct GcVm final {
          NativeMethodBridge* native_bridge = nullptr)
         : vm(
               [this, &extras]() -> DexClassLinker& {
-                  auto catalog = CoreIntrinsicCatalog();
+                  auto catalog = CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices());
                   auto builder = IntrinsicClassBuilder::Class("Lgc/RootBox;");
                   builder.InstanceField("child", "Ljava/lang/Object;");
                   builder.StaticField("root", "Ljava/lang/Object;");
@@ -252,7 +252,7 @@ TEST_CASE("DexVM and JNI share one object array identity and element store") {
     auto& object_arrays = objects.ObjectArrays();
 
     DexClassLinker linker;
-    auto catalog = CoreIntrinsicCatalog();
+    auto catalog = CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices());
     catalog.push_back(std::move(IntrinsicClassBuilder::Class("Lgc/Box;")).Build());
     linker.RegisterIntrinsics(catalog);
     ogplay::test::RegisterBootDex(linker);
@@ -574,7 +574,11 @@ TEST_CASE("WU7-4 finalizer daemon preserves resurrection swallows exceptions and
         const auto object = f.vm.NewIntrinsicInstance("Lgc/Finalizable;");
         const auto identity = f.model.ToIdentity(object);
         static_cast<void>(f.vm.CollectGarbage("finalizable-unreachable"));
-        f.vm.RunFinalization();
+        const auto system = f.linker.ResolveDescriptor("Ljava/lang/System;");
+        const auto finalize = f.linker.FindDirectMethod(system, "runFinalization", "()V");
+        REQUIRE(finalize);
+        const auto finalized = f.vm.Call(*finalize, {});
+        REQUIRE_MESSAGE(!finalized.exception.IsValid(), finalized.exception_message);
         CHECK(calls->load() == 1);
         CHECK(worker->load());
         CHECK(f.model.FindIdentity(identity).IsValid());

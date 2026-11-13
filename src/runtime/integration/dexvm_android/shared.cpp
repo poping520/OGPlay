@@ -44,106 +44,112 @@ dx::VmObjectRef NewServiceArray(dx::Interpreter& vm, const char* descriptor, Jni
                                      size);
 }
 
-void InitializeAndroidSystemProperties(dx::Interpreter& vm, const Context& context) {
-    static_cast<void>(vm.SetSystemProperty("user.language", context->locale_language));
-    static_cast<void>(vm.SetSystemProperty("user.region", context->locale_region));
-    if (!context->session) return;
-    auto& process = context->session->Process();
-    const auto memory = process.GuestMemoryAccess();
-    const auto invoke = [&](memory::GuestAddress target, std::array<std::uint32_t, 4> args) {
-        A32GuestCallFrame frame;
-        frame.target = target;
-        frame.registers = args;
-        frame.context_token = vm.CurrentContextToken();
-        frame.thread_id =
-            context->native_thread_for_context ? context->native_thread_for_context(vm.CurrentContextToken()) : 1;
-        auto& execution_lock = vm.ExecutionLock();
-        const auto depth = execution_lock.ReleaseForBlocking();
-        std::uint32_t value{};
-        try {
-            value = process.Invoke(frame).return_value;
-        } catch (...) {
-            execution_lock.ReacquireAfterBlocking(depth);
-            throw;
-        }
+namespace {
+
+std::uint32_t InvokePropertySource(dx::Interpreter& vm, const Context& context, memory::GuestAddress target,
+                                   std::array<std::uint32_t, 4> args) {
+    A32GuestCallFrame frame;
+    frame.target = target;
+    frame.registers = args;
+    frame.context_token = vm.CurrentContextToken();
+    frame.thread_id = context->native_thread_for_context ? context->native_thread_for_context(frame.context_token) : 1;
+    auto& execution_lock = vm.ExecutionLock();
+    const auto depth = execution_lock.ReleaseForBlocking();
+    try {
+        const auto result = context->session->Process().Invoke(frame).return_value;
         execution_lock.ReacquireAfterBlocking(depth);
-        return value;
-    };
-    const auto word = [&](memory::GuestAddress address) {
-        std::array<std::byte, 4> bytes{};
-        memory.read(address, bytes);
-        std::uint32_t value{};
-        for (std::size_t i = 0; i < bytes.size(); ++i)
-            value |= std::to_integer<std::uint32_t>(bytes[i]) << (8U * i);
-        return value;
-    };
-    const auto string = [&](memory::GuestAddress address) {
-        if (address.Value() == 0) throw std::runtime_error("null platform property source");
-        std::string result;
-        for (std::uint32_t i = 0; i < 4096; ++i) {
-            std::array<std::byte, 1> byte{};
-            memory.read(address.Add(i), byte);
-            const auto c = static_cast<char>(std::to_integer<unsigned char>(byte[0]));
-            if (c == '\0') return result;
-            result.push_back(c);
-        }
-        throw std::runtime_error("unterminated platform property source");
-    };
-    const auto getuid = process.FindLibraryExport("libc.so", "getuid");
-    const auto getpwuid = process.FindLibraryExport("libc.so", "getpwuid");
-    if (getuid && getpwuid) {
-        const auto uid = invoke(*getuid, {});
-        const memory::GuestAddress passwd{invoke(*getpwuid, {uid, 0, 0, 0})};
-        if (passwd.Value() == 0) throw dx::VmJavaThrow{"Ljava/lang/AssertionError;", "guest getpwuid failed"};
-        // Pinned Bionic ARM struct passwd: name, passwd, uid, gid, dir, shell.
-        static_cast<void>(vm.SetSystemProperty("user.name", string(memory::GuestAddress{word(passwd)})));
-        static_cast<void>(vm.SetSystemProperty("user.home", string(memory::GuestAddress{word(passwd.Add(16))})));
+        return result;
+    } catch (...) {
+        execution_lock.ReacquireAfterBlocking(depth);
+        throw;
     }
+}
+
+std::uint32_t ReadPropertyWord(const dx::NioDirectMemoryAccess& memory, memory::GuestAddress address) {
+    std::array<std::byte, 4> bytes{};
+    memory.read(address, bytes);
+    std::uint32_t value{};
+    for (std::size_t i = 0; i < bytes.size(); ++i)
+        value |= std::to_integer<std::uint32_t>(bytes[i]) << (8U * i);
+    return value;
+}
+
+std::string ReadPropertyString(const dx::NioDirectMemoryAccess& memory, memory::GuestAddress address) {
+    if (address.IsNull()) throw std::runtime_error("null guest property source");
+    std::string result;
+    for (std::uint32_t i = 0; i < 4096; ++i) {
+        std::array<std::byte, 1> byte{};
+        memory.read(address.Add(i), byte);
+        const auto c = static_cast<char>(std::to_integer<unsigned char>(byte[0]));
+        if (c == '\0') return result;
+        result.push_back(c);
+    }
+    throw std::runtime_error("unterminated guest property source");
+}
+
+}  // namespace
+
+std::optional<dx::CoreIntrinsicServices::Passwd> ReadGuestPasswd(dx::Interpreter& vm, const Context& context,
+                                                                 std::int32_t uid) {
+    if (!context->session)
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest passwd is unavailable"};
+    auto& process = context->session->Process();
+    const auto getpwuid = process.FindLibraryExport("libc.so", "getpwuid");
+    if (!getpwuid)
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest getpwuid export is unavailable"};
+    const memory::GuestAddress passwd{InvokePropertySource(vm, context, *getpwuid, {static_cast<std::uint32_t>(uid)})};
+    if (passwd.IsNull()) return std::nullopt;
+    const auto memory = process.GuestMemoryAccess();
+    const auto word = [&](std::uint32_t offset) { return ReadPropertyWord(memory, passwd.Add(offset)); };
+    const auto string = [&](std::uint32_t offset) {
+        return ReadPropertyString(memory, memory::GuestAddress{word(offset)});
+    };
+    // Pinned ARM Bionic struct passwd: name, passwd, uid, gid, dir, shell.
+    return dx::CoreIntrinsicServices::Passwd{string(0), static_cast<std::int32_t>(word(8)),
+                                             static_cast<std::int32_t>(word(12)), string(16), string(20)};
+}
+
+std::string ReadGuestIcuVersion(dx::Interpreter& vm, const Context& context,
+                                dx::CoreIntrinsicServices::IcuVersion kind) {
+    using enum dx::CoreIntrinsicServices::IcuVersion;
+    if (!context->session)
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest ICU is unavailable"};
+    auto& process = context->session->Process();
+    const bool status = kind == cldr;
+    const auto* soname = status ? "libicui18n.so" : "libicuuc.so";
+    const auto* symbol = status            ? "ulocdata_getCLDRVersion_51"
+                         : kind == library ? "u_getVersion_51"
+                                           : "u_getUnicodeVersion_51";
+    const auto function = process.FindLibraryExport(soname, symbol);
+    if (!function)
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest ICU version export is unavailable"};
+    const auto memory = process.GuestMemoryAccess();
     const auto storage = memory.allocate(8);
 
     struct Release final {
-        dx::NioDirectMemoryAccess memory;
+        const dx::NioDirectMemoryAccess& memory;
         memory::GuestAddress address;
 
         ~Release() { memory.release(address, 8); }
     } release{memory, storage};
 
-    const auto version = [&](memory::GuestAddress function, const char* key, bool status) {
-        const std::array<std::byte, 8> zero{};
-        memory.write(storage, zero);
-        static_cast<void>(invoke(function, {storage.Value(), status ? storage.Add(4).Value() : 0, 0, 0}));
-        if (status && static_cast<std::int32_t>(word(storage.Add(4))) > 0)
-            throw std::runtime_error("ICU version query failed");
-        std::array<std::byte, 4> bytes{};
-        memory.read(storage, bytes);
-        std::size_t end = 4;
-        while (end > 2 && bytes[end - 1] == std::byte{})
-            --end;
-        std::string value;
-        for (std::size_t i = 0; i < end; ++i) {
-            if (i) value += '.';
-            value += std::to_string(std::to_integer<unsigned>(bytes[i]));
-        }
-        static_cast<void>(vm.SetSystemProperty(key, value));
-    };
-    // Missing exports retain manifest-derived defaults. Resolve the full loaded
-    // namespace by library identity, including modules loaded after process creation.
-    for (const auto& source :
-         std::array{std::tuple{"libicuuc.so", "u_getVersion_51", "android.icu.library.version", false},
-                    std::tuple{"libicuuc.so", "u_getUnicodeVersion_51", "android.icu.unicode.version", false},
-                    std::tuple{"libicui18n.so", "ulocdata_getCLDRVersion_51", "android.icu.cldr.version", true}}) {
-        const auto& [library, symbol, key, status] = source;
-        if (const auto address = process.FindLibraryExport(library, symbol)) version(*address, key, status);
+    const std::array<std::byte, 8> zero{};
+    memory.write(storage, zero);
+    static_cast<void>(
+        InvokePropertySource(vm, context, *function, {storage.Value(), status ? storage.Add(4).Value() : 0}));
+    if (status && static_cast<std::int32_t>(ReadPropertyWord(memory, storage.Add(4))) > 0)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "guest ICU version query failed"};
+    std::array<std::byte, 4> bytes{};
+    memory.read(storage, bytes);
+    std::size_t end = bytes.size();
+    while (end > 2 && bytes[end - 1] == std::byte{})
+        --end;
+    std::string version;
+    for (std::size_t i = 0; i < end; ++i) {
+        if (i) version += '.';
+        version += std::to_string(std::to_integer<unsigned>(bytes[i]));
     }
-    // Synthetic native shells may have no Bionic environment source either.
-    if (process.FindLibraryExport("libc.so", "environ")) {
-        for (const auto& [environment, key] :
-             std::array{std::pair{"JAVA_HOME", "java.home"}, std::pair{"LD_LIBRARY_PATH", "java.library.path"}}) {
-            if (const auto value = process.ProcessEnvironmentValue(environment))
-                static_cast<void>(vm.SetSystemProperty(key, *value));
-        }
-    }
-    static_cast<void>(vm.SetSystemProperty("java.class.path", context->package_resource_path));
+    return version;
 }
 
 namespace {
@@ -317,13 +323,6 @@ dx::IntrinsicHandler WidgetNoopHandler() {
     return dx::IntrinsicHandler([](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
 }
 
-dx::IntrinsicHandler PlatformSystemCurrentTimeMillisHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext&) {
-        // Deterministic epoch base plus lifecycle-published uptime.
-        return dx::VmValue::Long(1'400'000'000'000LL + context->uptime_millis.load());
-    });
-}
-
 dx::IntrinsicHandler PlatformRuntimeNativeExitHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) -> dx::VmValue {
         context->exit_requested = true;
@@ -355,9 +354,8 @@ dx::IntrinsicHandler PlatformSystemLoadHandlerImpl(const Context& context, const
             }
             std::optional<std::string> application_path;
             if (resolve_application_library && context->sealed_apk_bytes && argument != "javacrypto") {
-                const auto caller = call.vm.CurrentCallerClass();
-                if (caller && call.vm.Linker().ClassHeader(*caller).defining_loader == dx::kApplicationLoader) {
-                    const auto loader = call.vm.ClassLoaders().ApplicationLoader();
+                const auto loader = call.arguments[1].ref;
+                if (loader.IsValid() && loader == call.vm.ClassLoaders().ApplicationLoader()) {
                     const auto result = CallAndroidMethod(call.vm, loader, "findLibrary",
                                                           "(Ljava/lang/String;)Ljava/lang/String;", {call.arguments[0]})
                                             .ref;
@@ -407,11 +405,6 @@ dx::IntrinsicHandler PlatformSystemLoadLibraryHandler(const Context& context) {
             static_cast<void>(libraries.LoadLibrary(resolved, class_loader));
         },
         true);
-}
-
-dx::IntrinsicHandler PlatformSystemNanoTimeHandler(const Context& context) {
-    return dx::IntrinsicHandler(
-        [context](dx::IntrinsicContext&) { return dx::VmValue::Long(context->uptime_millis.load() * 1'000'000LL); });
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
@@ -561,7 +554,7 @@ TakeDue(DexVmAndroidContext& context, const dx::VmObjectRef looper, const std::i
                                                        const bool yield_on_budget = false) {
     constexpr std::size_t kMaxCallbacksPerPump = 10'000;
     for (std::size_t count = 0; count < kMaxCallbacksPerPump; ++count) {
-        const auto now = context.uptime_millis.load();
+        const auto now = context.UptimeMillis();
         // An idle pump must not wait for the VM lock.
         if (!HasDue(context, looper, now)) return std::nullopt;
         // Queued work is a GC root only while queued. The lifecycle thread pumps
@@ -632,7 +625,8 @@ dx::VmObjectRef EnsureMainLooper(dx::Interpreter& vm, const Context& context) {
         const auto prepare = vm.Linker().FindDirectMethod(owner, "prepareMainLooper", "()V");
         const auto result = vm.Call(*prepare, {});
         if (result.exception.IsValid())
-            throw dx::VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+            throw dx::VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor,
+                                  result.exception_message + vm.DescribeThrowableCauses(result.exception),
                                   result.exception};
         main = RomLooperStatic(vm, "getMainLooper");
     }
@@ -752,13 +746,23 @@ void NotifyAndroidScheduler(DexVmAndroidContext& context) {
     if (context.notify_native_loopers) context.notify_native_loopers();
 }
 
-void AdvanceAndroidClock(DexVmAndroidContext& context, const std::int64_t delta_millis) {
-    if (delta_millis <= 0) return;
+void AdvanceAndroidClock(DexVmAndroidContext& context, const std::int64_t delta_nanos) {
+    if (delta_nanos <= 0) return;
     {
         std::scoped_lock lock(context.scheduler_mutex);
-        context.uptime_millis.fetch_add(delta_millis);
+        context.uptime_nanos.fetch_add(delta_nanos);
     }
     NotifyAndroidScheduler(context);
+}
+
+void AdvanceAndroidClockForDriverSleep(DexVmAndroidContext& context, const std::int64_t slept_nanos) {
+    if (slept_nanos <= 0) return;
+    context.driver_sleep_credit_nanos.fetch_add(slept_nanos);
+    AdvanceAndroidClock(context, slept_nanos);
+}
+
+void AdvanceAndroidFrameClock(DexVmAndroidContext& context, const std::int64_t frame_nanos) {
+    AdvanceAndroidClock(context, frame_nanos - context.driver_sleep_credit_nanos.exchange(0));
 }
 
 void ShutdownAndroidScheduler(DexVmAndroidContext& context) {
@@ -883,7 +887,7 @@ void QueueAndroidDisplayFrame(dexvm::VmExecutionLock& execution_lock, DexVmAndro
         if (context.display_vsync_frame == static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max()))
             throw std::overflow_error("Display vsync frame counter exhausted");
         const auto frame = ++context.display_vsync_frame;
-        const auto now = context.uptime_millis.load();
+        const auto now = context.UptimeMillis();
         for (auto& [token, receiver] : context.display_receivers) {
             if (!receiver.requested) continue;
             receiver.requested = false;

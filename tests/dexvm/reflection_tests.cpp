@@ -1,4 +1,7 @@
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
+#include "ogplay/core/text.h"
+#include "ogplay/loader/dex_class_data.h"
+#include "ogplay/runtime/dexvm/access_flags.h"
 #include "boot_dex.h"
 #include "android_value_fixture.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
@@ -6,6 +9,8 @@
 #include <array>
 #include <fstream>
 #include <iterator>
+#include <set>
+#include <tuple>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -229,6 +234,86 @@ TEST_CASE("reflection metadata uses declared order and opaque local slots") {
     });
     REQUIRE(get_name != wrapper_methods.end());
     CHECK(get_name->access_flags == 0x0001U);
+}
+
+TEST_CASE("System and SystemEnvironment reflection match API19 core.jar declarations") {
+    const auto& jars = ogplay::test::BootClasspathJars();
+    const auto jar = std::ranges::find(jars, "/system/framework/core.jar", &BootClasspathJar::guest_path);
+    REQUIRE(jar != jars.end());
+    const auto dex = BootClasspathDexFiles(std::span(&*jar, 1)).front();
+    const auto image = ogplay::loader::ParseDex(dex);
+    const auto class_data = ogplay::loader::ReadDexClassData(dex, image);
+    const auto name = [&](std::uint32_t index) {
+        return ogplay::core::Utf16ToUtf8(image.strings[index].value, ogplay::core::InvalidUtf16Policy::replace).value();
+    };
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ReflectionVm vm("interp.dex", backend);
+        for (const auto* owner : {"Ljava/lang/System;", "Ljava/lang/System$SystemEnvironment;"}) {
+            CAPTURE(owner);
+            const auto definition = std::ranges::find_if(image.classes, [&](const auto& type) {
+                return image.types[type.class_type_index].descriptor == owner;
+            });
+            REQUIRE(definition != image.classes.end());
+            const auto& data = class_data[static_cast<std::size_t>(definition - image.classes.begin())];
+            using Members = std::multiset<std::tuple<std::string, std::string, std::uint32_t>>;
+            Members fields, methods, constructors;
+            for (const auto* list : {&data.static_fields, &data.instance_fields})
+                for (const auto& encoded : *list) {
+                    const auto& id = image.fields[encoded.field_index];
+                    fields.emplace(name(id.name_string_index), image.types[id.type_index].descriptor,
+                                   encoded.access_flags);
+                }
+            for (const auto* list : {&data.direct_methods, &data.virtual_methods})
+                for (const auto& encoded : *list) {
+                    const auto& id = image.methods[encoded.method_index];
+                    const auto member = name(id.name_string_index);
+                    if (member == "<clinit>") continue;
+                    const auto& proto = image.prototypes[id.prototype_index];
+                    std::string signature = "(";
+                    for (const auto param : proto.parameter_type_indices)
+                        signature += image.types[param].descriptor;
+                    signature += ")" + image.types[proto.return_type_index].descriptor;
+                    (member == "<init>" ? constructors : methods).emplace(member, signature, encoded.access_flags);
+                }
+            const auto type = vm.linker.ResolveDescriptor(owner);
+            CHECK(vm.linker.Class(type).is_boot_dex);
+            const auto klass = vm.model.ClassObject(type);
+            const auto enumerate = [&](const char* method, const char* signature, auto entry) {
+                const auto result = vm.Virtual(klass, method, signature);
+                REQUIRE_FALSE(result.exception.IsValid());
+                const auto root = vm.interpreter.ProtectReferences(std::array{result.value.ref});
+                Members members;
+                for (JniSize i = 0; i < vm.model.ArrayLength(result.value.ref); ++i)
+                    members.insert(entry(vm.model.GetObjectElement(result.value.ref, i)));
+                return members;
+            };
+            auto& reflect = vm.interpreter.Reflection();
+            CHECK(enumerate("getDeclaredFields", "()[Ljava/lang/reflect/Field;", [&](VmObjectRef ref) {
+                      const auto& meta = reflect.FieldMetadata(ref);
+                      const auto& field = vm.linker.Field(meta.field);
+                      return std::tuple{field.name, field.descriptor, meta.access_flags};
+                  }) == fields);
+            std::size_t native_count{};
+            CHECK(enumerate("getDeclaredMethods", "()[Ljava/lang/reflect/Method;", [&](VmObjectRef ref) {
+                      const auto& meta = reflect.MethodMetadata(ref);
+                      const auto& method = vm.linker.Method(meta.method);
+                      if (meta.access_flags & kAccNative) {
+                          ++native_count;
+                          CHECK(method.kind == MethodKind::intrinsic);
+                      } else {
+                          CHECK(method.kind == MethodKind::interpreted);
+                      }
+                      return std::tuple{method.name, method.descriptor, meta.access_flags};
+                  }) == methods);
+            CHECK(native_count == (std::string_view(owner) == "Ljava/lang/System;" ? 8U : 0U));
+            CHECK(enumerate("getDeclaredConstructors", "()[Ljava/lang/reflect/Constructor;", [&](VmObjectRef ref) {
+                      const auto& meta = reflect.ConstructorMetadata(ref);
+                      const auto& method = vm.linker.Method(meta.method);
+                      CHECK(method.kind == MethodKind::interpreted);
+                      return std::tuple{method.name, method.descriptor, meta.access_flags};
+                  }) == constructors);
+        }
+    }
 }
 
 TEST_CASE("reflection Method wrappers are fresh semantic copies") {

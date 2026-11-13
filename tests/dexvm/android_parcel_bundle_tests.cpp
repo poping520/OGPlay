@@ -169,10 +169,10 @@ TEST_CASE("DVM-86 Parcel Bundle and bounded services share session state") {
     CHECK(fixture.On(lock, "isHeld", "()Z").AsInt() == 0);
 
     fixture.On(lock, "acquire", "(J)V", {VmValue::Long(10)});
-    AdvanceAndroidClock(*fixture.context, 9);
+    AdvanceAndroidClock(*fixture.context, 9 * 1'000'000);
     REQUIRE_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.On(lock, "isHeld", "()Z").AsInt() == 1);
-    AdvanceAndroidClock(*fixture.context, 1);
+    AdvanceAndroidClock(*fixture.context, 1 * 1'000'000);
     REQUIRE_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.On(lock, "isHeld", "()Z").AsInt() == 0);
 

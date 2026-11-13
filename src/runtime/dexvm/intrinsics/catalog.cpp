@@ -19,8 +19,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(CoreIntrinsicServices servi
         Declare_java_lang_String_Natives(),
         Declare_java_lang_RealToString_Natives(),
         Declare_java_lang_StringToReal_Natives(),
-        Declare_java_lang_System_Class(services),
-        Declare_org_ogplay_io_LogOutputStream_Natives(),
+        Declare_java_lang_System_Natives(services),
         Declare_java_lang_Math_Natives(),
         Declare_java_lang_Runtime_Overrides(services),
         Declare_libcore_io_IoUtils_Overrides(),
@@ -30,9 +29,9 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(CoreIntrinsicServices servi
         Declare_java_lang_reflect_Constructor_Natives(),
         Declare_java_lang_reflect_Field_Natives(),
         Declare_java_lang_reflect_Array_Natives(),
+        Declare_dalvik_system_VMRuntime_Natives(services),
     };
 
-    AppendDalvikVmRuntimeNatives(catalog);
     AppendJavaLangWrapperNatives(catalog);
     AppendJavaIoStreams(catalog);
     AppendJavaIoFiles(catalog);

@@ -47,16 +47,16 @@
   String.valueOf(Object) 对非 null 对象虚派 toString，保留返回值与异常。
   regionMatches 两重载按 UTF-16 单元与 libcore 边界规则比较；忽略大小写用
   Character.toLowerCase(toUpperCase(char))，Unicode 简单映射交 guest ICU51，非整串 case folding。
-- System.arraycopy 先校验数组与范围；引用拷贝保持重叠安全并逐元素检查赋值兼容性，
+- System 与 SystemEnvironment 执行 API 19 原版类。宿主绑定 System 的八个原版 native。
+  System.arraycopy 先校验数组与范围；引用拷贝保持重叠安全并逐元素检查赋值兼容性，
   首个不兼容元素前的前缀保留，随后抛 ArrayStoreException。
 - Math 普通方法/常量/random 归 BootDex，仅保留 24 个 libm native；不宣称 fdlibm 逐位一致。
   Throwable/StackTraceElement/异常家族归 BootDex，仅保留两个栈 native；消息虚派、原异常
   身份、cause/suppressed 与输出格式归 Java。PrintStream 来自 BootDex，保存实际 OutputStream
-  强边及编码/错误/刷新/关闭；System.out/err 正常构造并包装独立 Java LogOutputStream，
-  只有该诊断端点的 private native emit 接入结构化日志，空片段不产生记录。
+  强边及编码/错误/刷新/关闭。System 由 ROM 创建标准流，应用启动用 ROM RuntimeInit 重定向日志。
 - Thread 声明字段和 Java 校验；start 虚派 this.run，基类 run 才虚派 target。
   线程、identity、sleep/join/park/interrupt 只用 VmThreadRuntime/monitor；纳秒向上取整到
-  统一毫秒 Clock。priority/daemon 仅为 guest fact，不映射宿主调度或自动退出。
+  统一 Clock 的毫秒等待接口。priority/daemon 仅为 guest fact，不映射宿主调度或自动退出。
 - Thread 字段用预绑定 handle/IntrinsicCall，禁止裸槽和逐调用 descriptor 查找。
   contextClassLoader 受 GC 追踪：root 为 application loader，子线程继承，setter 允许 null。
   已注册 JNI 附加 context 的 currentThread 使用独立、已启动的 Thread；默认名称/priority 5、
@@ -67,22 +67,22 @@
   结束后 Thread.getThreadGroup 返回 null。组销毁、daemon 和组优先级未纳入。
   ThreadGroup.uncaughtException 依次虚派 parent、默认 handler；无 handler 时向 System.err 打印线程名前缀和原版 Throwable 栈，ThreadDeath 不输出。APK 无 handler 的工作线程仍走原有进程致命出口。
   线程栈来自本 VM safe-point snapshot，不伪造完整 ThreadGroup/State。
-- Runtime 的单例、hook List、shuttingDown、add/remove/exit/halt 执行原版 Java；System.exit
-  委托 Runtime.exit，nativeExit 进入 Interpreter.Exit，不能返回 guest 或直接退出宿主。
-  宿主 Stop 保持取消语义；availableProcessors 保留单执行通道事实 1。
-  Runtime gc/内存统计/runFinalization 接入真实 GC/堆及原版 finalizer；nativeLoad 保留生产
-  loader 边界。runFinalizersOnExit(true) 立即
-  记账抛 UnsupportedOperationException，false 保持未启用。见 [相关说明](../../../../docs/design/dexvm.md)。
-- System.gc 显式请求普通 STW；runFinalization 等待当前 finalizer 批次。VMRuntime 普通单例、
+- Runtime 的单例、hook、退出和 finalization 由 ROM Java 执行，nativeExit 保存退出码并停止 VM。
+  gc 与内存 native 共用 VM 堆。availableProcessors 经 Posix.sysconf 查询配置核数。
+  integration 在 Runtime 两个接受 ClassLoader 的包内加载方法接入现有库加载器；nativeLoad
+  明确失败。Runtime.exec 所需进程管理不支持。
+- System.gc 显式请求普通 STW；runFinalization 执行原版 sentinel 协议。VMRuntime 普通单例、
   参数校验与已退役 external-allocation 协议执行原版 Java；利用率与 native allocation/free
   更新 JavaObjectModel 的真实配置/计数。无 JIT 的 start/disable 与 4.4 无 JIT 构建相同。
   newNonMovableArray 走统一基本类型/对象数组分配；null 抛 NPE、负长度抛 NegativeArraySizeException。
   addressOf 不检查 non-movable 标记，基本类型数组返回 payload 的 32 位 guest 地址并零扩展为 long；
   非数组抛 IllegalArgumentException，对象数组无 guest payload，记账并抛 UnsupportedOperationException。
   SDK 重配、缓存预加载/VM 标识查询等未接通 native 明确失败。
-- System 属性共用 per-VM 表，默认只发布三个 separator，参数按 Java 校验；getenv 只读取
-  注入的 guest Bionic environ，无参版本返回原版不可修改快照。getSecurityManager 固定 null，
-  不安装宿主权限系统；nanoTime 只用统一 Clock。Class.desiredAssertionStatus 默认 false，仅独立 run-dex 的 `--enable-assertions` 全局开启（无逐类规则）；ClassLoader.setDefaultAssertionStatus 按 API19 原版为空操作。
+- System 的 Java Properties 来自 ROM initSystemProperties，依赖 VMRuntime 的启动参数和类路径、
+  Posix 的环境与 passwd、guest uname、ICU 版本及 System.specialProperties。环境读取 Bionic
+  environ；无进程的调用需要显式注入事实。nanoTime 直接读统一 Clock 的纳秒值。
+  Class.desiredAssertionStatus 默认 false，仅独立 run-dex 的 `--enable-assertions` 全局开启；
+  ClassLoader.setDefaultAssertionStatus 按 API19 原版为空操作。
 - 平台 enum 用 IntrinsicEnumBuilder 在链接前生成字段、$VALUES、clinit、values/valueOf；
   Thread.State 与顶层接口、reflect.Type、Thread.UncaughtExceptionHandler 归 BootDex。
   Enum 已归 BootDex，ROM shared-constants 缓存使用 Class 提供的

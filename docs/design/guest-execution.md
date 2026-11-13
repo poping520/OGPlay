@@ -160,6 +160,9 @@ Java 字节码仍在可重入 VM 执行锁内串行解释，
 ## Clock 与执行预算
 
 Clock 是会话唯一时间入口，CPU tick 表示执行量预算而不是 Android uptime。
+Android uptime 按纳秒发布，Java 与原生系统调用读取同一个计数，墙钟查询共用固定纪元。
+uptime 只在生命周期步进时前进；驱动线程上的原生 nanosleep 按实际睡眠时长推进 uptime，
+下一次帧推进扣除这部分，避免帧内原生等待循环看到时间冻结。
 可选进程执行预算用 FIFO 准入和 token bucket 控制原生 CPU 并发及 tick 速率，默认关闭。
 启用时边界调用交回 runner 释放名额，关闭先解除预算等待。
 这种预算不限制所有宿主工作，也不改变虚拟 CPU 查询事实。

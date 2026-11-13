@@ -55,7 +55,7 @@ struct MonitorVm final {
         : model(arrays, {}), linker(),
           interpreter(
               [this, platform_bindings]() -> DexClassLinker& {
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices()));
                   if (platform_bindings)
                       linker.RegisterIntrinsics(AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>()));
                   ogplay::test::RegisterBootDex(linker);

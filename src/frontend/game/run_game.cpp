@@ -552,9 +552,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.logger = &logger;
         app_request.diagnostics = diagnostic_state;
         app_request.configure_dex_vm = [&, dex_context](runtime::dexvm::Interpreter& vm) {
-            vm.Monitors().SetTimeSource([dex_context] { return dex_context->uptime_millis.load(); });
             if (survey_gaps_output.has_value()) {
-                vm.Linker().EnableGapSurvey([dex_context] { return dex_context->uptime_millis.load(); });
+                vm.Linker().EnableGapSurvey([dex_context] { return dex_context->UptimeMillis(); });
                 Write("OGPlay: GAP SURVEY RUN — called unimplemented members and "
                       "unresolved platform classes answer neutrally and are "
                       "recorded. This is a "

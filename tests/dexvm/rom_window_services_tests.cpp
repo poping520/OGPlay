@@ -477,9 +477,9 @@ TEST_CASE("P3 host vsync queues a deterministic Clock pulse without running gues
     const auto receiver = f.New("Lprobe/DisplayReceiver;", "(Landroid/os/Looper;)V", {V::Ref(looper)});
     const auto roots = f.vm.ProtectReferences(std::array{receiver, looper});
     f.On(receiver, "scheduleVsync", "()V");
-    const auto before = f.context->uptime_millis.load();
+    const auto before = f.context->UptimeMillis();
     std::thread host([&] {
-        AdvanceAndroidClock(*f.context, 16);
+        AdvanceAndroidClock(*f.context, 16 * 1'000'000);
         QueueAndroidDisplayFrame(f.vm.ExecutionLock(), *f.context);
     });
     host.join();

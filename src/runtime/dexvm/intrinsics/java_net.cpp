@@ -73,11 +73,14 @@ void SetShortField(Interpreter& vm, const VmObjectRef object, const std::string&
                       detail.empty() ? std::string(function) + " failed" : std::string(detail), exception};
 }
 
+std::int32_t FileDescriptorHandle(IntrinsicContext& call, const VmObjectRef descriptor) {
+    if (!descriptor.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "fd == null"};
+    return GetCat1Field(call.vm, descriptor, "descriptor", "I");
+}
+
 [[nodiscard]] IoRuntime::DescriptorState& PosixDescriptor(IntrinsicContext& call, const VmObjectRef descriptor,
                                                           const std::string_view function) {
-    if (!descriptor.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "fd == null"};
-    const auto& field = ObjectField(call.vm, descriptor, "descriptor", "I");
-    const auto handle = static_cast<std::int32_t>(call.vm.Model().InstanceSlots(descriptor)[field.slot].bits);
+    const auto handle = FileDescriptorHandle(call, descriptor);
     if (const auto* state = call.vm.IO().FindDescriptor(descriptor);
         state && state->kind == IoRuntime::DescriptorKind::interface_query) {
         if (auto* ledger = call.vm.Ledger())
@@ -873,6 +876,49 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
                                               kAccPublic | kAccFinal);
     posix.MergesBootClass();
 #include "api19_posix_natives.inc"
+    posix.VirtualMethod(
+        "getenv", "(Ljava/lang/String;)Ljava/lang/String;",
+        [read = services.process_environment](IntrinsicContext& call) {
+            const auto name = IntrinsicCall(call).NonNullRef(0, "name");
+            if (!read)
+                throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest environment is unavailable"};
+            const auto key = call.vm.StringUtf8(name);
+            if (key.empty() || key.find('=') != std::string::npos) return VmValue::Ref(VmObjectRef{});
+            const auto prefix = key + "=";
+            for (const auto& entry : read()) {
+                if (entry.starts_with(prefix)) return VmValue::Ref(call.vm.NewStringUtf8(entry.substr(prefix.size())));
+            }
+            return VmValue::Ref(VmObjectRef{});
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "environ", "()[Ljava/lang/String;",
+        [read = services.process_environment](IntrinsicContext& call) {
+            if (!read)
+                throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest environment is unavailable"};
+            return VmValue::Ref(detail::NewStringArray(call.vm, read()));
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "getpwuid", "(I)Llibcore/io/StructPasswd;",
+        [read = services.guest_passwd](IntrinsicContext& call) {
+            if (!read) ThrowErrno(call.vm, "getpwuid_r", 38);
+            const auto passwd = read(call.vm, call.arguments[0].AsInt());
+            if (!passwd) ThrowErrno(call.vm, "getpwuid_r", 2);
+            const auto result = call.vm.NewIntrinsicInstance("Llibcore/io/StructPasswd;");
+            const auto result_root = call.vm.ProtectReferences(std::array{result});
+            const auto name = call.vm.NewStringUtf8(passwd->name);
+            const auto name_root = call.vm.ProtectReferences(std::array{name});
+            const auto directory = call.vm.NewStringUtf8(passwd->directory);
+            const auto directory_root = call.vm.ProtectReferences(std::array{directory});
+            const auto shell = call.vm.NewStringUtf8(passwd->shell);
+            InvokeDirect(call.vm, "Llibcore/io/StructPasswd;", "<init>",
+                         "(Ljava/lang/String;IILjava/lang/String;Ljava/lang/String;)V",
+                         {VmValue::Ref(result), VmValue::Ref(name), VmValue::Int(passwd->uid),
+                          VmValue::Int(passwd->gid), VmValue::Ref(directory), VmValue::Ref(shell)});
+            return VmValue::Ref(result);
+        },
+        kAccPublic | kAccNative);
     if (services.process_id)
         posix.VirtualMethod(
             "getpid", "()I", [identity = services.process_id](IntrinsicContext&) { return VmValue::Int(identity()); },
@@ -1037,7 +1083,9 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
         kAccPublic | kAccNative);
     const auto read_bytes = [](IntrinsicContext& call) {
         const auto fd = call.arguments[0].ref;
-        static_cast<void>(PosixDescriptor(call, fd, "read"));
+        const auto handle = FileDescriptorHandle(call, fd);
+        if (handle == 1 || handle == 2) ThrowErrno(call.vm, "read", 9);
+        if (handle != 0) static_cast<void>(PosixDescriptor(call, fd, "read"));
         const auto buffer = call.arguments[1].ref;
         const auto offset = call.arguments[2].AsInt();
         const auto count = call.arguments[3].AsInt();
@@ -1045,6 +1093,7 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
         if (offset < 0 || count < 0 || static_cast<std::int64_t>(offset) + count > call.vm.Model().ArrayLength(buffer))
             throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "read range exceeds array"};
         try {
+            if (handle == 0) return VmValue::Int(0);
             std::vector<std::byte> bytes(static_cast<std::size_t>(count));
             const auto amount = call.vm.IO().ReadFileStream(fd, bytes);
             if (amount == 0) return VmValue::Int(-1);
@@ -1058,9 +1107,12 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
                        kAccPrivate | kAccNative);
     posix.DirectMethod(
         "writeBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;II)I",
-        [](IntrinsicContext& call) {
+        [write = services.write_standard_stream](IntrinsicContext& call) {
             const auto fd = call.arguments[0].ref;
-            static_cast<void>(PosixDescriptor(call, fd, "write"));
+            const auto handle = FileDescriptorHandle(call, fd);
+            if (handle == 0) ThrowErrno(call.vm, "write", 9);
+            const bool standard = handle == 1 || handle == 2;
+            if (!standard) static_cast<void>(PosixDescriptor(call, fd, "write"));
             const auto buffer = call.arguments[1].ref;
             const auto offset = call.arguments[2].AsInt();
             const auto count = call.arguments[3].AsInt();
@@ -1069,7 +1121,21 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
                 static_cast<std::int64_t>(offset) + count > call.vm.Model().ArrayLength(buffer))
                 throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "write range exceeds array"};
             try {
-                call.vm.IO().WriteFileStream(fd, call.vm.Model().ReadByteRegion(buffer, offset, count));
+                const auto bytes = call.vm.Model().ReadByteRegion(buffer, offset, count);
+                if (!standard) {
+                    call.vm.IO().WriteFileStream(fd, bytes);
+                } else if (!bytes.empty()) {
+                    const bool error = handle == 2;
+                    if (const auto& console = call.vm.Console(error)) {
+                        console(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+                    } else if (write) {
+                        write(call.vm, error, bytes);
+                    } else if (auto* log = call.vm.Log()) {
+                        log->Write(error ? core::LogLevel::error : core::LogLevel::info,
+                                   error ? "guest.stderr" : "guest.stdout",
+                                   std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+                    }
+                }
                 return VmValue::Int(count);
             } catch (const IoRuntimeError& error) {
                 ThrowErrno(call.vm, "write", error.ErrorNumber(), error.what());
@@ -1244,7 +1310,8 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
         "ioctlInt", "(Ljava/io/FileDescriptor;ILlibcore/util/MutableInt;)I",
         [](IntrinsicContext& call) {
             try {
-                const auto available = call.vm.IO().FileAvailable(call.arguments[0].ref);
+                const auto fd = call.arguments[0].ref;
+                const auto available = FileDescriptorHandle(call, fd) == 0 ? 0 : call.vm.IO().FileAvailable(fd);
                 SetIntField(call.vm, call.arguments[2].ref, "value", static_cast<std::int32_t>(available));
                 return VmValue::Int(0);
             } catch (const IoRuntimeError& error) {

@@ -62,9 +62,9 @@ TEST_CASE("DVM-219 pinned tzdata serves real Bionic UTC and Shanghai queries") {
     core::Logger logger;
     std::vector<std::vector<std::byte>> contents;
     std::vector<runtime::BionicModuleSource> libraries;
-    for (const auto* name : {"libc.so", "libdl.so", "libm.so", "libstdc++.so"}) {
-        contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
-        libraries.push_back({name, contents.back()});
+    for (const auto name : runtime::SelectBionicProfile(19).guest_libraries) {
+        contents.push_back(ReadPayloadBytes(std::string("lib/") + std::string(name)));
+        libraries.push_back({std::string(name), contents.back()});
     }
     session::AndroidAppProcessRequest request;
     request.manifest = AppManifest("fixture.DelayedContentActivity");
@@ -76,6 +76,7 @@ TEST_CASE("DVM-219 pinned tzdata serves real Bionic UTC and Shanghai queries") {
     request.ledger = &ledger;
     request.logger = &logger;
     request.platform.android_id = "0123456789abcdef";
+    request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
     request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
     auto app = session::AndroidAppProcess::Create(std::move(request));
     auto& process = app->NativeProcess();
@@ -233,7 +234,7 @@ TEST_CASE("DVM-215 API19 decimal JSON uses bounded guest BIGNUM arithmetic") {
         for (const auto name :
              {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so", "libcrypto.so", "libssl.so", "libgabi++.so",
               "libicui18n.so", "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
-            contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
+            contents.push_back(ReadPayloadBytes(std::string("lib/") + std::string(name)));
             libraries.push_back({name, contents.back()});
         }
         auto context = std::make_shared<runtime::DexVmAndroidContext>();
@@ -511,7 +512,7 @@ void CheckPlatformPropertySources(bool load_icu) {
                                                 "libicui18n.so", "libicuuc.so",  "libstlport.so", "libogplay_jni.so"}
                      : std::vector<const char*>{"libc.so", "libm.so", "libdl.so", "libstdc++.so"};
         for (const auto* name : names) {
-            contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
+            contents.push_back(ReadPayloadBytes(std::string("lib/") + std::string(name)));
             libraries.push_back({name, contents.back()});
         }
         session::AndroidAppProcessRequest request;
@@ -525,34 +526,47 @@ void CheckPlatformPropertySources(bool load_icu) {
         request.filesystem = &filesystem;
         request.ledger = &ledger;
         request.logger = &logger;
-        auto app = session::AndroidAppProcess::Create(std::move(request));
-        auto& vm = app->DexVm().Vm();
-        const auto type = vm.Linker().ResolveDescriptor("Lfixture/PlatformTables;");
-        const auto method = vm.Linker().FindDirectMethod(type, "property", "(Ljava/lang/String;)Ljava/lang/String;");
-        REQUIRE(method.has_value());
-        auto& process = app->NativeProcess();
-        CHECK(process.FindLibraryExport("libicuuc.so", "u_getVersion_51").has_value() == load_icu);
-        CHECK(process.FindLibraryExport("libicuuc.so", "u_getUnicodeVersion_51").has_value() == load_icu);
-        CHECK(process.FindLibraryExport("libicui18n.so", "ulocdata_getCLDRVersion_51").has_value() == load_icu);
-        const auto raw_manifest = ReadPayloadBytes("manifest.json");
-        const std::string manifest(reinterpret_cast<const char*>(raw_manifest.data()), raw_manifest.size());
-        core::JsonParseError error;
-        const auto document = core::JsonDocument::ParseStrict(manifest, error);
-        REQUIRE(document.has_value());
-        const auto icu = document->Root().Member("icu");
-        REQUIRE(icu.has_value());
-        for (const auto& [key, expected] : std::array<std::pair<std::string_view, std::string_view>, 5>{
-                 {{"user.name", "u0_a0"},
-                  {"user.home", "/data"},
-                  {"android.icu.library.version", *icu->Member("version")->String()},
-                  {"android.icu.unicode.version", *icu->Member("unicode_version")->String()},
-                  {"android.icu.cldr.version", *icu->Member("cldr_version")->String()}}}) {
-            INFO(key);
-            const auto outcome = vm.Call(*method, std::array{VmValue::Ref(vm.NewStringUtf8(std::string(key)))});
-            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
-            REQUIRE(outcome.value.ref.IsValid());
-            CHECK(vm.StringUtf8(outcome.value.ref) == expected);
+        if (!load_icu) {
+            try {
+                static_cast<void>(session::AndroidAppProcess::Create(std::move(request)));
+                FAIL("System initialized without bundled ICU");
+            } catch (const VmJavaThrow& error) {
+                CHECK(error.descriptor == "Ljava/lang/ExceptionInInitializerError;");
+                CHECK(error.message.find("guest ICU version export is unavailable") != std::string::npos);
+            }
+            continue;
         }
+        const auto context = request.context;
+        request.configure_dex_vm = [context](Interpreter& vm) {
+            const auto type = vm.Linker().ResolveDescriptor("Lfixture/PlatformTables;");
+            const auto method =
+                vm.Linker().FindDirectMethod(type, "property", "(Ljava/lang/String;)Ljava/lang/String;");
+            REQUIRE(method.has_value());
+            auto& process = context->session->Process();
+            CHECK(process.FindLibraryExport("libicuuc.so", "u_getVersion_51").has_value());
+            CHECK(process.FindLibraryExport("libicuuc.so", "u_getUnicodeVersion_51").has_value());
+            CHECK(process.FindLibraryExport("libicui18n.so", "ulocdata_getCLDRVersion_51").has_value());
+            const auto raw_manifest = ReadPayloadBytes("manifest.json");
+            const std::string manifest(reinterpret_cast<const char*>(raw_manifest.data()), raw_manifest.size());
+            core::JsonParseError error;
+            const auto document = core::JsonDocument::ParseStrict(manifest, error);
+            REQUIRE(document.has_value());
+            const auto icu = document->Root().Member("icu");
+            REQUIRE(icu.has_value());
+            for (const auto& [key, expected] : std::array<std::pair<std::string_view, std::string_view>, 5>{
+                     {{"user.name", "u0_a0"},
+                      {"user.home", "/data"},
+                      {"android.icu.library.version", *icu->Member("version")->String()},
+                      {"android.icu.unicode.version", *icu->Member("unicode_version")->String()},
+                      {"android.icu.cldr.version", *icu->Member("cldr_version")->String()}}}) {
+                INFO(key);
+                const auto outcome = vm.Call(*method, std::array{VmValue::Ref(vm.NewStringUtf8(std::string(key)))});
+                REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+                REQUIRE(outcome.value.ref.IsValid());
+                CHECK(vm.StringUtf8(outcome.value.ref) == expected);
+            }
+        };
+        auto app = session::AndroidAppProcess::Create(std::move(request));
         // No Application or Activity is started by this process-shell test.
         CHECK_FALSE(app->Context()->application.IsValid());
     }
@@ -564,6 +578,6 @@ TEST_CASE("DVM-264 native properties use Bionic passwd and loaded guest ICU") {
     CheckPlatformPropertySources(true);
 }
 
-TEST_CASE("DVM-264 native process without ICU uses bundled manifest property metadata") {
+TEST_CASE("DVM-264 native process without ICU rejects System property initialization") {
     CheckPlatformPropertySources(false);
 }

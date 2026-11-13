@@ -441,10 +441,10 @@ TEST_CASE("DVM-103 collection VM primitives use injected time and wrapping atomi
         auto time = f.Static("Ljava/lang/System;", "nanoTime", "()J");
         REQUIRE(time.exception.IsValid());
         CHECK(f.linker.Class(time.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        f.vm.Monitors().SetTimeSource([] { return std::int64_t{123}; });
+        f.vm.Monitors().SetNanoTimeSource([] { return std::int64_t{123000001}; });
         time = f.Static("Ljava/lang/System;", "nanoTime", "()J");
         f.RequireOk(time);
-        CHECK(time.value.AsLong() == 123000000);
+        CHECK(time.value.AsLong() == 123000001);
         const auto runtime = f.Static("Ljava/lang/Runtime;", "getRuntime", "()Ljava/lang/Runtime;");
         f.RequireOk(runtime);
         const auto processors = f.Virtual(runtime.value.ref, "availableProcessors", "()I");

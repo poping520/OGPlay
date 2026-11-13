@@ -816,9 +816,7 @@ Decl Declare_android_database_sqlite_SQLiteConnection_Natives(const Context& con
             context->sqlite_connections.emplace(
                 token,
                 database::Connection::Open(
-                    *context->vfs, path, {},
-                    [context] { return 1'400'000'000'000LL + context->uptime_millis.load(std::memory_order_relaxed); },
-                    hal::FillSecureRandom,
+                    *context->vfs, path, {}, [context] { return context->WallTimeMillis(); }, hal::FillSecureRandom,
                     {.read_only = (flags & 0x00000001) != 0, .create = (flags & 0x10000000) != 0}));
             return dx::VmValue::Int(static_cast<std::int32_t>(token));
         }));

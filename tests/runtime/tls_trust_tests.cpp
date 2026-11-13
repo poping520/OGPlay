@@ -671,16 +671,16 @@ TEST_CASE("TLS-01 path validation uses guest libcrypto") {
                                      {VmValue::Ref(auth_chain), VmValue::Ref(app.Vm().NewStringUtf8("ECDSA"))});
         REQUIRE(auth.exception.IsValid());
         CHECK(app.Linker().Class(auth.exception_class).descriptor == "Ljava/security/cert/CertificateException;");
-        const auto previous = app.context->uptime_millis.load();
+        const auto previous = app.context->UptimeMillis();
         // AndroidAppProcess wall clock is 1_400_000_000_000 + uptime_millis.
         // 714'380'800'000 yields 2037-01-01, after fixture notAfter 2036-12-31.
-        app.context->uptime_millis.store(714'380'800'000LL);
+        app.context->uptime_nanos.store((714'380'800'000LL) * 1'000'000);
         auto expired_chain = app.CertArray({"server.der"});
         const auto expired_chain_roots = app.Vm().ProtectReferences(std::array{expired_chain});
         auto clocked = app.InvokeResult(trusted, "checkServerTrusted",
                                         "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
                                         {VmValue::Ref(expired_chain), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
-        app.context->uptime_millis.store(previous);
+        app.context->uptime_nanos.store((previous) * 1'000'000);
         REQUIRE(clocked.exception.IsValid());
         CHECK(app.Linker().Class(clocked.exception_class).descriptor ==
               "Ljava/security/cert/CertificateExpiredException;");
@@ -891,8 +891,8 @@ TEST_CASE("TLS-02 session cache resumes and honors timeout") {
           app.Vm().Model().ReadByteRegion(enumerated, 0, app.Vm().Model().ArrayLength(enumerated)));
     app.Invoke(first, "close", "()V");
 
-    const auto original_uptime = app.context->uptime_millis.load();
-    app.context->uptime_millis.store(original_uptime + 500);
+    const auto original_uptime = app.context->UptimeMillis();
+    app.context->uptime_nanos.store((original_uptime + 500) * 1'000'000);
     app.Invoke(session_context, "setSessionCacheSize", "(I)V", {VmValue::Int(1)});
     CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(first_id)})
               .ref.IsValid());
@@ -930,15 +930,15 @@ TEST_CASE("TLS-02 session cache resumes and honors timeout") {
     app.Invoke(disabled, "close", "()V");
 
     app.Invoke(session_context, "setSessionTimeout", "(I)V", {VmValue::Int(1)});
-    const auto previous = app.context->uptime_millis.load();
-    app.context->uptime_millis.store(original_uptime + 900);
+    const auto previous = app.context->UptimeMillis();
+    app.context->uptime_nanos.store((original_uptime + 900) * 1'000'000);
     CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(first_id)})
               .ref.IsValid());
-    app.context->uptime_millis.store(original_uptime + 1100);
+    app.context->uptime_nanos.store((original_uptime + 1100) * 1'000'000);
     auto expired =
         app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(first_id)}).ref;
     CHECK_FALSE(expired.IsValid());
-    app.context->uptime_millis.store(previous);
+    app.context->uptime_nanos.store((previous) * 1'000'000);
     app.Invoke(session_context, "setSessionTimeout", "(I)V", {VmValue::Int(0)});
     for (int i = 0; i < 3; ++i) {
         auto item = app.Vm().NewIntrinsicInstance("Lorg/ogplay/security/OgPlaySslSession;");

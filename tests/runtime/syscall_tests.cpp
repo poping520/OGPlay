@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <chrono>
 #include <cstdint>
 #include <array>
 #include <cstddef>
@@ -182,6 +183,66 @@ TEST_CASE("Android time syscalls use the unified clock and checked guest memory"
     frame.arguments[0] = 1;
     frame.arguments[1] = 0x20000;
     CHECK(dispatcher.Dispatch(frame) == -14);
+}
+
+TEST_CASE("Android time syscalls read injected uptime and report slept time to the clock owner") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::hal::FixedStepClock clock{100, 1000};
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestRange page{ogplay::memory::GuestAddress{0x10000}, memory.PageSize()};
+    memory.Map(page, ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+    std::uint64_t uptime = 60'000'001'234;
+    std::vector<std::pair<std::uint64_t, std::chrono::nanoseconds>> slept;
+    ogplay::runtime::BindAndroidTimeSyscalls(
+        dispatcher, clock, memory, {}, [&] { return uptime; },
+        [&](std::uint64_t thread, std::chrono::nanoseconds duration) {
+            slept.emplace_back(thread, duration);
+            uptime += static_cast<std::uint64_t>(duration.count());
+        });
+    const auto read32 = [&memory](const std::uint32_t address) {
+        std::array<std::byte, 4> bytes{};
+        memory.Read(ogplay::memory::GuestAddress{address}, bytes);
+        std::uint32_t value{};
+        for (std::size_t index = 0; index < bytes.size(); ++index)
+            value |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[index])) << (index * 8U);
+        return value;
+    };
+    const auto write32 = [&memory](const std::uint32_t address, const std::uint32_t value) {
+        std::array<std::byte, 4> bytes{};
+        for (std::size_t index = 0; index < bytes.size(); ++index)
+            bytes[index] = static_cast<std::byte>(value >> (index * 8U));
+        memory.Write(ogplay::memory::GuestAddress{address}, bytes);
+    };
+
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.thread_id = 1;
+    frame.number = 263;
+    frame.arguments[0] = 1;
+    frame.arguments[1] = 0x10000;
+    REQUIRE(dispatcher.Dispatch(frame) == 0);
+    CHECK(read32(0x10000) == 60);
+    CHECK(read32(0x10004) == 1234);
+    frame.arguments[0] = 0;
+    REQUIRE(dispatcher.Dispatch(frame) == 0);
+    CHECK(read32(0x10000) == ogplay::runtime::kAndroidWallEpochMillis / 1000 + 60);
+
+    // A native sleep loop on the clock driver must observe time passing inside one step.
+    frame.number = 162;
+    frame.arguments[0] = 0x10030;
+    frame.arguments[1] = 0;
+    write32(0x10030, 0U);
+    write32(0x10034, 2'000'000U);
+    REQUIRE(dispatcher.Dispatch(frame) == 0);
+    REQUIRE(slept.size() == 1);
+    CHECK(slept[0].first == 1U);
+    CHECK(slept[0].second == std::chrono::milliseconds(2));
+    frame.number = 263;
+    frame.arguments[0] = 1;
+    frame.arguments[1] = 0x10000;
+    REQUIRE(dispatcher.Dispatch(frame) == 0);
+    CHECK(read32(0x10000) == 60);
+    CHECK(read32(0x10004) == 2'001'234);
 }
 
 TEST_CASE("Android memory syscalls map protect unmap and grow brk safely") {

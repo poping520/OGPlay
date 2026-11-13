@@ -160,7 +160,9 @@ struct AudioTrackVm final {
                       context->native_output_sample_rate = *native_output_sample_rate;
                   }
                   context->pcm_playback = &mixer;
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  auto services = AndroidCoreIntrinsicServices(context);
+                  ogplay::test::BindCoreBootFixtureFacts(services);
+                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(std::move(services)));
                   linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
                   linker.RegisterIntrinsics(AudioTrackTestCatalog(&recorder, &loads, &prepared));
                   ogplay::test::RegisterBootDex(linker);
@@ -169,7 +171,7 @@ struct AudioTrackVm final {
               }(),
               model, nullptr, ledger, {}),
           threads(vm) {
-        vm.Monitors().SetTimeSource([] { return std::int64_t{1}; });
+        vm.Monitors().SetNanoTimeSource([context = context] { return context->uptime_nanos.load(); });
         context->threads = &threads;
         RegisterAndroidSchedulerStateTable(vm, context);
         RegisterAndroidAudioTrackStateTable(vm, context);

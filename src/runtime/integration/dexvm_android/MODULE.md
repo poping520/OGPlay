@@ -311,8 +311,9 @@ Handler 的消息沿原版语义，不宣称 abandon 能撤销已交付消息。
 
 Context 服务派发与 dump-surface 共用 platform_tables.h：未知名称返回 null，注册但
 未提供的服务记账并抛 UOE。DisplayManager 只查询既有 managed Display；不提供
-外接/虚拟显示及监听。属性来源经显式 core 回调注入；有 ICU 导出时查询 guest，
-无导出时保留随附 manifest 元数据生成的默认值，不隐式加载或访问宿主 ICU。
+外接/虚拟显示及监听。ROM System 属性通过显式 core 回调读取 Bionic 环境、passwd 与 ICU51
+版本，进程在 VM 初始化前准备随附 JNI 库及其 ICU 依赖，缺导出明确失败。Android 时钟按纳秒推进，Java 与
+原生时间查询读取同一计数；Java 毫秒接口由纳秒读数派生。
 
 ## 图形几何 native
 

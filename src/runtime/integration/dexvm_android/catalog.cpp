@@ -65,9 +65,23 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
         return context->network_environment->Interfaces();
     };
     static_cast<void>(DeviceLocale(context->locale_language, context->locale_region));
-    services.initialize_system_properties = [context](dexvm::Interpreter& vm) {
-        android_intrinsics::InitializeAndroidSystemProperties(vm, context);
+    services.application_classpath = [context] {
+        return context->package_resource_path.empty() ? std::string(".") : context->package_resource_path;
     };
+    services.vm_property_assignments = [context] {
+        std::vector<std::string> assignments{"user.language=" + context->locale_language,
+                                             "user.region=" + context->locale_region};
+        if (context->sealed_apk_bytes) assignments.emplace_back("java.io.tmpdir=/sdcard");
+        return assignments;
+    };
+    services.guest_passwd = [context](dexvm::Interpreter& vm, std::int32_t uid) {
+        return android_intrinsics::ReadGuestPasswd(vm, context, uid);
+    };
+    services.guest_icu_version = [context](dexvm::Interpreter& vm, dexvm::CoreIntrinsicServices::IcuVersion kind) {
+        return android_intrinsics::ReadGuestIcuVersion(vm, context, kind);
+    };
+    services.runtime_load = android_intrinsics::PlatformSystemLoadHandler(context);
+    services.runtime_load_library = android_intrinsics::PlatformSystemLoadLibraryHandler(context);
     services.boot_classpath_size = [context] { return static_cast<std::int32_t>(context->boot_classpath.size()); };
     services.find_boot_classpath_resource =
         [context](std::string_view name,
@@ -106,29 +120,13 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
         context->singletons.emplace(std::string(key), instance);
         return instance;
     };
-    services.current_time_millis = [context] {
-        return 1'400'000'000'000LL + context->uptime_millis.load(std::memory_order_relaxed);
-    };
-    services.environment_value = [context](const std::string_view name) {
-        if (context->session == nullptr) {
-            const auto environment = GuestProcessEnvironment::Api19(context->external_storage_root);
-            const auto value = environment.Find(name);
-            return value ? std::optional<std::string>{*value} : std::nullopt;
-        }
-        return context->session->Process().ProcessEnvironmentValue(name);
-    };
-    services.environment_entries = [context] {
-        if (context->session == nullptr) {
-            std::vector<std::pair<std::string, std::string>> result;
-            const auto environment = GuestProcessEnvironment::Api19(context->external_storage_root);
-            for (const auto& entry : environment.Entries())
-                result.emplace_back(entry.name, entry.value);
-            return result;
-        }
-        std::vector<std::pair<std::string, std::string>> result;
-        for (const auto& entry : context->session->Process().ProcessEnvironmentEntries()) {
-            result.emplace_back(entry.name, entry.value);
-        }
+    services.current_time_millis = [context] { return context->WallTimeMillis(); };
+    services.process_environment = [context] {
+        if (!context->session)
+            throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest environment is unavailable"};
+        std::vector<std::string> result;
+        for (const auto& entry : context->session->Process().ProcessEnvironmentEntries())
+            result.push_back(entry.name + "=" + entry.value);
         return result;
     };
     return services;

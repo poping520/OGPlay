@@ -29,6 +29,7 @@ enum class VmWaitOutcome : std::uint8_t {
 // Monotonic milliseconds from the unified Clock. Timed waits refuse to run
 // without one rather than reading a host wall clock.
 using VmMonotonicMillis = std::function<std::int64_t()>;
+using VmMonotonicNanos = std::function<std::int64_t()>;
 
 // Execution-context token of the root lifecycle thread: the context plain
 // Call() uses on the host thread that owns the session. VmThreadRuntime
@@ -61,6 +62,8 @@ public:
     VmMonitorTable(const VmMonitorTable&) = delete;
     VmMonitorTable& operator=(const VmMonitorTable&) = delete;
 
+    void SetNanoTimeSource(VmMonotonicNanos source);
+    [[nodiscard]] VmMonotonicNanos NanoTimeSource() const;
     void SetTimeSource(VmMonotonicMillis source);
     // Thread.sleep/join copy this same session clock. Host waits may schedule
     // rechecks, but only this source decides whether a guest deadline passed.

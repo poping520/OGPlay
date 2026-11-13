@@ -53,109 +53,73 @@ namespace {
 
 std::vector<IntrinsicClassDecl> FileFilterTestIntrinsics() {
     std::vector<IntrinsicClassDecl> result;
-    auto filename = IntrinsicClassBuilder::Class(
-        "Ltest/DatFilenameFilter;", "Ljava/lang/Object;",
-        {"Ljava/io/FilenameFilter;"});
-    filename.VirtualMethod(
-        "accept", "(Ljava/io/File;Ljava/lang/String;)Z",
-        [](IntrinsicContext& call) {
-            return VmValue::Int(
-                call.vm.StringUtf8(call.arguments[1].ref).ends_with(".dat"));
-        });
+    auto filename =
+        IntrinsicClassBuilder::Class("Ltest/DatFilenameFilter;", "Ljava/lang/Object;", {"Ljava/io/FilenameFilter;"});
+    filename.VirtualMethod("accept", "(Ljava/io/File;Ljava/lang/String;)Z", [](IntrinsicContext& call) {
+        return VmValue::Int(call.vm.StringUtf8(call.arguments[1].ref).ends_with(".dat"));
+    });
     result.push_back(std::move(filename).Build());
 
-    auto file = IntrinsicClassBuilder::Class(
-        "Ltest/SavFileFilter;", "Ljava/lang/Object;",
-        {"Ljava/io/FileFilter;"});
-    file.VirtualMethod("accept", "(Ljava/io/File;)Z",
-        [](IntrinsicContext& call) {
-            const auto slots =
-                call.vm.Model().InstanceSlots(call.arguments[0].ref);
-            return VmValue::Int(
-                call.vm.StringUtf8(VmObjectRef(slots[0].bits))
-                    .ends_with(".sav"));
-        });
+    auto file = IntrinsicClassBuilder::Class("Ltest/SavFileFilter;", "Ljava/lang/Object;", {"Ljava/io/FileFilter;"});
+    file.VirtualMethod("accept", "(Ljava/io/File;)Z", [](IntrinsicContext& call) {
+        const auto slots = call.vm.Model().InstanceSlots(call.arguments[0].ref);
+        return VmValue::Int(call.vm.StringUtf8(VmObjectRef(slots[0].bits)).ends_with(".sav"));
+    });
     result.push_back(std::move(file).Build());
 
-    auto throwing = IntrinsicClassBuilder::Class(
-        "Ltest/ThrowingFilenameFilter;", "Ljava/lang/Object;",
-        {"Ljava/io/FilenameFilter;"});
-    throwing.VirtualMethod(
-        "accept", "(Ljava/io/File;Ljava/lang/String;)Z",
-        [](IntrinsicContext&) -> VmValue {
-            throw VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                              "filter rejected the traversal"};
-        });
+    auto throwing = IntrinsicClassBuilder::Class("Ltest/ThrowingFilenameFilter;", "Ljava/lang/Object;",
+                                                 {"Ljava/io/FilenameFilter;"});
+    throwing.VirtualMethod("accept", "(Ljava/io/File;Ljava/lang/String;)Z", [](IntrinsicContext&) -> VmValue {
+        throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "filter rejected the traversal"};
+    });
     result.push_back(std::move(throwing).Build());
 
-    auto gc_filename = IntrinsicClassBuilder::Class(
-        "Ltest/GcFilenameFilter;", "Ljava/lang/Object;",
-        {"Ljava/io/FilenameFilter;"});
-    gc_filename.VirtualMethod(
-        "accept", "(Ljava/io/File;Ljava/lang/String;)Z",
-        [](IntrinsicContext& call) {
-            static_cast<void>(
-                call.vm.CollectGarbage("file-filename-filter-callback"));
-            return VmValue::Int(
-                call.vm.StringUtf8(call.arguments[1].ref).ends_with(".dat"));
-        });
+    auto gc_filename =
+        IntrinsicClassBuilder::Class("Ltest/GcFilenameFilter;", "Ljava/lang/Object;", {"Ljava/io/FilenameFilter;"});
+    gc_filename.VirtualMethod("accept", "(Ljava/io/File;Ljava/lang/String;)Z", [](IntrinsicContext& call) {
+        static_cast<void>(call.vm.CollectGarbage("file-filename-filter-callback"));
+        return VmValue::Int(call.vm.StringUtf8(call.arguments[1].ref).ends_with(".dat"));
+    });
     result.push_back(std::move(gc_filename).Build());
 
-    auto gc_file = IntrinsicClassBuilder::Class(
-        "Ltest/GcFileFilter;", "Ljava/lang/Object;",
-        {"Ljava/io/FileFilter;"});
-    gc_file.VirtualMethod("accept", "(Ljava/io/File;)Z",
-        [](IntrinsicContext& call) {
-            static_cast<void>(
-                call.vm.CollectGarbage("file-file-filter-callback"));
-            const auto slots =
-                call.vm.Model().InstanceSlots(call.arguments[0].ref);
-            return VmValue::Int(
-                call.vm.StringUtf8(VmObjectRef(slots[0].bits))
-                    .ends_with(".sav"));
-        });
+    auto gc_file = IntrinsicClassBuilder::Class("Ltest/GcFileFilter;", "Ljava/lang/Object;", {"Ljava/io/FileFilter;"});
+    gc_file.VirtualMethod("accept", "(Ljava/io/File;)Z", [](IntrinsicContext& call) {
+        static_cast<void>(call.vm.CollectGarbage("file-file-filter-callback"));
+        const auto slots = call.vm.Model().InstanceSlots(call.arguments[0].ref);
+        return VmValue::Int(call.vm.StringUtf8(VmObjectRef(slots[0].bits)).ends_with(".sav"));
+    });
     result.push_back(std::move(gc_file).Build());
 
     const auto add_file_constructor = [](IntrinsicClassBuilder& builder) {
         builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext& call) {
-            call.vm.Model().InstanceSlots(call.receiver)[0] = {
-                call.arguments[0].ref.Value(), SlotTag::ref};
+            call.vm.Model().InstanceSlots(call.receiver)[0] = {call.arguments[0].ref.Value(), SlotTag::ref};
             return VmValue::Void();
         });
     };
-    auto fresh_path_file = IntrinsicClassBuilder::Class(
-        "Ltest/FreshPathFile;", "Ljava/io/File;");
+    auto fresh_path_file = IntrinsicClassBuilder::Class("Ltest/FreshPathFile;", "Ljava/io/File;");
     add_file_constructor(fresh_path_file);
-    fresh_path_file.OverrideMethod(
-        "getPath", "()Ljava/lang/String;", [](IntrinsicContext& call) {
-            const auto path = VmObjectRef(
-                call.vm.Model().InstanceSlots(call.receiver)[0].bits);
-            return VmValue::Ref(
-                call.vm.NewStringUtf8(call.vm.StringUtf8(path)));
-        });
+    fresh_path_file.OverrideMethod("getPath", "()Ljava/lang/String;", [](IntrinsicContext& call) {
+        const auto path = VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits);
+        return VmValue::Ref(call.vm.NewStringUtf8(call.vm.StringUtf8(path)));
+    });
     result.push_back(std::move(fresh_path_file).Build());
 
-    auto gc_path_file = IntrinsicClassBuilder::Class(
-        "Ltest/GcPathFile;", "Ljava/io/File;");
+    auto gc_path_file = IntrinsicClassBuilder::Class("Ltest/GcPathFile;", "Ljava/io/File;");
     add_file_constructor(gc_path_file);
-    gc_path_file.OverrideMethod(
-        "getPath", "()Ljava/lang/String;", [](IntrinsicContext& call) {
-            static_cast<void>(
-                call.vm.CollectGarbage("file-compare-to-callback"));
-            return VmValue::Ref(VmObjectRef(
-                call.vm.Model().InstanceSlots(call.receiver)[0].bits));
-        });
+    gc_path_file.OverrideMethod("getPath", "()Ljava/lang/String;", [](IntrinsicContext& call) {
+        static_cast<void>(call.vm.CollectGarbage("file-compare-to-callback"));
+        return VmValue::Ref(VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits));
+    });
     result.push_back(std::move(gc_path_file).Build());
     return result;
 }
 
-} // namespace
+}  // namespace
 
 TEST_CASE("DVM-243 original StatFs snapshots refresh guest quota and preserve errors") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         const TemporaryRoot root("statfs");
-        auto store = SandboxStore::Open(root.path, kPackage, kPackage,
-                                       {.byte_quota = 16 * 4096, .maximum_files = 32});
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage, {.byte_quota = 16 * 4096, .maximum_files = 32});
         FileVm f(store.get(), true, {.backend = backend});
         f.vfs.AddPathAlias("/storage/emulated/0", "/sdcard");
         const auto type = f.linker.ResolveDescriptor("Landroid/os/StatFs;");
@@ -166,18 +130,17 @@ TEST_CASE("DVM-243 original StatFs snapshots refresh guest quota and preserve er
             return f.CallOnOutcome(stat, "restat", "(Ljava/lang/String;)V",
                                    {VmValue::Ref(f.interpreter.NewStringUtf8(path))});
         };
-        f.CallOn(stat, "<init>", "(Ljava/lang/String;)V",
-                 {VmValue::Ref(f.interpreter.NewStringUtf8("/sdcard"))});
+        f.CallOn(stat, "<init>", "(Ljava/lang/String;)V", {VmValue::Ref(f.interpreter.NewStringUtf8("/sdcard"))});
         CHECK(f.CallOn(stat, "getBlockSizeLong", "()J").AsLong() == 4096);
         CHECK(f.CallOn(stat, "getBlockCountLong", "()J").AsLong() == 16);
         CHECK(f.CallOn(stat, "getFreeBlocks", "()I").AsInt() == 16);
         CHECK(f.CallOn(stat, "getAvailableBytes", "()J").AsLong() == 16 * 4096);
-        REQUIRE_FALSE(refresh("/data").exception.IsValid()); // SQLiteGlobal page-size path
+        REQUIRE_FALSE(refresh("/data").exception.IsValid());  // SQLiteGlobal page-size path
         CHECK(f.CallOn(stat, "getBlockSize", "()I").AsInt() == 4096);
         const auto fd = f.vfs.Open("/sdcard/save", {.write = true, .create = true});
         const std::vector<std::byte> data(4096);
         REQUIRE(f.vfs.Write(fd, data) == data.size());
-        CHECK(f.CallOn(stat, "getFreeBlocks", "()I").AsInt() == 16); // cached snapshot
+        CHECK(f.CallOn(stat, "getFreeBlocks", "()I").AsInt() == 16);  // cached snapshot
         REQUIRE_FALSE(refresh("/storage/emulated/0/save").exception.IsValid());
         CHECK(f.CallOn(stat, "getFreeBlocksLong", "()J").AsLong() == 15);
         CHECK(f.CallOn(stat, "getFreeBytes", "()J").AsLong() == 15 * 4096);
@@ -199,16 +162,18 @@ TEST_CASE("DVM-243 original StatFs snapshots refresh guest quota and preserve er
         f.vfs.Truncate(fd, 0);
         REQUIRE_FALSE(refresh("/data/data/com.example.game").exception.IsValid());
         CHECK(f.CallOn(stat, "getAvailableBlocks", "()I").AsInt() == 16);
-        f.vfs.Close(fd); f.vfs.RemoveFile("/sdcard/save");
+        f.vfs.Close(fd);
+        f.vfs.RemoveFile("/sdcard/save");
         const auto other = f.interpreter.NewIntrinsicInstance("Landroid/os/StatFs;");
         const auto other_root = f.interpreter.ProtectReferences(std::array{other});
         fail(f.CallOnOutcome(other, "<init>", "(Ljava/lang/String;)V",
-                              {VmValue::Ref(f.interpreter.NewStringUtf8("/bad/path"))}),
+                             {VmValue::Ref(f.interpreter.NewStringUtf8("/bad/path"))}),
              "Ljava/lang/IllegalArgumentException;");
         static_cast<void>(f.interpreter.CollectGarbage());
         CHECK(f.CallOn(stat, "getFreeBlocksLong", "()J").AsLong() == 16);
         const auto hits = f.ledger.Unimplemented();
-        REQUIRE(hits.size() == 1); CHECK(hits.front().id == "runtime.vfs_filesystem_stats");
+        REQUIRE(hits.size() == 1);
+        CHECK(hits.front().id == "runtime.vfs_filesystem_stats");
     }
 }
 
@@ -228,8 +193,7 @@ TEST_CASE("DVM-243 original StatFs retains long values and API19 int truncation"
 }
 
 TEST_CASE("DVM-217 AtomicFile commits rolls back and recovers through VFS") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         const TemporaryRoot root("atomic-file");
         const std::string path = std::string(kWritableRoots[0]) + "/save/progress";
@@ -258,13 +222,12 @@ TEST_CASE("DVM-217 AtomicFile commits rolls back and recovers through VFS") {
             write("committed", "finishWrite");
             CHECK(vm.NativeRead(path) == "committed");
             CHECK_FALSE(vm.BoolOn(vm.NewFile(path + ".bak"), "exists"));
-            const auto permissions = vm.linker.FindDirectMethod(
-                vm.linker.ResolveDescriptor("Landroid/os/FileUtils;"),
-                "setPermissions", "(Ljava/lang/String;III)I");
+            const auto permissions = vm.linker.FindDirectMethod(vm.linker.ResolveDescriptor("Landroid/os/FileUtils;"),
+                                                                "setPermissions", "(Ljava/lang/String;III)I");
             REQUIRE(permissions.has_value());
-            const auto permission_result = vm.interpreter.Call(*permissions, std::array{
-                VmValue::Ref(vm.interpreter.NewStringUtf8(path)),
-                VmValue::Int(0771), VmValue::Int(-1), VmValue::Int(-1)});
+            const auto permission_result =
+                vm.interpreter.Call(*permissions, std::array{VmValue::Ref(vm.interpreter.NewStringUtf8(path)),
+                                                             VmValue::Int(0771), VmValue::Int(-1), VmValue::Int(-1)});
             REQUIRE_FALSE(permission_result.exception.IsValid());
             CHECK(permission_result.value.AsInt() == 38);
             CHECK_FALSE(vm.logger.Snapshot(ogplay::core::LogLevel::warn).empty());
@@ -318,9 +281,10 @@ TEST_CASE("File and stream class shapes come from API19 BootDex") {
         const auto type = vm.linker.ResolveDescriptor(owner);
         CHECK(vm.linker.Class(type).is_boot_dex);
         CHECK(vm.linker.FindFieldRecursive(type, "fd", "Ljava/io/FileDescriptor;").has_value());
-        for (const auto& [name, descriptor] : std::vector<std::pair<std::string, std::string>>{
-                 {"close", "()V"}, {"getFD", "()Ljava/io/FileDescriptor;"},
-                 {"getChannel", "()Ljava/nio/channels/FileChannel;"}}) {
+        for (const auto& [name, descriptor] :
+             std::vector<std::pair<std::string, std::string>>{{"close", "()V"},
+                                                              {"getFD", "()Ljava/io/FileDescriptor;"},
+                                                              {"getChannel", "()Ljava/nio/channels/FileChannel;"}}) {
             const auto slot = vm.linker.FindVtableIndex(type, name, descriptor);
             REQUIRE(slot.has_value());
             CHECK(vm.linker.Method(vm.linker.Class(type).vtable[*slot]).kind == MethodKind::interpreted);
@@ -336,83 +300,58 @@ TEST_CASE("File and stream class shapes come from API19 BootDex") {
 }
 
 TEST_CASE("File first-batch path and object semantics match on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
-        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
-                                                         "switch");
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         InterpreterConfig config;
         config.backend = backend;
         FileVm vm(nullptr, true, config);
         vm.vfs.CreateDirectory("/data");
         vm.vfs.CreateDirectory("/data/game");
         vm.vfs.SetWorkingDirectory("/data/game");
-        static_cast<void>(
-            vm.interpreter.SetSystemProperty("user.dir", "/data/game"));
+        const auto system = vm.linker.ResolveDescriptor("Ljava/lang/System;");
+        const auto reset = vm.linker.FindDirectMethod(system, "setProperties", "(Ljava/util/Properties;)V");
+        REQUIRE(reset);
+        REQUIRE_FALSE(vm.interpreter.Call(*reset, std::array{VmValue::Ref(VmObjectRef{})}).exception.IsValid());
 
         const auto relative = vm.NewFile("saves/.slot");
-        CHECK(vm.interpreter.StringUtf8(
-                  vm.CallOn(relative, "getName", "()Ljava/lang/String;").ref) ==
-              ".slot");
-        CHECK(vm.interpreter.StringUtf8(
-                  vm.CallOn(relative, "getParent", "()Ljava/lang/String;").ref) ==
-              "saves");
-        const auto parent = vm.CallOn(
-            relative, "getParentFile", "()Ljava/io/File;").ref;
-        CHECK(vm.interpreter.StringUtf8(
-                  vm.CallOn(parent, "getPath", "()Ljava/lang/String;").ref) ==
-              "saves");
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(relative, "getName", "()Ljava/lang/String;").ref) == ".slot");
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(relative, "getParent", "()Ljava/lang/String;").ref) == "saves");
+        const auto parent = vm.CallOn(relative, "getParentFile", "()Ljava/io/File;").ref;
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(parent, "getPath", "()Ljava/lang/String;").ref) == "saves");
         CHECK_FALSE(vm.BoolOn(relative, "isAbsolute"));
         CHECK(vm.BoolOn(relative, "isHidden"));
-        CHECK(vm.interpreter.StringUtf8(vm.CallOn(
-                  relative, "getAbsolutePath", "()Ljava/lang/String;").ref) ==
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(relative, "getAbsolutePath", "()Ljava/lang/String;").ref) ==
               "/data/game/saves/.slot");
-        const auto absolute = vm.CallOn(
-            relative, "getAbsoluteFile", "()Ljava/io/File;").ref;
-        CHECK(vm.interpreter.StringUtf8(
-                  vm.CallOn(absolute, "getPath", "()Ljava/lang/String;").ref) ==
+        const auto absolute = vm.CallOn(relative, "getAbsoluteFile", "()Ljava/io/File;").ref;
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(absolute, "getPath", "()Ljava/lang/String;").ref) ==
               "/data/game/saves/.slot");
 
         const auto same = vm.NewFile("saves/.slot");
         const auto later = vm.NewFile("saves/z");
-        CHECK(vm.CallOn(relative, "equals", "(Ljava/lang/Object;)Z",
-                        {VmValue::Ref(same)}).AsInt() == 1);
-        CHECK(vm.CallOn(relative, "hashCode", "()I").AsInt() ==
-              vm.CallOn(same, "hashCode", "()I").AsInt());
-        CHECK(vm.CallOn(relative, "compareTo", "(Ljava/io/File;)I",
-                        {VmValue::Ref(later)}).AsInt() < 0);
-        CHECK(vm.interpreter.StringUtf8(vm.CallOn(
-                  relative, "toString", "()Ljava/lang/String;").ref) ==
-              "saves/.slot");
+        CHECK(vm.CallOn(relative, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(same)}).AsInt() == 1);
+        CHECK(vm.CallOn(relative, "hashCode", "()I").AsInt() == vm.CallOn(same, "hashCode", "()I").AsInt());
+        CHECK(vm.CallOn(relative, "compareTo", "(Ljava/io/File;)I", {VmValue::Ref(later)}).AsInt() < 0);
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(relative, "toString", "()Ljava/lang/String;").ref) == "saves/.slot");
 
         const auto not_file = vm.interpreter.NewStringUtf8("not a file");
-        const auto cast = vm.CallOnOutcome(
-            relative, "compareTo", "(Ljava/lang/Object;)I",
-            {VmValue::Ref(not_file)});
+        const auto cast = vm.CallOnOutcome(relative, "compareTo", "(Ljava/lang/Object;)I", {VmValue::Ref(not_file)});
         REQUIRE(cast.exception.IsValid());
-        CHECK(vm.linker.Class(cast.exception_class).descriptor ==
-              "Ljava/lang/ClassCastException;");
+        CHECK(vm.linker.Class(cast.exception_class).descriptor == "Ljava/lang/ClassCastException;");
 
-        const auto roots = vm.CallStatic(
-            "Ljava/io/File;", "listRoots", "()[Ljava/io/File;").ref;
+        const auto roots = vm.CallStatic("Ljava/io/File;", "listRoots", "()[Ljava/io/File;").ref;
         REQUIRE(vm.model.ArrayLength(roots) == 1);
         const auto root = vm.model.GetObjectElement(roots, 0);
-        CHECK(vm.interpreter.StringUtf8(
-                  vm.CallOn(root, "getPath", "()Ljava/lang/String;").ref) ==
-              "/");
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(root, "getPath", "()Ljava/lang/String;").ref) == "/");
 
         vm.vfs.CreateDirectory("/data/game/save dir");
         const auto directory = vm.NewFile("save dir");
-        const auto uri = vm.CallOn(
-            directory, "toURI", "()Ljava/net/URI;").ref;
-        CHECK(vm.interpreter.StringUtf8(vm.CallOn(
-                  uri, "toString", "()Ljava/lang/String;").ref) ==
+        const auto uri = vm.CallOn(directory, "toURI", "()Ljava/net/URI;").ref;
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(uri, "toString", "()Ljava/lang/String;").ref) ==
               "file:/data/game/save%20dir/");
 
         const auto legal = vm.NewFile("save!$&'()+,;=@.dat");
-        const auto legal_uri = vm.CallOn(
-            legal, "toURI", "()Ljava/net/URI;").ref;
-        CHECK(vm.interpreter.StringUtf8(vm.CallOn(
-                  legal_uri, "toString", "()Ljava/lang/String;").ref) ==
+        const auto legal_uri = vm.CallOn(legal, "toURI", "()Ljava/net/URI;").ref;
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(legal_uri, "toString", "()Ljava/lang/String;").ref) ==
               "file:/data/game/save!$&'()+,;=@.dat");
     }
 }
@@ -436,10 +375,8 @@ TEST_CASE("File mkdir creates one level while mkdirs creates parents") {
 
 TEST_CASE("File second-batch VFS and filter semantics match on both backends") {
     const auto filters = FileFilterTestIntrinsics();
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
-        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
-                                                         "switch");
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         InterpreterConfig config;
         config.backend = backend;
         FileVm vm(nullptr, true, config, filters);
@@ -468,130 +405,93 @@ TEST_CASE("File second-batch VFS and filter semantics match on both backends") {
         CHECK_FALSE(vm.BoolOn(missing, "canWrite"));
         CHECK_FALSE(vm.BoolOn(missing, "isFile"));
 
-        CHECK(vm.CallOn(writable, "setWritable", "(Z)Z",
-                        {VmValue::Int(1)}).AsInt() == 0);
-        CHECK(vm.CallOn(writable, "setWritable", "(ZZ)Z",
-                        {VmValue::Int(1), VmValue::Int(0)}).AsInt() == 0);
-        CHECK(vm.CallOn(writable, "setWritable", "(Z)Z",
-                        {VmValue::Int(0)}).AsInt() == 0);
-        CHECK(vm.CallOn(read_only, "setWritable", "(Z)Z",
-                        {VmValue::Int(1)}).AsInt() == 0);
+        CHECK(vm.CallOn(writable, "setWritable", "(Z)Z", {VmValue::Int(1)}).AsInt() == 0);
+        CHECK(vm.CallOn(writable, "setWritable", "(ZZ)Z", {VmValue::Int(1), VmValue::Int(0)}).AsInt() == 0);
+        CHECK(vm.CallOn(writable, "setWritable", "(Z)Z", {VmValue::Int(0)}).AsInt() == 0);
+        CHECK(vm.CallOn(read_only, "setWritable", "(Z)Z", {VmValue::Int(1)}).AsInt() == 0);
 
         const auto array_strings = [&](const VmObjectRef array) {
             std::vector<std::string> result;
-            for (JniSize index = 0; index < vm.model.ArrayLength(array);
-                 ++index) {
-                result.push_back(vm.interpreter.StringUtf8(
-                    vm.model.GetObjectElement(array, index)));
+            for (JniSize index = 0; index < vm.model.ArrayLength(array); ++index) {
+                result.push_back(vm.interpreter.StringUtf8(vm.model.GetObjectElement(array, index)));
             }
             return result;
         };
         const auto file_paths = [&](const VmObjectRef array) {
             std::vector<std::string> result;
-            for (JniSize index = 0; index < vm.model.ArrayLength(array);
-                 ++index) {
+            for (JniSize index = 0; index < vm.model.ArrayLength(array); ++index) {
                 const auto file = vm.model.GetObjectElement(array, index);
-                result.push_back(vm.interpreter.StringUtf8(vm.CallOn(
-                    file, "getPath", "()Ljava/lang/String;").ref));
+                result.push_back(vm.interpreter.StringUtf8(vm.CallOn(file, "getPath", "()Ljava/lang/String;").ref));
             }
             return result;
         };
 
-        const auto dat_filter = vm.interpreter.NewIntrinsicInstance(
-            "Ltest/DatFilenameFilter;");
-        const auto names = vm.CallOn(
-            directory, "list",
-            "(Ljava/io/FilenameFilter;)[Ljava/lang/String;",
-            {VmValue::Ref(dat_filter)}).ref;
+        const auto dat_filter = vm.interpreter.NewIntrinsicInstance("Ltest/DatFilenameFilter;");
+        const auto names =
+            vm.CallOn(directory, "list", "(Ljava/io/FilenameFilter;)[Ljava/lang/String;", {VmValue::Ref(dat_filter)})
+                .ref;
         CHECK(array_strings(names) == std::vector<std::string>{"a.dat"});
-        const auto null_names = vm.CallOn(
-            directory, "list",
-            "(Ljava/io/FilenameFilter;)[Ljava/lang/String;",
-            {VmValue::Ref(VmObjectRef{})}).ref;
-        CHECK(array_strings(null_names) ==
-              std::vector<std::string>{"a.dat", "b.sav", "c.txt", "sub"});
+        const auto null_names =
+            vm.CallOn(directory, "list", "(Ljava/io/FilenameFilter;)[Ljava/lang/String;", {VmValue::Ref(VmObjectRef{})})
+                .ref;
+        CHECK(array_strings(null_names) == std::vector<std::string>{"a.dat", "b.sav", "c.txt", "sub"});
 
-        const auto all_files = vm.CallOn(
-            directory, "listFiles", "()[Ljava/io/File;").ref;
-        CHECK(file_paths(all_files) == std::vector<std::string>{
-            "/data/game/a.dat", "/data/game/b.sav", "/data/game/c.txt",
-            "/data/game/sub"});
-        const auto dat_files = vm.CallOn(
-            directory, "listFiles",
-            "(Ljava/io/FilenameFilter;)[Ljava/io/File;",
-            {VmValue::Ref(dat_filter)}).ref;
-        CHECK(file_paths(dat_files) ==
-              std::vector<std::string>{"/data/game/a.dat"});
-        const auto sav_filter = vm.interpreter.NewIntrinsicInstance(
-            "Ltest/SavFileFilter;");
-        const auto sav_files = vm.CallOn(
-            directory, "listFiles", "(Ljava/io/FileFilter;)[Ljava/io/File;",
-            {VmValue::Ref(sav_filter)}).ref;
-        CHECK(file_paths(sav_files) ==
-              std::vector<std::string>{"/data/game/b.sav"});
+        const auto all_files = vm.CallOn(directory, "listFiles", "()[Ljava/io/File;").ref;
+        CHECK(file_paths(all_files) ==
+              std::vector<std::string>{"/data/game/a.dat", "/data/game/b.sav", "/data/game/c.txt", "/data/game/sub"});
+        const auto dat_files =
+            vm.CallOn(directory, "listFiles", "(Ljava/io/FilenameFilter;)[Ljava/io/File;", {VmValue::Ref(dat_filter)})
+                .ref;
+        CHECK(file_paths(dat_files) == std::vector<std::string>{"/data/game/a.dat"});
+        const auto sav_filter = vm.interpreter.NewIntrinsicInstance("Ltest/SavFileFilter;");
+        const auto sav_files =
+            vm.CallOn(directory, "listFiles", "(Ljava/io/FileFilter;)[Ljava/io/File;", {VmValue::Ref(sav_filter)}).ref;
+        CHECK(file_paths(sav_files) == std::vector<std::string>{"/data/game/b.sav"});
 
-        const auto gc_filename_filter = vm.interpreter.NewIntrinsicInstance(
-            "Ltest/GcFilenameFilter;");
-        const auto gc_names = vm.CallOn(
-            directory, "list",
-            "(Ljava/io/FilenameFilter;)[Ljava/lang/String;",
-            {VmValue::Ref(gc_filename_filter)}).ref;
-        CHECK(array_strings(gc_names) ==
-              std::vector<std::string>{"a.dat"});
-        const auto gc_file_filter = vm.interpreter.NewIntrinsicInstance(
-            "Ltest/GcFileFilter;");
-        const auto gc_files = vm.CallOn(
-            directory, "listFiles", "(Ljava/io/FileFilter;)[Ljava/io/File;",
-            {VmValue::Ref(gc_file_filter)}).ref;
-        CHECK(file_paths(gc_files) ==
-              std::vector<std::string>{"/data/game/b.sav"});
+        const auto gc_filename_filter = vm.interpreter.NewIntrinsicInstance("Ltest/GcFilenameFilter;");
+        const auto gc_names = vm.CallOn(directory, "list", "(Ljava/io/FilenameFilter;)[Ljava/lang/String;",
+                                        {VmValue::Ref(gc_filename_filter)})
+                                  .ref;
+        CHECK(array_strings(gc_names) == std::vector<std::string>{"a.dat"});
+        const auto gc_file_filter = vm.interpreter.NewIntrinsicInstance("Ltest/GcFileFilter;");
+        const auto gc_files =
+            vm.CallOn(directory, "listFiles", "(Ljava/io/FileFilter;)[Ljava/io/File;", {VmValue::Ref(gc_file_filter)})
+                .ref;
+        CHECK(file_paths(gc_files) == std::vector<std::string>{"/data/game/b.sav"});
         const auto non_directory = vm.NewFile("/data/game/a.dat");
-        CHECK_FALSE(vm.CallOn(
-            non_directory, "listFiles", "()[Ljava/io/File;").ref.IsValid());
+        CHECK_FALSE(vm.CallOn(non_directory, "listFiles", "()[Ljava/io/File;").ref.IsValid());
 
-        const auto throwing = vm.interpreter.NewIntrinsicInstance(
-            "Ltest/ThrowingFilenameFilter;");
-        const auto filter_error = vm.CallOnOutcome(
-            directory, "list",
-            "(Ljava/io/FilenameFilter;)[Ljava/lang/String;",
-            {VmValue::Ref(throwing)});
+        const auto throwing = vm.interpreter.NewIntrinsicInstance("Ltest/ThrowingFilenameFilter;");
+        const auto filter_error = vm.CallOnOutcome(directory, "list", "(Ljava/io/FilenameFilter;)[Ljava/lang/String;",
+                                                   {VmValue::Ref(throwing)});
         REQUIRE(filter_error.exception.IsValid());
-        CHECK(vm.linker.Class(filter_error.exception_class).descriptor ==
-              "Ljava/lang/IllegalStateException;");
+        CHECK(vm.linker.Class(filter_error.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
 
         const auto source = vm.NewFile("/data/game/a.dat");
         const auto target = vm.NewFile("/data/game/b.sav");
-        CHECK(vm.CallOn(source, "renameTo", "(Ljava/io/File;)Z",
-                        {VmValue::Ref(target)}).AsInt() == 1);
+        CHECK(vm.CallOn(source, "renameTo", "(Ljava/io/File;)Z", {VmValue::Ref(target)}).AsInt() == 1);
         CHECK_FALSE(vm.BoolOn(source, "exists"));
         CHECK(vm.NativeRead("/data/game/b.sav") == "dat");
         const auto bad_target = vm.NewFile("/missing/a.dat");
-        CHECK(vm.CallOn(target, "renameTo", "(Ljava/io/File;)Z",
-                        {VmValue::Ref(bad_target)}).AsInt() == 0);
+        CHECK(vm.CallOn(target, "renameTo", "(Ljava/io/File;)Z", {VmValue::Ref(bad_target)}).AsInt() == 0);
         CHECK(vm.BoolOn(target, "exists"));
-        CHECK(vm.CallOn(directory, "renameTo", "(Ljava/io/File;)Z",
-                        {VmValue::Ref(vm.NewFile("/data/moved"))}).AsInt() == 0);
-        const auto null_target = vm.CallOnOutcome(
-            target, "renameTo", "(Ljava/io/File;)Z",
-            {VmValue::Ref(VmObjectRef{})});
+        CHECK(
+            vm.CallOn(directory, "renameTo", "(Ljava/io/File;)Z", {VmValue::Ref(vm.NewFile("/data/moved"))}).AsInt() ==
+            0);
+        const auto null_target =
+            vm.CallOnOutcome(target, "renameTo", "(Ljava/io/File;)Z", {VmValue::Ref(VmObjectRef{})});
         REQUIRE(null_target.exception.IsValid());
-        CHECK(vm.linker.Class(null_target.exception_class).descriptor ==
-              "Ljava/lang/NullPointerException;");
+        CHECK(vm.linker.Class(null_target.exception_class).descriptor == "Ljava/lang/NullPointerException;");
 
-        const auto new_path_file = [&](const std::string_view descriptor,
-                                       const std::string_view path) {
+        const auto new_path_file = [&](const std::string_view descriptor, const std::string_view path) {
             const auto file = vm.interpreter.NewIntrinsicInstance(descriptor);
-            static_cast<void>(vm.CallOn(
-                file, "<init>", "(Ljava/lang/String;)V",
-                {VmValue::Ref(vm.interpreter.NewStringUtf8(path))}));
+            static_cast<void>(
+                vm.CallOn(file, "<init>", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(path))}));
             return file;
         };
-        const auto fresh_left =
-            new_path_file("Ltest/FreshPathFile;", "left");
-        const auto collecting_right =
-            new_path_file("Ltest/GcPathFile;", "right");
-        CHECK(vm.CallOn(fresh_left, "compareTo", "(Ljava/io/File;)I",
-                        {VmValue::Ref(collecting_right)}).AsInt() < 0);
+        const auto fresh_left = new_path_file("Ltest/FreshPathFile;", "left");
+        const auto collecting_right = new_path_file("Ltest/GcPathFile;", "right");
+        CHECK(vm.CallOn(fresh_left, "compareTo", "(Ljava/io/File;)I", {VmValue::Ref(collecting_right)}).AsInt() < 0);
     }
 }
 
@@ -601,7 +501,8 @@ TEST_CASE("File Java failure results preserve the unavailable filesystem boundar
         vm.interpreter.IO().SetFileSystem(nullptr);
         const auto file = vm.NewFile("/data/game/save.dat");
         const auto target = vm.NewFile("/data/game/moved.dat");
-        for (const auto* name : {"canRead", "isFile", "mkdir"}) CHECK_FALSE(vm.BoolOn(file, name));
+        for (const auto* name : {"canRead", "isFile", "mkdir"})
+            CHECK_FALSE(vm.BoolOn(file, name));
         CHECK_FALSE(vm.CallOn(file, "list", "()[Ljava/lang/String;").ref.IsValid());
         CHECK(vm.CallOn(file, "renameTo", "(Ljava/io/File;)Z", {VmValue::Ref(target)}).AsInt() == 0);
         CHECK(vm.CallOn(file, "setWritable", "(Z)Z", {VmValue::Int(1)}).AsInt() == 0);
@@ -613,8 +514,9 @@ TEST_CASE("File Java failure results preserve the unavailable filesystem boundar
         REQUIRE(opened.exception.IsValid());
         CHECK(vm.linker.Class(opened.exception_class).descriptor == "Ljava/io/FileNotFoundException;");
         const auto posix = vm.interpreter.NewIntrinsicInstance("Llibcore/io/Posix;");
-        const auto denied = vm.CallOnOutcome(posix, "access", "(Ljava/lang/String;I)Z",
-            {VmValue::Ref(vm.interpreter.NewStringUtf8("/data/game/save.dat")), VmValue::Int(2)});
+        const auto denied =
+            vm.CallOnOutcome(posix, "access", "(Ljava/lang/String;I)Z",
+                             {VmValue::Ref(vm.interpreter.NewStringUtf8("/data/game/save.dat")), VmValue::Int(2)});
         REQUIRE(denied.exception.IsValid());
         CHECK(vm.linker.Class(denied.exception_class).descriptor == "Llibcore/io/ErrnoException;");
         const auto errno_field = vm.linker.FindFieldRecursive(denied.exception_class, "errno", "I");
@@ -652,55 +554,40 @@ TEST_CASE("File constructors and separators follow API 19 URI semantics") {
 
     CHECK(vm.StaticField("Ljava/io/File;", "separatorChar", "C") == '/');
     CHECK(vm.StaticField("Ljava/io/File;", "pathSeparatorChar", "C") == ':');
+    CHECK(vm.interpreter.StringUtf8(VmObjectRef(
+              static_cast<std::uint32_t>(vm.StaticField("Ljava/io/File;", "separator", "Ljava/lang/String;")))) == "/");
     CHECK(vm.interpreter.StringUtf8(VmObjectRef(static_cast<std::uint32_t>(
-              vm.StaticField("Ljava/io/File;", "separator",
-                             "Ljava/lang/String;")))) == "/");
-    CHECK(vm.interpreter.StringUtf8(VmObjectRef(static_cast<std::uint32_t>(
-              vm.StaticField("Ljava/io/File;", "pathSeparator",
-                             "Ljava/lang/String;")))) ==
-          ":");
+              vm.StaticField("Ljava/io/File;", "pathSeparator", "Ljava/lang/String;")))) == ":");
 
     const auto parent = vm.NewFile("/sdcard//game/");
-    CHECK(vm.interpreter.StringUtf8(vm.CallOn(
-              parent, "getPath", "()Ljava/lang/String;").ref) ==
-          "/sdcard/game");
+    CHECK(vm.interpreter.StringUtf8(vm.CallOn(parent, "getPath", "()Ljava/lang/String;").ref) == "/sdcard/game");
     const auto child = vm.NewFile(parent, "/saves//slot.dat/");
-    CHECK(vm.interpreter.StringUtf8(vm.CallOn(
-              child, "getPath", "()Ljava/lang/String;").ref) ==
+    CHECK(vm.interpreter.StringUtf8(vm.CallOn(child, "getPath", "()Ljava/lang/String;").ref) ==
           "/sdcard/game/saves/slot.dat");
 
     const auto uri = vm.NewUri("file:///sdcard/game%20save//slot.dat/");
-    CHECK(vm.interpreter.StringUtf8(vm.CallOn(
-              uri, "getRawPath", "()Ljava/lang/String;").ref) ==
+    CHECK(vm.interpreter.StringUtf8(vm.CallOn(uri, "getRawPath", "()Ljava/lang/String;").ref) ==
           "/sdcard/game%20save//slot.dat/");
     const auto from_uri = vm.NewFileFromUri(uri);
-    CHECK(vm.interpreter.StringUtf8(vm.CallOn(
-              from_uri, "getPath", "()Ljava/lang/String;").ref) ==
+    CHECK(vm.interpreter.StringUtf8(vm.CallOn(from_uri, "getPath", "()Ljava/lang/String;").ref) ==
           "/sdcard/game save/slot.dat");
 }
 
 TEST_CASE("File URI constructor rejects non-file URI components") {
     FileVm vm;
-    for (const auto spec : {"relative/path", "http:///sdcard/file.dat",
-                            "file:opaque", "file://host/sdcard/file.dat",
-                            "file:///sdcard/file.dat?query",
-                            "file:///sdcard/file.dat#fragment"}) {
+    for (const auto spec : {"relative/path", "http:///sdcard/file.dat", "file:opaque", "file://host/sdcard/file.dat",
+                            "file:///sdcard/file.dat?query", "file:///sdcard/file.dat#fragment"}) {
         const auto file = vm.interpreter.NewIntrinsicInstance("Ljava/io/File;");
-        const auto outcome = vm.CallOnOutcome(
-            file, "<init>", "(Ljava/net/URI;)V",
-            {VmValue::Ref(vm.NewUri(spec))});
+        const auto outcome = vm.CallOnOutcome(file, "<init>", "(Ljava/net/URI;)V", {VmValue::Ref(vm.NewUri(spec))});
         REQUIRE(outcome.exception.IsValid());
-        CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-              "Ljava/lang/IllegalArgumentException;");
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
     }
 
     const auto malformed = vm.interpreter.NewIntrinsicInstance("Ljava/net/URI;");
-    const auto outcome = vm.CallOnOutcome(
-        malformed, "<init>", "(Ljava/lang/String;)V",
-        {VmValue::Ref(vm.interpreter.NewStringUtf8("file:///bad%2"))});
+    const auto outcome = vm.CallOnOutcome(malformed, "<init>", "(Ljava/lang/String;)V",
+                                          {VmValue::Ref(vm.interpreter.NewStringUtf8("file:///bad%2"))});
     REQUIRE(outcome.exception.IsValid());
-    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-          "Ljava/net/URISyntaxException;");
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/net/URISyntaxException;");
 }
 
 TEST_CASE("File writes and native reads share one filesystem") {
@@ -714,14 +601,11 @@ TEST_CASE("File writes and native reads share one filesystem") {
     CHECK(vm.CallOn(file, "length", "()J").AsLong() == 11);
 
     // A native write is visible to Java, which is the other direction.
-    const auto descriptor = vm.vfs.Open(
-        "/sdcard/game/native.dat",
-        {.write = true, .create = true, .truncate = true});
+    const auto descriptor = vm.vfs.Open("/sdcard/game/native.dat", {.write = true, .create = true, .truncate = true});
     const std::vector<std::byte> bytes{std::byte{'h'}, std::byte{'i'}};
     CHECK(vm.vfs.Write(descriptor, bytes) == 2);
     vm.vfs.Close(descriptor);
-    CHECK(vm.CallOn(vm.NewFile("/sdcard/game/native.dat"), "length", "()J")
-              .AsLong() == 2);
+    CHECK(vm.CallOn(vm.NewFile("/sdcard/game/native.dat"), "length", "()J").AsLong() == 2);
 }
 
 TEST_CASE("File.delete removes real entries and refuses the rest") {
@@ -755,14 +639,12 @@ TEST_CASE("File.list distinguishes an empty directory from an invalid path") {
     FileVm vm;
     const auto directory = vm.NewFile("/sdcard/empty");
     REQUIRE(vm.BoolOn(directory, "mkdirs"));
-    const auto empty =
-        vm.CallOn(directory, "list", "()[Ljava/lang/String;").ref;
+    const auto empty = vm.CallOn(directory, "list", "()[Ljava/lang/String;").ref;
     REQUIRE(empty.IsValid());
     CHECK(vm.model.ArrayLength(empty) == 0);
 
     const auto missing = vm.NewFile("/sdcard/missing");
-    CHECK_FALSE(vm.CallOn(missing, "list", "()[Ljava/lang/String;")
-                    .ref.IsValid());
+    CHECK_FALSE(vm.CallOn(missing, "list", "()[Ljava/lang/String;").ref.IsValid());
 }
 
 TEST_CASE("DVM-338 Posix lazily adopts guest descriptors and preserves errno") {

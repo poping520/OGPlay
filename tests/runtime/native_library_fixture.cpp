@@ -375,7 +375,9 @@ ApplicationProcess::ApplicationProcess(ogplay::runtime::dexvm::InterpreterBacken
     globals_before_bridge = session->Environment().GlobalReferenceCount();
     bridge = std::make_unique<ogplay::runtime::DexVmGuestBridge>(
         *session, ReadDexFixture(dex_fixture), catalog, context, ledger, &logger,
-        ogplay::runtime::DexVmBridgeConfig{.interpreter = {.backend = backend}, .heap = heap},
+        ogplay::runtime::DexVmBridgeConfig{.interpreter = {.backend = backend},
+                                           .heap = heap,
+                                           .configure_core_services = ogplay::test::BindCoreBootFixtureFacts},
         ogplay::test::ReadBootDex());
     context->threads = &bridge->Threads();
 }

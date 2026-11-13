@@ -133,8 +133,8 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
 - 对象模型完成实例分配后通过显式 observer 调用 FinalizerReference.add，解释器只识别真正
   覆盖 finalize 的类；Java referent/zombie/list 是唯一状态。原版 Daemons 用真实 guest/host
   守护线程执行 finalize，异常记录后吞掉；复活对象不再第二次自动登记。runFinalization
-  等待进入时批次（含正在执行者），不等待后续新任务；固定 ROM 的 LIFO sentinel 越过旧任务
-  时由 VM 批次快照补足。watchdog 使用统一 Clock 的 10 秒阈值，原版 handler/guest exit(2)
+  按原版 LIFO 队列执行 sentinel 协议，与 Dalvik 一样不保证等完已排队的旧任务，VM 不改写队列。
+  watchdog 使用统一 Clock 的 10 秒阈值，原版 handler/guest exit(2)
   不终止宿主进程。详见 ADR-0151。
 - native 关闭在释放 VM 锁前按已登记 cleanup/token 占有 owner 字段并保活；成功退役、异常恢复。
   与 Java finalizer、GC/teardown 共用关闭事实，不能重复关闭 peer，也不将非法 token 伪作成功。
@@ -155,6 +155,10 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   `force_all_bridge` 是永久等价门禁。String 方法在链接时按方法身份记录 fast_op，
   threaded 在唯一目标调用点缓存该标记，多态调用点在选中目标后读取。仅加速确定的成功路径，
   需抛异常或无法判定时执行原版方法，启用 trace 时关闭快路径。
+- 内核定位：threaded 是生产内核，依赖分派或调用点的性能特化只做在 threaded，游戏场景与性能门禁以它为准；
+  switch 是参考内核，作为纯字节码语义基准、差分对照和排障后端，只接受语义修复，不接任何性能特化。
+  与分派无关的语义和性能改动放在共享层；opcode 层的语义修复两个内核同步修改。一致性套件两个内核都要跑。
+  默认值切到 threaded 之前，生产仍使用 switch。
 - `VmExecutionLock` 是可重入全 VM 单写/STW 边界；阻塞按原深度释放/恢复。锁序固定为
   execution→thread runtime→context table；安全分配点外不得触发 GC。
   锁竞争按 FIFO 准入；普通字节码每 1024 tick 的稳定安全点可向等待宿主让出，保留
@@ -167,7 +171,7 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   短暂重取 VM 锁不重置起点，补时仍受该区间真实耗时限制。start 虚派真实 `run()`；interrupt/join/sleep/
   park/uncaught handler/ThreadGroup 使用唯一 runtime。priority/daemon 不映射宿主调度或退出。
 - monitor owner 是 context token；wait 完全释放并恢复 recursion，notify/interrupt/shutdown/
-  Clock 唤醒。非 owner 操作抛 IllegalMonitorStateException。deadline 只用注入 Clock；无 Clock
+  Clock 唤醒。Java 时间查询可读取纳秒值，等待仍使用从同一读数派生的毫秒。非 owner 操作抛 IllegalMonitorStateException。deadline 只用注入 Clock；无 Clock
   明确失败，禁止读取宿主墙钟。
   ADR-0171：生命周期停摆时 root/worker 的限时等待每轮仅补至起点 uptime 加注入的
   真实流逝时间，并受自身截止时间约束；并发收敛，恢复后不补时、不回拨。
@@ -190,10 +194,9 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   常驻 runnable guest 不能阻断 Surface 等后续平台事件发布。普通 guest `Thread.yield()`
   仍使用既有 `Yield()` 语义。
 
-- System.out/err 经 LogOutputStream 提交文本与“是否行尾”事实：默认写结构化日志（空片段不记），
-  设置 `SetConsoleSink` 时按原字节（含空行、无行尾片段）交给宿主控制台，仅 run-dex 使用。
-  可选 error sink 接收 Java System.err；未注入时继续汇入原 console sink。通道归 Java 日志流实例，
-  不按文本或调用栈猜测，System.setOut/setErr 与自定义 PrintStream 仍由 Java 决定目标。
+- System 标准流由 ROM 初始化，Posix 标准输出经进程诊断出口记录，run-dex 可显式注入
+  `SetConsoleSink` 按原字节接收 fd 1/2，支持独立 stderr sink。System.setOut/setErr 由 ROM
+  改写各自静态字段。
   `InterpreterConfig::enable_assertions` 只对应 dalvikvm `-ea` 全局开关，APK 运行保持关闭。
 
 ### Core intrinsic 与专用 runtime
@@ -242,10 +245,8 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   ByteArrayInputStream；URL.openStream 虚派连接的 getInputStream。默认 NetworkPolicy disabled。真实客户端
   TLS/HTTPS 由 OGPlayJSSE 经 raw transport 与 guest libssl 完成，不在宿主重复加密。
   SSLEngine、server TLS 和公开互联网 CA 不在当前 complete 范围。
-- `System.lineSeparator` 在类初始化时通过初始 `line.separator` property 冻结，后续 property
-  修改不影响 `lineSeparator()`；System 仍是 VM 启动及 native 平台边界，不整体迁入 BootDex。
-- API 19 初始 property 固定提供 guest `java.home`、`java.io.tmpdir` 与 `user.dir`；Android
-  bridge 在执行任何 Java 代码前以 VFS working directory 覆盖 `user.dir`，禁止读取宿主 cwd。
+- `System.lineSeparator` 在 ROM 类初始化时冻结。Java Properties 由 System 持有，宿主读取
+  属性经 ROM getProperty。specialProperties 从已注入的 guest VFS 取得 `user.dir`。
 - `NioRuntime` 以对象 identity 保存 Buffer backing/cursor；heap/direct/view 共用 storage，backing
   array 是 GC 强边。allocateDirect 创建真实 byte[]，容量计入 Java 堆；direct 地址与数组 payload
   相同，GC 是唯一回收方，任一视图或单独数组引用都可保活。JNI WrapDirect 仍非拥有、无数组。
@@ -352,10 +353,6 @@ String 使用 API19 BootDex 普通实例布局。启动链接 String 与 [C 后�
 StringChars 视图在 String 可达时有效；hashCode 缓存与 ROM 字段共用。强/弱 intern 集合
 按 VmObjectRef 保存、按 payload 内容查询，weak 在回收引用前移除。JNI Chars/Critical
 借用 value+offset 并按 value 数组计 pin，UTF8 复制 lease 独立配对。
-
-平台默认属性由 platform_tables.h 定义；物化后以单一 live BootDex Properties 为权威，
-VM 持有 GC 根，get/setProperty 与 getProperties 共用对象。CoreIntrinsicServices 提供
-显式来源初始化回调；guest uname、passwd、ICU 与随附元数据为默认属性来源。
 
 DiagnosticThrowableCause 只读固定 ROM InvocationTargetException.target、
 ExceptionInInitializerError.exception、ClassNotFoundException.ex，否则读取 Throwable.cause；

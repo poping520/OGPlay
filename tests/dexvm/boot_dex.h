@@ -37,6 +37,9 @@ inline void BindBootDexArchive(runtime::DexVmAndroidContext& context) {
 // Fill absent Android declarations using the production catalog. Existing test
 // declarations remain explicit overrides; callers install Core first.
 void MountResourceFixture(runtime::DexVmAndroidContext& context, runtime::dexvm::Interpreter& vm);
+// Explicit facts for VMs that do not start guest Bionic and ICU.
+runtime::dexvm::CoreIntrinsicServices CoreBootFixtureServices(runtime::dexvm::CoreIntrinsicServices services = {});
+void BindCoreBootFixtureFacts(runtime::dexvm::CoreIntrinsicServices& services);
 void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker);
 // View constructors now call Context.getResources. UI fixtures must supply
 // attached wrappers, just as the production Activity driver does.

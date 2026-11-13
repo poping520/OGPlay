@@ -36,7 +36,23 @@ using HostStateDestructor = std::function<void(std::uint64_t)>;
 // Narrow host facts needed by Java/JRE intrinsic families that used to live
 // in dexvm_android. Callbacks keep core independent from DexVmAndroidContext.
 struct CoreIntrinsicServices final {
-    std::function<void(Interpreter&)> initialize_system_properties;
+    std::function<std::string()> application_classpath;
+    std::function<std::vector<std::string>()> vm_property_assignments;
+
+    struct Passwd final {
+        std::string name;
+        std::int32_t uid;
+        std::int32_t gid;
+        std::string directory;
+        std::string shell;
+    };
+
+    std::function<std::optional<Passwd>(Interpreter&, std::int32_t)> guest_passwd;
+    enum class IcuVersion { library, unicode, cldr };
+    std::function<std::string(Interpreter&, IcuVersion)> guest_icu_version;
+    std::function<void(Interpreter&, bool, std::span<const std::byte>)> write_standard_stream;
+    IntrinsicHandler runtime_load;
+    IntrinsicHandler runtime_load_library;
     // Uses the embedding process's existing guest allocator and direct-buffer
     // path; the mapping remains read-only and live until process/VM teardown.
     std::function<VmObjectRef(Interpreter&, std::span<const std::uint8_t>)> create_dex_buffer;
@@ -61,8 +77,7 @@ struct CoreIntrinsicServices final {
     std::string default_timezone{"GMT"};
     std::function<VmObjectRef(Interpreter&, std::string_view, std::string_view)> singleton;
     std::function<std::int64_t()> current_time_millis;
-    std::function<std::optional<std::string>(std::string_view)> environment_value;
-    std::function<std::vector<std::pair<std::string, std::string>>()> environment_entries;
+    std::function<std::vector<std::string>()> process_environment;
 };
 
 // Class linking: registration, hierarchy resolution, field layout, vtable

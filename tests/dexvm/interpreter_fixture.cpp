@@ -61,7 +61,7 @@ Vm::Vm(const InterpreterConfig config, const JavaObjectModelConfig model_config,
     : arrays(payload_provider ? *payload_provider : arrays_payload), model(arrays, model_config), linker(),
       interpreter(
           [this, &extra_catalog, &extra_fixture]() -> DexClassLinker& {
-              auto catalog = CoreIntrinsicCatalog();
+              auto catalog = CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices());
               catalog.insert(catalog.end(), std::make_move_iterator(extra_catalog.begin()),
                              std::make_move_iterator(extra_catalog.end()));
               linker.RegisterIntrinsics(catalog);
@@ -89,7 +89,7 @@ IntrinsicVm::IntrinsicVm(std::vector<IntrinsicClassDecl> catalog)
     : model(arrays), linker(),
       interpreter(
           [this, &catalog]() -> DexClassLinker& {
-              auto core = CoreIntrinsicCatalog();
+              auto core = CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices());
               core.insert(core.end(), std::make_move_iterator(catalog.begin()), std::make_move_iterator(catalog.end()));
               linker.RegisterIntrinsics(core);
               ogplay::test::RegisterBootDex(linker);

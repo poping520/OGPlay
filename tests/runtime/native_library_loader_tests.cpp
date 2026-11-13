@@ -290,7 +290,9 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
     auto catalog = runtime::AndroidIntrinsicCatalog(context);
     auto bridge = std::make_unique<runtime::DexVmGuestBridge>(
         *session, ReadDexFixture("aps5.dex"), catalog, context, ledger, nullptr,
-        runtime::DexVmBridgeConfig{.interpreter = {.backend = backend}}, test::ReadBootDex());
+        runtime::DexVmBridgeConfig{.interpreter = {.backend = backend},
+                                   .configure_core_services = test::BindCoreBootFixtureFacts},
+        test::ReadBootDex());
     context->threads = &bridge->Threads();
 
     const auto aps5_class = bridge->Linker().FindClass("Lfixture/Aps5;");
@@ -325,6 +327,14 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
     REQUIRE_MESSAGE(!mixed_case.exception.IsValid(), mixed_case.exception_message);
     const auto logical_result = call_with_string(method("loadLibrary", "(Ljava/lang/String;)V"), "Path");
     REQUIRE_MESSAGE(!logical_result.exception.IsValid(), logical_result.exception_message);
+    const auto runtime_load = method("runtimeLoadLibrary", "(Ljava/lang/String;)V");
+    const auto runtime_result = call_with_string(runtime_load, "Path");
+    REQUIRE_MESSAGE(!runtime_result.exception.IsValid(), runtime_result.exception_message);
+    expect_link_error(call_with_string(runtime_load, "missing"));
+    for (const auto* logical : {"soundpool", "media_jni"}) {
+        REQUIRE_FALSE(call_with_string(runtime_load, logical).exception.IsValid());
+        REQUIRE_FALSE(call_with_string(method("loadLibrary", "(Ljava/lang/String;)V"), logical).exception.IsValid());
+    }
     records = libraries.Records();
     const auto alias_found = std::ranges::find(records, "libPath.so", &runtime::NativeLibraryRecord::soname);
     REQUIRE(alias_found != records.end());
@@ -427,9 +437,9 @@ TEST_CASE("System loadLibrary releases VM lock for concurrent native JNI class i
     context->session = session.get();
     context->native_libraries = &libraries;
     core::CapabilityLedger ledger;
-    auto bridge =
-        std::make_unique<DexVmGuestBridge>(*session, ReadDexFixture("aps5.dex"), AndroidIntrinsicCatalog(context),
-                                           context, ledger, nullptr, DexVmBridgeConfig{}, test::ReadBootDex());
+    auto bridge = std::make_unique<DexVmGuestBridge>(
+        *session, ReadDexFixture("aps5.dex"), AndroidIntrinsicCatalog(context), context, ledger, nullptr,
+        DexVmBridgeConfig{.configure_core_services = test::BindCoreBootFixtureFacts}, test::ReadBootDex());
     active_bridge = bridge.get();
     context->threads = &bridge->Threads();
     auto& vm = bridge->Vm();
@@ -530,9 +540,9 @@ TEST_CASE("DexVM preserves failure from a resolved RegisterNatives target") {
     context->native_libraries = &libraries;
     core::CapabilityLedger ledger;
     auto catalog = runtime::AndroidIntrinsicCatalog(context);
-    auto bridge =
-        std::make_unique<runtime::DexVmGuestBridge>(*session, ReadDexFixture("aps5.dex"), catalog, context, ledger,
-                                                    nullptr, runtime::DexVmBridgeConfig{}, test::ReadBootDex());
+    auto bridge = std::make_unique<runtime::DexVmGuestBridge>(
+        *session, ReadDexFixture("aps5.dex"), catalog, context, ledger, nullptr,
+        runtime::DexVmBridgeConfig{.configure_core_services = test::BindCoreBootFixtureFacts}, test::ReadBootDex());
     context->threads = &bridge->Threads();
 
     const auto owner = bridge->Linker().FindClass("Lfixture/Aps5;");

@@ -373,7 +373,7 @@ Decl Declare_local_LocationService_Class(const Context& context) {
             auto entry = ReadGeofence(vm, call.arguments[1].ref, intent, sender);
             entry.expires_at = CallAndroidMethod(vm, sanitized, "getExpireAt", "()J").AsLong();
             auto& fences = context->location_registrations.geofences;
-            const auto now = context->uptime_millis.load();
+            const auto now = context->UptimeMillis();
             std::erase_if(fences, [now](const auto& fence) { return fence.expires_at < now; });
             if (entry.expires_at < now) return VmValue::Void();
             const auto old =
@@ -396,7 +396,7 @@ Decl Declare_local_LocationService_Class(const Context& context) {
             const auto sender_root = call.vm.ProtectReferences(std::array{sender});
             const auto fence = call.arguments[0].ref;
             const auto entry = fence.IsValid() ? ReadGeofence(call.vm, fence, intent, sender) : Geofence{};
-            const auto now = context->uptime_millis.load();
+            const auto now = context->UptimeMillis();
             std::erase_if(context->location_registrations.geofences, [&](const auto& registered) {
                 if (registered.expires_at < now) return true;
                 return fence.IsValid() ? SameGeofence(registered, entry) : registered.sender == sender;
@@ -1095,59 +1095,55 @@ Decl Declare_local_TelephonyService_Class(const Context& context) {
 Decl Declare_local_TelephonyRegistry_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalTelephonyRegistry;",
                                                     "Lcom/android/internal/telephony/ITelephonyRegistry$Stub;");
-    builder.VirtualMethod("listen", "(Ljava/lang/String;Lcom/android/internal/telephony/IPhoneStateListener;IZ)V",
-                          [context](dx::IntrinsicContext& call) {
-                              const auto callback = dx::IntrinsicCall(call).NonNullRef(1, "callback");
-                              const auto events = call.arguments[2].AsInt();
-                              if (events == 0) {
-                                  context->telephony_listeners.erase(callback);
-                                  return dx::VmValue::Void();
-                              }
-                              constexpr int kLocationEvents = 0x410;
-                              constexpr int kPhoneStateEvents = 0xec;
-                              if (events & kLocationEvents) RequireServicePermission(context, "ACCESS_COARSE_LOCATION");
-                              if (events & kPhoneStateEvents) RequireServicePermission(context, "READ_PHONE_STATE");
-                              context->telephony_listeners.insert_or_assign(callback, events);
-                              if (!call.arguments[3].AsInt()) return dx::VmValue::Void();
+    builder.VirtualMethod(
+        "listen", "(Ljava/lang/String;Lcom/android/internal/telephony/IPhoneStateListener;IZ)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto callback = dx::IntrinsicCall(call).NonNullRef(1, "callback");
+            const auto events = call.arguments[2].AsInt();
+            if (events == 0) {
+                context->telephony_listeners.erase(callback);
+                return dx::VmValue::Void();
+            }
+            constexpr int kLocationEvents = 0x410;
+            constexpr int kPhoneStateEvents = 0xec;
+            if (events & kLocationEvents) RequireServicePermission(context, "ACCESS_COARSE_LOCATION");
+            if (events & kPhoneStateEvents) RequireServicePermission(context, "READ_PHONE_STATE");
+            context->telephony_listeners.insert_or_assign(callback, events);
+            if (!call.arguments[3].AsInt()) return dx::VmValue::Void();
 
-                              auto& vm = call.vm;
-                              const auto dispatch = [&](int event, const char* name, const char* signature,
-                                                        std::vector<dx::VmValue> arguments) {
-                                  const auto record = context->telephony_listeners.find(callback);
-                                  if (record != context->telephony_listeners.end() && (record->second & event))
-                                      static_cast<void>(
-                                          CallAndroidMethod(vm, callback, name, signature, std::move(arguments)));
-                              };
-                              if (events & 1) {
-                                  const auto service =
-                                      NewPlatformObject(vm, "Landroid/telephony/ServiceState;", "()V", {});
-                                  static_cast<void>(CallAndroidMethod(vm, service, "setStateOutOfService", "()V"));
-                                  dispatch(1, "onServiceStateChanged", "(Landroid/telephony/ServiceState;)V",
-                                           {dx::VmValue::Ref(service)});
-                              }
-                              const auto zero = dx::VmValue::Int(0);
-                              dispatch(2, "onSignalStrengthChanged", "(I)V", {dx::VmValue::Int(-1)});
-                              dispatch(4, "onMessageWaitingIndicatorChanged", "(Z)V", {zero});
-                              dispatch(8, "onCallForwardingIndicatorChanged", "(Z)V", {zero});
-                              if (events & 16)
-                                  dispatch(16, "onCellLocationChanged", "(Landroid/os/Bundle;)V",
-                                           {dx::VmValue::Ref(NewAndroidBundle(vm))});
-                              const auto& state = context->device_state.telephony;
-                              if (events & 32)
-                                  dispatch(32, "onCallStateChanged", "(ILjava/lang/String;)V",
-                                           {dx::VmValue::Int(state.call_state), MakeString(call, "")});
-                              dispatch(64, "onDataConnectionStateChanged", "(II)V",
-                                       {dx::VmValue::Int(state.data_state), zero});
-                              dispatch(128, "onDataActivity", "(I)V", {zero});
-                              if (events & 256)
-                                  dispatch(256, "onSignalStrengthsChanged", "(Landroid/telephony/SignalStrength;)V",
-                                           {dx::VmValue::Ref(NewPlatformObject(vm, "Landroid/telephony/SignalStrength;",
-                                                                               "()V", {}))});
-                              dispatch(512, "onOtaspChanged", "(I)V", {zero});
-                              dispatch(1024, "onCellInfoChanged", "(Ljava/util/List;)V",
-                                       {dx::VmValue::Ref(dx::VmObjectRef{})});
-                              return dx::VmValue::Void();
-                          });
+            auto& vm = call.vm;
+            const auto dispatch = [&](int event, const char* name, const char* signature,
+                                      std::vector<dx::VmValue> arguments) {
+                const auto record = context->telephony_listeners.find(callback);
+                if (record != context->telephony_listeners.end() && (record->second & event))
+                    static_cast<void>(CallAndroidMethod(vm, callback, name, signature, std::move(arguments)));
+            };
+            if (events & 1) {
+                const auto service = NewPlatformObject(vm, "Landroid/telephony/ServiceState;", "()V", {});
+                static_cast<void>(CallAndroidMethod(vm, service, "setStateOutOfService", "()V"));
+                dispatch(1, "onServiceStateChanged", "(Landroid/telephony/ServiceState;)V",
+                         {dx::VmValue::Ref(service)});
+            }
+            const auto zero = dx::VmValue::Int(0);
+            dispatch(2, "onSignalStrengthChanged", "(I)V", {dx::VmValue::Int(-1)});
+            dispatch(4, "onMessageWaitingIndicatorChanged", "(Z)V", {zero});
+            dispatch(8, "onCallForwardingIndicatorChanged", "(Z)V", {zero});
+            if (events & 16)
+                dispatch(16, "onCellLocationChanged", "(Landroid/os/Bundle;)V",
+                         {dx::VmValue::Ref(NewAndroidBundle(vm))});
+            const auto& state = context->device_state.telephony;
+            if (events & 32)
+                dispatch(32, "onCallStateChanged", "(ILjava/lang/String;)V",
+                         {dx::VmValue::Int(state.call_state), MakeString(call, "")});
+            dispatch(64, "onDataConnectionStateChanged", "(II)V", {dx::VmValue::Int(state.data_state), zero});
+            dispatch(128, "onDataActivity", "(I)V", {zero});
+            if (events & 256)
+                dispatch(256, "onSignalStrengthsChanged", "(Landroid/telephony/SignalStrength;)V",
+                         {dx::VmValue::Ref(NewPlatformObject(vm, "Landroid/telephony/SignalStrength;", "()V", {}))});
+            dispatch(512, "onOtaspChanged", "(I)V", {zero});
+            dispatch(1024, "onCellInfoChanged", "(Ljava/util/List;)V", {dx::VmValue::Ref(dx::VmObjectRef{})});
+            return dx::VmValue::Void();
+        });
     for (
         const auto& [name, descriptor] : std::array{
             std::pair{"notifyCallForwardingChanged", "(Z)V"},

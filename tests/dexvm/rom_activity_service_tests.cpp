@@ -178,7 +178,7 @@ TEST_CASE("P3 AMS exit deadline follows the injected Clock without declaring pen
     const auto token = x.Top();
     RequestRomActivityExit(x.f.vm, x.f.context, 20);
     CHECK(ReadRomActivityExitStatus(x.f.context) == RomActivityExitStatus::waiting);
-    AdvanceAndroidClock(*x.f.context, 20);
+    AdvanceAndroidClock(*x.f.context, 20 * 1'000'000);
     CHECK(ReadRomActivityExitStatus(x.f.context) == RomActivityExitStatus::deadline_expired);
     x.Paused(token);
     x.f.On(x.am, "activityDestroyed", "(Landroid/os/IBinder;)V", {V::Ref(token)});

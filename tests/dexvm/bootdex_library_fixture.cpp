@@ -58,8 +58,9 @@ Dvm87Vm::Dvm87Vm(const InterpreterBackend backend, const std::string& language, 
               context->locale_region = region;
               CoreIntrinsicServices services = AndroidCoreIntrinsicServices(context);
               services.default_timezone = default_timezone;
+              services.process_environment = {};
               services.current_time_millis = [] { return 1704067200000LL; };
-              linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
+              linker.RegisterIntrinsics(CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices(services)));
               linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
               ogplay::test::BindBootDexPlatformNatives(linker);
               ogplay::test::RegisterBootDex(linker);

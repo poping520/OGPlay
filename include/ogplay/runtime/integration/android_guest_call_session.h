@@ -219,6 +219,9 @@ struct AndroidGuestProcessRequest final {
     std::shared_ptr<debug::DiagnosticState> diagnostics;
     std::shared_ptr<const GuestProcessEnvironment> initial_environment;
     std::optional<std::thread::id> guest_call_slice_observer_thread;
+    std::function<std::uint64_t()> monotonic_nanos{};
+    // Called on the sleeping host thread after a native nanosleep with the time slept.
+    std::function<void(std::chrono::nanoseconds)> native_sleep_observer{};
 };
 
 class AndroidGuestProcessError final : public std::runtime_error {
@@ -294,6 +297,7 @@ public:
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
     [[nodiscard]] const GuestCpuConfig& CpuConfig() const noexcept;
     [[nodiscard]] const GuestMemorySnapshot& MemorySnapshot() const noexcept;
+    void WriteStandardStream(bool error, std::span<const std::byte> bytes, std::uint64_t thread);
     [[nodiscard]] std::optional<std::string> ProcessEnvironmentValue(std::string_view name) const;
     [[nodiscard]] std::vector<GuestProcessEnvironmentEntry> ProcessEnvironmentEntries() const;
     [[nodiscard]] std::optional<memory::GuestAddress>

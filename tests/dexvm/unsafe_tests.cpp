@@ -50,7 +50,7 @@ struct UnsafeVm {
               [&]() -> DexClassLinker& {
                   CoreIntrinsicServices services;
                   services.current_time_millis = [this] { return 1'400'000'000'000LL + millis.load(); };
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
+                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices(services)));
                   if (boot) {
                       ogplay::test::RegisterBootDex(linker);
                   }

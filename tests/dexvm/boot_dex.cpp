@@ -338,6 +338,34 @@ void MountResourceFixture(runtime::DexVmAndroidContext& context, runtime::dexvm:
     }
 }
 
+runtime::dexvm::CoreIntrinsicServices CoreBootFixtureServices(runtime::dexvm::CoreIntrinsicServices services) {
+    using Services = runtime::dexvm::CoreIntrinsicServices;
+    if (!services.process_uid) services.process_uid = [] { return 10000; };
+    if (!services.process_environment)
+        services.process_environment = [] {
+            return std::vector<std::string>{"LD_LIBRARY_PATH=/vendor/lib:/system/lib"};
+        };
+    services.guest_passwd = [](runtime::dexvm::Interpreter&, std::int32_t uid) -> std::optional<Services::Passwd> {
+        if (uid != 10000) return std::nullopt;
+        return Services::Passwd{"u0_a0", uid, uid, "/data", "/system/bin/sh"};
+    };
+    services.guest_icu_version = [](runtime::dexvm::Interpreter&, Services::IcuVersion kind) {
+        using enum Services::IcuVersion;
+        switch (kind) {
+        case library: return "51.1.0.1";
+        case unicode: return "6.2";
+        case cldr: return "23.0";
+        }
+        throw std::logic_error("unknown ICU fixture version");
+    };
+    return services;
+}
+
+void BindCoreBootFixtureFacts(runtime::dexvm::CoreIntrinsicServices& services) {
+    services.process_environment = {};
+    services = CoreBootFixtureServices(std::move(services));
+}
+
 void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker) {
     const auto context = std::make_shared<runtime::DexVmAndroidContext>();
     BindBootDexArchive(*context);

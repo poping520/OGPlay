@@ -38,39 +38,14 @@ inline VmValue InvokeGuest(Interpreter& vm, VmObjectRef receiver, const std::str
     return result.value;
 }
 
-inline void AddThrowableCauseConstructors(IntrinsicClassBuilder& builder) {
-    builder.Constructor("(Ljava/lang/String;Ljava/lang/Throwable;)V", [](IntrinsicContext& c) {
-        c.vm.InitializeThrowable(c.receiver, c.arguments[0].ref);
-        c.vm.InitThrowableCause(c.receiver, c.arguments[1].ref);
-        return VmValue::Void();
-    });
-    builder.Constructor("(Ljava/lang/Throwable;)V", [](IntrinsicContext& c) {
-        const auto cause = c.arguments[0].ref;
-        c.vm.InitializeThrowable(c.receiver);
-        c.vm.InitThrowableCause(c.receiver, cause);
-        if (cause.IsValid()) {
-            const auto message = InvokeGuest(c.vm, cause, "toString", "()Ljava/lang/String;").ref;
-            c.vm.SetThrowableMessage(c.receiver, message);
-        }
-        return VmValue::Void();
-    });
-}
-
-[[nodiscard]] inline IntrinsicClassDecl
-DeclareSimpleThrowableClass(const std::string_view descriptor, const std::string_view super_descriptor,
-                            bool with_cause = false, std::optional<std::int64_t> serial_uid = std::nullopt) {
-    auto builder = IntrinsicClassBuilder::Class(std::string(descriptor), std::string(super_descriptor));
-    if (serial_uid) builder.ConstantInt("serialVersionUID", "J", *serial_uid, kAccPrivate);
-    builder.Constructor("()V", [](IntrinsicContext& context) {
-        context.vm.InitializeThrowable(context.receiver);
-        return VmValue::Void();
-    });
-    builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext& context) {
-        context.vm.InitializeThrowable(context.receiver, context.arguments[0].ref);
-        return VmValue::Void();
-    });
-    if (with_cause) AddThrowableCauseConstructors(builder);
-    return std::move(builder).Build();
+inline VmObjectRef NewStringArray(Interpreter& vm, const std::vector<std::string>& strings) {
+    const auto element = vm.Linker().ResolveDescriptor("Ljava/lang/String;");
+    const auto array = vm.Model().NewObjectArray(vm.Linker().ResolveDescriptor("[Ljava/lang/String;"), element,
+                                                 static_cast<JniSize>(strings.size()));
+    const auto roots = vm.ProtectReferences(std::array{array});
+    for (std::size_t i = 0; i < strings.size(); ++i)
+        vm.Model().SetObjectElement(array, static_cast<JniSize>(i), vm.NewStringUtf8(strings[i]));
+    return array;
 }
 
 [[nodiscard]] inline std::string DottedName(const std::string& descriptor) {
@@ -217,12 +192,6 @@ inline void SetBoxedBits(IntrinsicContext& context, const VmObjectRef receiver, 
     const auto instance = context.vm.NewIntrinsicInstance(descriptor);
     SetBoxedBits(context, instance, bits, wide);
     return VmValue::Ref(instance);
-}
-
-inline void GuestLine(IntrinsicContext& context, const std::string& line) {
-    auto* logger = context.vm.Log();
-    if (logger == nullptr) return;
-    logger->Write(core::LogLevel::info, "runtime.dexvm.guest", line);
 }
 
 [[nodiscard]] inline std::u16string Utf8DecodeReplace(const std::span<const std::byte> bytes) {

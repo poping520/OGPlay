@@ -506,6 +506,8 @@ struct AndroidGuestProcessStartup final {
     std::shared_ptr<debug::DiagnosticState> diagnostics;
     std::shared_ptr<const GuestProcessEnvironment> initial_environment;
     std::optional<std::thread::id> guest_call_slice_observer_thread;
+    std::function<std::uint64_t()> monotonic_nanos{};
+    std::function<void(std::chrono::nanoseconds)> native_sleep_observer{};
 };
 
 [[nodiscard]] AndroidGuestProcessStartup RootlessStartup(const AndroidGuestProcessRequest& request) {
@@ -531,7 +533,9 @@ struct AndroidGuestProcessStartup final {
             request.proc_facts,
             request.diagnostics,
             request.initial_environment,
-            request.guest_call_slice_observer_thread};
+            request.guest_call_slice_observer_thread,
+            request.monotonic_nanos,
+            request.native_sleep_observer};
 }
 
 [[nodiscard]] AndroidGuestProcessStartup LegacyStartup(const AndroidGuestCallSessionRequest& request) {
@@ -633,6 +637,7 @@ public:
           }),
           nested_guest_cpus_(memory_bus_, execution_context_,
                              [this](cpu::DynarmicCpu& cpu) { ConfigureFastHostCalls(cpu); }),
+          monotonic_nanos_(request.monotonic_nanos), native_sleep_observer_(request.native_sleep_observer),
           filesystem_(request.filesystem), logger_(request.boundary_options.logger),
           initial_environment_(request.initial_environment
                                    ? request.initial_environment
@@ -1646,15 +1651,58 @@ public:
         if (failure) std::rethrow_exception(failure);
     }
 
+    void LogGuestIo(const GuestIoRecord& record) {
+        if (logger_ == nullptr) return;
+        auto level = record.stream == GuestIoStream::stderr_stream ? core::LogLevel::error : core::LogLevel::info;
+        std::size_t begin{};
+        std::string tag;
+        if (record.stream == GuestIoStream::android_log && !record.payload.empty()) {
+            const auto priority = std::to_integer<std::uint8_t>(record.payload.front());
+            level = priority >= 7U   ? core::LogLevel::fatal
+                    : priority >= 6U ? core::LogLevel::error
+                    : priority >= 5U ? core::LogLevel::warn
+                    : priority >= 4U ? core::LogLevel::info
+                                     : core::LogLevel::debug;
+            begin = 1U;
+            while (begin < record.payload.size() && record.payload[begin] != std::byte{}) {
+                tag.push_back(static_cast<char>(std::to_integer<unsigned char>(record.payload[begin++])));
+            }
+            if (begin < record.payload.size()) ++begin;
+        }
+        std::string message;
+        message.reserve(record.payload.size() - begin);
+        for (std::size_t index = begin; index < record.payload.size(); ++index) {
+            const auto byte = std::to_integer<unsigned char>(record.payload[index]);
+            if (byte == 0U) continue;
+            message.push_back(byte == '\r' ? '\n' : static_cast<char>(byte));
+        }
+        while (!message.empty() && (message.back() == '\n' || message.back() == '\0')) {
+            message.pop_back();
+        }
+        if (message.empty()) message = "<empty guest write>";
+        const auto category = record.stream == GuestIoStream::stderr_stream   ? "guest.stderr"
+                              : record.stream == GuestIoStream::stdout_stream ? "guest.stdout"
+                                                                              : "guest.kernel_log";
+        logger_->Write(level, category, tag.empty() ? "[guest] " + message : "[guest] " + tag + ": " + message,
+                       {.guest_thread = record.thread_id},
+                       {{"guest_io_endpoint", record.endpoint},
+                        {"guest_io_bytes", static_cast<std::uint64_t>(record.payload.size())}});
+    }
+
     void BindSyscalls() {
         BindAndroidTimeSyscalls(
-            dispatcher_, clock_, address_space_, [this](std::uint64_t thread, std::chrono::nanoseconds duration) {
+            dispatcher_, clock_, address_space_,
+            [this](std::uint64_t thread, std::chrono::nanoseconds duration) {
                 if (thread != kRootThreadId || std::this_thread::get_id() != owner_thread_ || cleanup_depth_ == 0U)
                     return;
                 const auto now = hal::Clock::SteadyTimestampNs();
                 if (now >= *cleanup_deadline_ns_ ||
                     static_cast<std::uint64_t>(duration.count()) > *cleanup_deadline_ns_ - now)
                     throw A32GuestCallError("teardown cleanup wall-time budget exhausted by nanosleep");
+            },
+            monotonic_nanos_,
+            [this](std::uint64_t, std::chrono::nanoseconds slept) {
+                if (native_sleep_observer_) native_sleep_observer_(slept);
             });
         BindAndroidMemorySyscalls(dispatcher_, address_space_);
         BindAndroidThreadSyscalls(dispatcher_, futex_table_, memory_bus_,
@@ -1671,43 +1719,8 @@ public:
             std::scoped_lock lock(vma_mutex_);
             vma_annotations_.push_back(annotation);
         });
-        BindAndroidFileSyscalls(dispatcher_, *filesystem_, address_space_, [this](const GuestIoRecord& record) {
-            if (logger_ == nullptr) return;
-            auto level = record.stream == GuestIoStream::stderr_stream ? core::LogLevel::error : core::LogLevel::info;
-            std::size_t begin{};
-            std::string tag;
-            if (record.stream == GuestIoStream::android_log && !record.payload.empty()) {
-                const auto priority = std::to_integer<std::uint8_t>(record.payload.front());
-                level = priority >= 7U   ? core::LogLevel::fatal
-                        : priority >= 6U ? core::LogLevel::error
-                        : priority >= 5U ? core::LogLevel::warn
-                        : priority >= 4U ? core::LogLevel::info
-                                         : core::LogLevel::debug;
-                begin = 1U;
-                while (begin < record.payload.size() && record.payload[begin] != std::byte{}) {
-                    tag.push_back(static_cast<char>(std::to_integer<unsigned char>(record.payload[begin++])));
-                }
-                if (begin < record.payload.size()) ++begin;
-            }
-            std::string message;
-            message.reserve(record.payload.size() - begin);
-            for (std::size_t index = begin; index < record.payload.size(); ++index) {
-                const auto byte = std::to_integer<unsigned char>(record.payload[index]);
-                if (byte == 0U) continue;
-                message.push_back(byte == '\r' ? '\n' : static_cast<char>(byte));
-            }
-            while (!message.empty() && (message.back() == '\n' || message.back() == '\0')) {
-                message.pop_back();
-            }
-            if (message.empty()) message = "<empty guest write>";
-            const auto category = record.stream == GuestIoStream::stderr_stream   ? "guest.stderr"
-                                  : record.stream == GuestIoStream::stdout_stream ? "guest.stdout"
-                                                                                  : "guest.kernel_log";
-            logger_->Write(level, category, tag.empty() ? "[guest] " + message : "[guest] " + tag + ": " + message,
-                           {.guest_thread = record.thread_id},
-                           {{"guest_io_endpoint", record.endpoint},
-                            {"guest_io_bytes", static_cast<std::uint64_t>(record.payload.size())}});
-        });
+        BindAndroidFileSyscalls(dispatcher_, *filesystem_, address_space_,
+                                [this](const GuestIoRecord& record) { LogGuestIo(record); });
         BindAndroidFileMetadataSyscalls(dispatcher_, *filesystem_, address_space_);
         BindAndroidThreadLifecycleSyscalls(dispatcher_, lifecycle_);
         BindAndroidArmPrivateSyscalls(dispatcher_, address_space_,
@@ -2410,6 +2423,8 @@ private:
         std::make_shared<cpu::DynarmicExecutionContext>(64, execution_budget_);
     cpu::GuestThreadGroup threads_;
     detail::NestedGuestCpuPool nested_guest_cpus_;
+    std::function<std::uint64_t()> monotonic_nanos_;
+    std::function<void(std::chrono::nanoseconds)> native_sleep_observer_;
     VirtualFileSystem* filesystem_{};
     core::Logger* logger_{};
     std::shared_ptr<const GuestProcessEnvironment> initial_environment_;
@@ -2688,6 +2703,14 @@ const GuestCpuConfig& AndroidGuestProcess::CpuConfig() const noexcept {
 
 const GuestMemorySnapshot& AndroidGuestProcess::MemorySnapshot() const noexcept {
     return impl_->MemorySnapshot();
+}
+
+void AndroidGuestProcess::WriteStandardStream(const bool error, const std::span<const std::byte> bytes,
+                                              const std::uint64_t thread) {
+    impl_->LogGuestIo({error ? GuestIoStream::stderr_stream : GuestIoStream::stdout_stream,
+                       error ? "stderr" : "stdout",
+                       {bytes.begin(), bytes.end()},
+                       thread});
 }
 
 std::optional<std::string> AndroidGuestProcess::ProcessEnvironmentValue(const std::string_view name) const {

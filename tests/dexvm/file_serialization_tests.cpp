@@ -307,7 +307,8 @@ TEST_CASE("Object streams preserve explicit exception serialization boundary and
     // through SHA. This core-only fixture has no guest native loader; the
     // actual NotSerializableException check lives in the real JNI fixture.
     CHECK(vm.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
-    CHECK(unsupported.exception_message == "APK native library loader is unavailable");
+    CHECK(unsupported.exception_message ==
+          "Library javacrypto not found; tried [/vendor/lib/libjavacrypto.so, /system/lib/libjavacrypto.so]");
 
     const auto invalid_bytes = vm.model.NewPrimitiveArray(vm.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 4);
     const auto byte_input = vm.interpreter.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");

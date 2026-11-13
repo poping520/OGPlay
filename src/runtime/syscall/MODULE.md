@@ -18,7 +18,9 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 - syscall 除 Linux 返回值外必须发布 watchdog 进展类别；正字节 read/pread/write/pwrite 与
   真实驻留的 futex wait 为 advanced，查询、EOF/零字节、wake/yield、内存管理及默认均为
   idle。类别清单集中在 dispatcher，未知 family 禁止自动续期。
-- guest 地址必须经受检内存访问；时间源只使用统一 Clock。
+- guest 地址必须经受检内存访问。带 DexVM 的 Android 会话注入同一个纳秒 uptime；
+  CLOCK_MONOTONIC、CLOCK_BOOTTIME 与 System.nanoTime 同源，CLOCK_REALTIME、
+  gettimeofday 与 System.currentTimeMillis 共用固定纪元。独立 native 入口读取注入的 Clock。
 - 非固定匿名私有 `mmap2` 在 `[0x60000000,4 GiB)` 调用 memory 的原子 first-fit
   映射，依据真实账本避开已占区（包括 TLS/栈/PROT_NONE）；无单调游标或独立空闲表，
   munmap 后空洞自动可复用，失败不消耗地址。brk 状态用独立锁串行化。
@@ -50,6 +52,7 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   可中断 host 等待，返回 EINTR，按需写回剩余 timespec；信号留给目标 CPU 安全边界投递，
   SA_RESTART 不重启睡眠。成功时不访问 remainder。只有实际等待后报告 advanced，
   零时长、等待前中断及参数错误为 idle；宿主等待计时使用统一 Clock，不推进 guest ticks。
+  可选睡眠记账回调在等待结束后收到实际睡眠时长（中断时为已睡部分）。
   可由进程 owner 注入非零睡眠准入回调，在实际 sleep 前拒绝超出退出预算的请求；
   控制失败原样展开，不伪造睡眠成功，默认无回调时语义保持。
 - API 19 futex wait 的 timeout 是 guest 32-bit 相对 timespec，清理 scope 可施加更短的时限；超时返回 `-ETIMEDOUT`，

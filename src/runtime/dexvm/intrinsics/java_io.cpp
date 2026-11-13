@@ -11,20 +11,6 @@ using namespace detail;
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
-// ---- migrated from java_io_FileNotFoundException.cpp ----
-#include "catalog.h"
-#include "shared.h"
-
-#include "ogplay/runtime/dexvm/intrinsic_builder.h"
-
-namespace ogplay::runtime::dexvm::intrinsics {
-using namespace detail;
-
-IntrinsicClassDecl Declare_java_io_FileNotFoundException_Class() {
-    return DeclareSimpleThrowableClass("Ljava/io/FileNotFoundException;", "Ljava/io/IOException;");
-}
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
 // ---- migrated from java_io_files.cpp ----
 #include "catalog.h"
 #include "shared.h"
@@ -96,31 +82,6 @@ void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog) {
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
-// Diagnostic sink native boundary; PrintStream itself belongs to BootDex.
-#include "catalog.h"
-#include "shared.h"
-
-namespace ogplay::runtime::dexvm::intrinsics {
-IntrinsicClassDecl Declare_org_ogplay_io_LogOutputStream_Natives() {
-    auto builder = IntrinsicClassBuilder::Class("Lorg/ogplay/io/LogOutputStream;");
-    builder.MergesBootClass();
-    builder.StaticMethod(
-        "emit", "(Ljava/lang/String;ZZ)V",
-        [](IntrinsicContext& c) {
-            const auto text = c.vm.StringUtf8(IntrinsicCall(c).NonNullRef(0, "text"));
-            const bool line_end = c.arguments[1].AsInt() != 0;
-            if (const auto& console = c.vm.Console(c.arguments[2].AsInt() != 0)) {
-                console(line_end ? text + "\n" : text);
-            } else if (!text.empty()) {
-                detail::GuestLine(c, text);
-            }
-            return VmValue::Void();
-        },
-        kAccPrivate | kAccNative);
-    return std::move(builder).Build();
-}
 }  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_io_Serializable.cpp ----

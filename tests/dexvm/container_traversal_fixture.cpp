@@ -122,13 +122,17 @@ AndroidTestRuntime::AndroidTestRuntime(const std::shared_ptr<DexVmAndroidContext
                                                .width = context->surface_width ? context->surface_width : 800,
                                                .height = context->surface_height ? context->surface_height : 480,
                                                .maximum_ticks_per_call = UINT64_C(100000000),
-                                               .filesystem = &fs});
+                                               .filesystem = &fs,
+                                               .boundary_options = {.logger = &logger},
+                                               .monotonic_nanos = [context] { return context->uptime_nanos.load(); }});
     session = AndroidGuestCallSession::AdoptProcess(std::move(process));
     libraries =
         std::make_unique<NativeLibraryLoader>(session->Process(), selected, SelectBionicProfile(19), sources, &logger);
     context->session = session.get();
     context->native_libraries = libraries.get();
     context->vfs = &fs;
+    static_cast<void>(libraries->LoadPath("/system/lib/libogplay_jni.so", context->application_class_loader_token,
+                                          NativeLibraryEntry::native_activity));
     auto boot_dex = ogplay::test::ReadBootDex();
     bridge = std::make_unique<DexVmGuestBridge>(*session, std::move(dex), catalog, context, ledger, &logger,
                                                 DexVmBridgeConfig{.interpreter = config}, std::move(boot_dex));

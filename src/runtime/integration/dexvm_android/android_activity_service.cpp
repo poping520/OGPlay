@@ -366,7 +366,7 @@ void RequestRomActivityExit(dx::Interpreter& vm, const Context& context, std::in
     if (s.exiting) return;
     s.exiting = true;
     s.pending.clear();
-    const auto now = context->uptime_millis.load();
+    const auto now = context->UptimeMillis();
     s.exit_deadline_millis = now > std::numeric_limits<std::int64_t>::max() - budget_millis
                                  ? std::numeric_limits<std::int64_t>::max()
                                  : now + budget_millis;
@@ -384,9 +384,8 @@ void RequestRomActivityExit(dx::Interpreter& vm, const Context& context, std::in
 RomActivityExitStatus ReadRomActivityExitStatus(const Context& context) {
     if (!context->rom_activities || context->rom_activities->exit_requested) return RomActivityExitStatus::complete;
     const auto& s = *context->rom_activities;
-    return s.exiting && context->uptime_millis.load() >= s.exit_deadline_millis
-               ? RomActivityExitStatus::deadline_expired
-               : RomActivityExitStatus::waiting;
+    return s.exiting && context->UptimeMillis() >= s.exit_deadline_millis ? RomActivityExitStatus::deadline_expired
+                                                                          : RomActivityExitStatus::waiting;
 }
 
 void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context) {
@@ -824,7 +823,7 @@ void QueueAndroidMediaTick(DexVmAndroidContext& context) {
 
 bool AndroidMainQueueIdle(DexVmAndroidContext& context) {
     std::scoped_lock lock(context.scheduler_mutex);
-    const auto now = context.uptime_millis.load();
+    const auto now = context.UptimeMillis();
     const auto queue = std::ranges::find_if(context.message_queues,
                                             [](const auto& entry) { return entry.second->context_token == 1U; });
     if (queue == context.message_queues.end() || !queue->second->idling || queue->second->wake ||

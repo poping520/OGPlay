@@ -39,6 +39,36 @@ using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
+TEST_CASE("ROM System logging maps priorities and renders Throwable for empty messages") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend);
+        const auto empty = fixture.vm.NewStringUtf8("");
+        const auto detail = fixture.vm.NewStringUtf8("system-log-detail");
+        const auto throwable =
+            fixture.New("Ljava/lang/RuntimeException;", "(Ljava/lang/String;)V", {VmValue::Ref(detail)});
+        const auto roots = fixture.vm.ProtectReferences(std::array{empty, detail, throwable});
+        CHECK_FALSE(fixture.StaticOutcome("Ljava/lang/System;", "logI", "(Ljava/lang/String;)V", {VmValue::Ref(empty)})
+                        .exception.IsValid());
+        CHECK_FALSE(fixture
+                        .StaticOutcome("Ljava/lang/System;", "logW", "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+                                       {VmValue::Ref(empty), VmValue::Ref(throwable)})
+                        .exception.IsValid());
+        auto records = fixture.logger.Snapshot(std::nullopt, "guest.java.lang.System");
+        REQUIRE(records.size() == 1);
+        CHECK(records.front().level == ogplay::core::LogLevel::warn);
+        CHECK(records.front().message.find("java.lang.RuntimeException: system-log-detail") != std::string::npos);
+        for (const auto [method, level] :
+             {std::pair{"logI", ogplay::core::LogLevel::info}, std::pair{"logE", ogplay::core::LogLevel::error}}) {
+            CHECK_FALSE(
+                fixture.StaticOutcome("Ljava/lang/System;", method, "(Ljava/lang/String;)V", {VmValue::Ref(detail)})
+                    .exception.IsValid());
+            records = fixture.logger.Snapshot(std::nullopt, "guest.java.lang.System");
+            CHECK(records.back().level == level);
+            CHECK(records.back().message == "system-log-detail");
+        }
+    }
+}
+
 TEST_CASE("Log debug throwable overload renders without changing control flow") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm fixture(backend);
@@ -370,10 +400,13 @@ TEST_CASE("DVM226 PrintStream owns error and autoFlush semantics and System stre
         f.On(stderr_stream, "println", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("stderr"))});
         f.On(stdout_stream, "append", "(Ljava/lang/CharSequence;)Ljava/io/PrintStream;",
              {VmValue::Ref(f.vm.NewStringUtf8(""))});
-        auto logs = f.logger.Snapshot(std::nullopt, "runtime.dexvm.guest");
-        REQUIRE(logs.size() == 2);
-        CHECK(logs[0].message == "stdout 中文");
-        CHECK(logs[1].message == "stderr");
+        const auto stdout_logs = f.logger.Snapshot(std::nullopt, "guest.stdout");
+        const auto stderr_logs = f.logger.Snapshot(std::nullopt, "guest.stderr");
+        const auto has_message = [](const auto& logs, std::string_view message) {
+            return std::ranges::any_of(logs, [&](const auto& record) { return record.message == message; });
+        };
+        CHECK(has_message(stdout_logs, "[guest] stdout 中文"));
+        CHECK(has_message(stderr_logs, "[guest] stderr"));
         std::string stdout_bytes, stderr_bytes;
         f.vm.SetConsoleSink([&](std::string_view bytes) { stdout_bytes += bytes; },
                             [&](std::string_view bytes) { stderr_bytes += bytes; });
@@ -384,11 +417,46 @@ TEST_CASE("DVM226 PrintStream owns error and autoFlush semantics and System stre
         f.vm.SetConsoleSink({});
         f.On(stdout_stream, "close", "()V");
         f.On(stderr_stream, "println", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("still-open"))});
-        logs = f.logger.Snapshot(std::nullopt, "runtime.dexvm.guest");
-        CHECK(logs.back().message == "still-open");
+        const auto logs = f.logger.Snapshot(std::nullopt, "guest.stderr");
+        CHECK(has_message(logs, "[guest] still-open"));
         CHECK(f.On(stdout_stream, "checkError", "()Z").AsInt() == 0);
         f.On(stdout_stream, "print", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("closed"))});
         CHECK(f.On(stdout_stream, "checkError", "()Z").AsInt() == 1);
+    }
+}
+
+TEST_CASE("ROM System streams support replacement and RuntimeInit redirects output to Android Log") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        constexpr auto owner = "Ljava/lang/System;";
+        const auto type = f.linker.ResolveDescriptor(owner);
+        REQUIRE_FALSE(f.vm.EnsureClassInitialized(type).exception.IsValid());
+        const auto read_static = [&](const char* name, const char* descriptor) {
+            const auto field = f.linker.FindFieldRecursive(type, name, descriptor);
+            REQUIRE(field);
+            return VmObjectRef{f.linker.Class(type).static_storage[f.linker.Field(*field).slot]};
+        };
+        const auto stdin_stream = read_static("in", "Ljava/io/InputStream;");
+        CHECK(f.On(stdin_stream, "read", "()I").AsInt() == -1);
+        const auto out = read_static("out", "Ljava/io/PrintStream;");
+        const auto err = read_static("err", "Ljava/io/PrintStream;");
+        f.Static(owner, "setOut", "(Ljava/io/PrintStream;)V", {VmValue::Ref(err)});
+        CHECK(read_static("out", "Ljava/io/PrintStream;") == err);
+        f.Static(owner, "setErr", "(Ljava/io/PrintStream;)V", {VmValue::Ref(out)});
+        CHECK(read_static("err", "Ljava/io/PrintStream;") == out);
+        f.Static(owner, "setIn", "(Ljava/io/InputStream;)V", {VmValue::Ref(VmObjectRef{})});
+        CHECK_FALSE(read_static("in", "Ljava/io/InputStream;").IsValid());
+        f.Static(owner, "setIn", "(Ljava/io/InputStream;)V", {VmValue::Ref(stdin_stream)});
+        CHECK(read_static("in", "Ljava/io/InputStream;") == stdin_stream);
+
+        f.Static("Lcom/android/internal/os/RuntimeInit;", "redirectLogStreams", "()V");
+        const auto redirected = read_static("out", "Ljava/io/PrintStream;");
+        CHECK(f.linker.Class(f.model.ObjectClass(redirected)).descriptor ==
+              "Lcom/android/internal/os/AndroidPrintStream;");
+        f.On(redirected, "println", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("redirected"))});
+        const auto logs = f.logger.Snapshot(std::nullopt, "runtime.dexvm.guest");
+        REQUIRE(!logs.empty());
+        CHECK(logs.back().message == "System.out: redirected");
     }
 }
 

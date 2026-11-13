@@ -59,7 +59,7 @@ struct Vm final {
         : model(arrays), linker(),
           interpreter(
               [this, load_boot_dex, &services, full_platform]() -> DexClassLinker& {
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
+                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices(services)));
                   if (full_platform)
                       linker.RegisterIntrinsics(AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>()));
                   if (load_boot_dex) {
@@ -152,13 +152,7 @@ TEST_CASE("dexvm P1 String surface: trim/lower/startsWith/indexOf") {
 
 TEST_CASE("dexvm System.getenv reads the injected guest process environment") {
     CoreIntrinsicServices services;
-    const std::vector<std::pair<std::string, std::string>> entries{{"PATH", "/system/bin"},
-                                                                   {"ANDROID_ROOT", "/system"}};
-    services.environment_value = [entries](const std::string_view name) -> std::optional<std::string> {
-        const auto found = std::ranges::find(entries, name, &std::pair<std::string, std::string>::first);
-        return found == entries.end() ? std::nullopt : std::optional(found->second);
-    };
-    services.environment_entries = [entries] { return entries; };
+    services.process_environment = [] { return std::vector<std::string>{"PATH=/system/bin", "ANDROID_ROOT=/system"}; };
 
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         INFO("backend=", backend == InterpreterBackend::threaded ? "threaded" : "switch");
@@ -472,9 +466,12 @@ TEST_CASE("dexvm P1 System.out println reaches the structured logger") {
     Vm vm;
     const auto outcome = vm.CallStatic("printHello", "()V");
     REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
-    const auto records = vm.logger.Snapshot(std::nullopt, "runtime.dexvm.guest");
+    const auto records = vm.logger.Snapshot(std::nullopt, "guest.stdout");
     REQUIRE(!records.empty());
-    CHECK(records.back().message == "hello from dexvm");
+    std::string output;
+    for (const auto& record : records)
+        output += record.message;
+    CHECK(output == "hello from dexvm\n");
 }
 
 TEST_CASE("dexvm Object notify validates monitor ownership") {

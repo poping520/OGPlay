@@ -76,6 +76,11 @@ wide pair 是占用两个 DEX 寄存器的 64 位值，payload 在这里指 swit
 这样加速的是分派，不需要维护第二套对象语义，catch 范围和诊断位置仍能指向原字节码。
 派生缓存与 bridge 路径需要保留，不适合快径的操作继续进入共享实现。
 
+两个内核的定位不同。threaded 是生产内核，执行层的性能特化（如 String 快路径、调用点缓存）只做在这里。
+switch 是参考内核，保持逐条解释原始 DEX，用作语义基准、差分对照和排障时的切换后端，因此不接任何性能特化。
+对象模型、运行时这类与分派无关的改进放在共享层，两个内核都受益。
+目前默认仍是 switch，计划切换为 threaded。
+
 执行 frame 保存方法、寄存器与类别 tag，避免把引用和同位型整数互换；
 Interpreter::Call 将返回值或未捕获异常显式交给调用者，
 而不是依赖外层猜测寄存器含义。
@@ -166,7 +171,7 @@ Manifest largeHeap 按 ROM 绑定应用顺序放开活动上限。
 
 Weak、Soft、Phantom 与 finalizer 按既定顺序处理。
 FinalizerReference 的登记和队列留在 Java，对应 Daemons 在真实线程执行；
-runFinalization 等待进入时的批次，不无限追逐后来新增任务。
+runFinalization 走原版 sentinel 协议；API19 队列为 LIFO，与真机一样不保证等完已排队的旧任务。
 finalizer 需要真实线程执行并可能调用其他对象，不能在 sweep 中同步重放 Java 回调。
 把 finalizer 图留在 ROM、把 native sweep 留在资源层，多了一个交接协议，
 但收集器不必反向依赖任意 guest 执行；native sweep 也独立承担资源安全回收，

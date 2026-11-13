@@ -31,6 +31,8 @@ struct DexVmAndroidContext;
 struct DexVmBridgeConfig final {
     dexvm::InterpreterConfig interpreter{};
     dexvm::JavaObjectModelConfig heap{};
+    // Embedders without Bionic/ICU may supply the process facts explicitly.
+    std::function<void(dexvm::CoreIntrinsicServices&)> configure_core_services{};
 };
 
 class DexVmBridgeError final : public std::runtime_error {

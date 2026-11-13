@@ -1,3 +1,5 @@
+#include "ogplay/runtime/integration/android_guest_call_session.h"
+#include "ogplay/runtime/dexvm/nio_runtime.h"
 #include "runtime/integration/dexvm_android/rom_activity.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
@@ -34,6 +36,7 @@
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
+#include "ogplay/runtime/dexvm/nio_runtime.h"
 #include "ogplay/runtime/vfs/vfs.h"
 #include "../fixtures/bitmap_decode_data.h"
 
@@ -1481,6 +1484,45 @@ TEST_CASE("DVM-264 DEX platform service registry preserves supported absent and 
     }
 }
 
+TEST_CASE("Java System and Android SystemClock share the exact native monotonic and realtime reading") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        auto& process = f.context->session->Process();
+        const auto clock_gettime = process.FindLibraryExport("libc.so", "clock_gettime");
+        const auto gettimeofday = process.FindLibraryExport("libc.so", "gettimeofday");
+        REQUIRE(clock_gettime);
+        REQUIRE(gettimeofday);
+        const auto guest_memory = process.GuestMemoryAccess();
+        const auto storage = guest_memory.allocate(8);
+        const auto native_time = [&](ogplay::memory::GuestAddress function, std::array<std::uint32_t, 4> arguments,
+                                     const std::int64_t scale) {
+            CHECK(process.Invoke({function, arguments, {}}).return_value == 0U);
+            std::array<std::byte, 8> bytes{};
+            guest_memory.read(storage, bytes);
+            std::uint32_t seconds{}, remainder{};
+            for (std::size_t i = 0; i < 4; ++i) {
+                seconds |= std::to_integer<std::uint32_t>(bytes[i]) << (i * 8);
+                remainder |= std::to_integer<std::uint32_t>(bytes[i + 4]) << (i * 8);
+            }
+            return seconds * scale + remainder;
+        };
+        const auto initial = f.context->uptime_nanos.load();
+        AdvanceAndroidClock(*f.context, 16'000'000);
+        CHECK(f.context->UptimeMillis() == initial / 1'000'000 + 16);
+        AdvanceAndroidClock(*f.context, 1234);
+        const auto now = f.Static("Ljava/lang/System;", "nanoTime", "()J").AsLong();
+        CHECK(now == initial + 16'001'234);
+        CHECK(f.Static("Landroid/os/SystemClock;", "elapsedRealtimeNanos", "()J").AsLong() == now);
+        CHECK(f.Static("Landroid/os/SystemClock;", "uptimeMillis", "()J").AsLong() == now / 1'000'000);
+        CHECK(native_time(*clock_gettime, {1, storage.Value()}, 1'000'000'000) == now);
+        CHECK(native_time(*clock_gettime, {7, storage.Value()}, 1'000'000'000) == now);
+        const auto wall = f.Static("Ljava/lang/System;", "currentTimeMillis", "()J").AsLong();
+        CHECK(native_time(*clock_gettime, {0, storage.Value()}, 1'000'000'000) / 1'000'000 == wall);
+        CHECK(native_time(*gettimeofday, {storage.Value(), 0}, 1'000'000) / 1000 == wall);
+        guest_memory.release(storage, 8);
+    }
+}
+
 TEST_CASE("DVM-264 DEX System properties include the frozen ROM keys and match guest uname") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend, {}, false, "platform_tables.dex");
@@ -1518,7 +1560,6 @@ TEST_CASE("DVM-264 DEX System properties include the frozen ROM keys and match g
             "java.ext.dirs",
             "java.home",
             "java.io.tmpdir",
-            "java.library.path",
             "java.runtime.name",
             "java.runtime.version",
             "java.specification.name",

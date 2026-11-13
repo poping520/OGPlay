@@ -22,7 +22,7 @@ VmObjectRef StringArray(Interpreter& vm, const std::vector<std::u16string>& valu
     return result;
 }
 
-IntrinsicClassDecl Declare_libcore_icu_ICU_Natives() {
+IntrinsicClassDecl Declare_libcore_icu_ICU_Natives(const CoreIntrinsicServices& services) {
     auto b = IntrinsicClassBuilder::Class("Llibcore/icu/ICU;");
     b.MergesBootClass();
     for (const auto& [name, descriptor, flags] : std::array{
@@ -58,6 +58,17 @@ IntrinsicClassDecl Declare_libcore_icu_ICU_Natives() {
     b.GuestNativeStatic("addLikelySubtags", "(Ljava/lang/String;)Ljava/lang/String;",
                         kAccPublic | kAccStatic | kAccNative);
     b.GuestNativeStatic("getScript", "(Ljava/lang/String;)Ljava/lang/String;", kAccPublic | kAccStatic | kAccNative);
+    using enum CoreIntrinsicServices::IcuVersion;
+    for (const auto& [name, kind] : std::array{std::pair{"getCldrVersion", cldr}, std::pair{"getIcuVersion", library},
+                                               std::pair{"getUnicodeVersion", unicode}}) {
+        b.StaticMethod(
+            name, "()Ljava/lang/String;",
+            [read = services.guest_icu_version, kind](IntrinsicContext& c) {
+                if (!read) throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest ICU is unavailable"};
+                return VmValue::Ref(c.vm.NewStringUtf8(read(c.vm, kind)));
+            },
+            kAccPublic | kAccStatic | kAccNative);
+    }
     constexpr std::pair<const char*, const char*> failures[]{
         {"getAvailableBreakIteratorLocalesNative", "()[Ljava/lang/String;"},
         {"getAvailableCalendarLocalesNative", "()[Ljava/lang/String;"},
@@ -65,9 +76,6 @@ IntrinsicClassDecl Declare_libcore_icu_ICU_Natives() {
         {"getAvailableCurrencyCodes", "()[Ljava/lang/String;"},
         {"getAvailableDateFormatLocalesNative", "()[Ljava/lang/String;"},
         {"getAvailableNumberFormatLocalesNative", "()[Ljava/lang/String;"},
-        {"getCldrVersion", "()Ljava/lang/String;"},
-        {"getIcuVersion", "()Ljava/lang/String;"},
-        {"getUnicodeVersion", "()Ljava/lang/String;"},
     };
     for (const auto& [name, descriptor] : failures)
         b.UnimplementedStatic(name, descriptor,
@@ -204,7 +212,7 @@ void AppendJavaIcu(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsic
         b.GuestNativeStatic("getAvailableCharsetNames", "()[Ljava/lang/String;", kAccPublic | kAccStatic | kAccNative);
         catalog.push_back(std::move(b).Build());
     }
-    catalog.push_back(Declare_libcore_icu_ICU_Natives());
+    catalog.push_back(Declare_libcore_icu_ICU_Natives(services));
     catalog.push_back(Declare_libcore_icu_NativeDecimalFormat_Natives());
     catalog.push_back(Declare_libcore_icu_TimeZoneNames_Natives());
     catalog.push_back(Declare_java_util_TimeZone_Overrides(services));

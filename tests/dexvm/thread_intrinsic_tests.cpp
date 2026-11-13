@@ -57,7 +57,7 @@ struct ThreadVm final {
         : model(arrays), linker(),
           interpreter(
               [this]() -> DexClassLinker& {
-                  auto catalog = CoreIntrinsicCatalog();
+                  auto catalog = CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices());
                   auto handler = IntrinsicClassBuilder::Class("LThreadUncaughtHandler;", "Ljava/lang/Object;",
                                                               {"Ljava/lang/Thread$UncaughtExceptionHandler;"});
                   handler.VirtualMethod("uncaughtException", "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
@@ -167,7 +167,7 @@ bool WaitFor(Predicate predicate) {
 }  // namespace
 
 TEST_CASE("dexvm Thread context ClassLoader declarations match API19 shape") {
-    const auto catalog = CoreIntrinsicCatalog();
+    const auto catalog = CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices());
     const auto thread = std::ranges::find_if(
         catalog, [](const auto& candidate) { return candidate.descriptor == "Ljava/lang/Thread;"; });
     REQUIRE(thread != catalog.end());
@@ -190,7 +190,7 @@ TEST_CASE("dexvm Thread context ClassLoader declarations match API19 shape") {
 }
 
 TEST_CASE("dexvm Thread uncaught handler declarations match API19 shape") {
-    const auto catalog = CoreIntrinsicCatalog();
+    const auto catalog = CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices());
     const auto thread = std::ranges::find_if(
         catalog, [](const auto& candidate) { return candidate.descriptor == "Ljava/lang/Thread;"; });
     REQUIRE(thread != catalog.end());
@@ -229,7 +229,7 @@ TEST_CASE("dexvm Thread uncaught handler declarations match API19 shape") {
 }
 
 TEST_CASE("dexvm Thread second priority declarations match API19 shape") {
-    const auto catalog = CoreIntrinsicCatalog();
+    const auto catalog = CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices());
     const auto find_class = [&](const std::string_view descriptor) {
         return std::ranges::find_if(catalog, [&](const auto& candidate) { return candidate.descriptor == descriptor; });
     };
@@ -269,7 +269,7 @@ TEST_CASE("dexvm Thread second priority declarations match API19 shape") {
 }
 
 TEST_CASE("dexvm Thread third priority declarations match API19 shape") {
-    const auto catalog = CoreIntrinsicCatalog();
+    const auto catalog = CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices());
     const auto find_class = [&](const std::string_view descriptor) {
         return std::ranges::find_if(catalog, [&](const auto& candidate) { return candidate.descriptor == descriptor; });
     };

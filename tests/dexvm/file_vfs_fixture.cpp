@@ -153,8 +153,9 @@ FileVm::FileVm(SandboxStore* sandbox, const bool include_android_catalog, const 
       standalone_interpreter([&]() -> std::unique_ptr<Interpreter> {
           if (runtime) return {};
           auto services = include_android_catalog ? AndroidCoreIntrinsicServices(context) : CoreIntrinsicServices{};
+          services.process_environment = {};
           services.current_time_millis = [] { return INT64_C(1704067200000); };
-          standalone_linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
+          standalone_linker.RegisterIntrinsics(CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices(services)));
           if (include_android_catalog) standalone_linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
           standalone_linker.RegisterIntrinsics(extra_intrinsics);
           if (include_boot_dex) RegisterBootDex(standalone_linker);

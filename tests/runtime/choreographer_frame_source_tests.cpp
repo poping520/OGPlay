@@ -149,13 +149,13 @@ TEST_CASE("DVM-336 ROM Choreographer single frame callbacks use the host frame C
         CHECK(f.ReceiverCount() == 1);
         f.Post(choreographer, callback);
         CHECK(stamps->empty());
-        const auto next_time = (f.f.context->uptime_millis.load() + 16) * 1'000'000;
+        const auto next_time = (f.f.context->UptimeMillis() + 16) * 1'000'000;
         f.Step();
         REQUIRE(stamps->size() == 1);
         CHECK(stamps->front() == next_time);
         f.Step();
         CHECK(stamps->size() == 1);  // No schedule, no callback.
-        const auto due = (f.f.context->uptime_millis.load() + 32) * 1'000'000;
+        const auto due = (f.f.context->UptimeMillis() + 32) * 1'000'000;
         f.Post(choreographer, callback, 32);
         f.Step();
         CHECK(stamps->size() == 1);
@@ -199,7 +199,7 @@ TEST_CASE("DVM-336 DisplayEventReceiver one shot merge dispose invalid queue and
         const auto roots = f.vm.ProtectReferences(std::array{receiver});
         auto frames = std::make_shared<std::vector<int>>();
         f.Hook("Lfixture/DisplayProbe;", "onVsync", "(JII)V", [&, frames](IntrinsicContext& call) {
-            CHECK(call.arguments[0].AsLong() == f.f.context->uptime_millis.load() * 1'000'000);
+            CHECK(call.arguments[0].AsLong() == f.f.context->uptime_nanos.load());
             CHECK(call.arguments[1].AsInt() == 0);
             frames->push_back(call.arguments[2].AsInt());
             return VmValue::Void();
@@ -313,7 +313,9 @@ TEST_CASE("DVM-336 DisplayEventReceiver finalization releases weak native regist
     REQUIRE(f.ReceiverCount() == baseline + 1);
     f.f.RunOnMainThread([&] {
         static_cast<void>(f.vm.CollectGarbage("display-receiver-weak-registration"));
-        f.vm.RunFinalization();
+        // API19 ReferenceQueue is LIFO: one runFinalization may return before older entries finish.
+        for (int attempt = 0; attempt < 100 && f.ReceiverCount() != baseline; ++attempt)
+            f.vm.RunFinalization();
     });
     CHECK(f.ReceiverCount() == baseline);
     static_cast<void>(f.f.app->Stop());
@@ -386,11 +388,11 @@ TEST_CASE("frame-rate cap gates display frames while lifecycle steps keep the lo
     };
     // A period far longer than the test: the first step claims the only display frame.
     f.f.context->frame_period_ns = 3'600'000'000'000ULL;
-    const auto uptime = f.f.context->uptime_millis.load();
+    const auto uptime = f.f.context->UptimeMillis();
     for (int i = 0; i < 4; ++i)
         step_and_wait();
     CHECK(*frames == 1);
-    CHECK(f.f.context->uptime_millis.load() - uptime == 4 * 16);
+    CHECK(f.f.context->UptimeMillis() - uptime == 4 * 16);
     // Without a cap every step is a display frame again.
     f.f.context->frame_period_ns = 0;
     for (int i = 0; i < 3; ++i)

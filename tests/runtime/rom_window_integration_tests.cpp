@@ -90,10 +90,10 @@ struct RomWindowApp {
 #endif
         app = session::AndroidAppProcess::Create(std::move(request));
         app->ActivityLifecycle().SetRealtimeVideoClock(realtime);
-        // Realtime uptime follows host time; a 16 ms step clock keeps frame assertions exact.
+        // Realtime steps retain the fractional nanosecond increment in the published clock.
         if (realtime)
             app->ActivityLifecycle().SetRealtimeTimeSourceForTesting(
-                [now = std::uint64_t{1'000'000'000}]() mutable { return now += 16'000'000; });
+                [now = std::uint64_t{1'000'000'000}]() mutable { return now += 16'000'001; });
         app->StartApplication();
         REQUIRE(app->StartLauncherActivity().state == session::LifecycleRunState::running);
     }
@@ -393,12 +393,14 @@ TEST_CASE("P3 continuous EGL producer completes one swap per Clock advance") {
         settle();
         for (unsigned i = 0; i < 5; ++i) {
             const auto before = fixture.Read("GlActivity", "draws");
-            const auto time = fixture.context->uptime_millis.load();
+            const auto time = fixture.context->UptimeMillis();
+            const auto nanos = fixture.context->uptime_nanos.load();
             if (realtime) CHECK(fixture.app->ActivityLifecycle().ReadyForFrame());
             fixture.Step();
             settle();
             CHECK(fixture.Read("GlActivity", "draws") == before + 1);
-            CHECK(fixture.context->uptime_millis.load() == time + 16);
+            CHECK(fixture.context->UptimeMillis() == time + 16);
+            CHECK(fixture.context->uptime_nanos.load() - nanos == (realtime ? 16'000'001 : 16'000'000));
         }
     }
 }
@@ -414,11 +416,11 @@ TEST_CASE("P3 dirty EGL producer without requestRender does not hold the Clock")
         }
         fixture.Step(5);
         const auto before = fixture.Read("GlActivity", "draws");
-        const auto time = fixture.context->uptime_millis.load();
+        const auto time = fixture.context->UptimeMillis();
         if (realtime) CHECK(fixture.app->ActivityLifecycle().ReadyForFrame());
         fixture.Step(5);
         CHECK(fixture.Read("GlActivity", "draws") == before);
-        CHECK(fixture.context->uptime_millis.load() == time + 80);
+        CHECK(fixture.context->UptimeMillis() == time + 80);
     }
 }
 
@@ -454,7 +456,7 @@ TEST_CASE("P3 slow EGL producer releases the Clock until it swaps again") {
         lifecycle.SetEglProducerWaitBudgetForTesting(budget_ns);
         hold_draw(true);
         if (realtime) hal::SleepPreciseNs(fixture.context->frame_period_ns);
-        const auto ticks = fixture.context->uptime_millis.load();
+        const auto ticks = fixture.context->UptimeMillis();
         fixture.Step();
         const auto deadline = hal::Clock::SteadyTimestampNs() + 2'000'000'000;
         while (!fixture.Read("GlActivity", "slowDraws"))
@@ -466,7 +468,7 @@ TEST_CASE("P3 slow EGL producer releases the Clock until it swaps again") {
         }
         const auto draws = fixture.Read("GlActivity", "draws");
         fixture.Step(2);
-        CHECK(fixture.context->uptime_millis.load() == ticks + 48);
+        CHECK(fixture.context->UptimeMillis() == ticks + 48);
         CHECK(fixture.Read("GlActivity", "draws") == draws);
         const auto warnings = fixture.logger.Snapshot(core::LogLevel::warn, "runtime.egl.pacing");
         CHECK(warnings.size() == 1);

@@ -89,13 +89,6 @@ void BindPlatformCoreHandlers(std::vector<dx::IntrinsicClassDecl>& catalog,
     };
 
     const Binding bindings[] = {
-        {"Ljava/lang/System;", "currentTimeMillis", "()J",
-         android_intrinsics::PlatformSystemCurrentTimeMillisHandler(android_context)},
-        {"Ljava/lang/System;", "nanoTime", "()J", android_intrinsics::PlatformSystemNanoTimeHandler(android_context)},
-        {"Ljava/lang/System;", "load", "(Ljava/lang/String;)V",
-         android_intrinsics::PlatformSystemLoadHandler(android_context)},
-        {"Ljava/lang/System;", "loadLibrary", "(Ljava/lang/String;)V",
-         android_intrinsics::PlatformSystemLoadLibraryHandler(android_context)},
         {"Ljava/lang/Runtime;", "nativeExit", "(I)V",
          android_intrinsics::PlatformRuntimeNativeExitHandler(android_context)},
     };
@@ -1444,7 +1437,16 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
         });
 
     if (android_context) android_context->memory_snapshot = session.MemorySnapshot();
-    auto core_catalog = BoundCoreIntrinsicCatalog(android_context, session.CpuConfig().cores);
+    auto services = AndroidCoreIntrinsicServices(android_context);
+    services.cpu_cores = session.CpuConfig().cores;
+    services.write_standard_stream = [bridge_state = impl_.get()](dx::Interpreter& vm, bool error,
+                                                                  std::span<const std::byte> bytes) {
+        bridge_state->session->Process().WriteStandardStream(
+            error, bytes, bridge_state->ProcessThreadForToken(vm.CurrentContextToken()));
+    };
+    if (config.configure_core_services) config.configure_core_services(services);
+    auto core_catalog = dx::CoreIntrinsicCatalog(std::move(services));
+    BindPlatformCoreHandlers(core_catalog, android_context);
     impl_->linker.RegisterIntrinsics(core_catalog);
     if (!platform_catalog.empty()) {
         impl_->linker.RegisterIntrinsics(platform_catalog);
@@ -1547,9 +1549,6 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
     if (android_context != nullptr && android_context->vfs != nullptr) {
         impl_->io_file_system = std::make_unique<DexVmIoVfsAdapter>(*android_context->vfs);
         impl_->vm->IO().SetFileSystem(impl_->io_file_system.get());
-        if (const auto working_directory = impl_->vm->IO().WorkingDirectory()) {
-            static_cast<void>(impl_->vm->SetSystemProperty("user.dir", *working_directory));
-        }
     }
     impl_->vm->SetLogger(logger);
     session.Objects().SetRuntimeClassResolver(
@@ -1633,9 +1632,9 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
         }});
     if (android_context != nullptr) {
         android_context->threads = impl_->threads.get();
-        impl_->vm->Monitors().SetTimeSource([android_context] { return android_context->uptime_millis.load(); });
+        impl_->vm->Monitors().SetNanoTimeSource([android_context] { return android_context->uptime_nanos.load(); });
         impl_->vm->Monitors().SetClockAdvance([android_context](const std::int64_t delta_millis) {
-            AdvanceAndroidClock(*android_context, delta_millis);
+            AdvanceAndroidClock(*android_context, delta_millis * 1'000'000);
         });
         impl_->vm->Monitors().SetRealtimeSource(
             [android_context] { return static_cast<std::int64_t>(android_context->stall_clock->Ticks()); });
@@ -1898,12 +1897,35 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
                     .ref;
             });
         }
-        PrepareAndroidMainLooper(*impl_->vm, android_context);
-        if (android_context->sealed_apk_bytes) {
-            const auto loader = vm.ClassLoaders().ApplicationLoader();
-            const auto thread = vm.Threads().CurrentThreadObject();
-            static_cast<void>(android_intrinsics::CallAndroidMethod(
-                vm, thread, "setContextClassLoader", "(Ljava/lang/ClassLoader;)V", {dx::VmValue::Ref(loader)}));
+        try {
+            PrepareAndroidMainLooper(*impl_->vm, android_context);
+            if (android_context->sealed_apk_bytes) {
+                const auto loader = vm.ClassLoaders().ApplicationLoader();
+                const auto thread = vm.Threads().CurrentThreadObject();
+                static_cast<void>(android_intrinsics::CallAndroidMethod(
+                    vm, thread, "setContextClassLoader", "(Ljava/lang/ClassLoader;)V", {dx::VmValue::Ref(loader)}));
+            }
+        } catch (...) {
+            // The process outlives this constructor's VM state when startup fails.
+            android_context->threads = nullptr;
+            android_context->clock_monitors = nullptr;
+            android_context->prepare_native_looper = {};
+            android_context->poll_native_looper = {};
+            android_context->wake_native_looper = {};
+            android_context->notify_native_loopers = {};
+            android_context->native_thread_for_context = {};
+            session.Environment().SetThreadDetachGuard({});
+            session.Environment().SetMonitorHooks({});
+            session.Environment().SetReflectionHooks({});
+            session.Environment().SetObjectAllocationHook({});
+            session.Environment().SetExceptionDescriber({});
+            session.Environment().SetThrowableFactory({});
+            session.Classes().SetClassResolver({});
+            session.Classes().SetMemberLoader({});
+            session.Objects().ObjectArrays().SetAssignability({});
+            session.Objects().SetRuntimeClassResolver({});
+            session.Fields().SetAccessHooks({});
+            throw;
         }
     }
     session.Process().SetStringBackend(impl_->model.get());

@@ -17,7 +17,10 @@ inline constexpr std::int32_t kGuestProcessId = 1;
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
 dx::VmObjectRef CreateApplicationResources(dx::IntrinsicContext& call, const Context& context);
-void InitializeAndroidSystemProperties(dx::Interpreter& vm, const Context& context);
+std::optional<dx::CoreIntrinsicServices::Passwd> ReadGuestPasswd(dx::Interpreter& vm, const Context& context,
+                                                                 std::int32_t uid);
+std::string ReadGuestIcuVersion(dx::Interpreter& vm, const Context& context,
+                                dx::CoreIntrinsicServices::IcuVersion kind);
 void EnsureLocalConnectivityBroadcast(dx::IntrinsicContext& call, const Context& context);
 
 // Normal guest dispatch; preserve Java exception identity across the boundary.
@@ -96,10 +99,8 @@ void LogDisabledWeb(dx::Interpreter& vm, std::string_view action, const Disabled
                                                           std::int32_t event);
 
 [[nodiscard]] dx::IntrinsicHandler WidgetNoopHandler();
-[[nodiscard]] dx::IntrinsicHandler PlatformSystemCurrentTimeMillisHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformRuntimeNativeExitHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemLoadHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemLoadLibraryHandler(const Context& context);
-[[nodiscard]] dx::IntrinsicHandler PlatformSystemNanoTimeHandler(const Context& context);
 
 }  // namespace ogplay::runtime::android_intrinsics

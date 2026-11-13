@@ -200,6 +200,7 @@ TEST_CASE("Android app process registers the last Activity theme and preserves a
     request.filesystem = &filesystem;
     request.ledger = &ledger;
     request.logger = &logger;
+    request.dexvm.configure_core_services = test::BindCoreBootFixtureFacts;
     auto app = session::AndroidAppProcess::Create(std::move(request));
     CHECK(app->Context()->activity_themes.at("fixture.DelayedContentActivity") == 0x7f030002U);
     CHECK(app->Context()->activity_themes.at("fixture.Alias") == 0x7f030001U);

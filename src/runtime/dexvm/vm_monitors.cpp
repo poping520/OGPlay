@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <limits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -42,6 +43,7 @@ class VmMonitorTable::Impl final {
 public:
     Interpreter* vm{};
     VmMonotonicMillis now;
+    VmMonotonicNanos now_nanos;
     VmClockAdvance advance;
     VmMonotonicMillis realtime;
     bool driver_blocked{};
@@ -58,9 +60,7 @@ public:
     std::unordered_set<std::uint64_t> woken;
     bool shutting_down{};
 
-    [[nodiscard]] bool ClockDriverStalled() const noexcept {
-        return driver_blocked || driver_wait_depth != 0;
-    }
+    [[nodiscard]] bool ClockDriverStalled() const noexcept { return driver_blocked || driver_wait_depth != 0; }
 
     // Called with clock_advance_mutex held on entry to a new stall.
     void BeginClockDriverStall() {
@@ -150,7 +150,28 @@ VmMonitorTable::~VmMonitorTable() = default;
 
 void VmMonitorTable::SetTimeSource(VmMonotonicMillis source) {
     const std::lock_guard guard(impl_->mutex);
-    impl_->now = std::move(source);
+    impl_->now = source;
+    impl_->now_nanos = source ? VmMonotonicNanos{[source = std::move(source)] {
+        const auto millis = source();
+        constexpr std::int64_t scale = 1'000'000;
+        if (millis > std::numeric_limits<std::int64_t>::max() / scale ||
+            millis < std::numeric_limits<std::int64_t>::min() / scale)
+            throw DexVmError(DexVmErrorReason::internal_invariant, "monotonic Clock exceeds nanosecond range");
+        return millis * scale;
+    }}
+                              : VmMonotonicNanos{};
+}
+
+void VmMonitorTable::SetNanoTimeSource(VmMonotonicNanos source) {
+    const std::lock_guard guard(impl_->mutex);
+    impl_->now_nanos = source;
+    impl_->now =
+        source ? VmMonotonicMillis{[source = std::move(source)] { return source() / 1'000'000; }} : VmMonotonicMillis{};
+}
+
+VmMonotonicNanos VmMonitorTable::NanoTimeSource() const {
+    const std::lock_guard guard(impl_->mutex);
+    return impl_->now_nanos;
 }
 
 VmMonotonicMillis VmMonitorTable::TimeSource() const {

@@ -22,7 +22,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | 游戏 | 平台 | 到达点 | 阻塞 / 待办 | 任务 |
 | --- | --- | --- | --- | --- |
 | My Boy! 1.8.0 | macOS | 浏览器、240p 菜单/短音、hello、设置/文本/存档/横竖屏；basic 场景三轮通过 | ARM 自动核心 test 225、SRAM test 004 与同 APK API25 真机一致；并发下偶发半帧；长时音频未验 | P4-myboy |
-| Island Castaway 1.3 | macOS | CG 带字幕，PLAY 进入第一关；菜单/第一关及按钮音效已验证非零 PCM 提交 SDL | OpenSL 必需 AndroidConfiguration 缺失致无声已修；SurfaceView 默认格式误用 alpha 致黑块闪烁已修，连续 48 帧检查通过；原生磁盘空间弹窗、退出 `runFinalizersOnExit` 仍在 | BND-56、SBX-16 |
+| Island Castaway 1.3 | macOS | CG 带字幕，PLAY 进入第一关；菜单/第一关及按钮音效已验证非零 PCM 提交 SDL | OpenSL 必需 AndroidConfiguration 缺失致无声已修；SurfaceView 默认格式误用 alpha 致黑块闪烁已修，连续 48 帧检查通过；原生磁盘空间弹窗、退出 `runFinalizersOnExit` 已修复，原 APK 待外验 | BND-56、SBX-16 |
 | TML 1.0 | macOS | 标题；三点击 survey 零命中；基础场景退出 0 | 正式交互/稳定性待验 | LUI-18、DVM-257 |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | DVM-247..249、BND-54 |
 | Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 安装器 Large ProgressBar 已封存，原命令 120 秒 5550 帧退出 0 | 进关 MyVideoView 的 setText(NORMAL) 崩溃已修（DVM-372），手测正常；GAThread `ContentValues$1.<init>` 未实现；CG/Win 待验 | DVM-257、DVM-372 |

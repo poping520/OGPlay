@@ -217,7 +217,7 @@ void AddRomSurfaceNatives(dx::IntrinsicClassBuilder& b, const Context& context) 
                     frame.width = static_cast<std::uint32_t>(canvas.Width());
                     frame.height = static_cast<std::uint32_t>(canvas.Height());
                     frame.rgba = std::move(rgba);
-                    frame.timestamp_ns = context->uptime_millis.load() * 1'000'000;
+                    frame.timestamp_ns = context->uptime_nanos.load();
                     native.stream->Submit(lease, std::move(frame));
                     native.stream->Disconnect(lease);
                 } catch (...) {
@@ -226,9 +226,9 @@ void AddRomSurfaceNatives(dx::IntrinsicClassBuilder& b, const Context& context) 
                 }
             } else
                 s.system.Post(native.window,
-                              std::make_shared<const video::VideoFrame>(video::VideoFrame{
-                                  context->uptime_millis.load(), static_cast<unsigned>(canvas.Width()),
-                                  static_cast<unsigned>(canvas.Height()), std::move(rgba)}),
+                              std::make_shared<const video::VideoFrame>(
+                                  video::VideoFrame{context->UptimeMillis(), static_cast<unsigned>(canvas.Width()),
+                                                    static_cast<unsigned>(canvas.Height()), std::move(rgba)}),
                               false, canvas.IsOpaque(), transparent);
             WindowField(c.vm, native.locked_canvas, "mNativeCanvas",
                         "I") = {static_cast<std::uint32_t>(native.previous_canvas_token), dx::SlotTag::cat1};

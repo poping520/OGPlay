@@ -118,7 +118,6 @@ Decl Declare_android_os_SystemProperties_Natives(const Context& context) {
         "native_get", "(Ljava/lang/String;)Ljava/lang/String;",
         [context](dx::IntrinsicContext& call) {
             const auto key = call.vm.StringUtf8(call.arguments[0].ref);
-            if (key == "qemu.hw.mainkeys") return MakeString(call, call.vm.GetSystemProperty(key).value_or(""));
             return MakeString(call, ReadAndroidProperty(call.vm, context, key));
         },
         flags);
@@ -561,13 +560,12 @@ Decl Declare_android_os_SystemClock_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/SystemClock;");
     builder.MergesBootClass();
     constexpr auto native_flags = dx::kAccPublic | dx::kAccStatic | dx::kAccNative;
-    const auto millis = [context](dx::IntrinsicContext&) { return dx::VmValue::Long(context->uptime_millis.load()); };
+    const auto millis = [context](dx::IntrinsicContext&) { return dx::VmValue::Long(context->UptimeMillis()); };
     builder.StaticMethod("uptimeMillis", "()J", millis, native_flags);
     builder.StaticMethod("elapsedRealtime", "()J", millis, native_flags);
     builder.StaticMethod(
         "elapsedRealtimeNanos", "()J",
-        [context](dx::IntrinsicContext&) { return dx::VmValue::Long(context->uptime_millis.load() * 1'000'000LL); },
-        native_flags);
+        [context](dx::IntrinsicContext&) { return dx::VmValue::Long(context->uptime_nanos.load()); }, native_flags);
     builder.StaticMethod("currentThreadTimeMillis", "()J", millis, native_flags);
     builder.StaticMethod(
         "setCurrentTimeMillis", "(J)Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); }, native_flags);
@@ -1141,7 +1139,7 @@ Decl Declare_local_PowerService_Class(const Context& context) {
              std::pair{"nap", "(J)V"},
          }) {
         builder.VirtualMethod(name, descriptor, [context](dx::IntrinsicContext& call) -> dx::VmValue {
-            if (call.arguments[0].AsLong() > context->uptime_millis.load())
+            if (call.arguments[0].AsLong() > context->UptimeMillis())
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "event time must not be in the future"};
             throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "DEVICE_POWER is required"};
         });
@@ -1376,7 +1374,7 @@ Decl Declare_android_os_MessageQueue_Natives(const Context& context) {
                 auto publish = std::exchange(context->on_first_main_idle, {});
                 publish(call.vm);
             }
-            const auto now = context->uptime_millis.load();
+            const auto now = context->UptimeMillis();
             const auto duration = std::max(timeout, 0);
             const auto deadline = now > std::numeric_limits<std::int64_t>::max() - duration
                                       ? std::numeric_limits<std::int64_t>::max()
@@ -1397,13 +1395,13 @@ Decl Declare_android_os_MessageQueue_Natives(const Context& context) {
             const auto ready = [&] {
                 return queue->wake || queue->destroyed || context->scheduler_shutdown ||
                        (queue->context_token == 1U &&
-                        context->uptime_millis.load() >= context->toast_deadline_millis.load()) ||
+                        context->UptimeMillis() >= context->toast_deadline_millis.load()) ||
                        std::ranges::any_of(context->scheduled_work,
                                            [&](const auto& work) {
                                                return work.looper == looper &&
-                                                      work.deadline_millis <= context->uptime_millis.load();
+                                                      work.deadline_millis <= context->UptimeMillis();
                                            }) ||
-                       (timeout >= 0 && context->uptime_millis.load() >= deadline);
+                       (timeout >= 0 && context->UptimeMillis() >= deadline);
             };
             {
                 std::scoped_lock lock(context->scheduler_mutex);

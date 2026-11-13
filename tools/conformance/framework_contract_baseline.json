@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "rom_sha256": "712f22b06045560585ab3dfbaa9d0d0ed2ef1ecf73ecd05c6a0c22f833e7826e",
+  "rom_sha256": "12f613e1772d81b7a9c34e8650d03d754a9cae16aafc06e1bc4bee248f17cf61",
   "intrinsic_classes": [
     "Landroid/app/AlarmManager;",
     "Landroid/app/Application;",
@@ -132,7 +132,6 @@
     "Ljava/lang/Runnable;",
     "Ljava/lang/Short;",
     "Ljava/lang/String;",
-    "Ljava/lang/System;",
     "Ljava/lang/Thread$State;",
     "Ljava/lang/Thread$UncaughtExceptionHandler;",
     "Ljava/lang/Thread;",
@@ -460,9 +459,6 @@
     "A2|Ljava/lang/String;|toUpperCase|()Ljava/lang/String;",
     "A2|Ljava/lang/String;|toUpperCase|(Ljava/util/Locale;)Ljava/lang/String;",
     "A2|Ljava/lang/String;|trim|()Ljava/lang/String;",
-    "A2|Ljava/lang/System;|@class|",
-    "A2|Ljava/lang/System;|err|Ljava/io/PrintStream;",
-    "A2|Ljava/lang/System;|out|Ljava/io/PrintStream;",
     "A2|Ljava/lang/Thread;|daemon|Z",
     "A2|Ljava/lang/Thread;|group|Ljava/lang/ThreadGroup;",
     "A2|Ljava/lang/Thread;|hasBeenStarted|Z",
@@ -697,8 +693,6 @@
     "E1|@system_services|uimode|",
     "E1|@system_services|user|",
     "E1|@system_services|wallpaper|",
-    "E1|@system_services|wifip2p|",
-    "E3|@system_properties|user.language|",
-    "E3|@system_properties|user.region|"
+    "E1|@system_services|wifip2p|"
   ]
 }

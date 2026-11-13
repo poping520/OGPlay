@@ -201,8 +201,8 @@ def analyze_platform_tables(surface, reference):
     tables = surface.get("platform_tables")
     if not isinstance(tables, dict):
         raise ValueError("missing platform_tables in dump-surface")
-    services, properties = tables["system_services"], tables["system_properties"]
-    if not isinstance(services, dict) or not isinstance(properties, dict):
+    services = tables["system_services"]
+    if not isinstance(services, dict):
         raise ValueError("invalid platform_tables")
     if any(value not in ("provided", "unsupported") for value in services.values()):
         raise ValueError("invalid system service status")
@@ -210,6 +210,11 @@ def analyze_platform_tables(surface, reference):
     for name in reference["system_services"]:
         if services.get(name) != "provided":
             result[f"E1|@system_services|{name}|"] = ["ROM registers service; OGPlay does not provide it"]
+    if tables.get("system_properties_owner") == "rom":
+        return result
+    properties = tables["system_properties"]
+    if not isinstance(properties, dict):
+        raise ValueError("invalid system property inventory")
     for key, rule in reference["system_properties"].items():
         if key not in properties:
             result[f"E2|@system_properties|{key}|"] = ["ROM initSystemProperties key is missing"]
@@ -480,6 +485,8 @@ def self_test():
         "E1|@system_services|account|", "E2|@system_properties|file.encoding|", "E3|@system_properties|java.version|"}
     tables["platform_tables"]["system_properties"]["os.name"] = "Darwin"
     assert "E3|@system_properties|os.name|" in analyze_platform_tables(tables, reference)
+    tables["platform_tables"]["system_properties_owner"] = "rom"
+    assert set(analyze_platform_tables(tables, reference)) == {"E1|@system_services|account|"}
     try:
         analyze_platform_tables({}, reference)
     except ValueError:

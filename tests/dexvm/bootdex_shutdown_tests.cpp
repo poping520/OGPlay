@@ -46,20 +46,27 @@ struct ShutdownHookVm final {
 
     explicit ShutdownHookVm(
         InterpreterBackend backend, IntrinsicHandler run = [](IntrinsicContext&) { return VmValue::Void(); },
-        IntrinsicHandler uncaught = [](IntrinsicContext&) { return VmValue::Void(); })
-        : f(backend, "en", "US", "GMT", HookClass(std::move(run), std::move(uncaught))) {
+        IntrinsicHandler uncaught = [](IntrinsicContext&) { return VmValue::Void(); }, IntrinsicHandler finalize = {})
+        : f(backend, "en", "US", "GMT", HookClass(std::move(run), std::move(uncaught), std::move(finalize))) {
         const auto result = f.Static("Ljava/lang/Runtime;", "getRuntime", "()Ljava/lang/Runtime;");
         f.RequireOk(result);
         runtime = result.value.ref;
     }
 
-    static std::vector<IntrinsicClassDecl> HookClass(IntrinsicHandler run, IntrinsicHandler uncaught) {
+    static std::vector<IntrinsicClassDecl> HookClass(IntrinsicHandler run, IntrinsicHandler uncaught,
+                                                     IntrinsicHandler finalize) {
         auto b = IntrinsicClassBuilder::Class("Ltest/ShutdownHook;", "Ljava/lang/Thread;");
         b.OverrideMethod("run", "()V", std::move(run));
         auto handler = IntrinsicClassBuilder::Class("Ltest/ShutdownExceptionHandler;", "Ljava/lang/Object;",
                                                     {"Ljava/lang/Thread$UncaughtExceptionHandler;"});
         handler.VirtualMethod("uncaughtException", "(Ljava/lang/Thread;Ljava/lang/Throwable;)V", std::move(uncaught));
-        return {std::move(b).Build(), std::move(handler).Build()};
+        std::vector result{std::move(b).Build(), std::move(handler).Build()};
+        if (finalize) {
+            auto object = IntrinsicClassBuilder::Class("Ltest/ShutdownFinalizable;");
+            object.OverrideMethod("finalize", "()V", std::move(finalize), kAccProtected);
+            result.push_back(std::move(object).Build());
+        }
+        return result;
     }
 
     VmObjectRef Hook() {
@@ -87,6 +94,32 @@ constexpr std::array kShutdownBackends{InterpreterBackend::switch_dispatch, Inte
 
 }  // namespace
 
+TEST_CASE("ROM Runtime exit runs shutdown hooks then queued finalizers and preserves the exit code") {
+    for (const auto backend : kShutdownBackends) {
+        std::vector<std::string> events;
+        ShutdownHookVm h(
+            backend,
+            [&](IntrinsicContext& c) {
+                events.emplace_back("hook");
+                static_cast<void>(c.vm.NewIntrinsicInstance("Ltest/ShutdownFinalizable;"));
+                static_cast<void>(c.vm.CollectGarbage("shutdown-hook"));
+                return VmValue::Void();
+            },
+            [](IntrinsicContext&) { return VmValue::Void(); },
+            [&](IntrinsicContext&) {
+                events.emplace_back("finalizer");
+                return VmValue::Void();
+            });
+        h.f.RequireOk(h.Add(h.Hook()));
+        h.f.RequireOk(h.f.Static("Ljava/lang/Runtime;", "runFinalizersOnExit", "(Z)V", {VmValue::Int(1)}));
+        h.f.vm.Monitors().SetNanoTimeSource([] { return std::int64_t{60'000'000'001}; });
+        CHECK_THROWS_AS(static_cast<void>(h.f.Static("Ljava/lang/System;", "exit", "(I)V", {VmValue::Int(17)})),
+                        DexVmError);
+        CHECK(h.f.vm.ExitCode() == 17);
+        CHECK(events == std::vector<std::string>{"hook", "finalizer"});
+    }
+}
+
 TEST_CASE("DVM-150 Runtime shutdown hook registration uses BootDex rules and GC roots") {
     for (const auto backend : kShutdownBackends) {
         ShutdownHookVm h(backend);
@@ -101,8 +134,7 @@ TEST_CASE("DVM-150 Runtime shutdown hook registration uses BootDex rules and GC 
         }
         h.Error(h.Add(VmObjectRef{}), "Ljava/lang/NullPointerException;");
         h.Error(h.Remove(VmObjectRef{}), "Ljava/lang/NullPointerException;");
-        h.Error(h.f.Static("Ljava/lang/Runtime;", "runFinalizersOnExit", "(Z)V", {VmValue::Int(1)}),
-                "Ljava/lang/UnsupportedOperationException;");
+        h.f.RequireOk(h.f.Static("Ljava/lang/Runtime;", "runFinalizersOnExit", "(Z)V", {VmValue::Int(1)}));
         h.f.RequireOk(h.f.Static("Ljava/lang/Runtime;", "runFinalizersOnExit", "(Z)V", {VmValue::Int(0)}));
         const auto removed = h.Hook();
         h.f.RequireOk(h.Add(removed));
@@ -311,9 +343,9 @@ TEST_CASE("DVM-353 worker SystemClock sleep and Runtime exit hooks share paced c
         });
         auto& m = h.f.vm.Monitors();
         h.f.context->threads = &h.f.threads;
-        m.SetTimeSource([&] { return h.f.context->uptime_millis.load(); });
+        m.SetTimeSource([&] { return h.f.context->UptimeMillis(); });
         m.SetRealtimeSource([&] { return real.load(); });
-        m.SetClockAdvance([&](std::int64_t delta) { AdvanceAndroidClock(*h.f.context, delta); });
+        m.SetClockAdvance([&](std::int64_t delta) { AdvanceAndroidClock(*h.f.context, delta * 1'000'000); });
         h.f.context->clock_monitors = &m;
         AttachAndroidClockObserver(*h.f.context, h.f.vm.ExecutionLock());
         h.f.RequireOk(h.Add(h.Hook()));
@@ -324,15 +356,15 @@ TEST_CASE("DVM-353 worker SystemClock sleep and Runtime exit hooks share paced c
         m.Interrupt(kRootLifecycleToken);
         h.f.RequireOk(h.f.Static("Landroid/os/SystemClock;", "sleep", "(J)V", {VmValue::Long(0)}));
         CHECK(m.ClearInterrupt(kRootLifecycleToken));
-        const auto start = h.f.context->uptime_millis.load();
+        const auto start = h.f.context->UptimeMillis();
         std::thread driver([&] {
             while (!entered.load())
                 std::this_thread::yield();
             real = 3000;
-            while (h.f.context->uptime_millis.load() < start + 3000)
+            while (h.f.context->UptimeMillis() < start + 3000)
                 std::this_thread::yield();
             CHECK_FALSE(returned.load());
-            CHECK(h.f.context->uptime_millis == start + 3000);
+            CHECK(h.f.context->UptimeMillis() == start + 3000);
             real = 10000;
         });
         try {
@@ -342,7 +374,7 @@ TEST_CASE("DVM-353 worker SystemClock sleep and Runtime exit hooks share paced c
         }
         driver.join();
         CHECK(returned.load());
-        CHECK(h.f.context->uptime_millis >= start + 10000);
+        CHECK(h.f.context->UptimeMillis() >= start + 10000);
         CHECK(h.f.vm.ExitCode() == 17);
     }
 }

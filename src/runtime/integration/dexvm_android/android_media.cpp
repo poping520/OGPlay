@@ -858,7 +858,7 @@ std::optional<std::string> PumpVideoViews(dexvm::Interpreter& vm, DexVmAndroidCo
             auto& state = found->second;
             window = state.display_window;
             if (!state.player || (!state.playing && !state.frame_requested)) continue;
-            const auto now = context.uptime_millis.load();
+            const auto now = context.UptimeMillis();
             const auto position = android_intrinsics::VideoPositionOf(state, now);
             try {
                 if (state.looping && state.playing) {

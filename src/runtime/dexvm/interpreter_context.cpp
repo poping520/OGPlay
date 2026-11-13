@@ -490,7 +490,6 @@ void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
             visitor(VmObjectRef(linked.static_storage[slot]));
         }
     }
-    visitor(impl_->system_properties_object);
     for (const auto& [_, array] : impl_->enum_constant_arrays)
         visitor(array);
     impl_->model->VisitPermanentRoots(visitor);
@@ -887,6 +886,9 @@ void Interpreter::RegisterFinalizable(const VmObjectRef object) {
     }
     if (!cached->second) return;
     const auto roots = ProtectReferences(std::array{object});
+    // The first explicit runFinalization can precede the first collection.
+    if (impl_->linker->Class(type).descriptor == "Ljava/lang/ref/FinalizerReference$Sentinel;")
+        EnsureFinalizerDaemons();
     impl_->linker->EnsureClassLinked(*reference);
     const auto add = impl_->linker->FindDirectMethod(*reference, "add", "(Ljava/lang/Object;)V");
     if (!add) throw DexVmError(DexVmErrorReason::unresolved_reference, "FinalizerReference.add");
@@ -926,35 +928,6 @@ void Interpreter::RunFinalization() {
     const auto type = impl_->linker->ResolveDescriptor("Ljava/lang/ref/FinalizerReference;");
     const auto method = impl_->linker->FindDirectMethod(type, "finalizeAllEnqueued", "()V");
     if (!method) throw DexVmError(DexVmErrorReason::unresolved_reference, "FinalizerReference.finalizeAllEnqueued");
-    // API19's pinned ReferenceQueue pushes at head: its sentinel may overtake
-    // an older finalizer. Snapshot this batch before enqueueing the sentinel.
-    const auto& linker = *impl_->linker;
-    const auto instance_ref = [&](VmObjectRef object, const char* name, const char* descriptor) {
-        const auto field = linker.FindFieldRecursive(impl_->model->ObjectClass(object), name, descriptor);
-        if (!field) throw DexVmError(DexVmErrorReason::unresolved_reference, std::string("finalizer field ") + name);
-        return VmObjectRef(impl_->model->InstanceSlots(object)[linker.Field(*field).slot].bits);
-    };
-    const auto daemon_type = impl_->linker->ResolveDescriptor("Ljava/lang/Daemons$FinalizerDaemon;");
-    const auto daemon_field = linker.FindFieldRecursive(daemon_type, "INSTANCE", "Ljava/lang/Daemons$FinalizerDaemon;");
-    const auto queue_field = linker.FindFieldRecursive(type, "queue", "Ljava/lang/ref/ReferenceQueue;");
-    if (!daemon_field || !queue_field)
-        throw DexVmError(DexVmErrorReason::unresolved_reference, "finalizer queue metadata");
-    const auto daemon = VmObjectRef(linker.Class(daemon_type).static_storage[linker.Field(*daemon_field).slot]);
-    const auto queue = VmObjectRef(linker.Class(type).static_storage[linker.Field(*queue_field).slot]);
-    std::vector<std::pair<VmObjectRef, VmObjectRef>> batch;
-    std::vector<VmObjectRef> roots;
-    auto next = instance_ref(queue, "head", "Ljava/lang/ref/Reference;");
-    std::set<std::uint32_t> visited;
-    while (next.IsValid() && visited.insert(next.Value()).second) {
-        const auto zombie = instance_ref(next, "zombie", "Ljava/lang/Object;");
-        batch.emplace_back(next, zombie);
-        roots.push_back(next);
-        roots.push_back(zombie);
-        next = instance_ref(next, "queueNext", "Ljava/lang/ref/Reference;");
-    }
-    const auto active = instance_ref(daemon, "finalizingObject", "Ljava/lang/Object;");
-    roots.push_back(active);
-    const auto batch_roots = ProtectReferences(roots);
     const auto result = Call(*method, {});
     if (result.exception.IsValid()) {
         if (impl_->linker->Class(result.exception_class).descriptor != "Ljava/lang/InterruptedException;")
@@ -962,22 +935,6 @@ void Interpreter::RunFinalization() {
                               result.exception};
         impl_->threads->Interrupt(impl_->threads->CurrentThreadObject());
         return;
-    }
-    while (true) {
-        const auto current = instance_ref(daemon, "finalizingObject", "Ljava/lang/Object;");
-        const bool pending =
-            (active.IsValid() && active == current) || std::any_of(batch.begin(), batch.end(), [&](const auto& entry) {
-                return instance_ref(entry.first, "zombie", "Ljava/lang/Object;").IsValid() ||
-                       (entry.second.IsValid() && entry.second == current);
-            });
-        if (!pending) break;
-        try {
-            impl_->threads->Sleep(1);
-        } catch (const VmJavaThrow& error) {
-            if (error.descriptor != "Ljava/lang/InterruptedException;") throw;
-            impl_->threads->Interrupt(impl_->threads->CurrentThreadObject());
-            break;
-        }
     }
 }
 

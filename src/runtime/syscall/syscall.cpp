@@ -292,7 +292,9 @@ A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(core::CapabilityLedger& l
 }
 
 void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock, memory::AddressSpace& address_space,
-                             std::function<void(std::uint64_t, std::chrono::nanoseconds)> admit_sleep) {
+                             std::function<void(std::uint64_t, std::chrono::nanoseconds)> admit_sleep,
+                             std::function<std::uint64_t()> monotonic_nanos,
+                             std::function<void(std::uint64_t, std::chrono::nanoseconds)> account_sleep) {
     constexpr std::int32_t kEfault = 14;
     constexpr std::int32_t kEinval = 22;
     constexpr std::int32_t kEoverflow = 75;
@@ -317,7 +319,13 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock
         }
         return value;
     };
-    const auto current = [&clock, frequency]() {
+    const auto current = [&clock, frequency, nanos = std::move(monotonic_nanos)](bool wall_time) {
+        if (nanos) {
+            const auto elapsed = nanos();
+            const auto epoch_seconds = wall_time ? static_cast<std::uint64_t>(kAndroidWallEpochMillis / 1000) : 0U;
+            return std::pair<std::uint64_t, std::uint64_t>{elapsed / 1'000'000'000 + epoch_seconds,
+                                                           elapsed % 1'000'000'000};
+        }
         const auto ticks = clock.Ticks();
         const auto seconds = ticks / frequency;
         const auto remainder = ticks % frequency;
@@ -328,7 +336,7 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock
         if (frame.arguments[0] != 0 && frame.arguments[0] != 1 && frame.arguments[0] != 7) {
             return -kEinval;
         }
-        const auto [seconds, nanoseconds] = current();
+        const auto [seconds, nanoseconds] = current(frame.number == 78 || frame.arguments[0] == 0);
         if (seconds > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max())) {
             return -kEoverflow;
         }
@@ -343,7 +351,7 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock
         }
     });
     dispatcher.Implement(78, [&address_space, write32, current](const A32SyscallFrame& frame) {
-        const auto [seconds, nanoseconds] = current();
+        const auto [seconds, nanoseconds] = current(frame.number == 78 || frame.arguments[0] == 0);
         if (seconds > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max())) {
             return -kEoverflow;
         }
@@ -365,8 +373,8 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock
     });
     dispatcher.Implement(
         162,
-        [&address_space, read32, signals = dispatcher.signal_binding,
-         admit_sleep = std::move(admit_sleep)](const A32SyscallFrame& frame) -> A32SyscallOutcome {
+        [&address_space, read32, signals = dispatcher.signal_binding, admit_sleep = std::move(admit_sleep),
+         account_sleep = std::move(account_sleep)](const A32SyscallFrame& frame) -> A32SyscallOutcome {
             auto progress = SupervisorCallProgress::handled_idle;
             try {
                 const memory::GuestAddress request{frame.arguments[0]};
@@ -382,6 +390,8 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock
                 if (signals->runtime) {
                     const auto result = signals->runtime->Sleep(frame.thread_id, duration);
                     if (result.waited) progress = SupervisorCallProgress::handled_advanced;
+                    if (account_sleep)
+                        account_sleep(frame.thread_id, result.interrupted ? duration - result.remaining : duration);
                     if (result.interrupted) {
                         if (frame.arguments[1] != 0) {
                             const auto left = result.remaining.count();
@@ -399,6 +409,7 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock
                     return {0, progress};
                 }
                 std::this_thread::sleep_for(duration);
+                if (account_sleep) account_sleep(frame.thread_id, duration);
                 return {0, SupervisorCallProgress::handled_advanced};
             } catch (const memory::MemoryFault&) {
                 return {-kEfault, progress};

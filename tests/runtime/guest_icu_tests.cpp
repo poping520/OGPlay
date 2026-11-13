@@ -695,7 +695,7 @@ TEST_CASE("DVM-376 Android Time uses fixed Clock and API19 guest date rules") {
             constexpr auto owner = "Landroid/text/format/Time;";
             constexpr auto text_signature = "Ljava/lang/String;";
             constexpr std::int64_t now = 1704045845000LL;  // 2023-12-31 18:04:05Z
-            f.context->uptime_millis = now - 1400000000000LL;
+            f.context->uptime_nanos = (now - 1400000000000LL) * 1'000'000;
 
             const auto new_time = [&](const char* zone) {
                 return f.New(owner, "(Ljava/lang/String;)V", {VmValue::Ref(f.Text(zone))});

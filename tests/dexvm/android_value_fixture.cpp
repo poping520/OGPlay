@@ -82,7 +82,7 @@ std::optional<std::string> DispatchFixtureMessages(Interpreter& vm, DexVmAndroid
         const auto fields = vm.Model().InstanceSlots(head);
         const auto when = static_cast<std::int64_t>(fields[when_slot].bits |
                                                     (static_cast<std::uint64_t>(fields[when_slot + 1].bits) << 32));
-        if (when > context.uptime_millis.load()) break;
+        if (when > context.UptimeMillis()) break;
         const auto take = invoke(queue, "next", "()Landroid/os/Message;");
         if (take.exception.IsValid()) return failure(take, "MessageQueue.next");
         const auto message = take.value.ref;

@@ -862,7 +862,7 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
                     }
                     video->playing = true;
                     video->loop_index = 0;
-                    video->start_uptime_ms = context->uptime_millis.load();
+                    video->start_uptime_ms = context->UptimeMillis();
                 }
             } else
                 context->encoded_music->Start(state.music);
@@ -884,7 +884,7 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
                 return dx::VmValue::Void();
             }
             if (video) {
-                video->base_position_ms = VideoPositionOf(*video, context->uptime_millis.load());
+                video->base_position_ms = VideoPositionOf(*video, context->UptimeMillis());
                 video->playing = false;
             } else
                 context->encoded_music->Pause(state.music);
@@ -977,7 +977,7 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
                 const auto position = std::clamp<std::int64_t>(call.arguments[0].AsInt(), 0, video->duration_ms);
                 video->player->SeekTo(position);
                 video->base_position_ms = position;
-                video->start_uptime_ms = context->uptime_millis.load();
+                video->start_uptime_ms = context->UptimeMillis();
                 video->loop_index = 0;
                 video->pcm_phase = 0;
                 video->pcm_carry.clear();
@@ -1025,8 +1025,8 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
             if (auto* video = VideoStateOf(context, call.receiver.Value())) {
                 // Rebase on a configuration change so a previous cycle does
                 // not become an immediate completion when looping is disabled.
-                video->base_position_ms = VideoPositionOf(*video, context->uptime_millis.load());
-                video->start_uptime_ms = context->uptime_millis.load();
+                video->base_position_ms = VideoPositionOf(*video, context->UptimeMillis());
+                video->start_uptime_ms = context->UptimeMillis();
                 video->loop_index = 0;
                 video->looping = media.looping;
                 return dx::VmValue::Void();
@@ -1068,8 +1068,7 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             std::scoped_lock video_lock(context->video_views_mutex);
             if (const auto* video = VideoStateOf(context, call.receiver.Value()))
-                return dx::VmValue::Int(
-                    static_cast<std::int32_t>(VideoPositionOf(*video, context->uptime_millis.load())));
+                return dx::VmValue::Int(static_cast<std::int32_t>(VideoPositionOf(*video, context->UptimeMillis())));
             return dx::VmValue::Int(context->encoded_music->PositionMs(RequireMedia(context, call).music));
         },
         kPubNat);

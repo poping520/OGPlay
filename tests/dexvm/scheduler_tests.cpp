@@ -153,7 +153,9 @@ struct SchedulerVm final {
     explicit SchedulerVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
         : vm(
               [this]() -> DexClassLinker& {
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(AndroidCoreIntrinsicServices(context)));
+                  auto services = AndroidCoreIntrinsicServices(context);
+                  services.process_environment = {};
+                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices(services)));
                   linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
                   linker.RegisterIntrinsics(TestCatalog(&messages, &ticks, &receiver_results, &runnable_calls,
                                                         &timer_calls, &finishes, &async_background, &async_post,
@@ -168,7 +170,7 @@ struct SchedulerVm final {
               model, nullptr, ledger, {.backend = backend}),
           threads(vm) {
         context->threads = &threads;
-        vm.Monitors().SetTimeSource([state = context] { return state->uptime_millis.load(); });
+        vm.Monitors().SetTimeSource([state = context] { return state->UptimeMillis(); });
         RegisterAndroidSchedulerStateTable(vm, context);
         PrepareAndroidMainLooper(vm, context);
     }
@@ -243,6 +245,23 @@ bool WaitFor(Predicate predicate) {
 }
 
 }  // namespace
+
+TEST_CASE("driver native sleeps advance uptime once and are netted from the next frame") {
+    DexVmAndroidContext context;
+    const auto initial = context.uptime_nanos.load();
+    AdvanceAndroidClockForDriverSleep(context, 5'000'000);
+    CHECK(context.uptime_nanos.load() == initial + 5'000'000);
+    AdvanceAndroidFrameClock(context, 16'000'000);
+    CHECK(context.uptime_nanos.load() == initial + 16'000'000);
+    AdvanceAndroidFrameClock(context, 16'000'000);
+    CHECK(context.uptime_nanos.load() == initial + 32'000'000);
+    // A sleep longer than the frame keeps the slept time; the frame adds nothing more.
+    AdvanceAndroidClockForDriverSleep(context, 40'000'000);
+    AdvanceAndroidFrameClock(context, 16'000'000);
+    CHECK(context.uptime_nanos.load() == initial + 72'000'000);
+    AdvanceAndroidFrameClock(context, 16'000'000);
+    CHECK(context.uptime_nanos.load() == initial + 88'000'000);
+}
 
 TEST_CASE("Context exposes the stable scheduler main Looper through wrappers") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
@@ -465,12 +484,12 @@ TEST_CASE("DVM-85 Handler queue is delayed ordered and removable") {
         fixture.Virtual(handler, "sendEmptyMessageDelayed", "(IJ)Z", {VmValue::Int(3), VmValue::Long(20)}));
     SchedulerVm::RequireOk(fixture.Virtual(handler, "removeMessages", "(I)V", {VmValue::Int(3)}));
 
-    AdvanceAndroidClock(*fixture.context, 9);
+    AdvanceAndroidClock(*fixture.context, 9 * 1'000'000);
     CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.messages.empty());
     CHECK(fixture.runnable_calls.load() == 0);
 
-    AdvanceAndroidClock(*fixture.context, 1);
+    AdvanceAndroidClock(*fixture.context, 1 * 1'000'000);
     CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.messages == std::vector<std::int32_t>{2, 1});
     CHECK(fixture.Direct("Landroid/os/SystemClock;", "uptimeMillis", "()J").value.AsLong() ==
@@ -538,7 +557,7 @@ TEST_CASE("DVM-85 Timer and CountDownTimer share the Android clock") {
     CHECK(fixture.ticks == std::vector<std::int64_t>{30});
 
     for (int step = 0; step < 3; ++step) {
-        AdvanceAndroidClock(*fixture.context, 10);
+        AdvanceAndroidClock(*fixture.context, 10 * 1'000'000);
         CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(fixture.vm, *fixture.context).has_value());
     }
     REQUIRE(WaitFor([&] { return fixture.timer_calls.load() == 1; }));
@@ -675,7 +694,7 @@ TEST_CASE("DVM-268 DEX Timer schedules once and cancel rejects more work") {
         SchedulerVm::RequireOk(f.Direct("Ltest/RomJavaReplacement;", "timer",
                                         "(Ljava/util/Timer;Ljava/util/TimerTask;)V",
                                         {VmValue::Ref(timer), VmValue::Ref(task)}));
-        AdvanceAndroidClock(*f.context, 10);
+        AdvanceAndroidClock(*f.context, 10 * 1'000'000);
         CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
         REQUIRE(WaitFor([&] { return f.timer_calls.load() == 1; }));
         SchedulerVm::RequireOk(f.Virtual(timer, "cancel", "()V"));
@@ -703,7 +722,7 @@ TEST_CASE("DVM-268 DEX CountDownTimer ticks and finishes") {
         CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
         CHECK(f.ticks == std::vector<std::int64_t>{30});
         for (int i = 0; i < 3; ++i) {
-            AdvanceAndroidClock(*f.context, 10);
+            AdvanceAndroidClock(*f.context, 10 * 1'000'000);
             CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
         }
         CHECK(f.ticks == std::vector<std::int64_t>{30, 20, 10});
@@ -775,17 +794,17 @@ TEST_CASE("ROM HandlerThread delays wake only after the manual Clock reaches the
         const auto runnable = f.New("Ltest/RecordingRunnable;");
         const auto roots = f.vm.ProtectReferences(std::array{handler, runnable});
         f.ConstructAs(handler, "Landroid/os/Handler;", "(Landroid/os/Looper;)V", {VmValue::Ref(looper)});
-        const auto now = f.context->uptime_millis.load();
+        const auto now = f.context->UptimeMillis();
         SchedulerVm::RequireOk(
             f.Virtual(handler, "postDelayed", "(Ljava/lang/Runnable;J)Z", {VmValue::Ref(runnable), VmValue::Long(10)}));
         REQUIRE(WaitFor([&] { return f.Virtual(looper, "isIdling", "()Z").value.AsInt() != 0; }));
         CHECK(f.runnable_calls.load() == 0);
-        AdvanceAndroidClock(*f.context, 9);
-        CHECK(f.context->uptime_millis.load() == now + 9);
+        AdvanceAndroidClock(*f.context, 9 * 1'000'000);
+        CHECK(f.context->UptimeMillis() == now + 9);
         CHECK(f.runnable_calls.load() == 0);
-        AdvanceAndroidClock(*f.context, 1);
+        AdvanceAndroidClock(*f.context, 1 * 1'000'000);
         REQUIRE(WaitFor([&] { return f.runnable_calls.load() == 1; }));
-        CHECK(f.context->uptime_millis.load() == now + 10);
+        CHECK(f.context->UptimeMillis() == now + 10);
         SchedulerVm::RequireOk(f.Virtual(thread, "quit", "()Z"));
         SchedulerVm::RequireOk(f.Virtual(thread, "join", "()V"));
     }
@@ -818,7 +837,7 @@ TEST_CASE("ROM MessageQueue invokes IdleHandler once and quitSafely discards fut
         SchedulerVm::RequireOk(f.Virtual(thread, "join", "()V"));
         CHECK(f.runnable_calls.load() == 2);
         CHECK(f.idle_calls.load() == 1);
-        AdvanceAndroidClock(*f.context, 100);
+        AdvanceAndroidClock(*f.context, 100 * 1'000'000);
         CHECK_FALSE(f.threads.IsAlive(thread));
         CHECK(f.runnable_calls.load() == 2);
     }

@@ -7,6 +7,7 @@
 #include "ogplay/core/atomic_shared_ptr.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/hal/clock.h"
+#include "ogplay/runtime/syscall/syscall.h"
 
 #include <deque>
 #include <filesystem>
@@ -401,7 +402,15 @@ struct DexVmAndroidContext final {
     std::shared_ptr<hal::Clock> stall_clock = std::make_shared<hal::RealtimeClock>(1000);
     dexvm::VmMonitorTable* clock_monitors{};
     std::thread::id clock_driver = std::this_thread::get_id();
-    std::atomic<std::int64_t> uptime_millis{kDefaultAndroidDeviceUptimeMillis};
+    std::atomic<std::int64_t> uptime_nanos{kDefaultAndroidDeviceUptimeMillis * 1'000'000};
+    // Native sleeps of the clock driver already advanced uptime; the next frame advance
+    // subtracts them so the clock does not count the same host interval twice.
+    std::atomic<std::int64_t> driver_sleep_credit_nanos{0};
+
+    [[nodiscard]] std::int64_t UptimeMillis() const noexcept { return uptime_nanos.load() / 1'000'000; }
+
+    [[nodiscard]] std::int64_t WallTimeMillis() const noexcept { return kAndroidWallEpochMillis + UptimeMillis(); }
+
     // System.exit(): the guest asked for the process, not an activity.
     std::atomic<bool> exit_requested{false};
 
@@ -732,7 +741,7 @@ struct DexVmAndroidContext final {
     std::function<void(dexvm::Interpreter&)> on_first_main_idle;
 
     // One scheduler owns every Android/JRE delayed callback. Deadline
-    // decisions use uptime_millis; the condition variable only wakes a
+    // decisions use UptimeMillis(); the condition variable only wakes a
     // HandlerThread when work or Clock state changes.
     mutable std::mutex scheduler_mutex;
     std::condition_variable scheduler_changed;
@@ -912,7 +921,11 @@ void QueueAndroidTextEvent(DexVmAndroidContext& context, std::string text, bool 
 void QueueAndroidMediaTick(DexVmAndroidContext& context);
 [[nodiscard]] bool AndroidMainQueueIdle(DexVmAndroidContext& context);
 void NotifyAndroidScheduler(DexVmAndroidContext& context);
-void AdvanceAndroidClock(DexVmAndroidContext& context, std::int64_t delta_millis);
+void AdvanceAndroidClock(DexVmAndroidContext& context, std::int64_t delta_nanos);
+// A native sleep on the clock driver thread lets uptime pass inside one step.
+void AdvanceAndroidClockForDriverSleep(DexVmAndroidContext& context, std::int64_t slept_nanos);
+// Lifecycle frame advance, net of driver sleeps since the previous frame advance.
+void AdvanceAndroidFrameClock(DexVmAndroidContext& context, std::int64_t frame_nanos);
 
 // Stops all loopers and wakes HandlerThread teardown. Idempotent.
 void ShutdownAndroidScheduler(DexVmAndroidContext& context);

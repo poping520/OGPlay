@@ -71,7 +71,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 ## 进程与库加载
 
 - FindLibraryExport 按库身份查询完整的已加载命名空间；缺库或导出返回 optional，
-  不隐式加载。平台属性查询与其他 native 边界遵循同一 VM 锁释放/恢复协议。
+  不隐式加载。创建 VM 前经现有加载入口准备随附 JNI 库的 ICU 依赖闭包；版本查询遵循 VM 锁释放/恢复协议。
 
 - 锁顺序：持有 VM 执行锁时，禁止获取进程 `guest_call_mutex_`、`native_load_mutex_`
   或 DexVM native context 的 `call_mutex`。进入可能等待这些锁或执行 guest 的边界前，
@@ -163,12 +163,13 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   可达性加入同一 namespace。map 事务完成后执行 constructor；registry mutex 不跨 guest
   call。只有显式 root 执行 JNI_OnLoad，不把 dependency 算作 Java load；module 持有至 Stop，
   按实际完成 constructor 的逆序 finalize，成功 load 记录 sequence/soname。
-- System.load/loadLibrary 使用同一个 loader 和 application ClassLoader token。Java 边界
+- System 和 Runtime 的公开加载方法汇入 Runtime 两个接受 ClassLoader 的包内方法，
+  复用同一 loader 和 application ClassLoader token。Java 边界
   为 NPE/UnsatisfiedLinkError，宿主保留 typed cause；legacy InitializeJniLibrary 只能在
   运行中、constructors 和类登记完成后调用一次，成功或无 OnLoad 才发布 ready。
 - BaseDexClassLoader.findLibrary 执行 ROM DexPathList，在 nativeLibraryDirectories 中通过
   VFS 查找 System.mapLibraryName 结果；封存所选 ABI 库位于 `/data/app-lib`，系统库位于
-  `/system/lib`，所得路径由 Runtime.nativeLoad 交统一 NativeLibraryLoader 装载。
+  `/system/lib`，所得路径由 Runtime 包内方法的绑定交统一 NativeLibraryLoader 装载。
   integration 不覆盖 findLibrary 普通方法。
 
 ## DexVM / JNI 唯一身份与执行
@@ -251,7 +252,9 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - Runtime 的 hook 与 exit/halt 普通协议归 BootDex；平台只绑定 nativeExit，发布 session
   退出标记并调用 VM.Exit，保留退出码、非 Java 展开，不从 worker 同步 Stop/join。
   宿主 Stop 仍为取消，不自动运行 hook；详见 [相关说明](../../../docs/design/dexvm.md)。
-- wait/sleep/timed join 共用注入 monotonic Clock，currentTimeMillis 使用会话时间事实。
+- wait/sleep/timed join 共用注入 monotonic Clock。Java 与 syscall 共用会话纳秒 uptime，
+  currentTimeMillis 与原生墙钟查询共用固定纪元。时钟驱动线程上的原生 nanosleep 经
+  `native_sleep_observer` 推进 uptime，下一次帧推进扣除该额度。
   ADR-0171：blocking observer 统一跟踪生命周期驱动停摆并转发 EGL pacer；无 EGL 亦适用。
   root/worker 限时等待仅补至停摆起点 uptime 加注入 RealtimeClock 的真实流逝时间，
   不超过自身 deadline；root join/退出 hook 同规则，恢复后按帧推进且不回拨。

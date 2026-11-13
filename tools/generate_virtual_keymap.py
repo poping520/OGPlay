@@ -7,10 +7,14 @@ import ast
 import hashlib
 import re
 from pathlib import Path
+import sys
 
 ROOT = Path(__file__).resolve().parent.parent
-MAP = ROOT / ".local/aosp/framework/base/data/keyboards/Virtual.kcm"
-KEYS = ROOT / ".local/aosp/framework/base/core/java/android/view/KeyEvent.java"
+sys.path.insert(0, str(ROOT / "tools"))
+from aosp_sources import api_dir  # noqa: E402
+
+MAP = api_dir(19) / "frameworks/base/data/keyboards/Virtual.kcm"
+KEYS = api_dir(19) / "frameworks/base/core/java/android/view/KeyEvent.java"
 OUTPUT = ROOT / "src/runtime/integration/dexvm_android/virtual_keymap.inc"
 MODIFIERS = {"base": 0, "shift": 1, "alt": 2, "ctrl": 0x1000,
              "meta": 0x10000, "capslock": 0x100000, "numlock": 0x200000}

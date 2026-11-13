@@ -10,6 +10,8 @@
    不凭猜测补实现。
 4. 适配新游戏、跑测试或排查症状前，先读 `docs/playbook/` 下对应的操作手册
    （总览 `docs/playbook/README.md`），按既有流程做，不要另起一套。
+5. AOSP API 19 参考源码在 `.aosp/api19/`（android-4.4.4_r2.0.1，目录与 AOSP 仓库路径一致，只读）， 
+   常用位置见 `.aosp/api19/README.md`。
 
 ## 范围边界
 

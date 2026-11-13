@@ -4,6 +4,7 @@
 /.cache/
 /.claude
 /.local/
+/.aosp/
 /.idea/
 /.vs/
 /.vscode/

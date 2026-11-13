@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
-"""Compare intrinsic own-member contracts with the pinned API19 ROM; never fix them."""
+"""Compare intrinsic own-member contracts with the pinned API19 ROM; never fix them.
+
+Also owns the API19 evidence it compares against: own-member shapes read from the hash-pinned
+ROM jars, and api19_platform_tables.json (ContextImpl service registrations and
+System.initSystemProperties), regenerated from the local AOSP tree with --regenerate-tables.
+"""
 from __future__ import annotations
 
 import argparse
 from collections import Counter
 import copy
 import hashlib
+import io
 import json
 from pathlib import Path
+import re
+import struct
 import sys
 import tempfile
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
-import api19_rom
+import dex_survey_lib as dex
+from aosp_sources import api_dir, rom_dir
 
 BASELINE = Path(__file__).with_name("framework_contract_baseline.json")
 MASK = 0x1 | 0x2 | 0x4 | 0x8 | 0x10 | 0x400
@@ -44,6 +54,147 @@ def member_index(rows):
 
 
 PLATFORM_TABLES = Path(__file__).with_name("api19_platform_tables.json")
+
+
+# ---- API19 ROM own-member shapes ----
+
+PINNED = {
+    'core.jar': '60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee',
+    'framework.jar': '422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b',
+    'framework2.jar': '5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973',
+    'telephony-common.jar': 'b1e4f98857dd07d9fa7bc1d6c2d6cdb49d41adc2973533db3982ef0d5348a908',
+    'ext.jar': 'e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2',
+}
+
+
+def clinit_writes(data, code, catalog):
+    units = struct.unpack_from('<%dH' % code.insns_size, data, code.insns_offset)
+    pc = 0
+    writes = set()
+    while pc < len(units):
+        op = units[pc] & 255
+        if op == 0 and units[pc] >> 8:
+            ident = units[pc]
+            if ident == 0x100:
+                width = 4 + 2 * units[pc + 1]
+            elif ident == 0x200:
+                width = 2 + 4 * units[pc + 1]
+            else:
+                width = 4 + (units[pc + 1] * (units[pc + 2] | units[pc + 3] << 16) + 1) // 2
+        else:
+            if 0x67 <= op <= 0x6d:
+                writes.add(units[pc + 1])
+            width = int(catalog[op]['format'][0])
+        pc += width
+    if pc != len(units):
+        raise ValueError('invalid clinit instruction width')
+    return writes
+
+
+def load_rom(directory=None):
+    """Return {descriptor: [super, interfaces, flags, methods, fields]} from the pinned jars.
+
+    methods: [name, descriptor, flags]; fields: [name, descriptor, flags, kind, value] where
+    kind 1 is a numeric and 2 a String static final constant no clinit writes.
+    """
+    directory = rom_dir(19) if directory is None else directory
+    records = {}
+    catalog = dex.load_catalog()
+    for jar, digest in PINNED.items():
+        raw = (Path(directory) / jar).read_bytes()
+        if hashlib.sha256(raw).hexdigest() != digest:
+            raise ValueError('pinned SHA256 mismatch: ' + jar)
+        data = zipfile.ZipFile(io.BytesIO(raw)).read('classes.dex')
+        image = dex.parse_dex(data)
+        for cls in image.classes:
+            owner = image.type_name(cls.type_index)
+            if owner in records:
+                raise ValueError('duplicate ROM class: ' + owner)
+            methods = []
+            writes = set()
+            for method in cls.direct_methods + cls.virtual_methods:
+                _, name, desc = image.method_signature(method.method_index)
+                methods.append([name, desc, method.access_flags])
+                if name == '<clinit>' and method.code:
+                    writes |= clinit_writes(data, method.code, catalog)
+            values = dex.static_values(data, image, cls)
+            fields = []
+            for i, field in enumerate(cls.static_fields + cls.instance_fields):
+                _, type_index, name_index = image.field_ids[field.field_index]
+                desc = image.type_name(type_index)
+                kind = 0
+                value = None
+                if (i < len(cls.static_fields) and field.access_flags & 0x18 == 0x18
+                        and field.field_index not in writes and i < len(values)):
+                    encoded = values[i]
+                    if desc == 'Ljava/lang/String;' and isinstance(encoded, str):
+                        kind, value = 2, encoded
+                    elif desc in 'ZBSCIJFD' and len(desc) == 1 and isinstance(encoded, (int, float)):
+                        kind = 1
+                        if desc in 'FD':
+                            bits = struct.pack('<f' if desc == 'F' else '<d', encoded)
+                            value = str(int.from_bytes(bits, 'little', signed=True))
+                        else:
+                            value = str(int(encoded))
+                fields.append([image.strings[name_index], desc, field.access_flags, kind, value])
+            parent = image.type_name(cls.superclass_index) if cls.superclass_index is not None else None
+            interfaces = [image.type_name(t) for t in cls.interface_type_indices]
+            records[owner] = [parent, interfaces, cls.access_flags, sorted(methods), sorted(fields)]
+    return records
+
+
+# ---- API19 platform tables evidence (generation only reads the local AOSP tree) ----
+
+TABLE_SOURCES = {
+    'context': 'frameworks/base/core/java/android/content/Context.java',
+    'registry': 'frameworks/base/core/java/android/app/ContextImpl.java',
+    'system': 'libcore/luni/src/main/java/java/lang/System.java',
+    'binding': 'frameworks/base/core/java/android/app/ActivityThread.java',
+}
+
+
+def extract_platform_tables(root):
+    texts = {key: (root / path).read_text(encoding='utf-8') for key, path in TABLE_SOURCES.items()}
+    constants = dict(re.findall(r'\bString\s+(\w+)\s*=\s*"([^"]+)"', texts['context']))
+    registrations = re.findall(r'\bregisterService\(\s*([A-Z][A-Z0-9_]+)\s*,', texts['registry'])
+    if len(registrations) != len(set(registrations)):
+        raise ValueError('duplicate service registration')
+    services = {constants[name]: name for name in registrations}
+    body = texts['system'].split('private static void initSystemProperties() {', 1)[1].split('systemProperties = p;', 1)[0]
+    expressions = dict(re.findall(r'p\.put\("([^"]+)",\s*([^;]+)\);', body))
+    properties = {}
+    variables = {'projectName': 'The Android Project', 'projectUrl': 'http://www.android.com/'}
+    for key, expression in expressions.items():
+        entry = {'expression': expression}
+        if expression.startswith('"'):
+            entry['value'] = json.loads(expression)
+        elif expression in variables:
+            entry['value'] = variables[expression]
+        elif expression.startswith('info.'):
+            entry['source'] = 'uname.' + expression[5:]
+        elif expression.startswith('passwd.'):
+            entry['source'] = 'passwd.' + expression[7:]
+        elif expression.startswith('ICU.'):
+            entry['source'] = expression
+        elif expression == 'javaHome':
+            entry.update(source='getenv.JAVA_HOME', fallback='/system')
+        elif expression == 'ldLibraryPath':
+            entry.update(source='getenv.LD_LIBRARY_PATH', conditional=True)
+        else:
+            entry['source'] = expression
+        properties[key] = entry
+    # Keep the ActivityThread override separately: /tmp is correct before binding.
+    if 'System.setProperty("java.io.tmpdir", cacheDir.getAbsolutePath())' not in texts['binding']:
+        raise ValueError('missing API19 cache binding rule')
+    properties['java.io.tmpdir']['application_binding'] = 'Context.getCacheDir().getAbsolutePath()'
+    if len(services) != 44 or len(properties) != 37:
+        raise ValueError(f'unexpected pinned source inventory: {len(services)} services, {len(properties)} properties')
+    return {
+        'schema': 1, 'api': 19, 'reference': 'AOSP android-4.4.4_r2.0.1',
+        'sources': {key: {'path': path, 'sha256': hashlib.sha256((root/path).read_bytes()).hexdigest()} for key, path in TABLE_SOURCES.items()},
+        'system_services': dict(sorted(services.items())),
+        'system_properties': dict(sorted(properties.items())),
+    }
 
 
 def analyze_platform_tables(surface, reference):
@@ -529,7 +680,11 @@ def main():
     parser.add_argument(
         "--surface", type=Path, help="JSON from ogplay-cli dexvm dump-surface"
     )
-    parser.add_argument("--aosp", type=Path, default=ROOT / ".local/aosp")
+    parser.add_argument("--rom", type=Path, default=rom_dir(19))
+    parser.add_argument("--aosp", type=Path, default=api_dir(19),
+                        help="AOSP source root for --regenerate-tables")
+    parser.add_argument("--regenerate-tables", action="store_true",
+                        help="rewrite api19_platform_tables.json from --aosp and exit")
     parser.add_argument("--baseline", type=Path, default=BASELINE)
     parser.add_argument("--report", type=Path)
     mode = parser.add_mutually_exclusive_group()
@@ -540,14 +695,19 @@ def main():
     if args.self_test:
         self_test()
         return 0
+    if args.regenerate_tables:
+        tables = extract_platform_tables(args.aosp)
+        PLATFORM_TABLES.write_text(json.dumps(tables, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"Extracted {len(tables['system_services'])} services and {len(tables['system_properties'])} properties")
+        return 0
     if not args.surface:
         parser.error("--surface is required")
     result = analyze(
-        json.loads(args.surface.read_text(encoding="utf-8")), api19_rom.load(args.aosp),
+        json.loads(args.surface.read_text(encoding="utf-8")), load_rom(args.rom),
         json.loads(PLATFORM_TABLES.read_text(encoding="utf-8")))
     # Bind the pinned jars and frozen platform evidence into the ROM identity.
     digest = hashlib.sha256(
-        json.dumps(api19_rom.PINNED, sort_keys=True).encode() + PLATFORM_TABLES.read_bytes()
+        json.dumps(PINNED, sort_keys=True).encode() + PLATFORM_TABLES.read_bytes()
     ).hexdigest()
     report = render(result)
     print(report, end="")

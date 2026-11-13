@@ -47,19 +47,19 @@ public final class EmptyArray { public static final byte[] BYTE = new byte[0]; }
   "source_tag": "android-4.4.4_r2.0.1",
   "algorithm_sources": [
     {
-      "path": ".local/aosp/libcore/luni/src/main/java/org/apache/harmony/security/provider/crypto/CryptoProvider.java",
+      "path": ".aosp/api19/libcore/luni/src/main/java/org/apache/harmony/security/provider/crypto/CryptoProvider.java",
       "sha256": "ab7296ab8b2542aa21bc089796d9cdadf7a5ca61cf6363a3073d75946e6fea28"
     },
     {
-      "path": ".local/aosp/libcore/luni/src/main/java/org/apache/harmony/security/provider/crypto/SHA1PRNG_SecureRandomImpl.java",
+      "path": ".aosp/api19/libcore/luni/src/main/java/org/apache/harmony/security/provider/crypto/SHA1PRNG_SecureRandomImpl.java",
       "sha256": "5876a54dc8d34d1a66e35150af1ba1fe28134c2329b62657da82296486269913"
     },
     {
-      "path": ".local/aosp/libcore/luni/src/main/java/org/apache/harmony/security/provider/crypto/SHA1Impl.java",
+      "path": ".aosp/api19/libcore/luni/src/main/java/org/apache/harmony/security/provider/crypto/SHA1Impl.java",
       "sha256": "43ac1a677ed31a33483e2278054e42903bcf187c19e46a1080517ae38e36129d"
     },
     {
-      "path": ".local/aosp/libcore/luni/src/main/java/org/apache/harmony/security/provider/crypto/SHA1Constants.java",
+      "path": ".aosp/api19/libcore/luni/src/main/java/org/apache/harmony/security/provider/crypto/SHA1Constants.java",
       "sha256": "4202a234c49242e6e254f00ae98dfaf5e6eeaf2d5f13ab582640adb26ce1b38c"
     }
   ],

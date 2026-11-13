@@ -55,9 +55,28 @@ python3 tools/capabilities.py verify runtime.ui_inflater --build-dir build/dev
 `verify` 按条目的 test 入口运行 doctest 过滤、ctest、tools 命令或 vitest；`--dry-run` 只打印命令，
 多配置生成器用 `--config`。`check` 由 ctest `tools.capabilities_current` 执行。
 
+## AOSP 参考源码与 ROM 输入
+
+`aosp_sources.py` 按 `aosp_sources.json` 在 `.aosp/`（已忽略，`OGPLAY_AOSP_DIR` 可覆盖）准备
+按 API 分层的 AOSP 资料：`.aosp/api<N>/<AOSP 项目路径>` 是该 API tag 的浅克隆（blob 按需拉取，
+可配置稀疏目录），`.aosp/api<N>/rom/` 放 payload 工具使用的 ROM 二进制并按清单校验 SHA-256。
+API 19 的 ROM 取自 Nexus 5 的 4.4.4 r2.0.1 系统（SDK 的 android-19 镜像是 4.4.2，不能替代），
+无法从源码仓库拉取，换机时从已有副本导入。
+
+```text
+python3 tools/aosp_sources.py sync [--api 19] [--project frameworks/base]
+python3 tools/aosp_sources.py rom [--api 19] --from <含 jar 与 framework-res.apk 的目录>
+python3 tools/aosp_sources.py status
+```
+
+需要新项目或目录时修改 `aosp_sources.json` 再 `sync`；新增 API 时增加一个 `apis` 条目。
+`sync`（或单独的 `readme`）按清单里的 notes/index 生成 `.aosp/api<N>/README.md`，记录各项目提交、
+检出范围和源码速查表；速查条目在清单中维护。
+其他工具通过 `aosp_sources.api_dir()`/`rom_dir()` 取路径，不写死目录。
+
 ## dalvik/tests 一致性探针
 
-`conformance/dalvik_tests.py` 把 `.local/aosp/dalvik/tests` 复制到工作目录，用 javac
+`conformance/dalvik_tests.py` 把 `.aosp/api19/dalvik/tests` 复制到工作目录，用 javac
 （1.7，API 19 android.jar）与 dx `--debug`（与 etc/default-build 一致；d8 1.5 会删除 javac
 断言代码）编译，经 `ogplay-cli dexvm run-dex --enable-assertions` 在两个解释器后端运行，
 与 expected.txt 逐字节比较并分类（pass/fail:*/excluded:*）。dx.jar 取自已下载的
@@ -78,7 +97,7 @@ python3 tools/conformance/dalvik_tests.py --update-baseline # 无回归才更新
 ## API 19 启动类路径
 
 `bootdex/build_bootdex.py` 生成 `data/android/19/framework/`：七个 ROM jar（core、conscrypt、
-ext、framework、framework2、telephony-common、android.policy）从 `.local/aosp` 原样复制并校验固定 SHA-256；
+ext、framework、framework2、telephony-common、android.policy）从 `.aosp/api19/rom` 原样复制并校验固定 SHA-256；
 `src/guest/*/java` 下的 OGPlay Java 用 javac 17 + API 19 android.jar + d8 编成 `ogplay.jar`，
 排在启动类路径最前，同名类以它为准。manifest 记录每个 jar 的顺序、来源与哈希。
 
@@ -89,39 +108,31 @@ python3 tools/bootdex/build_bootdex.py check
 
 ogplay.jar 只含 manifest 和 DEX；系统资源由 payload 中的 framework-res.apk 提供。
 
-`trim_framework_resources.py` 从 `.local/aosp/framework-res.apk` 生成
+`build`/`check` 同时从 `.aosp/api19/rom/framework-res.apk` 生成
 `data/android/19/framework/framework-res.apk`：校验 manifest 登记的原版 SHA-256，去掉三张
-default_wallpaper.jpg 和 `META-INF/`，其余条目原样保留，resources.arsc 不压缩并按 4 字节对齐。
+default_wallpaper.jpg 和 `META-INF/`，其余条目原样保留，resources.arsc 不压缩并按 4 字节对齐；
+产物大小与 SHA-256 写入 manifest 的 `framework_resources`。
 
 `build` 两次独立编译 guest Java 并核对 DEX 一致；`check` 重新生成并与现有制品、manifest 比对。
-输入默认位于 `.local/aosp` 和 `.local/toolchain`。
+输入默认位于 `.aosp/api19/rom` 和 `.local/toolchain`。
 
 `generate_virtual_keymap.py` 从本地 API19 `Virtual.kcm` 与 `KeyEvent.java` 生成虚拟键盘
 native 查询表；`--check` 核对生成数据及来源哈希。只接受受审属性，未知行为明确失败。
 生成表随 C++ 发布，各宿主平台共用；修改映射后只重建受影响目标。
 
-## DexVM API-19 intrinsic 骨架
+## API-19 Java 表面清单
 
 `dexvm_api19_surface.py` 从 pinned Android 4.4.4 Java 源码抽取 public/protected
 顶层 class shape；仓库固定的 Luni `java.lang` 清单可这样复验：
 
 ```text
 python tools/dexvm_api19_surface.py \
-  --source-root .local/aosp/libcore/luni/src/main/java \
+  --source-root .aosp/api19/libcore/luni/src/main/java \
   --package java.lang \
   --check data/dexvm/api19-java-lang-surface.json
 ```
 
-从清单生成单类当前 builder 骨架（包含预绑定字段 handle，方法保持显式未实现）：
-
-```text
-python tools/dexvm_stub_gen.py \
-  --surface data/dexvm/api19-java-lang-surface.json \
-  --class Ljava/lang/Integer;
-```
-
-该生成器保留作历史诊断工具，不作为新平台类实现的起点。原样 ROM jar 已提供声明和普通方法，
-新代码只能扩展 native/进程内服务，不得用生成结果替换 ROM 类或覆盖非 native 方法。
+原样 ROM jar 已提供声明和普通方法，清单只用于核对表面；新代码只扩展 native/进程内服务，
 实际替换与覆盖的查询方法见 [ROM 平台边界](../docs/design/dexvm.md)。
 
 ## M4 本机出口测试
@@ -208,5 +219,4 @@ ELF 使用独立 native-import-missing，不把未知 C 符号伪称 Java API19 
 RegisterNatives 指针三元组只证明候选表，owner 保持未知；heuristic 配对不证明实际调用。
 动态 native admission 不证明实现，guest-jni-unverified 单列；工具不分析系统调用参数、
 动态拼接的名称或游戏路径可达性，不生成声明/桩。部分 DEX/ABI/ELF 不支持明确标 incomplete，
-失败/不完整扫描返回非零；完整盘点有缺口也可返回 0，不是兼容性门禁。
-旧 dexvm_gap_report 的正则结果仅兼容历史工具，不能替代该权威表面。命令见 NEW-TITLE 步 1。
+失败/不完整扫描返回非零；完整盘点有缺口也可返回 0，不是兼容性门禁。命令见 NEW-TITLE 步 1。

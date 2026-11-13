@@ -485,7 +485,7 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
             CHECK(wrong_key.exception.IsValid());
             const auto legacy_path =
                 std::filesystem::path(OGPLAY_SOURCE_DIR) /
-                ".local/aosp/libcore/luni/src/test/resources/org/apache/harmony/luni/tests/key_store.bks";
+                ".aosp/api19/libcore/luni/src/test/resources/org/apache/harmony/luni/tests/key_store.bks";
             std::ifstream legacy_stream(legacy_path, std::ios::binary);
             REQUIRE(legacy_stream.good());
             const std::vector<char> legacy_chars{std::istreambuf_iterator<char>(legacy_stream), {}};

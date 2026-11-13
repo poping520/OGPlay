@@ -39,7 +39,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-DEFAULT_TESTS = REPO / ".local/aosp/dalvik/tests"
+sys.path.insert(0, str(REPO / "tools"))
+from aosp_sources import api_dir  # noqa: E402
+
+DEFAULT_TESTS = api_dir(19) / "dalvik/tests"
 DEFAULT_OUT = REPO / ".local/analysis/wu6"
 DEFAULT_CLI = REPO / "build/release/ogplay-cli"
 BASELINE = Path(__file__).with_name("dalvik_baseline.json")

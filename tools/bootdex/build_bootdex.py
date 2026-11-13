@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Build and check the API 19 boot classpath payload.
 
-The ROM jars are copied unmodified from .local/aosp. OGPlay's own guest Java is
-compiled into ogplay.jar, which comes first on the boot classpath. The same
-script builds the guest JNI library (build-guest-jni).
+The ROM jars are copied unmodified from .aosp/api19/rom. OGPlay's own guest Java is
+compiled into ogplay.jar, which comes first on the boot classpath. build/check also
+produce framework-res.apk from the pinned ROM original (wallpapers and META-INF
+removed, everything else kept). The same script builds the guest JNI library
+(build-guest-jni).
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import os
 import re
 import subprocess
 import shutil
+import struct
 import sys
 import tempfile
 import zipfile
@@ -23,9 +26,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+from aosp_sources import rom_dir  # noqa: E402
 
-
-AOSP = ROOT / ".local/aosp"
+AOSP = rom_dir(19)
 FRAMEWORK = ROOT / "data/android/19/framework"
 OGPLAY_JAR = FRAMEWORK / "ogplay.jar"
 MANIFEST = ROOT / "data/android/19/manifest.json"
@@ -280,8 +283,47 @@ def build_ogplay_jar() -> bytes:
 def rom_jar(name: str) -> bytes:
     data = (AOSP / name).read_bytes()
     if sha256(data) != ROM_JARS[name][1]:
-        raise BuildError(f"unexpected ROM input: .local/aosp/{name}")
+        raise BuildError(f"unexpected ROM input: {AOSP / name}")
     return data
+
+
+FRAMEWORK_RES = FRAMEWORK / "framework-res.apk"
+WALLPAPERS = {
+    f"res/drawable-{qualifier}nodpi/default_wallpaper.jpg"
+    for qualifier in ("", "sw600dp-", "sw720dp-")
+}
+
+
+def trim_framework_resources(source: bytes) -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(source)) as original, zipfile.ZipFile(output, "w") as archive:
+        if original.getinfo("resources.arsc").compress_type != zipfile.ZIP_STORED:
+            raise BuildError("original resources.arsc must be STORED")
+        if not WALLPAPERS <= set(original.namelist()):
+            raise BuildError("original framework-res.apk is missing a wallpaper to remove")
+        for entry in original.infolist():
+            if entry.filename in WALLPAPERS or entry.filename.startswith("META-INF/"):
+                continue
+            info = zipfile.ZipInfo(entry.filename, (1980, 1, 1, 0, 0, 0))
+            info.compress_type = entry.compress_type
+            info.create_system = 3
+            info.external_attr = (0o40755 if entry.is_dir() else 0o100644) << 16
+            if info.compress_type == zipfile.ZIP_STORED:
+                start = output.tell() + 30 + len(info.filename.encode("utf-8"))
+                if start % 4:
+                    # zipalign's alignment extra field followed by zero padding.
+                    padding = (-(start + 6)) % 4
+                    info.extra = struct.pack("<HHH", 0xD935, 2 + padding, 4) + bytes(padding)
+            archive.writestr(info, original.read(entry), compresslevel=9)
+    return output.getvalue()
+
+
+def framework_resources() -> bytes:
+    source = (AOSP / "framework-res.apk").read_bytes()
+    expected = json.loads(MANIFEST.read_text(encoding="utf-8"))["framework_resources"]["original_sha256"]
+    if sha256(source) != expected:
+        raise BuildError(f"unexpected ROM input: {AOSP / 'framework-res.apk'}")
+    return trim_framework_resources(source)
 
 
 def boot_metadata(jar: bytes) -> dict:
@@ -311,18 +353,21 @@ def boot_metadata(jar: bytes) -> dict:
     }
 
 
-def manifest_bytes(metadata: dict) -> bytes:
+def manifest_bytes(metadata: dict, resources: bytes) -> bytes:
     document = json.loads(MANIFEST.read_text(encoding="utf-8"))
     document.pop("boot_dex", None)
     document["boot_classpath"] = metadata
+    document["framework_resources"].update(size=len(resources), sha256=sha256(resources))
     return (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode()
 
 
 def build_or_check(mode: str) -> int:
     jar = build_ogplay_jar()
     roms = {name: rom_jar(name) for name in ROM_JARS}
-    manifest = manifest_bytes(boot_metadata(jar))
-    outputs = {OGPLAY_JAR: jar, **{FRAMEWORK / name: data for name, data in roms.items()}, MANIFEST: manifest}
+    resources = framework_resources()
+    manifest = manifest_bytes(boot_metadata(jar), resources)
+    outputs = {OGPLAY_JAR: jar, **{FRAMEWORK / name: data for name, data in roms.items()},
+               FRAMEWORK_RES: resources, MANIFEST: manifest}
     if mode == "build":
         FRAMEWORK.mkdir(parents=True, exist_ok=True)
         for path, data in outputs.items():
@@ -333,7 +378,7 @@ def build_or_check(mode: str) -> int:
                  if not path.is_file() or path.read_bytes() != data]
         if stale:
             raise BuildError("boot classpath payload is stale (run build): " + ", ".join(stale))
-    print(f"boot classpath {mode}: ogplay.jar {sha256(jar)} + {len(roms)} ROM jars")
+    print(f"boot classpath {mode}: ogplay.jar {sha256(jar)} + {len(roms)} ROM jars + framework-res.apk {sha256(resources)}")
     return 0
 
 

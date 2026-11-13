@@ -445,8 +445,6 @@ endif()
 
 ogplay_add_tool_test(tools.gles_idl_generator_self_test tools ${_src}/tools/generate_gles_api.py
     --self-test)
-ogplay_add_tool_test(tools.dexvm_stub_generator_self_test tools ${_src}/tools/dexvm_stub_gen.py
-    --self-test)
 ogplay_add_tool_test(tools.dexvm_api19_surface_self_test tools ${_src}/tools/dexvm_api19_surface.py
     --self-test)
 ogplay_add_tool_test(tools.framework_contract_self_test tools
@@ -455,8 +453,6 @@ ogplay_add_tool_test(tools.boundary_exports_self_test tools
     ${_src}/tools/conformance/boundary_exports.py --self-test)
 ogplay_add_tool_test(tools.title_preflight_self_test tools ${_src}/tools/title_preflight.py
     --self-test)
-ogplay_add_tool_test(tools.dexvm_gap_report_self_test tools ${_src}/tools/dexvm_gap_report.py --repo
-    ${_src} --self-test)
 ogplay_add_tool_test(tools.diagnostics_align_host_threads tools
     ${_src}/tests/tools/test_align_host_threads.py)
 ogplay_add_tool_test(tools.gles2_extensions_catalog_current tools ${_src}/tools/generate_gles_api.py
@@ -511,8 +507,6 @@ ogplay_add_tool_test(tools.dalvik_tests_self_test "tools;dexvm"
     ${_src}/tools/conformance/dalvik_tests.py --self-test)
 ogplay_add_tool_test(tools.dexasm_self_test "tools;dexvm" ${_src}/tools/dexasm.py --catalog
     ${_src}/data/dexvm/dalvik_opcodes.json --self-test)
-ogplay_add_tool_test(tools.dex_dependency_survey_self_test "tools;dexvm"
-    ${_src}/tools/dex_dependency_survey.py --self-test)
 ogplay_add_tool_test(tools.m4_local_exit_self_test "tools;fixtures" ${_src}/tools/m4_exit.py
     --self-test)
 ogplay_add_tool_test(tools.angle_build_driver_self_test tools

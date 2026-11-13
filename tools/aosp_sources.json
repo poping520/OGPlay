@@ -1,0 +1,148 @@
+{
+  "remote": "https://android.googlesource.com/",
+  "apis": {
+    "19": {
+      "tag": "android-4.4.4_r2.0.1",
+      "projects": [
+        {
+          "path": "frameworks/base",
+          "sparse": [
+            "api",
+            "cmds",
+            "core",
+            "data/etc",
+            "data/keyboards",
+            "drm",
+            "graphics",
+            "include",
+            "keystore",
+            "libs",
+            "location",
+            "media/java",
+            "media/jni",
+            "media/lib",
+            "media/mca",
+            "native",
+            "nfc-extras",
+            "obex",
+            "opengl",
+            "packages",
+            "policy",
+            "sax",
+            "services",
+            "telephony",
+            "test-runner",
+            "tools",
+            "wifi"
+          ]
+        },
+        {
+          "path": "frameworks/native"
+        },
+        {
+          "path": "frameworks/wilhelm"
+        },
+        {
+          "path": "dalvik"
+        },
+        {
+          "path": "libcore"
+        },
+        {
+          "path": "bionic"
+        }
+      ],
+      "rom": {
+        "source": "Nexus 5 (hammerhead) android-4.4.4_r2.0.1 ROM, /system/framework, deodexed",
+        "files": {
+          "core.jar": "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee",
+          "conscrypt.jar": "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004",
+          "ext.jar": "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2",
+          "framework.jar": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+          "framework2.jar": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973",
+          "telephony-common.jar": "b1e4f98857dd07d9fa7bc1d6c2d6cdb49d41adc2973533db3982ef0d5348a908",
+          "android.policy.jar": "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1",
+          "framework-res.apk": "5beb897ee2ede51f02e2fdf1a004ce3f12d7d5cd938b56672f70a7cba96471e3"
+        }
+      },
+      "notes": [
+        "API 19 的系统服务都在 frameworks/base/services/java/com/android/server/，L 以后才迁到 services/core/java/，对照高版本时路径和实现都不同。",
+        "行为以本目录（API 19）为准，其他 API 目录仅作对照。"
+      ],
+      "index": [
+        [
+          "PackageManagerService 及 Settings/PackageSetting",
+          "frameworks/base/services/java/com/android/server/pm/"
+        ],
+        [
+          "ActivityManagerService 等其他系统服务",
+          "frameworks/base/services/java/com/android/server/"
+        ],
+        [
+          "客户端包管理：PackageParser、IPackageManager.aidl",
+          "frameworks/base/core/java/android/content/pm/"
+        ],
+        [
+          "ActivityThread、ContextImpl、ApplicationPackageManager",
+          "frameworks/base/core/java/android/app/"
+        ],
+        [
+          "framework JNI",
+          "frameworks/base/core/jni/"
+        ],
+        [
+          "图形 JNI",
+          "frameworks/base/graphics/jni/"
+        ],
+        [
+          "系统资源",
+          "frameworks/base/core/res/res/"
+        ],
+        [
+          "GLES Java 绑定",
+          "frameworks/base/opengl/java/"
+        ],
+        [
+          "native 图形与 EGL",
+          "frameworks/native/opengl/"
+        ],
+        [
+          "OpenSL ES",
+          "frameworks/wilhelm/src/"
+        ],
+        [
+          "Dalvik VM",
+          "dalvik/vm/"
+        ],
+        [
+          "Dalvik native 方法",
+          "dalvik/vm/native/"
+        ],
+        [
+          "java.* 等核心库",
+          "libcore/luni/src/main/java/"
+        ],
+        [
+          "libcore native",
+          "libcore/luni/src/main/native/"
+        ],
+        [
+          "Class 等 Dalvik 专属类",
+          "libcore/libdvm/src/main/java/"
+        ],
+        [
+          "bionic libc",
+          "bionic/libc/"
+        ],
+        [
+          "动态链接器",
+          "bionic/linker/"
+        ],
+        [
+          "ROM 二进制（framework jar、framework-res.apk）",
+          "rom/"
+        ]
+      ]
+    }
+  }
+}

@@ -35,8 +35,8 @@
 mkdir -p .local/analysis/preflight
 build/release/ogplay-cli dexvm dump-surface > .local/analysis/preflight/surface.json
 python3 tools/dexvm_api19_surface.py \
-  --jar .local/aosp/core.jar --jar .local/aosp/framework.jar \
-  --jar .local/aosp/framework2.jar --jar .local/aosp/ext.jar \
+  --jar .aosp/api19/rom/core.jar --jar .aosp/api19/rom/framework.jar \
+  --jar .aosp/api19/rom/framework2.jar --jar .aosp/api19/rom/ext.jar \
   --output .local/analysis/preflight/api19.json
 python3 tools/title_preflight.py --apk <title>.apk \
   --surface .local/analysis/preflight/surface.json \
@@ -49,8 +49,7 @@ python3 tools/title_preflight.py --apk <title>.apk \
 ELF 导入另标 `native-import-missing`，强弱与版本分开。JNI 字符串配对带置信度，
 动态 guest JNI 标记 unverified；静态依赖不代表可达，仍须步骤 3/5 确认真实命中。
 题库可用 `--games-dir .local/games --output-dir .local/analysis/preflight/library` 汇总。
-表面、参考及 APK 派生产物一律留 `.local/`；旧 gap report 输出可继续供步骤 2 的旧生成器使用，
-新体检不生成桩，也不直接作为旧生成器输入。完整边界见 [静态体检与诊断](../design/diagnostics-testing.md)。
+表面、参考及 APK 派生产物一律留 `.local/`；体检不生成桩。完整边界见 [静态体检与诊断](../design/diagnostics-testing.md)。
 
 ### 步 2 · 核对 ROM 来源与真实接缝
 
@@ -58,7 +57,6 @@ ELF 导入另标 `native-import-missing`，强弱与版本分开。JNI 字符串
 原样 ROM jar 已在启动类路径，不再生成平台占位类、补普通 Java handler 或逐类准入。
 使用 `dump-surface` 与实际 ROM 签名核对来源，查询方法见
 [平台边界](../design/dexvm.md)。
-`dexvm_stub_gen.py` 只保留为历史诊断工具，生成结果不能作为替换 ROM 类或覆盖普通方法的实现入口。
 缺 native 时对照固定 AOSP JNI，缺服务时对照 ROM 接口及本地 Stub；超出范围明确失败。
 
 ### 步 3 · 固化输入场景，再成对运行 survey
@@ -89,9 +87,6 @@ survey 模式下层级、常量、声明与正常运行一致：被调用的未�
    "channel": "java", "first_hit_index": 7, "hits": 812, "first_stack": ["…"]}],
  "members_by_first_hit": [{"class": "Landroid/…;", "member": "getX()I", "first_hit_index": 7}]}
 ```
-
-配合 `tools/dexvm_stub_gen.py --survey … --reached-only` 直接得到「真正被执行
-到」的行。
 
 **survey 的纪律**：默认关闭；开启时 CLI 与日志都会大声标注该次运行是诊断、
 不是兼容性结论；产物 JSON 带 `"survey": true`。任何 gate、golden、Scenario
@@ -130,7 +125,7 @@ ogplay-cli run-apk … --exit-after-frames 600      # 不带 --survey-gaps
 | `intrinsic handler is not implemented (id)` | 方法声明了 handler，未注册 | 在对应分面注册 |
 | `virtual dispatch failed for m on L…;` | 接收者的类没有该虚方法 | 声明在**接收者**类或其父类上 |
 | `invoke on null receiver: C.m() from vN called by D.f pc P` | 上游查询返回了 null | 顺着 `called by` 找那次查询（findViewById/getSystemService 之类），补的是**它** |
-| `register out of range at pc N` | 预检规则或格式解码有问题 | 先怀疑我方 precheck（k22b 类 bug 有先例），用 `tools/dexdis.py` 核对 |
+| `register out of range at pc N` | 预检规则或格式解码有问题 | 先怀疑我方 precheck（k22b 类 bug 有先例），用 `tools/dex_survey_lib.py` 直读字节或 baksmali 核对 |
 | `dexvm tick budget exhausted` | 预算不够，不是死循环 | 调 profile `[runtime.dexvm]`，别改解释器 |
 | `DEX method_id contains an invalid index` 等解析期失败 | 还没进 dexvm，属 `loader` | 先判断是坏 dex 还是我方规则过严（已有先例：dex-format 允许数组 descriptor 作 method owner，我方只收 `L…;`），改规则要同步 `src/loader/MODULE.md` 与正/反例测试 |
 
@@ -177,10 +172,8 @@ cd build/dev
 
 | 工具 | 用途 | 注意 |
 | --- | --- | --- |
-| `tools/dexvm_gap_report.py` | 静态缺口分层报告（§2 步 1） | 只看平台前缀；`runtime` 段是优先级清单不是必做项 |
-| `tools/dexvm_stub_gen.py` | 历史诊断骨架生成器（§2 步 2） | 引用返回值/字段必须人工决策；输出不含 handler id |
-| `tools/dex_dependency_survey.py` | 题库静态测量 | 产物留 `.local/` |
-| `tools/dexdis.py` | 反汇编辅助 | pc/宽度显示有已知瑕疵，**不可作为权威**；权威事实用 C++ 侧 dump 或 `tools/dex_survey_lib.py` 直读字节 |
+| `tools/title_preflight.py` | 静态体检（§2 步 1），`--games-dir` 汇总题库 | 只列潜在依赖，不代表可达；产物留 `.local/` |
+| `tools/dex_survey_lib.py` | 严格 DEX 035 读取库 | 权威字节事实，配合 C++ 侧 dump 使用 |
 
 **固化为可复跑用例**：进入主界面后写 Scenario 并按 gate 三轮验证，见
 [SCENARIO-RUNNER.md](SCENARIO-RUNNER.md)；通过后再把 profile 迁进

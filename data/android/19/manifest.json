@@ -186,7 +186,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "36b21ad0c4e53776525433abf396b6ca3485c8d37e5700cfa06678243e31f5e0",
+        "generator_sha256": "1dcdd3e5c6065bca413115e0f8e272d026b72dd4f99fca6203caf44477fb7c4c",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",

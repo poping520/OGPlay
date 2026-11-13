@@ -4,11 +4,11 @@
   "reference": "AOSP android-4.4.4_r2.0.1",
   "sources": {
     "context": {
-      "path": "framework/base/core/java/android/content/Context.java",
+      "path": "frameworks/base/core/java/android/content/Context.java",
       "sha256": "a24c9e482d1865c7c9c78856b202e6de7d182545f52180c08427cc86e10bee36"
     },
     "registry": {
-      "path": "framework/base/core/java/android/app/ContextImpl.java",
+      "path": "frameworks/base/core/java/android/app/ContextImpl.java",
       "sha256": "bc14c3f5f02d240b89e740aae65cffd2218d89eb05a176e49bad9cf39d7cfa02"
     },
     "system": {
@@ -16,7 +16,7 @@
       "sha256": "e33317ed3f12f510c35884a42df4feb34c38854e3aeb096e3ff8138e61f9e80a"
     },
     "binding": {
-      "path": "framework/base/core/java/android/app/ActivityThread.java",
+      "path": "frameworks/base/core/java/android/app/ActivityThread.java",
       "sha256": "4373bb6a1b9097c136ddab729cafc9884f9c5a70fdf41b43bfd4ba7b083229ae"
     }
   },

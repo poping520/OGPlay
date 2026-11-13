@@ -9,8 +9,10 @@ DexFormatError instead of guessing.
 
 from __future__ import annotations
 
+import json
 import struct
 from dataclasses import dataclass, field
+from pathlib import Path
 
 DEX_MAGIC_035 = b"dex\n035\x00"
 NO_INDEX = 0xFFFFFFFF
@@ -18,6 +20,13 @@ HEADER_SIZE = 0x70
 ENDIAN_CONSTANT = 0x12345678
 
 ACC_NATIVE = 0x0100
+
+
+def load_catalog() -> dict[int, dict]:
+    """Opcode -> entry from the declarative data/dexvm/dalvik_opcodes.json catalog."""
+    path = Path(__file__).resolve().parent.parent / "data/dexvm/dalvik_opcodes.json"
+    catalog = json.loads(path.read_text(encoding="utf-8"))
+    return {entry["opcode"]: entry for entry in catalog["opcodes"]}
 
 
 class DexFormatError(ValueError):

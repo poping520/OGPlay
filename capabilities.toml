@@ -1218,11 +1218,6 @@ status = "partial"
 test = "tests/runtime/boundary/integration/android_gles1_exports_tests.cpp#DVM271"
 note = "lock/unlock 校验后无驱动 backing 返回 FALSE/BAD_DISPLAY，NV 时钟无支持返回 AAPCS32 宽零/BAD_DISPLAY，均记账；presentation-time 保存有符号 surface 生产者时间戳，不提供宿主呈现调度或新增扩展声明。GPU 调用待沙盒外验收。"
 
-[tools.dex_dependency_survey]
-status = "complete"
-test = "tools.dex_dependency_survey_self_test"
-note = "纯 Python 严格 DEX 035 静态测量：应用类规模、Java 厚度（与 loader.dex_l1 同阈值）、平台类/方法引用直方图、native 清单、引擎指纹与 profile impl id 语料；报告本地产出不进仓库"
-
 [dexvm.opcode_catalog]
 status = "complete"
 test = "tools.dexvm_opcode_generator_self_test; tools.dexvm_opcode_catalog_current"
@@ -1686,7 +1681,7 @@ note = "计划的 family ownership、Context、NIO/direct buffer、Java GLES bou
 [dexvm.gap_survey]
 status = "complete"
 test = "tests/dexvm/gap_survey_tests.cpp; tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp"
-note = "run-apk --survey-gaps：层级/常量/声明同正常运行；被调用的未实现方法（intrinsic/BootDex，含 JNI、反射入口）、被访问的非恒定未实现字段及 API19 未声明成员返回中性值并记账。JSON schema 2：来源、通道、首次序号/uptime/前5帧栈、次数，按次数与首次命中两种排序。永远不是兼容性结论；中性值后行为可能已偏离。配套 tools/dexvm_gap_report.py 与 tools/dexvm_stub_gen.py"
+note = "run-apk --survey-gaps：层级/常量/声明同正常运行；被调用的未实现方法（intrinsic/BootDex，含 JNI、反射入口）、被访问的非恒定未实现字段及 API19 未声明成员返回中性值并记账。JSON schema 2：来源、通道、首次序号/uptime/前5帧栈、次数，按次数与首次命中两种排序。永远不是兼容性结论；中性值后行为可能已偏离。"
 
 [loader.binary_xml_pull]
 status = "complete"

@@ -193,7 +193,7 @@ TEST_CASE("reflection metadata uses declared order and opaque local slots") {
     const auto counter = vm.linker.FindClass("LCounter;");
     REQUIRE(counter.has_value());
 
-    // AOSP API19: .local/aosp/dalvik/vm/reflect/Reflect.cpp ::
+    // AOSP API19: .aosp/api19/dalvik/vm/reflect/Reflect.cpp ::
     // dvmCreateReflectMethodObject / createFieldObject
     const auto methods = vm.interpreter.Reflection().DeclaredMethods(*counter);
     REQUIRE(methods.size() == 3);
@@ -240,7 +240,7 @@ TEST_CASE("reflection Method wrappers are fresh semantic copies") {
         return Ref(vm.Virtual(class_object, "getDeclaredMethods", "()[Ljava/lang/reflect/Method;"));
     };
 
-    // AOSP API19: .local/aosp/libcore/libdvm/src/main/java/
+    // AOSP API19: .aosp/api19/libcore/libdvm/src/main/java/
     // java/lang/reflect/Method.java :: equals/getParameterTypes
     const auto first_array = query();
     const auto second_array = query();
@@ -365,7 +365,7 @@ TEST_CASE("Class structural core follows API19 primitive array and hierarchy rul
         return vm.Virtual(class_object(descriptor), name, signature, std::move(arguments));
     };
 
-    // AOSP API19: .local/aosp/dalvik/vm/native/java_lang_Class.cpp ::
+    // AOSP API19: .aosp/api19/dalvik/vm/native/java_lang_Class.cpp ::
     // getComponentType/getInterfaces/getSuperclass/isAssignableFrom/isInstance
     CHECK(vm.interpreter.StringUtf8(Ref(call("[[I", "getName", "()Ljava/lang/String;"))) == "[[I");
     CHECK(vm.interpreter.StringUtf8(Ref(call("[[I", "getSimpleName", "()Ljava/lang/String;"))) == "int[][]");
@@ -429,7 +429,7 @@ TEST_CASE("Class member queries separate declared and deterministic public aggre
     };
     const auto string = [&](const std::string_view value) { return VmValue::Ref(vm.interpreter.NewStringUtf8(value)); };
 
-    // AOSP API19: .local/aosp/libcore/libdvm/src/main/java/java/lang/Class.java
+    // AOSP API19: .aosp/api19/libcore/libdvm/src/main/java/java/lang/Class.java
     // :: getDeclaredMethods/getPublicMethodsRecursive/getPublicFieldsRecursive
     const auto declared_methods = MemberNames(vm, Ref(query("getDeclaredMethods", "()[Ljava/lang/reflect/Method;")));
     CHECK(declared_methods == std::vector<std::string>{"hiddenDerived", "acceptDouble", "acceptLong", "childContract",
@@ -516,7 +516,7 @@ TEST_CASE("ReflectionCodec enforces the API19 primitive widening matrix") {
     };
     constexpr std::string_view targets = "ZBCSIJFD";
 
-    // AOSP API19: .local/aosp/dalvik/vm/reflect/Reflect.cpp ::
+    // AOSP API19: .aosp/api19/dalvik/vm/reflect/Reflect.cpp ::
     // dvmConvertArgument/dvmConvertPrimitiveValue/dvmBoxPrimitive.
     for (const auto& source : sources) {
         const auto boxed = Box(vm, source.descriptor, source.value);
@@ -755,7 +755,7 @@ TEST_CASE("Reflective members use member access while Class newInstance also che
 TEST_CASE("Constructor newInstance initializes converts and wraps target exceptions") {
     ReflectionVm vm("reflection.dex");
 
-    // AOSP API19: .local/aosp/dalvik/vm/native/
+    // AOSP API19: .aosp/api19/dalvik/vm/native/
     // java_lang_reflect_Constructor.cpp :: constructNative
     const auto constructor = ConstructorWrapper(vm, "Lreflect/ConstructTarget;", {"J"});
     const auto instance = Ref(Construct(vm, constructor, {Box(vm, "I", VmValue::Int(27))}));
@@ -797,7 +797,7 @@ TEST_CASE("Class newInstance uses the nullary constructor without wrapping") {
         return vm.Virtual(vm.model.ClassObject(java_class), "newInstance", "()Ljava/lang/Object;");
     };
 
-    // AOSP API19: .local/aosp/dalvik/vm/native/java_lang_Class.cpp ::
+    // AOSP API19: .aosp/api19/dalvik/vm/native/java_lang_Class.cpp ::
     // Dalvik_java_lang_Class_newInstance
     const auto instance = Ref(call("Lreflect/DefaultTarget;"));
     const auto field = vm.linker.FindFieldRecursive(vm.model.ObjectClass(instance), "value", "I");
@@ -842,7 +842,7 @@ TEST_CASE("Field get and set share access initialization and widening rules") {
     const auto derived_class = vm.linker.ResolveDescriptor("Lreflect/Derived;");
     const auto derived = vm.model.NewInstance(derived_class, vm.linker.Class(derived_class).instance_slots);
 
-    // AOSP API19: .local/aosp/dalvik/vm/native/
+    // AOSP API19: .aosp/api19/dalvik/vm/native/
     // java_lang_reflect_Field.cpp :: validateFieldAccess/getFieldValue
     const auto byte_field = FieldWrapper(vm, "Lreflect/Derived;", "byteField");
     REQUIRE_FALSE(vm.Virtual(byte_field, "setByte", "(Ljava/lang/Object;B)V", {VmValue::Ref(derived), VmValue::Int(-7)})
@@ -915,7 +915,7 @@ TEST_CASE("reflect Array creates and accesses typed primitive and object arrays"
         return vm.Static("Ljava/lang/reflect/Array;", name, descriptor, std::move(arguments));
     };
 
-    // AOSP API19: .local/aosp/libcore/luni/src/main/java/
+    // AOSP API19: .aosp/api19/libcore/luni/src/main/java/
     // java/lang/reflect/Array.java :: get/set/newInstance
     const auto ints = Ref(array_call("newInstance", "(Ljava/lang/Class;I)Ljava/lang/Object;",
                                      {VmValue::Ref(class_object("I")), VmValue::Int(2)}));

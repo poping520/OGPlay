@@ -358,6 +358,11 @@ public:
                     context->service_components = manifest.service_components;
                     context->receiver_components = manifest.receiver_components;
                     context->provider_components = manifest.provider_components;
+                    context->instrumentation = manifest.instrumentation;
+                    context->package_configurations = manifest.configurations;
+                    context->package_required_features = manifest.required_features;
+                    context->required_shared_libraries = manifest.required_libraries;
+                    context->optional_shared_libraries = manifest.optional_libraries;
                     context->application_enabled = manifest.application_enabled;
                     context->application_large_heap = manifest.application_large_heap;
                     context->package_inventory_known = true;

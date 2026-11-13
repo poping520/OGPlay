@@ -24,6 +24,7 @@
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
+#include "ogplay/core/sha256.h"
 #include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
@@ -301,10 +302,8 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
         REQUIRE(unknown.exception.IsValid());
         CHECK(f.linker.Class(unknown.exception_class).descriptor ==
               "Landroid/content/pm/PackageManager$NameNotFoundException;");
-        const auto unsupported =
-            f.OnOutcome(manager, "getPackageInfo", kGetPackageInfo, {VmValue::Ref(package), VmValue::Int(0x00000002)});
-        REQUIRE(unsupported.exception.IsValid());
-        CHECK(f.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        const auto no_gids = query(0x100);
+        CHECK_FALSE(ref_field(no_gids.ref, "gids", "[I").IsValid());
         static_cast<void>(f.vm.CollectGarbage());
     }
 }
@@ -559,17 +558,26 @@ TEST_CASE("DVM-240 installed applications use sealed facts independent values an
             }
         }
         CHECK(hit_count() == before);
+        context.application_enabled = true;
+        context.activity_components.front().enabled = true;
+        context.receiver_components.front().enabled = true;
+        context.service_components.front().enabled = true;
         for (const auto& spec : specs) {
-            const auto previous = hit_count();
-            unsupported(f.OnOutcome(manager, spec.method, spec.signature,
-                                    {VmValue::Ref(spec.component ? component : package), VmValue::Int(0x4000)}));
-            CHECK(hit_count() == previous + 1);
+            // GET_INTENT_FILTERS is unused by generatePackageInfo; application
+            // and component getters also ignore GET_ACTIVITIES and 0x40.
+            const auto ignored = spec.package_info ? 0x20 : 0x41;
+            const auto result =
+                f.OnOutcome(manager, spec.method, spec.signature,
+                            {VmValue::Ref(spec.component ? component : package), VmValue::Int(ignored)});
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            CHECK(result.value.ref.IsValid());
         }
-        for (int flags : {1, 0x200, 0x400, 0x4000, -1}) {
-            const auto previous = hit_count();
-            unsupported(query(flags));
-            CHECK(hit_count() == previous + 1);
-        }
+        CHECK_FALSE(query(1 | 0x40 | 0x200 | 0x4000).exception.IsValid());
+        CHECK(hit_count() == before);
+        context.required_shared_libraries = {"fixture.shared"};
+        unsupported(query(0x400));
+        CHECK(hit_count() == before + 1);
+        context.required_shared_libraries.clear();
         context.package_inventory_known = false;
         unsupported(query(0));
         context.package_inventory_known = true;
@@ -581,11 +589,9 @@ TEST_CASE("DVM-240 installed applications use sealed facts independent values an
         context.package_name.clear();
         unsupported(query(0));
         const auto hits = f.ledger.Unimplemented();
-        REQUIRE(hits.size() == 5);
-        for (const auto* id : {"dexvm.installed_applications", "dexvm.package_info_activities", "dexvm.activity_info",
-                               "dexvm.receiver_info", "dexvm.service_info"}) {
-            CHECK(std::any_of(hits.begin(), hits.end(), [&](const auto& hit) { return hit.id == id; }));
-        }
+        REQUIRE(hits.size() == 1);
+        CHECK(hits.front().id == "dexvm.installed_applications");
+        CHECK(hits.front().count == 6);  // Includes the initial missing inventory.
     }
 }
 
@@ -718,16 +724,16 @@ TEST_CASE("PackageManager getPermissionInfo queries definitions, not requests") 
         const auto missing = f.linker.ResolveDescriptor("Landroid/content/pm/PackageManager$NameNotFoundException;");
         CHECK(query("external.REQUESTED", 0).exception_class == missing);
         CHECK(query("other.package.Permission", 0).exception_class == missing);
-        const auto unsupported = query("org.example.game.C2D_MESSAGE", 0x200);
-        REQUIRE(unsupported.exception.IsValid());
-        CHECK(f.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        const auto ignored_flag = query("org.example.game.C2D_MESSAGE", 0x200);
+        REQUIRE_FALSE(ignored_flag.exception.IsValid());
+        CHECK(field(ignored_flag.value.ref, "flags", "I") == field(plain.value.ref, "flags", "I"));
         f.context->permission_inventory_known = false;
         const auto unavailable = query("org.example.game.C2D_MESSAGE", 0);
         REQUIRE(unavailable.exception.IsValid());
         CHECK(f.linker.Class(unavailable.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         const auto hits = f.ledger.Unimplemented();
         CHECK(std::any_of(hits.begin(), hits.end(),
-                          [](const auto& hit) { return hit.id == "dexvm.permission_info" && hit.count == 2; }));
+                          [](const auto& hit) { return hit.id == "dexvm.permission_info" && hit.count == 1; }));
         static_cast<void>(f.vm.CollectGarbage("permission-info"));
         CHECK(f.vm.StringUtf8(get_string(ref_field(info, "metaData", "Landroid/os/Bundle;"), "permission.string")) ==
               "ready");
@@ -877,6 +883,7 @@ TEST_CASE("PackageManager getServiceInfo uses current Manifest service facts") {
         REQUIRE_FALSE(disabled_app.exception.IsValid());
         CHECK(field(ref_field(disabled_app.value.ref, "applicationInfo", "Landroid/content/pm/ApplicationInfo;"),
                     "enabled", "Z") == 0);
+        f.context->required_shared_libraries = {"fixture.shared"};
         const auto unsupported = query(present, 0x400);
         REQUIRE(unsupported.exception.IsValid());
         CHECK(f.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
@@ -1014,6 +1021,7 @@ TEST_CASE("PackageManager getReceiverInfo uses current Manifest receiver facts")
         REQUIRE_FALSE(disabled_app.exception.IsValid());
         CHECK_FALSE(bool_field(
             ref_field(disabled_app.value.ref, "applicationInfo", "Landroid/content/pm/ApplicationInfo;"), "enabled"));
+        f.context->required_shared_libraries = {"fixture.shared"};
         const auto unsupported = query(present, 0x400);
         REQUIRE(unsupported.exception.IsValid());
         CHECK(f.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
@@ -1027,5 +1035,380 @@ TEST_CASE("PackageManager getReceiverInfo uses current Manifest receiver facts")
         static_cast<void>(f.vm.CollectGarbage("receiver-info"));
         CHECK(f.vm.StringUtf8(bundle_string(ref_field(info, "metaData", "Landroid/os/Bundle;"), "receiver.string")) ==
               "ready");
+    }
+}
+
+namespace {
+
+auto PackageField(AndroidValueVm& f, VmObjectRef object, const char* name, const char* type) {
+    const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, type);
+    REQUIRE(id.has_value());
+    return f.model.InstanceSlots(object)[f.linker.Field(*id).slot].bits;
+}
+
+VmObjectRef PackageRef(AndroidValueVm& f, VmObjectRef object, const char* name, const char* type) {
+    return VmObjectRef{static_cast<std::uint32_t>(PackageField(f, object, name, type))};
+}
+
+}  // namespace
+
+TEST_CASE("PackageManager projects Manifest components, configurations and URI grants") {
+    using namespace ogplay::loader;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        auto& context = *f.context;
+        context.package_name = "fixture.app";
+        context.package_resource_path = "/data/app/fixture.app-1.apk";
+        context.package_inventory_known = true;
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto manager = f.On(base, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+        const auto text = [&](const char* value) { return VmValue::Ref(f.vm.NewStringUtf8(value)); };
+        const auto package = text("fixture.app");
+        const auto package_root = f.vm.ProtectReferences(std::array{package.ref});
+        const auto query = [&](int flags) {
+            return f
+                .On(manager, "getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
+                    {package, VmValue::Int(flags)})
+                .ref;
+        };
+
+        struct Projection {
+            const char* field;
+            const char* type;
+            const char* first;
+        };
+
+        const std::array components{
+            Projection{"receivers", "[Landroid/content/pm/ActivityInfo;", "fixture.app.Receiver"},
+            Projection{"services", "[Landroid/content/pm/ServiceInfo;", "fixture.app.Service"},
+            Projection{"providers", "[Landroid/content/pm/ProviderInfo;", "fixture.app.Provider"},
+        };
+        constexpr int projections = 0x2 | 0x4 | 0x8 | 0x10 | 0x100 | 0x4000;
+        const auto absent = query(projections);
+        const auto absent_root = f.vm.ProtectReferences(std::array{absent});
+        for (const auto& item : components)
+            CHECK_FALSE(PackageRef(f, absent, item.field, item.type).IsValid());
+        CHECK_FALSE(PackageRef(f, absent, "instrumentation", "[Landroid/content/pm/InstrumentationInfo;").IsValid());
+        CHECK_FALSE(PackageRef(f, absent, "configPreferences", "[Landroid/content/pm/ConfigurationInfo;").IsValid());
+        CHECK_FALSE(PackageRef(f, absent, "reqFeatures", "[Landroid/content/pm/FeatureInfo;").IsValid());
+
+        context.receiver_components = {{.name = "fixture.app.Receiver"},
+                                       {.name = "fixture.app.Disabled", .enabled = false}};
+        context.service_components = {{.name = "fixture.app.Service", .process_name = "fixture.app:service"},
+                                      {.name = "fixture.app.Disabled", .enabled = false}};
+        context.provider_components = {
+            {.name = "fixture.app.Provider",
+             .authority = "fixture.provider",
+             .grant_uri_permissions = true,
+             .uri_permission_patterns = {{"/read/", 1}},
+             .intent_filters = {{{"fixture.PROVIDE"}, {"android.intent.category.DEFAULT"}, false}}},
+            {.name = "fixture.app.Disabled", .authority = "fixture.disabled", .enabled = false},
+        };
+        context.instrumentation = {{.name = "fixture.app.Runner",
+                                    .target_package = "fixture.target",
+                                    .handle_profiling = true,
+                                    .functional_test = true,
+                                    .meta_data = {{"fixture.key", std::string("value")}}}};
+        context.package_configurations = {{.keyboard = 2, .input_features = 3}, {.gl_es_version = 0x20000}};
+        context.package_required_features = {{.name = "fixture.feature", .required = false},
+                                             {.gl_es_version = 0x20000}};
+        context.requested_permissions = {"android.permission.INTERNET", "android.permission.READ_EXTERNAL_STORAGE",
+                                         "android.permission.WRITE_EXTERNAL_STORAGE", "android.permission.READ_LOGS"};
+        context.granted_permissions = {"android.permission.INTERNET", "android.permission.READ_EXTERNAL_STORAGE",
+                                       "android.permission.WRITE_EXTERNAL_STORAGE"};
+        context.application_enabled = false;  // Package arrays still use each component's enabled flag.
+        const auto unrequested = query(0);
+        const auto unrequested_root = f.vm.ProtectReferences(std::array{unrequested});
+        const auto enabled = query(projections);
+        const auto enabled_root = f.vm.ProtectReferences(std::array{enabled});
+        const auto all = query(projections | 0x200 | 0x800 | 0x80 | 0x400);
+        const auto all_root = f.vm.ProtectReferences(std::array{all});
+        for (const auto& item : components) {
+            CHECK_FALSE(PackageRef(f, unrequested, item.field, item.type).IsValid());
+            const auto projected = PackageRef(f, enabled, item.field, item.type);
+            REQUIRE(projected.IsValid());
+            REQUIRE(f.model.ArrayLength(projected) == 1);
+            const auto first = f.model.GetObjectElement(projected, 0);
+            CHECK(f.vm.StringUtf8(PackageRef(f, first, "name", "Ljava/lang/String;")) == item.first);
+            const auto both = PackageRef(f, all, item.field, item.type);
+            REQUIRE(f.model.ArrayLength(both) == 2);
+            CHECK(f.vm.StringUtf8(PackageRef(f, f.model.GetObjectElement(both, 1), "name", "Ljava/lang/String;")) ==
+                  "fixture.app.Disabled");
+        }
+        const auto plain_provider =
+            f.model.GetObjectElement(PackageRef(f, enabled, "providers", "[Landroid/content/pm/ProviderInfo;"), 0);
+        CHECK_FALSE(PackageRef(f, plain_provider, "uriPermissionPatterns", "[Landroid/os/PatternMatcher;").IsValid());
+        const auto provider =
+            f.model.GetObjectElement(PackageRef(f, all, "providers", "[Landroid/content/pm/ProviderInfo;"), 0);
+        const auto patterns = PackageRef(f, provider, "uriPermissionPatterns", "[Landroid/os/PatternMatcher;");
+        REQUIRE(patterns.IsValid());
+        REQUIRE(f.model.ArrayLength(patterns) == 1);
+        const auto pattern = f.model.GetObjectElement(patterns, 0);
+        CHECK(f.vm.StringUtf8(f.On(pattern, "getPath", "()Ljava/lang/String;").ref) == "/read/");
+        CHECK(f.On(pattern, "getType", "()I").AsInt() == 1);
+        const auto instrumentation = PackageRef(f, all, "instrumentation", "[Landroid/content/pm/InstrumentationInfo;");
+        REQUIRE(f.model.ArrayLength(instrumentation) == 1);
+        const auto runner = f.model.GetObjectElement(instrumentation, 0);
+        CHECK(f.vm.StringUtf8(PackageRef(f, runner, "targetPackage", "Ljava/lang/String;")) == "fixture.target");
+        CHECK(PackageField(f, runner, "functionalTest", "Z") == 1);
+        CHECK(PackageRef(f, runner, "metaData", "Landroid/os/Bundle;").IsValid());
+        const auto features = PackageRef(f, all, "reqFeatures", "[Landroid/content/pm/FeatureInfo;");
+        REQUIRE(f.model.ArrayLength(features) == 2);
+        CHECK(PackageField(f, f.model.GetObjectElement(features, 0), "flags", "I") == 0);
+        CHECK(PackageField(f, f.model.GetObjectElement(features, 1), "reqGlEsVersion", "I") == 0x20000);
+        const auto configs = PackageRef(f, all, "configPreferences", "[Landroid/content/pm/ConfigurationInfo;");
+        REQUIRE(f.model.ArrayLength(configs) == 2);
+        CHECK(PackageField(f, f.model.GetObjectElement(configs, 0), "reqInputFeatures", "I") == 3);
+        CHECK(PackageField(f, f.model.GetObjectElement(configs, 1), "reqGlEsVersion", "I") == 0x20000);
+        CHECK_FALSE(PackageRef(f, unrequested, "gids", "[I").IsValid());
+        const auto gids = PackageRef(f, all, "gids", "[I");
+        REQUIRE(f.model.ArrayLength(gids) == 3);
+        CHECK(f.model.GetPrimitiveElement(gids, 0) == 3003);
+        CHECK(f.model.GetPrimitiveElement(gids, 1) == 1028);
+        CHECK(f.model.GetPrimitiveElement(gids, 2) == 1015);
+        const auto app = PackageRef(f, all, "applicationInfo", "Landroid/content/pm/ApplicationInfo;");
+        CHECK_FALSE(PackageRef(f, app, "sharedLibraryFiles", "[Ljava/lang/String;").IsValid());
+
+        context.required_shared_libraries = {"javax.obex"};
+        context.optional_shared_libraries = {"fixture.optional", "android.test.runner"};
+        const auto with_libraries = query(0x400);
+        const auto libraries_app =
+            PackageRef(f, with_libraries, "applicationInfo", "Landroid/content/pm/ApplicationInfo;");
+        const auto libraries = PackageRef(f, libraries_app, "sharedLibraryFiles", "[Ljava/lang/String;");
+        REQUIRE(f.model.ArrayLength(libraries) == 2);
+        CHECK(f.vm.StringUtf8(f.model.GetObjectElement(libraries, 0)) == "/system/framework/javax.obex.jar");
+        CHECK(f.vm.StringUtf8(f.model.GetObjectElement(libraries, 1)) == "/system/framework/android.test.runner.jar");
+
+        context.receiver_components.erase(context.receiver_components.begin());
+        context.service_components.erase(context.service_components.begin());
+        context.provider_components.erase(context.provider_components.begin());
+        const auto disabled = query(projections);
+        const auto disabled_root = f.vm.ProtectReferences(std::array{disabled});
+        for (const auto& item : components) {
+            const auto array = PackageRef(f, disabled, item.field, item.type);
+            REQUIRE(array.IsValid());
+            CHECK(f.model.ArrayLength(array) == 0);
+        }
+    }
+}
+
+TEST_CASE("PackageManager GET_SIGNATURES caches DER and failures, and returns fresh guest values") {
+    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR};
+    const auto signed_apk = ogplay::test::resources::ReadSource(path / "samples/sweetshop/out/ogplay-sweetshop.apk");
+    const auto unsigned_apk = ogplay::test::resources::ReadSource(path / "tests/fixtures/ui/rom_window.apk");
+    // SHA-256 of the original DER from the fixture's META-INF/ANDROIDD.RSA:
+    // openssl pkcs7 -inform DER -print_certs | openssl x509 -outform DER | shasum -a 256
+    constexpr auto digest = "cd334e85f922986744ce0d596094f36bfc091d44f3cd636a1733ec00d40537fb";
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        auto& context = *f.context;
+        context.package_name = "fixture.app";
+        context.package_resource_path = "/data/app/fixture.app-1.apk";
+        context.package_inventory_known = true;
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto manager = f.On(base, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
+        const auto package = f.vm.NewStringUtf8(context.package_name);
+        const auto roots = f.vm.ProtectReferences(std::array{manager, package});
+        const auto query = [&](int flags) {
+            return f.OnOutcome(manager, "getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
+                               {VmValue::Ref(package), VmValue::Int(flags)});
+        };
+        // Avoid the resource fixture remounting its staging bytes on each call.
+        context.apk_bytes.clear();
+        const auto load = [&](auto bytes) {
+            context.sealed_apk_bytes = std::make_shared<const std::vector<std::byte>>(bytes.begin(), bytes.end());
+            context.archive = ogplay::loader::ParseApkArchive(context.ApkBytes());
+        };
+        const auto first_is_signed = backend == InterpreterBackend::switch_dispatch;
+        load(first_is_signed ? unsigned_apk.bytes : signed_apk.bytes);
+        const auto plain = query(0);
+        REQUIRE_FALSE(plain.exception.IsValid());
+        CHECK_FALSE(PackageRef(f, plain.value.ref, "signatures", "[Landroid/content/pm/Signature;").IsValid());
+        load(first_is_signed ? signed_apk.bytes : unsigned_apk.bytes);
+        const auto first = query(0x40);
+        const auto first_root = f.vm.ProtectReferences(std::array{first.value.ref, first.exception});
+        // Replacing the synthetic fixture backing bytes after the first lookup
+        // reveals an accidental reparse of either the success or failure.
+        load(first_is_signed ? unsigned_apk.bytes : signed_apk.bytes);
+        const auto second = query(0x40);
+        if (!first_is_signed) {
+            REQUIRE(first.exception.IsValid());
+            CHECK(first.exception_class == f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
+            CHECK(second.exception_class == first.exception_class);
+            CHECK(second.exception_message == first.exception_message);
+            CHECK(first.exception_message.find("no META-INF JAR signature block") != std::string::npos);
+            REQUIRE(f.ledger.Unimplemented().size() == 1);
+            CHECK(f.ledger.Unimplemented().front().id == "dexvm.package_signatures");
+            CHECK(f.ledger.Unimplemented().front().count == 2);
+            continue;
+        }
+        REQUIRE_MESSAGE(!first.exception.IsValid(), first.exception_message);
+        REQUIRE_MESSAGE(!second.exception.IsValid(), second.exception_message);
+        const auto second_root = f.vm.ProtectReferences(std::array{second.value.ref});
+        const auto a = PackageRef(f, first.value.ref, "signatures", "[Landroid/content/pm/Signature;");
+        const auto b = PackageRef(f, second.value.ref, "signatures", "[Landroid/content/pm/Signature;");
+        REQUIRE(a.IsValid());
+        REQUIRE(b.IsValid());
+        CHECK(a != b);
+        REQUIRE(f.model.ArrayLength(a) == 1);
+        REQUIRE(f.model.ArrayLength(b) == 1);
+        CHECK(f.model.GetObjectElement(a, 0) != f.model.GetObjectElement(b, 0));
+        for (const auto array : {a, b}) {
+            const auto bytes = f.On(f.model.GetObjectElement(array, 0), "toByteArray", "()[B").ref;
+            CHECK(ogplay::core::Sha256(f.model.ReadByteRegion(bytes, 0, f.model.ArrayLength(bytes))) == digest);
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("PMS entry points silently ignore bits outside their API19 masks") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        auto& c = *f.context;
+        c.package_name = "fixture.app";
+        c.package_resource_path = "/data/app/fixture.app-1.apk";
+        c.package_inventory_known = c.activity_inventory_known = c.receiver_inventory_known =
+            c.service_inventory_known = c.permission_inventory_known = true;
+        c.activity_components = {{.name = "fixture.app.Entry", .intent_filters = {{{"fixture.ACTIVITY"}}}}};
+        c.receiver_components = {{.name = "fixture.app.Entry", .intent_filters = {{{"fixture.RECEIVER"}}}}};
+        c.service_components = {{.name = "fixture.app.Entry"}};
+        c.provider_components = {{.name = "fixture.app.Entry",
+                                  .authority = "fixture.authority",
+                                  .intent_filters = {{{"fixture.PROVIDER"}, {"android.intent.category.DEFAULT"}}}}};
+        c.instrumentation = {{.name = "fixture.app.Entry", .target_package = c.package_name}};
+        c.defined_permissions = {{.name = "fixture.app.Permission", .package_name = c.package_name}};
+        c.granted_permissions.insert("fixture.app.Permission");
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto manager = f.On(base, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+        const auto service = PackageRef(f, manager, "mPM", "Landroid/content/pm/IPackageManager;");
+        const auto text = [&](std::string_view value) { return VmValue::Ref(f.vm.NewStringUtf8(value)); };
+        const auto package = text(c.package_name);
+        const auto name = text("fixture.app.Entry");
+        const auto component = VmValue::Ref(
+            f.New("Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V", {package, name}));
+        const auto action_intent = [&](std::string_view action) {
+            return VmValue::Ref(f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V", {text(action)}));
+        };
+        const auto activity = action_intent("fixture.ACTIVITY");
+        const auto receiver = action_intent("fixture.RECEIVER");
+        const auto provider = action_intent("fixture.PROVIDER");
+        const auto explicit_service = action_intent("fixture.SERVICE");
+        const auto authority = text("fixture.authority");
+        const auto permission = text("fixture.app.Permission");
+        const auto permissions = VmValue::Ref(f.model.NewObjectArray(
+            f.linker.ResolveDescriptor("[Ljava/lang/String;"), f.linker.ResolveDescriptor("Ljava/lang/String;"), 1));
+        f.model.SetObjectElement(permissions.ref, 0, permission.ref);
+        const auto roots = f.vm.ProtectReferences(std::array{package.ref, name.ref, component.ref, activity.ref,
+                                                             receiver.ref, provider.ref, explicit_service.ref,
+                                                             authority.ref, permission.ref, permissions.ref});
+        f.On(explicit_service.ref, "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;",
+             {component});
+        const auto int_flag = VmValue::Int(0);
+        const auto no_ref = VmValue::Ref(VmObjectRef{});
+        const auto package_queries = [&](const char* method, const char* descriptor, std::vector<VmValue> args,
+                                         std::size_t index, int ignored, auto inspect) {
+            CAPTURE(method);
+            const auto plain = f.OnOutcome(manager, method, descriptor, args);
+            REQUIRE_MESSAGE(!plain.exception.IsValid(), plain.exception_message);
+            const auto plain_root = f.vm.ProtectReferences(std::array{plain.value.ref});
+            args[index] = VmValue::Int(ignored);
+            const auto extra = f.OnOutcome(manager, method, descriptor, args);
+            REQUIRE_MESSAGE(!extra.exception.IsValid(), extra.exception_message);
+            const auto extra_root = f.vm.ProtectReferences(std::array{extra.value.ref});
+            CHECK(inspect(plain.value.ref) == inspect(extra.value.ref));
+        };
+        const auto name_field = [&](VmObjectRef value) {
+            REQUIRE(value.IsValid());
+            return f.vm.StringUtf8(PackageRef(f, value, "name", "Ljava/lang/String;"));
+        };
+        const auto package_field = [&](VmObjectRef value) {
+            REQUIRE(value.IsValid());
+            return f.vm.StringUtf8(PackageRef(f, value, "packageName", "Ljava/lang/String;"));
+        };
+        const auto first = [&](VmObjectRef list) {
+            REQUIRE(f.On(list, "size", "()I").AsInt() == 1);
+            return f.On(list, "get", "(I)Ljava/lang/Object;", {VmValue::Int(0)}).ref;
+        };
+        package_queries("getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;", {package, int_flag},
+                        1, 0x20 | 0x10000, package_field);
+        package_queries("getInstalledPackages", "(I)Ljava/util/List;", {int_flag}, 0, 0x20 | 0x10000,
+                        [&](VmObjectRef value) { return package_field(first(value)); });
+        package_queries("getPackagesHoldingPermissions", "([Ljava/lang/String;I)Ljava/util/List;",
+                        {permissions, int_flag}, 1, 0x20 | 0x10000,
+                        [&](VmObjectRef value) { return package_field(first(value)); });
+        package_queries("getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
+                        {package, int_flag}, 1, 0x41, package_field);
+        package_queries("getInstalledApplications", "(I)Ljava/util/List;", {int_flag}, 0, 0x41,
+                        [&](VmObjectRef value) { return package_field(first(value)); });
+        for (const auto& [method, descriptor] : std::array{
+                 std::pair{"getActivityInfo", "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;"},
+                 std::pair{"getReceiverInfo", "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;"},
+                 std::pair{"getServiceInfo", "(Landroid/content/ComponentName;I)Landroid/content/pm/ServiceInfo;"},
+                 std::pair{"getProviderInfo", "(Landroid/content/ComponentName;I)Landroid/content/pm/ProviderInfo;"},
+                 std::pair{"getInstrumentationInfo",
+                           "(Landroid/content/ComponentName;I)Landroid/content/pm/InstrumentationInfo;"},
+             })
+            package_queries(method, descriptor, {component, int_flag}, 1, 0x41, name_field);
+        package_queries("resolveContentProvider", "(Ljava/lang/String;I)Landroid/content/pm/ProviderInfo;",
+                        {authority, int_flag}, 1, 0x41, name_field);
+        package_queries("getPermissionInfo", "(Ljava/lang/String;I)Landroid/content/pm/PermissionInfo;",
+                        {permission, int_flag}, 1, 0x641, name_field);
+        package_queries("queryPermissionsByGroup", "(Ljava/lang/String;I)Ljava/util/List;", {no_ref, int_flag}, 1,
+                        0x641, [&](VmObjectRef value) { return name_field(first(value)); });
+        package_queries("queryInstrumentation", "(Ljava/lang/String;I)Ljava/util/List;", {package, int_flag}, 1, 0x41,
+                        [&](VmObjectRef value) { return name_field(first(value)); });
+        package_queries("queryContentProviders", "(Ljava/lang/String;II)Ljava/util/List;", {no_ref, int_flag, int_flag},
+                        2, 0x41, [&](VmObjectRef value) { return name_field(first(value)); });
+        for (const auto& [method, intent, field, type] : std::array{
+                 std::tuple{"queryIntentActivities", activity, "activityInfo", "Landroid/content/pm/ActivityInfo;"},
+                 std::tuple{"queryBroadcastReceivers", receiver, "activityInfo", "Landroid/content/pm/ActivityInfo;"},
+                 std::tuple{"queryIntentServices", explicit_service, "serviceInfo", "Landroid/content/pm/ServiceInfo;"},
+                 std::tuple{"queryIntentContentProviders", provider, "providerInfo",
+                            "Landroid/content/pm/ProviderInfo;"},
+             })
+            package_queries(method, "(Landroid/content/Intent;I)Ljava/util/List;", {intent, int_flag}, 1, 0x101,
+                            [&](VmObjectRef value) { return name_field(PackageRef(f, first(value), field, type)); });
+        for (const auto& [method, intent, field, type] : std::array{
+                 std::tuple{"resolveActivity", activity, "activityInfo", "Landroid/content/pm/ActivityInfo;"},
+                 std::tuple{"resolveService", explicit_service, "serviceInfo", "Landroid/content/pm/ServiceInfo;"},
+             })
+            package_queries(method, "(Landroid/content/Intent;I)Landroid/content/pm/ResolveInfo;", {intent, int_flag},
+                            1, 0x101, [&](VmObjectRef value) { return name_field(PackageRef(f, value, field, type)); });
+
+        // The local AIDL entry applies the same mask independently of the Java wrapper.
+        const auto direct =
+            f.On(service, "getActivityInfo", "(Landroid/content/ComponentName;II)Landroid/content/pm/ActivityInfo;",
+                 {component, VmValue::Int(1), int_flag})
+                .ref;
+        CHECK(name_field(direct) == "fixture.app.Entry");
+        CHECK(f.ledger.Unimplemented().empty());
+        c.required_shared_libraries = {"fixture.unresolved"};
+        const auto unsupported =
+            f.OnOutcome(manager, "getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
+                        {package, VmValue::Int(0x400)});
+        REQUIRE(unsupported.exception_class == f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
+        CHECK(unsupported.exception_message.find("GET_SHARED_LIBRARY_FILES") != std::string::npos);
+        REQUIRE(f.ledger.Unimplemented().size() == 1);
+        CHECK(f.ledger.Unimplemented().front().id == "dexvm.package_info_activities");
+
+        c.required_shared_libraries.clear();
+        c.device_state.application_enabled_setting = 4;
+        const auto disabled =
+            f.OnOutcome(manager, "getActivityInfo",
+                        "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;", {component, int_flag});
+        CHECK(disabled.exception_class ==
+              f.linker.ResolveDescriptor("Landroid/content/pm/PackageManager$NameNotFoundException;"));
+        const auto until_used =
+            f.On(manager, "getActivityInfo", "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;",
+                 {component, VmValue::Int(0x8000)})
+                .ref;
+        CHECK(name_field(until_used) == "fixture.app.Entry");
+        const auto app = PackageRef(f, until_used, "applicationInfo", "Landroid/content/pm/ApplicationInfo;");
+        CHECK(PackageField(f, app, "enabled", "Z") == 1);
     }
 }

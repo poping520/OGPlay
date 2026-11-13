@@ -36,13 +36,13 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | GTA3 | macOS | 首次启动 EULA 长消息模态已发布（1280×720、320dpi），原容纳异常消失 | 20 秒有界运行未见新 uncaught 异常，SIGINT 退出 0；EULA 手测正常；影片画面与 NV clock 提示仍待验 | DVM-370、DVM-363 |
 | GTASA | macOS | OFFLINE → 标题菜单 → Start Game 进入开场过场，约 2 分钟无 fault，SIGINT 退出 0 | OpenSL 播放器 BUFFERQUEUE/ANDROIDSIMPLEBUFFERQUEUE 未互为别名致 OpenAL 启动失败、随后堆损坏，已修；登录界面图片（guest onDraw）未绘制，游戏内交互未验 | DVM-366 |
 | Monument Valley 2.5.18 | macOS | 720×1280：序章曲柄/行走至终点，进入第二章 The Garden，非零 PCM 已确认 | 默认入口竖屏、触摸复制及长期工作 Looper 已修；退出 IAP 未 bind 却 unbind 抛 IAE，正式 title gate/跨平台未验 | DVM-369、DVM-259 |
-| NFS17 | macOS | 下载布局构造通过，进入 GameActivityMain.onCreate | `Window.getWindowManager()` 未实现；尚未进入游戏 | DVM-367、DVM-368 |
+| NFS17 | macOS | 本地 PMS 忽略 getActivityInfo 的 GET_ACTIVITIES，完成 GameActivityMain.onCreate/onStart/onResume，加载游戏资源并呈现 33,846 帧 | 单次库诊断限时 SIGINT 退出 0，未见新阻断错误；游戏内交互待验 | DVM-367、DVM-368 |
 | Bad Piggies HD 1.9.1 | macOS | Surface 回调后 `libRCSSDK.so` 加载及 JNI_OnLoad 完成，已越过 `0xec510f1e` 探测 | `f=3951` 时 UnityMain `UnityPlayer.nativeRender()Z` 报 `JNI object is not a string in this store`，本次未出现此前 FMOD 退出 | DVM-374、BND-57 |
 | Sacred Odyssey 1.1.0 | macOS | 800×480：Logo 可见，Release 主菜单实测 24.3 FPS；NEW GAME → Mission 开场对白/Skip，MCP 关闭退出 0 | 非全屏视频黑屏、进关日志非 UTF-8 崩溃已修；开场 3D 区域仍黑；1280×720 Splash 的 `nativeRender` 读 `0x0`；游戏内操作待验 | DVM-375、DVM-353、DVM-303、BND-5 |
 | 水果忍者 1.8.8 | macOS | 第 110 帧越过原版 `View.isInEditMode` 调用 | 地图手势初始化：ROM `VelocityTracker` 已加载，`nativeInitialize` 未实现 | — |
 | 割绳子 2.3.8（广告版） | macOS | ACRA 构造与 Application 生命周期回调注册通过，进入首个 Activity 的 onCreate，未呈现 | FragmentActivity 调用 `getLastNonConfigurationInstance()` 缺失 | DVM-376 |
 | 保卫萝卜 1.1.0 | macOS | Cocos2d 文字位图越过 `Paint.getFontMetricsInt()`，呈现 2 帧 | `nativeRender` 的 JNI `CallStaticObjectMethodV` 返回类型与描述符不符 | DVM-376 |
-| 鳄鱼小顽皮 1.13.1 | macOS | Character 执行原版 ROM，已越过 `isJavaIdentifierPart(C)` 缺方法错误，未呈现 | Configurator 后台线程调用 `java.lang.reflect.Method.isBridge()` 缺失；Alarm 调度仍未实现 | DVM-211 |
+| 鳄鱼小顽皮 1.13.1 | macOS | 闹钟登记已越过 `onResume` 的 UOE；库诊断运行 120 秒呈现 23,719 帧，SIGINT 退出 0 | 本次未见新的阻断错误；闹钟到期触发未实现，游戏内交互待验 | DVM-211 |
 
 ## 未闭合问题
 

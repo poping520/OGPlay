@@ -126,7 +126,7 @@ TEST_CASE("DVM-239 ARM JNI Debug query observes virtual RAM growth and release")
     }
 }
 
-TEST_CASE("DVM-240 ARM JNI installed applications expose the session APK and reject unknown flags") {
+TEST_CASE("DVM-240 ARM JNI installed applications expose the session APK and ignore unrelated flags") {
     using namespace ogplay;
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
@@ -209,17 +209,22 @@ TEST_CASE("DVM-240 ARM JNI installed applications expose the session APK and rej
                       vm.Model().InstanceSlots(uninstalled_item.value.ref)[linker.Field(*package_field).slot].bits}) ==
                   f.context->package_name);
             env.DeleteLocalRef(1, uninstalled_reference);
-            // GET_SHARED_LIBRARY_FILES is outside the declared bounded query.
-            bytes[129] = std::byte{4};
+            bytes[128] = std::byte{0x41};  // GET_ACTIVITIES | GET_SIGNATURES are ignored here.
+            bytes[129] = std::byte{0};
             memory.write(scratch, bytes);
-            CHECK(invoke("CallObjectMethodA", {process.GuestEnvironment().Value(), reference.Value(), method,
-                                               scratch.Add(128).Value()}) == 0);
-            REQUIRE(env.ExceptionCheck(1));
-            const auto throwable = env.ExceptionOccurred(1);
-            env.ExceptionClear(1);
-            CHECK(linker.Class(vm.Model().ObjectClass(bridge.FromReference(throwable))).descriptor ==
-                  "Ljava/lang/UnsupportedOperationException;");
-            env.DeleteLocalRef(1, throwable);
+            const auto ignored_reference = runtime::JniReference{
+                invoke("CallObjectMethodA",
+                       {process.GuestEnvironment().Value(), reference.Value(), method, scratch.Add(128).Value()})};
+            REQUIRE_FALSE(env.ExceptionCheck(1));
+            const auto ignored_list = bridge.FromReference(ignored_reference);
+            const auto ignored_roots = vm.ProtectReferences(std::array{ignored_list});
+            const auto ignored_item = vm.Call(linker.Class(vm.Model().ObjectClass(ignored_list)).vtable[*get],
+                                              std::array{VmValue::Ref(ignored_list), VmValue::Int(0)});
+            REQUIRE_FALSE(ignored_item.exception.IsValid());
+            const auto ignored_path =
+                VmObjectRef{vm.Model().InstanceSlots(ignored_item.value.ref)[linker.Field(*source).slot].bits};
+            CHECK(vm.StringUtf8(ignored_path) == f.context->package_resource_path);
+            env.DeleteLocalRef(1, ignored_reference);
             env.DeleteLocalRef(1, list_reference);
             env.DeleteLocalRef(1, reference);
             env.DeleteLocalRef(1, clazz);

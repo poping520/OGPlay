@@ -100,6 +100,11 @@ struct AndroidManifestReceiverComponent final {
     return component.exported.value_or(!component.intent_filters.empty());
 }
 
+struct AndroidManifestUriPermissionPattern final {
+    std::string path;
+    std::int32_t type{};  // PatternMatcher literal, prefix, or simple glob.
+};
+
 struct AndroidManifestProviderComponent final {
     std::string name;
     std::string authority;
@@ -111,6 +116,29 @@ struct AndroidManifestProviderComponent final {
     std::vector<AndroidManifestMetaData> meta_data;
     std::int32_t init_order{};
     bool grant_uri_permissions{};
+    std::vector<AndroidManifestUriPermissionPattern> uri_permission_patterns;
+    std::vector<AndroidManifestIntentFilter> intent_filters;
+};
+
+struct AndroidManifestInstrumentation final {
+    std::string name;
+    std::string target_package;
+    bool handle_profiling{};
+    bool functional_test{};
+    std::optional<AndroidManifestLabel> label;
+    std::uint32_t icon{};
+    std::uint32_t logo{};
+    std::vector<AndroidManifestMetaData> meta_data;
+};
+
+struct AndroidManifestConfiguration final {
+    std::int32_t touchscreen{}, keyboard{}, navigation{}, input_features{}, gl_es_version{};
+};
+
+struct AndroidManifestFeature final {
+    std::optional<std::string> name;
+    std::int32_t gl_es_version{};
+    bool required{true};
 };
 
 struct AndroidManifestActivityComponent final {
@@ -198,6 +226,10 @@ struct AndroidManifestFacts final {
     std::vector<AndroidManifestServiceComponent> service_components;
     std::vector<AndroidManifestReceiverComponent> receiver_components;
     std::vector<AndroidManifestProviderComponent> provider_components;
+    std::vector<AndroidManifestInstrumentation> instrumentation;
+    std::vector<AndroidManifestConfiguration> configurations;
+    std::vector<AndroidManifestFeature> required_features;
+    std::vector<std::string> required_libraries, optional_libraries;
     // Top-level supports-gl-texture android:name, in first-declaration order.
     std::vector<std::string> supported_gl_textures;
     std::vector<std::string> diagnostics;

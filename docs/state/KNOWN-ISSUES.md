@@ -15,8 +15,8 @@
   复核入口：`tests/dexvm/reflection_tests.cpp` 的代理/注解主题及 `tools/conformance/dalvik_tests.py` 的 004、044 用例。
 - **线程与内存**：GC 全周期、直接写 ABA、直接访存卸载 quiescence 和 MCP shutdown 稳定性尚未完整验收；不宣称完整 ARM reservation 模型。
   复核入口：CPU/GC/线程主题与现有游戏关闭路径；Windows 的稳定 payload 路径尚未实跑。
-- **Alarm 与位置服务**：闹钟调度/send 和位置更新订阅仍缺能力；取消闹钟不等于支持调度。
-  复现：鳄鱼小顽皮启动到 onResume 后 setRepeating；水果忍者的位置订阅路径，当前最近启动首错另见 CURRENT。
+- **Alarm 与位置服务**：闹钟可登记、替换和取消，到期触发与 PendingIntent.send 仍缺；位置更新订阅仍缺能力。
+  复核入口：`tests/dexvm/android_pending_notifications_tests.cpp` 的闹钟登记主题；水果忍者的位置订阅路径，当前启动首错另见 CURRENT。
 - **网络与 TLS 发布**：默认离线；公开 CA 来源/更新责任和随附 OpenSSL 1.0.1 补丁维护未闭合，loopback 客户端成功不能作为在线发布依据。
   复核入口：`tests/fixtures/tls/loopback_https.py` 与 guest crypto；SSLEngine、server TLS、AndroidKeyStore、完整 PKIX 不支持。
 - **文件与 Looper**：完整 mmap/lock、目录树 rename、WAL/跨进程共享以及 NDK Looper callback/非 pipe fd 不支持。

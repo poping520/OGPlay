@@ -229,11 +229,15 @@ TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
         const auto cancel_alarm = [&](VmObjectRef operation) {
             f.On(alarm, "cancel", "(Landroid/app/PendingIntent;)V", {VmValue::Ref(operation)});
         };
+        const auto set_alarm = [&](VmObjectRef operation) {
+            f.On(alarm, "set", "(IJLandroid/app/PendingIntent;)V",
+                 {VmValue::Int(3), VmValue::Long(1), VmValue::Ref(operation)});
+        };
         const auto other = token(0, 2);
-        // Seed backend entries to verify removal independently of unsupported scheduling.
         const auto other_root = f.vm.ProtectReferences(std::array{other});
         const auto other_sender = target(other);
-        f.context->alarm_operations = {target(first), other_sender};
+        set_alarm(first);
+        set_alarm(other);
         cancel_alarm(first);
         REQUIRE(f.context->alarm_operations.size() == 1);
         CHECK(f.context->alarm_operations.front() == other_sender);
@@ -246,13 +250,17 @@ TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
         CHECK(f.vm.MarkReachable().IsMarked(snapshot));
         CHECK(f.vm.MarkReachable().IsMarked(other_sender));  // alarm keeps the sender alive
         CHECK(f.context->pending_intents.size() == 2);       // other weak entries swept
+        set_alarm(first);
         f.On(first, "cancel", "()V");
         f.On(first, "cancel", "()V");
+        CHECK(f.context->alarm_operations == std::vector{other_sender});
         CHECK_FALSE(token(no_create).IsValid());
         const auto replacement = token();
         const auto replacement_root = f.vm.ProtectReferences(std::array{replacement});
         CHECK(replacement != first);
+        set_alarm(replacement);
         CHECK(same(token(cancel_current | no_create), replacement));
+        CHECK(f.context->alarm_operations == std::vector{other_sender});
         CHECK(f.context->pending_intents.at(target(replacement).Value()).canceled);
         CHECK_FALSE(token(no_create).IsValid());
         const auto next = token();
@@ -289,13 +297,9 @@ TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
                     .exception.IsValid());
         f.On(intent, "setSelector", "(Landroid/content/Intent;)V", {VmValue::Ref(VmObjectRef{})});
         REQUIRE(f.OnOutcome(next, "send", "()V").exception.IsValid());
-        REQUIRE(f.OnOutcome(alarm, "set", "(IJLandroid/app/PendingIntent;)V",
-                            {VmValue::Int(3), VmValue::Long(1), VmValue::Ref(other)})
-                    .exception.IsValid());
         std::vector<std::string> ids;
         for (const auto& hit : f.ledger.Unimplemented())
             ids.push_back(hit.id);
-        CHECK_MESSAGE(std::ranges::find(ids, "dexvm.alarm_manager") != ids.end(), ids.size());
         CHECK_MESSAGE(std::ranges::find(ids, "dexvm.pending_intent") != ids.end(), ids.size());
         cancel_alarm(other);
         CHECK(f.context->alarm_operations.empty());
@@ -311,6 +315,65 @@ TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
         REQUIRE(f.StaticOutcome(descriptor, "getService", signature,
                                 {VmValue::Ref(base), VmValue::Int(0), VmValue::Ref(intent), VmValue::Int(0)})
                     .exception.IsValid());
+    }
+}
+
+TEST_CASE("DVM-211 ROM AlarmManager validates and registers broadcast operations") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.context->package_name = "fixture";
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto intent = f.New("Landroid/content/Intent;");
+        const auto operation =
+            f.Static("Landroid/app/PendingIntent;", "getBroadcast",
+                     "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;",
+                     {VmValue::Ref(base), VmValue::Int(0), VmValue::Ref(intent), VmValue::Int(0)})
+                .ref;
+        const auto operation_root = f.vm.ProtectReferences(std::array{operation});
+        const auto token = f.On(operation, "getTarget", "()Landroid/content/IIntentSender;").ref;
+        const auto name = VmValue::Ref(f.vm.NewStringUtf8("alarm"));
+        const auto name_root = f.vm.ProtectReferences(std::array{name.ref});
+        const auto alarm = f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {name}).ref;
+        CHECK(f.linker.Class(f.model.ObjectClass(alarm)).is_boot_dex);
+        const auto binder =
+            f.Static("Landroid/os/ServiceManager;", "getService", "(Ljava/lang/String;)Landroid/os/IBinder;", {name});
+        const auto service = f.Static("Landroid/app/IAlarmManager$Stub;", "asInterface",
+                                      "(Landroid/os/IBinder;)Landroid/app/IAlarmManager;", {binder})
+                                 .ref;
+        REQUIRE(service.IsValid());
+        const auto work_source = f.New("Landroid/os/WorkSource;");
+        const auto null = VmValue::Ref(VmObjectRef{});
+        const auto zero = VmValue::Long(0);
+        const auto set_service = [&](int type, VmValue pending, VmValue source) {
+            return f.OnOutcome(service, "set", "(IJJJLandroid/app/PendingIntent;Landroid/os/WorkSource;)V",
+                               {VmValue::Int(type), zero, zero, zero, pending, source});
+        };
+        const auto invalid = set_service(5, VmValue::Ref(operation), null);
+        REQUIRE(invalid.exception.IsValid());
+        CHECK(f.linker.Class(invalid.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        CHECK(invalid.exception_message == "Invalid alarm type 5");
+        CHECK_FALSE(set_service(5, null, null).exception.IsValid());  // null operation precedes type validation
+        const auto denied = set_service(0, VmValue::Ref(operation), VmValue::Ref(work_source));
+        REQUIRE(denied.exception.IsValid());
+        CHECK(f.linker.Class(denied.exception_class).descriptor == "Ljava/lang/SecurityException;");
+        CHECK(f.context->alarm_operations.empty());
+        CHECK(f.ledger.Unimplemented().empty());
+
+        constexpr auto set = "(IJLandroid/app/PendingIntent;)V";
+        f.On(alarm, "set", set, {VmValue::Int(0), VmValue::Long(1), VmValue::Ref(operation)});
+        CHECK(f.context->alarm_operations == std::vector{token});
+        f.On(alarm, "setRepeating", "(IJJLandroid/app/PendingIntent;)V",
+             {VmValue::Int(0), VmValue::Long(2), VmValue::Long(86'400'000), VmValue::Ref(operation)});
+        CHECK(f.context->alarm_operations == std::vector{token});
+        f.On(alarm, "set", set, {VmValue::Int(3), VmValue::Long(3), VmValue::Ref(operation)});
+        CHECK(f.context->alarm_operations == std::vector{token});
+        f.On(alarm, "cancel", "(Landroid/app/PendingIntent;)V", {VmValue::Ref(operation)});
+        CHECK(f.context->alarm_operations.empty());
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits.front().id == "dexvm.alarm_delivery");
+        CHECK(hits.front().count == 3);
     }
 }
 

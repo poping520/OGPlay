@@ -88,26 +88,32 @@ key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保
 
 | 查询 | 支持与失败边界 |
 | --- | --- |
-| getInstalledPackages/getInstalledApplications | 封存当前 APK 安装清单，PackageInfo 与 getPackageInfo 同源，ApplicationInfo 与 getApplicationInfo 同源。通过 ROM ParceledListSlice 返回独立列表。缺清单/身份/guest 路径或未知 flags UOE |
+| getInstalledPackages/getInstalledApplications | 封存当前 APK 安装清单，通过 ROM ParceledListSlice 返回独立列表，分别复用 getPackageInfo/getApplicationInfo 投影。缺安装清单的应用列表查询记账失败 |
 | getInstallerPackageName(String) | 当前直接加载 APK 无安装器记录则 null；未知包（含空串/system/null）IAE，不推测商店 |
 | getResourcesForApplication(String) | 当前包共用应用 Resources/AssetManager；未知包（含空串/system）NameNotFoundException，null NPE；无跨包/其他重载 |
-| getPackageArchiveInfo | ROM PackageManager/PackageParser 从 guest VFS 中的 APK 解析 Manifest，不复用安装清单；缺路径或损坏归档沿 ROM 返回 null。无包安装或外部包数据库 |
-| getApplicationInfo | 当前包，0/GET_META_DATA/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）；外部包 NameNotFoundException |
-| getPackageInfo | GET_ACTIVITIES/META_DATA/PERMISSIONS/UNINSTALLED_PACKAGES 组合（单包清单下 GET_UNINSTALLED_PACKAGES 不改变结果）；activities 仅请求时按声明顺序发布、保留 alias，默认排除禁用项，否则 null |
-| getActivityInfo/getReceiverInfo/getServiceInfo | 当前包完整组件名，0/GET_META_DATA/GET_DISABLED_COMPONENTS/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）；按应用/组件启用状态过滤，缺失 NameNotFoundException，同名 Activity/receiver/service 取最后声明 |
-| getPermissionInfo | 仅 Manifest 中 registered 的 `<permission>` 首个有效定义，0/GET_META_DATA；未知 group/重复后项不注册，仅请求/授予但未定义仍 NameNotFoundException |
-| queryIntentActivities/resolveIntent | 当前 APK 显式组件及隐式过滤器。ROM IntentFilter 匹配 action/category、MIME、scheme、authority 与路径模式，按优先级、DEFAULT 与匹配分排序；resolveIntent 取首项 |
-| queryBroadcastReceivers | 支持显式组件；隐式查询要求非空 action、同一 filter category 子集、无 selector/data/type。flags 为 0 或 MATCH_DEFAULT_ONLY，后者仅保留有 DEFAULT category 的 filter。排除禁用项，同组件首匹配、API19 稳定排序 |
-| queryIntentServices/resolveService | 支持显式组件；隐式查询沿用非空 action、无 data/type/categories、0/GET_RESOLVED_FILTER。仅确定无候选时返回空列表或 null；潜在匹配/未知条件失败 |
+| getPackageArchiveInfo | ROM PackageManager/PackageParser 从 guest VFS 中的 APK 解析 Manifest。缺路径或损坏归档沿 ROM 返回 null |
+| getApplicationInfo | 当前包的独立 ApplicationInfo，含按请求返回的元数据及当前应用启用设置 |
+| getPackageInfo/getPackagesHoldingPermissions | 按请求投影 activities、receivers、services、providers、instrumentation、权限、配置及签名。组件数组保留声明顺序和 alias；仅按组件声明过滤禁用项。没有声明时数组为 null；已有声明但全部被过滤时为零长度。Instrumentation 仅发布元数据 |
+| getActivityInfo/getReceiverInfo/getServiceInfo/getProviderInfo/resolveContentProvider/queryContentProviders | 当前包组件或 authority。组件查询看应用与组件启用状态；同名 Activity/receiver/service 取最后声明。Provider 可按请求发布 URI 授权模式 |
+| getPermissionInfo/queryPermissionsByGroup | 当前 Manifest 注册的权限定义，GET_META_DATA 发布定义元数据。仅请求或授予的权限仍无定义 |
+| queryIntentActivities/resolveIntent/queryIntentContentProviders | 当前 APK 显式组件及隐式过滤器。ROM IntentFilter 匹配 action/category、MIME、scheme、authority 与路径模式，按优先级、DEFAULT 与匹配分排序；resolveIntent 取首项 |
+| queryBroadcastReceivers | 支持显式组件；隐式查询要求非空 action、同一 filter category 子集、无 selector/data/type，按启用状态过滤并稳定排序。候选 data 条件无法解析时记账失败 |
+| queryIntentServices/resolveService | 支持显式组件。隐式支持 action-only 下可确定无候选的查询；应用/组件启用状态及 MATCH_DEFAULT_ONLY 参与筛选。潜在匹配或未知条件记账失败 |
 | bindService/unbindService | 缺席查询沿原规则；主线程 BIND_AUTO_CREATE、component-only、当前 APK 启用的同进程服务；独立进程/isolated 返回 false，仍登记连接且可解绑，无回调（[ADR-0170](../../../../docs/adr/runtime.md#adr-0170)） |
 
-显式查询优先使用 Intent 的 component，其次取 selector 的 component。移除 MATCH_DEFAULT_ONLY 后按对应
-getXxxInfo 的 flags 和启用状态查询。命中时返回仅设置 activityInfo 或 serviceInfo 的 ResolveInfo，
-缺失时返回空列表（resolveService 返回 null）。外部包、缺 inventory 和未知 flags 记账并失败。
-隐式广播查询保留真实 ArrayList/ResolveInfo/ActivityInfo 及 priority/match/isDefault/filter label/icon；
-同名声明各自的过滤器与配置独立，跨声明按组件去重，首个匹配提供结果，不与按名查询的后项配置合并。
-permission/exported 不限制声明查询。隐式广播查询遇外部包、未解析的候选 data 条件、未知 flags 或
-缺 inventory 明确失败。服务查询只读取声明，启动与绑定另按各自的进程边界处理。
+本地 PMS 按 API19 各入口实际消费的 flag 掩码处理，忽略其余位。GET_UNINSTALLED_PACKAGES 在当前已安装的单 APK 清单下结果相同。
+GET_DISABLED_UNTIL_USED_COMPONENTS 按应用启用设置生效。GET_GIDS 按固定 API19 AOSP platform.xml、AID 定义和会话已授予权限生成。
+GET_SHARED_LIBRARY_FILES 按 API19 aosp_arm 的 XML 库注册表发布 guest 路径，必需项在可选项之前。
+没有可发布路径时为 null；未知可选项跳过，未知必需项记账拒绝。路径是包元数据，库加载由独立机制负责。
+GET_SIGNATURES 从 package_resource_path 对应的封存 APK 字节惰性提取证书；每会话用 once_flag 缓存
+成功的 DER 或解析错误。每次请求创建新的 ROM Signature(byte[]) 和数组，解析失败逐次记账并抛出 UOE。
+证书提取边界见 [loader 契约](../../../loader/MODULE.md#公共-api)。
+
+显式查询优先使用 Intent 的 component，其次取 selector 的 component；按对应组件 getter 投影，
+MATCH_DEFAULT_ONLY 和 GET_RESOLVED_FILTER 在显式路径无效果。命中时 ResolveInfo 仅填对应组件；
+缺失时返回空列表（resolveService 返回 null）。隐式匹配时 GET_RESOLVED_FILTER 发布匹配过滤器。
+广播同名声明各自保留过滤器与配置，跨声明按组件去重，首个匹配提供结果。
+permission/exported 不限制声明查询；服务启动与绑定按各自的进程边界处理。
 独立进程/isolated 服务 start 返回 null、bind 返回 false，每次记账并限流 warn，
 PackageManager 保留清单事实（[ADR-0170](../../../../docs/adr/runtime.md#adr-0170)）。显式绑定在主 Looper 异步 construct/attach/onCreate/onBind 后交付原本地 Binder；
 同组件共享，创建、绑定、解绑和停止经 ROM ActivityThread.H 排队；回调及释放按 ROM 调度。
@@ -136,7 +142,7 @@ calling identity 固定为进程 UID/PID，StrictMode mask 按执行上下文隔
 | Notification | ROM Notification/NotificationManager 持有字段、构造、extras 与本地 Parcel 值；本地 INotificationManager 按当前包 tag/id 保存通知并支持取消。展示记 UI 降级，跨包访问检查 UID；无系统展示、声音、点击或持久库存 |
 | SMS | SmsManager 和 SmsMessage 来自原样的 telephony-common.jar。PDU 由 ROM 解析。本地 ISms 对获准查询返回无 SIM、无 IMS 状态，获准发送请求记账拒绝。无 Phone/RIL、SIM 存储或短信传输 |
 | NFC | ROM NfcAdapter 经 IPackageManager 查询 NFC feature，缺席时 NfcManager 捕获 UOE，默认适配器为 null；无监听或通信 |
-| PendingIntent/AlarmManager | 当前 APK 单 Activity/service/broadcast 令牌，创建不解析/启动目标；原 Intent 复制/filterEquals/replaceExtras 快照，extras 不参与身份，种类/包/requestCode/ONE_SHOT/fill-in flags 参与，NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT 控制查找，CANCEL_CURRENT\|NO_CREATE 返回旧已取消令牌。仅普通 Intent/BootDex Uri；selector/content MIME provider/未知 flags/Parcel/克隆失败。VM 锁串行 registry、非永久根，ROM 包装按本地 IIntentSender 的 Binder 身份比较，活令牌追踪 Intent，GC 删除记录；闹钟条目为 session roots。ROM AlarmManager 经本地 IAlarmManager，cancel(null/无匹配) 正常，移除闹钟不取消令牌；令牌 cancel 后不匹配。退出停止创建/清理；注册/调度/send UOE |
+| PendingIntent/AlarmManager | 当前 APK 单 Activity/service/broadcast 令牌，创建不解析/启动目标；原 Intent 复制/filterEquals/replaceExtras 快照，extras 不参与身份，种类/包/requestCode/ONE_SHOT/fill-in flags 参与，NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT 控制查找，CANCEL_CURRENT\|NO_CREATE 返回旧已取消令牌。仅普通 Intent/BootDex Uri；selector/content MIME provider/未知 flags/Parcel/克隆失败。VM 锁串行 registry、非永久根，ROM 包装按本地 IIntentSender 的 Binder 身份比较，活令牌追踪 Intent，GC 删除记录；闹钟条目为 session roots。ROM AlarmManager 经本地 IAlarmManager，set 按 API19 校验并登记，按 operation 令牌替换，每次成功登记记 `dexvm.alarm_delivery`，到期触发暂缺。cancel(null/无匹配) 正常，移除闹钟不取消令牌；令牌 cancel 后不匹配。退出停止创建/清理；IIntentSender.send 仍抛 UOE。 |
 | Connectivity/Wifi | core policy/transport 默认离线，仅注入事实，无 host 网络/DNS/代理/证书探测。默认断开的逻辑 WiFi，可声明类型缺席；独立原版 NetworkInfo=DISCONNECTED/不可用、活动网络 null，Wifi 默认开启。NetworkInfo 查询需 ACCESS_NETWORK_STATE，缺事实/online policy UOE，不支持类型按 API19 null；ROM ConnectivityManager 通过本地 IConnectivityManager 查询，服务调用原 NetworkInfo 构造/setter。getConnectionInfo 需 ACCESS_WIFI_STATE，离线返回独立 WifiInfo（networkId=-1、UNINITIALIZED、MAC=null）；初次登记可收到断开状态的粘性广播。Wifi 开关写入会话状态；无在线 provider 或真实无线控制；同一离线拓扑派生只读 lo 内核视图与本地地址 ioctl，不受 transport IO 授权限制 |
 | USB/备份 | ROM UsbManager 使用本地 IUsbManager，设备列表为空，配件缺席，打开设备或配件返回 null，权限查询 false。USB 管理权限不授予普通 APK，设备权限 PendingIntent 投递显式失败。ROM BackupManager 保留服务缺席语义，备份请求不排队，恢复请求返回 -1、无恢复会话。 |
 | WifiLock/MulticastLock | ROM WifiManager 计数、held 和每 manager 50 锁上限；本地 IWifiManager 校验锁模式及 WAKE_LOCK/CHANGE_WIFI_MULTICAST_STATE 权限，不改变连接、网卡或组播。 |

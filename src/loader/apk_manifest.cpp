@@ -267,34 +267,62 @@ bool ValidPackage(const std::string_view package) {
 
 std::uint32_t ManifestAttributeId(const std::string_view name) {
     // API19 core/res/res/values/public.xml; only fields projected by this parser.
-    constexpr std::pair<std::string_view, std::uint32_t> ids[]{{"configChanges", 0x0101001fU},
-                                                               {"description", 0x01010020U},
-                                                               {"enabled", 0x0101000eU},
-                                                               {"exported", 0x01010010U},
-                                                               {"icon", 0x01010002U},
-                                                               {"isolatedProcess", 0x010103a9U},
-                                                               {"label", 0x01010001U},
-                                                               {"launchMode", 0x0101001dU},
-                                                               {"largeHeap", 0x0101035aU},
-                                                               {"maxSdkVersion", 0x01010271U},
-                                                               {"minSdkVersion", 0x0101020cU},
-                                                               {"name", 0x01010003U},
-                                                               {"permission", 0x01010006U},
-                                                               {"permissionFlags", 0x010103c7U},
-                                                               {"permissionGroup", 0x0101000aU},
-                                                               {"priority", 0x0101001cU},
-                                                               {"process", 0x01010011U},
-                                                               {"protectionLevel", 0x01010009U},
-                                                               {"resource", 0x01010025U},
-                                                               {"singleUser", 0x010103bfU},
-                                                               {"stopWithTask", 0x0101036aU},
-                                                               {"targetActivity", 0x01010202U},
-                                                               {"targetSdkVersion", 0x01010270U},
-                                                               {"taskAffinity", 0x01010012U},
-                                                               {"theme", 0x01010000U},
-                                                               {"value", 0x01010024U},
-                                                               {"versionCode", 0x0101021bU},
-                                                               {"versionName", 0x0101021cU}};
+    constexpr std::pair<std::string_view, std::uint32_t> ids[]{
+        {"authorities", 0x01010018U},
+        {"configChanges", 0x0101001fU},
+        {"description", 0x01010020U},
+        {"enabled", 0x0101000eU},
+        {"exported", 0x01010010U},
+        {"functionalTest", 0x01010023U},
+        {"glEsVersion", 0x01010281U},
+        {"grantUriPermissions", 0x0101001bU},
+        {"handleProfiling", 0x01010022U},
+        {"host", 0x01010028U},
+        {"icon", 0x01010002U},
+        {"initOrder", 0x0101001aU},
+        {"isolatedProcess", 0x010103a9U},
+        {"label", 0x01010001U},
+        {"largeHeap", 0x0101035aU},
+        {"launchMode", 0x0101001dU},
+        {"logo", 0x010102beU},
+        {"maxSdkVersion", 0x01010271U},
+        {"mimeType", 0x01010026U},
+        {"minSdkVersion", 0x0101020cU},
+        {"name", 0x01010003U},
+        {"path", 0x0101002aU},
+        {"pathPattern", 0x0101002cU},
+        {"pathPrefix", 0x0101002bU},
+        {"permission", 0x01010006U},
+        {"permissionFlags", 0x010103c7U},
+        {"permissionGroup", 0x0101000aU},
+        {"port", 0x01010029U},
+        {"priority", 0x0101001cU},
+        {"process", 0x01010011U},
+        {"protectionLevel", 0x01010009U},
+        {"readPermission", 0x01010007U},
+        {"reqFiveWayNav", 0x01010232U},
+        {"reqHardKeyboard", 0x01010229U},
+        {"reqKeyboardType", 0x01010228U},
+        {"reqNavigation", 0x0101022aU},
+        {"reqTouchScreen", 0x01010227U},
+        {"required", 0x0101028eU},
+        {"resource", 0x01010025U},
+        {"scheme", 0x01010027U},
+        {"singleUser", 0x010103bfU},
+        {"ssp", 0x010103e3U},
+        {"sspPattern", 0x010103e5U},
+        {"sspPrefix", 0x010103e4U},
+        {"stopWithTask", 0x0101036aU},
+        {"targetActivity", 0x01010202U},
+        {"targetPackage", 0x01010021U},
+        {"targetSdkVersion", 0x01010270U},
+        {"taskAffinity", 0x01010012U},
+        {"theme", 0x01010000U},
+        {"value", 0x01010024U},
+        {"versionCode", 0x0101021bU},
+        {"versionName", 0x0101021cU},
+        {"writePermission", 0x01010008U},
+    };
     for (const auto& [key, id] : ids)
         if (key == name) return id;
     return 0;
@@ -701,6 +729,7 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
     std::optional<std::size_t> current_receiver;
     std::optional<std::size_t> current_provider;
     std::optional<std::size_t> current_permission;
+    std::optional<std::size_t> current_instrumentation;
     std::optional<AndroidManifestIntentFilter> current_intent_filter;
     while (cursor < document.size()) {
         const auto chunk = ReadChunk(document, cursor, "binary XML node");
@@ -726,6 +755,24 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
             }
             const auto name =
                 StringAt(strings, Read32(bytes, cursor + chunk.header_size + 4), "binary XML element name");
+            const auto android = [&](std::string_view key) {
+                return FindAttribute(attributes, key, kAndroidNamespace);
+            };
+            const auto integer = [&](std::string_view key) {
+                const auto* attribute = android(key);
+                return attribute ? std::bit_cast<std::int32_t>(ReadIntegerAttribute(*attribute, key, strings, true))
+                                 : 0;
+            };
+            const auto boolean = [&](std::string_view key, bool fallback) {
+                const auto* attribute = android(key);
+                return attribute ? ReadBooleanAttribute(*attribute, key, strings, fallback) : fallback;
+            };
+            const auto literal = [&](std::string_view key) -> std::optional<std::string> {
+                const auto* attribute = android(key);
+                if (attribute && attribute->data_type == kStringType)
+                    if (const auto* value = strings.Get(attribute->data)) return *value;
+                return std::nullopt;
+            };
             if (elements.empty()) {
                 if (saw_manifest || name != "manifest") {
                     throw std::runtime_error("binary AndroidManifest root element is invalid");
@@ -782,6 +829,43 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                     if (const auto value = ReadOptionalStringAttribute(*application_name, strings))
                         facts.application_class = NormalizeAndroidManifestClassName(facts.package, *value);
                 }
+            } else if (name == "instrumentation" && elements.size() == 1) {
+                const auto* class_name = android("name");
+                const auto target = literal("targetPackage");
+                if (!class_name || !target)
+                    throw std::runtime_error("binary AndroidManifest instrumentation requires name and targetPackage");
+                AndroidManifestInstrumentation info;
+                info.name = NormalizeAndroidManifestClassName(
+                    facts.package, ReadStringAttribute(*class_name, strings, "instrumentation name"));
+                info.target_package = *target;
+                info.handle_profiling = boolean("handleProfiling", false);
+                info.functional_test = boolean("functionalTest", false);
+                if (const auto* label = android("label"))
+                    info.label =
+                        label->data_type == kReferenceType
+                            ? AndroidManifestLabel{ReadReferenceAttribute(*label, "instrumentation label")}
+                            : AndroidManifestLabel{ReadStringAttribute(*label, strings, "instrumentation label")};
+                if (const auto* icon = android("icon"))
+                    info.icon = ReadReferenceAttribute(*icon, "instrumentation icon");
+                if (const auto* logo = android("logo"))
+                    info.logo = ReadReferenceAttribute(*logo, "instrumentation logo");
+                facts.instrumentation.push_back(std::move(info));
+                current_instrumentation = facts.instrumentation.size() - 1;
+            } else if (name == "uses-configuration" && elements.size() == 1) {
+                const auto inputs =
+                    (boolean("reqHardKeyboard", false) ? 1 : 0) | (boolean("reqFiveWayNav", false) ? 2 : 0);
+                facts.configurations.push_back(
+                    {integer("reqTouchScreen"), integer("reqKeyboardType"), integer("reqNavigation"), inputs, 0});
+            } else if (name == "uses-feature" && elements.size() == 1) {
+                const auto feature = literal("name");
+                const auto version = feature ? 0 : integer("glEsVersion");
+                facts.required_features.push_back({feature, version, boolean("required", true)});
+                if (!feature) facts.configurations.push_back({.gl_es_version = version});
+            } else if (name == "uses-library" && elements.size() == 2 && elements.back() == "application") {
+                if (const auto library = literal("name")) {
+                    auto& libraries = boolean("required", true) ? facts.required_libraries : facts.optional_libraries;
+                    if (std::ranges::find(libraries, *library) == libraries.end()) libraries.push_back(*library);
+                }
             } else if (name == "meta-data" &&
                        ((elements.size() == 2 && elements[1] == "application") ||
                         (elements.size() == 3 && current_component &&
@@ -789,19 +873,22 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                         (elements.size() == 3 && elements[2] == "receiver" && current_receiver.has_value()) ||
                         (elements.size() == 3 && elements[2] == "service" && current_service.has_value()) ||
                         (elements.size() == 3 && elements[2] == "provider" && current_provider.has_value()) ||
-                        (elements.size() == 2 && elements[1] == "permission" && current_permission.has_value()))) {
-                auto& meta_data = current_component    ? facts.activity_components[*current_component].meta_data
-                                  : current_receiver   ? facts.receiver_components[*current_receiver].meta_data
-                                  : current_service    ? facts.service_components[*current_service].meta_data
-                                  : current_provider   ? facts.provider_components[*current_provider].meta_data
-                                  : current_permission ? facts.defined_permissions[*current_permission].meta_data
-                                                       : facts.application_meta_data;
-                const auto owner = current_component    ? "activity"
-                                   : current_receiver   ? "receiver"
-                                   : current_service    ? "service"
-                                   : current_provider   ? "provider"
-                                   : current_permission ? "permission"
-                                                        : "application";
+                        (elements.size() == 2 && elements[1] == "permission" && current_permission.has_value()) ||
+                        (elements.size() == 2 && elements[1] == "instrumentation" && current_instrumentation))) {
+                auto& meta_data = current_component         ? facts.activity_components[*current_component].meta_data
+                                  : current_receiver        ? facts.receiver_components[*current_receiver].meta_data
+                                  : current_service         ? facts.service_components[*current_service].meta_data
+                                  : current_provider        ? facts.provider_components[*current_provider].meta_data
+                                  : current_instrumentation ? facts.instrumentation[*current_instrumentation].meta_data
+                                  : current_permission      ? facts.defined_permissions[*current_permission].meta_data
+                                                            : facts.application_meta_data;
+                const auto owner = current_component         ? "activity"
+                                   : current_receiver        ? "receiver"
+                                   : current_service         ? "service"
+                                   : current_provider        ? "provider"
+                                   : current_instrumentation ? "instrumentation"
+                                   : current_permission      ? "permission"
+                                                             : "application";
                 const auto* metadata_name = FindAttribute(attributes, "name", kAndroidNamespace);
                 const auto* metadata_value = FindAttribute(attributes, "value", kAndroidNamespace);
                 const auto* metadata_resource = FindAttribute(attributes, "resource", kAndroidNamespace);
@@ -1003,11 +1090,25 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 current_provider = facts.provider_components.size() - 1U;
             } else if (name == "grant-uri-permission" && current_provider && elements.size() == 3 &&
                        elements.back() == "provider") {
-                facts.provider_components[*current_provider].grant_uri_permissions = true;
-            } else if (name == "intent-filter" && (current_component || current_service || current_receiver) &&
+                auto& provider = facts.provider_components[*current_provider];
+                // PackageParser lets the last present attribute win.
+                constexpr std::array<std::string_view, 3> keys{"path", "pathPrefix", "pathPattern"};
+                for (std::size_t i = keys.size(); i > 0; --i) {
+                    if (const auto* attribute = android(keys[i - 1])) {
+                        if (auto path = ReadOptionalStringAttribute(*attribute, strings)) {
+                            provider.uri_permission_patterns.push_back(
+                                {std::move(*path), static_cast<std::int32_t>(i - 1)});
+                            provider.grant_uri_permissions = true;
+                            break;
+                        }
+                    }
+                }
+            } else if (name == "intent-filter" &&
+                       (current_component || current_service || current_receiver || current_provider) &&
                        elements.size() == 3 &&
                        (elements.back() == "activity" || elements.back() == "activity-alias" ||
-                        elements.back() == "service" || elements.back() == "receiver")) {
+                        elements.back() == "service" || elements.back() == "receiver" ||
+                        elements.back() == "provider")) {
                 current_intent_filter.emplace();
                 if (const auto* priority = FindAttribute(attributes, "priority", kAndroidNamespace)) {
                     current_intent_filter->priority = std::bit_cast<std::int32_t>(
@@ -1022,13 +1123,15 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 if (const auto* icon = FindAttribute(attributes, "icon", kAndroidNamespace)) {
                     current_intent_filter->icon = ReadReferenceAttribute(*icon, "intent-filter icon");
                 }
-            } else if (name == "action" && (current_component || current_service || current_receiver) &&
+            } else if (name == "action" &&
+                       (current_component || current_service || current_receiver || current_provider) &&
                        current_intent_filter.has_value() && elements.size() == 4 &&
                        elements.back() == "intent-filter") {
                 if (const auto* action_name = FindAttribute(attributes, "name", kAndroidNamespace)) {
                     current_intent_filter->actions.push_back(ReadStringAttribute(*action_name, strings, "action name"));
                 }
-            } else if (name == "category" && (current_component || current_service || current_receiver) &&
+            } else if (name == "category" &&
+                       (current_component || current_service || current_receiver || current_provider) &&
                        current_intent_filter.has_value() && elements.size() == 4 &&
                        elements.back() == "intent-filter") {
                 if (const auto* category_name = FindAttribute(attributes, "name", kAndroidNamespace)) {
@@ -1038,7 +1141,7 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
             } else if (name == "data" && current_intent_filter && elements.size() == 4 &&
                        elements.back() == "intent-filter") {
                 current_intent_filter->has_data = true;
-                if (current_component) {
+                if (current_component || current_provider) {
                     const auto read = [&](std::string_view key) -> std::optional<std::string> {
                         if (const auto* attribute = FindAttribute(attributes, key, kAndroidNamespace)) {
                             return ReadStringAttribute(*attribute, strings, key);
@@ -1142,10 +1245,12 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
             // API19 tracks depth, not matching end-tag names.
             const auto& name = elements.back();
             if (name == "intent-filter" && elements.size() == 4 &&
-                (current_component || current_service || current_receiver) && current_intent_filter.has_value()) {
-                auto& filters = current_receiver  ? facts.receiver_components[*current_receiver].intent_filters
-                                : current_service ? facts.service_components[*current_service].intent_filters
-                                                  : facts.activity_components[*current_component].intent_filters;
+                (current_component || current_service || current_receiver || current_provider) &&
+                current_intent_filter.has_value()) {
+                auto& filters = current_provider   ? facts.provider_components[*current_provider].intent_filters
+                                : current_receiver ? facts.receiver_components[*current_receiver].intent_filters
+                                : current_service  ? facts.service_components[*current_service].intent_filters
+                                                   : facts.activity_components[*current_component].intent_filters;
                 filters.push_back(std::move(*current_intent_filter));
                 current_intent_filter.reset();
             } else if ((name == "activity" || name == "activity-alias") && elements.size() == 3 &&
@@ -1163,6 +1268,8 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 current_provider.reset();
             } else if (name == "permission" && elements.size() == 2) {
                 current_permission.reset();
+            } else if (name == "instrumentation" && elements.size() == 2) {
+                current_instrumentation.reset();
             }
             elements.pop_back();
             if (elements.empty()) break;

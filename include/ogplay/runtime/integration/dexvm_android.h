@@ -274,6 +274,9 @@ struct DexVmAndroidContext final {
     // The installed guest inventory is sealed and contains only this APK.
     // Missing standalone context facts are not an empty installation list.
     bool package_inventory_known{};
+    std::once_flag package_signatures_once;
+    std::vector<std::vector<std::byte>> package_signatures;
+    std::string package_signature_error;
     std::uint32_t package_version_code{};
     std::string package_version_name;
     std::uint32_t target_sdk_version{};
@@ -302,6 +305,10 @@ struct DexVmAndroidContext final {
     std::vector<loader::AndroidManifestServiceComponent> service_components;
     std::vector<loader::AndroidManifestReceiverComponent> receiver_components;
     std::vector<loader::AndroidManifestProviderComponent> provider_components;
+    std::vector<loader::AndroidManifestInstrumentation> instrumentation;
+    std::vector<loader::AndroidManifestConfiguration> package_configurations;
+    std::vector<loader::AndroidManifestFeature> package_required_features;
+    std::vector<std::string> required_shared_libraries, optional_shared_libraries;
     std::map<std::string, dexvm::VmObjectRef, std::less<>> local_provider_holders;
 
     struct LocalContentObserver final {

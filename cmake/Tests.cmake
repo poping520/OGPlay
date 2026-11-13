@@ -181,6 +181,7 @@ set(OGPLAY_TEST_SOURCES
     tests/frontend/run_apk_vfs_tests.cpp
     tests/loader/apk_tests.cpp
     tests/loader/apk_manifest_tests.cpp
+    tests/loader/apk_signatures_tests.cpp
     tests/loader/binary_xml_tests.cpp
     tests/loader/apk_native_tests.cpp
     tests/loader/elf_tests.cpp

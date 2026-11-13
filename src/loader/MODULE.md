@@ -19,6 +19,11 @@
   `ApkEntryRangeStatistics` 的扫描量仅累计 Deflate 输出，stored 为 0；交付量独立累计。
 - `ApkDeflateStream`：借用同一 ZIP 字节，复用解码器逐段读取；连续读保留当前块和 32 KiB
   历史，向后读从头重放，读到 EOF 校验声明长度。
+- `ReadApkSignatureCertificates`：读取 META-INF 的 v1 JAR `.RSA`、`.DSA` 或 `.EC` PKCS#7
+  SignedData DER。支持一个签名块、一个 issuer/serial 匹配的 signer 和一个 X.509 证书，返回
+  完整证书 DER。在此范围内与 API19 JarVerifier/JarUtils 交给 PackageParser 的证书数量和顺序一致。
+  要求对应 .SF 和 JAR manifest 存在；缺块、结构不支持、多签名块、多 signer 或多证书集合显式失败。
+  仅提取证书；原版安装还会验证 .SF 签名、manifest/entry 摘要及跨 entry 证书一致性。
 - `ParseAndroidBinaryManifest` / `ReadAndroidManifest`：受检解析 binary XML chunk、UTF-8/
   UTF-16 string pool、元素与 typed attribute，产出 package/version/SDK、默认或自定义
   Application 类与 largeHeap 布尔事实，以及按声明顺序保留 enabled、逐 intent-filter、alias target 的 Activity
@@ -71,6 +76,10 @@
   service/receiver 与 Activity 一样保留所有同名声明，不合并配置或过滤器；运行时按名取后项，
   intent 查询保留逐声明匹配并按组件去重。provider 保存规范类名、authority、enabled/exported、
   process、读写权限、URI 授权标志、initOrder 和自身 meta-data，供进程内 ActivityThread 安装。
+  Provider 按声明序保留有效 grant-uri-permission 模式，同标签优先级为 pathPattern、pathPrefix、path；
+  provider intent-filter 保留匹配数据。顶层 instrumentation 保存目标包、标志、展示字段与元数据。
+  uses-configuration 与 uses-feature 保留要求及声明顺序；无名称的 uses-feature 同时形成 GLES 配置项。
+  application 的 uses-library 保留必需和可选名称；安装路径由上层 ROM 库注册表决定。
   receiver 同样逐个保存 intent-filter，不合并 action/category；共用过滤器事实还保留
   signed priority、label/icon，供上层查询返回与排序。
   Manifest 顶层 supports-gl-texture 按 ADR-0128 保留 android:name 原始声明，按声明序去重，

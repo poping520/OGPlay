@@ -966,6 +966,14 @@ constexpr std::int32_t kIntentFillFlags = 0xff;  // API19 FILL_IN_*.
     throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", message};
 }
 
+[[nodiscard]] dx::VmObjectRef AlarmOperationToken(dx::IntrinsicContext& call, const Context& context,
+                                                  dx::VmObjectRef operation) {
+    const auto token = CallAndroidMethod(call.vm, operation, "getTarget", "()Landroid/content/IIntentSender;").ref;
+    if (!context->pending_intents.contains(token.Value()))
+        UnsupportedPending(call, "alarm operation has no process token");
+    return token;
+}
+
 [[nodiscard]] dx::VmObjectRef CopyPendingIntent(dx::Interpreter& vm, dx::VmObjectRef source) {
     const auto source_root = vm.ProtectReferences(std::array{source});
     const auto initialized = vm.EnsureClassInitialized(vm.Linker().ResolveDescriptor("Landroid/content/Intent;"));
@@ -1125,18 +1133,29 @@ Decl Declare_local_AlarmService_Class(const Context& context) {
     builder.VirtualMethod("remove", "(Landroid/app/PendingIntent;)V", [context](dx::IntrinsicContext& call) {
         const auto operation = call.arguments[0].ref;
         if (!operation.IsValid()) return dx::VmValue::Void();
-        const auto token = CallAndroidMethod(call.vm, operation, "getTarget", "()Landroid/content/IIntentSender;").ref;
-        if (!context->pending_intents.contains(token.Value()))
-            UnsupportedPending(call, "alarm operation has no process token");
-        std::erase(context->alarm_operations, token);
+        std::erase(context->alarm_operations, AlarmOperationToken(call, context, operation));
         return dx::VmValue::Void();
     });
     builder.VirtualMethod("set", "(IJJJLandroid/app/PendingIntent;Landroid/os/WorkSource;)V",
-                          [](dx::IntrinsicContext& call) -> dx::VmValue {
+                          [context](dx::IntrinsicContext& call) {
+                              if (call.arguments[5].ref.IsValid())
+                                  RequireServicePermission(context, "UPDATE_DEVICE_STATS");
+                              const auto operation = call.arguments[4].ref;
+                              if (!operation.IsValid()) return dx::VmValue::Void();
+                              constexpr int kRtcWakeup = 0;
+                              constexpr int kElapsedRealtime = 3;
+                              const auto type = call.arguments[0].AsInt();
+                              if (type < kRtcWakeup || type > kElapsedRealtime)
+                                  throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                                        "Invalid alarm type " + std::to_string(type)};
+
+                              // Apply API19's negative trigger time and oversized window corrections when adding timed delivery.
+                              const auto token = AlarmOperationToken(call, context, operation);
+                              std::erase(context->alarm_operations, token);
+                              context->alarm_operations.push_back(token);
                               if (auto* ledger = call.vm.Ledger())
-                                  ledger->RecordUnimplemented("dexvm.alarm_manager", 0);
-                              throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                                    "alarm scheduling is unsupported"};
+                                  ledger->RecordUnimplemented("dexvm.alarm_delivery", 0);
+                              return dx::VmValue::Void();
                           });
     DenyServiceMethod(builder, "setTime", "(J)V", "SET_TIME");
     DenyServiceMethod(builder, "setTimeZone", "(Ljava/lang/String;)V", "SET_TIME_ZONE");

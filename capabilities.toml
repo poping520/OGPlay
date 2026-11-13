@@ -1524,9 +1524,14 @@ test = "tests/dexvm/android_webview_tests.cpp#DVM-185 WebView.destroy"
 note = "ROM 按构造时目标 SDK 检查 Looper。provider 销毁释放客户端和 JS 接口，取消待交付的加载和查找，保留每实例 WebSettings。"
 
 [dexvm.package_info_activities]
-status = "complete"
-test = "tests/dexvm/android_package_metadata_tests.cpp#DVM-180; tests/dexvm/android_component_services_tests.cpp#DVM-195; tests/loader/apk_manifest_tests.cpp#DVM-180; tests/loader/apk_manifest_tests.cpp#DVM-195"
-note = "当前包 getActivityInfo 支持 0/GET_META_DATA/GET_DISABLED_COMPONENTS/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）；getPackageInfo 支持 GET_ACTIVITIES/META_DATA/PERMISSIONS/UNINSTALLED_PACKAGES 组合，activities 来自 Manifest，保留顺序与 alias 身份，默认过滤禁用组件。requestedPermissions 为声明；未知 flags 失败。无完整 PackageManager 或组件启动。"
+status = "partial"
+test = "tests/dexvm/android_package_metadata_tests.cpp#DVM-180; tests/dexvm/android_component_services_tests.cpp#DVM-195; tests/loader/apk_manifest_tests.cpp#DVM-180; tests/loader/apk_manifest_tests.cpp#DVM-195; tests/dexvm/android_package_metadata_tests.cpp#PMS entry points"
+note = "当前 APK PackageInfo 按 API19 flags 发布 activity/alias、receiver、service、provider、instrumentation、权限、配置与 GID，签名见 dexvm.package_signatures；Provider 支持 URI 授权模式。无关位忽略，无法解析的共享库记账拒绝。无外部包或组件启动。"
+
+[dexvm.package_signatures]
+status = "partial"
+test = "tests/loader/apk_signatures_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp#PackageManager GET_SIGNATURES"
+note = "GET_SIGNATURES 首次请求时从会话 APK 解析 v1 签名块并缓存（含失败）。支持单签名块、单 signer、单 X.509 证书的 DER PKCS#7，每次返回新 Signature。多签名块/signer/证书、BER 及缺签名记账拒绝；不校验 .SF 与 entry 摘要，不支持 v2 签名。"
 
 [dexvm.package_archive_info]
 status = "partial"
@@ -1536,7 +1541,7 @@ note = "ROM PackageManager 和 PackageParser 从 guest VFS APK 读取 Manifest�
 [dexvm.installed_applications]
 status = "partial"
 test = "tests/dexvm/android_package_metadata_tests.cpp#DVM-240; tests/runtime/jni_android_platform_tests.cpp#DVM-240"
-note = "封存单包清单，getInstalledApplications 和 getInstalledPackages 分别复用 ApplicationInfo 和 PackageInfo 的当前 APK 事实。支持各自现有查询 flags，缺清单或未知 flags 记账失败。无外部包扫描、共享库或 PMS 进程。"
+note = "封存单 APK 清单，getInstalledApplications 和 getInstalledPackages 分别复用 ApplicationInfo 和 PackageInfo 投影。忽略 API19 未读取的位。缺应用安装清单或无法提供的请求字段记账失败。"
 
 [dexvm.context_file_stream_path]
 status = "complete"
@@ -1901,7 +1906,7 @@ note = "queryIntentServices/resolveService 支持当前 APK 显式组件（含 s
 [dexvm.receiver_query]
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp#receiver facts; tests/dexvm/android_component_services_tests.cpp#DVM-193 receiver queries match independent filters and return BootDex results"
-note = "queryBroadcastReceivers 支持当前 APK 显式组件（含 selector），按 getReceiverInfo 返回单个结果或空列表。隐式支持非空 action、同一 filter category 子集，MATCH_DEFAULT_ONLY 只保留含 DEFAULT 的 filter；排除禁用组件并按 API19 去重排序。外部包、缺清单、未知 flags 或待解析的 data 候选记账失败。广播投递由独立能力提供。"
+note = "当前 APK 显式组件按 getReceiverInfo 投影。隐式支持非空 action、同一 filter category 子集、MATCH_DEFAULT_ONLY、GET_RESOLVED_FILTER、元数据与启用过滤，按 API19 去重排序。外部包、缺清单及待解析的 data 候选记账失败。广播投递由独立能力提供。"
 
 [dexvm.activity_query]
 status = "partial"
@@ -1911,17 +1916,17 @@ note = "当前 APK 的显式组件与隐式过滤器查询，隐式使用 ROM In
 [dexvm.receiver_info]
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp"
-note = "Manifest receiver 经 session 注入，只按当前包完整 ComponentName 回答 getReceiverInfo，同名声明取后项；支持 0、GET_META_DATA、GET_DISABLED_COMPONENTS/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）与 application/component 禁用过滤，返回 BootDex ActivityInfo 并分离 receiver/application 元数据。未知 flags 与缺少 inventory 记账失败；不含外部包、广播投递或系统包服务。"
+note = "Manifest receiver 经 session 注入，按当前包完整 ComponentName 查询，同名声明取后项。支持元数据、禁用过滤和未安装位，忽略 API19 未读取的位；缺清单或无法解析的共享库记账失败。"
 
 [dexvm.service_info]
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp"
-note = "Manifest service 保存名称、启用、exported、process、permission、元数据与 flags；getServiceInfo 只按当前包完整 ComponentName 查询，同名声明取后项，支持 0/GET_META_DATA/GET_DISABLED_COMPONENTS/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）与禁用过滤。未知 flags 或缺清单记账失败；不启动独立进程，不含 Binder 与系统包服务。"
+note = "Manifest service 保存名称、启用、exported、process、permission、元数据与 flags。按当前包完整 ComponentName 查询，同名声明取后项。支持元数据、禁用过滤和未安装位，忽略 API19 未读取的位；缺清单或无法解析的共享库记账失败。"
 
 [dexvm.permission_info]
 status = "partial"
 test = "tools/bootdex/build_bootdex.py check; tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp"
-note = "API19 PermissionInfo 与 CREATOR 归 BootDex；Manifest 顶层 permission 定义独立于 uses-permission 请求和现有 granted 集合。getPermissionInfo 仅查询当前 APK 定义，支持 0、GET_META_DATA，返回原版 PermissionInfo；未定义抛 NameNotFoundException，未知 flags/未装配 inventory 记账失败。不提供外部包或平台权限目录。"
+note = "API19 PermissionInfo 与 CREATOR 来自 ROM。仅查询当前 APK 注册的 permission 定义；GET_META_DATA 返回元数据，其余位忽略。未定义抛 NameNotFoundException，缺 inventory 记账失败。无平台权限目录。"
 
 [dexvm.typeface]
 status = "partial"
@@ -1996,7 +2001,7 @@ note = "当前 APK 的单 Activity/service/broadcast 令牌创建、规范化身
 [dexvm.alarm_manager]
 status = "partial"
 test = "tests/dexvm/android_pending_notifications_tests.cpp#DVM-211"
-note = "alarm 单例与 API19 cancel(null/无匹配/匹配令牌)；取消闹钟不使 PendingIntent 失效，条目保活与退出清理接入 session GC。尚无生产闹钟注册入口，所有已声明 set/setExact/setWindow/setRepeating/setInexactRepeating 调度入口均记账失败；不提供后台系统闹钟服务。"
+note = "alarm 单例与 API19 set 参数校验；按 PendingIntent 令牌登记和替换，每次成功登记记 dexvm.alarm_delivery。cancel 支持空值、无匹配与匹配令牌，移除闹钟不使 PendingIntent 失效；条目保活与退出清理接入 session GC。到期触发与 PendingIntent 投递仍缺。"
 
 [runtime.guest_timezone_data]
 status = "partial"

@@ -1858,3 +1858,117 @@ std::vector<std::byte> PackageManifestFixture() {
     return Manifest();
 }
 }  // namespace ogplay::test
+
+TEST_CASE("Manifest reads package configurations, instrumentation, libraries and provider URI grants") {
+    using namespace ogplay::loader;
+    const std::vector<std::string> strings{
+        "manifest",
+        "package",
+        "fixture.app",
+        "http://schemas.android.com/apk/res/android",
+        "uses-configuration",
+        "reqKeyboardType",
+        "reqHardKeyboard",
+        "reqFiveWayNav",
+        "uses-feature",
+        "name",
+        "glEsVersion",
+        "required",
+        "fixture.feature",
+        "instrumentation",
+        ".Runner",
+        "targetPackage",
+        "fixture.target",
+        "functionalTest",
+        "application",
+        "uses-library",
+        "fixture.library",
+        "provider",
+        ".Provider",
+        "authorities",
+        "fixture.provider",
+        "grant-uri-permission",
+        "path",
+        "pathPrefix",
+        "pathPattern",
+        "/literal",
+        "/prefix",
+        "/glob/.*",
+        "meta-data",
+        "fixture.key",
+        "value",
+    };
+    const auto id = [&](std::string_view value) {
+        const auto found = std::ranges::find(strings, value);
+        REQUIRE(found != strings.end());
+        return static_cast<std::uint32_t>(found - strings.begin());
+    };
+    const auto ns = id("http://schemas.android.com/apk/res/android");
+    const auto literal = [&](std::string_view name, std::string_view value) {
+        return Attribute{id(name), id(value), 0x03, id(value), ns};
+    };
+    const auto number = [&](std::string_view name, std::uint32_t value) {
+        return Attribute{id(name), 0xffffffffU, 0x10, value, ns};
+    };
+    std::vector<std::byte> bytes;
+    Append16(bytes, 0x0003);
+    Append16(bytes, 8);
+    Append32(bytes, 0);
+    Append(bytes, StringPool(strings, false));
+    const auto start = [&](std::string_view name, std::vector<Attribute> attributes = {}) {
+        Append(bytes, StartElement(id(name), attributes));
+    };
+    const auto end = [&](std::string_view name) { Append(bytes, EndElement(id(name))); };
+    const auto tag = [&](std::string_view name, std::vector<Attribute> attributes) {
+        start(name, attributes);
+        end(name);
+    };
+    start("manifest", {{id("package"), id("fixture.app"), 0x03, id("fixture.app")}});
+    tag("uses-configuration", {number("reqKeyboardType", 2), number("reqHardKeyboard", 1), number("reqFiveWayNav", 1)});
+    tag("uses-feature", {literal("name", "fixture.feature"), number("glEsVersion", 0x30000), number("required", 0)});
+    tag("uses-feature", {number("glEsVersion", 0x20000)});
+    start("instrumentation",
+          {literal("name", ".Runner"), literal("targetPackage", "fixture.target"), number("functionalTest", 1)});
+    tag("meta-data", {literal("name", "fixture.key"), number("value", 42)});
+    end("instrumentation");
+    start("application");
+    tag("uses-library", {literal("name", "fixture.library"), number("required", 0)});
+    tag("uses-library", {literal("name", "fixture.library"), number("required", 0)});
+    start("provider", {literal("name", ".Provider"), literal("authorities", "fixture.provider")});
+    tag("grant-uri-permission", {});
+    tag("grant-uri-permission",
+        {literal("path", "/literal"), literal("pathPrefix", "/prefix"), literal("pathPattern", "/glob/.*")});
+    tag("grant-uri-permission", {literal("pathPrefix", "/prefix")});
+    end("provider");
+    end("application");
+    end("manifest");
+    Set32(bytes, 4, static_cast<std::uint32_t>(bytes.size()));
+
+    const auto facts = ParseAndroidBinaryManifest(bytes);
+    REQUIRE(facts.configurations.size() == 2);
+    CHECK(facts.configurations[0].keyboard == 2);
+    CHECK(facts.configurations[0].input_features == 3);
+    CHECK(facts.configurations[1].gl_es_version == 0x20000);
+    REQUIRE(facts.required_features.size() == 2);
+    CHECK(facts.required_features[0].name == "fixture.feature");
+    CHECK_FALSE(facts.required_features[0].required);
+    CHECK(facts.required_features[0].gl_es_version == 0);
+    CHECK_FALSE(facts.required_features[1].name.has_value());
+    CHECK(facts.required_features[1].required);
+    REQUIRE(facts.instrumentation.size() == 1);
+    CHECK(facts.instrumentation[0].name == "fixture.app.Runner");
+    CHECK(facts.instrumentation[0].target_package == "fixture.target");
+    CHECK(facts.instrumentation[0].functional_test);
+    REQUIRE(facts.instrumentation[0].meta_data.size() == 1);
+    CHECK(std::get<std::int32_t>(facts.instrumentation[0].meta_data.front().value) == 42);
+    CHECK(facts.required_libraries.empty());
+    CHECK(facts.optional_libraries == std::vector<std::string>{"fixture.library"});
+    REQUIRE(facts.provider_components.size() == 1);
+    const auto& provider = facts.provider_components.front();
+    CHECK(provider.grant_uri_permissions);
+    REQUIRE(provider.uri_permission_patterns.size() == 2);
+    CHECK(provider.uri_permission_patterns[0].path == "/glob/.*");
+    CHECK(provider.uri_permission_patterns[0].type == 2);
+    CHECK(provider.uri_permission_patterns[1].path == "/prefix");
+    CHECK(provider.uri_permission_patterns[1].type == 1);
+}

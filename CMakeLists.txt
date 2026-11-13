@@ -259,6 +259,7 @@ ogplay_add_module(ogplay_loader Loader
     src/loader/apk.cpp
     src/loader/apk_manifest.cpp
     src/loader/apk_native.cpp
+    src/loader/apk_signatures.cpp
     src/loader/binary_xml.cpp
     src/loader/dex.cpp
     src/loader/dex_analysis.cpp

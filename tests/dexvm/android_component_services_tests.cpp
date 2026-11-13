@@ -122,7 +122,7 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
         const auto services = query_all(intent, 0x40);
         REQUIRE_FALSE(services.exception.IsValid());
         CHECK(f.On(services.value.ref, "size", "()I").AsInt() == 0);
-        fail(query_all(intent, 1));
+        CHECK(QueryListSize(f, query_all(intent, 1)) == 0);
         const auto filtered = query(intent, 0x40);
         REQUIRE_FALSE(filtered.exception.IsValid());
         CHECK_FALSE(filtered.value.ref.IsValid());
@@ -134,7 +134,7 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
         absent();
         CHECK(f.ledger.Unimplemented().size() == 1);
         CHECK(f.ledger.Unimplemented()[0].id == "dexvm.service_resolution");
-        CHECK(f.ledger.Unimplemented()[0].count == 2);
+        CHECK(f.ledger.Unimplemented()[0].count == 1);
         f.context->service_components.push_back(
             {"example.Candidate", true, {{{"example.SERVICE"}, {"example.EXTRA"}, false}}});
         fail(query_all(intent));
@@ -146,8 +146,11 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
         absent();
         f.context->application_enabled = true;
         f.context->service_components.clear();
-        for (const int flags : {1, 128, -1})
-            fail(query(intent, flags));
+        for (const int flags : {1, 128, -1}) {
+            const auto result = query(intent, flags);
+            REQUIRE_FALSE(result.exception.IsValid());
+            CHECK_FALSE(result.value.ref.IsValid());
+        }
         const auto empty = f.New("Landroid/content/Intent;");
         fail(query(empty));
         f.On(intent, "setType", "(Ljava/lang/String;)Landroid/content/Intent;",
@@ -172,7 +175,7 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
         static_cast<void>(f.vm.CollectGarbage());
         absent();
         CHECK(std::ranges::any_of(f.ledger.Unimplemented(), [](const auto& hit) {
-            return hit.id == "dexvm.service_resolution" && hit.count == 14;
+            return hit.id == "dexvm.service_resolution" && hit.count == 10;
         }));
 
         f.context->package_name = "example";
@@ -182,7 +185,7 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
         const auto resolved = query(intent, kMatchDefaultOnly);
         REQUIRE_MESSAGE(!resolved.exception.IsValid(), resolved.exception_message);
         CheckExplicitResolveInfo(f, resolved.value.ref, "example.Local", true);
-        fail(query(intent, kMatchDefaultOnly | 0x40));
+        CheckExplicitResolveInfo(f, query(intent, kMatchDefaultOnly | 0x40).value.ref, "example.Local", true);
         SetIntentComponent(f, intent, "example", "example.Absent");
         CHECK(QueryListSize(f, query_all(intent, kMatchDefaultOnly)) == 0);
         absent();
@@ -375,8 +378,13 @@ TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex
         const auto unsupported = [&](const VmCallOutcome& outcome) {
             CHECK(outcome.exception_class == f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
         };
-        for (const int flags : {0x80, 0x200, kMatchDefaultOnly | 0x80, -1})
-            unsupported(query(intent, flags));
+        // Enabling this disabled receiver would require resolving its data filter.
+        unsupported(query(intent, 0x200));
+        for (const int flags : {0x80, kMatchDefaultOnly | 0x80, -1}) {
+            const auto result = query(intent, flags);
+            REQUIRE_FALSE(result.exception.IsValid());
+            CHECK(result.value.ref.IsValid());
+        }
         f.context->receiver_inventory_known = false;
         unsupported(query(intent));
         f.context->receiver_inventory_known = true;
@@ -483,7 +491,7 @@ TEST_CASE("PackageManager resolves explicit components and matches local activit
 
         SetIntentComponent(f, intent, "fixture", "fixture.Local");
         CheckExplicitResolveInfo(f, OnlyQueryResult(f, query()), "fixture.Local");
-        unsupported(query(kMatchDefaultOnly | 1));
+        CheckExplicitResolveInfo(f, OnlyQueryResult(f, query(kMatchDefaultOnly | 1)), "fixture.Local");
         f.context->activity_inventory_known = false;
         unsupported(query());
         f.context->activity_inventory_known = true;
@@ -561,7 +569,7 @@ TEST_CASE("DVM-195 getActivityInfo returns only the requested activity metadata"
         REQUIRE(f.model.ArrayLength(activities) == 2);
         CHECK(f.model.InstanceSlots(f.model.GetObjectElement(activities, 0))[f.linker.Field(*mode).slot].bits == 0);
         CHECK(f.model.InstanceSlots(f.model.GetObjectElement(activities, 1))[f.linker.Field(*mode).slot].bits == 2);
-        CHECK(query(1).exception.IsValid());
+        CHECK_FALSE(query(1).exception.IsValid());
         f.context->activity_components.back().enabled = false;
         CHECK(query(0).exception.IsValid());
         CHECK_FALSE(query(0x200).exception.IsValid());

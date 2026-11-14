@@ -491,6 +491,11 @@
    "version": "",
    "url": "https://github.com/webview/webview",
    "license": "MIT",
+   "platforms": [
+    "Windows",
+    "Darwin",
+    "Linux"
+   ],
    "notices": [
     {
      "title": "webview",
@@ -544,6 +549,11 @@
    "version": "1.6.32",
    "url": "https://github.com/leeoniya/uPlot",
    "license": "MIT",
+   "platforms": [
+    "Windows",
+    "Darwin",
+    "Linux"
+   ],
    "notices": [
     {
      "title": "uPlot",

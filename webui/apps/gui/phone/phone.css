@@ -1,0 +1,204 @@
+/* Phone layout (phone/): portrait touch screens about 360–412 CSS px wide (19:9 to 20:9). Tokens, skins, controls and
+   dialog contents are the console's (ui-kit, library.css, settings.css); this file lays them out for one hand and
+   turns dialogs into bottom sheets. The Android host sets --safe-top/--safe-bottom to the system bars it draws under. */
+:root[data-layout="phone"] { --safe-top: 0px; --safe-bottom: 0px; height: 100%; overflow: hidden; overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+:root[data-layout="phone"] body { height: 100%; overflow: hidden; }
+:root[data-layout="phone"] button { touch-action: manipulation; }
+
+.console.phone { display: block; min-width: 0; height: 100dvh; font-size: 15px; }
+.ph-page { position: relative; z-index: 1; display: flex; flex-direction: column; height: 100%; }
+.ph-spacer { flex: 1; }
+.ph-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.ph-scroll::-webkit-scrollbar { display: none; }
+
+/* top bar: under the status bar, icon buttons at 44px */
+.ph-bar { flex: none; display: flex; align-items: center; gap: 8px; height: calc(60px + var(--safe-top)); padding: var(--safe-top) 12px 0 16px; }
+.ph-bar .brand { gap: 8px; font-size: 19px; }
+.ph-bar .brand img { width: 30px; height: 30px; }
+.ph-bar h1 { flex: 1; min-width: 0; overflow: hidden; font-size: 20px; font-weight: 900; white-space: nowrap; text-overflow: ellipsis; }
+.ph-bar .ph-icon:first-child { margin-left: -6px; }
+.ph-icon { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: 50%; background: var(--glass); color: var(--ink); }
+.ph-icon .glyph { width: 22px; height: 22px; stroke-width: 2.2; }
+.ph-icon[aria-pressed=true] { background: var(--ink); color: var(--bg); }
+.ph-icon:disabled { opacity: .4; }
+:root[data-layout="phone"] :is(.ph-icon, .ph-card, .pill, .ph-chips button, .cfg-acts button, .cfg-phone .groups button):active:not(:disabled) { transform: scale(.96); }
+
+/* library: search, filter chips, two-column grid, import button at the thumb */
+.ph-search { flex: none; display: flex; align-items: center; gap: 10px; height: 48px; margin: 2px 16px 4px; padding: 0 4px 0 16px; border-radius: 999px; background: var(--glass2); }
+.ph-search > .glyph { width: 18px; height: 18px; color: var(--muted); }
+.ph-search input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: none; color: var(--ink); font: 700 16px var(--font); user-select: text; }
+.ph-search input:focus { outline: none; }
+.ph-search input::placeholder { color: var(--dim); }
+.ph-search input::-webkit-search-cancel-button { display: none; }
+.ph-search button { height: 40px; padding: 0 14px; border-radius: 999px; color: var(--accent); font-weight: 800; }
+.ph-chips { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 16px 12px; overflow-x: auto; scrollbar-width: none; }
+.ph-chips::-webkit-scrollbar { display: none; }
+.ph-chips button { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 15px; border-radius: 999px; background: var(--glass);
+  color: var(--soft); font-size: 14px; font-weight: 800; white-space: nowrap; }
+.ph-chips button[aria-pressed=true] { background: var(--ink); color: var(--bg); }
+.ph-chips .count { font-size: 12px; opacity: .6; }
+.ph-chips .sort { padding: 0 8px 0 12px; background: none; color: var(--muted); }
+.ph-chips .sort .glyph { width: 16px; height: 16px; }
+.ph-home .ph-scroll { padding: 2px 16px calc(100px + var(--safe-bottom)); }
+.ph-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ph-card { display: flex; flex-direction: column; align-items: center; min-width: 0; padding: 16px 10px 14px; border-radius: 22px; background: var(--glass);
+  text-align: center; transition: transform .12s, background .12s; }
+.ph-card:active { background: var(--glass2); }
+.ph-cart { display: block; width: 100%; max-width: 112px; aspect-ratio: 27 / 40; container-type: inline-size; perspective: 700px; }
+.ph-cart .cartridge { font-size: calc(100cqw / 27); transform: rotateY(-12deg); }
+.ph-cart .tile-3d { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.ph-name { display: block; width: 100%; margin-top: 12px; overflow: hidden; font-size: 15px; font-weight: 900; line-height: 1.3; white-space: nowrap; text-overflow: ellipsis; }
+.ph-status { display: inline-flex; align-items: center; gap: 6px; margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.ph-status .led { width: 7px; height: 7px; }
+.console.phone .pill { justify-content: center; gap: 10px; height: 52px; padding: 0 24px; font-size: 16px; }
+.console.phone .pill.main { height: 56px; padding: 0 28px; font-size: 17px; }
+.console.phone .pill:hover:not(:disabled) { transform: none; }
+.console.phone .ph-fab { position: absolute; right: 16px; bottom: calc(18px + var(--safe-bottom)); z-index: 5; gap: 8px; padding: 0 24px 0 20px; }
+.ph-fab b { font-size: 26px; font-weight: 700; line-height: 1; }
+.ph-empty { padding: 72px 0; color: var(--muted); font-weight: 700; text-align: center; }
+.ph-welcome { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 28px 8px; text-align: center; }
+.ph-welcome h1 { font-size: 30px; font-weight: var(--title-weight); line-height: 1.2; }
+.ph-welcome h1.small { font-size: 22px; }
+.ph-welcome p { color: var(--soft); font-weight: 700; }
+.ph-welcome small { color: var(--dim); font-size: 12px; }
+.console.phone .ph-welcome .ghost-cart { width: 150px; height: 222px; margin-bottom: 10px; font-size: 64px; }
+
+/* one game: cartridge stage, facts, actions bar */
+.ph-showcase { position: relative; flex: none; height: min(44vh, 380px); display: grid; place-items: center; perspective: 1500px; }
+.ph-showcase .float { font-size: calc(min(44vh, 380px) / 52); }
+.ph-showcase .stage3d { inset: -4% -8%; }
+.ph-showcase .flag { top: 8%; right: 14%; }
+.ph-info { padding: 4px 22px 20px; }
+.ph-info h1 { margin: 10px 0 2px; font-size: 30px; font-weight: var(--title-weight); line-height: 1.15; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.ph-info .mono { overflow-wrap: anywhere; color: var(--muted); font-size: 13px; user-select: text; }
+.ph-stats { display: flex; gap: 8px; margin: 18px 0 0; }
+.ph-stats > div { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 16px; background: var(--glass); }
+.ph-stats dt { color: var(--muted); font-size: 12px; font-weight: 700; }
+.ph-stats dd { margin: 2px 0 0; overflow: hidden; font-size: 16px; font-weight: 900; white-space: nowrap; text-overflow: ellipsis; }
+.ph-state { display: flex; align-items: flex-start; gap: 12px; margin-top: 10px; padding: 12px 14px; border-radius: 16px; background: var(--glass); }
+.ph-state .led { margin-top: 7px; }
+.ph-state > div { min-width: 0; }
+.ph-state b { font-weight: 800; }
+.ph-state small { margin-top: 2px; color: var(--soft); font-size: 12.5px; overflow-wrap: anywhere; user-select: text; }
+.ph-state.danger { border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.console.phone .ph-fix { width: 100%; height: 46px; margin-top: 10px; font-size: 15px; }
+.ph-facts { margin: 14px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 12.5px; font-weight: 600; }
+.ph-facts li { padding: 9px 2px; border-top: 1px solid var(--line); overflow-wrap: anywhere; user-select: text; }
+.ph-facts small { color: var(--dim); font-size: 11px; font-weight: 800; }
+.ph-actions { flex: none; display: flex; gap: 10px; padding: 10px 16px calc(14px + var(--safe-bottom));
+  background: linear-gradient(transparent, color-mix(in srgb, var(--bg) 88%, transparent) 35%); }
+.console.phone .ph-actions .pill.main { flex: 1; }
+.console.phone .ph-square { width: 56px; height: 56px; padding: 0; }
+.ph-square .glyph { width: 24px; height: 24px; }
+
+/* dialogs become bottom sheets; the import wizard takes the whole screen. Prefixed to sit above the console's
+   per-view dialog rules (.console dialog …, .cfg dialog). */
+:root[data-layout="phone"] dialog[open] { width: 100%; max-width: 100%; max-height: calc(100dvh - 40px - var(--safe-top)); margin: auto 0 0;
+  padding: 22px 20px calc(18px + var(--safe-bottom)); border: 0; border-radius: 24px 24px 0 0; overflow-y: auto; scrollbar-width: none;
+  animation: ph-sheet .24s cubic-bezier(.2,.8,.2,1); }
+:root[data-layout="phone"] dialog[open]::backdrop { background: rgba(0,0,0,.55); }
+:root[data-layout="phone"] dialog[open] h2 { font-size: 19px; font-weight: 900; }
+:root[data-layout="phone"] dialog[open] .modal-actions { display: flex; gap: 10px; margin-top: 22px; }
+:root[data-layout="phone"] dialog[open] .modal-actions button { flex: 1; height: 50px; margin: 0; padding: 0 12px; border: 0; border-radius: 999px;
+  background: var(--glass2); color: var(--ink); font-size: 16px; font-weight: 900; }
+:root[data-layout="phone"] dialog[open] .modal-actions button.primary { background: var(--yellow); color: #2a2000; }
+:root[data-layout="phone"] dialog[open] .modal-actions button.danger { background: var(--danger); color: #fff; }
+:root[data-layout="phone"] dialog[open] .modal-actions .iw-spacer { display: none; }
+/* opaque underneath: the glass skin's translucent dialog surface would show the library through a full-screen page */
+:root[data-layout="phone"] dialog[class="import-wizard"][open] { height: 100dvh; max-height: 100dvh; padding-top: calc(18px + var(--safe-top)); border-radius: 0;
+  display: flex; flex-direction: column; background-color: var(--bg); }
+:root[data-layout="phone"] dialog[class="import-wizard"][open] .modal-actions { position: sticky; bottom: calc(-18px - var(--safe-bottom)); margin: auto -20px calc(-18px - var(--safe-bottom));
+  padding: 14px 20px calc(18px + var(--safe-bottom)); background: inherit; }
+:root[data-layout="phone"] .import-wizard .iw-head { flex-wrap: wrap; gap: 8px 12px; }
+:root[data-layout="phone"] .import-wizard .iw-stage { margin-left: 0; }
+:root[data-layout="phone"] .import-wizard .iw-game { align-items: flex-start; gap: 14px; padding: 14px; }
+:root[data-layout="phone"] .import-wizard .iw-game img, :root[data-layout="phone"] .import-wizard .iw-icon { width: 60px; height: 60px; border-radius: 14px; }
+:root[data-layout="phone"] .console .import-wizard :is(.iw-pick, .iw-source) button { height: 38px; }
+:root[data-layout="phone"] .iw-pick { height: 50px; }
+:root[data-layout="phone"] .iw-row > span { width: 100%; }
+:root[data-layout="phone"] .import-wizard .iw-note { margin-left: 0; }
+:root[data-layout="phone"] .iw-txt { height: 46px; }
+:root[data-layout="phone"] .rg-scope { grid-template-columns: 1fr; }
+:root[data-layout="phone"] .dh-move { grid-template-columns: minmax(0, 1fr); }
+:root[data-layout="phone"] .dh-move > span { transform: rotate(90deg); justify-self: start; }
+:root[data-layout="phone"] .ii-usage { gap: 8px; }
+@keyframes ph-sheet { from { transform: translateY(40px); opacity: 0; } }
+
+/* bottom sheet (parts.tsx Sheet): grip, title, entries of at least 56px */
+:root[data-layout="phone"] .ph-sheet[open] { padding: 8px 10px calc(12px + var(--safe-bottom)); }
+.ph-grip { display: block; width: 40px; height: 4px; margin: 0 auto 8px; border-radius: 4px; background: var(--glass2); }
+:root[data-layout="phone"] .ph-sheet[open] > h2 { margin: 0; padding: 6px 12px 10px; overflow: hidden; font-size: 17px; white-space: nowrap; text-overflow: ellipsis; }
+:root[data-layout="phone"] .ph-sheet[open] > :is(p, ul) { margin: 0 12px 10px; }
+:root[data-layout="phone"] .ph-sheet[open] .modal-actions { margin: 12px 4px 0; }
+.ph-list { display: flex; flex-direction: column; gap: 2px; }
+:root[data-layout="phone"] .ph-sheet .ph-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; margin: 0; padding: 8px 14px; border: 0;
+  border-radius: 16px; background: none; color: var(--ink); text-align: left; }
+:root[data-layout="phone"] .ph-sheet .ph-item:active:not(:disabled) { background: var(--glass2); }
+.ph-item > span { flex: 1; min-width: 0; }
+.ph-item b { display: block; font-size: 16px; font-weight: 800; }
+:root .ph-item small { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; font-weight: 600; line-height: 1.4; }
+.ph-item.danger b { color: #ffb4ae; }
+.ph-item[aria-checked=true] b { color: var(--accent); }
+.ph-item .glyph { width: 20px; height: 20px; color: var(--accent); stroke-width: 2.6; }
+:root[data-layout="phone"] .ph-sheet .ph-item:disabled { opacity: .4; }
+
+/* settings (settings-ui.tsx PhoneFrame): group list, then one group's rows; wide controls go under their label */
+.cfg.cfg-phone { display: flex; flex-direction: column; min-width: 0; font-size: 15px; }
+.cfg-phone .save-state { height: 30px; padding: 0 10px; }
+.cfg-phone .save-state:not(.on) { visibility: hidden; }
+.cfg-phone .cfg-main { padding: 4px 16px calc(36px + var(--safe-bottom)); }
+.cfg-phone .cfg-idle { margin: 0 4px 10px; color: var(--muted); font-size: 13px; font-weight: 700; }
+.cfg-phone .who { padding: 6px 4px 16px; }
+.cfg.cfg-phone .groups { gap: 6px; padding: 0; overflow: visible; }
+.cfg.cfg-phone .groups button { gap: 14px; height: 60px; padding: 0 12px 0 12px; border-radius: 18px; background: var(--glass); color: var(--ink); font-size: 16px; }
+.cfg-phone .groups .n { margin-left: auto; }
+.cfg-phone .ph-next { width: 18px; height: 18px; color: var(--dim); stroke-width: 2.4; }
+.cfg-acts { display: flex; gap: 10px; margin-top: 18px; }
+.cfg-acts button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 50px; border-radius: 999px; background: var(--glass);
+  font-weight: 800; white-space: nowrap; }
+.cfg-acts .glyph { width: 18px; height: 18px; }
+.cfg-acts .danger { color: #ffb4ae; }
+.cfg-acts button:disabled { opacity: .4; }
+.cfg-phone .cfg-file { margin-top: 20px; padding: 14px 4px 0; }
+.cfg-phone .cfg-file > span { white-space: normal; overflow-wrap: anywhere; direction: ltr; }
+.cfg-phone .rows { gap: 8px; }
+.cfg-phone .row { grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; min-height: 66px; padding: 12px 14px; border-radius: 18px; }
+.cfg-phone .row:hover { background: var(--glass); }
+.cfg-phone .row > .ic { width: 34px; height: 34px; }
+.cfg-phone .ctl { gap: 10px; }
+.cfg-phone .ctl:not(:has(> .switch)), .cfg-phone .ctl:has(> .restore) { grid-column: 1 / -1; justify-content: space-between; }
+.cfg-phone .ctl > :is(.seg, .cyc, .step, .range, .txt, .pick) { flex: 1; width: auto; min-width: 0; }
+.cfg-phone .seg { display: flex; }
+.cfg-phone .seg button { flex: 1; height: 40px; padding: 0 8px; }
+.cfg-phone :is(.cyc, .step, .txt) { height: 48px; }
+.cfg-phone :is(.cyc, .step) button { width: 48px; height: 48px; }
+.cfg-phone .range { height: 48px; }
+.cfg-phone .range input::-webkit-slider-thumb { width: 28px; height: 28px; }
+.cfg .pick { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 48px; padding: 0 16px 0 18px; border-radius: 999px;
+  background: var(--field); font-weight: 800; }
+.cfg .pick span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cfg .pick .glyph { width: 18px; height: 18px; color: var(--muted); }
+.cfg-phone .restore { height: 36px; }
+.cfg-phone .note { gap: 12px; padding: 14px 16px; }
+.cfg-phone .launch-h .seg { margin-left: 0; }
+.cfg-phone .launch-f { flex-direction: column; align-items: stretch; }
+.cfg.cfg-phone .launch-f .pill { margin-left: 0; height: 48px; justify-content: center; }
+.cfg-phone .toast { bottom: calc(24px + var(--safe-bottom)); max-width: calc(100vw - 32px); }
+
+/* cartridge viewer: back and title on top, the three actions under them, view presets along the bottom */
+.console.viewer.phone-viewer { min-width: 0; grid-template-rows: auto minmax(0, 1fr) auto; }
+.phone-viewer .top { flex-wrap: wrap; gap: 8px; padding: calc(8px + var(--safe-top)) 16px 8px; }
+.phone-viewer .top .brand, .phone-viewer .key { display: none; }
+.phone-viewer .top .crumb { flex: 1 1 0; }
+.phone-viewer .back { height: 40px; padding: 0 14px 0 6px; }
+.phone-viewer .top .pill { flex: 1 1 0; height: 44px; padding: 0 8px; justify-content: center; font-size: 14px; }
+.phone-viewer .viewer-info { top: 12px; right: 20px; bottom: auto; left: 20px; max-width: none; }
+.phone-viewer .viewer-info h1 { font-size: 26px; }
+.phone-viewer .viewer-views { right: 12px; bottom: 12px; left: 12px; overflow-x: auto; scrollbar-width: none; }
+.phone-viewer .viewer-views button { flex: 1 0 auto; height: 40px; }
+.phone-viewer .foot { justify-content: center; padding: 8px 16px calc(8px + var(--safe-bottom)); }
+.phone-viewer .foot .hint { display: none; }
+.phone-viewer .foot-note { margin: 0; }
+
+@media (prefers-reduced-motion: reduce) { :root[data-layout="phone"] dialog[open] { animation: none; } .ph-card { transition: none; } }

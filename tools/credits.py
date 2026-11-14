@@ -4,7 +4,7 @@
 PROJECTS lists the third-party code OGPlay release builds ship (native libraries, the
 Web UI and the API 19 guest runtime). License texts are copied verbatim from the source tree into the
 one JSON file; the guest runtime's NOTICE files already ship under data/android/19/notices and are
-referenced in place. PLATFORMS optionally restricts a project to Windows, Darwin or Linux; omitted
+referenced in place. PLATFORMS optionally restricts a project to Windows, Darwin, Linux or Android; omitted
 projects apply everywhere. All platforms ship this same catalog; the native About service filters it.
 Run after adding, removing or updating a dependency:
 
@@ -132,7 +132,9 @@ PROJECTS = [
 ]
 
 # Optional host restrictions, using CMAKE_SYSTEM_NAME. Unlisted projects apply to every platform.
-PLATFORMS = {"sn-pro": ["Windows"]}
+# webview hosts the desktop launcher and uPlot draws the desktop Dashboard; Android ships neither.
+DESKTOP = ["Windows", "Darwin", "Linux"]
+PLATFORMS = {"sn-pro": ["Windows"], "webview": DESKTOP, "uplot": DESKTOP}
 
 # Historical repository of a project whose current source is a fork or continuation.
 ORIGINAL_URLS = {"dynarmic": "https://github.com/merryhime/dynarmic"}

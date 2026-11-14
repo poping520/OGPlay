@@ -2,12 +2,22 @@
 
 ## 职责
 
-桌面系统 WebView 启动器（Windows WebView2、macOS WKWebView）的呈现、RPC、导入向导与子进程管理，编入 ogplay_desktop_app。
+系统 WebView 启动器（Windows WebView2、macOS WKWebView、Android WebView）的 RPC 模型、导入向导与桌面子进程管理。
+平台无关部分（RPC、启动计划、共享装配 `LauncherServices`、`GuiPlatform`）编入 `ogplay_launcher_rpc`，桌面外壳与进程管理编入
+ogplay_desktop_app，Android 外壳见 `frontend/android`。
 游戏库领域经 ogplay::app 外观共享，GUI 装配当前 EXE 的
 `--run-game` 子进程，不拥有 guest/runtime。GUI v2 第一阶段已替换 ImGui；macOS 使用 WKWebView，Linux 暂缓。
 
 ## 公共 API
 
+- `GuiPlatform`：平台提供的启动器能力（按键设置、Dashboard、MCP、预检/诊断、打开目录、桌面窗口、宿主路径设置、
+  拖放上传、开发者设置）及是否经独立可执行文件启动。桌面全开；Android 全关且游戏在进程内入口启动。
+  被关能力的 RPC 方法按未知方法（-32601）拒绝，其设置不进入 fields/values、保存时按未知设置拒绝，已有覆盖值原样保留；
+  `library.launch` 只接受 normal，预览只给 normal；启动计划不生成按键令牌/端口，argv 只含游戏选项。
+  宿主路径能力关闭时数据包只能复制入库（`external_mode: link` 与 `data_mount.apply` 的 `external_dir` 被拒绝）。
+  `host.features {}` 返回 `{platform, features}`，前端据此决定入口，不自行判断平台。
+- `LauncherServices`：各平台共用的 Demo 补入、库视图上下文（宿主跟踪实例 + 运行锁）、Profile/制品事实、开源致谢与 APK 分析回调；
+  平台只补充启动、选择器与窗口类回调。
 - `RunGuiCommand`：桌面默认模式，直接接受 `--library-root`、`--smoke-frames`；参数错误与
   冒烟失败只返回日志/退出码，交互 GUI 初始化失败显示消息框。入口由 desktop/main 分派；GUI 日志由桌面配置。
   原生窗口、导航限制和目录打开经 `hal::WebViewHost`，不直接包含 Windows/WebView2 API。

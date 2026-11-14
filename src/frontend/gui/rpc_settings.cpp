@@ -38,10 +38,13 @@ app::JsonWriter::Value Json(app::JsonWriter& writer, const SettingValue& value) 
     return writer.String(std::get<std::string>(value));
 }
 
-app::JsonWriter::Value Values(app::JsonWriter& writer, const LibraryConfig& config) {
+// Without a platform: every value, as the revision covers them all.
+app::JsonWriter::Value Values(app::JsonWriter& writer, const LibraryConfig& config,
+                              const GuiPlatform* platform = nullptr) {
     const auto values = writer.Object();
     for (const auto& field : SettingDefinitions())
-        writer.Add(values, field.key, Json(writer, Setting(config, field.key)));
+        if (!platform || SettingAvailable(*platform, field.key))
+            writer.Add(values, field.key, Json(writer, Setting(config, field.key)));
     return values;
 }
 
@@ -59,10 +62,12 @@ SettingValue ReadValue(app::JsonValue value, const SettingDefinition& field) {
     throw std::invalid_argument(field.key + ": invalid value type");
 }
 
+// Fields of capabilities the platform leaves out are not part of its schema; hidden ones are, but stay off the pages.
 app::JsonWriter::Value FieldList(app::JsonWriter& writer, const std::vector<SettingDefinition>& definitions,
-                                 const std::span<const std::string_view> hidden = {}) {
+                                 const GuiPlatform& platform, const std::span<const std::string_view> hidden = {}) {
     const auto fields = writer.Array();
     for (const auto& field : definitions) {
+        if (!SettingAvailable(platform, field.key)) continue;
         const auto item = writer.Object(), choices = writer.Array();
         writer.AddString(item, "key", field.key);
         writer.AddString(item, "group", field.group);
@@ -100,7 +105,7 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
             throw std::invalid_argument("values/revision required");
         expected = std::string(*revision->String());
         for (const auto& field : GameSettingDefinitions())
-            if (const auto value = values->Member(field.key)) {
+            if (const auto value = values->Member(field.key); value && SettingAvailable(platform_, field.key)) {
                 auto parsed = ReadValue(*value, field);
                 ValidateSettingValue(field, parsed);
                 replacement.values[field.key] = std::move(parsed);
@@ -130,6 +135,9 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
     };
     if (save) {
         if (revision() != expected) throw std::runtime_error("游戏或全局设置已变化，请重新载入后保存。");
+        // The page never sees the settings of capabilities left out here; their overrides stay as they are.
+        for (const auto& [key, value] : settings.values)
+            if (!SettingAvailable(platform_, key)) replacement.values[key] = value;
         // Only a changed directory must exist now: an unplugged linked pack must not block unrelated edits.
         GameSettings changed;
         for (const auto& [key, value] : replacement.values)
@@ -154,12 +162,13 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
         writer.AddNull(result, "profile_id");
     writer.AddString(result, "revision", revision());
     for (const auto& [key, value] : settings.values)
-        writer.Add(overrides, key, Json(writer, value));
+        if (SettingAvailable(platform_, key)) writer.Add(overrides, key, Json(writer, value));
     for (const auto& field : GameSettingDefinitions())
-        writer.Add(inherited, field.key, Json(writer, EffectiveGameSetting({}, global, entry, field.key)));
+        if (SettingAvailable(platform_, field.key))
+            writer.Add(inherited, field.key, Json(writer, EffectiveGameSetting({}, global, entry, field.key)));
     writer.Add(result, "values", overrides);
     writer.Add(result, "inherited", inherited);
-    writer.Add(result, "fields", FieldList(writer, GameSettingDefinitions(), kHiddenSettings));
+    writer.Add(result, "fields", FieldList(writer, GameSettingDefinitions(), platform_, kHiddenSettings));
     writer.AddBool(result, "reserved_visible", kReservedVisible);
     writer.AddString(result, "config_path", PathText(entry.directory / "settings.toml"));
     const auto previews = writer.Object();
@@ -167,9 +176,10 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
          std::vector<std::pair<std::string, LaunchMode>>{{"normal", LaunchMode::normal},
                                                          {"preflight", LaunchMode::preflight},
                                                          {"diagnostic", LaunchMode::diagnostic}}) {
+        if (mode != LaunchMode::normal && !platform_.launch_modes) continue;
         const auto preview = writer.Object(), argv = writer.Array();
         try {
-            const auto plan = BuildLaunchPlan(game_executable_, store_.Root(), entry, global, mode);
+            const auto plan = BuildLaunchPlan(game_executable_, store_.Root(), entry, global, mode, platform_);
             for (const auto& arg : plan.argv)
                 writer.Append(argv, writer.String(arg));
             writer.AddString(preview, "error", "");
@@ -234,7 +244,7 @@ app::ConsoleResponse GuiRpcService::SettingsRequest(std::string_view method, app
         expected = std::string(*revision->String());
         std::size_t known{};
         for (const auto& field : SettingDefinitions())
-            if (const auto value = values->Member(field.key)) {
+            if (const auto value = values->Member(field.key); value && SettingAvailable(platform_, field.key)) {
                 ++known;
                 SetSetting(patch, field.key, ReadValue(*value, field));
             }
@@ -270,8 +280,8 @@ app::ConsoleResponse GuiRpcService::SettingsRequest(std::string_view method, app
     writer.AddUnsignedInteger(result, "schema", 2);
     writer.AddString(result, "system_language", UiLanguageTag(SystemUiLanguage()));
     writer.AddString(result, "revision", Revision(config));
-    writer.Add(result, "values", Values(writer, config));
-    const auto fields = FieldList(writer, SettingDefinitions(), kHiddenSettings);
+    writer.Add(result, "values", Values(writer, config, &platform_));
+    const auto fields = FieldList(writer, SettingDefinitions(), platform_, kHiddenSettings);
     writer.Add(result, "fields", fields);
     writer.AddBool(result, "reserved_visible", kReservedVisible);
     writer.AddString(result, "library_root", PathText(store_.Root()));

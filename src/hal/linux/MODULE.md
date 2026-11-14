@@ -7,7 +7,7 @@ Android 复用本目录除 `host_paths.cpp` 外的全部实现，修改时须同
 
 ## 依赖与边界
 
-- 文件克隆用 FICLONE ioctl，文件系统不支持时删除新建目标并返回不支持。
+- 文件克隆用 FICLONE ioctl，文件系统不支持或策略拒绝该 ioctl（EACCES/EPERM，如 Android SELinux）时删除新建目标并返回不支持。
 - 宿主只读文件使用 O_CLOEXEC/O_NOFOLLOW fd 与 pread；身份来自 fstat dev/inode，
   EINTR 重试、取消及错误传播，不使用共享文件偏移。
 

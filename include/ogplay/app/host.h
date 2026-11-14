@@ -10,6 +10,8 @@ struct DataPaths final {
 OGPLAYCORE_API DataPaths BundledDataPaths();
 OGPLAYCORE_API std::filesystem::path ExecutablePath();
 OGPLAYCORE_API std::filesystem::path DefaultLibraryRoot();
+// The host OS as CMAKE_SYSTEM_NAME spells it: Windows, Darwin, Linux or Android.
+OGPLAYCORE_API std::string HostPlatformName();
 OGPLAYCORE_API std::string UtcTimestamp();
 OGPLAYCORE_API std::string NewControlToken();
 class OGPLAYCORE_API MonotonicClock final {

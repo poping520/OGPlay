@@ -32,7 +32,7 @@ android {
                     "-DOGPLAY_ENABLE_FFMPEG=ON",
                     "-DOGPLAY_RUNTIME_DATA_DIR=$stagedAssets/data",
                 )
-                targets += listOf("ogplay_android", "ogplay_stage_data")
+                targets += listOf("ogplay_android", "ogplay_launcher", "ogplay_stage_data")
             }
         }
     }

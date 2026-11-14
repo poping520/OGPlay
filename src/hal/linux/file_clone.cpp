@@ -31,8 +31,11 @@ bool TryCloneFile(const std::filesystem::path& source,
     ::close(output.fd);
     output.fd = -1;
     ::unlink(destination.c_str());
-    // Reflink needs btrfs/XFS-style shared extents on one file system.
-    if (error == EOPNOTSUPP || error == EXDEV || error == EINVAL || error == ENOTTY) return false;
+    // Reflink needs btrfs/XFS-style shared extents on one file system. Both files are open, so EACCES/EPERM
+    // here is a policy refusing the ioctl itself (Android SELinux), which a plain copy does not need.
+    if (error == EOPNOTSUPP || error == EXDEV || error == EINVAL || error == ENOTTY || error == EACCES ||
+        error == EPERM)
+        return false;
     throw std::system_error(error, std::generic_category(), "FICLONE");
 }
 

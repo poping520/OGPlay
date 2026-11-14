@@ -673,27 +673,41 @@ if(OGPLAY_ENABLE_SDL3)
 endif()
 
 include(cmake/WebUi.cmake)
+# Launcher RPC model shared by the desktop GUI and the Android launcher; no SDL or WebView.
+add_library(ogplay_launcher_rpc STATIC EXCLUDE_FROM_ALL
+    src/frontend/gui/launch.cpp src/frontend/gui/dashboard.cpp
+    src/frontend/gui/rpc.cpp src/frontend/gui/rpc_import.cpp
+    src/frontend/gui/rpc_settings.cpp src/frontend/gui/rpc_data_hint.cpp src/frontend/gui/view_model.cpp
+    src/frontend/gui/credits.cpp src/frontend/gui/platform.cpp src/frontend/gui/launcher_services.cpp)
+target_link_libraries(ogplay_launcher_rpc PUBLIC ogplaycore)
+target_include_directories(ogplay_launcher_rpc PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_include_directories(ogplay_launcher_rpc SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost")
+target_compile_definitions(ogplay_launcher_rpc PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
+if(WIN32)
+    target_link_libraries(ogplay_launcher_rpc PRIVATE ws2_32)
+endif()
+ogplay_set_project_warnings(ogplay_launcher_rpc)
+
 if(OGPLAY_BUILD_GUI OR OGPLAY_BUILD_TESTS)
-    add_library(ogplay_desktop_app STATIC
-        src/frontend/gui/launch.cpp src/frontend/gui/dashboard.cpp
-        src/frontend/gui/rpc.cpp src/frontend/gui/rpc_import.cpp
-        src/frontend/gui/rpc_settings.cpp src/frontend/gui/rpc_data_hint.cpp src/frontend/gui/view_model.cpp
-        src/frontend/gui/credits.cpp)
-    target_link_libraries(ogplay_desktop_app PUBLIC ogplaycore PRIVATE ogplay_desktop_webview)
-    target_include_directories(ogplay_desktop_app PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_include_directories(ogplay_desktop_app SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost")
-    target_compile_definitions(ogplay_desktop_app PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
     if(OGPLAY_ENABLE_SDL3)
-        target_sources(ogplay_desktop_app PRIVATE src/frontend/gui/process_manager.cpp src/frontend/gui/webview_shell.cpp)
-        target_link_libraries(ogplay_desktop_app PRIVATE SDL3::SDL3)
+        add_library(ogplay_desktop_app STATIC
+            src/frontend/gui/process_manager.cpp src/frontend/gui/webview_shell.cpp)
+        target_link_libraries(ogplay_desktop_app PUBLIC ogplay_launcher_rpc PRIVATE ogplay_desktop_webview SDL3::SDL3)
+        target_include_directories(ogplay_desktop_app PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_include_directories(ogplay_desktop_app SYSTEM PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost")
+        target_compile_definitions(ogplay_desktop_app PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
+        if(WIN32)
+            target_link_libraries(ogplay_desktop_app PRIVATE ws2_32)
+        endif()
+        ogplay_set_project_warnings(ogplay_desktop_app)
+    else()
+        add_library(ogplay_desktop_app INTERFACE)
+        target_link_libraries(ogplay_desktop_app INTERFACE ogplay_launcher_rpc)
     endif()
     if(OGPLAY_BUILD_GUI)
         add_dependencies(ogplay_desktop_app ogplay_check_webui)
     endif()
-    if(WIN32)
-        target_link_libraries(ogplay_desktop_app PRIVATE ws2_32)
-    endif()
-    ogplay_set_project_warnings(ogplay_desktop_app)
 endif()
 
 add_library(ogplay_cli_app STATIC src/frontend/cli/commands.cpp src/frontend/cli/library_commands.cpp)

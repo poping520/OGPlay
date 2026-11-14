@@ -239,9 +239,9 @@ test = "tests/frontend/library_store_tests.cpp#bundled demo; tests/frontend/gui_
 note = "安装包带 data/demos/ogplay-sweetshop.apk（OGPlay 糖果铺）；show_demo_games（常规，默认开）开时启动器启动或重新打开该项即补入库，关时列表隐藏但条目不动，删除 Demo 即关闭该项。macOS 新库首启实测补入；Windows 安装包未验；随包 Demo 升级不替换库中旧版。"
 
 [frontend.android_host]
-status = "unimplemented"
-test = ""
-note = "android/ 工程与 arm64-v8a 原生运行时可打包为 APK（minSdk 29、targetSdk 36，ANGLE Vulkan）；一加 7 Pro 上 Demo 呈现并响应触摸；仅 ES2 的 ANGLE 设备上 ES3 context 明确失败。未接入切后台恢复、游戏库界面、导入与 MCP。"
+status = "partial"
+test = "tests/frontend/gui_rpc_tests.cpp#gui_platform; webui/apps/gui/settings/settings.test.ts"
+note = "arm64 APK（minSdk 29、targetSdk 36，ANGLE Vulkan）。启动器为 WebView 承载的 webui/gui（AND-LAUNCHER）：GuiPlatform 裁掉按键设置、Dashboard、MCP、预检/诊断、目录与开发者项；手机为竖屏触屏布局、平板用游戏机布局；游戏库、SAF 导入 APK 与数据包目录（仅复制）、设置、Demo 启动与退出回报已在真机验证。为已有游戏补选数据包、切后台恢复未接入。"
 
 [frontend.running_game_icon]
 status = "partial"

@@ -3,6 +3,7 @@ import { rpc } from '../shared/rpc';
 import { guestPathError, importingStage, normalizeGuestPath, pause, pickPath, upload, type ExternalMode, type ImportJob } from './import';
 import { MountPreview, useDataDirectory } from './mount-preview';
 import { gameName, t } from '../shared/i18n';
+import { has } from '../shared/features';
 
 const MODES: { value: ExternalMode; label: string }[] = [
   { value: 'copy', label: '复制到游戏库' },
@@ -119,12 +120,16 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
         <div class="iw-title"><b>{t('数据包')}</b><small>{t('可选')}</small></div>
         <div class="iw-pick">
           <span class={external ? 'iw-host' : 'iw-host empty'} title={external}><span><bdi>{external || t('未选择，不需要可跳过')}</bdi></span></span>
-          <button disabled={busy} onClick={() => void run(async () => { const path = await pickPath('directory'); if (path) setExternal(path); })}>{external ? t('更换') : t('选择目录')}</button>
+          <button disabled={busy} onClick={() => void run(async () => {
+            // Android copies the picked directory before answering, which can take a while for a large pack.
+            setStage(t('正在读取数据包目录…'));
+            try { const path = await pickPath('directory'); if (path) setExternal(path); } finally { if (!disposed.current) setStage(''); }
+          })}>{external ? t('更换') : t('选择目录')}</button>
           {external && <button disabled={busy} onClick={() => setExternal('')}>{t('清除')}</button>}
         </div>
         {external && <>
           <div class="iw-row"><span>{t('导入方式')}</span>
-            <div class="seg" role="radiogroup" aria-label={t('数据包导入方式')}>{MODES.map(item =>
+            <div class="seg" role="radiogroup" aria-label={t('数据包导入方式')}>{MODES.filter(item => item.value === 'copy' || has('path_settings')).map(item =>
               <button role="radio" aria-checked={item.value === externalMode} class={item.value === externalMode ? 'on' : ''} disabled={busy}
                 onClick={() => setExternalMode(item.value)}>{t(item.label)}</button>)}</div>
           </div>

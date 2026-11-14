@@ -20,6 +20,9 @@
 #endif
 
 namespace ogplay::hal {
+// Android reads it from the environment the Java shell publishes (hal/android): the launcher process has
+// no SDLActivity, and SDL's locale query needs one.
+#if !defined(__ANDROID__)
 std::string HostPreferredLocale() {
 #if OGPLAY_HAS_SDL3
     int count{};
@@ -41,6 +44,7 @@ std::string HostPreferredLocale() {
     return {};
 #endif
 }
+#endif
 
 DisplayRect FitDisplayRect(const std::uint32_t source_width, const std::uint32_t source_height,
                            const std::uint32_t target_width, const std::uint32_t target_height) {

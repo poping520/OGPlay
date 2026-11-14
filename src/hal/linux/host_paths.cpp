@@ -38,4 +38,8 @@ std::optional<std::filesystem::path> HostUserDataDirectory() {
     return std::filesystem::path(*home) / ".local" / "share" / "ogplay";
 }
 
+std::string_view HostPlatformName() noexcept {
+    return "Linux";
+}
+
 }  // namespace ogplay::hal

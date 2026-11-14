@@ -71,7 +71,7 @@
     }
   ],
   "buildPresets": [
-    { "name": "android-arm64", "configurePreset": "android-arm64", "targets": ["ogplay_android"] },
+    { "name": "android-arm64", "configurePreset": "android-arm64", "targets": ["ogplay_android", "ogplay_launcher"] },
     { "name": "dev", "configurePreset": "dev" },
     { "name": "release", "configurePreset": "release" },
     { "name": "ci", "configurePreset": "ci" },

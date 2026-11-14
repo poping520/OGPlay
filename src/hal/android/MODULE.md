@@ -14,6 +14,8 @@
   `data/`），未发布时明确失败；`/proc/self/exe` 在 Android 上指向 `app_process`，不可用。
 - `HostExecutablePath` 由运行目录派生，不代表真实可执行文件；Android 不派生子进程。
 - `HostUserDataDirectory` 读取 `OGPLAY_ANDROID_USER_DATA_DIR`，未发布时返回空。
+- `HostPreferredLocale` 读取 `OGPLAY_ANDROID_LOCALE`（`language[-COUNTRY]`），未发布时返回空；
+  启动器进程没有 SDLActivity，不能用 SDL 查询 locale。
 
 ## 测试
 

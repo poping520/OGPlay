@@ -51,7 +51,7 @@ function Copyable({ text }: { text: string }) {
 
 /** "更多 › 安装信息": install record, disk usage and directories of one entry. */
 export function InstallInfoDialog({ item, busy, openDir, onClose }: {
-  item: LibraryItem; busy: boolean; openDir: (kind: 'sandbox' | 'log') => void; onClose: () => void;
+  item: LibraryItem; busy: boolean; openDir?: (kind: 'sandbox' | 'log') => void; onClose: () => void;
 }) {
   const dialog = useModal();
   const status = statuses[item.status] ?? { label: '状态未知', tone: 'warning' };
@@ -68,7 +68,7 @@ export function InstallInfoDialog({ item, busy, openDir, onClose }: {
   const measured = typeof storage === 'object' ? storage : undefined;
   const path = (label: string, value: string, kind: 'sandbox' | 'log') => <div class="ii-path">
     <small>{label}</small>
-    <div class="ii-field"><code>{value}</code><button disabled={busy} onClick={() => openDir(kind)}>{t('打开')}</button></div>
+    <div class="ii-field"><code>{value}</code>{openDir && <button disabled={busy} onClick={() => openDir(kind)}>{t('打开')}</button>}</div>
   </div>;
   return <dialog ref={dialog} class="import-wizard install-info" aria-label={t('安装信息')} onCancel={event => { event.preventDefault(); onClose(); }}>
     <header class="iw-head"><h2>{t('安装信息')}</h2>

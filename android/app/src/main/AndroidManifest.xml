@@ -21,10 +21,13 @@
             android:name="SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON"
             android:value="1" />
 
+        <!-- The WebView library survives rotation and resizing instead of reloading the page. -->
         <activity
             android:name=".launcher.LauncherActivity"
+            android:configChanges="layoutDirection|locale|fontScale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:enableOnBackInvokedCallback="true"
             android:exported="true"
-            android:theme="@android:style/Theme.DeviceDefault.DayNight">
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -4,7 +4,7 @@ import { t } from '../shared/i18n';
 import type { Sort } from './library';
 
 // Sort picker in the "更多" menu style: a native <select> opens the system menu, which no skin can restyle.
-const sorts: readonly (readonly [Sort, string])[] = [['name', '名称'], ['newest', '最近导入'], ['oldest', '最早导入']];
+export const sorts: readonly (readonly [Sort, string])[] = [['name', '名称'], ['newest', '最近导入'], ['oldest', '最早导入']];
 export function SortMenu({ value, change }: { value: Sort; change: (value: Sort) => void }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);

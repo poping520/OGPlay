@@ -130,4 +130,9 @@ namespace ogplay::hal {
 void FillSecureRandom(std::span<std::byte> output) {
     arc4random_buf(output.data(), output.size());
 }
+
+std::string_view HostPlatformName() noexcept {
+    return "Darwin";
+}
+
 }  // namespace ogplay::hal

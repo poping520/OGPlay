@@ -80,6 +80,10 @@ std::filesystem::path ExecutablePath() {
     return hal::HostExecutablePath();
 }
 
+std::string HostPlatformName() {
+    return std::string(hal::HostPlatformName());
+}
+
 std::filesystem::path DefaultLibraryRoot() {
     auto root = frontend::UserDataDirectory();
     if (!root) throw std::runtime_error("host user-data directory is unavailable; use --library-root <dir>");

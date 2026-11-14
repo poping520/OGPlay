@@ -27,8 +27,10 @@ namespace {
 }  // namespace
 
 LaunchPlan BuildLaunchPlan(const std::filesystem::path& game_executable, const std::filesystem::path& library_root,
-                           const LibraryEntry& entry, const LibraryConfig& config, LaunchMode mode) {
-    if (!std::filesystem::is_regular_file(game_executable))
+                           const LibraryEntry& entry, const LibraryConfig& config, LaunchMode mode,
+                           const GuiPlatform& platform) {
+    if (mode != LaunchMode::normal && !platform.launch_modes) throw std::invalid_argument("unknown launch mode");
+    if (platform.game_executable && !std::filesystem::is_regular_file(game_executable))
         throw LibraryError(LibraryErrorCode::not_found, "OGPlay game executable is missing", game_executable);
     if (LibraryStore(library_root).IsRunning(entry.key))
         throw LibraryError(LibraryErrorCode::running,
@@ -39,12 +41,14 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& game_executable, const s
     plan.mcp_port = resolved.mcp_port;
     plan.dashboard_auto_open = resolved.dashboard_auto_open;
     plan.ui_language = resolved.options.ui_language.value();
-    if (mode != LaunchMode::preflight) {
+    if (mode != LaunchMode::preflight && platform.key_editor) {
         plan.control_token = app::NewControlToken();
         plan.key_editor_port = plan.mcp_port ? *plan.mcp_port : PickLoopbackPort();
         if (!plan.mcp_port) resolved.options.key_editor_port = plan.key_editor_port;
     }
-    plan.argv = {PathUtf8(std::filesystem::absolute(game_executable).lexically_normal()), "--run-game"};
+    // Without a game executable the platform enters the game in-process (Android SDL_main): only the options.
+    if (platform.game_executable)
+        plan.argv = {PathUtf8(std::filesystem::absolute(game_executable).lexically_normal()), "--run-game"};
     const auto args = app::FormatGameRunArgs(resolved.options);
     plan.argv.insert(plan.argv.end(), args.begin(), args.end());
     plan.log_path = std::filesystem::absolute(entry.directory / "last-run.log").lexically_normal();

@@ -10,6 +10,7 @@
 #include "ogplay/app/agent.h"
 #include "ogplay/app/ui_text.h"
 #include "frontend/gui/launch.h"
+#include "frontend/gui/platform.h"
 #include "frontend/gui/view_model.h"
 
 namespace ogplay::frontend {
@@ -49,7 +50,9 @@ struct GuiRpcHost final {
 
 class GuiRpcService final {
 public:
-    GuiRpcService(LibraryStore& store, std::filesystem::path game_executable, GuiRpcHost host);
+    // platform leaves out the methods and settings of the capabilities it does not offer.
+    GuiRpcService(LibraryStore& store, std::filesystem::path game_executable, GuiRpcHost host,
+                  GuiPlatform platform = GuiPlatform::Desktop());
     GuiRpcService(const GuiRpcService&) = delete;
     GuiRpcService& operator=(const GuiRpcService&) = delete;
     GuiRpcService(GuiRpcService&&) = delete;
@@ -69,6 +72,7 @@ private:
     LibraryStore& store_;
     std::filesystem::path game_executable_;
     GuiRpcHost host_;
+    GuiPlatform platform_;
     app::JsonRpcDispatcher adapter_;
 };
 

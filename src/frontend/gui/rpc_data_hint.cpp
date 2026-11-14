@@ -38,6 +38,9 @@ app::ConsoleResponse GuiRpcService::DataHintRequest(std::string_view method, app
     const auto id = RequiredText(params, "installation_id");
     std::optional<std::filesystem::path> picked;
     if (params.Member("external_dir")) picked = Path(RequiredText(params, "external_dir"));
+    // Applying a picked directory keeps it by reference; a platform without that only remounts.
+    if (apply && picked && !platform_.path_settings)
+        throw std::invalid_argument("external_dir cannot be linked on this platform");
     if (ImportBusy()) throw std::runtime_error("正在入库，请稍后重试。");
     app::JsonWriter writer;
     const auto root = writer.Object(), result = writer.Object();

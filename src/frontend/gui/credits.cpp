@@ -6,6 +6,7 @@
 #include <iterator>
 #include <stdexcept>
 
+#include "ogplay/app/host.h"
 #include "ogplay/app/json.h"
 
 namespace ogplay::frontend {
@@ -13,28 +14,18 @@ namespace {
 
 constexpr std::uintmax_t kMaximumNoticeBytes = 1024U * 1024U;
 
-constexpr std::string_view CurrentPlatform() {
-#if defined(_WIN32)
-    return "Windows";
-#elif defined(__APPLE__)
-    return "Darwin";
-#else
-    return "Linux";
-#endif
-}
-
 [[nodiscard]] bool AppliesToCurrentPlatform(const app::JsonValue& project) {
     const auto platforms = project.Member("platforms");
     if (!platforms) return true;
     if (!platforms->IsArray() || platforms->Size() == 0)
         throw std::runtime_error("credits.json: platforms must be a non-empty array");
-    constexpr std::array<std::string_view, 3> supported{"Windows", "Darwin", "Linux"};
+    constexpr std::array<std::string_view, 4> supported{"Windows", "Darwin", "Linux", "Android"};
     bool matches = false;
     for (std::size_t index = 0; index < platforms->Size(); ++index) {
         const auto platform = platforms->Element(index)->String();
         if (!platform || std::find(supported.begin(), supported.end(), *platform) == supported.end())
             throw std::runtime_error("credits.json: invalid platform");
-        matches = matches || *platform == CurrentPlatform();
+        matches = matches || *platform == app::HostPlatformName();
     }
     return matches;
 }

@@ -10,6 +10,7 @@
 
 #include "ogplay/app/library.h"
 #include "ogplay/app/ui_text.h"
+#include "frontend/gui/platform.h"
 
 namespace ogplay::frontend {
 using namespace ogplay::app;
@@ -30,7 +31,8 @@ struct LaunchPlan final {
 
 [[nodiscard]] LaunchPlan BuildLaunchPlan(const std::filesystem::path& game_executable,
                                          const std::filesystem::path& library_root, const LibraryEntry& entry,
-                                         const LibraryConfig& config, LaunchMode mode = LaunchMode::normal);
+                                         const LibraryConfig& config, LaunchMode mode = LaunchMode::normal,
+                                         const GuiPlatform& platform = GuiPlatform::Desktop());
 
 struct GameExit final {
     std::string package;

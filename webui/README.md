@@ -11,6 +11,8 @@ Linux 暂缓；macOS WebView 宿主尚未接入，本阶段仅构建 Windows GUI
 Windows 首次在仓库根运行 `./webui/prepare-sdk.ps1`，显式下载并校验固定 WebView2 SDK；
 安装后的 WebView2 Runtime 由系统提供，不打包浏览器。CMake 配置期不访问网络。
 
+Android 启动器制品用 `npm run build:android`，只生成 `data/webui/android/gui/`（平台 Android），不覆盖桌面制品。
+
 在本目录运行 `npm ci`、`npm run build`；生成 `data/webui/gui/`、`data/webui/dashboard/` 和
 `data/webui/controls/`，不入库。
 `npm run check` 执行 TypeScript、协议、库交互及分块上传测试。

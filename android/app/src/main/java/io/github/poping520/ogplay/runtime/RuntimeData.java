@@ -3,6 +3,8 @@ package io.github.poping520.ogplay.runtime;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
+import android.system.ErrnoException;
+import android.system.Os;
 
 import java.io.File;
 import java.io.IOException;
@@ -10,6 +12,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 /** Extracts the bundled data/ assets, because the native runtime reads them as ordinary files. */
@@ -27,6 +30,15 @@ public final class RuntimeData {
         return new File(context.getFilesDir(), "user");
     }
 
+    /** Publishes both roots and the locale for hal/android, which reads them from the process environment. */
+    public static void publishEnvironment(Context context) {
+        setEnvironment("OGPLAY_ANDROID_RUNTIME_DIR", runtimeDirectory(context).getPath());
+        setEnvironment("OGPLAY_ANDROID_USER_DATA_DIR", userDataDirectory(context).getPath());
+        Locale locale = context.getResources().getConfiguration().getLocales().get(0);
+        String country = locale.getCountry();
+        setEnvironment("OGPLAY_ANDROID_LOCALE", locale.getLanguage() + (country.isEmpty() ? "" : "-" + country));
+    }
+
     /** Publishes the current version's data atomically; call it off the main thread. */
     public static File prepare(Context context) throws IOException {
         File runtime = runtimeDirectory(context);
@@ -40,6 +52,14 @@ public final class RuntimeData {
             throw new IOException("Cannot publish " + runtime);
         }
         return runtime;
+    }
+
+    private static void setEnvironment(String name, String value) {
+        try {
+            Os.setenv(name, value, true);
+        } catch (ErrnoException error) {
+            throw new IllegalStateException("Cannot set " + name, error);
+        }
     }
 
     private static File runtimesRoot(Context context) {

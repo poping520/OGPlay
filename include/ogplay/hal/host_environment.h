@@ -10,6 +10,9 @@
 
 namespace ogplay::hal {
 
+// The host OS as CMAKE_SYSTEM_NAME spells it: Windows, Darwin, Linux or Android.
+[[nodiscard]] std::string_view HostPlatformName() noexcept;
+
 // First SDL preferred locale (language-country), empty when unavailable. No guest locale effects.
 [[nodiscard]] std::string HostPreferredLocale();
 

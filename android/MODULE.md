@@ -5,18 +5,26 @@ Android 宿主工程（Gradle 根），只含 Java 外壳和打包配置。C++ �
 
 ## 职责
 
-- `launcher/`：主进程入口。当前只准备运行数据并启动内置演示游戏，游戏库界面尚未接入。
-- `game/GameActivity`：`:game` 进程，继承 `SDLActivity`，发布运行目录和用户数据目录环境变量
-  后进入 `SDL_main`。一个进程只运行一个游戏，结束即退出进程。
+- `launcher/`：主进程入口。`LauncherActivity` 在 WebView 中加载运行数据里的 `webui/gui`：页面只经私有 https 源
+  由 `shouldInterceptRequest` 从运行目录提供，其他请求与导航一律拒绝，不开放文件/内容访问；注入的桥接脚本定义
+  `window.rpc`，经 `LauncherBridge` 进入 `libogplay_launcher`。返回键先交给页面的 `ogplay-back` 事件，页面未处理才退出。
+  APK 与数据包目录分别用 SAF（`ACTION_OPEN_DOCUMENT`/`ACTION_OPEN_DOCUMENT_TREE`）复制到 cache，只保留最近一次，
+  启动时清空；系统不允许选存储根、Download 根及 `Android/data|obb`，需选其下的目录。
+  最小宽度 < 600dp 为手机：锁竖屏，桥接脚本先写 `window.__ogplayLayout='phone'`，页面用手机布局；API 30+ 全面屏绘制，
+  状态栏/导航栏高度经 `__ogplayInsets` 写成 CSS `--safe-top/--safe-bottom`，只有软键盘缩小视图，WebView 不再收到 insets。
+  平板锁横屏、用游戏机布局，矮屏（CSS 高度 < 640）放宽布局视口后缩放。debug 包开启 WebView 远程调试（chrome://inspect）。
+- `game/GameActivity`：`:game` 进程，继承 `SDLActivity`，发布运行目录、用户数据目录和 locale 环境变量后进入
+  `SDL_main`；参数为启动器启动计划的完整 argv。一个进程只运行一个游戏，结束即退出进程。
 - `runtime/RuntimeData`：把 assets 的 `data/` 按安装版本原子解压到私有目录，供原生层按普通
-  文件读取。
+  文件读取；`publishEnvironment` 发布两个根目录与 `OGPLAY_ANDROID_LOCALE`。
 
 ## 构建约定
 
 - `minSdk` 29、`targetSdk`/`compileSdk` 36，只打 `arm64-v8a`；NDK 固定 r30。
 - SDL Java 源码直接引用 `third_party/SDL/android-project`，不复制；SDL Java 与原生库版本
   因此始终一致。
-- `externalNativeBuild` 构建 `ogplay_android` 与 `ogplay_stage_data`。运行库由 CMake 放到
+- `externalNativeBuild` 构建 `ogplay_android`、`ogplay_launcher` 与 `ogplay_stage_data`；启动器页面来自
+  `webui` 的 `npm run build:android`（输出 `data/webui/android/gui`，平台标记 Android），缺失或哈希不符时构建失败。运行库由 CMake 放到
   库输出目录，运行数据放到 `build/generated/ogplay-assets/data`，assets 合并排在原生构建之后。
 - 原生 STL 固定 `c++_shared`：`ogplaycore` 的 C++ 接口跨动态库。
 - 只改 C++ 时可用 CMake 预设 `android-arm64` 编译原生代码，不经 Gradle。

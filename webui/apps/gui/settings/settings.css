@@ -93,7 +93,7 @@
 .cfg .switch.on { background: var(--yellow); }
 .cfg .switch.on::after { transform: translateX(24px); background: #2a2000; }
 /* existing behaviour: the track loses its fill while hovered */
-.cfg .switch:hover:not(:disabled) { background: none; }
+@media (hover: hover) { .cfg .switch:hover:not(:disabled) { background: none; } }
 .cyc, .step, .txt { display: inline-flex; align-items: center; height: 40px; border-radius: 999px; background: var(--field); }
 .cyc { width: 220px; }
 .cfg .cyc button, .cfg .step button { flex: none; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; font-weight: 900; line-height: 1; color: var(--muted); }

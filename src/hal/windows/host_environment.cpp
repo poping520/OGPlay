@@ -148,4 +148,9 @@ void FillSecureRandom(std::span<std::byte> output) {
         output = output.subspan(size);
     }
 }
+
+std::string_view HostPlatformName() noexcept {
+    return "Windows";
+}
+
 }  // namespace ogplay::hal

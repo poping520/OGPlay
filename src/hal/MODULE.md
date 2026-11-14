@@ -77,7 +77,7 @@
 - `hal::ScopedHostEnvironment`：串行覆盖一组宿主进程环境变量并在嵌套、异常和析构路径恢复
   原值；`HostEnvironmentValue` 提供同锁只读查询。
 - `hal::HostPreferredLocale`：SDL 首选 locale 的第一项（含 country 时以 `-` 连接），释放 SDL 分配；
-  无 SDL 或取不到时返回空串，不读取或修改 guest Locale。
+  无 SDL 或取不到时返回空串，不读取或修改 guest Locale。Android 改读 Java 外壳发布的环境变量（见 hal/android）。
 - `hal::HostExecutableDirectory`：通过平台实现返回当前宿主可执行文件所在的绝对目录，
   供上层定位随程序交付且可重定位的运行时资源。
 - `hal::SharedLibraryFileName` / `OpenSharedLibrary` / `ResolveSharedLibrarySymbol`：

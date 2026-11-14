@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include "ogplay/app/logging.h"
+#include "frontend/gui/launcher_services.h"
 #include "frontend/gui/rpc.h"
 #include "ogplay/app/library.h"
 #include "ogplay/app/demo_games.h"
@@ -113,45 +114,6 @@ void PrepareLog(app::Logger& logger, const std::filesystem::path& root) {
     logger.SetFile(path);
 }
 
-LibraryViewContext BuildContext(const LibraryStore& store_, const GuiProcessManager& processes_,
-                                const std::vector<LibraryEntry>& entries) {
-    LibraryViewContext context;
-    context.running_packages = processes_.RunningPackages();
-    for (const auto& entry : entries)
-        if (store_.IsRunning(entry.key) && std::find(context.running_packages.begin(), context.running_packages.end(),
-                                                     entry.key) == context.running_packages.end())
-            context.running_packages.push_back(entry.key);
-    try {
-        const auto config = LoadLibraryConfig(store_.Root());
-        std::map<std::optional<std::filesystem::path>, app::ProfileCatalog> catalogs;
-        for (const auto& entry : entries) {
-            if (!entry.metadata || entry.Damaged()) continue;
-            try {
-                const auto effective = EffectiveGameConfig(LoadGameSettings(entry.directory), config);
-                const auto& directory = effective.profiles_dir;
-                if (!catalogs.contains(directory)) {
-                    catalogs.emplace(directory, directory ? app::ProfileCatalog::Load(*directory)
-                                                          : app::ProfileCatalog::LoadBundled());
-                }
-                const auto& profiles = catalogs.at(directory);
-                if (!entry.metadata->profile_id) continue;
-                const auto summary = profiles.Find(*entry.metadata->profile_id);
-                if (!summary) context.missing_profiles.insert(entry.key);
-            } catch (const LibraryError& error) {
-                if (error.Code() == LibraryErrorCode::busy) throw;
-                context.profile_errors[entry.key] = error.what();
-            } catch (const std::exception& error) {
-                context.profile_errors[entry.key] = error.what();
-            }
-        }
-    } catch (const LibraryError& error) {
-        if (error.Code() == LibraryErrorCode::busy) throw;
-        context.profile_catalog_error = error.what();
-    } catch (const std::exception& error) {
-        context.profile_catalog_error = error.what();
-    }
-    return context;
-}
 }  // namespace
 
 int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
@@ -159,93 +121,30 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
     try {
         PrepareLog(logger, options.library_root);
         LibraryStore store(options.library_root);
-        // Bundled demos are read once; a broken one is logged and leaves the launcher without demos.
-        std::vector<app::ApkImportAnalysis> demos;
-        const auto seed_demos = [&] {
-            for (const auto& id : SeedBundledDemos(store, demos, app::UtcTimestamp()))
-                logger.Write(app::LogLevel::info, "frontend.gui.demo", "demo game added to the library", {},
-                             {{"installation_id", id}});
-        };
-        try {
-            demos = FindBundledDemos(app::BundledDataPaths().root / "demos", app::ProfileCatalog::LoadBundled());
-            seed_demos();
-        } catch (const std::exception& error) {
-            logger.Write(app::LogLevel::warn, "frontend.gui.demo", "demo games unavailable", {},
-                         {{"reason", std::string(error.what())}});
-        }
-        auto language = SystemUiLanguage();
-        try {
-            language = ResolveUiLanguage(std::get<std::string>(Setting(LoadLibraryConfig(store.Root()), "language")));
-        } catch (const std::exception& error) {
-            logger.Write(app::LogLevel::warn, "frontend.gui", "UI language configuration unavailable", {},
-                         {{"reason", std::string(error.what())}});
-        }
+        LauncherServices services(store, logger);
+        auto language = services.Language();
         GuiProcessManager processes(logger);
         std::unique_ptr<hal::WebViewHost> view;
-        GuiRpcService rpc(
-            store, app::ExecutablePath(),
-            {[&](const auto& entries) { return BuildContext(store, processes, entries); },
-             [&](const auto& plan) { processes.Launch(plan); }, [](const auto& path) { hal::OpenHostDirectory(path); },
-             [&](const auto& path) {
-                 const auto config = LoadLibraryConfig(store.Root());
-                 const auto profiles = config.profiles_dir ? app::ProfileCatalog::Load(*config.profiles_dir)
-                                                           : app::ProfileCatalog::LoadBundled();
-                 return AnalyzeApkImportFile(path, profiles);
-             },
-             [&](bool directory) {
-                 return view->PickPath(directory, Text(language, directory ? UiText::pick_data_dir : UiText::pick_apk));
-             },
-             [] { return app::UtcTimestamp(); }, [&] { view->Minimize(); },
-             [] {
-                 std::map<std::string, std::optional<std::string>> facts;
-                 facts["ogplay_version"] = OGPLAY_VERSION;
-                 const auto root = app::BundledDataPaths().root;
-                 // Web UI licenses are part of the open-source acknowledgements (about.credits).
-                 for (const auto& [key, path] : std::array<std::pair<const char*, const char*>, 1>{
-                          {{"android_manifest", "android/19/manifest.json"}}}) {
-                     std::error_code error;
-                     const auto size = std::filesystem::file_size(root / path, error);
-                     facts[key] = std::nullopt;  // missing, unreadable or over the read limit
-                     if (error || size > 65536) continue;
-                     std::ifstream file(root / path, std::ios::binary);
-                     std::string text(static_cast<std::size_t>(size), '\0');
-                     file.read(text.data(), static_cast<std::streamsize>(size));
-                     if (file) facts[key] = std::move(text);
-                 }
-                 return facts;
-             },
-             [](const LibraryEntry& entry, const LibraryConfig& config) {
-                 std::map<std::string, std::string> facts;
-                 const auto bundled = app::BundledDataPaths();
-                 const auto directory = config.profiles_dir.value_or(bundled.profiles_directory);
-                 facts["profiles_dir"] = PathUtf8(directory);
-                 const auto profiles = config.profiles_dir ? app::ProfileCatalog::Load(*config.profiles_dir)
-                                                           : app::ProfileCatalog::LoadBundled();
-                 if (entry.metadata && entry.metadata->profile_id) {
-                     const auto summary = profiles.Find(*entry.metadata->profile_id);
-                     facts["profile_status"] = summary ? "recorded" : "missing";
-                 }
-                 return facts;
-             },
-             [] { return LoadCredits(app::BundledDataPaths().root); },
-             [](std::string_view id) { return ReadCreditNotices(app::BundledDataPaths().root, id); },
-             [&] { return processes.Dashboards(); },
-             [&](std::string_view instance) { view->OpenDashboard(instance, processes.DashboardPort(instance)); },
-             [&](std::string_view instance) {
-                 const auto editor = processes.KeyEditor(instance);
-                 view->OpenKeyEditor(instance, editor.port, editor.token, KeyEditorTitle(editor, instance));
-             },
-             [&] {
-                 std::vector<std::string> packages;
-                 for (const auto& demo : demos)
-                     packages.push_back(demo.manifest.package);
-                 return packages;
-             },
-             seed_demos,
-             [&](UiLanguage next) {
-                 language = next;
-                 view->SetShellText(ShellText(language));
-             }});
+        auto host = services.Host([&] { return processes.RunningPackages(); });
+        host.launch = [&](const auto& plan) { processes.Launch(plan); };
+        host.open_directory = [](const auto& path) { hal::OpenHostDirectory(path); };
+        host.pick = [&](bool directory) {
+            return view->PickPath(directory, Text(language, directory ? UiText::pick_data_dir : UiText::pick_apk));
+        };
+        host.minimize = [&] { view->Minimize(); };
+        host.dashboards = [&] { return processes.Dashboards(); };
+        host.open_dashboard = [&](std::string_view instance) {
+            view->OpenDashboard(instance, processes.DashboardPort(instance));
+        };
+        host.open_key_editor = [&](std::string_view instance) {
+            const auto editor = processes.KeyEditor(instance);
+            view->OpenKeyEditor(instance, editor.port, editor.token, KeyEditorTitle(editor, instance));
+        };
+        host.language_changed = [&](UiLanguage next) {
+            language = next;
+            view->SetShellText(ShellText(language));
+        };
+        GuiRpcService rpc(store, app::ExecutablePath(), std::move(host));
         // WebView teardown drains callbacks the page already queued: destroy it while rpc is
         // still alive, and refuse those late callbacks because view is already null by then.
         bool closing{};

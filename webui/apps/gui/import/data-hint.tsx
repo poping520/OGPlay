@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc } from '../shared/rpc';
 import { pickPath, type DataHint } from './import';
+import { has } from '../shared/features';
 import { MountPreview, useDataDirectory } from './mount-preview';
 import { t, tj } from '../shared/i18n';
 
@@ -63,7 +64,7 @@ export function DataHintDialog({ id, name, initial, onClose, onApplied }: {
       {remount ? <>
         <button disabled={busy} onClick={() => void apply(false)}>{t('仅修改')}</button>
         <button class="primary" disabled={busy} onClick={() => void apply(true)}>{t('挂载并重新启动')}</button>
-      </> : <button class="primary" disabled={busy} onClick={() => void pick()}>{t('选择数据包目录')}</button>}
+      </> : has('path_settings') && <button class="primary" disabled={busy} onClick={() => void pick()}>{t('选择数据包目录')}</button>}
     </div>
   </dialog>;
 }

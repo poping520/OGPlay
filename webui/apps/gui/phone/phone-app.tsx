@@ -1,0 +1,238 @@
+import { Brand } from '../kit';
+import { Glyph } from '../../../packages/ui-kit/glyph';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import type { LibraryItem } from '../shared/rpc';
+import { t } from '../shared/i18n';
+import { has } from '../shared/features';
+import { externalText, filters, lastRunText, profileText, statusDetail, statusOf, versionLabel, visibleItems } from '../library/library';
+import { useLauncher, type Launcher } from '../library/launcher';
+import { sorts } from '../library/sort-menu';
+import { SettingsPage } from '../settings/settings-page';
+import { GameSettingsPage } from '../settings/game-settings-page';
+import { CartViewer } from '../cartridge/cart-viewer';
+import { ImportWizard } from '../import/import-wizard';
+import { DataHintDialog } from '../import/data-hint';
+import { ClearDataDialog, InstallInfoDialog, RemoveGameDialog } from '../library/game-dialogs';
+import { Backdrop, Cartridge } from '../cartridge/cartridge';
+import { Hero3D, TileCart } from '../cartridge/cartridge3d';
+import { Modal } from '../library/modal';
+import { Splash } from '../library/splash';
+import { BackButton, MoreIcon, Sheet, SheetItem } from './parts';
+import '../library/library.css';
+import './phone.css';
+
+// Phone layout (Android phones, portrait, touch): the library as a two-column grid, one page per game with the
+// actions at the thumb, full-screen settings and import, bottom sheets for menus and confirmations. Pages stack;
+// the back key closes the top dialog first, then the top page. State and actions are useLauncher's, as on the console.
+type Page = { kind: 'home' } | { kind: 'game'; id: string } | { kind: 'settings' } | { kind: 'game-settings'; id: string } | { kind: 'viewer'; id: string };
+type SheetState = { kind: 'actions'; id: string } | { kind: 'sort' } | null;
+
+export function PhoneApp() {
+  const launcher = useLauncher();
+  const { library, items, loading, refresh, act, busy, query, setQuery, filter, setFilter, sort, setSort, applySettings, skin, cartMode, cart3d, viewer,
+    errors, importing, pendingFile, startImport, dataHint, removing, clearing, setClearing, clearData } = launcher;
+  const [stack, setStack] = useState<Page[]>([{ kind: 'home' }]);
+  const [sheet, setSheet] = useState<SheetState>(null);
+  const [info, setInfo] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [splash, setSplash] = useState(true);
+  const search = useRef<HTMLInputElement>(null);
+  const page = stack[stack.length - 1];
+  const find = (id: string) => library.items.find(game => game.installation_id === id);
+  const push = (next: Page) => setStack(current => [...current, next]);
+  const pop = () => setStack(current => current.length > 1 ? current.slice(0, -1) : current);
+  // Pages of a game that left the library (removed here or elsewhere) go with it.
+  useEffect(() => {
+    if (!loading) setStack(current => current.filter(entry => !('id' in entry) || library.items.some(game => game.installation_id === entry.id)));
+  }, [library.items, loading]);
+  const closeSearch = () => { setQuery(''); setSearchOpen(false); search.current?.blur(); };
+  const openSearch = () => { setSearchOpen(true); requestAnimationFrame(() => search.current?.focus()); };
+  const openGameSettings = (game: LibraryItem) => { if (!busy && !importing) push({ kind: 'game-settings', id: game.installation_id }); };
+  const openViewer = (game: LibraryItem) => { if (viewer) push({ kind: 'viewer', id: game.installation_id }); };
+  const launch = (game: LibraryItem) => { if (game.can_launch && !game.running) void act('library.launch', game); };
+
+  // The back key (the host's cancelable ogplay-back): the top dialog or sheet, then a full-screen view (which reads
+  // it as Esc: a settings group goes back to the group list first), then the top page, the search and the filters.
+  useEffect(() => {
+    const back = (event: Event) => {
+      const dialogs = document.querySelectorAll<HTMLDialogElement>('dialog[open]');
+      if (dialogs.length) dialogs[dialogs.length - 1].dispatchEvent(new Event('cancel', { cancelable: true }));
+      else if (page.kind === 'settings' || page.kind === 'game-settings' || page.kind === 'viewer')
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+      else if (page.kind === 'game') pop();
+      else if (searchOpen || query) closeSearch();
+      else if (filter !== 'all') setFilter('all');
+      else return;
+      event.preventDefault();
+    };
+    window.addEventListener('ogplay-back', back);
+    return () => window.removeEventListener('ogplay-back', back);
+  });
+  // A tap on the dimmed screen around a dialog or sheet dismisses it, as the back key does.
+  useEffect(() => {
+    const tap = (event: MouseEvent) => {
+      const dialog = event.target;
+      if (!(dialog instanceof HTMLDialogElement) || !dialog.open) return;
+      const box = dialog.getBoundingClientRect();
+      if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom)
+        dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
+    };
+    window.addEventListener('click', tap);
+    return () => window.removeEventListener('click', tap);
+  }, []);
+
+  const overlays = <>
+    {splash && <Splash ready={!loading && cartMode !== 'pending'} onDone={() => setSplash(false)} />}
+    {importing && <ImportWizard file={pendingFile} onClose={launcher.closeImport} onImported={async id => {
+      closeSearch(); await launcher.imported(); setStack([{ kind: 'home' }, { kind: 'game', id }]);
+    }} />}
+    {dataHint && <DataHintDialog id={dataHint.id} initial={dataHint.hint} name={find(dataHint.id)?.display_name ?? dataHint.id}
+      onClose={launcher.closeDataHint} onApplied={launcher.applyDataHint} />}
+    {clearing && <ClearDataDialog item={find(clearing.installation_id) ?? clearing} busy={busy}
+      onConfirm={() => void clearData(clearing)} onClose={() => { if (!busy) setClearing(null); }} />}
+    {removing && <RemoveGameDialog item={removing} busy={busy} onConfirm={withSaves => void launcher.remove(removing, withSaves)}
+      onClose={() => { if (!busy) launcher.cancelRemoval(); }} />}
+    {info && find(info) && <InstallInfoDialog item={find(info)!} busy={busy} onClose={() => setInfo('')} />}
+    {sheet?.kind === 'sort' && <Sheet title={t('排序')} onClose={() => setSheet(null)}>{sorts.map(([key, label]) =>
+      <SheetItem key={key} label={t(label)} checked={key === sort} onClick={() => { setSort(key); setSheet(null); }} />)}</Sheet>}
+    {sheet?.kind === 'actions' && find(sheet.id) && <GameSheet launcher={launcher} game={find(sheet.id)!} close={() => setSheet(null)}
+      start={launch} settings={openGameSettings} view={viewer ? openViewer : undefined} info={game => setInfo(game.installation_id)} />}
+    {!importing && errors.length > 0 && <Modal title={t('操作提示')} onDismiss={launcher.dismissError}><pre>{errors[0]}</pre></Modal>}
+  </>;
+
+  // Full-screen views take the whole window, as on the console; the back key reaches them as Esc.
+  if (page.kind === 'settings') return <SettingsPage onBack={() => { pop(); void refresh().catch(launcher.report); }} onSaved={applySettings} />;
+  if (page.kind === 'game-settings') return <GameSettingsPage id={page.id} item={find(page.id)} skin={skin} cart3d={cart3d}
+    onBack={() => { pop(); void refresh().catch(launcher.report); }}
+    clearData={() => { const game = find(page.id); pop(); if (game) setClearing(game); }} />;
+  const viewed = page.kind === 'viewer' ? find(page.id) : undefined;
+  if (viewed && viewer) return <CartViewer api={viewer} items={items.some(game => game === viewed) ? items : [viewed]} selected={viewed} skin={skin}
+    select={id => setStack(current => [...current.slice(0, -1), { kind: 'viewer', id }])} onBack={pop} />;
+
+  const game = page.kind === 'game' ? find(page.id) : undefined;
+  return <div class={`console phone skin-${skin}`}>
+    <Backdrop item={game} skin={skin} />
+    {game ? <GamePage key={game.installation_id} launcher={launcher} game={game} back={pop} more={() => setSheet({ kind: 'actions', id: game.installation_id })}
+      start={launch} settings={openGameSettings} view={viewer ? openViewer : undefined} /> :
+    <div class="ph-page ph-home">
+      <header class="ph-bar">
+        <Brand />
+        <span class="ph-spacer" />
+        <button class="ph-icon" aria-label={t('搜索游戏')} aria-pressed={searchOpen || !!query} onClick={() => searchOpen || query ? closeSearch() : openSearch()}><Glyph name="search" /></button>
+        <button class="ph-icon" aria-label={t('设置')} disabled={busy || importing} onClick={() => push({ kind: 'settings' })}><Glyph name="settings" /></button>
+      </header>
+      {(searchOpen || query) && <div class="ph-search">
+        <Glyph name="search" />
+        <input ref={search} type="search" enterKeyHint="search" placeholder={t('名称、包名或版本')} aria-label={t('搜索游戏')} value={query}
+          onInput={event => setQuery(event.currentTarget.value)} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} />
+        <button onClick={closeSearch}>{t('取消')}</button>
+      </div>}
+      <nav class="ph-chips" aria-label={t('筛选游戏')}>
+        {filters.map(([value, label]) => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
+          {t(label)}<span class="count">{visibleItems(library.items, '', value, 'name').length}</span></button>)}
+        <span class="ph-spacer" />
+        <button class="sort" aria-label={`${t('排序')} · ${t(sorts.find(([key]) => key === sort)![1])}`} onClick={() => setSheet({ kind: 'sort' })}>
+          {t(sorts.find(([key]) => key === sort)![1])}<Glyph name="down" /></button>
+      </nav>
+      <main class="ph-scroll" aria-busy={loading}>
+        {loading ? <p class="ph-empty">{t('正在读取游戏库…')}</p> :
+          library.items.length === 0 ? <div class="ph-welcome">
+            <button class="ghost-cart" aria-label={t('选择 APK 文件')} disabled={importing} onClick={startImport}>＋</button>
+            <div class="kicker"><i />Welcome to OGPlay</div>
+            <h1>{t('添加你的')}{t('第一款游戏')}</h1>
+            <p>{t('选择安卓游戏安装包（APK）。')}</p>
+            <button class="pill main" disabled={importing} onClick={startImport}>{t('选择 APK 文件')}</button>
+            <small>{t('支持单体 APK，分包格式暂不支持')}</small>
+          </div> :
+          items.length === 0 ? <div class="ph-welcome">
+            <h1 class="small">{query ? t('没有符合条件的游戏') : t('这个分类里没有游戏')}</h1>
+            <button class="pill" onClick={() => { closeSearch(); launcher.resetFilters(); }}>{t('清除筛选')}</button>
+          </div> :
+          <div class="ph-grid">{items.map(entry => {
+            const status = statusOf(entry), tone = entry.running ? 'running' : status.tone;
+            return <button key={entry.installation_id} class="ph-card" aria-label={t('{name}，{status}', { name: entry.display_name, status: status.label })}
+              onClick={() => push({ kind: 'game', id: entry.installation_id })}
+              onContextMenu={event => { event.preventDefault(); setSheet({ kind: 'actions', id: entry.installation_id }); }}>
+              <span class="ph-cart"><TileCart api={cart3d} item={entry} tone={tone} /></span>
+              <b class="ph-name">{entry.display_name}</b>
+              <small class="ph-status"><i class={`led ${tone}`} />{entry.running ? t('运行中') : status.label}</small>
+            </button>;
+          })}</div>}
+      </main>
+      {library.items.length > 0 && <button class="ph-fab pill main" disabled={importing} onClick={startImport}><b aria-hidden="true">＋</b>{t('导入游戏')}</button>}
+    </div>}
+    {overlays}
+  </div>;
+}
+
+interface GameActions {
+  start: (game: LibraryItem) => void; settings: (game: LibraryItem) => void; view?: (game: LibraryItem) => void;
+}
+
+// One game: its cartridge, the facts the console hero shows (written out here, not left to tooltips) and the actions
+// in a bar under the thumb. The 3D cartridge turns under a drag; a tap opens the viewer.
+function GamePage({ launcher, game, back, more, start, settings, view }: GameActions & {
+  launcher: Launcher; game: LibraryItem; back: () => void; more: () => void;
+}) {
+  const { busy, importing, cart3d, items } = launcher;
+  const status = statusOf(game), tone = game.running ? 'running' : status.tone;
+  const detail = statusDetail(game), profile = profileText(game), external = externalText(game), lastRun = game.running ? null : lastRunText(game);
+  const position = items.findIndex(entry => entry.installation_id === game.installation_id) + 1;
+  return <div class="ph-page ph-game">
+    <header class="ph-bar">
+      <BackButton onClick={back} />
+      <span class="ph-spacer" />
+      <button class="ph-icon" aria-label={t('更多')} onClick={more}><MoreIcon /></button>
+    </header>
+    <main class="ph-scroll">
+      <div class="ph-showcase">
+        {(game.running || status.tone !== 'ready') && <span class={`flag ${tone}`}>{game.running ? t('● 运行中') : status.label}</span>}
+        {cart3d ? <Hero3D api={cart3d} item={game} tone={tone} shown={() => { /* no splash waits on it here */ }} neighbours={[]} inspect={() => view?.(game)} /> :
+          <><div class="float"><div class="tilt"><Cartridge item={game} tone={tone} hero /></div></div><div class="floor" /></>}
+      </div>
+      <section class="ph-info">
+        <div class="kicker"><i />{position > 0 ? `No.${String(position).padStart(2, '0')} / ${String(items.length).padStart(2, '0')}` : 'OGPlay'}</div>
+        <h1>{game.display_name}</h1>
+        <p class="mono">{game.package || t('包名不可用')}</p>
+        <dl class="ph-stats">
+          <div><dt>{t('版本')}</dt><dd>{game.version_name || (game.version_code === null ? t('元数据不可用') : String(game.version_code))}</dd></div>
+          {profile && <div><dt>Profile</dt><dd>{profile.value}</dd></div>}
+          <div><dt>{t('数据包')}</dt><dd>{external.value}</dd></div>
+        </dl>
+        <div class={`ph-state ${tone}`}><i class={`led ${tone}`} />
+          <div><b>{game.running ? t('运行中') : status.label}</b>{detail && <small>{detail}</small>}</div></div>
+        {lastRun && <div class="ph-state danger"><i class="led danger" />
+          <div><b>{lastRun.label}</b>{lastRun.error && <small>{lastRun.error}</small>}</div></div>}
+        {game.status === 'damaged' && !game.running && <button class="pill ph-fix" disabled={busy} onClick={() => launcher.requestRemoval(game)}>{t('删除后重新导入 →')}</button>}
+        <ul class="ph-facts">
+          {external.detail && game.external.status !== 'not_required' && <li><small>{t('数据包')}</small><span>{external.detail}</span></li>}
+          {game.imported_at && <li><span>{t('导入于 {date}', { date: game.imported_at.slice(0, 10) })}</span></li>}
+          <li><small>{t('版本')}</small><span class="mono">{versionLabel(game)}</span></li>
+        </ul>
+      </section>
+    </main>
+    <footer class="ph-actions">
+      <button class="pill ph-square" aria-label={t('游戏设置')} disabled={busy || importing} onClick={() => settings(game)}><Glyph name="settings" /></button>
+      {game.running
+        ? <button class="pill main" disabled><i class="led running" />{t('运行中')}</button>
+        : <button class="pill main" disabled={busy || !game.can_launch} onClick={() => start(game)}>{t('开始游戏')}</button>}
+    </footer>
+  </div>;
+}
+
+// Long press on a card, or "更多" on a game page: everything one entry offers here.
+function GameSheet({ launcher, game, close, start, settings, view, info }: GameActions & {
+  launcher: Launcher; game: LibraryItem; close: () => void; info: (game: LibraryItem) => void;
+}) {
+  const { busy, importing } = launcher;
+  const then = (action: () => void) => () => { close(); action(); };
+  return <Sheet title={game.display_name} onClose={close}>
+    {!game.running && <SheetItem label={t('开始游戏')} disabled={busy || !game.can_launch} note={game.can_launch ? undefined : statusDetail(game)} onClick={then(() => start(game))} />}
+    <SheetItem label={t('游戏设置')} note={t('下次启动生效')} disabled={busy || importing} onClick={then(() => settings(game))} />
+    {view && <SheetItem label={t('查看卡带')} note={t('转一转、拆开看看里面')} onClick={then(() => view(game))} />}
+    <SheetItem label={t('安装信息')} onClick={then(() => info(game))} />
+    <SheetItem label={t('清空游戏数据')} note={t('删除存档与进度，保留游戏和数据包')} danger disabled={busy || importing || game.running}
+      onClick={then(() => launcher.setClearing(game))} />
+    <SheetItem label={t('删除游戏')} note={t('默认保留存档，重新导入时恢复')} danger disabled={busy || importing || game.running} onClick={then(() => launcher.requestRemoval(game))} />
+  </Sheet>;
+}

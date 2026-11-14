@@ -36,6 +36,7 @@ struct Fixture {
     std::vector<std::string> demo_packages;
     unsigned demo_seeds{};
     std::vector<UiLanguage> language_changes;
+    frontend::GuiPlatform platform;
     frontend::GuiRpcService rpc{
         store,
         root / "ogplay.exe",
@@ -79,9 +80,10 @@ struct Fixture {
          [this](std::string_view id) { opened_editor = id; },
          [this] { return demo_packages; },
          [this] { ++demo_seeds; },
-         [this](UiLanguage language) { language_changes.push_back(language); }}};
+         [this](UiLanguage language) { language_changes.push_back(language); }},
+        platform};
 
-    Fixture() {
+    explicit Fixture(frontend::GuiPlatform value = frontend::GuiPlatform::Desktop()) : platform(std::move(value)) {
         std::filesystem::create_directories(root);
         std::ofstream(root / "ogplay.exe") << "fixture";
         const auto entry = root / "library/org.example.game";
@@ -492,11 +494,12 @@ TEST_CASE("GUI credits apply optional platform declarations to lists and notices
 
 TEST_CASE("GUI credits reject malformed platform declarations") {
     Fixture fixture;
-    for (const auto* platforms : {"null", "[]", R"("Windows")", "[17]", R"([""])", R"(["Plan9"])", R"(["Windows",17])"}) {
+    for (const auto* platforms :
+         {"null", "[]", R"("Windows")", "[17]", R"([""])", R"(["Plan9"])", R"(["Windows",17])"}) {
         INFO(platforms);
         std::ofstream(fixture.root / "credits.json")
-            << R"({"schema":1,"projects":[{"id":"test","name":"Test","version":"","url":"","platforms":)"
-            << platforms << R"(,"notices":[{"title":"License","text":"text"}]}]})";
+            << R"({"schema":1,"projects":[{"id":"test","name":"Test","version":"","url":"","platforms":)" << platforms
+            << R"(,"notices":[{"title":"License","text":"text"}]}]})";
         CHECK_THROWS_AS(static_cast<void>(frontend::LoadCredits(fixture.root)), std::runtime_error);
     }
 }
@@ -944,4 +947,116 @@ TEST_CASE("gui_rpc error params keep the template separate from status values") 
     REQUIRE(failure);
     CHECK(failure->Member("message")->String() == "图标素材缺失：{path}");
     CHECK(failure->Member("params")->Member("path")->String() == "/missing/icon.png");
+}
+
+namespace {
+bool HasField(const app::JsonValue& fields, std::string_view key) {
+    for (std::size_t index = 0; index < fields.Size(); ++index)
+        if (fields.Element(index)->Member("key")->String() == key) return true;
+    return false;
+}
+
+std::optional<std::int64_t> ErrorCode(Fixture& fixture, const std::string& request) {
+    const auto response = Decode(fixture.rpc.Handle(request));
+    const auto error = response.Root().Member("error");
+    return error ? error->Member("code")->Integer() : std::nullopt;
+}
+}  // namespace
+
+TEST_CASE("gui_platform desktop offers every launcher capability") {
+    Fixture fixture;
+    const auto response = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"host.features"})"));
+    const auto features = response.Root().Member("result")->Member("features");
+    REQUIRE(features.has_value());
+    CHECK(features->Size() == 9);
+    for (const auto key : features->Keys())
+        CHECK(features->Member(key)->Bool() == std::optional<bool>{true});
+    CHECK(ErrorCode(fixture, R"({"jsonrpc":"2.0","id":1,"method":"host.features","params":{"x":1}})") == -32602);
+}
+
+TEST_CASE("gui_platform android leaves out desktop and developer capabilities") {
+    Fixture fixture(frontend::GuiPlatform::Android());
+    const auto features = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"host.features"})"));
+    const auto result = features.Root().Member("result");
+    CHECK(result->Member("platform")->String() == ogplay::app::HostPlatformName());
+    for (const auto* name : {"key_editor", "dashboard", "mcp", "launch_modes", "open_directory", "desktop_window",
+                             "path_settings", "file_upload", "developer"})
+        CHECK(result->Member("features")->Member(name)->Bool() == std::optional<bool>{false});
+
+    // Left-out capabilities have no methods: the same answer as a method that never existed.
+    for (
+        const auto* request :
+        {R"({"jsonrpc":"2.0","id":1,"method":"controls.open","params":{"installation_id":"org.example.game"}})",
+         R"({"jsonrpc":"2.0","id":1,"method":"dashboard.list"})",
+         R"({"jsonrpc":"2.0","id":1,"method":"library.open_dir","params":{"installation_id":"org.example.game","kind":"log"}})",
+         R"({"jsonrpc":"2.0","id":1,"method":"settings.open_dir","params":{"kind":"library"}})",
+         R"({"jsonrpc":"2.0","id":1,"method":"settings.icon_preview"})",
+         R"({"jsonrpc":"2.0","id":1,"method":"library.upload.begin","params":{"name":"a.apk","size":1}})"})
+        CHECK(ErrorCode(fixture, request) == -32601);
+    CHECK(fixture.opens == 0);
+    // A picked directory may be a temporary copy here, so it is never kept by reference.
+    CHECK(
+        ErrorCode(
+            fixture,
+            R"({"jsonrpc":"2.0","id":1,"method":"library.data_mount.apply","params":{"installation_id":"org.example.game","external_guest_dir":"/sdcard","external_dir":"/tmp"}})") ==
+        -32602);
+
+    const auto settings = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"settings.get"})"));
+    const auto fields = *settings.Root().Member("result")->Member("fields");
+    const auto values = *settings.Root().Member("result")->Member("values");
+    CHECK(HasField(fields, "language"));
+    CHECK(HasField(fields, "cpu_cores") == false);  // a per-game field, not global
+    for (const auto* key : {"mcp_enabled", "mcp_port", "dashboard_auto_open", "interpreter", "profiles_dir",
+                            "window_mode", "minimize_on_launch", "running_icon", "angle_backend", "keymap"}) {
+        CHECK_FALSE(HasField(fields, key));
+        CHECK_FALSE(values.Member(key).has_value());
+    }
+    CHECK(fields.Size() == values.Size());
+    const auto set = [&](std::string_view key, bool value) {
+        app::JsonWriter writer;
+        const auto root = writer.Object(), params = writer.Object(), patch = writer.Object();
+        writer.AddString(root, "jsonrpc", "2.0");
+        writer.AddInteger(root, "id", 2);
+        writer.AddString(root, "method", "settings.set");
+        writer.AddBool(patch, key, value);
+        writer.Add(params, "values", patch);
+        writer.Add(params, "revision", writer.Copy(*settings.Root().Member("result")->Member("revision")));
+        writer.Add(root, "params", params);
+        return writer.Serialize(root);
+    };
+    CHECK(ErrorCode(fixture, set("mcp_enabled", true)) == -32602);
+    CHECK(std::get<bool>(ogplay::app::Setting(ogplay::app::LoadLibraryConfig(fixture.root), "mcp_enabled")) == false);
+    CHECK(ErrorCode(fixture, set("show_exit_log", false)) == std::nullopt);
+
+    const auto game = Decode(fixture.rpc.Handle(
+        R"({"jsonrpc":"2.0","id":1,"method":"game_settings.get","params":{"installation_id":"org.example.game"}})"));
+    const auto game_result = game.Root().Member("result");
+    CHECK(HasField(*game_result->Member("fields"), "cpu_cores"));
+    for (const auto* key : {"mcp_manual_step", "mcp_enabled", "ephemeral_sandbox", "external_dir", "supersample"}) {
+        CHECK_FALSE(HasField(*game_result->Member("fields"), key));
+        CHECK_FALSE(game_result->Member("inherited")->Member(key).has_value());
+    }
+    CHECK(game_result->Member("previews")->Size() == 1);
+    const auto argv = game_result->Member("previews")->Member("normal")->Member("argv");
+    REQUIRE(argv->Size() > 0);
+    CHECK(argv->Element(0)->String()->ends_with("game.apk"));
+
+    CHECK(
+        ErrorCode(
+            fixture,
+            R"({"jsonrpc":"2.0","id":1,"method":"library.launch","params":{"installation_id":"org.example.game","mode":"preflight"}})") ==
+        -32602);
+    CHECK(fixture.launches == 0);
+    CHECK(
+        ErrorCode(
+            fixture,
+            R"({"jsonrpc":"2.0","id":1,"method":"library.launch","params":{"installation_id":"org.example.game"}})") ==
+        std::nullopt);
+    REQUIRE(fixture.plan.has_value());
+    // The game is entered in-process: options only, no executable, no key editor token or port.
+    CHECK(std::find(fixture.plan->argv.begin(), fixture.plan->argv.end(), "--run-game") == fixture.plan->argv.end());
+    CHECK(fixture.plan->argv.front().ends_with("game.apk"));
+    CHECK(fixture.plan->control_token.empty());
+    CHECK_FALSE(fixture.plan->key_editor_port.has_value());
+    CHECK_FALSE(fixture.plan->mcp_port.has_value());
 }

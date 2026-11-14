@@ -9,15 +9,29 @@ GUI 制品在 manifest 标记目标平台；仅 Windows 构建内嵌 SN Pro 字�
 
 | 目录 | 职责 |
 | --- | --- |
-| 根 | `main.tsx` 启动（闪屏前语言预设、屏蔽右键菜单、挂载）；`app.tsx` 启动器外壳；`kit.tsx` 启动器共享片段 |
+| 根 | `main.tsx` 启动（闪屏前语言预设、屏蔽右键菜单、按布局挂载）；`app.tsx` 游戏机布局外壳；`kit.tsx` 启动器共享片段 |
 | `shared/` | RPC、界面语言、本地偏好缓存（[MODULE](shared/MODULE.md)） |
-| `library/` | 游戏库主界面及其菜单、弹窗、闪屏（[MODULE](library/MODULE.md)） |
+| `library/` | 两种布局共用的启动器状态（`launcher.ts`），游戏库主界面及其菜单、弹窗、闪屏（[MODULE](library/MODULE.md)） |
+| `phone/` | 手机竖屏布局（[MODULE](phone/MODULE.md)） |
 | `import/` | 导入向导、数据包挂载与运行后数据建议（[MODULE](import/MODULE.md)） |
 | `settings/` | 全局与每实例设置页（[MODULE](settings/MODULE.md)） |
 | `cartridge/` | CSS/3D 卡带、卡带展示及独立的 cart3d 包（[MODULE](cartridge/MODULE.md)） |
 | `assets/` | logo 与卡带模型、AO 贴图 |
 
 功能代码、模型、测试与样式放在所属目录；两个及以上功能用到的放 `shared/`（逻辑）或 ui-kit（无资源的样式与组件）。
+
+## 平台能力
+
+`shared/features.ts` 在首帧前读取 `host.features`；宿主未提供的能力（按键设置、Dashboard、打开目录、拖放、预检/诊断等）
+不渲染入口、按键提示与说明，只属于这些能力的设置分组（输入、开发者工具、高级）一并隐藏。字段裁剪由宿主完成。
+Android 宿主发出可取消的 `ogplay-back`：依次关闭最上层对话框、全屏视图、菜单或筛选，均无则不取消，由宿主退出。
+
+## 布局
+
+两种布局，启动时选定一次，不随窗口尺寸切换：游戏机布局（`app.tsx`，桌面窗口与 Android 平板，键盘/手柄提示）与手机布局
+（`phone/`，只在 Android 宿主声明 `window.__ogplayLayout='phone'` 时使用，竖屏触屏；PC 不用）。两者的游戏库状态与操作
+（列表、筛选、设置与皮肤、3D 卡带、运行实例、启动/删除/清空、导入与数据提示、错误队列）都来自 `library/launcher.ts` 的
+`useLauncher()`，布局只决定怎么显示；弹窗、设置控件与行、卡带组件也共用，手机只换排布与样式。
 
 ## 启动器外壳
 

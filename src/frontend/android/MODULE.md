@@ -4,6 +4,13 @@ Android 原生入口，对应桌面的 `frontend/desktop`。`libogplay_android.s
 由 `SDLActivity` 按名称解析并在 SDL 线程调用；参数即 `GameRunOptions` 命令行（APK 路径及
 run-apk 选项），经 `app::ParseGameRunArgs` 进入 `app::RunGame`，与桌面共用运行服务。
 
+`libogplay_launcher.so`（`launcher.cpp`）供主进程 `LauncherActivity` 的 WebView 使用：以 `GuiPlatform::Android()` 构造
+`GuiRpcService`，库根为宿主用户数据目录，`gui.log` 写在库根。所有 Handle/Poll 在 Java 桥的单一工作线程执行；
+RPC 文本与路径以 UTF-8 字节数组跨 JNI。启动回调把启动计划的 argv 交给 `GameActivity`；`Poll` 依据运行锁与
+`last-run.json` 是否改写判断游戏结束（30 秒内既未持锁也未改写视为启动前失败），产出 `ogplay-exit` 事件。
+文件与目录选择回调由 Java 经 SAF 复制到 cache 后回填路径：目录副本位于 `cache/import-data/sdcard/<卷内原路径>`，
+宿主据此推断挂载位置；`GuiPlatform::Android()` 不允许引用方式，数据包总是复制入库。
+
 只调用 `ogplaycore` 公开外观，不直接依赖 runtime。一个 `:game` 进程只运行一个游戏，
 退出即结束进程，不做进程内重启。失败经 logcat 上报。`<android/*>` 与 `<jni.h>` 只能出现在
 本目录及 `hal/android`。

@@ -10,6 +10,8 @@ namespace {
 // /proc/self/exe names app_process on Android, so the Java host publishes both roots.
 constexpr const char* kRuntimeDirectoryVariable = "OGPLAY_ANDROID_RUNTIME_DIR";
 constexpr const char* kUserDataDirectoryVariable = "OGPLAY_ANDROID_USER_DATA_DIR";
+// language[-COUNTRY], as SDL formats preferred locales on the other platforms.
+constexpr const char* kLocaleVariable = "OGPLAY_ANDROID_LOCALE";
 
 }  // namespace
 
@@ -29,6 +31,14 @@ std::optional<std::filesystem::path> HostUserDataDirectory() {
     const auto value = HostEnvironmentValue(kUserDataDirectoryVariable);
     if (!value.has_value() || value->empty()) return std::nullopt;
     return std::filesystem::path(*value);
+}
+
+std::string HostPreferredLocale() {
+    return HostEnvironmentValue(kLocaleVariable).value_or(std::string{});
+}
+
+std::string_view HostPlatformName() noexcept {
+    return "Android";
 }
 
 }  // namespace ogplay::hal

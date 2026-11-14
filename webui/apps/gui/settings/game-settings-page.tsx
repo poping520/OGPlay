@@ -11,6 +11,7 @@ import type { Cart3D } from '../cartridge/cart3d/api';
 import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui';
 import type { Skin } from '../kit';
 import { t } from '../shared/i18n';
+import { groupAvailable, has } from '../shared/features';
 
 const modes = [['normal', '正常启动'], ['preflight', '预检'], ['diagnostic', '带诊断启动']] as const;
 // argv from the host, one flag per line; the page never assembles arguments itself.
@@ -51,7 +52,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
   const actions = (...buttons: ComponentChildren[]) => <div class="acts">{buttons}</div>;
   const launch = <div class="launch">
     <div class="launch-h"><b>{t('启动与参数预览')}</b><span class="tag over">{t('来自已保存设置')}</span>
-      <div class="seg" role="radiogroup" aria-label={t('启动模式')}>{modes.map(([key, label]) =>
+      <div class="seg" role="radiogroup" aria-label={t('启动模式')}>{modes.filter(([key]) => key === 'normal' || has('launch_modes')).map(([key, label]) =>
         <button key={key} role="radio" aria-checked={mode === key} class={mode === key ? 'on' : ''} onClick={() => setMode(key)}>{t(label)}</button>)}</div></div>
     {preview?.error ? <pre class="term" role="alert">{t(preview.error)}</pre> : <Argv argv={preview?.argv ?? []} />}
     <div class="launch-f"><span>{mode === 'preflight' ? t('预检不会启用 MCP，结果写入游戏日志。') : t('参数由宿主生成，前端不拼接自由参数。')}</span>
@@ -64,8 +65,8 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
     device: <Note icon="device" title="Android 4.4.4 · API 19"><p>{t('系统版本固定。CPU 核数和标称主频在下次启动生效，供游戏查询；主频不限制实际执行速度。')}{saved.reserved_visible && t('机型预设尚未接入，其他预留项仅保存配置。')}</p>
       {actions(<button class="mini" disabled>{t('ANDROID_ID 查看 / 重新生成')}<em>{t('管理接口待接入')}</em></button>)}</Note>,
     data: <Note icon="data" title={t('存档与目录')}><Paths rows={[...(item ? [[t('沙盒'), item.sandbox_path], [t('日志'), item.log_directory]] as [string, string][] : []), [t('游戏配置'), saved.config_path]]} />
-      {actions(<button class="mini" disabled={busy} onClick={() => open('sandbox')}>{t('打开沙盒目录')}</button>, <button class="mini" disabled={busy} onClick={() => open('log')}>{t('打开日志目录')}</button>,
-        <button class="mini" disabled={busy} onClick={() => open('external')}>{t('打开数据包目录')}</button>,
+      {actions(...(has('open_directory') ? [<button class="mini" disabled={busy} onClick={() => open('sandbox')}>{t('打开沙盒目录')}</button>, <button class="mini" disabled={busy} onClick={() => open('log')}>{t('打开日志目录')}</button>,
+        <button class="mini" disabled={busy} onClick={() => open('external')}>{t('打开数据包目录')}</button>] : []),
         saved.reserved_visible && <button class="mini" disabled>{t('导出 / 导入存档')}<em>{t('预留')}</em></button>,
         <button class="mini" disabled={busy || !item || item.running} title={item?.running ? t('游戏运行中，退出后才能清空数据。') : undefined}
           onClick={() => store.afterSave(clearData)}>{t('清空游戏数据…')}</button>)}</Note>,
@@ -84,7 +85,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
       <div><b>{name}</b><small>{id}</small>
         <span class="chip"><i class={`led ${tone}`} />{item ? versionLabel(item) : ''}{saved ? t(' · 已单独设置 {n} 项', { n: Object.keys(saved.values).filter(key => !isInstanceOnlySetting(key)).length }) : ''}</span></div>
     </div>}
-    groupsTitle={t('游戏设置')} groups={gameGroups} group={group} setGroup={setGroup} fields={saved?.fields ?? []} reservedVisible={reservedVisible}
+    groupsTitle={t('游戏设置')} groups={gameGroups.filter(([key]) => groupAvailable(key))} group={group} setGroup={setGroup} fields={saved?.fields ?? []} reservedVisible={reservedVisible}
     sectionBefore={{ brand: t('设备身份 · 预留') }}
     model={field => {
       const overridden = Object.hasOwn(draft, field.key);

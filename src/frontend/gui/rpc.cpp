@@ -90,8 +90,10 @@ void AddBytes(app::JsonWriter& writer, const app::JsonWriter::Value object, cons
 
 }  // namespace
 
-GuiRpcService::GuiRpcService(LibraryStore& store, std::filesystem::path game_executable, GuiRpcHost host)
+GuiRpcService::GuiRpcService(LibraryStore& store, std::filesystem::path game_executable, GuiRpcHost host,
+                             GuiPlatform platform)
     : store_(store), game_executable_(std::move(game_executable)), host_(std::move(host)),
+      platform_(std::move(platform)),
       adapter_([this](std::string_view method, app::JsonValue params) { return Request(method, params); }) {
     if (!host_.context || !host_.launch || !host_.open_directory)
         throw std::invalid_argument("GUI host callbacks are required");
@@ -120,6 +122,29 @@ std::string GuiRpcService::Handle(std::string_view request) {
 
 app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonValue params) {
     try {
+        // A capability this platform leaves out has no methods at all, not a refusing one.
+        if (!MethodAvailable(platform_, method))
+            return Error(-32601, "unknown method", "使用当前版本支持的 GUI 方法。");
+        if (method == "host.features") {
+            CheckFields(params, {});
+            app::JsonWriter writer;
+            const auto root = writer.Object(), result = writer.Object(), features = writer.Object();
+            writer.AddString(result, "platform", platform_.name);
+            for (const auto& [name, enabled] :
+                 std::initializer_list<std::pair<std::string_view, bool>>{{"key_editor", platform_.key_editor},
+                                                                          {"dashboard", platform_.dashboard},
+                                                                          {"mcp", platform_.mcp},
+                                                                          {"launch_modes", platform_.launch_modes},
+                                                                          {"open_directory", platform_.open_directory},
+                                                                          {"desktop_window", platform_.desktop_window},
+                                                                          {"path_settings", platform_.path_settings},
+                                                                          {"file_upload", platform_.file_upload},
+                                                                          {"developer", platform_.developer}})
+                writer.AddBool(features, name, enabled);
+            writer.Add(result, "features", features);
+            writer.Add(root, "result", result);
+            return {true, writer.Serialize(root)};
+        }
         if (method == "about.credits" || method == "about.notices") {
             CheckFields(params, method == "about.notices" ? std::initializer_list<std::string_view>{"id"}
                                                           : std::initializer_list<std::string_view>{});
@@ -254,6 +279,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             else if (value == "diagnostic")
                 mode = LaunchMode::diagnostic;
             else if (value != "normal")
+                throw std::invalid_argument("unknown launch mode");
+            if (mode != LaunchMode::normal && !platform_.launch_modes)
                 throw std::invalid_argument("unknown launch mode");
         }
         bool delete_saves{};
@@ -390,9 +417,9 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                     return Error(-32001, "游戏当前不可启动（{status}）", "检查运行状态、Profile 和数据包目录。",
                                  {{"status", std::string(Status(tile->status))}});
                 const auto config = LoadLibraryConfig(store_.Root());
-                const auto minimize = std::get<bool>(Setting(config, "minimize_on_launch"));
+                const auto minimize = platform_.desktop_window && std::get<bool>(Setting(config, "minimize_on_launch"));
                 if (minimize && !host_.minimize) throw std::runtime_error("宿主不支持最小化窗口。");
-                host_.launch(BuildLaunchPlan(game_executable_, store_.Root(), *entry, config, mode));
+                host_.launch(BuildLaunchPlan(game_executable_, store_.Root(), *entry, config, mode, platform_));
                 if (minimize) host_.minimize();
                 writer.AddString(result, "installation_id", key);
                 writer.AddBool(result, "started", true);

@@ -321,6 +321,8 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                     if (text != "copy" && text != "link")
                         throw std::invalid_argument("external_mode must be copy or link");
                     mode = text == "link" ? ExternalDataMode::link : ExternalDataMode::copy;
+                    if (mode == ExternalDataMode::link && !platform_.path_settings)
+                        throw std::invalid_argument("external_mode must be copy on this platform");
                 }
                 const auto request = BuildLibraryImport(
                     *job.analysis, external, host_.timestamp(),
@@ -354,7 +356,8 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
             const auto summary = writer.Object();
             writer.AddString(summary, "display_name", analysis.display_name);
             const auto names = writer.Object();
-            for (const auto& [locale, name] : analysis.localized_names) writer.AddString(names, locale, name);
+            for (const auto& [locale, name] : analysis.localized_names)
+                writer.AddString(names, locale, name);
             writer.Add(summary, "localized_names", names);
             writer.AddString(summary, "package", analysis.manifest.package);
             writer.AddString(summary, "version_name", analysis.manifest.version_name.value_or(""));

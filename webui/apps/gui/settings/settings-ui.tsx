@@ -7,6 +7,8 @@ import { Back, Brand, type Skin } from '../kit';
 import { Glyph } from '../../../packages/ui-kit/glyph';
 import { Key } from '../../../packages/ui-kit/key';
 import { SETTING_ICONS } from './setting-icons';
+import { layout } from '../shared/features';
+import { BackButton, NextIcon, Sheet, SheetItem } from '../phone/parts';
 import './settings.css';
 
 // Settings pages ("磨砂黑" layout): top bar with save state, group sidebar, field rows, gamepad legend. Edits are
@@ -78,6 +80,7 @@ function Control({ field, value, disabled, change, browse }: {
   if (field.choices.length && field.choices.length <= 3 && field.choices.every(choice => textWidth(choiceLabel(field, choice)) <= 14))
     return <div class="seg" role="radiogroup" aria-label={meta.label}>{field.choices.map(choice =>
       <button key={choice} role="radio" aria-checked={choice === value} class={choice === value ? 'on' : ''} disabled={disabled} onClick={() => change(choice)}>{choiceLabel(field, choice)}</button>)}</div>;
+  if (field.choices.length && layout() === 'phone') return <ChoicePicker field={field} value={value} disabled={disabled} change={change} />;
   if (field.choices.length) {
     const at = field.choices.indexOf(String(value));
     return <div class="cyc" role="group" aria-label={meta.label}>
@@ -104,6 +107,18 @@ function Control({ field, value, disabled, change, browse }: {
   return <div class="txt"><input type="text" value={typed.shown} disabled={disabled} aria-label={meta.label}
     placeholder={field.directory ? t('留空使用默认行为') : field.pending.startsWith(RESERVED_MARK) ? t('跟随设备预设') : t('未设置')} {...typed.events} />
     {browse && <button disabled={disabled} onClick={browse}>{t('浏览…')}</button>}</div>;
+}
+
+// Phone: longer choice lists open a bottom sheet instead of stepping through them one at a time.
+function ChoicePicker({ field, value, disabled, change }: { field: SettingField; value: SettingValue; disabled: boolean; change: (value: SettingValue) => void }) {
+  const [open, setOpen] = useState(false);
+  const label = fieldMeta(field).label;
+  return <>
+    <button class="pick" aria-haspopup="dialog" aria-label={label} disabled={disabled} onClick={() => setOpen(true)}>
+      <span>{choiceLabel(field, String(value))}</span><Glyph name="down" /></button>
+    {open && <Sheet title={label} onClose={() => setOpen(false)}>{field.choices.map(choice =>
+      <SheetItem key={choice} label={choiceLabel(field, choice)} checked={choice === String(value)} onClick={() => { setOpen(false); change(choice); }} />)}</Sheet>}
+  </>;
 }
 
 // What a page tells the frame about one row.
@@ -277,7 +292,12 @@ export interface FrameProps {
 }
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
 
+// Console pages lay groups beside their rows; the phone shows the group list first and one group per page.
 export function SettingsFrame(props: FrameProps) {
+  return layout() === 'phone' ? <PhoneFrame {...props} /> : <ConsoleFrame {...props} />;
+}
+
+function ConsoleFrame(props: FrameProps) {
   const { skin, group } = props;
   const fields = shownFields(props.fields, props.reservedVisible);
   // Which groups survive is only known once the fields arrive: list none until then rather than all and then fewer.
@@ -390,6 +410,87 @@ export function SettingsFrame(props: FrameProps) {
       <ul>{fields.filter(field => props.resetKeys.includes(field.key)).map(field => <li key={field.key}>{fieldMeta(field).label}</li>)}</ul>
       <div class="acts"><button class="pill" autoFocus onClick={() => setConfirm(false)}><Key>B</Key>{t('取消')}</button>
         <button class="pill danger" onClick={confirmReset}><Key>A</Key>{props.resetLabel}</button></div>
+    </dialog>
+    {props.toast && <div class="toast" role="status"><i />{props.toast}</div>}
+  </div>;
+}
+
+// Phone settings: a list of groups (with the game card, reload and reset on a per-game page), each opening its rows
+// on a page of its own; back returns from a group to the list, then leaves. Rows, controls, saving and the reset
+// confirmation are the console frame's.
+function PhoneFrame(props: FrameProps) {
+  const { skin, group } = props;
+  const fields = shownFields(props.fields, props.reservedVisible);
+  const groups = props.loaded ? shownGroups(props.groups, props.fields, fields) : [];
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const main = useRef<HTMLElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const listScroll = useRef(0);
+  const visible = fields.filter(field => field.group === group);
+  const [, title] = props.groups.find(([key]) => key === group) ?? props.groups[0];
+  const askReset = () => { if (!props.busy && props.loaded && props.resetKeys.length) setConfirm(true); };
+  const confirmReset = () => { setConfirm(false); props.reset(); };
+  const openGroup = (key: string) => {
+    listScroll.current = main.current?.scrollTop ?? 0;
+    props.setGroup(key); setOpen(true); main.current?.scrollTo({ top: 0 });
+  };
+  const back = () => {
+    if (!open) { props.back(); return; }
+    setOpen(false);
+    requestAnimationFrame(() => main.current?.scrollTo({ top: listScroll.current }));
+  };
+  useEffect(() => { if (confirm) dialog.current?.showModal(); else dialog.current?.close(); }, [confirm]);
+  // The back key arrives as Esc (phone-app.tsx); a focused field only gives up its keyboard.
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || confirm) return;
+      if (editable(event.target)) { (event.target as HTMLElement).blur(); return; }
+      event.preventDefault(); back();
+    };
+    window.addEventListener('keydown', keydown);
+    return () => window.removeEventListener('keydown', keydown);
+  });
+  const rows = visible.map(field => <Fragment key={field.key}>
+    {props.sectionBefore?.[field.key] && <div class="sect">{props.sectionBefore[field.key]}</div>}
+    {props.model(field).confirmed
+      ? <ConfirmedPathRow field={field} model={props.model(field)} saving={props.saving} focused={false} focus={() => {}}
+          change={value => props.change(field, value)} browse={apply => props.browse(field, apply)} />
+      : <FieldRow field={field} model={props.model(field)} focused={false} focus={() => {}}
+          change={value => props.change(field, value)} browse={() => props.browse(field)} restoreInherit={props.restoreInherit && (() => props.restoreInherit!(field))} />}
+    {props.after?.[field.key]}
+  </Fragment>);
+  return <div class={`cfg cfg-phone skin-${skin}`} style={props.tint ? shellStyle(props.tint) : {}}>
+    <div class="cfg-bg glass-sky" aria-hidden="true"><div class={`art ${props.art ? '' : 'plain'}`} style={props.art ? { backgroundImage: `url("${props.art}")` } : {}} /><div class="fade" /><div class="grain" /></div>
+    <header class="ph-bar">
+      <BackButton disabled={props.busy} onClick={back} />
+      <h1>{open ? t(title) : props.groupsTitle}</h1>
+      <span class={`save-state ${props.saving ? 'on' : ''}`} role="status"><i />{props.saving ? t('正在保存…') : ''}</span>
+    </header>
+    <main class="cfg-main" ref={main}>
+      {props.error && <Note icon="info" title={t('操作失败')} warn><pre role="alert">{props.error}</pre></Note>}
+      {!props.loaded ? !props.error && <Note icon="info" title={props.busy ? t('正在读取设置…') : t('设置不可用')} /> :
+        open ? <div class="rows" key={group} aria-busy={props.busy}>{props.top}{rows}{props.end}</div> : <>
+          {props.who}
+          <p class="cfg-idle">{props.idle}</p>
+          <nav class="groups" aria-label={props.groupsTitle}>{groups.map(([key, label]) => {
+            const count = fields.filter(field => field.group === key).length;
+            return <button key={key} onClick={() => openGroup(key)}><GroupIcon name={key} />{t(label)}<span class="n">{count || ''}</span><NextIcon /></button>;
+          })}</nav>
+          <div class="cfg-acts">
+            <button disabled={props.busy || props.saving} onClick={props.reload}><Glyph name="reload" />{t('重新载入')}</button>
+            <button class="danger" disabled={props.busy || !props.resetKeys.length} onClick={askReset}>{props.resetLabel}</button>
+          </div>
+          <div class="cfg-file">{props.fileLabel}<span dir="ltr">{props.filePath}</span></div>
+        </>}
+    </main>
+    <dialog ref={dialog} class="ph-sheet" aria-label={props.resetLabel} onCancel={event => { event.preventDefault(); setConfirm(false); }}>
+      <i class="ph-grip" aria-hidden="true" />
+      <h2>{props.resetTitle}</h2>
+      <p>{t('确认后立即写入配置。')}</p>
+      <ul>{fields.filter(field => props.resetKeys.includes(field.key)).map(field => <li key={field.key}>{fieldMeta(field).label}</li>)}</ul>
+      <div class="modal-actions"><button onClick={() => setConfirm(false)}>{t('取消')}</button>
+        <button class="danger" onClick={confirmReset}>{props.resetLabel}</button></div>
     </dialog>
     {props.toast && <div class="toast" role="status"><i />{props.toast}</div>}
   </div>;

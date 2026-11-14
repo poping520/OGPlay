@@ -7,7 +7,7 @@ if(OGPLAY_BUILD_WEBUI)
     add_custom_target(webui
         COMMAND "${OGPLAY_NPM}" ci --no-audit --no-fund
         COMMAND "${CMAKE_COMMAND}" -E env "OGPLAY_WEBUI_PLATFORM=${CMAKE_SYSTEM_NAME}"
-            "${OGPLAY_NPM}" run build
+            "${OGPLAY_NPM}" run $<IF:$<PLATFORM_ID:Android>,build:android,build>
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/webui"
         VERBATIM)
 endif()

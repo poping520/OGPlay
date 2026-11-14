@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { targetPlatform } from './platform.mjs';
-for (const app of ['gui', 'dashboard', 'controls']) {
-const root = resolve(`../data/webui/${app}`);
+import { targetPlatform, webuiApps, webuiOutDir } from './platform.mjs';
+for (const app of webuiApps) {
+const root = resolve(webuiOutDir(app));
 copyFileSync(`apps/${app}/index.html`, resolve(root, 'index.html'));
 writeFileSync(resolve(root, 'THIRD-PARTY-LICENSES.txt'),
   'Preact\n\n' + readFileSync('node_modules/preact/LICENSE', 'utf8') +
-  (app === 'gui' ? '\n\nwebview\n\n' + readFileSync('../third_party/webview/LICENSE', 'utf8') +
+  (app === 'gui' ? (targetPlatform === 'Android' ? '' : '\n\nwebview\n\n' + readFileSync('../third_party/webview/LICENSE', 'utf8')) +
     '\n\nthree.js (cart3d.js)\n\n' + readFileSync('node_modules/three/LICENSE', 'utf8') +
     '\n\nDraco decoder (cart3d.js, three/examples/jsm/libs/draco/gltf/draco_decoder.js)\n\n' +
     'Copyright Google LLC. Licensed under the Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0\n' :

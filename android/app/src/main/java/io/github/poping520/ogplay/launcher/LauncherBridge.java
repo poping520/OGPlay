@@ -22,6 +22,12 @@ final class LauncherBridge {
         void launchGame(String[] arguments);
 
         void pickPath(long token, boolean directory);
+
+        /** "size\tpath\n" lines for a picked directory handle; null when unknown or unreadable. */
+        byte[] listTree(String handle);
+
+        /** A detached descriptor for one listed file, or -1. */
+        int openTreeFile(String handle, String path);
     }
 
     private static final String TAG = "OGPlay";
@@ -64,11 +70,15 @@ final class LauncherBridge {
         });
     }
 
-    /** A path for the pending native picker, or null when the user cancelled or the copy failed. */
-    void pickResult(long token, String path) {
+    /**
+     * The pending native picker's answer: a path or handle for the host and a label to show (file name,
+     * /sdcard/…), or null when the user cancelled or the file could not be opened.
+     */
+    void pickResult(long token, String path, String label) {
         byte[] bytes = path != null ? path.getBytes(StandardCharsets.UTF_8) : null;
+        byte[] shown = label != null ? label.getBytes(StandardCharsets.UTF_8) : null;
         run(() -> {
-            if (handle != 0) nativePickResult(handle, token, bytes);
+            if (handle != 0) nativePickResult(handle, token, bytes, shown);
         });
     }
 
@@ -107,8 +117,19 @@ final class LauncherBridge {
             host.pickPath(token, directory);
         } catch (RuntimeException error) {
             Log.e(TAG, "picker unavailable", error);
-            pickResult(token, null);
+            pickResult(token, null, null);
         }
+    }
+
+    // Called from native import threads (any thread): a picked directory's listing and files.
+    @SuppressWarnings("unused")
+    private byte[] listTree(byte[] handle) {
+        return host.listTree(new String(handle, StandardCharsets.UTF_8));
+    }
+
+    @SuppressWarnings("unused")
+    private int openTreeFile(byte[] handle, byte[] path) {
+        return host.openTreeFile(new String(handle, StandardCharsets.UTF_8), new String(path, StandardCharsets.UTF_8));
     }
 
     private static native long nativeCreate(LauncherBridge bridge);
@@ -117,7 +138,7 @@ final class LauncherBridge {
 
     private static native String nativePoll(long handle);
 
-    private static native void nativePickResult(long handle, long token, byte[] path);
+    private static native void nativePickResult(long handle, long token, byte[] path, byte[] label);
 
     private static native void nativeDestroy(long handle);
 }

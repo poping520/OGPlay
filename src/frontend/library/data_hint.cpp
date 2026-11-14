@@ -1,3 +1,4 @@
+#include "data_layout.h"
 #include "ogplay/app/data_hint.h"
 
 #include <algorithm>
@@ -222,26 +223,18 @@ std::optional<std::string> GuessDataMount(const std::filesystem::path& dir, cons
         return result;
     };
     // The innermost layout marker wins, so a phone backup nested in another one maps correctly.
-    for (std::size_t index = parts.size(); index-- > 0 && !guest;) {
-        const auto part = Fold(parts[index]);
-        const auto next = index + 1 < parts.size() ? Fold(parts[index + 1]) : std::string{};
-        if (part == "android" && (next.empty() || next == "data" || next == "obb" || next == "media"))
-            guest = next.empty() ? below(index + 1, "/sdcard/Android") : below(index + 2, "/sdcard/Android/" + next);
-        else if (part == "sdcard")
-            guest = below(index + 1, "/sdcard");
-        else if (part == "0" && index > 0 && Fold(parts[index - 1]) == "emulated")
-            guest = below(index + 1, "/sdcard");
-    }
+    for (std::size_t index = parts.size(); index-- > 0 && !guest;)
+        if (const auto marker = MatchStorageMarker(parts, index)) guest = below(index + marker->parts, marker->guest);
     if (!guest && !parts.empty()) {
         bool obb{}, android{};
         std::error_code error;
         for (std::filesystem::directory_iterator it(dir, error), end; !error && it != end; it.increment(error)) {
-            obb = obb || (it->is_regular_file(error) && Fold(Utf8(it->path().extension())) == ".obb");
+            obb = obb || (it->is_regular_file(error) && IsObbName(Utf8(it->path().filename())));
             android = android || (it->is_directory(error) && Fold(Utf8(it->path().filename())) == "android");
         }
         // A copied sdcard root keeps /sdcard; otherwise the picked directory itself appears below it.
         if (!package.empty() && Fold(parts.back()) == Fold(package))
-            guest = std::string(obb ? "/sdcard/Android/obb/" : "/sdcard/Android/data/").append(parts.back());
+            guest = PackageDirectoryMount(parts.back(), obb);
         else if (!android)
             guest = std::string("/sdcard/").append(parts.back());
     }

@@ -180,8 +180,11 @@ public:
         panel.message = Text(title);
         panel.title = Text(title);
         if (!directory) {
-            UTType* apk = [UTType typeWithFilenameExtension:@"apk"];
-            if (apk) panel.allowedContentTypes = @[apk];
+            // APKs and the game archives (ZIP/RAR, Muzhiwan .gpk) the library imports.
+            NSMutableArray<UTType*>* types = [NSMutableArray array];
+            for (NSString* extension in @[@"apk", @"zip", @"rar", @"gpk"])
+                if (UTType* type = [UTType typeWithFilenameExtension:extension]) [types addObject:type];
+            if (types.count) panel.allowedContentTypes = types;
         }
         // The sheet completes asynchronously on the main thread; the RPC callback never blocks.
         void (^done)(NSModalResponse) = ^(NSModalResponse response) {

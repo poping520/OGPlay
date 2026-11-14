@@ -100,6 +100,7 @@ export function versionLabel(item: LibraryItem): string {
 }
 export function validatePackageSelection(files: Pick<File, 'name' | 'size'>[]): string | null {
   if (files.length !== 1) return t('请一次选择一个 APK、XAPK、APKM 或 APKS 文件。');
+  if (/\.(zip|rar|gpk)$/i.test(files[0].name)) return t('游戏压缩包请点“导入游戏”后选择文件导入。');
   if (!/\.(apk|xapk|apkm|apks)$/i.test(files[0].name)) return t('文件格式不支持，请选择 APK、XAPK、APKM 或 APKS。');
   if (files[0].size === 0) return t('文件为空，请选择完整的安装包。');
   return null;

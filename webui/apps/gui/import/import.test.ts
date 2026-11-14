@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeData, formatBytes, guestPathError, importingStage, normalizeGuestPath, upload, type Call } from './import';
+import { archivePreview, describeData, formatBytes, guestPathError, importingStage, normalizeGuestPath, upload, type ArchiveSummary, type Call } from './import';
 describe('APK transfer', () => {
   it('rejects unsupported, empty and oversized files before contacting the host', async () => {
     const call: Call = async () => { throw new Error('unexpected RPC'); };
@@ -43,5 +43,20 @@ describe('mount preview', () => {
     expect(normalizeGuestPath(' /sdcard/games/ ')).toBe('/sdcard/games');
     expect(normalizeGuestPath('/')).toBe('/');
     expect(describeData({ path: '/x', entries: [], entry_count: 0, files: 3, bytes: 2048, truncated: false })).toBe('3 个文件 · 2.0 KB');
+  });
+});
+
+describe('archive data preview', () => {
+  const archive: ArchiveSummary = {
+    apks: [{ path: 'game.apk', size: 5 }], apk: 'game.apk',
+    data: { path: '/sdcard/Android/obb/a.b', guest_dir: '/sdcard/Android/obb/a.b', entries: [{ name: 'main.1.a.b.obb', directory: false }],
+      entry_count: 1, files: 1, bytes: 10, truncated: false,
+      sdcard: { entries: [{ name: 'Android', directory: true }], entry_count: 1, files: 1, bytes: 10, truncated: false } },
+    extras: [{ name: 'picture', files: 2, bytes: 4 }],
+  };
+  it('shows the planned mount, or /sdcard with the chosen extras beside the data', () => {
+    expect(archivePreview(archive, [])).toBe(archive.data);
+    expect(archivePreview(archive, ['picture'])).toEqual({ path: '/sdcard', truncated: false, entry_count: 2, files: 3, bytes: 14,
+      entries: [{ name: 'Android', directory: true }, { name: 'picture', directory: true }] });
   });
 });

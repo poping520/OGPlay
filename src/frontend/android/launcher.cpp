@@ -1,9 +1,15 @@
 // Android launcher: the WebView page's rpc bridge into GuiRpcService, entered from LauncherBridge.java.
 // Every Handle and Poll call arrives on the bridge's one worker thread; picker results arrive from
-// the copy thread and only touch the pending pickers under their lock.
+// the activity and only touch the pending pickers and labels under their lock. A picked file is a descriptor
+// the activity holds (/proc/self/fd/<n>); a picked directory is a SAF handle whose files are listed and opened
+// through the bridge, from whichever thread imports them.
 #include <android/log.h>
 #include <jni.h>
+#include <unistd.h>
 
+#include <cerrno>
+
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <filesystem>
@@ -13,12 +19,14 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "frontend/gui/launcher_services.h"
 #include "frontend/gui/rpc.h"
+#include "ogplay/app/archive_import.h"
 #include "ogplay/app/host.h"
 #include "ogplay/app/json.h"
 #include "ogplay/app/library.h"
@@ -75,6 +83,31 @@ std::string FailureResponse(std::string_view message) {
     return writer.Serialize(root);
 }
 
+// Import threads are native: attached to the VM on first use and detached when they end.
+struct ThreadAttachment final {
+    JavaVM* vm{};
+    ~ThreadAttachment() {
+        if (vm) vm->DetachCurrentThread();
+    }
+};
+
+class Launcher;
+
+// A picked SAF directory as an import source: listed once, each file opened by the activity as a
+// descriptor and copied from it.
+class SafTreeSource final : public app::ImportSource {
+public:
+    SafTreeSource(Launcher& launcher, std::string handle, std::vector<app::ImportFile> files)
+        : launcher_(launcher), handle_(std::move(handle)), files_(std::move(files)) {}
+    const std::vector<app::ImportFile>& Files() const override { return files_; }
+    void Extract(std::span<const app::ImportExtraction> files, app::ImportProgress* progress) override;
+
+private:
+    Launcher& launcher_;
+    std::string handle_;
+    std::vector<app::ImportFile> files_;
+};
+
 class Launcher final {
 public:
     Launcher(JNIEnv* env, jobject bridge)
@@ -83,8 +116,11 @@ public:
         const auto bridge_class = env->GetObjectClass(bridge);
         launch_method_ = env->GetMethodID(bridge_class, "launchGame", "([Ljava/lang/String;)V");
         pick_method_ = env->GetMethodID(bridge_class, "pickPath", "(JZ)V");
+        list_tree_method_ = env->GetMethodID(bridge_class, "listTree", "([B)[B");
+        open_tree_file_method_ = env->GetMethodID(bridge_class, "openTreeFile", "([B[B)I");
         env->DeleteLocalRef(bridge_class);
-        if (!launch_method_ || !pick_method_) throw std::runtime_error("LauncherBridge callbacks are missing");
+        if (!launch_method_ || !pick_method_ || !list_tree_method_ || !open_tree_file_method_)
+            throw std::runtime_error("LauncherBridge callbacks are missing");
 
         const auto root = app::DefaultLibraryRoot();
         std::filesystem::create_directories(root);
@@ -104,6 +140,16 @@ public:
             throw std::runtime_error("Android 启动器不打开宿主目录。");
         };
         host.pick = [this](bool directory) { return Pick(directory); };
+        host.label = [this](const std::filesystem::path& path) {
+            std::lock_guard lock(picks_mutex_);
+            const auto found = labels_.find(PathUtf8(path));
+            return found == labels_.end() ? std::string{} : found->second;
+        };
+        host.open_tree = [this](const std::filesystem::path& path) -> std::unique_ptr<app::ImportSource> {
+            const auto handle = PathUtf8(path);
+            if (!handle.starts_with("saf-tree:")) return nullptr;
+            return std::make_unique<SafTreeSource>(*this, handle, ListTree(handle));
+        };
         rpc_ =
             std::make_unique<GuiRpcService>(*store_, std::filesystem::path{}, std::move(host), GuiPlatform::Android());
         logger_.Write(app::LogLevel::info, "frontend.android.launcher", "launcher ready", {},
@@ -161,15 +207,72 @@ public:
         return writer.Serialize(events);
     }
 
-    void PickResult(jlong token, std::optional<std::filesystem::path> path) {
+    void PickResult(jlong token, std::optional<std::filesystem::path> path, std::string label = {}) {
         std::lock_guard lock(picks_mutex_);
+        if (path && !label.empty()) labels_[PathUtf8(*path)] = std::move(label);
         const auto found = picks_.find(token);
         if (found == picks_.end()) return;
         found->second.set_value(std::move(path));
         picks_.erase(found);
     }
 
+    // A detached descriptor for one file of a picked directory, owned by the caller; -1 when it cannot be opened.
+    int OpenTreeFile(const std::string& handle, const std::string& path) {
+        JNIEnv* env = AttachedEnv();
+        const auto handle_bytes = Bytes(env, handle), path_bytes = Bytes(env, path);
+        const auto descriptor = env->CallIntMethod(bridge_, open_tree_file_method_, handle_bytes, path_bytes);
+        env->DeleteLocalRef(handle_bytes);
+        env->DeleteLocalRef(path_bytes);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            return -1;
+        }
+        return descriptor;
+    }
+
 private:
+    static jbyteArray Bytes(JNIEnv* env, std::string_view text) {
+        const auto bytes = env->NewByteArray(static_cast<jsize>(text.size()));
+        env->SetByteArrayRegion(bytes, 0, static_cast<jsize>(text.size()), reinterpret_cast<const jbyte*>(text.data()));
+        return bytes;
+    }
+
+    // The calling thread's JNI environment, attaching a native import thread on first use.
+    JNIEnv* AttachedEnv() const {
+        JNIEnv* env{};
+        if (vm_->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK) return env;
+        if (vm_->AttachCurrentThread(&env, nullptr) != JNI_OK) throw std::runtime_error("cannot attach import thread");
+        thread_local ThreadAttachment attachment;
+        attachment.vm = vm_;
+        return env;
+    }
+
+    std::vector<app::ImportFile> ListTree(const std::string& handle) {
+        JNIEnv* env = AttachedEnv();
+        const auto handle_bytes = Bytes(env, handle);
+        const auto listing = static_cast<jbyteArray>(env->CallObjectMethod(bridge_, list_tree_method_, handle_bytes));
+        env->DeleteLocalRef(handle_bytes);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            throw std::runtime_error("无法读取所选目录。");
+        }
+        if (!listing) throw std::runtime_error("无法读取所选目录。");
+        const auto text = FromJava(env, listing);
+        env->DeleteLocalRef(listing);
+        std::vector<app::ImportFile> files;
+        for (std::size_t start = 0; start < text.size();) {
+            const auto end = std::min(text.find('\n', start), text.size());
+            const auto line = std::string_view(text).substr(start, end - start);
+            start = end + 1;
+            const auto tab = line.find('\t');
+            if (tab == std::string_view::npos) continue;
+            const auto path = app::NormalizeArchivePath(line.substr(tab + 1));
+            if (!path || path->empty()) continue;
+            files.push_back({*path, std::stoull(std::string(line.substr(0, tab)))});
+        }
+        return files;
+    }
+
     struct Tracked final {
         std::string package;
         std::filesystem::path log_path;
@@ -234,6 +337,8 @@ private:
     jobject bridge_{};
     jmethodID launch_method_{};
     jmethodID pick_method_{};
+    jmethodID list_tree_method_{};
+    jmethodID open_tree_file_method_{};
     app::Logger logger_;
     std::unique_ptr<app::LibraryStore> store_;
     std::unique_ptr<LauncherServices> services_;
@@ -241,8 +346,30 @@ private:
     std::vector<Tracked> tracked_;
     std::mutex picks_mutex_;
     std::map<jlong, std::promise<std::optional<std::filesystem::path>>> picks_;
+    std::map<std::string, std::string> labels_;   // picked path or handle -> what the page shows
     jlong next_pick_{};
 };
+
+void SafTreeSource::Extract(std::span<const app::ImportExtraction> files, app::ImportProgress* progress) {
+    for (const auto& item : files) {
+        const auto& file = files_.at(item.index);
+        const int descriptor = launcher_.OpenTreeFile(handle_, file.path);
+        if (descriptor < 0)
+            throw app::LibraryError(app::LibraryErrorCode::io_error, "无法读取所选目录中的文件：" + file.path);
+        struct Closer final {
+            int fd;
+            ~Closer() { ::close(fd); }
+        } closer{descriptor};
+        app::WriteImportFile(item.destination, file.size, [&](std::span<std::byte> buffer) -> std::size_t {
+            for (;;) {
+                const auto count = ::read(descriptor, buffer.data(), buffer.size());
+                if (count >= 0) return static_cast<std::size_t>(count);
+                if (errno != EINTR)
+                    throw app::LibraryError(app::LibraryErrorCode::io_error, "无法读取所选目录中的文件：" + file.path);
+            }
+        }, progress);
+    }
+}
 
 Launcher* FromHandle(jlong handle) {
     return reinterpret_cast<Launcher*>(static_cast<std::intptr_t>(handle));
@@ -294,10 +421,11 @@ JNIEXPORT jstring JNICALL Java_io_github_poping520_ogplay_launcher_LauncherBridg
 JNIEXPORT void JNICALL Java_io_github_poping520_ogplay_launcher_LauncherBridge_nativePickResult(JNIEnv* env, jclass,
                                                                                                 jlong handle,
                                                                                                 jlong token,
-                                                                                                jbyteArray path) {
+                                                                                                jbyteArray path,
+                                                                                                jbyteArray label) {
     std::optional<std::filesystem::path> picked;
     if (path) picked = Utf8Path(FromJava(env, path));
-    FromHandle(handle)->PickResult(token, std::move(picked));
+    FromHandle(handle)->PickResult(token, std::move(picked), label ? FromJava(env, label) : std::string{});
 }
 
 JNIEXPORT void JNICALL Java_io_github_poping520_ogplay_launcher_LauncherBridge_nativeDestroy(JNIEnv*, jclass,

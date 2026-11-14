@@ -148,6 +148,7 @@ if(WIN32)
         src/hal/windows/host_environment.cpp
         src/hal/windows/host_read_file.cpp
         src/hal/windows/shared_library.cpp
+        src/hal/windows/utf8_locale.cpp
         src/hal/windows/virtual_memory.cpp
         src/hal/windows/window_icon.cpp)
 elseif(APPLE)
@@ -163,6 +164,7 @@ elseif(APPLE)
         src/hal/macos/host_environment.cpp
         src/hal/macos/host_read_file.cpp
         src/hal/macos/shared_library.cpp
+        src/hal/macos/utf8_locale.cpp
         src/hal/macos/virtual_memory.cpp)
 elseif(UNIX)
     target_sources(ogplay_hal PRIVATE src/hal/rgb_surface_storage.cpp)
@@ -179,6 +181,7 @@ elseif(UNIX)
         src/hal/linux/host_environment.cpp
         src/hal/linux/host_read_file.cpp
         src/hal/linux/shared_library.cpp
+        src/hal/linux/utf8_locale.cpp
         src/hal/linux/virtual_memory.cpp)
 else()
     message(FATAL_ERROR "OGPlay has no virtual memory HAL for this host platform")
@@ -591,8 +594,17 @@ add_library(ogplay_library STATIC
     src/frontend/library/game_settings.cpp src/frontend/library/profiles.cpp
     src/frontend/library/resolve_launch.cpp src/frontend/library/locks.cpp
     src/frontend/library/external_data.cpp src/frontend/library/data_hint.cpp
-    src/frontend/library/running_icon.cpp src/frontend/library/demos.cpp)
-target_link_libraries(ogplay_library PRIVATE OGPlay::Runtime OGPlay::Session OGPlay::Agent OGPlay::Raster)
+    src/frontend/library/running_icon.cpp src/frontend/library/demos.cpp
+    src/frontend/library/archive_plan.cpp src/frontend/library/archive_zip.cpp
+    src/frontend/library/archive_rar.cpp src/frontend/library/data_layout.cpp
+    "${OGPLAY_GENERATED_DIR}/ogplay/app/gbk_table.h")
+add_custom_command(
+    OUTPUT "${OGPLAY_GENERATED_DIR}/ogplay/app/gbk_table.h"
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gbk_table.py"
+        --output "${OGPLAY_GENERATED_DIR}/ogplay/app/gbk_table.h"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gbk_table.py"
+    VERBATIM)
+target_link_libraries(ogplay_library PRIVATE OGPlay::Runtime OGPlay::Session OGPlay::Agent OGPlay::Raster archive_static)
 target_include_directories(ogplay_library PRIVATE "${OGPLAY_GENERATED_DIR}")
 target_include_directories(ogplay_library SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb")
 target_compile_definitions(ogplay_library PRIVATE ogplaycore_EXPORTS)

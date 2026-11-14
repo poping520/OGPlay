@@ -24,14 +24,22 @@ ogplay_desktop_app，Android 外壳见 `frontend/android`。
 - `GuiRpcService::Handle`：复用 `app::JsonRpcDispatcher` 注入模式；同步分派
   `library.list`、`library.launch`、`library.open_dir`、`library.remove`、`library.clear_data`、`library.storage`，以及导入任务与对话框 RPC。
   宿主上下文、进程、目录打开、分析、选择器与 UTC 时间通过显式回调注入。
-- `library.analyze {path}` / `library.upload.begin/chunk/finish`：原生路径或拖放字节进入独立快照，
-  单体 APK 上限 1 GiB；分块 base64 最大 256 KiB，严格顺序/总长度检查。
+- `library.analyze {path, apk?}` / `library.upload.begin/chunk/finish`：原生路径或拖放字节进入独立快照，
+  单体 APK 上限 1 GiB；分块 base64 最大 256 KiB，严格顺序/总长度检查（拖放只收 APK）。`analyze` 按文件头区分 APK 与
+  游戏压缩包（ZIP/RAR，`ogplay/app/archive_import.h`）：压缩包取首选或 `apk` 指定的 APK 解出分析，摘要多一个
+  `archive {apks, apk, data{guest_dir, path, entries…, sdcard{…}} | null, extras[{name, files, bytes}]}`，APK 为 `archive: null`。
+  任务快照与解出的数据放在库根 `import-staging/work-N`（持锁，下次导入清理无持有者的残留及旧版 `.gui-import-*`）。
 - `library.job.poll/cancel {job}`：每服务仅一个活动导入任务；后台只读分析，失败可查询。
-  `library.import {job, new_instance:true, external_dir?, external_guest_dir?, external_mode?:copy|link}`
-  只消费 ready 快照，异步原子发布，默认复制数据包入库；重复提交拒绝，结果返回真实 installation id。
+  `library.import {job, new_instance:true, external_dir?, external_guest_dir?, external_mode?:copy|link, extras?}`
+  只消费 ready 快照，异步原子发布，默认复制数据包入库；重复提交拒绝，结果返回真实 installation id。压缩包带数据时
+  不能另给 external_dir：识别的数据与勾选的 extras 解到任务目录后整体移入条目（`ExternalDataMode::move`），未给
+  external_guest_dir 时用规划的挂载位置；宿主 `open_tree` 认得的目录句柄（Android SAF）同样逐文件写入后移入，只能复制。
+  普通请求在请求时校验，目录或挂载位置无效时分析结果保留可重试。
   提交期间 poll 返回 `progress {copied_bytes,total_bytes}`；取消在发布前生效，已发布则结果仍为
   imported，worker 停止前状态保持 importing。服务析构先请求取消再回收。
-- `dialog.pick {kind:file|directory}` / `dialog.poll {dialog}`：异步原生选择器，取消返回 null。
+- `dialog.pick {kind:file|directory}` / `dialog.poll {dialog}`：异步原生选择器，取消返回 null；结果带 `label`
+  （宿主 `label` 回调给出的显示名，默认即路径）。选择句柄而非宿主路径的平台（Android）经 `label`/`open_tree`
+  回调提供显示名、推断挂载用的路径和文件列表；`library.external.inspect` 对句柄按列表描述，不扫描磁盘。
 - `library.data_hint {installation_id, external_dir?}`：SuggestDataMount 的结果（kind none/remount/
   needs_data、候选及示例）；`library.data_mount.apply {installation_id, external_guest_dir, external_dir?}`
   经 PatchGameSettings 写挂载位置，未配置数据包时连同目录（引用方式）。均拒绝未知字段，入库时忙碌。

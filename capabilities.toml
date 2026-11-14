@@ -223,6 +223,11 @@ status = "complete"
 test = "tests/frontend/data_directory_tests.cpp; tests/frontend/library_store_tests.cpp; tests/frontend/gui_rpc_tests.cpp; tests/frontend/library_lock_tests.cpp; tests/frontend/library_lock_contention_tests.cpp; tests/hal/file_lock_tests.cpp; tests/frontend/cli_library_tests.cpp; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_view_model_tests.cpp; tests/frontend/gui_import_tests.cpp; tests/session/profile_apk_tests.cpp; frontend.app_entrypoints"
 note = "ADR-0138：LibraryStore/LibraryConfig、检视/图标/设置继承与 ResolveLaunch 下沉 core C++ 外观，GUI/CLI 同根共用。导入/移除/清理用 OS 库锁，List 冲突跳过清理；运行锁保护单实例/移除/清空；存档默认保留，重导沿用原 id，可选删除或保留身份清空。数据包默认锁外暂存复制（macOS/Linux 优先克隆）后发布到 data/，可取消，随移除删除；引用原目录为显式选项（ADR-0144）。CLI library 已验；macOS 定向及真实 APK 通过，Windows GUI 待复验。"
 
+[frontend.archive_import]
+status = "partial"
+test = "tests/frontend/archive_import_tests.cpp; tests/frontend/gui_rpc_tests.cpp#game archive; webui/apps/gui/import/import.test.ts"
+note = "导入游戏压缩包（IMPORT-ARCHIVE）：ZIP（自有读取，ZIP64、GBK 名）与 RAR4/5（libarchive）按内容识别，PlanArchive 认出 APK 与 Android/obb|data、包名目录、GPK 反斜杠路径的数据包及挂载位置，杂项可勾选；解到库卷后移入 data/。CLI 与 GUI 同源；macOS CLI 样例与 Android 真机 ZIP/RAR 实测。加密/分卷不支持；Windows 未构建验证，桌面 GUI 待用户实测。"
+
 [frontend.gui_launch_spawn]
 status = "complete"
 test = "tests/frontend/gui_launch_tests.cpp; tests/frontend/gui_dashboard_window_tests.cpp; frontend.gui_smoke; frontend.gui_library_smoke"
@@ -241,7 +246,7 @@ note = "安装包带 data/demos/ogplay-sweetshop.apk（OGPlay 糖果铺）；sho
 [frontend.android_host]
 status = "partial"
 test = "tests/frontend/gui_rpc_tests.cpp#gui_platform; webui/apps/gui/settings/settings.test.ts"
-note = "arm64 APK（minSdk 29、targetSdk 36，ANGLE Vulkan）。启动器为 WebView 承载的 webui/gui（AND-LAUNCHER）：GuiPlatform 裁掉按键设置、Dashboard、MCP、预检/诊断、目录与开发者项；手机为竖屏触屏布局、平板用游戏机布局；游戏库、SAF 导入 APK 与数据包目录（仅复制）、设置、Demo 启动与退出回报已在真机验证。为已有游戏补选数据包、切后台恢复未接入。"
+note = "arm64 APK（minSdk 29、targetSdk 36，ANGLE Vulkan）。启动器为 WebView 承载的 webui/gui（AND-LAUNCHER）：GuiPlatform 裁掉按键设置、Dashboard、MCP、预检/诊断、目录与开发者项；手机为竖屏触屏布局、平板用游戏机布局；游戏库、SAF 直读导入 APK/压缩包与数据包目录（不先复制到 cache，仅复制入库）、设置、Demo 启动与退出回报已在真机验证。为已有游戏补选数据包、切后台恢复未接入。"
 
 [frontend.running_game_icon]
 status = "partial"

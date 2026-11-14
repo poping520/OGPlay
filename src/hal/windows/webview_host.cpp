@@ -475,7 +475,7 @@ public:
                 Check(dialog->SetOptions(flags | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST |
                                          (directory ? FOS_PICKFOLDERS : FOS_FILEMUSTEXIST)));
                 if (!directory) {
-                    const COMDLG_FILTERSPEC filters[]{{L"Android APK", L"*.apk"}};
+                    const COMDLG_FILTERSPEC filters[]{{L"APK / ZIP / RAR", L"*.apk;*.zip;*.rar;*.gpk"}};
                     Check(dialog->SetFileTypes(1, filters));
                 }
                 Check(dialog->SetTitle(title.c_str()));

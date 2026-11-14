@@ -4,6 +4,15 @@ export interface ImportSummary {
   display_name: string; localized_names: Record<string, string>; package: string; version_name: string; version_code: number;
   min_sdk: number | null; target_sdk: number | null; abis: string[]; icon: string;
   profile: string | null; existing_instances: number;
+  /** A game archive's contents; null for a plain APK. */
+  archive?: ArchiveSummary | null;
+}
+/** What the host found in a game archive: its APKs (the analyzed one is `apk`), the data pack it recognized with
+ *  the mount it planned (and the /sdcard top level, used once extras are chosen), and the parts of no known use. */
+export interface ArchiveSummary {
+  apks: { path: string; size: number }[]; apk: string;
+  data: (DataDirectory & { guest_dir: string; sdcard: Omit<DataDirectory, 'path'> }) | null;
+  extras: { name: string; files: number; bytes: number }[];
 }
 export interface ImportJob {
   job: string; state: 'uploading' | 'analyzing' | 'ready' | 'importing' | 'imported' | 'cancelled' | 'failed';
@@ -17,22 +26,40 @@ export function formatBytes(value: number): string {
   while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
   return `${unit ? value.toFixed(1) : value} ${units[unit]}`;
 }
-/** Stage text while a commit runs; byte counts appear once data copying reports a total. */
-export function importingStage(job: ImportJob): string {
+/** Stage text while a commit runs; byte counts appear once data copying (or unpacking an archive) reports a total. */
+export function importingStage(job: ImportJob, unpacking = false): string {
   const progress = job.progress;
   if (!progress || !progress.total_bytes) return t('正在加入游戏库，请勿关闭…');
   const percent = Math.min(100, Math.floor(progress.copied_bytes / progress.total_bytes * 100));
-  return t('正在复制数据包… {percent}%（{copied} / {total}）', { percent, copied: formatBytes(progress.copied_bytes), total: formatBytes(progress.total_bytes) });
+  const params = { percent, copied: formatBytes(progress.copied_bytes), total: formatBytes(progress.total_bytes) };
+  return unpacking ? t('正在解压数据包… {percent}%（{copied} / {total}）', params) : t('正在复制数据包… {percent}%（{copied} / {total}）', params);
+}
+/** With extras chosen, an archive's data mounts at /sdcard: the preview then lists that level plus the extras. */
+export function archivePreview(archive: ArchiveSummary, extras: string[]): DataDirectory | null {
+  const chosen = archive.extras.filter(extra => extras.includes(extra.name));
+  if (!chosen.length) return archive.data;
+  const base = archive.data?.sdcard ?? { entries: [], entry_count: 0, files: 0, bytes: 0, truncated: false };
+  return {
+    path: '/sdcard', truncated: false,
+    entries: [...base.entries, ...chosen.map(extra => ({ name: extra.name, directory: true }))].slice(0, 8),
+    entry_count: base.entry_count + chosen.length,
+    files: base.files + chosen.reduce((sum, extra) => sum + extra.files, 0),
+    bytes: base.bytes + chosen.reduce((sum, extra) => sum + extra.bytes, 0),
+  };
 }
 export type Call = <T>(method: string, params?: Record<string, unknown>) => Promise<T>;
 export const pause = () => new Promise<void>(resolve => setTimeout(resolve, 150));
-export async function pickPath(kind: 'file' | 'directory', call: Call = rpc): Promise<string | null> {
+/** A host pick: `path` goes back to the host, `label` is what to show (a SAF pick's path is only a handle). */
+export async function pickSource(kind: 'file' | 'directory', call: Call = rpc): Promise<{ path: string; label: string } | null> {
   const { dialog } = await call<{ dialog: string }>('dialog.pick', { kind });
   for (;;) {
-    const result = await call<{ pending: boolean; path: string | null }>('dialog.poll', { dialog });
-    if (!result.pending) return result.path;
+    const result = await call<{ pending: boolean; path: string | null; label?: string }>('dialog.poll', { dialog });
+    if (!result.pending) return result.path === null ? null : { path: result.path, label: result.label || result.path };
     await pause();
   }
+}
+export async function pickPath(kind: 'file' | 'directory', call: Call = rpc): Promise<string | null> {
+  return (await pickSource(kind, call))?.path ?? null;
 }
 export async function upload(file: File, onJob: (job: string) => void, progress: (value: number) => void, call: Call = rpc): Promise<ImportJob> {
   if (!/\.apk$/i.test(file.name)) throw new Error(t('当前仅支持单体 APK；XAPK、APKM、APKS 分包安装尚未实现。'));

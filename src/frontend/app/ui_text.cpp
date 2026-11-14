@@ -33,7 +33,7 @@ constexpr auto kText = std::to_array<Entry>({
     {UiText::tray_show, "显示 OGPlay", "Show OGPlay"},
     {UiText::tray_quit, "退出 OGPlay", "Quit OGPlay"},
     {UiText::pick_data_dir, "选择游戏数据包目录", "Choose Game Data Folder"},
-    {UiText::pick_apk, "选择 APK", "Choose APK"},
+    {UiText::pick_apk, "选择 APK 或游戏压缩包", "Choose an APK or game archive"},
     {UiText::key_editor_window_title, "OGPlay 按键设置", "OGPlay Key Settings"},
 });
 // clang-format on

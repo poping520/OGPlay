@@ -35,7 +35,8 @@ public:
         std::stop_token stop = {}) const = 0;
 };
 
-// Rejects final-component symlinks/reparse points and non-regular files.
+// Rejects final-component symlinks/reparse points and non-regular files. On Linux/Android a
+// /proc/self/fd/<n> path is a descriptor the process holds (an Android SAF pick) and is duplicated.
 // Native errors are reported as std::system_error; no CRT streams are used.
 [[nodiscard]] std::shared_ptr<const HostReadFile> OpenHostReadFile(
     const std::filesystem::path& path);

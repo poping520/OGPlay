@@ -89,10 +89,11 @@ struct LibraryEntry final {
     [[nodiscard]] bool Damaged() const noexcept { return damage_reason.has_value(); }
 };
 
-enum class ExternalDataMode : std::uint8_t { copy, link };
+enum class ExternalDataMode : std::uint8_t { copy, link, move };
 
 // external_dir is the selected data pack: copy publishes it as the entry's data/ directory,
-// link records its host path in settings.toml. A non-default mount goes to settings.toml too.
+// link records its host path in settings.toml, move renames it into data/ (a directory the caller
+// extracted on the library volume, e.g. from a game archive). A non-default mount goes to settings.toml too.
 struct LibraryImport final {
     std::filesystem::path source_apk;
     LibraryMetadata metadata;

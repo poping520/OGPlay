@@ -34,3 +34,6 @@
 	path = third_party/skia-prebuilt
 	url = https://github.com/poping520/OGPlay-skia-prebuilt.git
 	shallow = true
+[submodule "third_party/libarchive"]
+	path = third_party/libarchive
+	url = https://github.com/libarchive/libarchive

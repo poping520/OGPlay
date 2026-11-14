@@ -109,6 +109,8 @@ PROJECTS = [
     ("sqlite", "SQLite", "3.53.4", "https://sqlite.org", "Public Domain", [("SQLite", sqlite_blessing())]),
     ("yyjson", "yyjson", "0.12.0", "https://github.com/ibireme/yyjson", "MIT",
      [("yyjson", text("third_party/yyjson/LICENSE"))]),
+    ("libarchive", "libarchive", "3.8.9", "https://www.libarchive.org", "BSD-2-Clause",
+     [("libarchive", text("third_party/libarchive/COPYING"))]),
     ("stb", "stb", "", "https://github.com/nothings/stb", "MIT OR Unlicense", [("stb", stb_license())]),
     ("minimp3", "minimp3", "", "https://github.com/lieff/minimp3", "CC0-1.0",
      [("minimp3", text("third_party/minimp3/LICENSE"))]),

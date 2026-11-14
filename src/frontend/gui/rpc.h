@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include "ogplay/app/apk_inspect.h"
+#include "ogplay/app/archive_import.h"
 #include "frontend/gui/credits.h"
 #include "frontend/gui/dashboard.h"
 #include "ogplay/app/agent.h"
@@ -46,6 +47,11 @@ struct GuiRpcHost final {
     std::function<void()> seed_demos;
     // RPC bindings run on the WebView UI thread; called after a successful settings save.
     std::function<void(UiLanguage)> language_changed;
+    // Optional, for hosts whose picks are handles rather than host paths (Android SAF). label: what to show
+    // for a picked path (a file name, /sdcard/Download/x) and the host path to guess its mount from; empty
+    // keeps the path. open_tree: a picked directory handle as files to list and copy; null for a host path.
+    std::function<std::string(const std::filesystem::path&)> label;
+    std::function<std::unique_ptr<ImportSource>(const std::filesystem::path&)> open_tree;
 };
 
 class GuiRpcService final {

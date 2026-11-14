@@ -202,3 +202,4 @@
 .phone-viewer .foot-note { margin: 0; }
 
 @media (prefers-reduced-motion: reduce) { :root[data-layout="phone"] dialog[open] { animation: none; } .ph-card { transition: none; } }
+:root[data-layout="phone"] .iw-tree code, :root[data-layout="phone"] .iw-root { overflow-wrap: anywhere; }

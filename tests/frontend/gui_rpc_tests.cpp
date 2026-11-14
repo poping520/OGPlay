@@ -10,6 +10,7 @@
 #include <thread>
 #include "ogplay/app/encoding.h"
 #include "frontend/gui/rpc.h"
+#include "zip_fixture.h"
 #include "frontend/gui/rpc_error.h"
 #include "ogplay/app/library.h"
 
@@ -718,6 +719,63 @@ TEST_CASE("GUI import rejects malformed upload and cancelled jobs without publis
     CHECK_FALSE(std::filesystem::exists(fixture.root / ".gui-import-1"));
     CHECK(Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":true})")).Root().Member("error"));
     CHECK(fixture.store.LoadEntries().size() == 1);
+}
+
+TEST_CASE("GUI import takes the APK and data pack out of a game archive") {
+    Fixture fixture;
+    const auto pack = fixture.root / "pack.zip";
+    std::filesystem::create_directories(fixture.root);
+    ogplay::test::WriteZip(pack, {{"game.apk", "apk-a"},
+                                  {"game_Mod.apk", "apk-b"},
+                                  {"org.example.game/main.3.org.example.game.obb", "expansion"},
+                                  {"picture/cover.png", "png"}});
+    const auto poll = [&](std::string_view job) {
+        for (unsigned attempt = 0; attempt < 100000; ++attempt) {
+            auto document = Decode(ImportCall(fixture, "library.job.poll", "{\"job\":\"" + std::string(job) + "\"}"));
+            REQUIRE_FALSE(document.Root().Member("error"));
+            const auto state = document.Root().Member("result")->Member("state")->String();
+            if (state != "analyzing" && state != "importing") return document;
+            std::this_thread::yield();
+        }
+        FAIL("import job did not settle");
+        return Decode("{}");
+    };
+    const auto analyze = [&](const std::string& params) {
+        const auto started = Decode(ImportCall(fixture, "library.analyze", params));
+        REQUIRE(started.Root().Member("result"));
+        return poll(*started.Root().Member("result")->Member("job")->String());
+    };
+    const auto path = "\"" + pack.generic_string() + "\"";   // temp paths need no JSON escapes
+    auto ready = analyze("{\"path\":" + path + "}");
+    auto archive = ready.Root().Member("result")->Member("summary")->Member("archive");
+    REQUIRE(archive);
+    CHECK(archive->Member("apk")->String() == "game.apk");
+    CHECK(archive->Member("apks")->Size() == 2);
+    CHECK(archive->Member("data")->Member("guest_dir")->String() == "/sdcard/Android/obb/org.example.game");
+    CHECK(archive->Member("data")->Member("files")->UnsignedInteger() == 1);
+    CHECK(archive->Member("extras")->Element(0)->Member("name")->String() == "picture");
+    REQUIRE(Decode(ImportCall(fixture, "library.job.cancel", R"({"job":"1"})")).Root().Member("result"));
+
+    // Another APK from the same archive, the pictures taken along: everything then mounts at /sdcard.
+    ready = analyze("{\"path\":" + path + ",\"apk\":\"game_Mod.apk\"}");
+    archive = ready.Root().Member("result")->Member("summary")->Member("archive");
+    CHECK(archive->Member("apk")->String() == "game_Mod.apk");
+    CHECK(Decode(ImportCall(fixture, "library.import", R"({"job":"2","new_instance":true,"external_dir":"/tmp"})"))
+              .Root()
+              .Member("error"));
+    REQUIRE(Decode(ImportCall(fixture, "library.import", R"({"job":"2","new_instance":true,"extras":["picture"]})"))
+                .Root()
+                .Member("result"));
+    const auto done = poll("2");
+    REQUIRE(done.Root().Member("result")->Member("state")->String() == "imported");
+    const std::string id(*done.Root().Member("result")->Member("installation_id")->String());
+    const auto entry = fixture.root / "library" / id;
+    CHECK(std::filesystem::file_size(entry / "game.apk") == 5);
+    CHECK(std::filesystem::exists(entry / "data/Android/obb/org.example.game/main.3.org.example.game.obb"));
+    CHECK(std::filesystem::exists(entry / "data/picture/cover.png"));
+    std::ifstream settings(entry / "settings.toml");
+    const std::string text{std::istreambuf_iterator<char>(settings), {}};
+    CHECK(text.find("external_guest_dir") == std::string::npos);   // /sdcard is the default
 }
 
 TEST_CASE("GUI import invalid external directory preserves ready analysis for retry") {

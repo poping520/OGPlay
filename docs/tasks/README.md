@@ -2,7 +2,7 @@
 
 任务单只用于需要跨会话推进的工作；日常局部修复与配方扩充不必建单。
 按通用能力组织，明确目标、依赖和机器可判定的验收边界，不按每条报错建单。
-本目录只放在办任务。在办：[AND-LAUNCHER](AND-LAUNCHER.md)。
+本目录只放在办任务。在办：[AND-LAUNCHER](AND-LAUNCHER.md)、[IMPORT-ARCHIVE](IMPORT-ARCHIVE.md)。
 
 新方案讨论写在任务单中，不另建 roadmap。每个可执行步骤应能在单次会话完成。
 完成后删除任务单：职责、接口、不变量及支持边界归 MODULE，架构决定归 ADR，

@@ -55,7 +55,23 @@ startup_failed/fault/crashed/no_frame、interrupted 或带 exit_error 为失败�
 由同名 `.lock` 标记存活，导入开始时清理无持有者的残留；逐文件先 hal::TryCloneFile，
 不支持时检查剩余空间后流式复制。只接受普通文件和目录，与库根互相包含、符号链接/特殊文件
 明确失败。ImportProgress 报告字节并在发布前接受取消（`import_cancelled`）。游戏设置
-external_dir 与库内路径不同时即按 link 解析。
+external_dir 与库内路径不同时即按 link 解析。move 把调用方已解到库卷上的目录（`ImportWorkDirectory`，
+库根 `import-staging/work-N`，同样持锁并清理残留）直接改名为 `data/`，不再复制。
+
+游戏压缩包（`ogplay/app/archive_import.h`）：`DetectImportSource` 只看内容——含根 AndroidManifest.xml 的 ZIP 是 APK，
+其他 ZIP（含 ZIP64）与 RAR4/RAR5 是压缩包。ZIP 用自有读取（stored/deflate，Deflate 复用 loader；非 UTF-8 且无
+Unicode 路径扩展的名字按 GBK 解码，码表构建时由 Python 生成）；RAR 用 libarchive（BSD-2，third_party 子模块，
+关闭系统编解码、加密、iconv，只编静态库；成员名经 `hal::ScopedUtf8Locale` 取 UTF-8）。加密、分卷、
+越界路径（`..`、盘符、控制字符）与 4 GB 以上的 deflate 成员明确失败；`\` 视为目录分隔。
+存储布局规则只有一份（`data_layout.h`），GuessDataMount 与 PlanArchive 共用：`Android/data|obb|media`、末尾的
+`Android`、`sdcard`、`emulated/0` 之后的部分映射到 /sdcard 对应位置；以包名命名的目录直接含 .obb 文件时挂到
+Android/obb/<名>，否则 Android/data/<名>。两者只在取哪个标记、哪些名字算包名上不同：选定目录的宿主路径取最内层标记、
+只认所选 APK 的包名；压缩包成员取最外层标记（遇到包名目录即停）、包名形的名字都算。
+`PlanArchive` 只看路径：APK 候选按层级浅、文件名不含独立的 mod 优先；根部扩展文件归 Android/obb/<包>；
+`Android/` 下其他文件忽略；单层包装目录被看穿；说明/图片/清单等根部杂项忽略，
+其余顶层内容为 extras（默认不导入，选中后放在 /sdcard/<路径>）。`ArchiveMount` 取所选内容最近的公共目录，
+深于 Android/<类>/<包> 时截到该层，选了 extras 即 /sdcard。CLI `library inspect|import <压缩包> [--apk <成员>]
+[--include <extra>]…` 同源。
 
 图标：入库与导入分析从 application icon 的全部密度配置中选面积最大且可解码的 PNG（跳过 XML、.9.png），
 存方形 RGBA PNG，不放大、超过 kLauncherIconMaxSize（256）才缩小。`RefreshIcons`/CLI `library refresh-icons`

@@ -8,8 +8,11 @@ run-apk 选项），经 `app::ParseGameRunArgs` 进入 `app::RunGame`，与桌�
 `GuiRpcService`，库根为宿主用户数据目录，`gui.log` 写在库根。所有 Handle/Poll 在 Java 桥的单一工作线程执行；
 RPC 文本与路径以 UTF-8 字节数组跨 JNI。启动回调把启动计划的 argv 交给 `GameActivity`；`Poll` 依据运行锁与
 `last-run.json` 是否改写判断游戏结束（30 秒内既未持锁也未改写视为启动前失败），产出 `ogplay-exit` 事件。
-文件与目录选择回调由 Java 经 SAF 复制到 cache 后回填路径：目录副本位于 `cache/import-data/sdcard/<卷内原路径>`，
-宿主据此推断挂载位置；`GuiPlatform::Android()` 不允许引用方式，数据包总是复制入库。
+选择不复制：选中的文件由 Activity 持有其 fd，路径为 `/proc/self/fd/<n>`（HAL 复制该 fd 读取，APK 快照与压缩包
+都经它读），`label` 为文件名；选中的目录为句柄 `saf-tree:N`，`label` 为卷内路径（`/sdcard/…`、`/storage/<卷>/…`，
+宿主据此推断挂载位置），`open_tree` 返回 `SafTreeSource`：经桥列出一次文件（`listTree`），导入时逐个由 Java 打开
+并交出 fd（`openTreeFile`）读取写入。导入线程是原生线程，首次回调 Java 时附着 VM、线程结束时分离。
+`GuiPlatform::Android()` 不允许引用方式，数据包总是复制入库。
 
 只调用 `ogplaycore` 公开外观，不直接依赖 runtime。一个 `:game` 进程只运行一个游戏，
 退出即结束进程，不做进程内重启。失败经 logcat 上报。`<android/*>` 与 `<jni.h>` 只能出现在

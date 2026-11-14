@@ -74,13 +74,24 @@ class DeflateBitReader final {
             count > bytes_.size() * 8U - bit_offset_) {
             throw std::runtime_error("APK deflate stream is truncated");
         }
-        std::uint32_t value{};
-        for (unsigned bit = 0; bit < count; ++bit) {
-            const auto byte = std::to_integer<std::uint8_t>(bytes_[bit_offset_ / 8U]);
-            value |= static_cast<std::uint32_t>((byte >> (bit_offset_ % 8U)) & 1U) << bit;
-            ++bit_offset_;
-        }
+        const auto value = Peek(count);
+        bit_offset_ += count;
         return value;
+    }
+
+    // The next count (<= 15) bits without consuming them; bits past the end read as zero.
+    [[nodiscard]] std::uint32_t Peek(const unsigned count) const noexcept {
+        const auto index = bit_offset_ / 8U;
+        std::uint32_t window{};
+        for (std::size_t byte = 0; byte < 3U && index + byte < bytes_.size(); ++byte)
+            window |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes_[index + byte])) << (8U * byte);
+        return (window >> (bit_offset_ % 8U)) & ((1U << count) - 1U);
+    }
+
+    void Skip(const unsigned count) {
+        if (bit_offset_ > bytes_.size() * 8U || count > bytes_.size() * 8U - bit_offset_)
+            throw std::runtime_error("APK deflate stream is truncated");
+        bit_offset_ += count;
     }
 
     void AlignToByte() noexcept { bit_offset_ = (bit_offset_ + 7U) & ~std::size_t{7U}; }
@@ -120,9 +131,26 @@ class DeflateHuffman final {
               const auto length = lengths[symbol];
               if (length != 0) symbols_[offsets[length]++] = static_cast<std::uint16_t>(symbol);
           }
+          // Codes of up to kFastBits bits decode with one lookup on the next bits (stream order is reversed).
+          std::uint32_t code{};
+          std::size_t index{};
+          for (std::size_t length = 1; length <= kFastBits; ++length) {
+              for (std::size_t count = 0; count < counts_[length]; ++count, ++code, ++index) {
+                  std::uint32_t reversed{};
+                  for (std::size_t bit = 0; bit < length; ++bit) reversed |= ((code >> bit) & 1U) << (length - 1U - bit);
+                  for (auto fill = reversed; fill < fast_.size(); fill += 1U << length)
+                      fast_[fill] = {symbols_[index], static_cast<std::uint8_t>(length)};
+              }
+              code <<= 1U;
+          }
       }
 
     [[nodiscard]] std::uint16_t Decode(DeflateBitReader& input) const {
+        const auto fast = fast_[input.Peek(kFastBits)];
+        if (fast.length != 0) {
+            input.Skip(fast.length);
+            return fast.symbol;
+        }
         std::uint32_t code{};
         std::uint32_t first{};
         std::size_t index{};
@@ -140,8 +168,14 @@ class DeflateHuffman final {
     }
 
   private:
+    static constexpr unsigned kFastBits = 9;
+    struct Fast final {
+        std::uint16_t symbol{};
+        std::uint8_t length{};   // 0: longer code, decoded bit by bit
+    };
     std::array<std::uint16_t, 16> counts_{};
     std::vector<std::uint16_t> symbols_;
+    std::array<Fast, 1U << kFastBits> fast_{};
 };
 
 std::pair<DeflateHuffman, DeflateHuffman> FixedDeflateTables() {
@@ -248,6 +282,24 @@ public:
 
     [[nodiscard]] std::size_t Size() const noexcept { return offset_; }
 
+    // Bulk Next(): fills output and returns the count, short only at the end of the stream.
+    [[nodiscard]] std::size_t Fill(const std::span<std::byte> output) {
+        std::size_t count{};
+        while (count < output.size()) {
+            if (copy_remaining_) {
+                const auto run = std::min(copy_remaining_, output.size() - count);
+                for (std::size_t index = 0; index < run; ++index)
+                    output[count++] = Emit(history_[(offset_ - copy_distance_) % history_.size()]);
+                copy_remaining_ -= run;
+                continue;
+            }
+            const auto byte = Next();
+            if (!byte) break;
+            output[count++] = *byte;
+        }
+        return count;
+    }
+
   private:
       std::byte Emit(std::byte value) {
           if (offset_ == expected_) throw std::runtime_error("APK deflate output exceeds declared size");
@@ -313,11 +365,15 @@ void InflateDeflateWindow(const std::span<const std::byte> compressed, const std
                           const std::size_t window_offset, const std::span<std::byte> window,
                           const std::stop_token stop = {}) {
     DeflateCursor cursor{compressed, expected_size};
-    for (std::size_t offset = 0;; ++offset) {
-        if ((offset & 0xffffU) == 0U && stop.stop_requested()) throw std::runtime_error("APK entry read cancelled");
-        auto byte = cursor.Next();
-        if (!byte) break;
-        if (offset >= window_offset && offset - window_offset < window.size()) window[offset - window_offset] = *byte;
+    std::array<std::byte, 65536> chunk{};
+    for (std::size_t offset = 0;;) {
+        if (stop.stop_requested()) throw std::runtime_error("APK entry read cancelled");
+        const auto count = cursor.Fill(chunk);
+        if (count == 0) break;
+        const auto begin = std::max(offset, window_offset), end = std::min(offset + count, window_offset + window.size());
+        if (begin < end)
+            std::copy_n(chunk.data() + (begin - offset), end - begin, window.data() + (begin - window_offset));
+        offset += count;
     }
 }
 
@@ -548,8 +604,7 @@ std::size_t ApkDeflateStream::Read(std::size_t offset, std::span<std::byte> dest
         while (stream.cursor.Size() < offset)
             static_cast<void>(stream.cursor.Next());
         const auto count = std::min(destination.size(), stream.size - offset);
-        for (auto& byte : destination.first(count))
-            byte = stream.cursor.Next().value();
+        if (stream.cursor.Fill(destination.first(count)) != count) throw std::runtime_error("APK deflate stream ended early");
         if (stream.cursor.Size() == stream.size) static_cast<void>(stream.cursor.Next());
         return count;
     } catch (...) {

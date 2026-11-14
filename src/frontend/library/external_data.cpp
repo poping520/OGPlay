@@ -1,4 +1,5 @@
 #include "external_data.h"
+#include "ogplay/app/archive_import.h"
 
 #include <fstream>
 #include <string>
@@ -213,6 +214,46 @@ StagedExternalData::StagedExternalData(const std::filesystem::path& library_root
                                 std::string("cannot copy external data: ") + exception.what(), source);
         }
     }
+}
+
+struct ImportWorkDirectory::Lock final {
+    hal::FileLock lock;
+};
+
+ImportWorkDirectory::ImportWorkDirectory(const std::filesystem::path& library_root) {
+    const auto parent = library_root / "import-staging";
+    try {
+        std::filesystem::create_directories(parent);
+        SweepStaleStaging(parent);
+        std::error_code error;
+        for (std::filesystem::directory_iterator iterator(library_root, error), end; !error && iterator != end;
+             iterator.increment(error)) {
+            const auto name = iterator->path().filename().string();
+            if (name.starts_with(".gui-import-")) RemoveIfPresent(iterator->path());
+        }
+        for (unsigned slot = 0; slot < kMaximumStagingSlots && !lock_; ++slot) {
+            const auto directory = parent / ("work-" + std::to_string(slot));
+            auto lock_path = directory;
+            lock_path += ".lock";
+            auto lock = hal::FileLock::TryAcquire(lock_path);
+            if (!lock) continue;
+            RemoveIfPresent(directory);
+            std::filesystem::create_directory(directory);
+            lock_ = std::make_unique<Lock>(Lock{std::move(*lock)});
+            path_ = directory;
+        }
+    } catch (const LibraryError&) {
+        throw;
+    } catch (const std::exception& exception) {
+        throw LibraryError(LibraryErrorCode::io_error, std::string("cannot prepare import directory: ") + exception.what(),
+                           parent);
+    }
+    if (!lock_) throw LibraryError(LibraryErrorCode::busy, "too many concurrent imports", parent);
+}
+
+ImportWorkDirectory::~ImportWorkDirectory() {
+    std::error_code error;
+    static_cast<void>(std::filesystem::remove_all(path_, error));
 }
 
 StagedExternalData::~StagedExternalData() {

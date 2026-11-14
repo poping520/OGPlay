@@ -1,6 +1,7 @@
 #include "library_commands.h"
 #include "output.h"
 #include "ogplay/app/apk_inspect.h"
+#include "ogplay/app/archive_import.h"
 #include "ogplay/app/data_hint.h"
 #include "ogplay/app/game_run.h"
 #include "ogplay/app/host.h"
@@ -101,6 +102,38 @@ std::string_view Fallback(ApplicationVisualFallback value) {
         "icon_entry_unavailable",   "icon_decode_failed",          "label_attribute_missing", "label_literal_empty",
         "label_control_characters", "label_resources_unavailable", "label_resource_missing"};
     return names[static_cast<std::size_t>(value)];
+}
+
+// What `library import` would take from a game archive before its APK is read (data planned without a package).
+Value ArchiveJson(JsonWriter& writer, const std::vector<ImportFile>& files, const ArchivePlan& plan) {
+    const auto result = writer.Object();
+    writer.AddString(result, "kind", "archive");
+    writer.AddUnsignedInteger(result, "files", files.size());
+    const auto apks = writer.Array();
+    for (const auto index : plan.apks)
+        writer.Append(apks, writer.String(files[index].path));
+    writer.Add(result, "apks", apks);
+    std::uint64_t bytes{};
+    for (const auto& item : plan.data) bytes += files[item.index].size;
+    const auto data = writer.Object();
+    const auto mount = ArchiveMount(plan, {});
+    if (mount.empty())
+        writer.AddNull(data, "guest_dir");
+    else
+        writer.AddString(data, "guest_dir", mount);
+    writer.AddUnsignedInteger(data, "files", plan.data.size());
+    writer.AddUnsignedInteger(data, "bytes", bytes);
+    writer.Add(result, "data", data);
+    const auto extras = writer.Array();
+    for (const auto& extra : plan.extras) {
+        const auto item = writer.Object();
+        writer.AddString(item, "name", extra.name);
+        writer.AddUnsignedInteger(item, "files", extra.members.size());
+        writer.AddUnsignedInteger(item, "bytes", extra.bytes);
+        writer.Append(extras, item);
+    }
+    writer.Add(result, "extras", extras);
+    return result;
 }
 
 Value InspectJson(JsonWriter& writer, const ApkInspection& inspection) {
@@ -219,6 +252,8 @@ int RunLibraryCommand(std::span<const char* const> args) {
     } else if (command == "inspect" || command == "import") {
         const auto source = Path(require());
         std::optional<std::filesystem::path> external;
+        std::optional<std::string> inner_apk;
+        std::vector<std::string> extras;
         bool new_instance{}, link_external{};
         if (command == "inspect")
             end();
@@ -231,23 +266,66 @@ int RunLibraryCommand(std::span<const char* const> args) {
                     new_instance = true;
                 else if (option == "--link-external" && !link_external)
                     link_external = true;
+                else if (option == "--apk" && !inner_apk)
+                    inner_apk = std::string(require());
+                else if (option == "--include")
+                    extras.emplace_back(require());
                 else
                     throw std::invalid_argument("unknown or duplicate import option: " + std::string(option));
             }
         const auto config = LoadLibraryConfig(store.Root());
         const auto profiles =
             config.profiles_dir ? ProfileCatalog::Load(*config.profiles_dir) : ProfileCatalog::LoadBundled();
-        const auto inspection = InspectApk(source, profiles);
-        if (command == "inspect")
-            result = InspectJson(writer, inspection);
-        else {
-            if (link_external && !external) throw std::invalid_argument("--link-external requires --external-dir");
-            const auto request = BuildLibraryImport(inspection, external, app::UtcTimestamp(), "/sdcard",
-                                                    link_external ? ExternalDataMode::link : ExternalDataMode::copy);
-            const auto id = store.Import(request, new_instance);
-            result = writer.Object();
-            writer.AddString(result, "installation_id", id);
-            writer.AddString(result, "package", inspection.manifest.package);
+        if (DetectImportSource(source) == ImportSourceKind::archive) {
+            // A game archive: its APK and data are extracted next to the library and the data moved in.
+            if (external || link_external) throw std::invalid_argument("--external-dir does not apply to an archive");
+            const auto archive = OpenArchive(source);
+            const auto& files = archive->Files();
+            auto plan = PlanArchive(files, {});
+            if (command == "inspect") {
+                result = ArchiveJson(writer, files, plan);
+            } else {
+                if (plan.apks.empty()) throw std::invalid_argument("the archive holds no APK");
+                std::size_t apk = plan.apks.front();
+                if (inner_apk) {
+                    const auto found = std::find_if(plan.apks.begin(), plan.apks.end(),
+                                                    [&](std::size_t at) { return files[at].path == *inner_apk; });
+                    if (found == plan.apks.end()) throw std::invalid_argument("no such APK in the archive: " + *inner_apk);
+                    apk = *found;
+                }
+                const ImportWorkDirectory work(store.Root());
+                const ImportExtraction extraction{apk, work.Path() / "source.apk"};
+                archive->Extract(std::span(&extraction, 1), nullptr);
+                const auto inspection = InspectApk(extraction.destination, profiles);
+                plan = PlanArchive(files, inspection.manifest.package);
+                const auto mount = ExtractArchiveData(*archive, plan, extras, work.Path() / "data", nullptr);
+                const auto request = BuildLibraryImport(
+                    inspection, mount.empty() ? std::nullopt : std::optional(work.Path() / "data"), app::UtcTimestamp(),
+                    mount.empty() ? "/sdcard" : mount, ExternalDataMode::move);
+                const auto id = store.Import(request, new_instance);
+                result = writer.Object();
+                writer.AddString(result, "installation_id", id);
+                writer.AddString(result, "package", inspection.manifest.package);
+                writer.AddString(result, "apk", files[apk].path);
+                if (mount.empty())
+                    writer.AddNull(result, "external_guest_dir");
+                else
+                    writer.AddString(result, "external_guest_dir", mount);
+            }
+        } else {
+            if (inner_apk || !extras.empty()) throw std::invalid_argument("--apk and --include apply to an archive");
+            const auto inspection = InspectApk(source, profiles);
+            if (command == "inspect")
+                result = InspectJson(writer, inspection);
+            else {
+                if (link_external && !external) throw std::invalid_argument("--link-external requires --external-dir");
+                const auto request = BuildLibraryImport(inspection, external, app::UtcTimestamp(), "/sdcard",
+                                                        link_external ? ExternalDataMode::link : ExternalDataMode::copy);
+                const auto id = store.Import(request, new_instance);
+                result = writer.Object();
+                writer.AddString(result, "installation_id", id);
+                writer.AddString(result, "package", inspection.manifest.package);
+            }
         }
     } else if (command == "remove") {
         const auto id = require();

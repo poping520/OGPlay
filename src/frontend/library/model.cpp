@@ -650,9 +650,10 @@ std::string LibraryStore::Import(const LibraryImport& request, bool new_instance
     // Copying can take minutes; it runs before the library lock is taken.
     std::optional<StagedExternalData> staged_data;
     if (copy_data) staged_data.emplace(root_, *request.external_dir, progress);
+    const bool move_data = request.external_dir.has_value() && request.external_mode == ExternalDataMode::move;
     auto library_lock = RequireLibraryLock(root_);
     GameSettings initial_settings;
-    if (request.external_dir.has_value() && !copy_data)
+    if (request.external_dir.has_value() && request.external_mode == ExternalDataMode::link)
         initial_settings.values["external_dir"] = PathUtf8(*request.external_dir);
     if (request.external_guest_dir != "/sdcard")
         initial_settings.values["external_guest_dir"] = request.external_guest_dir;
@@ -699,6 +700,7 @@ std::string LibraryStore::Import(const LibraryImport& request, bool new_instance
     try {
         std::filesystem::copy_file(request.source_apk, temporary / "game.apk", std::filesystem::copy_options::none);
         if (staged_data) staged_data->Publish(temporary / "data");
+        if (move_data) std::filesystem::rename(*request.external_dir, temporary / "data");
         WriteText(temporary / "meta.toml", EncodeMetadata(request.metadata));
         if (!initial_settings.values.empty()) SaveGameSettingsUnlocked(temporary, initial_settings);
         if (!request.icon_png.empty()) {

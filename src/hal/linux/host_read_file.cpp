@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <limits>
+#include <string_view>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <system_error>
@@ -11,10 +12,27 @@
 
 namespace ogplay::hal {
 namespace {
+// /proc/self/fd/<n> names a file this process already holds open (an Android SAF pick handed over by the
+// launcher). The path is a link by nature, so the descriptor is duplicated instead of reopened; -1 otherwise.
+int HeldDescriptor(const std::filesystem::path& path) {
+    constexpr std::string_view prefix = "/proc/self/fd/";
+    const auto text = path.native();
+    if (!text.starts_with(prefix) || text.size() == prefix.size() || text.size() > prefix.size() + 9) return -1;
+    int number = 0;
+    for (const char digit : std::string_view(text).substr(prefix.size())) {
+        if (digit < '0' || digit > '9') return -1;
+        number = number * 10 + (digit - '0');
+    }
+    const int duplicate = ::fcntl(number, F_DUPFD_CLOEXEC, 0);
+    if (duplicate < 0) throw std::system_error(errno, std::generic_category(), "duplicate held descriptor");
+    return duplicate;
+}
+
 class PosixReadFile final : public HostReadFile {
 public:
     explicit PosixReadFile(const std::filesystem::path& path) {
-        descriptor_ = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+        descriptor_ = HeldDescriptor(path);
+        if (descriptor_ < 0) descriptor_ = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
         if (descriptor_ < 0) throw std::system_error(errno, std::generic_category(), "open host backing");
         struct stat status{};
         const auto stat_result = ::fstat(descriptor_, &status);

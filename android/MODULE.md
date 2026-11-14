@@ -8,8 +8,9 @@ Android 宿主工程（Gradle 根），只含 Java 外壳和打包配置。C++ �
 - `launcher/`：主进程入口。`LauncherActivity` 在 WebView 中加载运行数据里的 `webui/gui`：页面只经私有 https 源
   由 `shouldInterceptRequest` 从运行目录提供，其他请求与导航一律拒绝，不开放文件/内容访问；注入的桥接脚本定义
   `window.rpc`，经 `LauncherBridge` 进入 `libogplay_launcher`。返回键先交给页面的 `ogplay-back` 事件，页面未处理才退出。
-  APK 与数据包目录分别用 SAF（`ACTION_OPEN_DOCUMENT`/`ACTION_OPEN_DOCUMENT_TREE`）复制到 cache，只保留最近一次，
-  启动时清空；系统不允许选存储根、Download 根及 `Android/data|obb`，需选其下的目录。
+  文件与目录用 SAF（`ACTION_OPEN_DOCUMENT` 不限类型 / `ACTION_OPEN_DOCUMENT_TREE`）选取后不复制：文件保持打开
+  （只留最近一个）、以 `/proc/self/fd/<n>` 交给原生层；目录登记为 `SafTrees` 句柄，原生导入时列出并逐个打开文件。
+  启动时清掉旧版本留在 cache 的副本。系统不允许选存储根、Download 根及 `Android/data|obb`，需选其下的目录。
   最小宽度 < 600dp 为手机：锁竖屏，桥接脚本先写 `window.__ogplayLayout='phone'`，页面用手机布局；API 30+ 全面屏绘制，
   状态栏/导航栏高度经 `__ogplayInsets` 写成 CSS `--safe-top/--safe-bottom`，只有软键盘缩小视图，WebView 不再收到 insets。
   平板锁横屏、用游戏机布局，矮屏（CSS 高度 < 640）放宽布局视口后缩放。debug 包开启 WebView 远程调试（chrome://inspect）。

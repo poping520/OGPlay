@@ -12,7 +12,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.DocumentsContract;
+import android.os.ParcelFileDescriptor;
 import android.provider.OpenableColumns;
 import android.util.Log;
 import android.view.View;
@@ -41,7 +41,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.Map;
@@ -116,6 +115,8 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
     private LauncherBridge bridge;
     private volatile File pageRoot;
     private long pendingPick;
+    private ParcelFileDescriptor pickedFile;
+    private SafTrees trees;
     // Phones (smallest width under 600dp) get the portrait phone layout drawn edge to edge; tablets the console one.
     private boolean phone;
     private int insetTop;
@@ -199,7 +200,8 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                     OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::back);
         }
-        // Staged picks from an earlier run belong to no import now.
+        trees = new SafTrees(getContentResolver());
+        // Copies made by earlier versions, which staged picks in the cache, belong to no import now.
         io.execute(() -> {
             deleteTree(new File(getCacheDir(), "import"));
             deleteTree(new File(getCacheDir(), "import-data"));
@@ -231,6 +233,7 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
     protected void onDestroy() {
         main.removeCallbacks(poll);
         if (bridge != null) bridge.close();
+        closePickedFile();
         io.shutdown();
         web.destroy();
         super.onDestroy();
@@ -305,17 +308,16 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
     @Override
     public void pickPath(long token, boolean directory) {
         main.post(() -> {
-            if (pendingPick != 0) bridge.pickResult(pendingPick, null);
+            if (pendingPick != 0) bridge.pickResult(pendingPick, null, null);
             pendingPick = token;
             if (directory) {
                 startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_DIRECTORY);
                 return;
             }
+            // Any file: APKs and game archives (ZIP, RAR, .gpk) carry no dependable MIME type; the host reads the head.
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
                     .addCategory(Intent.CATEGORY_OPENABLE)
-                    .setType("*/*")
-                    .putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
-                            "application/vnd.android.package-archive", "application/octet-stream"});
+                    .setType("*/*");
             startActivityForResult(intent, PICK_FILE);
         });
     }
@@ -328,78 +330,53 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
         pendingPick = 0;
         Uri uri = resultCode == RESULT_OK && data != null ? data.getData() : null;
         if (uri == null) {
-            bridge.pickResult(token, null);
+            bridge.pickResult(token, null, null);
+            return;
+        }
+        if (requestCode == PICK_DIRECTORY) {
+            // Only a handle: the import lists and reads the files itself, nothing is copied here.
+            bridge.pickResult(token, trees.register(uri), SafTrees.label(uri));
             return;
         }
         io.execute(() -> {
-            String path = null;
+            // The picked file stays open here and the native side reads it through /proc/self/fd/<n>, so a
+            // large APK or game archive is never copied before the import reads it.
+            String path = null, label = null;
             try {
-                path = (requestCode == PICK_FILE ? copyPicked(uri) : copyPickedTree(uri)).getPath();
+                ParcelFileDescriptor descriptor = getContentResolver().openFileDescriptor(uri, "r");
+                if (descriptor != null) {
+                    closePickedFile();
+                    pickedFile = descriptor;
+                    path = "/proc/self/fd/" + descriptor.getFd();
+                    label = displayName(uri);
+                }
             } catch (IOException | RuntimeException error) {
-                Log.e(TAG, "cannot copy the picked " + (requestCode == PICK_FILE ? "file" : "directory"), error);
+                Log.e(TAG, "cannot open the picked file", error);
             }
-            bridge.pickResult(token, path);
+            bridge.pickResult(token, path, label);
         });
     }
 
-    // The import analysis reads ordinary files, so a picked document is copied into the cache first.
-    // Only the latest pick is kept: the import copies the APK into the library itself.
-    private File copyPicked(Uri uri) throws IOException {
-        File directory = new File(getCacheDir(), "import");
-        File[] stale = directory.listFiles();
-        if (stale != null) for (File file : stale) Files.deleteIfExists(file.toPath());
-        Files.createDirectories(directory.toPath());
-        File target = new File(directory, displayName(uri));
-        try (InputStream input = getContentResolver().openInputStream(uri)) {
-            if (input == null) throw new IOException("cannot open " + uri);
-            Files.copy(input, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+    private synchronized void closePickedFile() {
+        if (pickedFile == null) return;
+        try {
+            pickedFile.close();
+        } catch (IOException error) {
+            Log.w(TAG, "cannot close the previous pick", error);
         }
-        return target;
+        pickedFile = null;
     }
 
-    // A picked data pack directory, copied for the analysis and the import (which copies it into the library).
-    // It lands below cache/import-data/sdcard at its place on the storage volume, so the host still infers the
-    // guest mount (Android/obb/<package>, Download/…) from the path. Only the latest pick is kept.
-    private File copyPickedTree(Uri tree) throws IOException {
-        File root = new File(getCacheDir(), "import-data");
-        deleteTree(root);
-        String id = DocumentsContract.getTreeDocumentId(tree);
-        int colon = id.indexOf(':');
-        File target = new File(root, "sdcard");
-        for (String part : (colon < 0 ? "" : id.substring(colon + 1)).split("/")) {
-            if (safeName(part)) target = new File(target, part);
-        }
-        copyDocument(tree, id, target);
-        return target;
+    // LauncherBridge.Host: a picked directory's files, for the native import.
+
+    @Override
+    public byte[] listTree(String handle) {
+        return trees.list(handle);
     }
 
-    private void copyDocument(Uri tree, String id, File target) throws IOException {
-        Files.createDirectories(target.toPath());
-        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, id);
-        String[] columns = {DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE};
-        try (Cursor cursor = getContentResolver().query(children, columns, null, null, null)) {
-            if (cursor == null) throw new IOException("cannot list " + id);
-            while (cursor.moveToNext()) {
-                String child = cursor.getString(0), name = cursor.getString(1), type = cursor.getString(2);
-                if (!safeName(name)) continue;
-                File file = new File(target, name);
-                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(type)) {
-                    copyDocument(tree, child, file);
-                    continue;
-                }
-                try (InputStream input = getContentResolver().openInputStream(
-                        DocumentsContract.buildDocumentUriUsingTree(tree, child))) {
-                    if (input == null) throw new IOException("cannot open " + child);
-                    Files.copy(input, file.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                }
-            }
-        }
-    }
-
-    private static boolean safeName(String name) {
-        return name != null && !name.isEmpty() && !name.equals(".") && !name.equals("..")
-                && name.indexOf('/') < 0 && name.indexOf('\0') < 0;
+    @Override
+    public int openTreeFile(String handle, String path) {
+        return trees.open(handle, path);
     }
 
     private static void deleteTree(File file) {
@@ -416,7 +393,7 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
         }
         if (name == null) name = "";
         name = name.replace('/', '_').replace('\0', '_').trim();
-        return name.isEmpty() || name.startsWith(".") ? "picked.apk" : name;
+        return name.isEmpty() ? "picked" : name;
     }
 
     private final class PageClient extends WebViewClient {

@@ -318,6 +318,17 @@
 .iw-mount .iw-note { margin-left: 0; }
 .import-wizard .iw-check { display: flex; align-items: flex-start; gap: 10px; margin-top: 18px; padding: 12px 14px; border-radius: 12px; background: rgba(255,176,32,.08); color: var(--soft); font-size: 13px; font-weight: 700; }
 .import-wizard .iw-check input { flex: none; width: auto; margin: 3px 0 0; accent-color: var(--accent); }
+/* game archive: APK choice (as the data-hint candidates), recognized data and opt-in extras */
+.import-wizard .iw-archive .iw-title + .iw-row { margin-top: 10px; }
+.iw-choices { display: grid; gap: 6px; margin: 10px 0 16px; }
+.console .import-wizard .iw-choices button { display: flex; align-items: center; gap: 10px; height: auto; margin: 0; padding: 9px 14px; border: 1px solid transparent;
+  border-radius: 12px; background: rgba(0,0,0,.28); text-align: left; }
+.console .import-wizard .iw-choices button.on { border-color: var(--accent); }
+.iw-choices code { flex: 1; min-width: 0; overflow-wrap: anywhere; font: 12.5px var(--code); }
+.iw-choices small { flex: none; color: var(--soft); font-size: 12px; }
+.import-wizard .iw-extras { margin-top: 16px; }
+.import-wizard .iw-extras .iw-check { margin-top: 8px; padding: 10px 14px; background: var(--glass); font-weight: 600; }
+.import-wizard .iw-extras code { font: 700 13px var(--code); color: var(--ink); }
 .import-wizard .modal-actions { align-items: center; gap: 8px; margin-top: 22px; }
 .import-wizard .iw-spacer { flex: 1; }
 .console .import-wizard button { white-space: nowrap; }

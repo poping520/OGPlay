@@ -17,7 +17,8 @@ SDL 动态库与桌面共享；RunGame 的状态行默认 stdout，CLI library r
 未知设置明确失败；界面语言不修改 guest Locale。GameRunOptions 的可选 ui_language 经
 `--ui-language` 严格解析和往返，缺省由游戏进程启动时解析系统语言。
 
-GameRunOptions 显式携带 surface_width/surface_height（默认 1280×720，每边 1..4096）与 density_dpi
+GameRunOptions 显式携带 surface_width/surface_height（默认 1280×720，每边 1..4096；surface_adaptation 为 limit/follow 时
+建窗前由 `AdaptSurfaceToDisplay` 按显示器限制或跟随，长边统一由 `SurfaceLongSide` 取偶数）与 density_dpi
 （默认 320，72..1280）；surface_size_explicit 表示命令行/游戏级固定尺寸，继承尺寸可在建窗前
 按入口 Manifest 方向交换（详见 game 契约）。解析、格式化和直接调用共用边界校验；DataPaths 不再暴露模板目录。
 

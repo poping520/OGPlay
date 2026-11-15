@@ -2,14 +2,16 @@
    dialog contents are the console's (ui-kit, library.css, settings.css); this file lays them out for one hand and
    turns dialogs into bottom sheets. The Android host sets --safe-top/--safe-bottom to the system bars it draws under. */
 :root[data-layout="phone"] { --safe-top: 0px; --safe-bottom: 0px; height: 100%; overflow: hidden; overscroll-behavior: none;
-  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; touch-action: pan-x pan-y; }
 :root[data-layout="phone"] body { height: 100%; overflow: hidden; }
 :root[data-layout="phone"] button { touch-action: manipulation; }
 
 .console.phone { display: block; min-width: 0; height: 100dvh; font-size: 15px; }
 .ph-page { position: relative; z-index: 1; display: flex; flex-direction: column; height: 100%; }
 .ph-spacer { flex: 1; }
-.ph-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+/* Pages scroll only vertically and stop at their ends: content wider than the screen (the cartridge stage's
+   margin) is clipped instead of dragging the page sideways. */
+.ph-scroll { flex: 1; min-height: 0; overflow: hidden auto; overscroll-behavior: none; scrollbar-width: none; }
 .ph-scroll::-webkit-scrollbar { display: none; }
 
 /* top bar: under the status bar, icon buttons at 44px */
@@ -95,7 +97,7 @@
 /* dialogs become bottom sheets; the import wizard takes the whole screen. Prefixed to sit above the console's
    per-view dialog rules (.console dialog …, .cfg dialog). */
 :root[data-layout="phone"] dialog[open] { width: 100%; max-width: 100%; max-height: calc(100dvh - 40px - var(--safe-top)); margin: auto 0 0;
-  padding: 22px 20px calc(18px + var(--safe-bottom)); border: 0; border-radius: 24px 24px 0 0; overflow-y: auto; scrollbar-width: none;
+  padding: 22px 20px calc(18px + var(--safe-bottom)); border: 0; border-radius: 24px 24px 0 0; overflow: hidden auto; overscroll-behavior: none; scrollbar-width: none;
   animation: ph-sheet .24s cubic-bezier(.2,.8,.2,1); }
 :root[data-layout="phone"] dialog[open]::backdrop { background: rgba(0,0,0,.55); }
 :root[data-layout="phone"] dialog[open] h2 { font-size: 19px; font-weight: 900; }
@@ -147,7 +149,7 @@
 .cfg.cfg-phone { display: flex; flex-direction: column; min-width: 0; font-size: 15px; }
 .cfg-phone .save-state { height: 30px; padding: 0 10px; }
 .cfg-phone .save-state:not(.on) { visibility: hidden; }
-.cfg-phone .cfg-main { padding: 4px 16px calc(36px + var(--safe-bottom)); }
+.cfg-phone .cfg-main { padding: 4px 16px calc(36px + var(--safe-bottom)); overflow: hidden auto; overscroll-behavior: none; }
 .cfg-phone .cfg-idle { margin: 0 4px 10px; color: var(--muted); font-size: 13px; font-weight: 700; }
 .cfg-phone .who { padding: 6px 4px 16px; }
 .cfg.cfg-phone .groups { gap: 6px; padding: 0; overflow: visible; }
@@ -202,4 +204,3 @@
 .phone-viewer .foot-note { margin: 0; }
 
 @media (prefers-reduced-motion: reduce) { :root[data-layout="phone"] dialog[open] { animation: none; } .ph-card { transition: none; } }
-:root[data-layout="phone"] .iw-tree code, :root[data-layout="phone"] .iw-root { overflow-wrap: anywhere; }

@@ -9,6 +9,7 @@ import { useIconColor } from '../cartridge/cartridge';
 import { TileCart } from '../cartridge/cartridge3d';
 import type { Cart3D } from '../cartridge/cart3d/api';
 import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui';
+import { deviceDisplay, ScreenSizeNote, screenFields } from './screen-size';
 import type { Skin } from '../kit';
 import { t } from '../shared/i18n';
 import { groupAvailable, has } from '../shared/features';
@@ -75,6 +76,8 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
       {Object.keys(saved.facts).length > 0 && <Paths rows={factRows(saved.facts)} />}</Note>,
   } : {};
   const reservedVisible = saved?.reserved_visible ?? true;
+  // This game's values over the global ones: what decides which screen rows show and the size they give.
+  const effective = { ...saved?.inherited, ...draft }, display = deviceDisplay();
   const shown = new Set(shownFields(saved?.fields ?? [], reservedVisible).map(field => field.key));
   const resetKeys = Object.keys(draft).filter(key => shown.has(key) && !isInstanceOnlySetting(key));
   return <SettingsFrame skin={skin} art={item?.icon} tint={item ? color : undefined}
@@ -85,8 +88,9 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
       <div><b>{name}</b><small>{id}</small>
         <span class="chip"><i class={`led ${tone}`} />{item ? versionLabel(item) : ''}{saved ? t(' · 已单独设置 {n} 项', { n: Object.keys(saved.values).filter(key => !isInstanceOnlySetting(key)).length }) : ''}</span></div>
     </div>}
-    groupsTitle={t('游戏设置')} groups={gameGroups.filter(([key]) => groupAvailable(key))} group={group} setGroup={setGroup} fields={saved?.fields ?? []} reservedVisible={reservedVisible}
+    groupsTitle={t('游戏设置')} groups={gameGroups.filter(([key]) => groupAvailable(key))} group={group} setGroup={setGroup} fields={screenFields(saved?.fields ?? [], effective, display)} reservedVisible={reservedVisible}
     sectionBefore={{ brand: t('设备身份 · 预留') }}
+    after={saved ? { screen_resolution: <ScreenSizeNote values={effective} display={display} /> } : undefined}
     model={field => {
       const overridden = Object.hasOwn(draft, field.key);
       return {

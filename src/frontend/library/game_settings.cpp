@@ -11,6 +11,8 @@ const std::vector<SettingDefinition>& GameSettingDefinitions() {
                                                               {"max_fps", "performance"},
                                                               {"clock_mode", "performance"},
                                                               {"device_preset", "device"},
+                                                              {"screen_resolution", "display"},
+                                                              {"screen_aspect", "display"},
                                                               {"screen_width", "display"},
                                                               {"screen_height", "display"},
                                                               {"density_dpi", "display"},

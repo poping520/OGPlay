@@ -59,11 +59,12 @@
   hal/windows `WindowIcons` 按窗口 DPI 的小/大图标度量各取最接近且不小于的尺寸设 ICON_SMALL/ICON_BIG。失败明确传播。
 - `hal::SetHostApplicationIdentity`：建窗前设置进程任务栏身份，1～128 个 `[A-Za-z0-9._-]`；Windows 为
   AppUserModelID（游戏与启动器分开成组），其他平台只校验。
-- `hal::InputEventType::close_requested`：用户请求关闭窗口，是否停止由窗口拥有者决定；`quit` 是宿主要求进程结束，不可拒绝。
+- `hal::InputEventType::close_requested`：用户请求关闭窗口（Android 为系统返回键/手势，不再作为按键上报），是否停止由窗口拥有者决定；`quit` 是宿主要求进程结束，不可拒绝。
 - `hal::WindowInput::ConfirmClose`：在拥有线程阻塞显示依附窗口的确认框，文案由调用方提供；仅用户选择关闭时返回 true，无法显示时抛错。
 - `hal::WindowInput::PumpEvents`：处理宿主窗口消息但不移除规范化输入事件，供长任务
   在主线程维持窗口响应；关闭窗口上调用明确失败。
 - `hal::WindowInput::PresentRgba8`：校验完整 RGBA8 帧并缩放提交到当前 SDL 窗口。
+- `hal::WindowInput::DisplaySize`：新窗口将打开的显示器（已开窗时为窗口所在显示器）当前模式的像素尺寸，可在建窗前查询；无显示器时为空。
 - `hal::WindowState::display_sleep_inhibited`：窗口打开期间宿主是否阻止显示休眠；SDL 取
   `!SDL_ScreenSaverEnabled()`（视频子系统默认禁用屏保），只报告事实，不另行修改宿主策略。
 - `hal::FrameRateSampler`：以调用方提供的单调 ticks 和累计成功 present 数按固定窗口计算

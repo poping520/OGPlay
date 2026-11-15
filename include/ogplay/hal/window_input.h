@@ -171,6 +171,8 @@ public:
     // sizes nearest the small/large icon metrics at the window's DPI.
     virtual void SetIcon(std::span<const IconImage> sizes) = 0;
     [[nodiscard]] virtual WindowState State() const = 0;
+    // Pixel size of the display a new window opens on (its current mode); nullopt when the backend has none.
+    [[nodiscard]] virtual std::optional<DisplayRect> DisplaySize() const = 0;
     [[nodiscard]] virtual std::string_view BackendName() const noexcept = 0;
     // Block the owner thread on a dialog attached to the window. True only when the user chose to close;
     // a host that cannot show the dialog throws.

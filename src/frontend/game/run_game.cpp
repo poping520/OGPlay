@@ -213,7 +213,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
           diagnostics_enabled, supersample_factor, max_fps, surface_width, surface_height, density_dpi, cpu_config,
           mcp_manual_step, preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox,
           input_config_path, library_root, missing_data_report, run_report, window_title, window_icon,
-          window_icon_style, ui_language, surface_size_explicit] = std::move(options);
+          window_icon_style, ui_language, surface_size_explicit, surface_adaptation] = std::move(options);
     const auto language = ui_language ? *ui_language : app::SystemUiLanguage();
     const auto bundled_data = HostBundledDataPaths();
     logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
@@ -370,6 +370,26 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         }
     }
     auto window = hal::CreateSdlWindowInput();
+    // Preset sizes never exceed the display, and 跟随屏幕 (follow) takes its aspect: a fullscreen window (Android)
+    // has no side bars and a desktop window the monitor's shape. The guest reads this size from DisplayMetrics, so
+    // it is settled before the window and the session exist. Sizes the user typed in stay as set.
+    if (surface_adaptation != app::SurfaceAdaptation::none) {
+        if (const auto display = window->DisplaySize()) {
+            const auto fitted = app::AdaptSurfaceToDisplay({surface_width, surface_height},
+                                                           {display->width, display->height}, surface_adaptation);
+            logger.Write(core::LogLevel::info, "frontend.run_apk", "surface adapted to the display", {},
+                         {{"surface_width", static_cast<std::uint64_t>(fitted.width)},
+                          {"surface_height", static_cast<std::uint64_t>(fitted.height)},
+                          {"display_width", static_cast<std::uint64_t>(display->width)},
+                          {"display_height", static_cast<std::uint64_t>(display->height)}},
+                         kUnrestrictedLog);
+            surface_width = fitted.width;
+            surface_height = fitted.height;
+        } else {
+            logger.Write(core::LogLevel::warn, "frontend.run_apk", "display size unknown; keeping the surface size",
+                         {}, {}, kUnrestrictedLog);
+        }
+    }
     const auto base_title = "OGPlay · " + window_title.value_or(PathUtf8(apk_path.filename()));
     window->Open({.title = base_title + " · FPS --",
                   .width = surface_width,

@@ -370,6 +370,16 @@ public:
         };
     }
 
+    std::optional<DisplayRect> DisplaySize() const override {
+        const SDL_DisplayID display = window_ != nullptr ? SDL_GetDisplayForWindow(window_) : SDL_GetPrimaryDisplay();
+        const SDL_DisplayMode* mode = display != 0 ? SDL_GetCurrentDisplayMode(display) : nullptr;
+        if (mode == nullptr || mode->w <= 0 || mode->h <= 0) return std::nullopt;
+        // Modes are in screen coordinates; their pixel density makes them device pixels.
+        const float density = mode->pixel_density > 0.0F ? mode->pixel_density : 1.0F;
+        return DisplayRect{0, 0, static_cast<std::uint32_t>(static_cast<float>(mode->w) * density + 0.5F),
+                           static_cast<std::uint32_t>(static_cast<float>(mode->h) * density + 0.5F)};
+    }
+
     std::string_view BackendName() const noexcept override {
         const auto* name = SDL_GetCurrentVideoDriver();
         return name == nullptr ? std::string_view{} : std::string_view{name};
@@ -587,6 +597,16 @@ private:
             break;
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP:
+#ifdef __ANDROID__
+            // The system back key or gesture asks to leave the game, as closing the window does on the desktop.
+            if (event.key.scancode == SDL_SCANCODE_AC_BACK) {
+                if (event.key.down && !event.key.repeat && IsOwnedWindow(event.key.windowID))
+                    result.push_back({.type = InputEventType::close_requested,
+                                      .timestamp_ns = event.key.timestamp,
+                                      .window_id = event.key.windowID});
+                break;
+            }
+#endif
             if (IsOwnedWindow(event.key.windowID)) {
                 modifiers_ = NormalizeKeyModifiers(event.key.mod);
                 result.push_back({

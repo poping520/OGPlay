@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <filesystem>
@@ -95,6 +96,7 @@ TEST_CASE("Game run args validate direct facade values") {
 #include <doctest/doctest.h>
 #include "ogplay/app/game_run.h"
 
+#include <algorithm>
 #include <array>
 #include <stdexcept>
 #include <string_view>
@@ -218,6 +220,38 @@ TEST_CASE("game_run_args ui-language round trips and rejects invalid or repeated
     auto options = ParseGameRunArgs(plain);
     options.ui_language = static_cast<UiLanguage>(255);
     CHECK_THROWS_AS(ValidateGameRunOptions(options), std::invalid_argument);
+}
+
+TEST_CASE("A surface following the display keeps its short side and takes the display's aspect") {
+    CHECK(SurfaceLongSide(480, 16, 9) == 854);
+    CHECK(SurfaceLongSide(480, 5, 3) == 800);
+    CHECK(SurfaceLongSide(720, 16, 9) == 1280);
+    CHECK(SurfaceLongSide(2160, 20, 9) == 4096);
+    CHECK_THROWS_AS(static_cast<void>(SurfaceLongSide(720, 9, 16)), std::invalid_argument);
+    constexpr auto follow = SurfaceAdaptation::follow, limit = SurfaceAdaptation::limit;
+    CHECK(AdaptSurfaceToDisplay({1280, 720}, {2376, 1080}, follow) == SurfaceSize{1584, 720});
+    CHECK(AdaptSurfaceToDisplay({1280, 720}, {1080, 2376}, follow) == SurfaceSize{1584, 720});  // before the rotation
+    CHECK(AdaptSurfaceToDisplay({720, 1280}, {2376, 1080}, follow) == SurfaceSize{720, 1584});
+    CHECK(AdaptSurfaceToDisplay({1280, 720}, {2048, 1536}, follow) == SurfaceSize{960, 720});   // 4:3 tablet
+    CHECK(AdaptSurfaceToDisplay({801, 481}, {2400, 1080}, follow) == SurfaceSize{1070, 481});   // rounded up to even
+    CHECK(AdaptSurfaceToDisplay({720, 720}, {2376, 1080}, follow) == SurfaceSize{720, 720});
+    CHECK(AdaptSurfaceToDisplay({1280, 720}, {0, 0}, follow) == SurfaceSize{1280, 720});
+    // Presets never exceed the display: 1440p on a 1080-pixel-high phone becomes 1080p, aspect kept or followed.
+    CHECK(AdaptSurfaceToDisplay({2560, 1440}, {2376, 1080}, limit) == SurfaceSize{1920, 1080});
+    CHECK(AdaptSurfaceToDisplay({2560, 1440}, {2376, 1080}, follow) == SurfaceSize{2376, 1080});
+    CHECK(AdaptSurfaceToDisplay({1280, 720}, {2376, 1080}, limit) == SurfaceSize{1280, 720});
+    CHECK(AdaptSurfaceToDisplay({2560, 1440}, {2376, 1080}, SurfaceAdaptation::none) == SurfaceSize{2560, 1440});
+
+    GameRunOptions options;
+    options.apk_path = "game.apk";
+    for (const auto mode : {limit, follow}) {
+        options.surface_adaptation = mode;
+        CHECK(RoundTrip(options) == options);
+    }
+    const auto args = FormatGameRunArgs(options);
+    CHECK(std::find(args.begin(), args.end(), "--surface-adapt") != args.end());
+    const std::array<std::string_view, 3> bad{"game.apk", "--surface-adapt", "stretch"};
+    CHECK_THROWS_AS(static_cast<void>(ParseGameRunArgs(bad)), std::invalid_argument);
 }
 
 TEST_CASE("Startup orientation adapts inherited dimensions and preserves explicit dimensions") {

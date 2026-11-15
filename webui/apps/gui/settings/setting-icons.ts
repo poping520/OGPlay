@@ -28,6 +28,8 @@ export const SETTING_ICONS: Record<string, string> = {
   angle_backend: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>',
   screen_width: WIDTH,
   screen_height: HEIGHT,
+  screen_resolution: '<rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M6 8h3M6 8v3M18 14h-3M18 14v-3"/>',
+  screen_aspect: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M9 9H6v6h3M15 9h3v6h-3"/>',
   supersample: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 12h16M12 4v16"/>',
   window_mode: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   scaling: '<rect x="3" y="3" width="10" height="10" rx="1.5"/><path d="M14 21h7v-7M21 21l-8-8"/>',

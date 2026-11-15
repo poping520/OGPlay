@@ -33,7 +33,10 @@ Android 宿主工程（Gradle 根），只含 Java 外壳和打包配置。C++ �
 ## 宿主行为
 
 - 声明 `appCategory=game`，在大屏上保留游戏的方向约束；`enableOnBackInvokedCallback=false`
-  并让 SDL 捕获返回键，使 guest 能收到返回事件（官方称该退出方案是临时的）。
+  并让 SDL 捕获返回键（官方称该退出方案是临时的）。系统返回键/手势不交给 guest，由 hal 转为关闭请求，
+  与桌面关窗一样弹出关闭确认。
+- `GameActivity` 以随系统深浅色的 DeviceDefault 对话框显示 SDL 消息框（≤3 个按钮）：Esc 默认按钮放在
+  取消位，返回键或点外部即选它。
 - 不调用宿主 Android framework 服务来运行 guest；guest 仍只看到 API 19。
 
 ## 验证

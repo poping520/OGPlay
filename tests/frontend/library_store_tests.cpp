@@ -84,6 +84,25 @@ TEST_CASE("GUI config is strict and round-trips UTF-8 paths") {
     }
 }
 
+TEST_CASE("Sizes saved before the screen presets keep showing as set") {
+    using namespace ogplay::app;
+    TemporaryDirectory tree;
+    // Every settings save wrote the old 1280×720 default: it gives way to the presets.
+    Write(tree.path / "config.toml", "schema = 2\nscreen_width = 1280\nscreen_height = 720\n");
+    CHECK(LoadLibraryConfig(tree.path).values.empty());
+    Write(tree.path / "config.toml", "schema = 2\nscreen_width = 960\nscreen_height = 720\n");
+    CHECK(Setting(LoadLibraryConfig(tree.path), "screen_resolution") == SettingValue(std::string("custom")));
+    Write(tree.path / "config.toml", "schema = 2\nscreen_resolution = \"1080p\"\nscreen_width = 960\n");
+    CHECK(Setting(LoadLibraryConfig(tree.path), "screen_resolution") == SettingValue(std::string("1080p")));
+    // A game's own size, even the old default, is the size the user chose for it.
+    const auto game = tree.path / "game";
+    std::filesystem::create_directories(game);
+    Write(game / "settings.toml", "schema = 1\nscreen_width = 1280\n");
+    const auto settings = LoadGameSettings(game);
+    CHECK(settings.values.at("screen_resolution") == SettingValue(std::string("custom")));
+    CHECK(settings.values.at("screen_width") == SettingValue(std::uint32_t{1280}));
+}
+
 TEST_CASE("GUI settings validate every configured directory before save") {
     TemporaryDirectory tree;
     const auto profiles = tree.path / "profiles";

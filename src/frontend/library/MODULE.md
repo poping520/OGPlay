@@ -21,9 +21,13 @@ APK label 为资源时，默认配置值为 `display_name`，各语言资源（`
 条目即该 Demo，不论是自动放入还是手动导入。`SeedBundledDemos` 仅在全局 `show_demo_games`（常规，默认开）
 为开时，把库中尚无同包名条目的 Demo 按普通导入（无数据包、/sdcard，沿用残留存档 id）放入库，关时不动游戏库。
 
-screen_width/screen_height（屏幕宽高）默认 1280/720，范围 1..4096；density_dpi 默认 320，范围 72..1280；
-supersample 范围 1..4；max_fps（帧率上限）取 30/60/90/120/144/unlimited，默认 120，转为 GameRunOptions.max_fps
-（unlimited 为 0）。五者均经 EffectiveGameSetting 解析游戏 > 全局 > 默认，GUI 编辑同一 schema；不读取 Profile。
+画面尺寸（screen_settings）：screen_resolution（分辨率）取 480p/540p/720p/1080p/1440p/2160p（短边）或 custom，默认 720p；
+screen_aspect（画面比例）取 screen（跟随屏幕）/4:3/16:10/16:9/18:9/19.5:9/20:9，默认 Android 为 screen、其他平台为 16:9；
+预设按横屏给出，长边由 SurfaceLongSide 取偶数（≤4096），以 GameRunOptions.surface_adaptation=limit（screen 为 follow）交给游戏进程按
+显示器限制或跟随。custom 才使用 screen_width/screen_height（默认 1280/720，范围 1..4096），且不做任何适配。
+旧配置只有宽高时读取即迁移：游戏级宽高、全局非 1280×720 的宽高记为 custom；全局 1280×720（旧默认，保存设置时总被写入）删去，改用预设。
+density_dpi 默认 320，范围 72..1280；supersample 范围 1..4；max_fps（帧率上限）取 30/60/90/120/144/unlimited，默认 120，
+转为 GameRunOptions.max_fps（unlimited 为 0）。均经 EffectiveGameSetting 解析游戏 > 全局 > 默认，GUI 编辑同一 schema；不读取 Profile。
 类型模板及 input_template 设置已删除，未知旧设置明确失败。
 
 数据包配置只有一个来源：meta.toml 只记录导入事实，不含任何数据包字段；external_guest_dir
@@ -81,5 +85,5 @@ Android/obb/<名>，否则 Android/data/<名>。两者只在取哪个标记、�
 选择样式；ResolveLaunch 仅在条目有 icon.png 时传 window_icon 与样式。
 Windows 合成使用更紧凑的留白（底板占边长约 91%、卡槽宽度占 98%），与裁透明边后的应用 ICO 保持接近的视觉尺寸，角标保持在画布内；macOS 沿用原有 Dock 网格。设置预览与运行图标使用相同的平台参数。
 
-游戏级任一 screen_width/screen_height 保存为 surface_size_explicit；全局或内置尺寸保留继承来源，
+游戏级 screen_resolution=custom 保存为 surface_size_explicit；预设与全局尺寸保留继承来源，
 交由 frontend/game 在建窗前按入口 Manifest 方向调整。GUI 子进程格式化参数也保留此来源。

@@ -165,7 +165,7 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     std::filesystem::create_directories(external);
     const auto plan =
         ogplay::frontend::BuildLaunchPlan(cli, temporary.path, Entry(entry_dir, external), {.profiles_dir = profiles});
-    REQUIRE(plan.argv.size() == 33);
+    REQUIRE(plan.argv.size() == 35);
     CHECK(plan.argv[1] == "--run-game");
     CHECK(plan.argv[3] == "--profiles-dir");
     CHECK(plan.argv[5] == "--external-dir");
@@ -175,27 +175,29 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     CHECK(plan.argv[10] == "1");
     CHECK(plan.argv[11] == "--cpu-frequency-mhz");
     CHECK(plan.argv[12] == "1000");
-    CHECK(plan.argv[13] == "--max-fps");
-    CHECK(plan.argv[14] == "120");
-    CHECK(plan.argv[15] == "--key-editor-port");
-    CHECK(plan.argv[16] == std::to_string(*plan.key_editor_port));
-    CHECK(plan.argv[17] == "--sandbox-dir");
-    CHECK(plan.argv[18] == ogplay::app::LauncherSandboxRoot(temporary.path).generic_string());
-    CHECK(plan.argv[19] == "--library-root");
-    CHECK(plan.argv[20] == std::filesystem::absolute(temporary.path).generic_string());
-    CHECK(plan.argv[21] == "--installation-id");
-    CHECK(plan.argv[22] == "org.example.game");
-    CHECK(plan.argv[23] == "--input-config");
-    CHECK(plan.argv[25] == "--missing-data-report");
-    CHECK(plan.argv[26] ==
+    CHECK(plan.argv[13] == "--surface-adapt");
+    CHECK(plan.argv[14] == "limit");
+    CHECK(plan.argv[15] == "--max-fps");
+    CHECK(plan.argv[16] == "120");
+    CHECK(plan.argv[17] == "--key-editor-port");
+    CHECK(plan.argv[18] == std::to_string(*plan.key_editor_port));
+    CHECK(plan.argv[19] == "--sandbox-dir");
+    CHECK(plan.argv[20] == ogplay::app::LauncherSandboxRoot(temporary.path).generic_string());
+    CHECK(plan.argv[21] == "--library-root");
+    CHECK(plan.argv[22] == std::filesystem::absolute(temporary.path).generic_string());
+    CHECK(plan.argv[23] == "--installation-id");
+    CHECK(plan.argv[24] == "org.example.game");
+    CHECK(plan.argv[25] == "--input-config");
+    CHECK(plan.argv[27] == "--missing-data-report");
+    CHECK(plan.argv[28] ==
           std::filesystem::absolute(entry_dir / "last-run-missing.json").lexically_normal().generic_string());
-    CHECK(plan.argv[27] == "--run-report");
-    CHECK(plan.argv[28] == std::filesystem::absolute(entry_dir / "last-run.json").lexically_normal().generic_string());
+    CHECK(plan.argv[29] == "--run-report");
+    CHECK(plan.argv[30] == std::filesystem::absolute(entry_dir / "last-run.json").lexically_normal().generic_string());
     // The window caption shows the library name, not the stored game.apk.
-    CHECK(plan.argv[29] == "--ui-language");
-    CHECK(plan.argv[30] == ogplay::app::UiLanguageTag(ogplay::app::SystemUiLanguage()));
-    CHECK(plan.argv[31] == "--window-title");
-    CHECK(plan.argv[32] == "Game");
+    CHECK(plan.argv[31] == "--ui-language");
+    CHECK(plan.argv[32] == ogplay::app::UiLanguageTag(ogplay::app::SystemUiLanguage()));
+    CHECK(plan.argv[33] == "--window-title");
+    CHECK(plan.argv[34] == "Game");
     CHECK(plan.package == "org.example.game");
     CHECK(plan.log_path == std::filesystem::absolute(entry_dir / "last-run.log"));
 }
@@ -388,6 +390,26 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     CHECK(launch.options.density_dpi == 320);
     CHECK(launch.options.supersample_factor == 1);
     CHECK(launch.options.max_fps == 120);
+    // Presets: a short side and an aspect; 跟随屏幕 leaves the long side to the game process.
+    CHECK(launch.options.surface_adaptation == (FindSetting("screen_aspect").initial == SettingValue("screen")
+                                                    ? SurfaceAdaptation::follow
+                                                    : SurfaceAdaptation::limit));
+    SetSetting(global, "screen_aspect", std::string("16:9"));
+    launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
+    CHECK(launch.options.surface_adaptation == SurfaceAdaptation::limit);
+    SaveGameSettings(directory, {{{"screen_resolution", std::string("480p")}, {"screen_aspect", std::string("19.5:9")}}});
+    launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
+    CHECK_FALSE(launch.options.surface_size_explicit);
+    CHECK(launch.options.surface_width == 1040);
+    CHECK(launch.options.surface_height == 480);
+    SaveGameSettings(directory, {{{"screen_resolution", std::string("1440p")}, {"screen_aspect", std::string("screen")}}});
+    launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
+    CHECK(launch.options.surface_adaptation == SurfaceAdaptation::follow);
+    CHECK(launch.options.surface_height == 1440);
+    SaveGameSettings(directory, {});
+    // A size typed in is used as set: no limit, no aspect.
+    SetSetting(global, "screen_resolution", std::string("custom"));
+    CHECK(ResolveLaunch(LibraryStore(tree.path), entry, global).options.surface_adaptation == SurfaceAdaptation::none);
     SetSetting(global, "screen_width", std::uint32_t{960});
     SetSetting(global, "screen_height", std::uint32_t{540});
     SetSetting(global, "density_dpi", std::uint32_t{240});

@@ -1,4 +1,5 @@
 #include "ogplay/app/library.h"
+#include "ogplay/app/host.h"
 #include "ogplay/core/text.h"
 #include <algorithm>
 #include <stdexcept>
@@ -77,6 +78,24 @@ const std::vector<SettingDefinition>& SettingDefinitions() {
          0,
          0,
          "预留 · 启动参数尚未接入"},
+        // Guest screen size (screen_settings.h): a preset height and an aspect, or a custom width × height.
+        {"screen_resolution",
+         "graphics",
+         "分辨率",
+         std::string("720p"),
+         {"480p", "540p", "720p", "1080p", "1440p", "2160p", "custom"},
+         0,
+         0,
+         "竖屏游戏交换宽高"},
+        // Phones show games fullscreen, so they default to the display's own aspect; desktop windows to 16:9.
+        {"screen_aspect",
+         "graphics",
+         "画面比例",
+         std::string(HostPlatformName() == "Android" ? "screen" : "16:9"),
+         {"screen", "4:3", "16:10", "16:9", "18:9", "19.5:9", "20:9"},
+         0,
+         0,
+         "跟随屏幕：按当前屏幕比例，全屏不留黑边"},
         {"screen_width", "graphics", "屏幕宽度", kDefaultSurfaceWidth, {}, 1, kMaximumSurfaceDimension},
         {"screen_height", "graphics", "屏幕高度", kDefaultSurfaceHeight, {}, 1, kMaximumSurfaceDimension},
         {"density_dpi",

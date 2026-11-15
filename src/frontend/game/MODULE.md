@@ -57,6 +57,9 @@ portrait/sensorPortrait/reversePortrait/userPortrait 仅对继承全局或内置
 命令行任一 --surface-width/--surface-height 或游戏级任一尺寸显式设置均固定整组尺寸。
 GameRunOptions.surface_size_explicit 保存来源，--inherited-surface-width/height 用于跨进程参数往返，
 不将继承值升级为显式设置；窗口、DisplayMetrics、Surface 和触摸映射共用交换后的同一尺寸。
+surface_adaptation（`--surface-adapt limit|follow`，库启动的分辨率预设传入）在建窗前读 hal 显示器像素尺寸：
+短边超过显示器短边时按原比例缩到显示器短边；follow 再按显示器比例取长边（SurfaceLongSide），方向不变；
+未知显示器保持原尺寸。命令行与 custom 尺寸不适配。窗口、DisplayMetrics 与输入映射都用适配后的尺寸。
 运行中请求仍仅向 SDL 设置方向提示；逻辑显示宽高及后续 Activity 配置变化由本地 AMS/WMS 更新，前端从呈现帧取得新尺寸并同步输入映射。
 
 实时循环在开始计时和推进 step 前查询 session 的 ReadyForFrame；生产者未完成且未进入真实阻塞时，

@@ -71,6 +71,9 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
             "  const MIN_HEIGHT = 640, viewport = document.querySelector('meta[name=viewport]');",
             "  if (window.__ogplayLayout !== 'phone' && viewport && innerHeight > 0 && innerHeight < MIN_HEIGHT && innerWidth > innerHeight)",
             "    viewport.content = 'width=' + Math.round(innerWidth * MIN_HEIGHT / innerHeight);",
+            "  // The phone page is an app screen at its natural size: pinching never zooms it.",
+            "  if (window.__ogplayLayout === 'phone' && viewport)",
+            "    viewport.content = 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no';",
             "  // Heights of the status and navigation bars the phone page draws under, in CSS pixels.",
             "  window.__ogplayInsets = (top, bottom) => {",
             "    document.documentElement.style.setProperty('--safe-top', top + 'px');",
@@ -147,6 +150,8 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
         settings.setUseWideViewPort(true);
         settings.setLoadWithOverviewMode(true);
         settings.setSupportZoom(false);
+        // Pages stop at their ends; the view's stretch would slide the whole UI past the screen edge.
+        web.setOverScrollMode(View.OVER_SCROLL_NEVER);
         web.setWebViewClient(new PageClient());
         web.setWebChromeClient(new WebChromeClient() {
             @Override

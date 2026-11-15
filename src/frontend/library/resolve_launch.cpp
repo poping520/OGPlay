@@ -1,4 +1,5 @@
 #include "ogplay/app/library.h"
+#include "screen_settings.h"
 #include <algorithm>
 
 namespace ogplay::app {
@@ -46,9 +47,19 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     o.profiles_directory = config.profiles_dir;
     o.external_directory = entry.external_dir;
     if (o.external_directory) o.external_guest_directory = entry.external_guest_dir;
-    o.surface_size_explicit = settings.values.contains("screen_width") || settings.values.contains("screen_height");
-    o.surface_width = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "screen_width"));
-    o.surface_height = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "screen_height"));
+    const auto text = [&](std::string_view key) {
+        return std::get<std::string>(EffectiveGameSetting(settings, global, entry, key));
+    };
+    const auto screen = ResolveScreenSize(
+        text("screen_resolution"), text("screen_aspect"),
+        std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "screen_width")),
+        std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "screen_height")));
+    // A size this game sets itself is shown exactly as set; presets and global sizes follow the game's orientation.
+    const auto own = settings.values.find("screen_resolution");
+    o.surface_size_explicit = own != settings.values.end() && std::get<std::string>(own->second) == "custom";
+    o.surface_width = screen.width;
+    o.surface_height = screen.height;
+    o.surface_adaptation = screen.adaptation;
     o.density_dpi = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "density_dpi"));
     o.supersample_factor = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "supersample"));
     if (const auto max_fps = std::get<std::string>(EffectiveGameSetting(settings, global, entry, "max_fps"));

@@ -61,6 +61,31 @@ void ApplyStartupOrientation(GameRunOptions& options, const std::int32_t screen_
         std::swap(options.surface_width, options.surface_height);
 }
 
+std::uint32_t SurfaceLongSide(const std::uint32_t short_side, const std::uint64_t numerator,
+                              const std::uint64_t denominator) {
+    if (short_side == 0 || short_side > kMaximumSurfaceDimension || denominator == 0 || numerator < denominator)
+        throw std::invalid_argument("surface aspect requires a short side in 1..4096 and a ratio of at least 1");
+    // Nearest length, then even (video and texture paths prefer even sizes): 480p at 16:9 is 854.
+    auto long_side = (2ULL * short_side * numerator + denominator) / (2ULL * denominator);
+    long_side += long_side % 2U;
+    return static_cast<std::uint32_t>(std::clamp<std::uint64_t>(long_side, short_side, kMaximumSurfaceDimension));
+}
+
+SurfaceSize AdaptSurfaceToDisplay(const SurfaceSize surface, const SurfaceSize display, const SurfaceAdaptation mode) {
+    if (mode == SurfaceAdaptation::none || display.width == 0 || display.height == 0) return surface;
+    const bool landscape = surface.width >= surface.height;
+    auto short_side = std::min(surface.width, surface.height), long_side = std::max(surface.width, surface.height);
+    const auto display_short = std::min(display.width, display.height);
+    const auto display_long = std::max(display.width, display.height);
+    if (short_side > display_short) {
+        long_side = SurfaceLongSide(display_short, long_side, short_side);
+        short_side = display_short;
+    }
+    if (mode == SurfaceAdaptation::follow && short_side != long_side && display_short != display_long)
+        long_side = SurfaceLongSide(short_side, display_long, display_short);
+    return landscape ? SurfaceSize{long_side, short_side} : SurfaceSize{short_side, long_side};
+}
+
 GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
     if (args.empty()) throw std::invalid_argument("run-apk requires <apk>");
     GameRunOptions options;
@@ -123,6 +148,14 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
                 options.surface_width = static_cast<std::uint32_t>(value);
             else
                 options.surface_height = static_cast<std::uint32_t>(value);
+        } else if (option == "--surface-adapt" && index + 1 < args.size()) {
+            const std::string_view mode{args[++index]};
+            if (mode == "limit")
+                options.surface_adaptation = SurfaceAdaptation::limit;
+            else if (mode == "follow")
+                options.surface_adaptation = SurfaceAdaptation::follow;
+            else
+                throw std::invalid_argument("--surface-adapt requires limit or follow");
         } else if (option == "--density-dpi" && index + 1 < args.size()) {
             const auto value = ParsePositive(args[++index], option);
             if (value < kMinimumDensityDpi || value > kMaximumDensityDpi)
@@ -353,6 +386,8 @@ std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
     if (o.surface_size_explicit || o.surface_height != kDefaultSurfaceHeight)
         add(o.surface_size_explicit ? "--surface-height" : "--inherited-surface-height",
             std::to_string(o.surface_height));
+    if (o.surface_adaptation != SurfaceAdaptation::none)
+        add("--surface-adapt", o.surface_adaptation == SurfaceAdaptation::limit ? "limit" : "follow");
     if (o.density_dpi != kDefaultDensityDpi) add("--density-dpi", std::to_string(o.density_dpi));
     if (o.supersample_factor != 1) add("--supersample", std::to_string(o.supersample_factor));
     if (o.max_fps) add("--max-fps", std::to_string(o.max_fps));

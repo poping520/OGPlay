@@ -597,6 +597,7 @@ add_library(ogplay_library STATIC
     src/frontend/library/running_icon.cpp src/frontend/library/demos.cpp
     src/frontend/library/archive_plan.cpp src/frontend/library/archive_zip.cpp
     src/frontend/library/archive_rar.cpp src/frontend/library/data_layout.cpp
+    src/frontend/library/screen_settings.cpp
     "${OGPLAY_GENERATED_DIR}/ogplay/app/gbk_table.h")
 add_custom_command(
     OUTPUT "${OGPLAY_GENERATED_DIR}/ogplay/app/gbk_table.h"

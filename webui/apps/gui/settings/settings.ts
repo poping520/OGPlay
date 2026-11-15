@@ -1,4 +1,5 @@
 import { t } from '../shared/i18n';
+import { followScreenLabel } from './screen-size';
 export type SettingValue = boolean | number | string;
 export interface SettingField {
   key: string; group: string; label: string; pending: string; initial: SettingValue;
@@ -86,6 +87,8 @@ export function shownGroups<G extends readonly [string, ...string[]]>(groups: re
 export function choiceLabel(field: SettingField, value: string): string {
   if (field.key === 'clock_rate') return `${value}×`;
   if (field.key === 'max_fps' && value !== 'unlimited') return `${value} FPS`;
+  if (field.key === 'screen_resolution') return value === 'custom' ? t('自定义') : value === '1440p' ? '1440p (2K)' : value === '2160p' ? '2160p (4K)' : value;
+  if (field.key === 'screen_aspect') return value === 'screen' ? followScreenLabel() : value;
   return value in labels ? t(labels[value]) : value;
 }
 export function displayValue(field: SettingField, value: SettingValue | undefined): string {

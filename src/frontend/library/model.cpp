@@ -1,6 +1,7 @@
 #include "ogplay/app/library.h"
 #include "external_data.h"
 #include "locks.h"
+#include "screen_settings.h"
 
 #include <algorithm>
 #include <array>
@@ -295,6 +296,7 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
         else
             SetSetting(config, key, ParseTomlString(value));
     }
+    MigrateLegacyScreenSize(config.values, true);
     return config;
 }
 
@@ -385,6 +387,7 @@ static GameSettings LoadGameSettingsUnlocked(const std::filesystem::path& direct
             ValidateSettingValue(*field, parsed);
             settings.values[key] = std::move(parsed);
         }
+        MigrateLegacyScreenSize(settings.values, false);
         return settings;
     });
 }

@@ -37,6 +37,14 @@ inline constexpr std::uint32_t kDefaultDensityDpi = 320;
 inline constexpr std::uint32_t kMinimumDensityDpi = 72;
 inline constexpr std::uint32_t kMaximumDensityDpi = 1280;
 
+// How the game process adapts the surface to the display it opens on. Library presets (screen_resolution) use
+// limit, or follow for screen_aspect = screen; sizes typed in by the user, and the CLI, use none.
+enum class SurfaceAdaptation : std::uint8_t {
+    none,     // the size as given
+    limit,    // the short side at most the display's (aspect kept)
+    follow,   // limit, then the long side at the display's aspect
+};
+
 struct GameRunOptions final {
     std::filesystem::path apk_path;
     std::optional<std::filesystem::path> external_directory;
@@ -84,6 +92,8 @@ struct GameRunOptions final {
     std::optional<UiLanguage> ui_language;
     // CLI or game-specific dimensions suppress Manifest startup adaptation.
     bool surface_size_explicit{};
+    // Applied before the window opens (a 20:9 phone following its display shows no side bars).
+    SurfaceAdaptation surface_adaptation{SurfaceAdaptation::none};
     bool operator==(const GameRunOptions&) const = default;
 };
 
@@ -94,6 +104,19 @@ OGPLAYCORE_API void ValidateExternalGuestDirectory(std::string_view path);
 [[nodiscard]] OGPLAYCORE_API GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args);
 [[nodiscard]] OGPLAYCORE_API std::vector<std::string> FormatGameRunArgs(const GameRunOptions& options);
 OGPLAYCORE_API void ApplyStartupOrientation(GameRunOptions& options, std::int32_t screen_orientation);
+// The long side for a short side at the aspect numerator:denominator (>= 1): the nearest length, made even
+// (rounded up), at least the short side and at most kMaximumSurfaceDimension. Presets and display fitting share it.
+[[nodiscard]] OGPLAYCORE_API std::uint32_t SurfaceLongSide(std::uint32_t short_side, std::uint64_t numerator,
+                                                          std::uint64_t denominator);
+struct SurfaceSize final {
+    std::uint32_t width{};
+    std::uint32_t height{};
+    bool operator==(const SurfaceSize&) const = default;
+};
+// The surface adapted to a display (pixels, either orientation) as `mode` says; the orientation of the surface is
+// kept. An empty display leaves it unchanged, and follow leaves a square surface or display at limit's result.
+[[nodiscard]] OGPLAYCORE_API SurfaceSize AdaptSurfaceToDisplay(SurfaceSize surface, SurfaceSize display,
+                                                               SurfaceAdaptation mode);
 OGPLAYCORE_API void ValidateGameRunOptions(const GameRunOptions& options);
 OGPLAYCORE_API int RunGame(GameRunOptions options, const LogConfig& logging = {});
 

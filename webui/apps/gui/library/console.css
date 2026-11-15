@@ -1,0 +1,123 @@
+/* Console library screen (app.tsx, desktop builds only): its top bar tools, hero text, cartridge rail, sort menu and
+   drop overlay. Loaded after library.css, which keeps what the phone layout shares (backdrop, splash, cartridge,
+   dialogs, import wizard, cartridge viewer). */
+.stage, .rail { position: relative; z-index: 1; min-width: 0; }
+.tabs { display: flex; align-items: center; gap: 6px; margin: 0 auto; }
+.tabs button { padding: 7px 16px; border-radius: 999px; font-weight: 800; color: var(--muted); white-space: nowrap; transition: color .15s, background .15s; }
+.console .tabs button:hover:not([aria-pressed=true]) { color: var(--ink); background: var(--glass); }
+.console .tabs button[aria-pressed=true] { background: var(--ink); color: var(--bg); }
+.tabs .count { margin-left: 5px; font-size: 12px; opacity: .55; }
+.shoulder { font-size: 11px; font-weight: 800; color: var(--dim); border: 1.5px solid var(--dim); border-radius: 7px 7px 4px 4px; padding: 0 7px; }
+/* L/R stand apart from the tabs, so a selected end tab's pill does not crowd them */
+.tabs .shoulder:first-child { margin-right: 10px; } .tabs .shoulder:last-child { margin-left: 10px; }
+.tools { display: flex; align-items: center; gap: 8px; flex: none; }
+.console .round { width: 38px; height: 38px; border-radius: 50%; background: var(--glass); display: grid; place-items: center; color: #cdd3e2; }
+.console .round .glyph { width: 18px; height: 18px; }
+.console .round:hover:not(:disabled) { background: var(--glass2); }
+.console .round:disabled { opacity: .4; cursor: not-allowed; }
+.search { display: flex; align-items: center; border-radius: 999px; transition: background .2s; }
+.search input { width: 0; padding: 0; border: 0; background: transparent; color: var(--ink); font: 700 13px var(--font); transition: width .2s, padding .2s; }
+.search input::placeholder { color: var(--dim); }
+.search input:focus-visible { outline: none; }
+.search input::-webkit-search-cancel-button { filter: invert(.7); }
+.search.open { background: var(--glass); }
+.search.open input { width: 200px; padding: 0 14px 0 4px; }
+.console .running-pill { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px; border-radius: 999px; background: var(--glass); color: var(--muted); font-size: 13px; font-weight: 800; }
+.console .running-pill.live { background: rgba(74,163,255,.14); color: #b9dbff; }
+.console .running-pill:hover:not(:disabled) { background: none; } /* existing behaviour: no fill while hovered */
+.clock { margin-left: 6px; font-size: 15px; font-weight: 700; color: #cdd3e2; font-variant-numeric: tabular-nums; }
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 36vw, 520px); align-items: center; padding: 0 32px 0 clamp(36px, 4.5vw, 64px); min-height: 0; }
+.hero-text { min-width: 0; padding-right: 24px; }
+.hero-text > * { animation: rise .3s backwards cubic-bezier(.2,.8,.2,1); }
+.hero-text > :nth-child(2) { animation-delay: .02s; } .hero-text > :nth-child(3) { animation-delay: .04s; } .hero-text > :nth-child(4) { animation-delay: .06s; }
+.hero-text > :nth-child(5) { animation-delay: .08s; } .hero-text > :nth-child(6) { animation-delay: .1s; }
+/* the clamp's overflow cuts at the line box, shorter than the rounded face's descenders: pad them in, take it back from the margin */
+.hero-text h1 { margin: 12px 0 calc(4px - .14em); padding-bottom: .14em; font-size: clamp(40px, min(5.4vw, 8.4vh), 76px); line-height: 1.08; font-weight: var(--title-weight); letter-spacing: -.02em;
+  text-shadow: 0 6px 40px rgba(0,0,0,.4); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.hero-text h1.small { font-size: clamp(30px, 3.4vw, 42px); }
+.stats { display: flex; gap: clamp(22px, 2.6vw, 38px); margin: clamp(16px, 3vh, 28px) 0 clamp(14px, 2.4vh, 22px); }
+.stats > div { min-width: 0; max-width: 220px; }
+.stats b { display: block; font-size: 22px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.console .stats small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.state { display: inline-flex; align-items: center; gap: 10px; max-width: min(620px, 100%); margin-top: 4px; padding: 8px 14px; border-radius: 12px; background: var(--glass);
+  color: #cfd5e3; font-size: 13px; font-weight: 700; user-select: text; }
+.state > span:not(.led) { min-width: 0; overflow-wrap: anywhere; }
+/* GUI-23: a failed last run is a second pill on the status row, so the hero keeps its height. */
+.state-row { display: flex; align-items: center; gap: 10px; max-width: min(760px, 100%); margin-top: 4px; }
+.state-row > .state { min-width: 0; margin-top: 0; }
+.state.last-run { overflow: hidden; }
+.state.last-run { flex: 0 1 auto; min-width: 0; border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.state.last-run > b { flex: none; white-space: nowrap; }
+.console .link { color: var(--accent); font-weight: 900; white-space: nowrap; }
+.console .link:hover { text-decoration: underline; }
+.hero-text > .state:last-child { margin-top: 22px; }
+.cta { display: flex; align-items: center; gap: 12px; margin-top: clamp(18px, 3vh, 28px); }
+.menu { position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 10; min-width: 220px; padding: 6px; border-radius: 16px; background: rgba(20,26,42,.96);
+  border: 1px solid var(--line); box-shadow: 0 20px 50px rgba(0,0,0,.5); backdrop-filter: blur(16px); animation: rise .18s cubic-bezier(.2,.8,.2,1); }
+.console .menu button { display: block; width: 100%; padding: 9px 12px; border-radius: 10px; text-align: left; font-weight: 800; font-size: 13px; }
+.console .menu button:hover:not(:disabled) { background: var(--glass2); }
+.console .menu button:disabled { opacity: .4; cursor: not-allowed; }
+.console .menu button.danger { color: #ffb4ae; }
+.console .menu small { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.menu hr { margin: 6px 4px; border: 0; border-top: 1px solid var(--line); }
+.showcase { position: relative; height: clamp(250px, 50vh, 470px); display: grid; place-items: center; perspective: 1500px; }
+/* rail */
+.rail-head { display: flex; align-items: baseline; gap: 12px; padding: 0 clamp(36px, 4.5vw, 64px) 6px; }
+.rail-head b { font-size: 15px; font-weight: 900; }
+.rail-head > span { color: var(--muted); font-size: 12px; font-weight: 700; }
+.console .sort > button { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 10px; border-radius: 999px; background: var(--glass); color: var(--soft); font: 800 12px var(--font); }
+.console .sort > button:hover { background: var(--glass2); color: var(--ink); }
+.sort > button .glyph { width: 12px; height: 12px; stroke-width: 2.6; transition: transform .15s; }
+.sort > button[aria-expanded=true] .glyph { transform: rotate(180deg); }
+/* the "更多" menu, dropped below the picker and right-aligned with it; unchecked entries line up with the checked text */
+.sort .menu { top: calc(100% + 8px); bottom: auto; left: auto; right: 0; min-width: 150px; }
+.console .sort .menu button { display: flex; align-items: center; gap: 8px; }
+.console .sort .menu button:not([aria-checked=true]) { padding-left: 34px; }
+.sort .menu .glyph { width: 14px; height: 14px; stroke-width: 2.6; color: var(--accent); }
+/* the strip scrolls beside the pinned import tile: cards dissolve before its border, and the end padding keeps the
+   last card and its selection ring clear of the fade */
+.rail-body { --tile-em: clamp(3.3px, .47vh, 4.2px); display: flex; align-items: flex-start; }
+.strip { display: flex; flex: 1; gap: 18px; min-width: 0; padding: 30px 72px 38px clamp(36px, 4.5vw, 64px); overflow-x: auto; scrollbar-width: none;
+  mask-image: linear-gradient(90deg, #000 calc(100% - 56px), transparent calc(100% - 8px)); }
+.strip::-webkit-scrollbar { display: none; }
+.console .tile { position: relative; flex: none; font-size: var(--tile-em); width: 27em; height: 40em; border-radius: 0; perspective: 700px;
+  filter: drop-shadow(0 10px 10px rgba(0,0,0,.45)); transition: transform .2s cubic-bezier(.3,1.5,.5,1); }
+.tile .cartridge { transform: rotateY(-16deg); transition: transform .3s cubic-bezier(.2,.8,.2,1); }
+.console .tile:hover .cartridge, .tile[aria-pressed=true] .cartridge { transform: rotateY(-6deg); }
+.tile .tile-3d { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.tile .name { position: absolute; left: -10px; right: -10px; top: calc(100% + 10px); overflow: hidden; text-align: center; font-size: 13px; font-weight: 800; white-space: nowrap; text-overflow: ellipsis;
+  opacity: 0; transition: opacity .15s; }
+.console .tile:hover { transform: translateY(-6px); }
+.tile:hover .name { opacity: .7; }
+.console .tile[aria-pressed=true] { z-index: 2; transform: translateY(-12px) scale(1.12); }
+.tile[aria-pressed=true] .name { opacity: 1; }
+.tile[aria-pressed=true]::before { content: ''; position: absolute; inset: -9px; border-radius: 26px 26px 22px 22px; border: 3px solid var(--accent);
+  box-shadow: 0 0 30px rgba(255,194,26,.35); animation: ring 1.6s ease-in-out infinite; }
+.console .tile.add { display: grid; place-content: center; gap: 2px; text-align: center; border: 2.5px dashed rgba(255,255,255,.25); border-radius: 18px 18px 14px 14px; color: var(--muted);
+  font-size: 12px; font-weight: 800; width: calc(27 * var(--tile-em)); height: calc(40 * var(--tile-em)); margin: 30px clamp(36px, 4.5vw, 64px) 0 6px; }
+.tile.add b { color: var(--accent); font-size: 34px; line-height: 1; }
+.console .tile.add small { color: var(--dim); font-size: 11px; }
+.console .tile.add:hover:not(:disabled) { border-color: var(--accent); color: var(--ink); }
+
+/* drag-to-insert overlay */
+.drop { position: fixed; inset: 0; z-index: 50; display: grid; place-content: center; text-align: center; background: rgba(9,12,22,.86); backdrop-filter: blur(10px); pointer-events: none; }
+.drop .slot { position: relative; display: grid; place-items: center; width: 420px; height: 120px; margin: 160px auto 34px; border: 3px dashed var(--yellow); border-radius: 26px; }
+.drop .slot::before { content: ''; width: 300px; height: 14px; border-radius: 8px; background: #000; box-shadow: inset 0 4px 8px #000, 0 0 30px rgba(255,194,26,.4); }
+.drop .slot::after { content: 'APK'; position: absolute; top: -150px; left: 50%; display: grid; place-items: center; width: 140px; height: 170px; margin-left: -70px; border-radius: 22px 22px 14px 14px;
+  background: linear-gradient(160deg, #ffe07a, var(--yellow)); color: #2a2000; font: 900 30px var(--font); box-shadow: 0 20px 40px rgba(0,0,0,.4); animation: insert 1.4s cubic-bezier(.6,0,.3,1) infinite; }
+.drop h2 { font-size: 36px; font-weight: 900; }
+.drop p { margin: 8px 0 0; color: var(--muted); font-weight: 700; }
+
+.console.skin-glass .tile[aria-pressed=true]::before { box-shadow: 0 0 30px rgba(111,247,228,.35); animation-name: ring-glass; }
+.console.skin-glass .drop { background: rgba(36,16,94,.86); }
+@keyframes ring { 50% { box-shadow: 0 0 46px rgba(255,194,26,.6); } }
+@keyframes ring-glass { 50% { box-shadow: 0 0 46px rgba(111,247,228,.6); } }
+@keyframes insert { 0% { transform: translateY(-20px); opacity: 0; } 30% { opacity: 1; } 70%, 100% { transform: translateY(60px); opacity: 0; } }
+@media (max-height: 720px) { .console { grid-template-rows: 60px minmax(0, 1fr) auto 38px; } .sub { font-size: 16px; } .stats b { font-size: 19px; } .rail-body { --tile-em: 2.95px; } .strip { padding-top: 22px; padding-bottom: 32px; } .console .tile.add { margin-top: 22px; } .stats { margin: 12px 0 10px; } .cta { margin-top: 14px; } .console .pill { height: 46px; } .console .pill.main { height: 50px; } }
+@media (max-width: 1180px) { .clock, .shoulder { display: none; } .tabs button { padding: 6px 12px; } .search.open input { width: 150px; } }
+.console.skin-glass .menu { border-color: rgba(255,255,255,.14); background: rgba(58,29,122,.94); box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 20px 50px rgba(10,0,40,.55); }
+@media (prefers-reduced-motion: reduce) {
+  .tile[aria-pressed=true]::before, .drop .slot::after, .hero-text > *, .menu { animation: none; }
+  .console .tile, .tile .cartridge { transition: none; }
+}

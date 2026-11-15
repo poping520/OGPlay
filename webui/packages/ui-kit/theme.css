@@ -12,10 +12,15 @@
   --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='.9' numOctaves='2'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
 }
 
-/* The launcher marks Windows before rendering. Put the bundled face before generic families so Chromium
-   cannot resolve ui-rounded to a system fallback and skip it. Other hosts keep their native typography. */
+/* The launcher marks Windows and Android before rendering. Put the bundled face before generic families so
+   Chromium cannot resolve ui-rounded to a system fallback and skip it. Other hosts keep their native typography.
+   SN Pro has Latin only: Chinese falls through to the system's CJK face. */
 :root[data-platform="windows"] {
   --font: 'SN Pro', 'Segoe UI Variable Display', 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
+  --title-weight: 800;
+}
+:root[data-platform="android"] {
+  --font: 'SN Pro', 'Noto Sans CJK SC', 'Noto Sans SC', sans-serif;
   --title-weight: 800;
 }
 

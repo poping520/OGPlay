@@ -12,6 +12,9 @@
 
 #if OGPLAY_HAS_SDL3
 #include <SDL3/SDL.h>
+#ifdef __ANDROID__
+#include <jni.h>
+#endif
 
 #ifdef _WIN32
 #include "windows/game_window.h"
@@ -325,17 +328,33 @@ public:
         return windows::ShowCloseConfirmation(Win32Handle(), text);
 #else
         const std::string title{text.title};
+#ifdef __ANDROID__
+        const std::string message{text.library_message.empty() ? text.message : text.library_message};
+#else
         const std::string message{text.message};
+#endif
         const std::string confirm{text.confirm_label};
         const std::string cancel{text.cancel_label};
         constexpr int kCancel = 0;
         constexpr int kConfirm = 1;
         // Enter keeps the game running, so keys still being pressed in play cannot close it.
+#ifdef __ANDROID__
+        constexpr int kLibrary = 2;
+        const std::string library{text.library_label};
+        // The game's task sits beside the launcher's: the third choice switches to the launcher, game still running.
+        const std::array<SDL_MessageBoxButtonData, 3> buttons{{
+            {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, kCancel,
+             cancel.c_str()},
+            {0, kConfirm, confirm.c_str()},
+            {0, kLibrary, library.c_str()},
+        }};
+#else
         const std::array<SDL_MessageBoxButtonData, 2> buttons{{
             {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, kCancel,
              cancel.c_str()},
             {0, kConfirm, confirm.c_str()},
         }};
+#endif
         const SDL_MessageBoxData dialog{
             .flags = SDL_MESSAGEBOX_WARNING,
             .window = window_,
@@ -347,9 +366,27 @@ public:
         };
         int clicked = kCancel;
         if (!SDL_ShowMessageBox(&dialog, &clicked)) throw SdlError("SDL_ShowMessageBox");
+#ifdef __ANDROID__
+        if (clicked == kLibrary) ShowLauncher();
+#endif
         return clicked == kConfirm;
 #endif
     }
+
+#ifdef __ANDROID__
+    // GameActivity.showLibrary: the launcher's task comes forward as from its home screen icon. Best effort: the
+    // choice already kept the game running, so a failure leaves the player in the game rather than closing it.
+    static void ShowLauncher() noexcept {
+        auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+        auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+        if (env == nullptr || activity == nullptr) return;
+        const jclass type = env->GetObjectClass(activity);
+        if (const jmethodID show = env->GetMethodID(type, "showLibrary", "()V")) env->CallVoidMethod(activity, show);
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        env->DeleteLocalRef(type);
+        env->DeleteLocalRef(activity);
+    }
+#endif
 
     WindowState State() const override {
         if (window_ == nullptr) return {};

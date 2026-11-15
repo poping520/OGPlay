@@ -1,10 +1,13 @@
 package io.github.poping520.ogplay.game;
 
 import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.res.Configuration;
+import android.os.Build;
 import android.os.Bundle;
 
 import io.github.poping520.ogplay.runtime.RuntimeData;
@@ -14,6 +17,8 @@ import org.libsdl.app.SDLActivity;
 /** Runs one game in the :game process; the native runtime starts from SDL_main. */
 public final class GameActivity extends SDLActivity {
     private static final String EXTRA_ARGUMENTS = "io.github.poping520.ogplay.extra.ARGUMENTS";
+    private static final String ACTION_RESUME = "io.github.poping520.ogplay.action.RESUME_GAME";
+    private static final String ACTION_QUIT = "io.github.poping520.ogplay.action.QUIT_GAME";
     // SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT in SDL_messagebox.h.
     private static final int ESCAPE_DEFAULT = 0x2;
 
@@ -22,11 +27,44 @@ public final class GameActivity extends SDLActivity {
         return new Intent(context, GameActivity.class).putExtra(EXTRA_ARGUMENTS, arguments);
     }
 
+    /** Back to the running game: its single-instance task comes to the front with the game as it was. */
+    public static Intent resume(Context context) {
+        return new Intent(context, GameActivity.class).setAction(ACTION_RESUME);
+    }
+
+    /** For the launcher to close the running game (a broadcast, so the game does not first come to the front). */
+    public static Intent quit(Context context) {
+        return new Intent(ACTION_QUIT).setPackage(context.getPackageName());
+    }
+
+    // Leaves through the game's own quit path, as its close confirmation does: the session ends and its saves and
+    // run report are written. SDL wakes its thread for this even while the game is in the background.
+    private final BroadcastReceiver quitReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            SDLActivity.nativeSendQuit();
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         RuntimeData.publishEnvironment(this);
         super.onCreate(savedInstanceState);
+        // A resume that finds no game (the process ended meanwhile) has nothing to show.
+        if (ACTION_RESUME.equals(getIntent().getAction())) {
+            finish();
+            return;
+        }
+        IntentFilter filter = new IntentFilter(ACTION_QUIT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(quitReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(quitReceiver, filter);
+        }
+        quitRegistered = true;
     }
+
+    private boolean quitRegistered;
 
     @Override
     protected String[] getLibraries() {
@@ -89,8 +127,21 @@ public final class GameActivity extends SDLActivity {
         dialog.show();
     }
 
+    /**
+     * Called by the native close confirmation ("回到游戏库"): the launcher's task comes forward as from its home screen
+     * icon, and this game keeps running in its own task.
+     */
+    @SuppressWarnings("unused")
+    public void showLibrary() {
+        runOnUiThread(() -> {
+            Intent launcher = getPackageManager().getLaunchIntentForPackage(getPackageName());
+            if (launcher != null) startActivity(launcher);
+        });
+    }
+
     @Override
     protected void onDestroy() {
+        if (quitRegistered) unregisterReceiver(quitReceiver);
         super.onDestroy();
         // Native state is process-wide; the next game starts from a new process.
         System.exit(0);

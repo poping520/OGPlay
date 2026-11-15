@@ -118,8 +118,11 @@ public:
         pick_method_ = env->GetMethodID(bridge_class, "pickPath", "(JZ)V");
         list_tree_method_ = env->GetMethodID(bridge_class, "listTree", "([B)[B");
         open_tree_file_method_ = env->GetMethodID(bridge_class, "openTreeFile", "([B[B)I");
+        resume_method_ = env->GetMethodID(bridge_class, "resumeGame", "()V");
+        stop_method_ = env->GetMethodID(bridge_class, "stopGame", "()V");
         env->DeleteLocalRef(bridge_class);
-        if (!launch_method_ || !pick_method_ || !list_tree_method_ || !open_tree_file_method_)
+        if (!launch_method_ || !pick_method_ || !list_tree_method_ || !open_tree_file_method_ || !resume_method_ ||
+            !stop_method_)
             throw std::runtime_error("LauncherBridge callbacks are missing");
 
         const auto root = app::DefaultLibraryRoot();
@@ -135,6 +138,13 @@ public:
             return running;
         });
         host.launch = [this](const LaunchPlan& plan) { Launch(plan); };
+        // The game runs in its own task: back to its screen, or asked to quit as its close confirmation would.
+        host.resume = [this](std::string_view) { CallGame(resume_method_, "无法返回游戏界面。"); };
+        host.stop = [this](std::string_view package) {
+            CallGame(stop_method_, "无法关闭游戏。");
+            logger_.Write(app::LogLevel::info, "frontend.android.launcher", "game asked to quit", {},
+                          {{"installation_id", std::string(package)}});
+        };
         // Never offered here: open_directory (no file manager), minimize, Dashboard and key editor windows.
         host.open_directory = [](const std::filesystem::path&) {
             throw std::runtime_error("Android 启动器不打开宿主目录。");
@@ -288,9 +298,23 @@ private:
         return env;
     }
 
+    void CallGame(jmethodID method, const char* failure) {
+        JNIEnv* env = Env();
+        env->CallVoidMethod(bridge_, method);
+        if (env->ExceptionCheck()) {
+            env->ExceptionDescribe();
+            env->ExceptionClear();
+            throw std::runtime_error(failure);
+        }
+    }
+
     void Launch(const LaunchPlan& plan) {
+        // One :game process: starting its activity again would only bring the running game back, whichever was asked
+        // for. The store's running lease also covers a game this launcher process did not start.
         for (const auto& game : tracked_)
             if (game.package == plan.package) throw std::runtime_error("游戏正在运行，退出后再启动。");
+        for (const auto& entry : store_->LoadEntries())
+            if (store_->IsRunning(entry.key)) throw std::runtime_error("已有游戏在运行，返回该游戏或先关闭它。");
         JNIEnv* env = Env();
         const auto string_class = env->FindClass("java/lang/String");
         const auto argv = env->NewObjectArray(static_cast<jsize>(plan.argv.size()), string_class, nullptr);
@@ -339,6 +363,8 @@ private:
     jmethodID pick_method_{};
     jmethodID list_tree_method_{};
     jmethodID open_tree_file_method_{};
+    jmethodID resume_method_{};
+    jmethodID stop_method_{};
     app::Logger logger_;
     std::unique_ptr<app::LibraryStore> store_;
     std::unique_ptr<LauncherServices> services_;

@@ -3,7 +3,7 @@
 Preact 游戏库与导入向导，只显示宿主返回的事实，经 closed-schema JSON-RPC 操作宿主。
 不执行 guest，不判断游戏兼容性。以 installation id 区分实例，不能按包名合并。
 主题位于 packages/ui-kit，产物由 Vite 生成，Node 仅构建期使用。
-GUI 制品在 manifest 标记目标平台；仅 Windows 构建内嵌 SN Pro 字体，macOS 使用系统圆体，宿主打包前校验平台匹配。许可由统一 `data/credits.json` 声明适用平台。
+GUI 制品在 manifest 标记目标平台；Windows 与 Android 构建内嵌 SN Pro 字体（中文回落系统字体），macOS 使用系统圆体，宿主打包前校验平台匹配。许可由统一 `data/credits.json` 声明适用平台。
 
 ## 目录
 
@@ -28,8 +28,11 @@ Android 宿主发出可取消的 `ogplay-back`：依次关闭最上层对话框�
 
 ## 布局
 
-两种布局，启动时选定一次，不随窗口尺寸切换：游戏机布局（`app.tsx`，桌面窗口与 Android 平板，键盘/手柄提示）与手机布局
-（`phone/`，只在 Android 宿主声明 `window.__ogplayLayout='phone'` 时使用，竖屏触屏；PC 不用）。两者的游戏库状态与操作
+两种布局，按构建目标选定，各自的产物只含自己一端：桌面构建（入口 `main.tsx`）为游戏机布局（`app.tsx`，键盘/手柄提示），
+Android 构建（入口 `phone/main.tsx`）为手机布局（`phone/`，竖屏触屏，平板也用）。两个入口共用 `boot.tsx` 启动流程；共用代码按
+构建常量 `__OGPLAY_PHONE__` 分支（设置页框架、选项控件、卡带展示），构建时删去另一端；手机构建中 `has()` 恒为假，桌面独有能力
+（Dashboard、按键设置等）的代码随之删去。样式同样分开：`library/console.css` 只由 `app.tsx` 引入，`phone/phone.css` 只由手机端引入，
+`library.css` 只放两端共用的部分。i18n 英文词表仍是两端共用的一份。两者的游戏库状态与操作
 （列表、筛选、设置与皮肤、3D 卡带、运行实例、启动/删除/清空、导入与数据提示、错误队列）都来自 `library/launcher.ts` 的
 `useLauncher()`，布局只决定怎么显示；弹窗、设置控件与行、卡带组件也共用，手机只换排布与样式。
 

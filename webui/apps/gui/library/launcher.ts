@@ -85,7 +85,7 @@ export function useLauncher() {
       finally { polling = false; }
     };
     // Running instances are tracked for their Dashboard and key editor; a host without either has nothing to list.
-    const tracked = has('dashboard') || has('key_editor');
+    const tracked = !__OGPLAY_PHONE__ && (has('dashboard') || has('key_editor'));
     if (tracked) void poll();
     const timer = tracked ? window.setInterval(() => void poll(), 1000) : 0;
     const dashboardError = (event: Event) => report(t((event as CustomEvent<string>).detail));

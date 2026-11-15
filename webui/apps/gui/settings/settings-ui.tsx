@@ -7,7 +7,6 @@ import { Back, Brand, type Skin } from '../kit';
 import { Glyph } from '../../../packages/ui-kit/glyph';
 import { Key } from '../../../packages/ui-kit/key';
 import { SETTING_ICONS } from './setting-icons';
-import { layout } from '../shared/features';
 import { BackButton, NextIcon, Sheet, SheetItem } from '../phone/parts';
 import './settings.css';
 
@@ -80,7 +79,7 @@ function Control({ field, value, disabled, change, browse }: {
   if (field.choices.length && field.choices.length <= 3 && field.choices.every(choice => textWidth(choiceLabel(field, choice)) <= 14))
     return <div class="seg" role="radiogroup" aria-label={meta.label}>{field.choices.map(choice =>
       <button key={choice} role="radio" aria-checked={choice === value} class={choice === value ? 'on' : ''} disabled={disabled} onClick={() => change(choice)}>{choiceLabel(field, choice)}</button>)}</div>;
-  if (field.choices.length && layout() === 'phone') return <ChoicePicker field={field} value={value} disabled={disabled} change={change} />;
+  if (field.choices.length && __OGPLAY_PHONE__) return <ChoicePicker field={field} value={value} disabled={disabled} change={change} />;
   if (field.choices.length) {
     const at = field.choices.indexOf(String(value));
     return <div class="cyc" role="group" aria-label={meta.label}>
@@ -294,7 +293,7 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 
 // Console pages lay groups beside their rows; the phone shows the group list first and one group per page.
 export function SettingsFrame(props: FrameProps) {
-  return layout() === 'phone' ? <PhoneFrame {...props} /> : <ConsoleFrame {...props} />;
+  return __OGPLAY_PHONE__ ? <PhoneFrame {...props} /> : <ConsoleFrame {...props} />;
 }
 
 function ConsoleFrame(props: FrameProps) {

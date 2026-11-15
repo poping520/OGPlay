@@ -52,6 +52,9 @@ struct GuiRpcHost final {
     // keeps the path. open_tree: a picked directory handle as files to list and copy; null for a host path.
     std::function<std::string(const std::filesystem::path&)> label;
     std::function<std::unique_ptr<ImportSource>(const std::filesystem::path&)> open_tree;
+    // single_game platforms: bring the running game (by installation id) back to the front, or ask it to quit.
+    std::function<void(std::string_view)> resume;
+    std::function<void(std::string_view)> stop;
 };
 
 class GuiRpcService final {

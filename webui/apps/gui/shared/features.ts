@@ -12,13 +12,14 @@ export interface HostFeatures { platform: string; features: Record<Feature, bool
 const everything = Object.fromEntries(featureNames.map(name => [name, true])) as Record<Feature, boolean>;
 let current: HostFeatures = { platform: '', features: everything };
 
-export const has = (feature: Feature): boolean => current.features[feature] === true;
+// The phone build's host (Android) offers none of them, so there the answer is fixed and the build drops their code.
+export const has = (feature: Feature): boolean => !__OGPLAY_PHONE__ && current.features[feature] === true;
 
-declare global { interface Window { __ogplayLayout?: string } }
-// Which screens the page draws: the phone layout (portrait, touch) only where the Android host says the device is a
-// phone (`__ogplayLayout`, set by its bridge before gui.js); desktop windows and tablets keep the console layout.
+// Which screens the page draws, fixed per build (vite.config.ts): the Android build is the phone layout (portrait,
+// touch), desktop builds the console layout. Code shared by both branches on __OGPLAY_PHONE__ so each build keeps
+// only its own side.
 export type Layout = 'console' | 'phone';
-export const layout = (): Layout => window.__ogplayLayout === 'phone' ? 'phone' : 'console';
+export const layout = (): Layout => __OGPLAY_PHONE__ ? 'phone' : 'console';
 export const hostPlatform = (): string => current.platform;
 
 // Settings groups that exist only for a capability: with it left out their fields are gone, and so are their notes.

@@ -7,7 +7,6 @@ import { VIEWS, type Cart3D, type View } from './cart3d/api';
 import { Back, Brand, type Skin } from '../kit';
 import { Key } from '../../../packages/ui-kit/key';
 import { t } from '../shared/i18n';
-import { layout } from '../shared/features';
 
 // Cartridge viewer: the selected library entry's 3D cartridge full screen, to turn round, look at from the presets
 // and open up to see the board. Everything printed or lit on it is still a host fact; ←/→ walk the same list as
@@ -57,7 +56,7 @@ export function CartViewer({ api, items, selected, skin, select, onBack }: {
     if (tip.current) tip.current.style.transform = `translate(${x + 16}px, ${y + 14}px)`;
   };
   const at = items.findIndex(game => game.installation_id === item.installation_id);
-  return <div class={`console viewer skin-${skin} ${layout() === 'phone' ? 'phone-viewer' : ''}`}>
+  return <div class={`console viewer skin-${skin} ${__OGPLAY_PHONE__ ? 'phone-viewer' : ''}`}>
     <Backdrop item={item} skin={skin} />
     <header class="top">
       <Brand />
@@ -82,7 +81,7 @@ export function CartViewer({ api, items, selected, skin, select, onBack }: {
       <span class="hint"><Key>← →</Key>{t('游戏')}</span><span class="hint"><Key>L R</Key>{t('视角')}<kbd>Q E</kbd></span>
       <span class="hint"><Key>A</Key>{t('拆开')}</span><span class="hint"><Key>Y</Key>{t('自转')}</span><span class="hint"><Key>X</Key>{t('复位')}</span>
       <span class="hint"><Key>B</Key>{t('返回')}<kbd>Esc</kbd></span>
-      <span class="foot-note">{layout() === 'phone' ? t('拖动旋转 · 双指缩放') : t('拖动旋转 · 滚轮缩放 · 指向部件看名称')}</span>
+      <span class="foot-note">{__OGPLAY_PHONE__ ? t('拖动旋转 · 双指缩放') : t('拖动旋转 · 滚轮缩放 · 指向部件看名称')}</span>
     </footer>
   </div>;
 }

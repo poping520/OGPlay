@@ -38,7 +38,9 @@ constexpr std::array<std::pair<std::string_view, Capability>, 22> kSettingCapabi
     {"ephemeral_sandbox", &GuiPlatform::developer},
 }};
 
-constexpr std::array<std::pair<std::string_view, Capability>, 9> kMethodCapabilities{{
+constexpr std::array<std::pair<std::string_view, Capability>, 11> kMethodCapabilities{{
+    {"library.resume", &GuiPlatform::single_game},
+    {"library.stop", &GuiPlatform::single_game},
     {"controls.open", &GuiPlatform::key_editor},
     {"dashboard.list", &GuiPlatform::dashboard},
     {"dashboard.open", &GuiPlatform::dashboard},
@@ -74,7 +76,8 @@ GuiPlatform GuiPlatform::Android() {
             .desktop_window = false,
             .path_settings = false,
             .file_upload = false,
-            .developer = false};
+            .developer = false,
+            .single_game = true};
 }
 
 bool SettingAvailable(const GuiPlatform& platform, std::string_view key) noexcept {

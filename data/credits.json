@@ -581,7 +581,8 @@
    "url": "https://github.com/supernotes/sn-pro",
    "license": "OFL-1.1",
    "platforms": [
-    "Windows"
+    "Windows",
+    "Android"
    ],
    "notices": [
     {

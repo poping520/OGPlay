@@ -11,6 +11,8 @@ enum class UiText : std::uint16_t {
     close_game_message,
     close_game_confirm,
     close_game_cancel,
+    close_game_library,
+    close_game_library_message,
     menu_hide_app,
     menu_hide_others,
     menu_show_all,

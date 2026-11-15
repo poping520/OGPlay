@@ -21,6 +21,12 @@ final class LauncherBridge {
 
         void launchGame(String[] arguments);
 
+        /** Brings the running game's task back to the front. */
+        void resumeGame();
+
+        /** Asks the running game to quit, as its own close confirmation would. */
+        void stopGame();
+
         void pickPath(long token, boolean directory);
 
         /** "size\tpath\n" lines for a picked directory handle; null when unknown or unreadable. */
@@ -109,6 +115,16 @@ final class LauncherBridge {
     @SuppressWarnings("unused")
     private void launchGame(String[] arguments) {
         host.launchGame(arguments);
+    }
+
+    @SuppressWarnings("unused")
+    private void resumeGame() {
+        host.resumeGame();
+    }
+
+    @SuppressWarnings("unused")
+    private void stopGame() {
+        host.stopGame();
     }
 
     @SuppressWarnings("unused")

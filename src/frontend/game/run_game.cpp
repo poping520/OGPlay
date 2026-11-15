@@ -870,6 +870,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                     .message = app::Text(language, app::UiText::close_game_message),
                     .confirm_label = app::Text(language, app::UiText::close_game_confirm),
                     .cancel_label = app::Text(language, app::UiText::close_game_cancel),
+                    .library_label = app::Text(language, app::UiText::close_game_library),
+                    .library_message = app::Text(language, app::UiText::close_game_library_message),
                 });
             } catch (const std::exception& error) {
                 logger.Write(core::LogLevel::warn, "frontend.run_apk.close_confirmation",

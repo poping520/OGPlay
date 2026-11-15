@@ -21,9 +21,11 @@
             android:name="SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON"
             android:value="1" />
 
-        <!-- The WebView library survives rotation and resizing instead of reloading the page. -->
+        <!-- The WebView library survives rotation and resizing instead of reloading the page. One instance only
+             (singleTask): the home screen icon, a game's "回到游戏库" and any other start reach the same page. -->
         <activity
             android:name=".launcher.LauncherActivity"
+            android:launchMode="singleTask"
             android:configChanges="layoutDirection|locale|fontScale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:enableOnBackInvokedCallback="true"
             android:exported="true"

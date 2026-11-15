@@ -1,7 +1,7 @@
 # 任务：Android Web 启动器
 
 目标：Android 主进程用系统 WebView 承载 `webui/gui`，复用 `GuiRpcService`，在真机上导入、设置并启动游戏；
-手机竖屏触屏布局；平板布局以后再定（暂用现有游戏机布局）。
+手机竖屏触屏布局；平板布局以后再定（暂用手机布局，Android 构建不含游戏机布局）。
 依赖：[frontend/gui](../../src/frontend/gui/MODULE.md)、[frontend/android](../../src/frontend/android/MODULE.md)、
 [android](../../android/MODULE.md)、[webui/gui](../../webui/apps/gui/MODULE.md)。
 范围：游戏库、导入（单体 APK 经 SAF 复制；数据包目录第二阶段）、全局与每游戏设置、内置 Demo、退出回报、开源致谢。
@@ -13,9 +13,9 @@
   被裁的 RPC 方法按未知方法拒绝，被裁设置不出现在 fields/values 且保存时拒绝，前端按 `host.features` 渲染。
 - MCP/Dashboard 运行时代码仍编入 ogplaycore，Android 没有入口；体积确有需要再加 CMake 开关。
 - `angle_backend` 在 Android 裁掉（Android ANGLE 预编译 `angle_enable_swiftshader=false`）；`cpu_*` 设备事实保留。
-- 画面尺寸跟随设备：运行时尚未支持，第一阶段保留 `screen_width/height`，作为后续缺口。
+- 画面尺寸：分辨率预设 + 画面比例（Android 默认跟随屏幕），预设不超过设备分辨率（见 frontend/library 契约）。
 - 布局（2026-11-14 修订）：现有横屏 UI 沿用电脑/手柄操作习惯，不适合手机。手机单独做一套竖屏触屏 UI（风格一致，
-  面向 19:9～20:9），PC 不用竖屏 UI；平板 UI 以后再说。按最小宽度 600dp 区分手机。
+  面向 19:9～20:9），PC 不用竖屏 UI；平板 UI 以后再说。webui 按构建目标分开：Android 构建只含手机布局，桌面构建只含游戏机布局。
 - 不新增 Android 依赖（不用 androidx.webkit），只用平台 API。
 
 ## 阶段
@@ -37,7 +37,7 @@
   选取已改为直读 SAF（IMPORT-ARCHIVE）：不再先复制到 cache，导入时一次写入并有进度，向导显示原路径。
   剩余：运行后“需要数据包”提示与游戏设置里无法补选数据包（Android 不允许引用目录），需要“为已有游戏复制数据包”的入口。
 - 阶段 5 首版完成：PJZ110（360×792 CSS px）上游戏库、游戏页、操作面板、全局/游戏设置两级页、选项面板、导入向导、
-  两种皮肤与返回键已截图核对；待用户手机实测反馈。平板仍用游戏机布局。
+  两种皮肤与返回键已截图核对；待用户手机实测反馈。Android 构建只含手机布局，平板暂用它。
 
 下一步：按用户实测反馈调整手机布局，再补阶段 6 剩余项。
 

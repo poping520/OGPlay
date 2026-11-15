@@ -35,6 +35,11 @@
 .ph-search input::-webkit-search-cancel-button { display: none; }
 .ph-search button { height: 40px; padding: 0 14px; border-radius: 999px; color: var(--accent); font-weight: 800; }
 .ph-chips { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 16px 12px; overflow-x: auto; scrollbar-width: none; }
+/* on the library the row sits at the top of the scrolling games: sticky, slid off while scrolling down, and backed
+   only while games are under it */
+.ph-home .ph-chips { position: sticky; top: 0; z-index: 2; transition: transform .22s cubic-bezier(.2,.8,.2,1), background-color .18s; }
+.ph-home .ph-chips.over { background: color-mix(in srgb, var(--bg) 86%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.ph-home .ph-chips.away { transform: translateY(-100%); }
 .ph-chips::-webkit-scrollbar { display: none; }
 .ph-chips button { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 15px; border-radius: 999px; background: var(--glass);
   color: var(--soft); font-size: 14px; font-weight: 800; white-space: nowrap; }
@@ -42,17 +47,38 @@
 .ph-chips .count { font-size: 12px; opacity: .6; }
 .ph-chips .sort { padding: 0 8px 0 12px; background: none; color: var(--muted); }
 .ph-chips .sort .glyph { width: 16px; height: 16px; }
-.ph-home .ph-scroll { padding: 2px 16px calc(100px + var(--safe-bottom)); }
-.ph-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.ph-card { display: flex; flex-direction: column; align-items: center; min-width: 0; padding: 16px 10px 14px; border-radius: 22px; background: var(--glass);
+.ph-home .ph-scroll { padding: 0 0 calc(100px + var(--safe-bottom)); }
+.ph-home .ph-scroll > :not(.ph-chips) { margin-inline: 16px; }
+/* the running game, one tap from going back to it */
+.ph-running { display: flex; align-items: center; gap: 10px; width: calc(100% - 32px); min-height: 52px; margin: 2px 0 12px; padding: 8px 10px 8px 16px;
+  border-radius: 18px; background: color-mix(in srgb, var(--running) 16%, transparent); color: var(--ink); text-align: left; }
+.ph-running .led { flex: none; }
+.ph-running span { flex: 1; min-width: 0; overflow: hidden; color: var(--soft); font-size: 13px; font-weight: 700; white-space: nowrap; text-overflow: ellipsis; }
+.ph-running b { margin-right: 8px; color: var(--ink); font-size: 15px; font-weight: 800; }
+.ph-running em { display: inline-flex; align-items: center; gap: 2px; flex: none; color: #b9dbff; font-size: 14px; font-style: normal; font-weight: 800; }
+.ph-running em .glyph, .ph-running em svg { width: 16px; height: 16px; }
+.ph-running:active:not(:disabled) { transform: scale(.98); }
+/* three cartridges a row, no card around them: the cartridge is the tile, its name under it */
+.ph-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 14px 8px; padding-top: 2px; }
+.ph-card { display: flex; flex-direction: column; align-items: center; min-width: 0; padding: 4px 2px 6px; border-radius: 16px; background: none;
   text-align: center; transition: transform .12s, background .12s; }
-.ph-card:active { background: var(--glass2); }
-.ph-cart { display: block; width: 100%; max-width: 112px; aspect-ratio: 27 / 40; container-type: inline-size; perspective: 700px; }
+.ph-card:active { background: var(--glass); }
+.ph-cart { display: block; width: 100%; aspect-ratio: 27 / 40; container-type: inline-size; perspective: 700px; }
 .ph-cart .cartridge { font-size: calc(100cqw / 27); transform: rotateY(-12deg); }
 .ph-cart .tile-3d { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
-.ph-name { display: block; width: 100%; margin-top: 12px; overflow: hidden; font-size: 15px; font-weight: 900; line-height: 1.3; white-space: nowrap; text-overflow: ellipsis; }
-.ph-status { display: inline-flex; align-items: center; gap: 6px; margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 700; }
-.ph-status .led { width: 7px; height: 7px; }
+.ph-name { display: block; width: 100%; margin-top: 4px; overflow: hidden; font-size: 13px; font-weight: 800; line-height: 1.3; white-space: nowrap; text-overflow: ellipsis; }
+.ph-status { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.ph-status.warning { color: var(--warning); }
+.ph-status.danger { color: #ffb4ae; }
+.ph-status .led { flex: none; width: 6px; height: 6px; }
+/* icon view: four a row, the game's launcher icon and its name */
+.ph-grid.icons { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 6px; padding-top: 6px; }
+.ph-grid.icons .ph-card { padding: 6px 2px 4px; }
+.ph-app-icon { display: grid; place-items: center; width: min(100%, 54px); aspect-ratio: 1; overflow: hidden; border-radius: 22%;
+  background: var(--glass2); box-shadow: 0 4px 12px rgba(0,0,0,.28); }
+.ph-app-icon img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ph-app-icon b { color: var(--ink); font-size: 24px; font-weight: 900; }
+.ph-grid.icons .ph-name { margin-top: 7px; font-size: 11px; font-weight: 700; }
 .console.phone .pill { justify-content: center; gap: 10px; height: 52px; padding: 0 24px; font-size: 16px; }
 .console.phone .pill.main { height: 56px; padding: 0 28px; font-size: 17px; }
 .console.phone .pill:hover:not(:disabled) { transform: none; }
@@ -71,6 +97,11 @@
 .ph-showcase .float { font-size: calc(min(44vh, 380px) / 52); }
 .ph-showcase .stage3d { inset: -4% -8%; }
 .ph-showcase .flag { top: 8%; right: 14%; }
+/* the icon view's game page: the game's own icon over the blurred art instead of the cartridge stage */
+.ph-icon-hero { position: relative; flex: none; display: grid; place-items: center; padding: 28px 0 18px; }
+.ph-icon-hero .ph-app-icon { width: 112px; border-radius: 26px; box-shadow: 0 18px 40px -10px rgba(0,0,0,.6); }
+.ph-icon-hero .ph-app-icon b { font-size: 46px; }
+.ph-icon-hero .flag { top: 18px; right: calc(50% - 92px); transform: rotate(8deg); }
 .ph-info { padding: 4px 22px 20px; }
 .ph-info h1 { margin: 10px 0 2px; font-size: 30px; font-weight: var(--title-weight); line-height: 1.15; letter-spacing: -.01em; overflow-wrap: anywhere; }
 .ph-info .mono { overflow-wrap: anywhere; color: var(--muted); font-size: 13px; user-select: text; }
@@ -125,6 +156,11 @@
 :root[data-layout="phone"] .dh-move { grid-template-columns: minmax(0, 1fr); }
 :root[data-layout="phone"] .dh-move > span { transform: rotate(90deg); justify-self: start; }
 :root[data-layout="phone"] .ii-usage { gap: 8px; }
+/* launch splash: icon and wordmark sized for a phone screen */
+:root[data-layout="phone"] .splash img { width: 88px; height: 88px; }
+:root[data-layout="phone"] .splash b { margin-top: 14px; font-size: 30px; }
+:root[data-layout="phone"] .splash small { margin-top: 8px; font-size: 11px; letter-spacing: .28em; }
+:root[data-layout="phone"] .splash-bar { width: 100px; margin-top: 24px; }
 @keyframes ph-sheet { from { transform: translateY(40px); opacity: 0; } }
 
 /* bottom sheet (parts.tsx Sheet): grip, title, entries of at least 56px */

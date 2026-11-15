@@ -15,6 +15,8 @@ ogplay_desktop_app，Android 外壳见 `frontend/android`。
   被关能力的 RPC 方法按未知方法（-32601）拒绝，其设置不进入 fields/values、保存时按未知设置拒绝，已有覆盖值原样保留；
   `library.launch` 只接受 normal，预览只给 normal；启动计划不生成按键令牌/端口，argv 只含游戏选项。
   宿主路径能力关闭时数据包只能复制入库（`external_mode: link` 与 `data_mount.apply` 的 `external_dir` 被拒绝）。
+  `single_game`（仅 Android）：同时只运行一个游戏进程；`library.resume`/`library.stop {installation_id}` 只对运行中的
+  游戏有效（否则 -32001），经宿主回调回到游戏或请它按自身退出流程退出；有游戏运行时启动另一个返回 -32003。
   `host.features {}` 返回 `{platform, features}`，前端据此决定入口，不自行判断平台。
 - `LauncherServices`：各平台共用的 Demo 补入、库视图上下文（宿主跟踪实例 + 运行锁）、Profile/制品事实、开源致谢与 APK 分析回调；
   平台只补充启动、选择器与窗口类回调。

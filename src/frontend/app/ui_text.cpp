@@ -16,6 +16,8 @@ constexpr auto kText = std::to_array<Entry>({
     {UiText::close_game_message, "确定要关闭游戏吗？未保存的进度可能会丢失。", "Close the game? Unsaved progress may be lost."},
     {UiText::close_game_confirm, "关闭", "Close"},
     {UiText::close_game_cancel, "取消", "Cancel"},
+    {UiText::close_game_library, "回到游戏库", "Game Library"},
+    {UiText::close_game_library_message, "关闭将结束游戏，未保存的进度可能会丢失；回到游戏库，游戏会在后台继续运行。", "Closing ends the game and unsaved progress may be lost. Game Library keeps it running in the background."},
     {UiText::menu_hide_app, "隐藏 OGPlay", "Hide OGPlay"},
     {UiText::menu_hide_others, "隐藏其他", "Hide Others"},
     {UiText::menu_show_all, "全部显示", "Show All"},

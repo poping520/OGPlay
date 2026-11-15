@@ -60,7 +60,7 @@
 - `hal::SetHostApplicationIdentity`：建窗前设置进程任务栏身份，1～128 个 `[A-Za-z0-9._-]`；Windows 为
   AppUserModelID（游戏与启动器分开成组），其他平台只校验。
 - `hal::InputEventType::close_requested`：用户请求关闭窗口（Android 为系统返回键/手势，不再作为按键上报），是否停止由窗口拥有者决定；`quit` 是宿主要求进程结束，不可拒绝。
-- `hal::WindowInput::ConfirmClose`：在拥有线程阻塞显示依附窗口的确认框，文案由调用方提供；仅用户选择关闭时返回 true，无法显示时抛错。
+- `hal::WindowInput::ConfirmClose`：在拥有线程阻塞显示依附窗口的确认框，文案由调用方提供；仅用户选择关闭时返回 true，无法显示时抛错。Android 另有 `library_label` 选项（此时以 `library_message` 代替消息，说明两种选择）：经 `GameActivity.showLibrary` 把启动器任务带到前台，游戏继续运行（返回 false，失败时留在游戏）。
 - `hal::WindowInput::PumpEvents`：处理宿主窗口消息但不移除规范化输入事件，供长任务
   在主线程维持窗口响应；关闭窗口上调用明确失败。
 - `hal::WindowInput::PresentRgba8`：校验完整 RGBA8 帧并缩放提交到当前 SDL 窗口。

@@ -251,7 +251,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             method.starts_with("library.upload."))
             return ImportRequest(method, params);
         if (method != "library.list" && method != "library.launch" && method != "library.open_dir" &&
-            method != "library.remove" && method != "library.clear_data" && method != "library.storage")
+            method != "library.remove" && method != "library.clear_data" && method != "library.storage" &&
+            method != "library.resume" && method != "library.stop")
             return Error(-32601, "unknown method", "使用当前版本支持的 GUI 方法。");
         if (method == "library.list")
             CheckFields(params, {});
@@ -261,7 +262,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             CheckFields(params, {"installation_id", "confirmed", "delete_saves"});
         else if (method == "library.clear_data")
             CheckFields(params, {"installation_id", "confirmed"});
-        else if (method == "library.storage")
+        else if (method == "library.storage" || method == "library.resume" || method == "library.stop")
             CheckFields(params, {"installation_id"});
         else
             CheckFields(params, {"installation_id", "kind"});
@@ -410,9 +411,25 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                     writer.AddString(result, "external_guest_dir", entry->external_guest_dir);
                 else
                     writer.AddNull(result, "external_guest_dir");
+            } else if (method == "library.resume" || method == "library.stop") {
+                const auto tile =
+                    std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
+                if (!tile->running) return Error(-32001, "游戏没有在运行", "刷新游戏库后重试。");
+                if (!(method == "library.resume" ? host_.resume : host_.stop))
+                    throw std::runtime_error("宿主不支持切换运行中的游戏。");
+                (method == "library.resume" ? host_.resume : host_.stop)(key);
+                writer.AddString(result, "installation_id", key);
             } else if (method == "library.launch") {
                 const auto tile =
                     std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
+                // Android runs one game process: a second launch would only bring the running game back.
+                if (platform_.single_game)
+                    if (const auto other = std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) {
+                            return item.running && item.key != key;
+                        });
+                        other != tiles.end())
+                        return Error(-32003, "已有游戏在运行（{name}）", "返回该游戏，或先关闭它再启动。",
+                                     {{"name", other->display_name}});
                 if (!tile->can_launch)
                     return Error(-32001, "游戏当前不可启动（{status}）", "检查运行状态、Profile 和数据包目录。",
                                  {{"status", std::string(Status(tile->status))}});

@@ -37,6 +37,7 @@ struct Fixture {
     std::vector<std::string> demo_packages;
     unsigned demo_seeds{};
     std::vector<UiLanguage> language_changes;
+    std::string resumed, stopped;
     frontend::GuiPlatform platform;
     frontend::GuiRpcService rpc{
         store,
@@ -81,7 +82,11 @@ struct Fixture {
          [this](std::string_view id) { opened_editor = id; },
          [this] { return demo_packages; },
          [this] { ++demo_seeds; },
-         [this](UiLanguage language) { language_changes.push_back(language); }},
+         [this](UiLanguage language) { language_changes.push_back(language); },
+         {},
+         {},
+         [this](std::string_view id) { resumed = id; },
+         [this](std::string_view id) { stopped = id; }},
         platform};
 
     explicit Fixture(frontend::GuiPlatform value = frontend::GuiPlatform::Desktop()) : platform(std::move(value)) {
@@ -1020,6 +1025,35 @@ std::optional<std::int64_t> ErrorCode(Fixture& fixture, const std::string& reque
     return error ? error->Member("code")->Integer() : std::nullopt;
 }
 }  // namespace
+
+TEST_CASE("gui_platform android returns to the one running game and starts no second one beside it") {
+    Fixture fixture(frontend::GuiPlatform::Android());
+    const auto other = fixture.root / "library/org.example.other";
+    std::filesystem::create_directories(other);
+    std::ofstream(other / "game.apk") << "fixture";
+    std::ofstream(other / "meta.toml") << "schema = 1\npackage = \"org.example.other\"\ndisplay_name = \"另一个\"\n"
+                                          "version_code = 1\nversion_name = \"1.0\"\nimported_at = \"now\"\n";
+    fixture.context.running_packages = {"org.example.game"};
+    const auto call = [&](std::string_view method, std::string_view id) {
+        return "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + std::string(method) +
+               "\",\"params\":{\"installation_id\":\"" + std::string(id) + "\"}}";
+    };
+    CHECK(Decode(fixture.rpc.Handle(call("library.resume", "org.example.game"))).Root().Member("result").has_value());
+    CHECK(fixture.resumed == "org.example.game");
+    CHECK(Decode(fixture.rpc.Handle(call("library.stop", "org.example.game"))).Root().Member("result").has_value());
+    CHECK(fixture.stopped == "org.example.game");
+    // Only a running game can be gone back to or closed; another one does not start while it runs.
+    CHECK(ErrorCode(fixture, call("library.resume", "org.example.other")) == -32001);
+    CHECK(ErrorCode(fixture, call("library.launch", "org.example.other")) == -32003);
+    CHECK(fixture.launches == 0);
+    fixture.context.running_packages.clear();
+    CHECK(Decode(fixture.rpc.Handle(call("library.launch", "org.example.other"))).Root().Member("result").has_value());
+    CHECK(fixture.launches == 1);
+
+    Fixture desktop;
+    CHECK(ErrorCode(desktop, call("library.resume", "org.example.game")) == -32601);
+    CHECK(ErrorCode(desktop, call("library.stop", "org.example.game")) == -32601);
+}
 
 TEST_CASE("gui_platform desktop offers every launcher capability") {
     Fixture fixture;

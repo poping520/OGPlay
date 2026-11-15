@@ -21,6 +21,9 @@ struct GuiPlatform final {
     bool path_settings{true};
     bool file_upload{true};  // library.upload.* (drag and drop)
     bool developer{true};    // interpreter, clock, log and timeout tuning
+    // One game process at a time, in its own task (Android): library.resume brings the running game back to the
+    // front, library.stop closes it, and a second game does not start while one runs.
+    bool single_game{false};
 
     [[nodiscard]] static GuiPlatform Desktop();
     [[nodiscard]] static GuiPlatform Android();

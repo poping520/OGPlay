@@ -1,4 +1,4 @@
-import { Brand } from './kit';
+import { Brand, editable } from './kit';
 import { Key } from '../../packages/ui-kit/key';
 import { Glyph } from '../../packages/ui-kit/glyph';
 import { useEffect, useRef, useState } from 'preact/hooks';
@@ -20,10 +20,10 @@ import { Splash } from './library/splash';
 import { Clock } from './library/clock';
 import { SortMenu } from './library/sort-menu';
 import './library/library.css';
+import './library/console.css';
 
 // Console layout (desktop windows, Android tablets): the library screen, handing the window to a full-screen view
 // (global or per-game settings, cartridge viewer) while one is open. The state it shows is useLauncher's.
-export const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
 export function App() {
   const launcher = useLauncher();
   const { library, items, loading, refresh, act, busy, query, setQuery, filter, setFilter, sort, setSort, settings, applySettings, skin, cartMode, cart3d, viewer,

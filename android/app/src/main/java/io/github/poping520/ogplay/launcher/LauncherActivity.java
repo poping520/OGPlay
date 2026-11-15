@@ -62,17 +62,13 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
     private static final long POLL_INTERVAL_MS = 500;
 
     // window.rpc for the page, resolved by deliver(); exits, the back key and the system bar insets enter the page
-    // here too. The first line names the layout (phone or console), see bridgeSource().
+    // here too. The Android web UI build is the phone layout only (portrait, touch, edge to edge).
     private static final String BRIDGE_SOURCE = String.join("\n",
             "(() => {",
             "  'use strict';",
-            "  // The console library is laid out for desktop windows: a short landscape screen gets a wider layout",
-            "  // viewport, scaled to fit, so the page is never shorter than MIN_HEIGHT CSS pixels. Phones use their own.",
-            "  const MIN_HEIGHT = 640, viewport = document.querySelector('meta[name=viewport]');",
-            "  if (window.__ogplayLayout !== 'phone' && viewport && innerHeight > 0 && innerHeight < MIN_HEIGHT && innerWidth > innerHeight)",
-            "    viewport.content = 'width=' + Math.round(innerWidth * MIN_HEIGHT / innerHeight);",
             "  // The phone page is an app screen at its natural size: pinching never zooms it.",
-            "  if (window.__ogplayLayout === 'phone' && viewport)",
+            "  const viewport = document.querySelector('meta[name=viewport]');",
+            "  if (viewport)",
             "    viewport.content = 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no';",
             "  // Heights of the status and navigation bars the phone page draws under, in CSS pixels.",
             "  window.__ogplayInsets = (top, bottom) => {",
@@ -120,8 +116,6 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
     private long pendingPick;
     private ParcelFileDescriptor pickedFile;
     private SafTrees trees;
-    // Phones (smallest width under 600dp) get the portrait phone layout drawn edge to edge; tablets the console one.
-    private boolean phone;
     private int insetTop;
     private int insetBottom;
 
@@ -129,9 +123,8 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        phone = getResources().getConfiguration().smallestScreenWidthDp < 600;
-        setRequestedOrientation(phone
-                ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        // The phone layout is portrait; tablets show it too until they get a layout of their own.
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             WebView.setWebContentsDebuggingEnabled(true);  // chrome://inspect for debug builds only
         }
@@ -146,9 +139,8 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
         settings.setSupportMultipleWindows(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setTextZoom(100);
-        // Honour the page's viewport meta, which the bridge widens on short landscape screens, and fit it to the view.
+        // Honour the page's viewport meta (device width, fixed scale, see the bridge).
         settings.setUseWideViewPort(true);
-        settings.setLoadWithOverviewMode(true);
         settings.setSupportZoom(false);
         // Pages stop at their ends; the view's stretch would slide the whole UI past the screen edge.
         web.setOverScrollMode(View.OVER_SCROLL_NEVER);
@@ -172,7 +164,7 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
         content.addView(web, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         content.addView(status);
-        if (phone && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             // The phone page paints under the system bars and keeps its controls clear of them (--safe-*); only the
             // keyboard shrinks the view. The WebView gets no insets of its own, so nothing is applied twice.
             getWindow().setDecorFitsSystemWindows(false);
@@ -251,12 +243,9 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
     }
 
     private void applyInsets() {
-        if (phone && bridge != null) evaluate("window.__ogplayInsets && window.__ogplayInsets(" + insetTop + "," + insetBottom + ")");
+        if (bridge != null) evaluate("window.__ogplayInsets && window.__ogplayInsets(" + insetTop + "," + insetBottom + ")");
     }
 
-    private String bridgeSource() {
-        return "window.__ogplayLayout = '" + (phone ? "phone" : "console") + "';\n" + BRIDGE_SOURCE;
-    }
 
     private void back() {
         if (bridge == null) {
@@ -308,6 +297,16 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
     @Override
     public void launchGame(String[] arguments) {
         main.post(() -> startActivity(GameActivity.intent(this, arguments)));
+    }
+
+    @Override
+    public void resumeGame() {
+        main.post(() -> startActivity(GameActivity.resume(this)));
+    }
+
+    @Override
+    public void stopGame() {
+        sendBroadcast(GameActivity.quit(this));
     }
 
     @Override
@@ -416,7 +415,7 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
             String path = url.getPath() == null ? "/" : url.getPath();
             try {
                 if (path.equals("/" + BRIDGE_SCRIPT)) {
-                    return respond("js", new ByteArrayInputStream(bridgeSource().getBytes(StandardCharsets.UTF_8)));
+                    return respond("js", new ByteArrayInputStream(BRIDGE_SOURCE.getBytes(StandardCharsets.UTF_8)));
                 }
                 File file = new File(pageRoot, path).getCanonicalFile();
                 if (!file.getPath().startsWith(pageRoot.getCanonicalPath() + File.separator) || !file.isFile()) {

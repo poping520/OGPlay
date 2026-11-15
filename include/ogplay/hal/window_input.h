@@ -156,6 +156,10 @@ struct CloseConfirmation {
     std::string_view message;
     std::string_view confirm_label;
     std::string_view cancel_label;
+    // Where the game runs in its own task beside the launcher (Android), a third choice that brings the launcher
+    // forward and leaves the game running; ConfirmClose then returns false. Other hosts leave it out.
+    std::string_view library_label;
+    std::string_view library_message;  // replaces message where library_label is offered, explaining both choices
 };
 
 class WindowInput {

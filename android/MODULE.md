@@ -11,11 +11,13 @@ Android 宿主工程（Gradle 根），只含 Java 外壳和打包配置。C++ �
   文件与目录用 SAF（`ACTION_OPEN_DOCUMENT` 不限类型 / `ACTION_OPEN_DOCUMENT_TREE`）选取后不复制：文件保持打开
   （只留最近一个）、以 `/proc/self/fd/<n>` 交给原生层；目录登记为 `SafTrees` 句柄，原生导入时列出并逐个打开文件。
   启动时清掉旧版本留在 cache 的副本。系统不允许选存储根、Download 根及 `Android/data|obb`，需选其下的目录。
-  最小宽度 < 600dp 为手机：锁竖屏，桥接脚本先写 `window.__ogplayLayout='phone'`，页面用手机布局；API 30+ 全面屏绘制，
+  Android 的 webui 构建只有手机布局：一律锁竖屏（平板暂同），视口固定设备宽度、不可缩放；API 30+ 全面屏绘制，
   状态栏/导航栏高度经 `__ogplayInsets` 写成 CSS `--safe-top/--safe-bottom`，只有软键盘缩小视图，WebView 不再收到 insets。
-  平板锁横屏、用游戏机布局，矮屏（CSS 高度 < 640）放宽布局视口后缩放。debug 包开启 WebView 远程调试（chrome://inspect）。
+  debug 包开启 WebView 远程调试（chrome://inspect）。
 - `game/GameActivity`：`:game` 进程，继承 `SDLActivity`，发布运行目录、用户数据目录和 locale 环境变量后进入
-  `SDL_main`；参数为启动器启动计划的完整 argv。一个进程只运行一个游戏，结束即退出进程。
+  `SDL_main`；参数为启动器启动计划的完整 argv。一个进程只运行一个游戏，结束即退出进程。游戏在独立任务（singleInstance）：
+  启动器以 `RESUME_GAME` 把它带回前台（游戏已结束时该意图直接结束），以包内广播 `QUIT_GAME` 请它退出（`nativeSendQuit`，
+  走与关闭确认相同的退出流程，后台时也能唤醒）；运行中不再启动另一个游戏，否则只会回到原游戏。
 - `runtime/RuntimeData`：把 assets 的 `data/` 按安装版本原子解压到私有目录，供原生层按普通
   文件读取；`publishEnvironment` 发布两个根目录与 `OGPLAY_ANDROID_LOCALE`。
 
@@ -36,7 +38,7 @@ Android 宿主工程（Gradle 根），只含 Java 外壳和打包配置。C++ �
   并让 SDL 捕获返回键（官方称该退出方案是临时的）。系统返回键/手势不交给 guest，由 hal 转为关闭请求，
   与桌面关窗一样弹出关闭确认。
 - `GameActivity` 以随系统深浅色的 DeviceDefault 对话框显示 SDL 消息框（≤3 个按钮）：Esc 默认按钮放在
-  取消位，返回键或点外部即选它。
+  取消位，返回键或点外部即选它。关闭确认另有“回到游戏库”（中性按钮）：`showLibrary` 以启动器的 launch intent 把其任务带到前台，游戏留在后台运行。
 - 不调用宿主 Android framework 服务来运行 guest；guest 仍只看到 API 19。
 
 ## 验证

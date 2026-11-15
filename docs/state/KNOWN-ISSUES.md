@@ -30,6 +30,11 @@
   复现：默认持久沙盒、1920×1080，菜单关闭；Dead Trigger 的 NativeActivity.onStop native futex 等待、Wild Blood 双 Activity 共享引用 CleanUp 空指针也未关闭。
 - **EGL 与窗口验收**：原生 EGL 生产者仍沿单向 pacer；真实 context loss、多窗口/透明 Activity、GLES1 vertex-array 原路径及跨平台未验收。
   复核入口：原生 EGL 游戏帧推进/关闭、窗口 relaunch 和现有场景；Java EGL 双向同步不覆盖原生自建循环。
+- **呈现读回**（后续优化）：实时会话的 Java EGL 窗口 swap 与 FrameService 已用 PBO+fence 异步读回，
+  但仅 Metal 启用，D3D11/Vulkan 等后端仍在生产线程同步读回；超采样仍整帧读回后在 collector 上 CPU
+  降采样，可改为 GPU blit 后只读逻辑尺寸。终态是 GPU 常驻 buffer 队列（IOSurface/D3D 共享句柄/
+  AHardwareBuffer）与 GPU 合成，只在截图/诊断时读回，需先把 WindowSystem 改为 GPU 合成。
+  复核入口：`rom_window_integration_tests.cpp` 的 realtime GLSurfaceView 用例与 Wild Blood 菜单帧率对照。
 - **软件图形**：文字整形/双向重排降级，WebP 编码、Parcel blob、硬件 Canvas 等能力缺失；不得把原样类加载当行为支持。
   复核入口：ROM 软件 Canvas/Paint/Bitmap 路径；Wild Blood 安装器、PvZ TermsActivity、NFS17 下载布局仍缺完整双侧画面对照。
 - **SurfaceTexture**：Metal 缺 external，MediaPlayer/NDK/EGL window producer 与后端切换尚未完整接入，context-loss 恢复未完成。

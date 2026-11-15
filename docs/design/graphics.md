@@ -209,7 +209,7 @@ pixel lease 延长的是该帧字节的寿命，
 
 ## 异步读回与 SurfaceTexture 的边界
 
-实时路径可显式启用能力受检的异步读回。
+实时路径可显式启用能力受检的异步读回，FrameService 与托管 window surface 的 swap 共用同一组件，后者按 surface 各持一条管线。
 producer 提交读回与 fence，collector 在内部共享 Context 等待、复制并交付；
 fence 是标识 GPU 工作完成的同步对象。
 这能把等待从生产线程分离，但要管理私有槽、背压、线程归属及停止时的 join。

@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "ogplay/gles/angle_frame.h"
+#include "ogplay/gles/angle_readback.h"
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
@@ -157,7 +158,35 @@ EglModule::EglModule(BoundaryCallServices& calls, EglBoundaryContext& context) n
     : calls_(calls), context_(context) {}
 
 EglModule::~EglModule() {
+    // Collectors publish through context_; join them before any member goes away.
+    for (auto& [_, surface] : surfaces_)
+        RetirePresentation(std::move(surface.presentation));
     RetireExtensionsLocked();
+}
+
+void EglModule::RetirePresentation(std::shared_ptr<SurfacePresentation> presentation) {
+    // Stop joins the collector, which never takes mutex_; callers release it first anyway.
+    if (presentation && presentation->readback) presentation->readback->Stop();
+}
+
+void EglModule::PublishPresentation(const PresentationTarget& target, std::vector<std::uint8_t> rgba8) noexcept {
+    try {
+        if (guest_graphics_retired_.load(std::memory_order_acquire)) return;
+        auto pixels = std::make_shared<video::VideoFrame>();
+        pixels->width = target.width;
+        pixels->height = target.height;
+        pixels->rgba8 =
+            target.factor == 1U
+                ? std::move(rgba8)
+                : gles::ResolveSupersampledRgba8(
+                      std::move(rgba8), gles::MakeSupersampleLayout(target.width, target.height, target.factor));
+        // A window that changed or retired after the swap rejects the stale frame.
+        static_cast<void>(context_.publish_surface_pixels(context_.native_window_owner, target.window, target.geometry,
+                                                          std::move(pixels)));
+    } catch (const std::exception&) {
+        // The window went away between the swap and GPU completion; the frame is dropped,
+        // as a BufferQueue drops buffers of an abandoned consumer.
+    }
 }
 
 void EglModule::RetireExtensionsLocked() noexcept {
@@ -908,7 +937,30 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             try {
                 frame->BindFramebuffer(target, 0U);
                 const auto& surface = surfaces_.at(args[1]);
+                const PresentationTarget presentation_target{queued_window, *geometry, surface.width, surface.height,
+                                                             graphics.layout.factor};
+                std::shared_ptr<SurfacePresentation> presentation;
                 if (!geometry->identity.IsNull() && context_.publish_surface_pixels) {
+                    std::scoped_lock lock(mutex_);
+                    presentation = surfaces_.at(args[1]).presentation;
+                }
+                if (presentation &&
+                    (!presentation->target.Same(presentation_target) || !presentation->readback->Matches(*frame))) {
+                    {
+                        std::scoped_lock lock(mutex_);
+                        surfaces_.at(args[1]).presentation.reset();
+                    }
+                    RetirePresentation(std::move(presentation));
+                }
+                if (presentation) {
+                    // Like a BufferQueue swap: queue the frame behind a fence and return. The collector
+                    // publishes it once the GPU completes; a surface change retires the pipeline first.
+                    if (guest_graphics_retired_.load(std::memory_order_acquire) || !presentation->readback->Enqueue()) {
+                        restore();
+                        SetError(tid, kEglBadNativeWindow);
+                        return 0U;
+                    }
+                } else if (!geometry->identity.IsNull() && context_.publish_surface_pixels) {
                     if (!surface_readbacks_) surface_readbacks_ = std::make_shared<SurfaceReadbackPool>();
                     auto pixels = std::shared_ptr<video::VideoFrame>(
                         surface_readbacks_->Take().release(),
@@ -931,6 +983,19 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                         restore();
                         SetError(tid, kEglBadNativeWindow);
                         return 0U;
+                    }
+                    // The first frame of a target is synchronous; later swaps queue behind a fence.
+                    if (context_.async_present_readback) {
+                        auto readback = gles::AsyncAngleReadback::Create(
+                            *frame, [this, presentation_target](std::vector<std::uint8_t> rgba8) {
+                                PublishPresentation(presentation_target, std::move(rgba8));
+                            });
+                        if (readback) {
+                            auto created = std::make_shared<SurfacePresentation>(
+                                SurfacePresentation{presentation_target, std::move(readback)});
+                            std::scoped_lock lock(mutex_);
+                            surfaces_.at(args[1]).presentation = std::move(created);
+                        }
                     }
                 } else
                     graphics.PublishFrame();

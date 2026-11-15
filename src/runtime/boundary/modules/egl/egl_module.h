@@ -8,6 +8,7 @@
 #include <memory>
 #include <thread>
 #include <span>
+#include <vector>
 
 #include "ogplay/hal/clock.h"
 #include "ogplay/runtime/boundary/boundary_symbol.h"
@@ -21,6 +22,10 @@
 
 namespace ogplay::core {
 class CapabilityLedger;
+}
+
+namespace ogplay::gles {
+class AsyncAngleReadback;
 }
 
 namespace ogplay::runtime {
@@ -40,6 +45,9 @@ struct EglBoundaryContext final {
     bool (*publish_surface_pixels)(void*, memory::GuestAddress, const AndroidSurfaceWindow&,
                                    std::shared_ptr<video::VideoFrame>){};
     std::uint64_t frame_period_ns{};
+    // Realtime sessions may publish window swaps from fenced PBO readback; manual stepping keeps
+    // the synchronous readback so each step composes the frame it produced.
+    bool async_present_readback{};
 };
 
 class EglModule final {
@@ -70,6 +78,28 @@ private:
 
     class SurfaceReadbackPool;
     std::shared_ptr<SurfaceReadbackPool> surface_readbacks_;
+
+    // Window and logical size one asynchronous readback pipeline publishes to.
+    struct PresentationTarget final {
+        memory::GuestAddress window;
+        AndroidSurfaceWindow geometry;
+        std::uint32_t width{}, height{}, factor{1U};
+
+        [[nodiscard]] bool Same(const PresentationTarget& other) const noexcept {
+            return window == other.window && geometry.identity == other.geometry.identity &&
+                   geometry.generation == other.geometry.generation && geometry.width == other.geometry.width &&
+                   geometry.height == other.geometry.height && width == other.width && height == other.height &&
+                   factor == other.factor;
+        }
+    };
+
+    struct SurfacePresentation final {
+        PresentationTarget target;
+        std::shared_ptr<gles::AsyncAngleReadback> readback;
+    };
+
+    void PublishPresentation(const PresentationTarget& target, std::vector<std::uint8_t> rgba8) noexcept;
+    static void RetirePresentation(std::shared_ptr<SurfacePresentation> presentation);
     BoundaryResult UnsupportedClock(const A32CallFrame& call);
 
     struct ThreadState final {
@@ -119,6 +149,7 @@ private:
         memory::GuestAddress native_window{};
         std::optional<std::int64_t> presentation_time_ns{};
         hal::FramePacer pacer{};
+        std::shared_ptr<SurfacePresentation> presentation{};
     };
 
     template <std::uint16_t FunctionId>

@@ -215,12 +215,28 @@ void DexActivityLifecycle::SetEglProducerWaitBudgetForTesting(std::uint64_t budg
 bool DexActivityLifecycle::ProducersReady(bool wait) {
     if (!producer_wait_started_ns_) producer_wait_started_ns_ = hal::Clock::SteadyTimestampNs();
     if (!runtime::EglProducersSettled(*bindings_.context, wait)) {
+        // A running producer may poll native time until it moves; realtime uptime keeps
+        // following host time while the step waits for it.
+        static_cast<void>(FollowHostTime());
         const auto waited = hal::Clock::SteadyTimestampNs() - producer_wait_started_ns_;
         if (waited < producer_budget_ns_) return false;
         runtime::ReleaseOverdueEglProducers(*bindings_.context, waited, bindings_.logger);
     }
     producer_wait_started_ns_ = 0;
     return true;
+}
+
+std::uint64_t DexActivityLifecycle::FollowHostTime() {
+    // Realtime uptime follows host time, independent of the step rate; the frame-rate cap only
+    // paces steps. A stalled interval catches up at most kMaxCatchUpMillis. Native sleeps of the
+    // driver since the last advance already moved uptime and are netted out.
+    const auto now = realtime_now_ns_ ? realtime_now_ns_() : hal::Clock::SteadyTimestampNs();
+    if (!realtime_) return now;
+    const auto elapsed_ns = now > previous_step_ns_ ? now - previous_step_ns_ : 0U;
+    previous_step_ns_ = std::max(previous_step_ns_, now);
+    runtime::AdvanceAndroidFrameClock(*bindings_.context,
+                                      static_cast<std::int64_t>(std::min(elapsed_ns, kMaxCatchUpMillis * 1'000'000U)));
+    return now;
 }
 
 void DexActivityLifecycle::AwaitProducers() {
@@ -249,18 +265,9 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
     try {
         CheckGuest();
         AwaitProducers();
-        const auto now = realtime_now_ns_ ? realtime_now_ns_() : hal::Clock::SteadyTimestampNs();
-        // Realtime uptime follows host time, independent of the step rate; the frame-rate cap only
-        // paces steps. A stalled step catches up at most
-        // kMaxCatchUpMillis. Manual stepping keeps one fixed frame period per step. Native sleeps
-        // of the driver inside the previous step already advanced uptime and are netted out.
-        auto delta = kNanosPerFrame;
-        if (realtime_) {
-            const auto elapsed_ns = now > previous_step_ns_ ? now - previous_step_ns_ : 0U;
-            previous_step_ns_ = std::max(previous_step_ns_, now);
-            delta = static_cast<std::int64_t>(std::min(elapsed_ns, kMaxCatchUpMillis * 1'000'000U));
-        }
-        runtime::AdvanceAndroidFrameClock(context, delta);
+        // Manual stepping keeps one fixed frame period per step.
+        const auto now = FollowHostTime();
+        if (!realtime_) runtime::AdvanceAndroidFrameClock(context, kNanosPerFrame);
         std::shared_ptr<runtime::RomWindowState> windows;
         bool media_tick{};
         {

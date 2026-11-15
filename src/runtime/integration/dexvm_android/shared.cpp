@@ -753,6 +753,7 @@ void AdvanceAndroidClock(DexVmAndroidContext& context, const std::int64_t delta_
         context.uptime_nanos.fetch_add(delta_nanos);
     }
     NotifyAndroidScheduler(context);
+    if (auto* const threads = context.threads) threads->NotifyClockAdvanced();
 }
 
 void AdvanceAndroidClockForDriverSleep(DexVmAndroidContext& context, const std::int64_t slept_nanos) {

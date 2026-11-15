@@ -497,6 +497,10 @@ void VmThreadRuntime::Sleep(const std::int64_t timeout_millis) {
     }
 }
 
+void VmThreadRuntime::NotifyClockAdvanced() noexcept {
+    impl_->changed.notify_all();
+}
+
 void VmThreadRuntime::Interrupt(const VmObjectRef thread_object) {
     std::uint64_t token = 0;
     {

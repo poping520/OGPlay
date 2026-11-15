@@ -36,6 +36,10 @@ EGL_WIDTH/HEIGHT 和实际 ANGLE backing 一致。尺寸变化在下一次 swap 
 重新分配并绑定下一 buffer；成功后 query 返回新尺寸，GL viewport 保持 guest 自己的状态。
 分配/绑定失败传播真实 EGL 错误，不冒充 resize 成功。NDK getter 可先于 EGL dequeue 变化。
 托管 holder 同步读取本次 swap 的 draw buffer，按 supersample 解析到 buffer 尺寸。
+`async_present_readback` 开启且 `AsyncAngleReadback` 能力受检通过时，每个 window surface 首帧同步发布，
+之后 swap 只提交读回与 fence 即返回（两槽占满时背压），collector 完成后解析并经同一像素 hook 发布；
+窗口/代次/尺寸/倍率或 context、backing 变化时先 join 旧管线再同步发布新首帧，surface 销毁与模块析构
+同样先 join。晚到帧由像素 hook 的代次复核丢弃，不向 guest 报错；手动步进保持同步读回。
 显式纯像素 hook 共享帧所有权，1× 读回仅在最后一个消费者释放后复用 RGBA8 存储。
 发布及 queue 通知复核 swap 捕获的窗口代次，尺寸变化不使已出队的旧尺寸 buffer 失效。
 普通 standalone/NativeActivity 无 holder 时继续使用 FrameService。

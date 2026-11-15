@@ -282,23 +282,33 @@ TEST_CASE("P3 ROM Activity exit takes focus from the dialog before pause and des
 }
 
 TEST_CASE("P3 ROM GLSurfaceView publishes beneath software overlays and retains EGL context") {
-    RomWindowApp fixture("GlActivity");
-    for (unsigned i = 0; i < 30; ++i) {
-        fixture.Step();
-        if (fixture.image && fixture.Pixel(60, 60)[1] >= 150) break;
-        hal::SleepPreciseNs(1'000'000);
+    // Realtime sessions publish window swaps through the fenced asynchronous readback; surface
+    // destruction retires the pipeline and the recreated surface publishes again.
+    for (const bool realtime : {false, true}) {
+        INFO("realtime=" << realtime);
+        RomWindowApp fixture("GlActivity", realtime);
+        const auto await_gl_pixels = [&] {
+            for (unsigned i = 0; i < 60; ++i) {
+                fixture.Step();
+                if (fixture.image && fixture.Pixel(60, 60)[1] >= 150) break;
+                hal::SleepPreciseNs(1'000'000);
+            }
+            CHECK(fixture.Pixel(12, 12) == std::array{255, 0, 0, 255});
+            CHECK(fixture.Pixel(60, 60)[1] >= 150);
+        };
+        await_gl_pixels();
+        REQUIRE(fixture.Read("GlActivity", "contexts") == 1);
+        CHECK(fixture.Read("GlActivity", "surfaceCreates") == 1);
+        static_cast<void>(fixture.app->ActivityLifecycle().Suspend());
+        CHECK(fixture.Read("GlActivity", "surfaceDestroys") == 1);
+        CHECK(fixture.Read("GlActivity", "validOnDestroy") == 1);
+        static_cast<void>(fixture.app->ActivityLifecycle().Resume());
+        fixture.Step(10);
+        CHECK(fixture.Read("GlActivity", "contexts") == 1);
+        CHECK(fixture.Read("GlActivity", "surfaceCreates") == 2);
+        fixture.image.reset();
+        await_gl_pixels();
     }
-    CHECK(fixture.Pixel(12, 12) == std::array{255, 0, 0, 255});
-    CHECK(fixture.Pixel(60, 60)[1] >= 150);
-    REQUIRE(fixture.Read("GlActivity", "contexts") == 1);
-    CHECK(fixture.Read("GlActivity", "surfaceCreates") == 1);
-    static_cast<void>(fixture.app->ActivityLifecycle().Suspend());
-    CHECK(fixture.Read("GlActivity", "surfaceDestroys") == 1);
-    CHECK(fixture.Read("GlActivity", "validOnDestroy") == 1);
-    static_cast<void>(fixture.app->ActivityLifecycle().Resume());
-    fixture.Step(10);
-    CHECK(fixture.Read("GlActivity", "contexts") == 1);
-    CHECK(fixture.Read("GlActivity", "surfaceCreates") == 2);
 }
 
 TEST_CASE("P3 ROM VideoView delivers a decoded frame to its ROM Surface") {
@@ -462,13 +472,16 @@ TEST_CASE("P3 slow EGL producer releases the Clock until it swaps again") {
         while (!fixture.Read("GlActivity", "slowDraws"))
             REQUIRE(hal::Clock::SteadyTimestampNs() < deadline);
         if (realtime) {
+            // The held producer may poll native time; realtime uptime keeps following host
+            // time while the step waits (each fake host read is one 16 ms interval).
             CHECK_FALSE(lifecycle.ReadyForFrame());
+            CHECK(fixture.context->UptimeMillis() == ticks + 32);
             hal::SleepPreciseNs(budget_ns);
             CHECK(lifecycle.ReadyForFrame());
         }
         const auto draws = fixture.Read("GlActivity", "draws");
         fixture.Step(2);
-        CHECK(fixture.context->UptimeMillis() == ticks + 48);
+        CHECK(fixture.context->UptimeMillis() == ticks + (realtime ? 80 : 48));
         CHECK(fixture.Read("GlActivity", "draws") == draws);
         const auto warnings = fixture.logger.Snapshot(core::LogLevel::warn, "runtime.egl.pacing");
         CHECK(warnings.size() == 1);

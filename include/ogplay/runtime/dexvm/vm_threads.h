@@ -48,8 +48,7 @@ struct VmThreadSnapshot final {
 
 class VmThreadRuntime final {
 public:
-    using UncaughtExceptionDispatcher =
-        std::function<bool(Interpreter&, VmObjectRef, VmObjectRef)>;
+    using UncaughtExceptionDispatcher = std::function<bool(Interpreter&, VmObjectRef, VmObjectRef)>;
 
     explicit VmThreadRuntime(Interpreter& vm);
     ~VmThreadRuntime();
@@ -73,8 +72,7 @@ public:
     // Starts virtual this.run() on a new host thread (Thread.start ->
     // VMThread.create -> dvmCreateInterpThread). The supplied id was allocated
     // when the Java object was constructed and remains stable after death.
-    void Start(VmObjectRef thread_object, std::string name,
-               std::uint64_t thread_id,
+    void Start(VmObjectRef thread_object, std::string name, std::uint64_t thread_id,
                UncaughtExceptionDispatcher uncaught_dispatcher = {});
 
     [[nodiscard]] bool IsAlive(VmObjectRef thread_object) const;
@@ -92,6 +90,9 @@ public:
     // VMThread.sleep / dvmThreadSleep. This parks the current execution
     // context without releasing any Java monitor owned by the caller.
     void Sleep(std::int64_t timeout_millis);
+    // The time source moved; timed sleepers recheck their deadline now instead of
+    // at the next poll.
+    void NotifyClockAdvanced() noexcept;
 
     // Raises the interrupt flag and wakes the target if it is parked
     // (AOSP vm/Thread.cpp dvmThreadInterrupt).
@@ -117,8 +118,7 @@ public:
     // Runtime-internal observable park state, keyed by execution context.
     // Monitor waits use this bridge so Snapshot() has one coherent surface
     // for sleep, join and monitor blocking.
-    void SetWaitState(std::uint64_t context_token,
-                      VmThreadWaitState wait_state);
+    void SetWaitState(std::uint64_t context_token, VmThreadWaitState wait_state);
 
     // Uncaught exceptions and VM errors are recorded here instead of being
     // thrown at whoever happens to call join(): the lifecycle driver drains
@@ -128,8 +128,7 @@ public:
     [[nodiscard]] VmObjectRef CurrentThreadObject() const;
     [[nodiscard]] std::size_t LiveCount() const;
     [[nodiscard]] std::vector<VmThreadSnapshot> Snapshot() const;
-    [[nodiscard]] std::optional<std::vector<VmThreadSnapshot>>
-    TrySnapshot() const;
+    [[nodiscard]] std::optional<std::vector<VmThreadSnapshot>> TrySnapshot() const;
     void VisitThreadRoots(const std::function<void(VmObjectRef)>& visitor) const;
 
     // Teardown: request every live thread to unwind, wake every parked

@@ -69,6 +69,7 @@ private:
     void CheckGuest();
     void AwaitProducers();
     bool ProducersReady(bool wait);
+    std::uint64_t FollowHostTime();
 
     DexActivityLifecycleBindings bindings_;
     std::vector<runtime::AndroidBoundaryInput> pending_input_;

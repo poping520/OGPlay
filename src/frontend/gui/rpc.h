@@ -21,6 +21,9 @@ inline bool CanDismissImportModal(bool host_dialog_pending) noexcept {
 
 using namespace ogplay::app;
 
+// The project page the About page's Star card opens; fixed here so the page never names a URL to open.
+inline constexpr std::string_view kOgplayRepositoryUrl = "https://github.com/poping520/OGPlay";
+
 // Host operations are explicit callbacks; the RPC model has no SDL/WebView dependency.
 struct GuiRpcHost final {
     std::function<LibraryViewContext(const std::vector<LibraryEntry>&)> context;
@@ -55,6 +58,8 @@ struct GuiRpcHost final {
     // single_game platforms: bring the running game (by installation id) back to the front, or ask it to quit.
     std::function<void(std::string_view)> resume;
     std::function<void(std::string_view)> stop;
+    // Opens an http(s) page in the system browser (about.open_repository).
+    std::function<void(std::string_view)> open_url;
 };
 
 class GuiRpcService final {

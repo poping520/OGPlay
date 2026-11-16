@@ -183,6 +183,16 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             writer.Add(root, "result", result);
             return {true, writer.Serialize(root)};
         }
+        if (method == "about.open_repository") {
+            CheckFields(params, {});
+            if (!host_.open_url) throw std::runtime_error("宿主不能打开网页。");
+            host_.open_url(kOgplayRepositoryUrl);
+            app::JsonWriter writer;
+            const auto root = writer.Object(), result = writer.Object();
+            writer.AddBool(result, "opened", true);
+            writer.Add(root, "result", result);
+            return {true, writer.Serialize(root)};
+        }
         if (method == "controls.open") {
             CheckFields(params, {"installation_id"});
             const auto id = RequiredString(params, "installation_id");

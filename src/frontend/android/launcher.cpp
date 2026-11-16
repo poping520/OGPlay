@@ -120,9 +120,10 @@ public:
         open_tree_file_method_ = env->GetMethodID(bridge_class, "openTreeFile", "([B[B)I");
         resume_method_ = env->GetMethodID(bridge_class, "resumeGame", "()V");
         stop_method_ = env->GetMethodID(bridge_class, "stopGame", "()V");
+        open_url_method_ = env->GetMethodID(bridge_class, "openUrl", "(Ljava/lang/String;)V");
         env->DeleteLocalRef(bridge_class);
         if (!launch_method_ || !pick_method_ || !list_tree_method_ || !open_tree_file_method_ || !resume_method_ ||
-            !stop_method_)
+            !stop_method_ || !open_url_method_)
             throw std::runtime_error("LauncherBridge callbacks are missing");
 
         const auto root = app::DefaultLibraryRoot();
@@ -144,6 +145,17 @@ public:
             CallGame(stop_method_, "无法关闭游戏。");
             logger_.Write(app::LogLevel::info, "frontend.android.launcher", "game asked to quit", {},
                           {{"installation_id", std::string(package)}});
+        };
+        host.open_url = [this](std::string_view url) {
+            JNIEnv* env = Env();
+            const auto text = env->NewStringUTF(std::string(url).c_str());
+            env->CallVoidMethod(bridge_, open_url_method_, text);
+            env->DeleteLocalRef(text);
+            if (env->ExceptionCheck()) {
+                env->ExceptionDescribe();
+                env->ExceptionClear();
+                throw std::runtime_error("无法打开网页。");
+            }
         };
         // Never offered here: open_directory (no file manager), minimize, Dashboard and key editor windows.
         host.open_directory = [](const std::filesystem::path&) {
@@ -365,6 +377,7 @@ private:
     jmethodID open_tree_file_method_{};
     jmethodID resume_method_{};
     jmethodID stop_method_{};
+    jmethodID open_url_method_{};
     app::Logger logger_;
     std::unique_ptr<app::LibraryStore> store_;
     std::unique_ptr<LauncherServices> services_;

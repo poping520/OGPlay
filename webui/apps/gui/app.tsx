@@ -291,6 +291,6 @@ export function App() {
         <button disabled={instance.key_editor_status !== 'ready'} title={t(instance.key_editor_detail)} onClick={() => void rpc('controls.open', { installation_id: instance.installation_id }).catch(report)}>{t('按键设置')}</button>
       </section>)}
     </Modal>}
-    {!importing && errors.length > 0 && <Modal title={t('操作提示')} onDismiss={launcher.dismissError}><pre>{errors[0]}</pre></Modal>}
+    {!importing && errors.length > 0 && <Modal title={errors[0].title ?? t('操作提示')} onDismiss={launcher.dismissError}><pre>{errors[0].text}</pre></Modal>}
   </div>;
 }

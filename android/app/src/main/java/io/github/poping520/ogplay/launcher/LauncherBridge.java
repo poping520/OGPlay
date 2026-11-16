@@ -27,6 +27,9 @@ final class LauncherBridge {
         /** Asks the running game to quit, as its own close confirmation would. */
         void stopGame();
 
+        /** Opens an http(s) page in the user's browser (the About page's project link). */
+        void openUrl(String url);
+
         void pickPath(long token, boolean directory);
 
         /** "size\tpath\n" lines for a picked directory handle; null when unknown or unreadable. */
@@ -125,6 +128,11 @@ final class LauncherBridge {
     @SuppressWarnings("unused")
     private void stopGame() {
         host.stopGame();
+    }
+
+    @SuppressWarnings("unused")
+    private void openUrl(String url) {
+        host.openUrl(url);
     }
 
     @SuppressWarnings("unused")

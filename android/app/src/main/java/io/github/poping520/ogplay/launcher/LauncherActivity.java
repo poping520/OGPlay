@@ -2,6 +2,7 @@ package io.github.poping520.ogplay.launcher;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.ActivityInfo;
@@ -307,6 +308,21 @@ public final class LauncherActivity extends Activity implements LauncherBridge.H
     @Override
     public void stopGame() {
         sendBroadcast(GameActivity.quit(this));
+    }
+
+    @Override
+    public void openUrl(String url) {
+        Uri uri = Uri.parse(url);
+        if (!"https".equals(uri.getScheme()) && !"http".equals(uri.getScheme())) {
+            throw new IllegalArgumentException("only http(s) pages open in the browser");
+        }
+        main.post(() -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE));
+            } catch (ActivityNotFoundException error) {
+                Log.w(TAG, "no browser for " + url, error);
+            }
+        });
     }
 
     @Override

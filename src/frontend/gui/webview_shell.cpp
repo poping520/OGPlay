@@ -128,6 +128,10 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
         auto host = services.Host([&] { return processes.RunningPackages(); });
         host.launch = [&](const auto& plan) { processes.Launch(plan); };
         host.open_directory = [](const auto& path) { hal::OpenHostDirectory(path); };
+        host.open_url = [](std::string_view url) {
+            if (!SDL_OpenURL(std::string(url).c_str()))
+                throw std::runtime_error(std::string("SDL_OpenURL failed: ") + SDL_GetError());
+        };
         host.pick = [&](bool directory) {
             return view->PickPath(directory, Text(language, directory ? UiText::pick_data_dir : UiText::pick_apk));
         };

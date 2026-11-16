@@ -37,7 +37,7 @@ struct Fixture {
     std::vector<std::string> demo_packages;
     unsigned demo_seeds{};
     std::vector<UiLanguage> language_changes;
-    std::string resumed, stopped;
+    std::string resumed, stopped, opened_url;
     frontend::GuiPlatform platform;
     frontend::GuiRpcService rpc{
         store,
@@ -86,7 +86,8 @@ struct Fixture {
          {},
          {},
          [this](std::string_view id) { resumed = id; },
-         [this](std::string_view id) { stopped = id; }},
+         [this](std::string_view id) { stopped = id; },
+         [this](std::string_view url) { opened_url = url; }},
         platform};
 
     explicit Fixture(frontend::GuiPlatform value = frontend::GuiPlatform::Desktop()) : platform(std::move(value)) {
@@ -411,6 +412,18 @@ TEST_CASE("GUI RPC serializes model facts and enforces launch eligibility") {
     fixture.context.profile_catalog_error = "unavailable";
     CHECK(Decode(fixture.rpc.Handle(launch)).Root().Member("error").has_value());
     CHECK(fixture.launches == 1);
+}
+
+TEST_CASE("GUI about RPC opens the OGPlay repository and takes no URL from the page") {
+    Fixture fixture;
+    auto opened = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"about.open_repository"})"));
+    CHECK(opened.Root().Member("result")->Member("opened")->Bool() == true);
+    CHECK(fixture.opened_url == "https://github.com/poping520/OGPlay");
+    fixture.opened_url.clear();
+    auto refused = Decode(fixture.rpc.Handle(
+        R"({"jsonrpc":"2.0","id":2,"method":"about.open_repository","params":{"url":"https://example.com"}})"));
+    CHECK(refused.Root().Member("error"));
+    CHECK(fixture.opened_url.empty());
 }
 
 TEST_CASE("GUI about RPC lists the shipped open-source projects and reads each license on request") {

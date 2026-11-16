@@ -158,7 +158,7 @@ export function PhoneApp() {
       <SheetItem label={t('关闭它，启动「{name}」', { name: find(sheet.to)!.display_name })} note={t('一次只能运行一个游戏；未保存的进度可能会丢失')} danger disabled={busy}
         onClick={() => { const from = find(sheet.from)!, to = find(sheet.to)!; setSheet(null); void stopThenStart(from, to); }} />
       <SheetItem label={t('取消')} onClick={() => setSheet(null)} /></Sheet>}
-    {!importing && errors.length > 0 && <Modal title={t('操作提示')} onDismiss={launcher.dismissError}><pre>{errors[0]}</pre></Modal>}
+    {!importing && errors.length > 0 && <Modal title={errors[0].title ?? t('操作提示')} onDismiss={launcher.dismissError}><pre>{errors[0].text}</pre></Modal>}
   </>;
 
   // Full-screen views take the whole window, as on the console; the back key reaches them as Esc.

@@ -12,6 +12,8 @@ import { useCart3D, type CartMode } from '../cartridge/cartridge3d';
 // Launcher state both layouts share (the console screen in app.tsx, the phone screens in phone/): the library and its
 // filters, settings and skin, the 3D cartridge bundle, running instances, entry actions, and the import, data-hint,
 // removal and clear-data flows with their errors. Each layout keeps only how it shows them.
+// One queued notice: a failed action or host message (titled 操作提示 by the layouts), or a game that crashed.
+export interface Notice { title?: string; text: string }
 export interface DashboardInfo { installation_id: string; process_id: number; port: number | null; status: string; detail: string; key_editor_status: string; key_editor_detail: string }
 
 export function useLauncher() {
@@ -30,7 +32,9 @@ export function useLauncher() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('name');
-  const [errors, setErrors] = useState<string[]>([]);
+  const [errors, setErrors] = useState<Notice[]>([]);
+  const libraryRef = useRef(library);
+  libraryRef.current = library;
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -38,7 +42,8 @@ export function useLauncher() {
   const inFlight = useRef(false);
   const generation = useRef(0);
   const items = useMemo(() => visibleItems(library.items, query, filter, sort), [library.items, query, filter, sort]);
-  const report = (reason: unknown) => setErrors(queue => [...queue, reason instanceof Error ? reason.message : String(reason)]);
+  const report = (reason: unknown, title?: string) =>
+    setErrors(queue => [...queue, { title, text: reason instanceof Error ? reason.message : String(reason) }]);
   const applySettings = (value: Settings) => {
     settingsRef.current = value; setSettings(value); applyLanguage(value); remember('ogplay.skin', value.values.settings_style);
   };
@@ -69,7 +74,10 @@ export function useLauncher() {
     const exited = (event: Event) => {
       const detail = (event as CustomEvent<{ installation_id: string; exit_code: number; log_tail: string }>).detail;
       setDashboards(current => current.filter(instance => instance.installation_id !== detail.installation_id));
-      if (detail.exit_code !== 0 && settingsRef.current?.values.show_exit_log !== false) report(`${t('{id} 退出码 {code}', { id: detail.installation_id, code: detail.exit_code })}\n${detail.log_tail}`);
+      if (detail.exit_code !== 0 && settingsRef.current?.values.show_exit_log !== false) {
+        const name = libraryRef.current.items.find(item => item.installation_id === detail.installation_id)?.display_name ?? detail.installation_id;
+        report(`${t('「{name}」异常退出，退出码 {code}。以下是运行日志的末尾：', { name, code: detail.exit_code })}\n\n${detail.log_tail}`, t('游戏异常退出'));
+      }
       void refresh().catch(report);
       // ADR-0146: what the run failed to find may point at a better data mount.
       void rpc<DataHint>('library.data_hint', { installation_id: detail.installation_id })

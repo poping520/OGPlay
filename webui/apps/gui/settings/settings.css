@@ -221,6 +221,39 @@ details.credit details.credit { background: rgba(255,255,255,.04); }
 @media (max-width: 1100px) { .cfg-top .save-state { display: none; } .cfg-foot .hk:nth-child(n+6) kbd { display: none; } }
 @media (prefers-reduced-motion: reduce) { .rows > *, .save-state.on i, .toast, .cfg dialog[open] { animation: none; } .cfg .switch::after { transition: none; } }
 
+/* About · Star on GitHub: a warm card whose star breathes and sparkles; pressing spins the star. */
+.star-card { position: relative; overflow: hidden; display: flex; align-items: center; gap: 18px; width: 100%; padding: 18px 20px;
+  border: 0; border-radius: 18px; text-align: left; color: var(--ink); cursor: pointer; font: inherit;
+  background: linear-gradient(120deg, rgba(255,194,26,.2), rgba(255,138,61,.12) 55%, rgba(255,194,26,.06));
+  box-shadow: inset 0 0 0 1px rgba(255,194,26,.38), 0 10px 30px -18px rgba(255,170,30,.7);
+  transition: transform .18s ease, box-shadow .18s ease; }
+.star-card:hover, .star-card:focus-visible { transform: translateY(-1px); outline: none;
+  box-shadow: inset 0 0 0 1.5px rgba(255,208,77,.75), 0 14px 34px -16px rgba(255,170,30,.85); }
+.star-card:active { transform: scale(.99); }
+.star-orb { position: relative; flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px;
+  background: radial-gradient(circle at 50% 45%, rgba(255,208,77,.35), rgba(255,194,26,.08) 70%); }
+.star-glyph { width: 32px; height: 32px; fill: var(--yellow-hi); stroke: #ffb300; stroke-width: 1.2; stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px rgba(255,200,40,.65)); animation: star-breathe 2.8s ease-in-out infinite; }
+.star-glyph.spun { animation: star-spin .7s cubic-bezier(.3,1.6,.5,1), star-breathe 2.8s ease-in-out .7s infinite; }
+.star-spark { position: absolute; width: 10px; height: 10px; fill: #fff3c4; opacity: 0; animation: star-twinkle 2.4s ease-in-out infinite; }
+.star-spark.s0 { top: 4px; right: 5px; }
+.star-spark.s1 { bottom: 6px; left: 4px; width: 8px; height: 8px; animation-delay: .8s; }
+.star-spark.s2 { top: 10px; left: 7px; width: 6px; height: 6px; animation-delay: 1.6s; }
+.star-copy { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.star-copy b { font-size: 16px; font-weight: 900; }
+.star-copy small { color: var(--soft); font-size: 13px; font-weight: 700; }
+.star-cta { flex: none; display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 999px;
+  background: var(--yellow); color: #1b1405; font-weight: 900; box-shadow: 0 6px 16px -8px rgba(255,194,26,.9); }
+.star-cta svg { width: 18px; height: 18px; fill: currentColor; }
+.star-cta em { font-style: normal; font-weight: 700; font-size: 12px; opacity: .7; }
+@keyframes star-breathe { 0%, 100% { transform: scale(1) rotate(0); } 50% { transform: scale(1.12) rotate(-8deg); } }
+@keyframes star-spin { from { transform: rotate(0) scale(.8); } to { transform: rotate(360deg) scale(1); } }
+@keyframes star-twinkle { 0%, 100% { opacity: 0; transform: scale(.3) rotate(0); } 45% { opacity: 1; transform: scale(1) rotate(45deg); } 70% { opacity: 0; transform: scale(.5) rotate(90deg); } }
+.cfg-phone .star-card { flex-wrap: wrap; gap: 12px 14px; padding: 16px; }
+.cfg-phone .star-copy { flex-basis: calc(100% - 66px); }
+.cfg-phone .star-cta { width: 100%; justify-content: center; }
+@media (prefers-reduced-motion: reduce) { .star-card, .star-glyph, .star-glyph.spun, .star-spark { animation: none; transition: none; } }
+
 /* ================================================================== skin-glass · 玻璃紫 */
 /* tokens, sky, keys, pills, segments and dialog surface come from the ui-kit skin-glass section */
 .skin-glass .cfg-bg .art, .skin-glass .cfg-bg .fade { display: none; }

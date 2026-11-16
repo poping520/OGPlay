@@ -82,6 +82,8 @@ ogplay_desktop_app，Android 外壳见 `frontend/android`。
   `--key-editor-port`。`GuiProcessManager` 每 500ms 以令牌发 `control.status {client:"launcher"}`，
   据此标记就绪，并在 `edit_requests` 增加（游戏内 F2）时打开窗口、`close_requests` 增加（页面“完成”）时关闭窗口。`controls.open {installation_id}`
   只对就绪实例打开；`dashboard.list` 带 `key_editor_status/detail`，从不返回令牌。
+- `about.open_repository {}`：用系统浏览器打开 OGPlay 的 GitHub 仓库（关于页 Star 卡片）；URL 固定在宿主
+  （`kOgplayRepositoryUrl`），页面不传网址。桌面经 `SDL_OpenURL`，Android 经 `LauncherBridge.openUrl`（ACTION_VIEW）。
 - `about.credits {}` / `about.notices {id}`：关于页开源致谢；`parent` 指向引入该项目的已列项目（须排在其前），OGPlay 直接使用的项目没有此字段。单文件 `data/credits.json` 内嵌许可证原文，由
   `tools/credits.py` 生成（`--check` 检查过期）；项目可带非空 `platforms` 数组（`Windows`/`Darwin`/`Linux`），省略则通用。
   可选 `original_url` 记录原始仓库，经 RPC 原样传递；填写时界面分别显示“当前使用仓库”（`url`）和“原始仓库”，未填写保持单一 URL 展示。

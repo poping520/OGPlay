@@ -80,4 +80,4 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
   启动器已换成 WebView 承载的 webui（[AND-LAUNCHER](../tasks/AND-LAUNCHER.md)），PJZ110 上导入（含 ZIP/RAR 游戏压缩包，SAF 选取不再先复制）、设置、启动与退出回报实测；Android 构建只含竖屏触屏的手机布局（平板暂同），桌面构建只含游戏机布局。
 - WebView 仅基础配置与回调（[DVM-187](KNOWN-ISSUES.md)/[188](KNOWN-ISSUES.md)），
   页面、JavaScript、TextToSpeech 未实现。
-- 不支持 NDK Looper callback 与非 pipe fd；TLS-03、完整 mmap/lock、系统 CA 未验收。
+- NDK Looper 支持 pipe 的 ident 和 callback 轮询；非 pipe fd、TLS-03、完整 mmap/lock、系统 CA 待验收。

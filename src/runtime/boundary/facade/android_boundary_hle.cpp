@@ -615,7 +615,7 @@ private:
         return static_cast<Impl*>(owner)->ReadShaderSources(arguments, thread_id);
     }
 
-    template <typename Module, auto Method, std::size_t ParameterCount, bool Gpu>
+    template <typename Module, auto Method, std::size_t ParameterCount, bool Gpu, bool LooperPoll = false>
     void BindExport(const BoundaryModuleDescriptor& module_descriptor, const std::string_view name, Module& module) {
         const auto found = std::find_if(module_descriptor.exports.begin(), module_descriptor.exports.end(),
                                         [&](const auto& export_) { return export_.name == name; });
@@ -626,7 +626,7 @@ private:
         if (slot >= fast_router_.Entries().size() || fast_router_.Entry(slot).invoke != nullptr) {
             throw std::logic_error("boundary hot slot is invalid or already bound");
         }
-        fast_router_.Entry(slot) = {&InvokeBoundaryFast<Module, Method, ParameterCount, Gpu>, &module,
+        fast_router_.Entry(slot) = {&InvokeBoundaryFast<Module, Method, ParameterCount, Gpu, LooperPoll>, &module,
                                     &InvokeBoundarySlow<Module, Method>, Gpu};
     }
 
@@ -796,7 +796,8 @@ private:
         };
         const auto& android = require("libandroid.so");
 #define OGPLAY_BIND_ANDROID(name, id, count, method)                                                                   \
-    BindExport<AndroidModule, &AndroidModule::method, count, false>(android, name, android_module_);
+    BindExport<AndroidModule, &AndroidModule::method, count, false, id == 7 || id == 34>(android, name,                \
+                                                                                         android_module_);
         OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_BIND_ANDROID)
 #undef OGPLAY_BIND_ANDROID
         const auto& bitmap = require("libjnigraphics.so");

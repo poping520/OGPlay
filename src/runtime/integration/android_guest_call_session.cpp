@@ -3,6 +3,9 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
+#include <map>
+#include "ogplay/core/byte_order.h"
 #include <condition_variable>
 #include <charconv>
 #include <cstddef>
@@ -78,10 +81,18 @@ constexpr std::uint32_t kTemporaryArenaEnd = 0x78000000U;
     return result;
 }
 
-std::vector<std::byte> BuildGuestProcMaps(const memory::AddressSpace& space) {
+struct GuestModuleMapping {
+    memory::GuestRange range;
+    std::string_view path;
+};
+
+std::vector<std::byte> BuildGuestProcMaps(const memory::AddressSpace& space,
+                                          std::span<const GuestModuleMapping> modules) {
+    constexpr std::size_t kMaximumRanges = 8192;
+    constexpr std::size_t kMaximumBytes = 1024U * 1024U;
     std::vector<memory::MemoryMappingInfo> mappings;
     try {
-        mappings = space.DescribeMappings(8192);
+        mappings = space.DescribeMappings(kMaximumRanges);
     } catch (const std::length_error&) {
         throw VfsError(27, "guest proc maps range limit exceeded");
     }
@@ -94,19 +105,48 @@ std::vector<std::byte> BuildGuestProcMaps(const memory::AddressSpace& space) {
         if (size < 8) text.append(8 - size, '0');
         text.append(buffer.data(), size);
     };
-    for (const auto& mapping : mappings) {
-        const auto start = mapping.range.Start().Value();
+    std::size_t line_count = 0;
+    const auto append_mapping = [&](std::uint64_t start, std::uint64_t end, memory::PageProtection protection,
+                                    std::string_view path) {
+        if (++line_count > kMaximumRanges || path.size() + 64 > kMaximumBytes - text.size())
+            throw VfsError(27, "guest proc maps snapshot limit exceeded");
         append_hex(start);
         text += '-';
-        append_hex(static_cast<std::uint64_t>(start) + mapping.range.Size());
-        const auto permissions = static_cast<std::uint8_t>(mapping.protection);
+        append_hex(end);
+        const auto permissions = static_cast<std::uint8_t>(protection);
         text += ' ';
         text += (permissions & 1U) ? 'r' : '-';
         text += (permissions & 2U) ? 'w' : '-';
         text += (permissions & 4U) ? 'x' : '-';
-        // Guest pages are currently private anonymous allocations, including
-        // ELF segments copied into those pages. No invented file identity.
-        text += "p 00000000 00:00 0\n";
+        text += "p 00000000 00:00 0";
+        if (!path.empty()) {
+            text += ' ';
+            for (const auto ch : path) {
+                if (ch == '\n')
+                    text += "\\012";
+                else
+                    text += ch;
+            }
+        }
+        text += '\n';
+        if (text.size() > kMaximumBytes) throw VfsError(27, "guest proc maps snapshot limit exceeded");
+    };
+    auto region = modules.begin();
+    for (const auto& mapping : mappings) {
+        std::uint64_t cursor = mapping.range.Start().Value();
+        const auto end = mapping.range.EndExclusive();
+        while (cursor < end) {
+            while (region != modules.end() && region->range.EndExclusive() <= cursor)
+                ++region;
+            if (region == modules.end() || region->range.Start().Value() >= end) {
+                append_mapping(cursor, end, mapping.protection, {});
+                break;
+            }
+            const auto start = region->range.Start().Value();
+            const auto next = cursor < start ? start : std::min(end, region->range.EndExclusive());
+            append_mapping(cursor, next, mapping.protection, cursor < start ? std::string_view{} : region->path);
+            cursor = next;
+        }
     }
     const auto bytes = std::as_bytes(std::span{text.data(), text.size()});
     return {bytes.begin(), bytes.end()};
@@ -663,8 +703,10 @@ public:
         urandom_ = filesystem_->RegisterReadOnlyCharacterDevice("/dev/urandom", 0x109U, random_reader);
         random_ = filesystem_->RegisterReadOnlyCharacterDevice("/dev/random", 0x108U, random_reader);
         cpu_environment_.Publish(*filesystem_);
-        proc_maps_ = filesystem_->RegisterGeneratedReadOnly(
-            "/proc/self/maps", 1024U * 1024U, [space = &address_space_] { return BuildGuestProcMaps(*space); });
+        proc_maps_ =
+            filesystem_->RegisterGeneratedReadOnly("/proc/self/maps", 1024U * 1024U, [this] { return ProcMaps(); });
+        const auto proc_pid = "/proc/" + std::to_string(kGuestProcessId);
+        if (filesystem_->CanonicalPath(proc_pid) != "/proc/self") filesystem_->AddPathAlias(proc_pid, "/proc/self");
         BindAndroidGuestJavaAudioHandlers(invocations_, sound_pool_,
                                           sound_pool_mixer_.Enabled() ? &sound_pool_mixer_ : nullptr);
         BindAndroidGuestJavaMediaHandlers(invocations_, environment_, strings_, arrays_, movie_state_, media_state_,
@@ -691,6 +733,8 @@ public:
                 cpu_environment_.BindSysconf(symbols, address_space_);
                 return symbols;
             });
+        for (const auto& module : loaded_.link_namespace.modules)
+            if (!module.load_ranges.empty()) module_paths_.emplace(module.name, "/system/lib/" + module.name);
         Progress("modules-loaded");
 
         process_memory_ = InitializeApi19GuestProcess(address_space_, memory_bus_, loaded_.link_namespace,
@@ -1104,9 +1148,9 @@ public:
     SupervisorCallProgress HandleBoundary(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
         if ((stopped.reason != cpu::RunStopReason::supervisor_call &&
              stopped.reason != cpu::RunStopReason::host_call_fault) ||
-            stopped.immediate != 3U)
+            (stopped.immediate != 2U && stopped.immediate != 3U))
             return boundary_.HandleWithProgress(cpu, stopped);
-        // JNI on a native clone borrows that thread's CPU for nested calls.
+        // JNI and reentrant boundary calls on a native clone borrow its CPU.
         // Java/root calls already publish the current CPU and nesting depth.
         const auto found = active_guest_calls.find(this);
         const auto previous = found == active_guest_calls.end() ? ActiveGuestCall{} : found->second;
@@ -1124,7 +1168,7 @@ public:
         } restore{this, previous};
 
         if (!previous.cpu) active_guest_calls[this] = {&cpu, 0U};
-        if (jni_dispatcher_.Handle(cpu, stopped)) {
+        if (stopped.immediate == 3U && jni_dispatcher_.Handle(cpu, stopped)) {
             return ClassifyJniReentry(true);
         }
         return boundary_.HandleWithProgress(cpu, stopped);
@@ -1168,6 +1212,9 @@ public:
             },
             +[](void* userdata, const std::uint32_t pc, const std::uint64_t thread_id) {
                 return static_cast<Impl*>(userdata)->DynamicFindExidx(pc, thread_id);
+            },
+            +[](void* userdata, memory::GuestAddress address, memory::GuestAddress output, std::uint64_t thread_id) {
+                return static_cast<Impl*>(userdata)->DynamicAddress(address, output, thread_id);
             }};
         options.ledger = &owner->ledger_;
         options.loopers.create_pipe = [owner] {
@@ -1182,6 +1229,12 @@ public:
             } catch (const GuestThreadLifecycleError&) {
                 return false;
             }
+        };
+        options.loopers.invoke_callback = [owner](std::uint64_t tid, memory::GuestAddress callback, std::int32_t fd,
+                                                  std::uint32_t events, memory::GuestAddress data) {
+            A32GuestCallFrame frame{callback, {static_cast<std::uint32_t>(fd), events, data.Value(), 0}, {}};
+            frame.thread_id = tid;
+            return std::bit_cast<std::int32_t>(owner->Invoke(frame).return_value);
         };
         options.open_sles_callbacks = {owner, +[](void* userdata, const OpenSlesGuestCallback& callback) {
                                            static_cast<Impl*>(userdata)->EnqueueOpenSlesCallback(callback);
@@ -1379,6 +1432,68 @@ public:
         } else {
             detail::SetApi19LinkerReferences(address_space_, *state->view, state->references - 1U);
             --state->references;
+        }
+        return 0;
+    }
+
+    std::vector<std::byte> ProcMaps() const {
+        std::scoped_lock lock(dynamic_link_mutex_);
+        std::vector<GuestModuleMapping> modules;
+        for (const auto& module : loaded_.link_namespace.modules) {
+            const auto path = module_paths_.find(module.name);
+            if (path == module_paths_.end()) continue;
+            for (const auto& range : module.load_ranges)
+                modules.push_back({range, path->second});
+        }
+        std::ranges::sort(modules, {}, [](const auto& module) { return module.range.Start(); });
+        return BuildGuestProcMaps(address_space_, modules);
+    }
+
+    memory::GuestAddress InternLinkerName(const std::string& name) {
+        if (const auto found = linker_names_.find(name); found != linker_names_.end()) return found->second;
+        constexpr std::uint64_t kArenaEnd = 0x7a000000U;
+        const auto page = address_space_.PageSize();
+        const auto size = (name.size() + page) / page * page;
+        if (next_dynamic_link_view_.Value() + size > kArenaEnd)
+            throw loader::LinkError("API19 linker view arena exhausted");
+        const auto address =
+            address_space_.MapAnywhere({next_dynamic_link_view_, kArenaEnd - next_dynamic_link_view_.Value()}, size,
+                                       memory::PageProtection::read | memory::PageProtection::write);
+        try {
+            address_space_.Write(address, std::as_bytes(std::span{name.c_str(), name.size() + 1}));
+            address_space_.Protect({address, size}, memory::PageProtection::read);
+        } catch (...) {
+            address_space_.Unmap({address, size});
+            throw;
+        }
+        next_dynamic_link_view_ = address.Add(size);
+        linker_names_.emplace(name, address);
+        return address;
+    }
+
+    std::uint32_t DynamicAddress(memory::GuestAddress address, memory::GuestAddress output, std::uint64_t tid) {
+        if (output.IsNull()) return 0;
+        std::scoped_lock lock(dynamic_link_mutex_);
+        for (const auto& module : loaded_.link_namespace.modules) {
+            if (!std::ranges::any_of(module.load_ranges,
+                                     [address](const auto& range) { return range.Contains(address); }))
+                continue;
+            const auto base =
+                std::ranges::min(module.load_ranges, {}, [](const auto& range) { return range.Start(); }).Start();
+            const auto destination = address_space_.PreflightWrite({output, 16}, tid);
+            std::array<std::byte, 16> data{};
+            core::WriteLittleEndian(std::span{data}, 0, InternLinkerName(module_paths_.at(module.name)).Value());
+            core::WriteLittleEndian(std::span{data}, 4, base.Value());
+            for (const auto& symbol : module.symbols.symbols) {
+                if (symbol.section_index == 0 || symbol.name.empty()) continue;
+                const auto start = static_cast<std::uint64_t>(module.load_bias.Value()) + symbol.value.Value();
+                if (address.Value() < start || address.Value() - start >= symbol.size) continue;
+                core::WriteLittleEndian(std::span{data}, 8, InternLinkerName(symbol.name).Value());
+                core::WriteLittleEndian(std::span{data}, 12, static_cast<std::uint32_t>(start));
+                break;
+            }
+            address_space_.WritePrevalidated(destination, data);
+            return 1;
         }
         return 0;
     }
@@ -2258,6 +2373,9 @@ public:
             root_module_index = extension.link_extension.scope.root_module;
             for (std::size_t index = 0; index < inputs.size(); ++index) {
                 const auto namespace_index = old_namespace_size + index;
+                const auto& source = missing_sources[index];
+                module_paths_.emplace(source.name,
+                                      source.guest_path.empty() ? "/data/app-lib/" + source.name : source.guest_path);
                 lifecycle_modules_.push_back(
                     {namespace_index, inputs[index].load_bias, extension.modules[index].lifecycle});
             }
@@ -2468,6 +2586,8 @@ private:
 
     static constexpr std::uint32_t kRtldDefault = 0xffffffffU;
     std::vector<DynamicLinkHandle> dynamic_link_handles_;
+    std::map<std::string, std::string, std::less<>> module_paths_;
+    std::map<std::string, memory::GuestAddress, std::less<>> linker_names_;
     memory::GuestAddress next_dynamic_link_view_{0x79000000U};
     std::vector<loader::Elf32LoadedModule> dynamic_modules_;
     std::string root_module_;

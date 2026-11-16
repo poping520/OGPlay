@@ -425,6 +425,8 @@ constexpr std::array kLocalServices{
                  "Lcom/android/internal/telephony/IPhoneSubInfo$Stub;"},
     LocalService{"isms", "Lorg/ogplay/framework/LocalSmsService;", "Lcom/android/internal/telephony/ISms$Stub;"},
     LocalService{"location", "Lorg/ogplay/framework/LocalLocationService;", "Landroid/location/ILocationManager$Stub;"},
+    LocalService{"media_router", "Lorg/ogplay/framework/LocalMediaRouterService;",
+                 "Landroid/media/IMediaRouterService$Stub;"},
     LocalService{"mount", "Lorg/ogplay/framework/LocalMountService;", "Landroid/os/storage/IMountService$Stub;"},
     LocalService{"notification", "Lorg/ogplay/framework/LocalNotificationService;",
                  "Landroid/app/INotificationManager$Stub;"},

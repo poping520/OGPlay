@@ -648,6 +648,8 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
     }
     const auto descriptor = AllocateDescriptor();
     auto opened = std::make_shared<OpenFile>(std::move(selected_file), 0, options.read, options.write, nullptr);
+    opened->owner_id = OwnerLocked(normalized);
+    opened->system_partition = normalized == "/system" || normalized.starts_with("/system/");
     opened->append = options.append;
     opened->non_blocking = options.non_blocking;
     opened->large_file = options.large_file;
@@ -1194,6 +1196,22 @@ auto ObserveLookup(const Impl& impl, const std::string_view path, Call&& call, c
     }
 }
 }  // namespace
+
+void VirtualFileSystem::SetApplicationOwner(std::string_view data_root, std::uint32_t uid) {
+    impl_->SetApplicationOwner(data_root, uid);
+}
+
+void VirtualFileSystem::SetLastModified(std::string_view path, std::int64_t millis) {
+    impl_->SetLastModified(path, millis);
+}
+
+void VirtualFileSystem::Chmod(std::string_view path, std::uint32_t mode) {
+    impl_->Chmod(path, mode);
+}
+
+void VirtualFileSystem::Fchmod(std::int32_t fd, std::uint32_t mode) {
+    impl_->Fchmod(fd, mode);
+}
 
 VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
     return ObserveLookup(*impl_, path, [&] { return impl_->Stat(path); });

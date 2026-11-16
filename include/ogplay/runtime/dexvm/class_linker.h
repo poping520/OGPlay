@@ -50,6 +50,7 @@ struct CoreIntrinsicServices final {
     std::function<std::optional<Passwd>(Interpreter&, std::int32_t)> guest_passwd;
     enum class IcuVersion { library, unicode, cldr };
     std::function<std::string(Interpreter&, IcuVersion)> guest_icu_version;
+    bool guest_icu_converters{};
     std::function<void(Interpreter&, bool, std::span<const std::byte>)> write_standard_stream;
     IntrinsicHandler runtime_load;
     IntrinsicHandler runtime_load_library;

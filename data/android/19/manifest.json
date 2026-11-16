@@ -172,8 +172,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 158896,
-      "sha256": "6b83a57cfefd42c997745e680cbacce4203a7d41018243e3755677e7709f6a13",
+      "size": 173252,
+      "sha256": "7dc906ebccadf6730b470ec9f26eb9fd15816bab3c2772d4e7990b2fa30e252a",
       "soname": "libogplay_jni.so",
       "needed": [
         "libssl.so",
@@ -186,7 +186,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "1dcdd3e5c6065bca413115e0f8e272d026b72dd4f99fca6203caf44477fb7c4c",
+        "generator_sha256": "ec980134fe98cd90b0879ed55d8c0a751f532bccbf8e2afd0efab7198e0f61f9",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",
@@ -205,15 +205,19 @@
           },
           {
             "path": "src/guest/icu/icu_jni.c",
-            "sha256": "91b4a7a35494e1ddb5d62090bba1109bb443cb54b0f46163dd39c1ad9daa3160"
+            "sha256": "caa30241284d50c466607a6c45a3e9c8e6c4accf88b3b256a066ede4b91a4bca"
           },
           {
             "path": "src/guest/icu/regex_jni.c",
             "sha256": "78de73e0b427cdcdd9556c03e25e563d7f400df9084268b08b17f21bc345ee34"
           },
           {
+            "path": "src/guest/icu/converter_jni.c",
+            "sha256": "4603512d06e18fedf57a6db02d469aa5292b428d9ed7898e764ba055cccd99ef"
+          },
+          {
             "path": "src/guest/zip/crc32_jni.c",
-            "sha256": "8db5a25e7c85b473face22f349cbf94238b9568a2989be584cb44452796904eb"
+            "sha256": "949308eae74af0f763a69272670ba9060c35c4286a083ff40f9e0e29938e5dcb"
           },
           {
             "path": "src/guest/zip/zip_stream_jni.c",
@@ -225,7 +229,7 @@
           },
           {
             "path": "src/guest/icu/icu51_capi.h",
-            "sha256": "d76373a8e936cf9ba529a76b8475a725e18d2bbf57a63376a27dd464545bb5fd"
+            "sha256": "630b12e54500662682f3864760f2d724605299bdf1e6164b143761148f480b0a"
           }
         ],
         "inputs": [

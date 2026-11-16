@@ -20,19 +20,15 @@ struct BoundaryCallServices final {
     memory::AddressSpace& address_space;
     BoundaryFaultStore& faults;
     void* gpu_owner{};
-    void (*record_gpu_call)(void*, std::size_t,
-                            const std::array<std::uint32_t, 4>&, bool, std::uint32_t){};
+    void (*record_gpu_call)(void*, std::size_t, const std::array<std::uint32_t, 4>&, bool, std::uint32_t){};
 
     core::Logger* logger{};
     core::CapabilityLedger* ledger{};
 
-    void RecordFastFault(
-        const cpu::A32HostCallContext& context) const noexcept {
-        faults.RecordCurrent(context);
-    }
-    void RecordGpuCall(const std::size_t slot,
-                       const std::array<std::uint32_t, 4>& arguments,
-                       const bool gpu, const std::uint32_t error = 0U) const {
+    void RecordFastFault(const cpu::A32HostCallContext& context) const noexcept { faults.RecordCurrent(context); }
+
+    void RecordGpuCall(const std::size_t slot, const std::array<std::uint32_t, 4>& arguments, const bool gpu,
+                       const std::uint32_t error = 0U) const {
         if (record_gpu_call != nullptr) {
             record_gpu_call(gpu_owner, slot, arguments, gpu, error);
         }
@@ -43,7 +39,9 @@ struct BoundaryCallServices final {
 struct BoundaryResult final {
     std::uint32_t low{}, high{};
     bool wide{};
+
     constexpr BoundaryResult(std::uint32_t value = 0) : low(value) {}
+
     static constexpr BoundaryResult Wide(std::uint64_t value) {
         BoundaryResult result{static_cast<std::uint32_t>(value)};
         result.high = static_cast<std::uint32_t>(value >> 32U);
@@ -55,7 +53,7 @@ struct BoundaryResult final {
 using BoundarySlowInvokeFn = BoundaryResult (*)(void*, const A32CallFrame&);
 
 struct BoundaryHotEntry final {
-    cpu::HostCallResult (*invoke)(void*, cpu::A32HostCallContext&) noexcept{};
+    cpu::HostCallResult (*invoke)(void*, cpu::A32HostCallContext&) noexcept {};
     void* self{};
     BoundarySlowInvokeFn slow{};
     bool gpu{};
@@ -66,11 +64,14 @@ BoundaryResult InvokeBoundarySlow(void* userdata, const A32CallFrame& call) {
     return (static_cast<Module*>(userdata)->*Method)(call);
 }
 
-template <typename Module, auto Method, std::size_t ParameterCount, bool Gpu>
-cpu::HostCallResult InvokeBoundaryFast(
-    void* userdata, cpu::A32HostCallContext& context) noexcept {
+template <typename Module, auto Method, std::size_t ParameterCount, bool Gpu, bool LooperPoll = false>
+cpu::HostCallResult InvokeBoundaryFast(void* userdata, cpu::A32HostCallContext& context) noexcept {
     if (userdata == nullptr) return cpu::HostCallResult::unhandled;
     auto& module = *static_cast<Module*>(userdata);
+    // Reentrant callbacks need the CPU state published by the slow boundary.
+    if constexpr (LooperPoll) {
+        if (module.LooperCanInvokeGuest()) return cpu::HostCallResult::unhandled;
+    }
     auto& services = module.CallServices();
     try {
         const A32CallFrame call(services.address_space, context, ParameterCount);
@@ -78,8 +79,7 @@ cpu::HostCallResult InvokeBoundaryFast(
         const BoundaryResult result = (module.*Method)(call);
         if constexpr (Gpu) {
             constexpr std::uint32_t kThunkStride = 4U;
-            const auto slot = static_cast<std::size_t>(
-                (context.pc.Value() - kBionicHleThunkBegin) / kThunkStride);
+            const auto slot = static_cast<std::size_t>((context.pc.Value() - kBionicHleThunkBegin) / kThunkStride);
             services.RecordGpuCall(slot, arguments, true, call.GlError());
         }
         context.registers[0] = result.low;

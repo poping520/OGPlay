@@ -292,7 +292,7 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
 - 依赖仅指向 core/loader/runtime-jni；平台 provider 经注入获得。guest 输入全部受检，未实现必须
   记账并失败。缓存不得跨可能扩容操作保存 class/member 引用或 host pointer。
 - 固定 BootDex 类可按类显式准入其原版 native 声明到 guest JNI；准入不定义类或复制成员，
-  未导出的符号仍明确失败。该机制用于 API 19 `NativeCrypto`、`CRC32` 与压缩流 native，
+  未导出的符号仍明确失败。该机制用于 API 19 `NativeCrypto`、`NativeConverter`、校验和与压缩流 native，
   并由制品审计校验签名集合。
 - Gap survey 默认关闭；开启后类层次、常量、成员声明与正常模式一致，仅对被调用的未实现
   方法/构造器（intrinsic、BootDex 声明，含 JNI/反射入口）、被访问的非恒定未实现字段及 API19 未声明成员生成

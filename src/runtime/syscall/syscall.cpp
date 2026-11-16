@@ -35,6 +35,7 @@ constexpr std::array kAndroidArmBaseline{
     Declaration{10, "unlink", SyscallGroup::file},
     Declaration{12, "chdir", SyscallGroup::file},
     Declaration{19, "lseek", SyscallGroup::file},
+    Declaration{15, "chmod", SyscallGroup::file},
     Declaration{20, "getpid", SyscallGroup::process},
     Declaration{33, "access", SyscallGroup::file},
     Declaration{38, "rename", SyscallGroup::file},
@@ -58,6 +59,7 @@ constexpr std::array kAndroidArmBaseline{
     Declaration{86, "uselib", SyscallGroup::process},
     Declaration{91, "munmap", SyscallGroup::memory},
     Declaration{93, "ftruncate", SyscallGroup::file},
+    Declaration{64, "getppid", SyscallGroup::process},
     Declaration{94, "fchmod", SyscallGroup::file},
     Declaration{95, "fchown", SyscallGroup::file},
     Declaration{96, "getpriority", SyscallGroup::process},
@@ -273,6 +275,9 @@ A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(core::CapabilityLedger& l
         };
         if (declaration.number == 20) {
             result.Register(declaration.number, declaration.name, declaration.group, constant);
+        } else if (declaration.number == 64) {
+            result.Register(declaration.number, declaration.name, declaration.group,
+                            [](const A32SyscallFrame&) { return kGuestParentProcessId; });
         } else if (declaration.number == 199 || declaration.number == 201) {
             result.Register(
                 declaration.number, declaration.name, declaration.group,

@@ -94,6 +94,58 @@ void RemoveAudioFocus(dx::IntrinsicContext& call, const Context& context, std::s
 }
 }  // namespace
 
+Decl Declare_local_MediaRouterService_Class(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalMediaRouterService;",
+                                                    "Landroid/media/IMediaRouterService$Stub;");
+    const auto client = [](dx::IntrinsicContext& call) {
+        const auto object = call.arguments[0].ref;
+        if (!object.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "client must not be null"};
+        return object;
+    };
+    builder.VirtualMethod(
+        "registerClientAsUser", "(Landroid/media/IMediaRouterClient;Ljava/lang/String;I)V",
+        [context, client](dx::IntrinsicContext& call) {
+            const auto token = client(call);
+            const auto package = call.arguments[1].ref;
+            if (!package.IsValid() || call.vm.StringUtf8(package) != context->package_name)
+                throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "packageName must match the calling uid"};
+            const auto user = call.arguments[2].AsInt();
+            if (user != 0 && user != -2 && user != -3)
+                throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "Cross-user media route access"};
+            context->device_state.audio.media_router_clients.insert(token);
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("unregisterClient", "(Landroid/media/IMediaRouterClient;)V",
+                          [context, client](dx::IntrinsicContext& call) {
+                              context->device_state.audio.media_router_clients.erase(client(call));
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod("getState", "(Landroid/media/IMediaRouterClient;)Landroid/media/MediaRouterClientState;",
+                          [context, client](dx::IntrinsicContext& call) {
+                              if (!context->device_state.audio.media_router_clients.contains(client(call)))
+                                  return dx::VmValue::Ref(dx::VmObjectRef{});
+                              // The default audio/video route belongs to ROM MediaRouter.
+                              // The process-local service has no global route providers.
+                              return dx::VmValue::Ref(
+                                  NewPlatformObject(call.vm, "Landroid/media/MediaRouterClientState;", "()V", {}));
+                          });
+    const auto update = [client](dx::IntrinsicContext& call) {
+        static_cast<void>(client(call));
+        return dx::VmValue::Void();
+    };
+    builder.VirtualMethod("setDiscoveryRequest", "(Landroid/media/IMediaRouterClient;IZ)V", update);
+    builder.VirtualMethod("setSelectedRoute", "(Landroid/media/IMediaRouterClient;Ljava/lang/String;Z)V", update);
+    for (const auto* name : {"requestSetVolume", "requestUpdateVolume"})
+        builder.VirtualMethod(
+            name, "(Landroid/media/IMediaRouterClient;Ljava/lang/String;I)V", [client](dx::IntrinsicContext& call) {
+                static_cast<void>(client(call));
+                if (!call.arguments[1].ref.IsValid())
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "routeId must not be null"};
+                return dx::VmValue::Void();
+            });
+    return std::move(builder).Build();
+}
+
 Decl Declare_local_AudioService_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalAudioService;",
                                                     "Landroid/media/IAudioService$Stub;");

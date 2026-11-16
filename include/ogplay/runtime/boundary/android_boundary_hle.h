@@ -104,6 +104,7 @@ struct BionicDynamicLinkHooks final {
     std::uint32_t (*symbol)(void*, std::uint32_t, std::string_view, std::uint64_t){};
     std::int32_t (*close)(void*, std::uint32_t, std::uint64_t){};
     ArmExidx (*find_exidx)(void*, std::uint32_t, std::uint64_t){};
+    std::uint32_t (*address)(void*, memory::GuestAddress, memory::GuestAddress, std::uint64_t){};
 };
 
 inline constexpr memory::GuestAddress kNativeActivityWindowHandleBegin{0x6e400000U};
@@ -146,6 +147,8 @@ struct AndroidLooperHooks final {
     // Both ends stay open while a no-device sensor queue lives: never ready.
     std::function<std::array<std::int32_t, 2>()> create_pipe{};
     std::function<void(std::int32_t)> close_fd{};
+    std::function<std::int32_t(std::uint64_t, memory::GuestAddress, std::int32_t, std::uint32_t, memory::GuestAddress)>
+        invoke_callback{};
 };
 
 struct AndroidBoundaryOptions final {

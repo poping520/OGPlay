@@ -21,30 +21,25 @@ namespace ogplay::runtime {
 // guest pointers and per-thread dlerror storage in the boundary layer.
 class LibdlOverrideModule final {
 public:
-    LibdlOverrideModule(BoundaryCallServices& calls,
-                        const BionicDynamicLinkHooks hooks) noexcept
+    LibdlOverrideModule(BoundaryCallServices& calls, const BionicDynamicLinkHooks hooks) noexcept
         : calls_(calls), hooks_(hooks) {}
 
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept { return calls_; }
 
     void MapErrorArena() {
-        calls_.address_space.Map(
-            {kErrorArenaBegin, kErrorArenaBytes},
-            memory::PageProtection::read | memory::PageProtection::write);
+        calls_.address_space.Map({kErrorArenaBegin, kErrorArenaBytes},
+                                 memory::PageProtection::read | memory::PageProtection::write);
     }
 
     std::uint32_t Dlopen(const A32CallFrame& call) {
-        const auto path = call.Argument(0) == 0U
-                              ? std::string{}
-                              : ReadCString(call.Argument(0), call.ThreadId(),
-                                            "dlopen");
+        const auto path =
+            call.Argument(0) == 0U ? std::string{} : ReadCString(call.Argument(0), call.ThreadId(), "dlopen");
         if (hooks_.owner == nullptr || hooks_.open == nullptr) {
             SetError(call.ThreadId(), "dlopen service is unavailable");
             return 0U;
         }
         try {
-            return hooks_.open(hooks_.owner, path, call.Argument(1),
-                               call.ThreadId());
+            return hooks_.open(hooks_.owner, path, call.Argument(1), call.ThreadId());
         } catch (const loader::LinkError& error) {
             SetError(call.ThreadId(), error.what());
             return 0U;
@@ -55,15 +50,13 @@ public:
     }
 
     std::uint32_t Dlsym(const A32CallFrame& call) {
-        const auto name = ReadCString(call.Argument(1), call.ThreadId(),
-                                      "dlsym");
+        const auto name = ReadCString(call.Argument(1), call.ThreadId(), "dlsym");
         if (hooks_.owner == nullptr || hooks_.symbol == nullptr) {
             SetError(call.ThreadId(), "dlsym service is unavailable");
             return 0U;
         }
         try {
-            return hooks_.symbol(hooks_.owner, call.Argument(0), name,
-                                 call.ThreadId());
+            return hooks_.symbol(hooks_.owner, call.Argument(0), name, call.ThreadId());
         } catch (const std::exception& error) {
             SetError(call.ThreadId(), error.what());
             return 0U;
@@ -76,8 +69,7 @@ public:
             return static_cast<std::uint32_t>(-1);
         }
         try {
-            return static_cast<std::uint32_t>(
-                hooks_.close(hooks_.owner, call.Argument(0), call.ThreadId()));
+            return static_cast<std::uint32_t>(hooks_.close(hooks_.owner, call.Argument(0), call.ThreadId()));
         } catch (const std::exception& error) {
             SetError(call.ThreadId(), error.what());
             return static_cast<std::uint32_t>(-1);
@@ -91,8 +83,7 @@ public:
         if (pending->second.size() >= kErrorSlotBytes) {
             throw std::length_error("dlerror text exceeds its guest slot");
         }
-        auto [slot, inserted] = error_slots_.try_emplace(
-            call.ThreadId(), error_slots_.size());
+        auto [slot, inserted] = error_slots_.try_emplace(call.ThreadId(), error_slots_.size());
         if (inserted && slot->second >= kMaximumErrorThreads) {
             error_slots_.erase(slot);
             throw std::length_error("dlerror guest thread capacity exceeded");
@@ -101,8 +92,7 @@ public:
         std::vector<std::byte> bytes;
         bytes.reserve(pending->second.size() + 1U);
         for (const auto character : pending->second) {
-            bytes.push_back(static_cast<std::byte>(
-                static_cast<unsigned char>(character)));
+            bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
         }
         bytes.push_back(std::byte{});
         calls_.address_space.Write(address, bytes, call.ThreadId());
@@ -110,31 +100,31 @@ public:
         return address.Value();
     }
 
+    std::uint32_t Dladdr(const A32CallFrame& call) {
+        if (!hooks_.address) return 0;
+        return hooks_.address(hooks_.owner, call.Pointer<void>(0).Address(), call.Pointer<void>(1).Address(),
+                              call.ThreadId());
+    }
+
     std::uint32_t DlUnwindFindExidx(const A32CallFrame& call) {
         BionicDynamicLinkHooks::ArmExidx result{};
         if (hooks_.owner != nullptr && hooks_.find_exidx != nullptr) {
-            result = hooks_.find_exidx(hooks_.owner, call.Argument(0),
-                                       call.ThreadId());
+            result = hooks_.find_exidx(hooks_.owner, call.Argument(0), call.ThreadId());
         }
-        calls_.address_space.Write32(memory::GuestAddress{call.Argument(1)},
-                                     result.entry_count, call.ThreadId());
+        calls_.address_space.Write32(memory::GuestAddress{call.Argument(1)}, result.entry_count, call.ThreadId());
         return result.address;
     }
 
 private:
-    [[nodiscard]] std::string ReadCString(
-        const std::uint32_t address, const std::uint64_t thread_id,
-        const std::string_view operation) const {
+    [[nodiscard]] std::string ReadCString(const std::uint32_t address, const std::uint64_t thread_id,
+                                          const std::string_view operation) const {
         if (address == 0U) {
-            throw std::invalid_argument(std::string(operation) +
-                                        " requires a symbol name");
+            throw std::invalid_argument(std::string(operation) + " requires a symbol name");
         }
-        const auto length = calls_.address_space.CStringLength(
-            memory::GuestAddress{address}, kMaximumInputBytes, thread_id);
+        const auto length =
+            calls_.address_space.CStringLength(memory::GuestAddress{address}, kMaximumInputBytes, thread_id);
         std::string value(length, '\0');
-        calls_.address_space.Read(memory::GuestAddress{address},
-                                  std::as_writable_bytes(std::span(value)),
-                                  thread_id);
+        calls_.address_space.Read(memory::GuestAddress{address}, std::as_writable_bytes(std::span(value)), thread_id);
         return value;
     }
 
@@ -146,8 +136,7 @@ private:
     static constexpr memory::GuestAddress kErrorArenaBegin{0x71d00000U};
     static constexpr std::size_t kErrorSlotBytes = 4096U;
     static constexpr std::size_t kMaximumErrorThreads = 256U;
-    static constexpr std::size_t kErrorArenaBytes =
-        kErrorSlotBytes * kMaximumErrorThreads;
+    static constexpr std::size_t kErrorArenaBytes = kErrorSlotBytes * kMaximumErrorThreads;
     static constexpr std::size_t kMaximumInputBytes = 4096U;
 
     BoundaryCallServices& calls_;

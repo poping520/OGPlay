@@ -32,6 +32,8 @@ struct IoFileInfo final {
     std::uint64_t size{};
     bool is_directory{};
     bool writable{};
+    std::uint32_t mode{}, uid{}, gid{};
+    std::int64_t modified_millis{};
 };
 
 class IoFileSystem {
@@ -43,6 +45,14 @@ public:
     [[nodiscard]] virtual GuestFileSystemStats StatVfs(std::string_view) const {
         throw IoRuntimeError("filesystem statistics are unavailable", 38);
     }
+
+    virtual void SetLastModified(std::string_view, std::int64_t) {
+        throw IoRuntimeError("file timestamps are unavailable", 38);
+    }
+
+    virtual void Chmod(std::string_view, std::uint32_t) { throw IoRuntimeError("chmod is unavailable", 38); }
+
+    virtual void Fchmod(std::int32_t, std::uint32_t) { throw IoRuntimeError("fchmod is unavailable", 38); }
 
     [[nodiscard]] virtual std::optional<std::vector<std::string>> List(std::string_view path) const = 0;
     [[nodiscard]] virtual std::optional<std::string> WorkingDirectory() const = 0;
@@ -175,6 +185,9 @@ public:
     void FlushFileStream(VmObjectRef owner);
     void CloseFileStream(VmObjectRef owner);
 
+    void SetLastModified(std::string_view path, std::int64_t millis);
+    void Chmod(std::string_view path, std::uint32_t mode);
+    void Fchmod(VmObjectRef fd, std::uint32_t mode);
     [[nodiscard]] std::optional<IoFileInfo> Stat(std::string_view path) const;
     [[nodiscard]] std::optional<std::vector<std::string>> List(std::string_view path) const;
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;

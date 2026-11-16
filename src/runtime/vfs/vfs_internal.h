@@ -99,6 +99,7 @@ struct File final {
     // replace this amount with the node's current in-memory size.
     std::uint64_t persisted_size{};
     std::uint64_t generation{1U};
+    VfsFileMetadata metadata;
 };
 
 // A descriptor opened on a directory: the children are snapshotted so
@@ -108,6 +109,7 @@ struct OpenDirectoryState final {
     std::size_t cursor{};
     VfsFileInfo info;
     std::string path;
+    bool system_partition{};
     std::string spelling;  // Guest spelling of path, for fchdir/getcwd.
     bool unlinked{};       // Guarded by the VFS namespace mutex.
 };
@@ -129,6 +131,8 @@ struct OpenFile final {
     bool large_file{};
     bool no_follow{};
     bool pipe{};
+    std::uint32_t owner_id{};
+    bool system_partition{};
     std::shared_ptr<const hal::HostReadFile> host_pin;
 };
 
@@ -182,6 +186,10 @@ public:
     [[nodiscard]] std::int32_t Duplicate(std::int32_t descriptor);
 
     // ---- directories, metadata and the sandbox (vfs_sandbox.cpp) --------
+    void SetApplicationOwner(std::string_view data_root, std::uint32_t uid);
+    void SetLastModified(std::string_view path, std::int64_t millis);
+    void Chmod(std::string_view path, std::uint32_t mode);
+    void Fchmod(std::int32_t fd, std::uint32_t mode);
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
     [[nodiscard]] GuestFileSystemStats StatVfs(std::string_view path) const;
     [[nodiscard]] std::string ResolveDataPathLocked(std::string_view path) const;
@@ -206,6 +214,13 @@ public:
 
     // Callers hold mutex_ for every helper below.
     [[nodiscard]] bool IsDirectoryLocked(const std::string& path) const;
+    [[nodiscard]] std::uint32_t OwnerLocked(std::string_view path) const;
+    [[nodiscard]] VfsFileInfo FileInfoLocked(const File& file, std::uint32_t owner) const;
+    [[nodiscard]] VfsFileMetadata& PathMetadataLocked(const std::string& path, const VfsFileInfo& info);
+    void UpdateDirectoryMetadataLocked(std::string_view path, const VfsFileMetadata& metadata);
+    std::string application_data_root_;
+    std::uint32_t application_uid_{};
+    std::map<std::string, VfsFileMetadata, std::less<>> directory_metadata_;
     [[nodiscard]] VfsFileInfo DirectoryInfoLocked(const std::string& path) const;
     // True when the path sits under a writable namespace root, which is the
     // only place the overlay accepts writes.

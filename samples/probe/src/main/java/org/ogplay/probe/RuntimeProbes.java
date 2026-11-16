@@ -367,16 +367,20 @@ final class RuntimeProbes {
         add(probes, new Probe("runtime.codec.checksums", "in_scope", false,
                 "Ljava/util/zip/CRC32;.update([B)V", "Ljava/util/zip/CRC32;.getValue()J",
                 "Ljava/util/zip/Adler32;.update([B)V", "Ljava/util/zip/Adler32;.getValue()J",
-                "Ljava/util/zip/Adler32;.updateImpl([BIIJ)J") {
+                "Ljava/util/zip/Adler32;.updateImpl([BIIJ)J", "Ljava/util/zip/Adler32;.updateByteImpl(IJ)J") {
             @Override Outcome run(ProbeSession session) throws Exception {
                 byte[] data = "123456789".getBytes("US-ASCII");
                 CRC32 crc = new CRC32();
                 Adler32 adler = new Adler32();
                 crc.update(data);
                 adler.update(data);
-                return check(crc.getValue() == 0xcbf43926L && adler.getValue() == 0x091e01deL,
-                        obj("crc32", crc.getValue(), "adler32", adler.getValue()),
-                        obj("crc32", 0xcbf43926L, "adler32", 0x091e01deL), "CRC32 and Adler32 match their integer vectors");
+                Adler32 incremental = new Adler32();
+                for (byte value : data) incremental.update(value | 0x100);
+                return check(crc.getValue() == 0xcbf43926L && adler.getValue() == 0x091e01deL
+                                && incremental.getValue() == adler.getValue(),
+                        obj("crc32", crc.getValue(), "adler32", adler.getValue(), "adler32_by_byte", incremental.getValue()),
+                        obj("crc32", 0xcbf43926L, "adler32", 0x091e01deL, "adler32_by_byte", 0x091e01deL),
+                        "CRC32 and Adler32 match their integer vectors");
             }
         });
         add(probes, new Probe("runtime.codec.gzip", "in_scope", false,
@@ -398,8 +402,8 @@ final class RuntimeProbes {
                         "GZIP decodes a fixed stream and round-trips the same payload");
             }
         });
-        final String[][] encodings = {{"UTF-8", "老游戏", "e88081e6b8b8e6888f"}, {"GBK", "游戏", "d3cecfb7"},
-                {"Big5", "遊戲", "b943c0b8"}, {"Shift_JIS", "ゲーム", "8351815b8380"}, {"ISO-8859-1", "café", "636166e9"}};
+        final String[][] encodings = {{"UTF-8", "老游戏", "e88081e6b8b8e6888f"}, {"GBK", "游戏", "d3cecfb7", "windows-936"},
+                {"Big5", "遊戲", "b943c0b8", "csBig5"}, {"Shift_JIS", "ゲーム", "8351815b8380", "MS_Kanji"}, {"ISO-8859-1", "café", "636166e9"}};
         for (final String[] vector : encodings) {
             add(probes, new Probe("runtime.charset." + vector[0].toLowerCase(java.util.Locale.US).replace('-', '_'),
                     "in_scope", false, "Ljava/lang/String;.getBytes(Ljava/lang/String;)[B",
@@ -407,9 +411,21 @@ final class RuntimeProbes {
                 @Override Outcome run(ProbeSession session) throws Exception {
                     String encoded = hex(vector[1].getBytes(vector[0]));
                     String decoded = new String(unhex(vector[2]), vector[0]);
-                    return check(vector[2].equals(encoded) && vector[1].equals(decoded),
-                            obj("encoded", encoded, "decoded", decoded), obj("encoded", vector[2], "decoded", vector[1]),
-                            "Encode and decode known " + vector[0] + " bytes");
+                    if (vector.length == 3) {
+                        return check(vector[2].equals(encoded) && vector[1].equals(decoded),
+                                obj("encoded", encoded, "decoded", decoded),
+                                obj("encoded", vector[2], "decoded", vector[1]),
+                                "Encode and decode known " + vector[0] + " bytes");
+                    }
+                    String aliasEncoded = hex(vector[1].getBytes(vector[3]));
+                    String aliasDecoded = new String(unhex(vector[2]), vector[3]);
+                    return check(vector[2].equals(encoded) && vector[1].equals(decoded)
+                                    && encoded.equals(aliasEncoded) && decoded.equals(aliasDecoded),
+                            obj("encoded", encoded, "decoded", decoded, "alias", vector[3],
+                                    "alias_encoded", aliasEncoded, "alias_decoded", aliasDecoded),
+                            obj("encoded", vector[2], "decoded", vector[1], "alias", vector[3],
+                                    "alias_encoded", vector[2], "alias_decoded", vector[1]),
+                            "Encode and decode known " + vector[0] + " bytes by canonical name and alias");
                 }
             });
         }

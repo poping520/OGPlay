@@ -61,6 +61,11 @@
 
 ## 生成的只读文件
 
+stat 与 fstat 通过同一 VFS 元数据报告属主、权限位和修改时间。应用私有目录以会话注入的
+UID 作为 uid/gid，系统、APK 和共享存储使用确定性的 guest 属主。chmod/fchmod 及文件时间
+设置仅更新已存在的可写节点，随进程结束丢弃。mode 用于报告，I/O 准入继续遵循 VFS 写域，
+宿主权限和持久化格式不参与。只读系统分区 chmod 返回 EROFS，其他只读节点返回 EPERM。
+
 `RegisterGeneratedReadOnly` 注册有界 provider，stat 大小为 0；每次 open 先预留最大输出
 预算，再在 VFS 锁外生成独立不可变快照。read/readAt/seek/fstat/lease 共用既有 FD 语义；
 fstat 报当前快照大小。write/create/truncate/unlink/rename 拒绝，回调不得递归打开自身。

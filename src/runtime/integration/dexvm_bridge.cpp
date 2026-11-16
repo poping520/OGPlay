@@ -177,6 +177,8 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
     }
     for (const auto observer : state.audio.route_observers)
         root(observer);
+    for (const auto client : state.audio.media_router_clients)
+        root(client);
     for (const auto token : state.power.wake_locks)
         root(token);
     for (const auto token : state.network.wifi_locks)
@@ -1441,6 +1443,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
     if (android_context) android_context->memory_snapshot = session.MemorySnapshot();
     auto services = AndroidCoreIntrinsicServices(android_context);
     services.cpu_cores = session.CpuConfig().cores;
+    services.guest_icu_converters = session.Process().HasLoadedModule("libogplay_jni.so");
     services.write_standard_stream = [bridge_state = impl_.get()](dx::Interpreter& vm, bool error,
                                                                   std::span<const std::byte> bytes) {
         bridge_state->session->Process().WriteStandardStream(

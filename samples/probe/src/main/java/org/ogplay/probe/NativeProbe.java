@@ -19,7 +19,7 @@ final class NativeProbe {
     static native long[] condWait();
     static native long[] sleep();
     static native long[] memory();
-    static native long[] maps();
+    static native long[] maps(String nativeLibraryDir);
     static native long[] readCpuInfo();
     static native String environmentValue();
     static native int jump();

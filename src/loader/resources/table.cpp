@@ -123,8 +123,10 @@ ResTableData::ResTableData(Source source) {
             require(kind == 0x202 || kind == 0x201, "unsupported resource package chunk");
             require(u16(c, 2) >= 16, "invalid type header");
             auto tid = u8(c, 8);
-            require(tid > 0 && tid <= package.types.size() && u8(c, 9) == 0 && u16(c, 10) == 0,
-                    "invalid type id/flags");
+            require(tid > 0 && tid <= package.types.size(), "invalid type id");
+            // API 19 ignores the type-spec reserved fields. Dense type chunks
+            // still require zero flags, including the newer sparse bit.
+            if (kind == 0x201) require(u8(c, 9) == 0 && u16(c, 10) == 0, "invalid type flags");
             auto count = u32(c, 12);
             require(count <= 65536, "too many type entries");
             auto& t = package.entries[tid];

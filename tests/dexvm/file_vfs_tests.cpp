@@ -229,12 +229,10 @@ TEST_CASE("DVM-217 AtomicFile commits rolls back and recovers through VFS") {
                 vm.interpreter.Call(*permissions, std::array{VmValue::Ref(vm.interpreter.NewStringUtf8(path)),
                                                              VmValue::Int(0771), VmValue::Int(-1), VmValue::Int(-1)});
             REQUIRE_FALSE(permission_result.exception.IsValid());
-            CHECK(permission_result.value.AsInt() == 38);
-            CHECK_FALSE(vm.logger.Snapshot(ogplay::core::LogLevel::warn).empty());
-            const auto hits = vm.ledger.Unimplemented();
-            REQUIRE(hits.size() == 1);
-            CHECK(hits[0].id == "libcore.io.Posix.chmod");
-            CHECK(hits[0].count == 1);
+            // chmod on application storage updates guest metadata only.
+            CHECK(permission_result.value.AsInt() == 0);
+            CHECK(std::ranges::none_of(vm.ledger.Unimplemented(),
+                                       [](const auto& hit) { return hit.id == "libcore.io.Posix.chmod"; }));
             write("rolled back", "failWrite");
             CHECK(vm.NativeRead(path) == "committed");
             CHECK_FALSE(vm.BoolOn(vm.NewFile(path + ".bak"), "exists"));
@@ -405,9 +403,10 @@ TEST_CASE("File second-batch VFS and filter semantics match on both backends") {
         CHECK_FALSE(vm.BoolOn(missing, "canWrite"));
         CHECK_FALSE(vm.BoolOn(missing, "isFile"));
 
-        CHECK(vm.CallOn(writable, "setWritable", "(Z)Z", {VmValue::Int(1)}).AsInt() == 0);
-        CHECK(vm.CallOn(writable, "setWritable", "(ZZ)Z", {VmValue::Int(1), VmValue::Int(0)}).AsInt() == 0);
-        CHECK(vm.CallOn(writable, "setWritable", "(Z)Z", {VmValue::Int(0)}).AsInt() == 0);
+        // Writable application files accept chmod; read-only VFS entries reject it.
+        CHECK(vm.CallOn(writable, "setWritable", "(Z)Z", {VmValue::Int(1)}).AsInt() == 1);
+        CHECK(vm.CallOn(writable, "setWritable", "(ZZ)Z", {VmValue::Int(1), VmValue::Int(0)}).AsInt() == 1);
+        CHECK(vm.CallOn(writable, "setWritable", "(Z)Z", {VmValue::Int(0)}).AsInt() == 1);
         CHECK(vm.CallOn(read_only, "setWritable", "(Z)Z", {VmValue::Int(1)}).AsInt() == 0);
 
         const auto array_strings = [&](const VmObjectRef array) {

@@ -161,6 +161,7 @@ public:
 
     struct ClosureModule final {
         std::string name;
+        std::string guest_path;
         std::span<const std::byte> image;
         std::string diagnostic_name;
         bool require_soname_match{};
@@ -215,7 +216,7 @@ public:
 
     [[nodiscard]] std::vector<ClosureModule> Closure(const ExplicitLibrary& root) const {
         std::vector<ClosureModule> result{
-            {root.module_name, root.image, root.diagnostic_name, root.require_soname_match}};
+            {root.module_name, root.canonical_path, root.image, root.diagnostic_name, root.require_soname_match}};
         std::set<std::string, std::less<>> selected{root.module_name};
         for (std::size_t index = 0; index < result.size(); ++index) {
             const auto library = result[index];
@@ -239,14 +240,17 @@ public:
                     const auto* dependency = FindApkLibraryIdentity(needed);
                     if (dependency != nullptr) {
                         if (selected.insert(dependency->soname).second) {
-                            result.push_back({dependency->soname, dependency->image, dependency->entry_name, false});
+                            result.push_back({dependency->soname,
+                                              NativeLibraryLoader::SyntheticGuestPath(dependency->soname),
+                                              dependency->image, dependency->entry_name, false});
                         }
                         continue;
                     }
                     const auto* system = FindSystemLibrary(needed);
                     if (system != nullptr) {
                         selected.insert(needed);
-                        result.push_back({system->name, system->image, system->name, true});
+                        result.push_back(
+                            {system->name, "/system/lib/" + system->name, system->image, system->name, true});
                     }
                 }
             } catch (const NativeLibraryLoadError&) {
@@ -383,7 +387,7 @@ public:
         std::vector<AndroidGuestApplicationModuleSource> sources;
         sources.reserve(closure.size());
         for (const auto& module : closure) {
-            sources.push_back({module.name, module.image});
+            sources.push_back({module.name, module.image, module.guest_path});
         }
         return process_->LoadApplicationModules(library.module_name, sources, thread_id);
     }

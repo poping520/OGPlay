@@ -11,7 +11,7 @@
 - 探针按设备、服务、运行时、存储、媒体、图形、UI 和原生分类。断言依据 API 19 的实现语义、独立来源的一致性和 runner 下发的配置。范围待确认时使用 `info`。
 - 网络探针仅连接 127.0.0.1 并查询 localhost。隔离自检由 autorun 显式启用。
 - SDK/NDK 经参数或环境变量定位。APK、签名密钥和生成物集中在 `out/`。
-- 主 APK 清零 type-spec 的 res1，以便当前 OGPlay 加载主探针。两个固定资源包以 STORED 方式内嵌，包含同一 marker。`runtime.resources.table_control` 加载清零样本，`runtime.resources.aapt2_typespec` 加载新版 aapt2 原始样本，检测宿主是否接受 API 19 读取时忽略的 res1。构建验证两份样本的 res1 和 ZIP 存储方式。静态 libc++ 的 abort 消息在旧 libc 上写入 stderr。
+- 主 APK 保留 aapt2 生成的资源表。两个固定资源包以 STORED 方式内嵌，包含同一 marker。`runtime.resources.table_control` 加载清零样本，`runtime.resources.aapt2_typespec` 加载新版 aapt2 原始样本，检测宿主是否接受 API 19 读取时忽略的 res1。构建验证两份样本的 res1 和 ZIP 存储方式。静态 libc++ 的 abort 消息在旧 libc 上写入 stderr。
 
 ## 不变量
 

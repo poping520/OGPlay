@@ -41,7 +41,7 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
             throw;
         }
     };
-    services.process_id = [] { return android_intrinsics::kGuestProcessId; };
+    services.process_id = [] { return kGuestProcessId; };
     services.process_uid = [context] { return static_cast<std::int32_t>(context->application_uid); };
     services.current_thread_id = [context](dexvm::Interpreter& vm) {
         const auto token = vm.CurrentContextToken();
@@ -185,6 +185,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_local_LocationService_Class(context),
         Declare_android_media_AudioSystem_Natives(context),
         Declare_local_AudioService_Class(context),
+        Declare_local_MediaRouterService_Class(context),
         Declare_android_media_AudioTrack_Natives(context),
         Declare_android_media_MediaPlayer_Natives(context),
         Declare_android_media_SoundPool_SoundPoolImpl_Natives(context),

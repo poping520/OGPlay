@@ -147,11 +147,21 @@ JNIEXPORT jlongArray JNICALL Java_org_ogplay_probe_NativeProbe_memory(JNIEnv* en
     return probe_longs(env, fields, COUNT(fields));
 }
 
-JNIEXPORT jlongArray JNICALL Java_org_ogplay_probe_NativeProbe_maps(JNIEnv* env, jclass type) {
+JNIEXPORT jlongArray JNICALL Java_org_ogplay_probe_NativeProbe_maps(JNIEnv* env, jclass type, jstring library_dir) {
     (void)type;
+    char path[1024];
+    const char* directory = (*env)->GetStringUTFChars(env, library_dir, NULL);
+    if (directory == NULL) return NULL;
+    const int length = snprintf(path, sizeof(path), "%s/libogprobe.so", directory);
+    (*env)->ReleaseStringUTFChars(env, library_dir, directory);
+
+    Dl_info info = {0};
+    const jlong same_path = length > 0 && (size_t)length < sizeof(path) &&
+                            dladdr((const void*)&Java_org_ogplay_probe_NativeProbe_maps, &info) != 0 &&
+                            info.dli_fname != NULL && strcmp(path, info.dli_fname) == 0;
     FILE* file = fopen("/proc/self/maps", "r");
     if (file == NULL) {
-        const jlong failed[] = {0, errno, 0, 0};
+        const jlong failed[] = {0, errno, 0, 0, same_path};
         return probe_longs(env, failed, COUNT(failed));
     }
     char line[1024];
@@ -159,12 +169,12 @@ JNIEXPORT jlongArray JNICALL Java_org_ogplay_probe_NativeProbe_maps(JNIEnv* env,
     jlong found = 0;
     while (fgets(line, sizeof(line), file) != NULL) {
         lines++;
-        if (strstr(line, "libogprobe.so") != NULL) {
+        if (length > 0 && (size_t)length < sizeof(path) && strstr(line, path) != NULL) {
             found = 1;
             break;
         }
     }
-    jlong result[] = {1, ferror(file) ? errno : 0, lines, found};
+    jlong result[] = {1, ferror(file) ? errno : 0, lines, found, same_path};
     fclose(file);
     return probe_longs(env, result, COUNT(result));
 }

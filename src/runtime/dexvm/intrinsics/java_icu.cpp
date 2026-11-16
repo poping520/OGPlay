@@ -209,7 +209,7 @@ void AppendJavaIcu(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsic
     }
     {
         auto b = IntrinsicClassBuilder::Class("Llibcore/icu/NativeConverter;");
-        b.GuestNativeStatic("getAvailableCharsetNames", "()[Ljava/lang/String;", kAccPublic | kAccStatic | kAccNative);
+        b.AdmitBootNativeMethods();
         catalog.push_back(std::move(b).Build());
     }
     catalog.push_back(Declare_libcore_icu_ICU_Natives(services));

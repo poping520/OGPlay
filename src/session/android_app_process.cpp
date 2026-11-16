@@ -313,6 +313,7 @@ public:
                                 runtime::NativeLibraryLoader::SyntheticGuestPath(library.soname), library.image, false);
                         }
                     }
+                    request.filesystem->SetApplicationOwner("/data/data/" + manifest.package, context->application_uid);
                     request.filesystem->AddPathAlias("/data/data/" + manifest.package + "/lib", "/data/app-lib");
                     native_libraries = std::make_unique<runtime::NativeLibraryLoader>(
                         session->Process(), *selected, runtime::SelectBionicProfile(request.api_level),

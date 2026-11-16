@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ogplay/runtime/common/api19_identity.h"
+
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -66,7 +68,7 @@ struct SyscallCoverage final {
 };
 
 struct AndroidProcessIdentity final {
-    std::uint32_t process_id{1000};
+    std::uint32_t process_id{kGuestProcessId};
     std::uint32_t user_id{10000};
     std::uint32_t group_id{10000};
 };

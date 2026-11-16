@@ -28,10 +28,40 @@ GuestFileSystemStats DexVmIoVfsAdapter::StatVfs(std::string_view path) const {
     }
 }
 
+void DexVmIoVfsAdapter::SetLastModified(std::string_view path, std::int64_t millis) {
+    try {
+        file_system_.SetLastModified(path, millis);
+    } catch (const VfsError& error) {
+        throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
+    }
+}
+
+void DexVmIoVfsAdapter::Chmod(std::string_view path, std::uint32_t mode) {
+    try {
+        file_system_.Chmod(path, mode);
+    } catch (const VfsError& error) {
+        throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
+    }
+}
+
+void DexVmIoVfsAdapter::Fchmod(std::int32_t fd, std::uint32_t mode) {
+    try {
+        file_system_.Fchmod(fd, mode);
+    } catch (const VfsError& error) {
+        throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
+    }
+}
+
 std::optional<dexvm::IoFileInfo> DexVmIoVfsAdapter::Stat(const std::string_view path) const {
     try {
         const auto info = file_system_.Stat(path);
-        return dexvm::IoFileInfo{info.size, info.is_directory, info.writable};
+        return dexvm::IoFileInfo{info.size,
+                                 info.is_directory,
+                                 info.writable,
+                                 info.Mode(),
+                                 info.uid,
+                                 info.gid,
+                                 info.metadata.modified_millis};
     } catch (const VfsError&) {
         return std::nullopt;
     }
@@ -183,7 +213,13 @@ std::int32_t DexVmIoVfsAdapter::DuplicateHandle(const std::int32_t handle) {
 dexvm::IoFileInfo DexVmIoVfsAdapter::HandleInfo(const std::int32_t handle) const {
     try {
         const auto info = file_system_.DescriptorInfo(handle);
-        return {info.size, info.is_directory, info.writable};
+        return {info.size,
+                info.is_directory,
+                info.writable,
+                info.Mode(),
+                info.uid,
+                info.gid,
+                info.metadata.modified_millis};
     } catch (const VfsError& error) {
         throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
     }

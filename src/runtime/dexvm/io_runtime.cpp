@@ -400,6 +400,23 @@ void IoRuntime::CloseFileStream(const VmObjectRef owner) {
     }
 }
 
+void IoRuntime::SetLastModified(std::string_view path, std::int64_t millis) {
+    if (!file_system_) throw IoRuntimeError("guest filesystem is unavailable", 38);
+    file_system_->SetLastModified(path, millis);
+}
+
+void IoRuntime::Chmod(std::string_view path, std::uint32_t mode) {
+    if (!file_system_) throw IoRuntimeError("guest filesystem is unavailable", 38);
+    file_system_->Chmod(path, mode);
+}
+
+void IoRuntime::Fchmod(VmObjectRef fd, std::uint32_t mode) {
+    const auto* state = FindDescriptor(fd);
+    if (!state || state->closed || !state->file || state->file->closed || !file_system_)
+        throw IoRuntimeError("bad file descriptor", 9);
+    file_system_->Fchmod(state->file->handle, mode);
+}
+
 std::optional<IoFileInfo> IoRuntime::Stat(const std::string_view path) const {
     return file_system_ != nullptr ? file_system_->Stat(path) : std::nullopt;
 }

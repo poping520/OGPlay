@@ -21,7 +21,7 @@ void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaUtilZip(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaIcu(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services);
 void AppendJavaConcurrent(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services);
-void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog);
+void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog, bool guest_icu_converters);
 void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services);
 void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog);
 

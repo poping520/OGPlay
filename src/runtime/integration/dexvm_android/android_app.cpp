@@ -787,7 +787,7 @@ Decl Declare_local_UiModeService_Class(const Context& context) {
         return dx::VmValue::Int(context->device_state.night_mode);
     });
     builder.VirtualMethod("getCurrentModeType", "()I", [context](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(context->device_state.car_mode ? 3 : 1);
+        return dx::VmValue::Int(context->device_state.UiMode() & 0x0f);
     });
     return std::move(builder).Build();
 }

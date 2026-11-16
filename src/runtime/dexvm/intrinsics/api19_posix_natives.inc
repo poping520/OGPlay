@@ -7,7 +7,6 @@ posix.UnimplementedVirtual("connect", "(Ljava/io/FileDescriptor;Ljava/net/InetAd
 posix.UnimplementedVirtual("dup2", "(Ljava/io/FileDescriptor;I)Ljava/io/FileDescriptor;");
 posix.UnimplementedVirtual("execv", "(Ljava/lang/String;[Ljava/lang/String;)V");
 posix.UnimplementedVirtual("execve", "(Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;)V");
-posix.UnimplementedVirtual("fchmod", "(Ljava/io/FileDescriptor;I)V");
 posix.UnimplementedVirtual("fchown", "(Ljava/io/FileDescriptor;II)V");
 posix.UnimplementedVirtual("fstatvfs", "(Ljava/io/FileDescriptor;)Llibcore/io/StructStatVfs;");
 posix.UnimplementedVirtual("getegid", "()I");
@@ -15,7 +14,6 @@ posix.UnimplementedVirtual("geteuid", "()I");
 posix.UnimplementedVirtual("getgid", "()I");
 posix.UnimplementedVirtual("getpeername", "(Ljava/io/FileDescriptor;)Ljava/net/SocketAddress;");
 if (!services.process_id) posix.UnimplementedVirtual("getpid", "()I");
-posix.UnimplementedVirtual("getppid", "()I");
 posix.UnimplementedVirtual("getpwnam", "(Ljava/lang/String;)Llibcore/io/StructPasswd;");
 posix.UnimplementedVirtual("getsockname", "(Ljava/io/FileDescriptor;)Ljava/net/SocketAddress;");
 posix.UnimplementedVirtual("getsockoptByte", "(Ljava/io/FileDescriptor;II)I");

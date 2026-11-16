@@ -67,7 +67,15 @@ void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog) {
             kAccPrivate | kAccStatic | kAccNative);
     }
     file.StaticMethod(
-        "setLastModifiedImpl", "(Ljava/lang/String;J)Z", [](IntrinsicContext&) { return VmValue::Int(0); },
+        "setLastModifiedImpl", "(Ljava/lang/String;J)Z",
+        [](IntrinsicContext& call) {
+            try {
+                call.vm.IO().SetLastModified(call.vm.StringUtf8(call.arguments[0].ref), call.arguments[1].AsLong());
+                return VmValue::Int(1);
+            } catch (const IoRuntimeError&) {
+                return VmValue::Int(0);
+            }
+        },
         kAccPrivate | kAccStatic | kAccNative);
     catalog.push_back(std::move(file).Build());
 }

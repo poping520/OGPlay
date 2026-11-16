@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ogplay/runtime/common/api19_identity.h"
+
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 
@@ -12,7 +14,6 @@ namespace dx = dexvm;
 [[nodiscard]] std::optional<std::array<float, 9>> AndroidMatrixSnapshot(DexVmAndroidContext& context, int token);
 void RetireAndroidNinePatch(dx::Interpreter& vm, DexVmAndroidContext& context, int bits, dx::VmObjectRef owner);
 void RegisterGraphicsStateTables(dx::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context);
-inline constexpr std::int32_t kGuestProcessId = 1;
 
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;

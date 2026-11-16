@@ -519,14 +519,39 @@ Decl Declare_local_DisplayService_Class(const Context& context) {
         return dx::VmValue::Ref(info);
     });
     constexpr auto owner = "android.hardware.display.IDisplayManager";
-    for (const auto* method : {"startWifiDisplayScan", "stopWifiDisplayScan", "disconnectWifiDisplay",
-                               "pauseWifiDisplay", "resumeWifiDisplay"})
-        RejectUnsupportedServiceMethod(builder, owner, method, "()V");
+    // API 19 allows any caller to query status and disconnect. Other Wi-Fi
+    // display controls require the privileged CONFIGURE_WIFI_DISPLAY permission.
+    builder.VirtualMethod(
+        "getWifiDisplayStatus", "()Landroid/hardware/display/WifiDisplayStatus;", [](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(
+                NewPlatformObject(call.vm, "Landroid/hardware/display/WifiDisplayStatus;", "()V", {}));
+        });
+    builder.VirtualMethod("disconnectWifiDisplay", "()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    const auto require_permission = [context] {
+        if (!context->granted_permissions.contains("android.permission.CONFIGURE_WIFI_DISPLAY"))
+            throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "Requires CONFIGURE_WIFI_DISPLAY"};
+    };
+    for (const auto* method : {"startWifiDisplayScan", "stopWifiDisplayScan"})
+        builder.VirtualMethod(method, "()V", [context, require_permission](dx::IntrinsicContext&) {
+            require_permission();
+            if (!context->singletons.contains("display_callback"))
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "No IDisplayManagerCallback registered"};
+            return dx::VmValue::Void();
+        });
+    for (const auto* method : {"pauseWifiDisplay", "resumeWifiDisplay"})
+        builder.VirtualMethod(method, "()V", [require_permission](dx::IntrinsicContext&) {
+            require_permission();
+            return dx::VmValue::Void();
+        });
+    const auto with_address = [require_permission](dx::IntrinsicContext& call) {
+        if (!call.arguments[0].ref.IsValid())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "address must not be null"};
+        require_permission();
+        return dx::VmValue::Void();
+    };
     for (const auto* method : {"connectWifiDisplay", "forgetWifiDisplay"})
-        RejectUnsupportedServiceMethod(builder, owner, method, "(Ljava/lang/String;)V");
-    RejectUnsupportedServiceMethod(builder, owner, "renameWifiDisplay", "(Ljava/lang/String;Ljava/lang/String;)V");
-    RejectUnsupportedServiceMethod(builder, owner, "getWifiDisplayStatus",
-                                   "()Landroid/hardware/display/WifiDisplayStatus;");
+        builder.VirtualMethod(method, "(Ljava/lang/String;)V", with_address);
+    builder.VirtualMethod("renameWifiDisplay", "(Ljava/lang/String;Ljava/lang/String;)V", with_address);
     RejectUnsupportedServiceMethod(
         builder, owner, "createVirtualDisplay",
         "(Landroid/os/IBinder;Ljava/lang/String;Ljava/lang/String;IIILandroid/view/Surface;I)I");

@@ -372,7 +372,8 @@ TEST_CASE("VFS-05 guest proc maps exposes actual address space and retires with 
         if (count == 0) break;
         maps.append(reinterpret_cast<const char*>(chunk.data()), count);
     }
-    CHECK(maps.find("10010000-10011000 rw-p") != std::string::npos);
+    CHECK(maps.find("10010000-10011000 rw-p 00000000 00:00 0 /system/lib/libc.so") != std::string::npos);
+    CHECK(ReadVfsText(filesystem, "/proc/" + std::to_string(ogplay::runtime::kGuestProcessId) + "/maps") == maps);
     CHECK(maps.find("6b000000-6b400000 rw-p") != std::string::npos);
     CHECK(maps.find("00:00 0\n") != std::string::npos);
     CHECK_THROWS_AS(static_cast<void>(filesystem.Open("/proc/self/maps", {.write = true})), ogplay::runtime::VfsError);

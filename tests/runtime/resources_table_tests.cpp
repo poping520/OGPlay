@@ -10,6 +10,24 @@
 #include <set>
 using namespace ogplay::test::resources;
 
+TEST_CASE("resources core table accepts aapt2 type-spec res1 and rejects sparse types") {
+    const std::array entries{Entry{.id = 0x7f040000, .name = "marker", .value = {0x10, 42}, .bag = {}, .config = {}}};
+    auto bytes = ResourceTable(entries);
+    const auto find_chunk = [&](std::uint16_t kind) {
+        using namespace ogplay::core;
+        const auto package = 12U + ReadLittleEndian<std::uint32_t>(std::span{bytes}, 16);
+        auto offset = package + 284U;
+        while (offset < bytes.size() && ReadLittleEndian<std::uint16_t>(std::span{bytes}, offset) != kind)
+            offset += ReadLittleEndian<std::uint32_t>(std::span{bytes}, offset + 4);
+        REQUIRE(offset < bytes.size());
+        return offset;
+    };
+    bytes[find_chunk(0x202) + 10] = std::byte{1};
+    CHECK_NOTHROW(res::ResTableData(OwnedSource(bytes)));
+    bytes[find_chunk(0x201) + 9] = std::byte{1};
+    CHECK_THROWS_AS(res::ResTableData(OwnedSource(bytes)), res::ResourceError);
+}
+
 TEST_CASE("resources core table round trips every public android R constant in the shipped ROM") {
     auto t = Table();
     CHECK(t.packageNames() == std::vector<std::string>{"android"});

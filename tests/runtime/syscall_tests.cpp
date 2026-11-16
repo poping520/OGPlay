@@ -22,6 +22,8 @@ TEST_CASE("Android ARM syscall baseline exposes identity and coverage") {
     ogplay::runtime::A32SyscallFrame frame;
     frame.number = 20;
     CHECK(dispatcher.Dispatch(frame) == 42);
+    frame.number = 64;
+    CHECK(dispatcher.Dispatch(frame) == ogplay::runtime::kGuestParentProcessId);
     frame.number = 199;
     CHECK(dispatcher.Dispatch(frame) == 10001);
     frame.number = 200;
@@ -31,7 +33,7 @@ TEST_CASE("Android ARM syscall baseline exposes identity and coverage") {
     CHECK(dispatcher.Dispatch(frame) == 77);
     const auto coverage = dispatcher.Coverage();
     CHECK(coverage.declared >= 120);
-    CHECK(coverage.implemented == 6);
+    CHECK(coverage.implemented == 7);
     CHECK(coverage.declared_by_group.at(ogplay::runtime::SyscallGroup::file) > 20);
 }
 
@@ -1414,6 +1416,38 @@ TEST_CASE("Android mkdir, stat64 and unlink syscalls reach the VFS") {
     CHECK(fixture.Call(10, {0x20100, 0, 0, 0, 0, 0}) == 0);
     CHECK(fixture.Call(40, {0x20000, 0, 0, 0, 0, 0}) == 0);
     CHECK(fixture.Call(195, {0x20000, 0x20200, 0, 0, 0, 0}) == -2);
+}
+
+TEST_CASE("Android chmod and stat64 share guest ownership and file metadata") {
+    MetadataSyscallFixture fixture;
+    fixture.vfs.SetApplicationOwner("/data/data/app", 10042);
+    fixture.vfs.PutFile("/data/data/app/file", {}, true);
+    fixture.vfs.PutFile("/system/file", {}, false);
+    fixture.vfs.PutFile("/data/app/base.apk", {}, false);
+    fixture.WriteString(0x20000, "/data/data/app/file");
+    fixture.WriteString(0x20040, "/data/data/app/missing");
+    fixture.WriteString(0x20080, "/system/file");
+    fixture.WriteString(0x200c0, "/data/app/base.apk");
+    CHECK(fixture.Call(15, {0x20040, 0755}) == -2);
+    CHECK(fixture.Call(15, {0x20080, 0755}) == -30);
+    CHECK(fixture.Call(15, {0x200c0, 0755}) == -1);
+    CHECK(fixture.Call(94, {9999, 0755}) == -9);
+    const auto system_fd = fixture.Call(5, {0x20080});
+    REQUIRE(system_fd >= 3);
+    CHECK(fixture.Call(94, {static_cast<std::uint32_t>(system_fd), 0755}) == -30);
+    const auto fd = fixture.Call(5, {0x20000});
+    REQUIRE(fd >= 3);
+    CHECK(fixture.Call(15, {0x20000, 0755}) == 0);
+    CHECK(fixture.Call(197, {static_cast<std::uint32_t>(fd), 0x20200}) == 0);
+    CHECK(fixture.ReadField(0x20200, 16, 4) == 0100755U);
+    CHECK(fixture.ReadField(0x20200, 24, 4) == 10042);
+    CHECK(fixture.ReadField(0x20200, 28, 4) == 10042);
+    CHECK(fixture.Call(94, {static_cast<std::uint32_t>(fd), 0600}) == 0);
+    fixture.vfs.SetLastModified("/data/data/app/file", 1400000000123);
+    CHECK(fixture.Call(196, {0x20000, 0x20200}) == 0);
+    CHECK(fixture.ReadField(0x20200, 16, 4) == 0100600U);
+    CHECK(fixture.ReadField(0x20200, 80, 4) == 1400000000);
+    CHECK(fixture.ReadField(0x20200, 84, 4) == 123000000);
 }
 
 TEST_CASE("VFS-08 ARM append openat writev and pwrite64 use one shared file state") {

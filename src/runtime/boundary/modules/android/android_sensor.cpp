@@ -12,8 +12,7 @@ constexpr memory::GuestAddress kSensorManager{0x6e008000U};
 
 AndroidModule::~AndroidModule() {
     ShutdownLoopers();
-    if (!sensor_list_.IsNull()) services_.address_space.Unmap(
-        {sensor_list_, services_.address_space.PageSize()});
+    if (!sensor_list_.IsNull()) services_.address_space.Unmap({sensor_list_, services_.address_space.PageSize()});
 }
 
 void AndroidModule::SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) {
@@ -25,25 +24,10 @@ void AndroidModule::SetSensorDirectory(std::shared_ptr<const AndroidSensorDirect
 
 [[noreturn]] void AndroidModule::SensorFailure(std::string_view message, std::uint64_t thread) {
     if (ledger_) ledger_->RecordUnimplemented("dexvm.sensor_absent_facade", 0);
-    if (logger_) logger_->Write(core::LogLevel::error, "runtime.android.sensor", message,
-        {.guest_thread = thread}, {}, {.mode = core::RateLimitMode::none});
+    if (logger_)
+        logger_->Write(core::LogLevel::error, "runtime.android.sensor", message, {.guest_thread = thread}, {},
+                       {.mode = core::RateLimitMode::none});
     throw std::invalid_argument(std::string(message));
-}
-
-std::int32_t AndroidModule::AddLooperFdLocked(memory::GuestAddress handle, std::int32_t fd,
-    std::int32_t ident, std::uint32_t events, memory::GuestAddress callback, memory::GuestAddress data) {
-    auto& looper = RequireLooper(handle);
-    if (looper.retired || fd < 0 || ident < 0 || !looper.allow_non_callbacks ||
-        !callback.IsNull() || !looper_hooks_.poll_events || (events & ~31U) != 0) return -1;
-    const auto available = looper_hooks_.poll_events(fd);
-    if (!available || (*available & 16U) != 0) return -1;
-    looper.requests[fd] = {ident, events, data};
-    ready_.notify_all();
-    return 1;
-}
-
-std::int32_t AndroidModule::RemoveLooperFdLocked(memory::GuestAddress looper, std::int32_t fd) {
-    return static_cast<std::int32_t>(RequireLooper(looper).requests.erase(fd));
 }
 
 void AndroidModule::CloseSensorQueue(const SensorQueue& queue) {
@@ -60,7 +44,8 @@ void AndroidModule::RetireSensorQueues(std::optional<std::uint64_t> thread) {
         if (!thread || it->second.owner == *thread) {
             CloseSensorQueue(it->second);
             it = sensor_queues_.erase(it);
-        } else ++it;
+        } else
+            ++it;
     }
 }
 
@@ -79,15 +64,15 @@ BoundaryResult AndroidModule::SensorExport(const A32CallFrame& call, std::uint16
     if (id == 86) {
         if (!call.Pointer<void>(1).IsNull()) {
             if (sensor_list_.IsNull()) {
-                sensor_list_ = services_.address_space.MapAnywhere(
-                    {memory::GuestAddress{0x60000000U}, 0xa0000000ULL},
-                    services_.address_space.PageSize(), memory::PageProtection::read);
+                sensor_list_ = services_.address_space.MapAnywhere({memory::GuestAddress{0x60000000U}, 0xa0000000ULL},
+                                                                   services_.address_space.PageSize(),
+                                                                   memory::PageProtection::read);
             }
             services_.Write32(args[1], sensor_list_.Value(), thread);
         }
         return 0;
     }
-    if (id == 87) return 0; // There are no devices of any type.
+    if (id == 87) return 0;  // There are no devices of any type.
     if (id == 88) {
         const auto looper = call.Pointer<void>(1).Address();
         if (looper.IsNull() || !loopers_.contains(looper.Value()) || RequireLooper(looper).retired)
@@ -98,26 +83,33 @@ BoundaryResult AndroidModule::SensorExport(const A32CallFrame& call, std::uint16
             SensorFailure("sensor queue VFS pipe backend is unavailable", thread);
         if (sensor_queues_.size() >= 1024 || next_sensor_queue_.Value() >= 0x6ea00000U)
             SensorFailure("sensor queue handle budget exhausted", thread);
-        if (RequireLooper(looper).references == UINT32_MAX) SensorFailure("sensor queue Looper reference overflow", thread);
+        if (RequireLooper(looper).references == UINT32_MAX)
+            SensorFailure("sensor queue Looper reference overflow", thread);
         const auto pipe = looper_hooks_.create_pipe();
-        ++RequireLooper(looper).references; // SensorEventQueue::looper is an sp<Looper>.
+        ++RequireLooper(looper).references;  // SensorEventQueue::looper is an sp<Looper>.
         const SensorQueue queue{thread, looper, pipe};
         const auto handle = next_sensor_queue_;
         try {
             const auto callback = call.Pointer<void>(3).Address();
-            const auto result = AddLooperFdLocked(looper, pipe[0], std::bit_cast<std::int32_t>(args[2]),
-                1, callback, call.Pointer<void>(4).Address());
+            const auto result = AddLooperFdLocked(looper, pipe[0], std::bit_cast<std::int32_t>(args[2]), 1, callback,
+                                                  call.Pointer<void>(4).Address());
             // API19 sensor.cpp deliberately ignores addFd's result. No devices
             // can make this pipe readable, so an unsupported callback is inert.
             if (result < 0) {
                 if (ledger_) ledger_->RecordUnimplemented("runtime.android_boundary_hle", 0);
-                if (logger_) logger_->Write(core::LogLevel::warn, "runtime.android.sensor",
-                    "sensor queue Looper registration rejected; empty pipe cannot dispatch callbacks",
-                    {.guest_thread = thread}, {{"callback", core::GuestAddress{callback.Value()}},
-                    {"add_fd_result", static_cast<std::int64_t>(result)}}, {.mode = core::RateLimitMode::none});
+                if (logger_)
+                    logger_->Write(core::LogLevel::warn, "runtime.android.sensor",
+                                   "sensor queue Looper registration rejected; empty pipe cannot dispatch callbacks",
+                                   {.guest_thread = thread},
+                                   {{"callback", core::GuestAddress{callback.Value()}},
+                                    {"add_fd_result", static_cast<std::int64_t>(result)}},
+                                   {.mode = core::RateLimitMode::none});
             }
             sensor_queues_.emplace(handle.Value(), queue);
-        } catch (...) { CloseSensorQueue(queue); throw; }
+        } catch (...) {
+            CloseSensorQueue(queue);
+            throw;
+        }
         next_sensor_queue_ = handle.Add(4);
         return handle.Value();
     }
@@ -130,8 +122,8 @@ BoundaryResult AndroidModule::SensorExport(const A32CallFrame& call, std::uint16
         return 0;
     }
     if (id >= 90 && id <= 92) SensorFailure("ASensor is invalid in the empty device directory", thread);
-    if (id == 93) return std::bit_cast<std::uint32_t>(std::int32_t{-1}); // API19 returns -1 when revents != POLLIN.
-    if (id == 94) return 0; // BitTube maps EAGAIN to zero events.
+    if (id == 93) return std::bit_cast<std::uint32_t>(std::int32_t{-1});  // API19 returns -1 when revents != POLLIN.
+    if (id == 94) return 0;                                               // BitTube maps EAGAIN to zero events.
     throw std::logic_error("unknown sensor export");
 }
-} // namespace ogplay::runtime
+}  // namespace ogplay::runtime

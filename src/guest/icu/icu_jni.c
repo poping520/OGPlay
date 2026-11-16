@@ -1218,36 +1218,11 @@ static jboolean NativeNormalizer_isNormalizedImpl(JNIEnv* env, jclass cls, jstri
     return icu_ok(env, "unorm_isNormalized", status) && result;
 }
 
-static jobjectArray NativeConverter_getAvailableCharsetNames(JNIEnv* env, jclass cls) {
-    (void)cls;
-    const int32_t count = ICU(ucnv_countAvailable)();
-    jclass string = (*env)->FindClass(env, "java/lang/String");
-    if (string == NULL) return NULL;
-    jobjectArray result = (*env)->NewObjectArray(env, count, string, NULL);
-    if (result == NULL) return NULL;
-    for (int32_t i = 0; i < count; ++i) {
-        const char* name = ICU(ucnv_getAvailableName)(i);
-        UErrorCode status = 0;
-        const char* standard = ICU(ucnv_getStandardName)(name, "MIME", &status);
-        if (standard == NULL) {
-            status = 0;
-            standard = ICU(ucnv_getStandardName)(name, "IANA", &status);
-        }
-        if (!icu_ok(env, "ucnv_getStandardName", status)) return NULL;
-        jstring item = (*env)->NewStringUTF(env, standard != NULL ? standard : name);
-        if (item == NULL) return NULL;
-        (*env)->SetObjectArrayElement(env, result, i, item);
-        (*env)->DeleteLocalRef(env, item);
-        if ((*env)->ExceptionCheck(env)) return NULL;
-    }
-    return result;
-}
-
 static const JNINativeMethod normalizer_methods[] = {
     {"normalizeImpl", "(Ljava/lang/String;I)Ljava/lang/String;", (void*)NativeNormalizer_normalizeImpl},
     {"isNormalizedImpl", "(Ljava/lang/String;I)Z", (void*)NativeNormalizer_isNormalizedImpl}};
-static const JNINativeMethod converter_methods[] = {
-    {"getAvailableCharsetNames", "()[Ljava/lang/String;", (void*)NativeConverter_getAvailableCharsetNames}};
+extern int ogplay_converter_on_load(JNIEnv*);
+extern void ogplay_converter_release(void);
 extern int ogplay_regex_on_load(JNIEnv*);
 extern void ogplay_regex_release(void);
 
@@ -1508,8 +1483,7 @@ int ogplay_icu_on_load(JNIEnv* env) {
     return ogplay_regex_on_load(env) &&
            register_methods(env, "libcore/icu/NativeNormalizer", normalizer_methods,
                             (jint)(sizeof(normalizer_methods) / sizeof(normalizer_methods[0]))) &&
-           register_methods(env, "libcore/icu/NativeConverter", converter_methods,
-                            (jint)(sizeof(converter_methods) / sizeof(converter_methods[0]))) &&
+           ogplay_converter_on_load(env) &&
            register_methods(env, "java/lang/Character", character_methods,
                             (jint)(sizeof(character_methods) / sizeof(character_methods[0]))) &&
            register_methods(env, "libcore/icu/ICU", icu_methods,
@@ -1522,6 +1496,7 @@ int ogplay_icu_on_load(JNIEnv* env) {
 
 void ogplay_icu_release(void) {
     ogplay_regex_release();
+    ogplay_converter_release();
     while (decimal_entries != NULL) {
         DecimalEntry* entry = decimal_entries;
         decimal_entries = entry->next;

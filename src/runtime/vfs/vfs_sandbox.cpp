@@ -12,6 +12,88 @@
 
 namespace ogplay::runtime {
 
+void VirtualFileSystem::Impl::SetApplicationOwner(std::string_view data_root, std::uint32_t uid) {
+    std::scoped_lock lock(mutex_);
+    application_data_root_ = NormalizePath(data_root);
+    application_uid_ = uid;
+}
+
+std::uint32_t VirtualFileSystem::Impl::OwnerLocked(std::string_view path) const {
+    const auto under = [path](std::string_view root) {
+        return path == root || (path.starts_with(root) && path.size() > root.size() && path[root.size()] == '/');
+    };
+    if (!application_data_root_.empty() && under(application_data_root_)) return application_uid_;
+    if (under("/data")) return 1000;                         // AID_SYSTEM
+    if (under("/sdcard") || under("/storage")) return 1023;  // AID_MEDIA_RW
+    return 0;
+}
+
+VfsFileInfo VirtualFileSystem::Impl::FileInfoLocked(const File& file, std::uint32_t owner) const {
+    return {file.size,
+            file.writable,
+            file.source,
+            false,
+            file.generation,
+            static_cast<bool>(file.character_device),
+            file.character_device ? file.character_device->device_number : 0,
+            owner,
+            owner,
+            file.metadata};
+}
+
+VfsFileMetadata& VirtualFileSystem::Impl::PathMetadataLocked(const std::string& path, const VfsFileInfo& info) {
+    if (path == "/system" || path.starts_with("/system/")) throw VfsError(30, "read-only VFS system partition");
+    if (!info.writable || (sandbox_ && !IsWritableNamespaceLocked(path)))
+        throw VfsError(1, "VFS metadata is not writable by the application");
+    return info.is_directory ? directory_metadata_[path] : files_.at(path)->metadata;
+}
+
+void VirtualFileSystem::Impl::UpdateDirectoryMetadataLocked(std::string_view path, const VfsFileMetadata& metadata) {
+    for (const auto& [fd, open] : descriptors_) {
+        static_cast<void>(fd);
+        if (open->directory && !open->directory->unlinked && open->directory->path == path)
+            open->directory->info.metadata = metadata;
+    }
+}
+
+void VirtualFileSystem::Impl::SetLastModified(std::string_view path, std::int64_t millis) {
+    std::scoped_lock lock(mutex_);
+    const auto normalized = ResolveDataPathLocked(path);
+    const auto info = StatLocked(normalized);
+    if (millis < 0 || millis / 1000 > INT32_MAX) throw VfsError(22, "timestamp is outside API19 time_t");
+    auto& metadata = PathMetadataLocked(normalized, info);
+    metadata.modified_millis = millis;
+    if (info.is_directory) UpdateDirectoryMetadataLocked(normalized, metadata);
+}
+
+void VirtualFileSystem::Impl::Chmod(std::string_view path, std::uint32_t mode) {
+    std::scoped_lock lock(mutex_);
+    const auto normalized = ResolveDataPathLocked(path);
+    const auto info = StatLocked(normalized);
+    auto& metadata = PathMetadataLocked(normalized, info);
+    metadata.permissions = mode & 07777U;
+    if (info.is_directory) UpdateDirectoryMetadataLocked(normalized, metadata);
+}
+
+void VirtualFileSystem::Impl::Fchmod(std::int32_t fd, std::uint32_t mode) {
+    std::scoped_lock lock(mutex_);
+    const auto open = FindDescriptor(fd);
+    if (open->directory ? open->directory->system_partition : open->system_partition)
+        throw VfsError(30, "read-only VFS system partition");
+    if (open->directory && !open->directory->unlinked) {
+        const auto& path = open->directory->path;
+        auto& metadata = PathMetadataLocked(path, open->directory->info);
+        metadata.permissions = mode & 07777U;
+        UpdateDirectoryMetadataLocked(path, metadata);
+    } else if (open->directory && open->directory->info.writable) {
+        open->directory->info.metadata.permissions = mode & 07777U;
+    } else if (open->file && open->file->writable) {
+        open->file->metadata.permissions = mode & 07777U;
+    } else {
+        throw VfsError(1, "VFS descriptor metadata is not writable by the application");
+    }
+}
+
 VfsFileInfo VirtualFileSystem::Impl::Stat(const std::string_view path) const {
     std::scoped_lock lock(mutex_);
     const auto normalized = ResolveDataPathLocked(path);
@@ -28,13 +110,7 @@ VfsFileInfo VirtualFileSystem::Impl::StatLocked(const std::string& normalized) c
             throw VfsError(kEnoent, "VFS generated file provider retired");
         if (found->second->character_device && !found->second->character_device->active)
             throw VfsError(kEnoent, "VFS character device retired");
-        return {found->second->size,
-                found->second->writable,
-                found->second->source,
-                false,
-                found->second->generation,
-                static_cast<bool>(found->second->character_device),
-                found->second->character_device ? found->second->character_device->device_number : 0};
+        return FileInfoLocked(*found->second, OwnerLocked(normalized));
     }
     if (IsDirectoryLocked(normalized)) {
         return DirectoryInfoLocked(normalized);
@@ -154,7 +230,11 @@ VfsFileInfo VirtualFileSystem::Impl::DirectoryInfoLocked(const std::string& path
             source = child->second->source;
         }
     }
-    return {0, writable, source, true};
+    const auto owner = OwnerLocked(path);
+    const auto metadata = directory_metadata_.find(path);
+    return {
+        0,     writable, source, true,  0,
+        false, 0,        owner,  owner, metadata != directory_metadata_.end() ? metadata->second : VfsFileMetadata{}};
 }
 
 bool VirtualFileSystem::Impl::IsWritableNamespaceLocked(const std::string& path) const {
@@ -252,6 +332,7 @@ std::int32_t VirtualFileSystem::Impl::OpenDirectory(const std::string_view path,
     auto directory = std::make_shared<OpenDirectoryState>();
     directory->entries = std::move(entries);
     directory->info = DirectoryInfoLocked(normalized);
+    directory->system_partition = normalized == "/system" || normalized.starts_with("/system/");
     directory->path = normalized;
     directory->spelling = PreserveSpelling(
         normalized, !path.empty() && path.front() == '/'
@@ -292,13 +373,7 @@ VfsFileInfo VirtualFileSystem::Impl::DescriptorInfo(const std::int32_t descripto
     }
     const auto& open = found->second;
     if (open->directory) return open->directory->info;
-    return {open->file->size,
-            open->file->writable,
-            open->file->source,
-            false,
-            open->file->generation,
-            static_cast<bool>(open->file->character_device),
-            open->file->character_device ? open->file->character_device->device_number : 0};
+    return FileInfoLocked(*open->file, open->owner_id);
 }
 
 void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {
@@ -374,6 +449,7 @@ void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
     }
     PersistRemovalLocked(normalized);
     directories_.erase(normalized);
+    directory_metadata_.erase(normalized);
     if (working_directory_ == normalized) {
         working_directory_unlinked_ = true;
         working_directory_.reset();
@@ -455,6 +531,10 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from, const std::str
         replaced->second->overlay_path.clear();
     }
     files_.insert_or_assign(target, file);
+    for (const auto& [fd, open] : descriptors_) {
+        static_cast<void>(fd);
+        if (open->file == file) open->owner_id = OwnerLocked(target);
+    }
     tombstones_.erase(target);
     MarkOverlayLocked(target, *file);
     SetNodeSizeDirtyLocked(*file, file->size, file->dirty || !file->overlay_path.empty());

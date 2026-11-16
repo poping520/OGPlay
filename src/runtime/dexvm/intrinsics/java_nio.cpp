@@ -751,17 +751,19 @@ IntrinsicClassDecl Declare_libcore_io_Memory_Natives() {
     return std::move(b).Build();
 }
 
-void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog) {
+void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog, bool guest_icu_converters) {
     auto order = IntrinsicClassBuilder::Class("Ljava/nio/ByteOrder;");
     order.MergesBootClass();
     order.StaticMethod(
         "isLittleEndian", "()Z", [](IntrinsicContext&) { return VmValue::Int(1); }, kAccPrivate | kAccNative);
     catalog.push_back(std::move(order).Build());
-    catalog.push_back(Declare_java_nio_charset_Charset_Class());
+    if (!guest_icu_converters) {
+        catalog.push_back(Declare_java_nio_charset_Charset_Class());
+        catalog.push_back(DeclareBuiltinCharset());
+        catalog.push_back(DeclareBuiltinCharsetEncoder());
+        catalog.push_back(DeclareUtf16Decoder());
+    }
     catalog.push_back(Declare_java_nio_charset_Charsets_Natives());
-    catalog.push_back(DeclareBuiltinCharset());
-    catalog.push_back(DeclareBuiltinCharsetEncoder());
-    catalog.push_back(DeclareUtf16Decoder());
     catalog.push_back(Declare_libcore_io_Memory_Natives());
     catalog.push_back(Declare_java_nio_FileChannelImpl_Overrides());
 }

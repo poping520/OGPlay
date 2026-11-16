@@ -446,7 +446,7 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
                                               std::bit_cast<std::int32_t>(args[2]), args[3],
                                               call.Pointer<void>(4).Address(), call.Pointer<void>(5).Address()));
     }
-    if constexpr (FunctionId == 7U || FunctionId == 34U) return PollAll(args, tid);
+    if constexpr (FunctionId == 7U || FunctionId == 34U) return PollAll(args, tid, {}, FunctionId == 7U);
     if constexpr (FunctionId == 8U) {
         std::scoped_lock lock(mutex_);
         auto& looper = RequireLooper(call.Pointer<void>(1).Address());

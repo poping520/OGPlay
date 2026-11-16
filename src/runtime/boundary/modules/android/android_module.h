@@ -34,6 +34,9 @@ public:
     void PollThreadLooper(std::uint64_t thread_id, const std::function<bool()>& interrupted);
     void WakeThreadLooper(std::uint64_t thread_id);
     void NotifyLooperPollers();
+
+    [[nodiscard]] bool LooperCanInvokeGuest() const { return static_cast<bool>(looper_hooks_.invoke_callback); }
+
     void RetireThreadLooper(std::uint64_t thread_id);
     void ShutdownLoopers();
     std::optional<AndroidSurfaceWindow> NativeWindowGeometry(memory::GuestAddress window);
@@ -58,7 +61,7 @@ public:
 
 private:
     std::uint32_t PollAll(const std::array<std::uint32_t, 4>& args, std::uint64_t thread_id,
-                          const std::function<bool()>& interrupted = {});
+                          const std::function<bool()>& interrupted = {}, bool all = false);
 
     struct Looper {
         std::uint64_t owner{};
@@ -68,11 +71,13 @@ private:
         struct Request {
             std::int32_t ident{};
             std::uint32_t events{};
-            memory::GuestAddress data{};
+            memory::GuestAddress data{}, callback{};
+            std::uint64_t generation{};
         };
 
         std::map<std::int32_t, Request> requests;
         std::int32_t last_fd{-1};
+        std::uint64_t generation{};
     };
 
     std::int32_t AddLooperFdLocked(memory::GuestAddress looper, std::int32_t fd, std::int32_t ident,

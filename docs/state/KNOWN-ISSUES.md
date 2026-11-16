@@ -19,7 +19,7 @@
   复核入口：`tests/dexvm/android_pending_notifications_tests.cpp` 的闹钟登记主题；水果忍者的位置订阅路径，当前启动首错另见 CURRENT。
 - **网络与 TLS 发布**：默认离线；公开 CA 来源/更新责任和随附 OpenSSL 1.0.1 补丁维护未闭合，loopback 客户端成功不能作为在线发布依据。
   复核入口：`tests/fixtures/tls/loopback_https.py` 与 guest crypto；SSLEngine、server TLS、AndroidKeyStore、完整 PKIX 不支持。
-- **文件与 Looper**：完整 mmap/lock、目录树 rename、WAL/跨进程共享以及 NDK Looper callback/非 pipe fd 不支持。
+- **文件与 Looper**：完整 mmap/lock、目录树 rename、WAL/跨进程共享以及 NDK Looper 非 pipe fd 不支持。
   复核入口：VFS/syscall/guest_looper 主题；临时沙盒的 Dungeon Hunter `/sdcard` 路径仍待相同启动复核。
 
 ## 窗口、图形与媒体

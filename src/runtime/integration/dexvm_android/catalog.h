@@ -88,6 +88,7 @@ void RegisterSkiaStateTables(dx::Interpreter& vm, const Context& context);
 [[nodiscard]] Decl Declare_local_LocationService_Class(const Context& context);
 [[nodiscard]] Decl Declare_android_media_AudioSystem_Natives(const Context& context);
 [[nodiscard]] Decl Declare_local_AudioService_Class(const Context& context);
+[[nodiscard]] Decl Declare_local_MediaRouterService_Class(const Context& context);
 [[nodiscard]] Decl Declare_android_media_AudioTrack_Natives(const Context& context);
 [[nodiscard]] Decl Declare_android_media_MediaPlayer_Natives(const Context& context);
 [[nodiscard]] Decl Declare_android_media_SoundPool_SoundPoolImpl_Natives(const Context& context);

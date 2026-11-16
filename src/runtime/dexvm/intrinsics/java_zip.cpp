@@ -26,7 +26,8 @@ IntrinsicClassDecl DeclareZipNatives(const char* owner) {
 }  // namespace
 
 void AppendJavaUtilZip(std::vector<IntrinsicClassDecl>& catalog) {
-    for (const auto owner : {"Ljava/util/zip/CRC32;", "Ljava/util/zip/Deflater;", "Lorg/ogplay/zip/NativeZip;"})
+    for (const auto owner :
+         {"Ljava/util/zip/CRC32;", "Ljava/util/zip/Adler32;", "Ljava/util/zip/Deflater;", "Lorg/ogplay/zip/NativeZip;"})
         catalog.push_back(DeclareZipNatives(owner));
     auto inflater = IntrinsicClassBuilder::Class("Ljava/util/zip/Inflater;");
     inflater.AdmitBootNativeMethods();

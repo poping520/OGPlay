@@ -50,7 +50,7 @@ JNIEXPORT jlongArray JNICALL Java_org_ogplay_probe_NativeProbe_looper(JNIEnv* en
     (void)type;
     int descriptors[2];
     struct PipeResult result = {.callbacks = 0, .value = -1};
-    jlong stats[] = {0, -1, -1, -1, 0, -1, 0};
+    jlong stats[] = {0, -1, -1, -1, 0, -1, 0, -1};
     ALooper* loop = ALooper_prepare(0);
     stats[0] = loop != NULL;
     if (loop && pipe(descriptors) == 0) {
@@ -60,7 +60,7 @@ JNIEXPORT jlongArray JNICALL Java_org_ogplay_probe_NativeProbe_looper(JNIEnv* en
             const unsigned char value = 19;
             stats[3] = write(descriptors[1], &value, 1);
             if (stats[3] == 1) stats[6] = ALooper_pollOnce(350, NULL, NULL, NULL);
-            ALooper_removeFd(loop, descriptors[0]);
+            stats[7] = ALooper_removeFd(loop, descriptors[0]);
         }
         close(descriptors[1]);
         close(descriptors[0]);

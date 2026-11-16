@@ -161,12 +161,15 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
   offset，循环读取到请求长度或 EOF，通过 VM 调用 setInputImpl 将实际字节交给 guest zlib。
   负长度明确失败，快照受 Java byte[] 长度与 VM 堆预算约束，IO 失败带 errno 抛 IOException。
   不支持 ZIP64、OPEN_DELETE、宿主路径或 JarFile 签名校验。
-  独立 Checksum/CRC32 公开行为与状态归原版 BootDex；CRC32 两个私有实例 native
+  Checksum、CRC32、Adler32 的公开行为与累加器归原版 BootDex；两种校验算法的私有实例 native
   按原声明准入统一 guest JNI，计算使用 guest libz，不新增宿主校验算法或状态。
 - NIO 缓冲区家族与 MemoryBlock/NIOAccess/NioUtils 原样运行 ROM；ByteOrder 只绑定
   isLittleEndian，Memory 只绑定原版 native，按 ARM 小端及 swap 参数访问稳定 payload。
   批量传输单次预检后整块复制/交换，memmove 保留重叠语义；没有 HeapByteBuffer 合成类。
-  Charset 自身仍保留既有 intrinsic，其编解码循环通过 ROM Buffer 方法及字段访问器读写。
+  装载统一 guest JNI 的会话执行原版 Charset/CharsetICU，绑定 NativeConverter 到 ICU 51。
+  无 guest JNI 的环境仍沿用六种标准字符集的既有 intrinsic；流 adapter 的范围仍为六种。
+  File.setLastModifiedImpl 和 Posix chmod/fchmod 转发到 VFS，stat 系列读取同源属主、
+  mode 与修改时间。ROM File.lastModified 按 API19 秒精度读取。
   Posix bytes 接口接受 byte[] 或 direct ByteBuffer；定位 IO 使用 VFS ReadAt/WriteAt，
   不移动共享文件位置。datagram 仍要求既有显式 socket/transport 和离线策略，未支持 flags 记账失败。
 - socket/stream/datagram 交 NetworkRuntime；默认离线，只有注入 policy/allowlist/transport

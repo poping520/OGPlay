@@ -232,3 +232,45 @@ extern UBool unorm_isNormalized_51(const UChar*, int32_t, int32_t, UErrorCode*);
 extern int32_t ucnv_countAvailable_51(void);
 extern const char* ucnv_getAvailableName_51(int32_t);
 extern const char* ucnv_getStandardName_51(const char*, const char*, UErrorCode*);
+
+/* ICU 51 converter and Unicode-set C ABI. Callback argument structs are opaque here. */
+typedef struct UConverter UConverter;
+typedef struct USet USet;
+typedef struct UEnumeration UEnumeration;
+typedef struct UConverterFromUnicodeArgs UConverterFromUnicodeArgs;
+typedef struct UConverterToUnicodeArgs UConverterToUnicodeArgs;
+typedef void (*FromUnicodeCallback)(const void*, UConverterFromUnicodeArgs*, const UChar*, int32_t, int32_t, int32_t,
+                                    UErrorCode*);
+typedef void (*ToUnicodeCallback)(const void*, UConverterToUnicodeArgs*, const char*, int32_t, int32_t, UErrorCode*);
+
+enum { U_INVALID_CHAR_FOUND = 10, U_TRUNCATED_CHAR_FOUND = 11, U_ILLEGAL_CHAR_FOUND = 12 };
+
+extern UConverter* ICU(ucnv_open)(const char*, UErrorCode*);
+extern void ICU(ucnv_close)(UConverter*);
+extern const char* ICU(ucnv_getCanonicalName)(const char*, const char*, UErrorCode*);
+extern const char* ICU(ucnv_getAlias)(const char*, uint16_t, UErrorCode*);
+extern uint16_t ICU(ucnv_countAliases)(const char*, UErrorCode*);
+extern UEnumeration* ICU(ucnv_openStandardNames)(const char*, const char*, UErrorCode*);
+extern const char* ICU(uenum_next)(UEnumeration*, int32_t*, UErrorCode*);
+extern void ICU(uenum_close)(UEnumeration*);
+extern int8_t ICU(ucnv_getMaxCharSize)(const UConverter*);
+extern int8_t ICU(ucnv_getMinCharSize)(const UConverter*);
+extern void ICU(ucnv_getSubstChars)(const UConverter*, char*, int8_t*, UErrorCode*);
+extern void ICU(ucnv_fromUnicode)(UConverter*, char**, const char*, const UChar**, const UChar*, int32_t*, UBool,
+                                  UErrorCode*);
+extern void ICU(ucnv_toUnicode)(UConverter*, UChar**, const UChar*, const char**, const char*, int32_t*, UBool,
+                                UErrorCode*);
+extern void ICU(ucnv_resetFromUnicode)(UConverter*);
+extern void ICU(ucnv_resetToUnicode)(UConverter*);
+extern void ICU(ucnv_getInvalidUChars)(const UConverter*, UChar*, int8_t*, UErrorCode*);
+extern void ICU(ucnv_getInvalidChars)(const UConverter*, char*, int8_t*, UErrorCode*);
+extern void ICU(ucnv_setFromUCallBack)(UConverter*, FromUnicodeCallback, const void*, FromUnicodeCallback*,
+                                       const void**, UErrorCode*);
+extern void ICU(ucnv_setToUCallBack)(UConverter*, ToUnicodeCallback, const void*, ToUnicodeCallback*, const void**,
+                                     UErrorCode*);
+extern void ICU(ucnv_cbFromUWriteBytes)(UConverterFromUnicodeArgs*, const char*, int32_t, int32_t, UErrorCode*);
+extern void ICU(ucnv_cbToUWriteUChars)(UConverterToUnicodeArgs*, const UChar*, int32_t, int32_t, UErrorCode*);
+extern USet* ICU(uset_openEmpty)(void);
+extern void ICU(uset_close)(USet*);
+extern UBool ICU(uset_containsAll)(const USet*, const USet*);
+extern void ICU(ucnv_getUnicodeSet)(const UConverter*, USet*, int32_t, UErrorCode*);

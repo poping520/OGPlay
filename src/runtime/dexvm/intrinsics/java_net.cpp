@@ -124,9 +124,13 @@ std::int32_t FileDescriptorHandle(IntrinsicContext& call, const VmObjectRef desc
     constexpr std::int32_t kDirectory = 0040000 | 0755;
     InvokeDirect(call.vm, "Llibcore/io/StructStat;", "<init>", "(JJIJIIJJJJJJJ)V",
                  {VmValue::Ref(result), VmValue::Long(0), VmValue::Long(0),
-                  VmValue::Int(info.is_directory ? kDirectory : kRegular), VmValue::Long(1), VmValue::Int(0),
-                  VmValue::Int(0), VmValue::Long(0), VmValue::Long(static_cast<std::int64_t>(info.size)),
-                  VmValue::Long(0), VmValue::Long(0), VmValue::Long(0), VmValue::Long(4096),
+                  VmValue::Int(info.mode           ? static_cast<std::int32_t>(info.mode)
+                               : info.is_directory ? kDirectory
+                                                   : kRegular),
+                  VmValue::Long(1), VmValue::Int(static_cast<std::int32_t>(info.uid)),
+                  VmValue::Int(static_cast<std::int32_t>(info.gid)), VmValue::Long(0),
+                  VmValue::Long(static_cast<std::int64_t>(info.size)), VmValue::Long(0),
+                  VmValue::Long(info.modified_millis / 1000), VmValue::Long(0), VmValue::Long(4096),
                   VmValue::Long(static_cast<std::int64_t>((info.size + 511U) / 512U))});
     return result;
 }
@@ -946,6 +950,9 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
             return VmValue::Ref(result);
         },
         kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "getppid", "()I", [](IntrinsicContext&) { return VmValue::Int(kGuestParentProcessId); },
+        kAccPublic | kAccNative);
     if (services.process_id)
         posix.VirtualMethod(
             "getpid", "()I", [identity = services.process_id](IntrinsicContext&) { return VmValue::Int(identity()); },
@@ -1271,13 +1278,29 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
             },
             kAccPublic | kAccNative);
     }
-    // FileUtils expects a POSIX errno when chmod is unavailable. Do
-    // not convert private VFS storage into host permission changes.
     posix.VirtualMethod(
         "chmod", "(Ljava/lang/String;I)V",
-        [](IntrinsicContext& call) -> VmValue {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("libcore.io.Posix.chmod", 0);
-            ThrowErrno(call.vm, "chmod", 38, "VFS permission changes are not supported");
+        [](IntrinsicContext& call) {
+            const auto path = IntrinsicCall(call).NonNullRef(0, "path");
+            try {
+                call.vm.IO().Chmod(call.vm.StringUtf8(path), static_cast<std::uint32_t>(call.arguments[1].AsInt()));
+                return VmValue::Void();
+            } catch (const IoRuntimeError& error) {
+                ThrowErrno(call.vm, "chmod", error.ErrorNumber(), error.what());
+            }
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "fchmod", "(Ljava/io/FileDescriptor;I)V",
+        [](IntrinsicContext& call) {
+            const auto fd = call.arguments[0].ref;
+            static_cast<void>(PosixDescriptor(call, fd, "fchmod"));
+            try {
+                call.vm.IO().Fchmod(fd, static_cast<std::uint32_t>(call.arguments[1].AsInt()));
+                return VmValue::Void();
+            } catch (const IoRuntimeError& error) {
+                ThrowErrno(call.vm, "fchmod", error.ErrorNumber(), error.what());
+            }
         },
         kAccPublic | kAccNative);
     posix.VirtualMethod(

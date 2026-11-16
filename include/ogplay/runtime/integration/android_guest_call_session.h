@@ -234,6 +234,7 @@ public:
 struct AndroidGuestApplicationModuleSource final {
     std::string name;
     std::span<const std::byte> image;
+    std::string guest_path{};
 };
 
 struct AndroidGuestApplicationLoad final {

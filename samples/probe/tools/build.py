@@ -61,8 +61,8 @@ def type_spec_offsets(table: bytes):
                     yield offset
 
 
-def api19_resource_table(data: bytes) -> bytes:
-    """Clear type-spec res1 for the current OGPlay reader."""
+def clear_type_spec_res1(data: bytes) -> bytes:
+    """Build the zero-res1 control sample."""
     table = bytearray(data)
     for offset in type_spec_offsets(data):
         struct.pack_into("<H", table, offset + 10, 0)
@@ -84,7 +84,7 @@ def build_resource_packs(aapt: Path, platform: Path, work: Path) -> Path:
         for entry in linked.infolist():
             payload = linked.read(entry)
             if entry.filename == "resources.arsc":
-                payload = api19_resource_table(payload)
+                payload = clear_type_spec_res1(payload)
             control.writestr(entry, payload)
     return packs
 
@@ -194,10 +194,7 @@ def build(sdk: Path, ndk: Path, tools_version: str | None) -> Path:
     packed = work / "packed.apk"
     with zipfile.ZipFile(unsigned) as linked, zipfile.ZipFile(packed, "w") as apk:
         for entry in linked.infolist():
-            payload = linked.read(entry)
-            if entry.filename == "resources.arsc":
-                payload = api19_resource_table(payload)
-            apk.writestr(entry, payload)
+            apk.writestr(entry, linked.read(entry))
         for name, path in members.items():
             apk.write(path, name, compress_type=zipfile.ZIP_DEFLATED)
         for path in sorted(fixtures.iterdir()):

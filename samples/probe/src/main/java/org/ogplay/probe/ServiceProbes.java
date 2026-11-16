@@ -22,6 +22,7 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationListener;
+import android.media.MediaRouter;
 import android.location.LocationManager;
 import android.media.AudioManager;
 import android.net.ConnectivityManager;
@@ -65,6 +66,15 @@ final class ServiceProbes {
                     JSONObject actual = obj("service", service[0], "class", manager == null ? null : manager.getClass().getName(),
                             "matches_api19_type", matches);
                     JSONObject expected = obj("api19_type", service[1], "present", true);
+                    if (manager instanceof MediaRouter && "media_router".equals(service[0])) {
+                        MediaRouter router = (MediaRouter) manager;
+                        MediaRouter.RouteInfo route = router.getDefaultRoute();
+                        actual.put("default_route", route != null
+                                && route == router.getSelectedRoute(MediaRouter.ROUTE_TYPE_LIVE_AUDIO));
+                        expected.put("default_route", true);
+                        return check(matches && actual.getBoolean("default_route"), actual, expected,
+                                "MediaRouter returns the default route");
+                    }
                     String message = infoOnly ? "API 19 registry presence and type; compatibility scope needs review"
                             : "Context returns a manager assignable to the API 19 service type";
                     return infoOnly ? new Outcome("info", actual, expected, message, null) : check(matches, actual, expected, message);
@@ -381,10 +391,15 @@ final class ServiceProbes {
             @Override Outcome run(ProbeSession session) throws Exception {
                 UiModeManager manager = (UiModeManager) session.activity.getSystemService(Context.UI_MODE_SERVICE);
                 int type = manager.getCurrentModeType();
-                int config = session.activity.getResources().getConfiguration().uiMode & Configuration.UI_MODE_TYPE_MASK;
+                int uiMode = session.activity.getResources().getConfiguration().uiMode;
+                int config = uiMode & Configuration.UI_MODE_TYPE_MASK;
                 return new Checks().require("manager_matches_configuration", type == config)
-                        .outcome(obj("manager_type", type, "configuration_type", config, "night_mode", manager.getNightMode()),
-                                obj("manager_matches_configuration", true), "UiModeManager and Resources report the same UI mode type");
+                        .require("normal_phone_mode",
+                                uiMode == (Configuration.UI_MODE_TYPE_NORMAL | Configuration.UI_MODE_NIGHT_NO))
+                        .outcome(obj("manager_type", type, "configuration_type", config, "ui_mode", uiMode,
+                                        "night_mode", manager.getNightMode()),
+                                obj("manager_matches_configuration", true, "ui_mode", 0x11),
+                                "UiModeManager and Resources describe a phone in day mode");
             }
         });
         add(probes, new Probe("services.input_method.state", "info", true,

@@ -149,6 +149,11 @@ struct VfsLazyMountEntry final {
 
 enum class VfsSeekWhence : std::uint8_t { begin, current, end };
 
+struct VfsFileMetadata final {
+    std::optional<std::uint32_t> permissions;
+    std::int64_t modified_millis{};
+};
+
 struct VfsFileInfo final {
     std::uint64_t size{};
     bool writable{};
@@ -157,6 +162,14 @@ struct VfsFileInfo final {
     std::uint64_t generation{};
     bool is_character_device{};
     std::uint64_t device_number{};
+    std::uint32_t uid{}, gid{};
+    VfsFileMetadata metadata{};
+
+    [[nodiscard]] std::uint32_t Mode() const noexcept {
+        const auto type = is_directory ? 0040000U : is_character_device ? 0020000U : 0100000U;
+        const auto defaults = is_directory ? (writable ? 0755U : 0555U) : (writable ? 0644U : 0444U);
+        return type | metadata.permissions.value_or(defaults);
+    }
 };
 
 struct VfsDirectoryEntry final {
@@ -276,6 +289,10 @@ public:
     // Returns the normalized node identity used internally by all VFS file
     // operations, including path aliases.
     [[nodiscard]] std::string CanonicalPath(std::string_view path) const;
+    void SetApplicationOwner(std::string_view data_root, std::uint32_t uid);
+    void SetLastModified(std::string_view path, std::int64_t millis);
+    void Chmod(std::string_view path, std::uint32_t mode);
+    void Fchmod(std::int32_t fd, std::uint32_t mode);
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
     [[nodiscard]] GuestFileSystemStats StatVfs(std::string_view path) const;
     // Immediate children (sorted, deduplicated) of a directory path; empty

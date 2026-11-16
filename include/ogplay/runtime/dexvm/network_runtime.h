@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ogplay/runtime/common/api19_identity.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -26,12 +28,14 @@ struct NetworkPolicy final {
     bool allow_tls{};
     bool allow_datagram{};
     std::unordered_set<std::string> allowed_hosts;
+
     // Deterministic API 19 guest identity; never the host computer's identity.
     struct HostIdentity final {
         std::string sysname, nodename, release, version, machine;
     };
+
     std::optional<HostIdentity> host_identity{
-        HostIdentity{"Linux", "localhost", "3.4.0", "API 19", "armv7l"}};
+        HostIdentity{kGuestSysname, kGuestNodename, kGuestRelease, kGuestVersion, kGuestMachine}};
 };
 
 struct NetworkDatagram final {
@@ -44,27 +48,25 @@ struct NetworkDatagram final {
 class NetworkTransport {
 public:
     virtual ~NetworkTransport() = default;
-    [[nodiscard]] virtual std::vector<std::string>
-    Resolve(std::string_view host) = 0;
+    [[nodiscard]] virtual std::vector<std::string> Resolve(std::string_view host) = 0;
+
     [[nodiscard]] virtual std::string Reverse(std::string_view) {
         throw NetworkRuntimeError("reverse lookup is not provided by transport");
     }
-    [[nodiscard]] virtual std::uint64_t Connect(
-        std::string_view host, std::uint16_t port, bool tls) = 0;
-    virtual void Send(std::uint64_t channel,
-                      std::span<const std::byte> bytes) = 0;
-    [[nodiscard]] virtual std::vector<std::byte>
-    Receive(std::uint64_t channel, std::size_t maximum) = 0;
-    [[nodiscard]] virtual std::vector<std::byte>
-    Receive(std::uint64_t channel, std::size_t maximum,
-            std::int32_t timeout_ms) {
+
+    [[nodiscard]] virtual std::uint64_t Connect(std::string_view host, std::uint16_t port, bool tls) = 0;
+    virtual void Send(std::uint64_t channel, std::span<const std::byte> bytes) = 0;
+    [[nodiscard]] virtual std::vector<std::byte> Receive(std::uint64_t channel, std::size_t maximum) = 0;
+
+    [[nodiscard]] virtual std::vector<std::byte> Receive(std::uint64_t channel, std::size_t maximum,
+                                                         std::int32_t timeout_ms) {
         static_cast<void>(timeout_ms);
         return Receive(channel, maximum);
     }
+
     virtual void Close(std::uint64_t channel) noexcept = 0;
     virtual void SendDatagram(const NetworkDatagram& datagram) = 0;
-    [[nodiscard]] virtual NetworkDatagram ReceiveDatagram(
-        std::size_t maximum) = 0;
+    [[nodiscard]] virtual NetworkDatagram ReceiveDatagram(std::size_t maximum) = 0;
 };
 
 class NetworkRuntime final {
@@ -79,6 +81,7 @@ public:
         std::string address;
         std::uint16_t port{};
     };
+
     struct Socket final {
         Endpoint endpoint;
         std::uint64_t channel{};
@@ -87,6 +90,7 @@ public:
         bool closed{};
         std::int32_t timeout_ms{};
     };
+
     void Configure(NetworkPolicy policy, NetworkTransport* transport) noexcept;
     [[nodiscard]] const NetworkPolicy& Policy() const noexcept;
     [[nodiscard]] std::vector<std::string> Resolve(std::string_view host);
@@ -99,8 +103,7 @@ public:
     [[nodiscard]] Socket& GetSocket(VmObjectRef owner);
     [[nodiscard]] const Socket& GetSocket(VmObjectRef owner) const;
     void BindStream(VmObjectRef stream, VmObjectRef socket, bool output);
-    [[nodiscard]] std::vector<std::byte> ReadStream(VmObjectRef stream,
-                                                    std::size_t maximum);
+    [[nodiscard]] std::vector<std::byte> ReadStream(VmObjectRef stream, std::size_t maximum);
     void WriteStream(VmObjectRef stream, std::span<const std::byte> bytes);
     void CloseSocket(VmObjectRef owner) noexcept;
     void Shutdown() noexcept;
@@ -108,8 +111,7 @@ public:
     void SendPacket(const Endpoint& endpoint, std::span<const std::byte> bytes);
     [[nodiscard]] NetworkDatagram ReceivePacket(std::size_t maximum);
 
-    void Trace(VmObjectRef owner,
-               const std::function<void(VmObjectRef)>& visit) const;
+    void Trace(VmObjectRef owner, const std::function<void(VmObjectRef)>& visit) const;
     void Sweep(VmObjectRef owner) noexcept;
 
 private:
@@ -117,7 +119,12 @@ private:
     NetworkPolicy policy_;
     NetworkTransport* transport_{};
     std::unordered_map<std::uint32_t, Socket> sockets_;
-    struct Stream final { VmObjectRef socket; bool output{}; };
+
+    struct Stream final {
+        VmObjectRef socket;
+        bool output{};
+    };
+
     std::unordered_map<std::uint32_t, Stream> streams_;
 };
 

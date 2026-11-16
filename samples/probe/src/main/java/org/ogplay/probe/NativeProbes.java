@@ -96,13 +96,14 @@ final class NativeProbes {
                         "readwrite_errno", "written_byte", "munmap_errno");
             }
         });
-        add(probes, new NativeCase("native.bionic.proc_maps", "in_scope", "fopen", "fgets", "fclose") {
+        add(probes, new NativeCase("native.bionic.proc_maps", "in_scope", "fopen", "fgets", "fclose", "dladdr") {
             @Override Outcome measure(ProbeSession session) throws Exception {
-                long[] value = NativeProbe.maps();
-                return check(value[0] == 1 && value[1] == 0 && value[2] > 0 && value[3] == 1,
-                        obj("opened", value[0] == 1, "errno", value[1], "lines_read", value[2], "library_found", value[3] == 1),
-                        obj("opened", true, "errno", 0, "library_found", true),
-                        "Process maps include the JNI library that is currently executing");
+                long[] value = NativeProbe.maps(session.activity.getApplicationInfo().nativeLibraryDir);
+                return check(value[0] == 1 && value[1] == 0 && value[2] > 0 && value[3] == 1 && value[4] == 1,
+                        obj("opened", value[0] == 1, "errno", value[1], "lines_read", value[2],
+                                "library_found", value[3] == 1, "dladdr_path_matches", value[4] == 1),
+                        obj("opened", true, "errno", 0, "library_found", true, "dladdr_path_matches", true),
+                        "Process maps and dladdr use the JNI library's installed path");
             }
         });
         add(probes, new NativeCase("native.bionic.stdio_proc", "in_scope", "fopen", "fread", "ferror", "fclose") {
@@ -179,9 +180,13 @@ final class NativeProbes {
                         .require("byte_written", value[3] == 1)
                         .require("one_callback_delivered", value[4] == 1)
                         .require("callback_received_expected_byte", value[5] == 19)
+                        .require("poll_reported_callback", value[6] == -2)
+                        .require("callback_removed_fd", value[7] == 0)
                         .outcome(obj("prepared", value[0], "pipe_errno", value[1], "registered", value[2], "written", value[3],
-                                "callback_count", value[4], "received_byte", value[5], "poll_result", value[6]),
-                        obj("prepared", 1, "pipe_errno", 0, "registered", 1, "written", 1, "callback_count", 1, "received_byte", 19),
+                                "callback_count", value[4], "received_byte", value[5], "poll_result", value[6],
+                                "remove_after_callback", value[7]),
+                        obj("prepared", 1, "pipe_errno", 0, "registered", 1, "written", 1, "callback_count", 1,
+                                "received_byte", 19, "poll_result", -2, "remove_after_callback", 0),
                         "A native Looper delivers an input callback for a ready pipe");
             }
         });

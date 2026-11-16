@@ -389,6 +389,7 @@ res::ResTable_config PlatformConfig(const DexVmAndroidContext& context) {
         .screenHeight = static_cast<std::uint16_t>(std::min(context.surface_width, context.surface_height)),
         .sdkVersion = 19,
         .screenLayout = static_cast<std::uint8_t>(display.screen_layout | 0x40),
+        .uiMode = context.device_state.UiMode(),
         .smallestScreenWidthDp = static_cast<std::uint16_t>(std::min(display.width_dp, display.height_dp)),
         .screenWidthDp = static_cast<std::uint16_t>(display.width_dp),
         .screenHeightDp = static_cast<std::uint16_t>(display.height_dp),
@@ -513,7 +514,7 @@ Decl Declare_android_content_res_AssetManager_Natives(const Context& context) {
                      auto defaults = PlatformConfig(*context);
                      defaults.mcc = config.mcc;
                      defaults.mnc = config.mnc;
-                     defaults.uiMode = config.uiMode;
+                     if (config.uiMode) defaults.uiMode = config.uiMode;
                      config = defaults;
                  }
                  manager.setConfiguration(config, locale);
@@ -887,6 +888,7 @@ dx::VmObjectRef CreateApplicationResources(Call& c, const Context& context) {
              {"navigation", display.navigation},
              {"navigationHidden", 2},
              {"orientation", display.orientation},
+             {"uiMode", display.uiMode},
              {"screenWidthDp", display.screenWidthDp},
              {"screenHeightDp", display.screenHeightDp},
              {"smallestScreenWidthDp", display.smallestScreenWidthDp},

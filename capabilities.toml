@@ -476,7 +476,7 @@ note = "M2 三平台完成 ELF32/ARM 多模块事务装载、TLS/版本/exidx、
 [runtime.syscall]
 status = "complete"
 test = "tests/runtime/syscall_tests.cpp; tests/runtime/arm_kernel_helpers_tests.cpp"
-note = "Android ARM 分组 syscall 目录；未实现项 ENOSYS 并记账。55/221 支持 F_GETFL，按真实 VFS/端点打开状态返回 ARM 标志，非法/关闭 fd 为 EBADF，其他 fcntl 仍未实现。0/1/2 与日志端点共用查询/dup/close/输出状态，stdin EOF，不接宿主输入；端点 fstat/seek/ioctl 未实现。kuser v5 屏障/CAS、受检 nanosleep 与进展分类沿既有边界。"
+note = "Android ARM 分组 syscall 目录；未实现项 ENOSYS 并记账。55/221 支持 F_GETFL，按真实 VFS/端点打开状态返回 ARM 标志，非法/关闭 fd 为 EBADF，其他 fcntl 仍未实现。0/1/2 与日志端点共用查询/dup/close/输出状态，stdin EOF，不接宿主输入；端点 fstat/seek/ioctl 未实现。kuser v5 屏障/CAS 与受检 nanosleep 沿既有边界。getpid/getppid 与 Java 共用进程身份，uname 返回同源 API19 ARM 标识。"
 
 [runtime.bionic]
 status = "complete"
@@ -491,7 +491,7 @@ note = "ADR-0020/：run-apk 默认按 package 打开持久沙盒，--sandbox-dir
 [dexvm.file_io_vfs]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp"
-note = "File/流/RAF/FileChannel、PFD 与 native 共用唯一 VFS，裸 fd 按真实访问模式接管，dup 独立关闭且共享 offset。Posix 文件入口、F_GETFL/未变 F_SETFL 受检；fcntlFlock 支持单 guest 进程记录锁，校验参数/范围/访问模式，GETLK 无自身冲突。跨进程锁、mmap、fcntl 状态变化、pipe、权限变化与 volume UUID 仍失败。"
+note = "File/流/RAF/FileChannel、PFD 与 native 共用 VFS。stat UID/GID、mode 与 mtime 同源；setLastModified、chmod/fchmod 更新进程内元数据。dup 独立关闭且共享 offset；支持 F_GETFL 与单进程 fcntlFlock。跨进程锁、mmap、fcntl 状态变化、Java pipe 与 volume UUID 仍失败。"
 
 [runtime.preferences_persistence]
 status = "complete"
@@ -511,7 +511,7 @@ note = "read/write/pread64/pwrite64 共用 64 KiB 临时缓冲，移除 16 MiB �
 [runtime.syscall_file_metadata]
 status = "partial"
 test = "tests/runtime/syscall_tests.cpp"
-note = "文件元数据、目录分页与 ARM open flags 接同一 VFS；chdir/fchdir/getcwd 共用初始 / 的进程 cwd，ENOENT/ENOTDIR/EBADF/ERANGE/EFAULT 受测。AT_FDCWD 相对路径已接入；其他 dirfd 相对查找 ENOTSUP，flock/xattr/inotify ENOSYS。"
+note = "文件元数据、目录分页和 ARM open flags 接同一 VFS。stat64 家族与 Java Posix 报同源 uid/gid、mode、mtime；chmod/fchmod 仅修改 guest 元数据。chdir/fchdir/getcwd 共用 cwd；AT_FDCWD 相对路径可用，其他 dirfd 相对查找 ENOTSUP，flock/xattr/inotify ENOSYS。"
 
 [runtime.vfs_directory_ops]
 status = "complete"
@@ -1286,7 +1286,7 @@ note = "API19 SQL 日期值类型纳入 BootDex。 从固定 API 19 core.jar 精
 [dexvm.guest_jni_api19]
 status = "complete"
 test = "tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tests/runtime/guest_crypto_certificates_tests.cpp#DVM-106; tests/runtime/guest_crypto_certificates_tests.cpp#DVM-108; tests/runtime/bionic_profile_tests.cpp; tools.android_payload_current; tools/bootdex/build_bootdex.py check"
-note = "将 crypto/ICU 统一为 libogplay_jni.so 和单一 JNI_OnLoad。NDK r25c ARMv7 API19 重复构建一致；ELF ABI、SONAME、DT_NEEDED、输入/输出哈希受构建器和 validator 约束。ICU data 禁止文件回退并立即初始化，teardown 先 cleanup 再释放；未审计 native 明确失败，不引入 libjavacore。"
+note = "libogplay_jni.so 按 NDK r25c ARMv7 API19 可复现构建；ELF 与输入输出哈希受 validator 约束。ROM NativeConverter 使用现有 ICU 51 数据与别名表，支持 GBK、Big5、Shift_JIS 的编解码。ICU 禁用文件回退，teardown 释放转换器后再 cleanup。不引入 libjavacore。"
 
 [dexvm.zip_byte_streams]
 status = "partial"
@@ -1296,7 +1296,7 @@ note = "API19 GZIP、Deflater/Inflater、ZipEntry/ZipInputStream/ZipFile 算法�
 [dexvm.crc32]
 status = "complete"
 test = "tests/runtime/guest_zlib_tests.cpp#DVM-201; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
-note = "Checksum/CRC32 公开方法、参数检查与 crc/tbytes 状态执行原版 API19 BootDex；两个私有实例 native 经统一 guest JNI 调用既有 libz，数组有界分块读取，空区间保持累积值，32 位结果无符号扩展。双解释器覆盖标准/大数组向量、增量/单字节、范围异常、reset/GC/实例隔离与 DigestOutputStream；不含 Adler32、Inflater/Deflater 或完整 ZIP 流。"
+note = "ROM Checksum/CRC32/Adler32 保存参数校验及累加器。各自两个私有实例 native 经统一 guest JNI 调用 guest libz，数组有界分块读取，空区间保持原值，32 位结果无符号扩展。"
 
 [dexvm.unsafe]
 status = "complete"
@@ -1731,7 +1731,7 @@ note = "Serializable/Externalizable、DataInput/Output、ObjectInput/Output 与�
 [dexvm.luni_value_io_bootdex]
 status = "complete"
 test = "tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/gc_tests.cpp; tools.android_payload_current"
-note = "ADR-0034：工具/事件/beans、同步器与 atomic、MessageFormat、内存/Buffer/Filter/Data/Reader/Writer、X500 名字/DER 与 key spec 在 BootDex 执行，状态归 guest 字段；InputStreamReader 使用 ICU 增量解码，支持六种标准字符集与畸形输入替换。完整 formatter、Charset provider API 与证书验证不在此范围。"
+note = "ADR-0034：工具/事件/beans、同步器与 atomic、MessageFormat、内存/Buffer/Filter/Data/Reader/Writer、X500 名字/DER 与 key spec 在 BootDex 执行，状态归 guest 字段；现有 InputStreamReader/OutputStreamWriter adapter 支持六种标准字符集；应用 Charset 和 String 的扩展字符集由 ROM NativeConverter 接 guest ICU 51。完整 formatter、Charset provider API 与证书验证不在此范围。"
 
 [dexvm.native_bn_asn1]
 status = "complete"
@@ -1976,7 +1976,7 @@ note = "ROM Theme/TypedArray 使用 framework 和应用 ARSC 的真实配置、b
 [runtime.guest_proc_maps]
 status = "partial"
 test = "tests/memory/address_space_tests.cpp#VFS-05; tests/runtime/vfs_tests.cpp#VFS-05; tests/runtime/syscall_tests.cpp#VFS-05; tests/runtime/android_guest_call_session_tests.cpp#VFS-05"
-note = "ADR-0078：定向 56 用例/351 断言通过，同路径 APK 越过 proc 检查至 SIG_SUSPEND 注册失败；按当前 guest 页账本生成 /proc/self/maps，含真实权限及 PROT_NONE；VFS 按打开冻结只读快照，回调同步撤销且旧 FD 存活，资源预算受检。当前映射为匿名私有 backing，未发布文件来源身份；不实现完整 procfs、PID 别名或 self/stat。"
+note = "按打开冻结的 /proc/self/maps 及当前 PID 别名报告 guest 页权限（含 PROT_NONE）。ELF 路径与 dladdr 同源，匿名区间路径为空，offset/device/inode 为 0。限制为 8192 个区间和 1 MiB；provider 退役后，旧 FD 仍可读取快照。未实现完整 procfs、stat/status。"
 
 [runtime.guest_signals]
 status = "partial"

@@ -10,6 +10,9 @@ class DexVmIoVfsAdapter final : public dexvm::IoFileSystem {
 public:
     explicit DexVmIoVfsAdapter(VirtualFileSystem& file_system) noexcept;
 
+    void SetLastModified(std::string_view path, std::int64_t millis) override;
+    void Chmod(std::string_view path, std::uint32_t mode) override;
+    void Fchmod(std::int32_t fd, std::uint32_t mode) override;
     [[nodiscard]] std::optional<dexvm::IoFileInfo> Stat(std::string_view path) const override;
     [[nodiscard]] GuestFileSystemStats StatVfs(std::string_view path) const override;
     [[nodiscard]] std::optional<std::vector<std::string>> List(std::string_view path) const override;

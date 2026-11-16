@@ -1,7 +1,7 @@
 # 模块：guest ICU JNI
 
 本目录实现 core.jar 中 ICU 相关 native 所需的 ICU（含 Locale 显示名、ISO3、likely-subtag、script 与可用区域枚举）、NativeDecimalFormat、
-NativeNormalizer、Pattern/Matcher、字符集名称枚举与 TimeZoneNames native。源码只调用 ICU 51 C ABI；禁止包含 ICU C++ API、链接 NDK
+NativeNormalizer、Pattern/Matcher、NativeConverter 与 TimeZoneNames native。源码只调用 ICU 51 C ABI；禁止包含 ICU C++ API、链接 NDK
 libc++，或跨越 API 19 STLport C++ ABI。
 
 - 不在宿主下载、编译或链接 ICU，也不嵌入 ICU 数据，因为区域语义与数据统一由固定 API19 guest ICU 提供。
@@ -24,6 +24,7 @@ libcore java_lang_Character.cpp 注册：分类、标识符、数值、名称、
 其余未绑定 ROM native 调用记账并抛 UnsatisfiedLinkError。
 Pattern/Matcher 普通协议来自 API19 BootDex，regex_jni.c 只调用 uregex C ABI；matcher 持有
 独立 UTF-16 native 副本，覆盖 input/region、UTF-16 group offsets、bounds、find/matches 与
-关闭，不长期保存 Java 字符指针。Normalizer 使用 unorm；字符集名称读取 ICU provider 表，
-公开 Charset.availableCharsets 只发布运行时确实支持的六种标准 codec。
+关闭，不长期保存 Java 字符指针。Normalizer 使用 unorm。NativeConverter 使用 ICU 51 的
+别名表和转换器，名称查找构造原版 CharsetICU；编码、解码和错误动作经原版 encoder/decoder
+协议传给 ICU。转换器使用 guest token，遵循原版 encoder/decoder 的线程约定，关闭及退出时回收。
 构建 manifest 固定所有 guest C 源文件与 `icu51_capi.h` 的哈希，ABI 变化不能绕过复现校验。

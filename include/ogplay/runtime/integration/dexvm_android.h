@@ -200,6 +200,7 @@ struct SimulatedDeviceState final {
 
         std::vector<Focus> focus;
         std::set<dexvm::VmObjectRef> route_observers;
+        std::set<dexvm::VmObjectRef> media_router_clients;
     } audio;
 
     struct Telephony final {
@@ -219,7 +220,14 @@ struct SimulatedDeviceState final {
     int application_enabled_setting{};
     bool user_is_monkey{};
     bool car_mode{};
-    int night_mode{};
+    int night_mode{1};  // MODE_NIGHT_NO
+
+    [[nodiscard]] std::uint8_t UiMode() const {
+        const auto type = car_mode ? 3 : 1;
+        const auto night = car_mode && night_mode == 2 ? 0x20 : 0x10;
+        return static_cast<std::uint8_t>(type | night);
+    }
+
     dexvm::VmObjectRef primary_clip{};
     std::set<dexvm::VmObjectRef> clipboard_listeners;
     std::set<dexvm::VmObjectRef> uri_permission_owners;

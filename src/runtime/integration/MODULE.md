@@ -99,11 +99,10 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   AndroidGuestCallSession.Start 是 legacy adapter；AdoptProcess 仅包装既有 owner。
   `RethrowAsyncFailure` 经 session 暴露已保存的 clone/OpenSL worker 原异常，无需再次进入
   guest；观察不消费首错，仍由原 owner 保存，退出阶段的二次异常不得覆盖。
-- `/proc/self/maps` 为当前 guest 地址空间的按打开快照，最多 8192 个合并区间/1 MiB；
-  包含 PROT_NONE，输出真实 guest 读写执行权限。现有 backing 为私有匿名页（包括复制的
-  ELF 段），offset/device/inode 为 0、pathname 为空；不推测原 ROM 文件身份。
-  provider 只捕获 address space，由注册句柄在地址空间析构前同步撤销，构造失败同样回收。
-  不读取宿主 maps，不实现完整 procfs 或 `/proc/self/stat`。
+- `/proc/self/maps` 与 `/proc/<guest PID>/maps` 为按打开冻结的 guest 地址空间快照，
+  最多 8192 个区间/1 MiB。输出实际权限（含 PROT_NONE）；ELF 区间使用与 dladdr 共用的
+  guest 路径，匿名区间路径为空。私有 backing 的 offset/device/inode 为 0。
+  provider 在 owner 析构前同步撤销，已打开快照由 VFS 继续持有。procfs 的 stat/status 暂缺。
   NDK Bitmap hooks 在 DexVM bridge 完成构造后发布，退役等待活跃调用完成；JNI env/
   reference 解析与 pending throwable 归 bridge，boundary 仅处理 ABI。活跃像素锁是
   VM 强根，recycle 延后退役 guest view，bridge 停止线程后解除 hooks 并清理 lease。
@@ -337,6 +336,7 @@ worker 最多 31 个，进程最后一槽保留给 OpenSL callback；满池明�
 DexVM bridge 通过 token→guest TID 显式准备 NDK Looper，Java 主线程在 Activity/JNI 启动前
 已关联，HandlerThread.prepare 复用该 registry。线程退出释放内部引用，进程 teardown
 先 shutdown Looper 以唤醒阻塞轮询。native clone 的存活来自 lifecycle hook，不继承父 Looper。
+回调轮询经可重入的 guest 调用入口在同一个线程执行，进入前发布当前 CPU 上下文。
 
 SurfaceStream 是无 JNI/GL/回调的进程内有界交付队列：producer 带 stream identity/epoch，
 async pending 替换不重发事件；acquire 将待上传帧独立持有，commit 锁存、abort 在无更新帧时归还，

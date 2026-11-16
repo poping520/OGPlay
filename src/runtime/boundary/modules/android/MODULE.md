@@ -42,8 +42,9 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
   由 integration 关联，Java MessageQueue 使用同一个 Looper 的 poll 和 wake 位。Clock 步进只通知
   poll 重新判断 Java deadline。进程 shutdown 唤醒所有等待，后续 poll 返回 POLL_ERROR。
 - fd 登记按 Looper 隔离；支持注入的真实 VFS pipe 就绪查询，轮询不消费 pipe 数据。
-  add/removeFd 可替换/删除登记；错误、挂断、失效事件始终报告。未支持的 fd 或 callback
-  登记返回 -1，不伪装成功。当前 pollOnce/pollAll 在无 callback 支持范围内行为相同。
+  add/removeFd 可替换/删除登记；错误、挂断、失效事件始终报告。pollOnce 在原 guest
+  线程派发 callback，回调返回 0 时只移除当次登记。pollAll 继续处理 callback，直到取得 ident、
+  wake、超时或错误。未支持的 fd 或缺少回调执行 hook 的登记返回 -1。
 - wake 返回 POLL_WAKE(-1)，超时返回 POLL_TIMEOUT(-3)，无关联返回 POLL_ERROR(-4)。
   outFd/outEvents/outData 允许为空；正超时判断通过统一 Clock，轮询可观察线程退出。
 - NativeActivity InputQueue 绑定具体 Looper，仅所属线程可 poll 到对应输入；callback
@@ -59,7 +60,7 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
   写失败传播；任意类型 getDefaultSensor 返回 null。没有合法 ASensor，getter/enable/disable/
   setEventRate 对任何 sensor 都记账、结构化错误并失败；float getter 不返回伪造位模式。
 - queue 单调分配且不复用，≤1024 live；持有真实 VFS pipe 两端且永不写入。使用 Looper
-  共用 addFd 路径，按 API19 忽略结果；callback 登记拒绝时 warn/记账，无 callback 派发。
+  共用 addFd 路径，按 API19 忽略结果；登记拒绝时 warn/记账，空队列永不产生可读事件。
   null/stale Looper 与 queue 明确失败；destroy 移除登记、关闭 pipe、退役 token。
 - getEvents 无事件返回零；hasEvents 保留 API19 revents!=POLLIN 返回 -1 的语义，不能改成零。
   creator thread 退役（含借用其他线程 Looper）及 shutdown 回收队列；进程结束释放空数组。

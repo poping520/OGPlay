@@ -412,7 +412,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             } else if (method == "library.storage") {
                 // Measured on request (the install info dialog), never for the list: data packs can be large.
                 const bool external = entry->external_dir.has_value();
-                AddBytes(writer, result, "apk_bytes", StorageBytes(entry->directory / "game.apk"));
+                AddBytes(writer, result, "apk_bytes", StorageBytes(LibraryApkPath(entry->directory)));
                 AddBytes(writer, result, "external_bytes",
                          external ? StorageBytes(*entry->external_dir) : std::nullopt);
                 AddBytes(writer, result, "sandbox_bytes",
@@ -434,9 +434,9 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                     std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
                 // Android runs one game process: a second launch would only bring the running game back.
                 if (platform_.single_game)
-                    if (const auto other = std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) {
-                            return item.running && item.key != key;
-                        });
+                    if (const auto other =
+                            std::find_if(tiles.begin(), tiles.end(),
+                                         [&](const auto& item) { return item.running && item.key != key; });
                         other != tiles.end())
                         return Error(-32003, "已有游戏在运行（{name}）", "返回该游戏，或先关闭它再启动。",
                                      {{"name", other->display_name}});

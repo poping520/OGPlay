@@ -179,7 +179,30 @@ void WriteText(const std::filesystem::path& path, const std::string_view text) {
     return found == fields.end() ? nullptr : &*found;
 }
 
+constexpr std::string_view kLibraryApkName = "base.apk";
+constexpr std::string_view kLegacyLibraryApkName = "game.apk";
+
+// Renames a pre-base.apk entry's game.apk; failure (e.g. the file is open on Windows)
+// leaves it for LibraryApkPath's fallback and the next listing.
+void MigrateLegacyLibraryApk(const std::filesystem::path& directory) {
+    std::error_code error;
+    const auto legacy = directory / kLegacyLibraryApkName;
+    const auto current = directory / kLibraryApkName;
+    if (std::filesystem::exists(current, error) || error) return;
+    if (!std::filesystem::is_regular_file(legacy, error) || error) return;
+    std::filesystem::rename(legacy, current, error);
+}
+
 }  // namespace
+
+std::filesystem::path LibraryApkPath(const std::filesystem::path& entry_directory) {
+    auto current = entry_directory / kLibraryApkName;
+    std::error_code error;
+    if (std::filesystem::exists(current, error)) return current;
+    auto legacy = entry_directory / kLegacyLibraryApkName;
+    if (std::filesystem::is_regular_file(legacy, error)) return legacy;
+    return current;
+}
 
 bool IsLibraryLocaleTag(const std::string_view tag) {
     const auto dash = tag.find('-');
@@ -612,12 +635,13 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
         const auto key = PathUtf8(iterator->path().filename());
         if (ImportTemporaryKey(key)) continue;
         LibraryEntry entry{.key = key, .directory = iterator->path()};
+        if (cleanup_lock) MigrateLegacyLibraryApk(iterator->path());
         try {
             auto metadata = DecodeMetadata(ReadText(iterator->path() / "meta.toml"));
             const auto expected_prefix = metadata.package + "-";
             if (key != metadata.package && !key.starts_with(expected_prefix))
                 throw std::runtime_error("metadata package does not match installation id");
-            if (!std::filesystem::is_regular_file(iterator->path() / "game.apk")) {
+            if (!std::filesystem::is_regular_file(LibraryApkPath(iterator->path()))) {
                 throw std::runtime_error("library APK copy is missing");
             }
             entry.metadata = std::move(metadata);
@@ -701,7 +725,8 @@ std::string LibraryStore::Import(const LibraryImport& request, bool new_instance
     std::filesystem::path target;
     std::filesystem::path reserved_sandbox;
     try {
-        std::filesystem::copy_file(request.source_apk, temporary / "game.apk", std::filesystem::copy_options::none);
+        std::filesystem::copy_file(request.source_apk, temporary / kLibraryApkName,
+                                   std::filesystem::copy_options::none);
         if (staged_data) staged_data->Publish(temporary / "data");
         if (move_data) std::filesystem::rename(*request.external_dir, temporary / "data");
         WriteText(temporary / "meta.toml", EncodeMetadata(request.metadata));

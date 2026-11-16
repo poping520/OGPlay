@@ -41,7 +41,7 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     if (entry.external_dir) RequireDirectory(*entry.external_dir, "external data directory");
     ResolvedLaunch result;
     auto& o = result.options;
-    o.apk_path = std::filesystem::absolute(entry.directory / "game.apk").lexically_normal();
+    o.apk_path = std::filesystem::absolute(LibraryApkPath(entry.directory)).lexically_normal();
     if (!std::filesystem::is_regular_file(o.apk_path))
         throw LibraryError(LibraryErrorCode::not_found, "library APK copy is missing", o.apk_path);
     o.profiles_directory = config.profiles_dir;
@@ -50,10 +50,10 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     const auto text = [&](std::string_view key) {
         return std::get<std::string>(EffectiveGameSetting(settings, global, entry, key));
     };
-    const auto screen = ResolveScreenSize(
-        text("screen_resolution"), text("screen_aspect"),
-        std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "screen_width")),
-        std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "screen_height")));
+    const auto screen =
+        ResolveScreenSize(text("screen_resolution"), text("screen_aspect"),
+                          std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "screen_width")),
+                          std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "screen_height")));
     // A size this game sets itself is shown exactly as set; presets and global sizes follow the game's orientation.
     const auto own = settings.values.find("screen_resolution");
     o.surface_size_explicit = own != settings.values.end() && std::get<std::string>(own->second) == "custom";

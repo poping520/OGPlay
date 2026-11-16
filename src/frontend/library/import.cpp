@@ -49,7 +49,7 @@ std::vector<std::string> LibraryStore::RefreshIcons() {
         const auto directory = iterator->path();
         std::vector<std::byte> icon;
         try {
-            icon = ExtractApkApplicationVisuals(ReadApkBytes(directory / "game.apk")).icon_png;
+            icon = ExtractApkApplicationVisuals(ReadApkBytes(LibraryApkPath(directory))).icon_png;
         } catch (const std::exception&) {
             continue;  // damaged entries are reported by LoadEntries, not here
         }

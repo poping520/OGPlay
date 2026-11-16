@@ -72,7 +72,7 @@ TEST_CASE("GUI global launch settings forward only supported CLI controls") {
     const auto cli = tree.path / "ogplay";
     const auto directory = tree.path / "library" / "org.example.game";
     Write(cli, "exe");
-    Write(directory / "game.apk", "apk");
+    Write(directory / "base.apk", "apk");
     auto entry = Entry(directory, {});
     entry.external_dir.reset();
     LibraryConfig config;
@@ -103,7 +103,7 @@ TEST_CASE("GUI instance launch overrides inherit and emit valid CLI mode combina
     const auto cli = tree.path / "ogplay", directory = tree.path / "library" / "org.example.game",
                external = tree.path / "external";
     Write(cli, "exe");
-    Write(directory / "game.apk", "apk");
+    Write(directory / "base.apk", "apk");
     std::filesystem::create_directories(external);
     auto entry = Entry(directory, {});
     entry.external_dir.reset();
@@ -160,7 +160,7 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     const auto profiles = temporary.path / "profiles";
     const auto external = temporary.path / "external";
     Write(cli, "exe");
-    Write(entry_dir / "game.apk", "apk");
+    Write(entry_dir / "base.apk", "apk");
     std::filesystem::create_directories(profiles);
     std::filesystem::create_directories(external);
     const auto plan =
@@ -193,7 +193,7 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
           std::filesystem::absolute(entry_dir / "last-run-missing.json").lexically_normal().generic_string());
     CHECK(plan.argv[29] == "--run-report");
     CHECK(plan.argv[30] == std::filesystem::absolute(entry_dir / "last-run.json").lexically_normal().generic_string());
-    // The window caption shows the library name, not the stored game.apk.
+    // The window caption shows the library name, not the stored base.apk.
     CHECK(plan.argv[31] == "--ui-language");
     CHECK(plan.argv[32] == ogplay::app::UiLanguageTag(ogplay::app::SystemUiLanguage()));
     CHECK(plan.argv[33] == "--window-title");
@@ -208,7 +208,7 @@ TEST_CASE("INP-5 GUI LaunchPlan always names the instance key layout file") {
     const auto entry_dir = temporary.path / "library" / "org.example.game";
     const auto external = temporary.path / "external";
     Write(cli, "exe");
-    Write(entry_dir / "game.apk", "apk");
+    Write(entry_dir / "base.apk", "apk");
     std::filesystem::create_directories(external);
     const auto plan = ogplay::frontend::BuildLaunchPlan(cli, temporary.path, Entry(entry_dir, external), {});
     REQUIRE(plan.argv.size() >= 2);
@@ -223,7 +223,7 @@ TEST_CASE("GUI LaunchPlan fails before spawn for every missing required input") 
     const auto cli = temporary.path / "ogplay";
     const auto entry_dir = temporary.path / "entry";
     Write(cli, "exe");
-    Write(entry_dir / "game.apk", "apk");
+    Write(entry_dir / "base.apk", "apk");
     const auto entry = Entry(entry_dir, temporary.path / "missing-external");
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(cli, temporary.path, entry, {})),
                     ogplay::app::LibraryError);
@@ -237,10 +237,10 @@ TEST_CASE("GUI LaunchPlan fails before spawn for every missing required input") 
     CHECK_THROWS_AS(
         static_cast<void>(ogplay::frontend::BuildLaunchPlan(temporary.path / "missing-cli", temporary.path, valid, {})),
         ogplay::app::LibraryError);
-    std::filesystem::remove(entry_dir / "game.apk");
+    std::filesystem::remove(entry_dir / "base.apk");
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(cli, temporary.path, valid, {})),
                     ogplay::app::LibraryError);
-    Write(entry_dir / "game.apk", "apk");
+    Write(entry_dir / "base.apk", "apk");
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
                         cli, temporary.path, valid, {.profiles_dir = temporary.path / "missing-profiles"})),
                     ogplay::app::LibraryError);
@@ -254,7 +254,7 @@ TEST_CASE("BND-42 GUI persists and forwards bounded CPU configuration") {
     TemporaryDirectory tree;
     const auto cli = tree.path / "ogplay", directory = tree.path / "library" / "org.example.game";
     Write(cli, "exe");
-    Write(directory / "game.apk", "apk");
+    Write(directory / "base.apk", "apk");
     auto entry = Entry(directory, {});
     entry.external_dir.reset();
     GameSettings settings{{{"cpu_cores", std::uint32_t{4}}, {"cpu_frequency_mhz", std::uint32_t{1500}}}};
@@ -279,7 +279,7 @@ TEST_CASE("BND-43 GUI persists optional execution limits independently of nomina
     TemporaryDirectory tree;
     const auto cli = tree.path / "ogplay", directory = tree.path / "library" / "org.example.game";
     Write(cli, "exe");
-    Write(directory / "game.apk", "apk");
+    Write(directory / "base.apk", "apk");
     auto entry = Entry(directory, {});
     entry.external_dir.reset();
     GameSettings settings{{{"cpu_limit_parallelism", true}, {"cpu_max_mticks_per_second", std::uint32_t{20}}}};
@@ -352,7 +352,7 @@ TEST_CASE("INP-7 GUI LaunchPlan gives every game a key editor port and a token o
     const auto cli = tree.path / "ogplay";
     const auto directory = tree.path / "library" / "org.example.game";
     Write(cli, "exe");
-    Write(directory / "game.apk", "apk");
+    Write(directory / "base.apk", "apk");
     auto entry = Entry(directory, {});
     entry.external_dir.reset();
     LibraryConfig config;
@@ -379,7 +379,7 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     const auto executable = tree.path / "ogplay";
     const auto directory = tree.path / "library/org.example.game";
     Write(executable, "exe");
-    Write(directory / "game.apk", "apk");
+    Write(directory / "base.apk", "apk");
     auto entry = Entry(directory, {});
     entry.external_dir.reset();
     LibraryConfig global;
@@ -476,7 +476,7 @@ TEST_CASE("VFS-09 external guest mount is per installation and resolves user ove
     const auto directory = store.EntriesRoot() / "org.example.game";
     const auto external = tree.path / "external";
     std::filesystem::create_directories(external);
-    Write(directory / "game.apk", "apk");
+    Write(directory / "base.apk", "apk");
     auto entry = Entry(directory, external);
     CHECK(ResolveLaunch(store, entry, {}).options.external_guest_directory == "/sdcard");
     GameSettings settings{{{"external_guest_dir", std::string("/sdcard/Other")}}};
@@ -500,7 +500,7 @@ TEST_CASE("running icon follows the entry icon and the global style") {
     using namespace ogplay::app;
     TemporaryDirectory tree;
     const auto directory = tree.path / "library/org.example.game";
-    Write(directory / "game.apk", "apk");
+    Write(directory / "base.apk", "apk");
     auto entry = Entry(directory, {});
     entry.external_dir.reset();
     LibraryConfig global;
@@ -526,7 +526,7 @@ TEST_CASE("gui_launch resolves UI language for the process and localized window 
     using namespace ogplay::app;
     TemporaryDirectory tree;
     const auto directory = tree.path / "library/org.example.game";
-    Write(directory / "game.apk", "apk");
+    Write(directory / "base.apk", "apk");
     auto entry = Entry(directory, {});
     entry.external_dir.reset();
     entry.metadata->localized_names = {{"zh", "中文游戏"}, {"en", "English Game"}};

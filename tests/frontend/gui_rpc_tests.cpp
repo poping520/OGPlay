@@ -95,7 +95,7 @@ struct Fixture {
         std::ofstream(root / "ogplay.exe") << "fixture";
         const auto entry = root / "library/org.example.game";
         std::filesystem::create_directories(entry);
-        std::ofstream(entry / "game.apk") << "fixture";
+        std::ofstream(entry / "base.apk") << "fixture";
         std::ofstream(entry / "meta.toml")
             << "schema = 1\npackage = \"org.example.game\"\ndisplay_name = \"游戏 <script>\"\n"
                "version_code = 1\nversion_name = \"1.0\"\nimported_at = \"now\"\n";
@@ -214,7 +214,7 @@ TEST_CASE("GUI settings RPC applies validated patches and rejects stale writes")
     writer.AddString(analyze, "jsonrpc", "2.0");
     writer.AddUnsignedInteger(analyze, "id", 4);
     writer.AddString(analyze, "method", "library.analyze");
-    writer.AddString(params, "path", (fixture.root / "library/org.example.game/game.apk").generic_string());
+    writer.AddString(params, "path", (fixture.root / "library/org.example.game/base.apk").generic_string());
     writer.Add(analyze, "params", params);
     REQUIRE(Decode(fixture.rpc.Handle(writer.Serialize(analyze))).Root().Member("result"));
     CHECK(update(token, "theme", "dark").Root().Member("error").has_value());
@@ -569,7 +569,7 @@ TEST_CASE("GUI RPC measures APK, data pack and game data storage on request") {
     auto result = before.Root().Member("result");
     REQUIRE(result);
     CHECK(result->Member("apk_bytes")->Integer() ==
-          static_cast<std::int64_t>(std::filesystem::file_size(directory / "game.apk")));
+          static_cast<std::int64_t>(std::filesystem::file_size(directory / "base.apk")));
     // No data pack configured and the game has not run yet: nothing to measure.
     CHECK(result->Member("external_bytes")->IsNull());
     CHECK(result->Member("external_guest_dir")->IsNull());
@@ -711,7 +711,7 @@ TEST_CASE("GUI import snapshot creates a distinct instance and rejects repeated 
         Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":true})")).Root().Member("result"));
     CHECK(fixture.store.LoadEntries().size() == 2);
     CHECK_FALSE(std::filesystem::exists(fixture.root / ".gui-import-1"));
-    CHECK(std::filesystem::file_size(fixture.root / "library/org.example.game-2/game.apk") == 7);
+    CHECK(std::filesystem::file_size(fixture.root / "library/org.example.game-2/base.apk") == 7);
 }
 
 TEST_CASE("GUI import rejects malformed upload and cancelled jobs without publishing") {
@@ -784,7 +784,7 @@ TEST_CASE("GUI import takes the APK and data pack out of a game archive") {
     REQUIRE(done.Root().Member("result")->Member("state")->String() == "imported");
     const std::string id(*done.Root().Member("result")->Member("installation_id")->String());
     const auto entry = fixture.root / "library" / id;
-    CHECK(std::filesystem::file_size(entry / "game.apk") == 5);
+    CHECK(std::filesystem::file_size(entry / "base.apk") == 5);
     CHECK(std::filesystem::exists(entry / "data/Android/obb/org.example.game/main.3.org.example.game.obb"));
     CHECK(std::filesystem::exists(entry / "data/picture/cover.png"));
     std::ifstream settings(entry / "settings.toml");
@@ -852,21 +852,21 @@ TEST_CASE("GUI RPC removes only the confirmed stopped installation") {
         const auto response = Decode(fixture.rpc.Handle(
             std::string(R"({"jsonrpc":"2.0","id":1,"method":"library.remove","params":)") + params + "}"));
         CHECK(response.Root().Member("error").has_value());
-        CHECK(std::filesystem::exists(entry / "game.apk"));
+        CHECK(std::filesystem::exists(entry / "base.apk"));
     }
     const auto request =
         R"({"jsonrpc":"2.0","id":1,"method":"library.remove","params":{"installation_id":"org.example.game","confirmed":true}})";
     fixture.context.running_packages = {"org.example.game"};
     std::ofstream(entry / "settings.toml") << "invalid TOML [";
     CHECK(Decode(fixture.rpc.Handle(request)).Root().Member("error").has_value());
-    CHECK(std::filesystem::exists(entry / "game.apk"));
+    CHECK(std::filesystem::exists(entry / "base.apk"));
     fixture.context.running_packages.clear();
     {
         ogplay::app::RunningLease externally_running(fixture.root, "org.example.game");
         auto rejected = Decode(fixture.rpc.Handle(request));
         REQUIRE(rejected.Root().Member("error"));
         CHECK(rejected.Root().Member("error")->Member("code")->Integer() == -32002);
-        CHECK(std::filesystem::exists(entry / "game.apk"));
+        CHECK(std::filesystem::exists(entry / "base.apk"));
     }
     const auto removed = Decode(fixture.rpc.Handle(request));
     REQUIRE(removed.Root().Member("result").has_value());
@@ -934,7 +934,7 @@ TEST_CASE("GUI RPC clears the saves of a confirmed stopped installation and keep
     CHECK(saved() == 0);
     std::ifstream input(sandbox / "meta.toml");
     CHECK(std::string(std::istreambuf_iterator<char>(input), {}) == meta);
-    CHECK(std::filesystem::exists(entry / "game.apk"));
+    CHECK(std::filesystem::exists(entry / "base.apk"));
     CHECK(std::filesystem::exists(entry / "meta.toml"));
 }
 
@@ -1039,7 +1039,7 @@ TEST_CASE("gui_platform android returns to the one running game and starts no se
     Fixture fixture(frontend::GuiPlatform::Android());
     const auto other = fixture.root / "library/org.example.other";
     std::filesystem::create_directories(other);
-    std::ofstream(other / "game.apk") << "fixture";
+    std::ofstream(other / "base.apk") << "fixture";
     std::ofstream(other / "meta.toml") << "schema = 1\npackage = \"org.example.other\"\ndisplay_name = \"另一个\"\n"
                                           "version_code = 1\nversion_name = \"1.0\"\nimported_at = \"now\"\n";
     fixture.context.running_packages = {"org.example.game"};
@@ -1140,7 +1140,7 @@ TEST_CASE("gui_platform android leaves out desktop and developer capabilities") 
     CHECK(game_result->Member("previews")->Size() == 1);
     const auto argv = game_result->Member("previews")->Member("normal")->Member("argv");
     REQUIRE(argv->Size() > 0);
-    CHECK(argv->Element(0)->String()->ends_with("game.apk"));
+    CHECK(argv->Element(0)->String()->ends_with("base.apk"));
 
     CHECK(
         ErrorCode(
@@ -1156,7 +1156,7 @@ TEST_CASE("gui_platform android leaves out desktop and developer capabilities") 
     REQUIRE(fixture.plan.has_value());
     // The game is entered in-process: options only, no executable, no key editor token or port.
     CHECK(std::find(fixture.plan->argv.begin(), fixture.plan->argv.end(), "--run-game") == fixture.plan->argv.end());
-    CHECK(fixture.plan->argv.front().ends_with("game.apk"));
+    CHECK(fixture.plan->argv.front().ends_with("base.apk"));
     CHECK(fixture.plan->control_token.empty());
     CHECK_FALSE(fixture.plan->key_editor_port.has_value());
     CHECK_FALSE(fixture.plan->mcp_port.has_value());

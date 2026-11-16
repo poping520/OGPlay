@@ -3,7 +3,7 @@
 if(DEFINED GUI_LIBRARY_ROOT)
     file(REMOVE_RECURSE "${GUI_LIBRARY_ROOT}")
     file(MAKE_DIRECTORY "${GUI_LIBRARY_ROOT}/library/org.example.game")
-    file(WRITE "${GUI_LIBRARY_ROOT}/library/org.example.game/game.apk" "fixture")
+    file(WRITE "${GUI_LIBRARY_ROOT}/library/org.example.game/base.apk" "fixture")
     file(WRITE "${GUI_LIBRARY_ROOT}/library/org.example.game/meta.toml"
         "schema = 1\n"
         "package = \"org.example.game\"\n"

@@ -118,7 +118,7 @@ TEST_CASE("CLI library inspect import duplicates and remove retain saves") {
     CHECK(f.Run({"remove", "org.example.game"}).code == 1);
     JsonSuccess(f.Run({"remove", "org.example.game", "--yes"}));
     CHECK(std::filesystem::exists(f.root / "sandbox/org.example.game/meta.toml"));
-    CHECK(std::filesystem::exists(f.root / "library/org.example.game-2/game.apk"));
+    CHECK(std::filesystem::exists(f.root / "library/org.example.game-2/base.apk"));
 }
 
 TEST_CASE("GUI-23 last run report round trips and drives the CLI attention filter") {

@@ -156,7 +156,7 @@ TEST_CASE("GUI RPC imports a real minimal APK from the analyzed snapshot") {
     CHECK(entries[0].metadata->version_code == 9);
     CHECK(std::get<std::string>(ogplay::app::LoadGameSettings(entries[0].directory).values.at("external_guest_dir")) ==
           "/sdcard/Games/Example");
-    const auto analyzed = ogplay::app::AnalyzeApkImportFile(entries[0].directory / "game.apk", app::ProfileCatalog{});
+    const auto analyzed = ogplay::app::AnalyzeApkImportFile(entries[0].directory / "base.apk", app::ProfileCatalog{});
     CHECK(analyzed.manifest.version_code == 9);
     CHECK_FALSE(std::filesystem::exists(temporary.path / ".gui-import-1"));
     call("library.upload.begin", R"({"name":"broken.apk","size":1})");

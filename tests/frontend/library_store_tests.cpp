@@ -224,7 +224,7 @@ TEST_CASE("library import atomically copies APK metadata and optional icon") {
     CHECK(linked.external_dir == std::filesystem::absolute(external));
     CHECK_FALSE(linked.external_owned);
     CHECK(entries[0].icon_png == icon);
-    CHECK(std::filesystem::file_size(entries[0].directory / "game.apk") == 9);
+    CHECK(std::filesystem::file_size(entries[0].directory / "base.apk") == 9);
     CHECK(std::filesystem::file_size(entries[0].directory / "icon.png") == 2);
     CHECK(std::filesystem::is_regular_file(external / "keep.dat"));
     CHECK_FALSE(std::filesystem::exists(store.EntriesRoot() / ".org.example.game.importing"));
@@ -279,9 +279,9 @@ TEST_CASE("library assigns a distinct installation id to duplicate packages") {
     missing_version.version_code = 0;
     missing_version.version_name.clear();
     store.Import({.source_apk = third, .metadata = missing_version}, true);
-    CHECK(std::filesystem::file_size(store.EntriesRoot() / "org.example.game" / "game.apk") == 5);
-    CHECK(std::filesystem::file_size(store.EntriesRoot() / "org.example.game-2" / "game.apk") == 6);
-    CHECK(std::filesystem::file_size(store.EntriesRoot() / "org.example.game-3" / "game.apk") == 5);
+    CHECK(std::filesystem::file_size(store.EntriesRoot() / "org.example.game" / "base.apk") == 5);
+    CHECK(std::filesystem::file_size(store.EntriesRoot() / "org.example.game-2" / "base.apk") == 6);
+    CHECK(std::filesystem::file_size(store.EntriesRoot() / "org.example.game-3" / "base.apk") == 5);
 }
 
 TEST_CASE("concurrent library imports reject busy operations and can be retried") {
@@ -352,7 +352,7 @@ TEST_CASE("library exposes corrupt entries instead of silently skipping them") {
           "schema = 1\npackage = \"org.example.other\"\n"
           "display_name = \"Bad\"\nversion_code = 1\nversion_name = \"1\"\n"
           "imported_at = \"now\"\n");
-    Write(store.EntriesRoot() / "org.example.bad" / "game.apk", "apk");
+    Write(store.EntriesRoot() / "org.example.bad" / "base.apk", "apk");
     Write(store.EntriesRoot() / "org.example.missing" / "meta.toml",
           "schema = 1\npackage = \"org.example.missing\"\n"
           "display_name = \"Missing\"\nversion_code = 1\nversion_name = \"1\"\n"
@@ -364,6 +364,24 @@ TEST_CASE("library exposes corrupt entries instead of silently skipping them") {
     CHECK(entries[1].Damaged());
     CHECK(entries[0].damage_reason->find("match") != std::string::npos);
     CHECK(entries[1].damage_reason->find("missing") != std::string::npos);
+}
+
+TEST_CASE("library migrates a legacy game.apk copy to base.apk") {
+    TemporaryDirectory tree;
+    ogplay::app::LibraryStore store(tree.path / "root");
+    const auto directory = store.EntriesRoot() / "org.example.legacy";
+    Write(directory / "meta.toml", "schema = 1\npackage = \"org.example.legacy\"\n"
+                                   "display_name = \"Legacy\"\nversion_code = 1\nversion_name = \"1\"\n"
+                                   "imported_at = \"now\"\n");
+    Write(directory / "game.apk", "legacy");
+    CHECK(ogplay::app::LibraryApkPath(directory) == directory / "game.apk");
+
+    const auto entries = store.LoadEntries();
+    REQUIRE(entries.size() == 1);
+    CHECK_FALSE(entries[0].Damaged());
+    CHECK_FALSE(std::filesystem::exists(directory / "game.apk"));
+    CHECK(std::filesystem::file_size(directory / "base.apk") == 6);
+    CHECK(ogplay::app::LibraryApkPath(directory) == directory / "base.apk");
 }
 
 TEST_CASE("library removal never touches external data or persistent sandbox") {

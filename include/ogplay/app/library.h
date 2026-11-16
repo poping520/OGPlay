@@ -89,6 +89,10 @@ struct LibraryEntry final {
     [[nodiscard]] bool Damaged() const noexcept { return damage_reason.has_value(); }
 };
 
+// The entry's copy of the imported APK, base.apk. Entries imported before the rename hold
+// game.apk until LoadEntries migrates them; until then this returns the legacy file.
+[[nodiscard]] OGPLAYCORE_API std::filesystem::path LibraryApkPath(const std::filesystem::path& entry_directory);
+
 enum class ExternalDataMode : std::uint8_t { copy, link, move };
 
 // external_dir is the selected data pack: copy publishes it as the entry's data/ directory,
@@ -128,7 +132,7 @@ public:
     // sandbox identity, game files, data pack, settings and logs. Refused
     // while the game runs and for a damaged entry.
     void ClearSaves(std::string_view key);
-    // Re-extracts each entry's icon.png from its own game.apk with the current icon
+    // Re-extracts each entry's icon.png from its own APK copy with the current icon
     // rule; returns the ids whose icon changed. Unreadable entries keep their icon.
     std::vector<std::string> RefreshIcons();
 

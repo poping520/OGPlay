@@ -4,6 +4,7 @@
 公开头只含 std 与 app 类型；内核 Profile、Manifest、沙盒及文件锁只在实现内使用。
 
 库根 library/.lock：导入、移除、配置写入及运行租约获取持排他锁；读全局/实例设置与运行探测持共享锁。两者有界等待约 2 秒，超时报 busy 并提示重试；List 只非阻塞尝试清理锁，冲突时跳过残留，busy 不得记为条目损坏。配置读取不改写文件，主文件缺失时只读 `.bak`，下次保存重新发布。运行租约在排他库锁内获取实例 .running.lock，保持至 RunGame 返回/异常；移除与单实例检查用同一 OS 锁。锁文件不得主动 unlink。
+条目目录内的 APK 副本名为 base.apk（`LibraryApkPath`）；旧条目的 game.apk 由 LoadEntries 持清理锁时改名，改名前 `LibraryApkPath` 回退到旧文件。
 删除条目保留引用的外部目录，库内 `data/` 随条目删除；sandbox 默认保留，`delete_saves` 时先删除。
 `ClearSaves` 在排他库锁内持实例运行锁清空 sandbox 覆盖层（SandboxStore::Clear），保留 meta 身份（id、ANDROID_ID）、库内 APK/数据包、设置与日志；运行中或损坏条目拒绝。
 导入优先沿用无库条目且 meta package 一致的残留 sandbox 的最小编号 id（ReusableInstallationId，ADR-0145）。settings 校验、未知键和预留字段规则为两个 EXE 的唯一来源：读取 config/settings/meta 文件时跳过未知键，写入与修改请求仍拒绝未知键；ResolveLaunch 产出值，参数格式仅由 FormatGameRunArgs 维护。
@@ -80,7 +81,7 @@ Android/obb/<名>，否则 Android/data/<名>。两者只在取哪个标记、�
 
 图标：入库与导入分析从 application icon 的全部密度配置中选面积最大且可解码的 PNG（跳过 XML、.9.png），
 存方形 RGBA PNG，不放大、超过 kLauncherIconMaxSize（256）才缩小。`RefreshIcons`/CLI `library refresh-icons`
-在库锁内按当前规则从各条目 game.apk 重提 icon.png，原子替换，读不出的条目保留原图标。
+在库锁内按当前规则从各条目 APK 副本重提 icon.png，原子替换，读不出的条目保留原图标。
 运行中游戏图标：`ComposeRunningIcon` 把条目图标与随包 OGPlay 卡带合成为方形 RGBA，`badge`（默认，圆形角标）或
 `cradle`（卡带插槽）；游戏图标不加底，裁透明边/软投影后放大至多 20% 直到 macOS 圆角内无透明像素。全局 `running_icon`
 选择样式；ResolveLaunch 仅在条目有 icon.png 时传 window_icon 与样式。

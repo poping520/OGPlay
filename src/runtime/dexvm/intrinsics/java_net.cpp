@@ -900,6 +900,10 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
     posix.MergesBootClass();
 #include "api19_posix_natives.inc"
     posix.VirtualMethod(
+        "waitpid", "(ILlibcore/util/MutableInt;I)I",
+        [](IntrinsicContext& call) -> VmValue { ThrowErrno(call.vm, "waitpid", 10); },  // API 19 ECHILD
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
         "getenv", "(Ljava/lang/String;)Ljava/lang/String;",
         [read = services.process_environment](IntrinsicContext& call) {
             const auto name = IntrinsicCall(call).NonNullRef(0, "name");

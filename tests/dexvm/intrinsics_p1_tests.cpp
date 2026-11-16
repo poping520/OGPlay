@@ -11,6 +11,7 @@
 #include <array>
 #include <algorithm>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <cstddef>
@@ -140,6 +141,65 @@ TEST_CASE("BND-42 Java Runtime and Posix share the configured CPU count") {
         CHECK(vm.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         const auto hits = vm.ledger.Unimplemented();
         CHECK(std::ranges::any_of(hits, [](const auto& hit) { return hit.id == "dexvm.posix.sysconf.39"; }));
+    }
+}
+
+TEST_CASE("dexvm ROM Runtime.exec throws a catchable IOException and parks its reaper") {
+    using namespace std::chrono_literals;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        INFO("backend=", backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        Vm vm({.backend = backend});
+        const auto expect_exec_failure = [&] {
+            const auto caught = vm.CallStatic("catchRuntimeExecFailure", "()Ljava/io/IOException;");
+            REQUIRE_MESSAGE(!caught.exception.IsValid(), caught.exception_message);
+            REQUIRE(caught.value.ref.IsValid());
+            const auto caught_root = vm.interpreter.ProtectReferences(std::array{caught.value.ref});
+            const auto io_exception = vm.linker.ResolveDescriptor("Ljava/io/IOException;");
+            const auto invoke = [&](VmValue receiver, const char* name, const char* descriptor) {
+                const auto& type = vm.linker.Class(vm.model.ObjectClass(receiver.ref));
+                const auto slot = vm.linker.FindVtableIndex(type.id, name, descriptor);
+                REQUIRE(slot.has_value());
+                return vm.interpreter.Call(type.vtable[*slot], std::array{receiver});
+            };
+            CHECK(vm.model.ObjectClass(caught.value.ref) == io_exception);
+            const auto message = vm.AsString(invoke(caught.value, "getMessage", "()Ljava/lang/String;"));
+            CHECK(message.starts_with("Error running exec(). Command: [getprop, ro.product.cpu.abi]"));
+
+            const auto cause = invoke(caught.value, "getCause", "()Ljava/lang/Throwable;");
+            REQUIRE_FALSE(cause.exception.IsValid());
+            REQUIRE(cause.value.ref.IsValid());
+            CHECK(vm.model.ObjectClass(cause.value.ref) == io_exception);
+            CHECK(vm.AsString(invoke(cause.value, "getMessage", "()Ljava/lang/String;")) ==
+                  "No such file or directory");
+        };
+        expect_exec_failure();
+        CHECK(std::ranges::any_of(vm.ledger.Unimplemented(),
+                                  [](const auto& hit) { return hit.id == "dexvm.process.exec"; }));
+        const auto warnings = vm.logger.Snapshot(ogplay::core::LogLevel::warn, "dexvm.process.exec");
+        REQUIRE(warnings.size() == 1);
+        REQUIRE(warnings.front().fields.size() == 1);
+        CHECK(warnings.front().fields.front().key == "command");
+        CHECK(std::get<std::string>(warnings.front().fields.front().value) == "getprop");
+
+        const auto reaper_waiting = [&] {
+            const auto stacks = vm.interpreter.TryStackSnapshot();
+            return stacks && std::ranges::any_of(*stacks, [](const auto& thread) {
+                       return thread.thread_name == "java.lang.ProcessManager" &&
+                              std::ranges::any_of(thread.frames, [](const auto& frame) {
+                                  return frame.class_descriptor == "Ljava/lang/ProcessManager;" &&
+                                         frame.method_name == "waitForMoreChildren";
+                              });
+                   });
+        };
+        const auto deadline = std::chrono::steady_clock::now() + 2s;
+        while (!reaper_waiting() && std::chrono::steady_clock::now() < deadline) {
+            const auto failure = vm.threads.TakeFailure();
+            REQUIRE_MESSAGE(!failure, failure.value_or(""));
+            static_cast<void>(vm.threads.WaitForHostProgress(10ms));
+        }
+        REQUIRE(reaper_waiting());
+        expect_exec_failure();
+        CHECK_FALSE(vm.threads.TakeFailure().has_value());
     }
 }
 

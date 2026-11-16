@@ -146,7 +146,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Llibcore/io/Posix;.tcdrain(Ljava/io/FileDescriptor;)V",
         "Llibcore/io/Posix;.tcsendbreak(Ljava/io/FileDescriptor;I)V",
         "Llibcore/io/Posix;.unsetenv(Ljava/lang/String;)V",
-        "Llibcore/io/Posix;.waitpid(ILlibcore/util/MutableInt;I)I",
         "Llibcore/io/Posix;.writev(Ljava/io/FileDescriptor;[Ljava/lang/Object;[I[I)I",
 
         // DVM-102: precise native failures frozen in api19.json (date_family_audit).

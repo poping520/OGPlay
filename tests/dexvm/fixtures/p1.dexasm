@@ -420,6 +420,22 @@
     return v2
 .end method
 
+.method static public catchRuntimeExecFailure()Ljava/io/IOException;
+.registers 2
+    invoke-static {}, Ljava/lang/Runtime;->getRuntime()Ljava/lang/Runtime;
+    move-result-object v0
+    const-string v1, "getprop ro.product.cpu.abi"
+    :try_start
+    invoke-virtual {v0, v1}, Ljava/lang/Runtime;->exec(Ljava/lang/String;)Ljava/lang/Process;
+    :try_end
+    const/4 v0, 0
+    return-object v0
+    :handler
+    move-exception v0
+    return-object v0
+    .catch Ljava/io/IOException; :try_start :try_end :handler
+.end method
+
 .method static public mathMix()I
 .registers 6
     const/16 v0, -7

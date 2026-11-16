@@ -61,5 +61,4 @@ posix.UnimplementedVirtual("symlink", "(Ljava/lang/String;Ljava/lang/String;)V")
 posix.UnimplementedVirtual("tcdrain", "(Ljava/io/FileDescriptor;)V");
 posix.UnimplementedVirtual("tcsendbreak", "(Ljava/io/FileDescriptor;I)V");
 posix.UnimplementedVirtual("unsetenv", "(Ljava/lang/String;)V");
-posix.UnimplementedVirtual("waitpid", "(ILlibcore/util/MutableInt;I)I");
 posix.UnimplementedVirtual("writev", "(Ljava/io/FileDescriptor;[Ljava/lang/Object;[I[I)I");

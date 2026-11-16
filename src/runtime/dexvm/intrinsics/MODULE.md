@@ -70,7 +70,8 @@
 - Runtime 的单例、hook、退出和 finalization 由 ROM Java 执行，nativeExit 保存退出码并停止 VM。
   gc 与内存 native 共用 VM 堆。availableProcessors 经 Posix.sysconf 查询配置核数。
   integration 在 Runtime 两个接受 ClassLoader 的包内加载方法接入现有库加载器；nativeLoad
-  明确失败。Runtime.exec 所需进程管理不支持。
+  明确失败。ProcessManager.exec 不启动子进程，抛出消息为 ENOENT 的 IOException 并记账；
+  Posix.waitpid 恒抛 ECHILD，ROM reaper 进入等待。
 - System.gc 显式请求普通 STW；runFinalization 执行原版 sentinel 协议。VMRuntime 普通单例、
   参数校验与已退役 external-allocation 协议执行原版 Java；利用率与 native allocation/free
   更新 JavaObjectModel 的真实配置/计数。无 JIT 的 start/disable 与 4.4 无 JIT 构建相同。

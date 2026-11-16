@@ -10,7 +10,7 @@
 
 [runtime.guest_fatal_diagnostics]
 status = "complete"
-test = "tests/runtime/syscall_signal_tests.cpp; tests/runtime/syscall_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp"
+test = "tests/runtime/syscall_signal_tests.cpp; tests/runtime/syscall_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tools/conformance/probe_tests.py selftest"
 note = "捕获 fd1/fd2 与 /dev/log write/writev 输出；tgkill(SIGABRT) 按默认 fatal 动作保存 signal/target/PC/LR 并请求进程组退出；A32 native 失败从 r11 有界展开 GCC frame record。仅限 fatal 诊断闭环，不含一般 signal handler 投递、内核 logger 设备或无 frame pointer 的启发式展开。"
 
 [runtime.virtual_so_boundary]

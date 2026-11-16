@@ -153,6 +153,33 @@ TABLE_SOURCES = {
 }
 
 
+def extract_service_types(registry, services):
+    imports = {name.rsplit('.', 1)[-1]: name for name in re.findall(r'^import ([\w.]+);', registry, re.M)}
+    fetchers = re.split(r'registerService\(\s*([A-Z][A-Z0-9_]+)\s*,', registry)
+    bodies = dict(zip(fetchers[1::2], fetchers[2::2]))
+    # Factories without an explicit construction, and public contracts for private implementations.
+    contracts = {
+        'DROPBOX_SERVICE': 'android.os.DropBoxManager',
+        'LAYOUT_INFLATER_SERVICE': 'android.view.LayoutInflater',
+        'SENSOR_SERVICE': 'android.hardware.SensorManager',
+        'VIBRATOR_SERVICE': 'android.os.Vibrator',
+        'WALLPAPER_SERVICE': 'android.app.WallpaperManager',
+        'WINDOW_SERVICE': 'android.view.WindowManager',
+    }
+    result = {}
+    for name, constant in services.items():
+        if constant in contracts:
+            result[name] = contracts[constant]
+            continue
+        factory = re.search(r'return\s+(?:new\s+([A-Z]\w*)\s*\(|([A-Z]\w*)\.(?:getInstance|create)\s*\()',
+                            bodies[constant])
+        if not factory:
+            raise ValueError(f'cannot derive the API 19 return type for {constant}')
+        simple = next(part for part in factory.groups() if part)
+        result[name] = imports.get(simple, f'android.app.{simple}')
+    return result
+
+
 def extract_platform_tables(root):
     texts = {key: (root / path).read_text(encoding='utf-8') for key, path in TABLE_SOURCES.items()}
     constants = dict(re.findall(r'\bString\s+(\w+)\s*=\s*"([^"]+)"', texts['context']))
@@ -160,6 +187,7 @@ def extract_platform_tables(root):
     if len(registrations) != len(set(registrations)):
         raise ValueError('duplicate service registration')
     services = {constants[name]: name for name in registrations}
+    service_types = extract_service_types(texts['registry'], services)
     body = texts['system'].split('private static void initSystemProperties() {', 1)[1].split('systemProperties = p;', 1)[0]
     expressions = dict(re.findall(r'p\.put\("([^"]+)",\s*([^;]+)\);', body))
     properties = {}
@@ -193,6 +221,7 @@ def extract_platform_tables(root):
         'schema': 1, 'api': 19, 'reference': 'AOSP android-4.4.4_r2.0.1',
         'sources': {key: {'path': path, 'sha256': hashlib.sha256((root/path).read_bytes()).hexdigest()} for key, path in TABLE_SOURCES.items()},
         'system_services': dict(sorted(services.items())),
+        'system_service_types': dict(sorted(service_types.items())),
         'system_properties': dict(sorted(properties.items())),
     }
 

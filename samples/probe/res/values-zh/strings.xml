@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OGPlay 能力探针</string>
+    <string name="device">设备</string>
+    <string name="services">服务</string>
+    <string name="runtime">运行时</string>
+    <string name="storage">存储</string>
+    <string name="media">媒体</string>
+    <string name="graphics">图形</string>
+    <string name="ui">界面</string>
+    <string name="native_probes">原生</string>
+    <string name="pass">通过</string>
+    <string name="fail">失败</string>
+    <string name="error">异常</string>
+    <string name="crash">崩溃</string>
+    <string name="timeout">超时</string>
+    <string name="skip">跳过</string>
+    <string name="info">信息</string>
+    <string name="device_info">设备信息</string>
+    <string name="running">正在运行 %1$s</string>
+    <string name="last_crash">上次在 %1$s 崩溃，已从下一项续跑</string>
+    <string name="finished">运行结束</string>
+    <string name="preparing">正在准备探针</string>
+    <string name="run_all">全部重跑</string>
+    <string name="run_failed">只重跑失败项</string>
+    <string name="back">返回</string>
+    <string name="run_one">重跑此项</string>
+    <string name="category_count">通过 %1$d / %2$d</string>
+    <string name="scope">范围</string>
+    <string name="status">状态</string>
+    <string name="observed">实测</string>
+    <string name="expected">预期</string>
+    <string name="exception">异常</string>
+    <string name="build_info">系统与版本</string>
+    <string name="cpu_info">CPU</string>
+    <string name="memory_info">内存</string>
+    <string name="display_info">屏幕</string>
+    <string name="gl_info">OpenGL ES</string>
+    <string name="sensor_info">传感器</string>
+    <string name="locale_info">地区</string>
+    <string name="time_info">时间</string>
+    <string name="unavailable">暂无采集结果</string>
+</resources>

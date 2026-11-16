@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OGPlay Probe</string>
+    <string name="device">Device</string>
+    <string name="services">Services</string>
+    <string name="runtime">Runtime</string>
+    <string name="storage">Storage</string>
+    <string name="media">Media</string>
+    <string name="graphics">Graphics</string>
+    <string name="ui">Interface</string>
+    <string name="native_probes">Native</string>
+    <string name="pass">Pass</string>
+    <string name="fail">Fail</string>
+    <string name="error">Error</string>
+    <string name="crash">Crash</string>
+    <string name="timeout">Timeout</string>
+    <string name="skip">Skip</string>
+    <string name="info">Info</string>
+    <string name="device_info">Device info</string>
+    <string name="running">Running %1$s</string>
+    <string name="last_crash">Resumed after %1$s crashed</string>
+    <string name="finished">Run finished</string>
+    <string name="preparing">Preparing probes</string>
+    <string name="run_all">Run all again</string>
+    <string name="run_failed">Retry failures</string>
+    <string name="back">Back</string>
+    <string name="run_one">Run this probe</string>
+    <string name="category_count">%1$d / %2$d passed</string>
+    <string name="scope">Scope</string>
+    <string name="status">Status</string>
+    <string name="observed">Observed</string>
+    <string name="expected">Expected</string>
+    <string name="exception">Exception</string>
+    <string name="build_info">System and build</string>
+    <string name="cpu_info">CPU</string>
+    <string name="memory_info">Memory</string>
+    <string name="display_info">Display</string>
+    <string name="gl_info">OpenGL ES</string>
+    <string name="sensor_info">Sensors</string>
+    <string name="locale_info">Locale</string>
+    <string name="time_info">Time</string>
+    <string name="unavailable">No observation</string>
+</resources>

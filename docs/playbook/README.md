@@ -6,6 +6,7 @@
 
 | 场景 | 读这篇 |
 | --- | --- |
+| 用普通 API 19 APK 探测能力与语义差异 | [PROBE.md](PROBE.md) |
 | 让一款新游戏跑上 dexvm 路线 | [NEW-TITLE.md](NEW-TITLE.md) |
 | 用 MCP 工具驱动会话：截图、触摸、步进、读状态 | [MCP-TESTING.md](MCP-TESTING.md) |
 | 把一次试玩固化成可复跑的场景 | [SCENARIO-RUNNER.md](SCENARIO-RUNNER.md) |

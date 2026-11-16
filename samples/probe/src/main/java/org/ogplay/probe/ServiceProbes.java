@@ -84,6 +84,9 @@ final class ServiceProbes {
         coreServices(probes);
         deviceServices(probes);
         interactionServices(probes);
+        ServiceSystemProbes.register(probes);
+        ServiceDeviceProbes.register(probes);
+        ServiceOtherProbes.register(probes);
     }
 
     private static void coreServices(Map<String, Probe> probes) {

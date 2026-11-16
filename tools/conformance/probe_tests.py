@@ -23,8 +23,8 @@ PACKAGE = "org.ogplay.probe"
 SCHEMA = "ogplay.probe.report/1"
 STATUSES = ("pass", "fail", "error", "crash", "timeout", "skip", "info")
 CONFIGS = {
-    "a": dict(width_px=1280, height_px=720, density_dpi=320, cpu_cores=2, cpu_frequency_mhz=1000),
-    "b": dict(width_px=800, height_px=480, density_dpi=240, cpu_cores=4, cpu_frequency_mhz=1500),
+    "a": dict(width_px=720, height_px=1280, density_dpi=320, cpu_cores=2, cpu_frequency_mhz=1000),
+    "b": dict(width_px=480, height_px=800, density_dpi=240, cpu_cores=4, cpu_frequency_mhz=1500),
 }
 FLAGS = dict(width_px="--surface-width", height_px="--surface-height", density_dpi="--density-dpi",
              cpu_cores="--cpu-cores", cpu_frequency_mhz="--cpu-frequency-mhz")

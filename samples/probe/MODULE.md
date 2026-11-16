@@ -17,6 +17,7 @@
 
 - 探针 ID、scope、调用描述符和状态词是报告接口。JSON 报告为 `ogplay.probe.report/1`，键序固定，结果按 ID 排序。
 - 使用具名组合判据的探针在 `observed.failed_checks` 中按判据顺序记录失败项，通过时为数组 `[]`。
+- `services.*.api` 探针用 ApiSweep 逐个调用服务方法：`observed.calls` 以 `类名.方法[标签]` 记录每次调用的返回摘要或异常，`failed_calls` 列出意外抛出的调用。任一调用意外抛出时状态为 error，异常字段为第一个抛出的原因；仅判据不满足时为 fail。期望异常（如未加锁释放 WakeLock）只在判据中检查；观测项（如未声明权限的写操作）只记录不判定。设备与用户标识只记录是否存在和长度。调用过的方法追加到 `api`，供 runner 关联 ledger。
 - 外部存储的 `OGPlayProbe` 目录保存 autorun、报告和续跑数据。有 `autorun.json` 时自动执行，按相同 session 和安装实例续跑，保留 filter、exit 和 selftest 语义；没有时只恢复展示，等待用户开始。手动运行中断后提示探针 ID，由用户选择继续（活动项记 crash）或重新开始。完整报告或可恢复的逐项结果供首页展示上次汇总。
 - 报告根层可选 `completed_at_ms` 为完成时的 Unix 毫秒时间戳，不改变 environment 或各探针结果；完成时间也保存在批次 plan 中，供只剩逐项结果时恢复；旧数据缺失此键时用报告或完整结果日志的文件修改时间展示，时间源不可用时显示“—”。
 - 设备信息页进入和刷新时在后台只读采集 framework、procfs/sysfs 及共享的设备读取方法，不依赖探针 observed，也不写入报告 environment。分区独立捕获失败；GL 复用 EGL pbuffer 读取与 finally 释放。卡片为主，原始 JSON 和扩展列表默认折叠；行值可长按复制，剪贴板不可用时提示。

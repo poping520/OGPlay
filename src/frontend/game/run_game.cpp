@@ -213,7 +213,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
           diagnostics_enabled, supersample_factor, max_fps, surface_width, surface_height, density_dpi, cpu_config,
           mcp_manual_step, preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox,
           input_config_path, library_root, missing_data_report, run_report, window_title, window_icon,
-          window_icon_style, ui_language, surface_size_explicit, surface_adaptation] = std::move(options);
+          window_icon_style, ui_language, surface_size_explicit, surface_adaptation, fps_overlay] = std::move(options);
     const auto language = ui_language ? *ui_language : app::SystemUiLanguage();
     const auto bundled_data = HostBundledDataPaths();
     logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
@@ -428,9 +428,22 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     std::uint32_t guest_height = surface_height;
     hal::RealtimeClock frame_rate_clock;
     hal::FrameRateSampler frame_rate{frame_rate_clock.TicksPerSecond(), frame_rate_clock.TicksPerSecond() / 2U};
+    // The counter over the picture shows the same measurement as the title.
+    std::string fps_text = FrameRateText(std::nullopt);
+    const auto fps_corner = [&]() -> std::optional<ScreenCorner> {
+        if (!fps_overlay) return std::nullopt;
+        switch (*fps_overlay) {
+        case app::OverlayCorner::top_right: return ScreenCorner::top_right;
+        case app::OverlayCorner::bottom_left: return ScreenCorner::bottom_left;
+        case app::OverlayCorner::bottom_right: return ScreenCorner::bottom_right;
+        case app::OverlayCorner::top_left: break;
+        }
+        return ScreenCorner::top_left;
+    }();
     const auto update_frame_rate = [&] {
         if (const auto fps = frame_rate.Observe(presented, frame_rate_clock.Ticks()); fps.has_value()) {
             window->SetTitle(FrameRateTitle(base_title, *fps));
+            fps_text = FrameRateText(*fps);
         }
     };
     input::ControlMapper control_mapper(control_config);
@@ -781,6 +794,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         // F1 hints are drawn on a host copy; the guest frame and MCP/editor snapshots stay clean.
         HostShortcutFilter host_keys;
         bool hints_visible{};
+        SavedArea fps_area;
         std::vector<std::uint8_t> hint_frame;
         // A look binding holds the pointer in relative mode while the guest runs normally; editing,
         // suspension, background and failure give the cursor back.
@@ -830,11 +844,28 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 guest_width = frame->width;
                 guest_height = frame->height;
                 control_mapper.SetSurface(guest_width, guest_height);
-                if (hints_visible) {
+                // Overlays go on the presented picture only: MCP captures and the recycled frame stay clean.
+                if (hints_visible || (fps_corner && frame->shared_rgba8)) {
                     hint_frame.assign(frame->Pixels().begin(), frame->Pixels().end());
-                    DrawControlHints(hint_frame, frame->width, frame->height, control_mapper.Hints(),
-                                     control_mapper.Mode(), PointerHintLine(control_mapper));
+                    std::uint32_t hints_top{};
+                    if (fps_corner) {
+                        DrawFrameRate(hint_frame, frame->width, frame->height, fps_text, *fps_corner);
+                        if (*fps_corner == ScreenCorner::top_left) {
+                            const auto area = FrameRateArea(frame->width, frame->height, fps_text, *fps_corner);
+                            hints_top = area.y + area.height;
+                        }
+                    }
+                    if (hints_visible)
+                        DrawControlHints(hint_frame, frame->width, frame->height, control_mapper.Hints(),
+                                         control_mapper.Mode(), PointerHintLine(control_mapper), hints_top);
                     window->PresentRgba8(hint_frame, frame->width, frame->height);
+                } else if (fps_corner) {
+                    // The frame is ours: draw on it and put back the few rows the counter covers.
+                    fps_area.Save(frame->rgba8, frame->width,
+                                  FrameRateArea(frame->width, frame->height, fps_text, *fps_corner));
+                    DrawFrameRate(frame->rgba8, frame->width, frame->height, fps_text, *fps_corner);
+                    window->PresentRgba8(frame->rgba8, frame->width, frame->height);
+                    fps_area.Restore(frame->rgba8, frame->width);
                 } else {
                     window->PresentRgba8(frame->Pixels(), frame->width, frame->height);
                 }

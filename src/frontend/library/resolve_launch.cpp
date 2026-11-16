@@ -65,6 +65,9 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     if (const auto max_fps = std::get<std::string>(EffectiveGameSetting(settings, global, entry, "max_fps"));
         max_fps != "unlimited")
         o.max_fps = static_cast<std::uint32_t>(std::stoul(max_fps));
+    if (std::get<bool>(EffectiveGameSetting(settings, global, entry, "fps_overlay")))
+        o.fps_overlay = ParseOverlayCorner(
+            std::get<std::string>(EffectiveGameSetting(settings, global, entry, "fps_overlay_position")));
     o.cpu_config.cores = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_cores"));
     o.cpu_config.frequency_mhz =
         std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_frequency_mhz"));

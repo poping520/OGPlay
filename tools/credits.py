@@ -134,9 +134,10 @@ PROJECTS = [
 ]
 
 # Optional host restrictions, using CMAKE_SYSTEM_NAME. Unlisted projects apply to every platform.
-# webview hosts the desktop launcher and uPlot draws the desktop Dashboard; Android ships neither.
+# webview hosts the desktop launcher and uPlot draws the desktop Dashboard; Android ships neither. SN Pro is the
+# launcher font on Windows and Android and, as a digits-only subset, the in-game FPS counter everywhere.
 DESKTOP = ["Windows", "Darwin", "Linux"]
-PLATFORMS = {"sn-pro": ["Windows", "Android"], "webview": DESKTOP, "uplot": DESKTOP}
+PLATFORMS = {"webview": DESKTOP, "uplot": DESKTOP}
 
 # Historical repository of a project whose current source is a fork or continuation.
 ORIGINAL_URLS = {"dynarmic": "https://github.com/merryhime/dynarmic"}

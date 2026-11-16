@@ -390,6 +390,16 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     CHECK(launch.options.density_dpi == 320);
     CHECK(launch.options.supersample_factor == 1);
     CHECK(launch.options.max_fps == 120);
+    // The FPS counter is off by default; its corner follows the global setting unless the game sets its own.
+    CHECK_FALSE(launch.options.fps_overlay.has_value());
+    SetSetting(global, "fps_overlay", true);
+    CHECK(ResolveLaunch(LibraryStore(tree.path), entry, global).options.fps_overlay == OverlayCorner::top_right);
+    SaveGameSettings(directory, {{{"fps_overlay_position", std::string("bottom-right")}}});
+    CHECK(ResolveLaunch(LibraryStore(tree.path), entry, global).options.fps_overlay == OverlayCorner::bottom_right);
+    SaveGameSettings(directory, {{{"fps_overlay", false}}});
+    CHECK_FALSE(ResolveLaunch(LibraryStore(tree.path), entry, global).options.fps_overlay.has_value());
+    SaveGameSettings(directory, {});
+    SetSetting(global, "fps_overlay", false);
     // Presets: a short side and an aspect; 跟随屏幕 leaves the long side to the game process.
     CHECK(launch.options.surface_adaptation == (FindSetting("screen_aspect").initial == SettingValue("screen")
                                                     ? SurfaceAdaptation::follow

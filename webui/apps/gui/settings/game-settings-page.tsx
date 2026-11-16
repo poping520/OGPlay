@@ -2,7 +2,7 @@ import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc, type LibraryItem } from '../shared/rpc';
 import { pickPath } from '../import/import';
-import { displayValue, factRows, shownFields } from './settings';
+import { displayValue, factRows, overlayFields, shownFields } from './settings';
 import { gameGroups, gameSettingsError, inheritAllSettings, inheritSetting, isInstanceOnlySetting, type GameSettings } from './game-settings';
 import { statuses, versionLabel } from '../library/library';
 import { useIconColor } from '../cartridge/cartridge';
@@ -88,7 +88,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
       <div><b>{name}</b><small>{id}</small>
         <span class="chip"><i class={`led ${tone}`} />{item ? versionLabel(item) : ''}{saved ? t(' · 已单独设置 {n} 项', { n: Object.keys(saved.values).filter(key => !isInstanceOnlySetting(key)).length }) : ''}</span></div>
     </div>}
-    groupsTitle={t('游戏设置')} groups={gameGroups.filter(([key]) => groupAvailable(key))} group={group} setGroup={setGroup} fields={screenFields(saved?.fields ?? [], effective, display)} reservedVisible={reservedVisible}
+    groupsTitle={t('游戏设置')} groups={gameGroups.filter(([key]) => groupAvailable(key))} group={group} setGroup={setGroup} fields={overlayFields(screenFields(saved?.fields ?? [], effective, display), effective)} reservedVisible={reservedVisible}
     sectionBefore={{ brand: t('设备身份 · 预留') }}
     after={saved ? { screen_resolution: <ScreenSizeNote values={effective} display={display} /> } : undefined}
     model={field => {

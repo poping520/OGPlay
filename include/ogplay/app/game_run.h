@@ -45,6 +45,9 @@ enum class SurfaceAdaptation : std::uint8_t {
     follow,   // limit, then the long side at the display's aspect
 };
 
+// The corner of the presented picture that shows the frame-rate counter (library setting fps_overlay_position).
+enum class OverlayCorner : std::uint8_t { top_left, top_right, bottom_left, bottom_right };
+
 struct GameRunOptions final {
     std::filesystem::path apk_path;
     std::optional<std::filesystem::path> external_directory;
@@ -94,6 +97,8 @@ struct GameRunOptions final {
     bool surface_size_explicit{};
     // Applied before the window opens (a 20:9 phone following its display shows no side bars).
     SurfaceAdaptation surface_adaptation{SurfaceAdaptation::none};
+    // Frames per second drawn over the presented picture in this corner; absent shows none.
+    std::optional<OverlayCorner> fps_overlay;
     bool operator==(const GameRunOptions&) const = default;
 };
 
@@ -117,6 +122,9 @@ struct SurfaceSize final {
 // kept. An empty display leaves it unchanged, and follow leaves a square surface or display at limit's result.
 [[nodiscard]] OGPLAYCORE_API SurfaceSize AdaptSurfaceToDisplay(SurfaceSize surface, SurfaceSize display,
                                                                SurfaceAdaptation mode);
+// "top-left", "top-right", "bottom-left", "bottom-right": the --fps-overlay argument and the library setting.
+[[nodiscard]] OGPLAYCORE_API std::string_view OverlayCornerName(OverlayCorner corner) noexcept;
+[[nodiscard]] OGPLAYCORE_API std::optional<OverlayCorner> ParseOverlayCorner(std::string_view name) noexcept;
 OGPLAYCORE_API void ValidateGameRunOptions(const GameRunOptions& options);
 OGPLAYCORE_API int RunGame(GameRunOptions options, const LogConfig& logging = {});
 

@@ -1,8 +1,10 @@
 #include "ogplay/app/game_run.h"
 #include "ogplay/core/text.h"
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <stdexcept>
+#include <utility>
 
 namespace ogplay::app {
 namespace {
@@ -51,6 +53,12 @@ InterpreterBackend ParseDexVmInterpreter(const std::string_view text) {
     throw std::invalid_argument("--dexvm-interpreter requires switch or threaded");
 }
 
+constexpr std::array<std::pair<OverlayCorner, std::string_view>, 4> kOverlayCorners{{
+    {OverlayCorner::top_left, "top-left"},
+    {OverlayCorner::top_right, "top-right"},
+    {OverlayCorner::bottom_left, "bottom-left"},
+    {OverlayCorner::bottom_right, "bottom-right"},
+}};
 }  // namespace
 
 void ApplyStartupOrientation(GameRunOptions& options, const std::int32_t screen_orientation) {
@@ -69,6 +77,18 @@ std::uint32_t SurfaceLongSide(const std::uint32_t short_side, const std::uint64_
     auto long_side = (2ULL * short_side * numerator + denominator) / (2ULL * denominator);
     long_side += long_side % 2U;
     return static_cast<std::uint32_t>(std::clamp<std::uint64_t>(long_side, short_side, kMaximumSurfaceDimension));
+}
+
+std::string_view OverlayCornerName(const OverlayCorner corner) noexcept {
+    for (const auto& [value, name] : kOverlayCorners)
+        if (value == corner) return name;
+    return "top-left";
+}
+
+std::optional<OverlayCorner> ParseOverlayCorner(const std::string_view name) noexcept {
+    for (const auto& [value, text] : kOverlayCorners)
+        if (text == name) return value;
+    return std::nullopt;
 }
 
 SurfaceSize AdaptSurfaceToDisplay(const SurfaceSize surface, const SurfaceSize display, const SurfaceAdaptation mode) {
@@ -156,6 +176,10 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
                 options.surface_adaptation = SurfaceAdaptation::follow;
             else
                 throw std::invalid_argument("--surface-adapt requires limit or follow");
+        } else if (option == "--fps-overlay" && index + 1 < args.size()) {
+            options.fps_overlay = ParseOverlayCorner(args[++index]);
+            if (!options.fps_overlay)
+                throw std::invalid_argument("--fps-overlay requires top-left, top-right, bottom-left or bottom-right");
         } else if (option == "--density-dpi" && index + 1 < args.size()) {
             const auto value = ParsePositive(args[++index], option);
             if (value < kMinimumDensityDpi || value > kMaximumDensityDpi)
@@ -391,6 +415,7 @@ std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
     if (o.density_dpi != kDefaultDensityDpi) add("--density-dpi", std::to_string(o.density_dpi));
     if (o.supersample_factor != 1) add("--supersample", std::to_string(o.supersample_factor));
     if (o.max_fps) add("--max-fps", std::to_string(o.max_fps));
+    if (o.fps_overlay) add("--fps-overlay", std::string(OverlayCornerName(*o.fps_overlay)));
     if (o.mcp_port) add("--mcp-port", std::to_string(*o.mcp_port));
     if (o.key_editor_port) add("--key-editor-port", std::to_string(*o.key_editor_port));
     if (o.mcp_manual_step) args.emplace_back("--mcp-manual-step");

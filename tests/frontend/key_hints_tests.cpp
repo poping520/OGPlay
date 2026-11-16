@@ -97,6 +97,45 @@ TEST_CASE("INP-4 hint overlay draws zones and labels only on the given copy") {
     CHECK(std::ranges::all_of(small, [](const std::uint8_t value) { return value == 10; }));
 }
 
+TEST_CASE("the FPS counter sits in its corner of the presented copy and the frame can be put back") {
+    using OverlayCorner = frontend::ScreenCorner;
+    CHECK(frontend::FrameRateText(59.6) == "60");
+    CHECK(frontend::FrameRateText(std::nullopt) == "--");
+    constexpr std::uint32_t width = 1280, height = 720;
+    const std::vector<std::uint8_t> guest(static_cast<std::size_t>(width) * height * 4U, 10);
+    for (const auto corner :
+         {OverlayCorner::top_left, OverlayCorner::top_right, OverlayCorner::bottom_left, OverlayCorner::bottom_right}) {
+        const auto area = frontend::FrameRateArea(width, height, "60", corner);
+        REQUIRE(area.width > 0);
+        const bool right = corner == OverlayCorner::top_right || corner == OverlayCorner::bottom_right;
+        const bool bottom = corner == OverlayCorner::bottom_left || corner == OverlayCorner::bottom_right;
+        // Inset from both edges of its corner, inside that quarter of the picture.
+        CHECK((right ? width - area.x - area.width : area.x) >= 16);
+        CHECK((bottom ? height - area.y - area.height : area.y) >= 16);
+        CHECK((right ? area.x >= width / 2 : area.x + area.width <= width / 2));
+        CHECK((bottom ? area.y >= height / 2 : area.y + area.height <= height / 2));
+        auto frame = guest;
+        frontend::SavedArea saved;
+        saved.Save(frame, width, area);
+        frontend::DrawFrameRate(frame, width, height, "60", corner);
+        std::size_t changed_inside{}, changed_outside{};
+        for (std::uint32_t y = 0; y < height; ++y)
+            for (std::uint32_t x = 0; x < width; ++x) {
+                const bool inside = x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height;
+                if (frame[(static_cast<std::size_t>(y) * width + x) * 4U] != 10) ++(inside ? changed_inside : changed_outside);
+            }
+        CHECK(changed_inside > area.width * area.height / 2);
+        CHECK(changed_outside == 0);
+        saved.Restore(frame, width);
+        CHECK(frame == guest);
+    }
+    // Too small a frame, or a short buffer, is left alone.
+    CHECK(frontend::FrameRateArea(40, 20, "60", OverlayCorner::top_left) == frontend::OverlayArea{});
+    std::vector<std::uint8_t> small(16, 10);
+    frontend::DrawFrameRate(small, width, height, "60", OverlayCorner::top_left);
+    CHECK(std::ranges::all_of(small, [](const std::uint8_t value) { return value == 10; }));
+}
+
 TEST_CASE("INP-4 hint labels are short ASCII names") {
     CHECK(frontend::HintLabel(input::ParseInputSource("key:j")) == "J");
     CHECK(frontend::HintLabel(input::ParseInputSource("key:space")) == "SPC");

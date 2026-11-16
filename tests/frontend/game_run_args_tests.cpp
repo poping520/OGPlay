@@ -254,6 +254,21 @@ TEST_CASE("A surface following the display keeps its short side and takes the di
     CHECK_THROWS_AS(static_cast<void>(ParseGameRunArgs(bad)), std::invalid_argument);
 }
 
+TEST_CASE("the FPS counter corner passes to the game process") {
+    GameRunOptions options;
+    options.apk_path = "game.apk";
+    const auto hidden = FormatGameRunArgs(options);
+    CHECK(std::find(hidden.begin(), hidden.end(), "--fps-overlay") == hidden.end());
+    for (const auto corner :
+         {OverlayCorner::top_left, OverlayCorner::top_right, OverlayCorner::bottom_left, OverlayCorner::bottom_right}) {
+        options.fps_overlay = corner;
+        CHECK(RoundTrip(options) == options);
+        CHECK(ParseOverlayCorner(OverlayCornerName(corner)) == corner);
+    }
+    const std::array<std::string_view, 3> bad{"game.apk", "--fps-overlay", "center"};
+    CHECK_THROWS_AS(static_cast<void>(ParseGameRunArgs(bad)), std::invalid_argument);
+}
+
 TEST_CASE("Startup orientation adapts inherited dimensions and preserves explicit dimensions") {
     GameRunOptions defaults;
     ApplyStartupOrientation(defaults, 1);

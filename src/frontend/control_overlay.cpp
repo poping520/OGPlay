@@ -3,7 +3,13 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
+#include <optional>
 #include <utility>
+
+#define STB_TRUETYPE_STATIC
+#define STB_TRUETYPE_IMPLEMENTATION
+#include <stb_truetype.h>
 
 namespace ogplay::frontend {
 namespace {
@@ -77,14 +83,8 @@ struct Canvas final {
     return text.empty() ? 0 : static_cast<std::int64_t>(text.size()) * 6 * scale - scale;
 }
 
-// Centered text on a dark plate so labels stay readable over any game art.
-void Label(const Canvas& canvas, const std::string_view text, const float center_x, const float center_y,
-           const std::int64_t scale) {
-    if (text.empty()) return;
-    const auto width = TextWidth(text, scale), height = 7 * scale;
-    const auto left = static_cast<std::int64_t>(std::lround(center_x)) - width / 2;
-    const auto top = static_cast<std::int64_t>(std::lround(center_y)) - height / 2;
-    canvas.Fill(left - 2 * scale, top - 2 * scale, width + 4 * scale, height + 4 * scale, kShade, 150);
+void Text(const Canvas& canvas, const std::string_view text, const std::int64_t left, const std::int64_t top,
+          const std::int64_t scale) {
     for (std::size_t index = 0; index < text.size(); ++index) {
         const auto* rows = Glyph(text[index]);
         if (rows == nullptr) continue;
@@ -94,6 +94,105 @@ void Label(const Canvas& canvas, const std::string_view text, const float center
                 if (((*rows)[static_cast<std::size_t>(row)] >> (4 - column)) & 1U)
                     canvas.Fill(x0 + column * scale, top + row * scale, scale, scale, kText, 255);
     }
+}
+
+// Centered text on a dark plate so labels stay readable over any game art.
+void Label(const Canvas& canvas, const std::string_view text, const float center_x, const float center_y,
+           const std::int64_t scale) {
+    if (text.empty()) return;
+    const auto width = TextWidth(text, scale), height = 7 * scale;
+    const auto left = static_cast<std::int64_t>(std::lround(center_x)) - width / 2;
+    const auto top = static_cast<std::int64_t>(std::lround(center_y)) - height / 2;
+    canvas.Fill(left - 2 * scale, top - 2 * scale, width + 4 * scale, height + 4 * scale, kShade, 150);
+    Text(canvas, text, left, top, scale);
+}
+
+// The frame-rate counter is set in SN Pro SemiBold (the rounded face the launcher uses where SF Pro Rounded is not
+// available), embedded as a digits-only subset. Glyphs are rasterized once per size as signed distance fields, which
+// give both the anti-aliased figure and its outline.
+constexpr unsigned char kCounterFont[] = {
+#include "counter_font.inc"
+};
+constexpr std::string_view kCounterCharacters = "0123456789-";
+// Lime figures with a dark outline on a dark pill stay readable over bright, white or busy game art.
+constexpr Color kCounterText{163, 230, 53};
+
+[[nodiscard]] const stbtt_fontinfo* CounterFont() {
+    static const auto font = [] {
+        std::optional<stbtt_fontinfo> info{stbtt_fontinfo{}};
+        if (stbtt_InitFont(&*info, kCounterFont, stbtt_GetFontOffsetForIndex(kCounterFont, 0)) == 0) info.reset();
+        return info;
+    }();
+    return font ? &*font : nullptr;
+}
+
+struct CounterGlyph final {
+    std::int32_t width{}, height{}, x_offset{}, y_offset{};
+    float advance{};
+    std::vector<std::uint8_t> field;  // 128 on the edge, larger inside
+};
+
+// Every size derives from the figure height: about 1/30 of the frame's short side, at least 12 pixels.
+struct CounterFace final {
+    std::int64_t text_height{};
+    float cell{};      // tabular advance: the widest figure (SN Pro's 3 and 9 are a little narrower)
+    float ascent{};    // baseline below the top of the figures
+    float outline{};   // pixels of dark edge around each figure
+    float field_scale{};
+    std::array<CounterGlyph, kCounterCharacters.size()> glyphs;
+};
+
+[[nodiscard]] const CounterFace* Face(const std::int64_t text_height) {
+    thread_local std::optional<CounterFace> cached;
+    if (cached && cached->text_height == text_height) return &*cached;
+    const auto* font = CounterFont();
+    if (font == nullptr) return nullptr;
+    int x0{}, y0{}, x1{}, y1{};
+    if (stbtt_GetCodepointBox(font, '0', &x0, &y0, &x1, &y1) == 0 || y1 <= y0) return nullptr;
+    CounterFace face;
+    face.text_height = text_height;
+    const float scale = static_cast<float>(text_height) / static_cast<float>(y1 - y0);
+    face.ascent = static_cast<float>(y1) * scale;
+    face.outline = std::max(1.0F, static_cast<float>(text_height) * 0.08F);
+    const int padding = static_cast<int>(std::ceil(face.outline)) + 2;
+    face.field_scale = 127.0F / static_cast<float>(padding);
+    for (std::size_t index = 0; index < kCounterCharacters.size(); ++index) {
+        const int code = kCounterCharacters[index];
+        auto& glyph = face.glyphs[index];
+        int advance{}, bearing{};
+        stbtt_GetCodepointHMetrics(font, code, &advance, &bearing);
+        glyph.advance = static_cast<float>(advance) * scale;
+        if (code != '-') face.cell = std::max(face.cell, glyph.advance);
+        auto* field = stbtt_GetCodepointSDF(font, scale, code, padding, 128, face.field_scale, &glyph.width,
+                                            &glyph.height, &glyph.x_offset, &glyph.y_offset);
+        if (field != nullptr) {
+            glyph.field.assign(field, field + static_cast<std::ptrdiff_t>(glyph.width) * glyph.height);
+            stbtt_FreeSDF(field, nullptr);
+        }
+    }
+    cached = std::move(face);
+    return &*cached;
+}
+
+struct CounterLayout final {
+    const CounterFace* face;
+    std::int64_t text_width, text_height, pad_x, pad_y, inset;
+};
+[[nodiscard]] CounterLayout Layout(const std::uint32_t width, const std::uint32_t height, const std::string_view text) {
+    const auto short_side = static_cast<std::int64_t>(std::min(width, height));
+    const auto text_height = std::max<std::int64_t>(12, short_side / 30);
+    const auto* face = Face(text_height);
+    float text_width{};
+    if (face != nullptr)
+        for (const char character : text) {
+            const auto at = kCounterCharacters.find(character);
+            text_width += at == std::string_view::npos ? 0.0F
+                          : character == '-'           ? face->glyphs[at].advance
+                                                       : face->cell;
+        }
+    // Rounded phone corners and cutouts clip a few percent of the short side.
+    return {face, std::lround(text_width), text_height, std::lround(static_cast<float>(text_height) * 0.55F),
+            std::lround(static_cast<float>(text_height) * 0.35F), std::max<std::int64_t>(4, short_side / 30)};
 }
 
 void Zone(const Canvas& canvas, const input::ResolvedZoneView& zone, const std::int64_t stroke) {
@@ -161,7 +260,7 @@ std::string PointerHintLine(const input::ControlMapper& mapper) {
 
 void DrawControlHints(const std::span<std::uint8_t> rgba8, const std::uint32_t width, const std::uint32_t height,
                       const std::span<const input::ControlHint> hints, const std::string_view mode,
-                      const std::string_view pointer_line) {
+                      const std::string_view pointer_line, const std::uint32_t top) {
     if (rgba8.size() < static_cast<std::size_t>(width) * height * 4U) return;
     const Canvas canvas{rgba8, width, height};
     const std::int64_t scale = std::max<std::int64_t>(1, static_cast<std::int64_t>(height) / 280);
@@ -182,10 +281,97 @@ void DrawControlHints(const std::span<std::uint8_t> rgba8, const std::uint32_t w
     std::string banner = "F1 HIDE KEYS  F2 EDIT KEYS";
     if (mode != input::kDefaultMode) banner += "  MODE " + std::string(mode);
     Label(canvas, banner, static_cast<float>(TextWidth(banner, scale)) / 2.0F + 6.0F * static_cast<float>(scale),
-          8.0F * static_cast<float>(scale), scale);
+          static_cast<float>(top) + 8.0F * static_cast<float>(scale), scale);
     Label(canvas, pointer_line,
           static_cast<float>(TextWidth(pointer_line, scale)) / 2.0F + 6.0F * static_cast<float>(scale),
-          20.0F * static_cast<float>(scale), scale);
+          static_cast<float>(top) + 20.0F * static_cast<float>(scale), scale);
+}
+
+std::string FrameRateText(const std::optional<double> fps) {
+    if (!fps.has_value() || !std::isfinite(*fps) || *fps < 0) return "--";
+    return std::to_string(std::lround(std::min(*fps, 9999.0)));
+}
+
+OverlayArea FrameRateArea(const std::uint32_t width, const std::uint32_t height, const std::string_view text,
+                          const ScreenCorner corner) {
+    const auto layout = Layout(width, height, text);
+    const auto plate_width = layout.text_width + 2 * layout.pad_x;
+    const auto plate_height = layout.text_height + 2 * layout.pad_y;
+    if (layout.face == nullptr || layout.text_width == 0 || plate_width + 2 * layout.inset > width ||
+        plate_height + 2 * layout.inset > height)
+        return {};
+    const bool right = corner == ScreenCorner::top_right || corner == ScreenCorner::bottom_right;
+    const bool bottom = corner == ScreenCorner::bottom_left || corner == ScreenCorner::bottom_right;
+    return {static_cast<std::uint32_t>(right ? width - layout.inset - plate_width : layout.inset),
+            static_cast<std::uint32_t>(bottom ? height - layout.inset - plate_height : layout.inset),
+            static_cast<std::uint32_t>(plate_width), static_cast<std::uint32_t>(plate_height)};
+}
+
+void DrawFrameRate(const std::span<std::uint8_t> rgba8, const std::uint32_t width, const std::uint32_t height,
+                   const std::string_view text, const ScreenCorner corner) {
+    if (rgba8.size() < static_cast<std::size_t>(width) * height * 4U) return;
+    const auto area = FrameRateArea(width, height, text, corner);
+    if (area.width == 0) return;
+    const Canvas canvas{rgba8, width, height};
+    const auto layout = Layout(width, height, text);
+    const auto& face = *layout.face;
+    // A translucent pill with anti-aliased ends.
+    const float radius = static_cast<float>(std::min(area.width, area.height)) / 2.0F;
+    for (std::uint32_t row = 0; row < area.height; ++row)
+        for (std::uint32_t column = 0; column < area.width; ++column) {
+            const float px = static_cast<float>(column) + 0.5F, py = static_cast<float>(row) + 0.5F;
+            const float cx = std::clamp(px, radius, static_cast<float>(area.width) - radius);
+            const float coverage = std::clamp(radius - std::hypot(px - cx, py - radius) + 0.5F, 0.0F, 1.0F);
+            if (coverage > 0)
+                canvas.Blend(area.x + column, area.y + row, kShade, static_cast<std::uint8_t>(std::lround(coverage * 190.0F)));
+        }
+    // Figures sit centred in equal cells; everything stays inside the plate so SavedArea covers it.
+    const auto right = static_cast<std::int64_t>(area.x + area.width), bottom = static_cast<std::int64_t>(area.y + area.height);
+    const float baseline = static_cast<float>(area.y + layout.pad_y) + face.ascent;
+    float pen = static_cast<float>(area.x + layout.pad_x);
+    for (const char character : text) {
+        const auto at = kCounterCharacters.find(character);
+        if (at == std::string_view::npos) continue;
+        const auto& glyph = face.glyphs[at];
+        const float cell = character == '-' ? glyph.advance : face.cell;
+        const auto left = static_cast<std::int64_t>(std::lround(pen + (cell - glyph.advance) / 2.0F)) + glyph.x_offset;
+        const auto top = static_cast<std::int64_t>(std::lround(baseline)) + glyph.y_offset;
+        pen += cell;
+        for (std::int32_t row = 0; row < glyph.height; ++row)
+            for (std::int32_t column = 0; column < glyph.width; ++column) {
+                const auto x = left + column, y = top + row;
+                if (x < static_cast<std::int64_t>(area.x) || x >= right || y < static_cast<std::int64_t>(area.y) || y >= bottom)
+                    continue;
+                const float distance =
+                    (static_cast<float>(glyph.field[static_cast<std::size_t>(row * glyph.width + column)]) - 128.0F) /
+                    face.field_scale;  // pixels, positive inside the figure
+                const float outline = std::clamp(distance + face.outline + 0.5F, 0.0F, 1.0F);
+                if (outline <= 0) continue;
+                canvas.Blend(x, y, kShade, static_cast<std::uint8_t>(std::lround(outline * 200.0F)));
+                const float coverage = std::clamp(distance + 0.5F, 0.0F, 1.0F);
+                if (coverage > 0)
+                    canvas.Blend(x, y, kCounterText, static_cast<std::uint8_t>(std::lround(coverage * 255.0F)));
+            }
+    }
+}
+
+void SavedArea::Save(const std::span<const std::uint8_t> rgba8, const std::uint32_t width, const OverlayArea area) {
+    const auto end = (static_cast<std::size_t>(area.y) + area.height) * width * 4U;
+    area_ = area.width != 0 && area.height != 0 && area.x + area.width <= width && end <= rgba8.size()
+                ? area
+                : OverlayArea{};
+    const auto row_bytes = static_cast<std::size_t>(area_.width) * 4U;
+    pixels_.resize(row_bytes * area_.height);
+    for (std::uint32_t row = 0; row < area_.height; ++row)
+        std::memcpy(pixels_.data() + row * row_bytes,
+                    rgba8.data() + ((static_cast<std::size_t>(area_.y) + row) * width + area_.x) * 4U, row_bytes);
+}
+
+void SavedArea::Restore(const std::span<std::uint8_t> rgba8, const std::uint32_t width) const {
+    const auto row_bytes = static_cast<std::size_t>(area_.width) * 4U;
+    for (std::uint32_t row = 0; row < area_.height; ++row)
+        std::memcpy(rgba8.data() + ((static_cast<std::size_t>(area_.y) + row) * width + area_.x) * 4U,
+                    pixels_.data() + row * row_bytes, row_bytes);
 }
 
 }  // namespace ogplay::frontend

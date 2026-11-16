@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { changedKeys, displayValue, factRows, fieldMeta, groups, isDirty, settingsError, shownFields, shownGroups, stepValue, type SettingField } from './settings';
+import { changedKeys, displayValue, factRows, fieldMeta, groups, isDirty, overlayFields, settingsError, shownFields, shownGroups, stepValue, type SettingField } from './settings';
 import { gameGroups } from './game-settings';
 import { SETTING_ICONS, SHARED_ICONS } from './setting-icons';
 import { creditSummary, creditTree, type CreditProject } from './credits';
@@ -108,5 +108,13 @@ describe('open-source credits', () => {
     expect(creditSummary(tree[0])).toBe('1.0 · MIT · 3 个依赖');
     expect(creditSummary(tree[1])).toBe('1.0 · MIT');
     expect(creditSummary(tree[2])).toBe('1.0 · MIT · 1 个依赖');
+  });
+});
+describe('fps overlay rows', () => {
+  it('shows the corner only while the counter is on', () => {
+    const fields = [field('fps_overlay', false), field('fps_overlay_position', 'top-left', ['top-left', 'top-right', 'bottom-left', 'bottom-right'])];
+    expect(overlayFields(fields, { fps_overlay: false }).map(item => item.key)).toEqual(['fps_overlay']);
+    expect(overlayFields(fields, { fps_overlay: true }).map(item => item.key)).toEqual(['fps_overlay', 'fps_overlay_position']);
+    expect(displayValue(fields[1], 'bottom-right')).toBe('右下');
   });
 });

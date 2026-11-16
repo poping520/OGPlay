@@ -35,6 +35,7 @@ export const SETTING_ICONS: Record<string, string> = {
   scaling: '<rect x="3" y="3" width="10" height="10" rx="1.5"/><path d="M14 21h7v-7M21 21l-8-8"/>',
   orientation: '<rect x="8" y="2" width="8" height="14" rx="1.5"/><path d="M4 14a8 8 0 0 0 8 8M4 14v3M4 14h3"/>',
   fps_overlay: '<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M6.5 8h4M6.5 11h2.5M8 21h8"/>',
+  fps_overlay_position: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M6.5 8h5v3h-5z"/>',
   // audio and input
   audio_device: '<rect x="6" y="2" width="12" height="20" rx="2"/><circle cx="12" cy="14" r="3"/><path d="M12 6.5h.01"/>',
   volume: `${SPEAKER}<path d="M15 9a4 4 0 0 1 0 6"/>`,

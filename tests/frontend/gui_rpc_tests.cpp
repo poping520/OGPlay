@@ -440,13 +440,9 @@ TEST_CASE("GUI about RPC lists the shipped open-source projects and reads each l
     CHECK(parents.at("zlib") == "aosp");
     for (const auto* id : {"dynarmic", "boost", "three", "aosp"})
         CHECK_FALSE(parents.contains(id));
-    for (const auto* id : {"sdl", "angle", "dynarmic", "ffmpeg", "preact", "aosp"})
+    // SN Pro ships everywhere: the in-game FPS counter draws its digits.
+    for (const auto* id : {"sdl", "angle", "dynarmic", "ffmpeg", "preact", "aosp", "sn-pro"})
         CHECK(std::find(ids.begin(), ids.end(), id) != ids.end());
-#if defined(_WIN32)
-    CHECK(std::find(ids.begin(), ids.end(), "sn-pro") != ids.end());
-#else
-    CHECK(std::find(ids.begin(), ids.end(), "sn-pro") == ids.end());
-#endif
     // Every listed project has readable, non-empty texts; that is the whole point of the page.
     for (const auto& id : ids) {
         auto notices = Decode(

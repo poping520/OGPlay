@@ -116,6 +116,13 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   F1 切换提示叠加层：`DrawControlHints` 在呈现副本上绘制 `ControlMapper::Hints` 的区域与键名，
   有准星时第二行由 `PointerHintLine` 给出锁定键（如 `~ LOCK MOUSE`、`~ FREE MOUSE`，无锁定键时 `NO MOUSE LOCK KEY`）
   （内置 5×7 ASCII 字形），guest 帧、MCP 截图与 `control.frame` 不含叠加层；切换在下一帧生效。
+- FPS 计数（`--fps-overlay top-left|top-right|bottom-left|bottom-right`，省略不显示）：`DrawFrameRate` 在呈现画面一角的
+  深色半透明圆角底板上只画数字（与窗口标题同一测量，0.5 秒更新，测得前为 `--`）。字体是内嵌的 SN Pro SemiBold
+  数字子集（`counter_font.inc`，由 `tools/counter_font.py` 从 webui 的 SN Pro 生成），stb_truetype 按尺寸生成一次
+  有向距离场并缓存，数字按等宽格居中；黄绿色加深色描边以适应亮色画面，高约短边的 1/30，并内缩短边的 1/30
+  避开手机圆角/挖孔。
+  独占帧就地绘制，经 `SavedArea` 在呈现后恢复该区域，不整帧复制；共享帧或 F1 提示打开时画在呈现副本上，
+  与提示同在左上时提示横幅下移。同样不进入 guest 帧与 MCP 截图。
   F2：最近 3 秒内有启动器以 `control.status {client:"launcher"}` 轮询时计入 `edit_requests` 交给
   启动器打开，否则用默认浏览器打开 `/controls/#token=…`。`control.status` 同时报告
   `edit_requests` 与 `close_requests` 两个累计数。

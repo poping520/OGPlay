@@ -27,7 +27,8 @@ screen_aspect（画面比例）取 screen（跟随屏幕）/4:3/16:10/16:9/18:9/
 显示器限制或跟随。custom 才使用 screen_width/screen_height（默认 1280/720，范围 1..4096），且不做任何适配。
 旧配置只有宽高时读取即迁移：游戏级宽高、全局非 1280×720 的宽高记为 custom；全局 1280×720（旧默认，保存设置时总被写入）删去，改用预设。
 density_dpi 默认 320，范围 72..1280；supersample 范围 1..4；max_fps（帧率上限）取 30/60/90/120/144/unlimited，默认 120，
-转为 GameRunOptions.max_fps（unlimited 为 0）。均经 EffectiveGameSetting 解析游戏 > 全局 > 默认，GUI 编辑同一 schema；不读取 Profile。
+转为 GameRunOptions.max_fps（unlimited 为 0）；fps_overlay（默认关）开启时按 fps_overlay_position（右上默认，左上、左下、右下）
+转为 GameRunOptions.fps_overlay，GUI 只在开启时显示位置行。均经 EffectiveGameSetting 解析游戏 > 全局 > 默认，GUI 编辑同一 schema；不读取 Profile。
 类型模板及 input_template 设置已删除，未知旧设置明确失败。
 
 数据包配置只有一个来源：meta.toml 只记录导入事实，不含任何数据包字段；external_guest_dir

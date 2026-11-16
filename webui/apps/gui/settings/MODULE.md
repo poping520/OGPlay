@@ -28,3 +28,4 @@ Esc 放弃；写入串行，进行中的改动合并为下一次写入；本地�
 屏幕尺寸（screen-size.tsx）：分辨率为预设时显示画面比例行、隐藏宽高行，为“自定义”时相反（游戏页按本游戏值覆盖全局值判断）；
 分辨率只列不高于本机屏幕短边（screen×devicePixelRatio）的预设（当前值始终保留）；分辨率行下方给出本机的实际分辨率，
 按宿主同一规则（SurfaceLongSide/AdaptSurfaceToDisplay，两端用例一致）计算，不经宿主往返。
+“FPS 位置”行只在“显示 FPS”开启时出现（`overlayFields`，游戏页同样按生效值判断）。

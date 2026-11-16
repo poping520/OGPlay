@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc } from '../shared/rpc';
 import { pickPath } from '../import/import';
-import { factRows, groups, settingsError, shownFields, type Settings } from './settings';
+import { factRows, groups, overlayFields, settingsError, shownFields, type Settings } from './settings';
 import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui';
 import { IconPreview } from './icon-preview';
 import { Credits } from './credits';
@@ -60,7 +60,7 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
   const resetKeys = saved ? shownFields(saved.fields, saved.reserved_visible).filter(field => draft[field.key] !== field.initial).map(field => field.key) : [];
   return <SettingsFrame skin={skin} crumb={<b>{t('全局设置')}</b>} idle={t('影响之后启动的游戏')} resetLabel={t('恢复默认')}
     resetTitle={t('将 {n} 项恢复为默认值？', { n: resetKeys.length })} resetKeys={resetKeys} busy={busy} saving={store.saving} loaded={!!saved}
-    groupsTitle={t('全局设置')} groups={groups.filter(([key]) => groupAvailable(key))} group={group} setGroup={setGroup} fields={screenFields(saved?.fields ?? [], draft, display)} reservedVisible={saved?.reserved_visible ?? true}
+    groupsTitle={t('全局设置')} groups={groups.filter(([key]) => groupAvailable(key))} group={group} setGroup={setGroup} fields={overlayFields(screenFields(saved?.fields ?? [], draft, display), draft)} reservedVisible={saved?.reserved_visible ?? true}
     model={field => ({ value: draft[field.key] ?? field.initial, disabled: busy })}
     change={(field, value) => store.edit(current => ({ ...current, [field.key]: value }))}
     browse={field => void run(async () => { const path = await pickPath('directory'); if (path) store.edit(current => ({ ...current, [field.key]: path })); })}

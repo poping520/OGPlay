@@ -75,7 +75,12 @@ const labels: Record<string, string> = {
   windowed: '窗口', fullscreen: '全屏', aspect: '保持比例', stretch: '拉伸', automatic: '自动', 'hardware-only': '仅硬件', 'software-only': '仅软件',
   disabled: '禁用', loopback: '仅回环', allow: '允许网络', realtime: '实时', fixed: '固定步进', portrait: '竖屏', landscape: '横屏', unlimited: '不限',
   '3d': '3D 模型', css: 'CSS 轻量', console: '磨砂黑', glass: '玻璃紫', cradle: '卡带插槽', badge: '圆形角标',
+  'top-left': '左上', 'top-right': '右上', 'bottom-left': '左下', 'bottom-right': '右下',
 };
+// The FPS corner only matters while the counter is shown.
+export function overlayFields(fields: SettingField[], values: Record<string, SettingValue>): SettingField[] {
+  return values.fps_overlay === true ? fields : fields.filter(field => field.key !== 'fps_overlay_position');
+}
 // Hidden rows never show; release builds (host reserved_visible false) also leave reserved rows out, and with
 // them the groups that only had such rows; groups without any field (e.g. 关于) stay.
 export function shownFields(fields: SettingField[], reservedVisible: boolean): SettingField[] {

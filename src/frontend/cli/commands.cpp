@@ -94,6 +94,8 @@ constexpr std::string_view kDetails =
     "    --density-dpi <72..1280>    Guest display density (default 320)\n"
     "    --supersample <1..4>        Render scale factor (default 1)\n"
     "    --max-fps <1..1000>         Cap presented frames per second (default no cap)\n"
+    "    --fps-overlay <corner>      Show frames per second in top-left, top-right,\n"
+    "                                bottom-left or bottom-right (default hidden)\n"
     "    --dexvm-interpreter <switch|threaded>\n"
     "                                DexVM interpreter override\n"
     "  Guest CPU\n"

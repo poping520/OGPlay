@@ -14,8 +14,9 @@ SDL 动态库与桌面共享；RunGame 的状态行默认 stdout，CLI library r
 
 `UiLanguage`/`UiText` 提供并排、编译期完整性校验的中英文宿主文案；只接受 zh-CN/en-US，
 `ResolveUiLanguage` 额外接受 system 并读取 HAL 首选 locale，zh 语系归中文，其余及不可用归英文。
-未知设置明确失败；界面语言不修改 guest Locale。GameRunOptions 的可选 ui_language 经
-`--ui-language` 严格解析和往返，缺省由游戏进程启动时解析系统语言。
+未知设置明确失败。GameRunOptions 的可选 ui_language 经 `--ui-language` 严格解析和往返，
+缺省由应用进程启动时解析系统语言；独立 app_language 经 `--app-language` 选择 zh-CN/en-US，
+缺省或 ui 跟随已解析的界面语言。语言选项在进程启动时固定，界面语言与应用语言可分别选择。
 
 GameRunOptions 显式携带 surface_width/surface_height（默认 1280×720，每边 1..4096；surface_adaptation 为 limit/follow 时
 建窗前由 `AdaptSurfaceToDisplay` 按显示器限制或跟随，长边统一由 `SurfaceLongSide` 取偶数）与 density_dpi

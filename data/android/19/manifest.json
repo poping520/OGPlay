@@ -354,8 +354,8 @@
             "src/guest/xml/java",
             "src/guest/zip/java"
           ],
-          "sha256": "6107c75c5abe0a916d04978b2d2c459aca8a60f71ef581fa43a3da6697e63d53",
-          "javac": "17.0.18",
+          "sha256": "e00dab4028288ac80083df4da115c7940f70076f0c31c3ce948dd6823e6116ad",
+          "javac": "17.0.2",
           "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
           "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
         }

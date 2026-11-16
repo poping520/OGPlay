@@ -5,10 +5,11 @@ const WIDTH = '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 12h1
 const HEIGHT = '<rect x="6" y="3" width="12" height="18" rx="2"/><path d="M12 7v10M10 9l2-2 2 2M10 15l2 2 2-2"/>';
 const DATA_PACK = '<path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>';
 const SPEAKER = '<path d="M11 5 6 9H3v6h3l5 4z"/>';
+const LANGUAGE = '<path d="M4 5h9M8.5 3v2M6 5c0 4 3 7 6 8M11 5c0 3-2.5 7-6.5 9"/><path d="M13 21l4-9 4 9M14.5 18h5"/>';
 
 export const SETTING_ICONS: Record<string, string> = {
   // general
-  language: '<path d="M4 5h9M8.5 3v2M6 5c0 4 3 7 6 8M11 5c0 3-2.5 7-6.5 9"/><path d="M13 21l4-9 4 9M14.5 18h5"/>',
+  language: LANGUAGE,
   theme: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/>',
   density: '<path d="M4 6h16M4 10h16M4 14h16M4 18h16"/>',
   cartridge: '<path d="M6 3h12a1 1 0 0 1 1 1v13H5V4a1 1 0 0 1 1-1z"/><path d="M7 17v3h10v-3"/><rect x="8" y="6" width="8" height="7" rx="1"/>',
@@ -65,7 +66,7 @@ export const SETTING_ICONS: Record<string, string> = {
   cpu_name: '<rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 10h6M9 14h4M9 2v3M15 2v3M9 19v3M15 19v3"/>',
   gpu_vendor: '<rect x="2" y="6" width="20" height="11" rx="2"/><circle cx="9" cy="11.5" r="3"/><path d="M15 10h3M15 13h3M5 17v3"/>',
   gpu_renderer: '<path d="M12 3l9 17H3z"/><path d="M12 3v17M7.5 11.5 12 20l4.5-8.5"/>',
-  locale: '<path d="M12 21s-7-6.5-7-12a7 7 0 0 1 14 0c0 5.5-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/>',
+  locale: LANGUAGE,
   timezone: '<circle cx="12" cy="12" r="9"/><path d="M3 12h3M18 12h3M12 7v5l3 3"/>',
   // network, diagnostics, control and advanced
   network_policy: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
@@ -81,4 +82,4 @@ export const SETTING_ICONS: Record<string, string> = {
   ephemeral_sandbox: '<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 3"/><path d="M9 12h6"/>',
 };
 // The same concept drawn twice on purpose; any other repeated glyph is a mistake (settings.test.ts).
-export const SHARED_ICONS = [['default_external_dir', 'external_dir']];
+export const SHARED_ICONS = [['default_external_dir', 'external_dir'], ['language', 'locale']];

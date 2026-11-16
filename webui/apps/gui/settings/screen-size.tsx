@@ -3,8 +3,8 @@ import { t } from '../shared/i18n';
 
 // The guest screen size the presets give, as the host computes it (src/frontend/library/screen_settings.cpp and
 // SurfaceLongSide/AdaptSurfaceToDisplay in run_options.cpp): screen_resolution is the short side or "custom" (the
-// width/height rows as set), screen_aspect the long side or "screen" (the display's). Presets never exceed the
-// display, so the page offers only those that fit it.
+// width/height rows as set), screen_aspect the long side or "screen" (the display's). The short side limits presets;
+// the desktop host independently fits its decorated window without changing the guest resolution.
 export interface Size { width: number; height: number }
 
 const resolutions: Record<string, number> = { '480p': 480, '540p': 540, '720p': 720, '1080p': 1080, '1440p': 1440, '2160p': 2160 };
@@ -76,6 +76,6 @@ export function ScreenSizeNote({ values, display }: { values: Record<string, Set
   if (!size) return null;
   return <div class="row-extra screen-size">
     <p><b>{t('实际分辨率 {width} × {height}', { width: size.width, height: size.height })}</b></p>
-    {display && <p>{t('本机屏幕 {width} × {height}，预设不超过它', { width: display.width, height: display.height })}</p>}
+    {display && <p>{t('本机屏幕 {width} × {height}，窗口自动适配可用桌面', { width: display.width, height: display.height })}</p>}
   </div>;
 }

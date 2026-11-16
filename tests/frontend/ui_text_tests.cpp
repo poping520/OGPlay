@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include <algorithm>
+#include <ostream>
 #include <stdexcept>
 #include "ogplay/app/ui_text.h"
 

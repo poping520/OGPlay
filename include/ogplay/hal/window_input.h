@@ -71,6 +71,8 @@ enum class KeyModifier : std::uint32_t {
 
 struct WindowOptions {
     std::string title{"OGPlay"};
+    // Requested host client size. Desktop windows may shrink proportionally to fit the usable display,
+    // including decorations; the producer's frame resolution is independent of this size.
     std::uint32_t width{1280};
     std::uint32_t height{720};
     bool hidden{};

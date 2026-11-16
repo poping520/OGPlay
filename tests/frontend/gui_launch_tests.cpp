@@ -407,12 +407,14 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     SetSetting(global, "screen_aspect", std::string("16:9"));
     launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
     CHECK(launch.options.surface_adaptation == SurfaceAdaptation::limit);
-    SaveGameSettings(directory, {{{"screen_resolution", std::string("480p")}, {"screen_aspect", std::string("19.5:9")}}});
+    SaveGameSettings(directory,
+                     {{{"screen_resolution", std::string("480p")}, {"screen_aspect", std::string("19.5:9")}}});
     launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
     CHECK_FALSE(launch.options.surface_size_explicit);
     CHECK(launch.options.surface_width == 1040);
     CHECK(launch.options.surface_height == 480);
-    SaveGameSettings(directory, {{{"screen_resolution", std::string("1440p")}, {"screen_aspect", std::string("screen")}}});
+    SaveGameSettings(directory,
+                     {{{"screen_resolution", std::string("1440p")}, {"screen_aspect", std::string("screen")}}});
     launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
     CHECK(launch.options.surface_adaptation == SurfaceAdaptation::follow);
     CHECK(launch.options.surface_height == 1440);
@@ -546,4 +548,38 @@ TEST_CASE("gui_launch resolves UI language for the process and localized window 
         CHECK(*std::next(flag) == UiLanguageTag(language));
         CHECK(ogplay::frontend::BuildLaunchPlan(executable, tree.path, entry, config).ui_language == language);
     }
+}
+
+TEST_CASE("gui_launch app language inherits global settings with an explicit follow UI choice") {
+    using namespace ogplay::app;
+    TemporaryDirectory tree;
+    const auto directory = tree.path / "library/org.example.game";
+    Write(directory / "base.apk", "apk");
+    auto entry = Entry(directory, {});
+    entry.external_dir.reset();
+    LibraryStore store(tree.path);
+    LibraryConfig config;
+    SetSetting(config, "language", std::string("zh-CN"));
+    CHECK(std::get<std::string>(Setting(config, "locale")) == "ui");
+    CHECK_FALSE(ResolveLaunch(store, entry, config).options.app_language);
+    SetSetting(config, "locale", std::string("en-US"));
+    CHECK(ResolveLaunch(store, entry, config).options.app_language == UiLanguage::en_US);
+    GameSettings settings;
+    settings.values["locale"] = std::string("zh-CN");
+    SaveGameSettings(directory, settings);
+    auto launch = ResolveLaunch(store, entry, config);
+    CHECK(launch.options.app_language == UiLanguage::zh_CN);
+    CHECK(launch.options.ui_language == UiLanguage::zh_CN);
+    settings.values["locale"] = std::string("ui");
+    SaveGameSettings(directory, settings);
+    CHECK_FALSE(ResolveLaunch(store, entry, config).options.app_language);
+    settings.values.clear();
+    SaveGameSettings(directory, settings);
+    CHECK(ResolveLaunch(store, entry, config).options.app_language == UiLanguage::en_US);
+    CHECK_THROWS(SetSetting(config, "locale", std::string("fr-FR")));
+    settings.values["locale"] = std::string("invalid");
+    CHECK_THROWS(SaveGameSettings(directory, settings));
+    Write(directory / "settings.toml", "schema = 1\nlocale = \"\"\n");
+    CHECK_FALSE(LoadGameSettings(directory).values.contains("locale"));
+    CHECK(ResolveLaunch(store, entry, config).options.app_language == UiLanguage::en_US);
 }

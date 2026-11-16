@@ -342,7 +342,8 @@ final class ServiceProbes {
                 "Landroid/app/NotificationManager;.cancel(I)V") {
             @Override Outcome run(ProbeSession session) throws Exception {
                 NotificationManager manager = (NotificationManager) session.activity.getSystemService(Context.NOTIFICATION_SERVICE);
-                Notification notification = new Notification.Builder(session.activity).setContentTitle("OGPlay Probe")
+                Notification notification = new Notification.Builder(session.activity)
+                        .setContentTitle(session.activity.getText(R.string.app_name))
                         .setSmallIcon(android.R.drawable.ic_dialog_info).build();
                 manager.notify(19, notification);
                 manager.cancel(19);

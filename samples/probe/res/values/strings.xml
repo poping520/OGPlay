@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OGPlay Probe</string>
+    <string name="app_name">OGPlay Compatibility Test</string>
     <string name="device">Device</string>
     <string name="services">Services</string>
     <string name="runtime">Runtime</string>
@@ -21,11 +21,19 @@
     <string name="last_crash">Resumed after %1$s crashed</string>
     <string name="finished">Run finished</string>
     <string name="preparing">Preparing probes</string>
-    <string name="run_all">Run all again</string>
+    <string name="run_all">Test again</string>
     <string name="run_failed">Retry failures</string>
     <string name="back">Back</string>
     <string name="run_one">Run this probe</string>
-    <string name="category_count">%1$d / %2$d passed</string>
+    <string name="category_count" translatable="false">%1$d / %2$d passed</string>
+    <string name="category_device" translatable="false">Device</string>
+    <string name="category_services" translatable="false">Services</string>
+    <string name="category_runtime" translatable="false">Runtime</string>
+    <string name="category_storage" translatable="false">Storage</string>
+    <string name="category_media" translatable="false">Media</string>
+    <string name="category_graphics" translatable="false">Graphics</string>
+    <string name="category_ui" translatable="false">Interface</string>
+    <string name="category_native" translatable="false">Native</string>
     <string name="scope">Scope</string>
     <string name="status">Status</string>
     <string name="observed">Observed</string>
@@ -39,5 +47,80 @@
     <string name="sensor_info">Sensors</string>
     <string name="locale_info">Locale</string>
     <string name="time_info">Time</string>
-    <string name="unavailable">No observation</string>
+    <string name="unavailable">Unavailable</string>
+    <string name="start_run">Start tests</string>
+    <string name="not_run">Not run yet</string>
+    <string name="previous_result">Last results · %1$s</string>
+    <string name="interrupted">Last run interrupted at %1$s</string>
+    <string name="continue_run">Continue</string>
+    <string name="restart_run">Start over</string>
+    <string name="loading_device">Loading device information…</string>
+    <string name="locale_time">Language and time</string>
+    <string name="network_phone">Network and phone</string>
+    <string name="model">Model</string>
+    <string name="manufacturer">Manufacturer</string>
+    <string name="brand">Brand</string>
+    <string name="device_code">Device code</string>
+    <string name="android_version">Android / API</string>
+    <string name="fingerprint">Build fingerprint</string>
+    <string name="serial">Serial number</string>
+    <string name="android_id">ANDROID_ID</string>
+    <string name="processor">Processor</string>
+    <string name="abi">ABI</string>
+    <string name="abi2">ABI2</string>
+    <string name="architecture">Architecture</string>
+    <string name="java_cores">Cores (Java)</string>
+    <string name="sysconf_cores">Cores (sysconf)</string>
+    <string name="maximum_frequency">Maximum frequency</string>
+    <string name="current_frequency">Current frequency</string>
+    <string name="features">Features</string>
+    <string name="total_memory">Total memory</string>
+    <string name="available_memory">Available memory</string>
+    <string name="memory_threshold">Low memory threshold</string>
+    <string name="low_memory">Low memory</string>
+    <string name="heap_limit">Heap limit</string>
+    <string name="large_heap_limit">Large heap limit</string>
+    <string name="resolution">Resolution</string>
+    <string name="density_dpi">Density / bucket</string>
+    <string name="scaled_density">Scaled density</string>
+    <string name="physical_size">Estimated size</string>
+    <string name="refresh_rate">Refresh rate</string>
+    <string name="orientation">Orientation</string>
+    <string name="landscape">Landscape</string>
+    <string name="portrait">Portrait</string>
+    <string name="unknown">Unknown</string>
+    <string name="internal_total">Internal total</string>
+    <string name="internal_available">Internal available</string>
+    <string name="external_state">External state</string>
+    <string name="external_total">External total</string>
+    <string name="external_available">External available</string>
+    <string name="gl_vendor">GL vendor</string>
+    <string name="gl_renderer">GL renderer</string>
+    <string name="gl_version">GL version</string>
+    <string name="max_texture_size">Max texture size</string>
+    <string name="req_gles_version">Required GLES version</string>
+    <string name="sensor">Sensor</string>
+    <string name="sensor_description">%1$s · type %2$d · %3$s</string>
+    <string name="none">None</string>
+    <string name="locale_value">Locale</string>
+    <string name="timezone_id">Time zone ID</string>
+    <string name="timezone_offset">UTC offset</string>
+    <string name="hour_24">24-hour clock</string>
+    <string name="uptime">Uptime (h:m:s)</string>
+    <string name="elapsed_realtime">Elapsed (h:m:s)</string>
+    <string name="network_connected">Connected</string>
+    <string name="network_type">Network type</string>
+    <string name="wifi_enabled">Wi-Fi enabled</string>
+    <string name="phone_type">Phone type</string>
+    <string name="sim_state">SIM state</string>
+    <string name="network_operator">Network operator</string>
+    <string name="roaming">Roaming</string>
+    <string name="extensions_count">Extensions (%1$d) · tap to expand/collapse</string>
+    <string name="extension">Extension</string>
+    <string name="refresh_device">Refresh</string>
+    <string name="raw_data">View raw data · expand/collapse</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+    <string name="value_copied">Value copied</string>
+    <string name="clipboard_unavailable">Clipboard unavailable</string>
 </resources>

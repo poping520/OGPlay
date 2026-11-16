@@ -222,7 +222,7 @@ def brief(value) -> str:
 
 def summary_markdown(report: dict, baseline: dict, reference: dict | None = None) -> str:
     host = report["host"]
-    lines = ["# OGPlay Probe", "",
+    lines = ["# OGPlay 兼容性测试", "",
              f"配置 {host['config']} · {host['interpreter']} · 启动 {len(host['attempts'])} 次 · "
              + ("报告完整" if host["complete"] else "报告未完成"),
              "", "| 分类 | 通过 / 总数 | 通过率 |", "| --- | ---: | ---: |"]

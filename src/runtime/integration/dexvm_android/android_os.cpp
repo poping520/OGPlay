@@ -83,6 +83,8 @@ namespace {
 [[nodiscard]] std::string ReadAndroidProperty(dx::Interpreter& vm, const Context& context, const std::string& key) {
     constexpr std::uint64_t kBytesPerMiB = 1024U * 1024U;
     if (key == "config.disable_renderscript") return "true";
+    if (key == "persist.sys.language" || key == "ro.product.locale.language") return context->locale_language;
+    if (key == "persist.sys.country" || key == "ro.product.locale.region") return context->locale_region;
     if (key == "sys.settings_system_version") return std::to_string(context->settings_system_version);
     if (key == "gsm.sim.state") return "ABSENT";
     if (key == "gsm.operator.numeric") return context->network_operator;

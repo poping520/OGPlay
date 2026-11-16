@@ -17,6 +17,9 @@ APK label 为资源时，默认配置值为 `display_name`，各语言资源（`
 `display_name.<locale>`。`LocalizedDisplayName` 按启动器语言依次取完全匹配、仅语言、同语言其他地区、
 默认值；运行窗口标题和 GUI（webui `gameName` 同规则）都按此显示。
 解释器设置用 `default` 选择通用默认值，`switch/threaded` 为用户显式覆盖。
+应用语言复用 locale 设置：全局默认 ui（跟随本次启动的界面语言），也可选择 zh-CN/en-US；
+实例值 > 全局值 > 默认，经 ResolveLaunch/FormatGameRunArgs 传递 --app-language。恢复全局删除实例覆盖；
+实例显式 ui 即使全局指定另一种语言也跟随界面。旧预留 locale 的空字符串读作无覆盖，新的非法选项明确拒绝。
 
 内置 Demo（`demo_games.h`）：随包数据 `demos/` 下的 *.apk 只放 OGPlay 自己的原创示例游戏；包名与其一致的
 条目即该 Demo，不论是自动放入还是手动导入。`SeedBundledDemos` 仅在全局 `show_demo_games`（常规，默认开）

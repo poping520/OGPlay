@@ -438,7 +438,7 @@ final class DeviceProbes {
         return (ActivityManager) session.activity.getSystemService(Context.ACTIVITY_SERVICE);
     }
 
-    private static String procField(String contents, String key) {
+    static String procField(String contents, String key) {
         for (String line : contents.split("\n")) {
             int colon = line.indexOf(':');
             if (colon > 0 && key.equals(line.substring(0, colon).trim())) return line.substring(colon + 1).trim();
@@ -480,7 +480,7 @@ final class DeviceProbes {
         }
     }
 
-    private static JSONObject stat(File directory) throws JSONException {
+    static JSONObject stat(File directory) throws JSONException {
         StatFs stat = new StatFs(directory.getAbsolutePath());
         return obj("available_bytes", stat.getAvailableBytes(), "total_bytes", stat.getTotalBytes());
     }

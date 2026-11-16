@@ -24,6 +24,14 @@ const std::vector<SettingDefinition>& SettingDefinitions() {
     // One schema drives persistence, RPC validation and the rendered controls.
     static const std::vector<SettingDefinition> fields{
         {"language", "general", "语言", std::string("system"), {"system", "zh-CN", "en-US"}, 0, 0, "OGPlay 界面语言"},
+        {"locale",
+         "general",
+         "应用语言",
+         std::string("ui"),
+         {"ui", "zh-CN", "en-US"},
+         0,
+         0,
+         "模拟 Android 的语言，下次启动生效；应用需包含对应翻译"},
         {"theme",
          "general",
          "主题",

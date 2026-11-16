@@ -213,8 +213,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
           diagnostics_enabled, supersample_factor, max_fps, surface_width, surface_height, density_dpi, cpu_config,
           mcp_manual_step, preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox,
           input_config_path, library_root, missing_data_report, run_report, window_title, window_icon,
-          window_icon_style, ui_language, surface_size_explicit, surface_adaptation, fps_overlay] = std::move(options);
+          window_icon_style, ui_language, app_language, surface_size_explicit, surface_adaptation, fps_overlay] =
+        std::move(options);
     const auto language = ui_language ? *ui_language : app::SystemUiLanguage();
+    const auto guest_language = app_language.value_or(language);
     const auto bundled_data = HostBundledDataPaths();
     logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
                  {{"data_root", PathUtf8(bundled_data.root)}});
@@ -386,8 +388,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             surface_width = fitted.width;
             surface_height = fitted.height;
         } else {
-            logger.Write(core::LogLevel::warn, "frontend.run_apk", "display size unknown; keeping the surface size",
-                         {}, {}, kUnrestrictedLog);
+            logger.Write(core::LogLevel::warn, "frontend.run_apk", "display size unknown; keeping the surface size", {},
+                         {}, kUnrestrictedLog);
         }
     }
     const auto base_title = "OGPlay · " + window_title.value_or(PathUtf8(apk_path.filename()));
@@ -468,6 +470,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             dex_context->ui_scaled_density = dex_context->ui_density;
             dex_context->host_display_sleep_inhibited = window->State().display_sleep_inhibited;
             dex_context->api_level = static_cast<std::int32_t>(api_level);
+            dex_context->locale_language = guest_language == app::UiLanguage::zh_CN ? "zh" : "en";
+            dex_context->locale_region = guest_language == app::UiLanguage::zh_CN ? "CN" : "US";
             // Java File/streams resolve through the same guest VFS as
             // native fopen (external mounts, /apk assets).
             dex_context->vfs = &filesystem;

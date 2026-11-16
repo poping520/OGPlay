@@ -183,8 +183,13 @@ def build(sdk: Path, ndk: Path, tools_version: str | None) -> Path:
     sources = sorted((ROOT / "src/main/java").rglob("*.java")) + sorted(generated.rglob("*.java"))
     run(javac, "-encoding", "UTF-8", "-source", "1.7", "-target", "1.7",
         "-bootclasspath", platform, "-Xlint:-options", "-d", classes, *sources)
+    # A single archive also stays below cmd.exe's d8.bat command-line limit on Windows.
+    class_jar = work / "classes.jar"
+    with zipfile.ZipFile(class_jar, "w") as archive:
+        for path in sorted(classes.rglob("*.class")):
+            archive.write(path, path.relative_to(classes).as_posix())
     run(d8, "--release", "--min-api", "9", "--lib", platform, "--output", dex,
-        *sorted(classes.rglob("*.class")))
+        class_jar)
     members = {"classes.dex": dex / "classes.dex", f"lib/{ABI}/{library.name}": library}
     packed = work / "packed.apk"
     with zipfile.ZipFile(unsigned) as linked, zipfile.ZipFile(packed, "w") as apk:

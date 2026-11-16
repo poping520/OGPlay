@@ -70,6 +70,7 @@ export function fieldMeta(field: SettingField): FieldMeta {
   return { label: t(match ? match[1] : field.label), unit: match && numeric ? t(match[2]) : '', hint: notes.join(t('；')), reserved: reserved && t(reserved) };
 }
 const labels: Record<string, string> = {
+  ui: '跟随界面语言',
   dark: '深色', light: '浅色', system: '跟随系统', compact: '紧凑', comfortable: '舒适',
   'zh-CN': '简体中文', 'en-US': 'English', switch: 'Switch', threaded: 'Threaded',
   windowed: '窗口', fullscreen: '全屏', aspect: '保持比例', stretch: '拉伸', automatic: '自动', 'hardware-only': '仅硬件', 'software-only': '仅软件',

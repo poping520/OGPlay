@@ -45,6 +45,10 @@ final class ProbeSession {
     private boolean restarted;
     private boolean exitAfter;
     private volatile boolean busy;
+    private boolean automatic;
+    private JSONObject pending;
+    private long completedAt;
+    private boolean previousResult;
 
     ProbeSession(ProbeActivity activity) {
         this.activity = activity;
@@ -56,6 +60,10 @@ final class ProbeSession {
 
     void rerun(String id) {
         launch(id, false);
+    }
+
+    void resume() {
+        launch("resume", false);
     }
 
     private void launch(final String selection, final boolean opening) {
@@ -78,6 +86,7 @@ final class ProbeSession {
         }
         if (opening) {
             File config = new File(directory, "autorun.json");
+            automatic = config.exists();
             autorun = config.exists() ? ProbeFiles.json(config) : new JSONObject();
             expect = autorun.optJSONObject("expect");
             if (expect == null) expect = new JSONObject();
@@ -103,6 +112,57 @@ final class ProbeSession {
                 && autorun.optString("session").equals(previous.optString("session"));
         boolean resume = compatible && !previous.optBoolean("complete");
         if (opening && compatible) batch = previous.optInt("batch");
+        if (opening && !automatic) {
+            if (compatible) {
+                restore(previous);
+                if (resume) pending = previous;
+                else completedAt = previous.optLong("completed_at_ms", progress.lastModified());
+            }
+            if (!resume && report.exists()) {
+                try {
+                    JSONObject saved = ProbeFiles.json(report);
+                    if ("ogplay.probe.report/1".equals(saved.optString("schema"))
+                            && VERSION.equals(saved.optString("probe_version"))) {
+                        JSONArray rows = saved.getJSONArray("results");
+                        for (int i = 0; i < rows.length(); i++) {
+                            JSONObject row = rows.getJSONObject(i);
+                            if (probes.containsKey(row.getString("id"))) results.put(row.getString("id"), row);
+                        }
+                        completedAt = saved.optLong("completed_at_ms", report.lastModified());
+                        rebuildEnvironment();
+                    }
+                } catch (IOException failure) {
+                    Log.w(TAG, "Cannot read last report: " + failure);
+                } catch (JSONException failure) {
+                    Log.w(TAG, "Cannot decode last report: " + failure);
+                }
+            }
+            if (!compatible) recoverJournal();
+            previousResult = pending == null && results.size() > 0;
+            busy = false;
+            publish(null, previousResult);
+            return;
+        }
+        if (!opening && "resume".equals(selection)) {
+            previous = pending;
+            if (previous == null) throw new IOException("No interrupted run to resume");
+            resume = true;
+        }
+        pending = null;
+        previousResult = false;
+        completedAt = 0;
+        if (!automatic && !resume && selection == null) {
+            // A fresh full manual run must not resurrect old rows after a crash.
+            results.clear();
+            environment.clear();
+            lastCrash = "";
+            File[] entries = journal.listFiles();
+            if (entries == null) throw new IOException("Cannot list " + journal);
+            for (File entry : entries) {
+                if (entry.getName().endsWith(".json") && !entry.delete()) throw new IOException("Cannot delete " + entry);
+            }
+            if (report.exists() && !report.delete()) throw new IOException("Cannot delete " + report);
+        }
         if (resume) {
             restore(previous);
             run++;
@@ -151,13 +211,17 @@ final class ProbeSession {
             publish(probe.id, false);
             if (executeProbe(probe)) return;
         }
+        completedAt = System.currentTimeMillis();
         JSONObject document = obj("schema", "ogplay.probe.report/1", "probe_version", VERSION,
-                "runs", run, "environment", environment(), "summary", summary(), "results", rows());
+                "runs", run, "environment", environment(), "summary", summary(), "results", rows(),
+                "completed_at_ms", completedAt);
         ProbeFiles.atomic(report, ProbeFiles.encode(document));
+        // Preserve the completion time when only the plan and result journal survive.
+        ProbeFiles.atomic(plan(batch), ProbeFiles.encode(obj("selected", selected, "completed_at_ms", completedAt)));
         checkpoint(null, true);
         log(obj("event", "end", "run", run, "summary", document.getJSONObject("summary")));
-        publish(null, true);
         busy = false;
+        publish(null, true);
         if (exitAfter) {
             main.post(new Runnable() {
                 @Override public void run() {
@@ -258,11 +322,48 @@ final class ProbeSession {
                 results.put(id, row);
             }
         }
+        rebuildEnvironment();
+    }
+
+    private void rebuildEnvironment() throws JSONException {
+        environment.clear();
         // Replay in probe order, not VFS enumeration order.
         for (String id : probes.keySet()) {
             JSONObject row = results.get(id);
             if (row != null) applyEnvironment(id, row.opt("observed"));
         }
+    }
+
+    private void recoverJournal() throws Exception {
+        File[] entries = journal.listFiles();
+        if (entries == null) throw new IOException("Cannot list " + journal);
+        for (File entry : entries) {
+            if (!entry.getName().endsWith(".json")) continue;
+            JSONObject saved = ProbeFiles.json(entry);
+            if (saved.optString("session").length() == 0) batch = Math.max(batch, saved.optInt("batch"));
+        }
+        if (results.size() > 0 || batch == 0 || !plan(batch).exists()) return;
+        JSONObject plan = ProbeFiles.json(plan(batch));
+        JSONArray ids = plan.getJSONArray("selected");
+        long journalTime = 0;
+        for (int i = 0; i < ids.length(); i++) {
+            File entry = rowPath(ids.getString(i));
+            if (!entry.exists()) return;
+            JSONObject saved = ProbeFiles.json(entry);
+            if (saved.optString("session").length() != 0 || saved.optInt("batch") != batch) return;
+            journalTime = Math.max(journalTime, entry.lastModified());
+        }
+        completedAt = plan.optLong("completed_at_ms", journalTime);
+        // The entire last plan is durable: recover even if report/progress was lost.
+        for (File entry : entries) {
+            if (!entry.getName().endsWith(".json")) continue;
+            JSONObject saved = ProbeFiles.json(entry);
+            JSONObject row = saved.getJSONObject("result");
+            if (saved.optString("session").length() == 0 && probes.containsKey(row.getString("id"))) {
+                results.put(row.getString("id"), row);
+            }
+        }
+        rebuildEnvironment();
     }
 
     private boolean executeProbe(final Probe probe) throws Exception {
@@ -312,7 +413,7 @@ final class ProbeSession {
         JSONObject state = obj("probe_version", VERSION, "session", autorun.optString("session"),
                 "batch", batch, "running", running, "run", run, "next", next, "complete", complete,
                 "last_crash", lastCrash, "token", token, "prefs_setup_error", prefsSetupError,
-                "android_id_before_restart", androidIdBeforeRestart);
+                "android_id_before_restart", androidIdBeforeRestart, "completed_at_ms", completedAt);
         ProbeFiles.atomic(progress, ProbeFiles.encode(state));
     }
 
@@ -386,11 +487,15 @@ final class ProbeSession {
         lastPublish = now;
         final JSONObject state = summary();
         final JSONArray rows = rows();
-        final JSONObject data = environment();
         final String crash = lastCrash;
+        final boolean active = busy;
+        final boolean old = previousResult;
+        final long finished = completedAt;
+        final String interrupted = pending == null ? null : pending.isNull("running")
+                ? selected.optString(next, selected.optString(Math.max(0, next - 1))) : pending.optString("running");
         main.post(new Runnable() {
             @Override public void run() {
-                activity.refresh(state, rows, data, running, done, crash);
+                activity.refresh(state, rows, running, done, crash, active, interrupted, finished, old);
             }
         });
     }

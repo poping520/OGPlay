@@ -38,8 +38,9 @@ Time 的 native 入口仅转发到 guest Calendar/TimeZone 实现；format 转�
 设备语言地区仅存 locale_language/locale_region，默认 en/US，严格校验小写两字母语言与大写
 两字母地区。System 初始化从该事实写 user.language/user.region；bridge 通过 boundary
 provider 发布同源的 DeviceLocale 投影，不向 core 注入 ISO3。Resources.getConfiguration 的
-locale 每次取当前 Locale.getDefault；setDefault 不修改设备事实。设置 UI、persist.sys.*、
-Bionic 属性区、旧 headless HLE 与资源 locale qualifier 不属于此边界。
+locale 每次取当前 Locale.getDefault；setDefault 不修改设备事实。只读 persist.sys.language/country 与
+ro.product.locale.language/region 也从同一设备事实回答。前端在启动前注入选定语言，设置 UI、
+Bionic 属性区与旧 headless HLE 不属于此边界。
 
 
 ROM ActivityManager 通过本地 IActivityManager 获取内存和当前进程快照。栈顶未 stopped

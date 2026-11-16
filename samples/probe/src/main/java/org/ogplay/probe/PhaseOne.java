@@ -88,8 +88,11 @@ final class PhaseOne {
                 Point size = new Point();
                 display.getSize(size);
                 display.getMetrics(metrics);
-                int width = session.expect.optInt("width_px", size.x);
-                int height = session.expect.optInt("height_px", size.y);
+                int configuredWidth = session.expect.optInt("width_px", size.x);
+                int configuredHeight = session.expect.optInt("height_px", size.y);
+                // The launcher declares portrait; a landscape runner surface rotates after launch.
+                int width = Math.min(configuredWidth, configuredHeight);
+                int height = Math.max(configuredWidth, configuredHeight);
                 int dpi = session.expect.optInt("density_dpi", metrics.densityDpi);
                 int rootWidth = activity.contentWidth();
                 int rootHeight = activity.contentHeight();

@@ -11,6 +11,7 @@ const std::vector<SettingDefinition>& GameSettingDefinitions() {
                                                               {"max_fps", "performance"},
                                                               {"clock_mode", "performance"},
                                                               {"device_preset", "device"},
+                                                              {"locale", "device"},
                                                               {"screen_resolution", "display"},
                                                               {"screen_aspect", "display"},
                                                               {"screen_width", "display"},
@@ -104,7 +105,6 @@ const std::vector<SettingDefinition>& GameSettingDefinitions() {
                                                               {"cpu_name", "CPU 名称"},
                                                               {"gpu_vendor", "GPU VENDOR"},
                                                               {"gpu_renderer", "GPU RENDERER"},
-                                                              {"locale", "语言/地区"},
                                                               {"timezone", "时区"}})
             result.push_back({key, "device", label, std::string(), {}, 0, 0, pending});
         return result;

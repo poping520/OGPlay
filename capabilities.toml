@@ -206,7 +206,7 @@ note = "库启动的游戏进程开局写未完成的 last-run.json，结束写�
 [frontend.gui_language]
 status = "partial"
 test = "tests/frontend/ui_text_tests.cpp; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp; tests/frontend/gui_rpc_tests.cpp; tests/frontend/control_requests_tests.cpp; webui/apps/gui/shared/i18n.test.ts; webui/apps/controls/i18n.test.ts; frontend.gui_webui_manifest; frontend.gui_smoke; frontend.gui_library_smoke"
-note = "启动器、宿主状态/错误、原生菜单/托盘/选择器、游戏关闭确认及按键页支持中英文；language 默认 system，由宿主解析首选语言，显式语言保留。保存后菜单即时更新，游戏进程语言固定且不影响 guest Locale。Dashboard 页面未翻译；CLI、日志、系统控件文字不接翻译。Windows 未编译验证，App 内点击待验。"
+note = "启动器、宿主状态/错误、原生菜单/托盘/选择器、游戏关闭确认及按键页支持中英文；language 默认 system，由宿主解析首选语言，显式语言保留。保存后菜单即时更新；独立 locale 应用语言默认跟随界面，也可固定中英文并按实例覆盖，启动后固定。Dashboard 页面未翻译；CLI、日志、系统控件文字不接翻译。Windows 构建及定向验证已通过，原生外壳交互待完整验收。"
 
 [frontend.gui_shell]
 status = "complete"
@@ -1271,7 +1271,7 @@ note = "ADR-0043：Throwable、StackTraceElement 与 java.lang 异常家族在 B
 [dexvm.locale_iso_catalogs]
 status = "complete"
 test = "tests/runtime/guest_icu_tests.cpp#DVM-342; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp#DVM-342; tools/bootdex/build_bootdex.py audit"
-note = "Locale 完整形状、常量、规范化、默认值/setDefault、显示名、ISO3、ISO/可用区域枚举及防御性复制执行 AOSP core.jar Java，native 仅用 guest ICU51 C ABI。设备 locale_language/locale_region 严格校验并同源派生 user.* 与 AConfiguration；Java setDefault 不改设备事实。布局方向仍限 en/zh，未接设置 UI、persist.sys.* 或资源 locale qualifier。"
+note = "Locale 算法、默认值/setDefault、显示名与区域枚举执行 API19 core.jar，native 使用 guest ICU51。设备语言地区严格校验，同源派生 user.*、AConfiguration、资源配置及只读 persist.sys.language/country、ro.product.locale.language/region。前端应用语言在启动前注入，默认跟随界面，可固定中英文；Java setDefault 不改设备事实。设置目前限 en/zh，Bionic 属性区未接入。"
 
 [dexvm.date_format_api19]
 status = "complete"

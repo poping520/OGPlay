@@ -108,6 +108,7 @@ SurfaceSize AdaptSurfaceToDisplay(const SurfaceSize surface, const SurfaceSize d
 
 GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
     if (args.empty()) throw std::invalid_argument("run-apk requires <apk>");
+    bool app_language_seen = false;
     GameRunOptions options;
     options.apk_path = Utf8Path(args.front());
     bool default_mcp{}, window_icon_style_seen{};
@@ -273,6 +274,14 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
         } else if (option == "--run-report" && index + 1 < args.size()) {
             if (options.run_report.has_value()) throw std::invalid_argument("run-apk accepts --run-report only once");
             options.run_report = Utf8Path(args[++index]);
+        } else if (option == "--app-language" && index + 1 < args.size()) {
+            if (app_language_seen) throw std::invalid_argument("run-apk accepts --app-language only once");
+            app_language_seen = true;
+            const auto value = args[++index];
+            if (value != "ui") {
+                options.app_language = ParseUiLanguage(value);
+                if (!options.app_language) throw std::invalid_argument("--app-language requires ui, zh-CN or en-US");
+            }
         } else if (option == "--ui-language" && index + 1 < args.size()) {
             if (options.ui_language) throw std::invalid_argument("run-apk accepts --ui-language only once");
             options.ui_language = ParseUiLanguage(args[++index]);
@@ -331,6 +340,7 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
 
 void ValidateGameRunOptions(const GameRunOptions& o) {
     if (o.ui_language) static_cast<void>(UiLanguageTag(*o.ui_language));
+    if (o.app_language) static_cast<void>(UiLanguageTag(*o.app_language));
     if (o.apk_path.empty()) throw std::invalid_argument("run-apk requires <apk>");
     if (o.surface_width == 0 || o.surface_width > kMaximumSurfaceDimension || o.surface_height == 0 ||
         o.surface_height > kMaximumSurfaceDimension)
@@ -437,6 +447,7 @@ std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
     optional_path("--missing-data-report", o.missing_data_report);
     optional_path("--run-report", o.run_report);
     if (o.ui_language) add("--ui-language", std::string(UiLanguageTag(*o.ui_language)));
+    if (o.app_language) add("--app-language", std::string(UiLanguageTag(*o.app_language)));
     if (o.window_title) add("--window-title", *o.window_title);
     optional_path("--window-icon", o.window_icon);
     if (o.window_icon && o.window_icon_style != RunningIconStyle::badge)

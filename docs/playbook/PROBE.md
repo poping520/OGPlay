@@ -1,4 +1,4 @@
-# OGPlay 能力探针
+# OGPlay 兼容性测试
 
 用 [Probe 样例](../../samples/probe/README.md) 验证一个原创 APK 在 API 19 的行为。探针按实际观测判定状态，依赖和环境未满足时会留下相应证据。
 
@@ -22,7 +22,11 @@ python3 tools/conformance/probe_tests.py selftest
 | a | 1280 × 720 | 320 | 2 | 1000 |
 | b | 800 × 480 | 240 | 4 | 1500 |
 
-交互模式直接用 `ogplay-cli run-apk samples/probe/out/ogplay-probe.apk` 启动。启动后自动跑一轮，结束后停在 UI。全量、失败项和单项重跑沿用画面状态。文件报告位于 guest 外部存储 `OGPlayProbe/`。
+表中宽高为宿主传入尺寸；Probe 首页声明竖屏，显示探针按短边 × 长边校验旋转后的尺寸。
+
+交互模式直接用 `ogplay-cli run-apk samples/probe/out/ogplay-probe.apk` 启动（Windows 使用上文的 CLI 路径）。guest 外部存储 `OGPlayProbe/` 不存在 `autorun.json` 时，首页显示“尚未运行”，点击“开始测试”才执行；完整结果会在下次打开时显示上次汇总、分类与完成时间，可点“重新测试”。中断的手动运行不会自动续跑，首页显示中断探针 ID，点击“继续”将活动项记为 crash 后沿用检查点续跑，或点“重新开始”清空本批进度从头执行。失败项和单项重跑需已有结果，运行中禁用启动类按钮。有 `autorun.json` 时保持 runner 的 session、filter、exit、selftest 与自动续跑行为。文件报告仍位于该目录。
+
+“设备信息”无需跑过测试，进入或点击底部“刷新”时在后台独立只读采集；加载后以可滚动分区卡片展示，单个分区失败只显示该区的异常。长按行可复制值，GL 扩展和底部“查看原始数据”默认收起。截图与输入验证使用 [MCP 操作手册](MCP-TESTING.md)，指定新的 `--sandbox-dir`，不传 autorun；需要 `session_state` / `shutdown` 时加 `--diag`。
 
 ## 取证与续跑
 

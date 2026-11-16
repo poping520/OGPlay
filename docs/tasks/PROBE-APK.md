@@ -1,4 +1,4 @@
-# 任务：OGPlay 能力探针 APK
+# 任务：OGPlay 兼容性测试 APK
 
 目标是用独立的 API 19 ARMv7 APK 产出带语义断言、调用表和 ledger 的能力报告。
 

@@ -66,7 +66,7 @@ final class UiProbes {
                 "Landroid/widget/Toast;.makeText(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;",
                 "Landroid/widget/Toast;.show()V") {
             @Override Outcome run(ProbeSession session) throws Exception {
-                Toast toast = Toast.makeText(session.activity, "OGPlay Probe", Toast.LENGTH_SHORT);
+                Toast toast = Toast.makeText(session.activity, R.string.app_name, Toast.LENGTH_SHORT);
                 toast.show();
                 toast.cancel();
                 return check(true, obj("show_returned", true), obj("show_returned", true), "A text Toast can be enqueued");

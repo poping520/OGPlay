@@ -5,7 +5,9 @@
 `app::FormatGameRunArgs` 与解析按选项值严格往返；公开选项不暴露 runtime 类型。
 `app::RunGame` 在 app 层完成 SDL bootstrap/运行租约/日志装配，内部 `RunGame` 消费选项，按宿主 EXE 定位 payload 并编排 session；兼容行为仍由下层实现。
 `--ui-language <zh-CN|en-US>` 只影响宿主界面；重复、非法或缺值明确失败，缺省使用系统语言。
-游戏启动时固定解析结果供关闭确认框与 control.get 使用，不跟随启动器后续切换，也不影响 guest Locale。
+应用启动时固定解析结果供关闭确认框与 control.get 使用，不跟随启动器后续切换。
+`--app-language <ui|zh-CN|en-US>` 独立选择模拟 Android 的语言，缺省或 ui 跟随本次解析的界面语言；
+在 VM/资源创建前注入同源的 locale_language/locale_region，供 Java Locale、资源与 NDK 配置及只读语言属性使用。应用没有对应翻译时按 Android 资源回退规则处理。
 用户关闭请求经 HAL 确认后才停止，确认框文案来自 app 文案表；取消恢复输入/音频推进。
 
 VFS 装配、持久实例选择、MCP/诊断、Clock、输入与退出不变量沿用父模块契约。
@@ -59,7 +61,8 @@ GameRunOptions.surface_size_explicit 保存来源，--inherited-surface-width/he
 不将继承值升级为显式设置；窗口、DisplayMetrics、Surface 和触摸映射共用交换后的同一尺寸。
 surface_adaptation（`--surface-adapt limit|follow`，库启动的分辨率预设传入）在建窗前读 hal 显示器像素尺寸：
 短边超过显示器短边时按原比例缩到显示器短边；follow 再按显示器比例取长边（SurfaceLongSide），方向不变；
-未知显示器保持原尺寸。命令行与 custom 尺寸不适配。窗口、DisplayMetrics 与输入映射都用适配后的尺寸。
+未知显示器保持原尺寸。命令行与 custom 的 guest 尺寸不适配。guest 帧、DisplayMetrics 与 Surface 使用同源尺寸；
+桌面宿主窗口另由 HAL 在首次显示前按可用工作区和边框等比缩小，保持 guest 分辨率并复用绘制/输入坐标换算。
 运行中请求仍仅向 SDL 设置方向提示；逻辑显示宽高及后续 Activity 配置变化由本地 AMS/WMS 更新，前端从呈现帧取得新尺寸并同步输入映射。
 
 实时循环在开始计时和推进 step 前查询 session 的 ReadyForFrame；生产者未完成且未进入真实阻塞时，

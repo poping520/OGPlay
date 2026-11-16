@@ -25,8 +25,8 @@ public final class ProbeActivity extends Activity {
     private static final int MUTED = 0xffa6b5c4;
     private static final int ACCENT = 0xff78c6f0;
     private static final String[] CATEGORIES = {"device", "services", "runtime", "storage", "media", "graphics", "ui", "native"};
-    private static final int[] CATEGORY_LABELS = {R.string.device, R.string.services, R.string.runtime,
-            R.string.storage, R.string.media, R.string.graphics, R.string.ui, R.string.native_probes};
+    private static final int[] CATEGORY_LABELS = {R.string.category_device, R.string.category_services, R.string.category_runtime,
+            R.string.category_storage, R.string.category_media, R.string.category_graphics, R.string.category_ui, R.string.category_native};
     private static final int[] STATUS_LABELS = {R.string.pass, R.string.fail, R.string.error, R.string.crash,
             R.string.timeout, R.string.skip, R.string.info};
 
@@ -34,6 +34,7 @@ public final class ProbeActivity extends Activity {
     private LinearLayout counts;
     private LinearLayout body;
     private LinearLayout actions;
+    private LinearLayout actionRow;
     private TextView heading;
     private TextView progress;
     private ListView list;
@@ -41,9 +42,9 @@ public final class ProbeActivity extends Activity {
     private TextView detail;
     private Rows adapter;
     private ProbeSession session;
+    private DeviceInfoPage devicePage;
 
     private JSONArray results = new JSONArray();
-    private JSONObject environment = new JSONObject();
     private JSONObject summary = new JSONObject();
     private String category;
     private String selected;
@@ -52,6 +53,11 @@ public final class ProbeActivity extends Activity {
     private String lastCrash = "";
     private boolean done;
     private String error;
+    private boolean ready;
+    private boolean active;
+    private String interrupted;
+    private long completedAt;
+    private boolean previousResult;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -86,6 +92,7 @@ public final class ProbeActivity extends Activity {
         body.setOrientation(LinearLayout.VERTICAL);
         root.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
         actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.VERTICAL);
         actions.setBaselineAligned(false);
         root.addView(actions);
         list = new ListView(this);
@@ -107,6 +114,8 @@ public final class ProbeActivity extends Activity {
         detail.setTextIsSelectable(false);
         reader.addView(detail);
         body.addView(reader, new LinearLayout.LayoutParams(-1, -1));
+        devicePage = new DeviceInfoPage(this);
+        body.addView(devicePage, new LinearLayout.LayoutParams(-1, -1));
         setContentView(root);
         render();
     }
@@ -124,13 +133,18 @@ public final class ProbeActivity extends Activity {
     int contentWidth() { return root.getWidth(); }
     int contentHeight() { return root.getHeight(); }
 
-    void refresh(JSONObject summary, JSONArray results, JSONObject environment, String running, boolean done, String crash) {
+    void refresh(JSONObject summary, JSONArray results, String running, boolean done, String crash,
+            boolean active, String interrupted, long completedAt, boolean previousResult) {
         this.summary = summary;
         this.results = results;
-        this.environment = environment;
         this.running = running;
         this.done = done;
         this.lastCrash = crash;
+        this.active = active;
+        this.interrupted = interrupted;
+        this.completedAt = completedAt;
+        this.previousResult = previousResult;
+        ready = true;
         error = null;
         render();
     }
@@ -138,12 +152,14 @@ public final class ProbeActivity extends Activity {
     void displayError(String message) {
         error = message;
         done = true;
+        ready = true;
+        active = false;
         render();
     }
 
     private void render() {
         boolean home = category == null && selected == null && !devices;
-        boolean reading = selected != null || devices;
+        boolean reading = selected != null;
         heading.setText(devices ? getString(R.string.device_info) : selected != null ? selected
                 : category != null ? categoryName(category) : getString(R.string.app_name));
         counts.setVisibility(home ? View.VISIBLE : View.GONE);
@@ -163,14 +179,17 @@ public final class ProbeActivity extends Activity {
                 row.addView(count, new LinearLayout.LayoutParams(0, -2, 1));
             }
         }
-        String statusLine = error != null ? error : running != null ? getString(R.string.running, running)
-                : getString(done ? R.string.finished : R.string.preparing);
+        String statusLine = error != null ? error : active ? running != null ? getString(R.string.running, running)
+                : getString(R.string.preparing) : interrupted != null ? getString(R.string.interrupted, interrupted)
+                : previousResult ? getString(R.string.previous_result, completionTime())
+                : getString(done ? R.string.finished : R.string.not_run);
         if (lastCrash.length() > 0) statusLine += "\n" + getString(R.string.last_crash, lastCrash);
         progress.setText(statusLine);
-        list.setVisibility(reading ? View.GONE : View.VISIBLE);
+        list.setVisibility(reading || devices ? View.GONE : View.VISIBLE);
         reader.setVisibility(reading ? View.VISIBLE : View.GONE);
-        if (reading) detail.setText(devices ? describeEnvironment() : describeResult(find(selected)));
-        else {
+        if (devicePage != null) devicePage.setVisibility(devices ? View.VISIBLE : View.GONE);
+        if (reading) detail.setText(describeResult(find(selected)));
+        else if (!devices) {
             adapter.rows.clear();
             if (home) categoryRows();
             else resultRows();
@@ -178,21 +197,36 @@ public final class ProbeActivity extends Activity {
         }
 
         actions.removeAllViews();
+        actionRow = new LinearLayout(this);
+        actionRow.setBaselineAligned(false);
+        actions.addView(actionRow, new LinearLayout.LayoutParams(-1, -2));
         if (home) {
-            action(R.string.run_all, done, new Runnable() {
+            if (interrupted != null) action(R.string.continue_run, ready && !active, new Runnable() {
+                public void run() {
+                    active = true;
+                    interrupted = null;
+                    session.resume();
+                    render();
+                }
+            });
+            action(interrupted != null ? R.string.restart_run : results.length() > 0 ? R.string.run_all : R.string.start_run,
+                    ready && !active, new Runnable() {
                 public void run() { beginAgain(null); }
             });
-            action(R.string.run_failed, done, new Runnable() {
+            actionRow = new LinearLayout(this);
+            actionRow.setBaselineAligned(false);
+            actions.addView(actionRow, new LinearLayout.LayoutParams(-1, -2));
+            if (interrupted == null) action(R.string.run_failed, ready && !active && results.length() > 0, new Runnable() {
                 public void run() { beginAgain("failed"); }
             });
             action(R.string.device_info, true, new Runnable() {
-                public void run() { devices = true; render(); }
+                public void run() { devices = true; devicePage.refresh(); render(); }
             });
         } else {
             action(R.string.back, true, new Runnable() {
                 public void run() { goBack(); }
             });
-            if (selected != null) action(R.string.run_one, done, new Runnable() {
+            if (selected != null) action(R.string.run_one, ready && !active && interrupted == null && find(selected).has("status"), new Runnable() {
                 public void run() { beginAgain(selected); }
             });
         }
@@ -200,6 +234,10 @@ public final class ProbeActivity extends Activity {
 
     private void beginAgain(String choice) {
         done = false;
+        active = true;
+        interrupted = null;
+        previousResult = false;
+        lastCrash = "";
         error = null;
         session.rerun(choice);
         render();
@@ -251,17 +289,9 @@ public final class ProbeActivity extends Activity {
                 + getString(R.string.exception) + "\n" + pretty(row.opt("exception"));
     }
 
-    private String describeEnvironment() {
-        StringBuilder builder = new StringBuilder();
-        String[] keys = {"build", "cpu", "memory", "display", "storage", "gl", "sensors", "locale_details", "time"};
-        int[] labels = {R.string.build_info, R.string.cpu_info, R.string.memory_info, R.string.display_info,
-                R.string.storage, R.string.gl_info, R.string.sensor_info, R.string.locale_info, R.string.time_info};
-        for (int i = 0; i < keys.length; i++) {
-            builder.append(getString(labels[i])).append('\n');
-            Object value = environment.opt(keys[i]);
-            builder.append(value == null ? getString(R.string.unavailable) : pretty(value)).append("\n\n");
-        }
-        return builder.toString();
+    private String completionTime() {
+        if (completedAt <= 0) return "—";
+        return java.text.DateFormat.getDateTimeInstance().format(new java.util.Date(completedAt));
     }
 
     private static String pretty(Object value) {
@@ -323,7 +353,7 @@ public final class ProbeActivity extends Activity {
         button.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { callback.run(); }
         });
-        actions.addView(button, new LinearLayout.LayoutParams(0, dp(48), 1));
+        actionRow.addView(button, new LinearLayout.LayoutParams(0, dp(48), 1));
     }
 
     private static final class Row {

@@ -44,6 +44,9 @@
   `Open` 按窗口宽高锁定移动设备的屏幕方向：宽 ≥ 高只允许两个横屏方向，否则只允许两个竖屏
   方向；桌面忽略。运行中不随 guest 的 `setRequestedOrientation` 改变。Android 上窗口总是
   全屏，并以沉浸式模式隐藏状态栏与导航栏；桌面仍为普通窗口。
+  桌面窗口首次显示前，按所在显示器可用工作区与真实窗口边框等比缩小过大的客户端并校正位置，
+  避免竖屏/高分辨率窗口超出桌面。只改变宿主窗口尺寸，生产者帧与 guest 分辨率不变，
+  PresentRgba8/MapDisplayPoint 沿用同一等比适配完成绘制与输入换算；Android 全屏路径不受此策略影响。
 - `hal::PointerButton`：把宿主鼠标按钮规范为 primary/middle/secondary/auxiliary 语义；
   未知按钮显式标记为 unknown，不向上层泄漏 SDL 数值。
 - `hal::InputEvent` 的键盘事实同时携带物理 scancode、当前键盘布局与 modifier 解析出的

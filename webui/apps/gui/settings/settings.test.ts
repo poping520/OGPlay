@@ -6,6 +6,14 @@ import { creditSummary, creditTree, type CreditProject } from './credits';
 const field = (key: string, initial: string | number | boolean, choices: string[] = []): SettingField =>
   ({ key, label: key, initial, choices, min: 1, max: 4, group: 'general', pending: '', directory: false, hidden: false });
 describe('settings drafts', () => {
+  it('shows and validates the shared app-language choices', () => {
+    const locale = field('locale', 'ui', ['ui', 'zh-CN', 'en-US']);
+    expect(displayValue(locale, 'ui')).toBe('跟随界面语言');
+    expect(displayValue(locale, 'zh-CN')).toBe('简体中文');
+    expect(displayValue(locale, 'en-US')).toBe('English');
+    expect(settingsError([locale], { locale: 'ui' })).toBeNull();
+    expect(settingsError([locale], { locale: 'invalid' })).not.toBeNull();
+  });
   const fields = [field('theme', 'dark', ['dark', 'light']), field('supersample', 1), field('enabled', false)];
   const values = { theme: 'dark', supersample: 1, enabled: false };
   it('rejects missing, unknown, wrong type, enum and non-finite numeric inputs', () => {

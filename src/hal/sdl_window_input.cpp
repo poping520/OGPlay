@@ -217,8 +217,11 @@ public:
             throw SdlError("SDL_SetHint(SDL_HINT_ORIENTATIONS)");
         }
 
-        SDL_WindowFlags flags = 0;
-        if (options.hidden) flags |= SDL_WINDOW_HIDDEN;
+        // Size and position the decorated window before its first visible frame.
+        SDL_WindowFlags flags = options.hidden ? SDL_WINDOW_HIDDEN : 0;
+#ifndef __ANDROID__
+        flags |= SDL_WINDOW_HIDDEN;
+#endif
         if (options.resizable) flags |= SDL_WINDOW_RESIZABLE;
 #ifdef __ANDROID__
         // A phone window always covers the display; fullscreen also hides the system bars
@@ -228,14 +231,19 @@ public:
         window_ = SDL_CreateWindow(options.title.c_str(), static_cast<int>(options.width),
                                    static_cast<int>(options.height), flags);
         if (window_ == nullptr) throw SdlError("SDL_CreateWindow");
+        try {
 #ifdef _WIN32
-        windows::ApplyGameWindowChrome(Win32Handle());
+            windows::ApplyGameWindowChrome(Win32Handle());
 #endif
-        renderer_ = SDL_CreateRenderer(window_, nullptr);
-        if (renderer_ == nullptr) {
-            SDL_DestroyWindow(window_);
-            window_ = nullptr;
-            throw SdlError("SDL_CreateRenderer");
+            FitWindowToDesktop(options);
+            renderer_ = SDL_CreateRenderer(window_, nullptr);
+            if (renderer_ == nullptr) throw SdlError("SDL_CreateRenderer");
+#ifndef __ANDROID__
+            if (!options.hidden && !SDL_ShowWindow(window_)) throw SdlError("SDL_ShowWindow");
+#endif
+        } catch (...) {
+            Close();
+            throw;
         }
         present_count_ = 0;
         modifiers_ = NormalizeKeyModifiers(SDL_GetModState());
@@ -342,12 +350,12 @@ public:
         constexpr int kLibrary = 2;
         const std::string library{text.library_label};
         // The game's task sits beside the launcher's: the third choice switches to the launcher, game still running.
-        const std::array<SDL_MessageBoxButtonData, 3> buttons{{
-            {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, kCancel,
-             cancel.c_str()},
-            {0, kConfirm, confirm.c_str()},
-            {0, kLibrary, library.c_str()},
-        }};
+        const std::array<SDL_MessageBoxButtonData, 3> buttons{
+            { {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, kCancel,
+               cancel.c_str()},
+              {0, kConfirm, confirm.c_str()},
+              {0, kLibrary, library.c_str()},
+            }};
 #else
         const std::array<SDL_MessageBoxButtonData, 2> buttons{{
             {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, kCancel,
@@ -495,6 +503,39 @@ public:
     }
 
 private:
+    void FitWindowToDesktop(const WindowOptions& options) {
+#ifndef __ANDROID__
+        SDL_Rect usable{};
+        const auto display = SDL_GetDisplayForWindow(window_);
+        if (display == 0 || !SDL_GetDisplayUsableBounds(display, &usable) || usable.w <= 0 || usable.h <= 0) return;
+        int top{}, left{}, bottom{}, right{};
+        if (!SDL_GetWindowBordersSize(window_, &top, &left, &bottom, &right)) top = left = bottom = right = 0;
+        const int available_width = std::max(1, usable.w - left - right);
+        const int available_height = std::max(1, usable.h - top - bottom);
+        int width = static_cast<int>(options.width), height = static_cast<int>(options.height);
+        const bool oversized = width > available_width || height > available_height;
+        if (oversized) {
+            const auto fitted =
+                FitDisplayRect(options.width, options.height, static_cast<std::uint32_t>(available_width),
+                               static_cast<std::uint32_t>(available_height));
+            width = static_cast<int>(fitted.width);
+            height = static_cast<int>(fitted.height);
+            if (!SDL_SetWindowSize(window_, width, height)) throw SdlError("SDL_SetWindowSize");
+        }
+        int x{}, y{};
+        if (!SDL_GetWindowPosition(window_, &x, &y)) throw SdlError("SDL_GetWindowPosition");
+        const int minimum_x = usable.x + left, minimum_y = usable.y + top;
+        const int target_x = oversized ? minimum_x + (available_width - width) / 2
+                                       : std::clamp(x, minimum_x, minimum_x + available_width - width);
+        const int target_y = oversized ? minimum_y + (available_height - height) / 2
+                                       : std::clamp(y, minimum_y, minimum_y + available_height - height);
+        if ((x != target_x || y != target_y) && !SDL_SetWindowPosition(window_, target_x, target_y))
+            throw SdlError("SDL_SetWindowPosition");
+#else
+        static_cast<void>(options);
+#endif
+    }
+
 #ifdef _WIN32
     // Null on the dummy and offscreen backends, which have no native window.
     [[nodiscard]] void* Win32Handle() const noexcept {

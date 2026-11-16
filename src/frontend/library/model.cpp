@@ -407,6 +407,8 @@ static GameSettings LoadGameSettingsUnlocked(const std::filesystem::path& direct
                 parsed = ParseUint32(value, key);
             else
                 parsed = ParseTomlString(value);
+            // The former reserved locale row used an empty string for no override.
+            if (key == "locale" && parsed == SettingValue{std::string()}) continue;
             ValidateSettingValue(*field, parsed);
             settings.values[key] = std::move(parsed);
         }

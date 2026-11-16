@@ -222,6 +222,27 @@ TEST_CASE("game_run_args ui-language round trips and rejects invalid or repeated
     CHECK_THROWS_AS(ValidateGameRunOptions(options), std::invalid_argument);
 }
 
+TEST_CASE("game_run_args app-language defaults to UI and round trips independently") {
+    const std::vector<std::string_view> defaults{"game.apk", "--ui-language", "zh-CN"};
+    CHECK_FALSE(ParseGameRunArgs(defaults).app_language);
+    for (const auto tag : {"ui", "zh-CN", "en-US"}) {
+        const std::vector<std::string_view> args{"game.apk", "--ui-language", "zh-CN", "--app-language", tag};
+        const auto options = ParseGameRunArgs(args);
+        CHECK(options.app_language == ParseUiLanguage(tag));
+        CHECK(options.ui_language == UiLanguage::zh_CN);
+        CHECK(RoundTrip(options) == options);
+    }
+    for (const auto& args :
+         {std::vector<std::string_view>{"game.apk", "--app-language"},
+          std::vector<std::string_view>{"game.apk", "--app-language", "system"},
+          std::vector<std::string_view>{"game.apk", "--app-language", "fr-FR"},
+          std::vector<std::string_view>{"game.apk", "--app-language", "ui", "--app-language", "en-US"}})
+        CHECK_THROWS_AS(static_cast<void>(ParseGameRunArgs(args)), std::invalid_argument);
+    auto options = ParseGameRunArgs(defaults);
+    options.app_language = static_cast<UiLanguage>(255);
+    CHECK_THROWS_AS(ValidateGameRunOptions(options), std::invalid_argument);
+}
+
 TEST_CASE("A surface following the display keeps its short side and takes the display's aspect") {
     CHECK(SurfaceLongSide(480, 16, 9) == 854);
     CHECK(SurfaceLongSide(480, 5, 3) == 800);
@@ -232,8 +253,8 @@ TEST_CASE("A surface following the display keeps its short side and takes the di
     CHECK(AdaptSurfaceToDisplay({1280, 720}, {2376, 1080}, follow) == SurfaceSize{1584, 720});
     CHECK(AdaptSurfaceToDisplay({1280, 720}, {1080, 2376}, follow) == SurfaceSize{1584, 720});  // before the rotation
     CHECK(AdaptSurfaceToDisplay({720, 1280}, {2376, 1080}, follow) == SurfaceSize{720, 1584});
-    CHECK(AdaptSurfaceToDisplay({1280, 720}, {2048, 1536}, follow) == SurfaceSize{960, 720});   // 4:3 tablet
-    CHECK(AdaptSurfaceToDisplay({801, 481}, {2400, 1080}, follow) == SurfaceSize{1070, 481});   // rounded up to even
+    CHECK(AdaptSurfaceToDisplay({1280, 720}, {2048, 1536}, follow) == SurfaceSize{960, 720});  // 4:3 tablet
+    CHECK(AdaptSurfaceToDisplay({801, 481}, {2400, 1080}, follow) == SurfaceSize{1070, 481});  // rounded up to even
     CHECK(AdaptSurfaceToDisplay({720, 720}, {2376, 1080}, follow) == SurfaceSize{720, 720});
     CHECK(AdaptSurfaceToDisplay({1280, 720}, {0, 0}, follow) == SurfaceSize{1280, 720});
     // Presets never exceed the display: 1440p on a 1080-pixel-high phone becomes 1080p, aspect kept or followed.

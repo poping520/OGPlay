@@ -105,6 +105,8 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     }
     // The window is named in the launcher's language, like the library tile.
     o.ui_language = ResolveUiLanguage(std::get<std::string>(Setting(global, "language")));
+    const auto app_language = std::get<std::string>(Setting(config, "locale"));
+    if (app_language != "ui") o.app_language = ParseUiLanguage(app_language);
     o.window_title = LocalizedDisplayName(*entry.metadata, UiLanguageTag(*o.ui_language));
     // The running window carries the game's own icon with the OGPlay mark; entries without one keep the default.
     if (const auto icon = entry.directory / "icon.png"; std::filesystem::is_regular_file(icon)) {

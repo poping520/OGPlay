@@ -85,6 +85,8 @@ struct VfsOpenOptions final {
     bool large_file{};
     bool no_follow{};
     bool exclusive{};
+    // Host callers that must not materialize a whole backing use this with read-only open.
+    bool require_positioned_read{};
 };
 
 // Immutable open-description flags, excluding creation and descriptor flags.

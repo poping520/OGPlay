@@ -142,6 +142,30 @@ bool ResTable_config::isMoreSpecificThan(const ResTable_config& o) const {
     return false;
 }
 
+std::uint32_t ResTable_config::diff(const ResTable_config& o) const {
+    std::uint32_t flags{};
+    if (mcc != o.mcc) flags |= CONFIG_MCC;
+    if (mnc != o.mnc) flags |= CONFIG_MNC;
+    if (std::string_view(language, 2) != std::string_view(o.language, 2) ||
+        std::string_view(country, 2) != std::string_view(o.country, 2))
+        flags |= CONFIG_LOCALE;
+    if (orientation != o.orientation) flags |= CONFIG_ORIENTATION;
+    if (density != o.density) flags |= CONFIG_DENSITY;
+    if (touchscreen != o.touchscreen) flags |= CONFIG_TOUCHSCREEN;
+    if ((inputFlags ^ o.inputFlags) & (MASK_KEYSHIDDEN | MASK_NAVHIDDEN)) flags |= CONFIG_KEYBOARD_HIDDEN;
+    if (keyboard != o.keyboard) flags |= CONFIG_KEYBOARD;
+    if (navigation != o.navigation) flags |= CONFIG_NAVIGATION;
+    if (screenWidth != o.screenWidth || screenHeight != o.screenHeight || screenWidthDp != o.screenWidthDp ||
+        screenHeightDp != o.screenHeightDp)
+        flags |= CONFIG_SCREEN_SIZE;
+    if (sdkVersion != o.sdkVersion || minorVersion != o.minorVersion) flags |= CONFIG_VERSION;
+    if ((screenLayout ^ o.screenLayout) & MASK_LAYOUTDIR) flags |= CONFIG_LAYOUTDIR;
+    if ((screenLayout ^ o.screenLayout) & ~MASK_LAYOUTDIR) flags |= CONFIG_SCREEN_LAYOUT;
+    if (uiMode != o.uiMode) flags |= CONFIG_UI_MODE;
+    if (smallestScreenWidthDp != o.smallestScreenWidthDp) flags |= CONFIG_SMALLEST_SCREEN_SIZE;
+    return flags;
+}
+
 bool ResTable_config::isBetterThan(const ResTable_config& o, const ResTable_config* requested) const {
     if (requested) {
         if ((mcc || mnc) || (o.mcc || o.mnc)) {

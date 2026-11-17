@@ -44,6 +44,8 @@ struct EglBoundaryContext final {
     void (*surface_buffer_queued)(void*, memory::GuestAddress, const AndroidSurfaceWindow&){};
     bool (*publish_surface_pixels)(void*, memory::GuestAddress, const AndroidSurfaceWindow&,
                                    std::shared_ptr<video::VideoFrame>){};
+    bool (*connect_window)(void*, memory::GuestAddress, const AndroidSurfaceWindow&){};
+    void (*disconnect_window)(void*, memory::GuestAddress, const AndroidSurfaceWindow&){};
     std::uint64_t frame_period_ns{};
     // Realtime sessions may publish window swaps from fenced PBO readback; manual stepping keeps
     // the synchronous readback so each step composes the frame it produced.
@@ -147,6 +149,7 @@ private:
         bool mipmap{};
         std::uint32_t mipmap_level{};
         memory::GuestAddress native_window{};
+        std::optional<AndroidSurfaceWindow> window_connection{};
         std::optional<std::int64_t> presentation_time_ns{};
         hal::FramePacer pacer{};
         std::shared_ptr<SurfacePresentation> presentation{};

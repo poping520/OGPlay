@@ -531,7 +531,8 @@ TEST_CASE("ClassLoader parent-first registration preserves bootstrap identity an
         CHECK(loaders.LoadClass(kBootstrapLoader, "shared.ParentOwned") == *original);
         CHECK(linker.IsInitiatedBy(*original, kApplicationLoader));
         CHECK(loaders.LoaderForClass(*original) == loaders.BootstrapLoader());
-        CHECK(loaders.LoaderForClass(child) == loaders.ApplicationLoader());
+        // A bare linker VM cannot run the ROM PathClassLoader constructor; check the defining role.
+        CHECK(linker.ClassHeader(child).defining_loader == kApplicationLoader);
         CHECK(model.ClassObject(linker.ResolveDescriptor("Lshared/ParentOwned;")) == model.ClassObject(*original));
         CHECK(linker.Class(*original).clinit_state == ClinitState::uninitialized);
         for (const auto& [name, expected] : std::array<std::pair<const char*, int>, 5>{{{"readParent", 42},

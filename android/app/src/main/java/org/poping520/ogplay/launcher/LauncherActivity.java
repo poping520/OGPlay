@@ -1,4 +1,4 @@
-package io.github.poping520.ogplay.launcher;
+package org.poping520.ogplay.launcher;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -31,9 +31,9 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.window.OnBackInvokedDispatcher;
 
-import io.github.poping520.ogplay.R;
-import io.github.poping520.ogplay.game.GameActivity;
-import io.github.poping520.ogplay.runtime.RuntimeData;
+import org.poping520.ogplay.R;
+import org.poping520.ogplay.game.GameActivity;
+import org.poping520.ogplay.runtime.RuntimeData;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;

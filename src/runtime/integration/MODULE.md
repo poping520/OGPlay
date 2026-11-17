@@ -153,7 +153,10 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 
 - NativeActivityRuntime 借用当前 process 的 guest 分配、模块导出查询、JNI/JavaVM 与执行器，
   只拥有 ARMv7 ANativeActivity/callbacks、路径/state backing 和真实 Activity/AssetManager global
-  refs；回调要求创建线程，native 执行释放 VM 锁，销毁退役注册并解除引用。
+  refs。活动 backing 地址单调分配，销毁时解除映射与注册。生命周期回调要求创建线程，
+  native 执行释放 VM 锁。NDK finish、窗口格式/标志和 IME 命令从任意线程进入每实例的
+  有界 FIFO，唤醒 loadNativeCode 的 MessageQueue，由该队列线程执行原版 Java 方法。
+  unload 开始时关闭队列并丢弃未派发命令。
   进程收尾在 Java worker join 后、JNI 解绑前显式 Release，包括启动失败未调用 onDestroy
   的实例；Release 幂等并报告失败，析构兜底记录失败，不能掩盖原始启动异常。
   NativeActivity 的 LoadPath entry mode 不执行 JNI_OnLoad；随后 Java load 复用同一 registry

@@ -11,10 +11,8 @@ namespace ogplay::runtime {
 AndroidBoundaryInput NormalizeAndroidInput(AndroidBoundaryInput input) {
     const bool key = input.type == AndroidBoundaryInputType::key;
     if (input.action < 0) {
-        input.action = !key && input.type == AndroidBoundaryInputType::pointer_motion
-            ? 2 : input.pressed ? 0 : 1;
-        if (input.event_time_ms < 0 ||
-            input.event_time_ms > std::numeric_limits<std::int64_t>::max() / 1000000)
+        input.action = !key && input.type == AndroidBoundaryInputType::pointer_motion ? 2 : input.pressed ? 0 : 1;
+        if (input.event_time_ms < 0 || input.event_time_ms > std::numeric_limits<std::int64_t>::max() / 1000000)
             throw std::invalid_argument("input event timestamp is outside range");
         input.event_time_ns = input.event_time_ms * 1000000;
         input.down_time_ns = input.event_time_ns;
@@ -36,15 +34,13 @@ AndroidBoundaryInput NormalizeAndroidInput(AndroidBoundaryInput input) {
         return input;
     }
     const auto action = input.action & 0xff;
-    if (input.pointers.empty() || input.pointers.size() > 16 || input.history.size() > 256 ||
-        action > 10 || (input.action & ~0xffff) != 0 ||
-        ((action == 5 || action == 6) &&
-         static_cast<std::size_t>(input.action >> 8) >= input.pointers.size()) ||
+    if (input.pointers.empty() || input.pointers.size() > 16 || input.history.size() > 256 || action > 10 ||
+        (input.action & ~0xffff) != 0 ||
+        ((action == 5 || action == 6) && static_cast<std::size_t>(input.action >> 8) >= input.pointers.size()) ||
         ((action != 5 && action != 6) && (input.action >> 8) != 0))
         throw std::invalid_argument("invalid motion event snapshot");
-    if (!std::isfinite(input.x_offset) || !std::isfinite(input.y_offset) ||
-        !std::isfinite(input.x_precision) || !std::isfinite(input.y_precision) ||
-        input.x_precision <= 0 || input.y_precision <= 0)
+    if (!std::isfinite(input.x_offset) || !std::isfinite(input.y_offset) || !std::isfinite(input.x_precision) ||
+        !std::isfinite(input.y_precision) || input.x_precision <= 0 || input.y_precision <= 0)
         throw std::invalid_argument("invalid motion coordinate metadata");
     const auto validate = [](const std::vector<AndroidInputPointer>& pointers) {
         std::set<std::int32_t> ids;
@@ -73,142 +69,233 @@ AndroidBoundaryInput NormalizeAndroidInput(AndroidBoundaryInput input) {
     return input;
 }
 
-template <std::uint16_t FunctionId>
-BoundaryResult AndroidModule::ReadInput(const A32CallFrame& call) {
-    constexpr auto function = FunctionId;
+BoundaryResult AndroidModule::AInputQueue_attachLooper(const A32CallFrame& call) {
+    const auto args = call.RegisterArguments();
+    std::scoped_lock lock(mutex_);
+    auto& looper = RequireLooper(call.Pointer<void>(1).Address());
+    if (looper.retired || args[3] != 0 || static_cast<std::int32_t>(args[2]) < 0)
+        throw std::invalid_argument("AInputQueue requires a live ident-polling looper");
+    if (managed_activity_seen_) {
+        auto& item = Queue(args[0]);
+        item.input_attached = true;
+    }
+    auto& queue = InputQueue(args[0]);
+    queue.looper = call.Pointer<void>(1).Address();
+    queue.ident = args[2];
+    queue.data = call.Argument(4);
+    ready_.notify_all();
+    return 0;
+}
+
+BoundaryResult AndroidModule::AInputQueue_detachLooper(const A32CallFrame& call) {
+    const auto handle = call.RegisterArguments()[0];
+    std::scoped_lock lock(mutex_);
+    auto& queue = InputQueue(handle);
+    queue.looper = memory::GuestAddress{};
+    if (managed_activity_seen_) Queue(handle).input_attached = false;
+    return 0;
+}
+
+BoundaryResult AndroidModule::AInputQueue_getEvent(const A32CallFrame& call) {
+    const auto args = call.RegisterArguments();
+    std::scoped_lock lock(mutex_);
+    auto& queue = InputQueue(args[0]);
+    if (call.Pointer<void>(1).IsNull()) throw std::invalid_argument("AInputQueue_getEvent requires an output pointer");
+    if (queue.pending.empty()) return std::bit_cast<std::uint32_t>(std::int32_t{-11});  // EAGAIN
+    if (next_input_.Value() >= 0x6e400000U) throw std::runtime_error("input event identity budget exhausted");
+    const auto handle = next_input_;
+    // Publish only after the guest destination and host allocation succeed.
+    queue.inflight.emplace(handle.Value(), queue.pending.front());
+    try {
+        services_.Write32(args[1], handle.Value(), call.ThreadId());
+    } catch (...) {
+        queue.inflight.erase(handle.Value());
+        throw;
+    }
+    next_input_ = next_input_.Add(4);
+    queue.pending.pop_front();
+    return 0;
+}
+
+BoundaryResult AndroidModule::AInputQueue_preDispatchEvent(const A32CallFrame& call) {
+    const auto args = call.RegisterArguments();
+    std::function<void(bool)> finish;
+    {
+        std::scoped_lock lock(mutex_);
+        auto& queue = InputQueue(args[0]);
+        const auto event = queue.inflight.find(args[1]);
+        if (event == queue.inflight.end()) throw std::invalid_argument("invalid input event pre-dispatch");
+        if (event->second.event.type != AndroidBoundaryInputType::key ||
+            !(event->second.event.flags & kAndroidKeyPreDispatchFlag))
+            return 0;
+        finish = std::move(event->second.finish);
+        queue.inflight.erase(event);
+    }
+    if (finish) finish(false);
+    return 1;
+}
+
+BoundaryResult AndroidModule::AInputQueue_finishEvent(const A32CallFrame& call) {
+    const auto args = call.RegisterArguments();
+    std::function<void(bool)> finish;
+    {
+        std::scoped_lock lock(mutex_);
+        auto& queue = InputQueue(args[0]);
+        const auto event = queue.inflight.find(args[1]);
+        if (event == queue.inflight.end()) throw std::invalid_argument("invalid input event completion");
+        finish = std::move(event->second.finish);
+        queue.inflight.erase(event);
+    }
+    if (finish) finish(args[2] != 0);
+    return 0;
+}
+
+BoundaryResult AndroidModule::AInputQueue_hasEvents(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    return InputQueue(call.RegisterArguments()[0]).pending.empty() ? 0U : 1U;
+}
+
+const AndroidBoundaryInput& AndroidModule::KeyEvent(const A32CallFrame& call) const {
+    const auto& event = InputEvent(call.Pointer<void>(0).Address());
+    if (event.type != AndroidBoundaryInputType::key) throw std::invalid_argument("AKeyEvent requires a key event");
+    return event;
+}
+
+const AndroidBoundaryInput& AndroidModule::MotionEvent(const A32CallFrame& call) const {
+    const auto& event = InputEvent(call.Pointer<void>(0).Address());
+    if (event.type == AndroidBoundaryInputType::key)
+        throw std::invalid_argument("AMotionEvent requires a motion event");
+    return event;
+}
+
+BoundaryResult AndroidModule::AInputEvent_getType(const A32CallFrame& call) {
     std::scoped_lock lock(mutex_);
     const auto& event = InputEvent(call.Pointer<void>(0).Address());
-    const bool key = event.type == AndroidBoundaryInputType::key;
-    if ((function == 14 || function == 15 || (function >= 39 && function <= 44)) && !key)
-        throw std::invalid_argument("AKeyEvent requires a key event");
-    if ((function == 16 || function == 17 || function == 18 || function >= 45) && key)
-        throw std::invalid_argument("AMotionEvent requires a motion event");
-    const auto integer = [](std::int32_t value) { return std::bit_cast<std::uint32_t>(value); };
-    const auto number = [](float value) { return std::bit_cast<std::uint32_t>(value); };
-    if constexpr (FunctionId == 13)
-        return key ? 1U : 2U;
-    if constexpr (FunctionId == 14 || FunctionId == 16)
-        return integer(event.action);
-    if constexpr (FunctionId == 15)
-        return integer(event.code);
-    if constexpr (FunctionId == 37)
-        return integer(event.device_id);
-    if constexpr (FunctionId == 38)
-        return integer(event.source);
-    if constexpr (FunctionId == 39 || FunctionId == 45)
-        return integer(event.flags);
-    if constexpr (FunctionId == 40)
-        return integer(event.scan_code);
-    if constexpr (FunctionId == 41 || FunctionId == 46)
-        return integer(event.meta_state);
-    if constexpr (FunctionId == 42)
-        return integer(event.repeat_count);
-    if constexpr (FunctionId == 43 || FunctionId == 49)
-        return BoundaryResult::Wide(static_cast<std::uint64_t>(event.down_time_ns));
-    if constexpr (FunctionId == 44 || FunctionId == 50)
-        return BoundaryResult::Wide(static_cast<std::uint64_t>(event.event_time_ns));
-    if constexpr (FunctionId == 47)
-        return integer(event.button_state);
-    if constexpr (FunctionId == 48)
-        return integer(event.edge_flags);
-    if constexpr (FunctionId == 51)
-        return number(event.x_offset);
-    if constexpr (FunctionId == 52)
-        return number(event.y_offset);
-    if constexpr (FunctionId == 53)
-        return number(event.x_precision);
-    if constexpr (FunctionId == 54)
-        return number(event.y_precision);
-    if constexpr (FunctionId == 55)
-        return static_cast<std::uint32_t>(event.pointers.size());
-    if constexpr (FunctionId == 56)
-        return integer(event.pointers.at(call.Argument(1)).id);
-    if constexpr (FunctionId == 57)
-        return integer(event.pointers.at(call.Argument(1)).tool_type);
-    if constexpr (FunctionId == 68)
-        return static_cast<std::uint32_t>(event.history.size());
-    if constexpr (FunctionId == 69)
-        return BoundaryResult::Wide(static_cast<std::uint64_t>(
-        event.history.at(call.Argument(1)).event_time_ns));
-    std::uint32_t axis{}, pointer_index = call.Argument(1);
-    bool raw = false;
-    const std::vector<AndroidInputPointer>* pointers = &event.pointers;
-    if (function >= 70) {
-        pointers = &event.history.at(call.Argument(function == 81 ? 3 : 2)).pointers;
+    return event.type == AndroidBoundaryInputType::key ? 1U : 2U;
+}
+
+#define OGPLAY_INPUT_WORD_GETTER(name, field)                                                                          \
+    BoundaryResult AndroidModule::name(const A32CallFrame& call) {                                                     \
+        std::scoped_lock lock(mutex_);                                                                                 \
+        return std::bit_cast<std::uint32_t>(field);                                                                    \
     }
-    if (function == 67 || function == 81) {
-        axis = call.Argument(1);
-        pointer_index = call.Argument(2);
-    } else if (function == 17 || function == 18) {
-        axis = function - 17U;
-    } else if (function >= 58 && function <= 66) {
-        axis = function - 58U;
-        raw = function <= 59;
-    } else if (function >= 70 && function <= 80) {
-        axis = function <= 71 ? function - 70U : function - 72U;
-        raw = function <= 71;
-    } else {
-        throw std::logic_error("unbound input getter");
+
+OGPLAY_INPUT_WORD_GETTER(AInputEvent_getDeviceId, InputEvent(call.Pointer<void>(0).Address()).device_id)
+OGPLAY_INPUT_WORD_GETTER(AInputEvent_getSource, InputEvent(call.Pointer<void>(0).Address()).source)
+OGPLAY_INPUT_WORD_GETTER(AKeyEvent_getAction, KeyEvent(call).action)
+OGPLAY_INPUT_WORD_GETTER(AKeyEvent_getKeyCode, KeyEvent(call).code)
+OGPLAY_INPUT_WORD_GETTER(AKeyEvent_getFlags, KeyEvent(call).flags)
+OGPLAY_INPUT_WORD_GETTER(AKeyEvent_getScanCode, KeyEvent(call).scan_code)
+OGPLAY_INPUT_WORD_GETTER(AKeyEvent_getMetaState, KeyEvent(call).meta_state)
+OGPLAY_INPUT_WORD_GETTER(AKeyEvent_getRepeatCount, KeyEvent(call).repeat_count)
+OGPLAY_INPUT_WORD_GETTER(AMotionEvent_getAction, MotionEvent(call).action)
+OGPLAY_INPUT_WORD_GETTER(AMotionEvent_getFlags, MotionEvent(call).flags)
+OGPLAY_INPUT_WORD_GETTER(AMotionEvent_getMetaState, MotionEvent(call).meta_state)
+OGPLAY_INPUT_WORD_GETTER(AMotionEvent_getButtonState, MotionEvent(call).button_state)
+OGPLAY_INPUT_WORD_GETTER(AMotionEvent_getEdgeFlags, MotionEvent(call).edge_flags)
+OGPLAY_INPUT_WORD_GETTER(AMotionEvent_getXOffset, MotionEvent(call).x_offset)
+OGPLAY_INPUT_WORD_GETTER(AMotionEvent_getYOffset, MotionEvent(call).y_offset)
+OGPLAY_INPUT_WORD_GETTER(AMotionEvent_getXPrecision, MotionEvent(call).x_precision)
+OGPLAY_INPUT_WORD_GETTER(AMotionEvent_getYPrecision, MotionEvent(call).y_precision)
+OGPLAY_INPUT_WORD_GETTER(AMotionEvent_getPointerId, MotionEvent(call).pointers.at(call.Argument(1)).id)
+OGPLAY_INPUT_WORD_GETTER(AMotionEvent_getToolType, MotionEvent(call).pointers.at(call.Argument(1)).tool_type)
+
+#undef OGPLAY_INPUT_WORD_GETTER
+
+#define OGPLAY_INPUT_TIME_GETTER(name, time)                                                                           \
+    BoundaryResult AndroidModule::name(const A32CallFrame& call) {                                                     \
+        std::scoped_lock lock(mutex_);                                                                                 \
+        return BoundaryResult::Wide(static_cast<std::uint64_t>(time));                                                 \
     }
-    const auto& pointer = pointers->at(pointer_index);
+
+OGPLAY_INPUT_TIME_GETTER(AKeyEvent_getDownTime, KeyEvent(call).down_time_ns)
+OGPLAY_INPUT_TIME_GETTER(AKeyEvent_getEventTime, KeyEvent(call).event_time_ns)
+OGPLAY_INPUT_TIME_GETTER(AMotionEvent_getDownTime, MotionEvent(call).down_time_ns)
+OGPLAY_INPUT_TIME_GETTER(AMotionEvent_getEventTime, MotionEvent(call).event_time_ns)
+OGPLAY_INPUT_TIME_GETTER(AMotionEvent_getHistoricalEventTime,
+                         MotionEvent(call).history.at(call.Argument(1)).event_time_ns)
+
+#undef OGPLAY_INPUT_TIME_GETTER
+
+BoundaryResult AndroidModule::AMotionEvent_getPointerCount(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    return static_cast<std::uint32_t>(MotionEvent(call).pointers.size());
+}
+
+BoundaryResult AndroidModule::AMotionEvent_getHistorySize(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    return static_cast<std::uint32_t>(MotionEvent(call).history.size());
+}
+
+namespace {
+std::uint32_t MotionAxis(const AndroidBoundaryInput& event, const AndroidInputPointer& pointer, std::uint32_t axis,
+                         bool raw) {
     // AOSP PointerCoords returns zero for axes outside its 64-axis domain.
-    if (axis >= pointer.axes.size()) return number(0);
+    if (axis >= pointer.axes.size()) return std::bit_cast<std::uint32_t>(0.0F);
     auto value = pointer.axes[axis];
     if (!raw && axis == 0) value += event.x_offset;
     if (!raw && axis == 1) value += event.y_offset;
-    return number(value);
+    return std::bit_cast<std::uint32_t>(value);
+}
+}  // namespace
+
+BoundaryResult AndroidModule::ReadMotionAxis(const A32CallFrame& call, std::uint32_t axis, bool raw) {
+    std::scoped_lock lock(mutex_);
+    const auto& event = MotionEvent(call);
+    return MotionAxis(event, event.pointers.at(call.Argument(1)), axis, raw);
 }
 
-template BoundaryResult AndroidModule::ReadInput<13>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<14>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<15>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<16>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<17>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<18>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<37>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<38>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<39>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<40>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<41>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<42>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<43>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<44>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<45>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<46>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<47>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<48>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<49>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<50>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<51>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<52>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<53>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<54>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<55>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<56>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<57>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<58>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<59>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<60>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<61>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<62>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<63>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<64>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<65>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<66>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<67>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<68>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<69>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<70>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<71>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<72>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<73>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<74>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<75>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<76>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<77>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<78>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<79>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<80>(const A32CallFrame&);
-template BoundaryResult AndroidModule::ReadInput<81>(const A32CallFrame&);
+BoundaryResult AndroidModule::ReadHistoricalMotionAxis(const A32CallFrame& call, std::uint32_t axis, bool raw) {
+    std::scoped_lock lock(mutex_);
+    const auto& event = MotionEvent(call);
+    const auto pointer_index = call.Argument(1);
+    const auto& sample = event.history.at(call.Argument(2));
+    return MotionAxis(event, sample.pointers.at(pointer_index), axis, raw);
+}
 
-} // namespace ogplay::runtime
+#define OGPLAY_MOTION_AXIS_GETTER(name, getter, axis, raw)                                                             \
+    BoundaryResult AndroidModule::name(const A32CallFrame& call) {                                                     \
+        return getter(call, axis, raw);                                                                                \
+    }
+
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getX, ReadMotionAxis, 0, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getY, ReadMotionAxis, 1, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getRawX, ReadMotionAxis, 0, true)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getRawY, ReadMotionAxis, 1, true)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getPressure, ReadMotionAxis, 2, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getSize, ReadMotionAxis, 3, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getTouchMajor, ReadMotionAxis, 4, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getTouchMinor, ReadMotionAxis, 5, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getToolMajor, ReadMotionAxis, 6, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getToolMinor, ReadMotionAxis, 7, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getOrientation, ReadMotionAxis, 8, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getHistoricalRawX, ReadHistoricalMotionAxis, 0, true)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getHistoricalRawY, ReadHistoricalMotionAxis, 1, true)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getHistoricalX, ReadHistoricalMotionAxis, 0, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getHistoricalY, ReadHistoricalMotionAxis, 1, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getHistoricalPressure, ReadHistoricalMotionAxis, 2, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getHistoricalSize, ReadHistoricalMotionAxis, 3, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getHistoricalTouchMajor, ReadHistoricalMotionAxis, 4, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getHistoricalTouchMinor, ReadHistoricalMotionAxis, 5, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getHistoricalToolMajor, ReadHistoricalMotionAxis, 6, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getHistoricalToolMinor, ReadHistoricalMotionAxis, 7, false)
+OGPLAY_MOTION_AXIS_GETTER(AMotionEvent_getHistoricalOrientation, ReadHistoricalMotionAxis, 8, false)
+
+#undef OGPLAY_MOTION_AXIS_GETTER
+
+BoundaryResult AndroidModule::AMotionEvent_getAxisValue(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    const auto& event = MotionEvent(call);
+    const auto axis = call.Argument(1);
+    return MotionAxis(event, event.pointers.at(call.Argument(2)), axis, false);
+}
+
+BoundaryResult AndroidModule::AMotionEvent_getHistoricalAxisValue(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    const auto& event = MotionEvent(call);
+    const auto axis = call.Argument(1);
+    const auto& sample = event.history.at(call.Argument(3));
+    return MotionAxis(event, sample.pointers.at(call.Argument(2)), axis, false);
+}
+
+}  // namespace ogplay::runtime

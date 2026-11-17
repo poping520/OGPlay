@@ -1,4 +1,5 @@
 #include "dexvm_android/rom_input.h"
+#include "dexvm_android/shared.h"
 #include "ogplay/runtime/integration/native_activity_runtime.h"
 
 #include <array>
@@ -20,6 +21,14 @@ namespace dx = dexvm;
 
 class NativeActivityRuntime::Impl {
 public:
+    struct CommandQueue {
+        std::mutex mutex;
+        std::deque<NativeActivityCommand> pending;
+        std::uint32_t queue_token{};
+        std::uint64_t context_token{};
+        bool retired{};
+    };
+
     struct Instance {
         memory::GuestAddress address;
         memory::GuestAddress window;
@@ -31,6 +40,7 @@ public:
         std::size_t module_index{};
         bool registered{};
         bool window_active{}, input_active{};
+        std::shared_ptr<CommandQueue> commands;
     };
 
     AndroidGuestCallSession& session;
@@ -125,7 +135,85 @@ public:
         return Invoke(call, item, target, args);
     }
 
+    static bool Post(const std::weak_ptr<DexVmAndroidContext>& weak_context,
+                     const std::weak_ptr<CommandQueue>& weak_queue, NativeActivityCommand command) {
+        const auto android = weak_context.lock();
+        const auto commands = weak_queue.lock();
+        if (!android || !commands) return false;
+        {
+            std::scoped_lock scheduler(android->scheduler_mutex);
+            const auto queue = android->message_queues.find(commands->queue_token);
+            if (android->scheduler_shutdown || queue == android->message_queues.end() || queue->second->destroyed)
+                return false;
+            std::scoped_lock work(commands->mutex);
+            if (commands->retired || commands->pending.size() >= 4096) return false;
+            commands->pending.push_back(command);
+            queue->second->wake = true;
+        }
+        // Poll's interrupt predicate takes scheduler_mutex with the boundary
+        // mutex held. Release both queue locks before waking the native Looper.
+        if (android->wake_native_looper) android->wake_native_looper(commands->context_token);
+        android->scheduler_changed.notify_all();
+        return true;
+    }
+
+    static void RetireCommands(Instance& item) {
+        if (!item.commands) return;
+        std::scoped_lock lock(item.commands->mutex);
+        item.commands->retired = true;
+        item.commands->pending.clear();
+    }
+
+    bool PumpCommands(dx::Interpreter& vm, std::uint32_t queue_token) {
+        std::vector<std::pair<dx::VmObjectRef, std::shared_ptr<CommandQueue>>> ready;
+        for (const auto& [_, item] : instances) {
+            if (item.commands->queue_token == queue_token && item.commands->context_token == vm.CurrentContextToken())
+                ready.emplace_back(item.owner, item.commands);
+        }
+        bool dispatched{};
+        for (const auto& [owner, queue] : ready) {
+            std::size_t count{};
+            {
+                std::scoped_lock lock(queue->mutex);
+                count = queue->pending.size();
+            }
+            for (std::size_t i = 0; i < count; ++i) {
+                NativeActivityCommand command;
+                {
+                    std::scoped_lock lock(queue->mutex);
+                    if (queue->pending.empty()) break;
+                    command = queue->pending.front();
+                    queue->pending.pop_front();
+                }
+                const auto roots = vm.ProtectReferences(std::array{owner});
+                const auto first = dx::VmValue::Int(std::bit_cast<std::int32_t>(command.first));
+                const auto second = dx::VmValue::Int(std::bit_cast<std::int32_t>(command.second));
+                using android_intrinsics::CallAndroidMethod;
+                switch (command.type) {
+                case NativeActivityCommandType::finish:
+                    static_cast<void>(CallAndroidMethod(vm, owner, "finish", "()V"));
+                    break;
+                case NativeActivityCommandType::set_window_format:
+                    static_cast<void>(CallAndroidMethod(vm, owner, "setWindowFormat", "(I)V", {first}));
+                    break;
+                case NativeActivityCommandType::set_window_flags:
+                    static_cast<void>(CallAndroidMethod(vm, owner, "setWindowFlags", "(II)V", {first, second}));
+                    break;
+                case NativeActivityCommandType::show_ime:
+                    static_cast<void>(CallAndroidMethod(vm, owner, "showIme", "(I)V", {first}));
+                    break;
+                case NativeActivityCommandType::hide_ime:
+                    static_cast<void>(CallAndroidMethod(vm, owner, "hideIme", "(I)V", {first}));
+                    break;
+                }
+                dispatched = true;
+            }
+        }
+        return dispatched;
+    }
+
     void Free(Instance& item) {
+        RetireCommands(item);
         if (const auto c = context.lock(); c && c->rom_input && !item.address.IsNull()) {
             for (auto& [_, q] : c->rom_input->native_queues)
                 if (q->native == item.address.Add(148)) {
@@ -146,7 +234,7 @@ public:
             env.DeleteGlobalRef(item.thread, item.assets);
             item.assets = JniReference{};
         }
-        if (!item.address.IsNull()) memory.release(item.address, item.bytes);
+        if (!item.address.IsNull()) session.Process().ReleaseNativeActivityStorage(item.address, item.bytes);
         item = Instance();
     }
 
@@ -182,6 +270,18 @@ public:
         item.module_index = loaded.module_index;
         item.thread = thread(call.vm.CurrentContextToken());
         item.owner = call.receiver;
+        item.commands = std::make_shared<CommandQueue>();
+        item.commands->context_token = call.vm.CurrentContextToken();
+        item.commands->queue_token =
+            android_intrinsics::WindowField(call.vm, typed.NonNullRef(2, "queue"), "mPtr", "I").bits;
+        {
+            std::scoped_lock lock(ctx->scheduler_mutex);
+            const auto queue = ctx->message_queues.find(item.commands->queue_token);
+            if (queue == ctx->message_queues.end() || queue->second->destroyed ||
+                queue->second->context_token != item.commands->context_token)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                      "NativeActivity requires its own MessageQueue"};
+        }
         std::vector<std::byte> bytes(256);
         const auto append_string = [&](std::size_t argument) {
             const auto ref = call.arguments[argument].ref;
@@ -204,7 +304,7 @@ public:
         if (bytes.size() > 1024U * 1024U)
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "NativeActivity state/path budget exceeded"};
         item.bytes = static_cast<std::uint32_t>(bytes.size());
-        item.address = memory.allocate(item.bytes);
+        item.address = session.Process().AllocateNativeActivityStorage(item.bytes);
         try {
             auto& env = session.Environment();
             const auto activity = publish(call.receiver, item.thread);
@@ -228,7 +328,10 @@ public:
             Write(item.address.Add(32), manager.Value());
             Write(item.address.Add(36), obb ? item.address.Add(obb).Value() : 0);
             session.Process().RegisterNativeActivity(
-                {item.address, manager, item.address.Add(148), ctx->surface_width, ctx->surface_height});
+                {item.address, manager, item.address.Add(148), ctx->surface_width, ctx->surface_height,
+                 [weak_context = context, queue = std::weak_ptr(item.commands)](NativeActivityCommand command) {
+                     return Post(weak_context, queue, command);
+                 }});
             item.registered = true;
             const std::array args{item.address.Value(), saved_size ? item.address.Add(saved_offset).Value() : 0U,
                                   saved_size};
@@ -251,6 +354,7 @@ public:
                                   "NativeActivity handle is stale or belongs to another Activity"};
         auto& item = found->second;
         if (method == "unloadNativeCode") {
+            RetireCommands(item);
             try {
                 static_cast<void>(Callback(call, item, 5));
             } catch (...) {
@@ -401,6 +505,10 @@ NativeActivityRuntime::~NativeActivityRuntime() {
 
 dexvm::VmValue NativeActivityRuntime::Call(dexvm::IntrinsicContext& call, std::string_view method) {
     return impl_->Call(call, method);
+}
+
+bool NativeActivityRuntime::PumpCommands(dx::Interpreter& vm, std::uint32_t queue_token) {
+    return impl_->PumpCommands(vm, queue_token);
 }
 
 memory::GuestAddress NativeActivityRuntime::InputQueuePointer(dexvm::VmObjectRef owner) const {

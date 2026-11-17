@@ -1,4 +1,4 @@
-package io.github.poping520.ogplay.runtime;
+package org.poping520.ogplay.runtime;
 
 import android.content.Context;
 import android.content.pm.PackageManager;

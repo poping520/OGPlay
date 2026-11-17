@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 #include "../../resources_test_support.h"
+#include "../../native_library_fixture.h"
+#include "runtime/integration/dexvm_android/rom_window.h"
 
 #include <algorithm>
 #include <array>
@@ -41,7 +43,9 @@
 #include "runtime/boundary/modules/opensles/opensles_abi.h"
 
 #include "android_boundary_fixture.h"
+#include "ogplay/runtime/dexvm/guest_memory.h"
 #include "ogplay/runtime/integration/apk_assets.h"
+#include "ogplay/runtime/integration/native_activity_runtime.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 
 using namespace ogplay::test::android_boundary;
@@ -50,7 +54,7 @@ namespace {
 
 class BoundaryAssetSource final : public ogplay::runtime::AndroidAssetSource {
 public:
-    std::uint64_t length{3};
+    std::uint64_t length{3}, start{123};
     bool compressed{};
     mutable std::size_t largest_read{}, descriptor_opens{}, descriptor_closes{};
 
@@ -68,7 +72,7 @@ public:
     ogplay::runtime::AssetFileDescriptor OpenFileDescriptor() const override {
         if (compressed) return {};
         ++descriptor_opens;
-        return {42, 123, length};
+        return {42, start, length};
     }
 
     void CloseFileDescriptor(std::int32_t) const override { ++descriptor_closes; }
@@ -288,6 +292,60 @@ TEST_CASE("DVM-237 NDK Asset large sources and FD output preflight do not materi
     CHECK(f.Call("libandroid.so", "AAsset_read", {asset, f.output.Add(32).Value(), 3}) == 3);
     f.Call("libandroid.so", "AAsset_close", {asset});
     CHECK_THROWS(f.Call("libandroid.so", "AAsset_getLength", {asset}));
+}
+
+TEST_CASE("API19 NDK asset off64_t uses aligned arguments and two result registers") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    const auto source = std::make_shared<BoundaryAssetManager>();
+    source->source->length = 0x300000015ULL;
+    source->source->start = 0x200000007ULL;
+    const auto manager = f.boundary.RegisterAssetManager(source);
+    WriteGuestString(f, f.output, "hello");
+    const auto asset = f.Call("libandroid.so", "AAssetManager_open", {manager.Value(), f.output.Value(), 2});
+    REQUIRE(asset);
+    const auto check_wide = [&](const char* name, std::span<const std::uint32_t> args, std::uint64_t expected) {
+        const auto target = f.boundary.Symbols().Lookup("libandroid.so", name);
+        REQUIRE(target);
+        CHECK(BoundaryCallAddress(f, target->Value(), args) == static_cast<std::uint32_t>(expected));
+        CHECK(f.cpu.GetState().Register(cpu::CoreRegister::r1) == static_cast<std::uint32_t>(expected >> 32));
+        std::array<std::uint32_t, 16> registers{};
+        const auto reg_words = std::min<std::size_t>(args.size(), 4);
+        std::copy_n(args.begin(), reg_words, registers.begin());
+        for (std::size_t i = reg_words; i < args.size(); ++i)
+            f.bus.Write32(f.stack.Add((i - 4) * 4), args[i]);
+        registers[13] = f.stack.Value();
+        cpu::A32HostCallContext call{registers, 1, memory::GuestAddress{target->Value() & ~1U}};
+        const auto hook = f.boundary.FastHostCallHook();
+        REQUIRE(hook.invoke(hook.userdata, 2, call) == cpu::HostCallResult::handled);
+        CHECK(registers[0] == static_cast<std::uint32_t>(expected));
+        CHECK(registers[1] == static_cast<std::uint32_t>(expected >> 32));
+    };
+    check_wide("AAsset_getLength64", std::array{asset}, 0x300000015ULL);
+    check_wide("AAsset_seek64", std::array{asset, 0xcafeU, 5U, 1U, 0U}, 0x100000005ULL);
+    check_wide("AAsset_getRemainingLength64", std::array{asset}, 0x200000010ULL);
+    check_wide("AAsset_seek64", std::array{asset, 0xcafeU, UINT32_MAX, UINT32_MAX, 2U}, 0x300000014ULL);
+    check_wide("AAsset_seek64", std::array{asset, 0U, 0U, 4U, 0U}, UINT64_MAX);
+    check_wide("AAsset_seek64", std::array{asset, 0U, 0U, 0U, 3U}, UINT64_MAX);
+    check_wide("AAsset_getRemainingLength64", std::array{asset}, 1);
+
+    const auto start = f.output.Add(32);
+    const auto length = start.Add(8);
+    f.bus.Write32(start, 0xabcdef00);
+    CHECK_THROWS(f.Call("libandroid.so", "AAsset_openFileDescriptor64",
+                        {asset, start.Value(), f.output.Add(f.memory.PageSize() - 4).Value()}));
+    CHECK(source->source->descriptor_opens == 0);
+    CHECK(f.bus.Read32(start) == 0xabcdef00);
+    CHECK(f.Call("libandroid.so", "AAsset_openFileDescriptor64", {asset, start.Value(), length.Value()}) == 42);
+    const auto read64 = [&](memory::GuestAddress ptr) {
+        return (std::uint64_t{f.bus.Read32(ptr.Add(4))} << 32) | f.bus.Read32(ptr);
+    };
+    CHECK(read64(start) == source->source->start);
+    CHECK(read64(length) == source->source->length);
+    source->source->compressed = true;
+    CHECK(f.Call("libandroid.so", "AAsset_openFileDescriptor64", {asset, start.Value(), length.Value()}) == UINT32_MAX);
+    CHECK(read64(start) == source->source->start);
+    CHECK(read64(length) == source->source->length);
 }
 
 TEST_CASE("DVM-237 retiring Asset hooks releases sources and stale handles") {
@@ -517,8 +575,15 @@ TEST_CASE("APS-11 NDK Asset directories cache guest names and retire with their 
     f.memory.Read(name, bytes);
     CHECK(std::string(reinterpret_cast<const char*>(bytes.data()), 5) == "hello");
     CHECK_THROWS(f.memory.Write(name, bytes));
+    f.Call("libandroid.so", "AAssetDir_rewind", {directory});
+    CHECK_NOTHROW(f.memory.Read(name, bytes));
+    const memory::GuestAddress again{f.Call("libandroid.so", "AAssetDir_getNextFileName", {directory})};
+    f.memory.Read(again, bytes);
+    CHECK(std::string(reinterpret_cast<const char*>(bytes.data()), 5) == "hello");
     const auto next = f.Call("libandroid.so", "AAssetDir_getNextFileName", {directory});
     REQUIRE(next != 0);
+    f.memory.Read(memory::GuestAddress{next}, bytes);
+    CHECK(std::string(reinterpret_cast<const char*>(bytes.data()), 5) == "other");
     CHECK(f.Call("libandroid.so", "AAssetDir_getNextFileName", {directory}) == 0);
     CHECK(f.Call("libandroid.so", "AAssetDir_getNextFileName", {directory}) == 0);
     CHECK_THROWS(f.memory.Read(memory::GuestAddress{next}, bytes));
@@ -546,9 +611,11 @@ TEST_CASE("APS-11 NDK Asset getBuffer is lazy stable readonly bounded and releas
         return f.Call("libandroid.so", "AAssetManager_open", {manager.Value(), f.output.Value(), 2});
     };
     const auto asset = open();
+    CHECK(f.Call("libandroid.so", "AAsset_isAllocated", {asset}) == 0);
     CHECK(source->source->largest_read == 0);
     const memory::GuestAddress buffer{f.Call("libandroid.so", "AAsset_getBuffer", {asset})};
     REQUIRE_FALSE(buffer.IsNull());
+    CHECK(f.Call("libandroid.so", "AAsset_isAllocated", {asset}) == 1);
     CHECK(source->source->largest_read == 3);
     CHECK(f.Call("libandroid.so", "AAsset_getBuffer", {asset}) == buffer.Value());
     CHECK(f.Call("libandroid.so", "AAsset_getRemainingLength", {asset}) == 3);
@@ -672,4 +739,229 @@ TEST_CASE("APS-11 APK Asset directories enumerate root subdirectory and absent p
             });
     }
     CHECK_FALSE(failed.load());
+}
+
+TEST_CASE("API19 NDK OBB scanner validates a bounded VFS footer") {
+    using namespace ogplay;
+    test::native_library::FixtureProcess f;
+    auto& process = *f.process;
+    const auto memory = process.GuestMemoryAccess();
+    const auto path = memory.allocate(64);
+    constexpr char filename[] = "/main.obb";
+    memory.write(path, std::as_bytes(std::span(filename)));
+    const runtime::BionicHleSymbolProvider symbols(runtime::detail::BuildAndroidBoundarySymbols());
+    const auto call = [&](const char* name, std::uint32_t arg) {
+        const auto target = symbols.Lookup("libandroid.so", name);
+        REQUIRE(target);
+        return process.Invoke({*target, {arg, 0, 0, 0}, {}}).return_value;
+    };
+    constexpr std::string_view package = "org.example.obb";
+    constexpr std::size_t footer_start = 65536;
+    constexpr std::size_t footer_size = 24 + package.size();
+    std::vector<std::byte> file(footer_start + footer_size + 8);
+    const auto word = [&](std::size_t offset, std::uint32_t value) {
+        for (unsigned i = 0; i < 4; ++i)
+            file[footer_start + offset + i] = static_cast<std::byte>(value >> (i * 8));
+    };
+    word(0, 1);
+    word(4, 123);
+    word(8, 0x80000001);
+    word(12, 0x12345678);
+    word(16, 0xfedcba98);
+    word(20, package.size());
+    const auto name_bytes = std::as_bytes(std::span(package));
+    std::copy(name_bytes.begin(), name_bytes.end(), file.begin() + footer_start + 24);
+    word(footer_size, footer_size);
+    word(footer_size + 4, 0x01059983);
+    std::size_t read_bytes{};
+    f.filesystem.PutReadOnlyFile(filename, file.size(), [&](std::uint64_t offset, std::span<std::byte> output) {
+        read_bytes += output.size();
+        const auto input = std::span(file).subspan(static_cast<std::size_t>(offset), output.size());
+        std::ranges::copy(input, output.begin());
+        return output.size();
+    });
+
+    const auto info = call("AObbScanner_getObbInfo", path.Value());
+    REQUIRE(info);
+    CHECK(read_bytes == 32776);
+    CHECK(call("AObbInfo_getVersion", info) == 123);
+    CHECK(call("AObbInfo_getFlags", info) == 0x80000001);
+    const memory::GuestAddress name{call("AObbInfo_getPackageName", info)};
+    std::array<char, package.size() + 1> actual{};
+    memory.read(name, std::as_writable_bytes(std::span(actual)));
+    CHECK(std::string_view(actual.data(), package.size()) == package);
+    CHECK(actual.back() == '\0');
+    CHECK_THROWS(memory.write(name, name_bytes));
+    call("AObbInfo_delete", info);
+    CHECK_THROWS(memory.read(name, std::as_writable_bytes(std::span(actual))));
+    call("AObbInfo_delete", 0);
+
+    for (const auto& [offset, invalid, valid] : {
+             std::array<std::size_t, 3>{footer_size + 4, 0, 0x01059983},
+             std::array<std::size_t, 3>{footer_size, 32769, footer_size},
+             std::array<std::size_t, 3>{0, 2, 1},
+             std::array<std::size_t, 3>{20, package.size() + 1, package.size()},
+         }) {
+        word(offset, static_cast<std::uint32_t>(invalid));
+        CHECK(call("AObbScanner_getObbInfo", path.Value()) == 0);
+        word(offset, static_cast<std::uint32_t>(valid));
+    }
+    bool materialized{};
+    f.filesystem.MountLazyReadOnly(runtime::VfsSource::obb, "/archives",
+                                   std::array{runtime::VfsLazyMountEntry{"legacy.obb",
+                                                                         file.size(),
+                                                                         [&] {
+                                                                             materialized = true;
+                                                                             return file;
+                                                                         },
+                                                                         {}}});
+    constexpr char legacy[] = "/archives/legacy.obb";
+    memory.write(path, std::as_bytes(std::span(legacy)));
+    CHECK(call("AObbScanner_getObbInfo", path.Value()) == 0);
+    CHECK_FALSE(materialized);
+    constexpr char missing[] = "/missing.obb";
+    memory.write(path, std::as_bytes(std::span(missing)));
+    CHECK(call("AObbScanner_getObbInfo", path.Value()) == 0);
+
+    memory.write(path, std::as_bytes(std::span(filename)));
+    const auto live_info = call("AObbScanner_getObbInfo", path.Value());
+    REQUIRE(live_info);
+    const memory::GuestAddress live_name{call("AObbInfo_getPackageName", live_info)};
+    process.Stop();
+    CHECK_THROWS(memory.read(live_name, std::as_writable_bytes(std::span(actual))));
+}
+
+TEST_CASE("API19 NDK storage manager reports device state and records OBB stubs") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    const auto call = [&](const char* name, std::array<std::uint32_t, 4> args = {}) {
+        return f.Call("libandroid.so", name, args);
+    };
+    const auto manager = call("AStorageManager_new");
+    REQUIRE(manager);
+    WriteGuestString(f, f.output, "/main.obb");
+    const auto args = std::array{manager, f.output.Value(), 0U, 0U};
+    CHECK(call("AStorageManager_isObbMounted", args) == 0);
+    CHECK(call("AStorageManager_getMountedObbPath", args) == 0);
+    CHECK(f.ledger.Unimplemented().empty());
+    for (const auto* name : {"AStorageManager_mountObb", "AStorageManager_unmountObb"}) {
+        const auto target = f.boundary.Symbols().Lookup("libandroid.so", name);
+        REQUIRE(target);
+        CHECK_THROWS(BoundaryCallAddress(f, target->Value(), std::array{manager, f.output.Value(), 0U, 0U, 0U}));
+        CHECK(BoundaryCallAddress(f, target->Value(), std::array{manager, f.output.Value(), 0U, 1U, 0U}) == 0);
+        CHECK(BoundaryCallAddress(f, target->Value(), std::array{manager, f.output.Value(), 0U, 1U, 0U}) == 0);
+        CHECK(std::ranges::any_of(f.ledger.Unimplemented(),
+                                  [&](const auto& hit) { return hit.id == std::string("boundary.android.") + name; }));
+    }
+    CHECK(f.logger.Snapshot(core::LogLevel::warn, "runtime.android.obb").size() == 2);
+    call("AStorageManager_delete", {manager});
+    call("AStorageManager_delete", {0});
+    CHECK_THROWS(call("AStorageManager_isObbMounted", args));
+    CHECK(call("AStorageManager_new") > manager);
+}
+
+TEST_CASE("API19 NDK NativeActivity worker commands reach the ROM main queue in order") {
+    using namespace ogplay;
+    namespace dx = runtime::dexvm;
+    using runtime::android_intrinsics::CallAndroidMethod;
+    using runtime::android_intrinsics::WindowField;
+    test::native_library::OrchestratedApp f(
+        "android.app.NativeActivity", true, true, {}, {}, true, dx::InterpreterBackend::switch_dispatch,
+        "android.app.Application", {}, {64, 36}, {}, false,
+        {.trace_capacity = 16384, .event_mask = dx::DexVmTraceBit(dx::DexVmTraceKind::method_enter)});
+    f.app->ActivityLifecycle().SetRealtimeVideoClock(false);
+    f.app->StartApplication();
+    REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+    auto& process = f.app->NativeProcess();
+    auto& vm = f.app->DexVm().Vm();
+    const auto activity = f.context->foreground_activity;
+    const auto queue = f.context->native_activity->InputQueuePointer(activity);
+    REQUIRE_FALSE(queue.IsNull());
+    const auto native = queue.Value() - 148;
+    const runtime::BionicHleSymbolProvider symbols(runtime::detail::BuildAndroidBoundarySymbols());
+    constexpr std::uint64_t worker_tid = 16385;
+    const auto post = [&](const char* name, std::uint32_t first = 0, std::uint32_t second = 0) {
+        const auto target = symbols.Lookup("libandroid.so", name);
+        if (!target) throw std::logic_error("missing NativeActivity command");
+        static_cast<void>(process.Invoke({*target, {native, first, second, 0}, {}, worker_tid}));
+    };
+    const auto attributes = [&] {
+        const auto window = CallAndroidMethod(vm, activity, "getWindow", "()Landroid/view/Window;").ref;
+        const auto attrs =
+            CallAndroidMethod(vm, window, "getAttributes", "()Landroid/view/WindowManager$LayoutParams;").ref;
+        return std::pair{WindowField(vm, attrs, "format", "I").bits, WindowField(vm, attrs, "flags", "I").bits};
+    };
+    // Hold the Java execution lock on main while a distinct guest thread
+    // posts work. Completion on the worker must not require Java execution.
+    process.PrepareDexVmThread(worker_tid, 0);
+    std::future<void> worker;
+    f.RunOnMainThread([&] {
+        const auto before = attributes();
+        worker = std::async(std::launch::async, [&] {
+            post("ANativeActivity_setWindowFormat", 4);
+            post("ANativeActivity_setWindowFormat", 2);
+            post("ANativeActivity_setWindowFlags", 0x80, 0);
+            post("ANativeActivity_setWindowFlags", 0x100, 0x80);
+            post("ANativeActivity_showSoftInput", 1);
+            post("ANativeActivity_hideSoftInput", 0);
+        });
+        REQUIRE(worker.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+        CHECK(attributes() == before);
+    });
+    worker.get();
+    f.RunOnMainThread([&] {
+        CHECK(vm.CurrentContextToken() == 1);
+        const auto [format, flags] = attributes();
+        CHECK(format == 2);
+        CHECK((flags & (0x80 | 0x100)) == 0x100);
+        std::vector<std::string> methods;
+        for (const auto& entry : vm.Trace("Landroid/app/NativeActivity;")) {
+            if (entry.class_descriptor != "Landroid/app/NativeActivity;" ||
+                entry.kind != dx::DexVmTraceKind::method_enter)
+                continue;
+            if (entry.method_name == "setWindowFormat" || entry.method_name == "setWindowFlags" ||
+                entry.method_name == "showIme" || entry.method_name == "hideIme") {
+                CHECK(entry.context_token == vm.CurrentContextToken());
+                methods.push_back(entry.method_name);
+            }
+        }
+        CHECK(methods == std::vector<std::string>{"setWindowFormat", "setWindowFormat", "setWindowFlags",
+                                                  "setWindowFlags", "showIme", "hideIme"});
+    });
+
+    SUBCASE("finish reaches Activity.finish on the owning Looper") {
+        worker = std::async(std::launch::async, [&] { post("ANativeActivity_finish"); });
+        worker.get();
+        process.ReleaseDexVmThread(worker_tid);
+        for (int i = 0; i < 8 && f.context->foreground_activity.IsValid(); ++i)
+            static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+        CHECK_FALSE(f.context->foreground_activity.IsValid());
+        CHECK(f.context->native_activity->InputQueuePointer(activity).IsNull());
+    }
+    SUBCASE("unload drops queued and late commands") {
+        // Queue work immediately before unloading inside the same Java turn.
+        // The next poll must not apply it to this window.
+        f.RunOnMainThread([&] {
+            worker = std::async(std::launch::async, [&] { post("ANativeActivity_setWindowFormat", 4); });
+            REQUIRE(worker.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+            const auto handle = WindowField(vm, activity, "mNativeHandle", "I").bits;
+            const auto type = vm.Linker().ResolveDescriptor("Landroid/app/NativeActivity;");
+            const auto method = vm.Linker().FindDirectMethod(type, "unloadNativeCode", "(I)V");
+            REQUIRE(method);
+            const auto result = vm.Call(
+                *method, std::array{dx::VmValue::Ref(activity), dx::VmValue::Int(std::bit_cast<std::int32_t>(handle))});
+            REQUIRE_FALSE(result.exception.IsValid());
+        });
+        worker.get();
+        f.RunOnMainThread([&] {
+            CHECK(attributes().first == 2);
+            CHECK(f.context->native_activity->InputQueuePointer(activity).IsNull());
+        });
+        auto stale = std::async(std::launch::async, [&] { post("ANativeActivity_finish"); });
+        CHECK_THROWS(stale.get());
+        CHECK_FALSE(f.logger.Snapshot(core::LogLevel::warn, "runtime.native_activity.command").empty());
+        process.ReleaseDexVmThread(worker_tid);
+        // The test already called the ROM unload native entry directly.
+        static_cast<void>(f.app->Stop(session::DexProcessStopReason::runtime_failure));
+    }
 }

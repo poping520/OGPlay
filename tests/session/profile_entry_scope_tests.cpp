@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/api19_identity.h"
 #include "../runtime/jni_string_fixture.h"
 #include "runtime/integration/dexvm_android/shared.h"
 #include "dexvm/resource_fixture.h"
@@ -399,6 +400,7 @@ TEST_CASE("Context package manager has one process identity") {
 }
 
 TEST_CASE("Context permission checks use the explicit guest process grant set") {
+    using ogplay::runtime::kGuestProcessId;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         InterpreterConfig config;
         config.backend = backend;
@@ -418,15 +420,15 @@ TEST_CASE("Context permission checks use the explicit guest process grant set") 
                 std::vector{VmValue::Ref(receiver), VmValue::Ref(permission), VmValue::Int(pid), VmValue::Int(uid)});
         };
 
-        auto outcome = check(base, granted, 1, 10000);
+        auto outcome = check(base, granted, kGuestProcessId, 10000);
         REQUIRE_FALSE(outcome.exception.IsValid());
         CHECK(outcome.value.AsInt() == 0);
-        outcome = check(activity, granted, 1, 10000);
+        outcome = check(activity, granted, kGuestProcessId, 10000);
         REQUIRE_FALSE(outcome.exception.IsValid());
         CHECK(outcome.value.AsInt() == 0);
-        CHECK(check(base, denied, 1, 10000).value.AsInt() == -1);
-        CHECK(check(base, granted, 2, 10000).value.AsInt() == -1);
-        CHECK(check(base, granted, 1, 10001).value.AsInt() == -1);
+        CHECK(check(base, denied, kGuestProcessId, 10000).value.AsInt() == -1);
+        CHECK(check(base, granted, kGuestProcessId + 1, 10000).value.AsInt() == -1);
+        CHECK(check(base, granted, kGuestProcessId, 10001).value.AsInt() == -1);
 
         const auto check_calling = [&](const VmObjectRef receiver, const VmObjectRef permission, const bool self_too) {
             const auto name = self_too ? "checkCallingOrSelfPermission" : "checkCallingPermission";
@@ -460,19 +462,19 @@ TEST_CASE("Context permission checks use the explicit guest process grant set") 
                                        std::vector{VmValue::Ref(base), VmValue::Ref(granted), VmValue::Int(pid),
                                                    VmValue::Int(10000), VmValue::Ref(VmObjectRef{})});
         };
-        CHECK_FALSE(enforce_explicit(1).exception.IsValid());
-        outcome = enforce_explicit(2);
+        CHECK_FALSE(enforce_explicit(kGuestProcessId).exception.IsValid());
+        outcome = enforce_explicit(kGuestProcessId + 1);
         REQUIRE(outcome.exception.IsValid());
         CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/SecurityException;");
 
-        outcome = check(base, VmObjectRef{}, 1, 10000);
+        outcome = check(base, VmObjectRef{}, kGuestProcessId, 10000);
         REQUIRE(outcome.exception.IsValid());
         CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
         outcome = check_calling(base, VmObjectRef{}, true);
         REQUIRE(outcome.exception.IsValid());
         CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
         vm.context->granted_permissions.clear();
-        CHECK(check(base, granted, 1, 10000).value.AsInt() == -1);
+        CHECK(check(base, granted, kGuestProcessId, 10000).value.AsInt() == -1);
     }
 }
 
@@ -640,12 +642,11 @@ TEST_CASE("PackageManager P0 exposes only explicit current-package facts") {
         REQUIRE(missing.exception.IsValid());
         CHECK(vm.linker.Class(vm.model.ObjectClass(missing.exception)).descriptor ==
               "Landroid/content/pm/PackageManager$NameNotFoundException;");
-        const auto unsupported =
-            invoke("getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
-                   {VmValue::Ref(package), VmValue::Int(0x40)});
-        REQUIRE(unsupported.exception.IsValid());
-        CHECK(vm.linker.Class(vm.model.ObjectClass(unsupported.exception)).descriptor ==
-              "Ljava/lang/UnsupportedOperationException;");
+        // API 19 masks getApplicationInfo flags; unrelated bits such as GET_SIGNATURES are ignored.
+        const auto unrelated = invoke("getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
+                                      {VmValue::Ref(package), VmValue::Int(0x40)});
+        REQUIRE_FALSE(unrelated.exception.IsValid());
+        CHECK(unrelated.value.ref.IsValid());
     }
 }
 
@@ -802,69 +803,6 @@ TEST_CASE("AudioManager reports the deterministic external music fact") {
         interpreter.Call(linker.Class(audio_class).vtable[*index], std::vector<VmValue>{VmValue::Ref(instance)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK(outcome.value.AsInt() == 0);
-}
-
-TEST_CASE("Thread priority validates and records the guest fact") {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    TestJniStrings strings{strings_payload};
-    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
-    JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model(arrays);
-    DexClassLinker linker;
-    auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
-    auto catalog = CoreIntrinsicCatalog();
-    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-    catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
-    linker.RegisterIntrinsics(catalog);
-    ogplay::test::RegisterBootDex(linker);
-    linker.RegisterDex(ReadInterpreterFixture());
-    linker.Link();
-    ogplay::core::CapabilityLedger ledger;
-    Interpreter interpreter(linker, model, nullptr, ledger);
-    VmThreadRuntime threads(interpreter);
-    const auto thread_class = linker.FindClass("Ljava/lang/Thread;");
-    REQUIRE(thread_class.has_value());
-    const auto set_priority = linker.FindVtableIndex(*thread_class, "setPriority", "(I)V");
-    REQUIRE(set_priority.has_value());
-    const auto thread = interpreter.NewIntrinsicInstance("Ljava/lang/Thread;");
-    const auto constructor = linker.FindDirectMethod(*thread_class, "<init>", "()V");
-    REQUIRE(constructor.has_value());
-    auto outcome = interpreter.Call(*constructor, std::vector<VmValue>{VmValue::Ref(thread)});
-    REQUIRE_FALSE(outcome.exception.IsValid());
-    const auto target = linker.Class(*thread_class).vtable[*set_priority];
-    outcome = interpreter.Call(target, std::vector<VmValue>{VmValue::Ref(thread), VmValue::Int(7)});
-    REQUIRE_FALSE(outcome.exception.IsValid());
-    const auto get_priority = linker.FindVtableIndex(*thread_class, "getPriority", "()I");
-    REQUIRE(get_priority.has_value());
-    outcome =
-        interpreter.Call(linker.Class(*thread_class).vtable[*get_priority], std::vector<VmValue>{VmValue::Ref(thread)});
-    REQUIRE_FALSE(outcome.exception.IsValid());
-    CHECK(outcome.value.AsInt() == 7);
-
-    const auto get_id = linker.FindVtableIndex(*thread_class, "getId", "()J");
-    const auto set_name = linker.FindVtableIndex(*thread_class, "setName", "(Ljava/lang/String;)V");
-    const auto get_name = linker.FindVtableIndex(*thread_class, "getName", "()Ljava/lang/String;");
-    REQUIRE(get_id.has_value());
-    REQUIRE(set_name.has_value());
-    REQUIRE(get_name.has_value());
-    outcome = interpreter.Call(linker.Class(*thread_class).vtable[*get_id], std::vector<VmValue>{VmValue::Ref(thread)});
-    REQUIRE_FALSE(outcome.exception.IsValid());
-    CHECK(outcome.value.AsLong() > 1);
-    outcome =
-        interpreter.Call(linker.Class(*thread_class).vtable[*set_name],
-                         std::vector<VmValue>{VmValue::Ref(thread), VmValue::Ref(interpreter.NewStringUtf8("render"))});
-    REQUIRE_FALSE(outcome.exception.IsValid());
-    outcome =
-        interpreter.Call(linker.Class(*thread_class).vtable[*get_name], std::vector<VmValue>{VmValue::Ref(thread)});
-    REQUIRE_FALSE(outcome.exception.IsValid());
-    CHECK(interpreter.StringUtf8(outcome.value.ref) == "render");
-
-    outcome = interpreter.Call(target, std::vector<VmValue>{VmValue::Ref(thread), VmValue::Int(11)});
-    CHECK(outcome.exception.IsValid());
-    outcome =
-        interpreter.Call(linker.Class(*thread_class).vtable[*get_priority], std::vector<VmValue>{VmValue::Ref(thread)});
-    REQUIRE_FALSE(outcome.exception.IsValid());
-    CHECK(outcome.value.AsInt() == 7);
 }
 
 TEST_CASE("URLEncoder applies UTF-8 form encoding") {

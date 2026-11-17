@@ -1,4 +1,4 @@
-package io.github.poping520.ogplay.game;
+package org.poping520.ogplay.game;
 
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
@@ -10,15 +10,15 @@ import android.content.res.Configuration;
 import android.os.Build;
 import android.os.Bundle;
 
-import io.github.poping520.ogplay.runtime.RuntimeData;
+import org.poping520.ogplay.runtime.RuntimeData;
 
 import org.libsdl.app.SDLActivity;
 
 /** Runs one game in the :game process; the native runtime starts from SDL_main. */
 public final class GameActivity extends SDLActivity {
-    private static final String EXTRA_ARGUMENTS = "io.github.poping520.ogplay.extra.ARGUMENTS";
-    private static final String ACTION_RESUME = "io.github.poping520.ogplay.action.RESUME_GAME";
-    private static final String ACTION_QUIT = "io.github.poping520.ogplay.action.QUIT_GAME";
+    private static final String EXTRA_ARGUMENTS = "org.poping520.ogplay.extra.ARGUMENTS";
+    private static final String ACTION_RESUME = "org.poping520.ogplay.action.RESUME_GAME";
+    private static final String ACTION_QUIT = "org.poping520.ogplay.action.QUIT_GAME";
     // SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT in SDL_messagebox.h.
     private static final int ESCAPE_DEFAULT = 0x2;
 

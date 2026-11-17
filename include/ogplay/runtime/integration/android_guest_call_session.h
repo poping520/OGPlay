@@ -326,6 +326,8 @@ public:
     void PushInput(const AndroidBoundaryInput& input);
     void PushQueueInput(memory::GuestAddress queue, const AndroidBoundaryInput& input,
                         std::function<void(bool)> finish);
+    [[nodiscard]] memory::GuestAddress AllocateNativeActivityStorage(std::uint32_t size);
+    void ReleaseNativeActivityStorage(memory::GuestAddress address, std::uint32_t size);
     void RegisterNativeActivity(NativeActivityBoundaryResources resources);
     void UnregisterNativeActivity(memory::GuestAddress activity);
     memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active,

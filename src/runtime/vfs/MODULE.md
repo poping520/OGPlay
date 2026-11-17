@@ -23,7 +23,8 @@
   `PutReadOnlyFile` 发布 runtime 来源只读节点，字节由调用方经 `read_at` 持有，VFS
   不复制；读取、lease 与映射均走 `read_at`，仅需自有内容的路径才整份物化。
   `ReadAt`/`WriteAt` 不移动 offset；普通 Read/Write/Seek 在同一打开状态串行，同一节点
-  的读写/截断由节点锁排序。失败未交付字节时不推进 offset。
+  的读写/截断由节点锁排序。失败未交付字节时不推进 offset。要求有界定位读的打开方式
+  拒绝生成节点、字符设备及只能整份物化的 backing，允许已在内存中的普通文件。
 - create+exclusive 在同一索引锁内检查存在并创建，已存在路径返回 EEXIST，早于截断/写入。
 - append 是打开状态的不可变属性，Duplicate 共享；每次非空 Write 在节点锁内选当前
   EOF、写入并提交 offset，先 seek 不解除追加。WriteAt 对 append fd 按 Android/Linux

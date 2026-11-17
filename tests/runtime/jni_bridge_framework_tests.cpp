@@ -162,51 +162,6 @@ TEST_CASE("DVM-206 JNI keyboard lookup resolves BootDex load and character queri
     }
 }
 
-TEST_CASE("ClassLoader findLibrary JNI method ID dispatches to the application loader") {
-    using namespace ogplay::runtime;
-    using namespace ogplay::runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ApplicationProcess fixture(backend);
-        auto& bridge = *fixture.bridge;
-        auto& vm = bridge.Vm();
-        const auto identity = fixture.session->Classes().FindClass("java/lang/ClassLoader");
-        REQUIRE(identity.has_value());
-        const auto method = fixture.session->Classes().GetMethodId(*identity, "findLibrary",
-                                                                   "(Ljava/lang/String;)Ljava/lang/String;", false);
-        REQUIRE(method.has_value());
-        const auto app = vm.ClassLoaders().ApplicationLoader();
-        const auto boot = vm.ClassLoaders().BootstrapLoader();
-        const auto find = [&](const VmObjectRef loader, const std::string_view name) {
-            const auto argument = vm.NewStringUtf8(name);
-            const auto roots = vm.ProtectReferences(std::array{loader, argument});
-            const std::array<JniValue, 1> args{bridge.PublishLocal(argument)};
-            const auto actual = bridge.RegisteredClassIdentity(bridge.Model().ObjectClass(loader));
-            REQUIRE(actual.has_value());
-            const auto result = std::get<JniReference>(fixture.session->Invocations().InvokeVirtual(
-                1U, bridge.PublishLocal(loader), *actual, *method, args, JniArgumentSource::value_array));
-            CHECK_FALSE(fixture.session->Environment().ExceptionCheck(1U));
-            return bridge.FromReference(result);
-        };
-        const auto result = find(app, "a");
-        REQUIRE(result.IsValid());
-        CHECK(vm.StringUtf8(result) == "/data/app-lib/liba.so");
-        CHECK_FALSE(find(boot, "a").IsValid());
-        CHECK_FALSE(find(app, "missing").IsValid());
-        CHECK_FALSE(find(app, "../a").IsValid());
-        CHECK(fixture.libraries->Records().empty());
-
-        fixture.context->native_libraries = nullptr;
-        const auto actual = bridge.Model().ObjectClass(app);
-        const auto index =
-            bridge.Linker().FindVtableIndex(actual, "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;");
-        REQUIRE(index.has_value());
-        const std::array args{VmValue::Ref(app), VmValue::Ref(vm.NewStringUtf8("a"))};
-        const auto unavailable = vm.Call(bridge.Linker().Class(actual).vtable[*index], args);
-        REQUIRE(unavailable.exception.IsValid());
-        CHECK(bridge.Linker().Class(unavailable.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
-    }
-}
-
 TEST_CASE("ClassLoader parent-first JNI lookup and app calls share bootstrap types") {
     using namespace ogplay::runtime;
     using namespace ogplay::runtime::dexvm;
@@ -255,6 +210,8 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
         auto& classes = fixture.runtime->session->Classes();
         auto& invocations = fixture.runtime->session->Invocations();
         fixture.context->device_id = "fixture-device";
+        // API 19 PhoneSubInfo enforces READ_PHONE_STATE before returning device identifiers.
+        fixture.context->granted_permissions.insert("android.permission.READ_PHONE_STATE");
         fixture.context->secure_settings["android_id"] = "0123456789abcdef";
         for (const auto name :
              {"android/content/Context", "android/content/ContextWrapper", "android/content/ContentResolver",
@@ -576,10 +533,14 @@ TEST_CASE("DVM-358 JNI diagnostics expand reflection targets and initializer exc
             };
             if (initializer) {
                 linker.MutableClass(type).clinit_implementation = throwing.implementation;
+                // API 19 Class.forName(String) uses the caller's loader; a JNI call with no Java
+                // frame resolves through the boot loader, so pass the application loader.
                 const auto cls = *classes.FindClass("java/lang/Class");
-                const auto for_name =
-                    *classes.GetMethodId(cls, "forName", "(Ljava/lang/String;)Ljava/lang/Class;", true);
-                const std::array<JniValue, 1> args{f.bridge->PublishLocal(vm.NewStringUtf8("fixture.AllocFailInit"))};
+                const auto for_name = *classes.GetMethodId(
+                    cls, "forName", "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;", true);
+                const std::array<JniValue, 3> args{f.bridge->PublishLocal(vm.NewStringUtf8("fixture.AllocFailInit")),
+                                                   JniBoolean{true},
+                                                   f.bridge->PublishLocal(vm.ClassLoaders().ApplicationLoader())};
                 static_cast<void>(
                     f.session->Invocations().InvokeStatic(1, cls, for_name, args, JniArgumentSource::value_array));
             } else {

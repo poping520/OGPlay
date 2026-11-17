@@ -10,18 +10,19 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
 - source 接口只发布 length/ReadAt/直接 FD，不依赖 JNI、loader 或 VFS。open 在 registry
   锁外查询；每个 Asset 有独立游标和操作锁，read 使用至多 64 KiB 的临时窗口，不物化
   整个条目。读输出预检失败不推进游标。seek 限于资源范围，EOF 为真实零字节读取。
-- openFileDescriptor 先预检两个 32 位输出，再获取完整 APK 的新 guest FD 与 start/length；
-  失败回滚新 FD，压缩资源返回负值且不改输出；API19 的 32 位范围截断保持。
+- 两种 openFileDescriptor 先预检对应宽度的输出，再获取完整 APK 的新 guest FD 与 start/length。
+  写回失败回滚新 FD，压缩资源返回负值且不改输出。seek 和长度查询共用游标与范围检查，
+  32 位接口保留截断，64 位接口通过 ARM32 r0/r1 返回完整值。
   Asset.close 不关闭交付的 FD；manager 退役不销毁已打开 Asset 的来源。
-- NativeActivity 退役只处理窗口/输入；Java manager GC 独立撤销注册。owner 停止 guest
+- NativeActivity 退役与 AssetManager 无关；Java manager GC 独立撤销注册。owner 停止 guest
   线程后解除 hooks，同时退役所有 Asset/manager source。无永久 Java 引用、宿主指针或 FD。
-  64 位导出未实现。
 - openDir 发布有界、排序的直接条目快照（≤4096 项、名称合计≤1 MiB），不存在目录仍返回
   非空迭代器；next 只返回普通文件 basename，guest 只读名称在下一次 next/close 失效。
+  rewind 只重置游标。
   目录句柄单调、不复用、≤4096 live，manager 退役/解除 hooks 一并回收。
 - getBuffer 是唯一允许物化整个条目的路径：调用时才读取完整 STORED/Deflate 内容，单资源
   上限 32 MiB；guest 缓冲只读、地址在 Asset 生存期内稳定、不改读取游标，close/解除 hooks
-  释放映射。超限记账并明确失败，普通 read 仍使用有界窗口。
+  释放映射。isAllocated 只报告已物化的缓冲。超限记账并明确失败，普通 read 仍使用有界窗口。
 
 ## 输入事件
 
@@ -48,7 +49,8 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
 - wake 返回 POLL_WAKE(-1)，超时返回 POLL_TIMEOUT(-3)，无关联返回 POLL_ERROR(-4)。
   outFd/outEvents/outData 允许为空；正超时判断通过统一 Clock，轮询可观察线程退出。
 - NativeActivity InputQueue 绑定具体 Looper，仅所属线程可 poll 到对应输入；callback
-  模式明确失败。命令通知只唤醒查询，不把任意 write 转换为输入/命令事件。
+  模式明确失败。NativeActivity 的窗口、IME 与 finish 命令只通过活动注册上的显式 hook
+  入队并唤醒所属 Java MessageQueue。登记退役后拒绝旧地址，派发由上层在队列线程完成。
 
 验证：BND45 定向边界、真实 libdl/ARM 调用与原 APK 路径。
 
@@ -86,10 +88,22 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
   纯像素 publisher、成功 swap 的 buffer-queued 身份通知与退役串行，经显式 hooks
   投递到 integration。两种通知都复核读回前的窗口代次，且与 fromSurface 的 JNI hook
   分锁，通知期间无需获取 VM 锁。
-  ANativeWindow_setBuffersGeometry 仍只接受重置或当前尺寸/格式，不新增任意 NDK resize。
+- ANativeWindow_setBuffersGeometry 的尺寸仍只接受重置或当前尺寸。CPU lock 支持
+  RGBA8888、RGBX8888 和 RGB565，guest 缓冲按转成 RGBA8 后不超过 32 MiB 限制，
+  post 经纯像素 hook 发布。
+  每次 lock 要求整窗重绘，同尺寸同格式时复用地址，退役或解除 hooks 时释放锁与缓冲。
+  CPU 从首次成功 lock 持有生产者连接至退役。EGL 与 CPU 按 holder 代际互斥，
+  EGL 连接在对应 surface 生命周期结束时释放。
 
-## AConfiguration 语言地区
+## AConfiguration
 
-getLanguage/getCountry 经 boundary service 的显式 DeviceLocale provider 读取同一会话事实，
-各写恰好两个字符、不附加终止符；语言与地区不混用。输入由两字母小写语言/大写地区规则校验，
-无 provider 明确失败；不读取宿主 locale。provider 在 guest 启动前安装、线程停止后解除。
+配置保留资源表的完整字段。new 从会话 DeviceLocale 预填语言和地区，随后允许独立修改。
+locale 访问各传输恰好两个 guest 字节。copy 复制完整配置，diff/match/isBetterThan 复用资源核心。
+provider 在 guest 启动前安装、线程停止后解除。
+
+## OBB
+
+扫描器通过 VFS hook 有界读尾部签名，包名存于 AObbInfo 持有的 guest 只读映射。
+guest 停止后撤销读取 hook 并销毁剩余句柄。
+OBB 挂载未支持。NDK 与 Java IMountService 共用没有已挂载 OBB 的设备状态。
+NDK mount/unmount 记账和限频警告，无异步回调。

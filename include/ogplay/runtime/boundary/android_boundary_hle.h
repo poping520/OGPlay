@@ -110,6 +110,13 @@ struct BionicDynamicLinkHooks final {
 inline constexpr memory::GuestAddress kNativeActivityWindowHandleBegin{0x6e400000U};
 inline constexpr memory::GuestAddress kNativeActivityWindowHandleEnd{0x6e800000U};
 
+enum class NativeActivityCommandType { finish, set_window_format, set_window_flags, show_ime, hide_ime };
+
+struct NativeActivityCommand final {
+    NativeActivityCommandType type;
+    std::uint32_t first{}, second{};
+};
+
 // Activity/queue allocations remain owned until UnregisterNativeActivity.
 // The asset manager is a separate process identity, shared with Java/JNI;
 // windows have independent generations. No host address crosses the guest ABI.
@@ -118,6 +125,8 @@ struct NativeActivityBoundaryResources final {
     memory::GuestAddress assets;
     memory::GuestAddress queue;
     std::uint32_t width{}, height{};
+    // May run on any guest thread. Enqueues and wakes only, with no VM access.
+    std::function<bool(NativeActivityCommand)> post_command{};
 };
 
 struct SurfaceJavaReference final {
@@ -151,6 +160,12 @@ struct AndroidLooperHooks final {
     std::function<void(std::int32_t, bool)> signal_pipe{};
 };
 
+struct AndroidObbHooks final {
+    void* owner{};
+    // Reads up to output.size() bytes from the end of one guest file, in file order.
+    std::size_t (*read_tail)(void*, std::string_view, std::span<std::byte>){};
+};
+
 struct AndroidBoundaryOptions final {
     bool allow_gles1_single_stage_texcoord_fallback{true};
     core::Logger* logger{};
@@ -165,6 +180,7 @@ struct AndroidBoundaryOptions final {
     // Host frame-rate cap: guest-code eglSwapBuffers on a window surface returns no sooner than
     // one period after that surface's previous release. 0 leaves swaps unpaced.
     std::uint64_t frame_period_ns{};
+    AndroidObbHooks obb{};
 };
 
 struct FrameReadbackFilter final {
@@ -192,6 +208,8 @@ public:
     void SetDeviceLocaleProvider(std::function<DeviceLocale()> provider);
     // Install before guest calls; clear only after workers stop, retiring assets.
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
+    // Call once guest code has stopped, including library finalizers.
+    void RetireObbResources();
     [[nodiscard]] memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);
     void UnregisterAssetManager(memory::GuestAddress manager);
     [[nodiscard]] std::shared_ptr<const AndroidAssetSource> ResolveAsset(memory::GuestAddress token);

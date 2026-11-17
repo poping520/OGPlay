@@ -127,9 +127,16 @@ public:
                            return static_cast<Impl*>(owner)->android_module_.PublishSurfacePixels(window, expected,
                                                                                                   std::move(pixels));
                        },
+                       +[](void* owner, memory::GuestAddress window, const AndroidSurfaceWindow& geometry) {
+                           return static_cast<Impl*>(owner)->android_module_.ConnectEglWindow(window, geometry);
+                       },
+                       +[](void* owner, memory::GuestAddress window, const AndroidSurfaceWindow& geometry) {
+                           static_cast<Impl*>(owner)->android_module_.DisconnectEglWindow(window, geometry);
+                       },
                        options.frame_period_ns,
                        options.async_present_readback},
-          android_module_(call_services_, android_services_, options.loopers, options.logger, options.ledger),
+          android_module_(call_services_, android_services_, options.loopers, options.logger, options.ledger,
+                          options.obb),
           bitmap_module_(call_services_), egl_module_(call_services_, egl_context_),
           gles1_module_(call_services_, graphics_context_, gles1_state_, gles1_legacy_state_, gles1_draw_state_,
                         gles1_dispatch_, gles1_extensions_dispatch_),
@@ -224,6 +231,8 @@ public:
     AndroidSensorQueues& SensorQueues() { return android_module_; }
 
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks) { android_module_.SetAssetManagerHooks(hooks); }
+
+    void RetireObbResources() { android_module_.RetireObbResources(); }
 
     memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) {
         return android_module_.RegisterAssetManager(std::move(source));
@@ -1300,6 +1309,10 @@ void AndroidBoundaryHle::SetSensorDirectory(std::shared_ptr<const AndroidSensorD
 
 AndroidSensorQueues& AndroidBoundaryHle::SensorQueues() {
     return impl_->SensorQueues();
+}
+
+void AndroidBoundaryHle::RetireObbResources() {
+    impl_->RetireObbResources();
 }
 
 void AndroidBoundaryHle::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) {

@@ -2,6 +2,7 @@
 #include "runtime/integration/dexvm_android/shared.h"
 #include "dexvm/resource_fixture.h"
 #include "boot_dex.h"
+#include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/integration/apk_assets.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
@@ -83,11 +84,19 @@ runtime::dexvm::VmObjectRef MakeRomAppContext(runtime::dexvm::Interpreter& vm,
                               "(Landroid/content/res/Configuration;Landroid/content/res/CompatibilityInfo;)Z",
                               {VmValue::Ref(config), VmValue::Ref(compat)}));
 
+        // With a sealed APK the bridge publishes the ROM application loader as the
+        // thread context loader, as ApplicationLoaders caches it in a real process.
+        // Reuse it so app classes resolve through the loader the VM accepts.
+        const auto current_thread = vm.Threads().CurrentThreadObject();
+        const auto context_loader =
+            CallAndroidMethod(vm, current_thread, "getContextClassLoader", "()Ljava/lang/ClassLoader;").ref;
+        const auto base_loader =
+            vm.ClassLoaders().IsRomApplicationLoader(context_loader) ? context_loader : VmObjectRef{};
         loaded = NewPlatformObject(
             vm, "Landroid/app/LoadedApk;",
             "(Landroid/app/ActivityThread;Landroid/content/pm/ApplicationInfo;Landroid/content/res/CompatibilityInfo;Ljava/lang/ClassLoader;ZZ)V",
-            {VmValue::Ref(thread), VmValue::Ref(info), VmValue::Ref(compat), VmValue::Ref(VmObjectRef{}),
-             VmValue::Int(0), VmValue::Int(0)});
+            {VmValue::Ref(thread), VmValue::Ref(info), VmValue::Ref(compat), VmValue::Ref(base_loader), VmValue::Int(0),
+             VmValue::Int(0)});
         context->singletons["fixture_application"] =
             CallAndroidMethod(vm, loaded, "makeApplication",
                               "(ZLandroid/app/Instrumentation;)Landroid/app/Application;",

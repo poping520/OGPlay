@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
 }
@@ -8,14 +10,20 @@ val projectVersion = Regex("""project\(OGPlay VERSION ([0-9.]+)""")
     .find(rootCMakeLists.readText())?.groupValues?.get(1)
     ?: throw GradleException("Cannot read the OGPlay version from $rootCMakeLists")
 val stagedAssets = layout.buildDirectory.dir("generated/ogplay-assets").get().asFile
+val releaseSigningPropertiesFile = rootProject.projectDir.resolve("keystore/release-signing.properties")
+val releaseSigningProperties = Properties().apply {
+    if (releaseSigningPropertiesFile.isFile) {
+        releaseSigningPropertiesFile.inputStream().use(::load)
+    }
+}
 
 android {
-    namespace = "io.github.poping520.ogplay"
+    namespace = "org.poping520.ogplay"
     compileSdk = 36
     ndkVersion = "30.0.16248370"
 
     defaultConfig {
-        applicationId = "io.github.poping520.ogplay"
+        applicationId = "org.poping520.ogplay"
         minSdk = 29
         targetSdk = 36
         versionCode = 1
@@ -37,6 +45,17 @@ android {
         }
     }
 
+    if (releaseSigningPropertiesFile.isFile) {
+        signingConfigs {
+            create("localRelease") {
+                storeFile = rootProject.projectDir.resolve(releaseSigningProperties.getProperty("storeFile"))
+                storePassword = releaseSigningProperties.getProperty("storePassword")
+                keyAlias = releaseSigningProperties.getProperty("keyAlias")
+                keyPassword = releaseSigningProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     externalNativeBuild {
         cmake {
             path = rootCMakeLists
@@ -45,6 +64,11 @@ android {
     }
 
     buildTypes {
+        release {
+            if (releaseSigningPropertiesFile.isFile) {
+                signingConfig = signingConfigs.getByName("localRelease")
+            }
+        }
         debug {
             externalNativeBuild {
                 cmake {

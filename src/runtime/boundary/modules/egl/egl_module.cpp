@@ -46,6 +46,7 @@ constexpr std::uint32_t kEglBadContext = 0x3006U;
 constexpr std::uint32_t kEglBadCurrentSurface = 0x3007U;
 constexpr std::uint32_t kEglBadDisplay = 0x3008U;
 constexpr std::uint32_t kEglBadNativePixmap = 0x300AU;
+constexpr std::uint32_t kEglBadAlloc = 0x3003U;
 constexpr std::uint32_t kEglBadNativeWindow = 0x300BU;
 constexpr std::uint32_t kEglBadParameter = 0x300CU;
 constexpr std::uint32_t kEglBadSurface = 0x300DU;
@@ -159,8 +160,11 @@ EglModule::EglModule(BoundaryCallServices& calls, EglBoundaryContext& context) n
 
 EglModule::~EglModule() {
     // Collectors publish through context_; join them before any member goes away.
-    for (auto& [_, surface] : surfaces_)
+    for (auto& [_, surface] : surfaces_) {
         RetirePresentation(std::move(surface.presentation));
+        if (surface.window_connection && context_.disconnect_window)
+            context_.disconnect_window(context_.native_window_owner, surface.native_window, *surface.window_connection);
+    }
     RetireExtensionsLocked();
 }
 
@@ -350,8 +354,13 @@ void EglModule::CollectRetiredObjectsLocked() {
     std::erase_if(contexts_, [](const auto& entry) {
         return entry.second.destroy_pending && !entry.second.current_thread.has_value();
     });
-    std::erase_if(surfaces_,
-                  [](const auto& entry) { return entry.second.destroy_pending && entry.second.current_count == 0U; });
+    std::erase_if(surfaces_, [&](const auto& entry) {
+        const auto& surface = entry.second;
+        if (!surface.destroy_pending || surface.current_count != 0U) return false;
+        if (surface.window_connection && context_.disconnect_window)
+            context_.disconnect_window(context_.native_window_owner, surface.native_window, *surface.window_connection);
+        return true;
+    });
     for (const auto group : groups) {
         const bool alive =
             std::ranges::any_of(contexts_, [group](const auto& entry) { return entry.second.share_group == group; });
@@ -613,10 +622,23 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             return 0U;
         }
         const auto handle = next_surface_++;
-        surfaces_.emplace(handle, SurfaceState{kFakeDisplay, args[1], SurfaceKind::window,
-                                               geometry->width ? geometry->width : graphics.layout.logical_width,
-                                               geometry->height ? geometry->height : graphics.layout.logical_height});
-        surfaces_.at(handle).native_window = window;
+        auto [surface, inserted] = surfaces_.emplace(
+            handle, SurfaceState{kFakeDisplay, args[1], SurfaceKind::window,
+                                 geometry->width ? geometry->width : graphics.layout.logical_width,
+                                 geometry->height ? geometry->height : graphics.layout.logical_height});
+        static_cast<void>(inserted);
+        try {
+            if (context_.connect_window && !context_.connect_window(context_.native_window_owner, window, *geometry)) {
+                surfaces_.erase(surface);
+                threads_[tid].error = kEglBadAlloc;
+                return 0U;
+            }
+        } catch (...) {
+            surfaces_.erase(surface);
+            throw;
+        }
+        surface->second.native_window = window;
+        surface->second.window_connection = *geometry;
         return handle;
     }
     if constexpr (FunctionId == 5U) {

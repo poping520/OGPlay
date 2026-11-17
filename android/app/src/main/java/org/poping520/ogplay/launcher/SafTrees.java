@@ -1,4 +1,4 @@
-package io.github.poping520.ogplay.launcher;
+package org.poping520.ogplay.launcher;
 
 import android.content.ContentResolver;
 import android.database.Cursor;

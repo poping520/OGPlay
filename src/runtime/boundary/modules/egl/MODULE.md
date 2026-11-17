@@ -35,6 +35,8 @@ presentation-time 校验后保存 surface 的有符号 64 位生产者时间戳�
 EGL_WIDTH/HEIGHT 和实际 ANGLE backing 一致。尺寸变化在下一次 swap 发布旧 buffer 后，
 重新分配并绑定下一 buffer；成功后 query 返回新尺寸，GL viewport 保持 guest 自己的状态。
 分配/绑定失败传播真实 EGL 错误，不冒充 resize 成功。NDK getter 可先于 EGL dequeue 变化。
+EGL window surface 通过同源窗口 hook 持有 holder 代际的生产者连接，连接冲突返回 EGL_BAD_ALLOC。
+最后一个 current 引用释放且 surface 销毁后归还连接。
 托管 holder 同步读取本次 swap 的 draw buffer，按 supersample 解析到 buffer 尺寸。
 `async_present_readback` 开启且 `AsyncAngleReadback` 能力受检通过时，每个 window surface 首帧同步发布，
 之后 swap 只提交读回与 fence 即返回（两槽占满时背压），collector 完成后解析并经同一像素 hook 发布；

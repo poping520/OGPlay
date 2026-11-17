@@ -2,6 +2,7 @@
 // DVM-80: API-family translation unit. Physical consolidation only.
 
 #include "ogplay/runtime/dexvm/io_runtime.h"
+#include "ogplay/runtime/integration/native_activity_runtime.h"
 
 // ---- migrated from android_os_AsyncTask.cpp ----
 #include <algorithm>
@@ -1395,6 +1396,9 @@ Decl Declare_android_os_MessageQueue_Natives(const Context& context) {
                 if (queue->context_token != call.vm.CurrentContextToken())
                     throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "MessageQueue polled on another thread"};
             }
+            if (context->native_activity &&
+                context->native_activity->PumpCommands(call.vm, static_cast<std::uint32_t>(token)))
+                return dx::VmValue::Void();
             auto& execution = call.vm.ExecutionLock();
             // Main-queue idleness must not bypass pacing. Other Looper threads
             // can own an EGL producer, and a real poll wait settles that frame.
@@ -1436,6 +1440,8 @@ Decl Declare_android_os_MessageQueue_Natives(const Context& context) {
             }
             execution.ReacquireAfterBlocking(depth, observe_blocking);
             if (stopped) throw dx::DexVmError(dx::DexVmErrorReason::thread_stopped, "MessageQueue shutdown");
+            if (context->native_activity)
+                context->native_activity->PumpCommands(call.vm, static_cast<std::uint32_t>(token));
             PumpJavaSensorEvents(call.vm, context);
             PumpNativeLooperEvents(call.vm, *context, looper);
             PumpRomInputEvents(call.vm, context);

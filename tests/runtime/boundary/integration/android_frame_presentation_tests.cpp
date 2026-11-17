@@ -250,3 +250,82 @@ TEST_CASE("frame-rate cap holds guest window swaps to the period but not managed
         REQUIRE(fixture.boundary.InvokeManagedEgl("eglSwapBuffers", std::array{1U, 3U}, 1U) == 1U);
     CHECK(now() - managed < kPeriodNs);
 }
+
+TEST_CASE("API19 NDK window CPU lock publishes packed pixels and excludes EGL") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    const memory::GuestAddress identity{0x1234};
+    std::shared_ptr<video::VideoFrame> frame;
+    f.boundary.SetSurfaceHooks({
+        &frame,
+        +[](void*, std::uint64_t, memory::GuestAddress, runtime::SurfaceJavaReference) {
+            return memory::GuestAddress{};
+        },
+        +[](void* owner, memory::GuestAddress target, std::shared_ptr<video::VideoFrame> pixels) {
+            CHECK(target == memory::GuestAddress{0x1234});
+            *static_cast<std::shared_ptr<video::VideoFrame>*>(owner) = std::move(pixels);
+        },
+    });
+    f.boundary.UpdateSurfaceWindow({identity, 2, 1});
+    const auto window = f.boundary.AcquireSurfaceWindow({identity, 2, 1}).Value();
+    const auto dirty = f.output.Add(44);
+    const auto lock = [&] {
+        return f.Call("libandroid.so", "ANativeWindow_lock", {window, f.output.Value(), dirty.Value()});
+    };
+    const auto post = [&] { return f.Call("libandroid.so", "ANativeWindow_unlockAndPost", {window}); };
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1);
+    const auto surface = f.Call("libEGL.so", "eglCreateWindowSurface", {1, 2, identity.Value(), 0});
+    REQUIRE(surface);
+    CHECK(lock() == static_cast<std::uint32_t>(-22));
+    REQUIRE(f.Call("libEGL.so", "eglDestroySurface", {1, surface}) == 1);
+    CHECK(post() == static_cast<std::uint32_t>(-38));
+    CHECK_THROWS(f.Call("libandroid.so", "ANativeWindow_lock", {window, 0, dirty.Value()}));
+    CHECK_THROWS(f.Call("libandroid.so", "ANativeWindow_lock", {window, f.output.Value(), 1}));
+    REQUIRE(lock() == 0);
+    CHECK(lock() == static_cast<std::uint32_t>(-38));
+    CHECK(f.bus.Read32(f.output) == 2);
+    CHECK(f.bus.Read32(f.output.Add(4)) == 1);
+    CHECK(f.bus.Read32(f.output.Add(8)) == 2);
+    CHECK(f.bus.Read32(f.output.Add(12)) == 1);
+    for (std::uint64_t i = 5; i < 11; ++i)
+        CHECK(f.bus.Read32(f.output.Add(i * 4)) == 0);
+    CHECK(f.bus.Read32(dirty) == 0);
+    CHECK(f.bus.Read32(dirty.Add(4)) == 0);
+    CHECK(f.bus.Read32(dirty.Add(8)) == 2);
+    CHECK(f.bus.Read32(dirty.Add(12)) == 1);
+    const memory::GuestAddress rgba{f.bus.Read32(f.output.Add(16))};
+    constexpr std::array<std::uint8_t, 8> rgba_bytes{1, 2, 3, 4, 5, 6, 7, 8};
+    f.memory.Write(rgba, std::as_bytes(std::span(rgba_bytes)));
+    REQUIRE(post() == 0);
+    REQUIRE(frame);
+    CHECK(frame->width == 2);
+    CHECK(frame->height == 1);
+    CHECK(frame->rgba8 == std::vector<std::uint8_t>(rgba_bytes.begin(), rgba_bytes.end()));
+    REQUIRE(lock() == 0);
+    CHECK(f.bus.Read32(f.output.Add(16)) == rgba.Value());
+    REQUIRE(post() == 0);
+    // CPU ownership persists after posting, and applies to aliases of the holder.
+    CHECK(f.Call("libEGL.so", "eglCreateWindowSurface", {1, 2, identity.Value(), 0}) == 0);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x3003);
+    CHECK(f.Call("libandroid.so", "ANativeWindow_setBuffersGeometry", {window, 0, 0, 3}) ==
+          static_cast<std::uint32_t>(-22));
+    REQUIRE(f.Call("libandroid.so", "ANativeWindow_setBuffersGeometry", {window, 2, 1, 2}) == 0);
+    REQUIRE(lock() == 0);
+    CHECK(f.bus.Read32(f.output.Add(12)) == 2);
+    f.memory.Write(memory::GuestAddress{f.bus.Read32(f.output.Add(16))}, std::as_bytes(std::span(rgba_bytes)));
+    REQUIRE(post() == 0);
+    CHECK(frame->rgba8 == std::vector<std::uint8_t>{1, 2, 3, 255, 5, 6, 7, 255});
+    REQUIRE(f.Call("libandroid.so", "ANativeWindow_setBuffersGeometry", {window, 2, 1, 4}) == 0);
+    REQUIRE(lock() == 0);
+    CHECK(f.bus.Read32(f.output.Add(12)) == 4);
+    const memory::GuestAddress rgb565{f.bus.Read32(f.output.Add(16))};
+    f.memory.Write(rgb565, std::array{std::byte{0}, std::byte{0xf8}, std::byte{0xff}, std::byte{0x07}});
+    REQUIRE(post() == 0);
+    CHECK(frame->rgba8 == std::vector<std::uint8_t>{255, 0, 0, 255, 0, 255, 255, 255});
+    REQUIRE(lock() == 0);
+    f.boundary.RetireSurfaceWindow(identity);
+    CHECK_THROWS(static_cast<void>(f.bus.Read32(rgb565)));
+    CHECK(post() == static_cast<std::uint32_t>(-38));
+    f.Call("libandroid.so", "ANativeWindow_release", {window});
+    CHECK_THROWS(post());
+}

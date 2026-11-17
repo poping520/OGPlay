@@ -420,7 +420,8 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
                                  const bool application_enabled,
                                  const ogplay::runtime::dexvm::InterpreterBackend interpreter_backend,
                                  const std::string& application_class, std::function<void()> pump_host_events,
-                                 Viewport viewport, std::vector<std::string> gl_textures, bool large_heap) {
+                                 Viewport viewport, std::vector<std::string> gl_textures, bool large_heap,
+                                 ogplay::runtime::dexvm::DexVmDiagnosticsConfig diagnostics) {
     if (activity == "android.app.NativeActivity" || activity == "fixture.NativeTakeoverActivity")
         native_a = NativeActivityElf();
     const std::array entries{std::pair{std::string("fixture"), std::vector<std::byte>{}}};
@@ -496,6 +497,7 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
     request.ledger = &ledger;
     request.logger = &logger;
     request.dexvm.interpreter.backend = interpreter_backend;
+    request.dexvm.interpreter.diagnostics = diagnostics;
     request.host.pump_host_events = std::move(pump_host_events);
     request.configure_dex_vm = [this](ogplay::runtime::dexvm::Interpreter& vm) {
         namespace dx = ogplay::runtime::dexvm;

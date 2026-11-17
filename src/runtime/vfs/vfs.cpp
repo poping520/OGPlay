@@ -602,6 +602,17 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
         MarkOverlayLocked(normalized, *found->second);
     }
     auto selected_file = found->second;
+    if (options.require_positioned_read) {
+        if (selected_file->generated || selected_file->character_device)
+            throw VfsError(kEinval, "VFS file does not support bounded positioned reads");
+        lock.unlock();
+        {
+            std::scoped_lock file_lock(*selected_file->mutex);
+            if (selected_file->read_all && !selected_file->read_at)
+                throw VfsError(kEinval, "VFS file requires whole-file materialization");
+        }
+        lock.lock();
+    }
     if (selected_file->generated) {
         if (options.create || options.truncate || options.write)
             throw VfsError(kEacces, "VFS generated file is read-only");

@@ -169,7 +169,7 @@ std::uint32_t AndroidModule::PollAll(const std::array<std::uint32_t, 4>& args, s
             const auto current = state->second.requests.find(entry.fd);
             return current != state->second.requests.end() && current->second.generation == entry.request.generation;
         };
-        bool dispatched = false;
+        bool callback_invoked = false;
         for (const auto& entry : callbacks) {
             if (!is_current(entry)) continue;
             lock.unlock();
@@ -180,7 +180,7 @@ std::uint32_t AndroidModule::PollAll(const std::array<std::uint32_t, 4>& args, s
                 keep = looper_hooks_.invoke_callback(tid, entry.request.callback, entry.fd, entry.events,
                                                      entry.request.data);
             lock.lock();
-            dispatched = true;
+            callback_invoked = true;
             if (!keep && is_current(entry)) RemoveLooperFdLocked(handle, entry.fd);
         }
         if (loopers_shutdown_ || !thread_loopers_.contains(tid)) return negative_result(-4);
@@ -191,7 +191,7 @@ std::uint32_t AndroidModule::PollAll(const std::array<std::uint32_t, 4>& args, s
             RequireLooper(handle).last_fd = response->fd;
             return static_cast<std::uint32_t>(response->request.ident);
         }
-        if (dispatched && !all) return negative_result(-2);
+        if (callback_invoked && !all) return negative_result(-2);
         const InputQueueState* ready_input = nullptr;
         if (!managed_activity_seen_ && standalone_input_.looper == handle && !standalone_input_.pending.empty())
             ready_input = &standalone_input_;
@@ -213,13 +213,78 @@ std::uint32_t AndroidModule::PollAll(const std::array<std::uint32_t, 4>& args, s
             return negative_result(-1);
         }
         if (interrupted && interrupted()) return negative_result(-1);
-        if (dispatched && timeout == 0) continue;
+        if (callback_invoked && timeout == 0) continue;
         const auto elapsed_ms = (looper_clock_.Ticks() - started) / 1000000U;
         if (timeout >= 0 && elapsed_ms >= static_cast<std::uint32_t>(timeout)) return negative_result(-3);
         // Polling also observes direct VFS operations and thread exit, which do
         // not necessarily enter a syscall observer. Clock owns all time readings.
-        if (!dispatched) ready_.wait_for(lock, std::chrono::milliseconds(2));
+        if (!callback_invoked) ready_.wait_for(lock, std::chrono::milliseconds(2));
     }
+}
+
+BoundaryResult AndroidModule::ALooper_prepare(const A32CallFrame& call) {
+    return PrepareThreadLooper(call.ThreadId(), call.RegisterArguments()[0]).Value();
+}
+
+BoundaryResult AndroidModule::ALooper_forThread(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    SweepLoopers();
+    const auto found = thread_loopers_.find(call.ThreadId());
+    return found == thread_loopers_.end() ? 0 : found->second.Value();
+}
+
+BoundaryResult AndroidModule::ALooper_acquire(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    SweepLoopers();
+    auto& looper = RequireLooper(call.Pointer<void>(0).Address());
+    if (looper.references == UINT32_MAX) throw std::overflow_error("ALooper reference overflow");
+    ++looper.references;
+    return 0;
+}
+
+BoundaryResult AndroidModule::ALooper_release(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    SweepLoopers();
+    const auto handle = call.Pointer<void>(0).Address();
+    auto& looper = RequireLooper(handle);
+    const auto owner_reference = looper.retired ? 0U : 1U;
+    if (looper.references <= owner_reference) throw std::invalid_argument("unbalanced ALooper_release");
+    if (--looper.references == 0) loopers_.erase(handle.Value());
+    return 0;
+}
+
+BoundaryResult AndroidModule::ALooper_wake(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    SweepLoopers();
+    auto& looper = RequireLooper(call.Pointer<void>(0).Address());
+    looper.wake = true;
+    ready_.notify_all();
+    return 0;
+}
+
+BoundaryResult AndroidModule::ALooper_addFd(const A32CallFrame& call) {
+    const auto args = call.RegisterArguments();
+    std::scoped_lock lock(mutex_);
+    SweepLoopers();
+    return std::bit_cast<std::uint32_t>(AddLooperFdLocked(
+        call.Pointer<void>(0).Address(), std::bit_cast<std::int32_t>(args[1]), std::bit_cast<std::int32_t>(args[2]),
+        args[3], call.Pointer<void>(4).Address(), call.Pointer<void>(5).Address()));
+}
+
+BoundaryResult AndroidModule::ALooper_removeFd(const A32CallFrame& call) {
+    const auto args = call.RegisterArguments();
+    std::scoped_lock lock(mutex_);
+    SweepLoopers();
+    return std::bit_cast<std::uint32_t>(
+        RemoveLooperFdLocked(call.Pointer<void>(0).Address(), std::bit_cast<std::int32_t>(args[1])));
+}
+
+BoundaryResult AndroidModule::ALooper_pollAll(const A32CallFrame& call) {
+    return PollAll(call.RegisterArguments(), call.ThreadId(), {}, true);
+}
+
+BoundaryResult AndroidModule::ALooper_pollOnce(const A32CallFrame& call) {
+    return PollAll(call.RegisterArguments(), call.ThreadId());
 }
 
 }  // namespace ogplay::runtime

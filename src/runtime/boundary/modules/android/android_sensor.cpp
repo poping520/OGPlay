@@ -189,79 +189,159 @@ std::size_t AndroidModule::ReadSensors(std::uint32_t key, std::span<AndroidSenso
     return count;
 }
 
-BoundaryResult AndroidModule::SensorExport(const A32CallFrame& call, std::uint16_t id) {
-    std::scoped_lock lock(mutex_);
+void AndroidModule::CheckSensorProcessLocked(std::uint64_t thread) {
     SweepLoopers();
-    const auto thread = call.ThreadId();
-    const auto args = call.RegisterArguments();
     if (loopers_shutdown_) SensorFailure("sensor process is shut down", thread);
-    if (id == 85) return kSensorManager.Value();
-    if (id <= 89 && call.Pointer<void>(0).Address() != kSensorManager)
-        SensorFailure("ASensorManager is invalid", thread);
-    if (id == 86 || id == 87 || id >= 95) BuildSensorList(thread);
-    const auto sensors = sensor_directory_->Sensors();
+}
+
+void AndroidModule::RequireSensorManager(const A32CallFrame& call) {
+    if (call.Pointer<void>(0).Address() != kSensorManager) SensorFailure("ASensorManager is invalid", call.ThreadId());
+}
+
+memory::GuestAddress AndroidModule::SensorTokenLocked(std::size_t index) const {
     const auto list = sensor_list_ ? sensor_list_->range.Start() : memory::GuestAddress{};
-    const auto sensor_at = [list](std::size_t i) { return list.Add(i * sizeof(std::uint32_t)); };
-    const auto sensor_index = [&](memory::GuestAddress token) {
-        for (std::size_t i = 0; i < sensors.size(); ++i)
-            if (sensor_at(i) == token) return i;
-        SensorFailure("ASensor is invalid", thread);
-    };
-    if (id == 86) {
-        if (!call.Pointer<void>(1).IsNull()) services_.Write32(args[1], list.Value(), thread);
-        return static_cast<std::uint32_t>(sensors.size());
-    }
-    if (id == 87) {
-        const auto found = std::ranges::find(sensors, std::bit_cast<std::int32_t>(args[1]), &AndroidSensor::type);
-        return found == sensors.end() ? 0 : sensor_at(static_cast<std::size_t>(found - sensors.begin())).Value();
-    }
-    if (id == 88)
-        return OpenSensorQueueLocked(thread, call.Pointer<void>(1).Address(), std::bit_cast<int>(args[2]),
-                                     call.Pointer<void>(3).Address(), call.Pointer<void>(4).Address());
-    if (id >= 95) {
-        const auto index = sensor_index(call.Pointer<void>(0).Address());
-        const auto& sensor = sensors[index];
-        switch (id) {
-        case 95: return sensor_strings_[index][0].Value();
-        case 96: return sensor_strings_[index][1].Value();
-        case 97: return static_cast<std::uint32_t>(sensor.type);
-        case 98: return std::bit_cast<std::uint32_t>(sensor.resolution);
-        case 99: return static_cast<std::uint32_t>(sensor.min_delay_us);
-        }
+    return list.Add(index * sizeof(std::uint32_t));
+}
+
+std::size_t AndroidModule::SensorIndexLocked(memory::GuestAddress token, std::uint64_t thread) {
+    const auto count = sensor_directory_->Sensors().size();
+    for (std::size_t i = 0; i < count; ++i)
+        if (SensorTokenLocked(i) == token) return i;
+    SensorFailure("ASensor is invalid", thread);
+}
+
+BoundaryResult AndroidModule::ASensorManager_getInstance(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    CheckSensorProcessLocked(call.ThreadId());
+    return kSensorManager.Value();
+}
+
+BoundaryResult AndroidModule::ASensorManager_getSensorList(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    const auto thread = call.ThreadId();
+    CheckSensorProcessLocked(thread);
+    RequireSensorManager(call);
+    BuildSensorList(thread);
+    const auto output = call.Pointer<void>(1);
+    if (!output.IsNull()) services_.Write32(output.Address().Value(), SensorTokenLocked(0).Value(), thread);
+    return static_cast<std::uint32_t>(sensor_directory_->Sensors().size());
+}
+
+BoundaryResult AndroidModule::ASensorManager_getDefaultSensor(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    const auto thread = call.ThreadId();
+    CheckSensorProcessLocked(thread);
+    RequireSensorManager(call);
+    BuildSensorList(thread);
+    const auto sensors = sensor_directory_->Sensors();
+    const auto type = std::bit_cast<std::int32_t>(call.RegisterArguments()[1]);
+    const auto found = std::ranges::find(sensors, type, &AndroidSensor::type);
+    return found == sensors.end() ? 0 : SensorTokenLocked(static_cast<std::size_t>(found - sensors.begin())).Value();
+}
+
+BoundaryResult AndroidModule::ASensorManager_createEventQueue(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    const auto thread = call.ThreadId();
+    CheckSensorProcessLocked(thread);
+    RequireSensorManager(call);
+    return OpenSensorQueueLocked(thread, call.Pointer<void>(1).Address(),
+                                 std::bit_cast<int>(call.RegisterArguments()[2]), call.Pointer<void>(3).Address(),
+                                 call.Pointer<void>(4).Address());
+}
+
+BoundaryResult AndroidModule::ASensorManager_destroyEventQueue(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    const auto thread = call.ThreadId();
+    CheckSensorProcessLocked(thread);
+    RequireSensorManager(call);
+    const auto key = call.RegisterArguments()[1];
+    auto& queue = RequireSensorQueue(key, thread);
+    CloseSensorQueueLocked(queue);
+    sensor_queues_.erase(key);
+    return 0;
+}
+
+#define OGPLAY_SENSOR_GETTER(name, value)                                                                              \
+    BoundaryResult AndroidModule::name(const A32CallFrame& call) {                                                     \
+        std::scoped_lock lock(mutex_);                                                                                 \
+        const auto thread = call.ThreadId();                                                                           \
+        CheckSensorProcessLocked(thread);                                                                              \
+        BuildSensorList(thread);                                                                                       \
+        const auto index = SensorIndexLocked(call.Pointer<void>(0).Address(), thread);                                 \
+        return value;                                                                                                  \
     }
 
-    const auto key = args[id == 89 ? 1 : 0];
-    auto& queue = RequireSensorQueue(key, thread);
-    if (id == 89) {
-        CloseSensorQueueLocked(queue);
-        sensor_queues_.erase(key);
-        return 0;
-    }
-    if (id >= 90 && id <= 92) {
-        const auto& sensor = sensors[sensor_index(call.Pointer<void>(1).Address())];
-        bool ok = false;
-        if (id == 90) ok = queue.stream->Enable(sensor.handle, 0);
-        if (id == 91) ok = queue.stream->Disable(sensor.handle);
-        if (id == 92) ok = queue.stream->SetPeriod(sensor.handle, std::bit_cast<int>(args[2]));
-        UpdateSensorQueueSignal(queue);
-        return ok ? 0 : std::bit_cast<std::uint32_t>(kBadValue);
-    }
-    if (id == 93) {
-        UpdateSensorQueueSignal(queue);
-        return queue.signaled ? 1 : UINT32_MAX;
-    }
-    if (id == 94) {
-        const auto capacity = std::min<std::size_t>(args[2], kEventBatch);
-        if (!queue.stream || capacity == 0) return 0;
-        const auto output = call.Pointer<AndroidSensorSample>(1).Address();
-        services_.address_space.Validate({output, capacity * sizeof(AndroidSensorSample)}, memory::AccessType::write,
-                                         thread);
-        std::array<AndroidSensorSample, kEventBatch> events;
-        const auto count = queue.stream->Read(std::span(events).first(capacity));
-        services_.address_space.Write(output, std::as_bytes(std::span(events).first(count)), thread);
-        UpdateSensorQueueSignal(queue);
-        return static_cast<std::uint32_t>(count);
-    }
-    throw std::logic_error("unknown sensor export");
+OGPLAY_SENSOR_GETTER(ASensor_getName, sensor_strings_[index][0].Value())
+OGPLAY_SENSOR_GETTER(ASensor_getVendor, sensor_strings_[index][1].Value())
+OGPLAY_SENSOR_GETTER(ASensor_getType, static_cast<std::uint32_t>(sensor_directory_->Sensors()[index].type))
+OGPLAY_SENSOR_GETTER(ASensor_getResolution,
+                     std::bit_cast<std::uint32_t>(sensor_directory_->Sensors()[index].resolution))
+OGPLAY_SENSOR_GETTER(ASensor_getMinDelay, static_cast<std::uint32_t>(sensor_directory_->Sensors()[index].min_delay_us))
+
+#undef OGPLAY_SENSOR_GETTER
+
+BoundaryResult AndroidModule::ASensorEventQueue_enableSensor(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    const auto thread = call.ThreadId();
+    CheckSensorProcessLocked(thread);
+    auto& queue = RequireSensorQueue(call.RegisterArguments()[0], thread);
+    const auto index = SensorIndexLocked(call.Pointer<void>(1).Address(), thread);
+    const auto& sensor = sensor_directory_->Sensors()[index];
+    const auto ok = queue.stream->Enable(sensor.handle, 0);
+    UpdateSensorQueueSignal(queue);
+    return ok ? 0 : std::bit_cast<std::uint32_t>(kBadValue);
 }
+
+BoundaryResult AndroidModule::ASensorEventQueue_disableSensor(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    const auto thread = call.ThreadId();
+    CheckSensorProcessLocked(thread);
+    auto& queue = RequireSensorQueue(call.RegisterArguments()[0], thread);
+    const auto index = SensorIndexLocked(call.Pointer<void>(1).Address(), thread);
+    const auto& sensor = sensor_directory_->Sensors()[index];
+    const auto ok = queue.stream->Disable(sensor.handle);
+    UpdateSensorQueueSignal(queue);
+    return ok ? 0 : std::bit_cast<std::uint32_t>(kBadValue);
+}
+
+BoundaryResult AndroidModule::ASensorEventQueue_setEventRate(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    const auto thread = call.ThreadId();
+    CheckSensorProcessLocked(thread);
+    const auto args = call.RegisterArguments();
+    auto& queue = RequireSensorQueue(args[0], thread);
+    const auto index = SensorIndexLocked(call.Pointer<void>(1).Address(), thread);
+    const auto& sensor = sensor_directory_->Sensors()[index];
+    const auto ok = queue.stream->SetPeriod(sensor.handle, std::bit_cast<int>(args[2]));
+    UpdateSensorQueueSignal(queue);
+    return ok ? 0 : std::bit_cast<std::uint32_t>(kBadValue);
+}
+
+BoundaryResult AndroidModule::ASensorEventQueue_hasEvents(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    const auto thread = call.ThreadId();
+    CheckSensorProcessLocked(thread);
+    auto& queue = RequireSensorQueue(call.RegisterArguments()[0], thread);
+    UpdateSensorQueueSignal(queue);
+    return queue.signaled ? 1 : UINT32_MAX;
+}
+
+BoundaryResult AndroidModule::ASensorEventQueue_getEvents(const A32CallFrame& call) {
+    std::scoped_lock lock(mutex_);
+    const auto thread = call.ThreadId();
+    CheckSensorProcessLocked(thread);
+    const auto args = call.RegisterArguments();
+    auto& queue = RequireSensorQueue(args[0], thread);
+    const auto capacity = std::min<std::size_t>(args[2], kEventBatch);
+    if (!queue.stream || capacity == 0) return 0;
+    const auto output = call.Pointer<AndroidSensorSample>(1).Address();
+    services_.address_space.Validate({output, capacity * sizeof(AndroidSensorSample)}, memory::AccessType::write,
+                                     thread);
+    std::array<AndroidSensorSample, kEventBatch> events;
+    const auto count = queue.stream->Read(std::span(events).first(capacity));
+    services_.address_space.Write(output, std::as_bytes(std::span(events).first(count)), thread);
+    UpdateSensorQueueSignal(queue);
+    return static_cast<std::uint32_t>(count);
+}
+
 }  // namespace ogplay::runtime

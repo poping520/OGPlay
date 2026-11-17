@@ -366,3 +366,75 @@ TEST_CASE("DVM-342 AConfiguration reads distinct language and region from device
                         std::invalid_argument);
     }
 }
+
+TEST_CASE("API19 NDK configuration fields round trip and compare with resource qualifiers") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    const auto call = [&](std::string_view name, std::array<std::uint32_t, 4> args = {}) {
+        return f.Call("libandroid.so", std::string("AConfiguration_") + std::string(name), args);
+    };
+    const auto base = call("new");
+    const auto requested = call("new");
+    const auto generic = call("new");
+    constexpr std::array values{
+        std::pair{"Mcc", 310U},
+        std::pair{"Mnc", 260U},
+        std::pair{"Orientation", 2U},
+        std::pair{"Touchscreen", 3U},
+        std::pair{"Density", 320U},
+        std::pair{"Keyboard", 2U},
+        std::pair{"Navigation", 4U},
+        std::pair{"KeysHidden", 3U},
+        std::pair{"NavHidden", 2U},
+        std::pair{"SdkVersion", 19U},
+        std::pair{"ScreenSize", 3U},
+        std::pair{"ScreenLong", 2U},
+        std::pair{"UiModeType", 4U},
+        std::pair{"UiModeNight", 1U},
+        std::pair{"ScreenWidthDp", 640U},
+        std::pair{"ScreenHeightDp", 360U},
+        std::pair{"SmallestScreenWidthDp", 360U},
+        std::pair{"LayoutDirection", 2U},
+    };
+    for (const auto& [name, value] : values) {
+        CAPTURE(name);
+        CHECK(call(std::string("get") + name, {base}) == 0);
+        call(std::string("set") + name, {base, value});
+    }
+    // Check together after setting all fields, including the shared bitfields.
+    for (const auto& [name, value] : values) {
+        CAPTURE(name);
+        CHECK(call(std::string("get") + name, {base}) == value);
+    }
+
+    const auto locale = f.output.Add(f.memory.PageSize() - 2);
+    f.memory.Write(locale, std::array{std::byte{'p'}, std::byte{'t'}});
+    call("setLanguage", {base, locale.Value()});
+    f.memory.Write(locale, std::array{std::byte{'B'}, std::byte{'R'}});
+    call("setCountry", {base, locale.Value()});
+    call("getLanguage", {base, f.output.Value()});
+    call("getCountry", {base, f.output.Add(2).Value()});
+    CHECK(f.bus.Read32(f.output) == 0x52427470);
+
+    call("copy", {requested, base});
+    CHECK(call("diff", {base, requested}) == 0);
+    CHECK(call("match", {base, requested}) == 1);
+    CHECK(call("isBetterThan", {base, generic, requested}) == 1);
+    CHECK(call("isBetterThan", {generic, base, requested}) == 0);
+    CHECK(call("isBetterThan", {base, generic, 0}) == 1);
+
+    call("setMnc", {requested, 261});
+    CHECK(call("diff", {base, requested}) == 1);  // API19 diff uses CONFIG_MCC for MNC.
+    CHECK(call("match", {base, requested}) == 0);
+    call("setLayoutDirection", {requested, 1});
+    call("setScreenLong", {requested, 1});
+    call("setUiModeNight", {requested, 2});
+    call("setNavHidden", {requested, 1});
+    call("setScreenWidthDp", {requested, 600});
+    CHECK(call("diff", {base, requested}) == (0x0001 | 0x4000 | 0x0800 | 0x1000 | 0x0020 | 0x0200));
+
+    CHECK_THROWS(call("setLanguage", {base, 0}));
+    call("delete", {base});
+    CHECK_THROWS(call("copy", {requested, base}));
+    CHECK_THROWS(call("getMnc", {base}));
+}

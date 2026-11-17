@@ -79,19 +79,42 @@ struct ResTable_config {
 
     enum {
         MASK_LAYOUTDIR = 0xc0,
+        SHIFT_LAYOUTDIR = 6,
         MASK_SCREENSIZE = 0x0f,
         SCREENSIZE_NORMAL = 2,
         MASK_SCREENLONG = 0x30,
+        SHIFT_SCREENLONG = 4,
         MASK_UI_MODE_TYPE = 0x0f,
         MASK_UI_MODE_NIGHT = 0x30,
+        SHIFT_UI_MODE_NIGHT = 4,
         MASK_KEYSHIDDEN = 3,
         MASK_NAVHIDDEN = 12,
+        SHIFT_NAVHIDDEN = 2,
         KEYSHIDDEN_NO = 1,
         KEYSHIDDEN_SOFT = 3,
         DENSITY_MEDIUM = 160,
         DENSITY_NONE = 0xffff
     };
 
+    enum {
+        CONFIG_MCC = 0x0001,
+        CONFIG_MNC = 0x0001,  // API 19 ResourceTypes.h aliases MNC to MCC.
+        CONFIG_LOCALE = 0x0004,
+        CONFIG_TOUCHSCREEN = 0x0008,
+        CONFIG_KEYBOARD = 0x0010,
+        CONFIG_KEYBOARD_HIDDEN = 0x0020,
+        CONFIG_NAVIGATION = 0x0040,
+        CONFIG_ORIENTATION = 0x0080,
+        CONFIG_DENSITY = 0x0100,
+        CONFIG_SCREEN_SIZE = 0x0200,
+        CONFIG_VERSION = 0x0400,
+        CONFIG_SCREEN_LAYOUT = 0x0800,
+        CONFIG_UI_MODE = 0x1000,
+        CONFIG_SMALLEST_SCREEN_SIZE = 0x2000,
+        CONFIG_LAYOUTDIR = 0x4000
+    };
+
+    [[nodiscard]] std::uint32_t diff(const ResTable_config& other) const;
     [[nodiscard]] bool match(const ResTable_config& settings) const;
     [[nodiscard]] bool isBetterThan(const ResTable_config& other, const ResTable_config* requested) const;
     [[nodiscard]] bool isMoreSpecificThan(const ResTable_config& other) const;

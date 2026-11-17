@@ -7,6 +7,7 @@
 #include <mutex>
 #include <map>
 #include <optional>
+#include <set>
 
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "ogplay/hal/clock.h"
@@ -20,7 +21,7 @@ namespace ogplay::runtime {
 class AndroidModule final : public AndroidSensorQueues {
 public:
     AndroidModule(BoundaryCallServices& calls, AndroidBoundaryServices& services, AndroidLooperHooks hooks = {},
-                  core::Logger* logger = nullptr, core::CapabilityLedger* ledger = nullptr);
+                  core::Logger* logger = nullptr, core::CapabilityLedger* ledger = nullptr, AndroidObbHooks obb = {});
     ~AndroidModule();
     void SetSurfaceHooks(AndroidSurfaceHooks hooks);
     void NotifySurfaceBufferQueued(memory::GuestAddress window, const AndroidSurfaceWindow& expected);
@@ -47,6 +48,8 @@ public:
     void RetireThreadLooper(std::uint64_t thread_id);
     void ShutdownLoopers();
     std::optional<AndroidSurfaceWindow> NativeWindowGeometry(memory::GuestAddress window);
+    bool ConnectEglWindow(memory::GuestAddress window, const AndroidSurfaceWindow& geometry);
+    void DisconnectEglWindow(memory::GuestAddress window, const AndroidSurfaceWindow& geometry);
     bool PublishSurfacePixels(memory::GuestAddress window, const AndroidSurfaceWindow& expected,
                               std::shared_ptr<video::VideoFrame> pixels);
     void PushInput(const AndroidBoundaryInput& input);
@@ -58,6 +61,7 @@ public:
                                                  std::optional<AndroidSurfaceWindow> surface = std::nullopt);
     void SetNativeActivityInput(memory::GuestAddress activity, bool active);
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
+    void RetireObbResources();
     memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);
     void UnregisterAssetManager(memory::GuestAddress manager);
     [[nodiscard]] std::shared_ptr<const AndroidAssetSource> ResolveAsset(memory::GuestAddress token);
@@ -101,8 +105,6 @@ private:
     AndroidLooperHooks looper_hooks_;
     hal::RealtimeClock looper_clock_;
     bool loopers_shutdown_{};
-    template <std::uint16_t FunctionId>
-    BoundaryResult ExecuteExport(const A32CallFrame& call);
 
     BoundaryCallServices& calls_;
     AndroidBoundaryServices& services_;
@@ -121,8 +123,12 @@ private:
 
     InputQueueState& InputQueue(std::uint32_t handle);
     const AndroidBoundaryInput& InputEvent(memory::GuestAddress handle) const;
-    template <std::uint16_t FunctionId>
-    BoundaryResult ReadInput(const A32CallFrame& call);
+    const AndroidBoundaryInput& KeyEvent(const A32CallFrame& call) const;
+    const AndroidBoundaryInput& MotionEvent(const A32CallFrame& call) const;
+    BoundaryResult ReadMotionAxis(const A32CallFrame& call, std::uint32_t axis, bool raw);
+    BoundaryResult ReadHistoricalMotionAxis(const A32CallFrame& call, std::uint32_t axis, bool raw);
+
+    BoundaryResult PostNativeActivityCommand(const A32CallFrame& call, NativeActivityCommand command);
 
     struct Resource {
         NativeActivityBoundaryResources resources;
@@ -131,12 +137,22 @@ private:
         InputQueueState input{};
     };
 
+    struct GuestBuffer;
+
     struct WindowResource {
         std::uint32_t width{}, height{}, references{1};
         bool active{}, owned{true};
         memory::GuestAddress surface_identity{};
+        std::uint32_t format{1};
+        std::unique_ptr<GuestBuffer> cpu_buffer{};
+        std::uint32_t buffer_width{}, buffer_height{}, buffer_format{};
+        bool cpu_locked{};
     };
 
+    std::optional<AndroidSurfaceWindow> NativeWindowGeometryLocked(memory::GuestAddress window) const;
+    using WindowConnectionKey = std::pair<memory::GuestAddress, std::uint64_t>;
+    static WindowConnectionKey ProducerKey(memory::GuestAddress window, const AndroidSurfaceWindow& geometry);
+    std::set<WindowConnectionKey> egl_windows_;
     std::map<std::uint32_t, WindowResource> windows_;
     std::map<std::uint32_t, AndroidSurfaceWindow> surface_geometries_;
     memory::GuestAddress next_window_{kNativeActivityWindowHandleBegin};
@@ -151,7 +167,24 @@ private:
 
     std::unique_ptr<GuestBuffer> ReadOnlyBuffer(std::span<const std::byte> bytes, std::uint64_t thread);
     std::string AssetPath(const A32CallFrame& call, std::size_t argument);
-    BoundaryResult AssetExtension(const A32CallFrame& call, std::uint16_t id);
+    BoundaryResult AssetLength(const A32CallFrame& call, bool remaining, bool wide);
+    BoundaryResult SeekAsset(const A32CallFrame& call, bool wide);
+    BoundaryResult OpenAssetFileDescriptor(const A32CallFrame& call, bool wide);
+
+    struct ObbInfo {
+        std::unique_ptr<GuestBuffer> package;
+        std::uint32_t version{}, flags{};
+        std::array<std::byte, 8> salt{};
+    };
+
+    ObbInfo& RequireObbInfo(GuestPtr<void> handle);
+    void RequireStorageManager(const A32CallFrame& call);
+    void RecordStorageStub(std::string_view name, std::uint64_t thread);
+    AndroidObbHooks obb_hooks_;
+    std::map<std::uint32_t, ObbInfo> obb_info_;
+    std::set<std::uint32_t> storage_managers_;
+    memory::GuestAddress next_obb_info_{0x6eb00000U};
+    memory::GuestAddress next_storage_manager_{0x6ec00000U};
 
     struct AssetDirectory {
         memory::GuestAddress manager;
@@ -160,6 +193,7 @@ private:
         std::unique_ptr<GuestBuffer> cached_name;
     };
 
+    AssetDirectory& RequireAssetDirectoryLocked(memory::GuestAddress handle);
     std::map<std::uint32_t, AssetDirectory> asset_directories_;
     memory::GuestAddress next_asset_directory_{0x6ea00000U};
 
@@ -170,10 +204,14 @@ private:
         std::mutex mutex;
     };
 
+    std::shared_ptr<Asset> RequireAsset(memory::GuestAddress handle);
+
     bool managed_activity_seen_{};
     std::map<std::uint32_t, Resource> resources_;
     std::map<std::uint32_t, std::shared_ptr<Asset>> assets_;
     std::map<std::uint32_t, std::shared_ptr<AndroidAssetManagerSource>> asset_managers_;
+    resources::ResTable_config& RequireConfiguration(GuestPtr<void> handle);
+    BoundaryResult WriteConfigurationLocale(const A32CallFrame& call, char (resources::ResTable_config::*field)[2]);
     std::map<std::uint32_t, resources::ResTable_config> configurations_;
     memory::GuestAddress next_configuration_{0x6e003000U};
     memory::GuestAddress next_asset_manager_{0x6e300000U};
@@ -182,7 +220,6 @@ private:
     AndroidSurfaceHooks surface_hooks_;
     std::recursive_mutex surface_hook_mutex_;
     std::mutex surface_publish_mutex_;
-    BoundaryResult SurfaceFromJava(const A32CallFrame& call);
     // Asset handles are opaque tokens, never dereferenced as guest structures.
     std::uint32_t next_asset_{0x6e100000U};
     Resource& Queue(std::uint32_t handle);
@@ -204,7 +241,10 @@ private:
     std::shared_ptr<const AndroidSensorDirectory> sensor_directory_ = std::make_shared<const AndroidSensorDirectory>();
     core::Logger* logger_{};
     core::CapabilityLedger* ledger_{};
-    BoundaryResult SensorExport(const A32CallFrame& call, std::uint16_t id);
+    void CheckSensorProcessLocked(std::uint64_t thread);
+    void RequireSensorManager(const A32CallFrame& call);
+    memory::GuestAddress SensorTokenLocked(std::size_t index) const;
+    std::size_t SensorIndexLocked(memory::GuestAddress token, std::uint64_t thread);
     void RetireSensorQueues(std::optional<std::uint64_t> thread);
     std::uint32_t OpenSensorQueueLocked(std::uint64_t thread, memory::GuestAddress looper, int ident,
                                         memory::GuestAddress callback, memory::GuestAddress data,

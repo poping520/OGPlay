@@ -29,43 +29,38 @@ struct NamedExport final {
 
 #define OGPLAY_NAMED_METADATA(name, id, count, method) NamedExport{name, id, count},
 constexpr std::array kBitmapExports{OGPLAY_BITMAP_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
-constexpr std::array kAndroidExports{
-    OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
+constexpr std::array kAndroidExports{OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
 constexpr std::array kEglExports{OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)
                                      OGPLAY_EGL_API19_EXPORTS(OGPLAY_NAMED_METADATA)};
-constexpr std::array kGles1BoundsExports{
-    OGPLAY_GLES1_BOUNDS_EXPORTS(OGPLAY_NAMED_METADATA)
-    OGPLAY_GLES_IMAGE_EXPORTS(OGPLAY_NAMED_METADATA)};
+constexpr std::array kGles1BoundsExports{OGPLAY_GLES1_BOUNDS_EXPORTS(OGPLAY_NAMED_METADATA)
+                                             OGPLAY_GLES_IMAGE_EXPORTS(OGPLAY_NAMED_METADATA)};
 constexpr std::array kGlesImageExports{OGPLAY_GLES_IMAGE_EXPORTS(OGPLAY_NAMED_METADATA)};
-constexpr std::array kLogExports{
-    OGPLAY_LOG_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
-#define OGPLAY_OPENSLES_METADATA(name, id, count, kind, method)                 \
-    NamedExport{name, id, count},
-constexpr std::array kOpenSlesCallableExports{
-    OGPLAY_OPENSLES_BOUNDARY_EXPORTS(OGPLAY_OPENSLES_METADATA)};
+constexpr std::array kLogExports{OGPLAY_LOG_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
+#define OGPLAY_OPENSLES_METADATA(name, id, count, kind, method) NamedExport{name, id, count},
+constexpr std::array kOpenSlesCallableExports{OGPLAY_OPENSLES_BOUNDARY_EXPORTS(OGPLAY_OPENSLES_METADATA)};
 #undef OGPLAY_OPENSLES_METADATA
 #undef OGPLAY_NAMED_METADATA
 
 void AddNamedModule(std::vector<BoundaryModuleDefinition>& modules,
-                    std::vector<std::vector<BoundaryExportDefinition>>& storage,
-                    const std::string_view soname,
+                    std::vector<std::vector<BoundaryExportDefinition>>& storage, const std::string_view soname,
                     const std::span<const NamedExport> exports) {
     auto& module_exports = storage.emplace_back();
     module_exports.reserve(exports.size());
     for (const auto& export_ : exports) {
-        module_exports.push_back({export_.name, export_.local_id,
-                                  export_.parameter_count, {},
+        module_exports.push_back({export_.name,
+                                  export_.local_id,
+                                  export_.parameter_count,
+                                  {},
                                   BoundaryExportKind::public_function,
-                                  memory::GuestAddress{}, 4U});
+                                  memory::GuestAddress{},
+                                  4U});
     }
     modules.push_back({soname, {}, module_exports});
 }
 
 void AddGlesModule(std::vector<BoundaryModuleDefinition>& modules,
-                   std::vector<std::vector<BoundaryExportDefinition>>& storage,
-                   const std::string_view soname,
-                   const std::span<const gles::GlesApi> apis,
-                   const std::span<const NamedExport> additional = {}) {
+                   std::vector<std::vector<BoundaryExportDefinition>>& storage, const std::string_view soname,
+                   const std::span<const gles::GlesApi> apis, const std::span<const NamedExport> additional = {}) {
     auto& module_exports = storage.emplace_back();
     std::set<std::uint16_t> local_ids;
     for (const auto& export_ : additional) {
@@ -74,10 +69,8 @@ void AddGlesModule(std::vector<BoundaryModuleDefinition>& modules,
     for (const auto api : apis) {
         const auto count = gles::GlesFunctionCount(api);
         for (std::size_t index = 0; index < count; ++index) {
-            const auto function = gles::DescribeGlesFunction(
-                api, static_cast<gles::GlesThunkId>(index));
-            if (module_exports.size() >
-                (std::numeric_limits<std::uint16_t>::max)()) {
+            const auto function = gles::DescribeGlesFunction(api, static_cast<gles::GlesThunkId>(index));
+            if (module_exports.size() > (std::numeric_limits<std::uint16_t>::max)()) {
                 throw std::length_error("GLES boundary local id overflows");
             }
             auto local_id = static_cast<std::uint16_t>(module_exports.size());
@@ -88,35 +81,36 @@ void AddGlesModule(std::vector<BoundaryModuleDefinition>& modules,
                 ++local_id;
             }
             local_ids.insert(local_id);
-            module_exports.push_back({
-                function.name,
-                local_id,
-                static_cast<std::uint8_t>(function.abi_word_count), {},
-                BoundaryExportKind::public_function,
-                memory::GuestAddress{}, 4U});
+            module_exports.push_back({function.name,
+                                      local_id,
+                                      static_cast<std::uint8_t>(function.abi_word_count),
+                                      {},
+                                      BoundaryExportKind::public_function,
+                                      memory::GuestAddress{},
+                                      4U});
         }
     }
     for (const auto& export_ : additional) {
-        module_exports.push_back({export_.name, export_.local_id,
-                                  export_.parameter_count, {},
+        module_exports.push_back({export_.name,
+                                  export_.local_id,
+                                  export_.parameter_count,
+                                  {},
                                   BoundaryExportKind::public_function,
-                                  memory::GuestAddress{}, 4U});
+                                  memory::GuestAddress{},
+                                  4U});
     }
     modules.push_back({soname, {}, module_exports});
 }
 
-void AddOpenSlesModule(
-    std::vector<BoundaryModuleDefinition>& modules,
-    std::vector<std::vector<BoundaryExportDefinition>>& storage) {
+void AddOpenSlesModule(std::vector<BoundaryModuleDefinition>& modules,
+                       std::vector<std::vector<BoundaryExportDefinition>>& storage) {
     auto& exports = storage.emplace_back();
     exports.reserve(kOpenSlesCallableExports.size() + OpenSlesDataExports().size());
-#define OGPLAY_ADD_OPENSLES(name, id, count, kind, method)                     \
-    exports.push_back({name, id, count, {}, BoundaryExportKind::kind,          \
-                       memory::GuestAddress{}, 4U});
+#define OGPLAY_ADD_OPENSLES(name, id, count, kind, method)                                                             \
+    exports.push_back({name, id, count, {}, BoundaryExportKind::kind, memory::GuestAddress{}, 4U});
     OGPLAY_OPENSLES_BOUNDARY_EXPORTS(OGPLAY_ADD_OPENSLES)
 #undef OGPLAY_ADD_OPENSLES
-    exports.insert(exports.end(), OpenSlesDataExports().begin(),
-                   OpenSlesDataExports().end());
+    exports.insert(exports.end(), OpenSlesDataExports().begin(), OpenSlesDataExports().end());
     modules.push_back({"libOpenSLES.so", {}, exports});
 }
 
@@ -126,13 +120,9 @@ BoundaryCatalog BuildCatalog(const AndroidApi api) {
     storage.reserve(7);
     AddNamedModule(modules, storage, "libandroid.so", kAndroidExports);
     AddNamedModule(modules, storage, "libEGL.so", kEglExports);
-    constexpr std::array gles1_apis{gles::GlesApi::gles1,
-                                   gles::GlesApi::gles1_extensions};
-    AddGlesModule(modules, storage, "libGLESv1_CM.so", gles1_apis,
-                  kGles1BoundsExports);
-    constexpr std::array gles2_apis{gles::GlesApi::gles2,
-                                    gles::GlesApi::gles3,
-                                    gles::GlesApi::gles2_extensions};
+    constexpr std::array gles1_apis{gles::GlesApi::gles1, gles::GlesApi::gles1_extensions};
+    AddGlesModule(modules, storage, "libGLESv1_CM.so", gles1_apis, kGles1BoundsExports);
+    constexpr std::array gles2_apis{gles::GlesApi::gles2, gles::GlesApi::gles3, gles::GlesApi::gles2_extensions};
     AddGlesModule(modules, storage, "libGLESv2.so", gles2_apis, kGlesImageExports);
     AddNamedModule(modules, storage, "liblog.so", kLogExports);
     AddOpenSlesModule(modules, storage);
@@ -147,15 +137,14 @@ const BoundaryCatalog& AndroidBoundaryCatalog(const AndroidApi api) {
     static const BoundaryCatalog api22 = BuildCatalog(AndroidApi::api22);
     static const BoundaryCatalog api23 = BuildCatalog(AndroidApi::api23);
     switch (api) {
-        case AndroidApi::api19: return api19;
-        case AndroidApi::api22: return api22;
-        case AndroidApi::api23: return api23;
+    case AndroidApi::api19: return api19;
+    case AndroidApi::api22: return api22;
+    case AndroidApi::api23: return api23;
     }
     throw std::logic_error("unsupported Android boundary API");
 }
 
-bool IsAndroidBoundaryLibrary(const AndroidApi api,
-                              const std::string_view soname) noexcept {
+bool IsAndroidBoundaryLibrary(const AndroidApi api, const std::string_view soname) noexcept {
     return AndroidBoundaryCatalog(api).FindModule(soname) != nullptr;
 }
 
@@ -169,29 +158,24 @@ std::vector<BionicHleSymbol> BuildAndroidBoundarySymbols(const AndroidApi api) {
     for (const auto& module : catalog.Modules()) {
         for (const auto& export_ : module.exports) {
             if (export_.kind == BoundaryExportKind::private_callable) continue;
-            result.push_back({
-                module.soname, export_.name, export_.address,
-                export_.kind == BoundaryExportKind::public_data
-                    ? BoundarySymbolKind::data
-                    : BoundarySymbolKind::function,
-                export_.size});
+            result.push_back({module.soname, export_.name, export_.address,
+                              export_.kind == BoundaryExportKind::public_data ? BoundarySymbolKind::data
+                                                                              : BoundarySymbolKind::function,
+                              export_.size});
         }
     }
     std::size_t override_index{};
     for (const auto& override_ : GuestSymbolOverrides()) {
-        result.push_back({std::string(override_.library),
-                          std::string(override_.symbol),
-                          memory::GuestAddress{kBionicHleThunkBegin +
-                              (catalog.SlotCount() +
-                               static_cast<std::uint32_t>(override_index++)) *
-                                  kThunkStride + 1U},
+        result.push_back({std::string(override_.library), std::string(override_.symbol),
+                          memory::GuestAddress{
+                              kBionicHleThunkBegin +
+                              (catalog.SlotCount() + static_cast<std::uint32_t>(override_index++)) * kThunkStride + 1U},
                           BoundarySymbolKind::function, 4U});
     }
     return result;
 }
 
-std::vector<HleThunkDescriptor> BuildAndroidBoundaryDescriptors(
-    const std::span<const BionicHleSymbol> symbols) {
+std::vector<HleThunkDescriptor> BuildAndroidBoundaryDescriptors(const std::span<const BionicHleSymbol> symbols) {
     static_cast<void>(symbols);
     std::vector<HleThunkDescriptor> result;
     const auto& catalog = AndroidBoundaryCatalog(AndroidApi::api19);
@@ -199,30 +183,21 @@ std::vector<HleThunkDescriptor> BuildAndroidBoundaryDescriptors(
     for (const auto& module : catalog.Modules()) {
         for (const auto& export_ : module.exports) {
             if (export_.kind == BoundaryExportKind::public_data) continue;
-            result.push_back({module.soname, export_.name, export_.local_id,
-                              export_.parameter_count});
+            result.push_back({module.soname, export_.name, export_.local_id, export_.parameter_count});
         }
     }
     for (const auto& override_ : GuestSymbolOverrides()) {
-        result.push_back({override_.library, override_.symbol,
-                          override_.local_id, override_.parameter_count});
+        result.push_back({override_.library, override_.symbol, override_.local_id, override_.parameter_count});
     }
     for (const auto& entry : kGlesImageExports)
         result.push_back({"$egl.proc", entry.name, 0U, entry.parameter_count});
     std::set<std::string_view> proc_names;
-    for (const auto api : {gles::GlesApi::gles1,
-                           gles::GlesApi::gles1_extensions,
-                           gles::GlesApi::gles2,
-                           gles::GlesApi::gles3,
-                           gles::GlesApi::gles2_extensions}) {
-        for (std::size_t index = 0; index < gles::GlesFunctionCount(api);
-             ++index) {
-            const auto function = gles::DescribeGlesFunction(
-                api, static_cast<gles::GlesThunkId>(index));
+    for (const auto api : {gles::GlesApi::gles1, gles::GlesApi::gles1_extensions, gles::GlesApi::gles2,
+                           gles::GlesApi::gles3, gles::GlesApi::gles2_extensions}) {
+        for (std::size_t index = 0; index < gles::GlesFunctionCount(api); ++index) {
+            const auto function = gles::DescribeGlesFunction(api, static_cast<gles::GlesThunkId>(index));
             if (!proc_names.insert(function.name).second) continue;
-            result.push_back({"$egl.proc", function.name, 0U,
-                              static_cast<std::uint8_t>(
-                                  function.abi_word_count)});
+            result.push_back({"$egl.proc", function.name, 0U, static_cast<std::uint8_t>(function.abi_word_count)});
         }
     }
     return result;

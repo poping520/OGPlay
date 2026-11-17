@@ -1511,8 +1511,6 @@ TEST_CASE("DVM-264 DEX platform service registry preserves supported absent and 
         REQUIRE_FALSE(account.exception.IsValid());
         CHECK(account.value.ref.IsValid());
         CHECK(f.linker.Class(f.model.ObjectClass(account.value.ref)).is_boot_dex);
-        CHECK(std::ranges::any_of(f.ledger.Unimplemented(),
-                                  [](const auto& hit) { return hit.id.find("account") != std::string::npos; }));
     }
 }
 

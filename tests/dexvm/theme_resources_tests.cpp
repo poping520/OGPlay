@@ -1145,7 +1145,7 @@ TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve 
 
 TEST_CASE("DVM-290 createView cache filter exception causes and ROM factories") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ContainerVm f(backend);
+        ContainerVm f(backend, false, true);
         const auto owner = InflaterActivity(f);
         const auto inflater =
             f.Static("Landroid/view/LayoutInflater;", "from",
@@ -1705,15 +1705,15 @@ TEST_CASE("DVM-334 Resources getIdentifier parses API19 names and routes package
         CHECK(id("resource.fixture:logo", "drawable", nullptr) == logo);
         CHECK(id("@drawable/logo", nullptr, nullptr) == 0);  // @ does not supply a default package.
         for (const auto& [text, expected] :
-             std::array<std::pair<const char*, std::int32_t>, 7>{{{"2130903041", logo},
-                                                                  {"+42", 42},
+             std::array<std::pair<const char*, std::int32_t>, 6>{{{"2130903041", logo},
                                                                   {"-42", -42},
                                                                   {"2147483647", 2147483647},
                                                                   {"-2147483648", (-2147483647 - 1)},
                                                                   {"0", 0},
                                                                   {"00042", 42}}})
             CHECK(id(text, nullptr, nullptr) == expected);
-        for (const auto* text : {"2147483648", "-2147483649", "+", "-", " 42", "42 ", "0x2a", "42x"})
+        // API 19 Integer.parseInt rejects a leading '+', so "+42" falls through to a name lookup.
+        for (const auto* text : {"+42", "2147483648", "-2147483649", "+", "-", " 42", "42 ", "0x2a", "42x"})
             CHECK(id(text, nullptr, nullptr) == 0);
         for (const auto* text : {"", "@", "@*", "resource.fixture:drawable/", "resource.fixture:/logo"})
             CHECK(id(text, nullptr, nullptr) == 0);

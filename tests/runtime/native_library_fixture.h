@@ -132,7 +132,8 @@ struct OrchestratedApp final {
                                  ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
                              const std::string& application_class = "android.app.Application",
                              std::function<void()> pump_host_events = {}, Viewport viewport = {64, 36},
-                             std::vector<std::string> gl_textures = {}, bool large_heap = false);
+                             std::vector<std::string> gl_textures = {}, bool large_heap = false,
+                             ogplay::runtime::dexvm::DexVmDiagnosticsConfig diagnostics = {});
 
     void RunOnMainThread(const std::function<void()>& action);
     ogplay::runtime::dexvm::VmCallOutcome CallGuest(ogplay::runtime::dexvm::VmMethodId method,

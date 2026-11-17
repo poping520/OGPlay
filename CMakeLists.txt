@@ -446,6 +446,8 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/boundary/modules/android/android_sensor.cpp
     src/runtime/boundary/modules/android/android_sensor_source.cpp
     src/runtime/boundary/modules/android/android_asset.cpp
+    src/runtime/boundary/modules/android/android_configuration.cpp
+    src/runtime/boundary/modules/android/android_obb.cpp
     src/runtime/boundary/modules/egl/egl_api19.cpp
     src/runtime/boundary/modules/egl/egl_module.cpp
     src/runtime/boundary/modules/gles1/gles1_bounds.cpp

@@ -550,10 +550,33 @@ struct AndroidGuestProcessStartup final {
     std::function<void(std::chrono::nanoseconds)> native_sleep_observer{};
 };
 
+std::size_t ReadBoundaryObbTail(void* owner, std::string_view path, std::span<std::byte> output) {
+    if (!owner) return 0;
+    auto& filesystem = *static_cast<VirtualFileSystem*>(owner);
+    try {
+        const auto descriptor = filesystem.Open(path, {.read = true, .require_positioned_read = true});
+        std::size_t bytes{};
+        try {
+            const auto size = filesystem.DescriptorInfo(descriptor).size;
+            const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(output.size(), size));
+            const auto got = filesystem.ReadAt(descriptor, size - count, output.first(count));
+            if (got == count) bytes = got;
+        } catch (...) {
+            filesystem.Close(descriptor);
+            throw;
+        }
+        filesystem.Close(descriptor);
+        return bytes;
+    } catch (const VfsError&) {
+        return 0;
+    }
+}
+
 [[nodiscard]] AndroidGuestProcessStartup RootlessStartup(const AndroidGuestProcessRequest& request) {
     auto boundary_options = request.boundary_options;
     boundary_options.guest_file_owner = request.filesystem;
     boundary_options.read_guest_file = &ReadBoundaryGuestFile;
+    boundary_options.obb = {request.filesystem, &ReadBoundaryObbTail};
     return {request.api,
             "libc.so",
             request.system_modules,
@@ -582,6 +605,7 @@ struct AndroidGuestProcessStartup final {
     auto boundary_options = request.boundary_options;
     boundary_options.guest_file_owner = request.filesystem;
     boundary_options.read_guest_file = &ReadBoundaryGuestFile;
+    boundary_options.obb = {request.filesystem, &ReadBoundaryObbTail};
     return {request.api,
             request.root_module,
             request.modules,
@@ -1734,6 +1758,7 @@ public:
         const auto detached = java_vm_.DetachCurrentThread(kRootThreadId);
         static_cast<void>(environment_.ShutdownMonitors());
         running_ = false;
+        boundary_.RetireObbResources();
         if (logger_) {
             const auto allocations = arrays_.AllocationStatistics();
             const auto backing = array_payload_.Statistics();
@@ -2143,6 +2168,25 @@ public:
     void PresentManagedSurface() { boundary_.PresentManagedSurface(); }
 
     void CloseManagedSurface() { boundary_.CloseManagedSurface(); }
+
+    memory::GuestAddress AllocateNativeActivityStorage(std::uint32_t size) {
+        const auto page = address_space_.PageSize();
+        const auto mapped = (static_cast<std::uint64_t>(size) + page - 1U) & ~(page - 1U);
+        std::scoped_lock lock(temporary_mutex_);
+        if (temporary_cursor_ + mapped > kTemporaryArenaEnd) throw std::bad_alloc{};
+        const auto address = memory::GuestAddress{temporary_cursor_};
+        address_space_.Map({address, mapped}, memory::PageProtection::read | memory::PageProtection::write);
+        // ANativeActivity's address is also its exported identity. Retired
+        // addresses must never dispatch commands to a later instance.
+        temporary_cursor_ += static_cast<std::uint32_t>(mapped);
+        return address;
+    }
+
+    void ReleaseNativeActivityStorage(memory::GuestAddress address, std::uint32_t size) {
+        const auto page = address_space_.PageSize();
+        const auto mapped = (static_cast<std::uint64_t>(size) + page - 1U) & ~(page - 1U);
+        address_space_.Unmap({address, mapped});
+    }
 
     void RegisterNativeActivity(NativeActivityBoundaryResources resources) {
         boundary_.RegisterNativeActivity(std::move(resources));
@@ -3440,6 +3484,14 @@ std::optional<std::vector<cpu::DynarmicCacheSnapshot>> AndroidGuestProcess::TryC
 }  // namespace ogplay::runtime
 
 namespace ogplay::runtime {
+memory::GuestAddress AndroidGuestProcess::AllocateNativeActivityStorage(std::uint32_t size) {
+    return impl_->AllocateNativeActivityStorage(size);
+}
+
+void AndroidGuestProcess::ReleaseNativeActivityStorage(memory::GuestAddress address, std::uint32_t size) {
+    impl_->ReleaseNativeActivityStorage(address, size);
+}
+
 void AndroidGuestProcess::RegisterNativeActivity(NativeActivityBoundaryResources resources) {
     impl_->RegisterNativeActivity(std::move(resources));
 }

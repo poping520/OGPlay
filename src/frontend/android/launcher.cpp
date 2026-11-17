@@ -424,7 +424,7 @@ void ThrowJava(JNIEnv* env, const char* message) {
 
 extern "C" {
 
-JNIEXPORT jlong JNICALL Java_io_github_poping520_ogplay_launcher_LauncherBridge_nativeCreate(JNIEnv* env, jclass,
+JNIEXPORT jlong JNICALL Java_org_poping520_ogplay_launcher_LauncherBridge_nativeCreate(JNIEnv* env, jclass,
                                                                                              jobject bridge) {
     try {
         return static_cast<jlong>(reinterpret_cast<std::intptr_t>(new Launcher(env, bridge)));
@@ -435,7 +435,7 @@ JNIEXPORT jlong JNICALL Java_io_github_poping520_ogplay_launcher_LauncherBridge_
     return 0;
 }
 
-JNIEXPORT jstring JNICALL Java_io_github_poping520_ogplay_launcher_LauncherBridge_nativeHandle(JNIEnv* env, jclass,
+JNIEXPORT jstring JNICALL Java_org_poping520_ogplay_launcher_LauncherBridge_nativeHandle(JNIEnv* env, jclass,
                                                                                                jlong handle,
                                                                                                jbyteArray request) {
     const auto text = FromJava(env, request);
@@ -447,7 +447,7 @@ JNIEXPORT jstring JNICALL Java_io_github_poping520_ogplay_launcher_LauncherBridg
     }
 }
 
-JNIEXPORT jstring JNICALL Java_io_github_poping520_ogplay_launcher_LauncherBridge_nativePoll(JNIEnv* env, jclass,
+JNIEXPORT jstring JNICALL Java_org_poping520_ogplay_launcher_LauncherBridge_nativePoll(JNIEnv* env, jclass,
                                                                                              jlong handle) {
     try {
         return ToJava(env, FromHandle(handle)->Poll());
@@ -457,7 +457,7 @@ JNIEXPORT jstring JNICALL Java_io_github_poping520_ogplay_launcher_LauncherBridg
     }
 }
 
-JNIEXPORT void JNICALL Java_io_github_poping520_ogplay_launcher_LauncherBridge_nativePickResult(JNIEnv* env, jclass,
+JNIEXPORT void JNICALL Java_org_poping520_ogplay_launcher_LauncherBridge_nativePickResult(JNIEnv* env, jclass,
                                                                                                 jlong handle,
                                                                                                 jlong token,
                                                                                                 jbyteArray path,
@@ -467,7 +467,7 @@ JNIEXPORT void JNICALL Java_io_github_poping520_ogplay_launcher_LauncherBridge_n
     FromHandle(handle)->PickResult(token, std::move(picked), label ? FromJava(env, label) : std::string{});
 }
 
-JNIEXPORT void JNICALL Java_io_github_poping520_ogplay_launcher_LauncherBridge_nativeDestroy(JNIEnv*, jclass,
+JNIEXPORT void JNICALL Java_org_poping520_ogplay_launcher_LauncherBridge_nativeDestroy(JNIEnv*, jclass,
                                                                                              jlong handle) {
     delete FromHandle(handle);
 }

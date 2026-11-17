@@ -508,6 +508,11 @@ status = "complete"
 test = "tests/runtime/syscall_tests.cpp"
 note = "read/write/pread64/pwrite64 共用 64 KiB 临时缓冲，移除 16 MiB 请求拒绝限制；请求截到 0x7ffff000，短传输停止，后续内存/VFS 错误返回已完成字节。 将 pread64/pwrite64 改为真正 ReadAt/WriteAt，不移动或临时改写 FD offset；不涵盖 mmap 或完整 POSIX"
 
+[runtime.syscall_poll]
+status = "partial"
+test = "tests/runtime/syscall_poll_tests.cpp"
+note = "poll/ppoll 覆盖 VFS pipe、其他 VFS fd（DEFAULT_POLLMASK）与 stdio/日志端点；pipe 写入/关闭即时唤醒，信号与线程退出按 10ms 片检查返回 EINTR；超时与清理预算沿 futex WAIT 钩子。ppoll 临时 sigmask 返回 ENOSYS 记账；socket、eventfd、epoll、select 未实现；pipe 挂断时读端同报 POLLIN。"
+
 [runtime.syscall_file_metadata]
 status = "partial"
 test = "tests/runtime/syscall_tests.cpp"

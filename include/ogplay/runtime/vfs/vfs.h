@@ -4,6 +4,7 @@
 
 // Android-path virtual filesystem core shared by syscall and framework HLE.
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -322,6 +323,11 @@ public:
     // ALOOPER-style bits: read=1, write=2, error=4, hangup=8, invalid=16.
     // nullopt means the descriptor type is outside the pipe polling contract.
     [[nodiscard]] std::optional<std::uint32_t> PipePollEvents(std::int32_t descriptor) const;
+    // Counter bumped after a pipe write or a pipe descriptor close. Read it before
+    // PipePollEvents, then WaitPipeReadiness with that value so no change is lost.
+    [[nodiscard]] std::uint64_t PipeReadinessGeneration() const;
+    // Returns once the counter differs from `observed` or `timeout` elapses.
+    void WaitPipeReadiness(std::uint64_t observed, std::chrono::nanoseconds timeout) const;
     [[nodiscard]] std::size_t Read(std::int32_t descriptor, std::span<std::byte> destination);
     [[nodiscard]] std::size_t ReadAt(std::int32_t descriptor, std::uint64_t offset, std::span<std::byte> destination);
     [[nodiscard]] std::size_t Write(std::int32_t descriptor, std::span<const std::byte> source);

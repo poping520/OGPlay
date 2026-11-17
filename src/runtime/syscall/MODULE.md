@@ -67,6 +67,16 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   64 位入口使用自然对齐目标和 guest 栈，保存非 clobbered 寄存器；访存错误保留 CPU fault。
 - `pipe` 必须先验证完整两元素输出数组，再原子创建 VFS descriptor pair；发布失败回收
   两端，不泄漏半完成状态。
+- `poll`(168)/`ppoll`(336) 随文件绑定装配（`syscall_poll.cpp`），共用同一 VFS 与诊断端点表。
+  先整表受检读入（nfds 上限 1024，超出 EINVAL，坏表 EFAULT），每轮先取 VFS 管道就绪代数再
+  评估，未就绪时在该代数上等待，pipe 写入/关闭即时唤醒，不丢通知。pipe 按 PipePollEvents
+  映射 POLLIN|RDNORM、POLLOUT|WRNORM、POLLERR、POLLHUP（挂断时读端同报 POLLIN）；其他 VFS fd
+  报 DEFAULT_POLLMASK；未打开 fd 报 POLLNVAL；负 fd 跳过；端点按访问模式报读/写。结果按
+  events|ERR|HUP|NVAL 掩码，只回写各项 revents。已就绪优先于信号；否则绑定 signal runtime 时
+  未屏蔽 pending 信号或线程退出返回 EINTR，按 10ms 片复查。超时与 owner 时限沿 futex WAIT：
+  到期且请求超时非零时调用 account_timeout，owner 时限先到按普通超时返回、不记账。只有实际
+  等待后报告 advanced。ppoll 受检读取 32-bit timespec（NULL 无限、非法 EINVAL），返回时回写
+  剩余时间；非空 sigmask 需 sigsuspend 式换掩码，返回 ENOSYS 记账。
 - 线程状态只能按 running → exit-requested → exited → reap 前进。exit-requested 必须持久保存
   来源（host/exit/exit_group）、requester、退出码和 syscall PC/LR；进程组退出的每个受影响
   线程共享同一请求事实，供即时错误与后续诊断读取。宿主失败通知可由已 exited 但未 reap

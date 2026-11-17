@@ -205,7 +205,16 @@ void BindAndroidCloneSyscall(A32SyscallDispatcher& dispatcher, GuestThreadCloneS
 void BindAndroidFileMetadataSyscalls(A32SyscallDispatcher& dispatcher, VirtualFileSystem& vfs,
                                      memory::AddressSpace& address_space);
 
+// Process policy for poll/ppoll waits, mirroring futex WAIT: wait_limit may shorten a
+// wait (teardown budget); account_timeout receives a non-zero requested timeout that expired.
+struct GuestPollWaitHooks final {
+    std::function<std::optional<std::chrono::nanoseconds>(std::uint64_t)> wait_limit;
+    std::function<void(std::uint64_t, std::chrono::nanoseconds)> account_timeout;
+};
+
+// Also binds poll(168)/ppoll(336) over the same VFS and stdio/log endpoints.
 void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher, VirtualFileSystem& vfs,
-                             memory::AddressSpace& address_space, GuestIoSink io_sink = {});
+                             memory::AddressSpace& address_space, GuestIoSink io_sink = {},
+                             GuestPollWaitHooks poll_wait = {});
 
 }  // namespace ogplay::runtime

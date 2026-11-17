@@ -95,6 +95,7 @@ set(OGPLAY_TEST_SOURCES
     tests/runtime/stall_diagnostics_tests.cpp
     tests/runtime/syscall_bridge_tests.cpp
     tests/runtime/syscall_process_tests.cpp
+    tests/runtime/syscall_poll_tests.cpp
     tests/runtime/syscall_signal_tests.cpp
     tests/runtime/bionic_module_set_tests.cpp
     tests/runtime/bionic_profile_tests.cpp

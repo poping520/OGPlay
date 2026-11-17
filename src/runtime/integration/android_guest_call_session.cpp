@@ -1856,25 +1856,25 @@ public:
                 if (native_sleep_observer_) native_sleep_observer_(slept);
             });
         BindAndroidMemorySyscalls(dispatcher_, address_space_);
-        BindAndroidThreadSyscalls(
-            dispatcher_, futex_table_, memory_bus_,
-            [this](std::uint64_t thread) -> std::optional<std::chrono::nanoseconds> {
-                if (thread != kRootThreadId || std::this_thread::get_id() != owner_thread_ || cleanup_depth_ == 0U)
-                    return std::nullopt;
-                const auto now = hal::Clock::SteadyTimestampNs();
-                const auto deadline = *cleanup_deadline_ns_;
-                return std::chrono::nanoseconds(now < deadline ? deadline - now : 0U);
-            },
-            [this](std::uint64_t, std::chrono::nanoseconds waited) {
-                if (native_sleep_observer_) native_sleep_observer_(waited);
-            });
+        const auto cleanup_wait_limit = [this](std::uint64_t thread) -> std::optional<std::chrono::nanoseconds> {
+            if (thread != kRootThreadId || std::this_thread::get_id() != owner_thread_ || cleanup_depth_ == 0U)
+                return std::nullopt;
+            const auto now = hal::Clock::SteadyTimestampNs();
+            const auto deadline = *cleanup_deadline_ns_;
+            return std::chrono::nanoseconds(now < deadline ? deadline - now : 0U);
+        };
+        const auto account_wait = [this](std::uint64_t, std::chrono::nanoseconds waited) {
+            if (native_sleep_observer_) native_sleep_observer_(waited);
+        };
+        BindAndroidThreadSyscalls(dispatcher_, futex_table_, memory_bus_, cleanup_wait_limit, account_wait);
         BindAndroidSignalSyscalls(dispatcher_, address_space_, &lifecycle_, GuestCpuEnvironment::ClassifyUserUndefined);
         BindAndroidProcessSyscalls(dispatcher_, address_space_, [this](const GuestVmaAnnotation& annotation) {
             std::scoped_lock lock(vma_mutex_);
             vma_annotations_.push_back(annotation);
         });
         BindAndroidFileSyscalls(dispatcher_, *filesystem_, address_space_,
-                                [this](const GuestIoRecord& record) { LogGuestIo(record); });
+                                [this](const GuestIoRecord& record) { LogGuestIo(record); },
+                                {.wait_limit = cleanup_wait_limit, .account_timeout = account_wait});
         BindAndroidFileMetadataSyscalls(dispatcher_, *filesystem_, address_space_);
         BindAndroidThreadLifecycleSyscalls(dispatcher_, lifecycle_);
         BindAndroidArmPrivateSyscalls(dispatcher_, address_space_,

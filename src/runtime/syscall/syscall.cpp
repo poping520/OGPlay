@@ -2,6 +2,7 @@
 
 #include "guest_path_reader.h"
 #include "file_transfer.h"
+#include "poll_syscalls.h"
 #include <array>
 #include <bit>
 #include <chrono>
@@ -765,7 +766,7 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher, cpu::FutexTable
 }
 
 void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher, VirtualFileSystem& vfs,
-                             memory::AddressSpace& address_space, GuestIoSink io_sink) {
+                             memory::AddressSpace& address_space, GuestIoSink io_sink, GuestPollWaitHooks poll_wait) {
     *dispatcher.filesystem_binding = &vfs;
     constexpr std::int32_t kEfault = 14;
     constexpr std::int32_t kEinval = 22;
@@ -1077,6 +1078,15 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher, VirtualFileSystem
             return -error.ErrorNumber();
         }
     });
+    BindAndroidPollSyscalls(
+        dispatcher, vfs, address_space,
+        [diagnostic_descriptors](const std::int32_t descriptor) -> std::optional<GuestPollEndpointAccess> {
+            std::scoped_lock lock(diagnostic_descriptors->mutex);
+            const auto found = diagnostic_descriptors->endpoints.find(descriptor);
+            if (found == diagnostic_descriptors->endpoints.end()) return std::nullopt;
+            return GuestPollEndpointAccess{found->second.status.read, found->second.status.write};
+        },
+        std::move(poll_wait));
 }
 
 }  // namespace ogplay::runtime

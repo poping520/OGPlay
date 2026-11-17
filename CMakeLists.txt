@@ -534,6 +534,7 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/syscall/syscall_arm.cpp
     src/runtime/syscall/syscall_bridge.cpp
     src/runtime/syscall/syscall_file_metadata.cpp
+    src/runtime/syscall/syscall_poll.cpp
     src/runtime/syscall/syscall_process.cpp
     src/runtime/syscall/syscall_signal.cpp
     src/runtime/syscall/syscall_thread_lifecycle.cpp

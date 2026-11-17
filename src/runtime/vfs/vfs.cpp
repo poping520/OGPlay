@@ -697,6 +697,26 @@ std::optional<std::uint32_t> VirtualFileSystem::Impl::PipePollEvents(std::int32_
     return events;
 }
 
+std::uint64_t VirtualFileSystem::Impl::PipeReadinessGeneration() const {
+    std::scoped_lock lock(pipe_readiness_mutex_);
+    return pipe_readiness_generation_;
+}
+
+void VirtualFileSystem::Impl::WaitPipeReadiness(const std::uint64_t observed,
+                                                const std::chrono::nanoseconds timeout) const {
+    std::unique_lock lock(pipe_readiness_mutex_);
+    pipe_readiness_changed_.wait_for(lock, timeout,
+                                     [this, observed] { return pipe_readiness_generation_ != observed; });
+}
+
+void VirtualFileSystem::Impl::NotifyPipeReadiness() const {
+    {
+        std::scoped_lock lock(pipe_readiness_mutex_);
+        ++pipe_readiness_generation_;
+    }
+    pipe_readiness_changed_.notify_all();
+}
+
 VfsPipeDescriptors VirtualFileSystem::Impl::CreatePipe() {
     std::scoped_lock lock(mutex_);
     auto pipe = std::make_shared<File>(File{{}, 0, {}, {}, true, VfsSource::runtime, false, {}});
@@ -843,6 +863,7 @@ std::size_t VirtualFileSystem::Impl::Write(const std::int32_t descriptor, const 
         open->offset = end;
         SetNodeSizeDirtyLocked(*file, file->contents.size(), file->dirty || !file->overlay_path.empty());
     }
+    if (open->pipe) NotifyPipeReadiness();
     return source.size();
 }
 
@@ -1032,6 +1053,8 @@ void VirtualFileSystem::Impl::Close(const std::int32_t descriptor) {
         open = found->second;
         descriptors_.erase(found);
     }
+    // Closing an end can raise hangup or error on its peer.
+    if (open->pipe) NotifyPipeReadiness();
     std::scoped_lock operation(open->mutex);
     if (!open->file) return;
     {
@@ -1305,6 +1328,14 @@ VfsFileInfo VirtualFileSystem::DescriptorInfo(const std::int32_t descriptor) con
 
 std::optional<std::uint32_t> VirtualFileSystem::PipePollEvents(std::int32_t descriptor) const {
     return impl_->PipePollEvents(descriptor);
+}
+
+std::uint64_t VirtualFileSystem::PipeReadinessGeneration() const {
+    return impl_->PipeReadinessGeneration();
+}
+
+void VirtualFileSystem::WaitPipeReadiness(const std::uint64_t observed, const std::chrono::nanoseconds timeout) const {
+    impl_->WaitPipeReadiness(observed, timeout);
 }
 
 VfsPipeDescriptors VirtualFileSystem::CreatePipe() {

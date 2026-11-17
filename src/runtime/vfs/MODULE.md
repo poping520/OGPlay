@@ -156,6 +156,9 @@ mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄�
 PipePollEvents 是不消费数据的快照查询：返回读/写/错误/挂断/无效位，普通文件或目录返回
 不支持。可读性来自当前 offset 与 backing size，另一端关闭从真实 descriptor 表推导；
 不以任意文件写入作为 pipe 事件。调用侧负责等待和重新查询，VFS 不依赖 Looper。
+PipeReadinessGeneration 是进程内单调计数，pipe 写入成功与 pipe descriptor 关闭后递增并唤醒
+WaitPipeReadiness；等待方先取计数再查询 PipePollEvents，再以该计数等待，变化不会丢失。
+计数只表示“可能变化”，等待方必须重新查询；其锁是叶子锁，持有时不进入其他 VFS 锁。
 
 ## 查找观察（ADR-0146）
 

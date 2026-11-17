@@ -6,6 +6,8 @@
 
 #include <cstdint>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -175,6 +177,9 @@ public:
     [[nodiscard]] VfsOpenStatus DescriptorStatus(std::int32_t descriptor) const;
     [[nodiscard]] VfsPipeDescriptors CreatePipe();
     [[nodiscard]] std::optional<std::uint32_t> PipePollEvents(std::int32_t descriptor) const;
+    [[nodiscard]] std::uint64_t PipeReadinessGeneration() const;
+    void WaitPipeReadiness(std::uint64_t observed, std::chrono::nanoseconds timeout) const;
+    void NotifyPipeReadiness() const;
     [[nodiscard]] std::size_t Read(std::int32_t descriptor, std::span<std::byte> destination);
     [[nodiscard]] std::size_t ReadAt(std::int32_t descriptor, std::uint64_t offset, std::span<std::byte> destination);
     [[nodiscard]] std::size_t Write(std::int32_t descriptor, std::span<const std::byte> source);
@@ -238,6 +243,10 @@ public:
     [[nodiscard]] std::shared_ptr<OpenFile> FindDescriptor(std::int32_t descriptor) const;
 
     mutable std::mutex mutex_;
+    // Leaf lock: holders never take another VFS lock.
+    mutable std::mutex pipe_readiness_mutex_;
+    mutable std::condition_variable pipe_readiness_changed_;
+    mutable std::uint64_t pipe_readiness_generation_{};
     // Separate from mutex_ so notification never runs under the index lock.
     mutable std::mutex lookup_observer_mutex_;
     std::shared_ptr<const VfsLookupObserver> lookup_observer_;

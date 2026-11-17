@@ -17,6 +17,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -93,12 +94,13 @@ struct AndroidKeyguardState final {
 
 using AndroidKeyguardStateProvider = std::function<AndroidKeyguardState()>;
 
-// Explicit bounded guest topology: a disabled logical WiFi network type,
-// independent of host adapters. Online states require a separate capability.
+// Offline GSM and optional Wi-Fi topology, independent of host adapters.
 class GuestNetworkEnvironment;
 
 struct AndroidOfflineConnectivity final {
     bool wifi_type_supported{true};
+    // Lazily read from the process's API 19 framework resources.
+    std::map<int, std::string> network_types;
 };
 
 // Process-visible logical devices, independent of SDL's host device ids.
@@ -175,6 +177,8 @@ struct SimulatedDeviceState final {
     struct Network final {
         bool wifi_enabled{true};
         bool mobile_data_enabled{};
+        bool airplane_mode{};
+        bool bluetooth_enabled{};
         int preference{1};  // TYPE_WIFI
         std::set<dexvm::VmObjectRef> wifi_locks;
         std::vector<dexvm::VmObjectRef> multicast_locks;
@@ -198,15 +202,22 @@ struct SimulatedDeviceState final {
             int gain{}, loss{};
         };
 
+        struct MediaButtonReceiver {
+            dexvm::VmObjectRef operation, target, component, token;
+        };
+
         std::vector<Focus> focus;
+        std::vector<MediaButtonReceiver> media_button_receivers;
         std::set<dexvm::VmObjectRef> route_observers;
         std::set<dexvm::VmObjectRef> media_router_clients;
     } audio;
 
     struct Telephony final {
-        int phone_type{};  // PHONE_TYPE_NONE
-        int call_state{};  // CALL_STATE_IDLE
-        int data_state{};  // DATA_DISCONNECTED
+        int phone_type{1};  // PHONE_TYPE_GSM
+        int call_state{};   // CALL_STATE_IDLE
+        int data_state{};   // DATA_DISCONNECTED
+        bool data_roaming{};
+        std::string network_operator;
         std::set<dexvm::VmObjectRef> call_listeners;
     } telephony;
 
@@ -250,6 +261,8 @@ struct DexVmAndroidContext final {
     // Documented shared desktop output fact. Frontends inject their session's
     // actual mixer rate when it differs from the default desktop configuration.
     std::uint32_t native_output_sample_rate{48000U};
+    std::uint32_t native_output_buffer_frames{};
+    std::uint32_t native_output_target_queued_frames{};
     // Process-owned encoded-audio mixer used by SoundPool and MediaPlayer.
     audio::JavaSoundPoolMixer* encoded_audio_playback{};
     audio::EncodedMusicMixer* encoded_music{};
@@ -331,6 +344,23 @@ struct DexVmAndroidContext final {
     std::vector<std::pair<dexvm::VmObjectRef, dexvm::VmObjectRef>> local_broadcast_filters;
     std::map<std::string, dexvm::VmObjectRef, std::less<>> local_sticky_broadcasts;
 
+    struct LocalBroadcast {
+        struct Target {
+            dexvm::VmObjectRef receiver;
+            const loader::AndroidManifestReceiverComponent* manifest{};
+            int priority{};
+        };
+
+        dexvm::VmObjectRef intent, result_to, data, extras, waiting;
+        std::deque<Target> targets;
+        int result_code{}, flags{};
+        bool ordered{};
+        std::string action, waiting_receiver;
+    };
+
+    std::deque<LocalBroadcast> local_serial_broadcasts;
+    std::atomic<std::int64_t> serial_broadcast_deadline_millis{std::numeric_limits<std::int64_t>::max()};
+
     struct RomServiceRecord final {
         dexvm::VmObjectRef thread{}, token{}, component{}, bind_intent{}, binder{};
         std::vector<dexvm::VmObjectRef> connections{};
@@ -349,10 +379,25 @@ struct DexVmAndroidContext final {
         std::string creator_package;
         std::int32_t kind{}, request_code{}, flags{};
         bool canceled{};
+        std::optional<std::string> resolved_type;
     };
 
     std::unordered_map<std::uint32_t, PendingIntentRecord> pending_intents;
-    std::vector<dexvm::VmObjectRef> alarm_operations;
+
+    struct AlarmOperation {
+        dexvm::VmObjectRef token;
+        std::int64_t when{}, interval{};
+        bool rtc{};
+    };
+
+    std::vector<AlarmOperation> alarm_operations;
+    std::array<std::atomic<std::int64_t>, 2> alarm_deadlines{std::numeric_limits<std::int64_t>::max(),
+                                                             std::numeric_limits<std::int64_t>::max()};
+
+    [[nodiscard]] bool AlarmDue() const {
+        return UptimeMillis() >= alarm_deadlines[0].load() || WallTimeMillis() >= alarm_deadlines[1].load();
+    }
+
     bool pending_intents_stopping{};
     std::unordered_set<std::string> granted_permissions;
     std::unordered_set<std::string> system_features;
@@ -370,7 +415,6 @@ struct DexVmAndroidContext final {
     std::string device_id{"000000000000000"};
     std::string device_software_version{"00"};
     std::string line_number;
-    std::string network_operator{"00000"};
     // Host-independent default: OGPlay has no lock screen. A frontend may
     // replace this process-lifetime provider with a host-backed snapshot
     // without changing the Android facade or introducing Binder/system_server.
@@ -516,10 +560,20 @@ struct DexVmAndroidContext final {
 
     // Dynamic receiver registrations are owned by the Context instance that
     // performed registerReceiver(), matching LoadedApk's per-context
-    // dispatcher map. Broadcast delivery remains outside this bounded model.
+    // dispatcher map.
     std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> broadcast_receivers;
 
     std::shared_ptr<const AndroidSensorDirectory> sensor_directory = std::make_shared<const AndroidSensorDirectory>();
+    std::shared_ptr<AndroidSensorSource> sensor_source;
+    AndroidSensorQueues* sensor_queues{};
+
+    struct JavaSensorQueue {
+        dexvm::VmObjectRef receiver, scratch;
+        std::uint64_t thread{};
+        std::shared_ptr<std::atomic<bool>> readable;
+    };
+
+    std::map<std::uint32_t, JavaSensorQueue> java_sensor_queues;
 
     struct SurfaceTextureState final {
         std::shared_ptr<SurfaceStream> stream;

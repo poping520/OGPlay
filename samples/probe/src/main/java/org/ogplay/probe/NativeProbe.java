@@ -29,5 +29,6 @@ final class NativeProbe {
     static native long[] asset(android.content.res.AssetManager manager);
     static native long[] looper();
     static native long[] openSl();
+    static native long[] sensor();
     static native void abortProcess();
 }

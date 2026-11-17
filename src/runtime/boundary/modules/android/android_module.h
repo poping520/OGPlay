@@ -17,7 +17,7 @@
 
 namespace ogplay::runtime {
 
-class AndroidModule final {
+class AndroidModule final : public AndroidSensorQueues {
 public:
     AndroidModule(BoundaryCallServices& calls, AndroidBoundaryServices& services, AndroidLooperHooks hooks = {},
                   core::Logger* logger = nullptr, core::CapabilityLedger* ledger = nullptr);
@@ -27,7 +27,14 @@ public:
     void RetireSurfaceWindow(memory::GuestAddress identity);
     memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface);
     void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface);
-    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory);
+    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory,
+                            std::shared_ptr<AndroidSensorSource> source);
+    std::uint32_t OpenSensorQueue(std::uint64_t thread, std::function<void()> on_readable) override;
+    void CloseSensorQueue(std::uint32_t queue) override;
+    bool EnableSensor(std::uint32_t queue, std::int32_t handle, std::int32_t period_us) override;
+    bool DisableSensor(std::uint32_t queue, std::int32_t handle) override;
+    bool FlushSensors(std::uint32_t queue) override;
+    std::size_t ReadSensors(std::uint32_t queue, std::span<AndroidSensorSample> events) override;
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept;
     void NotifyFileWrite();
     memory::GuestAddress PrepareThreadLooper(std::uint64_t thread_id, std::uint32_t opts = 0);
@@ -73,6 +80,7 @@ private:
             std::uint32_t events{};
             memory::GuestAddress data{}, callback{};
             std::uint64_t generation{};
+            std::function<void()> on_readable;
         };
 
         std::map<std::int32_t, Request> requests;
@@ -81,7 +89,8 @@ private:
     };
 
     std::int32_t AddLooperFdLocked(memory::GuestAddress looper, std::int32_t fd, std::int32_t ident,
-                                   std::uint32_t events, memory::GuestAddress callback, memory::GuestAddress data);
+                                   std::uint32_t events, memory::GuestAddress callback, memory::GuestAddress data,
+                                   std::function<void()> on_readable = {});
     std::int32_t RemoveLooperFdLocked(memory::GuestAddress looper, std::int32_t fd);
     Looper& RequireLooper(memory::GuestAddress handle);
     void RetireThreadLooperLocked(std::uint64_t thread_id);
@@ -183,17 +192,27 @@ private:
         std::uint64_t owner{};
         memory::GuestAddress looper;
         std::array<std::int32_t, 2> pipe;
+        std::unique_ptr<AndroidSensorStream> stream;
+        bool signaled{};
     };
 
     std::map<std::uint32_t, SensorQueue> sensor_queues_;
     memory::GuestAddress next_sensor_queue_{0x6e900000U};
-    memory::GuestAddress sensor_list_{};
+    std::unique_ptr<GuestBuffer> sensor_list_;
+    std::vector<std::array<memory::GuestAddress, 2>> sensor_strings_;
+    std::shared_ptr<AndroidSensorSource> sensor_source_;
     std::shared_ptr<const AndroidSensorDirectory> sensor_directory_ = std::make_shared<const AndroidSensorDirectory>();
     core::Logger* logger_{};
     core::CapabilityLedger* ledger_{};
     BoundaryResult SensorExport(const A32CallFrame& call, std::uint16_t id);
     void RetireSensorQueues(std::optional<std::uint64_t> thread);
-    void CloseSensorQueue(const SensorQueue& queue);
+    std::uint32_t OpenSensorQueueLocked(std::uint64_t thread, memory::GuestAddress looper, int ident,
+                                        memory::GuestAddress callback, memory::GuestAddress data,
+                                        std::function<void()> on_readable = {});
+    void CloseSensorQueueLocked(const SensorQueue& queue);
+    void UpdateSensorQueueSignal(SensorQueue& queue);
+    void BuildSensorList(std::uint64_t thread);
+    SensorQueue& RequireSensorQueue(std::uint32_t key, std::uint64_t thread);
     [[noreturn]] void SensorFailure(std::string_view message, std::uint64_t thread);
     std::mutex mutex_;
     std::condition_variable ready_;

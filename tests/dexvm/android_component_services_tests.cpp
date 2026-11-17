@@ -699,6 +699,7 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
                                        return VmValue::Void();
                                    });
     auto receiver_class = IntrinsicClassBuilder::Class("Ltest/RomReceiver;", "Landroid/content/BroadcastReceiver;");
+    receiver_class.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
     receiver_class.VirtualMethod(
         "onReceive", "(Landroid/content/Context;Landroid/content/Intent;)V", [&](IntrinsicContext& call) {
             const auto type = call.vm.Model().ObjectClass(call.receiver);
@@ -839,6 +840,31 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
     CHECK_FALSE(
         f.On(application, "registerReceiver", register_signature, {VmValue::Ref(VmObjectRef{}), VmValue::Ref(filter)})
             .ref.IsValid());
+    f.context->receiver_inventory_known = true;
+    f.context->receiver_components = {{.name = "test.RomReceiver", .enabled = true}};
+    const auto manifest_receiver = f.New(
+        "Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
+        {VmValue::Ref(f.vm.NewStringUtf8("test.application")), VmValue::Ref(f.vm.NewStringUtf8("test.RomReceiver"))});
+    const auto explicit_broadcast = f.New("Landroid/content/Intent;");
+    const auto broadcast_root = f.vm.ProtectReferences(std::array{manifest_receiver, explicit_broadcast});
+    f.On(explicit_broadcast, "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;",
+         {VmValue::Ref(manifest_receiver)});
+    constexpr auto pending_intent = "Landroid/app/PendingIntent;";
+    constexpr auto create_pending = "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;";
+    const auto broadcast =
+        f.Static(pending_intent, "getBroadcast", create_pending,
+                 {VmValue::Ref(application), VmValue::Int(1), VmValue::Ref(explicit_broadcast), VmValue::Int(0)})
+            .ref;
+    f.On(broadcast, "send", "()V");
+    REQUIRE(f.context->local_serial_broadcasts.size() == 1);
+    const auto delivery_token = f.context->local_serial_broadcasts.front().waiting;
+    REQUIRE(delivery_token.IsValid());
+    CHECK(delivery_token !=
+          f.On(thread, "getApplicationThread", "()Landroid/app/ActivityThread$ApplicationThread;").ref);
+    const auto broadcast_error = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
+    REQUIRE_MESSAGE(!broadcast_error.has_value(), broadcast_error.value_or(""));
+    CHECK(received == 3);
+    CHECK(f.context->local_serial_broadcasts.empty());
     const auto component = f.New(
         "Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
         {VmValue::Ref(f.vm.NewStringUtf8("test.application")), VmValue::Ref(f.vm.NewStringUtf8("test.RomService"))});
@@ -851,10 +877,15 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
         CHECK(f.On(application, "startService", "(Landroid/content/Intent;)Landroid/content/ComponentName;",
                    {VmValue::Ref(request)})
                   .ref.IsValid());
+    const auto pending_service =
+        f.Static(pending_intent, "getService", create_pending,
+                 {VmValue::Ref(application), VmValue::Int(2), VmValue::Ref(request), VmValue::Int(0)})
+            .ref;
+    f.On(pending_service, "send", "()V");
     const auto starts = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
     REQUIRE_MESSAGE(!starts.has_value(), starts.value_or(""));
     CHECK(created == 1);
-    CHECK(started == 2);
+    CHECK(started == 3);
     const auto connection = f.vm.NewIntrinsicInstance("Ltest/RomConnection;");
     const auto connection_root = f.vm.ProtectReferences(std::array{connection});
     CHECK(f.On(application, "bindService", "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z",

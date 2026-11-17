@@ -271,7 +271,9 @@ public:
     void RetireSurfaceWindow(memory::GuestAddress identity);
     memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface);
     void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface);
-    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory);
+    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory,
+                            std::shared_ptr<AndroidSensorSource> source);
+    AndroidSensorQueues& SensorQueues();
     void SetDeviceLocaleProvider(std::function<DeviceLocale()> provider);
     [[nodiscard]] memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);
     void UnregisterAssetManager(memory::GuestAddress manager);

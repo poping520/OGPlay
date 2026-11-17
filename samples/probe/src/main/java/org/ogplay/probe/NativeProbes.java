@@ -190,6 +190,31 @@ final class NativeProbes {
                         "A native Looper delivers an input callback for a ready pipe");
             }
         });
+        add(probes, new NativeCase("native.sensor", "in_scope", "ASensorManager_getSensorList",
+                "ASensorManager_getDefaultSensor", "ASensorEventQueue_enableSensor",
+                "ASensorEventQueue_setEventRate", "ALooper_pollOnce", "ASensorEventQueue_getEvents",
+                "ASensorEventQueue_disableSensor") {
+            @Override Outcome measure(ProbeSession session) throws Exception {
+                long[] value = NativeProbe.sensor();
+                int javaCount = ((android.hardware.SensorManager) session.activity.getSystemService("sensor"))
+                        .getSensorList(android.hardware.Sensor.TYPE_ALL).size();
+                return new Checks()
+                        .require("same_inventory_size", value[0] > 0 && value[0] == javaCount)
+                        .require("default_accelerometer_listed", value[1] == 1)
+                        .require("enabled", value[2] == 0)
+                        .require("rate_set", value[3] == 0)
+                        .require("looper_event", value[4] == 1)
+                        .require("valid_sample", value[5] == 1)
+                        .require("disabled", value[6] == 0)
+                        .require("idle_after_disable", value[7] == 1)
+                        .require("destroyed", value[8] == 0)
+                        .outcome(obj("ndk_count", value[0], "java_count", javaCount, "listed", value[1],
+                                "enable", value[2], "rate", value[3], "looper_event", value[4],
+                                "sample_valid", value[5], "disable", value[6], "idle", value[7], "destroy", value[8]),
+                                obj("count_matches_java", true, "accelerometer_listed", true,
+                                        "receives_and_stops", true), "The NDK sensor shares Java inventory and wakes ALooper");
+            }
+        });
         add(probes, new NativeCase("native.opensl", "in_scope", "slCreateEngine", "SLObjectItf.Realize",
                 "SLEngineItf.CreateOutputMix", "SLEngineItf.CreateAudioPlayer", "SLPlayItf.SetPlayState",
                 "SLAndroidSimpleBufferQueueItf.RegisterCallback", "SLAndroidSimpleBufferQueueItf.Enqueue", "SLObjectItf.Destroy") {

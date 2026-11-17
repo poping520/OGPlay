@@ -140,15 +140,17 @@ calling identity 固定为进程 UID/PID，StrictMode mask 按执行上下文隔
 | 能力 | 支持范围与所有权 |
 | --- | --- |
 | DisplayManager/UiModeManager | 本地 IDisplayManager 发布单显示和原版默认 WifiDisplayStatus。本地 IMediaRouterService 登记当前用户的客户端且提供空全局路由目录；默认路由由 ROM MediaRouter 管理。Wi-Fi 显示控制保留权限和扫描登记检查；无适配器时无无线动作。UiModeManager、初始 Configuration 与资源匹配共用设备 uiMode，普通手机默认 NORMAL、NIGHT_NO。 |
-| Settings/SystemProperties | ROM NameValueCache 通过本地 Settings provider 读取沙盒 Secure 身份和进程内 System/Global 表。System 有效值变更递增版本并由 IContentService 通知观察者。System 写需 WRITE_SETTINGS，Secure/Global 写抛 SecurityException。URI 查询返回已建模表的游标；按表或名称读取，支持投影与简单名称筛选。SystemProperties 从显示和 VM 配置读取密度、常规堆上限和最大堆；无跨用户、同步适配器或宿主设置。 |
+| Settings/SystemProperties | ROM NameValueCache 通过本地 Settings provider 读取 System、Secure、Global。只读默认层取 API19 常量和会话设备状态，进程内写入层优先；URI 表查询包含默认行，支持投影与名称筛选。System 有效值变更递增版本并由 IContentService 通知，写需 WRITE_SETTINGS；Secure/Global 写抛 SecurityException。依赖未建模服务的键不发布。SystemProperties 从显示、电话和 VM 配置读取事实；Secure ANDROID_ID 取自沙盒。 |
 | Notification | ROM Notification/NotificationManager 持有字段、构造、extras 与本地 Parcel 值；本地 INotificationManager 按当前包 tag/id 保存通知并支持取消。展示记 UI 降级，跨包访问检查 UID；无系统展示、声音、点击或持久库存 |
 | SMS | SmsManager 和 SmsMessage 来自原样的 telephony-common.jar。PDU 由 ROM 解析。本地 ISms 对获准查询返回无 SIM、无 IMS 状态，获准发送请求记账拒绝。无 Phone/RIL、SIM 存储或短信传输 |
 | NFC | ROM NfcAdapter 经 IPackageManager 查询 NFC feature，缺席时 NfcManager 捕获 UOE，默认适配器为 null；无监听或通信 |
-| PendingIntent/AlarmManager | 当前 APK 单 Activity/service/broadcast 令牌，创建不解析/启动目标；原 Intent 复制/filterEquals/replaceExtras 快照，extras 不参与身份，种类/包/requestCode/ONE_SHOT/fill-in flags 参与，NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT 控制查找，CANCEL_CURRENT\|NO_CREATE 返回旧已取消令牌。仅普通 Intent/BootDex Uri；selector/content MIME provider/未知 flags/Parcel/克隆失败。VM 锁串行 registry、非永久根，ROM 包装按本地 IIntentSender 的 Binder 身份比较，活令牌追踪 Intent，GC 删除记录；闹钟条目为 session roots。ROM AlarmManager 经本地 IAlarmManager，set 按 API19 校验并登记，按 operation 令牌替换，每次成功登记记 `dexvm.alarm_delivery`，到期触发暂缺。cancel(null/无匹配) 正常，移除闹钟不取消令牌；令牌 cancel 后不匹配。退出停止创建/清理；IIntentSender.send 仍抛 UOE。 |
-| Connectivity/Wifi | core policy/transport 默认离线，仅注入事实，无 host 网络/DNS/代理/证书探测。默认断开的逻辑 WiFi，可声明类型缺席；独立原版 NetworkInfo=DISCONNECTED/不可用、活动网络 null，Wifi 默认开启。NetworkInfo 查询需 ACCESS_NETWORK_STATE，缺事实/online policy UOE，不支持类型按 API19 null；ROM ConnectivityManager 通过本地 IConnectivityManager 查询，服务调用原 NetworkInfo 构造/setter。getConnectionInfo 需 ACCESS_WIFI_STATE，离线返回独立 WifiInfo（networkId=-1、UNINITIALIZED、MAC=null）；初次登记可收到断开状态的粘性广播。Wifi 开关写入会话状态；无在线 provider 或真实无线控制；同一离线拓扑派生只读 lo 内核视图与本地地址 ioctl，不受 transport IO 授权限制 |
+| PendingIntent/AlarmManager | 当前 APK 的单 Activity/service/broadcast 令牌，创建只保存 Intent 快照及匹配身份。ROM Intent 处理快照、filterEquals、replaceExtras 和发送时的 fillIn。已取消令牌返回 START_CANCELED，ONE_SHOT 先失效后发送。发送使用正常的进程内 Activity、Service 和广播入口；广播完成回调等待接收器完成。闹钟按令牌替换或取消，主 Looper 使用统一 Clock 区分 RTC 和 elapsedRealtime，按窗口起点触发，补算重复次数并附带 EXTRA_ALARM_COUNT。条目随进程清理，无持久化或进程外唤醒。selector、content MIME 推断、跨包解析和 Parcel 仍受现有边界约束。 |
+| Connectivity/Wifi | ROM ConnectivityManager 使用本地 IConnectivityManager。支持的类型取自 framework-res 的 networkAttributes，保留 Wi-Fi 和 GSM 移动系列。Wi-Fi 默认开启但断开，无 SIM 的移动网络断开、不可用、subtype UNKNOWN；活动网络为 null。NetworkInfo 查询需 ACCESS_NETWORK_STATE，返回原版对象并按 API19 对缺席类型返回 null。getConnectionInfo 需 ACCESS_WIFI_STATE，返回断开的 WifiInfo；初次注册可收到断开的粘性广播。Wifi 开关归会话，网络传输策略继续保持离线和回环视图。 |
 | USB/备份 | ROM UsbManager 使用本地 IUsbManager，设备列表为空，配件缺席，打开设备或配件返回 null，权限查询 false。USB 管理权限不授予普通 APK，设备权限 PendingIntent 投递显式失败。ROM BackupManager 保留服务缺席语义，备份请求不排队，恢复请求返回 -1、无恢复会话。 |
 | WifiLock/MulticastLock | ROM WifiManager 计数、held 和每 manager 50 锁上限；本地 IWifiManager 校验锁模式及 WAKE_LOCK/CHANGE_WIFI_MULTICAST_STATE 权限，不改变连接、网卡或组播。 |
-| Sensor/Telephony/Keyguard | ROM SystemSensorManager 从与 NDK 共用的空设备目录枚举。ROM LegacySensorManager 经 IWindowManager 查询固定 ROTATION_0。ROM KeyguardManager 的三项查询经本地 IWindowManager 读取进程 provider，缺席表示桌面无锁屏。ROM TelephonyManager 经本地 IPhoneSubInfo 读取注入的设备标识、软件版本和号码，无订阅时 subscriberId=null；ITelephony 报告 PHONE_TYPE_NONE。SIM/运营商查询由 ROM 读取进程 SystemProperties；ITelephonyRegistry 强持有已登记回调，按事件掩码推送一次当前状态，注销后移除，listen(null) 由 ROM 捕获 NPE。 |
+| Sensor/Telephony/Keyguard | ROM SystemSensorManager 与 NDK 共用会话注入的不可变设备目录和可替换数据源，独立订阅经同一 Looper fd 路径投递。桌面数据源发布静止朝北的运动传感器，手机端可替换数据源。LegacySensorManager 经 IWindowManager 查询固定 ROTATION_0；Keyguard 查询沿进程 provider，缺席表示桌面无锁屏。ITelephony 报告 PHONE_TYPE_GSM，SIM 为 ABSENT，运营商为空，无订阅时 subscriberId=null；身份经 IPhoneSubInfo 与 SystemProperties 读取。ITelephonyRegistry 按掩码推送当前状态，注销时释放回调。 |
+| AccountManager | 本地 IAccountManager 表示零账户、零 authenticator。查询保留 API19 权限检查并返回空数组，令牌失效为空操作。空 feature 查询通过 onResult 返回空数组，需 authenticator 的会话以 onError 报 bind failure。账户权限变更、跨用户与共享账户写入受限。 |
+| AudioSystem/AudioManager | AudioSystem 发布内置扬声器和未静音麦克风。主输出采样率和缓冲帧数取会话 PCM 输出配置。AudioSystem 的设备、路由、音量、静音和低内存策略 setter 返回错误并逐方法记账。setParameters 接受参数并按键限流告警，getParameters 返回空串。输出延迟根据 PCM 缓冲与目标排队帧数计算，输出参数缺席时返回 -1。IAudioService 会话内维护媒体键接收器栈，桌面无媒体键来源；系统 UI 音效播放走 UI 降级。 |
 | Vibrator | ROM SystemVibrator 经本地 IVibratorService 查询硬件缺席；单次请求及取消更新进程事实，模式请求检查权限和 UID，不驱动宿主硬件。 |
 
 ### 模拟设备状态
@@ -173,8 +175,10 @@ provider 保留最新请求；已登记的回调和请求由会话强持有。�
 
 本包启用的同进程 provider 由 ROM ActivityThread 按 initOrder 安装，AMS 按 authority 登记。
 本地 IContentService 按 authority 与路径匹配观察者，使用 ROM ContentObserver transport 分发。
-同进程 Service 的创建、绑定、命令及销毁通过 IApplicationThread 投递；动态 Receiver 通过 ROM dispatcher
-处理进程内无序广播。受权限保护的 sticky 保留未定向的 action 快照；电池快照声明无电池。
+同进程 Service 的创建、绑定、命令及销毁通过 IApplicationThread 投递。动态 Receiver 经 ROM dispatcher，
+同进程 Manifest Receiver 由 ActivityThread 实例化。串行投递逐个等待 ROM finishReceiver，
+每个接收器使用独立完成令牌。主 Looper 按统一 Clock 在前台 10 秒或后台 60 秒后跳过超时接收器，
+保留先前广播结果并忽略迟到的完成回调。受权限保护的 sticky 保留未定向的 action 快照，电池快照声明无电池。
 
 ## 资源、图像与存储
 

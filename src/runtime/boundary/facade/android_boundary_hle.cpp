@@ -216,9 +216,12 @@ public:
 
     void RetireSurfaceWindow(memory::GuestAddress identity) { android_module_.RetireSurfaceWindow(identity); }
 
-    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) {
-        android_module_.SetSensorDirectory(std::move(directory));
+    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory,
+                            std::shared_ptr<AndroidSensorSource> source) {
+        android_module_.SetSensorDirectory(std::move(directory), std::move(source));
     }
+
+    AndroidSensorQueues& SensorQueues() { return android_module_; }
 
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks) { android_module_.SetAssetManagerHooks(hooks); }
 
@@ -1290,8 +1293,13 @@ void AndroidBoundaryHle::SetDeviceLocaleProvider(std::function<DeviceLocale()> p
     impl_->SetDeviceLocaleProvider(std::move(provider));
 }
 
-void AndroidBoundaryHle::SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) {
-    impl_->SetSensorDirectory(std::move(directory));
+void AndroidBoundaryHle::SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory,
+                                            std::shared_ptr<AndroidSensorSource> source) {
+    impl_->SetSensorDirectory(std::move(directory), std::move(source));
+}
+
+AndroidSensorQueues& AndroidBoundaryHle::SensorQueues() {
+    return impl_->SensorQueues();
 }
 
 void AndroidBoundaryHle::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) {

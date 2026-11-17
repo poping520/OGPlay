@@ -83,11 +83,16 @@ Display、Settings 和通知等有各自有限的本地服务实现，服务名�
 
 Manifest 封存当前 APK 的组件和权限信息，PackageManager 按这些事实回答。
 同进程 provider 由 ActivityThread 安装并按 authority 登记，
-Service 请求经 IApplicationThread 投递，动态广播使用 ROM dispatcher。
+Service 和同进程 Manifest Receiver 请求经 IApplicationThread 投递，
+动态广播使用 ROM dispatcher。有序广播经 finishReceiver 继续下一个接收器并交付完成回调。
+PendingIntent 复用这些进程内路径以及 Activity 启动路径；主 MessageQueue 从统一 Clock
+判断 RTC 和 elapsedRealtime 闹钟是否到期，到期后使用同一 PendingIntent 发送逻辑。
 独立进程或 isolated Service 按不可解析通道回答，
 理由和返回行为见[默认进程决定](../adr/runtime.md#adr-0170)。
 
-设备查询也可以准确报告缺席，例如空传感器目录或断开的网络状态。
+传感器目录描述 API19 设备，数据源负责每个订阅的采样和时间戳，Java 与 NDK 共用两者。
+桌面源用统一 Clock 生成固定姿态的运动读数，队列通过 Looper fd 唤醒各自的客户端。
+设备查询也可以准确报告缺席或离线，例如空 USB 清单或断开的移动网络。
 这种回答使 ROM 保留自己的空列表、权限和参数处理逻辑；
 它不代表任意 USB、NFC、通知发布或网络操作都能成功。
 真实缺口集中在[已知问题](../state/KNOWN-ISSUES.md#执行与平台)。

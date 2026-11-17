@@ -62,6 +62,108 @@ Decl Declare_android_media_AudioSystem_Natives(const Context& context) {
             return dx::VmValue::Int(0);
         },
         dx::kAccPublic | dx::kAccStatic | dx::kAccNative);
+    constexpr auto flags = dx::kAccPublic | dx::kAccStatic | dx::kAccNative;
+    using V = dx::VmValue;
+    constexpr int kSpeaker = 0x2;
+    constexpr int kBuiltInMic = std::bit_cast<int>(0x80000004U);
+    builder.StaticMethod(
+        "getDeviceConnectionState", "(ILjava/lang/String;)I",
+        [](dx::IntrinsicContext& call) {
+            const auto device = call.arguments[0].AsInt();
+            return V::Int(device == kSpeaker || device == kBuiltInMic);
+        },
+        flags);
+    builder.StaticMethod(
+        "getDevicesForStream", "(I)I",
+        [](dx::IntrinsicContext& call) {
+            const auto stream = call.arguments[0].AsInt();
+            return V::Int(stream >= 0 && stream < 10 ? kSpeaker : 0);
+        },
+        flags);
+    builder.StaticMethod(
+        "getPrimaryOutputSamplingRate", "()I",
+        [context](dx::IntrinsicContext&) { return V::Int(static_cast<int>(context->native_output_sample_rate)); },
+        flags);
+    builder.StaticMethod(
+        "getPrimaryOutputFrameCount", "()I",
+        [context](dx::IntrinsicContext&) { return V::Int(static_cast<int>(context->native_output_buffer_frames)); },
+        flags);
+    builder.StaticMethod(
+        "getStreamVolumeIndex", "(II)I",
+        [context](dx::IntrinsicContext& call) {
+            const auto stream = call.arguments[0].AsInt();
+            const auto& volumes = context->device_state.audio.volume;
+            return V::Int(stream >= 0 && stream < static_cast<int>(volumes.size())
+                              ? volumes[static_cast<std::size_t>(stream)]
+                              : -1);
+        },
+        flags);
+    builder.StaticMethod("getMasterVolume", "()F", [](dx::IntrinsicContext&) { return V::Float(1.0F); }, flags);
+    builder.StaticMethod(
+        "getParameters", "(Ljava/lang/String;)Ljava/lang/String;",
+        [](dx::IntrinsicContext& call) { return MakeString(call, ""); }, flags);
+    builder.StaticMethod(
+        "setParameters", "(Ljava/lang/String;)I",
+        [](dx::IntrinsicContext& call) {
+            const auto parameters = call.arguments[0].ref;
+            if (auto* logger = call.vm.Log(); logger && parameters.IsValid()) {
+                const auto pairs = call.vm.StringUtf8(parameters);
+                for (const auto pair : std::string_view(pairs) | std::views::split(';')) {
+                    const std::string_view parameter(pair.begin(), pair.end());
+                    const auto key = parameter.substr(0, parameter.find('='));
+                    if (!key.empty())
+                        logger->Write(core::LogLevel::warn, "runtime.android.audio",
+                                      "Ignoring audio parameter " + std::string(key), {}, {},
+                                      {.mode = core::RateLimitMode::first_and_count});
+                }
+            }
+            return V::Int(0);
+        },
+        flags);
+    builder.StaticMethod(
+        "getOutputLatency", "(I)I",
+        [context](dx::IntrinsicContext&) {
+            const auto rate = context->native_output_sample_rate;
+            const auto buffer = context->native_output_buffer_frames;
+            const auto queued = context->native_output_target_queued_frames;
+            if (!rate || !buffer || !queued) return V::Int(-1);
+            const auto latency_ms = (static_cast<std::uint64_t>(buffer) + queued) * 1000 / rate;
+            return V::Int(latency_ms <= INT32_MAX ? static_cast<int>(latency_ms) : -1);
+        },
+        flags);
+    for (const auto& [name, desc] : std::array{
+             std::pair{"isMicrophoneMuted", "()Z"},
+             std::pair{"isSourceActive", "(I)Z"},
+             std::pair{"isStreamActiveRemotely", "(II)Z"},
+             std::pair{"getMasterMute", "()Z"},
+             std::pair{"getForceUse", "(I)I"},
+             std::pair{"checkAudioFlinger", "()I"},
+         }) {
+        builder.StaticMethod(name, desc, [](dx::IntrinsicContext&) { return V::Int(0); }, flags);
+    }
+    // The fixed routes and mix policy cannot be reconfigured through AudioSystem.
+    for (const auto& [name, desc] : std::array{
+             std::pair{"muteMicrophone", "(Z)I"},
+             std::pair{"setDeviceConnectionState", "(IILjava/lang/String;)I"},
+             std::pair{"setPhoneState", "(I)I"},
+             std::pair{"setForceUse", "(II)I"},
+             std::pair{"initStreamVolume", "(III)I"},
+             std::pair{"setStreamVolumeIndex", "(III)I"},
+             std::pair{"setMasterVolume", "(F)I"},
+             std::pair{"setMasterMute", "(Z)I"},
+             std::pair{"setLowRamDevice", "(Z)I"},
+         }) {
+        builder.StaticMethod(
+            name, desc,
+            [name](dx::IntrinsicContext& call) {
+                if (auto* ledger = call.vm.Ledger())
+                    ledger->RecordUnimplemented(std::string("dexvm.audio_system.") + name, 0);
+                const std::string_view method{name};
+                if (method == "setLowRamDevice") return V::Int(-38);  // INVALID_OPERATION
+                return V::Int(1);                                     // AudioSystem.AUDIO_STATUS_ERROR
+            },
+            flags);
+    }
     return std::move(builder).Build();
 }
 
@@ -346,12 +448,21 @@ Decl Declare_local_AudioService_Class(const Context& context) {
         builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Int(5); });
     }
     for (const auto& [name, descriptor] : std::array{
-             std::pair{"playSoundEffect", "(I)V"},
-             std::pair{"playSoundEffectVolume", "(IF)V"},
              std::pair{"dispatchMediaKeyEvent", "(Landroid/view/KeyEvent;)V"},
              std::pair{"dispatchMediaKeyEventUnderWakelock", "(Landroid/view/KeyEvent;)V"},
          }) {
         RejectUnsupportedServiceMethod(builder, "android.media.IAudioService", name, descriptor);
+    }
+
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"playSoundEffect", "(I)V"},
+             std::pair{"playSoundEffectVolume", "(IF)V"},
+         }) {
+        builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext& call) {
+            if (const auto effect = call.arguments[0].AsInt(); effect >= 0 && effect < 10)
+                RecordUiDegraded(call.vm, "System UI sound effect");
+            return dx::VmValue::Void();
+        });
     }
 
     builder.VirtualMethod("isLocalOrRemoteMusicActive", "()Z", [](dx::IntrinsicContext& call) {
@@ -370,11 +481,37 @@ Decl Declare_local_AudioService_Class(const Context& context) {
             context->device_state.audio.speakerphone = call.arguments[0].AsInt() != 0;
         return dx::VmValue::Void();
     });
+    const auto media_button_target = [](dx::IntrinsicContext& call) {
+        return CallAndroidMethod(call.vm, dx::IntrinsicCall(call).NonNullRef(0, "mediaIntent"), "getTarget",
+                                 "()Landroid/content/IIntentSender;")
+            .ref;
+    };
+    builder.VirtualMethod(
+        "registerMediaButtonIntent",
+        "(Landroid/app/PendingIntent;Landroid/content/ComponentName;Landroid/os/IBinder;)V",
+        [context, media_button_target](dx::IntrinsicContext& call) {
+            const auto target = media_button_target(call);
+            auto& stack = context->device_state.audio.media_button_receivers;
+            if (!stack.empty() && stack.back().target == target) return dx::VmValue::Void();
+            const auto existing =
+                std::ranges::find(stack, target, &SimulatedDeviceState::Audio::MediaButtonReceiver::target);
+            if (existing == stack.end()) {
+                stack.push_back({call.arguments[0].ref, target, call.arguments[1].ref, call.arguments[2].ref});
+            } else {
+                std::rotate(existing, existing + 1, stack.end());
+            }
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("unregisterMediaButtonIntent", "(Landroid/app/PendingIntent;)V",
+                          [context, media_button_target](dx::IntrinsicContext& call) {
+                              const auto target = media_button_target(call);
+                              auto& stack = context->device_state.audio.media_button_receivers;
+                              std::erase_if(stack, [target](const auto& entry) { return entry.target == target; });
+                              return dx::VmValue::Void();
+                          });
     for (const auto& [name, descriptor] : std::array{
              std::pair{"adjustLocalOrRemoteStreamVolume", "(IILjava/lang/String;)V"},
              std::pair{"forceVolumeControlStream", "(ILandroid/os/IBinder;)V"},
-             std::pair{"registerMediaButtonIntent",
-                       "(Landroid/app/PendingIntent;Landroid/content/ComponentName;Landroid/os/IBinder;)V"},
              std::pair{"registerRemoteControlClient",
                        "(Landroid/app/PendingIntent;Landroid/media/IRemoteControlClient;Ljava/lang/String;)I"},
              std::pair{"registerRemoteControlDisplay", "(Landroid/media/IRemoteControlDisplay;II)Z"},
@@ -387,7 +524,6 @@ Decl Declare_local_AudioService_Class(const Context& context) {
              std::pair{"setPlaybackStateForRcc", "(IIJF)V"},
              std::pair{"setRemoteControlClientPlaybackPosition", "(IJ)V"},
              std::pair{"setStreamSolo", "(IZLandroid/os/IBinder;)V"},
-             std::pair{"unregisterMediaButtonIntent", "(Landroid/app/PendingIntent;)V"},
              std::pair{"unregisterRemoteControlClient",
                        "(Landroid/app/PendingIntent;Landroid/media/IRemoteControlClient;)V"},
              std::pair{"unregisterRemoteControlDisplay", "(Landroid/media/IRemoteControlDisplay;)V"},

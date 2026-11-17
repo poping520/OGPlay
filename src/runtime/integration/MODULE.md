@@ -13,7 +13,7 @@ JNI 渲染调用释放 VM 锁时仍算已登记 EGL 生产者正在运行，其 
 选择；逐个所选 ABI APK 根构建 Bionic namespace，用现有 lookup/version 规则聚合强/弱缺口。
 未引用导入仍发布诊断及独立计数；只有非 NONE 重定位引用的强缺口计入预检失败。
 不映射或执行 guest，不把全 APK 导出并成虚假全局 scope。JNI bridge 向 boundary 注入与
-Java 同源的空传感器目录、DeviceLocale provider、VFS pipe hooks，以及 Surface 引用→ROM native 句柄→WMS window 的显式
+Java 与 NDK 共用的传感器目录和数据源、DeviceLocale provider、VFS pipe hooks，以及 Surface 引用→ROM native 句柄→WMS window 的显式
 转换；转换/acquire 在 VM 锁内完成，relayout/退役同步边界窗口，退出后解除 hooks。
 
 
@@ -290,8 +290,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - legacy media 的 no-op/返回值只表示 Java 契约；volume/pitch/loaded/voice 为受检会话状态。
   资源必须真实非空且受 JNI size 限制；audio.load_movie 仅登记最多 4096 UTF-16 单元的请求，
   不等于已播放。display.change_mode/process.exit 只发布可查询请求，由上层实施窗口/清理策略。
-- 网络默认离线，只用注入 policy/transport；设备/身份/服务仅发布已配置事实，不伪造广播、
-  传感器、电话或在线服务。Activity 当前/根身份来自 lifecycle，finish/handoff 不混为进程退出；
+- 网络默认离线，沿注入的 policy/transport 执行。设备、身份和服务以会话配置与模拟设备状态为准。
+  Activity 当前/根身份来自 lifecycle，finish/handoff 不混为进程退出；
   SQL 持久化只用 guest VFS。Typeface/主题边界见 Android 子模块。
 
 Debug 当前进程查询的默认 provider 在 bridge 装配后安装，析构撤销自有回调；

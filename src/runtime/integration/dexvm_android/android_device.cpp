@@ -564,22 +564,83 @@ void CheckSettingsWriter(const Context& context, const SettingsPath& path) {
     RequireServicePermission(context, "WRITE_SETTINGS");
 }
 
+// Constant rows from API 19 SettingsProvider DatabaseHelper and defaults.xml.
+// Device facts are projected below. Keys for absent services are omitted.
 PreferenceMap ReadSettingsTable(const Context& context, std::string_view table) {
+    static const PreferenceMap system_defaults{
+        {"dim_screen", true},
+        {"screen_off_timeout", 60'000},
+        {"screen_brightness", 102},
+        {"screen_brightness_mode", false},
+        {"accelerometer_rotation", true},
+        {"haptic_feedback_enabled", true},
+        {"notification_light_pulse", true},
+        {"pointer_speed", 0},
+        {"dtmf_tone", true},
+        {"sound_effects_enabled", true},
+        {"lockscreen_sounds_enabled", 1},
+        {"dtmf_tone_type", 0},
+        {"hearing_aid", 0},
+        {"tty_mode", 0},
+    };
+    static const PreferenceMap secure_defaults{
+        {"long_press_timeout", 500},
+        {"touch_exploration_enabled", false},
+        {"accessibility_speak_password", false},
+        {"accessibility_script_injection", false},
+        {"accessibility_display_magnification_enabled", false},
+        {"accessibility_display_magnification_scale", std::string("2.0")},
+        {"accessibility_display_magnification_auto_update", true},
+        {"user_setup_complete", true},  // The simulated user has completed setup, unlike the factory default.
+        {"lockscreen.disabled", false},
+        {"backup_enabled", false},
+    };
+    static const PreferenceMap global_defaults{
+        {"airplane_mode_radios", std::string("cell,bluetooth,wifi,nfc,wimax")},
+        {"airplane_mode_toggleable_radios", std::string("bluetooth,wifi,nfc")},
+        {"assisted_gps_enabled", true},
+        {"auto_time", true},
+        {"auto_time_zone", true},
+        {"stay_on_while_plugged_in", false},
+        {"wifi_sleep_policy", 2},
+        {"wifi_networks_available_notification_on", true},
+        {"device_provisioned", true},  // The simulated device has completed setup, unlike the factory default.
+        {"install_non_market_apps", false},
+        {"wifi_max_dhcp_retry_count", 9},
+        {"window_animation_scale", std::string("1.0")},
+        {"transition_animation_scale", std::string("1.0")},
+        {"set_install_location", 0},
+        {"default_install_location", 0},
+        {"call_auto_retry", 0},
+        {"power_sounds_enabled", 1},
+        {"dock_sounds_enabled", 0},
+        {"dock_audio_media_enabled", 1},
+        {"low_battery_sound_timeout", 0},
+    };
     PreferenceMap result;
-    if (table == "secure") {
+    if (table == "system") {
+        result = system_defaults;
+    } else if (table == "secure") {
+        result = secure_defaults;
         for (const auto& [key, value] : context->secure_settings)
-            result.emplace(key, value);
+            result.insert_or_assign(key, value);
         for (const auto* key : {"location_mode", "location_providers_allowed", "allow_mock_location"})
             if (const auto value = ReadLocationSecureSetting(context->device_state.location, key))
                 result.insert_or_assign(key, std::string(*value));
-    } else if (const auto store = context->preferences.find("__android.settings." + std::string(table));
-               store != context->preferences.end()) {
-        result = store->second;
+    } else if (table == "global") {
+        result = global_defaults;
+        const auto& state = context->device_state;
+        result.emplace("wifi_on", state.network.wifi_enabled);
+        result.emplace("mobile_data", state.network.mobile_data_enabled);
+        result.emplace("airplane_mode_on", state.network.airplane_mode);
+        result.emplace("bluetooth_on", state.network.bluetooth_enabled);
+        result.emplace("data_roaming", state.telephony.data_roaming);
+        result.emplace("mode_ringer", state.audio.ringer_mode);
     }
-    if (table == "global") {
-        const auto& network = context->device_state.network;
-        result.insert_or_assign("wifi_on", network.wifi_enabled);
-        result.insert_or_assign("mobile_data", network.mobile_data_enabled);
+    if (const auto store = context->preferences.find("__android.settings." + std::string(table));
+        store != context->preferences.end()) {
+        for (const auto& [key, value] : store->second)
+            result.insert_or_assign(key, value);
     }
     return result;
 }
@@ -618,11 +679,18 @@ bool WriteSystemSetting(dx::IntrinsicContext& call, const Context& context, cons
     auto& store = context->preferences["__android.settings.system"];
     if (value.IsValid()) {
         const auto text = call.vm.StringUtf8(value);
-        const auto old = store.find(name);
-        if (old != store.end() && SettingsValueString(old->second) == text) return false;
+        const auto rows = ReadSettingsTable(context, "system");
+        const auto old = rows.find(name);
+        if (old != rows.end() && SettingsValueString(old->second) == text) return false;
         store.insert_or_assign(name, text);
-    } else if (store.erase(name) == 0) {
-        return false;
+    } else {
+        const auto old = store.find(name);
+        if (old == store.end()) return false;
+        const auto previous = SettingsValueString(old->second);
+        store.erase(old);
+        const auto defaults = ReadSettingsTable(context, "system");
+        const auto fallback = defaults.find(name);
+        if (fallback != defaults.end() && SettingsValueString(fallback->second) == previous) return true;
     }
     ++context->settings_system_version;
     const auto root = call.vm.ProtectReferences(std::array{uri});
@@ -799,8 +867,8 @@ Decl Declare_local_SettingsProvider_Class(const Context& context) {
         int count = 0;
         for (const auto& [key, _] : rows) {
             if (path.name && key != *path.name) continue;
-            WriteSystemSetting(call, context, key, value, call.arguments[1].ref);
-            ++count;
+            const bool changed = WriteSystemSetting(call, context, key, value, call.arguments[1].ref);
+            if (update || changed) ++count;
         }
         return dx::VmValue::Int(count);
     };

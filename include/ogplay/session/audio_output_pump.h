@@ -16,12 +16,13 @@ namespace ogplay::session {
 
 class AudioOutputPump final {
 public:
-    using Mix = std::function<std::size_t(std::span<std::int16_t>,
-                                          std::uint32_t)>;
+    static constexpr std::size_t kChunkFrames = 1024U;
+    static constexpr std::uint32_t kTargetQueuedFrames = 4096U;
+    using Mix = std::function<std::size_t(std::span<std::int16_t>, std::uint32_t)>;
     using FailureInterrupt = std::function<void()>;
 
-    AudioOutputPump(Mix mix, hal::AudioOutput* output, std::uint32_t sample_rate,
-                    std::uint8_t channels, FailureInterrupt failure_interrupt = {});
+    AudioOutputPump(Mix mix, hal::AudioOutput* output, std::uint32_t sample_rate, std::uint8_t channels,
+                    FailureInterrupt failure_interrupt = {});
     ~AudioOutputPump();
     AudioOutputPump(const AudioOutputPump&) = delete;
     AudioOutputPump& operator=(const AudioOutputPump&) = delete;
@@ -35,8 +36,7 @@ public:
     [[nodiscard]] bool DeviceFailed() const noexcept;
     void RethrowWorkerFailure();
     [[nodiscard]] std::size_t MixOffline(std::span<std::int16_t> output);
-    [[nodiscard]] std::uint64_t FramesForTicks(std::uint64_t tick_delta,
-                                               std::uint64_t ticks_per_second);
+    [[nodiscard]] std::uint64_t FramesForTicks(std::uint64_t tick_delta, std::uint64_t ticks_per_second);
 
 private:
     void PumpRealtimeOnce();
@@ -53,8 +53,8 @@ private:
     std::exception_ptr worker_failure_;
     std::jthread worker_;
     std::atomic<bool> suspended_{};
-    bool manual_step_active_{}; // guarded by mutex_
-    std::uint64_t manual_frames_advanced_{}; // deducted from later Clock allowance
+    bool manual_step_active_{};               // guarded by mutex_
+    std::uint64_t manual_frames_advanced_{};  // deducted from later Clock allowance
     std::atomic<bool> device_failed_{};
     std::uint64_t frame_remainder_{};
 };

@@ -456,7 +456,6 @@ Decl Declare_local_ActivityService_Class(const Context& context) {
              std::pair{"backupAgentCreated", "(Ljava/lang/String;Landroid/os/IBinder;)V"},
              std::pair{"enterSafeMode", "()V"},
              std::pair{"finishInstrumentation", "(Landroid/app/IApplicationThread;ILandroid/os/Bundle;)V"},
-             std::pair{"finishReceiver", "(Landroid/os/IBinder;ILjava/lang/String;Landroid/os/Bundle;Z)V"},
              std::pair{"killApplicationProcess", "(Ljava/lang/String;I)V"},
              std::pair{"killApplicationWithAppId", "(Ljava/lang/String;ILjava/lang/String;)V"},
              std::pair{"notifyActivityDrawn", "(Landroid/os/IBinder;)V"},
@@ -992,6 +991,91 @@ constexpr std::int32_t kIntentFillFlags = 0xff;  // API19 FILL_IN_*.
     return snapshot;
 }
 
+void PublishAlarmDeadlines(DexVmAndroidContext& context) {
+    std::array deadlines{INT64_MAX, INT64_MAX};
+    for (const auto& alarm : context.alarm_operations) {
+        auto& deadline = deadlines[alarm.rtc];
+        deadline = std::min(deadline, alarm.when);
+    }
+    std::scoped_lock lock(context.scheduler_mutex);
+    for (std::size_t i = 0; i < deadlines.size(); ++i)
+        context.alarm_deadlines[i].store(deadlines[i]);
+}
+
+void RemoveAlarm(DexVmAndroidContext& context, dx::VmObjectRef token) {
+    std::erase_if(context.alarm_operations, [token](const auto& alarm) { return alarm.token == token; });
+    PublishAlarmDeadlines(context);
+}
+
+int SendPendingIntent(dx::Interpreter& vm, const Context& context, dx::VmObjectRef token, int code,
+                      dx::VmObjectRef fill, dx::VmObjectRef resolved_type, dx::VmObjectRef finished,
+                      dx::VmObjectRef permission) {
+    using V = dx::VmValue;
+    const auto found = context->pending_intents.find(token.Value());
+    if (context->pending_intents_stopping || found == context->pending_intents.end() || found->second.canceled)
+        return -6;  // ActivityManager.START_CANCELED
+    const auto record = found->second;
+    const auto roots =
+        vm.ProtectReferences(std::array{token, record.intent, fill, resolved_type, finished, permission});
+    if (record.flags & kOneShot) {
+        found->second.canceled = true;
+        RemoveAlarm(*context, token);
+    }
+    const auto intent = CopyPendingIntent(vm, record.intent);
+    const auto intent_root = vm.ProtectReferences(std::array{intent});
+    constexpr int kFillInData = 2;
+    if (!fill.IsValid() ||
+        !(CallAndroidMethod(vm, intent, "fillIn", "(Landroid/content/Intent;I)I", {V::Ref(fill), V::Int(record.flags)})
+              .AsInt() &
+          kFillInData))
+        resolved_type = record.resolved_type ? vm.NewStringUtf8(*record.resolved_type) : dx::VmObjectRef{};
+    const auto type_root = vm.ProtectReferences(std::array{resolved_type});
+    const auto am = GetLocalServiceInterface(vm, "activity", "Landroid/app/ActivityManagerNative;",
+                                             "Landroid/app/IActivityManager;");
+    const auto am_root = vm.ProtectReferences(std::array{am});
+    const auto null = V::Ref(dx::VmObjectRef{});
+    const auto thread = context->rom_activities ? context->rom_activities->application_thread : dx::VmObjectRef{};
+    bool finish = finished.IsValid();
+    try {
+        switch (record.kind) {
+        case kIntentSenderBroadcast:
+            static_cast<void>(CallAndroidMethod(
+                vm, am, "broadcastIntent",
+                "(Landroid/app/IApplicationThread;Landroid/content/Intent;Ljava/lang/String;"
+                "Landroid/content/IIntentReceiver;ILjava/lang/String;Landroid/os/Bundle;Ljava/lang/String;IZZI)I",
+                {V::Ref(thread), V::Ref(intent), V::Ref(resolved_type), V::Ref(finished), V::Int(code), null, null,
+                 V::Ref(permission), V::Int(-1), V::Int(finish), V::Int(0), V::Int(0)}));
+            finish = false;
+            break;
+        case kIntentSenderActivity:
+            static_cast<void>(CallAndroidMethod(
+                vm, am, "startActivity",
+                "(Landroid/app/IApplicationThread;Ljava/lang/String;Landroid/content/Intent;Ljava/lang/String;"
+                "Landroid/os/IBinder;Ljava/lang/String;IILjava/lang/String;Landroid/os/ParcelFileDescriptor;Landroid/os/Bundle;)I",
+                {V::Ref(thread), V::Ref(vm.NewStringUtf8(record.creator_package)), V::Ref(intent),
+                 V::Ref(resolved_type), null, null, V::Int(-1), V::Int(0), null, null, null}));
+            break;
+        case kIntentSenderService:
+            static_cast<void>(CallAndroidMethod(
+                vm, am, "startService",
+                "(Landroid/app/IApplicationThread;Landroid/content/Intent;Ljava/lang/String;I)Landroid/content/ComponentName;",
+                {V::Ref(thread), V::Ref(intent), V::Ref(resolved_type), V::Int(0)}));
+            break;
+        }
+    } catch (const dx::VmJavaThrow& error) {
+        // PendingIntentRecord logs a failed start/delivery and returns success for a live token.
+        if (auto* logger = vm.Log())
+            logger->Write(core::LogLevel::warn, "runtime.android.pending_intent", error.message);
+    }
+    if (finish) {
+        const auto copy = CopyPendingIntent(vm, intent);
+        static_cast<void>(CallAndroidMethod(vm, finished, "performReceive",
+                                            "(Landroid/content/Intent;ILjava/lang/String;Landroid/os/Bundle;ZZI)V",
+                                            {V::Ref(copy), V::Int(0), null, null, V::Int(0), V::Int(0), V::Int(0)}));
+    }
+    return 0;
+}
+
 [[nodiscard]] dx::VmValue GetPendingIntent(dx::IntrinsicContext& call, const Context& context) {
     dx::IntrinsicCall args(call);
     const auto kind = args.Int(0);
@@ -1004,6 +1088,11 @@ constexpr std::int32_t kIntentFillFlags = 0xff;  // API19 FILL_IN_*.
         UnsupportedPending(
             call, "only current-user PendingIntent tokens for one activity, broadcast or service are supported");
     const auto intent = call.vm.Model().GetObjectElement(intents, JniSize{0});
+    const auto types = args.Ref(6);
+    const auto type_ref = types.IsValid() && call.vm.Model().ArrayLength(types) == 1
+                              ? call.vm.Model().GetObjectElement(types, 0)
+                              : dx::VmObjectRef{};
+    const auto resolved_type = type_ref.IsValid() ? std::optional(call.vm.StringUtf8(type_ref)) : std::nullopt;
     if (!intent.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "intent == null"};
     if (call.vm.Model().ObjectClass(intent) != call.vm.Linker().ResolveDescriptor("Landroid/content/Intent;"))
         UnsupportedPending(call, "PendingIntent requires an ordinary API19 Intent");
@@ -1036,7 +1125,8 @@ constexpr std::int32_t kIntentFillFlags = 0xff;  // API19 FILL_IN_*.
         std::vector<dx::VmObjectRef> candidate_roots;
         for (const auto& [_, record] : context->pending_intents) {
             if (!record.canceled && record.creator_package == package && record.kind == kind &&
-                record.request_code == request_code && record.flags == (flags & ~kControlFlags)) {
+                record.request_code == request_code && record.flags == (flags & ~kControlFlags) &&
+                record.resolved_type == resolved_type) {
                 candidates.push_back(record);
                 candidate_roots.push_back(record.object);
             }
@@ -1054,7 +1144,7 @@ constexpr std::int32_t kIntentFillFlags = 0xff;  // API19 FILL_IN_*.
         if (existing.IsValid()) {
             if ((flags & kCancelCurrent) != 0) {
                 context->pending_intents.at(existing.Value()).canceled = true;
-                std::erase(context->alarm_operations, existing);
+                RemoveAlarm(*context, existing);
             } else {
                 if ((flags & kUpdateCurrent) != 0) {
                     const auto snapshot = context->pending_intents.at(existing.Value()).intent;
@@ -1079,13 +1169,14 @@ constexpr std::int32_t kIntentFillFlags = 0xff;  // API19 FILL_IN_*.
                 const auto& record = entry.second;
                 return !record.canceled && record.creator_package == package && record.kind == kind &&
                        record.request_code == request_code && record.flags == (flags & ~kControlFlags) &&
+                       record.resolved_type == resolved_type &&
                        std::none_of(candidates.begin(), candidates.end(),
                                     [&](const auto& old) { return old.object == record.object; });
             });
         if (published) continue;
         context->pending_intents.emplace(
             object.Value(), DexVmAndroidContext::PendingIntentRecord{object, snapshot, package, kind, request_code,
-                                                                     flags & ~kControlFlags, false});
+                                                                     flags & ~kControlFlags, false, resolved_type});
         return dx::VmValue::Ref(object);
     }
 }
@@ -1103,12 +1194,12 @@ void AddLocalIntentSenderMethods(dx::IntrinsicClassBuilder& builder, const Conte
                               if (found == context->pending_intents.end())
                                   UnsupportedPending(call, "PendingIntent has no process token");
                               found->second.canceled = true;
-                              std::erase(context->alarm_operations, token);
+                              RemoveAlarm(*context, token);
                               return dx::VmValue::Void();
                           });
 }
 
-Decl Declare_local_IntentSender_Class(const Context&) {
+Decl Declare_local_IntentSender_Class(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalIntentSender;",
                                                     "Landroid/content/IIntentSender$Stub;");
     builder.Constructor("()V", [](dx::IntrinsicContext& call) {
@@ -1121,10 +1212,54 @@ Decl Declare_local_IntentSender_Class(const Context&) {
     });
     builder.VirtualMethod(
         "send", "(ILandroid/content/Intent;Ljava/lang/String;Landroid/content/IIntentReceiver;Ljava/lang/String;)I",
-        [](dx::IntrinsicContext& call) -> dx::VmValue {
-            UnsupportedPending(call, "PendingIntent delivery is unsupported");
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(SendPendingIntent(call.vm, context, call.receiver, call.arguments[0].AsInt(),
+                                                      call.arguments[1].ref, call.arguments[2].ref,
+                                                      call.arguments[3].ref, call.arguments[4].ref));
         });
     return std::move(builder).Build();
+}
+
+void PumpDueAlarms(dx::Interpreter& vm, const Context& context) {
+    if (context->pending_intents_stopping || !context->AlarmDue()) return;
+    const auto elapsed = context->UptimeMillis();
+    const auto wall = context->WallTimeMillis();
+
+    struct Due {
+        dx::VmObjectRef token;
+        int count;
+        std::int64_t deadline;
+    };
+
+    std::vector<Due> due;
+    std::vector<dx::VmObjectRef> tokens;
+    std::erase_if(context->alarm_operations, [&](auto& alarm) {
+        const auto now = alarm.rtc ? wall : elapsed;
+        if (alarm.when > now) return false;
+        const auto late = now - alarm.when;
+        const auto missed = alarm.interval > 0 ? late / alarm.interval : 0;
+        const auto count = missed < INT32_MAX ? static_cast<int>(missed) + 1 : INT32_MAX;
+        due.push_back({alarm.token, count, elapsed - late});
+        tokens.push_back(alarm.token);
+        if (alarm.interval <= 0) return true;
+        const auto until_next = alarm.interval - late % alarm.interval;
+        if (until_next > INT64_MAX - now) return true;
+        alarm.when = now + until_next;
+        return false;
+    });
+    PublishAlarmDeadlines(*context);
+    const auto roots = vm.ProtectReferences(tokens);
+    std::stable_sort(due.begin(), due.end(), [](const auto& a, const auto& b) { return a.deadline < b.deadline; });
+    for (const auto& alarm : due) {
+        if (context->pending_intents_stopping) break;
+        const auto extra = NewPlatformObject(vm, "Landroid/content/Intent;", "()V", {});
+        const auto root = vm.ProtectReferences(std::array{extra});
+        static_cast<void>(CallAndroidMethod(
+            vm, extra, "putExtra", "(Ljava/lang/String;I)Landroid/content/Intent;",
+            {dx::VmValue::Ref(vm.NewStringUtf8("android.intent.extra.ALARM_COUNT")), dx::VmValue::Int(alarm.count)}));
+        const dx::VmObjectRef none{};
+        static_cast<void>(SendPendingIntent(vm, context, alarm.token, 0, extra, none, none, none));
+    }
 }
 
 Decl Declare_local_AlarmService_Class(const Context& context) {
@@ -1133,30 +1268,31 @@ Decl Declare_local_AlarmService_Class(const Context& context) {
     builder.VirtualMethod("remove", "(Landroid/app/PendingIntent;)V", [context](dx::IntrinsicContext& call) {
         const auto operation = call.arguments[0].ref;
         if (!operation.IsValid()) return dx::VmValue::Void();
-        std::erase(context->alarm_operations, AlarmOperationToken(call, context, operation));
+        RemoveAlarm(*context, AlarmOperationToken(call, context, operation));
         return dx::VmValue::Void();
     });
-    builder.VirtualMethod("set", "(IJJJLandroid/app/PendingIntent;Landroid/os/WorkSource;)V",
-                          [context](dx::IntrinsicContext& call) {
-                              if (call.arguments[5].ref.IsValid())
-                                  RequireServicePermission(context, "UPDATE_DEVICE_STATS");
-                              const auto operation = call.arguments[4].ref;
-                              if (!operation.IsValid()) return dx::VmValue::Void();
-                              constexpr int kRtcWakeup = 0;
-                              constexpr int kElapsedRealtime = 3;
-                              const auto type = call.arguments[0].AsInt();
-                              if (type < kRtcWakeup || type > kElapsedRealtime)
-                                  throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                                        "Invalid alarm type " + std::to_string(type)};
+    builder.VirtualMethod(
+        "set", "(IJJJLandroid/app/PendingIntent;Landroid/os/WorkSource;)V", [context](dx::IntrinsicContext& call) {
+            if (call.arguments[5].ref.IsValid()) RequireServicePermission(context, "UPDATE_DEVICE_STATS");
+            const auto operation = call.arguments[4].ref;
+            if (!operation.IsValid()) return dx::VmValue::Void();
+            constexpr int kRtcWakeup = 0;
+            constexpr int kElapsedRealtime = 3;
+            const auto type = call.arguments[0].AsInt();
+            if (type < kRtcWakeup || type > kElapsedRealtime)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "Invalid alarm type " + std::to_string(type)};
 
-                              // Apply API19's negative trigger time and oversized window corrections when adding timed delivery.
-                              const auto token = AlarmOperationToken(call, context, operation);
-                              std::erase(context->alarm_operations, token);
-                              context->alarm_operations.push_back(token);
-                              if (auto* ledger = call.vm.Ledger())
-                                  ledger->RecordUnimplemented("dexvm.alarm_delivery", 0);
-                              return dx::VmValue::Void();
-                          });
+            const auto token = AlarmOperationToken(call, context, operation);
+            if (context->pending_intents_stopping || context->pending_intents.at(token.Value()).canceled)
+                return dx::VmValue::Void();
+            RemoveAlarm(*context, token);
+            const auto when = std::max<std::int64_t>(0, call.arguments[1].AsLong());
+            context->alarm_operations.push_back({token, when, call.arguments[3].AsLong(), type <= 1});
+            PublishAlarmDeadlines(*context);
+            NotifyAndroidScheduler(*context);
+            return dx::VmValue::Void();
+        });
     DenyServiceMethod(builder, "setTime", "(J)V", "SET_TIME");
     DenyServiceMethod(builder, "setTimeZone", "(Ljava/lang/String;)V", "SET_TIME_ZONE");
     return std::move(builder).Build();
@@ -1206,6 +1342,7 @@ void ShutdownPendingIntents(dexvm::Interpreter& vm, DexVmAndroidContext& context
     const dexvm::VmExecutionLockScope guard(vm.ExecutionLock());
     context.pending_intents_stopping = true;
     context.alarm_operations.clear();
+    android_intrinsics::PublishAlarmDeadlines(context);
     context.pending_intents.clear();
 }
 }  // namespace ogplay::runtime

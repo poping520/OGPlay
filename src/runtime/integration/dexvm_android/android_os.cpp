@@ -87,7 +87,7 @@ namespace {
     if (key == "persist.sys.country" || key == "ro.product.locale.region") return context->locale_region;
     if (key == "sys.settings_system_version") return std::to_string(context->settings_system_version);
     if (key == "gsm.sim.state") return "ABSENT";
-    if (key == "gsm.operator.numeric") return context->network_operator;
+    if (key == "gsm.operator.numeric") return context->device_state.telephony.network_operator;
     if (key == "ro.opengles.version") return std::to_string(kManagedGlesVersion);
     if (key == "ro.sf.lcd_density") return std::to_string(DeviceDensityDpi(context));
     if (key == "dalvik.vm.heapgrowthlimit")
@@ -408,6 +408,7 @@ struct LocalService {
 constexpr std::array kLocalServices{
     LocalService{"accessibility", "Lorg/ogplay/framework/LocalAccessibilityService;",
                  "Landroid/view/accessibility/IAccessibilityManager$Stub;"},
+    LocalService{"account", "Lorg/ogplay/framework/LocalAccountService;", "Landroid/accounts/IAccountManager$Stub;"},
     LocalService{"activity", "Lorg/ogplay/framework/LocalActivityService;", "Landroid/app/ActivityManagerNative;"},
     LocalService{"alarm", "Lorg/ogplay/framework/LocalAlarmService;", "Landroid/app/IAlarmManager$Stub;"},
     LocalService{"audio", "Lorg/ogplay/framework/LocalAudioService;", "Landroid/media/IAudioService$Stub;"},
@@ -1367,11 +1368,14 @@ Decl Declare_android_os_MessageQueue_Natives(const Context& context) {
         [context, require](dx::IntrinsicContext& call) {
             call.vm.RestartExecutionBudget();
             const auto looper = RegisterCurrentRomLooper(call.vm, context);
+            PumpJavaSensorEvents(call.vm, context);
             PumpNativeLooperEvents(call.vm, *context, looper);
             PumpRomInputEvents(call.vm, context);
             if (call.vm.CurrentContextToken() == 1U) {
                 PumpAndroidHostRequests(call.vm, context);
                 PumpRomToastQueue(call.vm, context);
+                PumpDueAlarms(call.vm, context);
+                PumpSerialBroadcastTimeout(call.vm, context);
             }
             const auto timeout = call.arguments[1].AsInt();
             if (timeout != 0 && call.vm.CurrentContextToken() == 1U && context->on_first_main_idle) {
@@ -1399,7 +1403,8 @@ Decl Declare_android_os_MessageQueue_Natives(const Context& context) {
             const auto ready = [&] {
                 return queue->wake || queue->destroyed || context->scheduler_shutdown ||
                        (queue->context_token == 1U &&
-                        context->UptimeMillis() >= context->toast_deadline_millis.load()) ||
+                        (context->UptimeMillis() >= context->toast_deadline_millis.load() || context->AlarmDue() ||
+                         context->UptimeMillis() >= context->serial_broadcast_deadline_millis.load())) ||
                        std::ranges::any_of(context->scheduled_work,
                                            [&](const auto& work) {
                                                return work.looper == looper &&
@@ -1431,11 +1436,14 @@ Decl Declare_android_os_MessageQueue_Natives(const Context& context) {
             }
             execution.ReacquireAfterBlocking(depth, observe_blocking);
             if (stopped) throw dx::DexVmError(dx::DexVmErrorReason::thread_stopped, "MessageQueue shutdown");
+            PumpJavaSensorEvents(call.vm, context);
             PumpNativeLooperEvents(call.vm, *context, looper);
             PumpRomInputEvents(call.vm, context);
             if (call.vm.CurrentContextToken() == 1U) {
                 PumpAndroidHostRequests(call.vm, context);
                 PumpRomToastQueue(call.vm, context);
+                PumpDueAlarms(call.vm, context);
+                PumpSerialBroadcastTimeout(call.vm, context);
             }
             return dx::VmValue::Void();
         },

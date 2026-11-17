@@ -458,6 +458,14 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             dex_context = runtime::AssembleAndroidContext(
                 runtime::ReadBootClasspath(bundled_data.root / bionic.data_directory / "framework"));
             dex_context->native_output_sample_rate = kDesktopAudioOutputSpec.sample_rate;
+            dex_context->native_output_buffer_frames = session::AudioOutputPump::kChunkFrames;
+            dex_context->native_output_target_queued_frames = session::AudioOutputPump::kTargetQueuedFrames;
+            dex_context->sensor_directory = runtime::StaticAndroidSensorDirectory();
+            dex_context->sensor_source = runtime::MakeStaticAndroidSensorSource(
+                dex_context->sensor_directory, [ctx = std::weak_ptr(dex_context)] {
+                    const auto context = ctx.lock();
+                    return context ? context->uptime_nanos.load() : std::int64_t{0};
+                });
             dex_context->framework_resource_apk =
                 bundled_data.root / bionic.data_directory / "framework/framework-res.apk";
             dex_context->apk_bytes = std::move(apk_bytes);

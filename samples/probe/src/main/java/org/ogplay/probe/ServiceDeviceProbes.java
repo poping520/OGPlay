@@ -224,12 +224,16 @@ final class ServiceDeviceProbes {
                     Object run() { return sm.getSensorList(Sensor.TYPE_ALL); }
                 });
                 boolean defaultsListed = true;
-                int[] types = {Sensor.TYPE_ACCELEROMETER, Sensor.TYPE_MAGNETIC_FIELD, Sensor.TYPE_GYROSCOPE, Sensor.TYPE_LIGHT,
+                int[] types = {Sensor.TYPE_ACCELEROMETER, Sensor.TYPE_MAGNETIC_FIELD, Sensor.TYPE_ORIENTATION, Sensor.TYPE_GYROSCOPE, Sensor.TYPE_LIGHT,
                         Sensor.TYPE_PROXIMITY, Sensor.TYPE_GRAVITY, Sensor.TYPE_LINEAR_ACCELERATION, Sensor.TYPE_ROTATION_VECTOR};
                 for (final int type : types) {
                     final Sensor sensor = (Sensor) s.call(SM, "getDefaultSensor", String.valueOf(type), new Step() { Object run() { return sm.getDefaultSensor(type); } });
+                    final List<?> typed = (List<?>) s.call(SM, "getSensorList", String.valueOf(type), new Step() {
+                        Object run() { return sm.getSensorList(type); }
+                    });
+                    defaultsListed &= typed != null && (sensor == null ? typed.isEmpty()
+                            : list != null && list.contains(sensor) && typed.contains(sensor) && sensor.getType() == type);
                     if (sensor == null) continue;
-                    defaultsListed &= list != null && list.contains(sensor) && sensor.getType() == type;
                     final String label = String.valueOf(type);
                     s.call(SENSOR, "getName", label, new Step() { Object run() { return sensor.getName(); } });
                     s.call(SENSOR, "getVendor", label, new Step() { Object run() { return sensor.getVendor(); } });

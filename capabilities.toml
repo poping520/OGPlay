@@ -701,7 +701,7 @@ note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢�
 [runtime.android_boundary_hle]
 status = "partial"
 test = "tests/runtime/guest_looper_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/runtime/boundary/integration/android_boundary_liblog_tests.cpp; tests/runtime/boundary/integration/android_egl_lifecycle_tests.cpp; tests/runtime/boundary/integration/android_boundary_libc_libdl_tests.cpp; tests/runtime/boundary/integration/android_boundary_opensles_tests.cpp; tests/runtime/boundary/integration/android_gles2_shaders_tests.cpp; tests/runtime/boundary/integration/android_gles1_exports_tests.cpp; tests/runtime/boundary/integration/android_gles_shared_resources_tests.cpp; tests/runtime/boundary/integration/android_gles1_state_tests.cpp; tests/runtime/boundary/integration/android_gles1_rendering_tests.cpp; tests/runtime/boundary/integration/android_boundary_looper_tests.cpp; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp; tests/runtime/boundary/integration/android_frame_presentation_tests.cpp; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp; tests/runtime/boundary/integration/android_gles_texture_formats_tests.cpp; tests/runtime/boundary/integration/android_boundary_sensor_tests.cpp#APS-11; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp#APS-11"
-note = "libandroid/Looper/input 与 EGL/GLES 由 Virtual SO catalog 绑定。NDK 空传感器与 Java 共用目录，队列使用 VFS pipe，API19 hasEvents 无事件为 -1；callback 登记拒绝并告警。fromSurface 复用 holder 窗口、引用计数及代际；无宿主传感器/callback 派发/非 pipe fd。"
+note = "libandroid/Looper/input 与 EGL/GLES 由 Virtual SO catalog 绑定。NDK 与 Java 共用传感器目录和数据源，队列由 VFS pipe 唤醒 Looper；API19 hasEvents 无事件为 -1。fromSurface 复用 holder 窗口、引用计数及代际。非 pipe fd 与真实传感器待支持。"
 
 [runtime.native_activity_session]
 status = "partial"
@@ -896,7 +896,7 @@ note = "平台身份不再由 guest 会话 HLE 提供；Build/SystemProperties/B
 [runtime.android_secure_settings]
 status = "complete"
 test = "tests/runtime/sandbox_store_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/runtime/android_guest_framework_platform_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "ROM Settings 与 NameValueCache 经本地 Settings provider 读取沙盒 ANDROID_ID、模拟设备和 System/Global 表。System 写需 WRITE_SETTINGS，有效变更通知观察者；Secure/Global 写抛 SecurityException。支持有界 URI 表投影，完整 SQL 和批事务未实现。"
+note = "ROM Settings 与 NameValueCache 经本地 provider 读取沙盒 ANDROID_ID、模拟设备和 API19 System/Secure/Global 默认行。进程内写入优先，有效变更通知观察者。System 写需 WRITE_SETTINGS，Secure/Global 写抛 SecurityException。仅支持有界 URI 表投影。"
 
 [runtime.jni_guest_library_load_plan]
 status = "complete"
@@ -1666,7 +1666,7 @@ note = "URI、InetAddress、URLConnection/HttpURLConnection/HttpsURLConnection �
 [dexvm.connectivity_offline]
 status = "partial"
 test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-241; tests/dexvm/android_value_tests.cpp#DVM-98; tests/dexvm/android_wifi_locks_tests.cpp#Offline WifiInfo; tests/runtime/jni_android_platform_tests.cpp#DVM-241; tests/dexvm/network_sqlite_tests.cpp#DVM-343"
-note = "ROM ConnectivityManager 查询断开的逻辑 WiFi，活动网络为 null。getAllNetworkInfo 返回独立数组；动态登记取得断开的粘性快照。Wifi 初始开启，可经权限检查切换会话开关；网络传输仍受离线策略约束。无宿主无线设备或网络探测。"
+note = "ROM ConnectivityManager 查询 framework-res 声明的 Wi-Fi 和 GSM 移动系列，均断开，活动网络为 null。无 SIM，移动数据关闭，Wi-Fi 初始开启且可切换。动态登记取得断开的粘性快照；网络传输沿既有离线回环策略。"
 
 [dexvm.apache_http_bootdex]
 status = "partial"
@@ -1893,6 +1893,16 @@ status = "complete"
 test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp#ROM ServiceManager; tests/dexvm/rom_window_services_tests.cpp#P3 local WMS"
 note = "ROM Binder/ServiceManager/ServiceManagerNative 执行本地虚派，calling identity 固定为 guest UID/PID；进程内注册表返回本地 Stub，缺席按服务名记账返回 null。Parcel 由 ROM 初始化，native 提供字节与 Binder 记录。StrictMode 策略按线程隔离；远程 IPC、BinderProxy 和线程池不支持。"
 
+[dexvm.local_accounts]
+status = "partial"
+test = "tests/dexvm/android_context_services_tests.cpp#Local AccountManager; tests/dexvm/android_context_services_tests.cpp#Local AIDL coverage"
+note = "本地 IAccountManager 发布零账户、零 authenticator，保留 API19 权限检查和异步 onResult/onError。支持查询和凭据失效，无 authenticator 执行、跨用户或共享账户写入。"
+
+[dexvm.audio_system]
+status = "partial"
+test = "tests/dexvm/android_context_services_tests.cpp#Local AudioSystem"
+note = "AudioSystem 发布内置扬声器、麦克风和会话 PCM 参数，按缓冲与目标排队帧数计算延迟。setParameters 忽略参数并按键告警；路由和策略 setter 返回错误并记账。IAudioService 维护进程内媒体键接收器栈，桌面无媒体键来源，系统 UI 音效降级。"
+
 [dexvm.backup_service]
 status = "partial"
 test = "tests/dexvm/android_context_services_tests.cpp#DVM-116; tests/dexvm/bootdex_collections_io_tests.cpp#DVM-103; tests/dexvm/bootdex_library_tests.cpp#DVM-103; tests/dexvm/bootdex_concurrency_tests.cpp#DVM-103"
@@ -1995,23 +2005,23 @@ note = "ADR-0081：默认关闭的 A32/T32 并发名额与进程总 tick 速率�
 
 [dexvm.pending_intent]
 status = "partial"
-test = "tests/dexvm/android_pending_notifications_tests.cpp#DVM-211"
-note = "当前 APK 的单 Activity/service/broadcast 令牌创建、规范化身份、NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT、取消、Intent 快照、VM 锁并发、弱 registry GC 与退出清理。原版 Intent 执行匹配/复制/更新；ONE_SHOT 与 fill-in flags 只参与身份。selector、自定义 Intent/Uri、content MIME provider 推断、未知 flags、投递与 Parcel 明确失败或不提供；不启动 Service。"
+test = "tests/dexvm/android_pending_notifications_tests.cpp#DVM-211; tests/dexvm/android_pending_notifications_tests.cpp#PendingIntent one-shot; tests/dexvm/android_pending_notifications_tests.cpp#Serial broadcasts skip"
+note = "当前 APK 单 Activity/service/broadcast 令牌支持 API19 创建、匹配、更新、取消、fill-in 和 ONE_SHOT 发送。发送复用进程内组件与广播路径，有序广播在接收器完成或超时跳过后交付回调。selector、跨包、外部服务、content MIME 推断及 Parcel 仍受限。"
 
 [dexvm.alarm_manager]
 status = "partial"
-test = "tests/dexvm/android_pending_notifications_tests.cpp#DVM-211"
-note = "alarm 单例与 API19 set 参数校验；按 PendingIntent 令牌登记和替换，每次成功登记记 dexvm.alarm_delivery。cancel 支持空值、无匹配与匹配令牌，移除闹钟不使 PendingIntent 失效；条目保活与退出清理接入 session GC。到期触发与 PendingIntent 投递仍缺。"
+test = "tests/dexvm/android_pending_notifications_tests.cpp#DVM-211; tests/dexvm/android_pending_notifications_tests.cpp#PendingIntent one-shot"
+note = "本地 IAlarmManager 校验并按 PendingIntent 令牌登记、替换和取消。活跃主 Looper 依据统一 Clock 的墙钟和 elapsedRealtime 到期发送，补算重复次数并携带 EXTRA_ALARM_COUNT。进程退出清理，无跨进程唤醒或持久化。"
 
 [runtime.guest_timezone_data]
 status = "partial"
 test = "tools.android_payload_current; tests/runtime/guest_native_values_tests.cpp#DVM-219 pinned tzdata; tests/runtime/api19_guest_process_tests.cpp; tests/runtime/guest_icu_tests.cpp#DVM-376"
 note = "API19 Bionic tzdata 2014a 原版归档经来源/哈希/TZif 校验进入 payload，在 native 初始化前以只读 /system/usr/share/zoneinfo/tzdata 发布；初始 TZ=UTC，guest 可经 setenv/tzset 修改本进程时区；不读宿主 TZ。 让 Java TimeZone/ZoneInfo 从同一归档查询地区时区；完整时区枚举、外部更新、全部地区历史转换与 2038 边界未验收。"
 
-[dexvm.sensor_absent_facade]
+[dexvm.motion_sensors]
 status = "partial"
-test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-220; tests/dexvm/android_context_services_tests.cpp#DVM-136; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services; tests/runtime/boundary/integration/android_boundary_sensor_tests.cpp#APS-11"
-note = "ROM SystemSensorManager 与 NDK ASensorManager 共用注入空目录，LegacySensorManager 经本地 IWindowManager 读取固定 ROTATION_0。NDK 队列保留 VFS pipe 协议。无宿主设备、真实事件或动态设备/旋转回调。"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-220; tests/dexvm/android_context_services_tests.cpp#DVM-136; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services; tests/runtime/boundary/integration/android_boundary_sensor_tests.cpp"
+note = "ROM SystemSensorManager 与 NDK ASensorManager 共用会话注入的目录和数据源。桌面发布固定姿态的运动设备，经统一 Clock 采样、VFS pipe 与 Looper 投递；LegacySensorManager 查询固定 ROTATION_0。手机真实数据源待接入。"
 
 [runtime.asset_manager]
 status = "partial"

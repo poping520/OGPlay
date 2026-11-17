@@ -52,18 +52,16 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
 
 验证：BND45 定向边界、真实 libdl/ARM 调用与原 APK 路径。
 
-## 空传感器目录
+## 传感器目录和事件
 
-- Java/NDK 读取 integration 注入的同一不可变 AndroidSensorDirectory；当前 Count=0，
-  非空 provider 明确记账失败，不探测宿主、运行 SensorService 或产生事件。
-- manager 是进程唯一非空 opaque token；getSensorList 返回零并可写非空空数组 guest 地址，
-  写失败传播；任意类型 getDefaultSensor 返回 null。没有合法 ASensor，getter/enable/disable/
-  setEventRate 对任何 sensor 都记账、结构化错误并失败；float getter 不返回伪造位模式。
-- queue 单调分配且不复用，≤1024 live；持有真实 VFS pipe 两端且永不写入。使用 Looper
-  共用 addFd 路径，按 API19 忽略结果；登记拒绝时 warn/记账，空队列永不产生可读事件。
-  null/stale Looper 与 queue 明确失败；destroy 移除登记、关闭 pipe、退役 token。
-- getEvents 无事件返回零；hasEvents 保留 API19 revents!=POLLIN 返回 -1 的语义，不能改成零。
-  creator thread 退役（含借用其他线程 Looper）及 shutdown 回收队列；进程结束释放空数组。
+- Java/NDK 共享会话注入的不可变 AndroidSensorDirectory 和 AndroidSensorSource。目录发布 API19
+  传感器描述，数据源为每个客户端创建按 handle 启停和设定采样周期的订阅。桌面数据源使用统一 Clock，
+  以固定朝北平放姿态产出时间有序的运动样本。
+- ASensorManager 是进程 opaque token。列表、ASensor token 与字符串在 guest 只读内存中稳定，
+  缺席类型返回 null，非法句柄和无效输出地址明确失败。
+- Java 和 NDK 队列使用可读 VFS pipe 唤醒 Looper。NDK 可用 ident 或 guest callback，Java fd
+  回调将就绪队列交还所属 MessageQueue 派发原版事件；创建线程、所属 Looper 或进程退役时关闭 pipe。
+  API19 登记拒绝保留队列并记账，hasEvents 无事件返回 -1，getEvents 无事件返回零。
 
 ## Java Surface 窗口
 

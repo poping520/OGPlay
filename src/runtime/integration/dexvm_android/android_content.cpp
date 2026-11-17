@@ -6,6 +6,7 @@
 // the base onReceive stays a recorded no-op games may override.
 
 #include "catalog.h"
+#include "rom_activity.h"
 
 #include <algorithm>
 #include <ranges>
@@ -1713,8 +1714,22 @@ dx::VmValue PackageCheckPermission(dx::IntrinsicContext& call, const Context& co
                                 : kPermissionDenied);
 }
 
+std::set<std::string> AvailableSystemFeatures(const Context& context) {
+    std::set<std::string> names(context->system_features.begin(), context->system_features.end());
+    if (context->device_state.telephony.phone_type == 1) {
+        names.emplace("android.hardware.telephony");
+        names.emplace("android.hardware.telephony.gsm");
+    }
+    for (const auto& sensor : context->sensor_directory->Sensors()) {
+        if (sensor.type == 1) names.emplace("android.hardware.sensor.accelerometer");
+        if (sensor.type == 2) names.emplace("android.hardware.sensor.compass");
+        if (sensor.type == 4) names.emplace("android.hardware.sensor.gyroscope");
+    }
+    return names;
+}
+
 dx::VmValue PackageHasSystemFeature(dx::IntrinsicContext& call, const Context& context) {
-    return dx::VmValue::Int(context->system_features.contains(RequiredString(call, 0U, "name")));
+    return dx::VmValue::Int(AvailableSystemFeatures(context).contains(RequiredString(call, 0U, "name")));
 }
 
 dx::VmValue QueryReceiverInfo(dx::IntrinsicContext& call, const Context& context, const dx::VmObjectRef component,
@@ -2413,11 +2428,11 @@ Decl Declare_local_PackageService_Class(const Context& context) {
         "getSystemAvailableFeatures", "()[Landroid/content/pm/FeatureInfo;", [context](dx::IntrinsicContext& call) {
             constexpr auto type = "Landroid/content/pm/FeatureInfo;";
             auto& vm = call.vm;
-            const auto array = NewServiceArray(vm, "[Landroid/content/pm/FeatureInfo;",
-                                               static_cast<JniSize>(context->system_features.size() + 1));
+            const auto names = AvailableSystemFeatures(context);
+            const auto array =
+                NewServiceArray(vm, "[Landroid/content/pm/FeatureInfo;", static_cast<JniSize>(names.size() + 1));
             const auto root = vm.ProtectReferences(std::array{array});
             JniSize index = 0;
-            std::set<std::string> names(context->system_features.begin(), context->system_features.end());
             for (const auto& name : names) {
                 const auto info = NewQueryObject(call, type);
                 const auto retained = vm.ProtectReferences(std::array{info});
@@ -2750,13 +2765,157 @@ bool MatchesLocalBroadcast(dx::Interpreter& vm, dx::VmObjectRef filter, dx::VmOb
 }
 
 void DispatchLocalBroadcast(dx::Interpreter& vm, dx::VmObjectRef receiver, dx::VmObjectRef intent, dx::VmValue code,
-                            dx::VmValue data, dx::VmValue extras, bool initial_sticky) {
+                            dx::VmValue data, dx::VmValue extras, bool initial_sticky, bool ordered = false) {
     const auto copy =
         NewPlatformObject(vm, "Landroid/content/Intent;", "(Landroid/content/Intent;)V", {dx::VmValue::Ref(intent)});
     static_cast<void>(CallAndroidMethod(vm, receiver, "performReceive",
                                         "(Landroid/content/Intent;ILjava/lang/String;Landroid/os/Bundle;ZZI)V",
-                                        {dx::VmValue::Ref(copy), code, data, extras, dx::VmValue::Int(0),
+                                        {dx::VmValue::Ref(copy), code, data, extras, dx::VmValue::Int(ordered),
                                          dx::VmValue::Int(initial_sticky), dx::VmValue::Int(0)}));
+}
+
+using Broadcast = DexVmAndroidContext::LocalBroadcast;
+constexpr int kForegroundBroadcast = 0x10000000;
+constexpr auto kNoBroadcastDeadline = std::numeric_limits<std::int64_t>::max();
+
+dx::VmObjectRef BroadcastField(dx::IntrinsicContext& call, dx::VmObjectRef object, const char* name,
+                               const char* descriptor) {
+    return dx::VmObjectRef{call.vm.Model().InstanceSlots(object)[Field(call, object, name, descriptor).slot].bits};
+}
+
+void SetBroadcastDeadline(DexVmAndroidContext& context, std::int64_t deadline) {
+    std::scoped_lock lock(context.scheduler_mutex);
+    context.serial_broadcast_deadline_millis.store(deadline);
+}
+
+void ClearBroadcastWait(DexVmAndroidContext& context) {
+    context.local_serial_broadcasts.front().waiting = dx::VmObjectRef{};
+    SetBroadcastDeadline(context, kNoBroadcastDeadline);
+}
+
+bool ScheduleRegisteredReceiver(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef transport,
+                                dx::VmObjectRef token, dx::VmObjectRef original, int code, dx::VmObjectRef data,
+                                dx::VmObjectRef extras) {
+    auto& vm = call.vm;
+    using V = dx::VmValue;
+    constexpr auto inner = "Landroid/app/LoadedApk$ReceiverDispatcher$InnerReceiver;";
+    if (vm.Linker().Class(vm.Model().ObjectClass(transport)).descriptor != inner)
+        UnsupportedLocalService(vm, "ordered broadcast requires a ROM ReceiverDispatcher");
+    const auto weak = BroadcastField(call, transport, "mDispatcher", "Ljava/lang/ref/WeakReference;");
+    const auto dispatcher = CallAndroidMethod(vm, weak, "get", "()Ljava/lang/Object;").ref;
+    if (!dispatcher.IsValid()) return false;
+    const auto dispatcher_root = vm.ProtectReferences(std::array{dispatcher});
+    const auto receiver = BroadcastField(call, dispatcher, "mReceiver", "Landroid/content/BroadcastReceiver;");
+    auto& queue = context->local_serial_broadcasts;
+    if (queue.empty() || queue.front().waiting != token) return false;
+    queue.front().waiting_receiver = vm.Linker().Class(vm.Model().ObjectClass(receiver)).descriptor;
+    const auto intent =
+        NewPlatformObject(vm, "Landroid/content/Intent;", "(Landroid/content/Intent;)V", {V::Ref(original)});
+    // The ROM Args runs with the original dispatcher, including its unregister state.
+    // Give its PendingResult a unique acknowledgement token before posting it.
+    const auto args = NewPlatformObject(
+        vm, "Landroid/app/LoadedApk$ReceiverDispatcher$Args;",
+        "(Landroid/app/LoadedApk$ReceiverDispatcher;Landroid/content/Intent;ILjava/lang/String;Landroid/os/Bundle;ZZI)V",
+        {V::Ref(dispatcher), V::Ref(intent), V::Int(code), V::Ref(data), V::Ref(extras), V::Int(1), V::Int(0),
+         V::Int(0)});
+    SetRef(call, args, "mToken", "Landroid/os/IBinder;", token);
+    const auto handler = BroadcastField(call, dispatcher, "mActivityThread", "Landroid/os/Handler;");
+    return CallAndroidMethod(vm, handler, "post", "(Ljava/lang/Runnable;)Z", {V::Ref(args)}).AsInt() != 0;
+}
+
+void ScheduleManifestReceiver(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef thread,
+                              const loader::AndroidManifestReceiverComponent& receiver, dx::VmObjectRef token,
+                              dx::VmObjectRef original, int code, dx::VmObjectRef data, dx::VmObjectRef extras,
+                              bool ordered) {
+    auto& vm = call.vm;
+    using V = dx::VmValue;
+    const auto intent =
+        NewPlatformObject(vm, "Landroid/content/Intent;", "(Landroid/content/Intent;)V", {V::Ref(original)});
+    const auto intent_root = vm.ProtectReferences(std::array{intent});
+    const auto package = vm.NewStringUtf8(context->package_name);
+    const auto package_root = vm.ProtectReferences(std::array{package});
+    const auto component =
+        NewPlatformObject(vm, "Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
+                          {V::Ref(package), V::Ref(vm.NewStringUtf8(receiver.name))});
+    static_cast<void>(CallAndroidMethod(
+        vm, intent, "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;", {V::Ref(component)}));
+    const auto app = MakeApplicationInfo(call, context, true);
+    const auto app_root = vm.ProtectReferences(std::array{app});
+    const auto info = MakeReceiverInfo(call, context, receiver, true, app);
+    const auto info_root = vm.ProtectReferences(std::array{info});
+    constexpr auto compat_type = "Landroid/content/res/CompatibilityInfo;";
+    const auto type = vm.Linker().ResolveDescriptor(compat_type);
+    const auto initialized = vm.EnsureClassInitialized(type);
+    if (initialized.exception.IsValid()) throw dx::VmJavaThrow{"", "", initialized.exception};
+    const auto field = vm.Linker().FindFieldRecursive(type, "DEFAULT_COMPATIBILITY_INFO", compat_type);
+    const auto compat = dx::VmObjectRef{vm.Linker().Class(type).static_storage[vm.Linker().Field(*field).slot]};
+    static_cast<void>(CallAndroidMethod(vm, thread, "updateProcessState", "(IZ)V", {V::Int(2), V::Int(0)}));
+    // scheduleReceiver normally embeds the process-wide application-thread Binder.
+    // Construct the same ROM message with a Binder specific to this delivery.
+    const auto message =
+        NewPlatformObject(vm, "Landroid/app/ActivityThread$ReceiverData;",
+                          "(Landroid/content/Intent;ILjava/lang/String;Landroid/os/Bundle;ZZLandroid/os/IBinder;I)V",
+                          {V::Ref(intent), V::Int(code), V::Ref(data), V::Ref(extras), V::Int(ordered), V::Int(0),
+                           V::Ref(token), V::Int(0)});
+    const auto message_root = vm.ProtectReferences(std::array{message});
+    SetRef(call, message, "info", "Landroid/content/pm/ActivityInfo;", info);
+    SetRef(call, message, "compatInfo", compat_type, compat);
+    const auto activity_thread = BroadcastField(call, thread, "this$0", "Landroid/app/ActivityThread;");
+    const auto send =
+        vm.Linker().FindDirectMethod(vm.Model().ObjectClass(activity_thread), "sendMessage", "(ILjava/lang/Object;)V");
+    if (!send) throw std::logic_error("ActivityThread.sendMessage is unavailable");
+    constexpr int kReceiverMessage = 113;  // ActivityThread.H.RECEIVER
+    const auto outcome = vm.Call(*send, std::array{V::Ref(activity_thread), V::Int(kReceiverMessage), V::Ref(message)});
+    if (outcome.exception.IsValid()) throw dx::VmJavaThrow{"", "", outcome.exception};
+}
+
+void DispatchNextLocalBroadcast(dx::IntrinsicContext& call, const Context& context) {
+    using V = dx::VmValue;
+    auto& vm = call.vm;
+    auto& queue = context->local_serial_broadcasts;
+    while (!queue.empty() && !queue.front().waiting.IsValid()) {
+        if (queue.front().targets.empty()) {
+            const auto completed = std::move(queue.front());
+            queue.pop_front();
+            const auto roots = vm.ProtectReferences(
+                std::array{completed.intent, completed.result_to, completed.data, completed.extras});
+            if (completed.result_to.IsValid())
+                DispatchLocalBroadcast(vm, completed.result_to, completed.intent, V::Int(completed.result_code),
+                                       V::Ref(completed.data), V::Ref(completed.extras), false);
+            continue;
+        }
+        const auto token = NewPlatformObject(vm, "Landroid/os/Binder;", "()V", {});
+        if (queue.empty() || queue.front().waiting.IsValid() || queue.front().targets.empty()) continue;
+        auto& item = queue.front();
+        const auto target = item.targets.front();
+        item.targets.pop_front();
+        const auto intent = item.intent;
+        const auto code = item.result_code;
+        const auto data = item.data;
+        const auto extras = item.extras;
+        const auto ordered = item.ordered;
+        const auto roots = vm.ProtectReferences(std::array{token, target.receiver, intent, data, extras});
+        item.waiting = token;
+        item.waiting_receiver = target.manifest ? target.manifest->name : std::to_string(target.receiver.Value());
+        const auto timeout = item.flags & kForegroundBroadcast ? 10'000 : 60'000;
+        SetBroadcastDeadline(*context, context->UptimeMillis() + timeout);
+        try {
+            const auto result_extras = extras.IsValid() ? NewAndroidBundle(vm, extras) : dx::VmObjectRef{};
+            const auto extras_root = vm.ProtectReferences(std::array{result_extras});
+            if (queue.empty() || queue.front().waiting != token) continue;
+            if (target.manifest) {
+                ScheduleManifestReceiver(call, context, target.receiver, *target.manifest, token, intent, code, data,
+                                         result_extras, ordered);
+                continue;
+            }
+            if (ScheduleRegisteredReceiver(call, context, target.receiver, token, intent, code, data, result_extras))
+                continue;
+        } catch (const dx::VmJavaThrow& error) {
+            if (auto* logger = vm.Log())
+                logger->Write(core::LogLevel::warn, "runtime.android.broadcast", error.message);
+        }
+        if (!queue.empty() && queue.front().waiting == token) ClearBroadcastWait(*context);
+    }
 }
 
 std::string LocalStickyAction(dx::Interpreter& vm, const Context& context, dx::VmObjectRef intent) {
@@ -2786,6 +2945,19 @@ void EnsureLocalBatteryBroadcast(dx::Interpreter& vm, const Context& context) {
     context->local_sticky_broadcasts.try_emplace(kBatteryChanged, battery);
 }
 }  // namespace
+
+void PumpSerialBroadcastTimeout(dx::Interpreter& vm, const Context& context) {
+    if (context->UptimeMillis() < context->serial_broadcast_deadline_millis.load()) return;
+    auto& queue = context->local_serial_broadcasts;
+    if (queue.empty() || !queue.front().waiting.IsValid()) return;
+    const auto& item = queue.front();
+    if (auto* logger = vm.Log())
+        logger->Write(core::LogLevel::warn, "runtime.android.broadcast", "Receiver delivery timed out", {},
+                      {{"receiver", item.waiting_receiver}, {"action", item.action}});
+    ClearBroadcastWait(*context);
+    dx::IntrinsicContext call{vm, dx::VmObjectRef{}, {}};
+    DispatchNextLocalBroadcast(call, context);
+}
 
 void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Context& context) {
     builder.VirtualMethod(
@@ -2842,43 +3014,129 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
                                             [&](const auto& item) { return item.first == call.arguments[0].ref; });
                               return dx::VmValue::Void();
                           });
+    builder.VirtualMethod("finishReceiver", "(Landroid/os/IBinder;ILjava/lang/String;Landroid/os/Bundle;Z)V",
+                          [context](dx::IntrinsicContext& call) {
+                              auto& queue = context->local_serial_broadcasts;
+                              const auto token = call.arguments[0].ref;
+                              if (!queue.empty() && token.IsValid() && queue.front().waiting == token &&
+                                  context->UptimeMillis() < context->serial_broadcast_deadline_millis.load()) {
+                                  auto& item = queue.front();
+                                  ClearBroadcastWait(*context);
+                                  if (item.ordered) {
+                                      item.result_code = call.arguments[1].AsInt();
+                                      item.data = call.arguments[2].ref;
+                                      item.extras = call.arguments[3].ref;
+                                      constexpr int kReceiverNoAbort = 0x08000000;
+                                      if (call.arguments[4].AsInt() && !(item.flags & kReceiverNoAbort))
+                                          item.targets.clear();
+                                  }
+                                  DispatchNextLocalBroadcast(call, context);
+                              }
+                              return dx::VmValue::Void();
+                          });
     builder.VirtualMethod(
         "broadcastIntent",
         "(Landroid/app/IApplicationThread;Landroid/content/Intent;Ljava/lang/String;Landroid/content/IIntentReceiver;"
         "ILjava/lang/String;Landroid/os/Bundle;Ljava/lang/String;IZZI)I",
         [context](dx::IntrinsicContext& call) {
-            if (call.arguments[11].AsInt() != 0 || call.arguments[3].ref.IsValid() || call.arguments[7].ref.IsValid() ||
-                call.arguments[8].AsInt() != -1 || call.arguments[9].AsInt())
-                UnsupportedLocalService(call.vm,
-                                        "only unordered process-local broadcasts without a permission are supported");
+            if (call.arguments[11].AsInt() != 0 || call.arguments[8].AsInt() != -1)
+                UnsupportedLocalService(call.vm, "broadcast requires current user and no AppOp");
+            using V = dx::VmValue;
             auto& vm = call.vm;
             const auto intent = dx::IntrinsicCall(call).NonNullRef(1, "intent");
-            const auto package = CallAndroidMethod(vm, intent, "getPackage", "()Ljava/lang/String;").ref;
-            if (package.IsValid() && vm.StringUtf8(package) != context->package_name) return dx::VmValue::Int(0);
-            if (CallAndroidMethod(vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref.IsValid())
-                UnsupportedLocalService(vm, "explicit broadcasts are unsupported");
+            const auto type = call.arguments[2];
+            const auto ordered = call.arguments[9].AsInt() != 0;
             if (call.arguments[10].AsInt()) {
                 const auto key = LocalStickyAction(vm, context, intent);
-                const auto copy = NewPlatformObject(vm, "Landroid/content/Intent;", "(Landroid/content/Intent;)V",
-                                                    {dx::VmValue::Ref(intent)});
+                const auto copy =
+                    NewPlatformObject(vm, "Landroid/content/Intent;", "(Landroid/content/Intent;)V", {V::Ref(intent)});
                 context->local_sticky_broadcasts.insert_or_assign(key, copy);
             }
-            std::vector<dx::VmObjectRef> targets;
-            const auto registrations = context->local_broadcast_filters;
+            const auto component =
+                CallAndroidMethod(vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref;
+            const auto component_root = vm.ProtectReferences(std::array{component});
+            const auto package = component.IsValid()
+                                     ? CallAndroidMethod(vm, component, "getPackageName", "()Ljava/lang/String;").ref
+                                     : CallAndroidMethod(vm, intent, "getPackage", "()Ljava/lang/String;").ref;
+            const auto required = call.arguments[7].ref;
+            std::vector<Broadcast::Target> targets;
             std::vector<dx::VmObjectRef> refs;
+            const auto registrations = context->local_broadcast_filters;
             for (const auto& [receiver, filter] : registrations) {
                 refs.push_back(receiver);
                 refs.push_back(filter);
             }
             const auto roots = vm.ProtectReferences(refs);
-            for (const auto& [receiver, filter] : registrations) {
-                if (std::ranges::find(targets, receiver) != targets.end()) continue;
-                if (MatchesLocalBroadcast(vm, filter, intent, call.arguments[2])) targets.push_back(receiver);
+            if ((!package.IsValid() || vm.StringUtf8(package) == context->package_name) &&
+                (!required.IsValid() || context->granted_permissions.contains(vm.StringUtf8(required)))) {
+                if (!component.IsValid()) {
+                    for (const auto& [receiver, filter] : registrations) {
+                        if (std::ranges::any_of(targets,
+                                                [&](const auto& target) { return target.receiver == receiver; }))
+                            continue;
+                        if (!MatchesLocalBroadcast(vm, filter, intent, type)) continue;
+                        if (!ordered) {
+                            DispatchLocalBroadcast(vm, receiver, intent, call.arguments[4], call.arguments[5],
+                                                   call.arguments[6], false);
+                            targets.push_back({receiver});  // Deduplicate additional filters.
+                        } else {
+                            const auto priority = CallAndroidMethod(vm, filter, "getPriority", "()I").AsInt();
+                            targets.push_back({receiver, nullptr, priority});
+                        }
+                    }
+                }
+                if (!ordered) targets.clear();
+                const auto flags = CallAndroidMethod(vm, intent, "getFlags", "()I").AsInt();
+                if (!(flags & 0x40000000) && context->rom_activities && context->application_enabled) {
+                    const auto thread = context->rom_activities->application_thread;
+                    const auto name =
+                        component.IsValid()
+                            ? vm.StringUtf8(
+                                  CallAndroidMethod(vm, component, "getClassName", "()Ljava/lang/String;").ref)
+                            : std::string{};
+                    const auto& process = context->application_process_name.empty() ? context->package_name
+                                                                                    : context->application_process_name;
+                    for (const auto& receiver : context->receiver_components) {
+                        if (!thread.IsValid() || !receiver.enabled ||
+                            (!receiver.process_name.empty() && receiver.process_name != process) ||
+                            std::ranges::any_of(targets, [&](const auto& target) {
+                                return target.manifest && target.manifest->name == receiver.name;
+                            }))
+                            continue;
+                        if (component.IsValid()) {
+                            if (name == receiver.name) targets.push_back({thread, &receiver});
+                            continue;
+                        }
+                        for (const auto& declaration : receiver.intent_filters) {
+                            const auto filter = MaterializeIntentFilter(vm, declaration);
+                            const auto filter_root = vm.ProtectReferences(std::array{filter});
+                            if (MatchesLocalBroadcast(vm, filter, intent, type)) {
+                                targets.push_back({thread, &receiver, declaration.priority});
+                                break;
+                            }
+                        }
+                    }
+                }
             }
-            for (const auto receiver : targets)
-                DispatchLocalBroadcast(vm, receiver, intent, call.arguments[4], call.arguments[5], call.arguments[6],
-                                       false);
-            return dx::VmValue::Int(0);
+            if (!targets.empty() || call.arguments[3].ref.IsValid()) {
+                std::stable_sort(targets.begin(), targets.end(),
+                                 [](const auto& a, const auto& b) { return a.priority > b.priority; });
+                const auto flags = CallAndroidMethod(vm, intent, "getFlags", "()I").AsInt();
+                const auto action = CallAndroidMethod(vm, intent, "getAction", "()Ljava/lang/String;").ref;
+                Broadcast item{.intent = intent,
+                               .result_to = call.arguments[3].ref,
+                               .data = call.arguments[5].ref,
+                               .extras = call.arguments[6].ref,
+                               .waiting = dx::VmObjectRef{},
+                               .targets = {targets.begin(), targets.end()},
+                               .result_code = call.arguments[4].AsInt(),
+                               .flags = flags,
+                               .ordered = ordered,
+                               .action = action.IsValid() ? vm.StringUtf8(action) : std::string{}};
+                context->local_serial_broadcasts.push_back(std::move(item));
+                DispatchNextLocalBroadcast(call, context);
+            }
+            return V::Int(0);
         });
     builder.VirtualMethod("unbroadcastIntent", "(Landroid/app/IApplicationThread;Landroid/content/Intent;I)V",
                           [context](dx::IntrinsicContext& call) {
@@ -3060,6 +3318,9 @@ void ShutdownLocalServices(dexvm::Interpreter& vm, DexVmAndroidContext& context)
         }
     }
     context.local_broadcast_filters.clear();
+    context.local_serial_broadcasts.clear();
+    android_intrinsics::SetBroadcastDeadline(context, android_intrinsics::kNoBroadcastDeadline);
+    context.device_state.audio.media_button_receivers.clear();
     context.local_sticky_broadcasts.clear();
     if (failure) std::rethrow_exception(failure);
 }

@@ -7,29 +7,19 @@
 #include <span>
 
 namespace ogplay::session {
-namespace {
 
-constexpr std::uint64_t kTargetQueuedFrames = 4096U;
-constexpr std::size_t kChunkFrames = 1024U;
-
-}  // namespace
-
-AudioOutputPump::AudioOutputPump(Mix mix, hal::AudioOutput* output,
-                                 const std::uint32_t sample_rate,
-                                 const std::uint8_t channels,
-                                 FailureInterrupt failure_interrupt)
-    : mix_(std::move(mix)),
-      failure_interrupt_(std::move(failure_interrupt)),
-      output_(output),
-      sample_rate_(sample_rate),
-      channels_(channels),
-      chunk_(kChunkFrames * channels) {
+AudioOutputPump::AudioOutputPump(Mix mix, hal::AudioOutput* output, const std::uint32_t sample_rate,
+                                 const std::uint8_t channels, FailureInterrupt failure_interrupt)
+    : mix_(std::move(mix)), failure_interrupt_(std::move(failure_interrupt)), output_(output),
+      sample_rate_(sample_rate), channels_(channels), chunk_(kChunkFrames * channels) {
     if (!mix_ || sample_rate_ == 0U || channels_ != 2U) {
         throw std::invalid_argument("audio output pump needs stereo mix");
     }
 }
 
-AudioOutputPump::~AudioOutputPump() { Stop(); }
+AudioOutputPump::~AudioOutputPump() {
+    Stop();
+}
 
 void AudioOutputPump::StartRealtime() {
     Stop();
@@ -41,8 +31,7 @@ void AudioOutputPump::StartRealtime() {
     worker_ = std::jthread([this](const std::stop_token stop) {
         while (!stop.stop_requested()) {
             try {
-                if (device_failed_.load(std::memory_order_relaxed) ||
-                    suspended_.load(std::memory_order_relaxed) ||
+                if (device_failed_.load(std::memory_order_relaxed) || suspended_.load(std::memory_order_relaxed) ||
                     output_ == nullptr || !output_->IsStarted()) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(2));
                     continue;
@@ -59,8 +48,10 @@ void AudioOutputPump::StartRealtime() {
 
 void AudioOutputPump::RecordWorkerFailure(std::exception_ptr failure) noexcept {
     // Wake the producer before publishing the failure to the lifecycle owner.
-    try { if (failure_interrupt_) failure_interrupt_(); }
-    catch (...) { /* Preserve the original consumer failure. */ }
+    try {
+        if (failure_interrupt_) failure_interrupt_();
+    } catch (...) { /* Preserve the original consumer failure. */
+    }
     std::scoped_lock lock(failure_mutex_);
     worker_failure_ = std::move(failure);
 }
@@ -118,12 +109,10 @@ std::size_t AudioOutputPump::MixOffline(const std::span<std::int16_t> output) {
     return mix_(output, sample_rate_);
 }
 
-std::uint64_t AudioOutputPump::FramesForTicks(
-    const std::uint64_t tick_delta, const std::uint64_t ticks_per_second) {
+std::uint64_t AudioOutputPump::FramesForTicks(const std::uint64_t tick_delta, const std::uint64_t ticks_per_second) {
     if (ticks_per_second == 0U) return 0U;
     std::scoped_lock lock(mutex_);
-    const auto scaled =
-        tick_delta * static_cast<std::uint64_t>(sample_rate_) + frame_remainder_;
+    const auto scaled = tick_delta * static_cast<std::uint64_t>(sample_rate_) + frame_remainder_;
     const auto frames = scaled / ticks_per_second;
     frame_remainder_ = scaled % ticks_per_second;
     const auto already_advanced = std::min(frames, manual_frames_advanced_);

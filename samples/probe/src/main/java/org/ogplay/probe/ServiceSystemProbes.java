@@ -314,6 +314,19 @@ final class ServiceSystemProbes {
                 Integer brightness = (Integer) s.call(SYSTEM, "getInt", "screen_brightness", new Step() {
                     Object run() { return Settings.System.getInt(cr, Settings.System.SCREEN_BRIGHTNESS, -1); }
                 });
+                Boolean brightnessRow = (Boolean) s.call(CR, "query", "system_brightness_row", new Step() {
+                    Object run() {
+                        Cursor cursor = cr.query(Settings.System.CONTENT_URI,
+                                new String[] {Settings.System.NAME}, null, null, null);
+                        if (cursor == null) return false;
+                        try {
+                            while (cursor.moveToNext()) {
+                                if (Settings.System.SCREEN_BRIGHTNESS.equals(cursor.getString(0))) return true;
+                            }
+                            return false;
+                        } finally { cursor.close(); }
+                    }
+                });
                 Integer rotation = (Integer) s.call(SYSTEM, "getInt", "accelerometer_rotation", new Step() {
                     Object run() { return Settings.System.getInt(cr, Settings.System.ACCELEROMETER_ROTATION, -1); }
                 });
@@ -351,6 +364,7 @@ final class ServiceSystemProbes {
                 String providers = allowed == null ? "" : allowed;
                 s.require("android_id_hex", androidId != null && androidId.matches("[0-9a-f]{1,16}"))
                         .require("brightness_in_range", brightness != null && brightness >= 0 && brightness <= 255)
+                        .require("brightness_row_present", Boolean.TRUE.equals(brightnessRow))
                         .require("rotation_flag", rotation != null && (rotation == 0 || rotation == 1))
                         .require("time_format_valid", clock == null || "12".equals(clock) || "24".equals(clock))
                         .require("airplane_flag", airplane != null && (airplane == 0 || airplane == 1))

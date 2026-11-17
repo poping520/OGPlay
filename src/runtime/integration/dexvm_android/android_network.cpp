@@ -3,10 +3,48 @@
 // ---- migrated from android_net_ConnectivityManager.cpp ----
 #include "catalog.h"
 
+#include <charconv>
+
+#include "ogplay/runtime/integration/apk_assets.h"
+
 namespace ogplay::runtime::android_intrinsics {
 namespace {
-const AndroidOfflineConnectivity& RequireOfflineConnectivity(dx::IntrinsicContext& call, const Context& context,
-                                                             bool network_permission) {
+std::map<int, std::string> ReadFrameworkNetworkTypes(const DexVmAndroidContext& context) {
+    const resources::AssetManager framework(FrameworkResourceApk(context));
+    const auto& table = framework.resources();
+    const auto id = table.identifierForName("networkAttributes", "array", "android");
+    std::map<int, std::string> types;
+    for (const auto& row : resources::getArrayStringResource(table, id)) {
+        if (!row) continue;
+        // NetworkConfig: name, network type, radio type, priority, restore time, dependency.
+        const std::string entry(row->begin(), row->end());
+        const auto first = entry.find(',');
+        if (first == std::string::npos) continue;
+        const auto second = entry.find(',', first + 1);
+        if (second == std::string::npos) continue;
+        int type{};
+        const auto [end, error] = std::from_chars(entry.data() + first + 1, entry.data() + second, type);
+        if (error != std::errc{} || end != entry.data() + second) continue;
+        const auto name = entry.substr(0, first);
+        if (type == 1 && name == "wifi")
+            types.emplace(type, "WIFI");
+        else if ((name == "mobile" || name.starts_with("mobile_")) && entry.substr(second + 1, 2) == "0,")
+            types.emplace(type, name);
+    }
+    if (!types.contains(0) || !types.contains(1))
+        throw resources::ResourceError("framework networkAttributes lacks mobile or Wi-Fi");
+    return types;
+}
+
+std::map<int, std::string> SupportedNetworkTypes(const Context& context, AndroidOfflineConnectivity& facts) {
+    if (facts.network_types.empty()) facts.network_types = ReadFrameworkNetworkTypes(*context);
+    auto types = facts.network_types;
+    if (!facts.wifi_type_supported) types.erase(1);
+    return types;
+}
+
+AndroidOfflineConnectivity& RequireOfflineConnectivity(dx::IntrinsicContext& call, const Context& context,
+                                                       bool network_permission) {
     if (network_permission) RequireServicePermission(context, "ACCESS_NETWORK_STATE");
     if (!context->offline_connectivity || context->network_policy.enabled || call.vm.Network().Policy().enabled) {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.connectivity_offline", 0);
@@ -19,7 +57,7 @@ const AndroidOfflineConnectivity& RequireOfflineConnectivity(dx::IntrinsicContex
 
 // The SDK compile stubs hide these constructors/setters. The native fact
 // factory invokes the original BootDex methods; it does not reimplement them.
-dx::VmObjectRef NewOfflineWifiNetworkInfo(dx::IntrinsicContext& call) {
+dx::VmObjectRef NewOfflineNetworkInfo(dx::IntrinsicContext& call, int network_type, std::string_view name) {
     auto& vm = call.vm;
     auto& linker = vm.Linker();
     const auto propagate = [&](const dx::VmCallOutcome& outcome) {
@@ -31,15 +69,16 @@ dx::VmObjectRef NewOfflineWifiNetworkInfo(dx::IntrinsicContext& call) {
     propagate(vm.EnsureClassInitialized(type));
     const auto info = vm.NewIntrinsicInstance("Landroid/net/NetworkInfo;");
     const auto root = vm.ProtectReferences(std::array{info});
-    const auto type_name = vm.NewStringUtf8("WIFI");
+    const auto type_name = vm.NewStringUtf8(name);
     const auto type_name_root = vm.ProtectReferences(std::array{type_name});
-    const auto subtype_name = vm.NewStringUtf8("");
+    const auto subtype_name = vm.NewStringUtf8(network_type == 1 ? "" : "UNKNOWN");
     const auto strings_root = vm.ProtectReferences(std::array{subtype_name});
     const auto constructor = linker.FindDirectMethod(type, "<init>", "(IILjava/lang/String;Ljava/lang/String;)V");
     if (!constructor)
         throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "NetworkInfo constructor is unavailable");
-    propagate(vm.Call(*constructor, std::array{dx::VmValue::Ref(info), dx::VmValue::Int(1), dx::VmValue::Int(0),
-                                               dx::VmValue::Ref(type_name), dx::VmValue::Ref(subtype_name)}));
+    propagate(
+        vm.Call(*constructor, std::array{dx::VmValue::Ref(info), dx::VmValue::Int(network_type), dx::VmValue::Int(0),
+                                         dx::VmValue::Ref(type_name), dx::VmValue::Ref(subtype_name)}));
     const auto detailed_type = linker.ResolveDescriptor("Landroid/net/NetworkInfo$DetailedState;");
     propagate(vm.EnsureClassInitialized(detailed_type));
     const auto field =
@@ -63,7 +102,7 @@ void EnsureLocalConnectivityBroadcast(dx::IntrinsicContext& call, const Context&
     const auto intent = NewPlatformObject(vm, "Landroid/content/Intent;", "(Ljava/lang/String;)V",
                                           {dx::VmValue::Ref(vm.NewStringUtf8(action))});
     const auto intent_root = vm.ProtectReferences(std::array{intent});
-    const auto network = NewOfflineWifiNetworkInfo(call);
+    const auto network = NewOfflineNetworkInfo(call, 1, "WIFI");
     const auto network_root = vm.ProtectReferences(std::array{network});
     static_cast<void>(CallAndroidMethod(vm, intent, "putExtra",
                                         "(Ljava/lang/String;Landroid/os/Parcelable;)Landroid/content/Intent;",
@@ -86,49 +125,54 @@ Decl Declare_local_ConnectivityService_Class(const Context& context) {
         static_cast<void>(RequireOfflineConnectivity(call, context, true));
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
-    builder.VirtualMethod("getNetworkInfo", "(I)Landroid/net/NetworkInfo;", [context](dx::IntrinsicContext& call) {
-        const auto& facts = RequireOfflineConnectivity(call, context, true);
-        if (call.arguments[0].AsInt() != 1 || !facts.wifi_type_supported) return dx::VmValue::Ref(dx::VmObjectRef{});
-        return dx::VmValue::Ref(NewOfflineWifiNetworkInfo(call));
+    const auto networks = [context](dx::IntrinsicContext& call) {
+        return SupportedNetworkTypes(context, RequireOfflineConnectivity(call, context, true));
+    };
+    builder.VirtualMethod("getNetworkInfo", "(I)Landroid/net/NetworkInfo;", [networks](dx::IntrinsicContext& call) {
+        const auto types = networks(call);
+        const auto type = types.find(call.arguments[0].AsInt());
+        return dx::VmValue::Ref(type == types.end() ? dx::VmObjectRef{}
+                                                    : NewOfflineNetworkInfo(call, type->first, type->second));
     });
-    builder.VirtualMethod("getAllNetworkInfo", "()[Landroid/net/NetworkInfo;", [context](dx::IntrinsicContext& call) {
-        const auto& facts = RequireOfflineConnectivity(call, context, true);
+    builder.VirtualMethod("getAllNetworkInfo", "()[Landroid/net/NetworkInfo;", [networks](dx::IntrinsicContext& call) {
+        const auto types = networks(call);
         auto& vm = call.vm;
-        const auto array = NewServiceArray(vm, "[Landroid/net/NetworkInfo;", facts.wifi_type_supported ? 1 : 0);
+        const auto array = NewServiceArray(vm, "[Landroid/net/NetworkInfo;", static_cast<JniSize>(types.size()));
         const auto root = vm.ProtectReferences(std::array{array});
-        if (facts.wifi_type_supported) vm.Model().SetObjectElement(array, 0, NewOfflineWifiNetworkInfo(call));
+        JniSize index = 0;
+        for (const auto& [type, name] : types)
+            vm.Model().SetObjectElement(array, index++, NewOfflineNetworkInfo(call, type, name));
         return dx::VmValue::Ref(array);
     });
-    builder.VirtualMethod("isNetworkSupported", "(I)Z", [context](dx::IntrinsicContext& call) {
-        const auto& facts = RequireOfflineConnectivity(call, context, true);
-        return dx::VmValue::Int(call.arguments[0].AsInt() == 1 && facts.wifi_type_supported);
+    builder.VirtualMethod("isNetworkSupported", "(I)Z", [networks](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(networks(call).contains(call.arguments[0].AsInt()));
     });
     builder.VirtualMethod(
-        "getLinkProperties", "(I)Landroid/net/LinkProperties;", [context](dx::IntrinsicContext& call) {
-            const auto& facts = RequireOfflineConnectivity(call, context, true);
-            if (call.arguments[0].AsInt() != 1 || !facts.wifi_type_supported)
-                return dx::VmValue::Ref(dx::VmObjectRef{});
+        "getLinkProperties", "(I)Landroid/net/LinkProperties;", [networks](dx::IntrinsicContext& call) {
+            if (!networks(call).contains(call.arguments[0].AsInt())) return dx::VmValue::Ref(dx::VmObjectRef{});
             return dx::VmValue::Ref(NewPlatformObject(call.vm, "Landroid/net/LinkProperties;", "()V", {}));
         });
-    builder.VirtualMethod("getAllNetworkState", "()[Landroid/net/NetworkState;", [context](dx::IntrinsicContext& call) {
-        const auto& facts = RequireOfflineConnectivity(call, context, true);
-        auto& vm = call.vm;
-        const auto array = NewServiceArray(vm, "[Landroid/net/NetworkState;", facts.wifi_type_supported ? 1 : 0);
-        const auto array_root = vm.ProtectReferences(std::array{array});
-        if (facts.wifi_type_supported) {
-            const auto info = NewOfflineWifiNetworkInfo(call);
-            const auto info_root = vm.ProtectReferences(std::array{info});
-            const auto properties = NewPlatformObject(vm, "Landroid/net/LinkProperties;", "()V", {});
-            const auto properties_root = vm.ProtectReferences(std::array{properties});
-            const auto capabilities = NewPlatformObject(vm, "Landroid/net/LinkCapabilities;", "()V", {});
-            const auto state = NewPlatformObject(
-                vm, "Landroid/net/NetworkState;",
-                "(Landroid/net/NetworkInfo;Landroid/net/LinkProperties;Landroid/net/LinkCapabilities;)V",
-                {dx::VmValue::Ref(info), dx::VmValue::Ref(properties), dx::VmValue::Ref(capabilities)});
-            vm.Model().SetObjectElement(array, 0, state);
-        }
-        return dx::VmValue::Ref(array);
-    });
+    builder.VirtualMethod(
+        "getAllNetworkState", "()[Landroid/net/NetworkState;", [networks](dx::IntrinsicContext& call) {
+            const auto types = networks(call);
+            auto& vm = call.vm;
+            const auto array = NewServiceArray(vm, "[Landroid/net/NetworkState;", static_cast<JniSize>(types.size()));
+            const auto array_root = vm.ProtectReferences(std::array{array});
+            JniSize index = 0;
+            for (const auto& [type, name] : types) {
+                const auto info = NewOfflineNetworkInfo(call, type, name);
+                const auto info_root = vm.ProtectReferences(std::array{info});
+                const auto properties = NewPlatformObject(vm, "Landroid/net/LinkProperties;", "()V", {});
+                const auto properties_root = vm.ProtectReferences(std::array{properties});
+                const auto capabilities = NewPlatformObject(vm, "Landroid/net/LinkCapabilities;", "()V", {});
+                const auto state = NewPlatformObject(
+                    vm, "Landroid/net/NetworkState;",
+                    "(Landroid/net/NetworkInfo;Landroid/net/LinkProperties;Landroid/net/LinkCapabilities;)V",
+                    {dx::VmValue::Ref(info), dx::VmValue::Ref(properties), dx::VmValue::Ref(capabilities)});
+                vm.Model().SetObjectElement(array, index++, state);
+            }
+            return dx::VmValue::Ref(array);
+        });
     for (const auto& [name, descriptor] : std::array{
              std::pair{"captivePortalCheckComplete", "(Landroid/net/NetworkInfo;)V"},
              std::pair{"captivePortalCheckCompleted", "(Landroid/net/NetworkInfo;Z)V"},

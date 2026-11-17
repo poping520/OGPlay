@@ -8,31 +8,49 @@
 
 using namespace ogplay;
 using namespace ogplay::test::android_boundary;
+
 namespace {
 struct SensorFixture {
     runtime::VirtualFileSystem fs;
     std::set<std::uint64_t> retired;
     std::vector<std::array<std::int32_t, 2>> pipes;
     std::vector<std::int32_t> closed;
-    BoundaryFixture f{1, nullptr, {}, true, {
-        [this](auto fd) { return fs.PipePollEvents(fd); },
-        [this](auto tid) { return !retired.contains(tid); },
-        [this] {
-            const auto p = fs.CreatePipe();
-            pipes.push_back({p.read_descriptor, p.write_descriptor});
-            return pipes.back();
-        },
-        [this](auto fd) { fs.Close(fd); closed.push_back(fd); }}};
+    BoundaryFixture f{1,
+                      nullptr,
+                      {},
+                      true,
+                      {[this](auto fd) { return fs.PipePollEvents(fd); },
+                       [this](auto tid) { return !retired.contains(tid); },
+                       [this] {
+                           const auto p = fs.CreatePipe();
+                           pipes.push_back({p.read_descriptor, p.write_descriptor});
+                           return pipes.back();
+                       },
+                       [this](auto fd) {
+                           fs.Close(fd);
+                           closed.push_back(fd);
+                       },
+                       {},
+                       [this](auto fd, bool signal) {
+                           std::array<std::byte, 1> byte{};
+                           if (signal)
+                               static_cast<void>(fs.Write(fd, byte));
+                           else
+                               static_cast<void>(fs.Read(fd, byte));
+                       }}};
+
     std::uint32_t call(const char* symbol, std::array<std::uint32_t, 4> args = {}) {
         return f.Call("libandroid.so", symbol, args);
     }
+
     std::uint32_t manager() { return call("ASensorManager_getInstance"); }
+
     std::uint32_t queue(std::uint32_t manager, std::uint32_t looper, bool callback = true) {
         f.bus.Write32(f.stack, 0);
         return call("ASensorManager_createEventQueue", {manager, looper, 2, callback ? 0x12345678U : 0U});
     }
 };
-}
+}  // namespace
 
 TEST_CASE("APS-11 sensor empty catalog and inert callback queue follow API19") {
     SensorFixture s;
@@ -59,7 +77,8 @@ TEST_CASE("APS-11 sensor empty catalog and inert callback queue follow API19") {
     CHECK_NOTHROW(s.f.memory.Validate({list, 1}, memory::AccessType::read));
     CHECK(s.call("ASensorManager_getSensorList", {manager, 0}) == 0);
     CHECK_THROWS(s.call("ASensorManager_getSensorList", {manager, 1}));
-    for (auto type : {0U, 1U, 2U, 0xffffffffU}) CHECK(s.call("ASensorManager_getDefaultSensor", {manager, type}) == 0);
+    for (auto type : {0U, 1U, 2U, 0xffffffffU})
+        CHECK(s.call("ASensorManager_getDefaultSensor", {manager, type}) == 0);
     CHECK(s.call("ASensorEventQueue_getEvents", {queue, 0, 10}) == 0);
     CHECK(s.call("ASensorEventQueue_getEvents", {queue, s.f.output.Value(), 0}) == 0);
     CHECK(static_cast<std::int32_t>(s.call("ALooper_pollOnce")) == -3);
@@ -88,22 +107,25 @@ TEST_CASE("APS-11 sensor rejects invalid handles and retires thread and process 
     const auto manager = s.manager();
     const auto looper = s.call("ALooper_prepare", {1});
     const auto queue = s.queue(manager, looper);
-    for (const auto* method : {"ASensor_getName", "ASensor_getVendor", "ASensor_getType", "ASensor_getResolution", "ASensor_getMinDelay"}) {
+    for (const auto* method :
+         {"ASensor_getName", "ASensor_getVendor", "ASensor_getType", "ASensor_getResolution", "ASensor_getMinDelay"}) {
         CHECK_THROWS(s.call(method, {0}));
         CHECK_THROWS(s.call(method, {123}));
     }
-    for (const auto* method : {"ASensorEventQueue_enableSensor", "ASensorEventQueue_disableSensor", "ASensorEventQueue_setEventRate"})
+    for (const auto* method :
+         {"ASensorEventQueue_enableSensor", "ASensorEventQueue_disableSensor", "ASensorEventQueue_setEventRate"})
         CHECK_THROWS(s.call(method, {queue, 123, 100}));
-    for (const auto* method : {"ASensorEventQueue_getEvents", "ASensorEventQueue_hasEvents", "ASensorEventQueue_enableSensor"})
+    for (const auto* method :
+         {"ASensorEventQueue_getEvents", "ASensorEventQueue_hasEvents", "ASensorEventQueue_enableSensor"})
         CHECK_THROWS(s.call(method, {123, 123, 1}));
     CHECK_THROWS(s.call("ASensorManager_getDefaultSensor", {123, 1}));
-    CHECK(std::ranges::any_of(s.f.ledger.Unimplemented(), [](const auto& hit) { return hit.id == "dexvm.sensor_absent_facade"; }));
     // Own queue on a guest thread without its own Looper, using another live Looper.
     s.f.bus.Write32(s.f.stack, 0);
-    const auto other = FastBoundaryCall(s.f, "libandroid.so", "ASensorManager_createEventQueue", {manager, looper, 2, 0}, 20);
+    const auto other =
+        FastBoundaryCall(s.f, "libandroid.so", "ASensorManager_createEventQueue", {manager, looper, 2, 0}, 20);
     REQUIRE(other > queue);
     s.retired.insert(20);
-    CHECK(s.manager() == manager); // sweeps retired queue owners too
+    CHECK(s.manager() == manager);  // sweeps retired queue owners too
     CHECK(s.closed.size() == 2);
     CHECK_THROWS(s.call("ASensorEventQueue_getEvents", {other}));
     s.f.boundary.RetireThreadLooper(1);
@@ -115,4 +137,33 @@ TEST_CASE("APS-11 sensor rejects invalid handles and retires thread and process 
     CHECK(s.closed.size() == 6);
     CHECK_THROWS(s.call("ASensorEventQueue_hasEvents", {last}));
     CHECK_THROWS(s.call("ASensorManager_getInstance"));
+}
+
+TEST_CASE("Static motion sensor events follow the supplied Clock and wake the NDK Looper") {
+    SensorFixture s;
+    const auto directory = runtime::StaticAndroidSensorDirectory();
+    std::int64_t now = 60'000'000'000;
+    s.f.boundary.SetSensorDirectory(directory, runtime::MakeStaticAndroidSensorSource(directory, [&] { return now; }));
+    const auto manager = s.manager();
+    CHECK(s.call("ASensorManager_getSensorList", {manager, s.f.output.Value()}) == 7);
+    const memory::GuestAddress list{s.f.bus.Read32(s.f.output)};
+    const auto sensor = s.call("ASensorManager_getDefaultSensor", {manager, 1});
+    REQUIRE(sensor == s.f.bus.Read32(list));
+    const auto queue = s.queue(manager, s.call("ALooper_prepare", {1}), false);
+    CHECK(s.call("ASensorEventQueue_enableSensor", {queue, sensor}) == 0);
+    CHECK(s.call("ASensorEventQueue_setEventRate", {queue, sensor, 100}) == 0);
+    CHECK(s.call("ALooper_pollOnce") == 2);
+    CHECK(s.call("ASensorEventQueue_getEvents", {queue, s.f.output.Value(), 4}) == 1);
+    now += 15'000'000;
+    CHECK(s.call("ALooper_pollOnce") == 2);
+    CHECK(s.call("ASensorEventQueue_getEvents", {queue, s.f.output.Value(), 4}) == 3);
+    std::array<runtime::AndroidSensorSample, 3> samples;
+    s.f.memory.Read(s.f.output, std::as_writable_bytes(std::span(samples)), 1);
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        CHECK(samples[i].timestamp == now - static_cast<std::int64_t>(samples.size() - i - 1) * 5'000'000);
+        CHECK(samples[i].values[2] == doctest::Approx(9.80665F));
+    }
+    CHECK(s.call("ASensorEventQueue_disableSensor", {queue, sensor}) == 0);
+    now += 1'000'000'000;
+    CHECK(std::bit_cast<std::int32_t>(s.call("ALooper_pollOnce")) == -3);
 }

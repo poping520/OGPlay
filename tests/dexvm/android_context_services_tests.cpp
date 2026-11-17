@@ -163,7 +163,7 @@ TEST_CASE("Telephony subscriber identity is unavailable without a cellular subsc
         const auto flags = f.linker.Method(f.linker.Class(type).vtable[*index]).access_flags;
         CHECK((flags & kAccPublic) != 0U);
         CHECK((flags & (kAccFinal | kAccStatic)) == 0U);
-        CHECK(f.On(phone, "getPhoneType", "()I").AsInt() == 0);
+        CHECK(f.On(phone, "getPhoneType", "()I").AsInt() == 1);
         CHECK(f.On(phone, "getSimState", "()I").AsInt() == 1);
         for (const auto events : {0, 1}) {
             CHECK_NOTHROW(f.On(phone, "listen", "(Landroid/telephony/PhoneStateListener;I)V",
@@ -285,6 +285,24 @@ TEST_CASE("Settings BootDex routes moved keys through the bounded store") {
                           "(Landroid/content/ContentResolver;Ljava/lang/String;I)I",
                           {VmValue::Ref(resolver), VmValue::Ref(volume), VmValue::Int(3)})
                   .AsInt() == 17);
+
+        const auto brightness = fixture.vm.NewStringUtf8("screen_brightness");
+        const auto brightness_root = fixture.vm.ProtectReferences(std::array{brightness});
+        const auto read_brightness = [&] {
+            return fixture
+                .Static("Landroid/provider/Settings$System;", "getInt",
+                        "(Landroid/content/ContentResolver;Ljava/lang/String;)I",
+                        {VmValue::Ref(resolver), VmValue::Ref(brightness)})
+                .AsInt();
+        };
+        CHECK(read_brightness() == 102);
+        constexpr auto put_string = "(Landroid/content/ContentResolver;Ljava/lang/String;Ljava/lang/String;)Z";
+        fixture.Static("Landroid/provider/Settings$System;", "putString", put_string,
+                       {VmValue::Ref(resolver), VmValue::Ref(brightness), VmValue::Ref(text)});
+        CHECK(read_brightness() == 17);
+        fixture.Static("Landroid/provider/Settings$System;", "putString", put_string,
+                       {VmValue::Ref(resolver), VmValue::Ref(brightness), VmValue::Ref(VmObjectRef{})});
+        CHECK(read_brightness() == 102);
 
         const auto system_class = fixture.linker.ResolveDescriptor("Landroid/provider/Settings$System;");
         const auto public_get = fixture.linker.FindDirectMethod(system_class, "getString", get_string);
@@ -1186,7 +1204,7 @@ TEST_CASE("Local device services enforce permissions and retain session changes"
 TEST_CASE("Local AIDL coverage tracks unbound abstract methods") {
     AndroidValueVm f;
     constexpr std::string_view prefix = "Lorg/ogplay/framework/";
-    bool checked_location = false;
+    bool checked_location = false, checked_accounts = false;
     for (const auto id : f.linker.AllClasses()) {
         const auto descriptor = f.linker.Class(id).descriptor;
         if (!std::string_view(descriptor).starts_with("Lorg/ogplay/framework/Local")) continue;
@@ -1194,6 +1212,7 @@ TEST_CASE("Local AIDL coverage tracks unbound abstract methods") {
         const auto& linked = f.linker.Class(type);
         const auto name = std::string_view(descriptor).substr(prefix.size(), descriptor.size() - prefix.size() - 1);
         checked_location |= name == "LocalLocationService";
+        checked_accounts |= name == "LocalAccountService";
         std::set<std::string> gaps;
         const auto check_contract = [&](DexClassId owner) {
             for (const auto method_id : f.linker.Class(owner).own_virtual_methods) {
@@ -1217,6 +1236,7 @@ TEST_CASE("Local AIDL coverage tracks unbound abstract methods") {
         }
     }
     CHECK(checked_location);
+    CHECK(checked_accounts);
 }
 
 TEST_CASE("DVM-166 keyguard facade reads the replaceable platform snapshot") {
@@ -1303,7 +1323,7 @@ TEST_CASE("DVM-241 offline connectivity distinguishes unsupported types and pres
             REQUIRE(outcome.exception.IsValid());
             CHECK(f.linker.Class(outcome.exception_class).descriptor == exception);
         };
-        for (const int type : {-1, 0, 9, 14, 15}) {
+        for (const int type : {-1, 7, 9, 13, 15}) {
             const auto result = query(type);
             REQUIRE_FALSE(result.exception.IsValid());
             CHECK_FALSE(result.value.ref.IsValid());
@@ -1330,8 +1350,20 @@ TEST_CASE("DVM-241 offline connectivity distinguishes unsupported types and pres
         const auto all = f.On(manager, "getAllNetworkInfo", "()[Landroid/net/NetworkInfo;").ref;
         const auto all_root = f.vm.ProtectReferences(std::array{all});
         REQUIRE(all.IsValid());
-        REQUIRE(f.model.ArrayLength(all) == 1);
-        const auto listed = f.model.GetObjectElement(all, 0);
+        const std::array expected_types{0, 1, 2, 3, 4, 5, 10, 11, 12, 14};
+        REQUIRE(f.model.ArrayLength(all) == expected_types.size());
+        for (std::size_t i = 0; i < expected_types.size(); ++i) {
+            const auto expected_type = expected_types[i];
+            CHECK(f.On(manager, "isNetworkSupported", "(I)Z", {VmValue::Int(expected_type)}).AsInt());
+            const auto network = f.model.GetObjectElement(all, static_cast<JniSize>(i));
+            CHECK(f.On(network, "getType", "()I").AsInt() == expected_type);
+            if (expected_type != 1) {
+                CHECK(f.On(network, "getSubtype", "()I").AsInt() == 0);
+                CHECK(f.vm.StringUtf8(f.On(network, "getSubtypeName", "()Ljava/lang/String;").ref) == "UNKNOWN");
+                CHECK_FALSE(f.On(network, "isAvailable", "()Z").AsInt());
+            }
+        }
+        const auto listed = f.model.GetObjectElement(all, 1);
         CHECK(f.On(listed, "getType", "()I").AsInt() == 1);
         CHECK(f.On(listed, "getState", "()Landroid/net/NetworkInfo$State;").ref == state);
         const auto copy = f.New("Landroid/net/NetworkInfo;", "(Landroid/net/NetworkInfo;)V", {VmValue::Ref(info)});
@@ -1794,17 +1826,16 @@ TEST_CASE("DVM-332 ContentObserver process tree dispatch and Settings changes") 
             return result;
         };
         CHECK(put("Landroid/provider/Settings$System;", "1").value.AsInt() == 1);
-        CHECK(count(exact) == 1);
-        REQUIRE_FALSE(events.empty());
-        CHECK(f.On(events[0].uri, "toString", "()Ljava/lang/String;").ref.IsValid());
-        CHECK(f.vm.StringUtf8(f.On(events[0].uri, "toString", "()Ljava/lang/String;").ref) ==
-              "content://settings/system/accelerometer_rotation");
-        CHECK(put("Landroid/provider/Settings$System;", "1").value.AsInt() == 1);
-        CHECK(events.empty());
+        CHECK(events.empty());  // The default is already 1.
         CHECK(put("Landroid/provider/Settings$System;", "0").value.AsInt() == 1);
         CHECK(count(exact) == 1);
+        REQUIRE_FALSE(events.empty());
+        CHECK(f.vm.StringUtf8(f.On(events[0].uri, "toString", "()Ljava/lang/String;").ref) ==
+              "content://settings/system/accelerometer_rotation");
+        CHECK(put("Landroid/provider/Settings$System;", "0").value.AsInt() == 1);
+        CHECK(events.empty());
         CHECK(put("Landroid/provider/Settings$System;", nullptr).value.AsInt() == 1);
-        CHECK(count(exact) == 1);
+        CHECK(count(exact) == 1);  // Deleting the override exposes the default again.
         CHECK(put("Landroid/provider/Settings$System;", nullptr).value.AsInt() == 1);
         CHECK(events.empty());
         fail(put("Landroid/provider/Settings$Secure;", "1"), "Ljava/lang/SecurityException;");
@@ -1891,4 +1922,72 @@ TEST_CASE("ROM SmsMessage decodes a GSM deliver PDU without a phone process") {
         CHECK(f.vm.StringUtf8(f.On(parsed, "getMessageBody", "()Ljava/lang/String;").ref) == "hello");
         CHECK_FALSE(f.context->local_binder_services.contains("isms"));
     }
+}
+
+TEST_CASE("Local AccountManager enforces caller permissions and completes missing authenticator requests") {
+    int error{};
+    auto response_type = IntrinsicClassBuilder::Class("Ltest/AccountResponse;", "Ljava/lang/Object;",
+                                                      {"Landroid/accounts/IAccountManagerResponse;"});
+    response_type.VirtualMethod("onError", "(ILjava/lang/String;)V", [&](IntrinsicContext& call) {
+        error = call.arguments[0].AsInt();
+        CHECK(call.vm.StringUtf8(call.arguments[1].ref) == "bind failure");
+        return VmValue::Void();
+    });
+    AndroidValueVm f(InterpreterBackend::threaded, {std::move(response_type).Build()});
+    const auto service =
+        f.Static("Landroid/os/ServiceManager;", "getService", "(Ljava/lang/String;)Landroid/os/IBinder;",
+                 {VmValue::Ref(f.vm.NewStringUtf8("account"))})
+            .ref;
+    REQUIRE(service.IsValid());
+    const auto response = f.vm.NewIntrinsicInstance("Ltest/AccountResponse;");
+    const auto account_type = f.vm.NewStringUtf8("fixture.test");
+    const auto roots = f.vm.ProtectReferences(std::array{service, response, account_type});
+    constexpr auto accounts = "(Ljava/lang/String;)[Landroid/accounts/Account;";
+    const auto denied = f.OnOutcome(service, "getAccounts", accounts, {VmValue::Ref(account_type)});
+    REQUIRE(denied.exception.IsValid());
+    CHECK(f.linker.Class(denied.exception_class).descriptor == "Ljava/lang/SecurityException;");
+    f.context->requested_permissions.emplace_back("android.permission.GET_ACCOUNTS");
+    const auto list = f.On(service, "getAccounts", accounts, {VmValue::Ref(account_type)}).ref;
+    CHECK(f.model.ArrayLength(list) == 0);
+
+    const auto features = android_intrinsics::NewServiceArray(f.vm, "[Ljava/lang/String;", 1);
+    f.model.SetObjectElement(features, 0, account_type);
+    f.On(service, "getAccountsByFeatures",
+         "(Landroid/accounts/IAccountManagerResponse;Ljava/lang/String;[Ljava/lang/String;)V",
+         {VmValue::Ref(response), VmValue::Ref(account_type), VmValue::Ref(features)});
+    CHECK(error == 1);
+}
+
+TEST_CASE("Local AudioSystem binds the ROM natives and reports injected PCM properties") {
+    AndroidValueVm f;
+    constexpr auto system = "Landroid/media/AudioSystem;";
+    const auto type = f.linker.ResolveDescriptor(system);
+    int natives = 0;
+    for (const auto id : f.linker.Class(type).own_direct_methods) {
+        const auto& method = f.linker.Method(id);
+        if (!(method.access_flags & kAccNative)) continue;
+        ++natives;
+        CHECK_MESSAGE(method.kind == MethodKind::intrinsic, method.name);
+    }
+    CHECK(natives == 25);
+    f.context->native_output_sample_rate = 44'100;
+    f.context->native_output_buffer_frames = 512;
+    CHECK(f.Static(system, "getPrimaryOutputSamplingRate", "()I").AsInt() == 44'100);
+    CHECK(f.Static(system, "getPrimaryOutputFrameCount", "()I").AsInt() == 512);
+    CHECK_FALSE(f.Static(system, "isMicrophoneMuted", "()Z").AsInt());
+    const auto device_state = [&](int device) {
+        return f
+            .Static(system, "getDeviceConnectionState", "(ILjava/lang/String;)I",
+                    {VmValue::Int(device), VmValue::Ref(f.vm.NewStringUtf8(""))})
+            .AsInt();
+    };
+    CHECK(device_state(0x2) == 1);
+    CHECK(device_state(std::bit_cast<int>(0x80000004U)) == 1);
+    CHECK(device_state(0x4) == 0);
+    CHECK(device_state(0x80) == 0);
+    CHECK(f.Static(system, "muteMicrophone", "(Z)I", {VmValue::Int(1)}).AsInt() != 0);
+    CHECK_FALSE(f.Static(system, "isMicrophoneMuted", "()Z").AsInt());
+    const auto hits = f.ledger.Unimplemented();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits.front().id == "dexvm.audio_system.muteMicrophone");
 }

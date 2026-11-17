@@ -10,6 +10,8 @@ Decl Declare_android_view_HardwareRenderer_Natives();
 Decl Declare_local_DisplayService_Class(const Context&);
 Decl Declare_dalvik_system_DexFile_Natives(const Context&);
 void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder&, const Context&);
+void PumpDueAlarms(dx::Interpreter&, const Context&);
+void PumpSerialBroadcastTimeout(dx::Interpreter&, const Context&);
 void AddLocalIntentSenderMethods(dx::IntrinsicClassBuilder&, const Context&);
 void AddLocalProviderMethods(dx::IntrinsicClassBuilder&, const Context&);
 dx::VmObjectRef ApplicationProviders(dx::IntrinsicContext&, const Context&, dx::VmObjectRef application_info);
@@ -44,6 +46,7 @@ Decl Declare_android_view_VelocityTracker_Natives(const Context& context);
 dx::VmValue MakeInputDevice(dx::IntrinsicContext& call, const Context& context);
 std::optional<DexVmAndroidContext::ActivityCommand>
 ResolveAndroidActivity(dx::IntrinsicContext& call, const Context& context, std::int32_t request_code);
+Decl Declare_local_AccountService_Class(const Context& context);
 [[nodiscard]] Decl Declare_local_ActivityService_Class(const Context& context);
 [[nodiscard]] Decl Declare_local_PackageService_Class(const Context& context);
 [[nodiscard]] Decl Declare_org_apache_harmony_dalvik_ddmc_DdmServer_Natives();
@@ -144,6 +147,8 @@ void RegisterSkiaStateTables(dx::Interpreter& vm, const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_EGLDisplay_Class(const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_EGLSurface_Class(const Context& context);
 [[nodiscard]] Decl Declare_com_google_android_gles_jni_GLImpl_Natives(const Context& context);
+void PumpJavaSensorEvents(dx::Interpreter&, const Context&);
+Decl Declare_android_hardware_BaseEventQueue_Natives(const Context&);
 [[nodiscard]] Decl Declare_android_hardware_SystemSensorManager_Natives(const Context& context);
 [[nodiscard]] Decl Declare_local_UsbService_Class(const Context& context);
 }  // namespace ogplay::runtime::android_intrinsics

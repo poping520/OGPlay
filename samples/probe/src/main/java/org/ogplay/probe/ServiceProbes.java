@@ -300,32 +300,44 @@ final class ServiceProbes {
             @Override Outcome run(ProbeSession session) throws Exception {
                 SensorManager sensors = (SensorManager) session.activity.getSystemService(Context.SENSOR_SERVICE);
                 Sensor accelerometer = sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-                if (accelerometer == null) return skip("The sensor inventory has no accelerometer");
-                final float[] reading = new float[3];
-                final CountDownLatch latch = new CountDownLatch(1);
+                if (accelerometer == null)
+                    return check(false, obj("present", false), obj("present", true), "Accelerometer is present");
+                final int wanted = 3;
+                final long[] timestamps = new long[wanted];
+                final double[] norms = new double[wanted];
+                final CountDownLatch latch = new CountDownLatch(wanted);
                 SensorEventListener callback = new SensorEventListener() {
                     @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
                     @Override public void onSensorChanged(SensorEvent event) {
-                        if (event.values.length >= 3 && latch.getCount() != 0) {
-                            System.arraycopy(event.values, 0, reading, 0, 3);
-                            latch.countDown();
-                        }
+                        int remaining = (int) latch.getCount();
+                        if (event.values.length < 3 || remaining == 0) return;
+                        int index = wanted - remaining;
+                        double x = event.values[0], y = event.values[1], z = event.values[2];
+                        timestamps[index] = event.timestamp;
+                        norms[index] = Math.sqrt(x * x + y * y + z * z);
+                        latch.countDown();
                     }
                 };
                 boolean registered = sensors.registerListener(callback, accelerometer, SensorManager.SENSOR_DELAY_GAME);
                 boolean received;
                 try { received = registered && latch.await(1, TimeUnit.SECONDS); }
                 finally { sensors.unregisterListener(callback); }
-                JSONArray sample = new JSONArray();
-                boolean finite = received;
-                if (received) for (float value : reading) {
-                    boolean valid = !Float.isInfinite(value) && !Float.isNaN(value);
-                    finite &= valid;
-                    sample.put(valid ? value : JSONObject.NULL);
+                int samples = wanted - (int) latch.getCount();
+                boolean increasing = received && timestamps[0] > 0;
+                boolean gravity = received;
+                for (int i = 0; i < wanted; i++) {
+                    gravity &= Math.abs(norms[i] - 9.81) < 0.15;
+                    if (i != 0) increasing &= timestamps[i] > timestamps[i - 1];
                 }
-                return check(registered && finite, obj("registered", registered, "received", received, "xyz", sample),
-                        obj("registered", true, "received_within_ms", 1000, "finite_xyz", true),
-                        "An advertised accelerometer emits finite samples after registration");
+                boolean listed = sensors.getSensorList(Sensor.TYPE_ALL).contains(accelerometer)
+                        && sensors.getSensorList(Sensor.TYPE_ACCELEROMETER).contains(accelerometer);
+                return new Checks().require("accelerometer_listed", listed).require("listener_registered", registered)
+                        .require("received_three_samples", received).require("timestamps_increase", increasing)
+                        .require("gravity_magnitude", gravity)
+                        .outcome(obj("registered", registered, "samples", samples, "increasing", increasing,
+                                "gravity_magnitude", gravity), obj("samples_at_least", wanted, "within_ms", 1000,
+                                "increasing", true, "gravity_magnitude_m_s2", 9.81),
+                                "The accelerometer delivers level, stationary samples in timestamp order");
             }
         });
     }

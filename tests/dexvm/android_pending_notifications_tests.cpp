@@ -34,6 +34,7 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "runtime/integration/dexvm_android/catalog.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
@@ -240,7 +241,7 @@ TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
         set_alarm(other);
         cancel_alarm(first);
         REQUIRE(f.context->alarm_operations.size() == 1);
-        CHECK(f.context->alarm_operations.front() == other_sender);
+        CHECK(f.context->alarm_operations.front().token == other_sender);
         cancel_alarm(first);                   // canceling an absent alarm is valid
         cancel_alarm(VmObjectRef{});           // API19 null cancellation is also valid
         CHECK(same(token(no_create), first));  // alarm cancel never invalidates sender
@@ -253,14 +254,16 @@ TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
         set_alarm(first);
         f.On(first, "cancel", "()V");
         f.On(first, "cancel", "()V");
-        CHECK(f.context->alarm_operations == std::vector{other_sender});
+        REQUIRE(f.context->alarm_operations.size() == 1);
+        CHECK(f.context->alarm_operations.front().token == other_sender);
         CHECK_FALSE(token(no_create).IsValid());
         const auto replacement = token();
         const auto replacement_root = f.vm.ProtectReferences(std::array{replacement});
         CHECK(replacement != first);
         set_alarm(replacement);
         CHECK(same(token(cancel_current | no_create), replacement));
-        CHECK(f.context->alarm_operations == std::vector{other_sender});
+        REQUIRE(f.context->alarm_operations.size() == 1);
+        CHECK(f.context->alarm_operations.front().token == other_sender);
         CHECK(f.context->pending_intents.at(target(replacement).Value()).canceled);
         CHECK_FALSE(token(no_create).IsValid());
         const auto next = token();
@@ -296,7 +299,10 @@ TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
                                 {VmValue::Ref(base), VmValue::Int(0), VmValue::Ref(intent), VmValue::Int(0)})
                     .exception.IsValid());
         f.On(intent, "setSelector", "(Landroid/content/Intent;)V", {VmValue::Ref(VmObjectRef{})});
-        REQUIRE(f.OnOutcome(next, "send", "()V").exception.IsValid());
+        const auto canceled_send = f.OnOutcome(next, "send", "()V");
+        REQUIRE(canceled_send.exception.IsValid());
+        CHECK(f.linker.Class(canceled_send.exception_class).descriptor ==
+              "Landroid/app/PendingIntent$CanceledException;");
         std::vector<std::string> ids;
         for (const auto& hit : f.ledger.Unimplemented())
             ids.push_back(hit.id);
@@ -362,18 +368,18 @@ TEST_CASE("DVM-211 ROM AlarmManager validates and registers broadcast operations
 
         constexpr auto set = "(IJLandroid/app/PendingIntent;)V";
         f.On(alarm, "set", set, {VmValue::Int(0), VmValue::Long(1), VmValue::Ref(operation)});
-        CHECK(f.context->alarm_operations == std::vector{token});
+        REQUIRE(f.context->alarm_operations.size() == 1);
+        CHECK(f.context->alarm_operations.front().token == token);
         f.On(alarm, "setRepeating", "(IJJLandroid/app/PendingIntent;)V",
              {VmValue::Int(0), VmValue::Long(2), VmValue::Long(86'400'000), VmValue::Ref(operation)});
-        CHECK(f.context->alarm_operations == std::vector{token});
+        REQUIRE(f.context->alarm_operations.size() == 1);
+        CHECK(f.context->alarm_operations.front().token == token);
         f.On(alarm, "set", set, {VmValue::Int(3), VmValue::Long(3), VmValue::Ref(operation)});
-        CHECK(f.context->alarm_operations == std::vector{token});
+        REQUIRE(f.context->alarm_operations.size() == 1);
+        CHECK(f.context->alarm_operations.front().token == token);
         f.On(alarm, "cancel", "(Landroid/app/PendingIntent;)V", {VmValue::Ref(operation)});
         CHECK(f.context->alarm_operations.empty());
-        const auto hits = f.ledger.Unimplemented();
-        REQUIRE(hits.size() == 1);
-        CHECK(hits.front().id == "dexvm.alarm_delivery");
-        CHECK(hits.front().count == 3);
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }
 
@@ -525,5 +531,220 @@ TEST_CASE("DVM227 ROM notification values preserve constructors and local Parcel
         CHECK(f.context->device_state.notifications.size() == 1);
         f.On(manager, "cancelAll", "()V");
         CHECK(f.context->device_state.notifications.empty());
+    }
+}
+
+namespace {
+VmObjectRef RegisterBroadcastReceiver(AndroidValueVm& fixture, VmObjectRef base, VmObjectRef receiver,
+                                      VmObjectRef action, int priority = 0) {
+    using android_intrinsics::NewPlatformObject;
+    PrepareAndroidMainLooper(fixture.vm, fixture.context);
+    const auto handler = fixture.New("Landroid/os/Handler;");
+    const auto handler_root = fixture.vm.ProtectReferences(std::array{handler});
+    const auto dispatcher = NewPlatformObject(
+        fixture.vm, "Landroid/app/LoadedApk$ReceiverDispatcher;",
+        "(Landroid/content/BroadcastReceiver;Landroid/content/Context;Landroid/os/Handler;Landroid/app/Instrumentation;Z)V",
+        {VmValue::Ref(receiver), VmValue::Ref(base), VmValue::Ref(handler), VmValue::Ref(VmObjectRef{}),
+         VmValue::Int(1)});
+    const auto dispatcher_root = fixture.vm.ProtectReferences(std::array{dispatcher});
+    const auto filter = fixture.New("Landroid/content/IntentFilter;", "(Ljava/lang/String;)V", {VmValue::Ref(action)});
+    const auto filter_root = fixture.vm.ProtectReferences(std::array{filter});
+    fixture.On(filter, "setPriority", "(I)V", {VmValue::Int(priority)});
+    const auto transport = fixture.On(dispatcher, "getIIntentReceiver", "()Landroid/content/IIntentReceiver;").ref;
+    fixture.context->local_broadcast_filters.emplace_back(transport, filter);
+    return dispatcher;
+}
+}  // namespace
+
+TEST_CASE("PendingIntent one-shot completion follows ordered receiver and alarms preserve Clock phase") {
+    constexpr auto callback_sig = "(Landroid/content/Intent;ILjava/lang/String;Landroid/os/Bundle;ZZI)V";
+    int delivered{}, completed{}, last_count{}, result_code{};
+    std::string payload;
+    VmObjectRef async_result;
+    auto receiver_type = IntrinsicClassBuilder::Class("Ltest/PendingReceiver;", "Landroid/content/BroadcastReceiver;");
+    receiver_type.VirtualMethod(
+        "onReceive", "(Landroid/content/Context;Landroid/content/Intent;)V", [&](IntrinsicContext& call) {
+            ++delivered;
+            using android_intrinsics::CallAndroidMethod;
+            const auto intent = call.arguments[1].ref;
+            last_count = CallAndroidMethod(
+                             call.vm, intent, "getIntExtra", "(Ljava/lang/String;I)I",
+                             {VmValue::Ref(call.vm.NewStringUtf8("android.intent.extra.ALARM_COUNT")), VmValue::Int(0)})
+                             .AsInt();
+            const auto extra =
+                CallAndroidMethod(call.vm, intent, "getStringExtra", "(Ljava/lang/String;)Ljava/lang/String;",
+                                  {VmValue::Ref(call.vm.NewStringUtf8("fill"))})
+                    .ref;
+            if (extra.IsValid()) payload = call.vm.StringUtf8(extra);
+            if (CallAndroidMethod(call.vm, call.receiver, "isOrderedBroadcast", "()Z").AsInt())
+                async_result = CallAndroidMethod(call.vm, call.receiver, "goAsync",
+                                                 "()Landroid/content/BroadcastReceiver$PendingResult;")
+                                   .ref;
+            return VmValue::Void();
+        });
+    auto finished_type = IntrinsicClassBuilder::Class("Ltest/PendingFinished;", "Ljava/lang/Object;",
+                                                      {"Landroid/content/IIntentReceiver;"});
+    finished_type.VirtualMethod("performReceive", callback_sig, [&](IntrinsicContext& call) {
+        ++completed;
+        result_code = call.arguments[1].AsInt();
+        return VmValue::Void();
+    });
+    AndroidValueVm f(InterpreterBackend::threaded,
+                     {std::move(receiver_type).Build(), std::move(finished_type).Build()});
+    f.context->package_name = "fixture";
+    f.vm.SetGcIntegration({{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
+    const auto base = f.New("Landroid/content/Context;");
+    const auto receiver = f.vm.NewIntrinsicInstance("Ltest/PendingReceiver;");
+    const auto finished = f.vm.NewIntrinsicInstance("Ltest/PendingFinished;");
+    const auto roots = f.vm.ProtectReferences(std::array{base, receiver, finished});
+    const auto action = f.vm.NewStringUtf8("fixture.intent.TEST");
+    const auto action_root = f.vm.ProtectReferences(std::array{action});
+    const auto dispatcher = RegisterBroadcastReceiver(f, base, receiver, action);
+    const auto dispatcher_root = f.vm.ProtectReferences(std::array{dispatcher});
+
+    const auto intent = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V", {VmValue::Ref(action)});
+    const auto intent_root = f.vm.ProtectReferences(std::array{intent});
+    const auto token = [&](int request, int flags) {
+        return f
+            .Static("Landroid/app/PendingIntent;", "getBroadcast",
+                    "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;",
+                    {VmValue::Ref(base), VmValue::Int(request), VmValue::Ref(intent), VmValue::Int(flags)})
+            .ref;
+    };
+    const auto one_shot = token(1, 1 << 30);
+    const auto one_shot_root = f.vm.ProtectReferences(std::array{one_shot});
+    const auto sender = f.On(one_shot, "getTarget", "()Landroid/content/IIntentSender;").ref;
+    const auto fill = f.New("Landroid/content/Intent;");
+    const auto fill_root = f.vm.ProtectReferences(std::array{fill});
+    f.On(fill, "putExtra", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+         {VmValue::Ref(f.vm.NewStringUtf8("fill")), VmValue::Ref(f.vm.NewStringUtf8("delivered"))});
+    const auto null = VmValue::Ref(VmObjectRef{});
+    constexpr auto send =
+        "(ILandroid/content/Intent;Ljava/lang/String;Landroid/content/IIntentReceiver;Ljava/lang/String;)I";
+    CHECK(
+        f.On(sender, "send", send, {VmValue::Int(7), VmValue::Ref(fill), null, VmValue::Ref(finished), null}).AsInt() ==
+        0);
+    REQUIRE_FALSE(DispatchFixtureMessages(f.vm, *f.context).has_value());
+    REQUIRE(async_result.IsValid());
+    const auto async_root = f.vm.ProtectReferences(std::array{async_result});
+    CHECK(delivered == 1);
+    CHECK(payload == "delivered");
+    CHECK(completed == 0);
+    CHECK(f.On(sender, "send", send, {VmValue::Int(0), null, null, null, null}).AsInt() == -6);
+    f.On(async_result, "setResultCode", "(I)V", {VmValue::Int(9)});
+    f.On(async_result, "finish", "()V");
+    CHECK(completed == 1);
+    CHECK(result_code == 9);
+
+    const auto alarm = f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                            {VmValue::Ref(f.vm.NewStringUtf8("alarm"))})
+                           .ref;
+    const auto repeating = token(2, 0);
+    const auto repeating_root = f.vm.ProtectReferences(std::array{repeating});
+    const auto start = f.context->UptimeMillis() + 20;
+    f.On(alarm, "setRepeating", "(IJJLandroid/app/PendingIntent;)V",
+         {VmValue::Int(3), VmValue::Long(start), VmValue::Long(20), VmValue::Ref(repeating)});
+    android_intrinsics::PumpDueAlarms(f.vm, f.context);
+    CHECK(delivered == 1);
+    AdvanceAndroidClock(*f.context, 65'000'000);
+    android_intrinsics::PumpDueAlarms(f.vm, f.context);
+    REQUIRE_FALSE(DispatchFixtureMessages(f.vm, *f.context).has_value());
+    CHECK(delivered == 2);
+    CHECK(last_count == 3);
+    REQUIRE(f.context->alarm_operations.size() == 1);
+    CHECK(f.context->alarm_operations.front().when == start + 60);
+
+    f.On(alarm, "setExact", "(IJLandroid/app/PendingIntent;)V",
+         {VmValue::Int(0), VmValue::Long(f.context->WallTimeMillis() + 5), VmValue::Ref(repeating)});
+    AdvanceAndroidClock(*f.context, 4'000'000);
+    android_intrinsics::PumpDueAlarms(f.vm, f.context);
+    CHECK(delivered == 2);
+    AdvanceAndroidClock(*f.context, 1'000'000);
+    android_intrinsics::PumpDueAlarms(f.vm, f.context);
+    REQUIRE_FALSE(DispatchFixtureMessages(f.vm, *f.context).has_value());
+    CHECK(delivered == 3);
+    CHECK(last_count == 1);
+    CHECK(f.context->alarm_operations.empty());
+}
+
+TEST_CASE("Serial broadcasts skip a timed-out receiver and ignore its late finish") {
+    VmObjectRef pending;
+    std::vector<int> results;
+    constexpr auto on_receive = "(Landroid/content/Context;Landroid/content/Intent;)V";
+    auto stalled = IntrinsicClassBuilder::Class("Ltest/StalledReceiver;", "Landroid/content/BroadcastReceiver;");
+    stalled.VirtualMethod("onReceive", on_receive, [&](IntrinsicContext& call) {
+        pending = android_intrinsics::CallAndroidMethod(call.vm, call.receiver, "goAsync",
+                                                        "()Landroid/content/BroadcastReceiver$PendingResult;")
+                      .ref;
+        return VmValue::Void();
+    });
+    auto next = IntrinsicClassBuilder::Class("Ltest/NextReceiver;", "Landroid/content/BroadcastReceiver;");
+    next.VirtualMethod("onReceive", on_receive, [&](IntrinsicContext& call) {
+        results.push_back(
+            android_intrinsics::CallAndroidMethod(call.vm, call.receiver, "getResultCode", "()I").AsInt());
+        return VmValue::Void();
+    });
+    AndroidValueVm f(InterpreterBackend::threaded, {std::move(stalled).Build(), std::move(next).Build()});
+    f.vm.SetGcIntegration({{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
+    const auto base = f.New("Landroid/content/Context;");
+    const auto first = f.vm.NewIntrinsicInstance("Ltest/StalledReceiver;");
+    const auto second = f.vm.NewIntrinsicInstance("Ltest/NextReceiver;");
+    const auto action = f.vm.NewStringUtf8("fixture.intent.TIMEOUT");
+    const auto roots = f.vm.ProtectReferences(std::array{base, first, second, action});
+    const auto first_dispatcher = RegisterBroadcastReceiver(f, base, first, action, 1);
+    const auto first_dispatcher_root = f.vm.ProtectReferences(std::array{first_dispatcher});
+    const auto second_dispatcher = RegisterBroadcastReceiver(f, base, second, action);
+    const auto second_dispatcher_root = f.vm.ProtectReferences(std::array{second_dispatcher});
+    const auto intent = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V", {VmValue::Ref(action)});
+    const auto am =
+        f.Static("Landroid/app/ActivityManagerNative;", "getDefault", "()Landroid/app/IActivityManager;").ref;
+    const auto state_root = f.vm.ProtectReferences(std::array{intent, am});
+    const auto null = VmValue::Ref(VmObjectRef{});
+    const auto send = [&] {
+        f.On(am, "broadcastIntent",
+             "(Landroid/app/IApplicationThread;Landroid/content/Intent;Ljava/lang/String;"
+             "Landroid/content/IIntentReceiver;ILjava/lang/String;Landroid/os/Bundle;Ljava/lang/String;IZZI)I",
+             {null, VmValue::Ref(intent), null, null, VmValue::Int(7), null, null, null, VmValue::Int(-1),
+              VmValue::Int(1), VmValue::Int(0), VmValue::Int(0)});
+    };
+    const auto dispatch = [&] { REQUIRE_FALSE(DispatchFixtureMessages(f.vm, *f.context).has_value()); };
+    const auto poll = [&] {
+        const auto queue = f.context->loopers.at(f.context->main_looper.Value()).queue;
+        const auto pointer = f.linker.FindFieldRecursive(f.model.ObjectClass(queue), "mPtr", "I");
+        REQUIRE(pointer);
+        const auto id = f.model.InstanceSlots(queue)[f.linker.Field(*pointer).slot].bits;
+        f.Static("Landroid/os/MessageQueue;", "nativePollOnce", "(II)V",
+                 {VmValue::Int(static_cast<int>(id)), VmValue::Int(0)});
+    };
+    for (const int flags : {0x10000000, 0}) {
+        const auto period_ms = flags ? 10'000 : 60'000;
+        results.clear();
+        f.On(intent, "setFlags", "(I)Landroid/content/Intent;", {VmValue::Int(flags)});
+        send();
+        dispatch();
+        const auto expired = pending;
+        REQUIRE(expired.IsValid());
+        const auto expired_root = f.vm.ProtectReferences(std::array{expired});
+        send();  // Queue another delivery to the same registered receiver.
+        AdvanceAndroidClock(*f.context, (period_ms - 1) * 1'000'000LL);
+        poll();
+        CHECK(results.empty());
+        AdvanceAndroidClock(*f.context, 1'000'000);
+        poll();
+        dispatch();
+        CHECK(results == std::vector{7});
+        const auto current = pending;
+        REQUIRE(current != expired);
+        const auto current_root = f.vm.ProtectReferences(std::array{current});
+        f.On(expired, "setResultCode", "(I)V", {VmValue::Int(99)});
+        f.On(expired, "abortBroadcast", "()V");
+        f.On(expired, "finish", "()V");
+        dispatch();
+        CHECK(results == std::vector{7});
+        f.On(current, "setResultCode", "(I)V", {VmValue::Int(42)});
+        f.On(current, "finish", "()V");
+        dispatch();
+        CHECK(results == std::vector{7, 42});
+        CHECK(f.context->local_serial_broadcasts.empty());
     }
 }

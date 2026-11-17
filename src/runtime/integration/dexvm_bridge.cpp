@@ -139,6 +139,12 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
         root(receiver);
         root(filter);
     }
+    for (const auto& item : context.local_serial_broadcasts) {
+        for (const auto ref : {item.intent, item.result_to, item.data, item.extras, item.waiting})
+            root(ref);
+        for (const auto& target : item.targets)
+            root(target.receiver);
+    }
     for (const auto& [_, intent] : context.local_sticky_broadcasts)
         root(intent);
     for (const auto& [_, holder] : context.local_provider_holders)
@@ -175,6 +181,11 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
         root(entry.token);
         root(entry.dispatcher);
     }
+    for (const auto& entry : state.audio.media_button_receivers) {
+        root(entry.operation);
+        root(entry.component);
+        root(entry.token);
+    }
     for (const auto observer : state.audio.route_observers)
         root(observer);
     for (const auto client : state.audio.media_router_clients)
@@ -202,8 +213,12 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
         root(listener);
     for (const auto& [_, notification] : state.notifications)
         root(notification);
-    for (const auto operation : context.alarm_operations)
-        root(operation);
+    for (const auto& [_, queue] : context.java_sensor_queues) {
+        root(queue.receiver);
+        root(queue.scratch);
+    }
+    for (const auto& operation : context.alarm_operations)
+        root(operation.token);
     for (const auto& toast : context.toasts)
         root(toast.callback);
     android_intrinsics::VisitRomActivityRoots(context, root);
@@ -1796,7 +1811,8 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
         session.Process().SetDeviceLocaleProvider([android_context] {
             return DeviceLocale(android_context->locale_language, android_context->locale_region);
         });
-        session.Process().SetSensorDirectory(android_context->sensor_directory);
+        session.Process().SetSensorDirectory(android_context->sensor_directory, android_context->sensor_source);
+        android_context->sensor_queues = &session.Process().SensorQueues();
         session.Process().SetSurfaceHooks(
             {bridge_state,
              +[](void* owner, std::uint64_t thread, memory::GuestAddress env, SurfaceJavaReference ref) {
@@ -1938,6 +1954,8 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
             android_context->poll_native_looper = {};
             android_context->wake_native_looper = {};
             android_context->notify_native_loopers = {};
+            android_context->sensor_queues = nullptr;
+            android_context->java_sensor_queues.clear();
             android_context->native_thread_for_context = {};
             session.Environment().SetThreadDetachGuard({});
             session.Environment().SetMonitorHooks({});
@@ -2046,6 +2064,8 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->android_context->poll_native_looper = {};
         impl_->android_context->wake_native_looper = {};
         impl_->android_context->notify_native_loopers = {};
+        impl_->android_context->sensor_queues = nullptr;
+        impl_->android_context->java_sensor_queues.clear();
         impl_->android_context->native_thread_for_context = {};
     }
     if (impl_->session) {

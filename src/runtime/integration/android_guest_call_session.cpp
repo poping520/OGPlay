@@ -1222,6 +1222,13 @@ public:
             return std::array{pipe.read_descriptor, pipe.write_descriptor};
         };
         options.loopers.close_fd = [owner](std::int32_t fd) { owner->filesystem_->Close(fd); };
+        options.loopers.signal_pipe = [owner](std::int32_t fd, bool signal) {
+            std::array<std::byte, 1> byte{};
+            if (signal)
+                static_cast<void>(owner->filesystem_->Write(fd, byte));
+            else
+                static_cast<void>(owner->filesystem_->Read(fd, byte));
+        };
         options.loopers.poll_events = [owner](std::int32_t fd) { return owner->filesystem_->PipePollEvents(fd); };
         options.loopers.thread_running = [owner](std::uint64_t tid) {
             try {
@@ -1954,9 +1961,12 @@ public:
 
     void RetireSurfaceWindow(memory::GuestAddress identity) { boundary_.RetireSurfaceWindow(identity); }
 
-    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) {
-        boundary_.SetSensorDirectory(std::move(directory));
+    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory,
+                            std::shared_ptr<AndroidSensorSource> source) {
+        boundary_.SetSensorDirectory(std::move(directory), std::move(source));
     }
+
+    AndroidSensorQueues& SensorQueues() { return boundary_.SensorQueues(); }
 
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks) { boundary_.SetAssetManagerHooks(hooks); }
 
@@ -3473,8 +3483,13 @@ void AndroidGuestProcess::SetDeviceLocaleProvider(std::function<DeviceLocale()> 
     impl_->SetDeviceLocaleProvider(std::move(provider));
 }
 
-void AndroidGuestProcess::SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) {
-    impl_->SetSensorDirectory(std::move(directory));
+void AndroidGuestProcess::SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory,
+                                             std::shared_ptr<AndroidSensorSource> source) {
+    impl_->SetSensorDirectory(std::move(directory), std::move(source));
+}
+
+AndroidSensorQueues& AndroidGuestProcess::SensorQueues() {
+    return impl_->SensorQueues();
 }
 
 void AndroidGuestProcess::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) {

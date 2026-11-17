@@ -5,6 +5,7 @@
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
 #include <android/looper.h>
+#include <android/sensor.h>
 #include <errno.h>
 #include <stdatomic.h>
 #include <unistd.h>
@@ -70,6 +71,46 @@ JNIEXPORT jlongArray JNICALL Java_org_ogplay_probe_NativeProbe_looper(JNIEnv* en
     stats[4] = result.callbacks;
     stats[5] = result.value;
     return probe_longs(env, stats, COUNT(stats));
+}
+
+JNIEXPORT jlongArray JNICALL Java_org_ogplay_probe_NativeProbe_sensor(JNIEnv* env, jclass type) {
+    (void)type;
+    jlong result[] = {0, 0, -1, -1, 0, 0, -1, 0, -1};
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    ASensorManager* manager = ASensorManager_getInstance();
+#pragma clang diagnostic pop
+    if (manager == NULL) return probe_longs(env, result, COUNT(result));
+    ASensorList list = NULL;
+    result[0] = ASensorManager_getSensorList(manager, &list);
+    const ASensor* sensor = ASensorManager_getDefaultSensor(manager, ASENSOR_TYPE_ACCELEROMETER);
+    if (sensor == NULL || list == NULL) return probe_longs(env, result, COUNT(result));
+    for (jlong i = 0; i < result[0]; i++)
+        result[1] |= list[i] == sensor;
+    ALooper* looper = ALooper_prepare(ALOOPER_PREPARE_ALLOW_NON_CALLBACKS);
+    if (looper == NULL) return probe_longs(env, result, COUNT(result));
+    const int ident = 27;
+    ASensorEventQueue* queue = ASensorManager_createEventQueue(manager, looper, ident, NULL, NULL);
+    if (queue == NULL) return probe_longs(env, result, COUNT(result));
+    result[2] = ASensorEventQueue_enableSensor(queue, sensor);
+    result[3] = ASensorEventQueue_setEventRate(queue, sensor, 20000);
+    int events = 0;
+    result[4] = ALooper_pollOnce(350, NULL, &events, NULL) == ident && (events & ALOOPER_EVENT_INPUT);
+    ASensorEvent samples[16];
+    ssize_t count = ASensorEventQueue_getEvents(queue, samples, COUNT(samples));
+    if (count > 0) {
+        ASensorEvent* sample = &samples[0];
+        const float x = sample->acceleration.x, y = sample->acceleration.y, z = sample->acceleration.z;
+        const float squared = x * x + y * y + z * z;
+        result[5] = sample->timestamp > 0 && sample->type == ASENSOR_TYPE_ACCELEROMETER && squared >= 9.66f * 9.66f &&
+                    squared <= 9.96f * 9.96f;
+    }
+    result[6] = ASensorEventQueue_disableSensor(queue, sensor);
+    while (ASensorEventQueue_getEvents(queue, samples, COUNT(samples)) > 0) {
+    }
+    result[7] = ALooper_pollOnce(100, NULL, NULL, NULL) == ALOOPER_POLL_TIMEOUT;
+    result[8] = ASensorManager_destroyEventQueue(manager, queue);
+    return probe_longs(env, result, COUNT(result));
 }
 
 static void on_buffer(SLAndroidSimpleBufferQueueItf queue, void* user) {

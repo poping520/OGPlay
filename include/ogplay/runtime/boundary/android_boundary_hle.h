@@ -144,11 +144,11 @@ struct AndroidLooperHooks final {
     // nullopt: descriptor type is unsupported; bits use ALOOPER_EVENT_*.
     std::function<std::optional<std::uint32_t>(std::int32_t)> poll_events;
     std::function<bool(std::uint64_t)> thread_running;
-    // Both ends stay open while a no-device sensor queue lives: never ready.
     std::function<std::array<std::int32_t, 2>()> create_pipe{};
     std::function<void(std::int32_t)> close_fd{};
     std::function<std::int32_t(std::uint64_t, memory::GuestAddress, std::int32_t, std::uint32_t, memory::GuestAddress)>
         invoke_callback{};
+    std::function<void(std::int32_t, bool)> signal_pipe{};
 };
 
 struct AndroidBoundaryOptions final {
@@ -186,7 +186,9 @@ public:
     void RetireSurfaceWindow(memory::GuestAddress identity);
     memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface);
     void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface);
-    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory);
+    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory,
+                            std::shared_ptr<AndroidSensorSource> source);
+    AndroidSensorQueues& SensorQueues();
     void SetDeviceLocaleProvider(std::function<DeviceLocale()> provider);
     // Install before guest calls; clear only after workers stop, retiring assets.
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);

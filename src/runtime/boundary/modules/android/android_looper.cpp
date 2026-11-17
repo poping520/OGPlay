@@ -11,14 +11,14 @@ namespace ogplay::runtime {
 
 std::int32_t AndroidModule::AddLooperFdLocked(memory::GuestAddress handle, std::int32_t fd, std::int32_t ident,
                                               std::uint32_t events, memory::GuestAddress callback,
-                                              memory::GuestAddress data) {
+                                              memory::GuestAddress data, std::function<void()> on_readable) {
     auto& looper = RequireLooper(handle);
     if (looper.retired || fd < 0 || !looper_hooks_.poll_events || (events & ~31U) != 0) return -1;
-    if (callback.IsNull() && (ident < 0 || !looper.allow_non_callbacks)) return -1;
+    if (callback.IsNull() && !on_readable && (ident < 0 || !looper.allow_non_callbacks)) return -1;
     if (!callback.IsNull() && !looper_hooks_.invoke_callback) return -1;
     const auto available = looper_hooks_.poll_events(fd);
     if (!available || (*available & 16U) != 0) return -1;
-    looper.requests[fd] = {ident, events, data, callback, ++looper.generation};
+    looper.requests[fd] = {ident, events, data, callback, ++looper.generation, std::move(on_readable)};
     ready_.notify_all();
     return 1;
 }
@@ -57,7 +57,7 @@ void AndroidModule::SweepLoopers() {
     for (auto it = sensor_queues_.begin(); it != sensor_queues_.end();) {
         const auto current = it++;
         if (!looper_hooks_.thread_running(current->second.owner)) {
-            CloseSensorQueue(current->second);
+            CloseSensorQueueLocked(current->second);
             sensor_queues_.erase(current);
         }
     }
@@ -136,6 +136,9 @@ std::uint32_t AndroidModule::PollAll(const std::array<std::uint32_t, 4>& args, s
         const auto handle = found->second;
         auto& looper = RequireLooper(handle);
 
+        for (auto& [_, queue] : sensor_queues_)
+            if (queue.looper == handle) UpdateSensorQueueSignal(queue);
+
         struct Ready {
             std::int32_t fd;
             std::uint32_t events;
@@ -150,10 +153,12 @@ std::uint32_t AndroidModule::PollAll(const std::array<std::uint32_t, 4>& args, s
         for (std::size_t remaining = looper.requests.size(); remaining != 0; --remaining) {
             if (request == looper.requests.end()) request = looper.requests.begin();
             const auto [fd, item] = *request++;
+            // ROM MessageQueue consumes managed readiness after reacquiring the VM lock.
+            if (item.on_readable && !interrupted) continue;
             const auto available = looper_hooks_.poll_events(fd);
             const auto events = available ? (*available & (item.events | 28U)) : 16U;
             if (events == 0) continue;
-            if (!item.callback.IsNull())
+            if (!item.callback.IsNull() || item.on_readable)
                 callbacks.push_back({fd, events, item});
             else if (!response)
                 response = Ready{fd, events, item};
@@ -168,8 +173,12 @@ std::uint32_t AndroidModule::PollAll(const std::array<std::uint32_t, 4>& args, s
         for (const auto& entry : callbacks) {
             if (!is_current(entry)) continue;
             lock.unlock();
-            const auto keep =
-                looper_hooks_.invoke_callback(tid, entry.request.callback, entry.fd, entry.events, entry.request.data);
+            int keep = 1;
+            if (entry.request.on_readable)
+                entry.request.on_readable();
+            else
+                keep = looper_hooks_.invoke_callback(tid, entry.request.callback, entry.fd, entry.events,
+                                                     entry.request.data);
             lock.lock();
             dispatched = true;
             if (!keep && is_current(entry)) RemoveLooperFdLocked(handle, entry.fd);

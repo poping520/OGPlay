@@ -77,7 +77,12 @@ https://developer.microsoft.com/microsoft-edge/webview2/
 Command line: ogplay-cli.exe --help
 Import your own APK and any required game data using the launcher.
 Only OGPlay's own demo game is included; commercial games are not included.
-User settings, library and saves are stored outside this program folder.
+User settings, library and saves default to %APPDATA%\OGPlay.
+To enable portable mode, create an empty portable.txt beside ogplay.exe.
+In portable mode, data is stored in userdata\ beside the executable, and the
+program folder must be writable.
+Existing data in %APPDATA%\OGPlay is never migrated automatically. To bring it
+over, close OGPlay and copy the contents of %APPDATA%\OGPlay into userdata\.
 
 This is an early release. Compatibility depends on the game and APK version.
 Licenses: LICENSE, data/credits.json (also shown in About),

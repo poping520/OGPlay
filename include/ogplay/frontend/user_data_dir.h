@@ -1,13 +1,25 @@
 #pragma once
 
-// What OGPlay keeps under the host user-data directory (roadmap 08 ·
-// naming). The platform root itself comes from hal::HostUserDataDirectory;
-// this header only names the subdirectories the frontend owns.
-
 #include <filesystem>
 #include <optional>
 
 namespace ogplay::frontend {
+
+struct UserDataLocation {
+    std::filesystem::path root;
+    bool portable{};
+};
+
+// Selects the root without creating or writing to it.
+[[nodiscard]] std::optional<UserDataLocation>
+ResolveUserDataLocation(const std::filesystem::path& executable_directory, bool portable_supported,
+                        const std::optional<std::filesystem::path>& platform_root);
+
+// Creates and probes a portable root. Failures include the path and the recovery steps.
+void EnsureWritableUserDataRoot(const std::filesystem::path& root);
+
+// Resolves the current host's root and validates it if portable mode is active.
+[[nodiscard]] std::optional<UserDataLocation> HostUserDataLocation();
 
 // nullopt when the host environment does not say where user data belongs;
 // callers report that and offer an explicit flag rather than guessing.

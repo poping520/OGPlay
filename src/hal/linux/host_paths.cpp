@@ -28,6 +28,10 @@ std::filesystem::path HostExecutableDirectory() {
     return HostExecutablePath().parent_path();
 }
 
+bool HostSupportsPortableMode() noexcept {
+    return false;
+}
+
 std::optional<std::filesystem::path> HostUserDataDirectory() {
     const auto xdg = HostEnvironmentValue("XDG_DATA_HOME");
     if (xdg.has_value() && !xdg->empty()) {

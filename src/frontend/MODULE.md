@@ -141,6 +141,9 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
 - 库的导入/移除/清理和库内配置读写使用 OS 排他锁；List 锁冲突跳过 `.importing` 清理。
   库启动显式带 library-root/installation-id，持有实例 OS 运行锁至游戏退出；移除与单实例以锁为准。
   GUI 只将 ResolveLaunch 的选项交给 FormatGameRunArgs，禁止另一份运行参数格式。
+- GUI 与 CLI 共用用户数据根。显式 `--library-root` 或 `run-apk` 的 `--sandbox-dir`、`--ephemeral-sandbox`
+  优先。默认解析时，Windows 可执行文件旁有普通文件 `portable.txt`（可为指向普通文件的符号链接）即使用同目录
+  的 `userdata/`，自动创建并探测写权限，失败明确报错且不回退。其余情况使用平台默认根。旧数据不自动迁移。
 - GUI 子进程关闭 stdin、继承 stdout、stderr 覆盖写入 `last-run.log`；同 installation id 单实例，
   GUI 退出不杀游戏。存档固定在库根 `sandbox/`；删除条目不删除 external 或存档。CLI
   名为 `ogplay-cli`；GUI 不依赖 CLI 文件。所有用户可见失败同时写结构化日志并给出下一步。

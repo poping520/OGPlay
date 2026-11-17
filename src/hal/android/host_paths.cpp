@@ -27,6 +27,10 @@ std::filesystem::path HostExecutableDirectory() {
     return std::filesystem::path(*value);
 }
 
+bool HostSupportsPortableMode() noexcept {
+    return false;
+}
+
 std::optional<std::filesystem::path> HostUserDataDirectory() {
     const auto value = HostEnvironmentValue(kUserDataDirectoryVariable);
     if (!value.has_value() || value->empty()) return std::nullopt;

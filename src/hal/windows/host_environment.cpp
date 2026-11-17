@@ -125,6 +125,10 @@ std::filesystem::path HostExecutableDirectory() {
     return HostExecutablePath().parent_path();
 }
 
+bool HostSupportsPortableMode() noexcept {
+    return true;
+}
+
 std::optional<std::string> HostEnvironmentValue(const std::string_view name) {
     const std::lock_guard lock(EnvironmentMutex());
     return ReadEnvironment(std::string(name));

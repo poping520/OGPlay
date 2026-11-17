@@ -9,6 +9,8 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 #include "ogplay/app/logging.h"
 #include "frontend/gui/launcher_services.h"
 #include "frontend/gui/rpc.h"
@@ -54,7 +56,7 @@ std::string KeyEditorTitle(const GuiProcessManager::KeyEditorAddress& editor, st
 }
 
 struct GuiOptions final {
-    std::filesystem::path library_root;
+    std::optional<std::filesystem::path> library_root;
     std::optional<std::uint64_t> smoke_frames;
 };
 
@@ -93,8 +95,7 @@ struct GuiOptions final {
         }
     }
 
-    if (explicit_root.has_value()) return {*explicit_root, smoke_frames};
-    return {app::DefaultLibraryRoot(), smoke_frames};
+    return {explicit_root, smoke_frames};
 }
 
 [[nodiscard]] std::string PathUtf8(const std::filesystem::path& path) {
@@ -119,8 +120,18 @@ void PrepareLog(app::Logger& logger, const std::filesystem::path& root) {
 int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
     const auto options = ParseOptions(argc, argv);
     try {
-        PrepareLog(logger, options.library_root);
-        LibraryStore store(options.library_root);
+        const auto location = options.library_root
+                                  ? app::LibraryRootLocation{*options.library_root, false, std::nullopt}
+                                  : app::DefaultLibraryLocation();
+        PrepareLog(logger, location.root);
+        std::vector<app::LogField> fields{
+            {"mode", std::string(location.portable ? "portable" : "standard")},
+            {"root", PathUtf8(location.root)},
+        };
+        if (location.legacy_root) fields.push_back({"legacy_root", PathUtf8(*location.legacy_root)});
+        logger.Write(app::LogLevel::info, "frontend.user_data", "selected launcher data directory", {},
+                     std::move(fields));
+        LibraryStore store(location.root);
         LauncherServices services(store, logger);
         auto language = services.Language();
         GuiProcessManager processes(logger);
@@ -165,8 +176,7 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
 
         view = hal::CreateWebViewHost(
             {app::BundledDataPaths().root / "webui/gui/index.html", options.smoke_frames,
-             options.library_root / "gui-smoke.png", ShellText(language), "检查 GUI 日志和前端制品后重试。",
-             options.library_root},
+             location.root / "gui-smoke.png", ShellText(language), "检查 GUI 日志和前端制品后重试。", location.root},
             {[&](std::string_view request) {
                  if (closing) {
                      app::JsonWriter writer;

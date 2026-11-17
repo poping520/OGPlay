@@ -41,6 +41,9 @@ private:
 
 [[nodiscard]] std::filesystem::path HostExecutablePath();
 [[nodiscard]] std::filesystem::path HostExecutableDirectory();
+// Whether the frontend may opt in to portable user data beside the executable.
+// Only Windows supports this. The platform default below is independent of portable mode.
+[[nodiscard]] bool HostSupportsPortableMode() noexcept;
 // Per-platform root for this user's application data (roadmap 08). Empty
 // when the host environment does not say where it belongs, which callers
 // must report rather than guess.

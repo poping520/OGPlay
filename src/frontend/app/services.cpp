@@ -15,6 +15,8 @@
 #include "ogplay/session/session.h"
 #include <stdexcept>
 #include <array>
+#include <system_error>
+#include <utility>
 
 namespace ogplay::app {
 static_assert(JsonRpcDispatcher::kMaximumResponseBytes == agent::JsonRpcAdapter::kMaximumResponseBytes);
@@ -84,10 +86,29 @@ std::string HostPlatformName() {
     return std::string(hal::HostPlatformName());
 }
 
+namespace {
+
+frontend::UserDataLocation RequireDefaultLibraryLocation() {
+    auto location = frontend::HostUserDataLocation();
+    if (!location) throw std::runtime_error("host user-data directory is unavailable; use --library-root <dir>");
+    return std::move(*location);
+}
+
+}  // namespace
+
 std::filesystem::path DefaultLibraryRoot() {
-    auto root = frontend::UserDataDirectory();
-    if (!root) throw std::runtime_error("host user-data directory is unavailable; use --library-root <dir>");
-    return *root;
+    return RequireDefaultLibraryLocation().root;
+}
+
+LibraryRootLocation DefaultLibraryLocation() {
+    auto location = RequireDefaultLibraryLocation();
+    std::optional<std::filesystem::path> legacy_root;
+    if (location.portable) {
+        auto standard = hal::HostUserDataDirectory();
+        std::error_code error;
+        if (standard && std::filesystem::exists(*standard, error)) legacy_root = std::move(standard);
+    }
+    return {std::move(location.root), location.portable, std::move(legacy_root)};
 }
 
 std::string UtcTimestamp() {

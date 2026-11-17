@@ -59,6 +59,7 @@ set(OGPLAY_TEST_SOURCES
     tests/frontend/mcp_input_dispatch_tests.cpp
     tests/frontend/run_apk_progress_tests.cpp
     tests/frontend/data_directory_tests.cpp
+    tests/frontend/user_data_dir_tests.cpp
     tests/golden/golden_frame_tests.cpp
     tests/gles/angle_backend_tests.cpp
     tests/gles/angle_frame_tests.cpp

@@ -223,6 +223,11 @@ status = "complete"
 test = "tests/frontend/data_directory_tests.cpp; tests/frontend/library_store_tests.cpp; tests/frontend/gui_rpc_tests.cpp; tests/frontend/library_lock_tests.cpp; tests/frontend/library_lock_contention_tests.cpp; tests/hal/file_lock_tests.cpp; tests/frontend/cli_library_tests.cpp; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_view_model_tests.cpp; tests/frontend/gui_import_tests.cpp; tests/session/profile_apk_tests.cpp; frontend.app_entrypoints"
 note = "ADR-0138：LibraryStore/LibraryConfig、检视/图标/设置继承与 ResolveLaunch 下沉 core C++ 外观，GUI/CLI 同根共用。导入/移除/清理用 OS 库锁，List 冲突跳过清理；运行锁保护单实例/移除/清空；存档默认保留，重导沿用原 id，可选删除或保留身份清空。数据包默认锁外暂存复制（macOS/Linux 优先克隆）后发布到 data/，可取消，随移除删除；引用原目录为显式选项（ADR-0144）。CLI library 已验；macOS 定向及真实 APK 通过，Windows GUI 待复验。"
 
+[frontend.windows_portable_mode]
+status = "partial"
+test = "tests/frontend/user_data_dir_tests.cpp"
+note = "Windows EXE 同目录的 portable.txt 启用 userdata 数据根，GUI/CLI 共用，显式参数优先。自动创建并探测写权限，不可写时明确失败。旧数据不迁移，Windows 未实测。"
+
 [frontend.archive_import]
 status = "partial"
 test = "tests/frontend/archive_import_tests.cpp; tests/frontend/gui_rpc_tests.cpp#game archive; webui/apps/gui/import/import.test.ts"

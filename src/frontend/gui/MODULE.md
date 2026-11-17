@@ -21,7 +21,8 @@ ogplay_desktop_app，Android 外壳见 `frontend/android`。
 - `LauncherServices`：各平台共用的 Demo 补入、库视图上下文（宿主跟踪实例 + 运行锁）、Profile/制品事实、开源致谢与 APK 分析回调；
   平台只补充启动、选择器与窗口类回调。
 - `RunGuiCommand`：桌面默认模式，直接接受 `--library-root`、`--smoke-frames`；参数错误与
-  冒烟失败只返回日志/退出码，交互 GUI 初始化失败显示消息框。入口由 desktop/main 分派；GUI 日志由桌面配置。
+  冒烟失败只返回日志/退出码，交互 GUI 初始化失败（包括无法解析或写入默认库根）显示启动失败消息框。
+  入口由 desktop/main 分派；GUI 日志由桌面配置。
   原生窗口、导航限制和目录打开经 `hal::WebViewHost`，不直接包含 Windows/WebView2 API。
 - `GuiRpcService::Handle`：复用 `app::JsonRpcDispatcher` 注入模式；同步分派
   `library.list`、`library.launch`、`library.open_dir`、`library.remove`、`library.clear_data`、`library.storage`，以及导入任务与对话框 RPC。
@@ -117,7 +118,9 @@ ogplay_desktop_app，Android 外壳见 `frontend/android`。
 - `library.storage` 只在请求时（安装信息弹窗）统计 APK、数据包目录与沙盒（游戏数据）的普通文件字节数，
   不跟随链接，尚不存在为 null；有数据包时同时返回生效的 guest 挂载位置。`library.list` 不做目录统计。
 - GUI 日志覆盖写入 `<library-root>/gui.log`，桌面入口同时保留 stderr sink。
-- Windows WebView2 数据根直接使用 `<library-root>`，浏览器在其下管理 `EBWebView/`，默认即 `%APPDATA%\OGPlay\EBWebView`；
+  `frontend.user_data` 记录有效根与便携模式状态，便携启动时若标准根存在则附记其路径。
+- Windows WebView2 数据根直接使用 `<library-root>`，浏览器在其下管理 `EBWebView/`。标准默认位置为
+  `%APPDATA%\OGPlay\EBWebView`，便携模式为 `<EXE目录>\userdata\EBWebView`。
   主窗口及辅助窗口共用，不再使用按 EXE 名命名的 AppData 目录。旧浏览器数据不自动迁移或删除。
 - 兼容 `--smoke-frames N` 正整数参数：现表示 WebView 加载后 N 次成功 `library.list`，
   不再声称 ANGLE present 次数；未完成前关闭窗口视为失败。

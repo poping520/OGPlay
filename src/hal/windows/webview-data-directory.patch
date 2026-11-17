@@ -1,0 +1,46 @@
+--- a/webview/webview.h
++++ b/webview/webview.h
+@@ -3783,7 +3783,9 @@
+
+ class win32_edge_engine : public engine_base {
+ public:
+-  win32_edge_engine(bool debug, void *window) : m_owns_window{!window} {
++  win32_edge_engine(bool debug, void *window,
++                    const std::wstring &user_data_folder = {})
++      : m_owns_window{!window} {
+     if (!is_webview2_available()) {
+       throw exception{WEBVIEW_ERROR_MISSING_DEPENDENCY,
+                       "WebView2 is unavailable"};
+@@ -3997,7 +3999,7 @@
+     auto cb =
+         std::bind(&win32_edge_engine::on_message, this, std::placeholders::_1);
+
+-    embed(m_widget, debug, cb).ensure_ok();
++    embed(m_widget, debug, cb, user_data_folder).ensure_ok();
+   }
+
+   virtual ~win32_edge_engine() {
+@@ -4183,7 +4185,8 @@
+   }
+
+ private:
+-  noresult embed(HWND wnd, bool debug, msg_cb_t cb) {
++  noresult embed(HWND wnd, bool debug, msg_cb_t cb,
++                 const std::wstring &user_data_folder) {
+     std::atomic_flag flag = ATOMIC_FLAG_INIT;
+     flag.test_and_set();
+
+@@ -4196,8 +4199,11 @@
+             SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, dataPath))) {
+       return error_info{WEBVIEW_ERROR_UNSPECIFIED, "SHGetFolderPathW failed"};
+     }
+-    wchar_t userDataFolder[MAX_PATH];
+-    PathCombineW(userDataFolder, dataPath, currentExeName);
++    wchar_t defaultUserDataFolder[MAX_PATH];
++    PathCombineW(defaultUserDataFolder, dataPath, currentExeName);
++    const auto *userDataFolder = user_data_folder.empty()
++                                     ? defaultUserDataFolder
++                                     : user_data_folder.c_str();
+
+     m_com_handler = new webview2_com_handler(
+         wnd, cb,

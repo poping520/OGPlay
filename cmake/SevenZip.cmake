@@ -1,5 +1,5 @@
 # 7-Zip 26.06. Source groups follow Bundles/Format7zExtractR/makefile and
-# Bundles/Format7zF/Arc{,_gcc}.mak. No bundle exports, UI, encoders or ASM.
+# Bundles/Format7zF/Arc{,_gcc}.mak. No bundle exports, UI, encoder targets or ASM.
 set(_7z_root "${PROJECT_SOURCE_DIR}/third_party/7zip")
 if(NOT EXISTS "${_7z_root}/C/7zVersion.h")
     message(FATAL_ERROR "7-Zip sources missing. Run: git submodule update --init third_party/7zip")
@@ -49,7 +49,7 @@ endforeach()
 
 set(_7z_c
     7zCrc 7zCrcOpt 7zStream Aes AesOpt Alloc Bcj2 Blake2s Bra Bra86 BraIA64 CpuArch Delta
-    Lzma2Dec Lzma2DecMt LzmaDec MtDec Ppmd7 Ppmd7Dec Ppmd7aDec Ppmd8 Ppmd8Dec
+    Lzma2Dec Lzma2DecMt LzmaDec MtDec Ppmd7 Ppmd7Dec Ppmd7aDec Ppmd8 Ppmd8Dec Ppmd8Enc
     Sha1 Sha1Opt Sha256 Sha256Opt SwapBytes Threads Xxh64 Xz XzCrc64 XzCrc64Opt XzDec ZstdDec)
 set(_7z_sources)
 foreach(_unit IN LISTS _7z_c)
@@ -102,6 +102,12 @@ set_source_files_properties(
     src/archive7z/zip_read_only.cpp
     PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/UZ7_EXTRACT_ONLY,-UZ7_EXTRACT_ONLY>")
 
+# ZIP AES decoding uses CAesCoder::SetCoderProperties and CAesCtrCoder::SetFunctions.
+# Those implementations share MyAes.cpp with writer code, so compile this unit with
+# the upstream extract-only guard disabled; the unused writer COMDATs are discarded.
+set_source_files_properties("${_7z_root}/CPP/7zip/Crypto/MyAes.cpp"
+    PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/UZ7_EXTRACT_ONLY,-UZ7_EXTRACT_ONLY>")
+
 add_library(ogplay_7z SHARED src/archive7z/archive7z.cpp src/archive7z/zip_read_only.cpp
     ${_7z_patched_sources} ${_7z_sources})
 target_include_directories(ogplay_7z PUBLIC "${PROJECT_SOURCE_DIR}/src/archive7z")
@@ -114,8 +120,9 @@ set_target_properties(ogplay_7z PROPERTIES
     OUTPUT_NAME 7z
     C_VISIBILITY_PRESET hidden CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES
     WINDOWS_EXPORT_ALL_SYMBOLS OFF)
-# PpmdZip.cpp contains unreferenced writer methods alongside the decoder.
-# Drop those methods in every configuration without linking Ppmd8Enc.
+# PpmdZip.cpp contains writer methods alongside the decoder. MSVC retains their
+# references in the ZIP handler vtable, so include the shared Ppmd8 encoder support
+# unit; no encoder is registered or exported by this library.
 if(WIN32)
     target_compile_options(ogplay_7z PRIVATE /Gy /Gw)
     target_link_options(ogplay_7z PRIVATE /OPT:REF)

@@ -165,7 +165,8 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
 
         view = hal::CreateWebViewHost(
             {app::BundledDataPaths().root / "webui/gui/index.html", options.smoke_frames,
-             options.library_root / "gui-smoke.png", ShellText(language), "检查 GUI 日志和前端制品后重试。"},
+             options.library_root / "gui-smoke.png", ShellText(language), "检查 GUI 日志和前端制品后重试。",
+             options.library_root},
             {[&](std::string_view request) {
                  if (closing) {
                      app::JsonWriter writer;

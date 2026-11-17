@@ -117,6 +117,8 @@ ogplay_desktop_app，Android 外壳见 `frontend/android`。
 - `library.storage` 只在请求时（安装信息弹窗）统计 APK、数据包目录与沙盒（游戏数据）的普通文件字节数，
   不跟随链接，尚不存在为 null；有数据包时同时返回生效的 guest 挂载位置。`library.list` 不做目录统计。
 - GUI 日志覆盖写入 `<library-root>/gui.log`，桌面入口同时保留 stderr sink。
+- Windows WebView2 数据根直接使用 `<library-root>`，浏览器在其下管理 `EBWebView/`，默认即 `%APPDATA%\OGPlay\EBWebView`；
+  主窗口及辅助窗口共用，不再使用按 EXE 名命名的 AppData 目录。旧浏览器数据不自动迁移或删除。
 - 兼容 `--smoke-frames N` 正整数参数：现表示 WebView 加载后 N 次成功 `library.list`，
   不再声称 ANGLE present 次数；未完成前关闭窗口视为失败。
 - 100ms 宿主事件计时器回收进程，不忙轮询。退出 0 静默，非零结构化退出码及有界 UTF-8

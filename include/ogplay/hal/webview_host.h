@@ -40,6 +40,8 @@ struct WebViewHostOptions final {
     std::filesystem::path smoke_image;
     WebViewShellText shell_text;
     std::string rpc_failure_next_step;
+    // Windows WebView2 profile/cache root; shared by all windows. Ignored by macOS.
+    std::filesystem::path user_data_directory;
 };
 
 struct WebViewHostCallbacks final {

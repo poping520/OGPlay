@@ -60,7 +60,8 @@ TEST_CASE("GUI Dashboard windows load without launcher bridge and reopen" * doct
     std::unique_ptr<hal::WebViewHost> host;
     unsigned stage{};
     const auto deadline = app::MonotonicClock::NowNs() + 15000000000ULL;
-    host = hal::CreateWebViewHost({fixture.root / "index.html", 1, fixture.root / "capture.png"}, {
+    host = hal::CreateWebViewHost({fixture.root / "index.html", 1, fixture.root / "capture.png", {}, {},
+                                 fixture.root}, {
         [](std::string_view) { return std::string("{}"); },
         [&] {
             if (app::MonotonicClock::NowNs() > deadline) { host->RecordSmokeResponse(); return; }
@@ -68,6 +69,9 @@ TEST_CASE("GUI Dashboard windows load without launcher bridge and reopen" * doct
                 ++stage; host->OpenDashboard("fixture", server->Port()); host->OpenDashboard("fixture", server->Port());
 #if defined(_WIN32)
                 CHECK(CheckApplicationWindowIcons() == 2);
+                host->OpenKeyEditor("fixture", server->Port(), "0123456789abcdef", "OGPlay key editor fixture");
+                CHECK(CheckApplicationWindowIcons() == 3);
+                host->CloseKeyEditor("fixture");
 #endif
             }
             else if (stage == 1 && loads.load() == 1) { ++stage; host->CloseDashboard("fixture"); }
@@ -82,11 +86,15 @@ TEST_CASE("GUI Dashboard windows load without launcher bridge and reopen" * doct
     CHECK(host->Run() == 0);
     CHECK(stage == 4);
     CHECK(loads.load() == 2);
+#if defined(_WIN32)
+    CHECK(std::filesystem::is_directory(fixture.root / "EBWebView"));
+#endif
     host.reset();
     // Exercise the actual WM_CLOSE path with a Dashboard still open.
     bool close_sent = false;
     const auto close_deadline = app::MonotonicClock::NowNs() + 5000000000ULL;
-    host = hal::CreateWebViewHost({fixture.root / "index.html", std::nullopt, {}}, {
+    host = hal::CreateWebViewHost({fixture.root / "index.html", std::nullopt, {}, {}, {},
+                                 fixture.root}, {
         [](std::string_view) { return std::string("{}"); },
         [&] {
             if (!close_sent) {

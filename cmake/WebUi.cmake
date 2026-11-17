@@ -21,9 +21,28 @@ if(OGPLAY_BUILD_GUI)
         if(NOT EXISTS "${OGPLAY_WEBVIEW2_SDK}/build/native/include/WebView2.h")
             message(FATAL_ERROR "WebView2 SDK missing; run webui/prepare-sdk.ps1")
         endif()
+        # Add an explicit data-directory constructor to a build-tree copy; keep the submodule pristine.
+        find_package(Git REQUIRED)
+        set(_webview_patch "${PROJECT_SOURCE_DIR}/src/hal/windows/webview-data-directory.patch")
+        set(_webview_generated "${CMAKE_CURRENT_BINARY_DIR}/generated/webview")
+        configure_file("${PROJECT_SOURCE_DIR}/third_party/webview/core/include/webview/webview.h"
+            "${_webview_generated}/input/webview/webview.h" COPYONLY)
+        file(COPY_FILE "${PROJECT_SOURCE_DIR}/third_party/webview/core/include/webview/webview.h"
+            "${_webview_generated}/input/webview/webview.h")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_webview_patch}")
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E env "GIT_CEILING_DIRECTORIES=${_webview_generated}"
+                "${GIT_EXECUTABLE}" apply --whitespace=nowarn "${_webview_patch}"
+            WORKING_DIRECTORY "${_webview_generated}/input"
+            RESULT_VARIABLE _webview_patch_status ERROR_VARIABLE _webview_patch_error)
+        if(NOT _webview_patch_status STREQUAL "0")
+            message(FATAL_ERROR "Cannot apply WebView2 data directory patch: ${_webview_patch_error}")
+        endif()
+        configure_file("${_webview_generated}/input/webview/webview.h"
+            "${_webview_generated}/webview/webview.h" COPYONLY)
         add_library(ogplay_webview STATIC src/hal/windows/webview_backend.cpp)
         target_include_directories(ogplay_webview SYSTEM PUBLIC
-            "${PROJECT_SOURCE_DIR}/third_party/webview/core/include"
+            "${_webview_generated}"
             "${OGPLAY_WEBVIEW2_SDK}/build/native/include")
         target_link_libraries(ogplay_webview PUBLIC advapi32 ole32 shell32 shlwapi user32 version)
         if(MSVC)

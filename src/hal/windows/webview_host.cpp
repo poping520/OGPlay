@@ -18,6 +18,7 @@
 #include "ogplay/hal/webview_host.h"
 #include "launcher_instance.h"
 #include "window_chrome.h"
+#include "webview_backend.h"
 
 namespace ogplay::hal {
 namespace {
@@ -116,8 +117,8 @@ public:
     WebViewWindow(const WebViewWindow&) = delete;
     WebViewWindow& operator=(const WebViewWindow&) = delete;
 
-    void Initialize() {
-        view_ = webview_create(0, &window_);
+    void Initialize(const std::filesystem::path& user_data_directory) {
+        view_ = windows::CreateWebViewWithDataDirectory(&window_, user_data_directory);
         if (!view_) {
             const auto answer =
                 MessageBoxW(window_,
@@ -369,13 +370,14 @@ public:
         if (!std::filesystem::is_regular_file(gui_root / "manifest.json") ||
             !std::filesystem::is_regular_file(gui_root / "index.html"))
             throw std::runtime_error("GUI Web UI is missing; build webui and stage data/webui/gui");
+        std::filesystem::create_directories(options_.user_data_directory);
         Check(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED));
         com_initialized_ = true;
         // External-window webview creation leaves DPI awareness and COM to the host.
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         main_window_ = std::make_unique<WebViewWindow>(true);
         main_window_->SetShellText(options_.shell_text);
-        main_window_->Initialize();
+        main_window_->Initialize(options_.user_data_directory);
         view_ = main_window_->View();
         CheckWeb(webview_set_title(view_, "OGPlay"));
         wchar_t uri[32768]{};
@@ -590,7 +592,7 @@ private:
             windows.erase(found);
         }
         auto child = std::make_unique<WebViewWindow>(false);
-        child->Initialize();
+        child->Initialize(options_.user_data_directory);
         CheckWeb(webview_set_title(child->View(), title.c_str()));
         auto* controller = static_cast<ICoreWebView2Controller*>(
             webview_get_native_handle(child->View(), WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER));
@@ -656,6 +658,8 @@ private:
 std::unique_ptr<WebViewHost> CreateWebViewHost(WebViewHostOptions options, WebViewHostCallbacks callbacks,
                                                app::Logger& logger) {
     if (!callbacks.request || !callbacks.poll) throw std::invalid_argument("WebView callbacks are required");
+    if (!options.user_data_directory.is_absolute())
+        throw std::invalid_argument("WebView2 user data directory must be absolute");
     return std::make_unique<NativeWebView>(std::move(options), std::move(callbacks), logger);
 }
 

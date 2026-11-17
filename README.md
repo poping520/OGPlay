@@ -127,4 +127,6 @@ Copyright (C) 2026 OGPlay contributors.
 
 Unless explicitly stated otherwise, original OGPlay code is released under the **GNU Affero General Public License v3.0 (version 3 only, SPDX: `AGPL-3.0-only`)**. You may use, modify, and redistribute this program under that license; see [LICENSE](LICENSE) for the full text. This program comes with no warranty; see the license terms for details.
 
+Under section 7 of the AGPL-3.0, the OGPlay copyright holders grant additional permission to combine OGPlay with the portions of 7-Zip subject to the unRAR restriction and to convey the resulting combination. The 7-Zip code remains subject to its own license terms.
+
 Third-party dependencies, incorporated upstream code, and assets retain their respective copyrights and licenses. This project's license declaration does not relicense them under the AGPL; their respective license terms still apply to use and distribution. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the list.

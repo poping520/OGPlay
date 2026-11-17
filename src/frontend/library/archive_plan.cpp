@@ -1,4 +1,4 @@
-#include "archive_source.h"
+#include "ogplay/app/archive_import.h"
 #include "data_layout.h"
 #include "external_data.h"
 
@@ -73,14 +73,17 @@ constexpr std::size_t kChunkBytes = 1U << 20U;
         return std::nullopt;
     if (!lower.ends_with(".obb")) return std::nullopt;
     const auto digits = at;
-    while (at < lower.size() && std::isdigit(static_cast<unsigned char>(lower[at]))) ++at;
+    while (at < lower.size() && std::isdigit(static_cast<unsigned char>(lower[at])))
+        ++at;
     if (at == digits || at >= lower.size() || lower[at] != '.') return std::nullopt;
     const auto package = name.substr(at + 1, name.size() - at - 1 - 4);
     if (!PackageLike(package)) return std::nullopt;
     return std::string(package);
 }
 
-[[nodiscard]] bool IsApk(std::string_view path) { return Lower(path).ends_with(".apk"); }
+[[nodiscard]] bool IsApk(std::string_view path) {
+    return Lower(path).ends_with(".apk");
+}
 
 // Readmes, store pages, icons and installer manifests packed beside the game; never data.
 [[nodiscard]] bool PackJunk(std::string_view name) {
@@ -88,8 +91,8 @@ constexpr std::size_t kChunkBytes = 1U << 20U;
     const auto dot = lower.rfind('.');
     if (dot == std::string::npos) return false;
     static const std::set<std::string, std::less<>> extensions{
-        "txt", "url", "htm", "html", "nfo", "png", "jpg", "jpeg", "gif", "bmp", "webp", "dat", "data", "ini",
-        "md5", "sfv", "lnk", "db", "doc", "docx", "pdf", "rtf", "xml", "json"};
+        "txt",  "url", "htm", "html", "nfo", "png", "jpg", "jpeg", "gif", "bmp", "webp", "dat",
+        "data", "ini", "md5", "sfv",  "lnk", "db",  "doc", "docx", "pdf", "rtf", "xml",  "json"};
     return extensions.contains(lower.substr(dot + 1));
 }
 
@@ -151,8 +154,6 @@ void AppendUtf8(std::string& output, char32_t value) {
 
 ImportSource::~ImportSource() = default;
 
-
-
 std::string DecodeArchiveName(std::string_view bytes) {
     if (ValidUtf8(bytes)) return std::string(bytes);
     std::string result;
@@ -183,6 +184,7 @@ std::string DecodeArchiveName(std::string_view bytes) {
 }
 
 std::optional<std::string> NormalizeArchivePath(std::string_view utf8) {
+    if (!ValidUtf8(utf8)) return std::nullopt;
     std::string text(utf8);
     std::replace(text.begin(), text.end(), '\\', '/');
     std::string result;
@@ -201,38 +203,54 @@ std::filesystem::path ImportFilePath(std::string_view utf8) {
     return std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(utf8.data()), utf8.size()));
 }
 
-void WriteImportFile(const std::filesystem::path& destination, std::uint64_t size,
-                     const std::function<std::size_t(std::span<std::byte>)>& read, ImportProgress* progress) {
+ImportFileWriter::ImportFileWriter(const std::filesystem::path& destination) : destination_(destination) {
     std::error_code error;
     std::filesystem::create_directories(destination.parent_path(), error);
-    if (error) throw LibraryError(LibraryErrorCode::io_error, "cannot create import directory", destination.parent_path());
+    if (error)
+        throw LibraryError(LibraryErrorCode::io_error, "cannot create import directory", destination.parent_path());
     if (std::filesystem::exists(destination, error))
         throw LibraryError(LibraryErrorCode::io_error, "压缩包里有重复的文件。", destination);
-    std::ofstream output(destination, std::ios::binary | std::ios::trunc);
-    if (!output) throw LibraryError(LibraryErrorCode::io_error, "cannot create imported file", destination);
+    output_.open(destination, std::ios::binary | std::ios::trunc);
+    if (!output_) throw LibraryError(LibraryErrorCode::io_error, "cannot create imported file", destination);
+}
+
+void ImportFileWriter::Write(std::span<const std::byte> bytes) {
+    output_.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (!output_) throw LibraryError(LibraryErrorCode::io_error, "写入游戏库失败，请检查剩余空间。", destination_);
+}
+
+void ImportFileWriter::Finish() {
+    output_.close();
+    if (!output_) throw LibraryError(LibraryErrorCode::io_error, "写入游戏库失败，请检查剩余空间。", destination_);
+}
+
+void WriteImportFile(const std::filesystem::path& destination, std::uint64_t size,
+                     const std::function<std::size_t(std::span<std::byte>)>& read, ImportProgress* progress) {
+    ImportFileWriter output(destination);
     std::vector<std::byte> buffer(kChunkBytes);
     for (std::uint64_t written = 0; written < size;) {
         ThrowIfImportCancelled(progress);
         const auto want = static_cast<std::size_t>(std::min<std::uint64_t>(buffer.size(), size - written));
         const auto count = read(std::span(buffer).first(want));
-        if (count == 0) throw LibraryError(LibraryErrorCode::io_error, "压缩包内容不完整。", destination);
-        output.write(reinterpret_cast<const char*>(buffer.data()), static_cast<std::streamsize>(count));
-        if (!output) throw LibraryError(LibraryErrorCode::io_error, "写入游戏库失败，请检查剩余空间。", destination);
+        if (count == 0 || count > want)
+            throw LibraryError(LibraryErrorCode::io_error, "压缩包内容不完整。", destination);
+        output.Write(std::span(buffer).first(count));
         written += count;
         if (progress) progress->copied_bytes.fetch_add(count, std::memory_order_relaxed);
     }
-    output.close();
-    if (!output) throw LibraryError(LibraryErrorCode::io_error, "写入游戏库失败，请检查剩余空间。", destination);
+    output.Finish();
 }
 
 ArchivePlan PlanArchive(const std::vector<ImportFile>& files, std::string_view package) {
     std::vector<std::vector<std::string>> split;
     split.reserve(files.size());
-    for (const auto& file : files) split.push_back(Split(file.path));
+    for (const auto& file : files)
+        split.push_back(Split(file.path));
     // A single wrapper directory (the pack's own name) is looked through.
     std::size_t skip = 0;
     std::vector<std::vector<std::string_view>> views;
-    for (const auto& parts : split) views.emplace_back(parts.begin(), parts.end());
+    for (const auto& parts : split)
+        views.emplace_back(parts.begin(), parts.end());
     for (;;) {
         if (files.empty()) break;
         const auto& first = split.front();
@@ -262,11 +280,14 @@ ArchivePlan PlanArchive(const std::vector<ImportFile>& files, std::string_view p
         // nothing counts. Anything else directly under Android/ (a readme) is not data.
         std::optional<std::pair<std::size_t, StorageMarker>> layout;
         for (auto at = skip; at + 1 < parts.size() && !layout; ++at) {
-            if (const auto marker = MatchStorageMarker(views[index], at)) layout.emplace(at, *marker);
-            else if (PackageLike(parts[at])) break;
+            if (const auto marker = MatchStorageMarker(views[index], at))
+                layout.emplace(at, *marker);
+            else if (PackageLike(parts[at]))
+                break;
         }
         if (layout && layout->first + layout->second.parts < parts.size()) {
-            plan.data.push_back({index, layout->second.guest + "/" + Join(parts, layout->first + layout->second.parts, parts.size())});
+            plan.data.push_back(
+                {index, layout->second.guest + "/" + Join(parts, layout->first + layout->second.parts, parts.size())});
             continue;
         }
         if (lower == "android") continue;
@@ -302,7 +323,8 @@ ArchivePlan PlanArchive(const std::vector<ImportFile>& files, std::string_view p
 
 std::string ArchiveMount(const ArchivePlan& plan, std::span<const std::string> extras) {
     std::vector<const ArchiveData*> chosen;
-    for (const auto& item : plan.data) chosen.push_back(&item);
+    for (const auto& item : plan.data)
+        chosen.push_back(&item);
     bool any_extra = false;
     for (const auto& name : extras) {
         const auto found = std::find_if(plan.extras.begin(), plan.extras.end(),
@@ -310,7 +332,8 @@ std::string ArchiveMount(const ArchivePlan& plan, std::span<const std::string> e
         if (found == plan.extras.end())
             throw LibraryError(LibraryErrorCode::invalid_argument, "压缩包里没有所选的内容：" + name);
         any_extra = true;
-        for (const auto& member : found->members) chosen.push_back(&member);
+        for (const auto& member : found->members)
+            chosen.push_back(&member);
     }
     if (chosen.empty()) return {};
     if (any_extra) return "/sdcard";
@@ -320,7 +343,8 @@ std::string ArchiveMount(const ArchivePlan& plan, std::span<const std::string> e
         auto parts = Split(item->guest_path.substr(1));
         parts.pop_back();
         std::size_t shared = 0;
-        while (shared < common.size() && shared < parts.size() && common[shared] == parts[shared]) ++shared;
+        while (shared < common.size() && shared < parts.size() && common[shared] == parts[shared])
+            ++shared;
         common.resize(shared);
     }
     // sdcard/Android/<kind>/<package>: one app's own directory is as deep as a mount goes.
@@ -339,11 +363,13 @@ std::string ExtractArchiveData(ImportSource& source, const ArchivePlan& plan, st
         work.push_back({item.index, destination / ImportFilePath(relative)});
         total += source.Files()[item.index].size;
     };
-    for (const auto& item : plan.data) add(item);
+    for (const auto& item : plan.data)
+        add(item);
     for (const auto& name : extras)
         for (const auto& extra : plan.extras)
             if (extra.name == name)
-                for (const auto& member : extra.members) add(member);
+                for (const auto& member : extra.members)
+                    add(member);
     std::error_code error;
     std::filesystem::create_directories(destination, error);
     if (error) throw LibraryError(LibraryErrorCode::io_error, "cannot create import directory", destination);

@@ -67,11 +67,12 @@ startup_failed/fault/crashed/no_frame、interrupted 或带 exit_error 为失败�
 external_dir 与库内路径不同时即按 link 解析。move 把调用方已解到库卷上的目录（`ImportWorkDirectory`，
 库根 `import-staging/work-N`，同样持锁并清理残留）直接改名为 `data/`，不再复制。
 
-游戏压缩包（`ogplay/app/archive_import.h`）：`DetectImportSource` 只看内容——含根 AndroidManifest.xml 的 ZIP 是 APK，
-其他 ZIP（含 ZIP64）与 RAR4/RAR5 是压缩包。ZIP 用自有读取（stored/deflate，Deflate 复用 loader；非 UTF-8 且无
-Unicode 路径扩展的名字按 GBK 解码，码表构建时由 Python 生成）；RAR 用 libarchive（BSD-2，third_party 子模块，
-关闭系统编解码、加密、iconv，只编静态库；成员名经 `hal::ScopedUtf8Locale` 取 UTF-8）。加密、分卷、
-越界路径（`..`、盘符、控制字符）与 4 GB 以上的 deflate 成员明确失败；`\` 视为目录分隔。
+游戏压缩包（`ogplay/app/archive_import.h`）：`DetectImportSource` 只看内容。含根 AndroidManifest.xml
+的 ZIP 是 APK，仍由 Loader 读取。其他 ZIP（含 ZIP64）、RAR4/RAR5 和 7z 由
+[7-Zip](../../archive7z/MODULE.md) 动态库读取，经 `hal::HostReadFile` 按偏移读入，可直接读 Android SAF
+选取的文件描述符。归档内有效 Unicode 名优先，其次使用标为 UTF-8 的名字，其余经 `DecodeArchiveName` 按
+UTF-8 有效性和 GBK 码表解码，`\` 视为分隔符。加密、分卷、越界路径（`..`、盘符、控制字符）
+与不支持的压缩方法明确失败。解码按索引批量流式写入导入工作目录，支持字节进度与取消；失败时清理工作目录。
 存储布局规则只有一份（`data_layout.h`），GuessDataMount 与 PlanArchive 共用：`Android/data|obb|media`、末尾的
 `Android`、`sdcard`、`emulated/0` 之后的部分映射到 /sdcard 对应位置；以包名命名的目录直接含 .obb 文件时挂到
 Android/obb/<名>，否则 Android/data/<名>。两者只在取哪个标记、哪些名字算包名上不同：选定目录的宿主路径取最内层标记、

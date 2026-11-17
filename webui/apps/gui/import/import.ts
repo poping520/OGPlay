@@ -28,6 +28,7 @@ export function formatBytes(value: number): string {
 }
 /** Stage text while a commit runs; byte counts appear once data copying (or unpacking an archive) reports a total. */
 export function importingStage(job: ImportJob, unpacking = false): string {
+  if (job.state === 'failed') return t('导入失败');
   const progress = job.progress;
   if (!progress || !progress.total_bytes) return t('正在加入游戏库，请勿关闭…');
   const percent = Math.min(100, Math.floor(progress.copied_bytes / progress.total_bytes * 100));

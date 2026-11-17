@@ -226,7 +226,8 @@ note = "ADR-0138：LibraryStore/LibraryConfig、检视/图标/设置继承与 Re
 [frontend.archive_import]
 status = "partial"
 test = "tests/frontend/archive_import_tests.cpp; tests/frontend/gui_rpc_tests.cpp#game archive; webui/apps/gui/import/import.test.ts"
-note = "导入游戏压缩包（IMPORT-ARCHIVE）：ZIP（自有读取，ZIP64、GBK 名）与 RAR4/5（libarchive）按内容识别，PlanArchive 认出 APK 与 Android/obb|data、包名目录、GPK 反斜杠路径的数据包及挂载位置，杂项可勾选；解到库卷后移入 data/。CLI 与 GUI 同源；macOS CLI 样例与 Android 真机 ZIP/RAR 实测。加密/分卷不支持；Windows 未构建验证，桌面 GUI 待用户实测。"
+note = "CLI 与 GUI 按内容识别 ZIP（含 ZIP64）、RAR4/RAR5 与 7z，由 7-Zip 动态库流式解码，使用归档 Unicode 名或 GBK 码表，接受 GPK 反斜杠目录。识别 APK 候选与数据包挂载位置，可选杂项，支持进度和取消。APK 仍由 Loader 读取。加密、分卷、越界路径和不支持的方法明确失败。Windows 构建、桌面向导与新解码库 Android 真机待验。"
+test = "tests/frontend/archive_import_tests.cpp; tests/frontend/gui_rpc_tests.cpp#GUI import takes the APK and data pack out of a game archive; webui/apps/gui/import/import.test.ts"
 
 [frontend.gui_launch_spawn]
 status = "complete"

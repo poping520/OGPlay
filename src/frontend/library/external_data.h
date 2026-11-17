@@ -2,7 +2,10 @@
 #include "ogplay/app/library.h"
 #include "ogplay/hal/file_lock.h"
 
+#include <cstddef>
 #include <filesystem>
+#include <fstream>
+#include <span>
 #include <optional>
 
 namespace ogplay::app {
@@ -10,12 +13,24 @@ namespace ogplay::app {
 [[noreturn]] void ThrowImportCancelled();
 void ThrowIfImportCancelled(const ImportProgress* progress);
 
+// The same file validation and sink are used by pull-based copies and push-based archive decoders.
+class ImportFileWriter final {
+public:
+    explicit ImportFileWriter(const std::filesystem::path& destination);
+    void Write(std::span<const std::byte> bytes);
+    void Finish();
+
+private:
+    std::filesystem::path destination_;
+    std::ofstream output_;
+};
+
 // A data pack copied into <root>/import-staging outside the library lock. The
 // held OS lock marks the directory live; unpublished copies are removed.
 class StagedExternalData final {
 public:
-    StagedExternalData(const std::filesystem::path& library_root,
-                       const std::filesystem::path& source, ImportProgress* progress);
+    StagedExternalData(const std::filesystem::path& library_root, const std::filesystem::path& source,
+                       ImportProgress* progress);
     ~StagedExternalData();
     StagedExternalData(const StagedExternalData&) = delete;
     StagedExternalData& operator=(const StagedExternalData&) = delete;

@@ -48,7 +48,11 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
       if (disposed.current) throw new Error(t('向导已关闭'));
       result = await rpc<ImportJob>('library.job.poll', { job: result.job });
     }
-    if (result.state === 'failed') throw new Error(`${t(result.message ?? '导入失败')}\n${t('请检查安装包和库目录后重新选择。')}`);
+    if (result.state === 'failed') {
+      setJob(result);
+      setStage(importingStage(result));
+      throw new Error(t(result.message ?? '导入失败'));
+    }
     return result;
   }
   async function run(action: () => Promise<void>) {
@@ -212,6 +216,9 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
           if (result.state !== 'imported' || !result.installation_id) throw new Error(t('宿主未返回导入结果。'));
           setStage(t('已加入游戏库')); activeJob.current = '';
           await onImported(result.installation_id);
+        } catch (reason) {
+          if (!disposed.current) setStage(t('导入失败'));
+          throw reason;
         } finally { if (!disposed.current) { setCommitting(false); setCancelling(false); } }
       })}>{t('导入到游戏库')}</button>
     </div>

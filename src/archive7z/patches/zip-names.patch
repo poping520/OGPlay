@@ -1,0 +1,90 @@
+# 2026-11-17, 7-Zip 26.06 (d3296e39e1f1f92c7b41c0c3848e65640428d42d).
+# Expose stored member names and encoding metadata by extraction index.
+--- a/CPP/7zip/Archive/Zip/ZipIn.h
++++ b/CPP/7zip/Archive/Zip/ZipIn.h
+@@ -316,5 +316,5 @@
+   HRESULT Skip64(UInt64 num, unsigned numFiles);
+ 
+-  bool ReadFileName(unsigned nameSize, AString &dest);
++  bool ReadFileName(unsigned nameSize, AString &dest, CByteBuffer &ogplayRawName);
+ 
+   bool ReadExtra(const CLocalItem &item, unsigned extraSize, CExtraBlock &extra,
+--- a/CPP/7zip/Archive/Zip/ZipIn.cpp
++++ b/CPP/7zip/Archive/Zip/ZipIn.cpp
+@@ -1041,6 +1041,7 @@
+ 
+ 
+-bool CInArchive::ReadFileName(unsigned size, AString &s)
+-{
++bool CInArchive::ReadFileName(unsigned size, AString &s, CByteBuffer &ogplayRawName)
++{
++  ogplayRawName.Free();
+   if (size == 0)
+   {
+@@ -1058,4 +1059,6 @@
+   while (--i);
+   s.ReleaseBuf_CalcLen(size);
++  if (s.Len() != size)
++    ogplayRawName.CopyFrom((const Byte *)p, size);
+   return s.Len() == i;
+ }
+@@ -1208,5 +1211,5 @@
+   const unsigned nameSize = Get16(p + 22);
+   const unsigned extraSize = Get16(p + 24);
+-  bool isOkName = ReadFileName(nameSize, item.Name);
++  bool isOkName = ReadFileName(nameSize, item.Name, item.OgplayRawName);
+   item.LocalFullHeaderSize = kLocalHeaderSize + (UInt32)nameSize + extraSize;
+   item.DescriptorWasRead = false;
+@@ -1672,5 +1675,5 @@
+   G32(34, item.ExternalAttrib);
+   G32(38, item.LocalHeaderPos);
+-  ReadFileName(nameSize, item.Name);
++  ReadFileName(nameSize, item.Name, item.OgplayRawName);
+   
+   if (extraSize > 0)
+--- a/CPP/7zip/Archive/Zip/ZipItem.h
++++ b/CPP/7zip/Archive/Zip/ZipItem.h
+@@ -223,4 +223,5 @@
+   
+   AString Name;
++  CByteBuffer OgplayRawName; // Used only if the stored name contains NULs.
+ 
+   CExtraBlock LocalExtra;
+--- a/CPP/7zip/Archive/Zip/ZipHandler.cpp
++++ b/CPP/7zip/Archive/Zip/ZipHandler.cpp
+@@ -384,5 +384,35 @@
+   switch (propID)
+   {
++    case kpidUserDefined: // Raw path bytes (binary BSTR).
++    {
++      const CByteBuffer &raw = item.OgplayRawName;
++      value->bstrVal = raw.Size()
++          ? ::SysAllocStringByteLen((const char *)(const Byte *)raw, (UINT)raw.Size())
++          : ::SysAllocStringByteLen(item.Name, item.Name.Len());
++      if (!value->bstrVal)
++        return E_OUTOFMEMORY;
++      value->vt = VT_BSTR;
++      return S_OK;
++    }
++    case kpidUserDefined + 1: prop = item.IsUtf8(); break;
++    case kpidUserDefined + 2: // Valid Info-ZIP Unicode Path (UTF-8 binary BSTR).
++    {
++      FOR_VECTOR (i, extra.SubBlocks)
++      {
++        const CExtraSubBlock &sb = extra.SubBlocks[i];
++        if (sb.ID == NFileHeader::NExtraID::kIzUnicodeName && sb.Data.Size() > 5
++            && sb.Data[0] == 1 && !item.OgplayRawName.Size() && sb.CheckIzUnicode(item.Name))
++        {
++          value->bstrVal = ::SysAllocStringByteLen(
++              (const char *)(const Byte *)sb.Data + 5, sb.Data.Size() - 5);
++          if (!value->bstrVal)
++            return E_OUTOFMEMORY;
++          value->vt = VT_BSTR;
++          return S_OK;
++        }
++      }
++      break;
++    }
+     case kpidPath:
+     {
+       UString res;

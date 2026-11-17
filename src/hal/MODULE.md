@@ -14,8 +14,6 @@
   Windows 使用原生 HANDLE/独立 OVERLAPPED，macOS/Linux 使用 fd/pread；无 CRT stream、
   无宿主线程池，不泄漏原生句柄。身份不承诺外部原地修改的内容快照。只读映射通过独立 owner 保活，供不可变归档借用。
   Linux/Android 上 `/proc/self/fd/<n>` 指本进程已持有的 fd（Android SAF 选取），复制该 fd 而不按路径重开。
-- `ScopedUtf8Locale`：本线程 LC_CTYPE 临时设为 UTF-8（`uselocale`），供按当前 locale 转换文本的 C 库（libarchive 的
-  RAR 成员名）使用；不影响其他线程，Windows 为空操作（其库走宽字符）。
 
 - `WebViewHost`：归 ogplay_desktop_webview，移出 ogplay_hal，仅桌面链接（Windows WebView2、macOS WKWebView）；仅宿主启动器使用的静态页面窗口、RPC 字符串回调、事件轮询与脚本投递；
   不暴露 native handle，不创建 guest。macOS/Windows 均在 UI 线程派发 RPC；冒烟可记录响应并保存 PNG。

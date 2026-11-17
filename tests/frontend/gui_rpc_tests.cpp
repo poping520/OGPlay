@@ -743,6 +743,9 @@ TEST_CASE("GUI import takes the APK and data pack out of a game archive") {
                                   {"game_Mod.apk", "apk-b"},
                                   {"org.example.game/main.3.org.example.game.obb", "expansion"},
                                   {"picture/cover.png", "png"}});
+    const auto bad = fixture.root / "unsupported.zip";
+    ogplay::test::WriteZip(
+        bad, {{"game.apk", "apk-a"}, {"org.example.game/main.3.org.example.game.obb", "data", false, 0, 2}});
     const auto poll = [&](std::string_view job) {
         for (unsigned attempt = 0; attempt < 100000; ++attempt) {
             auto document = Decode(ImportCall(fixture, "library.job.poll", "{\"job\":\"" + std::string(job) + "\"}"));
@@ -759,7 +762,7 @@ TEST_CASE("GUI import takes the APK and data pack out of a game archive") {
         REQUIRE(started.Root().Member("result"));
         return poll(*started.Root().Member("result")->Member("job")->String());
     };
-    const auto path = "\"" + pack.generic_string() + "\"";   // temp paths need no JSON escapes
+    const auto path = "\"" + pack.generic_string() + "\"";  // temp paths need no JSON escapes
     auto ready = analyze("{\"path\":" + path + "}");
     auto archive = ready.Root().Member("result")->Member("summary")->Member("archive");
     REQUIRE(archive);
@@ -789,7 +792,19 @@ TEST_CASE("GUI import takes the APK and data pack out of a game archive") {
     CHECK(std::filesystem::exists(entry / "data/picture/cover.png"));
     std::ifstream settings(entry / "settings.toml");
     const std::string text{std::istreambuf_iterator<char>(settings), {}};
-    CHECK(text.find("external_guest_dir") == std::string::npos);   // /sdcard is the default
+    CHECK(text.find("external_guest_dir") == std::string::npos);  // /sdcard is the default
+
+    const auto imported_count = fixture.store.LoadEntries().size();
+    const auto bad_ready = analyze("{\"path\":\"" + bad.generic_string() + "\"}");
+    REQUIRE(bad_ready.Root().Member("result")->Member("state")->String() == "ready");
+    REQUIRE(
+        Decode(ImportCall(fixture, "library.import", R"({"job":"3","new_instance":true})")).Root().Member("result"));
+    const auto failure = poll("3");
+    const auto failed = failure.Root().Member("result");
+    REQUIRE(failed->Member("state")->String() == "failed");
+    CHECK(failed->Member("message")->String() == "压缩包使用了暂不支持的压缩方法：Reduce1");
+    CHECK_FALSE(failed->Member("progress"));
+    CHECK(fixture.store.LoadEntries().size() == imported_count);
 }
 
 TEST_CASE("GUI import invalid external directory preserves ready analysis for retry") {

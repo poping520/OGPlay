@@ -133,7 +133,7 @@ if(TARGET ogplay AND APPLE)
     # ogplaycore or the staged payload; it is self-contained and runs from any directory.
     set(_ogplay_app "$<TARGET_BUNDLE_DIR:ogplay>")
     set(_ogplay_frameworks
-        "$<TARGET_FILE:ogplaycore>" "$<TARGET_SONAME_FILE:SDL3::SDL3>"
+        "$<TARGET_FILE:ogplaycore>" "$<TARGET_SONAME_FILE:SDL3::SDL3>" "$<TARGET_FILE:ogplay_7z>"
         "${OGPLAY_ANGLE_RUNTIME_DIR}/libEGL.dylib" "${OGPLAY_ANGLE_RUNTIME_DIR}/libGLESv2.dylib")
     if(OGPLAY_FFMPEG_FOUND)
         list(APPEND _ogplay_frameworks "${OGPLAY_FFMPEG_RUNTIME}")
@@ -155,7 +155,7 @@ if(TARGET ogplay AND APPLE)
 elseif(TARGET ogplay)
     install(TARGETS ogplay RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
 endif()
-install(TARGETS ogplaycore ogplay-cli
+install(TARGETS ogplaycore ogplay-cli ogplay_7z
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Runtime
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Development)

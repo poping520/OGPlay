@@ -23,8 +23,8 @@ struct ImportFile final {
 };
 
 struct ImportExtraction final {
-    std::size_t index{};                  // into ImportSource::Files()
-    std::filesystem::path destination;    // must not exist; parent directories are created
+    std::size_t index{};                // into ImportSource::Files()
+    std::filesystem::path destination;  // must not exist; parent directories are created
 };
 
 // Files that can be brought into the library without copying them anywhere first: a game archive, or a host's
@@ -39,9 +39,9 @@ public:
 enum class ImportSourceKind : std::uint8_t { apk, archive, unknown };
 
 // From the file head, never the name: a ZIP with a root AndroidManifest.xml is an APK, any other ZIP (also ZIP64)
-// or a RAR is a game archive.
+// or a RAR or 7z is a game archive.
 [[nodiscard]] OGPLAYCORE_API ImportSourceKind DetectImportSource(const std::filesystem::path& path);
-// Lists a ZIP or RAR archive. Encrypted or multi-volume archives and unsafe member paths are refused.
+// Lists a ZIP, RAR or 7z archive. Encrypted or multi-volume archives and unsafe member paths are refused.
 [[nodiscard]] OGPLAYCORE_API std::unique_ptr<ImportSource> OpenArchive(const std::filesystem::path& path);
 
 // What a game archive holds. Data members are mapped to absolute guest paths under /sdcard; members of no known
@@ -50,13 +50,15 @@ struct ArchiveData final {
     std::size_t index{};
     std::string guest_path;
 };
+
 struct ArchiveExtra final {
     std::string name;
     std::vector<ArchiveData> members;
     std::uint64_t bytes{};
 };
+
 struct ArchivePlan final {
-    std::vector<std::size_t> apks;        // APK candidates, preferred first
+    std::vector<std::size_t> apks;  // APK candidates, preferred first
     std::vector<ArchiveData> data;
     std::vector<ArchiveExtra> extras;
 };
@@ -70,8 +72,8 @@ struct ArchivePlan final {
 // Writes the planned data and chosen extras under destination, laid out relative to ArchiveMount, and returns
 // that mount. Unknown extra names are refused.
 OGPLAYCORE_API std::string ExtractArchiveData(ImportSource& source, const ArchivePlan& plan,
-                                             std::span<const std::string> extras,
-                                             const std::filesystem::path& destination, ImportProgress* progress);
+                                              std::span<const std::string> extras,
+                                              const std::filesystem::path& destination, ImportProgress* progress);
 
 // A private directory under the library root (same volume, so its contents can be moved into an entry) for
 // one import's snapshot and extracted data: <root>/import-staging/work-N, alive while its OS lock is held.
@@ -83,6 +85,7 @@ public:
     ~ImportWorkDirectory();
     ImportWorkDirectory(const ImportWorkDirectory&) = delete;
     ImportWorkDirectory& operator=(const ImportWorkDirectory&) = delete;
+
     [[nodiscard]] const std::filesystem::path& Path() const noexcept { return path_; }
 
 private:

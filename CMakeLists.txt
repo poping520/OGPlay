@@ -102,6 +102,7 @@ function(ogplay_suppress_source_warnings)
     endif()
 endfunction()
 include(cmake/ThirdParty.cmake)
+include(cmake/SevenZip.cmake)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 set(OGPLAY_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -148,7 +149,6 @@ if(WIN32)
         src/hal/windows/host_environment.cpp
         src/hal/windows/host_read_file.cpp
         src/hal/windows/shared_library.cpp
-        src/hal/windows/utf8_locale.cpp
         src/hal/windows/virtual_memory.cpp
         src/hal/windows/window_icon.cpp)
 elseif(APPLE)
@@ -164,7 +164,6 @@ elseif(APPLE)
         src/hal/macos/host_environment.cpp
         src/hal/macos/host_read_file.cpp
         src/hal/macos/shared_library.cpp
-        src/hal/macos/utf8_locale.cpp
         src/hal/macos/virtual_memory.cpp)
 elseif(UNIX)
     target_sources(ogplay_hal PRIVATE src/hal/rgb_surface_storage.cpp)
@@ -181,7 +180,6 @@ elseif(UNIX)
         src/hal/linux/host_environment.cpp
         src/hal/linux/host_read_file.cpp
         src/hal/linux/shared_library.cpp
-        src/hal/linux/utf8_locale.cpp
         src/hal/linux/virtual_memory.cpp)
 else()
     message(FATAL_ERROR "OGPlay has no virtual memory HAL for this host platform")
@@ -600,7 +598,7 @@ add_library(ogplay_library STATIC
     src/frontend/library/external_data.cpp src/frontend/library/data_hint.cpp
     src/frontend/library/running_icon.cpp src/frontend/library/demos.cpp
     src/frontend/library/archive_plan.cpp src/frontend/library/archive_zip.cpp
-    src/frontend/library/archive_rar.cpp src/frontend/library/data_layout.cpp
+    src/frontend/library/archive_7z.cpp src/frontend/library/data_layout.cpp
     src/frontend/library/screen_settings.cpp
     "${OGPLAY_GENERATED_DIR}/ogplay/app/gbk_table.h")
 add_custom_command(
@@ -609,7 +607,7 @@ add_custom_command(
         --output "${OGPLAY_GENERATED_DIR}/ogplay/app/gbk_table.h"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gbk_table.py"
     VERBATIM)
-target_link_libraries(ogplay_library PRIVATE OGPlay::Runtime OGPlay::Session OGPlay::Agent OGPlay::Raster archive_static)
+target_link_libraries(ogplay_library PRIVATE OGPlay::Runtime OGPlay::Session OGPlay::Agent OGPlay::Raster ogplay_7z)
 target_include_directories(ogplay_library PRIVATE "${OGPLAY_GENERATED_DIR}")
 target_include_directories(ogplay_library SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb")
 target_compile_definitions(ogplay_library PRIVATE ogplaycore_EXPORTS)
@@ -801,7 +799,7 @@ elseif(APPLE)
 else()
     set(_ogplay_slim_link_options LINKER:--gc-sections LINKER:-s)
 endif()
-foreach(_ogplay_slim_target IN ITEMS ogplaycore ogplay-cli ogplay SDL3-shared)
+foreach(_ogplay_slim_target IN ITEMS ogplaycore ogplay-cli ogplay SDL3-shared ogplay_7z)
     if(TARGET ${_ogplay_slim_target})
         foreach(_ogplay_slim_option IN LISTS _ogplay_slim_link_options)
             target_link_options(${_ogplay_slim_target} PRIVATE

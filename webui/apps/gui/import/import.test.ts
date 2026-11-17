@@ -27,6 +27,10 @@ describe('APK transfer', () => {
   });
 });
 describe('import progress', () => {
+  it('shows failure in place of unpacking progress', () => {
+    expect(importingStage({ job: '1', state: 'failed', progress: { copied_bytes: 1, total_bytes: 2 } }, true))
+      .toBe('导入失败');
+  });
   it('shows byte progress only once the host reports a data total', () => {
     expect(importingStage({ job: '1', state: 'importing' })).toBe('正在加入游戏库，请勿关闭…');
     expect(importingStage({ job: '1', state: 'importing', progress: { copied_bytes: 0, total_bytes: 0 } })).toBe('正在加入游戏库，请勿关闭…');

@@ -94,7 +94,7 @@ void DescribeDataDirectory(app::JsonWriter& writer, app::JsonWriter::Value resul
 void DescribeFiles(app::JsonWriter& writer, app::JsonWriter::Value result,
                    const std::vector<std::pair<std::string, std::uint64_t>>& files) {
     constexpr std::size_t shown_entries = 8;
-    std::map<std::string, bool> top;   // name -> directory
+    std::map<std::string, bool> top;  // name -> directory
     std::uint64_t bytes{};
     for (const auto& [path, size] : files) {
         const auto slash = path.find('/');
@@ -103,7 +103,8 @@ void DescribeFiles(app::JsonWriter& writer, app::JsonWriter::Value result,
         bytes += size;
     }
     std::vector<std::pair<bool, std::string>> sorted;
-    for (const auto& [name, directory] : top) sorted.emplace_back(!directory, name);
+    for (const auto& [name, directory] : top)
+        sorted.emplace_back(!directory, name);
     std::sort(sorted.begin(), sorted.end());
     const auto entries = writer.Array();
     for (std::size_t index = 0; index < sorted.size() && index < shown_entries; ++index) {
@@ -124,7 +125,8 @@ std::vector<std::pair<std::string, std::uint64_t>> Under(const ImportSource& sou
                                                          std::string_view mount) {
     std::vector<std::pair<std::string, std::uint64_t>> files;
     for (const auto& item : plan.data)
-        if (item.guest_path.size() > mount.size() && item.guest_path.starts_with(mount) && item.guest_path[mount.size()] == '/')
+        if (item.guest_path.size() > mount.size() && item.guest_path.starts_with(mount) &&
+            item.guest_path[mount.size()] == '/')
             files.emplace_back(item.guest_path.substr(mount.size() + 1), source.Files()[item.index].size);
     return files;
 }
@@ -147,7 +149,7 @@ struct GuiRpcService::ImportState {
     std::uint64_t serial{};
     std::string job, state = "idle", failure, installed;
     std::optional<LibraryErrorCode> failure_code;
-    std::unique_ptr<ImportWorkDirectory> work;   // the job's snapshot and extracted data, swept if the process dies
+    std::unique_ptr<ImportWorkDirectory> work;  // the job's snapshot and extracted data, swept if the process dies
     std::filesystem::path directory;
     std::uint64_t expected{}, received{};
     std::optional<ApkImportAnalysis> analysis;
@@ -299,7 +301,8 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
         const auto tree = host_.open_tree ? host_.open_tree(path) : nullptr;
         if (tree) {
             std::vector<std::pair<std::string, std::uint64_t>> files;
-            for (const auto& file : tree->Files()) files.emplace_back(file.path, file.size);
+            for (const auto& file : tree->Files())
+                files.emplace_back(file.path, file.size);
             writer.AddString(result, "path", host_.label ? host_.label(path) : Text(path));
             DescribeFiles(writer, result, files);
         } else {
@@ -315,7 +318,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
     } else {
         if (!host_.analyze || !host_.timestamp) throw std::runtime_error("导入服务不可用。");
         if (method == "library.analyze") {
-            // An APK, or a game archive (ZIP/RAR) holding one: told apart by content, not by name.
+            // An APK, or a game archive (ZIP/RAR/7z) holding one: told apart by content, not by name.
             const auto source = Path(String(params, "path"));
             std::optional<std::string> inner;
             if (params.Member("apk")) inner = String(params, "apk");
@@ -325,7 +328,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 Analyzed result;
                 const auto kind = DetectImportSource(source);
                 if (kind == ImportSourceKind::unknown)
-                    throw std::invalid_argument("请选择 APK，或内含 APK 的 ZIP/RAR 压缩包。");
+                    throw std::invalid_argument("请选择 APK，或内含 APK 的 ZIP/RAR/7z 压缩包。");
                 if (kind == ImportSourceKind::apk) {
                     if (inner) throw std::invalid_argument("apk applies to an archive");
                     const auto size = ImportFileSize(source);
@@ -422,8 +425,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 std::optional<std::filesystem::path> external;
                 if (params.Member("external_dir")) external = Path(String(params, "external_dir"));
                 const bool archive_data = job.archive && !ArchiveMount(job.plan, extras).empty();
-                if (archive_data && external)
-                    throw std::invalid_argument("压缩包里已有数据包，不能另选数据包目录。");
+                if (archive_data && external) throw std::invalid_argument("压缩包里已有数据包，不能另选数据包目录。");
                 auto mode = ExternalDataMode::copy;
                 if (params.Member("external_mode")) {
                     const auto text = String(params, "external_mode");
@@ -443,41 +445,42 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 // A plain request is checked here, so a bad directory or mount leaves the analysis ready to retry.
                 std::optional<LibraryImport> ready;
                 if (!archive_data && !tree)
-                    ready = BuildLibraryImport(*job.analysis, external, host_.timestamp(), guest.value_or("/sdcard"), mode);
+                    ready =
+                        BuildLibraryImport(*job.analysis, external, host_.timestamp(), guest.value_or("/sdcard"), mode);
                 else if (guest)
                     static_cast<void>(BuildLibraryImport(*job.analysis, std::nullopt, host_.timestamp(), *guest));
                 auto store = store_;
                 job.progress = std::make_shared<ImportProgress>();
-                job.committing = std::async(std::launch::async, [store, ready, analysis = *job.analysis, external, mode, guest,
-                                                                 archive = archive_data ? job.archive : nullptr,
-                                                                 plan = job.plan, extras, tree,
-                                                                 data = job.directory / "data", timestamp = host_.timestamp(),
-                                                                 progress = job.progress]() mutable {
-                    if (ready) return store.Import(*ready, true, progress.get());
-                    auto source = external;
-                    auto chosen_mode = mode;
-                    auto mount = guest.value_or("/sdcard");
-                    if (archive) {
-                        const auto planned = ExtractArchiveData(*archive, plan, extras, data, progress.get());
-                        if (!guest) mount = planned;
-                        source = data;
-                        chosen_mode = ExternalDataMode::move;
-                    } else if (tree) {
-                        std::vector<ImportExtraction> work;
-                        std::uint64_t total{};
-                        for (std::size_t index = 0; index < tree->Files().size(); ++index) {
-                            work.push_back({index, data / ImportFilePath(tree->Files()[index].path)});
-                            total += tree->Files()[index].size;
+                job.committing =
+                    std::async(std::launch::async, [store, ready, analysis = *job.analysis, external, mode, guest,
+                                                    archive = archive_data ? job.archive : nullptr, plan = job.plan,
+                                                    extras, tree, data = job.directory / "data",
+                                                    timestamp = host_.timestamp(), progress = job.progress]() mutable {
+                        if (ready) return store.Import(*ready, true, progress.get());
+                        auto source = external;
+                        auto chosen_mode = mode;
+                        auto mount = guest.value_or("/sdcard");
+                        if (archive) {
+                            const auto planned = ExtractArchiveData(*archive, plan, extras, data, progress.get());
+                            if (!guest) mount = planned;
+                            source = data;
+                            chosen_mode = ExternalDataMode::move;
+                        } else if (tree) {
+                            std::vector<ImportExtraction> work;
+                            std::uint64_t total{};
+                            for (std::size_t index = 0; index < tree->Files().size(); ++index) {
+                                work.push_back({index, data / ImportFilePath(tree->Files()[index].path)});
+                                total += tree->Files()[index].size;
+                            }
+                            std::filesystem::create_directories(data);
+                            progress->total_bytes = total;
+                            tree->Extract(work, progress.get());
+                            source = data;
+                            chosen_mode = ExternalDataMode::move;
                         }
-                        std::filesystem::create_directories(data);
-                        progress->total_bytes = total;
-                        tree->Extract(work, progress.get());
-                        source = data;
-                        chosen_mode = ExternalDataMode::move;
-                    }
-                    const auto request = BuildLibraryImport(analysis, source, timestamp, mount, chosen_mode);
-                    return store.Import(request, true, progress.get());
-                });
+                        const auto request = BuildLibraryImport(analysis, source, timestamp, mount, chosen_mode);
+                        return store.Import(request, true, progress.get());
+                    });
                 job.state = "importing";
             }
         }

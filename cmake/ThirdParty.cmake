@@ -45,28 +45,6 @@ if(NOT EXISTS "${PROJECT_SOURCE_DIR}/third_party/ext-boost/boost/url/encode.hpp"
         "Run: git submodule update --init --recursive")
 endif()
 
-ogplay_require_submodule("third_party/libarchive" "libarchive")
-
-# libarchive (BSD-2) reads RAR game archives for the library import; ZIP stays on OGPlay's own reader. Only the
-# static library is built, without system codecs, crypto, iconv or the bundled tools, so every host behaves alike.
-foreach(_libarchive_option
-        ENABLE_MBEDTLS ENABLE_NETTLE ENABLE_OPENSSL ENABLE_LIBB2 ENABLE_LZ4 ENABLE_LZO ENABLE_LZMA ENABLE_ZSTD
-        ENABLE_ZLIB ENABLE_BZip2 ENABLE_LIBXML2 ENABLE_EXPAT ENABLE_WIN32_XMLLITE ENABLE_PCREPOSIX ENABLE_PCRE2POSIX
-        ENABLE_LIBGCC ENABLE_CNG ENABLE_TAR ENABLE_CPIO ENABLE_CAT ENABLE_UNZIP ENABLE_XATTR ENABLE_ACL ENABLE_ICONV
-        ENABLE_TEST ENABLE_COVERAGE ENABLE_INSTALL)
-    set(${_libarchive_option} OFF CACHE BOOL "" FORCE)
-endforeach()
-# libarchive declares BUILD_SHARED_LIBS ON by default, which would turn every untyped library here (Dynarmic)
-# shared; the project builds those static.
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-add_subdirectory("${PROJECT_SOURCE_DIR}/third_party/libarchive"
-    "${CMAKE_BINARY_DIR}/_deps/libarchive-build" EXCLUDE_FROM_ALL)
-if(TARGET archive_static)
-    set_target_properties(archive_static PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    target_include_directories(archive_static INTERFACE "${PROJECT_SOURCE_DIR}/third_party/libarchive/libarchive")
-    target_compile_definitions(archive_static INTERFACE LIBARCHIVE_STATIC)
-endif()
-
 if(OGPLAY_ENABLE_SDL3)
     set(SDL_SHARED ON CACHE BOOL "" FORCE)
     set(SDL_STATIC OFF CACHE BOOL "" FORCE)

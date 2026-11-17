@@ -180,9 +180,9 @@ public:
         panel.message = Text(title);
         panel.title = Text(title);
         if (!directory) {
-            // APKs and the game archives (ZIP/RAR, Muzhiwan .gpk) the library imports.
+            // APKs and the game archives (ZIP/RAR/7z, .gpk) the library imports.
             NSMutableArray<UTType*>* types = [NSMutableArray array];
-            for (NSString* extension in @[@"apk", @"zip", @"rar", @"gpk"])
+            for (NSString* extension in @[@"apk", @"zip", @"rar", @"7z", @"gpk"])
                 if (UTType* type = [UTType typeWithFilenameExtension:extension]) [types addObject:type];
             if (types.count) panel.allowedContentTypes = types;
         }

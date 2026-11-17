@@ -119,15 +119,15 @@ public:
     void Initialize() {
         view_ = webview_create(0, &window_);
         if (!view_) {
-            const auto answer = MessageBoxW(
-                window_,
-                L"OGPlay could not initialize Microsoft Edge WebView2.\n\n"
-                L"If the WebView2 Runtime is missing, install the Evergreen Runtime and restart OGPlay.\n\n"
-                L"Open the official Microsoft download page?",
-                L"OGPlay - WebView2 Runtime", MB_YESNO | MB_ICONERROR | MB_DEFBUTTON2);
+            const auto answer =
+                MessageBoxW(window_,
+                            L"OGPlay could not initialize Microsoft Edge WebView2.\n\n"
+                            L"If the WebView2 Runtime is missing, install the Evergreen Runtime and restart OGPlay.\n\n"
+                            L"Open the official Microsoft download page?",
+                            L"OGPlay - WebView2 Runtime", MB_YESNO | MB_ICONERROR | MB_DEFBUTTON2);
             if (answer == IDYES)
-                ShellExecuteW(window_, L"open", L"https://developer.microsoft.com/microsoft-edge/webview2/",
-                              nullptr, nullptr, SW_SHOWNORMAL);
+                ShellExecuteW(window_, L"open", L"https://developer.microsoft.com/microsoft-edge/webview2/", nullptr,
+                              nullptr, SW_SHOWNORMAL);
             throw std::runtime_error("Cannot create WebView2; install Microsoft Edge WebView2 Runtime");
         }
         SetApplicationIcon(view_);
@@ -475,7 +475,7 @@ public:
                 Check(dialog->SetOptions(flags | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST |
                                          (directory ? FOS_PICKFOLDERS : FOS_FILEMUSTEXIST)));
                 if (!directory) {
-                    const COMDLG_FILTERSPEC filters[]{{L"APK / ZIP / RAR", L"*.apk;*.zip;*.rar;*.gpk"}};
+                    const COMDLG_FILTERSPEC filters[]{{L"APK / ZIP / RAR / 7z", L"*.apk;*.zip;*.rar;*.7z;*.gpk"}};
                     Check(dialog->SetFileTypes(1, filters));
                 }
                 Check(dialog->SetTitle(title.c_str()));

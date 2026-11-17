@@ -25,10 +25,12 @@ public:
                 std::to_string(sequence.fetch_add(1)));
         std::filesystem::create_directories(path);
     }
+
     ~TemporaryDirectory() {
         std::error_code error;
         static_cast<void>(std::filesystem::remove_all(path, error));
     }
+
     std::filesystem::path path;
 };
 
@@ -39,7 +41,8 @@ std::string Read(const std::filesystem::path& path) {
 
 std::vector<ImportFile> Files(std::initializer_list<const char*> paths) {
     std::vector<ImportFile> files;
-    for (const auto* path : paths) files.push_back({*NormalizeArchivePath(path), 1});
+    for (const auto* path : paths)
+        files.push_back({*NormalizeArchivePath(path), 1});
     return files;
 }
 
@@ -57,7 +60,8 @@ TEST_CASE("archive plan maps pack layouts to sdcard paths") {
         REQUIRE(plan.apks.size() == 1);
         CHECK(files[plan.apks[0]].path == "Game_v1.5.apk");
         CHECK(plan.data.size() == 1);
-        CHECK(GuestOf(plan, files, "Android/obb/com.a.b/main.72.com.a.b.obb") == "/sdcard/Android/obb/com.a.b/main.72.com.a.b.obb");
+        CHECK(GuestOf(plan, files, "Android/obb/com.a.b/main.72.com.a.b.obb") ==
+              "/sdcard/Android/obb/com.a.b/main.72.com.a.b.obb");
         CHECK(plan.extras.empty());
         CHECK(ArchiveMount(plan, {}) == "/sdcard/Android/obb/com.a.b");
     }
@@ -160,4 +164,51 @@ TEST_CASE("encrypted zip members and escaping paths are refused") {
     const auto escaping = directory.path / "escape.zip";
     WriteZip(escaping, {{"../evil.apk", "x"}});
     CHECK_THROWS_AS(static_cast<void>(OpenArchive(escaping)), LibraryError);
+    const auto control = directory.path / "control.zip";
+    WriteZip(control, {{std::string("test.apk\0", 9), "x"}});
+    CHECK_THROWS_AS(static_cast<void>(OpenArchive(control)), LibraryError);
+}
+
+TEST_CASE("archive ZIP Unicode Path overrides legacy names") {
+    TemporaryDirectory directory;
+    const auto pack = directory.path / "unicode.zip";
+    WriteZip(pack, {{"legacy.apk", "unicode", false, 0, 0, "\xE6\xB8\xB8\xE6\x88\x8F.apk"},
+                    {"\xE5\xAD\x98\xE6\xA1\xA3.txt", "utf-8", false, 0x800}});
+    const auto archive = OpenArchive(pack);
+    REQUIRE(archive->Files().size() == 2);
+    CHECK(archive->Files()[0].path == "\xE6\xB8\xB8\xE6\x88\x8F.apk");
+    CHECK(archive->Files()[1].path == "\xE5\xAD\x98\xE6\xA1\xA3.txt");
+    const ImportExtraction extraction{0, directory.path / "out.apk"};
+    archive->Extract(std::span(&extraction, 1), nullptr);
+    CHECK(Read(extraction.destination) == "unicode");
+}
+
+TEST_CASE("archive 7z streams selected files from a solid LZMA2 and BCJ2 block") {
+    const auto path = std::filesystem::path(OGPLAY_SOURCE_DIR) / "tests/fixtures/archive_import/solid.7z";
+    CHECK(DetectImportSource(path) == ImportSourceKind::archive);
+    auto archive = OpenArchive(path);
+    const auto& files = archive->Files();
+    REQUIRE(files.size() == 3);
+    CHECK(files[2].path == "\xE5\xAD\x98\xE6\xA1\xA3.txt");
+    TemporaryDirectory directory;
+    // Select two files out of order and repeat the call with the last file alone.
+    const std::vector<ImportExtraction> selections{{2, directory.path / "save"}, {0, directory.path / "data"}};
+    ImportProgress progress;
+    archive->Extract(selections, &progress);
+    std::string expected;
+    for (int i = 0; i < 257; ++i)
+        expected.append("\xE8\x01\0\0\0\xE9\x02\0\0\0", 10);
+    CHECK(Read(directory.path / "data") == expected);
+    CHECK(Read(directory.path / "save") == "non-ASCII name\n");
+    CHECK(progress.copied_bytes == 2585);
+    const ImportExtraction apk{1, directory.path / "apk"};
+    archive->Extract(std::span(&apk, 1), nullptr);
+    CHECK(Read(apk.destination) == "fixture APK bytes");
+}
+
+TEST_CASE("archive 7z refuses encrypted entries and encrypted headers") {
+    const auto fixtures = std::filesystem::path(OGPLAY_SOURCE_DIR) / "tests/fixtures/archive_import";
+    for (const auto name : {"encrypted.7z", "encrypted-header.7z"})
+        CHECK_THROWS_WITH_AS(static_cast<void>(OpenArchive(fixtures / name)), "暂不支持加密的压缩包，请先解压。",
+                             LibraryError);
 }

@@ -1,0 +1,52 @@
+# 2026-11-17, 7-Zip 26.06 (d3296e39e1f1f92c7b41c0c3848e65640428d42d).
+# Expose stored member names and encoding metadata by extraction index.
+--- a/CPP/7zip/Archive/Rar/RarHandler.cpp
++++ b/CPP/7zip/Archive/Rar/RarHandler.cpp
+@@ -346,4 +346,5 @@
+ {
+   item.UnicodeName.Empty();
++  item.OgplayRawName.Free();
+   if (nameSize > 0)
+   {
+@@ -351,4 +352,6 @@
+     for (i = 0; i < nameSize && p[i] != 0; i++);
+     item.Name.SetFrom((const char *)p, i);
++    if (i != nameSize && !item.HasUnicodeName())
++      item.OgplayRawName.CopyFrom(p, nameSize);
+ 
+     if (item.HasUnicodeName())
+@@ -993,5 +996,20 @@
+   switch (propID)
+   {
++    case kpidUserDefined: // Raw path bytes (binary BSTR).
++    {
++      const CByteBuffer &raw = item.OgplayRawName;
++      value->bstrVal = raw.Size()
++          ? ::SysAllocStringByteLen((const char *)(const Byte *)raw, (UINT)raw.Size())
++          : ::SysAllocStringByteLen(item.Name, item.Name.Len());
++      if (!value->bstrVal)
++        return E_OUTOFMEMORY;
++      value->vt = VT_BSTR;
++      return S_OK;
++    }
++    case kpidUserDefined + 2:
++      if (item.HasUnicodeName() && !item.UnicodeName.IsEmpty())
++        prop = item.UnicodeName;
++      break;
+     case kpidPath:
+     {
+       /*
+--- a/CPP/7zip/Archive/Rar/RarItem.h
++++ b/CPP/7zip/Archive/Rar/RarItem.h
+@@ -4,4 +4,5 @@
+ #define ZIP7_INC_ARCHIVE_RAR_ITEM_H
+ 
++#include "../../../Common/MyBuffer.h"
+ #include "../../../Common/StringConvert.h"
+ 
+@@ -39,4 +40,5 @@
+ 
+   AString Name;
++  CByteBuffer OgplayRawName; // Non-Unicode name containing NULs.
+   UString UnicodeName;
+ 

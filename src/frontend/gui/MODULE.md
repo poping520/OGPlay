@@ -28,7 +28,7 @@ ogplay_desktop_app，Android 外壳见 `frontend/android`。
   宿主上下文、进程、目录打开、分析、选择器与 UTC 时间通过显式回调注入。
 - `library.analyze {path, apk?}` / `library.upload.begin/chunk/finish`：原生路径或拖放字节进入独立快照，
   单体 APK 上限 1 GiB；分块 base64 最大 256 KiB，严格顺序/总长度检查（拖放只收 APK）。`analyze` 按文件头区分 APK 与
-  游戏压缩包（ZIP/RAR，`ogplay/app/archive_import.h`）：压缩包取首选或 `apk` 指定的 APK 解出分析，摘要多一个
+  游戏压缩包（ZIP/RAR/7z，`ogplay/app/archive_import.h`）：压缩包取首选或 `apk` 指定的 APK 解出分析，摘要多一个
   `archive {apks, apk, data{guest_dir, path, entries…, sdcard{…}} | null, extras[{name, files, bytes}]}`，APK 为 `archive: null`。
   任务快照与解出的数据放在库根 `import-staging/work-N`（持锁，下次导入清理无持有者的残留及旧版 `.gui-import-*`）。
 - `library.job.poll/cancel {job}`：每服务仅一个活动导入任务；后台只读分析，失败可查询。

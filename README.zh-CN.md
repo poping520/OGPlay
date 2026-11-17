@@ -67,7 +67,7 @@ OGPlay 当前主要适配 2010 - 2016 期间 Android 老游戏。
 
 目前已有十几款游戏可以运行，测试还不全面，其他游戏也可能兼容，欢迎尝试。同一游戏的不同版本也可能表现不同。
 
-具体兼容情况：[兼容情况](docs/COMPATIBILITY.md)
+具体兼容情况：[兼容列表](https://poping520.github.io/ogplay-site/compat/)
 
 ## 工作原理
 

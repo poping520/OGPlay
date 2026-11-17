@@ -171,6 +171,9 @@ public:
     virtual void Close() noexcept = 0;
     // Reveal an open, hidden window after its initial appearance has been configured.
     virtual void Show() = 0;
+    // Take an open window off screen while the guest finishes shutting down; Close still releases it.
+    // False when the window is not open or the host cannot hide it.
+    [[nodiscard]] virtual bool Hide() noexcept = 0;
     virtual void SetTitle(std::string_view title) = 0;
     // Window icon from one picture at one or more sizes, the largest first. macOS shows it as the process's
     // Dock icon (every size an image representation); Windows sets the title-bar and taskbar icons from the

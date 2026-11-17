@@ -75,6 +75,8 @@ struct File final {
     // Stable for the node lifetime. Paths may be removed or rebound; caches
     // and leases must never use a pathname as content identity.
     std::uint64_t node_id{};
+    // Guarded by the metadata lock. Retained after unlink for open descriptors.
+    std::string canonical_path;
     // Accessed only under the VFS metadata lock; weak tokens do not pin nodes.
     std::vector<std::weak_ptr<const std::function<void()>>> mapping_readers;
     std::shared_ptr<VfsGeneratedFileState> generated;
@@ -197,6 +199,9 @@ public:
     void Fchmod(std::int32_t fd, std::uint32_t mode);
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
     [[nodiscard]] GuestFileSystemStats StatVfs(std::string_view path) const;
+    [[nodiscard]] GuestFileSystemStats StatVfs(std::int32_t descriptor) const;
+    [[nodiscard]] GuestFileSystemStats VolumeStatsLocked(std::string_view path) const;
+    [[nodiscard]] GuestFileSystemStats SandboxStatsLocked(std::uint32_t filesystem_type) const;
     [[nodiscard]] std::string ResolveDataPathLocked(std::string_view path) const;
     [[nodiscard]] VfsFileInfo StatLocked(const std::string& normalized) const;
     [[nodiscard]] std::vector<VfsDirectoryEntry> ListDirectory(std::string_view path) const;

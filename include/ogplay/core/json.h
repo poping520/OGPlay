@@ -66,10 +66,9 @@ public:
     JsonDocument(const JsonDocument&) = delete;
     JsonDocument& operator=(const JsonDocument&) = delete;
 
-    [[nodiscard]] static std::optional<JsonDocument> ParseStrict(
-        std::string_view text, JsonParseError& error,
-        std::size_t maximum_bytes = kDefaultMaximumBytes,
-        std::size_t maximum_depth = kDefaultMaximumDepth);
+    [[nodiscard]] static std::optional<JsonDocument> ParseStrict(std::string_view text, JsonParseError& error,
+                                                                 std::size_t maximum_bytes = kDefaultMaximumBytes,
+                                                                 std::size_t maximum_depth = kDefaultMaximumDepth);
 
     [[nodiscard]] JsonValue Root() const noexcept;
 
@@ -117,7 +116,8 @@ public:
     void AddString(Value object, std::string_view name, std::string_view value);
     void Append(Value array, Value value);
 
-    [[nodiscard]] std::string Serialize(Value root);
+    // pretty: two-space indentation instead of a single line.
+    [[nodiscard]] std::string Serialize(Value root, bool pretty = false);
 
 private:
     void* document_ = nullptr;

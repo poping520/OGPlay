@@ -5,7 +5,7 @@ ogplaycore 的 C++ 外观装配边界，公开头为 include/ogplay/app；只导
 删除旧 C main。标准异常可跨同构建 C++ 边界，SDL 的 C 回调捕获异常，回到外观后重新抛出。
 
 RunGame 校验值、持有库运行租约、配置日志并自行执行 SDL bootstrap；游戏运行宿主交给 game，库领域交给 library。
-AgentConsole 封装账本/session/agent 生命周期，提供 Request/HandleJsonRpc；JsonRpcDispatcher 只复用 envelope 机制，协议回调归 EXE。
+JsonRpcDispatcher 只复用 agent JSON-RPC 的 envelope 机制，协议回调归 EXE。
 诊断触发、bundled payload、默认库根、Clock 单调计时/UTC、CSPRNG 控制令牌与日志/JSON/编码外观均不暴露内核头。
 JSON 值为所属文档的借用视图，回调结束/文档销毁后失效；序列化保持严格解析、重复键/大小/深度边界。
 不拥有 CLI usage/stdio 循环、桌面模式分派、WebView、GUI 视图或子进程管理；加载共享库时不创建应用资源。

@@ -12,6 +12,29 @@
 
 namespace ogplay::runtime {
 
+namespace {
+
+constexpr std::uint64_t kFilesystemBlockSize = 4096;
+constexpr std::uint32_t kExt4Magic = 0xEF53;
+constexpr std::uint64_t kReadOnlyFilesystem = 1;
+
+[[nodiscard]] constexpr std::uint64_t FilesystemId(std::string_view name) {
+    std::uint64_t id = UINT64_C(14695981039346656037);
+    for (const auto c : name) {
+        id ^= static_cast<unsigned char>(c);
+        id *= UINT64_C(1099511628211);
+    }
+    id &= static_cast<std::uint64_t>(INT64_MAX);
+    return id == 0 ? 1 : id;
+}
+
+[[nodiscard]] constexpr GuestFileSystemStats SyntheticVolumeStats(std::string_view name, std::uint32_t type,
+                                                                  std::uint64_t flags = 0) {
+    return {{kFilesystemBlockSize, kFilesystemBlockSize, 0, 0, 0, 0, 0, 0, FilesystemId(name), flags, 255}, type};
+}
+
+}  // namespace
+
 void VirtualFileSystem::Impl::SetApplicationOwner(std::string_view data_root, std::uint32_t uid) {
     std::scoped_lock lock(mutex_);
     application_data_root_ = NormalizePath(data_root);
@@ -121,14 +144,50 @@ VfsFileInfo VirtualFileSystem::Impl::StatLocked(const std::string& normalized) c
 GuestFileSystemStats VirtualFileSystem::Impl::StatVfs(std::string_view path) const {
     std::scoped_lock lock(mutex_);
     const auto normalized = ResolveDataPathLocked(path);
-    const auto info = StatLocked(normalized);
-    // Container directories such as /data and /data/data describe the
-    // single attached quota volume too; this does not grant write access.
-    const bool ancestor =
-        info.is_directory && normalized != "/" &&
-        std::ranges::any_of(writable_roots_, [&](const auto& root) { return root.starts_with(normalized + "/"); });
-    if (!sandbox_ || (!IsWritableNamespaceLocked(normalized) && !ancestor))
-        throw VfsError(95, "filesystem statistics require the attached sandbox volume");
+    static_cast<void>(StatLocked(normalized));
+    return VolumeStatsLocked(normalized);
+}
+
+GuestFileSystemStats VirtualFileSystem::Impl::StatVfs(std::int32_t descriptor) const {
+    std::scoped_lock lock(mutex_);
+    const auto open = FindDescriptor(descriptor);
+    if (open->pipe) return SyntheticVolumeStats("pipefs", 0x50495045);
+    return VolumeStatsLocked(open->directory ? open->directory->path : open->file->canonical_path);
+}
+
+GuestFileSystemStats VirtualFileSystem::Impl::VolumeStatsLocked(std::string_view path) const {
+    const auto under = [path](std::string_view root) {
+        return path == root || (path.starts_with(root) && path[root.size()] == '/');
+    };
+    if (under("/data")) return SandboxStatsLocked(kExt4Magic);
+    if (under("/sdcard")) return SandboxStatsLocked(0x65735546);
+    if (under("/proc")) return SyntheticVolumeStats("proc", 0x9FA0);
+    if (under("/dev")) return SyntheticVolumeStats("dev", 0x01021994);
+    if (!under("/system")) return SyntheticVolumeStats("rootfs", 0x858458F6, kReadOnlyFilesystem);
+
+    auto stats = SyntheticVolumeStats("system", kExt4Magic, kReadOnlyFilesystem);
+    std::uint64_t bytes = 0;
+    std::uint64_t nodes = 0;
+    for (auto it = files_.lower_bound("/system"); it != files_.end() && it->first.starts_with("/system"); ++it) {
+        const auto& [name, file] = *it;
+        if ((name != "/system" && !name.starts_with("/system/")) || tombstones_.contains(name) ||
+            (file->generated && !file->generated->active) ||
+            (file->character_device && !file->character_device->active))
+            continue;
+        if (file->size > UINT64_MAX - bytes) throw VfsError(75, "system volume size exceeds statistics range");
+        bytes += file->size;
+        ++nodes;
+    }
+    for (auto it = directories_.lower_bound("/system"); it != directories_.end() && it->starts_with("/system"); ++it) {
+        if ((*it == "/system" || it->starts_with("/system/")) && !tombstones_.contains(*it)) ++nodes;
+    }
+    stats.values[2] = bytes / kFilesystemBlockSize + (bytes % kFilesystemBlockSize != 0);
+    stats.values[5] = nodes;
+    return stats;
+}
+
+GuestFileSystemStats VirtualFileSystem::Impl::SandboxStatsLocked(std::uint32_t filesystem_type) const {
+    if (!sandbox_) throw VfsError(95, "filesystem statistics require the attached sandbox volume");
     const auto quota = sandbox_->QuotaBytes();
     if (quota > static_cast<std::uint64_t>(INT64_MAX) || sandbox_->UsedBytes() > quota)
         throw VfsError(75, "sandbox quota exceeds supported filesystem statistics range");
@@ -147,20 +206,15 @@ GuestFileSystemStats VirtualFileSystem::Impl::StatVfs(std::string_view path) con
         if (file->dirty && !file->overlay_path.empty()) entries.insert(file->overlay_path);
     const auto entry_quota = sandbox_->EntryQuota();
     const auto free_entries = entry_quota > entries.size() ? entry_quota - entries.size() : 0;
-    std::uint64_t fsid = UINT64_C(14695981039346656037);
-    for (const auto c : sandbox_->InstallationId() + "/" + sandbox_->Package()) {
-        fsid ^= static_cast<unsigned char>(c);
-        fsid *= UINT64_C(1099511628211);
-    }
-    fsid &= static_cast<std::uint64_t>(INT64_MAX);
-    if (!fsid) fsid = 1;
-    constexpr std::uint64_t block = 4096;
+    const auto fsid = FilesystemId(sandbox_->InstallationId() + "/" + sandbox_->Package());
+    constexpr auto block = kFilesystemBlockSize;
     const auto free = (quota - static_cast<std::uint64_t>(used)) / block;
     // Explicit virtual quota volume: no reserved blocks or mount-option
     // flags. namemax is the existing encoded backing-name upper bound;
     // escaping/tombstone overhead can reject a guest name sooner.
     return {{block, block, quota / block, free, free, entry_quota, free_entries, free_entries, fsid, 0,
-             SandboxStore::MaximumEncodedNameBytes()}};
+             SandboxStore::MaximumEncodedNameBytes()},
+            filesystem_type};
 }
 
 std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ListDirectory(const std::string_view path) const {
@@ -522,6 +576,7 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from, const std::str
     RejectMappedMutationLocked(*file);
     if (const auto replaced = files_.find(target); replaced != files_.end())
         RejectMappedMutationLocked(*replaced->second);
+    auto canonical_target = target;
     files_.erase(found);
     if (const auto replaced = files_.find(target); replaced != files_.end() && replaced->second != file) {
         // The node being replaced may live on through open descriptors,
@@ -531,6 +586,7 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from, const std::str
         replaced->second->overlay_path.clear();
     }
     files_.insert_or_assign(target, file);
+    file->canonical_path = std::move(canonical_target);
     for (const auto& [fd, open] : descriptors_) {
         static_cast<void>(fd);
         if (open->file == file) open->owner_id = OwnerLocked(target);
@@ -682,6 +738,7 @@ void VirtualFileSystem::Impl::AttachSandbox(SandboxStore& store, const std::span
         if (!entry.is_directory && !entry.is_tombstone) {
             auto file = std::make_shared<File>();
             file->node_id = next_node_id_++;
+            file->canonical_path = normalized;
             file->size = entry.size;
             file->writable = true;
             file->source = VfsSource::sandbox;

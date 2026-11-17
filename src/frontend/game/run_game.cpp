@@ -1206,6 +1206,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         write_survey();
         logger.Write(core::LogLevel::info, "frontend.run_apk", "stopping Activity lifecycle",
                      {.frame = driver.state().frame}, {}, kUnrestrictedLog);
+        // Guest pause/stop/destroy callbacks may take seconds; the window would sit frozen meanwhile.
+        if (!failure && !window->Hide())
+            logger.Write(core::LogLevel::warn, "frontend.run_apk", "window stays visible during shutdown", {}, {},
+                         kUnrestrictedLog);
         try {
             static_cast<void>(driver.stop(failure ? session::DexProcessStopReason::runtime_failure
                                                   : session::DexProcessStopReason::host_shutdown));

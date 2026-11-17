@@ -30,7 +30,7 @@
 
 ## 用户与工具说明
 
-- [项目说明](../README.zh-CN.md)、[兼容性边界](COMPATIBILITY.md)
+- [项目说明](../README.zh-CN.md)、[兼容列表](https://poping520.github.io/ogplay-site/compat/)（[ogplay-site](https://github.com/poping520/ogplay-site) 仓库维护）
 - [第三方声明](../THIRD_PARTY_NOTICES.md)
 - [工具入口](../tools/README.md)、[场景说明](../tests/scenarios/README.md)
 

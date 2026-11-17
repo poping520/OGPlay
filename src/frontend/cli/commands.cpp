@@ -1,14 +1,13 @@
 #include <cstdio>
 #include <exception>
 #include <filesystem>
-#include <iostream>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 
-#include "ogplay/app/agent.h"
+#include "ogplay/app/json.h"
 #include "ogplay/app/host.h"
 #include "ogplay/app/diagnostics.h"
 #include "ogplay/app/dex_run.h"
@@ -28,31 +27,40 @@ std::filesystem::path Utf8Path(std::string_view text) {
     return std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text.data()), text.size()));
 }
 
-constexpr std::string_view kSynopsis =
-    "usage: ogplay-cli <command> [arguments]\n"
-    "\n"
-    "Commands:\n"
+constexpr std::string_view kDexvmHelp =
     "  dexvm dump-surface [--framework <dir>]  Export linked platform JSON\n"
     "  dexvm run-dex <dex|jar> [--class <name>] [--backend switch|threaded] [--native-lib-dir <dir>]\n"
     "        [--enable-assertions] [--merge-console] [--ledger-json <file>] [-- args...]\n"
     "                                Run a standalone main like dalvikvm;\n"
-    "                                exit 0/1(uncaught)/System.exit, 70 on VM error\n"
-    "  run-apk <apk> [options]       Run an APK directly\n"
-    "  library [--library-root <dir>] <subcommand>\n"
-    "                                Manage the game library\n"
-    "  diag snapshot --pid <pid> [--diag-dir <dir>]\n"
-    "                                Request a snapshot from a running game\n"
-    "  agent <method>                Send one agent request, print the reply\n"
-    "  agent-stdio                   Serve JSON-RPC over stdin/stdout\n"
-    "  --version                     Print the version\n"
-    "  -h, --help                    Show the full help\n";
+    "                                exit 0/1(uncaught)/System.exit, 70 on VM error\n";
 
-constexpr std::string_view kDetails =
-    "\n"
+constexpr std::string_view kDiagHelp = "  diag snapshot --pid <pid> [--diag-dir <dir>] [--human|-h]\n"
+                                       "                                Request a snapshot from a running game;\n"
+                                       "                                prints one JSON line\n";
+
+std::string Synopsis() {
+    return std::string("usage: ogplay-cli <command> [arguments]\n"
+                       "\n"
+                       "Commands:\n") +
+           std::string(kDexvmHelp) +
+           "  run-apk <apk> [options]       Run an APK directly\n"
+           "  library [--library-root <dir>] <subcommand> [--human|-h]\n"
+           "                                Manage the game library\n" +
+           std::string(kDiagHelp) +
+           "  --version                     Print the version\n"
+           "  -h, --help                    Show the full help; <command> --help shows one command\n";
+}
+
+constexpr std::string_view kLibraryHelp =
     "Library subcommands:\n"
+    "  Output is one JSON line; --human or -h anywhere after `library` indents it.\n"
+    "  <installation> is an installation id, or a package that names exactly one installation.\n"
     "  list [--filter all|attention|launchable]\n"
-    "                                List installations with their last run;\n"
-    "                                attention: entry problems or a failed last run\n"
+    "                                Summarize installations: id, package, name,\n"
+    "                                version, status (ready|running|damaged|\n"
+    "                                data_missing|last_run_failed); attention: entry\n"
+    "                                problems or a failed last run\n"
+    "  show <installation>           Every field of one installation, with its last run\n"
     "  inspect <apk>                 Inspect an APK without importing it\n"
     "  import <apk> [--external-dir <dir> [--link-external]] [--new-instance]\n"
     "                                Import an APK; the data directory is copied\n"
@@ -62,13 +70,14 @@ constexpr std::string_view kDetails =
     "                                Remove an installation; saves are kept and\n"
     "                                reused by the next import unless deleted\n"
     "  refresh-icons                 Re-extract every library icon from its APK\n"
-    "  data-hint <installation-id> [--external-dir <dir>]\n"
+    "  data-hint <installation> [--external-dir <dir>]\n"
     "                                Suggest a data mount from the last run\n"
-    "  settings get <installation-id>\n"
-    "  settings set <installation-id> <key>=<value>... [--unset <key>]...\n"
-    "  run <installation-id> [--mode normal|preflight|diagnostic]\n"
-    "\n"
-    "run-apk options:\n"
+    "  settings get <installation>\n"
+    "  settings set <installation> <key>=<value>... [--unset <key>]...\n"
+    "  run <installation> [--mode normal|preflight|diagnostic]\n";
+
+constexpr std::string_view kRunApkHelp =
+    "run-apk <apk> [options]:\n"
     "  Data\n"
     "    --profiles-dir <dir>        Profile directory\n"
     "    --external-dir <host-dir>   Host directory exposed as external storage\n"
@@ -121,15 +130,28 @@ constexpr std::string_view kDetails =
     "                                Snapshot when teardown stalls; implies --diag\n";
 
 int Help() {
-    Write(stdout, kSynopsis);
-    Write(stdout, kDetails);
+    Write(stdout, Synopsis() + "\n" + std::string(kLibraryHelp) + "\n" + std::string(kRunApkHelp));
     return 0;
 }
 
 int Usage() {
-    Write(stderr, kSynopsis);
-    Write(stderr, "\nRun 'ogplay-cli --help' for subcommands and run-apk options.\n");
+    Write(stderr, Synopsis());
+    Write(stderr, "\nRun 'ogplay-cli --help' for everything, or 'ogplay-cli <command> --help' for one command.\n");
     return 2;
+}
+
+// `<command> --help` before any `--` (run-dex passes what follows to the guest).
+std::optional<std::string_view> CommandHelp(const int argc, const char* const argv[]) {
+    const std::string_view command{argv[1]};
+    bool asked{};
+    for (int index = 2; index < argc && std::string_view(argv[index]) != "--"; ++index)
+        asked = asked || std::string_view(argv[index]) == "--help";
+    if (!asked) return std::nullopt;
+    if (command == "library") return kLibraryHelp;
+    if (command == "run-apk") return kRunApkHelp;
+    if (command == "dexvm") return kDexvmHelp;
+    if (command == "diag") return kDiagHelp;
+    return std::nullopt;
 }
 
 }  // namespace
@@ -146,6 +168,10 @@ int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
     }
     if (argc == 2 && (std::string_view(argv[1]) == "--help" || std::string_view(argv[1]) == "-h")) return Help();
     if (argc < 2) return Usage();
+    if (const auto help = CommandHelp(argc, argv)) {
+        Write(stdout, *help);
+        return 0;
+    }
 
     try {
         if (argc >= 3 && std::string_view(argv[1]) == "dexvm" && std::string_view(argv[2]) == "dump-surface") {
@@ -176,12 +202,15 @@ int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
             std::vector<std::string_view> args(argv + 2, argv + argc);
             return app::RunGame(app::ParseGameRunArgs(args));
         }
-        if (argc >= 5 && std::string_view(argv[1]) == "diag" && std::string_view(argv[2]) == "snapshot") {
+        if (argc >= 3 && std::string_view(argv[1]) == "diag" && std::string_view(argv[2]) == "snapshot") {
             std::optional<std::uint64_t> pid;
             std::filesystem::path directory{".local/diagnostics"};
+            bool human{};
             for (int index = 3; index < argc; ++index) {
                 const std::string_view option{argv[index]};
-                if (option == "--pid" && index + 1 < argc) {
+                if (option == "--human" || option == "-h") {
+                    human = true;
+                } else if (option == "--pid" && index + 1 < argc) {
                     const std::string value{argv[++index]};
                     std::size_t consumed{};
                     const auto parsed = std::stoull(value, &consumed);
@@ -197,23 +226,15 @@ int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
             }
             if (!pid) throw std::invalid_argument("diag snapshot requires --pid");
             const auto trigger = ogplay::app::RequestDiagnosticSnapshot(*pid, directory);
-            Write(stdout, "OGPlay: requested diagnostic snapshot via " + trigger + "\n");
-            return 0;
-        }
-        if (!(std::string_view(argv[1]) == "agent" && argc == 3) &&
-            !(std::string_view(argv[1]) == "agent-stdio" && argc == 2))
-            return Usage();
-        ogplay::app::AgentConsole console;
-
-        if (argc == 3 && std::string_view(argv[1]) == "agent") {
-            const auto response = console.Request(argv[2]);
-            Write(response.ok ? stdout : stderr, response.json + "\n");
-            return response.ok ? 0 : 1;
-        }
-        if (argc == 2 && std::string_view(argv[1]) == "agent-stdio") {
-            std::string line;
-            while (std::getline(std::cin, line))
-                Write(stdout, console.HandleJsonRpc(line) + "\n");
+            // The snapshot is written asynchronously by the game; this only confirms the request.
+            ogplay::app::JsonWriter writer;
+            const auto result = writer.Object();
+            writer.AddUnsignedInteger(result, "pid", *pid);
+            writer.AddString(result, "trigger", trigger);
+            const auto text = directory.generic_u8string();
+            writer.AddString(result, "diag_dir", {reinterpret_cast<const char*>(text.data()), text.size()});
+            writer.AddBool(result, "requested", true);
+            Write(stdout, writer.Serialize(result, human) + "\n");
             return 0;
         }
     } catch (...) {

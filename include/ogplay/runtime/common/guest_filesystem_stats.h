@@ -10,6 +10,7 @@ struct GuestFileSystemStats final {
     std::array<std::uint64_t, 11> values{};
     // bsize, frsize, blocks, bfree, bavail, files, ffree, favail,
     // fsid, flag, namemax. Provenance/support is owned by the provider.
+    std::uint32_t filesystem_type{};
 };
 
-} // namespace ogplay::runtime
+}  // namespace ogplay::runtime

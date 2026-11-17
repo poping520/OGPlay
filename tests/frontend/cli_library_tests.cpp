@@ -160,19 +160,98 @@ TEST_CASE("GUI-23 last run report round trips and drives the CLI attention filte
     const auto attention = f.Run({"list", "--filter", "attention"});
     JsonSuccess(attention);
     CHECK(attention.out.find("\"installation_id\":\"org.example.game\"") != std::string::npos);
-    CHECK(attention.out.find("\"outcome\":\"fault\"") != std::string::npos);
-    CHECK(attention.out.find("\"outcome\":\"interrupted\"") != std::string::npos);
+    CHECK(attention.out.find("\"status\":\"last_run_failed\"") != std::string::npos);
     CHECK(attention.out.find("org.example.game-3") == std::string::npos);
+    // list stays a summary; the last run lives in show.
+    CHECK(attention.out.find("\"last_run\"") == std::string::npos);
+    const auto fault_detail = f.Run({"show", "org.example.game"});
+    JsonSuccess(fault_detail);
+    CHECK(fault_detail.out.find("\"outcome\":\"fault\"") != std::string::npos);
+    const auto interrupted_detail = f.Run({"show", "org.example.game-2"});
+    JsonSuccess(interrupted_detail);
+    CHECK(interrupted_detail.out.find("\"outcome\":\"interrupted\"") != std::string::npos);
     const auto launchable = f.Run({"list", "--filter", "launchable"});
     JsonSuccess(launchable);
     CHECK(launchable.out.find("org.example.game-3") != std::string::npos);
-    CHECK(launchable.out.find("\"attention\":true") != std::string::npos);
+    CHECK(launchable.out.find("\"status\":\"last_run_failed\"") != std::string::npos);
     // A report this build cannot read is no run information, not entry damage.
     std::ofstream(entries / "org.example.game-3" / "last-run.json") << "{\"schema\":99}";
     const auto all = f.Run({"list"});
     JsonSuccess(all);
     CHECK(all.out.find("\"damaged\":true") == std::string::npos);
     CHECK(f.Run({"list", "--filter", "broken"}).code == 1);
+}
+
+TEST_CASE("CLI library show resolves an installation id or a unique package") {
+    Fixture f;
+    JsonSuccess(f.Run({"import", f.Text("sample.apk")}));
+    const auto list = f.Run({"list"});
+    JsonSuccess(list);
+    {
+        // list is a summary: these keys only, in this order.
+        ogplay::app::JsonParseError e;
+        const auto document = ogplay::app::JsonDocument::ParseStrict(list.out, e);
+        REQUIRE(document.has_value());
+        REQUIRE(document->Root().Size() == 1);
+        const auto item = document->Root().Element(0);
+        REQUIRE(item.has_value());
+        CHECK(item->Keys() ==
+              std::vector<std::string_view>{"installation_id", "package", "display_name", "version_name", "status"});
+        CHECK(item->Member("status")->String() == "ready");
+    }
+    const auto by_id = f.Run({"show", "org.example.game"});
+    JsonSuccess(by_id);
+    CHECK(by_id.out.find("\"directory\"") != std::string::npos);
+    CHECK(by_id.out.find("\"last_run\":null") != std::string::npos);
+    JsonSuccess(f.Run({"import", f.Text("sample.apk"), "--new-instance"}));
+    // org.example.game is now both an id and a shared package: the id wins.
+    const auto exact = f.Run({"show", "org.example.game"});
+    JsonSuccess(exact);
+    CHECK(exact.out.find("\"installation_id\":\"org.example.game\"") != std::string::npos);
+    const auto copy = f.Run({"show", "org.example.game-2"});
+    JsonSuccess(copy);
+    CHECK(copy.out.find("\"package\":\"org.example.game\"") != std::string::npos);
+    // With no installation id equal to the package, the package must be unique.
+    JsonSuccess(f.Run({"import", f.Text("sample.apk"), "--new-instance"}));
+    JsonSuccess(f.Run({"remove", "org.example.game", "--yes"}));
+    const auto ambiguous = f.Run({"show", "org.example.game"});
+    CHECK(ambiguous.code == 1);
+    CHECK(ambiguous.out.empty());
+    CHECK(ambiguous.error.find("several installations") != std::string::npos);
+    CHECK(ambiguous.error.find("org.example.game-3") != std::string::npos);
+    // remove deletes data, so it never resolves a package.
+    CHECK(f.Run({"settings", "get", "org.example.game"}).code == 1);
+    JsonSuccess(f.Run({"remove", "org.example.game-3", "--yes"}));
+    const auto by_package = f.Run({"show", "org.example.game"});
+    JsonSuccess(by_package);
+    CHECK(by_package.out.find("\"installation_id\":\"org.example.game-2\"") != std::string::npos);
+    // settings resolve the same way and write to the resolved installation.
+    JsonSuccess(f.Run({"settings", "set", "org.example.game", "cpu_cores=3"}));
+    CHECK(std::get<std::uint32_t>(
+              ogplay::app::LoadGameSettings(f.root / "library/org.example.game-2").values.at("cpu_cores")) == 3);
+    JsonSuccess(f.Run({"settings", "get", "org.example.game"}));
+    CHECK(f.Run({"remove", "org.example.game", "--yes"}).code == 1);
+    CHECK(std::filesystem::exists(f.root / "library/org.example.game-2"));
+    // `library --help` prints only the library section, even with other arguments around it.
+    const auto help = f.Run({"show", "--help"});
+    CHECK(help.code == 0);
+    CHECK(help.out.find("Library subcommands:") == 0);
+    CHECK(help.out.find("run-apk") == std::string::npos);
+    const auto missing = f.Run({"show", "org.example.absent"});
+    CHECK(missing.code == 1);
+    CHECK(missing.out.empty());
+    CHECK(f.Run({"show"}).code == 1);
+    CHECK(f.Run({"show", "org.example.game-2", "extra"}).code == 1);
+    // --human/-h indents the same document wherever it appears after `library`.
+    for (const auto& command : std::vector<std::vector<std::string>>{{"show", "org.example.game-2", "--human"},
+                                                                     {"-h", "show", "org.example.game-2"}}) {
+        const auto human = f.Run(command);
+        CHECK(human.code == 0);
+        CHECK(std::count(human.out.begin(), human.out.end(), '\n') > 5);
+        CHECK(human.out.find("\n  \"installation_id\": \"org.example.game-2\"") != std::string::npos);
+        ogplay::app::JsonParseError e;
+        CHECK(ogplay::app::JsonDocument::ParseStrict(human.out, e).has_value());
+    }
 }
 
 TEST_CASE("CLI library settings reuse strict schema inheritance and reserved values") {

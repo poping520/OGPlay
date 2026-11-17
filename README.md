@@ -67,7 +67,7 @@ OGPlay currently focuses on older Android games from 2010 to 2016.
 
 More than a dozen games can run so far. Testing is not yet comprehensive, so other games may work too, and you are welcome to try them. Different versions of the same game may also behave differently.
 
-For details, see [Compatibility](docs/COMPATIBILITY.md).
+For details, see the [compatibility list](https://poping520.github.io/ogplay-site/compat/).
 
 ## How It Works
 

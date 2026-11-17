@@ -49,6 +49,10 @@ constexpr std::size_t kStat64BlockSizeOffset = 56;
 constexpr std::size_t kStat64BlocksOffset = 64;
 constexpr std::size_t kStat64InoOffset = 96;
 
+// The ARM wrappers accept bionic's padded size and copy the packed kernel layout.
+constexpr std::size_t kStatFs64Size = 84;
+constexpr std::size_t kBionicStatFsSize = 88;
+
 // linux_dirent64: u64 ino, s64 off, u16 reclen, u8 type, char name[].
 constexpr std::size_t kDirentHeaderSize = 19;
 constexpr std::uint8_t kDirentTypeDirectory = 4;
@@ -77,6 +81,23 @@ void PutLittleEndian(const std::span<std::byte> out, const std::size_t offset, c
     // that only test for "has an inode" honest without inventing identity.
     PutLittleEndian(bytes, kStat64InoOffset, 1, 8);
     PutLittleEndian(bytes, kStat64LegacyInoOffset, 1, 4);
+    return bytes;
+}
+
+[[nodiscard]] std::array<std::byte, kStatFs64Size> EncodeStatFs64(const GuestFileSystemStats& stats) {
+    std::array<std::byte, kStatFs64Size> bytes{};
+    const auto& values = stats.values;
+    PutLittleEndian(bytes, 0, stats.filesystem_type, 4);
+    PutLittleEndian(bytes, 4, values[0], 4);    // f_bsize
+    PutLittleEndian(bytes, 8, values[2], 8);    // f_blocks
+    PutLittleEndian(bytes, 16, values[3], 8);   // f_bfree
+    PutLittleEndian(bytes, 24, values[4], 8);   // f_bavail
+    PutLittleEndian(bytes, 32, values[5], 8);   // f_files
+    PutLittleEndian(bytes, 40, values[6], 8);   // f_ffree
+    PutLittleEndian(bytes, 48, values[8], 8);   // f_fsid, low word followed by high word
+    PutLittleEndian(bytes, 56, values[10], 4);  // f_namelen
+    PutLittleEndian(bytes, 60, values[1], 4);   // f_frsize
+    PutLittleEndian(bytes, 64, values[9], 4);   // f_flags
     return bytes;
 }
 
@@ -202,6 +223,24 @@ void BindAndroidFileMetadataSyscalls(A32SyscallDispatcher& dispatcher, VirtualFi
     dispatcher.Implement(197, guarded([&vfs, write_stat](const A32SyscallFrame& frame) {
                              const auto descriptor = std::bit_cast<std::int32_t>(frame.arguments[0]);
                              return write_stat(vfs.DescriptorInfo(descriptor), frame.arguments[1], frame.thread_id);
+                         }));
+
+    const auto write_statfs = [&address_space](const GuestFileSystemStats& stats, const A32SyscallFrame& frame) {
+        const memory::GuestAddress destination{frame.arguments[2]};
+        address_space.Validate({destination, kStatFs64Size}, memory::AccessType::write, frame.thread_id);
+        address_space.Write(destination, EncodeStatFs64(stats), frame.thread_id);
+        return 0;
+    };
+    dispatcher.Implement(266, guarded([&vfs, read_path, write_statfs](const A32SyscallFrame& frame) {
+                             const auto size = frame.arguments[1];
+                             if (size != kStatFs64Size && size != kBionicStatFsSize) return -kEinval;
+                             return write_statfs(vfs.StatVfs(read_path(frame.arguments[0])), frame);
+                         }));
+    dispatcher.Implement(267, guarded([&vfs, write_statfs](const A32SyscallFrame& frame) {
+                             const auto size = frame.arguments[1];
+                             if (size != kStatFs64Size && size != kBionicStatFsSize) return -kEinval;
+                             const auto descriptor = std::bit_cast<std::int32_t>(frame.arguments[0]);
+                             return write_statfs(vfs.StatVfs(descriptor), frame);
                          }));
 
     // access(path, mode) / faccessat: existence plus the real writable fact.

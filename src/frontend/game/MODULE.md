@@ -9,6 +9,7 @@
 `--app-language <ui|zh-CN|en-US>` 独立选择模拟 Android 的语言，缺省或 ui 跟随本次解析的界面语言；
 在 VM/资源创建前注入同源的 locale_language/locale_region，供 Java Locale、资源与 NDK 配置及只读语言属性使用。应用没有对应翻译时按 Android 资源回退规则处理。
 用户关闭请求经 HAL 确认后才停止，确认框文案来自 app 文案表；取消恢复输入/音频推进。
+非故障停止在调用 guest 关闭回调前先隐藏窗口，避免回调期间停在冻结画面；隐藏失败只记 warn。
 
 VFS 装配、持久实例选择、MCP/诊断、Clock、输入与退出不变量沿用父模块契约。
 未实现能力明确失败；不拥有启动器窗口，不包含平台 API 或游戏专属分支。

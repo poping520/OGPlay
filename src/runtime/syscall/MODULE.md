@@ -119,7 +119,7 @@ pwrite64 也在共享预算内一次暂存并提交，保持整条追加记录�
 不提供 fcntl 状态修改、跨进程/NFS 追加或通用 Linux open flags。
 
 `BindAndroidFileMetadataSyscalls`（`syscall_file_metadata.cpp`）把
-mkdir/rmdir/unlink/rename 及其 `*at` 变体、stat64 家族、`getdents64`、
+mkdir/rmdir/unlink/rename 及其 `*at` 变体、stat64 家族、`statfs64`/`fstatfs64`、`getdents64`、
 `access`、`ftruncate`、`fsync`/`fdatasync` 与 `pread64`/`pwrite64` 绑到与
 `BindAndroidFileSyscalls` 同一个 VFS。`struct stat64` 按 Android ARM 自然对齐
 布局（104 字节，非 x86 的打包布局）编组：`st_mode` 在 16、`st_size` 在 48、
@@ -136,3 +136,7 @@ mode 和显式设置的 mtime。chmod/fchmod 共用 Java Posix 的 VFS 元数据
 `getcwd(183)` 写入含 NUL 路径并返回字节数；缓冲不足 ERANGE，非法 guest 地址 EFAULT，
 已删除 cwd ENOENT。`*at` 的 AT_FDCWD 相对路径使用同一 cwd；其他 dirfd 相对路径
 仍明确 `-ENOTSUP`。`flock`、`*xattr`、`inotify*` 等维持 `-ENOSYS` 记账。
+
+`statfs64(266)`/`fstatfs64(267)` 读取 VFS 卷统计。ARM EABI 接受 bionic 对齐后的 88 字节和内核
+打包布局的 84 字节两种 size，其他 size 返回 EINVAL。成功时预检并以小端写入前 84 字节，
+bionic 结构末尾 4 字节保持原值。旧 32 位 `statfs(99)`/`fstatfs(100)` 维持 ENOSYS。

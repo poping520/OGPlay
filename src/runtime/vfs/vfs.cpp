@@ -193,6 +193,7 @@ void VirtualFileSystem::Impl::RegisterGeneratedReadOnly(const std::string_view p
     if (IsDirectoryLocked(normalized)) throw VfsError(kEisdir, "VFS generated file is a directory");
     auto file = std::make_shared<File>();
     file->node_id = next_node_id_++;
+    file->canonical_path = normalized;
     file->generated = std::move(state);
     files_[normalized] = std::move(file);
 }
@@ -213,6 +214,7 @@ void VirtualFileSystem::Impl::PutFile(const std::string_view path, const std::sp
                                             false,
                                             {}});
     file->node_id = next_node_id_++;
+    file->canonical_path = normalized;
     files_.emplace(normalized, std::move(file));
 }
 
@@ -235,6 +237,7 @@ void VirtualFileSystem::Impl::PutReadOnlyFile(const std::string_view path, const
     auto file = std::make_shared<File>(
         File{{}, size, std::move(read_all), std::move(read_at), false, VfsSource::runtime, false, {}});
     file->node_id = next_node_id_++;
+    file->canonical_path = normalized;
     files_.emplace(normalized, std::move(file));
 }
 
@@ -254,6 +257,7 @@ void VirtualFileSystem::Impl::RegisterReadOnlyCharacterDevice(const std::string_
     if (IsDirectoryLocked(normalized)) throw VfsError(kEisdir, "VFS device path is a directory");
     auto file = std::make_shared<File>();
     file->node_id = next_node_id_++;
+    file->canonical_path = normalized;
     file->character_device = std::move(state);
     files_[normalized] = std::move(file);
 }
@@ -297,6 +301,7 @@ void VirtualFileSystem::Impl::Mount(const VfsSource source, const std::string_vi
     mounts_.push_back({NormalizePath(root), source});
     for (auto& [path, file] : pending) {
         file->node_id = next_node_id_++;
+        file->canonical_path = path;
         files_.emplace(std::move(path), std::move(file));
     }
 }
@@ -347,6 +352,7 @@ void VirtualFileSystem::Impl::MountLazy(const VfsSource source, const std::strin
     mounts_.push_back({NormalizePath(root), source});
     for (auto& [path, file] : pending) {
         file->node_id = next_node_id_++;
+        file->canonical_path = path;
         files_.emplace(std::move(path), std::move(file));
     }
 }
@@ -578,6 +584,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
             files_.emplace(normalized, std::make_shared<File>(File{{}, 0, {}, {}, true, VfsSource::runtime, false, {}}))
                 .first;
         found->second->node_id = next_node_id_++;
+        found->second->canonical_path = normalized;
         // Creation makes the path visible immediately. The host-side
         // tombstone is cleared at the next flush, but it must stop
         // shadowing the new in-memory node in this session now.
@@ -630,6 +637,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
         snapshot->materialized_reserved_bytes = state->maximum_bytes;
         lock.lock();
         snapshot->node_id = next_node_id_++;
+        snapshot->canonical_path = normalized;
         selected_file = std::move(snapshot);
     }
     if (options.truncate) {
@@ -1253,6 +1261,10 @@ VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
 
 GuestFileSystemStats VirtualFileSystem::StatVfs(std::string_view path) const {
     return impl_->StatVfs(path);
+}
+
+GuestFileSystemStats VirtualFileSystem::StatVfs(std::int32_t descriptor) const {
+    return impl_->StatVfs(descriptor);
 }
 
 std::unique_ptr<VfsCharacterDeviceRegistration>

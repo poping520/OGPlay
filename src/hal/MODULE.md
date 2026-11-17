@@ -55,6 +55,7 @@
 - `hal::WindowInput::SetTitle`：只在窗口打开期间更新宿主标题，拒绝内嵌 NUL，SDL
   失败必须明确传播。
 - `hal::WindowInput::Show`：显示已打开的隐藏窗口；未打开或宿主显示失败明确抛错。可先配置图标再显示，避免任务栏首次显示默认图标。
+- `hal::WindowInput::Hide`：把已打开窗口移出屏幕，供 guest 关闭回调期间使用；不抛错，未打开或宿主无法隐藏时返回 false，`Close` 仍负责释放。
 - `hal::WindowInput::SetIcon`：窗口打开期间以同一图标的一组尺寸（最大在前；直通 RGBA8，≤1024 边长、尺寸与像素数一致）
   设置窗口图标。SDL 以首张为主图、其余为备选：macOS 即进程 Dock 图标（各尺寸为 NSImage 表示）；Windows 另由
   hal/windows `WindowIcons` 按窗口 DPI 的小/大图标度量各取最接近且不小于的尺寸设 ICON_SMALL/ICON_BIG。失败明确传播。

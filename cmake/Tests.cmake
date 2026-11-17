@@ -93,6 +93,7 @@ set(OGPLAY_TEST_SOURCES
     tests/memory/bus_tests.cpp
     tests/memory/snapshot_tests.cpp
     tests/runtime/syscall_tests.cpp
+    tests/runtime/syscall_statfs_tests.cpp
     tests/runtime/stall_diagnostics_tests.cpp
     tests/runtime/syscall_bridge_tests.cpp
     tests/runtime/syscall_process_tests.cpp

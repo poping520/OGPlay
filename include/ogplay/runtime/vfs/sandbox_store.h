@@ -17,9 +17,9 @@
 namespace ogplay::runtime {
 
 struct SandboxConfig final {
-    // Old-title saves live in the KB..MB range; the default is an order of
-    // magnitude of headroom. Exceeding it is -ENOSPC, like a full sdcard.
-    std::uint64_t byte_quota{256ULL * 1024ULL * 1024ULL};
+    // Reported as the device's internal/external volume size, so it matches an
+    // ordinary 16 GB phone. Exceeding it is -ENOSPC, like a full sdcard.
+    std::uint64_t byte_quota{16ULL * 1024ULL * 1024ULL * 1024ULL};
     std::uint64_t maximum_files{65536};
 };
 
@@ -38,16 +38,14 @@ public:
     // Opens (creating if needed) <root>/<installation_id>/ and loads the overlay.
     // index. Leftover crash temporaries are removed; the count is reported
     // through TemporaryFilesRemoved so the caller can log it.
-    [[nodiscard]] static std::unique_ptr<SandboxStore> Open(
-        const std::filesystem::path& root, std::string_view installation_id,
-        std::string_view package,
-        SandboxConfig config = {});
+    [[nodiscard]] static std::unique_ptr<SandboxStore> Open(const std::filesystem::path& root,
+                                                            std::string_view installation_id, std::string_view package,
+                                                            SandboxConfig config = {});
     // Atomically reserves a previously unused installation id. Existing
     // directories fail with EEXIST instead of being opened.
-    [[nodiscard]] static std::unique_ptr<SandboxStore> Create(
-        const std::filesystem::path& root, std::string_view installation_id,
-        std::string_view package,
-        SandboxConfig config = {});
+    [[nodiscard]] static std::unique_ptr<SandboxStore> Create(const std::filesystem::path& root,
+                                                              std::string_view installation_id,
+                                                              std::string_view package, SandboxConfig config = {});
     ~SandboxStore();
     SandboxStore(const SandboxStore&) = delete;
     SandboxStore& operator=(const SandboxStore&) = delete;
@@ -57,13 +55,11 @@ public:
     [[nodiscard]] std::vector<SandboxEntry> Entries() const;
     // Canonical guest mount roots; they exist independently of overlay entries.
     [[nodiscard]] std::span<const std::string> SemanticRoots() const;
-    [[nodiscard]] std::vector<std::byte> ReadFile(
-        std::string_view guest_path) const;
+    [[nodiscard]] std::vector<std::byte> ReadFile(std::string_view guest_path) const;
 
     // tmp + rename in the same directory: a crash leaves either the old or
     // the new contents, never a half-written file.
-    void WriteFileAtomic(std::string_view guest_path,
-                         std::span<const std::byte> contents);
+    void WriteFileAtomic(std::string_view guest_path, std::span<const std::byte> contents);
     void WriteTombstone(std::string_view guest_path);
     void CreateDirectory(std::string_view guest_path);
     // Removes a file, tombstone or empty directory; absent is -ENOENT.
@@ -93,8 +89,7 @@ public:
     // Returns the sandbox-stable API 19 ANDROID_ID. The caller supplies
     // exactly 64 bits of OS entropy; it is consumed only when an older or new
     // sandbox has no identity yet. Persistence remains owned by this store.
-    [[nodiscard]] std::string EnsureAndroidId(
-        std::span<const std::byte> entropy);
+    [[nodiscard]] std::string EnsureAndroidId(std::span<const std::byte> entropy);
     // Empty for an untouched schema-1 sandbox.
     [[nodiscard]] std::optional<std::string> AndroidId() const;
 
@@ -104,9 +99,10 @@ public:
     [[nodiscard]] static std::string UnescapeSegment(std::string_view segment);
 
 private:
-    [[nodiscard]] static std::unique_ptr<SandboxStore> OpenInternal(
-        const std::filesystem::path& root, std::string_view installation_id,
-        std::string_view package, SandboxConfig config, bool require_new);
+    [[nodiscard]] static std::unique_ptr<SandboxStore> OpenInternal(const std::filesystem::path& root,
+                                                                    std::string_view installation_id,
+                                                                    std::string_view package, SandboxConfig config,
+                                                                    bool require_new);
     class Impl;
     explicit SandboxStore(std::unique_ptr<Impl> impl) noexcept;
     std::unique_ptr<Impl> impl_;

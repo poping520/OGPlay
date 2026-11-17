@@ -8,13 +8,6 @@
 
 ## 核心模型与公共边界
 
-- StatVfs 在同一索引锁内按规范路径/别名校验存在性并读取 attached sandbox 写配额卷。
-  所有 writable roots 及其非根目录祖先共用安装身份 fsid，不改变写权限；
-  字节已用量含 persisted+dirty delta，4096
-  为报告块单位、向下取整、无 reserved blocks。条目预算含活动持久项与新 dirty 文件，
-  不计 tombstone/immutable base；无配置 mount flags，name 上限为现有 encoded backing
-  name 约束，转义/辅助文件可能提前失败。未知卷/无 sandbox 为 ENOTSUP，范围/账本
-  异常明确失败；这是 overlay 写预算，不是物理磁盘/inode 或写入成功保证。
 - `File` 是稳定节点：拥有进程内唯一 `node_id`、来源、权限、尺寸、`generation` 与
   overlay 归属；路径只是可替换的名字。`OpenFile` 独立拥有 offset、权限和操作锁，FD 表
   保存其 `shared_ptr`。Close 先移除表项，再等待旧打开状态的在途操作；复用同一数字不会
@@ -59,6 +52,29 @@
   fsync/Close/rename 仍允许阻塞落盘，本模块不创建后台预读或线程池。
 - `ListDirectory` 合并显式/隐式目录并返回排序去重快照；`OpenDirectory` 的 cursor 在打开
   时冻结。目录树 rename、mmap、跨进程锁、WAL 与通用 POSIX 扩展不在本模块范围。
+
+## 文件系统统计
+
+`StatVfs(path)` 在索引锁内解析别名、cwd 与 `..`，校验路径存在性，再按规范路径的最长卷前缀
+返回统计。块大小和分片大小均为 4096 字节。
+
+| 规范路径 | 文件系统类型 | 容量及条目 | flags |
+| --- | --- | --- | --- |
+| `/data`（含 APK 与 native 库） | ext4 (`0xEF53`) | 沙盒配额 | 0 |
+| `/sdcard`（含映射至此的别名、宿主目录及 OBB） | FUSE (`0x65735546`) | 与 data 共用沙盒配额 | 0 |
+| `/system` | ext4 (`0xEF53`) | 已索引节点总字节数向上取整为块数，条目为可见文件与显式目录数，可用块与条目为 0 | `ST_RDONLY` |
+| `/proc` | procfs (`0x9FA0`) | 计数为 0 | 0 |
+| `/dev` | tmpfs (`0x01021994`) | 计数为 0 | 0 |
+| 其余路径（含 `/`） | ramfs (`0x858458F6`) | 计数为 0 | `ST_RDONLY` |
+
+data 与 sdcard 共用安装身份 fsid。总量按配额向下取整，剩余容量扣除持久数据与脏数据后向下取整。
+条目预算含活动持久项及新脏文件，排除 tombstone 与不可变基底。名称上限为编码后的 backing 名称上限，
+转义与辅助文件可能提前耗尽该上限。未挂沙盒时这两个卷返回 ENOTSUP，其他卷照常回答。
+配额范围与账本异常明确失败。其他卷的 fsid 按卷名稳定派生，名称上限为 255。
+统计使用虚拟配额与 VFS 元数据，不查询宿主磁盘。
+
+`StatVfs(fd)` 在 FD 表及索引锁下按打开节点当前的规范路径查询，unlink 后继续使用该节点最后的路径。
+目录和字符设备按路径归属，管道返回 pipefs (`0x50495045`)，块与条目计数为 0。无效 FD 返回 EBADF。
 
 ## 生成的只读文件
 
@@ -121,7 +137,7 @@ SandboxStore::Clear 原地清空四个语义根的全部内容并清零索引，
 位置映射同一 guest 节点或大小写折叠后同一节点则拒绝；唯一例外是已删除目录：tombstone 只按精确路径
 生效，rmdir 时子 tombstone 必须保留，宿主目录作为其容器与同名目录 tombstone 并存，装载读为一个已删除
 目录，容器内出现非 tombstone 条目则拒绝。WriteTombstone 对仍含活动子项的目录返回 ENOTEMPTY。文件名转义、ASCII case-fold、越界拒绝、tmp 原子替换、
-tombstone、256 MiB/65536 活动项配额继续保留。close/fsync/pause/shutdown 落文件内容；
+tombstone、16 GiB/65536 活动项配额继续保留。close/fsync/pause/shutdown 落文件内容；
 mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄不得复活旧路径。
 
 安装层导入时先沿用无库条目、meta package 一致的残留沙盒中编号最小者（ADR-0145），否则

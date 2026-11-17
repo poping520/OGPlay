@@ -132,7 +132,8 @@ native 清理失败仍继续关闭进程和 surface；前端保留运行首错�
 本地视频与软件 Canvas/EGL 通过各自的 ROM Surface 进入窗口合成器。
 
 、ADR-0095/0115：进程 Stop 显式区分 host shutdown、guest exit 与运行 fault，
-退出事实优先。健康宿主关闭在既有预算内经 AMS 请求 pause、stop 与 destroy 并等待 ROM 确认；期间 VM 仍可创建 Java/native 线程，音频消费保持推进。回调后先调用显式
+退出事实优先。健康宿主关闭在 20 秒预算内（API19 ActivityStack STOP_TIMEOUT 与 DESTROY_TIMEOUT 之和，按宿主稳定时钟计，
+独立于逐帧回调预算）经 AMS 请求 pause、stop 与 destroy 并等待 ROM 确认；期间 VM 仍可创建 Java/native 线程，音频消费保持推进。回调后先调用显式
 `before_guest_shutdown` 停止并回收音频消费者，再 BeginTeardown、VM shutdown/join；
 超时传播原错并记 `session.lifecycle.cleanup_timeout`，到期后不继续 guest 回调。
 进程资源在销毁确认后退役；普通 Activity.finish 仍按实例执行 destroy 并传播异常。

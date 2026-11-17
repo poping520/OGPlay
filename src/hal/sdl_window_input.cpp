@@ -266,6 +266,8 @@ public:
         if (!SDL_ShowWindow(window_)) throw SdlError("SDL_ShowWindow");
     }
 
+    bool Hide() noexcept override { return window_ != nullptr && SDL_HideWindow(window_); }
+
     bool SetRelativePointer(const bool enabled) override {
         if (window_ == nullptr) throw std::logic_error("relative pointer requires an open window");
         return SDL_SetWindowRelativeMouseMode(window_, enabled);

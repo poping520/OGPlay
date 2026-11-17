@@ -113,6 +113,8 @@ ogplay-cli run-apk … --exit-after-frames 600      # 不带 --survey-gaps
 只有关闭 survey 的同路径复现才能证明越过原首错；600 帧未触发目标路径不能替代复现。
 收尾按根目录 `AGENTS.md` 的改动分级执行：复用直接相关验证，只有二进制受影响才构建。
 按事实变化更新对应文档，不默认修改 MODULE、能力账本及任务单。正式 title 验收另走 Scenario。
+确认能进入游戏且音视频正常后，在 [ogplay-site](https://github.com/poping520/ogplay-site) 仓库的
+`data/apps.toml` 加一条并重新生成页面，步骤见该仓库 README。
 
 ---
 

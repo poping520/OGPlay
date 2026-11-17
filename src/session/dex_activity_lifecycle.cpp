@@ -212,6 +212,10 @@ void DexActivityLifecycle::SetEglProducerWaitBudgetForTesting(std::uint64_t budg
     producer_budget_ns_ = budget_ns;
 }
 
+void DexActivityLifecycle::SetShutdownBudgetForTesting(std::uint64_t budget_ns) noexcept {
+    shutdown_budget_ns_ = budget_ns;
+}
+
 bool DexActivityLifecycle::ProducersReady(bool wait) {
     if (!producer_wait_started_ns_) producer_wait_started_ns_ = hal::Clock::SteadyTimestampNs();
     if (!runtime::EglProducersSettled(*bindings_.context, wait)) {
@@ -339,7 +343,7 @@ LifecycleFrameState DexActivityLifecycle::Stop(DexProcessStopReason reason) {
         attempt([&] {
             CancelInput();
             runtime::ShutdownEglSwapPacer(context);
-            const auto deadline = hal::Clock::SteadyTimestampNs() + kCallbackBudgetNs;
+            const auto deadline = hal::Clock::SteadyTimestampNs() + shutdown_budget_ns_;
             vm.SetDefaultExecutionDeadline(deadline);
             runtime::QueueAndroidActivityRequest(context, {ActivityRequest::Kind::shutdown, {}, {}});
             auto last_ns = hal::Clock::SteadyTimestampNs();

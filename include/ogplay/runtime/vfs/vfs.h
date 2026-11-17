@@ -298,6 +298,7 @@ public:
     void Fchmod(std::int32_t fd, std::uint32_t mode);
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
     [[nodiscard]] GuestFileSystemStats StatVfs(std::string_view path) const;
+    [[nodiscard]] GuestFileSystemStats StatVfs(std::int32_t descriptor) const;
     // Immediate children (sorted, deduplicated) of a directory path; empty
     // when nothing is below it. Directories exist both implicitly, through
     // the files mounted beneath them, and explicitly through CreateDirectory.

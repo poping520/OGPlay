@@ -541,8 +541,8 @@ note = "ADR-0071/0074/0110/0129：节点/打开状态/backing 分离，ReadAt/Wr
 
 [runtime.vfs_filesystem_stats]
 status = "partial"
-test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/runtime/vfs_sandbox_tests.cpp#DVM-243; tests/dexvm/file_vfs_tests.cpp#DVM-243; tests/runtime/jni_android_platform_tests.cpp#DVM-243"
-note = "ADR-0122：原版 StatFs Java 算法，Posix.statvfs 经 IoFileSystem 原子查询 VFS；仅支持已挂沙盒可写根及其祖先目录，容量为配额减已持久与脏数据，4096 字节块向下取整，不报告物理磁盘/inode、不读宿主剩余空间。其他卷、fstatvfs、原生 statfs 记账并按 errno 失败；跨平台未验收。"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/runtime/vfs_sandbox_tests.cpp#DVM-243; tests/runtime/syscall_statfs_tests.cpp; tests/dexvm/file_vfs_tests.cpp#DVM-243; tests/runtime/jni_android_platform_tests.cpp#DVM-243"
+note = "VFS 为任何存在的路径按规范路径归属卷；data/sdcard 共用沙盒配额，未挂沙盒时返回 ENOTSUP。原版 StatFs 经 Posix.statvfs 查询同一 VFS，已实现 ARM statfs64/fstatfs64，后者支持打开节点和管道。32 位 statfs/fstatfs、Java fstatvfs、物理磁盘数据和跨平台验收仍有缺口。"
 
 [runtime.jni]
 status = "complete"

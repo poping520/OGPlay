@@ -141,6 +141,8 @@ constexpr std::array kAndroidArmBaseline{
     Declaration{256, "set_tid_address", SyscallGroup::thread},
     Declaration{263, "clock_gettime", SyscallGroup::time},
     Declaration{264, "clock_getres", SyscallGroup::time},
+    Declaration{266, "statfs64", SyscallGroup::file},
+    Declaration{267, "fstatfs64", SyscallGroup::file},
     Declaration{268, "tgkill", SyscallGroup::signal},
     Declaration{281, "socket", SyscallGroup::network},
     Declaration{283, "connect", SyscallGroup::network},

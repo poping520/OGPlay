@@ -10,8 +10,10 @@
 #include "ogplay/app/run_report.h"
 #include <algorithm>
 #include <charconv>
+#include <optional>
 #include <set>
 #include <stdexcept>
+#include <vector>
 
 namespace ogplay::cli {
 namespace {
@@ -89,13 +91,6 @@ SettingValue ParseValue(std::string_view key, std::string_view text) {
     return std::string(text);
 }
 
-LibraryEntry FindEntry(const LibraryStore& store, std::string_view id) {
-    for (const auto& entry : store.LoadEntries())
-        if (entry.key == id) return entry;
-    throw LibraryError(LibraryErrorCode::not_found,
-                       "library entry does not exist; run library list to select an installation id");
-}
-
 std::string_view Fallback(ApplicationVisualFallback value) {
     constexpr std::string_view names[]{
         "icon_attribute_missing",   "icon_resources_unavailable",  "icon_resource_missing",   "icon_path_unsupported",
@@ -114,7 +109,8 @@ Value ArchiveJson(JsonWriter& writer, const std::vector<ImportFile>& files, cons
         writer.Append(apks, writer.String(files[index].path));
     writer.Add(result, "apks", apks);
     std::uint64_t bytes{};
-    for (const auto& item : plan.data) bytes += files[item.index].size;
+    for (const auto& item : plan.data)
+        bytes += files[item.index].size;
     const auto data = writer.Object();
     const auto mount = ArchiveMount(plan, {});
     if (mount.empty())
@@ -168,9 +164,128 @@ Value InspectJson(JsonWriter& writer, const ApkInspection& inspection) {
         writer.AddNull(result, "profile_id");
     return result;
 }
+
+// One installation as the GUI list sees it: settings resolve the data pack and
+// unreadable settings damage the entry.
+struct EntryState final {
+    LibraryEntry entry;
+    std::optional<LastRunReport> last_run;
+    bool running{}, data_missing{}, attention{}, launchable{};
+};
+
+EntryState LoadEntryState(const LibraryStore& store, LibraryEntry entry) {
+    try {
+        entry = EffectiveGameEntry(entry, LoadGameSettings(entry.directory));
+    } catch (const LibraryError& error) {
+        if (error.Code() == LibraryErrorCode::busy) throw;
+        entry.damage_reason = error.what();
+    } catch (const std::exception& error) {
+        entry.damage_reason = error.what();
+    }
+    EntryState state;
+    state.running = store.IsRunning(entry.key);
+    std::error_code missing_error;
+    state.data_missing = entry.external_dir.has_value() &&
+                         (!std::filesystem::is_directory(*entry.external_dir, missing_error) || missing_error);
+    const bool problem = entry.Damaged() || !entry.metadata || state.data_missing;
+    // GUI-23: a failed last run puts a launchable entry under attention too.
+    state.last_run = LoadLastRunReport(entry.directory / "last-run.json");
+    state.attention = problem || (state.last_run && LastRunFailed(*state.last_run, state.running));
+    state.launchable = !problem && !state.running;
+    state.entry = std::move(entry);
+    return state;
+}
+
+// Most pressing condition first, so one value explains why an entry is not ready.
+std::string_view Status(const EntryState& state) {
+    if (state.running) return "running";
+    if (state.entry.Damaged() || !state.entry.metadata) return "damaged";
+    if (state.data_missing) return "data_missing";
+    if (state.attention) return "last_run_failed";
+    return "ready";
+}
+
+// What `library list` prints per entry; `library show` has the rest.
+Value EntrySummaryJson(JsonWriter& writer, const EntryState& state) {
+    const auto& entry = state.entry;
+    const auto item = writer.Object();
+    writer.AddString(item, "installation_id", entry.key);
+    if (entry.metadata) {
+        writer.AddString(item, "package", entry.metadata->package);
+        writer.AddString(item, "display_name", entry.metadata->display_name);
+        writer.AddString(item, "version_name", entry.metadata->version_name);
+    } else {
+        writer.AddNull(item, "package");
+        writer.AddNull(item, "display_name");
+        writer.AddNull(item, "version_name");
+    }
+    writer.AddString(item, "status", Status(state));
+    return item;
+}
+
+Value EntryJson(JsonWriter& writer, const EntryState& state) {
+    const auto& entry = state.entry;
+    const auto item = writer.Object();
+    writer.AddString(item, "installation_id", entry.key);
+    writer.AddString(item, "directory", Text(entry.directory));
+    writer.AddBool(item, "damaged", entry.Damaged());
+    if (entry.damage_reason) writer.AddString(item, "damage_reason", *entry.damage_reason);
+    if (entry.metadata) {
+        writer.AddString(item, "package", entry.metadata->package);
+        writer.AddString(item, "display_name", entry.metadata->display_name);
+        const auto names = writer.Object();
+        for (const auto& [locale, name] : entry.metadata->localized_names)
+            writer.AddString(names, locale, name);
+        writer.Add(item, "localized_names", names);
+        writer.AddUnsignedInteger(item, "version_code", entry.metadata->version_code);
+        writer.AddString(item, "version_name", entry.metadata->version_name);
+    }
+    writer.AddBool(item, "running", state.running);
+    writer.AddBool(item, "data_missing", state.data_missing);
+    writer.AddBool(item, "launchable", state.launchable);
+    writer.AddBool(item, "attention", state.attention);
+    writer.AddString(item, "status", Status(state));
+    writer.AddString(item, "log", Text(entry.directory / "last-run.log"));
+    if (state.last_run)
+        writer.Add(item, "last_run", LastRunJson(writer, *state.last_run, state.running));
+    else
+        writer.AddNull(item, "last_run");
+    return item;
+}
+
+// An installation id wins; otherwise the package must name exactly one installation.
+LibraryEntry ResolveEntry(const LibraryStore& store, std::string_view id_or_package) {
+    const auto entries = store.LoadEntries();
+    for (const auto& entry : entries)
+        if (entry.key == id_or_package) return entry;
+    std::vector<const LibraryEntry*> matches;
+    for (const auto& entry : entries)
+        if (entry.metadata && entry.metadata->package == id_or_package) matches.push_back(&entry);
+    if (matches.size() == 1) return *matches.front();
+    if (matches.empty())
+        throw LibraryError(LibraryErrorCode::not_found, "no installation id or package matches " +
+                                                            std::string(id_or_package) +
+                                                            "; run library list to see installations");
+    std::string ids;
+    for (const auto* match : matches)
+        ids += (ids.empty() ? "" : ", ") + match->key;
+    throw std::invalid_argument("package " + std::string(id_or_package) + " has several installations (" + ids +
+                                "); pass an installation id");
+}
 }  // namespace
 
-int RunLibraryCommand(std::span<const char* const> args) {
+int RunLibraryCommand(std::span<const char* const> raw_args) {
+    // --human/-h may appear anywhere after `library`; output is one JSON line otherwise.
+    bool human{};
+    std::vector<const char*> kept;
+    for (const auto* arg : raw_args) {
+        const std::string_view text{arg};
+        if (text == "--human" || text == "-h")
+            human = true;
+        else
+            kept.push_back(arg);
+    }
+    const std::span<const char* const> args{kept};
     std::size_t index{};
     auto root = std::optional<std::filesystem::path>{};
     if (index < args.size() && std::string_view(args[index]) == "--library-root") {
@@ -178,7 +293,7 @@ int RunLibraryCommand(std::span<const char* const> args) {
         root = Path(args[index++]);
     }
     if (index == args.size())
-        throw std::invalid_argument("library requires list|inspect|import|remove|settings|data-hint|run");
+        throw std::invalid_argument("library requires list|show|inspect|import|remove|settings|data-hint|run");
     const std::string_view command = args[index++];
     const auto require = [&]() -> std::string_view {
         if (index == args.size())
@@ -203,52 +318,14 @@ int RunLibraryCommand(std::span<const char* const> args) {
         end();
         result = writer.Array();
         for (auto entry : store.LoadEntries()) {
-            // As in the GUI list: settings resolve the data pack, and unreadable settings damage the entry.
-            try {
-                entry = EffectiveGameEntry(entry, LoadGameSettings(entry.directory));
-            } catch (const LibraryError& error) {
-                if (error.Code() == LibraryErrorCode::busy) throw;
-                entry.damage_reason = error.what();
-            } catch (const std::exception& error) {
-                entry.damage_reason = error.what();
-            }
-            const bool running = store.IsRunning(entry.key);
-            std::error_code missing_error;
-            const bool data_missing =
-                entry.external_dir.has_value() &&
-                (!std::filesystem::is_directory(*entry.external_dir, missing_error) || missing_error);
-            const bool problem = entry.Damaged() || !entry.metadata || data_missing;
-            // GUI-23: a failed last run puts a launchable entry under attention too.
-            const auto last_run = LoadLastRunReport(entry.directory / "last-run.json");
-            const bool attention = problem || (last_run && LastRunFailed(*last_run, running));
-            const bool launchable = !problem && !running;
-            if ((filter == "attention" && !attention) || (filter == "launchable" && !launchable)) continue;
-            const auto item = writer.Object();
-            writer.AddString(item, "installation_id", entry.key);
-            writer.AddString(item, "directory", Text(entry.directory));
-            writer.AddBool(item, "damaged", entry.Damaged());
-            if (entry.damage_reason) writer.AddString(item, "damage_reason", *entry.damage_reason);
-            if (entry.metadata) {
-                writer.AddString(item, "package", entry.metadata->package);
-                writer.AddString(item, "display_name", entry.metadata->display_name);
-                const auto names = writer.Object();
-                for (const auto& [locale, name] : entry.metadata->localized_names)
-                    writer.AddString(names, locale, name);
-                writer.Add(item, "localized_names", names);
-                writer.AddUnsignedInteger(item, "version_code", entry.metadata->version_code);
-                writer.AddString(item, "version_name", entry.metadata->version_name);
-            }
-            writer.AddBool(item, "running", running);
-            writer.AddBool(item, "data_missing", data_missing);
-            writer.AddBool(item, "launchable", launchable);
-            writer.AddBool(item, "attention", attention);
-            writer.AddString(item, "log", Text(entry.directory / "last-run.log"));
-            if (last_run)
-                writer.Add(item, "last_run", LastRunJson(writer, *last_run, running));
-            else
-                writer.AddNull(item, "last_run");
-            writer.Append(result, item);
+            const auto state = LoadEntryState(store, std::move(entry));
+            if ((filter == "attention" && !state.attention) || (filter == "launchable" && !state.launchable)) continue;
+            writer.Append(result, EntrySummaryJson(writer, state));
         }
+    } else if (command == "show") {
+        const auto id = require();
+        end();
+        result = EntryJson(writer, LoadEntryState(store, ResolveEntry(store, id)));
     } else if (command == "inspect" || command == "import") {
         const auto source = Path(require());
         std::optional<std::filesystem::path> external;
@@ -290,7 +367,8 @@ int RunLibraryCommand(std::span<const char* const> args) {
                 if (inner_apk) {
                     const auto found = std::find_if(plan.apks.begin(), plan.apks.end(),
                                                     [&](std::size_t at) { return files[at].path == *inner_apk; });
-                    if (found == plan.apks.end()) throw std::invalid_argument("no such APK in the archive: " + *inner_apk);
+                    if (found == plan.apks.end())
+                        throw std::invalid_argument("no such APK in the archive: " + *inner_apk);
                     apk = *found;
                 }
                 const ImportWorkDirectory work(store.Root());
@@ -299,9 +377,9 @@ int RunLibraryCommand(std::span<const char* const> args) {
                 const auto inspection = InspectApk(extraction.destination, profiles);
                 plan = PlanArchive(files, inspection.manifest.package);
                 const auto mount = ExtractArchiveData(*archive, plan, extras, work.Path() / "data", nullptr);
-                const auto request = BuildLibraryImport(
-                    inspection, mount.empty() ? std::nullopt : std::optional(work.Path() / "data"), app::UtcTimestamp(),
-                    mount.empty() ? "/sdcard" : mount, ExternalDataMode::move);
+                const auto request =
+                    BuildLibraryImport(inspection, mount.empty() ? std::nullopt : std::optional(work.Path() / "data"),
+                                       app::UtcTimestamp(), mount.empty() ? "/sdcard" : mount, ExternalDataMode::move);
                 const auto id = store.Import(request, new_instance);
                 result = writer.Object();
                 writer.AddString(result, "installation_id", id);
@@ -319,8 +397,9 @@ int RunLibraryCommand(std::span<const char* const> args) {
                 result = InspectJson(writer, inspection);
             else {
                 if (link_external && !external) throw std::invalid_argument("--link-external requires --external-dir");
-                const auto request = BuildLibraryImport(inspection, external, app::UtcTimestamp(), "/sdcard",
-                                                        link_external ? ExternalDataMode::link : ExternalDataMode::copy);
+                const auto request =
+                    BuildLibraryImport(inspection, external, app::UtcTimestamp(), "/sdcard",
+                                       link_external ? ExternalDataMode::link : ExternalDataMode::copy);
                 const auto id = store.Import(request, new_instance);
                 result = writer.Object();
                 writer.AddString(result, "installation_id", id);
@@ -351,14 +430,14 @@ int RunLibraryCommand(std::span<const char* const> args) {
             writer.Append(ids, writer.String(id));
         writer.Add(result, "refreshed", ids);
     } else if (command == "data-hint") {
-        const std::string id(require());
+        const auto target = require();
         std::optional<std::filesystem::path> picked;
         if (index < args.size() && std::string_view(args[index]) == "--external-dir") {
             ++index;
             picked = Path(require());
         }
         end();
-        const auto suggestion = SuggestDataMount(store, id, picked);
+        const auto suggestion = SuggestDataMount(store, ResolveEntry(store, target).key, picked);
         const auto& hint = suggestion.hint;
         const auto strings = [&](const std::vector<std::string>& values) {
             const auto array = writer.Array();
@@ -389,7 +468,7 @@ int RunLibraryCommand(std::span<const char* const> args) {
         writer.AddString(result, "search_root", hint.search_root);
         writer.Add(result, "examples", strings(hint.examples));
     } else if (command == "settings") {
-        const auto action = require(), id = require();
+        const auto action = require(), target = require();
         if (action != "get" && action != "set") throw std::invalid_argument("settings requires get or set");
         GameSettings changes;
         std::vector<std::string> unset;
@@ -415,7 +494,8 @@ int RunLibraryCommand(std::span<const char* const> args) {
             }
             if (touched.empty()) throw std::invalid_argument("settings set requires at least one change");
         }
-        const auto entry = FindEntry(store, id);
+        const auto entry = ResolveEntry(store, target);
+        const auto& id = entry.key;
         if (entry.Damaged())
             throw LibraryError(LibraryErrorCode::corrupt_config,
                                "damaged library entry; restore it before changing settings");
@@ -423,7 +503,7 @@ int RunLibraryCommand(std::span<const char* const> args) {
             action == "set" ? PatchGameSettings(store, id, changes, unset) : LoadGameSettings(entry.directory);
         result = SettingsJson(writer, saved, LoadLibraryConfig(store.Root()), entry);
     } else if (command == "run") {
-        const auto id = require();
+        const auto id = ResolveEntry(store, require()).key;
         LaunchMode mode = LaunchMode::normal;
         if (index < args.size()) {
             if (require() != "--mode")
@@ -448,7 +528,7 @@ int RunLibraryCommand(std::span<const char* const> args) {
         writer.AddInteger(result, "exit_code", code);
     } else
         throw std::invalid_argument("unknown library command: " + std::string(command));
-    Write(stdout, writer.Serialize(result) + "\n");
+    Write(stdout, writer.Serialize(result, human) + "\n");
     return 0;
 }
 }  // namespace ogplay::cli

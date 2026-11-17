@@ -3,16 +3,12 @@
 #include "ogplay/core/encoding.h"
 #include "ogplay/app/diagnostics.h"
 #include "ogplay/app/host.h"
-#include "ogplay/agent/control_service.h"
 #include "ogplay/agent/json_rpc.h"
-#include "ogplay/core/capability_ledger.h"
-#include "ogplay/core/logger.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/hal/host_environment.h"
 #include "ogplay/frontend/data_directory.h"
 #include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/runtime/debug/stall_diagnostics.h"
-#include "ogplay/session/session.h"
 #include <stdexcept>
 #include <array>
 #include <system_error>
@@ -43,30 +39,6 @@ std::string NewControlToken() {
     std::array<std::byte, 16> entropy{};
     hal::FillSecureRandom(entropy);
     return core::EncodeHex(entropy);
-}
-
-struct AgentConsole::Impl {
-    core::CapabilityLedger ledger;
-    core::Logger logger;
-    hal::FixedStepClock clock{1000, 60000};
-    session::Session session{clock};
-    agent::ControlService service{ledger, logger, session};
-    agent::JsonRpcAdapter rpc{service};
-
-    Impl() = default;
-};
-
-AgentConsole::AgentConsole() : impl_(std::make_unique<Impl>()) {}
-
-AgentConsole::~AgentConsole() = default;
-
-ConsoleResponse AgentConsole::Request(std::string_view method) {
-    auto result = impl_->service.Request(method);
-    return {result.ok, std::move(result.json)};
-}
-
-std::string AgentConsole::HandleJsonRpc(std::string_view line) {
-    return impl_->rpc.Handle(line);
 }
 
 std::string RequestDiagnosticSnapshot(std::uint64_t pid, const std::filesystem::path& directory) {

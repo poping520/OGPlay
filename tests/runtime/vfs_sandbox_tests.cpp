@@ -8,6 +8,7 @@
 #include <array>
 #include <filesystem>
 #include <functional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -161,12 +162,112 @@ TEST_CASE("DVM-243 sandbox statvfs shares alias identity and dirty quota facts")
     vfs.RemoveDirectory("/sdcard/folder");
     CHECK(vfs.StatVfs("/sdcard").values[6] == 8);
     vfs.PutFile("/system/readonly", {}, false);
-    CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/system/readonly")); }) == 95);
+    const auto system = vfs.StatVfs("/system/readonly");
+    CHECK(system.filesystem_type == 0xEF53);
+    CHECK(system.values[9] == 1);
+    CHECK(system.values[3] == 0);
+    CHECK(system.values[4] == 0);
     CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/sdcard/missing")); }) == 2);
     CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/sdcard/../escape")); }) == 2);
     VirtualFileSystem missing;
     missing.CreateDirectory("/sdcard");
     CHECK(ErrnoOf([&] { static_cast<void>(missing.StatVfs("/sdcard")); }) == 95);
+}
+
+TEST_CASE("DVM-243 statvfs classifies paths and live descriptors by volume") {
+    VirtualFileSystem vfs;
+    vfs.PutFile("/etc/config", Bytes("config"), false);
+    vfs.PutFile("/system/lib/a", std::vector<std::byte>(4095), false);
+    vfs.PutFile("/system/b", std::vector<std::byte>(2), false);
+    vfs.CreateDirectory("/system/empty");
+    vfs.PutFile("/system-backup/file", std::vector<std::byte>(4096), false);
+    const auto generated = vfs.RegisterGeneratedReadOnly("/proc/self/maps", 16, [] { return Bytes("maps"); });
+    const auto device = vfs.RegisterReadOnlyCharacterDevice("/dev/urandom", 0x109, [](auto) { return 0U; });
+    const auto rootfs = vfs.StatVfs("/");
+    const auto system = vfs.StatVfs("/SYSTEM/lib/../b");
+    const auto proc = vfs.StatVfs("/proc/self/maps");
+    const auto dev = vfs.StatVfs("/dev/urandom");
+    CHECK(rootfs.filesystem_type == 0x858458F6);
+    CHECK(vfs.StatVfs("/etc").values == rootfs.values);
+    CHECK(vfs.StatVfs("/system-backup").filesystem_type == rootfs.filesystem_type);
+    CHECK(system.filesystem_type == 0xEF53);
+    CHECK(system.values[2] == 2);
+    CHECK(system.values[3] == 0);
+    CHECK(system.values[4] == 0);
+    CHECK(system.values[5] == 3);
+    CHECK(system.values[6] == 0);
+    CHECK(system.values[7] == 0);
+    CHECK(system.values[9] == 1);
+    CHECK(proc.filesystem_type == 0x9FA0);
+    CHECK(dev.filesystem_type == 0x01021994);
+    CHECK(rootfs.values[9] == 1);
+    CHECK(proc.values[9] == 0);
+    CHECK(dev.values[9] == 0);
+    for (const auto& zero_counts : {rootfs, proc, dev}) {
+        for (std::size_t i = 2; i <= 7; ++i)
+            CHECK(zero_counts.values[i] == 0);
+    }
+    std::set<std::uint64_t> fsids;
+    for (const auto& stats : {rootfs, system, proc, dev}) {
+        CHECK(stats.values[0] == 4096);
+        CHECK(stats.values[1] == 4096);
+        CHECK(stats.values[8] != 0);
+        CHECK(fsids.insert(stats.values[8]).second);
+        CHECK(stats.values[10] == 255);
+    }
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/system/absent")); }) == 2);
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/system/b/..")); }) == 20);
+
+    const auto fd = vfs.Open("/dev/urandom", {.read = true});
+    CHECK(vfs.StatVfs(fd).values == dev.values);
+    CHECK(vfs.StatVfs(fd).filesystem_type == dev.filesystem_type);
+    vfs.Close(fd);
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs(fd)); }) == 9);
+    const auto directory = vfs.OpenDirectory("/system");
+    CHECK(vfs.StatVfs(directory).values == system.values);
+    vfs.Close(directory);
+    const auto pipe = vfs.CreatePipe();
+    for (const auto pipe_fd : {pipe.read_descriptor, pipe.write_descriptor}) {
+        const auto stats = vfs.StatVfs(pipe_fd);
+        CHECK(stats.filesystem_type == 0x50495045);
+        for (std::size_t i = 2; i <= 7; ++i)
+            CHECK(stats.values[i] == 0);
+        vfs.Close(pipe_fd);
+    }
+
+    // Rename can change a node's volume. An unlink retains its last one.
+    vfs.PutFile("/movable", {}, true);
+    const auto moved = vfs.Open("/movable", {.read = true});
+    CHECK(vfs.StatVfs(moved).filesystem_type == rootfs.filesystem_type);
+    vfs.Rename("/movable", "/system/movable");
+    CHECK(vfs.StatVfs(moved).values == vfs.StatVfs("/system/movable").values);
+    CHECK(vfs.StatVfs(moved).filesystem_type == system.filesystem_type);
+    vfs.RemoveFile("/system/movable");
+    CHECK(vfs.StatVfs(moved).values == system.values);
+    CHECK(vfs.StatVfs(moved).filesystem_type == system.filesystem_type);
+    vfs.Close(moved);
+
+    const TemporaryRoot root("statvfs-volumes");
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+    VirtualFileSystem sandbox;
+    sandbox.AttachSandbox(*store, kWritableRoots);
+    sandbox.AddPathAlias("/storage/emulated/0", "/sdcard");
+    sandbox.AddPathAlias("/mnt/sdcard", "/sdcard");
+    sandbox.PutFile("/data/app/x-1.apk", Bytes("apk"), false);
+    sandbox.PutFile("/data/app-lib/x-1/lib.so", Bytes("lib"), false);
+    sandbox.Mount(VfsSource::obb, "/sdcard/Android/obb", std::array{VfsMountEntry{"main.obb", Bytes("obb")}});
+    const auto data = sandbox.StatVfs("/data/app/x-1.apk");
+    const auto sdcard = sandbox.StatVfs("/sdcard");
+    CHECK(data.filesystem_type == 0xEF53);
+    CHECK(sdcard.filesystem_type == 0x65735546);
+    CHECK(data.values == sdcard.values);
+    CHECK(data.values[8] != 0);
+    CHECK(fsids.insert(data.values[8]).second);
+    CHECK(sandbox.StatVfs("/data/app-lib/x-1/lib.so").values == data.values);
+    for (const auto* path : {"/storage/emulated/0", "/mnt/sdcard/Android/obb/main.obb"}) {
+        CHECK(sandbox.StatVfs(path).values == sdcard.values);
+        CHECK(sandbox.StatVfs(path).filesystem_type == sdcard.filesystem_type);
+    }
 }
 
 TEST_CASE("VFS sandbox preserves mixed-case package roots across reload and deletion") {

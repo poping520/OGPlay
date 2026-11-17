@@ -13,20 +13,6 @@ struct ConsoleResponse final {
     std::string json;
 };
 
-class OGPLAYCORE_API AgentConsole final {
-public:
-    AgentConsole();
-    ~AgentConsole();
-    AgentConsole(const AgentConsole&) = delete;
-    AgentConsole& operator=(const AgentConsole&) = delete;
-    ConsoleResponse Request(std::string_view method);
-    std::string HandleJsonRpc(std::string_view line);
-
-private:
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
-};
-
 class OGPLAYCORE_API JsonRpcDispatcher final {
 public:
     using RequestHandler = std::function<ConsoleResponse(std::string_view, JsonValue)>;

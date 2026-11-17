@@ -220,6 +220,8 @@ TEST_CASE("cooperative onPause can start Java workers before VM shutdown and joi
                 };
             }
             if (timeout) {
+                // The default follows API19 STOP+DESTROY timeouts; keep the hung case short.
+                f.app->ActivityLifecycle().SetShutdownBudgetForTesting(2'000'000'000);
                 CHECK_THROWS_WITH(static_cast<void>(f.app->Stop()),
                                   doctest::Contains("ROM Activity shutdown exceeded its Clock deadline"));
                 const auto hits = f.ledger.Unimplemented();

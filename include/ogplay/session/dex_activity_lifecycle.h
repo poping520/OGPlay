@@ -56,6 +56,8 @@ public:
     [[nodiscard]] bool ReadyForFrame();
     void SetRealtimeVideoClock(bool enabled) noexcept;
     void SetEglProducerWaitBudgetForTesting(std::uint64_t budget_ns) noexcept;
+    // Host-shutdown budget for the ROM pause/stop/destroy callbacks.
+    void SetShutdownBudgetForTesting(std::uint64_t budget_ns) noexcept;
     // Replaces the host steady time read by realtime steps.
     void SetRealtimeTimeSourceForTesting(std::function<std::uint64_t()> now_ns);
     void QueueInput(const runtime::AndroidBoundaryInput& input);
@@ -80,6 +82,9 @@ private:
     LifecycleRunState state_{LifecycleRunState::ready};
     std::uint64_t frame_{}, window_revision_{}, previous_step_ns_{}, producer_wait_started_ns_{};
     std::uint64_t producer_budget_ns_{30'000'000'000};
+    // API19 ActivityStack STOP_TIMEOUT + DESTROY_TIMEOUT (10 s each). Guest
+    // callbacks run slower than on a device, so the host does not cut them shorter.
+    std::uint64_t shutdown_budget_ns_{20'000'000'000};
     bool surface_open_{}, suspended_{}, realtime_{true}, stop_completed_{};
     bool posted_frame_{}, blank_frame_{}, reported_borrow_{};
 };

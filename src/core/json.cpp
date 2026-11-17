@@ -11,8 +11,7 @@
 namespace ogplay::core {
 namespace {
 
-bool ValidateTree(yyjson_val* value, const std::size_t depth,
-                  const std::size_t maximum_depth, JsonParseError& error) {
+bool ValidateTree(yyjson_val* value, const std::size_t depth, const std::size_t maximum_depth, JsonParseError& error) {
     if (depth > maximum_depth) {
         error = {JsonParseErrorKind::nesting_limit, 0, "JSON nesting exceeds limit"};
         return false;
@@ -32,8 +31,7 @@ bool ValidateTree(yyjson_val* value, const std::size_t depth,
     while (auto* key = yyjson_obj_iter_next(&iterator)) {
         const std::string name(yyjson_get_str(key), yyjson_get_len(key));
         if (!names.emplace(name).second) {
-            error = {JsonParseErrorKind::duplicate_key, 0,
-                     "duplicate JSON object member: " + name};
+            error = {JsonParseErrorKind::duplicate_key, 0, "duplicate JSON object member: " + name};
             return false;
         }
         if (!ValidateTree(yyjson_obj_iter_get_val(key), depth + 1U, maximum_depth, error)) {
@@ -51,22 +49,30 @@ void Require(const bool condition, const char* message) {
 
 JsonValue::JsonValue(void* value) noexcept : value_(value) {}
 
-bool JsonValue::IsValid() const noexcept { return value_ != nullptr; }
+bool JsonValue::IsValid() const noexcept {
+    return value_ != nullptr;
+}
+
 bool JsonValue::IsNull() const noexcept {
     return value_ != nullptr && yyjson_is_null(static_cast<yyjson_val*>(value_));
 }
+
 bool JsonValue::IsBool() const noexcept {
     return value_ != nullptr && yyjson_is_bool(static_cast<yyjson_val*>(value_));
 }
+
 bool JsonValue::IsInteger() const noexcept {
     return value_ != nullptr && yyjson_is_int(static_cast<yyjson_val*>(value_));
 }
+
 bool JsonValue::IsString() const noexcept {
     return value_ != nullptr && yyjson_is_str(static_cast<yyjson_val*>(value_));
 }
+
 bool JsonValue::IsArray() const noexcept {
     return value_ != nullptr && yyjson_is_arr(static_cast<yyjson_val*>(value_));
 }
+
 bool JsonValue::IsObject() const noexcept {
     return value_ != nullptr && yyjson_is_obj(static_cast<yyjson_val*>(value_));
 }
@@ -149,10 +155,11 @@ std::size_t JsonValue::Size() const noexcept {
 
 JsonDocument::JsonDocument(void* document) noexcept : document_(document) {}
 
-JsonDocument::~JsonDocument() { yyjson_doc_free(static_cast<yyjson_doc*>(document_)); }
+JsonDocument::~JsonDocument() {
+    yyjson_doc_free(static_cast<yyjson_doc*>(document_));
+}
 
-JsonDocument::JsonDocument(JsonDocument&& other) noexcept
-    : document_(std::exchange(other.document_, nullptr)) {}
+JsonDocument::JsonDocument(JsonDocument&& other) noexcept : document_(std::exchange(other.document_, nullptr)) {}
 
 JsonDocument& JsonDocument::operator=(JsonDocument&& other) noexcept {
     if (this == &other) return *this;
@@ -161,22 +168,20 @@ JsonDocument& JsonDocument::operator=(JsonDocument&& other) noexcept {
     return *this;
 }
 
-std::optional<JsonDocument> JsonDocument::ParseStrict(
-    const std::string_view text, JsonParseError& error, const std::size_t maximum_bytes,
-    const std::size_t maximum_depth) {
+std::optional<JsonDocument> JsonDocument::ParseStrict(const std::string_view text, JsonParseError& error,
+                                                      const std::size_t maximum_bytes,
+                                                      const std::size_t maximum_depth) {
     error = {};
     if (text.size() > maximum_bytes) {
-        error = {JsonParseErrorKind::size_limit, maximum_bytes,
-                 "JSON input exceeds size limit"};
+        error = {JsonParseErrorKind::size_limit, maximum_bytes, "JSON input exceeds size limit"};
         return std::nullopt;
     }
     yyjson_read_err read_error{};
     const char* const bytes = text.data() ? text.data() : "";
-    auto* const document = yyjson_read_opts(
-        const_cast<char*>(bytes), text.size(), YYJSON_READ_NOFLAG, nullptr, &read_error);
+    auto* const document =
+        yyjson_read_opts(const_cast<char*>(bytes), text.size(), YYJSON_READ_NOFLAG, nullptr, &read_error);
     if (!document) {
-        error = {JsonParseErrorKind::syntax, read_error.pos,
-                 read_error.msg ? read_error.msg : "invalid JSON"};
+        error = {JsonParseErrorKind::syntax, read_error.pos, read_error.msg ? read_error.msg : "invalid JSON"};
         return std::nullopt;
     }
     JsonDocument result(document);
@@ -192,7 +197,10 @@ JsonValue JsonDocument::Root() const noexcept {
 }
 
 JsonWriter::Value::Value(void* value) noexcept : value_(value) {}
-bool JsonWriter::Value::IsValid() const noexcept { return value_ != nullptr; }
+
+bool JsonWriter::Value::IsValid() const noexcept {
+    return value_ != nullptr;
+}
 
 JsonWriter::JsonWriter() : document_(yyjson_mut_doc_new(nullptr)) {
     if (!document_) throw std::bad_alloc();
@@ -202,8 +210,7 @@ JsonWriter::~JsonWriter() {
     yyjson_mut_doc_free(static_cast<yyjson_mut_doc*>(document_));
 }
 
-JsonWriter::JsonWriter(JsonWriter&& other) noexcept
-    : document_(std::exchange(other.document_, nullptr)) {}
+JsonWriter::JsonWriter(JsonWriter&& other) noexcept : document_(std::exchange(other.document_, nullptr)) {}
 
 JsonWriter& JsonWriter::operator=(JsonWriter&& other) noexcept {
     if (this == &other) return *this;
@@ -256,16 +263,15 @@ JsonWriter::Value JsonWriter::Real(const double value) {
 
 JsonWriter::Value JsonWriter::String(const std::string_view value) {
     const char* const bytes = value.data() ? value.data() : "";
-    auto* const result = yyjson_mut_strncpy(
-        static_cast<yyjson_mut_doc*>(document_), bytes, value.size());
+    auto* const result = yyjson_mut_strncpy(static_cast<yyjson_mut_doc*>(document_), bytes, value.size());
     if (!result) throw std::bad_alloc();
     return Value(result);
 }
 
 JsonWriter::Value JsonWriter::Copy(const JsonValue value) {
     Require(value.IsValid(), "cannot copy an empty JSON value");
-    auto* const result = yyjson_val_mut_copy(
-        static_cast<yyjson_mut_doc*>(document_), static_cast<yyjson_val*>(value.value_));
+    auto* const result =
+        yyjson_val_mut_copy(static_cast<yyjson_mut_doc*>(document_), static_cast<yyjson_val*>(value.value_));
     if (!result) throw std::bad_alloc();
     return Value(result);
 }
@@ -277,12 +283,10 @@ void JsonWriter::Add(const Value object, const std::string_view name, const Valu
     Require(yyjson_mut_is_obj(raw_object), "JSON member target must be an object");
     Require(value.IsValid(), "cannot add an empty JSON value");
     const char* const name_bytes = name.data() ? name.data() : "";
-    Require(yyjson_mut_obj_getn(raw_object, name_bytes, name.size()) == nullptr,
-            "duplicate JSON object member");
+    Require(yyjson_mut_obj_getn(raw_object, name_bytes, name.size()) == nullptr, "duplicate JSON object member");
     auto* const key = yyjson_mut_strncpy(document, name_bytes, name.size());
     Require(key != nullptr, "failed to allocate JSON object key");
-    Require(yyjson_mut_obj_add(raw_object, key,
-                               static_cast<yyjson_mut_val*>(value.value_)),
+    Require(yyjson_mut_obj_add(raw_object, key, static_cast<yyjson_mut_val*>(value.value_)),
             "failed to add JSON object member");
 }
 
@@ -294,13 +298,11 @@ void JsonWriter::AddBool(const Value object, const std::string_view name, const 
     Add(object, name, Bool(value));
 }
 
-void JsonWriter::AddInteger(const Value object, const std::string_view name,
-                            const std::int64_t value) {
+void JsonWriter::AddInteger(const Value object, const std::string_view name, const std::int64_t value) {
     Add(object, name, Integer(value));
 }
 
-void JsonWriter::AddUnsignedInteger(const Value object, const std::string_view name,
-                                    const std::uint64_t value) {
+void JsonWriter::AddUnsignedInteger(const Value object, const std::string_view name, const std::uint64_t value) {
     Add(object, name, UnsignedInteger(value));
 }
 
@@ -308,29 +310,27 @@ void JsonWriter::AddReal(const Value object, const std::string_view name, const 
     Add(object, name, Real(value));
 }
 
-void JsonWriter::AddString(const Value object, const std::string_view name,
-                           const std::string_view value) {
+void JsonWriter::AddString(const Value object, const std::string_view name, const std::string_view value) {
     Add(object, name, String(value));
 }
 
 void JsonWriter::Append(const Value array, const Value value) {
     Require(array.IsValid(), "JSON array target is empty");
     Require(value.IsValid(), "cannot append an empty JSON value");
-    Require(yyjson_mut_is_arr(static_cast<yyjson_mut_val*>(array.value_)),
-            "JSON append target must be an array");
-    Require(yyjson_mut_arr_append(static_cast<yyjson_mut_val*>(array.value_),
-                                  static_cast<yyjson_mut_val*>(value.value_)),
-            "failed to append JSON array value");
+    Require(yyjson_mut_is_arr(static_cast<yyjson_mut_val*>(array.value_)), "JSON append target must be an array");
+    Require(
+        yyjson_mut_arr_append(static_cast<yyjson_mut_val*>(array.value_), static_cast<yyjson_mut_val*>(value.value_)),
+        "failed to append JSON array value");
 }
 
-std::string JsonWriter::Serialize(const Value root) {
+std::string JsonWriter::Serialize(const Value root, const bool pretty) {
     Require(root.IsValid(), "cannot serialize an empty JSON value");
     auto* const document = static_cast<yyjson_mut_doc*>(document_);
     yyjson_mut_doc_set_root(document, static_cast<yyjson_mut_val*>(root.value_));
     std::size_t length = 0;
     yyjson_write_err error{};
-    char* const bytes = yyjson_mut_write_opts(
-        document, YYJSON_WRITE_NOFLAG, nullptr, &length, &error);
+    char* const bytes = yyjson_mut_write_opts(document, pretty ? YYJSON_WRITE_PRETTY_TWO_SPACES : YYJSON_WRITE_NOFLAG,
+                                              nullptr, &length, &error);
     if (!bytes) {
         throw std::runtime_error(error.msg ? error.msg : "failed to serialize JSON");
     }

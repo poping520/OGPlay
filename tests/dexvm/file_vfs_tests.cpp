@@ -152,8 +152,8 @@ TEST_CASE("DVM-243 original StatFs snapshots refresh guest quota and preserve er
         fail(refresh("/sdcard/absent"), "Ljava/lang/IllegalArgumentException;");
         CHECK(f.CallOn(stat, "getFreeBlocksLong", "()J").AsLong() == 15);
         f.vfs.PutFile("/system/ro", {}, false);
-        fail(refresh("/system/ro"), "Ljava/lang/IllegalArgumentException;");
-        CHECK(f.CallOn(stat, "getFreeBlocksLong", "()J").AsLong() == 15);
+        REQUIRE_FALSE(refresh("/system/ro").exception.IsValid());
+        CHECK(f.CallOn(stat, "getFreeBlocksLong", "()J").AsLong() == 0);
         const auto null = f.CallOnOutcome(stat, "restat", "(Ljava/lang/String;)V", {VmValue::Ref(VmObjectRef{})});
         fail(null, "Ljava/lang/NullPointerException;");
         f.interpreter.IO().SetFileSystem(nullptr);

@@ -1252,7 +1252,7 @@ note = "ADR-0150：Boot/App 按实际 bootstrap 身份 parent-first；层级/布
 [dexvm.boot_dex]
 status = "complete"
 test = "tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/frontend/data_directory_tests.cpp; tools.android_payload_current; tools/bootdex/build_bootdex.py check"
-note = "启动类路径为 ogplay.jar + 原样 API19 ROM jar（顺序与身份见 data/android/19/manifest.json），同名类先到先得；intrinsic 未标 MergesBootClass 时整类替换 ROM 类。未绑定 native 调用时抛 UnsatisfiedLinkError 并记账。依赖缺失的 ROM 类按需链接失败。multidex、动态 classpath、系统服务进程未纳入。"
+note = "启动类路径为单个 bootdex.jar，按顺序加载 OGPlay 与原样 API19 ROM DEX（身份见 data/android/19/manifest.json）。同名类先到先得；intrinsic 未标 MergesBootClass 时整类替换 ROM 类。未绑定 native 调用时抛 UnsatisfiedLinkError 并记账。依赖缺失的 ROM 类按需链接失败。应用 multidex、动态 classpath、系统服务进程未纳入。"
 
 [dexvm.string_format_api19]
 status = "partial"
@@ -2147,7 +2147,7 @@ note = "真实 catalog/BootDex/平台绑定导出 JSON；API19 ROM 公开/保护
 [dexvm.bootdex_rom_java]
 status = "partial"
 test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/intrinsics_p1_tests.cpp#DVM-265; tests/dexvm/network_sqlite_tests.cpp#DVM-265; tests/dexvm/android_intent_uri_tests.cpp#DVM-265; tests/dexvm/core_catalog_tests.cpp#DVM-265; tests/dexvm/android_value_tests.cpp#DVM-266; tests/dexvm/android_context_services_tests.cpp#DVM-266; tests/dexvm/android_value_tests.cpp#DVM-267; tests/dexvm/android_context_services_tests.cpp#DVM-267; tests/dexvm/bootdex_concurrency_tests.cpp#DVM-267"
-note = "启动类路径按 manifest 加载 ogplay.jar 与原样 API19 ROM jar，普通 Java 字段、方法和初始化由 ROM 拥有；未绑定 native 调用记账并抛 UnsatisfiedLinkError。新代码不得替换 ROM 类或覆盖非 native 方法，现存替换/覆盖按阶段移除。类可链接不代表完整服务或游戏兼容。"
+note = "启动类路径从单个 bootdex.jar 按顺序加载 OGPlay 与原样 API19 ROM DEX。普通 Java 字段、方法和初始化由 ROM 拥有；未绑定 native 调用记账并抛 UnsatisfiedLinkError。新代码不得替换 ROM 类或覆盖非 native 方法，现存替换/覆盖按阶段移除。类可链接不代表完整服务或游戏兼容。"
 
 [dexvm.bootdex_member_composition]
 status = "partial"

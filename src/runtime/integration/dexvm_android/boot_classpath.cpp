@@ -15,19 +15,15 @@ bool HasEntry(const loader::ApkArchive& archive, const std::string_view name) {
 }  // namespace
 
 std::vector<BootClasspathJar> ReadBootClasspath(const std::filesystem::path& framework_directory) {
-    std::vector<BootClasspathJar> jars;
-    jars.reserve(kBootClasspathJars.size());
-    for (const auto name : kBootClasspathJars) {
-        const auto path = framework_directory / std::filesystem::path(std::string(name));
-        std::ifstream input(path, std::ios::binary);
-        if (!input) throw std::runtime_error("boot classpath archive is missing: " + path.string());
-        const std::vector<char> raw{std::istreambuf_iterator<char>(input), {}};
-        BootClasspathJar jar;
-        jar.guest_path = std::string(kBootClasspathDirectory) + std::string(name);
-        jar.bytes.resize(raw.size());
-        std::memcpy(jar.bytes.data(), raw.data(), raw.size());
-        jars.push_back(std::move(jar));
-    }
+    const auto path = framework_directory / kBootClasspathJar;
+    std::ifstream input(path, std::ios::binary);
+    if (!input) throw std::runtime_error("boot classpath archive is missing: " + path.string());
+    const std::vector<char> raw{std::istreambuf_iterator<char>(input), {}};
+    std::vector<BootClasspathJar> jars(1);
+    auto& jar = jars.front();
+    jar.guest_path = std::string(kBootClasspathDirectory) + std::string(kBootClasspathJar);
+    jar.bytes.resize(raw.size());
+    if (!raw.empty()) std::memcpy(jar.bytes.data(), raw.data(), raw.size());
     return jars;
 }
 

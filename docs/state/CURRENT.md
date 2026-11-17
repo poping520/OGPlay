@@ -6,7 +6,7 @@
 跨会话在办事项写入任务单，完成后的过程、验证明细及证据留在提交说明中。能力见 [capabilities.toml](../../capabilities.toml)，
 契约见各模块 MODULE，任务见 [任务总览](../tasks/README.md)。
 
-当前启动类路径为 ogplay.jar + 原样 API19 ROM jar，应用与 ROM 共用 DexVM/JNI 对象模型；
+当前启动类路径为单个 `bootdex.jar`，依次包含 OGPlay 与原样 API19 ROM DEX。应用与 ROM 共用 DexVM/JNI 对象模型，
 ROM ActivityThread、主 Looper 和 ViewRootImpl 驱动启动、生命周期、配置派发/relaunch 与软件绘制。
 宿主提供进程内 AMS/WMS/IMMS/通知等服务及 native：资源基于本地 framework-res.apk 和唯一资源表核心，
 Java/NDK 共用 AssetManager；软件 Canvas 使用 Skia，EGL/视频 Surface 经 WindowSystem 合成后交付宿主。

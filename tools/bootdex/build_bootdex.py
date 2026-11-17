@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build and check the API 19 boot classpath payload.
 
-The ROM jars are copied unmodified from .aosp/api19/rom. OGPlay's own guest Java is
-compiled into ogplay.jar, which comes first on the boot classpath. build/check also
+bootdex.jar contains OGPlay's compiled guest Java followed by the original DEX
+files and resources from the pinned .aosp/api19/rom jars. build/check also
 produce framework-res.apk from the pinned ROM original (wallpapers and META-INF
 removed, everything else kept). The same script builds the guest JNI library
 (build-guest-jni).
@@ -11,6 +11,7 @@ removed, everything else kept). The same script builds the guest JNI library
 from __future__ import annotations
 
 import argparse
+import binascii
 import hashlib
 import io
 import json
@@ -30,30 +31,40 @@ from aosp_sources import rom_dir  # noqa: E402
 
 AOSP = rom_dir(19)
 FRAMEWORK = ROOT / "data/android/19/framework"
-OGPLAY_JAR = FRAMEWORK / "ogplay.jar"
+BOOT_JAR = FRAMEWORK / "bootdex.jar"
 MANIFEST = ROOT / "data/android/19/manifest.json"
 NOTICE = ROOT / "data/android/19/notices/boot-classpath.txt"
 ROM_NOTICES = {"telephony-common.jar": "notices/telephony-common.jar.txt"}
 GUEST_JAVA_ROOTS = tuple(ROOT / "src/guest" / name / "java"
                          for name in ("crypto", "framework", "io", "math", "webview", "xml", "zip"))
 
-# API 19 ROM jars in boot classpath order, after ogplay.jar.
+# API 19 ROM jars in boot classpath order, after OGPlay's DEX.
+# Each entry pins the source project, original jar hash and original DEX hash.
 ROM_JARS = {
     "core.jar": ("platform/libcore",
-                 "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"),
+                 "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee",
+                 "68edab3c434076cdeb8fcc408dfb208706a2c54081598a117563352b671f80de"),
     "conscrypt.jar": ("platform/libcore",
-                      "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"),
+                      "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004",
+                      "a8c3f9df9b31a9fc9b78d16d618f21af5ed80a703ee67a3cea8b8738244fb621"),
     "ext.jar": ("platform/external/apache-http",
-                "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2"),
+                "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2",
+                "25315c2c3ec8ca7ec2aacebadadaeade8af55de4e2f584db35b9c8337f307c23"),
     "framework.jar": ("platform/frameworks/base",
-                      "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"),
+                      "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+                      "905d1ba05d4f64eb889fdc02b9bcaca382e991c642913810f8949c1c19d0f590"),
     "framework2.jar": ("platform/frameworks/base",
-                       "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"),
+                       "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973",
+                       "ef843c09e8a5bde9916e08f3b2b15a4789a35792dc2cc4ad2ce7737920ea9fcf"),
     "telephony-common.jar": ("platform/frameworks/opt/telephony",
-                             "b1e4f98857dd07d9fa7bc1d6c2d6cdb49d41adc2973533db3982ef0d5348a908"),
+                             "b1e4f98857dd07d9fa7bc1d6c2d6cdb49d41adc2973533db3982ef0d5348a908",
+                             "2887c593e7656dbe925d6d432a7703f37290a93f23b19ae9bbf4b05a75eb5f25"),
     "android.policy.jar": ("platform/frameworks/base",
-                           "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1"),
+                           "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1",
+                           "2919a52dd8b950ed086dc70779f76cab9fec25fa4528d04f66d8ef02573deeed"),
 }
+LEGACY_BOOT_JARS = ("ogplay.jar", *ROM_JARS)
+DEX_ENTRIES = ("classes.dex", *(f"classes{index}.dex" for index in range(2, len(ROM_JARS) + 2)))
 
 # Hidden API 19 types are absent from the public SDK android.jar. These
 # declarations only satisfy javac; the ROM jars supply the real classes.
@@ -258,26 +269,63 @@ def compile_guest_java(work: Path) -> bytes:
     return (dex_dir / "classes.dex").read_bytes()
 
 
-def make_jar(dex: bytes) -> bytes:
-    output = io.BytesIO()
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
-        for name, content in [("META-INF/MANIFEST.MF", JAR_MANIFEST), ("classes.dex", dex)]:
-            info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_STORED
-            info.create_system = 3
-            info.external_attr = 0o100644 << 16
-            archive.writestr(info, content)
-    return output.getvalue()
+class BootZipWriter:
+    """Write a canonical ZIP32 archive from stored or already compressed data."""
+
+    def __init__(self) -> None:
+        self.output = io.BytesIO()
+        self.directory = io.BytesIO()
+        self.names: set[str] = set()
+
+    def add(self, name: str, compressed: bytes, method: int, crc: int, size: int) -> None:
+        if name in self.names:
+            raise BuildError(f"duplicate boot archive entry: {name}")
+        self.names.add(name)
+        encoded = name.encode("utf-8")
+        flags = 0 if name.isascii() else 0x800
+        offset = self.output.tell()
+        # ZIP version, flags, method, DOS time/date, CRC, sizes and name length.
+        fields = (20, flags, method, 0, 0x21, crc, len(compressed), size, len(encoded))
+        self.output.write(struct.pack("<I5H3I2H", 0x04034B50, *fields, 0))
+        self.output.write(encoded)
+        self.output.write(compressed)
+        self.directory.write(struct.pack("<I6H3I5H2I", 0x02014B50, 0x314, *fields,
+                                         0, 0, 0, 0, 0o100644 << 16, offset))
+        self.directory.write(encoded)
+
+    def add_stored(self, name: str, contents: bytes) -> None:
+        self.add(name, contents, zipfile.ZIP_STORED, binascii.crc32(contents), len(contents))
+
+    def bytes(self) -> bytes:
+        offset = self.output.tell()
+        directory = self.directory.getvalue()
+        count = len(self.names)
+        self.output.write(directory)
+        self.output.write(struct.pack("<I4H2IH", 0x06054B50, 0, 0, count, count, len(directory), offset, 0))
+        return self.output.getvalue()
 
 
-def build_ogplay_jar() -> bytes:
+def compressed_zip_data(source: bytes, info: zipfile.ZipInfo) -> bytes:
+    # Central-directory lengths also cover sources that use a data descriptor.
+    offset = info.header_offset
+    if source[offset:offset + 4] != b"PK\x03\x04" or offset + 30 > len(source):
+        raise BuildError(f"invalid ZIP local header: {info.filename}")
+    name_size, extra_size = struct.unpack_from("<HH", source, offset + 26)
+    start = offset + 30 + name_size + extra_size
+    data = source[start:start + info.compress_size]
+    if len(data) != info.compress_size:
+        raise BuildError(f"truncated ZIP entry: {info.filename}")
+    return data
+
+
+def build_ogplay_dex() -> bytes:
     check_toolchain()
-    with tempfile.TemporaryDirectory(prefix="ogplay-jar-a-") as first, \
-            tempfile.TemporaryDirectory(prefix="ogplay-jar-b-") as second:
+    with tempfile.TemporaryDirectory(prefix="ogplay-dex-a-") as first, \
+            tempfile.TemporaryDirectory(prefix="ogplay-dex-b-") as second:
         dex = compile_guest_java(Path(first))
         if dex != compile_guest_java(Path(second)):
             raise BuildError("two guest Java builds differ")
-    return make_jar(dex)
+    return dex
 
 
 def rom_jar(name: str) -> bytes:
@@ -285,6 +333,35 @@ def rom_jar(name: str) -> bytes:
     if sha256(data) != ROM_JARS[name][1]:
         raise BuildError(f"unexpected ROM input: {AOSP / name}")
     return data
+
+
+def pack_boot_classpath(dex: bytes) -> tuple[bytes, list[dict]]:
+    writer = BootZipWriter()
+    writer.add_stored("META-INF/MANIFEST.MF", JAR_MANIFEST)
+    writer.add_stored(DEX_ENTRIES[0], dex)
+    dexes = [{"entry": DEX_ENTRIES[0], "size": len(dex), "sha256": sha256(dex)}]
+    resources = []
+    for entry, (name, (project, source_hash, dex_hash)) in zip(DEX_ENTRIES[1:], ROM_JARS.items()):
+        source = rom_jar(name)
+        with zipfile.ZipFile(io.BytesIO(source)) as rom:
+            info = rom.getinfo("classes.dex")
+            if sha256(rom.read(info)) != dex_hash:
+                raise BuildError(f"unexpected ROM DEX: {name}/classes.dex")
+            writer.add(entry, compressed_zip_data(source, info), info.compress_type, info.CRC, info.file_size)
+            for resource in rom.infolist():
+                if resource.is_dir() or resource.filename.startswith("META-INF/") or resource.filename.endswith(".dex"):
+                    continue
+                resources.append((resource.filename, compressed_zip_data(source, resource),
+                                  resource.compress_type, resource.CRC, resource.file_size))
+        metadata = {"entry": entry, "size": info.file_size, "sha256": dex_hash,
+                    "source": name, "source_project": project, "source_sha256": source_hash}
+        if name in ROM_NOTICES:
+            notice = ROM_NOTICES[name]
+            metadata.update(notice=notice, notice_sha256=file_sha256(MANIFEST.parent / notice))
+        dexes.append(metadata)
+    for resource in resources:
+        writer.add(*resource)
+    return writer.bytes(), dexes
 
 
 FRAMEWORK_RES = FRAMEWORK / "framework-res.apk"
@@ -326,28 +403,19 @@ def framework_resources() -> bytes:
     return trim_framework_resources(source)
 
 
-def boot_metadata(jar: bytes) -> dict:
-    def rom_metadata(name: str, project: str, digest: str) -> dict:
-        entry = {"path": f"framework/{name}", "source_project": project,
-                 "size": (AOSP / name).stat().st_size, "sha256": digest}
-        if name in ROM_NOTICES:
-            notice = ROM_NOTICES[name]
-            entry.update(notice=notice, notice_sha256=file_sha256(MANIFEST.parent / notice))
-        return entry
-
+def boot_metadata(jar: bytes, dexes: list[dict]) -> dict:
+    dexes[0]["sources"] = {
+        "roots": [root.relative_to(ROOT).as_posix() for root in GUEST_JAVA_ROOTS],
+        "sha256": sha256(b"".join(path.relative_to(ROOT).as_posix().encode("utf-8") + b"\0"
+                                  + path.read_bytes() for path in guest_java_sources())),
+        "javac": javac_release(), "android_jar_sha256": ANDROID_JAR_SHA256, "d8_sha256": D8_JAR_SHA256,
+    }
     return {
-        "directory": "framework",
+        "path": BOOT_JAR.relative_to(MANIFEST.parent).as_posix(),
+        "size": len(jar),
+        "sha256": sha256(jar),
+        "dex": dexes,
         "generator": "tools/bootdex/build_bootdex.py",
-        "classpath": [
-            {"path": "framework/ogplay.jar", "source_project": "OGPlay", "size": len(jar), "sha256": sha256(jar),
-             "sources": {
-                 "roots": [root.relative_to(ROOT).as_posix() for root in GUEST_JAVA_ROOTS],
-                 "sha256": sha256(b"".join(path.relative_to(ROOT).as_posix().encode("utf-8") + b"\0"
-                                           + path.read_bytes() for path in guest_java_sources())),
-                 "javac": javac_release(), "android_jar_sha256": ANDROID_JAR_SHA256,
-                 "d8_sha256": D8_JAR_SHA256}},
-            *(rom_metadata(name, project, digest) for name, (project, digest) in ROM_JARS.items()),
-        ],
         "notice": NOTICE.relative_to(MANIFEST.parent).as_posix(),
         "notice_sha256": file_sha256(NOTICE),
     }
@@ -362,23 +430,25 @@ def manifest_bytes(metadata: dict, resources: bytes) -> bytes:
 
 
 def build_or_check(mode: str) -> int:
-    jar = build_ogplay_jar()
-    roms = {name: rom_jar(name) for name in ROM_JARS}
+    jar, dexes = pack_boot_classpath(build_ogplay_dex())
     resources = framework_resources()
-    manifest = manifest_bytes(boot_metadata(jar), resources)
-    outputs = {OGPLAY_JAR: jar, **{FRAMEWORK / name: data for name, data in roms.items()},
-               FRAMEWORK_RES: resources, MANIFEST: manifest}
+    manifest = manifest_bytes(boot_metadata(jar, dexes), resources)
+    outputs = {BOOT_JAR: jar, FRAMEWORK_RES: resources, MANIFEST: manifest}
+    legacy = [FRAMEWORK / name for name in LEGACY_BOOT_JARS]
     if mode == "build":
         FRAMEWORK.mkdir(parents=True, exist_ok=True)
         for path, data in outputs.items():
             if not path.is_file() or path.read_bytes() != data:
                 path.write_bytes(data)
+        for path in legacy:
+            path.unlink(missing_ok=True)
     else:
         stale = [path.relative_to(ROOT).as_posix() for path, data in outputs.items()
                  if not path.is_file() or path.read_bytes() != data]
+        stale.extend(path.relative_to(ROOT).as_posix() for path in legacy if path.exists() or path.is_symlink())
         if stale:
             raise BuildError("boot classpath payload is stale (run build): " + ", ".join(stale))
-    print(f"boot classpath {mode}: ogplay.jar {sha256(jar)} + {len(roms)} ROM jars + framework-res.apk {sha256(resources)}")
+    print(f"boot classpath {mode}: bootdex.jar {sha256(jar)} ({len(dexes)} DEX) + framework-res.apk {sha256(resources)}")
     return 0
 
 

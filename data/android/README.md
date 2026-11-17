@@ -8,15 +8,14 @@
 外部系统库目录。
 
 `19/manifest.json` 是发行 payload 的机器可读事实源，保存构建、逐库 ELF/哈希、依赖和
-NOTICE 映射，以及启动类路径各 jar 的来源与哈希；`19/source-manifest.xml` 固定
+NOTICE 映射，以及启动类路径归档的哈希和各 DEX 的来源与哈希；`19/source-manifest.xml` 固定
 参与构建的源码 revision。Bionic-only 构建没有生成 build fingerprint，因此清单以 `null`
 明确表示未知，不以推测值代替。
 
-`19/framework/` 是 API 19 启动类路径：`core.jar`、`conscrypt.jar`、`ext.jar`、
-`framework.jar`、`framework2.jar`、`telephony-common.jar`、`android.policy.jar` 原样取自 AOSP 构建，`ogplay.jar`
-放 OGPlay 自己的 guest Java 与进程内服务实现，并排在最前；资源 native 读取本地
+`19/framework/bootdex.jar` 是 API 19 启动类路径。首个 DEX 包含 OGPlay 的 guest Java 和进程内服务实现，
+后续 DEX 保留 AOSP 原版字节，归档也保留 ROM JAR 的非 DEX 资源。资源 native 读取本地
 `framework-res.apk` 与应用 APK，共用唯一资源核心。生成命令为
-`python3 tools/bootdex/build_bootdex.py build`，运行时按顺序加载全部 jar；该目录不入库。
+`python3 tools/bootdex/build_bootdex.py build`，运行时按顺序加载归档中的 DEX。该目录不入库。
 构建要求见 [工具说明](../../tools/README.md)。
 
 提交或发布前运行：
@@ -28,7 +27,7 @@ python tools/validate_android_payload.py --root data/android/19
 校验器要求精确的五个 pinned Bionic 库、`libcrypto.so`/`libssl.so`/`libogplay_jni.so`、两个 ICU4C
 运行库及其 ABI/STLport 依赖（共四个库）的闭集，复核体积、SHA-256、ELF32/little-endian/ARM/DYN 身份、
 并逐库解析 SONAME/DT_NEEDED，复核目标 AOSP tag、构建目标、源码仓库 clean/tag 状态和 NOTICE；同时复核
-启动类路径顺序、ROM jar 固定哈希与 ogplay.jar 布局。
+`bootdex.jar` 归档布局、DEX 顺序及 ROM 来源和 DEX 的固定哈希。
 
 通常设备提取物只作为开发期 ABI oracle。`libcrypto.so` 已替换为 AOSP
 `platform/external/openssl` 在 `android-4.4.4_r2.0.1` 的

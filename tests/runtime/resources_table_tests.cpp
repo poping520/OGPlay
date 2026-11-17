@@ -1,3 +1,4 @@
+#include "dexvm/boot_dex.h"
 #include "ogplay/core/byte_order.h"
 #include <thread>
 #include <atomic>
@@ -31,10 +32,7 @@ TEST_CASE("resources core table accepts aapt2 type-spec res1 and rejects sparse 
 TEST_CASE("resources core table round trips every public android R constant in the shipped ROM") {
     auto t = Table();
     CHECK(t.packageNames() == std::vector<std::string>{"android"});
-    auto jar = ReadSource(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework/framework.jar");
-    auto zip = ogplay::loader::ParseApkArchive(jar.bytes);
-    auto data = ogplay::loader::ReadApkEntry(jar.bytes, zip, "classes.dex");
-    auto bytes = std::span(reinterpret_cast<const std::uint8_t*>(data.data()), data.size());
+    const auto bytes = ogplay::test::ReadBootDexFromSource("framework.jar");
     auto dex = ogplay::loader::ParseDex(bytes);
     auto classes = ogplay::loader::ReadDexClassData(bytes, dex);
     std::size_t count = 0;

@@ -13,16 +13,12 @@
 #include <thread>
 #include "ogplay/runtime/dexvm/big_int_runtime.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
-#include <cstring>
-#include <filesystem>
-#include <fstream>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
-#include "ogplay/loader/apk.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
@@ -37,17 +33,7 @@
 namespace ogplay::test::bootdex_library {
 
 std::vector<std::uint8_t> BootJarDex(const std::string_view jar) {
-    const auto path = std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework" / std::string(jar);
-    std::ifstream stream(path, std::ios::binary);
-    REQUIRE_MESSAGE(stream.good(), path.string());
-    const std::vector<char> raw{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
-    std::vector<std::byte> archive_bytes(raw.size());
-    std::memcpy(archive_bytes.data(), raw.data(), raw.size());
-    const auto archive = ogplay::loader::ParseApkArchive(archive_bytes);
-    const auto dex = ogplay::loader::ReadApkEntry(archive_bytes, archive, "classes.dex");
-    std::vector<std::uint8_t> result(dex.size());
-    std::memcpy(result.data(), dex.data(), dex.size());
-    return result;
+    return ReadBootDexFromSource(jar);
 }
 
 Dvm87Vm::Dvm87Vm(const InterpreterBackend backend, const std::string& language, const std::string& region,

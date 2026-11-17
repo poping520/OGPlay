@@ -133,14 +133,11 @@ struct BootClasspathJar final {
     loader::ApkArchive archive;
 };
 
-// Boot classpath order. OGPlay's own classes come first so that they replace
-// the ROM class of the same name; the ROM jars follow unmodified.
-inline constexpr std::array<std::string_view, 8> kBootClasspathJars{
-    "ogplay.jar",    "core.jar",       "conscrypt.jar",        "ext.jar",
-    "framework.jar", "framework2.jar", "telephony-common.jar", "android.policy.jar"};
+// classes.dex contains OGPlay's classes, followed by the unmodified ROM DEX files.
+inline constexpr std::string_view kBootClasspathJar = "bootdex.jar";
 inline constexpr std::string_view kBootClasspathDirectory = "/system/framework/";
 
-// Reads every kBootClasspathJars archive from a payload framework directory.
+// Reads the single boot classpath archive from a payload framework directory.
 [[nodiscard]] std::vector<BootClasspathJar> ReadBootClasspath(const std::filesystem::path& framework_directory);
 
 // Parses the archives and builds the context; fails before any VM exists if a jar is unusable.

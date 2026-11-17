@@ -237,10 +237,7 @@ TEST_CASE("reflection metadata uses declared order and opaque local slots") {
 }
 
 TEST_CASE("System and NIO reflection match API19 core.jar declarations") {
-    const auto& jars = ogplay::test::BootClasspathJars();
-    const auto jar = std::ranges::find(jars, "/system/framework/core.jar", &BootClasspathJar::guest_path);
-    REQUIRE(jar != jars.end());
-    const auto dex = BootClasspathDexFiles(std::span(&*jar, 1)).front();
+    const auto dex = ogplay::test::ReadBootDexFromSource("core.jar");
     const auto image = ogplay::loader::ParseDex(dex);
     const auto class_data = ogplay::loader::ReadDexClassData(dex, image);
     const auto name = [&](std::uint32_t index) {

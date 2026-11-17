@@ -79,17 +79,12 @@ TEST_CASE("API19 ROM String reflection exposes exactly the core.jar declarations
               "Ljava/util/regex/Splitter;"})
             CHECK(fixture.linker.Class(fixture.linker.ResolveDescriptor(dependency)).is_boot_dex);
 
-        const auto& jars = ogplay::test::BootClasspathJars();
-        const auto core =
-            std::ranges::find_if(jars, [](const auto& jar) { return jar.guest_path.ends_with("/core.jar"); });
-        REQUIRE(core != jars.end());
-        const auto dexes = ogplay::runtime::BootClasspathDexFiles(std::span{&*core, 1});
-        REQUIRE(dexes.size() == 1);
-        const auto image = ogplay::loader::ParseDex(dexes.front());
+        const auto dex = ogplay::test::ReadBootDexFromSource("core.jar");
+        const auto image = ogplay::loader::ParseDex(dex);
         const auto def = std::ranges::find_if(
             image.classes, [&](const auto& item) { return image.types[item.class_type_index].descriptor == kString; });
         REQUIRE(def != image.classes.end());
-        const auto data = ogplay::loader::ReadDexClassData(dexes.front(), image);
+        const auto data = ogplay::loader::ReadDexClassData(dex, image);
         const auto& rom = data[static_cast<std::size_t>(def - image.classes.begin())];
         const auto name = [&](std::uint32_t index) {
             const auto& text = image.strings[index].value;

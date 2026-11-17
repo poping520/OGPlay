@@ -1,6 +1,10 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
+#include <cstring>
 #include <filesystem>
+#include <stdexcept>
 #include <vector>
 
 #include "ogplay/loader/apk.h"
@@ -8,7 +12,7 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 
 namespace ogplay::test {
-// The payload boot classpath (ogplay.jar + ROM jars), parsed once per test binary.
+// The payload's bootdex.jar, parsed once per test binary.
 inline const std::vector<runtime::BootClasspathJar>& BootClasspathJars() {
     static const auto jars = [] {
         auto result =
@@ -23,6 +27,22 @@ inline const std::vector<runtime::BootClasspathJar>& BootClasspathJars() {
 // Boot classpath DEX files in classpath order.
 inline std::vector<std::vector<std::uint8_t>> ReadBootDex() {
     return runtime::BootClasspathDexFiles(BootClasspathJars());
+}
+
+// The source JAR names in bootdex.jar DEX order.
+inline std::vector<std::uint8_t> ReadBootDexFromSource(std::string_view source) {
+    constexpr std::array<std::string_view, 8> sources{
+        "ogplay.jar",    "core.jar",       "conscrypt.jar",        "ext.jar",
+        "framework.jar", "framework2.jar", "telephony-common.jar", "android.policy.jar"};
+    const auto found = std::ranges::find(sources, source);
+    if (found == sources.end()) throw std::invalid_argument("unknown boot DEX source: " + std::string(source));
+    const auto entry = found == sources.begin() ? std::string("classes.dex")
+                                                : "classes" + std::to_string(found - sources.begin() + 1) + ".dex";
+    const auto& jar = BootClasspathJars().front();
+    const auto dex = loader::ReadApkEntry(jar.bytes, jar.archive, entry);
+    std::vector<std::uint8_t> result(dex.size());
+    std::memcpy(result.data(), dex.data(), dex.size());
+    return result;
 }
 
 std::vector<std::byte> ReadTestSystemFont(std::string_view name);

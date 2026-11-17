@@ -21,8 +21,8 @@ content/os/view/graphics/gl/media/database/device family TU 同址。`shared.*` 
   为非零 32 位 token；资源均登记 GC/teardown。原版 Java 的参数异常、状态及监听协议不另建副本。
 - 资源/设备/路径/身份仅取显式 context，不探测 host。classpath 由启动类路径 jar 与 APK 组成：
   bootstrap 不见 APK、application parent-first，返回归档 guest 路径/entry，校验来源及 ZIP/CRC。
-  启动类路径按 `kBootClasspathJars` 顺序（ogplay.jar 在前，其后为原样 ROM jar），各 jar 身份为
-  `/system/framework/<名称>`，APK 用 package_resource_path；无宿主文件映射/跨 VM 缓存。
+  启动类路径使用 `/system/framework/bootdex.jar`，按 DEX 条目顺序加载 OGPlay 与原样 API19 ROM DEX。
+  APK 用 package_resource_path；无宿主文件映射/跨 VM 缓存。
   ROM 类调用未绑定 native 时记账并抛 UnsatisfiedLinkError。已绑定的显示降级由具体入口记账。
 - 未实现记账并抛可捕获 Java 异常，禁止伪成功；结构化日志保留异常，回调保持身份/代际。
   Clock 唯一时间源，一个 guest 对应一个 host 线程，共用 VM 锁；图形 ANGLE，窗口/输入 SDL3。

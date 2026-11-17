@@ -186,7 +186,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "ec980134fe98cd90b0879ed55d8c0a751f532bccbf8e2afd0efab7198e0f61f9",
+        "generator_sha256": "17ec5ae3ebfc1233301107abe99272bc1d875dd4c147842cb8b46b005bdb23ac",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",
@@ -340,14 +340,14 @@
     "source_directory": "data/fonts"
   },
   "boot_classpath": {
-    "directory": "framework",
-    "generator": "tools/bootdex/build_bootdex.py",
-    "classpath": [
+    "path": "framework/bootdex.jar",
+    "size": 7565131,
+    "sha256": "07af2fa40e0d39a1a7432603e1c2a6d2528d8908b8ef0fa890503390a7ab068f",
+    "dex": [
       {
-        "path": "framework/ogplay.jar",
-        "source_project": "OGPlay",
-        "size": 130112,
-        "sha256": "aaf1d06ff16966bb2e7de4b0237971ba963944f715a55476cfa4a08457189e6c",
+        "entry": "classes.dex",
+        "size": 129808,
+        "sha256": "f7f044282b9487e1ff835c6c129cb079a3071e6edc7b5d6e9b7636980d044cba",
         "sources": {
           "roots": [
             "src/guest/crypto/java",
@@ -358,57 +358,72 @@
             "src/guest/xml/java",
             "src/guest/zip/java"
           ],
-          "sha256": "e00dab4028288ac80083df4da115c7940f70076f0c31c3ce948dd6823e6116ad",
-          "javac": "17.0.2",
+          "sha256": "6107c75c5abe0a916d04978b2d2c459aca8a60f71ef581fa43a3da6697e63d53",
+          "javac": "17.0.18",
           "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
           "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
         }
       },
       {
-        "path": "framework/core.jar",
+        "entry": "classes2.dex",
+        "size": 2830676,
+        "sha256": "68edab3c434076cdeb8fcc408dfb208706a2c54081598a117563352b671f80de",
+        "source": "core.jar",
         "source_project": "platform/libcore",
-        "size": 1231555,
-        "sha256": "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"
+        "source_sha256": "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"
       },
       {
-        "path": "framework/conscrypt.jar",
+        "entry": "classes3.dex",
+        "size": 335424,
+        "sha256": "a8c3f9df9b31a9fc9b78d16d618f21af5ed80a703ee67a3cea8b8738244fb621",
+        "source": "conscrypt.jar",
         "source_project": "platform/libcore",
-        "size": 145349,
-        "sha256": "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"
+        "source_sha256": "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"
       },
       {
-        "path": "framework/ext.jar",
+        "entry": "classes4.dex",
+        "size": 1340496,
+        "sha256": "25315c2c3ec8ca7ec2aacebadadaeade8af55de4e2f584db35b9c8337f307c23",
+        "source": "ext.jar",
         "source_project": "platform/external/apache-http",
-        "size": 1222968,
-        "sha256": "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2"
+        "source_sha256": "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2"
       },
       {
-        "path": "framework/framework.jar",
+        "entry": "classes5.dex",
+        "size": 8738112,
+        "sha256": "905d1ba05d4f64eb889fdc02b9bcaca382e991c642913810f8949c1c19d0f590",
+        "source": "framework.jar",
         "source_project": "platform/frameworks/base",
-        "size": 3669632,
-        "sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"
+        "source_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"
       },
       {
-        "path": "framework/framework2.jar",
+        "entry": "classes6.dex",
+        "size": 1457700,
+        "sha256": "ef843c09e8a5bde9916e08f3b2b15a4789a35792dc2cc4ad2ce7737920ea9fcf",
+        "source": "framework2.jar",
         "source_project": "platform/frameworks/base",
-        "size": 583993,
-        "sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
+        "source_sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
       },
       {
-        "path": "framework/telephony-common.jar",
+        "entry": "classes7.dex",
+        "size": 1165972,
+        "sha256": "2887c593e7656dbe925d6d432a7703f37290a93f23b19ae9bbf4b05a75eb5f25",
+        "source": "telephony-common.jar",
         "source_project": "platform/frameworks/opt/telephony",
-        "size": 487663,
-        "sha256": "b1e4f98857dd07d9fa7bc1d6c2d6cdb49d41adc2973533db3982ef0d5348a908",
+        "source_sha256": "b1e4f98857dd07d9fa7bc1d6c2d6cdb49d41adc2973533db3982ef0d5348a908",
         "notice": "notices/telephony-common.jar.txt",
         "notice_sha256": "9fb5a1858c46110c3cef29c7ab5bd9fdc6cf2c7966c7d50a2995dcb6bd739f71"
       },
       {
-        "path": "framework/android.policy.jar",
+        "entry": "classes8.dex",
+        "size": 231876,
+        "sha256": "2919a52dd8b950ed086dc70779f76cab9fec25fa4528d04f66d8ef02573deeed",
+        "source": "android.policy.jar",
         "source_project": "platform/frameworks/base",
-        "size": 108252,
-        "sha256": "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1"
+        "source_sha256": "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1"
       }
     ],
+    "generator": "tools/bootdex/build_bootdex.py",
     "notice": "notices/boot-classpath.txt",
     "notice_sha256": "19e41f351999050e4ce7eb00958bc068922fbc4ccc3b5cc5964cd723d4f4de57"
   },

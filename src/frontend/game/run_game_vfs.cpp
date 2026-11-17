@@ -78,8 +78,7 @@ void MountFrameworkPayload(runtime::VirtualFileSystem& filesystem, const std::fi
                                    [file](std::uint64_t offset, std::span<std::byte> destination,
                                           std::stop_token stop) { return file->ReadAt(offset, destination, stop); });
     };
-    for (const auto name : runtime::kBootClasspathJars)
-        mount(name);
+    mount(runtime::kBootClasspathJar);
     mount("framework-res.apk");
 }
 

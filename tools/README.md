@@ -96,17 +96,19 @@ python3 tools/conformance/dalvik_tests.py --update-baseline # 无回归才更新
 
 ## API 19 启动类路径
 
-`bootdex/build_bootdex.py` 生成 `data/android/19/framework/`：七个 ROM jar（core、conscrypt、
-ext、framework、framework2、telephony-common、android.policy）从 `.aosp/api19/rom` 原样复制并校验固定 SHA-256；
-`src/guest/*/java` 下的 OGPlay Java 用 javac 17 + API 19 android.jar + d8 编成 `ogplay.jar`，
-排在启动类路径最前，同名类以它为准。manifest 记录每个 jar 的顺序、来源与哈希。
+`bootdex/build_bootdex.py` 生成 `data/android/19/framework/bootdex.jar`。`src/guest/*/java` 下的
+OGPlay Java 用 javac 17 + API 19 android.jar + d8 编成首个 DEX，同名类以它为准。
+随后依次放入 `.aosp/api19/rom` 中 core、conscrypt、ext、framework、framework2、telephony-common、
+android.policy 的原样 DEX，再放入 ROM JAR 的非 DEX 资源。构建校验 ROM JAR 与 DEX 的固定 SHA-256，
+manifest 记录归档哈希及 DEX 的顺序、来源与哈希。
 
 ```text
 python3 tools/bootdex/build_bootdex.py build
 python3 tools/bootdex/build_bootdex.py check
 ```
 
-ogplay.jar 只含 manifest 和 DEX；系统资源由 payload 中的 framework-res.apk 提供。
+`bootdex.jar` 的 manifest 和 OGPlay DEX 使用 STORED，ROM 条目保留原始压缩数据。
+系统资源由 payload 中的 framework-res.apk 提供。
 
 `build`/`check` 同时从 `.aosp/api19/rom/framework-res.apk` 生成
 `data/android/19/framework/framework-res.apk`：校验 manifest 登记的原版 SHA-256，去掉三张

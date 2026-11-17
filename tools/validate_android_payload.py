@@ -11,6 +11,7 @@ import struct
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +46,7 @@ NOTICES = {
     "notices/libstlport.so.txt",
     "notices/libz.so.txt",
 }
-BOOT_CLASSPATH = ("framework/ogplay.jar",) + tuple(f"framework/{name}" for name in bootdex.ROM_JARS)
+BOOT_JAR = "framework/bootdex.jar"
 FRAMEWORK_RES = "framework/framework-res.apk"
 ORIGINAL_FRAMEWORK_RES_SHA256 = "5beb897ee2ede51f02e2fdf1a004ce3f12d7d5cd938b56672f70a7cba96471e3"
 BOOT_CLASSPATH_NOTICE = "notices/boot-classpath.txt"
@@ -81,7 +82,7 @@ ICU_NOTICES = {
     "notices/icu4c-unicode-license.txt",
 }
 PAYLOAD_FILES = LIBRARIES | NOTICES | {
-    FRAMEWORK_RES, *BOOT_CLASSPATH, *SYSTEM_FONTS, BOOT_CLASSPATH_NOTICE, *bootdex.ROM_NOTICES.values(), ICU_DATA, "manifest.json",
+    FRAMEWORK_RES, BOOT_JAR, *SYSTEM_FONTS, BOOT_CLASSPATH_NOTICE, *bootdex.ROM_NOTICES.values(), ICU_DATA, "manifest.json",
     "source-manifest.xml", TZDATA, TZDATA_NOTICE, UI_PRIMARY_FONT, UI_FONT, UI_FONT_NOTICE, "fonts/README.md"} | ICU_NOTICES
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -234,6 +235,59 @@ def validate_tzdata(image: bytes) -> None:
         raise PayloadError("tzdata lacks the required guest time zones")
 
 
+def validate_boot_classpath(root: Path, boot: dict[str, Any], source_projects: set[str]) -> None:
+    if boot.get("generator") != "tools/bootdex/build_bootdex.py" or boot.get("path") != BOOT_JAR or \
+            boot.get("notice") != BOOT_CLASSPATH_NOTICE or \
+            boot.get("notice_sha256") != _digest(root / BOOT_CLASSPATH_NOTICE):
+        raise PayloadError("boot_classpath identity or notice does not match")
+    path = root / BOOT_JAR
+    _validate_digest(path, boot.get("size"), boot.get("sha256"), BOOT_JAR)
+
+    entries = [_mapping(item, "boot_classpath.dex entry") for item in _items(boot.get("dex"), "boot_classpath.dex")]
+    if tuple(entry.get("entry") for entry in entries) != bootdex.DEX_ENTRIES:
+        raise PayloadError("boot_classpath DEX order does not match")
+    _mapping(entries[0].get("sources"), "boot_classpath.dex[0].sources")
+    for entry, (name, (project, source_hash, dex_hash)) in zip(entries[1:], bootdex.ROM_JARS.items()):
+        if entry.get("source") != name or entry.get("source_project") != project or \
+                entry.get("source_sha256") != source_hash or entry.get("sha256") != dex_hash or \
+                project not in source_projects:
+            raise PayloadError(f"{name} does not match the pinned API 19 ROM source")
+        if name in bootdex.ROM_NOTICES:
+            notice = bootdex.ROM_NOTICES[name]
+            if entry.get("notice") != notice or entry.get("notice_sha256") != _digest(root / notice):
+                raise PayloadError(f"ROM notice does not match: {name}")
+
+    try:
+        image = path.read_bytes()
+        with zipfile.ZipFile(path) as archive:
+            infos = archive.infolist()
+            manifest_entry = "META-INF/MANIFEST.MF"
+            prefix = (manifest_entry, *bootdex.DEX_ENTRIES)
+            if tuple(info.filename for info in infos[:len(prefix)]) != prefix or \
+                    any(info.compress_type != zipfile.ZIP_STORED for info in infos[:2]) or \
+                    any(info.is_dir() or info.filename.startswith("META-INF/") or info.filename.endswith(".dex")
+                        for info in infos[len(prefix):]):
+                raise PayloadError("bootdex.jar entry layout does not match")
+            # Rebuild just the ZIP structure around the existing compressed data.
+            canonical = bootdex.BootZipWriter()
+            for info in infos:
+                if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+                    raise PayloadError(f"bootdex.jar has an unsupported compression method: {info.filename}")
+                canonical.add(info.filename, bootdex.compressed_zip_data(image, info), info.compress_type,
+                              info.CRC, info.file_size)
+            if image != canonical.bytes() or archive.read(manifest_entry) != bootdex.JAR_MANIFEST:
+                raise PayloadError("bootdex.jar is not canonical")
+            for entry in entries:
+                name = entry["entry"]
+                dex = archive.read(name)
+                if len(dex) != entry.get("size") or bootdex.sha256(dex) != entry.get("sha256"):
+                    raise PayloadError(f"bootdex.jar {name} size or SHA-256 does not match")
+                if len(dex) < 0x70 or dex[:8] != b"dex\n035\0" or struct.unpack_from("<I", dex, 0x20)[0] != len(dex):
+                    raise PayloadError(f"bootdex.jar {name} is not DEX 035")
+    except (bootdex.BuildError, OSError, zipfile.BadZipFile, zlib.error, struct.error) as error:
+        raise PayloadError(f"bootdex.jar is invalid: {error}") from error
+
+
 def validate(root: Path) -> None:
     root = root.resolve()
     if _digest(root / UI_FONT) != "05d71b179ef97b82cf1bb91cef290c600a510f77f39b4964359e3ef88378c79d":
@@ -320,38 +374,7 @@ def validate(root: Path) -> None:
     if _digest(root / TZDATA_NOTICE) != tzdata.get("notice_sha256"):
         raise PayloadError("tzdata notice SHA-256 does not match")
 
-    boot = _mapping(manifest.get("boot_classpath"), "boot_classpath")
-    if boot.get("generator") != "tools/bootdex/build_bootdex.py" or boot.get("directory") != "framework" or \
-            boot.get("notice") != BOOT_CLASSPATH_NOTICE or \
-            boot.get("notice_sha256") != _digest(root / BOOT_CLASSPATH_NOTICE):
-        raise PayloadError("boot_classpath identity or notice does not match")
-    entries = boot.get("classpath")
-    if not isinstance(entries, list) or tuple(entry.get("path") for entry in entries) != BOOT_CLASSPATH:
-        raise PayloadError("boot_classpath order does not match")
-    for entry in entries:
-        _validate_digest(root / entry["path"], entry.get("size"), entry.get("sha256"), entry["path"])
-        name = Path(entry["path"]).name
-        if name in bootdex.ROM_NOTICES:
-            notice = bootdex.ROM_NOTICES[name]
-            if entry.get("notice") != notice or entry.get("notice_sha256") != _digest(root / notice):
-                raise PayloadError(f"ROM notice does not match: {name}")
-        if name in bootdex.ROM_JARS:
-            project, digest = bootdex.ROM_JARS[name]
-            if entry.get("source_project") != project or entry.get("sha256") != digest or \
-                    project not in source_projects:
-                raise PayloadError(f"{name} is not the pinned API 19 ROM jar")
-    try:
-        with zipfile.ZipFile(root / BOOT_CLASSPATH[0]) as archive:
-            names = archive.namelist()
-            if names != ["META-INF/MANIFEST.MF", "classes.dex"] or archive.comment or \
-                    archive.read("META-INF/MANIFEST.MF") != bootdex.JAR_MANIFEST or \
-                    any(info.compress_type != zipfile.ZIP_STORED for info in archive.infolist()):
-                raise PayloadError("ogplay.jar layout is not canonical")
-            dex = archive.read("classes.dex")
-    except (OSError, zipfile.BadZipFile, KeyError) as error:
-        raise PayloadError(f"ogplay.jar is invalid: {error}") from error
-    if len(dex) < 0x70 or dex[:8] != b"dex\n035\0" or struct.unpack_from("<I", dex, 0x20)[0] != len(dex):
-        raise PayloadError("ogplay.jar classes.dex is not DEX 035")
+    validate_boot_classpath(root, _mapping(manifest.get("boot_classpath"), "boot_classpath"), source_projects)
 
     icu = _mapping(manifest.get("icu"), "icu")
     expected_icu = {

@@ -39,7 +39,7 @@ void WritePayload(const std::filesystem::path& root) {
     }
     const auto framework = root / "android" / "19" / "framework";
     std::filesystem::create_directories(framework);
-    std::ofstream(framework / "framework.jar", std::ios::binary) << "zip";
+    std::ofstream(framework / "bootdex.jar", std::ios::binary) << "zip";
 }
 
 }  // namespace
@@ -92,7 +92,7 @@ TEST_CASE("build stages a complete runtime data payload") {
     CHECK(std::filesystem::is_regular_file(android / "manifest.json"));
     CHECK_FALSE(std::filesystem::exists(android / "source-manifest.xml"));
     CHECK_FALSE(std::filesystem::exists(paths.profiles_directory / "README.md"));
-    CHECK(std::filesystem::is_regular_file(android / "framework" / "framework.jar"));
+    CHECK(std::filesystem::is_regular_file(android / "framework" / "bootdex.jar"));
     for (const auto* name : {"libc.so", "libdl.so", "libm.so", "libstdc++.so", "libz.so"}) {
         CHECK(std::filesystem::is_regular_file(android / "lib" / name));
     }

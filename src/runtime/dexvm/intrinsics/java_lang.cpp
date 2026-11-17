@@ -17,12 +17,7 @@ IntrinsicClassDecl Declare_dalvik_system_VMRuntime_Natives(const CoreIntrinsicSe
     b.UnimplementedVirtual("vmLibrary", "()Ljava/lang/String;", kAccPublic | kAccNative);
     b.VirtualMethod(
         "bootClassPath", "()Ljava/lang/String;",
-        [](IntrinsicContext& c) {
-            return VmValue::Ref(c.vm.NewStringUtf8(
-                "/system/framework/ogplay.jar:/system/framework/core.jar:/system/framework/conscrypt.jar:"
-                "/system/framework/ext.jar:/system/framework/framework.jar:/system/framework/framework2.jar:"
-                "/system/framework/telephony-common.jar:/system/framework/android.policy.jar"));
-        },
+        [](IntrinsicContext& c) { return VmValue::Ref(c.vm.NewStringUtf8("/system/framework/bootdex.jar")); },
         kAccPublic | kAccNative);
     b.VirtualMethod(
         "classPath", "()Ljava/lang/String;",

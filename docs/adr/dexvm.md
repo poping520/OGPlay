@@ -24,7 +24,7 @@
 
 ### 决定
 
-应用与 API19 ROM Java 方法在同一 DexVM 中解释执行，启动类路径为 ogplay.jar 与原样 ROM jar。
+应用与 API19 ROM Java 方法在同一 DexVM 中解释执行，启动类路径为包含 OGPlay 与原样 ROM DEX 的 `bootdex.jar`。
 ROM ActivityThread、主 Looper、ViewRootImpl 执行应用启动、生命周期与软件绘制；宿主提供 native
 和进程内服务接口，不启动 system_server、Zygote 或 Binder IPC。新代码不得替换 ROM 类或覆盖
 ROM 非 native 方法；现存替换和覆盖按阶段移除，查询方法见 [平台边界](../design/dexvm.md)。
@@ -136,7 +136,7 @@ Java native 字段保存受检逻辑 token；Clock、线程、取消、GC 与释
 
 ### 决定
 
-启动类路径按固定顺序加载 ogplay.jar 和原样 API19 ROM jar；归档哈希与 DEX 条目由装配校验。
+启动类路径从 `bootdex.jar` 按固定顺序加载 OGPlay 和原样 API19 ROM DEX。Payload 校验器核对归档哈希与 DEX 条目。
 ROM 类的方法、字段及初始化执行原版字节码，native 和本地服务边界由宿主绑定。
 类可链接不代表全部行为已实现；未绑定 native 调用记账并抛 UnsatisfiedLinkError。
 未实现的存量 intrinsic 方法/构造器及非常量字段访问明确失败，不返回默认 null/0。

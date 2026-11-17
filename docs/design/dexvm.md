@@ -24,8 +24,8 @@ core / Android catalog → 启动类路径 DEX → 应用 DEX
 ```
 
 catalog 是平台类型和绑定的目录，intrinsic 是宿主实现的方法处理器。
-装配先登记目录，再按 manifest 归档顺序读取 ogplay.jar 和原样 ROM jar，最后登记应用 DEX。
-ReadBootClasspath 读取受检归档，BootClasspathDexFiles 提取 DEX，
+装配先登记目录，再按 `bootdex.jar` 的 DEX 条目顺序登记 OGPlay 和原样 API19 ROM DEX，最后登记应用 DEX。
+ReadBootClasspath 读取单个归档，BootClasspathDexFiles 提取 DEX，
 每个 unit 保留自己的常量池和解析缓存。
 
 常量池索引只在所属 DEX 内有意义。因此解析跟随方法所属 unit，

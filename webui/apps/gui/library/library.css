@@ -137,6 +137,13 @@
   color: rgba(255,90,82,.85); font: 900 1.6em/1.2 var(--font); letter-spacing: .12em; transform: rotate(-14deg); }
 .hero-cart .cart-foil { animation: foil 7s ease-in-out infinite alternate; }
 
+/* app icon (game-icon.tsx) for both layouts' icon views: rounded square, the game's art or its first letter; each
+   place sets the width (and the letter size) */
+.app-icon { display: grid; place-items: center; aspect-ratio: 1; overflow: hidden; border-radius: 22%; background: var(--glass2);
+  box-shadow: 0 4px 12px rgba(0,0,0,.28); }
+.app-icon img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.app-icon b { color: var(--ink); font-weight: 900; line-height: 1; }
+
 .sort { position: relative; display: flex; align-items: center; gap: 6px; margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 700; }
 /* footer */
 .foot { display: flex; align-items: center; gap: 20px; padding: 0 clamp(36px, 4.5vw, 64px); border-top: 1px solid rgba(255,255,255,.06); color: var(--muted); font-size: 12px; font-weight: 700; }

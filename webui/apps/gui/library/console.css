@@ -100,6 +100,45 @@
 .console .tile.add small { color: var(--dim); font-size: 11px; }
 .console .tile.add:hover:not(:disabled) { border-color: var(--accent); color: var(--ink); }
 
+/* icon desktop (desk.tsx, the simple view): the middle of the window is a launcher desktop of app icons and names
+   under the rail's head row, scrolling on its own; the selected game's bar (.dock) takes the rail's row. */
+.desk { position: relative; z-index: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; padding-top: 8px; }
+.desk ~ .foot { grid-row: 4; }
+.desk-grid { --app: clamp(64px, 9.5vh, 84px); position: relative; flex: 1; min-height: 0; display: grid; align-content: start; gap: 6px 4px;
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--app) + 44px), 1fr)); padding: 10px clamp(36px, 4.5vw, 64px) 24px; overflow-y: auto;
+  scrollbar-width: thin; mask-image: linear-gradient(180deg, transparent, #000 10px, #000 calc(100% - 22px), transparent); }
+.console .app { position: relative; display: flex; flex-direction: column; align-items: center; gap: 9px; min-width: 0; padding: 14px 6px 10px; border-radius: 18px; }
+.console .app:hover:not(:disabled) { background: var(--glass); }
+.console .app[aria-pressed=true] { background: var(--glass2); box-shadow: inset 0 0 0 2px var(--accent); }
+.app .app-icon { width: var(--app); box-shadow: 0 10px 22px -8px rgba(0,0,0,.6), inset 0 0 0 1px rgba(255,255,255,.08); transition: transform .2s cubic-bezier(.3,1.5,.5,1); }
+.console .app:hover:not(:disabled) .app-icon, .app[aria-pressed=true] .app-icon { transform: translateY(-2px) scale(1.04); }
+.app .app-icon b { font-size: calc(var(--app) * .42); }
+/* status LED on the icon's corner (non-ready games only), ringed in the page colour */
+.app > .led { position: absolute; top: 10px; left: calc(50% + var(--app) / 2 - 10px); width: 12px; height: 12px; border: 2px solid var(--bg); box-sizing: content-box; }
+.app .name { max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: var(--soft);
+  font-size: 13px; font-weight: 800; line-height: 1.3; text-align: center; overflow-wrap: anywhere; }
+.app[aria-pressed=true] .name { color: var(--ink); }
+.app.add .app-icon { border: 2.5px dashed rgba(255,255,255,.25); background: none; box-shadow: none; color: var(--accent); font-size: calc(var(--app) * .45); font-weight: 700; line-height: 1; }
+.console .app.add:hover:not(:disabled) .app-icon { border-color: var(--accent); }
+.app.add .name { color: var(--muted); }
+.desk-empty { padding: 6vh clamp(36px, 4.5vw, 64px) 0; }
+.dock { position: relative; z-index: 1; display: flex; align-items: center; gap: 16px; min-width: 0; padding: 12px clamp(36px, 4.5vw, 64px);
+  border-top: 1px solid rgba(255,255,255,.06); background: rgba(9,12,22,.35); }
+.dock > .app-icon { flex: none; width: 52px; border-radius: 14px; }
+.dock > .app-icon b { font-size: 22px; }
+.dock-title { flex: 0 1 280px; min-width: 0; display: flex; flex-direction: column; }
+.dock-title b { overflow: hidden; font-size: 18px; font-weight: 900; line-height: 1.25; white-space: nowrap; text-overflow: ellipsis; }
+.dock-title .mono { overflow: hidden; color: var(--muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+.dock .state-row { flex: 1 1 0; min-width: 0; margin-top: 0; }
+.dock .state { white-space: nowrap; overflow: hidden; }
+.dock .state > span:not(.led) { overflow: hidden; text-overflow: ellipsis; }
+.dock .cta { flex: none; gap: 10px; margin: 0; }
+.console .dock .pill { height: 44px; gap: 10px; padding-right: 18px; font-size: 14px; }
+.console .dock .pill.main { height: 48px; padding-right: 24px; font-size: 15px; }
+.dock .more .menu { left: auto; right: 0; }
+/* a game's right-click menu, placed at the pointer by desk.tsx */
+.menu.context { position: fixed; left: 0; top: 0; bottom: auto; z-index: 40; }
+
 /* drag-to-insert overlay */
 .drop { position: fixed; inset: 0; z-index: 50; display: grid; place-content: center; text-align: center; background: rgba(9,12,22,.86); backdrop-filter: blur(10px); pointer-events: none; }
 .drop .slot { position: relative; display: grid; place-items: center; width: 420px; height: 120px; margin: 160px auto 34px; border: 3px dashed var(--yellow); border-radius: 26px; }
@@ -111,6 +150,7 @@
 
 .console.skin-glass .tile[aria-pressed=true]::before { box-shadow: 0 0 30px rgba(111,247,228,.35); animation-name: ring-glass; }
 .console.skin-glass .drop { background: rgba(36,16,94,.86); }
+.console.skin-glass .dock { border-top-color: rgba(255,255,255,.1); background: rgba(36,16,94,.3); }
 @keyframes ring { 50% { box-shadow: 0 0 46px rgba(255,194,26,.6); } }
 @keyframes ring-glass { 50% { box-shadow: 0 0 46px rgba(111,247,228,.6); } }
 @keyframes insert { 0% { transform: translateY(-20px); opacity: 0; } 30% { opacity: 1; } 70%, 100% { transform: translateY(60px); opacity: 0; } }
@@ -119,5 +159,5 @@
 .console.skin-glass .menu { border-color: rgba(255,255,255,.14); background: rgba(58,29,122,.94); box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 20px 50px rgba(10,0,40,.55); }
 @media (prefers-reduced-motion: reduce) {
   .tile[aria-pressed=true]::before, .drop .slot::after, .hero-text > *, .menu { animation: none; }
-  .console .tile, .tile .cartridge { transition: none; }
+  .console .tile, .tile .cartridge, .app .app-icon { transition: none; }
 }

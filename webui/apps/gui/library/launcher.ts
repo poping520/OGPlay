@@ -14,6 +14,11 @@ import { useCart3D, type CartMode } from '../cartridge/cartridge3d';
 // removal and clear-data flows with their errors. Each layout keeps only how it shows them.
 // One queued notice: a failed action or host message (titled 操作提示 by the layouts), or a game that crashed.
 export interface Notice { title?: string; text: string }
+// The library shows game cartridges or app icons (the simple view). The choice belongs to this device, remembered
+// across launches: the phone starts with icons, the console with cartridges.
+export type LibraryView = 'carts' | 'icons';
+const VIEW_KEY = __OGPLAY_PHONE__ ? 'ogplay.phone.view' : 'ogplay.console.view';
+const DEFAULT_VIEW: LibraryView = __OGPLAY_PHONE__ ? 'icons' : 'carts';
 export interface DashboardInfo { installation_id: string; process_id: number; port: number | null; status: string; detail: string; key_editor_status: string; key_editor_detail: string }
 
 export function useLauncher() {
@@ -32,6 +37,8 @@ export function useLauncher() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('name');
+  const [view, setViewState] = useState<LibraryView>(() => { const value = recall(VIEW_KEY); return value === 'carts' || value === 'icons' ? value : DEFAULT_VIEW; });
+  const setView = (next: LibraryView) => { setViewState(next); remember(VIEW_KEY, next); };
   const [errors, setErrors] = useState<Notice[]>([]);
   const libraryRef = useRef(library);
   libraryRef.current = library;
@@ -142,7 +149,7 @@ export function useLauncher() {
   };
   return {
     library, items, loading, refresh, act, busy,
-    query, setQuery, filter, setFilter, sort, setSort, resetFilters,
+    query, setQuery, filter, setFilter, sort, setSort, resetFilters, view, setView,
     settings, applySettings, skin, cartMode, cart3d, viewer,
     dashboards, errors, report, dismissError: () => setErrors(queue => queue.slice(1)),
     importing, pendingFile, startImport, intake, closeImport, imported,

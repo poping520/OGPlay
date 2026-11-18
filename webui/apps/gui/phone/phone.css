@@ -74,10 +74,8 @@
 /* icon view: four a row, the game's launcher icon and its name */
 .ph-grid.icons { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 6px; padding-top: 6px; }
 .ph-grid.icons .ph-card { padding: 6px 2px 4px; }
-.ph-app-icon { display: grid; place-items: center; width: min(100%, 54px); aspect-ratio: 1; overflow: hidden; border-radius: 22%;
-  background: var(--glass2); box-shadow: 0 4px 12px rgba(0,0,0,.28); }
-.ph-app-icon img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.ph-app-icon b { color: var(--ink); font-size: 24px; font-weight: 900; }
+.ph-card .app-icon { width: min(100%, 54px); }
+.ph-card .app-icon b { font-size: 24px; }
 .ph-grid.icons .ph-name { margin-top: 7px; font-size: 11px; font-weight: 700; }
 .console.phone .pill { justify-content: center; gap: 10px; height: 52px; padding: 0 24px; font-size: 16px; }
 .console.phone .pill.main { height: 56px; padding: 0 28px; font-size: 17px; }
@@ -99,8 +97,8 @@
 .ph-showcase .flag { top: 8%; right: 14%; }
 /* the icon view's game page: the game's own icon over the blurred art instead of the cartridge stage */
 .ph-icon-hero { position: relative; flex: none; display: grid; place-items: center; padding: 28px 0 18px; }
-.ph-icon-hero .ph-app-icon { width: 112px; border-radius: 26px; box-shadow: 0 18px 40px -10px rgba(0,0,0,.6); }
-.ph-icon-hero .ph-app-icon b { font-size: 46px; }
+.ph-icon-hero .app-icon { width: 112px; border-radius: 26px; box-shadow: 0 18px 40px -10px rgba(0,0,0,.6); }
+.ph-icon-hero .app-icon b { font-size: 46px; }
 .ph-icon-hero .flag { top: 18px; right: calc(50% - 92px); transform: rotate(8deg); }
 .ph-info { padding: 4px 22px 20px; }
 .ph-info h1 { margin: 10px 0 2px; font-size: 30px; font-weight: var(--title-weight); line-height: 1.15; letter-spacing: -.01em; overflow-wrap: anywhere; }

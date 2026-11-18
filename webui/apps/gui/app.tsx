@@ -19,18 +19,22 @@ import { Modal } from './library/modal';
 import { Splash } from './library/splash';
 import { Clock } from './library/clock';
 import { SortMenu } from './library/sort-menu';
+import { GameIcon } from './library/game-icon';
+import { ContextMenu, Desk, gridColumns, revealIn } from './library/desk';
 import './library/library.css';
 import './library/console.css';
 
 // Console layout (desktop windows, Android tablets): the library screen, handing the window to a full-screen view
-// (global or per-game settings, cartridge viewer) while one is open. The state it shows is useLauncher's.
+// (global or per-game settings, cartridge viewer) while one is open. The state it shows is useLauncher's. The library
+// is the cartridge hero and rail, or in the icon view (the simple one) a desktop of app icons over the selected game's bar.
 export function App() {
   const launcher = useLauncher();
-  const { library, items, loading, refresh, act, busy, query, setQuery, filter, setFilter, sort, setSort, settings, applySettings, skin, cartMode, cart3d, viewer,
+  const { library, items, loading, refresh, act, busy, query, setQuery, filter, setFilter, sort, setSort, view, setView, settings, applySettings, skin, cartMode, cart3d, viewer,
     dashboards, errors, report, importing, pendingFile, startImport, intake, dataHint, removing, clearing, setClearing, clearData } = launcher;
   const [dashboardListOpen, setDashboardListOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [context, setContext] = useState<{ id: string; x: number; y: number } | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [viewing, setViewing] = useState(false);
@@ -43,39 +47,50 @@ export function App() {
   const [dragging, setDragging] = useState(false);
   const search = useRef<HTMLInputElement>(null);
   const strip = useRef<HTMLDivElement>(null);
+  const deskGrid = useRef<HTMLDivElement>(null);
   const primary = useRef<HTMLButtonElement>(null);
   const dragDepth = useRef(0);
   const item = items.find(game => game.installation_id === selected) ?? items[0];
   const instance = item && dashboards.find(value => value.installation_id === item.installation_id);
   const runningCount = library.items.filter(game => game.running).length;
+  // The icon desktop needs games to show; loading and the empty library keep the hero's messages and welcome.
+  const desk = view === 'icons' && !loading && library.items.length > 0;
   const tileReady = (id: string) => { if (!readyTiles.current.has(id)) { readyTiles.current.add(id); setReadyTileCount(readyTiles.current.size); } };
-  const startReady = !loading && cartMode !== 'pending' && cart3d !== 'waiting' && (cart3d === null ||
-    (!item || heroShown) && items.slice(0, 12).every(game => readyTiles.current.has(game.installation_id)));
+  const startReady = !loading && cartMode !== 'pending' && (desk || cart3d !== 'waiting' && (cart3d === null ||
+    (!item || heroShown) && items.slice(0, 12).every(game => readyTiles.current.has(game.installation_id))));
   useEffect(() => { setMenuOpen(false); }, [item?.installation_id]);
   useEffect(() => {
+    if (desk) {
+      const grid = deskGrid.current, tile = grid?.querySelector<HTMLElement>('.app[aria-pressed=true]');
+      if (grid && tile) revealIn(grid, tile);
+      return;
+    }
     // Scroll only the strip: scrollIntoView would also shift the page once the strip hits its end.
     const rail = strip.current, tile = rail?.querySelector<HTMLElement>('.tile[aria-pressed=true]');
     if (!rail || !tile) return;
     const offset = tile.getBoundingClientRect().left - rail.getBoundingClientRect().left;
     rail.scrollTo({ left: rail.scrollLeft + offset - (rail.clientWidth - tile.offsetWidth) / 2, behavior: 'smooth' });
-  }, [item?.installation_id, filter]);
+  }, [item?.installation_id, filter, desk]);
   const remove = async (game: LibraryItem, withSaves = false) => { if (await launcher.remove(game, withSaves)) setSelected(''); };
-  const requestRemoval = (game: LibraryItem) => { setMenuOpen(false); launcher.requestRemoval(game); };
+  const closeMenus = () => { setMenuOpen(false); setContext(null); };
+  const requestRemoval = (game: LibraryItem) => { closeMenus(); launcher.requestRemoval(game); };
   const isFileDrag = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes('Files');
   const resetFilters = () => { launcher.resetFilters(); setSearchOpen(false); };
   const openSearch = () => { setSearchOpen(true); requestAnimationFrame(() => search.current?.focus()); };
   const editorReady = instance?.key_editor_status === 'ready';
   const openControls = (game: LibraryItem) => { if (has('key_editor') && dashboards.find(value => value.installation_id === game.installation_id)?.key_editor_status === 'ready') void act('controls.open', game); };
-  const openViewer = () => { if (viewer) { setMenuOpen(false); setViewing(true); } };
-  const openGameSettings = (game: LibraryItem) => { if (!busy && !importing) { setMenuOpen(false); setGameSettingsId(game.installation_id); } };
+  const openViewer = () => { if (viewer) { closeMenus(); setViewing(true); } };
+  const openGameSettings = (game: LibraryItem) => { if (!busy && !importing) { closeMenus(); setGameSettingsId(game.installation_id); } };
 
-  // Keyboard stands in for the gamepad legend: ←/→ select, Enter = A, Esc = B, X/Y shortcuts, Q/E = L/R; ⌘K/Ctrl+K
+  const launch = (game: LibraryItem) => { if (game.can_launch && !game.running) void act('library.launch', game); };
+
+  // Keyboard stands in for the gamepad legend: ←/→ select (↑/↓ by a row on the icon desktop), Enter = A, Esc = B, X/Y shortcuts, Q/E = L/R; ⌘K/Ctrl+K
   // searches and ⌘O/Ctrl+O imports from anywhere in the library.
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (settingsOpen || gameSettingsId || viewing) return;   // full-screen views own the keyboard while open
       if (event.key === 'Escape') {
-        if (menuOpen) { setMenuOpen(false); return; }
+        if (menuOpen || context) { closeMenus(); return; }
         if (searchOpen && !query && document.activeElement === search.current) { setSearchOpen(false); search.current?.blur(); }
         else if (!item && !document.querySelector('dialog[open]') && (query || filter !== 'all')) resetFilters();
         return;
@@ -88,14 +103,18 @@ export function App() {
       }
       if (event.metaKey || event.ctrlKey || event.altKey || editable(event.target) || document.querySelector('dialog[open]') || importing) return;
       const target = event.target as HTMLElement | null;
-      const onTile = !!target?.closest?.('.tile');
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      const onTile = !!target?.closest?.('[data-instance]');
+      const row = desk && deskGrid.current && (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+        ? (event.key === 'ArrowDown' ? 1 : -1) * gridColumns(deskGrid.current) : 0;
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || row) {
         if (!items.length) return;
         event.preventDefault();
-        // Functional update so key repeat before the next render still advances one step per press.
+        // Functional update so key repeat before the next render still advances one step per press. ←/→ wrap round
+        // the library; ↑/↓ stop at the first and last rows.
         setSelected(current => {
-          const next = cycle(items, items.find(game => game.installation_id === current) ?? items[0], event.key === 'ArrowRight' ? 1 : -1).installation_id;
-          if (onTile) requestAnimationFrame(() => strip.current?.querySelector<HTMLElement>(`.tile[data-instance="${CSS.escape(next)}"]`)?.focus());
+          const from = items.find(game => game.installation_id === current) ?? items[0];
+          const next = (row ? items[items.indexOf(from) + row] ?? from : cycle(items, from, event.key === 'ArrowRight' ? 1 : -1)).installation_id;
+          if (onTile) requestAnimationFrame(() => (desk ? deskGrid : strip).current?.querySelector<HTMLElement>(`[data-instance="${CSS.escape(next)}"]`)?.focus());
           return next;
         });
       } else if (event.key === 'Enter' && (onTile || target === document.body)) {
@@ -117,7 +136,7 @@ export function App() {
       const dialogs = document.querySelectorAll<HTMLDialogElement>('dialog[open]');
       if (dialogs.length) dialogs[dialogs.length - 1].dispatchEvent(new Event('cancel', { cancelable: true }));
       else if (settingsOpen || gameSettingsId || viewing) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
-      else if (menuOpen) setMenuOpen(false);
+      else if (menuOpen || context) closeMenus();
       else if (searchOpen || query || filter !== 'all') { resetFilters(); search.current?.blur(); }
       else return;
       event.preventDefault();
@@ -131,6 +150,13 @@ export function App() {
     window.addEventListener('pointerdown', close);
     return () => window.removeEventListener('pointerdown', close);
   }, [menuOpen]);
+  // The right-click menu closes on a press or wheel outside it and when the window resizes.
+  useEffect(() => {
+    if (!context) return;
+    const close = (event: Event) => { if (!(event.target as HTMLElement).closest?.('.context')) setContext(null); };
+    window.addEventListener('pointerdown', close); window.addEventListener('wheel', close); window.addEventListener('resize', close);
+    return () => { window.removeEventListener('pointerdown', close); window.removeEventListener('wheel', close); window.removeEventListener('resize', close); };
+  }, [context]);
 
   if (viewing && viewer && item) return <CartViewer api={viewer} items={items} selected={item} skin={skin} select={setSelected} onBack={() => setViewing(false)} />;
   if (settingsOpen) return <SettingsPage onBack={() => { setSettingsOpen(false); void refresh().catch(report); }} onSaved={applySettings} />;
@@ -140,20 +166,40 @@ export function App() {
     clearData={() => { const game = library.items.find(entry => entry.installation_id === gameSettingsId); setGameSettingsId(''); if (game) setClearing(game); }} />;
 
   const filterLabel = t(filters.find(([value]) => value === filter)![1]);
+  const railHead = <div class="rail-head"><b>{filterLabel}</b><span role="status">{t('{n} 款游戏', { n: items.length })}{query ? t(' · 搜索“{query}”', { query }) : ''}</span>
+    <SortMenu value={sort} change={setSort} />
+  </div>;
+  // The game's own entries: the "更多" menu, and its right-click menu after the actions.
+  const menuEntries = (game: LibraryItem) => <>
+    {game.running && <button role="menuitem" disabled={busy || importing} onClick={() => openGameSettings(game)}>{t('游戏设置')}<small>{t('下次启动生效')}</small></button>}
+    <button role="menuitem" disabled={!viewer} onClick={openViewer}>{t('查看卡带')}<small>{viewer ? t('转一转、拆开看看里面') : t('需要 3D 卡带：设置 › 常规 › 主界面卡带')}</small></button>
+    {has('open_directory') && <>
+      <button role="menuitem" disabled={busy} onClick={() => { closeMenus(); void act('library.open_dir', game, 'sandbox'); }}>{t('打开沙盒目录')}</button>
+      <button role="menuitem" disabled={busy} onClick={() => { closeMenus(); void act('library.open_dir', game, 'log'); }}>{t('打开日志目录')}</button></>}
+    <button role="menuitem" onClick={() => { closeMenus(); setInfoOpen(true); }}>{t('安装信息')}</button>
+    <hr />
+      <button role="menuitem" class="danger" disabled={busy || importing || game.running} title={game.running ? t('游戏运行中，退出后才能清空数据。') : undefined} onClick={() => { closeMenus(); setClearing(game); }}>{t('清空游戏数据')}<small>{t('删除存档与进度，保留游戏和数据包')}</small></button>
+    <button role="menuitem" class="danger" disabled={busy || importing || game.running} title={game.running ? t('游戏运行中，退出后才能删除。') : undefined} onClick={() => requestRemoval(game)}>{t('删除游戏')}<small>{t('默认保留存档，重新导入时恢复')}</small></button>
+  </>;
   const moreMenu = (game: LibraryItem) => <div class="more">
     <button class="pill" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}><Key>…</Key>{t('更多')}</button>
-    {menuOpen && <div class="menu" role="menu">
-      {game.running && <button role="menuitem" disabled={busy || importing} onClick={() => openGameSettings(game)}>{t('游戏设置')}<small>{t('下次启动生效')}</small></button>}
-      <button role="menuitem" disabled={!viewer} onClick={openViewer}>{t('查看卡带')}<small>{viewer ? t('转一转、拆开看看里面') : t('需要 3D 卡带：设置 › 常规 › 主界面卡带')}</small></button>
-      {has('open_directory') && <>
-        <button role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); void act('library.open_dir', game, 'sandbox'); }}>{t('打开沙盒目录')}</button>
-        <button role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); void act('library.open_dir', game, 'log'); }}>{t('打开日志目录')}</button></>}
-      <button role="menuitem" onClick={() => { setMenuOpen(false); setInfoOpen(true); }}>{t('安装信息')}</button>
-      <hr />
-      <button role="menuitem" class="danger" disabled={busy || importing || game.running} title={game.running ? t('游戏运行中，退出后才能清空数据。') : undefined} onClick={() => { setMenuOpen(false); setClearing(game); }}>{t('清空游戏数据')}<small>{t('删除存档与进度，保留游戏和数据包')}</small></button>
-      <button role="menuitem" class="danger" disabled={busy || importing || game.running} title={game.running ? t('游戏运行中，退出后才能删除。') : undefined} onClick={() => requestRemoval(game)}>{t('删除游戏')}<small>{t('默认保留存档，重新导入时恢复')}</small></button>
-    </div>}
+    {menuOpen && <div class="menu" role="menu">{menuEntries(game)}</div>}
   </div>;
+  // Right click on the desktop: what the action pills offer for this game, then its own entries.
+  const contextMenu = (game: LibraryItem, x: number, y: number) => {
+    const running = dashboards.find(value => value.installation_id === game.installation_id);
+    return <ContextMenu x={x} y={y}>
+      {game.running ? <>
+        {has('dashboard') && running?.port && <button role="menuitem" disabled={busy || running.status !== 'ready'} onClick={() => { closeMenus(); void act('dashboard.open', game); }}>{t('打开 Dashboard')}</button>}
+        {has('key_editor') && <button role="menuitem" disabled={busy || running?.key_editor_status !== 'ready'} onClick={() => { closeMenus(); openControls(game); }}>{t('按键设置')}</button>}
+      </> : <>
+        <button role="menuitem" disabled={busy || !game.can_launch} onClick={() => { closeMenus(); launch(game); }}>{t('开始游戏')}{!game.can_launch && <small>{statusDetail(game)}</small>}</button>
+        <button role="menuitem" disabled={busy || importing} onClick={() => openGameSettings(game)}>{t('游戏设置')}<small>{t('下次启动生效')}</small></button>
+      </>}
+      {(!game.running || has('dashboard') || has('key_editor')) && <hr />}
+      {menuEntries(game)}
+    </ContextMenu>;
+  };
   const actions = (game: LibraryItem) => {
     if (game.running) {
       const dashboard = has('dashboard') && instance?.port ? <button ref={primary} class="pill main" disabled={busy || instance.status !== 'ready'} title={t(instance.detail)} onClick={() => void act('dashboard.open', game)}><Key>A</Key>{t('打开 Dashboard')}</button> : null;
@@ -176,6 +222,29 @@ export function App() {
     target.style.setProperty('--tilt-y', `${(x * 30).toFixed(2)}deg`);
     target.style.setProperty('--tilt-x', `${(-y * 16).toFixed(2)}deg`);
   };
+  // The selected game's status (with its fix and the running instance), and a failed last run beside it; the hero
+  // and the desktop's bar share it. The bar has no cartridge flag, so it says 运行中 itself.
+  const stateRow = (game: LibraryItem) => {
+    const status = statusOf(game), detail = statusDetail(game), lastRun = game.running ? null : lastRunText(game);
+    const fix = game.status === 'missing_external' ? <button class="link" onClick={() => openGameSettings(game)}>{t('选择数据包 →')}</button> :
+      game.status === 'damaged' && !game.running ? <button class="link" onClick={() => requestRemoval(game)}>{t('删除后重新导入 →')}</button> : null;
+    const runtime = instance ? ` · PID ${instance.process_id}${instance.port ? t(' · MCP 端口 {port}', { port: instance.port }) : ''}` : '';
+    return <div class="state-row">
+      <div class="state"><span class={`led ${game.running ? 'running' : status.tone}`} /><span>{desk && game.running ? t('运行中') : status.label}{detail ? ` · ${detail}` : ''}{runtime}</span>{fix}</div>
+      {lastRun && <div class="state last-run" title={lastRun.error || undefined}><span class="led danger" />
+        <b>{lastRun.label}</b>
+        {has('open_directory') && <button class="link" disabled={busy} onClick={() => void act('library.open_dir', game, 'log')}>{t('日志 →')}</button>}</div>}
+    </div>;
+  };
+  const noMatch = () => <div class="hero-text"><h1 class="small">{query ? t('没有符合条件的游戏') : t('这个分类里没有游戏')}</h1>
+    <div class="sub">{t('按 Q / E 切换分类，或换个关键词。')}</div><div class="cta"><button class="pill" onClick={resetFilters}><Key>B</Key>{t('清除筛选')}</button></div></div>;
+  // Under the icon desktop: the selected game, its status and the same actions as the hero.
+  const dock = (game: LibraryItem) => <section class="dock" aria-label={t('游戏详情')}>
+    <GameIcon game={game} />
+    <div class="dock-title"><b title={game.display_name}>{game.display_name}</b><span class="mono">{game.package || t('包名不可用')} · {versionLabel(game)}</span></div>
+    {stateRow(game)}
+    <div class="cta">{actions(game)}</div>
+  </section>;
   const hero = () => {
     if (loading) return <div class="hero-text"><h1 class="small">{t('正在读取游戏库…')}</h1></div>;
     if (library.items.length === 0) return <>
@@ -185,14 +254,9 @@ export function App() {
         <div class="state">{t('支持单体 APK，分包格式暂不支持')}</div></div>
       <div class="showcase"><button class="ghost-cart" aria-label={t('选择 APK 文件')} disabled={importing} onClick={startImport}>＋</button><div class="floor" /></div>
     </>;
-    if (!item) return <div class="hero-text"><h1 class="small">{query ? t('没有符合条件的游戏') : t('这个分类里没有游戏')}</h1>
-      <div class="sub">{t('按 Q / E 切换分类，或换个关键词。')}</div><div class="cta"><button class="pill" onClick={resetFilters}><Key>B</Key>{t('清除筛选')}</button></div></div>;
-    const status = statusOf(item), detail = statusDetail(item), profile = profileText(item), external = externalText(item);
-    const lastRun = item.running ? null : lastRunText(item);
+    if (!item) return noMatch();
+    const status = statusOf(item), profile = profileText(item), external = externalText(item);
     const position = items.indexOf(item) + 1;
-    const fix = item.status === 'missing_external' ? <button class="link" onClick={() => openGameSettings(item)}>{t('选择数据包 →')}</button> :
-      item.status === 'damaged' && !item.running ? <button class="link" onClick={() => requestRemoval(item)}>{t('删除后重新导入 →')}</button> : null;
-    const runtime = instance ? ` · PID ${instance.process_id}${instance.port ? t(' · MCP 端口 {port}', { port: instance.port }) : ''}` : '';
     return <>
       <div class="hero-text" key={item.installation_id}>
         <div class="kicker"><i />No.{String(position).padStart(2, '0')} / {String(items.length).padStart(2, '0')}{item.imported_at ? t(' · 导入于 {date}', { date: item.imported_at.slice(0, 10) }) : ''}</div>
@@ -203,12 +267,7 @@ export function App() {
           {profile && <div title={profile.detail}><b>{profile.value}</b><small>Profile</small></div>}
           <div title={external.detail}><b>{external.value}</b><small>{t('数据包')}</small></div>
         </div>
-        <div class="state-row">
-          <div class="state"><span class={`led ${item.running ? 'running' : status.tone}`} /><span>{status.label}{detail ? ` · ${detail}` : ''}{runtime}</span>{fix}</div>
-          {lastRun && <div class="state last-run" title={lastRun.error || undefined}><span class="led danger" />
-            <b>{lastRun.label}</b>
-            {has('open_directory') && <button class="link" disabled={busy} onClick={() => void act('library.open_dir', item, 'log')}>{t('日志 →')}</button>}</div>}
-        </div>
+        {stateRow(item)}
         <div class="cta">{actions(item)}</div>
       </div>
       <div class="showcase" onPointerMove={tilt} onPointerLeave={tilt}>
@@ -241,32 +300,41 @@ export function App() {
             onInput={event => setQuery(event.currentTarget.value)} onBlur={() => { if (!query) setSearchOpen(false); }} />
         </div>
         <button class={`running-pill ${runningCount ? 'live' : ''}`} disabled={!has('dashboard')} onClick={() => setDashboardListOpen(true)}><span class={`led ${runningCount ? 'running' : 'idle'}`} />{t('{n} 运行中', { n: runningCount })}</button>
+        <button class="round" aria-label={view === 'icons' ? t('改为卡带展示') : t('改为图标展示')} title={view === 'icons' ? t('改为卡带展示') : t('改为图标展示')}
+          disabled={!library.items.length} onClick={() => setView(view === 'icons' ? 'carts' : 'icons')}><Glyph name={view === 'icons' ? 'cartridge' : 'icons'} /></button>
         <button class="round" aria-label={t('刷新游戏库')} title={t('刷新')} disabled={busy || loading} onClick={() => void refresh().catch(report)}><Glyph name="reload" /></button>
         <button class="round" aria-label={t('设置')} title={t('设置')} disabled={busy || importing} onClick={() => setSettingsOpen(true)}><Glyph name="settings" /></button>
         <Clock />
       </div>
     </header>
-    <section class="stage" aria-label={t('游戏详情')} aria-busy={loading}>{hero()}</section>
-    <section class="rail" aria-label={t('游戏条目')}>
-      <div class="rail-head"><b>{filterLabel}</b><span role="status">{t('{n} 款游戏', { n: items.length })}{query ? t(' · 搜索“{query}”', { query }) : ''}</span>
-        <SortMenu value={sort} change={setSort} />
-      </div>
-      {/* The import tile sits beside the scrolling strip, so it is in view however long the library is. */}
-      <div class="rail-body"><div class="strip" ref={strip} onWheel={event => { if (strip.current && Math.abs(event.deltaY) > Math.abs(event.deltaX)) strip.current.scrollLeft += event.deltaY; }}>
-        {items.map(game => {
-          const status = statusOf(game);
-          const tone = game.running ? 'running' : status.tone;
-          return <button key={game.installation_id} class="tile" data-instance={game.installation_id}
-            aria-pressed={item?.installation_id === game.installation_id} aria-label={t('{name}，{status}', { name: game.display_name, status: status.label })} title={`${game.display_name} · ${versionLabel(game)}`}
-            onClick={() => setSelected(game.installation_id)} onDblClick={() => { if (game.can_launch && !game.running) void act('library.launch', game); }}>
-            <TileCart api={cart3d} item={game} tone={tone} ready={() => tileReady(game.installation_id)} /><span class="name">{game.display_name}</span>
-          </button>;
-        })}
-      </div>
-      <button class="tile add" title={t('导入游戏（⌘O / Ctrl+O）')} disabled={importing} onClick={startImport}><b>＋</b>{t('导入游戏')}<small>{t('选择 APK')}</small></button></div>
-    </section>
+    {desk ? <>
+      <section class="desk" aria-label={t('游戏条目')}>
+        {railHead}
+        {items.length ? <Desk items={items} selected={item?.installation_id} select={setSelected} launch={launch} importing={importing} startImport={startImport} grid={deskGrid}
+          menu={(game, x, y) => { setMenuOpen(false); setContext({ id: game.installation_id, x, y }); }} /> : <div class="desk-empty">{noMatch()}</div>}
+      </section>
+      {item && dock(item)}
+    </> : <>
+      <section class="stage" aria-label={t('游戏详情')} aria-busy={loading}>{hero()}</section>
+      <section class="rail" aria-label={t('游戏条目')}>
+        {railHead}
+        {/* The import tile sits beside the scrolling strip, so it is in view however long the library is. */}
+        <div class="rail-body"><div class="strip" ref={strip} onWheel={event => { if (strip.current && Math.abs(event.deltaY) > Math.abs(event.deltaX)) strip.current.scrollLeft += event.deltaY; }}>
+          {items.map(game => {
+            const status = statusOf(game);
+            const tone = game.running ? 'running' : status.tone;
+            return <button key={game.installation_id} class="tile" data-instance={game.installation_id}
+              aria-pressed={item?.installation_id === game.installation_id} aria-label={t('{name}，{status}', { name: game.display_name, status: status.label })} title={`${game.display_name} · ${versionLabel(game)}`}
+              onClick={() => setSelected(game.installation_id)} onDblClick={() => launch(game)}>
+              <TileCart api={cart3d} item={game} tone={tone} ready={() => tileReady(game.installation_id)} /><span class="name">{game.display_name}</span>
+            </button>;
+          })}
+        </div>
+        <button class="tile add" title={t('导入游戏（⌘O / Ctrl+O）')} disabled={importing} onClick={startImport}><b>＋</b>{t('导入游戏')}<small>{t('选择 APK')}</small></button></div>
+      </section>
+    </>}
     <footer class="foot">
-      <span class="hint"><Key>← →</Key>{t('选择')}</span><span class="hint"><Key>A</Key>{t('开始')}<kbd>Enter</kbd></span><span class="hint"><Key>B</Key>{t('返回')}<kbd>Esc</kbd></span>
+      <span class="hint"><Key>{desk ? '↑ ↓ ← →' : '← →'}</Key>{t('选择')}</span><span class="hint"><Key>A</Key>{t('开始')}<kbd>Enter</kbd></span><span class="hint"><Key>B</Key>{t('返回')}<kbd>Esc</kbd></span>
       {has('key_editor') && <span class="hint"><Key>X</Key>{t('按键设置')}</span>}<span class="hint"><Key>Y</Key>{t('游戏设置')}</span>
       {viewer && <span class="hint"><Key>⧉</Key>{t('查看卡带')}<kbd>V</kbd></span>}<span class="hint"><Key>L R</Key>{t('切换分类')}<kbd>Q E</kbd></span>
     </footer>
@@ -291,6 +359,8 @@ export function App() {
         <button disabled={instance.key_editor_status !== 'ready'} title={t(instance.key_editor_detail)} onClick={() => void rpc('controls.open', { installation_id: instance.installation_id }).catch(report)}>{t('按键设置')}</button>
       </section>)}
     </Modal>}
+    {context && library.items.some(game => game.installation_id === context.id) &&
+      contextMenu(library.items.find(game => game.installation_id === context.id)!, context.x, context.y)}
     {!importing && errors.length > 0 && <Modal title={errors[0].title ?? t('操作提示')} onDismiss={launcher.dismissError}><pre>{errors[0].text}</pre></Modal>}
   </div>;
 }

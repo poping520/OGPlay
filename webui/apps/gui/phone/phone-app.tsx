@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { LibraryItem } from '../shared/rpc';
 import { t } from '../shared/i18n';
 import { has } from '../shared/features';
-import { recall, remember } from '../shared/prefs';
 import { externalText, filters as allFilters, lastRunText, profileText, statusDetail, statusOf, versionLabel, visibleItems } from '../library/library';
 import { useLauncher, type Launcher } from '../library/launcher';
 import { sorts } from '../library/sort-menu';
@@ -18,11 +17,12 @@ import { Backdrop, Cartridge } from '../cartridge/cartridge';
 import { Hero3D, TileCart } from '../cartridge/cartridge3d';
 import { Modal } from '../library/modal';
 import { Splash } from '../library/splash';
+import { GameIcon } from '../library/game-icon';
 import { BackButton, MoreIcon, NextIcon, Sheet, SheetItem } from './parts';
 import '../library/library.css';
 import './phone.css';
 
-// Phone layout (Android phones, portrait, touch): the library as a three-column cartridge grid, one page per game with the
+// Phone layout (Android phones, portrait, touch): the library as a grid of icons (four a row) or cartridges (three), one page per game with the
 // actions at the thumb, full-screen settings and import, bottom sheets for menus and confirmations. Pages stack;
 // the back key closes the top dialog first, then the top page. State and actions are useLauncher's, as on the console.
 type Page = { kind: 'home' } | { kind: 'game'; id: string } | { kind: 'settings' } | { kind: 'game-settings'; id: string } | { kind: 'viewer'; id: string };
@@ -30,24 +30,18 @@ type SheetState = { kind: 'actions'; id: string } | { kind: 'sort' } | { kind: '
   | { kind: 'switch'; from: string; to: string } | null;
 // Waiting for a game asked to quit before the next one starts (Android runs one game at a time).
 const SWITCH_TIMEOUT_MS = 15000;
-// The library shows icons and names (four a row, the default) or cartridges (three a row); the choice is the
-// phone's own, remembered across launches.
-type View = 'carts' | 'icons';
 // "可启动" is left to the console: the phone keeps all games and the ones needing attention.
 const filters = allFilters.filter(([value]) => value !== 'launchable');
-const VIEW_KEY = 'ogplay.phone.view';
 
 export function PhoneApp() {
   const launcher = useLauncher();
-  const { library, items, loading, refresh, act, busy, query, setQuery, filter, setFilter, sort, setSort, applySettings, skin, cartMode, cart3d, viewer,
+  const { library, items, loading, refresh, act, busy, query, setQuery, filter, setFilter, sort, setSort, view, setView, applySettings, skin, cartMode, cart3d, viewer,
     errors, importing, pendingFile, startImport, dataHint, removing, clearing, setClearing, clearData } = launcher;
   const [stack, setStack] = useState<Page[]>([{ kind: 'home' }]);
   const [sheet, setSheet] = useState<SheetState>(null);
   const [info, setInfo] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [splash, setSplash] = useState(true);
-  const [view, setViewState] = useState<View>(() => recall(VIEW_KEY) === 'carts' ? 'carts' : 'icons');
-  const setView = (next: View) => { setViewState(next); remember(VIEW_KEY, next); };
   useEffect(() => { if (!filters.some(([value]) => value === filter)) setFilter('all'); }, [filter]);
   // The filter row scrolls away with the games and slides back on the first scroll up (sticky, moved off screen).
   // Over the page background it is bare, like the top bar; only games scrolled under it get a backing.
@@ -230,14 +224,6 @@ export function PhoneApp() {
     </div>}
     {overlays}
   </div>;
-}
-
-// The game's own launcher icon, or its first letter on a plain tile when it ships none (or it fails to load).
-function GameIcon({ game }: { game: LibraryItem }) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [game.icon]);
-  return <span class="ph-app-icon">{game.icon && !failed ? <img src={game.icon} alt="" onError={() => setFailed(true)} />
-    : <b aria-hidden="true">{[...game.display_name][0] ?? '?'}</b>}</span>;
 }
 
 interface GameActions {

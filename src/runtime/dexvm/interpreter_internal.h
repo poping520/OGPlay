@@ -144,6 +144,7 @@ public:
         VmFieldId field;
         VmMethodId cleanup;
         std::int64_t invalid_token;
+        bool reset_on_clone;
     };
 
     std::vector<GuestNativeResourceField> guest_native_resource_fields;

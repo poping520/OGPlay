@@ -173,6 +173,7 @@ set(OGPLAY_TEST_SOURCES
     tests/runtime/guest_icu_tests.cpp
     tests/runtime/guest_crypto_bks_tests.cpp
     tests/runtime/guest_crypto_certificates_tests.cpp
+    tests/runtime/guest_crypto_rsa_tests.cpp
     tests/runtime/application_exit_tests.cpp
     tests/runtime/native_activity_process_tests.cpp
     tests/runtime/native_dlopen_tests.cpp

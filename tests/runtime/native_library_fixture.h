@@ -104,14 +104,23 @@ struct RomValueProcess final {
     ~RomValueProcess();
 };
 
-struct OrchestratedApp final {
-    struct Viewport {
-        std::uint32_t width, height;
-    };
+class MainThreadActions final {
+public:
+    void Install(ogplay::session::AndroidAppProcessRequest& request);
+    void Run(ogplay::session::AndroidAppProcess& app, const std::function<void()>& action);
 
+private:
     struct MainAction {
         std::function<void()> run;
         std::promise<void> done;
+    };
+
+    std::map<std::uint32_t, std::shared_ptr<MainAction>> pending_;
+};
+
+struct OrchestratedApp final {
+    struct Viewport {
+        std::uint32_t width, height;
     };
 
     std::vector<std::byte> libc{LibcElf()};
@@ -121,7 +130,7 @@ struct OrchestratedApp final {
         std::make_shared<ogplay::runtime::DexVmAndroidContext>()};
     ogplay::core::CapabilityLedger ledger;
     ogplay::core::Logger logger;
-    std::map<std::uint32_t, std::shared_ptr<MainAction>> main_actions;
+    MainThreadActions main_actions;
     std::unique_ptr<ogplay::session::AndroidAppProcess> app;
 
     explicit OrchestratedApp(const std::string& activity, const bool has_launcher = true, const bool with_native = true,
@@ -133,7 +142,8 @@ struct OrchestratedApp final {
                              const std::string& application_class = "android.app.Application",
                              std::function<void()> pump_host_events = {}, Viewport viewport = {64, 36},
                              std::vector<std::string> gl_textures = {}, bool large_heap = false,
-                             ogplay::runtime::dexvm::DexVmDiagnosticsConfig diagnostics = {});
+                             ogplay::runtime::dexvm::DexVmDiagnosticsConfig diagnostics = {},
+                             std::uint64_t maximum_ticks_per_call = UINT64_C(100000000));
 
     void RunOnMainThread(const std::function<void()>& action);
     ogplay::runtime::dexvm::VmCallOutcome CallGuest(ogplay::runtime::dexvm::VmMethodId method,

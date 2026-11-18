@@ -17,10 +17,8 @@ struct SignatureAlgorithm {
     const char* oid;
 };
 
-constexpr SignatureAlgorithm kSignatures[] = {
-    {"SHA1withRSA", "1.2.840.113549.1.1.5"},    {"SHA224withRSA", "1.2.840.113549.1.1.14"},
-    {"SHA256withRSA", "1.2.840.113549.1.1.11"}, {"SHA384withRSA", "1.2.840.113549.1.1.12"},
-    {"SHA512withRSA", "1.2.840.113549.1.1.13"}, {"SHA1withECDSA", "1.2.840.10045.4.1"},
+constexpr SignatureAlgorithm kVerificationSignatures[] = {
+    {"SHA224withRSA", "1.2.840.113549.1.1.14"}, {"SHA1withECDSA", "1.2.840.10045.4.1"},
     {"SHA224withECDSA", "1.2.840.10045.4.3.1"}, {"SHA256withECDSA", "1.2.840.10045.4.3.2"},
     {"SHA384withECDSA", "1.2.840.10045.4.3.3"}, {"SHA512withECDSA", "1.2.840.10045.4.3.4"},
 };
@@ -105,8 +103,7 @@ IntrinsicClassDecl Declare_com_android_org_conscrypt_OpenSSLProvider_Overrides()
         const auto roots = vm.ProtectReferences(std::array{name});
         Direct(vm, "Ljava/security/Provider;", "<init>", "(Ljava/lang/String;DLjava/lang/String;)V",
                {VmValue::Ref(c.receiver), VmValue::Ref(name), VmValue::Double(1.0),
-                VmValue::Ref(
-                    vm.NewStringUtf8("OGPlay API 19 guest OpenSSL AES/digests/signature verification; OS entropy"))});
+                VmValue::Ref(vm.NewStringUtf8("OGPlay API 19 guest OpenSSL AES/RSA/digests; OS entropy"))});
         for (const auto mode : {"ECB", "CBC", "CTR"}) {
             for (const auto padding : {"NoPadding", "PKCS5Padding"}) {
                 if (std::string_view(mode) == "CTR" && std::string_view(padding) != "NoPadding") continue;
@@ -137,7 +134,50 @@ IntrinsicClassDecl Declare_com_android_org_conscrypt_OpenSSLProvider_Overrides()
             Put(vm, c.receiver, std::string("Alg.Alias.MessageDigest.") + entry[2], entry[0]);
         }
         Put(vm, c.receiver, "Alg.Alias.MessageDigest.SHA", "SHA-1");
-        for (const auto& entry : kSignatures) {
+        constexpr std::pair<const char*, const char*> rsa_services[] = {
+            {"KeyPairGenerator.RSA", "com.android.org.conscrypt.OpenSSLRSAKeyPairGenerator"},
+            {"Alg.Alias.KeyPairGenerator.1.2.840.113549.1.1.1", "RSA"},
+            {"KeyFactory.RSA", "com.android.org.conscrypt.OpenSSLRSAKeyFactory"},
+            {"Alg.Alias.KeyFactory.1.2.840.113549.1.1.1", "RSA"},
+            {"Signature.MD5WithRSA", "com.android.org.conscrypt.OpenSSLSignature$MD5RSA"},
+            {"Alg.Alias.Signature.MD5WithRSAEncryption", "MD5WithRSA"},
+            {"Alg.Alias.Signature.MD5/RSA", "MD5WithRSA"},
+            {"Alg.Alias.Signature.1.2.840.113549.1.1.4", "MD5WithRSA"},
+            {"Alg.Alias.Signature.1.2.840.113549.2.5with1.2.840.113549.1.1.1", "MD5WithRSA"},
+            {"Signature.SHA1WithRSA", "com.android.org.conscrypt.OpenSSLSignature$SHA1RSA"},
+            {"Alg.Alias.Signature.SHA1WithRSAEncryption", "SHA1WithRSA"},
+            {"Alg.Alias.Signature.SHA1/RSA", "SHA1WithRSA"},
+            {"Alg.Alias.Signature.SHA-1/RSA", "SHA1WithRSA"},
+            {"Alg.Alias.Signature.1.2.840.113549.1.1.5", "SHA1WithRSA"},
+            {"Alg.Alias.Signature.1.3.14.3.2.26with1.2.840.113549.1.1.1", "SHA1WithRSA"},
+            {"Alg.Alias.Signature.1.3.14.3.2.26with1.2.840.113549.1.1.5", "SHA1WithRSA"},
+            {"Alg.Alias.Signature.1.3.14.3.2.29", "SHA1WithRSA"},
+            {"Signature.SHA256WithRSA", "com.android.org.conscrypt.OpenSSLSignature$SHA256RSA"},
+            {"Alg.Alias.Signature.SHA256WithRSAEncryption", "SHA256WithRSA"},
+            {"Alg.Alias.Signature.1.2.840.113549.1.1.11", "SHA256WithRSA"},
+            {"Alg.Alias.Signature.2.16.840.1.101.3.4.2.1with1.2.840.113549.1.1.1", "SHA256WithRSA"},
+            {"Alg.Alias.Signature.2.16.840.1.101.3.4.2.1with1.2.840.113549.1.1.11", "SHA256WithRSA"},
+            {"Signature.SHA384WithRSA", "com.android.org.conscrypt.OpenSSLSignature$SHA384RSA"},
+            {"Alg.Alias.Signature.SHA384WithRSAEncryption", "SHA384WithRSA"},
+            {"Alg.Alias.Signature.1.2.840.113549.1.1.12", "SHA384WithRSA"},
+            {"Alg.Alias.Signature.2.16.840.1.101.3.4.2.2with1.2.840.113549.1.1.1", "SHA384WithRSA"},
+            {"Signature.SHA512WithRSA", "com.android.org.conscrypt.OpenSSLSignature$SHA512RSA"},
+            {"Alg.Alias.Signature.SHA512WithRSAEncryption", "SHA512WithRSA"},
+            {"Alg.Alias.Signature.1.2.840.113549.1.1.13", "SHA512WithRSA"},
+            {"Alg.Alias.Signature.2.16.840.1.101.3.4.2.3with1.2.840.113549.1.1.1", "SHA512WithRSA"},
+            {"Signature.NONEwithRSA", "com.android.org.conscrypt.OpenSSLSignatureRawRSA"},
+            {"Cipher.RSA/ECB/NoPadding", "com.android.org.conscrypt.OpenSSLCipherRSA$Raw"},
+            {"Alg.Alias.Cipher.RSA/None/NoPadding", "RSA/ECB/NoPadding"},
+            {"Cipher.RSA/ECB/PKCS1Padding", "com.android.org.conscrypt.OpenSSLCipherRSA$PKCS1"},
+            {"Alg.Alias.Cipher.RSA/None/PKCS1Padding", "RSA/ECB/PKCS1Padding"},
+            {"Alg.Alias.Signature.OID.1.2.840.113549.1.1.5", "SHA1WithRSA"},
+            {"Alg.Alias.Signature.OID.1.2.840.113549.1.1.11", "SHA256WithRSA"},
+            {"Alg.Alias.Signature.OID.1.2.840.113549.1.1.12", "SHA384WithRSA"},
+            {"Alg.Alias.Signature.OID.1.2.840.113549.1.1.13", "SHA512WithRSA"},
+        };
+        for (const auto& [key, value] : rsa_services)
+            Put(vm, c.receiver, key, value);
+        for (const auto& entry : kVerificationSignatures) {
             Put(vm, c.receiver, std::string("Signature.") + entry.algorithm,
                 std::string("org.ogplay.security.Verify") + entry.algorithm);
             Put(vm, c.receiver, std::string("Alg.Alias.Signature.") + entry.oid, entry.algorithm);
@@ -203,62 +243,6 @@ IntrinsicClassDecl Declare_org_ogplay_security_OsRandom_Class(const CoreIntrinsi
         },
         kAccProtected);
     b.UnimplementedVirtual("engineSetSeed", "([B)V", kAccProtected);
-    return std::move(b).Build();
-}
-
-IntrinsicClassDecl Declare_com_android_org_conscrypt_OpenSSLRandom_Class(const CoreIntrinsicServices& services) {
-    auto b = IntrinsicClassBuilder::Class("Lcom/android/org/conscrypt/OpenSSLRandom;",
-                                          "Ljava/security/SecureRandomSpi;", {"Ljava/io/Serializable;"});
-    const auto seeded = b.BoundInstanceField("seeded", "Z", kAccPrivate);
-    const auto ensure_seeded = [random = services.secure_random, seeded](IntrinsicContext& c) {
-        IntrinsicCall call(c);
-        if (call.GetInt(seeded)) return;
-        if (!random)
-            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "OS secure random is not connected"};
-        std::vector<std::byte> bytes(32);
-        try {
-            random(bytes);
-        } catch (const std::exception&) {
-            throw VmJavaThrow{"Ljava/security/ProviderException;", "OS secure random failed"};
-        }
-        const auto seed = c.vm.Model().NewPrimitiveArray(c.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
-                                                         static_cast<JniSize>(bytes.size()));
-        const auto roots = c.vm.ProtectReferences(std::array{seed});
-        c.vm.Model().WriteByteRegion(seed, 0, bytes);
-        Direct(c.vm, kNative, "RAND_seed", "([B)V", {VmValue::Ref(seed)});
-        call.SetInt(seeded, 1);
-    };
-    b.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
-    b.VirtualMethod(
-        "engineSetSeed", "([B)V",
-        [ensure_seeded](IntrinsicContext& c) {
-            ensure_seeded(c);
-            return Direct(c.vm, kNative, "RAND_seed", "([B)V", {VmValue::Ref(IntrinsicCall(c).NonNullRef(0, "seed"))});
-        },
-        kAccProtected);
-    b.VirtualMethod(
-        "engineNextBytes", "([B)V",
-        [ensure_seeded](IntrinsicContext& c) {
-            ensure_seeded(c);
-            return Direct(c.vm, kNative, "RAND_bytes", "([B)V",
-                          {VmValue::Ref(IntrinsicCall(c).NonNullRef(0, "output"))});
-        },
-        kAccProtected);
-    b.VirtualMethod(
-        "engineGenerateSeed", "(I)[B",
-        [ensure_seeded](IntrinsicContext& c) {
-            const auto count = IntrinsicCall(c).Int(0);
-            if (count < 0) {
-                throw VmJavaThrow{"Ljava/lang/NegativeArraySizeException;", std::to_string(count)};
-            }
-            const auto output =
-                c.vm.Model().NewPrimitiveArray(c.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, count);
-            const auto roots = c.vm.ProtectReferences(std::array{output});
-            ensure_seeded(c);
-            Direct(c.vm, kNative, "RAND_bytes", "([B)V", {VmValue::Ref(output)});
-            return VmValue::Ref(output);
-        },
-        kAccProtected);
     return std::move(b).Build();
 }
 
@@ -616,7 +600,6 @@ void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrin
     catalog.push_back(Declare_org_apache_harmony_security_provider_crypto_CryptoProvider_Class());
     catalog.push_back(Declare_org_ogplay_security_DefaultAes_Class());
     catalog.push_back(Declare_org_ogplay_security_OsRandom_Class(services));
-    catalog.push_back(Declare_com_android_org_conscrypt_OpenSSLRandom_Class(services));
     catalog.push_back(Declare_org_ogplay_security_AesKeyGenerator_Class());
     catalog.push_back(Declare_com_android_org_conscrypt_NativeCrypto_Natives());
     catalog.push_back(Declare_org_ogplay_security_NativeVerification_Class());
@@ -624,7 +607,7 @@ void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrin
     catalog.push_back(Declare_org_ogplay_security_NativeTrust_Overrides());
     catalog.push_back(Declare_org_ogplay_security_NativeTls_Overrides());
     catalog.push_back(Declare_com_android_org_conscrypt_OpenSSLCipherContext_Overrides());
-    for (const auto& entry : kSignatures)
+    for (const auto& entry : kVerificationSignatures)
         catalog.push_back(DeclareVerificationSpiClass(entry.algorithm));
 }
 }  // namespace ogplay::runtime::dexvm::intrinsics

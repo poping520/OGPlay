@@ -8,6 +8,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.security.Key;
+import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.KeyStoreException;
@@ -17,7 +18,9 @@ import java.security.UnrecoverableKeyException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
+import java.security.spec.RSAPrivateCrtKeySpec;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.Hashtable;
@@ -200,11 +203,51 @@ public final class BksKeyStoreSpi extends KeyStoreSpi {
         byte[] encoded = readBlob(input, "key length");
         if (kind == 0 && "PKCS#8".equals(format) &&
                 ("RSA".equals(algorithm) || "EC".equals(algorithm))) {
-            try { return new BksPrivateKey(algorithm, encoded); }
-            catch (RuntimeException exception) { throw new IOException("invalid private key", exception); }
+            try {
+                if ("RSA".equals(algorithm)) return rsaPrivateKey(encoded);
+                return new BksPrivateKey(algorithm, encoded);
+            } catch (java.security.GeneralSecurityException | RuntimeException exception) {
+                throw new IOException("invalid private key", exception);
+            } finally {
+                Arrays.fill(encoded, (byte) 0);
+            }
         }
         if (kind == 2 && "RAW".equals(format)) return new SecretKeySpec(encoded, algorithm);
         throw new IOException("unsupported BKS key: " + kind + "/" + format + "/" + algorithm);
+    }
+
+    private static final byte[] RSA_ENCRYPTION = {
+        0x2a, (byte) 0x86, 0x48, (byte) 0x86, (byte) 0xf7, 0x0d, 0x01, 0x01, 0x01
+    };
+
+    /** PKCS#8 RSA keys keep their CRT form through the public Conscrypt KeyFactory spec path. */
+    private static PrivateKey rsaPrivateKey(byte[] encoded)
+            throws IOException, java.security.GeneralSecurityException {
+        DerReader top = new DerReader(encoded, 0, encoded.length);
+        DerReader info = top.read(0x30);
+        top.end();
+        if (info.integer().signum() != 0) throw new IOException("unsupported PKCS#8 version");
+        DerReader identifier = info.read(0x30);
+        if (!Arrays.equals(identifier.read(6).bytes(), RSA_ENCRYPTION)) {
+            throw new IOException("PKCS#8 key is not RSA");
+        }
+        if (identifier.has(5)) identifier.read(5).end();
+        identifier.end();
+        byte[] privateKey = info.read(4).bytes();
+        try {
+            if (info.has(0xa0)) info.read(0xa0);
+            info.end();
+            DerReader keyTop = new DerReader(privateKey, 0, privateKey.length);
+            DerReader key = keyTop.read(0x30);
+            keyTop.end();
+            if (key.integer().signum() != 0) throw new IOException("multi-prime RSA keys are unsupported");
+            RSAPrivateCrtKeySpec spec = new RSAPrivateCrtKeySpec(key.integer(), key.integer(), key.integer(),
+                    key.integer(), key.integer(), key.integer(), key.integer(), key.integer());
+            key.end();
+            return KeyFactory.getInstance("RSA").generatePrivate(spec);
+        } finally {
+            Arrays.fill(privateKey, (byte) 0);
+        }
     }
 
     private static byte[] protectKey(Key key, char[] password)

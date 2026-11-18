@@ -172,8 +172,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 173252,
-      "sha256": "7dc906ebccadf6730b470ec9f26eb9fd15816bab3c2772d4e7990b2fa30e252a",
+      "size": 193852,
+      "sha256": "34de5b84655b64563cf4fb973b1c499b9e9f501a2c33144018f0397a42ebfe9e",
       "soname": "libogplay_jni.so",
       "needed": [
         "libssl.so",
@@ -186,14 +186,18 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "17ec5ae3ebfc1233301107abe99272bc1d875dd4c147842cb8b46b005bdb23ac",
+        "generator_sha256": "e055498f35849d33b8a738241392b6a6a0bbd319e087ce06977b030cfa8df82b",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",
         "sources": [
           {
             "path": "src/guest/crypto/crypto_jni.c",
-            "sha256": "51ce78ebb928bf3dbb30220118ec44056ba72c3150813b5b709c94a6c4d97f64"
+            "sha256": "a0be8d1efcffb7d083c2613afda9277f017e6c0e5e5286f756f4caee6af06930"
+          },
+          {
+            "path": "src/guest/crypto/rsa_jni.c",
+            "sha256": "04c87ad2268686bc8da4c68ff1db3297f25e44cb0759efda68ececdb1e13092b"
           },
           {
             "path": "src/guest/crypto/trust_jni.c",
@@ -201,7 +205,7 @@
           },
           {
             "path": "src/guest/crypto/tls_jni.c",
-            "sha256": "d7ab20aa9483270eaf1dcf78e42dfb39b4fdfacea4c3274b8ec24d967ff0457b"
+            "sha256": "1cf68289af79b7a73a63402cc5802ea7342bc041eb76f72bc136b66e4004a85a"
           },
           {
             "path": "src/guest/icu/icu_jni.c",
@@ -230,6 +234,10 @@
           {
             "path": "src/guest/icu/icu51_capi.h",
             "sha256": "630b12e54500662682f3864760f2d724605299bdf1e6164b143761148f480b0a"
+          },
+          {
+            "path": "src/guest/crypto/crypto_jni.h",
+            "sha256": "480e2ee5804c46a6d1e6498d66f59dd10ea5e04d1878d0de2701b7f79ada876f"
           }
         ],
         "inputs": [
@@ -341,13 +349,13 @@
   },
   "boot_classpath": {
     "path": "framework/bootdex.jar",
-    "size": 7565131,
-    "sha256": "07af2fa40e0d39a1a7432603e1c2a6d2528d8908b8ef0fa890503390a7ab068f",
+    "size": 7578819,
+    "sha256": "e529c5edcbc2e23c6ee0036f9212ca37872f81643b9689a81d24ab0dc3f02b7a",
     "dex": [
       {
         "entry": "classes.dex",
-        "size": 129808,
-        "sha256": "f7f044282b9487e1ff835c6c129cb079a3071e6edc7b5d6e9b7636980d044cba",
+        "size": 143496,
+        "sha256": "37fe5ab4390c14d6948cdcbd4d6d441ed91b759bd9070532b54c5bcd5a78ce8b",
         "sources": {
           "roots": [
             "src/guest/crypto/java",
@@ -358,7 +366,7 @@
             "src/guest/xml/java",
             "src/guest/zip/java"
           ],
-          "sha256": "6107c75c5abe0a916d04978b2d2c459aca8a60f71ef581fa43a3da6697e63d53",
+          "sha256": "8eed2cb868392fd6f0b9440c27d64ddf2bf18c2507f8b8d3e0da7462fe67a024",
           "javac": "17.0.18",
           "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
           "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"

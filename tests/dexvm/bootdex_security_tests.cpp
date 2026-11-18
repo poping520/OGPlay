@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/hal/clock.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
@@ -436,7 +437,13 @@ TEST_CASE("DVM-104 NativeBN tokens are isolated checked and swept with BigInt ow
 
     Dvm87Vm other;
     CHECK_THROWS(other.vm.BigInts().Require(token));
+    const VmExecutionLockScope lock(f.vm.ExecutionLock());
     static_cast<void>(f.vm.CollectGarbage());
+    const auto deadline = ogplay::hal::Clock::SteadyTimestampNs() + UINT64_C(5000000000);
+    while (f.vm.BigInts().Size() != baseline && ogplay::hal::Clock::SteadyTimestampNs() < deadline) {
+        f.vm.ExecutionLock().YieldToWaiter();
+        static_cast<void>(f.vm.CollectGarbage());
+    }
     CHECK(f.vm.BigInts().Size() == baseline);
     CHECK_THROWS(f.vm.BigInts().Require(token));
 }

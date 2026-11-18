@@ -865,7 +865,8 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model, NativeM
             if (field && close) TrackGuestNativeResourceField(*field, *close);
         }
     }
-    const auto track_native_field = [&](const char* owner, const char* field_name, const char* cleanup_name) {
+    const auto track_native_field = [&](const char* owner, const char* field_name, const char* cleanup_name,
+                                        bool reset_on_clone = false) {
         const auto type = linker.FindClass(owner);
         const auto native = linker.FindClass("Lcom/android/org/conscrypt/NativeCrypto;");
         if (!type || !native) return;
@@ -876,10 +877,12 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model, NativeM
         if (!field || !cleanup)
             throw DexVmError(DexVmErrorReason::unresolved_reference,
                              std::string{"crypto resource metadata: "} + owner + (!field ? " field" : " cleanup"));
-        TrackGuestNativeResourceField(*field, *cleanup);
+        TrackGuestNativeResourceField(*field, *cleanup, 0, reset_on_clone);
     };
-    track_native_field("Lcom/android/org/conscrypt/OpenSSLMessageDigestJDK;", "ctx", "EVP_MD_CTX_destroy");
+    track_native_field("Lcom/android/org/conscrypt/OpenSSLMessageDigestJDK;", "ctx", "EVP_MD_CTX_destroy", true);
     track_native_field("Lcom/android/org/conscrypt/OpenSSLDigestContext;", "context", "EVP_MD_CTX_destroy");
+    track_native_field("Lcom/android/org/conscrypt/OpenSSLSignature;", "ctx", "EVP_MD_CTX_destroy");
+    track_native_field("Lorg/ogplay/security/Sha224Digest;", "ctx", "EVP_MD_CTX_destroy", true);
     track_native_field("Lcom/android/org/conscrypt/OpenSSLKey;", "ctx", "EVP_PKEY_free");
     if (const auto type = linker.FindClass("Lorg/ogplay/security/BksPrivateKey;"); type.has_value()) {
         const auto native = linker.FindClass("Lorg/ogplay/security/NativeKeyStoreCrypto;");
@@ -1592,6 +1595,18 @@ const Interpreter::ConsoleSink& Interpreter::Console(const bool error) const noe
 
 VmObjectRef Interpreter::CloneObject(const VmObjectRef source) {
     const auto clone = impl_->model->CloneObject(source);
+    if (impl_->model->Kind(clone) == VmObjectKind::vm_instance) {
+        const auto type = impl_->model->ObjectClass(clone);
+        for (const auto& rule : impl_->guest_native_resource_fields) {
+            if (!rule.reset_on_clone) continue;
+            const auto& field = impl_->linker->Field(rule.field);
+            if (!impl_->linker->IsAssignable(field.owner, type)) continue;
+            auto slots = impl_->model->InstanceSlots(clone);
+            const auto invalid = std::bit_cast<std::uint64_t>(rule.invalid_token);
+            slots[field.slot].bits = static_cast<std::uint32_t>(invalid);
+            slots[field.slot + 1].bits = static_cast<std::uint32_t>(invalid >> 32U);
+        }
+    }
     for (const auto& table : impl_->intrinsic_state_tables) {
         if (table.clone) table.clone(source, clone);
     }

@@ -1,6 +1,8 @@
 #include <cerrno>
 #include "../dexvm/boot_dex.h"
 #include "../dexvm/tls_fixtures.h"
+#include "native_library_fixture.h"
+#include "resources_test_support.h"
 
 #include <algorithm>
 #include <array>
@@ -307,6 +309,7 @@ struct TlsApp final {
     ogplay::core::Logger logger;
     std::vector<std::vector<std::byte>> contents;
     std::vector<BionicModuleSource> libraries;
+    ogplay::test::native_library::MainThreadActions main;
     std::unique_ptr<AndroidAppProcess> app;
     LoopbackTransport* transport{};
 
@@ -319,11 +322,8 @@ struct TlsApp final {
             contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
             libraries.push_back({name, contents.back()});
         }
-        context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
-        if (network != nullptr) {
-            context->network_policy = NetworkPolicy{true, true, false, {"tls.test", "127.0.0.1"}};
-            context->network_transport = network;
-        }
+        const std::array entries{std::pair{std::string("fixture"), std::vector<std::byte>{}}};
+        context->apk_bytes = ogplay::test::resources::Zip(entries);
         AndroidAppProcessRequest request;
         request.manifest = AppManifest();
         request.system_libraries = libraries;
@@ -345,8 +345,20 @@ struct TlsApp final {
         request.filesystem = &filesystem;
         request.ledger = &ledger;
         request.logger = &logger;
+        ogplay::test::BindBootDexArchive(*context);
+        main.Install(request);
         app = AndroidAppProcess::Create(std::move(request));
+        app->StartApplication();
+        if (network != nullptr) {
+            main.Run(*app, [&] {
+                context->network_policy = NetworkPolicy{true, true, false, {"tls.test", "127.0.0.1"}};
+                context->network_transport = network;
+                Vm().Network().Configure(context->network_policy, network);
+            });
+        }
     }
+
+    void Run(const std::function<void()>& action) { main.Run(*app, action); }
 
     Interpreter& Vm() { return app->DexVm().Vm(); }
 
@@ -502,188 +514,193 @@ TEST_CASE("TLS-01 path validation uses guest libcrypto") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         CAPTURE(static_cast<int>(backend));
         TlsApp app(nullptr, backend);
-        {
-            auto leaf = app.Bytes(ReadTlsFixture("server.der"));
-            auto extras = app.Bytes(PackTlsCerts({}));
-            auto anchors = app.Bytes(PackTlsCerts({"ca.der"}));
-            const auto roots = app.Vm().ProtectReferences(std::array{leaf, extras, anchors});
-            const auto verified =
-                app.DirectResult("Lorg/ogplay/security/NativeTrust;", "verifyPath", "([B[B[BLjava/lang/String;)Z",
-                                 {VmValue::Ref(leaf), VmValue::Ref(extras), VmValue::Ref(anchors),
-                                  VmValue::Ref(app.Vm().NewStringUtf8("SERVER"))});
-            REQUIRE_MESSAGE(!verified.exception.IsValid(), verified.exception_message);
-        }
-        {
-            auto leaf = app.Certificate("server.der");
-            auto leaf_roots = app.Vm().ProtectReferences(std::array{leaf});
-            auto ca = app.Certificate("ca.der");
-            const auto ca_roots = app.Vm().ProtectReferences(std::array{ca});
-            CheckBytes(app, app.Invoke(leaf, "getEncoded", "()[B").ref, ReadTlsFixture("server.der"));
-            CheckBytes(app, app.Invoke(ca, "getEncoded", "()[B").ref, ReadTlsFixture("ca.der"));
-        }
-        auto trusted = app.TrustManager({"ca.der"});
-        auto trust_roots = app.Vm().ProtectReferences(std::array{trusted});
-        auto packed_anchors = RefField(app, trusted, "packedAnchors", "[B");
-        const auto packed_anchor_roots = app.Vm().ProtectReferences(std::array{packed_anchors});
-        CheckBytes(app, packed_anchors, PackTlsCerts({"ca.der"}));
-        auto accepted = app.Invoke(trusted, "getAcceptedIssuers", "()[Ljava/security/cert/X509Certificate;").ref;
-        const auto accepted_roots = app.Vm().ProtectReferences(std::array{accepted});
-        REQUIRE(app.Vm().Model().ArrayLength(accepted) == 1);
-        auto issuer_cert = app.Vm().Model().GetObjectElement(accepted, 0);
-        const auto issuer_roots = app.Vm().ProtectReferences(std::array{issuer_cert});
-        CheckBytes(app, app.Invoke(issuer_cert, "getEncoded", "()[B").ref, ReadTlsFixture("ca.der"));
-        CheckBytes(app,
-                   app.Direct("Lorg/ogplay/security/NativeTrust;", "encodedCopy",
-                              "(Ljava/security/cert/X509Certificate;)[B", {VmValue::Ref(issuer_cert)})
-                       .ref,
-                   ReadTlsFixture("ca.der"));
-        CheckBytes(app,
-                   app.Direct("Lorg/ogplay/security/X509TrustManagerImpl;", "copyEncoded",
-                              "(Ljava/security/cert/X509Certificate;)[B", {VmValue::Ref(issuer_cert)})
-                       .ref,
-                   ReadTlsFixture("ca.der"));
-        CheckBytes(app,
-                   app.Direct("Lorg/ogplay/security/X509TrustManagerImpl;", "packCertificates",
-                              "([Ljava/security/cert/X509Certificate;)[B", {VmValue::Ref(accepted)})
-                       .ref,
-                   PackTlsCerts({"ca.der"}));
-        auto chain = app.CertArray({"server.der"});
-        const auto chain_roots = app.Vm().ProtectReferences(std::array{chain});
-        auto chain_leaf = app.Vm().Model().GetObjectElement(chain, 0);
-        const auto chain_leaf_roots = app.Vm().ProtectReferences(std::array{chain_leaf});
-        CheckBytes(app, app.Invoke(chain_leaf, "getEncoded", "()[B").ref, ReadTlsFixture("server.der"));
-        CheckBytes(app,
-                   app.Direct("Lorg/ogplay/security/NativeTrust;", "encodedCopy",
-                              "(Ljava/security/cert/X509Certificate;)[B", {VmValue::Ref(chain_leaf)})
-                       .ref,
-                   ReadTlsFixture("server.der"));
-        app.Invoke(trusted, "checkServerTrusted", "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
-                   {VmValue::Ref(chain), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
-        CheckBytes(app, RefField(app, trusted, "packedAnchors", "[B"), PackTlsCerts({"ca.der"}));
-        auto accepted_after_decode =
-            app.Invoke(trusted, "getAcceptedIssuers", "()[Ljava/security/cert/X509Certificate;").ref;
-        const auto accepted_after_decode_roots = app.Vm().ProtectReferences(std::array{accepted_after_decode});
-        auto issuer_after_decode = app.Vm().Model().GetObjectElement(accepted_after_decode, 0);
-        const auto issuer_after_decode_roots = app.Vm().ProtectReferences(std::array{issuer_after_decode});
-        CheckBytes(app, app.Invoke(issuer_after_decode, "getEncoded", "()[B").ref, ReadTlsFixture("ca.der"));
-        auto trusted_leaf_chain = app.CertArray({"trusted-leaf.der"});
-        const auto trusted_leaf_chain_roots = app.Vm().ProtectReferences(std::array{trusted_leaf_chain});
-        CheckBytes(app, RefField(app, trusted, "packedAnchors", "[B"), PackTlsCerts({"ca.der"}));
-        app.Invoke(trusted, "checkServerTrusted", "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
-                   {VmValue::Ref(trusted_leaf_chain), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
-        auto leaf_trusted = app.TrustManager({"trusted-leaf.der"});
-        const auto leaf_trusted_roots = app.Vm().ProtectReferences(std::array{leaf_trusted});
-        auto leaf_trusted_chain = app.CertArray({"trusted-leaf.der"});
-        const auto leaf_trusted_chain_roots = app.Vm().ProtectReferences(std::array{leaf_trusted_chain});
-        app.Invoke(leaf_trusted, "checkServerTrusted", "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
-                   {VmValue::Ref(leaf_trusted_chain), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
-        auto empty =
-            app.Vm().Model().NewObjectArray(app.Linker().ResolveDescriptor("[Ljava/security/cert/X509Certificate;"),
-                                            app.Linker().ResolveDescriptor("Ljava/security/cert/X509Certificate;"), 0);
-        const auto empty_roots = app.Vm().ProtectReferences(std::array{empty});
-        auto empty_args = app.InvokeResult(trusted, "checkServerTrusted",
-                                           "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
-                                           {VmValue::Ref(empty), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
-        REQUIRE(empty_args.exception.IsValid());
-        CHECK(app.Linker().Class(empty_args.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
-        ExpectCheckFailure(app, trusted, app.CertArray({"untrusted.der"}), "RSA",
-                           "Ljava/security/cert/CertificateException;");
-        ExpectCheckFailure(app, trusted, app.CertArray({"expired.der"}), "RSA",
-                           "Ljava/security/cert/CertificateExpiredException;");
-        ExpectCheckFailure(app, trusted, app.CertArray({"notyet.der"}), "RSA",
-                           "Ljava/security/cert/CertificateNotYetValidException;");
-        ExpectCheckFailure(app, trusted, app.CertArray({"non-ca-leaf.der", "non-ca.der"}), "RSA",
-                           "Ljava/security/cert/CertificateException;");
-        auto pathlen_manager = app.TrustManager({"pathlen-ca.der"});
-        const auto pathlen_manager_roots = app.Vm().ProtectReferences(std::array{pathlen_manager});
-        ExpectCheckFailure(app, pathlen_manager,
-                           app.CertArray({"pathlen-leaf.der", "pathlen-bridge.der", "pathlen-mid.der"}), "RSA",
-                           "Ljava/security/cert/CertificateException;");
-        ExpectCheckFailure(app, trusted, app.CertArray({"wrong-eku.der"}), "RSA",
-                           "Ljava/security/cert/CertificateException;");
-        auto nc_manager = app.TrustManager({"nc-ca.der"});
-        const auto nc_manager_roots = app.Vm().ProtectReferences(std::array{nc_manager});
-        ExpectCheckFailure(app, nc_manager, app.CertArray({"nc-leaf.der"}), "RSA",
-                           "Ljava/security/cert/CertificateException;");
-        ExpectCheckFailure(app, trusted, app.CertArray({"unknown-critical.der"}), "RSA",
-                           "Ljava/security/cert/CertificateException;");
-        auto same_subject_manager = app.TrustManager({"same-subject-ca.der"});
-        const auto same_subject_manager_roots = app.Vm().ProtectReferences(std::array{same_subject_manager});
-        ExpectCheckFailure(app, same_subject_manager, app.CertArray({"server.der"}), "RSA",
-                           "Ljava/security/cert/CertificateException;");
-        auto cross_chain = app.CertArray({"cross-leaf.der", "cross-mid.der"});
-        const auto cross_chain_roots = app.Vm().ProtectReferences(std::array{cross_chain});
-        for (JniSize i = 0; i < 2; ++i) {
-            const auto cert = app.Vm().Model().GetObjectElement(cross_chain, i);
+        app.Run([&] {
+            {
+                auto leaf = app.Bytes(ReadTlsFixture("server.der"));
+                auto extras = app.Bytes(PackTlsCerts({}));
+                auto anchors = app.Bytes(PackTlsCerts({"ca.der"}));
+                const auto roots = app.Vm().ProtectReferences(std::array{leaf, extras, anchors});
+                const auto verified =
+                    app.DirectResult("Lorg/ogplay/security/NativeTrust;", "verifyPath", "([B[B[BLjava/lang/String;)Z",
+                                     {VmValue::Ref(leaf), VmValue::Ref(extras), VmValue::Ref(anchors),
+                                      VmValue::Ref(app.Vm().NewStringUtf8("SERVER"))});
+                REQUIRE_MESSAGE(!verified.exception.IsValid(), verified.exception_message);
+            }
+            {
+                auto leaf = app.Certificate("server.der");
+                auto leaf_roots = app.Vm().ProtectReferences(std::array{leaf});
+                auto ca = app.Certificate("ca.der");
+                const auto ca_roots = app.Vm().ProtectReferences(std::array{ca});
+                CheckBytes(app, app.Invoke(leaf, "getEncoded", "()[B").ref, ReadTlsFixture("server.der"));
+                CheckBytes(app, app.Invoke(ca, "getEncoded", "()[B").ref, ReadTlsFixture("ca.der"));
+            }
+            auto trusted = app.TrustManager({"ca.der"});
+            auto trust_roots = app.Vm().ProtectReferences(std::array{trusted});
+            auto packed_anchors = RefField(app, trusted, "packedAnchors", "[B");
+            const auto packed_anchor_roots = app.Vm().ProtectReferences(std::array{packed_anchors});
+            CheckBytes(app, packed_anchors, PackTlsCerts({"ca.der"}));
+            auto accepted = app.Invoke(trusted, "getAcceptedIssuers", "()[Ljava/security/cert/X509Certificate;").ref;
+            const auto accepted_roots = app.Vm().ProtectReferences(std::array{accepted});
+            REQUIRE(app.Vm().Model().ArrayLength(accepted) == 1);
+            auto issuer_cert = app.Vm().Model().GetObjectElement(accepted, 0);
+            const auto issuer_roots = app.Vm().ProtectReferences(std::array{issuer_cert});
+            CheckBytes(app, app.Invoke(issuer_cert, "getEncoded", "()[B").ref, ReadTlsFixture("ca.der"));
             CheckBytes(app,
                        app.Direct("Lorg/ogplay/security/NativeTrust;", "encodedCopy",
-                                  "(Ljava/security/cert/X509Certificate;)[B", {VmValue::Ref(cert)})
+                                  "(Ljava/security/cert/X509Certificate;)[B", {VmValue::Ref(issuer_cert)})
                            .ref,
-                       ReadTlsFixture(i == 0 ? "cross-leaf.der" : "cross-mid.der"));
-        }
-        app.Invoke(trusted, "checkServerTrusted", "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
-                   {VmValue::Ref(cross_chain), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
-        auto empty_store = app.TrustManager({});
-        const auto empty_store_roots = app.Vm().ProtectReferences(std::array{empty_store});
-        ExpectCheckFailure(app, empty_store, app.CertArray({"server.der"}), "RSA",
-                           "Ljava/security/cert/CertificateException;");
-        auto default_factory = app.Direct("Ljavax/net/ssl/TrustManagerFactory;", "getInstance",
-                                          "(Ljava/lang/String;)Ljavax/net/ssl/TrustManagerFactory;",
-                                          {VmValue::Ref(app.Vm().NewStringUtf8("PKIX"))})
-                                   .ref;
-        const auto default_factory_roots = app.Vm().ProtectReferences(std::array{default_factory});
-        app.Invoke(default_factory, "init", "(Ljava/security/KeyStore;)V", {VmValue::Ref(VmObjectRef{})});
-        auto default_managers = app.Invoke(default_factory, "getTrustManagers", "()[Ljavax/net/ssl/TrustManager;").ref;
-        const auto default_managers_roots = app.Vm().ProtectReferences(std::array{default_managers});
-        auto default_manager = app.Vm().Model().GetObjectElement(default_managers, 0);
-        const auto default_manager_roots = app.Vm().ProtectReferences(std::array{default_manager});
-        auto issuers = app.Invoke(default_manager, "getAcceptedIssuers", "()[Ljava/security/cert/X509Certificate;").ref;
-        const auto issuers_roots = app.Vm().ProtectReferences(std::array{issuers});
-        REQUIRE(app.Vm().Model().ArrayLength(issuers) == 1);
-        app.Vm().Model().SetObjectElement(issuers, 0, VmObjectRef{});
-        auto issuers_again =
-            app.Invoke(default_manager, "getAcceptedIssuers", "()[Ljava/security/cert/X509Certificate;").ref;
-        const auto issuers_again_roots = app.Vm().ProtectReferences(std::array{issuers_again});
-        CHECK(app.Vm().Model().GetObjectElement(issuers_again, 0).IsValid());
-        auto default_chain = app.CertArray({"server.der"});
-        const auto default_chain_roots = app.Vm().ProtectReferences(std::array{default_chain});
-        app.Invoke(default_manager, "checkServerTrusted", "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
-                   {VmValue::Ref(default_chain), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
-        auto android_store =
-            app.Direct("Ljava/security/KeyStore;", "getInstance", "(Ljava/lang/String;)Ljava/security/KeyStore;",
-                       {VmValue::Ref(app.Vm().NewStringUtf8("AndroidCAStore"))})
-                .ref;
-        const auto android_store_roots = app.Vm().ProtectReferences(std::array{android_store});
-        app.Invoke(android_store, "load", "(Ljava/io/InputStream;[C)V",
-                   {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
-        CHECK(app.Invoke(android_store, "size", "()I").AsInt() == 1);
-        auto write_cert = app.Certificate("ca.der");
-        const auto write_cert_roots = app.Vm().ProtectReferences(std::array{write_cert});
-        auto write = app.InvokeResult(android_store, "setCertificateEntry",
-                                      "(Ljava/lang/String;Ljava/security/cert/Certificate;)V",
-                                      {VmValue::Ref(app.Vm().NewStringUtf8("user:test")), VmValue::Ref(write_cert)});
-        REQUIRE(write.exception.IsValid());
-        CHECK(app.Linker().Class(write.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        auto auth_chain = app.CertArray({"server.der"});
-        const auto auth_chain_roots = app.Vm().ProtectReferences(std::array{auth_chain});
-        auto auth = app.InvokeResult(trusted, "checkServerTrusted",
-                                     "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
-                                     {VmValue::Ref(auth_chain), VmValue::Ref(app.Vm().NewStringUtf8("ECDSA"))});
-        REQUIRE(auth.exception.IsValid());
-        CHECK(app.Linker().Class(auth.exception_class).descriptor == "Ljava/security/cert/CertificateException;");
-        const auto previous = app.context->UptimeMillis();
-        // AndroidAppProcess wall clock is 1_400_000_000_000 + uptime_millis.
-        // 714'380'800'000 yields 2037-01-01, after fixture notAfter 2036-12-31.
-        app.context->uptime_nanos.store((714'380'800'000LL) * 1'000'000);
-        auto expired_chain = app.CertArray({"server.der"});
-        const auto expired_chain_roots = app.Vm().ProtectReferences(std::array{expired_chain});
-        auto clocked = app.InvokeResult(trusted, "checkServerTrusted",
-                                        "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
-                                        {VmValue::Ref(expired_chain), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
-        app.context->uptime_nanos.store((previous) * 1'000'000);
-        REQUIRE(clocked.exception.IsValid());
-        CHECK(app.Linker().Class(clocked.exception_class).descriptor ==
-              "Ljava/security/cert/CertificateExpiredException;");
+                       ReadTlsFixture("ca.der"));
+            CheckBytes(app,
+                       app.Direct("Lorg/ogplay/security/X509TrustManagerImpl;", "copyEncoded",
+                                  "(Ljava/security/cert/X509Certificate;)[B", {VmValue::Ref(issuer_cert)})
+                           .ref,
+                       ReadTlsFixture("ca.der"));
+            CheckBytes(app,
+                       app.Direct("Lorg/ogplay/security/X509TrustManagerImpl;", "packCertificates",
+                                  "([Ljava/security/cert/X509Certificate;)[B", {VmValue::Ref(accepted)})
+                           .ref,
+                       PackTlsCerts({"ca.der"}));
+            auto chain = app.CertArray({"server.der"});
+            const auto chain_roots = app.Vm().ProtectReferences(std::array{chain});
+            auto chain_leaf = app.Vm().Model().GetObjectElement(chain, 0);
+            const auto chain_leaf_roots = app.Vm().ProtectReferences(std::array{chain_leaf});
+            CheckBytes(app, app.Invoke(chain_leaf, "getEncoded", "()[B").ref, ReadTlsFixture("server.der"));
+            CheckBytes(app,
+                       app.Direct("Lorg/ogplay/security/NativeTrust;", "encodedCopy",
+                                  "(Ljava/security/cert/X509Certificate;)[B", {VmValue::Ref(chain_leaf)})
+                           .ref,
+                       ReadTlsFixture("server.der"));
+            app.Invoke(trusted, "checkServerTrusted", "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
+                       {VmValue::Ref(chain), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
+            CheckBytes(app, RefField(app, trusted, "packedAnchors", "[B"), PackTlsCerts({"ca.der"}));
+            auto accepted_after_decode =
+                app.Invoke(trusted, "getAcceptedIssuers", "()[Ljava/security/cert/X509Certificate;").ref;
+            const auto accepted_after_decode_roots = app.Vm().ProtectReferences(std::array{accepted_after_decode});
+            auto issuer_after_decode = app.Vm().Model().GetObjectElement(accepted_after_decode, 0);
+            const auto issuer_after_decode_roots = app.Vm().ProtectReferences(std::array{issuer_after_decode});
+            CheckBytes(app, app.Invoke(issuer_after_decode, "getEncoded", "()[B").ref, ReadTlsFixture("ca.der"));
+            auto trusted_leaf_chain = app.CertArray({"trusted-leaf.der"});
+            const auto trusted_leaf_chain_roots = app.Vm().ProtectReferences(std::array{trusted_leaf_chain});
+            CheckBytes(app, RefField(app, trusted, "packedAnchors", "[B"), PackTlsCerts({"ca.der"}));
+            app.Invoke(trusted, "checkServerTrusted", "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
+                       {VmValue::Ref(trusted_leaf_chain), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
+            auto leaf_trusted = app.TrustManager({"trusted-leaf.der"});
+            const auto leaf_trusted_roots = app.Vm().ProtectReferences(std::array{leaf_trusted});
+            auto leaf_trusted_chain = app.CertArray({"trusted-leaf.der"});
+            const auto leaf_trusted_chain_roots = app.Vm().ProtectReferences(std::array{leaf_trusted_chain});
+            app.Invoke(leaf_trusted, "checkServerTrusted", "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
+                       {VmValue::Ref(leaf_trusted_chain), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
+            auto empty = app.Vm().Model().NewObjectArray(
+                app.Linker().ResolveDescriptor("[Ljava/security/cert/X509Certificate;"),
+                app.Linker().ResolveDescriptor("Ljava/security/cert/X509Certificate;"), 0);
+            const auto empty_roots = app.Vm().ProtectReferences(std::array{empty});
+            auto empty_args = app.InvokeResult(trusted, "checkServerTrusted",
+                                               "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
+                                               {VmValue::Ref(empty), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
+            REQUIRE(empty_args.exception.IsValid());
+            CHECK(app.Linker().Class(empty_args.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+            ExpectCheckFailure(app, trusted, app.CertArray({"untrusted.der"}), "RSA",
+                               "Ljava/security/cert/CertificateException;");
+            ExpectCheckFailure(app, trusted, app.CertArray({"expired.der"}), "RSA",
+                               "Ljava/security/cert/CertificateExpiredException;");
+            ExpectCheckFailure(app, trusted, app.CertArray({"notyet.der"}), "RSA",
+                               "Ljava/security/cert/CertificateNotYetValidException;");
+            ExpectCheckFailure(app, trusted, app.CertArray({"non-ca-leaf.der", "non-ca.der"}), "RSA",
+                               "Ljava/security/cert/CertificateException;");
+            auto pathlen_manager = app.TrustManager({"pathlen-ca.der"});
+            const auto pathlen_manager_roots = app.Vm().ProtectReferences(std::array{pathlen_manager});
+            ExpectCheckFailure(app, pathlen_manager,
+                               app.CertArray({"pathlen-leaf.der", "pathlen-bridge.der", "pathlen-mid.der"}), "RSA",
+                               "Ljava/security/cert/CertificateException;");
+            ExpectCheckFailure(app, trusted, app.CertArray({"wrong-eku.der"}), "RSA",
+                               "Ljava/security/cert/CertificateException;");
+            auto nc_manager = app.TrustManager({"nc-ca.der"});
+            const auto nc_manager_roots = app.Vm().ProtectReferences(std::array{nc_manager});
+            ExpectCheckFailure(app, nc_manager, app.CertArray({"nc-leaf.der"}), "RSA",
+                               "Ljava/security/cert/CertificateException;");
+            ExpectCheckFailure(app, trusted, app.CertArray({"unknown-critical.der"}), "RSA",
+                               "Ljava/security/cert/CertificateException;");
+            auto same_subject_manager = app.TrustManager({"same-subject-ca.der"});
+            const auto same_subject_manager_roots = app.Vm().ProtectReferences(std::array{same_subject_manager});
+            ExpectCheckFailure(app, same_subject_manager, app.CertArray({"server.der"}), "RSA",
+                               "Ljava/security/cert/CertificateException;");
+            auto cross_chain = app.CertArray({"cross-leaf.der", "cross-mid.der"});
+            const auto cross_chain_roots = app.Vm().ProtectReferences(std::array{cross_chain});
+            for (JniSize i = 0; i < 2; ++i) {
+                const auto cert = app.Vm().Model().GetObjectElement(cross_chain, i);
+                CheckBytes(app,
+                           app.Direct("Lorg/ogplay/security/NativeTrust;", "encodedCopy",
+                                      "(Ljava/security/cert/X509Certificate;)[B", {VmValue::Ref(cert)})
+                               .ref,
+                           ReadTlsFixture(i == 0 ? "cross-leaf.der" : "cross-mid.der"));
+            }
+            app.Invoke(trusted, "checkServerTrusted", "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
+                       {VmValue::Ref(cross_chain), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
+            auto empty_store = app.TrustManager({});
+            const auto empty_store_roots = app.Vm().ProtectReferences(std::array{empty_store});
+            ExpectCheckFailure(app, empty_store, app.CertArray({"server.der"}), "RSA",
+                               "Ljava/security/cert/CertificateException;");
+            auto default_factory = app.Direct("Ljavax/net/ssl/TrustManagerFactory;", "getInstance",
+                                              "(Ljava/lang/String;)Ljavax/net/ssl/TrustManagerFactory;",
+                                              {VmValue::Ref(app.Vm().NewStringUtf8("PKIX"))})
+                                       .ref;
+            const auto default_factory_roots = app.Vm().ProtectReferences(std::array{default_factory});
+            app.Invoke(default_factory, "init", "(Ljava/security/KeyStore;)V", {VmValue::Ref(VmObjectRef{})});
+            auto default_managers =
+                app.Invoke(default_factory, "getTrustManagers", "()[Ljavax/net/ssl/TrustManager;").ref;
+            const auto default_managers_roots = app.Vm().ProtectReferences(std::array{default_managers});
+            auto default_manager = app.Vm().Model().GetObjectElement(default_managers, 0);
+            const auto default_manager_roots = app.Vm().ProtectReferences(std::array{default_manager});
+            auto issuers =
+                app.Invoke(default_manager, "getAcceptedIssuers", "()[Ljava/security/cert/X509Certificate;").ref;
+            const auto issuers_roots = app.Vm().ProtectReferences(std::array{issuers});
+            REQUIRE(app.Vm().Model().ArrayLength(issuers) == 1);
+            app.Vm().Model().SetObjectElement(issuers, 0, VmObjectRef{});
+            auto issuers_again =
+                app.Invoke(default_manager, "getAcceptedIssuers", "()[Ljava/security/cert/X509Certificate;").ref;
+            const auto issuers_again_roots = app.Vm().ProtectReferences(std::array{issuers_again});
+            CHECK(app.Vm().Model().GetObjectElement(issuers_again, 0).IsValid());
+            auto default_chain = app.CertArray({"server.der"});
+            const auto default_chain_roots = app.Vm().ProtectReferences(std::array{default_chain});
+            app.Invoke(default_manager, "checkServerTrusted",
+                       "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
+                       {VmValue::Ref(default_chain), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
+            auto android_store =
+                app.Direct("Ljava/security/KeyStore;", "getInstance", "(Ljava/lang/String;)Ljava/security/KeyStore;",
+                           {VmValue::Ref(app.Vm().NewStringUtf8("AndroidCAStore"))})
+                    .ref;
+            const auto android_store_roots = app.Vm().ProtectReferences(std::array{android_store});
+            app.Invoke(android_store, "load", "(Ljava/io/InputStream;[C)V",
+                       {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+            CHECK(app.Invoke(android_store, "size", "()I").AsInt() == 1);
+            auto write_cert = app.Certificate("ca.der");
+            const auto write_cert_roots = app.Vm().ProtectReferences(std::array{write_cert});
+            auto write = app.InvokeResult(
+                android_store, "setCertificateEntry", "(Ljava/lang/String;Ljava/security/cert/Certificate;)V",
+                {VmValue::Ref(app.Vm().NewStringUtf8("user:test")), VmValue::Ref(write_cert)});
+            REQUIRE(write.exception.IsValid());
+            CHECK(app.Linker().Class(write.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+            auto auth_chain = app.CertArray({"server.der"});
+            const auto auth_chain_roots = app.Vm().ProtectReferences(std::array{auth_chain});
+            auto auth = app.InvokeResult(trusted, "checkServerTrusted",
+                                         "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
+                                         {VmValue::Ref(auth_chain), VmValue::Ref(app.Vm().NewStringUtf8("ECDSA"))});
+            REQUIRE(auth.exception.IsValid());
+            CHECK(app.Linker().Class(auth.exception_class).descriptor == "Ljava/security/cert/CertificateException;");
+            const auto previous = app.context->UptimeMillis();
+            // AndroidAppProcess wall clock is 1_400_000_000_000 + uptime_millis.
+            // 714'380'800'000 yields 2037-01-01, after fixture notAfter 2036-12-31.
+            app.context->uptime_nanos.store((714'380'800'000LL) * 1'000'000);
+            auto expired_chain = app.CertArray({"server.der"});
+            const auto expired_chain_roots = app.Vm().ProtectReferences(std::array{expired_chain});
+            auto clocked = app.InvokeResult(trusted, "checkServerTrusted",
+                                            "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V",
+                                            {VmValue::Ref(expired_chain), VmValue::Ref(app.Vm().NewStringUtf8("RSA"))});
+            app.context->uptime_nanos.store((previous) * 1'000'000);
+            REQUIRE(clocked.exception.IsValid());
+            CHECK(app.Linker().Class(clocked.exception_class).descriptor ==
+                  "Ljava/security/cert/CertificateExpiredException;");
+        });
     }
 }
 
@@ -693,6 +710,140 @@ TEST_CASE("TLS-02 client handshake HTTPS layered autoClose") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         TlsApp app(&transport, backend);
+        app.Run([&] {
+            auto context = app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance",
+                                      "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+                                      {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))})
+                               .ref;
+            app.Invoke(context, "init",
+                       "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
+                       "Ljava/security/SecureRandom;)V",
+                       {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+            auto factory = app.Invoke(context, "getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;").ref;
+            auto suites = app.Invoke(factory, "getDefaultCipherSuites", "()[Ljava/lang/String;").ref;
+            CHECK(app.Vm().Model().ArrayLength(suites) > 0);
+            auto socket = app.Invoke(factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
+                                     {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")), VmValue::Int(server.Port())})
+                              .ref;
+            auto handshake = app.InvokeResult(socket, "startHandshake", "()V");
+            REQUIRE_MESSAGE(!handshake.exception.IsValid(), handshake.exception_message);
+            auto session = app.Invoke(socket, "getSession", "()Ljavax/net/ssl/SSLSession;").ref;
+            CHECK(app.Vm().StringUtf8(app.Invoke(session, "getProtocol", "()Ljava/lang/String;").ref) == "TLSv1.2");
+            CHECK(app.Vm().StringUtf8(app.Invoke(session, "getCipherSuite", "()Ljava/lang/String;").ref).find("TLS_") ==
+                  0);
+            auto session_id = app.Invoke(session, "getId", "()[B").ref;
+            CHECK(app.Vm().Model().ArrayLength(session_id) > 4);
+            CHECK(app.Vm().StringUtf8(app.Invoke(session, "getPeerHost", "()Ljava/lang/String;").ref) == "tls.test");
+            auto peers = app.Invoke(session, "getPeerCertificates", "()[Ljava/security/cert/Certificate;").ref;
+            CHECK(app.Vm().Model().ArrayLength(peers) >= 1);
+            app.Invoke(socket, "close", "()V");
+
+            auto url = app.Vm().NewIntrinsicInstance("Ljava/net/URL;");
+            const auto spec = "https://tls.test:" + std::to_string(server.Port()) + "/";
+            app.Direct("Ljava/net/URL;", "<init>", "(Ljava/lang/String;)V",
+                       {VmValue::Ref(url), VmValue::Ref(app.Vm().NewStringUtf8(spec))});
+            auto connection = app.Invoke(url, "openConnection", "()Ljava/net/URLConnection;").ref;
+            CHECK(app.Linker().Class(app.Vm().Model().ObjectClass(connection)).descriptor ==
+                  "Lorg/ogplay/security/OgPlayHttpsURLConnection;");
+            auto opened_connect = app.InvokeResult(connection, "connect", "()V");
+            REQUIRE_MESSAGE(!opened_connect.exception.IsValid(), opened_connect.exception_message);
+            auto body_result = app.InvokeResult(connection, "getInputStream", "()Ljava/io/InputStream;");
+            REQUIRE_MESSAGE(!body_result.exception.IsValid(), body_result.exception_message);
+            auto code = app.InvokeResult(connection, "getResponseCode", "()I");
+            REQUIRE_MESSAGE(!code.exception.IsValid(), code.exception_message);
+            CHECK(code.value.AsInt() == 200);
+            auto body = app.Invoke(connection, "getInputStream", "()Ljava/io/InputStream;").ref;
+            auto bytes = app.Vm().NewIntrinsicInstance("Ljava/io/ByteArrayOutputStream;");
+            app.Direct("Ljava/io/ByteArrayOutputStream;", "<init>", "()V", {VmValue::Ref(bytes)});
+            std::array<std::byte, 16> scratch{};
+            auto buffer = app.Bytes(std::vector<std::byte>(scratch.begin(), scratch.end()));
+            int total{};
+            while (true) {
+                auto read = app.Invoke(body, "read", "([B)I", {VmValue::Ref(buffer)});
+                if (read.AsInt() < 0) break;
+                app.Invoke(bytes, "write", "([BII)V", {VmValue::Ref(buffer), VmValue::Int(0), read});
+                total += read.AsInt();
+                REQUIRE(total < 64);
+            }
+            auto payload = app.Invoke(bytes, "toByteArray", "()[B").ref;
+            const auto text = app.Vm().Model().ReadByteRegion(payload, 0, app.Vm().Model().ArrayLength(payload));
+            CHECK(std::string(reinterpret_cast<const char*>(text.data()), text.size()) == "tls-ok");
+            app.Invoke(connection, "disconnect", "()V");
+
+            auto raw = app.Vm().NewIntrinsicInstance("Ljava/net/Socket;");
+            app.Direct(
+                "Ljava/net/Socket;", "<init>", "(Ljava/lang/String;I)V",
+                {VmValue::Ref(raw), VmValue::Ref(app.Vm().NewStringUtf8("tls.test")), VmValue::Int(server.Port())});
+            auto layered =
+                app.Invoke(factory, "createSocket", "(Ljava/net/Socket;Ljava/lang/String;IZ)Ljava/net/Socket;",
+                           {VmValue::Ref(raw), VmValue::Ref(app.Vm().NewStringUtf8("tls.test")),
+                            VmValue::Int(server.Port()), VmValue::Int(0)})
+                    .ref;
+            app.Invoke(layered, "close", "()V");
+            auto closed = app.Invoke(raw, "isClosed", "()Z");
+            CHECK(closed.AsInt() == 0);
+            app.Invoke(raw, "close", "()V");
+        });
+    }
+}
+
+TEST_CASE("TLS-02 SSLContext init does not replace the HTTPS factory") {
+    TlsApp app;
+    app.Run([&] {
+        auto defaults =
+            app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance", "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+                       {VmValue::Ref(app.Vm().NewStringUtf8("Default"))})
+                .ref;
+        auto original = app.Direct("Ljavax/net/ssl/HttpsURLConnection;", "getDefaultSSLSocketFactory",
+                                   "()Ljavax/net/ssl/SSLSocketFactory;")
+                            .ref;
+        auto context =
+            app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance", "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+                       {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))})
+                .ref;
+        app.Invoke(context, "init",
+                   "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
+                   "Ljava/security/SecureRandom;)V",
+                   {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        auto after = app.Direct("Ljavax/net/ssl/HttpsURLConnection;", "getDefaultSSLSocketFactory",
+                                "()Ljavax/net/ssl/SSLSocketFactory;")
+                         .ref;
+        CHECK(after.Value() == original.Value());
+        auto factory = app.Invoke(context, "getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;").ref;
+        CHECK(factory.Value() != original.Value());
+        app.Direct("Ljavax/net/ssl/HttpsURLConnection;", "setDefaultSSLSocketFactory",
+                   "(Ljavax/net/ssl/SSLSocketFactory;)V", {VmValue::Ref(factory)});
+        auto created_default =
+            app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance", "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+                       {VmValue::Ref(app.Vm().NewStringUtf8("Default"))})
+                .ref;
+        auto after_default = app.Direct("Ljavax/net/ssl/HttpsURLConnection;", "getDefaultSSLSocketFactory",
+                                        "()Ljavax/net/ssl/SSLSocketFactory;")
+                                 .ref;
+        CHECK(after_default.Value() == factory.Value());
+        auto url = app.Vm().NewIntrinsicInstance("Ljava/net/URL;");
+        app.Direct("Ljava/net/URL;", "<init>", "(Ljava/lang/String;)V",
+                   {VmValue::Ref(url), VmValue::Ref(app.Vm().NewStringUtf8("https://tls.test/"))});
+        auto connection = app.InvokeResult(url, "openConnection", "()Ljava/net/URLConnection;");
+        REQUIRE_FALSE(connection.exception.IsValid());
+        REQUIRE(connection.value.ref.IsValid());
+        auto failure = app.InvokeResult(connection.value.ref, "connect", "()V");
+        REQUIRE(failure.exception.IsValid());
+        CHECK(app.Linker().IsAssignable(app.Linker().ResolveDescriptor("Ljava/io/IOException;"),
+                                        failure.exception_class));
+        CHECK(failure.exception_message.find("offline") != std::string::npos);
+        app.Invoke(connection.value.ref, "disconnect", "()V");
+        app.Invoke(connection.value.ref, "disconnect", "()V");
+        (void)defaults;
+        (void)created_default;
+    });
+}
+
+TEST_CASE("TLS-02 enabled protocols and SNI apply to the handshake") {
+    OracleServer server("server.crt", "server.key");
+    LoopbackTransport transport(server.Port());
+    TlsApp app(&transport);
+    app.Run([&] {
         auto context =
             app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance", "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
                        {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))})
@@ -702,268 +853,148 @@ TEST_CASE("TLS-02 client handshake HTTPS layered autoClose") {
                    "Ljava/security/SecureRandom;)V",
                    {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
         auto factory = app.Invoke(context, "getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;").ref;
-        auto suites = app.Invoke(factory, "getDefaultCipherSuites", "()[Ljava/lang/String;").ref;
-        CHECK(app.Vm().Model().ArrayLength(suites) > 0);
-        auto socket = app.Invoke(factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
-                                 {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")), VmValue::Int(server.Port())})
-                          .ref;
-        auto handshake = app.InvokeResult(socket, "startHandshake", "()V");
+        auto tls1 = app.Invoke(factory, "createSocket", "()Ljava/net/Socket;").ref;
+        auto v1 = app.Vm().Model().NewObjectArray(app.Linker().ResolveDescriptor("[Ljava/lang/String;"),
+                                                  app.Linker().ResolveDescriptor("Ljava/lang/String;"), 1);
+        app.Vm().Model().SetObjectElement(v1, 0, app.Vm().NewStringUtf8("TLSv1"));
+        app.Invoke(tls1, "setEnabledProtocols", "([Ljava/lang/String;)V", {VmValue::Ref(v1)});
+        auto endpoint = app.Vm().NewIntrinsicInstance("Ljava/net/InetSocketAddress;");
+        app.Direct(
+            "Ljava/net/InetSocketAddress;", "<init>", "(Ljava/lang/String;I)V",
+            {VmValue::Ref(endpoint), VmValue::Ref(app.Vm().NewStringUtf8("tls.test")), VmValue::Int(server.Port())});
+        app.Invoke(tls1, "connect", "(Ljava/net/SocketAddress;)V", {VmValue::Ref(endpoint)});
+        auto denied = app.InvokeResult(tls1, "startHandshake", "()V");
+        REQUIRE(denied.exception.IsValid());
+        app.Invoke(tls1, "close", "()V");
+
+        auto created = app.Invoke(factory, "createSocket", "()Ljava/net/Socket;").ref;
+        auto created_endpoint = app.Vm().NewIntrinsicInstance("Ljava/net/InetSocketAddress;");
+        app.Direct("Ljava/net/InetSocketAddress;", "<init>", "(Ljava/lang/String;I)V",
+                   {VmValue::Ref(created_endpoint), VmValue::Ref(app.Vm().NewStringUtf8("tls.test")),
+                    VmValue::Int(server.Port())});
+        app.Invoke(created, "connect", "(Ljava/net/SocketAddress;)V", {VmValue::Ref(created_endpoint)});
+        auto handshake = app.InvokeResult(created, "startHandshake", "()V");
         REQUIRE_MESSAGE(!handshake.exception.IsValid(), handshake.exception_message);
-        auto session = app.Invoke(socket, "getSession", "()Ljavax/net/ssl/SSLSession;").ref;
-        CHECK(app.Vm().StringUtf8(app.Invoke(session, "getProtocol", "()Ljava/lang/String;").ref) == "TLSv1.2");
-        CHECK(app.Vm().StringUtf8(app.Invoke(session, "getCipherSuite", "()Ljava/lang/String;").ref).find("TLS_") == 0);
-        auto session_id = app.Invoke(session, "getId", "()[B").ref;
-        CHECK(app.Vm().Model().ArrayLength(session_id) > 4);
+        auto session = app.Invoke(created, "getSession", "()Ljavax/net/ssl/SSLSession;").ref;
         CHECK(app.Vm().StringUtf8(app.Invoke(session, "getPeerHost", "()Ljava/lang/String;").ref) == "tls.test");
-        auto peers = app.Invoke(session, "getPeerCertificates", "()[Ljava/security/cert/Certificate;").ref;
-        CHECK(app.Vm().Model().ArrayLength(peers) >= 1);
-        app.Invoke(socket, "close", "()V");
-
-        auto url = app.Vm().NewIntrinsicInstance("Ljava/net/URL;");
-        const auto spec = "https://tls.test:" + std::to_string(server.Port()) + "/";
-        app.Direct("Ljava/net/URL;", "<init>", "(Ljava/lang/String;)V",
-                   {VmValue::Ref(url), VmValue::Ref(app.Vm().NewStringUtf8(spec))});
-        auto connection = app.Invoke(url, "openConnection", "()Ljava/net/URLConnection;").ref;
-        CHECK(app.Linker().Class(app.Vm().Model().ObjectClass(connection)).descriptor ==
-              "Lorg/ogplay/security/OgPlayHttpsURLConnection;");
-        auto opened_connect = app.InvokeResult(connection, "connect", "()V");
-        REQUIRE_MESSAGE(!opened_connect.exception.IsValid(), opened_connect.exception_message);
-        auto body_result = app.InvokeResult(connection, "getInputStream", "()Ljava/io/InputStream;");
-        REQUIRE_MESSAGE(!body_result.exception.IsValid(), body_result.exception_message);
-        auto code = app.InvokeResult(connection, "getResponseCode", "()I");
-        REQUIRE_MESSAGE(!code.exception.IsValid(), code.exception_message);
-        CHECK(code.value.AsInt() == 200);
-        auto body = app.Invoke(connection, "getInputStream", "()Ljava/io/InputStream;").ref;
-        auto bytes = app.Vm().NewIntrinsicInstance("Ljava/io/ByteArrayOutputStream;");
-        app.Direct("Ljava/io/ByteArrayOutputStream;", "<init>", "()V", {VmValue::Ref(bytes)});
-        std::array<std::byte, 16> scratch{};
-        auto buffer = app.Bytes(std::vector<std::byte>(scratch.begin(), scratch.end()));
-        int total{};
-        while (true) {
-            auto read = app.Invoke(body, "read", "([B)I", {VmValue::Ref(buffer)});
-            if (read.AsInt() < 0) break;
-            app.Invoke(bytes, "write", "([BII)V", {VmValue::Ref(buffer), VmValue::Int(0), read});
-            total += read.AsInt();
-            REQUIRE(total < 64);
-        }
-        auto payload = app.Invoke(bytes, "toByteArray", "()[B").ref;
-        const auto text = app.Vm().Model().ReadByteRegion(payload, 0, app.Vm().Model().ArrayLength(payload));
-        CHECK(std::string(reinterpret_cast<const char*>(text.data()), text.size()) == "tls-ok");
-        app.Invoke(connection, "disconnect", "()V");
-
-        auto raw = app.Vm().NewIntrinsicInstance("Ljava/net/Socket;");
-        app.Direct("Ljava/net/Socket;", "<init>", "(Ljava/lang/String;I)V",
-                   {VmValue::Ref(raw), VmValue::Ref(app.Vm().NewStringUtf8("tls.test")), VmValue::Int(server.Port())});
-        auto layered = app.Invoke(factory, "createSocket", "(Ljava/net/Socket;Ljava/lang/String;IZ)Ljava/net/Socket;",
-                                  {VmValue::Ref(raw), VmValue::Ref(app.Vm().NewStringUtf8("tls.test")),
-                                   VmValue::Int(server.Port()), VmValue::Int(0)})
-                           .ref;
-        app.Invoke(layered, "close", "()V");
-        auto closed = app.Invoke(raw, "isClosed", "()Z");
-        CHECK(closed.AsInt() == 0);
-        app.Invoke(raw, "close", "()V");
-    }
-}
-
-TEST_CASE("TLS-02 SSLContext init does not replace the HTTPS factory") {
-    TlsApp app;
-    auto defaults =
-        app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance", "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
-                   {VmValue::Ref(app.Vm().NewStringUtf8("Default"))})
-            .ref;
-    auto original = app.Direct("Ljavax/net/ssl/HttpsURLConnection;", "getDefaultSSLSocketFactory",
-                               "()Ljavax/net/ssl/SSLSocketFactory;")
-                        .ref;
-    auto context =
-        app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance", "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
-                   {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))})
-            .ref;
-    app.Invoke(context, "init",
-               "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
-               "Ljava/security/SecureRandom;)V",
-               {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
-    auto after = app.Direct("Ljavax/net/ssl/HttpsURLConnection;", "getDefaultSSLSocketFactory",
-                            "()Ljavax/net/ssl/SSLSocketFactory;")
-                     .ref;
-    CHECK(after.Value() == original.Value());
-    auto factory = app.Invoke(context, "getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;").ref;
-    CHECK(factory.Value() != original.Value());
-    app.Direct("Ljavax/net/ssl/HttpsURLConnection;", "setDefaultSSLSocketFactory",
-               "(Ljavax/net/ssl/SSLSocketFactory;)V", {VmValue::Ref(factory)});
-    auto created_default =
-        app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance", "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
-                   {VmValue::Ref(app.Vm().NewStringUtf8("Default"))})
-            .ref;
-    auto after_default = app.Direct("Ljavax/net/ssl/HttpsURLConnection;", "getDefaultSSLSocketFactory",
-                                    "()Ljavax/net/ssl/SSLSocketFactory;")
-                             .ref;
-    CHECK(after_default.Value() == factory.Value());
-    auto url = app.Vm().NewIntrinsicInstance("Ljava/net/URL;");
-    app.Direct("Ljava/net/URL;", "<init>", "(Ljava/lang/String;)V",
-               {VmValue::Ref(url), VmValue::Ref(app.Vm().NewStringUtf8("https://tls.test/"))});
-    auto connection = app.InvokeResult(url, "openConnection", "()Ljava/net/URLConnection;");
-    REQUIRE_FALSE(connection.exception.IsValid());
-    REQUIRE(connection.value.ref.IsValid());
-    auto failure = app.InvokeResult(connection.value.ref, "connect", "()V");
-    REQUIRE(failure.exception.IsValid());
-    CHECK(app.Linker().IsAssignable(app.Linker().ResolveDescriptor("Ljava/io/IOException;"), failure.exception_class));
-    CHECK(failure.exception_message.find("offline") != std::string::npos);
-    app.Invoke(connection.value.ref, "disconnect", "()V");
-    app.Invoke(connection.value.ref, "disconnect", "()V");
-    (void)defaults;
-    (void)created_default;
-}
-
-TEST_CASE("TLS-02 enabled protocols and SNI apply to the handshake") {
-    OracleServer server("server.crt", "server.key");
-    LoopbackTransport transport(server.Port());
-    TlsApp app(&transport);
-    auto context =
-        app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance", "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
-                   {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))})
-            .ref;
-    app.Invoke(context, "init",
-               "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
-               "Ljava/security/SecureRandom;)V",
-               {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
-    auto factory = app.Invoke(context, "getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;").ref;
-    auto tls1 = app.Invoke(factory, "createSocket", "()Ljava/net/Socket;").ref;
-    auto v1 = app.Vm().Model().NewObjectArray(app.Linker().ResolveDescriptor("[Ljava/lang/String;"),
-                                              app.Linker().ResolveDescriptor("Ljava/lang/String;"), 1);
-    app.Vm().Model().SetObjectElement(v1, 0, app.Vm().NewStringUtf8("TLSv1"));
-    app.Invoke(tls1, "setEnabledProtocols", "([Ljava/lang/String;)V", {VmValue::Ref(v1)});
-    auto endpoint = app.Vm().NewIntrinsicInstance("Ljava/net/InetSocketAddress;");
-    app.Direct("Ljava/net/InetSocketAddress;", "<init>", "(Ljava/lang/String;I)V",
-               {VmValue::Ref(endpoint), VmValue::Ref(app.Vm().NewStringUtf8("tls.test")), VmValue::Int(server.Port())});
-    app.Invoke(tls1, "connect", "(Ljava/net/SocketAddress;)V", {VmValue::Ref(endpoint)});
-    auto denied = app.InvokeResult(tls1, "startHandshake", "()V");
-    REQUIRE(denied.exception.IsValid());
-    app.Invoke(tls1, "close", "()V");
-
-    auto created = app.Invoke(factory, "createSocket", "()Ljava/net/Socket;").ref;
-    auto created_endpoint = app.Vm().NewIntrinsicInstance("Ljava/net/InetSocketAddress;");
-    app.Direct("Ljava/net/InetSocketAddress;", "<init>", "(Ljava/lang/String;I)V",
-               {VmValue::Ref(created_endpoint), VmValue::Ref(app.Vm().NewStringUtf8("tls.test")),
-                VmValue::Int(server.Port())});
-    app.Invoke(created, "connect", "(Ljava/net/SocketAddress;)V", {VmValue::Ref(created_endpoint)});
-    auto handshake = app.InvokeResult(created, "startHandshake", "()V");
-    REQUIRE_MESSAGE(!handshake.exception.IsValid(), handshake.exception_message);
-    auto session = app.Invoke(created, "getSession", "()Ljavax/net/ssl/SSLSession;").ref;
-    CHECK(app.Vm().StringUtf8(app.Invoke(session, "getPeerHost", "()Ljava/lang/String;").ref) == "tls.test");
-    CHECK(app.Vm().StringUtf8(app.Invoke(session, "getProtocol", "()Ljava/lang/String;").ref) == "TLSv1.2");
-    app.Invoke(created, "close", "()V");
+        CHECK(app.Vm().StringUtf8(app.Invoke(session, "getProtocol", "()Ljava/lang/String;").ref) == "TLSv1.2");
+        app.Invoke(created, "close", "()V");
+    });
 }
 
 TEST_CASE("TLS-02 session cache resumes and honors timeout") {
     OracleServer server("server.crt", "server.key");
     LoopbackTransport transport(server.Port());
     TlsApp app(&transport);
-    auto context =
-        app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance", "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
-                   {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))})
-            .ref;
-    app.Invoke(context, "init",
-               "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
-               "Ljava/security/SecureRandom;)V",
-               {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
-    auto factory = app.Invoke(context, "getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;").ref;
-    auto first = app.Invoke(factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
-                            {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")), VmValue::Int(server.Port())})
-                     .ref;
-    auto first_handshake = app.InvokeResult(first, "startHandshake", "()V");
-    REQUIRE_MESSAGE(!first_handshake.exception.IsValid(), first_handshake.exception_message);
-    auto first_session = app.Invoke(first, "getSession", "()Ljavax/net/ssl/SSLSession;").ref;
-    auto first_id = app.Invoke(first_session, "getId", "()[B").ref;
-    REQUIRE(app.Vm().Model().ArrayLength(first_id) > 4);
-    auto session_context = app.Invoke(context, "getClientSessionContext", "()Ljavax/net/ssl/SSLSessionContext;").ref;
-    const auto session_roots =
-        app.Vm().ProtectReferences(std::array{context, factory, first, first_session, first_id, session_context});
-    auto cached =
-        app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(first_id)}).ref;
-    REQUIRE(cached.IsValid());
-    auto cached_id = app.Invoke(cached, "getId", "()[B").ref;
-    CHECK(app.Vm().Model().ReadByteRegion(first_id, 0, app.Vm().Model().ArrayLength(first_id)) ==
-          app.Vm().Model().ReadByteRegion(cached_id, 0, app.Vm().Model().ArrayLength(cached_id)));
-    auto ids = app.Invoke(session_context, "getIds", "()Ljava/util/Enumeration;").ref;
-    CHECK(app.Invoke(ids, "hasMoreElements", "()Z").AsInt() == 1);
-    auto enumerated = app.Invoke(ids, "nextElement", "()Ljava/lang/Object;").ref;
-    CHECK(app.Vm().Model().ReadByteRegion(first_id, 0, app.Vm().Model().ArrayLength(first_id)) ==
-          app.Vm().Model().ReadByteRegion(enumerated, 0, app.Vm().Model().ArrayLength(enumerated)));
-    app.Invoke(first, "close", "()V");
+    app.Run([&] {
+        auto context =
+            app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance", "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+                       {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))})
+                .ref;
+        app.Invoke(context, "init",
+                   "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
+                   "Ljava/security/SecureRandom;)V",
+                   {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        auto factory = app.Invoke(context, "getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;").ref;
+        auto first = app.Invoke(factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
+                                {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")), VmValue::Int(server.Port())})
+                         .ref;
+        auto first_handshake = app.InvokeResult(first, "startHandshake", "()V");
+        REQUIRE_MESSAGE(!first_handshake.exception.IsValid(), first_handshake.exception_message);
+        auto first_session = app.Invoke(first, "getSession", "()Ljavax/net/ssl/SSLSession;").ref;
+        auto first_id = app.Invoke(first_session, "getId", "()[B").ref;
+        REQUIRE(app.Vm().Model().ArrayLength(first_id) > 4);
+        auto session_context =
+            app.Invoke(context, "getClientSessionContext", "()Ljavax/net/ssl/SSLSessionContext;").ref;
+        const auto session_roots =
+            app.Vm().ProtectReferences(std::array{context, factory, first, first_session, first_id, session_context});
+        auto cached =
+            app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(first_id)}).ref;
+        REQUIRE(cached.IsValid());
+        auto cached_id = app.Invoke(cached, "getId", "()[B").ref;
+        CHECK(app.Vm().Model().ReadByteRegion(first_id, 0, app.Vm().Model().ArrayLength(first_id)) ==
+              app.Vm().Model().ReadByteRegion(cached_id, 0, app.Vm().Model().ArrayLength(cached_id)));
+        auto ids = app.Invoke(session_context, "getIds", "()Ljava/util/Enumeration;").ref;
+        CHECK(app.Invoke(ids, "hasMoreElements", "()Z").AsInt() == 1);
+        auto enumerated = app.Invoke(ids, "nextElement", "()Ljava/lang/Object;").ref;
+        CHECK(app.Vm().Model().ReadByteRegion(first_id, 0, app.Vm().Model().ArrayLength(first_id)) ==
+              app.Vm().Model().ReadByteRegion(enumerated, 0, app.Vm().Model().ArrayLength(enumerated)));
+        app.Invoke(first, "close", "()V");
 
-    const auto original_uptime = app.context->UptimeMillis();
-    app.context->uptime_nanos.store((original_uptime + 500) * 1'000'000);
-    app.Invoke(session_context, "setSessionCacheSize", "(I)V", {VmValue::Int(1)});
-    CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(first_id)})
-              .ref.IsValid());
-    app.Invoke(session_context, "setSessionCacheSize", "(I)V", {VmValue::Int(0)});
-    auto resumed = app.Invoke(factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
-                              {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")), VmValue::Int(server.Port())})
-                       .ref;
-    app.Invoke(resumed, "setEnableSessionCreation", "(Z)V", {VmValue::Int(0)});
-    auto resume_handshake = app.InvokeResult(resumed, "startHandshake", "()V");
-    REQUIRE_MESSAGE(!resume_handshake.exception.IsValid(), resume_handshake.exception_message);
-    auto resumed_session = app.Invoke(resumed, "getSession", "()Ljavax/net/ssl/SSLSession;").ref;
-    auto resumed_id = app.Invoke(resumed_session, "getId", "()[B").ref;
-    CHECK(resumed_session.Value() == first_session.Value());
-    CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(first_id)})
-              .ref.IsValid());
-    CHECK(app.Vm().Model().ReadByteRegion(first_id, 0, app.Vm().Model().ArrayLength(first_id)) ==
-          app.Vm().Model().ReadByteRegion(resumed_id, 0, app.Vm().Model().ArrayLength(resumed_id)));
-    app.Invoke(resumed, "close", "()V");
-
-    auto isolated =
-        app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance", "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
-                   {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))})
-            .ref;
-    app.Invoke(isolated, "init",
-               "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
-               "Ljava/security/SecureRandom;)V",
-               {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
-    auto isolated_factory = app.Invoke(isolated, "getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;").ref;
-    auto disabled = app.Invoke(isolated_factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
-                               {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")), VmValue::Int(server.Port())})
-                        .ref;
-    app.Invoke(disabled, "setEnableSessionCreation", "(Z)V", {VmValue::Int(0)});
-    auto blocked = app.InvokeResult(disabled, "startHandshake", "()V");
-    REQUIRE(blocked.exception.IsValid());
-    app.Invoke(disabled, "close", "()V");
-
-    app.Invoke(session_context, "setSessionTimeout", "(I)V", {VmValue::Int(1)});
-    const auto previous = app.context->UptimeMillis();
-    app.context->uptime_nanos.store((original_uptime + 900) * 1'000'000);
-    CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(first_id)})
-              .ref.IsValid());
-    app.context->uptime_nanos.store((original_uptime + 1100) * 1'000'000);
-    auto expired =
-        app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(first_id)}).ref;
-    CHECK_FALSE(expired.IsValid());
-    app.context->uptime_nanos.store((previous) * 1'000'000);
-    app.Invoke(session_context, "setSessionTimeout", "(I)V", {VmValue::Int(0)});
-    for (int i = 0; i < 3; ++i) {
-        auto item = app.Vm().NewIntrinsicInstance("Lorg/ogplay/security/OgPlaySslSession;");
-        auto id = app.Bytes(std::vector<std::byte>{static_cast<std::byte>(i + 1)});
-        const auto roots = app.Vm().ProtectReferences(std::array{item, id});
-        app.Direct(
-            "Lorg/ogplay/security/OgPlaySslSession;", "<init>",
-            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I[Ljava/security/cert/Certificate;Lorg/ogplay/security/OgPlaySslSessionContext;[B[B)V",
-            {VmValue::Ref(item), VmValue::Ref(app.Vm().NewStringUtf8("TLSv1.2")),
-             VmValue::Ref(app.Vm().NewStringUtf8("fixture")), VmValue::Ref(app.Vm().NewStringUtf8("cache.test")),
-             VmValue::Int(i), VmValue::Ref(VmObjectRef{}), VmValue::Ref(session_context), VmValue::Ref(id),
-             VmValue::Ref(VmObjectRef{})});
-        app.Invoke(session_context, "put", "(Lorg/ogplay/security/OgPlaySslSession;)V", {VmValue::Ref(item)});
-        CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(id)})
+        const auto original_uptime = app.context->UptimeMillis();
+        app.context->uptime_nanos.store((original_uptime + 500) * 1'000'000);
+        app.Invoke(session_context, "setSessionCacheSize", "(I)V", {VmValue::Int(1)});
+        CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(first_id)})
                   .ref.IsValid());
-    }
-    app.Invoke(session_context, "setSessionCacheSize", "(I)V", {VmValue::Int(2)});
-    auto remaining = app.Invoke(session_context, "getIds", "()Ljava/util/Enumeration;").ref;
-    int count = 0;
-    while (app.Invoke(remaining, "hasMoreElements", "()Z").AsInt()) {
-        app.Invoke(remaining, "nextElement", "()Ljava/lang/Object;");
-        ++count;
-        REQUIRE(count <= 3);
-    }
-    CHECK(count == 2);
+        app.Invoke(session_context, "setSessionCacheSize", "(I)V", {VmValue::Int(0)});
+        auto resumed = app.Invoke(factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
+                                  {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")), VmValue::Int(server.Port())})
+                           .ref;
+        app.Invoke(resumed, "setEnableSessionCreation", "(Z)V", {VmValue::Int(0)});
+        auto resume_handshake = app.InvokeResult(resumed, "startHandshake", "()V");
+        REQUIRE_MESSAGE(!resume_handshake.exception.IsValid(), resume_handshake.exception_message);
+        auto resumed_session = app.Invoke(resumed, "getSession", "()Ljavax/net/ssl/SSLSession;").ref;
+        auto resumed_id = app.Invoke(resumed_session, "getId", "()[B").ref;
+        CHECK(resumed_session.Value() == first_session.Value());
+        CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(first_id)})
+                  .ref.IsValid());
+        CHECK(app.Vm().Model().ReadByteRegion(first_id, 0, app.Vm().Model().ArrayLength(first_id)) ==
+              app.Vm().Model().ReadByteRegion(resumed_id, 0, app.Vm().Model().ArrayLength(resumed_id)));
+        app.Invoke(resumed, "close", "()V");
+
+        auto isolated =
+            app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance", "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+                       {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))})
+                .ref;
+        app.Invoke(isolated, "init",
+                   "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
+                   "Ljava/security/SecureRandom;)V",
+                   {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        auto isolated_factory = app.Invoke(isolated, "getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;").ref;
+        auto disabled = app.Invoke(isolated_factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
+                                   {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")), VmValue::Int(server.Port())})
+                            .ref;
+        app.Invoke(disabled, "setEnableSessionCreation", "(Z)V", {VmValue::Int(0)});
+        auto blocked = app.InvokeResult(disabled, "startHandshake", "()V");
+        REQUIRE(blocked.exception.IsValid());
+        app.Invoke(disabled, "close", "()V");
+
+        app.Invoke(session_context, "setSessionTimeout", "(I)V", {VmValue::Int(1)});
+        const auto previous = app.context->UptimeMillis();
+        app.context->uptime_nanos.store((original_uptime + 900) * 1'000'000);
+        CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(first_id)})
+                  .ref.IsValid());
+        app.context->uptime_nanos.store((original_uptime + 1100) * 1'000'000);
+        auto expired =
+            app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(first_id)}).ref;
+        CHECK_FALSE(expired.IsValid());
+        app.context->uptime_nanos.store((previous) * 1'000'000);
+        app.Invoke(session_context, "setSessionTimeout", "(I)V", {VmValue::Int(0)});
+        for (int i = 0; i < 3; ++i) {
+            auto item = app.Vm().NewIntrinsicInstance("Lorg/ogplay/security/OgPlaySslSession;");
+            auto id = app.Bytes(std::vector<std::byte>{static_cast<std::byte>(i + 1)});
+            const auto roots = app.Vm().ProtectReferences(std::array{item, id});
+            app.Direct(
+                "Lorg/ogplay/security/OgPlaySslSession;", "<init>",
+                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I[Ljava/security/cert/Certificate;Lorg/ogplay/security/OgPlaySslSessionContext;[B[B)V",
+                {VmValue::Ref(item), VmValue::Ref(app.Vm().NewStringUtf8("TLSv1.2")),
+                 VmValue::Ref(app.Vm().NewStringUtf8("fixture")), VmValue::Ref(app.Vm().NewStringUtf8("cache.test")),
+                 VmValue::Int(i), VmValue::Ref(VmObjectRef{}), VmValue::Ref(session_context), VmValue::Ref(id),
+                 VmValue::Ref(VmObjectRef{})});
+            app.Invoke(session_context, "put", "(Lorg/ogplay/security/OgPlaySslSession;)V", {VmValue::Ref(item)});
+            CHECK(app.Invoke(session_context, "getSession", "([B)Ljavax/net/ssl/SSLSession;", {VmValue::Ref(id)})
+                      .ref.IsValid());
+        }
+        app.Invoke(session_context, "setSessionCacheSize", "(I)V", {VmValue::Int(2)});
+        auto remaining = app.Invoke(session_context, "getIds", "()Ljava/util/Enumeration;").ref;
+        int count = 0;
+        while (app.Invoke(remaining, "hasMoreElements", "()Z").AsInt()) {
+            app.Invoke(remaining, "nextElement", "()Ljava/lang/Object;");
+            ++count;
+            REQUIRE(count <= 3);
+        }
+        CHECK(count == 2);
+    });
 }
 
 void HandshakeMutualTls(TlsApp& app, std::uint16_t port, const char* algorithm, const char* pkcs8, const char* der) {
@@ -1013,42 +1044,46 @@ TEST_CASE("TLS-02 mutual TLS installs a BKS client certificate") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         TlsApp app(&transport, backend);
-        HandshakeMutualTls(app, server.Port(), "RSA", "client.pkcs8", "client.der");
-        HandshakeMutualTls(app, server.Port(), "EC", "ec-client.pkcs8", "ec-client.der");
+        app.Run([&] {
+            HandshakeMutualTls(app, server.Port(), "RSA", "client.pkcs8", "client.der");
+            HandshakeMutualTls(app, server.Port(), "EC", "ec-client.pkcs8", "ec-client.der");
+        });
     }
 }
 
 TEST_CASE("TLS-02 network stays offline by default") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         TlsApp app(nullptr, backend);
-        CHECK_FALSE(app.Vm().Network().Policy().enabled);
-        auto url = app.Vm().NewIntrinsicInstance("Ljava/net/URL;");
-        app.Direct("Ljava/net/URL;", "<init>", "(Ljava/lang/String;)V",
-                   {VmValue::Ref(url), VmValue::Ref(app.Vm().NewStringUtf8("https://tls.test/"))});
-        const auto io_exception = app.Linker().ResolveDescriptor("Ljava/io/IOException;");
-        for (const auto* operation : {"connect", "getResponseCode", "getInputStream"}) {
-            auto opened = app.InvokeResult(url, "openConnection", "()Ljava/net/URLConnection;");
-            REQUIRE_FALSE(opened.exception.IsValid());
-            REQUIRE(opened.value.ref.IsValid());
-            const auto connection = opened.value.ref;
-            app.Invoke(connection, "setRequestMethod", "(Ljava/lang/String;)V",
-                       {VmValue::Ref(app.Vm().NewStringUtf8("GET"))});
-            app.Invoke(
-                connection, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V",
-                {VmValue::Ref(app.Vm().NewStringUtf8("Connection")), VmValue::Ref(app.Vm().NewStringUtf8("close"))});
-            app.Invoke(connection, "setConnectTimeout", "(I)V", {VmValue::Int(100)});
-            CHECK(app.Invoke(connection, "getConnectTimeout", "()I").AsInt() == 100);
-            app.Invoke(connection, "disconnect", "()V");
-            const auto* descriptor = std::string_view(operation) == "getResponseCode"  ? "()I"
-                                     : std::string_view(operation) == "getInputStream" ? "()Ljava/io/InputStream;"
-                                                                                       : "()V";
-            auto failure = app.InvokeResult(connection, operation, descriptor);
-            REQUIRE(failure.exception.IsValid());
-            CHECK(app.Linker().IsAssignable(io_exception, failure.exception_class));
-            CHECK(failure.exception_message.find("offline") != std::string::npos);
-            app.Invoke(connection, "disconnect", "()V");
-            app.Invoke(connection, "disconnect", "()V");
+        app.Run([&] {
             CHECK_FALSE(app.Vm().Network().Policy().enabled);
-        }
+            auto url = app.Vm().NewIntrinsicInstance("Ljava/net/URL;");
+            app.Direct("Ljava/net/URL;", "<init>", "(Ljava/lang/String;)V",
+                       {VmValue::Ref(url), VmValue::Ref(app.Vm().NewStringUtf8("https://tls.test/"))});
+            const auto io_exception = app.Linker().ResolveDescriptor("Ljava/io/IOException;");
+            for (const auto* operation : {"connect", "getResponseCode", "getInputStream"}) {
+                auto opened = app.InvokeResult(url, "openConnection", "()Ljava/net/URLConnection;");
+                REQUIRE_FALSE(opened.exception.IsValid());
+                REQUIRE(opened.value.ref.IsValid());
+                const auto connection = opened.value.ref;
+                app.Invoke(connection, "setRequestMethod", "(Ljava/lang/String;)V",
+                           {VmValue::Ref(app.Vm().NewStringUtf8("GET"))});
+                app.Invoke(connection, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V",
+                           {VmValue::Ref(app.Vm().NewStringUtf8("Connection")),
+                            VmValue::Ref(app.Vm().NewStringUtf8("close"))});
+                app.Invoke(connection, "setConnectTimeout", "(I)V", {VmValue::Int(100)});
+                CHECK(app.Invoke(connection, "getConnectTimeout", "()I").AsInt() == 100);
+                app.Invoke(connection, "disconnect", "()V");
+                const auto* descriptor = std::string_view(operation) == "getResponseCode"  ? "()I"
+                                         : std::string_view(operation) == "getInputStream" ? "()Ljava/io/InputStream;"
+                                                                                           : "()V";
+                auto failure = app.InvokeResult(connection, operation, descriptor);
+                REQUIRE(failure.exception.IsValid());
+                CHECK(app.Linker().IsAssignable(io_exception, failure.exception_class));
+                CHECK(failure.exception_message.find("offline") != std::string::npos);
+                app.Invoke(connection, "disconnect", "()V");
+                app.Invoke(connection, "disconnect", "()V");
+                CHECK_FALSE(app.Vm().Network().Policy().enabled);
+            }
+        });
     }
 }

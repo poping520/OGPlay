@@ -213,10 +213,12 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
 - crypto family 只管 provider、熵、JNI 和资源 owner。AES ECB/CBC 的 NoPadding/PKCS5Padding、
   CBC/ZeroBytePadding 及 CTR/NoPadding、128/192/256 KeyGenerator 已登记；ZeroBytePadding
   由 guest Java 适配到 CBC/NoPadding，Cipher 普通方法无 overlay。
-  OGPlayCrypto 的 SecretKeyFactory 通过标准 Provider 配置进入 JCA；公开 API、PBE 规格及
-  PKCS12 SHA-1/AES-256 SPI 都执行 guest Java，不新增 SecretKeyFactory 方法 overlay。
-  OGPlayOS 用 HAL CSPRNG 且拒绝 setSeed；AndroidOpenSSL/SHA1PRNG 首次由同一 CSPRNG 播种，后续执行
-  guest RAND_seed/RAND_bytes，调用方 seed 仅追加熵。IvParameterSpec 可用。
+  AndroidOpenSSL 登记 API 19 RSA KeyFactory、KeyPairGenerator、ECB/None 的 NoPadding/PKCS1Padding、
+  NONEwithRSA 和 MD5/SHA1/SHA256/SHA384/SHA512 PKCS#1 v1.5 签名与验签及原版别名。
+  裸 RSA 和 OAEP 由 OGPlayCrypto 的 guest CipherSpi 提供，精确匹配继续由 AndroidOpenSSL 处理。
+  OGPlayCrypto 的 SecretKeyFactory、PBE 规格与 PKCS12 SHA-1/AES-256 SPI 同样执行 guest Java。
+  OGPlayOS 用 HAL CSPRNG 且拒绝 setSeed；原版 AndroidOpenSSL/SHA1PRNG 与 RSA/TLS 共用 guest
+  libcrypto 的进程级播种，调用方 seed 追加熵。IvParameterSpec 可用。
   Crypto Provider 仅发布 API19 Harmony SHA1PRNG，注册构造为平台配置边界；算法及播种/
   counter/输出缓存执行原版 BootDex，状态只在 guest 字段/数组。首次显式 seed 可复现字节流；
   未播种与 generateSeed 通过既有 VFS /dev/urandom 获取熵，失败保真。默认 Provider 顺序不变；
@@ -225,15 +227,18 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
   guest JNI，不重列成员。原版 `javacrypto` 加载名映射统一 JNI，字段 token 资源由 VM 装配；
   OGPlay 私有证书验签使用独立 `NativeVerification`，不扩展原版 ABI。
 - Certificate/ASN.1/X.509/PKCS7/CertPath、UUID、MessageDigest 普通协议归 BootDex。
-  证书 verify 不允许 overlay；SHA1/224/256/384/512 × RSA PKCS#1 v1.5/ECDSA 的 10 个
-  验签 SPI 用普通字段保存公钥/最多 1 MiB 消息，真实解码后调用 guest ARM EVP，验后清空。
-  摘要仅 MD5/SHA1/SHA256/SHA384/SHA512；NativeBN 只提供值转换和 per-VM token。
+  证书 verify 执行原版方法。RSA 公钥由 KeyFactory 返回含数学参数的 Conscrypt 对象，EC 保留编码公钥。
+  VerifySHA224withRSA 和五种 ECDSA Verify* 仍使用 guest 字段缓存公钥与最多 1 MiB 消息，
+  其他已登记 RSA 签名使用 Conscrypt 的增量 EVP 上下文。
+  SHA-224 摘要由 OGPlayCrypto 复用原版 NativeCrypto 摘要 ABI。NativeBN 只提供值转换和 per-VM token。
   十进制输入保留符号/有效前缀长度，最多 1 MiB、16777216 次 limb 转换；超限明确失败且保留旧值。
-- 未登记能力明确失败：NativeCrypto 的 ENGINE/RSA/EC/X509/TLS 长尾、BigDecimal 精确解析、具名时区历史、privileged executor、
-  完整 ThreadGroup/反射长尾、RSA Cipher/GCM/其他 transformation、签名生成、通用 CertPathValidator.PKIX、
-  撤销检查、HMAC/SHA3/独立 SHA224 摘要。TrustManager 路径验证与只读 AndroidCAStore 已由
-  OGPlayJSSE 交付；loopback 客户端 TLS/HTTPS 已闭合，SSLEngine/server TLS 明确失败。AES AlgorithmParameters provider 未注册，原版
-  engineGetParameters 可返回 null；公钥仅编码 fallback，不宣称数学参数/KeyFactory 能力。
+- 未登记能力明确失败：NativeCrypto 的 ENGINE/EC/X509/TLS 长尾、PSS、MD2withRSA、
+  DSA/EC KeyFactory/KeyPairGenerator/签名生成、AndroidKeyStore、GCM、其他 Cipher transformation、
+  HmacSHA1 之外的 Mac、SHA3、通用 CertPathValidator.PKIX 和撤销检查。BigDecimal 精确解析、
+  具名时区历史、privileged executor、完整 ThreadGroup/反射长尾仍不在范围。
+  TrustManager 路径验证与只读 AndroidCAStore 由 OGPlayJSSE 提供，loopback 客户端 TLS/HTTPS
+  已闭合，SSLEngine/server TLS 明确失败。AES AlgorithmParameters provider 未注册，原版
+  engineGetParameters 可返回 null。
 - KeyStore/KeyStoreSpi 及公开嵌套类已进入 BootDex；自有 `OGPlayKeyStore` 已注册 BKS 并设为
   默认类型，BKS v0/v1/v2、标准/历史 key PBE、AES RAW、RSA/EC PKCS#8 与 API19 双向互操作
   已受检。CallbackHandler 实际取密码、同 store 双线程、磁盘跨 session 重载及应用沙盒隔离

@@ -1,9 +1,10 @@
 # 模块：guest crypto JNI 源码
 
-crypto_jni.c 与 `src/guest/icu/icu_jni.c` 统一编译为 API 19 ARM
-`libogplay_jni.so`。本目录只拥有 crypto 注册、状态和 OpenSSL 调用；唯一 JNI_OnLoad
-在本文件协调两个源码模块。使用 JNI 1.6 必要槽、API 19 bionic
-mutex ABI 与 OpenSSL EVP 不透明接口，无 OpenSSL 结构布局依赖；算法在 libcrypto 执行。
+本目录与 ICU、ZIP、NativeBN 的适配源码统一编译为 API 19 ARM `libogplay_jni.so`。
+本目录拥有 crypto 注册、状态和 OpenSSL 调用，`crypto_jni.c` 提供唯一 JNI_OnLoad。
+使用 JNI 1.6 必要槽、API 19 bionic mutex ABI 和 OpenSSL EVP 接口。仅 RSA 使用
+OpenSSL 1.0.1 公开 `rsa_st` 前缀，字段偏移以固定 ARM ELF 为准；加载期按字段构造已知密钥并
+核对 PKCS#1 DER，失败时拒绝加载。密码学原语在 guest libcrypto 执行。
 API 19 payload 同时提供同一 AOSP revision 构建的 `libssl.so`；它是 OpenSSL 运行库的一部分，
 当前 Java/TLS 能力边界仍由上层模块约束。
 
@@ -26,35 +27,27 @@ payload manifest/validator 共同校验。缺库或哈希不符时构建与完�
 SHA-256 为 `8b1a7d20e405ff73edcaad592cf846f8e28b78bb446874208d65990b16d79734`；
 它与 `libcrypto.so` 共用 OpenSSL NOTICE，来源和哈希由 payload manifest/validator 校验。
 
-在同一库增加验签 JNI：SPKI 公钥经 d2i_PUBKEY 完整消费，EVP_Digest/Verify
-执行 RSA PKCS#1 v1.5 或 ECDSA，摘要为 SHA1/224/256/384/512。Java 拥有证书解析与
-Signature 状态；native 调用内创建的 key/digest context 在所有出口释放，不发布指针。
-错误公钥、算法、签名分别明确处理；每个编码输入最多 1 MiB。JNI_OnLoad 安装 OpenSSL
-API 19 锁与 pthread identity 回调，析构在 context 清理后撤销回调并释放锁。
-Cipher、Digest、Signature 与 ICU 共用一个 manifest library 条目，不允许恢复独立 crypto SO。
+RSA JNI 覆盖 EVP_PKEY 构造、类型、比较与长度，SPKI/PKCS#8 编解码、RSA 参数与密钥生成、
+四个原版 RSA 块操作，以及 EVP 增量签名/验签。编码输入上限 1 MiB，负数 BigInteger 被拒绝，
+模数沿用 OpenSSL 1.0.1 的 16384 位上限。带公开指数的私钥启用盲化，只有 n、d 时关闭。
+临时私钥编码及参数缓冲区以 volatile 写入清零。
 
-增加 7 个 MessageDigest JNI 入口：MD5/SHA1/SHA256/SHA384/SHA512 的
-algorithm lookup/size、init/update/final、ctx copy/destroy。算法和 context 使用逻辑 token，
-摘要长度为相应 EVP 输出大小；无效/过期 token 明确失败，clone 使用 EVP_MD_CTX_copy_ex。
-每次 update 分块读取 Java byte[]，scratch 最多 64 KiB，无累计消息长度上限。
-final 消费 context，Java 清零 ctx 字段；GC/teardown 通过同一 destroy 释放。
-registry/per-context mutex、引用计数与库析构兜底沿用 Cipher 约定；MD5 不在宿主实现。
+原版 `NativeCrypto` 类和 descriptor 来自固定 JAR。RSA EVP_PKEY 和 HMAC key 使用同一类型化
+token registry，`EVP_PKEY_free` 按类型释放；签名上下文与 digest/HMAC 共用
+`EVP_MD_CTX_destroy`。VM 统一追踪 `OpenSSLKey.ctx`、`OpenSSLSignature.ctx` 等 owner 字段。
+引用计数与 per-context mutex 保护操作和并发释放。初始化安装 OpenSSL API 19 的锁、pthread
+identity 回调与摘要，库析构在释放资源后撤销回调。
 
-使用固定 JAR 的原版 `NativeCrypto` 类和全部 native descriptor；本模块只导出当前
-26 个已实现后端及受限 `clinit`。`clinit` 验证 `JNI_OnLoad`已完成线程回调和摘要注册，
-不初始化或发布 TLS。OGPlay 私有证书验签导出归 `NativeVerification.verify`；digest/HMAC/
-OpenSSLKey 的字段 token 清理由 VM 统一登记，registry、锁、GC/teardown 语义不变。
+MD5、SHA-1/224/256/384/512 摘要共用原版查询、初始化、更新、结束、clone 与 destroy ABI；
+update 的 scratch 最多 64 KiB，无累计消息长上限。`NativeVerification.verify` 继续负责
+SHA224withRSA 与 ECDSA 验签，完整消费 SPKI，单个编码输入最多 1 MiB。
 
-的 `java/` 目录以固定 API 19 类路径编译进入 ogplay.jar，拥有自有 KeyStore
-Provider、SPI、条目、BKS codec 与 PKCS#12 KDF；Provider 以 `OGPlayKeyStore` 独立身份发布
-标准 BKS v2 写出和 v0/v1/v2 读取。BC 仅为隔离 oracle，生产 DEX 拒绝其类型引用。
-标准/历史 3DES PBE 调用 guest libcrypto；RSA/EC PKCS#8 使用独立 EVP_PKEY token registry，
-引用、GC、显式释放与 teardown 一致。生产 C++ 不保存条目或 KeyStore 影子状态。
-在同一 `libogplay_jni.so` 增加 `trust_jni.c` 与 `tls_jni.c`：路径验证走
-`X509_verify_cert`，客户端 TLS 使用内存 BIO 与逻辑 SSL_CTX/SSL token；JNI_OnLoad 调用
-`ogplay_tls_on_load` 初始化 libssl。`NativeTls.seed` 在 `SSL_CTX_new` 前执行 `RAND_seed`，
-未播种时 `createContext` 明确失败。不扩展原版 NativeCrypto ABI，不把宿主 FD 传入 guest SSL。
-DT_NEEDED 含 `libssl.so` 并写入 manifest。SSLEngine、server TLS 与公开互联网 CA 包不在本模块范围。
+`java/` 随固定 API 19 类路径编译进入 BootDex。BKS RSA 私钥复用 Conscrypt 的 EVP_PKEY；
+EC PKCS#8 私钥保留 BKS 的独立 token。标准/历史 3DES PBE 调用 guest libcrypto。
+`trust_jni.c` 路径验证走 `X509_verify_cert`，`tls_jni.c` 的客户端 TLS 使用内存 BIO 和
+SSL_CTX/SSL token，不传宿主 FD。RSA 随机填充、盲化、密钥生成、OpenSSLRandom 和 TLS 共用
+首次随机操作前一次性的进程播种，由 guest `/dev/urandom` 读取宿主 HAL CSPRNG；熵不可用时明确失败。
+DT_NEEDED 含 `libssl.so`。SSLEngine、server TLS 与公开互联网 CA 包未纳入。
 路径验证时间经 JNI 读取 `System.currentTimeMillis()` 再 `X509_STORE_CTX_set_time`，不写死墙钟。
 握手使用 `SSL_VERIFY_PEER`，在 `SSL_do_handshake` 内调用 Java TrustManager。
 客户端 session 经 `i2d_SSL_SESSION`/`SSL_set_session` 恢复；`SSL_session_reused` 在

@@ -414,14 +414,12 @@ RomValueProcess::RomValueProcess(ogplay::runtime::dexvm::InterpreterBackend back
 
 RomValueProcess::~RomValueProcess() = default;
 
-OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_launcher, const bool with_native,
-                                 const std::string& launcher_alias,
-                                 const std::vector<ogplay::loader::AndroidManifestServiceComponent>& services,
-                                 const bool application_enabled,
-                                 const ogplay::runtime::dexvm::InterpreterBackend interpreter_backend,
-                                 const std::string& application_class, std::function<void()> pump_host_events,
-                                 Viewport viewport, std::vector<std::string> gl_textures, bool large_heap,
-                                 ogplay::runtime::dexvm::DexVmDiagnosticsConfig diagnostics) {
+OrchestratedApp::OrchestratedApp(
+    const std::string& activity, const bool has_launcher, const bool with_native, const std::string& launcher_alias,
+    const std::vector<ogplay::loader::AndroidManifestServiceComponent>& services, const bool application_enabled,
+    const ogplay::runtime::dexvm::InterpreterBackend interpreter_backend, const std::string& application_class,
+    std::function<void()> pump_host_events, Viewport viewport, std::vector<std::string> gl_textures, bool large_heap,
+    ogplay::runtime::dexvm::DexVmDiagnosticsConfig diagnostics, std::uint64_t maximum_ticks_per_call) {
     if (activity == "android.app.NativeActivity" || activity == "fixture.NativeTakeoverActivity")
         native_a = NativeActivityElf();
     const std::array entries{std::pair{std::string("fixture"), std::vector<std::byte>{}}};
@@ -484,7 +482,7 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
     request.surface_width = static_cast<std::uint32_t>(viewport.width);
     request.surface_height = static_cast<std::uint32_t>(viewport.height);
     // Real guest JNI/ICU initialization uses the same bounded budget as IcuVm.
-    request.maximum_ticks_per_call = UINT64_C(100000000);
+    request.maximum_ticks_per_call = maximum_ticks_per_call;
 #if defined(_WIN32)
     request.backend = {ogplay::gles::AngleRenderer::d3d11, ogplay::gles::AngleDevice::hardware};
 #elif defined(__APPLE__)
@@ -499,6 +497,11 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
     request.dexvm.interpreter.backend = interpreter_backend;
     request.dexvm.interpreter.diagnostics = diagnostics;
     request.host.pump_host_events = std::move(pump_host_events);
+    main_actions.Install(request);
+    app = ogplay::session::AndroidAppProcess::Create(std::move(request));
+}
+
+void MainThreadActions::Install(ogplay::session::AndroidAppProcessRequest& request) {
     request.configure_dex_vm = [this](ogplay::runtime::dexvm::Interpreter& vm) {
         namespace dx = ogplay::runtime::dexvm;
         const auto type = vm.Linker().ResolveDescriptor("Lfixture/MainAction;");
@@ -507,10 +510,10 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
         auto& method = vm.Linker().MutableMethod(vm.Linker().Class(type).vtable[*slot]);
         method.kind = dx::MethodKind::intrinsic;
         method.implementation = [this](dx::IntrinsicContext& c) {
-            const auto found = main_actions.find(c.receiver.Value());
-            if (found != main_actions.end()) {
+            const auto found = pending_.find(c.receiver.Value());
+            if (found != pending_.end()) {
                 auto action = std::move(found->second);
-                main_actions.erase(found);
+                pending_.erase(found);
                 try {
                     action->run();
                     action->done.set_value();
@@ -521,13 +524,12 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
             return dx::VmValue::Void();
         };
     };
-    app = ogplay::session::AndroidAppProcess::Create(std::move(request));
 }
 
-void OrchestratedApp::RunOnMainThread(const std::function<void()>& action) {
+void MainThreadActions::Run(ogplay::session::AndroidAppProcess& app, const std::function<void()>& action) {
     namespace dx = ogplay::runtime::dexvm;
     using namespace ogplay::runtime::android_intrinsics;
-    auto& vm = app->DexVm().Vm();
+    auto& vm = app.DexVm().Vm();
     if (vm.ExecutionLock().HeldByCurrentThread() && vm.CurrentContextToken() == 1U) {
         action();
         return;
@@ -543,9 +545,9 @@ void OrchestratedApp::RunOnMainThread(const std::function<void()>& action) {
             callback = vm.NewIntrinsicInstance("Lfixture/MainAction;");
             const auto roots = vm.ProtectReferences(std::array{callback});
             const auto handler = NewPlatformObject(vm, "Landroid/os/Handler;", "(Landroid/os/Looper;)V",
-                                                   {dx::VmValue::Ref(context->main_looper)});
+                                                   {dx::VmValue::Ref(app.Context()->main_looper)});
             const auto handler_root = vm.ProtectReferences(std::array{handler});
-            main_actions.emplace(callback.Value(), pending);
+            pending_.emplace(callback.Value(), pending);
             if (!CallAndroidMethod(vm, handler, "postAtFrontOfQueue", "(Ljava/lang/Runnable;)Z",
                                    {dx::VmValue::Ref(callback)})
                      .AsInt())
@@ -553,17 +555,20 @@ void OrchestratedApp::RunOnMainThread(const std::function<void()>& action) {
         });
     } catch (...) {
         const dx::VmExecutionLockScope lock(vm.ExecutionLock());
-        if (callback.IsValid()) main_actions.erase(callback.Value());
+        if (callback.IsValid()) pending_.erase(callback.Value());
         vm.DiscardExecutionContext(driver);
         throw;
     }
     vm.DiscardExecutionContext(driver);
     if (done.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
         const dx::VmExecutionLockScope lock(vm.ExecutionLock());
-        if (main_actions.erase(callback.Value()))
-            throw std::runtime_error("guest main queue did not run fixture action");
+        if (pending_.erase(callback.Value())) throw std::runtime_error("guest main queue did not run fixture action");
     }
     done.get();
+}
+
+void OrchestratedApp::RunOnMainThread(const std::function<void()>& action) {
+    main_actions.Run(*app, action);
 }
 
 ogplay::runtime::dexvm::VmCallOutcome

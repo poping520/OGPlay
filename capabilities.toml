@@ -1757,7 +1757,12 @@ note = "有界 BN_add/mul/mul_word/shift/div/exp，服务原版 BigDecimal 数�
 [dexvm.cipher_aes]
 status = "complete"
 test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/runtime/jni_environment_tests.cpp; tools.android_payload_current"
-note = "ADR-0035：AES-128/192/256 的 ECB/CBC NoPadding/PKCS5Padding、CBC/ZeroBytePadding、CTR/NoPadding，裸 AES 默认 ECB/PKCS5Padding；Cipher/JCA/Conscrypt Java 在 BootDex，11 个 native 经 guest JNI 调用 API19 libcrypto，无宿主 AES。自设随机 seed、AlgorithmParameters 编码、RSA Cipher、wrap/unwrap 与完整 JCA 未验收。"
+note = "ADR-0035：AES-128/192/256 的 ECB/CBC NoPadding/PKCS5Padding、CBC/ZeroBytePadding、CTR/NoPadding，裸 AES 默认 ECB/PKCS5Padding；Cipher/JCA/Conscrypt Java 在 BootDex，11 个 native 经 guest JNI 调用 API19 libcrypto，无宿主 AES。自设随机 seed、AlgorithmParameters 编码、AES wrap/unwrap 与完整 JCA 未验收。"
+
+[dexvm.rsa]
+status = "complete"
+test = "tests/runtime/guest_crypto_rsa_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/tls_trust_tests.cpp; tests/dexvm/bootdex_security_tests.cpp"
+note = "原版 Conscrypt RSA KeyFactory/KeyPairGenerator、NoPadding/PKCS1 Cipher 与 MD5/SHA-1/256/384/512/NONE 签名；OGPlayCrypto 裸 RSA 与 OAEP（SHA-1/224/256/384/512、MGF1、label）；BKS RSA 私钥可签名与解密。PSS、MD2withRSA、ENGINE、AndroidKeyStore、DSA/EC 签名生成与 TLS 服务端未纳入。"
 
 [dexvm.jca_random_keygen]
 status = "complete"
@@ -1782,7 +1787,7 @@ note = "Context.checkPermission 以固定 self PID 与应用 UID 查询 Manifest
 [dexvm.certificate_x509]
 status = "complete"
 test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/runtime/jni_object_array_tests.cpp; tools.android_payload_current"
-note = "ADR-0036：Certificate/X509Certificate/CertificateFactory 与 Harmony ASN.1/X.509/PKCS7 在 BootDex，支持 DER/PEM、证书集合、PkiPath/PKCS7 编解码；签名经 guest libcrypto EVP 验证 RSA PKCS#1 v1.5/ECDSA 与 SHA1/224/256/384/512，单消息最多 1 MiB。通用 PKIX、公网 CA、撤销与 TLS 不在范围（TrustManager 范围见 dexvm.trust_manager_factory）。"
+note = "ADR-0036：BootDex Harmony X.509 支持 DER/PEM、证书集合和 PkiPath/PKCS7；RSA 公钥由 Conscrypt KeyFactory 解析，EC 保留编码公钥；验签经 guest libcrypto，RSA MD5/SHA-1/256/384/512 走增量 EVP，SHA224withRSA 与 ECDSA 的单消息上限为 1 MiB。通用 PKIX、公网 CA、撤销与 TLS 不在范围（TrustManager 范围见 dexvm.trust_manager_factory）。"
 
 [dexvm.framework_value_bootdex]
 status = "complete"
@@ -1802,12 +1807,12 @@ note = "ADR-0039：原版 UUID 在 BootDex，无 overlay；randomUUID 使用 OS 
 [dexvm.message_digest]
 status = "complete"
 test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/gc_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tools.android_payload_current"
-note = "ADR-0039：原版 MessageDigest、Digest 流与 Conscrypt MD5/SHA-1/SHA-256/SHA-384/SHA-512 在 BootDex，7 个 JNI 入口调用 guest libcrypto EVP，update 按 64 KiB 分块，无总长上限；支持增量、reset、clone 与 ByteBuffer。SHA-224 未在原版 OpenSSLProvider 注册；SHA-3 与完整 JCA 未纳入。"
+note = "ADR-0039：原版 MessageDigest、Digest 流与 Conscrypt MD5/SHA-1/SHA-256/SHA-384/SHA-512 在 BootDex，7 个 JNI 入口调用 guest libcrypto EVP，update 按 64 KiB 分块，无总长上限；支持增量、reset、clone 与 ByteBuffer。OGPlayCrypto 的 SHA-224 复用同一 ABI，支持 RSA OAEP；SHA-3 与完整 JCA 未纳入。"
 
 [dexvm.hmac_sha1]
 status = "complete"
 test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tools/bootdex/build_bootdex.py check"
-note = "原版 Mac/MacSpi 与 OpenSSLMac HmacSHA1 在 BootDex；conscrypt.jar 原版 NativeCrypto 为唯一类定义，26 个 native 后端经 guest libcrypto，其余 190 个 native 明确失败。其他 Mac 算法、BouncyCastle 与 TLS 不在此项。"
+note = "原版 Mac/MacSpi 与 OpenSSLMac HmacSHA1 在 BootDex；conscrypt.jar 原版 NativeCrypto 为唯一类定义，48 个 native 后端经 guest libcrypto，其余 168 个 native 明确失败。其他 Mac 算法、BouncyCastle 与 TLS 不在此项。"
 
 [dexvm.secret_key_factory]
 status = "complete"
@@ -1827,7 +1832,7 @@ note = "Java 实现 PKCS#12 SHA-1 KDF、HMAC-SHA1、BKS v2 写出与 v0/v1/v2 �
 [dexvm.bks_key_protection]
 status = "complete"
 test = "tests/runtime/guest_crypto_bks_tests.cpp#DVM-105/169/175-180"
-note = "标准 SHA/3-key TripleDES 写出/恢复及 Broken faulty-parity、Old PKCS12 mixer 历史回退调用 guest libcrypto；支持 AES RAW secret 与 RSA/EC PKCS#8 private key、证书链和两种 setKeyEntry 重载。私钥 EVP token 有独立类型、引用、GC/teardown 释放。DSA、X.509 public-key entry 和其他算法明确失败；TLS client auth 见 RSA mTLS。"
+note = "标准 SHA/3-key TripleDES 写出/恢复及 Broken faulty-parity、Old PKCS12 mixer 历史回退调用 guest libcrypto；支持 AES RAW secret 与 RSA/EC PKCS#8 private key、证书链和两种 setKeyEntry 重载。RSA 私钥经 Conscrypt KeyFactory 与 CRT 路径恢复，EC 保留独立 EVP token，均由 GC/teardown 释放。DSA、X.509 public-key entry 和其他算法明确失败；TLS client auth 见 RSA mTLS。"
 
 [dexvm.trust_manager_factory]
 status = "complete"

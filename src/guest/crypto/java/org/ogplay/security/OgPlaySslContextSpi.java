@@ -5,6 +5,7 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContextSpi;
 import javax.net.ssl.SSLEngine;
@@ -22,7 +23,6 @@ public class OgPlaySslContextSpi extends SSLContextSpi {
     private boolean initialized;
     private X509TrustManager trustManager;
     private X509KeyManager keyManager;
-    private SecureRandom secureRandom;
     private OgPlaySslSessionContext clientSessions;
     private OgPlaySslSocketFactory socketFactory;
     private long nativeContext;
@@ -40,10 +40,15 @@ public class OgPlaySslContextSpi extends SSLContextSpi {
         try {
             trustManager = selectTrustManager(tm);
             keyManager = selectKeyManager(km);
-            secureRandom = sr != null ? sr : new SecureRandom();
-            byte[] entropy = new byte[64];
-            secureRandom.nextBytes(entropy);
-            NativeTls.seed(entropy);
+            if (sr != null) {
+                byte[] entropy = new byte[64];
+                try {
+                    sr.nextBytes(entropy);
+                    NativeTls.seed(entropy);
+                } finally {
+                    Arrays.fill(entropy, (byte) 0);
+                }
+            }
             if (nativeContext != 0) {
                 NativeTls.freeContext(nativeContext);
                 nativeContext = 0;
@@ -95,10 +100,6 @@ public class OgPlaySslContextSpi extends SSLContextSpi {
     X509KeyManager keyManager() {
         requireInit();
         return keyManager;
-    }
-
-    SecureRandom secureRandom() {
-        return secureRandom;
     }
 
     String[] protocols() {

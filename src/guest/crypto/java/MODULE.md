@@ -13,6 +13,16 @@ BouncyCastle 运行时或 C++ 条目/会话影子状态。
 `AES/CBC/ZeroBytePadding` 由本目录的 CipherSpi 完成分段缓冲、零填充和解密去尾零，
 实际分组运算复用 API 19 Conscrypt 的 `AES/CBC/NoPadding`，仍进入 guest libcrypto。
 
+`OGPlayCrypto` 的 `Cipher.RSA` 接受 ECB/NONE，裸 RSA 默认 NoPadding。精确命中的
+NoPadding/PKCS1Padding 由 AndroidOpenSSL 提供，通用 SPI 也复用这两个原版 transformation。
+OAEP 在原始 RSA 上执行 Java EME-OAEP 与 MGF1，接受 SHA-1/224/256/384/512 名称、独立摘要和
+`OAEPParameterSpec` 的 PSpecified label。解码以固定次数扫描摘要与分隔符，格式错误统一抛
+BadPaddingException；去掉前导零的短密文按右对齐解密。`AlgorithmParameters.OAEP` 提供规格及 PKCS#1 DER 往返。SHA-224 摘要
+复用已有 Conscrypt native ABI，为固定 API 19 Provider 缺少的 SHA-224 OAEP 提供支撑。
+
+BKS RSA PKCS#8 在本目录解析为 RSAPrivateCrtKeySpec，经原版 KeyFactory 构造 CRT 私钥，EC 仍使用 BksPrivateKey。
+同一 native key 继续提供 PKCS#8 编码用于 BKS 写出和 TLS 客户端认证。
+
 `OGPlayCrypto` 独立发布 `PBEWITHSHAAND256BITAES-CBC-BC` SecretKeyFactory 及 SHA1/SHA-1
 名称别名。公开 API/规格来自原版 BootDex，SPI 与 PBEKey 状态归 guest Java；复用 PKCS12
 SHA-1 KDF，固定派生 32-byte key，不使用 PBKDF2。无盐规格返回延迟密码编码；有盐密钥

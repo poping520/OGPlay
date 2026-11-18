@@ -138,6 +138,7 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   不终止宿主进程。详见 ADR-0151。
 - native 关闭在释放 VM 锁前按已登记 cleanup/token 占有 owner 字段并保活；成功退役、异常恢复。
   与 Java finalizer、GC/teardown 共用关闭事实，不能重复关闭 peer，也不将非法 token 伪作成功。
+  摘要类的浅克隆不取得原上下文的所有权，Java clone 通过 EVP_MD_CTX_copy 为新对象安装独立 token。
 - Thread runtime 核对对象身份而非可复用 handle；死 Thread 的 host/context tombstone 延至
   teardown 回收，新 identity 可合法复用其句柄，不重启旧 Java Thread。
 - Runtime maxMemory 是当前 growth limit，totalMemory 是已提交目标（至少 allocated），

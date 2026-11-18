@@ -383,26 +383,6 @@
     invoke-direct {v0, v1}, Ljava/io/IOException;-><init>(Ljava/lang/String;)V
     throw v0
 .end method
-.class public Lfixture/KeyPasswordHandler;
-.super Ljava/lang/Object;
-.implements Ljavax/security/auth/callback/CallbackHandler;
-.method public constructor <init>()V
-.registers 1
-    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
-    return-void
-.end method
-.method public handle([Ljavax/security/auth/callback/Callback;)V
-.registers 5
-    const/4 v0, 0
-    aget-object v1, v4, v0
-    check-cast v1, Ljavax/security/auth/callback/PasswordCallback;
-    const-string v2, "keypass"
-    invoke-virtual {v2}, Ljava/lang/String;->toCharArray()[C
-    move-result-object v2
-    invoke-virtual {v1, v2}, Ljavax/security/auth/callback/PasswordCallback;->setPassword([C)V
-    return-void
-.end method
-
 .class public Lfixture/KeyStoreWorker;
 .super Ljava/lang/Thread;
 .field private store:Ljava/security/KeyStore;
@@ -458,4 +438,21 @@
     iget v3, v1, Lfixture/KeyStoreWorker;->completed:I
     add-int/2addr v2, v3
     return v2
+.end method
+
+.class public Lfixture/MainAction;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+
+.method public run()V
+.registers 1
+return-void
+.end method
+
+
+.method public static readObject(Ljava/io/ObjectInputStream;)Ljava/lang/Object;
+.registers 1
+    invoke-virtual {v0}, Ljava/io/ObjectInputStream;->readObject()Ljava/lang/Object;
+    move-result-object v0
+    return-object v0
 .end method

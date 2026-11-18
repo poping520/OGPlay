@@ -435,8 +435,9 @@ public:
     void RegisterIntrinsicStateTable(IntrinsicStateTableHooks hooks);
     // Cleanup is queued during sweep and executed through JNI after GC finishes.
     void TrackGuestNativeResource(VmObjectRef owner, VmMethodId cleanup, std::int64_t token);
-    // Resource ownership follows an ordinary mutable Java long field, including clones.
-    void TrackGuestNativeResourceField(VmFieldId field, VmMethodId cleanup, std::int64_t invalid_token = 0);
+    // A peer duplicated by the Java clone method starts unowned in a shallow clone.
+    void TrackGuestNativeResourceField(VmFieldId field, VmMethodId cleanup, std::int64_t invalid_token = 0,
+                                       bool reset_on_clone = false);
     void ReleaseGuestNativeResources(bool all = false);
     [[nodiscard]] std::size_t GuestNativeResourceCount() const;
 

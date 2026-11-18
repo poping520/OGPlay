@@ -733,7 +733,8 @@ void Interpreter::Impl::RetireClosedNativeResource(const VmMethodId cleanup, con
                   [&](const auto& item) { return item.cleanup == cleanup && item.token == token; });
 }
 
-void Interpreter::TrackGuestNativeResourceField(VmFieldId field_id, VmMethodId cleanup, std::int64_t invalid_token) {
+void Interpreter::TrackGuestNativeResourceField(VmFieldId field_id, VmMethodId cleanup, std::int64_t invalid_token,
+                                                bool reset_on_clone) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     const auto& field = Linker().Field(field_id);
     const auto& method = Linker().Method(cleanup);
@@ -741,12 +742,12 @@ void Interpreter::TrackGuestNativeResourceField(VmFieldId field_id, VmMethodId c
         throw DexVmError(DexVmErrorReason::invalid_operand, "invalid native resource field");
     for (const auto& rule : impl_->guest_native_resource_fields) {
         if (rule.field == field_id) {
-            if (rule.cleanup != cleanup || rule.invalid_token != invalid_token)
+            if (rule.cleanup != cleanup || rule.invalid_token != invalid_token || rule.reset_on_clone != reset_on_clone)
                 throw DexVmError(DexVmErrorReason::invalid_operand, "conflicting native cleanup");
             return;
         }
     }
-    impl_->guest_native_resource_fields.push_back({field_id, cleanup, invalid_token});
+    impl_->guest_native_resource_fields.push_back({field_id, cleanup, invalid_token, reset_on_clone});
 }
 
 void Interpreter::Impl::QueueFieldNativeResources(const GcMarkResult* mark) {

@@ -84,7 +84,8 @@ extern _STACK *X509_STORE_CTX_get_chain(X509_STORE_CTX *);
 extern int X509_cmp(X509 *, X509 *);
 extern void ERR_clear_error(void);
 extern unsigned long ERR_get_error(void);
-extern void RAND_seed(const void *, int);
+extern int crypto_seed_rng(JNIEnv*, const char*);
+extern void crypto_mix_seed(JNIEnv*, jobject);
 extern int RAND_status(void);
 extern EC_KEY *EC_KEY_new_by_curve_name(int);
 extern void EC_KEY_free(EC_KEY *);
@@ -420,15 +421,7 @@ void Java_org_ogplay_security_NativeTls_seed(JNIEnv *env, jobject cls, jobject e
         fail(env, "java/security/ProviderException", "TLS entropy is shorter than 32 bytes");
         return;
     }
-    unsigned char buffer[256];
-    int offset = 0;
-    while (offset < count) {
-        int chunk = count - offset;
-        if (chunk > (int)sizeof(buffer)) chunk = (int)sizeof(buffer);
-        read_bytes(env, entropy, offset, chunk, buffer);
-        RAND_seed(buffer, chunk);
-        offset += chunk;
-    }
+    crypto_mix_seed(env, entropy);
 }
 int ogplay_tls_on_load(void) {
     if (SSL_library_init() != 1) return 0;
@@ -487,10 +480,7 @@ jlong Java_org_ogplay_security_NativeTls_createContext(JNIEnv *env, jobject cls,
                                                        jobject ciphers) {
     (void)cls;
     ERR_clear_error();
-    if (RAND_status() != 1) {
-        fail(env, "javax/net/ssl/SSLException", "OpenSSL RNG is not seeded");
-        return 0;
-    }
+    if (!crypto_seed_rng(env, "javax/net/ssl/SSLException")) return 0;
     long options = disable_unused(0, protocols, env);
     if (options < 0) return 0;
     SSL_CTX *ssl = SSL_CTX_new(SSLv23_client_method());

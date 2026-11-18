@@ -453,6 +453,7 @@ def validate(root: Path) -> None:
             build = entry.get("build")
             expected_sources = [
                 "src/guest/crypto/crypto_jni.c",
+                "src/guest/crypto/rsa_jni.c",
                 "src/guest/crypto/trust_jni.c",
                 "src/guest/crypto/tls_jni.c",
                 "src/guest/icu/icu_jni.c",
@@ -462,6 +463,7 @@ def validate(root: Path) -> None:
                 "src/guest/zip/zip_stream_jni.c",
                 "src/guest/math/big_integer_jni.c",
                 "src/guest/icu/icu51_capi.h",
+                "src/guest/crypto/crypto_jni.h",
             ]
             if not isinstance(build, dict) or build.get("ndk_revision") != "25.2.9519653" or \
                     build.get("target") != "armv7a-linux-androideabi19" or \

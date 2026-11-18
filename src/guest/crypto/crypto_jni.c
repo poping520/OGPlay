@@ -1,9 +1,7 @@
 /* API 19 ARM guest JNI adapter. AES, digest and signature algorithms execute in guest libcrypto.
  * JNI 1.6 table slots follow the Android JNI ABI; no host headers are used. */
-typedef unsigned int size_t;
-typedef long long jlong;
-typedef void *jobject;
-typedef const void **JNIEnv;
+#include "crypto_jni.h"
+
 typedef const void **JavaVM;
 typedef struct evp_cipher_ctx_st EVP_CIPHER_CTX;
 typedef struct evp_cipher_st EVP_CIPHER;
@@ -32,44 +30,57 @@ extern int EVP_CipherUpdate(EVP_CIPHER_CTX *, unsigned char *, int *, const unsi
 extern int EVP_CipherFinal_ex(EVP_CIPHER_CTX *, unsigned char *, int *);
 extern unsigned long ERR_get_error(void);
 extern void ERR_clear_error(void);
+extern int open(const char*, int, ...);
+extern int read(int, void*, size_t);
+extern int close(int);
 extern void RAND_seed(const void *, int);
 extern int RAND_bytes(unsigned char *, int);
+extern int RAND_status(void);
 #define AES(bits, mode) extern const EVP_CIPHER *EVP_aes_##bits##_##mode(void);
 AES(128, ecb)
 AES(192, ecb)
 AES(256, ecb)
 AES(128, cbc)
 AES(192, cbc)
-AES(256, cbc) AES(128, ctr) AES(192, ctr) AES(256, ctr)
-#define JNI(slot, type) ((type)((*env)[slot]))
-    static void wipe32(unsigned char (*buffer)[32]) {
-    volatile unsigned char *p = *buffer;
-    for (int i = 0; i < 32; ++i) p[i] = 0;
+
+AES(256, cbc) AES(128, ctr) AES(192, ctr) AES(256, ctr) void crypto_wipe(void* buffer, size_t size) {
+    volatile unsigned char* bytes = buffer;
+    for (size_t i = 0; i < size; ++i)
+        bytes[i] = 0;
 }
-static void fail(JNIEnv *env, const char *type, const char *message) {
+
+static void wipe32(unsigned char (*buffer)[32]) {
+    crypto_wipe(*buffer, sizeof(*buffer));
+}
+
+void fail(JNIEnv* env, const char* type, const char* message) {
     jobject cls = JNI(6, jobject(*)(JNIEnv *, const char *))(env, type);
     if (cls) JNI(14, int (*)(JNIEnv *, jobject, const char *))(env, cls, message);
 }
-static int length(JNIEnv *env, jobject array) {
+
+int length(JNIEnv* env, jobject array) {
     if (!array) {
         fail(env, "java/lang/NullPointerException", "array == null");
         return -1;
     }
     return JNI(171, int (*)(JNIEnv *, jobject))(env, array);
 }
-static int range(JNIEnv *env, jobject array, int offset, int count) {
+
+int range(JNIEnv* env, jobject array, int offset, int count) {
     int n = length(env, array);
     if (n < 0) return 0;
     if (offset < 0 || count < 0 || offset > n || count > n - offset) {
-        fail(env, "java/lang/ArrayIndexOutOfBoundsException", "invalid cipher buffer range");
+        fail(env, "java/lang/ArrayIndexOutOfBoundsException", "invalid array range");
         return 0;
     }
     return 1;
 }
-static void read_bytes(JNIEnv *env, jobject a, int off, int n, unsigned char *p) {
+
+void read_bytes(JNIEnv* env, jobject a, int off, int n, unsigned char* p) {
     JNI(200, void (*)(JNIEnv *, jobject, int, int, unsigned char *))(env, a, off, n, p);
 }
-static void write_bytes(JNIEnv *env, jobject a, int off, int n, const unsigned char *p) {
+
+void write_bytes(JNIEnv* env, jobject a, int off, int n, const unsigned char* p) {
     JNI(208, void (*)(JNIEnv *, jobject, int, int, const unsigned char *))(env, a, off, n, p);
 }
 typedef struct Context {
@@ -126,11 +137,40 @@ static const EVP_CIPHER *cipher(jlong token) {
     }
     return (void *)0;
 }
-#define N(name) Java_com_android_org_conscrypt_NativeCrypto_##name
-void N(RAND_1seed)(JNIEnv *env, jobject cls, jobject seed) {
-    (void)cls;
+
+/* The guest device is backed by HAL's CSPRNG. Caller-provided seed bytes
+ * may supplement the process seed after this read succeeds. */
+int crypto_seed_rng(JNIEnv* env, const char* exception) {
+    static int seed_mutex;
+    static int seeded;
+    pthread_mutex_lock(&seed_mutex);
+    if (!seeded) {
+        unsigned char entropy[64];
+        int fd = open("/dev/urandom", 0);
+        int done = 0;
+        if (fd >= 0) {
+            while (done < (int)sizeof(entropy)) {
+                int count = read(fd, entropy + done, sizeof(entropy) - (size_t)done);
+                if (count <= 0) break;
+                done += count;
+            }
+            close(fd);
+        }
+        if (done == (int)sizeof(entropy)) {
+            RAND_seed(entropy, done);
+            seeded = RAND_status() == 1;
+        }
+        crypto_wipe(entropy, sizeof(entropy));
+    }
+    int ready = seeded;
+    pthread_mutex_unlock(&seed_mutex);
+    if (!ready) fail(env, exception, "OpenSSL RNG could not be seeded from /dev/urandom");
+    return ready;
+}
+
+void crypto_mix_seed(JNIEnv* env, jobject seed) {
     int count = length(env, seed);
-    if (count < 0) return;
+    if (count < 0 || !crypto_seed_rng(env, "java/security/ProviderException")) return;
     unsigned char buffer[4096];
     for (int offset = 0; offset < count;) {
         int chunk = count - offset < (int)sizeof(buffer) ? count - offset : (int)sizeof(buffer);
@@ -138,11 +178,17 @@ void N(RAND_1seed)(JNIEnv *env, jobject cls, jobject seed) {
         RAND_seed(buffer, chunk);
         offset += chunk;
     }
+    crypto_wipe(buffer, sizeof(buffer));
+}
+
+void N(RAND_1seed)(JNIEnv* env, jobject cls, jobject seed) {
+    (void)cls;
+    crypto_mix_seed(env, seed);
 }
 void N(RAND_1bytes)(JNIEnv *env, jobject cls, jobject output) {
     (void)cls;
     int count = length(env, output);
-    if (count < 0) return;
+    if (count < 0 || !crypto_seed_rng(env, "java/security/ProviderException")) return;
     unsigned char buffer[4096];
     for (int offset = 0; offset < count;) {
         int chunk = count - offset < (int)sizeof(buffer) ? count - offset : (int)sizeof(buffer);
@@ -378,7 +424,7 @@ int N(EVP_1CipherFinal_1ex)(JNIEnv *env, jobject cls, jlong token, jobject out, 
 static void release_crypto_locks(void);
 static void release_digests(void);
 static void release_hmacs(void);
-static void release_mac_keys(void);
+static void release_keys(void);
 static void release_private_keys(void);
 __attribute__((destructor)) static void release_contexts(void) {
     while (contexts) {
@@ -389,7 +435,7 @@ __attribute__((destructor)) static void release_contexts(void) {
     }
     release_digests();
     release_hmacs();
-    release_mac_keys();
+    release_keys();
     release_private_keys();
     release_crypto_locks();
     ogplay_tls_on_unload();
@@ -398,8 +444,6 @@ __attribute__((destructor)) static void release_contexts(void) {
 
 /* Stateless signature verification: Java owns DER/PEM parsing and fields.
  * OpenSSL owns key decoding and the actual signature algorithm. */
-typedef struct env_md_ctx_st EVP_MD_CTX;
-typedef struct evp_pkey_st EVP_PKEY;
 typedef struct pkcs8_priv_key_info_st PKCS8_PRIV_KEY_INFO;
 typedef struct env_md_st EVP_MD;
 extern EVP_PKEY *d2i_PUBKEY(EVP_PKEY **, const unsigned char **, long);
@@ -413,6 +457,7 @@ extern EVP_PKEY *EVP_PKCS82PKEY(PKCS8_PRIV_KEY_INFO *);
 extern PKCS8_PRIV_KEY_INFO *EVP_PKEY2PKCS8(EVP_PKEY *);
 extern const EVP_CIPHER *EVP_des_ede3_cbc(void);
 extern int EVP_add_digest(const EVP_MD *);
+extern const EVP_MD* EVP_md5(void);
 extern const EVP_MD *EVP_sha1(void);
 extern const EVP_MD *EVP_sha224(void);
 extern const EVP_MD *EVP_sha256(void);
@@ -446,8 +491,8 @@ int JNI_OnLoad(JavaVM *vm, void *reserved) {
     for (int i = 0; i < crypto_lock_count; ++i) crypto_locks[i] = 0;
     CRYPTO_set_locking_callback(crypto_lock);
     CRYPTO_set_id_callback(pthread_self);
-    if (!EVP_add_digest(EVP_sha1()) || !EVP_add_digest(EVP_sha224()) ||
-        !EVP_add_digest(EVP_sha256()) || !EVP_add_digest(EVP_sha384()) ||
+    if (!ogplay_rsa_layout_check() || !EVP_add_digest(EVP_md5()) || !EVP_add_digest(EVP_sha1()) ||
+        !EVP_add_digest(EVP_sha224()) || !EVP_add_digest(EVP_sha256()) || !EVP_add_digest(EVP_sha384()) ||
         !EVP_add_digest(EVP_sha512()))
         return -1;
     crypto_initialized = 1;
@@ -462,7 +507,7 @@ void N(clinit)(JNIEnv *env, jobject cls) {
 static unsigned char *encoded(JNIEnv *env, jobject array, int *count, const char *exception) {
     *count = length(env, array);
     if (*count < 0) return 0;
-    if (*count > 1048576) {
+    if (*count > CRYPTO_MAX_ENCODING) {
         fail(env, exception, "encoded value exceeds 1 MiB limit");
         return 0;
     }
@@ -489,21 +534,21 @@ unsigned char Java_org_ogplay_security_NativeVerification_verify(
     }
     const char *name = JNI(169, const char *(*)(JNIEnv *, jobject, void *))(env, algorithm, 0);
     if (!name) return 0;
-    const char *rsa[] = {"SHA1withRSA", "SHA224withRSA", "SHA256withRSA", "SHA384withRSA",
-                         "SHA512withRSA"};
     const char *ec[] = {"SHA1withECDSA", "SHA224withECDSA", "SHA256withECDSA", "SHA384withECDSA",
                         "SHA512withECDSA"};
     const EVP_MD *(*digests[])(void) = {EVP_sha1, EVP_sha224, EVP_sha256, EVP_sha384, EVP_sha512};
     const EVP_MD *digest = 0;
-    int expected_type = 0;
-    for (int i = 0; i < 5; ++i) {
-        if (!strcmp(name, rsa[i])) {
-            expected_type = 6;
-            digest = digests[i]();
-        }
-        if (!strcmp(name, ec[i])) {
-            expected_type = 408;
-            digest = digests[i]();
+    int expected_type;
+    if (!strcmp(name, "SHA224withRSA")) {
+        expected_type = CRYPTO_PKEY_RSA;
+        digest = EVP_sha224();
+    } else {
+        expected_type = 408; /* EVP_PKEY_EC */
+        for (size_t i = 0; i < sizeof(ec) / sizeof(*ec); ++i) {
+            if (!strcmp(name, ec[i])) {
+                digest = digests[i]();
+                break;
+            }
         }
     }
     JNI(170, void (*)(JNIEnv *, jobject, const char *))(env, algorithm, name);
@@ -750,7 +795,6 @@ static void release_crypto_locks(void) {
 
 /* API 19 MessageDigest: Java owns the digest API and ctx field.
  * Tokens are monotonically allocated, never native pointers. */
-extern const EVP_MD *EVP_md5(void);
 extern int EVP_DigestFinal_ex(EVP_MD_CTX *, unsigned char *, unsigned int *);
 extern int EVP_MD_CTX_copy_ex(EVP_MD_CTX *, const EVP_MD_CTX *);
 typedef struct Digest {
@@ -758,22 +802,42 @@ typedef struct Digest {
     int mutex, references, removed;
     jlong token;
     EVP_MD_CTX *evp;
-    int size;
+    int size, signature;
 } Digest;
 static int update_hmac_token(JNIEnv *, jlong, jobject, int, int);
 static int destroy_hmac_token(JNIEnv *, jlong);
-static Digest *digests;
-static Digest *digest_context(JNIEnv *env, jlong token) {
+static Digest* digests;
+
+static Digest* find_digest(jlong token, int signature) {
     pthread_mutex_lock(&registry_mutex);
     Digest *p = digests;
     while (p && p->token != token) p = p->next;
+    if (p && p->signature != signature) p = 0;
     if (p) ++p->references;
     pthread_mutex_unlock(&registry_mutex);
-    if (!p) fail(env, "java/lang/IllegalStateException", "invalid digest context token");
-    else pthread_mutex_lock(&p->mutex);
+    if (p) pthread_mutex_lock(&p->mutex);
     return p;
 }
-static void release_digest(Digest **address) {
+
+static Digest* digest_context(JNIEnv* env, jlong token) {
+    Digest* p = find_digest(token, 0);
+    if (!p) fail(env, "java/lang/IllegalStateException", "invalid digest context token");
+    return p;
+}
+
+CryptoDigest* crypto_signature_context(JNIEnv* env, jlong token) {
+    Digest* p = find_digest(token, 1);
+    if (!p)
+        fail(env, token ? "java/lang/IllegalStateException" : "java/lang/NullPointerException",
+             "invalid signature context token");
+    return p;
+}
+
+EVP_MD_CTX* crypto_digest_evp(const CryptoDigest* p) {
+    return p->evp;
+}
+
+void crypto_release_digest(Digest** address) {
     Digest *p = *address;
     if (!p) return;
     pthread_mutex_unlock(&p->mutex);
@@ -785,23 +849,25 @@ static void release_digest(Digest **address) {
         free(p);
     }
 }
-#define DIGEST Digest *p __attribute__((cleanup(release_digest))) = digest_context(env, token)
+
+#define DIGEST Digest* p __attribute__((cleanup(crypto_release_digest))) = digest_context(env, token)
 typedef struct DigestAlgorithm {
     const char *name, *upper;
     const EVP_MD *(*evp)(void);
     int size;
 } DigestAlgorithm;
+
 static const DigestAlgorithm digest_algorithms[] = {
-    {"md5", "MD5", EVP_md5, 16}, {"sha1", "SHA1", EVP_sha1, 20},
-    {"sha256", "SHA256", EVP_sha256, 32}, {"sha384", "SHA384", EVP_sha384, 48},
-    {"sha512", "SHA512", EVP_sha512, 64}
-};
+    {"md5", "MD5", EVP_md5, 16},          {"sha1", "SHA1", EVP_sha1, 20},       {"sha256", "SHA256", EVP_sha256, 32},
+    {"sha384", "SHA384", EVP_sha384, 48}, {"sha512", "SHA512", EVP_sha512, 64}, {"sha224", "SHA224", EVP_sha224, 28}};
 static const DigestAlgorithm *digest_algorithm(JNIEnv *env, jlong token) {
-    if (token >= 1 && token <= 5) return &digest_algorithms[token - 1];
+    if (token >= 1 && token <= (jlong)(sizeof(digest_algorithms) / sizeof(*digest_algorithms)))
+        return &digest_algorithms[token - 1];
     fail(env, "java/lang/IllegalArgumentException", "unsupported digest algorithm token");
     return 0;
 }
-static jlong publish_digest(JNIEnv *env, EVP_MD_CTX *evp, int size) {
+
+static jlong publish_digest(JNIEnv* env, EVP_MD_CTX* evp, int size, int signature) {
     Digest *p = malloc(sizeof(Digest));
     if (!p) {
         EVP_MD_CTX_destroy(evp);
@@ -811,6 +877,7 @@ static jlong publish_digest(JNIEnv *env, EVP_MD_CTX *evp, int size) {
     p->mutex = p->references = p->removed = 0;
     p->evp = evp;
     p->size = size;
+    p->signature = signature;
     pthread_mutex_lock(&registry_mutex);
     if (next_token == 0x7fffffffffffffffLL) {
         pthread_mutex_unlock(&registry_mutex);
@@ -826,6 +893,10 @@ static jlong publish_digest(JNIEnv *env, EVP_MD_CTX *evp, int size) {
     pthread_mutex_unlock(&registry_mutex);
     return result;
 }
+
+jlong crypto_publish_signature(JNIEnv* env, EVP_MD_CTX* evp) {
+    return publish_digest(env, evp, 0, 1);
+}
 jlong N(EVP_1get_1digestbyname)(JNIEnv *env, jobject cls, jobject name) {
     (void)cls;
     if (!name) {
@@ -835,7 +906,7 @@ jlong N(EVP_1get_1digestbyname)(JNIEnv *env, jobject cls, jobject name) {
     const char *text = JNI(169, const char *(*)(JNIEnv *, jobject, void *))(env, name, 0);
     if (!text) return 0;
     jlong result = 0;
-    for (int i = 0; i < 5; ++i)
+    for (size_t i = 0; i < sizeof(digest_algorithms) / sizeof(*digest_algorithms); ++i)
         if (!strcmp(text, digest_algorithms[i].name) || !strcmp(text, digest_algorithms[i].upper)) {
             result = i + 1;
             break;
@@ -862,25 +933,24 @@ jlong N(EVP_1DigestInit)(JNIEnv *env, jobject cls, jlong algorithm) {
         fail(env, "java/security/ProviderException", "EVP digest initialization failed");
         return 0;
     }
-    return publish_digest(env, evp, a->size);
+    return publish_digest(env, evp, a->size, 0);
 }
 void N(EVP_1DigestUpdate)(JNIEnv *env, jobject cls, jlong token, jobject input, int offset, int count) {
     (void)cls;
-    Digest *p __attribute__((cleanup(release_digest))) = 0;
-    pthread_mutex_lock(&registry_mutex);
-    p = digests;
-    while (p && p->token != token) p = p->next;
-    if (p) ++p->references;
-    pthread_mutex_unlock(&registry_mutex);
+    Digest* p __attribute__((cleanup(crypto_release_digest))) = find_digest(token, 0);
     if (!p) {
         (void)update_hmac_token(env, token, input, offset, count);
         return;
     }
-    pthread_mutex_lock(&p->mutex);
+    crypto_update_digest(env, p->evp, input, offset, count);
+}
+
+void crypto_update_digest(JNIEnv* env, EVP_MD_CTX* evp, jobject input, int offset, int count) {
     if (!range(env, input, offset, count)) return;
+    if (!count) return;
     // Bound temporary memory, not the Java array or cumulative message length.
     const int capacity = count < 65536 ? count : 65536;
-    unsigned char *data = malloc((size_t)capacity + 1);
+    unsigned char* data = malloc((size_t)capacity);
     if (!data) {
         fail(env, "java/lang/OutOfMemoryError", "digest input buffer");
         return;
@@ -889,10 +959,11 @@ void N(EVP_1DigestUpdate)(JNIEnv *env, jobject cls, jlong token, jobject input, 
     while (count && ok) {
         int chunk = count < capacity ? count : capacity;
         read_bytes(env, input, offset, chunk, data);
-        ok = EVP_DigestUpdate(p->evp, data, (size_t)chunk);
+        ok = EVP_DigestUpdate(evp, data, (size_t)chunk);
         offset += chunk;
         count -= chunk;
     }
+    crypto_wipe(data, (size_t)capacity);
     free(data);
     if (!ok) fail(env, "java/security/ProviderException", "EVP digest update failed");
 }
@@ -944,7 +1015,7 @@ jlong N(EVP_1MD_1CTX_1copy)(JNIEnv *env, jobject cls, jlong token) {
         fail(env, "java/security/ProviderException", "EVP digest copy failed");
         return 0;
     }
-    return publish_digest(env, copy, p->size);
+    return publish_digest(env, copy, p->size, 0);
 }
 static void release_digests(void) {
     while (digests) {
@@ -1028,21 +1099,100 @@ static void release_hmacs(void) {
     }
 }
 
-typedef struct MacKey {
-    struct MacKey *next;
+struct CryptoKey {
+    struct CryptoKey* next;
     jlong token;
-    unsigned char normalized[64];
-} MacKey;
-static MacKey *mac_keys;
-static void release_mac_keys(void) {
-    while (mac_keys) {
-        MacKey *p = mac_keys;
-        mac_keys = p->next;
-        volatile unsigned char *wipe = p->normalized;
-        for (int i = 0; i < 64; ++i) wipe[i] = 0;
-        free(p);
+    int type, is_mac, mutex, references, removed;
+
+    union {
+        EVP_PKEY* evp;
+        unsigned char mac[64];
+    } value;
+};
+
+static CryptoKey* keys;
+
+static void destroy_key(CryptoKey* key) {
+    if (key->is_mac)
+        crypto_wipe(key->value.mac, sizeof(key->value.mac));
+    else
+        EVP_PKEY_free(key->value.evp);
+    free(key);
+}
+
+static void release_keys(void) {
+    while (keys) {
+        CryptoKey* key = keys;
+        keys = key->next;
+        destroy_key(key);
     }
 }
+
+static jlong publish_key(JNIEnv* env, CryptoKey* key) {
+    pthread_mutex_lock(&registry_mutex);
+    if (next_token == 0x7fffffffffffffffLL) {
+        pthread_mutex_unlock(&registry_mutex);
+        destroy_key(key);
+        fail(env, "java/lang/OutOfMemoryError", "native token space exhausted");
+        return 0;
+    }
+    key->token = next_token++;
+    key->next = keys;
+    keys = key;
+    jlong token = key->token;
+    pthread_mutex_unlock(&registry_mutex);
+    return token;
+}
+
+jlong crypto_publish_pkey(JNIEnv* env, EVP_PKEY* evp) {
+    CryptoKey* key = malloc(sizeof(*key));
+    if (!key) {
+        EVP_PKEY_free(evp);
+        fail(env, "java/lang/OutOfMemoryError", "EVP_PKEY token");
+        return 0;
+    }
+    *key = (CryptoKey){.type = EVP_PKEY_base_id(evp), .value.evp = evp};
+    return publish_key(env, key);
+}
+
+CryptoKey* crypto_acquire_key(JNIEnv* env, jlong token) {
+    pthread_mutex_lock(&registry_mutex);
+    CryptoKey* key = keys;
+    while (key && key->token != token)
+        key = key->next;
+    if (key) ++key->references;
+    pthread_mutex_unlock(&registry_mutex);
+    if (!key)
+        fail(env, token ? "java/lang/IllegalStateException" : "java/lang/NullPointerException",
+             "pkey == null or expired");
+    return key;
+}
+
+void crypto_release_key(CryptoKey** address) {
+    CryptoKey* key = *address;
+    if (!key) return;
+    pthread_mutex_lock(&registry_mutex);
+    int destroy = --key->references == 0 && key->removed;
+    pthread_mutex_unlock(&registry_mutex);
+    if (destroy) destroy_key(key);
+}
+
+int crypto_key_type(const CryptoKey* key) {
+    return key->type;
+}
+
+EVP_PKEY* crypto_key_evp(const CryptoKey* key) {
+    return key->is_mac ? 0 : key->value.evp;
+}
+
+void crypto_lock_key(CryptoKey* key) {
+    pthread_mutex_lock(&key->mutex);
+}
+
+void crypto_unlock_key(CryptoKey** address) {
+    pthread_mutex_unlock(&(*address)->mutex);
+}
+
 static int normalize_hmac_key(JNIEnv *env, jobject key, unsigned char normalized[64]) {
     int key_size = length(env, key);
     if (key_size < 0) return 0;
@@ -1151,49 +1301,38 @@ void N(EVP_1MD_1CTX_1init)(JNIEnv *env, jobject cls, jlong token) {
 }
 jlong N(EVP_1PKEY_1new_1mac_1key)(JNIEnv *env, jobject cls, int type, jobject key) {
     (void)cls;
-    if (type != 855) {
+    if (type != CRYPTO_PKEY_HMAC) {
         fail(env, "java/security/InvalidKeyException", "unsupported MAC key type");
         return 0;
     }
-    MacKey *p = malloc(sizeof(MacKey));
-    if (!p) {
+    CryptoKey* key_token = malloc(sizeof(*key_token));
+    if (!key_token) {
         fail(env, "java/lang/OutOfMemoryError", "MAC key");
         return 0;
     }
-    if (!normalize_hmac_key(env, key, p->normalized)) {
-        free(p);
+    *key_token = (CryptoKey){.type = CRYPTO_PKEY_HMAC, .is_mac = 1};
+    if (!normalize_hmac_key(env, key, key_token->value.mac)) {
+        destroy_key(key_token);
         return 0;
     }
-    pthread_mutex_lock(&registry_mutex);
-    if (next_token == 0x7fffffffffffffffLL) {
-        pthread_mutex_unlock(&registry_mutex);
-        free(p);
-        fail(env, "java/lang/OutOfMemoryError", "native token space exhausted");
-        return 0;
-    }
-    p->token = next_token++;
-    p->next = mac_keys;
-    mac_keys = p;
-    jlong result = p->token;
-    pthread_mutex_unlock(&registry_mutex);
-    return result;
+    return publish_key(env, key_token);
 }
 void N(EVP_1PKEY_1free)(JNIEnv *env, jobject cls, jlong token) {
     (void)cls;
     pthread_mutex_lock(&registry_mutex);
-    MacKey **cursor = &mac_keys;
+    CryptoKey** cursor = &keys;
     while (*cursor && (*cursor)->token != token) cursor = &(*cursor)->next;
     if (!*cursor) {
         pthread_mutex_unlock(&registry_mutex);
-        fail(env, "java/lang/IllegalStateException", "invalid MAC key token");
+        fail(env, "java/lang/IllegalStateException", "invalid EVP_PKEY token");
         return;
     }
-    MacKey *p = *cursor;
-    *cursor = p->next;
+    CryptoKey* key = *cursor;
+    *cursor = key->next;
+    key->removed = 1;
+    int destroy = key->references == 0;
     pthread_mutex_unlock(&registry_mutex);
-    volatile unsigned char *wipe = p->normalized;
-    for (int i = 0; i < 64; ++i) wipe[i] = 0;
-    free(p);
+    if (destroy) destroy_key(key);
 }
 void N(EVP_1DigestSignInit)(JNIEnv *env, jobject cls, jlong token,
                             jlong algorithm, jlong key_token) {
@@ -1203,22 +1342,17 @@ void N(EVP_1DigestSignInit)(JNIEnv *env, jobject cls, jlong token,
              "only HmacSHA1 is supported");
         return;
     }
-    unsigned char normalized[64];
-    pthread_mutex_lock(&registry_mutex);
-    MacKey *key = mac_keys;
-    while (key && key->token != key_token) key = key->next;
-    if (key) for (int i = 0; i < 64; ++i) normalized[i] = key->normalized[i];
-    pthread_mutex_unlock(&registry_mutex);
-    if (!key) {
+    CryptoKey* key __attribute__((cleanup(crypto_release_key))) = crypto_acquire_key(env, key_token);
+    if (!key) return;
+    if (!key->is_mac) {
         fail(env, "java/security/InvalidKeyException", "invalid MAC key token");
         return;
     }
     HMAC_SHA1;
     if (!p) return;
     for (int i = 0; i < 64; ++i) {
-        p->ipad[i] = normalized[i] ^ 0x36;
-        p->opad[i] = normalized[i] ^ 0x5c;
-        normalized[i] = 0;
+        p->ipad[i] = key->value.mac[i] ^ 0x36;
+        p->opad[i] = key->value.mac[i] ^ 0x5c;
     }
     p->initialized = 1;
     if (!hmac_reset(p))

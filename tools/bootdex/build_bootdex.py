@@ -69,6 +69,15 @@ DEX_ENTRIES = ("classes.dex", *(f"classes{index}.dex" for index in range(2, len(
 # Hidden API 19 types are absent from the public SDK android.jar. These
 # declarations only satisfy javac; the ROM jars supply the real classes.
 COMPILE_ONLY_SOURCES = {
+    "com/android/org/conscrypt/NativeCrypto.java": """package com.android.org.conscrypt;
+public final class NativeCrypto {
+    public static native long EVP_get_digestbyname(String name);
+    public static native long EVP_DigestInit(long algorithm);
+    public static native void EVP_DigestUpdate(long ctx, byte[] input, int offset, int length);
+    public static native int EVP_DigestFinal(long ctx, byte[] output, int offset);
+    public static native void EVP_MD_CTX_destroy(long ctx);
+    public static native long EVP_MD_CTX_copy(long ctx);
+}""",
     "android/os/SystemProperties.java":
         "package android.os; public class SystemProperties {"
         " public static String get(String key, String def) { throw new AssertionError(); } }",
@@ -494,6 +503,7 @@ def build_guest_jni() -> int:
         if not tool.is_file():
             raise BuildError(f"NDK tool is missing: {tool}")
     sources = [ROOT / "src/guest/crypto/crypto_jni.c",
+               ROOT / "src/guest/crypto/rsa_jni.c",
                ROOT / "src/guest/crypto/trust_jni.c",
                ROOT / "src/guest/crypto/tls_jni.c",
                ROOT / "src/guest/icu/icu_jni.c",
@@ -502,7 +512,7 @@ def build_guest_jni() -> int:
                ROOT / "src/guest/zip/crc32_jni.c",
                ROOT / "src/guest/zip/zip_stream_jni.c",
                ROOT / "src/guest/math/big_integer_jni.c"]
-    source_inputs = [*sources, ROOT / "src/guest/icu/icu51_capi.h"]
+    source_inputs = [*sources, ROOT / "src/guest/icu/icu51_capi.h", ROOT / "src/guest/crypto/crypto_jni.h"]
     for source in source_inputs:
         if not source.is_file():
             raise BuildError(f"guest JNI source is missing: {source}")

@@ -123,4 +123,5 @@
     <string name="no">No</string>
     <string name="value_copied">Value copied</string>
     <string name="clipboard_unavailable">Clipboard unavailable</string>
+    <string name="category_crypto" translatable="false">Crypto</string>
 </resources>

@@ -7,8 +7,10 @@ import argparse
 from collections import Counter, defaultdict
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -20,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SAMPLE = ROOT / "samples/probe"
 BASELINE = Path(__file__).with_name("probe_baseline.json")
 PACKAGE = "org.ogplay.probe"
+DEVICE_DIR = "/sdcard/OGPlayProbe"
 SCHEMA = "ogplay.probe.report/1"
 STATUSES = ("pass", "fail", "error", "crash", "timeout", "skip", "info")
 CONFIGS = {
@@ -235,6 +238,9 @@ def summary_markdown(report: dict, baseline: dict, reference: dict | None = None
     lines.extend(("", "## 首错与退出", ""))
     for run in host["attempts"]:
         detail = run["run_report"]
+        if host.get("serial"):
+            lines.append(f"- Android 真机 `{host['serial']}` · {detail['end']}")
+            continue
         problem = detail.get("error") or detail.get("exit_error") or ""
         lines.append(f"- 第 {run['attempt']} 次 · {detail.get('end') or 'unknown'} · "
                      f"退出码 {run['exit_code']} · ledger 采样 {run['ledger_samples']} 次"
@@ -283,8 +289,10 @@ def summary_markdown(report: dict, baseline: dict, reference: dict | None = None
     if not orphaned:
         lines.append("无已采集条目。")
     lines.extend(("", "## 基线变化", ""))
-    regressions, additions = compare(report, baseline)
-    if host["complete"]:
+    if host.get("serial"):
+        lines.append("真机报告用于判据校准。")
+    elif host["complete"]:
+        regressions, additions = compare(report, baseline)
         lines.extend(f"- 回归 {item}" for item in regressions)
         lines.extend(f"- 新通过 `{item}`" for item in additions)
         if not regressions and not additions:
@@ -391,6 +399,104 @@ def run_probes(args: argparse.Namespace, selftest: bool = False) -> dict:
     return report
 
 
+def run_device(args: argparse.Namespace) -> dict:
+    apk = (SAMPLE / "out/ogplay-probe.apk").resolve(strict=True)
+    sdk = os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME")
+    adb = str(Path(sdk) / "platform-tools" / "adb") if sdk else shutil.which("adb")
+    if not adb:
+        raise ValueError("adb not found; set ANDROID_SDK_ROOT or add adb to PATH")
+    out = (args.out or ROOT / ".local/probe" /
+           (datetime.now().strftime("%Y%m%d-%H%M%S-%f") + "-device")).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    if any(out.iterdir()):
+        raise ValueError(f"run output must be empty: {out}")
+    session = uuid4().hex
+    remote_apk = f"/data/local/tmp/ogplay-probe-{session}.apk"
+    remote_config = f"{DEVICE_DIR}/autorun-{session}.json"
+    config = out / "autorun.json"
+    write_json(config, {"session": session, "filter": args.filter, "expect": {},
+                        "exit": True, "selftest": False})
+    deadline = time.monotonic() + args.timeout
+
+    def call(*command: str, check: bool = True, cleanup: bool = False) -> str:
+        result = subprocess.run([adb, "-s", args.serial, *command], capture_output=True,
+                                encoding="utf-8", errors="replace",
+                                timeout=5 if cleanup else max(0.1, deadline - time.monotonic()))
+        if check and result.returncode:
+            raise RuntimeError(f"adb {command[0]} failed: {(result.stderr or result.stdout).strip()}")
+        return result.stdout.strip() if result.returncode == 0 else ""
+
+    def document(filename: str) -> dict:
+        data = call("shell", "cat", f"{DEVICE_DIR}/{filename}", check=False)
+        # API 19 adb shell does not propagate the remote command exit code.
+        return json.loads(data) if data.startswith("{") else {}
+
+    progress, guest, selected = {}, {}, []
+    started = False
+    timed_out = False
+    try:
+        call("push", str(apk), remote_apk)
+        installed = call("shell", "su", "-c", f"'pm install -r {remote_apk}'")
+        if "Success" not in installed.splitlines():
+            raise RuntimeError(f"device APK install failed: {installed}")
+        call("shell", "am", "force-stop", PACKAGE)
+        call("shell", "mkdir", "-p", DEVICE_DIR)
+        call("push", str(config), remote_config)
+        call("shell", "mv", remote_config, f"{DEVICE_DIR}/autorun.json")
+        started = True
+        launch = call("shell", "am", "start", "-n", f"{PACKAGE}/.ProbeActivity")
+        if "Error" in launch:
+            raise RuntimeError(f"device Activity launch failed: {launch}")
+        while time.monotonic() < deadline:
+            snapshot = document("progress.json")
+            if snapshot.get("session") == session:
+                progress = snapshot
+                if not selected:
+                    selected = document(f"plan-{progress['batch']}.json").get("selected", [])
+                if progress.get("complete"):
+                    raw = out / "guest-report.json"
+                    call("pull", f"{DEVICE_DIR}/report.json", str(raw))
+                    guest = load_report(raw)
+                    break
+            time.sleep(0.25)
+        else:
+            timed_out = True
+    except subprocess.TimeoutExpired:
+        timed_out = True
+    finally:
+        try:
+            if started and not guest:
+                call("shell", "am", "force-stop", PACKAGE, check=False, cleanup=True)
+            paths = [remote_apk, remote_config]
+            if started:
+                paths.append(f"{DEVICE_DIR}/autorun.json")
+            call("shell", "rm", "-f", *paths, check=False, cleanup=True)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    results = sorted(guest.get("results", []), key=lambda row: row["id"])
+    ids = {row["id"] for row in results}
+    pending = sorted(set(selected) - ids)
+    complete = (bool(selected) and set(selected) == ids and bool(progress.get("complete"))
+                and guest.get("completed_at_ms") == progress.get("completed_at_ms"))
+    if progress:
+        write_json(out / "progress.json", progress)
+    report = {"schema": SCHEMA, "probe_version": guest.get("probe_version", progress.get("probe_version")),
+              "runs": guest.get("runs", int(started)), "environment": guest.get("environment", {}),
+              "summary": summary_counts(results), "results": results,
+              "host": {"complete": complete, "config": "device", "expect": {}, "filter": args.filter,
+                       "selftest": False, "interpreter": "dalvik", "serial": args.serial,
+                       "selected": selected, "pending": pending, "framework_errors": [], "ledger": [],
+                       "attempts": [{"attempt": 1, "exit_code": None, "wall_timeout": timed_out, "stdout": None,
+                                     "stderr": None, "ledger_samples": 0, "ledger_truncated": False,
+                                     "run_report": {"end": "completed" if complete else "incomplete"}}]
+                       if started else []}}
+    write_json(out / "report.json", report)
+    (out / "summary.md").write_text(summary_markdown(report, {}), encoding="utf-8")
+    print(f"{out / 'report.json'}\n{json.dumps(report['summary'], ensure_ascii=False)}")
+    return report
+
+
 def check(reports: list[dict], update: bool) -> int:
     baseline = optional_json(BASELINE)
     if any(value != "pass" for value in baseline.values()):
@@ -401,8 +507,8 @@ def check(reports: list[dict], update: bool) -> int:
         host = report.get("host", {})
         if not host.get("complete", True) or not report["results"]:
             raise ValueError("check requires a complete report")
-        if update and (host.get("selftest") or host.get("filter")):
-            raise ValueError("baseline update requires unfiltered normal reports")
+        if update and (host.get("selftest") or host.get("filter") or host.get("serial")):
+            raise ValueError("baseline update requires unfiltered normal OGPlay reports")
         lost, gained = compare(report, baseline)
         regressions.update(lost)
         passes.append(set(gained))
@@ -436,7 +542,7 @@ def latest_report() -> Path:
                         key=lambda path: path.stat().st_mtime, reverse=True)
     for path in candidates:
         host = load_report(path).get("host", {})
-        if host.get("complete") and not host.get("selftest") and not host.get("filter"):
+        if host.get("complete") and not host.get("selftest") and not host.get("filter") and not host.get("serial"):
             return path
     raise ValueError("no complete unfiltered report under .local/probe; specify --report")
 
@@ -468,6 +574,11 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--sdk", type=Path)
     build.add_argument("--ndk", type=Path)
     build.add_argument("--build-tools")
+    device = commands.add_parser("device", help="run the APK on an attached root-enabled Android device")
+    device.add_argument("--serial", required=True)
+    device.add_argument("--filter", nargs="+", default=[], metavar="PREFIX")
+    device.add_argument("--out", type=Path)
+    device.add_argument("--timeout", type=positive, default=3600, help="total wall-clock budget in seconds")
     for name, help_text in (("run", "run the APK and summarize evidence"),
                             ("selftest", "verify crash recovery, timeout isolation and continuation")):
         command = commands.add_parser(name, help=help_text)
@@ -503,6 +614,8 @@ def main(argv: list[str] | None = None) -> int:
                          args.update_baseline)
         if args.command == "diff":
             return diff(load_report(args.before), load_report(args.after))
+        if args.command == "device":
+            return int(not run_device(args)["host"]["complete"])
         if args.restarts < 0:
             raise ValueError("--restarts must be nonnegative")
         selftest = args.command == "selftest"

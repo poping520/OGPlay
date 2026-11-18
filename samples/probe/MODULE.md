@@ -8,7 +8,7 @@
 
 - `org.ogplay.probe`，manifest 声明 minSdk 9、targetSdk 19，验收目标为 API 19、`armeabi-v7a`。首页 Activity 声明竖屏；辅助测试 Activity 保留各探针要求的方向行为。
 - Java 7 和 framework 控件，英文和简体中文资源随设备配置切换；探针分类名称与分类通过计数固定使用英文。原生探针使用 NDK，静态链接 libc++。
-- 探针按设备、服务、运行时、存储、媒体、图形、UI 和原生分类。断言依据 API 19 的实现语义、独立来源的一致性和 runner 下发的配置。范围待确认时使用 `info`。
+- 探针按设备、服务、运行时、加密、存储、媒体、图形、UI 和原生分类。断言依据 API 19 的实现语义、独立来源的一致性和 runner 下发的配置。Crypto 通过公开 JCA 接口校验，provider 名作为观测，服务清单使用 `info`。
 - 网络探针仅连接 127.0.0.1 并查询 localhost。隔离自检由 autorun 显式启用。
 - SDK/NDK 经参数或环境变量定位。APK、签名密钥和生成物集中在 `out/`。
 - 主 APK 保留 aapt2 生成的资源表。两个固定资源包以 STORED 方式内嵌，包含同一 marker。`runtime.resources.table_control` 加载清零样本，`runtime.resources.aapt2_typespec` 加载新版 aapt2 原始样本，检测宿主是否接受 API 19 读取时忽略的 res1。构建验证两份样本的 res1 和 ZIP 存储方式。静态 libc++ 的 abort 消息在旧 libc 上写入 stderr。

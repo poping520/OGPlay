@@ -95,6 +95,7 @@ final class ProbeSession {
             DeviceProbes.register(probes);
             ServiceProbes.register(probes);
             RuntimeProbes.register(probes);
+            CryptoProbes.register(probes);
             StorageProbes.register(probes);
             MediaProbes.register(probes);
             GraphicsProbes.register(probes);
@@ -109,7 +110,8 @@ final class ProbeSession {
         }
         JSONObject previous = opening && progress.exists() ? ProbeFiles.json(progress) : null;
         boolean compatible = previous != null && VERSION.equals(previous.optString("probe_version"))
-                && autorun.optString("session").equals(previous.optString("session"));
+                && autorun.optString("session").equals(previous.optString("session"))
+                && planCompatible(previous.optInt("batch"));
         boolean resume = compatible && !previous.optBoolean("complete");
         if (opening && compatible) batch = previous.optInt("batch");
         if (opening && !automatic) {
@@ -294,6 +296,16 @@ final class ProbeSession {
             }
         }
         return ids;
+    }
+
+    private boolean planCompatible(int savedBatch) throws JSONException, IOException {
+        File file = plan(savedBatch);
+        if (!file.isFile()) return false;
+        JSONArray ids = ProbeFiles.json(file).getJSONArray("selected");
+        for (int i = 0; i < ids.length(); i++) {
+            if (!probes.containsKey(ids.getString(i))) return false;
+        }
+        return true;
     }
 
     private void restore(JSONObject previous) throws JSONException, IOException {

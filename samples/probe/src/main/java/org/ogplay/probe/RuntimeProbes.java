@@ -20,8 +20,6 @@ import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
 import java.nio.channels.FileChannel;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Timer;
@@ -38,10 +36,6 @@ import java.util.zip.Deflater;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.Inflater;
-import javax.crypto.Cipher;
-import javax.crypto.Mac;
-import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import org.json.JSONArray;
 import org.json.JSONException;
 
@@ -53,7 +47,7 @@ final class RuntimeProbes {
         threads(probes);
         classes(probes);
         ResourceTableProbes.register(probes);
-        crypto(probes);
+        codecs(probes);
         buffers(probes);
         network(probes);
     }
@@ -276,62 +270,7 @@ final class RuntimeProbes {
         });
     }
 
-    private static void crypto(Map<String, Probe> probes) {
-        final String[] hashes = {"MD5", "SHA-1", "SHA-256"};
-        final String[] vectors = {"900150983cd24fb0d6963f7d28e17f72", "a9993e364706816aba3e25717850c26c9cd0d89d",
-                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"};
-        for (int i = 0; i < hashes.length; i++) {
-            final String algorithm = hashes[i];
-            final String expected = vectors[i];
-            add(probes, new Probe("runtime.crypto." + algorithm.toLowerCase(java.util.Locale.US).replace("-", ""),
-                    "in_scope", false, "Ljava/security/MessageDigest;.getInstance(Ljava/lang/String;)Ljava/security/MessageDigest;",
-                    "Ljava/security/MessageDigest;.digest([B)[B") {
-                @Override Outcome run(ProbeSession session) throws Exception {
-                    String actual = hex(MessageDigest.getInstance(algorithm).digest("abc".getBytes("UTF-8")));
-                    return check(expected.equals(actual), obj("hex", actual), obj("hex", expected), algorithm + " digest of abc");
-                }
-            });
-        }
-        add(probes, new Probe("runtime.crypto.aes_cbc", "in_scope", false,
-                "Ljavax/crypto/Cipher;.getInstance(Ljava/lang/String;)Ljavax/crypto/Cipher;",
-                "Ljavax/crypto/Cipher;.init(ILjava/security/Key;Ljava/security/spec/AlgorithmParameterSpec;)V",
-                "Ljavax/crypto/Cipher;.doFinal([B)[B") {
-            @Override Outcome run(ProbeSession session) throws Exception {
-                SecretKeySpec key = new SecretKeySpec(unhex("2b7e151628aed2a6abf7158809cf4f3c"), "AES");
-                IvParameterSpec iv = new IvParameterSpec(unhex("000102030405060708090a0b0c0d0e0f"));
-                String expected = "2374fdfc3b4ffa0ba97a19327689fd5e6b861707111bb8588b9b2cf585a416f6";
-                Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-                byte[] data = "Android KitKat probe".getBytes("UTF-8");
-                cipher.init(Cipher.ENCRYPT_MODE, key, iv);
-                String encrypted = hex(cipher.doFinal(data));
-                cipher.init(Cipher.DECRYPT_MODE, key, iv);
-                boolean decrypted = Arrays.equals(cipher.doFinal(unhex(expected)), data);
-                return check(expected.equals(encrypted) && decrypted, obj("ciphertext", encrypted, "known_vector_decrypted", decrypted),
-                        obj("ciphertext", expected, "known_vector_decrypted", true), "AES-CBC with padding matches the fixed key, IV and plaintext vector");
-            }
-        });
-        add(probes, new Probe("runtime.crypto.hmac_sha1", "in_scope", false,
-                "Ljavax/crypto/Mac;.getInstance(Ljava/lang/String;)Ljavax/crypto/Mac;",
-                "Ljavax/crypto/Mac;.doFinal([B)[B") {
-            @Override Outcome run(ProbeSession session) throws Exception {
-                byte[] key = new byte[20];
-                Arrays.fill(key, (byte) 0x0b);
-                Mac mac = Mac.getInstance("HmacSHA1");
-                mac.init(new SecretKeySpec(key, "HmacSHA1"));
-                String actual = hex(mac.doFinal("Hi There".getBytes("UTF-8")));
-                String expected = "b617318655057264e28bc0b6fb378c8ef146be00";
-                return check(expected.equals(actual), obj("hex", actual), obj("hex", expected), "HMAC-SHA1 matches the known key and message vector");
-            }
-        });
-        add(probes, new Probe("runtime.crypto.secure_random", "in_scope", false, "Ljava/security/SecureRandom;.nextBytes([B)V") {
-            @Override Outcome run(ProbeSession session) throws Exception {
-                byte[] buf = new byte[32];
-                new SecureRandom().nextBytes(buf);
-                boolean nonzero = !Arrays.equals(buf, new byte[32]);
-                return check(nonzero, obj("nonzero", nonzero, "length", buf.length),
-                        obj("nonzero", true, "length", 32), "SecureRandom populates a zero-initialized buffer");
-            }
-        });
+    private static void codecs(Map<String, Probe> probes) {
         add(probes, new Probe("runtime.codec.base64", "in_scope", false,
                 "Landroid/util/Base64;.encodeToString([BI)Ljava/lang/String;", "Landroid/util/Base64;.decode(Ljava/lang/String;I)[B") {
             @Override Outcome run(ProbeSession session) throws Exception {

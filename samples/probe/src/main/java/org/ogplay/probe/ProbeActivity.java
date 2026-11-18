@@ -24,9 +24,9 @@ public final class ProbeActivity extends Activity {
     private static final int INK = 0xffedf3fa;
     private static final int MUTED = 0xffa6b5c4;
     private static final int ACCENT = 0xff78c6f0;
-    private static final String[] CATEGORIES = {"device", "services", "runtime", "storage", "media", "graphics", "ui", "native"};
+    private static final String[] CATEGORIES = {"device", "services", "runtime", "crypto", "storage", "media", "graphics", "ui", "native"};
     private static final int[] CATEGORY_LABELS = {R.string.category_device, R.string.category_services, R.string.category_runtime,
-            R.string.category_storage, R.string.category_media, R.string.category_graphics, R.string.category_ui, R.string.category_native};
+            R.string.category_crypto, R.string.category_storage, R.string.category_media, R.string.category_graphics, R.string.category_ui, R.string.category_native};
     private static final int[] STATUS_LABELS = {R.string.pass, R.string.fail, R.string.error, R.string.crash,
             R.string.timeout, R.string.skip, R.string.info};
 

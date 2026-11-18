@@ -114,4 +114,5 @@
     <string name="no">否</string>
     <string name="value_copied">已复制该行的值</string>
     <string name="clipboard_unavailable">剪贴板服务不可用</string>
+    <string name="category_crypto">Crypto</string>
 </resources>

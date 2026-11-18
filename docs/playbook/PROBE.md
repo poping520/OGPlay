@@ -28,6 +28,22 @@ python3 tools/conformance/probe_tests.py selftest
 
 “设备信息”无需跑过测试，进入或点击底部“刷新”时在后台独立只读采集；加载后以可滚动分区卡片展示，单个分区失败只显示该区的异常。长按行可复制值，GL 扩展和底部“查看原始数据”默认收起。截图与输入验证使用 [MCP 操作手册](MCP-TESTING.md)，指定新的 `--sandbox-dir`，不传 autorun；需要 `session_state` / `shutdown` 时加 `--diag`。
 
+## 真机校准
+
+连接可通过 `adb shell su -c` 取得 root 的 API 19 ARM 真机，在构建 APK 后执行
+
+```sh
+adb devices -l
+python3 tools/conformance/probe_tests.py device --serial <serial> --filter crypto. \
+  --out .local/probe/crypto-device
+python3 tools/conformance/probe_tests.py diff .local/probe/crypto-device/report.json \
+  .local/probe/crypto-threaded/report.json
+```
+
+runner 将 APK 推到 `/data/local/tmp/`，经 root 的 `pm install -r` 安装，在外部存储下发 autorun，启动首页并等待同 session 的完成检查点。在空的 `--out` 中写入 `report.json`、`summary.md` 和原始 APK 报告。真机使用实际配置，`expect` 为空，无 OGPlay ledger。默认总时限为 3600 秒，可用 `--timeout` 调整。旧版 BC 首次生成默认 DH 密钥对时需搜索 1024 位安全素数，可能耗时数分钟。
+
+Crypto 的清单记录各 provider 发布的服务，实际变换和语义看对应判据。差分同时包含 provider 名、生成的随机 IV 和其他观测值，能力回归按状态和首个失败判据判断。AndroidKeyStore 依赖进程外守护服务，记在清单的范围说明中。SSLContext 探针只调用查找和初始化。
+
 ## 取证与续跑
 
 - `report.json` 合并 APK 结果、恢复的日志结果、启动报告和 ledger。每项保留结构化实测和预期值、状态、调用表及异常原因和栈。

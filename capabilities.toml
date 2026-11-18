@@ -546,8 +546,8 @@ note = "VFS 为任何存在的路径按规范路径归属卷；data/sdcard 共�
 
 [runtime.jni]
 status = "complete"
-test = "tests/runtime/headless_jni_contract_tests.cpp"
-note = "M3 范围完成：233 槽 ABI 全冻结，208 个常用 JNIEnv 与 4 个 JavaVM 槽有真实行为，低频槽继续可观测 trap；累计样本覆盖双向调用、引用、异常及 native 工作线程 attach/HLE callback/detach"
+test = "tests/runtime/headless_jni_contract_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp#DexVM exposes canonical array classes across JNI and Java"
+note = "M3 范围覆盖双向调用、引用、异常及 native 工作线程 attach/HLE callback/detach。233 个 JNIEnv 槽 ABI 固定，未绑定槽可观测。DexVM 提供数组描述符解析、类关系和继承成员查询，NewObjectArray 支持数组元素类。独立 JNI 会话的类查询限于已注册的对象类。"
 
 [runtime.jni_legacy_app_bug_compat]
 status = "complete"
@@ -832,7 +832,7 @@ note = "NewString/Length/Region 保留码元和输入预检；Chars/Critical 返
 [runtime.jni_guest_arrays]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/jni_object_array_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "ADR-0152 / 阶段 3：八类 New/Region/Elements 与 PrimitiveCritical 共用数组 authority；Elements/Critical 直接返回 guest payload、FALSE，数组身份 pin 是跨线程 GC 强根。Release 按 Dalvik 忽略 elems/kind，COMMIT 无操作，其余 mode 解除一次 pin；无配对仅 warn/ledger，>10 首次告警。Object[] 身份与 VM 赋值兼容性不变。"
+note = "ADR-0152 / 阶段 3：八类 New/Region/Elements 与 PrimitiveCritical 共用数组 authority；Elements/Critical 直接返回 guest payload、FALSE，数组身份 pin 是跨线程 GC 强根。Release 按 Dalvik 忽略 elems/kind，COMMIT 无操作，其余 mode 解除一次 pin；无配对仅 warn/ledger，>10 首次告警。NewObjectArray 支持 DexVM 数组元素类，数组间赋值复用 VM 类型检查。"
 
 [runtime.jni_guest_nonvirtual_calls]
 status = "complete"

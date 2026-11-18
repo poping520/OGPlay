@@ -300,7 +300,13 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& e
                                                   frame.thread_id, "exception message");
             const std::vector<std::uint8_t> encoded(message.begin(), message.end());
             static_cast<void>(DecodeJniModifiedUtf8(encoded));
-            environment.ThrowNew(frame.thread_id, *java_class, message);
+            if (java_class->domain == JniObjectDomain::dex_vm && classes.ClassName(*java_class).starts_with('[')) {
+                // Dalvik Exception.cpp:initException falls back when the exception class has no constructor.
+                jni_guest_detail::ThrowJavaError(environment, classes, frame.thread_id, "java/lang/RuntimeException",
+                                                 "re-throw on exception class missing constructor");
+            } else {
+                environment.ThrowNew(frame.thread_id, *java_class, message);
+            }
             return Int(static_cast<JniInt>(JniStatus::ok));
         });
     dispatcher.BindEnvironment(EnvironmentSlot("ExceptionOccurred"), [&environment](const JniGuestCallFrame& frame) {

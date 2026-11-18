@@ -19,6 +19,9 @@ Bionic、syscall、execution 或 integration。
 - `JniClassRegistry::FindClass` 为被动查询；`ResolveClass` 可经 owner 的显式 resolver
   按需链接/发布类。显式类查询和成员查找可请求 owner 补齐延迟发布的类成员，
   继承搜索按原声明顺序进行。回调在注册表锁外执行，owner 负责串行发布，并在停止调用后撤销。
+- 有 DexVM 时，`ResolveClass` 接受数组描述符，返回 VM 的 `Class` 对象身份。
+  数组类的名称、父类、接口、类型关系和方法查询由显式 owner hooks 提供，沿用同一引用表和 JNI 成员 ID。
+  无 DexVM 的独立会话中，类查询仅支持已注册的对象类。
 - `ThrowNew` 可由 owner 的 ThrowableFactory 发布真实 local Throwable，保留异常类/消息
   元数据；无 VM 时保留独立 JNI 表示。factory 在锁外执行，真实新抛出的异常可按 Dalvik 替换原 pending。
 - 字段 owner 用 `JniFieldAccessPending` 表示已挂起 Java 异常；禁止据此回落零值侧表。

@@ -458,7 +458,7 @@ public:
     [[nodiscard]] JniObjectIdentity JniClassIdentity(const dx::DexClassId java_class) {
         const auto& linked = linker.Class(java_class);
         if (linked.is_array) {
-            return {JniObjectDomain::dex_vm, java_class.Value()};
+            return model->ToIdentity(model->ClassObject(java_class));
         }
         // Value transport needs the stable class identity, not a fresh scan of
         // every method and field on each object-array store. JNI resolution
@@ -469,11 +469,6 @@ public:
     }
 
     [[nodiscard]] dx::DexClassId DexClassIdentity(const JniObjectIdentity identity) const {
-        if (identity.domain == JniObjectDomain::dex_vm) {
-            const auto java_class = dx::DexClassId(static_cast<std::uint32_t>(identity.value));
-            static_cast<void>(linker.Class(java_class));
-            return java_class;
-        }
         if (const auto type = ClassForJniIdentity(identity)) return *type;
         throw DexVmBridgeError("JNI class identity is not published in DexVM");
     }
@@ -482,8 +477,51 @@ public:
         if (identity.domain == JniObjectDomain::host) {
             const auto found = native_class_ids.find(identity.value);
             if (found != native_class_ids.end()) return found->second;
+        } else {
+            const auto ref = model->FindIdentity(identity);
+            if (ref.IsValid() && model->Kind(ref) == dx::VmObjectKind::class_object) {
+                const auto type = model->ClassOfClassObject(ref);
+                if (linker.Class(type).is_array) return type;
+            }
         }
         return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<bool> JniAssignable(JniObjectIdentity target, JniObjectIdentity source) {
+        const dx::VmExecutionLockScope guard(vm->ExecutionLock());
+        const auto target_class = ClassForJniIdentity(target);
+        const auto source_class = ClassForJniIdentity(source);
+        if (!target_class || !source_class) return std::nullopt;
+        return linker.IsAssignable(*target_class, *source_class);
+    }
+
+    [[nodiscard]] std::optional<JniExternalClassInfo> DescribeJniArrayClass(JniObjectIdentity identity) {
+        const dx::VmExecutionLockScope guard(vm->ExecutionLock());
+        const auto type = ClassForJniIdentity(identity);
+        if (!type) return std::nullopt;
+        const auto& linked = linker.Class(*type);
+        JniExternalClassInfo info{.name = linked.descriptor};
+        if (linked.super) info.superclass = JniClassIdentity(*linked.super);
+        for (const auto descriptor : {"Ljava/lang/Cloneable;", "Ljava/io/Serializable;"}) {
+            info.interfaces.push_back(JniClassIdentity(linker.ResolveDescriptor(descriptor)));
+        }
+        return info;
+    }
+
+    [[nodiscard]] std::optional<JniMethodId> FindJniArrayMethod(JniObjectIdentity identity, const std::string& name,
+                                                                const std::string& descriptor, bool is_static) {
+        const dx::VmExecutionLockScope guard(vm->ExecutionLock());
+        const auto type = DexClassIdentity(identity);
+        std::optional<dx::VmMethodId> method;
+        if (is_static) {
+            method = linker.FindDirectMethod(type, name, descriptor);
+        } else if (const auto index = linker.FindVtableIndex(type, name, descriptor)) {
+            // Dalvik Jni.cpp:1627-1651 and oo/Array.cpp:354-373: arrays share Object's vtable.
+            method = linker.Class(type).vtable[*index];
+        }
+        if (!method || linker.Method(*method).is_static != is_static) return std::nullopt;
+        const auto owner = RegisterClassForNative(linker.Method(*method).owner);
+        return session->Classes().GetMethodId(owner, name, descriptor, is_static);
     }
 
     [[nodiscard]] dx::DexClassId ObjectClassIdentity(const JniObjectIdentity identity) const {
@@ -642,6 +680,7 @@ public:
                                                                 const std::uint64_t thread) {
         const auto java_class = ClassForJniIdentity(identity);
         if (!java_class.has_value()) return std::nullopt;
+        if (linker.Class(*java_class).is_array) return true;
         const auto outcome = vm->EnsureClassInitialized(ContextForJniThread(thread), *java_class);
         if (!outcome.exception.IsValid()) return true;
         session->Environment().Throw(thread, PublishLocal(outcome.exception, thread));
@@ -651,8 +690,7 @@ public:
     [[nodiscard]] JniReference AllocJniObject(std::uint64_t thread, JniReference class_ref) {
         const auto identity = session->Environment().ResolveObjectForHle(thread, class_ref);
         if (!identity) throw DexVmBridgeError("AllocObject requires a class reference");
-        const auto type = identity->domain == JniObjectDomain::dex_vm ? std::optional{DexClassIdentity(*identity)}
-                                                                      : ClassForJniIdentity(*identity);
+        const auto type = ClassForJniIdentity(*identity);
         if (!type) throw DexVmBridgeError("AllocObject reference is not a VM class");
         JniReference reference;
         vm->RunInExecutionContext(ContextForJniThread(thread), [&] {
@@ -1622,18 +1660,18 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
         });
     impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);
     RegisterAndroidSchedulerStateTable(*impl_->vm, android_context);
-    session.Objects().ObjectArrays().SetAssignability(
-        [bridge_state](JniObjectIdentity target, JniObjectIdentity source) -> std::optional<bool> {
-            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
-            const auto resolve = [bridge_state](JniObjectIdentity identity) -> std::optional<dx::DexClassId> {
-                return identity.domain == JniObjectDomain::dex_vm ? bridge_state->DexClassIdentity(identity)
-                                                                  : bridge_state->ClassForJniIdentity(identity);
-            };
-            const auto target_class = resolve(target);
-            const auto source_class = resolve(source);
-            if (!target_class || !source_class) return std::nullopt;
-            return bridge_state->linker.IsAssignable(*target_class, *source_class);
-        });
+    const auto is_assignable = [bridge_state](JniObjectIdentity target, JniObjectIdentity source) {
+        return bridge_state->JniAssignable(target, source);
+    };
+    session.Objects().ObjectArrays().SetAssignability(is_assignable);
+    session.Classes().SetExternalClassHooks({
+        [bridge_state](JniObjectIdentity identity) { return bridge_state->DescribeJniArrayClass(identity); },
+        is_assignable,
+        [bridge_state](JniObjectIdentity identity, const std::string& name, const std::string& descriptor,
+                       bool is_static) {
+            return bridge_state->FindJniArrayMethod(identity, name, descriptor, is_static);
+        },
+    });
     session.Environment().SetReflectionHooks(
         JniReflectionHooks{[bridge_state](std::uint64_t thread, JniReference object) {
                                const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
@@ -1894,11 +1932,16 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
     });
     session.Classes().SetClassResolver([bridge_state](const std::string& name) -> std::optional<JniObjectIdentity> {
         const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
-        if (!IsValidJniObjectClassName(name)) return std::nullopt;
+        const bool is_array = name.starts_with('[');
+        if (!is_array && !IsValidJniObjectClassName(name)) return std::nullopt;
         try {
-            const auto java_class = bridge_state->linker.ResolveDescriptor("L" + name + ";");
+            if (is_array) static_cast<void>(ParseJniFieldDescriptor(name));
+            const auto java_class = bridge_state->linker.ResolveDescriptor(is_array ? name : "L" + name + ";");
             bridge_state->linker.EnsureClassLinked(java_class);
+            if (is_array) return bridge_state->JniClassIdentity(java_class);
             return bridge_state->RegisterClassForNative(java_class);
+        } catch (const JniSignatureError&) {
+            return std::nullopt;
         } catch (const dx::JavaLinkageError& error) {
             const auto error_class = bridge_state->linker.ResolveDescriptor(error.Descriptor());
             const auto thread = bridge_state->ProcessThreadForToken(bridge_state->vm->CurrentContextToken());
@@ -1965,6 +2008,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
             session.Environment().SetExceptionDescriber({});
             session.Environment().SetThrowableFactory({});
             session.Classes().SetClassResolver({});
+            session.Classes().SetExternalClassHooks({});
             session.Classes().SetMemberLoader({});
             session.Objects().ObjectArrays().SetAssignability({});
             session.Objects().SetRuntimeClassResolver({});
@@ -2076,6 +2120,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->session->DirectBuffers() = {};
         impl_->session->Environment().SetObjectAllocationHook({});
         impl_->session->Classes().SetClassResolver({});
+        impl_->session->Classes().SetExternalClassHooks({});
         impl_->session->Classes().SetMemberLoader({});
         impl_->session->Environment().SetExceptionDescriber({});
         impl_->session->Environment().SetThrowableFactory({});

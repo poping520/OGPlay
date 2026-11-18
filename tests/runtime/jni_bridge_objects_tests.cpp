@@ -19,6 +19,7 @@
 #include <thread>
 #include <iterator>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -452,16 +453,14 @@ TEST_CASE("DVM-231 JNI-created strings and arrays expose their actual runtime cl
         for (std::size_t index = 0; index < names.size(); ++index) {
             const auto array = JniReference{call(names[index], 2)};
             const auto native_class = *env.ResolveObjectForHle(1, JniReference{call("GetObjectClass", array.Value())});
-            CHECK(native_class ==
-                  JniObjectIdentity{JniObjectDomain::dex_vm, linker.ResolveDescriptor(descriptors[index]).Value()});
+            CHECK(native_class == model.ToIdentity(model.ClassObject(linker.ResolveDescriptor(descriptors[index]))));
             const auto imported = f.bridge->FromReference(array);
             CHECK(linker.Class(model.ObjectClass(imported)).descriptor == descriptors[index]);
             CHECK(model.ArrayLength(imported) == 2);
         }
         const auto array = JniReference{call("NewObjectArray", 1, class_ref.Value(), utf)};
         const auto array_class = *env.ResolveObjectForHle(1, JniReference{call("GetObjectClass", array.Value())});
-        CHECK(array_class ==
-              JniObjectIdentity{JniObjectDomain::dex_vm, linker.ResolveDescriptor("[Ljava/lang/String;").Value()});
+        CHECK(array_class == model.ToIdentity(model.ClassObject(linker.ResolveDescriptor("[Ljava/lang/String;"))));
         CHECK(call("GetObjectArrayElement", array.Value(), 0) != 0);
         const auto global = env.NewGlobalRef(1, JniReference{fresh});
         static_cast<void>(env.PopLocalFrame(1));
@@ -480,6 +479,134 @@ TEST_CASE("DVM-231 JNI-created strings and arrays expose their actual runtime cl
         CHECK_THROWS_AS(static_cast<void>(call("GetObjectClass", forged.Value())), JniGuestBindingError);
         f.bridge.reset();
         CHECK_THROWS_AS(static_cast<void>(objects.ClassOf(f.session->Strings().Create({}))), JniGuestBindingError);
+    }
+}
+
+TEST_CASE("DexVM exposes canonical array classes across JNI and Java") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess fixture(backend);
+        auto& bridge = *fixture.bridge;
+        auto& process = fixture.session->Process();
+        auto& vm = bridge.Vm();
+        auto& linker = bridge.Linker();
+        auto& model = bridge.Model();
+        const auto memory = process.GuestMemoryAccess();
+        const auto scratch = memory.allocate(512);
+        const auto write = [&](const std::string& value, std::uint32_t offset = 0) {
+            const auto address = scratch.Add(offset);
+            memory.write(address, std::as_bytes(std::span{value.c_str(), value.size() + 1}));
+            return address.Value();
+        };
+        const auto call = [&](const char* slot, std::uint32_t a = 0, std::uint32_t b = 0, std::uint32_t c = 0) {
+            return process
+                .Invoke(
+                    {memory::GuestAddress{EnvironmentThunk(slot)}, {process.GuestEnvironment().Value(), a, b, c}, {}})
+                .return_value;
+        };
+        const auto find = [&](const std::string& name) { return call("FindClass", write(name)); };
+        const auto same = [&](std::uint32_t a, std::uint32_t b) { return call("IsSameObject", a, b) == 1; };
+        const auto expect_exception = [&](const char* descriptor) {
+            const auto exception = JniReference{call("ExceptionOccurred")};
+            REQUIRE_FALSE(exception.IsNull());
+            const auto type = model.ObjectClass(bridge.FromReference(exception));
+            CHECK(linker.Class(type).descriptor == descriptor);
+            call("ExceptionClear");
+        };
+
+        const auto byte_class = find("[B");
+        const auto int_class = find("[I");
+        const auto strings_class = find("[Ljava/lang/String;");
+        const auto objects_class = find("[Ljava/lang/Object;");
+        const auto object_class = find("java/lang/Object");
+        const auto class_class = find("java/lang/Class");
+        const auto strings = call("NewObjectArray", 1, find("java/lang/String"));
+        const auto bytes = call("NewByteArray", 1);
+        const auto ints = call("NewIntArray", 1);
+        REQUIRE(byte_class != 0);
+        REQUIRE(strings_class != 0);
+        CHECK(same(byte_class, call("GetObjectClass", bytes)));
+        CHECK(same(strings_class, call("GetObjectClass", strings)));
+        CHECK(same(object_class, call("GetSuperclass", byte_class)));
+        CHECK(same(class_class, call("GetObjectClass", byte_class)));
+
+        CHECK(call("IsAssignableFrom", strings_class, objects_class) == 1);
+        CHECK(call("IsAssignableFrom", objects_class, strings_class) == 0);
+        CHECK(call("IsAssignableFrom", byte_class, int_class) == 0);
+        CHECK(call("IsAssignableFrom", byte_class, objects_class) == 0);
+        CHECK(call("IsInstanceOf", strings, objects_class) == 1);
+        CHECK(call("IsInstanceOf", ints, byte_class) == 0);
+        CHECK(call("IsInstanceOf", 0, byte_class) == 1);
+        for (const auto parent : {object_class, find("java/lang/Cloneable"), find("java/io/Serializable")}) {
+            CHECK(call("IsAssignableFrom", byte_class, parent) == 1);
+            CHECK(call("IsInstanceOf", bytes, parent) == 1);
+        }
+
+        const auto matrix = call("NewObjectArray", 2, byte_class, bytes);
+        REQUIRE(matrix != 0);
+        const auto matrix_class = find("[[B");
+        CHECK(same(matrix_class, call("GetObjectClass", matrix)));
+        CHECK(call("IsAssignableFrom", matrix_class, objects_class) == 1);
+        CHECK(same(bytes, call("GetObjectArrayElement", matrix, 0)));
+        call("SetObjectArrayElement", matrix, 1, 0);
+        CHECK(call("GetObjectArrayElement", matrix, 1) == 0);
+        call("SetObjectArrayElement", matrix, 1, bytes);
+        CHECK(same(bytes, call("GetObjectArrayElement", matrix, 1)));
+        call("SetObjectArrayElement", matrix, 1, ints);
+        expect_exception("Ljava/lang/ArrayStoreException;");
+        CHECK(same(bytes, call("GetObjectArrayElement", matrix, 1)));
+        call("SetObjectArrayElement", matrix, 2, ints);
+        expect_exception("Ljava/lang/ArrayIndexOutOfBoundsException;");
+        CHECK(call("NewObjectArray", 1, byte_class, ints) == 0);
+        expect_exception("Ljava/lang/ArrayStoreException;");
+
+        const auto java_array = linker.ResolveDescriptor("Ljava/lang/reflect/Array;");
+        const auto get_element = linker.FindDirectMethod(java_array, "get", "(Ljava/lang/Object;I)Ljava/lang/Object;");
+        REQUIRE(get_element);
+        const auto java_matrix = bridge.FromReference(JniReference{matrix});
+        CHECK(linker.Class(model.ObjectClass(java_matrix)).descriptor == "[[B");
+        const auto loaded = vm.Call(*get_element, std::array{VmValue::Ref(java_matrix), VmValue::Int(1)});
+        REQUIRE_FALSE(loaded.exception.IsValid());
+        CHECK(loaded.value.ref == bridge.FromReference(JniReference{bytes}));
+
+        const auto name = write("getClass");
+        const auto signature = write("()Ljava/lang/Class;", 320);
+        const auto method = call("GetMethodID", byte_class, name, signature);
+        REQUIRE(method != 0);
+        CHECK(method == call("GetMethodID", object_class, name, signature));
+        CHECK(same(byte_class, call("CallObjectMethod", bytes, method)));
+        CHECK(call("GetMethodID", byte_class, write("<init>"), write("()V", 320)) == 0);
+        expect_exception("Ljava/lang/NoSuchMethodError;");
+        CHECK(call("GetFieldID", byte_class, write("length"), write("I", 320)) == 0);
+        expect_exception("Ljava/lang/NoSuchFieldError;");
+
+        const auto global = call("NewGlobalRef", byte_class);
+        REQUIRE(global != 0);
+        call("DeleteLocalRef", byte_class);
+        CHECK(same(global, find("[B")));
+        const auto mirror = bridge.FromReference(JniReference{global});
+        CHECK(model.ClassOfClassObject(mirror) == linker.ResolveDescriptor("[B"));
+        CHECK(call("MonitorEnter", global) == 0);
+        CHECK(vm.Monitors().Snapshot(mirror).owner != 0);
+        CHECK(call("MonitorExit", global) == 0);
+        const auto get_name = call("GetMethodID", class_class, write("getName"), write("()Ljava/lang/String;", 320));
+        REQUIRE(get_name != 0);
+        const auto java_name = bridge.FromReference(JniReference{call("CallObjectMethod", global, get_name)});
+        CHECK(vm.StringUtf8(java_name) == "[B");
+        CHECK(call("ThrowNew", global, write("array class")) == 0);
+        expect_exception("Ljava/lang/RuntimeException;");
+        call("DeleteGlobalRef", global);
+
+        for (const auto* invalid : {"[", "[V", "[IB", "[Ljava/lang/String", "[Ljava/lang/NoSuchArrayComponent;"}) {
+            CHECK(find(invalid) == 0);
+            expect_exception("Ljava/lang/NoClassDefFoundError;");
+        }
+        CHECK(find(std::string(255, '[') + 'I') != 0);
+        CHECK(find(std::string(256, '[') + 'I') == 0);
+        expect_exception("Ljava/lang/NoClassDefFoundError;");
+        memory.release(scratch, 512);
     }
 }
 

@@ -172,8 +172,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 193852,
-      "sha256": "34de5b84655b64563cf4fb973b1c499b9e9f501a2c33144018f0397a42ebfe9e",
+      "size": 193740,
+      "sha256": "4f0fbc914acb3da2dd707fcaf74f07d7567fb4211c578e506842ed95310930fe",
       "soname": "libogplay_jni.so",
       "needed": [
         "libssl.so",
@@ -197,7 +197,7 @@
           },
           {
             "path": "src/guest/crypto/rsa_jni.c",
-            "sha256": "04c87ad2268686bc8da4c68ff1db3297f25e44cb0759efda68ececdb1e13092b"
+            "sha256": "832fd04922ff19e44f8b9c4cd08f076997503278dbea47a3c55f7c0176ff2a12"
           },
           {
             "path": "src/guest/crypto/trust_jni.c",
@@ -349,13 +349,13 @@
   },
   "boot_classpath": {
     "path": "framework/bootdex.jar",
-    "size": 7578819,
-    "sha256": "e529c5edcbc2e23c6ee0036f9212ca37872f81643b9689a81d24ab0dc3f02b7a",
+    "size": 7578631,
+    "sha256": "bc10c01a3b6561b7b924e687db0580bc811cdc50857cab57d6694515f7ba58e9",
     "dex": [
       {
         "entry": "classes.dex",
-        "size": 143496,
-        "sha256": "37fe5ab4390c14d6948cdcbd4d6d441ed91b759bd9070532b54c5bcd5a78ce8b",
+        "size": 143308,
+        "sha256": "0629720464d5ae38baf85c3c146f54c5649f2990949292be19c971d620c25b14",
         "sources": {
           "roots": [
             "src/guest/crypto/java",
@@ -366,7 +366,7 @@
             "src/guest/xml/java",
             "src/guest/zip/java"
           ],
-          "sha256": "8eed2cb868392fd6f0b9440c27d64ddf2bf18c2507f8b8d3e0da7462fe67a024",
+          "sha256": "409271f467e3a51d731d7dc0e4120a3f39d1a619d5240f0a25dbb81f1e832739",
           "javac": "17.0.18",
           "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
           "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"

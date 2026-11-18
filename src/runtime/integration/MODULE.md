@@ -184,6 +184,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   native/服务显式绑定，ROM 普通 Java 原样执行；存量替换/覆盖按阶段移除，新代码不得增加。已迁移平台类由 VM 发布 JNI，禁止同名 HLE 遮蔽；
   无 VM 的 native/HLE 会话不保留旧替身，独立 headless 契约和应用兼容回调除外。
 - String 复用 VM 对象身份，primitive/object array 复用会话 store；jclass 双向规范化为同一 ClassObject。
+  数组 jclass 直接使用 ClassObject 的 DexVM 对象身份，JNI 类型查询、引用往返和 monitor 共用该对象。
   PublishLocal 用 EnsureRegistered 原子幂等发布真实类，GC 同步清扫 registry；不为所有
   APK 类预占 global ref，只有 static native 出向的 jclass 按需缓存，发布使用调用线程身份。
   JNI 创建的 String 和数组首次类型查询在执行锁内登记真实类，数组按需导入。
@@ -194,9 +195,10 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - JNI 类解析遇 guest linkage failure 时在当前调用线程发布原 Java 错误，再返回空身份；
   真实内部错误继续传播，不能把它当作查询未命中。
 - 类注册保留完整父类/direct interface 图；interface MethodID 在实际 receiver 上虚派。
-  JNI 数组兼容/IsAssignableFrom 复用 linker 的类、接口、数组协变与 primitive 规则；
+  数组存储和涉及数组类的 IsAssignableFrom 复用 linker 的类、接口、数组协变与 primitive 规则；
   任一侧不属于 VM 返回 nullopt 保留 JNI 校验，不能无条件放行或把不相等视作不兼容。
-  兼容回调在数组锁外、VM 执行锁内运行，guest 线程停止后撤销。
+  数组的继承方法使用 linker vtable 并返回声明类现有的 JNI 成员 ID。
+  类查询与兼容回调在 registry/store 锁外、VM 执行锁内运行，guest 线程停止后撤销。
 - DEX 字段以稳定 JniFieldId→VmFieldId 访问同一 instance/static 槽；GetFieldID 先 clinit，
   引用按调用线程转换 local ref。未接管 HLE 字段仍归 JniFieldStore，不建 DEX 影子存储。
 - native 出向按 descriptor 编 A32 soft-float 帧：r0=JNIEnv、r1=receiver/jclass，64 位偶对齐、

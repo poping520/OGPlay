@@ -229,26 +229,37 @@ public:
                    : std::optional<JniObjectIdentity>{found->second};
     }
 
-  [[nodiscard]] std::string ClassName(
-      const JniObjectIdentity java_class) const {
+    [[nodiscard]] std::string ClassName(const JniObjectIdentity java_class) const {
+        if (java_class.domain != JniObjectDomain::host) return DescribeExternalClass(java_class).name;
         std::scoped_lock lock(mutex_);
         return RequireClass(java_class).name;
     }
 
-  [[nodiscard]] std::optional<JniObjectIdentity>
-  Superclass(const JniObjectIdentity java_class) const {
+    [[nodiscard]] std::optional<JniObjectIdentity> Superclass(const JniObjectIdentity java_class) const {
+        if (java_class.domain != JniObjectDomain::host) return DescribeExternalClass(java_class).superclass;
         std::scoped_lock lock(mutex_);
         return RequireClass(java_class).superclass;
     }
 
-  [[nodiscard]] std::vector<JniObjectIdentity>
-  Interfaces(const JniObjectIdentity java_class) const {
+    [[nodiscard]] std::vector<JniObjectIdentity> Interfaces(const JniObjectIdentity java_class) const {
+        if (java_class.domain != JniObjectDomain::host) return DescribeExternalClass(java_class).interfaces;
         std::scoped_lock lock(mutex_);
         return RequireClass(java_class).interfaces;
     }
 
     [[nodiscard]] bool Assignable(const JniObjectIdentity target,
                                   JniObjectIdentity source) const {
+        if (target.domain != JniObjectDomain::host || source.domain != JniObjectDomain::host) {
+            decltype(external_class_hooks_.is_assignable) is_assignable;
+            {
+                std::scoped_lock lock(mutex_);
+                is_assignable = external_class_hooks_.is_assignable;
+            }
+            if (is_assignable) {
+                if (const auto result = is_assignable(target, source)) return *result;
+            }
+            UnknownClass();
+        }
         std::scoped_lock lock(mutex_);
         static_cast<void>(RequireClass(target));
         std::vector<JniObjectIdentity> pending{source};
@@ -275,6 +286,12 @@ public:
         ValidateMemberName(name);
         static_cast<void>(ParseJniMethodDescriptor(descriptor));
         std::unique_lock lock(mutex_);
+        if (java_class.domain != JniObjectDomain::host) {
+            const auto find_method = external_class_hooks_.find_method;
+            lock.unlock();
+            static_cast<void>(DescribeExternalClass(java_class));
+            return find_method ? find_method(java_class, name, descriptor, is_static) : std::nullopt;
+        }
         const bool constructor = name == "<init>";
         if (!constructor && RequireClass(java_class).is_interface) {
             std::vector<JniObjectIdentity> pending{java_class};
@@ -317,6 +334,12 @@ public:
                                                 const bool is_static) const {
         ValidateMemberName(name);
         static_cast<void>(ParseJniFieldDescriptor(descriptor));
+        if (java_class.domain != JniObjectDomain::host) {
+            const auto info = DescribeExternalClass(java_class);
+            if (!info.superclass) return std::nullopt;
+            // Array mirrors declare no fields. The ordinary search handles Object's fields.
+            java_class = *info.superclass;
+        }
         std::unique_lock lock(mutex_);
         const MemberKey key{name, descriptor};
         const auto declared_field = [&](const ClassEntry& entry) {
@@ -386,6 +409,18 @@ public:
     }
 
 private:
+    [[nodiscard]] JniExternalClassInfo DescribeExternalClass(const JniObjectIdentity identity) const {
+        decltype(external_class_hooks_.describe) describe;
+        {
+            std::scoped_lock lock(mutex_);
+            describe = external_class_hooks_.describe;
+        }
+        if (describe) {
+            if (auto info = describe(identity)) return std::move(*info);
+        }
+        UnknownClass();
+    }
+
     struct ClassEntry final {
         std::string name;
         std::optional<JniObjectIdentity> superclass;
@@ -454,6 +489,11 @@ public:
         resolver_ = std::move(resolver);
     }
 
+    void SetExternalClassHooks(JniExternalClassHooks hooks) {
+        std::scoped_lock lock(mutex_);
+        external_class_hooks_ = std::move(hooks);
+    }
+
     void SetMemberLoader(MemberLoader loader) {
         std::scoped_lock lock(mutex_);
         member_loader_ = std::move(loader);
@@ -489,6 +529,7 @@ public:
     }
 private:
     ClassResolver resolver_;
+    JniExternalClassHooks external_class_hooks_;
     MemberLoader member_loader_;
     mutable std::mutex mutex_;
     std::map<std::string, JniObjectIdentity> classes_by_name_;
@@ -524,6 +565,10 @@ JniClassRegistry::FindClass(const std::string &name) const {
 }
 void JniClassRegistry::SetClassResolver(ClassResolver resolver) {
     impl_->SetResolver(std::move(resolver));
+}
+
+void JniClassRegistry::SetExternalClassHooks(JniExternalClassHooks hooks) {
+    impl_->SetExternalClassHooks(std::move(hooks));
 }
 
 void JniClassRegistry::SetMemberLoader(MemberLoader loader) {

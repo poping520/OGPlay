@@ -87,6 +87,8 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   栈地址均明确失败。
   static/instance FieldID binding 只共享校验→查类→查字段骨架，storage kind 与错误上下文仍分开。
 - JNI guest FindClass 经 registry 的显式 owner resolver 按需发布真实链接类。
+  DexVM 解析数组描述符并共享 GetObjectClass 的类身份。数组类从 VM 查询父类、类型关系和
+  继承方法，缺失字段沿同一 NoSuchFieldError 路径。
   成员 ID 精确匹配描述符与 static；缺失返回 NULL，并挂起 NoSuchMethodError/NoSuchFieldError，
   缺类挂起 NoClassDefFoundError。无效引用/参数仍沿宿主绑定错误，pending 门禁不放宽。
   未实现非常量字段访问记账并挂起 UnsatisfiedLinkError；ABI 零值仅为带异常的返回哨兵，
@@ -131,14 +133,17 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   object array
   3 槽复用会话级 `JniGuestObjectRegistry::ObjectArrays()` 并验证 initial/set
   assignability；该 store 同时注入 DexVM object model，native/解释路径共享 identity
-  与元素事实。`GetArrayLength` 通过
+  与元素事实。数组类可作 `NewObjectArray` 的元素类，产物交回 Java 时为相应的多维数组。
+  存入不兼容的数组值或写入不兼容的子数组时发布 ArrayStoreException。多维数组的
+  initial 也保持 store 的类型保护。`GetArrayLength` 通过
   显式 `Contains` 区分 object/primitive store,不使用异常探测。创建后 local reference
   发布失败必须删除 semantic array。
 - nonvirtual 30 槽与 virtual/static call 共用 descriptor 驱动的 A32 word cursor、
   va_list、jvalue 与返回编码;仅按 JNI ABI 从 r3 取得 method,并从 guest 栈取得首个
   Java 参数或 V/A pointer,随后调用唯一 `JniInvocationEngine::InvokeNonvirtual` 完成
   method/class/receiver 语义。ThrowNew 完整读取并校验 Modified UTF-8 message,在
-  runtime/jni 保存 throwable identity、exception class 与 message;ExceptionDescribe 写
+  runtime/jni 保存 throwable identity、exception class 与 message。数组类缺少异常构造器，
+  按 Dalvik 的构造失败路径发布 RuntimeException。ExceptionDescribe 写
   结构化 `runtime.jni.exception` diagnostic,且不得清除或替换 pending throwable。
 - MonitorEnter/MonitorExit 只解析统一 JNIEnv reference 后进入 environment 的唯一 monitor
   backend,不返回 fake success；默认语义位于 runtime/jni，DexVM 装配时由 hooks 委托给

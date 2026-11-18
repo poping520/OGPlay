@@ -425,20 +425,9 @@ static jobject rsa_params(JNIEnv* env, jlong token, int private_key) {
     }
     const BIGNUM* params[] = {rsa->n, rsa->e, rsa->d, rsa->p, rsa->q, rsa->dmp1, rsa->dmq1, rsa->iqmp};
     int count = private_key ? 8 : 2;
-    /* The guest JNI class registry does not resolve array classes, so Java allocates byte[][]. */
-    jobject type = JNI(6, jobject (*)(JNIEnv*, const char*))(env, "org/ogplay/security/NativeArrays");
+    jobject type = JNI(6, jobject (*)(JNIEnv*, const char*))(env, "[B");
     if (!type) return 0;
-    typedef void* jmethodID;
-    jmethodID allocate =
-        JNI(113, jmethodID (*)(JNIEnv*, jobject, const char*, const char*))(env, type, "newByteArrays", "(I)[[B");
-    if (!allocate) return 0;
-
-    union {
-        jlong wide;
-        int integer;
-    } args[] = {{.integer = count}}; /* jvalue is an 8-byte union on ARM. */
-
-    jobject output = JNI(116, jobject (*)(JNIEnv*, jobject, jmethodID, const void*))(env, type, allocate, args);
+    jobject output = JNI(172, jobject (*)(JNIEnv*, int, jobject, jobject))(env, count, type, 0);
     if (!output) return 0;
     for (int i = 0; i < count; ++i) {
         if (!params[i]) continue;

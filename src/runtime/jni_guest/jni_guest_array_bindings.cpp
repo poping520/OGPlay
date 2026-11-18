@@ -373,7 +373,17 @@ void BindJniGuestArraySlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& 
         static_cast<void>(classes.IsAssignableFrom(element_class, element_class));
         const auto initial =
             ResolveObjectValue(environment, classes, strings, objects, frame, frame.registers[3], "NewObjectArray");
-        const auto identity = object_arrays.New(element_class, length, initial);
+        JniObjectIdentity identity;
+        try {
+            identity = object_arrays.New(element_class, length, initial);
+        } catch (const JniObjectArrayError& error) {
+            if (element_class.domain != JniObjectDomain::dex_vm ||
+                error.Reason() != JniObjectArrayErrorReason::incompatible_element)
+                throw;
+            jni_guest_detail::ThrowJavaError(environment, classes, frame.thread_id, "java/lang/ArrayStoreException",
+                                             error.what());
+            return Word(0U);
+        }
         try {
             return Word(environment.PublishLocalObject(frame.thread_id, identity).Value());
         } catch (...) {
@@ -402,9 +412,30 @@ void BindJniGuestArraySlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& 
     dispatcher.BindEnvironment(Slot("SetObjectArrayElement"), [&environment, &classes, &strings, &objects,
                                                                &object_arrays](const JniGuestCallFrame& frame) {
         const auto array = Resolve(environment, frame, frame.registers[1], "SetObjectArrayElement");
+        const auto index = std::bit_cast<JniSize>(frame.registers[2]);
+        const auto element_class = object_arrays.ElementClass(array);
+        // Dalvik Jni.cpp:2300-2320 checks bounds before compatibility.
+        if (element_class.domain == JniObjectDomain::dex_vm) {
+            const auto length = object_arrays.Length(array);
+            if (index < 0 || index >= length) {
+                jni_guest_detail::ThrowJavaError(
+                    environment, classes, frame.thread_id, "java/lang/ArrayIndexOutOfBoundsException",
+                    "length=" + std::to_string(length) + "; index=" + std::to_string(index));
+                return JniGuestCallResult{};
+            }
+        }
         const auto value = ResolveObjectValue(environment, classes, strings, objects, frame, frame.registers[3],
                                               "SetObjectArrayElement");
-        object_arrays.Set(array, std::bit_cast<JniSize>(frame.registers[2]), value);
+        try {
+            object_arrays.Set(array, index, value);
+        } catch (const JniObjectArrayError& error) {
+            if (error.Reason() != JniObjectArrayErrorReason::incompatible_element ||
+                (element_class.domain != JniObjectDomain::dex_vm &&
+                 (!value || value->java_class.domain != JniObjectDomain::dex_vm)))
+                throw;
+            jni_guest_detail::ThrowJavaError(environment, classes, frame.thread_id, "java/lang/ArrayStoreException",
+                                             error.what());
+        }
         return JniGuestCallResult{};
     });
 }

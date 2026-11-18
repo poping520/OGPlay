@@ -36,6 +36,19 @@ struct JniClassDeclaration final {
     bool is_interface{};
 };
 
+struct JniExternalClassInfo final {
+    std::string name;
+    std::optional<JniObjectIdentity> superclass;
+    std::vector<JniObjectIdentity> interfaces;
+};
+
+struct JniExternalClassHooks final {
+    std::function<std::optional<JniExternalClassInfo>(JniObjectIdentity)> describe;
+    std::function<std::optional<bool>(JniObjectIdentity target, JniObjectIdentity source)> is_assignable;
+    std::function<std::optional<JniMethodId>(JniObjectIdentity, const std::string&, const std::string&, bool)>
+        find_method;
+};
+
 struct JniResolvedMethod final {
     JniObjectIdentity declaring_class;
     JniMethodId id;
@@ -93,6 +106,8 @@ public:
     using ClassResolver = std::function<std::optional<JniObjectIdentity>(const std::string&)>;
     void SetClassResolver(ClassResolver resolver);
     [[nodiscard]] std::optional<JniObjectIdentity> ResolveClass(const std::string& name) const;
+    // Queries for VM-owned class mirrors run outside the registry lock.
+    void SetExternalClassHooks(JniExternalClassHooks hooks);
     // Called outside the registry lock when lookup reaches a class with deferred members.
     using MemberLoader = std::function<void(JniObjectIdentity)>;
     void SetMemberLoader(MemberLoader loader);

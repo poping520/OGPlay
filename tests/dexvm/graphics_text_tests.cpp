@@ -20,6 +20,7 @@
 #include <bit>
 #include <cmath>
 #include <doctest/doctest.h>
+#include "interpreter_backends.h"
 
 namespace {
 using namespace ogplay::test::android_value;
@@ -67,7 +68,7 @@ float Measure(AndroidValueVm& f, VmObjectRef paint, V text) {
 }
 
 TEST_CASE("ROM Paint compares widths bounds fallback and integer metrics with Skia") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         constexpr float size = 23.5F;
         const auto paint = NewPaint(f, size);
@@ -220,7 +221,7 @@ TEST_CASE("ROM Paint synthesizes missing styles and copies state independently")
 }
 
 TEST_CASE("DEX Paint metrics to Bitmap Canvas text matches host Skia pixels") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend, {}, false, "text_bitmap.dex");
         constexpr std::u16string_view text = u"Text bitmap";
         const auto bitmap =

@@ -1,6 +1,7 @@
 #include "container_traversal_fixture.h"
 #include "file_vfs_fixture.h"
 #include <bit>
+#include "interpreter_backends.h"
 
 using ogplay::test::container_traversal::ContainerVm;
 
@@ -222,7 +223,7 @@ constexpr const char* pool = "Landroid/content/res/StringBlock;";
 }  // namespace
 
 TEST_CASE("DVM-287 ROM XmlBlock Parser event and typed attribute semantics") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         XmlVm f(backend);
         auto bytes = f.Bytes(CompiledFactsFixture());
         auto block = f.New(xml, "([B)V", {VmValue::Ref(bytes)});
@@ -346,7 +347,7 @@ TEST_CASE("DVM-287 ROM XmlBlock Parser event and typed attribute semantics") {
 }
 
 TEST_CASE("DVM-287 XML lifetime and StringBlock reject stale tokens and expose spans") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         XmlVm f(backend);
         auto block = f.New(xml, "([B)V", {VmValue::Ref(f.Bytes(CompiledFactsFixture()))});
         auto p = f.On(block, "newParser", "()Landroid/content/res/XmlResourceParser;").ref;
@@ -444,7 +445,7 @@ TEST_CASE("DVM-287 XML lifetime and StringBlock reject stale tokens and expose s
 }
 
 TEST_CASE("DVM-287 APK XML entry executes ROM Parser and GC retires native state") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         XmlVm f(backend);
         auto fixture = CompiledFactsFixture();
         f.context->apk_bytes = ogplay::test::file_vfs::MakeStoredZip("res/layout/example.xml", fixture);

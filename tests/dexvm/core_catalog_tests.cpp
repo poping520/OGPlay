@@ -41,6 +41,7 @@
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 
 #include "interpreter_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::interpreter;
 using namespace ogplay::runtime;
@@ -957,7 +958,7 @@ TEST_CASE("dexvm System properties are deterministic and mutable") {
 }
 
 TEST_CASE("DVM-265 DEX Appendable interface dispatch") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
         const auto builder = f.New("Ljava/lang/StringBuilder;");
         const auto roots = f.vm.ProtectReferences(std::array{builder});
@@ -970,7 +971,7 @@ TEST_CASE("DVM-265 DEX Appendable interface dispatch") {
 }
 
 TEST_CASE("DVM-268 DEX AnnotatedElement ROM interface dispatch") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
         const auto result = f.Static("Ltest/RomJavaReplacement;", "annotated", "()I");
         CHECK(result.AsInt() == 0);
@@ -979,7 +980,7 @@ TEST_CASE("DVM-268 DEX AnnotatedElement ROM interface dispatch") {
 }
 
 TEST_CASE("DVM-268 DEX Member ROM interface dispatch") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
         const auto result = f.Static("Ltest/RomJavaReplacement;", "member", "()Ljava/lang/Class;");
         CHECK(f.vm.StringUtf8(f.On(result.ref, "getName", "()Ljava/lang/String;").ref) == "java.lang.Object");
@@ -988,7 +989,7 @@ TEST_CASE("DVM-268 DEX Member ROM interface dispatch") {
 }
 
 TEST_CASE("DVM-268 DEX GenericDeclaration ROM interface dispatch") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
         const auto result = f.Static("Ltest/RomJavaReplacement;", "generic", "()I");
         CHECK(result.AsInt() == 1);
@@ -997,7 +998,7 @@ TEST_CASE("DVM-268 DEX GenericDeclaration ROM interface dispatch") {
 }
 
 TEST_CASE("DVM-268 DEX AutoCloseable ROM interface dispatch") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
         const auto result = f.Static("Ltest/RomJavaReplacement;", "close", "()I");
         CHECK(result.AsInt() == 0);

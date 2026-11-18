@@ -33,13 +33,14 @@
 #include "tls_fixtures.h"
 
 #include "bootdex_library_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::bootdex_library;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-87 injected clock works and Calendar requires the guest ICU bridge") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm fixture(backend);
         const auto clock = fixture.Static("Ljava/lang/System;", "currentTimeMillis", "()J");
         Dvm87Vm::RequireOk(clock);
@@ -56,7 +57,7 @@ TEST_CASE("DVM-87 injected clock works and Calendar requires the guest ICU bridg
 }
 
 TEST_CASE("DVM-113 Locale ISO catalogs use pinned ICU and independent Java clones" * doctest::skip(true)) {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const auto* language : {"zh", "en"}) {
             Dvm87Vm f(backend, language, std::string_view(language) == "zh" ? "CN" : "US");
 
@@ -222,7 +223,7 @@ TEST_CASE("DVM-102 SimpleDateFormat uses the API 19 BootDex hierarchy") {
 }
 
 TEST_CASE("DVM-102 SimpleDateFormat initializes the API 19 object graph" * doctest::skip(true)) {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         Dvm87Vm fixture(backend);
         const auto locale = fixture.Static("Ljava/util/Locale;", "getDefault", "()Ljava/util/Locale;").value.ref;
@@ -312,7 +313,7 @@ TEST_CASE("DVM-102 SimpleDateFormat initializes the API 19 object graph" * docte
 }
 
 TEST_CASE("DVM-102 date formatting covers constructors factories and zones" * doctest::skip(true)) {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         Dvm87Vm fixture(backend);
         const auto default_locale = fixture.Static("Ljava/util/Locale;", "getDefault", "()Ljava/util/Locale;");
@@ -502,7 +503,7 @@ TEST_CASE("DVM-102 date formatting covers constructors factories and zones" * do
 }
 
 TEST_CASE("DVM-102 regression comma literal survives disabled grouping in date parser" * doctest::skip(true)) {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
         auto fmt = f.vm.NewIntrinsicInstance("Ljava/text/SimpleDateFormat;");
         f.Construct(fmt, "Ljava/text/SimpleDateFormat;", "(Ljava/lang/String;)V",
@@ -540,7 +541,7 @@ TEST_CASE("DVM-102 regression narrow English date symbols are narrow" * doctest:
 }
 
 TEST_CASE("DVM-102 regression native parse preserves API19 position semantics" * doctest::skip(true)) {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
         const auto format = f.vm.NewIntrinsicInstance("Ljava/text/DecimalFormat;");
         f.Construct(format, "Ljava/text/DecimalFormat;", "(Ljava/lang/String;)V",

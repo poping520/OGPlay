@@ -35,13 +35,14 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-121 ColorStateList uses Java StateSet matching in ROM TextView") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto int_array = [&](std::initializer_list<std::int32_t> items) {
             const auto result = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer,

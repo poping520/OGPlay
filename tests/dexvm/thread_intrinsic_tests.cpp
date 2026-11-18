@@ -26,6 +26,7 @@
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
+#include "interpreter_backends.h"
 
 namespace {
 
@@ -53,7 +54,7 @@ struct ThreadVm final {
     std::atomic<std::int32_t> default_uncaught_calls{};
     std::atomic<std::int32_t> throwing_uncaught_calls{};
 
-    explicit ThreadVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
+    explicit ThreadVm(const InterpreterBackend backend = InterpreterBackend::threaded)
         : model(arrays), linker(),
           interpreter(
               [this]() -> DexClassLinker& {
@@ -328,7 +329,7 @@ TEST_CASE("DVM-98 Thread State uses ROM enum methods") {
 }
 
 TEST_CASE("dexvm Thread uncaught handlers are scoped and accept null") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ThreadVm first_vm(backend);
         const auto first = first_vm.New("Ljava/lang/Thread;");
         const auto second = first_vm.New("Ljava/lang/Thread;");
@@ -376,7 +377,7 @@ TEST_CASE("dexvm Thread uncaught handlers are scoped and accept null") {
 }
 
 TEST_CASE("dexvm Thread dispatches explicit and default uncaught handlers") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ThreadVm vm(backend);
         const auto handler = vm.New("LThreadUncaughtHandler;");
         const auto default_handler = vm.New("LThreadDefaultUncaughtHandler;");
@@ -419,7 +420,7 @@ TEST_CASE("dexvm Thread dispatches explicit and default uncaught handlers") {
 }
 
 TEST_CASE("dexvm Thread diagnostics and group APIs follow bounded API19 semantics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ThreadVm vm(backend);
         const auto root = vm.Static("Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;").value.ref;
         const auto group = vm.Virtual(root, "getThreadGroup", "()Ljava/lang/ThreadGroup;").value.ref;
@@ -451,7 +452,7 @@ TEST_CASE("dexvm Thread diagnostics and group APIs follow bounded API19 semantic
 }
 
 TEST_CASE("ThreadGroup enumerates live threads and interrupts only its subtree") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ThreadVm vm(backend);
         const auto current = vm.Static("Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;").value.ref;
         const auto group = vm.New("Ljava/lang/ThreadGroup;");
@@ -517,7 +518,7 @@ TEST_CASE("ThreadGroup enumerates live threads and interrupts only its subtree")
 }
 
 TEST_CASE("dexvm Thread third priority APIs expose bounded API19 behavior") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ThreadVm vm(backend);
         const auto root = vm.Static("Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;").value.ref;
         const auto group = vm.Virtual(root, "getThreadGroup", "()Ljava/lang/ThreadGroup;").value.ref;
@@ -553,7 +554,7 @@ TEST_CASE("dexvm Thread third priority APIs expose bounded API19 behavior") {
 }
 
 TEST_CASE("dexvm Thread park permit and interrupt actions follow API19 rules") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ThreadVm vm(backend);
         const auto root = vm.Static("Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;").value.ref;
 
@@ -627,7 +628,7 @@ TEST_CASE("dexvm Thread constructors allocate stable per-VM identity") {
 }
 
 TEST_CASE("dexvm Thread context ClassLoader defaults inherits and accepts null") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         ThreadVm vm(backend);
         const auto root = vm.Static("Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;");
@@ -913,7 +914,7 @@ TEST_CASE("dexvm worker Thread.sleep advances only while clock driver is blocked
 }
 
 TEST_CASE("WU7-3 ThreadGroup delegates through parent to default and prints unhandled exceptions") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ThreadVm vm(backend);
         const auto thread = vm.Static("Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;").value.ref;
         const auto group = vm.Virtual(thread, "getThreadGroup", "()Ljava/lang/ThreadGroup;").value.ref;
@@ -945,7 +946,7 @@ TEST_CASE("WU7-3 ThreadGroup delegates through parent to default and prints unha
 }
 
 TEST_CASE("WU7-3 interrupt wakes a parked sleeper in both backends and clears its flag") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ThreadVm vm(backend);
         const auto thread = vm.New("LThreadSleeper;");
         RequireOk(vm.Construct(thread, "LThreadSleeper;", "()V"));
@@ -965,7 +966,7 @@ TEST_CASE("WU7-3 interrupt wakes a parked sleeper in both backends and clears it
 }
 
 TEST_CASE("WU7-3 APK-style worker without a handler retains process-fatal failure") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ThreadVm vm(backend);
         const auto runnable = vm.Runnable("LThreadThrower;");
         const auto thread = vm.New("Ljava/lang/Thread;");

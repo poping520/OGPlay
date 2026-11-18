@@ -9,6 +9,7 @@
 #include <bit>
 #include <limits>
 #include <vector>
+#include "interpreter_backends.h"
 
 namespace {
 using namespace ogplay;
@@ -130,7 +131,7 @@ struct Frames final {
 }  // namespace
 
 TEST_CASE("DVM-336 ROM Choreographer single frame callbacks use the host frame Clock before traversal") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Frames f(backend);
         const auto choreographer = f.Choreographer();
         CHECK(f.Choreographer() == choreographer);
@@ -189,7 +190,7 @@ TEST_CASE("DVM-336 ROM Choreographer single frame callbacks use the host frame C
 }
 
 TEST_CASE("DVM-336 DisplayEventReceiver one shot merge dispose invalid queue and token") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Frames f(backend);
         const auto baseline = f.ReceiverCount();
         const auto looper = f.Static("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;").ref;
@@ -402,7 +403,7 @@ TEST_CASE("frame-rate cap gates display frames while lifecycle steps keep the lo
 }
 
 TEST_CASE("Choreographer delivers vsync on a non-main owner Looper") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Frames f(backend);
         std::promise<void> ready, delivered;
         auto ready_future = ready.get_future(), delivered_future = delivered.get_future();

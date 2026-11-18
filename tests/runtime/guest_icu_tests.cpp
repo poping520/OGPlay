@@ -9,6 +9,7 @@
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/session/android_app_process.h"
+#include "interpreter_backends.h"
 
 namespace {
 using namespace ogplay;
@@ -107,7 +108,7 @@ struct IcuVm final {
 }  // namespace
 
 TEST_CASE("WU7-6 ICU51 supplies locale data decimal double digit lists and date fields") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         IcuVm f(backend);
         f.RunOnMainThread([&] {
             auto& vm = f.Vm();
@@ -166,7 +167,7 @@ TEST_CASE("WU7-6 ICU51 supplies locale data decimal double digit lists and date 
 }
 
 TEST_CASE("WU7-6 ICU51 regex preserves UTF16 groups regions replacement syntax errors and cleanup") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         IcuVm f(backend);
         f.RunOnMainThread([&] {
             auto& vm = f.Vm();
@@ -259,7 +260,7 @@ TEST_CASE("WU7-6 ICU51 regex preserves UTF16 groups regions replacement syntax e
 }
 
 TEST_CASE("WU7-6 charset enumeration exposes only supported ICU codecs in an immutable case insensitive map") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         IcuVm f(backend);
         f.RunOnMainThread([&] {
             auto& vm = f.Vm();
@@ -284,7 +285,7 @@ TEST_CASE("WU7-6 charset enumeration exposes only supported ICU codecs in an imm
 }
 
 TEST_CASE("WU7-6 JNI chars leases keep strings alive across guest cleanup GC") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         IcuVm f(backend);
         f.RunOnMainThread([&] {
             auto& vm = f.Vm();
@@ -306,7 +307,7 @@ TEST_CASE("WU7-6 JNI chars leases keep strings alive across guest cleanup GC") {
 }
 
 TEST_CASE("DVM-183 SQL date value types use API 19 BootDex") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         IcuVm fixture(backend);
         fixture.RunOnMainThread([&] {
@@ -380,7 +381,7 @@ TEST_CASE("DVM-183 SQL date value types use API 19 BootDex") {
 }
 
 TEST_CASE("WU7-6 guest timezone defaults clone reset and isolate production VM state") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         IcuVm f(backend);
         f.RunOnMainThread([&] {
             auto& vm = f.Vm();
@@ -419,7 +420,7 @@ TEST_CASE("WU7-6 guest timezone defaults clone reset and isolate production VM s
 }
 
 TEST_CASE("DVM-260 guest String backing preserves char array builder substring and value semantics") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         IcuVm f(backend);
         f.RunOnMainThread([&] {
             auto& vm = f.Vm();
@@ -479,7 +480,7 @@ TEST_CASE("DVM-260 guest String backing preserves char array builder substring a
 }
 
 TEST_CASE("DVM-331 orchestrated ROM FrameLayout construction uses guest ICU regex without a window") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         OrchestratedApp fixture("fixture.ResultCaller", true, false, {}, {}, true, backend);
         fixture.app->StartApplication();
         const auto startup_gaps = fixture.ledger.Unimplemented().size();
@@ -519,7 +520,7 @@ TEST_CASE("DVM-331 orchestrated ROM FrameLayout construction uses guest ICU rege
 TEST_CASE("DVM-342 Locale executes ROM Java with injected device facts and ICU51") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         IcuVm f(backend, "fr", "CA");
         f.RunOnMainThread([&] {
@@ -687,7 +688,7 @@ TEST_CASE("DVM-342 Locale executes ROM Java with injected device facts and ICU51
 }
 
 TEST_CASE("DVM-376 Android Time uses fixed Clock and API19 guest date rules") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend);
         IcuVm f(backend);
         f.RunOnMainThread([&] {
@@ -826,7 +827,7 @@ TEST_CASE("DVM-376 Android Time uses fixed Clock and API19 guest date rules") {
 }
 
 TEST_CASE("ROM TextUtils layout direction uses pinned guest ICU likely subtags and scripts") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         IcuVm fixture(backend);
         fixture.RunOnMainThread([&] {
             for (const auto& [language, script, direction] :
@@ -856,7 +857,7 @@ TEST_CASE("ROM TextUtils layout direction uses pinned guest ICU likely subtags a
 }
 
 TEST_CASE("core ROM Character executes every native through guest ICU51") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         OrchestratedApp fixture("fixture.ResultCaller", true, false, {}, {}, true, backend);
         fixture.app->StartApplication();
         fixture.RunOnMainThread([&] {

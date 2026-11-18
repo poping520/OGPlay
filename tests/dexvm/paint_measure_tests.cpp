@@ -9,6 +9,7 @@
 #include "include/ports/SkFontMgr_empty.h"
 #include <cmath>
 #include <algorithm>
+#include "interpreter_backends.h"
 
 using ogplay::test::container_traversal::ContainerVm;
 
@@ -30,7 +31,7 @@ float SkiaWidth(const SkFont& font, std::u16string_view text) {
 }  // namespace
 
 TEST_CASE("DVM-293 ROM TextView clinit measures H through instance Paint on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         const auto type = f.linker.ResolveDescriptor("Landroid/widget/TextView;");
         f.Checked(f.vm.EnsureClassInitialized(type));
@@ -107,7 +108,7 @@ TEST_CASE("DVM-293 ROM TextView clinit measures H through instance Paint on both
 }
 
 TEST_CASE("DVM-293 Paint measures unshaped text and rejects invalid ranges") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         const auto paint = f.New("Landroid/graphics/Paint;");
         CHECK_FALSE(f.On(paint, "setShader", "(Landroid/graphics/Shader;)Landroid/graphics/Shader;",
@@ -134,7 +135,7 @@ TEST_CASE("DVM-293 Paint measures unshaped text and rejects invalid ranges") {
 }
 
 TEST_CASE("DVM-360 ROM Paint filter-bitmap and dither flags remain independent on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         const auto type = f.linker.ResolveDescriptor("Landroid/graphics/Paint;");
         CHECK(f.linker.Class(type).is_boot_dex);
@@ -187,7 +188,7 @@ TEST_CASE("DVM-360 ROM Paint filter-bitmap and dither flags remain independent o
 }
 
 TEST_CASE("DVM-356 RectF ROM value semantics and explicit failure boundaries on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         const auto type = f.linker.ResolveDescriptor("Landroid/graphics/RectF;");
         CHECK(f.linker.Class(type).is_boot_dex);
@@ -331,7 +332,7 @@ TEST_CASE("DVM-356 RectF ROM value semantics and explicit failure boundaries on 
 }
 
 TEST_CASE("DVM-362 Paint and TextPaint bounds share Skia glyph metrics on both backends") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         for (const auto type : {"Landroid/graphics/Paint;", "Landroid/text/TextPaint;"}) {
             const auto paint = f.New(type);

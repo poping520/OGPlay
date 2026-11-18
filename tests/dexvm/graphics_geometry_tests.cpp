@@ -3,12 +3,13 @@
 #include <doctest/doctest.h>
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 namespace {
 using namespace ogplay::test::android_value;
 
 TEST_CASE("Skia ROM Matrix composes and maps in-place with an inverse") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto matrix = f.New("Landroid/graphics/Matrix;");
         const auto inverse = f.New("Landroid/graphics/Matrix;");

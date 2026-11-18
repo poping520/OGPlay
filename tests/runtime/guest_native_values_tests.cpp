@@ -52,6 +52,7 @@
 #include "ogplay/video/fake_video_player.h"
 
 #include "native_library_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::native_library;
 
@@ -123,7 +124,7 @@ TEST_CASE("DVM-219 pinned tzdata serves real Bionic UTC and Shanghai queries") {
 TEST_CASE("DVM-126 String.format delegates Locale formatting to API19 Formatter") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;
@@ -224,7 +225,7 @@ TEST_CASE("DVM-126 String.format delegates Locale formatting to API19 Formatter"
 TEST_CASE("DVM-215 API19 decimal JSON uses bounded guest BIGNUM arithmetic") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;
@@ -500,7 +501,7 @@ namespace {
 void CheckPlatformPropertySources(bool load_icu) {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;
         core::Logger logger;

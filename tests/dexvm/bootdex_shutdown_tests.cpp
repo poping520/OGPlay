@@ -33,6 +33,7 @@
 #include "tls_fixtures.h"
 
 #include "bootdex_library_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::bootdex_library;
 using namespace ogplay::runtime;
@@ -90,7 +91,7 @@ struct ShutdownHookVm final {
     }
 };
 
-constexpr std::array kShutdownBackends{InterpreterBackend::switch_dispatch, InterpreterBackend::threaded};
+const auto& kShutdownBackends = ogplay::test::InterpreterBackends();
 
 }  // namespace
 

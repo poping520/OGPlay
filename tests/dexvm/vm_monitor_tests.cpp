@@ -24,6 +24,7 @@
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
+#include "interpreter_backends.h"
 
 namespace {
 
@@ -51,7 +52,7 @@ struct MonitorVm final {
     std::atomic<std::int64_t> fake_real{};
 
     explicit MonitorVm(const bool platform_bindings = false,
-                       const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
+                       const InterpreterBackend backend = InterpreterBackend::threaded)
         : model(arrays, {}), linker(),
           interpreter(
               [this, platform_bindings]() -> DexClassLinker& {
@@ -152,7 +153,7 @@ TEST_CASE("dexvm notifyAll releases a waiter parked on another host thread") {
 }
 
 TEST_CASE("conditional swap pacing releases two swaps while driver waits") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         MonitorVm vm(false, backend);
         vm.interpreter.BindDefaultExecutionHost();
         const auto worker_context = vm.interpreter.CreateExecutionContext();
@@ -351,7 +352,7 @@ TEST_CASE("dexvm timed wait without a Clock fails instead of guessing") {
 }
 
 TEST_CASE("dexvm interrupt wakes a waiter and re-acquires before throwing") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         MonitorVm vm(false, backend);
         vm.UseTestClock();
         const auto lock = vm.Lock();
@@ -609,7 +610,7 @@ TEST_CASE("DVM-234 pacer shutdown preserves actual driver blocking facts") {
 }
 
 TEST_CASE("DVM-353 concurrent timed parks converge on elapsed real time and stop catching up on resume") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         MonitorVm f(false, backend);
         f.UseTestClock();
         std::atomic<std::int64_t> real{};

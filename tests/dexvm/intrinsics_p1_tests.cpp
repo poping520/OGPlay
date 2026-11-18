@@ -32,6 +32,7 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/object_model.h"
+#include "interpreter_backends.h"
 
 namespace {
 
@@ -146,7 +147,7 @@ TEST_CASE("BND-42 Java Runtime and Posix share the configured CPU count") {
 
 TEST_CASE("dexvm ROM Runtime.exec throws a catchable IOException and parks its reaper") {
     using namespace std::chrono_literals;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         INFO("backend=", backend == InterpreterBackend::threaded ? "threaded" : "switch");
         Vm vm({.backend = backend});
         const auto expect_exec_failure = [&] {
@@ -214,7 +215,7 @@ TEST_CASE("dexvm System.getenv reads the injected guest process environment") {
     CoreIntrinsicServices services;
     services.process_environment = [] { return std::vector<std::string>{"PATH=/system/bin", "ANDROID_ROOT=/system"}; };
 
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         INFO("backend=", backend == InterpreterBackend::threaded ? "threaded" : "switch");
         Vm vm({.backend = backend}, true, services);
         const auto string = [&vm](const std::string& value) {
@@ -320,7 +321,7 @@ TEST_CASE("dexvm P1 boxed values") {
 }
 
 TEST_CASE("dexvm P1 collections use Java string equality for keys") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         INFO("backend=", backend == InterpreterBackend::threaded ? "threaded" : "switch");
         InterpreterConfig config;
         config.backend = backend;
@@ -338,7 +339,7 @@ TEST_CASE("dexvm P1 collections use Java string equality for keys") {
 }
 
 TEST_CASE("dexvm core java.io streams and missing filesystem use production class sources") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         InterpreterConfig config;
         config.backend = backend;
         CoreIntrinsicServices services;
@@ -358,7 +359,7 @@ TEST_CASE("dexvm P1 System.arraycopy and Math") {
 }
 
 TEST_CASE("dexvm reference arraycopy checks each element and retains the copied prefix") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Vm vm({.backend = backend});
         const auto object = vm.linker.ResolveDescriptor("Ljava/lang/Object;");
         const auto string = vm.linker.ResolveDescriptor("Ljava/lang/String;");
@@ -396,7 +397,7 @@ TEST_CASE("dexvm reference arraycopy checks each element and retains the copied 
 }
 
 TEST_CASE("dexvm String regionMatches overloads preserve libcore bounds and case rules") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Vm vm({.backend = backend});
         const auto receiver = vm.model.NewString(u"AbCd");
         const auto other = vm.model.NewString(u"abcd");
@@ -427,7 +428,7 @@ TEST_CASE("dexvm String regionMatches overloads preserve libcore bounds and case
 }
 
 TEST_CASE("dexvm String valueOf Object invokes the enum object's toString") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Vm vm({.backend = backend});
         const auto enum_class = vm.linker.ResolveDescriptor("LP1Enum;");
         const auto constant =
@@ -450,7 +451,7 @@ TEST_CASE("dexvm String valueOf Object invokes the enum object's toString") {
 }
 
 TEST_CASE("DVM-118 Math uses API19 Java rounding and libm native primitives") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CoreIntrinsicServices services;
         services.current_time_millis = [] { return INT64_C(1400000000000); };
         Vm vm({.backend = backend}, true, services);
@@ -653,7 +654,7 @@ TEST_CASE("API 19 boot dex loads every class and executes EnumSet") {
         "Ljava/util/concurrent/locks/ReentrantLock$Sync;",
         "Ljava/util/concurrent/locks/ReentrantLock;",
     };
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         INFO("backend=", backend == InterpreterBackend::threaded ? "threaded" : "switch");
         InterpreterConfig config;
         config.backend = backend;
@@ -705,7 +706,7 @@ TEST_CASE("API 19 boot dex loads every class and executes EnumSet") {
 }
 
 TEST_CASE("DVM-265 DEX InputSource getters and setters") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
         const auto text = f.vm.NewStringUtf8("file:///rom.xml");
         const auto roots = f.vm.ProtectReferences(std::array{text});

@@ -44,6 +44,7 @@
 #include "ogplay/runtime/vfs/vfs.h"
 
 #include "file_vfs_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::file_vfs;
 using namespace ogplay::runtime;
@@ -76,7 +77,7 @@ struct PrefsDriver final {
 } // namespace
 
 TEST_CASE("Environment MEDIA_MOUNTED Java field matches the external storage state") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         FileVm vm(nullptr, true, InterpreterConfig{.backend = backend});
         const auto type = vm.linker.ResolveDescriptor("Landroid/os/Environment;");
         const auto field = vm.CallOn(vm.model.ClassObject(type), "getDeclaredField",
@@ -142,8 +143,7 @@ TEST_CASE("Context files and cache directories are inherited stable and VFS back
 }
 
 TEST_CASE("Context OBB directories follow API 19 external package layout") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
                                                          "switch");
         InterpreterConfig config;
@@ -176,8 +176,7 @@ TEST_CASE("Context OBB directories follow API 19 external package layout") {
 }
 
 TEST_CASE("Context private file streams use the app files directory on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
                                                          "switch");
         InterpreterConfig config;
@@ -288,8 +287,7 @@ TEST_CASE("Context private file streams use the app files directory on both back
 }
 
 TEST_CASE("Context getDir private directories preserve API19 paths and VFS state") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         InterpreterConfig config;
         config.backend = backend;
         FileVm vm(nullptr, true, config);
@@ -351,8 +349,7 @@ TEST_CASE("Context getDir private directories preserve API19 paths and VFS state
 }
 
 TEST_CASE("Context getDir private directories persist across sessions") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         InterpreterConfig config;
         config.backend = backend;
         const TemporaryRoot root(backend == InterpreterBackend::threaded

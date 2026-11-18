@@ -9,6 +9,7 @@
 #include <bit>
 #include "../fixtures/bitmap_decode_data.h"
 #include <fstream>
+#include "interpreter_backends.h"
 
 using namespace ogplay::runtime;
 
@@ -214,7 +215,7 @@ ogplay::test::ResourceFixtureTable Table(std::vector<ogplay::test::ResourceFixtu
 
 TEST_CASE("API19 ContextImpl default theme underlies an activity theme with an inert ROM parent") {
     using ogplay::test::container_traversal::ContainerVm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend);
         ContainerVm f(backend);
         ogplay::test::ResourceFixture(*f.context) = Table();
@@ -242,7 +243,7 @@ TEST_CASE("API19 ContextImpl default theme underlies an activity theme with an i
 TEST_CASE("DVM-288 ROM Theme and TypedArray execute on both interpreter backends") {
     using ogplay::test::container_traversal::ContainerVm;
     using namespace ogplay::runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         ogplay::test::ResourceFixture(*f.context) = Table();
         ogplay::test::ResourceFixture(*f.context).global_string_pool = StringPool({"from APK"}, true);
@@ -412,7 +413,7 @@ TEST_CASE("DVM-288 ROM Theme and TypedArray execute on both interpreter backends
 
 TEST_CASE("DVM-289 ROM attribute constructor smoke") {
     using ogplay::test::container_traversal::ContainerVm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         ogplay::test::ResourceFixture(*f.context) = Table();
         ogplay::test::ResourceFixture(*f.context)
@@ -528,7 +529,7 @@ VmObjectRef OpenAttributeXml(ContainerVm& f, VmObjectRef owner, const std::vecto
 }  // namespace
 
 TEST_CASE("DVM-351 DVM-289 XML attributes construct ROM containers and LayoutParams") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         ogplay::test::ResourceFixture(*f.context) =
             Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
@@ -643,7 +644,7 @@ TEST_CASE("DVM-351 DVM-289 XML attributes construct ROM containers and LayoutPar
 }
 
 TEST_CASE("DVM-289 container priority follows XML style default and application theme") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         std::vector<std::byte> table_bytes;
         ogplay::test::ResourceFixture(*f.context) = Table(
@@ -706,7 +707,7 @@ TEST_CASE("DVM-289 Relative LayoutParams read all 23 attributes from Parser") {
         {0x010103bb, 20},  // layout_alignParentStart
         {0x010103bc, 21},  // layout_alignParentEnd
     }};
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         ogplay::test::ResourceFixture(*f.context) =
             Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
@@ -747,7 +748,7 @@ TEST_CASE("DVM-289 Relative LayoutParams read all 23 attributes from Parser") {
 }
 
 TEST_CASE("DVM-289 missing dimensions and drawable resources use ROM failures") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         ogplay::test::ResourceFixture(*f.context) =
             Table({Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}})});
@@ -1027,7 +1028,7 @@ std::vector<XmlValue> InflateSize(std::uint32_t width, std::uint32_t height) {
 }  // namespace
 
 TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve failure boundaries") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         ogplay::test::ResourceFixture(*f.context) = Table({Style(
             0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x0101013f, 5, 0x601, {}}})});
@@ -1144,7 +1145,7 @@ TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve 
 }
 
 TEST_CASE("DVM-290 createView cache filter exception causes and ROM factories") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend, false, true);
         const auto owner = InflaterActivity(f);
         const auto inflater =
@@ -1279,7 +1280,7 @@ TEST_CASE("DVM-290 createView cache filter exception causes and ROM factories") 
 TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both backends") {
     using ogplay::test::container_traversal::ContainerVm;
     using namespace ogplay::runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         f.context->ui_density = 2;
         f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
@@ -1475,7 +1476,7 @@ TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both bac
 // namespace
 
 TEST_CASE("DVM-296 ImageButton XML and code honor real imageButtonStyle and explicit precedence") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         const auto owner = f.New("Landroid/app/Activity;");
         ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
@@ -1522,7 +1523,7 @@ TEST_CASE("DVM-296 ImageButton XML and code honor real imageButtonStyle and expl
 }
 
 TEST_CASE("DVM-325 scrollbar references project without loading and reject unregistered IDs") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         const auto plain_owner = f.New("Landroid/app/Activity;");
         ogplay::test::AttachViewTestContext(f.vm, plain_owner, f.context);
@@ -1574,7 +1575,7 @@ TEST_CASE("DVM-325 scrollbar references project without loading and reject unreg
 }
 
 TEST_CASE("DVM-316 RelativeLayout inflation reports reflection target and constructor first stack") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         // The observed root now passes projection. This diagnostic deliberately
         // supplies an unknown framework scrollbar ID through the theme instead.
@@ -1627,7 +1628,7 @@ TEST_CASE("DVM-316 RelativeLayout inflation reports reflection target and constr
 
 TEST_CASE("API19 app and system resources load framework scalar colors and XML selectors") {
     using ogplay::test::container_traversal::ContainerVm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         const auto owner = f.New("Landroid/content/Context;");
         ogplay::test::AttachViewTestContext(f.vm, owner, f.context);
@@ -1670,7 +1671,7 @@ TEST_CASE("API19 app and system resources load framework scalar colors and XML s
 TEST_CASE("DVM-334 Resources getIdentifier parses API19 names and routes packages") {
     using ogplay::test::container_traversal::ContainerVm;
     using namespace ogplay::runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         ogplay::test::ResourceFixture(*f.context) = Table();
         ogplay::test::ResourceFixture(*f.context).package_name = "resource.fixture";
@@ -1744,7 +1745,7 @@ TEST_CASE("DVM-334 Resources getIdentifier parses API19 names and routes package
 TEST_CASE("P2 Context obtainStyledAttributes resolves an application style through android resources") {
     using ogplay::test::container_traversal::ContainerVm;
     using namespace ogplay::runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         constexpr int appStyle = 0x7f020000;
         constexpr int appAttribute = 0x7f010000;

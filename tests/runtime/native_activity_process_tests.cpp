@@ -50,13 +50,14 @@
 #include "ogplay/video/fake_video_player.h"
 
 #include "native_library_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::native_library;
 
 TEST_CASE("DVM-195 original NativeActivity runs in the existing Java native process") {
     using namespace ogplay;
     namespace dx = runtime::dexvm;
-    for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         OrchestratedApp fixture("android.app.NativeActivity", true, true, {}, {}, true, backend);
         fixture.app->ActivityLifecycle().SetRealtimeVideoClock(false);
         fixture.app->StartApplication();
@@ -189,7 +190,7 @@ TEST_CASE("DVM-195 original NativeActivity runs in the existing Java native proc
 TEST_CASE("NativeActivity failed lifecycle releases backing before JNI detach") {
     using namespace ogplay;
     namespace dx = runtime::dexvm;
-    for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         OrchestratedApp fixture("android.app.NativeActivity", true, true, {}, {}, true, backend);
         fixture.app->StartApplication();
         auto& linker = fixture.app->DexVm().Linker();

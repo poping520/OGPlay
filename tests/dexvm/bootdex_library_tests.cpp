@@ -36,6 +36,7 @@
 #include "tls_fixtures.h"
 
 #include "bootdex_library_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::bootdex_library;
 using namespace ogplay::runtime;
@@ -80,7 +81,7 @@ TEST_CASE("DVM-87 Arrays primitive algorithms are deterministic") {
 }
 
 TEST_CASE("API19 regex requires the guest ICU bridge") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm fixture(backend);
         CHECK_THROWS_AS(static_cast<void>(fixture.Static("Ljava/util/regex/Pattern;", "compile",
                                                          "(Ljava/lang/String;)Ljava/util/regex/Pattern;",
@@ -90,7 +91,7 @@ TEST_CASE("API19 regex requires the guest ICU bridge") {
 }
 
 TEST_CASE("API19 Build family executes from BootDex without class intrinsics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
         for (const auto descriptor :
              {"Landroid/os/Build;", "Landroid/os/Build$VERSION;", "Landroid/os/Build$VERSION_CODES;"}) {
@@ -187,7 +188,7 @@ TEST_CASE("DVM-103 deferred intrinsic interfaces preserve declaration order") {
 }
 
 TEST_CASE("DVM-104 tools events atomics and X500 execute API19 bytecode") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
         const auto text = f.vm.NewStringUtf8("one,two,,three");
         const auto tokenizer = f.vm.NewIntrinsicInstance("Ljava/util/StringTokenizer;");
@@ -237,7 +238,7 @@ TEST_CASE("DVM-104 tools events atomics and X500 execute API19 bytecode") {
 }
 
 TEST_CASE("DVM-104 formatters events tokenizer and key parameters use guest state") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         auto calls = std::make_shared<int>();
         auto listener = IntrinsicClassBuilder::Class("Ltest/PropertyListener;", "Ljava/lang/Object;",
                                                      {"Ljava/beans/PropertyChangeListener;"});

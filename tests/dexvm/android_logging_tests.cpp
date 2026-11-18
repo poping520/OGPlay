@@ -34,13 +34,14 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("ROM System logging maps priorities and renders Throwable for empty messages") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm fixture(backend);
         const auto empty = fixture.vm.NewStringUtf8("");
         const auto detail = fixture.vm.NewStringUtf8("system-log-detail");
@@ -70,7 +71,7 @@ TEST_CASE("ROM System logging maps priorities and renders Throwable for empty me
 }
 
 TEST_CASE("Log debug throwable overload renders without changing control flow") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm fixture(backend);
         const auto message = fixture.vm.NewStringUtf8("failure detail");
         const auto throwable =
@@ -86,7 +87,7 @@ TEST_CASE("Log debug throwable overload renders without changing control flow") 
 }
 
 TEST_CASE("EventLog write overloads preserve API 19 payload semantics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm fixture(backend);
         const auto text = fixture.vm.NewStringUtf8("cookie.db\ncorrupt");
         const auto integer = fixture.New("Ljava/lang/Integer;", "(I)V", {VmValue::Int(42)});
@@ -149,7 +150,7 @@ TEST_CASE("DVM-176 Log.getStackTraceString follows API 19 throwable rules") {
         }
         return VmValue::Void();
     };
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         std::int32_t printed{};
         auto custom_host = IntrinsicClassBuilder::Class("Ltest/CustomUnknownHost;", "Ljava/net/UnknownHostException;");
         custom_host.Constructor("(Ljava/lang/String;)V", [&super_construct](IntrinsicContext& call) {
@@ -271,7 +272,7 @@ TEST_CASE("DVM-176 Log.getStackTraceString follows API 19 throwable rules") {
 }
 
 TEST_CASE("DVM226 BootDex PrintStream captures bytes stack traces encoding and GC without logging") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto buffer = f.New("Ljava/io/ByteArrayOutputStream;");
         const auto stream = f.New("Ljava/io/PrintStream;", "(Ljava/io/OutputStream;)V", {VmValue::Ref(buffer)});
@@ -353,7 +354,7 @@ TEST_CASE("DVM226 PrintStream owns error and autoFlush semantics and System stre
         bool fail_write{};
     };
 
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         auto target = std::make_shared<Target>();
         auto out = IntrinsicClassBuilder::Class("Ltest/PrintTarget;", "Ljava/io/OutputStream;");
         out.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
@@ -426,7 +427,7 @@ TEST_CASE("DVM226 PrintStream owns error and autoFlush semantics and System stre
 }
 
 TEST_CASE("ROM System streams support replacement and RuntimeInit redirects output to Android Log") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         constexpr auto owner = "Ljava/lang/System;";
         const auto type = f.linker.ResolveDescriptor(owner);
@@ -461,7 +462,7 @@ TEST_CASE("ROM System streams support replacement and RuntimeInit redirects outp
 }
 
 TEST_CASE("Log.println uses the native buffer validation and byte count") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto tag = f.vm.NewStringUtf8("tag");
         const auto message = f.vm.NewStringUtf8("hello");

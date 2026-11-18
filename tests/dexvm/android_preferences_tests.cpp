@@ -34,6 +34,7 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
@@ -41,7 +42,7 @@ using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-124 PreferenceManager default preferences share the Context store") {
     for (const auto backend :
-         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+         ogplay::test::InterpreterBackends()) {
         auto observer = IntrinsicClassBuilder::Class("Ltest/PreferenceObserver;", "Ljava/lang/Object;",
             {"Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;"});
         observer.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
@@ -160,7 +161,7 @@ TEST_CASE("DVM-124 PreferenceManager default preferences share the Context store
 
 TEST_CASE("DVM-124 PreferenceManager honors Context overrides and delegation") {
     for (const auto backend :
-         {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+         ogplay::test::InterpreterBackends()) {
         auto named = IntrinsicClassBuilder::Class("Ltest/NamedContext;", "Landroid/content/ContextWrapper;");
         named.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
 
@@ -228,7 +229,7 @@ TEST_CASE("DVM-124 PreferenceManager honors Context overrides and delegation") {
 }
 
 TEST_CASE("DVM-121 SharedPreferences editors isolate pending changes and clear before puts") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto base = f.New("Landroid/content/Context;");
         const auto prefs = f.Static("Landroid/preference/PreferenceManager;", "getDefaultSharedPreferences",
@@ -276,7 +277,7 @@ TEST_CASE("DVM-121 SharedPreferences editors isolate pending changes and clear b
 }
 
 TEST_CASE("DVM-121 SharedPreferences complete interfaces float snapshots and editor GC") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto base = f.New("Landroid/content/Context;");
         const auto prefs = f.Static("Landroid/preference/PreferenceManager;", "getDefaultSharedPreferences",

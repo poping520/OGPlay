@@ -29,6 +29,7 @@
 #include "ogplay/runtime/dexvm/guest_memory.h"
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
+#include "interpreter_backends.h"
 
 namespace {
 #if defined(_WIN32)
@@ -61,7 +62,7 @@ struct EglVm final {
         return catalog;
     }
 
-    explicit EglVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+    explicit EglVm(const InterpreterBackend backend = InterpreterBackend::threaded,
                    const char* dex_fixture = nullptr, const std::vector<IntrinsicClassDecl>& extras = {},
                    ogplay::gles::AngleBackend graphics = {},
                    ogplay::gles::CompressedTextureFamily texture_family = ogplay::gles::CompressedTextureFamily::all)
@@ -708,7 +709,7 @@ TEST_CASE("SurfaceTexture original Java connects a Surface producer to real exte
 #if OGPLAY_ANGLE_HAS_SWIFTSHADER
     using namespace ogplay::gles;
     REQUIRE(IsNativeAngleEglAvailable());
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         int callbacks{};
         VmObjectRef notified;
         const auto listener =
@@ -894,7 +895,7 @@ TEST_CASE("SurfaceTexture original Java connects a Surface producer to real exte
 }
 
 TEST_CASE("SurfaceTexture GC abandons consumers without producer endpoints retaining Java owners") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         EglVm fixture(backend);
         fixture.context->session = nullptr;
         VmThreadRuntime threads(fixture.interpreter);

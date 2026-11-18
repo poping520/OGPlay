@@ -7,15 +7,13 @@
 在仓库根目录使用 Python 3.11+ 和 JDK 17。Android SDK 需含 `platforms/android-19/android.jar`、Build Tools、SDK CMake 和 NDK。通过参数或环境变量定位 SDK 和 NDK。
 
 ```sh
+cmake --build build/release --target ogplay-cli
 python3 tools/conformance/probe_tests.py build
-python3 tools/conformance/probe_tests.py run --config a --interpreter threaded --out .local/probe/a-threaded
-python3 tools/conformance/probe_tests.py run --config b --interpreter threaded --out .local/probe/b-threaded
-python3 tools/conformance/probe_tests.py run --config a --interpreter switch --out .local/probe/a-switch \
-  --compare-to .local/probe/a-threaded/report.json
+python3 tools/conformance/probe_tests.py run --config a --filter crypto. --out .local/probe/a-threaded
 python3 tools/conformance/probe_tests.py selftest
 ```
 
-`run` 和 `selftest` 默认用 `build/dev/ogplay-cli`。Windows 可指定 `--cli build/windows-msvc/Release/ogplay-cli.exe`。`--filter device.cpu graphics.gles` 选择 ID 前缀。每次运行需要独立的空 `--out`，省略时自动生成。默认总时限 300 秒，最多重启 8 次。正常运行有能力失败时仍可生成完整报告。
+`run` 和 `selftest` 默认用 `build/release/ogplay-cli`，解释器默认 threaded。debug 构建只用于排查，不用于常规运行。配置 b 和 `--interpreter switch` 仅在用户要求时运行，switch 的对比用 `--compare-to` 指向 threaded 报告。Windows 可指定 `--cli build/windows-msvc/Release/ogplay-cli.exe`。`--filter device.cpu graphics.gles` 选择 ID 前缀。每次运行需要独立的空 `--out`，省略时自动生成。默认总时限 300 秒，最多重启 8 次。正常运行有能力失败时仍可生成完整报告。
 
 | 配置 | 宽高 px | dpi | CPU 核 | MHz |
 | --- | --- | ---: | ---: | ---: |
@@ -55,11 +53,10 @@ Crypto 的清单记录各 provider 发布的服务，实际变换和语义看对
 ## 单调基线与报告差分
 
 ```sh
-python3 tools/conformance/probe_tests.py check --report .local/probe/a-threaded/report.json \
-  --also-report .local/probe/b-threaded/report.json --also-report .local/probe/a-switch/report.json
+python3 tools/conformance/probe_tests.py check --report .local/probe/a-threaded/report.json
 python3 tools/conformance/probe_tests.py diff .local/probe/a-threaded/report.json .local/probe/b-threaded/report.json
 ```
 
-`check` 检查以往通过项，只有所有指定报告均通过的新增项可以经 `--update-baseline` 纳入下一版基线。生成基线须使用完整、未过滤的正式运行。省略 `--report` 时选择默认输出树内最新的完整正式报告。`diff` 对比每项的状态和实测值，包括配置、计时与每个沙盒生成的身份差异。
+`check` 检查以往通过项，只有所有指定报告均通过的新增项可以经 `--update-baseline` 纳入下一版基线。生成基线须使用完整、未过滤的正式运行，只在用户要求更新基线时执行；需要多配置或双解释器时用 `--also-report` 追加报告。省略 `--report` 时选择默认输出树内最新的完整正式报告。`diff` 对比每项的状态和实测值，包括配置、计时与每个沙盒生成的身份差异。
 
 退出码 0 表示命令成功，1 表示运行未完成、自检失败、基线回归或差分存在，2 表示参数、输入或构建工具失败。

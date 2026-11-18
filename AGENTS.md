@@ -72,6 +72,15 @@ Agent 自行按实际风险分级，无需为常规分级向用户确认；出�
   未修改的原版算法不自动要求新增完整语义测试。
 - 只构建受影响目标，Windows 使用 `windows-msvc`。只有配方/运行时数据变化且现有二进制
   可直接加载时，不重编译 C++。无用户明确要求禁止全量测试；不运行与改动无关的门禁。
+- DexVM 解释器默认只验证 threaded 后端：`ogplay_tests` 中按后端参数化的用例经
+  `ogplay::test::InterpreterBackends()`（`tests/interpreter_backends.h`）只跑 threaded，
+  Probe/JNI/Dalvik 一致性 runner 默认也只跑 threaded。switch 或双后端
+  （`OGPLAY_TEST_BACKENDS=all`、`--backend switch`、`--interpreter switch`）仅在用户明确要求时运行。
+- 运行 APK、Probe 和一致性 runner 使用 release 构建（`cmake --build build/release --target ogplay-cli`），
+  debug 只用于排查；单元测试在 `build/dev` 定向构建。Probe 按改动用 `--filter` 只跑相关分类，
+  完整未过滤运行和基线更新仅在用户要求时执行。
+- 格式化放在最终验证之前：对改动行执行 `git clang-format`，不对整个文件 `clang-format -i`；
+  随后构建并跑一轮定向验证。不为格式化重复整轮测试，也不在报告前重跑已通过的检查。
 - BootDex 配方扩充：核对依赖/native/overlay 冲突，build/check，并按需要复用已有链接或
   加载检查。出现新 native、未满足依赖或行为适配才升级为代码开发；不为类数变化重写测试。
   若已有硬编码检查确需更新，只做必要维护，不在小任务中重构测试框架。

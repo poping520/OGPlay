@@ -48,6 +48,7 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/session/android_app_process.h"
+#include "interpreter_backends.h"
 
 namespace {
 
@@ -314,7 +315,7 @@ struct TlsApp final {
     LoopbackTransport* transport{};
 
     explicit TlsApp(NetworkTransport* network = nullptr,
-                    const InterpreterBackend backend = InterpreterBackend::switch_dispatch) {
+                    const InterpreterBackend backend = InterpreterBackend::threaded) {
         InstallCaPack(filesystem);
         for (const auto name :
              {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so", "libcrypto.so", "libssl.so", "libgabi++.so",
@@ -511,7 +512,7 @@ void ExpectCheckFailure(TlsApp& app, VmObjectRef manager, VmObjectRef chain, con
 }  // namespace
 
 TEST_CASE("TLS-01 path validation uses guest libcrypto") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(static_cast<int>(backend));
         TlsApp app(nullptr, backend);
         app.Run([&] {
@@ -707,7 +708,7 @@ TEST_CASE("TLS-01 path validation uses guest libcrypto") {
 TEST_CASE("TLS-02 client handshake HTTPS layered autoClose") {
     OracleServer server("server.crt", "server.key");
     LoopbackTransport transport(server.Port());
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         TlsApp app(&transport, backend);
         app.Run([&] {
@@ -1041,7 +1042,7 @@ void HandshakeMutualTls(TlsApp& app, std::uint16_t port, const char* algorithm, 
 TEST_CASE("TLS-02 mutual TLS installs a BKS client certificate") {
     OracleServer server("server.crt", "server.key", "ca.crt");
     LoopbackTransport transport(server.Port());
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         TlsApp app(&transport, backend);
         app.Run([&] {
@@ -1052,7 +1053,7 @@ TEST_CASE("TLS-02 mutual TLS installs a BKS client certificate") {
 }
 
 TEST_CASE("TLS-02 network stays offline by default") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         TlsApp app(nullptr, backend);
         app.Run([&] {
             CHECK_FALSE(app.Vm().Network().Policy().enabled);

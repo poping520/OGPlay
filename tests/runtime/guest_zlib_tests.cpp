@@ -51,13 +51,14 @@
 #include "ogplay/video/fake_video_player.h"
 
 #include "native_library_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::native_library;
 
 TEST_CASE("DVM-201 CRC32 uses BootDex state and real guest zlib on both backends") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;
@@ -237,7 +238,7 @@ TEST_CASE("DVM-201 CRC32 uses BootDex state and real guest zlib on both backends
 TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;
@@ -557,7 +558,7 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
 TEST_CASE("ZipInputStream reads guest source bytes and dispatches entry operations") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;
@@ -695,7 +696,7 @@ TEST_CASE("ZipInputStream reads guest source bytes and dispatches entry operatio
 TEST_CASE("DVM-350 ZipFile reads stored and deflated entries from guest VFS") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;

@@ -5,6 +5,7 @@
 #include "../fixtures/bitmap_decode_data.h"
 #include "android_value_fixture.h"
 #include "ogplay/runtime/vfs/vfs.h"
+#include "interpreter_backends.h"
 
 namespace {
 using namespace ogplay::test::android_value;
@@ -192,7 +193,7 @@ TEST_CASE("Skia ROM BitmapFactory scales PNG nine-patch metadata and output padd
 }  // namespace
 
 TEST_CASE("NIO ROM Bitmap pixel copies use payload offsets and Java advances position once") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto config = f.Static("Landroid/graphics/Bitmap$Config;", "valueOf",
                                      "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;",

@@ -18,6 +18,7 @@
 #include "ogplay/runtime/dexvm/guest_memory.h"
 #include "ogplay/runtime/dexvm/nio_buffer_access.h"
 #include "ogplay/runtime/dexvm/object_model.h"
+#include "interpreter_backends.h"
 
 namespace dx = ogplay::runtime::dexvm;
 namespace memory = ogplay::memory;
@@ -35,7 +36,7 @@ struct NioVm final {
     ogplay::core::CapabilityLedger ledger;
     dx::Interpreter vm;
 
-    explicit NioVm(dx::InterpreterBackend backend = dx::InterpreterBackend::switch_dispatch, bool disable_fast = false)
+    explicit NioVm(dx::InterpreterBackend backend = dx::InterpreterBackend::threaded, bool disable_fast = false)
         : vm(
               [this]() -> dx::DexClassLinker& {
                   linker.RegisterIntrinsics(dx::CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices()));
@@ -226,7 +227,7 @@ TEST_CASE("DVM-83 NIO marshals heap and direct buffers without moving cursors") 
 }
 
 TEST_CASE("WU7-6 NIO byte and short reads sign extend on both backends") {
-    for (auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         NioVm f(backend);
         const auto on = [&](dx::VmObjectRef receiver, const char* name, const char* descriptor,
                             std::vector<dx::VmValue> args) {
@@ -254,7 +255,7 @@ TEST_CASE("WU7-6 NIO byte and short reads sign extend on both backends") {
 }
 
 TEST_CASE("DVM-260 direct buffers share managed byte payload across views and GC") {
-    for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         NioVm f(backend);
         const auto buffer = f.Static("allocateDirect", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(16)});
         const auto state = f.vm.Buffers().Read(buffer);
@@ -330,7 +331,7 @@ TEST_CASE("DVM-260 direct buffers share managed byte payload across views and GC
 }
 
 TEST_CASE("DVM-260 VMRuntime array allocation and addressOf follow Dalvik boundaries") {
-    for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         NioVm f(backend);
         const auto getter = f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Ldalvik/system/VMRuntime;"),
                                                       "getRuntime", "()Ldalvik/system/VMRuntime;");
@@ -396,7 +397,7 @@ TEST_CASE("DVM-260 VMRuntime array allocation and addressOf follow Dalvik bounda
 }
 
 TEST_CASE("UTF8 streaming encoder preserves sliced input and overflow cursors") {
-    for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         NioVm f(backend);
         const auto invoke = [&](const char* owner, const char* name, const char* signature,
                                 std::vector<dx::VmValue> arguments) {
@@ -447,7 +448,7 @@ TEST_CASE("UTF8 streaming encoder preserves sliced input and overflow cursors") 
 }
 
 TEST_CASE("NIO ROM Memory bulk bindings preserve swap, bounds and overlapping bytes") {
-    for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         using V = dx::VmValue;
         NioVm f(backend);
         const auto memory_class = f.linker.ResolveDescriptor("Llibcore/io/Memory;");

@@ -39,13 +39,14 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-142 PackageManager reflection resolves the BootDex ResolveInfo family") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
 
         for (const auto* descriptor : {
@@ -82,7 +83,7 @@ TEST_CASE("DVM-142 PackageManager reflection resolves the BootDex ResolveInfo fa
 
 TEST_CASE("PackageManager getInstallerPackageName reports direct-load provenance") {
     constexpr auto kQuery = "(Ljava/lang/String;)Ljava/lang/String;";
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->package_name = "org.example.game";
         const auto base = f.New("Landroid/content/Context;");
@@ -126,7 +127,7 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
     constexpr auto kGetMetaData = 0x00000080;
     constexpr auto kGetPermissions = 0x00001000;
     constexpr auto kGetPackageInfo = "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;";
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->package_name = "org.example.game";
         f.context->package_version_code = 7U;
@@ -309,7 +310,7 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
 }
 
 TEST_CASE("DVM-240 installed applications use sealed facts independent values and API19 flags") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         auto& context = *f.context;
         context.package_name = "org.example.game";
@@ -597,7 +598,7 @@ TEST_CASE("DVM-240 installed applications use sealed facts independent values an
 
 TEST_CASE("ROM PackageManager parses archive bytes independently of installed Manifest facts") {
     constexpr auto signature = "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;";
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto base = f.New("Landroid/content/Context;");
         const auto base_root = f.vm.ProtectReferences(std::array{base});
@@ -627,7 +628,7 @@ TEST_CASE("ROM PackageManager parses archive bytes independently of installed Ma
 
 TEST_CASE("PackageManager getPermissionInfo queries definitions, not requests") {
     constexpr auto kQuery = "(Ljava/lang/String;I)Landroid/content/pm/PermissionInfo;";
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->package_name = "org.example.game";
         f.context->permission_inventory_known = true;
@@ -742,7 +743,7 @@ TEST_CASE("PackageManager getPermissionInfo queries definitions, not requests") 
 
 TEST_CASE("PackageManager getServiceInfo uses current Manifest service facts") {
     constexpr auto kQuery = "(Landroid/content/ComponentName;I)Landroid/content/pm/ServiceInfo;";
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->package_name = "org.example.game";
         f.context->application_process_name = "org.example.game:app";
@@ -902,7 +903,7 @@ TEST_CASE("PackageManager getServiceInfo uses current Manifest service facts") {
 
 TEST_CASE("PackageManager getReceiverInfo uses current Manifest receiver facts") {
     constexpr auto kQuery = "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;";
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->package_name = "org.example.game";
         f.context->application_process_name = "org.example.game:app";
@@ -1054,7 +1055,7 @@ VmObjectRef PackageRef(AndroidValueVm& f, VmObjectRef object, const char* name, 
 
 TEST_CASE("PackageManager projects Manifest components, configurations and URI grants") {
     using namespace ogplay::loader;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         auto& context = *f.context;
         context.package_name = "fixture.app";
@@ -1201,7 +1202,7 @@ TEST_CASE("PackageManager GET_SIGNATURES caches DER and failures, and returns fr
     // SHA-256 of the original DER from the fixture's META-INF/ANDROIDD.RSA:
     // openssl pkcs7 -inform DER -print_certs | openssl x509 -outform DER | shasum -a 256
     constexpr auto digest = "cd334e85f922986744ce0d596094f36bfc091d44f3cd636a1733ec00d40537fb";
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         auto& context = *f.context;
         context.package_name = "fixture.app";
@@ -1265,7 +1266,7 @@ TEST_CASE("PackageManager GET_SIGNATURES caches DER and failures, and returns fr
 }
 
 TEST_CASE("PMS entry points silently ignore bits outside their API19 masks") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         auto& c = *f.context;
         c.package_name = "fixture.app";

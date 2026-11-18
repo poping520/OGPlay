@@ -50,6 +50,7 @@
 #include "ogplay/video/fake_video_player.h"
 
 #include "native_library_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::native_library;
 
@@ -144,7 +145,7 @@ TEST_CASE("DVM-150 Runtime exit propagates through guest JNI OnLoad reentry") {
 TEST_CASE("DVM-202 teardown isolates pending JNI errors and still stops after cleanup failure") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         OrchestratedApp f("fixture.LauncherActivity", true, false, {}, {}, true, backend);
         f.app->StartApplication();
         static_cast<void>(f.app->StartLauncherActivity());
@@ -170,7 +171,7 @@ TEST_CASE("DVM-202 teardown isolates pending JNI errors and still stops after cl
 TEST_CASE("cooperative onPause can start Java workers before VM shutdown and join is bounded") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const bool timeout : {false, true}) {
             INFO("timeout=" << timeout << " backend=" << static_cast<int>(backend));
             OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
@@ -241,7 +242,7 @@ TEST_CASE("cooperative onPause can start Java workers before VM shutdown and joi
 TEST_CASE("process close destroys the foreground before shutdown and finish stays per instance") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const int mode : {0, 1, 2}) {
             INFO("mode=" << mode << " backend=" << static_cast<int>(backend));
             OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
@@ -323,7 +324,7 @@ TEST_CASE("process close destroys the foreground before shutdown and finish stay
 TEST_CASE("DVM-236 guest process exit and runtime fault forbid Activity callbacks") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const bool guest_exit : {false, true}) {
             OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
             f.app->StartApplication();

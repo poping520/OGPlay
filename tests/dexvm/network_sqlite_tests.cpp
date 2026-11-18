@@ -37,6 +37,7 @@
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/runtime/vfs/sandbox_store.h"
 #include "ogplay/hal/clock.h"
+#include "interpreter_backends.h"
 
 namespace {
 using namespace ogplay::runtime;
@@ -215,7 +216,7 @@ struct NetworkSqliteVm final {
     std::atomic<bool> thread_query_entered{};
     std::atomic<bool> thread_query_interrupted{};
 
-    explicit NetworkSqliteVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+    explicit NetworkSqliteVm(const InterpreterBackend backend = InterpreterBackend::threaded,
                              std::vector<std::uint8_t> app_dex = {}, std::string package_name = "test.game",
                              const bool sealed_classpath = false)
         : runtime([&] {
@@ -895,7 +896,7 @@ TEST_CASE("DVM-186 close cancels active work and teardown is idempotent") {
 }
 
 TEST_CASE("DVM-194 SQLiteGlobal reads framework-res configuration") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         NetworkSqliteVm fixture(backend);
         const auto owner = fixture.linker.ResolveDescriptor("Landroid/database/sqlite/SQLiteGlobal;");
         const auto config = [&](const char* method, const char* signature) {
@@ -929,7 +930,7 @@ TEST_CASE("DVM-194 SQLiteGlobal reads framework-res configuration") {
 }
 
 TEST_CASE("DVM-186 original database path runs on both interpreters") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         NetworkSqliteVm fixture(backend);
         auto database =
             fixture
@@ -976,7 +977,7 @@ TEST_CASE("DVM-186 original database path runs on both interpreters") {
 }
 
 TEST_CASE("DVM-186 real guest thread query is cancelled by teardown") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         NetworkSqliteVm fixture(backend);
         fixture.thread_connection =
             database::Connection::Open(fixture.vfs, "/data/data/test.game/databases/thread-close.db");
@@ -995,7 +996,7 @@ TEST_CASE("DVM-186 real guest thread query is cancelled by teardown") {
 }
 
 TEST_CASE("DVM-186 GC marking competes safely with connection close") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         NetworkSqliteVm fixture(backend);
         const auto database =
             fixture
@@ -1071,7 +1072,7 @@ TEST_CASE("DVM-88 network runtime closes live channels during teardown") {
 }
 
 TEST_CASE("DVM-152 API 19 InetAddress owns address state and uses bounded DNS") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         NetworkSqliteVm fixture(backend);
 
@@ -1116,7 +1117,7 @@ TEST_CASE("DVM-152 API 19 InetAddress owns address state and uses bounded DNS") 
 }
 
 TEST_CASE("DVM-153 API 19 URI parses creates normalizes and resolves in BootDex") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         NetworkSqliteVm fixture(backend);
         const auto input =
@@ -1146,7 +1147,7 @@ TEST_CASE("DVM-153 API 19 URI parses creates normalizes and resolves in BootDex"
 }
 
 TEST_CASE("ProxySelector reports no process-wide proxy service") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         NetworkSqliteVm fixture(backend);
         const auto selector = fixture.Static("Ljava/net/ProxySelector;", "getDefault", "()Ljava/net/ProxySelector;");
@@ -1155,7 +1156,7 @@ TEST_CASE("ProxySelector reports no process-wide proxy service") {
 }
 
 TEST_CASE("DVM-88 URL form codecs match API 19 UTF-8 behavior") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         NetworkSqliteVm fixture(backend);
         const auto utf8 = fixture.vm.NewStringUtf8("UTF-8");
@@ -1209,7 +1210,7 @@ TEST_CASE("DVM-88 URL form codecs match API 19 UTF-8 behavior") {
 }
 
 TEST_CASE("DVM-88 URL parsing is value-only and offline failure starts at I/O") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         FakeNetwork transport;
         NetworkSqliteVm fixture(backend);
@@ -1531,7 +1532,7 @@ TEST_CASE("DVM-186 real APK cookie storage handles empty expired and valid datab
 }
 
 TEST_CASE("DVM-186 helper callback failure rolls back schema and version") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         NetworkSqliteVm fixture(backend);
         fixture.helper_create_throws = true;
         const auto helper = fixture.NewHelper("callback-failure.db", 1);
@@ -1629,7 +1630,7 @@ TEST_CASE("DVM-88 stage catalog keeps NIO GLES AudioTrack and data paths linkabl
 }
 
 TEST_CASE("Sealed classpath URLs read registered ZIP entries with parent first and API19 ZIP semantics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const auto boot_present : {false, true}) {
             NetworkSqliteVm fixture(backend, {}, "test.game", true);
             const std::string name = "java/lang/config %!?# +.properties";
@@ -1707,7 +1708,7 @@ TEST_CASE("Sealed classpath URLs read registered ZIP entries with parent first a
 }
 
 TEST_CASE("DVM164 offline HTTP objects configure and disconnect after failed I/O") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         FakeNetwork transport;
         NetworkSqliteVm fixture(backend);
         fixture.vm.Network().Configure({}, &transport);
@@ -1747,7 +1748,7 @@ TEST_CASE("DVM164 offline HTTP objects configure and disconnect after failed I/O
 }
 
 TEST_CASE("DVM-265 DEX DatagramPacket setData owns length") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
         const auto array = f.Bytes("abcd");
         const auto roots = f.vm.ProtectReferences(std::array{array});
@@ -1785,7 +1786,7 @@ TEST_CASE("DVM-265 DEX DatagramPacket setData owns length") {
 }
 
 TEST_CASE("Posix datagram bytes accept direct ByteBuffer slices in the existing transport") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         FakeNetwork transport;
         ogplay::test::android_value::AndroidValueVm f(backend);
         f.vm.Network().Configure({.enabled = true, .allow_datagram = true, .allowed_hosts = {"203.0.113.7"}},
@@ -1828,7 +1829,7 @@ TEST_CASE("Posix datagram bytes accept direct ByteBuffer slices in the existing 
 }
 
 TEST_CASE("DVM-343 ROM network interfaces enumerate the offline kernel view") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         NetworkSqliteVm f(backend, {}, "test.game", true);
         const auto file =
             f.New("Ljava/io/File;", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("/sys/class/net"))});
@@ -1882,7 +1883,7 @@ TEST_CASE("DVM-343 ROM network interfaces enumerate the offline kernel view") {
 }
 
 TEST_CASE("DVM-343 interface query descriptors bound Posix errno and close semantics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         NetworkSqliteVm f(backend, {}, "test.game", true);
         const auto posix = f.New("Llibcore/io/Posix;");
         const auto errno_is = [&](const VmCallOutcome& outcome, const int expected) {

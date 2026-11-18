@@ -53,13 +53,14 @@
 
 #include "native_library_fixture.h"
 #include "resources_test_support.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::native_library;
 
 TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcrypto") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         const auto sandbox_root =
             std::filesystem::temp_directory_path() /

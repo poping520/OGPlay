@@ -51,6 +51,7 @@
 
 #include "native_library_fixture.h"
 #include "resources_test_support.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::native_library;
 
@@ -385,7 +386,7 @@ TEST_CASE("VFS-09 session and native process share the finite guest call watchdo
 TEST_CASE("DVM-264 ROM application binding publishes tmpdir before Application class initialization") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         runtime::VirtualFileSystem filesystem;
         filesystem.CreateDirectory("/data");
         filesystem.CreateDirectory("/data/game");
@@ -441,7 +442,7 @@ TEST_CASE("DVM-354 API19 heap classes and largeHeap are applied before Applicati
     using namespace ogplay;
     using namespace runtime::dexvm;
     constexpr std::int64_t mib = 1024 * 1024;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const bool large : {false, true}) {
             OrchestratedApp fixture("fixture.LauncherActivity", true, false, "", {}, true, backend,
                                     "fixture.HeapApplication", {}, {64, 36}, {}, large);
@@ -513,7 +514,7 @@ TEST_CASE("DVM-354 API19 heap classes and largeHeap are applied before Applicati
 TEST_CASE("AndroidAppProcess runs host requests inside the ROM main Looper on one guest owner") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         OrchestratedApp f("fixture.LauncherActivity", true, false, {}, {}, true, backend);
         f.app->StartApplication();
         const auto host_thread = std::this_thread::get_id();

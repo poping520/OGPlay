@@ -44,6 +44,7 @@
 #include "ogplay/runtime/vfs/vfs.h"
 
 #include "file_vfs_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::file_vfs;
 using namespace ogplay::runtime;
@@ -88,8 +89,7 @@ std::vector<IntrinsicClassDecl> InputInheritanceTestIntrinsics(
 } // namespace
 
 TEST_CASE("OutputStream inherited bulk writes virtual-dispatch to subclasses") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
                                                          "switch");
         const auto written = std::make_shared<std::vector<std::byte>>();
@@ -121,8 +121,7 @@ TEST_CASE("OutputStream inherited bulk writes virtual-dispatch to subclasses") {
 }
 
 TEST_CASE("InputStream inherited reads and skip virtual-dispatch to subclasses") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
                                                          "switch");
         const auto cursor = std::make_shared<std::size_t>();
@@ -161,8 +160,7 @@ TEST_CASE("InputStream inherited reads and skip virtual-dispatch to subclasses")
 }
 
 TEST_CASE("FileOutputStream public constructors and writes match on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
                                                          "switch");
         InterpreterConfig config;
@@ -293,8 +291,7 @@ TEST_CASE("FileOutputStream rejects null paths and read-only descriptors") {
 }
 
 TEST_CASE("FileInputStream public API shares descriptor position on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
                                                          "switch");
         InterpreterConfig config;
@@ -360,8 +357,7 @@ TEST_CASE("FileInputStream public API shares descriptor position on both backend
 }
 
 TEST_CASE("FileChannel transferTo copies a bounded range and preserves source position") {
-  for (const auto backend : {InterpreterBackend::switch_dispatch,
-                             InterpreterBackend::threaded}) {
+  for (const auto backend : ogplay::test::InterpreterBackends()) {
     CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
     InterpreterConfig config;
     config.backend = backend;
@@ -447,8 +443,7 @@ TEST_CASE("DexVM IO adapter preserves VFS errno on descriptor failures") {
 }
 
 TEST_CASE("RandomAccessFile shares VFS position and supports resize") {
-  for (const auto backend : {InterpreterBackend::switch_dispatch,
-                             InterpreterBackend::threaded}) {
+  for (const auto backend : ogplay::test::InterpreterBackends()) {
     InterpreterConfig config;
     config.backend = backend;
     FileVm vm(nullptr, true, config);
@@ -477,7 +472,7 @@ TEST_CASE("RandomAccessFile shares VFS position and supports resize") {
 }
 
 TEST_CASE("Posix fcntlFlock backs FileChannel locks with single-process record lock semantics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend);
         InterpreterConfig config;
         config.backend = backend;
@@ -647,7 +642,7 @@ TEST_CASE("DataOutputStream and wrapped FileOutputStream share one close state")
 
 
 TEST_CASE("DVM-104 FileReader inherits guest Reader behavior over VFS UTF8") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         FileVm vm(nullptr, false, InterpreterConfig{.backend=backend});
         vm.vfs.CreateDirectory("/sdcard");
         const auto file=vm.NewFile("/sdcard/reader.txt");

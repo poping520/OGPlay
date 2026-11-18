@@ -44,6 +44,7 @@
 #include "ogplay/runtime/vfs/vfs.h"
 
 #include "file_vfs_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::file_vfs;
 using namespace ogplay::runtime;
@@ -117,7 +118,7 @@ std::vector<IntrinsicClassDecl> FileFilterTestIntrinsics() {
 }  // namespace
 
 TEST_CASE("DVM-243 original StatFs snapshots refresh guest quota and preserve errors") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         const TemporaryRoot root("statfs");
         auto store = SandboxStore::Open(root.path, kPackage, kPackage, {.byte_quota = 16 * 4096, .maximum_files = 32});
         FileVm f(store.get(), true, {.backend = backend});
@@ -179,7 +180,7 @@ TEST_CASE("DVM-243 original StatFs snapshots refresh guest quota and preserve er
 
 TEST_CASE("DVM-243 original StatFs retains long values and API19 int truncation") {
     constexpr auto blocks = (UINT64_C(1) << 31) + 5;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         const TemporaryRoot root("statfs-large");
         auto store = SandboxStore::Open(root.path, kPackage, kPackage, {.byte_quota = blocks * 4096});
         FileVm f(store.get(), true, {.backend = backend});
@@ -193,7 +194,7 @@ TEST_CASE("DVM-243 original StatFs retains long values and API19 int truncation"
 }
 
 TEST_CASE("DVM-217 AtomicFile commits rolls back and recovers through VFS") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         const TemporaryRoot root("atomic-file");
         const std::string path = std::string(kWritableRoots[0]) + "/save/progress";
@@ -298,7 +299,7 @@ TEST_CASE("File and stream class shapes come from API19 BootDex") {
 }
 
 TEST_CASE("File first-batch path and object semantics match on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         InterpreterConfig config;
         config.backend = backend;
@@ -373,7 +374,7 @@ TEST_CASE("File mkdir creates one level while mkdirs creates parents") {
 
 TEST_CASE("File second-batch VFS and filter semantics match on both backends") {
     const auto filters = FileFilterTestIntrinsics();
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         InterpreterConfig config;
         config.backend = backend;
@@ -495,7 +496,7 @@ TEST_CASE("File second-batch VFS and filter semantics match on both backends") {
 }
 
 TEST_CASE("File Java failure results preserve the unavailable filesystem boundary") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         FileVm vm(nullptr, true, {.backend = backend});
         vm.interpreter.IO().SetFileSystem(nullptr);
         const auto file = vm.NewFile("/data/game/save.dat");
@@ -622,7 +623,7 @@ TEST_CASE("File.delete removes real entries and refuses the rest") {
 }
 
 TEST_CASE("File.createNewFile reports whether it created anything") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         FileVm vm(nullptr, true, {.backend = backend});
         const auto file = vm.NewFile("/sdcard/fresh.dat");
         CHECK(vm.CallOn(file, "createNewFile", "()Z").AsInt() == 1);
@@ -647,7 +648,7 @@ TEST_CASE("File.list distinguishes an empty directory from an invalid path") {
 }
 
 TEST_CASE("DVM-338 Posix lazily adopts guest descriptors and preserves errno") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend);
         FileVm vm(nullptr, true, {.backend = backend});
         const std::array data{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
@@ -732,7 +733,7 @@ TEST_CASE("DVM-338 Posix lazily adopts guest descriptors and preserves errno") {
 }
 
 TEST_CASE("NIO ROM Posix bytes natives share direct payload and preserve positioned IO offsets") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         FileVm f(nullptr, true, {.backend = backend});
         const std::array initial{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}, std::byte{'d'}};
         f.vfs.PutFile("/nio-io", initial, true);

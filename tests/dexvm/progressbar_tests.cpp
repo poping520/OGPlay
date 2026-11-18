@@ -1,12 +1,13 @@
 #include "android_value_fixture.h"
 #include "container_traversal_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 using ogplay::test::container_traversal::ContainerVm;
 
 TEST_CASE("DVM-365 ROM drawable XML rejects a null parser") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ContainerVm f(backend);
         const auto owner = f.New("Landroid/app/Activity;");
         const auto view = f.New("Landroid/widget/ProgressBar;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});

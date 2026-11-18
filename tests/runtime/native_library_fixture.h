@@ -80,7 +80,7 @@ struct ApplicationProcess final {
     ogplay::core::Logger logger;
 
     explicit ApplicationProcess(ogplay::runtime::dexvm::InterpreterBackend backend =
-                                    ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
+                                    ogplay::runtime::dexvm::InterpreterBackend::threaded,
                                 const std::optional<std::string_view> working_directory = std::nullopt,
                                 const std::string& dex_fixture = "application.dex",
                                 const ogplay::runtime::dexvm::JavaObjectModelConfig heap = {});
@@ -138,7 +138,7 @@ struct OrchestratedApp final {
                              const std::vector<ogplay::loader::AndroidManifestServiceComponent>& services = {},
                              const bool application_enabled = true,
                              const ogplay::runtime::dexvm::InterpreterBackend interpreter_backend =
-                                 ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
+                                 ogplay::runtime::dexvm::InterpreterBackend::threaded,
                              const std::string& application_class = "android.app.Application",
                              std::function<void()> pump_host_events = {}, Viewport viewport = {64, 36},
                              std::vector<std::string> gl_textures = {}, bool large_heap = false,

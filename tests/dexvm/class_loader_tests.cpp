@@ -20,6 +20,7 @@
 #include "ogplay/runtime/dexvm/reflection.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "interpreter_backends.h"
 
 namespace {
 
@@ -43,7 +44,7 @@ struct LoaderVm final {
     DexClassLinker& linker;
     Interpreter& interpreter;
 
-    explicit LoaderVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+    explicit LoaderVm(const InterpreterBackend backend = InterpreterBackend::threaded,
                       CoreIntrinsicServices services = {})
         : runtime([&] {
               ogplay::test::BindBootDexArchive(*context);
@@ -181,7 +182,7 @@ TEST_CASE("Class and ClassLoader resource streams preserve loader and package se
 }
 
 TEST_CASE("Class resource URLs preserve API19 names and open actual streams") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         using Resource = CoreIntrinsicServices::ClasspathResource;
         CoreIntrinsicServices services;
         services.read_classpath_resource = [](const Resource& resource) -> std::optional<std::vector<std::byte>> {
@@ -407,7 +408,7 @@ TEST_CASE("ClassLoader refuses dynamic namespaces and bootstrap app lookup") {
 }
 
 TEST_CASE("Class forName follows API19 caller loader initialization and errors") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         LoaderVm vm(backend);
         const auto find = [&](const std::string_view name) {
@@ -479,7 +480,7 @@ std::vector<IntrinsicClassDecl> ParentFirstCatalog() {
 }  // namespace
 
 TEST_CASE("ClassLoader parent-first registration preserves bootstrap identity and app-only classes") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         DexClassLinker linker;
         auto catalog = ParentFirstCatalog();
         auto intrinsic = IntrinsicClassBuilder::Class("Lshared/IntrinsicOwned;");
@@ -596,7 +597,7 @@ TEST_CASE("ClassLoader parent-first registration still rejects malformed duplica
 }
 
 TEST_CASE("WU7-3 ClassLoader default assertion setter is an API19 no-op") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         LoaderVm vm(backend);
         const auto loader =
             Ref(vm.Static("Ljava/lang/ClassLoader;", "getSystemClassLoader", "()Ljava/lang/ClassLoader;"));
@@ -613,7 +614,7 @@ TEST_CASE("WU7-3 ClassLoader default assertion setter is an API19 no-op") {
 }
 
 TEST_CASE("ADR-0153 JNI pending enters class initialization and becomes its failure") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const auto* descriptor : {"Ljava/lang/RuntimeException;", "Ljava/lang/LinkageError;"}) {
             LoaderVm vm(backend);
             auto original = vm.interpreter.MakeThrowable(descriptor, "pending-clinit");

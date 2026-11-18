@@ -26,6 +26,7 @@
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
+#include "interpreter_backends.h"
 
 namespace {
 
@@ -401,7 +402,7 @@ TEST_CASE("Context package manager has one process identity") {
 
 TEST_CASE("Context permission checks use the explicit guest process grant set") {
     using ogplay::runtime::kGuestProcessId;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         InterpreterConfig config;
         config.backend = backend;
         AndroidVm vm(config);
@@ -479,7 +480,7 @@ TEST_CASE("Context permission checks use the explicit guest process grant set") 
 }
 
 TEST_CASE("PackageManager P0 exposes only explicit current-package facts") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         InterpreterConfig config;
         config.backend = backend;
         ResourceVm vm(config);

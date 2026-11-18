@@ -50,13 +50,14 @@
 #include "ogplay/video/fake_video_player.h"
 
 #include "native_library_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::native_library;
 
 TEST_CASE("JNI native-only attachments detach without a DexVM monitor context") {
     using namespace ogplay::runtime;
     using namespace ogplay::runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess f(backend);
         auto& env = f.session->Environment();
         JniJavaVm java_vm(env);
@@ -77,7 +78,7 @@ TEST_CASE("JNI native-only attachments detach without a DexVM monitor context") 
 TEST_CASE("JNI stopped Java callbacks preserve native thread cancellation") {
     using namespace ogplay::runtime;
     using namespace ogplay::runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess f(backend);
         auto& session = *f.session;
         auto& env = session.Environment();
@@ -112,7 +113,7 @@ TEST_CASE("JNI stopped Java callbacks preserve native thread cancellation") {
 TEST_CASE("JNI native attachments isolate Java execution identity and detach cleanup") {
     using namespace ogplay::runtime;
     using namespace ogplay::runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess f(backend);
         auto& vm = f.bridge->Vm();
         auto& model = f.bridge->Model();
@@ -196,7 +197,7 @@ TEST_CASE("JNI native attachments isolate Java execution identity and detach cle
 TEST_CASE("DVM-111 scheduled tasks use VM interface assignability in shared JNI arrays") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess fixture(backend);
         auto& vm = fixture.bridge->Vm();
         auto& linker = fixture.bridge->Linker();

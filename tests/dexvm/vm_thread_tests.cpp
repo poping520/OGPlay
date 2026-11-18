@@ -24,6 +24,7 @@
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
+#include "interpreter_backends.h"
 
 namespace {
 
@@ -58,7 +59,7 @@ struct ThreadedVm final {
     VmThreadRuntime threads;
 
     explicit ThreadedVm(NativeMethodBridge* bridge = nullptr,
-                        InterpreterBackend backend = InterpreterBackend::switch_dispatch, bool platform = false)
+                        InterpreterBackend backend = InterpreterBackend::threaded, bool platform = false)
         : model(arrays, {}), linker(),
           interpreter(
               [this, platform]() -> DexClassLinker& {
@@ -265,7 +266,7 @@ TEST_CASE("dexvm uncaught thread exceptions are recorded, not thrown at join") {
 }
 
 TEST_CASE("DVM-234 uncaught dispatcher retains its child context and throwable roots") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ThreadedVm fixture(nullptr, backend, true);
         auto& vm = fixture.interpreter;
         vm.BindDefaultExecutionHost();
@@ -373,7 +374,7 @@ TEST_CASE("dexvm synchronized native methods use class and receiver monitors") {
 }
 
 TEST_CASE("DVM-202 direct native Java exceptions preserve identity and permit subsequent calls") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         StubNativeBridge bridge;
         ThreadedVm vm(&bridge, backend, true);
         const auto original = vm.interpreter.MakeThrowable("Ljava/lang/IllegalStateException;", "native failure");

@@ -33,7 +33,7 @@ struct AndroidValueVm final {
     Interpreter& vm;
     VmThreadRuntime& threads;
 
-    AndroidValueVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+    AndroidValueVm(InterpreterBackend backend = InterpreterBackend::threaded,
                    const std::vector<IntrinsicClassDecl>& extras = {}, bool force_all_bridge = false,
                    const char* dex_fixture = nullptr, ogplay::gles::AngleBackend graphics = {},
                    ogplay::gles::CompressedTextureFamily texture_family = ogplay::gles::CompressedTextureFamily::all);

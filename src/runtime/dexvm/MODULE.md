@@ -310,7 +310,7 @@ Method/Constructor/参数注解与泛型查询由运行时元数据及原版 Jav
 及完整 Java/Android 平台。
 
 定向测试位于 `tests/dexvm/`：interpreter/fast-code/linker、reflection、GC、thread/monitor、IO/
-network/NIO/Unsafe、BootDex 双后端与 dexasm readback。只构建受影响目标并运行相关用例；完整
+network/NIO/Unsafe、BootDex 后端参数化（默认只跑 threaded）与 dexasm readback。只构建受影响目标并运行相关用例；完整
 验收与 title gate 按顶层约定执行。
 
 ### Runtime shutdown

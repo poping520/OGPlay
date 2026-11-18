@@ -21,6 +21,7 @@
 #include "ogplay/runtime/dexvm/reflection.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
+#include "interpreter_backends.h"
 
 namespace {
 using namespace ogplay::runtime;
@@ -45,7 +46,7 @@ struct UnsafeVm {
     VmThreadRuntime threads;
     VmObjectRef unsafe;
 
-    explicit UnsafeVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch, bool boot = true)
+    explicit UnsafeVm(InterpreterBackend backend = InterpreterBackend::threaded, bool boot = true)
         : vm(
               [&]() -> DexClassLinker& {
                   CoreIntrinsicServices services;
@@ -115,7 +116,7 @@ struct UnsafeVm {
 }  // namespace
 
 TEST_CASE("Unsafe API19 singleton caller checks and allocation") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         UnsafeVm f(backend);
         CHECK(UnsafeVm::Ok(f.Static(kUnsafe, "getUnsafe", "()Lsun/misc/Unsafe;")).ref == f.unsafe);
         for (const auto name : {"THE_ONE", "theUnsafe"}) {
@@ -148,7 +149,7 @@ TEST_CASE("Unsafe API19 singleton caller checks and allocation") {
 }
 
 TEST_CASE("Unsafe fields share DEX storage and reject invalid locations") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         UnsafeVm f(backend);
         const auto object = f.Allocate("LUnsafeChild;");
         const auto offset = f.Offset("LUnsafeBean;", "value");
@@ -293,7 +294,7 @@ TEST_CASE("Unsafe arrays use checked base scale and shared array stores") {
 }
 
 TEST_CASE("Unsafe park uses one permit and unified epoch Clock") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         UnsafeVm f(backend);
         const auto thread = UnsafeVm::Ok(f.Static("Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;")).ref;
         for (int i = 0; i < 2; ++i)
@@ -343,7 +344,7 @@ TEST_CASE("Unsafe CAS is atomic across guest execution contexts") {
 }
 
 TEST_CASE("Unsafe boots real API19 AtomicInteger and AQS") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         UnsafeVm f(backend, true);
         const auto object = f.Allocate("Ljava/util/concurrent/atomic/AtomicInteger;");
         const auto type = f.model.ObjectClass(object);
@@ -389,7 +390,7 @@ TEST_CASE("Unsafe boots real API19 AtomicInteger and AQS") {
 }
 
 TEST_CASE("API19 read write locks preserve reentrancy sharing and ThreadLocal holds") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const bool fair : {false, true}) {
             INFO("fair=", fair);
             UnsafeVm f(backend, true);

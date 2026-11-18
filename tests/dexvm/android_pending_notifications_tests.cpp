@@ -35,13 +35,14 @@
 
 #include "android_value_fixture.h"
 #include "runtime/integration/dexvm_android/catalog.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-224 notification posting and cancellation use the session inventory") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         auto foreign =
             IntrinsicClassBuilder::Class("Ltest/ForeignNotificationContext;", "Landroid/content/ContextWrapper;");
         foreign.OverrideMethod("getPackageName", "()Ljava/lang/String;", [](IntrinsicContext& call) {
@@ -121,7 +122,7 @@ TEST_CASE("DVM-224 notification posting and cancellation use the session invento
 }
 
 TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->package_name = "example";
         f.vm.SetGcIntegration(
@@ -325,7 +326,7 @@ TEST_CASE("DVM-211 PendingIntent identity flags cancellation and GC") {
 }
 
 TEST_CASE("DVM-211 ROM AlarmManager validates and registers broadcast operations") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->package_name = "fixture";
         const auto base = f.New("Landroid/content/Context;");
@@ -410,7 +411,7 @@ TEST_CASE("Service foreground notification display degrades after validating the
 }
 
 TEST_CASE("DVM-211 concurrent contexts share one PendingIntent token") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         std::array<VmCallOutcome, 2> results;
         std::array<VmObjectRef, 2> workers;
         VmObjectRef base, intent;
@@ -466,7 +467,7 @@ TEST_CASE("DVM-211 concurrent contexts share one PendingIntent token") {
 }
 
 TEST_CASE("DVM227 ROM notification values preserve constructors and local Parcel contents") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend, {}, false, "notification_template.dex");
         f.context->package_name = "fixture";
         const auto base = f.New("Landroid/content/Context;");

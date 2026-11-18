@@ -44,6 +44,7 @@
 #include "ogplay/runtime/vfs/vfs.h"
 
 #include "file_vfs_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::file_vfs;
 using namespace ogplay::runtime;
@@ -84,7 +85,7 @@ std::vector<IntrinsicClassDecl> ObjectSerializationTestIntrinsics() {
 }  // namespace
 
 TEST_CASE("Object streams round trip bounded API19 primitive and string data") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         InterpreterConfig config;
         config.backend = backend;
@@ -196,7 +197,7 @@ TEST_CASE("Object streams round trip bounded API19 primitive and string data") {
 
 TEST_CASE("Object streams round trip default Serializable graphs") {
     const auto extra = ObjectSerializationTestIntrinsics();
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         InterpreterConfig config;
         config.backend = backend;

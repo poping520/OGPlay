@@ -40,6 +40,7 @@
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
+#include "interpreter_backends.h"
 
 namespace ogplay::test::interpreter {
 
@@ -87,7 +88,7 @@ struct IntrinsicVm final {
 
 template <typename Fn>
 void WithEachBackend(Fn&& fn) {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         INFO("backend=", backend == InterpreterBackend::threaded ? "threaded" : "switch");
         InterpreterConfig config;
         config.backend = backend;

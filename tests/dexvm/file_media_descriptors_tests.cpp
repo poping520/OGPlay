@@ -44,6 +44,7 @@
 #include "ogplay/runtime/vfs/vfs.h"
 
 #include "file_vfs_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::file_vfs;
 using namespace ogplay::runtime;
@@ -243,7 +244,7 @@ TEST_CASE("MediaPlayer resolves a JNI-built FileDescriptor through its guest VFS
 }
 
 TEST_CASE("DVM-338 ROM adoptFd AFD close retains the captured media lease") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const bool register_first : {false, true}) {
             CAPTURE(backend);
             CAPTURE(register_first);

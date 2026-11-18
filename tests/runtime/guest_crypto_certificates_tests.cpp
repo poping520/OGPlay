@@ -52,6 +52,7 @@
 
 #include "native_library_fixture.h"
 #include "resources_test_support.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::native_library;
 
@@ -121,7 +122,7 @@ TEST_CASE("DVM-171 failed unified crypto JNI initialization aborts process creat
 TEST_CASE("DVM-106 Certificate parses DER PEM and verifies RSA EC through guest OpenSSL") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;
@@ -460,7 +461,7 @@ TEST_CASE("DVM-106 Certificate parses DER PEM and verifies RSA EC through guest 
 TEST_CASE("DVM-108/109 UUID MessageDigest and serialization use BootDex with real guest crypto") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;

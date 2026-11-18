@@ -34,6 +34,7 @@
 
 #include "bootdex_library_fixture.h"
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::bootdex_library;
 using namespace ogplay::runtime;
@@ -181,7 +182,7 @@ struct ScheduledVm final {
 }  // namespace
 
 TEST_CASE("DVM-110 scheduled one-shot tasks use Clock FIFO factories and GC roots") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const char* factory :
              std::array<const char*, 3>{nullptr, "newScheduledThreadPool", "newSingleThreadScheduledExecutor"}) {
             ScheduledVm s(backend);
@@ -224,7 +225,7 @@ TEST_CASE("DVM-110 scheduled one-shot tasks use Clock FIFO factories and GC root
 }
 
 TEST_CASE("DVM-110 fixed rate and fixed delay use distinct deadlines and stop after cancellation") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const bool fixed_rate : {false, true}) {
             ScheduledVm s(backend);
             s.state->slow = true;
@@ -252,7 +253,7 @@ TEST_CASE("DVM-110 fixed rate and fixed delay use distinct deadlines and stop af
 }
 
 TEST_CASE("DVM-110 cancellation timeout rejection and periodic failure preserve Future semantics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ScheduledVm s(backend);
         const auto pool = s.Pool();
         const auto queue = s.Call(pool, "getQueue", "()Ljava/util/concurrent/BlockingQueue;").ref;
@@ -304,7 +305,7 @@ TEST_CASE("DVM-110 cancellation timeout rejection and periodic failure preserve 
 }
 
 TEST_CASE("DVM-110 shutdown honors delayed and periodic continuation policies") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const bool periodic : {false, true})
             for (const bool delayed : {false, true}) {
                 ScheduledVm s(backend);
@@ -343,7 +344,7 @@ TEST_CASE("DVM-110 shutdown honors delayed and periodic continuation policies") 
 }
 
 TEST_CASE("DVM-110 cancelling running work and shutdownNow interrupt real workers") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const bool shutdown_now : {false, true}) {
             ScheduledVm s(backend);
             s.state->block = true;
@@ -368,7 +369,7 @@ TEST_CASE("DVM-110 cancelling running work and shutdownNow interrupt real worker
 }
 
 TEST_CASE("DVM-110 core pool runs independent guest workers and executor completion APIs stay Java") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ScheduledVm s(backend);
         s.state->block = true;
         const auto pool = s.Pool();
@@ -436,7 +437,7 @@ TEST_CASE("DVM-87 FutureTask and atomic state expose core semantics") {
 }
 
 TEST_CASE("DVM-103 collection VM primitives use injected time and wrapping atomics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
         auto time = f.Static("Ljava/lang/System;", "nanoTime", "()J");
         REQUIRE(time.exception.IsValid());
@@ -462,7 +463,7 @@ TEST_CASE("DVM-103 collection VM primitives use injected time and wrapping atomi
 }
 
 TEST_CASE("DVM-104 synchronizers park real guest threads and handle interruption") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const auto* descriptor : {"Ljava/util/concurrent/CountDownLatch;", "Ljava/util/concurrent/Semaphore;",
                                        "Ljava/util/concurrent/CyclicBarrier;"}) {
             CAPTURE(std::string(descriptor));
@@ -548,7 +549,7 @@ TEST_CASE("DVM-104 synchronizers park real guest threads and handle interruption
 }
 
 TEST_CASE("DVM-104 atomic arrays references and immediate timeouts follow API19") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
         f.vm.Monitors().SetTimeSource([] { return std::int64_t{123}; });
         for (const bool wide : {false, true}) {
@@ -625,7 +626,7 @@ TEST_CASE("DVM-104 atomic arrays references and immediate timeouts follow API19"
 }
 
 TEST_CASE("DVM-267 ROM Thread subclass executes start and join") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         CHECK(f.Static("Lfixture/PlatformTables;", "romThread", "()I").AsInt() == 0);
         CHECK(f.ledger.Unimplemented().empty());

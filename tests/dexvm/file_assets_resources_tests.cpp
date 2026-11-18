@@ -46,6 +46,7 @@
 
 #include "file_vfs_fixture.h"
 #include "../runtime/resources_test_support.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::file_vfs;
 using namespace ogplay::runtime;
@@ -225,7 +226,7 @@ TEST_CASE("AssetManager opens ROM AssetInputStream for STORED and DEFLATED entri
 }
 
 TEST_CASE("Resources Context and PackageManager share application assets and isolate system assets") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         FileVm vm(nullptr, true, {.backend = backend});
         vm.context->package_inventory_known = true;
         const std::vector<std::byte> payload{std::byte{0x41}};
@@ -303,7 +304,7 @@ TEST_CASE("Resources Context and PackageManager share application assets and iso
 }
 
 TEST_CASE("Resources getXml exposes compiled APK XML as pull events") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         FileVm vm(nullptr, true, {.backend = backend});
         constexpr std::uint32_t kResourceId = 0x7f010000U;
         const auto xml = MakeBinaryXmlTextResource();
@@ -518,7 +519,7 @@ TEST_CASE("XML Pull original factory parses BOM APK assets through KXml on both 
         document.assign(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
     }
     REQUIRE(document.starts_with("\xEF\xBB\xBF"));
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         FileVm vm(nullptr, true, {.backend = backend});
         for (const auto descriptor :
              {"Lorg/xmlpull/v1/XmlPullParserFactory;", "Lorg/xmlpull/v1/XmlPullParser;",
@@ -615,7 +616,7 @@ TEST_CASE("XML Pull original factory parses BOM APK assets through KXml on both 
 
 TEST_CASE("DVM-375 SAX dispatches APK text XML to a guest handler on both backends") {
     constexpr auto handler_type = "Ltest/SaxHandler;";
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         std::vector<std::string> events;
         auto builder = IntrinsicClassBuilder::Class(handler_type, "Lorg/xml/sax/helpers/DefaultHandler;");
         builder.VirtualMethod("startDocument", "()V", [&](IntrinsicContext&) {
@@ -711,7 +712,7 @@ TEST_CASE("DVM-375 SAX dispatches APK text XML to a guest handler on both backen
 }
 
 TEST_CASE("DVM-338 ROM PFD duplicates detaches opens and rejects unsupported transports") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend);
         FileVm vm(nullptr, true, {.backend = backend}, {}, true);
         const auto invoke = [&](const char* owner, const char* name, const char* signature, std::vector<VmValue> args) {

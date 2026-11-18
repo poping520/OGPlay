@@ -39,13 +39,14 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-277 View constructor initializes ROM SDK compatibility flags once") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const auto sdk : {17U, 18U, 19U}) {
             AndroidValueVm fixture(backend);
             fixture.context->target_sdk_version = sdk;
@@ -72,7 +73,7 @@ TEST_CASE("DVM-277 View constructor initializes ROM SDK compatibility flags once
 }
 
 TEST_CASE("DVM-138 View.getParent follows the ROM ViewGroup hierarchy") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto activity = f.New("Landroid/content/Context;");
         const auto first_parent =
@@ -103,7 +104,7 @@ TEST_CASE("DVM-138 View.getParent follows the ROM ViewGroup hierarchy") {
 }
 
 TEST_CASE("DVM-167 ViewGroup width-height add uses virtual default params") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto activity = f.New("Landroid/app/Activity;");
         const auto relative =
@@ -131,7 +132,7 @@ TEST_CASE("DVM-174 AnimationListener type compatibility links and dispatches") {
     constexpr auto kListener = "Landroid/view/animation/Animation$AnimationListener;";
     constexpr auto kAnimation = "Landroid/view/animation/Animation;";
     constexpr auto kSignature = "(Landroid/view/animation/Animation;)V";
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         std::int32_t starts{};
         std::int32_t ends{};
         std::int32_t repeats{};
@@ -194,7 +195,7 @@ TEST_CASE("DVM-184 View.getContext preserves constructor and inflation identity"
     constexpr auto kViewInit = "(Landroid/content/Context;)V";
     constexpr auto kTwoArg = "(Landroid/content/Context;Landroid/util/AttributeSet;)V";
     constexpr auto kStyleInit = "(Landroid/content/Context;Landroid/util/AttributeSet;I)V";
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         auto subclass = IntrinsicClassBuilder::Class("Ltest/BurstlyView;", "Landroid/widget/LinearLayout;");
         subclass.Constructor(kViewInit, [](IntrinsicContext& call) {
             const auto type = call.vm.Linker().ResolveDescriptor("Landroid/widget/LinearLayout;");
@@ -255,7 +256,7 @@ TEST_CASE("DVM-184 View.getContext preserves constructor and inflation identity"
 }
 
 TEST_CASE("DVM-371 View scrollbar style round-trips and animation state stays inert") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::container_traversal::ContainerVm f(backend);
         const auto owner = f.New("Landroid/app/Activity;");
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});
@@ -294,7 +295,7 @@ TEST_CASE("DVM-371 View scrollbar style round-trips and animation state stays in
 }
 
 TEST_CASE("DVM-372 display-only setters warn and keep running while getters stay honest") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::container_traversal::ContainerVm f(backend);
         const auto owner = f.New("Landroid/app/Activity;");
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});
@@ -361,7 +362,7 @@ TEST_CASE("DVM-372 display-only setters warn and keep running while getters stay
 }
 
 TEST_CASE("DVM-363 View flags focus ids and ROM toString resolve actual resource identities") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::container_traversal::ContainerVm f(backend);
         const auto owner = f.New("Landroid/app/Activity;");
         const auto owner_root = f.vm.ProtectReferences(std::array{owner});

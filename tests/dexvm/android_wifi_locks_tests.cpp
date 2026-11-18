@@ -34,6 +34,7 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
@@ -58,7 +59,7 @@ VmObjectRef NewWifiManager(AndroidValueVm& f) {
 }  // namespace
 
 TEST_CASE("Offline WifiInfo requires ACCESS_WIFI_STATE and reports no connection") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto manager = NewWifiManager(f);
         const auto manager_root = f.vm.ProtectReferences(std::array{manager});
@@ -90,7 +91,7 @@ TEST_CASE("Offline WifiInfo requires ACCESS_WIFI_STATE and reports no connection
 }
 
 TEST_CASE("DVM-209 WifiLock Java state supports counted and uncounted ownership") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->granted_permissions.insert("android.permission.WAKE_LOCK");
         const auto manager = NewWifiManager(f);
@@ -135,7 +136,7 @@ TEST_CASE("DVM-209 WifiLock Java state supports counted and uncounted ownership"
 }
 
 TEST_CASE("DVM-209 WifiLock mode changes preserve separate count and held state") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->granted_permissions.insert("android.permission.WAKE_LOCK");
         const auto manager = NewWifiManager(f);
@@ -157,7 +158,7 @@ TEST_CASE("DVM-209 WifiLock mode changes preserve separate count and held state"
 }
 
 TEST_CASE("DVM-209 WifiLock permissions quota and GC are bounded per manager") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto manager = NewWifiManager(f);
         const auto create = [&](VmObjectRef service, int mode = 1) {
@@ -198,7 +199,7 @@ TEST_CASE("DVM-209 WifiLock permissions quota and GC are bounded per manager") {
 }
 
 TEST_CASE("DVM-209 MulticastLock Java state and finalization preserve API19 semantics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->granted_permissions.insert("android.permission.CHANGE_WIFI_MULTICAST_STATE");
         const auto manager = NewWifiManager(f);
@@ -259,7 +260,7 @@ TEST_CASE("DVM-209 MulticastLock Java state and finalization preserve API19 sema
 }
 
 TEST_CASE("DVM-209 MulticastLock uses its own permission for acquisition and release") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto manager = NewWifiManager(f);
         const auto create = [&] {
@@ -291,7 +292,7 @@ TEST_CASE("DVM-209 MulticastLock uses its own permission for acquisition and rel
 }
 
 TEST_CASE("DVM-209 WifiLock and MulticastLock share quota and retain other owners") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->granted_permissions.insert("android.permission.WAKE_LOCK");
         f.context->granted_permissions.insert("android.permission.CHANGE_WIFI_MULTICAST_STATE");

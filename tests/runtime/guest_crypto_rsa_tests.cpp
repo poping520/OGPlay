@@ -11,13 +11,14 @@
 #include "ogplay/hal/clock.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/session/android_app_process.h"
+#include "interpreter_backends.h"
 
 namespace {
 using namespace ogplay;
 using namespace ogplay::runtime::dexvm;
 using namespace ogplay::test::native_library;
 
-constexpr auto kBackends = {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded};
+const auto& kBackends = ogplay::test::InterpreterBackends();
 constexpr auto kFactory = "Ljava/security/KeyFactory;";
 constexpr auto kGenerator = "Ljava/security/KeyPairGenerator;";
 constexpr auto kCipher = "Ljavax/crypto/Cipher;";

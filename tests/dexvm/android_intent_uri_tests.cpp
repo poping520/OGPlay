@@ -34,13 +34,14 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-140 Intent putExtras merges Java Bundle mappings without aliasing") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto intent = f.New("Landroid/content/Intent;");
         const auto source = f.New("Landroid/os/Bundle;");
@@ -84,7 +85,7 @@ TEST_CASE("DVM-140 Intent putExtras merges Java Bundle mappings without aliasing
 }
 
 TEST_CASE("DVM-117 Intent extras use BootDex Bundle identity copies and GC") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto intent = f.New("Landroid/content/Intent;");
         const auto intent_root = f.vm.ProtectReferences(std::array{intent});
@@ -269,7 +270,7 @@ TEST_CASE("DVM-97 IntentFilter matches bounded MIME URI authority and categories
 }
 
 TEST_CASE("DVM-132 API 19 Uri executes from BootDex on both interpreters") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm fixture(backend);
         const auto text =
             fixture.vm.NewStringUtf8("content://user@cdn.example.com:443/plants/pea%20pod?kind=snow%20pea#leaf");
@@ -370,7 +371,7 @@ TEST_CASE("DVM-97 missing content providers return no MIME and malformed filters
 }
 
 TEST_CASE("DVM-107 ComponentName Java value and Parcel roundtrip") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto component = f.New(
             "Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
@@ -445,7 +446,7 @@ TEST_CASE("ROM IntentSender carries the PendingIntent Binder identity") {
 }
 
 TEST_CASE("DVM-265 DEX IntentFilter actions survive Parcelable dispatch") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
         const auto action = f.vm.NewStringUtf8("test.ROM");
         const auto roots = f.vm.ProtectReferences(std::array{action});

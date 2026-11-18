@@ -4,6 +4,7 @@
 #include "file_vfs_fixture.h"
 #include <bit>
 #include <algorithm>
+#include "interpreter_backends.h"
 
 using ogplay::test::container_traversal::ContainerVm;
 
@@ -185,7 +186,7 @@ Slot& Field(ContainerVm& f, VmObjectRef object, const char* name, const char* ty
 }  // namespace
 
 TEST_CASE("DVM-299 scroll ROM constructors real metrics and TypedArray on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const auto density : {1.0F, 2.0F}) {
             ContainerVm f(backend);
             f.context->ui_density = density;
@@ -264,7 +265,7 @@ TEST_CASE("DVM-299 scroll ROM constructors real metrics and TypedArray on both b
 }
 
 TEST_CASE("DVM-299 scroll over-scroll mode and construction without a window") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const auto name : {"Landroid/widget/ScrollView;", "Landroid/widget/HorizontalScrollView;"}) {
             ContainerVm f(backend);
             const auto owner = Owner(f);

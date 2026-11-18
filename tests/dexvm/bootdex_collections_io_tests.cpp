@@ -33,13 +33,14 @@
 #include "tls_fixtures.h"
 
 #include "bootdex_library_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::bootdex_library;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-103 BootDex collection implementations own their methods and storage") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
         for (const auto* name :
              {"ArrayList", "LinkedList", "Vector", "Stack", "ArrayDeque", "HashSet", "LinkedHashSet", "TreeSet",
@@ -103,7 +104,7 @@ TEST_CASE("DVM-103 BootDex collection implementations own their methods and stor
 }
 
 TEST_CASE("DVM-103 BootDex weak keys clear and enqueue while live list elements survive GC") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
         const auto map = f.vm.NewIntrinsicInstance("Ljava/util/WeakHashMap;");
         f.Construct(map, "Ljava/util/WeakHashMap;", "()V");
@@ -149,7 +150,7 @@ TEST_CASE("DVM-103 BootDex weak keys clear and enqueue while live list elements 
 }
 
 TEST_CASE("DVM-103 Externalizable invokes public constructor and callbacks with shared handles") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         bool public_constructor = true;
         bool fail_write = false;
         bool fail_read = false;
@@ -278,7 +279,7 @@ TEST_CASE("DVM-103 Externalizable invokes public constructor and callbacks with 
 }
 
 TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
         const auto value = f.vm.NewStringUtf8("item");
         for (const auto* name : {"ArrayBlockingQueue", "LinkedBlockingQueue", "LinkedBlockingDeque"}) {
@@ -326,7 +327,7 @@ TEST_CASE("DVM-103 bounded queues and Collections wrappers use API19 semantics")
 }
 
 TEST_CASE("DVM-104 memory wrappers preserve underlying guest stream identity") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
         const auto bytes = f.vm.NewIntrinsicInstance("Ljava/io/ByteArrayOutputStream;");
         f.Construct(bytes, "Ljava/io/ByteArrayOutputStream;", "()V");
@@ -370,7 +371,7 @@ TEST_CASE("DVM-104 memory wrappers preserve underlying guest stream identity") {
 }
 
 TEST_CASE("DVM-104 standard charset names encode decode and incremental reader agree") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
         for (const auto* name : {"UTF-8", "UTF-16", "UTF-16BE", "UTF-16LE", "ISO-8859-1", "US-ASCII"}) {
             CAPTURE(name);
@@ -438,7 +439,7 @@ TEST_CASE("DVM-104 standard charset names encode decode and incremental reader a
 }
 
 TEST_CASE("DVM-104 guest stream callbacks retain monitor exception identity and nonblocking available") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         auto failure = std::make_shared<VmObjectRef>();
         auto reads = std::make_shared<int>();
         auto locked = std::make_shared<bool>(false);
@@ -478,7 +479,7 @@ TEST_CASE("DVM-104 guest stream callbacks retain monitor exception identity and 
 }
 
 TEST_CASE("DVM-151 StringBuffer monitor covers callbacks and releases on exception") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         auto receiver = std::make_shared<VmObjectRef>();
         auto observed = std::make_shared<bool>(false);
         auto probe = IntrinsicClassBuilder::Class("Ltest/BuilderCallback;");

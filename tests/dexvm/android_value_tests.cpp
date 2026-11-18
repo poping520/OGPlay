@@ -34,6 +34,7 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
@@ -124,7 +125,7 @@ TEST_CASE("DVM-98 Android platform enums share generated enum behavior") {
 }
 
 TEST_CASE("DVM-107 framework Pair and sparse containers execute Java on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto a = f.vm.NewStringUtf8("equal");
         const auto b = f.vm.NewStringUtf8("equal");
@@ -195,7 +196,7 @@ TEST_CASE("DVM-107 framework Pair and sparse containers execute Java on both bac
 }
 
 TEST_CASE("DVM-107 sparse and Pair fields keep children alive and release deleted values") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto sparse = f.New("Landroid/util/SparseArray;");
         const auto roots = f.vm.ProtectReferences(std::array{sparse});
@@ -216,7 +217,7 @@ TEST_CASE("DVM-107 sparse and Pair fields keep children alive and release delete
 
 TEST_CASE("DVM-107 builder CharSequence range append uses UTF16 and validates before "
           "mutation") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         for (const auto* descriptor : {"Ljava/lang/StringBuilder;", "Ljava/lang/StringBuffer;"}) {
             const auto builder = f.New(descriptor);
@@ -241,7 +242,7 @@ TEST_CASE("DVM-107 builder CharSequence range append uses UTF16 and validates be
 }
 
 TEST_CASE("DVM-109 UUID deserialization restores private readObject invariants") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto uuid = f.Static("Ljava/util/UUID;", "fromString", "(Ljava/lang/String;)Ljava/util/UUID;",
                                    {VmValue::Ref(f.vm.NewStringUtf8("f81d4fae-7dec-11d0-a765-00a0c91e6bf6"))})
@@ -267,7 +268,7 @@ TEST_CASE("DVM-109 UUID deserialization restores private readObject invariants")
 }
 
 TEST_CASE("DVM-108 UUID values and UTF16 substring search follow API19") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto failure = f.New("Ljava/security/ProviderException;", "(Ljava/lang/String;)V",
                                    {VmValue::Ref(f.vm.NewStringUtf8("provider failed"))});
@@ -338,7 +339,7 @@ TEST_CASE("DVM-143 method lookup ignores unrelated unavailable signature types")
                           [](IntrinsicContext&) { return VmValue::Ref(VmObjectRef{}); });
     const std::vector<IntrinsicClassDecl> extras{std::move(builder).Build()};
 
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend, extras);
         const auto represented = f.model.ClassObject(f.linker.ResolveDescriptor("Ltest/SelectiveLookup;"));
         const auto lookup = [&](const char* operation) {
@@ -379,7 +380,7 @@ TEST_CASE("small framework Java values execute from BootDex") {
         "Landroid/util/Property;",
         "Landroid/util/TimeFormatException;",
     };
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         for (const auto* descriptor : migrated) {
             CAPTURE(descriptor);
@@ -417,7 +418,7 @@ TEST_CASE("small framework Java values execute from BootDex") {
 }
 
 TEST_CASE("ClipData value objects execute from BootDex") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         for (const auto* descriptor : {
                  "Landroid/content/ClipData;",
@@ -481,7 +482,7 @@ TEST_CASE("ClipData value objects execute from BootDex") {
 
 TEST_CASE("DVM-151 BootDex builders own UTF16 fields capacity and immutable snapshots") {
     for (const bool bridge : {false, true})
-        for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (auto backend : ogplay::test::InterpreterBackends()) {
             AndroidValueVm f(backend, {}, bridge);
             for (const auto* owner : {"Ljava/lang/StringBuilder;", "Ljava/lang/StringBuffer;"}) {
                 CAPTURE(owner);
@@ -558,7 +559,7 @@ TEST_CASE("DVM-151 BootDex builders own UTF16 fields capacity and immutable snap
 
 TEST_CASE("DVM-151 builder integer and floating appends execute original conversion classes") {
     for (const bool bridge : {false, true})
-        for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (auto backend : ogplay::test::InterpreterBackends()) {
             AndroidValueVm f(backend, {}, bridge);
             for (const auto* owner : {"Ljava/lang/StringBuilder;", "Ljava/lang/StringBuffer;"}) {
                 const auto b = f.New(owner);
@@ -594,7 +595,7 @@ TEST_CASE("DVM-151 builder integer and floating appends execute original convers
 }
 
 TEST_CASE("DVM-151 builders retain constructor null array and bridge contracts") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         for (const auto* owner : {"Ljava/lang/StringBuilder;", "Ljava/lang/StringBuffer;"}) {
             const auto b = f.New(owner, "(I)V", {VmValue::Int(0)});
@@ -646,7 +647,7 @@ TEST_CASE("DVM-151 builders retain constructor null array and bridge contracts")
 }
 
 TEST_CASE("DVM-266 ContentValues clinit constructs the ROM Parcelable creator") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         const auto creator =
             f.Static("Lfixture/PlatformTables;", "contentValuesCreator", "()Landroid/os/Parcelable$Creator;").ref;
@@ -660,7 +661,7 @@ TEST_CASE("DVM-266 ContentValues clinit constructs the ROM Parcelable creator") 
 }
 
 TEST_CASE("DVM-267 ROM Enum subclass executes values valueOf and ordinal") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         CHECK(f.Static("Lfixture/PlatformTables;", "romEnum", "()I").AsInt() == 31);
         CHECK(f.ledger.Unimplemented().empty());
@@ -668,7 +669,7 @@ TEST_CASE("DVM-267 ROM Enum subclass executes values valueOf and ordinal") {
 }
 
 TEST_CASE("DVM-267 ROM overlay Exception subclass preserves throw catch and message") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         const auto message = f.Static("Lfixture/PlatformTables;", "romException", "()Ljava/lang/String;").ref;
         CHECK(f.vm.StringUtf8(message) == "ROM exception");
@@ -677,7 +678,7 @@ TEST_CASE("DVM-267 ROM overlay Exception subclass preserves throw catch and mess
 }
 
 TEST_CASE("DVM-268 DEX Location owns provider and time") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
         CHECK(f.Static("Ltest/RomJavaReplacement;", "location", "()J").AsLong() == 42);
         CHECK(f.linker.Class(f.linker.ResolveDescriptor("Landroid/location/Location;")).is_boot_dex);

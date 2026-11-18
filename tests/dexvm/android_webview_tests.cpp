@@ -20,6 +20,7 @@
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
+#include "interpreter_backends.h"
 #include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
@@ -40,7 +41,7 @@ using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("View focus and WebView configuration keep real per-instance state") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         std::vector<std::int32_t> focus_events;
         auto listener_class = IntrinsicClassBuilder::Class("Ltest/FocusListener;", "Ljava/lang/Object;",
                                                            {"Landroid/view/View$OnFocusChangeListener;"});
@@ -263,7 +264,7 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
     constexpr auto kViewInit = "(Landroid/content/Context;)V";
     constexpr auto kGetSettings = "()Landroid/webkit/WebSettings;";
     constexpr auto kLoadUrl = "(Ljava/lang/String;)V";
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         std::atomic<std::int32_t> worker_runs{};
         std::string worker_exception;
         VmObjectRef worker_view;
@@ -407,7 +408,7 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
 #include "container_traversal_fixture.h"
 
 TEST_CASE("DVM-365 WebView complete constructor configuration and ROM super attachment") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::container_traversal::ContainerVm f(backend);
         PrepareAndroidMainLooper(f.vm, f.context);
         const auto owner = f.New("Landroid/app/Activity;");

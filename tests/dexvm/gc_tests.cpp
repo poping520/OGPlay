@@ -23,6 +23,7 @@
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
+#include "interpreter_backends.h"
 
 DOCTEST_REGISTER_EXCEPTION_TRANSLATOR(const ogplay::runtime::dexvm::VmJavaThrow& error) {
     return doctest::String((error.descriptor + ": " + error.message).c_str());
@@ -64,7 +65,7 @@ struct GcVm final {
     Interpreter vm;
 
     GcVm(const std::vector<IntrinsicClassDecl>& extras = {},
-         const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+         const InterpreterBackend backend = InterpreterBackend::threaded,
          NativeMethodBridge* native_bridge = nullptr)
         : vm(
               [this, &extras]() -> DexClassLinker& {
@@ -467,7 +468,7 @@ TEST_CASE("DVM-109 soft references retain caches until pressure and interned str
 }
 
 TEST_CASE("WU7-3 System.gc clears weak interns while retaining literals in both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         GcVm f({}, backend);
         const auto literal = f.model.InternString(u"wu7-3-constant");
         const auto value = f.model.NewString(u"wu7-3-dynamic");
@@ -493,7 +494,7 @@ TEST_CASE("WU7-3 System.gc clears weak interns while retaining literals in both 
 }
 
 TEST_CASE("WU7-4 heap queries and VMRuntime share live heap configuration on both backends") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         GcVm f({}, backend);
         VmThreadRuntime threads(f.vm);
         const auto stat = [&](const char* owner, const char* name, const char* signature,
@@ -549,7 +550,7 @@ TEST_CASE("WU7-4 heap queries and VMRuntime share live heap configuration on bot
 }
 
 TEST_CASE("WU7-4 finalizer daemon preserves resurrection swallows exceptions and finalizes once") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         auto calls = std::make_shared<std::atomic<int>>(0);
         auto worker = std::make_shared<std::atomic<bool>>(false);
         auto declaration = IntrinsicClassBuilder::Class("Lgc/Finalizable;");
@@ -597,7 +598,7 @@ TEST_CASE("WU7-4 finalizer daemon preserves resurrection swallows exceptions and
 }
 
 TEST_CASE("WU7-4 weak soft and phantom queues distinguish pressure and finalizer reachability") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         GcVm f({}, backend);
         const auto make = [&](const char* owner, const char* signature, std::vector<VmValue> args = {}) {
             const auto instance = f.vm.NewIntrinsicInstance(owner);
@@ -642,7 +643,7 @@ TEST_CASE("WU7-4 weak soft and phantom queues distinguish pressure and finalizer
 }
 
 TEST_CASE("WU7-4 a reclaimed Thread handle can start again with a new Java identity") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         auto declaration = IntrinsicClassBuilder::Class("Lgc/Worker;", "Ljava/lang/Thread;");
         declaration.OverrideMethod("run", "()V", [](IntrinsicContext&) { return VmValue::Void(); });
         GcVm f({std::move(declaration).Build()}, backend);
@@ -693,7 +694,7 @@ TEST_CASE("WU7-4 native close claims its owner before reentrant collection and r
         }
     };
 
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         Bridge bridge;
         auto declaration = IntrinsicClassBuilder::Class("Lgc/CloseOwner;");
         declaration.InstanceField("peer", "J");
@@ -844,7 +845,7 @@ TEST_CASE("DVM-260 direct String pins survive GC until final cross-kind release"
 }
 
 TEST_CASE("DVM-353 ROM finalizer watchdog measures injected real time during a driver stall") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const bool timeout : {false, true}) {
             std::atomic<bool> entered{}, release{}, completed{};
             auto declaration = IntrinsicClassBuilder::Class("Lgc/PacedFinalizable;");

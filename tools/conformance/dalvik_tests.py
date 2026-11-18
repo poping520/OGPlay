@@ -394,7 +394,7 @@ def main() -> int:
     if args.self_test:
         self_test()
         return 0
-    args.backends = tuple(args.backends or BACKENDS)
+    args.backends = tuple(args.backends or ("threaded",))
     baseline = json.loads(BASELINE.read_text(encoding="utf-8")) if (
         args.check_baseline or args.update_baseline) else None
     args.out = args.out.resolve()

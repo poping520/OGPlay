@@ -34,13 +34,14 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("Binder BootDex Bundle Parcel uses the byte protocol and reconstructs values") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto parcel = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
         const auto parcel_root = f.vm.ProtectReferences(std::array{parcel});
@@ -80,7 +81,7 @@ TEST_CASE("Binder BootDex Bundle Parcel uses the byte protocol and reconstructs 
 }
 
 TEST_CASE("Binder byte Parcel preserves API19 positions append and pure marshalling") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto source = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
         const auto target = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
@@ -231,7 +232,7 @@ TEST_CASE("DVM-86 rooted Bundle traces byte arrays and Parcelable identities") {
 }
 
 TEST_CASE("DVM-144 Parcel exception headers preserve Java protocol and reject violations") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto p = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
         const auto roots = f.vm.ProtectReferences(std::array{p});
@@ -262,7 +263,7 @@ TEST_CASE("DVM-144 Parcel exception headers preserve Java protocol and reject vi
 }
 
 TEST_CASE("DVM-144 Parcel interface policy and malformed lengths are bounded") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto p = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
         const auto descriptor = f.vm.NewStringUtf8("echo");
@@ -289,7 +290,7 @@ TEST_CASE("DVM-144 Parcel interface policy and malformed lengths are bounded") {
 }
 
 TEST_CASE("DVM-144 Binder Parcel references survive append and release on overwrite") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto source = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
         const auto target = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
@@ -317,7 +318,7 @@ TEST_CASE("DVM-144 Binder Parcel references survive append and release on overwr
 }
 
 TEST_CASE("ROM ServiceManager returns rooted local AIDL objects and records absent names") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         constexpr auto manager = "Landroid/os/ServiceManager;";
         constexpr auto lookup = "(Ljava/lang/String;)Landroid/os/IBinder;";

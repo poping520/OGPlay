@@ -344,7 +344,7 @@ def main():
             print('Full coverage required; uncovered: ' + ', '.join(covered['uncovered']))
             return 1
     dex, libraries = build(host, args.out)
-    backends = args.backend or BACKENDS
+    backends = args.backend or ('threaded',)
     # --list runs before loading the probe library; inventory comes from guest Java.
     listing, code, timeout, ledger = execute(args.cli, dex, libraries, backends[0], ['--list'], args.out / 'list', args.timeout)
     if code or timeout:

@@ -22,6 +22,7 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/reflection.h"
 #include "ogplay/runtime/dexvm/reflection_codec.h"
+#include "interpreter_backends.h"
 
 namespace {
 
@@ -45,7 +46,7 @@ struct ReflectionVm final {
     Interpreter& interpreter;
 
     explicit ReflectionVm(const std::string& fixture = "interp.dex",
-                          const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+                          const InterpreterBackend backend = InterpreterBackend::threaded,
                           const bool platform = false)
         : runtime([&] {
               static_cast<void>(platform);
@@ -243,7 +244,7 @@ TEST_CASE("System and NIO reflection match API19 core.jar declarations") {
     const auto name = [&](std::uint32_t index) {
         return ogplay::core::Utf16ToUtf8(image.strings[index].value, ogplay::core::InvalidUtf16Policy::replace).value();
     };
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ReflectionVm vm("interp.dex", backend);
         std::vector<std::string> owners{"Ljava/lang/System;", "Ljava/lang/System$SystemEnvironment;",
                                         "Llibcore/io/Memory;"};
@@ -645,7 +646,7 @@ TEST_CASE("ReflectionCodec enforces the API19 primitive widening matrix") {
 }
 
 TEST_CASE("Method invoke dispatches and boxes identically on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ReflectionVm vm("reflection.dex", backend);
         const auto derived_class = vm.linker.ResolveDescriptor("Lreflect/Derived;");
         const auto derived = vm.model.NewInstance(derived_class, vm.linker.Class(derived_class).instance_slots);
@@ -726,7 +727,7 @@ TEST_CASE("DEX parse diagnostics preserve source reason and offset") {
 }
 
 TEST_CASE("Field runtime marker annotations dispatch on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ReflectionVm vm("field_annotation.dex", backend);
         const auto field = FieldWrapper(vm, "Lannotation/Subject;", "marked");
         const auto marker = vm.linker.ResolveDescriptor("Lannotation/Marker;");
@@ -825,7 +826,7 @@ TEST_CASE("Method invoke honors caller access and preserves target throwable ide
 }
 
 TEST_CASE("Reflective members use member access while Class newInstance also checks class access") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ReflectionVm vm("reflection.dex", backend);
         const auto owner = vm.linker.ResolveDescriptor("Lreflect/PackageOwner;");
         REQUIRE((vm.linker.Class(owner).access_flags & kAccPublic) == 0);
@@ -910,7 +911,7 @@ TEST_CASE("Class newInstance uses the nullary constructor without wrapping") {
 }
 
 TEST_CASE("protected reflective field access precedes null receiver validation") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ReflectionVm vm("reflection.dex", backend);
         auto& reflect = vm.interpreter.Reflection();
         const auto field = FieldWrapper(vm, "Lreflect/Base;", "protectedField");
@@ -1133,7 +1134,7 @@ TEST_CASE("Dalvik system metadata closes nested enclosing and throws reflection"
 }
 
 TEST_CASE("DVM-109 serialization native metadata and constructor tokens follow API19") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ReflectionVm f("reflection.dex", backend);
         auto& vm = f.interpreter;
         auto& r = vm.Reflection();
@@ -1188,7 +1189,7 @@ TEST_CASE("DVM-109 serialization native metadata and constructor tokens follow A
 }
 
 TEST_CASE("DVM-109 reflective wide field initialization failure preserves Java exception") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ReflectionVm f("reflection.dex", backend);
         const auto wrapper = FieldWrapper(f, "Lreflect/FailingStaticField;", "value");
         const auto result = f.Virtual(wrapper, "getLong", "(Ljava/lang/Object;)J", {VmValue::Ref(VmObjectRef{})});
@@ -1224,7 +1225,7 @@ VmObjectRef ClassAnnotation(ReflectionVm& vm, const std::string_view owner, cons
 }
 
 TEST_CASE("Class runtime annotations query members defaults inherited and isolation") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ReflectionVm vm("class_annotation.dex", backend);
         const auto host = ClassOf(vm, "Lann/Host;");
         const auto marker = vm.linker.ResolveDescriptor("Lann/Marker;");
@@ -1328,7 +1329,7 @@ TEST_CASE("Class runtime annotations query members defaults inherited and isolat
 }
 
 TEST_CASE("DVM-182 Class getEnumConstants clones shared enum identity") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ReflectionVm vm("p1.dex", backend);
         const auto enum_class = vm.linker.ResolveDescriptor("LP1Enum;");
         const auto class_object = vm.model.ClassObject(enum_class);
@@ -1367,7 +1368,7 @@ TEST_CASE("DVM-182 Class getEnumConstants clones shared enum identity") {
 }
 
 TEST_CASE("WU7-5 executable annotations share annotation runtime and defensive parameter arrays") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ReflectionVm f("class_annotation.dex", backend);
         auto& vm = f.interpreter;
         const auto annotations = f.linker.Class(f.linker.ResolveDescriptor("Lann/DefaultsHost;")).runtime_annotations;
@@ -1441,7 +1442,7 @@ TEST_CASE("WU7-5 executable annotations share annotation runtime and defensive p
 }
 
 TEST_CASE("WU7-5 generic signatures use original parser and preserve raw types and errors") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ReflectionVm f("reflection_generics.dex", backend);
         const auto type = ClassOf(f, "Lgeneric/Box;");
         CHECK(Ref(f.Virtual(type, "getGenericSuperclass", "()Ljava/lang/reflect/Type;")) ==
@@ -1495,7 +1496,7 @@ TEST_CASE("WU7-5 generic signatures use original parser and preserve raw types a
 
 TEST_CASE("DVM-259 Proxy ordered interfaces cache checked exceptions and GC use real methods") {
     using ogplay::test::android_value::AndroidValueVm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         int mode = 0;
         auto handler_decl = IntrinsicClassBuilder::Class("Ltest/ProxyHandler;", "Ljava/lang/Object;",
                                                          {"Ljava/lang/reflect/InvocationHandler;"});

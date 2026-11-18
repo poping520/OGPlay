@@ -41,13 +41,14 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("Context without package code uses the system class loader and delegates virtually") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         auto custom = IntrinsicClassBuilder::Class("Ltest/LoaderContext;", "Landroid/content/Context;");
         custom.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
         custom.OverrideMethod("getClassLoader", "()Ljava/lang/ClassLoader;", [](IntrinsicContext& call) {
@@ -92,7 +93,7 @@ TEST_CASE("Context without package code uses the system class loader and delegat
 }
 
 TEST_CASE("Context class loader reflects BootDex system properties with API19 defaults") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto base = f.New("Landroid/content/Context;");
         const auto base_root = f.vm.ProtectReferences(std::array{base});
@@ -135,7 +136,7 @@ TEST_CASE("Context class loader reflects BootDex system properties with API19 de
 }
 
 TEST_CASE("Telephony subscriber identity is unavailable without a cellular subscription") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         std::vector<int> states;
         auto listener_type =
             IntrinsicClassBuilder::Class("Ltest/DevicePhoneListener;", "Landroid/telephony/PhoneStateListener;");
@@ -195,7 +196,7 @@ TEST_CASE("Telephony subscriber identity is unavailable without a cellular subsc
 }
 
 TEST_CASE("DVM-128 Settings.Secure reads the injected API 19 identity") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm fixture(backend);
         fixture.context->secure_settings.insert_or_assign("android_id", "0123456789abcdef");
         const auto resolver = fixture
@@ -242,7 +243,7 @@ TEST_CASE("DVM-128 Settings.Secure reads the injected API 19 identity") {
 }
 
 TEST_CASE("Settings BootDex routes moved keys through the bounded store") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm fixture(backend);
         fixture.context->secure_settings.insert_or_assign("android_id", "0123456789abcdef");
         const auto resolver = fixture
@@ -319,7 +320,7 @@ TEST_CASE("Settings BootDex routes moved keys through the bounded store") {
 }
 
 TEST_CASE("DVM-116 ROM BackupManager reports disabled local backup service") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         int callbacks{};
         auto observer = IntrinsicClassBuilder::Class("Ltest/BackupObserver;", "Landroid/app/backup/RestoreObserver;");
         observer.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
@@ -375,7 +376,7 @@ TEST_CASE("DVM-116 ROM BackupManager reports disabled local backup service") {
 }
 
 TEST_CASE("DVM-220 BootDex sensor clients share an honest empty device boundary") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         std::int32_t callbacks{};
         auto listener = IntrinsicClassBuilder::Class(
             "Ltest/SensorClient;", "Ljava/lang/Object;",
@@ -460,7 +461,7 @@ TEST_CASE("DVM-220 BootDex sensor clients share an honest empty device boundary"
 }
 
 TEST_CASE("DVM228 ActivityManager queries preserve guest memory units thresholds and ownership") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.vm.SetGcIntegration(
             {{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
@@ -545,7 +546,7 @@ TEST_CASE("DVM228 ActivityManager queries preserve guest memory units thresholds
 }
 
 TEST_CASE("DVM228 ActivityManager reports fresh current process facts and lifecycle importance") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         std::function<void()> during_create;
         auto activity_decl = IntrinsicClassBuilder::Class("Ltest/ProcessActivity;", "Landroid/app/Activity;");
         activity_decl.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
@@ -633,7 +634,7 @@ TEST_CASE("DVM228 ActivityManager reports fresh current process facts and lifecy
 }
 
 TEST_CASE("DVM-239 Debug MemoryInfo keeps original values Parcel and failure semantics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto debug = f.linker.ResolveDescriptor("Landroid/os/Debug;");
         CHECK(f.linker.Class(debug).is_boot_dex);
@@ -721,7 +722,7 @@ TEST_CASE("DVM-239 Debug MemoryInfo keeps original values Parcel and failure sem
 }
 
 TEST_CASE("DVM-222 NFC discovery preserves API19 absence without transport") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         std::int32_t callbacks{};
         auto listener = IntrinsicClassBuilder::Class("Ltest/NdefClient;", "Ljava/lang/Object;",
                                                      {"Landroid/nfc/NfcAdapter$CreateNdefMessageCallback;",
@@ -793,7 +794,7 @@ TEST_CASE("DVM-222 NFC discovery preserves API19 absence without transport") {
 }
 
 TEST_CASE("DVM-341 USB manager preserves API19 absence without transport") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.vm.SetGcIntegration(
             {{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
@@ -867,7 +868,7 @@ TEST_CASE("DVM-341 USB manager preserves API19 absence without transport") {
 }
 
 TEST_CASE("DVM-136 API 19 OrientationEventListener preserves absent sensor semantics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         std::int32_t orientation_callbacks{};
         auto listener =
             IntrinsicClassBuilder::Class("Ltest/OrientationListener;", "Landroid/view/OrientationEventListener;");
@@ -901,7 +902,7 @@ TEST_CASE("DVM-136 API 19 OrientationEventListener preserves absent sensor seman
 }
 
 TEST_CASE("DVM-156 ROM LocationManager queries and registers on a device with location off") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         std::vector<std::string> disabled;
         int location_callbacks = 0;
         auto listener = IntrinsicClassBuilder::Class("Ltest/LocationListener;", "Ljava/lang/Object;",
@@ -1240,7 +1241,7 @@ TEST_CASE("Local AIDL coverage tracks unbound abstract methods") {
 }
 
 TEST_CASE("DVM-166 keyguard facade reads the replaceable platform snapshot") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm fixture(backend);
         const auto context = fixture.New("Landroid/content/Context;");
         const auto service_name = fixture.vm.NewStringUtf8("keyguard");
@@ -1271,7 +1272,7 @@ TEST_CASE("DVM-166 keyguard facade reads the replaceable platform snapshot") {
 }
 
 TEST_CASE("DVM-133 ContentResolver query returns null when no provider exists") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm fixture(backend);
         const auto resolver = fixture
                                   .On(fixture.New("Landroid/content/Context;"), "getContentResolver",
@@ -1298,7 +1299,7 @@ TEST_CASE("DVM-133 ContentResolver query returns null when no provider exists") 
 }
 
 TEST_CASE("Activity top-level identity reports that it is not a child") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm fixture(backend);
         const auto activity = fixture.New("Landroid/app/Activity;");
         CHECK(fixture.On(activity, "isChild", "()Z").AsInt() == 0);
@@ -1306,7 +1307,7 @@ TEST_CASE("Activity top-level identity reports that it is not a child") {
 }
 
 TEST_CASE("DVM-241 offline connectivity distinguishes unsupported types and preserves original values") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->granted_permissions.insert("android.permission.ACCESS_NETWORK_STATE");
         const auto base = f.New("Landroid/content/Context;");
@@ -1445,7 +1446,7 @@ TEST_CASE("DVM-241 offline connectivity distinguishes unsupported types and pres
 }
 
 TEST_CASE("WU7-4 ActivityManager memory classes share the VM heap limits in both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto manager = f.New("Landroid/content/Context;");
         const auto root = f.vm.ProtectReferences(std::array{manager});
@@ -1466,7 +1467,7 @@ TEST_CASE("WU7-4 ActivityManager memory classes share the VM heap limits in both
 }
 
 TEST_CASE("DVM-264 DEX platform service registry preserves supported absent and unsupported results") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         const auto context = ogplay::test::MakeRomAppContext(f.vm, f.context);
         const auto roots = f.vm.ProtectReferences(std::array{context});
@@ -1515,7 +1516,7 @@ TEST_CASE("DVM-264 DEX platform service registry preserves supported absent and 
 }
 
 TEST_CASE("Java System and Android SystemClock share the exact native monotonic and realtime reading") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         auto& process = f.context->session->Process();
         const auto clock_gettime = process.FindLibraryExport("libc.so", "clock_gettime");
@@ -1554,7 +1555,7 @@ TEST_CASE("Java System and Android SystemClock share the exact native monotonic 
 }
 
 TEST_CASE("DVM-264 DEX System properties include the frozen ROM keys and match guest uname") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         const auto os = f.vm.NewIntrinsicInstance("Llibcore/io/Posix;");
         const auto roots = f.vm.ProtectReferences(std::array{os});
@@ -1633,7 +1634,7 @@ TEST_CASE("DVM-264 DEX System properties include the frozen ROM keys and match g
 }
 
 TEST_CASE("DVM-266 ROM AppGlobals returns the default without an attached ActivityThread") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         CHECK(f.linker.Class(f.linker.ResolveDescriptor("Landroid/app/AppGlobals;")).is_boot_dex);
         const auto result = f.StaticOutcome("Lfixture/PlatformTables;", "coreSetting", "(Ljava/lang/String;I)I",
@@ -1644,7 +1645,7 @@ TEST_CASE("DVM-266 ROM AppGlobals returns the default without an attached Activi
 }
 
 TEST_CASE("DVM-267 ROM Handler subclass receives a message through Looper") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         const auto looper = f.Static("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;").ref;
         const auto listener = f.New("Lfixture/RomHandlerProbe;");
@@ -1661,7 +1662,7 @@ TEST_CASE("DVM-267 ROM Handler subclass receives a message through Looper") {
 }
 
 TEST_CASE("DVM-267 ROM BroadcastReceiver subclass constructs and dispatches onReceive") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend, {}, false, "platform_tables.dex");
         const auto object = f.New("Landroid/media/MediaRouter$VolumeChangeReceiver;");
         const auto receiver =
@@ -1676,7 +1677,7 @@ TEST_CASE("DVM-267 ROM BroadcastReceiver subclass constructs and dispatches onRe
 }
 
 TEST_CASE("DVM-332 ContentObserver process tree dispatch and Settings changes") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         struct Event {
             VmObjectRef observer;
             bool self;
@@ -1849,7 +1850,7 @@ TEST_CASE("DVM-332 ContentObserver process tree dispatch and Settings changes") 
 }
 
 TEST_CASE("ROM SmsManager uses local ISms and rejects SMS delivery") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         constexpr auto type = "Landroid/telephony/SmsManager;";
         const auto manager = f.Static(type, "getDefault", "()Landroid/telephony/SmsManager;").ref;
@@ -1900,7 +1901,7 @@ TEST_CASE("ROM SmsManager uses local ISms and rejects SMS delivery") {
 }
 
 TEST_CASE("ROM SmsMessage decodes a GSM deliver PDU without a phone process") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         // No SMSC, international originating address, GSM 7-bit DCS, five septets.
         constexpr std::array<std::uint8_t, 24> bytes{0x00, 0x04, 0x0a, 0x91, 0x21, 0x43, 0x65, 0x87,

@@ -54,7 +54,7 @@ struct Dvm87Vm final {
     VirtualFileSystem vfs;
     DexVmIoVfsAdapter io_file_system{vfs};
 
-    explicit Dvm87Vm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+    explicit Dvm87Vm(const InterpreterBackend backend = InterpreterBackend::threaded,
                      const std::string& language = "zh", const std::string& region = "CN",
                      const std::string& default_timezone = "GMT", const std::vector<IntrinsicClassDecl>& extras = {});
 

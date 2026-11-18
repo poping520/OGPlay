@@ -35,6 +35,7 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
@@ -90,7 +91,7 @@ void CheckExplicitResolveInfo(AndroidValueVm& f, const VmObjectRef result, const
 }  // namespace
 
 TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupported queries") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto base = f.New("Landroid/content/Context;");
         const auto manager = f.On(base, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
@@ -205,7 +206,7 @@ TEST_CASE("DVM-112 resolveService distinguishes absent candidates from unsupport
 }
 
 TEST_CASE("DVM-144 failed service binding retains a Context owned dispatcher until unbind") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         int callbacks = 0;
         auto declaration = IntrinsicClassBuilder::Class("Ltest/AbsentConnection;", "Ljava/lang/Object;",
                                                         {"Landroid/content/ServiceConnection;"});
@@ -253,7 +254,7 @@ TEST_CASE("DVM-144 failed service binding retains a Context owned dispatcher unt
 TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex results") {
     using ogplay::loader::AndroidManifestIntentFilter;
     using ogplay::loader::AndroidManifestReceiverComponent;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->package_name = "org.example.game";
         f.context->receiver_inventory_known = true;
@@ -447,7 +448,7 @@ TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex
 }
 
 TEST_CASE("PackageManager resolves explicit components and matches local activity filters") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->package_name = "fixture";
         f.context->activity_inventory_known = true;
@@ -509,7 +510,7 @@ TEST_CASE("PackageManager resolves explicit components and matches local activit
 }
 
 TEST_CASE("DVM-195 getActivityInfo returns only the requested activity metadata") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->package_name = "fixture";
         f.context->activity_inventory_known = true;
@@ -593,7 +594,7 @@ TEST_CASE("DVM-195 getActivityInfo returns only the requested activity metadata"
 }
 
 TEST_CASE("DVM-263 ROM Application keeps component callbacks on the guest object") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto app = f.New("Landroid/app/Application;");
         const auto root = f.vm.ProtectReferences(std::array{app});
@@ -606,7 +607,7 @@ TEST_CASE("DVM-263 ROM Application keeps component callbacks on the guest object
 }
 
 TEST_CASE("ROM ActivityThread initializes its application thread and instrumentation state") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->package_name = "test.application";
         const auto thread = f.New("Landroid/app/ActivityThread;");

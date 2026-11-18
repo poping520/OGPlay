@@ -6,6 +6,7 @@
 #include "android_value_fixture.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "interpreter_backends.h"
 
 namespace {
 using namespace ogplay::test::android_value;
@@ -44,7 +45,7 @@ void DrawColor(AndroidValueVm& f, VmObjectRef canvas, std::uint32_t color) {
 }
 
 TEST_CASE("ROM Canvas Region.Op draws each device-space Boolean clip") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto bitmap = Bitmap(f, 12, 4);
         const auto canvas = Canvas(f, bitmap);

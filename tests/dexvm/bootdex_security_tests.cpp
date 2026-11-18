@@ -35,6 +35,7 @@
 
 #include "bootdex_library_fixture.h"
 #include "ogplay/loader/dex_class_data.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::bootdex_library;
 using namespace ogplay::runtime;
@@ -203,7 +204,7 @@ TEST_CASE("DVM NativeCrypto identity and members come from API 19 BootDex") {
 }
 
 TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
 
         const auto params = f.vm.NewIntrinsicInstance("Lorg/apache/http/params/BasicHttpParams;");
@@ -307,7 +308,7 @@ TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path"
 }
 
 TEST_CASE("TLS-01 TrustManagerFactory and AndroidCAStore use the injected pack") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         Dvm87Vm f(backend);
         auto algorithm = f.Static("Ljavax/net/ssl/TrustManagerFactory;", "getDefaultAlgorithm", "()Ljava/lang/String;");
@@ -375,7 +376,7 @@ TEST_CASE("TLS-01 TrustManagerFactory and AndroidCAStore use the injected pack")
 }
 
 TEST_CASE("DVM-173/174 KeyStore Java closure keeps state in the guest object graph") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
         const auto default_type = f.Static("Ljava/security/KeyStore;", "getDefaultType", "()Ljava/lang/String;");
         f.RequireOk(default_type);
@@ -449,7 +450,7 @@ TEST_CASE("DVM-104 NativeBN tokens are isolated checked and swept with BigInt ow
 }
 
 TEST_CASE("DVM-106 BigInteger certificate values preserve long signed encodings") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
 
         struct Case {
@@ -514,7 +515,7 @@ TEST_CASE("DVM-106 BigInteger certificate values preserve long signed encodings"
 }
 
 TEST_CASE("NativeBN decimal input preserves prefix count sign and bounded failure") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
         const auto allocated = f.Static("Ljava/math/NativeBN;", "BN_new", "()J", {});
         f.RequireOk(allocated);
@@ -612,7 +613,7 @@ TEST_CASE("SetIntrinsicStaticRef links BootDex statics without running clinit") 
 }
 
 TEST_CASE("Security.getProperty writes Engine.door on a cold VM") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         Dvm87Vm f(backend);
         CHECK_FALSE(EngineDoorDeclared(f));
@@ -626,7 +627,7 @@ TEST_CASE("Security.getProperty writes Engine.door on a cold VM") {
 }
 
 TEST_CASE("Security.getProperty still writes Engine.door after other JCA classes") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         Dvm87Vm f(backend);
         for (const auto* type : {"Ljavax/crypto/Cipher;", "Ljavax/crypto/Mac;"}) {
@@ -640,7 +641,7 @@ TEST_CASE("Security.getProperty still writes Engine.door after other JCA classes
 }
 
 TEST_CASE("guest worker first Security.getProperty writes Engine.door") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         auto worker = IntrinsicClassBuilder::Class("Ltest/SecurityDoorWorker;", "Ljava/lang/Thread;");
         worker.OverrideMethod("run", "()V", [](IntrinsicContext& context) {
@@ -674,7 +675,7 @@ TEST_CASE("guest worker first Security.getProperty writes Engine.door") {
 }
 
 TEST_CASE("DVM-208 Crypto SHA1PRNG preserves API19 seeded streams and Provider identity") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         CryptoPrngVm f(backend);
         for (auto name : {"SHA1PRNG_SecureRandomImpl", "SHA1Impl", "SHA1Constants"}) {
             const auto type =
@@ -755,7 +756,7 @@ TEST_CASE("DVM-208 Crypto SHA1PRNG preserves API19 seeded streams and Provider i
 }
 
 TEST_CASE("DVM-208 Crypto SHA1PRNG obtains entropy through VFS and propagates failure") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         CryptoPrngVm f(backend);
         const auto random = f.NewRandom();
         CHECK(f.entropy_reads == 0);
@@ -788,7 +789,7 @@ TEST_CASE("DVM-208 Crypto SHA1PRNG obtains entropy through VFS and propagates fa
 }
 
 TEST_CASE("DVM-208 Crypto SHA1PRNG instances are isolated across guest threads") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (auto backend : ogplay::test::InterpreterBackends()) {
         auto action = std::make_shared<std::function<void()>>();
         auto worker_class = IntrinsicClassBuilder::Class("Ltest/CryptoPrngWorker;", "Ljava/lang/Thread;");
         worker_class.OverrideMethod("run", "()V", [action](IntrinsicContext&) {

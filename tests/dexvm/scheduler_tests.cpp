@@ -23,6 +23,7 @@
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
+#include "interpreter_backends.h"
 
 namespace {
 
@@ -150,7 +151,7 @@ struct SchedulerVm final {
     Interpreter vm;
     VmThreadRuntime threads;
 
-    explicit SchedulerVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
+    explicit SchedulerVm(const InterpreterBackend backend = InterpreterBackend::threaded)
         : vm(
               [this]() -> DexClassLinker& {
                   auto services = AndroidCoreIntrinsicServices(context);
@@ -264,7 +265,7 @@ TEST_CASE("driver native sleeps advance uptime once and are netted from the next
 }
 
 TEST_CASE("Context exposes the stable scheduler main Looper through wrappers") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ogplay::test::android_value::AndroidValueVm fixture(backend);
         const auto base = fixture.New("Landroid/content/Context;");
         const auto root = fixture.vm.ProtectReferences(std::array{base});
@@ -385,7 +386,7 @@ TEST_CASE("DVM-89 ResultReceiver dispatches locally and through its Handler") {
 }
 
 TEST_CASE("Message five-argument obtain preserves fields and queued ownership on both backends") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         SchedulerVm fixture(backend);
         fixture.vm.SetGcIntegration(
             {{}, {}, [&fixture](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*fixture.context, visit); }});
@@ -497,7 +498,7 @@ TEST_CASE("DVM-85 Handler queue is delayed ordered and removable") {
 }
 
 TEST_CASE("DVM-170 Activity runOnUiThread posts workers to the main Looper") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         SchedulerVm fixture(backend);
         const auto activity = fixture.New("Landroid/app/Activity;");
         fixture.ConstructAs(activity, "Landroid/app/Activity;", "()V");
@@ -643,7 +644,7 @@ TEST_CASE("AsyncTask preserves background DexVmError and never posts null") {
 
 TEST_CASE("DVM-262 Message obtain overload calls the ROM no-argument pool factory") {
     using namespace ogplay::test::android_value;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend, {}, false, nullptr);
         const auto type = f.linker.ResolveDescriptor("Landroid/os/Message;");
         const auto initialized = f.vm.EnsureClassInitialized(type);
@@ -684,7 +685,7 @@ TEST_CASE("DVM-262 Message obtain overload calls the ROM no-argument pool factor
 }
 
 TEST_CASE("DVM-268 DEX Timer schedules once and cancel rejects more work") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         SchedulerVm f(backend);
         const auto timer = f.New("Ljava/util/Timer;");
         f.ConstructAs(timer, "Ljava/util/Timer;", "()V");
@@ -711,7 +712,7 @@ TEST_CASE("DVM-268 DEX Timer schedules once and cancel rejects more work") {
 }
 
 TEST_CASE("DVM-268 DEX CountDownTimer ticks and finishes") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         SchedulerVm f(backend);
         CHECK_FALSE(ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context).has_value());
         const auto timer = f.New("Ltest/RecordingCountDown;");
@@ -732,7 +733,7 @@ TEST_CASE("DVM-268 DEX CountDownTimer ticks and finishes") {
 }
 
 TEST_CASE("DVM-268 DEX TimerTask cancellation before scheduling returns false") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         SchedulerVm f(backend);
         const auto task = f.New("Ltest/RecordingTimerTask;");
         const auto roots = f.vm.ProtectReferences(std::array{task});
@@ -746,7 +747,7 @@ TEST_CASE("DVM-268 DEX TimerTask cancellation before scheduling returns false") 
 }
 
 TEST_CASE("ROM MessageQueue barriers pass asynchronous messages and protect the main Looper") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         SchedulerVm f(backend);
         const auto main = f.context->main_looper;
         const auto handler = f.New("Ltest/RecordingHandler;");
@@ -781,7 +782,7 @@ TEST_CASE("ROM MessageQueue barriers pass asynchronous messages and protect the 
 }
 
 TEST_CASE("ROM HandlerThread delays wake only after the manual Clock reaches their deadline") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         SchedulerVm f(backend);
         const auto thread = f.New("Landroid/os/HandlerThread;");
         const auto thread_root = f.vm.ProtectReferences(std::array{thread});
@@ -811,7 +812,7 @@ TEST_CASE("ROM HandlerThread delays wake only after the manual Clock reaches the
 }
 
 TEST_CASE("ROM MessageQueue invokes IdleHandler once and quitSafely discards future work") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         SchedulerVm f(backend);
         const auto thread = f.New("Landroid/os/HandlerThread;");
         const auto thread_root = f.vm.ProtectReferences(std::array{thread});

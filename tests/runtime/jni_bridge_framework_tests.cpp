@@ -51,6 +51,7 @@
 
 #include "native_library_fixture.h"
 #include "../dexvm/android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::native_library;
 
@@ -58,7 +59,7 @@ TEST_CASE("Build and SystemProperties JNI use the BootDex owner") {
     using namespace ogplay;
     using namespace runtime;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess fixture(backend);
         auto& bridge = *fixture.bridge;
         auto& vm = bridge.Vm();
@@ -135,7 +136,7 @@ TEST_CASE("Build and SystemProperties JNI use the BootDex owner") {
 TEST_CASE("DVM-206 JNI keyboard lookup resolves BootDex load and character queries") {
     using namespace ogplay::runtime;
     using namespace ogplay::runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess fixture(backend);
         fixture.context->input_devices = {{-1, "keyboard", "fixture:keyboard", kAndroidKeyboardSource, 2, {}}};
         auto& bridge = *fixture.bridge;
@@ -165,7 +166,7 @@ TEST_CASE("DVM-206 JNI keyboard lookup resolves BootDex load and character queri
 TEST_CASE("ClassLoader parent-first JNI lookup and app calls share bootstrap types") {
     using namespace ogplay::runtime;
     using namespace ogplay::runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess fixture(backend, std::nullopt, "parent_first_jni_app.dex");
         auto& bridge = *fixture.bridge;
         auto& vm = bridge.Vm();
@@ -201,7 +202,7 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
     using namespace ogplay;
     using namespace runtime;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         // ROM TelephonyManager initializes its modem hint with guest /proc and ICU regex.
         ogplay::test::android_value::AndroidValueVm fixture(backend);
         auto& bridge = *fixture.runtime->bridge;
@@ -359,7 +360,7 @@ TEST_CASE("JNI AudioTrack uses the VM PCM player and lifecycle") {
     using namespace ogplay;
     using namespace runtime;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess fixture(backend);
         auto& bridge = *fixture.bridge;
         auto& vm = bridge.Vm();
@@ -415,7 +416,7 @@ TEST_CASE("BootDex speech callbacks link and JNI diagnostics retain nested cause
     using namespace ogplay;
     using namespace runtime;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess f(backend);
         auto& vm = f.bridge->Vm();
         auto& linker = vm.Linker();
@@ -511,7 +512,7 @@ TEST_CASE("DVM-358 JNI diagnostics expand reflection targets and initializer exc
     using namespace ogplay;
     using namespace runtime;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess f(backend);
         auto& vm = f.bridge->Vm();
         auto& linker = vm.Linker();
@@ -586,7 +587,7 @@ TEST_CASE("DVM-358 JNI diagnostics expand reflection targets and initializer exc
 
 TEST_CASE("DVM-112 BootDex ServiceConnection links and the shared bridge takes the absent branch") {
     using namespace ogplay::runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         RomValueProcess f(backend);
         f.context->service_inventory_known = true;
         auto& vm = f.bridge->Vm();
@@ -635,7 +636,7 @@ TEST_CASE("DVM-112 BootDex ServiceConnection links and the shared bridge takes t
 
 TEST_CASE("DVM-144 application Proxy executes BootDex Binder transact and Java reply protocol") {
     using namespace ogplay::runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess f(backend);
         auto& vm = f.bridge->Vm();
         auto& linker = f.bridge->Linker();

@@ -53,13 +53,14 @@
 #include "ogplay/video/fake_video_player.h"
 
 #include "native_library_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::native_library;
 
 TEST_CASE("DVM-239 ARM JNI Debug query observes virtual RAM growth and release") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
         f.app->StartApplication();
         f.RunOnMainThread([&] {
@@ -129,7 +130,7 @@ TEST_CASE("DVM-239 ARM JNI Debug query observes virtual RAM growth and release")
 TEST_CASE("DVM-240 ARM JNI installed applications expose the session APK and ignore unrelated flags") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
         REQUIRE(f.context->package_inventory_known);
         static_cast<void>(f.app->StartApplication());
@@ -238,7 +239,7 @@ TEST_CASE("DVM-247 ARM JNI inherited inflater lookup Context and native resource
     using namespace ogplay;
     using namespace runtime;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         RomValueProcess f(backend);
         auto& bridge = *f.bridge;
         auto& vm = bridge.Vm();
@@ -319,7 +320,7 @@ TEST_CASE("DVM-243 ARM JNI StatFs refresh observes the shared sandbox volume") {
     using namespace runtime;
     using namespace runtime::dexvm;
     const auto root = std::filesystem::temp_directory_path() / "ogplay-jni-statfs";
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         std::filesystem::remove_all(root);
         std::filesystem::create_directories(root);
         {
@@ -388,7 +389,7 @@ TEST_CASE("DVM-243 ARM JNI StatFs refresh observes the shared sandbox volume") {
 TEST_CASE("DVM-241 ARM JNI connectivity query returns the original disconnected value") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
         f.context->granted_permissions.insert("android.permission.ACCESS_NETWORK_STATE");
         f.app->StartApplication();
@@ -485,7 +486,7 @@ TEST_CASE("DVM-221 pixel formats use API19 stride and native packed layout") {
 TEST_CASE("DVM-221 real ARM NDK Bitmap shares Java pixels and survives GC and recycle") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         OrchestratedApp f("fixture.DelayedContentActivity", true, false, {}, {}, true, backend);
         f.app->StartApplication();
         f.RunOnMainThread([&] {

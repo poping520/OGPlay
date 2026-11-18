@@ -39,13 +39,14 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-118 Resources metrics share display facts and BootDex value semantics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->surface_width = 960;
         f.context->surface_height = 540;
@@ -121,7 +122,7 @@ TEST_CASE("DVM-118 Resources metrics share display facts and BootDex value seman
 }
 
 TEST_CASE("DVM-137 Configuration uses API19 Java shape and managed device facts") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend, {}, false, nullptr);
         f.context->surface_width = 960;
         f.context->surface_height = 540;
@@ -210,7 +211,7 @@ TEST_CASE("DVM-137 Configuration uses API19 Java shape and managed device facts"
 }
 
 TEST_CASE("DVM-244 bitmap resource decoding shares ARSC selection pixels and density") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->ui_density = 2;
         f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
@@ -324,7 +325,7 @@ TEST_CASE("DVM-244 bitmap resource decoding shares ARSC selection pixels and den
 }
 
 TEST_CASE("DVM-244 byte stream decode preserves null errors ownership and pixel budgets") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         int closed{};
         bool sent{};
         VmObjectRef resource_source;
@@ -449,7 +450,7 @@ TEST_CASE("DVM-86 graphics value classes keep geometry and path state") {
 }
 
 TEST_CASE("DVM-359 Bitmap metadata uses packed API19 rows and survives recycle") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         constexpr auto config_type = "Landroid/graphics/Bitmap$Config;";
         const auto configs = f.Static(config_type, "values", "()[Landroid/graphics/Bitmap$Config;").ref;
@@ -573,7 +574,7 @@ TEST_CASE("Bitmap Config matches the API 19 enum and native mapping") {
 }
 
 TEST_CASE("DVM118 resource text coerces simple values and preserves reference selection errors") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         f.context->surface_width = 800;
         f.context->surface_height = 480;
@@ -660,7 +661,7 @@ TEST_CASE("DVM118 resource text coerces simple values and preserves reference se
 }
 
 TEST_CASE("DVM118 getString dispatches getText and CharSequence toString through Context") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         auto text = std::make_shared<VmObjectRef>();
         auto resources = std::make_shared<VmObjectRef>();
         auto custom = IntrinsicClassBuilder::Class("Ltest/TextResources;", "Landroid/content/res/Resources;");
@@ -689,7 +690,7 @@ TEST_CASE("DVM118 getString dispatches getText and CharSequence toString through
 }
 
 TEST_CASE("DVM-262 Canvas integer pixels forward virtually to the ROM float overload") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         int calls = 0;
         auto canvas = IntrinsicClassBuilder::Class("Ltest/OverloadCanvas;", "Landroid/graphics/Canvas;");
         canvas.OverrideMethod("drawBitmap", "([IIIFFIIZLandroid/graphics/Paint;)V", [&calls](IntrinsicContext& c) {
@@ -718,7 +719,7 @@ TEST_CASE("DVM-262 Canvas integer pixels forward virtually to the ROM float over
 }
 
 TEST_CASE("Bitmap createScaledBitmap preserves metadata and handles filtering mirroring and invalid sizes") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto configs =
             f.Static("Landroid/graphics/Bitmap$Config;", "values", "()[Landroid/graphics/Bitmap$Config;").ref;

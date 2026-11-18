@@ -5,6 +5,7 @@
 #include "android_value_fixture.h"
 #include "runtime/integration/dexvm_android/rom_input.h"
 #include "runtime/integration/dexvm_android/velocity_tracker.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
@@ -27,7 +28,7 @@ void Int(AndroidValueVm& f, VmObjectRef ref, const char* name, int value) {
     WindowField(f.vm, ref, name, "I") = {static_cast<unsigned>(value), SlotTag::cat1};
 }
 
-std::unique_ptr<AndroidValueVm> WindowVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+std::unique_ptr<AndroidValueVm> WindowVm(InterpreterBackend backend = InterpreterBackend::threaded,
                                          std::vector<IntrinsicClassDecl> extras = {}) {
     auto client =
         IntrinsicClassBuilder::Class("Lprobe/WindowImeClient;", "Lcom/android/internal/view/IInputMethodClient$Stub;");
@@ -55,7 +56,7 @@ IntrinsicClassDecl WindowProbe() {
 }  // namespace
 
 TEST_CASE("P3 local WMS opens a rooted session and supplies display facts") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         auto fixture = WindowVm(backend);
         auto& f = *fixture;
         f.context->surface_width = 800;
@@ -186,7 +187,7 @@ TEST_CASE("P3 ROM Surface native dirty lock retains pixels and publishes immutab
 }
 
 TEST_CASE("P3 VelocityTracker ROM computes API19 lsq2 and preserves lift velocity") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         auto fixture = WindowVm(backend);
         auto& f = *fixture;
         f.context->surface_width = 800;

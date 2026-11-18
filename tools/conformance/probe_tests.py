@@ -582,7 +582,7 @@ def main(argv: list[str] | None = None) -> int:
     for name, help_text in (("run", "run the APK and summarize evidence"),
                             ("selftest", "verify crash recovery, timeout isolation and continuation")):
         command = commands.add_parser(name, help=help_text)
-        command.add_argument("--cli", type=Path, default=ROOT / "build/dev/ogplay-cli")
+        command.add_argument("--cli", type=Path, default=ROOT / "build/release/ogplay-cli")
         command.add_argument("--apk", type=Path, default=SAMPLE / "out/ogplay-probe.apk")
         command.add_argument("--config", choices=CONFIGS, default="a")
         command.add_argument("--interpreter", choices=("switch", "threaded"), default="threaded")

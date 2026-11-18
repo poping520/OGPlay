@@ -35,13 +35,14 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("InputDevice queries use BootDex values and the process input directory") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm fixture(backend);
         constexpr auto device_class = "Landroid/view/InputDevice;";
         const auto ids = [&] { return fixture.Static(device_class, "getDeviceIds", "()[I").ref; };
@@ -104,7 +105,7 @@ TEST_CASE("InputDevice queries use BootDex values and the process input director
 }
 
 TEST_CASE("BND46 Java MotionEvent preserves snapshot axes history identity and GC ownership") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         AndroidBoundaryInput input;
         input.type = AndroidBoundaryInputType::pointer_motion;
@@ -195,7 +196,7 @@ TEST_CASE("BND46 Java MotionEvent preserves snapshot axes history identity and G
 }
 
 TEST_CASE("MotionEvent.obtain and addBatch rebuild events from BootDex pointer values") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         constexpr auto coords_type = "Landroid/view/MotionEvent$PointerCoords;";
         constexpr auto props_type = "Landroid/view/MotionEvent$PointerProperties;";
@@ -327,7 +328,7 @@ TEST_CASE("MotionEvent.obtain and addBatch rebuild events from BootDex pointer v
 }
 
 TEST_CASE("BND46 timed KeyEvent retains metadata in both interpreters") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         const auto event =
             f.New("Landroid/view/KeyEvent;", "(JJIIIIIIII)V",
@@ -341,7 +342,7 @@ TEST_CASE("BND46 timed KeyEvent retains metadata in both interpreters") {
 }
 
 TEST_CASE("DVM-206 virtual key character maps use API19 data and process device fallback") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
         constexpr auto owner = "Landroid/view/KeyCharacterMap;";
         const auto load = [&](int device) {

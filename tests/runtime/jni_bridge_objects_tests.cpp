@@ -51,6 +51,7 @@
 #include "ogplay/video/fake_video_player.h"
 
 #include "native_library_fixture.h"
+#include "interpreter_backends.h"
 
 using namespace ogplay::test::native_library;
 
@@ -92,7 +93,7 @@ TEST_CASE("DVM-200 JNI reflection conversions share VM members and survive GC") 
     using namespace ogplay;
     using namespace runtime;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess f(backend);
         auto& vm = f.bridge->Vm();
         auto& model = f.bridge->Model();
@@ -214,7 +215,7 @@ TEST_CASE("DVM-200 JNI reflection conversions share VM members and survive GC") 
 TEST_CASE("DVM-141 Java Map array elements become callable JNI receivers and GC roots") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess f(backend);
         auto& vm = f.bridge->Vm();
         auto& model = f.bridge->Model();
@@ -324,7 +325,7 @@ TEST_CASE("DVM-231 JNI-created strings and arrays expose their actual runtime cl
     using namespace ogplay;
     using namespace runtime;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess f(backend);
         auto& env = f.session->Environment();
         auto& objects = f.session->Objects();
@@ -486,7 +487,7 @@ TEST_CASE("DexVM exposes canonical array classes across JNI and Java") {
     using namespace ogplay;
     using namespace runtime;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess fixture(backend);
         auto& bridge = *fixture.bridge;
         auto& process = fixture.session->Process();
@@ -751,7 +752,7 @@ TEST_CASE("DVM-242 ARM JNI AllocObject shares zeroed inherited fields without co
     using namespace ogplay;
     using namespace runtime;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         ApplicationProcess f(backend);
         auto& bridge = *f.bridge;
         auto& vm = bridge.Vm();
@@ -882,7 +883,7 @@ TEST_CASE("DVM-333 JNI NewObject variants allocate VM slots and preserve Java fa
     using namespace ogplay;
     using namespace runtime;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         for (const char* variant : {"NewObject", "NewObjectV", "NewObjectA"}) {
             CAPTURE(backend);
             CAPTURE(variant);
@@ -991,7 +992,7 @@ TEST_CASE("DVM-242 JNI allocation translates exhausted VM heap to a pending Java
     using namespace ogplay;
     using namespace runtime;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
         constexpr std::uint64_t limit = 64 * 1024;
         ApplicationProcess f(backend, std::nullopt, "application.dex",
                              {.initial_heap_target_bytes = limit,

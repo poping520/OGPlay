@@ -742,6 +742,8 @@ TEST_CASE("DVM-208 Crypto SHA1PRNG preserves API19 seeded streams and Provider i
                      {VmValue::Ref(f.vm.NewStringUtf8("AES"))});
         f.RequireOk(generator_result);
         const auto generator = f.Keep(generator_result.value.ref);
+        const auto generator_provider = f.Keep(f.Invoke(generator, "getProvider", "()Ljava/security/Provider;").ref);
+        CHECK(f.vm.StringUtf8(f.Invoke(generator_provider, "getName", "()Ljava/lang/String;").ref) == "OGPlayCrypto");
         for (int i = 0; i < 2; ++i) {
             const auto random = f.NewRandom();
             f.Seed(random, "0001020304050607");
@@ -752,6 +754,77 @@ TEST_CASE("DVM-208 Crypto SHA1PRNG preserves API19 seeded streams and Provider i
             CHECK(f.model.ReadByteRegion(encoded, 0, 16) ==
                   std::vector<std::byte>(expected.begin(), expected.begin() + 16));
         }
+        const auto check_key_length = [&](int length) {
+            const auto key = f.Keep(f.Invoke(generator, "generateKey", "()Ljavax/crypto/SecretKey;").ref);
+            CHECK(f.model.ArrayLength(f.Invoke(key, "getEncoded", "()[B").ref) == length);
+        };
+        f.Invoke(generator, "init", "(ILjava/security/SecureRandom;)V", {VmValue::Int(129), VmValue::Ref(first)});
+        check_key_length(17);
+        f.Invoke(generator, "init", "(Ljava/security/SecureRandom;)V", {VmValue::Ref(VmObjectRef{})});
+        check_key_length(17);
+        f.Invoke(generator, "init", "(Ljava/security/SecureRandom;)V", {VmValue::Ref(first)});
+        check_key_length(24);
+        const auto spec_init = f.Virtual(generator, "init", "(Ljava/security/spec/AlgorithmParameterSpec;)V",
+                                         {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(spec_init.exception.IsValid());
+        CHECK(f.linker.Class(spec_init.exception_class).descriptor ==
+              "Ljava/security/InvalidAlgorithmParameterException;");
+    }
+}
+
+TEST_CASE("API19 AES IV parameters use BC ASN.1 and RAW formats") {
+    constexpr auto params_type = "Ljava/security/AlgorithmParameters;";
+    constexpr auto iv_type = "Ljavax/crypto/spec/IvParameterSpec;";
+    constexpr auto raw_hex = "000102030405060708090a0b0c0d0e0f";
+    constexpr auto der_hex = "0410000102030405060708090a0b0c0d0e0f";
+    for (auto backend : ogplay::test::InterpreterBackends()) {
+        CryptoPrngVm f(backend);
+        const auto make_params = [&] {
+            const auto result =
+                f.Static(params_type, "getInstance", "(Ljava/lang/String;)Ljava/security/AlgorithmParameters;",
+                         {VmValue::Ref(f.vm.NewStringUtf8("AES"))});
+            f.RequireOk(result);
+            return f.Keep(result.value.ref);
+        };
+        const auto bytes = [&](std::string_view hex) {
+            const auto data = f.Decode(hex);
+            const auto array = f.Keep(f.model.NewPrimitiveArray(
+                f.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, static_cast<JniSize>(data.size())));
+            f.model.WriteByteRegion(array, 0, data);
+            return VmValue::Ref(array);
+        };
+        const auto read = [&](VmValue value) {
+            return f.model.ReadByteRegion(value.ref, 0, f.model.ArrayLength(value.ref));
+        };
+        const auto params = make_params();
+        const auto iv = f.Keep(f.vm.NewIntrinsicInstance(iv_type));
+        f.base.Construct(iv, iv_type, "([B)V", {bytes(raw_hex)});
+        f.Invoke(params, "init", "(Ljava/security/spec/AlgorithmParameterSpec;)V", {VmValue::Ref(iv)});
+        CHECK(read(f.Invoke(params, "getEncoded", "()[B")) == f.Decode(der_hex));
+        const auto encoded = [&](VmObjectRef format) {
+            return f.Invoke(params, "getEncoded", "(Ljava/lang/String;)[B", {VmValue::Ref(format)});
+        };
+        CHECK(read(encoded(f.vm.NewStringUtf8("RAW"))) == f.Decode(raw_hex));
+        CHECK(read(encoded(f.vm.NewStringUtf8("ASN.1"))) == f.Decode(der_hex));
+        CHECK(read(encoded(VmObjectRef{})) == f.Decode(der_hex));
+        CHECK_FALSE(encoded(f.vm.NewStringUtf8("asn.1")).ref.IsValid());
+        CHECK_FALSE(encoded(f.vm.NewStringUtf8("X.509")).ref.IsValid());
+
+        const auto iv_class = VmValue::Ref(f.model.ClassObject(f.linker.ResolveDescriptor(iv_type)));
+        for (const auto* format : {"ASN.1", "RAW"}) {
+            const auto restored = make_params();
+            const auto input = bytes(std::string_view(format) == "RAW" ? raw_hex : der_hex);
+            f.Invoke(restored, "init", "([BLjava/lang/String;)V", {input, VmValue::Ref(f.vm.NewStringUtf8(format))});
+            const auto spec =
+                f.Keep(f.Invoke(restored, "getParameterSpec",
+                                "(Ljava/lang/Class;)Ljava/security/spec/AlgorithmParameterSpec;", {iv_class})
+                           .ref);
+            CHECK(read(f.Invoke(spec, "getIV", "()[B")) == f.Decode(raw_hex));
+        }
+        const auto malformed = f.Virtual(make_params(), "init", "([BLjava/lang/String;)V",
+                                         {bytes("04100102"), VmValue::Ref(f.vm.NewStringUtf8("ASN.1"))});
+        REQUIRE(malformed.exception.IsValid());
+        CHECK(f.linker.Class(malformed.exception_class).descriptor == "Ljava/io/IOException;");
     }
 }
 

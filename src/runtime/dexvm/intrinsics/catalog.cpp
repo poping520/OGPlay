@@ -43,7 +43,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(CoreIntrinsicServices servi
     AppendJavaNetPlatform(catalog, services);
     AppendJavaNio(catalog, services.guest_icu_converters);
     AppendJavaIcu(catalog, services);
-    AppendJavaCrypto(catalog, services);
+    AppendJavaCrypto(catalog);
     catalog.push_back(Declare_java_util_regex_Pattern_Natives());
     catalog.push_back(Declare_java_util_regex_Matcher_Natives());
     AppendJavaConcurrent(catalog, services);

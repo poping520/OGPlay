@@ -6,6 +6,8 @@ import java.security.Provider;
 public final class OgPlayCryptoProvider extends Provider {
     public OgPlayCryptoProvider() {
         super("OGPlayCrypto", 1.0, "OGPlay software crypto provider");
+        put("KeyGenerator.AES", "org.ogplay.security.AesKeyGenerator");
+        put("AlgorithmParameters.AES", "org.ogplay.security.AesParameters");
         put("Cipher.RSA", "org.ogplay.security.RsaCipher");
         put("AlgorithmParameters.OAEP", "org.ogplay.security.OaepParameters");
         put("MessageDigest.SHA-224", "org.ogplay.security.Sha224Digest");

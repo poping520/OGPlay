@@ -1757,17 +1757,17 @@ note = "有界 BN_add/mul/mul_word/shift/div/exp，服务原版 BigDecimal 数�
 [dexvm.cipher_aes]
 status = "complete"
 test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/runtime/jni_environment_tests.cpp; tools.android_payload_current"
-note = "ADR-0035：AES-128/192/256 的 ECB/CBC NoPadding/PKCS5Padding、CBC/ZeroBytePadding、CTR/NoPadding，裸 AES 默认 ECB/PKCS5Padding；Cipher/JCA/Conscrypt Java 在 BootDex，11 个 native 经 guest JNI 调用 API19 libcrypto，无宿主 AES。自设随机 seed、AlgorithmParameters 编码、AES wrap/unwrap 与完整 JCA 未验收。"
+note = "ADR-0035：AES-128/192/256 的 ECB/CBC NoPadding/PKCS5Padding、CBC/ZeroBytePadding、CTR/NoPadding，裸 AES 默认 ECB/PKCS5Padding；CTR 重用延续计数器，CBC 恢复 IV。原版 Conscrypt 经 guest JNI 调用 API19 libcrypto。OGPlayCrypto 提供 AES IV 的 DER OCTET STRING、RAW 与 IvParameterSpec 互转。AES wrap/unwrap 与完整 JCA 未验收。"
 
 [dexvm.rsa]
 status = "complete"
 test = "tests/runtime/guest_crypto_rsa_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/tls_trust_tests.cpp; tests/dexvm/bootdex_security_tests.cpp"
-note = "原版 Conscrypt RSA KeyFactory/KeyPairGenerator、NoPadding/PKCS1 Cipher 与 MD5/SHA-1/256/384/512/NONE 签名；OGPlayCrypto 裸 RSA 与 OAEP（SHA-1/224/256/384/512、MGF1、label）；BKS RSA 私钥可签名与解密。PSS、MD2withRSA、ENGINE、AndroidKeyStore、DSA/EC 签名生成与 TLS 服务端未纳入。"
+note = "原版 Conscrypt RSA KeyFactory/KeyPairGenerator、NoPadding/PKCS1 Cipher 与 MD5/SHA-1/256/384/512/NONE 签名；OGPlayCrypto 裸 RSA 与 OAEP（MD5、SHA-1/224/256/384/512、MGF1、label）；BKS RSA 私钥可签名与解密。PSS、MD2withRSA、ENGINE、AndroidKeyStore、DSA/EC 签名生成与 TLS 服务端未纳入。"
 
 [dexvm.jca_random_keygen]
 status = "complete"
 test = "tests/dexvm/bootdex_security_tests.cpp#DVM-208; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tools/bootdex/build_bootdex.py check"
-note = "AndroidOpenSSL SHA1PRNG 首用由统一 CSPRNG 注入熵，再经 guest libcrypto RAND；受限 Crypto Provider 仅发布原版 Harmony SHA1PRNG（显式首次播种可复现）；未播种与 generateSeed 读 VFS /dev/urandom。AES KeyGenerator 支持 128/192/256 位。其他 PRNG/KeyGenerator、PRNG 序列化与完整 JCA Provider 未验收。"
+note = "默认 SecureRandom 为 AndroidOpenSSL/SHA1PRNG，经 guest /dev/urandom 播种 libcrypto RAND。受限 Crypto Provider 仅发布原版 Harmony SHA1PRNG，首次显式播种可复现，未播种与 generateSeed 读 VFS /dev/urandom。OGPlayCrypto 的 AES KeyGenerator 默认 192 位，按 API19 BC 处理 init。其他 PRNG/KeyGenerator、PRNG 序列化与完整 JCA Provider 未验收。"
 
 [dexvm.android_log]
 status = "complete"

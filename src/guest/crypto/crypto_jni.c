@@ -89,7 +89,6 @@ typedef struct Context {
     jlong token;
     EVP_CIPHER_CTX *evp;
     int buffered, padding, encrypting, algorithm;
-    unsigned char iv[16];
 } Context;
 static Context *contexts;
 static jlong next_token = 1;
@@ -309,11 +308,8 @@ void N(EVP_1CipherInit_1ex)(JNIEnv *env, jobject cls, jlong token, jlong algorit
         }
         read_bytes(env, iv, 0, 16, v);
     }
-    if (iv)
-        for (int i = 0; i < 16; i++) p->iv[i] = v[i];
     ERR_clear_error();
-    int ok =
-        EVP_CipherInit_ex(p->evp, c, 0, key ? k : 0, selected > 3 ? p->iv : 0, encrypt ? 1 : 0);
+    int ok = EVP_CipherInit_ex(p->evp, c, 0, key ? k : 0, iv ? v : 0, encrypt ? 1 : 0);
     volatile unsigned char *wipe = k;
     for (int i = 0; i < 32; i++) wipe[i] = 0;
     if (!ok) {

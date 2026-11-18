@@ -7,7 +7,6 @@
 #include <limits>
 #include <stdexcept>
 
-#include "ogplay/hal/host_environment.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/dexvm/guest_memory.h"
@@ -18,7 +17,6 @@ namespace ogplay::runtime {
 
 dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<DexVmAndroidContext>& context) {
     dexvm::CoreIntrinsicServices services;
-    services.secure_random = hal::FillSecureRandom;
     if (context == nullptr) return services;
     services.create_dex_buffer = [context](dexvm::Interpreter& vm, std::span<const std::uint8_t> bytes) {
         if (!context->session || bytes.size() > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max()))

@@ -10,8 +10,8 @@ API 19 payload 同时提供同一 AOSP revision 构建的 `libssl.so`；它是 O
 
 算法与 context 使用逻辑 token；registry mutex、引用计数与 per-context mutex 保护
 查找/执行/释放。Java owner GC、teardown 释放资源，库析构兜底。独立 buffer 支持
-输入/输出别名，临时明文与 key buffer 使用 volatile 清零。reset 明确恢复原始 IV，
-修复 OpenSSL CTR 传 null IV 时不复位的行为。
+输入/输出别名，临时明文与 key buffer 使用 volatile 清零。重初始化按原版 Conscrypt 透传
+null IV。OpenSSL 1.0.1 在 CBC 中恢复原始 IV，在 CTR 中保留已推进的计数器。
 
 构建：`python tools/bootdex/build_bootdex.py build-guest-jni`。固定使用 NDK r25c 的
 ARMv7 API 19 clang/ld.lld，默认位于 `D:\01_software\android-sdk\ndk\r25c`，可用

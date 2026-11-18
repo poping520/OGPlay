@@ -717,12 +717,15 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
                 roundtrip.write(reinterpret_cast<const char*>(encoded_store.data()),
                                 static_cast<std::streamsize>(encoded_store.size()));
                 REQUIRE(roundtrip.good());
-                const auto secure_random = direct("Ljava/security/SecureRandom;", "getInstance",
-                                                  "(Ljava/lang/String;)Ljava/security/SecureRandom;",
-                                                  {VmValue::Ref(vm.NewStringUtf8("SHA1PRNG"))})
-                                               .ref;
+                const auto secure_random = vm.NewIntrinsicInstance("Ljava/security/SecureRandom;");
                 const auto random_output = bytes("00000000000000000000000000000000");
                 const auto random_roots = vm.ProtectReferences(std::array{secure_random, random_output});
+                direct("Ljava/security/SecureRandom;", "<init>", "()V", {VmValue::Ref(secure_random)});
+                CHECK(vm.StringUtf8(invoke(secure_random, "getAlgorithm", "()Ljava/lang/String;", {}).ref) ==
+                      "SHA1PRNG");
+                const auto random_provider = invoke(secure_random, "getProvider", "()Ljava/security/Provider;", {}).ref;
+                CHECK(vm.StringUtf8(invoke(random_provider, "getName", "()Ljava/lang/String;", {}).ref) ==
+                      "AndroidOpenSSL");
                 invoke(secure_random, "setSeed", "([B)V", {VmValue::Ref(bytes("01020304"))});
                 invoke(secure_random, "nextBytes", "([B)V", {VmValue::Ref(random_output)});
                 CHECK(vm.Model().ReadByteRegion(random_output, 0, 16) != std::vector<std::byte>(16, std::byte{0}));
@@ -807,26 +810,33 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
                     const char* ecb;
                     const char* cbc;
                     const char* ctr;
+                    const char* ctr_reused;
                 };
 
-                // NIST SP 800-38A F.1/F.2/F.5, first block, all three AES key lengths.
-                for (const auto& vector : std::array{
-                         Vector{"2b7e151628aed2a6abf7158809cf4f3c", "3ad77bb40d7a3660a89ecaf32466ef97",
-                                "7649abac8119b246cee98e9b12e9197d", "874d6191b620e3261bef6864990db6ce"},
-                         Vector{"8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b", "bd334f1d6e45f25ff712a214571fa5cc",
-                                "4f021db243bc633d7178183a9fa071e8", "1abc932417521ca24f2b0459fe7e6e0b"},
-                         Vector{"603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4",
-                                "f3eed1bdb5d2a03c064b5a7e3db181f8", "f58c4c04d6e5f1ba779eabfb5f7bfbd6",
-                                "601ec313775789a5b7a7f504bbf3d228"}}) {
+                // NIST SP 800-38A F.1/F.2/F.5. The CTR reuse ciphertexts are from the API 19 device report.
+                for (const auto& vector :
+                     std::array{Vector{"2b7e151628aed2a6abf7158809cf4f3c", "3ad77bb40d7a3660a89ecaf32466ef97",
+                                       "7649abac8119b246cee98e9b12e9197d",
+                                       "874d6191b620e3261bef6864990db6ce9806f66b7970fdff8617187bb9fffdff",
+                                       "01ed7d9a56c9a8d95789b60a64297b6e46b1b3c8eef2345a4abd5e7750c325af"},
+                                Vector{"8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b",
+                                       "bd334f1d6e45f25ff712a214571fa5cc", "4f021db243bc633d7178183a9fa071e8",
+                                       "1abc932417521ca24f2b0459fe7e6e0b090339ec0aa6faefd5ccc2c6f4ce8e94",
+                                       "453f10cf5cf7bdf7dd7ba26e3fb9ee3217ca09e413d43ed3690bf43bfb050911"},
+                                Vector{"603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4",
+                                       "f3eed1bdb5d2a03c064b5a7e3db181f8", "f58c4c04d6e5f1ba779eabfb5f7bfbd6",
+                                       "601ec313775789a5b7a7f504bbf3d228f443e3ca4d62b59aca84e990cacaf5c5",
+                                       "7000927e2f2192cbe4b6a8b2441ddd48877b6b9f77369a2d205ef3dfe6baf8e7"}}) {
                     const auto vector_key = make_key(vector.key);
                     const auto vector_roots = vm.ProtectReferences(std::array{vector_key});
                     for (const auto mode : {"ECB", "CBC", "CTR"}) {
                         CAPTURE(mode);
                         CAPTURE(vector.key);
+                        const bool ctr = std::string_view(mode) == "CTR";
                         const auto aes = make_cipher(std::string("AES/") + mode + "/NoPadding");
                         const auto roots = vm.ProtectReferences(std::array{aes});
-                        const auto iv = make_iv(std::string_view(mode) == "CTR" ? "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
-                                                                                : "000102030405060708090a0b0c0d0e0f");
+                        const auto iv =
+                            make_iv(ctr ? "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff" : "000102030405060708090a0b0c0d0e0f");
                         const auto iv_roots = vm.ProtectReferences(std::array{iv});
                         const auto initialize = [&](int operation) {
                             if (std::string_view(mode) == "ECB")
@@ -838,7 +848,9 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
                                        {VmValue::Int(operation), VmValue::Ref(vector_key), VmValue::Ref(iv)});
                         };
                         initialize(1);
-                        const auto input = bytes("6bc1bee22e409f96e93d7e117393172a");
+                        const auto input =
+                            bytes(ctr ? "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51"
+                                      : "6bc1bee22e409f96e93d7e117393172a");
                         const auto input_roots = vm.ProtectReferences(std::array{input});
                         const auto output = invoke(aes, "doFinal", "([B)[B", {VmValue::Ref(input)}).ref;
                         const auto output_roots = vm.ProtectReferences(std::array{output});
@@ -846,17 +858,18 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
                                                   : std::string_view(mode) == "CBC" ? vector.cbc
                                                                                     : vector.ctr);
                         CHECK(read(output) == read(answer));
-                        // doFinal resets the key/IV and allows reuse.
-                        CHECK(read(invoke(aes, "doFinal", "([B)[B", {VmValue::Ref(input)}).ref) == read(output));
+                        const auto reused = read(invoke(aes, "doFinal", "([B)[B", {VmValue::Ref(input)}).ref);
+                        CHECK(reused == read(ctr ? bytes(vector.ctr_reused) : output));
                         initialize(2);
                         CHECK(read(invoke(aes, "doFinal", "([B)[B", {VmValue::Ref(output)}).ref) == read(input));
                         initialize(1);
                         auto split = read(
                             invoke(aes, "update", "([BII)[B", {VmValue::Ref(input), VmValue::Int(0), VmValue::Int(5)})
                                 .ref);
-                        auto tail = read(
-                            invoke(aes, "doFinal", "([BII)[B", {VmValue::Ref(input), VmValue::Int(5), VmValue::Int(11)})
-                                .ref);
+                        auto tail = read(invoke(aes, "doFinal", "([BII)[B",
+                                                {VmValue::Ref(input), VmValue::Int(5),
+                                                 VmValue::Int(vm.Model().ArrayLength(input) - 5)})
+                                             .ref);
                         split.insert(split.end(), tail.begin(), tail.end());
                         CHECK(split == read(output));
                         const auto provider = invoke(aes, "getProvider", "()Ljava/security/Provider;", {}).ref;

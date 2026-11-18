@@ -74,7 +74,6 @@ struct CoreIntrinsicServices final {
     std::function<std::optional<ClasspathResource>(std::string_view, std::int32_t)> find_boot_classpath_resource;
     // Unknown origins fail explicitly; nullopt means a missing entry only.
     std::function<std::optional<std::vector<std::byte>>(const ClasspathResource&)> read_classpath_resource;
-    std::function<void(std::span<std::byte>)> secure_random;
     std::string default_timezone{"GMT"};
     std::function<VmObjectRef(Interpreter&, std::string_view, std::string_view)> singleton;
     std::function<std::int64_t()> current_time_millis;

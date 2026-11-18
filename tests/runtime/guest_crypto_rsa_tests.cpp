@@ -135,6 +135,12 @@ constexpr std::string_view kSignatureSHA512 =
     "d371345d1d5d2432f4c9ede8ec749cbfa426e05110cbeda097771b868ef5329841300dc0fc5d3f2b402d22aab6b60e50efe5bdbc48d7"
     "32ace607095542bc157bde99e4515b9701328e4f3c5d7583326734b8a44f2c2e3b6e5befce7e2464b17181b877c24683dfa7a4a00e8d"
     "aff45889022cec3a033be708b85536557d4a100c91887eca9a10bd356bd65abb6614576df4e79929";
+constexpr std::string_view kOaepMD5 =
+    "66931fba9f3ab33ad7106ee65e8484a2c34413f53eac48e07e2c13ff120b1040ee781d5054d2dc23bca971abd341f58cdd9e71c5"
+    "d3d7fd299d52501dd9f52fa85b1e6c54440406d9a0450514e93908951a94b41a877531d685a540fe0b20e2d05e90bc81f42e9204"
+    "aaf7ed5b14228289508b5f545b343d195ea9315de88730d3e09dca3486e6cb90c1ed583d52b5e40e3af2eb804cb6b5e77cdae57d"
+    "8d7ccea4b4a532cbdbb96b1c636541095782326eec2f1596a0215e559d3e681c6dd07d0ebf2b8de06f15d63fc7515072fe50d1a9"
+    "04d258205aa4e515f4f6aa97985c1c59d70e0e3483e62d384acf7114be27d5f1424333a18898d5d19bb278ac84143ac5";
 constexpr std::string_view kOaepSHA1 =
     "99fe360bbb057cf054b99769a05fb89f1ad66c924ac5c3a60deda95cd6bcd421c0b832823e972dfdab80d3744be4d5d95441d53d6d6f"
     "b6baedaa57ad8ea57af89e648e35adbfba7fd05425fb6e9a9d3da6989c4834ad7ea723690ed355d28b892cbdb46d46f7b5de22a3fb68"
@@ -573,8 +579,8 @@ TEST_CASE("API19 RSA OAEP matches OpenSSL vectors and supports independent MGF1 
     constexpr auto spec_init = "(ILjava/security/Key;Ljava/security/spec/AlgorithmParameterSpec;)V";
     constexpr auto params_init = "(ILjava/security/Key;Ljava/security/AlgorithmParameters;)V";
     constexpr std::pair<std::string_view, std::string_view> vectors[] = {
-        {"SHA-1", kOaepSHA1},     {"SHA-224", kOaepSHA224}, {"SHA-256", kOaepSHA256},
-        {"SHA-384", kOaepSHA384}, {"SHA-512", kOaepSHA512},
+        {"MD5", kOaepMD5},        {"SHA-1", kOaepSHA1},     {"SHA-224", kOaepSHA224},
+        {"SHA-256", kOaepSHA256}, {"SHA-384", kOaepSHA384}, {"SHA-512", kOaepSHA512},
     };
     for (auto backend : kBackends) {
         CAPTURE(std::string_view(backend == InterpreterBackend::threaded ? "threaded" : "switch"));
@@ -602,6 +608,20 @@ TEST_CASE("API19 RSA OAEP matches OpenSSL vectors and supports independent MGF1 
             f.CipherInit(cipher, 2, priv);
             CHECK(f.Read(f.Final(cipher, f.Bytes(kOaepSHA1))) == Hex(kMessage));
             CHECK(f.Read(f.Final(cipher, f.Bytes(kOaepLeadingZero))) == Hex(kMessage));
+            auto md5_mask =
+                f.Construct("Ljava/security/spec/MGF1ParameterSpec;", "(Ljava/lang/String;)V", {f.String("MD5")});
+            auto empty_label = f.Construct(source_type, "([B)V", {f.Bytes("")});
+            auto md5_spec =
+                f.Construct(spec_type, spec_ctor, {f.String("MD5"), f.String("MGF1"), md5_mask, empty_label});
+            f.Call(cipher, "init", spec_init, {VmValue::Int(2), priv, md5_spec});
+            CHECK(f.Read(f.Final(cipher, f.Bytes(kOaepMD5))) == Hex(kMessage));
+            auto md5_params = f.Call(cipher, "getParameters", "()Ljava/security/AlgorithmParameters;");
+            auto md5_der = f.Call(md5_params, "getEncoded", "()[B");
+            auto md5_restored = f.Static(kParameters, "getInstance",
+                                         "(Ljava/lang/String;)Ljava/security/AlgorithmParameters;", {f.String("OAEP")});
+            f.Call(md5_restored, "init", "([B)V", {md5_der});
+            f.Call(cipher, "init", params_init, {VmValue::Int(2), priv, md5_restored});
+            CHECK(f.Read(f.Final(cipher, f.Bytes(kOaepMD5))) == Hex(kMessage));
             auto mgf =
                 f.Construct("Ljava/security/spec/MGF1ParameterSpec;", "(Ljava/lang/String;)V", {f.String("SHA-1")});
             auto label = f.Construct(source_type, "([B)V", {f.Bytes("6c6162656c")});

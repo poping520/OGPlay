@@ -226,8 +226,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         {"Ljava/lang/reflect/Proxy;.constructorPrototype(Ljava/lang/reflect/InvocationHandler;)V",
          "Ldalvik/system/VMStack;.fillStackTraceElements(Ljava/lang/Thread;[Ljava/lang/StackTraceElement;)I",
          "Ldalvik/system/VMStack;.getThreadStackTrace(Ljava/lang/Thread;)[Ljava/lang/StackTraceElement;",
-         "Ljava/io/ObjectOutputStream;.getFieldL(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
-         "Lorg/ogplay/security/OsRandom;.engineSetSeed([B)V"})
+         "Ljava/io/ObjectOutputStream;.getFieldL(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;"})
         intentionally_unimplemented.insert(signature);
     for (const auto* digest : {"SHA1", "SHA224", "SHA256", "SHA384", "SHA512"})
         for (const auto* key : {"RSA", "ECDSA"})

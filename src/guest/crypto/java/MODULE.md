@@ -1,7 +1,7 @@
 # 模块：KeyStore/JSSE guest Java
 
 本目录拥有 OGPlay 软件 KeyStore 与 JSSE 的 Provider、SPI、条目状态、BKS codec、
-只读 AndroidCAStore、路径验证适配、客户端 SSLSocket/HTTPS 和 KDF/PBE 适配。
+只读 AndroidCAStore、路径验证适配、客户端 SSLSocket/HTTPS 及软件 crypto SPI。
 代码固定以 API 19 `android.jar` 编译并进入 BootDex，由 DexVM 执行；不得依赖宿主 JDK、
 BouncyCastle 运行时或 C++ 条目/会话影子状态。
 
@@ -13,9 +13,14 @@ BouncyCastle 运行时或 C++ 条目/会话影子状态。
 `AES/CBC/ZeroBytePadding` 由本目录的 CipherSpi 完成分段缓冲、零填充和解密去尾零，
 实际分组运算复用 API 19 Conscrypt 的 `AES/CBC/NoPadding`，仍进入 guest libcrypto。
 
+`OGPlayCrypto` 发布 `KeyGenerator.AES` 和 `AlgorithmParameters.AES`。密钥生成遵循 API 19 BC，
+默认 192 位，显式位数按字节向上取整，拒绝 `AlgorithmParameterSpec` 初始化。AES IV 参数支持
+`IvParameterSpec` 与 DER OCTET STRING 往返，`ASN.1`（含 null）和 `RAW` 格式名区分大小写，
+未知编码格式返回 null。Conscrypt 的 CBC 参数查询使用该服务。
+
 `OGPlayCrypto` 的 `Cipher.RSA` 接受 ECB/NONE，裸 RSA 默认 NoPadding。精确命中的
 NoPadding/PKCS1Padding 由 AndroidOpenSSL 提供，通用 SPI 也复用这两个原版 transformation。
-OAEP 在原始 RSA 上执行 Java EME-OAEP 与 MGF1，接受 SHA-1/224/256/384/512 名称、独立摘要和
+OAEP 在原始 RSA 上执行 Java EME-OAEP 与 MGF1，接受 MD5、SHA-1/224/256/384/512、独立摘要和
 `OAEPParameterSpec` 的 PSpecified label。解码以固定次数扫描摘要与分隔符，格式错误统一抛
 BadPaddingException；去掉前导零的短密文按右对齐解密。`AlgorithmParameters.OAEP` 提供规格及 PKCS#1 DER 往返。SHA-224 摘要
 复用已有 Conscrypt native ABI，为固定 API 19 Provider 缺少的 SHA-224 OAEP 提供支撑。

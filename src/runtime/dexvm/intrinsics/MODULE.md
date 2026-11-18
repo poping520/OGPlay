@@ -210,15 +210,15 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
   native 经 guest ICU51，String 正则委托同一路径。
   Charset.availableCharsets 读取 guest ICU 名称表，仅公布既有六种真实 codec，返回不区分大小写
   的不可变 SortedMap。UTF-16 家族经现有 NIO buffer 实现编解码循环，供 String 的通用 Charset 路径使用。
-- crypto family 只管 provider、熵、JNI 和资源 owner。AES ECB/CBC 的 NoPadding/PKCS5Padding、
-  CBC/ZeroBytePadding 及 CTR/NoPadding、128/192/256 KeyGenerator 已登记；ZeroBytePadding
+- crypto family 只管 provider、JNI 和资源 owner。AES ECB/CBC 的 NoPadding/PKCS5Padding、
+  CBC/ZeroBytePadding 及 CTR/NoPadding 已登记；ZeroBytePadding
   由 guest Java 适配到 CBC/NoPadding，Cipher 普通方法无 overlay。
   AndroidOpenSSL 登记 API 19 RSA KeyFactory、KeyPairGenerator、ECB/None 的 NoPadding/PKCS1Padding、
   NONEwithRSA 和 MD5/SHA1/SHA256/SHA384/SHA512 PKCS#1 v1.5 签名与验签及原版别名。
   裸 RSA 和 OAEP 由 OGPlayCrypto 的 guest CipherSpi 提供，精确匹配继续由 AndroidOpenSSL 处理。
-  OGPlayCrypto 的 SecretKeyFactory、PBE 规格与 PKCS12 SHA-1/AES-256 SPI 同样执行 guest Java。
-  OGPlayOS 用 HAL CSPRNG 且拒绝 setSeed；原版 AndroidOpenSSL/SHA1PRNG 与 RSA/TLS 共用 guest
-  libcrypto 的进程级播种，调用方 seed 追加熵。IvParameterSpec 可用。
+  OGPlayCrypto 的 AES KeyGenerator 和 IV AlgorithmParameters、SecretKeyFactory、PBE 规格与
+  PKCS12 SHA-1/AES-256 SPI 同样执行 guest Java。默认 SecureRandom 为 AndroidOpenSSL/SHA1PRNG，
+  与 RSA/TLS 共用 guest libcrypto 的进程级播种。系统熵经 guest `/dev/urandom` 读取，调用方 seed 追加熵。
   Crypto Provider 仅发布 API19 Harmony SHA1PRNG，注册构造为平台配置边界；算法及播种/
   counter/输出缓存执行原版 BootDex，状态只在 guest 字段/数组。首次显式 seed 可复现字节流；
   未播种与 generateSeed 通过既有 VFS /dev/urandom 获取熵，失败保真。默认 Provider 顺序不变；
@@ -237,8 +237,7 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
   HmacSHA1 之外的 Mac、SHA3、通用 CertPathValidator.PKIX 和撤销检查。BigDecimal 精确解析、
   具名时区历史、privileged executor、完整 ThreadGroup/反射长尾仍不在范围。
   TrustManager 路径验证与只读 AndroidCAStore 由 OGPlayJSSE 提供，loopback 客户端 TLS/HTTPS
-  已闭合，SSLEngine/server TLS 明确失败。AES AlgorithmParameters provider 未注册，原版
-  engineGetParameters 可返回 null。
+  已闭合，SSLEngine/server TLS 明确失败。
 - KeyStore/KeyStoreSpi 及公开嵌套类已进入 BootDex；自有 `OGPlayKeyStore` 已注册 BKS 并设为
   默认类型，BKS v0/v1/v2、标准/历史 key PBE、AES RAW、RSA/EC PKCS#8 与 API19 双向互操作
   已受检。CallbackHandler 实际取密码、同 store 双线程、磁盘跨 session 重载及应用沙盒隔离

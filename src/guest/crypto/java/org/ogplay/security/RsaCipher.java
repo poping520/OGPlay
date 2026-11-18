@@ -33,7 +33,7 @@ import javax.crypto.spec.SecretKeySpec;
 public final class RsaCipher extends CipherSpi {
     private static final String RAW = "NoPadding";
     private static final String PKCS1 = "PKCS1Padding";
-    private static final String[] OAEP_DIGESTS = { "SHA-1", "SHA-224", "SHA-256", "SHA-384", "SHA-512" };
+    private static final String[] OAEP_DIGESTS = { "MD5", "SHA-1", "SHA-224", "SHA-256", "SHA-384", "SHA-512" };
 
     private String padding = RAW;
     private OAEPParameterSpec defaultOaep;

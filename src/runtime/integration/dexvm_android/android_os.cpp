@@ -1722,9 +1722,13 @@ Decl Declare_android_os_MessageQueue_Natives(const Context& context) {
             }
             bool stopped{};
             {
-                std::scoped_lock lock(context->scheduler_mutex);
+                std::unique_lock lock(context->scheduler_mutex);
                 queue->idling = false;
                 queue->wake = false;
+                // A host stop claimed this idle main queue. Keep it parked until
+                // the teardown path closes the scheduler.
+                if (queue->context_token == 1U && context->process_stopping)
+                    context->scheduler_changed.wait(lock, [&] { return context->scheduler_shutdown; });
                 stopped = context->scheduler_shutdown;
             }
             execution.ReacquireAfterBlocking(depth, observe_blocking);

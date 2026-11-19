@@ -185,8 +185,8 @@ note = "独立 SoundPool 池、AOSP play(IFFIIF) loop/priority/rate/maxStreams �
 
 [audio.encoded_music_playback]
 status = "partial"
-test = "tests/audio/encoded_music_tests.cpp; tests/dexvm/audio_track_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp"
-note = "音乐 OGG/WAV 和经 FFmpeg 注入的 MP3、MP4/M4A AAC 增量解码，独立 seek/loop/volume、有限实例/输入预算和可取消准备任务。显式 MediaPlayer transport 阶段和按 stream 输出增益。MP3 后退 seek 线性重解码。游戏内听测待验。"
+test = "tests/audio/encoded_music_tests.cpp; tests/audio/encoded_music_tests.cpp#encoded music async owners cancel; tests/dexvm/audio_track_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp"
+note = "音乐 OGG/WAV 和经 FFmpeg 注入的 MP3、MP4/M4A AAC 增量解码。首次 start 申请声部（最多 32），pause、stop 和结束保留，reset、release、finalize 或成功重设源释放；配额耗尽投递 NO_INIT 错误事件。编码窗口总计 128 MiB、单窗 64 MiB，准备可取消。独立 seek/loop/volume，按 stream 应用输出增益。MP3 后退 seek 线性重解码。游戏内听测待验。"
 
 [frontend.run_apk_external]
 status = "complete"
@@ -1406,8 +1406,8 @@ note = "在 VmExecutionLock 安全点给出全部 execution context 的 Java 栈
 
 [dexvm.threads]
 status = "complete"
-test = "tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp"
-note = "guest/host 线程及 execution context 1:1，子线程独立 A32 CPU/栈、TLS/JNI attach。Thread 含 loader、handler、group/State、park/interrupt；ThreadGroup 支持父子组构造、存活枚举和子树中断，按 parent/default/stderr 分派，APK 无 handler 工作线程保持致命出口。VM 单写锁串行、FIFO 准入、1024 tick 轮转；root/worker sleep/join/park 停摆时按注入真实流逝时间补时（ADR-0171）。"
+test = "tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp#dexvm Thread uncaught handlers are scoped; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp"
+note = "guest/host 线程和 execution context 1:1，子线程独立 A32 CPU/栈、TLS/JNI attach。Thread 含 loader、group/State、park/interrupt，handler 查询回退到 ThreadGroup。ThreadGroup 支持父子组、存活枚举、子树中断及 parent/default/stderr 分派。APK 无 handler 的工作线程保留致命出口。VM 单写锁、FIFO 准入、1024 tick 轮转，sleep/join/park 停摆时按注入的真实流逝时间补时（ADR-0171）。"
 
 [dexvm.monitors]
 status = "complete"
@@ -1712,7 +1712,7 @@ note = "唯一 API19 ARSC 表核心供清单、游戏库和资源 native 共用�
 [session.dex_activity_lifecycle]
 status = "complete"
 test = "tests/runtime/rom_window_integration_tests.cpp; tests/dexvm/rom_activity_service_tests.cpp; tests/session/lifecycle_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "ROM ActivityThread/Looper 驱动启动、生命周期与配置重建；session 只排队 AMS 请求、WMS 输入和 vsync。手动步进等待主队列、当步绘制及 Java EGL swap 完成或真实阻塞。实时模式同样等待生产者，超过 EGL 等待预算后继续步进。健康关闭先隐藏栈中 app token，再有界等待 ROM 销毁，超时保留首错。原生 EGL 线程仍独立节流。"
+note = "ROM ActivityThread/Looper 驱动启动、生命周期与配置重建；session 只排队 AMS 请求、WMS 输入和 vsync。手动步进等待主队列、当步绘制及 Java EGL swap 完成或真实阻塞。实时模式同样等待生产者，超过 EGL 等待预算后继续步进。健康宿主关闭复用 suspend，10 秒内等待整栈 stop 确认与主队列空闲，随后退役进程，不派发销毁回调。原生 EGL 线程仍独立节流。"
 
 [runtime.android_link_preflight]
 status = "complete"

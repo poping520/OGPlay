@@ -24,6 +24,8 @@ constexpr std::int32_t kSuccess = 0;
 constexpr std::int32_t kError = -1;
 constexpr std::int32_t kErrorBadValue = -2;
 constexpr std::int32_t kErrorInvalidOperation = -3;
+// Android NO_INIT (-ENODEV), returned when AudioOutput cannot open an AudioTrack.
+constexpr std::int32_t kAudioTrackUnavailable = -19;
 constexpr auto kPrivNatFin = dx::kAccPrivate | dx::kAccNative | dx::kAccFinal;
 constexpr auto kPrivStatNatFin = dx::kAccPrivate | dx::kAccStatic | dx::kAccNative | dx::kAccFinal;
 constexpr auto kPubNatFin = dx::kAccPublic | dx::kAccNative | dx::kAccFinal;
@@ -707,11 +709,7 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "encoded music mixer is unavailable"};
             }
             DexVmAndroidContext::MediaPlayerState state;
-            try {
-                state.music = context->encoded_music->Create();
-            } catch (const std::length_error& error) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", error.what()};
-            }
+            state.music = context->encoded_music->Create();
             state.jni_weak = call.arguments[0].ref;
             context->media_players[call.receiver.Value()] = std::move(state);
             SetNativeContext(call, static_cast<std::int32_t>(context->media_players[call.receiver.Value()].music));
@@ -851,7 +849,7 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
             if (state.phase != Phase::prepared && state.phase != Phase::started && state.phase != Phase::paused &&
                 state.phase != Phase::completed) {
                 state.phase = Phase::error;
-                state.error_event_pending = true;
+                state.QueueError();
                 context->encoded_music->Pause(state.music);
                 if (video) video->playing = false;
                 return dx::VmValue::Void();
@@ -869,8 +867,21 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
                     video->loop_index = 0;
                     video->start_uptime_ms = context->UptimeMillis();
                 }
-            } else
-                context->encoded_music->Start(state.music);
+            } else {
+                using StartStatus = audio::EncodedMusicMixer::StartStatus;
+                const auto status = context->encoded_music->Start(state.music);
+                if (status != StartStatus::started) {
+                    state.phase = Phase::error;
+                    if (status == StartStatus::voice_limit) {
+                        if (auto* ledger = call.vm.Ledger())
+                            ledger->RecordUnimplemented("dexvm.media.music_voice_limit", 0);
+                        state.QueueError(kAudioTrackUnavailable, 0);
+                    } else {
+                        state.QueueError();
+                    }
+                    return dx::VmValue::Void();
+                }
+            }
             state.phase = Phase::started;
             return dx::VmValue::Void();
         },
@@ -883,7 +894,7 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
             auto* video = VideoStateOf(context, call.receiver.Value());
             if (state.phase != Phase::started && state.phase != Phase::paused && state.phase != Phase::completed) {
                 state.phase = Phase::error;
-                state.error_event_pending = true;
+                state.QueueError();
                 context->encoded_music->Pause(state.music);
                 if (video) video->playing = false;
                 return dx::VmValue::Void();
@@ -906,7 +917,7 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
             if (state.phase != Phase::prepared && state.phase != Phase::started && state.phase != Phase::paused &&
                 state.phase != Phase::completed && state.phase != Phase::stopped) {
                 state.phase = Phase::error;
-                state.error_event_pending = true;
+                state.QueueError();
                 context->encoded_music->Pause(state.music);
                 if (video) video->playing = false;
                 return dx::VmValue::Void();
@@ -959,7 +970,7 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
             found->second.left_volume = found->second.right_volume = 1.0F;
             found->second.prepared_event_pending = false;
             found->second.seek_event_pending = false;
-            found->second.error_event_pending = false;
+            found->second.error_event_pending.reset();
             found->second.phase = Phase::idle;
             return dx::VmValue::Void();
         },
@@ -973,7 +984,7 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
             if (state.phase != Phase::prepared && state.phase != Phase::started && state.phase != Phase::paused &&
                 state.phase != Phase::completed) {
                 state.phase = Phase::error;
-                state.error_event_pending = true;
+                state.QueueError();
                 context->encoded_music->Pause(state.music);
                 if (video) video->playing = false;
                 return dx::VmValue::Void();

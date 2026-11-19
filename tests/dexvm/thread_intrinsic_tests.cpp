@@ -341,35 +341,38 @@ TEST_CASE("dexvm Thread uncaught handlers are scoped and accept null") {
         const auto first_handler = first_vm.New("LThreadUncaughtHandler;");
         const auto default_handler = first_vm.New("LThreadUncaughtHandler;");
 
-        CHECK_FALSE(
-            first_vm.Virtual(first, "getUncaughtExceptionHandler", "()Ljava/lang/Thread$UncaughtExceptionHandler;")
-                .value.ref.IsValid());
+        const auto first_group = first_vm.Virtual(first, "getThreadGroup", "()Ljava/lang/ThreadGroup;").value.ref;
+        REQUIRE(first_group.IsValid());
+        CHECK(first_vm.Virtual(first, "getUncaughtExceptionHandler", "()Ljava/lang/Thread$UncaughtExceptionHandler;")
+                  .value.ref == first_group);
         RequireOk(first_vm.Virtual(first, "setUncaughtExceptionHandler",
                                    "(Ljava/lang/Thread$UncaughtExceptionHandler;)V", {VmValue::Ref(first_handler)}));
         CHECK(first_vm.Virtual(first, "getUncaughtExceptionHandler", "()Ljava/lang/Thread$UncaughtExceptionHandler;")
                   .value.ref == first_handler);
-        CHECK_FALSE(
-            first_vm.Virtual(second, "getUncaughtExceptionHandler", "()Ljava/lang/Thread$UncaughtExceptionHandler;")
-                .value.ref.IsValid());
-
         RequireOk(first_vm.Static("Ljava/lang/Thread;", "setDefaultUncaughtExceptionHandler",
                                   "(Ljava/lang/Thread$UncaughtExceptionHandler;)V", {VmValue::Ref(default_handler)}));
         CHECK(first_vm
                   .Static("Ljava/lang/Thread;", "getDefaultUncaughtExceptionHandler",
                           "()Ljava/lang/Thread$UncaughtExceptionHandler;")
                   .value.ref == default_handler);
+        CHECK(first_vm.Virtual(second, "getUncaughtExceptionHandler", "()Ljava/lang/Thread$UncaughtExceptionHandler;")
+                  .value.ref == first_vm.Virtual(second, "getThreadGroup", "()Ljava/lang/ThreadGroup;").value.ref);
 
         RequireOk(first_vm.Virtual(first, "setUncaughtExceptionHandler",
                                    "(Ljava/lang/Thread$UncaughtExceptionHandler;)V", {VmValue::Ref(VmObjectRef{})}));
         RequireOk(first_vm.Static("Ljava/lang/Thread;", "setDefaultUncaughtExceptionHandler",
                                   "(Ljava/lang/Thread$UncaughtExceptionHandler;)V", {VmValue::Ref(VmObjectRef{})}));
-        CHECK_FALSE(
-            first_vm.Virtual(first, "getUncaughtExceptionHandler", "()Ljava/lang/Thread$UncaughtExceptionHandler;")
-                .value.ref.IsValid());
+        CHECK(first_vm.Virtual(first, "getUncaughtExceptionHandler", "()Ljava/lang/Thread$UncaughtExceptionHandler;")
+                  .value.ref == first_group);
         CHECK_FALSE(first_vm
                         .Static("Ljava/lang/Thread;", "getDefaultUncaughtExceptionHandler",
                                 "()Ljava/lang/Thread$UncaughtExceptionHandler;")
                         .value.ref.IsValid());
+        RequireOk(first_vm.Virtual(first, "start", "()V"));
+        RequireOk(first_vm.Virtual(first, "join", "()V"));
+        CHECK_FALSE(
+            first_vm.Virtual(first, "getUncaughtExceptionHandler", "()Ljava/lang/Thread$UncaughtExceptionHandler;")
+                .value.ref.IsValid());
 
         ThreadVm second_vm(backend);
         CHECK_FALSE(second_vm

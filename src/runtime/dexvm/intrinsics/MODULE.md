@@ -64,7 +64,8 @@
   实例 uncaught handler 优先于默认 handler；handler 自身异常按 API19 忽略，无 handler
   保留进程致命诊断。ThreadGroup 保留 system/main，支持按当前组或显式父组构造、查询祖先关系，
   并从唯一线程运行时枚举本组或子树的存活线程；interrupt 虚派子树内存活 Thread 的 interrupt。
-  结束后 Thread.getThreadGroup 返回 null。组销毁、daemon 和组优先级未纳入。
+  Thread.getUncaughtExceptionHandler 优先返回显式 handler，否则沿用 getThreadGroup 的查询结果。
+  线程结束后 getThreadGroup 返回 null。组销毁、daemon 和组优先级未纳入。
   ThreadGroup.uncaughtException 依次虚派 parent、默认 handler；无 handler 时向 System.err 打印线程名前缀和原版 Throwable 栈，ThreadDeath 不输出。APK 无 handler 的工作线程仍走原有进程致命出口。
   线程栈来自本 VM safe-point snapshot，不伪造完整 ThreadGroup/State。
 - Runtime 的单例、hook、退出和 finalization 由 ROM Java 执行，nativeExit 保存退出码并停止 VM。

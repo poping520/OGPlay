@@ -42,8 +42,9 @@ src 中禁止裸 printf、std::cout、std::cerr；显式 Java/CLI 控制台协�
 ### 决定
 
 区分 Activity.finish、健康宿主关闭、guest exit 与运行 fault。
-finish 执行实例 onDestroy；健康宿主关闭在有界根 scope 内尝试前台失焦、pause、Surface/stop、
-前台 onDestroy，不作后台全栈 finish；期间保留图形、线程准入与音频消费，只解除宿主帧节奏等待。
+finish 执行实例 onDestroy；健康宿主关闭采用按 Home 后移除任务的语义，在有界根 scope 内完成前台失焦、
+pause、保存状态和 stop，确认后视为进程被杀，不派发 Activity.onDestroy 或 Service 销毁回调。
+期间保留图形、线程准入与音频消费，只解除宿主帧节奏等待。
 协作完成或失败后先停止音频消费者，再 BeginTeardown、关闭 scheduler/准入、取消并 join worker。
 BeginTeardown 幂等且不可逆，封闭 Java/native EGL/GLES、唤醒阻塞，安全点观察独立取消。
 退役后图形不进入 ANGLE，swap 返回 false 并锁存 BAD_NATIVE_WINDOW；不得复活旧线程或资源。

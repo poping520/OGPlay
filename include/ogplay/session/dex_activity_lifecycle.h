@@ -82,9 +82,7 @@ private:
     LifecycleRunState state_{LifecycleRunState::ready};
     std::uint64_t frame_{}, window_revision_{}, previous_step_ns_{}, producer_wait_started_ns_{};
     std::uint64_t producer_budget_ns_{30'000'000'000};
-    // API19 ActivityStack STOP_TIMEOUT + DESTROY_TIMEOUT (10 s each). Guest
-    // callbacks run slower than on a device, so the host does not cut them shorter.
-    std::uint64_t shutdown_budget_ns_{20'000'000'000};
+    std::uint64_t shutdown_budget_ns_{10'000'000'000};  // API 19 ActivityStack.STOP_TIMEOUT
     bool surface_open_{}, suspended_{}, realtime_{true}, stop_completed_{};
     bool posted_frame_{}, blank_frame_{}, reported_borrow_{};
 };

@@ -343,25 +343,34 @@ LifecycleFrameState DexActivityLifecycle::Stop(DexProcessStopReason reason) {
     if (bindings_.diagnostics) bindings_.diagnostics->SetLifecyclePhase("teardown.guest_callbacks", true);
     if (live && reason == DexProcessStopReason::host_shutdown && state_ == LifecycleRunState::running) {
         attempt([&] {
-            CancelInput();
-            runtime::ShutdownEglSwapPacer(context);
             const auto deadline = hal::Clock::SteadyTimestampNs() + shutdown_budget_ns_;
             vm.SetDefaultExecutionDeadline(deadline);
+            runtime::ShutdownEglSwapPacer(context);
+            if (!suspended_) CancelInput();
             runtime::QueueAndroidActivityRequest(context, {ActivityRequest::Kind::shutdown, {}, {}});
             auto last_ns = hal::Clock::SteadyTimestampNs();
-            while (!context.activities_destroyed.load() || !runtime::AndroidMainQueueIdle(context)) {
+            const auto check_deadline = [&](std::uint64_t now) {
+                if (now < deadline) return;
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("session.lifecycle.cleanup_timeout", 0);
+                Fail("ROM Activity shutdown exceeded its Clock deadline");
+            };
+            for (;;) {
                 if (vm.ExitCode() || session.NativeExitCode()) break;
                 const auto now = hal::Clock::SteadyTimestampNs();
-                if (now >= deadline) {
-                    if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("session.lifecycle.cleanup_timeout", 0);
-                    Fail("ROM Activity shutdown exceeded its Clock deadline");
-                }
+                check_deadline(now);
                 try {
                     CheckGuest();
+                } catch (const dx::DexVmError& error) {
+                    if (vm.ExitCode() || session.NativeExitCode()) break;
+                    if (error.Reason() == dx::DexVmErrorReason::budget_exhausted)
+                        check_deadline(hal::Clock::SteadyTimestampNs());
+                    throw;
                 } catch (...) {
                     if (vm.ExitCode() || session.NativeExitCode()) break;
                     throw;
                 }
+                check_deadline(hal::Clock::SteadyTimestampNs());
+                if (runtime::TryBeginAndroidProcessStop(context)) break;
                 runtime::AdvanceAndroidFrameClock(context, static_cast<std::int64_t>(now - last_ns));
                 last_ns = now;
                 runtime::QueueAndroidDisplayFrame(vm.ExecutionLock(), context);

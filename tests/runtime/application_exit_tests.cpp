@@ -20,6 +20,7 @@
 #include <iterator>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -29,6 +30,7 @@
 #include "ogplay/core/encoding.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/loader/elf.h"
+#include "ogplay/runtime/common/api19_identity.h"
 #include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
@@ -70,7 +72,7 @@ TEST_CASE("DVM-150 Java exit unwinds Activity startup and stops the guest proces
 TEST_CASE("DVM-150 Java exit cannot be caught by Application onCreate") {
     using namespace ogplay;
     OrchestratedApp fixture("fixture.LauncherActivity", true, false, {}, {}, true,
-                            runtime::dexvm::InterpreterBackend::switch_dispatch, "fixture.ExitApplication");
+                            runtime::dexvm::InterpreterBackend::threaded, "fixture.ExitApplication");
     fixture.app->StartApplication();
     CHECK(fixture.app->State() == session::AndroidAppProcessState::stopped);
     CHECK(fixture.app->DexVm().Vm().ExitCode() == 31);
@@ -88,7 +90,7 @@ TEST_CASE("DVM-150 Java exit cannot be caught by Application onCreate") {
 TEST_CASE("DVM-150 AndroidAppProcess does not launch after Application exits") {
     using namespace ogplay;
     OrchestratedApp fixture("fixture.LauncherActivity", true, false, "", {}, true,
-                            runtime::dexvm::InterpreterBackend::switch_dispatch, "fixture.ExitApplication");
+                            runtime::dexvm::InterpreterBackend::threaded, "fixture.ExitApplication");
     fixture.app->StartApplication();
     CHECK(fixture.app->State() == session::AndroidAppProcessState::stopped);
     CHECK(fixture.app->StartLauncherActivity().state == session::LifecycleRunState::stopped);
@@ -195,7 +197,7 @@ TEST_CASE("cooperative onPause can start Java workers before VM shutdown and joi
             }
             const auto activity_type = vm.Model().ObjectClass(f.context->foreground_activity);
             const auto activity_base = linker.ResolveDescriptor("Landroid/app/Activity;");
-            for (const auto callback : {"onPause", "onStop", "onDestroy"}) {
+            for (const auto callback : {"onPause", "onStop"}) {
                 const auto pause = linker.FindVtableIndex(activity_type, callback, "()V");
                 REQUIRE(pause);
                 const auto super_slot = linker.FindVtableIndex(activity_base, callback, "()V");
@@ -221,7 +223,7 @@ TEST_CASE("cooperative onPause can start Java workers before VM shutdown and joi
                 };
             }
             if (timeout) {
-                // The default follows API19 STOP+DESTROY timeouts; keep the hung case short.
+                // Keep the hung case shorter than the API 19 stop timeout.
                 f.app->ActivityLifecycle().SetShutdownBudgetForTesting(2'000'000'000);
                 CHECK_THROWS_WITH(static_cast<void>(f.app->Stop()),
                                   doctest::Contains("ROM Activity shutdown exceeded its Clock deadline"));
@@ -230,7 +232,7 @@ TEST_CASE("cooperative onPause can start Java workers before VM shutdown and joi
                                   [](const auto& hit) { return hit.id == "session.lifecycle.cleanup_timeout"; }));
             } else {
                 CHECK(f.app->Stop().state == session::LifecycleRunState::stopped);
-                CHECK(completed == 6);
+                CHECK(completed == 4);
             }
             CHECK(f.app->DexVm().Threads().ShuttingDown());
             CHECK_FALSE(f.app->NativeProcess().Running());
@@ -239,7 +241,7 @@ TEST_CASE("cooperative onPause can start Java workers before VM shutdown and joi
     }
 }
 
-TEST_CASE("process close destroys the foreground before shutdown and finish stays per instance") {
+TEST_CASE("process close stops Activities without destroying them and finish stays per instance") {
     using namespace ogplay;
     using namespace runtime::dexvm;
     for (const auto backend : ogplay::test::InterpreterBackends()) {
@@ -253,22 +255,36 @@ TEST_CASE("process close destroys the foreground before shutdown and finish stay
             auto& linker = vm.Linker();
             const auto caller = f.context->foreground_activity;
             const auto type = vm.Model().ObjectClass(caller);
-            const auto slot = linker.FindVtableIndex(type, "onDestroy", "()V");
-            REQUIRE(slot.has_value());
             const auto activity_base = linker.ResolveDescriptor("Landroid/app/Activity;");
-            const auto super_slot = linker.FindVtableIndex(activity_base, "onDestroy", "()V");
-            REQUIRE(super_slot);
-            const auto super = linker.Class(activity_base).vtable[*super_slot];
             int destroyed{};
-            auto& method = linker.MutableMethod(linker.Class(type).vtable[*slot]);
-            method.kind = MethodKind::intrinsic;
-            method.implementation = [&, super](IntrinsicContext& call) {
-                CHECK_FALSE(f.app->DexVm().Threads().ShuttingDown());
-                ++destroyed;
-                if (mode == 2) throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "shared owner already destroyed"};
-                REQUIRE_FALSE(vm.Call(super, std::array{VmValue::Ref(call.receiver)}).exception.IsValid());
-                return VmValue::Void();
-            };
+            VmObjectRef observed;
+            std::vector<std::string_view> callbacks;
+            for (const auto* name : {"onPause", "onSaveInstanceState", "onStop", "onDestroy"}) {
+                const std::string_view callback = name;
+                const auto* signature = callback == "onSaveInstanceState" ? "(Landroid/os/Bundle;)V" : "()V";
+                const auto slot = linker.FindVtableIndex(type, name, signature);
+                REQUIRE(slot);
+                const auto super_slot = linker.FindVtableIndex(activity_base, name, signature);
+                REQUIRE(super_slot);
+                const auto super = linker.Class(activity_base).vtable[*super_slot];
+                const auto target = linker.Class(type).vtable[*slot];
+                REQUIRE(target != super);
+                auto& method = linker.MutableMethod(target);
+                method.kind = MethodKind::intrinsic;
+                method.implementation = [&, callback, super](IntrinsicContext& call) {
+                    if (call.receiver == observed) callbacks.push_back(callback);
+                    if (callback == "onDestroy") {
+                        ++destroyed;
+                        CHECK_FALSE(f.app->DexVm().Threads().ShuttingDown());
+                        if (mode == 2)
+                            throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "shared owner already destroyed"};
+                    }
+                    std::vector args{VmValue::Ref(call.receiver)};
+                    args.insert(args.end(), call.arguments.begin(), call.arguments.end());
+                    REQUIRE_FALSE(vm.Call(super, args).exception.IsValid());
+                    return VmValue::Void();
+                };
+            }
             const auto on = [&](VmObjectRef object, const char* name, const char* signature,
                                 std::vector<VmValue> args = {}) {
                 return runtime::android_intrinsics::CallAndroidMethod(vm, object, name, signature, args);
@@ -286,6 +302,7 @@ TEST_CASE("process close destroys the foreground before shutdown and finish stay
             for (int i = 0; i < 3 && f.context->foreground_activity == caller; ++i)
                 static_cast<void>(f.app->ActivityLifecycle().StepFrame());
             REQUIRE(f.context->foreground_activity != caller);
+            observed = f.context->foreground_activity;
             if (mode != 0) {
                 f.RunOnMainThread([&] { on(f.context->foreground_activity, "finish", "()V"); });
                 const auto finish_child = [&] {
@@ -299,6 +316,15 @@ TEST_CASE("process close destroys the foreground before shutdown and finish stay
                     CHECK(f.context->foreground_activity == caller);
                 }
                 CHECK(destroyed == 1);
+                CHECK((!callbacks.empty() && callbacks.back() == "onDestroy"));
+                observed = caller;
+                callbacks.clear();
+            }
+            // The fixture has a pre-Honeycomb target. ROM saves its state in handlePauseActivity, before onPause.
+            const std::vector<std::string_view> stop_callbacks{"onSaveInstanceState", "onPause", "onStop"};
+            if (mode == 1) {
+                CHECK(f.app->ActivityLifecycle().Suspend().state == session::LifecycleRunState::running);
+                CHECK(callbacks == stop_callbacks);
             }
             f.context->video_views[999].guest_path = "retained source";
             f.context->encoded_audio_leases[999] = {};
@@ -306,8 +332,10 @@ TEST_CASE("process close destroys the foreground before shutdown and finish stay
             const auto player = f.context->pcm_playback->CreatePlayer({48000, 2, 16}, 2);
             f.context->audio_tracks[999].player = player;
             REQUIRE(f.context->pcm_playback->HasPlayer(player));
-            CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
-            CHECK(destroyed == (mode == 2 ? 1 : 2));
+            CHECK(f.app->Stop().state ==
+                  (mode == 2 ? session::LifecycleRunState::failed : session::LifecycleRunState::stopped));
+            CHECK(destroyed == (mode == 0 ? 0 : 1));
+            CHECK(callbacks == (mode == 2 ? std::vector<std::string_view>{} : stop_callbacks));
             CHECK(f.context->video_views.empty());
             CHECK(f.context->encoded_audio_leases.empty());
             CHECK_FALSE(f.context->pcm_playback->HasPlayer(player));
@@ -316,7 +344,7 @@ TEST_CASE("process close destroys the foreground before shutdown and finish stay
             CHECK_FALSE(f.app->NativeProcess().Running());
             CHECK(f.app->NativeProcess().AttachedJniThreadCount() == 0);
             CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
-            CHECK(destroyed == (mode == 2 ? 1 : 2));
+            CHECK(destroyed == (mode == 0 ? 0 : 1));
         }
     }
 }
@@ -351,9 +379,10 @@ TEST_CASE("DVM-236 guest process exit and runtime fault forbid Activity callback
                 const auto process = linker.ResolveDescriptor("Landroid/os/Process;");
                 const auto kill = linker.FindDirectMethod(process, "killProcess", "(I)V");
                 REQUIRE(kill.has_value());
-                CHECK_THROWS_AS(
-                    f.RunOnMainThread([&] { static_cast<void>(vm.Call(*kill, std::array{VmValue::Int(1)})); }),
-                    DexVmError);
+                CHECK_THROWS_AS(f.RunOnMainThread([&] {
+                    static_cast<void>(vm.Call(*kill, std::array{VmValue::Int(runtime::kGuestProcessId)}));
+                }),
+                                DexVmError);
                 CHECK(vm.ExitCode() == 0);
             }
             CHECK_NOTHROW(static_cast<void>(f.app->Stop(guest_exit ? session::DexProcessStopReason::host_shutdown

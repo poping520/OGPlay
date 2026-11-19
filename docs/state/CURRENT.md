@@ -46,7 +46,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | 鳄鱼小顽皮 1.13.1 | macOS | 闹钟登记已越过 `onResume` 的 UOE；库诊断运行 120 秒呈现 23,719 帧，SIGINT 退出 0 | 本次未见新的阻断错误；闹钟到期投递已通过 Probe，原 APK 到期路径和游戏内交互待复验 | DVM-211 |
 | Rayman Fiesta Run 1.4.2 | macOS | 越过 MSDK `http.agent` 的 strlen(NULL)（斜杠类名 findLoadedClass、启动未设 `http.agent` 已修），进入资源包加载；约 100 秒呈现 5659 帧，SIGTERM 退出 0 | 画面与交互未验；缺失报告列出 obb 与 73 个 `casa_gamedata` 路径，是否为正常探测未判定 | — |
 | POPClassic | macOS | 快速开始并跳过过场，进入第一关，关卡 AAC 环境音已提交非零 PCM 至 SDL。约 190 秒呈现 9,202 帧，SIGTERM 退出 0 | FFmpeg 离线解码 APK 中全部 91 个 MP3 成功，覆盖此前两处 SoundPool 加载失败。游戏内声音、后续关卡和跨平台待验 | — |
-| Assassin's Creed Pirates 2.9.1 | macOS | 跳过开场 CG，越过 AppOps 与 UserManager 空接收者崩溃，进入标题页并显示「无法联机」；呈现 1,024 帧 | 未见新的运行中 guest fault；请求关闭后 ROM Activity 超过 Clock 截止时间，CLI 退出 1；关卡待验 | — |
+| Assassin's Creed Pirates 2.9.1 | macOS | 原 APK 库诊断运行呈现 2,535 帧；MediaPlayer 构造错误和 Kontagent handler NPE 均为零 | Kontagent DNS resolver 初始化仍失败；上次关窗卡在 NativeActivity.onDestroy，CLI 退出 1；宿主关闭已改为 stop 后结束进程，原 APK 关窗及关卡待验 | — |
 
 ## 未闭合问题
 

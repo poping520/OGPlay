@@ -57,8 +57,9 @@ ApplicationLoaders 缓存，与 VM 应用类的 loader 同一对象。封存 APK
 Activity、PhoneWindow、WindowManagerGlobal 和 ViewRootImpl 执行 ROM。AMS 通过 IApplicationThread
 调度启动、暂停、停止、结果、恢复及销毁。当前 APK 的封存 Manifest 提供组件身份、主题和 alias。
 同包 Activity 由封存清单解析；task 与实例复用遵循四种 launchMode，支持本地 for-result。
-token、Intent 与结果由 AMS 持有至对应确认。进程退出与宿主协作关闭使用独立状态，截止时间由统一
-Clock 驱动。跨包解析、跨进程 Binder 及系统任务管理超出支持范围。
+token、Intent 与结果由 AMS 持有至对应确认。宿主关闭复用 suspend，等整栈 stop 确认与主队列空闲后结束进程；
+guest finish 保留实例销毁与最后一个实例销毁后的退出信号。关闭截止时间按宿主稳定 Clock 计。
+跨包解析、跨进程 Binder 及系统任务管理超出支持范围。
 
 运行期固定方向请求在主队列安全点更新单显示的宽高与全局 Configuration。AMS 经
 IApplicationThread.scheduleConfigurationChanged 交付进程配置。AMS 保存全局及每个 Activity 上次交付的独立快照，恢复可见前核对自身快照，不能把 Resources 的可变 Configuration 当旧值；可见且未结束的 Activity 按
@@ -119,7 +120,8 @@ permission/exported 不限制声明查询；服务启动与绑定按各自的进
 独立进程/isolated 服务 start 返回 null、bind 返回 false，每次记账并限流 warn，
 PackageManager 保留清单事实（[ADR-0170](../../../../docs/adr/runtime.md#adr-0170)）。显式绑定在主 Looper 异步 construct/attach/onCreate/onBind 后交付原本地 Binder；
 同组件共享，创建、绑定、解绑和停止经 ROM ActivityThread.H 排队；回调及释放按 ROM 调度。
-连接早于 bind 结果登记、失败可解绑一次；Context 强边/session roots 保活连接/Intent/服务，退出清理；
+连接早于 bind 结果登记、失败可解绑一次；Context 强边/session roots 保活连接/Intent/服务。
+进程退役只清理宿主侧服务记录，不调度解绑、Service.onDestroy 或 onServiceDisconnected；
 定向反射不解析无关签名。
 
 权限定义/requestedPermissions/granted 独立；checkPermission 仅 self PID/UID，外部/未授予 denied，
@@ -228,8 +230,8 @@ provider 保留最新请求；已登记的回调和请求由会话强持有。�
 WMS 在单逻辑显示上管理应用窗口、子窗口及 Toast 的 frame、层级、焦点、可见性和输入通道。
 同 app token 的 base application 放在既有 Dialog 之下，子窗口沿所属根窗口排序。
 本地服务前台通知按 token 和 ComponentName 验证，非零 id 配 null 通知抛 IAE；通知展示调用 RecordUiDegraded。
-AMS 结束 Activity 时先隐藏其 app token，再调度 pause、stop 和 destroy。会话退出先隐藏栈中
-全部 token，再调度生命周期消息。WMS 仅向仍登记的窗口派发焦点变化。
+AMS 结束 Activity 时先隐藏其 app token，再调度 pause、stop 和 destroy。宿主关闭沿 suspend 隐藏
+栈中 token，完成 pause、保存状态及 stop 后结束进程。WMS 仅向仍登记的窗口派发焦点变化。
 ROM 自己测量、定位和绘制 View。PopupWindow 的锚点与 gravity 是 WindowSession 的布局输入。
 系统 inset 为零，窗口动画缩放为零。多显示、系统装饰和非单位窗口矩阵超出支持范围。
 显示宽高变化先取消当前触摸捕获，再更新 WMS 几何并经 IWindow.resized 请求 ROM relayout。

@@ -944,11 +944,11 @@ std::optional<std::string> PumpAndroidAudioTracks(dexvm::Interpreter& vm, DexVmA
         }
         if (!is_video && context.encoded_music && context.encoded_music->TakeDecodeFailure(found->second.music)) {
             found->second.phase = Phase::error;
-            found->second.error_event_pending = true;
+            found->second.QueueError();
         }
-        if (found->second.error_event_pending) {
-            found->second.error_event_pending = false;
-            if (const auto error = post("Landroid/media/MediaPlayer;", found->second.jni_weak, 100, 1, -38);
+        if (const auto event = std::exchange(found->second.error_event_pending, std::nullopt)) {
+            if (const auto error =
+                    post("Landroid/media/MediaPlayer;", found->second.jni_weak, 100, event->what, event->extra);
                 error.has_value())
                 return error;
             continue;

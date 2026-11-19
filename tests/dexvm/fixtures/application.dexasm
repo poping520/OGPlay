@@ -1438,6 +1438,11 @@
     invoke-super {v0}, Landroid/app/Activity;->onPause()V
     return-void
 .end method
+.method protected onSaveInstanceState(Landroid/os/Bundle;)V
+.registers 2
+    invoke-super {v0, v1}, Landroid/app/Activity;->onSaveInstanceState(Landroid/os/Bundle;)V
+    return-void
+.end method
 .method protected onStop()V
 .registers 1
     invoke-super {v0}, Landroid/app/Activity;->onStop()V

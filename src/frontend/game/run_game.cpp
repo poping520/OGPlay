@@ -24,6 +24,7 @@
 #include "ogplay/agent/mcp_protocol.h"
 #include "ogplay/agent/mcp_session_control.h"
 #include "ogplay/agent/dashboard.h"
+#include "ogplay/audio/encoded_music.h"
 #include "ogplay/core/encoding.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/core/text.h"
@@ -1219,6 +1220,13 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             }
             if (!guest_fault) guest_fault = error.what();
             mcp_lifecycle = agent::McpLifecycleState::failed;
+        }
+        if (diagnostics_enabled) {
+            const auto music = guest->EncodedMusic().Stats();
+            logger.Write(
+                core::LogLevel::info, "frontend.run_apk.media", "MediaPlayer voice usage", {},
+                {{"created_players", music.created_players}, {"peak_reserved_voices", music.peak_reserved_voices}},
+                kUnrestrictedLog);
         }
         for (const auto& hit : dexvm_ledger.Warnings())
             if (hit.id.starts_with(core::kUiDegradedWarningPrefix))

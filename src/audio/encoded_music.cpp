@@ -41,18 +41,19 @@ EncodedMusicMixer::EncodedMusicMixer(ExternalAudioDecoder decoder) : external_de
 
 std::uint32_t EncodedMusicMixer::Create() {
     std::scoped_lock lock(mutex_);
-    if (players_.size() >= kMaximumPlayers) throw std::length_error("music player limit reached");
     const auto id = next_++;
     players_[id] = {};
+    ++stats_.created_players;
     return id;
 }
 
 void EncodedMusicMixer::Destroy(const std::uint32_t player) {
     std::scoped_lock lock(mutex_);
     const auto found = players_.find(player);
-    if (found != players_.end() && found->second.prepare_task)
-        found->second.prepare_task->Cancel();
-    players_.erase(player);
+    if (found == players_.end()) return;
+    if (found->second.prepare_task) found->second.prepare_task->Cancel();
+    reserved_voices_ -= found->second.has_voice;
+    players_.erase(found);
 }
 
 void EncodedMusicMixer::Reset(const std::uint32_t player) {
@@ -62,6 +63,7 @@ void EncodedMusicMixer::Reset(const std::uint32_t player) {
         if (found->second.prepare_task) found->second.prepare_task->Cancel();
         const auto generation = found->second.generation + 1U;
         const auto stream = found->second.audio_stream;
+        reserved_voices_ -= found->second.has_voice;
         found->second = {};
         found->second.audio_stream = stream;
         found->second.generation = generation;
@@ -92,6 +94,7 @@ bool EncodedMusicMixer::SetSource(
     if (found->second.prepare_task) found->second.prepare_task->Cancel();
     const auto generation = found->second.generation + 1U;
     const auto stream = found->second.audio_stream;
+    reserved_voices_ -= found->second.has_voice;
     found->second = {};
     found->second.audio_stream = stream;
     found->second.generation = generation;
@@ -198,16 +201,23 @@ std::optional<AudioDecodeFailure> EncodedMusicMixer::PrepareFailure(std::uint32_
     return found == players_.end() ? std::nullopt : found->second.prepare_failure;
 }
 
-void EncodedMusicMixer::Start(const std::uint32_t player) {
+EncodedMusicMixer::StartStatus EncodedMusicMixer::Start(const std::uint32_t player) {
     std::scoped_lock lock(mutex_);
     const auto found = players_.find(player);
-    if (found == players_.end() || !found->second.prepared) return;
+    if (found == players_.end() || !found->second.prepared) return StartStatus::not_prepared;
+    if (!found->second.has_voice) {
+        if (reserved_voices_ >= kMaximumVoices) return StartStatus::voice_limit;
+        found->second.has_voice = true;
+        ++reserved_voices_;
+        stats_.peak_reserved_voices = std::max(stats_.peak_reserved_voices, reserved_voices_);
+    }
     if (found->second.completed ||
         found->second.position >= static_cast<double>(found->second.total_frames)) {
         found->second.position = 0.0;
     }
     found->second.playing = true;
     found->second.completed = false;
+    return StartStatus::started;
 }
 
 void EncodedMusicMixer::Pause(const std::uint32_t player) {
@@ -340,6 +350,11 @@ std::size_t EncodedMusicMixer::CachedDecodedBytes() const {
         }
     }
     return bytes;
+}
+
+EncodedMusicMixer::PlaybackStats EncodedMusicMixer::Stats() const {
+    std::scoped_lock lock(mutex_);
+    return stats_;
 }
 
 void EncodedMusicMixer::MixIntoAccumulator(

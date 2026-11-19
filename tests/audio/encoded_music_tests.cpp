@@ -153,21 +153,23 @@ TEST_CASE("music data source is consumed in bounded blocks without ReadAll") {
     }
 }
 
-TEST_CASE("encoded music async owners cancel reset release and bound instances") {
+TEST_CASE("encoded music async owners cancel and playback voices remain reserved") {
     using namespace ogplay::audio;
     EncodedMusicMixer mixer;
     std::vector<std::uint32_t> players;
     const auto encoded = ReadSound();
-    for (std::size_t i = 0; i < EncodedMusicMixer::kMaximumPlayers; ++i) {
+    for (std::size_t i = 0; i < EncodedMusicMixer::kMaximumVoices; ++i) {
         const auto player = mixer.Create();
         players.push_back(player);
         REQUIRE(mixer.SetEncoded(player, encoded));
         REQUIRE(mixer.BeginPrepare(player));
         CHECK_FALSE(mixer.BeginPrepare(player));
     }
-    CHECK_THROWS_AS(static_cast<void>(mixer.Create()), std::length_error);
-    CHECK(mixer.CachedDecodedBytes() <= players.size() * (encoded.size() + 16384U));
-    for (auto player : players) {
+    const auto extra = mixer.Create();
+    REQUIRE(mixer.SetEncoded(extra, encoded));
+    REQUIRE(mixer.Prepare(extra));
+    CHECK(mixer.CachedDecodedBytes() <= (players.size() + 1) * (encoded.size() + 16384U));
+    for (const auto player : players) {
         mixer.Reset(player);
         CHECK(mixer.PollPrepare(player) == EncodedMusicMixer::PrepareStatus::failed);
         REQUIRE(mixer.SetEncoded(player, encoded));
@@ -175,6 +177,43 @@ TEST_CASE("encoded music async owners cancel reset release and bound instances")
         mixer.Destroy(player);
         CHECK(mixer.PollPrepare(player) == EncodedMusicMixer::PrepareStatus::failed);
     }
+    players.clear();
+    using StartStatus = EncodedMusicMixer::StartStatus;
+    for (std::size_t i = 0; i < EncodedMusicMixer::kMaximumVoices; ++i) {
+        const auto player = mixer.Create();
+        players.push_back(player);
+        REQUIRE(mixer.SetEncoded(player, encoded));
+        REQUIRE(mixer.Prepare(player));
+        REQUIRE(mixer.Start(player) == StartStatus::started);
+        if (i != 0) mixer.Pause(player);
+    }
+    CHECK(mixer.Start(extra) == StartStatus::voice_limit);
+    CHECK_FALSE(mixer.IsPlaying(extra));
+
+    constexpr std::uint32_t output_rate = 48000;
+    std::vector<std::int64_t> pcm(2U * output_rate * (1 + mixer.DurationMs(players[0]) / 1000));
+    mixer.MixIntoAccumulator(pcm, output_rate);
+    REQUIRE(mixer.Completed(players[0]));
+    mixer.Stop(players[1]);
+    CHECK(mixer.Start(extra) == StartStatus::voice_limit);
+    CHECK(mixer.Start(players[0]) == StartStatus::started);
+    CHECK(mixer.Start(players[1]) == StartStatus::started);
+
+    mixer.Reset(players[0]);
+    CHECK(mixer.Start(extra) == StartStatus::started);
+    REQUIRE(mixer.SetEncoded(players[0], encoded));
+    REQUIRE(mixer.Prepare(players[0]));
+    CHECK(mixer.Start(players[0]) == StartStatus::voice_limit);
+    REQUIRE(mixer.SetEncoded(extra, encoded));
+    CHECK(mixer.Start(players[0]) == StartStatus::started);
+    REQUIRE(mixer.Prepare(extra));
+    CHECK(mixer.Start(extra) == StartStatus::voice_limit);
+    mixer.Destroy(players[1]);
+    CHECK(mixer.Start(extra) == StartStatus::started);
+    CHECK(mixer.Stats().peak_reserved_voices == 32U);
+    for (const auto player : players)
+        mixer.Destroy(player);
+    mixer.Destroy(extra);
     CHECK(mixer.CachedDecodedBytes() == 0U);
 }
 

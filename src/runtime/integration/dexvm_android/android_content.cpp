@@ -2671,22 +2671,20 @@ void NotifyRomServiceConnections(dx::Interpreter& vm, const RomService& service,
 }
 
 void RetireRomService(dx::Interpreter& vm, DexVmAndroidContext& context,
-                      std::map<std::string, RomService, std::less<>>::iterator service, bool shutdown = false) {
+                      std::map<std::string, RomService, std::less<>>::iterator service) {
     const auto& record = service->second;
     if (!record.token.IsValid()) {
-        if (shutdown || record.connections.empty()) context.rom_services.erase(service);
+        if (record.connections.empty()) context.rom_services.erase(service);
         return;
     }
-    if (!shutdown && (record.started || std::ranges::any_of(record.connections, &RomService::Connection::auto_create)))
-        return;
+    if (record.started || std::ranges::any_of(record.connections, &RomService::Connection::auto_create)) return;
 
     const auto roots = vm.ProtectReferences(
         std::array{record.thread, record.token, record.component, record.bind_intent, record.binder});
     auto retired = context.rom_services.extract(service);
     auto& stopping = retired.mapped();
     try {
-        // Process teardown takes the same-process clients down too; no disconnect callback is observable.
-        if (!shutdown) NotifyRomServiceConnections(vm, stopping, dx::VmObjectRef{});
+        NotifyRomServiceConnections(vm, stopping, dx::VmObjectRef{});
         stopping.connections.clear();
         UnbindRomService(vm, stopping);
         static_cast<void>(CallAndroidMethod(vm, stopping.thread, "scheduleStopService", "(Landroid/os/IBinder;)V",
@@ -3212,7 +3210,7 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
             RequireRomServiceRequest(call, call.arguments[2].ref, call.arguments[3].AsInt());
             const auto intent = dx::IntrinsicCall(call).NonNullRef(1, "service");
             const auto target = ResolveExplicitService(call.vm, context, intent);
-            if (context->local_services_stopping || !context->application_enabled || !target.declaration ||
+            if (context->process_stopping || !context->application_enabled || !target.declaration ||
                 !target.declaration->enabled)
                 return dx::VmValue::Ref(dx::VmObjectRef{});
             if (!target.hostable) {
@@ -3276,7 +3274,7 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
                 return dx::VmValue::Int(0);
             }
             const auto target = ResolveExplicitService(vm, context, intent);
-            if (context->local_services_stopping || !context->application_enabled || !target.declaration ||
+            if (context->process_stopping || !context->application_enabled || !target.declaration ||
                 !target.declaration->enabled)
                 return dx::VmValue::Int(0);
             if (!target.hostable) {
@@ -3361,24 +3359,12 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime {
-void ShutdownLocalServices(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
-    context.local_services_stopping = true;
-    std::exception_ptr failure;
-    while (!context.rom_services.empty()) {
-        const auto service = context.rom_services.begin();
-        const auto name = service->first;
-        try {
-            android_intrinsics::RetireRomService(vm, context, service, true);
-        } catch (...) {
-            context.rom_services.erase(name);
-            if (!failure) failure = std::current_exception();
-        }
-    }
+void ShutdownLocalServices(DexVmAndroidContext& context) {
+    context.rom_services.clear();
     context.local_broadcast_filters.clear();
     context.local_serial_broadcasts.clear();
     android_intrinsics::SetBroadcastDeadline(context, android_intrinsics::kNoBroadcastDeadline);
     context.device_state.audio.media_button_receivers.clear();
     context.local_sticky_broadcasts.clear();
-    if (failure) std::rethrow_exception(failure);
 }
 }  // namespace ogplay::runtime

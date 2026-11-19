@@ -552,6 +552,7 @@ public:
         attempt([&] { static_cast<void>(session->InterruptBlockingWaits()); });
         attempt([&] { session->QuiesceNativeWorkers(); });
         attempt([&] { bridge->Threads().Shutdown(); });
+        attempt([&] { runtime::ShutdownLocalServices(*context); });
         attempt([&] { runtime::ReleaseAndroidMediaResources(*context); });
         attempt([&] { runtime::ShutdownPendingIntents(vm, *context); });
         if (live) {

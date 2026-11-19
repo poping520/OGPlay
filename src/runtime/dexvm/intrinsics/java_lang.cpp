@@ -1559,6 +1559,14 @@ void ValidateTimeout(const std::int64_t millis, const std::int32_t nanos) {
         throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "timeout arguments out of range"};
     }
 }
+
+[[nodiscard]] VmObjectRef ThreadGroupOf(IntrinsicContext& context, const ThreadFields& fields) {
+    const IntrinsicCall call(context);
+    if (call.GetInt(fields.has_been_started) != 0 && !context.vm.Threads().IsAlive(context.receiver)) {
+        return VmObjectRef{};
+    }
+    return call.GetRef(fields.group);
+}
 }  // namespace
 
 IntrinsicClassDecl Declare_java_lang_Thread_Class() {
@@ -1747,10 +1755,11 @@ IntrinsicClassDecl Declare_java_lang_Thread_Class() {
         }
         return VmValue::Ref(map);
     });
-    // 返回此线程显式设置的未捕获异常处理器。
     builder.VirtualMethod("getUncaughtExceptionHandler", "()Ljava/lang/Thread$UncaughtExceptionHandler;",
                           [fields](IntrinsicContext& context) {
-                              return VmValue::Ref(IntrinsicCall(context).GetRef(fields.uncaught_handler));
+                              const IntrinsicCall call(context);
+                              const auto handler = call.GetRef(fields.uncaught_handler);
+                              return VmValue::Ref(handler.IsValid() ? handler : ThreadGroupOf(context, fields));
                           });
     // 设置此线程专用的未捕获异常处理器，可传入 null 清除。
     builder.VirtualMethod("setUncaughtExceptionHandler", "(Ljava/lang/Thread$UncaughtExceptionHandler;)V",
@@ -1775,13 +1784,8 @@ IntrinsicClassDecl Declare_java_lang_Thread_Class() {
         return VmValue::Int(context.vm.Threads().IsAlive(context.receiver) ? 1 : 0);
     });
     // 返回线程所属的线程组；已终止线程返回 null。
-    builder.FinalMethod("getThreadGroup", "()Ljava/lang/ThreadGroup;", [fields](IntrinsicContext& context) {
-        IntrinsicCall call(context);
-        if (call.GetInt(fields.has_been_started) != 0 && !context.vm.Threads().IsAlive(context.receiver)) {
-            return VmValue::Ref(VmObjectRef{});
-        }
-        return VmValue::Ref(call.GetRef(fields.group));
-    });
+    builder.FinalMethod("getThreadGroup", "()Ljava/lang/ThreadGroup;",
+                        [fields](IntrinsicContext& context) { return VmValue::Ref(ThreadGroupOf(context, fields)); });
     builder.FinalMethod("getPriority", "()I", [fields](IntrinsicContext& context) {
         return VmValue::Int(IntrinsicCall(context).GetInt(fields.priority));
     });

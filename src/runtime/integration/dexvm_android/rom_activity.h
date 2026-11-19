@@ -22,17 +22,13 @@ struct RomActivityState {
     std::deque<DexVmAndroidContext::ActivityCommand> pending;
     int next_task{2};
     std::set<int> background_tasks;
-    bool suspended{}, exiting{}, exit_requested{};
-    std::int64_t exit_deadline_millis{};
+    bool suspended{}, host_closing{}, exit_requested{};
 };
 
 namespace android_intrinsics {
 void StartRomLauncher(dx::Interpreter& vm, const Context& context, const std::string& descriptor,
                       const std::string& component);
 void RequestRomActivitySuspend(dx::Interpreter& vm, const Context& context, bool suspend);
-void RequestRomActivityExit(dx::Interpreter& vm, const Context& context, std::int64_t budget_millis = 2000);
-enum class RomActivityExitStatus { waiting, complete, deadline_expired };
-RomActivityExitStatus ReadRomActivityExitStatus(const Context& context);
 void VisitRomActivityRoots(const DexVmAndroidContext& context, const dx::VmRootVisitor& visit);
 }  // namespace android_intrinsics
 }  // namespace ogplay::runtime

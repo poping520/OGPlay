@@ -3,7 +3,6 @@
 #include "rom_input.h"
 
 #include <algorithm>
-#include <limits>
 
 namespace ogplay::runtime::android_intrinsics {
 namespace {
@@ -58,7 +57,6 @@ void Append(dx::Interpreter& vm, Ref list, Ref item) {
 }
 
 void Result(dx::Interpreter& vm, RomActivityState& s, const Record& r) {
-    if (s.exiting) return;
     if (r.request < 0 || !Find(s, r.caller)) return;
     const auto result =
         NewPlatformObject(vm, "Landroid/app/ResultInfo;", "(Ljava/lang/String;IILandroid/content/Intent;)V",
@@ -131,7 +129,7 @@ void EnsureConfiguration(dx::Interpreter& vm, RomActivityState& s, Record& r) {
 }
 
 void Resume(dx::Interpreter& vm, const Context& context, RomActivityState& s) {
-    if (s.suspended || s.exiting || s.stack.empty()) return;
+    if (s.suspended || s.stack.empty()) return;
     auto& top = s.stack.back();
     if (s.background_tasks.contains(top.task)) return;
     if (top.finishing || top.destroying || top.resumed || top.launching || top.pausing) return;
@@ -256,7 +254,7 @@ void Launch(dx::Interpreter& vm, const Context& context, const DexVmAndroidConte
 // user-selected pixel dimensions have no live frontend editing entry point.
 void ApplyOrientation(dx::Interpreter& vm, const Context& context) {
     auto& s = Activities(context);
-    if (s.stack.empty() || s.exiting || s.stack.back().launching || s.stack.back().pausing) return;
+    if (s.stack.empty() || s.host_closing || s.stack.back().launching || s.stack.back().pausing) return;
     const auto orientation = s.stack.back().orientation;
     const bool portrait = orientation == 1 || orientation == 7 || orientation == 9 || orientation == 12;
     const bool landscape = orientation == 0 || orientation == 6 || orientation == 8 || orientation == 11;
@@ -283,7 +281,7 @@ void ApplyOrientation(dx::Interpreter& vm, const Context& context) {
 
 void Drain(dx::Interpreter& vm, const Context& context) {
     auto& s = Activities(context);
-    if (s.pending.empty() || s.exiting) return;
+    if (s.pending.empty() || s.host_closing) return;
     if (!s.stack.empty() && (s.stack.back().launching || s.stack.back().pausing)) return;
     if (!s.stack.empty() && s.stack.back().resumed) {
         Pause(vm, s, s.stack.back());
@@ -346,46 +344,22 @@ void StartRomLauncher(dx::Interpreter& vm, const Context& context, const std::st
 
 void RequestRomActivitySuspend(dx::Interpreter& vm, const Context& context, bool suspend) {
     auto& s = Activities(context);
-    if (s.suspended == suspend || s.exiting) return;
+    if (s.suspended == suspend || (!suspend && s.host_closing)) return;
     s.suspended = suspend;
-    if (s.stack.empty()) return;
     if (suspend) {
-        auto& top = s.stack.back();
-        top.suspend_stop_required = true;
-        if (top.resumed || top.launching)
-            Pause(vm, s, top);
-        else
-            Stop(vm, context, s, top);
-    } else
+        for (auto& r : s.stack)
+            Hide(vm, context, r);
+        for (auto& r : s.stack) {
+            if (r.resumed || r.launching || r.pausing) {
+                r.suspend_stop_required = true;
+                Pause(vm, s, r);
+            } else {
+                Stop(vm, context, s, r);
+            }
+        }
+    } else {
         Resume(vm, context, s);
-}
-
-void RequestRomActivityExit(dx::Interpreter& vm, const Context& context, std::int64_t budget_millis) {
-    if (budget_millis < 0) throw std::invalid_argument("negative Activity exit budget");
-    auto& s = Activities(context);
-    if (s.exiting) return;
-    s.exiting = true;
-    s.pending.clear();
-    const auto now = context->UptimeMillis();
-    s.exit_deadline_millis = now > std::numeric_limits<std::int64_t>::max() - budget_millis
-                                 ? std::numeric_limits<std::int64_t>::max()
-                                 : now + budget_millis;
-    // Queue focus loss across the stack before any lifecycle message for this exit.
-    for (auto& r : s.stack) {
-        r.finishing = true;
-        Hide(vm, context, r);
     }
-    for (auto& r : s.stack)
-        Finish(vm, context, s, r);
-    s.exit_requested = s.stack.empty();
-    context->activities_destroyed.store(s.exit_requested);
-}
-
-RomActivityExitStatus ReadRomActivityExitStatus(const Context& context) {
-    if (!context->rom_activities || context->rom_activities->exit_requested) return RomActivityExitStatus::complete;
-    const auto& s = *context->rom_activities;
-    return s.exiting && context->UptimeMillis() >= s.exit_deadline_millis ? RomActivityExitStatus::deadline_expired
-                                                                          : RomActivityExitStatus::waiting;
 }
 
 void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context) {
@@ -394,7 +368,7 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
         "(Landroid/app/IApplicationThread;Ljava/lang/String;Landroid/content/Intent;Ljava/lang/String;Landroid/os/IBinder;Ljava/lang/String;IILjava/lang/String;Landroid/os/ParcelFileDescriptor;Landroid/os/Bundle;)I",
         [context](dx::IntrinsicContext& c) {
             auto& s = Activities(context);
-            if (s.exiting || context->process_stopping)
+            if (s.host_closing || context->process_stopping)
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "process is stopping"};
             if (c.arguments[3].ref.IsValid() || c.arguments[5].ref.IsValid() || c.arguments[7].AsInt() ||
                 c.arguments[8].ref.IsValid() || c.arguments[9].ref.IsValid() || c.arguments[10].ref.IsValid())
@@ -441,7 +415,7 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
             r->stopped = false;
             r->stopping = false;
             r->launching = false;
-            if (!r->finishing) {
+            if (!r->finishing && !s.host_closing) {
                 r->visible = true;
                 SetRomApplicationVisibility(c.vm, context, r->token, true);
             }
@@ -461,11 +435,10 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
             r->resumed = false;
             r->pausing = false;
             r->launching = false;
-            if (r->finishing || s.suspended || s.exiting || r->suspend_stop_required ||
-                s.background_tasks.contains(r->task)) {
+            if (r->finishing || s.suspended || r->suspend_stop_required || s.background_tasks.contains(r->task)) {
                 Stop(c.vm, context, s, *r);
                 r->suspend_stop_required = false;
-                if (r->finishing || s.exiting) Destroy(c.vm, s, *r);
+                if (r->finishing) Destroy(c.vm, s, *r);
             }
         }
         Drain(c.vm, context);
@@ -494,7 +467,7 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
                                 r->visible = true;
                                 SetRomApplicationVisibility(c.vm, context, r->token, true);
                             }
-                            if (s.suspended || s.exiting || s.background_tasks.contains(r->task)) {
+                            if (s.suspended || s.background_tasks.contains(r->task)) {
                                 if (r->resumed)
                                     Pause(c.vm, s, *r);
                                 else
@@ -513,8 +486,7 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
         std::erase_if(s.stack, [&](const auto& r) { return r.token == c.arguments[0].ref; });
         if (s.stack.empty() && s.pending.empty()) {
             s.exit_requested = true;
-            context->activities_destroyed.store(true);
-            if (!s.exiting) context->exit_requested.store(true);
+            context->exit_requested.store(true);
         } else if (!s.stack.empty()) {
             context->requested_activity_orientation.store(s.stack.back().orientation);
             Resume(c.vm, context, s);
@@ -546,7 +518,7 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
     b.VirtualMethod("willActivityBeVisible", "(Landroid/os/IBinder;)Z", [context](dx::IntrinsicContext& c) {
         auto& s = Activities(context);
         const auto* r = Find(s, c.arguments[0].ref);
-        return V::Int(r && !r->finishing && !r->destroying && !s.exiting && !s.background_tasks.contains(r->task));
+        return V::Int(r && !r->finishing && !r->destroying && !s.host_closing && !s.background_tasks.contains(r->task));
     });
     b.VirtualMethod("setRequestedOrientation", "(Landroid/os/IBinder;I)V", [context](dx::IntrinsicContext& c) {
         auto& s = Activities(context);
@@ -767,13 +739,22 @@ void PumpAndroidHostRequests(dx::Interpreter& vm, const Context& context) {
         case Kind::launch: StartRomLauncher(vm, context, request.descriptor, request.component); break;
         case Kind::suspend: RequestRomActivitySuspend(vm, context, true); break;
         case Kind::resume: RequestRomActivitySuspend(vm, context, false); break;
-        case Kind::shutdown: RequestRomActivityExit(vm, context); break;
+        case Kind::shutdown: {
+            auto& state = Activities(context);
+            state.host_closing = true;
+            state.pending.clear();
+            RequestRomActivitySuspend(vm, context, true);
+            break;
+        }
         }
     }
     ApplyOrientation(vm, context);
-    if (context->rom_activities && context->rom_activities->exiting && context->activities_destroyed.load() &&
-        !context->local_services_stopping)
-        ShutdownLocalServices(vm, *context);
+    const auto& state = Activities(context);
+    if (state.host_closing) {
+        context->activities_stopped_for_shutdown.store(std::ranges::all_of(state.stack, [](const Record& r) {
+            return r.stopped && !r.stopping && !r.resumed && !r.pausing && !r.launching;
+        }));
+    }
     for (const auto& [value, composing] : text)
         CommitRomInputText(vm, context, vm.NewStringUtf8(value), composing);
     if (media) {
@@ -821,8 +802,8 @@ void QueueAndroidMediaTick(DexVmAndroidContext& context) {
     NotifyAndroidScheduler(context);
 }
 
-bool AndroidMainQueueIdle(DexVmAndroidContext& context) {
-    std::scoped_lock lock(context.scheduler_mutex);
+namespace {
+bool MainQueueIdleLocked(const DexVmAndroidContext& context) {
     const auto now = context.UptimeMillis();
     const auto queue = std::ranges::find_if(context.message_queues,
                                             [](const auto& entry) { return entry.second->context_token == 1U; });
@@ -832,5 +813,20 @@ bool AndroidMainQueueIdle(DexVmAndroidContext& context) {
     return std::ranges::none_of(context.scheduled_work, [&](const auto& work) {
         return work.looper == context.main_looper && work.deadline_millis <= now;
     });
+}
+}  // namespace
+
+bool AndroidMainQueueIdle(DexVmAndroidContext& context) {
+    std::scoped_lock lock(context.scheduler_mutex);
+    return MainQueueIdleLocked(context);
+}
+
+bool TryBeginAndroidProcessStop(DexVmAndroidContext& context) {
+    std::scoped_lock lock(context.scheduler_mutex);
+    if (!context.activities_stopped_for_shutdown.load() || !MainQueueIdleLocked(context) || context.AlarmDue() ||
+        context.UptimeMillis() >= context.serial_broadcast_deadline_millis.load())
+        return false;
+    context.process_stopping = true;
+    return true;
 }
 }  // namespace ogplay::runtime

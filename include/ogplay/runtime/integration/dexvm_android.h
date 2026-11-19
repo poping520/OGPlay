@@ -373,7 +373,6 @@ struct DexVmAndroidContext final {
     };
 
     std::map<std::string, RomServiceRecord, std::less<>> rom_services;
-    bool local_services_stopping{};
 
     // VM execution lock serializes token lookup, mutation and GC. Registry
     // owners are weak; live wrappers trace their Intent snapshot. Alarm entries
@@ -728,6 +727,16 @@ struct DexVmAndroidContext final {
     // The last canvas keeps the holder on the software presentation path.
     struct MediaPlayerState final {
         enum class Phase { idle, initialized, preparing, prepared, started, paused, stopped, completed, error };
+
+        struct ErrorEvent {
+            std::int32_t what;
+            std::int32_t extra;
+        };
+
+        void QueueError(std::int32_t what = 1, std::int32_t extra = -38) {
+            if (!error_event_pending) error_event_pending = ErrorEvent{what, extra};
+        }
+
         Phase phase{Phase::idle};
         std::uint32_t music{};
         audio::EncodedAudioSource source;
@@ -741,7 +750,7 @@ struct DexVmAndroidContext final {
         float left_volume{1.0F}, right_volume{1.0F};
         bool prepared_event_pending{};
         bool seek_event_pending{};
-        bool error_event_pending{};
+        std::optional<ErrorEvent> error_event_pending;
     };
 
     std::unordered_map<std::uint32_t, MediaPlayerState> media_players;
@@ -822,7 +831,7 @@ struct DexVmAndroidContext final {
     std::deque<std::pair<std::string, bool>> host_text_events;
     bool media_tick_pending{};
     std::atomic<bool> host_ime_visible{};
-    std::atomic<bool> activities_destroyed{};
+    std::atomic<bool> activities_stopped_for_shutdown{};
     std::atomic<int> requested_activity_orientation{-1};
 
     struct MessageQueueState final {
@@ -1017,6 +1026,7 @@ void QueueAndroidActivityRequest(DexVmAndroidContext& context, DexVmAndroidConte
 void QueueAndroidTextEvent(DexVmAndroidContext& context, std::string text, bool composing);
 void QueueAndroidMediaTick(DexVmAndroidContext& context);
 [[nodiscard]] bool AndroidMainQueueIdle(DexVmAndroidContext& context);
+[[nodiscard]] bool TryBeginAndroidProcessStop(DexVmAndroidContext& context);
 void NotifyAndroidScheduler(DexVmAndroidContext& context);
 void AdvanceAndroidClock(DexVmAndroidContext& context, std::int64_t delta_nanos);
 // A native sleep on the clock driver thread lets uptime pass inside one step.
@@ -1026,7 +1036,7 @@ void AdvanceAndroidFrameClock(DexVmAndroidContext& context, std::int64_t frame_n
 
 // Stops all loopers and wakes HandlerThread teardown. Idempotent.
 void ShutdownAndroidScheduler(DexVmAndroidContext& context);
-void ShutdownLocalServices(dexvm::Interpreter&, DexVmAndroidContext&);
+void ShutdownLocalServices(DexVmAndroidContext&);
 void ShutdownPendingIntents(dexvm::Interpreter&, DexVmAndroidContext&);
 
 void RegisterAndroidSchedulerStateTable(dexvm::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context);

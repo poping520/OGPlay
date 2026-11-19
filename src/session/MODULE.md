@@ -131,17 +131,20 @@ hook 可阻塞正常 exit，强制取消不能宣称正常 hook 完成。详见 
 
 DexActivityLifecycle 成功启动与恢复后向已连接 DiagnosticState 发布 running 阶段；无需启动写盘 coordinator，阶段 generation 仍由 DiagnosticState 维护。
 
-退出前记录并退役已失败调用的 root JNI 异常；本地服务在 ROM 主队列关闭前解绑。
+退出前记录并退役已失败调用的 root JNI 异常；本地服务记录在 worker join 后由宿主回收。
 native 清理失败仍继续关闭进程和 surface；前端保留运行首错，独立报告清理错误。
 
 本地视频与软件 Canvas/EGL 通过各自的 ROM Surface 进入窗口合成器。
 
-、ADR-0095/0115：进程 Stop 显式区分 host shutdown、guest exit 与运行 fault，
-退出事实优先。健康宿主关闭在 20 秒预算内（API19 ActivityStack STOP_TIMEOUT 与 DESTROY_TIMEOUT 之和，按宿主稳定时钟计，
-独立于逐帧回调预算）经 AMS 请求 pause、stop 与 destroy 并等待 ROM 确认；期间 VM 仍可创建 Java/native 线程，音频消费保持推进。回调后先调用显式
+ADR-0095/0115：进程 Stop 显式区分 host shutdown、guest exit 与运行 fault，
+退出事实优先。健康宿主关闭复用 AMS 的 suspend 路径，前台失焦、pause、保存状态、stop 并隐藏窗口和 Surface。
+保存状态的时序由 ROM 决定，targetSdk 低于 Honeycomb 时在 onPause 前保存。
+所有 Activity 均收到 ROM 的 stop 确认且主队列空闲后，视为进程被杀。已 suspended 时不重复派发 pause 和 stop。
+等待预算为 API19 ActivityStack STOP_TIMEOUT（10 秒，按宿主稳定时钟计，独立于逐帧回调预算）。
+期间 VM 仍可创建 Java/native 线程，音频消费保持推进。确认后先调用显式
 `before_guest_shutdown` 停止并回收音频消费者，再 BeginTeardown、VM shutdown/join；
 超时传播原错并记 `session.lifecycle.cleanup_timeout`，到期后不继续 guest 回调。
-进程资源在销毁确认后退役；普通 Activity.finish 仍按实例执行 destroy 并传播异常。
+宿主关闭不派发 Activity.onDestroy、Service.onDestroy 或 onServiceDisconnected；普通 Activity.finish 仍按实例执行 destroy 并传播异常。
 进程关闭拒绝新转换/输入，关闭 ROM Looper/native 队列、join native/Java worker 后由 owner 退役媒体/图形
 资源，再执行仍允许的 native cleanup。退出预算覆盖重入且不续期，首错保持、重复 Stop 幂等。
 进程 Stop 不执行模块卸载式 DSO fini；底层显式 permitted 卸载/停机的执行与失败传播保持。

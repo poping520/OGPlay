@@ -117,7 +117,7 @@ TEST_CASE("P3 AMS launch for-result finish and return use IApplicationThread sch
     CHECK(x.trace->calls.back() == "scheduleResumeActivity");
 }
 
-TEST_CASE("P3 AMS suspend resume and shutdown order is pause stop destroy") {
+TEST_CASE("P3 AMS suspend and resume preserve the Activity until it finishes") {
     Fixture x;
     x.Start();
     x.Resumed();
@@ -131,7 +131,9 @@ TEST_CASE("P3 AMS suspend resume and shutdown order is pause stop destroy") {
     CHECK(x.trace->calls.back() == "scheduleResumeActivity");
     x.Resumed();
     x.trace->calls.clear();
-    RequestRomActivityExit(x.f.vm, x.f.context);
+    CHECK(x.f.On(x.am, "finishActivity", "(Landroid/os/IBinder;ILandroid/content/Intent;)Z",
+                 {V::Ref(token), V::Int(0), null})
+              .AsInt() == 1);
     x.Paused(token);
     CHECK(x.trace->calls ==
           std::vector<std::string>{"schedulePauseActivity", "scheduleStopActivity", "scheduleDestroyActivity"});
@@ -171,18 +173,25 @@ TEST_CASE("P3 AMS launch modes retain tokens and isolated tasks") {
     CHECK(x.f.On(x.am, "getRequestedOrientation", "(Landroid/os/IBinder;)I", {V::Ref(isolated)}).AsInt() == 0);
 }
 
-TEST_CASE("P3 AMS exit deadline follows the injected Clock without declaring pending destroys complete") {
+TEST_CASE("P3 AMS host shutdown waits for stop confirmation and keeps the Activity") {
     Fixture x;
     x.Start();
     x.Resumed();
     const auto token = x.Top();
-    RequestRomActivityExit(x.f.vm, x.f.context, 20);
-    CHECK(ReadRomActivityExitStatus(x.f.context) == RomActivityExitStatus::waiting);
-    AdvanceAndroidClock(*x.f.context, 20 * 1'000'000);
-    CHECK(ReadRomActivityExitStatus(x.f.context) == RomActivityExitStatus::deadline_expired);
+    x.trace->calls.clear();
+    QueueAndroidActivityRequest(*x.f.context, {DexVmAndroidContext::HostActivityRequest::Kind::shutdown, {}, {}});
+    PumpAndroidHostRequests(x.f.vm, x.f.context);
+    CHECK_FALSE(x.f.context->activities_stopped_for_shutdown);
     x.Paused(token);
-    x.f.On(x.am, "activityDestroyed", "(Landroid/os/IBinder;)V", {V::Ref(token)});
-    CHECK(ReadRomActivityExitStatus(x.f.context) == RomActivityExitStatus::complete);
+    PumpAndroidHostRequests(x.f.vm, x.f.context);
+    CHECK_FALSE(x.f.context->activities_stopped_for_shutdown);
+    x.f.On(x.am, "activityStopped",
+           "(Landroid/os/IBinder;Landroid/os/Bundle;Landroid/graphics/Bitmap;Ljava/lang/CharSequence;)V",
+           {V::Ref(token), null, null, null});
+    PumpAndroidHostRequests(x.f.vm, x.f.context);
+    CHECK(x.f.context->activities_stopped_for_shutdown);
+    CHECK(x.Top() == token);
+    CHECK(x.trace->calls == std::vector<std::string>{"schedulePauseActivity", "scheduleStopActivity"});
 }
 
 TEST_CASE("P3 AMS moveTaskToBack stops the root and keeps the task queryable") {

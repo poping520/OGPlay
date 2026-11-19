@@ -13,6 +13,9 @@ title 的通用症状。手册总览见 [README.md](README.md)。
 
 ## 停滞与退出卡住
 
+宿主关闭在失焦、pause、保存状态及 stop 后结束进程。先核查 ROM 是否确认全部 Activity 已 stop、
+主队列是否空闲。等待超过 10 秒记 `session.lifecycle.cleanup_timeout`；已过 stop 确认点时检查 worker join 和资源退役。
+
 启动时显式打开诊断；超时值只触发取证，不会强杀 guest：
 
 ```powershell

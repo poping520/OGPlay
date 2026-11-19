@@ -18,8 +18,10 @@
 - `EncodedAudioDataSource`：窄拥有型接口只发布 `Size` 与带 `stop_token` 的 `ReadAt`；
   decoder 按块消费，来源寿命覆盖 prepare/playback，取消只终止当前任务。
 - `EncodedMusicMixer` / `EncodedAudioStream`：音乐按 OGG/MP3/WAV/MP4（M4A）bitstream 分块读取，
-  不缓存整首 PCM；SoundPool 仍用短音效全量缓存。音乐最多 16 实例，所持编码窗口总量
-  128 MiB、单窗口 64 MiB；每 decoder PCM 块 16 KiB，Vorbis codec arena 上限 2 MiB。
+  不缓存整首 PCM；SoundPool 仍用短音效全量缓存。创建音乐实例不占声部，首次 start
+  申请声部，上限 32。pause、stop 和自然结束保留声部，reset、release、finalize 或成功重设源时释放。
+  声部耗尽时 runtime 记账并异步投递 MediaPlayer error（NO_INIT, 0）。
+  所持编码窗口总量 128 MiB、单窗口 64 MiB；每 decoder PCM 块 16 KiB，Vorbis codec arena 上限 2 MiB。
   元数据准备在实例拥有的 jthread 中进行；每实例最多一个任务，不 detach，reset/release/
   重设源先取消并 join；提交验证任务身份。MP3 准备扫描 demux 后的压缩帧时长并扣除 gapless
   裁剪量，所得总帧数用于时长和播放边界。后退 seek 重置解码器并

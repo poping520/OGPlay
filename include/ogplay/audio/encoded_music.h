@@ -17,9 +17,15 @@ namespace ogplay::audio {
 
 class EncodedMusicMixer final {
 public:
-    static constexpr std::size_t kMaximumPlayers = 16;
+    static constexpr std::size_t kMaximumVoices = 32;
     static constexpr std::size_t kMaximumMusicBytes = 128U * 1024U * 1024U;
     enum class PrepareStatus { pending, ready, failed };
+    enum class StartStatus { started, not_prepared, voice_limit };
+
+    struct PlaybackStats {
+        std::uint64_t created_players{};
+        std::uint64_t peak_reserved_voices{};
+    };
     explicit EncodedMusicMixer(ExternalAudioDecoder decoder = {});
     [[nodiscard]] std::uint32_t Create();
     void Destroy(std::uint32_t player);
@@ -33,7 +39,7 @@ public:
     [[nodiscard]] bool BeginPrepare(std::uint32_t player);
     [[nodiscard]] PrepareStatus PollPrepare(std::uint32_t player);
     [[nodiscard]] std::optional<AudioDecodeFailure> PrepareFailure(std::uint32_t player) const;
-    void Start(std::uint32_t player);
+    StartStatus Start(std::uint32_t player);
     void Pause(std::uint32_t player);
     void Stop(std::uint32_t player);
     void SeekMs(std::uint32_t player, std::int32_t milliseconds);
@@ -50,6 +56,7 @@ public:
     [[nodiscard]] std::int32_t DurationMs(std::uint32_t player) const;
     [[nodiscard]] std::int32_t PositionMs(std::uint32_t player) const;
     [[nodiscard]] std::size_t CachedDecodedBytes() const;
+    [[nodiscard]] PlaybackStats Stats() const;
     void MixIntoAccumulator(std::span<std::int64_t> accumulator,
                             std::uint32_t output_rate);
 
@@ -81,6 +88,7 @@ private:
         bool looping{};
         bool playing{};
         bool prepared{};
+        bool has_voice{};
         bool completed{};
         bool decode_failed{};
         std::int32_t audio_stream{3};
@@ -92,6 +100,8 @@ private:
     mutable std::mutex mutex_;
     ExternalAudioDecoder external_decoder_;
     std::map<std::uint32_t, Player> players_;
+    std::uint64_t reserved_voices_{};
+    PlaybackStats stats_;
     std::array<float, 10> stream_gains_{1,1,1,1,1,1,1,1,1,1};
     std::uint32_t next_{1};
 };
